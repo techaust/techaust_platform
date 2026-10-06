@@ -15,7 +15,15 @@ The live site is the old Worker **`techaust-web`**. **Never deploy to, rename or
 | R2 | `techaust-staging-files`, `techaust-staging-docs` | **Not created yet** (owner deferred; R2 may need a payment method on file) | M3.4 / M4.4 |
 | Turnstile widget | staging hostnames | **Not created yet**: dashboard checklist at M2.4 | M2.4 |
 | Access app | the staging `*.workers.dev` hosts | **Not created yet**: dashboard checklist before any real data (M1.4) | M1.4 |
-| Workers | `techaust-platform-{web,admin,portal,jobs}-staging` | Created by the first staging deploy | — |
+| Workers | `techaust-platform-{web,admin,portal,jobs}-staging` | **Deployed 2026-10-06** (PR #1); health routes return 200 | — |
+
+**Staging URLs** (workers.dev subdomain `techaust-technologies-153`; noindex placeholders, no data, no Access yet):
+- Web: https://techaust-platform-web-staging.techaust-technologies-153.workers.dev (`/api/geo`)
+- Admin: https://techaust-platform-admin-staging.techaust-technologies-153.workers.dev (`/api/v1/health`)
+- Portal: https://techaust-platform-portal-staging.techaust-technologies-153.workers.dev (`/api/v1/health`)
+- Jobs: https://techaust-platform-jobs-staging.techaust-technologies-153.workers.dev (`/healthz`)
+
+Deploys happen automatically when a PR is merged to `main` (`.github/workflows/deploy-staging.yml`).
 
 ## Production
 Nothing is created until Phase 7 (L3), with owner approval per resource.
@@ -23,4 +31,8 @@ Nothing is created until Phase 7 (L3), with owner approval per resource.
 ## Access methods
 - Local: `wrangler login` (OAuth, the owner's machine). Scopes include Workers/D1/Queues write and zone **read** only.
 - CI: `CF_API_TOKEN_STAGING` (repo secret, created by the owner with the scoped permissions in docs/09 P5.7), plus `CLOUDFLARE_ACCOUNT_ID`.
-- Cloudflare MCP (plugin): read-only use (logs, listing).
+- Cloudflare MCP (plugin, authorised): read-only use (logs, listing).
+
+## GitHub
+- Repo `techaust/techaust_platform`: **public** (owner decision, 2026-10-06). `main` is protected (PR + CI `checks` required).
+- Repo secrets: `CF_API_TOKEN_STAGING`, `CLOUDFLARE_ACCOUNT_ID`. Repo variable `PRODUCTION_ENABLED`: **unset** (production deploys disabled until Phase 7).

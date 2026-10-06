@@ -20,6 +20,8 @@
 | U-3 | **UPI merchant fee from 15 Oct 2026** (0.4 % above ₹2,000, capped at ₹300; NPCI FAQ dated 15 Sep 2026) | Affects Razorpay costs on B2B invoices. You absorb fees, so prices may need a small buffer. | Ask Razorpay for its restated pricing; for large INR invoices, nudge clients to netbanking or NEFT. |
 | U-4 | **Razorpay website checklist** | Live keys need Terms, Privacy, Refund, **Delivery**, Contact and Pricing pages live on the domain | Covered by the new site (Phase 7 order: site live → apply for live keys) |
 | U-5 | **Zoho aliases** `hello@`, `billing@`, `privacy@`, `security@` | Needed for email sending (SES identities), legal pages and security.txt | Create them in Zoho before the email milestone |
+| U-6 | **Public GitHub repo** (since 2026-10-06, owner decision) | `docs/` publicly describes unfixed weaknesses of the live site (audit H-5, M-1, M-2: form rate-limit bypass, debug leak, no Origin check) and business-confidential plans; the commit email is public | Make the repo private when convenient (Settings → General → Change visibility). Already-copied content can't be recalled. Until then nothing sensitive is committed (CLAUDE.md rule 6). |
+| U-7 | **GitHub billing block** | GitHub refused to run Actions on the private repo ("recent account payments have failed or your spending limit…"). Public repos aren't affected, but it returns if the repo goes private. | Check GitHub → Settings → Billing and licensing for a failed payment |
 
 ---
 
@@ -59,7 +61,8 @@
 | **Payments UX** | Tampering | Client edits the amount in the browser | The amount comes from the server balance; partial amount bounds checked server-side; nothing is marked paid on a redirect |
 | **Documents** | Tampering | An issued invoice silently edited | DB triggers freeze content; the PDF and snapshot are stored with SHA-256; corrections only via credit/debit notes |
 | **Files** | Malicious upload | HTML or SVG with script; zip bombs; huge files | Allow-list by magic bytes; ≤ 25 MB; served as `attachment` with `X-Content-Type-Options: nosniff`; private R2 with 5-min signed URLs; no server-side unzip |
-| **Supply chain** | Tampering | A malicious npm release | Exact pins; pnpm `minimumReleaseAge` 7 days; `onlyBuiltDependencies` allow-list; Renovate PRs with CI; lockfile integrity; actions pinned by SHA; gitleaks secret scan |
+| **Supply chain** | Tampering | A malicious npm release | Exact pins; pnpm `minimumReleaseAge` 1 day (install fails on newer packages, as seen in P5.2) + Renovate's 7-day delay on updates; `allowBuilds` allow-list (only esbuild and workerd run install scripts); Renovate PRs with CI; `--frozen-lockfile` in CI; actions pinned by SHA; gitleaks secret scan |
+| **CI/CD (public repo)** | Elevation | A fork PR's code runs with our secrets ("pwn request"); a malicious workflow change | `deploy-staging` runs only for `push` events on this repo's `main` (never fork PRs); CI has no secrets; first-time fork contributors need approval to run Actions; branch protection requires CI on every PR |
 | **CI/CD** | Elevation | A collaborator adds a workflow that exfiltrates the prod token | Write access limited to the Owner; the prod token is used only in `deploy-prod.yml` (actor guard + typed confirmation); separate least-privilege tokens per environment; branch protection; review of `.github/` changes |
 | **Outbound calls** | SSRF | User-supplied URL fetched server-side | No user-supplied URLs are fetched; outbound hosts are allow-listed (gateways, SES, Turnstile, FBIL/RBI rates, PayPal certs) |
 | **Email** | Spoofing of our domain | Phishing "invoices" from techaust.com | SPF, DKIM (SES Easy DKIM) and DMARC (`p=none` → `quarantine` after monitoring); a custom MAIL FROM; BIMI later (optional) |
@@ -118,7 +121,8 @@ See [05 §6](05-architecture.md). Key controls:
 - [ ] Integration tests in the Workers runtime (auth, portal scoping, webhooks, numbering concurrency)
 - [ ] E2E tests (Playwright) + axe
 - [ ] A security review (the `/security-review` command or a manual checklist) before each milestone sign-off
-- [ ] Dependency audit + gitleaks in CI; Renovate with a 7-day delay
+- [x] gitleaks (full git history) in CI; exact pins + `minimumReleaseAge` + `allowBuilds` (Phase 5)
+- [ ] Dependency audit in CI; Renovate app with a 7-day delay (installing the Renovate app needs owner approval)
 
 ---
 
@@ -132,14 +136,16 @@ See [05 §6](05-architecture.md). Key controls:
 | SES IAM access key | Wrangler secret (jobs) | Owner | 90 days (calendar reminder + a cron alert from key age) |
 | `SES_EVENTS_TOKEN` | Wrangler secret + EventBridge connection | Owner | Yearly |
 | `TURNSTILE_SECRET` | Wrangler secret | Owner | On suspicion |
-| `CF_API_TOKEN_STAGING`, `CF_API_TOKEN_PROD`, `CF_API_TOKEN_BACKUP` | GitHub repo secrets | Workflows only (repo write access = Owner) | Yearly; least privilege per token |
+| `CF_API_TOKEN_STAGING` (**created 2026-10-06** by the owner: Workers Scripts/D1/Queues edit + Account Settings read; no zone/DNS) + `CLOUDFLARE_ACCOUNT_ID` | GitHub repo secrets | `deploy-staging.yml` only (never exposed to fork PRs) | Yearly; least privilege |
+| `CF_API_TOKEN_PROD`, `CF_API_TOKEN_BACKUP` (Phase 7) | GitHub repo secrets | `deploy-prod.yml` / `backup.yml` only (repo write access = Owner) | Yearly; least privilege per token |
+| Local `wrangler login` (OAuth) | The owner's machine (`%APPDATA%\xdg.config\.wrangler`) | Local CLI only | `wrangler logout` to revoke |
 | AWS (backups) | **No stored keys**: GitHub OIDC → IAM role (`s3:PutObject` on the backup prefix only) | — | n/a |
 | `BUILD_SNAPSHOT_TOKEN` | Wrangler secret (admin) + GitHub secret | Workflows | Yearly |
 | age **identity** (backup private key) | **Offline**: the owner's password manager + a printed copy in a safe place | Owner only | Only if exposed (then re-encrypt the retained backups) |
 | Bank details | D1 (`bank_accounts`), entered by the Owner in Settings | Owner (full), Accountant (masked) | n/a |
 
 **Rules:**
-- **Never commit secrets.** `.env.example` and `.dev.vars.example` list names only. `.dev.vars` and `.env*` are git-ignored. gitleaks runs in CI and as a pre-commit hook.
+- **Never commit secrets.** `.env.example` and `.dev.vars.example` list names only. `.dev.vars` and `.env*` are git-ignored. gitleaks scans the full git history in CI (a local pre-commit hook is optional and not yet installed).
 - I will **never** read your `CREDENTIALS` folder. When a secret is needed, I give you the exact `wrangler secret put NAME --env staging` command and **you** paste the value into your terminal.
 - Gateway keys can't be entered in the admin UI (ADM-SET-06). The UI shows only "configured / missing" and the mode.
 - Owner accounts on Cloudflare, GitHub, AWS, Razorpay, Stripe, PayPal, Zoho and the domain registrar all use **2FA with an authenticator app or passkey**, and recovery codes stored offline.

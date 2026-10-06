@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Phase** | 5, Setup and tooling (**T1–T12 APPROVED** by owner 2026-10-06) |
+| **Phase** | 5, Setup and tooling (**T1–T12 APPROVED** 2026-10-06; Phase 5 complete, see §6) |
 | **Date** | 2026-10-06 |
 | **Rule** | Owner ground rule 6: each tool is explained here and **used only after your approval**. Using a tool never bypasses the other rules. Anything that **changes** Cloudflare, AWS, GitHub, DNS or production still needs your approval **for that specific action**. |
 
@@ -59,7 +59,7 @@
 
 | Step | Status |
 |---|---|
-| P5.1 Tools | ✅ T1–T12 approved; Cloudflare plugin installed (MCP sign-in pending, read-only use) |
+| P5.1 Tools | ✅ T1–T12 approved; Cloudflare plugin installed via `claude plugin install cloudflare@cloudflare` (marketplace `cloudflare/skills`) and its MCP server authorised (read-only use). Cloudflare's agent-setup page reviewed: the beta `cf` CLI and the other-agent steps were skipped as unnecessary. |
 | P5.2–P5.3 Scaffold + git | ✅ Monorepo builds, lints, type-checks; 7 tests pass (4 in workerd) |
 | P5.4 First push | ✅ Approved; repo `techaust/techaust_platform` (owner made it **public**, see the risk note in memory/08) |
 | P5.5 GitHub settings | ✅ Branch protection on `main`: PR + `checks` required, admins included, linear history, no force-push or deletion |
