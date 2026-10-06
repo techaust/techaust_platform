@@ -377,7 +377,7 @@ All documents are **HTML + print CSS rendered by Browser Run** ([05 §8](05-arch
 | Colour | Ink text on white. Verdigris only for the header rule and the mark. Status is never colour-only. **Legible in grayscale** (checked by rendering a grayscale proof in tests). |
 | Sizes | Body 9.5 pt / 13 pt leading; table cells 9 pt; small print 7.5 pt (minimum); totals 11 pt bold; grand total 14 pt |
 | Repeating elements | Table headers repeat on each page (`thead { display: table-header-group }`); rows never split (`break-inside: avoid`); the totals block is kept together with the last rows |
-| Footer (every page) | Symbol mark · "TecHaust Technologies · techaust.com" and the sender address for the document type (`hello@techaust.com` for proposals and estimates, `billing@techaust.com` for invoices, proformas and receipts) · document number · "Page X of Y" |
+| Footer (every page) | Symbol mark · "TecHaust Technologies · techaust.com" and the sender address for the document type (`hello@techaust.com` for proposals and estimates, `billing@techaust.com` for invoices, proformas, receipts, credit/debit notes and statements) · document number · "Page X of Y" |
 | Metadata | `<title>` = "Tax Invoice TH/INV/2627/0001 – Client name"; `lang="en-IN"`; tagged PDF enabled where the renderer supports it |
 | Integrity | A small footer line on the final page: "Document ID ‹uuid› · Content fingerprint ‹first 12 hex chars of the SHA-256 of the snapshot›". It is verifiable against the admin. |
 
@@ -397,7 +397,7 @@ All documents are **HTML + print CSS rendered by Browser Run** ([05 §8](05-arch
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-Supplier block contents come from Settings (ADM-SET-01). **This is the only public place for the GSTIN and the proprietor's legal name as supplier** (owner decision; the website shows neither as supplier, [04 §0](04-prd.md) Identity). The sender address in the block follows the document type: `hello@` for proposals and estimates, `billing@` for invoices, proformas and receipts (the example above is a tax invoice).
+Supplier block contents come from Settings (ADM-SET-01). **This is the only public place for the GSTIN and the proprietor's legal name as supplier** (owner decision; the website shows neither as supplier, [04 §0](04-prd.md) Identity). The sender address in the block follows the document type: `hello@` for proposals and estimates, `billing@` for invoices, proformas, receipts, credit/debit notes and statements (the example above is a tax invoice).
 
 ### 7.3 Per-document specifics
 
