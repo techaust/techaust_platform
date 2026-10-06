@@ -544,7 +544,7 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 
 | Asset / input | Used on | Status |
 |---|---|---|
-| Logo source (`TecHaust.ai`, PNG, JPG, cover mock-up) | Everywhere; PDFs; email; favicon | ✅ received in `brand-incoming/` (2026-10-06). Refined variants shown to you in M1 ([06 §1.2](06-design-system.md)) |
+| Logo | Everywhere; PDFs; email; favicon | ✅ New identity "Patina" approved 2026-10-06; files in `packages/ui/brand/` ([06 §1](06-design-system.md)). The supplied `TecHaust.ai` logo is retired. |
 | Founder headshot (≥ 1200 px, plain background) | About, blog author, OG | 🟧 OWNER (website milestone) |
 | Founder bio (80–120 words) + LinkedIn URL | About, blog | 🟧 OWNER |
 | TecHaust LinkedIn company page URL | Footer, schema `sameAs` | 🟧 OWNER |

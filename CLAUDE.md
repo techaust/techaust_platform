@@ -6,14 +6,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Rebuild of techaust.com: a public website, admin and client portal for **TecHaust Technologies** (sole proprietorship, GST-registered, Balurghat, West Bengal). Owner: Rupak Sarkar.
 
 ## Current status (update at every phase or milestone)
-- Phases 1–5 approved. **Phase 6 M1.1 approved** (2026-10-06): tokens, fonts and the **brand identity "Patina"** (docs/06 §1–3, docs/11 audit, ADR 0013); assets in `packages/ui/brand/`. **Next: M1.2** core library (`docs/09-roadmap.md`).
-- **Brand changes happen in code:** `packages/ui/src/brand/geometry.ts` → `pnpm --filter @techaust/ui draw:master` → `build:brand` (tests catch drift). Print CMYK: `python packages/ui/scripts/measure-cmyk.py` (Windows, ICC).
+- Phases 1–5 approved. **Phase 6 M1.1 done and approved** (2026-10-06, PR #3): design tokens, fonts, and the new **brand identity "Patina"** (docs/06 §1–3, docs/11 audit, ADR 0013). The assets are in `packages/ui/brand/`.
+- **Next: M1.2**, the core library in `packages/core` (money, FY/IST dates, GSTIN, amount in words, numbering, permissions, zod schemas). See `docs/09-roadmap.md`.
+- Open owner actions (not blocking):
+  - trademark search (VERIFY WITH LEGAL, 08 U-8)
+  - a printed proof and Pantone match
+  - the phone number for the business card
 - Live site: the old Worker **`techaust-web`** (rollback target). New staging Workers: `https://techaust-platform-{web,admin,portal,jobs}-staging.techaust-technologies-153.workers.dev`.
 
 ## Read first
 - Status, decisions and the build order: `docs/09-roadmap.md`, `docs/04-prd.md` §0, `docs/10-tooling.md` §6
 - Requirements: `docs/04-prd.md` (IDs like `ADM-INV-03` are referenced in tests and commits)
-- Architecture: `docs/05-architecture.md` · Design: `docs/06-design-system.md` · Copy: `docs/07-content.md` · Security and compliance: `docs/08-security-compliance.md` · ADRs: `docs/adr/`
+- Architecture: `docs/05-architecture.md` · Design + brand rules: `docs/06-design-system.md` · Brand audit: `docs/11-brand-audit.md` · Copy: `docs/07-content.md` · Security and compliance: `docs/08-security-compliance.md` · ADRs: `docs/adr/`
 - Environments and Cloudflare resources: `docs/runbooks/environments.md`
 - Background (approved): `docs/01-audit.md`, `docs/02-services-strategy.md`, `docs/03-plan.md` (where 03 differs from 05, **05 wins**)
 
@@ -37,7 +41,7 @@ Rebuild of techaust.com: a public website, admin and client portal for **TecHaus
 - Commit identity (repo-local): `TecHaust Technologies <admin@techaust.com>`. Conventional commits referencing PRD IDs, e.g. `feat(invoices): gap-free numbering [ADM-INV-03]`.
 
 ## Stack (pinned exactly; see `docs/05-architecture.md` §2)
-pnpm 12.9.1 workspace · Node 24 (→ 26 LTS) · TypeScript 6.0.3 · Biome 2.5 · Astro 7.3 static site (`apps/web`, no adapter, hand-written `/api/*` Worker) · React 19.3 + React Router 8.4 (data mode) + Vite 8 SPAs with Hono APIs via `@cloudflare/vite-plugin` (`apps/admin`, `apps/portal`) · Hono jobs Worker (`apps/jobs`) · D1 + Drizzle 0.45 · Queues · R2 · Browser Run (PDF) · SES ap-south-1 via aws4fetch · in-house auth (`packages/auth`) · **Vitest 4.1 + `@cloudflare/vitest-plugin`** (tests run in workerd) · Playwright + axe · Worker types come from **`wrangler types`** (generated, git-ignored).
+pnpm 12.9.1 workspace · Node 24 (→ 26 LTS) · TypeScript 6.0.3 · Biome 2.5 · Astro 7.3 static site (`apps/web`, no adapter, hand-written `/api/*` Worker) · React 19.3 + React Router 8.4 (data mode) + Vite 8 SPAs with Hono APIs via `@cloudflare/vite-plugin` (`apps/admin`, `apps/portal`) · Hono jobs Worker (`apps/jobs`) · D1 + Drizzle 0.45 · Queues · R2 · Browser Run (PDF) · SES ap-south-1 via aws4fetch · in-house auth (`packages/auth`) · **Vitest 4.1 + `@cloudflare/vitest-plugin`** (tests run in workerd) · Playwright + axe · Worker types come from **`wrangler types`** (generated, git-ignored) · design system in `packages/ui`: Tailwind v4 theme, Archivo + IBM Plex Mono (self-hosted).
 
 ## Commands
 ```bash
@@ -57,6 +61,13 @@ pnpm --filter @techaust/jobs exec vitest run test/health.test.ts -t "healthz"   
 pnpm --filter @techaust/admin dev                                   # one app (SPA + its /api Worker in workerd)
 pnpm --filter @techaust/web dev:worker                              # web incl. its /api Worker (astro build + wrangler dev)
 pnpm --filter @techaust/jobs types                                  # regenerate worker-configuration.d.ts after editing wrangler.jsonc
+
+# Design system and brand (packages/ui); commit the outputs, the drift tests check them
+pnpm --filter @techaust/ui build:tokens     # tokens/tokens.json → generated/{tokens,theme,print}.css + email.ts
+pnpm --filter @techaust/ui build:fonts      # subset fonts → fonts/*.woff2, fonts/metrics.json, generated/fonts.css
+pnpm --filter @techaust/ui draw:master      # src/brand/geometry.ts + Archivo → brand/source/techaust-master.svg
+pnpm --filter @techaust/ui build:brand      # master → every logo, icon, social image + brand/print/*.pdf
+python packages/ui/scripts/measure-cmyk.py  # Windows only: ICC print CMYK → tokens/print-cmyk.json (after palette changes)
 ```
 Coming with M1.3: `pnpm db:generate` (drizzle-kit) and `pnpm db:migrate:local` (wrangler d1 migrations apply).
 
@@ -69,6 +80,11 @@ Coming with M1.3: `pnpm db:generate` (drizzle-kit) and `pnpm db:migrate:local` (
 - **Types are generated, not installed.** `wrangler types` (run by each app's `typecheck`) writes the git-ignored `worker-configuration.d.ts`, which holds the runtime types, the global `Env` (from `vars` and bindings) and the `exports` typing. Use `Hono<{ Bindings: Env }>`; after changing bindings or vars, regenerate types.
 - **Workers tests run in workerd** via `cloudflareTest({ wrangler: { configPath: "./wrangler.jsonc" } })` in each app's `vitest.config.ts`. Integration tests call the Worker with `import { exports } from "cloudflare:workers"` → `exports.default.fetch(url)` (the older `SELF` from `cloudflare:test` is deprecated). Admin/portal include only `worker/**/*.test.ts`.
 - **Staging deploys differ per app** (`deploy:staging` scripts, run by `.github/workflows/deploy-staging.yml`): web and jobs use `wrangler deploy --env staging`; the SPAs use `CLOUDFLARE_ENV=staging vite build && wrangler deploy`, because the Vite plugin bakes the environment in at build time and writes a redirected deploy config.
+- **`packages/ui` is the design system and the brand.**
+  - **Sources:** `tokens/tokens.json` (colours, type, spacing), `src/fonts/config.ts` (font files and subsets), and `src/brand/geometry.ts` (the mark, wordmark edits and lockup proportions, as numbers).
+  - **Outputs:** everything in `generated/`, `fonts/` and `brand/` comes from the scripts above and is committed. Vitest drift tests regenerate the outputs and compare, so a hand edit or a forgotten rebuild fails CI.
+  - **Pure vs Node-only:** `src/tokens/*` and `src/brand/compose.ts` are pure. `src/brand/outline.ts`, `master.ts`, `print.ts` and `src/fonts/disk.ts` are Node-only (HarfBuzz, pdf-lib, file reads), and are used only by scripts and tests, never by apps.
+  - **How apps consume it:** CSS and assets by path: `@techaust/ui/theme.css`, `/fonts.css`, `/brand/<file>`.
 - **Guards worth knowing:** `scripts/check-web-bindings.mjs` fails CI if `apps/web/wrangler.jsonc` gains D1/R2/KV bindings. `deploy-prod.yml` refuses to run unless the actor is `techaust`, the repo variable `PRODUCTION_ENABLED` is `true`, and the typed confirmation matches.
 
 ## Conventions
@@ -80,5 +96,11 @@ Coming with M1.3: `pnpm db:generate` (drizzle-kit) and `pnpm db:migrate:local` (
 - **Packages:** `core` is pure (no I/O) and must keep ≥ 90 % coverage. Apps import packages, never the reverse. `apps/web` has **no D1/R2/KV bindings** (CI guard `scripts/check-web-bindings.mjs`).
 - **Workers:** names are `techaust-platform-<app>` (+ `-staging`). Don't hand-write `Env` interfaces; use the generated global `Env` from `wrangler types`.
 - **Supply chain:** exact version pins; pnpm `minimumReleaseAge` (1 day) blocks just-published packages (pick the previous release, don't bypass it); install scripts only via `allowBuilds` in `pnpm-workspace.yaml`; GitHub Actions pinned by commit SHA.
-- **UI:** tokens from `packages/ui/tokens` only; WCAG 2.2 AA; 44 px targets; text ≥ 12 px (body ≥ 16 px); reduced motion respected.
+- **UI:** tokens from `packages/ui/tokens` only (Tailwind utilities come only from our theme, and its defaults are reset); WCAG 2.2 AA (enforced by `tokens/contrast.test.ts`); 44 px targets; text ≥ 12 px (body ≥ 16 px); reduced motion respected.
+- **Brand:**
+  - Never hand-edit or hand-draw logo files: change `geometry.ts` or the tokens and rebuild.
+  - Never set "TecHaust" in a live font in place of the wordmark.
+  - The T and the shared stem are ink; the crossbar and the right stem are verdigris (never swapped).
+  - Arrows are icons, not the → character (it isn't in the fonts).
+  - Print CMYK comes only from `tokens/print-cmyk.json` (ICC-measured), never a formula.
 - **Content:** Markdown in `apps/web/src/content`; prices only from the catalogue snapshot (`{{price:Sx}}`); English (India/UK spelling).

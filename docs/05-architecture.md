@@ -20,6 +20,14 @@
 > 8. **Tests use `@cloudflare/vitest-plugin`** 1.3.6 (the renamed Workers test pool, `cloudflareTest()`), and Worker types come from **`wrangler types`** instead of `@cloudflare/workers-types`.
 > 9. **pnpm 12** uses `allowBuilds` (not `onlyBuiltDependencies`) and a 1-day `minimumReleaseAge`.
 > 10. **The repo is public** (owner decision). That makes branch protection free, so `main` is now protected (PR + green CI required). Workflows are hardened for public repos (ADR 0012).
+>
+> **Changes made during Phase 6 M1.1 (2026-10-06):**
+> 11. **New brand identity "Patina"** replaces the supplied logo (owner request; ADR 0013, docs/06 §1–3, docs/11). Fonts are now **Archivo + IBM Plex Mono** (Newsreader and IBM Plex Sans dropped).
+> 12. **The brand is generated from code:**
+>     - `packages/ui/src/brand/geometry.ts` → master SVG → every logo, icon, social image and print PDF
+>     - tests guard geometry, contrast, fonts and print colours
+>     - the build scripts live in `packages/ui/scripts/` (not the root `scripts/`)
+> 13. **Generated design outputs are committed** (`packages/ui/generated/`, `fonts/`, `brand/`), since packages stay source-only. Drift tests fail if they don't match their sources.
 
 ---
 
@@ -94,6 +102,7 @@ All versions are pinned exactly (no `^`). Renovate opens grouped PRs after a **7
 | Lint / format | Biome (+ `astro check` for `.astro`) | 2.5.15 |
 | CI | GitHub Actions; actions pinned by commit SHA (`wrangler-action@v4.1.3`, `configure-aws-credentials@v6.3.0` …) | — |
 | Backups | `age` CLI | 1.3.2 |
+| Design system build (dev-only, `packages/ui`) | Tailwind v4 (theme compile test) · fonts from Fontsource (Archivo, IBM Plex Mono) · subsetting/outlines: subset-font + harfbuzzjs + fontverter, metrics: fontkitten · rasters: sharp · print PDFs: `@cantoo/pdf-lib` · print CMYK: LittleCMS via Pillow (one-off Windows script) | 4.3.3 · 5.3.0 / 5.3.0 · 2.9.0 + 1.6.2 + 2.0.0, 1.0.3 · 0.35.5 · 2.11.1 |
 
 ---
 
@@ -126,13 +135,15 @@ techaust_platform/
 │  ├─ payments/               # PaymentProvider interface + razorpay, stripe, paypal, manual
 │  ├─ pdf/                    # document templates (HTML strings), print CSS, embedded fonts, render client
 │  ├─ email/                  # templates (HTML + text), SES client, header sanitising
-│  ├─ ui/                     # tokens.json → CSS/Tailwind/email/print; React components; brand assets
+│  ├─ ui/                     # tokens/tokens.json → generated/ (CSS, Tailwind theme, email, print);
+│  │                          #   fonts/ (subset WOFF2); brand/ (all logo files + print/ PDFs, generated
+│  │                          #   from src/brand/geometry.ts); scripts/ (draw:master, build:*); React components later
 │  ├─ config/                 # tsconfig bases, biome.json, vitest presets
 │  └─ testing/                # fixtures, factories, fake clock, recorded gateway payloads
-├─ scripts/                   # font subsetting + ₹ glyph check, brand export, catalogue snapshot,
-│                             #   content lint (banned phrases), contrast check
-├─ docs/                      # 01–09 + appendices + ADRs (docs/adr/NNNN-*.md)
-├─ brand-incoming/            # owner-supplied originals (moved into packages/ui/brand/source in M1)
+├─ scripts/                   # check-web-bindings.mjs (CI guard); later: catalogue snapshot, content lint
+│                             #   (font, brand and contrast tooling lives in packages/ui)
+├─ docs/                      # 01–11 + appendices + runbooks + ADRs (docs/adr/NNNN-*.md)
+├─ brand-incoming/            # owner-supplied originals (git-ignored; the old logo is retired, ADR 0013)
 ├─ .github/workflows/         # ci.yml, deploy-staging.yml, deploy-prod.yml, backup.yml, restore-drill.yml
 ├─ .env.example               # documents every variable/secret name (no values)
 ├─ CLAUDE.md
@@ -591,6 +602,7 @@ Budget: about 3 operations per message, with 10k ops/day (≈ 3.3k messages). Ex
 | 0007 | SES via aws4fetch; events via EventBridge API destination |
 | 0008 | Payment provider interface; webhooks verified on the raw body; nothing is paid on a redirect |
 | 0009 | Owner-only manual production workflow (actor guard + typed confirmation + `PRODUCTION_ENABLED`) |
+| 0010 | Tax/legal rules as settings with researched defaults (VERIFY WITH CA/LEGAL) |
 | 0011 | New Worker names (`techaust-platform-*`) never collide with the live `techaust-web` |
 | 0012 | Public repository: branch protection on `main`, fork-safe workflows, nothing sensitive committed |
-| 0010 | Tax/legal rules as settings with researched defaults (VERIFY WITH CA/LEGAL) |
+| 0013 | New brand identity "Patina" replaces the supplied logo; the brand is generated from code |

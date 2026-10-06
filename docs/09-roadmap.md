@@ -22,13 +22,13 @@
 
 ---
 
-## Phase 5: Setup and tooling ✅ complete 2026-10-06 (awaiting the owner's "approved")
+## Phase 5: Setup and tooling ✅ approved 2026-10-06
 
 | # | Step | Output | Approval needed / status |
 |---|---|---|---|
 | P5.1 | **Recommend skills, plugins and MCP servers** (what each does, why we need it) | A short list in `docs/10-tooling.md` | ✅ **Done**: T1–T12 approved |
 | P5.2 | Scaffold the pnpm monorepo per [05 §3](05-architecture.md); `CLAUDE.md` refresh; ADRs 0001–0010 | Repo skeleton builds, lints, tests (empty) | ✅ **Done**: ADRs 0001–0012 |
-| P5.3 | `git init`, `.gitignore` (`.dev.vars`, `.env*`, `node_modules`, `dist`, `brand-incoming/` large originals moved into `packages/ui/brand/source`), gitleaks in CI | Local repo | ✅ **Done** (originals stay git-ignored in `brand-incoming/` until M1.1) |
+| P5.3 | `git init`, `.gitignore` (`.dev.vars`, `.env*`, `node_modules`, `dist`, `brand-incoming/` originals stay git-ignored), gitleaks in CI | Local repo | ✅ **Done** (originals stay git-ignored in `brand-incoming/` until M1.1) |
 | P5.4 | Connect to `techaust/techaust_platform` and **push the first commit** | Remote `main` | ✅ **Done**: approved and pushed; the owner then made the repo **public** |
 | P5.5 | GitHub settings: branch protection on `main`, Renovate app, repo secrets list | Settings | ✅ **Done**: branch protection ON (PR + CI); Renovate app **not installed yet** (needs your approval) |
 | P5.6 | Cloudflare **staging** resources: D1 `techaust-staging`, R2 buckets, 4 queues + DLQs, Turnstile widget, Access application on workers.dev | Staging infrastructure (no DNS changes) | ✅ **Done**: D1 + 8 queues. R2, Turnstile and Access deferred to M3.4 / M2.4 / M1.4 ([runbook](runbooks/environments.md)) |
@@ -45,7 +45,7 @@
 
 | # | Milestone | Scope (PRD IDs) | Critical tests | Size | Owner inputs |
 |---|---|---|---|---|---|
-| M1.1 | **Design tokens and brand** | `packages/ui/tokens` → CSS/Tailwind/email/print; contrast test ([06 §2.3](06-design-system.md)); self-hosted fonts + **₹ glyph check**. **New identity "Patina"** (owner request: a new logo replaces the supplied one; [ADR 0013](adr/0013-new-brand-identity.md)): master generated from code, every lockup and colour version, pixel-fitted favicons, social, email, print PDFs (CMYK via ICC), brand audit ([11](11-brand-audit.md)) | Contrast pairs; font glyph coverage; token/brand drift; geometry, pixel-fit and print-colour tests | M | ✅ **Approved** 2026-10-06 · open owner actions: trademark search (VERIFY WITH LEGAL), print proof, card phone number |
+| M1.1 | **Design tokens and brand** | `packages/ui/tokens` → CSS/Tailwind/email/print; contrast test ([06 §2.3](06-design-system.md)); self-hosted fonts + **₹ glyph check**. **New identity "Patina"** (owner request: a new logo replaces the supplied one; [ADR 0013](adr/0013-new-brand-identity.md)): master generated from code, every lockup and colour version, pixel-fitted favicons, social, email, print PDFs (CMYK via ICC), brand audit ([11](11-brand-audit.md)) | Contrast pairs; font glyph coverage; token/brand drift; geometry, pixel-fit and print-colour tests | M | ✅ **Done and approved** 2026-10-06 ([PR #3](https://github.com/techaust/techaust_platform/pull/3)) · open owner actions: trademark search (VERIFY WITH LEGAL), print proof, card phone number |
 | M1.2 | **Core library** | `packages/core`: money (minor units, en-IN/en-US formatting, parsing), FY/IST dates, GSTIN validator + state codes, amount in words (Indian + international), numbering formatter (≤ 16 chars), permissions matrix, shared zod schemas (forms) | Property tests (money round-trip, no floats); FY boundary; GSTIN checksum vectors; words for 0 → 99,99,99,999 | M | — |
 | M1.3 | **Database** | Drizzle schema for identity, settings, CRM and documents ([05 §5](05-architecture.md)); hand-written triggers (frozen documents, append-only audit); seed (catalogue S1–S18, settings defaults from [08 §7.1](08-security-compliance.md)) | Migrations apply clean; trigger tests (update a frozen doc → abort; delete from audit → abort); seed idempotent | M | — |
 | M1.4 | 🚦 **Auth CPU spike (gate)** | First: **Cloudflare Access on the staging URLs** (your dashboard checklist). Then a minimal admin Worker on **staging**: salt → login (HMAC) → TOTP → session; browser Argon2id in a Web Worker. **Measure** CPU p50/p99 per route from Workers Logs (100+ runs incl. cold isolates), and Argon2id time on a mid-range Android phone | CPU report in `docs/runbooks/cpu-baseline.md` | S | 🟧 Optional: time a login on your phone |

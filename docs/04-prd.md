@@ -28,7 +28,7 @@
 | Q-B14 | AMC clients | 1–3, to migrate to Care Plan tiers at renewal |
 | Q-B15 | Social links | **LinkedIn company page + founder's LinkedIn only** (you'll give the URLs) |
 | Q-B16 | Case studies | You fill in 2–3 briefs (template in [07 §6](07-content.md)), and I write them up. Missing ones show an honest "coming soon". |
-| Assets | Logo / photo / bio | Logo **now** into `brand-incoming/`. Headshot and bio at the website milestone. |
+| Assets | Logo / photo / bio | Logo: superseded by the new identity "Patina" (M1.1, [ADR 0013](adr/0013-new-brand-identity.md)). Headshot and bio at the website milestone. |
 | Contact | Public contact | **WhatsApp business number** (you'll provide it), with a reply promise of **within 1 business day (Mon–Sat, 10:00–19:00 IST)**. Address shown as **"Balurghat, West Bengal, India"** in the header, footer, schema and Google profile. The **full postal address** appears only on the Contact page and the legal pages (Razorpay checklist and SPDI/E-Commerce rules, VERIFY WITH CA/LEGAL). |
 | Identity | Legal pages | "TecHaust Technologies, a sole proprietorship based in Balurghat, West Bengal". **Grievance Officer: Rupak Sarkar, Founder** (`privacy@` / `grievance@` alias). **No GSTIN on the website** (invoices only). |
 | Blog | Launch posts | **3 articles** drafted by me and reviewed by you |
@@ -520,7 +520,7 @@ Every service page uses one template, with sections in this order ([03 §3A.3](0
 
 | Item | Needed by |
 |---|---|
-| Logo source files → `brand-incoming/` | **Now** (design system, PDF templates) |
+| Logo source files → `brand-incoming/` | ✅ Received, then retired: new identity designed in M1.1 (assets in `packages/ui/brand/`) |
 | Founder headshot + bio (or notes) | Public-website milestone |
 | WhatsApp business number | Public-website milestone |
 | LinkedIn company page URL + founder LinkedIn URL | Public-website milestone |
