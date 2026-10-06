@@ -37,6 +37,16 @@ Rebuild of techaust.com: a public website, admin and client portal for **TecHaus
 11. **Tools:** approved tools are listed in `docs/10-tooling.md`. Ask before using anything new. The Cloudflare MCP server is used **read-only**.
 12. Keep `docs/`, this file and memory notes updated so work can resume across sessions.
 
+## Model and effort (owner rule, 2026-10-07: to save usage limits)
+- **Default:** Sonnet 5.5, medium effort.
+- **Opus 5.5, high effort:**
+  - security, auth and payments
+  - gate checks, unexplained CI failures, stubborn bugs
+  - architecture, milestone plans and ADRs
+  - money, GST and invoicing logic
+- **Lighter work** (routine merges, doc updates, quick questions) can use low effort or Haiku 4.5.
+- **Suggest, don't switch:** when the work changes kind, say which model and effort it needs. Switch only after the owner says yes.
+
 ## Git workflow
 - `main` is **protected**: PR required, the CI `checks` job must pass, linear history, no force-push, admins included.
 - Work on a branch → push → `gh pr create` → CI green → **squash-merge** → staging auto-deploys.
