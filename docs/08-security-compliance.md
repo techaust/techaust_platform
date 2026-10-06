@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Phase** | 4, Project documentation (**APPROVED** 2026-10-06) |
-| **Date** | 2026-10-06 |
+| **Date** | 2026-10-06 · **Last updated 2026-10-07** (see the [change log](#change-log)) |
 | **Research** | [08-A GST & invoicing](08-research-appendix/A-gst-invoicing.md) (≈ 690 lines, CBIC/RBI/NPCI primary sources) · [08-B DPDP & legal](08-research-appendix/B-dpdp-legal.md) (≈ 700 lines, DPDP Rules Gazette, CERT-In, CCPA) · [05-A stack](05-research-appendix/A-stack-verification.md) |
 | **Implements** | [04 PRD](04-prd.md) NFR-5/6/7/9, ADM-AUTH, ADM-AUD, JOB-BKP · [05 Architecture](05-architecture.md) §1.1, §6, §12 |
 
@@ -13,16 +13,16 @@
 
 ## 0. Urgent items for you (outside the software)
 
-| # | Item | Why now | Action (yours) |
-|---|---|---|---|
-| U-1 | **LUT for FY 2026-27** (Form GST RFD-11) | If you have invoiced any foreign client since 1 April 2026 without a filed LUT, those invoices may attract IGST at 18 %. A late LUT can sometimes be condoned, but don't rely on it. (VERIFY WITH CA) | Check the GST portal: Services → User Services → **Furnish Letter of Undertaking** → view filed LUTs. If none is filed for 2026-27, file it now (free, online, with DSC/EVC) and note the ARN for Settings. |
-| U-2 | **FEMA 2026: export realisation is now 9 months, plus a new monthly EDF** (from 1 Oct 2026) | Any unpaid foreign invoice older than ~9 months breaches FEMA. EDFs are due within 30 days of the end of each invoice month. (VERIFY WITH CA) | Ask your bank (AD bank) how they want the EDF filed for services. Our admin will produce the monthly list (ADM-REP-07). |
-| U-3 | **UPI merchant fee from 15 Oct 2026** (0.4 % above ₹2,000, capped at ₹300; NPCI FAQ dated 15 Sep 2026) | Affects Razorpay costs on B2B invoices. You absorb fees, so prices may need a small buffer. | Ask Razorpay for its restated pricing; for large INR invoices, nudge clients to netbanking or NEFT. |
-| U-4 | **Razorpay website checklist** | Live keys need Terms, Privacy, Refund, **Delivery**, Contact and Pricing pages live on the domain | Covered by the new site (Phase 7 order: site live → apply for live keys) |
-| U-5 | **Zoho aliases** `hello@`, `billing@`, `privacy@`, `security@` | Needed for email sending (SES identities), legal pages and security.txt | Create them in Zoho before the email milestone |
-| U-6 | **Public GitHub repo** (since 2026-10-06, owner decision) | `docs/` publicly describes unfixed weaknesses of the live site (audit H-5, M-1, M-2: form rate-limit bypass, debug leak, no Origin check) and business-confidential plans; the commit email is public | Make the repo private when convenient (Settings → General → Change visibility). Already-copied content can't be recalled. Until then nothing sensitive is committed (CLAUDE.md rule 6). |
-| U-7 | **GitHub billing block** | GitHub refused to run Actions on the private repo ("recent account payments have failed or your spending limit…"). Public repos aren't affected, but it returns if the repo goes private. | Check GitHub → Settings → Billing and licensing for a failed payment |
-| U-8 | **Trademark clearance for the new identity** (VERIFY WITH LEGAL) | The new name treatment and TH mark (ADR 0013) have not been searched. A clash found after printing or launch means redoing everything. | Ask a trademark agent to search IP India for "TecHaust" (word) and the TH device mark in classes 9, 35 and 42, then consider filing both ([11 §4](11-brand-audit.md)) |
+| # | Item | Why now | Action (yours) | Raised · status (2026-10-07) |
+|---|---|---|---|---|
+| U-1 | **LUT for FY 2026-27** (Form GST RFD-11) | If you have invoiced any foreign client since 1 April 2026 without a filed LUT, those invoices may attract IGST at 18 %. A late LUT can sometimes be condoned, but don't rely on it. (VERIFY WITH CA) | Check the GST portal: Services → User Services → **Furnish Letter of Undertaking** → view filed LUTs. If none is filed for 2026-27, file it now (free, online, with DSC/EVC) and note the ARN for Settings. | 2026-10-06 · Open (owner). Also in [12-status](12-status.md), *Waits on the owner*. |
+| U-2 | **FEMA 2026: export realisation is 9 months, plus a new monthly EDF** (from 1 Oct 2026) | For invoices raised from 1 Oct 2026 the limit is 9 months; older invoices may have 15 months (Nov 2025 amendment). Ask the CA which applies to each invoice. EDFs are due within 30 days of the end of each invoice month. (VERIFY WITH CA) | Ask your bank (AD bank) how they want the EDF filed for services. Our admin will produce the monthly list (ADM-REP-07). | 2026-10-06 · Open (owner). Also in [12-status](12-status.md), *Waits on the owner*. |
+| U-3 | **UPI merchant fee from 15 Oct 2026** (0.4 % above ₹2,000, capped at ₹300; NPCI FAQ dated 15 Sep 2026; VERIFY WITH CA) | Affects Razorpay costs on B2B invoices. You absorb fees, so prices may need a small buffer. | Ask Razorpay for its restated pricing; for large INR invoices, nudge clients to netbanking or NEFT. | 2026-10-06 · Open (owner); applies from 15 Oct 2026. Also in [12-status](12-status.md), *Waits on the owner*. |
+| U-4 | **Razorpay website checklist** | Live keys need Terms, Privacy, Refund, **Delivery**, Contact and Pricing pages live on the domain | Covered by the new site (Phase 7 order: site live → apply for live keys) | 2026-10-06 · Planned (Phase 7 order: site live, then apply for live keys). |
+| U-5 | **Zoho aliases** `hello@`, `billing@`, `privacy@`, `grievance@`, `security@`, plus the `no-reply@` sender (sent through SES) | Needed for email sending (SES identities), legal pages and security.txt | Create them in Zoho before the email milestone | 2026-10-06 · Open (before the email milestone). |
+| U-6 | **Public GitHub repo** (since 2026-10-06, owner decision) | `docs/` publicly describes unfixed weaknesses of the live site (audit H-5, M-1, M-2: form rate-limit bypass, debug leak, no Origin check) and business-confidential plans; the commit email is public | Make the repo private when convenient (Settings → General → Change visibility). Already-copied content can't be recalled. Until then nothing sensitive is committed (CLAUDE.md rule 6). | 2026-10-06 · Open (the owner's call; the repo has been public since 2026-10-06, [ADR 0012](adr/0012-public-repository.md)). |
+| U-7 | **GitHub billing block** | GitHub refused to run Actions on the private repo ("recent account payments have failed or your spending limit…"). Public repos aren't affected, but it returns if the repo goes private. | Check GitHub → Settings → Billing and licensing for a failed payment | 2026-10-06 · Open, not blocking while the repo is public. |
+| U-8 | **Trademark clearance for the new identity** (VERIFY WITH LEGAL) | The new name treatment and TH mark (ADR 0013) have not been searched. A clash found after printing or launch means redoing everything. | Ask a trademark agent to search IP India for "TecHaust" (word) and the TH device mark in classes 9, 35 and 42, then consider filing both ([11 §4](11-brand-audit.md)) | 2026-10-06 · Open, not blocking. |
 
 ---
 
@@ -38,7 +38,7 @@
 | Domain and DNS (techaust.com) | Phishing, email spoofing, takeover | Cloudflare account (owner) |
 | Payment gateway accounts | Funds | Razorpay/Stripe/PayPal dashboards (owner, with 2FA) |
 
-**Security targets:** OWASP ASVS Level 2 for authentication, sessions, access control, validation, cryptography, error handling and logging; OWASP Top 10 (2021) mapped in [03 §3C.6](03-plan.md).
+**Security targets:** OWASP ASVS Level 2 for authentication, sessions, access control, validation, cryptography, error handling and logging; OWASP Top 10 mapped in [03 §3C.6](03-plan.md) (2021 mapping; 2025 re-map in M7.5).
 
 ---
 
@@ -67,6 +67,7 @@
 | **CI/CD** | Elevation | A collaborator adds a workflow that exfiltrates the prod token | Write access limited to the Owner; the prod token is used only in `deploy-prod.yml` (actor guard + typed confirmation); separate least-privilege tokens per environment; branch protection; review of `.github/` changes |
 | **Outbound calls** | SSRF | User-supplied URL fetched server-side | No user-supplied URLs are fetched; outbound hosts are allow-listed (gateways, SES, Turnstile, FBIL/RBI rates, PayPal certs) |
 | **Email** | Spoofing of our domain | Phishing "invoices" from techaust.com | SPF, DKIM (SES Easy DKIM) and DMARC (`p=none` → `quarantine` after monitoring); a custom MAIL FROM; BIMI later (optional) |
+| **Staging Workers** | Information disclosure / elevation | Test logins and test data sit on public `*.workers.dev` URLs; a bypass left open | Cloudflare Access on all four staging Workers: only `admin@techaust.com` (one-time PIN); Version and Preview URLs off; the jobs Worker gets a bypass for provider webhook paths only, added in M6; the CPU benchmark uses an Access service token scoped to the admin staging application (`docs/runbooks/access-staging.md`, PR #7). Never on `techaust-web`. |
 | **Availability** | DoS / free-plan exhaustion | D1 daily limits hit; request cap hit | Static-first design; budgets and alerts ([05 §1.2](05-architecture.md)); the upgrade trigger proposal |
 
 ---
@@ -98,18 +99,20 @@ See [05 §6](05-architecture.md). Key controls:
 - [ ] Step-up for sensitive actions
 - [ ] Exact lockout counters + rate limits + Turnstile
 - [ ] Login and 2FA-change alerts
-- [ ] Owner break-glass: recovery codes printed and stored offline. If they are all lost, a documented **`pnpm admin:reset-2fa`** script, run locally by the Owner with the prod Cloudflare token, clears the Owner's TOTP and issues a one-time enrolment link (audit-logged). Rotating `PASSWORD_PEPPER` is **not** a recovery method, because it would lock out every user.
+- [ ] Owner break-glass: recovery codes printed and stored offline. If they are all lost, a documented **`pnpm admin:reset-2fa`** script, run locally by the Owner with their own local `wrangler login` (OAuth), not with the prod token, clears the Owner's TOTP and issues a one-time enrolment link (audit-logged). Rotating `PASSWORD_PEPPER` is **not** a recovery method, because it would lock out every user.
 
 ### 3.3 Authorisation
-- [ ] Deny by default; permission declared per route; route-coverage test
+- [x] The permission matrix ([04 §9](04-prd.md)) is implemented in `packages/core` (M1.2)
+- [ ] Deny by default: permission declared on every route, with a route-coverage test (route enforcement is pending)
 - [ ] Portal: client ID from the session only; cross-tenant tests
 - [ ] Field-level stripping for Sales (no finance fields)
 - [ ] Approvals bound to a content hash (any edit invalidates them)
 
 ### 3.4 Data protection in the app
 - [ ] Money as integers; tax maths in pure, tested functions
-- [ ] Immutable issued documents (DB triggers) + SHA-256 of snapshots and PDFs
-- [ ] Append-only audit log (triggers) for ≥ 10 years
+- [x] Immutable issued documents: DB triggers on the frozen document columns and child rows (M1.3, `packages/db/src/triggers.ts`)
+- [ ] SHA-256 of snapshots and PDFs (at issue, M4)
+- [x] Append-only audit log and acceptance records (triggers, M1.3); keeping the audit log ≥ 10 years is a setting (ADM-SET-09), enforced later
 - [ ] Bank account numbers masked in the UI and never logged
 - [ ] TOTP secrets encrypted (AES-GCM, `TOTP_ENC_KEY`)
 - [ ] No personal data in logs or Sentry (`beforeSend` scrubber; auth/payment bodies never logged)
@@ -117,8 +120,9 @@ See [05 §6](05-architecture.md). Key controls:
 - [ ] Clocks: Workers time is NTP-synced by Cloudflare; timestamps stored in UTC (CERT-In clock-sync direction)
 
 ### 3.5 Secure development
-- [ ] TypeScript strict; Biome lint (including a no-floating-point-money rule and banned `innerHTML`)
-- [ ] Unit tests for money, tax, numbering, schedules, ledger, permissions (≥ 90 % coverage in `packages/core`)
+- [ ] TypeScript strict; Biome's recommended rules (including `noDangerouslySetInnerHtml`) and a float-scan test for money code (`packages/core/test/no-floats.test.ts`)
+- [x] Unit tests and the ≥ 90 % coverage gate in `packages/core` for money, numbering and permissions (M1.2)
+- [ ] Unit tests for tax, schedules and the ledger (M4)
 - [ ] Integration tests in the Workers runtime (auth, portal scoping, webhooks, numbering concurrency)
 - [ ] E2E tests (Playwright) + axe
 - [ ] A security review (the `/security-review` command or a manual checklist) before each milestone sign-off
@@ -142,6 +146,7 @@ See [05 §6](05-architecture.md). Key controls:
 | Local `wrangler login` (OAuth) | The owner's machine (`%APPDATA%\xdg.config\.wrangler`) | Local CLI only | `wrangler logout` to revoke |
 | AWS (backups) | **No stored keys**: GitHub OIDC → IAM role (`s3:PutObject` on the backup prefix only) | — | n/a |
 | `BUILD_SNAPSHOT_TOKEN` | Wrangler secret (admin) + GitHub secret | Workflows | Yearly |
+| `CF_ACCESS_BENCH_CLIENT_ID`, `CF_ACCESS_BENCH_CLIENT_SECRET` | GitHub repo secrets: the Access service token for the staging CPU benchmark (names only here) | The owner-only benchmark workflow (never fork PRs) | With the token's duration (1 year) or on suspicion |
 | age **identity** (backup private key) | **Offline**: the owner's password manager + a printed copy in a safe place | Owner only | Only if exposed (then re-encrypt the retained backups) |
 | Bank details | D1 (`bank_accounts`), entered by the Owner in Settings | Owner (full), Accountant (masked) | n/a |
 
@@ -167,7 +172,7 @@ See [05 §6](05-architecture.md). Key controls:
 | 8 EU/UK | If EU/UK personal data is affected: supervisory authority within 72 h (GDPR Art. 33), where we are controller | 72 h |
 | 9 Recover and learn | Fix the root cause; post-incident review; update this document | Within 2 weeks |
 
-**Templates** for steps 4–7 are drafted in Phase 6 M7 (hardening) and kept in `docs/runbooks/incident.md`.
+**Templates** for steps 4–7 are drafted in M7.5 (runbooks, [09](09-roadmap.md)) and kept in `docs/runbooks/incident.md`.
 
 ---
 
@@ -184,9 +189,9 @@ See [05 §6](05-architecture.md). Key controls:
 | Code and config | GitHub (+ the local clone) | Each commit | Forever |
 | Secrets | **Not backed up by the system**; listed in the owner's password manager | — | — |
 
-### 6.2 Restore runbook: D1 (summary; the full step-by-step version goes in `docs/runbooks/restore.md` in Phase 5)
+### 6.2 Restore runbook: D1 (summary; the full step-by-step version goes in `docs/runbooks/restore.md` in M7.5, runbooks)
 1. **Decide the scope:** a single-table or row mistake within 7 days → **Time Travel**. A disaster, or anything older than 7 days → **S3 backup**.
-2. **Time Travel:** `wrangler d1 time-travel info techaust-prod --timestamp=<ISO>` → restore **into a scratch database first** (`wrangler d1 time-travel restore` acts on the target DB, so for a partial fix restore a copy and move only the needed rows across).
+2. **Time Travel:** it restores **in place only** (the whole database moves back; there is no restore into a copy). Note the current bookmark first (`wrangler d1 time-travel info techaust-prod`), restore to the chosen timestamp (`wrangler d1 time-travel restore techaust-prod --timestamp=<ISO>`), export the rows you need, then restore back to the saved bookmark and re-apply the exported rows. This is a production action and needs the owner's approval.
 3. **S3 restore:**
    - (a) download the chosen `db-YYYYMMDD.sql.age` from S3 (AWS console or CLI on the owner's machine)
    - (b) `age -d -i <offline identity> -o db.sql db-YYYYMMDD.sql.age` on the owner's machine
@@ -195,7 +200,7 @@ See [05 §6](05-architecture.md). Key controls:
    - (e) verify: row counts per table, latest invoice number per series, ledger totals vs the last known report, audit-log tail
    - (f) either point the Workers' `DB` binding to the restored database (a config change + approved prod deploy) or copy the needed rows back
    - (g) record the incident in the audit log and the runbook log
-4. **Quarterly restore drill** (NFR-7, RTO ≤ 4 h): restore the latest backup to a scratch D1, run the verification script (`pnpm drill:verify`), write the result (date, duration, issues) into `docs/runbooks/drill-log.md`, then delete the scratch DB. **The first drill is part of the Phase 7 launch checklist.**
+4. **Quarterly restore drill** (NFR-7, RTO ≤ 4 h): restore the latest backup to a scratch D1, run the verification script (`pnpm drill:verify`), write the result (date, duration, issues) into `docs/runbooks/drill-log.md`, then delete the scratch DB. **The first drill is part of the Phase 7 launch checklist (L7, [09](09-roadmap.md)).**
 
 ### 6.3 Code rollback
 - `wrangler rollback --name techaust-platform-<app> --env production` (to the previous version), run by the owner locally or through a manual workflow. Migrations are backward-compatible ([05 §5.5](05-architecture.md)), so code rollback never needs a DB rollback.
@@ -207,13 +212,13 @@ See [05 §6](05-architecture.md). Key controls:
 
 ### 7.1 GST and invoicing (VERIFY WITH CA): defaults in the software
 
-Implemented as editable settings in `packages/core/src/schemas/settings.ts` and seeded into D1 in M1.3. Company identity (legal name, GSTIN, address) and bank details are not seeded: the Owner enters them in the admin (M3.1), because the repository is public.
+Implemented as editable settings in `packages/core/src/schemas/settings.ts` and seeded into D1 in M1.3. Company identity (legal name, GSTIN, address) and bank details are not seeded: the Owner enters them in the admin (M3.1), because the repository is public. Of the rows below, G-1, G-2, G-5, G-6, G-8 to G-12, G-14, G-15 and G-18 are settings today; the rest arrive with M4.2 (tax engine) and M5.5 (GST exports).
 
 | # | Topic | Default in the software ([08-A](08-research-appendix/A-gst-invoicing.md)) | Confidence |
 |---|---|---|---|
 | G-1 | GST rate | 18 % on all our services (CGST 9 + SGST 9, or IGST 18); exports under LUT 0 % | High |
 | G-2 | SAC codes | 998314 build/web/app/AI/UI-UX · 998313 consulting/AMC/support/fractional CTO · 998315 hosting · 998316 managed infra · 6 digits printed | Med |
-| G-3 | Numbering | `TH/{INV,EXP,CN,DN,RV,RF}/2627/0001` (≤ 16 chars, A–Z 0–9 `/` `-`), reset 1 April, gap-free, never reused; voided numbers reported as cancelled (GSTR-1 Table 13). Proforma `TH/PI/…` and Payment Receipt `TH/RCT/…` are not GST documents. | High |
+| G-3 | Numbering | `TH/{INV,EXP,CN,DN,RV,RF}/2627/0001` (≤ 16 chars, A–Z 0–9 `/` `-`), reset 1 April, gap-free, never reused; voided numbers reported as cancelled (GSTR-1 Table 13). Proforma `TH/PI/…` and Payment Receipt `TH/RCT/…` are not GST documents. The Estimate `TH/EST/…` and Proposal `TH/PRP/…` series are non-GST too, with the same format rules. | High |
 | G-4 | Invoice contents | All Rule 46 fields; "ORIGINAL FOR RECIPIENT"; reverse charge "No"; authorised-signatory block (no digital signature needed for an electronic invoice) | High |
 | G-5 | Timing | Within 30 days of completing a service (alert at day 25); care plans/retainers on or before the payment due date (continuous supply) | High |
 | G-6 | Advances | Default: Proforma → on payment, an auto **Tax Invoice** for the amount received. Optional modes: tax invoice upfront; Receipt Voucher (Rule 50) + Refund Voucher (Rule 51). Also selectable per client/document ("invoice first" for clients who pay only against a tax invoice). | Med |
@@ -286,3 +291,12 @@ All 15 questions are in [08-A, the last section](08-research-appendix/A-gst-invo
 | C-2 | Tax defaults reviewed by you (and optionally a CA); **LUT ARN for the current FY saved** before any export invoice | Decide on a CA review; file the LUT |
 | C-3 | `PAYMENTS_LIVE_ALLOWED=true` **only after your explicit go-live approval**; live keys set by you | Approve go-live |
 | C-4 | SES out of the sandbox (your request to AWS) | Request |
+
+---
+
+## Change log
+
+| Date | Change |
+|---|---|
+| 2026-10-06 | Phase 4 approved. |
+| 2026-10-07 | Quality pass: status column on §0; FEMA and UPI items re-worded (VERIFY WITH CA); staging Workers threat row and the Access secret names; break-glass and Time Travel restore steps corrected; §3 checklist ticked for what M1.2 and M1.3 built; §7.1 notes which defaults are settings today and adds the estimate and proposal series; runbook references point to M7.5 and L7. |
