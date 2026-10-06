@@ -20,5 +20,5 @@ description: Start or resume work on the TecHaust rebuild. Use when the owner sa
    - what's waiting on the owner
    - the next item
 5. **Continue from the next item.**
-   - If it touches more than one file, first present a numbered plan and wait, unless the owner has already approved that plan (check STATUS and DECISIONS).
+   - If it touches more than one file, first present a numbered plan and wait, unless the owner has already approved that plan (check `docs/12-status.md` and `docs/13-decisions.md`).
    - If the next item waits on the owner, say exactly what they need to do (click-by-click), and stop.
