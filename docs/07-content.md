@@ -5,7 +5,7 @@
 | **Phase** | 4, Project documentation (**APPROVED** 2026-10-06) |
 | **Date** | 2026-10-06 |
 | **Inputs** | [02](02-services-strategy.md) positioning, portfolio and prices · [04 PRD](04-prd.md) · [06 design system](06-design-system.md) · legal research [08-B](08-research-appendix/B-dpdp-legal.md) |
-| **Legal page drafts** | [07-A Legal pages](07-content-appendix/A-legal-pages.md) (privacy, terms, refund, delivery, cookies, security). VERIFY WITH CA/LEGAL. |
+| **Legal page drafts** | [07-A Legal pages](07-content-appendix/A-legal-pages.md) (privacy, terms, refund, delivery, cookies, security, accessibility). VERIFY WITH CA/LEGAL. |
 
 **How to read this document**
 - Copy here is **final draft** wording. In Phase 6 it moves into Markdown files under `apps/web/src/content/`. Small edits for layout fit may happen; changes of meaning come back to you.
