@@ -111,7 +111,7 @@ All pages have `lang="en"`, exactly one H1, a logical heading order (no skipped 
 
 | ID | Sev | Finding | Evidence | Recommendation |
 |---|---|---|---|---|
-| S1 | High | **@techaustsocial does not exist on X.** `x.com/techaustsocial` → 404, the same as the control `x.com/zzqqnonexist8812x` → 404, while `x.com/r4rupak1997` and `x.com/elonmusk` → 200. The handle is used in `twitter:site`, `twitter:creator`, the footer link (all 10 pages) and Organization `sameAs`. | curl differential test | Create or claim the handle, or remove it from metadata, footer and `sameAs`. Only list profiles that exist. |
+| S1 | High | **@techaustsocial does not exist on X.** `x.com/techaustsocial` → 404, the same as the control `x.com/zzqqnonexist8812x` → 404, while `the founder's personal X handle` and `x.com/elonmusk` → 200. The handle is used in `twitter:site`, `twitter:creator`, the footer link (all 10 pages) and Organization `sameAs`. | curl differential test | Create or claim the handle, or remove it from metadata, footer and `sameAs`. Only list profiles that exist. |
 | S2 | High | `SoftwareApplication` with a free `Offer` on every page misrepresents the business (bespoke paid B2B services, no downloadable or self-serve app). This can produce a misleading "Free" rich result and risks a structured-data manual action. | JSON-LD above | Remove `SoftwareApplication`. Use `ProfessionalService` (or `Organization` + `Service` per service page with `provider`, `areaServed`, `serviceType`) instead. |
 | S3 | Medium | The index shows a stale identity. WebSearch summaries and ZoomInfo describe "TecHaust Technologies" as a **digital marketing / web development / brand strategy** company. The `site:` search surfaced `https://www.techaust.com/` (the www variant, even though canonical is apex). The name collides with *Tech Australia* (techaust.com.au, facebook.com/techaust, LinkedIn techaustralia), and those dominate brand queries. Only `/` and `/contact` were seen indexed on the apex. | WebSearch `site:techaust.com`, `"TecHaust Technologies"` | Verify the apex domain property in Google Search Console (a `google-site-verification` TXT record already exists), submit the sitemap, and request indexing of all 9 URLs. Update ZoomInfo, Crunchbase and LinkedIn descriptions. Add `alternateName: "TecHaust"` and a disambiguating `description` to Organization. |
 | S4 | Medium | **Streaming wrapper around all page content.** `app/loading.tsx` makes every route render `<div role=status aria-label="Loading TecHaust Core">LOADING TECHAUST CORE...</div>` first. The real `<main>` content sits in `<div hidden id="S:0">` and is swapped in by an inline `$RC` script. Googlebot renders JS and will see the content, but non-rendering crawlers (social unfurlers, many AI/LLM crawlers, some Bing passes) see a loading screen plus hidden text. It also causes P1. | `grep '<template id="B:0">'` hits on 9/9 pages | Delete `app/loading.tsx`, or scope it to genuinely dynamic segments. All these pages are static and should prerender without Suspense. |
@@ -196,8 +196,8 @@ Crawled: every `<a href>` on all 9 sitemap pages plus 404 (`links_by_page.txt`).
 | https://linkedin.com/company/techaustsocial | 200 behind LinkedIn bot wall, so **unverified** |
 | https://instagram.com/techaustsocial | 301 → 200 generic shell (IG returns this for any handle), so **unverified** |
 | https://facebook.com/techaustsocial | 301 → 400 to bots, so **unverified** |
-| https://x.com/r4rupak1997 | 200 ✔ (exists) |
-| linkedin/in, instagram, facebook `r4rupak1997` | unverified (same bot walls) |
+| The founder's personal X handle | 200 ✔ (exists) |
+| The founder's personal LinkedIn, Instagram, Facebook | unverified (same bot walls) |
 | Internal 4xx/5xx | none |
 
 ---

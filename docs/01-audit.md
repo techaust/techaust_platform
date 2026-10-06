@@ -108,7 +108,7 @@ IDs are stable so later docs can refer to them. "Evidence" points to the appendi
 ### Info / dead code
 
 - Unused: `components/ui/button.tsx`, `components/particle-canvas.tsx` (which also has a duplicate-loop bug), `EMAIL_DIRECTORY` and the sales@, support@, admin@ and billing@ addresses in `lib/site-config.ts`, 8 CSS classes, the `class-variance-authority` dependency, and a stale `app/icon-512.png`.
-- **Secrets:** none found in the source tree, build output or git history (1 commit scanned with secret patterns; clean). The Resend key is read correctly as a runtime secret.
+- **Secrets:** none found in the source tree or build output; **git history was not scanned** (App. A F-S12, Q4). The Resend key is read correctly as a runtime secret.
 - **Production may be a newer revision than this folder:** the live bundle file names differ from the local `dist/` (see Q-H2).
 - PageSpeed / Lighthouse scores and real-user (CrUX) data were **not obtained**; Google's anonymous API quota was exhausted. Figures above come from browser measurements and curl.
 

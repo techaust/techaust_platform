@@ -137,7 +137,7 @@ Sections in order:
    - *High: on-prem/VPC capability and a 14-day audit SLA are capability claims. VERIFY.*
 7. **Founder** (H2 "Rupak Sarkar")
    - "RS" monogram tile (no photo); "FOUNDER — TECHAUST TECHNOLOGIES"; "Founded the platform from the ground up in Balurghat, West Bengal, India — building every system it runs today."
-   - 4 personal social pills opening in a new tab: LinkedIn /in/r4rupak1997, X /r4rupak1997, Facebook /r4rupak1997, Instagram /r4rupak1997. *Low: personal Facebook/Instagram on a B2B enterprise site.*
+   - 4 personal social pills opening in a new tab: the founder's personal LinkedIn, X, Facebook and Instagram. *Low: personal Facebook/Instagram on a B2B enterprise site.*
    - Narrative: a near-verbatim repeat of "Our Story", now singular ("an operator").
    - Quote: "Enterprise AI must be private by default, accurate to the source, and auditable end to end. Everything else is theater."
 8. **CTA:** H2 "Meet the team behind your AI workforce."; "Request a 30-minute discovery with Solutions Architecture — NDA available, no sales pressure"; button "Contact & Audit →" → `/contact`. *High: no team is shown.*
@@ -393,7 +393,7 @@ In-page CTAs:
 
 **External** (all `target="_blank" rel="noopener noreferrer"`)
 - Brand: linkedin.com/company/techaustsocial, x.com/techaustsocial, facebook.com/techaustsocial, instagram.com/techaustsocial.
-- Founder: linkedin.com/in/r4rupak1997, x.com/r4rupak1997, facebook.com/r4rupak1997, instagram.com/r4rupak1997.
+- Founder: the founder's personal LinkedIn, X, Facebook and Instagram handles.
 
 **mailto**
 - `contact@techaust.com` on Contact (direct line and consent text), Privacy (×3) and Terms (×2).
@@ -409,7 +409,7 @@ In-page CTAs:
 | Phone | none | Gap (Medium trust) |
 | Emails | contact@techaust.com (only one rendered) | sales/support/admin/billing defined but unused |
 | Socials | @techaustsocial on LinkedIn/X/FB/IG | X does not exist (App. C S1); LinkedIn, Facebook and Instagram unverified (App. C §5) |
-| Founder | Rupak Sarkar, "Founder"; personal handles r4rupak1997 | OK; no photo, background, credentials or LinkedIn summary on the page |
+| Founder | Rupak Sarkar, "Founder"; personal handles (founder's own) | OK; no photo, background, credentials or LinkedIn summary on the page |
 | Team | "Solutions Architecture Team", "named architect", "operators" | **Likely overstated** (High) |
 | Products | Corporate Brain / Digital Workforce / System Guard; "Platform v2.4"; "AI Core Matrix" | **VERIFY** production status |
 | Deployment | Private / VPC / On-Prem | VERIFY |

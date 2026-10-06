@@ -255,7 +255,7 @@ Each service page on the new website and each proposal template will be built fr
 - **Who buys:** legal, CA and consulting firms, SaaS support teams, companies with large policy libraries.
 - **Why demand lasts:** simple "chat with your documents" is being absorbed into ChatGPT, Copilot and Zoho. Custom builds survive where **access control, multiple data sources, Indian languages, data residency or measured quality** matter. We sell only that end of the market.
 - **Skills:** ✅ (in progress; first case study pending).
-- **Pricing:** fixed pilot from ₹2.5L / $10k → production → AI Ops retainer. Model and API usage billed as pass-through or at cost plus 10–20%.
+- **Pricing:** fixed pilot from ₹2.5L / $10k → production → AI Ops retainer. Model and API usage passed through at cost (owner decision 2026-10-07; matches 07 §4.8).
 
 #### S13 · AI Features for Your Software (NOW)
 - **What it is:** add AI to an existing SaaS or app (smart search, summarisation, copilots, document understanding). Also build **MCP servers and "agent-ready" APIs** so a client's product can be used inside ChatGPT, Claude or Copilot.
@@ -283,7 +283,7 @@ Each service page on the new website and each proposal template will be built fr
 - **Pricing:** fixed, from ₹50k / $2k.
 
 #### S16 · Care Plans (LEAD, recurring)
-Attached to every build; the first month is included at launch to drive conversion.
+Attached to every build. (A "first month included at launch" offer was dropped by the owner on 2026-10-07; it can still be offered case by case in a proposal.)
 
 | Tier | India | International | Included |
 |---|---|---|---|
@@ -291,7 +291,7 @@ Attached to every build; the first month is included at launch to drive conversi
 | **Growth** | from ₹24,999/mo | from $899/mo | Everything in Essential, plus 8–10 dev hours, performance and technical SEO checks, analytics review, 1-business-day response, quarterly roadmap call |
 | **Scale** | from ₹59,999/mo | from $2,499/mo | Everything in Growth, plus 25–40 dev hours, DevOps / CI, security review, 4 business hours (critical), business hours only (Q-S3), fractional-CTO advisory |
 
-- **Rules:** unused hours don't roll over (or roll over for one month only), overage is billed at the plan rate, and annual prepay earns 10–15% off.
+- **Rules:** Essential: unused hours don't roll over; Growth and Scale: they roll over for one month (07 §4.14). Overage is billed at the plan rate. Annual prepay earns **10 % off** (owner decision 2026-10-07).
 - **Existing AMC clients** migrate to these tiers at renewal (Q-B14).
 - **Why demand lasts:** accountability and uptime aren't commoditised. AI-generated code actually *increases* maintenance needs.
 - **Skills:** ✅ (business hours only; no on-call, [04 §0](04-prd.md) Q-S3).
