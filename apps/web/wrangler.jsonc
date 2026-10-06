@@ -1,0 +1,26 @@
+{
+  // techaust.com public website (docs/05-architecture.md §4).
+  // RULE: no D1/R2/KV bindings here, ever (CI guard: scripts/check-web-bindings.mjs).
+  // Queue producer, rate limiter and Turnstile are added in M2.4. Custom domain only in Phase 7, with owner approval.
+  // NOTE: the live site runs as the old Worker "techaust-web"; these names deliberately differ.
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "techaust-platform-web",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": false,
+  "observability": { "enabled": true },
+  "assets": { "directory": "./dist", "not_found_handling": "404-page", "run_worker_first": ["/api/*"] },
+  "vars": { "ENVIRONMENT": "local" },
+  "env": {
+    "staging": {
+      "name": "techaust-platform-web-staging",
+      "workers_dev": true,
+      "vars": { "ENVIRONMENT": "staging" }
+    },
+    "production": {
+      "name": "techaust-platform-web",
+      "workers_dev": false,
+      "vars": { "ENVIRONMENT": "production" }
+    }
+  }
+}

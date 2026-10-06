@@ -1,0 +1,19 @@
+{
+  "name": "@techaust/pdf",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Document templates (HTML + print CSS), embedded fonts and the Browser Run render client.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests"
+  },
+  "devDependencies": {
+    "@techaust/config": "workspace:*",
+    "typescript": "6.0.3",
+    "vitest": "4.1.11"
+  }
+}

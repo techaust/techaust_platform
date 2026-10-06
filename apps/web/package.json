@@ -1,0 +1,26 @@
+{
+  "name": "@techaust/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev --port 4321",
+    "dev:worker": "astro build && wrangler dev",
+    "build": "astro build && wrangler deploy --dry-run --outdir .wrangler/dry-run",
+    "typecheck": "wrangler types && astro check && tsc -p tsconfig.worker.json",
+    "test": "vitest run --passWithNoTests",
+    "deploy:staging": "astro build && wrangler deploy --env staging",
+    "types": "wrangler types"
+  },
+  "dependencies": {
+    "hono": "4.13.13"
+  },
+  "devDependencies": {
+    "@techaust/config": "workspace:*",
+    "@astrojs/check": "0.9.10",
+    "astro": "7.3.5",
+    "typescript": "6.0.3",
+    "vitest": "4.1.11",
+    "wrangler": "4.147.0"
+  }
+}

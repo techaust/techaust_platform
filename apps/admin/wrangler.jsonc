@@ -1,0 +1,26 @@
+{
+  // admin.techaust.com (docs/05-architecture.md §4). SPA assets + Hono API under /api/*.
+  // The assets directory is filled in by @cloudflare/vite-plugin at build time.
+  // D1/R2/queue bindings are added in M1.3. Custom domains only in Phase 7, with owner approval.
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "techaust-platform-admin",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "observability": { "enabled": true },
+  "assets": { "not_found_handling": "single-page-application", "run_worker_first": ["/api/*"] },
+  "vars": { "ENVIRONMENT": "local", "PAYMENTS_LIVE_ALLOWED": "false" },
+  "env": {
+    "staging": {
+      "name": "techaust-platform-admin-staging",
+      "workers_dev": true,
+      "vars": { "ENVIRONMENT": "staging", "PAYMENTS_LIVE_ALLOWED": "false" }
+    },
+    "production": {
+      "name": "techaust-platform-admin",
+      "workers_dev": false,
+      "vars": { "ENVIRONMENT": "production", "PAYMENTS_LIVE_ALLOWED": "false" }
+    }
+  }
+}

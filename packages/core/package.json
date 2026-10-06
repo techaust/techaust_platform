@@ -1,0 +1,19 @@
+{
+  "name": "@techaust/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Pure domain logic: money, tax engine, numbering, FY dates, schedules, permissions, shared schemas (no I/O).",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests"
+  },
+  "devDependencies": {
+    "@techaust/config": "workspace:*",
+    "typescript": "6.0.3",
+    "vitest": "4.1.11"
+  }
+}

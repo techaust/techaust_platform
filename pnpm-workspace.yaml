@@ -1,0 +1,12 @@
+packages:
+  - apps/*
+  - packages/*
+
+# Supply-chain delay for newly published versions, in minutes (1 day).
+# Renovate adds a further 7-day delay on updates (renovate.json).
+minimumReleaseAge: 1440
+
+# Only these packages may run install scripts (everything else is blocked).
+allowBuilds:
+  esbuild: true
+  workerd: true

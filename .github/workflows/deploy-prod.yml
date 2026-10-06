@@ -1,0 +1,41 @@
+name: Deploy production
+# PRODUCTION. Owner-only, manual, typed confirmation (docs/05-architecture.md §12.3, ADR 0009).
+# Disabled until Phase 7: requires repo variable PRODUCTION_ENABLED == 'true' (set by the owner at go-live).
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to deploy (e.g. v2026.11.01-1)"
+        required: true
+      confirm:
+        description: "Type exactly: deploy techaust.com <tag>"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Owner, enablement and confirmation checks
+        env:
+          ACTOR: ${{ github.actor }}
+          ENABLED: ${{ vars.PRODUCTION_ENABLED }}
+          TAG: ${{ inputs.tag }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          [ "$ACTOR" = "techaust" ] || { echo "Only the owner (techaust) may deploy production."; exit 1; }
+          [ "$ENABLED" = "true" ] || { echo "Production deploys are disabled until Phase 7."; exit 1; }
+          [ "$CONFIRM" = "deploy techaust.com $TAG" ] || { echo "Confirmation text does not match."; exit 1; }
+          echo "Guards passed for $TAG"
+  deploy:
+    needs: guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - run: echo "Production deploy steps (backup, migrations, deploy, smoke tests) are added in Phase 7 (L3-L4)."

@@ -1,0 +1,9 @@
+{
+  "name": "@techaust/config",
+  "version": "0.0.0",
+  "private": true,
+  "exports": {
+    "./tsconfig.base.json": "./tsconfig.base.json",
+    "./tsconfig.workers.json": "./tsconfig.workers.json"
+  }
+}

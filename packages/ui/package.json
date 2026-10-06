@@ -1,0 +1,19 @@
+{
+  "name": "@techaust/ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Design tokens (single source), generated CSS/Tailwind/email/print outputs, React components, brand assets.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests"
+  },
+  "devDependencies": {
+    "@techaust/config": "workspace:*",
+    "typescript": "6.0.3",
+    "vitest": "4.1.11"
+  }
+}

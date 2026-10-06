@@ -1,0 +1,15 @@
+name: Backup D1 to S3
+# Nightly encrypted D1 export to S3 Mumbai (docs/08-security-compliance.md §6). Enabled in Phase 7 (L7).
+on:
+  workflow_dispatch:
+  # schedule:
+  #   - cron: "30 21 * * *"   # 03:00 IST
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Backup job is enabled in Phase 7 once the production D1, S3 bucket and OIDC role exist."
