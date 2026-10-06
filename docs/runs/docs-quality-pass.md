@@ -205,8 +205,59 @@ Checked and fine:
 36. 11:7, :68: add [ADR 0013](adr/0013-new-brand-identity.md) to the header and link "docs/07 §3".
 37. Code comments in `packages/db/src/seed/catalogue.ts` (lines 2, 129): "docs/04 §4.2" → "docs/04 §3.2". Comment only.
 
-## Findings: group 1
-_Pending._
+## Findings: group 1 (CLAUDE.md, README, record, 00, 05 + appendix, 09, 10, runbooks, ADRs). Done by the lead
+Scores before:
+| File | Score |
+|---|---|
+| CLAUDE.md | 8.5 |
+| README | 7.8 |
+| CHANGELOG | 7.5 |
+| STATUS | 8.2 |
+| DECISIONS | 8.3 |
+| runs/README | 8.5 |
+| 00 | 4.5 |
+| 09 | 7.0 |
+| 10 | 6.7 |
+| environments | 7.7 |
+| access-staging (PR #7) | 7.7 |
+| cpu-baseline (PR #7) | 8.8 |
+| ADR 0001–0011 | 7.2 |
+| ADR 0012 | 8.5 |
+| ADR 0013 | 9.0 |
+| 05 | 7.3 |
+| 05-A | 8.5 |
+
+1. 05:306, :33: **MEANING (owner)** The issue guard allows `draft` and `pending_approval` (`triggers.ts:83`), but the §5.4 SQL issues drafts only, so a number could be lost. Decide: may a document waiting for approval be issued? The fix is a new migration later (code follow-up).
+2. 05:578: ci.yml "Today" → add the migrations-drift step; D1 migrations in tests, gitleaks and the binding guard already run, so move them out of "later".
+3. 05:579: deploy-staging "Today" → skip if no secrets → migrate staging D1 → seed → deploy 4 Workers; remove migrations from "later".
+4. 09:10-16, :21: the milestone flow → CLAUDE.md rule 2 (review → PR → CI green → auto-merge → staging → show → wait; held PRs).
+5. 09:50: M1.3 → "✅ Done and approved 2026-10-06 (PR #6)".
+6. STATUS:44: "this PR" → PR #8 (merged). List what PR #7's CLAUDE.md must keep: the `pnpm dev:secrets` / `pnpm invite` commands, the Staff-login bullet, the `__new_` migration convention, and the `wrangler types --env staging` note.
+7. STATUS: add "Install the Renovate app (approve/decline)" under Not blocking. 05:90 → "will open … once the app is installed".
+8. CHANGELOG: add #8 (2026-10-07). Keep the link format and update the end-session skill to match.
+9. 00: banner "Historical record (2026-10-06). Superseded by CLAUDE.md, docs/12-status.md, docs/13-decisions.md; start sessions with 'start the day'."
+10. 10: add §9 "Working-rules additions (2026-10-07, owner-approved)": builder/reviewer agents, worktrees, Monitor, `tools/heavy.sh`, `tools/watch.sh`, the start/end-session skills.
+11. 10:7: → "CLAUDE.md hard rule 11".
+12. 10:64: "memory/08" → [08 §0 U-6](08-security-compliance.md).
+13. 10:52-56: §5 → "(done 2026-10-06)".
+14. 05:315: triggers → "a custom migration generated from `packages/db/src/triggers.ts` by `scripts/write-triggers.ts`"; also 09:50 "hand-written triggers".
+15. 05:147, :159: `config/` → "tsconfig bases"; dependency rules → "(enforced by review today; a lint check is planned)".
+16. 05:153, :185: `restore-drill.yml`, `.dev.vars.example`, `pnpm dev:pdf-remote` → mark "(planned: Phase 7 / M1.4 / M4.4)".
+17. 05:94: Node → "24.x (`.nvmrc` 24; engines ≥ 24.19.0)".
+18. ADR 0009:4, 05:15: add "Update 2026-10-07": the private-repo premise changed with ADR 0012; the decision stands until the owner revisits it.
+19. ADR 0004:4: → "To be confirmed by the M1.4 CPU gate (pending)".
+20. environments:77: → 05 §12.3.
+21. environments:64, :80-82: "no data" → "no personal data"; add auto-merge on and conversation resolution required; add "Last updated".
+22. DECISIONS: add rows for Phase 4 approved, Phase 5 approved, R2 deferred, Renovate pending (2026-10-06).
+23. runs/README: every run file starts with `Status: open | merged (PR #N) | abandoned`.
+24. access-staging (PR #7): webhook paths → `/razorpay`, `/stripe`, `/paypal`, `/ses` (05:382, `apps/jobs/src/index.ts:10`). **Do in PR #7.**
+25. access-staging (PR #7): "next PR"/"coming" wording, the full `cd` path, `powershell` labels, the trailing-newline check. **Do in PR #7.**
+26. ADR 0001–0011: "Details: see docs/05" → link the section.
+27. README: add pointers to the record, and the Node 24 / pnpm 12.9.1 prerequisites.
+28. CLAUDE.md:97 → "(web and jobs also dry-run their Worker bundles)".
+29. 10:14 → "pnpm switches to the pinned version itself (`packageManager`)".
+
+**Lead decision on group 4 item 1:** this is a factual correction (the appendix says the git history wasn't scanned), so it gets fixed, not asked.
 
 ## Owner questions (collected)
 _Asked after all groups report._
