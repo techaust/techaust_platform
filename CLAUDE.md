@@ -1,5 +1,8 @@
-# TecHaust Platform: project rules for Claude
+# CLAUDE.md
 
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project
 Rebuild of techaust.com: a public website, admin and client portal for **TecHaust Technologies** (sole proprietorship, GST-registered, Balurghat, West Bengal). Owner: Rupak Sarkar.
 
 ## Current status (update at every phase or milestone)
@@ -46,8 +49,27 @@ pnpm check              # lint + typecheck + public-Worker binding guard
 pnpm test               # vitest (unit + Workers runtime)
 pnpm build              # build all apps (web also dry-runs its Worker bundle)
 pnpm format             # biome format --write
+
+# One package / one test
+pnpm --filter @techaust/core test                                   # one package
+pnpm --filter @techaust/core test -- test/scaffold.test.ts          # one file
+pnpm --filter @techaust/jobs exec vitest run test/health.test.ts -t "healthz"   # one test by name
+pnpm --filter @techaust/admin dev                                   # one app (SPA + its /api Worker in workerd)
+pnpm --filter @techaust/web dev:worker                              # web incl. its /api Worker (astro build + wrangler dev)
+pnpm --filter @techaust/jobs types                                  # regenerate worker-configuration.d.ts after editing wrangler.jsonc
 ```
 Coming with M1.3: `pnpm db:generate` (drizzle-kit) and `pnpm db:migrate:local` (wrangler d1 migrations apply).
+
+## How the code fits together
+- **Four Workers, one per host**, each configured by its own `apps/<app>/wrangler.jsonc`. The top level is the local config; `env.staging` / `env.production` override the name, `workers_dev` and `vars`.
+  - `apps/web`: Astro builds static pages into `dist/`, served as Workers static assets. `run_worker_first: ["/api/*"]` means **only `/api/*` invokes `src/worker.ts`** (Hono, `basePath("/api")`). `astro dev` serves pages only, so use `dev:worker` to exercise the API.
+  - `apps/admin`, `apps/portal`: the React SPA (`src/`, React Router data mode) plus a Hono API (`worker/index.ts`, `basePath("/api")`) **in one Worker**. `@cloudflare/vite-plugin` runs the Worker inside Vite dev and fills in the assets directory at build time. `not_found_handling: single-page-application` serves `index.html` for every non-API path. Two tsconfigs: `tsconfig.json` (DOM, SPA) and `tsconfig.worker.json` (Workers runtime).
+  - `apps/jobs`: headless Hono Worker (`fetch` for `/healthz` + webhooks, plus `scheduled` and later `queue` handlers).
+- **Packages are source-only.** Each `packages/*` exports `./src/index.ts` directly (no build step). Wrangler/Vite bundle them into the apps. `@techaust/config` holds the shared tsconfigs (`tsconfig.base.json`, `tsconfig.workers.json`).
+- **Types are generated, not installed.** `wrangler types` (run by each app's `typecheck`) writes the git-ignored `worker-configuration.d.ts`, which holds the runtime types, the global `Env` (from `vars` and bindings) and the `exports` typing. Use `Hono<{ Bindings: Env }>`; after changing bindings or vars, regenerate types.
+- **Workers tests run in workerd** via `cloudflareTest({ wrangler: { configPath: "./wrangler.jsonc" } })` in each app's `vitest.config.ts`. Integration tests call the Worker with `import { exports } from "cloudflare:workers"` → `exports.default.fetch(url)` (the older `SELF` from `cloudflare:test` is deprecated). Admin/portal include only `worker/**/*.test.ts`.
+- **Staging deploys differ per app** (`deploy:staging` scripts, run by `.github/workflows/deploy-staging.yml`): web and jobs use `wrangler deploy --env staging`; the SPAs use `CLOUDFLARE_ENV=staging vite build && wrangler deploy`, because the Vite plugin bakes the environment in at build time and writes a redirected deploy config.
+- **Guards worth knowing:** `scripts/check-web-bindings.mjs` fails CI if `apps/web/wrangler.jsonc` gains D1/R2/KV bindings. `deploy-prod.yml` refuses to run unless the actor is `techaust`, the repo variable `PRODUCTION_ENABLED` is `true`, and the typed confirmation matches.
 
 ## Conventions
 - **Money:** integer minor units (paise/cents) + currency. Never floats. Rates in basis points; quantities in milli-units; FX as micros.
