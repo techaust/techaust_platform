@@ -5,8 +5,9 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createBrand, parseMaster, SCHEMES } from "../src/brand/compose.ts";
 import { brandFiles, rasterPlan } from "../src/brand/files.ts";
-import { MARK, STROKE } from "../src/brand/geometry.ts";
+import { MARK, MARK_PARAMS, pixelMark, STROKE } from "../src/brand/geometry.ts";
 import { renderMaster } from "../src/brand/master.ts";
+import { PRINT_CMYK } from "../src/brand/print.ts";
 import { tokens } from "../src/tokens/model.ts";
 
 const root = join(import.meta.dirname, "..");
@@ -33,9 +34,40 @@ describe("master", () => {
     const bar = Math.min(...pts.filter(([, y]) => (y ?? 0) > 1 && (y ?? 0) < 99).map(([, y]) => y ?? 0));
     const bottom = Math.max(...pts.filter(([, y]) => y === bar).map(([x]) => x ?? 0));
     expect(top - bottom).toBeCloseTo(bar, 1);
-    // …and the mark's own cuts are 45° too, sized to the stroke.
-    expect(MARK.base).toContain(`H62L${62 - STROKE} ${STROKE}`);
+    // …and the mark's own cuts are 45°: bar end (x + y = barEnd) and right stem (x + y = 100).
     expect(MARK.accent).toContain(`M81 ${STROKE}L100 0`);
+  });
+});
+
+describe("mark geometry (brand audit, docs/11)", () => {
+  const nums = (d: string) => (d.match(/-?\d*\.?\d+/g) ?? []).map(Number);
+
+  it("the diagonal channel between the two cuts is exactly one stroke wide", () => {
+    const barEnd = nums(MARK.base)[2] ?? 0; // "M0 0H<barEnd>L…"
+    const channel = (100 - barEnd) / Math.SQRT2;
+    expect(channel).toBeCloseTo(STROKE, 1);
+  });
+
+  it("horizontals are optically thinner than verticals, and the crossbar sits above centre", () => {
+    expect(MARK_PARAMS.h).toBeLessThan(MARK_PARAMS.v);
+    expect(MARK_PARAMS.h / MARK_PARAMS.v).toBeCloseTo(0.92, 2);
+    expect(MARK_PARAMS.crossbarY).toBeLessThan(50);
+  });
+
+  it("pixel-fitted marks land every coordinate on a whole pixel", () => {
+    for (const px of [10, 16, 20, 32]) {
+      const p = pixelMark(px);
+      for (const n of [...nums(p.base), ...nums(p.accent)])
+        expect(Number.isInteger(n), `${px}px: ${n}`).toBe(true);
+    }
+    expect(pixelMark(16)).toEqual({
+      base: "M0 0H12L9 3H0ZM3 0H6V16H3Z",
+      accent: "M6 6H13V9H6ZM13 3L16 0V16H13Z",
+    });
+  });
+
+  it("favicon.svg uses the 16-unit pixel grid", () => {
+    expect(brand.faviconSvg()).toContain('viewBox="0 0 16 16"');
   });
 });
 
@@ -49,6 +81,7 @@ describe("vector files are up to date with the master", () => {
       ...Object.keys(brandFiles(brand)),
       ...rasterPlan(brand).map((r) => r.file),
       "source",
+      "print",
     ]);
     expect(readdirSync(brandDir).filter((f) => !expected.has(f))).toEqual([]);
   });
@@ -109,5 +142,35 @@ describe("raster files", () => {
     expect(sizes).toEqual([16, 32, 48]);
     const off = ico.readUInt32LE(6 + 12);
     expect(ico.subarray(off + 1, off + 4).toString()).toBe("PNG");
+  });
+});
+
+describe("print files", () => {
+  const files = [
+    "logo-primary-cmyk.pdf",
+    "logo-primary-cmyk-on-dark.pdf",
+    "business-card.pdf",
+    "letterhead-a4.pdf",
+  ];
+  it.each(files)("%s is a PDF", (f) => {
+    const buf = readFileSync(join(brandDir, "print", f));
+    expect(buf.subarray(0, 5).toString()).toBe("%PDF-");
+  });
+
+  it("the business card has trim and bleed boxes (3 mm bleed) on both sides", () => {
+    const pdf = readFileSync(join(brandDir, "print", "business-card.pdf"), "latin1");
+    expect(pdf.match(/\/TrimBox/g)?.length).toBe(2);
+    expect(pdf.match(/\/BleedBox/g)?.length).toBe(2);
+  });
+
+  it("uses only measured CMYK values, each within a small colour error of the brand colour", () => {
+    for (const [key, c] of Object.entries(PRINT_CMYK)) {
+      expect(c.hex, key).toBe(tokens.palette[key]);
+      expect(
+        c.cmyk.reduce((a, b) => a + b, 0),
+        `${key} total ink`,
+      ).toBeLessThanOrEqual(300);
+      expect(c.deltaE76, key).toBeLessThanOrEqual(4);
+    }
   });
 });

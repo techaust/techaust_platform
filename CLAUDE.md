@@ -6,8 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Rebuild of techaust.com: a public website, admin and client portal for **TecHaust Technologies** (sole proprietorship, GST-registered, Balurghat, West Bengal). Owner: Rupak Sarkar.
 
 ## Current status (update at every phase or milestone)
-- Phases 1–4 approved. **Phase 5 (setup) complete, awaiting the owner's "approved".**
-- **Next:** Phase 6 milestone **M1.1**, design tokens + refined logo variants (`docs/09-roadmap.md`).
+- Phases 1–5 approved. **Phase 6 M1.1 in progress** on branch `feat/m1.1-design-tokens`: tokens, fonts and the **new brand identity "Patina"** (docs/06 §1–3, docs/11 audit, ADR 0013), **awaiting the owner's approval**. The repo is public, so don't push the brand until it's approved.
+- **Brand changes happen in code:** `packages/ui/src/brand/geometry.ts` → `pnpm --filter @techaust/ui draw:master` → `build:brand` (tests catch drift). Print CMYK: `python packages/ui/scripts/measure-cmyk.py` (Windows, ICC).
 - Live site: the old Worker **`techaust-web`** (rollback target). New staging Workers: `https://techaust-platform-{web,admin,portal,jobs}-staging.techaust-technologies-153.workers.dev`.
 
 ## Read first

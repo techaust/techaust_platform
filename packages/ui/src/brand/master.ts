@@ -1,7 +1,7 @@
 // Draws brand/source/techaust-master.svg from geometry.ts (scripts/draw-master.ts writes it; a test checks drift).
 import { createRequire } from "node:module";
 import { join } from "node:path";
-import { LOCKUP, MARK, WORDMARK } from "./geometry.ts";
+import { LOCKUP, MARK, TYPE_LINES, WORDMARK } from "./geometry.ts";
 import { outlineText, pathBounds, transformPath } from "./outline.ts";
 
 /** The wordmark with its bespoke edits applied (see geometry.ts). Returns one path per glyph. */
@@ -17,11 +17,32 @@ export async function drawWordmark(packageRoot: string): Promise<string[]> {
   const corner = `L${maxX} ${bar}`;
   if (!t.includes(corner)) throw new Error("T bar corner not found; the font outline changed");
   const cutT = t.replace(corner, `L${Math.round((maxX - bar) * 100) / 100} ${bar}`);
-  return [cutT, ...rest.map((g) => transformPath(g, 1, 1, -WORDMARK.kernAfterT, 0))];
+  // Shift each later glyph left by the T kern plus every optical pair correction up to and including it.
+  let shift = WORDMARK.kernAfterT;
+  return [
+    cutT,
+    ...rest.map((g, i) => {
+      shift += WORDMARK.pairs[i + 1] ?? 0;
+      return transformPath(g, 1, 1, -shift, 0);
+    }),
+  ];
+}
+
+/** Brand type set as outlines (banners, OG images, print): renderers never need the font installed. */
+async function drawLines(packageRoot: string): Promise<string[]> {
+  const require = createRequire(join(packageRoot, "package.json"));
+  const out: string[] = [];
+  for (const [id, line] of Object.entries(TYPE_LINES)) {
+    const d = (await outlineText(require.resolve(WORDMARK.font), line.text, { ...line, cap: 100 })).join("");
+    const width = Math.round(pathBounds(d).x1 * 100) / 100;
+    out.push(`  <path id="${id}" data-width="${width}" display="none" d="${d}"/>`);
+  }
+  return out;
 }
 
 export async function renderMaster(packageRoot: string): Promise<string> {
   const glyphs = await drawWordmark(packageRoot);
+  const lines = await drawLines(packageRoot);
   const box = pathBounds(glyphs.join(""));
   const wx = 100 * LOCKUP.markScale + LOCKUP.gap;
   const width = Math.round((wx + box.x1) * 100) / 100;
@@ -37,6 +58,8 @@ export async function renderMaster(packageRoot: string): Promise<string> {
     `  <g id="wordmark" fill="#14231F" transform="translate(${wx} 0)">`,
     ...glyphs.map((d, i) => `    <path id="glyph-${i + 1}-${names[i]}" d="${d}"/>`),
     "  </g>",
+    "  <!-- Brand lines (cap height 100, hidden): used by banners, link previews and print. -->",
+    ...lines,
     "</svg>",
     "",
   ].join("\n");

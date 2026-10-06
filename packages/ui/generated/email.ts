@@ -24,7 +24,7 @@ export const emailTokens = {
     "btnSecondaryFg": "#14231f",
     "focus": "#1e6b5c",
     "selection": "#d7ece5",
-    "success": "#2d7a3e",
+    "success": "#47730f",
     "warning": "#8f5b00",
     "danger": "#b3261e",
     "info": "#2b5797"
@@ -49,7 +49,7 @@ export const emailTokens = {
     "btnSecondaryFg": "#e4ebe7",
     "focus": "#6cc4ae",
     "selection": "#1f4a40",
-    "success": "#6fcb86",
+    "success": "#a9d46b",
     "warning": "#e9b44c",
     "danger": "#ff8a80",
     "info": "#8db4ff"

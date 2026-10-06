@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 import { createBrand, parseMaster } from "../src/brand/compose.ts";
 import { brandFiles, rasterPlan } from "../src/brand/files.ts";
+import { buildPrintFiles } from "../src/brand/print.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const brandDir = join(root, "brand");
@@ -15,7 +16,7 @@ const brand = createBrand(parseMaster(readFileSync(join(brandDir, "source/techau
 const vectors = brandFiles(brand);
 const rasters = rasterPlan(brand);
 // Remove anything we no longer produce (the folder holds generated files + source/ only).
-const keep = new Set([...Object.keys(vectors), ...rasters.map((r) => r.file), "source"]);
+const keep = new Set([...Object.keys(vectors), ...rasters.map((r) => r.file), "source", "print"]);
 for (const f of readdirSync(brandDir)) if (!keep.has(f)) rmSync(join(brandDir, f), { recursive: true });
 
 for (const [file, svg] of Object.entries(vectors)) writeFileSync(join(brandDir, file), svg);
@@ -45,4 +46,12 @@ for (const r of rasters) {
   });
   writeFileSync(join(brandDir, r.file), Buffer.concat([header, ...images.map((i) => i.data)]));
 }
-console.log(`wrote ${Object.keys(vectors).length} SVGs and ${rasters.length} rasters to brand/`);
+// Print-ready PDFs (CMYK, outlined text, trim/bleed boxes).
+const printDir = join(brandDir, "print");
+rmSync(printDir, { recursive: true, force: true });
+mkdirSync(printDir);
+const print = await buildPrintFiles(brand, root);
+for (const [file, bytes] of Object.entries(print)) writeFileSync(join(printDir, file), bytes);
+console.log(
+  `wrote ${Object.keys(vectors).length} SVGs, ${rasters.length} rasters and ${Object.keys(print).length} print PDFs to brand/`,
+);

@@ -2,55 +2,95 @@
 
 | | |
 |---|---|
-| **Phase** | 4, Project documentation (**APPROVED** 2026-10-06) |
+| **Phase** | 4, Project documentation (**APPROVED** 2026-10-06). §1–3 rewritten in Phase 6 M1.1 for the new identity "Patina" (**awaiting owner approval**) |
 | **Date** | 2026-10-06 |
-| **Inputs** | Owner logo files in `brand-incoming/` (`TecHaust.ai`, `TecHaust.png`, `TecHaust.jpg`, `techhast logo cover.jpg`) · [03 §3A.5](03-plan.md) design direction · audit findings M-4 to M-8 ([01](01-audit.md)) |
+| **Inputs** | Owner brief for a new identity (2026-10-06; the supplied logo files in `brand-incoming/` are retired) · [11 brand audit](11-brand-audit.md) · [03 §3A.5](03-plan.md) design direction · audit findings M-4 to M-8 ([01](01-audit.md)) |
 | **Implements** | [04 PRD](04-prd.md) WEB-G-05, WEB-G-13 to WEB-G-16, NFR-4 |
 
-> **One source of truth.** All tokens live in `packages/ui/tokens/tokens.json`. A build script generates (1) CSS custom properties, (2) the Tailwind v4 `@theme` used by the site, admin and portal, (3) inline-style constants for email templates, and (4) the print CSS for PDFs. A token is never typed by hand in an app.
+> **One source of truth.** All tokens live in `packages/ui/tokens/tokens.json`. A build script generates (1) CSS custom properties, (2) the Tailwind v4 `@theme` used by the site, admin and portal, (3) inline-style constants for email templates, and (4) the print CSS for PDFs. A token is never typed by hand in an app. Print CMYK values live in `tokens/print-cmyk.json` (§1.6).
 
 ---
 
 ## 1. Brand foundations
 
-### 1.1 The logo you supplied
+> **Identity "Patina" (owner-chosen 2026-10-06, after a three-concept round), refined by the brand audit in [11](11-brand-audit.md).** It replaces the supplied navy/orange "TECHAUST" logo, which is retired. Source of truth: `packages/ui/src/brand/geometry.ts`, which defines the mark and the wordmark edits as numbers. `pnpm --filter @techaust/ui draw:master` then `build:brand` regenerate every file, and tests fail on any drift.
 
-| Element | Observed in the files | Value |
+### 1.1 The idea
+Ink green and verdigris: the colour copper earns after years outdoors. Systems built properly, then looked after for years (build + AMC), which is what TecHaust sells. The strapline is the approved home-page H1: **"Build it right. Automate the rest."**
+
+### 1.2 The mark
+- **Construction:** a TH ligature on a 100-unit grid, made as **one block split by a single diagonal cut**. The T and the H share one stem. The T bar's end and the H's right stem are cut at 45°, and the channel between the two cuts is exactly **one stroke wide** (19 units).
+- **Optical corrections:** horizontals are 8 % thinner than verticals (17.5 vs 19). The crossbar sits 1.5 units above the geometric centre.
+- **Colour logic:** the T and the shared stem are always ink (the "base"); the crossbar and the right stem are verdigris (the "accent"). Never swap them.
+- **Small sizes:** at 64 px and below the mark is **pixel-fitted**, so every edge lands on a whole pixel. `favicon.svg` is drawn on a 16-unit grid, so it is crisp at 16 and 32 px and switches colours in a dark browser.
+
+### 1.3 The wordmark
+"TecHaust" in Archivo (OFL) at weight 620 and width 116 %, outlined, so it is artwork and not live text. Bespoke edits:
+- the T bar carries the mark's 45° cut
+- everything after the T is kerned 9 units closer
+- three pairs are optically re-spaced: cH −4, Ha −2, st −2 (measured white area, [11 §2.3](11-brand-audit.md))
+
+Mixed case is deliberate: it keeps "Haust" readable.
+
+### 1.4 Lockups and rules
+| Lockup | Use | File |
 |---|---|---|
-| Wordmark | "TECHAUST", bold geometric grotesque capitals. The top half is navy; the lower half is orange, split by an orange swoosh that crosses the letters. | — |
-| Mark | A small "pixel cluster" (two navy squares + orange squares) at the top-right of the final T | — |
-| Brand navy | Measured from `TecHaust.png` | **`#111A45`** |
-| Brand orange | Measured from `TecHaust.png` | **`#FF5100`** |
-| Source | `TecHaust.ai` is PDF-compatible (`%PDF-1.5`), so clean vectors can be extracted | — |
+| **Primary (horizontal)** | Default: site header, documents, email | `logo-primary-*.svg` |
+| Stacked | Square spaces (merch, slides, signage) | `logo-stacked-*.svg` |
+| Wordmark only | Where the mark already appears nearby | `logo-wordmark-*.svg` |
+| Symbol | Favicon, avatars, app icon, PDF footers | `logo-symbol-*.svg`, `logo-tile.svg` |
 
-**Note:** this logo is different from the code-drawn "T" mark on the old website (cyan/violet). Since you supplied this one, the new brand is **navy + orange on warm neutrals**, and the old cyan/violet is retired.
+**Rules:**
+- **Proportions:** the mark is 1.28 × the cap height, centred on the caps. The gap between mark and wordmark is two mark strokes.
+- **Clear space:** one mark stroke on every side.
+- **Minimum size:** horizontal lockup 96 px wide on screen (24 mm in print); symbol 16 px (6 mm).
+- **Colour versions:** full colour on light; on dark (mist + light verdigris); one colour ink, white or black. Nothing else.
+- **Never:**
+  - stretch, rotate or outline the mark
+  - recolour it outside the palette, or swap the two colours
+  - add shadows, glows or gradients
+  - place it on busy photos
+  - set "TecHaust" in a live font in place of the wordmark
 
-### 1.2 Logo refinement plan (Phase 6, milestone M1: I'll show you the variants for approval)
+### 1.5 Deliverables (`packages/ui/brand/`, all generated)
+- **Vector logos:** 4 lockups × 5 colour versions (SVG), plus `logo-tile.svg`.
+- **Favicons:** `favicon.svg` (pixel-fitted, adaptive) and `favicon.ico` (16/32/48, pixel-fitted tiles).
+- **App icons:** `apple-touch-icon.png`, `icon-192/512.png`, `icon-maskable-512.png`.
+- **Social:**
+  - `profile-400.png` (LinkedIn page logo) and `profile-800.png` (WhatsApp, X, Google)
+  - `cover-linkedin-company.png`: 1512 × 256, LinkedIn's official size
+  - `cover-linkedin-profile.png`: 1584 × 396
+  - `cover-x.png`: 1500 × 500, with content kept inside X's 60 px top and bottom crop
+- **Link previews:** `og-default.png` / `og-default-dark.png`, 1200 × 630, with the strapline.
+- **Email:** `logo-email-color@2x.png`, `-dark@2x.png`, and `logo-email-badge@2x.png`. The badge has a white plate, so the logo survives clients that force dark mode by inverting colours.
+- **Print** (`print/`): vector PDFs in CMYK with all text outlined (§1.6):
+  - `logo-primary-cmyk.pdf` and `-on-dark.pdf`
+  - `business-card.pdf`: 3.5 × 2 in, 3 mm bleed, with trim and bleed boxes
+  - `letterhead-a4.pdf`
 
-The current file works well at large sizes but has issues at small ones. The swoosh makes the lower half of the letters hard to read below about 120 px wide, and the pixel cluster disappears at favicon size. Proposed refinements, keeping the identity intact:
+### 1.6 Print colour
+CMYK values come from a real ICC profile, not a formula. `scripts/measure-cmyk.py` searches the CMYK space with LittleCMS against SWOP coated (Microsoft `RSWOP.icm`), with total ink ≤ 300 %. The results are in `tokens/print-cmyk.json`.
 
-1. **Clean master SVG**, traced from the `.ai` vectors (not from the PNG). Letter spacing optically balanced, the swoosh curve smoothed, and the pixel cluster aligned to the cap-height grid.
-2. **Lockups:**
-   - **Primary horizontal** (full wordmark + pixel cluster) for the header, PDFs and email
-   - **Compact** (wordmark without the swoosh's lower letter halves, i.e. the navy top half completed as solid letters, swoosh kept as an underline) for sizes below 120 px. **Needs your approval**, as it changes the drawing.
-   - **Symbol**: the pixel cluster on its own (or a "T" + cluster monogram) for the favicon, app icon, social avatar and PDF page footers
-3. **Colour versions:**
-   - full colour on light (navy + orange)
-   - full colour on dark (navy letters → `#F3F1EA` warm white; orange unchanged)
-   - one-colour navy, one-colour white, and one-colour black for fax-style or grayscale printing
-4. **Rules:**
-   - **Clear space** on every side = 2 × the pixel-square size.
-   - **Minimum width:** primary 120 px (screen) / 30 mm (print); compact 72 px; symbol 16 px.
-   - **Never:** gradients, glows, 3D effects (as in the "cover" mock-up), stretching, recolouring outside the palette, or placing on busy photos.
-5. **Deliverables:** `packages/ui/brand/` (SVG masters, favicon set `favicon.svg` + 32 px ICO + 180 px Apple touch icon + 512/192 px PWA icons, a 1200×630 OG template, and a PDF-embeddable SVG).
+| Colour | Hex | CMYK (starting values) | ΔE |
+|---|---|---|---|
+| Ink | `#14231F` | 88 / 56 / 60 / 72 | 0.0 |
+| Verdigris | `#1E6B5C` | 92 / 40 / 64 / 4 | 0.0 |
+| Light verdigris (dark backgrounds) | `#6CC4AE` | 60 / 0 / 32 / 0 | 3.8 (the closest printable) |
+| Mist | `#E4EBE7` | 8 / 0 / 4 / 4 | 0.8 |
 
-### 1.3 Personality → design principles
+**Before any print run:**
+- approve a printed proof against the hex colours
+- for premium stationery, ask the printer to match verdigris to a **Pantone Solid Coated** swatch from a physical guide, then record the number here
+
+**Owner action:** confirm the phone/WhatsApp number for the business card (it is left off until then).
+
+### 1.7 Personality → design principles
 
 | Principle | Meaning in practice |
 |---|---|
 | **Calm** | Generous white space, few colours on screen at once, no constant motion, no glows |
-| **Editorial** | Strong type hierarchy, a serif display face for big headings, long-form text set like a good publication |
-| **Premium, not flashy** | Hairline borders, restrained shadows, precise alignment, tabular numbers for prices |
+| **Engineered** | One family of type, exact alignment, one decorative device (the diagonal cut), nothing ornamental |
+| **Premium, not flashy** | Hairline borders, restrained shadows, tabular numbers for prices; verdigris used sparingly, never as large fills |
 | **Honest** | Diagrams over fake dashboards; "Illustrative" labels; no decorative "live" indicators |
 | **Indian + global** | ₹ and $ treated equally; the lakh/crore format for INR; IST shown with the visitor's local time |
 
@@ -58,131 +98,92 @@ The current file works well at large sizes but has issues at small ones. The swo
 
 ## 2. Colour tokens
 
-### 2.1 Palette
+### 2.1 Palette (`tokens/tokens.json`)
 
-**Brand scales** (anchors are the logo colours; other steps are derived and checked for contrast).
-
-| Token | Light role | Hex |
-|---|---|---|
-| `navy-950` | Dark-theme background | `#0A0F2C` |
-| `navy-900` | **Brand navy** (logo), light-theme text | `#111A45` |
-| `navy-800` | Dark-theme surface | `#141D4D` |
-| `navy-700` | Hover on navy buttons, dark-theme raised surface | `#1E2A63` |
-| `navy-600` | Dark-theme borders (strong) | `#5C6694` |
-| `navy-400` | Muted text (light) | `#4B5275` |
-| `navy-300` | Muted text (dark) | `#B7BBD2` |
-| `navy-100` | Tinted surface (light) | `#E8EAF3` |
-| `orange-700` | **Accent text / links on light** | `#C03D00` |
-| `orange-600` | Accent hover on light | `#A83500` |
-| `orange-500` | **Brand orange** (logo), decorative, large text, accent bars | `#FF5100` |
-| `orange-400` | Primary button background (dark theme) | `#FF6A26` |
-| `orange-300` | Accent text / links on dark | `#FF7A3D` |
-| `orange-100` | Tinted highlight (light) | `#FFE7DB` |
-
-**Warm neutrals**
-
-| Token | Hex | Use |
-|---|---|---|
-| `paper` | `#FBFAF7` | Light page background |
-| `white` | `#FFFFFF` | Light cards, inputs, PDF paper |
-| `sand-100` | `#F3F0E8` | Light alternate section background |
-| `sand-200` | `#E9E5DA` | Light subtle fills (table stripes, code background) |
-| `sand-300` | `#D9D4C7` | Light borders (decorative; never the only boundary of a control) |
-| `stone-500` | `#8A8FA8` | Light **control** borders (inputs, checkboxes: ≥ 3:1) |
-| `warm-white` | `#F3F1EA` | Dark-theme text |
-
-**Status** (always paired with an icon and a text label, never colour alone)
-
-| Token | Light | Dark |
-|---|---|---|
-| `success` | `#1E7A4C` | `#4FC08D` |
-| `warning` | `#9A5800` | `#F2B54A` |
-| `danger` | `#B42318` | `#FF8A7A` |
-| `info` | `#2D4BA6` | `#8EA6FF` |
+| Group | Tokens |
+|---|---|
+| **Ink** (text, dark surfaces) | `ink-950 #0D1613` · `ink-900 #14231F` (brand ink) · `ink-800 #15211D` · `ink-750 #111C18` · `ink-700 #1B2924` · `ink-600 #26352F` · `ink-500 #61796F` · `ink-400 #485752` · `ink-300 #9DB0A8` |
+| **Verdigris** (brand accent) | `verdigris-900 #1F4A40` · `-800 #175548` · `-700 #1E6B5C` (brand) · `-500 #2E8B77` · `-300 #6CC4AE` (brand, dark) · `-200 #8AD4C1` · `-100 #D7ECE5` |
+| **Stone** (light neutrals) | `stone-50 #F6F7F5` (page) · `-100 #ECEFEB` · `-200 #E1E6E2` · `-300 #D3DBD6` · `-500 #7A8B84` (control borders) |
+| **Other** | `mist #E4EBE7` (dark-theme text) · `white` · `black` |
+| **Status** (always with an icon + label) | success `#47730F` / `#A9D46B` (80° of hue away from verdigris, so success never reads as "brand") · warning `#8F5B00` / `#E9B44C` · danger `#B3261E` / `#FF8A80` · info `#2B5797` / `#8DB4FF` |
 
 ### 2.2 Semantic tokens (what components use)
 
 | Semantic token | Light | Dark |
 |---|---|---|
-| `--color-bg` | `paper` | `navy-950` |
-| `--color-surface` | `white` | `navy-800` |
-| `--color-surface-alt` | `sand-100` | `#101845` |
-| `--color-surface-raised` | `white` + `--shadow-1` | `navy-700` |
-| `--color-text` | `navy-900` | `warm-white` |
-| `--color-text-muted` | `navy-400` | `navy-300` |
-| `--color-text-accent` | `orange-700` | `orange-300` |
-| `--color-link` | `navy-900` underlined; hover `orange-700` | `warm-white` underlined; hover `orange-300` |
-| `--color-border` | `sand-300` | `#27326B` |
-| `--color-border-control` | `stone-500` | `navy-600` |
-| `--color-accent-decor` | `orange-500` | `orange-500` |
-| `--color-btn-primary-bg` / `-fg` | `navy-900` / `white` | `orange-400` / `navy-950` |
-| `--color-btn-primary-hover` | `navy-700` | `#FF7F45` |
-| `--color-btn-secondary` | transparent, 1.5 px `navy-900` border, `navy-900` text | transparent, 1.5 px `warm-white` border, `warm-white` text |
-| `--color-focus` | `orange-700` (2 px ring + 2 px offset in `--color-bg`) | `orange-300` |
-| `--color-selection` | `orange-100` | `#3A2A3F` |
+| `--color-bg` | `stone-50` | `ink-950` |
+| `--color-surface` / `-alt` / `-raised` | `white` / `stone-100` / `white` + shadow | `ink-800` / `ink-750` / `ink-700` |
+| `--color-text` / `-muted` | `ink-900` / `ink-400` | `mist` / `ink-300` |
+| `--color-text-accent`, `--color-link-hover`, `--color-focus` | `verdigris-700` | `verdigris-300` |
+| `--color-link` | `ink-900` (underlined) | `mist` (underlined) |
+| `--color-border` / `-control` | `stone-300` / `stone-500` | `ink-600` / `ink-500` |
+| `--color-btn-primary-bg` / `-fg` / `-hover` | `verdigris-700` / `white` / `verdigris-800` | `verdigris-300` / `ink-950` / `verdigris-200` |
+| `--color-accent-decor` | `verdigris-500` | `verdigris-300` |
+| `--color-selection` | `verdigris-100` | `verdigris-900` |
+| Shadows | soft ink shadows (`--elevation-1/2`) | replaced by a 1 px `ink-600` outline |
 
-### 2.3 Contrast (measured, WCAG 2.x)
+### 2.3 Contrast (computed from the tokens; the test `tokens/contrast.test.ts` enforces it)
 
-| Pair | Ratio | Passes |
-|---|---|---|
-| Text `#111A45` on paper `#FBFAF7` | 16.0 : 1 | AAA |
-| Muted `#4B5275` on paper | 7.3 : 1 | AAA |
-| Accent text `#C03D00` on paper | 5.2 : 1 | AA |
-| Brand orange `#FF5100` on paper | 3.1 : 1 | **Large text (≥ 24 px, or ≥ 18.7 px bold) and non-text UI only** |
-| White on navy button | 16.7 : 1 | AAA |
-| Control border `#8A8FA8` on paper | 3.1 : 1 | AA non-text (1.4.11) |
-| Status success / warning / danger / info on paper | 5.1 / 5.3 / 6.3 / 7.5 : 1 | AA |
-| Dark: text `#F3F1EA` on `#0A0F2C` | 16.6 : 1 | AAA |
-| Dark: muted `#B7BBD2` on bg / on surface | 9.9 / 8.4 : 1 | AAA |
-| Dark: accent `#FF7A3D` on bg / surface | 7.3 / 6.2 : 1 | AA+ |
-| Dark: primary button text `#0A0F2C` on `#FF6A26` | 6.6 : 1 | AA |
-| Dark: control border `#5C6694` on bg | 3.4 : 1 | AA non-text |
-| Dark status colours on bg | 8.1–10.3 : 1 | AAA |
+| Pair | Light | Dark | Level |
+|---|---|---|---|
+| Text on page | 15.2 | 15.2 | AAA |
+| Muted text on page / on alternate section | 7.1 / 6.6 | 8.1 / 7.7 | AAA on page |
+| Accent text on page / alternate section | 5.9 / 5.5 | 8.9 / 8.4 | AA |
+| Button label on primary button / on hover | 6.3 / 8.6 | 8.9 / 10.8 | AA |
+| Control border on page / card (dark: also dialog 3.2) | 3.3 / 3.6 | 3.9 / 3.5 | AA non-text (1.4.11) |
+| Focus ring on page | 5.9 | 8.9 | AA non-text |
+| Decorative verdigris on page | 3.9 | 8.9 | Large text and non-text only |
+| Success / warning / danger / info on page | 5.2 / 5.3 / 6.1 / 6.7 | 10.8 / 9.7 / 8.1 / 8.9 | AA |
 
 **Rules:**
-- Body text is never `orange-500`.
-- Placeholder text uses `--color-text-muted` (not lighter), and labels are always visible (placeholders never act as labels).
-- A CI test (`packages/ui/tokens/contrast.test.ts`) recomputes every semantic pair and fails below the thresholds above.
+- Body text is never the decorative accent.
+- Placeholders use `--color-text-muted`, and labels are always visible.
+- Status is never colour alone.
 
 ---
 
 ## 3. Typography
 
-### 3.1 Typefaces (all SIL Open Font License, self-hosted woff2, subset)
+### 3.1 Typefaces (SIL Open Font License, self-hosted, subset)
 
-| Role | Family | Why | Files on first view |
-|---|---|---|---|
-| **Display** (h1, h2, pull quotes, PDF titles) | **Newsreader** (variable, optical size 6–72, weights 400–700) | Calm, editorial and very readable at large sizes. Gives "premium publication" rather than "startup template". | 1 (roman, Latin subset) |
-| **UI and body** | **IBM Plex Sans** (variable or 400/500/600) | An engineering heritage that suits a senior studio. Highly legible at small sizes, tabular figures, distinct `Il1`. | 1 |
-| **Mono** (code snippets only, never paragraphs: audit finding) | **IBM Plex Mono** 400 | Same family as the body face | Lazy, only on pages with code |
+| Role | Family | Files |
+|---|---|---|
+| **Display** (h1, h2, the wordmark, PDF titles) | **Archivo, Expanded** (`font-stretch: 116%`, weight 560) | One variable file for display *and* text: `archivo-latin.woff2`, 34 KB, weights 400–600 × widths 100–116 %. ₹ ships as `archivo-rupee.woff2` (1.5 KB), loaded only on pages with ₹ |
+| **UI and body** | **Archivo, Normal** (100 %, 400/500/600) | (the same file) |
+| **Mono** (code only) | **IBM Plex Mono** 400 | `ibm-plex-mono-latin.woff2` 12 KB (+ ₹ file) |
 
 **Requirements:**
-- **₹ (U+20B9) must render in the UI/body face**, since prices and all document numbers use it. Phase 6 M1 checks glyph coverage of the chosen files with a script. If either font lacks ₹, a `unicode-range` fallback to **Noto Sans** (₹ only) is added.
-- Subsets: Latin + Latin-1 + ₹ + common punctuation (– — ’ “ ” • × →). Target ≤ 45 KB per file.
-- `font-display: swap` for body, `optional` for display (avoids layout shift). Metric-matched fallbacks (`size-adjust`, `ascent-override`) for Georgia (display) and Arial (body), so CLS stays below 0.01.
-- Numbers: `font-variant-numeric: tabular-nums` on all money, tables, invoice numbers and KPIs. `lining-nums` in headings.
-- Language: `lang="en-IN"`. Hyphenation off for headings and on (`hyphens: auto`) for long prose on mobile.
+- ₹ coverage is tested (`test/fonts.test.ts`). → (U+2192) is not in these fonts, so arrows are Lucide icons, never text.
+- Two metric-matched Arial fallbacks keep layout shift near zero during font swap: "Archivo Fallback" for body text and "Archivo Expanded Fallback" for headings.
+- Numbers: `tabular-nums` on money, tables, document numbers and KPIs.
+- `lang="en-IN"`.
+- Font licence: the OFL permits using the font to make a logo. The outlined wordmark is artwork, not Font Software.
 
 ### 3.2 Type scale
 
-The base is 16 px. UI text uses a 1.25 ratio; display sizes are fluid with `clamp()` between 360 px and 1280 px viewports. **The minimum text size is 12 px (captions only); body text is never below 16 px** (fixes audit M-4, M-7).
+The base is 16 px; display sizes are fluid between 360 px and 1280 px viewports. **The minimum text size is 12 px (captions only); body text is never below 16 px.**
 
 | Token | Size / line-height | Weight | Family | Use |
 |---|---|---|---|---|
-| `text-display-1` | clamp(2.75rem → **4.5rem**) / 1.05 | 500 | Newsreader | Home hero h1 |
-| `text-display-2` | clamp(2.25rem → **3.5rem**) / 1.1 | 500 | Newsreader | Page h1 |
-| `text-h2` | clamp(1.75rem → **2.5rem**) / 1.15 | 500 | Newsreader | Section h2 |
-| `text-h3` | 1.5rem (24 px) / 1.25 | 600 | Plex Sans | Sub-sections, card titles (large) |
-| `text-h4` | 1.25rem (20 px) / 1.3 | 600 | Plex Sans | Card titles, FAQ questions |
-| `text-lede` | clamp(1.125rem → 1.375rem) / 1.5 | 400 | Plex Sans | Intro paragraphs |
-| `text-body-lg` | 1.125rem (18 px) / 1.65 | 400 | Plex Sans | **Site prose** (articles, service pages) |
-| `text-body` | 1rem (16 px) / 1.6 | 400 | Plex Sans | **App body**, forms, site UI |
-| `text-sm` | 0.875rem (14 px) / 1.45 | 400/500 | Plex Sans | App table cells, secondary UI, footer links (≥ 14 px) |
-| `text-caption` | 0.75rem (12 px) / 1.4 | 500 | Plex Sans | Eyebrows (uppercase, +0.08 em tracking), legal fine print, PDF footers. **Minimum.** |
-| `text-price-lg` | clamp(1.75rem → 2.25rem) / 1.1 | 600, tabular | Plex Sans | Price tags |
+| `text-display-1` | clamp(2.75rem → **4.5rem**) / 1.05 | 560 | Archivo Expanded | Home hero h1 |
+| `text-display-2` | clamp(2.25rem → **3.5rem**) / 1.1 | 560 | Archivo Expanded | Page h1 |
+| `text-h2` | clamp(1.75rem → **2.5rem**) / 1.15 | 560 | Archivo Expanded | Section h2 |
+| `text-h3` | 1.5rem (24 px) / 1.25 | 600 | Archivo | Sub-sections, card titles (large) |
+| `text-h4` | 1.25rem (20 px) / 1.3 | 600 | Archivo | Card titles, FAQ questions |
+| `text-lede` | clamp(1.125rem → 1.375rem) / 1.5 | 400 | Archivo | Intro paragraphs |
+| `text-body-lg` | 1.125rem (18 px) / 1.65 | 400 | Archivo | **Site prose** |
+| `text-body` | 1rem (16 px) / 1.6 | 400 | Archivo | **App body**, forms, site UI |
+| `text-sm` | 0.875rem (14 px) / 1.45 | 400/500 | Archivo | Table cells, secondary UI |
+| `text-caption` | 0.75rem (12 px) / 1.4 | 500 | Archivo | Legal fine print, PDF footers. **Minimum.** |
+| `text-price-lg` | clamp(1.75rem → 2.25rem) / 1.1 | 600, tabular | Archivo | Price tags |
 | `text-code` | 0.9375rem / 1.6 | 400 | Plex Mono | Code blocks |
 
-**Measure:** prose is max **68 ch**, ledes max 60 ch, headings max 22 ch (balanced with `text-wrap: balance`, paragraphs `text-wrap: pretty`).
+**Measure:**
+- prose: max **68 ch**
+- ledes: max 60 ch
+- headings: max 22 ch, with `text-wrap: balance`
+- paragraphs: `text-wrap: pretty`
 
 ---
 
@@ -225,7 +226,7 @@ The base is 16 px. UI text uses a 1.25 ratio; display sizes are fluid with `clam
 | `shadow-2` | `0 8px 24px rgb(17 26 69 / .08), 0 2px 6px rgb(17 26 69 / .05)` (dialogs, menus) |
 | Dark theme | Shadows replaced by a 1 px lighter border + `surface-raised` |
 
-**Signature detail:** the **orange "swoosh rule"**, a 2–3 px gently curved orange line (an SVG echo of the logo swoosh). It is used sparingly: under the hero h1, at the top of PDF documents, and as the active-nav indicator. It is the one decorative flourish of the system.
+**Signature detail:** the **diagonal cut**, the 45° edge from the mark. It is used sparingly: as the corner of the active-nav indicator, on the top-right corner of the hero image frame, and as the tone-on-tone mark on banners. It is the one decorative device of the system; there are no curves, swooshes or gradients.
 
 ### 4.4 Motion
 
@@ -247,7 +248,7 @@ The base is 16 px. UI text uses a 1.25 ratio; display sizes are fluid with `clam
 - **Icons:** Lucide (ISC licence), 1.5 px stroke, sizes 16 / 20 / 24, inlined as SVG (the site) or tree-shaken (apps). Decorative icons get `aria-hidden`; meaningful ones get a label.
 - **Diagrams:** custom SVG (architecture, workflow, process), built with the tokens, labelled "Illustrative" where they don't depict a real client system. They must work in both themes (via `currentColor` + CSS variables).
 - **Photography:** only real photos (the founder headshot at launch). No stock "team" photos.
-- **OG images:** generated at build. Paper or navy background, the Newsreader title, a category eyebrow, the swoosh rule and the logo.
+- **OG images:** generated at build on the `og-default` layout: stone or ink background, the lockup, the page title in Archivo Expanded (outlined), the domain, and the tone-on-tone mark bleeding off the right edge.
 
 ---
 
@@ -278,7 +279,7 @@ The base is 16 px. UI text uses a 1.25 ratio; display sizes are fluid with `clam
 | `DeliverablesList` | Check-icon list (list semantics, icons hidden from assistive tech) |
 | `ComparisonTable` | Care-plan tiers: a real `<table>` with `scope`. On mobile it becomes stacked cards per tier, with the same data. |
 | `FAQ` | A `<details>`/`<summary>` list (works without JS), plus JSON-LD |
-| `CTABand` | Navy background (light theme) with a white-text primary CTA; pre-fills the service |
+| `CTABand` | Ink background (light theme) with a verdigris-300 primary CTA; pre-fills the service |
 | `Breadcrumbs` | `nav aria-label="Breadcrumb"` + JSON-LD |
 | `Notice` | Variants: info, legal ("Pending legal review"), illustrative ("Illustrative example") |
 | `DiagramFrame` | `<figure>` + caption + an "Illustrative" badge |
@@ -333,7 +334,7 @@ Built on **Radix UI primitives** (Dialog, Popover, DropdownMenu, Tabs, Tooltip, 
 
 | Status | Pill style | Icon |
 |---|---|---|
-| Draft | Neutral (sand fill, navy text) | pencil |
+| Draft | Neutral (stone fill, ink text) | pencil |
 | Pending approval | Warning | clock |
 | Sent / Issued | Info | send / file-check |
 | Viewed | Info (outline) | eye |
@@ -349,10 +350,10 @@ Built on **Radix UI primitives** (Dialog, Popover, DropdownMenu, Tabs, Tooltip, 
 
 | Aspect | Spec |
 |---|---|
-| Layout | 600 px single column, table-based, inline CSS (generated from tokens), dark-mode-safe (no pure-white logos on transparent backgrounds; a navy/white logo pair via `prefers-color-scheme` where supported) |
-| Header | Logo (primary lockup, 140 px wide, PNG @2x + alt text "TecHaust Technologies"), then an orange swoosh rule |
-| Body | Plex Sans with Arial/Helvetica fallback (web fonts aren't relied on), 16 px / 1.6, navy text on white |
-| Button | "Bulletproof" (VML-safe) navy button with white text, 48 px tall; the plain URL is repeated below |
+| Layout | 600 px single column, table-based, inline CSS (generated from tokens), dark-mode-safe (no pure-white logos on transparent backgrounds; an ink/mist logo pair via `prefers-color-scheme` where supported, plus the white-plate badge) |
+| Header | Logo (primary lockup, 140 px wide, PNG @2x + alt text "TecHaust Technologies"; the white-plate badge version for clients that force dark mode), then a 2 px verdigris rule |
+| Body | Archivo with Arial/Helvetica fallback (web fonts aren't relied on), 16 px / 1.6, ink text on white |
+| Button | "Bulletproof" (VML-safe) verdigris button with white text, 48 px tall; the plain URL is repeated below |
 | Footer | Company trade name, "Balurghat, West Bengal, India", contact@techaust.com, why you got this email, and an unsubscribe link (non-transactional only) |
 | Plain text | Every template has a hand-tuned plain-text version |
 | Accessibility | `lang`, `role="presentation"` on layout tables, real headings, ≥ 4.5:1 contrast, no image-only content |
@@ -370,8 +371,8 @@ All documents are **HTML + print CSS rendered by Browser Run** ([05 §8](05-arch
 | Size | **A4 portrait** (210 × 297 mm) |
 | Margins | Top 16 mm · bottom 18 mm (footer) · left/right 16 mm |
 | Grid | 12 columns, 4 mm gutters |
-| Fonts | Newsreader (document title, proposal headings) + IBM Plex Sans (everything else), **embedded** via `@font-face` data URIs; ₹ verified (§3.1); tabular numbers everywhere |
-| Colour | Navy text on white. Orange only for the swoosh rule and the thin accent bar. Status is never colour-only. **Legible in grayscale** (checked by rendering a grayscale proof in tests). |
+| Fonts | Archivo Expanded (document title, proposal headings) + Archivo (everything else), **embedded** via `@font-face` data URIs; ₹ verified (§3.1); tabular numbers everywhere |
+| Colour | Ink text on white. Verdigris only for the header rule and the mark. Status is never colour-only. **Legible in grayscale** (checked by rendering a grayscale proof in tests). |
 | Sizes | Body 9.5 pt / 13 pt leading; table cells 9 pt; small print 7.5 pt (minimum); totals 11 pt bold; grand total 14 pt |
 | Repeating elements | Table headers repeat on each page (`thead { display: table-header-group }`); rows never split (`break-inside: avoid`); the totals block is kept together with the last rows |
 | Footer (every page) | Symbol mark · "TecHaust Technologies · techaust.com · billing@techaust.com" · document number · "Page X of Y" |
@@ -382,9 +383,9 @@ All documents are **HTML + print CSS rendered by Browser Run** ([05 §8](05-arch
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────┐
-│ [TECHAUST logo, 42 mm]                                 TAX INVOICE        │  ← Newsreader 20 pt, navy
+│ [TecHaust logo, 42 mm]                                 TAX INVOICE        │  ← Archivo Expanded 20 pt, ink
 │                                              ORIGINAL FOR RECIPIENT       │  ← caption, GST docs only
-│ ~~~~~~~~~~~~~~~~~~ orange swoosh rule (full width, 0.8 mm) ~~~~~~~~~~~~~~ │
+│ ──────────────────── verdigris rule (full width, 0.8 pt) ──────────────── │
 │ FROM (supplier)                 BILL TO                     DOCUMENT       │
 │ TecHaust Technologies           Client legal name           No. TH/INV/…   │
 │ Proprietor: ‹legal name›        Address lines               Date 06 Oct 26 │
@@ -413,8 +414,8 @@ Supplier block contents come from Settings (ADM-SET-01). **This is the only plac
 ### 7.4 Proposal layout (editorial)
 
 1. **Cover** (full page):
-   - logo top-left, swoosh rule
-   - the title in Newsreader 32 pt (e.g. "Invoice-to-Tally automation pilot")
+   - logo top-left, verdigris rule
+   - the title in Archivo Expanded 32 pt (e.g. "Invoice-to-Tally automation pilot")
    - "Prepared for ‹Client›", the date, "Version 2", "Valid until ‹date›", the proposal number
    - the contact person at TecHaust
 2. **Summary** (≤ ½ page): the outcome, the price headline, the timeline headline.
@@ -423,7 +424,7 @@ Supplier block contents come from Settings (ADM-SET-01). **This is the only plac
 5. **Assumptions & exclusions**, **Terms** (versioned, shared with the website "How we work" text).
 6. **Acceptance**: an instruction box ("Accept online at portal.techaust.com"). On the **accepted** copy, a stamped record is added: "Accepted by ‹typed name› (‹email›) on ‹date time IST› from IP ‹…› · Document fingerprint ‹SHA-256›".
 
-Headings are Newsreader; body text is Plex Sans 10 pt / 14 pt; each section starts on a new page only if less than 40 % of the current page remains.
+Headings are Archivo Expanded; body text is Archivo 10 pt / 14 pt; each section starts on a new page only if less than 40 % of the current page remains.
 
 ### 7.5 Template engineering rules
 - One `DocumentLayout` + per-type body partials. **No logic in templates** beyond formatting; all maths comes pre-computed from `packages/core` (tested).
@@ -448,8 +449,9 @@ Headings are Newsreader; body text is Plex Sans 10 pt / 14 pt; each section star
 
 ## 9. What I need you to approve in this document
 
-1. **Palette:** navy `#111A45` + orange `#FF5100` from your logo, on warm neutrals; navy primary buttons (orange buttons in dark mode).
-2. **Fonts:** Newsreader (display) + IBM Plex Sans/Mono (UI, body, code).
-3. **Logo refinements** (§1.2), especially the **compact lockup** for small sizes and the **symbol** (pixel cluster) for the favicon. You'll see drawn variants in Phase 6 M1 before anything ships.
-4. **Signature detail:** the orange swoosh rule, used sparingly.
-5. **PDF layouts** (§7): A4, the header structure, and the per-document blocks.
+1. **Identity "Patina" (§1):** the TH-ligature mark with its one-stroke diagonal channel, the custom Archivo wordmark, and the lockup rules. Concepts and the audit: [11](11-brand-audit.md).
+2. **Palette (§2):** ink + verdigris on stone, with a dark theme; verdigris primary buttons.
+3. **Fonts (§3):** Archivo (Expanded for display, Normal for text) + IBM Plex Mono (code).
+4. **Signature detail:** the diagonal cut, used sparingly.
+5. **PDF layouts (§7):** A4, the header structure, and the per-document blocks.
+6. **Print (§1.6):** the CMYK starting values; Pantone matching and the business-card phone number are owner actions.
