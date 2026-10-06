@@ -1,5 +1,7 @@
 # AI Services Market Research for TecHaust Technologies
 
+> **Phase 2 research record (APPROVED 2026-10-06).** Parent: [02](../02-services-strategy.md). Where it differs from a decision, [13-decisions](../13-decisions.md) wins.
+
 **Prepared:** 2026-10-06 | **Scope:** demand, India context, pricing, and what separates winners, for a 2–5 person Indian studio selling AI services in India and abroad.
 
 **How to read this report**

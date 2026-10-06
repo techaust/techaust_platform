@@ -4,9 +4,10 @@
 |---|---|
 | **Phase** | 3, Plan (**APPROVED** 2026-10-06) |
 | **Date** | 2026-10-06 |
+| **Revised** | 2026-10-07, documentation quality pass ([runs/docs-quality-pass.md](runs/docs-quality-pass.md)) |
 | **Inputs** | [01-audit.md](01-audit.md) · [02-services-strategy.md](02-services-strategy.md) · owner interview (§0) · research: [A: payments](03-research-appendix/A-payments.md) · [B: platform & stack](03-research-appendix/B-platform-stack.md) |
 | **Next** | Phase 4 turns this plan into the PRD, architecture, design system, content, security and roadmap docs |
-| **Superseded where different** | Later approved changes live in [05-architecture.md](05-architecture.md) and [04-prd.md](04-prd.md) §0, including (not limited to): Astro 7, React Router 8, in-house auth instead of Better Auth, Worker names, the public repo; the **Patina brand and fonts** ([ADR 0013](adr/0013-new-brand-identity.md); against §0 Logo, §3A.5); the **queue CPU rule and upgrade triggers** ([05 §1.2](05-architecture.md); against §3C.4); **Workers Logs retention** ([05](05-architecture.md) §13; against §3C.3 Monitoring); **staging behind Cloudflare Access** ([04 §0](04-prd.md); against §3C.5); and **backup retention** (≥ 8 years from FY end, default 10; [08 §6](08-security-compliance.md)). **Where this plan and 05 differ, 05 wins.** |
+| **Superseded where different** | Later approved changes live in [05-architecture.md](05-architecture.md) and [04-prd.md](04-prd.md) §0, including (not limited to): Astro 7, React Router 8, in-house auth instead of Better Auth, Worker names, the public repo; the **Patina brand and fonts** ([ADR 0013](adr/0013-new-brand-identity.md); against §0 Logo, §3A.5); the **queue CPU rule and upgrade triggers** ([05 §1.2](05-architecture.md); against §3C.4); **Workers Logs retention** ([05](05-architecture.md) §13; against §3C.3 Monitoring); **staging behind Cloudflare Access** ([04 §0](04-prd.md); against §3C.5); and **backup retention** (≥ 8 years from FY end, default 10; the monthly copy holds finance/GST tables only, leads and contacts are only in the 90 daily copies (owner decision 2026-10-07, [08 §6.1](08-security-compliance.md)); [08 §6](08-security-compliance.md)). **Where this plan and 05 differ, 05 wins.** |
 
 > **Compliance.** Every tax, invoicing, payments-regulation and DPDP point is marked **VERIFY WITH CA/LEGAL**. The software will be configurable, so whatever your CA or lawyer decides can be applied without code changes wherever possible.
 
@@ -48,7 +49,7 @@
 | Content editing | **Markdown files in the repo.** Prices are read from the admin catalogue. |
 | Languages | English only |
 | Analytics | Cloudflare Web Analytics (cookieless) **and** Google Analytics 4, which loads **only after cookie consent** |
-| Proprietor name and GSTIN | **On invoices only, not on the website** |
+| Proprietor name and GSTIN | **On invoices only, not on the website** (superseded in part: the proprietor's name appears on the privacy page as Grievance Officer and EU/UK controller; GSTIN stays invoice-only, [04 §0](04-prd.md) Identity, [07-A](07-content-appendix/A-legal-pages.md)) |
 | Off-site backups | **AWS S3 Mumbai**, encrypted, nightly |
 | Code repository | **A new private repo, `techaust/techaust_platform`**, created by you. The old `techaust-web` repo is left untouched. Local project folder: `WEBSITE\techaust_platform` (renamed by you from `techaust_website`). |
 
@@ -419,7 +420,7 @@ Cloudflare provides all of these on one account (**Workers, D1, R2, Queues, Cron
 | **Email** | **Amazon SES Mumbai** (your choice; ≈ $0.10 per 1,000) | Resend (free 3k/mo, domain already verified) | Cloudflare Email Service (paid plan only) | India region, pennies per month, reliable |
 | **Payments** | **Razorpay (INR) + Stripe + PayPal (USD) + manual bank transfer** | + a cross-border e-FIRA account (Xflow/Skydo/MoneySaver) later | Cashfree as INR backup | Uses your active accounts; the plug-in design leaves room for options 2 and 3 |
 | **Background work** | **Queues + Cron Triggers** (free: 10k queue ops/day) | Workflows | External cron (GitHub Actions) | Native; fits the free tier |
-| **Backups** | **Built-in 7-day restore + nightly encrypted export → S3 Mumbai** (GitHub Actions, free) | R2 only | Both | Your choice. A truly off-site copy, ≈ ₹0–10/mo. Monthly copies kept 6+ years for GST record retention (superseded: ≥ 8 years from FY end, default 10; [08 §6](08-security-compliance.md), [08-A #20](08-research-appendix/A-gst-invoicing.md); VERIFY WITH CA). |
+| **Backups** | **Built-in 7-day restore + nightly encrypted export → S3 Mumbai** (GitHub Actions, free) | R2 only | Both | Your choice. A truly off-site copy, ≈ ₹0–10/mo. Monthly copies kept 6+ years for GST record retention (superseded: ≥ 8 years from FY end, default 10; the monthly copy holds finance/GST tables only, leads and contacts are only in the 90 daily copies (owner decision 2026-10-07, [08 §6.1](08-security-compliance.md)); [08 §6](08-security-compliance.md), [08-A #20](08-research-appendix/A-gst-invoicing.md); VERIFY WITH CA). |
 | **Monorepo** | **pnpm workspaces** (apps: web, admin, portal, jobs; packages: db, core, auth, pdf, email, ui, config; final layout: [05 §3](05-architecture.md)) | Turborepo on top | Separate repos | Shared types, schema and money/tax logic. Simple tooling. |
 | **Testing** | **Vitest** (unit/integration, with the Workers test pool) + **Playwright** (end-to-end, accessibility via axe) | Jest | Cypress | Fast, Workers-native, covers the critical logic |
 | **CI/CD** | **GitHub Actions:** checks on every PR → auto-deploy to **staging**; **production deploy is a manual, approved step** | Cloudflare Workers Builds (Git-connected) | Manual `wrangler deploy` | Fixes audit H-8 (every push currently ships to production) |
@@ -473,7 +474,7 @@ The DNS cutover from the old `techaust-web` Worker happens only in Phase 7, with
 | Abuse / spam | Turnstile, Rate Limiting binding keyed on `CF-Connecting-IP`, free WAF rules, request body-size limits, Origin checks on state-changing requests (fixes audit H-5, M-2) |
 | Files | Type and size allow-list, private R2, short-lived signed download URLs, served as downloads (never inline HTML), filenames sanitised |
 | Data protection (DPDP, **VERIFY WITH CA/LEGAL**) | Data inventory; purpose-specific notices; GA4 only after consent; retention schedule (leads deleted after N months if not converted; financial records kept per GST/tax law); data-principal request handling (export, delete where lawful); breach response plan; processor list (Cloudflare, AWS, Razorpay, Stripe, PayPal, Google); Cloudflare D1 has no India region (DPDP doesn't currently require India residency, but your lawyer should confirm) |
-| Backups & recovery | Built-in 7-day restore + nightly encrypted S3 copy (90 days daily, monthly for 6+ years; superseded: ≥ 8 years from FY end, default 10, [08 §6](08-security-compliance.md), [08-A #20](08-research-appendix/A-gst-invoicing.md); VERIFY WITH CA); **quarterly restore drill** with a written runbook |
+| Backups & recovery | Built-in 7-day restore + nightly encrypted S3 copy (90 days daily, monthly for 6+ years; superseded: ≥ 8 years from FY end, default 10; the monthly copy holds finance/GST tables only, leads and contacts are only in the 90 daily copies (owner decision 2026-10-07, [08 §6.1](08-security-compliance.md)); [08 §6](08-security-compliance.md), [08-A #20](08-research-appendix/A-gst-invoicing.md); VERIFY WITH CA); **quarterly restore drill** with a written runbook |
 
 ---
 
