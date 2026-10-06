@@ -1,12 +1,16 @@
 # techaust.com: Live Production Audit (Performance, Accessibility, SEO, Security Headers, Links)
 
+> **Phase 1 evidence (APPROVED 2026-10-06).** Parent: [01-audit](../01-audit.md). Fixes apply to the old site; for how the rebuild maps them, see [04 §10](../04-prd.md) (traceability) and §11 (later).
+>
+> **Not legal advice.** Legal and compliance remarks (privacy, DPDP, advertising) are **VERIFY WITH CA/LEGAL**.
+
 - **Date:** 2026-10-06
 - **Method:** Read-only. Only GET, HEAD and OPTIONS requests were sent (curl, Schannel and OpenSSL), plus the built-in Chromium pane. I checked layout at 1024px desktop, an approx. 406px pane, and a 375x812 mobile viewport. No form was submitted and nothing was POSTed to `/api/contact`.
 - **Source:** I cross-checked `ASSETS/WEBSITE` read-only.
-- **Stack observed:** vinext (Next.js App Router on Vite) on Cloudflare Workers, behind Cloudflare. The CF colo was MRS (Chennai). Build id is `40d41b75…`.
+- **Stack observed:** vinext (Next.js App Router on Vite) on Cloudflare Workers, behind Cloudflare. The CF colo was MRS (Marseille; an earlier draft said "Chennai", but MRS is Marseille's airport code, so the curl timings in §3 may include the route to Europe). Build id is `40d41b75…`.
 - **PageSpeed Insights:** **Not available.** The anonymous PSI API returned `429 RESOURCE_EXHAUSTED (Queries per day)` on all 4 runs, and again via WebFetch. Because of that, the performance section uses browser Performance APIs and curl byte counts. There are no Lighthouse scores or CrUX field data here (see Open questions).
 
-Raw artifacts in this folder are `html/*.html` (server HTML per page), `seo.txt`, `asset_sizes.txt`, `links_by_page.txt` and `psi_*.json` (the 429 bodies).
+Raw artefacts were kept in the session scratchpad, not committed: `html/*.html` (server HTML per page), `seo.txt`, `asset_sizes.txt`, `links_by_page.txt` and `psi_*.json` (the 429 bodies).
 
 ---
 
@@ -15,7 +19,7 @@ Raw artifacts in this folder are `html/*.html` (server HTML per page), `seo.txt`
 | # | Severity | Area | Issue |
 |---|---|---|---|
 | P1 | **High** | Perf/CWV | CLS 0.21–0.32 on homepage first load: footer jumps when streamed content replaces `app/loading.tsx` fallback |
-| P2 | **High** | Perf | HTML is `Cache-Control: no-store`, `CF-Cache-Status: BYPASS`, TTFB 0.8–1.05 s from India for fully static marketing pages |
+| P2 | **High** | Perf | HTML is `Cache-Control: no-store`, `CF-Cache-Status: BYPASS`, TTFB 0.8–1.05 s (curl; colo MRS = Marseille, so it may include the route to Europe, see §3) for fully static marketing pages |
 | S1 | **High** | SEO | `@techaustsocial` on X does not exist (404, same as a nonsense control handle) but is used in `twitter:site`, `twitter:creator`, footer and Organization `sameAs` |
 | S2 | **High** | SEO | JSON-LD declares a `SoftwareApplication` "TecHaust Autonomous AI Platform" with `Offer price 0 USD` on every page: misrepresents a paid B2B services firm as a free app |
 | S3 | **Medium** | SEO | Third-party index/brand data still describes TecHaust as a "digital marketing" company; brand confusion with Tech Australia (techaust.com.au, facebook.com/techaust) |
@@ -71,7 +75,7 @@ Vary: RSC, Next-Router-State-Tree, ... (10 entries)
 | H1 | Medium | No CSP header anywhere. | Header dumps above; `next.config.ts` has no CSP entry. The page loads inline scripts, `static.cloudflareinsights.com` (Cloudflare Web Analytics beacon) and same-origin chunks only. | Ship at least `Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com; connect-src 'self' https://cloudflareinsights.com; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'`, starting as `-Report-Only`, and tighten to nonces later. |
 | H2 | Medium | The contact API failure path echoes internal debug data to the client. | `app/api/contact/route.ts` ~L150-155 returns `debug:{stage:"resend",resendStatus,resendError,from,to}` with a 502. I did not trigger it (no POST). | Remove `debug` from the response body and keep it in `console.error` only. |
 | H3 | Low | No `Cross-Origin-Opener-Policy`, `Cross-Origin-Resource-Policy`; `/.well-known/security.txt` → 404 (it renders the HTML 404 page). HSTS says `preload`, but hstspreload.org reports status `unknown` (not submitted; it is preloadable with no errors). | curl output | Add `COOP: same-origin` and `CORP: same-origin`. Publish `/.well-known/security.txt` (Contact, Expires, Policy). Either submit to hstspreload.org or drop `preload`. |
-| H4 | Low | DMARC is `v=DMARC1; p=none` (reporting to Cloudflare) and there are no CAA records. SPF `include:zoho.in ~all` is on the apex. Resend DKIM (`resend._domainkey`) and `send.` SPF/MX via SES are present ✔. | DoH lookups | After monitoring, move DMARC to `p=quarantine`, then `reject`. Add CAA for `pki.goog`/`letsencrypt.org` (Cloudflare's CAs). |
+| H4 | Low | DMARC is `v=DMARC1; p=none` (reporting to Cloudflare) and there are no CAA records. SPF `include:zoho.in ~all` is on the apex. Resend DKIM (`resend._domainkey`) and `send.` SPF/MX via SES are present ✔. | DoH lookups | After monitoring, move DMARC to `p=quarantine`, then `reject`. Cloudflare adds its CA records automatically; check the existing records before adding any. |
 | H5 | Low | Static assets have no HSTS/nosniff. | `/_next/static/css/index.CLS60pd_.css` headers show only `Cache-Control: public, max-age=31536000, immutable` | Add a `public/_headers` file, or a Cloudflare Transform Rule for `/*`. |
 | H6 | Info | `X-Vinext-Build-Id` and the long internal `Vary` list leak the stack and build. | headers | Strip them with a Transform Rule (low value either way). |
 
@@ -98,7 +102,7 @@ Cookies: none are set on HTML responses ✔.
 All pages have `lang="en"`, exactly one H1, a logical heading order (no skipped levels in the rendered DOM), full OG and Twitter sets, a manifest, icons and theme-color. Favicon links are duplicated (`/favicon.ico?60f0…` plus `/favicon.ico`), which is harmless.
 
 **robots.txt** ✔ `Allow: /`, `Disallow: /api/`, and a Sitemap line.
-**sitemap.xml** lists 9 URLs, all return 200 and all are canonical-consistent. `lastmod` is the request time (`2026-10-06T00:15:54.120Z` on every URL; `app/sitemap.ts:20 lastModified: now`).
+**sitemap.xml** lists 9 URLs, all return 200 and all are canonical-consistent. `lastmod` is the request time (`2026-10-06T00:15:54.120Z` on every URL; `app/sitemap.ts:17–20 lastModified: now`).
 
 ### JSON-LD (identical `@graph` on every page)
 - `Organization`: name, legalName, url, logo (icon-512.png), founder Person (Rupak Sarkar, with sameAs to 4 personal profiles), PostalAddress (Balurghat, West Bengal, 733133, IN, **no streetAddress**), sameAs ×4 (@techaustsocial), and ContactPoint (email only, **no telephone**). The JSON parses as valid.
@@ -113,7 +117,7 @@ All pages have `lang="en"`, exactly one H1, a logical heading order (no skipped 
 | S4 | Medium | **Streaming wrapper around all page content.** `app/loading.tsx` makes every route render `<div role=status aria-label="Loading TecHaust Core">LOADING TECHAUST CORE...</div>` first. The real `<main>` content sits in `<div hidden id="S:0">` and is swapped in by an inline `$RC` script. Googlebot renders JS and will see the content, but non-rendering crawlers (social unfurlers, many AI/LLM crawlers, some Bing passes) see a loading screen plus hidden text. It also causes P1. | `grep '<template id="B:0">'` hits on 9/9 pages | Delete `app/loading.tsx`, or scope it to genuinely dynamic segments. All these pages are static and should prerender without Suspense. |
 | S5 | Medium | Local SEO (India) is thin. The contact page shows "REGISTERED OFFICE Pirozpur, Balurghat, Dakshin Dinajpur, West Bengal - 733133" but the schema has no `streetAddress`, `telephone`, `geo`, `openingHours` or `areaServed`. There are no `tel:` links. There is no `LocalBusiness`/`ProfessionalService` type and no Google Business Profile link in `sameAs` or `hasMap`. Service pages have no `Service` or `BreadcrumbList` schema. | JSON-LD, links_by_page.txt | Add `ProfessionalService` with full PostalAddress, telephone, `areaServed: ["IN", …]`, `hasMap` (GBP URL) and `priceRange`. Add `Service` + `BreadcrumbList` per service page. Keep NAP identical to the GBP listing. |
 | S6 | Medium | The social preview image is wrong. `og:image` = `https://techaust.com/icon-512.png` (512x512) with `twitter:card=summary_large_image`, so X, LinkedIn and WhatsApp crop or letterbox an icon. `/og-image.png` and `/opengraph-image` → 404. `/icon-512.png` is served with `max-age=0`. | seo.txt | Add a 1200x630 `opengraph-image` (static or per route). Use `summary` card if staying with a square image. |
-| S7 | Low | sitemap `lastmod` is always "now", so Google learns to ignore it. | `app/sitemap.ts:20` | Use real content dates (build time or a per-page constant). Drop `changefreq`/`priority` (ignored by Google). |
+| S7 | Low | sitemap `lastmod` is always "now", so Google learns to ignore it. | `app/sitemap.ts:17–20` | Use real content dates (build time or a per-page constant). Drop `changefreq`/`priority` (ignored by Google). |
 | S8 | Low | Titles: About is 90 chars with the brand twice; Privacy and Terms repeat the brand (the page-level title already includes it and the template appends it again). About description is 183 chars (truncated). | table | Set `title: { absolute: … }` or drop the brand from page titles. Keep titles ≤60 and descriptions ≤155. |
 | S9 | Low | 404 page has two `<meta name="robots">` tags, `canonical` = homepage, and `og:url` = homepage. | html/nonexistent-xyz.html | Emit a single `noindex` and no canonical on the not-found page. |
 | S10 | Low | `/services` returns 404 (no hub page; the nav uses a dropdown). `og:locale en_US` is set for an India-based firm. `meta keywords` (ignored by Google) includes the founder name. | curl | Optionally add a `/services` hub. Use `en_IN` (or keep en_US if targeting US buyers deliberately). Drop `keywords`. |
@@ -122,11 +126,11 @@ All pages have `lang="en"`, exactly one H1, a logical heading order (no skipped 
 
 ## 3. Performance
 
-**PSI/Lighthouse scores and CrUX field data are unavailable (API quota 429).** Measurements below come from the Chromium pane on a fast desktop connection and from curl in India (CF colo MRS).
+**PSI/Lighthouse scores and CrUX field data are unavailable (API quota 429).** Measurements below come from the Chromium pane on a fast desktop connection and from curl (CF colo MRS = Marseille, so the TTFB figures may include the route to Europe; they were not shown to be what an Indian visitor sees, and should be re-measured from India).
 
 | Metric (homepage) | Value |
 |---|---|
-| TTFB (curl, uncached HTML) | 0.80–1.05 s across all 10 pages (HTML is always rendered at the Worker) |
+| TTFB (curl, uncached HTML) | 0.80–1.05 s across all 10 pages (HTML is always rendered at the Worker). Served from colo MRS (Marseille), so it may include the route to Europe: re-measure from India. |
 | TTFB (browser, warm connection) | 204–218 ms |
 | FCP / LCP (desktop pane) | 444–540 ms; LCP element = hero `<h1>` (text, so no image LCP) |
 | **CLS** | **0.317** (first visit, 1024px) and **0.208** (406px pane). The source is `FOOTER` moving from y=263 to off-screen at ~404 ms (content stream replacing the loading fallback). 0 on warm reloads where the swap precedes first paint. |
@@ -143,7 +147,7 @@ All pages have `lang="en"`, exactly one H1, a logical heading order (no skipped 
 | ID | Sev | Finding | Recommendation |
 |---|---|---|---|
 | P1 | High | CLS ≥0.2 on first visit (poor is >0.25; 0.317 measured at 1024px). It is caused by `app/loading.tsx` streaming: the footer renders right under a 60vh spinner, then jumps when the page body is revealed. | Remove the root `loading.tsx`, or reserve full height. Static pages need no Suspense fallback. Re-measure in PSI after the quota resets. |
-| P2 | High | Static marketing pages are SSR'd per request with `Cache-Control: no-store`, `CF-Cache-Status: BYPASS`, giving 0.8–1.05 s TTFB from within India (worse elsewhere) and unnecessary Worker invocations. RSC prefetches (`?_rsc`) for 5–8 routes also hit the Worker on every page view. | Prerender/ISR the pages and send `Cache-Control: public, s-maxage=3600, stale-while-revalidate=86400` (or enable vinext/Workers cache for these routes, or a CF Cache Rule for HTML). Target TTFB <200 ms. |
+| P2 | High | Static marketing pages are SSR'd per request with `Cache-Control: no-store`, `CF-Cache-Status: BYPASS`, giving 0.8–1.05 s TTFB by curl (colo MRS, Marseille: re-measure from India before quoting it) and unnecessary Worker invocations. RSC prefetches (`?_rsc`) for 5–8 routes also hit the Worker on every page view. | Prerender/ISR the pages and send `Cache-Control: public, s-maxage=3600, stale-while-revalidate=86400` (or enable vinext/Workers cache for these routes, or a CF Cache Rule for HTML). Target TTFB <200 ms. |
 | P3 | Medium | About 200 KB br of JS for a brochure site; framer-motion is loaded on every page for entrance animations. | Replace simple framer-motion fades with CSS. Lazy-load the hero matrix, guard monitor and stepper islands on visibility. Check `index` + `vinext` chunk duplication. |
 | P4 | Low | JetBrains Mono (40 KB, the largest font) is preloaded although it is used only for small labels. | Drop the mono preload (keep `display: swap`) or subset it. |
 | P5 | Low | `icon.svg`, `apple-icon.png` and `favicon.ico` are `no-store`; `icon-512.png` (also og:image) is `max-age=0`. | Serve them from `public/` or set long cache headers. |
@@ -215,5 +219,5 @@ Crawled: every `<a href>` on all 9 sitemap pages plus 404 (`links_by_page.txt`).
 7. Can HTML be edge-cached (no per-user content)? Is there a reason for `no-store` on marketing pages?
 8. Can someone run PageSpeed Insights / Search Console Core Web Vitals manually (or provide a PSI API key), so lab scores and CrUX field data can be attached? The anonymous quota was exhausted during this audit.
 9. Should the Cloudflare minimum TLS version be raised to 1.2 (this needs a dashboard check; I did not access it)?
-10. The privacy policy has no mention of India's DPDP Act 2023 and no Grievance Officer (IT Rules 2011). Is legal review planned?
+10. The privacy policy has no mention of India's DPDP Act 2023 and no Grievance Officer (IT Rules 2011). Is legal review planned? (VERIFY WITH CA/LEGAL; not legal advice.)
 11. Homepage hero numbers ("2,847 docs indexed", "258 threats blocked", the live "8ms ping") are simulated. Should they be labelled "demo"/"simulated" to avoid looking like real telemetry?
