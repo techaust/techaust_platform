@@ -1,6 +1,6 @@
 # ADR 0013: New brand identity "Patina" replaces the supplied logo
 
-- **Status:** Proposed (owner chose the concept on 2026-10-06; final approval with M1.1)
+- **Status:** Accepted (owner approved 2026-10-06)
 - **Date:** 2026-10-06
 
 ## Context

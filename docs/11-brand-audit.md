@@ -5,7 +5,7 @@
 | **Phase** | 6, milestone M1.1 (design tokens and brand) |
 | **Date** | 2026-10-06 |
 | **Scope** | Every brand asset in `packages/ui/brand/`, the tokens behind them, and the rules in [06 §1–3](06-design-system.md) |
-| **Status** | Audit done and fixes applied; **awaiting the owner's approval** |
+| **Status** | Audit done and fixes applied; **APPROVED** by the owner 2026-10-06 |
 
 ## 1. How the audit was done
 

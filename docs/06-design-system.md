@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Phase** | 4, Project documentation (**APPROVED** 2026-10-06). §1–3 rewritten in Phase 6 M1.1 for the new identity "Patina" (**awaiting owner approval**) |
+| **Phase** | 4, Project documentation (**APPROVED** 2026-10-06). §1–3 rewritten in Phase 6 M1.1 for the new identity "Patina" (**APPROVED** 2026-10-06) |
 | **Date** | 2026-10-06 |
 | **Inputs** | Owner brief for a new identity (2026-10-06; the supplied logo files in `brand-incoming/` are retired) · [11 brand audit](11-brand-audit.md) · [03 §3A.5](03-plan.md) design direction · audit findings M-4 to M-8 ([01](01-audit.md)) |
 | **Implements** | [04 PRD](04-prd.md) WEB-G-05, WEB-G-13 to WEB-G-16, NFR-4 |
