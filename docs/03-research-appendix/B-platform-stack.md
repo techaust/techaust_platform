@@ -12,7 +12,7 @@
 
 - **The free Workers plan won't be enough. Budget for Workers Paid at $5/month (about ₹450).** Two hard blockers: (a) Better Auth's scrypt password hashing takes 73–170 ms of CPU, and the free plan allows 10 ms per request; (b) Browser Run (the new name for Browser Rendering) gives free accounts only 10 minutes a day, and Cloudflare's own email *sending* is paid-only. **[S]** (sources in §1 and §4)
 - **Recommendation [I]: Option A, all-Cloudflare.** Astro 6 for the public site. React Router (framework mode) on Workers for admin and portal. D1 + Drizzle for the database, R2 for files, Better Auth for login, with Cloudflare Access in front of the admin. Browser Run renders HTML templates to PDF. Email goes through Cloudflare Email Service or Resend. Expected cost: **about $5–8/month (₹450–720)**.
-- **Data residency:** D1 has **no India location** (the closest hint is `apac`). **The DPDP Act doesn't require localisation.** It uses a negative list, and the cross-border rule only takes effect on 13 May 2027. **VERIFY WITH CA/LEGAL**; see [08-B §1](../08-research-appendix/B-dpdp-legal.md) (the SPDI Rules apply now). If a client contract does require India residency, switch the DB to **Supabase Mumbai (ap-south-1) through Hyperdrive** (Option B2, about ₹2.7k/month) or move to a **VPS in Mumbai or Bangalore** (Option C).
+- **Data residency:** D1 has **no India location** (the closest hint is `apac`). **The DPDP Act doesn't require localisation.** It uses a negative list, and the cross-border rule only takes effect on 13 May 2027. **VERIFY WITH CA/LEGAL**; see [08-B §1a](../08-research-appendix/B-dpdp-legal.md) (the SPDI Rules apply now). If a client contract does require India residency, switch the DB to **Supabase Mumbai (ap-south-1) through Hyperdrive** (Option B2, about ₹2.7k/month) or move to a **VPS in Mumbai or Bangalore** (Option C).
 
 ---
 
@@ -44,7 +44,7 @@
 - [S] **Time Travel (point-in-time restore)** is always on and free. You can restore to any minute in the last **7 days (free) or 30 days (paid)**. For longer retention, Cloudflare documents exporting to R2 with Workflows or the REST API. https://developers.cloudflare.com/d1/reference/time-travel/
 - [S] Location hints are wnam, enam, weur, eeur, **apac** and oc. Jurisdictions are eu, us and fedramp. **There's no India option.** Read replication is available. https://developers.cloudflare.com/d1/configuration/data-location/
 - [?] Cloudflare doesn't publish which city `apac` maps to.
-- [I] `wrangler d1 export` produces a SQL dump. Schedule a nightly or weekly export to R2 to cover GST record-keeping beyond 30 days; CGST s.36 expects about 6 years of retention (that period is from general knowledge, not a source checked here; **superseded:** ≥ 8 years from FY end, default 10; [08 §6](../08-security-compliance.md), [08-A #20](../08-research-appendix/A-gst-invoicing.md); VERIFY WITH CA).
+- [I] `wrangler d1 export` produces a SQL dump. Schedule a nightly or weekly export to R2 to cover GST record-keeping beyond 30 days; CGST s.36 expects about 6 years of retention (that period is from general knowledge, not a source checked here; **superseded:** ≥ 8 years from FY end, default 10; the monthly copy holds finance/GST tables only, leads and contacts are only in the 90 daily copies (owner decision 2026-10-07, [08 §6.1](../08-security-compliance.md)); [08 §6](../08-security-compliance.md), [08-A #20](../08-research-appendix/A-gst-invoicing.md); VERIFY WITH CA).
 
 ### Hyperdrive (connection pooling to an external Postgres)
 - [S] Free plan: 100,000 queries/day. Paid: unlimited queries. Pooling and caching are included, with no egress charges. https://developers.cloudflare.com/hyperdrive/platform/pricing/
@@ -78,7 +78,7 @@
 - [I] Put **admin.techaust.com** behind Access with email OTP or Google login for staff. Leave the **portal** subdomain on app-level auth only, because clients shouldn't have to go through Access.
 
 ### Observability
-- [S] **Workers Logs.** Free: 200k events/day, 3-day retention. Paid: 20M/month included, then $0.60/M, 7-day retention. **From 2026-12-01 this moves to "Cloudflare Observability" pricing** (resolved in [05-A #13](../05-research-appendix/A-stack-verification.md): Free = 0.5 GB ingestion/day, 7-day retention). https://developers.cloudflare.com/workers/observability/logs/workers-logs/ [?] The new pricing isn't known yet.
+- [S] **Workers Logs.** Free: 200k events/day, 3-day retention. Paid: 20M/month included, then $0.60/M, 7-day retention. **From 2026-12-01 this moves to "Cloudflare Observability" pricing** (resolved in [05-A #13](../05-research-appendix/A-stack-verification.md): Free = 0.5 GB ingestion/day, 7-day retention). https://developers.cloudflare.com/workers/observability/logs/workers-logs/
 
 ### Astro and Cloudflare
 - [S] **Cloudflare acquired The Astro Technology Company on 2026-01-16.** Astro stays open source. https://www.businesswire.com/news/home/20260116386991/en/Cloudflare-Acquires-Astro-to-Accelerate-the-Future-of-High-Performance-Web-Development
@@ -195,7 +195,7 @@
 ## 8. Data protection (DPDP) and residency
 
 - [S] The **DPDP Rules 2025 are Gazette-dated 13 November 2025 (PIB announced them on 14 November)** and phase in: Rule 4 (consent managers) from 2026-11-13; **core obligations (notice, security safeguards, breach reporting, retention and so on) from 2027-05-13** (aligned to [08-B §1](../08-research-appendix/B-dpdp-legal.md)). **VERIFY WITH CA/LEGAL**; the SPDI Rules apply now. https://www.tcsa.in/resources/dpdp-rules-2025-implementation-roadmap , https://static.pib.gov.in/WriteReadData/specificdocs/documents/2025/nov/doc20251117695301.pdf
-- [S] **Cross-border transfers use a negative list.** Transfers are allowed unless the government restricts a country. There's **no general localisation requirement**, though sector rules and Significant Data Fiduciaries can have extra duties. **VERIFY WITH CA/LEGAL** (see [08-B §1](../08-research-appendix/B-dpdp-legal.md): SPDI Rules apply now; cross-border detail in 08-B §7). https://www.mondaq.com/india/data-protection/1844060/
+- [S] **Cross-border transfers use a negative list.** Transfers are allowed unless the government restricts a country. There's **no general localisation requirement**, though sector rules and Significant Data Fiduciaries can have extra duties. **VERIFY WITH CA/LEGAL** (see [08-B §1a](../08-research-appendix/B-dpdp-legal.md): SPDI Rules apply now; cross-border detail in 08-B §7). https://www.mondaq.com/india/data-protection/1844060/
 - [S] Cloudflare's **Data Localization Suite** has an **India region** (TLS decrypted only in Indian data centres; R2 is compatible with Regional Services). https://developers.cloudflare.com/data-localization/region-support/ . [I] **DLS is an Enterprise add-on**, out of budget.
 - [I] What to do before May 2027:
   - Keep a privacy notice and consent records for forms.
@@ -204,7 +204,7 @@
   - Keep an audit log and set retention schedules.
   - Have a written breach-response procedure. Rules require notifying the Board and affected people, with a 72-hour detailed report.
   - Sign processor agreements (DPAs) with Cloudflare, the email provider and so on.
-  - D1 in `apac` plus R2 is **legally fine under DPDP today**. Choose Option B2 or C only if clients contractually demand India residency. **VERIFY WITH CA/LEGAL**; see [08-B §1](../08-research-appendix/B-dpdp-legal.md) (the SPDI Rules apply now).
+  - D1 in `apac` plus R2 is **legally fine under DPDP today**. Choose Option B2 or C only if clients contractually demand India residency. **VERIFY WITH CA/LEGAL**; see [08-B §1a](../08-research-appendix/B-dpdp-legal.md) (the SPDI Rules apply now).
 
 ---
 
@@ -255,7 +255,7 @@ Astro static site on Cloudflare (free) or Netlify. The admin is Node (React Rout
    - Better Auth, so users stay in your own DB.
    - HTML/CSS PDF templates, so the renderer can be swapped.
    - An `EmailSender` interface.
-   - Nightly D1 export to R2 (and a copy outside Cloudflare, e.g. Backblaze/S3 or a Google Drive sync, for the 6-year GST retention; **superseded:** ≥ 8 years from FY end, default 10, [08 §6](../08-security-compliance.md), [08-A #20](../08-research-appendix/A-gst-invoicing.md); VERIFY WITH CA).
+   - Nightly D1 export to R2 (and a copy outside Cloudflare, e.g. Backblaze/S3 or a Google Drive sync, for the 6-year GST retention; **superseded:** ≥ 8 years from FY end, default 10; the monthly copy holds finance/GST tables only, leads and contacts are only in the 90 daily copies (owner decision 2026-10-07, [08 §6.1](../08-security-compliance.md)); [08 §6](../08-security-compliance.md), [08-A #20](../08-research-appendix/A-gst-invoicing.md); VERIFY WITH CA).
 3. **Escape hatch:** if an enterprise or government client requires India residency, move only the DB to **Supabase Mumbai through Hyperdrive** (B2), or the whole admin to **Lightsail Mumbai** (C). The site stays on Workers either way.
 4. **Admin hardening:**
    - Cloudflare Access (free, up to 50 users) on `admin.`.

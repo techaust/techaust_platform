@@ -4,6 +4,7 @@
 |---|---|
 | **Phase** | 2, Business and services strategy (**APPROVED 2026-10-06**) |
 | **Date** | 2026-10-06 |
+| **Revised** | 2026-10-07, documentation quality pass ([runs/docs-quality-pass.md](runs/docs-quality-pass.md)) |
 | **Inputs** | Owner interview (§1), [01-audit.md](01-audit.md), market research (2025–26 sources): [A: AI services market](02-research-appendix/A-ai-services-market.md) · [B: software services market](02-research-appendix/B-software-services-market.md) · [C: competitors, positioning and channels](02-research-appendix/C-competitors-positioning-channels.md) |
 | **Downstream** | Website content (Phase 3/4), the service catalogue, and proposal and estimate templates in the admin backend (§8) |
 
@@ -291,7 +292,7 @@ Attached to every build. (A "first month included at launch" offer was dropped b
 | **Growth** | from ₹24,999/mo | from $899/mo | Everything in Essential, plus 8–10 dev hours, performance and technical SEO checks, analytics review, 1-business-day response, quarterly roadmap call |
 | **Scale** | from ₹59,999/mo | from $2,499/mo | Everything in Growth, plus 25–40 dev hours, DevOps / CI, security review, 4 business hours (critical), business hours only (Q-S3), fractional-CTO advisory |
 
-- **Rules:** Essential: unused hours don't roll over; Growth and Scale: they roll over for one month (07 §4.14). Overage is billed at the plan rate. Annual prepay earns **10 % off** (owner decision 2026-10-07).
+- **Rules:** Essential: unused hours don't roll over; Growth and Scale: they roll over for one month (07 §4.14). Overage is billed at the plan rate. Annual prepay earns 10% off (owner decision 2026-10-07).
 - **Existing AMC clients** migrate to these tiers at renewal (Q-B14).
 - **Why demand lasts:** accountability and uptime aren't commoditised. AI-generated code actually *increases* maintenance needs.
 - **Skills:** ✅ (business hours only; no on-call, [04 §0](04-prd.md) Q-S3).

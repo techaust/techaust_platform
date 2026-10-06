@@ -222,7 +222,7 @@ Research date: 2026-10-06. Web-only; no sign-ups or logins.
 | Invoice | Razorpay MoneySaver | Skydo | Xflow Starter | Xflow Growth | PayPal (approx.) |
 |---|---|---|---|---|---|
 | $1,000 | max(1%, ₹1,000) ≈ $11.4 | $19 | $12 | $20 | $44.30 + about $30 FX ≈ $74 |
-| $5,000 | $50 | $29 | $30 (0.6%) | $20 | ~$380 |
+| $5,000 | $50 | $29 | $30 (0.6%) | $20 | $220.30 + about $150 FX ≈ $370 |
 
 Recompute with live rates before choosing.
 

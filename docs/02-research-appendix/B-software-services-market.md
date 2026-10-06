@@ -1,5 +1,7 @@
 # Non-AI-Core Software Services: Demand, Pricing & Models (Research for TecHaust Technologies)
 
+> **Phase 2 research record (APPROVED 2026-10-06).** Parent: [02](../02-services-strategy.md). Where it differs from a decision, [13-decisions](../13-decisions.md) wins.
+
 Research date: 2026-10-06. Web research only. Sources are listed at the end with publication or update dates where shown.
 
 **Legend:** **[S#]** = sourced fact (see the numbered source list). **[INF]** = inference or recommendation by the researcher. **[VENDOR]** = a figure from a vendor or agency blog with a commercial interest. Treat it as directional only.
@@ -15,7 +17,7 @@ FX assumption for the INR conversions: about ₹88 = US$1 **[INF]**.
 3. **Most durable demand for a small senior studio:** custom web apps, portals and internal tools (35% of enterprises have replaced at least one SaaS tool with a custom build) **[S6]**; API and systems integration (India: Tally/Zoho/GST/Razorpay/WhatsApp); maintenance, AMC and DevOps retainers; and fixing or hardening apps generated with "vibe coding" tools **[S7][VENDOR]**.
 4. **Most commoditised:** simple SMB brochure websites, due to AI site builders plus a ₹10k–₹50k price floor in India **[S8][S9]**; basic Shopify theme setups; and generic SEO.
 5. **India-specific tailwinds:** DPDP Rules compliance (Consent Manager rules from 13 Nov 2026, full obligations from 13 May 2027) **[S10]**; GST e-invoicing for businesses above ₹5 cr, with a 30-day IRP upload rule for those at ₹10 cr+ **[S11]**; about 15M WhatsApp Business accounts **[S12][VENDOR]**; ONDC passing 500M cumulative transactions **[S13]**; and UPI at about 24B transactions a month **[S14]**.
-6. **Pricing position:** Indian agencies sit at $25–49/hr on Clutch, versus $50–99 for US software firms and $100–149 for US web agencies **[S16]**, Canada and Australia **[S15]**. The ₹2–5 lakh/month goal (about $2.3k–5.7k) needs only about 1–2 international retainers, or 3–4 Indian mid-ticket projects plus care plans **[INF]**.
+6. **Pricing position:** Indian agencies sit at $25–49/hr on Clutch, versus $50–99 for US software firms and $100–149 for US web agencies **[S16][VENDOR]**, Canada and Australia **[S15]**. The ₹2–5 lakh/month goal (about $2.3k–5.7k) needs only about 1–2 international retainers, or 3–4 Indian mid-ticket projects plus care plans **[INF]**.
 
 ---
 
@@ -74,7 +76,7 @@ Ratings in the table are **[INF]**, based on the evidence column.
 | India freelancers (mid-level full-stack) | $20–52/hr; senior $30–72; staff/principal $42–95 | **[S38][VENDOR]** |
 | Upwork freelance web developers (global) | $15–50/hr, median about $30 | **[S16]** citing Upwork |
 | US software firms (Clutch) | $50–99/hr | **[S15]** |
-| US web agencies (UX Continuum) | $100–149/hr | **[S16]** (UX Continuum) |
+| US web agencies (UX Continuum) | $100–149/hr | **[S16][VENDOR]** (UX Continuum) |
 | US boutique design agencies | $100–149/hr; enterprise $200–300 | **[S22]** |
 | Canada / Australia (Clutch) | $100–149/hr | **[S15]** |
 | Australia mid-size agencies | AUD 150–330/hr | **[S39][VENDOR]** |

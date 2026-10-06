@@ -4,6 +4,7 @@
 |---|---|
 | **Phase** | 1, Audit (**APPROVED 2026-10-06**) |
 | **Date** | 2026-10-06 |
+| **Revised** | 2026-10-07, documentation quality pass ([runs/docs-quality-pass.md](runs/docs-quality-pass.md)) |
 | **Audited source** | `D:\BUSINESS\1. PARENT PROJECT\TECHAUST TECHNOLOGIES\ASSETS\WEBSITE`, read-only and not modified. Builds ran on a copy in a scratch folder. |
 | **Audited live site** | https://techaust.com. Read-only GET and HEAD requests only. No forms were submitted and no dashboards were touched. |
 | **Detailed evidence** | [Appendix A: code, build and security](01-audit-appendix/A-code-build-security.md) · [Appendix B: content inventory and design](01-audit-appendix/B-content-design.md) · [Appendix C: live performance, SEO, accessibility and links](01-audit-appendix/C-live-perf-seo-a11y.md) |
@@ -20,7 +21,7 @@ The current site is **technically competent but makes claims it can't back up**.
 2. **The legal pages are unadapted templates.** The privacy policy follows GDPR/CCPA with nothing for DPDP, and it names the wrong service providers. The terms choose Delaware (USA) law with a USD $100 liability cap. No legal entity, CIN or GSTIN appears anywhere (VERIFY WITH CA/LEGAL).
 3. **The positioning is unclear.** "Next-Gen Autonomous AI Infrastructure for Enterprise" doesn't say what is sold, to whom, how, or at what price. USD pricing and US Pacific time slots sit next to a Balurghat address.
 4. **Leads can be lost.** The only lead channel (the contact form) has a rate limit that's easy to bypass, may sit on a 100-emails-a-day free email tier (if on the free tier; plan not confirmed, Q-H4), and rejects calculator-sourced leads with decimal or missing values. There is no acknowledgement email and no tests.
-5. **The site is slower than it needs to be.** Every page is rendered fresh on each request with `no-store`, giving 0.8–1.05 s time to first byte. A site-wide loading spinner causes a layout jump of CLS 0.21–0.32 (needs improvement to poor) and hides page content from crawlers that don't run JavaScript.
+5. **The site is slower than it needs to be.** Every page is rendered fresh on each request with `no-store`, giving 0.8–1.05 s time to first byte (curl through the Marseille colo; re-measure from India, see H-7). A site-wide loading spinner causes a layout jump of CLS 0.21–0.32 (needs improvement to poor) and hides page content from crawlers that don't run JavaScript.
 
 **Rebuild verdict:** reuse almost nothing of the code, keep a few ideas, and replace all the copy. Things worth carrying forward are in §6.
 
@@ -78,7 +79,7 @@ IDs are stable so later docs can refer to them. "Evidence" points to the appendi
 | ID | Area | Finding | Evidence |
 |---|---|---|---|
 | M-1 | Security | Contact API leaks internals: error responses include a `debug` object with the to/from addresses and Resend's raw error, plus full validation details (`route.ts:134-156`). | App. A F-S2; App. C H2 |
-| M-2 | Security | No body-size limit (a 3 MB body was parsed); `size`, `focus` and `slot` are free text of any length, go into the email **subject**, and CR/LF isn't stripped. There's no Origin check and `text/plain` is accepted, so any website can submit the form from visitors' browsers. | App. A F-S3, F-S4, F-S5 |
+| M-2 | Security | No body-size limit (an oversized body was parsed); `size`, `focus` and `slot` are free text of any length, go into the email **subject**, and CR/LF isn't stripped. There's no Origin check and `text/plain` is accepted, so any website can submit the form from visitors' browsers. | App. A F-S3, F-S4, F-S5 |
 | M-3 | Security | No Content-Security-Policy. The five other headers **do** reach production on HTML and API responses, but not on static assets. No COOP/CORP, no `security.txt`. HSTS says `preload` but the domain was never submitted to the preload list. | App. A F-S8, F-S9, F-S10; App. C H1, H3, H5 |
 | M-4 | Accessibility | Text contrast below 4.5:1: `text-white/30` (2.6:1), `/40` (3.8:1), `slate-500` (3.9–4.2:1) on 10–12px text. Many labels are 8–11px. This contradicts the README's "WCAG AAA" claim. | App. C A2; App. B §B.3 |
 | M-5 | Accessibility | The hero feed updates on a timer forever with **no pause button**, and two `role="status"` live regions make screen readers announce every ~2 s (WCAG 2.2.2). `focus:outline-none` on inputs overrides the global focus ring (2.4.7). | App. C A1; App. A F-A1, F-A2 |
@@ -183,10 +184,13 @@ These are deduplicated from all three audits. I'll ask them in small batches thr
 > | Q-B1 | Sole proprietorship, GST-registered | [02 §1](02-services-strategy.md) |
 > | Q-B4 | The logo is replaced by the new identity "Patina" | [ADR 0013](adr/0013-new-brand-identity.md) |
 > | Q-B5, Q-B6, Q-B10 | Team size and response time, case studies, and "starting from" prices | [02](02-services-strategy.md) (§1 Team, D-3) and [04 §0](04-prd.md) (Team, Contact, Q-B16) |
-> | Q-B7 | Grievance Officer: Rupak Sarkar, Founder | [04 §0](04-prd.md) (Identity) |
+> | Q-B2 | Both India and international, split by offer | [02 §1](02-services-strategy.md) (Markets) and D-2 |
+> | Q-B3 | AI projects are in progress, so there is no completed public AI case study yet; the old product names are retired | [02 §1](02-services-strategy.md) (AI projects in progress) and D-4 |
+> | Q-B7 | Grievance Officer: Rupak Sarkar, Founder; no lawyer: the legal pages are drafted in-house (04 §0 Q-B12) | [04 §0](04-prd.md) (Identity) |
 > | Q-B8 | LinkedIn company page and the founder's LinkedIn only | [04 §0](04-prd.md) (Q-B15) |
+> | Q-B9 | Headshot and bio at the website milestone; a WhatsApp business number (to be provided); a plain Cal.com link, no embedded widget | [04 §0](04-prd.md) (Assets, Contact, Q-P3-1) |
 >
-> **Still open:** Q-H2 to Q-H6 (hosting and account checks that only the owner can make). The other questions (Q-B2, Q-B3, Q-B9) are not tracked in this box.
+> **Still open:** Q-H2 to Q-H6 (hosting and account checks that only the owner can make).
 
 ### Hosting, accounts and deployment
 - **Q-H1** ★ Is techaust.com a Cloudflare **Workers** project or a **Pages** project? (You said you're unsure. The code and live headers say Workers. You can check in Cloudflare dashboard → Workers & Pages → `techaust-web`, which will be labelled either Worker or Pages.)
