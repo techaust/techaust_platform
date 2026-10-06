@@ -18,7 +18,11 @@ describe("migrations apply cleanly to a fresh D1", () => {
 
   it("records both migrations", async () => {
     const applied = await all<{ name: string }>("SELECT name FROM d1_migrations ORDER BY id");
-    expect(applied.map((m) => m.name)).toEqual(["0000_init.sql", "0001_triggers.sql"]);
+    expect(applied.map((m) => m.name)).toEqual([
+      "0000_init.sql",
+      "0001_triggers.sql",
+      "0002_invites_bootstrap.sql",
+    ]);
   });
 
   it("enforces foreign keys", async () => {
@@ -113,5 +117,25 @@ describe("CHECK constraints", () => {
     await rejects(lead("lost", null), /leads_lost_reason/);
     await rejects(lead("new", "price"), /leads_lost_reason/);
     await lead("lost", "price");
+  });
+});
+
+describe("0002: bootstrap invites", () => {
+  it("allows an invite without an inviter, and still checks the role", async () => {
+    await run(
+      "INSERT INTO staff_invites (token_hash, email, role, expires_at) VALUES ('h1', 'owner@example.com', 'owner', 1)",
+    );
+    await rejects(
+      run(
+        "INSERT INTO staff_invites (token_hash, email, role, expires_at) VALUES ('h2', 'x@example.com', 'root', 1)",
+      ),
+      /staff_invites_role/,
+    );
+    await rejects(
+      run(
+        "INSERT INTO staff_invites (token_hash, email, role, invited_by, expires_at) VALUES ('h3', 'x@example.com', 'staff', 'nobody', 1)",
+      ),
+      /FOREIGN KEY/i,
+    );
   });
 });

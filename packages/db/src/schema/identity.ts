@@ -74,9 +74,8 @@ export const staffInvites = sqliteTable(
     tokenHash: text("token_hash").primaryKey(),
     email: text("email").notNull(),
     role: text("role", { enum: ROLES }).notNull(),
-    invitedBy: text("invited_by")
-      .notNull()
-      .references(() => staffUsers.id),
+    /** NULL only for bootstrap invites created from the command line (the first Owner, CPU benchmarks). */
+    invitedBy: text("invited_by").references(() => staffUsers.id),
     expiresAt: integer("expires_at").notNull(),
     usedAt: integer("used_at"),
     createdAt: createdAt(),
