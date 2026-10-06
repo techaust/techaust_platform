@@ -1,0 +1,5 @@
+# Local-only login secrets. Create apps/admin/.dev.vars with `pnpm dev:secrets` (random values, git-ignored).
+PASSWORD_PEPPER=
+SALT_PEPPER=
+TOTP_ENC_KEY=
+SESSION_HMAC_KEY=

@@ -1,0 +1,50 @@
+name: Auth CPU benchmark (staging)
+
+# M1.4 gate (docs/09): real logins against the STAGING admin, through Cloudflare Access with a service token.
+# Owner-only and manual: it never runs on pushes or pull requests (the repo is public, so fork PRs can't reach
+# these secrets). CPU per request is then read from Workers Logs for the printed time window.
+on:
+  workflow_dispatch:
+    inputs:
+      users:
+        description: Throwaway users (each can log in about twice a minute because of the TOTP replay guard)
+        default: "12"
+      minutes:
+        description: How long to run logins
+        default: "5"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bench-auth
+  cancel-in-progress: false
+
+jobs:
+  bench:
+    if: github.actor == 'techaust' && github.repository == 'techaust/techaust_platform'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_STAGING }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_BENCH_CLIENT_ID }}
+      CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_BENCH_CLIENT_SECRET }}
+      BENCH_USERS: ${{ inputs.users }}
+      BENCH_MINUTES: ${{ inputs.minutes }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run the benchmark
+        run: node scripts/bench-auth.mjs
+      - name: Show the result on the run page
+        if: always()
+        run: |
+          if [ -f bench-auth-result.json ]; then
+            { echo '### Auth benchmark (wall-clock; CPU comes from Workers Logs)'; echo '```json'; cat bench-auth-result.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          fi

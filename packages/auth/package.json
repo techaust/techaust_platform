@@ -5,15 +5,25 @@
   "type": "module",
   "description": "In-house auth: sessions, password HMAC, TOTP, recovery codes, magic links, step-up, lockout.",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./client": "./src/client.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run"
   },
   "devDependencies": {
     "@techaust/config": "workspace:*",
+    "@types/node": "24.19.1",
+    "fast-check": "4.10.2",
     "typescript": "6.0.3",
     "vitest": "4.1.11"
+  },
+  "dependencies": {
+    "@oslojs/crypto": "1.0.1",
+    "@oslojs/encoding": "1.1.0",
+    "@oslojs/otp": "1.1.0",
+    "hash-wasm": "4.12.0",
+    "zod": "4.6.5"
   }
 }

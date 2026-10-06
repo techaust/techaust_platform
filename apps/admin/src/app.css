@@ -1,0 +1,116 @@
+/* M1.4 sign-in screens. Tokens only (@techaust/ui); the full admin shell comes later. */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
+}
+
+.card {
+  width: min(100%, 26rem);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-8) var(--space-6);
+  box-shadow: var(--elevation-1);
+}
+
+.logo {
+  display: block;
+  height: 2.5rem;
+  width: auto;
+  margin-bottom: var(--space-6);
+}
+
+h1 {
+  font-family: var(--font-display);
+  font-stretch: var(--font-display--stretch);
+  font-weight: 560;
+  font-size: 1.75rem;
+  line-height: 1.2;
+  margin: 0 0 var(--space-6);
+}
+
+.field {
+  display: grid;
+  gap: var(--space-1);
+  margin-bottom: var(--space-5);
+}
+
+label {
+  font-weight: 560;
+}
+
+input {
+  font: inherit;
+  min-height: var(--target-min);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+button {
+  font: inherit;
+  font-weight: 560;
+  min-height: var(--target-min);
+  width: 100%;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--color-btn-primary-bg);
+  color: var(--color-btn-primary-fg);
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  background: var(--color-btn-primary-hover);
+}
+
+button:disabled {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.hint {
+  color: var(--color-text-muted);
+  font-size: var(--text-caption);
+  margin: 0;
+}
+
+.card > .hint {
+  margin-top: var(--space-4);
+}
+
+.error {
+  color: var(--color-danger);
+  font-weight: 560;
+}
+
+a {
+  color: var(--color-link);
+}
+
+.secret code {
+  font-family: var(--font-mono);
+  font-size: 1.1rem;
+  letter-spacing: 0.05em;
+  overflow-wrap: anywhere;
+}

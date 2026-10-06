@@ -14,7 +14,7 @@ The live site is the old Worker **`techaust-web`**. **Never deploy to, rename or
 | Queue | `techaust-staging-events` (+ `-dlq`) | — | M6 |
 | R2 | `techaust-staging-files`, `techaust-staging-docs` | **Not created yet** (owner deferred; R2 may need a payment method on file) | M3.4 / M4.4 |
 | Turnstile widget | staging hostnames | **Not created yet**: dashboard checklist at M2.4 | M2.4 |
-| Access app | the staging `*.workers.dev` hosts | **Not created yet**: dashboard checklist before any real data (M1.4) | M1.4 |
+| Access app | the staging `*.workers.dev` hosts | **Owner checklist ready** ([access-staging.md](access-staging.md)): `admin@techaust.com` only; benchmark service token; login secrets on the admin Worker | M1.4 |
 | Workers | `techaust-platform-{web,admin,portal,jobs}-staging` | **Deployed 2026-10-06** (PR #1); health routes return 200 | — |
 
 **Staging URLs** (workers.dev subdomain `techaust-technologies-153`; noindex placeholders, no data, no Access yet):
