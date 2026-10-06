@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Phase** | 5, Setup and tooling (**T1–T12 APPROVED** 2026-10-06; Phase 5 complete, see §6) |
-| **Date** | 2026-10-06 |
+| **Date** | 2026-10-06 (last updated 2026-10-07) |
 | **Rule** | CLAUDE.md hard rule 11: each tool is explained here and **used only after your approval**. Using a tool never bypasses the other rules. Anything that **changes** Cloudflare, AWS, GitHub, DNS or production still needs your approval **for that specific action**. |
 
 ## 1. Your machine (checked 2026-10-06)

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Phase** | 4, Project documentation (**APPROVED** 2026-10-06) |
-| **Date** | 2026-10-06 |
+| **Date** | 2026-10-06 (last updated 2026-10-07) |
 | **Inputs** | [01-audit.md](01-audit.md) · [02-services-strategy.md](02-services-strategy.md) · [03-plan.md](03-plan.md) (approved) · Phase 4 interview (§0) |
 | **Companion docs** | [05 Architecture](05-architecture.md) · [06 Design system](06-design-system.md) · [07 Content](07-content.md) · [08 Security & compliance](08-security-compliance.md) · [09 Roadmap](09-roadmap.md) |
 

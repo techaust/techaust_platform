@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Phase** | 4, Project documentation (**APPROVED** 2026-10-06) |
-| **Date** | 2026-10-06 |
+| **Date** | 2026-10-06 (last updated 2026-10-07) |
 | **Inputs** | [03 §3C](03-plan.md) (approved) · [04 PRD](04-prd.md) · stack verification [05-A](05-research-appendix/A-stack-verification.md) · GST research [08-A](08-research-appendix/A-gst-invoicing.md) · legal research [08-B](08-research-appendix/B-dpdp-legal.md) |
 | **Hard constraint** | **Cloudflare Workers Free plan, permanently**: 10 ms CPU per invocation (HTTP, cron **and queue consumers**), 100k requests/day, D1 5M reads / 100k writes per day (**hard-enforced since 2026-09-01**), Browser Run 10 min/day |
 
