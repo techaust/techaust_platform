@@ -309,7 +309,7 @@ The supplier's location is West Bengal (19). Place of supply in WB → CGST 9% +
 - In the e-invoice schema, exports use place of supply 96 and PIN 999999 (secondary).
 - Codes 25 (old Daman & Diu) and 28 (old Andhra Pradesh) are legacy codes.
 
-This list is from memory and cross-checked against portal usage. Seed it from the official master and verify [?].
+Verified on 2026-10-06 against the official e-way bill master (docs.ewaybillgst.gov.in/apidocs/state-code.html), which also lists 99 = Other Country. Implemented in `packages/core/src/gstin.ts`; codes 25 and 28 are kept as legacy (accepted but flagged, and hidden from state pickers).
 
 **Default (VERIFY WITH CA).** Derive the place of supply from the client's GSTIN for B2B clients, and from the billing-address state for unregistered clients. Make "state" a required field. Tax type = `pos == 19 ? CGST+SGST : IGST`. Allow a manual override, with a logged reason.
 

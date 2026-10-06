@@ -97,7 +97,7 @@ All versions are pinned exactly (no `^`). Renovate opens grouped PRs after a **7
 | Email | Amazon SES v2 (ap-south-1) via **aws4fetch** | 1.0.20 |
 | Payments | Razorpay (fetch), Stripe (`stripe` SDK or fetch), PayPal Orders v2 (fetch) | stripe 23.0.0 (API `2026-09-30.endive`) |
 | Errors | `@sentry/cloudflare`, `@sentry/react` (errors only, PII scrubbed) | 11.4.0 |
-| Tests | Vitest + **`@cloudflare/vitest-plugin`** (`cloudflareTest()`; tests run inside workerd; **Vitest 5 not supported yet**) · Playwright + `@axe-core/playwright` · Lighthouse CI | 4.1.11 + 1.3.6 · 1.63.0 + 4.13.0 |
+| Tests | Vitest + **`@cloudflare/vitest-plugin`** (`cloudflareTest()`; tests run inside workerd; **Vitest 5 not supported yet**) · fast-check (property tests) + `@vitest/coverage-v8` (core ≥ 90 % gate) · Playwright + `@axe-core/playwright` · Lighthouse CI | 4.1.11 + 1.3.6 · 4.10.2 + 4.1.11 · 1.63.0 + 4.13.0 |
 | Worker types | Generated per app by **`wrangler types`** → `worker-configuration.d.ts` (git-ignored; runs inside `pnpm typecheck`) | wrangler 4.147.0 |
 | Lint / format | Biome (+ `astro check` for `.astro`) | 2.5.15 |
 | CI | GitHub Actions; actions pinned by commit SHA (`wrangler-action@v4.1.3`, `configure-aws-credentials@v6.3.0` …) | — |

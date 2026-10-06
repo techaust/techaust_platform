@@ -77,3 +77,11 @@
 | Design build libraries (dev-only, `packages/ui`) | npm | Font subsetting and outlines (subset-font, harfbuzzjs, fontverter, fontkitten), rasters (sharp), print PDFs (`@cantoo/pdf-lib`, already in the approved stack), Tailwind theme test (tailwindcss), fonts (Fontsource Archivo, IBM Plex Mono) | Exact pins, `minimumReleaseAge` respected; none run install scripts or reach a Worker bundle. Versions in [05 §2](05-architecture.md) |
 | LittleCMS via Pillow + Windows `RSWOP.icm` | Local, one-off | ICC-accurate print CMYK (`packages/ui/scripts/measure-cmyk.py`) | Results committed in `tokens/print-cmyk.json`, so CI never needs it |
 
+## 8. Phase 6 additions (M1.2, 2026-10-06, owner-approved)
+
+| What | Kind | Why | Notes |
+|---|---|---|---|
+| **fast-check** 4.10.2 | npm (dev-only, `packages/core`) | Property tests: generates thousands of random amounts, dates and formats to prove the rules (format → parse returns the same paise; instalments add up to the total; every document number fits 16 characters; any single-character GSTIN typo is caught) | Exact pin; never reaches a Worker bundle |
+| **@vitest/coverage-v8** 4.1.11 | npm (dev-only, `packages/core`) | Enforces the ≥ 90 % coverage rule for `core` on every `pnpm test` (locally and in CI) | Matches Vitest 4.1.11 exactly |
+| Web fetch (built in) | Tool | Checked the GST state-code list against the official e-way bill master, and GSTIN check-character vectors | Read-only |
+
