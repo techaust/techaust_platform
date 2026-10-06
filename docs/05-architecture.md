@@ -12,7 +12,7 @@
 > 2. **React Router v7 → v8.4**, data mode (v7 now gets security fixes only).
 > 3. **Better Auth → a small in-house auth package** (owner-approved: two clean realms; Better Auth's ≈ 9 ms cold start is too close to the 10 ms limit).
 > 4. **Queues provide retries and pacing, not extra CPU**: every job unit must fit in 10 ms.
-> 5. **Production deploys use an owner-only manual workflow** (owner-approved), because GitHub Free private repos can't enforce reviewers.
+> 5. **Production deploys use an owner-only manual workflow** (owner-approved), because GitHub Free private repos can't enforce reviewers. (Update 2026-10-07: the repo is now public, so this premise changed; the decision stands, see [ADR 0009](adr/0009-owner-only-prod-deploy.md).)
 > 6. Worker logs: 7-day retention and a 0.5 GB/day cap from 2026-12-01. Security logs are kept in D1 for 13 months.
 >
 > **Changes made during Phase 5 (setup, 2026-10-06):**
@@ -30,7 +30,7 @@
 > 13. **Generated design outputs are committed** (`packages/ui/generated/`, `fonts/`, `brand/`), since packages stay source-only. Drift tests fail if they don't match their sources.
 >
 > **Changes made during Phase 6 M1.3 (2026-10-06):**
-> 14. **Issue guard (fixes a gap in §5.4).** An `UPDATE … WHERE status = 'draft'` that matches no row doesn't fail, so the original batch could consume a number for a document that wasn't a draft. Every issue batch now starts with `INSERT INTO issue_guard (document_id) VALUES (?)`, a view whose trigger aborts the whole batch unless the document is an unfrozen draft.
+> 14. **Issue guard (fixes a gap in §5.4).** An `UPDATE … WHERE status = 'draft'` that matches no row doesn't fail, so the original batch could consume a number for a document that wasn't a draft. Every issue batch now starts with `INSERT INTO issue_guard (document_id) VALUES (?)`, a view whose trigger aborts the whole batch unless the document is an unfrozen draft. **Owner decision 2026-10-07:** only drafts can be issued; a document waiting for approval must be approved first. The guard in code (`packages/db/src/triggers.ts`) still also accepts `pending_approval`; a new migration narrows it to `draft` before issuing is built (M3/M5, see [12-status](12-status.md)).
 > 15. **Triggers are generated from the schema** (`packages/db/src/triggers.ts`), so every content column of `documents` is covered. A test reads the installed trigger and fails if a column is missing. Migrations are never edited after they are applied; a new document column needs a new migration that recreates the trigger.
 > 16. **Staging D1 is migrated and seeded on every merge** (owner decision), before the Workers deploy. The seed is insert-only (`ON CONFLICT DO NOTHING`), so it never overwrites edits made in the admin.
 > 17. **Tables arrive with their milestones.** M1.3 creates identity, settings, CRM, catalogue, documents and the audit/access logs (36 tables). Payments, checkout sessions, webhook events, credits and settlements come with M6; email log and suppressions with M2.4; notifications, review items, DSR requests, idempotency keys and stats with the features that use them.
@@ -87,11 +87,11 @@
 
 ## 2. Stack and pinned versions
 
-All versions are pinned exactly (no `^`). Renovate opens grouped PRs after a **7-day release-age delay**. Details and sources: [05-A §1](05-research-appendix/A-stack-verification.md).
+All versions are pinned exactly (no `^`). Renovate will open grouped PRs after a **7-day release-age delay** once the owner installs the app (pending, see [12-status](12-status.md)). Details and sources: [05-A §1](05-research-appendix/A-stack-verification.md).
 
 | Layer | Choice | Pin |
 |---|---|---|
-| Runtime / tooling | Node.js (→ 26 LTS after 2026-10-28) · pnpm · TypeScript · wrangler · `@cloudflare/vite-plugin` | 24.21.0 · 12.9.1 · 6.0.3 · 4.147.0 · 1.62.5 |
+| Runtime / tooling | Node.js (→ 26 LTS after 2026-10-28) · pnpm · TypeScript · wrangler · `@cloudflare/vite-plugin` | 24.x (`.nvmrc` `24`; engines ≥ 24.19.0) · 12.9.1 · 6.0.3 · 4.147.0 · 1.62.5 |
 | Public site | Astro (static output, **no adapter**), build-time images (Sharp) | astro 7.3.5 |
 | APIs | Hono (+ `@hono/standard-validator`) on all four Workers | 4.13.13 (+ 0.4.0) |
 | SPAs | React · React Router (data mode, `createBrowserRouter`) · Vite (Rolldown) · TanStack Query · react-hook-form + resolvers · Radix UI primitives | 19.3.0 · 8.4.0 · 8.3.2 · 5.104.1 · 7.89.0 + 5.9.1 · latest-pinned |
@@ -144,19 +144,19 @@ techaust_platform/
 │  ├─ ui/                     # tokens/tokens.json → generated/ (CSS, Tailwind theme, email, print);
 │  │                          #   fonts/ (subset WOFF2); brand/ (all logo files + print/ PDFs, generated
 │  │                          #   from src/brand/geometry.ts); scripts/ (draw:master, build:*); React components later
-│  ├─ config/                 # tsconfig bases, biome.json, vitest presets
+│  ├─ config/                 # tsconfig bases (biome.json is at the repo root)
 │  └─ testing/                # fixtures, factories, fake clock, recorded gateway payloads
 ├─ scripts/                   # check-web-bindings.mjs (CI guard); later: catalogue snapshot, content lint
 │                             #   (font, brand and contrast tooling lives in packages/ui)
 ├─ docs/                      # 01–11 + appendices + runbooks + ADRs (docs/adr/NNNN-*.md)
 ├─ brand-incoming/            # owner-supplied originals (git-ignored; the old logo is retired, ADR 0013)
-├─ .github/workflows/         # ci.yml, deploy-staging.yml, deploy-prod.yml, backup.yml, restore-drill.yml
+├─ .github/workflows/         # ci.yml, deploy-staging.yml, deploy-prod.yml, backup.yml (restore-drill.yml planned for Phase 7)
 ├─ .env.example               # documents every variable/secret name (no values)
 ├─ CLAUDE.md
 ├─ package.json  pnpm-workspace.yaml  renovate.json  biome.json
 ```
 
-**Dependency rules** (enforced by a lint check):
+**Dependency rules** (enforced by review today; a lint check is planned):
 - `core` depends on nothing internal.
 - `db` → `core`.
 - `auth`, `payments`, `pdf`, `email` → `core` (+ `db` where needed).
@@ -182,7 +182,7 @@ techaust_platform/
 
 **Package manager:** pnpm 12.9.1 (pinned via `packageManager`; plain `pnpm` auto-switches). `pnpm-workspace.yaml` sets `minimumReleaseAge: 1440` (a package must be ≥ 1 day old; if a pin is too new, choose the previous release rather than bypassing the rule) and `allowBuilds` (only `esbuild` and `workerd` may run install scripts).
 
-**Local development:** `pnpm dev` runs all four Workers (`@cloudflare/vite-plugin` for the SPAs; `wrangler dev` for web/jobs) with local D1/R2/Queues (Miniflare), Turnstile **test keys**, gateway **test keys** in `.dev.vars` (git-ignored; `.dev.vars.example` committed) and a **mocked Browser Run** (the Quick Action is remote-only). A `pnpm dev:pdf-remote` script uses real Browser Run against staging when needed.
+**Local development:** `pnpm dev` runs all four Workers (`@cloudflare/vite-plugin` for the SPAs; `wrangler dev` for web/jobs) with local D1/R2/Queues (Miniflare), Turnstile **test keys**, gateway **test keys** in `.dev.vars` (git-ignored; `.dev.vars.example` committed per app from M1.4) and a **mocked Browser Run** (the Quick Action is remote-only). A `pnpm dev:pdf-remote` script (planned, M4.4) will use real Browser Run against staging when needed.
 
 ---
 
@@ -312,7 +312,7 @@ The formatted number is computed in SQL from the counter value (`printf('TH/INV/
 
 ### 5.5 Migrations
 - `drizzle-kit generate` writes SQL into `packages/db/migrations/`. It is reviewed in the PR and applied with `wrangler d1 migrations apply <db> --remote` by the deploy workflows (**staging first; production only in the approved prod workflow**). `drizzle-kit push` is banned.
-- Triggers and views live in hand-written SQL migrations alongside the generated ones.
+- Triggers and views live in a custom migration generated from `packages/db/src/triggers.ts` by `scripts/write-triggers.ts`, alongside the drizzle-kit ones.
 - Tests apply all migrations to a fresh D1 via `applyD1Migrations()`.
 - CI fails if `src/schema` changed without a generated migration (`pnpm db:generate` must produce nothing).
 - Local: `pnpm db:migrate:local` and `pnpm db:seed:local` (one shared local database in `.wrangler/state` for admin, portal and jobs). Staging: applied by `deploy-staging.yml` on merge.
@@ -575,8 +575,8 @@ Budget: about 3 operations per message, with 10k ops/day (≈ 3.3k messages). Ex
 
 | Workflow | Trigger | Steps |
 |---|---|---|
-| `ci.yml` | Every PR + push to `main` | **Today:** full-history checkout → gitleaks 8.30.1 (git history) → `pnpm install --frozen-lockfile` → Biome → typecheck (`wrangler types` + tsc / `astro check`) → public-Worker binding guard → tests (Vitest + workerd) → build all apps (web also dry-runs its Worker). **Added in later milestones:** D1 migrations in tests → web checks: link checker, SEO/schema test, content lint (banned phrases, prices from snapshot, GSTIN absent), bundle-size budget → Playwright E2E against `wrangler dev` builds + axe → Lighthouse CI (web templates) → PDF visual regression → dependency audit + secret scan (gitleaks) → binding guard (no D1/R2 on web) |
-| `deploy-staging.yml` | `workflow_run` after CI succeeds, **only for push events on this repository's `main`** (never fork PRs) | **Today:** skips cleanly if the secrets are missing → `pnpm -r run deploy:staging` (4 Workers). **Added later:** fetch the published catalogue snapshot (build token) → build → `wrangler d1 migrations apply techaust-staging --remote` → deploy 4 Workers `--env staging` → smoke tests (health, login page, form submit with the Turnstile test key) |
+| `ci.yml` | Every PR + push to `main` | **Today:** full-history checkout → gitleaks 8.30.1 (git history) → `pnpm install --frozen-lockfile` → Biome → typecheck (`wrangler types` + tsc / `astro check`) → public-Worker binding guard → tests (Vitest + workerd, D1 migrations applied) → migrations match the Drizzle schema (drift check) → build all apps (web and jobs also dry-run their Workers). **Added in later milestones:** web checks: link checker, SEO/schema test, content lint (banned phrases, prices from snapshot, GSTIN absent), bundle-size budget → Playwright E2E against `wrangler dev` builds + axe → Lighthouse CI (web templates) → PDF visual regression → dependency audit |
+| `deploy-staging.yml` | `workflow_run` after CI succeeds, **only for push events on this repository's `main`** (never fork PRs) | **Today:** skips cleanly if the secrets are missing → migrate staging D1 (`wrangler d1 migrations apply`) → seed (insert-only) → `pnpm -r --workspace-concurrency=1 run deploy:staging` (4 Workers). **Added later:** fetch the published catalogue snapshot (build token) → smoke tests (health, login page, form submit with the Turnstile test key) |
 | `deploy-prod.yml` | **`workflow_dispatch` only**. Inputs: `tag` and `confirm` (must equal `deploy techaust.com <tag>`) | Guards: actor = `techaust`, repo variable **`PRODUCTION_ENABLED == 'true'`** (unset until Phase 7), typed confirmation. **Today the deploy job is a placeholder.** Phase 7 adds: and the ref is a tag on `main` that passed staging → build → D1 export (pre-deploy backup) → migrations `--remote` on prod → deploy 4 Workers `--env production` using **`CF_API_TOKEN_PROD`** (scoped to prod Workers/D1/R2 only) → smoke tests → summary. **Rollback:** `wrangler rollback` per Worker (documented in [08 §6](08-security-compliance.md)) |
 | `backup.yml` | Nightly 21:30 UTC (03:00 IST) + manual (**schedule commented out until Phase 7**) | `wrangler d1 export techaust-prod --remote` → `age -r <owner public key>` → AWS OIDC role (`s3:PutObject` on the backup prefix only) → upload to S3 Mumbai (versioning + Object Lock) → verify the object exists and the size is > 0 → Sentry cron check-in |
 | `restore-drill.yml` | Manual (quarterly) | Download the latest backup → *(the owner decrypts locally; CI never holds the private key)* → documented steps in [08 §6](08-security-compliance.md) |
