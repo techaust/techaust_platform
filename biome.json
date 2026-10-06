@@ -12,6 +12,7 @@
       "!**/.astro",
       "!**/.wrangler",
       "!**/worker-configuration.d.ts",
+      "!packages/ui/generated",
       "!docs",
       "!brand-incoming"
     ]

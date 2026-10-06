@@ -1,0 +1,65 @@
+/* Print foundations for PDF documents. Generated from packages/ui/tokens/tokens.json by `pnpm --filter @techaust/ui build:tokens`. Do not edit. */
+
+@page {
+  size: A4 portrait;
+  margin: 16mm 16mm 18mm 16mm;
+}
+
+:root {
+  --color-text: #14231f;
+  --color-text-muted: #485752;
+  --color-text-accent: #1e6b5c;
+  --color-border: #d3dbd6;
+  --color-accent-decor: #2e8b77;
+  --color-success: #47730f;
+  --color-warning: #8f5b00;
+  --color-danger: #b3261e;
+  --color-info: #2b5797;
+  --font-display: "Archivo", "Archivo Expanded Fallback", "Arial", "Helvetica", sans-serif;
+  --font-sans: "Archivo", "Archivo Fallback", "Arial", "Helvetica", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", "Consolas", monospace;
+  --print-body: 9.5pt;
+  --print-body-leading: 13pt;
+  --print-table: 9pt;
+  --print-small: 7.5pt;
+  --print-totals: 11pt;
+  --print-grand-total: 14pt;
+  --print-title: 20pt;
+  --print-proposal-title: 32pt;
+  --print-proposal-body: 10pt;
+  --print-proposal-leading: 14pt;
+  --print-grid-columns: 12;
+  --print-gutter: 4mm;
+  --print-swoosh-rule: 0.8mm;
+  --print-logo-width: 42mm;
+}
+
+html {
+  color: var(--color-text);
+  background: #ffffff;
+  font-family: var(--font-sans);
+  font-size: 9.5pt;
+  line-height: 13pt;
+  font-variant-numeric: tabular-nums lining-nums;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+
+h1 {
+  font-family: var(--font-display);
+  font-size: 20pt;
+  font-weight: 500;
+}
+
+table {
+  border-collapse: collapse;
+  font-size: 9pt;
+}
+
+thead {
+  display: table-header-group;
+}
+
+tr {
+  break-inside: avoid;
+}

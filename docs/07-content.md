@@ -558,7 +558,7 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 | Diagrams (document pipeline, integration map, process) | S9, S14, How we work | Me (SVG, "Illustrative") |
 | OG images | All pages | Me (generated at build) |
 | Icons | Everywhere | Lucide (ISC licence) |
-| Fonts | Everywhere | Newsreader, IBM Plex Sans/Mono (OFL), self-hosted |
+| Fonts | Everywhere | Archivo + IBM Plex Mono (OFL), self-hosted |
 | Stock photos | — | **None** (by design) |
 
 ---

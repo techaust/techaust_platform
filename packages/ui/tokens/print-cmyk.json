@@ -1,0 +1,51 @@
+{
+  "source": "LittleCMS 2.19 via Pillow; profile RSWOP.icm (SWOP coated); search 4 % steps, total ink <= 300 %; relative colorimetric + BPC",
+  "note": "Starting values for offset/digital print: approve a printed proof against the hex colours before a full run.",
+  "colours": {
+    "ink-900": {
+      "hex": "#14231F",
+      "cmyk": [88, 56, 60, 72],
+      "deltaE76": 0.0
+    },
+    "ink-700": {
+      "hex": "#1B2924",
+      "cmyk": [64, 16, 28, 84],
+      "deltaE76": 0.0
+    },
+    "ink-400": {
+      "hex": "#485752",
+      "cmyk": [76, 48, 52, 24],
+      "deltaE76": 0.0
+    },
+    "ink-300": {
+      "hex": "#9DB0A8",
+      "cmyk": [20, 0, 12, 28],
+      "deltaE76": 1.0
+    },
+    "verdigris-700": {
+      "hex": "#1E6B5C",
+      "cmyk": [92, 40, 64, 4],
+      "deltaE76": 0.0
+    },
+    "verdigris-500": {
+      "hex": "#2E8B77",
+      "cmyk": [76, 4, 44, 20],
+      "deltaE76": 1.0
+    },
+    "verdigris-300": {
+      "hex": "#6CC4AE",
+      "cmyk": [60, 0, 32, 0],
+      "deltaE76": 3.8
+    },
+    "mist": {
+      "hex": "#E4EBE7",
+      "cmyk": [8, 0, 4, 4],
+      "deltaE76": 0.8
+    },
+    "stone-200": {
+      "hex": "#E1E6E2",
+      "cmyk": [8, 0, 4, 8],
+      "deltaE76": 1.3
+    }
+  }
+}
