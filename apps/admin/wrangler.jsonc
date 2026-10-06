@@ -1,7 +1,7 @@
 {
   // admin.techaust.com (docs/05-architecture.md §4). SPA assets + Hono API under /api/*.
   // The assets directory is filled in by @cloudflare/vite-plugin at build time.
-  // D1/R2/queue bindings are added in M1.3. Custom domains only in Phase 7, with owner approval.
+  // D1 is bound from M1.3; R2 and queues follow with their milestones. Custom domains only in Phase 7, with owner approval.
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "techaust-platform-admin",
   "main": "worker/index.ts",
@@ -11,11 +11,28 @@
   "observability": { "enabled": true },
   "assets": { "not_found_handling": "single-page-application", "run_worker_first": ["/api/*"] },
   "vars": { "ENVIRONMENT": "local", "PAYMENTS_LIVE_ALLOWED": "false" },
+  // D1 (docs/05 §5). Migrations live in packages/db; local dev and tests use a local database.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "techaust-local",
+      "database_id": "local",
+      "migrations_dir": "../../packages/db/migrations"
+    }
+  ],
   "env": {
     "staging": {
       "name": "techaust-platform-admin-staging",
       "workers_dev": true,
-      "vars": { "ENVIRONMENT": "staging", "PAYMENTS_LIVE_ALLOWED": "false" }
+      "vars": { "ENVIRONMENT": "staging", "PAYMENTS_LIVE_ALLOWED": "false" },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "techaust-staging",
+          "database_id": "879c63dd-fedd-4710-9b13-21d8804879a9",
+          "migrations_dir": "../../packages/db/migrations"
+        }
+      ]
     },
     "production": {
       "name": "techaust-platform-admin",

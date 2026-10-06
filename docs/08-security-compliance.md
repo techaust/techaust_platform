@@ -207,6 +207,8 @@ See [05 §6](05-architecture.md). Key controls:
 
 ### 7.1 GST and invoicing (VERIFY WITH CA): defaults in the software
 
+Implemented as editable settings in `packages/core/src/schemas/settings.ts` and seeded into D1 in M1.3. Company identity (legal name, GSTIN, address) and bank details are not seeded: the Owner enters them in the admin (M3.1), because the repository is public.
+
 | # | Topic | Default in the software ([08-A](08-research-appendix/A-gst-invoicing.md)) | Confidence |
 |---|---|---|---|
 | G-1 | GST rate | 18 % on all our services (CGST 9 + SGST 9, or IGST 18); exports under LUT 0 % | High |

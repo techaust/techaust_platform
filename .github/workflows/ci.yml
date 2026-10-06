@@ -40,5 +40,13 @@ jobs:
         run: node scripts/check-web-bindings.mjs
       - name: Tests (unit + Workers runtime)
         run: pnpm test
+      - name: Migrations match the Drizzle schema
+        run: |
+          pnpm db:generate
+          if [ -n "$(git status --porcelain packages/db/migrations)" ]; then
+            echo "::error::packages/db/src/schema changed without a migration. Run 'pnpm db:generate' and commit it."
+            git status --porcelain packages/db/migrations
+            exit 1
+          fi
       - name: Build
         run: pnpm build

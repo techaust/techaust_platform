@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev --port 8787",
+    "dev": "wrangler dev --port 8787 --persist-to ../../.wrangler/state",
     "typecheck": "wrangler types && tsc -p tsconfig.json",
     "test": "vitest run",
     "build": "wrangler deploy --dry-run --outdir dist",
