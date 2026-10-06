@@ -126,7 +126,41 @@ All relative links resolve. External URLs not checked (no web access). None of t
 24. 03:142, :158, :268, :464: make the backticked 06/08 names relative links.
 25. 03:459: OWASP 2021 → note "2021 mapping retained (08)"; don't claim a 2025 edition unless verified.
 
-## Findings: groups 1, 2, 3
+## Findings: group 3 (08 security + appendices A GST, B DPDP; 07-A legal pages). Scores before: 6.8, 8.0, 7.7, 6.8
+The code matches the docs for: the settings defaults G-1, G-5, G-8, G-10, G-11 date, G-12, G-14, G-18; the GSTIN state codes; the auth parameters (PR #7).
+1. 08:181 vs B:272, 07-A:67: **MEANING (owner)** Monthly D1 exports are kept for 10 years and include leads, which conflicts with "enquiries deleted after 12 months". Option (a): the long-term copy holds financial tables only. Option (b): disclose backups in 07-A §5 and replay erasures after a restore.
+2. 08:14-25: add a Status/Date column to §0 (U-items). The open U-1 (LUT), U-2 (FEMA EDF) and U-3 (UPI MDR from 15 Oct) go into 12-status "Waits on the owner".
+3. 08:20: tag U-3 "(VERIFY WITH CA)".
+4. 08:19: FEMA → "invoices raised from 1 Oct 2026: 9 months; older ones may have 15 months (Nov 2025 amendment); ask the CA (VERIFY WITH CA)".
+5. 08:189: restore → "Time Travel restores in place only: note the current bookmark, restore to the timestamp, export the rows needed, then restore back to the saved bookmark. Production action, needs the owner's approval."
+6. 08:101: break-glass reset-2fa → "runs with the owner's local `wrangler login` (OAuth)", not with the prod token.
+7. 08:187, :170: → "M7.5 (runbooks), L7 (first drill)".
+8. 08:103-125: §3 checklist → tick the frozen-document triggers and the append-only logs (M1.3, `packages/db/src/triggers.ts`) and the core coverage gate (M1.2). Split "permission per route": the matrix is done (core); route enforcement is pending.
+9. 08:120: Biome → "a float-scan test (`packages/core/test/no-floats.test.ts`) and Biome's recommended rules (`noDangerouslySetInnerHtml`)".
+10. 08:45-70: threat model → add a "Staging Workers" row: Access for admin@ only, a jobs webhook bypass in M6, the benchmark service token. §4 → add the secret names `CF_ACCESS_BENCH_CLIENT_ID` and `CF_ACCESS_BENCH_CLIENT_SECRET`.
+11. 08:210: → "G-1, G-2, G-5, G-6, G-8 to G-12, G-14, G-15, G-18 are settings; the rest arrive with M4.2/M5.5".
+12. 08:224: **MEANING (owner)** The G-11 block also needs "or the annual-return filing date, if earlier". This needs a code change later; record it as a follow-up.
+13. 08:216: G-3 → add the `TH/EST` and `TH/PRP` series ("non-GST, same format rules").
+14. 08:135: session-key rotation: reword when PR #7 merges (follow-up only, not now).
+15. 08:22: U-5 → add `no-reply@` (sent through SES) and `grievance@`.
+16. 07-A:5: change the "08 §7.2" label to "08 §7.3".
+17. 07-A:189, :71: `_ga` cookie lifetime → "up to 2 years (GA4 default)". Leave the data-retention setting as is.
+18. 07-A:34, :38: India legal basis → "provided voluntarily for that purpose (DPDP s.7(a))" plus legal obligation; "Contract" in the GDPR column only. VERIFY WITH CA/LEGAL.
+19. 07-A:85-95: **MEANING (owner)** EU/UK section (08 L-8). The controller identity may need the proprietor's name.
+20. 07-A:93, :155 vs :100: → "48 hours" everywhere.
+21. 07-A:46-56: providers → add Meta (WhatsApp); "Stripe (if used)".
+22. 07-A: add a §8 accessibility statement: WCAG 2.2 AA target, known gaps, contact (08 L-15).
+23. 07-A:72 vs B:264: **MEANING (owner)** Newsletter proof of consent: 1 year or 3 years after unsubscribing?
+24. B:87: add a dated correction: staff have password + TOTP, stored as HMAC and encrypted respectively. Ask the lawyer about SPDI Rule 5(1) (VERIFY WITH LEGAL).
+25. B:263, :419, :602, :622: "Superseded by 08 §7.3 L-6 / L-16" notes.
+26. A:440: round-off range → "−49 … +50 paise".
+27. A:51, :648: the 57th GST Council (7/8 Oct 2026) re-check → a follow-up in 12-status.
+28. A:19, :203: the "first character not 0" rule isn't enforced in `numbering.ts`. Record as a code follow-up; the doc keeps the rule.
+29. 08:3-8: add "Last updated 2026-10-07" and a short change log.
+30. A:13-39: renumber the TL;DR rows 1–N.
+31. 08:41: → "2021 mapping; 2025 re-map in M7.5".
+
+## Findings: groups 1, 2
 _Pending._
 
 ## Owner questions (collected)
