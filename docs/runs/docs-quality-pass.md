@@ -483,7 +483,7 @@ Branch `docs/qp-04-11` (from b338cd4). Scope: group 2 and group 3 findings for 0
 
 **Not verified:** external URLs (no web access in the reviews).
 
-**Scores:** 8.8 out of 10 on average before → 9.7 after the verification pass, with R1/R2 applied on top. Some scores stay below 10 because reaching 10 needs new research or owner input:
+**Scores:** about 7.5 out of 10 on average before (34 scored files, range 4.5–9.0) → about 9.6 after the verification pass, with R1/R2 applied on top. Some scores stay below 10 because reaching 10 needs new research or owner input:
 - 01-C TTFB: re-measure from India
 - 02-B S16 source: check the source text
 - 02-C: add a source for each row
