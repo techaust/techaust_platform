@@ -184,7 +184,7 @@ See [05 §6](05-architecture.md). Key controls:
 | Data | Mechanism | RPO | Retention |
 |---|---|---|---|
 | D1 (all tables) | **D1 Time Travel** (built-in, point-in-time) | Minutes | 7 days (Free) |
-| D1 (all tables) | **Nightly `wrangler d1 export`** → age-encrypt → S3 Mumbai (versioning + Object Lock, governance mode) | 24 h | 90 daily copies + the first-of-month copy for **10 years** (GST ≥ 8 years; VERIFY WITH CA) |
+| D1 (all tables) | **Nightly `wrangler d1 export`** → age-encrypt → S3 Mumbai (versioning + Object Lock, governance mode) | 24 h | 90 daily copies (all tables) + the first-of-month copy for **10 years, finance/GST tables only** (invoices, notes, receipts, payments, ledger, audit of those; no leads or contacts), owner decision 2026-10-07 so erased personal data leaves every backup within 90 days (GST ≥ 8 years; VERIFY WITH CA/LEGAL) |
 | R2 documents (frozen PDFs, snapshots) | Weekly sync of new objects → S3 Mumbai (encrypted) via GitHub Actions | 7 days (the documents can also be re-rendered from D1 snapshots) | 10 years |
 | R2 client files | Weekly incremental sync → S3 | 7 days | While the client is active + 1 year (data-processing note) |
 | Code and config | GitHub (+ the local clone) | Each commit | Forever |
@@ -227,7 +227,7 @@ Implemented as editable settings in `packages/core/src/schemas/settings.ts` and 
 | G-8 | Exports | LUT mode needs a saved ARN for the FY; full Rule 46 endorsement text; country of destination; INR value + rate | High |
 | G-9 | FX | FBIL/RBI reference rate on the invoice date, stored and frozen | Med |
 | G-10 | Rounding | Integer paise; tax per line per tax head, half-up; grand total to the nearest ₹1 with a Round-off line; USD not rounded | Med |
-| G-11 | Credit/debit notes | Debit notes for upward corrections; credit-note **hard block** after 30 Nov following the FY; IMS / ITC-reversal status tracked | High |
+| G-11 | Credit/debit notes | Debit notes for upward corrections; credit-note **hard block** after 30 Nov following the FY **or the annual-return filing date, if earlier** (owner decision 2026-10-07; needs an `annualReturnFiledAt` input, arriving with M4/M5); IMS / ITC-reversal status tracked | High |
 | G-12 | Realisation (FEMA 2026) | Warn at 9 months; escalate at 12 months + 15 days (IGST + interest under LUT); FIRA/FIRC per receipt; archive PayPal FIRAs; monthly EDF list | Med |
 | G-13 | Returns | QRMP default; GSTR-1 Offline-Tool-compatible exports (b2b, b2cl, b2cs, exp, cdnr, cdnur, hsn b2b/b2c, docs); GSTR-3B is hard-locked to GSTR-1, so the exports must be right first time | Med |
 | G-14 | E-invoicing | Off (AATO ≤ ₹5 Cr assumed); IRN/QR fields ready behind a flag | High |

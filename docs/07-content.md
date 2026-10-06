@@ -12,6 +12,7 @@
 - `{{price:S5}}` = the "from" price, read at build time from the catalogue snapshot. It renders as **"from ₹3,00,000 + GST"** (India) or **"from $12,000"** (international). See [04 WEB-G-06/07](04-prd.md).
 - `{{price-plain:S5}}` = the amount alone, with no "from" and no "+ GST" (used in meta descriptions and running text).
 - `{{price:S16-growth}}` = the form `{{price:Sx-<line>}}`: it reads the named default line of that catalogue entry (e.g. `S16-growth`, `S11-monthly`) instead of the entry's headline price.
+- `{{terms:small_job_threshold}}` = a published payment-terms setting, rendered from the snapshot (e.g. "about ₹1,00,000"; owner decision 2026-10-07).
 - `{{schedule:S5}}` = the payment-schedule text from the catalogue (e.g. "40 % on acceptance · 30 % at the midpoint milestone · 30 % on delivery").
 - 🟧 **OWNER** = something only you can provide or confirm. All of these are listed in §9.
 - Every page has a meta title (≤ 60 characters) and a description (≤ 155).
@@ -331,7 +332,7 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 | Fractional-CTO advisory | — | — | ✓ |
 | **Response time** (business hours, Mon–Sat 10:00–19:00 IST) | **2 business days** | **1 business day** | **4 business hours** for critical issues |
 
-- **Rules (small print):** "Essential: no rollover. Growth and Scale: unused hours roll over for one month. Extra hours are billed at the plan rate. Pay annually and save 10 %. Out-of-hours cover can be quoted separately. Billed monthly in advance; cancel with 30 days' notice." 🟧 OWNER confirms the annual discount (02 said 10–15 %).
+- **Rules (small print):** "Essential: no rollover. Growth and Scale: unused hours roll over for one month. Extra hours are billed at the plan rate. Pay annually and save 10 %. Out-of-hours cover can be quoted separately. Billed monthly in advance; cancel with 30 days' notice." (10 % confirmed by the owner, 2026-10-07.)
 - **AI Ops add-on (S17):** "For AI systems in production: monitoring, test-set reruns, prompt and model updates, and cost tracking, from {{price:S17}} a month."
 - **CTA:** Choose a plan
 
@@ -394,7 +395,7 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 - **"What affects the price":** number of user roles and screens · integrations and data migration · document variety (for AI) · deadlines · hosting and compliance needs
 - **"How payment works":**
   - "**Builds:** 40 % to start, 30 % at a mid-project milestone, 30 % on delivery."
-  - "**Smaller fixed jobs** (under about ₹1,00,000 / $2,000): paid in full upfront."
+  - "**Smaller fixed jobs** (under {{terms:small_job_threshold}}): paid in full upfront."
   - "**Care plans and subscriptions:** monthly in advance."
   - "**Invoices are due within 7 days.** Proposals are valid for 15 days."
   - "**India:** UPI, cards and netbanking (Razorpay) or bank transfer. **International:** card (Stripe), PayPal or bank transfer (SWIFT)."
@@ -559,7 +560,7 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 | Full postal address (for Contact + legal pages only) | Contact, privacy, terms, refund, delivery | 🟧 OWNER |
 | Cal.com booking URL | Contact, thanks, acknowledgement email | 🟧 OWNER (create a free account) |
 | 2–3 case-study briefs (§6) | Work, service-page proof, home | 🟧 OWNER |
-| Confirmations in the claims register (§1.4): experience, project count, Tally/GSP experience, warranty length, annual care-plan discount | Various | 🟧 OWNER |
+| Confirmations in the claims register (§1.4): experience, project count, Tally/GSP experience, warranty length (annual care-plan discount: 10 %, confirmed 2026-10-07) | Various | 🟧 OWNER |
 | USD price for WhatsApp Automation (S11), or INR-only | S11 page, pricing | 🟧 OWNER |
 | Email aliases in Zoho: hello@, billing@, privacy@ (or grievance@), security@ | Email, legal pages, security.txt | 🟧 OWNER creates them in Zoho |
 | Bank details, GSTIN, legal name, LUT ARN (if filed) | Invoices and documents (admin Settings) | 🟧 OWNER types them into the admin Settings screen (invoice milestone), never in chat or code |

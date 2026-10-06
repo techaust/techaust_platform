@@ -70,7 +70,8 @@ Some providers store data outside India. Indian law currently permits this, as t
 | Security and access logs | 13 months |
 | Email delivery records | 13 months |
 | Analytics (Google, with consent) | 14 months (Google's setting) |
-| Newsletter consent | Until you unsubscribe, plus proof of consent for 1 year after |
+| Newsletter consent | Until you unsubscribe, plus proof of consent for 3 years after (VERIFY WITH CA/LEGAL) |
+| Backups | Rolling encrypted backups are kept for up to 90 days, so deleted data disappears from them within 90 days. Long-term archive copies hold only invoices, payments and other tax records (8–10 years, as above), never enquiries or contact lists |
 
 If the law requires us to keep something longer (for example, during a dispute), we keep it only for that purpose.
 
@@ -92,6 +93,14 @@ You can ask us to:
 - **nominate** someone to exercise your rights if you die or become unable to
 
 Email **privacy@techaust.com**, or use "Request my data" in the client portal. We may need to confirm your identity. We acknowledge requests within 48 hours and respond within 30 days.
+
+### 7a. If you are in the EU or UK (VERIFY WITH LEGAL)
+- **Who controls your data:** TecHaust Technologies (Rupak Sarkar, proprietor), {{postal_address}}, India · privacy@techaust.com.
+- **Extra rights under the GDPR / UK GDPR:** you can also ask us to **restrict** how we use your data, to give it to you in a **portable** format, and you can **object** to our use of it based on legitimate interests, and to direct marketing at any time.
+- **Our legitimate interests** (where the table above says so): keeping the website secure and free of abuse, replying to business enquiries, and keeping proper business records.
+- **Automated decisions:** we don't make decisions about you by purely automated means.
+- **Representative:** we haven't appointed a representative in the EU or UK (VERIFY WITH LEGAL whether one is needed for our level of activity).
+- **Transfers:** see section 4.
 
 **Complaints:** please contact our Grievance Officer first (below). If you're not satisfied, you can complain to the **Data Protection Board of India** once its complaint process is available. In the EU/UK, you can complain to your local data-protection authority (in the UK, the ICO).
 

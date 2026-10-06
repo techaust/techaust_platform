@@ -44,7 +44,7 @@
 - [S] **Time Travel (point-in-time restore)** is always on and free. You can restore to any minute in the last **7 days (free) or 30 days (paid)**. For longer retention, Cloudflare documents exporting to R2 with Workflows or the REST API. https://developers.cloudflare.com/d1/reference/time-travel/
 - [S] Location hints are wnam, enam, weur, eeur, **apac** and oc. Jurisdictions are eu, us and fedramp. **There's no India option.** Read replication is available. https://developers.cloudflare.com/d1/configuration/data-location/
 - [?] Cloudflare doesn't publish which city `apac` maps to.
-- [I] `wrangler d1 export` produces a SQL dump. Schedule a nightly or weekly export to R2 to cover GST record-keeping beyond 30 days; CGST s.36 expects about 6 years of retention (that period is from general knowledge, not a source checked here; **superseded:** ≥ 8 years from FY end, default 10; [08 §6](../08-security-compliance.md), [08-A #13](../08-research-appendix/A-gst-invoicing.md); VERIFY WITH CA).
+- [I] `wrangler d1 export` produces a SQL dump. Schedule a nightly or weekly export to R2 to cover GST record-keeping beyond 30 days; CGST s.36 expects about 6 years of retention (that period is from general knowledge, not a source checked here; **superseded:** ≥ 8 years from FY end, default 10; [08 §6](../08-security-compliance.md), [08-A #20](../08-research-appendix/A-gst-invoicing.md); VERIFY WITH CA).
 
 ### Hyperdrive (connection pooling to an external Postgres)
 - [S] Free plan: 100,000 queries/day. Paid: unlimited queries. Pooling and caching are included, with no egress charges. https://developers.cloudflare.com/hyperdrive/platform/pricing/
@@ -255,7 +255,7 @@ Astro static site on Cloudflare (free) or Netlify. The admin is Node (React Rout
    - Better Auth, so users stay in your own DB.
    - HTML/CSS PDF templates, so the renderer can be swapped.
    - An `EmailSender` interface.
-   - Nightly D1 export to R2 (and a copy outside Cloudflare, e.g. Backblaze/S3 or a Google Drive sync, for the 6-year GST retention; **superseded:** ≥ 8 years from FY end, default 10, [08 §6](../08-security-compliance.md), [08-A #13](../08-research-appendix/A-gst-invoicing.md); VERIFY WITH CA).
+   - Nightly D1 export to R2 (and a copy outside Cloudflare, e.g. Backblaze/S3 or a Google Drive sync, for the 6-year GST retention; **superseded:** ≥ 8 years from FY end, default 10, [08 §6](../08-security-compliance.md), [08-A #20](../08-research-appendix/A-gst-invoicing.md); VERIFY WITH CA).
 3. **Escape hatch:** if an enterprise or government client requires India residency, move only the DB to **Supabase Mumbai through Hyperdrive** (B2), or the whole admin to **Lightsail Mumbai** (C). The site stays on Workers either way.
 4. **Admin hardening:**
    - Cloudflare Access (free, up to 50 users) on `admin.`.

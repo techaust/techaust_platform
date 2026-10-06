@@ -42,9 +42,11 @@ Severity scale: Critical / High / Medium / Low / Info.
 
 ### 2.1 Security: contact API (`app/api/contact/route.ts`)
 
+> **Redacted 2026-10-07 (owner decision):** exact reproduction steps for weaknesses still live on `techaust-web` were removed from this public record; the findings and severities are unchanged. The older text remains in git history until the old site is replaced.
+
 **F-S1 [High] The rate limit can be bypassed by spoofing X-Forwarded-For and does not work across Worker isolates**
 - Evidence: route.ts:55 reads `x-forwarded-for` and keys on the **first** element. That element is set by the client: Cloudflare appends the real IP to any client-supplied XFF rather than replacing it. route.ts:41 uses an in-memory `Map`, which exists per isolate only. Workers run many isolates across many colos, and isolates are recycled often.
-- Verified locally: 8 consecutive POSTs with a rotating `X-Forwarded-For: 10.0.0.N` all passed (no 429). A fixed XFF value got a 429 on the 6th request.
+- Verified locally (exact reproduction steps withheld: the repo is public and the old site is still live; tracked in [08 §0 U-6](../08-security-compliance.md)).
 - Requests with no XFF header all share the single key `"unknown"`, so one abuser can 429 every other header-less client in that isolate.
 - The Map is never pruned (only re-set on a later hit), so a spoofed-XFF flood grows it without limit until the isolate is recycled.
 - Impact: if the account is on Resend's free tier (plan not confirmed, [01 Q-H4](../01-audit.md)), only 100 emails per day are allowed. A trivial script can use up the quota, which silently kills the only lead channel, and can flood the inbox.
@@ -56,19 +58,19 @@ Severity scale: Critical / High / Medium / Low / Info.
 - Recommendation: return only the generic message and keep the details in `console.error` with a request ID.
 
 **F-S3 [Medium] No body-size limit; the body is parsed before validation**
-- Evidence: route.ts:62 calls `await req.json()` with no `Content-Length` check. Verified: a 3 MB JSON body was fully parsed, and only then rejected by Zod.
+- Evidence: route.ts:62 calls `await req.json()` with no `Content-Length` check. Verified locally: an oversized JSON body was fully parsed before Zod rejected it (exact payload withheld, see F-S1).
 - Recommendation: reject `Content-Length > ~16 KB` (and non-`application/json` requests) before parsing.
 
 **F-S4 [Medium] Weak validation: free-text `size`, `focus` and `slot` fields flow into the subject and body**
 - Evidence: route.ts:15-16 and 19 define `size`, `focus` and `slot` as `z.string().min(1)` or `.optional()`, with no max length and no enum. `sanitize()` (route.ts:32-35) only strips `<` and `>` and truncates to 2000 characters. It does not strip CR/LF.
 - `lib/contact-email.ts:45-46` puts the company name and the unknown `focus` value verbatim into the email **subject**.
-- Verified locally: a 5,000-character `focus`, `size` and `slot`, plus `company: "Acme\r\nBcc: x@evil.com"`, all passed validation (the request then reached the 503 no-key path).
+- Verified locally: over-long values and line breaks in these fields passed validation (exact payload withheld, see F-S1).
 - SMTP header injection is unlikely because Resend takes JSON. Even so, the attacker controls subject text up to 2000 characters, which enables phishing-style subjects in the owner's inbox.
 - The HTML body itself is correctly escaped (`escapeHtml` in contact-email.ts:27-33). Single quotes are not escaped, but no value lands in an attribute, so that is acceptable.
 - Recommendation: use `z.enum([...])` for `size`, `focus` and `slot`; strip `[\r\n]` from every single-line field; cap the subject length.
 
 **F-S5 [Low] No Origin or CSRF check; `text/plain` bodies are accepted**
-- Evidence: route.ts has no `Origin` or `Sec-Fetch-Site` check. `req.json()` parses regardless of Content-Type. Verified: `Content-Type: text/plain` with `Origin: https://evil.example` was processed. Any website can therefore make visitors' browsers submit the form as a CORS-safelisted "simple request", which spreads spam across many real IPs.
+- Evidence: route.ts has no `Origin` or `Sec-Fetch-Site` check. `req.json()` parses regardless of Content-Type. Verified locally: a cross-origin `text/plain` request was processed (exact request withheld, see F-S1). Any website can therefore make visitors' browsers submit the form as a CORS-safelisted "simple request", which spreads spam across many real IPs.
 - Recommendation: require `Content-Type: application/json` and an `Origin` matching `https://techaust.com`.
 
 **F-S6 [Low] `sanitize()` mangles legitimate input and duplicates escaping**
