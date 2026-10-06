@@ -1,6 +1,6 @@
 # Run: documentation quality pass (2026-10-07)
 
-Status: open
+Status: merged (the `docs/quality-pass` PR, 2026-10-07)
 
 ## Brief
 **Owner's request:** score all 45 documentation files out of 10 on six aspects (accuracy, completeness, consistency, clarity, structure, upkeep) and bring every one to 10/10.
@@ -346,7 +346,7 @@ Scores after the first fix round:
 12. 02:294: change "**10 % off**" to "10% off" (the file's style).
 13. Banners and revisions:
     - 02-A and 02-B: add the banner "> **Phase 2 research record (APPROVED 2026-10-06).** Parent: [02](../02-services-strategy.md). Where it differs from a decision, [13-decisions](../13-decisions.md) wins."
-    - 01, 02, 03: add a header row "| **Revised** | 2026-10-07, documentation quality pass ([runs/docs-quality-pass.md](runs/docs-quality-pass.md)) |".
+    - 01, 02, 03: add a header row "| **Revised** | 2026-10-07, documentation quality pass ([runs/docs-quality-pass.md](docs-quality-pass.md)) |".
 
 ### Fix list R2 (04–13, root, ADRs)
 1. 04 JOB-BKP-01 (~:429) → "retention 90 daily (all tables) + the first-of-month copy of the finance/GST tables only for 10 years (≥ 8 from FY end; 08 §6.1; VERIFY WITH CA/LEGAL)". 05 backup.yml row (~:581) → add "first of month: a second export limited to the finance tables (`wrangler d1 export --table …`), kept 10 years".
@@ -369,7 +369,7 @@ Scores after the first fix round:
     - 2026-10-07 | `/accessibility` added as its own legal page, per 08 L-15 | Lead | 04 WEB-LEGAL, 07-A §8
     - 2026-10-07 | 04 §12 owner-inputs table folded into 07 §9 (single list) | Lead | 04 §12, 07 §9
 
-    The "M1.1, M1.2, M1.3 approved" row: also cite [09](09-roadmap.md).
+    The "M1.1, M1.2, M1.3 approved" row: also cite [09](../09-roadmap.md).
 18. Date rows in 04, 05, 06, 07, 10, 11 → add "(last updated 2026-10-07)".
 19. CHANGELOG intro → "One line per merged pull request, newest first; dates in IST."
 20. 05-A §14 heading (~:379): add a dated note under it: "Repo public since ADR 0012; see the ADR 0009 update (2026-10-07)."
@@ -455,3 +455,37 @@ Branch `docs/qp-04-11` (from b338cd4). Scope: group 2 and group 3 findings for 0
 **Files changed**
 `docs/04-prd.md`, `docs/06-design-system.md`, `docs/07-content.md`, `docs/11-brand-audit.md`, `docs/08-security-compliance.md`, `docs/08-research-appendix/A-gst-invoicing.md`, `docs/08-research-appendix/B-dpdp-legal.md`, `docs/07-content-appendix/A-legal-pages.md`, `packages/db/src/seed/catalogue.ts` (two comment lines), `docs/runs/docs-quality-pass.md` (this report).
 ## Integration notes
+
+### Lead integration (2026-10-07)
+**Merged into `docs/quality-pass`:**
+- `docs/qp-01-03` (builder, 01–03)
+- `docs/qp-04-11` (builder, 04–11; the run-file conflict was resolved by keeping both reports)
+- `docs/qp-r1` and `docs/qp-r2` (verification fix lists)
+
+**Applied by the lead after the builders**, so where a builder report above says "SKIPPED" for these, they were applied later:
+- g4#1, #14 and #24, plus 02 g5#7, #8 and #11: commit 27f106e, with the redaction completed in 5b85050
+- g2#7 and #13, g3#1, #12, #19 and #23, and the 07 discount: commit 5b85050
+- g1#1 (05 §5.4 guard note): commit a1c9c31
+
+**Lead decisions:**
+- R1#3: kept "can still be offered case by case". The owner chose the option that said so.
+- R2#15: recorded as a Lead decision in 13-decisions; Q-P3-5 doesn't name a sender for credit/debit notes and statements.
+
+**Deferred by design** (listed in [12-status](../12-status.md)):
+- g1#24 and #25 (access-staging, in PR #7)
+- g3#14 (session-key rotation, after PR #7)
+- g3#28 and the code follow-ups (issue_guard, smallJobThreshold, annualReturnFiledAt)
+
+**Checks:**
+- every relative link in every tracked Markdown file resolves (script)
+- `pnpm lint` passes
+- docs only, apart from two comment lines in `packages/db/src/seed/catalogue.ts`
+
+**Not verified:** external URLs (no web access in the reviews).
+
+**Scores:** 8.8 out of 10 on average before → 9.7 after the verification pass, with R1/R2 applied on top. Some scores stay below 10 because reaching 10 needs new research or owner input:
+- 01-C TTFB: re-measure from India
+- 02-B S16 source: check the source text
+- 02-C: add a source for each row
+- 12-status: rewritten at session end
+

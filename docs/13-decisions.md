@@ -58,3 +58,4 @@ Who: **Owner** (Rupak Sarkar) or **Lead** (Claude, the lead conversation). Backf
 | 2026-10-07 | Documentation quality pass: six read-only reviewers + two builders; meaning changes asked, the rest fixed | Lead | [runs/docs-quality-pass.md](runs/docs-quality-pass.md) |
 | 2026-10-07 | `/accessibility` added as its own legal page, per 08 L-15 | Lead | [04 WEB-LEGAL](04-prd.md), [07-A §8](07-content-appendix/A-legal-pages.md) |
 | 2026-10-07 | 04 §12 owner-inputs table folded into 07 §9 (single list) | Lead | [04 §12](04-prd.md), [07 §9](07-content.md) |
+| 2026-10-07 | Credit/debit notes and statements are sent from `billing@` (same family as invoices and receipts, Q-P3-5) | Lead | [06](06-design-system.md) PDF footer and supplier note |
