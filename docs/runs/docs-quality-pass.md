@@ -160,7 +160,52 @@ The code matches the docs for: the settings defaults G-1, G-5, G-8, G-10, G-11 d
 30. A:13-39: renumber the TL;DR rows 1–N.
 31. 08:41: → "2021 mapping; 2025 re-map in M7.5".
 
-## Findings: groups 1, 2
+## Findings: group 2 (04 PRD, 06 design, 11 brand audit, 07 content). Scores before: 7.2, 8.0, 8.8, 7.3
+Checked and fine:
+- links and § references resolve
+- 06 tokens, contrast ratios, CMYK and geometry match the code
+- the prices in 02, the seed and 07 agree
+- the 04 §9 matrix matches `permissions.ts` (except item 24)
+- the enums match
+1. 04:438: NFR-2 → "API p99 ≤ 7 ms (the Phase 6 gate, 05 §1.2)". Also point the upgrade trigger at [05 §1.2](05-architecture.md), not 03 §3C.4.
+2. 04:424: JOB-Q-01 → "batches of 1–5 (one unit of work per message; PDF consumer max_concurrency 1)".
+3. 04:195: ADM-G-03 → "keyset pagination (25/50 rows)".
+4. 04:146: S18 "limited slots" (banned) → "a small number of subscriptions at a time (no scarcity counter)".
+5. 07:15: nine meta titles are over 60 characters (lines 176, 219, 228, 255, 281, 312, 364, 376, 382). Shorten each to ≤ 60 (count them), and fix the counts on lines 107–108 (title 56, description 145).
+6. 07:12-13: "How to read" → define `{{price-plain:Sx}}` (the amount with no "from" and no "+ GST") and `{{price:Sx-<line>}}` (reads the catalogue default line, e.g. S16-growth, S11-monthly).
+7. 04:296: **MEANING (owner)** ADM-CAT-05: add default-line names and prices to the public snapshot fields, so the S16 tiers and the S11 setup/monthly prices can reach the site.
+8. 06:425: §7.4 item 6 → "Acceptance is recorded in a separate acceptance-certificate PDF (05 §8); the accepted proposal PDF is never changed."
+9. 06:225-226: shadow-1/2 → copy the values from `packages/ui/tokens/tokens.json`, which use `rgb(20 35 31 / …)`, not the retired navy.
+10. 11:75: true once item 9 is fixed. Add "(shadow values fixed 2026-10-07)".
+11. 07:30: rule 2 applies to outcome promises only. Write "paid in full upfront" in place of "100 % upfront" (07:185 and 04 WEB-SVC-05:125). "we never…" about our own process (241, 422) is allowed; say so.
+12. 07:187: → "For small, well-defined jobs, we usually skip it and quote after a call."
+13. 07:395: **MEANING (owner, the 04 part)** The hard-coded "₹1,00,000 / $2,000" breaks WEB-G-07. Add a `small_job_threshold` setting (ADM-SET-05) and a `{{terms:…}}` placeholder. Leave 07:395 as it is until the owner answers.
+14. 04:164: the WEB-LEGAL link → [07-A](07-content-appendix/A-legal-pages.md).
+15. 06:398: → "the only public place for the GSTIN and the proprietor's legal name as supplier".
+16. 04:358, :164: tag ADM-PAY-13 (UPI MDR) and WEB-LEGAL (DPDP/SPDI) "VERIFY WITH CA/LEGAL".
+17. 04:358, :385: move ADM-PAY-13 after PAY-12 and ADM-REP-07 after REP-06, keeping the IDs.
+18. 04:249, :374: JOB-EMAIL → JOB-Q-01; JOB-HOOK-SES → JOB-HOOK-01.
+19. 04:225: ADM-SET-04 → "for every series (GST requires it for invoice, export, CN/DN, vouchers)".
+20. 04:199: ADM-G-07 → "(a scanning test, `packages/core/test/no-floats.test.ts`)".
+21. 04:97: WEB-G-02 → the CI check fails on D1, R2, KV, Durable Objects or Hyperdrive bindings.
+22. 04:208: ADM-AUTH-02 → "M1.4 (docs/runbooks/cpu-baseline.md, PR #7)".
+23. 04:471: GST/CA exports → "✅ (step-up)" for Owner and Accountant.
+24. 04:519-531: §12 → replace the table with a pointer to 07 §9, which is the single list.
+25. 07:519-537: §8 → add copy rows for estimate sent, approval requested/decided, weekly digest, debit note. Keep them plain and in the existing style.
+26. 07:13: example → "40 % on acceptance · 30 % at the midpoint milestone · 30 % on delivery".
+27. 07:23: → "(style guidance, not linted)".
+28. 06:113-124: §2.2 → add the `fill-subtle` and `btn-secondary-fg` tokens (take their values from tokens.json); `--container` → `--container-page`; note that `--shadow-n` is an alias of `--elevation-n`.
+29. 06:450: §9 → "Approved 2026-10-06", plus a Status line like 04 §13.
+30. 06:356: "Bulletproof" → "VML-safe (Outlook) button".
+31. 06:378, :394: the PDF sender → "per document type (hello@ for proposals and estimates, billing@ for invoices, proformas and receipts)".
+32. 06:303: `Money` → negatives as −₹1,000.00 (U+2212). 04 ADM-INV-05:328 → amount in words "Rupees … and … Paise Only" / "US Dollars … and … Cents Only".
+33. 07:332: → "Essential: no rollover. Growth and Scale: unused hours roll over for one month."
+34. 07:524: → "Links to the accepted proposal and the acceptance certificate are below."
+35. 07:490: the case-study brief location → "(git-ignored; never committed)".
+36. 11:7, :68: add [ADR 0013](adr/0013-new-brand-identity.md) to the header and link "docs/07 §3".
+37. Code comments in `packages/db/src/seed/catalogue.ts` (lines 2, 129): "docs/04 §4.2" → "docs/04 §3.2". Comment only.
+
+## Findings: group 1
 _Pending._
 
 ## Owner questions (collected)
