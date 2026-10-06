@@ -106,7 +106,7 @@ All relative links resolve. External URLs not checked (no web access). None of t
    - Workers Logs retention (05), against line 424
    - staging behind Access (04 §0), against line 452
    - backup retention
-5. 03:493-505: heading → "Open questions for Phase 4 (answered in [04 §0](04-prd.md))". Add the same pointer under the roles legend (line 210). Payment schedule 30/40/30 → 40/30/30 at lines 255, 267, 502. The ❓ marks are resolved (tiered approvals, Q-P3-2).
+5. 03:493-505: heading → "Open questions for Phase 4 (answered in [04 §0](../04-prd.md))". Add the same pointer under the roles legend (line 210). Payment schedule 30/40/30 → 40/30/30 at lines 255, 267, 502. The ❓ marks are resolved (tiered approvals, Q-P3-2).
 6. 03:100-102: "drafted for lawyer review" → add "(drafted in-house, no lawyer: 04 §0 Q-B12; VERIFY WITH CA/LEGAL)".
 7. B:13, :196, :205: tag the DPDP conclusions VERIFY WITH CA/LEGAL, and add "see 08-B §1 (SPDI Rules apply now)".
 8. A:3: add an Outcome note: "the owner holds active Razorpay, Stripe and PayPal accounts; 03 §3B.5 and 05 §9 adopt them plus manual transfer; Xflow, Skydo, MoneySaver and Cashfree are later options through the provider interface (ADR 0008)".
@@ -169,7 +169,7 @@ Checked and fine:
 - the prices in 02, the seed and 07 agree
 - the 04 §9 matrix matches `permissions.ts` (except item 24)
 - the enums match
-1. 04:438: NFR-2 → "API p99 ≤ 7 ms (the Phase 6 gate, 05 §1.2)". Also point the upgrade trigger at [05 §1.2](05-architecture.md), not 03 §3C.4.
+1. 04:438: NFR-2 → "API p99 ≤ 7 ms (the Phase 6 gate, 05 §1.2)". Also point the upgrade trigger at [05 §1.2](../05-architecture.md), not 03 §3C.4.
 2. 04:424: JOB-Q-01 → "batches of 1–5 (one unit of work per message; PDF consumer max_concurrency 1)".
 3. 04:195: ADM-G-03 → "keyset pagination (25/50 rows)".
 4. 04:146: S18 "limited slots" (banned) → "a small number of subscriptions at a time (no scarcity counter)".
@@ -182,7 +182,7 @@ Checked and fine:
 11. 07:30: rule 2 applies to outcome promises only. Write "paid in full upfront" in place of "100 % upfront" (07:185 and 04 WEB-SVC-05:125). "we never…" about our own process (241, 422) is allowed; say so.
 12. 07:187: → "For small, well-defined jobs, we usually skip it and quote after a call."
 13. 07:395: **MEANING (owner, the 04 part)** The hard-coded "₹1,00,000 / $2,000" breaks WEB-G-07. Add a `small_job_threshold` setting (ADM-SET-05) and a `{{terms:…}}` placeholder. Leave 07:395 as it is until the owner answers.
-14. 04:164: the WEB-LEGAL link → [07-A](07-content-appendix/A-legal-pages.md).
+14. 04:164: the WEB-LEGAL link → [07-A](../07-content-appendix/A-legal-pages.md).
 15. 06:398: → "the only public place for the GSTIN and the proprietor's legal name as supplier".
 16. 04:358, :164: tag ADM-PAY-13 (UPI MDR) and WEB-LEGAL (DPDP/SPDI) "VERIFY WITH CA/LEGAL".
 17. 04:358, :385: move ADM-PAY-13 after PAY-12 and ADM-REP-07 after REP-06, keeping the IDs.
@@ -204,7 +204,7 @@ Checked and fine:
 33. 07:332: → "Essential: no rollover. Growth and Scale: unused hours roll over for one month."
 34. 07:524: → "Links to the accepted proposal and the acceptance certificate are below."
 35. 07:490: the case-study brief location → "(git-ignored; never committed)".
-36. 11:7, :68: add [ADR 0013](adr/0013-new-brand-identity.md) to the header and link "docs/07 §3".
+36. 11:7, :68: add [ADR 0013](../adr/0013-new-brand-identity.md) to the header and link "docs/07 §3".
 37. Code comments in `packages/db/src/seed/catalogue.ts` (lines 2, 129): "docs/04 §4.2" → "docs/04 §3.2". Comment only.
 
 ## Findings: group 1 (CLAUDE.md, README, record, 00, 05 + appendix, 09, 10, runbooks, ADRs). Done by the lead
@@ -240,7 +240,7 @@ Scores before:
 9. 00: banner "Historical record (2026-10-06). Superseded by CLAUDE.md, docs/12-status.md, docs/13-decisions.md; start sessions with 'start the day'."
 10. 10: add §9 "Working-rules additions (2026-10-07, owner-approved)": builder/reviewer agents, worktrees, Monitor, `tools/heavy.sh`, `tools/watch.sh`, the start/end-session skills.
 11. 10:7: → "CLAUDE.md hard rule 11".
-12. 10:64: "memory/08" → [08 §0 U-6](08-security-compliance.md).
+12. 10:64: "memory/08" → [08 §0 U-6](../08-security-compliance.md).
 13. 10:52-56: §5 → "(done 2026-10-06)".
 14. 05:315: triggers → "a custom migration generated from `packages/db/src/triggers.ts` by `scripts/write-triggers.ts`"; also 09:50 "hand-written triggers".
 15. 05:147, :159: `config/` → "tsconfig bases"; dependency rules → "(enforced by review today; a lint check is planned)".
