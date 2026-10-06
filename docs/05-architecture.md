@@ -14,6 +14,12 @@
 > 4. **Queues provide retries and pacing, not extra CPU**: every job unit must fit in 10 ms.
 > 5. **Production deploys use an owner-only manual workflow** (owner-approved), because GitHub Free private repos can't enforce reviewers.
 > 6. Worker logs: 7-day retention and a 0.5 GB/day cap from 2026-12-01. Security logs are kept in D1 for 13 months.
+>
+> **Changes made during Phase 5 (setup, 2026-10-06):**
+> 7. **Worker names are `techaust-platform-<app>`** (+ `-staging`), so no deploy can ever overwrite the live Worker `techaust-web` (ADR 0011).
+> 8. **Tests use `@cloudflare/vitest-plugin`** 1.3.6 (the renamed Workers test pool, `cloudflareTest()`), and Worker types come from **`wrangler types`** instead of `@cloudflare/workers-types`.
+> 9. **pnpm 12** uses `allowBuilds` (not `onlyBuiltDependencies`) and a 1-day `minimumReleaseAge`.
+> 10. **The repo is public** (owner decision). That makes branch protection free, so `main` is now protected (PR + green CI required). Workflows are hardened for public repos (ADR 0012).
 
 ---
 
@@ -83,7 +89,8 @@ All versions are pinned exactly (no `^`). Renovate opens grouped PRs after a **7
 | Email | Amazon SES v2 (ap-south-1) via **aws4fetch** | 1.0.20 |
 | Payments | Razorpay (fetch), Stripe (`stripe` SDK or fetch), PayPal Orders v2 (fetch) | stripe 23.0.0 (API `2026-09-30.endive`) |
 | Errors | `@sentry/cloudflare`, `@sentry/react` (errors only, PII scrubbed) | 11.4.0 |
-| Tests | Vitest + `@cloudflare/vitest-pool-workers` (**Vitest 5 not supported yet**) · Playwright + `@axe-core/playwright` · Lighthouse CI | 4.1.11 + 0.22.0 · 1.63.0 + 4.13.0 |
+| Tests | Vitest + **`@cloudflare/vitest-plugin`** (`cloudflareTest()`; tests run inside workerd; **Vitest 5 not supported yet**) · Playwright + `@axe-core/playwright` · Lighthouse CI | 4.1.11 + 1.3.6 · 1.63.0 + 4.13.0 |
+| Worker types | Generated per app by **`wrangler types`** → `worker-configuration.d.ts` (git-ignored; runs inside `pnpm typecheck`) | wrangler 4.147.0 |
 | Lint / format | Biome (+ `astro check` for `.astro`) | 2.5.15 |
 | CI | GitHub Actions; actions pinned by commit SHA (`wrangler-action@v4.1.3`, `configure-aws-credentials@v6.3.0` …) | — |
 | Backups | `age` CLI | 1.3.2 |
@@ -155,6 +162,8 @@ techaust_platform/
 **Plain (non-secret) vars:** `ENVIRONMENT` (`local|staging|production`), `APP_ORIGIN`, `PAYMENTS_LIVE_ALLOWED` (`false` until the Phase 7 approval), `SES_REGION=ap-south-1`, `SES_CONFIG_SET`, sender addresses.
 
 **Cron triggers:** 5 per account in total. Each environment uses **two**: a `*/15 * * * *` dispatcher (reminders in the 09:00–19:00 IST window, care-plan billing at 06:00 IST, digests) and a daily `0 22 * * *` UTC (03:30 IST) maintenance run (overdue marking, expiry, retention, stats). That's 4 of 5 in total.
+
+**Package manager:** pnpm 12.9.1 (pinned via `packageManager`; plain `pnpm` auto-switches). `pnpm-workspace.yaml` sets `minimumReleaseAge: 1440` (a package must be ≥ 1 day old; if a pin is too new, choose the previous release rather than bypassing the rule) and `allowBuilds` (only `esbuild` and `workerd` may run install scripts).
 
 **Local development:** `pnpm dev` runs all four Workers (`@cloudflare/vite-plugin` for the SPAs; `wrangler dev` for web/jobs) with local D1/R2/Queues (Miniflare), Turnstile **test keys**, gateway **test keys** in `.dev.vars` (git-ignored; `.dev.vars.example` committed) and a **mocked Browser Run** (the Quick Action is remote-only). A `pnpm dev:pdf-remote` script uses real Browser Run against staging when needed.
 
@@ -527,8 +536,8 @@ Budget: about 3 operations per message, with 10k ops/day (≈ 3.3k messages). Ex
 
 | | Local | Staging | Production |
 |---|---|---|---|
-| URLs | `localhost` ports (web 4321, admin 5173, portal 5174, jobs 8787) | `techaust-platform-{web,admin,portal,jobs}-staging.<account>.workers.dev` | `techaust.com`, `admin.`, `portal.`, `hooks.techaust.com` (Workers Custom Domains, **added only in Phase 7 with your approval**) |
-| Access control | — | **Cloudflare Access** (your email) on web/admin/portal staging; the `jobs` staging Worker has an Access **bypass** for webhook paths (they are signature-verified) | Public site open; admin optionally behind Access (ADM-AUTH-10) |
+| URLs | `localhost` ports (web 4321, admin 5173, portal 5174, jobs 8787) | `https://techaust-platform-{web,admin,portal,jobs}-staging.techaust-technologies-153.workers.dev` (live since 2026-10-06) | `techaust.com`, `admin.`, `portal.`, `hooks.techaust.com` (Workers Custom Domains, **added only in Phase 7 with your approval**) |
+| Access control | — | **Cloudflare Access** (your email) on web/admin/portal staging (**to be added before any real data, M1.4**; until then the staging Workers are noindex placeholders with no data); the `jobs` staging Worker has an Access **bypass** for webhook paths (they are signature-verified) | Public site open; admin optionally behind Access (ADM-AUTH-10) |
 | Data | Local D1/R2, seed fixtures | `techaust-staging` D1 + `techaust-staging-*` R2 buckets (anonymised seed) | `techaust-prod` D1 + `techaust-prod-*` R2 |
 | Payments | Test keys | Test/sandbox keys | **Test keys until the Phase 7 go-live approval** (`PAYMENTS_LIVE_ALLOWED=false`) |
 | Email | Logged to the console (no send) | SES sandbox → verified test inboxes only | SES production (after the AWS production-access request) |
@@ -537,19 +546,20 @@ Budget: about 3 operations per message, with 10k ops/day (≈ 3.3k messages). Ex
 
 ### 12.2 Git workflow
 - Trunk-based: short-lived branches → PR → `main`. Conventional commits. Version tags `vYYYY.MM.DD-N` for production releases.
-- **Branch protection on `main`** (to the extent GitHub Free allows on private repos; checked in Phase 5): PRs required, status checks required, no force-push.
+- **Branch protection on `main` is ON** (enabled 2026-10-06; free because the repo is public): PR required (0 approvals), the CI `checks` job must pass and be up to date, linear history (squash-merge), conversation resolution, no force-push or deletion, and the rules apply to admins too.
+- If the repo is made **private** again on GitHub Free, branch protection stops being enforced and Actions minutes count against the account (which then had a billing block). Revisit both at that point.
 
 ### 12.3 GitHub Actions workflows
 
 | Workflow | Trigger | Steps |
 |---|---|---|
-| `ci.yml` | Every PR + push to `main` | `pnpm install --frozen-lockfile` → Biome → `tsc -b` + `astro check` → unit + Workers tests (Vitest pool, D1 migrations applied) → build all apps → web checks: link checker, SEO/schema test, content lint (banned phrases, prices from snapshot, GSTIN absent), bundle-size budget → Playwright E2E against `wrangler dev` builds + axe → Lighthouse CI (web templates) → PDF visual regression → dependency audit + secret scan (gitleaks) → binding guard (no D1/R2 on web) |
-| `deploy-staging.yml` | Push to `main` (after CI passes) | Fetch the published catalogue snapshot (build token) → build → `wrangler d1 migrations apply techaust-staging --remote` → deploy 4 Workers `--env staging` → smoke tests (health, login page, form submit with the Turnstile test key) |
-| `deploy-prod.yml` | **`workflow_dispatch` only**. Inputs: `ref` (a tag) and `confirm` (must equal `deploy techaust.com <tag>`) | Guard: `github.actor == '<owner-login>'` and the ref is a tag on `main` that passed staging → build → D1 export (pre-deploy backup) → migrations `--remote` on prod → deploy 4 Workers `--env production` using **`CF_API_TOKEN_PROD`** (scoped to prod Workers/D1/R2 only) → smoke tests → summary. **Rollback:** `wrangler rollback` per Worker (documented in [08 §6](08-security-compliance.md)) |
-| `backup.yml` | Nightly 21:30 UTC (03:00 IST) + manual | `wrangler d1 export techaust-prod --remote` → `age -r <owner public key>` → AWS OIDC role (`s3:PutObject` on the backup prefix only) → upload to S3 Mumbai (versioning + Object Lock) → verify the object exists and the size is > 0 → Sentry cron check-in |
+| `ci.yml` | Every PR + push to `main` | **Today:** full-history checkout → gitleaks 8.30.1 (git history) → `pnpm install --frozen-lockfile` → Biome → typecheck (`wrangler types` + tsc / `astro check`) → public-Worker binding guard → tests (Vitest + workerd) → build all apps (web also dry-runs its Worker). **Added in later milestones:** D1 migrations in tests → web checks: link checker, SEO/schema test, content lint (banned phrases, prices from snapshot, GSTIN absent), bundle-size budget → Playwright E2E against `wrangler dev` builds + axe → Lighthouse CI (web templates) → PDF visual regression → dependency audit + secret scan (gitleaks) → binding guard (no D1/R2 on web) |
+| `deploy-staging.yml` | `workflow_run` after CI succeeds, **only for push events on this repository's `main`** (never fork PRs) | **Today:** skips cleanly if the secrets are missing → `pnpm -r run deploy:staging` (4 Workers). **Added later:** fetch the published catalogue snapshot (build token) → build → `wrangler d1 migrations apply techaust-staging --remote` → deploy 4 Workers `--env staging` → smoke tests (health, login page, form submit with the Turnstile test key) |
+| `deploy-prod.yml` | **`workflow_dispatch` only**. Inputs: `tag` and `confirm` (must equal `deploy techaust.com <tag>`) | Guards: actor = `techaust`, repo variable **`PRODUCTION_ENABLED == 'true'`** (unset until Phase 7), typed confirmation. **Today the deploy job is a placeholder.** Phase 7 adds: and the ref is a tag on `main` that passed staging → build → D1 export (pre-deploy backup) → migrations `--remote` on prod → deploy 4 Workers `--env production` using **`CF_API_TOKEN_PROD`** (scoped to prod Workers/D1/R2 only) → smoke tests → summary. **Rollback:** `wrangler rollback` per Worker (documented in [08 §6](08-security-compliance.md)) |
+| `backup.yml` | Nightly 21:30 UTC (03:00 IST) + manual (**schedule commented out until Phase 7**) | `wrangler d1 export techaust-prod --remote` → `age -r <owner public key>` → AWS OIDC role (`s3:PutObject` on the backup prefix only) → upload to S3 Mumbai (versioning + Object Lock) → verify the object exists and the size is > 0 → Sentry cron check-in |
 | `restore-drill.yml` | Manual (quarterly) | Download the latest backup → *(the owner decrypts locally; CI never holds the private key)* → documented steps in [08 §6](08-security-compliance.md) |
 
-**Tokens:** `CF_API_TOKEN_STAGING` (staging resources only), `CF_API_TOKEN_PROD` (prod only; used solely by `deploy-prod.yml`), `CF_API_TOKEN_BACKUP` (D1 read/export only). GitHub Free has no environment secrets on private repos, so these are repo secrets, and **write access is limited to the Owner**; other collaborators work through PRs from forks or with Triage access ([05-A §14](05-research-appendix/A-stack-verification.md)).
+**Tokens:** `CF_API_TOKEN_STAGING` (**exists**: account-level Workers Scripts/D1/Queues edit + Account Settings read, no zone/DNS permissions) and `CLOUDFLARE_ACCOUNT_ID` (exists); `CF_API_TOKEN_PROD` (Phase 7; used solely by `deploy-prod.yml`); `CF_API_TOKEN_BACKUP` (Phase 7; D1 read/export only). Cloudflare can't scope a token to particular Workers, so the staging token could technically touch any Worker; the naming rule and approvals protect `techaust-web`. These are repo secrets, and **write access is limited to the Owner**; other collaborators work through PRs from forks or with Triage access ([05-A §14](05-research-appendix/A-stack-verification.md)).
 
 ### 12.4 Release and rollback
 1. Merge to `main` → staging auto-deploys.
@@ -568,7 +578,7 @@ Budget: about 3 operations per message, with 10k ops/day (≈ 3.3k messages). Ex
 
 ---
 
-## 14. Architecture decision records (to be written in `docs/adr/` during Phase 5)
+## 14. Architecture decision records (`docs/adr/`, written in Phase 5)
 
 | ADR | Decision |
 |---|---|
@@ -580,5 +590,7 @@ Budget: about 3 operations per message, with 10k ops/day (≈ 3.3k messages). Ex
 | 0006 | Browser Run Quick Action for PDFs; render once; pdf-lib fallback |
 | 0007 | SES via aws4fetch; events via EventBridge API destination |
 | 0008 | Payment provider interface; webhooks verified on the raw body; nothing is paid on a redirect |
-| 0009 | Owner-only manual production workflow on GitHub Free |
+| 0009 | Owner-only manual production workflow (actor guard + typed confirmation + `PRODUCTION_ENABLED`) |
+| 0011 | New Worker names (`techaust-platform-*`) never collide with the live `techaust-web` |
+| 0012 | Public repository: branch protection on `main`, fork-safe workflows, nothing sensitive committed |
 | 0010 | Tax/legal rules as settings with researched defaults (VERIFY WITH CA/LEGAL) |

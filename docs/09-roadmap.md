@@ -17,22 +17,23 @@
 - **Size:** S ≈ 1–2 working sessions · M ≈ 3–5 · L ≈ 6+. These are relative effort, not calendar promises.
 - **Gates (🚦)** are points where I stop and ask if the result doesn't fit the plan, e.g. the free-plan CPU measurement.
 - **Owner inputs (🟧)** are listed per milestone so nothing blocks unexpectedly.
-- **Production stays untouched** until Phase 7. Every Phase 6 deploy goes to **staging** (workers.dev behind Cloudflare Access).
+- **Production stays untouched** until Phase 7. Every Phase 6 deploy goes to **staging** automatically on merge to `main` (workers.dev; Cloudflare Access added before any real data, at M1.4).
+- **Delivery flow:** branch → PR → CI green → squash-merge → staging deploy (`main` is protected).
 
 ---
 
-## Phase 5: Setup and tooling (after this document set is approved)
+## Phase 5: Setup and tooling ✅ complete 2026-10-06 (awaiting the owner's "approved")
 
-| # | Step | Output | Approval needed |
+| # | Step | Output | Approval needed / status |
 |---|---|---|---|
-| P5.1 | **Recommend skills, plugins and MCP servers** (what each does, why we need it) | A short list in `docs/10-tooling.md` | ✅ Your approval before I use any |
-| P5.2 | Scaffold the pnpm monorepo per [05 §3](05-architecture.md); `CLAUDE.md` refresh; ADRs 0001–0010 | Repo skeleton builds, lints, tests (empty) | — |
-| P5.3 | `git init`, `.gitignore` (`.dev.vars`, `.env*`, `node_modules`, `dist`, `brand-incoming/` large originals moved into `packages/ui/brand/source`), gitleaks pre-commit | Local repo | — |
-| P5.4 | Connect to `techaust/techaust_platform` and **push the first commit** | Remote `main` | ✅ **You approve the first push** |
-| P5.5 | GitHub settings: branch protection on `main` (what Free allows), Renovate app, repo secrets list | Settings | ✅ Each GitHub setting change |
-| P5.6 | Cloudflare **staging** resources: D1 `techaust-staging`, R2 buckets, 4 queues + DLQs, Turnstile widget, Access application on workers.dev | Staging infrastructure (no DNS changes) | ✅ Creating resources in your Cloudflare account |
-| P5.7 | Scoped API tokens (`CF_API_TOKEN_STAGING` now; prod and backup tokens in Phase 7). **You create them** using my exact permission list and paste them into GitHub secrets. | Tokens in GitHub | 🟧 You do it |
-| P5.8 | CI workflows: `ci.yml` (all checks), `deploy-staging.yml` (auto on `main`), `deploy-prod.yml` (owner-only dispatch with a typed confirmation; **not run until Phase 7**), `backup.yml` (disabled until Phase 7) | Green CI on a PR; staging deploy of the "hello" Workers | ✅ Review of the workflows |
+| P5.1 | **Recommend skills, plugins and MCP servers** (what each does, why we need it) | A short list in `docs/10-tooling.md` | ✅ **Done**: T1–T12 approved |
+| P5.2 | Scaffold the pnpm monorepo per [05 §3](05-architecture.md); `CLAUDE.md` refresh; ADRs 0001–0010 | Repo skeleton builds, lints, tests (empty) | ✅ **Done**: ADRs 0001–0012 |
+| P5.3 | `git init`, `.gitignore` (`.dev.vars`, `.env*`, `node_modules`, `dist`, `brand-incoming/` large originals moved into `packages/ui/brand/source`), gitleaks in CI | Local repo | ✅ **Done** (originals stay git-ignored in `brand-incoming/` until M1.1) |
+| P5.4 | Connect to `techaust/techaust_platform` and **push the first commit** | Remote `main` | ✅ **Done**: approved and pushed; the owner then made the repo **public** |
+| P5.5 | GitHub settings: branch protection on `main`, Renovate app, repo secrets list | Settings | ✅ **Done**: branch protection ON (PR + CI); Renovate app **not installed yet** (needs your approval) |
+| P5.6 | Cloudflare **staging** resources: D1 `techaust-staging`, R2 buckets, 4 queues + DLQs, Turnstile widget, Access application on workers.dev | Staging infrastructure (no DNS changes) | ✅ **Done**: D1 + 8 queues. R2, Turnstile and Access deferred to M3.4 / M2.4 / M1.4 ([runbook](runbooks/environments.md)) |
+| P5.7 | Scoped API tokens (`CF_API_TOKEN_STAGING` now; prod and backup tokens in Phase 7). **You create them** using my exact permission list and paste them into GitHub secrets. | Tokens in GitHub | ✅ **Done** by you: `CF_API_TOKEN_STAGING` + `CLOUDFLARE_ACCOUNT_ID` |
+| P5.8 | CI workflows: `ci.yml` (all checks), `deploy-staging.yml` (auto on `main`), `deploy-prod.yml` (owner-only dispatch with a typed confirmation; **not run until Phase 7**), `backup.yml` (disabled until Phase 7) | Green CI on a PR; staging deploy of the "hello" Workers | ✅ **Done**: CI green; PR #1 merged; 4 staging Workers live and healthy |
 
 🚦 **STOP:** Phase 5 summary → wait for "approved".
 
@@ -47,7 +48,7 @@
 | M1.1 | **Design tokens and brand** | `packages/ui/tokens` → CSS/Tailwind/email/print; contrast test ([06 §2.3](06-design-system.md)); self-hosted fonts + **₹ glyph check**; logo master SVG from `.ai`; primary, compact and symbol lockups; favicon set | Contrast pairs; font glyph coverage; token build snapshot | M | 🟧 **Approve the logo variants** (especially the compact lockup) |
 | M1.2 | **Core library** | `packages/core`: money (minor units, en-IN/en-US formatting, parsing), FY/IST dates, GSTIN validator + state codes, amount in words (Indian + international), numbering formatter (≤ 16 chars), permissions matrix, shared zod schemas (forms) | Property tests (money round-trip, no floats); FY boundary; GSTIN checksum vectors; words for 0 → 99,99,99,999 | M | — |
 | M1.3 | **Database** | Drizzle schema for identity, settings, CRM and documents ([05 §5](05-architecture.md)); hand-written triggers (frozen documents, append-only audit); seed (catalogue S1–S18, settings defaults from [08 §7.1](08-security-compliance.md)) | Migrations apply clean; trigger tests (update a frozen doc → abort; delete from audit → abort); seed idempotent | M | — |
-| M1.4 | 🚦 **Auth CPU spike (gate)** | A minimal admin Worker on **staging**: salt → login (HMAC) → TOTP → session; browser Argon2id in a Web Worker. **Measure** CPU p50/p99 per route from Workers Logs (100+ runs incl. cold isolates), and Argon2id time on a mid-range Android phone | CPU report in `docs/runbooks/cpu-baseline.md` | S | 🟧 Optional: time a login on your phone |
+| M1.4 | 🚦 **Auth CPU spike (gate)** | First: **Cloudflare Access on the staging URLs** (your dashboard checklist). Then a minimal admin Worker on **staging**: salt → login (HMAC) → TOTP → session; browser Argon2id in a Web Worker. **Measure** CPU p50/p99 per route from Workers Logs (100+ runs incl. cold isolates), and Argon2id time on a mid-range Android phone | CPU report in `docs/runbooks/cpu-baseline.md` | S | 🟧 Optional: time a login on your phone |
 | | | **Gate:** login p99 ≤ 5 ms CPU and every route ≤ 7 ms. **If it doesn't fit, I stop and ask** (options: tune, Cloudflare Access + simpler auth, or the $5 plan). | | | |
 | M1.5 | **Staff auth (complete)** | ADM-AUTH-01…09: invites, TOTP enrolment, recovery codes, sessions list, step-up, lockout, login alerts (email stubbed until M2.4), RBAC middleware + route-coverage test, audit-log writer, access log | Auth integration suite (enumeration, replay, lockout, expiry, rotation, step-up); permission tests per role | M | — |
 | M1.6 | **Portal auth** | POR-01…03: magic links (fragment + POST), client sessions, organisation scoping helper, single-document tokens | Cross-tenant tests; token single-use/expiry | S | — |

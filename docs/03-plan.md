@@ -6,6 +6,7 @@
 | **Date** | 2026-10-06 |
 | **Inputs** | [01-audit.md](01-audit.md) · [02-services-strategy.md](02-services-strategy.md) · owner interview (§0) · research: [A: payments](03-research-appendix/A-payments.md) · [B: platform & stack](03-research-appendix/B-platform-stack.md) |
 | **Next** | Phase 4 turns this plan into the PRD, architecture, design system, content, security and roadmap docs |
+| **Superseded where different** | Later approved changes live in [05-architecture.md](05-architecture.md) (Astro 7, React Router 8, in-house auth instead of Better Auth, Worker names, public repo) and [04-prd.md](04-prd.md) §0. **Where this plan and 05 differ, 05 wins.** |
 
 > **Compliance.** Every tax, invoicing, payments-regulation and DPDP point is marked **VERIFY WITH CA/LEGAL**. The software will be configurable, so whatever your CA or lawyer decides can be applied without code changes wherever possible.
 
