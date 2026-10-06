@@ -122,7 +122,7 @@ Every service page uses one template, with sections in this order ([03 §3A.3](0
 | WEB-SVC-02 | M | Sections: The problem · What you get (deliverables list) · How it works (steps + typical timeline + what we need from you) · Pricing & engagement model (incl. payment schedule) · Tech & integrations (text or truthful logos) · Proof · FAQs · Related services · CTA band | Each section has an `h2`. Sections with no content are omitted rather than shown empty. |
 | WEB-SVC-03 | M | **Proof** shows a linked case study when one exists for the service, otherwise a sample deliverable labelled "Sample", otherwise the section is omitted | No fabricated testimonials or logos. |
 | WEB-SVC-04 | M | **FAQs** (4–8) as an accessible disclosure list + `FAQPage` JSON-LD with identical text | The JSON-LD answers match the visible text (test). |
-| WEB-SVC-05 | M | **Payment schedule text** comes from the catalogue entry (e.g. 40/30/30, 100 % upfront, monthly in advance) | Matches the catalogue snapshot. |
+| WEB-SVC-05 | M | **Payment schedule text** comes from the catalogue entry (e.g. 40/30/30, paid in full upfront, monthly in advance) | Matches the catalogue snapshot. |
 | WEB-SVC-06 | M | "Prices exclude GST" note next to INR prices (VERIFY WITH CA). For USD: "Invoiced from India; export of services." | Visible next to every INR price block. |
 
 **Service pages at launch**
