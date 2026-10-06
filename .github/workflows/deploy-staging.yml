@@ -51,6 +51,15 @@ jobs:
           cache: pnpm
       - if: steps.creds.outputs.ready == 'true'
         run: pnpm install --frozen-lockfile
+      # Owner decision (M1.3): staging D1 is migrated and seeded on every merge, before the Workers deploy, so
+      # new code never runs against an old schema. Migrations are backward-compatible (docs/05 §5.5) and the
+      # seed is insert-only (it never overwrites edits). Staging only: production D1 is a Phase 7 decision.
+      - if: steps.creds.outputs.ready == 'true'
+        name: Migrate and seed staging D1
+        run: |
+          pnpm --filter @techaust/jobs exec wrangler d1 migrations apply DB --remote --env staging
+          pnpm --filter @techaust/db seed:sql "$RUNNER_TEMP/seed.sql"
+          pnpm --filter @techaust/jobs exec wrangler d1 execute DB --remote --env staging --file "$RUNNER_TEMP/seed.sql"
       - if: steps.creds.outputs.ready == 'true'
         name: Deploy all Workers (staging)
         run: pnpm -r --workspace-concurrency=1 run deploy:staging

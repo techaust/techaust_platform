@@ -1,6 +1,6 @@
 {
   // hooks.techaust.com: webhooks, queue consumers and cron (docs/05-architecture.md §4).
-  // Bindings (D1, R2, queues, Browser Run, crons) are added in P5.6/M1.3. Custom domains only in Phase 7.
+  // D1 is bound from M1.3; R2, queues, Browser Run and crons follow with their milestones. Custom domains only in Phase 7.
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "techaust-platform-jobs",
   "main": "src/index.ts",
@@ -9,11 +9,28 @@
   "workers_dev": false,
   "observability": { "enabled": true },
   "vars": { "ENVIRONMENT": "local", "PAYMENTS_LIVE_ALLOWED": "false" },
+  // D1 (docs/05 §5). Migrations live in packages/db; local dev and tests use a local database.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "techaust-local",
+      "database_id": "local",
+      "migrations_dir": "../../packages/db/migrations"
+    }
+  ],
   "env": {
     "staging": {
       "name": "techaust-platform-jobs-staging",
       "workers_dev": true,
-      "vars": { "ENVIRONMENT": "staging", "PAYMENTS_LIVE_ALLOWED": "false" }
+      "vars": { "ENVIRONMENT": "staging", "PAYMENTS_LIVE_ALLOWED": "false" },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "techaust-staging",
+          "database_id": "879c63dd-fedd-4710-9b13-21d8804879a9",
+          "migrations_dir": "../../packages/db/migrations"
+        }
+      ]
     },
     "production": {
       "name": "techaust-platform-jobs",

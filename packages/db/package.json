@@ -8,12 +8,23 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json",
-    "test": "vitest run --passWithNoTests"
+    "generate": "drizzle-kit generate",
+    "seed:sql": "node scripts/seed-sql.ts",
+    "typecheck": "wrangler types && tsc -p tsconfig.json && tsc -p tsconfig.node.json",
+    "test": "vitest run",
+    "types": "wrangler types"
   },
   "devDependencies": {
+    "@cloudflare/vitest-plugin": "1.3.6",
     "@techaust/config": "workspace:*",
+    "@types/node": "24.19.1",
+    "drizzle-kit": "0.31.11",
     "typescript": "6.0.3",
-    "vitest": "4.1.11"
+    "vitest": "4.1.11",
+    "wrangler": "4.147.0"
+  },
+  "dependencies": {
+    "@techaust/core": "workspace:*",
+    "drizzle-orm": "0.45.3"
   }
 }

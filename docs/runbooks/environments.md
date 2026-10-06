@@ -7,7 +7,7 @@ The live site is the old Worker **`techaust-web`**. **Never deploy to, rename or
 
 | Resource | Name | ID / note | Used from |
 |---|---|---|---|
-| D1 | `techaust-staging` | `879c63dd-fedd-4710-9b13-21d8804879a9` (location hint apac) | M1.3 |
+| D1 | `techaust-staging` | `879c63dd-fedd-4710-9b13-21d8804879a9` (location hint apac); bound to admin, portal and jobs; **migrated and seeded on every merge** (seed is insert-only, no personal data) | M1.3 |
 | Queue | `techaust-staging-leads` (+ `-dlq`) | — | M2.4 |
 | Queue | `techaust-staging-pdf` (+ `-dlq`) | — | M4.4 |
 | Queue | `techaust-staging-email` (+ `-dlq`) | — | M2.4 |
@@ -23,7 +23,7 @@ The live site is the old Worker **`techaust-web`**. **Never deploy to, rename or
 - Portal: https://techaust-platform-portal-staging.techaust-technologies-153.workers.dev (`/api/v1/health`)
 - Jobs: https://techaust-platform-jobs-staging.techaust-technologies-153.workers.dev (`/healthz`)
 
-Deploys happen automatically when a PR is merged to `main` (`.github/workflows/deploy-staging.yml`).
+Deploys happen automatically when a PR is merged to `main` (`.github/workflows/deploy-staging.yml`): first `wrangler d1 migrations apply DB --remote --env staging` and the seed, then the four Workers.
 
 ## Production
 Nothing is created until Phase 7 (L3), with owner approval per resource.

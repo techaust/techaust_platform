@@ -1,0 +1,16 @@
+{
+  // Test-only config for @techaust/db: gives the Workers tests (and `wrangler types`) a local D1 binding.
+  // Never deployed. The apps bind the real databases in their own wrangler.jsonc.
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "techaust-db-test",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "techaust-test",
+      "database_id": "local-test",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

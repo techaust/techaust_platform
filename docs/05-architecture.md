@@ -28,6 +28,12 @@
 >     - tests guard geometry, contrast, fonts and print colours
 >     - the build scripts live in `packages/ui/scripts/` (not the root `scripts/`)
 > 13. **Generated design outputs are committed** (`packages/ui/generated/`, `fonts/`, `brand/`), since packages stay source-only. Drift tests fail if they don't match their sources.
+>
+> **Changes made during Phase 6 M1.3 (2026-10-06):**
+> 14. **Issue guard (fixes a gap in §5.4).** An `UPDATE … WHERE status = 'draft'` that matches no row doesn't fail, so the original batch could consume a number for a document that wasn't a draft. Every issue batch now starts with `INSERT INTO issue_guard (document_id) VALUES (?)`, a view whose trigger aborts the whole batch unless the document is an unfrozen draft.
+> 15. **Triggers are generated from the schema** (`packages/db/src/triggers.ts`), so every content column of `documents` is covered. A test reads the installed trigger and fails if a column is missing. Migrations are never edited after they are applied; a new document column needs a new migration that recreates the trigger.
+> 16. **Staging D1 is migrated and seeded on every merge** (owner decision), before the Workers deploy. The seed is insert-only (`ON CONFLICT DO NOTHING`), so it never overwrites edits made in the admin.
+> 17. **Tables arrive with their milestones.** M1.3 creates identity, settings, CRM, catalogue, documents and the audit/access logs (36 tables). Payments, checkout sessions, webhook events, credits and settlements come with M6; email log and suppressions with M2.4; notifications, review items, DSR requests, idempotency keys and stats with the features that use them.
 
 ---
 
@@ -277,7 +283,8 @@ techaust_platform/
 
 ### 5.3 Integrity rules enforced in the database
 - **Frozen documents:** a `BEFORE UPDATE` trigger on `documents` aborts if `OLD.frozen_at IS NOT NULL` and any content column changes. Only the ledger columns (`paid_minor`, `credited_minor`, `balance_minor`, `status`), `voided_at`/`void_reason` and e-invoice fields may change. A matching trigger blocks `document_lines` changes for frozen parents.
-- **Append-only:** `audit_log`, `acceptances` and `webhook_events.payload` refuse UPDATE/DELETE (except the retention job, which runs through a dedicated trigger-guarded path that writes its own audit record).
+- **Append-only:** `audit_log`, `acceptances` and `catalogue_price_history` refuse UPDATE/DELETE (M1.3); `webhook_events.payload` follows in M6. The retention job's trigger-guarded deletion path is added with the retention milestone; until then nothing can delete these rows.
+- **Counters:** `doc_counters` rows can only move forward and can't be deleted (gap-free, never reused).
 - **Uniqueness:** `(series, fy, number)`, `(provider, event_id)`, `(provider, provider_payment_id)`, `(document_id)` on acceptances.
 
 ### 5.4 Gap-free numbering (ADM-INV-03)
@@ -285,6 +292,8 @@ techaust_platform/
 Issue happens in **one `db.batch()`**. D1 runs a batch as a single transaction: if any statement fails, everything rolls back and no number is consumed.
 
 ```sql
+-- guard: abort the whole batch unless ?3 is an unfrozen draft (M1.3, change 14)
+INSERT INTO issue_guard(document_id) VALUES (?3);
 -- 0. ensure counter row exists for this FY
 INSERT INTO doc_counters(series, fy, next_no) VALUES (?1, ?2, 1) ON CONFLICT DO NOTHING;
 -- 1. take the number
@@ -305,6 +314,8 @@ The formatted number is computed in SQL from the counter value (`printf('TH/INV/
 - `drizzle-kit generate` writes SQL into `packages/db/migrations/`. It is reviewed in the PR and applied with `wrangler d1 migrations apply <db> --remote` by the deploy workflows (**staging first; production only in the approved prod workflow**). `drizzle-kit push` is banned.
 - Triggers and views live in hand-written SQL migrations alongside the generated ones.
 - Tests apply all migrations to a fresh D1 via `applyD1Migrations()`.
+- CI fails if `src/schema` changed without a generated migration (`pnpm db:generate` must produce nothing).
+- Local: `pnpm db:migrate:local` and `pnpm db:seed:local` (one shared local database in `.wrangler/state` for admin, portal and jobs). Staging: applied by `deploy-staging.yml` on merge.
 - **Backward-compatible migrations only** (expand → migrate → contract across two releases), so a rollback of Worker code doesn't need a DB rollback.
 
 ---
