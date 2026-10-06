@@ -94,7 +94,7 @@
 | ID | Pri | Requirement | Acceptance criteria |
 |---|---|---|---|
 | WEB-G-01 | M | **Static output.** Every page is prerendered HTML, served as Workers static assets. The only server code on `techaust.com` is `/api/forms/*` and `/api/geo`. | The build emits HTML for every route. Page responses run no Worker script (the asset path is served directly). `CF-Cache-Status` is HIT on repeat views. The page TTFB p75 is < 200 ms from India. |
-| WEB-G-02 | M | **No database access** from the public Worker | The `web` Worker's `wrangler` config has no D1 or R2 bindings, only a Queue producer, Turnstile secret and rate limiter. A CI check fails if a D1 or R2 binding is added to `apps/web`. |
+| WEB-G-02 | M | **No database access** from the public Worker | The `web` Worker's `wrangler` config has no D1, R2, KV, Durable Object or Hyperdrive bindings, only a Queue producer, Turnstile secret and rate limiter. A CI check (`scripts/check-web-bindings.mjs`) fails if any of those bindings is added to `apps/web`. |
 | WEB-G-03 | M | **Header**: logo (home link), primary nav (Services ▾, Industries ▾, Pricing, Work, About, Contact), ₹/$ toggle, theme toggle, CTA "Book a Discovery Sprint" | Keyboard: Tab reaches every item. Dropdowns open on Enter/Space, close on Esc and return focus to the trigger. On mobile (< 768 px) a full-screen menu traps focus and closes on Esc. The menu works without JavaScript via `<details>` progressive enhancement. |
 | WEB-G-04 | M | **Footer**: short brand line, service and industry links, company links, legal links, contact (email, WhatsApp, "Balurghat, West Bengal, India"), LinkedIn links, cookie-preferences link, ©. **No GSTIN or proprietor name** (the full address appears only on Contact and the legal pages). | Every link resolves (link checker in CI). No `@techaustsocial` anywhere. No GSTIN anywhere on the website (build check). |
 | WEB-G-05 | M | **Theme**: light by default. Follows `prefers-color-scheme`; the toggle overrides it and remembers the choice (localStorage). No flash of the wrong theme. | First paint uses the correct theme (inline head script, < 1 KB). Both themes pass AA contrast on every template. |
@@ -143,7 +143,7 @@ Every service page uses one template, with sections in this order ([03 §3A.3](0
 | `/services/dpdp-readiness` | S3 | S3 | Book an audit | **Flag off** until a legal partner exists. "Technical implementation only, legal interpretation by your lawyer" banner. |
 | `/services/fractional-cto` | S4 | S4 | Talk to us | Led by the founder |
 | `/services/care-plans` | S16 + S17 | S16 tiers, S17 | Choose a plan | Three-tier comparison table; business-hours SLAs (Essential 2 BD, Growth 1 BD, Scale 4 business hours critical); rollover and overage rules; AI Ops add-on |
-| `/services/dev-subscription` | S18 | S18 | Start a subscription | "One active request at a time; pause or cancel monthly"; limited slots (no fake scarcity counter) |
+| `/services/dev-subscription` | S18 | S18 | Start a subscription | "One active request at a time; pause or cancel monthly"; a small number of subscriptions at a time (no scarcity counter) |
 
 ### 3.3 Other pages
 
@@ -161,7 +161,7 @@ Every service page uses one template, with sections in this order ([03 §3A.3](0
 | WEB-CONTACT | `/contact` | M | Short form (FRM-CONTACT), email `contact@techaust.com`, WhatsApp link + hours, **full postal address** (from site config), response promise ("within one business day, Mon–Sat 10:00–19:00 IST"), Cal.com link | Works without JS (plain POST with a server redirect), progressively enhanced with inline validation. |
 | WEB-QUOTE | `/get-a-quote` | M | Multi-step quote / Discovery request (FRM-QUOTE) | See §4. |
 | WEB-THANKS | `/thanks` | M | Confirmation, what happens next (reply within 1 business day), Cal.com link, links to pricing and how-we-work. `noindex`. | Reached only after a successful submit. Shows a reference number (lead ref). |
-| WEB-LEGAL | `/privacy`, `/terms`, `/refund-policy`, `/delivery-policy`, `/cookies` | M | Drafted per [08](08-security-compliance.md) and [07 §8](07-content.md). "Last updated" date and version shown. The cookie page includes the preferences control. **`/delivery-policy`** (how services are delivered: digitally, by milestones and timelines) is required by Razorpay's website checklist, together with Terms, Privacy, Refund, Contact and Pricing ([08-research B](08-research-appendix/B-dpdp-legal.md)). The privacy notice names a **Grievance Officer** (the founder) with a 1-month reply commitment (IT SPDI Rules 2011, in force now) and offers the notice in any Eighth Schedule language on request (DPDP Rule 3, from 13 May 2027). | Each legal page has a version and date in front-matter. Changes are listed in a changelog section. |
+| WEB-LEGAL | `/privacy`, `/terms`, `/refund-policy`, `/delivery-policy`, `/cookies` | M | Drafted per [08](08-security-compliance.md); the draft text is in [07-A](07-content-appendix/A-legal-pages.md) (**VERIFY WITH CA/LEGAL**). "Last updated" date and version shown. The cookie page includes the preferences control. **`/delivery-policy`** (how services are delivered: digitally, by milestones and timelines) is required by Razorpay's website checklist, together with Terms, Privacy, Refund, Contact and Pricing ([08-research B](08-research-appendix/B-dpdp-legal.md)). The privacy notice names a **Grievance Officer** (the founder) with a 1-month reply commitment (IT SPDI Rules 2011, in force now) and offers the notice in any Eighth Schedule language on request (DPDP Rule 3, from 13 May 2027). | Each legal page has a version and date in front-matter. Changes are listed in a changelog section. |
 | WEB-SEC | `/security` | M | How to report a vulnerability, scope, safe-harbour wording, response targets; links security.txt | security.txt `Policy:` points here. |
 | WEB-404 | 404 | M | Helpful links (services, pricing, contact), search-free | Returns HTTP 404 (not 200). `noindex`. No canonical tag pointing at home. |
 | WEB-OG | OG images | S | A 1200×630 image per page, generated at build from the title + category using brand tokens | Each page's `og:image` URL exists and is 1200×630. |
@@ -192,11 +192,11 @@ Every service page uses one template, with sections in this order ([03 §3A.3](0
 |---|---|---|---|
 | ADM-G-01 | M | **SPA shell** (React Router 8, data mode): left nav (Dashboard, Leads, Clients, Projects, Care plans, Time, Catalogue, Proposals, Estimates, Invoices, Payments, Reports, Approvals, Audit log, Settings), top bar (search, notifications, user menu), breadcrumbs | Usable at 375 px for: dashboard, lead view/edit, recording a payment, approvals. All screens work from 768 px up. |
 | ADM-G-02 | M | **Server-side permission check on every API route** (deny by default), using the matrix in §9 | Each route has an automated test per role (allowed / denied). The UI hides what a role can't do, but the server is the source of truth. |
-| ADM-G-03 | M | **Lists**: server-side pagination (25/50/100), sort, filters, search; filters kept in the URL | 1,000-row fixtures load a page in < 300 ms (API p95, staging). |
+| ADM-G-03 | M | **Lists**: server-side keyset pagination (25/50 rows), sort, filters, search; filters kept in the URL | 1,000-row fixtures load a page in < 300 ms (API p95, staging). |
 | ADM-G-04 | M | **Forms** validate with the shared schemas; unsaved-changes warning; optimistic UI only where safe (never for money actions) | Money actions show a confirmation dialog summarising the amount and the target. |
 | ADM-G-05 | M | **Global search** across leads, clients, contacts, projects, documents (by number) | Returns within 500 ms on staging data. Results respect role permissions. |
 | ADM-G-06 | M | **Audit log** entry for every create/update/delete on business records, every money action, every login or security event and every settings change (ADM-AUD) | A test asserts that each mutating route writes an audit row. |
-| ADM-G-07 | M | **Money** stored as integer minor units (paise/cents) with a currency code. Formatting via `Intl.NumberFormat('en-IN')` for INR (₹1,23,456.00) and `en-US` for USD. | Property tests: format/parse round-trip; no floats in money paths (lint rule). |
+| ADM-G-07 | M | **Money** stored as integer minor units (paise/cents) with a currency code. Formatting via `Intl.NumberFormat('en-IN')` for INR (₹1,23,456.00) and `en-US` for USD. | Property tests: format/parse round-trip; no floats in money paths (a scanning test, `packages/core/test/no-floats.test.ts`). |
 | ADM-G-08 | M | **Dates** stored in UTC, displayed in IST (Asia/Kolkata). The financial year runs 1 April – 31 March. | FY boundary tests (31 Mar 23:59 IST vs 1 Apr 00:00 IST). |
 | ADM-G-09 | S | **Notifications** in-app (bell) + email for: new lead, proposal viewed/accepted, payment received, approval requested, webhook failure, job failure | Each notification links to the record. |
 
@@ -205,7 +205,7 @@ Every service page uses one template, with sections in this order ([03 §3A.3](0
 | ID | Pri | Requirement | Acceptance criteria |
 |---|---|---|---|
 | ADM-AUTH-01 | M | **Email + password + mandatory TOTP** for all staff roles | A user can't reach any data route until TOTP is enrolled and verified. |
-| ADM-AUTH-02 | M | **Browser-side Argon2id** (WASM, in a Web Worker) → the server stores `HMAC-SHA-256(pepper, salt ‖ clientHash)` (design in [05 §6](05-architecture.md)) | Server CPU for login ≤ 5 ms p99, measured in Phase 6 M1. If it doesn't fit, I stop and ask. The salt lookup for an unknown email returns a deterministic fake salt (no user enumeration). |
+| ADM-AUTH-02 | M | **Browser-side Argon2id** (WASM, in a Web Worker) → the server stores `HMAC-SHA-256(pepper, salt ‖ clientHash)` (design in [05 §6](05-architecture.md)) | Server CPU for login ≤ 5 ms p99, measured in Phase 6 M1.4 (`docs/runbooks/cpu-baseline.md`, PR #7). If it doesn't fit, I stop and ask. The salt lookup for an unknown email returns a deterministic fake salt (no user enumeration). |
 | ADM-AUTH-03 | M | **Password policy**: ≥ 12 characters, checked against a top-100k breached-password list (k-anonymity HIBP check from the browser, optional) and a zxcvbn-style strength score ≥ 3 | Weak passwords are rejected with a helpful message. |
 | ADM-AUTH-04 | M | **TOTP** (RFC 6238, 30 s, 6 digits, ±1 step) + **10 single-use recovery codes** (shown once, stored hashed) | A replayed code within its window is rejected. A used recovery code can't be reused. |
 | ADM-AUTH-05 | M | **Sessions**: HttpOnly, Secure, `SameSite=Strict`, `__Host-` prefix, admin host only; 12 h idle / 7 days absolute; rotation on login and on privilege change; active-sessions list with remote sign-out | Tests for each expiry. Signing out everywhere invalidates all sessions instantly. |
@@ -222,7 +222,7 @@ Every service page uses one template, with sections in this order ([03 §3A.3](0
 | ADM-SET-01 | M | **Company profile**: trade name, legal name (proprietor's name), GSTIN (validated: 15-char format + checksum), PAN (derived from GSTIN), principal place of business, state + code (WB 19), email/phone for documents, logo (light/dark), signature image (optional) | GSTIN checksum test vectors pass. Changes are audit-logged with before/after. |
 | ADM-SET-02 | M | **Bank details**: INR block (account name, number, IFSC, bank, branch) and a USD/SWIFT block (SWIFT/BIC, bank address, intermediary bank if any, purpose-code hint). **Entered by the owner in this screen only.** | Stored in D1. Displayed masked in the admin (last 4 digits), in full on documents. Edits need step-up auth and are audit-logged. Never logged in plain text. |
 | ADM-SET-03 | M | **Tax settings** (VERIFY WITH CA): default GST rate (18 %), per-line override allowed, SAC defaults per category, rounding mode (default: tax per line to 2 decimals, grand total rounded to nearest ₹1 with a "Round off" line), export mode default (**under LUT** / IGST paid), LUT ARN + validity FY, USD→INR rate source (default: RBI reference rate on invoice date, entered or fetched), e-invoicing switch (off), reverse-charge text | Every tax-engine test reads its settings from fixtures, not constants. Changing a setting affects only new documents. |
-| ADM-SET-04 | M | **Numbering** per document type: prefix, FY token format, padding, next number (read-only once used), reset each 1 April. Defaults: `TH/INV/2627/0001` (tax invoice), `TH/EXP/2627/0001` (export invoice), `TH/CN/2627/0001` (credit note), `TH/DN/2627/0001` (debit note), `TH/RV/2627/0001` and `TH/RF/2627/0001` (receipt/refund vouchers, used only in receipt-voucher mode), `TH/RCT/2627/0001` (payment receipt, not a GST document), `TH/PI/2627/0001` (proforma), `TH/EST/2627/0001` (estimate), `TH/PRP/2627/0001` (proposal; versions shown as "v2") | A validator rejects formats that can exceed **16 characters** or use characters other than A–Z, 0–9, `/` and `-` for GST documents (invoice, export, credit/debit note, vouchers). Format changes are audit-logged. Next numbers can't be decreased. |
+| ADM-SET-04 | M | **Numbering** per document type: prefix, FY token format, padding, next number (read-only once used), reset each 1 April. Defaults: `TH/INV/2627/0001` (tax invoice), `TH/EXP/2627/0001` (export invoice), `TH/CN/2627/0001` (credit note), `TH/DN/2627/0001` (debit note), `TH/RV/2627/0001` and `TH/RF/2627/0001` (receipt/refund vouchers, used only in receipt-voucher mode), `TH/RCT/2627/0001` (payment receipt, not a GST document), `TH/PI/2627/0001` (proforma), `TH/EST/2627/0001` (estimate), `TH/PRP/2627/0001` (proposal; versions shown as "v2") | For every series, a validator rejects formats that can exceed **16 characters** or use characters other than A–Z, 0–9, `/` and `-` (GST requires this for invoice, export, credit/debit note and voucher series). Format changes are audit-logged. Next numbers can't be decreased. |
 | ADM-SET-05 | M | **Payment terms**: default Net 7; reminder offsets (−3, 0, +3, +7, +14); default schedules per catalogue category (40/30/30 builds; 100 % small jobs; monthly in advance for care plans); proposal validity 15 days; Razorpay minimum partial amount (default ₹10,000 or the full balance if lower); advance mode (Proforma → Tax invoice / Tax invoice upfront / Receipt voucher), **overridable per client and per document** (some B2B clients pay only against a tax invoice) | Effective for new documents only. |
 | ADM-SET-06 | M | **Gateways**: per provider, a mode (test/live) and a status. **Keys are not entered here.** They live in Wrangler secrets; the screen shows only "configured / missing" and the mode. **Live mode can't be selected until the owner's go-live approval flag (Phase 7) is set via a deploy-time variable.** | With `PAYMENTS_LIVE_ALLOWED=false`, the API rejects switching to live. |
 | ADM-SET-07 | M | **Email settings**: sender identities (hello@, billing@, no-reply@), reply-to, BCC-to-owner toggle per template, footer text | Test-send button per template (to the current user only). |
@@ -246,7 +246,7 @@ Every service page uses one template, with sections in this order ([03 §3A.3](0
 | ADM-LEAD-03 | M | Owner (assignee), next-action date + note, activity timeline (notes, emails sent, stage changes) | Overdue next actions are highlighted and listed on the dashboard. |
 | ADM-LEAD-04 | M | **Convert** → creates a Client + primary Contact (pre-filled) and opens a draft proposal (service pre-selected) | Conversion is atomic. The lead links to the client and proposal. |
 | ADM-LEAD-05 | M | **Retention**: unconverted leads are auto-deleted per ADM-SET-09, with a 14-day "scheduled for deletion" view | A deletion writes an audit entry with no personal data (lead ref only). |
-| ADM-LEAD-06 | S | Reply-from-admin: send a templated or free-text email from `hello@` (logged in the timeline) | Uses the email pipeline (JOB-EMAIL). |
+| ADM-LEAD-06 | S | Reply-from-admin: send a templated or free-text email from `hello@` (logged in the timeline) | Uses the email pipeline (JOB-Q-01). |
 
 ### 5.6 Clients and contacts (ADM-CLI)
 
@@ -325,7 +325,7 @@ Every service page uses one template, with sections in this order ([03 §3A.3](0
 | ADM-INV-02 | M | **Lifecycle**: Draft → Issued → Partially paid → Paid, plus Overdue (computed) and Void (keeps its number; content frozen; reason required). Credit-noted states: partially/fully credited. | Status is derived from the ledger, not set manually (except Void). Tests for every transition. |
 | ADM-INV-03 | M | **Numbering**: assigned **only at issue**, gap-free per series per FY, never reused, atomic (no duplicates under concurrent issue) | A concurrency test issues 20 invoices in parallel → 20 consecutive numbers, none duplicated. FY rollover test. |
 | ADM-INV-04 | M | **Issue = Owner only** (Q-P3-2), with step-up auth. Staff can "Request issue" (ADM-APR). | API tests per role. |
-| ADM-INV-05 | M | **Tax engine** (pure functions in `packages/core/tax`, 100 % branch coverage): supplier state WB (19); client in WB → CGST + SGST (half each); other Indian state → IGST; overseas → export (LUT: 0 % IGST with the LUT declaration; IGST paid: IGST at the rate); unregistered Indian clients: the state of the client's address on record (no address → West Bengal); tax per line per tax head = round-half-up(taxable × rate) in paise, with CGST and SGST computed separately at half the rate each; per-line rate and SAC; rounding per ADM-SET-03; amount in words (Indian system for INR: lakh/crore; international for USD) | Golden tests: a table of ≥ 40 cases (intra/inter/export, discounts, mixed rates, rounding edge cases like ₹0.005, credit notes) with expected paise outputs. |
+| ADM-INV-05 | M | **Tax engine** (pure functions in `packages/core/tax`, 100 % branch coverage): supplier state WB (19); client in WB → CGST + SGST (half each); other Indian state → IGST; overseas → export (LUT: 0 % IGST with the LUT declaration; IGST paid: IGST at the rate); unregistered Indian clients: the state of the client's address on record (no address → West Bengal); tax per line per tax head = round-half-up(taxable × rate) in paise, with CGST and SGST computed separately at half the rate each; per-line rate and SAC; rounding per ADM-SET-03; amount in words (Indian system for INR: lakh/crore, written "Rupees … and … Paise Only"; international for USD, written "US Dollars … and … Cents Only") | Golden tests: a table of ≥ 40 cases (intra/inter/export, discounts, mixed rates, rounding edge cases like ₹0.005, credit notes) with expected paise outputs. |
 | ADM-INV-06 | M | **Mandatory fields** (configurable checklist; defaults from Rule 46, VERIFY WITH CA): supplier legal name (proprietor) + trade name, address, GSTIN; invoice number and date; client name, address, GSTIN if registered; place of supply (state name + code); line description, SAC, quantity, unit, rate, discount, taxable value, tax rate and amount per tax type; totals in figures and words; reverse-charge statement ("Tax payable on reverse charge: No"); signature/authorised signatory; "ORIGINAL FOR RECIPIENT" marking (Rule 48); export declaration for exports; country of destination for exports; bank details; payment link/QR. For unregistered clients with an invoice value ≥ ₹50,000: name, address and state are required. | Issuing is blocked if any mandatory field is missing (a validation list is shown). Test per field. |
 | ADM-INV-07 | M | **Immutability**: at issue, the content snapshot + PDF are stored in R2 with a SHA-256 hash; the DB row is locked by a trigger. Corrections happen **only via credit notes**. | The update API returns 409 for issued invoices. A DB trigger blocks direct updates to frozen fields. |
 | ADM-INV-08 | M | **USD invoices**: stored in USD; the INR equivalent and the exchange rate (value, date, source) are recorded at issue for GST reporting (Rule 34, VERIFY WITH CA) | The rate is required to issue a USD invoice. The rate can be entered manually or fetched (RBI reference rate). |
@@ -355,9 +355,9 @@ Every service page uses one template, with sections in this order ([03 §3A.3](0
 | ADM-PAY-08 | M | **Refunds** (Owner only, step-up auth): full/partial via the gateway API or manual; always paired with a credit note (created as a draft, issued by the Owner) | A refund can't exceed the amount paid. Refund status is tracked from the webhook. |
 | ADM-PAY-09 | M | **Receipts**: an automatic receipt (`TH/RCT/…`) per confirmed payment: PDF to R2, email to the billing contacts from `billing@`, visible in the portal | Generated once per payment (idempotent). |
 | ADM-PAY-10 | S | **Reconciliation**: Razorpay settlements (API) matched against payments; a "match bank entry" screen for transfers; unmatched items listed | The settlement fee is shown (absorbed, not charged to the client). |
-| ADM-PAY-13 | M | **Gateway limits**: warn when a Stripe/PayPal export payment would exceed **₹25 lakh per transaction** (RBI PA-CB cap, VERIFY). Never add a UPI surcharge line (UPI MDR of 0.4% above ₹2,000, capped at ₹300, from 15 Oct 2026, must be absorbed by the merchant). | Test for the warning. |
 | ADM-PAY-11 | M | **Go-live guard**: provider live keys are used only when `PAYMENTS_LIVE_ALLOWED=true` (set only at the Phase 7 approval) and the provider's mode = live | Test: live mode is rejected when the flag is false. |
 | ADM-PAY-12 | M | **We never collect or store card or bank credentials of payers.** All entry happens on gateway-hosted pages. | No card fields in any of our UI (code review checklist). |
+| ADM-PAY-13 | M | **Gateway limits** (VERIFY WITH CA/LEGAL): warn when a Stripe/PayPal export payment would exceed **₹25 lakh per transaction** (RBI PA-CB cap). Never add a UPI surcharge line (UPI MDR of 0.4% above ₹2,000, capped at ₹300, from 15 Oct 2026, must be absorbed by the merchant). | Test for the warning. |
 
 ### 5.15 Approvals (ADM-APR)
 
@@ -371,7 +371,7 @@ Every service page uses one template, with sections in this order ([03 §3A.3](0
 | ID | Pri | Requirement | Acceptance criteria |
 |---|---|---|---|
 | ADM-MAIL-01 | M | Templates (HTML + plain text, brand tokens): lead acknowledgement, internal lead alert, proposal/estimate sent, proposal accepted (both sides), invoice issued, proforma issued, reminder (5 variants), payment received + receipt, credit note issued, magic link, staff invite, login alert, 2FA changed, lockout, approval requested/decided, weekly digest | Each renders with fixture data and has a plain-text version. Snapshot tests. They pass a basic email-client check (tables layout, inline CSS). |
-| ADM-MAIL-02 | M | **Email log**: recipient, template, related record, SES message ID, status (sent / delivered / bounced / complained), timestamps | Bounce/complaint events update the status (JOB-HOOK-SES). Hard-bounced addresses are flagged on the contact. |
+| ADM-MAIL-02 | M | **Email log**: recipient, template, related record, SES message ID, status (sent / delivered / bounced / complained), timestamps | Bounce/complaint events update the status (JOB-HOOK-01). Hard-bounced addresses are flagged on the contact. |
 | ADM-MAIL-03 | M | Header-injection safe; the `List-Unsubscribe` header on non-transactional mail (digest, marketing) | Tests. |
 
 ### 5.17 Reports (ADM-REP)
@@ -382,9 +382,9 @@ Every service page uses one template, with sections in this order ([03 §3A.3](0
 | ADM-REP-02 | M | **Outstanding & ageing**: 0–30 / 31–60 / 61–90 / 90+ days past due, per client; statement links | |
 | ADM-REP-03 | M | **Pipeline & win rate**: leads and proposals by stage and value, conversion %, lost reasons, source pages, time-to-win | |
 | ADM-REP-04 | M | **GST & CA exports** (VERIFY WITH CA for formats): sales register, output tax by rate and type (CGST/SGST/IGST/zero-rated), B2B / B2C / export splits, credit notes, HSN/SAC summary, documents-issued summary (per series: from–to, total, cancelled), **GSTR-1-ready Excel/CSV**, payment register | Exports are generated **in the browser** from API JSON (free-plan CPU). Column layouts are versioned. Totals match the invoices. |
-| ADM-REP-07 | M | **FEMA EDF report** (new from 1 Oct 2026, VERIFY WITH CA): a monthly list of export-of-services invoices for filing with your bank (AD bank) within 30 days of the end of the invoice month; plus an export-realisation status report | Columns versioned. A reminder email on the 5th of each month. |
 | ADM-REP-05 | M | **Care plans**: hours used vs included per client per month; overage to invoice | |
 | ADM-REP-06 | M | Accountant role: all finance reports + exports, read-only | Role tests. |
+| ADM-REP-07 | M | **FEMA EDF report** (new from 1 Oct 2026, VERIFY WITH CA): a monthly list of export-of-services invoices for filing with your bank (AD bank) within 30 days of the end of the invoice month; plus an export-realisation status report | Columns versioned. A reminder email on the 5th of each month. |
 
 ### 5.18 Audit log (ADM-AUD)
 
@@ -421,7 +421,7 @@ Every service page uses one template, with sections in this order ([03 §3A.3](0
 | JOB-HOOK-01 | M | `POST /razorpay` (`X-Razorpay-Signature` HMAC-SHA256 of the raw body), `POST /stripe` (`Stripe-Signature`, 5-min tolerance), `POST /paypal` (verify-signature), `POST /ses` (SNS signature verified, or a shared-secret path + SNS signature) | Invalid signature → 400 and an alert after 5 in 1 h. Constant-time comparisons. Tests with recorded sandbox payloads. |
 | JOB-HOOK-02 | M | **Idempotency**: an event-ID unique table; duplicates → 200 with no side effects | Test. |
 | JOB-HOOK-03 | M | Respond 2xx fast; heavy work (receipt PDF, emails) is queued | Hook CPU ≤ 5 ms p99. |
-| JOB-Q-01 | M | Queues: `leads`, `pdf`, `email`, `events` (+ dead-letter queues). Consumers in small batches (≤ 10), max 5 retries with backoff, then DLQ + an admin alert | Tests per consumer. DLQ items are visible in the admin under "Needs review". |
+| JOB-Q-01 | M | Queues: `leads`, `pdf`, `email`, `events` (+ dead-letter queues). Consumers take batches of 1–5 (one unit of work per message; the PDF consumer runs with `max_concurrency` 1), max 5 retries with backoff, then DLQ + an admin alert | Tests per consumer. DLQ items are visible in the admin under "Needs review". |
 | JOB-PDF-01 | M | PDF rendering via Browser Run: on proposal send, acceptance, invoice/credit-note/receipt issue, statement request. Paced to the free-tier limits; results cached in R2 with a hash; never re-rendered for frozen documents | A burst of 20 PDFs completes without errors (paced). The stored PDF hash matches the DB. |
 | JOB-CRON-01 | M | Daily 03:30 IST: mark overdue invoices, expire proposals, enqueue reminders (sending window 09:00–19:00 IST), retention clean-up, session clean-up | Each cron handler only enqueues (≤ 5 ms CPU). |
 | JOB-CRON-02 | M | Daily 06:00 IST: care-plan billing for plans whose billing day = today | Idempotent per plan per period. |
@@ -435,7 +435,7 @@ Every service page uses one template, with sections in this order ([03 §3A.3](0
 | ID | Area | Requirement |
 |---|---|---|
 | NFR-1 | Performance (site) | Lighthouse mobile ≥ 95/100/100/100; field LCP < 2.0 s, INP < 200 ms, CLS < 0.05 (p75); TTFB < 200 ms; JS ≤ 50 KB gz per page |
-| NFR-2 | **Free-plan budgets** | Per request CPU: API p99 ≤ 8 ms, login ≤ 5 ms, hooks ≤ 5 ms, cron ≤ 5 ms. Requests: total < 50k/day (alert at 50 %, the upgrade trigger in [03 §3C.4](03-plan.md)). D1: < 1M rows read/day (indexes on all filter columns). Browser Run: < 50 % of the daily minutes. Queues: < 5k ops/day. All monitored ([08](08-security-compliance.md)). |
+| NFR-2 | **Free-plan budgets** | Per request CPU: API p99 ≤ 7 ms (the Phase 6 gate, [05 §1.2](05-architecture.md)), login ≤ 5 ms, hooks ≤ 5 ms, cron ≤ 5 ms. Requests: total < 50k/day (alert at 50 %, the upgrade trigger in [05 §1.2](05-architecture.md)). D1: < 1M rows read/day (indexes on all filter columns). Browser Run: < 50 % of the daily minutes. Queues: < 5k ops/day. All monitored ([08](08-security-compliance.md)). |
 | NFR-3 | Performance (apps) | Admin/portal initial JS ≤ 250 KB gz (code-split per route); API p95 < 300 ms from India; lists of 1,000 rows paginate server-side |
 | NFR-4 | Accessibility | WCAG 2.2 AA for all three surfaces; PDFs tagged where the renderer allows (title, language, reading order) |
 | NFR-5 | Security | OWASP ASVS L2 targets for auth, sessions, access control and input validation; details and threat model in [08](08-security-compliance.md) |
@@ -468,7 +468,7 @@ Every service page uses one template, with sections in this order ([03 §3A.3](0
 | Record manual payment | ✅ (confirmed) | ✏️ → ⏳ pending verification | — | 👁 |
 | Refunds | ✅ (step-up) | — | — | 👁 |
 | Reports | ✅ | Projects, time, care plans | Pipeline only | ✅ finance + exports |
-| GST/CA exports | ✅ | — | — | ✅ |
+| GST/CA exports | ✅ (step-up) | — | — | ✅ (step-up) |
 | Audit log | ✅ | — | — | 👁 finance events |
 | Approvals queue | ✅ | own requests | own requests | — |
 
@@ -516,19 +516,9 @@ Every service page uses one template, with sections in this order ([03 §3A.3](0
 
 ---
 
-## 12. Inputs still needed from you (tracked in [07 §9](07-content.md))
+## 12. Inputs still needed from you
 
-| Item | Needed by |
-|---|---|
-| Logo source files → `brand-incoming/` | ✅ Received, then retired: new identity designed in M1.1 (assets in `packages/ui/brand/`) |
-| Founder headshot + bio (or notes) | Public-website milestone |
-| WhatsApp business number | Public-website milestone |
-| LinkedIn company page URL + founder LinkedIn URL | Public-website milestone |
-| Cal.com booking URL (you create a free account) | Public-website milestone |
-| 2–3 case-study briefs (template in [07 §6](07-content.md)) | Public-website milestone (otherwise "coming soon") |
-| Bank details, GSTIN, legal name, LUT ARN (if filed) | Typed by you into the admin Settings screen (invoice milestone) |
-| Zoho aliases `hello@` and `billing@` | Before the email milestone |
-| Gateway sandbox/test keys (Razorpay, Stripe, PayPal) | Set by you as Wrangler secrets (payments milestone). I'll give exact commands; you run them. |
+The single list is [07 §9](07-content.md) (asset list and owner inputs): headshot and bio, WhatsApp number, LinkedIn URLs, Cal.com URL, case-study briefs, Zoho aliases, bank details, GSTIN, legal name, LUT ARN and the gateway test keys. It is kept in one place so the two documents cannot drift apart.
 
 ---
 
