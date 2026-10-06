@@ -4,27 +4,33 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 Rebuild of techaust.com: a public website, admin and client portal for **TecHaust Technologies** (sole proprietorship, GST-registered, Balurghat, West Bengal). Owner: Rupak Sarkar.
+- **Live site:** the old Worker **`techaust-web`**, which is also the rollback target.
+- **Staging Workers:** `https://techaust-platform-{web,admin,portal,jobs}-staging.techaust-technologies-153.workers.dev`.
 
-## Current status (update at every phase or milestone)
-- Phases 1–5 approved. **Phase 6 M1.1 done and approved** (2026-10-06, PR #3): design tokens, fonts, and the new **brand identity "Patina"** (docs/06 §1–3, docs/11 audit, ADR 0013). The assets are in `packages/ui/brand/`.
-- **M1.2 done and approved** (2026-10-06, PR #5): the core library in `packages/core`.
-- **M1.3 built** (2026-10-06, awaiting approval): the D1 schema, triggers and seed in `packages/db`; staging D1 is migrated and seeded on every merge. **Next: M1.4** (auth CPU spike; Cloudflare Access on staging first). See `docs/09-roadmap.md`.
-- Open owner actions (not blocking):
-  - trademark search (VERIFY WITH LEGAL, 08 U-8)
-  - a printed proof and Pantone match
-  - the phone number for the business card
-- Live site: the old Worker **`techaust-web`** (rollback target). New staging Workers: `https://techaust-platform-{web,admin,portal,jobs}-staging.techaust-technologies-153.workers.dev`.
+**This file holds rules only, never status or history.** The owner starts each day in a new conversation with **"start the day"** and ends it with **"end the day"**. A fresh conversation each day costs far less per turn than one very long one. The skills `.claude/skills/start-session` and `end-session` run these.
+
+## The record (read at the start, update at the end)
+- **`docs/STATUS.md`:** the single place for where things stand: done, in progress, next, waits on the owner, open follow-ups. Replace it at the end of each session; never append to it.
+- **`docs/DECISIONS.md`:** one row per decision (date, decision, who, where it's applied). **Never ask the owner again about a question that's decided there.**
+- **`CHANGELOG.md`:** one line per merged PR, newest first.
+- **`docs/runs/<task>.md`:** one file per task given to a builder: the brief, the builder's report, the review, the integration notes ([docs/runs/README.md](docs/runs/README.md)).
 
 ## Read first
-- Status, decisions and the build order: `docs/09-roadmap.md`, `docs/04-prd.md` §0, `docs/10-tooling.md` §6
+- The plan and build order: `docs/09-roadmap.md`. Product decisions: `docs/04-prd.md` §0. Tools: `docs/10-tooling.md`
 - Requirements: `docs/04-prd.md` (IDs like `ADM-INV-03` are referenced in tests and commits)
-- Architecture: `docs/05-architecture.md` · Design + brand rules: `docs/06-design-system.md` · Brand audit: `docs/11-brand-audit.md` · Copy: `docs/07-content.md` · Security and compliance: `docs/08-security-compliance.md` · ADRs: `docs/adr/`
+- Other docs:
+  - architecture: `docs/05-architecture.md`
+  - design and brand rules: `docs/06-design-system.md`
+  - brand audit: `docs/11-brand-audit.md`
+  - copy: `docs/07-content.md`
+  - security and compliance: `docs/08-security-compliance.md`
+  - ADRs: `docs/adr/`
 - Environments and Cloudflare resources: `docs/runbooks/environments.md`
 - Background (approved): `docs/01-audit.md`, `docs/02-services-strategy.md`, `docs/03-plan.md` (where 03 differs from 05, **05 wins**)
 
 ## Hard rules (owner's ground rules)
 1. **Never guess.** If information is missing or a decision is the owner's, stop and ask with AskUserQuestion: up to 4 questions per batch, the recommended option first and marked "(Recommended)". Explain anything technical in plain English when asked.
-2. **Phases and milestones need an explicit "approved".** Each milestone: explain → build + tests → verify locally → PR → CI green → show → wait.
+2. **Milestones are approved on staging.** Each milestone: explain → build + tests → verify locally → review → PR → CI green → it merges itself and deploys to staging → show the owner → **wait for "approved" before starting the next milestone.** A PR that the record marks as held (for example "not before Access is on") gets no auto-merge.
 3. **Old site is READ-ONLY:** `D:\BUSINESS\1. PARENT PROJECT\TECHAUST TECHNOLOGIES\ASSETS\WEBSITE`. Never modify it, build in it, or run git-writing commands there. **Never read the sibling `CREDENTIALS` folder.**
 4. **Never deploy to, rename or delete the Worker `techaust-web`.** Don't touch production, DNS, or Cloudflare/AWS/GitHub settings without the owner's approval for that specific action. Phase 6 deploys go to **staging only** (automatically, on merge to `main`).
 5. **Secrets:** never hardcode, commit, or ask for them in chat. Names only in `.env.example` / `.dev.vars.example`. Give the owner the exact `wrangler secret put …` / `gh secret set …` command to run.
@@ -32,13 +38,49 @@ Rebuild of techaust.com: a public website, admin and client portal for **TecHaus
 7. **Payments:** sandbox/test keys only until the owner's explicit go-live (`PAYMENTS_LIVE_ALLOWED=false`). Never collect or store card or bank credentials.
 8. **Compliance:** tag GST, invoicing law, payments regulation and DPDP items **"VERIFY WITH CA/LEGAL"**, and never present them as settled advice. Tax/legal rules are **settings** with researched defaults (`docs/08-research-appendix/`).
 9. **Cost:** everything must fit the **Cloudflare Workers Free plan** (10 ms CPU per invocation, including cron and queue consumers) and ₹500–1,000/month. Propose any paid upgrade separately.
-10. **Honesty:** no fabricated metrics, testimonials, team members, clients or "live" data. Respect the banned-phrase list in `docs/07-content.md` §1.3.
-11. **Tools:** approved tools are listed in `docs/10-tooling.md`. Ask before using anything new. The Cloudflare MCP server is used **read-only**.
-12. Keep `docs/`, this file and memory notes updated so work can resume across sessions.
+10. **Honesty:** no fabricated metrics, testimonials, team members, clients or "live" data. Respect the banned-phrase list in `docs/07-content.md` §1.3. Never invent client data; a missing client input becomes a clearly named, flagged default only when the owner says so.
+11. **Tools:** approved tools are listed in `docs/10-tooling.md`. **Never install plugins, MCP servers or packages without the owner's go-ahead.** The Cloudflare MCP server is used **read-only**.
+12. Keep the record (above), this file and memory notes updated so work can resume across sessions.
+
+## Working with the owner
+- **The owner isn't a shell user.** Give click-by-click steps, one command per code block, with full paths.
+- **Decisions:** ask only the ones that are the owner's, as multiple-choice questions with the recommendation first. Take routine engineering decisions yourself, state them, and record them in DECISIONS (who: Lead).
+- **Reporting:** say honestly what ran, what passed, and what wasn't verified.
+- **Plans:** for anything that touches more than one file, present a numbered plan first, unless the owner has already approved it.
+- **When the owner must handle a secret:**
+  - write a small PowerShell script that prompts with hidden input (`Read-Host -AsSecureString`), checks the value, and stores it (`wrangler secret put` / `gh secret set`) or puts it on the clipboard
+  - the owner runs it and copies back **only its result line**
+  - anything pasted into chat counts as exposed and gets rotated
+
+## How work is split (models, effort, builders)
+| Work | Model and effort | How it's set |
+|---|---|---|
+| Lead (this conversation: plans, briefs, integration, talks to the owner) | Opus 5.5, medium | **The owner picks it in the app's model picker.** It's not pinned in settings. If a session starts on anything else, say so once. |
+| Builders | Sonnet 5.5 | `.claude/agents/builder.md` |
+| Reviewer (changes no code) | Opus 5.5, high effort | `.claude/agents/reviewer.md` |
+
+- **Builders:** at most **two at once** (this PC has 8 GB of RAM). Each one gets its own git worktree (`isolation: "worktree"`) and a run file with a brief that stands on its own.
+- **Builders' own rules:**
+  - commit at least every 20 minutes
+  - stop and report when blocked
+  - never touch hosted services; any hosted change needs the owner's yes first
+- **Heavy commands go through the queue, one at a time:** full lint, typecheck, build, database tests and end-to-end tests run via `bash tools/heavy.sh <command>`.
+  - the lock is `~/.techaust-heavy.lock`, and a lock older than 90 minutes is stale
+  - commands wait while free memory is under 512 MB
+  - the whole-repository lint runs only once, as a builder's final check
+- **Every task is reviewed before it merges.** The reviewer can send it back. The lead integrates the tasks, runs `pnpm check` + `pnpm test`, and fills in the run file.
+- **Check-ins happen only on events:**
+  - a builder finishes
+  - a builder stalls for 20 minutes with the lock free, or free memory falls under 512 MB (watched with the Monitor tool running `bash tools/watch.sh <worktrees>`)
+  - a review result arrives
+  - a decision belongs to the owner
+
+  No progress messages in between.
+- **Small or tightly coupled work** (doc edits, one-file fixes, merges, gate checks) is done by the lead directly, without agents.
 
 ## Git workflow
 - `main` is **protected**: PR required, the CI `checks` job must pass, linear history, no force-push, admins included.
-- Work on a branch → push → `gh pr create` → CI green → **squash-merge** → staging auto-deploys.
+- **Never push to `main` or force-push.** The flow: work on a branch → push → `gh pr create` → `gh pr merge --auto --squash` → it merges itself once CI is green (owner rule, 2026-10-07) → staging auto-deploys. Held PRs (see `docs/STATUS.md`) get no auto-merge.
 - Commit identity (repo-local): `TecHaust Technologies <admin@techaust.com>`. Conventional commits referencing PRD IDs, e.g. `feat(invoices): gap-free numbering [ADM-INV-03]`.
 
 ## Stack (pinned exactly; see `docs/05-architecture.md` §2)
