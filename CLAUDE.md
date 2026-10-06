@@ -37,15 +37,18 @@ Rebuild of techaust.com: a public website, admin and client portal for **TecHaus
 11. **Tools:** approved tools are listed in `docs/10-tooling.md`. Ask before using anything new. The Cloudflare MCP server is used **read-only**.
 12. Keep `docs/`, this file and memory notes updated so work can resume across sessions.
 
-## Model and effort (owner rule, 2026-10-07: to save usage limits)
-- **Default:** Sonnet 5.5, medium effort.
-- **Opus 5.5, high effort:**
-  - security, auth and payments
-  - gate checks, unexplained CI failures, stubborn bugs
-  - architecture, milestone plans and ADRs
-  - money, GST and invoicing logic
-- **Lighter work** (routine merges, doc updates, quick questions) can use low effort or Haiku 4.5.
-- **Suggest, don't switch:** when the work changes kind, say which model and effort it needs. Switch only after the owner says yes.
+## How work is split (owner rule, 2026-10-07: get the job done, save usage limits)
+| Work | Model and effort | How it's set |
+|---|---|---|
+| Lead (the main conversation: plans, slices, merges, talks to the owner) | Opus 5.5, medium | The owner picks it in the app. If a session starts on anything else, say so once. |
+| Slice builders | Sonnet 5.5 | `.claude/agents/slice-builder.md` |
+| Slice reviewer (read-only) | Opus 5.5, high | `.claude/agents/slice-reviewer.md` |
+
+- **Two builders at a time.** Each one gets its own git worktree (`isolation: "worktree"`) and a self-contained brief.
+- **Heavy checks go through the queue.** Tests, typecheck and build run via `node scripts/heavy.mjs <command>`: one at a time per PC, and they wait while free memory is under 1.5 GB.
+- **Every slice is reviewed before its PR.** The reviewer can send a slice back. The lead fixes or re-briefs, then merges the slices into the milestone branch and runs the full `pnpm check` + `pnpm test`.
+- **Check-ins happen only on events:** a builder finishes, a builder stalls, a review result arrives, the PC is low on memory, or a decision belongs to the owner. No progress messages in between.
+- **Small or tightly coupled work** (doc edits, one-file fixes, merging, gate checks) is done directly by the lead, without agents.
 
 ## Git workflow
 - `main` is **protected**: PR required, the CI `checks` job must pass, linear history, no force-push, admins included.
