@@ -1,8 +1,8 @@
-# 07-A: Legal page drafts (privacy, terms, refunds, delivery, cookies, security)
+# 07-A: Legal page drafts (privacy, terms, refunds, delivery, cookies, security, accessibility)
 
 | | |
 |---|---|
-| **Status** | **Draft v0.1 (2026-10-06). VERIFY WITH CA/LEGAL.** You asked me to draft these myself without a lawyer. They follow the research in [08-B](../08-research-appendix/B-dpdp-legal.md), but I am not a lawyer and this is not legal advice. An optional one-hour lawyer review ([08 §7.2](../08-security-compliance.md)) is your decision before launch. |
+| **Status** | **Draft v0.1 (2026-10-06). VERIFY WITH CA/LEGAL.** You asked me to draft these myself without a lawyer. They follow the research in [08-B](../08-research-appendix/B-dpdp-legal.md), but I am not a lawyer and this is not legal advice. An optional one-hour lawyer review ([08 §7.3](../08-security-compliance.md)) is your decision before launch. |
 | **Placeholders** | `{{postal_address}}` (🟧 OWNER) · `{{effective_date}}` (set at launch) · `privacy@`/`security@` aliases (🟧 OWNER creates them in Zoho) |
 | **Identity rule** | Owner decision: legal pages name "TecHaust Technologies, a sole proprietorship based in Balurghat, West Bengal" and the Grievance Officer **Rupak Sarkar (Founder)**. **No GSTIN on the website.** |
 | **Website notice** | Each page shows "Version X · Effective {{date}}" and a short changelog at the bottom. |
@@ -31,11 +31,11 @@ When we build or run systems **for** a client that contain the client's customer
 
 | Who you are | Data | Why we use it | Basis (India / EU-UK) |
 |---|---|---|---|
-| **Website visitor** | IP address, browser and device details, pages visited (cookieless Cloudflare Web Analytics); Cloudflare Turnstile security signals | Run and secure the website; understand overall usage | Legitimate use: the security and functioning of a service you choose to use / legitimate interests |
+| **Website visitor** | IP address, browser and device details, pages visited (cookieless Cloudflare Web Analytics); Cloudflare Turnstile security signals | Run and secure the website; understand overall usage | India: provided voluntarily by using the site for that purpose (DPDP s.7(a)). EU/UK: legitimate interests (VERIFY WITH CA/LEGAL) |
 | **Visitor who accepts analytics** | Google Analytics identifiers and usage events | Understand which pages help visitors | **Consent** (withdraw at any time via "Cookie settings") |
 | **Enquirer** (contact or quote form, email, WhatsApp, booking) | Name, work email, company, country, phone/WhatsApp (optional), project details, budget band, timeline, preferred call time, the page you came from | Reply, assess fit, prepare a proposal | Information you provide voluntarily for that purpose (DPDP s.7(a)) / steps before a contract, legitimate interests |
 | **Newsletter subscriber** (only if you tick the box) | Email, name, consent record | Occasional updates (about one a month) | **Consent** |
-| **Client contact** | Name, title, work email, phone, portal sign-in activity, messages and files you share, proposal acceptance details (typed name, time, IP address, browser), billing details (company name, address, GSTIN), payment status and references | Deliver services, give portal access, invoice, collect payment, keep records | Contract / provided for that purpose; **legal obligation** for tax records |
+| **Client contact** | Name, title, work email, phone, portal sign-in activity, messages and files you share, proposal acceptance details (typed name, time, IP address, browser), billing details (company name, address, GSTIN), payment status and references | Deliver services, give portal access, invoice, collect payment, keep records | India: provided voluntarily for that purpose (DPDP s.7(a)); **legal obligation** for tax records. EU/UK: contract; **legal obligation** for tax records (VERIFY WITH CA/LEGAL) |
 | **Everyone** | Security logs (sign-ins, access to admin and portal, IP address, time) | Protect accounts and data; investigate incidents | Legal obligation and security |
 
 **We never collect or store card numbers, UPI PINs or bank passwords.** Payments happen on our payment providers' secure pages.
@@ -48,11 +48,12 @@ We use these service providers ("processors"). Each receives only what it needs:
 | Cloudflare, Inc. | Website and application hosting, database, file storage, security (Turnstile), cookieless analytics | Global network (including the USA and EU) |
 | Amazon Web Services (SES, S3) | Sending email; encrypted backups | India (Mumbai region) |
 | Razorpay Software Pvt Ltd | Payments in INR | India |
-| Stripe | Card payments in USD | USA / global |
+| Stripe (if used) | Card payments in USD | USA / global |
 | PayPal | Payments in USD | Global |
 | Google (Analytics) | Website analytics, **only with your consent** | USA / global |
 | Zoho Corporation | Our email inbox | India |
 | Cal.com | Call booking (if you use the booking link) | USA / EU |
+| Meta Platforms (WhatsApp) | Messages you exchange with us on WhatsApp, if you choose to contact us there | USA / global |
 | Sentry | Error monitoring (personal data removed where possible) | USA |
 
 We may also disclose information when the law requires it, or to protect our rights in a legal dispute.
@@ -90,7 +91,7 @@ You can ask us to:
 - **withdraw consent** (as easily as you gave it; this doesn't affect what we did before)
 - **nominate** someone to exercise your rights if you die or become unable to
 
-Email **privacy@techaust.com**, or use "Request my data" in the client portal. We may need to confirm your identity. We acknowledge requests within 2 business days and respond within 30 days.
+Email **privacy@techaust.com**, or use "Request my data" in the client portal. We may need to confirm your identity. We acknowledge requests within 48 hours and respond within 30 days.
 
 **Complaints:** please contact our Grievance Officer first (below). If you're not satisfied, you can complain to the **Data Protection Board of India** once its complaint process is available. In the EU/UK, you can complain to your local data-protection authority (in the UK, the ICO).
 
@@ -152,7 +153,7 @@ We'll post changes here and update the date. For significant changes affecting c
    - **If we cancel or can't deliver:** we refund everything paid for undelivered work.
 2. **Small fixed jobs** (Discovery Sprint, audits, single workflows; paid upfront): fully refundable if cancelled before the kick-off call; after kick-off, refundable only for work not yet done.
 3. **Care plans, retainers and subscriptions** (billed monthly in advance): cancel any time with **30 days' written notice** (email is fine). No refund for a month that has started, except where we failed to provide the service. Unused hours don't carry over (except as stated in your plan).
-4. **How to ask:** email billing@techaust.com or use the portal. We acknowledge within 2 business days and decide within 14 days.
+4. **How to ask:** email billing@techaust.com or use the portal. We acknowledge within 48 hours and decide within 14 days.
 5. **How refunds are paid:** to the **original payment method** (as payment rules require), within 5–7 business days of approval. Banks and card networks may take longer. Refunds are made in the currency you paid. Exchange-rate differences aren't covered. Payment-gateway fees aren't charged to you.
 6. **GST:** for Indian invoices, a refund is documented with a **credit note**. (VERIFY WITH CA)
 7. **Disputes:** please contact us first. We'd rather fix the problem. This doesn't affect your rights with your bank or card provider.
@@ -186,7 +187,7 @@ We'll post changes here and update the date. For significant changes affecting c
 | `ta_consent` (browser storage) | TecHaust | Remembers your cookie choice | Necessary | 12 months |
 | `ta_theme`, `ta_currency` (browser storage) | TecHaust | Remember light/dark theme and ₹/$ choice | Necessary (preferences) | Until cleared |
 | Turnstile (`cf_*`, if set) | Cloudflare | Protects forms from bots | Necessary | Session |
-| `_ga`, `_ga_<id>` | Google | Analytics (only after consent) | Analytics | Up to 14 months |
+| `_ga`, `_ga_<id>` | Google | Analytics (only after consent) | Analytics | Up to 2 years (GA4 default) |
 | `__Host-ta_portal` | TecHaust | Keeps you signed in to the client portal | Necessary | Up to 90 days |
 | `__Host-ta_admin` | TecHaust | Keeps staff signed in to the admin | Necessary | Up to 7 days |
 
@@ -247,3 +248,24 @@ A one-page schedule attached to proposals where we handle the client's personal 
 - **liability** follows the main contract
 
 **Full text is drafted in the proposals milestone** (Phase 6 M4). VERIFY WITH CA/LEGAL.
+
+---
+
+## 8. Accessibility statement (`/accessibility`)
+
+*Draft. VERIFY WITH CA/LEGAL. Source: [08 §7.3 L-15](../08-security-compliance.md) and [04 WEB-G-16](../04-prd.md).*
+
+**Our aim.** We build techaust.com, the client portal and the admin to meet the Web Content Accessibility Guidelines (WCAG) 2.2, level AA.
+
+**What we do.**
+- Every page works with a keyboard alone, with visible focus, a skip link and labelled forms.
+- Colours are checked against contrast requirements in the build, and information is never shown by colour alone.
+- Tap and click targets are at least 44 × 44 pixels, and motion respects your "reduce motion" setting.
+- We test with automated checks (axe) and with a manual keyboard and screen-reader (NVDA) pass before launch.
+- Proposals, invoices and other PDFs are tagged where our PDF renderer allows it.
+
+**Known gaps.** None recorded yet. When we find one we will list it here with a date and say when we expect to fix it.
+
+**Tell us.** If something on our site or in a document is hard to use, email contact@techaust.com. We reply within one business day, and we will give you the information in another format if you ask.
+
+*Version 0.1 · Effective {{effective_date}}*

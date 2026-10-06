@@ -5,12 +5,14 @@
 | **Phase** | 4, Project documentation (**APPROVED** 2026-10-06) |
 | **Date** | 2026-10-06 |
 | **Inputs** | [02](02-services-strategy.md) positioning, portfolio and prices · [04 PRD](04-prd.md) · [06 design system](06-design-system.md) · legal research [08-B](08-research-appendix/B-dpdp-legal.md) |
-| **Legal page drafts** | [07-A Legal pages](07-content-appendix/A-legal-pages.md) (privacy, terms, refund, delivery, cookies, security). VERIFY WITH CA/LEGAL. |
+| **Legal page drafts** | [07-A Legal pages](07-content-appendix/A-legal-pages.md) (privacy, terms, refund, delivery, cookies, security, accessibility). VERIFY WITH CA/LEGAL. |
 
 **How to read this document**
 - Copy here is **final draft** wording. In Phase 6 it moves into Markdown files under `apps/web/src/content/`. Small edits for layout fit may happen; changes of meaning come back to you.
 - `{{price:S5}}` = the "from" price, read at build time from the catalogue snapshot. It renders as **"from ₹3,00,000 + GST"** (India) or **"from $12,000"** (international). See [04 WEB-G-06/07](04-prd.md).
-- `{{schedule:S5}}` = the payment-schedule text from the catalogue (e.g. "40 % to start · 30 % at the staging demo · 30 % on delivery").
+- `{{price-plain:S5}}` = the amount alone, with no "from" and no "+ GST" (used in meta descriptions and running text).
+- `{{price:S16-growth}}` = the form `{{price:Sx-<line>}}`: it reads the named default line of that catalogue entry (e.g. `S16-growth`, `S11-monthly`) instead of the entry's headline price.
+- `{{schedule:S5}}` = the payment-schedule text from the catalogue (e.g. "40 % on acceptance · 30 % at the midpoint milestone · 30 % on delivery").
 - 🟧 **OWNER** = something only you can provide or confirm. All of these are listed in §9.
 - Every page has a meta title (≤ 60 characters) and a description (≤ 155).
 
@@ -20,14 +22,14 @@
 
 ### 1.1 Voice
 - **Senior, calm, specific.** Short sentences. Concrete nouns (Tally, GSTR-2B, purchase orders) over abstractions ("digital transformation").
-- **"We"** for TecHaust, **"you"** for the reader. No "leverage", "synergy", "cutting-edge", "next-gen", "revolutionary", "seamless", "robust", "world-class".
+- **"We"** for TecHaust, **"you"** for the reader. No "leverage", "synergy", "cutting-edge", "next-gen", "revolutionary", "seamless", "robust", "world-class" (style guidance, not linted).
 - **Outcomes, then method.** "Your team stops retyping invoices into Tally" comes before "we use document AI".
 - **India + global:** INR in the lakh format (₹3,00,000) for India, USD for international. Times in IST, with the reader's local time where it helps.
 - **English (India/UK spelling):** organisation, optimise, colour, programme (but "program" for software).
 
 ### 1.2 Honesty rules (audit C-1, C-2, H-3; [08-B §14](08-research-appendix/B-dpdp-legal.md))
 1. No metric without evidence on file (the claims register, §1.4).
-2. No absolute promises: no "100 %", "guarantee", "zero errors", "never", "no hallucinations".
+2. No absolute promises about **outcomes**: no "100 %", "guarantee", "zero errors", "no hallucinations". Write "paid in full upfront" in place of "100 % upfront". "We never…" about our own process (§4.5 FAQs, §5.5 item 7) is allowed when it is true and written into the terms.
 3. Demos and diagrams are labelled **"Illustrative example"**.
 4. No invented people, clients, logos, reviews or "trusted by" lines.
 5. No false urgency or scarcity (no countdowns, no "only 2 slots left").
@@ -104,8 +106,8 @@
 
 ## 3. Home (`/`)
 
-**Meta title:** "TecHaust Technologies: Software and AI automation studio" (55)
-**Meta description:** "Senior engineers who build custom software and automate back-office paperwork: Tally, Zoho, GST, WhatsApp. Fixed prices, India and international." (150)
+**Meta title:** "TecHaust Technologies: Software and AI automation studio" (56)
+**Meta description:** "Senior engineers who build custom software and automate back-office paperwork: Tally, Zoho, GST, WhatsApp. Fixed prices, India and international." (145)
 
 **Hero**
 - Eyebrow: "Software & AI automation studio · India"
@@ -173,7 +175,7 @@ Link: "How we work →"
 Every page follows the template in [04 §3.2](04-prd.md): hero → problem → what you get → how it works → pricing & engagement → tech → proof → FAQs → related → CTA. Below is the copy per page. "Proof" follows WEB-SVC-03 (a case study if available, otherwise a sample, otherwise omitted).
 
 ### 4.1 Discovery Sprint (S1) · `/services/discovery-sprint`
-- **Meta:** "Discovery Sprint: a fixed-price plan before you build | TecHaust" · "A 1–2 week paid sprint: workflow map, ROI-ranked roadmap or product blueprint, and a fixed quote. Fee credited to your build."
+- **Meta:** "Discovery Sprint: a fixed price before you build | TecHaust" · "A 1–2 week paid sprint: workflow map, ROI-ranked roadmap or product blueprint, and a fixed quote. Fee credited to your build."
 - **H1:** "Know exactly what to build, and what it will cost, before you commit."
 - **Who it's for:** owners, finance and operations heads, and founders who know something must change but not yet what, or how much.
 - **Problem:** "Big software and AI projects fail in the first week, not the last: unclear goals, messy data, and a quote that was a guess. A short, paid discovery removes the guesswork for both of us."
@@ -182,9 +184,9 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
   - **Product Blueprint:** "We turn your idea into scope, architecture and a clickable prototype that users can try, with a fixed quote for the first release."
 - **What you get:** findings report · prioritised roadmap with estimated savings (your numbers, our method) · architecture sketch or clickable prototype · a fixed-price proposal for phase 1 · a 60-minute walkthrough call.
 - **How it works:** (1) Kick-off call (60 min) → (2) interviews and data samples (week 1) → (3) analysis and prototype (week 1–2) → (4) walkthrough and proposal. **What we need from you:** 2–4 hours of your team's time and sample documents or data (we sign an NDA first if you like).
-- **Pricing:** {{price:S1}} · fixed · 100 % upfront · "**Credited in full against your build** if you go ahead within 60 days."
+- **Pricing:** {{price:S1}} · fixed · paid in full upfront · "**Credited in full against your build** if you go ahead within 60 days."
 - **FAQs:**
-  - "Is the sprint worth it for a small project?" → "For jobs under about {{price:S10}}, we usually skip it and quote after a call."
+  - "Is the sprint worth it for a small project?" → "For small, well-defined jobs, we usually skip it and quote after a call."
   - "What if you recommend not building anything?" → "Then we say so. Sometimes the answer is a setting in Zoho or a better spreadsheet."
   - "Can the sprint be remote?" → "Yes, fully. On-site visits in India can be arranged at cost."
   - "Do you sign NDAs?" → "Yes, before you share any data."
@@ -216,7 +218,7 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 - **CTA:** Get a quote
 
 ### 4.4 Mobile Apps (S7) · `/services/mobile-apps`
-- **Meta:** "Cross-platform mobile apps (React Native and Flutter) | TecHaust" · "iOS and Android apps built with React Native/Expo or Flutter, usually alongside a web app or portal. Fixed price, from {{price-plain:S7}}."
+- **Meta:** "Cross-platform mobile apps: React Native, Flutter | TecHaust" · "iOS and Android apps built with React Native/Expo or Flutter, usually alongside a web app or portal. Fixed price, from {{price-plain:S7}}."
 - **H1:** "Mobile apps that share a backbone with your web system."
 - **Problem:** "A mobile app on its own is rarely the point. It's the field team's order form, the customer's tracking screen, the dealer's catalogue. It has to talk to everything else."
 - **What you get:** UX for small screens · a cross-platform app (React Native/Expo or Flutter, chosen per project) · API and back-end integration · store submission support · crash and analytics monitoring.
@@ -225,7 +227,7 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 - **CTA:** Get a quote
 
 ### 4.5 AI Document Automation (S9) · `/services/ai-document-automation`
-- **Meta:** "AI document automation for invoices, POs and contracts | TecHaust" · "Extract, check and post invoices, purchase orders and KYC files into Tally, Zoho, QuickBooks or Xero, with human review. Pilot from {{price-plain:S9}}."
+- **Meta:** "AI document automation: invoices, POs, contracts | TecHaust" · "Extract, check and post invoices, purchase orders and KYC files into Tally, Zoho, QuickBooks or Xero, with human review. Pilot from {{price-plain:S9}}."
 - **H1:** "Stop retyping invoices. Keep control of every entry."
 - **Who it's for:** CA and accounting firms, finance teams in SMBs, NBFCs, logistics companies and online sellers.
 - **Problem:** "Somewhere in your office, skilled people copy numbers from PDFs into Tally all day. It's slow, it's error-prone, and it's the first job they'd happily give up."
@@ -252,7 +254,7 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 - **CTA:** Automate a workflow
 
 ### 4.7 WhatsApp Business Automation (S11) · `/services/whatsapp-automation`
-- **Meta:** "WhatsApp Business automation for orders and payments | TecHaust" · "Order updates, payment reminders, catalogue ordering and support handover on the WhatsApp Business Platform, connected to your systems."
+- **Meta:** "WhatsApp automation for orders and payments | TecHaust" · "Order updates, payment reminders, catalogue ordering and support handover on the WhatsApp Business Platform, connected to your systems."
 - **H1:** "Meet customers on WhatsApp, with your systems behind it."
 - **Problem:** "Your customers already message you on WhatsApp. Answering by hand doesn't scale, and order details end up trapped in chats."
 - **What you get:** WhatsApp Business Platform setup through an official provider · flows for order updates, payment links and reminders, catalogue ordering, COD confirmation and returns · handover to a person · integration with your order, billing or CRM system · reporting.
@@ -278,7 +280,7 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 - **CTA:** Get a quote
 
 ### 4.10 Business Systems Integration (S14, + S15) · `/services/business-systems-integration`
-- **Meta:** "Tally, Zoho, GST e-invoice and Shopify integration | TecHaust" · "Connectors between Tally, Zoho, GST e-invoicing and e-way bills, Shopify, QuickBooks, Xero and payments, monitored and documented."
+- **Meta:** "Tally, Zoho, GST e-invoice, Shopify integration | TecHaust" · "Connectors between Tally, Zoho, GST e-invoicing and e-way bills, Shopify, QuickBooks, Xero and payments, monitored and documented."
 - **H1:** "Make your systems talk to each other, reliably."
 - **Problem:** "Sales are in Shopify, accounts in Tally, invoices in Zoho, and someone re-enters everything at month end. Every copy is a chance for a mistake."
 - **What you get:** connectors (Tally ↔ Zoho, GST e-invoicing and e-way bills via a GST Suvidha Provider, Shopify ↔ ERP, CRM ↔ accounting, QuickBooks, Xero, HubSpot, Stripe) · sync monitoring and error alerts · documentation · a care plan.
@@ -309,7 +311,7 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 - **CTA:** Talk to us
 
 ### 4.14 Care Plans (S16 + S17) · `/services/care-plans`
-- **Meta:** "Website and app care plans with clear response times | TecHaust" · "Monitoring, security patches, backups, small changes and business-hours response times. Essential, Growth and Scale plans from {{price-plain:S16-essential}} a month."
+- **Meta:** "Website and app care plans, clear response times | TecHaust" · "Monitoring, security patches, backups, small changes and business-hours response times. Essential, Growth and Scale plans from {{price-plain:S16-essential}} a month."
 - **H1:** "Keep your software healthy, with a named response time."
 - **Intro:** "Software that isn't maintained slowly breaks: expiring certificates, outdated libraries, a backup nobody tested. A care plan makes someone responsible."
 
@@ -329,7 +331,7 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 | Fractional-CTO advisory | — | — | ✓ |
 | **Response time** (business hours, Mon–Sat 10:00–19:00 IST) | **2 business days** | **1 business day** | **4 business hours** for critical issues |
 
-- **Rules (small print):** "Unused hours don't roll over (Growth and Scale: one month's rollover). Extra hours are billed at the plan rate. Pay annually and save 10 %. Out-of-hours cover can be quoted separately. Billed monthly in advance; cancel with 30 days' notice." 🟧 OWNER confirms the annual discount (02 said 10–15 %).
+- **Rules (small print):** "Essential: no rollover. Growth and Scale: unused hours roll over for one month. Extra hours are billed at the plan rate. Pay annually and save 10 %. Out-of-hours cover can be quoted separately. Billed monthly in advance; cancel with 30 days' notice." 🟧 OWNER confirms the annual discount (02 said 10–15 %).
 - **AI Ops add-on (S17):** "For AI systems in production: monitoring, test-set reruns, prompt and model updates, and cost tracking, from {{price:S17}} a month."
 - **CTA:** Choose a plan
 
@@ -361,7 +363,7 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 **Hub (`/industries`).** **H1:** "Industries we know well". Lede: "We work across sectors, but these three are where our experience runs deepest."
 
 **Finance, Accounting & Legal (`/industries/finance-accounting-legal`)**
-- **Meta:** "Automation for CA firms, finance teams and legal practices | TecHaust" · "Invoice-to-Tally automation, GSTR-2B reconciliation, contract extraction and client portals for finance, accounting and legal teams."
+- **Meta:** "Automation for CA firms, finance and legal teams | TecHaust" · "Invoice-to-Tally automation, GSTR-2B reconciliation, contract extraction and client portals for finance, accounting and legal teams."
 - **H1:** "Less data entry. More time for the work clients pay you for."
 - **Use cases:**
   1. Vendor invoices posted to Tally or Zoho with review
@@ -373,13 +375,13 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 - **FAQ:** "Do you understand GST workflows?" → "We build software for them every day; your CA stays in charge of tax decisions." · "Is client data safe?" → "Access control, audit logs, encryption, and documented data handling. We'll walk your team through it."
 
 **Retail, E-commerce & Logistics (`/industries/retail-ecommerce-logistics`)**
-- **Meta:** "Automation for online sellers, distributors and logistics | TecHaust" · "WhatsApp commerce, Shopify-to-ERP sync, delivery-proof and freight-invoice extraction, and dealer ordering portals."
+- **Meta:** "Automation for sellers, distributors, logistics | TecHaust" · "WhatsApp commerce, Shopify-to-ERP sync, delivery-proof and freight-invoice extraction, and dealer ordering portals."
 - **H1:** "Orders, stock and paperwork that keep up with your sales."
 - **Use cases:** WhatsApp ordering and payment reminders · Shopify ↔ Tally/Zoho sync · delivery-proof and freight-invoice extraction · dealer and distributor ordering portals · COD confirmation and returns flows
 - **Related:** S11, S14, S9, S5
 
 **SaaS & Startups (`/industries/saas-startups`)**
-- **Meta:** "Product engineering and AI for SaaS teams and founders | TecHaust" · "Production-grade MVPs, AI features, MCP servers, a dev subscription and fractional CTO support for startups and SaaS companies."
+- **Meta:** "Product engineering and AI for SaaS and founders | TecHaust" · "Production-grade MVPs, AI features, MCP servers, a dev subscription and fractional CTO support for startups and SaaS companies."
 - **H1:** "A senior product team when you need one, without hiring one."
 - **Use cases:** MVP builds · AI features and MCP servers · rescuing a fast-built prototype · steady capacity via the dev subscription · technical leadership via the fractional CTO
 - **Related:** S6, S13, S2, S18, S4
@@ -487,7 +489,7 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 
 ## 6. Case-study brief (🟧 OWNER fills one per project; 2–3 wanted)
 
-> Copy this into an email or a file in `brand-incoming/case-studies/`. Short answers are fine; I'll write the final page and send it back to you for approval.
+> Copy this into an email or a file in `brand-incoming/case-studies/` (git-ignored; never committed). Short answers are fine; I'll write the final page and send it back to you for approval.
 
 1. **Client type** (no name needed): industry, size (staff or revenue band), country/state.
 2. **May we publish an anonymised version?** Yes / No / Only after the client approves the text.
@@ -521,7 +523,8 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 | Lead acknowledgement (from hello@) | "We've received your request ({{ref}})" | "Hi {{first_name}}, thanks for getting in touch about {{service_name}}. We'll reply within one business day (Mon–Sat, 10:00–19:00 IST). If you'd like to pick a call time now: {{cal_link}}. Your reference: {{ref}}. — TecHaust Technologies" |
 | Internal lead alert | "New lead {{ref}}: {{service_name}} · {{budget_band}} · {{country}}" | A summary + "Open in admin" |
 | Proposal sent | "Proposal: {{proposal_title}} ({{number}} v{{version}})" | "Hi {{first_name}}, your proposal is ready. It covers scope, timeline, price and payment schedule, and it's valid until {{valid_until}}. [Review and accept]. Questions? Just reply to this email." |
-| Proposal accepted (both) | "Accepted: {{proposal_title}} ({{number}} v{{version}})" | "Thank you, {{typed_name}}. Your acceptance was recorded on {{accepted_at_ist}}. The accepted proposal and acceptance record are attached as links. Next: {{next_step}}." |
+| Estimate sent (from hello@) | "Estimate: {{estimate_title}} ({{number}} v{{version}})" | "Hi {{first_name}}, your estimate is ready. It covers the line items, price and payment terms, and it's valid until {{valid_until}}. [Review and accept]. Questions? Just reply to this email." |
+| Proposal accepted (both) | "Accepted: {{proposal_title}} ({{number}} v{{version}})" | "Thank you, {{typed_name}}. Your acceptance was recorded on {{accepted_at_ist}}. Links to the accepted proposal and the acceptance certificate are below. Next: {{next_step}}." |
 | Proforma (billing@) | "Payment request {{number}}: {{amount}}" | "…for {{description}}. [Pay online] · bank details inside. A tax invoice will be issued when payment is received." |
 | Invoice issued | "Invoice {{number}} from TecHaust Technologies: {{amount}} due {{due_date}}" | "Hi {{first_name}}, please find invoice {{number}} for {{amount}}, due on {{due_date}}. [View & pay]. You can pay by {{methods}}." |
 | Reminder −3 | "Invoice {{number}} is due on {{due_date}}" | "A friendly reminder that invoice {{number}} ({{balance}}) is due in 3 days. [View & pay]. If you've already paid, thank you, and please ignore this." |
@@ -531,6 +534,10 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 | Reminder +14 | "Action needed: invoice {{number}} is 14 days overdue" | Firm; names the owner as contact; no threats. |
 | Payment received + receipt | "Payment received, thank you ({{receipt_number}})" | "We've received {{amount}} via {{mode}} for {{document_number}}. Remaining balance: {{balance}}. [Download receipt]." |
 | Credit note | "Credit note {{number}} for invoice {{invoice_number}}" | Reason + amount + link |
+| Debit note | "Debit note {{number}} for invoice {{invoice_number}}" | Reason + amount + link. Plain wording that the invoice amount has been corrected upwards. |
+| Approval requested (to the owner) | "Approval needed: {{document_type}} {{number}}" | "{{requester_name}} asks you to approve {{request_reason}} for {{document_number}} ({{amount}}). [Open in admin]. Your decision applies to this version only." |
+| Approval decided (to the requester) | "{{decision}}: {{document_type}} {{number}}" | "{{approver_name}} has {{decision}} your request for {{document_number}}. Note: {{decision_note}}. [Open in admin]." |
+| Weekly digest (to the owner, Mondays 09:00 IST) | "Your week at TecHaust: {{week_label}}" | "Pipeline, invoiced and collected, overdue invoices, new leads and upcoming reminders. [Open dashboard]." Non-transactional: it carries the "Why you're receiving this" line and a link to switch it off. |
 | Magic link (no-reply@) | "Your sign-in link for the TecHaust client portal" | "Use this link to sign in. It works once and expires in 15 minutes: [Sign in]. If you didn't ask for it, you can ignore this email." |
 | Staff invite | "You've been invited to TecHaust admin" | Link valid 48 h; mentions the authenticator-app requirement. |
 | Login alert | "New sign-in to your TecHaust admin account" | Time (IST), approximate location, device; "Not you? Contact the owner immediately." |
@@ -555,6 +562,8 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 | Confirmations in the claims register (§1.4): experience, project count, Tally/GSP experience, warranty length, annual care-plan discount | Various | 🟧 OWNER |
 | USD price for WhatsApp Automation (S11), or INR-only | S11 page, pricing | 🟧 OWNER |
 | Email aliases in Zoho: hello@, billing@, privacy@ (or grievance@), security@ | Email, legal pages, security.txt | 🟧 OWNER creates them in Zoho |
+| Bank details, GSTIN, legal name, LUT ARN (if filed) | Invoices and documents (admin Settings) | 🟧 OWNER types them into the admin Settings screen (invoice milestone), never in chat or code |
+| Gateway sandbox/test keys (Razorpay, Stripe, PayPal) | Payments | 🟧 OWNER sets them as Wrangler secrets (payments milestone); I give the exact commands |
 | Diagrams (document pipeline, integration map, process) | S9, S14, How we work | Me (SVG, "Illustrative") |
 | OG images | All pages | Me (generated at build) |
 | Icons | Everywhere | Lucide (ISC licence) |

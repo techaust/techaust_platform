@@ -6,6 +6,7 @@
 | **Date** | 2026-10-06 |
 | **Scope** | Every brand asset in `packages/ui/brand/`, the tokens behind them, and the rules in [06 §1–3](06-design-system.md) |
 | **Status** | Audit done and fixes applied; **APPROVED** by the owner 2026-10-06 |
+| **Decision record** | [ADR 0013](adr/0013-new-brand-identity.md) |
 
 ## 1. How the audit was done
 
@@ -65,14 +66,14 @@ Optical white area between each letter pair (depth-capped scanlines), compared w
 | Finding | Fix |
 |---|---|
 | The LinkedIn banner was 1584 × 396, which is the *personal* profile size. | Added the company cover at LinkedIn's official **1512 × 256** (LinkedIn help centre) and kept 1584 × 396 for the founder's profile. Added the X header (1500 × 500, content inside its 60 px crop) and a 400 × 400 page logo. |
-| Covers had no message. | They carry the approved strapline "Build it right. Automate the rest." (docs/07 §3), outlined in Archivo so they never depend on installed fonts. |
+| Covers had no message. | They carry the approved strapline "Build it right. Automate the rest." ([07 §3](07-content.md)), outlined in Archivo so they never depend on installed fonts. |
 | The link preview was just a centred logo. | It's now a layout: lockup, the strapline on two lines, the domain, and the tone-on-tone mark bleeding off the edge (light and dark). |
 | Email clients that force dark mode invert transparent logos. | Added `logo-email-badge@2x.png` with a white plate. |
 
 ### 2.8 Documentation and legal
 | Finding | Fix / status |
 |---|---|
-| docs/06 still described the retired navy/orange identity. | §1–3 rewritten, plus every stale reference in §4–9 and docs/07. |
+| docs/06 still described the retired navy/orange identity. | §1–3 rewritten, plus every stale reference in §4–9 and docs/07 (shadow values fixed 2026-10-07). |
 | Font licence for the logo | The OFL allows a font to be used to make a logo; the outlined wordmark is artwork, not Font Software. Recorded in 06 §3.1. |
 | Trademark | **VERIFY WITH LEGAL.** Before printing at scale or launching, search the Trade Marks Registry (IP India public search) for the word mark "TecHaust" and for similar TH device marks, in classes 9, 35 and 42. Then consider filing for the word mark and the device mark. Not done; this needs a trademark professional. |
 

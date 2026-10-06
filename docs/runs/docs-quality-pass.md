@@ -329,4 +329,40 @@ Branch `docs/qp-01-03`, from b8dfdc3. Commits: d591261 (01), ee122a8 (02), 907df
 
 **Open questions:** none for the owner. One for the lead: the brief's "04 §11" for the appendix headers; I used §10 plus §11 (see item 13).
 
+### Builder report (04–11)
+Branch `docs/qp-04-11` (from b338cd4). Scope: group 2 and group 3 findings for 04, 06, 07, 08, 11, the 08 appendices, 07-A, and the two comment lines in `packages/db/src/seed/catalogue.ts`.
+
+**Group 2 (04, 06, 07, 11)**
+- Applied: 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37.
+- Skipped (owner decisions, as instructed): 7, 13. The 07 §5.3 line "under about ₹1,00,000 / $2,000" and ADM-CAT-05 are untouched.
+- Notes:
+  - 5: nine titles shortened (counted with a script; every meta title is now ≤ 60). Home counts fixed to title 56, description 145. Discovery Sprint now reads "a fixed price before you build", which drops the word "plan" to fit.
+  - 11: "100 % upfront" is now "paid in full upfront" in 07 §4.1 and 04 WEB-SVC-05. Other "100 %" mentions in 04 (WEB-PRICING, ADM-SET-05, ADM-EST-02, Q-P3-6) were not in the finding and are unchanged. They may still trip the `100%` lint if rendered on a page.
+  - 24: because the 04 §12 table was replaced by a pointer to 07 §9, I added two rows to 07 §9 (bank details/GSTIN/legal name/LUT ARN; gateway test keys) so no input was lost. The old "Needed by" milestones are folded into those rows.
+  - 25: added copy rows for estimate sent, debit note, approval requested, approval decided and weekly digest. Variable names (e.g. `{{request_reason}}`, `{{decision}}`) are new and need confirming when the templates are built.
+  - 31: the sender is now stated in the 06 footer row and under the shared header (hello@ for proposals and estimates, billing@ for invoices, proformas and receipts). Credit notes, debit notes and statements are not named in the finding, so they are not assigned.
+  - 28 and 9: values copied from `packages/ui/tokens/tokens.json` and `generated/theme.css`.
+  - 37: the finding said lines 2 and 129; the second was at line 148. Both are comment-only. Biome was not run (comments only; no pnpm).
+
+**Group 3 (08, 08 appendices, 07-A)**
+- Applied: 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 16, 17, 18, 20, 21, 22, 24, 25, 26, 29, 30, 31. Item 27's 08 part is the new U-9 row (see below).
+- Skipped (owner decisions or later work, as instructed): 1, 12, 14, 19, 23, 28. The 07-A privacy §5 retention table, the EU/UK text and the 08 G-11 row are untouched.
+- Notes:
+  - 2: Raised/status column added to 08 §0. U-1, U-2, U-3 are marked "Open (owner)" and link to `12-status.md` (the new name, which resolves once the rename lands). Statuses for U-4 to U-8 are my reading of the existing text and CLAUDE.md (planned / open / not blocking); the lead should check them.
+  - 27: added **U-9** to 08 §0 for the 57th GST Council re-check (open follow-up). The matching "Waits on the owner"/follow-up entry in 12-status is for the lead.
+  - 30: the 08-A TL;DR now numbers rows 1–25. **Old row 13 (Retention) is now row 20.** Group 6 finding 2 cites "08-A #13" for backup retention; that citation must become "08-A #20" (or cite 08 §7.1 G-15 instead).
+  - 18: the India basis for visitors (07-A §2 row 1) is now "provided voluntarily by using the site (DPDP s.7(a))", tagged VERIFY WITH CA/LEGAL. That wording is my application of the finding to line 34; check it.
+  - 22: the accessibility statement is added as 07-A §8 with the route `/accessibility`. The route is **not** listed in 04 WEB-LEGAL, 04 §3.3 or the 07 §2.2 footer. The lead or owner should decide whether it is its own page. "Known gaps" says none recorded yet (no audit has run).
+  - 10: the Access facts (admin@ only, jobs webhook bypass in M6, benchmark service token, the two secret names) come from `docs/runbooks/access-staging.md` on the `feat/m1.4-auth-spike` branch (PR #7). The 08 text names that file in plain text, not as a link, because it is not on this branch.
+  - 5: the Time Travel steps follow the finding; the exact `wrangler d1 time-travel` flags were not verified against Cloudflare docs here.
+  - 8: ticked only what the code backs: permission matrix (core), frozen-document and append-only triggers (`packages/db/src/triggers.ts`), the core coverage gate (`packages/core/vitest.config.ts`). Route enforcement and SHA-256 stay unticked.
+  - 25: B notes link to `../08-security-compliance.md` §7.3 L-6 and L-16.
+
+**Not done / not verified**
+- No pnpm commands were run (docs only). The site's content lint and SEO tests were not run.
+- Links: a script checked every relative link and anchor in the eight edited docs. The only unresolved ones are the three new `12-status.md` links, which wait for the rename.
+- No new URLs, dates or figures were introduced beyond those in the findings and the cited repo files.
+
+**Files changed**
+`docs/04-prd.md`, `docs/06-design-system.md`, `docs/07-content.md`, `docs/11-brand-audit.md`, `docs/08-security-compliance.md`, `docs/08-research-appendix/A-gst-invoicing.md`, `docs/08-research-appendix/B-dpdp-legal.md`, `docs/07-content-appendix/A-legal-pages.md`, `packages/db/src/seed/catalogue.ts` (two comment lines), `docs/runs/docs-quality-pass.md` (this report).
 ## Integration notes
