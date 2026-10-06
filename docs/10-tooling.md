@@ -4,14 +4,14 @@
 |---|---|
 | **Phase** | 5, Setup and tooling (**T1–T12 APPROVED** 2026-10-06; Phase 5 complete, see §6) |
 | **Date** | 2026-10-06 |
-| **Rule** | Owner ground rule 6: each tool is explained here and **used only after your approval**. Using a tool never bypasses the other rules. Anything that **changes** Cloudflare, AWS, GitHub, DNS or production still needs your approval **for that specific action**. |
+| **Rule** | CLAUDE.md hard rule 11: each tool is explained here and **used only after your approval**. Using a tool never bypasses the other rules. Anything that **changes** Cloudflare, AWS, GitHub, DNS or production still needs your approval **for that specific action**. |
 
 ## 1. Your machine (checked 2026-10-06)
 
 | Tool | Found | Needed | Action |
 |---|---|---|---|
 | Node.js | 24.19.0 | 24.x (→ 26 LTS after 28 Oct) | OK. The engines field allows ≥ 24.19 |
-| pnpm | 12.6.0 | 12.9.1 (pinned via `packageManager`) | Corepack fetches the pinned version automatically |
+| pnpm | 12.6.0 | 12.9.1 (pinned via `packageManager`) | pnpm switches to the pinned version itself (`packageManager`) |
 | git | 2.55.0 | — | OK. **No global name or email set yet** (asked at scaffold time) |
 | GitHub CLI | 2.101.0, signed in as `techaust` | — | OK |
 | wrangler | (not global) | 4.147.0 | Installed per project as a dev dependency |
@@ -49,7 +49,7 @@
 | "Ship A Cloudflare Worker", "devrunway", "securitymaxxing" (community plugins) | They overlap with the official Cloudflare plugin and the built-in review skills. Several install broad ("privileged") hooks, which is an unnecessary risk. |
 | Stark accessibility | A paid platform; not needed at our scale |
 
-## 5. After approval: what happens next (P5.2–P5.8, see [09](09-roadmap.md))
+## 5. After approval: what happens next (P5.2–P5.8, see [09](09-roadmap.md)): done 2026-10-06, see §6
 1. Install the Cloudflare plugin (T1) if approved, and connect it through Cloudflare's sign-in.
 2. Scaffold the monorepo and `git init`. I'll ask for your git author name/email.
 3. Ask your approval for the **first push** to `techaust/techaust_platform`.
@@ -61,7 +61,7 @@
 |---|---|
 | P5.1 Tools | ✅ T1–T12 approved; Cloudflare plugin installed via `claude plugin install cloudflare@cloudflare` (marketplace `cloudflare/skills`) and its MCP server authorised (read-only use). Cloudflare's agent-setup page reviewed: the beta `cf` CLI and the other-agent steps were skipped as unnecessary. |
 | P5.2–P5.3 Scaffold + git | ✅ Monorepo builds, lints, type-checks; 7 tests pass (4 in workerd) |
-| P5.4 First push | ✅ Approved; repo `techaust/techaust_platform` (owner made it **public**, see the risk note in memory/08) |
+| P5.4 First push | ✅ Approved; repo `techaust/techaust_platform` (owner made it **public**, see the risk note in [08 §0 U-6](08-security-compliance.md)) |
 | P5.5 GitHub settings | ✅ Branch protection on `main`: PR + `checks` required, admins included, linear history, no force-push or deletion |
 | P5.6 Staging resources | ✅ D1 `techaust-staging` + 8 queues ([runbooks/environments.md](runbooks/environments.md)); R2, Turnstile and Access deferred |
 | P5.7 CI token | ✅ Owner created `CF_API_TOKEN_STAGING` (Workers/D1/Queues/Account read; no zone/DNS) + `CLOUDFLARE_ACCOUNT_ID` |
@@ -85,3 +85,15 @@
 | **@vitest/coverage-v8** 4.1.11 | npm (dev-only, `packages/core`) | Enforces the ≥ 90 % coverage rule for `core` on every `pnpm test` (locally and in CI) | Matches Vitest 4.1.11 exactly |
 | Web fetch (built in) | Tool | Checked the GST state-code list against the official e-way bill master, and GSTIN check-character vectors | Read-only |
 
+## 9. Working-rules additions (2026-10-07, owner-approved)
+Approved in the 2026-10-07 interview ([13-decisions.md](13-decisions.md)). No new packages, plugins or MCP servers: all of these are built-in Claude Code features or small scripts in this repo.
+
+| Tool | Type | What it does | Access and limits |
+|---|---|---|---|
+| **builder** agent (`.claude/agents/builder.md`) | Claude Code subagent (Sonnet) | Writes code and tests for one task from a brief in `docs/runs/` | Its own git worktree; never touches hosted services, never pushes |
+| **reviewer** agent (`.claude/agents/reviewer.md`) | Claude Code subagent (Opus, high effort) | Reviews each task before it merges | Read-only |
+| Git worktrees | Built in (`isolation: "worktree"`) | A separate copy of the repo per builder, in `.claude/worktrees/` (git-ignored) | Local disk only |
+| Monitor tool | Built in | Runs `tools/watch.sh` and wakes the lead only on an event | Local only |
+| `tools/heavy.sh` | Repo script (Git Bash) | Runs heavy commands one at a time per PC; pauses under 512 MB free memory | Local only |
+| `tools/watch.sh` | Repo script (Git Bash) | Reports a builder stall (20 min, lock free) or low memory | Local only |
+| `start-session` / `end-session` skills | Repo skills (`.claude/skills/`) | "start the day" / "end the day" routines | Local; the end-session PR uses `gh` |
