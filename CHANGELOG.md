@@ -2,6 +2,7 @@
 
 One line per merged pull request, newest first.
 
+- 2026-10-07 [#8](https://github.com/techaust/techaust_platform/pull/8) chore: working rules (agents, queue, daily sessions, record, merge on green)
 - 2026-10-06 [#6](https://github.com/techaust/techaust_platform/pull/6) M1.3: D1 schema, integrity triggers and seed
 - 2026-10-06 [#5](https://github.com/techaust/techaust_platform/pull/5) M1.2: core library (money, words, dates, GSTIN, numbering, permissions, form schemas)
 - 2026-10-06 [#4](https://github.com/techaust/techaust_platform/pull/4) docs: sync CLAUDE.md and docs after M1.1

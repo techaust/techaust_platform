@@ -5,8 +5,8 @@ description: Start or resume work on the TecHaust rebuild. Use when the owner sa
 
 1. **Read the record:**
    - `CLAUDE.md` (the rules)
-   - `docs/STATUS.md` (where things stand)
-   - `docs/DECISIONS.md` (never re-ask a decided question)
+   - `docs/12-status.md` (where things stand)
+   - `docs/13-decisions.md` (never re-ask a decided question)
    - any open `docs/runs/*.md`
 
    Then check the work in flight: `git status`, `git branch --show-current`, `git worktree list`.

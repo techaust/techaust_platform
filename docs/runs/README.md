@@ -1,6 +1,6 @@
 # Run files
 
-Each task given to a builder gets one file, `docs/runs/<task>.md` (for example `m1.5-admin-shell.md`), with these sections:
+Each task given to a builder gets one file, `docs/runs/<task>.md` (for example `m1.5-admin-shell.md`), that starts with a status line, `Status: open | merged (PR #N) | abandoned`, followed by these sections:
 
 1. **Brief**, written by the lead before the builder starts:
    - the PRD IDs

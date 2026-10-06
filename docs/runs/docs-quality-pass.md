@@ -1,5 +1,7 @@
 # Run: documentation quality pass (2026-10-07)
 
+Status: open
+
 ## Brief
 **Owner's request:** score all 45 documentation files out of 10 on six aspects (accuracy, completeness, consistency, clarity, structure, upkeep) and bring every one to 10/10.
 
@@ -259,8 +261,30 @@ Scores before:
 
 **Lead decision on group 4 item 1:** this is a factual correction (the appendix says the git history wasn't scanned), so it gets fixed, not asked.
 
-## Owner questions (collected)
-_Asked after all groups report._
+## Owner decisions (2026-10-07)
+**Prices and terms:**
+| Question | Decision | Where it's applied |
+|---|---|---|
+| S16 "first month included at launch" (g5#7) | **Dropped** | 02 |
+| S12 model usage (g5#8) | **At cost** | 02 matches 07 |
+| Annual care-plan discount (g5#11) | **10 %** | 02 and 07; the 07 "pending" mark removed |
+| Small-job threshold (g5#27, g2#13) | **INR-led** (under ₹1 L, in any currency), and an editable setting `small_job_threshold` | 04 ADM-SET-05; 07 uses a `{{terms:small_job_threshold}}` placeholder. The seed is already INR-led, so nothing changes there. The setting code is a follow-up (M3/M4). |
+
+**Privacy and legal (all VERIFY WITH CA/LEGAL):**
+| Question | Decision | Where it's applied |
+|---|---|---|
+| Backups (g3#1) | The 10-year monthly copy holds **finance/GST tables only**. Leads and contacts are kept only in rolling 35–90-day backups. | 08 §6.1, 07-A §5 |
+| Newsletter proof of consent (g3#23) | **3 years** after unsubscribing | 07-A |
+| EU/UK section (g3#19) | Controller: "TecHaust Technologies (Rupak Sarkar, proprietor)", plus the GDPR rights and an Art. 27 note | 07-A |
+| G-11 (g3#12) | Also stop at the annual-return filing date, if earlier | 08 G-11 now; the setting/code follows with M4/M5 |
+
+**Public repo and approvals:**
+| Question | Decision | Where it's applied |
+|---|---|---|
+| Live-site exploit steps (g4#14) | **Redact** the exact payloads ("verified locally"); the findings and severity stay | 01-A |
+| Personal handles (g4#24) | Replace with "founder's personal handles" | 01-B, 01-C |
+| A pending-approval document being issued (g1#1) | **No.** It needs approval first. The docs say drafts only; the guard is narrowed in a later migration (code follow-up). | 05 §5.4 |
+| Default lines in the public snapshot (g2#7) | **Yes:** names and prices only | 04 ADM-CAT-05 |
 
 ## Builder reports
 ## Integration notes

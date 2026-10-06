@@ -18,3 +18,4 @@ worker-configuration.d.ts
 # owner-supplied originals (moved into packages/ui/brand/source in M1.1)
 brand-incoming/
 .claude/launch.json
+.claude/worktrees/

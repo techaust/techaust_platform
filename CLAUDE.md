@@ -10,9 +10,10 @@ Rebuild of techaust.com: a public website, admin and client portal for **TecHaus
 **This file holds rules only, never status or history.** The owner starts each day in a new conversation with **"start the day"** and ends it with **"end the day"**. A fresh conversation each day costs far less per turn than one very long one. The skills `.claude/skills/start-session` and `end-session` run these.
 
 ## The record (read at the start, update at the end)
-- **`docs/STATUS.md`:** the single place for where things stand: done, in progress, next, waits on the owner, open follow-ups. Replace it at the end of each session; never append to it.
-- **`docs/DECISIONS.md`:** one row per decision (date, decision, who, where it's applied). **Never ask the owner again about a question that's decided there.**
+- **`docs/12-status.md`:** the single place for where things stand: done, in progress, next, waits on the owner, open follow-ups. Replace it at the end of each session; never append to it.
+- **`docs/13-decisions.md`:** one row per decision (date, decision, who, where it's applied). **Never ask the owner again about a question that's decided there.**
 - **`CHANGELOG.md`:** one line per merged PR, newest first.
+- **Naming:** top-level docs are numbered `docs/NN-name.md`; supporting material goes in `docs/NN-name-appendix/`; ADRs are `docs/adr/NNNN-name.md`; procedures go in `docs/runbooks/`. Only `README.md`, `CLAUDE.md` and `CHANGELOG.md` sit in the repo root (tools expect them there).
 - **`docs/runs/<task>.md`:** one file per task given to a builder: the brief, the builder's report, the review, the integration notes ([docs/runs/README.md](docs/runs/README.md)).
 
 ## Read first
@@ -80,7 +81,7 @@ Rebuild of techaust.com: a public website, admin and client portal for **TecHaus
 
 ## Git workflow
 - `main` is **protected**: PR required, the CI `checks` job must pass, linear history, no force-push, admins included.
-- **Never push to `main` or force-push.** The flow: work on a branch → push → `gh pr create` → `gh pr merge --auto --squash` → it merges itself once CI is green (owner rule, 2026-10-07) → staging auto-deploys. Held PRs (see `docs/STATUS.md`) get no auto-merge.
+- **Never push to `main` or force-push.** The flow: work on a branch → push → `gh pr create` → `gh pr merge --auto --squash` → it merges itself once CI is green (owner rule, 2026-10-07) → staging auto-deploys. Held PRs (see `docs/12-status.md`) get no auto-merge.
 - Commit identity (repo-local): `TecHaust Technologies <admin@techaust.com>`. Conventional commits referencing PRD IDs, e.g. `feat(invoices): gap-free numbering [ADM-INV-03]`.
 
 ## Stack (pinned exactly; see `docs/05-architecture.md` §2)
@@ -94,7 +95,7 @@ pnpm lint               # biome check
 pnpm typecheck          # wrangler types + tsc / astro check in every package
 pnpm check              # lint + typecheck + public-Worker binding guard
 pnpm test               # vitest (unit + Workers runtime)
-pnpm build              # build all apps (web also dry-runs its Worker bundle)
+pnpm build              # build all apps (web and jobs also dry-run their Worker bundles)
 pnpm format             # biome format --write
 
 # One package / one test
