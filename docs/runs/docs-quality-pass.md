@@ -133,4 +133,46 @@ _Pending._
 _Asked after all groups report._
 
 ## Builder reports
+
+### Builder report (01–03)
+Branch `docs/qp-01-03`, from b8dfdc3. Commits: d591261 (01), ee122a8 (02), 907dffc (03), plus this report. Docs only; no commands other than git and a link-check script (every relative link in the 12 files resolves, except the new `13-decisions.md` link in `02-research-appendix/C-…`, which resolves once the rename lands).
+
+**Files changed:** `docs/01-audit.md`, `docs/01-audit-appendix/{A-code-build-security,B-content-design,C-live-perf-seo-a11y}.md`, `docs/02-services-strategy.md`, `docs/02-research-appendix/{A-ai-services-market,B-software-services-market,C-competitors-positioning-channels}.md`, `docs/03-plan.md`, `docs/03-research-appendix/{A-payments,B-platform-stack}.md`, and this run file.
+
+**Group 4 (01 + appendices)**
+- 1: SKIPPED (owner decision). `01:111` and App A:111 untouched.
+- 2: applied (header APPROVED 2026-10-06, §8 ticked).
+- 3: applied (Superseded note in §6: ADR 0013, 06 §1, 04 §11).
+- 4: applied ("Resolved in" box at the top of §7; Q-H2 to Q-H6 still open). Q-B5/B6/B10 cite 02 §1 (Team), D-3, and 04 §0 (Team, Contact, Q-B16), since the brief only said "02/04".
+- 5: applied the variant. C header and §3 now say MRS (Marseille) with the caveat that curl TTFB may include the route to Europe; same caveat in C summary row P2, C P2 finding, the TTFB table row, and 01 H-7.
+- 6: applied (timeline note in 01 C-3 and B §A.8 gaps, citing 08 L-1/L-2 and 08-B).
+- 7: applied (VERIFY WITH CA/LEGAL tags on A Q8/Q9 and C Q10; "Not legal advice" line in C's header).
+- 8: applied (B footer list, A.15 table row, D Q10 now point to App C S1/§5).
+- 9, 10, 11: applied (CLS wording; Resend free-tier hedge in 01:22/39/68 and A F-S1; the 38.5 wording).
+- 12: applied (A:5, C:9).
+- 13: applied to A, B, C. I linked **04 §10 (traceability) and §11 (later)** rather than §11 alone, because §10 is the finding-to-requirement map.
+- 14: SKIPPED (owner decision). A:43-70 untouched.
+- 15, 16, 17: applied (B slate-500 "fails AA", the 3.6/3.8 contrast pair, ping 4–12 ms).
+- 18: applied (new Evidence column on the M and L tables, every row filled from the appendices' own finding IDs).
+- 19, 20, 21, 23: applied.
+- 22: applied (B:24, :247, :341, :605, :616 now cross-reference App C S4/P1, A F-S2, A F-S8).
+- 24: SKIPPED (owner decision). The founder's handles are untouched.
+- 25: applied (B Q6 answered in part: DNS shows Zoho; I also added the Grievance Officer answer from 04 §0).
+
+**Group 5 (02 + appendices)**
+- 7, 8, 11, 27: SKIPPED (owner decisions). S16 "first month included", S12 "at cost plus 10–20 %", the rollover/annual-discount line and the seed threshold are untouched. Item 27 is in `catalogue.ts`, outside my files.
+- 1, 2, 3, 4, 5, 9, 10, 12, 13, 14, 15, 17, 18, 19, 20, 21, 22, 24, 25, 26: applied as written. Item 4 adds a "Resolved in" column to the §10 table (Q-P1, Q-S1, Q-S2, Q-B11 → 03 §0; the rest → 04 §0). Item 16: S4, S7, S14 and the S9 Tally skill are now ✅ with citations; the S9 finance-domain 🟡 (Q-B13: no CA yet) is left because it is not in the finding.
+- 6: applied with a **deviation**: the finding's "₹15–45k" blends two sources, so I wrote what each says: "₹15–60k, App A §1.8; ₹20–45k low-complexity, App C §1b". The "₹75k-per-workflow" example is removed from that cell.
+- 23: applied with a **deviation**: B:13 now reads "$6.15T (+10.8%) [S1]". I dropped "about $6.3T" and "14.2 %" because no listed source supports them. I also added S16 to the "US web agencies" figure in B's summary, to match the re-attribution.
+- 24: B:77 re-attributed to S16 UX Continuum; 02:65 reads "Clutch / UX Continuum". (I did not check S16's own text, only the existing source list.)
+
+**Group 6 (03 + appendices)**
+- 1 to 17, 19 to 25: applied as written. Item 4's list also names the sections each change contradicts (§0 Logo, §3A.5, §3C.3, §3C.4, §3C.5). Item 5 keeps the old 30/40/30 text visible with "superseded"/"Answered" notes, except the 30% advance example in §3B.3, which is changed to 40%. Item 15 uses 13 Nov 2026 (08-B). Item 17: ₹88 / ₹90 / 88.42 noted in A and B.
+- 18: partly applied. Where the source named only a page type ("the related pages", "refunds idempotent docs", a mirror, a truncated GitHub path) I added "source detail not captured" or "full URL not captured". No URLs were invented. A:36's Razorpay and blog URLs were already complete.
+- 13: B:264-271 marks only the Workers Logs item as resolved (05-A #13). The other re-check items are not resolved in 05-A's table, so they stay open.
+
+**Not verified:** external URLs (no web access); the facts cited from 04/05/08 were checked against those files in this repo. The `13-decisions.md` link will 404 until the rename lands.
+
+**Open questions:** none for the owner. One for the lead: the brief's "04 §11" for the appendix headers; I used §10 plus §11 (see item 13).
+
 ## Integration notes
