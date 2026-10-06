@@ -5,8 +5,8 @@ description: Start or resume work on the TecHaust rebuild. Use when the owner sa
 
 1. **Read the record:**
    - `CLAUDE.md` (the rules)
-   - `docs/STATUS.md` (where things stand)
-   - `docs/DECISIONS.md` (never re-ask a decided question)
+   - `docs/12-status.md` (where things stand)
+   - `docs/13-decisions.md` (never re-ask a decided question)
    - any open `docs/runs/*.md`
 
    Then check the work in flight: `git status`, `git branch --show-current`, `git worktree list`.
@@ -20,5 +20,5 @@ description: Start or resume work on the TecHaust rebuild. Use when the owner sa
    - what's waiting on the owner
    - the next item
 5. **Continue from the next item.**
-   - If it touches more than one file, first present a numbered plan and wait, unless the owner has already approved that plan (check STATUS and DECISIONS).
+   - If it touches more than one file, first present a numbered plan and wait, unless the owner has already approved that plan (check `docs/12-status.md` and `docs/13-decisions.md`).
    - If the next item waits on the owner, say exactly what they need to do (click-by-click), and stop.

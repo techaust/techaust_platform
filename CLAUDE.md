@@ -10,9 +10,10 @@ Rebuild of techaust.com: a public website, admin and client portal for **TecHaus
 **This file holds rules only, never status or history.** The owner starts each day in a new conversation with **"start the day"** and ends it with **"end the day"**. A fresh conversation each day costs far less per turn than one very long one. The skills `.claude/skills/start-session` and `end-session` run these.
 
 ## The record (read at the start, update at the end)
-- **`docs/STATUS.md`:** the single place for where things stand: done, in progress, next, waits on the owner, open follow-ups. Replace it at the end of each session; never append to it.
-- **`docs/DECISIONS.md`:** one row per decision (date, decision, who, where it's applied). **Never ask the owner again about a question that's decided there.**
+- **`docs/12-status.md`:** the single place for where things stand: done, in progress, next, waits on the owner, open follow-ups. Replace it at the end of each session; never append to it.
+- **`docs/13-decisions.md`:** one row per decision (date, decision, who, where it's applied). **Never ask the owner again about a question that's decided there.**
 - **`CHANGELOG.md`:** one line per merged PR, newest first.
+- **Naming:** top-level docs are numbered `docs/NN-name.md`; supporting material goes in `docs/NN-name-appendix/`; ADRs are `docs/adr/NNNN-name.md`; procedures go in `docs/runbooks/`. Only `README.md`, `CLAUDE.md` and `CHANGELOG.md` sit in the repo root (tools expect them there).
 - **`docs/runs/<task>.md`:** one file per task given to a builder: the brief, the builder's report, the review, the integration notes ([docs/runs/README.md](docs/runs/README.md)).
 
 ## Read first
@@ -44,7 +45,7 @@ Rebuild of techaust.com: a public website, admin and client portal for **TecHaus
 
 ## Working with the owner
 - **The owner isn't a shell user.** Give click-by-click steps, one command per code block, with full paths.
-- **Decisions:** ask only the ones that are the owner's, as multiple-choice questions with the recommendation first. Take routine engineering decisions yourself, state them, and record them in DECISIONS (who: Lead).
+- **Decisions:** ask only the ones that are the owner's, as multiple-choice questions with the recommendation first. Take routine engineering decisions yourself, state them, and record them in `docs/13-decisions.md` (who: Lead).
 - **Reporting:** say honestly what ran, what passed, and what wasn't verified.
 - **Plans:** for anything that touches more than one file, present a numbered plan first, unless the owner has already approved it.
 - **When the owner must handle a secret:**
@@ -80,7 +81,7 @@ Rebuild of techaust.com: a public website, admin and client portal for **TecHaus
 
 ## Git workflow
 - `main` is **protected**: PR required, the CI `checks` job must pass, linear history, no force-push, admins included.
-- **Never push to `main` or force-push.** The flow: work on a branch → push → `gh pr create` → `gh pr merge --auto --squash` → it merges itself once CI is green (owner rule, 2026-10-07) → staging auto-deploys. Held PRs (see `docs/STATUS.md`) get no auto-merge.
+- **Never push to `main` or force-push.** The flow: work on a branch → push → `gh pr create` → `gh pr merge --auto --squash` → it merges itself once CI is green (owner rule, 2026-10-07) → staging auto-deploys. Held PRs (see `docs/12-status.md`) get no auto-merge.
 - Commit identity (repo-local): `TecHaust Technologies <admin@techaust.com>`. Conventional commits referencing PRD IDs, e.g. `feat(invoices): gap-free numbering [ADM-INV-03]`.
 
 ## Stack (pinned exactly; see `docs/05-architecture.md` §2)
@@ -94,7 +95,7 @@ pnpm lint               # biome check
 pnpm typecheck          # wrangler types + tsc / astro check in every package
 pnpm check              # lint + typecheck + public-Worker binding guard
 pnpm test               # vitest (unit + Workers runtime)
-pnpm build              # build all apps (web also dry-runs its Worker bundle)
+pnpm build              # build all apps (web and jobs also dry-run their Worker bundles)
 pnpm format             # biome format --write
 
 # One package / one test
@@ -134,7 +135,7 @@ pnpm db:seed:local        # load the seed (catalogue S1–S18 + settings default
   - **How apps consume it:** CSS and assets by path: `@techaust/ui/theme.css`, `/fonts.css`, `/brand/<file>`.
 - **`packages/core` is pure domain logic** (no I/O, runs anywhere): `money.ts` (minor units, bigint maths, en-IN/en-US format and parse), `words.ts`, `dates.ts` (IST, FY), `gstin.ts` (check character, state codes), `numbering.ts` (formats + the SQL printf pattern used at issue), `permissions.ts` (the docs/04 §9 matrix: allow / step-up / approval / deny), `schemas/` (zod: shared form and domain schemas). Tests run in Node with fast-check property tests; `test/no-floats.test.ts` scans money files for float operations, so add new money modules to its list.
 - **`packages/db` is the D1 schema** (Drizzle, `src/schema/*`, snake_case names written out). `drizzle-kit generate` writes migrations; **never edit an applied migration** (add a new one). Integrity triggers (frozen documents, append-only logs, counters, the issue guard) are generated by `src/triggers.ts` into a custom migration with `scripts/write-triggers.ts`; tests read the installed triggers to prove every document column is covered. The seed (`src/seed/`) is pure SQL text, insert-only, with stable IDs (`stableId`). Tests run in workerd with all migrations applied (`test/setup.ts`); tests within one file share a database. Use `createDb(env.DB)` for a typed client.
-- **Guards worth knowing:** `scripts/check-web-bindings.mjs` fails CI if `apps/web/wrangler.jsonc` gains D1/R2/KV bindings. `deploy-prod.yml` refuses to run unless the actor is `techaust`, the repo variable `PRODUCTION_ENABLED` is `true`, and the typed confirmation matches.
+- **Guards worth knowing:** `scripts/check-web-bindings.mjs` fails CI if `apps/web/wrangler.jsonc` gains D1/R2/KV/Durable Object/Hyperdrive bindings. `deploy-prod.yml` refuses to run unless the actor is `techaust`, the repo variable `PRODUCTION_ENABLED` is `true`, and the typed confirmation matches.
 
 ## Conventions
 - **Money:** integer minor units (paise/cents) + currency. Never floats. Rates in basis points; quantities in milli-units; FX as micros.
@@ -142,7 +143,7 @@ pnpm db:seed:local        # load the seed (catalogue S1–S18 + settings default
 - **Documents:** numbers are assigned only at issue, inside one `db.batch()` (gap-free, ≤ 16 characters). Issued documents are frozen (DB triggers); corrections only via credit/debit notes.
 - **Security:** permission declared on every route (deny by default); portal client ID from the session only; webhooks verified on the raw body and idempotent; nothing is marked paid on a redirect; no personal data in logs.
 - **Free plan:** one unit of work per queue message; cron only enqueues; keyset pagination ≤ 50 rows; index every filter; no base64 of big blobs; target p99 CPU ≤ 7 ms.
-- **Packages:** `core` is pure (no I/O) and must keep ≥ 90 % coverage. Apps import packages, never the reverse. `apps/web` has **no D1/R2/KV bindings** (CI guard `scripts/check-web-bindings.mjs`).
+- **Packages:** `core` is pure (no I/O) and must keep ≥ 90 % coverage. Apps import packages, never the reverse. `apps/web` has **no D1/R2/KV/Durable Object/Hyperdrive bindings** (CI guard `scripts/check-web-bindings.mjs`).
 - **Workers:** names are `techaust-platform-<app>` (+ `-staging`). Don't hand-write `Env` interfaces; use the generated global `Env` from `wrangler types`.
 - **Supply chain:** exact version pins; pnpm `minimumReleaseAge` (1 day) blocks just-published packages (pick the previous release, don't bypass it); install scripts only via `allowBuilds` in `pnpm-workspace.yaml`; GitHub Actions pinned by commit SHA.
 - **UI:** tokens from `packages/ui/tokens` only (Tailwind utilities come only from our theme, and its defaults are reset); WCAG 2.2 AA (enforced by `tokens/contrast.test.ts`); 44 px targets; text ≥ 12 px (body ≥ 16 px); reduced motion respected.

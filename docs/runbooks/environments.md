@@ -1,6 +1,6 @@
 # Runbook: environments and Cloudflare resources
 
-Cloudflare account: **Techaust Technologies** (`153cd8b23edd2bc9dec570ffaf467c2f`), owner `admin@techaust.com`.
+Cloudflare account: **Techaust Technologies** (`153cd8b23edd2bc9dec570ffaf467c2f`), owner `admin@techaust.com`. _Last updated 2026-10-07._
 The live site is the old Worker **`techaust-web`**. **Never deploy to, rename or delete it** (rollback target until Phase 7 + 2 weeks).
 
 ## Staging (created 2026-10-06, P5.6, approved by the owner)
@@ -17,7 +17,7 @@ The live site is the old Worker **`techaust-web`**. **Never deploy to, rename or
 | Access app | the staging `*.workers.dev` hosts | **Not created yet**: dashboard checklist before any real data (M1.4) | M1.4 |
 | Workers | `techaust-platform-{web,admin,portal,jobs}-staging` | **Deployed 2026-10-06** (PR #1); health routes return 200 | — |
 
-**Staging URLs** (workers.dev subdomain `techaust-technologies-153`; noindex placeholders, no data, no Access yet):
+**Staging URLs** (workers.dev subdomain `techaust-technologies-153`; noindex placeholders, no personal data; Cloudflare Access pending the owner's setup, see `docs/runbooks/access-staging.md` in PR #7):
 - Web: https://techaust-platform-web-staging.techaust-technologies-153.workers.dev (`/api/geo`)
 - Admin: https://techaust-platform-admin-staging.techaust-technologies-153.workers.dev (`/api/v1/health`)
 - Portal: https://techaust-platform-portal-staging.techaust-technologies-153.workers.dev (`/api/v1/health`)
@@ -30,9 +30,9 @@ Nothing is created until Phase 7 (L3), with owner approval per resource.
 
 ## Access methods
 - Local: `wrangler login` (OAuth, the owner's machine). Scopes include Workers/D1/Queues write and zone **read** only.
-- CI: `CF_API_TOKEN_STAGING` (repo secret, created by the owner with the scoped permissions in docs/09 P5.7), plus `CLOUDFLARE_ACCOUNT_ID`.
+- CI: `CF_API_TOKEN_STAGING` (repo secret, created by the owner with the scoped permissions in [05 §12.3](../05-architecture.md)), plus `CLOUDFLARE_ACCOUNT_ID`.
 - Cloudflare MCP (plugin, authorised): read-only use (logs, listing).
 
 ## GitHub
-- Repo `techaust/techaust_platform`: **public** (owner decision, 2026-10-06). `main` is protected (PR + CI `checks` required).
+- Repo `techaust/techaust_platform`: **public** (owner decision, 2026-10-06). `main` is protected (PR + CI `checks` required, conversation resolution required, linear history, no force-push, admins included). **Auto-merge is on** (owner, 2026-10-07): PRs merge themselves when CI passes, except held PRs.
 - Repo secrets: `CF_API_TOKEN_STAGING`, `CLOUDFLARE_ACCOUNT_ID`. Repo variable `PRODUCTION_ENABLED`: **unset** (production deploys disabled until Phase 7).

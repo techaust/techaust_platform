@@ -1,5 +1,7 @@
 # AI Services Market Research for TecHaust Technologies
 
+> **Phase 2 research record (APPROVED 2026-10-06).** Parent: [02](../02-services-strategy.md). Where it differs from a decision, [13-decisions](../13-decisions.md) wins.
+
 **Prepared:** 2026-10-06 | **Scope:** demand, India context, pricing, and what separates winners, for a 2–5 person Indian studio selling AI services in India and abroad.
 
 **How to read this report**
@@ -74,7 +76,7 @@
   - [F] Gartner customer survey (Jul 2026): customers are 3x more likely to use third-party GenAI tools than company chatbots [S22]. [F] 87% of customers say an option to reach a human is essential [S23, secondary].
   - [F] Upwork: AI chatbot development demand rose 71% year on year [S3].
   - [F] **India voice:** Tracxn lists 32 voice AI startups in India, including Sarvam, Gnani and Ringg [S24]. Published voice-agent rates are ₹2–12/min. The effective cost is often ₹6–25/min once platform and telephony fees are added [S25, vendor].
-  - [F] **India WhatsApp:** since July 2025 Meta bills per delivered message. Approximate India rates are ₹0.86 for marketing and ₹0.115 for utility and authentication messages. Service messages become chargeable from 1 Oct 2026, with the first 1,000 per number per month free [S26, aggregator; verify against Meta's official rate card].
+  - [F] **India WhatsApp:** since July 2025 Meta bills per delivered message. Approximate India rates are ₹0.86 for marketing and ₹0.115 for utility and authentication messages. Service messages become chargeable from 1 Oct 2026, with the first 1,000 per number per month free [S26, aggregator; the 1 Oct 2026 date is now past, so re-verify against Meta's official rate card before quoting S11].
 - **Durability:** high for WhatsApp commerce and support in India [I]. Voice is growing quickly but is platform-driven.
 - **Commoditisation risk:** high [I]. Gupshup, Interakt, AiSensy, Wati, Bolna and similar platforms let SMBs build FAQ bots themselves. Agencies win on back-end integration (ERP, inventory, payments, CRM) and on Indic and Hinglish tuning.
 
@@ -176,7 +178,7 @@
   - The MeitY guidelines [S35] give useful vocabulary for responsible-AI sections in proposals.
 
 ### 2.3 DPDP Act implications for AI projects
-- [F] The DPDP Rules were notified on 14 Nov 2025 with phased timelines [S45]:
+- [F] The DPDP Rules are Gazette-dated 13 Nov 2025 (PIB announced them on 14 Nov), with phased timelines [S45]; see [08-B](../08-research-appendix/B-dpdp-legal.md) (**VERIFY WITH CA/LEGAL**):
   - Board set up immediately.
   - Consent-manager provisions after about 12 months (Nov 2026).
   - Substantive obligations from **13 May 2027**: notices, consent, data principal rights, breach notification and security safeguards.

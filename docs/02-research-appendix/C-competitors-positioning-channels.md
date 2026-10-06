@@ -1,5 +1,12 @@
 # TecHaust Technologies: Competitive Landscape, Positioning and Low-Budget Acquisition
 
+> **Superseded in part.** This is a dated research record (2026-10-06); where it differs from an approved decision, the decision wins ([13-decisions.md](../13-decisions.md)).
+> - Old service names (Corporate Brain, Digital Workforce, System Guard): retired ([02 D-4](../02-services-strategy.md)).
+> - `taxID` / GSTIN in the schema (§4): not used; GSTIN appears on invoices only ([04 WEB-G-10 and §0 Identity](../04-prd.md)).
+> - Social handles (@techausttech / @techausthq): the site links to a LinkedIn company page and the founder's LinkedIn only ([04 §0, Q-B15](../04-prd.md)).
+> - Reviews from "existing AMC clients" (§3): there are 1–3 AMC clients, plus past project clients ([04 §0, Q-B14](../04-prd.md)).
+> - "2 founders" (§3): TecHaust has one founder.
+
 Research date: 2026-10-06. Web research only. Nothing was submitted, signed up for or logged into.
 
 **Legend.** **[S]** means a sourced fact (URL given; date noted where the page shows one). **[I]** means my inference or recommendation. Prices are as published on the pages at fetch time. Where I convert currencies, I use about ₹88 = $1 **[I]**.

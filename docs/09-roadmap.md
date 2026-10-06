@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Phase** | 4, Project documentation (**APPROVED** 2026-10-06) |
-| **Date** | 2026-10-06 |
+| **Date** | 2026-10-06 (last updated 2026-10-07) |
 | **Builds** | [04 PRD](04-prd.md) per [05 Architecture](05-architecture.md), [06 Design system](06-design-system.md), [07 Content](07-content.md), [08 Security & compliance](08-security-compliance.md) |
 
 ## How milestones work
@@ -11,14 +11,15 @@
   1. explain what I'm about to build
   2. build it, with tests for the critical logic
   3. run it locally and verify: build, tests, no console errors, responsive (375/768/1280/1920), axe clean, free-plan CPU budget
-  4. commit (conventional commits)
-  5. show you the result: screenshots/preview, a test summary, open questions
-  6. **wait for your "approved"**
+  4. have the reviewer agent check it, then open a PR (conventional commits)
+  5. CI green → it merges itself and deploys to staging (held PRs excepted)
+  6. show you the result on staging: screenshots/preview, a test summary, open questions
+  7. **wait for your "approved" before the next milestone** (CLAUDE.md rule 2)
 - **Size:** S ≈ 1–2 working sessions · M ≈ 3–5 · L ≈ 6+. These are relative effort, not calendar promises.
 - **Gates (🚦)** are points where I stop and ask if the result doesn't fit the plan, e.g. the free-plan CPU measurement.
 - **Owner inputs (🟧)** are listed per milestone so nothing blocks unexpectedly.
 - **Production stays untouched** until Phase 7. Every Phase 6 deploy goes to **staging** automatically on merge to `main` (workers.dev; Cloudflare Access added before any real data, at M1.4).
-- **Delivery flow:** branch → PR → CI green → squash-merge → staging deploy (`main` is protected).
+- **Delivery flow:** branch → review → PR with auto-merge → CI green → squash-merge → staging deploy (`main` is protected; held PRs get no auto-merge).
 
 ---
 
@@ -47,7 +48,7 @@
 |---|---|---|---|---|---|
 | M1.1 | **Design tokens and brand** | `packages/ui/tokens` → CSS/Tailwind/email/print; contrast test ([06 §2.3](06-design-system.md)); self-hosted fonts + **₹ glyph check**. **New identity "Patina"** (owner request: a new logo replaces the supplied one; [ADR 0013](adr/0013-new-brand-identity.md)): master generated from code, every lockup and colour version, pixel-fitted favicons, social, email, print PDFs (CMYK via ICC), brand audit ([11](11-brand-audit.md)) | Contrast pairs; font glyph coverage; token/brand drift; geometry, pixel-fit and print-colour tests | M | ✅ **Done and approved** 2026-10-06 ([PR #3](https://github.com/techaust/techaust_platform/pull/3)) · open owner actions: trademark search (VERIFY WITH LEGAL), print proof, card phone number |
 | M1.2 | **Core library** | `packages/core`: money (minor units, en-IN/en-US formatting, parsing), FY/IST dates, GSTIN validator + state codes, amount in words (Indian + international), numbering formatter (≤ 16 chars), permissions matrix, shared zod schemas (forms) | Property tests (money round-trip, no floats); FY boundary; GSTIN checksum vectors; words for 0 → 99,99,99,999 | M | ✅ **Done and approved** 2026-10-06 ([PR #5](https://github.com/techaust/techaust_platform/pull/5)): 245 tests, coverage 100 % lines / 98 % branches. Owner decisions: amount-in-words style ("Rupees … and … Paise Only", "US Dollars … and … Cents Only"), negatives with a minus sign (−₹1,000.00), fast-check + coverage-v8 approved |
-| M1.3 | **Database** | Drizzle schema for identity, settings, CRM and documents ([05 §5](05-architecture.md)); hand-written triggers (frozen documents, append-only audit); seed (catalogue S1–S18, settings defaults from [08 §7.1](08-security-compliance.md)) | Migrations apply clean; trigger tests (update a frozen doc → abort; delete from audit → abort); seed idempotent | M | ✅ **Built** 2026-10-06: 36 tables, 20 triggers + an issue guard, seed (S1–S18 at the docs/02 prices, settings defaults). Owner decisions: staging D1 migrated and seeded automatically on merge; seed prices from docs/02 · awaiting the owner's "approved" |
+| M1.3 | **Database** | Drizzle schema for identity, settings, CRM and documents ([05 §5](05-architecture.md)); integrity triggers generated from `src/triggers.ts` (frozen documents, append-only audit); seed (catalogue S1–S18, settings defaults from [08 §7.1](08-security-compliance.md)) | Migrations apply clean; trigger tests (update a frozen doc → abort; delete from audit → abort); seed idempotent | M | ✅ **Done and approved** 2026-10-06 ([PR #6](https://github.com/techaust/techaust_platform/pull/6)): 36 tables, 20 triggers + an issue guard, seed (S1–S18 at the docs/02 prices, settings defaults). Owner decisions: staging D1 migrated and seeded automatically on merge; seed prices from docs/02 |
 | M1.4 | 🚦 **Auth CPU spike (gate)** | First: **Cloudflare Access on the staging URLs** (your dashboard checklist). Then a minimal admin Worker on **staging**: salt → login (HMAC) → TOTP → session; browser Argon2id in a Web Worker. **Measure** CPU p50/p99 per route from Workers Logs (100+ runs incl. cold isolates), and Argon2id time on a mid-range Android phone | CPU report in `docs/runbooks/cpu-baseline.md` | S | 🟧 Optional: time a login on your phone |
 | | | **Gate:** login p99 ≤ 5 ms CPU and every route ≤ 7 ms. **If it doesn't fit, I stop and ask** (options: tune, Cloudflare Access + simpler auth, or the $5 plan). | | | |
 | M1.5 | **Staff auth (complete)** | ADM-AUTH-01…09: invites, TOTP enrolment, recovery codes, sessions list, step-up, lockout, login alerts (email stubbed until M2.4), RBAC middleware + route-coverage test, audit-log writer, access log | Auth integration suite (enumeration, replay, lockout, expiry, rotation, step-up); permission tests per role | M | — |

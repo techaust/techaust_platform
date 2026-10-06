@@ -1,5 +1,7 @@
 # TecHaust Technologies website: content inventory and design audit
 
+> **Phase 1 evidence (APPROVED 2026-10-06).** Parent: [01-audit](../01-audit.md). Fixes apply to the old site; for how the rebuild maps them, see [04 §10](../04-prd.md) (traceability) and §11 (later).
+
 - **Scope:** full content inventory (every route, section, CTA, link, form, visual, business fact) and design system review.
 - **Source (read-only):** `D:\BUSINESS\1. PARENT PROJECT\TECHAUST TECHNOLOGIES\ASSETS\WEBSITE` (app/, components/, lib/, public/, scripts/generate-brand-assets.mjs, README.md).
 - **Live site checked:** https://techaust.com, 2026-10-06, in the built-in browser at 375x812, 768x1024 and 1280x800. No forms were submitted.
@@ -14,17 +16,17 @@ Severity scale: **Critical** (legal or trust exposure, or a broken conversion pa
 
 | # | Sev | Finding |
 |---|---|---|
-| 1 | **Critical** | **Simulated telemetry is shown as fact.** These read as real production data but are hard-coded or random: "TECHAUST PLATFORM v2.4", "LIVE", "6–8ms PING", "OPERATIONAL NODES", "2,847 DOCS INDEXED", "1,847 INVOICES SYNCED / documents processed today", "Avg 4.2s vs 8.5 min", "258 THREATS BLOCKED" (89/142/27, "100% blocked"), "Confidence 99.2%", and the footer badge "ALL AI SYSTEMS OPERATIONAL". The Guard "REAL-TIME THREAT MONITOR" carries no visible "simulation" label (only screen-reader text says so). The Knowledge demo returns canned answers labelled "VERIFIED ANSWER • CITATIONS INCLUDED". This is a misleading-advertising risk (Consumer Protection Act 2019 / ASCI code: **VERIFY WITH CA/LEGAL**). |
+| 1 | **Critical** | **Simulated telemetry is shown as fact.** These read as real production data but are hard-coded or random: "TECHAUST PLATFORM v2.4", "LIVE", "4–12ms PING", "OPERATIONAL NODES", "2,847 DOCS INDEXED", "1,847 INVOICES SYNCED / documents processed today", "Avg 4.2s vs 8.5 min", "258 THREATS BLOCKED" (89/142/27, "100% blocked"), "Confidence 99.2%", and the footer badge "ALL AI SYSTEMS OPERATIONAL". The Guard "REAL-TIME THREAT MONITOR" carries no visible "simulation" label (only screen-reader text says so). The Knowledge demo returns canned answers labelled "VERIFIED ANSWER • CITATIONS INCLUDED". This is a misleading-advertising risk (Consumer Protection Act 2019 / ASCI code: **VERIFY WITH CA/LEGAL**). |
 | 2 | **Critical** | **Absolute guarantees no vendor can contractually honour:** "100% accurate answers", "No hallucinations", "Zero manual errors", "Proprietary data never leaks", "Full legal compliance", "no gaps, no exceptions", "100% private", "100% auditable", "ironclad". Terms §2 tries to limit them to the MSA, but the marketing claims stand on their own. |
 | 3 | **Critical** | **The Privacy Policy is GDPR/CCPA-styled with no India DPDP Act 2023 alignment.** It names no Indian legal entity, no Grievance Officer, no Data Protection Board complaint route, no consent-manager or withdrawal mechanics, and names the wrong processors (it says "Vercel Edge / Cloudflare Pages"; production actually uses Cloudflare Workers plus Resend, a US email API). It also promises things the stack can't evidence ("zero-data retention", "never visible to TecHaust staff", "AES-256", "System Guard" protecting the site against prompt injection on a site that has no AI). **VERIFY WITH CA/LEGAL.** |
 | 4 | **High** | **The Terms choose Delaware (USA) law with exclusive venue in Wilmington** and a USD $100 liability cap, for a business whose only stated address is Balurghat, West Bengal. This looks like an unadapted template. **VERIFY WITH CA/LEGAL.** |
 | 5 | **High** | **The legal entity is unclear.** The site says only "TecHaust Technologies" (no Pvt Ltd/LLP/proprietorship, no CIN/GSTIN/Udyam), yet the Contact page labels the address "REGISTERED OFFICE" and JSON-LD sets `legalName` to the brand name. |
 | 6 | **High** | **The team is overstated against a solo-founder reality.** The copy says "founded by operators" (plural), "Solutions Architecture Team", "every enquiry lands with a named architect", "Meet the team behind your AI workforce", while the founder block says Rupak Sarkar built "every system it runs today". There are no team members, clients, case studies, testimonials or logos anywhere. "TRUSTED FOR HIGH-COMPLIANCE ENTERPRISE WORKLOADS" implies existing customers. |
 | 7 | **High** | **A conversion bug kills calculator-sourced leads.** The calculator allows decimal hourly rates (verified live: typing 38.5 produced `/contact?…&rate=38.5…`), and partial URLs fill missing values with "-". The API's `calc` regex accepts digits only (`^\d{1,6}$`), so the whole submission is rejected with a generic "Validation failed". Client and server limits also differ (name max 80, email max 120 and company max 120 are enforced only on the server). |
-| 8 | **High** | **Every page's initial HTML shows "LOADING TECHAUST CORE..."** in `<main>`. The real content sits in `<div hidden id="S:0">` and only swaps in after JS runs: `app/loading.tsx` wraps every route in Suspense. In the browser pane the spinner stayed visible for 6+ seconds while the tab was backgrounded. Non-JS crawlers, AI crawlers and link unfurlers see a spinner page, and LCP is delayed. (This is SEO/perf; flagged for that auditor.) |
+| 8 | **High** | **Every page's initial HTML shows "LOADING TECHAUST CORE..."** in `<main>`. The real content sits in `<div hidden id="S:0">` and only swaps in after JS runs: `app/loading.tsx` wraps every route in Suspense. In the browser pane the spinner stayed visible for 6+ seconds while the tab was backgrounded. Non-JS crawlers, AI crawlers and link unfurlers see a spinner page, and LCP is delayed. (This is SEO/perf: see App. C S4 and P1.) |
 | 9 | **Medium** | **The homepage ROI "EXAMPLE OUTPUT" ($1,058,400 / 27,864h) can't be reproduced by the calculator.** 27,864 / (48 × 0.72) = 806.25 team-hours, which the integer sliders can't produce. The calculator defaults show $1,063,772 / 27,994h. The "72% automation rate", called "conservative", has no cited source. |
 | 10 | **Medium** | **The intended display font isn't applied to most headings.** 71 uses of `font-[var(--font-space)]` don't resolve to Space Grotesk: live computed styles show card h3s and the ROI/CTA headings in Plus Jakarta Sans. Only `.fluid-*` headings get Space Grotesk. |
-| 11 | **Medium** | **Text contrast and sizes fail the README's "WCAG AAA" claim:** `text-white/30` and `/40` (about 2.6–3.6:1), slate-500 small text, 8–11px text (logo caption 8px, hop labels 9px, 11× 10px, 24× 11px). |
+| 11 | **Medium** | **Text contrast and sizes fail the README's "WCAG AAA" claim:** `text-white/30` (≈2.6:1) and `/40` (≈3.6:1 on #0F111A; 3.8:1 on #07080C, App. C A2), slate-500 small text, 8–11px text (logo caption 8px, hop labels 9px, 11× 10px, 24× 11px). |
 | 12 | **Medium** | **The audience is unclear:** USD-only pricing logic, call slots in "PT" (US Pacific Time), "EMEA" and "Acme" demo data, Delaware law, for an Indian company. That suits US enterprise buyers but confuses Indian prospects, and the copy never says who the site targets. |
 
 ---
@@ -65,10 +67,10 @@ Severity scale: **Critical** (legal or trust exposure, or a broken conversion pa
 **Footer** (`components/footer.tsx`)
 - Logo; tagline "Autonomous AI infrastructure for regulated enterprise — transforming scattered records…"; map-pin "Balurghat, West Bengal, India".
 - "@techaustsocial" followed by 4 round buttons that use **text monograms, not icons** ("in", "𝕏", "f", "ig"). All open in a new tab (`target="_blank" rel="noopener noreferrer"`):
-  - LinkedIn → https://linkedin.com/company/techaustsocial (HTTP 200)
-  - X → https://x.com/techaustsocial (404 without login: inconclusive, **VERIFY**)
-  - Facebook → https://facebook.com/techaustsocial (200)
-  - Instagram → https://instagram.com/techaustsocial (200)
+  - LinkedIn → https://linkedin.com/company/techaustsocial (HTTP 200 behind a bot wall: unverified, App. C §5)
+  - X → https://x.com/techaustsocial (404; **superseded:** App. C S1 control-tested it, and the account does not exist)
+  - Facebook → https://facebook.com/techaustsocial (bot wall: unverified, App. C §5)
+  - Instagram → https://instagram.com/techaustsocial (a generic page that Instagram returns for any handle: unverified, App. C §5)
 - PLATFORM: AI Knowledge Systems, AI Workforce Automation, AI Security & Compliance, ROI Calculator.
 - COMPANY: About TecHaust, Contact & Audit, Privacy Policy, Terms of Service.
 - Bottom bar: "© {current year} TecHaust Technologies. All rights reserved."; a pulsing green badge "**ALL AI SYSTEMS OPERATIONAL**" (static string from `siteConfig.status`, *High trust risk: no status system behind it*); "Engineered with ♥ (heartbeat animation) in India."
@@ -135,7 +137,7 @@ Sections in order:
    - *High: on-prem/VPC capability and a 14-day audit SLA are capability claims. VERIFY.*
 7. **Founder** (H2 "Rupak Sarkar")
    - "RS" monogram tile (no photo); "FOUNDER — TECHAUST TECHNOLOGIES"; "Founded the platform from the ground up in Balurghat, West Bengal, India — building every system it runs today."
-   - 4 personal social pills opening in a new tab: LinkedIn /in/r4rupak1997, X /r4rupak1997, Facebook /r4rupak1997, Instagram /r4rupak1997. *Low: personal Facebook/Instagram on a B2B enterprise site.*
+   - 4 personal social pills opening in a new tab: the founder's personal LinkedIn, X, Facebook and Instagram. *Low: personal Facebook/Instagram on a B2B enterprise site.*
    - Narrative: a near-verbatim repeat of "Our Story", now singular ("an operator").
    - Quote: "Enterprise AI must be private by default, accurate to the source, and auditable end to end. Everything else is theater."
 8. **CTA:** H2 "Meet the team behind your AI workforce."; "Request a 30-minute discovery with Solutions Architecture — NDA available, no sales pressure"; button "Contact & Audit →" → `/contact`. *High: no team is shown.*
@@ -244,7 +246,7 @@ Sections in order:
   4. **Success:** a toast for 6s: "Audit request received, {first name}. Our solutions architect will contact you at {email} within 4 business hours [• Calculator: Nh / $N saved]. All inquiries are securely delivered to contact@techaust.com." The form resets.
   5. No auto-acknowledgement email to the submitter, and no analytics or conversion event.
 - **Errors:** 429 "Too many requests…"; 400 "Validation failed" (generic and unhelpful); 503 "Email service is not configured. Please email contact@techaust.com directly."; 502 "Delivery failed…".
-  - *Medium (security, pass to the security auditor):* the 502 body includes `debug` with the Resend error text and the configured `from`/`to` addresses.
+  - *Medium (security; see App. A F-S2):* the 502 body includes `debug` with the Resend error text and the configured `from`/`to` addresses.
 - **Data flow:** personal data goes to Cloudflare (edge), then Resend (US), then the techaust.com mailbox provider (unknown). The Privacy Policy names none of these correctly.
 
 ### A.8 `/privacy`
@@ -267,6 +269,8 @@ What it says, by section:
 - **Contact:** contact@ (listed twice); "[SECURITY]" subject tag.
 
 **Gaps vs India's DPDP Act 2023 and DPDP Rules 2025 (all VERIFY WITH CA/LEGAL)**
+
+> **Timeline.** The DPDP Rules' core duties start on **13 May 2027**. Until then the IT Act s.43A and the SPDI Rules 2011 apply (see [08 L-1 and L-2](../08-security-compliance.md) and [08-B](../08-research-appendix/B-dpdp-legal.md)). **VERIFY WITH CA/LEGAL.**
 
 | Sev | Gap |
 |---|---|
@@ -338,7 +342,7 @@ Gaps (VERIFY WITH CA/LEGAL):
 - Icons: `/icon.svg` (64-unit chamfered octagon tile with the T mark), `/favicon.ico` (16/32/48), `/apple-icon.png` (180), `/icon-512.png` (512, also used as the OG image). All return 200.
 - `app/icon-512.png` is a stale duplicate (5.5KB vs 22.8KB in public/; not served from app/; *Info*).
 - `www` returns a 301 to apex.
-- Security headers on live: HSTS (preload), X-Frame-Options DENY, nosniff, Referrer-Policy, Permissions-Policy. No CSP (for the security auditor).
+- Security headers on live: HSTS (preload), X-Frame-Options DENY, nosniff, Referrer-Policy, Permissions-Policy. No CSP (see App. A F-S8 and App. C H1).
 - Dead code (*Info*): `components/particle-canvas.tsx` (unused), `components/ui/button.tsx` (unused), and in `lib/site-config.ts` `EMAIL_DIRECTORY` plus the sales@/support@/admin@/billing@ addresses (never rendered; README lists sales@ and support@ as live contacts).
 
 ### A.14 Consolidated link inventory
@@ -389,7 +393,7 @@ In-page CTAs:
 
 **External** (all `target="_blank" rel="noopener noreferrer"`)
 - Brand: linkedin.com/company/techaustsocial, x.com/techaustsocial, facebook.com/techaustsocial, instagram.com/techaustsocial.
-- Founder: linkedin.com/in/r4rupak1997, x.com/r4rupak1997, facebook.com/r4rupak1997, instagram.com/r4rupak1997.
+- Founder: the founder's personal LinkedIn, X, Facebook and Instagram handles.
 
 **mailto**
 - `contact@techaust.com` on Contact (direct line and consent text), Privacy (×3) and Terms (×2).
@@ -404,8 +408,8 @@ In-page CTAs:
 | Address | Pirozpur, Balurghat, Dakshin Dinajpur, West Bengal 733133, India (labelled "Registered office") | VERIFY registration |
 | Phone | none | Gap (Medium trust) |
 | Emails | contact@techaust.com (only one rendered) | sales/support/admin/billing defined but unused |
-| Socials | @techaustsocial on LinkedIn/X/FB/IG | X unverified |
-| Founder | Rupak Sarkar, "Founder"; personal handles r4rupak1997 | OK; no photo, background, credentials or LinkedIn summary on the page |
+| Socials | @techaustsocial on LinkedIn/X/FB/IG | X does not exist (App. C S1); LinkedIn, Facebook and Instagram unverified (App. C §5) |
+| Founder | Rupak Sarkar, "Founder"; personal handles (founder's own) | OK; no photo, background, credentials or LinkedIn summary on the page |
 | Team | "Solutions Architecture Team", "named architect", "operators" | **Likely overstated** (High) |
 | Products | Corporate Brain / Digital Workforce / System Guard; "Platform v2.4"; "AI Core Matrix" | **VERIFY** production status |
 | Deployment | Private / VPC / On-Prem | VERIFY |
@@ -478,8 +482,8 @@ In-page CTAs:
 - Components mostly use **Tailwind defaults** (cyan-200/300/400, violet-200/300/400/500/600, fuchsia-300/600, emerald-200/300/400/500, teal-600, slate-200/300/400/500, `white/xx`) rather than the theme tokens. `bg-obsidian`, `text-cyan` and the other tokens are almost never referenced, so the token layer is decorative. *Medium (consistency):* Tailwind's cyan-400 is `#22D3EE`, not the brand `#00F0FF`.
 - **Gradient system:** primary CTA cyan-400 → violet-600; each division has its own accent (KS cyan→violet; WA violet→cyan; SG emerald→cyan). This works as a colour-coding system.
 - **Contrast (Medium):**
-  - `text-white/30` (≈2.6:1) and `/40` (≈3.6:1) on `#0B0D14`/`#0F111A` fail WCAG AA for small text (4 + 9 uses), e.g. calculator sub-labels and "Forwards your figures…".
-  - `text-slate-500` (#64748B ≈ 4.2:1) at 11–12px in the footer and contact band is borderline.
+  - `text-white/30` (≈2.6:1) and `/40` (≈3.6:1 on #0F111A; 3.8:1 on #07080C, App. C A2) fail WCAG AA for small text (4 + 9 uses), e.g. calculator sub-labels and "Forwards your figures…".
+  - `text-slate-500` (#64748B ≈ 4.2:1) at 11–12px in the footer and contact band fails AA (below 4.5:1).
   - Gradient-clipped text (cyan→violet) is fine at display sizes.
 - `AmbientLight` sits at fixed `z-[1]` *above* page content (13% opacity, blurred), which slightly tints text on desktop. *Low.*
 
@@ -602,7 +606,7 @@ Motion appears in the following places:
 - H2. No legal entity, registration or GST details; "Registered office" label; JSON-LD `legalName`.
 - H3. Overstated team and customer base ("operators", "Solutions Architecture Team", "named architect", "Meet the team", "Trusted for high-compliance enterprise workloads", "Why back-office teams choose…").
 - H4. Calculator → contact submission fails for decimal rates or partial params (server `calc` regex); client/server length mismatch gives a generic error.
-- H5. SSR `<main>` is a loading spinner on every route; content hidden until JS runs (flag for the SEO/perf audit).
+- H5. SSR `<main>` is a loading spinner on every route; content hidden until JS runs (see App. C S4 and P1).
 
 **Medium**
 - M1. Home ROI example not reproducible; 72% rate unsourced; "typically higher" claim.
@@ -613,7 +617,7 @@ Motion appears in the following places:
 - M6. USD/PT/Delaware vs India: audience and localisation mismatch.
 - M7. No OG card image (square icon used as large image).
 - M8. SoftwareApplication JSON-LD "price 0 USD".
-- M9. 502 response leaks debug info (from/to addresses, Resend error body) to the browser (pass to security).
+- M9. 502 response leaks debug info (from/to addresses, Resend error body) to the browser (see App. A F-S2).
 - M10. Excessive concurrent motion and pulsing indicators; theme tokens defined but unused (palette drift).
 - M11. Analytics (Cloudflare RUM observed) not named in the privacy policy.
 
@@ -644,11 +648,11 @@ Motion appears in the following places:
 3. Are **any** of the products in production with paying or pilot clients? Is "Platform v2.4" real? Which metrics (2,847 docs, 1,847 invoices, 258 threats, 4.2s, 99.2%) come from real deployments, if any?
 4. How many people work at TecHaust today? Is there a "Solutions Architecture Team"? Who answers enquiries within "4 business hours" (and in which timezone: PT or IST)?
 5. Can you share any **client names, logos, testimonials or case studies** (even anonymised) that may be published?
-6. Which **mail host** receives contact@techaust.com (Google Workspace, Zoho, Cloudflare Email Routing)? Is Resend's data retention acceptable? Who is the **Grievance Officer** under DPDP?
+6. Which **mail host** receives contact@techaust.com (Google Workspace, Zoho, Cloudflare Email Routing)? **Answered in part:** DNS shows Zoho (App. C H4). Is Resend's data retention acceptable? Who is the **Grievance Officer** under DPDP? (Answered later: Rupak Sarkar, [04 §0](../04-prd.md).)
 7. Is any **analytics** installed besides Cloudflare Web Analytics/RUM? Any cookies set?
 8. Do you actually offer **on-prem / VPC** deployment, a **14-day audit**, an **NDA**, and an "Executive Assurance Pack"? What does the "audit" deliverable contain, and is it free?
 9. Should the founder's personal Facebook/Instagram be on the corporate site? Can you provide a professional headshot and short bio (background, credentials)?
-10. Is the X account @techaustsocial live (it couldn't be confirmed without login)?
+10. Is the X account @techaustsocial live? (**Answered:** it does not exist; App. C S1 control-tested it. LinkedIn, Facebook and Instagram remain unverified, App. C §5.)
 11. Do you want sales@ / support@ / billing@ shown publicly, and is a phone or WhatsApp number available?
 12. Is the ASSETS\WEBSITE folder the exact source of the current production deploy (the bundle hashes differ from the local `dist/`)?
 13. Pricing: do you want indicative pricing or engagement models (fixed-scope pilot, monthly retainer) on the site?
