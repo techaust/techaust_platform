@@ -22,6 +22,7 @@
 | U-5 | **Zoho aliases** `hello@`, `billing@`, `privacy@`, `security@` | Needed for email sending (SES identities), legal pages and security.txt | Create them in Zoho before the email milestone |
 | U-6 | **Public GitHub repo** (since 2026-10-06, owner decision) | `docs/` publicly describes unfixed weaknesses of the live site (audit H-5, M-1, M-2: form rate-limit bypass, debug leak, no Origin check) and business-confidential plans; the commit email is public | Make the repo private when convenient (Settings → General → Change visibility). Already-copied content can't be recalled. Until then nothing sensitive is committed (CLAUDE.md rule 6). |
 | U-7 | **GitHub billing block** | GitHub refused to run Actions on the private repo ("recent account payments have failed or your spending limit…"). Public repos aren't affected, but it returns if the repo goes private. | Check GitHub → Settings → Billing and licensing for a failed payment |
+| U-8 | **Trademark clearance for the new identity** (VERIFY WITH LEGAL) | The new name treatment and TH mark (ADR 0013) have not been searched. A clash found after printing or launch means redoing everything. | Ask a trademark agent to search IP India for "TecHaust" (word) and the TH device mark in classes 9, 35 and 42, then consider filing both ([11 §4](11-brand-audit.md)) |
 
 ---
 
@@ -61,7 +62,7 @@
 | **Payments UX** | Tampering | Client edits the amount in the browser | The amount comes from the server balance; partial amount bounds checked server-side; nothing is marked paid on a redirect |
 | **Documents** | Tampering | An issued invoice silently edited | DB triggers freeze content; the PDF and snapshot are stored with SHA-256; corrections only via credit/debit notes |
 | **Files** | Malicious upload | HTML or SVG with script; zip bombs; huge files | Allow-list by magic bytes; ≤ 25 MB; served as `attachment` with `X-Content-Type-Options: nosniff`; private R2 with 5-min signed URLs; no server-side unzip |
-| **Supply chain** | Tampering | A malicious npm release | Exact pins; pnpm `minimumReleaseAge` 1 day (install fails on newer packages, as seen in P5.2) + Renovate's 7-day delay on updates; `allowBuilds` allow-list (only esbuild and workerd run install scripts); Renovate PRs with CI; `--frozen-lockfile` in CI; actions pinned by SHA; gitleaks secret scan |
+| **Supply chain** | Tampering | A malicious npm release | Exact pins; pnpm `minimumReleaseAge` 1 day (install fails on newer packages, as seen in P5.2) + Renovate's 7-day delay on updates; `allowBuilds` allow-list (only esbuild and workerd run install scripts; dev-only design tooling in `packages/ui` such as sharp, HarfBuzz and pdf-lib ships no install scripts and never reaches a Worker bundle); Renovate PRs with CI; `--frozen-lockfile` in CI; actions pinned by SHA; gitleaks secret scan |
 | **CI/CD (public repo)** | Elevation | A fork PR's code runs with our secrets ("pwn request"); a malicious workflow change | `deploy-staging` runs only for `push` events on this repo's `main` (never fork PRs); CI has no secrets; first-time fork contributors need approval to run Actions; branch protection requires CI on every PR |
 | **CI/CD** | Elevation | A collaborator adds a workflow that exfiltrates the prod token | Write access limited to the Owner; the prod token is used only in `deploy-prod.yml` (actor guard + typed confirmation); separate least-privilege tokens per environment; branch protection; review of `.github/` changes |
 | **Outbound calls** | SSRF | User-supplied URL fetched server-side | No user-supplied URLs are fetched; outbound hosts are allow-listed (gateways, SES, Turnstile, FBIL/RBI rates, PayPal certs) |
@@ -256,6 +257,7 @@ All 15 questions are in [08-A, the last section](08-research-appendix/A-gst-invo
 | L-14 | E-Commerce Rules 2020 | Possibly applicable. One combined Grievance Officer block covers SPDI, DPDP and E-Com. |
 | L-15 | Accessibility | WCAG 2.2 AA; watch the **draft RPwD Amendment Rules 2026** (IS 17802; an 18-month deadline for firms under ₹500 Cr if finalised) |
 | L-16 | Identity on the site | Trade name + "sole proprietorship, Balurghat, West Bengal" + the Grievance Officer's name; **no GSTIN on the website** (owner decision); full postal address on Contact and legal pages only |
+| L-17 | Trademark and font licences | New identity "Patina" (ADR 0013): trademark search and filing not done (U-8). Fonts are SIL OFL 1.1: using them in a logo is allowed, the outlined wordmark is artwork; licence texts ship in `packages/ui/fonts/LICENSES.md` |
 
 **Questions for an optional one-hour lawyer review:** the 15 questions in [08-B](08-research-appendix/B-dpdp-legal.md). The five most important:
 1. Does CERT-In apply to a sole proprietorship?

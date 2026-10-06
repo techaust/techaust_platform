@@ -66,3 +66,14 @@
 | P5.6 Staging resources | ✅ D1 `techaust-staging` + 8 queues ([runbooks/environments.md](runbooks/environments.md)); R2, Turnstile and Access deferred |
 | P5.7 CI token | ✅ Owner created `CF_API_TOKEN_STAGING` (Workers/D1/Queues/Account read; no zone/DNS) + `CLOUDFLARE_ACCOUNT_ID` |
 | P5.8 CI/CD | ✅ CI green; staging deploy runs on merge to `main`; production workflow owner-only and disabled until Phase 7 |
+
+## 7. Phase 6 additions (M1.1, 2026-10-06)
+
+| What | Kind | Why | Notes |
+|---|---|---|---|
+| **frontend-design** skill (T5, approved) | Skill | Three identity concepts and the brand refinement | Used as planned |
+| Web search / fetch (built in) | Tool | Checked LinkedIn's official image sizes in its help centre | Read-only |
+| Built-in browser pane (T4) | Tool | Rendered and screenshot-checked every concept, logo, social image and print PDF | Local pages only |
+| Design build libraries (dev-only, `packages/ui`) | npm | Font subsetting and outlines (subset-font, harfbuzzjs, fontverter, fontkitten), rasters (sharp), print PDFs (`@cantoo/pdf-lib`, already in the approved stack), Tailwind theme test (tailwindcss), fonts (Fontsource Archivo, IBM Plex Mono) | Exact pins, `minimumReleaseAge` respected; none run install scripts or reach a Worker bundle. Versions in [05 §2](05-architecture.md) |
+| LittleCMS via Pillow + Windows `RSWOP.icm` | Local, one-off | ICC-accurate print CMYK (`packages/ui/scripts/measure-cmyk.py`) | Results committed in `tokens/print-cmyk.json`, so CI never needs it |
+
