@@ -1,8 +1,10 @@
 # TecHaust Website: Code, Build and Security Audit
 
+> **Phase 1 evidence (APPROVED 2026-10-06).** Parent: [01-audit](../01-audit.md). Fixes apply to the old site; for how the rebuild maps them, see [04 §10](../04-prd.md) (traceability) and §11 (later).
+
 **Scope:** tech stack, build/deploy, code quality, tech debt, dead code, code-level security, testing.
 **Source (read-only):** `D:\BUSINESS\1. PARENT PROJECT\TECHAUST TECHNOLOGIES\ASSETS\WEBSITE`. Paths below are relative to that folder.
-**Method:** I read every source file in app/, components/, lib/, scripts/, the root configs and .agents/. I copied the project, without .git, .next, dist, .wrangler or .vinext, to `scratchpad\audit-copy` and ran every gate there. I then ran the vinext Worker bundle locally (`wrangler dev`, no secrets present) and probed it with curl, including `/api/contact`. Raw logs are in the scratchpad: `tsc-*.txt`, `lint*.txt`, `build-next.txt`, `build-vinext.txt`, `audit.json`, `outdated.txt` and `wrangler-dev*.txt`.
+**Method:** I read every source file in app/, components/, lib/, scripts/, the root configs and .agents/. I copied the project, without .git, .next, dist, .wrangler or .vinext, to `scratchpad\audit-copy` and ran every gate there. I then ran the vinext Worker bundle locally (`wrangler dev`, no secrets present) and probed it with curl, including `/api/contact`. Raw logs were kept in the session scratchpad, not committed: `tsc-*.txt`, `lint*.txt`, `build-next.txt`, `build-vinext.txt`, `audit.json`, `outdated.txt` and `wrangler-dev*.txt`.
 **Date:** 2026-10-06
 
 Severity scale: Critical / High / Medium / Low / Info.
@@ -45,7 +47,7 @@ Severity scale: Critical / High / Medium / Low / Info.
 - Verified locally: 8 consecutive POSTs with a rotating `X-Forwarded-For: 10.0.0.N` all passed (no 429). A fixed XFF value got a 429 on the 6th request.
 - Requests with no XFF header all share the single key `"unknown"`, so one abuser can 429 every other header-less client in that isolate.
 - The Map is never pruned (only re-set on a later hit), so a spoofed-XFF flood grows it without limit until the isolate is recycled.
-- Impact: the Resend free tier allows 100 emails per day. A trivial script can use up the quota, which silently kills the only lead channel, and can flood the inbox.
+- Impact: if the account is on Resend's free tier (plan not confirmed, [01 Q-H4](../01-audit.md)), only 100 emails per day are allowed. A trivial script can use up the quota, which silently kills the only lead channel, and can flood the inbox.
 - Recommendation: key on `CF-Connecting-IP`. Enforce limits with a Cloudflare WAF rate-limiting rule (one free rule) or the Workers Rate Limiting binding, and add Cloudflare Turnstile (free) to the form.
 
 **F-S2 [Medium] Error responses leak internal configuration and upstream errors**
@@ -118,9 +120,9 @@ Severity scale: Critical / High / Medium / Low / Info.
 **F-B1 [High] Under vinext, no page is prerendered or cached: every page view is a Worker SSR render with `no-store`**
 - Evidence: the `build:vinext` output says "Prerendered 1 routes (10 skipped)". `dist/server/vinext-prerender.json` marks all 9 pages `skipped / reason: dynamic`.
 - The local Worker returns `Cache-Control: no-store, must-revalidate` on every page **and** on robots/sitemap/manifest/icons. So `vite.config.ts:9` `cache: { cdn: cdnAdapter() }` and `wrangler.jsonc:17-19` `cache.enabled` have no effect on HTML.
-- AGENTS.md:21, README:60 and CLAUDE.md all claim prerendered static pages.
+- AGENTS.md:21, README:60 and the old site's CLAUDE.md all claim prerendered static pages.
 - Impact:
-  - Every hit costs a Worker request plus React SSR CPU (27–54 ms wall time locally).
+  - Every hit costs a Worker request plus React SSR CPU (27–54 ms wall time locally; wall time, CPU not measured).
   - The free plan has a 10 ms CPU cap and 100k requests per day, which risks Error 1102 / CPU-limit failures and quota exhaustion under traffic or bot load.
   - No edge caching means slower TTFB.
   - Search-engine bots and scrapers all hit SSR.
@@ -225,7 +227,7 @@ Severity scale: Critical / High / Medium / Low / Info.
 
 **F-Q8 [Low] Build-time-frozen and stale values**
 - footer.tsx:61 calls `new Date().getFullYear()`, which freezes at build time on static output.
-- sitemap.ts:17 sets `lastModified: now` on every build or request, so it is meaningless to crawlers.
+- sitemap.ts:17–20 sets `lastModified: now` on every build or request, so it is meaningless to crawlers.
 - Stale platform references: route.ts:5-8, .env.example:2-3, privacy/page.tsx:86 ("Vercel Edge / Cloudflare Pages"), README:184.
 
 **F-Q9 [Info] Type safety and lint strictness**
@@ -317,5 +319,5 @@ Severity scale: Critical / High / Medium / Low / Info.
 5. Are any subdomains of techaust.com served over plain HTTP? HSTS uses `includeSubDomains; preload`.
 6. Was the `debug` payload in contact error responses meant to be temporary? Can it be removed now?
 7. Is the dual build (`next build` for Vercel compatibility) still needed? Dropping it would remove the divergence risk and the deprecated edge runtime.
-8. The site shows simulated "live" numbers and statuses ("ALL AI SYSTEMS OPERATIONAL", "Live: 1,847 documents processed today", the threat counters) and the privacy page claims "System Guard" controls and analytics on techaust.com that do not exist in the code. Should these be relabelled as demos or removed? This is not a code bug, but it is a trust and compliance exposure for a security-positioned brand.
-9. The privacy policy and terms name "Vercel Edge / Cloudflare Pages" and Delaware law for an India-based entity. Should legal review these?
+8. The site shows simulated "live" numbers and statuses ("ALL AI SYSTEMS OPERATIONAL", "Live: 1,847 documents processed today", the threat counters) and the privacy page claims "System Guard" controls and analytics on techaust.com that do not exist in the code. Should these be relabelled as demos or removed? This is not a code bug, but it is a trust and compliance exposure for a security-positioned brand (VERIFY WITH CA/LEGAL; not legal advice).
+9. The privacy policy and terms name "Vercel Edge / Cloudflare Pages" and Delaware law for an India-based entity. Should legal review these? (VERIFY WITH CA/LEGAL; not legal advice.)
