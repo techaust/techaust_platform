@@ -426,7 +426,7 @@ Every service page uses one template, with sections in this order ([03 §3A.3](0
 | JOB-CRON-01 | M | Daily 03:30 IST: mark overdue invoices, expire proposals, enqueue reminders (sending window 09:00–19:00 IST), retention clean-up, session clean-up | Each cron handler only enqueues (≤ 5 ms CPU). |
 | JOB-CRON-02 | M | Daily 06:00 IST: care-plan billing for plans whose billing day = today | Idempotent per plan per period. |
 | JOB-CRON-03 | S | Monday 09:00 IST: weekly digest | |
-| JOB-BKP-01 | M | **Nightly backup** (GitHub Actions, 02:00 IST): D1 export → encrypt (age, the owner's public key) → upload to S3 Mumbai (OIDC role, no stored AWS keys) → verify the object → retention 90 daily + monthly for ≥ 8 years | Workflow logs show success. A restore drill is documented ([08 §6](08-security-compliance.md)). |
+| JOB-BKP-01 | M | **Nightly backup** (GitHub Actions, 03:00 IST / 21:30 UTC): D1 export → encrypt (age, the owner's public key) → upload to S3 Mumbai (OIDC role, no stored AWS keys) → verify the object → retention 90 daily (all tables) + the first-of-month copy of the finance/GST tables only for 10 years (≥ 8 from FY end; [08 §6.1](08-security-compliance.md); VERIFY WITH CA/LEGAL) | Workflow logs show success. A restore drill is documented ([08 §6](08-security-compliance.md)). |
 
 ---
 
