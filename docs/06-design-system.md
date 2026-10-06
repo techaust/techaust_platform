@@ -114,14 +114,16 @@ CMYK values come from a real ICC profile, not a formula. `scripts/measure-cmyk.p
 |---|---|---|
 | `--color-bg` | `stone-50` | `ink-950` |
 | `--color-surface` / `-alt` / `-raised` | `white` / `stone-100` / `white` + shadow | `ink-800` / `ink-750` / `ink-700` |
+| `--color-fill-subtle` | `stone-200` | `ink-750` |
 | `--color-text` / `-muted` | `ink-900` / `ink-400` | `mist` / `ink-300` |
 | `--color-text-accent`, `--color-link-hover`, `--color-focus` | `verdigris-700` | `verdigris-300` |
 | `--color-link` | `ink-900` (underlined) | `mist` (underlined) |
 | `--color-border` / `-control` | `stone-300` / `stone-500` | `ink-600` / `ink-500` |
 | `--color-btn-primary-bg` / `-fg` / `-hover` | `verdigris-700` / `white` / `verdigris-800` | `verdigris-300` / `ink-950` / `verdigris-200` |
+| `--color-btn-secondary-fg` | `ink-900` | `mist` |
 | `--color-accent-decor` | `verdigris-500` | `verdigris-300` |
 | `--color-selection` | `verdigris-100` | `verdigris-900` |
-| Shadows | soft ink shadows (`--elevation-1/2`) | replaced by a 1 px `ink-600` outline |
+| Shadows | soft ink shadows (`--elevation-1/2`; `--shadow-1/2` are aliases of them) | replaced by a 1 px `ink-600` outline |
 
 ### 2.3 Contrast (computed from the tokens; the test `tokens/contrast.test.ts` enforces it)
 
@@ -211,7 +213,7 @@ The base is 16 px; display sizes are fluid between 360 px and 1280 px viewports.
 | `xl` | 1280 px | Max container reached |
 | `2xl` | 1536 px | Larger outer margins only (content width doesn't grow) |
 
-**Containers:** `--container` 1200 px · `--container-wide` 1360 px (pricing table, diagrams) · `--container-prose` 68 ch. Apps: fluid, with a side nav of 248 px (collapsible to 64 px).
+**Containers:** `--container-page` 1200 px · `--container-wide` 1360 px (pricing table, diagrams) · `--container-prose` 68 ch. Apps: fluid, with a side nav of 248 px (collapsible to 64 px).
 
 ### 4.3 Shape, elevation, borders
 
@@ -222,9 +224,9 @@ The base is 16 px; display sizes are fluid between 360 px and 1280 px viewports.
 | `radius-lg` | 12 px (site cards, dialogs) |
 | `radius-full` | 999 px (pills, avatars) |
 | `border-hairline` | 1 px `--color-border` |
-| `shadow-1` | `0 1px 2px rgb(17 26 69 / .06), 0 1px 1px rgb(17 26 69 / .04)` |
-| `shadow-2` | `0 8px 24px rgb(17 26 69 / .08), 0 2px 6px rgb(17 26 69 / .05)` (dialogs, menus) |
-| Dark theme | Shadows replaced by a 1 px lighter border + `surface-raised` |
+| `shadow-1` | `0 1px 2px rgb(20 35 31 / 0.06), 0 1px 1px rgb(20 35 31 / 0.04)` |
+| `shadow-2` | `0 8px 24px rgb(20 35 31 / 0.08), 0 2px 6px rgb(20 35 31 / 0.05)` (dialogs, menus) |
+| Dark theme | Shadows replaced by a 1 px `ink-600` outline (`0 0 0 1px #26352F`) + `surface-raised`. `--shadow-n` is an alias of `--elevation-n`. |
 
 **Signature detail:** the **diagonal cut**, the 45° edge from the mark. It is used sparingly: as the corner of the active-nav indicator, on the top-right corner of the hero image frame, and as the tone-on-tone mark on banners. It is the one decorative device of the system; there are no curves, swooshes or gradients.
 
@@ -300,7 +302,7 @@ Built on **Radix UI primitives** (Dialog, Popover, DropdownMenu, Tabs, Tooltip, 
 | `DataTable` | Server-side sort, filter and pagination; sticky header; row selection; column visibility; a keyboard-navigable grid only where needed (a plain table otherwise); responsive (cards below `md`). Money columns are right-aligned and tabular. |
 | `FilterBar` | Chips for active filters; synced to the URL |
 | `StatusPill` | Icon + text + colour, for every document state (§5.5) |
-| `Money` | Formats minor units → `₹1,23,456.00` (en-IN) or `$12,345.00` (en-US); `aria-label` with full words optional |
+| `Money` | Formats minor units → `₹1,23,456.00` (en-IN) or `$12,345.00` (en-US); negatives show a true minus sign (U+2212), e.g. `−₹1,000.00`; `aria-label` with full words optional |
 | `MoneyInput` | Accepts typed amounts with Indian or Western grouping; stores integer minor units; never float maths; shows the currency prefix |
 | `PercentInput`, `QuantityInput` | Decimal-safe (string-based parse → integer basis points / milli-units) |
 | `LineItemsEditor` | Rows: catalogue picker (combobox), description, SAC, quantity, unit, rate, discount, tax rate. Keyboard: Enter adds a row; reorder by drag or by buttons (accessible alternative). Live totals. |
@@ -353,7 +355,7 @@ Built on **Radix UI primitives** (Dialog, Popover, DropdownMenu, Tabs, Tooltip, 
 | Layout | 600 px single column, table-based, inline CSS (generated from tokens), dark-mode-safe (no pure-white logos on transparent backgrounds; an ink/mist logo pair via `prefers-color-scheme` where supported, plus the white-plate badge) |
 | Header | Logo (primary lockup, 140 px wide, PNG @2x + alt text "TecHaust Technologies"; the white-plate badge version for clients that force dark mode), then a 2 px verdigris rule |
 | Body | Archivo with Arial/Helvetica fallback (web fonts aren't relied on), 16 px / 1.6, ink text on white |
-| Button | "Bulletproof" (VML-safe) verdigris button with white text, 48 px tall; the plain URL is repeated below |
+| Button | VML-safe (Outlook) verdigris button with white text, 48 px tall; the plain URL is repeated below |
 | Footer | Company trade name, "Balurghat, West Bengal, India", contact@techaust.com, why you got this email, and an unsubscribe link (non-transactional only) |
 | Plain text | Every template has a hand-tuned plain-text version |
 | Accessibility | `lang`, `role="presentation"` on layout tables, real headings, ≥ 4.5:1 contrast, no image-only content |
@@ -375,7 +377,7 @@ All documents are **HTML + print CSS rendered by Browser Run** ([05 §8](05-arch
 | Colour | Ink text on white. Verdigris only for the header rule and the mark. Status is never colour-only. **Legible in grayscale** (checked by rendering a grayscale proof in tests). |
 | Sizes | Body 9.5 pt / 13 pt leading; table cells 9 pt; small print 7.5 pt (minimum); totals 11 pt bold; grand total 14 pt |
 | Repeating elements | Table headers repeat on each page (`thead { display: table-header-group }`); rows never split (`break-inside: avoid`); the totals block is kept together with the last rows |
-| Footer (every page) | Symbol mark · "TecHaust Technologies · techaust.com · billing@techaust.com" · document number · "Page X of Y" |
+| Footer (every page) | Symbol mark · "TecHaust Technologies · techaust.com" and the sender address for the document type (`hello@techaust.com` for proposals and estimates, `billing@techaust.com` for invoices, proformas and receipts) · document number · "Page X of Y" |
 | Metadata | `<title>` = "Tax Invoice TH/INV/2627/0001 – Client name"; `lang="en-IN"`; tagged PDF enabled where the renderer supports it |
 | Integrity | A small footer line on the final page: "Document ID ‹uuid› · Content fingerprint ‹first 12 hex chars of the SHA-256 of the snapshot›". It is verifiable against the admin. |
 
@@ -395,7 +397,7 @@ All documents are **HTML + print CSS rendered by Browser Run** ([05 §8](05-arch
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-Supplier block contents come from Settings (ADM-SET-01). **This is the only place the proprietor name and GSTIN appear publicly** (owner decision).
+Supplier block contents come from Settings (ADM-SET-01). **This is the only public place for the GSTIN and the proprietor's legal name as supplier** (owner decision; the website shows neither as supplier, [04 §0](04-prd.md) Identity). The sender address in the block follows the document type: `hello@` for proposals and estimates, `billing@` for invoices, proformas and receipts (the example above is a tax invoice).
 
 ### 7.3 Per-document specifics
 
@@ -422,7 +424,7 @@ Supplier block contents come from Settings (ADM-SET-01). **This is the only plac
 3. **Your goals / the problem**, **Scope** (in / out), **Deliverables**, **Timeline** (milestone table: milestone · what you get · target date · payment %), **Team** (roles), **How we work** (shared text).
 4. **Investment**: the estimate table + tax summary + payment schedule table (instalment · trigger · % · amount).
 5. **Assumptions & exclusions**, **Terms** (versioned, shared with the website "How we work" text).
-6. **Acceptance**: an instruction box ("Accept online at portal.techaust.com"). On the **accepted** copy, a stamped record is added: "Accepted by ‹typed name› (‹email›) on ‹date time IST› from IP ‹…› · Document fingerprint ‹SHA-256›".
+6. **Acceptance**: an instruction box ("Accept online at portal.techaust.com"). Acceptance is recorded in a separate acceptance-certificate PDF ([05 §8](05-architecture.md)); the accepted proposal PDF is never changed.
 
 Headings are Archivo Expanded; body text is Archivo 10 pt / 14 pt; each section starts on a new page only if less than 40 % of the current page remains.
 
@@ -447,7 +449,7 @@ Headings are Archivo Expanded; body text is Archivo 10 pt / 14 pt; each section 
 
 ---
 
-## 9. What I need you to approve in this document
+## 9. What the owner approved in this document (approved 2026-10-06)
 
 1. **Identity "Patina" (§1):** the TH-ligature mark with its one-stroke diagonal channel, the custom Archivo wordmark, and the lockup rules. Concepts and the audit: [11](11-brand-audit.md).
 2. **Palette (§2):** ink + verdigris on stone, with a dark theme; verdigris primary buttons.
@@ -455,3 +457,9 @@ Headings are Archivo Expanded; body text is Archivo 10 pt / 14 pt; each section 
 4. **Signature detail:** the diagonal cut, used sparingly.
 5. **PDF layouts (§7):** A4, the header structure, and the per-document blocks.
 6. **Print (§1.6):** the CMYK starting values; Pantone matching and the business-card phone number are owner actions.
+
+---
+
+## 10. Status
+- [x] Design system, brand identity "Patina", documents and email layouts reviewed
+- [x] **Approved by owner 2026-10-06**
