@@ -9,11 +9,16 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --coverage"
   },
   "devDependencies": {
     "@techaust/config": "workspace:*",
+    "@vitest/coverage-v8": "4.1.11",
+    "fast-check": "4.10.2",
     "typescript": "6.0.3",
     "vitest": "4.1.11"
+  },
+  "dependencies": {
+    "zod": "4.6.5"
   }
 }

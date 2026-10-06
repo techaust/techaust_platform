@@ -7,7 +7,7 @@ Rebuild of techaust.com: a public website, admin and client portal for **TecHaus
 
 ## Current status (update at every phase or milestone)
 - Phases 1–5 approved. **Phase 6 M1.1 done and approved** (2026-10-06, PR #3): design tokens, fonts, and the new **brand identity "Patina"** (docs/06 §1–3, docs/11 audit, ADR 0013). The assets are in `packages/ui/brand/`.
-- **Next: M1.2**, the core library in `packages/core` (money, FY/IST dates, GSTIN, amount in words, numbering, permissions, zod schemas). See `docs/09-roadmap.md`.
+- **M1.2 built** (2026-10-06, awaiting approval): the core library in `packages/core` (money, FY/IST dates, GSTIN + state codes, amount in words, numbering formats, permissions matrix, shared zod form schemas). **Next: M1.3** (database). See `docs/09-roadmap.md`.
 - Open owner actions (not blocking):
   - trademark search (VERIFY WITH LEGAL, 08 U-8)
   - a printed proof and Pantone match
@@ -56,7 +56,7 @@ pnpm format             # biome format --write
 
 # One package / one test
 pnpm --filter @techaust/core test                                   # one package
-pnpm --filter @techaust/core test -- test/scaffold.test.ts          # one file
+pnpm --filter @techaust/core exec vitest run test/money.test.ts    # one file (no coverage gate)
 pnpm --filter @techaust/jobs exec vitest run test/health.test.ts -t "healthz"   # one test by name
 pnpm --filter @techaust/admin dev                                   # one app (SPA + its /api Worker in workerd)
 pnpm --filter @techaust/web dev:worker                              # web incl. its /api Worker (astro build + wrangler dev)
@@ -85,6 +85,7 @@ Coming with M1.3: `pnpm db:generate` (drizzle-kit) and `pnpm db:migrate:local` (
   - **Outputs:** everything in `generated/`, `fonts/` and `brand/` comes from the scripts above and is committed. Vitest drift tests regenerate the outputs and compare, so a hand edit or a forgotten rebuild fails CI.
   - **Pure vs Node-only:** `src/tokens/*` and `src/brand/compose.ts` are pure. `src/brand/outline.ts`, `master.ts`, `print.ts` and `src/fonts/disk.ts` are Node-only (HarfBuzz, pdf-lib, file reads), and are used only by scripts and tests, never by apps.
   - **How apps consume it:** CSS and assets by path: `@techaust/ui/theme.css`, `/fonts.css`, `/brand/<file>`.
+- **`packages/core` is pure domain logic** (no I/O, runs anywhere): `money.ts` (minor units, bigint maths, en-IN/en-US format and parse), `words.ts`, `dates.ts` (IST, FY), `gstin.ts` (check character, state codes), `numbering.ts` (formats + the SQL printf pattern used at issue), `permissions.ts` (the docs/04 §9 matrix: allow / step-up / approval / deny), `schemas/` (zod: shared form and domain schemas). Tests run in Node with fast-check property tests; `test/no-floats.test.ts` scans money files for float operations, so add new money modules to its list.
 - **Guards worth knowing:** `scripts/check-web-bindings.mjs` fails CI if `apps/web/wrangler.jsonc` gains D1/R2/KV bindings. `deploy-prod.yml` refuses to run unless the actor is `techaust`, the repo variable `PRODUCTION_ENABLED` is `true`, and the typed confirmation matches.
 
 ## Conventions

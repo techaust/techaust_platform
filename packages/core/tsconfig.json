@@ -1,4 +1,7 @@
 {
   "extends": "@techaust/config/tsconfig.base.json",
-  "include": ["src", "test"]
+  "compilerOptions": {
+    "allowImportingTsExtensions": true
+  },
+  "include": ["src", "test", "vitest.config.ts"]
 }
