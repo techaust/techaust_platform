@@ -5,14 +5,34 @@
   "type": "module",
   "description": "Design tokens (single source), generated CSS/Tailwind/email/print outputs, React components, brand assets.",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./tokens.css": "./generated/tokens.css",
+    "./theme.css": "./generated/theme.css",
+    "./fonts.css": "./generated/fonts.css",
+    "./print.css": "./generated/print.css",
+    "./email": "./generated/email.ts",
+    "./fonts/*": "./fonts/*",
+    "./brand/*": "./brand/*"
   },
   "scripts": {
+    "draw:master": "node scripts/draw-master.ts",
+    "build:tokens": "node scripts/build-tokens.ts",
+    "build:fonts": "node scripts/build-fonts.ts",
+    "build:brand": "node scripts/build-brand.ts",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run"
   },
   "devDependencies": {
+    "@fontsource-variable/archivo": "5.3.0",
+    "@fontsource/ibm-plex-mono": "5.3.0",
     "@techaust/config": "workspace:*",
+    "@types/node": "24.19.1",
+    "fontkitten": "1.0.3",
+    "fontverter": "2.0.0",
+    "harfbuzzjs": "1.6.2",
+    "sharp": "0.35.5",
+    "subset-font": "2.9.0",
+    "tailwindcss": "4.3.3",
     "typescript": "6.0.3",
     "vitest": "4.1.11"
   }

@@ -1,0 +1,28 @@
+{
+  "web": {
+    "Archivo Fallback": {
+      "unitsPerEm": 1000,
+      "ascent": 878,
+      "descent": -210,
+      "lineGap": 0,
+      "avgWidth": 431.78
+    },
+    "Archivo Expanded Fallback": {
+      "unitsPerEm": 1000,
+      "ascent": 878,
+      "descent": -210,
+      "lineGap": 0,
+      "avgWidth": 527.93
+    }
+  },
+  "system": {
+    "Arial": {
+      "unitsPerEm": 2048,
+      "ascent": 1854,
+      "descent": -434,
+      "lineGap": 67,
+      "avgWidth": 901.4,
+      "source": "Windows 11 arial.ttf"
+    }
+  }
+}
