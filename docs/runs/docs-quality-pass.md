@@ -286,6 +286,95 @@ Scores before:
 | A pending-approval document being issued (g1#1) | **No.** It needs approval first. The docs say drafts only; the guard is narrowed in a later migration (code follow-up). | 05 §5.4 |
 | Default lines in the public snapshot (g2#7) | **Yes:** names and prices only | 04 ADM-CAT-05 |
 
+## Review (verification pass, 2026-10-07, two Opus high-effort reviewers): SEND BACK, small fixes
+Scores after the first fix round:
+| Files | Score |
+|---|---|
+| 01 | 9.3 |
+| 01-A, 01-B | 10 |
+| 01-C | 9.7 |
+| 02 | 9.5 |
+| 02-A | 9.8 |
+| 02-B | 9.5 |
+| 02-C | 9.8 |
+| 03 | 9.2 |
+| 03-A | 9.8 |
+| 03-B | 9.7 |
+| CLAUDE.md | 9.3 |
+| README | 10 |
+| CHANGELOG | 9.8 |
+| 13-decisions | 9.5 |
+| runs/README | 10 |
+| 00 | 10 |
+| 04 | 9.2 |
+| 05 | 9.3 |
+| 05-A | 9.5 |
+| 06 | 9.7 |
+| 07 | 9.2 |
+| 07-A | 9.3 |
+| 08 | 9.3 |
+| 08-A | 9.7 |
+| 08-B | 9.8 |
+| 09 | 9.8 |
+| 10 | 9.8 |
+| 11 | 9.8 |
+| environments | 10 |
+| ADR 0001–0011 | 9.8 |
+| ADR 0012 | 9.7 |
+| ADR 0013 | 10 |
+| skills/agents | 9.7 |
+
+12-status (6.2) and this run file are rewritten by the lead at session end.
+
+### Fix list R1 (files 01–03)
+1. 03:51: append "(superseded in part: the proprietor's name appears on the privacy page as Grievance Officer and EU/UK controller; GSTIN stays invoice-only, [04 §0](../04-prd.md) Identity, [07-A](../07-content-appendix/A-legal-pages.md))". The links are written relative to docs/ in the target file, i.e. `04-prd.md`.
+2. 03:9, :422, :476; 03-B:47, :258: after "default 10", add "; the monthly copy holds finance/GST tables only, leads and contacts are only in the 90 daily copies (owner decision 2026-10-07, 08 §6.1)".
+3. 02:286: keep as is (the option the owner chose included "case by case"). No change.
+4. 03-B:81: delete the trailing "[?] The new pricing isn't known yet."
+5. 01:189: add rows:
+   - Q-B2 → 02 §1 (Markets) and D-2
+   - Q-B3 → 02 §1 (AI projects in progress) and D-4
+   - Q-B9 → 04 §0 (Assets, Contact, Q-P3-1)
+
+   Extend Q-B7 with "; no lawyer: the legal pages are drafted in-house (04 §0 Q-B12)". Delete the "not tracked" sentence.
+6. 01:81: change "a 3 MB body was parsed" to "an oversized body was parsed".
+7. 01:23: after "time to first byte", add "(curl through the Marseille colo; re-measure from India, see H-7)".
+8. 03-B:15, :198, :207: "08-B §1" → "08-B §1a" where the SPDI Rules are meant. Keep §1 where DPDP dates are meant (:197).
+9. 03-A:225: change the $5,000 PayPal cell to "$220.30 + about $150 FX ≈ $370".
+10. 01-C:114: remove the backticks around "the founder's personal X handle".
+11. 02-B:18, :77: tag the S16 figures "**[S16][VENDOR]**".
+12. 02:294: change "**10 % off**" to "10% off" (the file's style).
+13. Banners and revisions:
+    - 02-A and 02-B: add the banner "> **Phase 2 research record (APPROVED 2026-10-06).** Parent: [02](../02-services-strategy.md). Where it differs from a decision, [13-decisions](../13-decisions.md) wins."
+    - 01, 02, 03: add a header row "| **Revised** | 2026-10-07, documentation quality pass ([runs/docs-quality-pass.md](runs/docs-quality-pass.md)) |".
+
+### Fix list R2 (04–13, root, ADRs)
+1. 04 JOB-BKP-01 (~:429) → "retention 90 daily (all tables) + the first-of-month copy of the finance/GST tables only for 10 years (≥ 8 from FY end; 08 §6.1; VERIFY WITH CA/LEGAL)". 05 backup.yml row (~:581) → add "first of month: a second export limited to the finance tables (`wrangler d1 export --table …`), kept 10 years".
+2. CLAUDE.md:48 and .claude/skills/start-session/SKILL.md:23: "DECISIONS" / "STATUS and DECISIONS" → "`docs/13-decisions.md`" / "`docs/12-status.md` and `docs/13-decisions.md`". Also grep CLAUDE.md, the skills and the agents for any remaining bare STATUS/DECISIONS names.
+3. 04:429: "02:00 IST" → "03:00 IST (21:30 UTC)" (`.github/workflows/backup.yml:6`).
+4. Code follow-up only (no edit): `settings.ts` `smallJobThreshold` has an INR/USD pair; the decision is a single INR value. The lead records it in 12-status.
+5. 07:85 footer legal row: add " · Accessibility". Add `/accessibility` wherever 04 lists the legal links or the sitemap.
+6. 07:49 claims register and the §9 confirmations row: Tally/GSP experience → "Confirmed (03 §0)", and drop it from the §9 list.
+7. 08:216: settings list → "G-1, G-2, G-3, G-5, G-6, G-8 to G-12 (G-11's annual-return date arrives with M4/M5), G-14, G-15, G-18".
+8. 08:301 change log, 2026-10-07 row: add "Owner decisions: the long-term backup holds finance/GST tables only (§6.1); G-11 also stops at the annual-return filing date (VERIFY WITH CA/LEGAL)".
+9. 07-A:5, :279: "Draft v0.1 (2026-10-06)" → "Draft v0.2 (2026-10-07)", with a one-line change note (§7a EU/UK, backups, consent kept 3 years, §8 accessibility).
+10. 08 §7.3 lawyer questions: add "the legal basis for passive visitor and security data (IP, device) under DPDP; currently written as s.7(a), VERIFY WITH CA/LEGAL".
+11. CLAUDE.md:138, :146: "D1/R2/KV" → "D1/R2/KV/Durable Object/Hyperdrive bindings".
+12. 05:582: restore-drill.yml trigger → "Manual (quarterly), planned: Phase 7".
+13. 08-A TL;DR row 17: "(±₹0.50)" → "(−₹0.49 … +₹0.50)".
+14. 08:22 (U-6) and ADR 0012:7: add "(exact reproduction payloads redacted 2026-10-07, 01-A; the findings and severity stay)".
+15. 06 footer row and supplier note: add "billing@ for credit/debit notes and statements" (04 ADM-SET-07).
+16. ADR 0003 "Details": "§3" → "§4 (Workers) and §7 (API design)". No heading anchors: the repo doesn't use them.
+17. 13-decisions: add the rows
+    - 2026-10-07 | `/accessibility` added as its own legal page, per 08 L-15 | Lead | 04 WEB-LEGAL, 07-A §8
+    - 2026-10-07 | 04 §12 owner-inputs table folded into 07 §9 (single list) | Lead | 04 §12, 07 §9
+
+    The "M1.1, M1.2, M1.3 approved" row: also cite [09](09-roadmap.md).
+18. Date rows in 04, 05, 06, 07, 10, 11 → add "(last updated 2026-10-07)".
+19. CHANGELOG intro → "One line per merged pull request, newest first; dates in IST."
+20. 05-A §14 heading (~:379): add a dated note under it: "Repo public since ADR 0012; see the ADR 0009 update (2026-10-07)."
+21. Run-file bookkeeping: done by the lead in Integration notes.
+
 ## Builder reports
 
 ### Builder report (01–03)
