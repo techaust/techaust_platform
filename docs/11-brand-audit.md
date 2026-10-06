@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Phase** | 6, milestone M1.1 (design tokens and brand) |
-| **Date** | 2026-10-06 |
+| **Date** | 2026-10-06 (last updated 2026-10-07) |
 | **Scope** | Every brand asset in `packages/ui/brand/`, the tokens behind them, and the rules in [06 §1–3](06-design-system.md) |
 | **Status** | Audit done and fixes applied; **APPROVED** by the owner 2026-10-06 |
 | **Decision record** | [ADR 0013](adr/0013-new-brand-identity.md) |

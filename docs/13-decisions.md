@@ -33,7 +33,7 @@ Who: **Owner** (Rupak Sarkar) or **Lead** (Claude, the lead conversation). Backf
 | 2026-10-06 | Cloudflare Access on staging for admin@techaust.com only | Owner | `docs/runbooks/access-staging.md` (in PR #7) |
 | 2026-10-06 | Jobs Worker: Access plus a webhook bypass (added in M6) | Owner | `docs/runbooks/access-staging.md` (in PR #7) |
 | 2026-10-06 | Auth benchmark runs from an owner-only GitHub workflow with an Access service token | Owner | `.github/workflows/bench-auth.yml`, `docs/runbooks/cpu-baseline.md` (in PR #7) |
-| 2026-10-06 | M1.1, M1.2, M1.3 approved | Owner | [12-status.md](12-status.md) |
+| 2026-10-06 | M1.1, M1.2, M1.3 approved | Owner | [12-status.md](12-status.md), [09](09-roadmap.md) |
 | 2026-10-07 | Lead runs on Opus 5.5 at medium effort (picked in the app, not pinned); builders on Sonnet; reviewer on Opus at high effort | Owner | [CLAUDE.md](../CLAUDE.md), `.claude/agents/` |
 | 2026-10-07 | Two builders at once, each in its own worktree, on this 8 GB PC; heavy commands queued; low-memory alarm and queue pause at 512 MB free (the PC idles at about 1.1 GB free) | Owner | `tools/heavy.sh`, `tools/watch.sh` |
 | 2026-10-07 | The reviewer checks every task before it merges | Owner | `.claude/agents/reviewer.md` |
@@ -56,3 +56,5 @@ Who: **Owner** (Rupak Sarkar) or **Lead** (Claude, the lead conversation). Backf
 | 2026-10-07 | Public price snapshot includes catalogue default-line names and prices (care-plan tiers, S11 setup/monthly) | Owner | [04 ADM-CAT-05](04-prd.md) |
 | 2026-10-07 | Audit summary corrected: git history was not scanned (the appendix said so) | Lead | [01](01-audit.md) |
 | 2026-10-07 | Documentation quality pass: six read-only reviewers + two builders; meaning changes asked, the rest fixed | Lead | [runs/docs-quality-pass.md](runs/docs-quality-pass.md) |
+| 2026-10-07 | `/accessibility` added as its own legal page, per 08 L-15 | Lead | [04 WEB-LEGAL](04-prd.md), [07-A §8](07-content-appendix/A-legal-pages.md) |
+| 2026-10-07 | 04 §12 owner-inputs table folded into 07 §9 (single list) | Lead | [04 §12](04-prd.md), [07 §9](07-content.md) |

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Phase** | 4, Project documentation (**APPROVED** 2026-10-06) |
-| **Date** | 2026-10-06 |
+| **Date** | 2026-10-06 (last updated 2026-10-07) |
 | **Inputs** | [02](02-services-strategy.md) positioning, portfolio and prices · [04 PRD](04-prd.md) · [06 design system](06-design-system.md) · legal research [08-B](08-research-appendix/B-dpdp-legal.md) |
 | **Legal page drafts** | [07-A Legal pages](07-content-appendix/A-legal-pages.md) (privacy, terms, refund, delivery, cookies, security, accessibility). VERIFY WITH CA/LEGAL. |
 
@@ -46,7 +46,7 @@
 |---|---|---|
 | "A small senior team with 10+ years' experience" | Owner interview, 02 §1 | 🟧 OWNER confirms before launch |
 | "20+ projects delivered (web apps, AI and automation, mobile, websites)" | Owner interview, 02 §1 | 🟧 OWNER confirms |
-| "Experience with Tally integration and GST e-invoice / GSP APIs" | Owner, 03 §0 | 🟧 OWNER confirms |
+| "Experience with Tally integration and GST e-invoice / GSP APIs" | Owner, 03 §0 | Confirmed (03 §0) |
 | "React Native/Expo and Flutter" | Owner, 03 §0 | Confirmed |
 | "Based in Balurghat, West Bengal, India" | Owner | Confirmed |
 | "We reply within one business day (Mon–Sat, 10:00–19:00 IST)" | Owner, Phase 4 | Confirmed |
@@ -82,7 +82,7 @@
   - **Help:** Contact · Get a quote · Security · Cookie settings
 - **Contact block:** contact@techaust.com · WhatsApp {{whatsapp}} (Mon–Sat, 10:00–19:00 IST) · Balurghat, West Bengal, India
 - **Social:** LinkedIn (company) 🟧 OWNER URL · Founder on LinkedIn 🟧 OWNER URL
-- **Legal row:** © {{year}} TecHaust Technologies · Privacy · Terms · Refunds & cancellations · Delivery policy · Cookies
+- **Legal row:** © {{year}} TecHaust Technologies · Privacy · Terms · Refunds & cancellations · Delivery policy · Cookies · Accessibility
 
 ### 2.3 Standard CTA labels (use exactly these; audit M-9)
 
@@ -560,7 +560,7 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 | Full postal address (for Contact + legal pages only) | Contact, privacy, terms, refund, delivery | 🟧 OWNER |
 | Cal.com booking URL | Contact, thanks, acknowledgement email | 🟧 OWNER (create a free account) |
 | 2–3 case-study briefs (§6) | Work, service-page proof, home | 🟧 OWNER |
-| Confirmations in the claims register (§1.4): experience, project count, Tally/GSP experience, warranty length (annual care-plan discount: 10 %, confirmed 2026-10-07) | Various | 🟧 OWNER |
+| Confirmations in the claims register (§1.4): experience, project count, warranty length (annual care-plan discount: 10 %, confirmed 2026-10-07) | Various | 🟧 OWNER |
 | USD price for WhatsApp Automation (S11), or INR-only | S11 page, pricing | 🟧 OWNER |
 | Email aliases in Zoho: hello@, billing@, privacy@ (or grievance@), security@ | Email, legal pages, security.txt | 🟧 OWNER creates them in Zoho |
 | Bank details, GSTIN, legal name, LUT ARN (if filed) | Invoices and documents (admin Settings) | 🟧 OWNER types them into the admin Settings screen (invoice milestone), never in chat or code |

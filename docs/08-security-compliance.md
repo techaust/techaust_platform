@@ -20,7 +20,7 @@
 | U-3 | **UPI merchant fee from 15 Oct 2026** (0.4 % above ₹2,000, capped at ₹300; NPCI FAQ dated 15 Sep 2026; VERIFY WITH CA) | Affects Razorpay costs on B2B invoices. You absorb fees, so prices may need a small buffer. | Ask Razorpay for its restated pricing; for large INR invoices, nudge clients to netbanking or NEFT. | 2026-10-06 · Open (owner); applies from 15 Oct 2026. Also in [12-status](12-status.md), *Waits on the owner*. |
 | U-4 | **Razorpay website checklist** | Live keys need Terms, Privacy, Refund, **Delivery**, Contact and Pricing pages live on the domain | Covered by the new site (Phase 7 order: site live → apply for live keys) | 2026-10-06 · Planned (Phase 7 order: site live, then apply for live keys). |
 | U-5 | **Zoho aliases** `hello@`, `billing@`, `privacy@`, `grievance@`, `security@`, plus the `no-reply@` sender (sent through SES) | Needed for email sending (SES identities), legal pages and security.txt | Create them in Zoho before the email milestone | 2026-10-06 · Open (before the email milestone). |
-| U-6 | **Public GitHub repo** (since 2026-10-06, owner decision) | `docs/` publicly describes unfixed weaknesses of the live site (audit H-5, M-1, M-2: form rate-limit bypass, debug leak, no Origin check) and business-confidential plans; the commit email is public | Make the repo private when convenient (Settings → General → Change visibility). Already-copied content can't be recalled. Until then nothing sensitive is committed (CLAUDE.md rule 6). | 2026-10-06 · Open (the owner's call; the repo has been public since 2026-10-06, [ADR 0012](adr/0012-public-repository.md)). |
+| U-6 | **Public GitHub repo** (since 2026-10-06, owner decision) | `docs/` publicly describes unfixed weaknesses of the live site (audit H-5, M-1, M-2: form rate-limit bypass, debug leak, no Origin check) (exact reproduction payloads redacted 2026-10-07, [01-A](01-audit-appendix/A-code-build-security.md); the findings and severity stay) and business-confidential plans; the commit email is public | Make the repo private when convenient (Settings → General → Change visibility). Already-copied content can't be recalled. Until then nothing sensitive is committed (CLAUDE.md rule 6). | 2026-10-06 · Open (the owner's call; the repo has been public since 2026-10-06, [ADR 0012](adr/0012-public-repository.md)). |
 | U-7 | **GitHub billing block** | GitHub refused to run Actions on the private repo ("recent account payments have failed or your spending limit…"). Public repos aren't affected, but it returns if the repo goes private. | Check GitHub → Settings → Billing and licensing for a failed payment | 2026-10-06 · Open, not blocking while the repo is public. |
 | U-8 | **Trademark clearance for the new identity** (VERIFY WITH LEGAL) | The new name treatment and TH mark (ADR 0013) have not been searched. A clash found after printing or launch means redoing everything. | Ask a trademark agent to search IP India for "TecHaust" (word) and the TH device mark in classes 9, 35 and 42, then consider filing both ([11 §4](11-brand-audit.md)) | 2026-10-06 · Open, not blocking. |
 | U-9 | **57th GST Council (7/8 Oct 2026): re-check the GST research** (VERIFY WITH CA) | Its agenda is process reforms (ITC, registration, invoice matching), not rates, but anything it changes may touch the defaults in §7.1 ([08-A](08-research-appendix/A-gst-invoicing.md)). | After it meets, re-read the 08-A summary and tell me what changed; I update §7.1 and the settings defaults. | 2026-10-07 · Open (follow-up). Also in [12-status](12-status.md). |
@@ -213,7 +213,7 @@ See [05 §6](05-architecture.md). Key controls:
 
 ### 7.1 GST and invoicing (VERIFY WITH CA): defaults in the software
 
-Implemented as editable settings in `packages/core/src/schemas/settings.ts` and seeded into D1 in M1.3. Company identity (legal name, GSTIN, address) and bank details are not seeded: the Owner enters them in the admin (M3.1), because the repository is public. Of the rows below, G-1, G-2, G-5, G-6, G-8 to G-12, G-14, G-15 and G-18 are settings today; the rest arrive with M4.2 (tax engine) and M5.5 (GST exports).
+Implemented as editable settings in `packages/core/src/schemas/settings.ts` and seeded into D1 in M1.3. Company identity (legal name, GSTIN, address) and bank details are not seeded: the Owner enters them in the admin (M3.1), because the repository is public. Of the rows below, G-1, G-2, G-3, G-5, G-6, G-8 to G-12 (G-11's annual-return date arrives with M4/M5), G-14, G-15 and G-18 are settings today; the rest arrive with M4.2 (tax engine) and M5.5 (GST exports).
 
 | # | Topic | Default in the software ([08-A](08-research-appendix/A-gst-invoicing.md)) | Confidence |
 |---|---|---|---|
@@ -267,12 +267,13 @@ All 15 questions are in [08-A, the last section](08-research-appendix/A-gst-invo
 | L-16 | Identity on the site | Trade name + "sole proprietorship, Balurghat, West Bengal" + the Grievance Officer's name; **no GSTIN on the website** (owner decision); full postal address on Contact and legal pages only |
 | L-17 | Trademark and font licences | New identity "Patina" (ADR 0013): trademark search and filing not done (U-8). Fonts are SIL OFL 1.1: using them in a logo is allowed, the outlined wordmark is artwork; licence texts ship in `packages/ui/fonts/LICENSES.md` |
 
-**Questions for an optional one-hour lawyer review:** the 15 questions in [08-B](08-research-appendix/B-dpdp-legal.md). The five most important:
+**Questions for an optional one-hour lawyer review:** the 15 questions in [08-B](08-research-appendix/B-dpdp-legal.md). The most important:
 1. Does CERT-In apply to a sole proprietorship?
 2. Does one combined Grievance Officer block satisfy SPDI, DPDP and the E-Commerce Rules?
 3. Should disputes go to Balurghat or Kolkata courts, and should the MSA use arbitration?
 4. Is West Bengal stamp duty due on e-accepted proposals?
 5. Is a GDPR Art. 27 representative needed?
+6. What is the legal basis for passive visitor and security data (IP, device) under DPDP? It is currently written as s.7(a) (VERIFY WITH CA/LEGAL).
 
 ### 7.4 What to look for if you do bring in professionals later
 - **CA:** GST for **exports of services** (LUT, refunds of unutilised ITC, FIRC/EDF practice), comfortable with QRMP and the GSTR-1 Offline Tool; ideally works with IT/software clients. An hourly or fixed-fee review of §7.1–7.2 should take about an hour with these documents.
@@ -300,4 +301,4 @@ All 15 questions are in [08-A, the last section](08-research-appendix/A-gst-invo
 | Date | Change |
 |---|---|
 | 2026-10-06 | Phase 4 approved. |
-| 2026-10-07 | Quality pass: status column on §0 and a new U-9 (57th GST Council re-check); FEMA and UPI items re-worded (VERIFY WITH CA); staging Workers threat row and the Access secret names; break-glass and Time Travel restore steps corrected; §3 checklist ticked for what M1.2 and M1.3 built; §7.1 notes which defaults are settings today and adds the estimate and proposal series; runbook references point to M7.5 and L7. |
+| 2026-10-07 | Quality pass: status column on §0 and a new U-9 (57th GST Council re-check); FEMA and UPI items re-worded (VERIFY WITH CA); staging Workers threat row and the Access secret names; break-glass and Time Travel restore steps corrected; §3 checklist ticked for what M1.2 and M1.3 built; §7.1 notes which defaults are settings today and adds the estimate and proposal series; runbook references point to M7.5 and L7. Owner decisions: the long-term backup holds finance/GST tables only (§6.1); G-11 also stops at the annual-return filing date (VERIFY WITH CA/LEGAL). |

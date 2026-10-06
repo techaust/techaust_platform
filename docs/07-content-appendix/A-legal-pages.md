@@ -2,7 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | **Draft v0.1 (2026-10-06). VERIFY WITH CA/LEGAL.** You asked me to draft these myself without a lawyer. They follow the research in [08-B](../08-research-appendix/B-dpdp-legal.md), but I am not a lawyer and this is not legal advice. An optional one-hour lawyer review ([08 §7.3](../08-security-compliance.md)) is your decision before launch. |
+| **Status** | **Draft v0.2 (2026-10-07). VERIFY WITH CA/LEGAL.** You asked me to draft these myself without a lawyer. They follow the research in [08-B](../08-research-appendix/B-dpdp-legal.md), but I am not a lawyer and this is not legal advice. An optional one-hour lawyer review ([08 §7.3](../08-security-compliance.md)) is your decision before launch. |
+| **Changes in v0.2** | 2026-10-07: privacy §7a (EU/UK), backups, consent records kept 3 years, and the new §8 accessibility statement. |
 | **Placeholders** | `{{postal_address}}` (🟧 OWNER) · `{{effective_date}}` (set at launch) · `privacy@`/`security@` aliases (🟧 OWNER creates them in Zoho) |
 | **Identity rule** | Owner decision: legal pages name "TecHaust Technologies, a sole proprietorship based in Balurghat, West Bengal" and the Grievance Officer **Rupak Sarkar (Founder)**. **No GSTIN on the website.** |
 | **Website notice** | Each page shows "Version X · Effective {{date}}" and a short changelog at the bottom. |
@@ -121,7 +122,7 @@ This notice is available in English. If you'd like it in Hindi, Bengali or anoth
 ### 12. Changes
 We'll post changes here and update the date. For significant changes affecting clients, we'll email you.
 
-*Version 0.1 · Effective {{effective_date}}*
+*Version 0.2 · Effective {{effective_date}}*
 
 ---
 
@@ -277,4 +278,4 @@ A one-page schedule attached to proposals where we handle the client's personal 
 
 **Tell us.** If something on our site or in a document is hard to use, email contact@techaust.com. We reply within one business day, and we will give you the information in another format if you ask.
 
-*Version 0.1 · Effective {{effective_date}}*
+*Version 0.2 · Effective {{effective_date}}*
