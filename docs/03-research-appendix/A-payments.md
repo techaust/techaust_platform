@@ -2,6 +2,10 @@
 
 Research date: 2026-10-06. Web-only; no sign-ups or logins.
 
+> **Outcome (research record).** The owner already holds active Razorpay, Stripe and PayPal accounts. [03 §3B.5](../03-plan.md) and [05 §9](../05-architecture.md) adopt them plus manual bank transfer. Xflow, Skydo, MoneySaver and Cashfree are later options, added through the provider interface ([ADR 0008](../adr/0008-payment-provider-interface.md)). Where this appendix says Stripe is not available to a new Indian account or recommends other providers first, the owner's existing accounts and the decisions above win.
+>
+> See [05-A §11](../05-research-appendix/A-stack-verification.md) for PayPal and Stripe webhook verification on Workers (this appendix covers Razorpay and Cashfree).
+
 **Legend**
 - **[S]** = sourced fact (URL + date, or "fetched 2026-10-06" for live pages without a visible date)
 - **[I]** = inference / analysis by the researcher
@@ -33,7 +37,7 @@ Research date: 2026-10-06. Web-only; no sign-ups or logins.
   - proprietor PAN
   - proprietor address proof (Aadhaar, Voter ID or Passport)
 
-  Source: https://razorpay.com/docs/payments/kyc/ (Business Types and KYC Documents; fetched via mirror 2026-10-06). A Razorpay blog dated 30 Apr 2026 lists PAN, government ID, Shop & Establishment or Udyam, a cancelled cheque or bank statement **with the name matching PAN exactly**, GST certificate or a non-enrolment declaration, and business address proof. It notes video KYC as an onboarding method. https://razorpay.com/blog/payment-gateway-kyc-onboarding-india/ (30 Apr 2026)
+  Source: https://razorpay.com/docs/payments/kyc/ (Business Types and KYC Documents; fetched via a mirror, mirror details not captured, 2026-10-06). A Razorpay blog dated 30 Apr 2026 lists PAN, government ID, Shop & Establishment or Udyam, a cancelled cheque or bank statement **with the name matching PAN exactly**, GST certificate or a non-enrolment declaration, and business address proof. It notes video KYC as an onboarding method. https://razorpay.com/blog/payment-gateway-kyc-onboarding-india/ (30 Apr 2026)
 - **[3P]** A savings account is accepted only for sole proprietors; other entities need a current account. The bank account is checked with a penny-drop name match. https://razorpay.com/blog/documents-required-for-payment-gateway
 - **[I]** Use a current account in the trade name, linked to the proprietor PAN. It avoids name-mismatch rejections and keeps business receipts clean for GST and income tax.
 
@@ -71,13 +75,13 @@ Research date: 2026-10-06. Web-only; no sign-ups or logins.
   - `X-Payout-Idempotency` has been mandatory for RazorpayX payouts since 15 Mar 2025.
   - Refunds support the `X-Refund-Idempotency` header.
 
-  Sources: https://razorpay.com/docs/api/x/payout-idempotency/ and the Razorpay refunds idempotent docs.
+  Sources: https://razorpay.com/docs/api/x/payout-idempotency/ and the Razorpay refunds idempotent docs (source detail not captured).
 - **[3P / unverified]** There are claims that the Orders `receipt` field acts as an idempotency key. **[I]** Do not rely on that. Store your own invoice↔order mapping and check it before creating.
 - **[S] Node SDK** (`razorpay` v2.9.8):
   - depends on **axios ^1.18**
   - `validateWebhookSignature` uses Node `require("crypto")` `createHmac('sha256')` and compares with plain `===`, which is **not timing-safe**
 
-  Sources: https://raw.githubusercontent.com/razorpay/razorpay-node/master/package.json and .../lib/utils/razorpay-utils.js (fetched 2026-10-06)
+  Sources: https://raw.githubusercontent.com/razorpay/razorpay-node/master/package.json and `lib/utils/razorpay-utils.js` in the same repository (full URL not captured; fetched 2026-10-06)
 - **[I] Cloudflare Workers:** the SDK might run under `nodejs_compat` with axios's fetch adapter. However:
   - **[3P]** axios 1.20's fetch adapter sets `cache: 'default'`, which Workers reject (https://github.com/axios/axios/issues/11192)
   - **Recommendation:** call the REST API directly with `fetch` and Basic auth (`key_id:key_secret`), and verify webhooks with Web Crypto
@@ -147,7 +151,7 @@ Research date: 2026-10-06. Web-only; no sign-ups or logins.
   - Disputes APIs cover types, states and actions.
   - A Settlement Recon report includes adjustments, refunds and disputes.
 
-  Source: https://www.cashfree.com/docs/payments/manage/refunds and the related pages.
+  Source: https://www.cashfree.com/docs/payments/manage/refunds and the related pages (source detail not captured).
 - **[S]** Sandbox is available (Dev Studio, including a webhook verification tool).
 
 ---
@@ -210,14 +214,14 @@ Research date: 2026-10-06. Web-only; no sign-ups or logins.
 | **Xflow** | Licensing claims are on Xflow's own site; status not confirmed separately in this research | **[S]** Starter: $12 flat up to $2,000, then 0.6%. Growth: $20 flat up to $5,000, then 0.4%. Scale: custom. **Next business day settlement by noon.** "No GST: Xflow's US entity provides services; GST may apply via reverse charge." (https://www.xflowpay.com/pricing fetched 2026-10-06) | **[S]** mid-market | **[3P]** auto e-FIRA within 24 hours, free; SOFTEX/EDPMS support | **[3P]** Supports sole proprietorships (PAN and brand name; IEC only for goods). Has API and payment-link features (not confirmed in this research). **Reverse-charge GST point: VERIFY WITH CA.** |
 | **Razorpay MoneySaver** | Razorpay is a PA-CB **[I/3P]** | **[S]** 1%, 0% FX markup, T+1; **[3P]** min ₹1,000 + GST under ₹1L | **[S]** 0 markup | **[S]** eFIRC within 24 hours | Same account and API as domestic: one vendor, one reconciliation path. |
 | **Cashfree Global Collections** | **[S]** Full PA-CB | **[3P]** quote-based (about 1–1.5%) | **[S]** "no forex markup" | **[3P]** free within 24 hours | **[S]** USD 10k per transaction limit |
-| **Wise Business** | **[S]** In-principle PA-CB, June/July 2025 (https://newsroom.wise.com/en-CAS/250703-wise-granted-rbi-s-in-principle-approval-to-operate-as-cross-border-payment-aggregator/) | **[3P]** small receive fees plus mid-market conversion; **[3P]** FIRA said to cost $2.50 each | mid-market | **[3P]** yes, paid | **[3P]** ₹25L per-transfer cap; India business receiving reportedly supports sole proprietors and freelancers but **not registered companies**; Indian accounts cannot hold FX balances long-term; personal-account receiving was ended from 5 Apr 2026 (https://www.winvesta.in/blog/businesses/wise-india-review-2026-features-fees-limitations-verdict). No invoicing/payment-link API suitable for your admin backend. **[I]** |
+| **Wise Business** | **[S]** In-principle PA-CB, July 2025 (announced 3 Jul 2025; https://newsroom.wise.com/en-CAS/250703-wise-granted-rbi-s-in-principle-approval-to-operate-as-cross-border-payment-aggregator/) | **[3P]** small receive fees plus mid-market conversion; **[3P]** FIRA said to cost $2.50 each | mid-market | **[3P]** yes, paid | **[3P]** ₹25L per-transfer cap; India business receiving reportedly supports sole proprietors and freelancers but **not registered companies**; Indian accounts cannot hold FX balances long-term; personal-account receiving was ended from 5 Apr 2026 (https://www.winvesta.in/blog/businesses/wise-india-review-2026-features-fees-limitations-verdict). No invoicing/payment-link API suitable for your admin backend. **[I]** |
 | **Payoneer** | **[S]** In-principle PA-CB, Jan 2026 (https://www.nasdaq.com/press-release/payoneer-receives-principle-authorization-cross-border-payment-aggregator-india-2026) | **[3P]** local receiving accounts free; ACH from non-Payoneer payers 1%; cards 3.2% + $0.49; **1–4% withdrawal/FX to INR**; $29.95 annual fee if receipts are under $6k in 12 months (https://www.xflowpay.com/blog/payoneer-charges 2026) | 1–4% markup | **[S]** free digital FIRA/FIRS/NOC (https://www.payoneer.com/en-in/digital-firc/) | Expensive on FX. **[I]** Fine if clients already use Payoneer. |
 
-**[I] Worked example** (assumes ₹88/USD; fee only, before GST):
+**[I] Worked example** (assumes ₹88/USD, a rough per-appendix assumption: [03-B](B-platform-stack.md) uses ₹90 and 05 uses 88.42; fee only, before GST):
 
 | Invoice | Razorpay MoneySaver | Skydo | Xflow Starter | Xflow Growth | PayPal (approx.) |
 |---|---|---|---|---|---|
-| $1,000 | max(1%, ₹1,000) ≈ $11.4 | $19 | $12 | $20 | ~$47 + about 3% FX ≈ $77 |
+| $1,000 | max(1%, ₹1,000) ≈ $11.4 | $19 | $12 | $20 | $44.30 + about $30 FX ≈ $74 |
 | $5,000 | $50 | $29 | $30 (0.6%) | $20 | ~$380 |
 
 Recompute with live rates before choosing.
@@ -279,7 +283,7 @@ const raw = await request.text(); // read raw body ONCE; JSON.parse only after v
    - Invoices over ₹25L, roughly $28k, must be split or sent by direct bank SWIFT.
    - Cashfree Global Collections adds its own lower cap of USD 10k **[S]**.
 2. **Foreign PA-CB approvals**
-   - **[S]** PayPal (in-principle, May 2025), Wise (in-principle, June 2025) and Payoneer (in-principle, Jan 2026).
+   - **[S]** PayPal (in-principle, May 2025), Wise (in-principle, July 2025; announced 3 Jul 2025) and Payoneer (in-principle, Jan 2026).
    - **[3P]** About 19 entities hold full PA-CB authorisation (https://www.winvesta.in/blog/businesses/19-firms-got-rbis-pa-cb-license-who-won-and-why). Skydo and Cashfree hold final authorisation **[S]**.
 3. **UPI MDR from 15 Oct 2026**
    - **[S]** NPCI's FAQ dated 15 Sept 2026, hosted by the Department of Financial Services:
@@ -345,7 +349,7 @@ const raw = await request.text(); // read raw body ONCE; JSON.parse only after v
 
 ### (b) International
 1. **Default: bank transfer to a PA-CB local collection account**, with free automatic e-FIRA and the purpose code set to P0802/P0807 (confirm with your CA).
-   - **Xflow** or **Skydo** for invoices of about $2k–$25k: flat or low percentage fee, mid-market FX.
+   - **Xflow** (confirm its PA-CB authorisation first; VERIFY WITH CA/LEGAL) or **Skydo** for invoices of about $2k–$25k: flat or low percentage fee, mid-market FX.
    - **Razorpay MoneySaver** if you prefer one vendor and API for everything. Watch the ₹1,000 minimum fee on small invoices.
 2. **Cards as an opt-in** on the same Razorpay (or Cashfree) link for clients who insist. Budget about 3% plus FX, plus dispute risk.
 3. **PayPal only as a last resort.** **Stripe is not available** unless invited.

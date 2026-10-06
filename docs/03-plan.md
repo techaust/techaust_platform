@@ -6,7 +6,7 @@
 | **Date** | 2026-10-06 |
 | **Inputs** | [01-audit.md](01-audit.md) · [02-services-strategy.md](02-services-strategy.md) · owner interview (§0) · research: [A: payments](03-research-appendix/A-payments.md) · [B: platform & stack](03-research-appendix/B-platform-stack.md) |
 | **Next** | Phase 4 turns this plan into the PRD, architecture, design system, content, security and roadmap docs |
-| **Superseded where different** | Later approved changes live in [05-architecture.md](05-architecture.md) (Astro 7, React Router 8, in-house auth instead of Better Auth, Worker names, public repo) and [04-prd.md](04-prd.md) §0. **Where this plan and 05 differ, 05 wins.** |
+| **Superseded where different** | Later approved changes live in [05-architecture.md](05-architecture.md) and [04-prd.md](04-prd.md) §0, including (not limited to): Astro 7, React Router 8, in-house auth instead of Better Auth, Worker names, the public repo; the **Patina brand and fonts** ([ADR 0013](adr/0013-new-brand-identity.md); against §0 Logo, §3A.5); the **queue CPU rule and upgrade triggers** ([05 §1.2](05-architecture.md); against §3C.4); **Workers Logs retention** ([05](05-architecture.md) §13; against §3C.3 Monitoring); **staging behind Cloudflare Access** ([04 §0](04-prd.md); against §3C.5); and **backup retention** (≥ 8 years from FY end, default 10; [08 §6](08-security-compliance.md)). **Where this plan and 05 differ, 05 wins.** |
 
 > **Compliance.** Every tax, invoicing, payments-regulation and DPDP point is marked **VERIFY WITH CA/LEGAL**. The software will be configurable, so whatever your CA or lawyer decides can be applied without code changes wherever possible.
 
@@ -29,7 +29,7 @@
 | Data import | None. Start fresh. |
 | Proposals | A proposal contains an estimate section. Standalone quick estimates also exist. **Click-to-accept** in the portal. **Versioned** (v1, v2…; an accepted version is locked). |
 | Currencies | **INR and USD** |
-| Invoice numbering | **Separate series per type, reset each financial year** (e.g. `TH/INV/26-27/0001`, `TH/EXP/…`, `TH/CN/…`, `TH/RCP/…`). VERIFY WITH CA. |
+| Invoice numbering | **Separate series per type, reset each financial year** (e.g. `TH/INV/26-27/0001` (superseded: `TH/INV/2627/0001`, ≤ 16 characters; [04 §0](04-prd.md)), `TH/EXP/…`, `TH/CN/…`, `TH/RCP/…`). VERIFY WITH CA. |
 | E-invoicing turnover | **Not sure** whether turnover is above ₹5 Cr. The design is IRP-ready but IRP is not integrated at launch. VERIFY WITH CA. |
 | LUT for exports | **Not sure** whether one is filed. Export invoices support both "under LUT" and "IGST paid" modes. VERIFY WITH CA. |
 | TDS | Clients don't deduct TDS, so no TDS module (a manual adjustment line is still possible) |
@@ -97,9 +97,9 @@
 | `/blog` + `/blog/[slug]` | Blog | SEO/AEO articles (e.g. "Tally invoice automation", "GST e-invoice API integration") | Contextual |
 | `/contact` | Contact | Short enquiry form, email, office location, response time (an honest SLA, in IST) | Send enquiry |
 | `/get-a-quote` | Quote / Discovery request | Multi-step form: service (pre-selected from the referring page), goals, budget band, timeline, contact details; Turnstile spam check | Request quote |
-| `/privacy` | Privacy notice | DPDP-aware notice, drafted for **lawyer review** (VERIFY WITH CA/LEGAL) | — |
-| `/terms` | Website terms | Indian law and jurisdiction, drafted for **lawyer review** | — |
-| `/refund-policy` | Refund & cancellation | **Required by payment gateways** for merchant compliance. Drafted for review. | — |
+| `/privacy` | Privacy notice | DPDP-aware notice, drafted for **lawyer review** (drafted in-house, no lawyer: [04 §0](04-prd.md) Q-B12; VERIFY WITH CA/LEGAL) | — |
+| `/terms` | Website terms | Indian law and jurisdiction, drafted for **lawyer review** (drafted in-house, no lawyer: [04 §0](04-prd.md) Q-B12; VERIFY WITH CA/LEGAL) | — |
+| `/refund-policy` | Refund & cancellation | **Required by payment gateways** for merchant compliance. Drafted for review (in-house, no lawyer: [04 §0](04-prd.md) Q-B12; VERIFY WITH CA/LEGAL). | — |
 | `/cookies` | Cookie policy + preferences | Needed because GA4 loads after consent | — |
 | `/security` | Security & disclosure | How to report a vulnerability; links to `/.well-known/security.txt` | — |
 | `404` | Not found | Helpful links (services, contact) | — |
@@ -139,7 +139,7 @@ Each **service page** follows the same template, so pages are consistent and qui
 - **Tone:** confident, plain-spoken, senior. Short sentences, specifics over superlatives, no fear language ("ironclad", "neutralized"), no absolute guarantees.
 - **Visual style:** calm, editorial and premium:
   - generous white space and a strong type hierarchy
-  - one confident accent colour (refined from the current cyan/violet brand toward a deeper, more trustworthy hue; final palette in `06-design-system.md`)
+  - one confident accent colour (refined from the current cyan/violet brand toward a deeper, more trustworthy hue; final palette in [`06-design-system.md`](06-design-system.md))
   - warm neutrals
   - real diagrams (architecture, workflow) instead of fake dashboards
   - **motion only where it explains something**, always respecting reduced-motion settings
@@ -155,7 +155,7 @@ Each **service page** follows the same template, so pages are consistent and qui
   - founder headshot
   - consistent icon set
   - generated per-page 1200×630 social images
-- **Shared look with documents:** proposals, estimates, invoices and receipts use the same tokens (colours, type, logo) as the site (`06-design-system.md`).
+- **Shared look with documents:** proposals, estimates, invoices and receipts use the same tokens (colours, type, logo) as the site ([`06-design-system.md`](06-design-system.md)).
 
 ## 3A.6 Performance, SEO and accessibility targets
 
@@ -209,6 +209,8 @@ Each **service page** follows the same template, so pages are consistent and qui
 
 ✅ = allowed · 👁 = read-only · — = no access · ❓ = to confirm (Q-P3-2)
 
+> **Answered in [04 §0](04-prd.md).** All ❓ marks are resolved by the tiered approval rules (Q-P3-2); the final matrix is [04 §9](04-prd.md).
+
 **Audit log**
 - Append-only: no update or delete through the app.
 - Records actor, role, action, entity, before/after summary, IP, user agent and timestamp.
@@ -252,7 +254,7 @@ Each **service page** follows the same template, so pages are consistent and qui
   - INR and USD prices
   - **SAC code** (VERIFY WITH CA)
   - deliverables, assumptions and exclusions text
-  - default payment schedule (e.g. 30/40/30)
+  - default payment schedule (e.g. 30/40/30; superseded: **40/30/30**, Q-P3-6 in [04 §0](04-prd.md))
   - active flag
 - **Templates:** one proposal template per category (Advise, Build, Automate, Connect, Run), plus a care-plan block and a standard terms block. **You enter only client, service(s), scope notes and any price changes**; everything else is pre-filled.
 - **Proposal** = cover + summary + problem/goals + scope + deliverables + timeline + team + **estimate section** (line items, discounts, tax preview, payment schedule) + terms + acceptance block.
@@ -264,8 +266,8 @@ Each **service page** follows the same template, so pages are consistent and qui
   - we record name, email, timestamp, IP, user agent and the fingerprint of the exact version
   - a confirmation email goes to both sides
   - VERIFY WITH CA/LEGAL for enforceability on high-value contracts
-- **One-click conversion:** accepted proposal/estimate → project + milestones → invoice(s) per the payment schedule (e.g. a 30% advance invoice created immediately).
-- **Branded PDFs:** identical layout system for proposals, estimates, invoices and receipts (`06-design-system.md`), with fonts embedded, including the ₹ glyph.
+- **One-click conversion:** accepted proposal/estimate → project + milestones → invoice(s) per the payment schedule (e.g. a 40% advance invoice created immediately, per the 40/30/30 schedule, [04 §0](04-prd.md) Q-P3-6).
+- **Branded PDFs:** identical layout system for proposals, estimates, invoices and receipts ([`06-design-system.md`](06-design-system.md)), with fonts embedded, including the ₹ glyph.
 
 ## 3B.4 Invoices (VERIFY WITH CA/LEGAL throughout)
 
@@ -417,8 +419,8 @@ Cloudflare provides all of these on one account (**Workers, D1, R2, Queues, Cron
 | **Email** | **Amazon SES Mumbai** (your choice; ≈ $0.10 per 1,000) | Resend (free 3k/mo, domain already verified) | Cloudflare Email Service (paid plan only) | India region, pennies per month, reliable |
 | **Payments** | **Razorpay (INR) + Stripe + PayPal (USD) + manual bank transfer** | + a cross-border e-FIRA account (Xflow/Skydo/MoneySaver) later | Cashfree as INR backup | Uses your active accounts; the plug-in design leaves room for options 2 and 3 |
 | **Background work** | **Queues + Cron Triggers** (free: 10k queue ops/day) | Workflows | External cron (GitHub Actions) | Native; fits the free tier |
-| **Backups** | **Built-in 7-day restore + nightly encrypted export → S3 Mumbai** (GitHub Actions, free) | R2 only | Both | Your choice. A truly off-site copy, ≈ ₹0–10/mo. Monthly copies kept 6+ years for GST record retention (VERIFY WITH CA). |
-| **Monorepo** | **pnpm workspaces** (apps: web, admin, portal, jobs; packages: db, core, auth, pdf, email, ui, config) | Turborepo on top | Separate repos | Shared types, schema and money/tax logic. Simple tooling. |
+| **Backups** | **Built-in 7-day restore + nightly encrypted export → S3 Mumbai** (GitHub Actions, free) | R2 only | Both | Your choice. A truly off-site copy, ≈ ₹0–10/mo. Monthly copies kept 6+ years for GST record retention (superseded: ≥ 8 years from FY end, default 10; [08 §6](08-security-compliance.md), [08-A #13](08-research-appendix/A-gst-invoicing.md); VERIFY WITH CA). |
+| **Monorepo** | **pnpm workspaces** (apps: web, admin, portal, jobs; packages: db, core, auth, pdf, email, ui, config; final layout: [05 §3](05-architecture.md)) | Turborepo on top | Separate repos | Shared types, schema and money/tax logic. Simple tooling. |
 | **Testing** | **Vitest** (unit/integration, with the Workers test pool) + **Playwright** (end-to-end, accessibility via axe) | Jest | Cypress | Fast, Workers-native, covers the critical logic |
 | **CI/CD** | **GitHub Actions:** checks on every PR → auto-deploy to **staging**; **production deploy is a manual, approved step** | Cloudflare Workers Builds (Git-connected) | Manual `wrangler deploy` | Fixes audit H-8 (every push currently ships to production) |
 | **Monitoring** | **Workers Logs** (free, 3-day retention) + **Sentry free** (errors) + a free uptime monitor | Cloudflare Observability (pricing changes 2026-12-01) | Paid APM | Free, enough at our scale. Set up in Phase 7. |
@@ -456,14 +458,14 @@ The DNS cutover from the old `techaust-web` Worker happens only in Phase 7, with
 
 ## 3C.6 Security (OWASP Top 10 and more)
 
-| Risk (OWASP 2021) | Measures |
+| Risk (OWASP 2021; mapping retained, [08](08-security-compliance.md)) | Measures |
 |---|---|
 | A01 Broken access control | Role checks on the server for every API route; the portal queries each client's own data only (organisation ID taken from the session, never from the request); deny by default; tests for every permission rule |
 | A02 Cryptographic failures | TLS everywhere with HSTS; Argon2id (browser) + HMAC with a pepper (server); secrets only in Wrangler or GitHub encrypted secrets; encrypted backups (age/GPG) with the key held offline by you |
 | A03 Injection | Drizzle parameterised queries; strict shared validation on every input; output encoding; strict CSP; no `dangerouslySetInnerHTML` on user data; CR/LF stripping on email headers |
-| A04 Insecure design | Threat model per module in `08-security-compliance.md`; immutable invoices; append-only audit log; webhook idempotency; money as integers |
+| A04 Insecure design | Threat model per module in [`08-security-compliance.md`](08-security-compliance.md); immutable invoices; append-only audit log; webhook idempotency; money as integers |
 | A05 Security misconfiguration | Security headers on **all** responses, including static assets (CSP, HSTS, nosniff, frame-ancestors none, COOP/CORP, Referrer-Policy, Permissions-Policy); Cloudflare minimum TLS 1.2 (approval needed); no debug data in API errors (fixes audit M-1) |
-| A06 Vulnerable components | Pinned versions, Dependabot/Renovate, `npm audit` in CI, no beta frameworks in production |
+| A06 Vulnerable components | Pinned versions, dependency audit (pnpm) in CI, Renovate, no beta frameworks in production |
 | A07 Identification & authentication failures | Mandatory TOTP for staff; rate limits and lockout; Turnstile; magic links single-use with 15-minute expiry; session rotation; login alerts |
 | A08 Software & data integrity | Signed webhooks verified on the raw body; PDF hashes; CI-only deploys; lockfile integrity |
 | A09 Logging & monitoring | Audit log, Workers Logs, Sentry, alerts on failed logins, webhook failures and job failures; no personal data in logs |
@@ -471,7 +473,7 @@ The DNS cutover from the old `techaust-web` Worker happens only in Phase 7, with
 | Abuse / spam | Turnstile, Rate Limiting binding keyed on `CF-Connecting-IP`, free WAF rules, request body-size limits, Origin checks on state-changing requests (fixes audit H-5, M-2) |
 | Files | Type and size allow-list, private R2, short-lived signed download URLs, served as downloads (never inline HTML), filenames sanitised |
 | Data protection (DPDP, **VERIFY WITH CA/LEGAL**) | Data inventory; purpose-specific notices; GA4 only after consent; retention schedule (leads deleted after N months if not converted; financial records kept per GST/tax law); data-principal request handling (export, delete where lawful); breach response plan; processor list (Cloudflare, AWS, Razorpay, Stripe, PayPal, Google); Cloudflare D1 has no India region (DPDP doesn't currently require India residency, but your lawyer should confirm) |
-| Backups & recovery | Built-in 7-day restore + nightly encrypted S3 copy (90 days daily, monthly for 6+ years); **quarterly restore drill** with a written runbook |
+| Backups & recovery | Built-in 7-day restore + nightly encrypted S3 copy (90 days daily, monthly for 6+ years; superseded: ≥ 8 years from FY end, default 10, [08 §6](08-security-compliance.md), [08-A #13](08-research-appendix/A-gst-invoicing.md); VERIFY WITH CA); **quarterly restore drill** with a written runbook |
 
 ---
 
@@ -486,11 +488,11 @@ The DNS cutover from the old `techaust-web` Worker happens only in Phase 7, with
 | Sentry (Developer free), uptime monitor (free tier) | ₹0 |
 | Payment gateways | Per transaction only (absorbed in prices) |
 | Domain renewal | Already paid yearly; unchanged |
-| **Total** | **≈ ₹5–50 / month.** If the upgrade triggers in §3C.4 are hit, the $5 plan (≈ ₹450) still fits your ₹500–1,000 budget. |
+| **Total** | **≈ ₹0–50 / month.** If the upgrade triggers in §3C.4 are hit, the $5 plan (≈ ₹450) still fits your ₹500–1,000 budget. |
 
 ---
 
-## 5. Open questions for Phase 4
+## 5. Open questions for Phase 4 (answered in [04 §0](04-prd.md))
 
 | ID | Question |
 |---|---|
@@ -499,7 +501,7 @@ The DNS cutover from the old `techaust-web` Worker happens only in Phase 7, with
 | Q-P3-3 | Does your CA want **proforma invoices** for advance payments, or a tax invoice on receipt of the advance? (VERIFY WITH CA) |
 | Q-P3-4 | Care-plan monthly invoices: **auto-send** on the billing day, or create a **draft for your review** first? |
 | Q-P3-5 | Sender addresses: `billing@`, `hello@`, `no-reply@techaust.com` OK? Which inbox receives replies (Zoho)? |
-| Q-P3-6 | Default payment schedule for builds (30/40/30?) and the validity period for proposals (15 or 30 days?) |
+| Q-P3-6 | Default payment schedule for builds (30/40/30?) and the validity period for proposals (15 or 30 days?). **Answered: 40/30/30 and 15 days** |
 | Q-P3-7 | Bank details to print on invoices (account name, number, IFSC, SWIFT for USD), shared securely when we build the settings screen, never in chat or code |
 | Q-P3-8 | Your CA's checklist: turnover vs ₹5 Cr (e-invoicing), LUT status for FY 2026-27, SAC codes, rounding, USD conversion rate source, GSTR-1 export format |
 | Carried from 02 | Q-B12 legal partner (DPDP page/service and privacy notice) · Q-B13 CA advisor · Q-B14 AMC client count · Q-B15 social handle · Q-B16 case studies · logo file upload · founder headshot and bio |
