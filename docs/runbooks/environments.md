@@ -1,0 +1,26 @@
+# Runbook: environments and Cloudflare resources
+
+Cloudflare account: **Techaust Technologies** (`153cd8b23edd2bc9dec570ffaf467c2f`), owner `admin@techaust.com`.
+The live site is the old Worker **`techaust-web`**. **Never deploy to, rename or delete it** (rollback target until Phase 7 + 2 weeks).
+
+## Staging (created 2026-10-06, P5.6, approved by the owner)
+
+| Resource | Name | ID / note | Used from |
+|---|---|---|---|
+| D1 | `techaust-staging` | `879c63dd-fedd-4710-9b13-21d8804879a9` (location hint apac) | M1.3 |
+| Queue | `techaust-staging-leads` (+ `-dlq`) | — | M2.4 |
+| Queue | `techaust-staging-pdf` (+ `-dlq`) | — | M4.4 |
+| Queue | `techaust-staging-email` (+ `-dlq`) | — | M2.4 |
+| Queue | `techaust-staging-events` (+ `-dlq`) | — | M6 |
+| R2 | `techaust-staging-files`, `techaust-staging-docs` | **Not created yet** (owner deferred; R2 may need a payment method on file) | M3.4 / M4.4 |
+| Turnstile widget | staging hostnames | **Not created yet**: dashboard checklist at M2.4 | M2.4 |
+| Access app | the staging `*.workers.dev` hosts | **Not created yet**: dashboard checklist before any real data (M1.4) | M1.4 |
+| Workers | `techaust-platform-{web,admin,portal,jobs}-staging` | Created by the first staging deploy | — |
+
+## Production
+Nothing is created until Phase 7 (L3), with owner approval per resource.
+
+## Access methods
+- Local: `wrangler login` (OAuth, the owner's machine). Scopes include Workers/D1/Queues write and zone **read** only.
+- CI: `CF_API_TOKEN_STAGING` (repo secret, created by the owner with the scoped permissions in docs/09 P5.7), plus `CLOUDFLARE_ACCOUNT_ID`.
+- Cloudflare MCP (plugin): read-only use (logs, listing).

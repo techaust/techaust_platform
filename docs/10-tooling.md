@@ -54,3 +54,15 @@
 2. Scaffold the monorepo and `git init`. I'll ask for your git author name/email.
 3. Ask your approval for the **first push** to `techaust/techaust_platform`.
 4. Propose the GitHub settings, Cloudflare staging resources and CI workflows, each with its own approval.
+
+## 6. Phase 5 status (2026-10-06)
+
+| Step | Status |
+|---|---|
+| P5.1 Tools | ✅ T1–T12 approved; Cloudflare plugin installed (MCP sign-in pending, read-only use) |
+| P5.2–P5.3 Scaffold + git | ✅ Monorepo builds, lints, type-checks; 7 tests pass (4 in workerd) |
+| P5.4 First push | ✅ Approved; repo `techaust/techaust_platform` (owner made it **public**, see the risk note in memory/08) |
+| P5.5 GitHub settings | ✅ Branch protection on `main`: PR + `checks` required, admins included, linear history, no force-push or deletion |
+| P5.6 Staging resources | ✅ D1 `techaust-staging` + 8 queues ([runbooks/environments.md](runbooks/environments.md)); R2, Turnstile and Access deferred |
+| P5.7 CI token | ✅ Owner created `CF_API_TOKEN_STAGING` (Workers/D1/Queues/Account read; no zone/DNS) + `CLOUDFLARE_ACCOUNT_ID` |
+| P5.8 CI/CD | ✅ CI green; staging deploy runs on merge to `main`; production workflow owner-only and disabled until Phase 7 |
