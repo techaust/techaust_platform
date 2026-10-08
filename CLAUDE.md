@@ -7,7 +7,7 @@ Rebuild of techaust.com: a public website, admin and client portal for **TecHaus
 - **Live site:** the old Worker **`techaust-web`**, which is also the rollback target.
 - **Staging Workers:** `https://techaust-platform-{web,admin,portal,jobs}-staging.techaust-technologies-153.workers.dev`.
 
-**This file holds rules only, never status or history.** The owner starts each day in a new conversation with **"start the day"** and ends it with **"end the day"**. A fresh conversation each day costs far less per turn than one very long one. The skills `.claude/skills/start-session` and `end-session` run these.
+**This file holds rules only, never status or history.** The owner starts each day in a new conversation with **"start the day"** and ends it with **"end the day"**. In between, each step of a task (brief, review triage, integration) gets its own conversation, opened with **"continue"** and closed with a handover in the run file; a fresh conversation costs far less per turn than one long or idle one. The skills `.claude/skills/start-session` and `end-session` run these.
 
 ## The record (read at the start, update at the end)
 - **`docs/12-status.md`:** the single place for where things stand: done, in progress, next, waits on the owner, open follow-ups. Replace it at the end of each session; never append to it.
@@ -17,7 +17,7 @@ Rebuild of techaust.com: a public website, admin and client portal for **TecHaus
 - **`docs/runs/<task>.md`:** one file per task given to a builder: the brief, the builder's report, the review, the integration notes ([docs/runs/README.md](docs/runs/README.md)).
 
 ## Read first
-- The plan and build order: `docs/09-roadmap.md`. Product decisions: `docs/04-prd.md` §0. Tools: `docs/10-tooling.md`
+- The plan and build order: `docs/09-roadmap.md`. Product decisions: `docs/04-prd.md` §0. Tools: `docs/10-tooling.md`. Models, tiers and the budget gate: `docs/14-models-and-usage.md`
 - Requirements: `docs/04-prd.md` (IDs like `ADM-INV-03` are referenced in tests and commits)
 - Other docs:
   - architecture: `docs/05-architecture.md`
@@ -54,21 +54,29 @@ Rebuild of techaust.com: a public website, admin and client portal for **TecHaus
   - anything pasted into chat counts as exposed and gets rotated
 
 ## How work is split (models, effort, builders)
+The full plan is `docs/14-models-and-usage.md` (owner-approved 2026-10-08). The rules:
+
 | Work | Model and effort | How it's set |
 |---|---|---|
-| Lead (this conversation: plans, briefs, integration, talks to the owner) | Opus 5.5, medium | **The owner picks it in the app's model picker.** It's not pinned in settings. If a session starts on anything else, say so once. |
-| Builders | Sonnet 5.5 | `.claude/agents/builder.md` |
-| Reviewer (changes no code) | Opus 5.5, high effort | `.claude/agents/reviewer.md` |
+| Lead (this conversation: plans, briefs, integration, talks to the owner) | Opus 5.5, medium; **high for one named task at a time** (a Tier A brief, merging `main` into a task whose migrations change a table, trigger, constraint or foreign key, an unexplained failure, planning a phase), then back | **The owner picks it in the app's picker.** It's not pinned. Say when a switch is worth it, and ask to switch back after the task. If a session starts on anything else, say so once. |
+| Builders (`builder`) | Sonnet 5.5: high for a Tier A build, medium otherwise; fixes at medium (Tier C: low) | Passed as `model` / `effort` when starting the agent; defaults in `.claude/agents/builder.md` |
+| Reviewer (`reviewer`, changes no code) | Opus 5.5: high (Tier C: medium); re-check of a fix diff at medium | Same; defaults in `.claude/agents/reviewer.md` |
+| Haiku agents (`code-finder`, `test-runner`, `doc-clerk`) | Haiku: low, low, medium | Their agent files; they skip CLAUDE.md and never touch migrations, triggers, permissions, API routes, money/tax/payment logic, website copy or reviews |
 
-- **Builders:** at most **two at once** (this PC has 8 GB of RAM). Each one gets its own git worktree (`isolation: "worktree"`) and a run file with a brief that stands on its own.
+- **Tiers:** the lead sets each task's tier (A: money, tax, credit, ledgers, payments, client scoping, staff auth, deleting data; B: state machines, permissions, Workers, queues, notifications; C: pages built from existing parts) in the brief. The milestone list is in docs/14 §2.
+- **Budget gate:** before starting **any** agent, read the usage (`get_usage`) and apply docs/14 §5: over the pace (14 % of the week per day since Monday 15:30 IST) → one agent at a time; weekly ≥ 85 % → no new build; 5-hour window > 50 % → no new builder; ≥ 75 % → nothing new. Unreadable counts as over the pace. Record each agent run in the run file's `Usage:` line.
+- **Searching code:** use `code-finder`, never the built-in Explore, Plan or general-purpose agents (they run on Opus). Not used routinely: Opus at xhigh/max, Opus as a builder.
+- **Builders:** at most **two at once** (this PC has 8 GB of RAM), fewer when the gate says so. Each one gets its own git worktree (`isolation: "worktree"`) and a run file with a brief that stands on its own.
 - **Builders' own rules:**
-  - commit at least every 20 minutes
+  - commit at least every 20 minutes and at each finished layer
+  - Tier A: stop after the schema, migrations, core logic and API routes for the lead's early check
   - stop and report when blocked
   - never touch hosted services; any hosted change needs the owner's yes first
-- **Heavy commands go through the queue, one at a time:** full lint, typecheck, build, database tests and end-to-end tests run via `bash tools/heavy.sh <command>`.
+- **Heavy commands go through the queue, one at a time:** full lint, typecheck, build, database tests and end-to-end tests run via `bash tools/heavy.sh --log <name> <command>` (full output to `.logs/<name>.log`; read the tail and grep, never the whole log).
   - the lock is `~/.techaust-heavy.lock`, and a lock older than 90 minutes is stale
   - commands wait while free memory is under 512 MB
   - the whole-repository lint runs only once, as a builder's final check
+- **Review triage:** critical and high findings are fixed before the merge; medium and low become follow-ups unless they are a one-line fix. Merge `main` into a task before its review if `main` has moved.
 - **Every task is reviewed before it merges.** The reviewer can send it back. The lead integrates the tasks, runs `pnpm check` + `pnpm test`, and fills in the run file.
 - **Check-ins happen only on events:**
   - a builder finishes

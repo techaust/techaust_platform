@@ -97,3 +97,16 @@ Approved in the 2026-10-07 interview ([13-decisions.md](13-decisions.md)). No ne
 | `tools/heavy.sh` | Repo script (Git Bash) | Runs heavy commands one at a time per PC; pauses under 512 MB free memory | Local only |
 | `tools/watch.sh` | Repo script (Git Bash) | Reports a builder stall (20 min, lock free) or low memory | Local only |
 | `start-session` / `end-session` skills | Repo skills (`.claude/skills/`) | "start the day" / "end the day" routines | Local; the end-session PR uses `gh` |
+
+## 10. Models-and-usage additions (2026-10-08, owner-approved)
+Approved with the models and usage plan ([14-models-and-usage.md](14-models-and-usage.md)). No new packages, plugins or MCP servers: these are Claude Code agent files and a script option in this repo.
+
+| Tool | Type | What it does | Access and limits |
+|---|---|---|---|
+| **code-finder** agent (`.claude/agents/code-finder.md`) | Claude Code subagent (Haiku, low effort, skips CLAUDE.md) | Answers "where is X"; replaces the built-in Explore, Plan and general-purpose agents (Opus) | Read-only (Read, Glob, Grep) |
+| **test-runner** agent (`.claude/agents/test-runner.md`) | Claude Code subagent (Haiku, low effort, skips CLAUDE.md) | Runs one suite through `tools/heavy.sh --log` and reports only the failures | Runs commands; changes no files; never staging or production |
+| **doc-clerk** agent (`.claude/agents/doc-clerk.md`) | Claude Code subagent (Haiku, medium effort, skips CLAUDE.md) | Drafts CHANGELOG lines, status tables and link fixes | Edits only `CHANGELOG.md`, `docs/12-status.md` and relative links; the lead checks the diff |
+| `tools/heavy.sh --log <name>` | Repo script option | Writes the full output to `.logs/<name>.log` and prints only the exit code and last 40 lines | Local only; `*.log` is git-ignored |
+| Usage tool (`get_usage`) | Built in (desktop app) | Reads the plan's weekly and 5-hour usage for the budget gate | Read-only |
+
+The **builder** and **reviewer** rows in §9 still apply; their model and effort now follow the task's tier ([14 §3](14-models-and-usage.md)), and the builder's tools are a fixed list.
