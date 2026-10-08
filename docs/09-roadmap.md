@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Phase** | 4, Project documentation (**APPROVED** 2026-10-06) |
-| **Date** | 2026-10-06 (last updated 2026-10-07) |
+| **Date** | 2026-10-06 (last updated 2026-10-08) |
 | **Builds** | [04 PRD](04-prd.md) per [05 Architecture](05-architecture.md), [06 Design system](06-design-system.md), [07 Content](07-content.md), [08 Security & compliance](08-security-compliance.md) |
 
 ## How milestones work
@@ -15,6 +15,7 @@
   5. CI green → it merges itself and deploys to staging (held PRs excepted)
   6. show you the result on staging: screenshots/preview, a test summary, open questions
   7. **wait for your "approved" before the next milestone** (CLAUDE.md rule 2)
+- **Tier:** each Phase 6 milestone has a tier (A, B or C) that sets the builder's and reviewer's model and effort ([14 §2](14-models-and-usage.md)).
 - **Size:** S ≈ 1–2 working sessions · M ≈ 3–5 · L ≈ 6+. These are relative effort, not calendar promises.
 - **Gates (🚦)** are points where I stop and ask if the result doesn't fit the plan, e.g. the free-plan CPU measurement.
 - **Owner inputs (🟧)** are listed per milestone so nothing blocks unexpectedly.
