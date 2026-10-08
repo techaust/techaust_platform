@@ -65,3 +65,4 @@ Who: **Owner** (Rupak Sarkar) or **Lead** (Claude, the lead conversation). Backf
 | 2026-10-08 | Builder gets a fixed tool list (file tools, Bash, PowerShell, Skill, tool search, Context7); no other connectors | Lead | `.claude/agents/builder.md` |
 | 2026-10-08 | `tools/heavy.sh --log <name>`: full output to `.logs/<name>.log` (git-ignored by `*.log`), prints the exit code and last 40 lines | Lead | `tools/heavy.sh` |
 | 2026-10-08 | Haiku agents use the `haiku` alias (runs Haiku 4.5 on Claude Code 2.1.288); switch to Haiku 5.5 once Claude Code recognises it | Lead | [14 §3](14-models-and-usage.md), `.claude/agents/` |
+| 2026-10-08 | Auto-fix is turned on for every PR (held ones included) right after it's opened; the session that opened it fixes CI failures, conflicts and review comments without asking | Owner | [CLAUDE.md](../CLAUDE.md) Git workflow, `.claude/skills/end-session/` |

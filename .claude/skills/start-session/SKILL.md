@@ -9,7 +9,7 @@ description: Start or resume work on the TecHaust rebuild. Use when the owner sa
    - `docs/13-decisions.md` (never re-ask a decided question)
    - any open `docs/runs/*.md`: on "continue", start from the newest **Handover** section
 
-   Then check the work in flight: `git status`, `git branch --show-current`, `git worktree list`.
+   Then check the work in flight: `git status`, `git branch --show-current`, `git worktree list`. If the current branch's PR has merged and nothing is uncommitted, switch to `main`, run `git pull --ff-only`, and delete that local branch.
 2. **Check GitHub:**
    - `gh run list --limit 3` (the latest CI run and its result)
    - `gh pr list --state open` (open PRs, their checks, and whether auto-merge is on)

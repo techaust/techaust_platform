@@ -2,6 +2,8 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-10-08 [#11](https://github.com/techaust/techaust_platform/pull/11) chore: models and usage plan (tiers, per-tier model/effort, Haiku agents, budget gate)
+- 2026-10-07 [#10](https://github.com/techaust/techaust_platform/pull/10) docs: correct the quality-pass score average; changelog #9
 - 2026-10-07 [#9](https://github.com/techaust/techaust_platform/pull/9) docs: documentation quality pass (all 45 files), numbered record files, owner decisions
 - 2026-10-07 [#8](https://github.com/techaust/techaust_platform/pull/8) chore: working rules (agents, queue, daily sessions, record, merge on green)
 - 2026-10-06 [#6](https://github.com/techaust/techaust_platform/pull/6) M1.3: D1 schema, integrity triggers and seed
