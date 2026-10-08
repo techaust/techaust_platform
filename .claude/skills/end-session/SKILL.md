@@ -17,6 +17,7 @@ description: Close the day on the TecHaust rebuild and leave the record current.
 6. **Pull request:**
    - commit the documents on a `docs/…` branch
    - push, run `gh pr create`, then `gh pr merge --auto --squash` (merge on green, the owner's rule)
+   - turn on Auto-fix for it (`ccd_pr` `set_monitor`), as for every PR
 7. **Agents:** list any builder or reviewer still running. **Stop none without the owner's word.**
 8. **Tell the owner,** in a few plain lines:
    - what was done
@@ -24,4 +25,4 @@ description: Close the day on the TecHaust rebuild and leave the record current.
    - what waits on them
    - the next step, and the lead model and effort it needs (Opus 5.5 medium unless [docs/14](../../../docs/14-models-and-usage.md) §3 says high); if this session was switched to high, ask to switch it back
    - the usage now (weekly and 5-hour %)
-   - the PR link
+   - the PR link, and that this session can be archived (not deleted) once that PR has merged

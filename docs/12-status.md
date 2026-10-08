@@ -23,6 +23,7 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
 1. When the owner says **"Access is on"** (lead on **Opus 5.5, high** for the PR #7 update, per [14 §3](14-models-and-usage.md); medium for the rest):
    1. check that every staging URL shows the Access sign-in
    2. bring PR #7 up to date with `main` (see the follow-ups)
+      - bind PR #7 to that session and turn on Auto-fix (no auto-merge: it stays held until this list is done)
    3. merge it
 2. The owner runs **GitHub → Actions → Auth CPU benchmark (staging) → Run workflow**.
 3. I read the CPU times from Workers Logs (read-only), fill in `docs/runbooks/cpu-baseline.md`, and run the gate check: login p99 ≤ 5 ms, every route ≤ 7 ms. If it fails, I stop and ask.
