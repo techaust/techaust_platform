@@ -1,12 +1,12 @@
 // PNG chunk helpers for generated rasters (Node-only: node:crypto and node:zlib; used by scripts and tests).
-// A wallpaper PNG is tagged sRGB and carries the SHA-256 of the SVG it was rendered from, so the drift test can
+// A wallpaper PNG is tagged sRGB and carries the SHA-256 of the sources it was rendered from, so the drift test can
 // prove a committed PNG matches the current generator without re-rendering 4K images.
 import { createHash } from "node:crypto";
 import { crc32 } from "node:zlib";
 
 const SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-/** tEXt keyword holding the hash of the SVG source. */
-export const SOURCE_KEY = "techaust:svg-sha256";
+/** tEXt keyword holding the hash of the source text. */
+export const SOURCE_KEY = "techaust:source-sha256";
 
 export const sourceHash = (svg: string) => createHash("sha256").update(svg, "utf8").digest("hex");
 
@@ -35,14 +35,14 @@ function encode({ type, data }: Chunk): Buffer {
 }
 
 /** Adds sRGB (perceptual) and the source hash right after IHDR; drops any other colour-space chunks. */
-export function tagPng(png: Buffer, svg: string): Buffer {
+export function tagPng(png: Buffer, source: string): Buffer {
   const drop = new Set(["sRGB", "gAMA", "cHRM", "iCCP", "tEXt", "iTXt", "zTXt", "eXIf", "tIME"]);
   const chunks = readChunks(png).filter((c) => !drop.has(c.type));
   const [ihdr, ...rest] = chunks;
   if (ihdr?.type !== "IHDR") throw new Error("PNG without IHDR");
   const tags: Chunk[] = [
     { type: "sRGB", data: Buffer.from([0]) },
-    { type: "tEXt", data: Buffer.from(`${SOURCE_KEY}\0${sourceHash(svg)}`, "latin1") },
+    { type: "tEXt", data: Buffer.from(`${SOURCE_KEY}\0${sourceHash(source)}`, "latin1") },
   ];
   return Buffer.concat([SIGNATURE, ...[ihdr, ...tags, ...rest].map(encode)]);
 }

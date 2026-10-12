@@ -5,15 +5,15 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
+import { zoneStats } from "../src/brand/wallpaper-render.ts";
 import {
   CONCEPTS,
   type Concept,
   FORMATS,
   type Format,
-  previewFocus,
+  MARK_PLACE,
   wallpaperFile,
 } from "../src/brand/wallpapers.ts";
-import { resolveColor } from "../src/tokens/model.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const src = join(root, "brand", "wallpapers");
@@ -118,38 +118,14 @@ function guides(format: Format, scale: number): string {
   );
 }
 
-// ── Measurements: the largest lightness step inside each quiet zone (CIE L*, against the background) ───────
-
-const lstar = (r: number, g: number, b: number) => {
-  const lin = (c: number) => (c / 255 <= 0.04045 ? c / 255 / 12.92 : ((c / 255 + 0.055) / 1.055) ** 2.4);
-  const y = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
-  return y > 216 / 24389 ? 116 * Math.cbrt(y) - 16 : (24389 / 27) * y;
-};
+// ── Measurements: how quiet each quiet zone is (L* range, largest block-to-block step, longest flat run) ──
 
 async function quietReport(file: string, format: Format) {
   const { data, info } = await sharp(join(src, file)).raw().toBuffer({ resolveWithObject: true });
-  const px = (x: number, y: number) => {
-    const o = (y * info.width + x) * info.channels;
-    return [data[o] ?? 0, data[o + 1] ?? 0, data[o + 2] ?? 0] as const;
-  };
-  const hex = resolveColor("ink-950");
-  const bg = lstar(
-    ...([1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16)) as [number, number, number]),
-  );
   return FORMATS[format].quiet.map((q) => {
-    let max = 0;
-    const colours = new Set<string>();
-    for (let y = q.y; y < q.y + q.h; y += 2)
-      for (let x = q.x; x < q.x + q.w; x += 2) {
-        const c = px(x, y);
-        colours.add(c.join(","));
-        max = Math.max(max, Math.abs(lstar(...c) - bg));
-      }
-    return {
-      zone: `${q.x},${q.y} ${q.w}×${q.h}`,
-      maxDeltaL: Math.round(max * 10) / 10,
-      colours: colours.size,
-    };
+    const s = zoneStats(new Uint8Array(data.buffer, data.byteOffset, data.length), info.width, q);
+    const r1 = (n: number) => Math.round(n * 100) / 100;
+    return { zone: `${q.x},${q.y} ${q.w}×${q.h}`, range: r1(s.range), step: r1(s.step), bands: s.bands };
   });
 }
 
@@ -237,7 +213,9 @@ async function inspect(concept: Concept, format: Format) {
   const file = wallpaperFile(concept, format);
   const { width, height } = FORMATS[format];
   const files: string[] = [];
-  for (const [i, p] of previewFocus(concept, format).entries()) {
+  const m = MARK_PLACE[format];
+  const focal = format === "desktop" ? { x: 2560, y: 760 } : { x: 1080, y: 2340 };
+  for (const [i, p] of [{ x: m.x + m.size / 2, y: m.y + m.size / 2 }, focal].entries()) {
     const left = Math.max(0, Math.min(width - 640, p.x - 320));
     const top = Math.max(0, Math.min(height - 640, p.y - 320));
     const f = join(out, `crop-${concept}-${format}-${i + 1}.png`);
@@ -264,6 +242,5 @@ for (const concept of CONCEPTS) {
   }
 }
 console.log(await overview());
-const bg = resolveColor("ink-950");
-writeFileSync(join(out, "quiet-zones.json"), `${JSON.stringify({ background: bg, report }, null, 2)}\n`);
+writeFileSync(join(out, "quiet-zones.json"), `${JSON.stringify(report, null, 2)}\n`);
 console.log(JSON.stringify(report, null, 1));

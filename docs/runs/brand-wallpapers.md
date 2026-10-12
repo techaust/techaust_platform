@@ -142,6 +142,70 @@ The owner answered all three in round 2 (below).
 
 **Not verified:** the same as round 1. Nothing was seen on a real screen or phone (mock-up overlays only), and the `CLAUDE.md` and docs/06 lines still wait for approval.
 
+### Round 3: soft abstract folds (2026-10-12)
+
+**The owner's decisions** (docs/13, merged from `brand/wallpapers` @ 9273cf8): round 2 was rejected (too flat and "vector", too dark, too technical and logo-heavy, awkward), and its 3D bevels are out. The new direction:
+- soft abstract folds in the mood of Windows 11 Bloom or macOS
+- mid-tone verdigris and teal
+- a small, subtle mark
+- a wallpaper-only exception that allows gradients, curves and soft light
+
+The sizes, PNG sRGB, no text, the quiet zones, generation from code and no new packages all still stand. The concepts are now **ribbon**, **fold** and **drape**.
+
+**Technique.** A small deterministic software renderer in pure TypeScript (`src/brand/wallpaper-render.ts`), with no new packages:
+- Surfaces are analytic (bands swept along bowed, gently waving paths), shaded by one soft key light from the top left: Lambert plus a Blinn sheen, soft drop shadows and valley occlusion.
+- Light is computed in linear float, then mapped through a colour ramp built from the palette tokens. The ramp runs ink-700 → verdigris-900 / 800 / 700 / 500 / 300 / 200 / 100 → mist, interpolated in OKLab so the teals between tokens stay clean. Nothing is black or white.
+- Output is 8-bit sRGB with interleaved-gradient-noise dithering (±0.5 LSB), written through sharp from a raw buffer.
+- Silhouettes and creases are anti-aliased analytically from signed distances, so they are crisp at 4K.
+- Render times: 10–21 s per image, about 95 s for all six.
+
+**The three concepts** share one shape language: broad bands that enter at the top edge (clear of the icons), bow through the free area and leave at the right edge (clear of the taskbar). On the phone they cross the full width through the middle third, recomposed rather than cropped.
+- **Ribbon:** three silk ribbons modelled in 3D. Each ribbon's width turns about its path, so it pinches where it twists edge-on and shows its lighter back face beyond. A domed cross-section rolls the highlight over the crest, and the ribbons cast soft shadows on one another.
+- **Fold:** one large sheet of paper, bleeding off the top and right, with one long, softly bowed edge.
+  - Its creases run along x + y = constant, the mark's 45° cut: a big lit facet, then a narrow dark pleat (the mark's channel made physical), a second lit facet, and a facet turning away.
+  - Each facet bends slightly. Valleys gather a soft occlusion, mountain creases catch a fine sheen, the paper's edge takes a hairline of light, and the sheet lifts off the field with a broad soft shadow.
+  - The most brand-specific of the three.
+- **Drape:** a backdrop silk sheet plus three translucent veils, lighter toward the front, each with a slow swell of light and a soft shadow on the layers behind. The lightest and most atmospheric of the three.
+- **The field:** a smooth mid-tone, a touch deeper toward the bottom left, with a soft glow behind the forms.
+- **The mark** sits in the same place in all three: bottom right, above the taskbar or dock band, on calm ground. It is 144 px on the desktop and 112 px on the phone, built from `geometry.ts` (snapped) and tone-on-tone. The T and stem lean 22 % toward ink-700; the crossbar and right stem lean 20 % toward verdigris-200. Anti-aliased, crisp at 100 %.
+
+**Measured on the committed pixels** (`quiet-zones.json`), in every quiet zone of all six:
+- brightness range ≤ 6.2 L* (a soft continuation of the field)
+- largest step between neighbouring 8-px blocks ≤ 0.22 L* (no edge, crease or highlight)
+- 0 banding steps
+- icon-zone mean L* between 30 and 48, so white labels stay readable; also checked visually with the Windows label shadow on both taskbar themes
+
+**Files changed (round 3)**
+- `packages/ui/src/brand/wallpaper-render.ts` (new, pure): colour (OKLab ramp from tokens), light, shapes, dithered output, `render()`, `lstar()`, `zoneStats()`
+- `packages/ui/src/brand/wallpapers.ts` (rewritten): formats, quiet zones, ramp, the mark (`fitMark`, `MARK_PLACE`, `MARK_TONE`), the field, the band primitive, and the three shaders
+- `packages/ui/src/brand/wallpaper-source.ts` (new, Node-only): the sources whose hash each PNG carries (renderer, concepts, geometry.ts, tokens.json)
+- `packages/ui/src/brand/png.ts`: the stamp is now a source hash (`techaust:source-sha256`)
+- `packages/ui/scripts/build-wallpapers.ts`: renders through sharp's raw input; `--draft <scale> [concept]` writes quick untagged previews to `.logs/wallpapers/draft`
+- `packages/ui/scripts/preview-wallpapers.ts`: crops on the mark and the focal area; zone report = range, step, bands
+- `packages/ui/test/wallpapers.test.ts` (rewritten, 29 tests):
+  - files, sizes, RGB 8-bit, sRGB, no ICC
+  - the drift hash against today's sources
+  - determinism (a small render, twice)
+  - quiet zones per zone: step < 0.5, range < 8, no banding
+  - mid-tone behind the icons
+  - the mark: geometry snapped to `geometry.ts`, placement clear of every quiet zone, colour logic measured in each PNG (stem darker than the ground between the stems, right stem lighter, never swapped)
+  - the round-2 palette-only and flat-fill checks are dropped, since gradients make them invalid
+- `packages/ui/brand/wallpapers/wallpaper-{ribbon,fold,drape}-{desktop,mobile}.png` (the round-2 monolith/cut/construction files are deleted)
+
+**Preview** (`.logs/wallpapers/`): `overview.png`, `sheet-ribbon.png`, `sheet-fold.png`, `sheet-drape.png`, `crop-<concept>-<format>-1.png` (the mark at 100 %), `crop-…-2.png` (the focal area at 100 %), `guides-*.png`, `quiet-zones.json`.
+
+**Commands (round 3)**
+- `bash tools/heavy.sh --log wp3-typecheck pnpm --filter @techaust/ui typecheck`: exit 0
+- `bash tools/heavy.sh --log wp3-build pnpm --filter @techaust/ui build:wallpapers`: 6 PNGs, 10–21 s each
+- `pnpm exec vitest run test/wallpapers.test.ts`: 29 passed
+- `bash tools/heavy.sh --log wp3-ui-test pnpm --filter @techaust/ui test`: 5 files, 216 passed
+- `bash tools/heavy.sh --log wp3-lint pnpm lint`: 171 files, no fixes
+
+**Not verified / open**
+- Nothing has been seen on a real Windows screen or phone. The overlays are mock-ups (translucent bars, no real Mica or acrylic blur).
+- The PNGs are about 2.2 MB each (13 MB per set), because dithered gradients compress far less than flat fills. Every re-render adds about 13 MB to the public repo's history. **Question for the lead:** keep committing each round, or commit PNGs only after approval (the drift test would then wait for them)?
+- The `CLAUDE.md` Commands line and the docs/06 §1 line still wait for approval.
+
 ## Review
 
 ## Integration notes

@@ -1,24 +1,36 @@
-// Brand wallpapers (docs/runs/brand-wallpapers.md): three concepts × desktop and mobile, drawn from the tokens
-// and the mark's geometry as SVG in output pixels (pure string functions; scripts/build-wallpapers.ts renders
-// them to PNG). Dark ink only, flat tones only, the TH mark only, no text.
+// Brand wallpapers (docs/runs/brand-wallpapers.md, round 3): soft abstract folds in mid-tone verdigris, signed
+// by a small tone-on-tone TH mark. Three concepts × desktop and phone, rendered pixel by pixel with
+// wallpaper-render.ts (pure and deterministic; scripts/build-wallpapers.ts writes the PNGs).
 //
-// One light for all three: it comes from the top left. Faces that look up or left are lighter, shadows fall
-// down and right at 45° (the mark's own cut), and depth is built from small tone steps (ΔL* about 2–6).
-// Crispness: every axis-aligned edge and hairline lands on a whole pixel; only 45° edges are anti-aliased.
-// No seams: wherever two tones meet along a diagonal, the lower one runs on underneath the upper one.
+// One family: the same key light (top left), the same colour ramp (palette tokens, OKLab-interpolated), the same
+// fold language (smooth surfaces whose creases and cuts echo the mark's 45°), and the same small mark in the same
+// place (bottom right, above the taskbar or dock band). The quiet zones carry only the smooth background field.
+
 import { color } from "./compose.ts";
 import { MARK_PARAMS, markPaths } from "./geometry.ts";
+import {
+  clamp01,
+  convexInside,
+  cover,
+  hexLinear,
+  makeRamp,
+  type RGB,
+  ramp,
+  render,
+  type Shader,
+  shade,
+  smoothstep,
+} from "./wallpaper-render.ts";
 
-export const CONCEPTS = ["monolith", "cut", "construction"] as const;
+export const CONCEPTS = ["ribbon", "fold", "drape"] as const;
 export type Concept = (typeof CONCEPTS)[number];
 export const FORMAT_NAMES = ["desktop", "mobile"] as const;
 export type Format = (typeof FORMAT_NAMES)[number];
 export type Rect = { x: number; y: number; w: number; h: number };
 type Pt = [number, number];
 
-/** Frame sizes and the quiet zones (icons, taskbar, clock, dock): the ground, or one plane within ΔL* 3. */
+/** Frame sizes, the quiet zones (icons, taskbar, clock, dock) and the phone's focal band. */
 export const FORMATS: Record<Format, { width: number; height: number; quiet: Rect[]; focus?: Rect }> = {
-  // Desktop: icons down the left 30 %, taskbar or dock along the bottom 8 %.
   desktop: {
     width: 3840,
     height: 2160,
@@ -27,8 +39,6 @@ export const FORMATS: Record<Format, { width: number; height: number; quiet: Rec
       { x: 0, y: 1987, w: 3840, h: 173 },
     ],
   },
-  // Mobile: clock and notifications in the top 15 %, dock and home bar in the bottom 12 %; the focal point
-  // sits in the middle third.
   mobile: {
     width: 2160,
     height: 4680,
@@ -42,23 +52,36 @@ export const FORMATS: Record<Format, { width: number; height: number; quiet: Rec
 
 export const wallpaperFile = (concept: Concept, format: Format) => `wallpaper-${concept}-${format}.png`;
 
-/** The tone ladder (L*): ink-950 6.4 · 750 9.1 · 800 11.5 · 700 15.2 · 600 20.7 · verdigris-900 28.3 · 800 32.1 · 700 40.5. */
-const T = {
-  ground: color("ink-950"),
-  low: color("ink-750"), // the one plane allowed in the quiet zones (ΔL* 2.7)
-  i800: color("ink-800"),
-  i700: color("ink-700"),
-  i600: color("ink-600"),
-  i400: color("ink-400"),
-  i300: color("ink-300"),
-  v900: color("verdigris-900"),
-  v800: color("verdigris-800"),
-  v700: color("verdigris-700"),
-  v500: color("verdigris-500"),
-  v300: color("verdigris-300"),
+// ── Palette ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** The ramp: deepest shade (ink-700, never black) through the verdigris family to mist (never white). */
+export const RAMP_STOPS: [number, string][] = [
+  [0, "ink-700"],
+  [0.14, "verdigris-900"],
+  [0.27, "verdigris-800"],
+  [0.42, "verdigris-700"],
+  [0.6, "verdigris-500"],
+  [0.77, "verdigris-300"],
+  [0.87, "verdigris-200"],
+  [0.95, "verdigris-100"],
+  [1, "mist"],
+];
+const LUT = makeRamp(RAMP_STOPS);
+const INK = hexLinear(color("ink-700"));
+const PALE = hexLinear(color("verdigris-200"));
+
+const mix = (o: RGB, c: RGB, f: number) => {
+  o[0] += (c[0] - o[0]) * f;
+  o[1] += (c[1] - o[1]) * f;
+  o[2] += (c[2] - o[2]) * f;
+};
+const darken = (o: RGB, f: number) => {
+  o[0] *= 1 - f;
+  o[1] *= 1 - f;
+  o[2] *= 1 - f;
 };
 
-// ── The mark, fitted to whole pixels ────────────────────────────────────────────────────────────────────────
+// ── The mark: small, tone-on-tone, same place in all three ──────────────────────────────────────────────────
 
 /** The mark `size` px wide with every stroke and edge on a whole pixel (geometry.ts `markPaths`, snapped). */
 export function fitMark(size: number) {
@@ -70,7 +93,6 @@ export function fitMark(size: number) {
     crossbarY: MARK_PARAMS.crossbarY * k,
     size,
   };
-  // The same rounding as markPaths(p, true), so the outlines and solids below match the filled shapes exactly.
   const v = Math.round(p.v);
   const h = Math.round(p.h);
   const s1 = Math.round(p.stemX);
@@ -90,14 +112,8 @@ export function fitMark(size: number) {
     barEnd,
     cTop,
     cBot,
-    /** Filled shapes: base = the T and the shared stem, accent = the crossbar and the right stem. */
     fill: markPaths(p, true),
-    /** Each colour as one closed outline (the union of its two shapes), for the hairline trace. */
-    outline: {
-      base: `M0 0H${barEnd}L${barEnd - h} ${h}H${s2}V${S}H${s1}V${h}H0Z`,
-      accent: `M${s2} ${cTop}H${rx}V${v}L${S} 0V${S}H${rx}V${cBot}H${s2}Z`,
-    },
-    /** The four convex pieces (bar, stem | crossbar, right stem), for the solid and its shadow. */
+    /** The four convex pieces in clockwise screen order: base = bar + stem, accent = crossbar + right stem. */
     pieces: {
       base: [
         [
@@ -132,358 +148,432 @@ export function fitMark(size: number) {
 }
 export type FittedMark = ReturnType<typeof fitMark>;
 
-// ── SVG helpers (whole-pixel coordinates) ───────────────────────────────────────────────────────────────────
-
-const r = (n: number) => Math.round(n * 100) / 100;
-const rect = (x: number, y: number, w: number, h: number, fill: string) =>
-  `<rect x="${r(x)}" y="${r(y)}" width="${r(w)}" height="${r(h)}" fill="${fill}"/>`;
-const d = (pts: Pt[]) => `M${pts.map(([x, y]) => `${r(x)} ${r(y)}`).join("L")}Z`;
-const poly = (pts: Pt[], fill: string, part = "") =>
-  `<path${part ? ` data-part="${part}"` : ""} fill="${fill}" d="${d(pts)}"/>`;
-const at = (x: number, y: number, body: string) => `<g transform="translate(${x} ${y})">${body}</g>`;
-const shift = (pts: Pt[], dx: number, dy: number): Pt[] => pts.map(([x, y]) => [x + dx, y + dy]);
-
-/** Convex hull (monotone chain): the swept solid of a convex piece and its extruded copy. */
-function hull(points: Pt[]): Pt[] {
-  const p = [...points].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-  const cross = (o: Pt, a: Pt, b: Pt) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
-  const half = (list: Pt[]) => {
-    const out: Pt[] = [];
-    for (const q of list) {
-      while (out.length >= 2 && cross(out[out.length - 2] as Pt, out[out.length - 1] as Pt, q) <= 0)
-        out.pop();
-      out.push(q);
-    }
-    out.pop();
-    return out;
-  };
-  return [...half(p), ...half([...p].reverse())];
-}
-
-function frame(format: Format, body: string): string {
-  const { width, height } = FORMATS[format];
-  return (
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
-    `${rect(0, 0, width, height, T.ground)}${body}</svg>\n`
-  );
-}
-
-/**
- * A 45° "/" band along x + y = k (its upper-left edge), `width` px thick measured square to the band, between
- * the horizontals y0 and y1 (whole pixels, so its ends are crisp).
- */
-function band(k: number, width: number, y0: number, y1: number, fill: string, part = "") {
-  const w = width * Math.SQRT2; // the band's width along a horizontal
-  return poly(
-    [
-      [k - y0, y0],
-      [k + w - y0, y0],
-      [k + w - y1, y1],
-      [k - y1, y1],
-    ],
-    fill,
-    part,
-  );
-}
-
-/** Everything on the lower-right side of x + y = k, between the horizontals y0 and y1 (a plate). */
-function plate(k: number, y0: number, y1: number, right: number, fill: string) {
-  return poly(
-    [
-      [k - y0, y0],
-      [right, y0],
-      [right, y1],
-      [k - y1, y1],
-    ],
-    fill,
-  );
-}
-
-/** A registration mark: a 2 px cross on whole pixels. */
-const cross = (x: number, y: number, arm: number, fill: string) =>
-  rect(x - arm, y - 1, 2 * arm, 2, fill) + rect(x - 1, y - arm, 2, 2 * arm, fill);
-
-/** A 2 px hairline segment (any angle; axis-aligned ones are drawn as whole-pixel rects by the callers). */
-const segment = (a: Pt, b: Pt, stroke: string, width = 2) =>
-  `<path fill="none" stroke="${stroke}" stroke-width="${width}" d="M${r(a[0])} ${r(a[1])}L${r(b[0])} ${r(b[1])}"/>`;
-
-// ── 1. Monolith: the whole mark as a machined solid on a wall plane ──────────────────────────────────────────
-// The mark is a relief, drawn in cabinet projection: its depth runs up and left by half the channel, so the faces
-// that catch the light show (tops, left sides and the right stem's 45° cut, which becomes a bevel). Its hard
-// shadow falls down and right onto an ink-750 wall plane, the one plane allowed in the quiet zones. The wall's
-// own corner is cut at 45°, one stroke from the solid; four registration marks sit one stroke outside the mark's
-// clear space; a verdigris-300 glint runs along the cut's arris.
-
-const MONOLITH: Record<Format, { size: number; centre: Pt; wall: number }> = {
-  // wall: the x of the wall plane's left edge
-  desktop: { size: 1300, centre: [2688, 960], wall: 1536 },
-  mobile: { size: 1400, centre: [1080, 2340], wall: 216 },
+/** Where the mark sits: bottom right, clear of the taskbar / dock band, the same in all three concepts. */
+export const MARK_PLACE: Record<Format, { size: number; x: number; y: number }> = {
+  desktop: { size: 144, x: 3840 - 144 - 192, y: 1987 - 144 - 144 },
+  mobile: { size: 112, x: 2160 - 112 - 160, y: 4118 - 112 - 160 },
 };
+/** Tone-on-tone strength: the T and stem lean to ink, the crossbar and right stem to light verdigris. */
+export const MARK_TONE = { base: 0.22, accent: 0.2 };
 
-function monolithGeometry(format: Format) {
-  const p = MONOLITH[format];
+function markLayer(format: Format): (x: number, y: number, px: number, o: RGB) => void {
+  const p = MARK_PLACE[format];
   const m = fitMark(p.size);
-  const x = p.centre[0] - p.size / 2;
-  const y = p.centre[1] - p.size / 2;
-  const e = Math.round(m.v * 0.22); // depth: a low relief; the cut's bevel takes about a third of the channel
-  return { p, m, x, y, e };
+  const base = m.pieces.base.map((q) => q.map(([a, b]) => [a + p.x, b + p.y] as const));
+  const accent = m.pieces.accent.map((q) => q.map(([a, b]) => [a + p.x, b + p.y] as const));
+  return (x, y, px, o) => {
+    if (x < p.x - 2 || y < p.y - 2 || x > p.x + p.size + 2 || y > p.y + p.size + 2) return;
+    const db = Math.max(...base.map((q) => convexInside(q, x, y)));
+    const da = Math.max(...accent.map((q) => convexInside(q, x, y)));
+    const cb = cover(db / px);
+    const ca = cover(da / px) * (1 - cb);
+    if (cb > 0) mix(o, INK, MARK_TONE.base * cb);
+    if (ca > 0) mix(o, PALE, MARK_TONE.accent * ca);
+  };
 }
 
-function monolith(format: Format): string {
-  const { height, width } = FORMATS[format];
-  const { p, m, x, y, e } = monolithGeometry(format);
-  // The wall: from its left edge to the right of the frame, top to bottom, its top-left corner cut at 45° one
-  // stroke (measured square) above-left of the solid's own top-left corner.
-  const cut = x - e + (y - e) - Math.round(m.v * Math.SQRT2); // the chamfer: x + y = cut
-  const wall = poly(
-    [
-      [p.wall, cut - p.wall],
-      [cut, 0],
-      [width, 0],
-      [width, height],
-      [p.wall, height],
+// ── The background field: one smooth mid-tone, a little lighter where the light falls ───────────────────────
+
+function background(format: Format): (x: number, y: number) => number {
+  const { width: W, height: H } = FORMATS[format];
+  const g = format === "desktop" ? { x: 2900, y: 500, r: 2000 } : { x: 1400, y: 2000, r: 1800 };
+  return (x, y) => {
+    const diag = (x / W) * 0.55 + (1 - y / H) * 0.45; // a touch darker toward the bottom left
+    const glow = Math.exp(-((x - g.x) ** 2 + (y - g.y) ** 2) / (2 * g.r * g.r));
+    return 0.35 + 0.09 * diag + 0.11 * glow;
+  };
+}
+
+// ── Bands: the shared form ──────────────────────────────────────────────────────────────────────────────────
+// Every form is a broad band sweeping diagonally down and right, defined by where its centre line enters and
+// leaves the frame. On the desktop it enters at the top edge, clear of the icons, and leaves at the right edge,
+// clear of the taskbar, along the diagonal of the free area; on the phone it crosses the whole width through the
+// middle third. A bend bows it toward the centre (its ends stay put) and a slow wave lets it breathe.
+
+type Band = {
+  a: Pt; // where the centre line enters the frame
+  b: Pt; // where it leaves
+  w: number; // full width (px)
+  wave: [number, number, number]; // amplitude (px), wavelength (px along the band), phase
+  bend: number; // bow: px at the middle, toward the lower left (+) or upper right (−)
+};
+
+const R2 = Math.SQRT1_2;
+
+/** Position relative to a band: along it (px from a), signed distance from its centre line, its normal. */
+function bandAt(b: Band, x: number, y: number) {
+  const ex = b.b[0] - b.a[0];
+  const ey = b.b[1] - b.a[1];
+  const len = Math.hypot(ex, ey);
+  const cx = ex / len;
+  const cy = ey / len;
+  const nx = cy; // in-plane normal, pointing up and right
+  const ny = -cx;
+  const ux = x - b.a[0];
+  const uy = y - b.a[1];
+  const along = ux * cx + uy * cy;
+  const across = ux * nx + uy * ny;
+  const [amp, wl, phase] = b.wave;
+  const k = (2 * Math.PI) / wl;
+  const f = along / len;
+  const centre = amp * Math.sin(k * along + phase) - 4 * b.bend * f * (1 - f);
+  const slope = amp * k * Math.cos(k * along + phase) - (4 * b.bend * (1 - 2 * f)) / len;
+  const off = (across - centre) / Math.hypot(1, slope);
+  return { along, off, nx, ny };
+}
+
+const SHADOW = { dx: 46, dy: 64, soft: 150, depth: 0.34 };
+
+// ── 1. Ribbon: broad silk ribbons, twisting as they sweep ───────────────────────────────────────────────────
+// The ribbon's width turns about its path (the twist), so it narrows where it turns edge-on and shows its lighter
+// back face beyond. Across its width it is slightly domed, so the key light rolls a highlight over the crest.
+
+type Ribbon = Band & {
+  twist: [number, number]; // width angle φ = twist[0] + twist[1]·along (radians, per px)
+  front: number; // ramp position of the front face
+  back: number; // ramp position of the back face
+};
+
+const RIBBONS: Record<Format, Ribbon[]> = {
+  desktop: [
+    {
+      a: [1850, 0],
+      b: [3840, 1120],
+      w: 760,
+      wave: [90, 3000, 0.3],
+      bend: 430,
+      twist: [0.2, 1 / 950],
+      front: 0.48,
+      back: 0.68,
+    },
+    {
+      a: [2250, 0],
+      b: [3840, 980],
+      w: 600,
+      wave: [-110, 2600, 1.4],
+      bend: 540,
+      twist: [-0.9, 1 / 800],
+      front: 0.54,
+      back: 0.76,
+    },
+    {
+      a: [1700, 0],
+      b: [3840, 1260],
+      w: 480,
+      wave: [80, 2200, 2.4],
+      bend: 360,
+      twist: [0.7, -1 / 850],
+      front: 0.62,
+      back: 0.82,
+    },
+  ],
+  mobile: [
+    {
+      a: [0, 1400],
+      b: [2160, 3250],
+      w: 640,
+      wave: [100, 2400, 0.3],
+      bend: 260,
+      twist: [0.35, 1 / 1250],
+      front: 0.48,
+      back: 0.68,
+    },
+    {
+      a: [0, 1700],
+      b: [2160, 3000],
+      w: 520,
+      wave: [-100, 2000, 1.4],
+      bend: -300,
+      twist: [-0.7, 1 / 900],
+      front: 0.54,
+      back: 0.76,
+    },
+    {
+      a: [0, 1300],
+      b: [2160, 3400],
+      w: 420,
+      wave: [70, 1800, 2.4],
+      bend: 200,
+      twist: [0.6, -1 / 1000],
+      front: 0.62,
+      back: 0.82,
+    },
+  ],
+};
+
+function ribbon(format: Format): Shader {
+  const bg = background(format);
+  const list = RIBBONS[format];
+  const mark = markLayer(format);
+  const tmp: RGB = [0, 0, 0];
+  const at = (rb: Ribbon, x: number, y: number) => {
+    const q = bandAt(rb, x, y);
+    const phi = rb.twist[0] + rb.twist[1] * q.along;
+    const half = 0.5 * rb.w * Math.abs(Math.cos(phi));
+    return { ...q, phi, half, d: half - Math.abs(q.off) };
+  };
+  return (x, y, px, o) => {
+    ramp(LUT, bg(x, y), o);
+    for (const rb of list) {
+      const r = at(rb, x, y);
+      const a = cover(r.d / px);
+      const s = at(rb, x - SHADOW.dx, y - SHADOW.dy);
+      darken(o, SHADOW.depth * smoothstep(-SHADOW.soft, SHADOW.soft, s.d) * (1 - a));
+      if (a <= 0) continue;
+      // Normal: the width direction is cos φ·n + sin φ·z (n = the band's in-plane normal); the surface normal is
+      // perpendicular to it and to the path, tilted along it by the dome (s = −1 … 1 across the visible width).
+      const c = Math.cos(r.phi);
+      const sn = Math.sin(r.phi);
+      const facing = c >= 0 ? 1 : -1;
+      const sAcross = r.half > 0 ? r.off / r.half : 0;
+      const dome = 0.5 * sAcross;
+      const inPlane = -sn * facing + dome * c;
+      let nx = inPlane * r.nx;
+      let ny = inPlane * r.ny;
+      let nz = (c + dome * sn) * facing;
+      const l = Math.hypot(nx, ny, nz);
+      nx /= l;
+      ny /= l;
+      nz /= l;
+      const z = Math.max(nz, 0.2);
+      const t =
+        (facing > 0 ? rb.front : rb.back) +
+        shade(-nx / z, -ny / z, 0.4, 0.34, 22) -
+        0.05 * smoothstep(0.6, 1, Math.abs(sAcross));
+      ramp(LUT, t, tmp);
+      mix(o, tmp, a);
+    }
+    mark(x, y, px, o);
+    return o;
+  };
+}
+
+// ── 2. Fold: one large sheet of paper, folded on the mark's 45° ────────────────────────────────────────────
+// A big sheet bleeding off the top and the right, with one long soft edge facing the free space, folded in a Z
+// on three crisp creases along x + y = constant (the mark's cut). Each of the four facets bends a little (its slope
+// changes across it), valleys gather a soft occlusion, mountain creases catch a fine sheen, and the paper's edge
+// takes a hairline of light. The sheet lifts off the background with a broad, soft shadow.
+
+type Sheet = Band & {
+  edge?: boolean; // the sheet is everything up-right of the band's centre line (only that edge is in frame)
+  creases: number[]; // crease lines as x + y (px), upper left to lower right
+  slopes: [number, number][]; // per facet: slope at its two sides (rise per px along (1, 1)/√2)
+  t: number;
+};
+
+const FOLDS: Record<Format, Sheet> = {
+  // The band is very wide: only its lower-left edge is in the frame; the rest of the sheet runs off it.
+  desktop: {
+    edge: true,
+    a: [1520, 0],
+    b: [3840, 1450],
+    w: 0,
+    wave: [40, 4200, 0.6],
+    bend: 600,
+    creases: [2750, 3000, 4150],
+    slopes: [
+      [0.24, 0.38],
+      [-0.56, -0.4],
+      [0.42, 0.18],
+      [-0.32, -0.12],
     ],
-    T.low,
-  );
-  const all = [...m.pieces.base, ...m.pieces.accent];
-  // The hard shadow: the silhouette, moved down and right by the depth.
-  const shadow = `<path fill="${T.ground}" d="${all.map((q) => d(shift(q, x + e, y + e))).join("")}"/>`;
-  // The solid: each convex piece swept up-left (in its side tone), then its lit faces, then the front.
-  const swept = (q: Pt[]) => hull([...q, ...shift(q, -e, -e)]);
-  const face = (a: Pt, b: Pt): Pt[] => [a, b, [b[0] - e, b[1] - e], [a[0] - e, a[1] - e]];
-  const body =
-    m.pieces.base.map((q) => poly(swept(q), T.i700, "base")).join("") +
-    m.pieces.accent.map((q) => poly(swept(q), T.v800, "accent")).join("") +
-    poly(face([0, 0], [m.barEnd, 0]), T.i600, "base") + // the bar's top
-    poly(face([m.s2, m.cTop], [m.rx, m.cTop]), T.v700, "accent") + // the crossbar's top
-    poly(face([m.rx, m.v], [m.size, 0]), T.v700, "accent") + // the right stem's cut, as a bevel
-    `<path data-part="base" fill="${T.i800}" d="${m.fill.base}"/>` +
-    `<path data-part="accent" fill="${T.v900}" d="${m.fill.accent}"/>` +
-    // The glint on the cut's arris: 3 px, just inside the bevel.
-    band(m.size - 3 * Math.SQRT2, 3, 0, m.v, T.v300, "accent");
-  // Registration: at the four corners of the mark's clear space (one stroke out).
-  const o = m.v;
-  const arm = Math.round(m.v / 8);
-  const marks = [
-    [-o, -o],
-    [m.size + o, -o],
-    [-o, m.size + o],
-    [m.size + o, m.size + o],
-  ]
-    .map(([a, b]) => cross(a as number, b as number, arm, T.i600))
-    .join("");
-  return frame(format, wall + shadow + at(x, y, marks + body));
-}
-
-// ── 2. Cut: a field of plates split by 45° cuts, the verdigris channel the hero ─────────────────────────────
-// Plates step up toward the top-right corner (ink-750 → 800 → 700 → 600) at stroke-multiple distances from the
-// hero channel (3 and 1 stroke before it; 1 and 2 strokes after it). Each raised plate shows a reveal along its
-// cut edge in a deeper verdigris (800, then 900), and ends square on a horizontal set by the golden section. The
-// hero channel is one stroke of a 480 px mark, with a verdigris-300 edge where the light catches it.
-
-const CUT: Record<Format, { mark: number; centre: Pt; stop: number; plates: [number, number] }> = {
-  // plates: the lower ends of the two raised plates (golden section of the frame height)
-  desktop: { mark: 480, centre: [2360, 1000], stop: 1987, plates: [1335, 825] },
-  mobile: { mark: 480, centre: [1080, 2340], stop: 4118, plates: [2892, 2340] },
+    t: 0.54,
+  },
+  mobile: {
+    a: [0, 1800],
+    b: [2160, 3350],
+    w: 1000,
+    wave: [50, 3000, 0.6],
+    bend: 220,
+    creases: [2900, 3120, 4200],
+    slopes: [
+      [0.24, 0.38],
+      [-0.56, -0.4],
+      [0.42, 0.18],
+      [-0.32, -0.12],
+    ],
+    t: 0.54,
+  },
 };
 
-function cutGeometry(format: Format) {
-  const p = CUT[format];
-  const w = fitMark(p.mark).v; // one stroke
-  const s = w * Math.SQRT2; // one stroke measured along a horizontal
-  const k = p.centre[0] + p.centre[1] - s / 2; // the hero's upper-left edge: x + y = k
-  return { p, w, s, k };
+function fold(format: Format): Shader {
+  const bg = background(format);
+  const sh = FOLDS[format];
+  const mark = markLayer(format);
+  const tmp: RGB = [0, 0, 0];
+  const n = sh.creases.length;
+  const lo = (i: number) => (i === 0 ? (sh.creases[0] as number) - 2000 : (sh.creases[i - 1] as number));
+  const hi = (i: number) => (i === n ? (sh.creases[n - 1] as number) + 2000 : (sh.creases[i] as number));
+  const facetT = (i: number, k: number, along: number) => {
+    const f = clamp01((k - lo(i)) / (hi(i) - lo(i)));
+    const [s0, s1] = sh.slopes[i] ?? [0, 0];
+    const flare = 0.8 + 0.2 * Math.sin(along / 900 + 1.3 * i); // each fold opens a little along its length
+    const g = (s0 + (s1 - s0) * f) * flare * R2; // the slope lies along (1, 1)/√2
+    let t = sh.t + shade(g, g, 0.55, 0.2, 16);
+    for (const [ci, dist] of [
+      [i - 1, (k - lo(i)) * R2],
+      [i, (hi(i) - k) * R2],
+    ] as const) {
+      if (ci < 0 || ci >= n) continue;
+      const valley = (sh.slopes[ci]?.[1] ?? 0) < (sh.slopes[ci + 1]?.[0] ?? 0);
+      t += valley ? -0.09 * Math.exp(-dist / 220) : 0.06 * Math.exp(-dist / 30);
+    }
+    return t;
+  };
+  return (x, y, px, o) => {
+    ramp(LUT, bg(x, y), o);
+    const q = bandAt(sh, x, y);
+    const d = sh.edge ? q.off : 0.5 * sh.w - Math.abs(q.off);
+    const a = cover(d / px);
+    const s = bandAt(sh, x - SHADOW.dx, y - SHADOW.dy);
+    const sd = sh.edge ? s.off : 0.5 * sh.w - Math.abs(s.off);
+    darken(o, SHADOW.depth * smoothstep(-SHADOW.soft, SHADOW.soft, sd) * (1 - a));
+    if (a > 0) {
+      const k = x + y;
+      let i = 0;
+      while (i < n && k >= (sh.creases[i] as number)) i++;
+      let t = facetT(i, k, q.along);
+      const dLo = ((k - lo(i)) * R2) / px;
+      const dHi = ((hi(i) - k) * R2) / px;
+      if (i > 0 && dLo < 0.5) t = t * cover(dLo) + facetT(i - 1, k, q.along) * (1 - cover(dLo));
+      else if (i < n && dHi < 0.5) t = t * cover(dHi) + facetT(i + 1, k, q.along) * (1 - cover(dHi));
+      t += 0.07 * Math.exp(-d / 6); // the paper's edge catches a hairline of light
+      ramp(LUT, t, tmp);
+      mix(o, tmp, a);
+    }
+    mark(x, y, px, o);
+    return o;
+  };
 }
 
-function cut(format: Format): string {
-  const { width, height } = FORMATS[format];
-  const { p, w, s, k } = cutGeometry(format);
-  const [yc, yd] = p.plates;
-  return frame(
-    format,
-    // The low plane (ΔL* 2.7) three strokes before the hero, running on through the quiet zones.
-    plate(k - 3 * s, 0, height, width, T.low) +
-      // The working plane, one stroke before the hero, ending on the taskbar / dock line.
-      plate(k - s, 0, p.stop, width, T.i800) +
-      // Raised plates (each starts under its reveal, so no seam shows).
-      plate(k + 2.5 * s, 0, yc, width, T.i700) +
-      plate(k + 5.5 * s, 0, yd, width, T.i600) +
-      // Reveals, one stroke wide along each raised plate's edge, deeper the further they are from the hero: a
-      // verdigris-900 channel, then a shadow gap in the ground tone.
-      band(k + 2 * s, w, 0, yc, T.v900) +
-      band(k + 5 * s, w, 0, yd, T.ground) +
-      // The hero channel and its lit edge (3 px on the upper-left side, where the light falls).
-      band(k, w, 0, p.stop, T.v700) +
-      band(k, 3, 0, p.stop, T.v300) +
-      // Registration marks one stroke below each reveal's square end, on its centre line.
-      [
-        [k + 2.5 * s - yc, yc],
-        [k + 5.5 * s - yd, yd],
-      ]
-        .map(([x, y]) => cross(Math.round((x as number) - w), Math.round((y as number) + w), 12, T.i600))
-        .join(""),
-  );
-}
+// ── 3. Drape: translucent silk veils, layered in depth ──────────────────────────────────────────────────────
+// Four broad veils, back to front lighter and more translucent, each with soft waving edges and a slow swell
+// that lays a band of light across it. Each lets the ones behind show through and casts a soft shadow on them:
+// the lightest and most atmospheric of the three.
 
-// ── 3. Construction: a drawing sheet ────────────────────────────────────────────────────────────────────────
-// An ink-750 sheet, cut at 45° at one corner, carries the mark's construction: a 5-unit sub-grid and the 10-unit
-// grid inside the clear space; ruler ticks along two edges; lines through the mark's edges and its two cuts out
-// to the sheet's edge; the mark filled tone-on-tone and traced on its true geometry (T and stem in ink, crossbar
-// and right stem in verdigris); three dimensions (stroke, channel, height), a 1:1 slope marker for the 45° (no
-// arcs: the brand has no curves) and registration marks at the clear space's corners.
+type Veil = Band & { t: number; alpha: number; swell: [number, number]; edge?: boolean };
 
-const CONSTRUCTION: Record<Format, { unit: number; centre: Pt }> = {
-  desktop: { unit: 10, centre: [2496, 994] },
-  mobile: { unit: 11, centre: [1080, 2340] },
+const DRAPES: Record<Format, Veil[]> = {
+  desktop: [
+    {
+      edge: true,
+      a: [1650, 0],
+      b: [3840, 1420],
+      w: 0,
+      wave: [60, 3600, 0.2],
+      bend: 560,
+      t: 0.46,
+      alpha: 0.95,
+      swell: [2600, 0.3],
+    },
+    {
+      a: [2000, 0],
+      b: [3840, 1150],
+      w: 760,
+      wave: [-100, 3000, 1.3],
+      bend: 460,
+      t: 0.6,
+      alpha: 0.72,
+      swell: [1700, 1.5],
+    },
+    {
+      a: [2250, 0],
+      b: [3840, 1000],
+      w: 600,
+      wave: [80, 2600, 2.4],
+      bend: 300,
+      t: 0.7,
+      alpha: 0.6,
+      swell: [1400, 2.6],
+    },
+    {
+      a: [2100, 0],
+      b: [3840, 1100],
+      w: 340,
+      wave: [-60, 2200, 0.7],
+      bend: 520,
+      t: 0.8,
+      alpha: 0.5,
+      swell: [1100, 0.9],
+    },
+  ],
+  mobile: [
+    {
+      a: [0, 1750],
+      b: [2160, 3250],
+      w: 1000,
+      wave: [90, 2800, 0.2],
+      bend: 220,
+      t: 0.5,
+      alpha: 0.9,
+      swell: [1800, 0.3],
+    },
+    {
+      a: [0, 1950],
+      b: [2160, 3150],
+      w: 760,
+      wave: [-80, 2400, 1.3],
+      bend: -240,
+      t: 0.6,
+      alpha: 0.72,
+      swell: [1400, 1.5],
+    },
+    {
+      a: [0, 1750],
+      b: [2160, 3350],
+      w: 560,
+      wave: [70, 2000, 2.4],
+      bend: 180,
+      t: 0.7,
+      alpha: 0.6,
+      swell: [1150, 2.6],
+    },
+    {
+      a: [0, 1900],
+      b: [2160, 3200],
+      w: 320,
+      wave: [-50, 1700, 0.7],
+      bend: -200,
+      t: 0.8,
+      alpha: 0.5,
+      swell: [900, 0.9],
+    },
+  ],
 };
-const HAIR = 2; // px: one device pixel at 200 % scaling
-const TRACE = 4; // px: the mark's outline
 
-function construction(format: Format): string {
-  const p = CONSTRUCTION[format];
-  const u = p.unit;
-  const m = fitMark(100 * u);
-  const S = m.size;
-  const x0 = p.centre[0] - S / 2;
-  const y0 = p.centre[1] - S / 2;
-  const C = 19 * u; // the clear space
-  const R = 38 * u; // the sheet: the clear space plus one more stroke
-  const { width, height } = FORMATS[format];
-  const out: string[] = [];
-  // The table: one very large ink-750 plane below a 45° edge one stroke beyond the sheet's cut corner.
-  const sheetCut = -2 * R + C; // the sheet's corner cut, x + y in sheet units
-  const tableK = x0 + y0 + sheetCut - Math.round(19 * u * Math.SQRT2);
-  const table = plate(tableK, 0, height, width, T.low);
-  // The sheet (ink-800), its top-left corner cut at 45° by one stroke, casting a hard shadow down and right.
-  const sheet: Pt[] = [
-    [-R + C, -R],
-    [S + R, -R],
-    [S + R, S + R],
-    [-R, S + R],
-    [-R, -R + C],
-  ];
-  const lift = Math.round(4 * u);
-  out.push(poly(shift(sheet, lift, lift), T.ground), poly(sheet, T.i800));
-  // Sub-grid (every 5 units, engraved: darker than the sheet) and grid (every 10, lighter), in the clear space.
-  for (let g = -15; g <= 115; g += 5) {
-    const q = g * u - HAIR / 2;
-    const tone = g % 10 === 0 && g >= 0 && g <= 100 ? T.i700 : T.low;
-    out.push(rect(q, -C, HAIR, S + 2 * C, tone), rect(-C, q, S + 2 * C, HAIR, tone));
-  }
-  // Ruler ticks along the sheet's top and left edges: every 10 units, longer at 0, 50 and 100.
-  for (let g = 0; g <= 100; g += 10) {
-    const len = g % 50 === 0 ? 3 * u : 1.5 * u;
-    out.push(rect(g * u - HAIR / 2, -R, HAIR, len, T.i600), rect(-R, g * u - HAIR / 2, len, HAIR, T.i600));
-  }
-  // Lines through the mark's edges (stems, bar, crossbar) and its two 45° cuts, out to the sheet.
-  for (const x of [m.s1, m.s2, m.rx]) out.push(rect(x - HAIR / 2, -R, HAIR, S + 2 * R, T.i600));
-  for (const y of [m.h, m.cTop, m.cBot]) out.push(rect(-R, y - HAIR / 2, S + 2 * R, HAIR, T.i600));
-  for (const k of [m.barEnd, S])
-    out.push(band(k - HAIR / Math.SQRT2, HAIR, Math.max(-R, k - (S + R)), 0, T.i600));
-  // The mark, filled tone-on-tone, then traced.
-  out.push(`<path data-part="base" fill="${T.i700}" d="${m.fill.base}"/>`);
-  out.push(`<path data-part="accent" fill="${T.v900}" d="${m.fill.accent}"/>`);
-  const trace = (part: "base" | "accent", path: string, stroke: string) =>
-    `<path data-part="${part}" fill="none" stroke="${stroke}" stroke-width="${TRACE}" stroke-linejoin="miter" d="${path}"/>`;
-  out.push(trace("base", m.outline.base, T.i300), trace("accent", m.outline.accent, T.v300));
-  // Dimensions, in verdigris-500 with square end ticks.
-  const t = Math.round(1.5 * u);
-  const dim: string[] = [];
-  // 1. The channel: square across the two cuts, in the clear space above the mark.
-  {
-    const run = (S - m.barEnd) / 2;
-    const my = -Math.round(0.8 * C);
-    const mx = (m.barEnd + S) / 2 - my;
-    const a: Pt = [mx - run / 2, my - run / 2];
-    const b: Pt = [mx + run / 2, my + run / 2];
-    dim.push(segment(a, b, T.v500));
-    for (const [x, y] of [a, b]) dim.push(segment([x - t, y + t], [x + t, y - t], T.v500));
-  }
-  // 2. The stroke: across the shared stem, half a clear space below the mark.
-  {
-    const y = S + Math.round(C / 2);
-    dim.push(rect(m.s1, y - 1, m.v, 2, T.v500));
-    for (const x of [m.s1, m.s2]) dim.push(rect(x - 1, y - t, 2, 2 * t, T.v500));
-  }
-  // 3. The height (100 units): to the right of the mark, half a clear space out.
-  {
-    const x = S + Math.round(C / 2);
-    dim.push(rect(x - 1, 0, 2, S, T.v500));
-    for (const y of [0, S]) dim.push(rect(x - t, y - 1, 2 * t, 2, T.v500));
-  }
-  // 4. The 45°: a 1:1 slope marker against the bar's cut (two equal legs and the hypotenuse on the cut line).
-  {
-    const leg = Math.round(4 * u);
-    const ax = m.barEnd - m.h; // the cut's lower end
-    const ay = m.h;
-    const c: Pt = [ax + leg, ay + Math.round(C / 2)];
-    const tri: Pt[] = [
-      [c[0] - leg, c[1]],
-      [c[0], c[1]],
-      [c[0], c[1] - leg],
-    ];
-    dim.push(
-      `<path fill="none" stroke="${T.v500}" stroke-width="${HAIR}" stroke-linejoin="miter" d="${d(tri)}"/>`,
-    );
-  }
-  out.push(...dim);
-  // Registration marks at the clear space's four corners.
-  const arm = Math.round(2 * u);
-  for (const [a, b] of [
-    [-C, -C],
-    [S + C, -C],
-    [-C, S + C],
-    [S + C, S + C],
-  ] as Pt[])
-    out.push(cross(a, b, arm, T.i400));
-  return frame(format, table + at(x0, y0, out.join("")));
-}
-
-// ── Inspection helpers ─────────────────────────────────────────────────────────────────────────────────────
-
-/** Points with the finest detail (the cuts, joins and line ends), for the preview's 100 % crops. */
-export function previewFocus(concept: Concept, format: Format): { x: number; y: number }[] {
-  if (concept === "monolith") {
-    const { m, x, y } = monolithGeometry(format);
-    return [
-      { x: x + Math.round((m.barEnd + m.size) / 2), y: y + Math.round(m.v / 2) },
-      { x: x + m.s2, y: y + m.cTop },
-    ];
-  }
-  if (concept === "cut") {
-    const { p, s, k } = cutGeometry(format);
-    const y = p.plates[0];
-    return [
-      { x: Math.round(k + s / 2 - p.plates[1]), y: p.plates[1] },
-      { x: Math.round(k + 2.5 * s - y), y },
-    ];
-  }
-  const p = CONSTRUCTION[format];
-  const m = fitMark(100 * p.unit);
-  const x0 = p.centre[0] - m.size / 2;
-  const y0 = p.centre[1] - m.size / 2;
-  return [
-    { x: x0 + m.barEnd, y: y0 },
-    { x: x0 + m.s2, y: y0 + m.size },
-  ];
+function drape(format: Format): Shader {
+  const bg = background(format);
+  const list = DRAPES[format];
+  const mark = markLayer(format);
+  const tmp: RGB = [0, 0, 0];
+  return (x, y, px, o) => {
+    ramp(LUT, bg(x, y), o);
+    for (const v of list) {
+      const q = bandAt(v, x, y);
+      const d = v.edge ? q.off : 0.5 * v.w - Math.abs(q.off);
+      const cov = cover(d / px);
+      const sq = bandAt(v, x - SHADOW.dx, y - SHADOW.dy);
+      const sd = v.edge ? sq.off : 0.5 * v.w - Math.abs(sq.off);
+      darken(o, 0.8 * SHADOW.depth * smoothstep(-SHADOW.soft, SHADOW.soft, sd) * (1 - cov));
+      if (cov <= 0) continue;
+      // a slow swell across the veil (its gradient lies across the band)
+      const [len, phase] = v.swell;
+      const k = (2 * Math.PI) / len;
+      const dz = 0.34 * Math.cos(k * q.off + phase + 0.0006 * q.along);
+      const t = v.t + shade(dz * q.nx, dz * q.ny, 0.42, 0.3, 16) + 0.05 * Math.exp(-d / 40);
+      ramp(LUT, t, tmp);
+      mix(o, tmp, cov * v.alpha);
+    }
+    mark(x, y, px, o);
+    return o;
+  };
 }
 
 // ── The six files ──────────────────────────────────────────────────────────────────────────────────────────
 
-const DRAW: Record<Concept, (f: Format) => string> = { monolith, cut, construction };
+const SHADERS: Record<Concept, (f: Format) => Shader> = { ribbon, fold, drape };
 
-export function wallpaperSvg(concept: Concept, format: Format): string {
-  return DRAW[concept](format);
-}
-
-export type Wallpaper = {
-  file: string;
-  concept: Concept;
-  format: Format;
-  width: number;
-  height: number;
-  svg: string;
-};
+export type Wallpaper = { file: string; concept: Concept; format: Format; width: number; height: number };
 
 export function wallpaperPlan(): Wallpaper[] {
   return CONCEPTS.flatMap((concept) =>
@@ -493,7 +583,13 @@ export function wallpaperPlan(): Wallpaper[] {
       format,
       width: FORMATS[format].width,
       height: FORMATS[format].height,
-      svg: wallpaperSvg(concept, format),
     })),
   );
+}
+
+/** Renders one wallpaper as packed 8-bit sRGB (scale < 1 for quick previews). */
+export function renderWallpaper(concept: Concept, format: Format, scale = 1) {
+  const { width, height } = FORMATS[format];
+  const data = render(width, height, SHADERS[concept](format), scale);
+  return { width: Math.round(width * scale), height: Math.round(height * scale), data };
 }
