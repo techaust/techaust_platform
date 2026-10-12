@@ -344,14 +344,14 @@ The pixel-measured quiet-zone test is unchanged and still passes on the new rend
 - `packages/ui/test/wallpapers.test.ts`, plus `wallpapers/` added to `scripts/build-brand.ts` and `test/brand.test.ts`
 - `docs/06-design-system.md` §1.5: the wallpapers line. The `CLAUDE.md` Commands line is left to the lead.
 
-## Review
-
-## Integration notes
-
-## Handover
-
 ### Fixes after review (designer, 2026-10-12)
 - **Dimension vs spur (Medium):** the Construction's tip spur now stops at (105, −5) on both formats, clear of the channel dimension's lower tick (the phone loses the spur's short vertical climb; node counts unchanged: desktop 14, phone 13). The dimension is now one function (`channelDimension`, exported in frame coordinates as `wallpaperDimension`); new test: no network node (as its square) or wire comes within 2 × tick of either dimension end.
 - **Colour logic (Medium):** the test now asserts each `data-part` path's `d` equals `fitMark(size).fill[part]` (Monolith) or `.outline[part]` (Construction), via the new `wallpaperMarkSize`, so a swap of shape or paint fails.
 - **Wording (Low):** `docs/06-design-system.md` and the `wallpapers.ts` header now say the mark plus a brand-built node network on Cut and Construction.
 - `build:wallpapers`: only the two Construction PNGs changed. `@techaust/ui` tests 218/218, typecheck clean, biome clean on the changed files. 100 % crops: `.logs/shots/brand-wallpapers/fix-dimension-{desktop,mobile}-100.png`.
+
+## Review
+
+## Integration notes
+
+## Handover
