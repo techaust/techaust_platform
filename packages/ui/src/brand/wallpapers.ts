@@ -1,6 +1,7 @@
 // Brand wallpapers (docs/runs/brand-wallpapers.md): three concepts × desktop and mobile, drawn from the tokens
 // and the mark's geometry as SVG in output pixels (pure string functions; scripts/build-wallpapers.ts renders
-// them to PNG). Dark ink only, flat tones only, the TH mark only, no text.
+// them to PNG). Dark ink only, flat tones only, no text: the TH mark, plus a brand-built node network on Cut and
+// Construction.
 // Crispness: every axis-aligned edge and hairline lands on a whole pixel; only the 45° cuts are anti-aliased.
 // Shapes that meet along a diagonal overlap underneath, so no background seam shows through a shared edge.
 import { color } from "./compose.ts";
@@ -354,6 +355,20 @@ const CONSTRUCTION: Record<Format, { unit: number; centre: [number, number] }> =
 const HAIR = 2; // px: one device pixel at 200 % scaling
 const TRACE = 4; // px: the mark's outline
 
+/**
+ * The channel dimension in the drawing's own coordinates (the mark's top-left corner = 0, 0): its two ends `a` (on
+ * the bar-end cut, x + y = barEnd) and `b` (on the stem cut, x + y = S), and the tick half-length along (1, -1).
+ */
+function channelDimension(format: Format): { a: Pt; b: Pt; tick: number } {
+  const u = CONSTRUCTION[format].unit;
+  const m = fitMark(100 * u);
+  const S = m.size;
+  const s = (S - m.barEnd) / 2; // the run along (1, 1) from one cut to the other
+  const my = -Math.round(0.8 * 19 * u); // inside the clear space above the mark
+  const mx = (m.barEnd + S) / 2 - my;
+  return { a: [mx - s / 2, my - s / 2], b: [mx + s / 2, my + s / 2], tick: 1.5 * u };
+}
+
 function construction(format: Format): string {
   const p = CONSTRUCTION[format];
   const u = p.unit;
@@ -386,12 +401,7 @@ function construction(format: Format): string {
     trace("accent", m.outline.accent, TONE.traceAccent),
   );
   // The dimension: square across the channel, in the clear space above the mark, with ticks along the cuts.
-  const s = (S - m.barEnd) / 2; // the run along (1, 1) from one cut to the other
-  const my = -Math.round(0.8 * near);
-  const mx = (m.barEnd + S) / 2 - my;
-  const a: [number, number] = [mx - s / 2, my - s / 2];
-  const b: [number, number] = [mx + s / 2, my + s / 2];
-  const t = 1.5 * u; // tick half-length along the cut direction (1, -1)
+  const { a, b, tick: t } = channelDimension(format);
   const seg = ([x1, y1]: [number, number], [x2, y2]: [number, number]) =>
     `M${r(x1)} ${r(y1)}L${r(x2)} ${r(y2)}`;
   const tick = ([x, y]: [number, number]) => seg([x - t, y + t], [x + t, y - t]);
@@ -399,7 +409,7 @@ function construction(format: Format): string {
     `<path d="${seg(a, b)}${tick(a)}${tick(b)}" fill="none" stroke="${TONE.dimension}" stroke-width="${HAIR}"/>`,
   );
   // The network: the mark wired to its own clear space.
-  parts.push(drawNetwork(markNetwork(format), 2 * Math.round(1.2 * u)));
+  parts.push(drawNetwork(markNetwork(format), constructionNodeSize(format)));
   return frame(format, at(x0, y0, parts.join("")));
 }
 
@@ -409,10 +419,11 @@ function construction(format: Format): string {
  * - a bus 10 units below the mark, and side buses 10 units out to the left and the right
  * - drops from the bus into the shared stem's foot and the right stem's foot (centred on each stem)
  * - feeds from the left bus into the stem's side (at 60) and the bar's end (at 10)
- * - the right bus climbs to 10 and turns 45° into the stem-cut tip; a spur leaves the tip along the cut
+ * - the right bus climbs to 10 and turns 45° into the stem-cut tip; a short spur leaves the tip along the cut and
+ *   stops at 5, clear of the channel dimension's tick (which sits on the same cut, further out)
  * Desktop: the signal enters at the clear space's lower-right corner, runs up the right bus and arrives in the right
  * stem (the accent). Phone (recomposed for the tall frame): the signal rises from below the drawing into the bus and
- * up into the right stem's foot; the left bus and the tip spur reach further up.
+ * up into the right stem's foot; the left bus reaches further up.
  */
 function markNetwork(format: Format): Network {
   const u = CONSTRUCTION[format].unit;
@@ -445,7 +456,7 @@ function markNetwork(format: Format): Network {
         [[P(-10, 60), sideIn]],
         [[P(-10, 10), barIn]],
         [[P(110, 50), P(110, 10), tip]], // the right bus, turning 45° into the tip
-        [[tip, P(110, -10)]], // a spur along the cut
+        [[tip, P(105, -5)]], // a short spur along the cut, stopping before the dimension
         [[corner, rb, P(110, 80), P(110, 50), [S, U(50)]], true], // the signal, arriving in the right stem
       ],
       [
@@ -458,7 +469,7 @@ function markNetwork(format: Format): Network {
         P(-15, -15),
         P(110, 10),
         tip,
-        P(110, -10),
+        P(105, -5),
       ],
       [corner, rb, P(110, 80), P(110, 50)],
       [[stem, S], rightFoot, sideIn, barIn, [S, U(50)]],
@@ -475,7 +486,7 @@ function markNetwork(format: Format): Network {
       [[P(-10, 60), sideIn]],
       [[P(-10, 10), barIn]],
       [[P(110, 50), [S, U(50)]]],
-      [[tip, P(110, -10), P(110, -30)]], // a spur along the cut, then up
+      [[tip, P(105, -5)]], // a short spur along the cut, stopping before the dimension
       [[below, mid, rightBus, rightFoot], true], // the signal, rising into the right stem's foot
     ],
     [
@@ -488,11 +499,31 @@ function markNetwork(format: Format): Network {
       P(-10, 60),
       P(-10, 10),
       P(-10, -30),
-      P(110, -30),
+      P(105, -5),
     ],
     [below, mid, rightBus],
     [[stem, S], rightFoot, sideIn, barIn, [S, U(50)]],
   );
+}
+
+/** The Construction's node size in px (a square, its top-left corner cut). */
+export const constructionNodeSize = (format: Format) => 2 * Math.round(1.2 * CONSTRUCTION[format].unit);
+
+/** The Construction's channel dimension in frame coordinates: its two ends and the tick half-length. */
+export function wallpaperDimension(format: Format): { a: Pt; b: Pt; tick: number } {
+  const p = CONSTRUCTION[format];
+  const S = 100 * p.unit;
+  const { a, b, tick } = channelDimension(format);
+  const dx = p.centre[0] - S / 2;
+  const dy = p.centre[1] - S / 2;
+  return { a: [a[0] + dx, a[1] + dy], b: [b[0] + dx, b[1] + dy], tick };
+}
+
+/** The size in px of the mark a wallpaper draws (filled on the Monolith, traced on the Construction; none on Cut). */
+export function wallpaperMarkSize(concept: Concept, format: Format): number | undefined {
+  if (concept === "monolith") return MONOLITH[format].size;
+  if (concept === "construction") return 100 * CONSTRUCTION[format].unit;
+  return undefined;
 }
 
 /** The node network drawn on a wallpaper, in frame coordinates (none on the Monolith). */

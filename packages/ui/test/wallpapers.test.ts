@@ -8,11 +8,21 @@ import { describe, expect, it } from "vitest";
 import { color } from "../src/brand/compose.ts";
 import { markPaths } from "../src/brand/geometry.ts";
 import { pngInfo, sourceHash } from "../src/brand/png.ts";
-import { FORMATS, fitMark, wallpaperNetwork, wallpaperPlan, wallpaperSvg } from "../src/brand/wallpapers.ts";
+import {
+  constructionNodeSize,
+  FORMATS,
+  fitMark,
+  wallpaperDimension,
+  wallpaperMarkSize,
+  wallpaperNetwork,
+  wallpaperPlan,
+  wallpaperSvg,
+} from "../src/brand/wallpapers.ts";
 import { tokens } from "../src/tokens/model.ts";
 
 const dir = join(import.meta.dirname, "..", "brand", "wallpapers");
 const plan = wallpaperPlan();
+type Pt = [number, number];
 const hex = (h: string) =>
   [1, 3, 5].map((i) => Number.parseInt(h.slice(i, i + 2), 16)) as [number, number, number];
 const lstar = ([r, g, b]: [number, number, number]) => {
@@ -80,11 +90,18 @@ describe("drawing rules", () => {
     for (const w of plan) {
       const parts = [...w.svg.matchAll(/<path data-part="(base|accent)"([^>]*)>/g)];
       expect(parts, w.file).toHaveLength(marks[w.concept]);
+      const size = wallpaperMarkSize(w.concept, w.format);
+      if (size === undefined) continue;
+      // each part is the shape geometry.ts calls that part, so swapping base and accent (shape or paint) fails
+      const shapes = w.concept === "monolith" ? fitMark(size).fill : fitMark(size).outline;
+      expect(parts.map(([, part]) => part).sort(), w.file).toEqual(["accent", "base"]);
       for (const [, part, attrs = ""] of parts) {
+        const p = part as "base" | "accent";
+        expect(/ d="([^"]+)"/.exec(attrs)?.[1], `${w.file} ${p} shape`).toBe(shapes[p]);
         const paint = /fill="none"/.test(attrs)
           ? /stroke="([^"]+)"/.exec(attrs)?.[1]
           : /fill="([^"]+)"/.exec(attrs)?.[1];
-        expect(want[part as "base" | "accent"].has(paint ?? ""), `${w.file} ${part} ${paint}`).toBe(true);
+        expect(want[p].has(paint ?? ""), `${w.file} ${p} ${paint}`).toBe(true);
       }
     }
   });
@@ -171,6 +188,36 @@ describe("the node network (Construction and Cut; none on the Monolith)", () => 
         }
     },
   );
+});
+
+describe("the Construction's channel dimension stands clear of the network", () => {
+  // distance from point p to segment a–b
+  const toSegment = ([px, py]: Pt, [ax, ay]: Pt, [bx, by]: Pt) => {
+    const dx = bx - ax;
+    const dy = by - ay;
+    const len = dx * dx + dy * dy;
+    const t = len === 0 ? 0 : Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len));
+    return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+  };
+  // distance from point p to a node's square (centred on c, n px wide)
+  const toNode = ([px, py]: Pt, [cx, cy]: Pt, n: number) =>
+    Math.hypot(Math.max(0, Math.abs(px - cx) - n / 2), Math.max(0, Math.abs(py - cy) - n / 2));
+
+  it.each(["desktop", "mobile"] as const)("%s: no node or wire within 2 × tick of either end", (format) => {
+    const { a, b, tick } = wallpaperDimension(format);
+    const net = wallpaperNetwork("construction", format);
+    const n = constructionNodeSize(format);
+    for (const end of [a, b]) {
+      for (const node of net.nodes)
+        expect(toNode(end, node.at, n), `node at ${node.at} near ${end}`).toBeGreaterThanOrEqual(2 * tick);
+      for (const wire of net.wires)
+        for (let i = 1; i < wire.pts.length; i++) {
+          const p = wire.pts[i - 1] as Pt;
+          const q = wire.pts[i] as Pt;
+          expect(toSegment(end, p, q), `wire ${p} to ${q} near ${end}`).toBeGreaterThanOrEqual(2 * tick);
+        }
+    }
+  });
 });
 
 describe("quiet zones (measured in the committed PNGs)", () => {
