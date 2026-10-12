@@ -64,6 +64,7 @@ Mixed case is deliberate: it keeps "Haust" readable.
   - `cover-x.png`: 1500 × 500, with content kept inside X's 60 px top and bottom crop
 - **Link previews:** `og-default.png` / `og-default-dark.png`, 1200 × 630, with the strapline.
 - **Email:** `logo-email-color@2x.png`, `-dark@2x.png`, and `logo-email-badge@2x.png`. The badge has a white plate, so the logo survives clients that force dark mode by inverting colours.
+- **Wallpapers** (`wallpapers/`): `wallpaper-{monolith,cut,construction}-{desktop,mobile}.png` (3840 × 2160 and 2160 × 4680, flat ink and verdigris: the mark, plus a brand-built node network on Cut and Construction), made by `pnpm --filter @techaust/ui build:wallpapers`.
 - **Print** (`print/`): vector PDFs in CMYK with all text outlined (§1.6):
   - `logo-primary-cmyk.pdf` and `-on-dark.pdf`
   - `business-card.pdf`: 3.5 × 2 in, 3 mm bleed, with trim and bleed boxes
