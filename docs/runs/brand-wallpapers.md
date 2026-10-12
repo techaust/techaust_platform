@@ -326,6 +326,24 @@ The pixel-measured quiet-zone test is unchanged and still passes on the new rend
 - `bash tools/heavy.sh --log wp7-ui-test pnpm --filter @techaust/ui test`: 211 passed; the 5 failures are only the drift checks, cleared when the PNGs are rebuilt on approval
 - `bash tools/heavy.sh --log wp7-lint pnpm lint`: 169 files, no fixes
 
+**Approved:** the owner approved round 7 as shown (all three wallpapers) on 2026-10-12. The six 4K PNGs were built from the round-7 code and committed.
+
+**Final checks** (through the queue):
+- `build:wallpapers`: 6 PNGs
+- `pnpm --filter @techaust/ui test`: 5 files, 216 passed (drift included)
+- `pnpm --filter @techaust/ui typecheck`: exit 0
+- `pnpm lint`: 169 files, no fixes
+
+**Final files**
+- `packages/ui/brand/wallpapers/wallpaper-monolith-desktop.png`, `wallpaper-monolith-mobile.png`
+- `packages/ui/brand/wallpapers/wallpaper-cut-desktop.png`, `wallpaper-cut-mobile.png`
+- `packages/ui/brand/wallpapers/wallpaper-construction-desktop.png`, `wallpaper-construction-mobile.png`
+- `packages/ui/src/brand/wallpapers.ts`: compositions, network, `fitMark`, `wallpaperPlan`, `wallpaperNetwork`, `previewFocus`
+- `packages/ui/src/brand/png.ts`: sRGB tag and SVG source-hash stamp
+- `packages/ui/scripts/build-wallpapers.ts` (`build:wallpapers` in `packages/ui/package.json`) and `packages/ui/scripts/preview-wallpapers.ts`
+- `packages/ui/test/wallpapers.test.ts`, plus `wallpapers/` added to `scripts/build-brand.ts` and `test/brand.test.ts`
+- `docs/06-design-system.md` §1.5: the wallpapers line. The `CLAUDE.md` Commands line is left to the lead.
+
 ## Review
 
 ## Integration notes
