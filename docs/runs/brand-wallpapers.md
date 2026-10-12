@@ -98,6 +98,50 @@ Then stop and report, with the paths. The lead shows the owner and comes back wi
 2. Monolith: is dropping the right stem off-frame acceptable? It's the banner-watermark crop; keeping the stem in frame would put verdigris inside the taskbar zone or shrink the mark below "very large".
 3. Construction: the T and stem are traced in ink-300, the ink role on dark, rather than verdigris-500 as the brief's "verdigris-300/500" might suggest. That keeps the colour logic (T = ink, accent = verdigris). Is that right?
 
+The owner answered all three in round 2 (below).
+
+### Round 2: richer compositions (2026-10-12)
+
+**Owner's decisions on round 1** (via the lead): the Monolith shows the whole mark, smaller but still large; the Cut's desktop channel ends on the taskbar line, and the two-thirds alternative is deleted; the Construction's ink-300 T and stem are correct. New direction: all three were too empty. Richness should come from depth (layered planes in small tone steps), scale contrast, and a little precision detail, while staying calm. Commit 02dd4bb, plus this report.
+
+**What changed**
+- **One system for all three.**
+  - Tone ladder (L*): ink-950 6.4 · ink-750 9.1 · ink-800 11.5 · ink-700 15.2 · ink-600 20.7 · verdigris-900 28.3 · verdigris-800 32.1 · verdigris-700 40.5.
+  - One light from the top left: faces looking up or left are lighter, and hard shadows fall down and right at 45°, the mark's own cut.
+  - Each wallpaper has one very large ink-750 plane (ΔL* 2.7). It is the only thing allowed into the quiet zones, so the quiet zones stay part of the composition.
+- **Monolith:** the whole mark (1300 px on the desktop, 1400 px on the phone) as a low-relief machined solid, centred on the right 60 % or in the phone's middle third.
+  - The depth runs up and left by 0.22 of a stroke. The lit faces show: the bar's top in ink-600, the left sides in ink-700, the crossbar's top and the right stem's 45° cut as a bevel in verdigris-700.
+  - Fronts are ink-800 (base) and verdigris-900 (accent), with a 3 px verdigris-300 glint on the cut's arris.
+  - The hard ink-950 shadow falls on an ink-750 wall plane whose corner is cut at 45°, exactly one stroke from the solid. Four small registration crosses mark the clear space.
+- **Cut:** a field of plates at stroke-multiple distances from the hero channel: the ink-750 plane 3 strokes before it, the ink-800 working plane 1 stroke before it, and raised ink-700 and ink-600 plates 1 and 2 strokes after it.
+  - The raised plates end square at golden-section heights. Each has a reveal along its edge, getting deeper with distance: a verdigris-900 channel, then a shadow gap in the ground tone.
+  - The hero keeps a 3 px verdigris-300 lit edge. Two small registration crosses sit on the reveals' centre lines, one stroke past their ends. The desktop channel still ends on the taskbar line; the phone's crosses the frame through the middle third.
+- **Construction:** an ink-800 drawing sheet, its corner cut at 45°, lying on an ink-750 table plane and casting a hard shadow. On it:
+  - a 5-unit sub-grid engraved in ink-750, and the 10-unit grid in ink-700
+  - ruler ticks along two edges, longer at 0, 50 and 100
+  - lines through the mark's edges and its two cuts, out to the sheet's edge
+  - the mark filled tone-on-tone (ink-700 and verdigris-900) under its ink-300 and verdigris-300 trace
+  - three verdigris-500 dimensions (stroke, channel, height) and a 1:1 slope marker in place of an angle arc, since the brand has no curves
+  - ink-400 registration crosses at the clear space's corners; the top-right one sits exactly on the extended stem cut, which is real geometry
+- **Tests** (still 23, about 3 s):
+  - Quiet zones are tightened to "the ground or one plane within ΔL* 3" (was 6), still measured on the committed pixels, still with no verdigris allowed.
+  - Colour logic now covers every tagged part: fronts, facets, bevel, glint, fills and traces.
+  - The geometry test covers the new sizes and checks that the solid's pieces use only the mark's own coordinates.
+  - Palette-only, flat-fill-only and drift-by-hash checks are unchanged.
+
+**Measured:** quiet zones max ΔL* 2.7 in all six (`quiet-zones.json`). Crisp at 100 % (crops checked). Shadows are physically consistent (the stem shades its right side, the bar shades below its cut). No seams, because each solid is drawn as its swept hull in its side tone before the facets go on top.
+
+**Preview** (same paths; the two-thirds alternative is deleted): `overview.png`, `sheet-<concept>.png`, `crop-*`, `guides-*`, `quiet-zones.json` in `.logs/wallpapers/`.
+
+**Commands (round 2):**
+- `node scripts/build-wallpapers.ts` and `node scripts/preview-wallpapers.ts`: wrote the PNGs and the sheets
+- `pnpm exec vitest run test/wallpapers.test.ts`: 23 passed
+- `bash tools/heavy.sh --log wp2-ui-typecheck pnpm --filter @techaust/ui typecheck`: exit 0
+- `bash tools/heavy.sh --log wp2-ui-test pnpm --filter @techaust/ui test`: 210 passed
+- `bash tools/heavy.sh --log wp2-lint pnpm lint`: 169 files, no fixes
+
+**Not verified:** the same as round 1. Nothing was seen on a real screen or phone (mock-up overlays only), and the `CLAUDE.md` and docs/06 lines still wait for approval.
+
 ## Review
 
 ## Integration notes
