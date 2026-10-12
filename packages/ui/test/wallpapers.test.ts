@@ -53,7 +53,7 @@ describe("drawing rules", () => {
   });
 
   it("the fitted mark is geometry.ts snapped to whole pixels", () => {
-    for (const size of [1000, 1100, 2800, 3200, 3300, 480]) {
+    for (const size of [480, 1000, 1100, 1300, 1400]) {
       const m = fitMark(size);
       const k = size / 100;
       expect(m.fill).toEqual(
@@ -62,7 +62,10 @@ describe("drawing rules", () => {
       const nums = [m.fill.base, m.fill.accent, m.outline.base, m.outline.accent].flatMap((d) =>
         (d.match(/-?\d*\.?\d+/g) ?? []).map(Number),
       );
-      for (const n of nums) expect(Number.isInteger(n), `${size}: ${n}`).toBe(true);
+      const corners = [...m.pieces.base, ...m.pieces.accent].flat(2);
+      for (const n of [...nums, ...corners]) expect(Number.isInteger(n), `${size}: ${n}`).toBe(true);
+      // The solid's pieces use only the filled shapes' own coordinates (no new geometry).
+      for (const n of corners) expect(nums, `${size}: piece corner ${n}`).toContain(n);
       // The channel between the two 45° cuts stays one stroke wide (within half a pixel).
       expect(Math.abs((size - m.barEnd) / Math.SQRT2 - m.v)).toBeLessThan(0.5);
     }
@@ -76,10 +79,11 @@ describe("drawing rules", () => {
           .map(color),
       );
     const want = { base: family("ink-"), accent: family("verdigris-") };
-    const marks = { monolith: 2, cut: 0, construction: 2 };
+    const draws = { monolith: true, cut: false, construction: true };
     for (const w of plan) {
       const parts = [...w.svg.matchAll(/<path data-part="(base|accent)"([^>]*)>/g)];
-      expect(parts, w.file).toHaveLength(marks[w.concept]);
+      const kinds = new Set(parts.map((q) => q[1]));
+      expect([...kinds].sort(), w.file).toEqual(draws[w.concept] ? ["accent", "base"] : []);
       for (const [, part, attrs = ""] of parts) {
         const paint = /fill="none"/.test(attrs)
           ? /stroke="([^"]+)"/.exec(attrs)?.[1]
@@ -100,25 +104,29 @@ describe("quiet zones (measured in the committed PNGs)", () => {
     .filter(([k]) => k.startsWith("verdigris-"))
     .map(([, v]) => v.toUpperCase());
 
-  it.each(plan.map((w) => [w.file, w] as const))("%s: only the ground or tone-on-tone", async (file, w) => {
-    for (const q of FORMATS[w.format].quiet) {
-      const { data, info } = await sharp(join(dir, file))
-        .extract({ left: q.x, top: q.y, width: q.w, height: q.h })
-        .raw()
-        .toBuffer({ resolveWithObject: true });
-      let worst = 0;
-      const seen = new Set<string>();
-      for (let o = 0; o < data.length; o += info.channels) {
-        const c: [number, number, number] = [data[o] ?? 0, data[o + 1] ?? 0, data[o + 2] ?? 0];
-        const key = c.join(",");
-        if (seen.has(key)) continue;
-        seen.add(key);
-        worst = Math.max(worst, Math.abs(lstar(c) - ground));
-        const h = `#${c.map((n) => n.toString(16).padStart(2, "0")).join("")}`.toUpperCase();
-        expect(verdigris, `${file}: verdigris in a quiet zone`).not.toContain(h);
+  it.each(plan.map((w) => [w.file, w] as const))(
+    "%s: only the ground or one plane within ΔL* 3",
+    async (file, w) => {
+      for (const q of FORMATS[w.format].quiet) {
+        const { data, info } = await sharp(join(dir, file))
+          .extract({ left: q.x, top: q.y, width: q.w, height: q.h })
+          .raw()
+          .toBuffer({ resolveWithObject: true });
+        let worst = 0;
+        const seen = new Set<string>();
+        for (let o = 0; o < data.length; o += info.channels) {
+          const c: [number, number, number] = [data[o] ?? 0, data[o + 1] ?? 0, data[o + 2] ?? 0];
+          const key = c.join(",");
+          if (seen.has(key)) continue;
+          seen.add(key);
+          worst = Math.max(worst, Math.abs(lstar(c) - ground));
+          const h = `#${c.map((n) => n.toString(16).padStart(2, "0")).join("")}`.toUpperCase();
+          expect(verdigris, `${file}: verdigris in a quiet zone`).not.toContain(h);
+        }
+        // The ground, or one very large plane within ΔL* 3 of it: white icon labels and their shadows stay fully
+        // readable, and nothing behind the icons or the taskbar draws the eye.
+        expect(worst, `${file} ${q.x},${q.y}`).toBeLessThanOrEqual(3);
       }
-      // ΔL* ≤ 6 on ink-950 keeps white icon labels (and their shadows) fully readable.
-      expect(worst, `${file} ${q.x},${q.y}`).toBeLessThanOrEqual(6);
-    }
-  });
+    },
+  );
 });
