@@ -233,6 +233,30 @@ F is the runner-up: clean and very on-brand, but closest to "a logo on a card".
 
 No PNGs or tests changed this round. From now on the 4K PNGs are committed only once the owner approves the finals (the lead's decision). The round-3 PNGs and tests remain on the branch until the finals replace them.
 
+### Round 5: finals (2026-10-12)
+
+**The owner's decision** (docs/13, merged from `brand/wallpapers` @ e067f28): go back to the round-1 set (Monolith, Cut, Construction as built at 73715e7) with flat tones and dark ink. Show Monolith's whole TH, keep Cut's desktop channel ending square on the taskbar line, keep Construction as it was, and polish only.
+
+**What changed from round 1**
+- **Monolith:** the whole mark is now in view, large and dark-on-dark: the T and stem in ink-800, the crossbar and right stem in verdigris-900.
+  - Desktop: 1680 px (78 % of the height), centred across the free area right of the icons (x = 1656), and set a touch above the centre of the space over the taskbar (y = 140, the optical centre).
+  - Phone: 1500 px, centred in the middle third (y = 1590 to 3090).
+- **Cut and Construction:** exactly as round 1.
+- **Code:** the round-1 approach is restored from 73715e7: flat SVG composition through sharp, `png.ts` stamping the SVG's hash, `build-wallpapers.ts`, `preview-wallpapers.ts`, and the round-1 test suite.
+  - The test suite's geometry sizes are updated (480, 1000, 1100, 1500, 1680).
+  - Removed: `wallpaper-render.ts`, `wallpaper-source.ts`, `sketch-wallpapers.ts`, the `--draft` mode and the round-3 PNGs.
+- **docs/06 §1.5:** one line naming the wallpapers and `build:wallpapers`. The `CLAUDE.md` line is left to the lead.
+
+**Quiet zones** (`quiet-zones.json`): Monolith and Construction are pure ground in all their zones. Cut's bottom zone holds only the ink-800 plane (ΔL\* 5.1), as approved in round 1.
+
+**Commands**
+- `bash tools/heavy.sh --log wp5-build pnpm --filter @techaust/ui build:wallpapers`: 6 PNGs
+- `bash tools/heavy.sh --log wp5-typecheck pnpm --filter @techaust/ui typecheck`: exit 0
+- `bash tools/heavy.sh --log wp5-ui-test pnpm --filter @techaust/ui test`: 5 files, 210 passed
+- `bash tools/heavy.sh --log wp5-lint pnpm lint`: 169 files, no fixes
+
+**Not verified:** nothing has been seen on a real screen or phone; the overlays are mock-ups.
+
 ## Review
 
 ## Integration notes
