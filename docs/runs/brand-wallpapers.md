@@ -1,6 +1,6 @@
-Status: open
+Status: open (PR pending)
 Tier: C
-Usage:
+Usage: designer claude-opus-5-5/high (rounds 1–7, one resumed run): weekly 3 → 6 %, 5-h 28 → 14 % (window reset mid-run) · reviewer claude-opus-5-5/high: weekly 6 → 6 %, 5-h 14 → ~16 % · designer claude-opus-5-5/medium (review fixes): weekly 6 → 6 %
 
 # Brand wallpapers (desktop + mobile)
 
@@ -351,7 +351,17 @@ The pixel-measured quiet-zone test is unchanged and still passes on the new rend
 - `build:wallpapers`: only the two Construction PNGs changed. `@techaust/ui` tests 218/218, typecheck clean, biome clean on the changed files. 100 % crops: `.logs/shots/brand-wallpapers/fix-dimension-{desktop,mobile}-100.png`.
 
 ## Review
+Reviewer (Opus 5.5, high) on 0d091a4: **APPROVE**. No critical or high findings. Re-rendered all six from source: pixel-identical to the committed PNGs; sizes, sRGB, quiet zones, colour logic, crispness, no text, network angles all verified.
+- M1 Construction's channel dimension collided with the network spur. **Fixed** (b672de1, owner chose to fix before merge) + test.
+- M2 colour-logic test didn't prove "never swapped". **Fixed** (b672de1): each part's path must equal the mark's base/accent geometry.
+- L6 stale "mark only" wording in docs/06 and the wallpapers.ts header. **Fixed** (b672de1).
+- L7 CLAUDE.md command line. **Fixed** by the lead (93c9c48).
+- L3, L4, L5, L9 (test-strength items) and L8 (informational): follow-ups, below.
 
 ## Integration notes
+- Merged `brand/wallpapers-design` (b672de1 + 34af7fa) into `brand/wallpapers` (5cd5510); `main` hadn't moved.
+- Full checks on the integrated branch: `pnpm check` exit 0 (lint, typecheck, binding guard); `pnpm test` exit 0 (core 259, ui 218, db 26, jobs 2, admin 1, portal 1).
+- The phone Construction spur is now the same short spur as the desktop (to clear the dimension): a tiny change to the approved look, accepted with the fix.
+- **Follow-ups (low):** network anchors checked against the real channel/mark geometry (L3); compare wire coordinates, not just counts (L4); optional slow pixel re-render test (L5); build the fitted-mark expectation from `MARK_PARAMS` (L9).
 
 ## Handover
