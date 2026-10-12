@@ -79,7 +79,8 @@ function monolith(f: Fmt): Shader {
 // ── B. Light through the mark: a TH-shaped window throws a long, soft, skewed patch of light (a gobo) ──────
 function gobo(f: Fmt): Shader {
   const [, H] = DIM[f];
-  const g =
+  type V2 = [number, number];
+  const g: { o: V2; u: V2; v: V2 } =
     f === "desktop"
       ? { o: [1950, 230], u: [1450, 170], v: [880, 1420] }
       : { o: [260, 1520], u: [1250, 140], v: [700, 1250] };
@@ -284,7 +285,7 @@ const png = async (f: Fmt, sh: Shader, scale: number) => {
 
 const CELL = { w: 960 + 24 + 250, h: 540 + 70 };
 const cols = 2;
-const tiles: sharp.OverlayOptions[] = [];
+const tiles: { input: Buffer; left: number; top: number }[] = [];
 for (const [i, [letter, name, make]] of SKETCHES.entries()) {
   const cx = 40 + (i % cols) * (CELL.w + 60);
   const cy = 40 + Math.floor(i / cols) * (CELL.h + 30);
