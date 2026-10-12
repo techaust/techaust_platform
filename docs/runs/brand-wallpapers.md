@@ -1,4 +1,4 @@
-Status: open (PR pending)
+Status: merged (PR #15)
 Tier: C
 Usage: designer claude-opus-5-5/high (rounds 1–7, one resumed run): weekly 3 → 6 %, 5-h 28 → 14 % (window reset mid-run) · reviewer claude-opus-5-5/high: weekly 6 → 6 %, 5-h 14 → ~16 % · designer claude-opus-5-5/medium (review fixes): weekly 6 → 6 %
 
@@ -365,3 +365,4 @@ Reviewer (Opus 5.5, high) on 0d091a4: **APPROVE**. No critical or high findings.
 - **Follow-ups (low):** network anchors checked against the real channel/mark geometry (L3); compare wire coordinates, not just counts (L4); optional slow pixel re-render test (L5); build the fitted-mark expectation from `MARK_PARAMS` (L9).
 
 ## Handover
+2026-10-12: done. [PR #15](https://github.com/techaust/techaust_platform/pull/15) merged on green; the six PNGs are in `packages/ui/brand/wallpapers/` and were sent to the owner to install. Nothing is in flight. Next step, if wanted: the four low test follow-ups in the integration notes (Tier C, a builder at low or the lead directly). The designer's worktree (`.claude/worktrees/agent-a62f60a92c395a3e9`) can be removed.

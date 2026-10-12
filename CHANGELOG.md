@@ -2,6 +2,8 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-10-12 [#15](https://github.com/techaust/techaust_platform/pull/15) feat(brand): company wallpapers (Monolith, Cut, Construction; desktop + phone)
+- 2026-10-12 [#14](https://github.com/techaust/techaust_platform/pull/14) docs: end of day 2026-10-12 (status, changelog #12 #13, designer/analyst named everywhere)
 - 2026-10-12 [#13](https://github.com/techaust/techaust_platform/pull/13) chore: three-model plan (Opus, Sonnet, Haiku 5.5 only; designer and analyst agents; model guard and audit)
 - 2026-10-08 [#12](https://github.com/techaust/techaust_platform/pull/12) docs: end of day 2026-10-08 (status, changelog #10 #11, Auto-fix on every PR)
 - 2026-10-08 [#11](https://github.com/techaust/techaust_platform/pull/11) chore: models and usage plan (tiers, per-tier model/effort, Haiku agents, budget gate)

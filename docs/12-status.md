@@ -15,7 +15,8 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
   - **verified** on Claude Code 2.1.295: a Fable request ran on Opus 5.5 with the allowlist (on Fable 5.1 without it); the Explore agent, a `fable` agent and a `max`-effort agent were refused; `code-finder` ran on Haiku 5.5 at low; per-agent effort applies; the lead is told its effort; all agents load; an agent took and read Playwright screenshots. CI green; staging deploy green.
   - the command-line copy of Claude Code was updated from 2.1.288 to 2.1.295 (owner-approved)
 - **Smart App Control turned off** by the owner (2026-10-12): it had started blocking unsigned developer tools (pnpm 12's native binary, Biome). Afterwards `pnpm check` passed locally.
-- **End-of-day doc check (this PR):** CLAUDE.md, 06, 09, 10, the end-session routine and `tools/watch.sh` now name the designer and analyst where they still said only "builder".
+- **Company wallpapers** ([PR #15](https://github.com/techaust/techaust_platform/pull/15), owner-approved and merged 2026-10-12; [runs/brand-wallpapers.md](runs/brand-wallpapers.md)): Monolith, Cut and Construction, each 3840×2160 (PC) and 2160×4680 (phone), flat ink and verdigris, Cut and Construction with a brand-built node network. Generated from `geometry.ts` + `tokens.json` (`pnpm --filter @techaust/ui build:wallpapers`), in `packages/ui/brand/wallpapers/`. Seven preview rounds; reviewer APPROVE; `pnpm check` + `pnpm test` green; CI green.
+- **End-of-day doc check ([PR #14](https://github.com/techaust/techaust_platform/pull/14)):** CLAUDE.md, 06, 09, 10, the end-session routine and `tools/watch.sh` now name the designer and analyst where they still said only "builder".
 
 ## In progress
 - **M1.4: the auth CPU spike, a gate** ([PR #7](https://github.com/techaust/techaust_platform/pull/7)).
@@ -34,7 +35,7 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
 3. I read the CPU times from Workers Logs (read-only), fill in `docs/runbooks/cpu-baseline.md`, and run the gate check: login p99 ≤ 5 ms, every route ≤ 7 ms. If it fails, I stop and ask.
 4. Then M1.5 (Tier A; the `analyst` drafts the brief).
 
-**Usage at the end of 2026-10-12:** weekly 2 % (reset today, 15:30 IST), 5-hour window 23 %. The first full measuring week runs to Monday 19 Oct ([14 §8](14-models-and-usage.md)).
+**Usage at the end of 2026-10-12 (second session):** weekly 7 % (reset today, 15:30 IST), 5-hour window 16 %. The first full measuring week runs to Monday 19 Oct ([14 §8](14-models-and-usage.md)).
 
 ## Waits on the owner
 - **Model menu:** open it once and confirm Fable is no longer offered (the one part of the three-model plan not yet confirmed inside the app), and pick **Opus 5.5, medium** for every conversation.
@@ -48,6 +49,7 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
   - **U-2:** how your AD bank wants the monthly FEMA EDF filed.
   - **U-9:** re-check the GST rules after the 57th GST Council (7/8 Oct 2026).
 - **Not blocking:**
+  - install the new wallpapers on the company PCs and phones (sent 2026-10-12) and say if anything looks off on a real screen
   - install or decline the **Renovate** app (dependency updates)
   - **U-5:** the Zoho aliases, including `grievance@`
   - trademark search (VERIFY WITH LEGAL)
@@ -71,9 +73,10 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
     - check for a trailing newline when piping secrets
     - wording: say that this PR already sets `preview_urls: false` and adds the benchmark workflow
   - **After the merge:** reword session-key rotation in 08 §3.2.
+- **Wallpapers (low, test strength; [runs/brand-wallpapers.md](runs/brand-wallpapers.md)):** check network anchors against the real channel/mark geometry; compare wire coordinates, not just counts; optional slow pixel re-render test; build the fitted-mark expectation from `MARK_PARAMS`. Remove the designer worktree `.claude/worktrees/agent-a62f60a92c395a3e9`.
 - **Models and usage:**
   - the cost report after the first Tier A build, the first designer task and the first two Tier B reviews ([14 §8](14-models-and-usage.md))
-  - the 2026-10-12 model audit flagged this lead session (Opus 5.5 at **high**, set in the picker) and one deliberate headless test (Sonnet at low); nothing else
+  - the 2026-10-12 model audit flagged only the deliberate headless test (Sonnet at low, 10:49); the wallpapers session ran Opus 5.5 at medium, its designer at high (fixes at medium) and its reviewer at high, as the plan says
 - **Code follow-ups (from the 2026-10-07 decisions):**
   - a migration narrowing `issue_guard` to `draft` only (before issuing is built, M3/M5)
   - `smallJobThreshold` in `packages/core/src/schemas/settings.ts` → a single INR value applied to every currency; plus a `{{terms:…}}` renderer
