@@ -127,14 +127,63 @@ function band(k: number, width: number, y0: number, y1: number, fill: string) {
   );
 }
 
+// ── The node network (Construction and Cut) ──────────────────────────────────────────────────────────────────
+// A designed system diagram, not a texture: nodes sit on the mark's construction (or on stroke multiples of the
+// channel), wires run only at 0°, 90° or 45° like circuit traces (orthogonal runs with 45° chamfers), 2 px on whole
+// pixels. Tone-on-tone ink, with one short verdigris "signal" (one wire, two nodes).
+
+export type Pt = [number, number];
+export type Network = { wires: { pts: Pt[]; signal: boolean }[]; nodes: { at: Pt; signal: boolean }[] };
+
+const NET = {
+  wire: color("ink-700"),
+  node: color("ink-600"),
+  signalWire: color("verdigris-500"),
+  signalNode: color("verdigris-300"),
+};
+
+/** A node: a square `n` px wide, its top-left corner cut at 45° (the right stem's tip), centred on a point. */
+function nodeShape([cx, cy]: Pt, n: number, fill: string, signal: boolean) {
+  const x0 = cx - n / 2;
+  const y0 = cy - n / 2;
+  const c = Math.round(n * 0.4);
+  const pts: Pt[] = [
+    [x0 + c, y0],
+    [x0 + n, y0],
+    [x0 + n, y0 + n],
+    [x0, y0 + n],
+    [x0, y0 + c],
+  ];
+  return `<path data-net="${signal ? "signal-node" : "node"}" fill="${fill}" d="M${pts.map(([x, y]) => `${r(x)} ${r(y)}`).join("L")}Z"/>`;
+}
+
+function drawNetwork(net: Network, nodeSize: number, wire = NET.wire): string {
+  const wires = net.wires
+    .map(
+      (w) =>
+        `<path data-net="${w.signal ? "signal-wire" : "wire"}" fill="none" stroke="${w.signal ? NET.signalWire : wire}" stroke-width="${HAIR}" stroke-linejoin="miter" stroke-linecap="square" d="M${w.pts.map(([x, y]) => `${x} ${y}`).join("L")}"/>`,
+    )
+    .join("");
+  const nodes = net.nodes
+    .map((n) => nodeShape(n.at, nodeSize, n.signal ? NET.signalNode : NET.node, n.signal))
+    .join("");
+  return wires + nodes;
+}
+
+const shiftNet = (net: Network, dx: number, dy: number): Network => ({
+  wires: net.wires.map((w) => ({ ...w, pts: w.pts.map(([x, y]) => [x + dx, y + dy] as Pt) })),
+  nodes: net.nodes.map((n) => ({ ...n, at: [n.at[0] + dx, n.at[1] + dy] as Pt })),
+});
+
 // ── 1. Monolith: the whole mark, very large and tone-on-tone, with one deep verdigris accent ────────────────
 // The T and the shared stem in ink-800 on ink-950; the crossbar and the right stem in verdigris-900. Desktop: 1680
 // px (78 % of the height), centred across the free area right of the icons and set a touch above the centre of the
-// space over the taskbar (optical centre). Phone: 1500 px, centred in the middle third. Nothing enters a quiet zone.
+// space over the taskbar (optical centre). Phone: 1560 px, the height of the middle third, set a touch above its
+// centre and held by equal 300 px margins at the sides. Nothing enters a quiet zone.
 
 const MONOLITH: Record<Format, { size: number; x: number; y: number }> = {
   desktop: { size: 1680, x: 1656, y: 140 },
-  mobile: { size: 1500, x: 330, y: 1590 },
+  mobile: { size: 1560, x: 300, y: 1520 },
 };
 
 function monolith(format: Format): string {
@@ -189,7 +238,79 @@ function cut(format: Format): string {
     ],
     TONE.raised,
   );
-  return frame(format, raised + band(k, w, 0, stop, TONE.channel));
+  return frame(
+    format,
+    raised + band(k, w, 0, stop, TONE.channel) + drawNetwork(cutNetwork(format), CUT_NODE, NET.node),
+  );
+}
+
+/** Node size on the Cut: a fifth of the channel's stroke, rounded to an even number of pixels. */
+const CUT_NODE = 18;
+
+/**
+ * The Cut's network: two traces parallel to the channel (2.5 strokes before it on the ground, 1.5 strokes after it
+ * on the raised plane), each turning off square with a 45° corner into its end node; and one short signal trace
+ * running level into the channel's lower edge, with a verdigris node where it meets the channel. Integer points;
+ * every diagonal run moves equally in x and y, so it is exactly 45°.
+ */
+export function cutNetwork(format: Format): Network {
+  const { w, k } = cutGeometry(format);
+  const d = w * Math.SQRT2; // one stroke along a horizontal
+  const before = Math.round(k - 2 * d); // x + y of the trace 2 strokes before the channel's upper edge
+  const after = Math.round(k + 2.5 * d); // x + y of the trace 1.5 strokes after its lower edge
+  const lower = k + d; // x + y of the channel's lower edge
+  const P = (x: number, xy: number): Pt => [x, xy - x];
+  const run = (start: Pt, len: number): Pt => [start[0] - len, start[1] + len]; // down-left at 45°
+  if (format === "desktop") {
+    const a0 = P(2700, before);
+    const a1 = run(a0, 560);
+    const a2: Pt = [a1[0] - 120, a1[1]];
+    const b0 = P(3100, after);
+    const b1 = run(b0, 520);
+    const b2: Pt = [b1[0], b1[1] + 140];
+    const cy = 1340;
+    const c0: Pt = [2440, cy];
+    const c1: Pt = [Math.round(lower - cy), cy];
+    return {
+      wires: [
+        { pts: [a0, a1, a2], signal: false },
+        { pts: [b0, b1, b2], signal: false },
+        { pts: [c0, c1], signal: true },
+      ],
+      nodes: [
+        { at: a0, signal: false },
+        { at: a2, signal: false },
+        { at: b0, signal: false },
+        { at: b2, signal: false },
+        { at: c0, signal: true },
+        { at: c1, signal: true },
+      ],
+    };
+  }
+  const a0 = P(1600, before);
+  const a1 = run(a0, 640);
+  const a2: Pt = [a1[0] - 130, a1[1]];
+  const b0 = P(1850, after);
+  const b1 = run(b0, 560);
+  const b2: Pt = [b1[0], b1[1] + 150];
+  const cy = 2760;
+  const c0: Pt = [1110, cy];
+  const c1: Pt = [Math.round(lower - cy), cy];
+  return {
+    wires: [
+      { pts: [a0, a1, a2], signal: false },
+      { pts: [b0, b1, b2], signal: false },
+      { pts: [c0, c1], signal: true },
+    ],
+    nodes: [
+      { at: a0, signal: false },
+      { at: a2, signal: false },
+      { at: b0, signal: false },
+      { at: b2, signal: false },
+      { at: c0, signal: true },
+      { at: c1, signal: true },
+    ],
+  };
 }
 
 // ── 3. Construction: the mark's 100-unit grid as hairlines, the mark traced on it ("built properly") ────────
@@ -249,7 +370,78 @@ function construction(format: Format): string {
   parts.push(
     `<path d="${seg(a, b)}${tick(a)}${tick(b)}" fill="none" stroke="${TONE.dimension}" stroke-width="${HAIR}"/>`,
   );
+  // The network: the mark wired to its own clear space.
+  parts.push(drawNetwork(markNetwork(format), 2 * u));
   return frame(format, at(x0, y0, parts.join("")));
+}
+
+/**
+ * The Construction's network, in the drawing's own coordinates (the mark's top-left corner = 0, 0): each of the
+ * mark's four outer points is wired to the nearest corner of its clear space. The bar's corner and the right
+ * stem's foot run out at 45°; the stem-cut tip follows the cut itself; the stem's foot drops square, turns with a
+ * 45° chamfer and runs level to its corner. The signal leaves through the right stem's foot (the accent).
+ */
+function markNetwork(format: Format): Network {
+  const u = CONSTRUCTION[format].unit;
+  const m = fitMark(100 * u);
+  const S = m.size;
+  const C = 19 * u; // the clear space
+  const half = Math.round(C / 2);
+  return {
+    wires: [
+      {
+        pts: [
+          [-C, -C],
+          [0, 0],
+        ],
+        signal: false,
+      },
+      {
+        pts: [
+          [S, 0],
+          [S + C, -C],
+        ],
+        signal: false,
+      },
+      {
+        pts: [
+          [m.s1, S],
+          [m.s1, S + C - half],
+          [m.s1 - half, S + C],
+          [-C, S + C],
+        ],
+        signal: false,
+      },
+      {
+        pts: [
+          [S, S],
+          [S + C, S + C],
+        ],
+        signal: true,
+      },
+    ],
+    nodes: [
+      { at: [-C, -C], signal: false },
+      { at: [0, 0], signal: false },
+      { at: [S, 0], signal: false },
+      { at: [S + C, -C], signal: false },
+      { at: [m.s1, S], signal: false },
+      { at: [-C, S + C], signal: false },
+      { at: [S, S], signal: true },
+      { at: [S + C, S + C], signal: true },
+    ],
+  };
+}
+
+/** The node network drawn on a wallpaper, in frame coordinates (none on the Monolith). */
+export function wallpaperNetwork(concept: Concept, format: Format): Network {
+  if (concept === "cut") return cutNetwork(format);
+  if (concept === "construction") {
+    const p = CONSTRUCTION[format];
+    const S = 100 * p.unit;
+    return shiftNet(markNetwork(format), p.centre[0] - S / 2, p.centre[1] - S / 2);
+  }
+  return { wires: [], nodes: [] };
 }
 
 // ── Inspection helpers ─────────────────────────────────────────────────────────────────────────────────────
@@ -265,20 +457,19 @@ export function previewFocus(concept: Concept, format: Format): { x: number; y: 
     ];
   }
   if (concept === "cut") {
-    const { d, k, stop } = cutGeometry(format);
-    const y = Math.round(FORMATS[format].height / 2);
-    return [
-      { x: Math.round(k + d / 2 - y), y },
-      { x: Math.round(k + d / 2 - stop), y: Math.min(stop, FORMATS[format].height - 320) },
-    ];
+    const net = cutNetwork(format);
+    const signal = net.nodes.find((n) => n.signal && net.nodes.indexOf(n) === net.nodes.length - 1);
+    const end = net.nodes[1];
+    return [signal, end].map((n) => ({ x: n?.at[0] ?? 0, y: n?.at[1] ?? 0 }));
   }
   const p = CONSTRUCTION[format];
   const m = fitMark(100 * p.unit);
   const x0 = p.centre[0] - m.size / 2;
   const y0 = p.centre[1] - m.size / 2;
+  const C = 19 * p.unit;
   return [
-    { x: x0 + m.barEnd, y: y0 },
-    { x: x0 + m.s2, y: y0 + m.cTop },
+    { x: x0 + m.size + Math.round(C / 2), y: y0 + m.size + Math.round(C / 2) },
+    { x: x0 + m.s1 - Math.round(C / 2), y: y0 + m.size + Math.round(C / 2) },
   ];
 }
 

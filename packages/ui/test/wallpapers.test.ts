@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import { color } from "../src/brand/compose.ts";
 import { markPaths } from "../src/brand/geometry.ts";
 import { pngInfo, sourceHash } from "../src/brand/png.ts";
-import { FORMATS, fitMark, wallpaperPlan, wallpaperSvg } from "../src/brand/wallpapers.ts";
+import { FORMATS, fitMark, wallpaperNetwork, wallpaperPlan, wallpaperSvg } from "../src/brand/wallpapers.ts";
 import { tokens } from "../src/tokens/model.ts";
 
 const dir = join(import.meta.dirname, "..", "brand", "wallpapers");
@@ -92,6 +92,62 @@ describe("drawing rules", () => {
   it("is deterministic", () => {
     for (const w of plan) expect(wallpaperSvg(w.concept, w.format)).toBe(w.svg);
   });
+});
+
+describe("the node network (Construction and Cut; none on the Monolith)", () => {
+  it.each(plan.map((w) => [w.file, w] as const))(
+    "%s: a designed diagram on whole pixels, clear of the quiet zones",
+    (file, w) => {
+      const net = wallpaperNetwork(w.concept, w.format);
+      if (w.concept === "monolith") {
+        expect(net.nodes, file).toHaveLength(0);
+        expect(w.svg).not.toContain("data-net");
+        return;
+      }
+      // sparse: a handful of nodes; one short signal (one wire, two to four nodes)
+      expect(net.nodes.length).toBeGreaterThanOrEqual(4);
+      expect(net.nodes.length).toBeLessThanOrEqual(12);
+      const signalNodes = net.nodes.filter((n) => n.signal).length;
+      expect(signalNodes).toBeGreaterThanOrEqual(2);
+      expect(signalNodes).toBeLessThanOrEqual(4);
+      expect(net.wires.filter((x) => x.signal).length).toBe(1);
+      // the SVG draws exactly this network
+      expect(w.svg.match(/data-net="(signal-)?node"/g)?.length).toBe(net.nodes.length);
+      expect(w.svg.match(/data-net="(signal-)?wire"/g)?.length).toBe(net.wires.length);
+      const f = FORMATS[w.format];
+      const pts = [...net.nodes.map((n) => n.at), ...net.wires.flatMap((x) => x.pts)];
+      for (const [x, y] of pts) {
+        expect(Number.isInteger(x) && Number.isInteger(y), `${file}: ${x},${y} on whole pixels`).toBe(true);
+        expect(x > 0 && x < f.width && y > 0 && y < f.height, `${file}: ${x},${y} in frame`).toBe(true);
+      }
+      // every wire runs at 0°, 90° or 45°
+      for (const wire of net.wires)
+        for (let i = 1; i < wire.pts.length; i++) {
+          const [ax, ay] = wire.pts[i - 1] as [number, number];
+          const [bx, by] = wire.pts[i] as [number, number];
+          const dx = Math.abs(bx - ax);
+          const dy = Math.abs(by - ay);
+          expect(dx === 0 || dy === 0 || dx === dy, `${file}: ${ax},${ay} to ${bx},${by}`).toBe(true);
+        }
+      // nothing within 60 px of a quiet zone: every wire segment's box and every node, with margin
+      const margin = 60;
+      const boxes = [
+        ...net.nodes.map((n) => [n.at[0], n.at[1], n.at[0], n.at[1]]),
+        ...net.wires.flatMap((x) =>
+          x.pts.slice(1).map((b, i) => {
+            const a = x.pts[i] as [number, number];
+            return [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1])];
+          }),
+        ),
+      ];
+      for (const [x0, y0, x1, y1] of boxes as [number, number, number, number][])
+        for (const q of f.quiet) {
+          const apart =
+            x1 + margin <= q.x || x0 - margin >= q.x + q.w || y1 + margin <= q.y || y0 - margin >= q.y + q.h;
+          expect(apart, `${file}: ${x0},${y0} to ${x1},${y1} near the zone at ${q.x},${q.y}`).toBe(true);
+        }
+    },
+  );
 });
 
 describe("quiet zones (measured in the committed PNGs)", () => {

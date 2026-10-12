@@ -257,6 +257,39 @@ No PNGs or tests changed this round. From now on the 4K PNGs are committed only 
 
 **Not verified:** nothing has been seen on a real screen or phone; the overlays are mock-ups.
 
+### Round 6: a brand-built node network (2026-10-12)
+
+**The owner's decision** (docs/13, merged from `brand/wallpapers` @ 640f976): add a node network to Construction and Cut, keep Monolith clean, and make all three 10/10.
+
+**The network** is a designed system diagram, not a texture.
+- Every wire runs at 0°, 90° or 45° (orthogonal runs with 45° chamfers), 2 px on whole pixels.
+- Each node is a small square with its top-left corner cut at 45°, the shape of the right stem's tip, so there are no circles.
+- Wires and nodes are tone-on-tone ink: ink-700 wires and ink-600 nodes on Construction, ink-600 on Cut.
+- One verdigris signal per wallpaper: a verdigris-500 wire with two verdigris-300 nodes.
+
+Placement:
+- **Construction:** the mark is wired to its own clear space. Its four outer points (the bar's corner, the stem-cut tip, the stem's foot and the right stem's foot) link to the four corners of the clear space. The links run at 45° (the stem-cut tip follows the cut itself), except the stem's foot, which drops square, turns with a chamfer and runs level. The signal leaves through the right stem's foot (the accent), away from the channel dimension. Nodes are 2 units square.
+- **Cut:** two traces run parallel to the channel, 2.5 strokes before it on the ground and 1.5 strokes after it on the raised plane. Each ends in a square turn with a 45° corner and a node. One short level signal trace meets the channel's lower edge at a verdigris node. The channel stays the hero. Nodes are 18 px, about a fifth of the stroke.
+- **Monolith:** no network. On the phone the mark grows from 1500 to 1560 px, exactly the height of the middle third, with equal 300 px side margins, set a touch above centre. It now holds the phone as strongly as 1680 px holds the desktop. The desktop is unchanged: 1680 px, centred across the free area at its optical centre. The tones stay ink-800 and verdigris-900 on ink-950.
+
+**Tests:** `wallpapers.test.ts` gains a network suite, driven by the exported `wallpaperNetwork()`:
+- no network on the Monolith
+- between 4 and 12 nodes, 2–4 signal nodes and one signal wire
+- the SVG draws exactly that network
+- every point in frame and on whole pixels
+- every segment at 0°, 90° or 45°
+- every node and wire segment at least 60 px clear of every quiet zone
+
+The pixel-measured quiet-zone test is unchanged and still passes on the new renders: ΔL\* ≤ 6 and no verdigris in any zone.
+
+**Previews** (rendered locally, then the committed PNGs were restored): `.logs/wallpapers/overview.png`, `sheet-{monolith,cut,construction}.png`, and the network crops `crop-cut-{desktop,mobile}-{1,2}.png` and `crop-construction-{desktop,mobile}-{1,2}.png`.
+
+**Commands**
+- `bash tools/heavy.sh --log wp6-build pnpm --filter @techaust/ui build:wallpapers`: rendered for the preview only; the PNGs were restored with `git checkout`, not committed
+- `bash tools/heavy.sh --log wp6-typecheck pnpm --filter @techaust/ui typecheck`: exit 0
+- `bash tools/heavy.sh --log wp6-ui-test pnpm --filter @techaust/ui test`: 211 passed, 5 failed. All 5 are the expected drift checks for the images whose source changed (Monolith phone, both Cuts, both Constructions); they clear when the PNGs are rebuilt on approval. Against the new local renders, all 29 wallpaper tests passed.
+- `bash tools/heavy.sh --log wp6-lint pnpm lint`: 169 files, no fixes
+
 ## Review
 
 ## Integration notes
