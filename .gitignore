@@ -19,3 +19,4 @@ worker-configuration.d.ts
 brand-incoming/
 .claude/launch.json
 .claude/worktrees/
+.logs/

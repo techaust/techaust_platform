@@ -1,7 +1,7 @@
 ---
 name: code-finder
 description: Finds where code lives in the TecHaust repo and answers "where is X" with file paths and line numbers. Read-only. Use instead of the built-in Explore, Plan and general-purpose agents.
-model: haiku
+model: claude-haiku-5-5
 effort: low
 omitClaudeMd: true
 tools: Read, Glob, Grep
