@@ -54,33 +54,36 @@ Rebuild of techaust.com: a public website, admin and client portal for **TecHaus
   - anything pasted into chat counts as exposed and gets rotated
 
 ## How work is split (models, effort, builders)
-The full plan is `docs/14-models-and-usage.md` (owner-approved 2026-10-08). The rules:
+The full plan is `docs/14-models-and-usage.md` (owner-approved 2026-10-12, replacing 2026-10-08). **Only Opus 5.5, Sonnet 5.5 and Haiku 5.5 are used**; `.claude/settings.json` and the hook `tools/model-guard.mjs` enforce it (docs/14 §6). The rules:
 
 | Work | Model and effort | How it's set |
 |---|---|---|
-| Lead (this conversation: plans, briefs, integration, talks to the owner) | Opus 5.5, medium; **high for one named task at a time** (a Tier A brief, merging `main` into a task whose migrations change a table, trigger, constraint or foreign key, an unexplained failure, planning a phase), then back | **The owner picks it in the app's picker.** It's not pinned. Say when a switch is worth it, and ask to switch back after the task. If a session starts on anything else, say so once. |
-| Builders (`builder`) | Sonnet 5.5: high for a Tier A build, medium otherwise; fixes at medium (Tier C: low) | Passed as `model` / `effort` when starting the agent; defaults in `.claude/agents/builder.md` |
-| Reviewer (`reviewer`, changes no code) | Opus 5.5: high (Tier C: medium); re-check of a fix diff at medium | Same; defaults in `.claude/agents/reviewer.md` |
-| Haiku agents (`code-finder`, `test-runner`, `doc-clerk`) | Haiku: low, low, medium | Their agent files; they skip CLAUDE.md and never touch migrations, triggers, permissions, API routes, money/tax/payment logic, website copy or reviews |
+| Lead (this conversation: plans, briefs, integration, talks to the owner) | **Opus 5.5, medium, for every step.** Never switched. | The owner picks it once in the app's picker; the project's `effortLevel` is medium. The hook reports the effort on the first command. If the model or effort is anything else, say so in one line and do no other work until it's fixed. |
+| Analyst (`analyst`, read-only) | Opus 5.5, high: Tier A briefs, the early check of a Tier A build, merges whose migrations change a table, trigger, constraint or foreign key, unexplained failures, phase plans | The agent file. The lead checks its draft and writes the final version. |
+| Designer (`designer`) | Opus 5.5, high: designs **and builds** every screen, page, component, PDF layout and email template, and checks its own screenshots; fixes at medium | The agent file. Previews of M2.1, M2.2, M3.1 and M4.5 are approved by the owner before they're built. |
+| Builders (`builder`) | Sonnet 5.5: data, logic, API routes and jobs; high for Tier A, medium otherwise; fixes at medium (high if a finding is critical; Tier C: low) | Passed as `model` / `effort` when starting the agent; defaults in `.claude/agents/builder.md` |
+| Reviewer (`reviewer`, changes no code) | Opus 5.5, high for every tier, with a visual review whenever there are screens; re-check of a fix diff at medium | Same; defaults in `.claude/agents/reviewer.md` |
+| Haiku agents (`code-finder`, `test-runner`, `doc-clerk`) | Haiku 5.5: low, low, medium | Their agent files; they skip CLAUDE.md and never touch migrations, triggers, permissions, API routes, money/tax/payment logic, website copy, screens or reviews |
 
 - **Tiers:** the lead sets each task's tier (A: money, tax, credit, ledgers, payments, client scoping, staff auth, deleting data; B: state machines, permissions, Workers, queues, notifications; C: pages built from existing parts) in the brief. The milestone list is in docs/14 §2.
-- **Budget gate:** before starting **any** agent, read the usage (`get_usage`) and apply docs/14 §5: over the pace (14 % of the week per day since Monday 15:30 IST) → one agent at a time; weekly ≥ 85 % → no new build; 5-hour window > 50 % → no new builder; ≥ 75 % → nothing new. Unreadable counts as over the pace. Record each agent run in the run file's `Usage:` line.
-- **Searching code:** use `code-finder`, never the built-in Explore, Plan or general-purpose agents (they run on Opus). Not used routinely: Opus at xhigh/max, Opus as a builder.
-- **Builders:** at most **two at once** (this PC has 8 GB of RAM), fewer when the gate says so. Each one gets its own git worktree (`isolation: "worktree"`) and a run file with a brief that stands on its own.
-- **Builders' own rules:**
-  - commit at least every 20 minutes and at each finished layer
-  - Tier A: stop after the schema, migrations, core logic and API routes for the lead's early check
+- **Order inside a task:** builder (data, logic, API) → Tier A: analyst's early check → designer (screens) → reviewer (code + visual) → fixes → re-check. Hand the branch over by removing the builder's worktree first (docs/14 §4).
+- **Budget gate:** before starting **any** agent, read the usage (`get_usage`) and apply docs/14 §5: over the pace (14 % of the week per day since Monday 15:30 IST) → one agent at a time; weekly ≥ 85 % → no new build or design; 5-hour window > 50 % → no new builder or designer; ≥ 75 % → nothing new. Unreadable counts as over the pace. **The gate never changes a model or an effort level.** Record each agent run in the run file's `Usage:` line, with the model and effort taken from `node tools/model-audit.mjs`.
+- **Never used:** Fable (or the `fable` / `best` aliases), effort xhigh/max, the built-in Explore, Plan, general-purpose and `claude` agents (use `code-finder` to search code). A new Anthropic model is a question for the owner.
+- **Agents at once:** at most **two** (this PC has 8 GB of RAM), fewer when the gate says so, and never two that use the browser (designer, reviewer). Each builder or designer gets its own git worktree (`isolation: "worktree"`) and a run file with a brief that stands on its own.
+- **Builders' and designers' own rules:**
+  - commit at least every 20 minutes and at each finished layer or screen
+  - Tier A: the builder stops after the schema, migrations, core logic and API routes for the analyst's early check
   - stop and report when blocked
   - never touch hosted services; any hosted change needs the owner's yes first
 - **Heavy commands go through the queue, one at a time:** full lint, typecheck, build, database tests and end-to-end tests run via `bash tools/heavy.sh --log <name> <command>` (full output to `.logs/<name>.log`; read the tail and grep, never the whole log).
   - the lock is `~/.techaust-heavy.lock`, and a lock older than 90 minutes is stale
   - commands wait while free memory is under 512 MB
-  - the whole-repository lint runs only once, as a builder's final check
+  - the whole-repository lint runs only once, as a builder's or designer's final check
 - **Review triage:** critical and high findings are fixed before the merge; medium and low become follow-ups unless they are a one-line fix. Merge `main` into a task before its review if `main` has moved.
 - **Every task is reviewed before it merges.** The reviewer can send it back. The lead integrates the tasks, runs `pnpm check` + `pnpm test`, and fills in the run file.
 - **Check-ins happen only on events:**
-  - a builder finishes
-  - a builder stalls for 20 minutes with the lock free, or free memory falls under 512 MB (watched with the Monitor tool running `bash tools/watch.sh <worktrees>`)
+  - a builder or designer finishes
+  - a builder or designer stalls for 20 minutes with the lock free, or free memory falls under 512 MB (watched with the Monitor tool running `bash tools/watch.sh <worktrees>`)
   - a review result arrives
   - a decision belongs to the owner
 

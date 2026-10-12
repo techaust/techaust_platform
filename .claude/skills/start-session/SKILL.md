@@ -14,7 +14,7 @@ description: Start or resume work on the TecHaust rebuild. Use when the owner sa
    - `gh run list --limit 3` (the latest CI run and its result)
    - `gh pr list --state open` (open PRs, their checks, and whether auto-merge is on)
 3. **Check the setup and the budget** ([docs/14](../../../docs/14-models-and-usage.md)):
-   - The lead should be Opus 5.5 at medium effort (high only for one named task). If this session runs on anything else, say so in one line, and don't pin it.
+   - The lead must be **Opus 5.5 at medium effort**, for every step. Run `git status` first: the model-guard hook then reports this session's effort level ("Lead effort level: …"). If the model isn't Opus 5.5 or the effort isn't medium, say so in one line ("Please pick Opus 5.5, medium in the model menu") and do nothing else until it's fixed.
    - Load the usage tool (`ToolSearch` → `select:mcp__ccd_session_mgmt__get_usage`) and read "Weekly · all models" and "5-hour limit".
    - Work out the pace: 14 % × days since the last Monday 10:00 UTC (15:30 IST) reset.
    - State today's gate in one line, e.g. "Weekly 67 % vs pace 42 %: over the pace, one agent at a time." If the usage can't be read, treat it as over the pace and say so.

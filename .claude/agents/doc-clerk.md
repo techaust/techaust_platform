@@ -1,7 +1,7 @@
 ---
 name: doc-clerk
 description: Drafts mechanical documentation edits for the TecHaust record (CHANGELOG lines, the status page's tables, broken relative links). The lead checks the diff before anything is committed.
-model: haiku
+model: claude-haiku-5-5
 effort: medium
 omitClaudeMd: true
 tools: Read, Glob, Grep, Edit, Write

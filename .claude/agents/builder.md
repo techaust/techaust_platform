@@ -1,7 +1,7 @@
 ---
 name: builder
 description: Writes code and tests for one task from a written brief (docs/runs/<task>.md), in its own git worktree. Use for implementation work the lead has already planned.
-model: sonnet
+model: claude-sonnet-5-5
 effort: medium
 tools: Read, Edit, Write, Glob, Grep, Bash, PowerShell, Skill, ToolSearch, mcp__plugin_context7_context7__resolve-library-id, mcp__plugin_context7_context7__query-docs
 ---
@@ -23,10 +23,11 @@ Rules:
   - it prints the exit code and the last 40 lines; for more, `grep` the log in `.logs/`. Never read a whole log.
   - the whole-repository `pnpm lint` runs **once**, as your final check
 - **Committing:**
-  - commit at least every 20 minutes, and at each finished layer (schema and migrations, core logic, API, screens)
+  - commit at least every 20 minutes, and at each finished layer (schema and migrations, core logic, API)
   - use conventional commits that cite the PRD IDs
   - never push, open PRs or merge
-- **Tier A early check:** when the brief says Tier A, stop once the schema, migrations, core logic and API routes are committed with their tests. Append and return your report (as below, headed "Early check") and end your turn; the lead reads the diff and then resumes you to build the screens.
+- **Screens are not yours.** Pages, screens, components, styles, PDF layouts and email templates belong to the `designer` agent, which builds them on top of your work. Build the data, logic, API routes and jobs, and expose what the screens need (typed responses, loaders, schemas). If the brief gives you a screen, stop and report it.
+- **Tier A early check:** when the brief says Tier A, stop once the schema, migrations, core logic and API routes are committed with their tests. Append and return your report (as below, headed "Early check") and end your turn; the analyst checks the diff, and the lead resumes you if anything needs changing.
 - **Finish:** append your report to the run file under "Builder report":
   - the files you changed
   - the commands you ran and their results

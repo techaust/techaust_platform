@@ -1,6 +1,6 @@
 # 12: Status
 
-_Replaced (never appended) at the end of every session. Last updated: **2026-10-08** (IST)._
+_Replaced (never appended) at the end of every session. Last updated: **2026-10-12** (IST)._
 
 ## Done
 - **Phases 1–5:** approved 2026-10-06 ([09-roadmap.md](09-roadmap.md)).
@@ -11,6 +11,7 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
   - agents: `builder` (fixed tool list, Tier A early check), `reviewer` (severity triage, re-check mode), new Haiku agents `code-finder`, `test-runner`, `doc-clerk`
   - `tools/heavy.sh --log <name>`; the start-session and end-session skills read and report usage; run files gain `Tier:`, `Usage:`, Early check and Handover
   - **verified:** the `--log` option; headless checks that all three new agents load, `code-finder` skips CLAUDE.md, `test-runner` ran a core suite through the queue (14 passed), and `builder` sees only its fixed tools and reaches Context7. `doc-clerk` was first used for this session's CHANGELOG lines.
+- **The three-model plan** (owner-approved 2026-10-12; PR pending): only Opus 5.5, Sonnet 5.5 and Haiku 5.5, enforced by `.claude/settings.json`, the `tools/model-guard.mjs` hook and the `tools/model-audit.mjs` end-of-day check; the lead is always Opus 5.5 medium; new agents `designer` (Opus 5.5 high: designs and builds every screen) and `analyst` (Opus 5.5 high, read-only); the reviewer adds a visual review. Tested before the PR on Claude Code 2.1.295 ([14 §6](14-models-and-usage.md)); the command-line copy was updated to 2.1.295.
 
 ## In progress
 - **M1.4: the auth CPU spike, a gate** ([PR #7](https://github.com/techaust/techaust_platform/pull/7)).
@@ -20,16 +21,16 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
   - **Needs updating with `main`:** it has merge conflicts (see the follow-ups below).
 
 ## Next
-1. When the owner says **"Access is on"** (lead on **Opus 5.5, high** for the PR #7 update, per [14 §3](14-models-and-usage.md); medium for the rest):
+1. When the owner says **"Access is on"** (the lead stays on Opus 5.5 medium; the `analyst` plans the PR #7 update first, per [14 §3](14-models-and-usage.md)):
    1. check that every staging URL shows the Access sign-in
    2. bring PR #7 up to date with `main` (see the follow-ups)
       - bind PR #7 to that session and turn on Auto-fix (no auto-merge: it stays held until this list is done)
    3. merge it
 2. The owner runs **GitHub → Actions → Auth CPU benchmark (staging) → Run workflow**.
 3. I read the CPU times from Workers Logs (read-only), fill in `docs/runbooks/cpu-baseline.md`, and run the gate check: login p99 ≤ 5 ms, every route ≤ 7 ms. If it fails, I stop and ask.
-4. Then M1.5 (Tier A; the brief is written with the lead on high).
+4. Then M1.5 (Tier A; the `analyst` drafts the brief).
 
-**Usage at the end of 2026-10-08:** weekly 67 %, pace about 42 % → over the pace: **one agent at a time** until the reset on Monday 12 Oct, 15:30 IST. The first full measuring week starts then ([14 §7](14-models-and-usage.md)).
+**Usage at the end of 2026-10-08:** weekly 67 %, pace about 42 % → over the pace: **one agent at a time** until the reset on Monday 12 Oct, 15:30 IST. The first full measuring week starts then ([14 §8](14-models-and-usage.md)).
 
 ## Waits on the owner
 - **Blocking M1.4:** Parts 1–3 of `docs/runbooks/access-staging.md` (in PR #7):
@@ -66,8 +67,8 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
     - wording: say that this PR already sets `preview_urls: false` and adds the benchmark workflow
   - **After the merge:** reword session-key rotation in 08 §3.2.
 - **Models and usage:**
-  - measure after the first Tier A build and the first two Tier B reviews; propose at most two adjustments ([14 §7](14-models-and-usage.md))
-  - switch the Haiku agents from the `haiku` alias (Haiku 4.5) to Haiku 5.5 once Claude Code recognises it
+  - the cost report after the first Tier A build, the first designer task and the first two Tier B reviews ([14 §8](14-models-and-usage.md))
+  - after the three-model PR merges: in a new conversation, check that the model menu offers only the three models, and that the hook and the audit work inside the app
 - **Code follow-ups (from the 2026-10-07 decisions):**
   - a migration narrowing `issue_guard` to `draft` only (before issuing is built, M3/M5)
   - `smallJobThreshold` in `packages/core/src/schemas/settings.ts` → a single INR value applied to every currency; plus a `{{terms:…}}` renderer
