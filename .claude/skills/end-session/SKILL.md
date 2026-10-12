@@ -19,7 +19,7 @@ description: Close the day on the TecHaust rebuild and leave the record current.
    - commit the documents on a `docs/…` branch
    - push, run `gh pr create`, then `gh pr merge --auto --squash` (merge on green, the owner's rule)
    - turn on Auto-fix for it (`ccd_pr` `set_monitor`), as for every PR
-8. **Agents:** list any builder or reviewer still running. **Stop none without the owner's word.**
+8. **Agents:** list any agent still running (builder, designer, analyst, reviewer). **Stop none without the owner's word.**
 9. **Tell the owner,** in a few plain lines:
    - what was done
    - what was verified, and how

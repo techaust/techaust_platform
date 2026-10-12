@@ -6,6 +6,7 @@
 | **Date** | 2026-10-06 (last updated 2026-10-07) |
 | **Inputs** | Owner brief for a new identity (2026-10-06; the supplied logo files in `brand-incoming/` are retired) · [11 brand audit](11-brand-audit.md) · [03 §3A.5](03-plan.md) design direction · audit findings M-4 to M-8 ([01](01-audit.md)) |
 | **Implements** | [04 PRD](04-prd.md) WEB-G-05, WEB-G-13 to WEB-G-16, NFR-4 |
+| **Applied by** | The `designer` agent (Opus 5.5, high) designs and builds every screen, PDF layout and email template to this document and checks its own screenshots; the `reviewer` checks them visually. The owner approves previews of M2.1, M2.2, M3.1 and M4.5 before they're built ([14 §3–4](14-models-and-usage.md), added 2026-10-12) |
 
 > **One source of truth.** All tokens live in `packages/ui/tokens/tokens.json`. A build script generates (1) CSS custom properties, (2) the Tailwind v4 `@theme` used by the site, admin and portal, (3) inline-style constants for email templates, and (4) the print CSS for PDFs. A token is never typed by hand in an app. Print CMYK values live in `tokens/print-cmyk.json` (§1.6).
 

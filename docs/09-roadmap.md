@@ -8,14 +8,15 @@
 
 ## How milestones work
 - Each milestone is **small and demonstrable**. For each one I:
-  1. explain what I'm about to build
+  1. explain what I'm about to build (for M2.1, M2.2, M3.1 and M4.5, first a design preview for your approval)
   2. build it, with tests for the critical logic
   3. run it locally and verify: build, tests, no console errors, responsive (375/768/1280/1920), axe clean, free-plan CPU budget
   4. have the reviewer agent check it, then open a PR (conventional commits)
   5. CI green → it merges itself and deploys to staging (held PRs excepted)
   6. show you the result on staging: screenshots/preview, a test summary, open questions
   7. **wait for your "approved" before the next milestone** (CLAUDE.md rule 2)
-- **Tier:** each Phase 6 milestone has a tier (A, B or C) that sets the builder's and reviewer's model and effort ([14 §2](14-models-and-usage.md)).
+- **Who builds:** only Opus 5.5, Sonnet 5.5 and Haiku 5.5 are used. The `designer` (Opus 5.5, high) designs and builds every screen; the `builder` (Sonnet 5.5) builds data, logic and API routes; the `reviewer` (Opus 5.5, high) reviews the code and the screens ([14 §3](14-models-and-usage.md)).
+- **Tier:** each Phase 6 milestone has a tier (A, B or C) that sets the builder's effort and whether the `analyst` drafts the brief and checks the build early ([14 §2](14-models-and-usage.md)).
 - **Size:** S ≈ 1–2 working sessions · M ≈ 3–5 · L ≈ 6+. These are relative effort, not calendar promises.
 - **Gates (🚦)** are points where I stop and ask if the result doesn't fit the plan, e.g. the free-plan CPU measurement.
 - **Owner inputs (🟧)** are listed per milestone so nothing blocks unexpectedly.
