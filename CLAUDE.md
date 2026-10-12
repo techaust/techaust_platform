@@ -14,7 +14,7 @@ Rebuild of techaust.com: a public website, admin and client portal for **TecHaus
 - **`docs/13-decisions.md`:** one row per decision (date, decision, who, where it's applied). **Never ask the owner again about a question that's decided there.**
 - **`CHANGELOG.md`:** one line per merged PR, newest first.
 - **Naming:** top-level docs are numbered `docs/NN-name.md`; supporting material goes in `docs/NN-name-appendix/`; ADRs are `docs/adr/NNNN-name.md`; procedures go in `docs/runbooks/`. Only `README.md`, `CLAUDE.md` and `CHANGELOG.md` sit in the repo root (tools expect them there).
-- **`docs/runs/<task>.md`:** one file per task given to a builder: the brief, the builder's report, the review, the integration notes ([docs/runs/README.md](docs/runs/README.md)).
+- **`docs/runs/<task>.md`:** one file per task given to a builder or designer: the brief, the builder's and designer's reports, the review, the integration notes ([docs/runs/README.md](docs/runs/README.md)).
 
 ## Read first
 - The plan and build order: `docs/09-roadmap.md`. Product decisions: `docs/04-prd.md` §0. Tools: `docs/10-tooling.md`. Models, tiers and the budget gate: `docs/14-models-and-usage.md`
@@ -53,7 +53,7 @@ Rebuild of techaust.com: a public website, admin and client portal for **TecHaus
   - the owner runs it and copies back **only its result line**
   - anything pasted into chat counts as exposed and gets rotated
 
-## How work is split (models, effort, builders)
+## How work is split (models, effort, agents)
 The full plan is `docs/14-models-and-usage.md` (owner-approved 2026-10-12, replacing 2026-10-08). **Only Opus 5.5, Sonnet 5.5 and Haiku 5.5 are used**; `.claude/settings.json` and the hook `tools/model-guard.mjs` enforce it (docs/14 §6). The rules:
 
 | Work | Model and effort | How it's set |

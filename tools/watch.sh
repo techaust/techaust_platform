@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Event watch for the lead while builders run (used with the Monitor tool). Prints ONE line and exits when:
-#   - a builder worktree has had no new commit for 20 minutes while the heavy lock is free (a stall), or
+# Event watch for the lead while builders or designers run (used with the Monitor tool). Prints ONE line and exits when:
+#   - a builder or designer worktree has had no new commit for 20 minutes while the heavy lock is free (a stall), or
 #   - free memory drops under 512 MB.
-# Builder completion itself arrives as a task notification, so it isn't watched here.
+# Agent completion itself arrives as a task notification, so it isn't watched here.
 # Usage: bash tools/watch.sh <worktree> [<worktree>...]
 set -u
 LOCK="$HOME/.techaust-heavy.lock"

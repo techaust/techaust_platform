@@ -92,10 +92,10 @@ Approved in the 2026-10-07 interview ([13-decisions.md](13-decisions.md)). No ne
 |---|---|---|---|
 | **builder** agent (`.claude/agents/builder.md`) | Claude Code subagent (Sonnet) | Writes code and tests for one task from a brief in `docs/runs/` | Its own git worktree; never touches hosted services, never pushes |
 | **reviewer** agent (`.claude/agents/reviewer.md`) | Claude Code subagent (Opus, high effort) | Reviews each task before it merges | Read-only |
-| Git worktrees | Built in (`isolation: "worktree"`) | A separate copy of the repo per builder, in `.claude/worktrees/` (git-ignored) | Local disk only |
+| Git worktrees | Built in (`isolation: "worktree"`) | A separate copy of the repo per builder or designer, in `.claude/worktrees/` (git-ignored) | Local disk only |
 | Monitor tool | Built in | Runs `tools/watch.sh` and wakes the lead only on an event | Local only |
 | `tools/heavy.sh` | Repo script (Git Bash) | Runs heavy commands one at a time per PC; pauses under 512 MB free memory | Local only |
-| `tools/watch.sh` | Repo script (Git Bash) | Reports a builder stall (20 min, lock free) or low memory | Local only |
+| `tools/watch.sh` | Repo script (Git Bash) | Reports a builder or designer stall (20 min, lock free) or low memory | Local only |
 | `start-session` / `end-session` skills | Repo skills (`.claude/skills/`) | "start the day" / "end the day" routines | Local; the end-session PR uses `gh` |
 
 ## 10. Models-and-usage additions (2026-10-08, owner-approved)
@@ -109,7 +109,7 @@ Approved with the models and usage plan ([14-models-and-usage.md](14-models-and-
 | `tools/heavy.sh --log <name>` | Repo script option | Writes the full output to `.logs/<name>.log` and prints only the exit code and last 40 lines | Local only; `*.log` is git-ignored |
 | Usage tool (`get_usage`) | Built in (desktop app) | Reads the plan's weekly and 5-hour usage for the budget gate | Read-only |
 
-The **builder** and **reviewer** rows in §9 still apply; their model and effort now follow the task's tier ([14 §3](14-models-and-usage.md)), and the builder's tools are a fixed list.
+The **builder** and **reviewer** rows in §9 still apply; their model and effort follow [14 §3](14-models-and-usage.md), and each agent's tools are a fixed list.
 
 ## 11. The three-model plan (2026-10-12, owner-approved)
 Approved with the replacement of [14-models-and-usage.md](14-models-and-usage.md): only Opus 5.5, Sonnet 5.5 and Haiku 5.5, and Opus designs and builds every screen. No new packages, plugins or MCP servers: these are agent files, project settings and scripts in this repo, plus an update of the existing Claude Code command-line copy.

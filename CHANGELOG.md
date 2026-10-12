@@ -2,6 +2,8 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-10-12 [#13](https://github.com/techaust/techaust_platform/pull/13) chore: three-model plan (Opus, Sonnet, Haiku 5.5 only; designer and analyst agents; model guard and audit)
+- 2026-10-08 [#12](https://github.com/techaust/techaust_platform/pull/12) docs: end of day 2026-10-08 (status, changelog #10 #11, Auto-fix on every PR)
 - 2026-10-08 [#11](https://github.com/techaust/techaust_platform/pull/11) chore: models and usage plan (tiers, per-tier model/effort, Haiku agents, budget gate)
 - 2026-10-07 [#10](https://github.com/techaust/techaust_platform/pull/10) docs: correct the quality-pass score average; changelog #9
 - 2026-10-07 [#9](https://github.com/techaust/techaust_platform/pull/9) docs: documentation quality pass (all 45 files), numbered record files, owner decisions

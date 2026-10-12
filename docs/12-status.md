@@ -6,12 +6,16 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
 - **Phases 1–5:** approved 2026-10-06 ([09-roadmap.md](09-roadmap.md)).
 - **M1.1:** design tokens, fonts and the "Patina" brand ([PR #3](https://github.com/techaust/techaust_platform/pull/3)). **M1.2:** the core library ([PR #5](https://github.com/techaust/techaust_platform/pull/5)). **M1.3:** the D1 schema, triggers and seed; staging D1 is migrated and seeded on every merge ([PR #6](https://github.com/techaust/techaust_platform/pull/6)). All approved.
 - **Working rules** ([PR #8](https://github.com/techaust/techaust_platform/pull/8)) and the **documentation quality pass** ([PR #9](https://github.com/techaust/techaust_platform/pull/9), [PR #10](https://github.com/techaust/techaust_platform/pull/10)), 2026-10-07; details in [runs/docs-quality-pass.md](runs/docs-quality-pass.md).
-- **Models and usage plan** ([PR #11](https://github.com/techaust/techaust_platform/pull/11), owner-approved 2026-10-08):
-  - [14-models-and-usage.md](14-models-and-usage.md): tiers A/B/C per milestone, model and effort per tier, the budget gate, habits, measuring
-  - agents: `builder` (fixed tool list, Tier A early check), `reviewer` (severity triage, re-check mode), new Haiku agents `code-finder`, `test-runner`, `doc-clerk`
-  - `tools/heavy.sh --log <name>`; the start-session and end-session skills read and report usage; run files gain `Tier:`, `Usage:`, Early check and Handover
-  - **verified:** the `--log` option; headless checks that all three new agents load, `code-finder` skips CLAUDE.md, `test-runner` ran a core suite through the queue (14 passed), and `builder` sees only its fixed tools and reaches Context7. `doc-clerk` was first used for this session's CHANGELOG lines.
-- **The three-model plan** (owner-approved 2026-10-12; PR pending): only Opus 5.5, Sonnet 5.5 and Haiku 5.5, enforced by `.claude/settings.json`, the `tools/model-guard.mjs` hook and the `tools/model-audit.mjs` end-of-day check; the lead is always Opus 5.5 medium; new agents `designer` (Opus 5.5 high: designs and builds every screen) and `analyst` (Opus 5.5 high, read-only); the reviewer adds a visual review. Tested before the PR on Claude Code 2.1.295 ([14 §6](14-models-and-usage.md)); the command-line copy was updated to 2.1.295.
+- **Models and usage plan** ([PR #11](https://github.com/techaust/techaust_platform/pull/11), 2026-10-08): tiers A/B/C, the budget gate, `tools/heavy.sh --log`, the Haiku helper agents, run-file `Tier:` / `Usage:` / Handover. Its model split is replaced by the plan below.
+- **The three-model plan** ([PR #13](https://github.com/techaust/techaust_platform/pull/13), owner-approved and merged 2026-10-12; [14-models-and-usage.md](14-models-and-usage.md)):
+  - **only Opus 5.5, Sonnet 5.5 and Haiku 5.5**; the lead is always Opus 5.5 at medium
+  - new `analyst` (Opus 5.5 high, read-only: Tier A briefs, early checks, risky merges, failure diagnosis, phase plans) and `designer` (Opus 5.5 high: designs **and builds** every screen, checks its own screenshots); `builder` (Sonnet 5.5) does data, logic and API; `reviewer` (Opus 5.5 high, every tier) adds a visual review
+  - previews of M2.1, M2.2, M3.1 and M4.5 are approved by the owner before they're built
+  - enforced by `.claude/settings.json` (alias pins, `availableModels`, effort medium), the `tools/model-guard.mjs` hook and the `tools/model-audit.mjs` end-of-day check
+  - **verified** on Claude Code 2.1.295: a Fable request ran on Opus 5.5 with the allowlist (on Fable 5.1 without it); the Explore agent, a `fable` agent and a `max`-effort agent were refused; `code-finder` ran on Haiku 5.5 at low; per-agent effort applies; the lead is told its effort; all agents load; an agent took and read Playwright screenshots. CI green; staging deploy green.
+  - the command-line copy of Claude Code was updated from 2.1.288 to 2.1.295 (owner-approved)
+- **Smart App Control turned off** by the owner (2026-10-12): it had started blocking unsigned developer tools (pnpm 12's native binary, Biome). Afterwards `pnpm check` passed locally.
+- **End-of-day doc check (this PR):** CLAUDE.md, 06, 09, 10, the end-session routine and `tools/watch.sh` now name the designer and analyst where they still said only "builder".
 
 ## In progress
 - **M1.4: the auth CPU spike, a gate** ([PR #7](https://github.com/techaust/techaust_platform/pull/7)).
@@ -30,9 +34,10 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
 3. I read the CPU times from Workers Logs (read-only), fill in `docs/runbooks/cpu-baseline.md`, and run the gate check: login p99 ≤ 5 ms, every route ≤ 7 ms. If it fails, I stop and ask.
 4. Then M1.5 (Tier A; the `analyst` drafts the brief).
 
-**Usage at the end of 2026-10-08:** weekly 67 %, pace about 42 % → over the pace: **one agent at a time** until the reset on Monday 12 Oct, 15:30 IST. The first full measuring week starts then ([14 §8](14-models-and-usage.md)).
+**Usage at the end of 2026-10-12:** weekly 2 % (reset today, 15:30 IST), 5-hour window 23 %. The first full measuring week runs to Monday 19 Oct ([14 §8](14-models-and-usage.md)).
 
 ## Waits on the owner
+- **Model menu:** open it once and confirm Fable is no longer offered (the one part of the three-model plan not yet confirmed inside the app), and pick **Opus 5.5, medium** for every conversation.
 - **Blocking M1.4:** Parts 1–3 of `docs/runbooks/access-staging.md` (in PR #7):
   - turn on Access for the four staging Workers
   - create the benchmark service token and run its two `gh secret set` commands
@@ -68,7 +73,7 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
   - **After the merge:** reword session-key rotation in 08 §3.2.
 - **Models and usage:**
   - the cost report after the first Tier A build, the first designer task and the first two Tier B reviews ([14 §8](14-models-and-usage.md))
-  - after the three-model PR merges: in a new conversation, check that the model menu offers only the three models, and that the hook and the audit work inside the app
+  - the 2026-10-12 model audit flagged this lead session (Opus 5.5 at **high**, set in the picker) and one deliberate headless test (Sonnet at low); nothing else
 - **Code follow-ups (from the 2026-10-07 decisions):**
   - a migration narrowing `issue_guard` to `draft` only (before issuing is built, M3/M5)
   - `smallJobThreshold` in `packages/core/src/schemas/settings.ts` → a single INR value applied to every currency; plus a `{{terms:…}}` renderer
