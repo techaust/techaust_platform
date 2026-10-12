@@ -50,6 +50,54 @@ Then stop and report, with the paths. The lead shows the owner and comes back wi
 
 ## Designer report
 
+**Round 1: preview only (2026-10-12).** Branch `brand/wallpapers-design` (from `brand/wallpapers` @ 19b16b0), commit 73715e7 plus this report. Awaiting the owner's approval; nothing is wired anywhere else and no PR is open.
+
+**What the three concepts are**
+- **Monolith:** the mark at 3300 px (desktop) / 3200 px (phone), tone-on-tone (ink-800 on ink-950), rising past the top edge and running off the right edge just before the right stem. The accent left in the frame is the crossbar alone, in verdigris-900: one deep, restrained bar under the bar's 45° cut. This is the same crop as the brand's banner watermark (`og-default`), which also drops the right stem. On the desktop the shared stem passes under the taskbar, tone-on-tone only (ΔL* 5.1).
+- **Cut:** a 45° verdigris-700 channel exactly one stroke wide (the stroke of a 480 px mark, 91 px) splitting ink-950 from ink-800. On the phone it crosses the whole frame through the middle third. On the desktop a "/" line can't cross a 16:9 frame without entering the icon column or the taskbar, so it runs from the top edge and stops square on the taskbar line (y = 1987). The two tones meet below it, tone-on-tone only.
+- **Construction:** the mark traced on its true geometry, with the T and shared stem in ink-300 and the crossbar and right stem in verdigris-300 (4 px). It sits on three layers that stop at three distances: the 10-unit grid fills the clear space (ink-800, 2 px), and the lines through the mark's own edges plus its two 45° cuts reach one stroke further (ink-600, 2 px). One verdigris-500 dimension across the channel shows it is one stroke wide.
+- **One family:** the same ink-950 ground and ink-800 second plane everywhere, and one verdigris rule: the larger the area, the deeper the tone (900 for a fill, 700 for a band, 300 for a hairline). No gradients, filters, opacity or text (the test enforces it).
+
+**Files changed**
+- `packages/ui/src/brand/wallpapers.ts` (new, pure): formats and quiet zones, `fitMark` (geometry.ts `markPaths` snapped to whole pixels, plus union outlines for the trace), the three compositions, `wallpaperPlan()`, `previewFocus()`
+- `packages/ui/src/brand/png.ts` (new, Node-only): PNG chunk helpers; tags each PNG `sRGB` and stamps a `tEXt` `techaust:svg-sha256` with the hash of its SVG source
+- `packages/ui/scripts/build-wallpapers.ts` (new) and the `build:wallpapers` script in `packages/ui/package.json`: sharp → opaque 8-bit RGB PNG, about 2.5 s for all six
+- `packages/ui/scripts/preview-wallpapers.ts` (new): writes the preview sheets, 100 % crops, quiet-zone guides and `quiet-zones.json` to `.logs/wallpapers/` (run with `node packages/ui/scripts/preview-wallpapers.ts`)
+- `packages/ui/brand/wallpapers/wallpaper-{monolith,cut,construction}-{desktop,mobile}.png` (6 outputs, 30–50 KB each)
+- `packages/ui/test/wallpapers.test.ts` (new, 23 tests, about 3 s): six files and no strays; exact sizes, RGB 8-bit, sRGB, no ICC; each PNG's embedded hash matches today's SVG (drift without re-rendering 4K); palette colours only and nothing but flat fills; `fitMark` equals geometry.ts snapped, with all integer coordinates and a channel within 0.5 px of one stroke; colour logic per tagged part (base = ink family, accent = verdigris family); the quiet zones are measured in the committed PNG pixels (no verdigris, ΔL* ≤ 6 against ink-950)
+- `packages/ui/scripts/build-brand.ts` and `packages/ui/test/brand.test.ts`: `wallpapers/` added to the keep and no-strays lists, so `build:brand` doesn't delete it
+
+**Preview sheets** (`.logs/wallpapers/` in this worktree, git-ignored)
+- `overview.png`: all six side by side
+- `sheet-monolith.png`, `sheet-cut.png`, `sheet-construction.png`: desktop at 50 % under Windows 11 desktop icons with white labels and a dark taskbar, the same with a light taskbar, and the phone at 25 % with a status bar and clock, a dock and a home bar
+- `alt-cut-desktop-stop-two-thirds.png`: an alternative Cut desktop whose channel stops at two-thirds height (not chosen; see the open questions)
+- `crop-<concept>-<format>-{1,2}.png`: 640 × 640 crops at 100 % of the cuts, joins and line ends
+- `guides-<concept>-<format>.png`: the frame with the quiet zones (red) and the phone's middle third (yellow) outlined
+- `quiet-zones.json`: the measured largest ΔL* and the colour count per quiet zone
+
+**Checks**
+- Crisp at 100 %: every axis-aligned edge and hairline is on whole pixels; the 45° edges have normal 2-pixel anti-aliasing. Seam check across the Cut channel: the anti-aliased pixels blend verdigris straight into ink-800 (22,39,33) and never dip to the ground, because the second tone starts under the channel.
+- Quiet zones: icons and the phone's top zone are pure ground in all six. Bottom zones: Monolith desktop and both Cuts hold the ink-800 plane (ΔL* 5.1, no verdigris); the others are pure ground.
+- Colour logic: the T and stem are ink, the crossbar and right stem verdigris, in Monolith and Construction (tested). The Cut has no mark.
+
+**Commands and results**
+- `bash tools/heavy.sh --log wp-install pnpm install --frozen-lockfile --prefer-offline`: exit 0 (worktree had no node_modules; lockfile only, nothing new)
+- `node scripts/build-wallpapers.ts` and `node scripts/preview-wallpapers.ts` (in packages/ui): wrote 6 PNGs and the sheets
+- `pnpm exec vitest run test/wallpapers.test.ts`: 23 passed
+- `bash tools/heavy.sh --log wp-ui-typecheck pnpm --filter @techaust/ui typecheck`: exit 0
+- `bash tools/heavy.sh --log wp-ui-test pnpm --filter @techaust/ui test`: 5 files, 210 tests passed
+- `bash tools/heavy.sh --log wp-lint pnpm lint`: 169 files, no fixes
+
+**Not verified / not done**
+- Not seen on a real Windows desktop or phone. The overlays are drawn mock-ups (translucent bars, not real Mica or acrylic blur), and the preview ran with sharp, not a browser.
+- The `CLAUDE.md` Commands line and the docs/06 §1 line are not added yet. They wait for approval, since the files may still change. `CLAUDE.md` is the lead's to edit.
+- No text appears in any wallpaper. The preview-sheet captions and the placeholder icon labels ("Recycle Bin", "Sample.pdf" …) are mock-up only.
+
+**Open questions (owner)**
+1. Cut, desktop: should the channel stop on the taskbar line (current, closest to "across the whole frame") or at two-thirds height (see `alt-cut-desktop-stop-two-thirds.png`)?
+2. Monolith: is dropping the right stem off-frame acceptable? It's the banner-watermark crop; keeping the stem in frame would put verdigris inside the taskbar zone or shrink the mark below "very large".
+3. Construction: the T and stem are traced in ink-300, the ink role on dark, rather than verdigris-500 as the brief's "verdigris-300/500" might suggest. That keeps the colour logic (T = ink, accent = verdigris). Is that right?
+
 ## Review
 
 ## Integration notes
