@@ -123,6 +123,7 @@ pnpm --filter @techaust/ui build:tokens     # tokens/tokens.json → generated/{
 pnpm --filter @techaust/ui build:fonts      # subset fonts → fonts/*.woff2, fonts/metrics.json, generated/fonts.css
 pnpm --filter @techaust/ui draw:master      # src/brand/geometry.ts + Archivo → brand/source/techaust-master.svg
 pnpm --filter @techaust/ui build:brand      # master → every logo, icon, social image + brand/print/*.pdf
+pnpm --filter @techaust/ui build:wallpapers # geometry + tokens → brand/wallpapers/*.png (company desktop + phone wallpapers)
 python packages/ui/scripts/measure-cmyk.py  # Windows only: ICC print CMYK → tokens/print-cmyk.json (after palette changes)
 
 # Database (packages/db)
