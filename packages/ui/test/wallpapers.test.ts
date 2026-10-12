@@ -104,13 +104,36 @@ describe("the node network (Construction and Cut; none on the Monolith)", () => 
         expect(w.svg).not.toContain("data-net");
         return;
       }
-      // sparse: a handful of nodes; one short signal (one wire, two to four nodes)
-      expect(net.nodes.length).toBeGreaterThanOrEqual(4);
-      expect(net.nodes.length).toBeLessThanOrEqual(12);
-      const signalNodes = net.nodes.filter((n) => n.signal).length;
-      expect(signalNodes).toBeGreaterThanOrEqual(2);
-      expect(signalNodes).toBeLessThanOrEqual(4);
-      expect(net.wires.filter((x) => x.signal).length).toBe(1);
+      // a real network: 12–20 nodes; one continuous signal across 3–5 nodes, arriving at the mark or the channel
+      expect(net.nodes.length).toBeGreaterThanOrEqual(12);
+      expect(net.nodes.length).toBeLessThanOrEqual(20);
+      const signalNodes = net.nodes.filter((n) => n.signal);
+      expect(signalNodes.length).toBeGreaterThanOrEqual(3);
+      expect(signalNodes.length).toBeLessThanOrEqual(5);
+      const signal = net.wires.filter((x) => x.signal);
+      expect(signal).toHaveLength(1);
+      const key = ([x, y]: [number, number]) => `${x},${y}`;
+      const anchors = new Set(net.anchors.map(key));
+      const nodes = new Set(net.nodes.map((n) => key(n.at)));
+      const route = signal[0]?.pts ?? [];
+      for (const n of signalNodes)
+        expect(route.map(key), `${file}: signal node off the path`).toContain(key(n.at));
+      expect(anchors.has(key(route.at(-1) as [number, number])), `${file}: the signal arrives`).toBe(true);
+      // every wire starts and ends at a node or on the mark or channel (no floating traces)
+      for (const wire of net.wires)
+        for (const end of [wire.pts[0], wire.pts.at(-1)] as [number, number][])
+          expect(nodes.has(key(end)) || anchors.has(key(end)), `${file}: loose end at ${key(end)}`).toBe(
+            true,
+          );
+      // branching: at least two junctions where three or more runs meet
+      const degree = new Map<string, number>();
+      for (const wire of net.wires)
+        wire.pts.forEach((p, i) => {
+          const runs = (i > 0 ? 1 : 0) + (i < wire.pts.length - 1 ? 1 : 0);
+          degree.set(key(p), (degree.get(key(p)) ?? 0) + runs);
+        });
+      const junctions = [...nodes].filter((n) => (degree.get(n) ?? 0) >= 3);
+      expect(junctions.length, `${file}: junctions`).toBeGreaterThanOrEqual(2);
       // the SVG draws exactly this network
       expect(w.svg.match(/data-net="(signal-)?node"/g)?.length).toBe(net.nodes.length);
       expect(w.svg.match(/data-net="(signal-)?wire"/g)?.length).toBe(net.wires.length);

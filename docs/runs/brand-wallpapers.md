@@ -290,6 +290,42 @@ The pixel-measured quiet-zone test is unchanged and still passes on the new rend
 - `bash tools/heavy.sh --log wp6-ui-test pnpm --filter @techaust/ui test`: 211 passed, 5 failed. All 5 are the expected drift checks for the images whose source changed (Monolith phone, both Cuts, both Constructions); they clear when the PNGs are rebuilt on approval. Against the new local renders, all 29 wallpaper tests passed.
 - `bash tools/heavy.sh --log wp6-lint pnpm lint`: 169 files, no fixes
 
+### Round 7: a real network (2026-10-12)
+
+**The owner's request:** make the network on Cut and Construction more visible and a real network: 12–20 nodes, branching, junctions on the mark's or channel's geometry, no floating traces, and the signal as one continuous path across 3–5 nodes. Monolith is approved as rendered in round 6 and is unchanged.
+
+**Tones:** wires ink-400, nodes ink-500, the signal (wire and nodes) verdigris-300. Hierarchy at 25 %: the mark or channel first, the network second, the grid third. Nodes are slightly larger (Construction 2 × round(1.2 units): 24 px on the desktop, 26 px on the phone; Cut 22 px).
+
+- **Construction** (14 nodes on the desktop, 13 on the phone), routed on the 100-unit grid like a board:
+  - a bus 10 units below the mark, and side buses 10 units out
+  - drops into the shared stem's foot and the right stem's foot
+  - feeds from the left bus into the stem's side (at 60) and the bar's end (at 10)
+  - the right bus turns 45° into the stem-cut tip, and a spur leaves the tip along the cut
+  - **Desktop signal:** from the clear space's lower-right corner, up the right bus, arriving in the right stem (4 nodes).
+  - **Phone (recomposed for portrait):** the signal rises from below the drawing, runs along the bus and climbs into the right stem's foot (3 nodes); the left bus and the tip spur reach further up.
+- **Cut** (13 nodes on each format):
+  - two trunks parallel to the channel on the raised plane (1.5 and 3.5 strokes past its lower edge) and one on the ground (1.5 strokes before its upper edge)
+  - junctions with level or plumb branches, four of which land on the channel's edges
+  - **Signal:** from the outer trunk's lower node, up to a junction, across the inner trunk, arriving at the channel (3 nodes)
+  - **Phone:** recomposed across the middle third
+  - The round-6 "floating trace" is gone: every wire ends at a node or on the channel. A wire crossing without a junction, found at 100 %, was removed.
+- **Tests:** the network suite now requires:
+  - 12–20 nodes
+  - one signal wire carrying all 3–5 signal nodes and ending on the mark or channel (an anchor)
+  - every wire end at a node or an anchor
+  - at least two junctions of degree ≥ 3
+  - plus, as before: whole pixels, 0°/90°/45° only, ≥ 60 px clear of every quiet zone, SVG ↔ geometry match
+  The pixel quiet-zone test is unchanged and passes on the new renders.
+
+**Previews:** `.logs/wallpapers/overview.png`, `sheet-cut.png`, `sheet-construction.png`, and `crop-cut-{desktop,mobile}-{1,2}.png` (the signal's arrival at the channel; a junction) and `crop-construction-{desktop,mobile}-{1,2}.png` (the signal's arrival; the bus under the stems). They were rendered locally, then the committed PNGs were restored.
+
+**Commands**
+- `bash tools/heavy.sh --log wp7-build pnpm --filter @techaust/ui build:wallpapers`: preview only
+- `pnpm exec vitest run test/wallpapers.test.ts` against the new renders: 29 passed
+- `bash tools/heavy.sh --log wp7-typecheck pnpm --filter @techaust/ui typecheck`: exit 0
+- `bash tools/heavy.sh --log wp7-ui-test pnpm --filter @techaust/ui test`: 211 passed; the 5 failures are only the drift checks, cleared when the PNGs are rebuilt on approval
+- `bash tools/heavy.sh --log wp7-lint pnpm lint`: 169 files, no fixes
+
 ## Review
 
 ## Integration notes
