@@ -206,6 +206,33 @@ The sizes, PNG sRGB, no text, the quiet zones, generation from code and no new p
 - The PNGs are about 2.2 MB each (13 MB per set), because dithered gradients compress far less than flat fills. Every re-render adds about 13 MB to the public repo's history. **Question for the lead:** keep committing each round, or commit PNGs only after approval (the drift test would then wait for them)?
 - The `CLAUDE.md` Commands line and the docs/06 §1 line still wait for approval.
 
+### Round 4: sketches (2026-10-12)
+
+**The owner's verdict on round 3:** the wallpapers read as generic, "downloaded from anywhere" with a logo placed on top. **New aim:** the subject must be TecHaust's own geometry (the mark, the 45° cut, the one-stroke channel, the 100-unit grid), lit with round 3's soft light, depth and mid-tone richness, and recognisable even without a corner mark.
+
+**The sketches.** Seven directions are on one contact sheet, `.logs/wallpapers/sketches.png`. Each has a desktop draft at 960 × 540 and a phone thumbnail, made by the new `packages/ui/scripts/sketch-wallpapers.ts`, which reuses the round-3 renderer and the mark's real geometry. All seven respect the quiet zones and the phone's middle third.
+- **A. Monolith, lit:** the whole TH as a stone or anodised volume in a gallery haze, rim light on its top-left edges, a long soft 45° shadow.
+- **B. Light through the mark:** light through a TH-shaped window throws a long, soft-edged patch across the wall. The T and stem fall as mist light and the crossbar and right stem as verdigris-300 light, the brand's on-dark colour scheme expressed as light.
+- **C. Cut of light:** the 45° one-stroke channel as a glowing slot between two planes, with bounce light. It stops before the taskbar on the desktop and crosses the full width on the phone.
+- **D. Debossed:** a huge TH pressed into a matte surface under raking light, with the T-bar's 45° cut and the channel clearly visible. The crossbar and right stem have a slightly lighter floor.
+- **E. Facade:** 45° louvres, each one stroke wide; the TH emerges where the slats turn toward the light.
+- **F. Construction, lit:** the drawing sheet (grid and sub-grid, the mark filled and outlined) as a real object on a softly lit desk, with its corner cut at 45° and a soft shadow.
+- **G. Glass mark** (replaces "folded mark", which read as flat shapes): the four pieces as frosted glass planes at different depths, overlapping translucently, with lit rims and soft depth shadows.
+
+**My top 3**
+1. **D, Debossed:** the most "our own". The brand is carved into the material, calm and tone-on-tone, and the 45° cut is legible at any size.
+2. **B, Light through the mark:** the most ownable and poetic. The colour logic becomes light itself.
+3. **A, Monolith, lit:** a direct successor to round 1's Monolith, now with real light.
+
+F is the runner-up: clean and very on-brand, but closest to "a logo on a card".
+
+**Commands:**
+- `node scripts/sketch-wallpapers.ts`: the sheet in about 7 s
+- `pnpm exec biome check` on the script: clean
+- `bash tools/heavy.sh --log wp4-typecheck pnpm --filter @techaust/ui typecheck`: exit 0 after one type fix
+
+No PNGs or tests changed this round. From now on the 4K PNGs are committed only once the owner approves the finals (the lead's decision). The round-3 PNGs and tests remain on the branch until the finals replace them.
+
 ## Review
 
 ## Integration notes
