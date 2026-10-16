@@ -146,6 +146,12 @@ Checked at 100 %: edges crisp (axis-aligned edges on whole pixels, only the 45°
 
 **Usage:** designer, Opus 5.5 high (as set by the agent file; not re-read with `node tools/model-audit.mjs` from inside the agent).
 
+**Fix round 1 (designer, 2026-10-16; branch `brand/social-kit-fix` from 490ba44, commit 3fe7486).** Findings 1, 2, 3, 4, 5, 6 and 9 fixed; 7 and 8 untouched.
+- Files: `packages/ui/scripts/out-dir.ts` (new: `--out` only strictly inside `<repo>/.logs/`; rejects a missing value, `""`, a value starting `--`, `.logs` itself, `..` escapes, other folders and drives), `scripts/build-social.ts` (uses it; PNGs with a `minBytes` step down to lighter lossless compression until they reach it), `scripts/check-social-out.ts` (minimum size; JPG size and colour space), `src/brand/social.ts` (`SocialItem.minBytes`: 10 KB on the Google logo and cover only; README: @2x rows "Double size of the above.", the 10 KB floor on the Google rows; comments for #5 and #9), `test/social.test.ts` (minimum size, JPG dimensions + sRGB/3 channels/8-bit/no ICC, colour attributes palette hex only, the `--out` guard, README rows), `brand/social/README.md` and `brand/social/google-business/logo.png`, `logo@2x.png` (re-rendered).
+- Google logo: 2,982 → 12,098 B and 9,323 → 12,389 B. Decoded pixels compared with the approved 490ba44 files: identical. `git diff --stat` after `build:social`: only those two PNGs and the README changed among the outputs. File names and the table are unchanged.
+- Commands: `pnpm --filter @techaust/ui build:social` (45 files); `bash tools/heavy.sh --log ui-test pnpm --filter @techaust/ui test`: 6 files, 426 passed, 2 skipped (the before-approval tests); `bash tools/heavy.sh --log ui-typecheck pnpm --filter @techaust/ui typecheck`: exit 0; `build-social.ts --out` with "", `--zip`, `.`, `.logs`, `packages/ui`: all refused; `--out .logs/social/kit` + `check-social-out.ts`: all good; `bash tools/heavy.sh --log lint pnpm lint`: 177 files, no errors.
+- Not verified: whether Google actually accepts the files (no upload; hosted services untouched). No new placeholder text.
+
 ## Review
 
 **Round 1 (reviewer claude-opus-5-5/high, 2026-10-16): SEND BACK, 2 high, 7 low.** Tests re-run (272 passed, 2 skipped as designed); 13 images opened at full size, the rest checked by tests.
