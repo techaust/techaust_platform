@@ -33,6 +33,7 @@ Sizes checked by the lead on 2026-10-16. **Official** = read on the platform's o
 | `instagram/` | `profile` | 320 × 320 (provide a 1080 × 1080 master too) | circle, shown ~110 px | Third-party |
 | | `highlight-<name>` × 4 (`services`, `work`, `about`, `contact`) | 1080 × 1920 | shown as a small circle cropped from the centre; the motif sits inside a centred circle of ~1080 px diameter, Instagram prints the label underneath (no text in the image) | Third-party |
 | | `post-template-square` / `post-template-portrait` | 1080 × 1080 / 1080 × 1350 | a branded frame with a large empty area for a later headline; ship the `.svg` too so it can be edited | Third-party |
+| `threads/` | `profile` | 320 × 320 (provide a 1080 × 1080 master too) | circle; the same art as Instagram's profile; Threads has no cover or banner. It imports the Instagram picture by default; it can be changed in Threads → Profile → Edit profile | Third-party; "check on a real phone" (owner addition, 2026-10-16) |
 | `whatsapp-business/` | `profile` | 640 × 640 (provide 1080 × 1080 too) | circle, shown very small; mark only | Third-party; ≤ 5 MB |
 | | `cover` | 1920 × 1080 | no official spec; keep everything in a centred 16:9-safe band; the README says "check on a real phone" | Third-party (inconsistent) |
 | `google-business/` | `logo` | 720 × 720 (min 250) | square, often shown as a circle | Official (general photo rule: JPG/PNG, 10 KB–5 MB) |

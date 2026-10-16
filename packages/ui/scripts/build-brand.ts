@@ -15,14 +15,15 @@ const brand = createBrand(parseMaster(readFileSync(join(brandDir, "source/techau
 
 const vectors = brandFiles(brand);
 const rasters = rasterPlan(brand);
-// Remove anything we no longer produce (the folder holds generated files + source/ only; wallpapers/ has its
-// own script, build:wallpapers).
+// Remove anything we no longer produce (the folder holds generated files + source/ only; wallpapers/ and social/
+// have their own scripts, build:wallpapers and build:social).
 const keep = new Set([
   ...Object.keys(vectors),
   ...rasters.map((r) => r.file),
   "source",
   "print",
   "wallpapers",
+  "social",
 ]);
 for (const f of readdirSync(brandDir)) if (!keep.has(f)) rmSync(join(brandDir, f), { recursive: true });
 
