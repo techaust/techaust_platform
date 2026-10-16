@@ -20,6 +20,7 @@
     "build:fonts": "node scripts/build-fonts.ts",
     "build:brand": "node scripts/build-brand.ts",
     "build:wallpapers": "node scripts/build-wallpapers.ts",
+    "build:social": "node scripts/build-social.ts",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run"
   },

@@ -83,6 +83,7 @@ describe("vector files are up to date with the master", () => {
       "source",
       "print",
       "wallpapers",
+      "social",
     ]);
     expect(readdirSync(brandDir).filter((f) => !expected.has(f))).toEqual([]);
   });

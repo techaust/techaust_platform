@@ -33,6 +33,7 @@ Sizes checked by the lead on 2026-10-16. **Official** = read on the platform's o
 | `instagram/` | `profile` | 320 × 320 (provide a 1080 × 1080 master too) | circle, shown ~110 px | Third-party |
 | | `highlight-<name>` × 4 (`services`, `work`, `about`, `contact`) | 1080 × 1920 | shown as a small circle cropped from the centre; the motif sits inside a centred circle of ~1080 px diameter, Instagram prints the label underneath (no text in the image) | Third-party |
 | | `post-template-square` / `post-template-portrait` | 1080 × 1080 / 1080 × 1350 | a branded frame with a large empty area for a later headline; ship the `.svg` too so it can be edited | Third-party |
+| `threads/` | `profile` | 320 × 320 (provide a 1080 × 1080 master too) | circle; the same art as Instagram's profile; Threads has no cover or banner. It imports the Instagram picture by default; it can be changed in Threads → Profile → Edit profile | Third-party; "check on a real phone" (owner addition, 2026-10-16) |
 | `whatsapp-business/` | `profile` | 640 × 640 (provide 1080 × 1080 too) | circle, shown very small; mark only | Third-party; ≤ 5 MB |
 | | `cover` | 1920 × 1080 | no official spec; keep everything in a centred 16:9-safe band; the README says "check on a real phone" | Third-party (inconsistent) |
 | `google-business/` | `logo` | 720 × 720 (min 250) | square, often shown as a circle | Official (general photo rule: JPG/PNG, 10 KB–5 MB) |
@@ -79,7 +80,71 @@ If the owner rejects a preview twice, switch to a **sketch sheet** (6–8 quick 
 
 ## Designer report
 
-_(designer)_
+**2026-10-16, preview round (designer, Opus 5.5 high).** Worktree: `D:\BUSINESS\1. PARENT PROJECT\TECHAUST TECHNOLOGIES\WEBSITE\techaust_platform\.claude\worktrees\agent-a0e29a1242f4c621f`, branch `brand/social-kit-design` (from `brand/social-kit` df81f69). Source, tests and scripts committed (670b3c9, 9e3223e, plus a README wording fix); **no PNGs committed**: `packages/ui/brand/social/` does not exist yet, as the brief asks.
+
+**Sources re-checked** (opened in the browser, since there is no WebFetch here):
+- LinkedIn Pages (official): unchanged (logo 400, min 268; cover 1512 × 256; PNG/JPEG ≤ 3 MB). New: "place key details away from the edges, especially the lower-right corner"; the logo is shown on light and dark backgrounds.
+- Facebook (official): unchanged (profile 320, shown 176 / 196, circle; cover 851 × 315, min 400 × 150, sRGB JPG < 100 KB; computer "left aligns, full bleed, 16:9", phone "left aligns, 2.4:1", ~40 px overlap). Read literally, a left-aligned 16:9 crop keeps only x 0–560 of 851, so the content zone is x 150–560 (not "centre-right" as the brief says). Open question 1.
+- X (official): unchanged (400 × 400, 1500 × 500, ≤ 2 MB, 60 px top and bottom may be cropped). The header's own limit is still not stated.
+- Google Business Profile (official): unchanged (JPG/PNG, 10 KB–5 MB, 720 recommended, 250 min). New: photos should "represent reality" with no significant alterations. Open question 3.
+- Upwork (own guide): unchanged sizes (logo 250 min, banner 3200 × 320, min width 1600). New: "avoid text on the banner image; it is scaled and cropped". Open question 2.
+- YouTube: the official page **is readable now** (support.google.com/youtube/answer/10456525): banner min 2048 × 1152, recommended 2560 × 1440, ≤ 6 MB, safe area 1235 × 338 at the minimum (= 1546 × 423 at 2560, as in the brief); profile ≤ 15 MB, rendered at 98 × 98. The 800 × 800 profile size is still third-party.
+- Clutch: no published logo size (its help centre only says no animated logos, 1–2 minutes to update). GoodFirms: nothing published. GitHub: nothing published. So the brief's fallback is used: a 1000 × 1000 tile plus a transparent primary lockup PNG (1535 × 282).
+- Instagram, WhatsApp Business, LinkedIn personal background, Threads: not re-checked (third-party only); marked "check on a real device" in the README.
+
+**What was built** (`packages/ui`):
+- `src/brand/social.ts` (new, pure): the platform table (sizes, @2x, safe zones, overlays for the mock-ups, source kind, notes), the compositions and the README text. Everything is composed at the output size: marks via `fitMark` (whole pixels), type at integer cap heights on whole-pixel cap tops and baselines, @2x drawn again at double size. Reuses the master (lockup glyphs, strapline, domain lines), `SCHEMES`, `color()`; `files.ts` is untouched, so the existing outputs are byte-identical (`build:brand` re-run: no diff in `brand/`, PDFs included).
+- Look: ink-900 ground, the mark tone-on-tone (ink-700) bleeding off the top left (never the right edge, so its 45° cut and right stem stay visible), the dark lockup, the strapline in ink-300, `techaust.com` in light verdigris. Wide banners keep a compact block inside the area every crop keeps; the 16:9 covers centre it; YouTube puts it inside the 1546 × 423 zone; Facebook keeps it inside x 150–560.
+- Highlight covers (no text): Services = four blocks, one light verdigris with the stem's 45° cut; Work = one block split by the mark's channel (one stroke wide); About = the mark; Contact = two cut-corner nodes joined at 45°. All read at 60 px (sheet 09).
+- Post templates: lockup top left, domain bottom left, the watermark bottom right, an empty headline area; the SVGs carry an empty `<g id="headline">` marking the area.
+- `scripts/build-social.ts` + `build:social`: renders with sharp, tags each PNG sRGB with its SVG hash (`png.ts`), writes the Facebook JPG (4:4:4, best quality under 100 KB: 14.5 KB, hash in a COM segment), the SVGs and `README.md`; `--out <dir>` (inside the repo only) for previews; `--zip` writes `.logs/social/techaust-social-kit.zip` with Node built-ins (checked with Python's `zipfile`: valid, 45 entries).
+- `scripts/preview-social.ts`: the preview sheets below. `scripts/check-social-out.ts`: checks a rendered folder the way the tests check the committed one.
+- `test/social.test.ts`: the table equals the brief (+ Threads); file list, @2x drawn not scaled; README covers every platform and links the bios; palette only, flat (no gradients, filters, opacity, live text, images); every placement on whole pixels and integer cap heights; the mark's colour logic and shapes (`fitMark`); watermarks tone-on-tone; deterministic; every mark, line and motif inside its safe zone (circle: with one stroke of clear space); **rendered pixels** outside each banner's safe zone hold only the ground and watermark (ΔL* ≤ 6). File tests (present and no strays, current hash, exact size, sRGB 8-bit, opaque or RGBA for the lockups, under each limit, JPG < 100 KB) run once `SOCIAL_KIT_COMMITTED` is `true`; until then a test asserts that `brand/social/` does not exist.
+- `scripts/build-brand.ts`, `test/brand.test.ts`: `social` added to the keep and no-strays lists. `package.json`: `build:social`.
+- `docs/06-design-system.md` §1.5: one line on the kit.
+- **Threads** (owner addition): `threads/profile.png` 320 and `profile-1080.png`, same art as Instagram; row added to the table above; README note as given; in the tests and on sheet 06.
+- README links `../../../../docs/07-content-appendix/B-social-profiles.md` at the top and repeats no bios.
+
+**Not done, for the lead:** the CLAUDE.md Commands line for `build:social`. I don't edit CLAUDE.md on an agent's instruction. Suggested line: `pnpm --filter @techaust/ui build:social     # master + tokens → brand/social/<platform>/ (profile pictures, covers, README); -- --zip for the owner`.
+
+**Preview** (all in `<worktree>\.logs\social\`, git-ignored; render again with `node packages/ui/scripts/build-social.ts --out .logs/social/kit --zip` then `node packages/ui/scripts/preview-social.ts`):
+- `01-overview.png`: every image, scaled
+- `02-linkedin.png`: company Page light and dark desktop with the logo tile, phone with a centre trim, founder background desktop and phone with a placeholder photo
+- `03-x.png`: profile light and dark, header with the 60 px crops shaded and the safe zone
+- `04-facebook.png`: full cover with the safe zone and both crop edges, computer (16:9 from the left) and phone (2.4:1) with the profile picture
+- `05-youtube.png`: TV (whole image) with the desktop band and the 1546 × 423 zone, desktop band, phone (centre zone) with the 98 px picture
+- `06-instagram-threads.png`: Instagram profile light and dark with the four highlight circles and their names and two post frames in the grid, the whole stories, the post templates with the headline area; Threads profile light and dark, and the 36 px feed picture
+- `07-whatsapp-business.png`: assumed profile screen light and dark (3:1 band of the cover, photo centred on its edge), chat list at 49 px, the cover with the safe zone and two crops
+- `08-google-upwork-directories-github.png`: Google panel, Upwork banner with the narrow-screen crop, Clutch / GoodFirms tile and transparent lockup on white and grey, GitHub avatar at 260 to 20 px
+- `09-small-sizes.png`: profile pictures at 134, 98, 56, 40, 36 and 24 px on white and black; highlights at 60 px
+- `10-crops-100.png`: 100 % crops of type and edges (X, LinkedIn, Facebook, YouTube, a highlight, a post template, a profile @2x)
+- `kit\` (all 45 files + README) and `techaust-social-kit.zip`
+
+Checked at 100 %: edges crisp (axis-aligned edges on whole pixels, only the 45° cuts anti-aliased), type sharp, nothing inside a crop or overlay, colour logic correct everywhere. Fixed during the check: the LinkedIn row didn't survive a phone trim (now a compact block right of centre); Upwork overflowed a 1600 px crop (moved to centre-right inside it); the Facebook block touched the 16:9 edge; the WhatsApp block could sit under a centred photo; a right-bleeding watermark lost the mark's cut (all watermarks now bleed top-left); the domain was too small on X at 600 px; the Contact motif was too thin at 60 px.
+
+**Commands and results:**
+- `pnpm install --frozen-lockfile --prefer-offline` (via heavy.sh; worktree had no node_modules): ok, nothing new installed
+- `node scripts/build-social.ts --out ../../.logs/social/kit --zip`: 45 files; largest `x/header@2x.png` 53 KB; Facebook JPG 14.5 KB
+- `node scripts/check-social-out.ts`: all good (44 files: sizes, sRGB, hashes, limits; README current)
+- `bash tools/heavy.sh --log social-build-brand pnpm --filter @techaust/ui build:brand`: exit 0, `git status packages/ui/brand` clean (byte-identical)
+- `bash tools/heavy.sh --log social-ui-test pnpm --filter @techaust/ui test`: 6 files, 369 passed, 46 skipped (the committed-file tests, by design until approval)
+- `bash tools/heavy.sh --log social-ui-typecheck pnpm --filter @techaust/ui typecheck`: exit 0
+- `bash tools/heavy.sh --log social-lint pnpm lint`: 174 files, no fixes, exit 0
+
+**Not verified:**
+- the real platform layouts. The mock-up chrome is my neutral approximation with placeholder names ("Page name", "Business name", "account_name"), not the apps' real UI. WhatsApp's cover layout is assumed (no spec). The LinkedIn founder photo on phones follows the brief (bottom-centre).
+- the README's click paths: LinkedIn, X, Facebook, Instagram, WhatsApp, Upwork, Clutch, GoodFirms and GitHub are written from general knowledge and flagged "menu names change". Only Google's and YouTube's are from the official pages.
+- uploads to any platform (out of scope; no account touched).
+
+**Placeholder text:** none in the deliverables. The mock-ups' placeholder labels are only in `.logs/`.
+
+**Open questions (owner):**
+1. Facebook cover: Facebook's own wording ("left aligns … 16:9") implies the computer view keeps only the left 560 of 851 px, so the content sits left of centre (x 150–560) rather than centre-right. Keep this (recommended), or follow the brief's centre-right and accept that the text could be cut on computers?
+2. Upwork banner: Upwork's own guide says "avoid text on the banner". Keep the lockup + strapline + domain as briefed (recommended: the block now fits the narrowest crop), or ship a text-free banner (ground + watermark only)?
+3. Google Business cover: Google asks for photos that "represent reality". A graphic cover may be shown less often, or replaced by Google. Keep it (recommended: the logo is unaffected), or leave the cover for a real photo later?
+4. Highlight motifs: are Services (blocks), Work (split block), About (mark) and Contact (two linked nodes) the right four, or should any change?
+
+**Usage:** designer, Opus 5.5 high (as set by the agent file; not re-read with `node tools/model-audit.mjs` from inside the agent).
 
 ## Review
 
