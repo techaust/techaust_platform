@@ -3,9 +3,10 @@
 // platform's safe zone (checked on the geometry and on rendered pixels), and, once the owner has approved the
 // preview and the files are committed, the files are current, exact, sRGB and under each platform's limit.
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, relative, resolve } from "node:path";
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
+import { outDir } from "../scripts/out-dir.ts";
 import { createBrand, parseMaster, SCHEMES } from "../src/brand/compose.ts";
 import { LOCKUP } from "../src/brand/geometry.ts";
 import { pngInfo, sourceHash } from "../src/brand/png.ts";
@@ -108,6 +109,29 @@ describe("the platform table (the brief, plus Threads: owner addition 2026-10-16
     expect(readme).not.toMatch(/https?:\/\//); // no account URLs
   });
 
+  it("a minimum file size only where a platform states one (Google Business: 10 KB, both items)", () => {
+    expect(
+      SOCIAL_ITEMS.filter((i) => i.minBytes !== undefined).map((i) => [
+        `${i.platform}/${i.name}`,
+        i.minBytes,
+      ]),
+    ).toEqual([
+      ["google-business/logo", 10 * 1024],
+      ["google-business/cover", 10 * 1024],
+    ]);
+  });
+
+  it("the README gives @2x rows as double size and states Google's 10 KB floor", () => {
+    const readme = socialReadme(plan);
+    for (const row of readme.split("\n").filter((l) => l.includes("@2x.png`")))
+      expect(row).toMatch(
+        /\| Double size of the above\.( At least 10 KB, the platform's minimum file size\.)? \|$/,
+      );
+    expect(readme).toContain(
+      "| `logo.png` | 720 × 720 | Logo: square, often shown as a circle. At least 10 KB",
+    );
+  });
+
   it("the transparent lockup's canvas matches the master's wordmark width", () => {
     const vb = brand.viewBox[2] ?? 0;
     expect(vb - (100 * LOCKUP.markScale + LOCKUP.gap)).toBeCloseTo(WORDMARK_UNITS, 2);
@@ -126,6 +150,14 @@ describe("drawing rules", () => {
   it.each(plan.map((f) => [f.file, f.svg] as const))("%s: palette colours only, flat", (_, svg) => {
     for (const m of svg.matchAll(/#[0-9A-Fa-f]{6}\b/g))
       expect(palette.has(m[0].toUpperCase()), m[0]).toBe(true);
+    // every colour attribute is a palette hex (or none): no named colours, #fff, rgb() or hsl()
+    const colours = [
+      ...svg.matchAll(/\b(fill|stroke|stop-color|flood-color|lighting-color|color)="([^"]*)"/g),
+    ];
+    expect(colours.length).toBeGreaterThan(0);
+    for (const [, attr, value] of colours)
+      expect(value === "none" || /^#[0-9A-F]{6}$/i.test(value ?? ""), `${attr}="${value}"`).toBe(true);
+    expect(svg).not.toMatch(/rgba?\(|hsla?\(|style=|currentColor/i);
     expect(svg).not.toMatch(/Gradient|<filter|opacity|<text|<image|<style/);
   });
 
@@ -246,6 +278,35 @@ describe("safe zones", () => {
   );
 });
 
+describe("build:social --out (the folder is emptied first, so only inside .logs/)", () => {
+  const repo = resolve("/repo");
+  const fallback = join(repo, "packages", "ui", "brand", "social");
+  const run = (...args: string[]) => outDir(args, repo, fallback, repo);
+
+  it("accepts a folder strictly inside .logs/, relative or absolute", () => {
+    expect(run()).toBe(fallback);
+    expect(run("--zip")).toBe(fallback);
+    expect(run("--out", ".logs/social/kit")).toBe(join(repo, ".logs", "social", "kit"));
+    expect(run("--out", join(repo, ".logs", "x"), "--zip")).toBe(join(repo, ".logs", "x"));
+    expect(run("--out", ".logs/..x")).toBe(join(repo, ".logs", "..x"));
+  });
+
+  it.each([
+    ["a missing value", ["--out"]],
+    ["an empty value", ["--out", ""]],
+    ["another flag", ["--out", "--zip"]],
+    [".logs itself", ["--out", ".logs"]],
+    [".logs with a trailing slash", ["--out", ".logs/"]],
+    ["the repository", ["--out", "."]],
+    ["a source folder", ["--out", "packages/ui"]],
+    ["an escape from .logs", ["--out", ".logs/../packages"]],
+    ["a folder outside the repository", ["--out", resolve(repo, "..", "elsewhere")]],
+    ["another drive", ["--out", process.platform === "win32" ? "Z:\\kit" : "/elsewhere/kit"]],
+  ])("rejects %s", (_, args) => {
+    expect(() => run(...args)).toThrow(/--out/);
+  });
+});
+
 describe.runIf(SOCIAL_KIT_COMMITTED)("committed files (after the owner's approval)", () => {
   const all = (d: string): string[] =>
     readdirSync(d).flatMap((n) =>
@@ -266,8 +327,8 @@ describe.runIf(SOCIAL_KIT_COMMITTED)("committed files (after the owner's approva
   });
 
   it.each(plan.map((f) => [f.file, f] as const))(
-    "%s: current, exact, sRGB 8-bit, under the limit",
-    (file, f) => {
+    "%s: current, exact, sRGB 8-bit, within the limits",
+    async (file, f) => {
       const buf = readFileSync(join(dir, file));
       if (f.kind === "svg") {
         expect(buf.toString("utf8")).toBe(f.svg);
@@ -276,6 +337,10 @@ describe.runIf(SOCIAL_KIT_COMMITTED)("committed files (after the owner's approva
       if (f.kind === "jpg") {
         expect(buf.length).toBeLessThan(f.item.jpg?.maxBytes ?? 0);
         expect(buf.toString("latin1")).toContain(`techaust:svg-sha256=${sourceHash(f.svg)}`);
+        const m = await sharp(buf).metadata();
+        expect([m.width, m.height]).toEqual([f.width, f.height]);
+        expect([m.format, m.space, m.channels, m.depth]).toEqual(["jpeg", "srgb", 3, "uchar"]);
+        expect(m.icc, "no ICC profile: untagged JPEGs are read as sRGB").toBeUndefined();
         return;
       }
       const info = pngInfo(buf);
@@ -286,6 +351,7 @@ describe.runIf(SOCIAL_KIT_COMMITTED)("committed files (after the owner's approva
       expect(info.iccp).toBe(false);
       expect(info.source, "rendered from today's SVG: run build:social").toBe(sourceHash(f.svg));
       expect(buf.length).toBeLessThan(f.item.maxBytes);
+      expect(buf.length, "the platform's minimum file size").toBeGreaterThanOrEqual(f.item.minBytes ?? 0);
     },
   );
 });

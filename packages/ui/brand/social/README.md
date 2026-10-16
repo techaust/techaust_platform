@@ -18,11 +18,11 @@ icon on the picture.
 | File | Size (px) | Notes |
 |---|---|---|
 | `company-logo.png` | 400 × 400 | Page logo. LinkedIn shows it on light and dark backgrounds; the ink tile works on both. Size from the platform's own help page. |
-| `company-logo@2x.png` | 800 × 800 | Size from the platform's own help page. |
+| `company-logo@2x.png` | 800 × 800 | Double size of the above. |
 | `company-cover.png` | 1512 × 256 | Page cover. LinkedIn may trim it to fit the screen; everything sits in the middle band. Size from the platform's own help page. |
-| `company-cover@2x.png` | 3024 × 512 | Size from the platform's own help page. |
+| `company-cover@2x.png` | 3024 × 512 | Double size of the above. |
 | `founder-background.png` | 1584 × 396 | Background image for a personal profile (the founder's). The photo itself is not part of this kit. Size from several guides, not an official page: **check on a real device**. |
-| `founder-background@2x.png` | 3168 × 792 | Size from several guides, not an official page: **check on a real device**. |
+| `founder-background@2x.png` | 3168 × 792 | Double size of the above. |
 
 ## X (`x/`)
 
@@ -31,9 +31,9 @@ icon on the picture.
 | File | Size (px) | Notes |
 |---|---|---|
 | `profile.png` | 400 × 400 | Profile photo, shown as a circle. Size from the platform's own help page. |
-| `profile@2x.png` | 800 × 800 | Size from the platform's own help page. |
+| `profile@2x.png` | 800 × 800 | Double size of the above. |
 | `header.png` | 1500 × 500 | Header. X may crop 60 px off the top and bottom; everything sits in the middle 380 px. Size from the platform's own help page. |
-| `header@2x.png` | 3000 × 1000 | Size from the platform's own help page. |
+| `header@2x.png` | 3000 × 1000 | Double size of the above. |
 
 ## Facebook (`facebook/`)
 
@@ -43,9 +43,9 @@ icon on the picture.
 | File | Size (px) | Notes |
 |---|---|---|
 | `profile.png` | 320 × 320 | Page profile picture: shown at 176 px on computers and 196 px on phones, cropped to a circle. Size from the platform's own help page. |
-| `profile@2x.png` | 640 × 640 | Size from the platform's own help page. |
+| `profile@2x.png` | 640 × 640 | Double size of the above. |
 | `cover.png` | 851 × 315 | Page cover. Upload the PNG for the sharpest type; the JPG (under 100 KB) is Facebook's fastest-loading format. Size from the platform's own help page. |
-| `cover@2x.png` | 1702 × 630 | Size from the platform's own help page. |
+| `cover@2x.png` | 1702 × 630 | Double size of the above. |
 | `cover.jpg` | 851 × 315 | Under 100 KB, Facebook's fastest-loading size. Size from the platform's own help page. |
 
 ## Instagram (`instagram/`)
@@ -92,9 +92,9 @@ icon on the picture.
 
 | File | Size (px) | Notes |
 |---|---|---|
-| `logo.png` | 720 × 720 | Logo: square, often shown as a circle. Size from the platform's own help page. |
-| `logo@2x.png` | 1440 × 1440 | Size from the platform's own help page. |
-| `cover.png` | 1920 × 1080 | Cover photo (16:9). Google may show another photo first; the lockup stays centred for any crop. Size from several guides, not an official page: **check on a real device**. |
+| `logo.png` | 720 × 720 | Logo: square, often shown as a circle. At least 10 KB, the platform's minimum file size. Size from the platform's own help page. |
+| `logo@2x.png` | 1440 × 1440 | Double size of the above. At least 10 KB, the platform's minimum file size. |
+| `cover.png` | 1920 × 1080 | Cover photo (16:9). Google may show another photo first; the lockup stays centred for any crop. At least 10 KB, the platform's minimum file size. Size from several guides, not an official page: **check on a real device**. |
 
 ## YouTube (`youtube/`)
 
@@ -103,7 +103,7 @@ icon on the picture.
 | File | Size (px) | Notes |
 |---|---|---|
 | `profile.png` | 800 × 800 | Channel picture, shown as a circle as small as 98 px. Size from several guides, not an official page: **check on a real device**. |
-| `profile@2x.png` | 1600 × 1600 | Size from several guides, not an official page: **check on a real device**. |
+| `profile@2x.png` | 1600 × 1600 | Double size of the above. |
 | `banner.png` | 2560 × 1440 | Channel banner. Only the centre 1546 × 423 shows on every device (TV shows the whole image). Size from the platform's own help page. |
 
 ## Upwork (`upwork/`)
@@ -113,7 +113,7 @@ icon on the picture.
 | File | Size (px) | Notes |
 |---|---|---|
 | `agency-logo.png` | 250 × 250 | Agency logo (square). Size from the platform's own guide. |
-| `agency-logo@2x.png` | 500 × 500 | Size from the platform's own guide. |
+| `agency-logo@2x.png` | 500 × 500 | Double size of the above. |
 | `agency-banner.png` | 3200 × 320 | Agency banner. Upwork scales and crops it to the screen; the lockup sits centre-right. Size from the platform's own guide. |
 
 ## Clutch (`clutch/`)

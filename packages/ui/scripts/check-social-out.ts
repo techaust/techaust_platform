@@ -1,9 +1,11 @@
 // Checks a rendered kit folder (default <repo>/.logs/social/kit) the way test/social.test.ts checks the committed
-// one: every file present and nothing else, exact size, sRGB 8-bit, current source hash, under each limit.
+// one: every file present and nothing else, exact size, sRGB 8-bit, current source hash, within each limit (under
+// the maximum, at or over a platform's stated minimum).
 // Run: node packages/ui/scripts/check-social-out.ts [dir]
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import sharp from "sharp";
 import { createBrand, parseMaster } from "../src/brand/compose.ts";
 import { pngInfo, sourceHash } from "../src/brand/png.ts";
 import { socialPlan, socialReadme } from "../src/brand/social.ts";
@@ -36,6 +38,10 @@ for (const f of plan) {
     if (buf.length >= (f.item.jpg?.maxBytes ?? 0)) problems.push(`${f.file}: ${buf.length} bytes`);
     if (!buf.toString("latin1").includes(`techaust:svg-sha256=${sourceHash(f.svg)}`))
       problems.push(`${f.file}: hash`);
+    const m = await sharp(buf).metadata();
+    if (m.width !== f.width || m.height !== f.height) problems.push(`${f.file}: ${m.width}×${m.height}`);
+    if (m.space !== "srgb" || m.channels !== 3 || m.depth !== "uchar" || m.icc)
+      problems.push(`${f.file}: colour ${m.space}/${m.channels}/${m.depth}${m.icc ? "/icc" : ""}`);
     console.log(`${f.file}: ${buf.length} bytes`);
     continue;
   }
@@ -46,6 +52,8 @@ for (const f of plan) {
     problems.push(`${f.file}: colour ${i.colourType}`);
   if (i.source !== sourceHash(f.svg)) problems.push(`${f.file}: stale`);
   if (buf.length >= f.item.maxBytes) problems.push(`${f.file}: ${buf.length} bytes over ${f.item.maxBytes}`);
+  if (buf.length < (f.item.minBytes ?? 0))
+    problems.push(`${f.file}: ${buf.length} bytes under ${f.item.minBytes}`);
 }
 console.log(`${plan.length} files checked; largest ${largest.file} (${Math.round(largest.bytes / 1024)} KB)`);
 console.log(problems.length ? `PROBLEMS:\n${problems.join("\n")}` : "all good");

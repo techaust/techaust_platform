@@ -44,6 +44,8 @@ export type SocialItem = {
   transparent?: true;
   /** the file must stay under this: the platform's published limit where there is one, otherwise a conservative ceiling */
   maxBytes: number;
+  /** the file must be at least this big: only where the platform states a minimum (Google Business: 10 KB) */
+  minBytes?: number;
   /** how the platform shows it */
   shown: "circle" | "rounded square" | "square" | "banner" | "story circle" | "post";
   /** content (mark, lockup, type, motif) must lie inside one of these zones, in 1x pixels */
@@ -58,7 +60,7 @@ const MB = 1024 * 1024;
 const KB = 1024;
 const rect = (x: number, y: number, w: number, h: number): Zone => ({ shape: "rect", x, y, w, h });
 const circle = (cx: number, cy: number, r: number): Zone => ({ shape: "circle", cx, cy, r });
-/** The inscribed circle of a square, less one mark stroke of clear space at the tile's mark ratio. */
+/** The inscribed circle of a square (the safe-zone test adds one mark stroke of clear space for the mark). */
 const inscribed = (size: number): Zone => circle(size / 2, size / 2, size / 2);
 
 /** The mark's share of a profile tile (the existing profile-400/800: inside the circle with clear space). */
@@ -310,16 +312,19 @@ export const SOCIAL_ITEMS: SocialItem[] = [
     note: "Cover photo. No official size is published: check on a real phone after uploading.",
   },
   // Google Business Profile (official: JPG/PNG, 10 KB–5 MB, 720 × 720 recommended, 250 × 250 minimum)
-  tileItem(
-    "google-business",
-    "logo",
-    720,
-    true,
-    5 * MB,
-    "circle",
-    "official",
-    "Logo: square, often shown as a circle.",
-  ),
+  {
+    ...tileItem(
+      "google-business",
+      "logo",
+      720,
+      true,
+      5 * MB,
+      "circle",
+      "official",
+      "Logo: square, often shown as a circle.",
+    ),
+    minBytes: 10 * KB,
+  },
   {
     platform: "google-business",
     name: "cover",
@@ -327,6 +332,7 @@ export const SOCIAL_ITEMS: SocialItem[] = [
     height: 1080,
     x2: false,
     maxBytes: 5 * MB,
+    minBytes: 10 * KB,
     shown: "banner",
     safe: [rect(480, 360, 960, 360)],
     overlays: [
@@ -605,8 +611,9 @@ export function createSocial(brand: Brand) {
 
   // ── Covers and banners (k = 1 or 2: every number is multiplied, then the mark is fitted at that size) ─────
 
-  // Every watermark bleeds off the top left, never off the right edge: the mark's character (its 45° cut and the
-  // right stem) is on its right side and must stay in the frame.
+  // Every cover's watermark bleeds off the top left, never off the right edge: the mark's character (its 45° cut and
+  // the right stem) is on its right side and must stay in the frame. The Instagram post templates (postTemplate,
+  // below) are the one exception, as approved: their watermark sits lower right and bleeds off the right and bottom.
   const covers: Record<string, (k: number) => Drawing> = {
     // LinkedIn may trim the cover to the screen; a compact block just right of centre survives a phone-width trim
     // (x 256–1256 at 375 px) and stays clear of the logo tile.
@@ -997,16 +1004,22 @@ export function socialReadme(plan: SocialFile[]): string {
     lines.push("| File | Size (px) | Notes |", "|---|---|---|");
     for (const f of plan.filter((x) => x.item.platform === p)) {
       const i = f.item;
-      const note =
-        f.kind === "png" && !f.file.includes("@2x")
+      const x2 = f.file.includes("@2x");
+      const note = x2
+        ? "Double size of the above."
+        : f.kind === "png"
           ? i.note
           : f.kind === "svg"
             ? "Editable version of the same frame."
             : "";
       const extra =
         f.kind === "jpg" ? `Under ${fmtBytes(i.jpg?.maxBytes ?? 0)}, Facebook's fastest-loading size.` : "";
+      const floor =
+        f.kind === "png" && i.minBytes
+          ? `At least ${fmtBytes(i.minBytes)}, the platform's minimum file size.`
+          : "";
       lines.push(
-        `| \`${f.file.slice(p.length + 1)}\` | ${f.width} × ${f.height} | ${[note, extra, sourceText[i.source]].filter(Boolean).join(" ")} |`,
+        `| \`${f.file.slice(p.length + 1)}\` | ${f.width} × ${f.height} | ${[note, extra, floor, x2 ? "" : sourceText[i.source]].filter(Boolean).join(" ")} |`,
       );
     }
   }

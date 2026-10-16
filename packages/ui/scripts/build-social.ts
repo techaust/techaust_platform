@@ -1,25 +1,25 @@
 // Writes the social media kit to packages/ui/brand/social/<platform>/ from src/brand/social.ts.
 // Run: pnpm --filter @techaust/ui build:social                 (rasters via sharp, a dev dependency only)
 //      pnpm --filter @techaust/ui build:social -- --zip         also writes <repo>/.logs/social/techaust-social-kit.zip
-//      pnpm --filter @techaust/ui build:social -- --out <dir>   writes the kit somewhere else (the preview round)
+//      pnpm --filter @techaust/ui build:social -- --out <dir>   writes the kit somewhere else (the preview round);
+//                                                              <dir> must be inside <repo>/.logs/ (it is emptied first)
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { crc32, deflateRawSync } from "node:zlib";
 import sharp from "sharp";
 import { createBrand, parseMaster } from "../src/brand/compose.ts";
 import { sourceHash, tagPng } from "../src/brand/png.ts";
 import { socialPlan, socialReadme } from "../src/brand/social.ts";
+import { outDir } from "./out-dir.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const repo = join(root, "..", "..");
 const args = process.argv.slice(2);
-const outArg = args.indexOf("--out");
-const dir = outArg >= 0 ? resolve(args[outArg + 1] ?? "") : join(root, "brand", "social");
+const dir = outDir(args, repo, join(root, "brand", "social"));
 const brand = createBrand(parseMaster(readFileSync(join(root, "brand/source/techaust-master.svg"), "utf8")));
 const plan = socialPlan(brand);
 
-if (relative(repo, dir).startsWith("..")) throw new Error(`--out must be inside the repository: ${dir}`);
 // Start clean: the folder holds only what the plan makes, plus the README.
 rmSync(dir, { recursive: true, force: true });
 mkdirSync(dir, { recursive: true });
@@ -54,10 +54,21 @@ for (const f of plan) {
     if (!out || out.length >= limit) throw new Error(`${f.file}: cannot get under ${limit} bytes`);
     writeFileSync(path, out);
   } else {
-    const png = f.item.transparent
-      ? await input.png({ compressionLevel: 9, adaptiveFiltering: true }).toBuffer()
-      : await input.flatten().removeAlpha().png({ compressionLevel: 9, adaptiveFiltering: true }).toBuffer();
-    writeFileSync(path, tagPng(png, f.svg));
+    // Smallest file first. Where a platform states a minimum file size (Google: 10 KB), step down to lighter
+    // compression until the file reaches it: the pixels are the same (PNG is lossless), nothing is padded.
+    const min = f.item.minBytes ?? 0;
+    let out: Buffer | undefined;
+    search: for (let level = 9; level >= 1; level--)
+      for (const adaptiveFiltering of [true, false]) {
+        const opts = { compressionLevel: level, adaptiveFiltering };
+        const png = f.item.transparent
+          ? await input.clone().png(opts).toBuffer()
+          : await input.clone().flatten().removeAlpha().png(opts).toBuffer();
+        out = tagPng(png, f.svg);
+        if (out.length >= min) break search;
+      }
+    if (!out || out.length < min) throw new Error(`${f.file}: cannot reach ${min} bytes`);
+    writeFileSync(path, out);
   }
   written.push(f.file);
   console.log(`wrote ${relative(repo, path)} (${f.width} × ${f.height})`);
