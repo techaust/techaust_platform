@@ -1,6 +1,6 @@
 Status: open
 Tier: C
-Usage:
+Usage: designer claude-opus-5-5/high (preview): weekly 80 → 81 %, 5-h 3 → 9 % · reviewer claude-opus-5-5/high: weekly 81 → 81 %, 5-h 9 → 10 % · designer claude-opus-5-5/medium (fixes): weekly 81 → 81 %, 5-h 10 → 11 % · reviewer claude-opus-5-5/high (re-check, resumed): weekly 81 → 81 %, 5-h 11 → 11 %
 
 # Brand social media kit
 
@@ -169,7 +169,11 @@ Triage (lead): 1–2 fixed before merge; 3, 4, 5, 6, 9 are small and fixed in th
 
 ## Integration notes
 
-_(lead)_
+- **Preview approved** by the owner on 2026-10-16 with the Facebook, Upwork and Google choices ([13](../13-decisions.md)). The lead merged `brand/social-kit-design` into `brand/social-kit`, set `SOCIAL_KIT_COMMITTED = true`, rendered the kit with `build:social` and committed the 45 files plus the README, and added the `build:social` line to CLAUDE.md.
+- **Review round 2:** APPROVE. The fix branch `brand/social-kit-fix` was fast-forwarded; only `social/README.md` and the two Google logo PNGs changed among the outputs (pixels identical).
+- **Full check on fe1741a:** `pnpm check` passes; `pnpm test`: core 259, ui 426 (+2 skipped by design), db 26, jobs 2, admin 1, portal 1, all passing.
+- **Model audit:** all runs within the plan (lead Opus 5.5 medium; designer high, then medium for fixes; reviewer high).
+- **Follow-ups:** #8, check that the Upwork banner's domain line can be read after upload and enlarge it if not; check the third-party sizes (Instagram, Threads, WhatsApp Business, YouTube) on a real phone after upload; "since 2019" against the GST registration date if used in official listings (VERIFY WITH CA/LEGAL).
 
 ## Handover
 
