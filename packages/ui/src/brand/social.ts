@@ -42,7 +42,7 @@ export type SocialItem = {
   svg?: true;
   /** transparent background (the lockup PNGs for directory sites); everything else is opaque */
   transparent?: true;
-  /** upload limit per file, in bytes */
+  /** the file must stay under this: the platform's published limit where there is one, otherwise a conservative ceiling */
   maxBytes: number;
   /** how the platform shows it */
   shown: "circle" | "rounded square" | "square" | "banner" | "story circle" | "post";
@@ -970,10 +970,10 @@ const PLATFORM_INFO: Record<string, { title: string; where: string[] }> = {
 
 const fmtBytes = (n: number) => (n >= MB ? `${n / MB} MB` : `${n / KB} KB`);
 const sourceText: Record<SourceKind, string> = {
-  official: "size from the platform's own help page",
-  "platform guide": "size from the platform's own guide",
-  "third-party": "size from several guides, not an official page: **check on a real device**",
-  "none published": "the platform publishes no size: **check on a real device**",
+  official: "Size from the platform's own help page.",
+  "platform guide": "Size from the platform's own guide.",
+  "third-party": "Size from several guides, not an official page: **check on a real device**.",
+  "none published": "The platform publishes no size: **check on a real device**.",
 };
 
 export function socialReadme(plan: SocialFile[]): string {
@@ -1003,10 +1003,10 @@ export function socialReadme(plan: SocialFile[]): string {
           : f.kind === "svg"
             ? "Editable version of the same frame."
             : "";
-      const limit =
-        f.kind === "jpg" ? `under ${fmtBytes(i.jpg?.maxBytes ?? 0)}` : `limit ${fmtBytes(i.maxBytes)}`;
+      const extra =
+        f.kind === "jpg" ? `Under ${fmtBytes(i.jpg?.maxBytes ?? 0)}, Facebook's fastest-loading size.` : "";
       lines.push(
-        `| \`${f.file.slice(p.length + 1)}\` | ${f.width} × ${f.height} | ${[note, `${limit}; ${sourceText[i.source]}`].filter(Boolean).join(" ")} |`,
+        `| \`${f.file.slice(p.length + 1)}\` | ${f.width} × ${f.height} | ${[note, extra, sourceText[i.source]].filter(Boolean).join(" ")} |`,
       );
     }
   }
