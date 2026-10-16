@@ -148,7 +148,18 @@ Checked at 100 %: edges crisp (axis-aligned edges on whole pixels, only the 45°
 
 ## Review
 
-_(lead copies the reviewer's reply)_
+**Round 1 (reviewer claude-opus-5-5/high, 2026-10-16): SEND BACK, 2 high, 7 low.** Tests re-run (272 passed, 2 skipped as designed); 13 images opened at full size, the rest checked by tests.
+1. **High:** `scripts/build-social.ts:17-24`: `--out` accepts the repo root, source folders, other drives or an empty value, then `rmSync`s it. Fix: only strictly inside `<repo>/.logs/`; reject a missing value or one starting `--`.
+2. **High:** Google Business `logo.png` (2,982 B) and `logo@2x.png` (9,323 B) are under Google's official 10 KB minimum; tests check only the upper limit. Fix: `minBytes` on items, assert it in the test and `check-social-out.ts`, make the files comply honestly (no junk padding), state the floor in the README.
+3. **Low:** the Facebook JPG's dimensions and colour space are never asserted.
+4. **Low:** the palette check matches only 6-digit hex; named colours, `#fff` or `rgb()` would pass.
+5. **Low:** the post-template watermark bleeds off the right edge, against the comment at `social.ts:608-609`; the image is owner-approved as shown, so correct the comment.
+6. **Low:** README @2x rows inherit "Size from the platform's own help page"; use "Double size of the above".
+7. **Low:** 07-B WhatsApp "About" instruction is ambiguous; name the 87-character line.
+8. **Low:** the Upwork banner's domain line may be too small once scaled down; check on a real device after upload (follow-up).
+9. **Low:** `social.ts:61` docstring says the inscribed circle subtracts a stroke; it doesn't.
+
+Triage (lead): 1–2 fixed before merge; 3, 4, 5, 6, 9 are small and fixed in the same pass; 7 fixed by the lead; 8 is a follow-up.
 
 ## Integration notes
 

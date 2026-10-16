@@ -26,7 +26,7 @@ Build it right. Automate the rest. Software & AI automation studio, India, since
 ```
 
 ### Medium (140 characters)
-For limits of about 150 characters or more: X, Instagram, Threads, the Upwork tagline. (WhatsApp Business "About" allows 139: use the one-line short version below.)
+For limits of about 150 characters or more: X, Instagram, Threads, the Upwork tagline. (WhatsApp Business "About" allows 139: use the 87-character line below.)
 
 ```text
 Build it right. Automate the rest.
@@ -65,7 +65,7 @@ Balurghat, West Bengal · techaust.com · contact@techaust.com
 | Facebook Page | Intro / Category / Website / Email | short / Software company / website / email | `social/facebook/` |
 | Instagram | Bio / Link / Category | medium / website / Software company | `social/instagram/` |
 | Threads | Bio / Link | medium / website | `social/threads/` |
-| WhatsApp Business | About / Description / Category / Website / Email / Hours | one-line short / long / IT services / website / email / Mon–Sat 10:00–19:00 IST | `social/whatsapp-business/` |
+| WhatsApp Business | About / Description / Category / Website / Email / Hours | the 87-character line / long / IT services / website / email / Mon–Sat 10:00–19:00 IST | `social/whatsapp-business/` |
 | Google Business Profile | Description / Category / Website / Hours | long / Software company / website / Mon–Sat 10:00–19:00 IST | `social/google-business/` |
 | YouTube | Description / Links / Email | long / website / email | `social/youtube/` |
 | Upwork agency | Tagline / Overview | medium / long | `social/upwork/` |
