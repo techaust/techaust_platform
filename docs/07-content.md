@@ -45,7 +45,8 @@
 
 | Claim on site | Source | Status |
 |---|---|---|
-| "A small senior team with 10+ years' experience" | Owner interview, 02 §1 | 🟧 OWNER confirms before launch |
+| "A small senior team with 10+ years' experience" | Owner interview, 02 §1 | Confirmed (owner, 2026-10-16) |
+| "Serving clients since 2019" / "Est. 2019" (TecHaust Technologies, under this name) | Owner, 2026-10-16 | Confirmed |
 | "20+ projects delivered (web apps, AI and automation, mobile, websites)" | Owner interview, 02 §1 | 🟧 OWNER confirms |
 | "Experience with Tally integration and GST e-invoice / GSP APIs" | Owner, 03 §0 | Confirmed (03 §0) |
 | "React Native/Expo and Flutter" | Owner, 03 §0 | Confirmed |
