@@ -230,7 +230,8 @@ export const SOCIAL_ITEMS: SocialItem[] = [
     svg: true,
     maxBytes: 30 * MB,
     shown: "post",
-    safe: [rect(88, 88, 904, 904)],
+    // the 88 px margin, less a few pixels for the round letters' overshoot below the baseline
+    safe: [rect(80, 80, 920, 920)],
     overlays: [{ label: "headline area", zone: rect(88, 200, 784, 300) }],
     source: "third-party",
     note: "Square post frame. Add a headline in the empty area (edit the SVG, or place the PNG in any editor).",
@@ -244,7 +245,7 @@ export const SOCIAL_ITEMS: SocialItem[] = [
     svg: true,
     maxBytes: 30 * MB,
     shown: "post",
-    safe: [rect(88, 88, 904, 1174)],
+    safe: [rect(80, 80, 920, 1190)],
     overlays: [{ label: "headline area", zone: rect(88, 200, 784, 480) }],
     source: "third-party",
     note: "Portrait (4:5) post frame, the tallest Instagram shows in the feed.",
@@ -299,8 +300,8 @@ export const SOCIAL_ITEMS: SocialItem[] = [
     x2: false,
     maxBytes: 5 * MB,
     shown: "banner",
-    // survives a centred square crop (x 420–1500) and a 3:1 band (y 220–860)
-    safe: [rect(480, 360, 960, 360)],
+    // survives a centred square crop (x 420–1500) and a 3:1 band (y 220–860), above a centred photo on the lower edge
+    safe: [rect(480, 280, 960, 280)],
     overlays: [
       { label: "square crop", zone: rect(420, 0, 1080, 1080) },
       { label: "3:1 band", zone: rect(0, 220, 1920, 640) },
@@ -373,7 +374,7 @@ export const SOCIAL_ITEMS: SocialItem[] = [
     x2: false,
     maxBytes: 5 * MB,
     shown: "banner",
-    safe: [rect(1200, 64, 1440, 192)],
+    safe: [rect(900, 64, 1400, 192)],
     overlays: [{ label: "narrow screen (1600 px, centred)", zone: rect(800, 0, 1600, 320) }],
     source: "platform guide",
     note: "Agency banner. Upwork scales and crops it to the screen; the lockup sits centre-right.",
@@ -607,20 +608,24 @@ export function createSocial(brand: Brand) {
   // Every watermark bleeds off the top left, never off the right edge: the mark's character (its 45° cut and the
   // right stem) is on its right side and must stay in the frame.
   const covers: Record<string, (k: number) => Drawing> = {
-    "linkedin/company-cover": (k) =>
-      frame(1512 * k, 256 * k, [
+    // LinkedIn may trim the cover to the screen; a compact block just right of centre survives a phone-width trim
+    // (x 256–1256 at 375 px) and stays clear of the logo tile.
+    "linkedin/company-cover": (k) => {
+      const b = block(36 * k, 18 * k, 14 * k);
+      return frame(1512 * k, 256 * k, [
         watermark(-17 * k, -46 * k, 380 * k),
-        ...row(40 * k, "right", 1400 * k, 128 * k),
-      ]),
+        ...stack(b.els, b.gaps, "centre", 940 * k, 128 * k),
+      ]);
+    },
     "linkedin/founder-background": (k) => {
-      const b = block(48 * k, 24 * k, 16 * k);
+      const b = block(48 * k, 24 * k, 18 * k);
       return frame(1584 * k, 396 * k, [
         watermark(-25 * k, -67 * k, 560 * k),
         ...stack(b.els, b.gaps, "right", 1472 * k, 148 * k),
       ]);
     },
     "x/header": (k) => {
-      const b = block(52 * k, 26 * k, 17 * k);
+      const b = block(52 * k, 26 * k, 20 * k);
       return frame(1500 * k, 500 * k, [
         watermark(-29 * k, -77 * k, 640 * k),
         ...stack(b.els, b.gaps, "right", 1380 * k, 250 * k),
@@ -629,35 +634,39 @@ export function createSocial(brand: Brand) {
     // Facebook: everything inside x 150–560, the part every crop keeps; the right of the frame is calm ground, so a
     // cropped cover loses nothing.
     "facebook/cover": (k) => {
-      const b = block(26 * k, 15 * k, 11 * k, true);
+      const b = block(26 * k, 15 * k, 12 * k, true);
       return frame(851 * k, 315 * k, [
-        watermark(-13 * k, -34 * k, 280 * k),
-        ...stack(b.els, b.gaps, "right", 556 * k, 142 * k),
+        watermark(-40 * k, -34 * k, 280 * k),
+        ...stack(b.els, b.gaps, "right", 520 * k, 142 * k),
       ]);
     },
-    "whatsapp-business/cover": (k) => centred16x9(k),
-    "google-business/cover": (k) => centred16x9(k),
+    "whatsapp-business/cover": (k) => centred16x9(k, 392, 48),
+    "google-business/cover": (k) => centred16x9(k, 540, 56),
     // YouTube: TV shows the whole frame, desktop the full-width band, phones only the centre 1546 × 423.
     "youtube/banner": (k) => {
-      const b = block(72 * k, 36 * k, 24 * k, true);
+      const b = block(72 * k, 36 * k, 27 * k, true);
       return frame(2560 * k, 1440 * k, [
         watermark(-52 * k, -138 * k, 1150 * k),
-        ...stack(b.els, b.gaps, "right", 1993 * k, 720 * k),
+        ...stack(b.els, b.gaps, "right", 1953 * k, 720 * k),
       ]);
     },
     "upwork/agency-banner": (k) =>
       frame(3200 * k, 320 * k, [
         watermark(-23 * k, -62 * k, 520 * k),
-        ...row(56 * k, "centre", 1920 * k, 160 * k),
+        ...row(56 * k, "centre", 1660 * k, 160 * k),
       ]),
   };
 
-  /** WhatsApp and Google: the block centred for any crop, the watermark in the top-left corner. */
-  function centred16x9(k: number): Drawing {
-    const b = block(56 * k, 28 * k, 19 * k, true);
+  /**
+   * WhatsApp and Google: the block centred across for any crop, the watermark in the top-left corner. WhatsApp sets
+   * the block a size smaller and higher (centre y 392): between the 3:1 band's top and a profile photo that may sit
+   * centred over the band's lower edge.
+   */
+  function centred16x9(k: number, cy: number, c: number): Drawing {
+    const b = block(c * k, (c / 2) * k, Math.round(c * 0.38) * k, true);
     return frame(1920 * k, 1080 * k, [
       watermark(-29 * k, -77 * k, 640 * k),
-      ...stack(b.els, b.gaps, "centre", 960 * k, 540 * k),
+      ...stack(b.els, b.gaps, "centre", 960 * k, cy * k),
     ]);
   }
 
@@ -970,6 +979,8 @@ const sourceText: Record<SourceKind, string> = {
 export function socialReadme(plan: SocialFile[]): string {
   const lines = [
     "# TecHaust social media kit",
+    "",
+    "The bios and profile text for each platform: [docs/07-content-appendix/B-social-profiles.md](../../../../docs/07-content-appendix/B-social-profiles.md).",
     "",
     "Generated from the brand sources by `pnpm --filter @techaust/ui build:social`. Do not edit these files by hand;",
     "change `packages/ui/src/brand/social.ts` and rebuild. One folder per platform. Files ending in `@2x` are the same",

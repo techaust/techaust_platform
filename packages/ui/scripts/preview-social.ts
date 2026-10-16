@@ -6,18 +6,16 @@
 //   node packages/ui/scripts/preview-social.ts
 // The mock-up chrome is neutral grey with generic labels ("Page name"); it is not the platforms' real UI and holds
 // no account data.
-import { mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
-import { createBrand, parseMaster } from "../src/brand/compose.ts";
 import { SOCIAL_ITEMS, type SocialItem, type Zone } from "../src/brand/social.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const out = join(root, "..", "..", ".logs", "social");
 const kit = join(out, "kit");
 mkdirSync(out, { recursive: true });
-createBrand(parseMaster(readFileSync(join(root, "brand/source/techaust-master.svg"), "utf8"))); // master parses
 
 const FONT = "Segoe UI, Arial, sans-serif";
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
@@ -623,10 +621,10 @@ async function whatsapp(): Promise<Panel[]> {
   for (const theme of ["light", "dark"] as Theme[]) {
     const u = theme === "light" ? UI.light : { ...UI.dark, bg: "#0B141A", block: "#1F2C33" };
     const W = 390;
-    const ch = Math.round((W * 9) / 16 / 1.6); // assumed: a shallow band of the 16:9 cover (no official spec)
+    const ch = Math.round((640 * W) / 1920); // assumed: the 3:1 band of the 16:9 cover (no official spec)
     const coverFull = await resized(file("whatsapp-business", "cover"), W, Math.round((W * 1080) / 1920));
     const cover = await sharp(coverFull)
-      .extract({ left: 0, top: Math.round(((W * 1080) / 1920 - ch) / 2), width: W, height: ch })
+      .extract({ left: 0, top: Math.round((220 * W) / 1920), width: W, height: ch })
       .png()
       .toBuffer();
     const d = 120;
@@ -637,7 +635,7 @@ async function whatsapp(): Promise<Panel[]> {
       text(W / 2, ch + d / 2 + 68, "Business account", 13, u.muted, 'text-anchor="middle"') +
       bars(24, ch + d / 2 + 96, [342, 300, 240], u.block, 12, 24);
     panels.push({
-      title: `WhatsApp Business profile (${theme}), assumed layout: cover band, photo centred over it`,
+      title: `WhatsApp Business profile (${theme}), assumed: 3:1 band, photo centred on its edge`,
       buf: await canvas(W, H, u.bg, [
         { input: cover, left: 0, top: 0 },
         { input: avatar, left: W / 2 - d / 2 - 4, top: ch - d / 2 - 4 },
@@ -786,7 +784,7 @@ async function others(): Promise<Panel[]> {
     });
   }
   {
-    const W = 760;
+    const W = 840;
     const H = 300;
     const sizes = [260, 120, 48, 32, 20];
     const layers: Layer[] = [];
@@ -847,9 +845,9 @@ async function crops(): Promise<Panel[]> {
   const panels: Panel[] = [];
   for (const [platform, name, left, top, w, h] of [
     ["x", "header", 880, 150, 520, 200],
-    ["linkedin", "company-cover", 540, 80, 520, 100],
-    ["facebook", "cover", 300, 70, 280, 150],
-    ["youtube", "banner", 1320, 560, 700, 320],
+    ["linkedin", "company-cover", 700, 60, 520, 140],
+    ["facebook", "cover", 260, 60, 280, 170],
+    ["youtube", "banner", 1270, 560, 700, 320],
     ["instagram", "highlight-contact", 260, 680, 560, 560],
     ["instagram", "post-template-square", 60, 60, 520, 120],
     ["x", "profile@2x", 160, 160, 480, 480],
@@ -915,3 +913,5 @@ await sheet(
 );
 await sheet("09-small-sizes", "Small sizes", await small(), 1);
 await sheet("10-crops-100", "100 % crops (edges and type at the real pixel size)", await crops(), 2);
+// The centre squares cut from the highlight covers were only needed for the mock-ups.
+for (const h of HIGHLIGHTS) rmSync(join(out, `tmp-hl-${h}.png`), { force: true });
