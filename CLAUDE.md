@@ -124,6 +124,7 @@ pnpm --filter @techaust/ui build:fonts      # subset fonts → fonts/*.woff2, fo
 pnpm --filter @techaust/ui draw:master      # src/brand/geometry.ts + Archivo → brand/source/techaust-master.svg
 pnpm --filter @techaust/ui build:brand      # master → every logo, icon, social image + brand/print/*.pdf
 pnpm --filter @techaust/ui build:wallpapers # geometry + tokens → brand/wallpapers/*.png (company desktop + phone wallpapers)
+pnpm --filter @techaust/ui build:social     # geometry + tokens → brand/social/<platform>/ (profile pictures, covers, README); add `-- --zip` for the owner's zip in .logs/social/
 python packages/ui/scripts/measure-cmyk.py  # Windows only: ICC print CMYK → tokens/print-cmyk.json (after palette changes)
 
 # Database (packages/db)

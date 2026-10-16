@@ -16,7 +16,7 @@ import { fitMark } from "./wallpapers.ts";
  * approval). While this is false the folder brand/social/ must not exist and the file tests are skipped; flip it to
  * true in the same commit that adds the approved files.
  */
-export const SOCIAL_KIT_COMMITTED = false;
+export const SOCIAL_KIT_COMMITTED = true;
 
 /** The wordmark's width in master units (checked against the master by the test). */
 export const WORDMARK_UNITS = 734.05;
