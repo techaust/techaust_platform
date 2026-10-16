@@ -6,6 +6,7 @@
 | **Date** | 2026-10-06 (last updated 2026-10-07) |
 | **Inputs** | [02](02-services-strategy.md) positioning, portfolio and prices · [04 PRD](04-prd.md) · [06 design system](06-design-system.md) · legal research [08-B](08-research-appendix/B-dpdp-legal.md) |
 | **Legal page drafts** | [07-A Legal pages](07-content-appendix/A-legal-pages.md) (privacy, terms, refund, delivery, cookies, security, accessibility). VERIFY WITH CA/LEGAL. |
+| **Social profiles** | [07-B Social media profiles](07-content-appendix/B-social-profiles.md) (bios, tagline and profile details for every platform; images in `packages/ui/brand/social/`) |
 
 **How to read this document**
 - Copy here is **final draft** wording. In Phase 6 it moves into Markdown files under `apps/web/src/content/`. Small edits for layout fit may happen; changes of meaning come back to you.
@@ -44,7 +45,8 @@
 
 | Claim on site | Source | Status |
 |---|---|---|
-| "A small senior team with 10+ years' experience" | Owner interview, 02 §1 | 🟧 OWNER confirms before launch |
+| "A small senior team with 10+ years' experience" | Owner interview, 02 §1 | Confirmed (owner, 2026-10-16) |
+| "Serving clients since 2019" / "Est. 2019" (TecHaust Technologies, under this name) | Owner, 2026-10-16 | Confirmed |
 | "20+ projects delivered (web apps, AI and automation, mobile, websites)" | Owner interview, 02 §1 | 🟧 OWNER confirms |
 | "Experience with Tally integration and GST e-invoice / GSP APIs" | Owner, 03 §0 | Confirmed (03 §0) |
 | "React Native/Expo and Flutter" | Owner, 03 §0 | Confirmed |
