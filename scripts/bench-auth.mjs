@@ -68,8 +68,14 @@ async function call(route, body, cookie) {
   timings.push({ route, status: res.status, ms: Math.round(ms), ray: res.headers.get("cf-ray") });
   if (res.status >= 300 && res.status < 400)
     throw new Error(`Redirected (Cloudflare Access refused the service token?) on ${route}`);
-  const data = await res.json().catch(() => ({}));
-  return { status: res.status, data, cookie: res.headers.get("set-cookie")?.split(";")[0] ?? null };
+  // Strict service token authentication (on by default for Zero Trust accounts from 2026-10-05)
+  // answers a refused token with a non-JSON 401/403 from Access itself; the Worker always answers JSON.
+  const isJson = res.headers.get("content-type")?.includes("application/json") ?? false;
+  if (!LOCAL && (res.status === 401 || res.status === 403) && !isJson)
+    throw new Error(`Cloudflare Access refused the service token on ${route} (${res.status})`);
+  const data = isJson ? await res.json().catch(() => ({})) : {};
+  const session = res.headers.getSetCookie().find((c) => c.startsWith("__Host-ta_admin="));
+  return { status: res.status, data, cookie: session?.split(";")[0] ?? null };
 }
 
 // ---------- the browser's work ----------

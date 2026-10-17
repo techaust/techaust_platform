@@ -2,7 +2,7 @@
 
 **Gate (docs/09 M1.4):** login p99 ≤ **5 ms** CPU, and every route ≤ **7 ms** p99, on the Workers **Free** plan (10 ms per invocation). If it doesn't fit, I stop and ask: tune, use Cloudflare Access with simpler auth, or move to the $5 plan.
 
-**Status:** method ready; **results pending** the first run on staging (after Access, the service token and the login secrets are in place, see [access-staging.md](access-staging.md)).
+**Status:** method ready; **results pending**. The run comes after PR #7 is on staging, with the login secrets (Part 3) and the service token (Part 2) in place, see [access-staging.md](access-staging.md). Access itself is on since 2026-10-17.
 
 ## What is measured
 The staff login routes of the staging admin Worker (`techaust-platform-admin-staging`), as designed in [05 §6.1](../05-architecture.md):
@@ -16,9 +16,13 @@ The staff login routes of the staging admin Worker (`techaust-platform-admin-sta
 | `POST /api/v1/auth/invite/*` | Enrolment only (rare): measured, but not part of the login gate |
 
 ## How to run it (owner)
-1. GitHub → **Actions → Auth CPU benchmark (staging) → Run workflow** (defaults: 12 users, 5 minutes). Only the `techaust` account can run it.
+1. Right after the staging deploy of PR #7 finishes (so the first requests hit cold isolates): GitHub → **Actions → Auth CPU benchmark (staging) → Run workflow** (defaults: 12 users, 5 minutes). Only the `techaust` account can run it.
 2. When it finishes, the run page shows the time window and wall-clock timings. Tell me "benchmark done".
-3. I read the CPU time of every request in that window from **Workers Logs** (Cloudflare MCP, read-only), compute p50/p99/max per route, include the first requests after the deploy (cold isolates), and fill in the table below.
+3. The same day (log retention is short), I read **Workers Logs** for `techaust-platform-admin-staging` (Cloudflare MCP, read-only), within the run's `windowUtc`, for paths under `/api/v1/auth/`:
+   - first I list the available fields (the CPU-time field name is checked, not assumed)
+   - per route (`salt`, `login`, `totp`, `me`; `invite/*` separately): count, CPU p50/p99/max, wall time, outcome and status (about 1 in 10 logins is a 401 by design)
+   - the first requests after the deploy (cold isolates) and the max are reported separately
+   - the gate: login p99 ≤ 5 ms and every route p99 ≤ 7 ms; on a fail I stop and ask
 
 The benchmark creates throwaway users (`@bench.invalid`) and deletes them at the end. The append-only audit log keeps their `auth.login` rows, as designed.
 

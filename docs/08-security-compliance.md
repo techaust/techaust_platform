@@ -137,7 +137,7 @@ See [05 §6](05-architecture.md). Key controls:
 | Secret | Where stored | Who can read | Rotation |
 |---|---|---|---|
 | `PASSWORD_PEPPER`, `SALT_PEPPER` | Wrangler secret (admin), staging and prod differ | Cloudflare account owner only | **Never routinely** (rotation forces password resets). Rotate only on suspected compromise, with a reset procedure. |
-| `SESSION_HMAC_KEY`, `MAGIC_LINK_KEY`, `DOC_TOKEN_KEY`, `TOTP_ENC_KEY` | Wrangler secrets | Owner | Yearly or on suspicion. Session keys can rotate with a key ID (old one valid 7 days); `TOTP_ENC_KEY` rotation re-encrypts the secrets via a script. |
+| `SESSION_HMAC_KEY`, `MAGIC_LINK_KEY`, `DOC_TOKEN_KEY`, `TOTP_ENC_KEY` | Wrangler secrets | Owner | Yearly or on suspicion. `SESSION_HMAC_KEY` signs only the short-lived login (5-minute) and enrolment (10-minute) challenges (sessions are random tokens stored as SHA-256 hashes), so rotating it needs no key ID: it only cancels sign-ins in progress; to end sessions, use "sign out everyone". `TOTP_ENC_KEY` rotation re-encrypts the secrets via a script. |
 | Gateway API keys and webhook secrets (Razorpay, Stripe, PayPal) | Wrangler secrets (admin/portal: create-only keys where providers allow restricted keys; jobs: status/refund) | Owner | Yearly or on staff change. **Test keys only until Phase 7.** Stripe **restricted keys** with minimal permissions. |
 | SES IAM access key | Wrangler secret (jobs) | Owner | 90 days (calendar reminder + a cron alert from key age) |
 | `SES_EVENTS_TOKEN` | Wrangler secret + EventBridge connection | Owner | Yearly |
@@ -302,3 +302,4 @@ All 15 questions are in [08-A, the last section](08-research-appendix/A-gst-invo
 |---|---|
 | 2026-10-06 | Phase 4 approved. |
 | 2026-10-07 | Quality pass: status column on §0 and a new U-9 (57th GST Council re-check); FEMA and UPI items re-worded (VERIFY WITH CA); staging Workers threat row and the Access secret names; break-glass and Time Travel restore steps corrected; §3 checklist ticked for what M1.2 and M1.3 built; §7.1 notes which defaults are settings today and adds the estimate and proposal series; runbook references point to M7.5 and L7. Owner decisions: the long-term backup holds finance/GST tables only (§6.1); G-11 also stops at the annual-return filing date (VERIFY WITH CA/LEGAL). |
+| 2026-10-17 | §4: `SESSION_HMAC_KEY` rotation reworded for the M1.4 design (it signs only short-lived challenges; sessions are hashed random tokens, so no key ID is needed). |
