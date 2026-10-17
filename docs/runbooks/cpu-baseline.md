@@ -2,7 +2,7 @@
 
 **Gate (docs/09 M1.4):** login p99 ≤ **5 ms** CPU, and every route ≤ **7 ms** p99, on the Workers **Free** plan (10 ms per invocation). If it doesn't fit, I stop and ask: tune, use Cloudflare Access with simpler auth, or move to the $5 plan.
 
-**Status:** method ready; **results pending**. The run comes after PR #7 is on staging, with the login secrets (Part 3) and the service token (Part 2) in place, see [access-staging.md](access-staging.md). Access itself is on since 2026-10-17.
+**Status:** measured 2026-10-17: **gate failed** (login p99 6 ms, totp p99 12 ms); tuning next, see Results. Setup: [access-staging.md](access-staging.md) (all three parts done 2026-10-17).
 
 ## What is measured
 The staff login routes of the staging admin Worker (`techaust-platform-admin-staging`), as designed in [05 §6.1](../05-architecture.md):
@@ -27,14 +27,28 @@ The staff login routes of the staging admin Worker (`techaust-platform-admin-sta
 The benchmark creates throwaway users (`@bench.invalid`) and deletes them at the end. The append-only audit log keeps their `auth.login` rows, as designed.
 
 ## Results
-_To be filled after the first run._
 
-| Route | Requests | CPU p50 | CPU p99 | CPU max | Gate |
-|---|---|---|---|---|---|
-| salt | | | | | ≤ 7 ms |
-| login | | | | | ≤ 5 ms |
-| totp | | | | | ≤ 7 ms |
-| me | | | | | ≤ 7 ms |
+### Run 2 (decisive): 2026-10-17, 15 minutes, 12 users
+Run `mvcbujlie045`, window 11:42:37–11:58:28 UTC, version `7361380c`; 382 logins, 0 unexpected failures; every request outcome "ok" (1,610 × 200, 37 × 401 by design). CPU from Workers Logs (`$workers.cpuTimeMs`, whole milliseconds; read 2026-10-17).
+
+| Route | Requests | CPU p50 | CPU p99 | CPU max | Over 10 ms | Gate |
+|---|---|---|---|---|---|---|
+| salt | 432 | 1 ms | 5 ms | 7 ms | 0 | ≤ 7 ms ✅ |
+| login | 419 | 2 ms | **6 ms** | 8 ms | 0 | ≤ 5 ms ❌ |
+| totp | 388 | 4 ms | **12 ms** | 16 ms | **4** | ≤ 7 ms ❌ |
+| me | 373 | 1 ms | 3 ms | 6 ms | 0 | ≤ 7 ms ✅ |
+| invite/* (not gated) | 34 | 2–4 ms | — | 15 ms (first request) | 2 | — |
+
+CPU histograms (ms: count). login: 1:176, 2:159, 3:56, 4:13, 5:10, 6:3, 7:1, 8:1. totp: 2:129, 3:59, 4:81, 5:71, 6:22, 7:11, 8:8, 9:3, 12:1, 14:1, 16:2.
+
+### Run 1: 2026-10-17, 5 minutes, 12 users
+Run `mvcb9b836a40`, window 11:26:06–11:31:57 UTC; 143 logins, 0 unexpected failures. login p50 2 / p99 7 / max 7 ms (148 requests); totp 4 / 7 / 16 ms (157); salt 1 / 3 / 6 ms (163); me 1 / 3 / 6 ms (140). Too few requests for a stable p99, so run 2 was made (owner decision).
+
+### Verdict: gate failed (owner decision 2026-10-17: tune, then re-measure)
+- The spikes are scattered through both runs, not cold starts; most requests are cheap.
+- totp is the main problem: about 1 % of requests exceed the Free plan's 10 ms (Cloudflare let them finish, but it may cut them off).
+- Next: the analyst diagnoses where login and totp spend CPU; a builder tunes (Tier A); the 15-minute run is repeated. If tuning can't meet the gate, the owner chooses between the $5 plan and Access + simpler auth.
+- Wall-clock times (GitHub runner in the US → MSP colo): login ~240 ms, totp ~980 ms (D1 batch), not part of the gate.
 
 **Browser Argon2id** (m = 19 MiB, t = 2, p = 1; the sign-in page shows the time):
 - this PC (owner's Windows machine, local dev): **86–92 ms**

@@ -16,20 +16,20 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
 - **Cloudflare Access on staging** (owner, 2026-10-17; [PR #18](https://github.com/techaust/techaust_platform/pull/18)): all four staging Workers, all traffic, the "Cloudflare account" policy (the owner is the only member), Preview URLs off. Checked by the lead: every staging URL answers 302 to the Access login.
 
 ## In progress
-- **M1.4: the auth CPU spike, a gate** ([PR #7](https://github.com/techaust/techaust_platform/pull/7); [runs/m1.4-auth-spike.md](runs/m1.4-auth-spike.md)).
-  - **Built and tested locally:** the staff login API, the sign-in and invite screens, the benchmark workflow. Argon2id in the browser took 86–92 ms on the owner's PC.
-  - **Held:** no auto-merge. It needs updating with `main` (merge conflicts) and the follow-ups below before the owner's secrets steps.
+- **M1.4: the auth CPU spike, a gate** ([PR #7](https://github.com/techaust/techaust_platform/pull/7) merged 2026-10-17 and on staging; [runs/m1.4-auth-spike.md](runs/m1.4-auth-spike.md)).
+  - Access runbook Parts 1–3 done (secrets set, benchmark token attached to the admin app only).
+  - **Gate failed** on the 15-minute run: login p99 6 ms (gate 5), totp p99 12 ms (gate 7), about 1 % of totp over the Free plan's 10 ms; salt and me pass ([cpu-baseline.md](runbooks/cpu-baseline.md)). Owner: **tune, then re-measure**.
 
 ## Next
-1. **Update PR #7** (a fresh conversation; the `analyst` plans it first, per [14 §3](14-models-and-usage.md)): merge `main` and apply "PR #7 update" below. Rewrite Part 1 of `docs/runbooks/access-staging.md` for the new dashboard (the Worker's **Access** tab, "All traffic", the "Cloudflare account" policy, never the "Protect all Workers" card, Preview URLs off in the **Domains** tab). Check Part 2 (service token) against the current Zero Trust screens. Bind PR #7 and turn on Auto-fix; **no auto-merge**.
-2. The owner does Part 2 (service token + two `gh secret set`) and then Part 3 (four `wrangler secret put … --env staging`), with click-by-click steps from the lead.
-3. Merge PR #7; the owner runs **Actions → Auth CPU benchmark (staging) → Run workflow**; the lead reads CPU times from Workers Logs (read-only), fills `docs/runbooks/cpu-baseline.md` and applies the gate (login p99 ≤ 5 ms, every route ≤ 7 ms). If it fails, stop and ask.
-4. Then M1.5 (Tier A; the `analyst` drafts the brief).
+1. **Analyst** (fresh conversation, "continue"): where login and totp spend CPU, options ranked by saving; the lead writes a Tier A builder brief.
+2. **Builder** (Tier A) after the weekly reset (**Mon 19 Oct, 15:30 IST**): the tuning; then review.
+3. The owner re-runs the 15-minute benchmark; the lead applies the gate. Still failing → the owner chooses the $5 plan or Access + simpler auth.
+4. Then M1.5 (Tier A; the `analyst` drafts the brief). M1.5 must also stop Workers Logs keeping request headers (session cookie, Access token).
 
-**Usage at the end of 2026-10-17:** weekly 82 % (pace ≈ 67 %: over the pace, one agent at a time; at 85 % no new build or design), 5-hour window 2 %. The weekly reset is **Mon 19 Oct, 15:30 IST**; starting the PR #7 update after it is the safe choice. The first full measuring week ends then ([14 §8](14-models-and-usage.md)).
+**Usage on 2026-10-17 (afternoon):** weekly 82 % (over the pace: one agent at a time; at 85 % no new build or design), 5-hour window 7 %.
 
 ## Waits on the owner
-- **M1.4:** Parts 2–3 of the Access runbook, **after** the lead's updated steps (step 2 above).
+- **M1.4:** re-run the 15-minute benchmark after the tuning (step 3 above).
 - **Time-sensitive compliance** ([08 §0](08-security-compliance.md); all VERIFY WITH CA):
   - **U-3 UPI MDR from 15 Oct 2026:** check the Razorpay pricing.
   - **U-1:** the LUT for zero-rated exports (send the ARN if filed).
