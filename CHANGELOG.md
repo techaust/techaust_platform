@@ -1,0 +1,21 @@
+# Changelog
+
+One line per merged pull request, newest first; dates in IST.
+
+- 2026-10-17 [#18](https://github.com/techaust/techaust_platform/pull/18) docs: Access on for staging; M1.4 handover
+- 2026-10-16 [#17](https://github.com/techaust/techaust_platform/pull/17) feat(brand): social media kit for 12 platforms + bios
+- 2026-10-12 [#16](https://github.com/techaust/techaust_platform/pull/16) docs: end of day 2026-10-12 (wallpapers: status, changelog #14 #15, decisions)
+- 2026-10-12 [#15](https://github.com/techaust/techaust_platform/pull/15) feat(brand): company wallpapers (Monolith, Cut, Construction; desktop + phone)
+- 2026-10-12 [#14](https://github.com/techaust/techaust_platform/pull/14) docs: end of day 2026-10-12 (status, changelog #12 #13, designer/analyst named everywhere)
+- 2026-10-12 [#13](https://github.com/techaust/techaust_platform/pull/13) chore: three-model plan (Opus, Sonnet, Haiku 5.5 only; designer and analyst agents; model guard and audit)
+- 2026-10-08 [#12](https://github.com/techaust/techaust_platform/pull/12) docs: end of day 2026-10-08 (status, changelog #10 #11, Auto-fix on every PR)
+- 2026-10-08 [#11](https://github.com/techaust/techaust_platform/pull/11) chore: models and usage plan (tiers, per-tier model/effort, Haiku agents, budget gate)
+- 2026-10-07 [#10](https://github.com/techaust/techaust_platform/pull/10) docs: correct the quality-pass score average; changelog #9
+- 2026-10-07 [#9](https://github.com/techaust/techaust_platform/pull/9) docs: documentation quality pass (all 45 files), numbered record files, owner decisions
+- 2026-10-07 [#8](https://github.com/techaust/techaust_platform/pull/8) chore: working rules (agents, queue, daily sessions, record, merge on green)
+- 2026-10-06 [#6](https://github.com/techaust/techaust_platform/pull/6) M1.3: D1 schema, integrity triggers and seed
+- 2026-10-06 [#5](https://github.com/techaust/techaust_platform/pull/5) M1.2: core library (money, words, dates, GSTIN, numbering, permissions, form schemas)
+- 2026-10-06 [#4](https://github.com/techaust/techaust_platform/pull/4) docs: sync CLAUDE.md and docs after M1.1
+- 2026-10-06 [#3](https://github.com/techaust/techaust_platform/pull/3) M1.1: design tokens, fonts and the Patina brand identity
+- 2026-10-06 [#2](https://github.com/techaust/techaust_platform/pull/2) docs: sync CLAUDE.md and docs with Phase 5 reality
+- 2026-10-06 [#1](https://github.com/techaust/techaust_platform/pull/1) docs: Phase 5 status + staging environments runbook

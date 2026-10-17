@@ -1,3 +1,5 @@
+> **Historical record (2026-10-06).** This is the prompt that started the project. Several facts in it have changed (the repo is now public, the stack versions moved on, the logo was replaced by ADR 0013, and the ground rules grew to 12). The current rules are in [CLAUDE.md](../CLAUDE.md), the state in [12-status.md](12-status.md), the decisions in [13-decisions.md](13-decisions.md). Don't paste this into a new session: start with **"start the day"**.
+
 # Role
 You are a senior full-stack engineer, system architect, UI/UX designer, and technology business strategist. You hold a high bar for production quality, security, performance, accessibility, and SEO.
 

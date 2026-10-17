@@ -86,6 +86,8 @@ The definition of "body corporate" in s.43A **includes a sole proprietorship** e
 
 **Plain English.** Until May 2027 we need a privacy policy and a named Grievance Officer who replies within a month. "Sensitive personal data" includes passwords and bank or card details. We hold almost none: the gateways hold card data, and magic links mean we store no passwords. Bank details collected for refunds or vendor payments would count.
 
+**Dated correction (2026-10-07).** The paragraph above says we store no passwords. That holds for the client portal (magic links) but not for staff: admin accounts have a password plus TOTP. The password is stored only as an HMAC of the browser-side hash, and the TOTP secret is stored encrypted (AES-GCM) ([08 §3.2](../08-security-compliance.md)). Passwords count as sensitive personal data under SPDI Rule 3, so ask the lawyer how SPDI Rule 5(1) (consent before collecting such data) applies to staff sign-in (VERIFY WITH LEGAL).
+
 **Put in the privacy notice.** A Grievance Officer block (name, email, postal address, phone optional), a 1-month response promise, and a security summary.
 
 **Risk.** Compensation claims under s.43A (no cap). IT Act s.72A (disclosing data in breach of a lawful contract) carries up to 3 years in prison or a fine up to ₹5 lakh.
@@ -260,7 +262,7 @@ s.8(2) also requires a **valid contract** with every Data Processor.
 
 | Data | Keep | Then |
 |---|---|---|
-| Unconverted leads (quote form) | 24 months from last contact [?]. Never less than 12 months (Rule 8(3)) | Delete, or anonymise into statistics |
+| Unconverted leads (quote form) | 24 months from last contact [?]. Never less than 12 months (Rule 8(3)). **Superseded: 12 months, [08 §7.3 L-6](../08-security-compliance.md) and ADM-SET-09.** | Delete, or anonymise into statistics |
 | Marketing consent records | For as long as we email the person, plus 3 years (proof of consent) | Delete |
 | Client org and contacts | Contract term, plus 8 years (to cover GST's 72 months and limitation) | Delete or archive |
 | Invoices, receipts, payment refs, credit notes | **72 months from the annual-return due date** | Delete |
@@ -416,7 +418,7 @@ Contact people at EU client businesses are "data subjects". **Art. 3(2)(b)** (mo
 - **International clients:** add **arbitration** (Arbitration and Conciliation Act 1996), seated in Kolkata (or online), English language, sole arbitrator. Arbitral awards are enforceable abroad under the New York Convention; Indian court judgments often are not. This belongs in the **client contract/MSA**, not only in the website terms.
 
 **Clauses**
-- Who we are: trade name, proprietor, GSTIN, address.
+- Who we are: trade name, proprietor, GSTIN, address. (**Superseded by [08 §7.3 L-16](../08-security-compliance.md): no GSTIN on the website.**)
 - Acceptance by using the site.
 - Changes to the terms.
 - **Information only, no offer**: prices marked "**starting from**" are indicative. Every engagement needs a written proposal, and the proposal and MSA override the site.
@@ -599,7 +601,7 @@ Scope: techaust.com, portal.\*, admin.\* (admin login only, no brute force). Out
 
 ### A. Privacy notice (one page, with a short standalone summary on top)
 - [ ] Summary box (Rule 3 "understandable on its own"): who we are; what we collect; why; who we share with; your choices; contact.
-- [ ] **Who we are:** TecHaust Technologies, sole proprietorship of [Proprietor name], [full address, Balurghat, Dakshin Dinajpur, WB, PIN], GSTIN [x], email, phone.
+- [ ] **Who we are:** TecHaust Technologies, sole proprietorship of [Proprietor name], [full address, Balurghat, Dakshin Dinajpur, WB, PIN], GSTIN [x], email, phone. (**Superseded by [08 §7.3 L-16](../08-security-compliance.md): no GSTIN on the website.**)
 - [ ] **Contact person for privacy questions (DPDP Rule 9)** and **Grievance Officer (SPDI 5(9) / E-Com r.4)**: name, designation, email (privacy@ / grievance@), postal address. Response times: acknowledge in 48 h, resolve within 30 days (and never later than 90 days).
 - [ ] **Itemised data table** per system: website visitors (IP, device, Turnstile signals, analytics if consented); enquirers (name, email, company, phone optional, budget band, message); clients' contacts (name, title, work email, phone, portal activity); proposal acceptance (typed name, IP, timestamp, user-agent); billing (invoice details, GSTIN, payment status and references, never card data); bookings (Cal.com); email correspondence (Zoho); error and diagnostic data (Sentry); staff (a separate internal notice).
 - [ ] **Purpose and basis for each item:** DPDP (legitimate use s.7(a), consent, legal obligation) plus a GDPR column.
@@ -619,7 +621,7 @@ Scope: techaust.com, portal.\*, admin.\* (admin login only, no brute force). Out
 - [ ] Version, effective date, change log; we notify material changes by email to clients.
 
 ### B. Terms of Use (website)
-- [ ] Parties and identity (trade name, proprietor, GSTIN, address); acceptance; changes.
+- [ ] Parties and identity (trade name, proprietor, GSTIN, address); acceptance; changes. (**Superseded by [08 §7.3 L-16](../08-security-compliance.md): no GSTIN on the website.**)
 - [ ] Site is information only. No offer. **"Starting from" prices are indicative. Proposals and MSA override.** **All prices exclude GST.**
 - [ ] Demos, case studies, AI examples are illustrative; results vary; synthetic content labelled.
 - [ ] IP ownership; limited licence; trademarks; feedback licence.

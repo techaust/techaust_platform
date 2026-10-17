@@ -1,5 +1,5 @@
 // Service catalogue seed S1–S18 [ADM-CAT-01]: names, categories and "from" prices from docs/02 §4.1–4.2
-// (owner-approved, M1.3); slugs from docs/04 §4.2; SAC codes from docs/08 §7.1 G-2 (VERIFY WITH CA);
+// (owner-approved, M1.3); slugs from docs/04 §3.2; SAC codes from docs/08 §7.1 G-2 (VERIFY WITH CA);
 // payment schedules from Q-P3-6. Prices are minor units. Everything is editable in the admin later; the seed
 // only inserts entries that don't exist yet, so it never overwrites the Owner's edits.
 import type { DefaultLine, ScheduleStep } from "../schema/catalogue.ts";
@@ -145,7 +145,7 @@ export const CATALOGUE: readonly CatalogueSeed[] = [
     priceUsd: 3_000 * L,
     sac: "998314",
     schedule: UPFRONT,
-    slug: null, // shown inside Custom Web Apps (docs/04 §4.2)
+    slug: null, // shown inside Custom Web Apps (docs/04 §3.2)
     showOnSite: true,
   },
   {

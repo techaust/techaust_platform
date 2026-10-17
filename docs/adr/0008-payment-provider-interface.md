@@ -2,4 +2,4 @@
 
 - **Status:** Accepted (2026-10-06)
 - **Context and decision:** Razorpay/Stripe/PayPal/manual behind one interface; signatures verified on the raw body; idempotent; nothing is marked paid on a redirect.
-- **Details:** see docs/05-architecture.md.
+- **Details:** [05 §9](../05-architecture.md) (payment flows).

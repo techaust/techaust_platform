@@ -82,6 +82,8 @@ describe("vector files are up to date with the master", () => {
       ...rasterPlan(brand).map((r) => r.file),
       "source",
       "print",
+      "wallpapers",
+      "social",
     ]);
     expect(readdirSync(brandDir).filter((f) => !expected.has(f))).toEqual([]);
   });

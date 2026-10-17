@@ -2,4 +2,4 @@
 
 - **Status:** Accepted (2026-10-06)
 - **Context and decision:** A tiny SigV4 signer, India region, pennies per month; delivery events via EventBridge API destination.
-- **Details:** see docs/05-architecture.md.
+- **Details:** [05 §11.1](../05-architecture.md) (email).

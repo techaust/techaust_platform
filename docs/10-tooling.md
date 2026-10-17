@@ -3,15 +3,15 @@
 | | |
 |---|---|
 | **Phase** | 5, Setup and tooling (**T1–T12 APPROVED** 2026-10-06; Phase 5 complete, see §6) |
-| **Date** | 2026-10-06 |
-| **Rule** | Owner ground rule 6: each tool is explained here and **used only after your approval**. Using a tool never bypasses the other rules. Anything that **changes** Cloudflare, AWS, GitHub, DNS or production still needs your approval **for that specific action**. |
+| **Date** | 2026-10-06 (last updated 2026-10-07) |
+| **Rule** | CLAUDE.md hard rule 11: each tool is explained here and **used only after your approval**. Using a tool never bypasses the other rules. Anything that **changes** Cloudflare, AWS, GitHub, DNS or production still needs your approval **for that specific action**. |
 
 ## 1. Your machine (checked 2026-10-06)
 
 | Tool | Found | Needed | Action |
 |---|---|---|---|
 | Node.js | 24.19.0 | 24.x (→ 26 LTS after 28 Oct) | OK. The engines field allows ≥ 24.19 |
-| pnpm | 12.6.0 | 12.9.1 (pinned via `packageManager`) | Corepack fetches the pinned version automatically |
+| pnpm | 12.6.0 | 12.9.1 (pinned via `packageManager`) | pnpm switches to the pinned version itself (`packageManager`) |
 | git | 2.55.0 | — | OK. **No global name or email set yet** (asked at scaffold time) |
 | GitHub CLI | 2.101.0, signed in as `techaust` | — | OK |
 | wrangler | (not global) | 4.147.0 | Installed per project as a dev dependency |
@@ -49,7 +49,7 @@
 | "Ship A Cloudflare Worker", "devrunway", "securitymaxxing" (community plugins) | They overlap with the official Cloudflare plugin and the built-in review skills. Several install broad ("privileged") hooks, which is an unnecessary risk. |
 | Stark accessibility | A paid platform; not needed at our scale |
 
-## 5. After approval: what happens next (P5.2–P5.8, see [09](09-roadmap.md))
+## 5. After approval: what happens next (P5.2–P5.8, see [09](09-roadmap.md)): done 2026-10-06, see §6
 1. Install the Cloudflare plugin (T1) if approved, and connect it through Cloudflare's sign-in.
 2. Scaffold the monorepo and `git init`. I'll ask for your git author name/email.
 3. Ask your approval for the **first push** to `techaust/techaust_platform`.
@@ -61,7 +61,7 @@
 |---|---|
 | P5.1 Tools | ✅ T1–T12 approved; Cloudflare plugin installed via `claude plugin install cloudflare@cloudflare` (marketplace `cloudflare/skills`) and its MCP server authorised (read-only use). Cloudflare's agent-setup page reviewed: the beta `cf` CLI and the other-agent steps were skipped as unnecessary. |
 | P5.2–P5.3 Scaffold + git | ✅ Monorepo builds, lints, type-checks; 7 tests pass (4 in workerd) |
-| P5.4 First push | ✅ Approved; repo `techaust/techaust_platform` (owner made it **public**, see the risk note in memory/08) |
+| P5.4 First push | ✅ Approved; repo `techaust/techaust_platform` (owner made it **public**, see the risk note in [08 §0 U-6](08-security-compliance.md)) |
 | P5.5 GitHub settings | ✅ Branch protection on `main`: PR + `checks` required, admins included, linear history, no force-push or deletion |
 | P5.6 Staging resources | ✅ D1 `techaust-staging` + 8 queues ([runbooks/environments.md](runbooks/environments.md)); R2, Turnstile and Access deferred |
 | P5.7 CI token | ✅ Owner created `CF_API_TOKEN_STAGING` (Workers/D1/Queues/Account read; no zone/DNS) + `CLOUDFLARE_ACCOUNT_ID` |
@@ -85,3 +85,41 @@
 | **@vitest/coverage-v8** 4.1.11 | npm (dev-only, `packages/core`) | Enforces the ≥ 90 % coverage rule for `core` on every `pnpm test` (locally and in CI) | Matches Vitest 4.1.11 exactly |
 | Web fetch (built in) | Tool | Checked the GST state-code list against the official e-way bill master, and GSTIN check-character vectors | Read-only |
 
+## 9. Working-rules additions (2026-10-07, owner-approved)
+Approved in the 2026-10-07 interview ([13-decisions.md](13-decisions.md)). No new packages, plugins or MCP servers: all of these are built-in Claude Code features or small scripts in this repo.
+
+| Tool | Type | What it does | Access and limits |
+|---|---|---|---|
+| **builder** agent (`.claude/agents/builder.md`) | Claude Code subagent (Sonnet) | Writes code and tests for one task from a brief in `docs/runs/` | Its own git worktree; never touches hosted services, never pushes |
+| **reviewer** agent (`.claude/agents/reviewer.md`) | Claude Code subagent (Opus, high effort) | Reviews each task before it merges | Read-only |
+| Git worktrees | Built in (`isolation: "worktree"`) | A separate copy of the repo per builder or designer, in `.claude/worktrees/` (git-ignored) | Local disk only |
+| Monitor tool | Built in | Runs `tools/watch.sh` and wakes the lead only on an event | Local only |
+| `tools/heavy.sh` | Repo script (Git Bash) | Runs heavy commands one at a time per PC; pauses under 512 MB free memory | Local only |
+| `tools/watch.sh` | Repo script (Git Bash) | Reports a builder or designer stall (20 min, lock free) or low memory | Local only |
+| `start-session` / `end-session` skills | Repo skills (`.claude/skills/`) | "start the day" / "end the day" routines | Local; the end-session PR uses `gh` |
+
+## 10. Models-and-usage additions (2026-10-08, owner-approved)
+Approved with the models and usage plan ([14-models-and-usage.md](14-models-and-usage.md)). No new packages, plugins or MCP servers: these are Claude Code agent files and a script option in this repo.
+
+| Tool | Type | What it does | Access and limits |
+|---|---|---|---|
+| **code-finder** agent (`.claude/agents/code-finder.md`) | Claude Code subagent (Haiku 5.5, low effort, skips CLAUDE.md) | Answers "where is X"; replaces the built-in Explore, Plan and general-purpose agents (Opus; the hook now refuses them) | Read-only (Read, Glob, Grep) |
+| **test-runner** agent (`.claude/agents/test-runner.md`) | Claude Code subagent (Haiku 5.5, low effort, skips CLAUDE.md) | Runs one suite through `tools/heavy.sh --log` and reports only the failures | Runs commands; changes no files; never staging or production |
+| **doc-clerk** agent (`.claude/agents/doc-clerk.md`) | Claude Code subagent (Haiku 5.5, medium effort, skips CLAUDE.md) | Drafts CHANGELOG lines, status tables and link fixes | Edits only `CHANGELOG.md`, `docs/12-status.md` and relative links; the lead checks the diff |
+| `tools/heavy.sh --log <name>` | Repo script option | Writes the full output to `.logs/<name>.log` and prints only the exit code and last 40 lines | Local only; `*.log` is git-ignored |
+| Usage tool (`get_usage`) | Built in (desktop app) | Reads the plan's weekly and 5-hour usage for the budget gate | Read-only |
+
+The **builder** and **reviewer** rows in §9 still apply; their model and effort follow [14 §3](14-models-and-usage.md), and each agent's tools are a fixed list.
+
+## 11. The three-model plan (2026-10-12, owner-approved)
+Approved with the replacement of [14-models-and-usage.md](14-models-and-usage.md): only Opus 5.5, Sonnet 5.5 and Haiku 5.5, and Opus designs and builds every screen. No new packages, plugins or MCP servers: these are agent files, project settings and scripts in this repo, plus an update of the existing Claude Code command-line copy.
+
+| Tool | Type | What it does | Access and limits |
+|---|---|---|---|
+| **designer** agent (`.claude/agents/designer.md`) | Claude Code subagent (Opus 5.5, high) | Designs and builds every screen, page, component, PDF layout and email template, and checks its own screenshots | Builder's tools plus the Playwright browser tools (T4); local dev servers only; screenshots in `.logs/shots/` (git-ignored) |
+| **analyst** agent (`.claude/agents/analyst.md`) | Claude Code subagent (Opus 5.5, high) | Drafts Tier A briefs, early checks, risky-merge plans, failure diagnoses and phase plans for the lead | Read-only (Read, Grep, Glob, Bash for git reads and tests) |
+| **reviewer** agent (updated) | Claude Code subagent (Opus 5.5, high) | Adds a visual review whenever there are screens | Gains the Playwright browser tools; still changes no code |
+| `.claude/settings.json` | Project settings (committed) | Pins the `opus` / `sonnet` / `haiku` aliases to the 5.5 model IDs, allows only those three models, sets effort medium, wires the hook | Local; contains no secrets |
+| `tools/model-guard.mjs` | Repo script (Claude Code `PreToolUse` hook, Node) | Refuses agents on other models, effort xhigh/max, or the built-in Explore/Plan/general-purpose/`claude` agents; tells the lead its effort level | Local only; reads the hook input, writes one small file per session in the temp folder |
+| `tools/model-audit.mjs` | Repo script (Node) | Lists each run's model and effort from its own log and flags anything outside the plan; run at the end of each day | Reads only this project's local Claude Code logs; prints no message content |
+| Claude Code command-line copy | Existing tool, updated | 2.1.288 → 2.1.295 (the version the app runs; Haiku 5.5 needs 2.1.293+) | Updated with the owner's approval, 2026-10-12 |

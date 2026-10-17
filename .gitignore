@@ -17,5 +17,7 @@ Thumbs.db
 worker-configuration.d.ts
 # owner-supplied originals (moved into packages/ui/brand/source in M1.1)
 brand-incoming/
-# local Claude Code preview config
 .claude/launch.json
+.claude/worktrees/
+.logs/
+.playwright-mcp/

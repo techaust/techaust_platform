@@ -378,6 +378,8 @@ SELECT ?3, ?1, ?2, next_no - 1, ...
 
 ## 14. GitHub Actions on a free private repo
 
+> **Note (2026-10-07):** Repo public since [ADR 0012](../adr/0012-public-repository.md); see the [ADR 0009](../adr/0009-owner-only-prod-deploy.md) update (2026-10-07).
+
 - `cloudflare/wrangler-action` **v4.1.3** (2026-09-24). [S] GitHub releases
 - **Plan limits (GitHub Free, private repo):** [S] https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments
   - "required reviewers are only available for public repositories" (Free, Pro and Team)
