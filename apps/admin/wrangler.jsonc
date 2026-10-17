@@ -11,6 +11,9 @@
   "observability": { "enabled": true },
   "assets": { "not_found_handling": "single-page-application", "run_worker_first": ["/api/*"] },
   "vars": { "ENVIRONMENT": "local", "PAYMENTS_LIVE_ALLOWED": "false" },
+  // Login secrets (docs/05 §4): names only; values are set with `wrangler secret put` (docs/runbooks/access-staging.md).
+  // Not inherited by environments, so each env lists them too.
+  "secrets": { "required": ["PASSWORD_PEPPER", "SALT_PEPPER", "TOTP_ENC_KEY", "SESSION_HMAC_KEY"] },
   // D1 (docs/05 §5). Migrations live in packages/db; local dev and tests use a local database.
   "d1_databases": [
     {
@@ -24,7 +27,10 @@
     "staging": {
       "name": "techaust-platform-admin-staging",
       "workers_dev": true,
+      // Version/Preview URLs would skip Cloudflare Access (docs/runbooks/access-staging.md).
+      "preview_urls": false,
       "vars": { "ENVIRONMENT": "staging", "PAYMENTS_LIVE_ALLOWED": "false" },
+      "secrets": { "required": ["PASSWORD_PEPPER", "SALT_PEPPER", "TOTP_ENC_KEY", "SESSION_HMAC_KEY"] },
       "d1_databases": [
         {
           "binding": "DB",

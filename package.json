@@ -16,7 +16,9 @@
     "check": "pnpm lint && pnpm typecheck && node scripts/check-web-bindings.mjs",
     "db:generate": "pnpm --filter @techaust/db generate",
     "db:migrate:local": "pnpm --filter @techaust/jobs exec wrangler d1 migrations apply DB --local --persist-to ../../.wrangler/state",
-    "db:seed:local": "pnpm --filter @techaust/db seed:sql ../../.wrangler/seed.sql && pnpm --filter @techaust/jobs exec wrangler d1 execute DB --local --persist-to ../../.wrangler/state --file ../../.wrangler/seed.sql"
+    "db:seed:local": "pnpm --filter @techaust/db seed:sql ../../.wrangler/seed.sql && pnpm --filter @techaust/jobs exec wrangler d1 execute DB --local --persist-to ../../.wrangler/state --file ../../.wrangler/seed.sql",
+    "invite": "node scripts/create-invite.mjs",
+    "dev:secrets": "node scripts/dev-vars.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",

@@ -15,6 +15,8 @@
     "staging": {
       "name": "techaust-platform-web-staging",
       "workers_dev": true,
+      // Version/Preview URLs would skip Cloudflare Access (docs/runbooks/access-staging.md).
+      "preview_urls": false,
       "vars": { "ENVIRONMENT": "staging" }
     },
     "production": {

@@ -20,3 +20,4 @@ brand-incoming/
 .claude/launch.json
 .claude/worktrees/
 .logs/
+.playwright-mcp/

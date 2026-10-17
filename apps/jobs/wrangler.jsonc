@@ -22,6 +22,8 @@
     "staging": {
       "name": "techaust-platform-jobs-staging",
       "workers_dev": true,
+      // Version/Preview URLs would skip Cloudflare Access (docs/runbooks/access-staging.md).
+      "preview_urls": false,
       "vars": { "ENVIRONMENT": "staging", "PAYMENTS_LIVE_ALLOWED": "false" },
       "d1_databases": [
         {

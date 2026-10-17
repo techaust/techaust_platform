@@ -34,6 +34,11 @@
 > 15. **Triggers are generated from the schema** (`packages/db/src/triggers.ts`), so every content column of `documents` is covered. A test reads the installed trigger and fails if a column is missing. Migrations are never edited after they are applied; a new document column needs a new migration that recreates the trigger.
 > 16. **Staging D1 is migrated and seeded on every merge** (owner decision), before the Workers deploy. The seed is insert-only (`ON CONFLICT DO NOTHING`), so it never overwrites edits made in the admin.
 > 17. **Tables arrive with their milestones.** M1.3 creates identity, settings, CRM, catalogue, documents and the audit/access logs (36 tables). Payments, checkout sessions, webhook events, credits and settlements come with M6; email log and suppressions with M2.4; notifications, review items, DSR requests, idempotency keys and stats with the features that use them.
+>
+> **Changes made during Phase 6 M1.4 (2026-10-06):**
+> 18. **Bootstrap invites.** The first Owner account (and the CPU benchmark's throwaway users) come from a command-line invite (`pnpm invite --email … --role owner [--staging]`) with no inviter (`staff_invites.invited_by` is nullable, migration 0002). The link carries the token in the URL fragment; it is single-use and expires within 48 h. Whoever can write to D1 can already do anything, so this adds no new power.
+> 19. **Staging has no Version/Preview URLs** (`preview_urls: false`), because those addresses would skip Cloudflare Access. Worker types are generated from the staging environment (`wrangler types --env staging`) until production gets its own bindings and secrets in Phase 7.
+> 20. **TOTP enrolment shows a link and a typed key, no QR code yet.** A QR library isn't in the approved stack; I'll propose one in M1.5.
 
 ---
 
