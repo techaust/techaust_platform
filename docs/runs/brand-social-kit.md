@@ -1,4 +1,4 @@
-Status: open
+Status: merged (PR #17)
 Tier: C
 Usage: designer claude-opus-5-5/high (preview): weekly 80 → 81 %, 5-h 3 → 9 % · reviewer claude-opus-5-5/high: weekly 81 → 81 %, 5-h 9 → 10 % · designer claude-opus-5-5/medium (fixes): weekly 81 → 81 %, 5-h 10 → 11 % · reviewer claude-opus-5-5/high (re-check, resumed): weekly 81 → 81 %, 5-h 11 → 11 %
 
@@ -177,4 +177,4 @@ Triage (lead): 1–2 fixed before merge; 3, 4, 5, 6, 9 are small and fixed in th
 
 ## Handover
 
-**2026-10-16:** brief written; the designer starts on the preview.
+**2026-10-17:** merged as [PR #17](https://github.com/techaust/techaust_platform/pull/17) on 2026-10-16; the final zip went to the owner. Task closed. Left: the owner uploads the kit and checks the Upwork banner's domain line and the third-party sizes on a real phone (follow-ups in [12-status](../12-status.md)).

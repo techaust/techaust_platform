@@ -2,6 +2,9 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-10-17 [#18](https://github.com/techaust/techaust_platform/pull/18) docs: Access on for staging; M1.4 handover
+- 2026-10-16 [#17](https://github.com/techaust/techaust_platform/pull/17) feat(brand): social media kit for 12 platforms + bios
+- 2026-10-12 [#16](https://github.com/techaust/techaust_platform/pull/16) docs: end of day 2026-10-12 (wallpapers: status, changelog #14 #15, decisions)
 - 2026-10-12 [#15](https://github.com/techaust/techaust_platform/pull/15) feat(brand): company wallpapers (Monolith, Cut, Construction; desktop + phone)
 - 2026-10-12 [#14](https://github.com/techaust/techaust_platform/pull/14) docs: end of day 2026-10-12 (status, changelog #12 #13, designer/analyst named everywhere)
 - 2026-10-12 [#13](https://github.com/techaust/techaust_platform/pull/13) chore: three-model plan (Opus, Sonnet, Haiku 5.5 only; designer and analyst agents; model guard and audit)
