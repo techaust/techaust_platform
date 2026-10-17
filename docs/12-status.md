@@ -19,14 +19,14 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
 - **M1.4: the auth CPU spike, a gate** ([PR #7](https://github.com/techaust/techaust_platform/pull/7) merged 2026-10-17 and on staging; [runs/m1.4-auth-spike.md](runs/m1.4-auth-spike.md)).
   - Access runbook Parts 1–3 done (secrets set, benchmark token attached to the admin app only).
   - **Gate failed** on the 15-minute run: login p99 6 ms (gate 5), totp p99 12 ms (gate 7), about 1 % of totp over the Free plan's 10 ms; salt and me pass ([cpu-baseline.md](runbooks/cpu-baseline.md)). Owner: **tune, then re-measure**.
+  - **Diagnosed** ([PR #22](https://github.com/techaust/techaust_platform/pull/22)): the CPU goes into D1 calls (≈ 0.6–1.5 ms each, confirmed on staging Workers Logs), not our crypto. Fix: totp 4 D1 calls → 2, login 2 → 1, no schema or security change. The Tier A builder brief is final in the run file.
 
 ## Next
-1. ~~Analyst~~ done 2026-10-17: the CPU goes into D1 calls (≈ 0.6–1.5 ms each, confirmed on Workers Logs), not our crypto; fix = totp 4 calls → 2, login 2 → 1. The builder brief is final in [runs/m1.4-auth-spike.md](runs/m1.4-auth-spike.md).
-2. **Builder** (Tier A, Sonnet 5.5 high) after the weekly reset (**Mon 19 Oct, 15:30 IST**; fresh conversation, "continue"): the tuning; analyst's early check; then review.
-3. The owner re-runs the 15-minute benchmark; the lead applies the gate. Still failing → the owner chooses the $5 plan or Access + simpler auth.
-4. Then M1.5 (Tier A; the `analyst` drafts the brief). M1.5 must also stop Workers Logs keeping request headers (session cookie, Access token).
+1. **Builder** (Tier A, Sonnet 5.5 high) after the weekly reset (**Mon 19 Oct, 15:30 IST**; fresh conversation, "continue"): the tuning; analyst's early check; then review.
+2. The owner re-runs the 15-minute benchmark; the lead applies the gate. Still failing → the owner chooses the $5 plan or Access + simpler auth.
+3. Then M1.5 (Tier A; the `analyst` drafts the brief). M1.5 must also stop Workers Logs keeping request headers (session cookie, Access token); note: the API query on 2026-10-17 returned `cookie` and `cf-access-jwt-assertion` as `REDACTED`, so first check what the dashboard and the stored logs really keep.
 
-**Usage on 2026-10-17 (afternoon):** weekly 82 % (over the pace: one agent at a time; at 85 % no new build or design), 5-hour window 7 %.
+**Usage at end of day 2026-10-17:** weekly 83 % (over the pace: one agent at a time; at 85 % no new build or design), 5-hour window 10 %. Weekly reset **Mon 19 Oct, 15:30 IST**.
 
 ## Waits on the owner
 - **M1.4:** re-run the 15-minute benchmark after the tuning (step 3 above).
@@ -50,7 +50,7 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
   - **After the merge:** reword session-key rotation in 08 §3.2.
 - **Social kit:** Upwork banner domain line may need enlarging after a real-device check (review finding 8, low).
 - **Wallpapers (low, test strength; [runs/brand-wallpapers.md](runs/brand-wallpapers.md)):** network anchors vs the real channel/mark geometry; compare wire coordinates, not just counts; optional pixel re-render test; build the fitted-mark expectation from `MARK_PARAMS`.
-- **Models and usage:** the cost report after the first Tier A build, the first designer task and the first two Tier B reviews ([14 §8](14-models-and-usage.md)). Audits 2026-10-16 and 2026-10-17: all runs within the plan.
+- **Models and usage:** the cost report after the first Tier A build (the M1.4 tuning will be the first), the first designer task and the first two Tier B reviews ([14 §8](14-models-and-usage.md)). Audits 2026-10-16 and 2026-10-17 (twice): all runs within the plan.
 - **Code follow-ups (from 2026-10-07):** a migration narrowing `issue_guard` to `draft` only (before M3/M5); `smallJobThreshold` → a single INR value + a `{{terms:…}}` renderer; the G-11 `annualReturnFiledAt` input (M4/M5); "first character not `0`" in `numbering.ts`.
 - **Content:** confirm the 07 §8 email variable names when templates are built; check the other "100 %" mentions in 04 against the content lint; add `/accessibility` to the sitemap and footer in M2; the site may now say "since 2019" (07 §1.4).
 - **Re-measure:** the old site's TTFB from India, if it still matters before cut-over.
