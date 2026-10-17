@@ -2,8 +2,11 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-10-17 [#22](https://github.com/techaust/techaust_platform/pull/22) docs(m1.4): auth CPU tuning analysis and Tier A builder brief
+- 2026-10-17 [#21](https://github.com/techaust/techaust_platform/pull/21) docs(m1.4): CPU benchmark results (gate failed) and next steps
 - 2026-10-17 [#7](https://github.com/techaust/techaust_platform/pull/7) feat(m1.4): staff login spike + CPU benchmark; Access runbook for the new dashboard
 - 2026-10-17 [#20](https://github.com/techaust/techaust_platform/pull/20) docs(m1.4): analyst plan for the PR #7 update; weekend decision
+- 2026-10-17 [#19](https://github.com/techaust/techaust_platform/pull/19) docs: end of day 2026-10-17 (status, changelog #16-#18, decisions)
 - 2026-10-17 [#18](https://github.com/techaust/techaust_platform/pull/18) docs: Access on for staging; M1.4 handover
 - 2026-10-16 [#17](https://github.com/techaust/techaust_platform/pull/17) feat(brand): social media kit for 12 platforms + bios
 - 2026-10-12 [#16](https://github.com/techaust/techaust_platform/pull/16) docs: end of day 2026-10-12 (wallpapers: status, changelog #14 #15, decisions)
