@@ -21,8 +21,8 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
   - **Gate failed** on the 15-minute run: login p99 6 ms (gate 5), totp p99 12 ms (gate 7), about 1 % of totp over the Free plan's 10 ms; salt and me pass ([cpu-baseline.md](runbooks/cpu-baseline.md)). Owner: **tune, then re-measure**.
 
 ## Next
-1. **Analyst** (fresh conversation, "continue"): where login and totp spend CPU, options ranked by saving; the lead writes a Tier A builder brief.
-2. **Builder** (Tier A) after the weekly reset (**Mon 19 Oct, 15:30 IST**): the tuning; then review.
+1. ~~Analyst~~ done 2026-10-17: the CPU goes into D1 calls (≈ 0.6–1.5 ms each, confirmed on Workers Logs), not our crypto; fix = totp 4 calls → 2, login 2 → 1. The builder brief is final in [runs/m1.4-auth-spike.md](runs/m1.4-auth-spike.md).
+2. **Builder** (Tier A, Sonnet 5.5 high) after the weekly reset (**Mon 19 Oct, 15:30 IST**; fresh conversation, "continue"): the tuning; analyst's early check; then review.
 3. The owner re-runs the 15-minute benchmark; the lead applies the gate. Still failing → the owner chooses the $5 plan or Access + simpler auth.
 4. Then M1.5 (Tier A; the `analyst` drafts the brief). M1.5 must also stop Workers Logs keeping request headers (session cookie, Access token).
 
