@@ -20,17 +20,14 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
   - Owner: accept and move to M1.5; cold starts go into M1.5; the $5 plan is looked at again before real staff use.
 
 ## In progress
-- Nothing.
+- **M1.5: staff auth (complete)**, Tier A ([runs/m1.5-staff-auth.md](runs/m1.5-staff-auth.md)). The brief is final (analyst draft, lead check, owner's answers 2026-10-21: 2FA reset by a fresh invite, the security log records every staff request, QR code and zxcvbn-ts + HIBP approved, admin request logs on for staging and off for production). Lead check of Workers Logs: cookie and Access JWT values are `REDACTED`; IP, user agent and location are kept.
 
 ## Next
-1. **M1.5 brief** (Tier A; fresh conversation, "continue"): the `analyst` drafts it from docs/09 M1.5, adding:
-   - stop Workers Logs keeping request headers (session cookie, Access token); the API on 2026-10-17 and 2026-10-21 shows `cookie` and `cf-access-jwt-assertion` as `REDACTED`, so first check what the dashboard and the stored logs really keep
-   - the reviewer's pre-read lock finding: count the attempt atomically before verifying, so parallel guesses can't get past the lock
-   - cold-start CPU of the admin Worker (bundle size)
-   - the follow-up tests listed in the run file's last handover
-2. Then the builder, the analyst's early check, the designer (screens), the review.
+1. **Builder** (fresh conversation, "continue"; Sonnet 5.5 high, own worktree): parts 0 and 1 of the brief (baseline, schema, logic, API, tests); it stops at the early check.
+2. Then the analyst's early check, builder part 2 (cold start, logs config), the designer (screens), the review, fixes.
+3. After the merge: ask the owner Q6 (re-run the 15-minute benchmark; one owner invite on staging) and fix the docs listed in the run file.
 
-**Usage on 2026-10-21:** weekly 4 %, 5-hour 6 % after the M1.4 tuning (builder, analyst, builder fixes, reviewer); well under the pace. Weekly reset **Mon 26 Oct, 15:30 IST**.
+**Usage on 2026-10-21:** weekly 5 %, 5-hour 12 % after the M1.5 brief (analyst); well under the pace. Weekly reset **Mon 26 Oct, 15:30 IST**.
 
 ## Waits on the owner
 - **Time-sensitive compliance** ([08 §0](08-security-compliance.md); all VERIFY WITH CA):
