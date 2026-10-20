@@ -12,7 +12,13 @@
 // Subpath export (`@techaust/db/log`) so a Worker importing it doesn't pull in the Drizzle schema.
 import { uuidv7 } from "@techaust/core";
 
-export type Guard = string | { sessionId: string } | { auditId: string } | "changes";
+//   - { sql, params }: a hand-written condition for the rare row that needs more than one (the new-device alert).
+export type Guard =
+  | string
+  | { sessionId: string }
+  | { auditId: string }
+  | { sql: string; params: readonly unknown[] }
+  | "changes";
 
 /** Who and where, copied onto every row; `ip` and `ua` serve security only (docs/08). */
 export type RequestInfo = { requestId: string | null; ip: string | null; ua: string | null };
@@ -41,10 +47,11 @@ export type AccessEntry = RequestInfo & {
 };
 
 /** The WHERE clause (without the keyword) and its bound values for a guard. */
-export function guardSql(guard: Guard): { sql: string; params: string[] } {
+export function guardSql(guard: Guard): { sql: string; params: readonly unknown[] } {
   if (guard === "changes") return { sql: "changes() > 0", params: [] };
   if (typeof guard === "string")
     return { sql: "EXISTS (SELECT 1 FROM staff_sessions WHERE id = ?)", params: [guard] };
+  if ("sql" in guard) return guard;
   if ("sessionId" in guard)
     return { sql: "EXISTS (SELECT 1 FROM staff_sessions WHERE id = ?)", params: [guard.sessionId] };
   return { sql: "EXISTS (SELECT 1 FROM audit_log WHERE id = ?)", params: [guard.auditId] };

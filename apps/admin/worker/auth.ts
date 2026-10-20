@@ -1,33 +1,46 @@
-// Staff login API (docs/05 §6.1; ADM-AUTH-01, -02, -05, -07). M1.4 scope: salt → login → TOTP → session,
-// invite acceptance (used for the first Owner and the CPU benchmark), me and logout. Raw D1 statements keep
-// these hot paths cheap; every response uses the same generic errors so nothing reveals which accounts exist.
+// Staff sign-in API (docs/05 §6.1; ADM-AUTH-01, -02, -04, -05, -06, -07, -09): salt → login → code (TOTP or recovery
+// code) → session, invite acceptance, logout. Raw D1 statements keep these hot paths cheap (the Free plan's 10 ms CPU
+// budget counts every D1 call); every refusal uses the same generic bodies, so nothing reveals which accounts exist.
+//
+// Lockout (LD1, ADM-AUTH-06): an attempt is COUNTED FIRST, atomically (`RESERVE_SQL`), then verified. Passwords count
+// on `acct:<hash of email>`, codes on `code:<user id>`; a full sign-in deletes both. A per-IP failure counter
+// (`ip:`) blocks an address after 100 failures an hour; a request from a blocked address writes nothing at all.
 import { sValidator } from "@hono/standard-validator";
 import {
-  type Attempts,
+  accountKey,
   base32,
   CHALLENGE_TTL_MS,
-  checkSession,
   clearCookie,
+  codeKey,
   DEFAULT_PARAMS,
-  enc,
+  DEVICE_COOKIE,
+  deviceCookie,
+  deviceFor,
   fakeSalt,
-  hex,
+  formatRecoveryCode,
+  IP_LOCK_AFTER,
+  IP_LOCK_MS,
+  IP_WINDOW_MS,
   inviteFinishRequest,
   inviteStartRequest,
+  ipKey,
   isAttemptKey,
-  isLocked,
+  isRecoveryCode,
   LOCK_AFTER,
   LOCK_MS,
   loginRequest,
+  newRecoveryCodes,
   newSession,
   newTotpSecret,
+  normaliseRecoveryCode,
   openTotpSecret,
   passwordHmac,
   readCookie,
+  recoveryCodeHash,
+  recoveryRequest,
   saltRequest,
   sealTotpSecret,
   sessionCookie,
-  sha256,
   signChallenge,
   tokenHash,
   totpRequest,
@@ -37,45 +50,45 @@ import {
   verifyTotp,
   WINDOW_MS,
 } from "@techaust/auth";
-import { uuidv7 } from "@techaust/core";
+import { type Role, uuidv7 } from "@techaust/core";
+import { accessStmt, auditStmt } from "@techaust/db/log";
 import { Hono } from "hono";
-import { bodyLimit } from "hono/body-limit";
 import type { z } from "zod";
+import { alertStmt, lockoutAlert } from "./alerts.ts";
+import {
+  type ApiError,
+  type AppEnv,
+  accessEntry,
+  BAD_REQUEST,
+  type Ctx,
+  err,
+  logBatch,
+  requestInfo,
+} from "./context.ts";
 
-type AppEnv = { Bindings: Env };
 type UserRow = {
   id: string;
   email: string;
   name: string;
-  role: string;
+  role: Role;
   status: string;
   totp_secret_enc: string | null;
   totp_last_step: number | null;
 };
-/** The lockout columns of a LEFT JOINed `auth_attempts` row: all null when there is no row. */
-type AttemptCols = { window_start: number | null; failures: number | null; locked_until: number | null };
 
-const INVALID = {
-  error: { code: "invalid_credentials", message: "Invalid email, password or code" },
-} as const;
-const LOCKED = { error: { code: "locked", message: "Too many attempts. Try again in 15 minutes." } } as const;
-const BAD_REQUEST = { error: { code: "bad_request", message: "Check the form and try again" } } as const;
-const INVITE_INVALID = {
-  error: { code: "invite_invalid", message: "This invite link is invalid or has expired" },
-} as const;
+const INVALID: ApiError = { code: "invalid_credentials", message: "Invalid email, password or code" };
+const LOCKED: ApiError = { code: "locked", message: "Too many attempts. Try again in 15 minutes." };
+const INVITE_INVALID: ApiError = {
+  code: "invite_invalid",
+  message: "This invite link is invalid or has expired",
+};
 
-const json = <S extends z.ZodType>(schema: S) =>
-  sValidator("json", schema, (result, c) => (result.success ? undefined : c.json(BAD_REQUEST, 400)));
+export const json = <S extends z.ZodType>(schema: S) =>
+  sValidator("json", schema, (result, c) => (result.success ? undefined : err(c as Ctx, BAD_REQUEST, 400)));
 
 const now = () => Date.now();
 
-/** Lockout is keyed by a hash of the email, so unknown emails behave exactly like real ones. */
-const attemptKey = async (email: string) => `acct:${hex(await sha256(enc.encode(email))).slice(0, 32)}`;
-
-const attemptsOf = (row: AttemptCols): Attempts | null =>
-  row.window_start === null || row.failures === null
-    ? null
-    : { windowStart: row.window_start, failures: row.failures, lockedUntil: row.locked_until };
+// ---- lockout SQL --------------------------------------------------------------------------------------------
 
 /**
  * One atomic upsert for a failed attempt, so parallel failures each add one (no read-modify-write). It mirrors
@@ -83,7 +96,7 @@ const attemptsOf = (row: AttemptCols): Attempts | null =>
  * (window_start = now); otherwise failures + 1 with the window kept; the lock (now + LOCK_MS) is set when the new
  * count is >= LOCK_AFTER, else locked_until is left as it was (also across a window reset, as in recordFailure).
  * ?1 key, ?2 now, ?3 window ms, ?4 lock-after count, ?5 lock ms. In SQLite's DO UPDATE every right-hand side reads
- * the old row, so the repeated CASE is consistent.
+ * the old row, so the repeated CASE is consistent. Used as is for the per-IP counter.
  */
 export const FAIL_SQL = `INSERT INTO auth_attempts (key, window_start, failures, locked_until)
 VALUES (?1, ?2, 1, CASE WHEN 1 >= ?4 THEN ?2 + ?5 ELSE NULL END)
@@ -93,18 +106,166 @@ ON CONFLICT(key) DO UPDATE SET
   locked_until = CASE WHEN (CASE WHEN ?2 - window_start >= ?3 THEN 1 ELSE failures + 1 END) >= ?4
                       THEN ?2 + ?5 ELSE locked_until END`;
 
-const fail = (db: D1Database, key: string) =>
-  db.prepare(FAIL_SQL).bind(key, now(), WINDOW_MS, LOCK_AFTER, LOCK_MS).run();
+/**
+ * `reserveAttempt` in SQL (LD1): count the attempt now, unless the lock is in force. A row comes back (RETURNING)
+ * exactly when the attempt was counted, even when this very reservation set the lock; NO row means locked, and
+ * nothing was written. ?1-?5 as FAIL_SQL, ?6 the caller's `ip:` key: while that address is blocked nothing is
+ * counted either (a blocked address writes nothing). Bind ?6 to NULL to skip the address check.
+ */
+export const RESERVE_SQL = `INSERT INTO auth_attempts (key, window_start, failures, locked_until)
+SELECT ?1, ?2, 1, CASE WHEN 1 >= ?4 THEN ?2 + ?5 ELSE NULL END
+WHERE NOT EXISTS (SELECT 1 FROM auth_attempts WHERE key = ?6 AND locked_until > ?2)
+ON CONFLICT(key) DO UPDATE SET
+  window_start = CASE WHEN ?2 - window_start >= ?3 THEN ?2 ELSE window_start END,
+  failures = CASE WHEN ?2 - window_start >= ?3 THEN 1 ELSE failures + 1 END,
+  locked_until = CASE WHEN (CASE WHEN ?2 - window_start >= ?3 THEN 1 ELSE failures + 1 END) >= ?4
+                      THEN ?2 + ?5 ELSE locked_until END
+WHERE locked_until IS NULL OR locked_until <= ?2
+RETURNING failures, locked_until`;
 
-/** The joined reads of /login (?1 email, ?2 lockout key) and /totp (?1 user id, ?2 lockout key); tests EXPLAIN them. */
+export const IP_READ = "SELECT locked_until FROM auth_attempts WHERE key = ?1";
+
+/** The reads of /login (?1 email), /totp and /recovery (?1 user id); tests EXPLAIN them. */
 export const LOGIN_READ =
-  "SELECT u.id, u.status, u.pw_salt, u.pw_hmac, u.totp_enabled_at, a.window_start, a.failures, a.locked_until FROM (SELECT ?1 AS email, ?2 AS akey) q LEFT JOIN staff_users u ON u.email = q.email LEFT JOIN auth_attempts a ON a.key = q.akey";
+  "SELECT id, status, role, pw_salt, pw_hmac, totp_enabled_at FROM staff_users WHERE email = ?1";
 export const TOTP_READ =
-  "SELECT u.id, u.email, u.name, u.role, u.totp_secret_enc, u.totp_last_step, a.window_start, a.failures, a.locked_until FROM staff_users u LEFT JOIN auth_attempts a ON a.key = ?2 WHERE u.id = ?1 AND u.status = 'active'";
+  "SELECT id, email, name, role, totp_secret_enc, totp_last_step FROM staff_users WHERE id = ?1 AND status = 'active'";
+export const RECOVERY_USER_READ =
+  "SELECT id, email, name, role FROM staff_users WHERE id = ?1 AND status = 'active'";
+export const RECOVERY_CODE_READ =
+  "SELECT 1 AS ok FROM staff_recovery_codes WHERE user_id = ?1 AND code_hash = ?2 AND used_at IS NULL";
 
-const userByEmail = (db: D1Database, email: string) =>
-  db.prepare("SELECT * FROM staff_users WHERE email = ?").bind(email).first<UserRow>();
-// (Used by the invite routes only; the hot login routes read exactly the columns they need.)
+type Counted = { failures: number; locked_until: number | null };
+
+/**
+ * The first call of /login, /totp and /recovery: [ip lock read, reservation, ...reads] in one batch. When the
+ * address is blocked the reservation is skipped by its own SQL, so nothing was written.
+ */
+async function attempt(c: Ctx, key: string, reads: D1PreparedStatement[]) {
+  const db = c.env.DB;
+  const t = now();
+  const ipk = c.var.ip ? await ipKey(c.env.SALT_PEPPER, c.var.ip) : null;
+  const results = await db.batch([
+    db.prepare(IP_READ).bind(ipk),
+    db.prepare(RESERVE_SQL).bind(key, t, WINDOW_MS, LOCK_AFTER, LOCK_MS, ipk),
+    ...reads,
+  ]);
+  const ip = results[0]?.results[0] as { locked_until: number | null } | undefined;
+  return {
+    t,
+    ipk,
+    ipLocked: !!ip?.locked_until && ip.locked_until > t,
+    reserved: results[1]?.results[0] as Counted | undefined,
+    reads: results.slice(2).map((r) => r.results[0]),
+  };
+}
+
+/** Failed attempt: the address's failure count (+ any alert) and the access row, in one call; then the generic 401. */
+async function refuse(c: Ctx, a: { ipk: string | null; t: number }, alerts: D1PreparedStatement[] = []) {
+  const db = c.env.DB;
+  const ipFail = a.ipk
+    ? [db.prepare(FAIL_SQL).bind(a.ipk, a.t, IP_WINDOW_MS, IP_LOCK_AFTER, IP_LOCK_MS)]
+    : [];
+  await logBatch(c, 401, [...ipFail, ...alerts]);
+  return err(c, INVALID, 401);
+}
+
+/** The 429 for a request from a blocked address (writes nothing, access row included) or a locked account. */
+const locked = (c: Ctx, ipLocked: boolean) => {
+  if (ipLocked) c.set("accessDone", true);
+  return err(c, LOCKED, 429);
+};
+
+// ---- sessions -----------------------------------------------------------------------------------------------
+
+export type SessionStart = {
+  user: { id: string; role: Role };
+  /** Runs first; the session exists only if it changed one row (the TOTP replay guard, the recovery code's use). */
+  guard: D1PreparedStatement;
+  via: "totp" | "recovery" | "invite";
+  /** Lockout counters a full sign-in deletes. */
+  clear?: string[];
+};
+
+/**
+ * Creates the session in ONE batch of about eight statements. Everything after the session insert is guarded on
+ * the session row existing, so a lost race (a replayed code, a recovery code used twice) writes nothing but is
+ * visible as `null`. Also in the batch: the `auth.login` audit row, the known-device bookkeeping and its alert
+ * (not at enrolment), the 2FA-change alert (recovery code used), the lockout rows' deletion and the access row.
+ */
+export async function startSession(c: Ctx, o: SessionStart) {
+  const db = c.env.DB;
+  const t = now();
+  const s = await newSession(t);
+  const device = await deviceFor(readCookie(c.req.header("Cookie"), DEVICE_COOKIE));
+  const uid = o.user.id;
+  const live = "EXISTS (SELECT 1 FROM staff_sessions WHERE id = ?)";
+  const info = requestInfo(c);
+  const stmts: D1PreparedStatement[] = [
+    o.guard,
+    db
+      .prepare(
+        "INSERT INTO staff_sessions (id, user_id, last_seen_at, idle_expires_at, abs_expires_at, ip, user_agent) SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7 WHERE changes() = 1",
+      )
+      .bind(s.id, uid, s.lastSeenAt, s.idleExpiresAt, s.absExpiresAt, info.ip, info.ua),
+    auditStmt(
+      db,
+      {
+        ...info,
+        actorId: uid,
+        role: o.user.role,
+        action: "auth.login",
+        entityType: "staff_user",
+        entityId: uid,
+        summary: { via: o.via },
+      },
+      s.id,
+    ),
+  ];
+  if (o.via === "recovery") {
+    stmts.push(
+      db
+        .prepare(`UPDATE staff_users SET last_login_at = ?2, updated_at = ?2 WHERE id = ?1 AND ${live}`)
+        .bind(uid, t, s.id),
+      alertStmt(c, "alert.2fa_change", { userId: uid, role: o.user.role }, s.id),
+    );
+  }
+  if (o.via !== "invite") {
+    // A new device raises an alert; this runs BEFORE the device row is stored, so a known device is skipped.
+    stmts.push(
+      alertStmt(
+        c,
+        "alert.new_device",
+        { userId: uid, role: o.user.role },
+        {
+          sql: `${live} AND NOT EXISTS (SELECT 1 FROM staff_known_devices WHERE user_id = ? AND device_hash = ?)`,
+          params: [s.id, uid, device.hash],
+        },
+      ),
+    );
+  }
+  stmts.push(
+    db
+      .prepare(
+        `INSERT INTO staff_known_devices (user_id, device_hash, user_agent) SELECT ?1, ?2, ?3 WHERE EXISTS (SELECT 1 FROM staff_sessions WHERE id = ?4) ON CONFLICT(user_id, device_hash) DO NOTHING`,
+      )
+      .bind(uid, device.hash, info.ua, s.id),
+  );
+  if (o.clear?.length) {
+    stmts.push(
+      db
+        .prepare(`DELETE FROM auth_attempts WHERE key IN (${o.clear.map(() => "?").join(", ")}) AND ${live}`)
+        .bind(...o.clear, s.id),
+    );
+  }
+  stmts.push(accessStmt(db, accessEntry(c, 200, uid), s.id));
+  const results = await db.batch(stmts);
+  if (results[1]?.meta.changes !== 1) return null;
+  c.set("accessDone", true);
+  c.header("Set-Cookie", sessionCookie(s.token, Math.floor((s.absExpiresAt - t) / 1000)), { append: true });
+  c.header("Set-Cookie", deviceCookie(device.token), { append: true });
+  return s;
+}
 
 const inviteSalt = async (saltPepper: string, hash: string) => fakeSalt(saltPepper, `invite:${hash}`);
 
@@ -119,57 +280,23 @@ async function liveInvite(db: D1Database, token: string) {
   return invite;
 }
 
-/**
- * Creates the session in one batch. With `attemptKey` (the password + code login) the failure counter is cleared
- * as the last statement, and only when the replay guard moved `totp_last_step`: `changes() = 1` still refers to
- * the audit insert, which itself runs only after the guard succeeded, so a replayed code never clears failures.
- */
-export function startSession(
+/** Ten recovery-code rows in one statement (30 bound values; D1 allows 100), only if `guardSql` holds. */
+export function insertRecoveryCodes(
   db: D1Database,
   userId: string,
-  ip: string | null,
-  ua: string | null,
-  step: number,
-  attemptKey?: string,
+  hashes: string[],
+  guard: { sql: string; params: readonly unknown[] },
 ) {
-  return async () => {
-    const s = await newSession(now());
-    const statements = [
-      // Atomic replay guard: only one request can move totp_last_step past this step.
-      db
-        .prepare(
-          "UPDATE staff_users SET totp_last_step = ?2, last_login_at = ?3, updated_at = ?3 WHERE id = ?1 AND (totp_last_step IS NULL OR totp_last_step < ?2)",
-        )
-        .bind(userId, step, now()),
-      db
-        .prepare(
-          "INSERT INTO staff_sessions (id, user_id, last_seen_at, idle_expires_at, abs_expires_at, ip, user_agent) SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7 WHERE changes() = 1",
-        )
-        .bind(s.id, userId, s.lastSeenAt, s.idleExpiresAt, s.absExpiresAt, ip, ua),
-      db
-        .prepare(
-          "INSERT INTO audit_log (id, actor_type, actor_id, action, entity_type, entity_id, ip, user_agent) SELECT ?1, 'staff', ?2, 'auth.login', 'staff_user', ?2, ?3, ?4 WHERE changes() = 1",
-        )
-        .bind(uuidv7(), userId, ip, ua),
-    ];
-    if (attemptKey) {
-      statements.push(
-        db.prepare("DELETE FROM auth_attempts WHERE key = ?1 AND changes() = 1").bind(attemptKey),
-      );
-    }
-    const results = await db.batch(statements);
-    return results[1]?.meta.changes === 1 ? s : null;
-  };
+  const values = hashes.map(() => "(?, ?, ?)").join(", ");
+  return db
+    .prepare(
+      `INSERT INTO staff_recovery_codes (id, user_id, code_hash) SELECT column1, column2, column3 FROM (VALUES ${values}) WHERE ${guard.sql}`,
+    )
+    .bind(...hashes.flatMap((h) => [uuidv7(), userId, h]), ...guard.params);
 }
 
 export const auth = new Hono<AppEnv>()
-  .use(bodyLimit({ maxSize: 16 * 1024, onError: (c) => c.json(BAD_REQUEST, 413) }))
-  .use(async (c, next) => {
-    await next();
-    c.header("Cache-Control", "no-store");
-  })
-
-  // 1. Salt for an email (a deterministic fake one when there's no account).
+  // 1. Salt for an email (a deterministic fake one when there's no usable account). A lookup, not an attempt.
   .post("/salt", json(saltRequest), async (c) => {
     const { email } = c.req.valid("json");
     const user = await c.env.DB.prepare("SELECT status, pw_salt, pw_params FROM staff_users WHERE email = ?")
@@ -182,129 +309,132 @@ export const auth = new Hono<AppEnv>()
     });
   })
 
-  // 2. Client hash → a short-lived challenge for the TOTP step (no session yet).
+  // 2. Client hash → a short-lived challenge for the code step (no session yet). One batch: the address's lock,
+  //    the reservation (counts the attempt), the user.
   .post("/login", json(loginRequest), async (c) => {
     const { email, clientHash } = c.req.valid("json");
-    const key = await attemptKey(email);
-    // One read that always returns one row (the subquery); user and lockout columns are null when absent.
-    const row = await c.env.DB.prepare(LOGIN_READ).bind(email, key).first<
-      AttemptCols & {
-        id: string | null;
-        status: string | null;
-        pw_salt: string | null;
-        pw_hmac: string | null;
-        totp_enabled_at: number | null;
-      }
-    >();
-    if (!row) throw new Error("login read returned no row");
-    const attempts = attemptsOf(row);
-    if (isLocked(attempts, now())) return c.json(LOCKED, 429);
-    const usable = row.id !== null && row.status === "active" && row.totp_enabled_at !== null;
+    const key = await accountKey(email);
+    const db = c.env.DB;
+    const a = await attempt(c, key, [db.prepare(LOGIN_READ).bind(email)]);
+    if (a.ipLocked) return locked(c, true);
+    if (!a.reserved) return locked(c, false);
+    const row = a.reads[0] as
+      | {
+          id: string;
+          status: string;
+          role: Role;
+          pw_salt: string | null;
+          pw_hmac: string | null;
+          totp_enabled_at: number | null;
+        }
+      | undefined;
+    const usable = !!row && row.status === "active" && row.totp_enabled_at !== null;
     const salt = usable && row.pw_salt ? row.pw_salt : await fakeSalt(c.env.SALT_PEPPER, email);
     const ok = await verifyPassword(c.env.PASSWORD_PEPPER, salt, clientHash, usable ? row.pw_hmac : null);
-    if (!ok || row.id === null) {
-      await fail(c.env.DB, key);
-      return c.json(INVALID, 401);
-    }
+    // A lock that started with THIS attempt on a real account raises an alert (unknown emails get none).
+    const alerts = row && a.reserved.failures >= LOCK_AFTER ? [lockoutAlert(c, row.id, row.role)] : [];
+    if (!ok || !row) return refuse(c, a, alerts);
     const challenge = await signChallenge(c.env.SESSION_HMAC_KEY, {
       purpose: "login_totp",
       sub: row.id,
       exp: now() + CHALLENGE_TTL_MS,
       ak: key,
     });
+    if (alerts.length) await logBatch(c, 200, alerts);
     return c.json({ next: "totp", challenge });
   })
 
-  // 3. TOTP → session cookie.
+  // 3. Authenticator code → session cookie. The code counter is reserved first; the check is the replay guard.
   .post("/totp", json(totpRequest), async (c) => {
     const { challenge, code } = c.req.valid("json");
     const claim = await verifyChallenge(c.env.SESSION_HMAC_KEY, challenge, "login_totp", now());
-    // The lockout key comes from the signed challenge (set at login), so no second read is needed.
-    if (!claim || !isAttemptKey(claim.ak)) return c.json(INVALID, 401);
-    const key = claim.ak;
-    const user = await c.env.DB.prepare(TOTP_READ)
-      .bind(claim.sub, key)
-      .first<
-        AttemptCols & Pick<UserRow, "id" | "email" | "name" | "role" | "totp_secret_enc" | "totp_last_step">
-      >();
-    if (!user?.totp_secret_enc) return c.json(INVALID, 401);
-    const attempts = attemptsOf(user);
-    if (isLocked(attempts, now())) return c.json(LOCKED, 429);
+    // The password counter's key comes from the signed challenge (set at login), so no second read is needed.
+    if (!claim || !isAttemptKey(claim.ak)) return err(c, INVALID, 401);
+    const db = c.env.DB;
+    const key = codeKey(claim.sub);
+    const a = await attempt(c, key, [db.prepare(TOTP_READ).bind(claim.sub)]);
+    if (a.ipLocked) return locked(c, true);
+    if (!a.reserved) return locked(c, false);
+    const user = a.reads[0] as UserRow | undefined;
+    const alerts = user && a.reserved.failures >= LOCK_AFTER ? [lockoutAlert(c, user.id, user.role)] : [];
+    if (!user?.totp_secret_enc) return refuse(c, a, alerts);
     const secret = await openTotpSecret(c.env.TOTP_ENC_KEY, user.id, user.totp_secret_enc);
-    const result = verifyTotp(secret, code, now(), user.totp_last_step);
-    const session = result.ok
-      ? await startSession(
-          c.env.DB,
-          user.id,
-          c.req.header("CF-Connecting-IP") ?? null,
-          c.req.header("User-Agent") ?? null,
-          result.step,
-          key,
-        )()
-      : null;
-    if (!session) {
-      await fail(c.env.DB, key);
-      return c.json(INVALID, 401);
-    }
-    c.header("Set-Cookie", sessionCookie(session.token, Math.floor((session.absExpiresAt - now()) / 1000)));
+    const result = verifyTotp(secret, code, a.t, user.totp_last_step);
+    if (!result.ok) return refuse(c, a, alerts);
+    const session = await startSession(c, {
+      user,
+      guard: db
+        .prepare(
+          "UPDATE staff_users SET totp_last_step = ?2, last_login_at = ?3, updated_at = ?3 WHERE id = ?1 AND (totp_last_step IS NULL OR totp_last_step < ?2)",
+        )
+        .bind(user.id, result.step, now()),
+      via: "totp",
+      clear: [claim.ak, key],
+    });
+    if (!session) return refuse(c, a, alerts);
     return c.json({ ok: true, user: { name: user.name, email: user.email, role: user.role } });
   })
 
-  .get("/me", async (c) => {
-    const token = readCookie(c.req.header("Cookie"));
-    if (!token) return c.json({ error: { code: "unauthenticated", message: "Sign in" } }, 401);
-    const id = await tokenHash(token);
-    const row = await c.env.DB.prepare(
-      "SELECT s.last_seen_at, s.idle_expires_at, s.abs_expires_at, s.revoked_at, u.name, u.email, u.role FROM staff_sessions s JOIN staff_users u ON u.id = s.user_id WHERE s.id = ? AND u.status = 'active'",
-    )
-      .bind(id)
-      .first<{
-        last_seen_at: number;
-        idle_expires_at: number;
-        abs_expires_at: number;
-        revoked_at: number | null;
-        name: string;
-        email: string;
-        role: string;
-      }>();
-    const state = row
-      ? checkSession(
-          {
-            lastSeenAt: row.last_seen_at,
-            idleExpiresAt: row.idle_expires_at,
-            absExpiresAt: row.abs_expires_at,
-            revokedAt: row.revoked_at,
-          },
-          now(),
+  // 3b. A recovery code instead of the authenticator code [ADM-AUTH-04]: same challenge, same counter, single use.
+  .post("/recovery", json(recoveryRequest), async (c) => {
+    const { challenge, code } = c.req.valid("json");
+    const claim = await verifyChallenge(c.env.SESSION_HMAC_KEY, challenge, "login_totp", now());
+    if (!claim || !isAttemptKey(claim.ak)) return err(c, INVALID, 401);
+    const db = c.env.DB;
+    const key = codeKey(claim.sub);
+    const hash = await recoveryCodeHash(code);
+    const a = await attempt(c, key, [
+      db.prepare(RECOVERY_USER_READ).bind(claim.sub),
+      db.prepare(RECOVERY_CODE_READ).bind(claim.sub, hash),
+    ]);
+    if (a.ipLocked) return locked(c, true);
+    if (!a.reserved) return locked(c, false);
+    const user = a.reads[0] as Pick<UserRow, "id" | "email" | "name" | "role"> | undefined;
+    const alerts = user && a.reserved.failures >= LOCK_AFTER ? [lockoutAlert(c, user.id, user.role)] : [];
+    const matches = !!a.reads[1] && isRecoveryCode(normaliseRecoveryCode(code));
+    if (!user || !matches) return refuse(c, a, alerts);
+    const session = await startSession(c, {
+      user,
+      // The code's single use IS the guard: of two requests with the same code only one changes a row.
+      guard: db
+        .prepare(
+          "UPDATE staff_recovery_codes SET used_at = ?3 WHERE user_id = ?1 AND code_hash = ?2 AND used_at IS NULL",
         )
-      : { valid: false, touch: false };
-    if (!row || !state.valid) return c.json({ error: { code: "unauthenticated", message: "Sign in" } }, 401);
-    if (state.touch) {
-      const t = now();
-      await c.env.DB.prepare(
-        "UPDATE staff_sessions SET last_seen_at = ?2, idle_expires_at = min(?3, abs_expires_at) WHERE id = ?1",
-      )
-        .bind(id, t, t + 12 * 60 * 60 * 1000)
-        .run();
-    }
-    return c.json({ user: { name: row.name, email: row.email, role: row.role } });
+        .bind(user.id, hash, now()),
+      via: "recovery",
+      clear: [claim.ak, key],
+    });
+    if (!session) return refuse(c, a, alerts);
+    return c.json({ ok: true, user: { name: user.name, email: user.email, role: user.role } });
   })
 
+  // Sign out (public: it works with whatever cookie it gets, and always clears it).
   .post("/logout", async (c) => {
     const token = readCookie(c.req.header("Cookie"));
     if (token) {
-      await c.env.DB.prepare("UPDATE staff_sessions SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL")
-        .bind(now(), await tokenHash(token))
-        .run();
+      const t = now();
+      const id = await tokenHash(token);
+      const db = c.env.DB;
+      const info = requestInfo(c);
+      await db.batch([
+        db
+          .prepare("UPDATE staff_sessions SET revoked_at = ?2 WHERE id = ?1 AND revoked_at IS NULL")
+          .bind(id, t),
+        db
+          .prepare(
+            "INSERT INTO audit_log (id, actor_type, actor_id, role, action, entity_type, entity_id, ip, user_agent, request_id) SELECT ?1, 'staff', s.user_id, u.role, 'auth.logout', 'staff_user', s.user_id, ?2, ?3, ?4 FROM staff_sessions s JOIN staff_users u ON u.id = s.user_id WHERE s.id = ?5 AND s.revoked_at = ?6",
+          )
+          .bind(uuidv7(), info.ip, info.ua, info.requestId, id, t),
+      ]);
     }
-    c.header("Set-Cookie", clearCookie());
+    c.header("Set-Cookie", clearCookie(), { append: true });
     return c.json({ ok: true });
   })
 
-  // Invite acceptance [ADM-AUTH-07]: start → set password → enrol TOTP → active + session.
+  // Invite acceptance [ADM-AUTH-07]: start → name + password → enrol TOTP → active + session + recovery codes.
   .post("/invite/start", json(inviteStartRequest), async (c) => {
     const invite = await liveInvite(c.env.DB, c.req.valid("json").token);
-    if (!invite) return c.json(INVITE_INVALID, 400);
+    if (!invite) return err(c, INVITE_INVALID, 400);
     return c.json({
       email: invite.email,
       salt: await inviteSalt(c.env.SALT_PEPPER, invite.token_hash),
@@ -313,26 +443,36 @@ export const auth = new Hono<AppEnv>()
   })
 
   .post("/invite/finish", json(inviteFinishRequest), async (c) => {
-    const { token, clientHash } = c.req.valid("json");
-    const invite = await liveInvite(c.env.DB, token);
-    if (!invite) return c.json(INVITE_INVALID, 400);
-    const existing = await userByEmail(c.env.DB, invite.email);
-    if (existing && existing.status !== "invited") return c.json(INVITE_INVALID, 400);
+    const { token, clientHash, name } = c.req.valid("json");
+    const db = c.env.DB;
+    const invite = await liveInvite(db, token);
+    if (!invite) return err(c, INVITE_INVALID, 400);
+    const existing = await db
+      .prepare("SELECT id, status FROM staff_users WHERE email = ?")
+      .bind(invite.email)
+      .first<{ id: string; status: string }>();
+    if (existing && existing.status !== "invited") return err(c, INVITE_INVALID, 400);
     const userId = existing?.id ?? uuidv7();
     const salt = await inviteSalt(c.env.SALT_PEPPER, invite.token_hash);
     const secret = newTotpSecret();
-    const values = [
-      await passwordHmac(c.env.PASSWORD_PEPPER, salt, clientHash),
-      JSON.stringify(DEFAULT_PARAMS),
-      await sealTotpSecret(c.env.TOTP_ENC_KEY, userId, secret),
-    ];
-    await c.env.DB.prepare(
-      `INSERT INTO staff_users (id, email, name, role, status, pw_salt, pw_hmac, pw_params, totp_secret_enc)
-       VALUES (?1, ?2, ?2, ?3, 'invited', ?4, ?5, ?6, ?7)
-       ON CONFLICT(email) DO UPDATE SET pw_salt = ?4, pw_hmac = ?5, pw_params = ?6, totp_secret_enc = ?7, updated_at = ?8
-       WHERE status = 'invited'`,
-    )
-      .bind(userId, invite.email, invite.role, salt, ...values, now())
+    await db
+      .prepare(
+        `INSERT INTO staff_users (id, email, name, role, status, pw_salt, pw_hmac, pw_params, totp_secret_enc)
+         VALUES (?1, ?2, ?9, ?3, 'invited', ?4, ?5, ?6, ?7)
+         ON CONFLICT(email) DO UPDATE SET name = ?9, pw_salt = ?4, pw_hmac = ?5, pw_params = ?6, totp_secret_enc = ?7, updated_at = ?8
+         WHERE status = 'invited'`,
+      )
+      .bind(
+        userId,
+        invite.email,
+        invite.role,
+        salt,
+        await passwordHmac(c.env.PASSWORD_PEPPER, salt, clientHash),
+        JSON.stringify(DEFAULT_PARAMS),
+        await sealTotpSecret(c.env.TOTP_ENC_KEY, userId, secret),
+        now(),
+        name,
+      )
       .run();
     const challenge = await signChallenge(c.env.SESSION_HMAC_KEY, {
       purpose: "enrol_totp",
@@ -346,32 +486,51 @@ export const auth = new Hono<AppEnv>()
     const { challenge, code } = c.req.valid("json");
     const claim = await verifyChallenge(c.env.SESSION_HMAC_KEY, challenge, "enrol_totp", now());
     const [userId, inviteHash] = claim ? claim.sub.split("|") : [];
-    if (!userId || !inviteHash) return c.json(INVALID, 401);
-    const user = await c.env.DB.prepare("SELECT * FROM staff_users WHERE id = ? AND status = 'invited'")
+    if (!userId || !inviteHash) return err(c, INVALID, 401);
+    const db = c.env.DB;
+    const user = await db
+      .prepare(
+        "SELECT id, email, name, role, totp_secret_enc, totp_last_step FROM staff_users WHERE id = ? AND status = 'invited'",
+      )
       .bind(userId)
       .first<UserRow>();
-    if (!user?.totp_secret_enc) return c.json(INVALID, 401);
+    if (!user?.totp_secret_enc) return err(c, INVALID, 401);
     const secret = await openTotpSecret(c.env.TOTP_ENC_KEY, user.id, user.totp_secret_enc);
     const result = verifyTotp(secret, code, now(), user.totp_last_step);
-    if (!result.ok) return c.json(INVALID, 401);
+    if (!result.ok) return err(c, INVALID, 401);
     const t = now();
-    const [activated] = await c.env.DB.batch([
-      c.env.DB.prepare(
-        "UPDATE staff_users SET status = 'active', totp_enabled_at = ?2, updated_at = ?2 WHERE id = ?1 AND status = 'invited'",
-      ).bind(user.id, t),
-      c.env.DB.prepare(
-        "UPDATE staff_invites SET used_at = ?2 WHERE token_hash = ?1 AND used_at IS NULL",
-      ).bind(inviteHash, t),
+    const codes = newRecoveryCodes();
+    const active = {
+      sql: "EXISTS (SELECT 1 FROM staff_users WHERE id = ? AND status = 'active' AND totp_enabled_at = ?)",
+      params: [user.id, t],
+    };
+    const [activated] = await db.batch([
+      db
+        .prepare(
+          "UPDATE staff_users SET status = 'active', totp_enabled_at = ?2, updated_at = ?2 WHERE id = ?1 AND status = 'invited'",
+        )
+        .bind(user.id, t),
+      db
+        .prepare(
+          `UPDATE staff_invites SET used_at = ? WHERE token_hash = ? AND used_at IS NULL AND ${active.sql}`,
+        )
+        .bind(t, inviteHash, ...active.params),
+      insertRecoveryCodes(db, user.id, await Promise.all(codes.map((x) => recoveryCodeHash(x))), active),
     ]);
-    if (activated?.meta.changes !== 1) return c.json(INVALID, 401);
-    const session = await startSession(
-      c.env.DB,
-      user.id,
-      c.req.header("CF-Connecting-IP") ?? null,
-      c.req.header("User-Agent") ?? null,
-      result.step,
-    )();
-    if (!session) return c.json(INVALID, 401);
-    c.header("Set-Cookie", sessionCookie(session.token, Math.floor((session.absExpiresAt - t) / 1000)));
-    return c.json({ ok: true, user: { name: user.name, email: user.email, role: user.role } });
+    if (activated?.meta.changes !== 1) return err(c, INVALID, 401);
+    const session = await startSession(c, {
+      user,
+      guard: db
+        .prepare(
+          "UPDATE staff_users SET totp_last_step = ?2, last_login_at = ?3, updated_at = ?3 WHERE id = ?1 AND (totp_last_step IS NULL OR totp_last_step < ?2)",
+        )
+        .bind(user.id, result.step, now()),
+      via: "invite",
+    });
+    if (!session) return err(c, INVALID, 401);
+    return c.json({
+      ok: true,
+      user: { name: user.name, email: user.email, role: user.role },
+      recoveryCodes: codes.map(formatRecoveryCode),
+    });
   });
