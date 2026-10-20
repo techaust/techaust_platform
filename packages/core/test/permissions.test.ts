@@ -5,6 +5,9 @@ import { ACTIONS, type Action, can, type Decision, decide, isRole, ROLES } from 
 // A = allow, S = step-up, P = needs Owner approval, - = deny. Proposal sending is tested separately.
 const EXPECTED: Record<Exclude<Action, "proposals.send">, string> = {
   "users.manage": "S---",
+  "users.read": "A---",
+  "account.own": "AAAA",
+  "account.recoveryCodes": "SSSS",
   "settings.manage": "A---",
   "settings.taxNumbering.read": "A--A",
   "gateways.manage": "S---",

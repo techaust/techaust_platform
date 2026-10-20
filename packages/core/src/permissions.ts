@@ -27,6 +27,10 @@ const selfSend: Rule = ({ discountBps }) =>
 const MATRIX = {
   // Users, roles, settings, gateway modes, tax and numbering
   "users.manage": { owner: "step-up" },
+  "users.read": { owner: "allow" },
+  // A signed-in member's own account: sessions, step-up, the "who am I" read (M1.5, ADM-AUTH-05, -08)
+  "account.own": { owner: "allow", staff: "allow", sales: "allow", accountant: "allow" },
+  "account.recoveryCodes": { owner: "step-up", staff: "step-up", sales: "step-up", accountant: "step-up" },
   "settings.manage": { owner: "allow" },
   "settings.taxNumbering.read": { owner: "allow", accountant: "allow" },
   "gateways.manage": { owner: "step-up" },
