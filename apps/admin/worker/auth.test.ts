@@ -14,7 +14,7 @@ import {
   totpCode,
 } from "@techaust/auth";
 import { describe, expect, it, vi } from "vitest";
-import { startSession } from "./auth.ts";
+import { LOGIN_READ, startSession, TOTP_READ } from "./auth.ts";
 import app from "./index.ts";
 
 const BASE = "https://admin.example/api/v1/auth";
@@ -400,5 +400,51 @@ describe("auth CPU tuning: the diagnostic log line [ADM-AUTH-01]", () => {
     expect(ns[1]).toBe((ns[0] as number) + 1);
     expect(ns[2]).toBe((ns[0] as number) + 2);
     expect(lines.join("\n")).not.toContain("logline@example.com");
+  });
+});
+
+describe("auth CPU tuning: lockout for unknown emails and the query plans [ADM-AUTH-02, -05]", () => {
+  it("an unknown email locks like a real account: the 11th login is 429 with the same body, in 1 call", async () => {
+    const email = "ghost2@example.com";
+    for (let i = 0; i < 10; i++)
+      expect((await call("/login", { body: { email, clientHash: hash() } })).status).toBe(401);
+    expect((await attemptsRow(await key(email)))?.failures).toBe(10);
+    const ghost = await counting("/login", { body: { email, clientHash: hash() } });
+    expect([ghost.res.status, ghost.calls]).toEqual([429, 1]);
+    const ghostBody = await ghost.res.json();
+
+    const real = "locked-real@example.com";
+    const { clientHash } = await enrol(real);
+    for (let i = 0; i < 10; i++) await call("/login", { body: { email: real, clientHash: hash() } });
+    const locked = await counting("/login", { body: { email: real, clientHash } });
+    expect([locked.res.status, locked.calls]).toEqual([429, 1]);
+    expect(ghostBody).toEqual(await locked.res.json());
+  });
+
+  /** The plan lines of one query: how each table is reached. */
+  const plan = async (sql: string, ...binds: unknown[]) =>
+    (
+      await env.DB.prepare(`EXPLAIN QUERY PLAN ${sql}`)
+        .bind(...binds)
+        .all<{ detail: string }>()
+    ).results.map((r) => r.detail);
+
+  it("the /login and /totp reads reach staff_users and auth_attempts by index, never a scan", async () => {
+    const k = await key("plan@example.com");
+    const reads = {
+      login: await plan(LOGIN_READ, "plan@example.com", k),
+      totp: await plan(TOTP_READ, "some-user-id", k),
+    };
+    for (const [name, lines] of Object.entries(reads)) {
+      for (const table of ["staff_users", "auth_attempts"]) {
+        const mine = lines.filter((l) => l.includes(table));
+        expect(mine.length, `${name}: ${table} is in the plan: ${lines.join(" | ")}`).toBeGreaterThan(0);
+        for (const l of mine)
+          expect(l, `${name}: ${l}`).toMatch(
+            /^SEARCH .*(USING (COVERING )?INDEX|PRIMARY KEY|INTEGER PRIMARY KEY)/,
+          );
+      }
+      expect(lines.filter((l) => /^SCAN (staff_users|auth_attempts)\b/.test(l))).toEqual([]);
+    }
   });
 });

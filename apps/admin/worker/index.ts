@@ -26,9 +26,9 @@ const AUTH_ROUTES = new Set([
 let isolateId: string | undefined;
 let isolateRequests = 0;
 app.use("/v1/auth/*", async (c, next) => {
-  await next();
   isolateId ??= hex(randomBytes(3));
-  isolateRequests += 1;
+  const n = ++isolateRequests; // taken before next(), so concurrent requests get distinct numbers
+  await next();
   const route = c.req.path.replace(/^\/api\/v1\/auth\//, "");
   console.log(
     JSON.stringify({
@@ -36,7 +36,7 @@ app.use("/v1/auth/*", async (c, next) => {
       r: AUTH_ROUTES.has(route) ? route : "other",
       s: c.res.status,
       iso: isolateId,
-      n: isolateRequests,
+      n,
     }),
   );
 });

@@ -85,6 +85,12 @@ async function fail(db: D1Database, key: string, before: Attempts | null) {
     .run();
 }
 
+/** The joined reads of /login (?1 email, ?2 lockout key) and /totp (?1 user id, ?2 lockout key); tests EXPLAIN them. */
+export const LOGIN_READ =
+  "SELECT u.id, u.status, u.pw_salt, u.pw_hmac, u.totp_enabled_at, a.window_start, a.failures, a.locked_until FROM (SELECT ?1 AS email, ?2 AS akey) q LEFT JOIN staff_users u ON u.email = q.email LEFT JOIN auth_attempts a ON a.key = q.akey";
+export const TOTP_READ =
+  "SELECT u.id, u.email, u.name, u.role, u.totp_secret_enc, u.totp_last_step, a.window_start, a.failures, a.locked_until FROM staff_users u LEFT JOIN auth_attempts a ON a.key = ?2 WHERE u.id = ?1 AND u.status = 'active'";
+
 const userByEmail = (db: D1Database, email: string) =>
   db.prepare("SELECT * FROM staff_users WHERE email = ?").bind(email).first<UserRow>();
 // (Used by the invite routes only; the hot login routes read exactly the columns they need.)
@@ -170,19 +176,15 @@ export const auth = new Hono<AppEnv>()
     const { email, clientHash } = c.req.valid("json");
     const key = await attemptKey(email);
     // One read that always returns one row (the subquery); user and lockout columns are null when absent.
-    const row = await c.env.DB.prepare(
-      "SELECT u.id, u.status, u.pw_salt, u.pw_hmac, u.totp_enabled_at, a.window_start, a.failures, a.locked_until FROM (SELECT ?1 AS email, ?2 AS akey) q LEFT JOIN staff_users u ON u.email = q.email LEFT JOIN auth_attempts a ON a.key = q.akey",
-    )
-      .bind(email, key)
-      .first<
-        AttemptCols & {
-          id: string | null;
-          status: string | null;
-          pw_salt: string | null;
-          pw_hmac: string | null;
-          totp_enabled_at: number | null;
-        }
-      >();
+    const row = await c.env.DB.prepare(LOGIN_READ).bind(email, key).first<
+      AttemptCols & {
+        id: string | null;
+        status: string | null;
+        pw_salt: string | null;
+        pw_hmac: string | null;
+        totp_enabled_at: number | null;
+      }
+    >();
     if (!row) throw new Error("login read returned no row");
     const attempts = attemptsOf(row);
     if (isLocked(attempts, now())) return c.json(LOCKED, 429);
@@ -209,9 +211,7 @@ export const auth = new Hono<AppEnv>()
     // The lockout key comes from the signed challenge (set at login), so no second read is needed.
     if (!claim || !isAttemptKey(claim.ak)) return c.json(INVALID, 401);
     const key = claim.ak;
-    const user = await c.env.DB.prepare(
-      "SELECT u.id, u.email, u.name, u.role, u.totp_secret_enc, u.totp_last_step, a.window_start, a.failures, a.locked_until FROM staff_users u LEFT JOIN auth_attempts a ON a.key = ?2 WHERE u.id = ?1 AND u.status = 'active'",
-    )
+    const user = await c.env.DB.prepare(TOTP_READ)
       .bind(claim.sub, key)
       .first<
         AttemptCols & Pick<UserRow, "id" | "email" | "name" | "role" | "totp_secret_enc" | "totp_last_step">
