@@ -8,7 +8,10 @@
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
-  "observability": { "enabled": true },
+  // Workers Logs (M1.5, owner's Q5): invocation logs stay ON here and in staging (the CPU benchmark reads `cpuTimeMs`
+  // from them; only the owner's visits and the benchmark reach staging). The app's own `ev: "req"` lines and errors
+  // are console logs and stay on everywhere. Query strings are removed from logged URLs.
+  "observability": { "enabled": true, "redact_query_string": true },
   "assets": { "not_found_handling": "single-page-application", "run_worker_first": ["/api/*"] },
   "vars": { "ENVIRONMENT": "local", "PAYMENTS_LIVE_ALLOWED": "false" },
   // Login secrets (docs/05 §4): names only; values are set with `wrangler secret put` (docs/runbooks/access-staging.md).
@@ -43,7 +46,14 @@
     "production": {
       "name": "techaust-platform-admin",
       "workers_dev": false,
-      "vars": { "ENVIRONMENT": "production", "PAYMENTS_LIVE_ALLOWED": "false" }
+      "vars": { "ENVIRONMENT": "production", "PAYMENTS_LIVE_ALLOWED": "false" },
+      // Production: NO invocation logs from day one (they carry the client IP, user agent and location of every staff
+      // request, which the append-only access log already holds for security). Console logs stay on.
+      "observability": {
+        "enabled": true,
+        "redact_query_string": true,
+        "logs": { "enabled": true, "invocation_logs": false }
+      }
     }
   }
 }
