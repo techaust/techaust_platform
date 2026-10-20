@@ -214,7 +214,10 @@ function DetailsStep(props: { token: string; invite: Invite; onDone: (e: Enrolme
         hint={`At least ${MIN_LENGTH} characters. A short sentence of unrelated words works well.`}
         type={show ? "text" : "password"}
         value={password}
-        onChange={setPassword}
+        onChange={(v) => {
+          setPassword(v);
+          setPwError(null);
+        }}
         onFocus={preloadStrength}
         autoComplete="new-password"
         spellCheck={false}
