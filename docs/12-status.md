@@ -1,6 +1,6 @@
 # 12: Status
 
-_Replaced (never appended) at the end of every session. Last updated: **2026-10-17** (IST)._
+_Replaced (never appended) at the end of every session. Last updated: **2026-10-21** (IST)._
 
 ## Done
 - **Phases 1–5:** approved 2026-10-06 ([09-roadmap.md](09-roadmap.md)).
@@ -14,22 +14,25 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
   - reviewer: SEND BACK (2 high, 7 low), then APPROVE after fixes; `pnpm check` + `pnpm test` green; CI green
   - the final zip was sent to the owner on 2026-10-16
 - **Cloudflare Access on staging** (owner, 2026-10-17; [PR #18](https://github.com/techaust/techaust_platform/pull/18)): all four staging Workers, all traffic, the "Cloudflare account" policy (the owner is the only member), Preview URLs off. Checked by the lead: every staging URL answers 302 to the Access login.
+- **M1.4: the auth CPU spike, a gate: accepted 2026-10-21** with an exception ([PR #7](https://github.com/techaust/techaust_platform/pull/7), tuning [PR #24](https://github.com/techaust/techaust_platform/pull/24); [runs/m1.4-auth-spike.md](runs/m1.4-auth-spike.md), [cpu-baseline.md](runbooks/cpu-baseline.md)).
+  - The tuning cut D1 calls (totp 4 → 2, login 2 → 1) and made the lockout counter atomic; analyst GO, reviewer APPROVE.
+  - Run 3 (15 min): totp p99 12 → 7 ms, salt 7, me 3 pass; login p99 6 ms vs 5 (one request in 380); nothing warm over 10 ms; cold starts 6–14 ms (2 of 8 over 10).
+  - Owner: accept and move to M1.5; cold starts go into M1.5; the $5 plan is looked at again before real staff use.
 
 ## In progress
-- **M1.4: the auth CPU spike, a gate** ([PR #7](https://github.com/techaust/techaust_platform/pull/7) merged 2026-10-17 and on staging; [runs/m1.4-auth-spike.md](runs/m1.4-auth-spike.md)).
-  - Access runbook Parts 1–3 done (secrets set, benchmark token attached to the admin app only).
-  - **Gate failed** on the 15-minute run: login p99 6 ms (gate 5), totp p99 12 ms (gate 7), about 1 % of totp over the Free plan's 10 ms; salt and me pass ([cpu-baseline.md](runbooks/cpu-baseline.md)). Owner: **tune, then re-measure**.
-  - **Diagnosed** ([PR #22](https://github.com/techaust/techaust_platform/pull/22)): the CPU goes into D1 calls (≈ 0.6–1.5 ms each, confirmed on staging Workers Logs), not our crypto. Fix: totp 4 D1 calls → 2, login 2 → 1, no schema or security change. The Tier A builder brief is final in the run file.
+- Nothing.
 
 ## Next
-1. **Builder** (Tier A, Sonnet 5.5 high) after the weekly reset (**Mon 19 Oct, 15:30 IST**; fresh conversation, "continue"): the tuning; analyst's early check; then review.
-2. The owner re-runs the 15-minute benchmark; the lead applies the gate. Still failing → the owner chooses the $5 plan or Access + simpler auth.
-3. Then M1.5 (Tier A; the `analyst` drafts the brief). M1.5 must also stop Workers Logs keeping request headers (session cookie, Access token); note: the API query on 2026-10-17 returned `cookie` and `cf-access-jwt-assertion` as `REDACTED`, so first check what the dashboard and the stored logs really keep.
+1. **M1.5 brief** (Tier A; fresh conversation, "continue"): the `analyst` drafts it from docs/09 M1.5, adding:
+   - stop Workers Logs keeping request headers (session cookie, Access token); the API on 2026-10-17 and 2026-10-21 shows `cookie` and `cf-access-jwt-assertion` as `REDACTED`, so first check what the dashboard and the stored logs really keep
+   - the reviewer's pre-read lock finding: count the attempt atomically before verifying, so parallel guesses can't get past the lock
+   - cold-start CPU of the admin Worker (bundle size)
+   - the follow-up tests listed in the run file's last handover
+2. Then the builder, the analyst's early check, the designer (screens), the review.
 
-**Usage at end of day 2026-10-17:** weekly 83 % (over the pace: one agent at a time; at 85 % no new build or design), 5-hour window 10 %. Weekly reset **Mon 19 Oct, 15:30 IST**.
+**Usage on 2026-10-21:** weekly 4 %, 5-hour 6 % after the M1.4 tuning (builder, analyst, builder fixes, reviewer); well under the pace. Weekly reset **Mon 26 Oct, 15:30 IST**.
 
 ## Waits on the owner
-- **M1.4:** re-run the 15-minute benchmark after the tuning (step 3 above).
 - **Time-sensitive compliance** ([08 §0](08-security-compliance.md); all VERIFY WITH CA):
   - **U-3 UPI MDR from 15 Oct 2026:** check the Razorpay pricing.
   - **U-1:** the LUT for zero-rated exports (send the ARN if filed).
