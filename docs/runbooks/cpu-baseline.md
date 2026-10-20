@@ -2,7 +2,7 @@
 
 **Gate (docs/09 M1.4):** login p99 ≤ **5 ms** CPU, and every route ≤ **7 ms** p99, on the Workers **Free** plan (10 ms per invocation). If it doesn't fit, I stop and ask: tune, use Cloudflare Access with simpler auth, or move to the $5 plan.
 
-**Status:** measured 2026-10-17: **gate failed** (login p99 6 ms, totp p99 12 ms); tuning next, see Results. Setup: [access-staging.md](access-staging.md) (all three parts done 2026-10-17).
+**Status:** re-measured 2026-10-21 after the tuning (PR #24): totp, salt and me pass; login p99 6 ms vs 5 (one request over the line). **Owner accepted M1.4 as passed with this exception** (2026-10-21); cold starts move to M1.5. See Results. Setup: [access-staging.md](access-staging.md) (all three parts done 2026-10-17).
 
 ## What is measured
 The staff login routes of the staging admin Worker (`techaust-platform-admin-staging`), as designed in [05 §6.1](../05-architecture.md):
@@ -28,6 +28,28 @@ The benchmark creates throwaway users (`@bench.invalid`) and deletes them at the
 
 ## Results
 
+### Run 3 (after the tuning, PR #24): 2026-10-21 IST (2026-10-20 UTC), 15 minutes, 12 users
+Run `mvh4cyuc5298`, window ≈ 20:11:51–20:27:20 UTC, version `392f8376` only; 375 logins, 0 unexpected failures; every outcome "ok" (1,415 × 200, 36 × 401 by design). CPU from Workers Logs (`$workers.cpuTimeMs`, whole ms), each request matched by request ID to its `ev:"auth"` line (`n = 1` = first request of an isolate; 25 of 1,451 requests had no log line). Read 2026-10-21.
+
+| Route | Requests | CPU p50 | CPU p99 (run 2 → 3) | CPU max | Over 10 ms | Gate |
+|---|---|---|---|---|---|---|
+| salt | 374 | 1 ms | 5 → **7 ms** | 14 ms | 2 (both cold) | ≤ 7 ms ✅ |
+| login | 380 | 1 ms | 6 → **6 ms** | 10 ms | 0 | ≤ 5 ms ❌ (by one request) |
+| totp | 339 | 2 ms | 12 → **7 ms** | 9 ms | **0** (was 4) | ≤ 7 ms ✅ |
+| me | 324 | 1 ms | 3 → **3 ms** | 3 ms | 0 | ≤ 7 ms ✅ |
+| invite/* (not gated) | 34 | 2 ms | 8 ms | 8 ms | 0 | — |
+
+- **Histograms** (ms: count). login: 0:4, 1:256, 2:89, 3:16, 4:6, 5:5, 6:2, 8:1, 10:1 (376 of 380 ≤ 5 ms; the p99 is the 377th). totp: 1:61, 2:150, 3:63, 4:42, 5:12, 6:5, 7:3, 8:1, 9:2.
+- **By status:** login 200 p50 1 / p99 6 / max 10 (344); login 401 p50 1 / p99 5 / max 5 (36).
+- **Cold vs warm:** 8 isolates. Their first requests cost 6, 7, 7, 7, 8, 10, 13, 14 ms (7 on salt, 1 on invite). Warm salt p99 is 3 ms (max 4); warm login and totp match the totals above.
+- **Wall clock** (GitHub runner in the US): login p50 262 / p99 564 ms, totp 523 / 627 ms (was ~980), not part of the gate.
+
+### Verdict (run 3): accepted as passed with an exception (owner, 2026-10-21)
+- The tuning worked where it mattered: totp p99 12 → 7 ms and nothing warm over 10 ms.
+- Login p99 is 6 ms against the 5 ms margin, decided by one request of 380; its max is exactly 10 ms.
+- Cold starts (module load on a fresh isolate) cost 6–14 ms; 2 of 8 went over 10 ms and Cloudflare let them finish, which it doesn't promise. Reducing cold-start cost is part of M1.5.
+- The $5 plan is looked at again before staff use the admin for real work.
+
 ### Run 2 (decisive): 2026-10-17, 15 minutes, 12 users
 Run `mvcbujlie045`, window 11:42:37–11:58:28 UTC, version `7361380c`; 382 logins, 0 unexpected failures; every request outcome "ok" (1,610 × 200, 37 × 401 by design). CPU from Workers Logs (`$workers.cpuTimeMs`, whole milliseconds; read 2026-10-17).
 
@@ -44,7 +66,7 @@ CPU histograms (ms: count). login: 1:176, 2:159, 3:56, 4:13, 5:10, 6:3, 7:1, 8:1
 ### Run 1: 2026-10-17, 5 minutes, 12 users
 Run `mvcb9b836a40`, window 11:26:06–11:31:57 UTC; 143 logins, 0 unexpected failures. login p50 2 / p99 7 / max 7 ms (148 requests); totp 4 / 7 / 16 ms (157); salt 1 / 3 / 6 ms (163); me 1 / 3 / 6 ms (140). Too few requests for a stable p99, so run 2 was made (owner decision).
 
-### Verdict: gate failed (owner decision 2026-10-17: tune, then re-measure)
+### Verdict (runs 1–2): gate failed (owner decision 2026-10-17: tune, then re-measure)
 - The spikes are scattered through both runs, not cold starts; most requests are cheap.
 - totp is the main problem: about 1 % of requests exceed the Free plan's 10 ms (Cloudflare let them finish, but it may cut them off).
 - Next: the analyst diagnoses where login and totp spend CPU; a builder tunes (Tier A); the 15-minute run is repeated. If tuning can't meet the gate, the owner chooses between the $5 plan and Access + simpler auth.

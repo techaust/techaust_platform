@@ -2,6 +2,8 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-10-21 [#24](https://github.com/techaust/techaust_platform/pull/24) perf(auth): fewer D1 calls on /login and /totp, atomic lockout counter (M1.4 tuning)
+- 2026-10-17 [#23](https://github.com/techaust/techaust_platform/pull/23) docs: end of day 2026-10-17 evening (status, changelog #19 #21 #22)
 - 2026-10-17 [#22](https://github.com/techaust/techaust_platform/pull/22) docs(m1.4): auth CPU tuning analysis and Tier A builder brief
 - 2026-10-17 [#21](https://github.com/techaust/techaust_platform/pull/21) docs(m1.4): CPU benchmark results (gate failed) and next steps
 - 2026-10-17 [#7](https://github.com/techaust/techaust_platform/pull/7) feat(m1.4): staff login spike + CPU benchmark; Access runbook for the new dashboard
