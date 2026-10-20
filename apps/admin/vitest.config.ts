@@ -2,8 +2,9 @@ import { join } from "node:path";
 import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-plugin";
 import { defineConfig } from "vitest/config";
 
-// Worker (API) tests run inside workerd with every D1 migration applied. SPA component tests come with the UI
-// milestones. The secrets below are fixed test values, used only here.
+// Worker (API) tests run inside workerd with every D1 migration applied. The SPA's pure modules (password rules,
+// API client, user-agent helper: src/**/*.test.ts) run in the same pool; they need no DOM. The secrets below are
+// fixed test values, used only here.
 const TEST_KEY = (n: number) => btoa(String.fromCharCode(...new Uint8Array(32).fill(n)));
 
 export default defineConfig(async () => ({
@@ -21,5 +22,5 @@ export default defineConfig(async () => ({
       },
     }),
   ],
-  test: { include: ["worker/**/*.test.ts"], setupFiles: ["./worker/test-setup.ts"] },
+  test: { include: ["worker/**/*.test.ts", "src/**/*.test.ts"], setupFiles: ["./worker/test-setup.ts"] },
 }));
