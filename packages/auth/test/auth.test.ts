@@ -20,7 +20,7 @@ import {
   sessionCookie,
   TOUCH_EVERY_MS,
 } from "../src/session.ts";
-import { newToken, signChallenge, tokenHash, verifyChallenge } from "../src/tokens.ts";
+import { isAttemptKey, newToken, signChallenge, tokenHash, verifyChallenge } from "../src/tokens.ts";
 import { currentStep, openTotpSecret, sealTotpSecret, totpUri, verifyTotp } from "../src/totp.ts";
 
 const KEY = btoa(String.fromCharCode(...new Uint8Array(32).fill(7)));
@@ -129,6 +129,33 @@ describe("tokens and challenges", () => {
     expect(await verifyChallenge(KEY, body, "login_totp", 1_000)).toBeNull();
     expect(await verifyChallenge(KEY, `${token}.x`, "login_totp", 1_000)).toBeNull();
     expect(await verifyChallenge(KEY, `${body}.!!!`, "login_totp", 1_000)).toBeNull();
+  });
+
+  it("the lockout key `ak` is signed with the challenge, so changing it breaks the signature", async () => {
+    const ak = `acct:${"a1".repeat(16)}`;
+    const c = { purpose: "login_totp" as const, sub: "u1", exp: 2_000, ak };
+    const token = await signChallenge(KEY, c);
+    expect(await verifyChallenge(KEY, token, "login_totp", 1_000)).toEqual(c);
+    const [, mac] = token.split(".") as [string, string];
+    const forged = b64url(new TextEncoder().encode(JSON.stringify({ ...c, ak: `acct:${"b2".repeat(16)}` })));
+    expect(await verifyChallenge(KEY, `${forged}.${mac}`, "login_totp", 1_000)).toBeNull();
+  });
+
+  it("isAttemptKey accepts only `acct:` plus 32 lowercase hex characters", () => {
+    expect(isAttemptKey(`acct:${"0f".repeat(16)}`)).toBe(true);
+    for (const bad of [
+      undefined,
+      null,
+      42,
+      "",
+      "acct:",
+      `acct:${"0f".repeat(15)}`,
+      `acct:${"0f".repeat(17)}`,
+      `acct:${"0F".repeat(16)}`,
+      `ip:${"0f".repeat(16)}`,
+      `acct:${"0f".repeat(16)}\n`,
+    ])
+      expect(isAttemptKey(bad)).toBe(false);
   });
 });
 
