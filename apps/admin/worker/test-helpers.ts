@@ -198,11 +198,11 @@ export type Enrolled = {
   inviteToken: string;
 };
 
-/** Walk an invite through the real API: start, finish (name + password hash), authenticator code. */
-export async function enrol(email: string, role = "owner", name = "Test Person"): Promise<Enrolled> {
-  const inviteToken = await invite(email, role);
+/** Accept an invite token through the real API: start, finish (name + password hash), authenticator code. */
+export async function accept(inviteToken: string, name = "Test Person"): Promise<Enrolled> {
   const start = await call("/auth/invite/start", { body: { token: inviteToken } });
   expect(start.status).toBe(200);
+  const { email } = (await start.json()) as { email: string };
   const clientHash = hash();
   const finish = await call("/auth/invite/finish", { body: { token: inviteToken, clientHash, name } });
   expect(finish.status).toBe(200);
@@ -226,6 +226,14 @@ export async function enrol(email: string, role = "owner", name = "Test Person")
     inviteToken,
   };
 }
+
+/** A new member through a database invite (the owner's `invite` script does the same). */
+export async function enrol(email: string, role = "owner", name = "Test Person"): Promise<Enrolled> {
+  return accept(await invite(email, role), name);
+}
+
+/** The token inside an invite link (`…/invite#t=<token>`). */
+export const tokenOfLink = (link: string) => new URL(link).hash.replace(/^#t=/, "");
 
 /** Password step: a challenge for the code step. */
 export async function challengeFor(email: string, clientHash: string, e: Env = env) {
