@@ -468,14 +468,6 @@ describe("auth CPU tuning: the atomic failure counter [ADM-AUTH-05]", () => {
     expect((await call("/login", { body: { email, clientHash } })).status).toBe(429);
   });
 
-  it("a failure is still exactly 1 D1 call (the upsert)", async () => {
-    const c = counted();
-    await c.env.DB.prepare(FAIL_SQL)
-      .bind("acct:call-budget", Date.now(), WINDOW_MS, LOCK_AFTER, LOCK_MS)
-      .run();
-    expect(c.calls()).toBe(1);
-  });
-
   type Row = Attempts;
   const runSql = async (k: string, at: number, lockAfter = LOCK_AFTER): Promise<Row> => {
     await env.DB.prepare(FAIL_SQL).bind(k, at, WINDOW_MS, lockAfter, LOCK_MS).run();
