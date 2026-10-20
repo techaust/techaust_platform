@@ -1,7 +1,7 @@
 // Recovery codes [ADM-AUTH-04]: shown once (at enrolment and after "make new codes"), never again. Copy, download
 // (a .txt built in the browser) and print; the person confirms they've saved them before going on.
 import { formatIstDateTime } from "@techaust/core";
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Download, Printer } from "./icons.tsx";
 import { CopyButton } from "./ui.tsx";
 
@@ -24,10 +24,20 @@ export function RecoveryCodes(props: {
   email: string;
   onDone: () => void;
   doneLabel: string;
+  /** Move focus to the codes when they appear (when no step heading takes it). */
+  focusOnMount?: boolean;
+  /** The slip title level: 3 inside a page section that already has an h2. */
+  level?: 2 | 3;
 }) {
   const [saved, setSaved] = useState(false);
   const [at] = useState(() => Date.now());
   const hintId = useId();
+  const title = useRef<HTMLHeadingElement>(null);
+  const { focusOnMount } = props;
+  const Title = props.level === 3 ? "h3" : "h2";
+  useEffect(() => {
+    if (focusOnMount) title.current?.focus();
+  }, [focusOnMount]);
   const text = recoveryCodesText(props.codes, props.email, at);
 
   function download() {
@@ -50,9 +60,9 @@ export function RecoveryCodes(props: {
       <p className="recovery__once">You'll only see these codes now.</p>
 
       <section className="slip print-area" aria-labelledby={`${hintId}-slip`}>
-        <h2 className="slip__title" id={`${hintId}-slip`}>
+        <Title className="slip__title" id={`${hintId}-slip`} ref={title} tabIndex={-1}>
           Recovery codes
-        </h2>
+        </Title>
         <p className="slip__meta">
           <span>{props.email}</span>
           <span>{formatIstDateTime(at)}</span>
@@ -68,7 +78,7 @@ export function RecoveryCodes(props: {
       </section>
 
       <div className="actions-row">
-        <CopyButton text={props.codes.join("\n")} label="Copy codes" />
+        <CopyButton text={props.codes.join("\n")} label="Copy" hiddenSuffix=" codes" />
         <button type="button" className="btn btn--secondary" onClick={download}>
           <Download size={20} />
           Download

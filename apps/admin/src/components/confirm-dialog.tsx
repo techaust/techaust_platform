@@ -1,7 +1,7 @@
 // The confirm dialog for irreversible staff actions (docs/06 §5.3 ConfirmDialog): what will happen, then one
 // clear action. If the action needs a fresh step-up, the step-up dialog opens on top and the action carries on.
 // An action can return something to show afterwards (a reset link shown once): the dialog then shows it with "Done".
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { errorText } from "../api.ts";
 import { Modal } from "./dialog.tsx";
 import { Notice } from "./ui.tsx";
@@ -18,10 +18,17 @@ export function ConfirmDialog(props: {
   onClose: () => void;
   /** Disable the confirm button (e.g. nothing picked yet). */
   disabled?: boolean | undefined;
+  /** The title once the action has happened (a question no longer fits). */
+  resultTitle?: string | undefined;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ReactNode | null>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  // The confirm button is gone once the result shows: focus goes to the title so the result is read next.
+  useEffect(() => {
+    if (result) titleRef.current?.focus();
+  }, [result]);
 
   function close() {
     setError(null);
@@ -44,7 +51,14 @@ export function ConfirmDialog(props: {
   }
 
   return (
-    <Modal open={props.open} title={props.title} onClose={close} busy={busy} tone={props.tone}>
+    <Modal
+      open={props.open}
+      title={result && props.resultTitle ? props.resultTitle : props.title}
+      onClose={close}
+      busy={busy}
+      tone={props.tone}
+      titleRef={titleRef}
+    >
       {result ? (
         <>
           <div className="dialog__body">{result}</div>

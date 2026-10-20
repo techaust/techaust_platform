@@ -135,7 +135,7 @@ export function Component() {
                     </dl>
                   </div>
                   {actionable && (
-                    <div className="row__actions row__actions--stack">
+                    <div className="row__actions row__actions--below">
                       <button
                         type="button"
                         className="btn btn--secondary"
@@ -221,6 +221,7 @@ export function Component() {
         }
         tone="danger"
         confirmLabel="Reset and make a link"
+        resultTitle="Sign-in reset"
         busyLabel="Resetting…"
         onClose={() => {
           close();

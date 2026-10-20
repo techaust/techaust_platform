@@ -1,7 +1,7 @@
 // A modal dialog on the native <dialog> element: showModal() gives the top layer, an inert page behind, focus
 // inside and Escape to cancel, which is the WAI-ARIA dialog pattern without a library. Focus goes back to the
 // control that opened it.
-import { type ReactNode, useEffect, useId, useRef } from "react";
+import { type ReactNode, type Ref, useEffect, useId, useRef } from "react";
 
 export function Modal(props: {
   open: boolean;
@@ -11,6 +11,8 @@ export function Modal(props: {
   busy?: boolean | undefined;
   children: ReactNode;
   tone?: "default" | "danger" | undefined;
+  /** The title takes focus when the content changes under it (a result step). */
+  titleRef?: Ref<HTMLHeadingElement> | undefined;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const opener = useRef<Element | null>(null);
@@ -41,7 +43,7 @@ export function Modal(props: {
     >
       {open && (
         <>
-          <h2 id={titleId} className="dialog__title">
+          <h2 id={titleId} className="dialog__title" ref={props.titleRef} tabIndex={-1}>
             {props.title}
           </h2>
           {props.children}

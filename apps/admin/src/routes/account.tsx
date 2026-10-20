@@ -71,40 +71,42 @@ export function Component() {
         {!data && !loadError && <SkeletonRows n={2} />}
         {data && (
           <ul className="rows">
-            {data.sessions.map((s) => (
-              <li key={s.id} className="row">
-                <div className="row__main">
-                  <p className="row__title">
-                    {describeUserAgent(s.user_agent)}
-                    {s.current && <span className="pill pill--accent">This browser</span>}
-                  </p>
-                  <dl className="row__facts">
-                    <div>
-                      <dt>Signed in</dt>
-                      <dd>{when(s.created_at)}</dd>
-                    </div>
-                    <div>
-                      <dt>Last active</dt>
-                      <dd>{when(s.last_seen_at)}</dd>
-                    </div>
-                    <div>
-                      <dt>IP address</dt>
-                      <dd className="mono">{s.ip ?? "Unknown"}</dd>
-                    </div>
-                  </dl>
-                </div>
-                <div className="row__actions">
-                  <button
-                    type="button"
-                    className="btn btn--secondary"
-                    onClick={() => setPending({ kind: "one", session: s })}
-                    aria-label={`Sign out of ${describeUserAgent(s.user_agent)}${s.current ? " (this browser)" : ""}, signed in ${when(s.created_at)}`}
-                  >
-                    Sign out
-                  </button>
-                </div>
-              </li>
-            ))}
+            {[...data.sessions]
+              .sort((a, b) => Number(b.current) - Number(a.current))
+              .map((s) => (
+                <li key={s.id} className="row">
+                  <div className="row__main">
+                    <p className="row__title">
+                      {describeUserAgent(s.user_agent)}
+                      {s.current && <span className="pill pill--accent">This browser</span>}
+                    </p>
+                    <dl className="row__facts">
+                      <div>
+                        <dt>Signed in</dt>
+                        <dd>{when(s.created_at)}</dd>
+                      </div>
+                      <div>
+                        <dt>Last active</dt>
+                        <dd>{when(s.last_seen_at)}</dd>
+                      </div>
+                      <div>
+                        <dt>IP address</dt>
+                        <dd className="mono">{s.ip ?? "Unknown"}</dd>
+                      </div>
+                    </dl>
+                  </div>
+                  <div className="row__actions">
+                    <button
+                      type="button"
+                      className="btn btn--secondary"
+                      onClick={() => setPending({ kind: "one", session: s })}
+                      aria-label={`Sign out of ${describeUserAgent(s.user_agent)}${s.current ? " (this browser)" : ""}, signed in ${when(s.created_at)}`}
+                    >
+                      Sign out
+                    </button>
+                  </div>
+                </li>
+              ))}
           </ul>
         )}
         {data && (
@@ -123,13 +125,17 @@ export function Component() {
       <section className="section" aria-labelledby="codes-h">
         <div className="section__head">
           <h2 id="codes-h">Recovery codes</h2>
-          <p className="hint">Each code lets you sign in once if you can't use your authenticator app.</p>
+          {!newCodes && (
+            <p className="hint">Each code lets you sign in once if you can't use your authenticator app.</p>
+          )}
         </div>
         {newCodes ? (
           <RecoveryCodes
             codes={newCodes}
             email={user.email}
             doneLabel="Done"
+            focusOnMount
+            level={3}
             onDone={() => {
               setNewCodes(null);
               setNotice("New recovery codes saved. Your old codes no longer work.");

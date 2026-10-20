@@ -3,7 +3,7 @@
 // The token is in the URL fragment (#t=…): it never reaches a server log. Loaded with import() (route chunk), and
 // the password dictionaries load on top of that only when the password field is used.
 import { type FormEvent, useEffect, useState } from "react";
-import { useNavigate } from "react-router";
+import { Navigate, useNavigate } from "react-router";
 import { api, errorText, hashPassword, type User } from "../api.ts";
 import { QrCode } from "../components/qr-code.tsx";
 import { RecoveryCodes } from "../components/recovery-codes.tsx";
@@ -41,12 +41,16 @@ export function Component() {
   const [enrol, setEnrol] = useState<Enrolment | null>(null);
   const [done, setDone] = useState<{ user: User; codes: string[] } | null>(null);
   const heading = useFocusOnChange<HTMLHeadingElement>(step);
+  const { user } = useSession();
 
   useEffect(() => {
     if (!token) return;
     api.inviteStart(token).then(setInvite, (err) => setInvalid(errorText(err)));
   }, [token]);
 
+  // No token (e.g. a reload after setup took it out of the address bar): someone signed in goes home.
+  if (!token && user) return <Navigate to="/" replace />;
+  if (!token && user === undefined) return null;
   if (invalid) return <InviteInvalid reason={invalid} />;
   if (!invite || !token) {
     return (
@@ -217,16 +221,18 @@ function DetailsStep(props: { token: string; invite: Invite; onDone: (e: Enrolme
         autoCapitalize="none"
         error={pwError}
         className="field--password"
+        addon={
+          <button
+            type="button"
+            className="reveal"
+            aria-controls="new-password"
+            onClick={() => setShow((v) => !v)}
+          >
+            {show ? "Hide" : "Show"}
+            <span className="visually-hidden"> password</span>
+          </button>
+        }
       >
-        <button
-          type="button"
-          className="btn btn--text reveal"
-          aria-pressed={show}
-          aria-controls="new-password"
-          onClick={() => setShow((v) => !v)}
-        >
-          {show ? "Hide password" : "Show password"}
-        </button>
         <StrengthMeter password={password} strength={strength} />
       </Field>
       <button

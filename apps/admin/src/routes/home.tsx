@@ -22,9 +22,8 @@ export function Home() {
   }
 
   return (
-    <Card title="TecHaust admin">
+    <Card title={user.name}>
       <div className="whoami">
-        <p className="whoami__name">{user.name}</p>
         <p className="whoami__meta">
           <span>{user.email}</span>
           <span className="pill">{ROLE_LABELS[user.role]}</span>

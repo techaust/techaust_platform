@@ -19,21 +19,24 @@ function Root() {
   const { user } = useSession();
   const { pathname } = useLocation();
   if (pathname === "/invite") return <Outlet />;
-  if (user === undefined) {
-    return (
-      <Card title="TecHaust admin" busy>
-        <p className="hint" role="status">
-          Loading…
-        </p>
-      </Card>
-    );
-  }
+  if (user === undefined) return <Loading />;
   if (!user) return <SignIn />;
   return (
     <>
       <Outlet />
       <StepUpDialog />
     </>
+  );
+}
+
+/** While the session (or the first screen's code) loads. */
+function Loading() {
+  return (
+    <Card title="TecHaust admin" busy>
+      <p className="hint" role="status">
+        Loading…
+      </p>
+    </Card>
   );
 }
 
@@ -53,6 +56,7 @@ function NotFound() {
 const router = createBrowserRouter([
   {
     path: "/",
+    HydrateFallback: Loading,
     element: (
       <SessionProvider>
         <Root />

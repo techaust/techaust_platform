@@ -81,6 +81,8 @@ export function Field(props: {
   maxLength?: number | undefined;
   className?: string | undefined;
   children?: ReactNode | undefined;
+  /** A control that sits inside the field's right edge (the password's Show/Hide). */
+  addon?: ReactNode | undefined;
 }) {
   const describedBy = [props.hint ? `${props.id}-hint` : null, props.error ? `${props.id}-error` : null]
     .filter(Boolean)
@@ -93,24 +95,36 @@ export function Field(props: {
           {props.hint}
         </p>
       )}
-      <input
-        id={props.id}
-        type={props.type ?? "text"}
-        value={props.value}
-        onChange={(e) => props.onChange(e.target.value)}
-        onFocus={props.onFocus}
-        onBlur={props.onBlur}
-        autoComplete={props.autoComplete}
-        inputMode={props.inputMode}
-        aria-describedby={describedBy || undefined}
-        aria-invalid={props.error ? true : undefined}
-        // biome-ignore lint/a11y/noAutofocus: each step has one field; focus follows the step change
-        autoFocus={props.autoFocus}
-        spellCheck={props.spellCheck}
-        autoCapitalize={props.autoCapitalize}
-        maxLength={props.maxLength}
-        required
-      />
+      {(() => {
+        const input = (
+          <input
+            id={props.id}
+            type={props.type ?? "text"}
+            value={props.value}
+            onChange={(e) => props.onChange(e.target.value)}
+            onFocus={props.onFocus}
+            onBlur={props.onBlur}
+            autoComplete={props.autoComplete}
+            inputMode={props.inputMode}
+            aria-describedby={describedBy || undefined}
+            aria-invalid={props.error ? true : undefined}
+            // biome-ignore lint/a11y/noAutofocus: each step has one field; focus follows the step change
+            autoFocus={props.autoFocus}
+            spellCheck={props.spellCheck}
+            autoCapitalize={props.autoCapitalize}
+            maxLength={props.maxLength}
+            required
+          />
+        );
+        return props.addon ? (
+          <div className="input-wrap">
+            {input}
+            {props.addon}
+          </div>
+        ) : (
+          input
+        );
+      })()}
       {props.children}
       {props.error && <FieldError id={`${props.id}-error`}>{props.error}</FieldError>}
     </div>
@@ -173,7 +187,18 @@ export function Notice({
 }
 
 /** Copies a value; says "Copied" in a polite live region (and on the button) for a few seconds. */
-export function CopyButton({ text, label, className }: { text: string; label: string; className?: string }) {
+export function CopyButton({
+  text,
+  label,
+  hiddenSuffix,
+  className,
+}: {
+  text: string;
+  label: string;
+  /** Words only screen readers hear after the label ("Copy" + " codes"), when the context makes them obvious. */
+  hiddenSuffix?: string;
+  className?: string;
+}) {
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
   useEffect(() => {
     if (state === "idle") return;
@@ -194,6 +219,7 @@ export function CopyButton({ text, label, className }: { text: string; label: st
       >
         {state === "copied" ? <Check size={20} /> : <Copy size={20} />}
         {state === "copied" ? "Copied" : label}
+        {hiddenSuffix && state !== "copied" && <span className="visually-hidden">{hiddenSuffix}</span>}
       </button>
       <span className="visually-hidden" role="status">
         {state === "copied"
