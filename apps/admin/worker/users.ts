@@ -18,6 +18,7 @@ import {
   err,
   mutate,
   NOT_FOUND,
+  type SideGuard,
 } from "./context.ts";
 
 const USER_EXISTS: ApiError = {
@@ -61,11 +62,10 @@ async function guarded(c: Ctx, run: () => Promise<boolean>): Promise<boolean | R
   }
 }
 
-const revokeSessionsOf =
-  (c: Ctx, userId: string, t: number) => (g: { sql: string; params: readonly unknown[] }) =>
-    c.env.DB.prepare(
-      `UPDATE staff_sessions SET revoked_at = ?1 WHERE user_id = ?2 AND revoked_at IS NULL AND ${g.sql(3)}`,
-    ).bind(t, userId, ...g.params);
+const revokeSessionsOf = (c: Ctx, userId: string, t: number) => (g: SideGuard) =>
+  c.env.DB.prepare(
+    `UPDATE staff_sessions SET revoked_at = ?1 WHERE user_id = ?2 AND revoked_at IS NULL AND ${g.sql(3)}`,
+  ).bind(t, userId, ...g.params);
 
 export const users = new Hono<AppEnv>()
   .get("/", async (c) => {

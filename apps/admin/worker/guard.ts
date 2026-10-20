@@ -16,7 +16,7 @@ import {
   UNAUTHENTICATED,
 } from "./context.ts";
 
-type Opts = { audit?: string; log?: boolean };
+type Opts = { audit?: string; log?: boolean | "refusals" };
 const R = (
   method: RouteDef["method"],
   path: string,
