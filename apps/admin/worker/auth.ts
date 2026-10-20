@@ -51,7 +51,7 @@ import {
   WINDOW_MS,
 } from "@techaust/auth";
 import { type Role, uuidv7 } from "@techaust/core";
-import { accessStmt, auditStmt } from "@techaust/db/log";
+import { accessStmt, auditStmt, type GuardSql } from "@techaust/db/log";
 import { Hono } from "hono";
 import type { z } from "zod";
 import { alertStmt, lockoutAlert } from "./alerts.ts";
@@ -161,20 +161,27 @@ async function attempt(c: Ctx, key: string, reads: D1PreparedStatement[]) {
 }
 
 /** Failed attempt: the address's failure count (+ any alert) and the access row, in one call; then the generic 401. */
-async function refuse(c: Ctx, a: { ipk: string | null; t: number }, alerts: D1PreparedStatement[] = []) {
-  const db = c.env.DB;
-  const ipFail = a.ipk
-    ? [db.prepare(FAIL_SQL).bind(a.ipk, a.t, IP_WINDOW_MS, IP_LOCK_AFTER, IP_LOCK_MS)]
-    : [];
-  await logBatch(c, 401, [...ipFail, ...alerts]);
+type Attempt = { ipk: string | null; t: number; ipLocked: boolean };
+
+/** The address's failure count, as a statement for the caller's single log batch (none without an address). */
+const ipFail = (c: Ctx, a: Pick<Attempt, "ipk" | "t">) =>
+  a.ipk ? [c.env.DB.prepare(FAIL_SQL).bind(a.ipk, a.t, IP_WINDOW_MS, IP_LOCK_AFTER, IP_LOCK_MS)] : [];
+
+async function refuse(c: Ctx, a: Pick<Attempt, "ipk" | "t">, alerts: D1PreparedStatement[] = []) {
+  await logBatch(c, 401, [...ipFail(c, a), ...alerts]);
   return err(c, INVALID, 401);
 }
 
-/** The 429 for a request from a blocked address (writes nothing, access row included) or a locked account. */
-const locked = (c: Ctx, ipLocked: boolean) => {
-  if (ipLocked) c.set("accessDone", true);
+/**
+ * The 429. From a blocked address nothing at all is written. For a locked account the attempt still counts as a
+ * failure for the address (so hammering a locked account can't go on writing access rows for ever), in the same
+ * single call that writes the access row.
+ */
+async function locked(c: Ctx, a: Attempt) {
+  if (a.ipLocked) c.set("accessDone", true);
+  else await logBatch(c, 429, ipFail(c, a));
   return err(c, LOCKED, 429);
-};
+}
 
 // ---- sessions -----------------------------------------------------------------------------------------------
 
@@ -199,7 +206,7 @@ export async function startSession(c: Ctx, o: SessionStart) {
   const s = await newSession(t);
   const device = await deviceFor(readCookie(c.req.header("Cookie"), DEVICE_COOKIE));
   const uid = o.user.id;
-  const live = "EXISTS (SELECT 1 FROM staff_sessions WHERE id = ?)";
+  const live = (at: number) => `EXISTS (SELECT 1 FROM staff_sessions WHERE id = ?${at})`;
   const info = requestInfo(c);
   const stmts: D1PreparedStatement[] = [
     o.guard,
@@ -225,7 +232,7 @@ export async function startSession(c: Ctx, o: SessionStart) {
   if (o.via === "recovery") {
     stmts.push(
       db
-        .prepare(`UPDATE staff_users SET last_login_at = ?2, updated_at = ?2 WHERE id = ?1 AND ${live}`)
+        .prepare(`UPDATE staff_users SET last_login_at = ?2, updated_at = ?2 WHERE id = ?1 AND ${live(3)}`)
         .bind(uid, t, s.id),
       alertStmt(c, "alert.2fa_change", { userId: uid, role: o.user.role }, s.id),
     );
@@ -238,7 +245,8 @@ export async function startSession(c: Ctx, o: SessionStart) {
         "alert.new_device",
         { userId: uid, role: o.user.role },
         {
-          sql: `${live} AND NOT EXISTS (SELECT 1 FROM staff_known_devices WHERE user_id = ? AND device_hash = ?)`,
+          sql: (at) =>
+            `${live(at)} AND NOT EXISTS (SELECT 1 FROM staff_known_devices WHERE user_id = ?${at + 1} AND device_hash = ?${at + 2})`,
           params: [s.id, uid, device.hash],
         },
       ),
@@ -254,7 +262,9 @@ export async function startSession(c: Ctx, o: SessionStart) {
   if (o.clear?.length) {
     stmts.push(
       db
-        .prepare(`DELETE FROM auth_attempts WHERE key IN (${o.clear.map(() => "?").join(", ")}) AND ${live}`)
+        .prepare(
+          `DELETE FROM auth_attempts WHERE key IN (${o.clear.map((_, i) => `?${i + 1}`).join(", ")}) AND ${live(o.clear.length + 1)}`,
+        )
         .bind(...o.clear, s.id),
     );
   }
@@ -273,7 +283,7 @@ async function liveInvite(db: D1Database, token: string) {
   const hash = await tokenHash(token);
   const invite = await db
     .prepare(
-      "SELECT token_hash, email, role FROM staff_invites WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?",
+      "SELECT token_hash, email, role FROM staff_invites WHERE token_hash = ?1 AND used_at IS NULL AND expires_at > ?2",
     )
     .bind(hash, now())
     .first<{ token_hash: string; email: string; role: string }>();
@@ -281,16 +291,11 @@ async function liveInvite(db: D1Database, token: string) {
 }
 
 /** Ten recovery-code rows in one statement (30 bound values; D1 allows 100), only if `guardSql` holds. */
-export function insertRecoveryCodes(
-  db: D1Database,
-  userId: string,
-  hashes: string[],
-  guard: { sql: string; params: readonly unknown[] },
-) {
-  const values = hashes.map(() => "(?, ?, ?)").join(", ");
+export function insertRecoveryCodes(db: D1Database, userId: string, hashes: string[], guard: GuardSql) {
+  const values = hashes.map((_, i) => `(?${i * 3 + 1}, ?${i * 3 + 2}, ?${i * 3 + 3})`).join(", ");
   return db
     .prepare(
-      `INSERT INTO staff_recovery_codes (id, user_id, code_hash) SELECT column1, column2, column3 FROM (VALUES ${values}) WHERE ${guard.sql}`,
+      `INSERT INTO staff_recovery_codes (id, user_id, code_hash) SELECT column1, column2, column3 FROM (VALUES ${values}) WHERE ${guard.sql(hashes.length * 3 + 1)}`,
     )
     .bind(...hashes.flatMap((h) => [uuidv7(), userId, h]), ...guard.params);
 }
@@ -299,7 +304,7 @@ export const auth = new Hono<AppEnv>()
   // 1. Salt for an email (a deterministic fake one when there's no usable account). A lookup, not an attempt.
   .post("/salt", json(saltRequest), async (c) => {
     const { email } = c.req.valid("json");
-    const user = await c.env.DB.prepare("SELECT status, pw_salt, pw_params FROM staff_users WHERE email = ?")
+    const user = await c.env.DB.prepare("SELECT status, pw_salt, pw_params FROM staff_users WHERE email = ?1")
       .bind(email)
       .first<{ status: string; pw_salt: string | null; pw_params: string | null }>();
     const real = user?.status === "active" && user.pw_salt;
@@ -316,8 +321,8 @@ export const auth = new Hono<AppEnv>()
     const key = await accountKey(email);
     const db = c.env.DB;
     const a = await attempt(c, key, [db.prepare(LOGIN_READ).bind(email)]);
-    if (a.ipLocked) return locked(c, true);
-    if (!a.reserved) return locked(c, false);
+    if (a.ipLocked) return locked(c, a);
+    if (!a.reserved) return locked(c, a);
     const row = a.reads[0] as
       | {
           id: string;
@@ -353,8 +358,8 @@ export const auth = new Hono<AppEnv>()
     const db = c.env.DB;
     const key = codeKey(claim.sub);
     const a = await attempt(c, key, [db.prepare(TOTP_READ).bind(claim.sub)]);
-    if (a.ipLocked) return locked(c, true);
-    if (!a.reserved) return locked(c, false);
+    if (a.ipLocked) return locked(c, a);
+    if (!a.reserved) return locked(c, a);
     const user = a.reads[0] as UserRow | undefined;
     const alerts = user && a.reserved.failures >= LOCK_AFTER ? [lockoutAlert(c, user.id, user.role)] : [];
     if (!user?.totp_secret_enc) return refuse(c, a, alerts);
@@ -365,7 +370,7 @@ export const auth = new Hono<AppEnv>()
       user,
       guard: db
         .prepare(
-          "UPDATE staff_users SET totp_last_step = ?2, last_login_at = ?3, updated_at = ?3 WHERE id = ?1 AND (totp_last_step IS NULL OR totp_last_step < ?2)",
+          "UPDATE staff_users SET totp_last_step = ?2, last_login_at = ?3, updated_at = ?3 WHERE id = ?1 AND status = 'active' AND (totp_last_step IS NULL OR totp_last_step < ?2)",
         )
         .bind(user.id, result.step, now()),
       via: "totp",
@@ -387,8 +392,8 @@ export const auth = new Hono<AppEnv>()
       db.prepare(RECOVERY_USER_READ).bind(claim.sub),
       db.prepare(RECOVERY_CODE_READ).bind(claim.sub, hash),
     ]);
-    if (a.ipLocked) return locked(c, true);
-    if (!a.reserved) return locked(c, false);
+    if (a.ipLocked) return locked(c, a);
+    if (!a.reserved) return locked(c, a);
     const user = a.reads[0] as Pick<UserRow, "id" | "email" | "name" | "role"> | undefined;
     const alerts = user && a.reserved.failures >= LOCK_AFTER ? [lockoutAlert(c, user.id, user.role)] : [];
     const matches = !!a.reads[1] && isRecoveryCode(normaliseRecoveryCode(code));
@@ -448,7 +453,7 @@ export const auth = new Hono<AppEnv>()
     const invite = await liveInvite(db, token);
     if (!invite) return err(c, INVITE_INVALID, 400);
     const existing = await db
-      .prepare("SELECT id, status FROM staff_users WHERE email = ?")
+      .prepare("SELECT id, status FROM staff_users WHERE email = ?1")
       .bind(invite.email)
       .first<{ id: string; status: string }>();
     if (existing && existing.status !== "invited") return err(c, INVITE_INVALID, 400);
@@ -459,7 +464,7 @@ export const auth = new Hono<AppEnv>()
       .prepare(
         `INSERT INTO staff_users (id, email, name, role, status, pw_salt, pw_hmac, pw_params, totp_secret_enc)
          VALUES (?1, ?2, ?9, ?3, 'invited', ?4, ?5, ?6, ?7)
-         ON CONFLICT(email) DO UPDATE SET name = ?9, pw_salt = ?4, pw_hmac = ?5, pw_params = ?6, totp_secret_enc = ?7, updated_at = ?8
+         ON CONFLICT(email) DO UPDATE SET name = ?9, role = ?3, pw_salt = ?4, pw_hmac = ?5, pw_params = ?6, totp_secret_enc = ?7, updated_at = ?8
          WHERE status = 'invited'`,
       )
       .bind(
@@ -488,41 +493,47 @@ export const auth = new Hono<AppEnv>()
     const [userId, inviteHash] = claim ? claim.sub.split("|") : [];
     if (!userId || !inviteHash) return err(c, INVALID, 401);
     const db = c.env.DB;
-    const user = await db
+    // The member being enrolled, with the role of the invite that is still live for them (none live: refused).
+    const row = await db
       .prepare(
-        "SELECT id, email, name, role, totp_secret_enc, totp_last_step FROM staff_users WHERE id = ? AND status = 'invited'",
+        "SELECT u.id, u.email, u.name, i.role AS role, u.totp_secret_enc, u.totp_last_step FROM staff_users u JOIN staff_invites i ON i.token_hash = ?2 AND i.email = u.email AND i.used_at IS NULL AND i.expires_at > ?3 WHERE u.id = ?1 AND u.status = 'invited'",
       )
-      .bind(userId)
+      .bind(userId, inviteHash, now())
       .first<UserRow>();
-    if (!user?.totp_secret_enc) return err(c, INVALID, 401);
-    const secret = await openTotpSecret(c.env.TOTP_ENC_KEY, user.id, user.totp_secret_enc);
+    if (!row?.totp_secret_enc) return err(c, INVALID, 401);
+    const user = row;
+    const secret = await openTotpSecret(c.env.TOTP_ENC_KEY, user.id, user.totp_secret_enc as string);
     const result = verifyTotp(secret, code, now(), user.totp_last_step);
     if (!result.ok) return err(c, INVALID, 401);
     const t = now();
     const codes = newRecoveryCodes();
-    const active = {
-      sql: "EXISTS (SELECT 1 FROM staff_users WHERE id = ? AND status = 'active' AND totp_enabled_at = ?)",
+    const active: GuardSql = {
+      sql: (at) =>
+        `EXISTS (SELECT 1 FROM staff_users WHERE id = ?${at} AND status = 'active' AND totp_enabled_at = ?${at + 1})`,
       params: [user.id, t],
     };
-    const [activated] = await db.batch([
+    // The invite is consumed FIRST, only if it is still live (not revoked, expired or replaced) and belongs to this
+    // member; the member is activated, with the role of THAT invite, only if it was consumed (`changes()` right
+    // after it); the recovery codes only if the member is active. A revoked invite therefore can't be completed.
+    const [consumed, activated] = await db.batch([
       db
         .prepare(
-          "UPDATE staff_users SET status = 'active', totp_enabled_at = ?2, updated_at = ?2 WHERE id = ?1 AND status = 'invited'",
+          "UPDATE staff_invites SET used_at = ?1 WHERE token_hash = ?2 AND used_at IS NULL AND expires_at > ?1 AND email = (SELECT email FROM staff_users WHERE id = ?3 AND status = 'invited')",
         )
-        .bind(user.id, t),
+        .bind(t, inviteHash, user.id),
       db
         .prepare(
-          `UPDATE staff_invites SET used_at = ? WHERE token_hash = ? AND used_at IS NULL AND ${active.sql}`,
+          "UPDATE staff_users SET status = 'active', role = (SELECT role FROM staff_invites WHERE token_hash = ?2), totp_enabled_at = ?1, updated_at = ?1 WHERE id = ?3 AND status = 'invited' AND changes() = 1",
         )
-        .bind(t, inviteHash, ...active.params),
+        .bind(t, inviteHash, user.id),
       insertRecoveryCodes(db, user.id, await Promise.all(codes.map((x) => recoveryCodeHash(x))), active),
     ]);
-    if (activated?.meta.changes !== 1) return err(c, INVALID, 401);
+    if (consumed?.meta.changes !== 1 || activated?.meta.changes !== 1) return err(c, INVALID, 401);
     const session = await startSession(c, {
       user,
       guard: db
         .prepare(
-          "UPDATE staff_users SET totp_last_step = ?2, last_login_at = ?3, updated_at = ?3 WHERE id = ?1 AND (totp_last_step IS NULL OR totp_last_step < ?2)",
+          "UPDATE staff_users SET totp_last_step = ?2, last_login_at = ?3, updated_at = ?3 WHERE id = ?1 AND status = 'active' AND (totp_last_step IS NULL OR totp_last_step < ?2)",
         )
         .bind(user.id, result.step, now()),
       via: "invite",

@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { resetStatements } from "./reset-2fa-sql.mjs";
+import { reinviteStatements, resetStatements } from "./reset-2fa-sql.mjs";
 
 const ORIGINS = {
   local: "http://localhost:5173",
@@ -52,8 +52,9 @@ const q = (s) => `'${String(s).replaceAll("'", "''")}'`;
 
 const [user] = rows(`SELECT id, role, status FROM staff_users WHERE email = ${q(email)}`);
 if (!user) throw new Error(`No staff member with the email ${email}.`);
-if (user.status !== "active") throw new Error(`${email} is "${user.status}", not active: nothing to reset.`);
-if (user.role === "owner") {
+if (user.status !== "active" && user.status !== "invited")
+  throw new Error(`${email} is "${user.status}": nothing to reset.`);
+if (user.status === "active" && user.role === "owner") {
   const [{ n }] = rows("SELECT count(*) AS n FROM staff_users WHERE role = 'owner' AND status = 'active'");
   if (n < 2)
     throw new Error(
@@ -63,14 +64,19 @@ if (user.role === "owner") {
 
 const token = randomBytes(32).toString("base64url");
 const now = Date.now();
-const sql = `${resetStatements({
+const common = {
   email,
   tokenHash: createHash("sha256").update(token).digest("hex"),
   now,
   expiresAt: now + hours * 3_600_000,
   auditId: randomUUID(),
-  alertId: randomUUID(),
-}).join("\n")}\n`;
+};
+// Already "invited" (an earlier reset whose link was lost): only a fresh invite; staff_users is not touched.
+const statements =
+  user.status === "invited"
+    ? reinviteStatements(common)
+    : resetStatements({ ...common, alertId: randomUUID() });
+const sql = `${statements.join("\n")}\n`;
 
 const dir = mkdtempSync(join(tmpdir(), "reset2fa-"));
 try {
@@ -85,5 +91,5 @@ const [after] = rows(`SELECT status FROM staff_users WHERE email = ${q(email)}`)
 if (after?.status !== "invited") throw new Error("The reset did not apply; nothing was changed.");
 const origin = values.staging ? ORIGINS.staging : ORIGINS.local;
 console.log(
-  `Reset done for ${email}: password, authenticator and recovery codes cleared, sessions ended.\nOne-time link, valid ${hours} h:\n${origin}/invite#t=${token}`,
+  `${user.status === "invited" ? "New link issued" : "Reset done"} for ${email}: password, authenticator and recovery codes cleared, sessions ended.\nOne-time link, valid ${hours} h:\n${origin}/invite#t=${token}`,
 );

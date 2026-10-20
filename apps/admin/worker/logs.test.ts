@@ -206,7 +206,14 @@ describe("no personal data on the console [NFR-6]", () => {
     const errors = spy.lines
       .map((l) => JSON.parse(l) as Record<string, unknown>)
       .filter((l) => l.level === "error");
-    expect(errors).toContainEqual({ level: "error", route: "/api/v1/users/:id/reset-2fa", message: "boom" });
+    // The error's class name, never its message (a driver error can echo SQL or values).
+    expect(errors).toContainEqual({
+      level: "error",
+      route: "/api/v1/users/:id/reset-2fa",
+      message: "unhandled error",
+      cause: "Error",
+    });
+    expect(spy.lines.join("\n")).not.toContain("boom");
     expect(spy.lines.join("\n")).not.toContain(t.id);
   });
 });

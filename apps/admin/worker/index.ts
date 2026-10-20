@@ -42,7 +42,8 @@ export function createApp() {
       c.header("Cache-Control", "no-store");
       // Every API request by a signed-in member, every sign-in attempt and every refusal (Q2). Not for lookups
       // (health, salt, invite start) and not for undeclared routes. A logging failure never changes the answer.
-      if (row && row.log !== false && !c.var.accessDone) {
+      const wanted = row && row.log !== false && (row.log !== "refusals" || c.res.status >= 400);
+      if (row && wanted && !c.var.accessDone) {
         try {
           const stmts = [
             ...(c.var.touch ? [c.var.touch] : []),
@@ -91,7 +92,13 @@ export function createApp() {
     }
     // The route PATTERN, never the raw path (it can carry ids).
     console.error(
-      JSON.stringify({ level: "error", route: c.var.route?.path ?? "other", message: e.message }),
+      // Never `e.message`: a driver error can echo SQL or values. The error's class name is enough to find it.
+      JSON.stringify({
+        level: "error",
+        route: c.var.route?.path ?? "other",
+        message: "unhandled error",
+        cause: e.name,
+      }),
     );
     return err(c, { code: "internal", message: "Something went wrong" }, 500);
   });

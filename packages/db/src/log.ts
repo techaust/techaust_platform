@@ -7,18 +7,19 @@
 //   - a session id string (or { sessionId }): only if that staff session row exists,
 //   - { auditId }: only if that audit row was written (the usual guard for the rest of a mutation's batch),
 //   - "changes": only if the statement right before it changed at least one row (use it ONLY directly after the
-//     statement it guards; D1 resets changes() with every statement).
+//     statement it guards; D1 resets changes() with every statement),
+//   - { sql, params }: a hand-written condition for the rare row that needs more than one (the new-device alert).
+//
+// All placeholders are NUMBERED (`?1`, `?2`…), never anonymous `?`: a guard's SQL is a function of the number its
+// first bound value gets, so a caller can append it to a statement that already binds values.
 //
 // Subpath export (`@techaust/db/log`) so a Worker importing it doesn't pull in the Drizzle schema.
 import { uuidv7 } from "@techaust/core";
 
-//   - { sql, params }: a hand-written condition for the rare row that needs more than one (the new-device alert).
-export type Guard =
-  | string
-  | { sessionId: string }
-  | { auditId: string }
-  | { sql: string; params: readonly unknown[] }
-  | "changes";
+/** A condition and the values it binds; `sql(at)` numbers its first placeholder `?at`. */
+export type GuardSql = { sql: (at: number) => string; params: readonly unknown[] };
+
+export type Guard = string | { sessionId: string } | { auditId: string } | GuardSql | "changes";
 
 /** Who and where, copied onto every row; `ip` and `ua` serve security only (docs/08). */
 export type RequestInfo = { requestId: string | null; ip: string | null; ua: string | null };
@@ -46,19 +47,24 @@ export type AccessEntry = RequestInfo & {
   status: number;
 };
 
-/** The WHERE clause (without the keyword) and its bound values for a guard. */
-export function guardSql(guard: Guard): { sql: string; params: readonly unknown[] } {
-  if (guard === "changes") return { sql: "changes() > 0", params: [] };
-  if (typeof guard === "string")
-    return { sql: "EXISTS (SELECT 1 FROM staff_sessions WHERE id = ?)", params: [guard] };
+const sessionLive = (id: string): GuardSql => ({
+  sql: (at) => `EXISTS (SELECT 1 FROM staff_sessions WHERE id = ?${at})`,
+  params: [id],
+});
+
+/** The condition (without WHERE) and its bound values for a guard. */
+export function guardSql(guard: Guard): GuardSql {
+  if (guard === "changes") return { sql: () => "changes() > 0", params: [] };
+  if (typeof guard === "string") return sessionLive(guard);
   if ("sql" in guard) return guard;
-  if ("sessionId" in guard)
-    return { sql: "EXISTS (SELECT 1 FROM staff_sessions WHERE id = ?)", params: [guard.sessionId] };
-  return { sql: "EXISTS (SELECT 1 FROM audit_log WHERE id = ?)", params: [guard.auditId] };
+  if ("sessionId" in guard) return sessionLive(guard.sessionId);
+  return { sql: (at) => `EXISTS (SELECT 1 FROM audit_log WHERE id = ?${at})`, params: [guard.auditId] };
 }
 
 const AUDIT_COLUMNS =
   "id, actor_type, actor_id, role, action, entity_type, entity_id, summary, ip, user_agent, request_id";
+
+const numbered = (n: number) => Array.from({ length: n }, (_, i) => `?${i + 1}`).join(", ");
 
 export function auditStmt(db: D1Database, entry: AuditEntry, guard?: Guard): D1PreparedStatement {
   const values = [
@@ -76,12 +82,12 @@ export function auditStmt(db: D1Database, entry: AuditEntry, guard?: Guard): D1P
   ];
   if (!guard)
     return db
-      .prepare(`INSERT INTO audit_log (${AUDIT_COLUMNS}) VALUES (${values.map(() => "?").join(", ")})`)
+      .prepare(`INSERT INTO audit_log (${AUDIT_COLUMNS}) VALUES (${numbered(values.length)})`)
       .bind(...values);
   const g = guardSql(guard);
   return db
     .prepare(
-      `INSERT INTO audit_log (${AUDIT_COLUMNS}) SELECT ${values.map(() => "?").join(", ")} WHERE ${g.sql}`,
+      `INSERT INTO audit_log (${AUDIT_COLUMNS}) SELECT ${numbered(values.length)} WHERE ${g.sql(values.length + 1)}`,
     )
     .bind(...values, ...g.params);
 }
@@ -102,12 +108,12 @@ export function accessStmt(db: D1Database, entry: AccessEntry, guard?: Guard): D
   ];
   if (!guard)
     return db
-      .prepare(`INSERT INTO access_log (${ACCESS_COLUMNS}) VALUES (${values.map(() => "?").join(", ")})`)
+      .prepare(`INSERT INTO access_log (${ACCESS_COLUMNS}) VALUES (${numbered(values.length)})`)
       .bind(...values);
   const g = guardSql(guard);
   return db
     .prepare(
-      `INSERT INTO access_log (${ACCESS_COLUMNS}) SELECT ${values.map(() => "?").join(", ")} WHERE ${g.sql}`,
+      `INSERT INTO access_log (${ACCESS_COLUMNS}) SELECT ${numbered(values.length)} WHERE ${g.sql(values.length + 1)}`,
     )
     .bind(...values, ...g.params);
 }

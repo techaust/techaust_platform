@@ -2,7 +2,7 @@
 import { env } from "cloudflare:workers";
 import { INVITE_TTL_MS, tokenHash } from "@techaust/auth";
 import { describe, expect, it } from "vitest";
-import { resetStatements } from "../../../scripts/reset-2fa-sql.mjs";
+import { reinviteStatements, resetStatements } from "../../../scripts/reset-2fa-sql.mjs";
 import {
   accept,
   bodyOf,
@@ -10,12 +10,15 @@ import {
   counting,
   countOf,
   enrol,
+  enrolCode,
   extraSession,
+  finishOnly,
   invite,
   login,
   one,
   rows,
   sessionFor,
+  signIn,
   tokenOfLink,
   userId,
 } from "./test-helpers.ts";
@@ -237,7 +240,7 @@ describe("changing a role [ADM-AUTH-07, ADM-AUTH-05]", () => {
     );
     expect(audit).toHaveLength(1);
     expect(audit[0]?.role).toBe("owner");
-    expect(JSON.parse(audit[0]?.summary as string)).toEqual({ role: { after: "sales" } });
+    expect(JSON.parse(audit[0]?.summary as string)).toEqual({ role: { before: "staff", after: "sales" } });
   });
 
   it("the same role is a harmless no-op; an unknown, deactivated or malformed target is refused", async () => {
@@ -454,7 +457,210 @@ describe("two-step reset, then a fresh invite [ADM-AUTH-07, ADM-AUTH-01, ADM-AUT
   });
 });
 
+describe("an invite must still be live when enrolment finishes [ADM-AUTH-07, ADM-AUTH-01]", () => {
+  const untouched = async (email: string) => {
+    const id = await userId(email);
+    expect(await one("SELECT status FROM staff_users WHERE id = ?", id)).toEqual({ status: "invited" });
+    expect(await countOf("staff_sessions", "user_id = ?", id)).toBe(0);
+    expect(await countOf("staff_recovery_codes", "user_id = ?", id)).toBe(0);
+  };
+
+  it("a revoked invite can't be completed, even inside the enrolment window: 401, still invited, no session, no codes", async () => {
+    const o = await owner();
+    const email = newEmail();
+    const { body } = await inviteVia(o, email, "staff");
+    const token = tokenOfLink(body.link);
+    const f = await finishOnly(token);
+    const hash = await tokenHash(token);
+    expect((await call(`/users/invites/${hash}/revoke`, { method: "POST", cookie: o.cookie })).status).toBe(
+      200,
+    );
+    const res = await enrolCode(f.challenge, f.secret);
+    expect(res.status).toBe(401);
+    expect(await bodyOf(res)).toEqual({
+      error: { code: "invalid_credentials", message: "Invalid email, password or code" },
+    });
+    await untouched(email);
+    expect((await call("/auth/login", { body: { email, clientHash: f.clientHash } })).status).toBe(401);
+  });
+
+  it("an expired invite can't be completed; one that is still live a moment longer can", async () => {
+    const o = await owner();
+    const gone = await inviteVia(o, newEmail(), "staff");
+    const fGone = await finishOnly(tokenOfLink(gone.body.link));
+    await env.DB.prepare("UPDATE staff_invites SET expires_at = ? WHERE token_hash = ?")
+      .bind(Date.now() - 1, await tokenHash(tokenOfLink(gone.body.link)))
+      .run();
+    expect((await enrolCode(fGone.challenge, fGone.secret)).status).toBe(401);
+    await untouched(gone.email);
+
+    const ok = await inviteVia(o, newEmail(), "staff");
+    const fOk = await finishOnly(tokenOfLink(ok.body.link));
+    await env.DB.prepare("UPDATE staff_invites SET expires_at = ? WHERE token_hash = ?")
+      .bind(Date.now() + 60_000, await tokenHash(tokenOfLink(ok.body.link)))
+      .run();
+    expect((await enrolCode(fOk.challenge, fOk.secret)).status).toBe(200);
+  });
+
+  it("a replaced invite (a newer one for the same email) can't be completed; the newer one can", async () => {
+    const o = await owner();
+    const email = newEmail();
+    const first = await inviteVia(o, email, "staff");
+    const f = await finishOnly(tokenOfLink(first.body.link));
+    const second = await inviteVia(o, email, "sales");
+    expect((await enrolCode(f.challenge, f.secret)).status).toBe(401);
+    await untouched(email);
+    const fresh = await accept(tokenOfLink(second.body.link), "Second Try");
+    expect(fresh.email).toBe(email);
+  });
+
+  it("the invite is consumed by the activation: used_at set once, not by a refused attempt", async () => {
+    const o = await owner();
+    const { body, email } = await inviteVia(o, newEmail(), "staff");
+    const token = tokenOfLink(body.link);
+    const hash = await tokenHash(token);
+    const f = await finishOnly(token);
+    expect((await one("SELECT used_at FROM staff_invites WHERE token_hash = ?", hash))?.used_at).toBeNull();
+    const wrong = await call("/auth/invite/totp", { body: { challenge: f.challenge, code: "000000" } });
+    expect(wrong.status).toBe(401);
+    expect((await one("SELECT used_at FROM staff_invites WHERE token_hash = ?", hash))?.used_at).toBeNull();
+    expect((await enrolCode(f.challenge, f.secret)).status).toBe(200);
+    expect(
+      (await one("SELECT used_at FROM staff_invites WHERE token_hash = ?", hash))?.used_at,
+    ).not.toBeNull();
+    expect((await enrolCode(f.challenge, f.secret)).status).toBe(401); // the member is active now
+    expect(await one("SELECT status FROM staff_users WHERE email = ?", email)).toEqual({ status: "active" });
+  });
+});
+
+describe("the role comes from the invite that is accepted [ADM-AUTH-07, ADM-AUTH-01]", () => {
+  it("an owner invite is revoked and the member re-invited as staff: the member becomes staff, never an owner", async () => {
+    const o = await owner();
+    const email = newEmail();
+    const asOwner = await inviteVia(o, email, "owner");
+    const f = await finishOnly(tokenOfLink(asOwner.body.link)); // the member got as far as the password
+    expect(await one("SELECT role, status FROM staff_users WHERE email = ?", email)).toEqual({
+      role: "owner",
+      status: "invited",
+    });
+    await call(`/users/invites/${await tokenHash(tokenOfLink(asOwner.body.link))}/revoke`, {
+      method: "POST",
+      cookie: o.cookie,
+    });
+    const asStaff = await inviteVia(o, email, "staff");
+    expect((await enrolCode(f.challenge, f.secret)).status).toBe(401); // the old walk-through is dead
+    const done = await accept(tokenOfLink(asStaff.body.link));
+    expect(await one("SELECT role, status FROM staff_users WHERE email = ?", email)).toEqual({
+      role: "staff",
+      status: "active",
+    });
+    const me = (await (await call("/auth/me", { cookie: done.cookie })).json()) as { user: { role: string } };
+    expect(me.user.role).toBe("staff");
+  });
+
+  it("an owner is reset (with a second owner) and re-invited as sales: the member becomes sales", async () => {
+    const o = await owner();
+    const other = await enrol(newEmail(), "owner"); // a second active owner
+    const id = await userId(other.email);
+    const reset = await call(`/users/${id}/reset-2fa`, { method: "POST", cookie: o.cookie });
+    expect(reset.status).toBe(200);
+    const asSales = await inviteVia(o, other.email, "sales");
+    expect(asSales.res.status).toBe(201);
+    const done = await accept(tokenOfLink(asSales.body.link));
+    expect(done.email).toBe(other.email);
+    expect(await one("SELECT role, status FROM staff_users WHERE id = ?", id)).toEqual({
+      role: "sales",
+      status: "active",
+    });
+    expect(
+      ((await (await call("/users", { cookie: done.cookie })).json()) as { error: { code: string } }).error
+        .code,
+    ).toBe("forbidden");
+  });
+
+  it("a plain accepted invite keeps its own role", async () => {
+    const o = await owner();
+    for (const role of ["owner", "staff", "sales", "accountant"]) {
+      const { body, email } = await inviteVia(o, newEmail(), role);
+      await accept(tokenOfLink(body.link));
+      expect((await one("SELECT role FROM staff_users WHERE email = ?", email))?.role).toBe(role);
+    }
+  });
+});
+
+describe("reset also forgets the member's devices [ADM-AUTH-09]", () => {
+  it("known devices are deleted by the API reset, so the next sign-in is a new device", async () => {
+    const o = await owner();
+    const u = await sessionFor("staff", { password: true });
+    const first = await signIn(u);
+    expect(first.res.status).toBe(200);
+    expect(await countOf("staff_known_devices", "user_id = ?", u.id)).toBe(1);
+    expect((await call(`/users/${u.id}/reset-2fa`, { method: "POST", cookie: o.cookie })).status).toBe(200);
+    expect(await countOf("staff_known_devices", "user_id = ?", u.id)).toBe(0);
+  });
+});
+
 describe("break-glass: pnpm admin:reset-2fa [ADM-AUTH-07, docs/08 §3.2]", () => {
+  it("also deletes the member's known devices, and a re-issue for an already-invited member leaves staff_users alone", async () => {
+    const u = await sessionFor("staff", { password: true });
+    await signIn(u);
+    await sessionFor("owner");
+    expect(await countOf("staff_known_devices", "user_id = ?", u.id)).toBe(1);
+    const now = Date.now();
+    const exec = (sql: string[]) => env.DB.exec(sql.join("\n"));
+    await exec(
+      resetStatements({
+        email: u.email,
+        tokenHash: await tokenHash("a".repeat(43)),
+        now,
+        expiresAt: now + INVITE_TTL_MS,
+        auditId: crypto.randomUUID(),
+        alertId: crypto.randomUUID(),
+      }),
+    );
+    expect(await countOf("staff_known_devices", "user_id = ?", u.id)).toBe(0);
+
+    // The link was lost: re-issue. staff_users is not written (updated_at stays), the older invite stops working.
+    const before = await one("SELECT status, updated_at FROM staff_users WHERE id = ?", u.id);
+    const later = now + 5;
+    await exec(
+      reinviteStatements({
+        email: u.email,
+        tokenHash: await tokenHash("b".repeat(43)),
+        now: later,
+        expiresAt: later + INVITE_TTL_MS,
+        auditId: crypto.randomUUID(),
+      }),
+    );
+    expect(await one("SELECT status, updated_at FROM staff_users WHERE id = ?", u.id)).toEqual(before);
+    expect((await call("/auth/invite/start", { body: { token: "a".repeat(43) } })).status).toBe(400);
+    expect((await call("/auth/invite/start", { body: { token: "b".repeat(43) } })).status).toBe(200);
+    expect(
+      await countOf(
+        "audit_log",
+        "action = 'user.invite' AND actor_type = 'system' AND entity_id = ?",
+        await tokenHash("b".repeat(43)),
+      ),
+    ).toBe(1);
+  });
+
+  it("a re-issue does nothing for an active or unknown email (guarded on 'invited')", async () => {
+    const active = await sessionFor("staff");
+    const before = { invites: await countOf("staff_invites"), audits: await countOf("audit_log") };
+    const now = Date.now();
+    for (const email of [active.email, "nobody-at-all@example.com"])
+      await env.DB.exec(
+        reinviteStatements({
+          email,
+          tokenHash: await tokenHash("c".repeat(43)),
+          now,
+          expiresAt: now + INVITE_TTL_MS,
+          auditId: crypto.randomUUID(),
+        }).join("\n"),
+      );
+    expect({ invites: await countOf("staff_invites"), audits: await countOf("audit_log") }).toEqual(before);
+  });
+
   const run = async (email: string, token: string) => {
     const now = Date.now();
     const sql = resetStatements({

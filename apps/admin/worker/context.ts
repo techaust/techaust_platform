@@ -2,7 +2,14 @@
 // request facts every log row needs, and `mutate` (one batch = the change + its audit row + its access row).
 import type { Action, Role } from "@techaust/core";
 import { uuidv7 } from "@techaust/core";
-import { type AccessEntry, accessStmt, auditStmt, type Guard, guardSql } from "@techaust/db/log";
+import {
+  type AccessEntry,
+  accessStmt,
+  auditStmt,
+  type Guard,
+  type GuardSql,
+  guardSql,
+} from "@techaust/db/log";
 import type { Context } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 
@@ -14,8 +21,8 @@ export type RouteDef = {
   access: "public" | Action;
   /** The audit action a successful mutation writes (informational: the handler writes it). */
   audit?: string;
-  /** false: no access-log row (health and the salt/invite-start lookups). Default true. */
-  log?: boolean;
+  /** false: never an access-log row (health). "refusals": only when the answer is 4xx/5xx (the salt and invite-start lookups). Default true. */
+  log?: boolean | "refusals";
 };
 
 export type Actor = {
@@ -96,7 +103,7 @@ export async function logBatch(c: Ctx, status: number, extra: D1PreparedStatemen
 }
 
 /** The statements a handler gets for the rest of its batch: they apply only if the audit row was written. */
-export type SideGuard = { sql: string; params: readonly unknown[] };
+export type SideGuard = GuardSql;
 
 export type Mutation = {
   /** The conditional primary statement(s); the LAST one decides (the audit row follows it with `changes() > 0`). None: always written. */
@@ -105,7 +112,17 @@ export type Mutation = {
   entityType: string;
   entityId: string | null;
   summary?: unknown;
-  /** Further statements (revoke sessions, insert an invite…); build them with `AND ${g.sql}` and `...g.params`. */
+  /**
+   * Audit-first (when the summary needs the row as it was BEFORE the change): the caller's own audit statement,
+   * written with the row's conditions in its WHERE, runs first; `after` then builds the change itself, guarded on
+   * that audit row existing. Replaces `main` and `summary`.
+   */
+  auditFirst?: (
+    auditId: string,
+    who: { actor: Actor; requestId: string | null; ip: string | null; ua: string | null },
+  ) => D1PreparedStatement;
+  after?: (g: SideGuard, auditId: string) => D1PreparedStatement[];
+  /** Further statements (revoke sessions, insert an invite…); bind `...g.params` after your own values and use `g.sql(n)`, n = the number of that first placeholder. */
   side?: (g: SideGuard, auditId: string) => D1PreparedStatement[];
   /** The status the access row records (the handler must answer with it). Default 200. */
   status?: number;
@@ -123,26 +140,32 @@ export async function mutate(c: Ctx, m: Mutation): Promise<boolean> {
   const auditId = uuidv7();
   const stmts: D1PreparedStatement[] = [];
   if (c.var.touch) stmts.push(c.var.touch);
-  const mains = m.main === undefined ? [] : Array.isArray(m.main) ? m.main : [m.main];
-  stmts.push(...mains);
-  const auditAt = stmts.length;
-  stmts.push(
-    auditStmt(
-      db,
-      {
-        ...requestInfo(c),
-        id: auditId,
-        actorId: user.id,
-        role: user.role,
-        action: m.action,
-        entityType: m.entityType,
-        entityId: m.entityId,
-        summary: m.summary,
-      },
-      mains.length ? "changes" : undefined,
-    ),
-  );
   const g = guardSql({ auditId });
+  let auditAt: number;
+  if (m.auditFirst) {
+    auditAt = stmts.length;
+    stmts.push(m.auditFirst(auditId, { actor: user, ...requestInfo(c) }), ...(m.after?.(g, auditId) ?? []));
+  } else {
+    const mains = m.main === undefined ? [] : Array.isArray(m.main) ? m.main : [m.main];
+    stmts.push(...mains);
+    auditAt = stmts.length;
+    stmts.push(
+      auditStmt(
+        db,
+        {
+          ...requestInfo(c),
+          id: auditId,
+          actorId: user.id,
+          role: user.role,
+          action: m.action,
+          entityType: m.entityType,
+          entityId: m.entityId,
+          summary: m.summary,
+        },
+        mains.length ? "changes" : undefined,
+      ),
+    );
+  }
   stmts.push(...(m.side?.(g, auditId) ?? []));
   stmts.push(accessStmt(db, accessEntry(c, m.status ?? 200, user.id), { auditId } satisfies Guard));
   const results = await db.batch(stmts);

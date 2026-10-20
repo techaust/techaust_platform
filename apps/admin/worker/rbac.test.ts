@@ -472,12 +472,36 @@ describe("the access log [NFR-9, Q2]", () => {
     expect(JSON.stringify(await rows("SELECT * FROM access_log"))).not.toContain(e.email);
   });
 
-  it("lookups (health, salt, invite start) and undeclared paths write no row", async () => {
+  it("successful lookups (health, salt, invite start) and undeclared paths write no row [Q2]", async () => {
     const before = await countOf("access_log");
     await call("/health");
-    await call("/auth/salt", { body: { email: "someone@example.com" } });
-    await call("/auth/invite/start", { body: { token: "a".repeat(43) } });
+    expect((await call("/auth/salt", { body: { email: "someone@example.com" } })).status).toBe(200);
+    const token = await invite(newEmail(), "staff");
+    expect((await call("/auth/invite/start", { body: { token } })).status).toBe(200);
     await call("/does/not/exist");
+    expect(await countOf("access_log")).toBe(before);
+  });
+
+  it("refusals on /salt and /invite/start ARE logged (owner's Q2: every refusal), health never", async () => {
+    const a = rid();
+    const salt = await call("/auth/salt", { body: { email: "not-an-email" }, headers: { "cf-ray": a } });
+    expect(salt.status).toBe(400);
+    expect(await accessOf(a)).toMatchObject([{ status: 400, actor_id: null, route: "/api/v1/auth/salt" }]);
+    const b = rid();
+    const start = await call("/auth/invite/start", {
+      body: { token: "a".repeat(43) },
+      headers: { "cf-ray": b },
+    });
+    expect(start.status).toBe(400); // an unknown invite
+    expect(await accessOf(b)).toMatchObject([
+      { status: 400, actor_id: null, route: "/api/v1/auth/invite/start" },
+    ]);
+    const c = rid();
+    const bad = await call("/auth/invite/start", { body: { token: "short" }, headers: { "cf-ray": c } });
+    expect(bad.status).toBe(400);
+    expect(await accessOf(c)).toHaveLength(1);
+    const before = await countOf("access_log");
+    await call("/health");
     expect(await countOf("access_log")).toBe(before);
   });
 

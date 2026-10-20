@@ -353,6 +353,85 @@ describe("the per-address counter [ADM-AUTH-06]", () => {
     expect(IP_WINDOW_MS).toBe(WINDOW_MS);
   });
 
+  it("a locked-account refusal counts as a failure for the address, in the same single call as the access row", async () => {
+    const ip = "198.51.100.50";
+    const ik = await ipKey(env.SALT_PEPPER, ip);
+    const e = await enrol("ip-locked-acct@example.com");
+    const ak = await accountKey(e.email);
+    await seed(ak, 10, Date.now(), Date.now() + LOCK_MS);
+    for (let i = 1; i <= 3; i++) {
+      const r = await counting("/auth/login", {
+        body: { email: e.email, clientHash: hash() },
+        headers: from(ip),
+      });
+      expect([r.res.status, r.calls]).toEqual([429, 2]); // still one batch + the access row's batch... = 2
+      expect((await attemptsRow(ik))?.failures).toBe(i);
+    }
+    expect((await attemptsRow(ak))?.failures).toBe(10); // the locked account's own counter is not moved
+    // The 100th failure from the address blocks it, and from then on nothing is written at all.
+    await seed(ik, IP_LOCK_AFTER - 1);
+    const hundredth = await call("/auth/login", {
+      body: { email: e.email, clientHash: hash() },
+      headers: from(ip),
+    });
+    expect(hundredth.status).toBe(429);
+    expect((await attemptsRow(ik))?.locked_until).toBeGreaterThan(Date.now());
+    const before = { access: await countOf("access_log"), attempts: await countOf("auth_attempts") };
+    const blocked = await counting("/auth/login", {
+      body: { email: e.email, clientHash: hash() },
+      headers: from(ip),
+    });
+    expect([blocked.res.status, blocked.calls]).toEqual([429, 1]);
+    expect({ access: await countOf("access_log"), attempts: await countOf("auth_attempts") }).toEqual(before);
+  });
+
+  it("the same holds at /totp and /recovery (a locked code counter counts for the address)", async () => {
+    const ip = "198.51.100.51";
+    const ik = await ipKey(env.SALT_PEPPER, ip);
+    const e = await enrol("ip-locked-code@example.com");
+    const id = await userId(e.email);
+    const challenge = await challengeFor(e.email, e.clientHash);
+    await seed(codeKey(id), 10, Date.now(), Date.now() + LOCK_MS);
+    const t = await counting("/auth/totp", {
+      body: { challenge, code: totpCode(e.secret, e.step + 1) },
+      headers: from(ip),
+    });
+    expect([t.res.status, t.calls]).toEqual([429, 2]);
+    const r = await counting("/auth/recovery", {
+      body: { challenge, code: e.recoveryCodes[0] },
+      headers: from(ip),
+    });
+    expect([r.res.status, r.calls]).toEqual([429, 2]);
+    expect((await attemptsRow(ik))?.failures).toBe(2);
+  });
+
+  it("a blocked address is refused at /recovery too: 429 in one call, nothing written, the code not used", async () => {
+    const ip = "198.51.100.52";
+    const e = await enrol("ip-recovery@example.com");
+    const id = await userId(e.email);
+    const challenge = await challengeFor(e.email, e.clientHash);
+    await seed(await ipKey(env.SALT_PEPPER, ip), 100, Date.now(), Date.now() + LOCK_MS);
+    const before = {
+      access: await countOf("access_log"),
+      audit: await countOf("audit_log"),
+      attempts: await countOf("auth_attempts"),
+      sessions: await countOf("staff_sessions"),
+    };
+    const r = await counting("/auth/recovery", {
+      body: { challenge, code: e.recoveryCodes[0] },
+      headers: from(ip),
+    });
+    expect([r.res.status, r.calls]).toEqual([429, 1]);
+    expect({
+      access: await countOf("access_log"),
+      audit: await countOf("audit_log"),
+      attempts: await countOf("auth_attempts"),
+      sessions: await countOf("staff_sessions"),
+    }).toEqual(before);
+    expect(await attemptsRow(codeKey(id))).toBeNull();
+    expect(await countOf("staff_recovery_codes", "user_id = ? AND used_at IS NOT NULL", id)).toBe(0);
+  });
+
   it("a blocked address is refused at /totp too, before anything is written", async () => {
     const ip = "198.51.100.40";
     const e = await enrol("ip-totp@example.com");

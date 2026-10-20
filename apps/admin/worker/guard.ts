@@ -27,12 +27,12 @@ const R = (
 export const ROUTES: readonly RouteDef[] = [
   R("GET", "/health", "public", { log: false }),
   // Sign-in: public, every one checks its own credentials. /salt and /invite/start are lookups, not attempts.
-  R("POST", "/auth/salt", "public", { log: false }),
+  R("POST", "/auth/salt", "public", { log: "refusals" }),
   R("POST", "/auth/login", "public"),
   R("POST", "/auth/totp", "public"),
   R("POST", "/auth/recovery", "public"),
   R("POST", "/auth/logout", "public", { audit: "auth.logout" }),
-  R("POST", "/auth/invite/start", "public", { log: false }),
+  R("POST", "/auth/invite/start", "public", { log: "refusals" }),
   R("POST", "/auth/invite/finish", "public"),
   R("POST", "/auth/invite/totp", "public"),
   // The signed-in member's own account.
@@ -60,7 +60,7 @@ export const routeFor = (method: string, pattern: string) => BY_ROUTE.get(`${met
 
 /** The guarded read, also used by the plan test: the session joined with its (active, enrolled) user. */
 export const SESSION_READ =
-  "SELECT s.last_seen_at, s.idle_expires_at, s.abs_expires_at, s.revoked_at, s.step_up_until, u.id, u.name, u.email, u.role FROM staff_sessions s JOIN staff_users u ON u.id = s.user_id WHERE s.id = ? AND u.status = 'active' AND u.totp_enabled_at IS NOT NULL";
+  "SELECT s.last_seen_at, s.idle_expires_at, s.abs_expires_at, s.revoked_at, s.step_up_until, u.id, u.name, u.email, u.role FROM staff_sessions s JOIN staff_users u ON u.id = s.user_id WHERE s.id = ?1 AND u.status = 'active' AND u.totp_enabled_at IS NOT NULL";
 
 type SessionRow = {
   last_seen_at: number;

@@ -87,7 +87,7 @@ export const account = new Hono<AppEnv>()
       main: [
         db
           .prepare(
-            "UPDATE staff_users SET totp_last_step = ?2, updated_at = ?3 WHERE id = ?1 AND (totp_last_step IS NULL OR totp_last_step < ?2)",
+            "UPDATE staff_users SET totp_last_step = ?2, updated_at = ?3 WHERE id = ?1 AND status = 'active' AND (totp_last_step IS NULL OR totp_last_step < ?2)",
           )
           .bind(u.id, result.step, t),
         db
@@ -99,7 +99,7 @@ export const account = new Hono<AppEnv>()
       entityId: u.id,
       summary: { until },
       side: (g) => [
-        db.prepare(`DELETE FROM auth_attempts WHERE key = ? AND ${g.sql}`).bind(key, ...g.params),
+        db.prepare(`DELETE FROM auth_attempts WHERE key = ?1 AND ${g.sql(2)}`).bind(key, ...g.params),
       ],
     });
     if (!done) return refuse(); // a replayed code: the guard moved nothing
@@ -162,7 +162,7 @@ export const account = new Hono<AppEnv>()
       entityId: u.id,
       side: (g) => [
         c.env.DB.prepare(
-          `UPDATE staff_sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL AND ${g.sql}`,
+          `UPDATE staff_sessions SET revoked_at = ?1 WHERE user_id = ?2 AND revoked_at IS NULL AND ${g.sql(3)}`,
         ).bind(t, u.id, ...g.params),
       ],
     });
@@ -181,7 +181,9 @@ export const account = new Hono<AppEnv>()
       entityType: "staff_user",
       entityId: u.id,
       side: (g, auditId) => [
-        db.prepare(`DELETE FROM staff_recovery_codes WHERE user_id = ? AND ${g.sql}`).bind(u.id, ...g.params),
+        db
+          .prepare(`DELETE FROM staff_recovery_codes WHERE user_id = ?1 AND ${g.sql(2)}`)
+          .bind(u.id, ...g.params),
         insertRecoveryCodes(db, u.id, hashes, g),
         alertStmt(c, "alert.2fa_change", { userId: u.id, role: u.role }, { auditId }),
       ],

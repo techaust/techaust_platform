@@ -44,7 +44,7 @@ const now = () => Date.now();
 
 /** Why a conditional write matched nothing: no such active member (404) or the last-owner rule (409). */
 async function whyNot(c: Ctx, id: string) {
-  const row = await c.env.DB.prepare("SELECT role, status FROM staff_users WHERE id = ?")
+  const row = await c.env.DB.prepare("SELECT role, status FROM staff_users WHERE id = ?1")
     .bind(id)
     .first<{ role: string; status: string }>();
   if (row?.status !== "active") return err(c, NOT_FOUND, 404);
@@ -65,7 +65,7 @@ async function guarded(c: Ctx, run: () => Promise<boolean>): Promise<boolean | R
 const revokeSessionsOf =
   (c: Ctx, userId: string, t: number) => (g: { sql: string; params: readonly unknown[] }) =>
     c.env.DB.prepare(
-      `UPDATE staff_sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL AND ${g.sql}`,
+      `UPDATE staff_sessions SET revoked_at = ?1 WHERE user_id = ?2 AND revoked_at IS NULL AND ${g.sql(3)}`,
     ).bind(t, userId, ...g.params);
 
 export const users = new Hono<AppEnv>()
@@ -108,7 +108,7 @@ export const users = new Hono<AppEnv>()
       side: (g) => [
         db
           .prepare(
-            `UPDATE staff_invites SET expires_at = ?1 WHERE email = ?2 AND token_hash <> ?3 AND used_at IS NULL AND expires_at > ?1 AND ${g.sql}`,
+            `UPDATE staff_invites SET expires_at = ?1 WHERE email = ?2 AND token_hash <> ?3 AND used_at IS NULL AND expires_at > ?1 AND ${g.sql(4)}`,
           )
           .bind(t, email, hash, ...g.params),
       ],
@@ -144,7 +144,7 @@ export const users = new Hono<AppEnv>()
       entityId: null,
       side: (g) => [
         c.env.DB.prepare(
-          `UPDATE staff_sessions SET revoked_at = ? WHERE revoked_at IS NULL AND id <> ? AND ${g.sql}`,
+          `UPDATE staff_sessions SET revoked_at = ?1 WHERE revoked_at IS NULL AND id <> ?2 AND ${g.sql(3)}`,
         ).bind(t, u.sessionId, ...g.params),
       ],
     });
@@ -157,20 +157,31 @@ export const users = new Hono<AppEnv>()
     const t = now();
     const result = await guarded(c, () =>
       mutate(c, {
-        main: c.env.DB.prepare(
-          `UPDATE staff_users SET role = ?1, updated_at = ?2 WHERE id = ?3 AND status = 'active' AND role <> ?1 AND ${NOT_LAST_OWNER}`,
-        ).bind(role, t, id),
         action: "user.role_change",
         entityType: "staff_user",
         entityId: id,
-        summary: { role: { after: role } },
+        // Audit-first: the row is written from the member as it is NOW (so the summary has before and after, as
+        // `auditSummary` would give), under the same conditions as the change that follows it in the batch.
+        auditFirst: (auditId, who) =>
+          c.env.DB.prepare(
+            `INSERT INTO audit_log (id, actor_type, actor_id, role, action, entity_type, entity_id, summary, ip, user_agent, request_id)
+             SELECT ?1, 'staff', ?2, ?3, 'user.role_change', 'staff_user', u.id, json_object('role', json_object('before', u.role, 'after', ?5)), ?6, ?7, ?8
+             FROM staff_users u
+             WHERE u.id = ?4 AND u.status = 'active' AND u.role <> ?5
+               AND (u.role <> 'owner' OR (SELECT count(*) FROM staff_users WHERE role = 'owner' AND status = 'active') > 1)`,
+          ).bind(auditId, who.actor.id, who.actor.role, id, role, who.ip, who.ua, who.requestId),
+        after: (g) => [
+          c.env.DB.prepare(
+            `UPDATE staff_users SET role = ?1, updated_at = ?2 WHERE id = ?3 AND status = 'active' AND role <> ?1 AND ${NOT_LAST_OWNER} AND ${g.sql(4)}`,
+          ).bind(role, t, id, ...g.params),
+        ],
         side: (g) => [revokeSessionsOf(c, id, t)(g)],
       }),
     );
     if (result instanceof Response) return result;
     if (result) return c.json({ ok: true, changed: true });
     // Nothing changed: the same role already (fine), no such active member, or the last owner.
-    const row = await c.env.DB.prepare("SELECT role, status FROM staff_users WHERE id = ?")
+    const row = await c.env.DB.prepare("SELECT role, status FROM staff_users WHERE id = ?1")
       .bind(id)
       .first<{ role: string; status: string }>();
     if (row?.status === "active" && row.role === role) return c.json({ ok: true, changed: false });
@@ -218,16 +229,22 @@ export const users = new Hono<AppEnv>()
         entityId: id,
         summary: { status: { before: "active", after: "invited" } },
         side: (g, auditId) => [
-          db.prepare(`DELETE FROM staff_recovery_codes WHERE user_id = ? AND ${g.sql}`).bind(id, ...g.params),
+          db
+            .prepare(`DELETE FROM staff_recovery_codes WHERE user_id = ?1 AND ${g.sql(2)}`)
+            .bind(id, ...g.params),
+          // Their devices are forgotten too: after a reset the next sign-in from any browser is a "new device".
+          db
+            .prepare(`DELETE FROM staff_known_devices WHERE user_id = ?1 AND ${g.sql(2)}`)
+            .bind(id, ...g.params),
           revokeSessionsOf(c, id, t)(g),
           db
             .prepare(
-              `UPDATE staff_invites SET expires_at = ?1 WHERE email = (SELECT email FROM staff_users WHERE id = ?2) AND used_at IS NULL AND expires_at > ?1 AND ${g.sql}`,
+              `UPDATE staff_invites SET expires_at = ?1 WHERE email = (SELECT email FROM staff_users WHERE id = ?2) AND used_at IS NULL AND expires_at > ?1 AND ${g.sql(3)}`,
             )
             .bind(t, id, ...g.params),
           db
             .prepare(
-              `INSERT INTO staff_invites (token_hash, email, role, invited_by, expires_at) SELECT ?1, email, role, ?2, ?3 FROM staff_users WHERE id = ?4 AND ${g.sql}`,
+              `INSERT INTO staff_invites (token_hash, email, role, invited_by, expires_at) SELECT ?1, email, role, ?2, ?3 FROM staff_users WHERE id = ?4 AND ${g.sql(5)}`,
             )
             .bind(hash, u.id, t + INVITE_TTL_MS, id, ...g.params),
           alertStmt(

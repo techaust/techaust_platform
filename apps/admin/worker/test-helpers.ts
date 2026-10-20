@@ -228,6 +228,19 @@ export async function accept(inviteToken: string, name = "Test Person"): Promise
   };
 }
 
+/** The first two steps of accepting an invite (name + password, authenticator secret), stopping before the code. */
+export async function finishOnly(inviteToken: string, name = "Test Person") {
+  const clientHash = hash();
+  const finish = await call("/auth/invite/finish", { body: { token: inviteToken, clientHash, name } });
+  expect(finish.status).toBe(200);
+  const f = (await finish.json()) as { secret: string; challenge: string };
+  return { clientHash, secret: secretFromBase32(f.secret), challenge: f.challenge };
+}
+
+/** The enrolment code step with the member's current authenticator code. */
+export const enrolCode = (challenge: string, secret: Uint8Array) =>
+  call("/auth/invite/totp", { body: { challenge, code: totpCode(secret, currentStep(Date.now())) } });
+
 /** A new member through a database invite (the owner's `invite` script does the same). */
 export async function enrol(email: string, role = "owner", name = "Test Person"): Promise<Enrolled> {
   return accept(await invite(email, role), name);
