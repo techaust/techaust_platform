@@ -1,20 +1,25 @@
 import { env, exports } from "cloudflare:workers";
 import {
+  type Attempts,
   b64url,
   currentStep,
   enc,
   fromB64url,
   hex,
+  LOCK_AFTER,
+  LOCK_MS,
   newToken,
   randomBytes,
+  recordFailure,
   secretFromBase32,
   sha256,
   signChallenge,
   tokenHash,
   totpCode,
+  WINDOW_MS,
 } from "@techaust/auth";
 import { describe, expect, it, vi } from "vitest";
-import { LOGIN_READ, startSession, TOTP_READ } from "./auth.ts";
+import { FAIL_SQL, LOGIN_READ, startSession, TOTP_READ } from "./auth.ts";
 import app from "./index.ts";
 
 const BASE = "https://admin.example/api/v1/auth";
@@ -445,6 +450,115 @@ describe("auth CPU tuning: lockout for unknown emails and the query plans [ADM-A
           );
       }
       expect(lines.filter((l) => /^SCAN (staff_users|auth_attempts)\b/.test(l))).toEqual([]);
+    }
+  });
+});
+
+describe("auth CPU tuning: the atomic failure counter [ADM-AUTH-05]", () => {
+  it("10 parallel wrong logins add exactly 10 failures and lock the account", async () => {
+    const email = "parallel@example.com";
+    const { clientHash } = await enrol(email);
+    const results = await Promise.all(
+      Array.from({ length: 10 }, () => call("/login", { body: { email, clientHash: hash() } })),
+    );
+    expect(results.map((r) => r.status)).toEqual(Array(10).fill(401));
+    const row = await attemptsRow(await key(email));
+    expect(row?.failures).toBe(10);
+    expect(row?.locked_until).toBeGreaterThan(Date.now());
+    expect((await call("/login", { body: { email, clientHash } })).status).toBe(429);
+  });
+
+  it("a failure is still exactly 1 D1 call (the upsert)", async () => {
+    const c = counted();
+    await c.env.DB.prepare(FAIL_SQL)
+      .bind("acct:call-budget", Date.now(), WINDOW_MS, LOCK_AFTER, LOCK_MS)
+      .run();
+    expect(c.calls()).toBe(1);
+  });
+
+  type Row = Attempts;
+  const runSql = async (k: string, at: number, lockAfter = LOCK_AFTER): Promise<Row> => {
+    await env.DB.prepare(FAIL_SQL).bind(k, at, WINDOW_MS, lockAfter, LOCK_MS).run();
+    const r = (await env.DB.prepare(
+      "SELECT window_start, failures, locked_until FROM auth_attempts WHERE key = ?",
+    )
+      .bind(k)
+      .first()) as { window_start: number; failures: number; locked_until: number | null };
+    return { windowStart: r.window_start, failures: r.failures, lockedUntil: r.locked_until };
+  };
+  // The same math as recordFailure, with a configurable lock-after count (the module's constant is fixed).
+  const model = (a: Row | null, at: number, lockAfter: number): Row => {
+    const fresh = !a || at - a.windowStart >= WINDOW_MS;
+    const failures = fresh ? 1 : a.failures + 1;
+    return {
+      windowStart: fresh ? at : a.windowStart,
+      failures,
+      lockedUntil: failures >= lockAfter ? at + LOCK_MS : (a?.lockedUntil ?? null),
+    };
+  };
+
+  const T0 = 1_700_000_000_000;
+  const H = WINDOW_MS;
+  const cases: Record<string, number[]> = {
+    "first failure only": [T0],
+    "9 then lock at the 10th": Array.from({ length: 10 }, (_, i) => T0 + i * 1000),
+    "11 failures keep extending the lock": Array.from({ length: 11 }, (_, i) => T0 + i * 1000),
+    "window expires exactly at WINDOW_MS (>=): restarts at 1": [T0, T0 + H],
+    "one ms before the window ends: still counts": [T0, T0 + H - 1],
+    "9 failures, window passes, then 9 more: no lock": [
+      ...Array.from({ length: 9 }, (_, i) => T0 + i),
+      ...Array.from({ length: 9 }, (_, i) => T0 + H + 10 + i),
+    ],
+    "lock, window passes, a fresh failure keeps the old locked_until": [
+      ...Array.from({ length: 10 }, (_, i) => T0 + i),
+      T0 + H + 50,
+    ],
+    "lock, then more failures after the window and a second lock": [
+      ...Array.from({ length: 10 }, (_, i) => T0 + i),
+      ...Array.from({ length: 10 }, (_, i) => T0 + 2 * H + i),
+    ],
+  };
+
+  // Deterministic pseudo-random sequences (a fixed LCG), with gaps from 0 ms to 1.5 windows.
+  let seed = 12345;
+  const rnd = () => {
+    seed = (seed * 1103515245 + 12345) % 2 ** 31;
+    return seed / 2 ** 31;
+  };
+  for (let s = 0; s < 40; s++) {
+    let t = T0;
+    cases[`random sequence ${s}`] = Array.from({ length: 30 }, () => {
+      t += Math.floor(rnd() < 0.1 ? rnd() * 1.5 * H : rnd() * 5000);
+      return t;
+    });
+  }
+
+  for (const [name, times] of Object.entries(cases)) {
+    it(`SQL and recordFailure give the same row: ${name}`, async () => {
+      const k = `acct:eq-${name.replace(/\W+/g, "-")}`;
+      let expected: Row | null = null;
+      for (const at of times) {
+        expected = recordFailure(expected, at);
+        expect(await runSql(k, at)).toEqual(expected);
+      }
+    });
+  }
+
+  it("with LOCK_AFTER = 1 the very first insert is already locked, as in recordFailure", async () => {
+    const k = "acct:eq-lock-after-1";
+    const got = await runSql(k, T0, 1);
+    expect(got).toEqual(model(null, T0, 1));
+    expect(got.lockedUntil).toBe(T0 + LOCK_MS);
+    expect(await runSql(k, T0 + H, 1)).toEqual(model(got, T0 + H, 1)); // a reset still locks at 1
+  });
+
+  it("the model used for LOCK_AFTER = 1 agrees with recordFailure at the real constant", () => {
+    let a: Row | null = null;
+    let b: Row | null = null;
+    for (let i = 0; i < 25; i++) {
+      a = recordFailure(a, T0 + i * 400_000);
+      b = model(b, T0 + i * 400_000, LOCK_AFTER);
+      expect(b).toEqual(a);
     }
   });
 });

@@ -16,13 +16,14 @@ import {
   inviteStartRequest,
   isAttemptKey,
   isLocked,
+  LOCK_AFTER,
+  LOCK_MS,
   loginRequest,
   newSession,
   newTotpSecret,
   openTotpSecret,
   passwordHmac,
   readCookie,
-  recordFailure,
   saltRequest,
   sealTotpSecret,
   sessionCookie,
@@ -34,6 +35,7 @@ import {
   verifyChallenge,
   verifyPassword,
   verifyTotp,
+  WINDOW_MS,
 } from "@techaust/auth";
 import { uuidv7 } from "@techaust/core";
 import { Hono } from "hono";
@@ -75,15 +77,24 @@ const attemptsOf = (row: AttemptCols): Attempts | null =>
     ? null
     : { windowStart: row.window_start, failures: row.failures, lockedUntil: row.locked_until };
 
-async function fail(db: D1Database, key: string, before: Attempts | null) {
-  const a = recordFailure(before, now());
-  await db
-    .prepare(
-      "INSERT INTO auth_attempts (key, window_start, failures, locked_until) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(key) DO UPDATE SET window_start = ?2, failures = ?3, locked_until = ?4",
-    )
-    .bind(key, a.windowStart, a.failures, a.lockedUntil)
-    .run();
-}
+/**
+ * One atomic upsert for a failed attempt, so parallel failures each add one (no read-modify-write). It mirrors
+ * `recordFailure` exactly: a missing row or one whose window is >= WINDOW_MS old starts again at 1 failure
+ * (window_start = now); otherwise failures + 1 with the window kept; the lock (now + LOCK_MS) is set when the new
+ * count is >= LOCK_AFTER, else locked_until is left as it was (also across a window reset, as in recordFailure).
+ * ?1 key, ?2 now, ?3 window ms, ?4 lock-after count, ?5 lock ms. In SQLite's DO UPDATE every right-hand side reads
+ * the old row, so the repeated CASE is consistent.
+ */
+export const FAIL_SQL = `INSERT INTO auth_attempts (key, window_start, failures, locked_until)
+VALUES (?1, ?2, 1, CASE WHEN 1 >= ?4 THEN ?2 + ?5 ELSE NULL END)
+ON CONFLICT(key) DO UPDATE SET
+  window_start = CASE WHEN ?2 - window_start >= ?3 THEN ?2 ELSE window_start END,
+  failures = CASE WHEN ?2 - window_start >= ?3 THEN 1 ELSE failures + 1 END,
+  locked_until = CASE WHEN (CASE WHEN ?2 - window_start >= ?3 THEN 1 ELSE failures + 1 END) >= ?4
+                      THEN ?2 + ?5 ELSE locked_until END`;
+
+const fail = (db: D1Database, key: string) =>
+  db.prepare(FAIL_SQL).bind(key, now(), WINDOW_MS, LOCK_AFTER, LOCK_MS).run();
 
 /** The joined reads of /login (?1 email, ?2 lockout key) and /totp (?1 user id, ?2 lockout key); tests EXPLAIN them. */
 export const LOGIN_READ =
@@ -192,7 +203,7 @@ export const auth = new Hono<AppEnv>()
     const salt = usable && row.pw_salt ? row.pw_salt : await fakeSalt(c.env.SALT_PEPPER, email);
     const ok = await verifyPassword(c.env.PASSWORD_PEPPER, salt, clientHash, usable ? row.pw_hmac : null);
     if (!ok || row.id === null) {
-      await fail(c.env.DB, key, attempts);
+      await fail(c.env.DB, key);
       return c.json(INVALID, 401);
     }
     const challenge = await signChallenge(c.env.SESSION_HMAC_KEY, {
@@ -232,7 +243,7 @@ export const auth = new Hono<AppEnv>()
         )()
       : null;
     if (!session) {
-      await fail(c.env.DB, key, attempts);
+      await fail(c.env.DB, key);
       return c.json(INVALID, 401);
     }
     c.header("Set-Cookie", sessionCookie(session.token, Math.floor((session.absExpiresAt - now()) / 1000)));
