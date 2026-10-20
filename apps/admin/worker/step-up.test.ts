@@ -28,11 +28,11 @@ const STEP_UP_BODY = {
 };
 
 describe("every step-up route refuses without a step-up [ADM-AUTH-08]", () => {
-  const stepUpRoutes = ROUTES.flatMap((route) =>
-    route.access === "public"
-      ? []
-      : ROLES.filter((role) => decide(role, route.access) === "step-up").map((role) => ({ route, role })),
-  );
+  const stepUpRoutes = ROUTES.flatMap((route) => {
+    const access = route.access;
+    if (access === "public") return [];
+    return ROLES.filter((role) => decide(role, access) === "step-up").map((role) => ({ route, role }));
+  });
 
   it("there are step-up routes for the owner (users.manage) and for everyone (recovery codes)", () => {
     const names = new Set(stepUpRoutes.map((x) => `${x.route.method} ${x.route.path}`));

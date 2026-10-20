@@ -105,13 +105,13 @@ export function barrierDb(base: D1Database, n: number): D1Database {
 
 export type CallInit = {
   body?: unknown;
-  cookie?: string;
+  cookie?: string | undefined;
   method?: string;
   headers?: Record<string, string>;
 };
 
 /** A request to `/api/v1<path>` as the SPA would send it (same origin, JSON), straight into the Hono app. */
-export const call = (path: string, init: CallInit = {}, e: Env = env) =>
+export const call = async (path: string, init: CallInit = {}, e: Env = env) =>
   app.request(
     `${ORIGIN}/api/v1${path}`,
     {
