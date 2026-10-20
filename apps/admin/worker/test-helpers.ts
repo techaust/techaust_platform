@@ -16,6 +16,7 @@ import {
 import type { Role } from "@techaust/core";
 import { uuidv7 } from "@techaust/core";
 import { expect } from "vitest";
+import type { RouteDef } from "./context.ts";
 import app from "./index.ts";
 
 export const ORIGIN = "https://admin.example";
@@ -332,6 +333,23 @@ export async function signIn(s: TestSession, cookie?: string, e: Env = env) {
     e,
   );
   return { res, cookie: cookieOf(res), device: cookieOf(res, "__Host-ta_device"), challenge };
+}
+
+/** A request that reaches the handler of `route`: a valid body, and a made-up id where the path needs one. */
+export function sampleRequest(route: RouteDef) {
+  const path = route.path
+    .replace("/api/v1", "")
+    .replace(":tokenHash", "a".repeat(64))
+    .replace(":id", "no-such-id");
+  const body =
+    route.method === "GET" || route.method === "DELETE"
+      ? undefined
+      : route.path.endsWith("/invites")
+        ? { email: `new-${Math.random().toString(36).slice(2)}@example.com`, role: "staff" }
+        : route.method === "PATCH"
+          ? { role: "staff" }
+          : {};
+  return { path, init: { method: route.method, body } };
 }
 
 /** Another live session for the same member. */

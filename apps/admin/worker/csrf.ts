@@ -4,6 +4,7 @@
 //   1. Unsafe methods (anything but GET, HEAD, OPTIONS): `Origin` must equal the app origin. Without an `Origin`
 //      header (some same-origin requests), `Sec-Fetch-Site: same-origin` must be present.
 //   2. A request that has a body must be `application/json`.
+import type { Context } from "hono";
 import { createMiddleware } from "hono/factory";
 import { type AppEnv, err } from "./context.ts";
 
@@ -12,9 +13,11 @@ const SAFE = new Set(["GET", "HEAD", "OPTIONS"]);
 export const CROSS_SITE = { code: "forbidden", message: "Request refused" } as const;
 export const NOT_JSON = { code: "unsupported_media_type", message: "Send JSON" } as const;
 
-const hasBody = (c: { req: { header: (n: string) => string | undefined } }) => {
+/** A body is there when a length (not 0) or chunked encoding is declared, or the runtime hands over a stream. */
+const hasBody = (c: Context<AppEnv>) => {
   const length = c.req.header("Content-Length");
-  return (length !== undefined && length !== "0") || c.req.header("Transfer-Encoding") !== undefined;
+  if (length === "0") return false;
+  return length !== undefined || c.req.header("Transfer-Encoding") !== undefined || c.req.raw.body !== null;
 };
 
 export const csrf = createMiddleware<AppEnv>(async (c, next) => {

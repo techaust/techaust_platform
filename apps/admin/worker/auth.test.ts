@@ -98,6 +98,14 @@ describe("staff login (docs/05 §6.1) [ADM-AUTH-01, -02, -05, -07]", () => {
     expect(await countOf("staff_sessions", "user_id = ?", await userId("pending@example.com"))).toBe(0);
   });
 
+  it("a client hash that is 43 characters but doesn't decode to 32 bytes is a 400, not a 500", async () => {
+    for (const clientHash of ["x".repeat(43), "-".repeat(43), `${"A".repeat(42)}B`]) {
+      const res = await call("/auth/login", { body: { email: "a@b.co", clientHash } });
+      expect([res.status, clientHash.length]).toEqual([400, 43]);
+    }
+    expect((await call("/auth/login", { body: { email: "a@b.co", clientHash: hash() } })).status).toBe(401);
+  });
+
   it("rejects malformed, oversized and cross-site requests", async () => {
     expect((await call("/auth/login", { body: { email: "x" } })).status).toBe(400);
     expect(

@@ -13,6 +13,7 @@ import {
   extraSession,
   nextCode,
   one,
+  sampleRequest,
   sessionFor,
   userId,
   wrongCode,
@@ -25,23 +26,6 @@ const stepUp = (s: { cookie: string }, code: string) =>
 const STEP_UP_BODY = {
   error: { code: "step_up_required", message: "Confirm with a fresh code from your authenticator first" },
 };
-
-/** A request that would reach the handler of `route` (valid body and a made-up id where one is needed). */
-function sample(route: (typeof ROUTES)[number]) {
-  const path = route.path
-    .replace("/api/v1", "")
-    .replace(":tokenHash", "a".repeat(64))
-    .replace(":id", "no-such-id");
-  const body =
-    route.method === "GET" || route.method === "DELETE"
-      ? undefined
-      : route.path.endsWith("/invites")
-        ? { email: `new-${Math.random().toString(36).slice(2)}@example.com`, role: "staff" }
-        : route.method === "PATCH"
-          ? { role: "staff" }
-          : {};
-  return { path, init: { method: route.method, body } };
-}
 
 describe("every step-up route refuses without a step-up [ADM-AUTH-08]", () => {
   const stepUpRoutes = ROUTES.flatMap((route) =>
@@ -65,7 +49,7 @@ describe("every step-up route refuses without a step-up [ADM-AUTH-08]", () => {
   for (const { route, role } of stepUpRoutes) {
     it(`${role}: ${route.method} ${route.path} → 403 step_up_required, then passes the guard with a step-up`, async () => {
       const without = await sessionFor(role);
-      const { path, init } = sample(route);
+      const { path, init } = sampleRequest(route);
       const refused = await call(path, { ...init, cookie: without.cookie });
       expect(refused.status).toBe(403);
       expect(await bodyOf(refused)).toEqual(STEP_UP_BODY);
