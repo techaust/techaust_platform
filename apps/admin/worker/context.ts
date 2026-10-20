@@ -1,7 +1,7 @@
 // Shared types and helpers of the admin API: the Hono environment, error bodies that carry the request ID, the
 // request facts every log row needs, and `mutate` (one batch = the change + its audit row + its access row).
-import type { Action, Role } from "@techaust/core";
-import { uuidv7 } from "@techaust/core";
+import { uuidv7 } from "@techaust/core/ids";
+import type { Action, Role } from "@techaust/core/permissions";
 import {
   type AccessEntry,
   accessStmt,

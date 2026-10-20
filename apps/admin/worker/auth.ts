@@ -50,10 +50,10 @@ import {
   verifyTotp,
   WINDOW_MS,
 } from "@techaust/auth";
-import { type Role, uuidv7 } from "@techaust/core";
+import { uuidv7 } from "@techaust/core/ids";
+import type { Role } from "@techaust/core/permissions";
 import { accessStmt, auditStmt, type GuardSql } from "@techaust/db/log";
-import { Hono } from "hono";
-import type { z } from "zod";
+import { Hono } from "hono/tiny";
 import { alertStmt, lockoutAlert } from "./alerts.ts";
 import {
   type ApiError,
@@ -83,7 +83,7 @@ const INVITE_INVALID: ApiError = {
   message: "This invite link is invalid or has expired",
 };
 
-export const json = <S extends z.ZodType>(schema: S) =>
+export const json = <S extends Parameters<typeof sValidator>[1]>(schema: S) =>
   sValidator("json", schema, (result, c) => (result.success ? undefined : err(c as Ctx, BAD_REQUEST, 400)));
 
 const now = () => Date.now();

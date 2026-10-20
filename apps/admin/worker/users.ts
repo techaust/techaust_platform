@@ -3,10 +3,10 @@
 // Each write is ONE batch after the guard's read: the conditional statement, its audit row and access row, and the
 // side effects (revoking the target's sessions, inserting the new invite) that only happen if it applied.
 import { sValidator } from "@hono/standard-validator";
-import { INVITE_TTL_MS, newToken, tokenHash } from "@techaust/auth";
-import { ROLES } from "@techaust/core";
-import { Hono } from "hono";
-import { z } from "zod";
+import { emailAddress, INVITE_TTL_MS, newToken, tokenHash } from "@techaust/auth";
+import { ROLES } from "@techaust/core/permissions";
+import { Hono } from "hono/tiny";
+import * as z from "zod/mini";
 import { alertStmt } from "./alerts.ts";
 import { json } from "./auth.ts";
 import {
@@ -27,12 +27,11 @@ const USER_EXISTS: ApiError = {
 const LAST_OWNER: ApiError = { code: "last_owner", message: "There must always be one active owner" };
 const SELF_RESET: ApiError = { code: "self_reset", message: "You can't reset your own two-step sign-in" };
 
-const email = z.string().trim().toLowerCase().max(254).pipe(z.email());
-const inviteRequest = z.object({ email, role: z.enum(ROLES) });
+const inviteRequest = z.object({ email: emailAddress, role: z.enum(ROLES) });
 const roleRequest = z.object({ role: z.enum(ROLES) });
-const idParam = z.object({ id: z.string().min(1).max(64) });
-const hashParam = z.object({ tokenHash: z.string().regex(/^[0-9a-f]{64}$/) });
-const param = <S extends z.ZodType>(schema: S) =>
+const idParam = z.object({ id: z.string().check(z.minLength(1), z.maxLength(64)) });
+const hashParam = z.object({ tokenHash: z.string().check(z.regex(/^[0-9a-f]{64}$/)) });
+const param = <S extends Parameters<typeof sValidator>[1]>(schema: S) =>
   sValidator("param", schema, (r, c) => (r.success ? undefined : err(c as Ctx, BAD_REQUEST, 400)));
 
 /** The owner count check as a SQL condition: the last active owner can't be demoted, deactivated or reset. */

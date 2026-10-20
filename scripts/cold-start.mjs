@@ -3,6 +3,11 @@
 // `GET /api/v1/health`, timing both with process.cpuUsage() (user + system CPU) and wall time.
 // This is a PROXY: Node's module loader and JIT are not workerd's, so use it to compare two bundles
 // (before / after), never as an absolute number. If the bundle cannot load in Node it says so.
+//
+// Node itself costs about 20 ms on a first `Request`/`Response` (its fetch stack initialises lazily), whatever the
+// bundle is. So the script also runs the same measurement on an EMPTY Worker (`fetch: () => Response.json(...)`)
+// and prints the numbers "net of the floor": that is the part the bundle is responsible for. Windows reports
+// process CPU in ~15.6 ms ticks, so compare on the wall figures.
 //   node scripts/cold-start.mjs [bundle.js] [--runs 20]
 // Default bundle: apps/admin/dist/techaust_platform_admin/index.js (build it first with
 //   CLOUDFLARE_ENV=staging pnpm --filter @techaust/admin exec vite build).
@@ -15,9 +20,11 @@ import { gzipSync } from "node:zlib";
 
 const here = fileURLToPath(import.meta.url);
 const root = resolve(here, "..", "..");
+const FLOOR = "floor";
+const FLOOR_MODULE = "data:text/javascript,export default { fetch: () => Response.json({ ok: true }) };";
 
 if (process.argv[2] === "--child") {
-  const url = pathToFileURL(process.argv[3]).href;
+  const url = process.argv[3] === FLOOR ? FLOOR_MODULE : pathToFileURL(process.argv[3]).href;
   const cpu0 = process.cpuUsage();
   const t0 = performance.now();
   const mod = await import(url);
@@ -51,23 +58,39 @@ const size = statSync(bundle).size;
 const gz = gzipSync(readFileSync(bundle)).length;
 console.log(`bundle ${bundle}\n  raw ${size} bytes, gzip ${gz} bytes`);
 
-const samples = [];
-for (let i = 0; i < runs; i++) {
-  const r = spawnSync(process.execPath, [here, "--child", bundle], { encoding: "utf8" });
-  if (r.status !== 0) {
-    console.log(
-      `The bundle does not load in Node (run ${i + 1}); use size only.\n${r.stderr.split("\n").slice(0, 6).join("\n")}`,
-    );
-    process.exit(0);
+/** `runs` fresh processes of one module; null when it can't be loaded in Node. */
+function measure(target) {
+  const out = [];
+  for (let i = 0; i < runs; i++) {
+    const r = spawnSync(process.execPath, [here, "--child", target], { encoding: "utf8" });
+    if (r.status !== 0) {
+      console.log(
+        `The bundle does not load in Node (run ${i + 1}); use size only.\n${r.stderr.split("\n").slice(0, 6).join("\n")}`,
+      );
+      return null;
+    }
+    out.push(JSON.parse(r.stdout.trim().split("\n").at(-1)));
   }
-  samples.push(JSON.parse(r.stdout.trim().split("\n").at(-1)));
+  return out;
 }
 const pct = (xs, p) =>
   xs.slice().sort((a, b) => a - b)[Math.min(xs.length - 1, Math.floor((p / 100) * xs.length))];
-const show = (key) => {
-  const xs = samples.map((s) => s[key]);
-  return `${key}: median ${pct(xs, 50).toFixed(1)} ms, p90 ${pct(xs, 90).toFixed(1)} ms`;
-};
+const col = (samples, key) => samples.map((s) => s[key]);
+
+const samples = measure(bundle);
+if (!samples) process.exit(0);
+const floor = measure(FLOOR);
 console.log(`${runs} fresh Node processes (${process.version})`);
-for (const k of ["importCpuMs", "firstCpuMs", "totalCpuMs", "importWallMs", "totalWallMs"])
-  console.log(`  ${show(k)}`);
+for (const k of ["importCpuMs", "firstCpuMs", "totalCpuMs", "importWallMs", "totalWallMs"]) {
+  const xs = col(samples, k);
+  console.log(`  ${k}: median ${pct(xs, 50).toFixed(1)} ms, p90 ${pct(xs, 90).toFixed(1)} ms`);
+}
+if (floor) {
+  const f = pct(col(floor, "totalWallMs"), 50);
+  const fi = pct(col(floor, "importWallMs"), 50);
+  const total = pct(col(samples, "totalWallMs"), 50);
+  console.log(
+    `empty Worker (the Node floor): total wall median ${f.toFixed(1)} ms, import ${fi.toFixed(1)} ms`,
+  );
+  console.log(`  net of the floor: total wall median ${(total - f).toFixed(1)} ms (the bundle's own share)`);
+}

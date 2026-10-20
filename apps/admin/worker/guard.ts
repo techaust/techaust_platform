@@ -3,7 +3,7 @@
 // Each row says who may call it (`public` or a matrix action from core); `decide(role, action)` then answers
 // allow / step-up / approval / deny. One D1 read per guarded request: the session joined with its user.
 import { checkSession, readCookie, stepUpActive, tokenHash } from "@techaust/auth";
-import { decide, isRole } from "@techaust/core";
+import { decide, isRole } from "@techaust/core/permissions";
 import { createMiddleware } from "hono/factory";
 import {
   type Actor,

@@ -1,11 +1,11 @@
 import { hex, randomBytes } from "@techaust/auth";
 import { accessStmt } from "@techaust/db/log";
-import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
 import { routePath } from "hono/route";
 import { secureHeaders } from "hono/secure-headers";
+import { Hono } from "hono/tiny";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { account } from "./account.ts";
 import { auth } from "./auth.ts";

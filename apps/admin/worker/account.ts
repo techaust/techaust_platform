@@ -16,7 +16,7 @@ import {
   verifyTotp,
   WINDOW_MS,
 } from "@techaust/auth";
-import { Hono } from "hono";
+import { Hono } from "hono/tiny";
 import { alertStmt, lockoutAlert } from "./alerts.ts";
 import { insertRecoveryCodes, json, RESERVE_SQL } from "./auth.ts";
 import {

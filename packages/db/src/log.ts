@@ -14,7 +14,7 @@
 // first bound value gets, so a caller can append it to a statement that already binds values.
 //
 // Subpath export (`@techaust/db/log`) so a Worker importing it doesn't pull in the Drizzle schema.
-import { uuidv7 } from "@techaust/core";
+import { uuidv7 } from "@techaust/core/ids";
 
 /** A condition and the values it binds; `sql(at)` numbers its first placeholder `?at`. */
 export type GuardSql = { sql: (at: number) => string; params: readonly unknown[] };
