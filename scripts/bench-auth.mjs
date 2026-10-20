@@ -58,6 +58,8 @@ async function call(route, body, cookie) {
     method: body === undefined ? "GET" : "POST",
     headers: {
       ...(LOCAL ? {} : ACCESS),
+      // The API's CSRF check wants the app's own origin on every unsafe request (a browser sends it by itself).
+      Origin: new URL(ADMIN).origin,
       ...(body === undefined ? {} : { "Content-Type": "application/json" }),
       ...(cookie ? { Cookie: cookie } : {}),
     },
@@ -74,8 +76,9 @@ async function call(route, body, cookie) {
   if (!LOCAL && (res.status === 401 || res.status === 403) && !isJson)
     throw new Error(`Cloudflare Access refused the service token on ${route} (${res.status})`);
   const data = isJson ? await res.json().catch(() => ({})) : {};
-  const session = res.headers.getSetCookie().find((c) => c.startsWith("__Host-ta_admin="));
-  return { status: res.status, data, cookie: session?.split(";")[0] ?? null };
+  const cookies = res.headers.getSetCookie();
+  const named = (name) => cookies.find((c) => c.startsWith(`${name}=`))?.split(";")[0] ?? null;
+  return { status: res.status, data, cookie: named("__Host-ta_admin"), device: named("__Host-ta_device") };
 }
 
 // ---------- the browser's work ----------
@@ -131,6 +134,7 @@ try {
     const finish = await call("/invite/finish", {
       token: u.token,
       clientHash: clientHash(u.password, start.data.salt, start.data.params),
+      name: "Bench User",
     });
     if (finish.status !== 200) throw new Error(`invite/finish → ${finish.status}`);
     u.secret = base32(finish.data.secret);
@@ -140,6 +144,7 @@ try {
       code: totp(u.secret, u.lastStep),
     });
     if (done.status !== 200) throw new Error(`invite/totp → ${done.status}`);
+    u.device = done.device; // the browser keeps its device cookie: later sign-ins are from a known device
   }
 
   // ---------- 3. logins ----------
@@ -148,7 +153,8 @@ try {
   while (Date.now() < until) {
     for (const u of users) {
       const s = Math.max(u.lastStep + 1, step() - 1);
-      if (s > step() + 1) continue; // this user's next code isn't valid yet
+      // The step-up after the sign-in needs the NEXT step's code (s + 1, which the server accepts up to step() + 1).
+      if (s > step()) continue; // this user's next two codes aren't valid yet
       const salt = await call("/salt", { email: u.email });
       const login = await call("/login", {
         email: u.email,
@@ -158,7 +164,7 @@ try {
         failures++;
         continue;
       }
-      const t = await call("/totp", { challenge: login.data.challenge, code: totp(u.secret, s) });
+      const t = await call("/totp", { challenge: login.data.challenge, code: totp(u.secret, s) }, u.device);
       if (t.status !== 200) {
         failures++;
         continue;
@@ -166,6 +172,10 @@ try {
       u.lastStep = s;
       logins++;
       await call("/me", undefined, t.cookie);
+      await call("/sessions", undefined, t.cookie);
+      const up = await call("/step-up", { code: totp(u.secret, s + 1) }, t.cookie);
+      if (up.status === 200) u.lastStep = s + 1;
+      else failures++;
       if (logins % 10 === 0) {
         // Unknown-email path (fake salt, no account): must cost the same as a real one.
         const email = `nobody-${RUN}-${logins}@bench.invalid`;
@@ -187,6 +197,8 @@ try {
     .join(", ");
   d1(
     [
+      // `code:<user id>` counters first (they need the ids); known devices and recovery codes go with the user (cascade).
+      `DELETE FROM auth_attempts WHERE key IN (SELECT 'code:' || id FROM staff_users WHERE email IN (${emails}));`,
       `DELETE FROM staff_sessions WHERE user_id IN (SELECT id FROM staff_users WHERE email IN (${emails}));`,
       `DELETE FROM staff_users WHERE email IN (${emails});`,
       `DELETE FROM staff_invites WHERE email IN (${emails});`,

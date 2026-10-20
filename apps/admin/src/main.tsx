@@ -1,30 +1,101 @@
 import "@techaust/ui/fonts.css";
 import "@techaust/ui/tokens.css";
 import "./app.css";
-import { StrictMode, useEffect, useState } from "react";
+import { can } from "@techaust/core/permissions";
+import { type ReactNode, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { createBrowserRouter, RouterProvider } from "react-router";
-import { api, type User } from "./api.ts";
-import { AcceptInvite, Home, SignIn } from "./auth.tsx";
+import { createBrowserRouter, Navigate, Outlet, RouterProvider, useLocation } from "react-router";
+import { StepUpDialog } from "./components/step-up-dialog.tsx";
+import { Card } from "./components/ui.tsx";
+import { Home } from "./routes/home.tsx";
+import { SignIn } from "./routes/sign-in.tsx";
+import { SessionProvider, useSession } from "./session.tsx";
 
-// The invite token travels in the URL fragment (#t=…), which is never sent to servers or kept in logs.
-const inviteToken = () => new URLSearchParams(location.hash.slice(1)).get("t");
+// Sign-in and the landing card are in the main chunk (every visit needs them). The invite, account and staff
+// screens load with import() when opened, so the first load stays small (NFR-3: initial JS ≤ 250 KB gzip).
 
-function App() {
-  const [user, setUser] = useState<User | null | undefined>(undefined);
-  useEffect(() => {
-    api.me().then(
-      (r) => setUser(r.user),
-      () => setUser(null),
-    );
-  }, []);
-  if (user === undefined) return <main className="card" aria-busy="true" />;
-  if (user) return <Home user={user} onSignedOut={() => setUser(null)} />;
-  const token = location.pathname === "/invite" ? inviteToken() : null;
-  return token ? <AcceptInvite token={token} onSignedIn={setUser} /> : <SignIn onSignedIn={setUser} />;
+/** The invite screen works signed in or not; everything else needs a session (the sign-in screen otherwise). */
+function Root() {
+  const { user } = useSession();
+  const { pathname } = useLocation();
+  if (pathname === "/invite") return <Outlet />;
+  if (user === undefined) return <Loading />;
+  if (!user) return <SignIn />;
+  return (
+    <>
+      <Outlet />
+      <StepUpDialog />
+    </>
+  );
 }
 
-const router = createBrowserRouter([{ path: "*", element: <App /> }]);
+/** While the session (or the first screen's code) loads. */
+function Loading() {
+  return (
+    <Card title="TecHaust admin" busy>
+      <p className="hint" role="status">
+        Loading…
+      </p>
+    </Card>
+  );
+}
+
+function OwnerOnly({ children }: { children: ReactNode }) {
+  const { user } = useSession();
+  return user && can(user.role, "users.read") ? children : <Navigate to="/" replace />;
+}
+
+function NotFound() {
+  return (
+    <Card title="Page not found" back={{ to: "/", label: "Home" }}>
+      <p>There's nothing at this address.</p>
+    </Card>
+  );
+}
+
+/** A screen failed to load or crashed (e.g. its code changed with a new release): a calm way out, no stack trace. */
+function Failed() {
+  return (
+    <Card title="This screen didn't load">
+      <p>Reload the page to try again. If it keeps happening, tell the owner.</p>
+      <button type="button" className="btn btn--primary btn--block" onClick={() => location.reload()}>
+        Reload
+      </button>
+    </Card>
+  );
+}
+
+const router = createBrowserRouter([
+  {
+    path: "/",
+    HydrateFallback: Loading,
+    errorElement: <Failed />,
+    element: (
+      <SessionProvider>
+        <Root />
+      </SessionProvider>
+    ),
+    children: [
+      { index: true, element: <Home /> },
+      { path: "invite", lazy: () => import("./routes/invite.tsx") },
+      { path: "account", lazy: () => import("./routes/account.tsx") },
+      {
+        path: "users",
+        lazy: async () => {
+          const { Component } = await import("./routes/users.tsx");
+          return {
+            Component: () => (
+              <OwnerOnly>
+                <Component />
+              </OwnerOnly>
+            ),
+          };
+        },
+      },
+      { path: "*", element: <NotFound /> },
+    ],
+  },
+]);
 
 const root = document.getElementById("root");
 if (!root) throw new Error("#root element missing");

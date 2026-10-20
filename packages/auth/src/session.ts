@@ -7,6 +7,14 @@ export const ABSOLUTE_MS = 7 * 24 * 60 * 60 * 1000;
 /** last_seen_at is written at most this often (keeps D1 writes low on the Free plan). */
 export const TOUCH_EVERY_MS = 15 * 60 * 1000;
 export const CHALLENGE_TTL_MS = 5 * 60 * 1000;
+/** A fresh TOTP prompt (step-up) lets sensitive routes through for this long [ADM-AUTH-08]. */
+export const STEP_UP_MS = 10 * 60 * 1000;
+/** An invite link works for 48 hours [ADM-AUTH-07]. */
+export const INVITE_TTL_MS = 48 * 60 * 60 * 1000;
+
+/** True while a step-up is in force (`step_up_until` is the end, in ms). */
+export const stepUpActive = (until: number | null | undefined, nowMs: number) =>
+  until !== null && until !== undefined && until > nowMs;
 
 export async function newSession(nowMs: number) {
   const token = newToken();

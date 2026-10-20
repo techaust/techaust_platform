@@ -40,4 +40,15 @@ export async function verifyPassword(
   return timingSafeEqual(actual, expected) && stored !== null;
 }
 
-export const isClientHash = (s: string) => /^[A-Za-z0-9_-]{43}$/.test(s);
+/**
+ * A well-formed client hash: 43 URL-safe characters that decode to exactly 32 bytes. (43 characters alone isn't
+ * enough: the last one must have no stray bits, and a string that doesn't decode would throw inside the HMAC.)
+ */
+export function isClientHash(s: string): boolean {
+  if (!/^[A-Za-z0-9_-]{43}$/.test(s)) return false;
+  try {
+    return fromB64url(s).length === CLIENT_HASH_BYTES;
+  } catch {
+    return false;
+  }
+}

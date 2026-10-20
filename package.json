@@ -18,6 +18,7 @@
     "db:migrate:local": "pnpm --filter @techaust/jobs exec wrangler d1 migrations apply DB --local --persist-to ../../.wrangler/state",
     "db:seed:local": "pnpm --filter @techaust/db seed:sql ../../.wrangler/seed.sql && pnpm --filter @techaust/jobs exec wrangler d1 execute DB --local --persist-to ../../.wrangler/state --file ../../.wrangler/seed.sql",
     "invite": "node scripts/create-invite.mjs",
+    "admin:reset-2fa": "node scripts/reset-2fa.mjs",
     "dev:secrets": "node scripts/dev-vars.mjs"
   },
   "devDependencies": {
