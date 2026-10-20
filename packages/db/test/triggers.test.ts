@@ -208,3 +208,78 @@ describe("gap-free numbering (docs/05 §5.4, ADM-INV-03)", () => {
     expect(doc?.status).toBe("draft");
   });
 });
+
+describe("staff-auth triggers (0004; ADM-AUTH-07, ADM-G-06, NFR-9)", () => {
+  const staff = (id: string, role: string, status = "active") =>
+    run(
+      "INSERT INTO staff_users (id, email, name, role, status) VALUES (?1, ?1 || '@example.com', ?1, ?2, ?3)",
+      id,
+      role,
+      status,
+    );
+
+  it("the last active owner can't be demoted, deactivated or reset to invited", async () => {
+    await staff("owner-a", "owner");
+    await staff("staff-a", "staff");
+    await rejects(
+      run("UPDATE staff_users SET role = 'staff' WHERE id = 'owner-a'"),
+      /at least one active owner/,
+    );
+    await rejects(
+      run("UPDATE staff_users SET status = 'deactivated' WHERE id = 'owner-a'"),
+      /at least one active owner/,
+    );
+    await rejects(
+      run("UPDATE staff_users SET status = 'invited', totp_secret_enc = NULL WHERE id = 'owner-a'"),
+      /at least one active owner/,
+    );
+    const owner = await first<{ role: string; status: string }>(
+      "SELECT role, status FROM staff_users WHERE id = 'owner-a'",
+    );
+    expect(owner).toEqual({ role: "owner", status: "active" });
+  });
+
+  it("with two active owners either can go, but then the other is protected", async () => {
+    await staff("owner-b", "owner");
+    await run("UPDATE staff_users SET status = 'deactivated' WHERE id = 'owner-b'");
+    await rejects(
+      run("UPDATE staff_users SET role = 'sales' WHERE id = 'owner-a'"),
+      /at least one active owner/,
+    );
+  });
+
+  it("other changes are untouched: promote, edit columns, deactivate a non-owner, delete a user", async () => {
+    await run("UPDATE staff_users SET role = 'owner' WHERE id = 'staff-a'");
+    await run("UPDATE staff_users SET name = 'Renamed', totp_last_step = 5 WHERE id = 'owner-a'");
+    await run("UPDATE staff_users SET role = 'sales' WHERE id = 'staff-a'"); // owner-a is still active
+    await run("UPDATE staff_users SET status = 'deactivated' WHERE id = 'staff-a'");
+    await staff("temp", "staff");
+    await run("DELETE FROM staff_users WHERE id = 'temp'"); // no delete trigger: the benchmark relies on it
+  });
+
+  it("an invited owner can be activated (the first-owner bootstrap)", async () => {
+    await staff("boot", "owner", "invited");
+    await run("UPDATE staff_users SET status = 'active', totp_enabled_at = 1 WHERE id = 'boot'");
+  });
+
+  it("access_log refuses UPDATE", async () => {
+    await run(
+      "INSERT INTO access_log (id, realm, method, route, status) VALUES ('al1', 'admin', 'GET', '/v1/auth/me', 200)",
+    );
+    await rejects(run("UPDATE access_log SET status = 500 WHERE id = 'al1'"), /access_log is append-only/);
+    expect((await first<{ status: number }>("SELECT status FROM access_log WHERE id = 'al1'"))?.status).toBe(
+      200,
+    );
+  });
+
+  it("staff_known_devices: one row per user and device, removed with the user", async () => {
+    await staff("dev-user", "staff");
+    await run("INSERT INTO staff_known_devices (user_id, device_hash) VALUES ('dev-user', 'h1')");
+    await rejects(
+      run("INSERT INTO staff_known_devices (user_id, device_hash) VALUES ('dev-user', 'h1')"),
+      /UNIQUE|PRIMARY/,
+    );
+    await run("DELETE FROM staff_users WHERE id = 'dev-user'");
+    expect(await all("SELECT 1 FROM staff_known_devices WHERE user_id = 'dev-user'")).toEqual([]);
+  });
+});

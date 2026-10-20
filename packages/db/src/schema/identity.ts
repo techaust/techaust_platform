@@ -1,8 +1,8 @@
 // Identity and auth (docs/05 §5.2, §6). Secrets are stored only as hashes or encrypted values.
 import { ROLES } from "@techaust/core";
 import { sql } from "drizzle-orm";
-import { check, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
-import { createdAt, id, oneOf, updatedAt } from "./common.ts";
+import { check, index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { createdAt, id, nowMs, oneOf, updatedAt } from "./common.ts";
 
 export const STAFF_STATUSES = ["invited", "active", "deactivated"] as const;
 
@@ -46,6 +46,23 @@ export const staffRecoveryCodes = sqliteTable(
     createdAt: createdAt(),
   },
   (t) => [index("staff_recovery_codes_user").on(t.userId)],
+);
+
+/**
+ * Browsers a staff member has signed in from (ADM-AUTH-09): the `__Host-ta_device` cookie holds a random token,
+ * only its SHA-256 is stored here. A sign-in from an unknown device raises `alert.new_device`.
+ */
+export const staffKnownDevices = sqliteTable(
+  "staff_known_devices",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => staffUsers.id, { onDelete: "cascade" }),
+    deviceHash: text("device_hash").notNull(),
+    firstSeenAt: integer("first_seen_at").notNull().default(nowMs),
+    userAgent: text("user_agent"),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.deviceHash] })],
 );
 
 export const staffSessions = sqliteTable(
