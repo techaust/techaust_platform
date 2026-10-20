@@ -36,8 +36,6 @@ export type Vars = {
   user?: Actor;
   /** The 15-minute `last_seen_at` refresh, when one is due: it rides in the request's single log write. */
   touch?: D1PreparedStatement;
-  /** The id of the person the access row is about when a handler signs someone in. */
-  accessActor?: string | null;
   /** The handler already wrote this request's access row (inside its batch), or must write none. */
   accessDone?: boolean;
 };
@@ -78,7 +76,7 @@ export const geo = (c: Ctx) => {
 
 export const accessEntry = (c: Ctx, status: number, actorId?: string | null): AccessEntry => ({
   ...requestInfo(c),
-  actorId: actorId ?? c.var.accessActor ?? c.var.user?.id ?? null,
+  actorId: actorId ?? c.var.user?.id ?? null,
   method: c.req.method,
   route: c.var.route?.path ?? "other",
   status,

@@ -17,7 +17,7 @@ import {
   WINDOW_MS,
 } from "@techaust/auth";
 import { describe, expect, it } from "vitest";
-import { RESERVE_SQL } from "./auth.ts";
+import { FAIL_SQL, RESERVE_SQL } from "./auth.ts";
 import {
   attemptsRow,
   barrierDb,
@@ -121,6 +121,27 @@ describe("RESERVE_SQL agrees with reserveAttempt [ADM-AUTH-06]", () => {
       }
       if (name.startsWith("11 attempts") || name.startsWith("lock expires"))
         expect(refused).toBeGreaterThan(0);
+    });
+  }
+
+  // FAIL_SQL is the per-address counter's upsert (it counts every call, locked or not, because a blocked address
+  // never reaches it). Same sequences, the address policy but with a limit of 3 so the lock is reached.
+  for (const [name, times] of Object.entries(cases)) {
+    it(`FAIL_SQL and recordFailure give the same row (address counter, limit 3): ${name}`, async () => {
+      const k = `ip:eq-${name.replace(/\W+/g, "-")}`;
+      let expected: Row | null = null;
+      for (const at of times) {
+        expected = recordFailure(expected, at, 3, IP_LOCK_MS, IP_WINDOW_MS);
+        await env.DB.prepare(FAIL_SQL).bind(k, at, IP_WINDOW_MS, 3, IP_LOCK_MS).run();
+        const r = (await env.DB.prepare(
+          "SELECT window_start, failures, locked_until FROM auth_attempts WHERE key = ?",
+        )
+          .bind(k)
+          .first()) as { window_start: number; failures: number; locked_until: number | null };
+        expect({ windowStart: r.window_start, failures: r.failures, lockedUntil: r.locked_until }).toEqual(
+          expected,
+        );
+      }
     });
   }
 
