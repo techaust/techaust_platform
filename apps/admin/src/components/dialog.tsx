@@ -43,7 +43,13 @@ export function Modal(props: {
     >
       {open && (
         <>
-          <h2 id={titleId} className="dialog__title" ref={props.titleRef} tabIndex={-1}>
+          <h2
+            id={titleId}
+            className="dialog__title"
+            ref={props.titleRef}
+            // Focusable only when asked: otherwise opening the dialog focuses its first control, as it should.
+            tabIndex={props.titleRef ? -1 : undefined}
+          >
             {props.title}
           </h2>
           {props.children}

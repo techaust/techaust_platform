@@ -2,7 +2,7 @@
 // email that M2.4 sends), revoke pending invites, change a role, deactivate, reset two-step sign-in, and sign out
 // everyone except you. Every change needs a fresh step-up; the step-up dialog opens on its own when it's due.
 import { ROLES, type Role } from "@techaust/core/permissions";
-import { type FormEvent, useCallback, useEffect, useId, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useId, useRef, useState } from "react";
 import { api, errorText, type Invite, type InviteLink, type StaffMember } from "../api.ts";
 import { ConfirmDialog } from "../components/confirm-dialog.tsx";
 import { Card, Field, Notice, ShownOnce, SkeletonRows } from "../components/ui.tsx";
@@ -43,7 +43,13 @@ export function Component() {
   };
 
   return (
-    <Card title="Staff and invites" wide back={{ to: "/", label: "Home" }} busy={!data && !loadError}>
+    <Card
+      title="Staff and invites"
+      wide
+      focusTitle
+      back={{ to: "/", label: "Home" }}
+      busy={!data && !loadError}
+    >
       {notice && <Notice tone="success">{notice}</Notice>}
       {loadError && (
         <div className="load-error">
@@ -308,6 +314,11 @@ function InviteForm({ onCreated }: { onCreated: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [emailError, setEmailError] = useState<string | null>(null);
   const [created, setCreated] = useState<{ link: InviteLink; email: string } | null>(null);
+  const createdRef = useRef<HTMLDivElement>(null);
+  // The form is replaced by the link: focus moves to it, so the result is read next.
+  useEffect(() => {
+    if (created) createdRef.current?.focus();
+  }, [created]);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -340,7 +351,7 @@ function InviteForm({ onCreated }: { onCreated: () => void }) {
         </p>
       </div>
       {created ? (
-        <div className="invite-created">
+        <div className="invite-created" ref={createdRef} tabIndex={-1}>
           <LinkResult link={created.link} email={created.email} what="invite" />
           <button type="button" className="btn btn--secondary" onClick={() => setCreated(null)}>
             Invite someone else

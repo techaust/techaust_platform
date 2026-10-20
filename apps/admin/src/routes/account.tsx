@@ -52,7 +52,7 @@ export function Component() {
   }
 
   return (
-    <Card title="Your account" wide back={{ to: "/", label: "Home" }} busy={!data && !loadError}>
+    <Card title="Your account" wide focusTitle back={{ to: "/", label: "Home" }} busy={!data && !loadError}>
       {notice && <Notice tone="success">{notice}</Notice>}
       {loadError && (
         <div className="load-error">

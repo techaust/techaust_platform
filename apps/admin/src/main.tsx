@@ -53,10 +53,23 @@ function NotFound() {
   );
 }
 
+/** A screen failed to load or crashed (e.g. its code changed with a new release): a calm way out, no stack trace. */
+function Failed() {
+  return (
+    <Card title="This screen didn't load">
+      <p>Reload the page to try again. If it keeps happening, tell the owner.</p>
+      <button type="button" className="btn btn--primary btn--block" onClick={() => location.reload()}>
+        Reload
+      </button>
+    </Card>
+  );
+}
+
 const router = createBrowserRouter([
   {
     path: "/",
     HydrateFallback: Loading,
+    errorElement: <Failed />,
     element: (
       <SessionProvider>
         <Root />

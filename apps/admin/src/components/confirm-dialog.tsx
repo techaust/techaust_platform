@@ -57,7 +57,7 @@ export function ConfirmDialog(props: {
       onClose={close}
       busy={busy}
       tone={props.tone}
-      titleRef={titleRef}
+      titleRef={result ? titleRef : undefined}
     >
       {result ? (
         <>

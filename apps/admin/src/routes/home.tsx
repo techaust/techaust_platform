@@ -22,7 +22,7 @@ export function Home() {
   }
 
   return (
-    <Card title={user.name}>
+    <Card title={user.name} focusTitle>
       <div className="whoami">
         <p className="whoami__meta">
           <span>{user.email}</span>

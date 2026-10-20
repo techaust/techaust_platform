@@ -5,7 +5,7 @@ import logoDark from "@techaust/ui/brand/logo-primary-dark.svg?url";
 import { type ReactNode, type Ref, useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { digitsOnly } from "../lib/format.ts";
-import { Alert, ArrowLeft, Check, Copy } from "./icons.tsx";
+import { Alert, ArrowLeft, Check, Copy, Info } from "./icons.tsx";
 
 /** The primary lockup, in its on-dark version when the OS is in dark mode (docs/06 §1). */
 export function Logo() {
@@ -27,7 +27,14 @@ export function Card(props: {
   lede?: ReactNode | undefined;
   /** The h1 takes focus when a step changes (pass the ref from useFocusOnChange). */
   titleRef?: Ref<HTMLHeadingElement> | undefined;
+  /** Screens reached by a link: the h1 takes focus on arrival, so keyboard and screen-reader users start at the top. */
+  focusTitle?: boolean | undefined;
 }) {
+  const own = useRef<HTMLHeadingElement>(null);
+  const { focusTitle } = props;
+  useEffect(() => {
+    if (focusTitle) own.current?.focus();
+  }, [focusTitle]);
   return (
     <main className={props.wide ? "card card--wide" : "card"} aria-busy={props.busy || undefined}>
       <div className="card__top">
@@ -39,7 +46,7 @@ export function Card(props: {
           </Link>
         )}
       </div>
-      <h1 ref={props.titleRef} tabIndex={-1}>
+      <h1 ref={props.titleRef ?? own} tabIndex={-1}>
         {props.title}
       </h1>
       {props.lede && <p className="lede">{props.lede}</p>}
@@ -180,7 +187,7 @@ export function Notice({
 }) {
   return (
     <div className={`notice notice--${tone}`} role={tone === "error" ? "alert" : "status"} id={id}>
-      {tone === "success" ? <Check size={20} /> : <Alert size={20} />}
+      {tone === "success" ? <Check size={20} /> : tone === "info" ? <Info size={20} /> : <Alert size={20} />}
       <div>{children}</div>
     </div>
   );

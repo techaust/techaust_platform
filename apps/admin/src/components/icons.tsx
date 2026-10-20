@@ -68,6 +68,14 @@ export const Alert = (p: P) => (
   </Icon>
 );
 
+export const Info = (p: P) => (
+  <Icon {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 11v5.5" />
+    <path d="M12 7.5h.01" />
+  </Icon>
+);
+
 export const Shield = (p: P) => (
   <Icon {...p}>
     <path d="M12 3 4.5 6v5.5c0 4.5 3.2 8.2 7.5 9.5 4.3-1.3 7.5-5 7.5-9.5V6z" />
