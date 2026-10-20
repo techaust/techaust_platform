@@ -3,6 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "sideEffects": false,
   "description": "Pure domain logic: money, tax engine, numbering, FY dates, schedules, permissions, shared schemas (no I/O).",
   "exports": {
     ".": "./src/index.ts"

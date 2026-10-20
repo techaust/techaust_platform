@@ -5,7 +5,12 @@ export const newToken = () => b64url(randomBytes(32));
 export const tokenHash = async (token: string) => hex(await sha256(enc.encode(token)));
 export const isToken = (s: string) => /^[A-Za-z0-9_-]{43}$/.test(s);
 
-export type Challenge = { purpose: "login_totp" | "enrol_totp"; sub: string; exp: number };
+/** `ak` is the lockout key (`acct:<32 hex>`) of a `login_totp` challenge; it is covered by the signature. */
+export type Challenge = { purpose: "login_totp" | "enrol_totp"; sub: string; exp: number; ak?: string };
+
+/** The shape of a lockout key: a hash of the email, never the email itself. */
+export const isAttemptKey = (s: unknown): s is string =>
+  typeof s === "string" && /^acct:[0-9a-f]{32}$/.test(s);
 
 /**
  * A signed, short-lived pre-auth challenge: `base64url(json).base64url(hmac)`. It grants nothing on its

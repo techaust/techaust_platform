@@ -14,6 +14,7 @@ import {
   hex,
   inviteFinishRequest,
   inviteStartRequest,
+  isAttemptKey,
   isLocked,
   loginRequest,
   newSession,
@@ -46,13 +47,11 @@ type UserRow = {
   name: string;
   role: string;
   status: string;
-  pw_salt: string | null;
-  pw_hmac: string | null;
-  pw_params: string | null;
   totp_secret_enc: string | null;
   totp_last_step: number | null;
-  totp_enabled_at: number | null;
 };
+/** The lockout columns of a LEFT JOINed `auth_attempts` row: all null when there is no row. */
+type AttemptCols = { window_start: number | null; failures: number | null; locked_until: number | null };
 
 const INVALID = {
   error: { code: "invalid_credentials", message: "Invalid email, password or code" },
@@ -71,15 +70,10 @@ const now = () => Date.now();
 /** Lockout is keyed by a hash of the email, so unknown emails behave exactly like real ones. */
 const attemptKey = async (email: string) => `acct:${hex(await sha256(enc.encode(email))).slice(0, 32)}`;
 
-async function readAttempts(db: D1Database, key: string): Promise<Attempts | null> {
-  const row = await db
-    .prepare("SELECT window_start, failures, locked_until FROM auth_attempts WHERE key = ?")
-    .bind(key)
-    .first<{ window_start: number; failures: number; locked_until: number | null }>();
-  return row
-    ? { windowStart: row.window_start, failures: row.failures, lockedUntil: row.locked_until }
-    : null;
-}
+const attemptsOf = (row: AttemptCols): Attempts | null =>
+  row.window_start === null || row.failures === null
+    ? null
+    : { windowStart: row.window_start, failures: row.failures, lockedUntil: row.locked_until };
 
 async function fail(db: D1Database, key: string, before: Attempts | null) {
   const a = recordFailure(before, now());
@@ -93,6 +87,7 @@ async function fail(db: D1Database, key: string, before: Attempts | null) {
 
 const userByEmail = (db: D1Database, email: string) =>
   db.prepare("SELECT * FROM staff_users WHERE email = ?").bind(email).first<UserRow>();
+// (Used by the invite routes only; the hot login routes read exactly the columns they need.)
 
 const inviteSalt = async (saltPepper: string, hash: string) => fakeSalt(saltPepper, `invite:${hash}`);
 
@@ -107,10 +102,22 @@ async function liveInvite(db: D1Database, token: string) {
   return invite;
 }
 
-function startSession(db: D1Database, userId: string, ip: string | null, ua: string | null, step: number) {
+/**
+ * Creates the session in one batch. With `attemptKey` (the password + code login) the failure counter is cleared
+ * as the last statement, and only when the replay guard moved `totp_last_step`: `changes() = 1` still refers to
+ * the audit insert, which itself runs only after the guard succeeded, so a replayed code never clears failures.
+ */
+export function startSession(
+  db: D1Database,
+  userId: string,
+  ip: string | null,
+  ua: string | null,
+  step: number,
+  attemptKey?: string,
+) {
   return async () => {
     const s = await newSession(now());
-    const results = await db.batch([
+    const statements = [
       // Atomic replay guard: only one request can move totp_last_step past this step.
       db
         .prepare(
@@ -127,7 +134,13 @@ function startSession(db: D1Database, userId: string, ip: string | null, ua: str
           "INSERT INTO audit_log (id, actor_type, actor_id, action, entity_type, entity_id, ip, user_agent) SELECT ?1, 'staff', ?2, 'auth.login', 'staff_user', ?2, ?3, ?4 WHERE changes() = 1",
         )
         .bind(uuidv7(), userId, ip, ua),
-    ]);
+    ];
+    if (attemptKey) {
+      statements.push(
+        db.prepare("DELETE FROM auth_attempts WHERE key = ?1 AND changes() = 1").bind(attemptKey),
+      );
+    }
+    const results = await db.batch(statements);
     return results[1]?.meta.changes === 1 ? s : null;
   };
 }
@@ -142,7 +155,9 @@ export const auth = new Hono<AppEnv>()
   // 1. Salt for an email (a deterministic fake one when there's no account).
   .post("/salt", json(saltRequest), async (c) => {
     const { email } = c.req.valid("json");
-    const user = await userByEmail(c.env.DB, email);
+    const user = await c.env.DB.prepare("SELECT status, pw_salt, pw_params FROM staff_users WHERE email = ?")
+      .bind(email)
+      .first<{ status: string; pw_salt: string | null; pw_params: string | null }>();
     const real = user?.status === "active" && user.pw_salt;
     return c.json({
       salt: real ? user.pw_salt : await fakeSalt(c.env.SALT_PEPPER, email),
@@ -154,19 +169,35 @@ export const auth = new Hono<AppEnv>()
   .post("/login", json(loginRequest), async (c) => {
     const { email, clientHash } = c.req.valid("json");
     const key = await attemptKey(email);
-    const [user, attempts] = await Promise.all([userByEmail(c.env.DB, email), readAttempts(c.env.DB, key)]);
+    // One read that always returns one row (the subquery); user and lockout columns are null when absent.
+    const row = await c.env.DB.prepare(
+      "SELECT u.id, u.status, u.pw_salt, u.pw_hmac, u.totp_enabled_at, a.window_start, a.failures, a.locked_until FROM (SELECT ?1 AS email, ?2 AS akey) q LEFT JOIN staff_users u ON u.email = q.email LEFT JOIN auth_attempts a ON a.key = q.akey",
+    )
+      .bind(email, key)
+      .first<
+        AttemptCols & {
+          id: string | null;
+          status: string | null;
+          pw_salt: string | null;
+          pw_hmac: string | null;
+          totp_enabled_at: number | null;
+        }
+      >();
+    if (!row) throw new Error("login read returned no row");
+    const attempts = attemptsOf(row);
     if (isLocked(attempts, now())) return c.json(LOCKED, 429);
-    const usable = user?.status === "active" && user.totp_enabled_at !== null;
-    const salt = usable && user.pw_salt ? user.pw_salt : await fakeSalt(c.env.SALT_PEPPER, email);
-    const ok = await verifyPassword(c.env.PASSWORD_PEPPER, salt, clientHash, usable ? user.pw_hmac : null);
-    if (!ok || !user) {
+    const usable = row.id !== null && row.status === "active" && row.totp_enabled_at !== null;
+    const salt = usable && row.pw_salt ? row.pw_salt : await fakeSalt(c.env.SALT_PEPPER, email);
+    const ok = await verifyPassword(c.env.PASSWORD_PEPPER, salt, clientHash, usable ? row.pw_hmac : null);
+    if (!ok || row.id === null) {
       await fail(c.env.DB, key, attempts);
       return c.json(INVALID, 401);
     }
     const challenge = await signChallenge(c.env.SESSION_HMAC_KEY, {
       purpose: "login_totp",
-      sub: user.id,
+      sub: row.id,
       exp: now() + CHALLENGE_TTL_MS,
+      ak: key,
     });
     return c.json({ next: "totp", challenge });
   })
@@ -175,13 +206,18 @@ export const auth = new Hono<AppEnv>()
   .post("/totp", json(totpRequest), async (c) => {
     const { challenge, code } = c.req.valid("json");
     const claim = await verifyChallenge(c.env.SESSION_HMAC_KEY, challenge, "login_totp", now());
-    if (!claim) return c.json(INVALID, 401);
-    const user = await c.env.DB.prepare("SELECT * FROM staff_users WHERE id = ? AND status = 'active'")
-      .bind(claim.sub)
-      .first<UserRow>();
+    // The lockout key comes from the signed challenge (set at login), so no second read is needed.
+    if (!claim || !isAttemptKey(claim.ak)) return c.json(INVALID, 401);
+    const key = claim.ak;
+    const user = await c.env.DB.prepare(
+      "SELECT u.id, u.email, u.name, u.role, u.totp_secret_enc, u.totp_last_step, a.window_start, a.failures, a.locked_until FROM staff_users u LEFT JOIN auth_attempts a ON a.key = ?2 WHERE u.id = ?1 AND u.status = 'active'",
+    )
+      .bind(claim.sub, key)
+      .first<
+        AttemptCols & Pick<UserRow, "id" | "email" | "name" | "role" | "totp_secret_enc" | "totp_last_step">
+      >();
     if (!user?.totp_secret_enc) return c.json(INVALID, 401);
-    const key = await attemptKey(user.email);
-    const attempts = await readAttempts(c.env.DB, key);
+    const attempts = attemptsOf(user);
     if (isLocked(attempts, now())) return c.json(LOCKED, 429);
     const secret = await openTotpSecret(c.env.TOTP_ENC_KEY, user.id, user.totp_secret_enc);
     const result = verifyTotp(secret, code, now(), user.totp_last_step);
@@ -192,13 +228,13 @@ export const auth = new Hono<AppEnv>()
           c.req.header("CF-Connecting-IP") ?? null,
           c.req.header("User-Agent") ?? null,
           result.step,
+          key,
         )()
       : null;
     if (!session) {
       await fail(c.env.DB, key, attempts);
       return c.json(INVALID, 401);
     }
-    await c.env.DB.prepare("DELETE FROM auth_attempts WHERE key = ?").bind(key).run();
     c.header("Set-Cookie", sessionCookie(session.token, Math.floor((session.absExpiresAt - now()) / 1000)));
     return c.json({ ok: true, user: { name: user.name, email: user.email, role: user.role } });
   })
