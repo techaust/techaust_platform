@@ -1,0 +1,4 @@
+# Findings reviewed and accepted (gitleaks fingerprint: commit:file:rule:line). Each is a dummy test value, not a secret.
+# M1.6: an unsigned placeholder JWT ("alg":"none", empty payload) used as a fake Cf-Access header in a test; replaced
+# by a plain string in a later commit, ignored here only because CI scans the branch's full history.
+5e9f9a2aeb0eea6b927fec41f60188cdf04181d1:apps/portal/worker/routes.test.ts:jwt:122

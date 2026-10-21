@@ -119,7 +119,7 @@ describe("route coverage: deny by default [POR-03]", () => {
 describe("no route reads anything from Cloudflare Access (staging sits behind it; the app must not care)", () => {
   const ACCESS = {
     "Cf-Access-Authenticated-User-Email": "someone@example.com",
-    "Cf-Access-Jwt-Assertion": "eyJhbGciOiJub25lIn0.e30.",
+    "Cf-Access-Jwt-Assertion": "not-a-real-assertion",
     "Cf-Access-Client-Id": "x.access",
   };
 
