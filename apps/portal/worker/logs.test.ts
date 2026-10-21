@@ -307,7 +307,7 @@ describe("access rows: every signed-in request and every sign-in event, nothing 
       [
         "csrf-415",
         415,
-        () =>
+        async () =>
           app.request(
             `${ORIGIN}/api/v1/auth/magic`,
             {
