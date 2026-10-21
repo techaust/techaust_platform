@@ -23,18 +23,44 @@ import {
 } from "@techaust/auth";
 import { accessStmt, auditStmt } from "@techaust/db/log";
 import { Hono } from "hono/tiny";
-import { type AppEnv, accessEntry, err, logBatch, NOT_FOUND, rateLimited, requestInfo } from "./context.ts";
+import {
+  type AppEnv,
+  accessEntry,
+  callerAddress,
+  err,
+  logBatch,
+  NOT_FOUND,
+  rateLimited,
+  requestInfo,
+} from "./context.ts";
 import { json } from "./validate.ts";
 
 /** Document types a link may open (proformas and invoices). VERIFY with the lead in M5 (credit notes etc. later). */
 export const VIEW_PAY_TYPES = ["proforma", "tax_invoice", "export_invoice"] as const;
-/** A link never opens a document in these states. */
-export const CLOSED_STATUSES = ["draft", "pending_approval", "void"] as const;
+/**
+ * A link opens a document only in one of these statuses: an ALLOW-LIST, so a status added to the schema later is
+ * closed until someone decides it may be shown (a test compares this with the schema's own list). Today's open
+ * statuses are every status except draft, pending approval and void; the exact members are confirmed in M5.
+ */
+export const OPEN_STATUSES = [
+  "sent",
+  "viewed",
+  "accepted",
+  "rejected",
+  "expired",
+  "revised",
+  "issued",
+  "partially_paid",
+  "paid",
+  "partially_credited",
+  "credited",
+  "converted",
+] as const;
 
 const quoted = (xs: readonly string[]) => xs.map((x) => `'${x}'`).join(", ");
 
 /** ?1 token hash, ?2 now. Tests EXPLAIN it (it is two primary-key lookups). */
-export const DOC_READ = `SELECT d.id, d.type, d.number_display, d.status FROM doc_access_tokens t JOIN documents d ON d.id = t.document_id WHERE t.token_hash = ?1 AND t.revoked_at IS NULL AND t.expires_at > ?2 AND t.purpose = 'view_pay' AND d.voided_at IS NULL AND d.status NOT IN (${quoted(CLOSED_STATUSES)}) AND d.type IN (${quoted(VIEW_PAY_TYPES)})`;
+export const DOC_READ = `SELECT d.id, d.type, d.number_display, d.status FROM doc_access_tokens t JOIN documents d ON d.id = t.document_id WHERE t.token_hash = ?1 AND t.revoked_at IS NULL AND t.expires_at > ?2 AND t.purpose = 'view_pay' AND d.voided_at IS NULL AND d.status IN (${quoted(OPEN_STATUSES)}) AND d.type IN (${quoted(VIEW_PAY_TYPES)})`;
 
 type DocRow = { id: string; type: string; number_display: string | null; status: string };
 
@@ -42,7 +68,7 @@ export const docToken = new Hono<AppEnv>().post("/document", json(docTokenReques
   const { token } = c.req.valid("json");
   const db = c.env.DB;
   const t = Date.now();
-  const failKey = await portalFailKey(c.env.PORTAL_KEY_PEPPER, c.var.ip ?? "unknown");
+  const failKey = await portalFailKey(c.env.PORTAL_KEY_PEPPER, callerAddress(c));
   // A token of the wrong shape is just a failed check: its hash matches nothing, and it counts like any other.
   const [lock, found] = await db.batch([
     db.prepare(IP_READ).bind(failKey),

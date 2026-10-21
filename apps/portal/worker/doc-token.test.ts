@@ -2,8 +2,9 @@
 // document, and the answer is that document's header and nothing else.
 import { env } from "cloudflare:workers";
 import { docTokenStmt, newDocToken, PORTAL_FAIL_LIMIT, portalFailKey, tokenHash } from "@techaust/auth";
+import { schema } from "@techaust/db";
 import { describe, expect, it } from "vitest";
-import { VIEW_PAY_TYPES } from "./doc-token.ts";
+import { DOC_READ, OPEN_STATUSES, VIEW_PAY_TYPES } from "./doc-token.ts";
 import { fixtures } from "./fixtures.ts";
 import { ROUTES } from "./guard.ts";
 import { attemptsRow, bodyOf, call, counting, countOf, rows, writes } from "./test-helpers.ts";
@@ -100,7 +101,6 @@ describe("tokens are random and stored hashed [POR-06]", () => {
         .bind(f.a.docs.issued)
         .run(),
     ).rejects.toThrow(/doc_access_tokens_purpose|CHECK/);
-    const { DOC_READ } = await import("./doc-token.ts");
     expect(DOC_READ).toContain("t.purpose = 'view_pay'");
   });
 });
@@ -125,6 +125,29 @@ describe("everything else is the same 404 [POR-06]", () => {
       expect(res.status, name).toBe(404);
       expect(await bodyOf(res), name).toEqual(NOT_FOUND);
       expect(calls, name).toBe(2);
+    }
+  });
+
+  it("the status rule is an allow-list: every schema status is either open or closed, and each opens or not accordingly", async () => {
+    const f = await fixtures();
+    const CLOSED = ["draft", "pending_approval", "void"];
+    expect([...OPEN_STATUSES, ...CLOSED].sort()).toEqual([...schema.DOCUMENT_STATUSES].sort());
+    expect(DOC_READ).toContain("d.status IN (");
+    expect(DOC_READ).not.toContain("NOT IN");
+    for (const status of schema.DOCUMENT_STATUSES) {
+      const did = crypto.randomUUID();
+      await env.DB.prepare(
+        "INSERT INTO documents (id, type, status, client_id, currency) VALUES (?1, 'proforma', ?2, ?3, 'INR')",
+      )
+        .bind(did, status, f.a.id)
+        .run();
+      const { token, stmt } = await docTokenStmt(env.DB, {
+        documentId: did,
+        purpose: "view_pay",
+        expiresAt: Date.now() + 60_000,
+      });
+      await stmt.run();
+      expect((await use(token)).status, status).toBe(CLOSED.includes(status) ? 404 : 200);
     }
   });
 

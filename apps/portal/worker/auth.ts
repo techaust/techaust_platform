@@ -35,13 +35,14 @@ import {
   readPortalCookie,
   tokenHash,
 } from "@techaust/auth";
+import { uuidv7 } from "@techaust/core/ids";
 import { accessStmt, auditStmt } from "@techaust/db/log";
 import { Hono } from "hono/tiny";
 import {
   type ApiError,
   type AppEnv,
   accessEntry,
-  type Ctx,
+  callerAddress,
   err,
   logBatch,
   rateLimited,
@@ -57,9 +58,6 @@ const LINK_INVALID: ApiError = {
 
 const now = () => Date.now();
 
-/** An address's counter key; a request with no address (never behind Cloudflare) shares one bucket: the strict side. */
-const addressOf = (c: Ctx) => c.var.ip ?? "unknown";
-
 /** Eligible contacts of an email, one row per organisation (`contacts_email`); tests EXPLAIN it. */
 export const CONTACT_READ =
   "SELECT c.id, cl.display_name FROM contacts c JOIN clients cl ON cl.id = c.client_id WHERE c.email = ?1 AND c.portal_access = 1 AND c.anonymised_at IS NULL";
@@ -71,8 +69,10 @@ export const CONTACT_READ =
  */
 export const USE_LINK_SQL =
   "UPDATE magic_link_tokens SET used_at = ?2 WHERE token_hash = ?1 AND used_at IS NULL AND expires_at > ?2 AND NOT EXISTS (SELECT 1 FROM auth_attempts WHERE key = ?3 AND locked_until > ?2)";
+// `ip` and `user_agent` stay NULL (data minimisation, LD15's logic: the session list does not exist for clients and the
+// access row of the sign-in keeps both; VERIFY WITH CA/LEGAL for the retention position).
 export const NEW_SESSION_SQL =
-  "INSERT INTO client_sessions (id, contact_id, client_id, last_seen_at, idle_expires_at, abs_expires_at, ip, user_agent) SELECT ?2, c.id, c.client_id, ?3, ?4, ?5, ?6, ?7 FROM magic_link_tokens t JOIN contacts c ON c.id = t.contact_id WHERE t.token_hash = ?1 AND t.used_at = ?3 AND changes() = 1 AND c.portal_access = 1 AND c.anonymised_at IS NULL";
+  "INSERT INTO client_sessions (id, contact_id, client_id, last_seen_at, idle_expires_at, abs_expires_at) SELECT ?2, c.id, c.client_id, ?3, ?4, ?5 FROM magic_link_tokens t JOIN contacts c ON c.id = t.contact_id WHERE t.token_hash = ?1 AND t.used_at = ?3 AND changes() = 1 AND c.portal_access = 1 AND c.anonymised_at IS NULL";
 
 /** The seconds until the latest of these locks ends (a refused request is told when to come back). */
 function retryAfter(t: number, ...rows: (unknown | undefined)[]) {
@@ -94,7 +94,7 @@ export const authRoutes = new Hono<AppEnv>()
     const db = c.env.DB;
     const t = now();
     const pepper = c.env.PORTAL_KEY_PEPPER;
-    const reqKey = await portalReqKey(pepper, addressOf(c));
+    const reqKey = await portalReqKey(pepper, callerAddress(c));
     const mailKey = await portalMailKey(pepper, email);
     const [mail, address, contacts, reqLock, mailLock] = await db.batch([
       db
@@ -150,7 +150,7 @@ export const authRoutes = new Hono<AppEnv>()
     const { token } = c.req.valid("json");
     const db = c.env.DB;
     const t = now();
-    const failKey = await portalFailKey(c.env.PORTAL_KEY_PEPPER, addressOf(c));
+    const failKey = await portalFailKey(c.env.PORTAL_KEY_PEPPER, callerAddress(c));
     // A token of the wrong shape is just a failed check: its hash matches nothing, and it counts like any other.
     const hash = await tokenHash(token);
     const s = await newPortalSession(t);
@@ -159,7 +159,7 @@ export const authRoutes = new Hono<AppEnv>()
     const results = await db.batch([
       db.prepare(IP_READ).bind(failKey),
       db.prepare(USE_LINK_SQL).bind(hash, t, failKey),
-      db.prepare(NEW_SESSION_SQL).bind(hash, s.id, t, s.idleExpiresAt, s.absExpiresAt, info.ip, info.ua),
+      db.prepare(NEW_SESSION_SQL).bind(hash, s.id, t, s.idleExpiresAt, s.absExpiresAt),
       auditStmt(
         db,
         {
@@ -195,7 +195,9 @@ export const authRoutes = new Hono<AppEnv>()
   })
 
   // Sign out (public: it works with whatever cookie it gets, and always clears it). The sign-out is a sign-in event
-  // (Q1 = A): one batch with the revoke, its audit row (only if a live session was revoked) and the access row.
+  // (Q1 = A) only when it really ends a live session: one batch with the revoke, its audit row (written only if that
+  // revoke changed a row) and the access row (written only if the audit row exists). A second sign-out, or a junk
+  // cookie, writes nothing, so a cookie that matches no live session can't be used to fill the log.
   .post("/logout", async (c) => {
     const token = readPortalCookie(c.req.header("Cookie"));
     c.header("Set-Cookie", clearPortalCookie(), { append: true });
@@ -203,6 +205,7 @@ export const authRoutes = new Hono<AppEnv>()
     const id = await tokenHash(token);
     const db = c.env.DB;
     const info = requestInfo(c);
+    const auditId = uuidv7();
     c.set("accessDone", true);
     await db.batch([
       db
@@ -212,6 +215,7 @@ export const authRoutes = new Hono<AppEnv>()
         db,
         {
           ...info,
+          id: auditId,
           actorType: "contact",
           actorId: null,
           actorFromClientSession: id,
@@ -222,7 +226,7 @@ export const authRoutes = new Hono<AppEnv>()
         },
         "changes",
       ),
-      accessStmt(db, { ...accessEntry(c, 204, null), actorFromClientSession: id }),
+      accessStmt(db, { ...accessEntry(c, 204, null), actorFromClientSession: id }, { auditId }),
     ]);
     return c.body(null, 204);
   })

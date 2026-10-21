@@ -1,5 +1,6 @@
 // Shared types and helpers of the portal API: the Hono environment, error bodies that carry the request ID, and the
 // request facts every log row needs. The same shapes as the admin API (docs/05 §7.1), with a different realm.
+import { addressOf } from "@techaust/auth";
 import { type AccessEntry, accessStmt } from "@techaust/db/log";
 import type { Context } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
@@ -62,6 +63,12 @@ export function rateLimited(c: Ctx, retryAfterS: number) {
   c.header("Retry-After", String(Math.max(1, Math.ceil(retryAfterS))));
   return err(c, RATE_LIMITED, 429);
 }
+
+/**
+ * The address a quota counts for this request: IPv4 as it is, IPv6 as its /64 (see `addressOf`). A request with no
+ * address header (never behind Cloudflare) shares one bucket: the strict side.
+ */
+export const callerAddress = (c: Ctx) => addressOf(c.var.ip ?? "unknown");
 
 /** Who and where, for audit and access rows. */
 export const requestInfo = (c: Ctx) => ({ requestId: c.var.rid, ip: c.var.ip, ua: c.var.ua });

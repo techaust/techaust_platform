@@ -130,3 +130,82 @@ describe("portal log rows [NFR-9, POR-02]", () => {
     expect(rows).toEqual([{ route: "/v1/plain", realm: "admin" }]);
   });
 });
+
+describe("the staff statements keep their exact SQL (the admin's M1.5 behaviour is pinned) [ADM-G-06, NFR-9]", () => {
+  /** A D1 stand-in that records what is prepared and bound, and runs nothing. */
+  const fake = () => {
+    const seen: { sql: string; values: unknown[] }[] = [];
+    const db = {
+      prepare(sql: string) {
+        return {
+          bind(...values: unknown[]) {
+            seen.push({ sql, values });
+            return {};
+          },
+        };
+      },
+    } as unknown as D1Database;
+    return { db, seen };
+  };
+  const audit = (extra: object = {}) => ({
+    requestId: "r",
+    ip: "i",
+    ua: "u",
+    actorId: "a",
+    role: "owner" as const,
+    action: "x.y",
+    entityType: "e",
+    entityId: "1",
+    ...extra,
+  });
+  const AUDIT_COLS =
+    "id, actor_type, actor_id, role, action, entity_type, entity_id, summary, ip, user_agent, request_id";
+  const ACCESS_COLS = "id, realm, actor_id, method, route, status, ip, user_agent, request_id";
+  const access = {
+    requestId: "r",
+    ip: "i",
+    ua: "u",
+    actorId: "a",
+    method: "GET",
+    route: "/v1/x",
+    status: 200,
+  };
+
+  it("an unguarded audit row and an unguarded access row are plain VALUES inserts", () => {
+    const { db, seen } = fake();
+    auditStmt(db, audit());
+    accessStmt(db, access);
+    expect(seen[0]?.sql).toBe(
+      `INSERT INTO audit_log (${AUDIT_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`,
+    );
+    expect(seen[0]?.values).toHaveLength(11);
+    expect(seen[0]?.values[1]).toBe("staff"); // the default actor type
+    expect(seen[1]?.sql).toBe(
+      `INSERT INTO access_log (${ACCESS_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`,
+    );
+    expect(seen[1]?.values).toHaveLength(9);
+    expect(seen[1]?.values[1]).toBe("admin"); // the default realm
+  });
+
+  it("a staff-session guard, an audit-id guard and 'changes' are SELECT ... WHERE inserts with the same numbering", () => {
+    const { db, seen } = fake();
+    auditStmt(db, audit(), "sess-1");
+    auditStmt(db, audit(), { sessionId: "sess-2" });
+    accessStmt(db, access, { auditId: "audit-1" });
+    auditStmt(db, audit(), "changes");
+    expect(seen[0]?.sql).toBe(
+      `INSERT INTO audit_log (${AUDIT_COLS}) SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11 WHERE EXISTS (SELECT 1 FROM staff_sessions WHERE id = ?12)`,
+    );
+    expect(seen[0]?.values.at(-1)).toBe("sess-1");
+    expect(seen[1]?.sql).toBe(seen[0]?.sql);
+    expect(seen[1]?.values.at(-1)).toBe("sess-2");
+    expect(seen[2]?.sql).toBe(
+      `INSERT INTO access_log (${ACCESS_COLS}) SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9 WHERE EXISTS (SELECT 1 FROM audit_log WHERE id = ?10)`,
+    );
+    expect(seen[2]?.values.at(-1)).toBe("audit-1");
+    expect(seen[3]?.sql).toBe(
+      `INSERT INTO audit_log (${AUDIT_COLS}) SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11 WHERE changes() > 0`,
+    );
+    expect(seen[3]?.values).toHaveLength(11);
+  });
+});

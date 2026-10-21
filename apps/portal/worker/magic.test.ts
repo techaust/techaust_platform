@@ -5,6 +5,7 @@ import {
   MAGIC_IP_LIMIT,
   MAGIC_MAIL_LIMIT,
   MAGIC_TTL_MS,
+  PORTAL_FAIL_LIMIT,
   portalMailKey,
   portalReqKey,
   tokenHash,
@@ -15,6 +16,7 @@ import { ROUTES } from "./guard.ts";
 import {
   attemptsRow,
   bodyOf,
+  call,
   callerFor,
   capture,
   counted,
@@ -258,6 +260,28 @@ describe("quotas: 3 per email in 15 minutes, 10 per address in an hour [POR-01]"
     expect((await ask(cap, email, ip)).res.status).toBe(200);
     expect((await attemptsRow(await portalMailKey(pepper(), email)))?.failures).toBe(1);
     expect((await attemptsRow(await portalReqKey(pepper(), ip)))?.locked_until).toBeGreaterThan(Date.now());
+  });
+
+  it("IPv6: addresses of one /64 share the address quota, another /64 does not", async () => {
+    const cap = capture();
+    for (let i = 1; i <= MAGIC_IP_LIMIT; i++) {
+      // ten different addresses inside 2001:db8:77:1::/64
+      const { res } = await ask(cap, `v6-quota-${i}@example.test`, `2001:db8:77:1:${i}:${i}:${i}:${i}`);
+      expect(res.status, `request ${i}`).toBe(200);
+    }
+    expect((await ask(cap, "v6-quota-11@example.test", "2001:db8:77:1::beef")).res.status).toBe(429);
+    expect((await ask(cap, "v6-quota-11@example.test", "2001:0db8:0077:0001:0:0:0:1")).res.status).toBe(429); // spelt out
+    expect((await ask(cap, "v6-quota-11@example.test", "2001:db8:77:2::1")).res.status).toBe(200); // next /64
+    const key = await portalReqKey(pepper(), "2001:db8:77:1::/64");
+    expect((await attemptsRow(key))?.locked_until).toBeGreaterThan(Date.now());
+  });
+
+  it("IPv6: the failed-check counter (links and document links) is per /64 too", async () => {
+    for (let i = 0; i < PORTAL_FAIL_LIMIT; i++)
+      await call("/auth/magic/verify", { body: { token: `v6-fail-${i}` }, ip: `2001:db8:88:1::${i + 1}` });
+    const blocked = await call("/t/document", { body: { token: "any" }, ip: "2001:db8:88:1:abcd::1" });
+    expect(blocked.status).toBe(429);
+    expect((await call("/t/document", { body: { token: "any" }, ip: "2001:db8:88:2::1" })).status).toBe(404);
   });
 
   it("counters are HMAC keys: no raw address or email in auth_attempts", async () => {

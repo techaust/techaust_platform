@@ -3,17 +3,20 @@
 // names a staff table. The SQL spy and the cross-tenant harness are written to be reused by M4.5 and M7.1.
 import { describe, expect, it } from "vitest";
 import { NOT_FOUND, type RouteDef } from "./context.ts";
-import { fixtures } from "./fixtures.ts";
-import { SESSION_READ } from "./guard.ts";
+import { type Fixtures, fixtures } from "./fixtures.ts";
+import { ROUTES, SESSION_READ } from "./guard.ts";
 import { createApp, type TestRoute } from "./index.ts";
 import { forClient, issueScope, notFound, requireFinance, scope } from "./scope.ts";
 import {
   bodyOf,
+  type CallInit,
   callerFor,
   counted,
   crossTenant,
   extraContact,
+  type Seen,
   sessionFor,
+  type TenantCase,
   tablesWithClientId,
   unscoped,
 } from "./test-helpers.ts";
@@ -68,6 +71,72 @@ const testRoutes: TestRoute[] = [
 const testApp = createApp({ testRoutes });
 const send = callerFor(testApp);
 
+// ---- every guarded route is classified (a route added later FAILS here until it is) --------------------------------
+
+type Key = `${RouteDef["method"]} ${string}`;
+const keyOf = (r: RouteDef): Key => `${r.method} ${r.path}`;
+/** Every route of the app under test: the product's table and this file's test-only routes. */
+const ALL_ROUTES: readonly RouteDef[] = [...ROUTES, ...testRoutes.map((t) => t.def)];
+const GUARDED = ALL_ROUTES.filter((r) => r.access !== "public");
+
+/**
+ * Routes that return or change rows of an organisation by an id the caller names: each runs through `crossTenant`
+ * (my own thing is served; another organisation's, a missing and a hidden one are one 404; finance is a 404 without
+ * finance access). M4.5 and M7.1 add their routes here.
+ */
+const TENANT_CASES: Record<string, TenantCase> = {
+  "GET /api/v1/test/documents/:id": {
+    name: "GET /test/documents/:id",
+    request: (id) => ({ path: `/test/documents/${id}` }),
+    hidden: (f) => [f.a.docs.draft, f.a.docs.pending, f.a.docs.void],
+  },
+  "GET /api/v1/test/finance/documents/:id": {
+    name: "GET /test/finance/documents/:id",
+    request: (id) => ({ path: `/test/finance/documents/${id}` }),
+    finance: true,
+  },
+};
+
+/** Guarded routes that touch no row of an organisation by a caller-named id, with the reason and a sample request. */
+const NO_CLIENT_ROWS: Record<
+  string,
+  { why: string; request: (f: Fixtures) => { path: string; init?: CallInit } }
+> = {
+  "GET /api/v1/me": { why: "answers from the guard's own read", request: () => ({ path: "/me" }) },
+  "POST /api/v1/auth/sessions/revoke-all": {
+    why: "revokes the session's own contact's sessions; no id from the caller",
+    request: () => ({ path: "/auth/sessions/revoke-all", init: { method: "POST" } }),
+  },
+  "GET /api/v1/test/echo": { why: "echoes the scope", request: () => ({ path: "/test/echo" }) },
+  "POST /api/v1/test/echo-body": {
+    why: "echoes the scope",
+    request: (f) => ({ path: "/test/echo-body", init: { body: { client_id: f.b.id } } }),
+  },
+};
+
+describe("every guarded route is classified for the cross-tenant and SQL-spy tests [POR-03]", () => {
+  it("each guarded route is in exactly one of TENANT_CASES and NO_CLIENT_ROWS, and neither lists a route that is gone", () => {
+    const keys = GUARDED.map(keyOf);
+    for (const k of keys) {
+      const where = [k in TENANT_CASES, k in NO_CLIENT_ROWS].filter(Boolean).length;
+      expect(
+        where,
+        `${k} must be in TENANT_CASES (crossTenant) or NO_CLIENT_ROWS (with a reason), not both, not neither`,
+      ).toBe(1);
+    }
+    for (const k of [...Object.keys(TENANT_CASES), ...Object.keys(NO_CLIENT_ROWS)])
+      expect(keys, `${k} is classified but is not a guarded route`).toContain(k);
+  });
+
+  it("the product table's guarded routes are exactly the two classified as NO_CLIENT_ROWS", () => {
+    expect(
+      ROUTES.filter((r) => r.access !== "public")
+        .map(keyOf)
+        .sort(),
+    ).toEqual(["GET /api/v1/me", "POST /api/v1/auth/sessions/revoke-all"].sort());
+  });
+});
+
 describe("every statement of a signed-in request is bound to the session's organisation [POR-03]", () => {
   it("the spy sees the schema's client_id tables (documents, contacts, client_sessions, ... and not access_log)", async () => {
     const tables = await tablesWithClientId();
@@ -76,74 +145,73 @@ describe("every statement of a signed-in request is bound to the session's organ
     expect(tables).not.toContain("audit_log");
   });
 
-  it("the spy catches an unscoped statement (a made-up one) and lets the guard's read through", async () => {
+  it("self-test: the spy flags a statement that BINDS the organisation's id but doesn't filter on it, and one that filters on another value", async () => {
     const tables = await tablesWithClientId();
-    const bad = { sql: "SELECT * FROM documents WHERE id = ?1", params: ["x"] };
-    const ok = { sql: "SELECT * FROM documents WHERE client_id = ?1 AND id = ?2", params: ["A", "x"] };
-    const guardRead = { sql: SESSION_READ, params: ["hash"] };
-    expect(unscoped([bad, ok, guardRead], "A", tables, [SESSION_READ])).toEqual([bad]);
+    const row = (sql: string, params: unknown[]) => ({ sql, params });
+    const guardRead = row(SESSION_READ, ["hash"]);
+    const good = [
+      row("SELECT * FROM documents WHERE client_id = ?1 AND id = ?2", ["A", "x"]),
+      row("SELECT * FROM documents WHERE id = ?1 AND client_id = ?2", ["x", "A"]),
+      row("SELECT * FROM documents d WHERE d.client_id = ?3", ["x", "y", "A"]),
+      row("INSERT INTO access_log (id) VALUES (?1)", ["A"]), // no client table: out of scope
+    ];
+    const bad = [
+      row("SELECT * FROM documents WHERE id = ?1", ["x"]), // no filter at all
+      row("SELECT * FROM documents WHERE id = ?1", ["A"]), // binds A's id, but as the document id
+      row("SELECT * FROM documents WHERE client_id = ?1", ["B"]), // filters on another organisation
+      row("SELECT * FROM documents WHERE client_id = ?2 AND id = ?1", ["A", "x"]), // ?2 is not A's id
+      row("SELECT * FROM documents WHERE client_id != ?1", ["A"]),
+      row("SELECT * FROM documents WHERE other_client_id = ?1", ["A"]),
+      row("UPDATE client_sessions SET revoked_at = ?2 WHERE contact_id = ?1", ["A", 1]),
+    ];
+    expect(unscoped([...good, ...bad, guardRead], "A", tables, [SESSION_READ])).toEqual(bad);
   });
 
-  it("every session route, as organisation A: no statement touches a client table without A's id (except the guard read)", async () => {
-    const f = await fixtures();
-    const tables = await tablesWithClientId();
-    const due = Date.now() - 20 * 60_000; // a session whose 15-minute touch is due: the touch statement is in play
-    const requests: {
-      name: string;
-      cookie: string;
-      path: string;
-      init?: { method?: string; body?: unknown };
-    }[] = [];
-    const add = async (name: string, who = f.a.finance, o: { lastSeen?: number } = {}) => {
-      const s = await sessionFor(who, o);
-      return { name, cookie: s.cookie };
-    };
-    requests.push({ ...(await add("GET /me")), path: "/me" });
-    requests.push({
-      ...(await add("GET /me with a touch due", f.a.finance, { lastSeen: due })),
-      path: "/me",
-    });
-    requests.push({ ...(await add("GET test document")), path: `/test/documents/${f.a.docs.issued}` });
-    requests.push({ ...(await add("GET test document of B")), path: `/test/documents/${f.b.docs.issued}` });
-    requests.push({
-      ...(await add("GET test finance document")),
-      path: `/test/finance/documents/${f.a.docs.issued}`,
-    });
-    requests.push({ ...(await add("GET test echo")), path: "/test/echo" });
-    requests.push({
-      ...(await add("POST test echo-body")),
-      path: "/test/echo-body",
-      init: { body: { client_id: f.b.id } },
-    });
-    requests.push({
-      ...(await add("POST revoke-all", await extraContact(f.a.id))),
-      path: "/auth/sessions/revoke-all",
-      init: { method: "POST" },
-    });
-    let checked = 0;
-    for (const r of requests) {
-      const c = counted();
-      const res = await send(r.path, { ...r.init, cookie: r.cookie }, c.env);
-      expect([200, 404], r.name).toContain(res.status);
-      expect(unscoped(c.seen, f.a.id, tables, [SESSION_READ]), r.name).toEqual([]);
-      // the guard's read happened exactly once, and it is the only allow-listed statement
-      expect(
-        c.seen.filter((s) => s.sql === SESSION_READ),
-        r.name,
-      ).toHaveLength(1);
-      checked += c.seen.length;
-    }
-    expect(checked).toBeGreaterThan(requests.length * 2); // not a vacuous pass
-  });
-
-  it("the touch statement binds the client too", async () => {
+  it("the touch statement filters on the client too", async () => {
     const f = await fixtures();
     const s = await sessionFor(f.a.plain, { lastSeen: Date.now() - 30 * 60_000 });
     const c = counted();
     await send("/me", { cookie: s.cookie }, c.env);
     const touch = c.seen.find((x) => x.sql.startsWith("UPDATE client_sessions SET last_seen_at"));
-    expect(touch?.params).toContain(f.a.id);
+    expect(touch).toBeDefined();
+    expect(unscoped([touch as Seen], f.a.id, await tablesWithClientId(), [])).toEqual([]);
   });
+
+  for (const route of GUARDED) {
+    const key = keyOf(route);
+    it(`${key}: as organisation A, every statement that touches a client table filters on A's id (but the guard read)`, async () => {
+      const f = await fixtures();
+      const tables = await tablesWithClientId();
+      const tenant = TENANT_CASES[key];
+      const plain = NO_CLIENT_ROWS[key];
+      const asked = tenant ? tenant.request(f.a.docs.issued) : plain?.request(f);
+      expect(
+        asked,
+        `${key} has no sample request: classify it in TENANT_CASES or NO_CLIENT_ROWS`,
+      ).toBeDefined();
+      const { path, init } = asked as { path: string; init?: CallInit };
+      // a session whose 15-minute touch is due too, so the touch statement is in play on every route
+      const who = key.includes("revoke-all") ? await extraContact(f.a.id) : f.a.finance;
+      const s = await sessionFor(who, { lastSeen: Date.now() - 20 * 60_000 });
+      const c = counted();
+      const res = await send(path, { ...init, cookie: s.cookie }, c.env);
+      expect([200, 404], key).toContain(res.status);
+      expect(unscoped(c.seen, f.a.id, tables, [SESSION_READ]), key).toEqual([]);
+      expect(
+        c.seen.filter((x) => x.sql === SESSION_READ),
+        key,
+      ).toHaveLength(1);
+      expect(c.seen.length, `${key} ran no statements: the spy would pass vacuously`).toBeGreaterThan(1);
+      // the same request for the other organisation's document, where the route takes one: still every statement scoped to A
+      if (tenant) {
+        const other = counted();
+        const o = tenant.request(f.b.docs.issued);
+        const r2 = await send(o.path, { ...o.init, cookie: s.cookie }, other.env);
+        expect(r2.status).toBe(404);
+        expect(unscoped(other.seen, f.a.id, tables, [SESSION_READ]), `${key} (B's id)`).toEqual([]);
+      }
+    });
+  }
 });
 
 describe("the scope comes from the session only [POR-03]", () => {
@@ -263,29 +331,10 @@ describe("forClient [POR-03]", () => {
 });
 
 describe("cross-tenant: another organisation's, a missing and a hidden thing are one 404 [POR-03]", () => {
+  // Every TENANT_CASES route, through the shared harness (the coverage test above makes the list complete).
   crossTenant(
     testApp,
-    [
-      {
-        name: "GET a document",
-        request: (id) => ({ path: `/test/documents/${id}` }),
-        hidden: (f) => [f.a.docs.draft, f.a.docs.pending, f.a.docs.void],
-      },
-    ],
-    fixtures,
-    (f) => f.a.docs.issued,
-    (f) => f.b.docs.issued,
-  );
-
-  crossTenant(
-    testApp,
-    [
-      {
-        name: "GET a finance document",
-        request: (id) => ({ path: `/test/finance/documents/${id}` }),
-        finance: true,
-      },
-    ],
+    Object.values(TENANT_CASES),
     fixtures,
     (f) => f.a.docs.issued,
     (f) => f.b.docs.issued,

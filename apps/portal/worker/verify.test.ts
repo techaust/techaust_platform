@@ -3,6 +3,7 @@
 import { env } from "cloudflare:workers";
 import { PORTAL_ABS_MS, PORTAL_FAIL_LIMIT, PORTAL_IDLE_MS, portalFailKey, tokenHash } from "@techaust/auth";
 import { describe, expect, it } from "vitest";
+import { NEW_SESSION_SQL, USE_LINK_SQL } from "./auth.ts";
 import { fixtures } from "./fixtures.ts";
 import app from "./index.ts";
 import {
@@ -47,7 +48,10 @@ describe("a link makes a session [POR-01, POR-02]", () => {
     const f = await fixtures();
     const token = await linkFor(f.a.plain.id);
     const t0 = Date.now();
-    const { res, cookie } = await verify(token);
+    const { res, cookie } = await verify(token, {
+      ip: "192.0.2.19",
+      headers: { "User-Agent": "session-agent" },
+    });
     expect(res.status).toBe(200);
     const raw = (cookie as string).split("=")[1] as string;
     const s = await one<Record<string, number | string | null>>(
@@ -55,6 +59,8 @@ describe("a link makes a session [POR-01, POR-02]", () => {
       await tokenHash(raw),
     );
     expect(s).toMatchObject({ contact_id: f.a.plain.id, client_id: f.a.id, revoked_at: null });
+    // data minimisation (LD15): the session keeps neither address nor agent; the sign-in's access row has both
+    expect(s).toMatchObject({ ip: null, user_agent: null });
     expect((s?.idle_expires_at as number) - (s?.last_seen_at as number)).toBe(PORTAL_IDLE_MS);
     expect((s?.abs_expires_at as number) - (s?.last_seen_at as number)).toBe(PORTAL_ABS_MS);
     expect(PORTAL_IDLE_MS).toBe(30 * 86_400_000);
@@ -230,6 +236,35 @@ describe("parallel uses of one link make exactly one session [POR-01]", () => {
     expect(await countOf("audit_log", "action = 'portal.login' AND actor_id = ?", who.id)).toBe(1);
     const loser = x.status === 401 ? x : y;
     expect(await bodyOf(loser)).toEqual(LINK_INVALID);
+  });
+
+  it("changes() = 1 is what stops a second use in the SAME millisecond: the same two batches, same `now`, two session ids", async () => {
+    // Two requests that read the clock in the same millisecond bind the same `now`. `used_at = now` alone then also
+    // matches the row the FIRST batch just marked, so only `changes() = 1` (the UPDATE of THIS batch changed a row)
+    // keeps the second batch from making a second session. This test fails if that condition is removed.
+    const f = await fixtures();
+    const who = await extraContact(f.a.id);
+    const token = await linkFor(who.id);
+    const hash = await tokenHash(token);
+    const now = Date.now();
+    const failKey = "p:fail:same-ms-test";
+    const batch = (sessionId: string) =>
+      env.DB.batch([
+        env.DB.prepare(USE_LINK_SQL).bind(hash, now, failKey),
+        env.DB.prepare(NEW_SESSION_SQL).bind(hash, sessionId, now, now + 1000, now + 2000),
+      ]);
+    const [used1, made1] = await batch("same-ms-session-1");
+    expect([used1?.meta.changes, made1?.meta.changes]).toEqual([1, 1]);
+    const [used2, made2] = await batch("same-ms-session-2");
+    expect(used2?.meta.changes).toBe(0); // the link is spent
+    expect(made2?.meta.changes).toBe(0); // and so no second session, though used_at = now still matches the row
+    expect(await countOf("client_sessions", "contact_id = ?", who.id)).toBe(1);
+    const spent = await one<{ used_at: number }>(
+      "SELECT used_at FROM magic_link_tokens WHERE token_hash = ?",
+      hash,
+    );
+    expect(spent?.used_at).toBe(now); // the premise: the second batch's `used_at = ?now` would have matched
+    expect(NEW_SESSION_SQL).toContain("changes() = 1");
   });
 
   it("five parallel verifies of one link: still exactly one session", async () => {

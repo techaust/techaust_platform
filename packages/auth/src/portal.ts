@@ -49,6 +49,50 @@ export const portalSessionCookie = (token: string, maxAgeS = PORTAL_ABS_MS / 100
 export const clearPortalCookie = () => `${PORTAL_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
 export const readPortalCookie = (header: string | null | undefined) => readCookie(header, PORTAL_COOKIE);
 
+const HEXTET = /^[0-9a-f]{1,4}$/;
+
+/**
+ * The address a quota counts: an IPv4 address as it is, an IPv6 address as its /64 prefix (`2001:db8:0:1::/64`),
+ * because one household or phone holds a whole /64 and can change addresses inside it at will; counting single IPv6
+ * addresses would make every quota free to dodge. Accepts compressed and expanded forms, brackets, a zone id and an
+ * IPv4-mapped form (`::ffff:1.2.3.4` counts as that IPv4 address). Anything it cannot parse is returned as given
+ * (lower-cased): still one stable bucket, never a crash.
+ */
+export function addressOf(ip: string): string {
+  const s = (
+    ip
+      .trim()
+      .toLowerCase()
+      .replace(/^\[|\]$/g, "")
+      .split("%")[0] ?? ""
+  ).trim();
+  if (!s.includes(":")) return s;
+  const mapped = /^(?:(?:0{1,4}:){5}|::)ffff:(\d{1,3}(?:\.\d{1,3}){3})$/.exec(s);
+  if (mapped) return mapped[1] as string;
+  // An embedded IPv4 tail (`::1.2.3.4`) is two more hextets.
+  const v4tail = /^(.*:)(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(s);
+  let text = s;
+  if (v4tail) {
+    const b = [v4tail[2], v4tail[3], v4tail[4], v4tail[5]].map(Number);
+    if (b.some((n) => n > 255)) return s;
+    const hex2 = (hi: number, lo: number) => ((hi << 8) | lo).toString(16);
+    text = `${v4tail[1]}${hex2(b[0] as number, b[1] as number)}:${hex2(b[2] as number, b[3] as number)}`;
+  }
+  const halves = text.split("::");
+  if (halves.length > 2) return s;
+  const part = (x: string | undefined) => (x ? x.split(":") : []);
+  const head = part(halves[0]);
+  const tail = halves.length === 2 ? part(halves[1]) : [];
+  const fill = halves.length === 2 ? 8 - head.length - tail.length : 0;
+  if (halves.length === 1 ? head.length !== 8 : fill < 1) return s;
+  const all = [...head, ...Array<string>(fill).fill("0"), ...tail];
+  if (all.length !== 8 || !all.every((h) => HEXTET.test(h))) return s;
+  return `${all
+    .slice(0, 4)
+    .map((h) => Number.parseInt(h, 16).toString(16))
+    .join(":")}::/64`;
+}
+
 // Counter keys: HMACs under the one portal secret (`PORTAL_KEY_PEPPER`), so the counter table holds neither a raw
 // address nor an email. A different prefix per counter keeps the three apart.
 const counterKey = async (prefix: string, pepper: string, tag: string, value: string) =>

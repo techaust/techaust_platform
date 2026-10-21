@@ -43,7 +43,8 @@ describe("ADM-AUTH-03: at least 12 characters", () => {
   });
 });
 
-describe("ADM-AUTH-03: strength score of 3 or more", () => {
+// The zxcvbn dictionaries load on first use (about 3 s alone, longer when every package tests at once): a 30 s limit.
+describe("ADM-AUTH-03: strength score of 3 or more", { timeout: 30_000 }, () => {
   it("refuses a score of 2 with a helpful message, and accepts 3", async () => {
     const weak = await evaluatePassword("abcdefghijkl", [], {
       strength: scored(2, "This is similar to a commonly used password."),

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { fromB64url } from "../src/crypto.ts";
 import {
+  addressOf,
   clearPortalCookie,
   DOC_TOKEN_PURPOSES,
   docTokenStmt,
@@ -123,6 +124,63 @@ describe("counter keys [POR-01]", () => {
     expect(await portalMailKey(KEY, "a@example.com")).not.toBe(await portalMailKey(KEY2, "a@example.com"));
     // an email that looks like an address string can't collide with the address counter's input
     expect(await portalMailKey(KEY, "203.0.113.5")).not.toBe(await portalReqKey(KEY, "203.0.113.5"));
+  });
+});
+
+describe("addressOf: what a quota counts [POR-01]", () => {
+  it("an IPv4 address is counted as it is", () => {
+    expect(addressOf("203.0.113.5")).toBe("203.0.113.5");
+    expect(addressOf(" 203.0.113.5 ")).toBe("203.0.113.5");
+    expect(addressOf("unknown")).toBe("unknown");
+  });
+
+  it("an IPv6 address is counted as its /64, whatever the spelling", () => {
+    const prefix = "2001:db8:0:1::/64";
+    for (const ip of [
+      "2001:db8:0:1:aaaa:bbbb:cccc:dddd",
+      "2001:0db8:0000:0001:0000:0000:0000:0001", // expanded, leading zeros
+      "2001:DB8:0:1::1", // compressed, upper case
+      "2001:db8:0:1::",
+      "[2001:db8:0:1::5]", // brackets
+      "2001:db8:0:1::5%eth0", // zone id
+      "2001:db8:0:1:ffff:ffff:ffff:ffff",
+    ])
+      expect(addressOf(ip), ip).toBe(prefix);
+  });
+
+  it("two addresses in one /64 share a bucket; the next /64 and another prefix do not", () => {
+    expect(addressOf("2001:db8:0:1::1")).toBe(addressOf("2001:db8:0:1:1234:5678:9abc:def0"));
+    expect(addressOf("2001:db8:0:1::1")).not.toBe(addressOf("2001:db8:0:2::1"));
+    expect(addressOf("2001:db8:0:1::1")).not.toBe(addressOf("2001:db9:0:1::1"));
+  });
+
+  it("compression inside the prefix still lands on the same /64", () => {
+    expect(addressOf("2001:db8::1:0:0:1")).toBe("2001:db8:0:0::/64"); // :: stands for the zeros of hextets 3 and 4
+    expect(addressOf("2001:db8::")).toBe("2001:db8:0:0::/64");
+    expect(addressOf("::1")).toBe("0:0:0:0::/64");
+    expect(addressOf("::")).toBe("0:0:0:0::/64");
+    expect(addressOf("fe80::1")).toBe("fe80:0:0:0::/64");
+  });
+
+  it("an IPv4-mapped address is that IPv4 address; an embedded IPv4 tail parses", () => {
+    expect(addressOf("::ffff:203.0.113.5")).toBe("203.0.113.5");
+    expect(addressOf("0:0:0:0:0:ffff:203.0.113.5")).toBe("203.0.113.5");
+    expect(addressOf("64:ff9b::192.0.2.1")).toBe("64:ff9b:0:0::/64");
+  });
+
+  it("something it can't parse is returned as given, lower-cased: one stable bucket, no crash", () => {
+    for (const bad of ["1:2:3:4:5:6:7:8:9", "1::2::3", "12345::1", "g::1", "1:2:3", "::ffff:999.1.1.1x"])
+      expect(addressOf(bad), bad).toBe(bad.toLowerCase());
+    expect(addressOf("1.2.3.4.5")).toBe("1.2.3.4.5");
+  });
+
+  it("the counter keys differ per /64 and agree inside one", async () => {
+    const a = await portalReqKey(KEY, addressOf("2001:db8:0:1::1"));
+    expect(a).toBe(await portalReqKey(KEY, addressOf("2001:db8:0:1:9::9")));
+    expect(a).not.toBe(await portalReqKey(KEY, addressOf("2001:db8:0:2::1")));
+    expect(await portalFailKey(KEY, addressOf("2001:db8:0:1::1"))).toBe(
+      await portalFailKey(KEY, addressOf("2001:db8:0:1::2")),
+    );
   });
 });
 

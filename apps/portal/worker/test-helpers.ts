@@ -344,14 +344,18 @@ export async function tablesWithClientId() {
 }
 
 /**
- * The statements that touch a table with a `client_id` column WITHOUT binding the organisation's id. `allow`: the exact
- * SQL texts that may (only the guard's session read, which is what discovers the organisation).
+ * The statements that touch a table with a `client_id` column WITHOUT filtering on the organisation: the SQL must say
+ * `client_id = ?N` AND parameter N must be the organisation's id (binding the id somewhere else in the statement
+ * does not count). `allow`: the exact SQL texts that may skip this (only the guard's session read, which is what
+ * discovers the organisation).
  */
 export function unscoped(seen: Seen[], clientId: string, tables: string[], allow: string[]) {
   return seen.filter((s) => {
     if (allow.includes(s.sql)) return false;
     const touches = tables.some((t) => new RegExp(`\\b${t}\\b`, "i").test(s.sql));
-    return touches && !s.params.includes(clientId);
+    if (!touches) return false;
+    const filters = [...s.sql.matchAll(/\bclient_id\s*=\s*\?(\d+)/g)];
+    return !filters.some((m) => s.params[Number(m[1]) - 1] === clientId);
   });
 }
 

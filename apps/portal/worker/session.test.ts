@@ -206,14 +206,14 @@ describe("sign out [POR-02]", () => {
     ]);
     await call("/auth/logout", { method: "POST", cookie: s.cookie, headers: { "cf-ray": "ray-out-2" } });
     expect(await countOf("audit_log", "request_id = 'ray-out-2'")).toBe(0);
-    // each sign-out is a sign-in event: its access row (status 204, the contact) is written both times
+    // the sign-out that ended a live session is a sign-in event: one access row (204, the contact). The second
+    // one ended nothing, so it writes no access row either.
     expect(
       await rows(
-        "SELECT actor_id, route, status FROM access_log WHERE request_id IN ('ray-out-1', 'ray-out-2') ORDER BY at",
+        "SELECT request_id, actor_id, route, status FROM access_log WHERE request_id IN ('ray-out-1', 'ray-out-2') ORDER BY at",
       ),
     ).toEqual([
-      { actor_id: f.a.finance.id, route: "/api/v1/auth/logout", status: 204 },
-      { actor_id: f.a.finance.id, route: "/api/v1/auth/logout", status: 204 },
+      { request_id: "ray-out-1", actor_id: f.a.finance.id, route: "/api/v1/auth/logout", status: 204 },
     ]);
   });
 
@@ -226,11 +226,17 @@ describe("sign out [POR-02]", () => {
     expect(await writes()).toEqual(before);
   });
 
-  it("with a cookie that matches no session: 204, nothing revoked and no audit row", async () => {
-    const before = await countOf("audit_log");
-    const res = await call("/auth/logout", { method: "POST", cookie: `__Host-ta_portal=${"B".repeat(43)}` });
-    expect(res.status).toBe(204);
-    expect(await countOf("audit_log")).toBe(before);
+  it("with a cookie that matches no live session (junk, unknown, already revoked): 204, ONE D1 call, nothing written at all", async () => {
+    const f = await fixtures();
+    const dead = await sessionFor(f.a.plain, { revoked: Date.now() - 1000 });
+    for (const cookie of [`__Host-ta_portal=${"B".repeat(43)}`, "__Host-ta_portal=junk", dead.cookie]) {
+      const before = await writes();
+      const { res, calls } = await counting("/auth/logout", { method: "POST", cookie });
+      expect(res.status, cookie).toBe(204);
+      expect(setCookieLine(res)).toMatch(/Max-Age=0/);
+      expect(calls).toBe(1);
+      expect(await writes()).toEqual(before); // no audit row, no access row
+    }
   });
 
   it("signing out one device leaves the contact's other session alone", async () => {

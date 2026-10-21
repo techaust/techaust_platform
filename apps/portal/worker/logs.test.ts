@@ -285,6 +285,24 @@ describe("access rows: every signed-in request and every sign-in event, nothing 
     for (let i = 0; i < 20; i++) await call("/auth/magic/verify", { body: { token: "bad" }, ip: blockedIp });
     const none: [string, number, () => Promise<Response>][] = [
       ["no-cookie", 401, () => call("/me", { headers: h("no-cookie") })],
+      [
+        "logout-junk",
+        204,
+        () =>
+          call("/auth/logout", {
+            method: "POST",
+            cookie: "__Host-ta_portal=junk",
+            headers: h("logout-junk"),
+          }),
+      ],
+      [
+        "logout-again",
+        204,
+        async () => {
+          const s = await sessionFor(f.a.plain, { revoked: Date.now() - 5 });
+          return call("/auth/logout", { method: "POST", cookie: s.cookie, headers: h("logout-again") });
+        },
+      ],
       ["bad-cookie", 401, () => call("/me", { cookie: "__Host-ta_portal=bad", headers: h("bad-cookie") })],
       [
         "dead-session",
