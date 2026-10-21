@@ -2,7 +2,13 @@
 import { env } from "cloudflare:workers";
 import { INVITE_TTL_MS, tokenHash } from "@techaust/auth";
 import { describe, expect, it } from "vitest";
-import { reinviteStatements, resetStatements } from "../../../scripts/reset-2fa-sql.mjs";
+import {
+  breakGlassStatements,
+  checkBreakGlass,
+  normaliseEmail,
+  reinviteStatements,
+  resetStatements,
+} from "../../../scripts/reset-2fa-sql.mjs";
 import {
   accept,
   bodyOf,
@@ -724,5 +730,213 @@ describe("break-glass: pnpm admin:reset-2fa [ADM-AUTH-07, docs/08 §3.2]", () =>
     expect((await one<{ status: string }>("SELECT status FROM staff_users WHERE id = ?", o.id))?.status).toBe(
       "active",
     );
+  });
+});
+
+describe("break-glass for the only owner: a second owner is invited [ADM-AUTH-07, docs/08 §3.2]", () => {
+  const sealed = (token: string) => "s".repeat(43 - token.length) + token; // a 43-character token for the tests
+  const onlyOwner = async () => {
+    const o = await sessionFor("owner");
+    await env.DB.prepare("UPDATE staff_users SET status = 'deactivated' WHERE role = 'owner' AND id <> ?")
+      .bind(o.id)
+      .run();
+    return o;
+  };
+  const params = async (
+    lostOwnerId: string,
+    newAddress: string,
+    token = `${crypto.randomUUID().replaceAll("-", "")}${"x".repeat(11)}`,
+  ) => {
+    const now = Date.now();
+    return {
+      newEmail: newAddress,
+      lostOwnerId,
+      tokenHash: await tokenHash(token),
+      now,
+      expiresAt: now + 5 * 3_600_000,
+      auditId: crypto.randomUUID(),
+    };
+  };
+  const run = async (p: Awaited<ReturnType<typeof params>>) => {
+    const sql = breakGlassStatements(p);
+    expect(sql.every((s) => !s.includes("\n"))).toBe(true); // one statement per line
+    await env.DB.exec(sql.join("\n"));
+  };
+
+  it("builds exactly two INSERT statements, with the quoting and guards in place", () => {
+    expect(
+      breakGlassStatements({
+        newEmail: "second@example.com",
+        lostOwnerId: "owner-1",
+        tokenHash: "abc123",
+        now: 1000,
+        expiresAt: 5000,
+        auditId: "audit-1",
+      }),
+    ).toEqual([
+      "INSERT INTO staff_invites (token_hash, email, role, invited_by, expires_at) SELECT 'abc123', 'second@example.com', 'owner', NULL, 5000 WHERE EXISTS (SELECT 1 FROM staff_users WHERE id = 'owner-1' AND role = 'owner' AND status = 'active') AND NOT EXISTS (SELECT 1 FROM staff_users WHERE email = 'second@example.com') AND NOT EXISTS (SELECT 1 FROM staff_invites WHERE email = 'second@example.com' AND used_at IS NULL AND expires_at > 1000);",
+      `INSERT INTO audit_log (id, actor_type, actor_id, action, entity_type, entity_id, summary) SELECT 'audit-1', 'system', NULL, 'user.invite', 'staff_invite', 'abc123', '{"via":"cli","reason":"break-glass","lost_owner_id":"owner-1"}' WHERE EXISTS (SELECT 1 FROM staff_invites WHERE token_hash = 'abc123' AND email = 'second@example.com');`,
+    ]);
+  });
+
+  it("stores an owner invite for the new address, with the expiry from --hours and a break-glass audit row", async () => {
+    const o = await onlyOwner();
+    const address = "second-owner@example.com";
+    const p = await params(o.id, address);
+    await run(p);
+    expect(
+      await one(
+        "SELECT email, role, invited_by, expires_at, used_at FROM staff_invites WHERE token_hash = ?",
+        p.tokenHash,
+      ),
+    ).toEqual({ email: address, role: "owner", invited_by: null, expires_at: p.expiresAt, used_at: null });
+    expect(p.expiresAt - p.now).toBe(5 * 3_600_000);
+    const audits = await rows<{
+      actor_type: string;
+      actor_id: string | null;
+      entity_type: string;
+      entity_id: string;
+      summary: string;
+    }>(
+      "SELECT actor_type, actor_id, entity_type, entity_id, summary FROM audit_log WHERE action = 'user.invite' AND entity_id = ?",
+      p.tokenHash,
+    );
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({ actor_type: "system", actor_id: null, entity_type: "staff_invite" });
+    const summary = JSON.parse(audits[0]?.summary ?? "{}") as Record<string, unknown>;
+    expect(Object.keys(summary).sort()).toEqual(["lost_owner_id", "reason", "via"]);
+    expect(summary).toEqual({ via: "cli", reason: "break-glass", lost_owner_id: o.id });
+    expect(audits[0]?.summary).not.toContain(address);
+    expect(audits[0]?.summary).not.toContain(o.email);
+  });
+
+  it("writes only to staff_invites and audit_log: the lost owner, sessions and recovery codes stay as they were", async () => {
+    const o = await onlyOwner();
+    await env.DB.prepare("INSERT INTO staff_recovery_codes (id, user_id, code_hash) VALUES (?, ?, ?)")
+      .bind(crypto.randomUUID(), o.id, "hash-of-a-code")
+      .run();
+    const snapshot = async () => ({
+      user: await one("SELECT * FROM staff_users WHERE id = ?", o.id),
+      sessions: await rows("SELECT * FROM staff_sessions WHERE user_id = ?", o.id),
+      codes: await rows("SELECT * FROM staff_recovery_codes WHERE user_id = ?", o.id),
+      users: await countOf("staff_users"),
+    });
+    const before = await snapshot();
+    expect(before.sessions.length).toBeGreaterThan(0);
+    expect(before.codes).toHaveLength(1);
+    const p = await params(o.id, "another-owner@example.com");
+    const sql = breakGlassStatements(p);
+    expect(
+      sql.every((s) => s.startsWith("INSERT INTO staff_invites ") || s.startsWith("INSERT INTO audit_log ")),
+    ).toBe(true);
+    expect(sql.join("\n")).not.toMatch(/\b(UPDATE|DELETE|DROP|ALTER|REPLACE)\b/i);
+    await run(p);
+    expect(await snapshot()).toEqual(before);
+  });
+
+  it("quotes a hostile address: it is stored as text and nothing else runs", async () => {
+    const o = await onlyOwner();
+    const hostile = "x'); DROP TABLE staff_users; --@example.com";
+    expect(normaliseEmail(hostile)).toBeNull(); // the spaces make the script refuse it; the quoting still holds below
+    const nospace = "o'brien'),(1)--@example.com";
+    expect(normaliseEmail(nospace)).toBe(nospace);
+    const users = await countOf("staff_users");
+    for (const address of [hostile, nospace])
+      await run(await params(o.id, address, sealed(address.length.toString())));
+    expect(await countOf("staff_users")).toBe(users);
+    expect(await countOf("staff_invites", "email = ?", nospace)).toBe(1);
+    expect(await countOf("staff_invites", "email = ?", hostile)).toBe(1); // the SQL layer is safe even if a caller skipped the check
+  });
+
+  it("does nothing when the new address already has an account (any status), a live invite, or the owner is gone", async () => {
+    const o = await onlyOwner();
+    const taken = await sessionFor("staff");
+    await env.DB.prepare("UPDATE staff_users SET status = 'deactivated' WHERE id = ?").bind(taken.id).run();
+    const liveFor = `live-${Math.random().toString(36).slice(2, 8)}@example.com`;
+    await invite(liveFor, "staff");
+    const before = { invites: await countOf("staff_invites"), audits: await countOf("audit_log") };
+    await run(await params(o.id, taken.email, sealed("a"))); // a deactivated member's address
+    await run(await params(o.id, liveFor, sealed("b"))); // a live unused invite
+    await run(await params("no-such-owner", "free@example.com", sealed("c"))); // not an active owner
+    expect({ invites: await countOf("staff_invites"), audits: await countOf("audit_log") }).toEqual(before);
+    // An expired or used invite does not block a new one.
+    const stale = `stale-${Math.random().toString(36).slice(2, 8)}@example.com`;
+    await invite(stale, "staff", -1000);
+    await run(await params(o.id, stale, sealed("d")));
+    expect(await countOf("staff_invites", "email = ? AND role = 'owner'", stale)).toBe(1);
+  });
+
+  it("the link works: the new owner enrols, the lost owner is unchanged, and once two owners exist it can be deactivated", async () => {
+    const o = await onlyOwner();
+    const address = `second-${Math.random().toString(36).slice(2, 8)}@example.com`;
+    const token = `${crypto.randomUUID().replaceAll("-", "")}${"y".repeat(11)}`;
+    await run(await params(o.id, address, token));
+    // Still the only active owner: the trigger is untouched, resetting the lost owner is still refused.
+    const now = Date.now();
+    await expect(
+      env.DB.exec(
+        resetStatements({
+          email: o.email,
+          tokenHash: await tokenHash("z".repeat(43)),
+          now,
+          expiresAt: now + INVITE_TTL_MS,
+          auditId: crypto.randomUUID(),
+          alertId: crypto.randomUUID(),
+        }).join("\n"),
+      ),
+    ).rejects.toThrow(/at least one active owner/);
+    const second = await accept(token, "Second Owner");
+    expect(second.email).toBe(address);
+    expect(await one("SELECT role, status FROM staff_users WHERE email = ?", address)).toEqual({
+      role: "owner",
+      status: "active",
+    });
+    expect(await countOf("staff_users", "role = 'owner' AND status = 'active'")).toBe(2);
+    await env.DB.prepare("UPDATE staff_users SET status = 'deactivated' WHERE id = ?").bind(o.id).run();
+    expect((await one<{ status: string }>("SELECT status FROM staff_users WHERE id = ?", o.id))?.status).toBe(
+      "deactivated",
+    );
+  });
+
+  describe("the script's checks (checkBreakGlass)", () => {
+    const base = { email: "lost@example.com", existing: 0, liveInvites: 0 };
+    it("returns the new address, trimmed and lower-cased", () => {
+      expect(checkBreakGlass({ ...base, newEmail: "  Second@Example.COM " })).toBe("second@example.com");
+    });
+    it("refuses a missing --new-email, explaining the break-glass and showing the exact command", () => {
+      for (const missing of [undefined, ""]) {
+        const msg = (() => {
+          try {
+            checkBreakGlass({ ...base, newEmail: missing });
+          } catch (e) {
+            return (e as Error).message;
+          }
+          return "";
+        })();
+        expect(msg).toContain("only active owner");
+        expect(msg).toContain(
+          "pnpm admin:reset-2fa --email lost@example.com --new-email <another address you control>",
+        );
+        expect(msg).not.toContain("--staging");
+      }
+      expect(() => checkBreakGlass({ ...base, newEmail: undefined, staging: true })).toThrow(
+        /--new-email .* --staging/,
+      );
+    });
+    it("refuses an invalid address, the same address, an existing account and a live invite", () => {
+      expect(() => checkBreakGlass({ ...base, newEmail: "not-an-address" })).toThrow(
+        /must be an email address/,
+      );
+      expect(() => checkBreakGlass({ ...base, newEmail: "has space@example.com" })).toThrow(
+        /must be an email/,
+      );
+      expect(() => checkBreakGlass({ ...base, newEmail: " LOST@example.com " })).toThrow(/different address/);
+      expect(() => checkBreakGlass({ ...base, newEmail: "x@example.com", existing: 1 })).toThrow(
+        /already belongs to a staff member/,
+      );
+      expect(() => checkBreakGlass({ ...base, newEmail: "x@example.com", liveInvites: 1 })).toThrow(
+        /already has a live invite/,
+      );
+    });
   });
 });

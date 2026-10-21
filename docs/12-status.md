@@ -34,9 +34,7 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
 
 ## Waits on the owner
 - **M1.5 on staging (morning):**
-  1. Tell me "ready for the invite": I create a one-time owner invite on staging (`pnpm invite --email <your email> --role owner --staging`) and give you the link. Open it, pass the Cloudflare Access login, type your name, choose a password, scan the QR code with your authenticator app, save the recovery codes, then sign in. Try Your account and Staff and invites.
-  2. **Q6 benchmark:** GitHub → **Actions → Auth CPU benchmark (staging) → Run workflow** (defaults), then tell me "benchmark done".
-  3. **Q1 break-glass:** if the only owner loses their phone and every recovery code, how do they get back in? (Recommended: the reset script issues an audit-logged one-time owner invite to a second email you control; no database safety rule is weakened.)
+  1. Done 2026-10-21: staging sign-in works ("everything working well"); the Q6 benchmark met every target (run 4 in [cpu-baseline.md](runbooks/cpu-baseline.md)); Q1 answered (second-owner invite, PR #28). **Say "approved" for M1.5** to start M1.6.
   4. Optional: approve installing `@axe-core/playwright` for automated accessibility checks (planned for M2.1 tests).
 - **Time-sensitive compliance** ([08 §0](08-security-compliance.md); all VERIFY WITH CA):
   - **U-3 UPI MDR from 15 Oct 2026:** check the Razorpay pricing.

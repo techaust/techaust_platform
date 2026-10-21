@@ -4,7 +4,13 @@
 //   pnpm admin:reset-2fa --email you@example.com --staging      # staging, with your own `wrangler login` (OAuth)
 // Never with a production API token. The link carries the token in the URL fragment (#t=…), so it never reaches
 // server logs; share it only with the person it is for. The reset is audit-logged (`user.reset_2fa`, actor "system").
-// The database refuses to reset the ONLY active owner (the last-owner trigger): invite a second owner first.
+//
+// The ONLY active owner cannot be reset: the database's last-owner trigger refuses it, and it stays strict (no bypass).
+// For that case the script issues a one-time OWNER invite for a second address you control instead:
+//   pnpm admin:reset-2fa --email you@example.com --new-email another@example.com [--staging]
+// Open the link, enrol that account, then reset or deactivate the lost one from Staff and invites (allowed once two
+// owners exist). The lost owner's row, sessions and recovery codes are not touched. Audit: `user.invite`, actor "system",
+// reason break-glass. Keep a sealed second owner account so you rarely need this.
 import { execFileSync } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -12,7 +18,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { reinviteStatements, resetStatements } from "./reset-2fa-sql.mjs";
+import {
+  breakGlassStatements,
+  checkBreakGlass,
+  normaliseEmail,
+  reinviteStatements,
+  resetStatements,
+} from "./reset-2fa-sql.mjs";
 
 const ORIGINS = {
   local: "http://localhost:5173",
@@ -22,12 +34,13 @@ const ORIGINS = {
 const { values } = parseArgs({
   options: {
     email: { type: "string" },
+    "new-email": { type: "string" },
     staging: { type: "boolean", default: false },
     hours: { type: "string", default: "48" },
   },
 });
-const email = values.email?.trim().toLowerCase();
-if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error("--email is required");
+const email = normaliseEmail(values.email);
+if (!email) throw new Error("--email is required");
 const hours = Number(values.hours);
 if (!Number.isInteger(hours) || hours < 1 || hours > 48) throw new Error("--hours must be 1–48");
 
@@ -54,42 +67,70 @@ const [user] = rows(`SELECT id, role, status FROM staff_users WHERE email = ${q(
 if (!user) throw new Error(`No staff member with the email ${email}.`);
 if (user.status !== "active" && user.status !== "invited")
   throw new Error(`${email} is "${user.status}": nothing to reset.`);
+let onlyOwner = false;
 if (user.status === "active" && user.role === "owner") {
   const [{ n }] = rows("SELECT count(*) AS n FROM staff_users WHERE role = 'owner' AND status = 'active'");
-  if (n < 2)
-    throw new Error(
-      "This is the only active owner, and the database refuses to reset the last owner. Invite a second owner first.",
-    );
+  onlyOwner = n < 2;
 }
+const newEmailArg = values["new-email"];
+if (!onlyOwner && newEmailArg !== undefined)
+  throw new Error(
+    "--new-email is only for the only active owner (break-glass). This member can be reset without it; nothing was changed.",
+  );
 
 const token = randomBytes(32).toString("base64url");
 const now = Date.now();
 const common = {
-  email,
   tokenHash: createHash("sha256").update(token).digest("hex"),
   now,
   expiresAt: now + hours * 3_600_000,
   auditId: randomUUID(),
 };
-// Already "invited" (an earlier reset whose link was lost): only a fresh invite; staff_users is not touched.
-const statements =
-  user.status === "invited"
-    ? reinviteStatements(common)
-    : resetStatements({ ...common, alertId: randomUUID() });
-const sql = `${statements.join("\n")}\n`;
-
-const dir = mkdtempSync(join(tmpdir(), "reset2fa-"));
-try {
-  const file = join(dir, "reset.sql");
-  writeFileSync(file, sql);
-  d1(["--file", file]);
-} finally {
-  rmSync(dir, { recursive: true, force: true });
+function runFile(statements) {
+  const dir = mkdtempSync(join(tmpdir(), "reset2fa-"));
+  try {
+    const file = join(dir, "reset.sql");
+    writeFileSync(file, `${statements.join("\n")}\n`);
+    d1(["--file", file]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
+const origin = values.staging ? ORIGINS.staging : ORIGINS.local;
+
+if (onlyOwner) {
+  // Break-glass for the only owner: the trigger stays strict, so a second owner is invited instead (one atomic run).
+  const probe = q(normaliseEmail(newEmailArg) ?? "");
+  const newEmail = checkBreakGlass({
+    email,
+    newEmail: newEmailArg,
+    staging: values.staging,
+    existing: rows(`SELECT 1 AS x FROM staff_users WHERE email = ${probe}`).length,
+    liveInvites: rows(
+      `SELECT 1 AS x FROM staff_invites WHERE email = ${probe} AND used_at IS NULL AND expires_at > ${now}`,
+    ).length,
+  });
+  runFile(breakGlassStatements({ ...common, newEmail, lostOwnerId: user.id }));
+  const [made] = rows(
+    `SELECT 1 AS x FROM staff_invites WHERE token_hash = ${q(common.tokenHash)} AND role = 'owner' AND used_at IS NULL`,
+  );
+  if (!made)
+    throw new Error("The invite was not created (the checks changed while running); nothing was changed.");
+  console.log(
+    `Break-glass: ${email} is the only active owner, so it was left untouched. A one-time OWNER invite was issued for ${newEmail}.\nNext: open the link, enrol that account (password and authenticator), then in Staff and invites reset or deactivate ${email}.\nOne-time link, valid ${hours} h:\n${origin}/invite#t=${token}`,
+  );
+  process.exit(0);
+}
+
+// Already "invited" (an earlier reset whose link was lost): only a fresh invite; staff_users is not touched.
+runFile(
+  user.status === "invited"
+    ? reinviteStatements({ ...common, email })
+    : resetStatements({ ...common, email, alertId: randomUUID() }),
+);
 
 const [after] = rows(`SELECT status FROM staff_users WHERE email = ${q(email)}`);
 if (after?.status !== "invited") throw new Error("The reset did not apply; nothing was changed.");
-const origin = values.staging ? ORIGINS.staging : ORIGINS.local;
 console.log(
   `${user.status === "invited" ? "New link issued" : "Reset done"} for ${email}: password, authenticator and recovery codes cleared, sessions ended.\nOne-time link, valid ${hours} h:\n${origin}/invite#t=${token}`,
 );
