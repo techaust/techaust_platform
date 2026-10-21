@@ -8,9 +8,9 @@
 // bundle is. So the script also runs the same measurement on an EMPTY Worker (`fetch: () => Response.json(...)`)
 // and prints the numbers "net of the floor": that is the part the bundle is responsible for. Windows reports
 // process CPU in ~15.6 ms ticks, so compare on the wall figures.
-//   node scripts/cold-start.mjs [bundle.js] [--runs 20]
-// Default bundle: apps/admin/dist/techaust_platform_admin/index.js (build it first with
-//   CLOUDFLARE_ENV=staging pnpm --filter @techaust/admin exec vite build).
+//   node scripts/cold-start.mjs [bundle.js] [--runs 20] [--app admin|portal]
+// Default bundle: apps/<app>/dist/techaust_platform_<app>/index.js, app = admin unless `--app portal` (build it first with
+//   CLOUDFLARE_ENV=staging pnpm --filter @techaust/<app> exec vite build).
 import { spawnSync } from "node:child_process";
 import { readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
@@ -50,9 +50,12 @@ if (process.argv[2] === "--child") {
 
 const { values, positionals } = parseArgs({
   allowPositionals: true,
-  options: { runs: { type: "string", default: "20" } },
+  options: { runs: { type: "string", default: "20" }, app: { type: "string", default: "admin" } },
 });
-const bundle = resolve(positionals[0] ?? resolve(root, "apps/admin/dist/techaust_platform_admin/index.js"));
+if (!["admin", "portal"].includes(values.app)) throw new Error("--app must be admin or portal");
+const bundle = resolve(
+  positionals[0] ?? resolve(root, `apps/${values.app}/dist/techaust_platform_${values.app}/index.js`),
+);
 const runs = Number(values.runs);
 const size = statSync(bundle).size;
 const gz = gzipSync(readFileSync(bundle)).length;
