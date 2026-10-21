@@ -5,9 +5,12 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { isClientHash } from "../src/password.ts";
 import {
+  docTokenRequest,
   inviteFinishRequest,
   inviteStartRequest,
   loginRequest,
+  magicRequest,
+  magicVerifyRequest,
   recoveryRequest,
   saltRequest,
   sessionIdParam,
@@ -27,6 +30,10 @@ const classic = {
   sessionIdParam: z.object({ id: z.string().regex(/^[0-9a-f]{64}$/) }),
   inviteStartRequest: z.object({ token: b64url43 }),
   inviteFinishRequest: z.object({ token: b64url43, clientHash, name: z.string().trim().min(1).max(100) }),
+  // portal (M1.6)
+  magicRequest: z.object({ email }),
+  magicVerifyRequest: z.object({ token: z.string().max(256) }),
+  docTokenRequest: z.object({ token: z.string().max(256) }),
 };
 const mini = {
   saltRequest,
@@ -37,6 +44,9 @@ const mini = {
   sessionIdParam,
   inviteStartRequest,
   inviteFinishRequest,
+  magicRequest,
+  magicVerifyRequest,
+  docTokenRequest,
 };
 
 const good43 = "A".repeat(43); // decodes to 32 zero bytes
@@ -104,6 +114,9 @@ const strings: unknown[] = [
   "c".repeat(512),
   "c".repeat(513),
   // hex ids
+  "a".repeat(255),
+  "a".repeat(256),
+  "a".repeat(257),
   "a".repeat(64),
   "A".repeat(64),
   "a".repeat(63),
@@ -124,6 +137,9 @@ function inputsFor(name: keyof typeof classic): unknown[] {
     sessionIdParam: { id: "a".repeat(64) },
     inviteStartRequest: { token: good43 },
     inviteFinishRequest: { token: good43, clientHash: good43, name: "Asha" },
+    magicRequest: { email: "a@b.co" },
+    magicVerifyRequest: { token: good43 },
+    docTokenRequest: { token: good43 },
   };
   const base = valid[name] as Record<string, unknown>;
   const out: unknown[] = [base, { ...base, extra: "ignored" }, null, undefined, "x", 1, [], [base]];
@@ -169,6 +185,10 @@ describe("zod/mini request schemas = the classic ones [ADM-AUTH-01, -02, -03, -0
 
   it("the cleaned values are what the Worker relies on: trimmed lower-case email, trimmed name", () => {
     expect(saltRequest.parse({ email: "  Mixed@Case.IN " })).toEqual({ email: "mixed@case.in" });
+    expect(magicRequest.parse({ email: "  Mixed@Case.IN " })).toEqual({ email: "mixed@case.in" }); // [POR-01]
+    // a token of the wrong shape is NOT a validation error (it is a counted failed check), only an oversize one is
+    expect(magicVerifyRequest.safeParse({ token: "short" }).success).toBe(true);
+    expect(docTokenRequest.safeParse({ token: "x".repeat(257) }).success).toBe(false);
     expect(inviteFinishRequest.parse({ token: good43, clientHash: good43, name: "  Asha Verma " }).name).toBe(
       "Asha Verma",
     );

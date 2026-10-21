@@ -26,3 +26,11 @@ export const sessionIdParam = z.object({ id: hex64 });
 export const inviteStartRequest = z.object({ token: b64url43 });
 /** `name`: the invitee types their own name at acceptance (the owner only chooses the email and the role). */
 export const inviteFinishRequest = z.object({ token: b64url43, clientHash, name });
+
+// Portal (M1.6). The email is cleaned exactly as for the invite. The token fields only bound the size: a token that
+// isn't 43 URL-safe characters is a FAILED CHECK (counted, the same refusal as a wrong one), never a 400 that would
+// tell a guesser the shape was wrong for free.
+export const magicRequest = z.object({ email: emailAddress });
+const tokenField = z.string().check(z.maxLength(256));
+export const magicVerifyRequest = z.object({ token: tokenField });
+export const docTokenRequest = z.object({ token: tokenField });

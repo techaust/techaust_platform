@@ -14,6 +14,14 @@ import {
   reserveAttempt,
   WINDOW_MS,
 } from "../src/lockout.ts";
+import {
+  MAGIC_IP_LIMIT,
+  MAGIC_IP_LOCK_MS,
+  MAGIC_IP_WINDOW_MS,
+  MAGIC_MAIL_LIMIT,
+  MAGIC_MAIL_LOCK_MS,
+  MAGIC_MAIL_WINDOW_MS,
+} from "../src/portal.ts";
 
 const KEY = btoa(String.fromCharCode(...new Uint8Array(32).fill(7)));
 const KEY2 = btoa(String.fromCharCode(...new Uint8Array(32).fill(9)));
@@ -68,6 +76,73 @@ describe("reserveAttempt [ADM-AUTH-06]", () => {
           }
         },
       ),
+    );
+  });
+});
+
+describe("reserveAttempt with a window and a lock of its own (M1.6 portal quotas) [POR-01]", () => {
+  it("the defaults are unchanged: calling with three arguments equals calling with the M1.5 constants", () => {
+    fc.assert(
+      fc.property(
+        fc.option(attempts, { nil: null }),
+        fc.integer({ min: 0, max: 5_000_000 }),
+        fc.integer({ min: 1, max: 12 }),
+        (a, now, lockAfter) => {
+          expect(reserveAttempt(a, now, lockAfter)).toEqual(
+            reserveAttempt(a, now, lockAfter, LOCK_MS, WINDOW_MS),
+          );
+        },
+      ),
+    );
+  });
+
+  it("property: with any lock and window the row is recordFailure's with the same lock and window", () => {
+    fc.assert(
+      fc.property(
+        fc.option(attempts, { nil: null }),
+        fc.integer({ min: 0, max: 5_000_000 }),
+        fc.integer({ min: 1, max: 12 }),
+        fc.integer({ min: 1, max: 4_000_000 }),
+        fc.integer({ min: 1, max: 4_000_000 }),
+        (a, now, lockAfter, lockMs, windowMs) => {
+          const r = reserveAttempt(a, now, lockAfter, lockMs, windowMs);
+          expect(r.allowed).toBe(!isLocked(a, now));
+          if (r.allowed) expect(r.row).toEqual(recordFailure(a, now, lockAfter, lockMs, windowMs));
+        },
+      ),
+    );
+  });
+
+  it("address quota: the 10th request in an hour is served and sets a one-hour lock; the 11th is refused", () => {
+    let a: Attempts | null = null;
+    for (let i = 1; i <= MAGIC_IP_LIMIT; i++) {
+      const r = reserveAttempt(a, 1_000 + i, MAGIC_IP_LIMIT, MAGIC_IP_LOCK_MS, MAGIC_IP_WINDOW_MS);
+      expect(r.allowed, `request ${i}`).toBe(true);
+      a = r.row;
+    }
+    expect(a?.lockedUntil).toBe(1_000 + MAGIC_IP_LIMIT + MAGIC_IP_LOCK_MS);
+    expect(reserveAttempt(a, 2_000, MAGIC_IP_LIMIT, MAGIC_IP_LOCK_MS, MAGIC_IP_WINDOW_MS).allowed).toBe(
+      false,
+    );
+    const later = 1_000 + MAGIC_IP_LIMIT + MAGIC_IP_LOCK_MS;
+    expect(reserveAttempt(a, later, MAGIC_IP_LIMIT, MAGIC_IP_LOCK_MS, MAGIC_IP_WINDOW_MS)).toMatchObject({
+      allowed: true,
+      row: { failures: 1 },
+    });
+  });
+
+  it("email quota: the 3rd request in 15 minutes is served; the 4th is refused until 15 minutes later", () => {
+    let a: Attempts | null = null;
+    for (let i = 1; i <= MAGIC_MAIL_LIMIT; i++) {
+      const r = reserveAttempt(a, 10_000 + i, MAGIC_MAIL_LIMIT, MAGIC_MAIL_LOCK_MS, MAGIC_MAIL_WINDOW_MS);
+      expect(r.allowed).toBe(true);
+      a = r.row;
+    }
+    const fourth = reserveAttempt(a, 10_100, MAGIC_MAIL_LIMIT, MAGIC_MAIL_LOCK_MS, MAGIC_MAIL_WINDOW_MS);
+    expect(fourth.allowed).toBe(false);
+    const free = 10_000 + MAGIC_MAIL_LIMIT + MAGIC_MAIL_LOCK_MS;
+    expect(reserveAttempt(a, free, MAGIC_MAIL_LIMIT, MAGIC_MAIL_LOCK_MS, MAGIC_MAIL_WINDOW_MS).allowed).toBe(
+      true,
     );
   });
 });
