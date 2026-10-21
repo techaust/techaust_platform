@@ -24,9 +24,9 @@ export function Home() {
     try {
       await api.logout();
       signedOut(COPY.signedOut);
-    } catch {
-      // Only a failure to reach us lands here (sign-out answers 204 whatever the cookie): the cookie is still set.
-      setError(COPY.home.signOutFailed);
+    } catch (e) {
+      // Sign-out answers 204 whatever the cookie, so only a network or server failure lands here: still signed in.
+      setError(e instanceof RequestError && e.code !== "network" ? COPY.server : COPY.home.signOutFailed);
       setBusy(false);
     }
   }

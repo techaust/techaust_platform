@@ -19,6 +19,11 @@ import { SessionProvider, useSession } from "./session.tsx";
 // FIRST, before anything renders or sends a request: take a sign-in link's token from `#t=` and strip the fragment
 // from the address bar and history (lib/link.ts, LD3).
 captureLinkToken();
+// A new link opened in a tab already on the callback path changes only the fragment, so the page doesn't reload:
+// reload it, which takes and strips the new token above.
+window.addEventListener("hashchange", () => {
+  if (location.pathname === CALLBACK_PATH && location.hash) location.reload();
+});
 
 // The tab icon (pixel-fitted, adapts to a dark browser) and the page's tone-on-tone mark (app.css), both from the
 // generated brand files.

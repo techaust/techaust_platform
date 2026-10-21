@@ -2,6 +2,8 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-10-21 [#29](https://github.com/techaust/techaust_platform/pull/29) feat(portal): M1.6 portal auth [POR-01..03, POR-06]
+- 2026-10-21 [#28](https://github.com/techaust/techaust_platform/pull/28) fix(auth): break-glass for the only owner via a second owner invite
 - 2026-10-21 [#27](https://github.com/techaust/techaust_platform/pull/27) feat(auth): M1.5 staff auth complete [ADM-AUTH-01..09]
 - 2026-10-21 [#26](https://github.com/techaust/techaust_platform/pull/26) docs(m1.5): Tier A staff-auth brief, owner's answers, Workers Logs check
 - 2026-10-21 [#25](https://github.com/techaust/techaust_platform/pull/25) docs(m1.4): run 3 results, gate accepted with an exception, M1.5 handover
