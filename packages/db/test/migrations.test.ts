@@ -30,8 +30,17 @@ describe("migrations apply cleanly to a fresh D1", () => {
   });
 
   it("access_log has no index on `at` (M1.6, LD19: 3 rows written per access row instead of 4)", async () => {
-    const indexes = await all<{ name: string }>("SELECT name FROM pragma_index_list('access_log') WHERE origin = 'c'");
+    const indexes = await all<{ name: string }>(
+      "SELECT name FROM pragma_index_list('access_log') WHERE origin = 'c'",
+    );
     expect(indexes.map((i) => i.name)).toEqual(["access_log_actor"]);
+  });
+
+  it("an access row writes 3 rows (the row, its primary-key index and the actor index): 4 before M1.6 (local meta only)", async () => {
+    const r = await run(
+      "INSERT INTO access_log (id, realm, method, route, status) VALUES ('rows-written-probe', 'portal', 'GET', '/v1/me', 200)",
+    );
+    expect(r.meta.rows_written).toBe(3);
   });
 
   it("enforces foreign keys", async () => {
