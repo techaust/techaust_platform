@@ -285,6 +285,9 @@ importers:
       '@techaust/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@techaust/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       hono:
         specifier: 4.13.13
         version: 4.13.13
