@@ -136,6 +136,7 @@ pnpm db:seed:local        # load the seed (catalogue S1–S18 + settings default
 pnpm dev:secrets          # write apps/admin/.dev.vars with random local-only login secrets (git-ignored)
 pnpm invite --email you@example.com --role owner            # single-use invite link, local DB
 pnpm invite --email you@example.com --role owner --staging  # same on staging (prints the link: share it only with that person)
+pnpm admin:reset-2fa --email … [--new-email …] [--staging]   # break-glass (docs/08 §3.2): reset a member; for the only owner, --new-email issues a one-time owner invite for a second address
 ```
 
 ## How the code fits together
