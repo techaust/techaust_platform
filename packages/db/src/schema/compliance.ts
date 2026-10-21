@@ -36,7 +36,10 @@ export const auditLog = sqliteTable(
 
 export const REALMS = ["admin", "portal", "jobs"] as const;
 
-/** Security log for access events (13-month retention, docs/08 L-6). */
+/**
+ * Security log for access events (13-month retention, docs/08 L-6). No index on `at` (M1.6, LD19): every index costs
+ * one more row written per access row on the Free plan; rows are pruned by UUIDv7 `id` range (M7.4).
+ */
 export const accessLog = sqliteTable(
   "access_log",
   {
@@ -51,9 +54,5 @@ export const accessLog = sqliteTable(
     userAgent: text("user_agent"),
     requestId: text("request_id"),
   },
-  (t) => [
-    index("access_log_at").on(t.at),
-    index("access_log_actor").on(t.actorId, t.at),
-    check("access_log_realm", oneOf(t.realm, REALMS)),
-  ],
+  (t) => [index("access_log_actor").on(t.actorId, t.at), check("access_log_realm", oneOf(t.realm, REALMS))],
 );

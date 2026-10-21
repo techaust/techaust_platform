@@ -36,6 +36,20 @@
       "when": 1792531616678,
       "tag": "0004_auth_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1792564900228,
+      "tag": "0005_drop_access_log_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1792564909555,
+      "tag": "0006_portal_triggers",
+      "breakpoints": true
     }
   ]
 }

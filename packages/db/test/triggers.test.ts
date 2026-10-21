@@ -283,3 +283,66 @@ describe("staff-auth triggers (0004; ADM-AUTH-07, ADM-G-06, NFR-9)", () => {
     expect(await all("SELECT 1 FROM staff_known_devices WHERE user_id = 'dev-user'")).toEqual([]);
   });
 });
+
+describe("portal-auth triggers (0006; POR-01, POR-02)", () => {
+  const link = (hash: string) =>
+    run(
+      "INSERT INTO magic_link_tokens (token_hash, contact_id, expires_at) VALUES (?1, 'contact-1', 1000)",
+      hash,
+    );
+  const session = (id: string) =>
+    run(
+      "INSERT INTO client_sessions (id, contact_id, client_id, last_seen_at, idle_expires_at, abs_expires_at) VALUES (?1, 'contact-1', 'client-1', 1, 2, 3)",
+      id,
+    );
+
+  it("a magic link's used_at can be set once and never changed or cleared", async () => {
+    await link("l1");
+    await run("UPDATE magic_link_tokens SET used_at = 5 WHERE token_hash = 'l1'");
+    await rejects(run("UPDATE magic_link_tokens SET used_at = NULL WHERE token_hash = 'l1'"), /write-once/);
+    await rejects(run("UPDATE magic_link_tokens SET used_at = 9 WHERE token_hash = 'l1'"), /write-once/);
+    await run("UPDATE magic_link_tokens SET used_at = 5, expires_at = 7 WHERE token_hash = 'l1'"); // same value: not a change
+    expect(
+      (await first<{ used_at: number }>("SELECT used_at FROM magic_link_tokens WHERE token_hash = 'l1'"))
+        ?.used_at,
+    ).toBe(5);
+  });
+
+  it("a client session's revoked_at can be set once and never cleared or changed", async () => {
+    await session("s1");
+    await run("UPDATE client_sessions SET revoked_at = 5 WHERE id = 's1'");
+    await rejects(run("UPDATE client_sessions SET revoked_at = NULL WHERE id = 's1'"), /write-once/);
+    await rejects(run("UPDATE client_sessions SET revoked_at = 6 WHERE id = 's1'"), /write-once/);
+    expect(
+      (await first<{ revoked_at: number }>("SELECT revoked_at FROM client_sessions WHERE id = 's1'"))
+        ?.revoked_at,
+    ).toBe(5);
+  });
+
+  it("a client session's contact_id and client_id never change; its other columns still do", async () => {
+    await session("s2");
+    await rejects(
+      run("UPDATE client_sessions SET contact_id = 'contact-2' WHERE id = 's2'"),
+      /cannot change/,
+    );
+    await rejects(run("UPDATE client_sessions SET client_id = 'client-2' WHERE id = 's2'"), /cannot change/);
+    await rejects(
+      run("UPDATE client_sessions SET contact_id = 'contact-2', client_id = 'client-2' WHERE id = 's2'"),
+      /cannot change/,
+    );
+    await run("UPDATE client_sessions SET last_seen_at = 50, idle_expires_at = 60 WHERE id = 's2'"); // the touch
+    await run("UPDATE client_sessions SET contact_id = 'contact-1' WHERE id = 's2'"); // same value: not a change
+    const row = await first<{ contact_id: string; client_id: string; last_seen_at: number }>(
+      "SELECT contact_id, client_id, last_seen_at FROM client_sessions WHERE id = 's2'",
+    );
+    expect(row).toEqual({ contact_id: "contact-1", client_id: "client-1", last_seen_at: 50 });
+  });
+
+  it("unused links and live sessions are otherwise untouched (revoke once, then delete is still open for the prune job)", async () => {
+    await link("l2");
+    await run("UPDATE magic_link_tokens SET expires_at = 2000 WHERE token_hash = 'l2'");
+    await run("DELETE FROM magic_link_tokens WHERE token_hash = 'l2'");
+    await session("s3");
+    await run("DELETE FROM client_sessions WHERE id = 's3'");
+  });
+});
