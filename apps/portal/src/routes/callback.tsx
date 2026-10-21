@@ -1,7 +1,7 @@
 // `/auth/callback`: the page a sign-in link opens [POR-01, POR-02, LD3]. The token was taken from `#t=` and the
 // fragment stripped before the app rendered (lib/link.ts). Nothing is sent until "Continue to the portal" is pressed;
 // then exactly one POST. A missing token and a refused link (401) read the same, with a way to request a new one.
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { ArrowRight } from "../components/icons.tsx";
 import { Card, Notice, Reference } from "../components/ui.tsx";
@@ -16,8 +16,16 @@ export function Callback() {
   const press = useMemo(() => createContinue(token), [token]);
   const [view, setView] = useState<View>(token ? "ready" : { kind: "invalid" });
   const titleRef = useRef<HTMLHeadingElement>(null);
+  const pressed = useRef(false);
+  const kind = typeof view === "object" ? view.kind : view;
+
+  // After a press, the button is gone on these two outcomes: the heading takes focus, so the outcome is read next.
+  useEffect(() => {
+    if (pressed.current && (kind === "invalid" || kind === "rate_limited")) titleRef.current?.focus();
+  }, [kind]);
 
   async function onContinue() {
+    pressed.current = true;
     setView("busy");
     const r = await press();
     if (r.kind === "signed_in") {
@@ -26,9 +34,6 @@ export function Callback() {
       return;
     }
     setView(r);
-    // The button is gone on these two: the heading takes focus, so the outcome is read next.
-    if (r.kind === "invalid" || r.kind === "rate_limited")
-      requestAnimationFrame(() => titleRef.current?.focus());
   }
 
   if (typeof view === "object" && view.kind === "invalid") {
@@ -55,7 +60,7 @@ export function Callback() {
 
   const busy = view === "busy";
   return (
-    <Card title={COPY.callback.title} lede={COPY.callback.lede} focusTitle>
+    <Card title={COPY.callback.title} lede={COPY.callback.lede} titleRef={titleRef} focusTitle>
       {typeof view === "object" && view.kind === "network" && (
         <Notice tone="error">{COPY.callback.network}</Notice>
       )}

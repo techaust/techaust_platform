@@ -9,8 +9,16 @@ const LINK_INVALID = {
   request_id: "r1",
 };
 
+/** A stand-in for the browser's LIVE `location` + `history`: replaceState changes what `location` reads afterwards. */
 function page(hash: string, pathname = "/auth/callback", search = "") {
-  return { loc: { pathname, search, hash }, hist: { replaceState: vi.fn() } };
+  const loc = { pathname, search, hash };
+  const hist = {
+    replaceState: vi.fn((_d: unknown, _u: string, url?: string) => {
+      const u = new URL(url ?? "", "https://portal.example.test");
+      Object.assign(loc, { pathname: u.pathname, search: u.search, hash: u.hash });
+    }),
+  };
+  return { loc, hist };
 }
 
 afterEach(() => {
@@ -25,6 +33,7 @@ describe("sign-in link callback: the fragment [POR-01, LD3]", () => {
     expect(takeLinkToken(loc, hist)).toBe(TOKEN);
     expect(hist.replaceState).toHaveBeenCalledTimes(1);
     expect(hist.replaceState).toHaveBeenCalledWith(null, "", "/auth/callback");
+    expect(loc.hash).toBe("");
   });
 
   it("keeps the query string but never the fragment", () => {

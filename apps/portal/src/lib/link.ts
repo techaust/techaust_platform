@@ -22,8 +22,10 @@ type Hist = { replaceState: (data: unknown, unused: string, url?: string) => voi
  */
 export function takeLinkToken(loc: Loc, hist: Hist): string | null {
   if (loc.pathname !== CALLBACK_PATH) return null;
-  if (loc.hash) hist.replaceState(null, "", loc.pathname + loc.search);
-  const t = new URLSearchParams(loc.hash.replace(/^#/, "")).get("t");
+  // Read first: `location` is live, so after replaceState its hash is already empty.
+  const { hash, pathname, search } = loc;
+  if (hash) hist.replaceState(null, "", pathname + search);
+  const t = new URLSearchParams(hash.replace(/^#/, "")).get("t");
   return t && TOKEN.test(t) ? t : null;
 }
 

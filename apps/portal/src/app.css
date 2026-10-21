@@ -18,7 +18,7 @@ html {
 
 @media (prefers-color-scheme: dark) {
   html {
-    --mark-tone: var(--color-surface-raised);
+    --mark-tone: var(--color-surface);
   }
 }
 
@@ -49,8 +49,14 @@ body {
     width: min(84vh, 46vw);
     aspect-ratio: 1;
     background: var(--mark-tone);
-    -webkit-mask: var(--brand-mark) center / contain no-repeat;
-    mask: var(--brand-mark) center / contain no-repeat;
+    /* Twice, 1 px apart: the symbol's two parts meet edge to edge, and a single layer leaves an anti-aliased seam
+       where the crossbar meets the stem. */
+    -webkit-mask:
+      var(--brand-mark) center / contain no-repeat,
+      var(--brand-mark) calc(50% + 1px) center / contain no-repeat;
+    mask:
+      var(--brand-mark) center / contain no-repeat,
+      var(--brand-mark) calc(50% + 1px) center / contain no-repeat;
     pointer-events: none;
   }
 }
@@ -142,17 +148,21 @@ a:hover {
   margin-bottom: var(--space-8);
 }
 
-/* The lockup with the product's name beside it, after a hairline (one mark stroke of clear space before it). */
+/* The lockup with the product's name beside it, after a hairline (more than one mark stroke of clear space). Where
+   the two don't fit on one line, the name sits under the lockup without the hairline. */
+.card__top {
+  container-type: inline-size;
+}
+
 .brand {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-2) var(--space-4);
+  gap: var(--space-4);
 }
 
 .logo {
   display: block;
-  height: 2.25rem;
+  height: 1.75rem;
   width: auto;
   max-width: 100%;
 }
@@ -162,9 +172,33 @@ a:hover {
   border-inline-start: 1px solid var(--color-border);
   color: var(--color-text-muted);
   font-size: var(--text-sm);
-  line-height: 2.25rem;
+  line-height: 1.75rem;
   font-weight: 560;
   white-space: nowrap;
+}
+
+@container (max-width: 21.5rem) {
+  .brand {
+    gap: var(--space-3);
+  }
+
+  .brand__product {
+    padding-inline-start: var(--space-3);
+  }
+}
+
+@container (max-width: 19rem) {
+  .brand {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-2);
+  }
+
+  .brand__product {
+    padding-inline-start: 0;
+    border-inline-start: 0;
+    line-height: var(--text-sm--line-height);
+  }
 }
 
 @media (max-width: 29.99rem) {
@@ -178,23 +212,6 @@ a:hover {
 
   .card__top {
     margin-bottom: var(--space-6);
-  }
-
-  .logo {
-    height: 2rem;
-  }
-
-  /* Narrow: the product name goes under the lockup, without the hairline. */
-  .brand {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--space-1);
-  }
-
-  .brand__product {
-    padding-inline-start: 0;
-    border-inline-start: 0;
-    line-height: var(--text-sm--line-height);
   }
 }
 

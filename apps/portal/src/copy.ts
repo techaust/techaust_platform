@@ -63,7 +63,7 @@ export const COPY = {
     laterTitle: "More to come",
     later: (org: string) =>
       `Proposals, invoices and payments for ${org} will appear here in a later update of the portal.`,
-    sessionTitle: "Signing out",
+    sessionTitle: "Your sign-in",
     signOut: "Sign out",
     signingOut: "Signing out…",
     signOutFailed:
