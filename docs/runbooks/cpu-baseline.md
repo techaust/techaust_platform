@@ -28,6 +28,28 @@ The benchmark creates throwaway users (`@bench.invalid`) and deletes them at the
 
 ## Results
 
+### Run 4 (M1.5, PR #27): 2026-10-21 IST, 15 minutes, 12 users
+Run `mvhpa77n3920`, window 05:57:33–06:13:03 UTC, version `f2da33e6` only (the M1.5 Worker: minified, `zod/mini`, `hono/tiny`, 79 KB); 198 logins, 0 unexpected failures; every outcome "ok" (1,088 × 200, 19 × 401 by design). CPU from Workers Logs (`$workers.cpuTimeMs`, whole ms), matched by request ID to the `ev:"req"` line (`n = 1` = first request of an isolate; 4 of 1,107 requests had no log line). Each cycle now also calls `/sessions` and `/step-up`, so there are fewer logins than in run 3. Read 2026-10-21 by the lead.
+
+| Route | Requests | CPU p50 | CPU p99 (run 3 → 4) | CPU max | Over 10 ms | Target |
+|---|---|---|---|---|---|---|
+| salt | 190 | 1 ms | 7 → **4 ms** | 7 ms | 0 | ≤ 7 ms ✅ |
+| login | 191 | 2 ms | 6 → **5 ms** | 13 ms | 1 (warm) | ≤ 6 ms ✅ (also the original 5 ms) |
+| totp | 172 | 3 ms | 7 → **7 ms** | 13 ms | 1 (warm) | ≤ 7 ms ✅ |
+| me | 176 | 1 ms | 3 → **3 ms** | 8 ms | 0 | ≤ 7 ms ✅ |
+| sessions (new) | 173 | 2 ms | **7 ms** | 8 ms | 0 | ≤ 7 ms ✅ |
+| step-up (new) | 171 | 3 ms | **6 ms** | 7 ms | 0 | ≤ 7 ms ✅ |
+| invite/* (not gated) | 34 | 1–5 ms | 4–13 ms | 13 ms (invite/totp) | 1 | — |
+
+- **Histograms** (ms: count). login: 1:43, 2:119, 3:22, 4:4, 5:2, 13:1. totp: 1:9, 2:66, 3:55, 4:24, 5:15, 6:1, 7:1, 13:1. sessions: 1:23, 2:99, 3:36, 4:10, 5:3, 7:1, 8:1. step-up: 1:1, 2:60, 3:76, 4:25, 5:5, 6:3, 7:1.
+- **Cold starts:** 5 isolates; their first requests cost 4, 4, 4, 3 and 7 ms (4 on salt, 1 on me). Run 3: 6–14 ms with 2 of 8 over 10. **Every `n = 1` request ≤ 10 ms ✅.**
+- **Over 10 ms:** 3 of 1,107 requests, all warm, scattered (login 13, totp 13, invite/totp 13); Cloudflare lets these finish but doesn't promise to.
+- **Wall clock** (GitHub runner in the US, not gated): login p50 508 / p99 682 ms, totp 523 / 740, step-up 725 / 885.
+
+### Verdict (run 4): M1.5 targets met (lead, 2026-10-21)
+Every gated route's p99 is within target, login p99 is 5 ms, and the cold-start fix worked (first requests 3–7 ms, was up to 14). Three warm requests in 1,107 reached 13 ms; worth watching in M7.5's budget audit, not a blocker. The $5 plan question (before real staff use) stands as recorded.
+
+
 ### Run 3 (after the tuning, PR #24): 2026-10-21 IST (2026-10-20 UTC), 15 minutes, 12 users
 Run `mvh4cyuc5298`, window ≈ 20:11:51–20:27:20 UTC, version `392f8376` only; 375 logins, 0 unexpected failures; every outcome "ok" (1,415 × 200, 36 × 401 by design). CPU from Workers Logs (`$workers.cpuTimeMs`, whole ms), each request matched by request ID to its `ev:"auth"` line (`n = 1` = first request of an isolate; 25 of 1,451 requests had no log line). Read 2026-10-21.
 
