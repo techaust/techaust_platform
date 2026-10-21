@@ -150,6 +150,16 @@ describe("no route reads anything from Cloudflare Access (staging sits behind it
   });
 });
 
+describe("D1 calls of the cheapest routes [NFR-2]", () => {
+  it("health makes no D1 call and writes no access row (it is a probe, not an event)", async () => {
+    const before = await countOf("access_log");
+    const { res, calls } = await counting("/health");
+    expect(res.status).toBe(200);
+    expect(calls).toBe(0);
+    expect(await countOf("access_log")).toBe(before);
+  });
+});
+
 describe("through the real entry point (exports.default.fetch)", () => {
   it("health answers, with no D1 call by design", async () => {
     const res = await exports.default.fetch("https://portal.example/api/v1/health");
