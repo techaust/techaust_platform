@@ -1,0 +1,1 @@
+DROP INDEX `access_log_at`;

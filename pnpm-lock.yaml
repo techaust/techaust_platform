@@ -273,6 +273,21 @@ importers:
 
   apps/portal:
     dependencies:
+      '@hono/standard-validator':
+        specifier: 0.4.0
+        version: 0.4.0(@standard-schema/spec@1.1.0)(hono@4.13.13)
+      '@techaust/auth':
+        specifier: workspace:*
+        version: link:../../packages/auth
+      '@techaust/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@techaust/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@techaust/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       hono:
         specifier: 4.13.13
         version: 4.13.13
@@ -285,6 +300,9 @@ importers:
       react-router:
         specifier: 8.4.0
         version: 8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@cloudflare/vite-plugin':
         specifier: 1.62.5

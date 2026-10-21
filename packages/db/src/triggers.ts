@@ -10,8 +10,10 @@ import {
   accessLog,
   auditLog,
   cataloguePriceHistory,
+  clientSessions,
   docCounters,
   documents,
+  magicLinkTokens,
   staffUsers,
 } from "./schema/index.ts";
 
@@ -107,10 +109,27 @@ export function authTriggerStatements(): string[] {
   ];
 }
 
+/**
+ * Portal-auth triggers (M1.6, POR-01, POR-02; a separate set because the existing triggers have no IF NOT EXISTS):
+ * - a magic link's `used_at` is write-once (a used link can't be made fresh again);
+ * - a client session's `revoked_at` is write-once (a signed-out session can't be revived);
+ * - a client session's `contact_id` and `client_id` never change (a session always belongs to one contact at one
+ *   organisation; moving a contact ends the session through the guard's join, it never re-points it).
+ */
+export function portalTriggerStatements(): string[] {
+  const table = (t: Parameters<typeof getTableConfig>[0]) => getTableConfig(t).name;
+  return [
+    `CREATE TRIGGER \`magic_link_tokens_used_once\` BEFORE UPDATE OF used_at ON \`${table(magicLinkTokens)}\` WHEN OLD.used_at IS NOT NULL AND NEW.used_at IS NOT OLD.used_at BEGIN ${abort("a magic link use is write-once")} END;`,
+    `CREATE TRIGGER \`client_sessions_revoked_once\` BEFORE UPDATE OF revoked_at ON \`${table(clientSessions)}\` WHEN OLD.revoked_at IS NOT NULL AND NEW.revoked_at IS NOT OLD.revoked_at BEGIN ${abort("a client session revocation is write-once")} END;`,
+    `CREATE TRIGGER \`client_sessions_keep_owner\` BEFORE UPDATE OF contact_id, client_id ON \`${table(clientSessions)}\` WHEN NEW.contact_id IS NOT OLD.contact_id OR NEW.client_id IS NOT OLD.client_id BEGIN ${abort("a client session contact and client cannot change")} END;`,
+  ];
+}
+
 /** The trigger sets, by the name the migration is created with (`drizzle-kit generate --custom --name <set>`). */
 export const TRIGGER_SETS = {
   triggers: { what: "integrity triggers (docs/05 §5.3)", statements: triggerStatements },
   auth_triggers: { what: "staff-auth triggers (M1.5)", statements: authTriggerStatements },
+  portal_triggers: { what: "portal-auth triggers (M1.6)", statements: portalTriggerStatements },
 } as const;
 export type TriggerSet = keyof typeof TRIGGER_SETS;
 

@@ -8,9 +8,16 @@
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
-  "observability": { "enabled": true },
+  // Workers Logs (M1.6, LD14; the owner's admin decision applies): invocation logs stay ON here and in staging (the
+  // CPU check reads `cpuTimeMs` from them; only the owner's visits reach staging). The app's own `ev: "req"` lines and
+  // errors are console logs and stay on everywhere. Query strings are removed from logged URLs.
+  "observability": { "enabled": true, "redact_query_string": true },
   "assets": { "not_found_handling": "single-page-application", "run_worker_first": ["/api/*"] },
   "vars": { "ENVIRONMENT": "local", "PAYMENTS_LIVE_ALLOWED": "false" },
+  // The one portal secret (M1.6, LD4): names only; the value is set with `wrangler secret put PORTAL_KEY_PEPPER`. It keys
+  // the HMACs of the rate-limit counters (address and email never sit in the counter table); the link and session
+  // tokens are random and need no key. Not inherited by environments, so each env lists it too.
+  "secrets": { "required": ["PORTAL_KEY_PEPPER"] },
   // D1 (docs/05 §5). Migrations live in packages/db; local dev and tests use a local database.
   "d1_databases": [
     {
@@ -27,6 +34,7 @@
       // Version/Preview URLs would skip Cloudflare Access (docs/runbooks/access-staging.md).
       "preview_urls": false,
       "vars": { "ENVIRONMENT": "staging", "PAYMENTS_LIVE_ALLOWED": "false" },
+      "secrets": { "required": ["PORTAL_KEY_PEPPER"] },
       "d1_databases": [
         {
           "binding": "DB",
@@ -39,7 +47,14 @@
     "production": {
       "name": "techaust-platform-portal",
       "workers_dev": false,
-      "vars": { "ENVIRONMENT": "production", "PAYMENTS_LIVE_ALLOWED": "false" }
+      "vars": { "ENVIRONMENT": "production", "PAYMENTS_LIVE_ALLOWED": "false" },
+      // Production: NO invocation logs from day one (they carry the client IP, user agent and location of every
+      // request, which the append-only access log already holds for security). Console logs stay on.
+      "observability": {
+        "enabled": true,
+        "redact_query_string": true,
+        "logs": { "enabled": true, "invocation_logs": false }
+      }
     }
   }
 }

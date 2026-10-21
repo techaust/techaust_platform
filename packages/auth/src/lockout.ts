@@ -47,9 +47,15 @@ export type Reservation =
  * the one that sets the lock still gets verified), so parallel requests can't all slip past a lock that only the
  * first of them has set. A full sign-in deletes the row. The Worker does this in one SQL statement (`RESERVE_SQL`).
  */
-export function reserveAttempt(a: Attempts | null, nowMs: number, lockAfter = LOCK_AFTER): Reservation {
+export function reserveAttempt(
+  a: Attempts | null,
+  nowMs: number,
+  lockAfter = LOCK_AFTER,
+  lockMs = LOCK_MS,
+  windowMs = WINDOW_MS,
+): Reservation {
   if (isLocked(a, nowMs)) return { allowed: false, row: a as Attempts };
-  const row = recordFailure(a, nowMs, lockAfter);
+  const row = recordFailure(a, nowMs, lockAfter, lockMs, windowMs);
   return { allowed: true, row, lockStarted: row.failures >= lockAfter };
 }
 
