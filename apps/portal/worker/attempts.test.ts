@@ -24,7 +24,10 @@ import {
   reserveAttempt,
   WINDOW_MS,
 } from "@techaust/auth";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+// A sequence is up to 60 D1 round trips (about 0.1 s alone); when every package tests at once it can pass 5 s.
+vi.setConfig({ testTimeout: 60_000 });
 
 const T0 = 1_700_000_000_000;
 
