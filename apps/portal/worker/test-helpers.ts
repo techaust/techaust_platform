@@ -198,7 +198,9 @@ export const setCookieLine = (res: Response, name = PORTAL_COOKIE) =>
 
 /** The response body without `request_id` (it differs per request by design). */
 export async function bodyOf(res: Response): Promise<Record<string, unknown>> {
-  const { request_id: _ignored, ...rest } = (await res.clone().json()) as Record<string, unknown>;
+  const text = await res.clone().text();
+  if (!text) return {}; // a 204 has no body
+  const { request_id: _ignored, ...rest } = JSON.parse(text) as Record<string, unknown>;
   return rest;
 }
 
@@ -334,7 +336,7 @@ export type TenantCase = {
   /** A route that needs finance access. */
   finance?: boolean;
   /** Documents of organisation A in states the portal may not show (drafts, pending approval, void). */
-  hidden?: string[];
+  hidden?: (f: Fixtures) => string[];
 };
 
 /**
@@ -369,7 +371,7 @@ export function crossTenant(
       const missing = await ask(`no-such-${crypto.randomUUID()}`);
       expect(missing.status).toBe(404);
       expect(await ask(theirs(f))).toEqual(missing);
-      for (const hidden of c.hidden ?? []) expect(await ask(hidden)).toEqual(missing);
+      for (const hidden of c.hidden?.(f) ?? []) expect(await ask(hidden)).toEqual(missing);
     });
     if (c.finance)
       it(`${c.name}: without finance access it is the same 404, even for my own document`, async () => {
