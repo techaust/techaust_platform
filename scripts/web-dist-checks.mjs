@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { lintBuiltPage, lintSource, readAllowList, visibleText } from "./web-content-lint.mjs";
+import { checkLinks } from "./web-link-check.mjs";
 
 /** The `/*` block of a Cloudflare `_headers` file as a lower-cased-name map. */
 export function parseHeaders(text) {
@@ -225,6 +226,52 @@ export function readGa4Id(siteTsText) {
   return /ga4Id:\s*"([^"]*)"/.exec(siteTsText)?.[1] ?? "";
 }
 
+const SECURITY_TXT_FIELDS = ["Contact", "Expires", "Policy", "Canonical"];
+
+/**
+ * WEB-SEC, RFC 9116: security.txt has Contact, Expires, Policy and Canonical, and Expires is in the future but no
+ * more than 366 days away (`now` is injectable for tests).
+ */
+export function checkSecurityTxt(text, now = new Date()) {
+  const problems = [];
+  const field = (n) => new RegExp(`^${n}:\\s*(\\S.*)$`, "mi").exec(text)?.[1]?.trim();
+  for (const f of SECURITY_TXT_FIELDS)
+    if (!field(f)) problems.push(`.well-known/security.txt: missing the ${f} field`);
+  const expires = field("Expires");
+  if (expires) {
+    const t = Date.parse(expires);
+    if (Number.isNaN(t))
+      problems.push(`.well-known/security.txt: Expires "${expires}" is not an ISO 8601 date`);
+    else if (t <= now.getTime())
+      problems.push(
+        `.well-known/security.txt: Expires ${expires} is in the past (renew site.securityTxtExpires)`,
+      );
+    else if (t - now.getTime() > 366 * 86_400_000)
+      problems.push(`.well-known/security.txt: Expires ${expires} is more than 366 days away`);
+  }
+  return problems;
+}
+
+/** The legal pages and /security: each built page must show its version line and a "Changes" section (lib/legal.ts). */
+export const LEGAL_PAGE_SLUGS = [
+  "privacy",
+  "terms",
+  "refund-policy",
+  "delivery-policy",
+  "cookies",
+  "accessibility",
+  "security",
+];
+
+export function checkLegalPage(name, html) {
+  const problems = [];
+  if (!/Version \d+\.\d+ · Effective \d{1,2} [A-Z][a-z]+ \d{4}/.test(html))
+    problems.push(`${name}: no "Version x.y · Effective <date>" line (WEB-LEGAL versioning)`);
+  if (!/<h[2-3][^>]*>\s*Changes\b/i.test(html))
+    problems.push(`${name}: no "Changes" section (WEB-LEGAL versioning)`);
+  return problems;
+}
+
 /** Everything: `webDir` is apps/web. Returns a list of problems (empty = all good). */
 export function checkWeb(webDir) {
   const problems = [];
@@ -255,6 +302,15 @@ export function checkWeb(webDir) {
         ...checkLeftovers(name, text),
         ...lintBuiltPage(name, text, allow.entries),
       );
+  }
+  problems.push(...checkLinks(webDir));
+  const sec = join(dist, ".well-known", "security.txt");
+  if (existsSync(sec)) problems.push(...checkSecurityTxt(readFileSync(sec, "utf8")));
+  else problems.push(".well-known/security.txt: not built (WEB-SEC)");
+  if (!existsSync(join(dist, "rss.xml"))) problems.push("rss.xml: not built (WEB-BLOG)");
+  for (const slug of LEGAL_PAGE_SLUGS) {
+    const page = join(dist, `${slug}.html`);
+    if (existsSync(page)) problems.push(...checkLegalPage(`${slug}.html`, readFileSync(page, "utf8")));
   }
   for (const file of walk(join(webDir, "src"))) {
     const name = relative(webDir, file).split(sep).join("/");

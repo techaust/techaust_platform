@@ -23,6 +23,22 @@ export const site = {
   discoveryFallback: "/contact?service=discovery-sprint",
   /** Owner decision 2026-10-22: no GA4 at launch. Empty = no consent banner, preferences show necessary only. */
   ga4Id: "",
+  /** OWNER: postal address for the legal pages (07-A `{{postal_address}}`). Empty = a labelled placeholder (never invented). */
+  postalAddress: "" as string,
+  /** OWNER: founder's headshot, a path under /brand or a built asset. Empty = the About page shows a placeholder. */
+  founderPhoto: "" as string,
+  /** OWNER: founder's short bio (About, 07 §5.7). Empty = placeholder. */
+  founderBio: "" as string,
+  /**
+   * Owner confirms the Zoho aliases security@ and privacy@ deliver (U-5). `false` blocks the production deploy
+   * (scripts/check-prod-readiness.mjs). Set to `true` only on the owner's word.
+   */
+  aliasesConfirmed: false as boolean,
+  /**
+   * `Expires` of /.well-known/security.txt (RFC 9116), ISO 8601, set to one year after it was written. The dist check
+   * fails when it is in the past or more than 366 days away: renew it before it lapses.
+   */
+  securityTxtExpires: "2027-10-22T00:00:00.000Z",
 } as const;
 
 /**
