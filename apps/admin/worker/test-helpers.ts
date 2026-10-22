@@ -1,4 +1,5 @@
 // Shared helpers of the admin API tests (workerd, a fresh D1 per test file with every migration applied).
+import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import {
   b64url,
@@ -103,6 +104,35 @@ export function barrierDb(base: D1Database, n: number): D1Database {
 
 // ---- requests ------------------------------------------------------------------------------------------------
 
+type Requester = {
+  request: (
+    input: string,
+    init: RequestInit,
+    env: Env,
+    ctx: ExecutionContext,
+  ) => Response | Promise<Response>;
+};
+
+/**
+ * A request into a Hono app WITH an execution context, answered only after everything the request put in
+ * `waitUntil` has settled (the access-log write rides there since audit L5): so a test sees the same database a
+ * caller would see a moment after the response.
+ */
+export async function sendTo(
+  target: Requester,
+  input: string,
+  init: RequestInit,
+  e: Env = env,
+): Promise<Response> {
+  const ctx = createExecutionContext();
+  const res = await target.request(input, init, e, ctx);
+  await waitOnExecutionContext(ctx);
+  return res;
+}
+
+/** `sendTo` the real app. */
+export const send = (input: string, init: RequestInit, e: Env = env) => sendTo(app, input, init, e);
+
 export type CallInit = {
   body?: unknown;
   cookie?: string | undefined;
@@ -112,7 +142,7 @@ export type CallInit = {
 
 /** A request to `/api/v1<path>` as the SPA would send it (same origin, JSON), straight into the Hono app. */
 export const call = async (path: string, init: CallInit = {}, e: Env = env) =>
-  app.request(
+  send(
     `${ORIGIN}/api/v1${path}`,
     {
       method: init.method ?? (init.body === undefined ? "GET" : "POST"),

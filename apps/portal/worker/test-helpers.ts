@@ -1,4 +1,5 @@
 // Shared helpers of the portal API tests (workerd, a fresh D1 per test file with every migration applied).
+import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { newToken, PORTAL_ABS_MS, PORTAL_COOKIE, PORTAL_IDLE_MS, tokenHash } from "@techaust/auth";
 import { uuidv7 } from "@techaust/core";
@@ -135,13 +136,36 @@ export type CallInit = {
   raw?: boolean;
 };
 
-type Handler = { request: (url: string, init: RequestInit, env: Env) => Response | Promise<Response> };
+type Handler = {
+  request: (url: string, init: RequestInit, env: Env, ctx: ExecutionContext) => Response | Promise<Response>;
+};
+
+/**
+ * A request into a Hono app WITH an execution context, answered only after everything the request put in
+ * `waitUntil` has settled (the access-log write rides there since audit L5): so a test sees the same database a
+ * caller would see a moment after the response.
+ */
+export async function sendTo(
+  target: Handler,
+  url: string,
+  init: RequestInit,
+  e: Env = env,
+): Promise<Response> {
+  const ctx = createExecutionContext();
+  const res = await target.request(url, init, e, ctx);
+  await waitOnExecutionContext(ctx);
+  return res;
+}
+
+/** `sendTo` the real app. */
+export const send = (url: string, init: RequestInit, e: Env = env) => sendTo(app, url, init, e);
 
 export const callerFor =
   (target: Handler) =>
   async (path: string, init: CallInit = {}, e: Env = env) => {
     const ip = init.ip === undefined ? nextIp() : init.ip;
-    return target.request(
+    return sendTo(
+      target,
       `${ORIGIN}/api/v1${path}`,
       {
         method: init.method ?? (init.body === undefined ? "GET" : "POST"),

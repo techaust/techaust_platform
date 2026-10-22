@@ -42,7 +42,9 @@ export function missingPreviewOff(config) {
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
   let failed = false;
   for (const app of APPS) {
-    const config = parseJsonc(readFileSync(new URL(`../apps/${app}/wrangler.jsonc`, import.meta.url), "utf8"));
+    const config = parseJsonc(
+      readFileSync(new URL(`../apps/${app}/wrangler.jsonc`, import.meta.url), "utf8"),
+    );
     const missing = missingPreviewOff(config);
     if (missing.length > 0) {
       console.error(`apps/${app}/wrangler.jsonc: "preview_urls": false is missing at ${missing.join(", ")}`);

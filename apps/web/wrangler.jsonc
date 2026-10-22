@@ -15,7 +15,11 @@
   "observability": { "enabled": true, "redact_query_string": true },
   // Only the routes the Worker implements run it; any other /api path gets the static 404 without an invocation.
   // (The Worker keeps its own 404 for unknown /api routes. Add each new route here when it is built: M2.4.)
-  "assets": { "directory": "./dist", "not_found_handling": "404-page", "run_worker_first": ["/api/geo", "/api/forms/*"] },
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "404-page",
+    "run_worker_first": ["/api/geo", "/api/forms/*"]
+  },
   "vars": { "ENVIRONMENT": "local" },
   "env": {
     "staging": {

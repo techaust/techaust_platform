@@ -5,8 +5,7 @@ import { ADMIN_COOKIE, newToken, PORTAL_COOKIE, tokenHash } from "@techaust/auth
 import { uuidv7 } from "@techaust/core";
 import { describe, expect, it } from "vitest";
 import { fixtures } from "./fixtures.ts";
-import app from "./index.ts";
-import { bodyOf, call, counted, sessionFor } from "./test-helpers.ts";
+import { bodyOf, call, counted, send, sessionFor } from "./test-helpers.ts";
 
 /** A live staff session (owner) written straight to the database: the token and the cookie as the admin would set it. */
 async function staffSession() {
@@ -28,7 +27,7 @@ describe("a staff token is not a portal token [POR-02]", () => {
   it("a valid staff token sent as the portal cookie is a portal 401 (one read, no write)", async () => {
     const staff = await staffSession();
     const c = counted();
-    const res = await app.request(
+    const res = await send(
       "https://portal.example/api/v1/me",
       { headers: { Cookie: `${PORTAL_COOKIE}=${staff.token}`, Origin: "https://portal.example" } },
       c.env,
@@ -41,7 +40,7 @@ describe("a staff token is not a portal token [POR-02]", () => {
   it("the staff cookie under its own name is invisible to the portal (no D1 call at all)", async () => {
     const staff = await staffSession();
     const c = counted();
-    const res = await app.request(
+    const res = await send(
       "https://portal.example/api/v1/me",
       { headers: { Cookie: `${ADMIN_COOKIE}=${staff.token}`, Origin: "https://portal.example" } },
       c.env,

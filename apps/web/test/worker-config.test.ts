@@ -32,9 +32,12 @@ describe("web run_worker_first (audit L1)", () => {
     }
   });
 
-  it.each(["/api/nope", "/api/x", "/api", "/api/geo2", "/api/form/x"])("%s is served by assets, not the Worker", (path) => {
-    expect(patterns.some((p) => matches(p, path))).toBe(false);
-  });
+  it.each(["/api/nope", "/api/x", "/api", "/api/geo2", "/api/form/x"])(
+    "%s is served by assets, not the Worker",
+    (path) => {
+      expect(patterns.some((p) => matches(p, path))).toBe(false);
+    },
+  );
 });
 
 describe("preview-URL guard (audit M1)", () => {
@@ -46,15 +49,17 @@ describe("preview-URL guard (audit M1)", () => {
 
   it("fails when the top level, staging or production is missing or true", () => {
     expect(guard.missingPreviewOff({ env: { staging: off, production: off } })).toEqual(["(top level)"]);
-    expect(guard.missingPreviewOff({ ...off, env: { staging: { preview_urls: true }, production: off } })).toEqual([
-      "env.staging",
-    ]);
+    expect(
+      guard.missingPreviewOff({ ...off, env: { staging: { preview_urls: true }, production: off } }),
+    ).toEqual(["env.staging"]);
     expect(guard.missingPreviewOff({ ...off, env: { staging: off } })).toEqual(["env.production"]);
     expect(guard.missingPreviewOff({})).toEqual(["(top level)", "env.staging", "env.production"]);
   });
 
   it.each(["admin", "portal", "web", "jobs"])("the real %s config passes", (name) => {
-    const real = guard.parseJsonc(readFileSync(new URL(`../../${name}/wrangler.jsonc`, import.meta.url), "utf8"));
+    const real = guard.parseJsonc(
+      readFileSync(new URL(`../../${name}/wrangler.jsonc`, import.meta.url), "utf8"),
+    );
     expect(guard.missingPreviewOff(real)).toEqual([]);
   });
 

@@ -1,7 +1,11 @@
 // What the Worker writes to Workers Logs [NFR-6]: one line per /api request with exactly ev, r, s, rid, iso, n, and
 // no personal data anywhere on the console.
+
+import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
+import { env } from "cloudflare:workers";
 import { currentStep, totpCode } from "@techaust/auth";
 import { describe, expect, it, vi } from "vitest";
+import app from "./index.ts";
 import {
   call,
   enrol,
@@ -9,6 +13,8 @@ import {
   hash,
   invite,
   nextCode,
+  ORIGIN,
+  rows,
   sessionFor,
   userId,
   withDb,
@@ -215,5 +221,109 @@ describe("no personal data on the console [NFR-6]", () => {
     });
     expect(spy.lines.join("\n")).not.toContain("boom");
     expect(spy.lines.join("\n")).not.toContain(t.id);
+  });
+});
+
+describe("header values are cut before they reach a log row (audit M2)", () => {
+  it("a 10 KB User-Agent is stored as 512 characters, an oversized address and cf-ray as 64", async () => {
+    const s = await sessionFor("accountant");
+    const res = await call("/auth/me", {
+      cookie: s.cookie,
+      headers: {
+        "cf-ray": `ray-${"r".repeat(200)}`,
+        "CF-Connecting-IP": "9".repeat(200),
+        "User-Agent": "A".repeat(10_240),
+      },
+    });
+    expect(res.status).toBe(200);
+    const id = ((await res.json()) as { request_id?: string }).request_id;
+    const logged = await rows<{ ip: string; user_agent: string; request_id: string }>(
+      "SELECT ip, user_agent, request_id FROM access_log WHERE actor_id = ?",
+      s.id,
+    );
+    expect(logged).toHaveLength(1);
+    expect(logged[0]?.user_agent).toBe("A".repeat(512));
+    expect(logged[0]?.ip).toBe("9".repeat(64));
+    expect(logged[0]?.request_id).toHaveLength(64);
+    expect(logged[0]?.request_id.startsWith("ray-rrr")).toBe(true);
+    expect(id === undefined || id.length <= 64).toBe(true);
+  });
+
+  it("a normal User-Agent and address are stored untouched", async () => {
+    const s = await sessionFor("accountant");
+    await call("/auth/me", {
+      cookie: s.cookie,
+      headers: { "CF-Connecting-IP": "203.0.113.7", "User-Agent": "Mozilla/5.0 (Normal)" },
+    });
+    expect(await rows("SELECT ip, user_agent FROM access_log WHERE actor_id = ?", s.id)).toEqual([
+      { ip: "203.0.113.7", user_agent: "Mozilla/5.0 (Normal)" },
+    ]);
+  });
+});
+
+describe("the access-row write rides in the execution context (audit L5)", () => {
+  const request = (cookie: string, e: Env = env) => {
+    const ctx = createExecutionContext();
+    const waited: Promise<unknown>[] = [];
+    const orig = ctx.waitUntil.bind(ctx);
+    ctx.waitUntil = (p: Promise<unknown>) => {
+      waited.push(p);
+      orig(p);
+    };
+    const res = app.request(
+      `${ORIGIN}/api/v1/auth/me`,
+      { headers: { Origin: ORIGIN, Cookie: cookie } },
+      e,
+      ctx,
+    );
+    return { res, ctx, waited };
+  };
+
+  it("hands the write to waitUntil exactly once, and the row exists once the context has settled", async () => {
+    const s = await sessionFor("accountant");
+    const before = (await rows("SELECT id FROM access_log WHERE actor_id = ?", s.id)).length;
+    const { res, ctx, waited } = request(s.cookie);
+    expect((await res).status).toBe(200);
+    expect(waited).toHaveLength(1);
+    await waitOnExecutionContext(ctx);
+    expect((await rows("SELECT id FROM access_log WHERE actor_id = ?", s.id)).length).toBe(before + 1);
+  });
+
+  it("a failing write still answers 200 and logs only the route pattern, the request id and the error class", async () => {
+    const s = await sessionFor("accountant");
+    // Statements whose `run` (the access row, alone in its call) rejects; everything else reads the real database.
+    const wrapStmt = (st: D1PreparedStatement): D1PreparedStatement =>
+      new Proxy(st, {
+        get(t, k) {
+          if (k === "run") return () => Promise.reject(new Error("disk full: secret-sql-detail"));
+          if (k === "bind") return (...a: unknown[]) => wrapStmt(t.bind(...a));
+          const v = Reflect.get(t, k) as unknown;
+          return typeof v === "function" ? v.bind(t) : v;
+        },
+      });
+    const failing = withDb({
+      prepare: (q: string) => wrapStmt(env.DB.prepare(q)),
+      batch: (b: D1PreparedStatement[]) => env.DB.batch(b),
+    } as unknown as D1Database);
+    const spy = spyConsole();
+    let res: Response;
+    try {
+      const r = request(s.cookie, failing);
+      res = await r.res;
+      await waitOnExecutionContext(r.ctx);
+    } finally {
+      spy.stop();
+    }
+    expect(res.status).toBe(200);
+    const errors = spy.lines
+      .map((l) => JSON.parse(l) as Record<string, unknown>)
+      .filter((l) => l.level === "error");
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({
+      route: "/api/v1/auth/me",
+      message: "access log write failed",
+      cause: "Error",
+    });
+    expect(spy.lines.join("\n")).not.toContain("secret-sql-detail");
   });
 });
