@@ -7,6 +7,7 @@
 | **Inputs** | [02](02-services-strategy.md) positioning, portfolio and prices · [04 PRD](04-prd.md) · [06 design system](06-design-system.md) · legal research [08-B](08-research-appendix/B-dpdp-legal.md) |
 | **Legal page drafts** | [07-A Legal pages](07-content-appendix/A-legal-pages.md) (privacy, terms, refund, delivery, cookies, security, accessibility). VERIFY WITH CA/LEGAL. |
 | **Social profiles** | [07-B Social media profiles](07-content-appendix/B-social-profiles.md) (bios, tagline and profile details for every platform; images in `packages/ui/brand/social/`) |
+| **M2.3 additions** | [07-C service FAQs](07-content-appendix/C-service-faqs.md) · [07-D missing copy](07-content-appendix/D-m2.3-missing-copy.md) · [07-E blog drafts](07-content-appendix/E-blog-drafts.md) · [07-F meta descriptions](07-content-appendix/F-m2.3-meta-descriptions.md) (industries hub, blog and RSS, legal pages) |
 
 **How to read this document**
 - Copy here is **final draft** wording. In Phase 6 it moves into Markdown files under `apps/web/src/content/`. Small edits for layout fit may happen; changes of meaning come back to you.
