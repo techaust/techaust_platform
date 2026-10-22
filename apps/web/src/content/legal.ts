@@ -16,6 +16,11 @@ export const legal = validateLegal({
   "refund-policy": draft01("First published draft."),
   "delivery-policy": draft01("First published draft."),
   cookies: draft01("First published draft."),
-  accessibility: draft01("First published draft."),
+  // 07-A §8 labels the accessibility statement Version 0.2, with one change entry.
+  accessibility: {
+    version: "0.2",
+    effective: "2026-10-22",
+    changes: [{ version: "0.2", date: "2026-10-22", note: "First published version." }],
+  },
   security: draft01("First published draft."),
 });

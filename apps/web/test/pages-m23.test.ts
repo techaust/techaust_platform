@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { site } from "../src/config/site";
 import { about, howWeBuildAi, howWeWork } from "../src/content/company";
 import { industries, industriesHub } from "../src/content/industries";
-import { legalPages } from "../src/content/legal-pages";
+import { buildLegalPages, legalPages } from "../src/content/legal-pages";
 import { pricing, pricingExtras } from "../src/content/pricing";
 import { serviceContent } from "../src/content/services";
 import { blogPage, workPage } from "../src/content/work-page";
@@ -83,6 +83,27 @@ describe("M2.3 content", () => {
       expect(text).not.toMatch(/`_ga/);
       expect(text).not.toMatch(/Google Analytics loads/);
     }
+  });
+
+  it("hides every Google Analytics line on privacy and cookies while GA is off, and brings each back word for word with it on", () => {
+    const off = buildLegalPages(false);
+    const on = buildLegalPages(true);
+    const offPrivacy = strings(off.privacy).join("\n");
+    const onPrivacy = strings(on.privacy).join("\n");
+    expect(offPrivacy).not.toMatch(/Google|analytics cookies only with your consent|accepts analytics/i);
+    expect(onPrivacy).toContain(
+      "analytics cookies only with your consent; marketing emails only if you opt in;",
+    );
+    expect(onPrivacy).toContain("Visitor who accepts analytics");
+    expect(onPrivacy).toContain("Google (Analytics)");
+    expect(onPrivacy).toContain("Analytics (Google, with consent)");
+    expect(offPrivacy).toContain("marketing emails only if you opt in; you can ask us to access");
+    const offCookies = strings(off.cookies).join("\n");
+    expect(offCookies).toContain("**Your choice.** You can delete cookies in your browser.");
+    expect(offCookies).not.toMatch(/accept or reject analytics|_ga|Google Analytics/);
+    const onCookies = strings(on.cookies).join("\n");
+    expect(onCookies).toContain("to accept or reject analytics at any time");
+    expect(onCookies).toContain("`_ga`");
   });
 
   it("keeps the website liability cap a formatted amount, never typed", () => {

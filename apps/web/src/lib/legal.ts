@@ -1,6 +1,6 @@
 // Legal page versioning (WEB-LEGAL, roadmap M2.3 "legal page versioning"): every legal page and /security carries a
 // version, an effective date and a list of changes. The pages show "Version 0.1 · Effective <date>" and a "Changes"
-// section; 07-A's {{effective_date}} comes from here. The data is content/legal.ts; this file is the schema and the
+// section; they replace 07-A's "Version x · Effective" footers. The data is content/legal.ts; this file is the schema and the
 // helpers. A page missing from the data, or with a malformed entry, fails the build (the module throws on import).
 import { z } from "astro/zod";
 

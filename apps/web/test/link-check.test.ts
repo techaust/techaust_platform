@@ -34,6 +34,23 @@ describe("link checker", () => {
     expect(out).toContain('x.html: src="/missing.png" does not resolve');
   });
 
+  it("counts name= only on an <a>, and decodes percent-escapes in a fragment", () => {
+    expect([...l.idsOf(html(`<a name="old">x</a><input name="email"><h2 id="a b">h</h2>`))].sort()).toEqual([
+      "a b",
+      "old",
+    ]);
+    const ok = site({
+      "index.html": html(`<a href="/p#caf%C3%A9">a</a><a href="/p#a%20b">b</a><a href="/p#old">c</a>`),
+      "p.html": html(`<h2 id="café">c</h2><h2 id="a b">h</h2><a name="old">o</a>`),
+    });
+    expect(l.checkLinksIn(ok)).toEqual([]);
+    const bad = site({
+      "index.html": html(`<a href="/p#email">a</a>`),
+      "p.html": html(`<input name="email">`),
+    });
+    expect(l.checkLinksIn(bad).join()).toContain('no id "email"');
+  });
+
   it("fails on a broken fragment, on this page and on another", () => {
     const bad = site({
       "index.html": html(`<a href="#nowhere">a</a><a href="/about#ghost">b</a>`),
@@ -99,6 +116,16 @@ describe("pre-production readiness (never run by CI or staging)", () => {
     ).toHaveLength(1);
   });
 
+  it("blocks production while the launch date is empty or a legal page's effective date differs", () => {
+    const legalTs = `a: { effective: "2026-10-22" }, b: { effective: "2026-10-22" }`;
+    expect(r.checkLaunchDate('launchDate: "" as string,', legalTs).join()).toMatch(/launch date is not set/);
+    expect(r.checkLaunchDate('launchDate: "2026-11-01" as string,', legalTs).join()).toMatch(
+      /2026-10-22 differ from site.launchDate 2026-11-01/,
+    );
+    expect(r.checkLaunchDate('launchDate: "2026-10-22",', legalTs)).toEqual([]);
+    expect(r.checkLaunchDate('launchDate: "2026-10-22",', "nothing here").join()).toMatch(/No `effective`/);
+  });
+
   it("fails on a built page that still has a Placeholder or the postal-address placeholder", () => {
     expect(r.checkBuiltPage("about.html", `<span class="placeholder__tag">Placeholder</span>`)).toHaveLength(
       1,
@@ -116,6 +143,8 @@ describe("pre-production readiness (never run by CI or staging)", () => {
   it("reads the real site.ts: blocked today (owner inputs pending)", () => {
     const text = r.readSiteString('a: 1,\n  founderBio: "x",', "founderBio");
     expect(text).toBe("x");
+    // The real site.ts has no launch date yet, so the real check is blocked on it too.
+    expect(r.readSiteString('launchDate: "" as string,', "launchDate")).toBe("");
     expect(r.readSiteBool("aliasesConfirmed: false as boolean", "aliasesConfirmed")).toBe(false);
   });
 });

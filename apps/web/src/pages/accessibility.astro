@@ -8,6 +8,6 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 const doc = legalPages.accessibility;
 ---
 
-<BaseLayout title={doc.meta.title}>
+<BaseLayout title={doc.meta.title} description={doc.meta.description}>
   <LegalPage doc={doc} />
 </BaseLayout>

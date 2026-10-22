@@ -3,8 +3,9 @@
 // fetched. Routes another milestone owns are listed, each with a reason and the milestone, in
 // apps/web/link-check-allow.json; an entry that is no longer needed (the page now exists) is itself a problem, so the
 // list cannot rot. Pure functions (no process.exit), run from scripts/web-dist-checks.mjs.
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, posix, relative, sep } from "node:path";
+import { walk } from "./web-shared.mjs";
 
 /** Paths the Worker answers (no file in dist): `run_worker_first: ["/api/*"]`. */
 const WORKER_PREFIXES = ["/api/"];
@@ -26,16 +27,6 @@ export function parseLinkAllowList(json) {
 export function readLinkAllowList(webDir) {
   const file = join(webDir, "link-check-allow.json");
   return existsSync(file) ? parseLinkAllowList(readFileSync(file, "utf8")) : [];
-}
-
-function walk(dir) {
-  const out = [];
-  for (const entry of readdirSync(dir)) {
-    const p = join(dir, entry);
-    if (statSync(p).isDirectory()) out.push(...walk(p));
-    else out.push(p);
-  }
-  return out;
 }
 
 const URL_ATTR = /\s(href|src|action|poster|data-src)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
@@ -70,12 +61,24 @@ const decodeEntities = (s) =>
     .replace(/&#38;/g, "&")
     .replace(/&quot;/g, '"');
 
-/** The ids (and legacy anchor names) on a page. */
+/** The ids on a page, and the legacy anchor names (`name=` counts only on an `<a>`; on a form field it is not a target). */
 export function idsOf(html) {
   const ids = new Set();
-  for (const tag of tagsOf(html))
-    for (const m of tag.matchAll(/\s(?:id|name)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi)) ids.add(m[1] ?? m[2]);
+  for (const tag of tagsOf(html)) {
+    for (const m of tag.matchAll(/\sid\s*=\s*(?:"([^"]*)"|'([^']*)')/gi)) ids.add(m[1] ?? m[2]);
+    if (/^<a\s/i.test(tag))
+      for (const m of tag.matchAll(/\sname\s*=\s*(?:"([^"]*)"|'([^']*)')/gi)) ids.add(m[1] ?? m[2]);
+  }
   return ids;
+}
+
+/** A URL fragment as the browser reads it: percent-decoded (an undecodable one stays as written). */
+export function decodeFragment(fragment) {
+  try {
+    return decodeURIComponent(fragment);
+  } catch {
+    return fragment;
+  }
 }
 
 /** The files a URL path may be: /about → about.html or about/index.html; / → index.html; /x.txt → x.txt. */
@@ -107,7 +110,7 @@ export function checkLinksIn(files, allow = []) {
     for (const { url, attr } of urlsOf(html)) {
       if (!url || /^([a-z][a-z0-9+.-]*:|\/\/)/i.test(url)) continue; // external, mailto:, tel:, data:, javascript:
       const hashAt = url.indexOf("#");
-      const fragment = hashAt >= 0 ? url.slice(hashAt + 1) : "";
+      const fragment = hashAt >= 0 ? decodeFragment(url.slice(hashAt + 1)) : "";
       const noHash = hashAt >= 0 ? url.slice(0, hashAt) : url;
       const path = noHash.split("?")[0];
       let target; // dist-relative file name

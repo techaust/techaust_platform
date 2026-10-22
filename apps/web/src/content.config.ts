@@ -3,13 +3,13 @@
 import { defineCollection } from "astro:content";
 import { glob } from "astro/loaders";
 import "./content/legal"; // validates the legal page version data on every build (lib/legal.ts)
+import { linkableServiceCodes } from "./content/services";
 import { blogSchema } from "./lib/blog";
-import { snapshot } from "./lib/catalogue";
 import { caseStudySchema } from "./lib/work";
 
 const blog = defineCollection({
   loader: glob({ pattern: "**/[^_]*.md", base: "./src/content/blog" }),
-  schema: blogSchema(snapshot().items.map((i) => i.code)),
+  schema: blogSchema(linkableServiceCodes()),
 });
 
 const caseStudies = defineCollection({

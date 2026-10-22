@@ -2,10 +2,11 @@
 // Pure functions (no process.exit) so a Vitest test can prove each check fails on bad input; the CLI is
 // scripts/check-web-dist.mjs, run by `pnpm --filter @techaust/web build` right after `astro build`.
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { lintBuiltPage, lintSource, readAllowList, visibleText } from "./web-content-lint.mjs";
 import { checkLinks } from "./web-link-check.mjs";
+import { readSiteString, walk } from "./web-shared.mjs";
 
 /** The `/*` block of a Cloudflare `_headers` file as a lower-cased-name map. */
 export function parseHeaders(text) {
@@ -209,22 +210,10 @@ export function checkAmountLiterals(name, source) {
   return problems;
 }
 
-function walk(dir) {
-  const out = [];
-  for (const entry of readdirSync(dir)) {
-    const p = join(dir, entry);
-    if (statSync(p).isDirectory()) out.push(...walk(p));
-    else out.push(p);
-  }
-  return out;
-}
-
 const TEXT_EXT = /\.(html|css|js|mjs|svg|txt|xml|json|webmanifest|map)$/i;
 
 /** The GA4 measurement ID from site.ts ("" when off). */
-export function readGa4Id(siteTsText) {
-  return /ga4Id:\s*"([^"]*)"/.exec(siteTsText)?.[1] ?? "";
-}
+export const readGa4Id = (siteTsText) => readSiteString(siteTsText, "ga4Id");
 
 const SECURITY_TXT_FIELDS = ["Contact", "Expires", "Policy", "Canonical"];
 
@@ -272,6 +261,35 @@ export function checkLegalPage(name, html) {
   return problems;
 }
 
+/** Every legal page must be built (a slug missing from dist is a problem) and carry its version line and Changes. */
+export function checkLegalPages(dist) {
+  const problems = [];
+  for (const slug of LEGAL_PAGE_SLUGS) {
+    const page = join(dist, `${slug}.html`);
+    if (existsSync(page)) problems.push(...checkLegalPage(`${slug}.html`, readFileSync(page, "utf8")));
+    else problems.push(`${slug}.html: legal page not built (WEB-LEGAL)`);
+  }
+  return problems;
+}
+
+const META_MAX = 155;
+const NO_DESCRIPTION = new Set(["404.html"]);
+
+/** WEB-G-09 / 07 §1: every built page has a meta description, not empty and at most 155 characters. */
+export function checkMetaDescription(name, html) {
+  if (NO_DESCRIPTION.has(name)) return [];
+  const tag = /<meta\b[^>]*\bname="description"[^>]*>/i.exec(html);
+  const raw = tag ? /\bcontent="([^"]*)"/i.exec(tag[0])?.[1] : undefined;
+  if (raw === undefined || !raw.trim()) return [`${name}: no meta description (07-F lists the wording)`];
+  const text = raw
+    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(Number.parseInt(h, 16)))
+    .replace(/&(?:amp|lt|gt|quot|apos);/g, "x");
+  return [...text].length > META_MAX
+    ? [`${name}: meta description is ${[...text].length} characters (at most ${META_MAX})`]
+    : [];
+}
+
 /** Everything: `webDir` is apps/web. Returns a list of problems (empty = all good). */
 export function checkWeb(webDir) {
   const problems = [];
@@ -300,6 +318,7 @@ export function checkWeb(webDir) {
         ...checkHtml(name, text, headersText),
         ...checkAmpersands(name, text),
         ...checkLeftovers(name, text),
+        ...checkMetaDescription(name, text),
         ...lintBuiltPage(name, text, allow.entries),
       );
   }
@@ -308,10 +327,7 @@ export function checkWeb(webDir) {
   if (existsSync(sec)) problems.push(...checkSecurityTxt(readFileSync(sec, "utf8")));
   else problems.push(".well-known/security.txt: not built (WEB-SEC)");
   if (!existsSync(join(dist, "rss.xml"))) problems.push("rss.xml: not built (WEB-BLOG)");
-  for (const slug of LEGAL_PAGE_SLUGS) {
-    const page = join(dist, `${slug}.html`);
-    if (existsSync(page)) problems.push(...checkLegalPage(`${slug}.html`, readFileSync(page, "utf8")));
-  }
+  problems.push(...checkLegalPages(dist));
   for (const file of walk(join(webDir, "src"))) {
     const name = relative(webDir, file).split(sep).join("/");
     if (name.startsWith("src/preview/") || !/\.(astro|ts|tsx|md|mdx|ya?ml|json)$/.test(name)) continue;

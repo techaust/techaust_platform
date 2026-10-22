@@ -7,9 +7,12 @@
 import type { IndustryContent } from "./types";
 
 export const industriesHub = {
-  // 07 §5.2 gives the hub no meta title or description (run file: a gap for the owner). The title is the h1 with the
-  // site suffix; there is no description until the owner writes one.
-  meta: { title: "Industries we know well | TecHaust" },
+  // 07 §5.2 gives the hub no meta: the title is the h1 with the site suffix; the description is 07-F (owner-approved).
+  meta: {
+    title: "Industries we know well | TecHaust",
+    description:
+      "Where our experience runs deepest: finance, accounting and legal teams; retail, e-commerce and logistics; and SaaS companies and startups.",
+  },
   h1: "Industries we know well",
   lede: "We work across sectors, but these three are where our experience runs deepest.",
   closing:

@@ -5,7 +5,6 @@
 //   {{terms:small_job_threshold}}  the settings default (catalogue snapshot payment terms), whole units, INR and USD,
 //                       rendered like a plain price (ref "terms:…", no "+ GST")
 //   {{postal_address}}  site.postalAddress, or a labelled placeholder while it is empty (OWNER input; never invented)
-//   {{effective_date}}  the legal page's effective date (lib/legal.ts); needs `options.effectiveDate`
 // An unknown or malformed token, an unknown code or a hidden service THROWS: the build fails, a wrong or missing price
 // is never shipped.
 import { money } from "@techaust/core";
@@ -32,11 +31,6 @@ const TERMS = /^terms:([a-z_]+)$/;
 /** What a legal page shows while `site.postalAddress` is empty (a visible, labelled gap, never an invented address). */
 export const POSTAL_ADDRESS_PLACEHOLDER = "[Postal address: owner input pending]";
 
-export type TokenOptions = {
-  /** The page's effective date, already formatted ("22 October 2026"), for `{{effective_date}}`. */
-  effectiveDate?: string;
-};
-
 /** The payment-terms settings a `{{terms:key}}` token may name, as a price (INR and USD whole-unit amounts). */
 function termsOf(key: string): SitePrice {
   const terms = snapshot().paymentTerms;
@@ -49,7 +43,7 @@ function termsOf(key: string): SitePrice {
 }
 
 /** Splits a content string into text and price parts. Throws on any `{{…}}` that is not a valid token. */
-export function parseTokens(text: string, options: TokenOptions = {}): Part[] {
+export function parseTokens(text: string): Part[] {
   const parts: Part[] = [];
   let last = 0;
   for (const m of text.matchAll(TOKEN)) {
@@ -58,14 +52,9 @@ export function parseTokens(text: string, options: TokenOptions = {}): Part[] {
     const terms = TERMS.exec(body);
     let asText: string | undefined;
     if (body === "postal_address") asText = site.postalAddress || POSTAL_ADDRESS_PLACEHOLDER;
-    else if (body === "effective_date") {
-      if (options.effectiveDate === undefined)
-        throw new Error("{{effective_date}} needs the page's effective date (options.effectiveDate)");
-      asText = options.effectiveDate;
-    }
     if (!known && !terms && asText === undefined)
       throw new Error(
-        `Unknown content token ${m[0]} (known: {{price:Sx}}, {{price-plain:Sx}}, {{terms:small_job_threshold}}, {{postal_address}}, {{effective_date}})`,
+        `Unknown content token ${m[0]} (known: {{price:Sx}}, {{price-plain:Sx}}, {{terms:small_job_threshold}}, {{postal_address}})`,
       );
     const before = text.slice(last, m.index);
     if (before) parts.push({ kind: "text", text: before });
@@ -92,8 +81,7 @@ export function parseTokens(text: string, options: TokenOptions = {}): Part[] {
 }
 
 /** Whether a string holds any price or terms token. */
-export const hasTokens = (text: string, options: TokenOptions = {}): boolean =>
-  parseTokens(text, options).some((p) => p.kind === "price");
+export const hasTokens = (text: string): boolean => parseTokens(text).some((p) => p.kind === "price");
 
 /**
  * Tokens as plain text, in INR (the site's default currency; no switch exists in meta text or link previews):
@@ -101,8 +89,8 @@ export const hasTokens = (text: string, options: TokenOptions = {}): boolean =>
  * amounts in meta text carry "+ GST"; VERIFY WITH CA/LEGAL). The words come from the shell copy, as on the pages.
  * A terms amount (a threshold) is not a price: no "+ GST".
  */
-export function renderPlain(text: string, options: TokenOptions = {}): string {
-  return parseTokens(text, options)
+export function renderPlain(text: string): string {
+  return parseTokens(text)
     .map((p) => {
       if (p.kind === "text") return p.text;
       if (p.ref.startsWith("terms:")) return displayAmount(p.inr);

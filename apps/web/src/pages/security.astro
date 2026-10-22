@@ -12,7 +12,7 @@ const doc = legalPages.security;
 const txt = buildSecurityTxt(site.securityTxtExpires).trimEnd();
 ---
 
-<BaseLayout title={doc.meta.title}>
+<BaseLayout title={doc.meta.title} description={doc.meta.description}>
   <LegalPage doc={doc}>
     <pre class="sectxt"><code>{txt}</code></pre>
   </LegalPage>
