@@ -13,7 +13,12 @@
   },
   "devDependencies": {
     "@techaust/config": "workspace:*",
+    "@types/node": "24.19.1",
     "typescript": "6.0.3",
     "vitest": "4.1.11"
+  },
+  "dependencies": {
+    "@techaust/core": "workspace:*",
+    "aws4fetch": "1.0.20"
   }
 }

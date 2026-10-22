@@ -64,6 +64,13 @@
       "when": 1792667643403,
       "tag": "0008_indexes_fk_lookups",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1792698682301,
+      "tag": "0009_email_log",
+      "breakpoints": true
     }
   ]
 }

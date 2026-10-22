@@ -1,8 +1,12 @@
 // Worker configuration guards. Runs in Node (it reads files).
 //  - L1 (audit 2026-10-22): only the routes the Worker implements run it; junk /api paths get the static 404.
 //  - M1: the preview-URL guard (scripts/check-worker-config.mjs) fails on a config that lets Preview URLs through.
+//  - M2.4: the no-data-bindings guard (scripts/check-web-bindings.mjs) still rejects D1/R2/KV/DO/Hyperdrive, and the
+//    form bindings (queue, rate limiter, secrets) are declared where the staging deploy needs them.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+// @ts-expect-error plain .mjs without types
+import * as bindingGuard from "../../../scripts/check-web-bindings.mjs";
 // @ts-expect-error plain .mjs without types
 import * as guard from "../../../scripts/check-worker-config.mjs";
 import app from "../src/worker.ts";
@@ -22,8 +26,9 @@ describe("web run_worker_first (audit L1)", () => {
 
   it("covers every route the Worker implements", () => {
     const routes = app.routes.filter((r) => r.method !== "ALL");
-    expect(routes.length).toBeGreaterThan(0);
-    for (const r of routes) {
+    const all = app.routes.map((r) => r.path);
+    expect(all).toContain("/api/forms/:kind");
+    for (const r of [...routes, ...app.routes.filter((x) => x.path.startsWith("/api/forms"))]) {
       const sample = r.path.replace(/\*$/, "x");
       expect(
         patterns.some((p) => matches(p, sample)),
@@ -38,6 +43,39 @@ describe("web run_worker_first (audit L1)", () => {
       expect(patterns.some((p) => matches(p, path))).toBe(false);
     },
   );
+});
+
+describe("web binding guard (docs/05 §1.1)", () => {
+  it("the real config declares no data bindings", () => {
+    expect(
+      bindingGuard.findForbidden(readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8")),
+    ).toEqual([]);
+  });
+
+  it.each(["d1_databases", "r2_buckets", "kv_namespaces", "durable_objects", "hyperdrive"])(
+    "still rejects %s",
+    (key) => {
+      expect(bindingGuard.findForbidden(`{ "${key}": [] }`)).toEqual([key]);
+    },
+  );
+
+  it("allows queues, rate limits and secrets", () => {
+    expect(
+      bindingGuard.findForbidden('{ "queues": {}, "ratelimits": [], "secrets": { "required": ["X"] } }'),
+    ).toEqual([]);
+  });
+});
+
+describe("form bindings (M2.4)", () => {
+  it("top level and staging declare the queue, the rate limiter and both secrets; production has none", () => {
+    for (const scope of [config, config.env.staging]) {
+      expect(scope.queues.producers[0].binding).toBe("LEADS_QUEUE");
+      expect(scope.ratelimits[0]).toMatchObject({ name: "RL_FORMS", simple: { limit: 2, period: 60 } });
+      expect(scope.secrets.required).toEqual(["TURNSTILE_SECRET", "FORMS_IP_PEPPER"]);
+    }
+    expect(config.env.staging.queues.producers[0].queue).toBe("techaust-staging-leads");
+    expect(config.env.production.queues).toBeUndefined();
+  });
 });
 
 describe("preview-URL guard (audit M1)", () => {

@@ -1,6 +1,7 @@
 {
   // hooks.techaust.com: webhooks, queue consumers and cron (docs/05-architecture.md §4).
-  // D1 is bound from M1.3; R2, queues, Browser Run and crons follow with their milestones. Custom domains only in Phase 7.
+  // D1 is bound from M1.3; the leads and email queues (consumers, dead-letter queues and the email producer) from M2.4.
+  // R2, Browser Run and crons follow with their milestones. Custom domains only in Phase 7.
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "techaust-platform-jobs",
   "main": "src/index.ts",
@@ -12,7 +13,20 @@
   "preview_urls": false,
   // Workers Logs: query strings are removed from logged URLs (owner decision 2026-10-21, all four Workers).
   "observability": { "enabled": true, "redact_query_string": true },
-  "vars": { "ENVIRONMENT": "local", "PAYMENTS_LIVE_ALLOWED": "false" },
+  // Local values. EMAIL_TRANSPORT=log: nothing is sent, nothing personal is printed. ADMIN_URL: the "Open in admin" link
+  // in the lead alert (the admin home until the lead screens arrive in M3).
+  "vars": {
+    "ENVIRONMENT": "local",
+    "PAYMENTS_LIVE_ALLOWED": "false",
+    "EMAIL_TRANSPORT": "log",
+    "LEAD_ALERT_TO": "owner@example.test",
+    "EMAIL_ALLOWED_RECIPIENTS": "",
+    "SES_REGION": "ap-south-1",
+    "SES_CONFIGURATION_SET": "techaust-transactional",
+    "ADMIN_URL": "http://localhost:5173/"
+  },
+  // SES keys: names only; values come from `wrangler secret put` (docs/runbooks/ses-and-turnstile.md). Not inherited.
+  "secrets": { "required": ["SES_ACCESS_KEY_ID", "SES_SECRET_ACCESS_KEY"] },
   // D1 (docs/05 §5). Migrations live in packages/db; local dev and tests use a local database.
   "d1_databases": [
     {
@@ -22,13 +36,49 @@
       "migrations_dir": "../../packages/db/migrations"
     }
   ],
+  // Queues (docs/05 §11): one unit of work per message, 5 tries, then the dead-letter queue. max_batch_size is 1 (the
+  // brief said 5): the Free plan's 10 ms CPU limit applies per invocation, so a batch of five messages could pass it. The web Worker produces to
+  // the leads queue; this Worker consumes it and produces to the email queue.
+  "queues": {
+    "producers": [{ "binding": "EMAIL_QUEUE", "queue": "techaust-local-email" }],
+    "consumers": [
+      {
+        "queue": "techaust-local-leads",
+        "max_batch_size": 1,
+        "max_concurrency": 1,
+        "max_retries": 5,
+        "dead_letter_queue": "techaust-local-leads-dlq"
+      },
+      { "queue": "techaust-local-leads-dlq", "max_batch_size": 1, "max_retries": 3 },
+      {
+        "queue": "techaust-local-email",
+        "max_batch_size": 1,
+        "max_concurrency": 2,
+        "max_retries": 5,
+        "dead_letter_queue": "techaust-local-email-dlq"
+      },
+      { "queue": "techaust-local-email-dlq", "max_batch_size": 1, "max_retries": 3 }
+    ]
+  },
   "env": {
     "staging": {
       "name": "techaust-platform-jobs-staging",
       "workers_dev": true,
       // Version/Preview URLs would skip Cloudflare Access (docs/runbooks/access-staging.md).
       "preview_urls": false,
-      "vars": { "ENVIRONMENT": "staging", "PAYMENTS_LIVE_ALLOWED": "false" },
+      // Staging sends only to EMAIL_ALLOWED_RECIPIENTS (SES sandbox, docs/13 2026-10-23); any other recipient is logged
+      // `skipped`. LEAD_ALERT_TO and the allow-list hold the owner's verified test inbox: CONFIRM with the owner.
+      "vars": {
+        "ENVIRONMENT": "staging",
+        "PAYMENTS_LIVE_ALLOWED": "false",
+        "EMAIL_TRANSPORT": "ses",
+        "LEAD_ALERT_TO": "admin@techaust.com",
+        "EMAIL_ALLOWED_RECIPIENTS": "admin@techaust.com",
+        "SES_REGION": "ap-south-1",
+        "SES_CONFIGURATION_SET": "techaust-transactional",
+        "ADMIN_URL": "https://techaust-platform-admin-staging.techaust-technologies-153.workers.dev/"
+      },
+      "secrets": { "required": ["SES_ACCESS_KEY_ID", "SES_SECRET_ACCESS_KEY"] },
       "d1_databases": [
         {
           "binding": "DB",
@@ -36,7 +86,28 @@
           "database_id": "879c63dd-fedd-4710-9b13-21d8804879a9",
           "migrations_dir": "../../packages/db/migrations"
         }
-      ]
+      ],
+      "queues": {
+        "producers": [{ "binding": "EMAIL_QUEUE", "queue": "techaust-staging-email" }],
+        "consumers": [
+          {
+            "queue": "techaust-staging-leads",
+            "max_batch_size": 1,
+            "max_concurrency": 1,
+            "max_retries": 5,
+            "dead_letter_queue": "techaust-staging-leads-dlq"
+          },
+          { "queue": "techaust-staging-leads-dlq", "max_batch_size": 1, "max_retries": 3 },
+          {
+            "queue": "techaust-staging-email",
+            "max_batch_size": 1,
+            "max_concurrency": 2,
+            "max_retries": 5,
+            "dead_letter_queue": "techaust-staging-email-dlq"
+          },
+          { "queue": "techaust-staging-email-dlq", "max_batch_size": 1, "max_retries": 3 }
+        ]
+      }
     },
     "production": {
       "name": "techaust-platform-jobs",
@@ -49,6 +120,7 @@
         "redact_query_string": true,
         "logs": { "enabled": true, "invocation_logs": false }
       },
+      // No D1, queues or SES secrets in production until Phase 7 (owner approval).
       "vars": { "ENVIRONMENT": "production", "PAYMENTS_LIVE_ALLOWED": "false" }
     }
   }

@@ -1,7 +1,8 @@
 {
   // techaust.com public website (docs/05-architecture.md §4).
-  // RULE: no D1/R2/KV bindings here, ever (CI guard: scripts/check-web-bindings.mjs).
-  // Queue producer, rate limiter and Turnstile are added in M2.4. Custom domain only in Phase 7, with owner approval.
+  // RULE: no D1/R2/KV bindings here, ever (CI guard: scripts/check-web-bindings.mjs). Since M2.4 the Worker has a Queues
+  // producer (LEADS_QUEUE), a Rate Limiting binding (RL_FORMS) and Turnstile secrets, all allowed. Custom domain only in
+  // Phase 7, with owner approval.
   // NOTE: the live site runs as the old Worker "techaust-web"; these names deliberately differ.
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "techaust-platform-web",
@@ -20,14 +21,37 @@
     "not_found_handling": "404-page",
     "run_worker_first": ["/api/geo", "/api/forms/*"]
   },
-  "vars": { "ENVIRONMENT": "local" },
+  // Local values. TURNSTILE_SITE_KEY is Cloudflare's always-pass TEST key (public); the matching test secret is written
+  // to .dev.vars by `pnpm dev:secrets`. FORMS_ALLOWED_ORIGINS: the page origins that may POST a form (FRM-03).
+  "vars": {
+    "ENVIRONMENT": "local",
+    "TURNSTILE_SITE_KEY": "1x00000000000000000000AA",
+    "TURNSTILE_HOSTNAMES": "localhost",
+    "FORMS_ALLOWED_ORIGINS": "http://localhost:4321,http://localhost:8787"
+  },
+  // Names only; values come from `wrangler secret put` (docs/runbooks/ses-and-turnstile.md). Not inherited by environments.
+  "secrets": { "required": ["TURNSTILE_SECRET", "FORMS_IP_PEPPER"] },
+  // Leads queue (producer): the jobs Worker consumes it. 2 submissions per 60 s per address is the first rate-limit layer
+  // (the exact 5 per 10 min and 50 per day are enforced by the consumer, docs/13 2026-10-23).
+  "queues": { "producers": [{ "binding": "LEADS_QUEUE", "queue": "techaust-local-leads" }] },
+  "ratelimits": [{ "name": "RL_FORMS", "namespace_id": "4001", "simple": { "limit": 2, "period": 60 } }],
   "env": {
     "staging": {
       "name": "techaust-platform-web-staging",
       "workers_dev": true,
       // Version/Preview URLs would skip Cloudflare Access (docs/runbooks/access-staging.md).
       "preview_urls": false,
-      "vars": { "ENVIRONMENT": "staging" }
+      // TURNSTILE_SITE_KEY is empty until the owner creates the staging widget (docs/runbooks/ses-and-turnstile.md Part 5);
+      // it is a public value and goes here. With it empty the form pages cannot show the widget.
+      "vars": {
+        "ENVIRONMENT": "staging",
+        "TURNSTILE_SITE_KEY": "",
+        "TURNSTILE_HOSTNAMES": "techaust-platform-web-staging.techaust-technologies-153.workers.dev",
+        "FORMS_ALLOWED_ORIGINS": "https://techaust-platform-web-staging.techaust-technologies-153.workers.dev"
+      },
+      "secrets": { "required": ["TURNSTILE_SECRET", "FORMS_IP_PEPPER"] },
+      "queues": { "producers": [{ "binding": "LEADS_QUEUE", "queue": "techaust-staging-leads" }] },
+      "ratelimits": [{ "name": "RL_FORMS", "namespace_id": "4001", "simple": { "limit": 2, "period": 60 } }]
     },
     "production": {
       "name": "techaust-platform-web",
@@ -40,7 +64,14 @@
         "redact_query_string": true,
         "logs": { "enabled": true, "invocation_logs": false }
       },
-      "vars": { "ENVIRONMENT": "production" }
+      // Production gets no queue, rate limiter or Turnstile secrets until Phase 7 (owner approval): the form endpoints
+      // answer 503 here. TURNSTILE_SITE_KEY stays empty for the same reason.
+      "vars": {
+        "ENVIRONMENT": "production",
+        "TURNSTILE_SITE_KEY": "",
+        "TURNSTILE_HOSTNAMES": "techaust.com",
+        "FORMS_ALLOWED_ORIGINS": "https://techaust.com"
+      }
     }
   }
 }
