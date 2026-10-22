@@ -4,7 +4,7 @@
 // form post or queue message, which is the one the Free plan's 10 ms CPU limit applies to (CPU tuning, 2026-10-23).
 // Pure: no I/O, nothing is stored or logged, the sample values are made up, and a failure is swallowed (a warm-up must
 // never stop a Worker from starting).
-import { countryName, budgetBandLabel } from "./form-labels.ts";
+import { budgetBandLabel, countryName } from "./form-labels.ts";
 import { contactForm, quoteForm } from "./schemas/forms.ts";
 import { emailMessage, formMeta, leadMessage } from "./schemas/messages.ts";
 

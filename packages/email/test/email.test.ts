@@ -145,8 +145,8 @@ describe("SES transport", () => {
       sign.mockClear();
       await sesTransport(own).send(input); // a new transport, the same day: the signature only
       expect(sign).toHaveBeenCalledTimes(1);
-      const first = (spy.mock.calls[0]?.[0] as Request).headers.get("authorization");
-      const second = (spy.mock.calls[1]?.[0] as Request).headers.get("authorization");
+      const first = (spy.mock.calls[0]?.[0] as Request | undefined)?.headers.get("authorization");
+      const second = (spy.mock.calls[1]?.[0] as Request | undefined)?.headers.get("authorization");
       expect(second).toBe(first); // same request, same instant, same signature as the uncached one
       sign.mockClear();
       vi.setSystemTime(new Date("2026-10-24T10:00:00Z"));
