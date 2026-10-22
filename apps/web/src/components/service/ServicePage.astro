@@ -1,0 +1,248 @@
+---
+// The service-page template (docs/04 §3.2, WEB-SVC-01…06): one layout for all 14 live services, fed by a
+// ServiceContent object (copy from docs/07 §4). Sections in the template's order; a section with no content is left
+// out, never shown empty (WEB-SVC-02). Proof (WEB-SVC-03) is omitted until a service has a case study or a sample.
+import "../../styles/page.css";
+import { home } from "../../content/home";
+import { serviceLabels } from "../../content/labels";
+import type { ServiceContent } from "../../content/types";
+import { priceOf } from "../../lib/prices";
+import Button from "../Button.astro";
+import CopyText from "../CopyText.astro";
+import CTABand from "../CTABand.astro";
+import CurrencyNote from "../CurrencyNote.astro";
+import FaqSection from "../FaqSection.astro";
+import Notice from "../Notice.astro";
+import Placeholder from "../Placeholder.astro";
+import PriceNote from "../PriceNote.astro";
+import PriceTag from "../PriceTag.astro";
+import ServiceIndex from "../ServiceIndex.astro";
+import Steps from "../Steps.astro";
+import ServiceHero from "./ServiceHero.astro";
+import WorkflowDiagram from "./WorkflowDiagram.astro";
+
+interface Props {
+  service: ServiceContent;
+  placeholders?: boolean;
+  faqOpen?: readonly number[];
+}
+
+const { service: s, placeholders = false, faqOpen } = Astro.props;
+const L = serviceLabels;
+const price = s.pricing ? priceOf(s.pricing.ref) : null;
+---
+
+<ServiceHero service={s} />
+
+{
+  s.problem && (
+    <section class="section section--alt" aria-labelledby="problem-title">
+      <div class="container split">
+        <h2 class="t-h2" id="problem-title">
+          {L.problem}
+        </h2>
+        <p class="statement">{s.problem}</p>
+      </div>
+    </section>
+  )
+}
+
+{
+  s.build && (
+    <section class="section" aria-labelledby="build-title">
+      <div class="container">
+        <div class="split">
+          <h2 class="t-h2" id="build-title">
+            {s.build.deliverables ? L.deliverables : L.build}
+          </h2>
+          <div class="build">
+            {s.build.text && <p class="t-body-lg">{s.build.text}</p>}
+            {s.build.uses && (
+              <div class="uses">
+                <h3 class="t-h4">{L.uses}</h3>
+                <ul class="uses__list" role="list">
+                  {s.build.uses.map((u) => (
+                    <li>
+                      <CopyText text={u} as="span" />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
+        {s.build.diagram && <WorkflowDiagram stations={s.build.diagram} class="build__diagram" />}
+      </div>
+    </section>
+  )
+}
+
+{
+  s.how && (
+    <section class="section section--flush-top" aria-labelledby="how-title">
+      <div class="container">
+        <h2 class="t-h2 how__title" id="how-title">
+          {L.how}
+        </h2>
+        <Steps steps={s.how.steps} />
+        {s.how.note && (
+          <Notice variant="info" class="how__note">
+            {s.how.note}
+          </Notice>
+        )}
+      </div>
+    </section>
+  )
+}
+
+{
+  s.pricing && price && (
+    <section class="section section--alt" aria-labelledby="pricing-title">
+      <div class="container split">
+        <div class="pricing__head">
+          <h2 class="t-h2" id="pricing-title">
+            {L.pricing}
+          </h2>
+        </div>
+        <div class="pricing">
+          <div class="pricing__main">
+            <PriceTag inr={price.inr} usd={price.usd} lead={s.pricing.lead} unit={s.pricing.unit} />
+            <CurrencyNote />
+          </div>
+          <ul class="pricing__lines" role="list">
+            {s.pricing.lines.map((l) => (
+              <li>{l}</li>
+            ))}
+          </ul>
+          {placeholders && (
+            <Placeholder what="Payment schedule from the catalogue entry (WEB-SVC-05)" reason="built in phase 2" />
+          )}
+          <PriceNote />
+          <div class="actions">
+            <Button href={s.hero.primary.href} size="lg">
+              {s.hero.primary.label}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+{
+  s.tech && (
+    <section class="section" aria-labelledby="tech-title">
+      <div class="container split">
+        <h2 class="t-h2" id="tech-title">
+          {L.tech}
+        </h2>
+        <p class="t-body-lg">{s.tech}</p>
+      </div>
+    </section>
+  )
+}
+
+{s.faqs && <FaqSection title={L.faqs} items={s.faqs} open={faqOpen} />}
+
+{
+  s.related && s.related.length > 0 && (
+    <section class="section section--flush-top" aria-labelledby="related-title">
+      <div class="container">
+        <div class="section-head">
+          <h2 class="t-h2" id="related-title">
+            {L.related}
+          </h2>
+          <CurrencyNote />
+        </div>
+        <ServiceIndex items={s.related} />
+      </div>
+    </section>
+  )
+}
+
+<CTABand
+  title={home.band.h2}
+  text={home.band.text}
+  primary={s.hero.primary}
+  whatsappLabel={home.band.whatsapp}
+  placeholders={placeholders}
+/>
+
+<style>
+  .statement {
+    font-size: var(--text-lede);
+    line-height: var(--text-lede--line-height);
+    max-inline-size: var(--container-lede);
+    text-wrap: pretty;
+  }
+
+  @media (min-width: 64rem) {
+    .statement {
+      font-size: var(--text-h3);
+      line-height: var(--text-h3--line-height);
+      font-weight: 400;
+      padding-block-start: var(--space-2);
+    }
+  }
+
+  .build {
+    display: grid;
+    gap: var(--space-10);
+    align-content: start;
+  }
+
+  .uses {
+    display: grid;
+    gap: var(--space-3);
+  }
+
+  .uses__list {
+    display: grid;
+    border-block-start: 1px solid var(--color-border);
+  }
+
+  .uses__list li {
+    padding-block: var(--space-3);
+    border-block-end: 1px solid var(--color-border);
+  }
+
+  .uses__list li::first-letter {
+    text-transform: uppercase;
+  }
+
+  .container > :global(.build__diagram) {
+    margin-block-start: var(--block-gap);
+  }
+
+  .how__title {
+    margin-block-end: var(--block-gap);
+  }
+
+  .container > :global(.how__note) {
+    margin-block-start: var(--block-gap);
+  }
+
+  .pricing {
+    display: grid;
+    gap: var(--space-5);
+    align-content: start;
+  }
+
+  .pricing__main {
+    display: grid;
+    gap: var(--space-1);
+    padding-block-end: var(--space-5);
+    border-block-end: 2px solid var(--color-text);
+  }
+
+  .pricing__lines {
+    display: grid;
+  }
+
+  .pricing__lines li {
+    padding-block: var(--space-3);
+    border-block-end: 1px solid var(--color-border);
+    font-size: var(--text-body-lg);
+    line-height: var(--text-body-lg--line-height);
+  }
+</style>

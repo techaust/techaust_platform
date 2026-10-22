@@ -1,0 +1,125 @@
+---
+// CopyText: one piece of docs/07 copy, rendered as written. It does two jobs the plain string can't:
+// 1. Arrows. 07 writes "→" and "↔"; neither is in the fonts (docs/06 §3.1), so each becomes an icon, with the
+//    character kept, visually hidden, for assistive technology and copy-paste.
+// 2. Prices in running text ({{price:Sx}}, docs/07 "How to read"): "from ₹40,000 + GST" or "from $2,000". When 07
+//    already writes "from" before the token ("from {{price:S16-essential}} a month"), the token adds no second "from".
+//    No layout shift when the currency changes (WEB-G-06, M2.1 follow-up M4): the whole sentence is written once per
+//    currency and both versions sit in the same grid cell; the inactive one is `visibility: hidden`, so the box is
+//    always as tall as the longer one and swapping moves nothing. Without JavaScript a third version shows both
+//    amounts ("from ₹40,000 + GST · $2,000").
+import type { Money } from "@techaust/core";
+import { draft } from "../content/shell";
+import { displayAmount, PRICE_TOKEN, priceOf } from "../lib/prices";
+import Icon from "./Icon.astro";
+
+interface Props {
+  text: string;
+  as?: "p" | "span" | "div";
+  class?: string;
+}
+
+const { text, as: Tag = "p", class: cls } = Astro.props;
+
+type Mode = "both" | "inr" | "usd";
+type Part =
+  | { kind: "text"; value: string }
+  | { kind: "arrow"; char: "→" | "↔" }
+  | { kind: "price"; inr: Money; usd: Money | null; from: boolean };
+
+const parts: Part[] = [];
+const pushText = (s: string) => {
+  for (const bit of s.split(/([→↔])/)) {
+    if (bit === "→" || bit === "↔") parts.push({ kind: "arrow", char: bit });
+    else if (bit) parts.push({ kind: "text", value: bit });
+  }
+};
+let last = 0;
+for (const m of text.matchAll(PRICE_TOKEN)) {
+  const before = text.slice(last, m.index);
+  pushText(before);
+  const { inr, usd } = priceOf(m[1] as string);
+  parts.push({ kind: "price", inr, usd, from: !/\bfrom\s$/i.test(before) });
+  last = (m.index ?? 0) + m[0].length;
+}
+pushText(text.slice(last));
+
+const priced = parts.some((p) => p.kind === "price");
+const modes: (Mode | null)[] = priced ? ["both", "inr", "usd"] : [null];
+---
+
+<Tag class:list={["copy", priced && "copy--priced", cls]}>
+  {
+    modes.map((mode) => (
+      <span class:list={["copy__v", mode && `copy__v--${mode}`]}>
+        {parts.map((p) =>
+          p.kind === "text" ? (
+            p.value
+          ) : p.kind === "arrow" ? (
+            <span class="copy__arrow">
+              <Icon name={p.char === "→" ? "arrow-right" : "move-horizontal"} size={16} />
+              <span class="visually-hidden">{p.char}</span>
+            </span>
+          ) : (
+            <>
+              {p.from && `${draft.priceFrom} `}
+              {mode === "usd" && p.usd ? (
+                <span class="copy__amount">{displayAmount(p.usd)}</span>
+              ) : (
+                <span class="copy__price">
+                  <span class="copy__amount">{displayAmount(p.inr)}</span> {draft.gst}
+                  {mode === "both" && p.usd && (
+                    <>
+                      {" · "}
+                      <span class="copy__amount">{displayAmount(p.usd)}</span>
+                    </>
+                  )}
+                </span>
+              )}
+            </>
+          ),
+        )}
+      </span>
+    ))
+  }
+</Tag>
+
+<style>
+  .copy__amount {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text);
+  }
+
+  /* "₹40,000 + GST" never breaks inside. */
+  .copy__price,
+  .copy__amount {
+    white-space: nowrap;
+  }
+
+  .copy__arrow {
+    display: inline-flex;
+    vertical-align: -0.15em;
+    margin-inline: 0.15em;
+  }
+
+  /* Prices: the three versions share one cell; the box is as tall as the longest, so a swap shifts nothing. */
+  .copy--priced {
+    display: grid;
+  }
+
+  .copy--priced > .copy__v {
+    grid-area: 1 / 1;
+  }
+
+  :global(:root:not(.js)) .copy__v--inr,
+  :global(:root:not(.js)) .copy__v--usd,
+  :global(:root.js) .copy__v--both {
+    display: none;
+  }
+
+  :global(:root[data-currency="inr"]) .copy__v--usd,
+  :global(:root[data-currency="usd"]) .copy__v--inr {
+    visibility: hidden;
+  }
+</style>

@@ -1,0 +1,137 @@
+---
+// Home hero (WEB-HOME): eyebrow, the tagline as the page's one h1 (the LCP element: text, no image), the lede, the two
+// CTAs and the Discovery Sprint small print with its currency note. Under it the "base line": the mark's
+// construction laid flat, one bar split by a single 45° cut into an ink part and a verdigris part, with a channel one
+// bar wide between them (docs/06 §1.2: the T and stem are ink, the crossbar verdigris; §4.3: the diagonal cut, the
+// one decorative device). Build it right, automate the rest. Pure CSS, decorative, hidden from assistive tech.
+import { discoveryHref } from "../../config/site";
+import { home } from "../../content/home";
+import Button from "../Button.astro";
+import CopyText from "../CopyText.astro";
+import CurrencyNote from "../CurrencyNote.astro";
+
+const h = home.hero;
+// The h1 keeps its text exactly; each sentence is set on its own line where there is room.
+const lines = h.h1.split(/(?<=\.)\s+/);
+---
+
+<section class="hero" aria-labelledby="hero-title">
+  <div class="container hero__inner">
+    <p class="t-eyebrow hero__eyebrow">{h.eyebrow}</p>
+    <h1 class="t-display-1 hero__title" id="hero-title">
+      {
+        lines.map((l, i) => (
+          <>
+            {i > 0 && " "}
+            <span class="hero__line">{l}</span>
+          </>
+        ))
+      }
+    </h1>
+    <p class="t-lede hero__lede">{h.lede}</p>
+    <div class="actions hero__ctas">
+      <Button href={discoveryHref} size="lg">{h.primary}</Button>
+      <Button href={h.secondary.href} variant="secondary" size="lg">{h.secondary.label}</Button>
+    </div>
+    <div class="hero__small">
+      <CopyText text={h.smallPrint} class="t-sm hero__print" />
+      <CurrencyNote />
+    </div>
+  </div>
+  <div class="container" aria-hidden="true">
+    <div class="hero__base"></div>
+  </div>
+</section>
+
+<style>
+  .hero {
+    padding-block: var(--space-12) var(--section-y);
+  }
+
+  @media (min-width: 48rem) {
+    .hero {
+      padding-block-start: var(--space-20);
+    }
+  }
+
+  .hero__eyebrow {
+    margin-block-end: var(--space-5);
+  }
+
+  .hero__title {
+    /* The two sentences, each on its own line, need more than the 22 ch heading measure at display size. */
+    max-inline-size: none;
+  }
+
+  @media (min-width: 30rem) {
+    .hero__line {
+      display: block;
+    }
+  }
+
+  .hero__lede {
+    margin-block-start: var(--space-6);
+  }
+
+  .hero__ctas {
+    margin-block-start: var(--space-8);
+  }
+
+  .hero__small {
+    margin-block-start: var(--space-5);
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    color: var(--color-text-muted);
+  }
+
+  .hero__small :global(.hero__print) {
+    padding-block-start: var(--space-1);
+    text-wrap: pretty;
+  }
+
+  /* The base line. --h is the bar; the channel between the two cuts is one bar wide, measured square to the cut,
+     so its width along the bar is h × √2. The cut falls at 7 of 12 columns. */
+  .hero__base {
+    --h: var(--space-2);
+    --split: 58.333%;
+    --channel: calc(var(--h) * 1.4142);
+    position: relative;
+    block-size: var(--h);
+    margin-block-start: var(--space-16);
+  }
+
+  @media (min-width: 48rem) {
+    .hero__base {
+      --h: var(--space-3);
+      margin-block-start: var(--space-20);
+    }
+  }
+
+  .hero__base::before,
+  .hero__base::after {
+    content: "";
+    position: absolute;
+    inset-block: 0;
+  }
+
+  /* Ink: from the left edge to the cut; its end leans like the mark's T bar (top longer than bottom). */
+  .hero__base::before {
+    inset-inline: 0 calc(100% - var(--split));
+    background: var(--color-text);
+    clip-path: polygon(0 0, 100% 0, calc(100% - var(--h)) 100%, 0 100%);
+  }
+
+  /* Verdigris: from the far side of the channel to the right edge, its start parallel to the cut. */
+  .hero__base::after {
+    inset-inline: calc(var(--split) - var(--h) + var(--channel)) 0;
+    background: var(--color-text-accent);
+    clip-path: polygon(var(--h) 0, 100% 0, 100% 100%, 0 100%);
+  }
+
+  @media (forced-colors: active) {
+    .hero__base {
+      display: none;
+    }
+  }
+</style>

@@ -1,0 +1,110 @@
+---
+// Service hero (WEB-SVC-01): breadcrumb, the outcome headline (h1, the LCP element), then a two-cell spec row
+// (who it's for · the "from" price with its currency note) between two rules, then the primary CTA and "See pricing".
+import { serviceLabels } from "../../content/labels";
+import { shared } from "../../content/shared";
+import type { ServiceContent } from "../../content/types";
+import { priceOf } from "../../lib/prices";
+import Breadcrumbs from "../Breadcrumbs.astro";
+import Button from "../Button.astro";
+import CurrencyNote from "../CurrencyNote.astro";
+import PriceTag from "../PriceTag.astro";
+
+interface Props {
+  service: ServiceContent;
+}
+
+const { service } = Astro.props;
+const h = service.hero;
+const p = priceOf(h.price.ref);
+---
+
+<section class="shero" aria-labelledby="hero-title">
+  <div class="container">
+    <Breadcrumbs trail={[{ label: serviceLabels.services, href: "/services" }, { label: service.name }]} />
+    <h1 class="t-display-2 shero__title" id="hero-title">{h.h1}</h1>
+    <div class="shero__spec">
+      <div class="shero__cell">
+        <p class="t-sm shero__label">{serviceLabels.whoFor}</p>
+        <p class="t-lede shero__who">{h.whoFor}</p>
+      </div>
+      <div class="shero__cell shero__cell--price">
+        <PriceTag inr={p.inr} usd={p.usd} lead={h.price.lead} unit={h.price.unit} />
+        <CurrencyNote />
+      </div>
+    </div>
+    <div class="actions shero__ctas">
+      <Button href={h.primary.href} size="lg">{h.primary.label}</Button>
+      <Button href="/pricing" variant="secondary" size="lg">{shared.cta.pricing}</Button>
+    </div>
+  </div>
+</section>
+
+<style>
+  .shero {
+    padding-block: var(--space-6) var(--section-y);
+  }
+
+  @media (min-width: 48rem) {
+    .shero {
+      padding-block-start: var(--space-10);
+    }
+  }
+
+  .shero__title {
+    margin-block-start: var(--space-8);
+  }
+
+  @media (min-width: 48rem) {
+    .shero__title {
+      margin-block-start: var(--space-12);
+    }
+  }
+
+  .shero__spec {
+    display: grid;
+    margin-block-start: var(--space-12);
+    border-block: 1px solid var(--color-border);
+  }
+
+  .shero__cell {
+    display: grid;
+    align-content: start;
+    gap: var(--space-3);
+    padding-block: var(--space-6);
+  }
+
+  .shero__cell + .shero__cell {
+    border-block-start: 1px solid var(--color-border);
+  }
+
+  @media (min-width: 64rem) {
+    .shero__spec {
+      grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+    }
+
+    .shero__cell {
+      padding-inline-end: var(--space-8);
+    }
+
+    .shero__cell + .shero__cell {
+      border-block-start: 0;
+      border-inline-start: 1px solid var(--color-border);
+      padding-inline: var(--space-8) 0;
+    }
+  }
+
+  /* A label for the line under it, not a section of its own (so not a heading). */
+  .shero__label {
+    font-weight: 600;
+    color: var(--color-text-muted);
+  }
+
+  .shero__who {
+    color: var(--color-text);
+  }
+
+  .shero__ctas {
+    margin-block-start: var(--space-8);
+  }
+</style>

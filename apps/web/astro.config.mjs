@@ -11,7 +11,8 @@ const devPreviewPages = {
   hooks: {
     "astro:config:setup": ({ command, injectRoute }) => {
       if (command !== "dev") return;
-      for (const page of ["shell", "menus", "components"]) {
+      // M2.1: shell, menus, components. M2.2: home, service (the S9 page).
+      for (const page of ["shell", "menus", "components", "home", "service"]) {
         injectRoute({ pattern: `/preview/${page}`, entrypoint: `./src/preview/${page}.astro` });
       }
     },

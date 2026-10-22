@@ -15,7 +15,10 @@ type Name =
   | "map-pin"
   | "message"
   | "info"
-  | "linkedin-box";
+  | "linkedin-box"
+  | "move-horizontal"
+  | "chevron-right"
+  | "plus";
 
 interface Props {
   name: Name;
@@ -39,6 +42,9 @@ const paths: Record<Name, string> = {
     '<path d="M20 10c0 4.99-5.54 10.19-7.4 11.8a1 1 0 0 1-1.2 0C9.54 20.19 4 14.99 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/>',
   message: '<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>',
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5.5"/><path d="M12 7.5h.01"/>',
+  "move-horizontal": '<path d="m18 8 4 4-4 4"/><path d="M2 12h20"/><path d="m6 8-4 4 4 4"/>',
+  "chevron-right": '<path d="m9 18 6-6-6-6"/>',
+  plus: '<path d="M5 12h14"/><path class="icon-plus__v" d="M12 5v14"/>',
   "linkedin-box":
     '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M8 11v5"/><path d="M8 8v.01"/><path d="M12 16v-5"/><path d="M16 16v-3a2 2 0 0 0-4 0"/>',
 };

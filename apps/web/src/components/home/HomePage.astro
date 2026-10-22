@@ -1,0 +1,42 @@
+---
+// The home page body (WEB-HOME, docs/07 §3), section by section. Rendered inside BaseLayout by the page: today the
+// dev-only preview (/preview/home); after the owner's approval, the real "/" (phase 2).
+import "../../styles/page.css";
+import { discoveryHref } from "../../config/site";
+import { home } from "../../content/home";
+import CTABand from "../CTABand.astro";
+import FaqSection from "../FaqSection.astro";
+import CareTeaser from "./CareTeaser.astro";
+import Hero from "./Hero.astro";
+import HowWeWork from "./HowWeWork.astro";
+import PriceAnchors from "./PriceAnchors.astro";
+import RecentWork from "./RecentWork.astro";
+import WhatWeDo from "./WhatWeDo.astro";
+import WhoWeHelp from "./WhoWeHelp.astro";
+
+interface Props {
+  /** Preview pages: labelled placeholders for pending owner inputs. */
+  placeholders?: boolean;
+  /** Preview only: FAQ items open on load. */
+  faqOpen?: readonly number[];
+}
+
+const { placeholders = false, faqOpen } = Astro.props;
+const b = home.band;
+---
+
+<Hero />
+<WhoWeHelp />
+<WhatWeDo />
+<HowWeWork />
+<CareTeaser />
+<PriceAnchors />
+<RecentWork />
+<FaqSection title={home.faq.h2} items={home.faq.items} flushTop open={faqOpen} />
+<CTABand
+  title={b.h2}
+  text={b.text}
+  primary={{ label: b.primary, href: discoveryHref }}
+  whatsappLabel={b.whatsapp}
+  placeholders={placeholders}
+/>

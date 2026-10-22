@@ -1,0 +1,164 @@
+---
+// ServiceIndex (docs/06 §5.2 ServiceCard, as a ruled index rather than boxed cards): title, one-liner, "from" price
+// and an arrow; the whole item is one link (a stretched link on the title, never nested links). Hover and keyboard
+// focus draw the mark's T bar along the item's top rule (verdigris, end cut at 45°): the brand's one device, used
+// to say "this is the one you're on". Used for the home "What we do", a service's "Related services", and later
+// the services hub.
+import type { ServiceLink } from "../content/types";
+import { priceOf } from "../lib/prices";
+import CopyText from "./CopyText.astro";
+import Icon from "./Icon.astro";
+import PriceTag from "./PriceTag.astro";
+
+interface Props {
+  items: readonly ServiceLink[];
+  /** The heading level of each item's title (the section's h2 is above). */
+  level?: "h3" | "h4";
+  class?: string;
+}
+
+const { items, level: Heading = "h3", class: cls } = Astro.props;
+---
+
+<ul class:list={["svc-index", cls]} role="list">
+  {
+    items.map((s) => {
+      const p = priceOf(s.price);
+      return (
+        <li class="svc">
+          <Heading class="t-h4 svc__title">
+            <a class="svc__link" href={s.href}>
+              {s.title}
+            </a>
+          </Heading>
+          <CopyText text={s.text} class="svc__text" />
+          <PriceTag inr={p.inr} usd={p.usd} unit={s.unit} size="md" class="svc__price" />
+          <Icon name="arrow-right" size={24} class="svc__arrow" />
+        </li>
+      );
+    })
+  }
+</ul>
+
+<style>
+  .svc-index {
+    display: grid;
+    gap: var(--space-10) var(--space-8);
+  }
+
+  @media (min-width: 48rem) {
+    .svc-index {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      row-gap: var(--space-12);
+    }
+  }
+
+  @media (min-width: 64rem) {
+    .svc-index {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  .svc {
+    position: relative;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    gap: var(--space-3);
+    padding-block-start: var(--space-6);
+    padding-inline-end: var(--space-10);
+    border-block-start: 1px solid var(--color-border);
+  }
+
+  /* The T bar: sits on the top rule, grows from the left on hover and focus. */
+  .svc::before {
+    content: "";
+    position: absolute;
+    inset-block-start: -2px;
+    inset-inline-start: 0;
+    inline-size: var(--space-16);
+    block-size: 3px;
+    background: var(--color-text-accent);
+    clip-path: polygon(0 0, 100% 0, calc(100% - 3px) 100%, 0 100%);
+    transform: scaleX(0);
+    transform-origin: left center;
+    transition: transform var(--duration-base) var(--ease-standard);
+  }
+
+  .svc:hover::before,
+  .svc:focus-within::before {
+    transform: none;
+  }
+
+  .svc__title {
+    text-wrap: balance;
+  }
+
+  .svc__link {
+    color: var(--color-text);
+    text-decoration: none;
+  }
+
+  /* One link for the whole item. */
+  .svc__link::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+  }
+
+  .svc__link:focus-visible {
+    outline: none;
+  }
+
+  .svc__link:focus-visible::after {
+    outline: 2px solid var(--color-focus);
+    outline-offset: var(--space-2);
+    border-radius: var(--radius-sm);
+  }
+
+  .svc:hover .svc__link {
+    color: var(--color-link-hover);
+  }
+
+  .svc :global(.svc__text) {
+    color: var(--color-text-muted);
+    text-wrap: pretty;
+  }
+
+  .svc :global(.svc__price) {
+    margin-block-start: var(--space-2);
+  }
+
+  .svc :global(.svc__arrow) {
+    position: absolute;
+    inset-block-start: var(--space-6);
+    inset-inline-end: 0;
+    color: var(--color-text-muted);
+    transition:
+      translate var(--duration-fast) var(--ease-standard),
+      color var(--duration-fast) var(--ease-standard);
+  }
+
+  .svc:hover :global(.svc__arrow),
+  .svc:focus-within :global(.svc__arrow) {
+    translate: var(--space-1) 0;
+    color: var(--color-text-accent);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .svc::before,
+    .svc :global(.svc__arrow) {
+      transition: none;
+    }
+
+    .svc:hover :global(.svc__arrow),
+    .svc:focus-within :global(.svc__arrow) {
+      translate: none;
+    }
+  }
+
+  @media (forced-colors: active) {
+    .svc::before {
+      background: Highlight;
+    }
+  }
+</style>

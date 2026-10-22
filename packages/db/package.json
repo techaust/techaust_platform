@@ -6,7 +6,8 @@
   "description": "Drizzle schema, SQL migrations (incl. triggers), repositories and seed data for D1.",
   "exports": {
     ".": "./src/index.ts",
-    "./log": "./src/log.ts"
+    "./log": "./src/log.ts",
+    "./catalogue": "./src/seed/catalogue.ts"
   },
   "scripts": {
     "generate": "drizzle-kit generate",

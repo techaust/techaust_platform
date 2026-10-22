@@ -1,0 +1,11 @@
+---
+// M2.2 preview (dev only, noindex): the home page as it will be built, with the final copy of docs/07 §3 and real
+// "from" prices from the seed catalogue. Pending owner inputs show as labelled placeholders (the build hides them).
+import HomePage from "../components/home/HomePage.astro";
+import { home } from "../content/home";
+import BaseLayout from "../layouts/BaseLayout.astro";
+---
+
+<BaseLayout title={home.meta.title} description={home.meta.description} noindex placeholders current="/">
+  <HomePage placeholders />
+</BaseLayout>

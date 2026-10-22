@@ -1,0 +1,29 @@
+---
+// What we do (WEB-HOME): the five headline services and the Discovery Sprint, each with its "from" price, then
+// "All services". The section's currency note sits beside its heading.
+import { home } from "../../content/home";
+import Button from "../Button.astro";
+import CurrencyNote from "../CurrencyNote.astro";
+import ServiceIndex from "../ServiceIndex.astro";
+
+const s = home.services;
+---
+
+<section class="section" aria-labelledby="services-title">
+  <div class="container">
+    <div class="section-head">
+      <h2 class="t-h2" id="services-title">{s.h2}</h2>
+      <CurrencyNote />
+    </div>
+    <ServiceIndex items={s.cards} />
+    <div class="more">
+      <Button href={s.more.href} variant="text" arrow>{s.more.label}</Button>
+    </div>
+  </div>
+</section>
+
+<style>
+  .more {
+    margin-block-start: var(--block-gap);
+  }
+</style>

@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@techaust/core": "workspace:*",
+    "@techaust/db": "workspace:*",
     "@techaust/ui": "workspace:*",
     "hono": "4.13.13"
   },
