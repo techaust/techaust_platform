@@ -4,6 +4,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
+import { lintBuiltPage, lintSource, readAllowList } from "./web-content-lint.mjs";
 
 /** The `/*` block of a Cloudflare `_headers` file as a lower-cased-name map. */
 export function parseHeaders(text) {
@@ -210,6 +211,9 @@ export function checkWeb(webDir) {
   const headersText = readFileSync(headersPath, "utf8");
   problems.push(...checkHeaders(headersText));
   const ga4Id = readGa4Id(readFileSync(join(webDir, "src", "config", "site.ts"), "utf8"));
+  // WEB-G-14 and the heading rule (scripts/web-content-lint.mjs): the source content, then each built page below.
+  const allow = readAllowList(webDir);
+  problems.push(...lintSource(webDir));
   for (const file of walk(dist)) {
     const name = relative(dist, file).split(sep).join("/");
     if (/^preview(\/|\.|$)/i.test(name)) problems.push(`${name}: preview pages must not be in the build`);
@@ -222,7 +226,11 @@ export function checkWeb(webDir) {
     const text = readFileSync(file, "utf8");
     problems.push(...checkText(name, text, { ga4Id }));
     if (name.endsWith(".html"))
-      problems.push(...checkHtml(name, text, headersText), ...checkAmpersands(name, text));
+      problems.push(
+        ...checkHtml(name, text, headersText),
+        ...checkAmpersands(name, text),
+        ...lintBuiltPage(name, text, allow.entries),
+      );
   }
   for (const file of walk(join(webDir, "src"))) {
     const name = relative(webDir, file).split(sep).join("/");

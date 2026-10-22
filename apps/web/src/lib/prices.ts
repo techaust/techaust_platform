@@ -1,22 +1,43 @@
-// The website's one door to prices (WEB-G-07): every price on the site is read here, at build time, by its
-// catalogue reference, and rendered only by PriceTag / CopyText through @techaust/core's formatMoney. No amount is
-// ever typed into a template or a content file (scripts/web-dist-checks.mjs fails the build on one).
-//
-// Source today: the owner-approved seed catalogue (packages/db, Phase 2). Phase 2 of M2.2 (builder) puts the
-// published catalogue snapshot (ADM-CAT-05) behind this same interface, with the seed as the fallback, so keep the
-// interface narrow: a reference in, two Money values out.
+// The website's one door to prices and payment schedules (WEB-G-07, WEB-SVC-05): everything is read here, at build time,
+// from the catalogue snapshot (lib/catalogue.ts) by its catalogue reference, and rendered only by PriceTag / CopyText
+// through @techaust/core's formatMoney. No amount is ever typed into a template or a content file
+// (scripts/web-dist-checks.mjs fails the build on one).
 //
 // References (the {{price:…}} tokens of docs/07):
 //   "S5"            the entry's headline "from" price
 //   "S16-essential" a named default line of the entry (07: {{price:Sx-<line>}}), matched on its description
-import { formatMoney, type Money, money } from "@techaust/core";
-import { CATALOGUE } from "@techaust/db/catalogue";
+import { formatMoney, type Money, money, scheduleText } from "@techaust/core";
+import { flags } from "../config/site";
+import { snapshot } from "./catalogue";
 
 /** A price as the site shows it: INR always, USD where the service is offered internationally. */
 export type SitePrice = { readonly inr: Money; readonly usd: Money | null };
 
-/** The {{price:…}} token pattern of docs/07 (also used by CopyText to find prices in running text). */
+/** The {{price:…}} token pattern of docs/07 (CopyText finds prices in running text with it). */
 export const PRICE_TOKEN = /\{\{price:(S\d+(?:-[a-z]+)?)\}\}/g;
+
+type Item = ReturnType<typeof snapshot>["items"][number];
+
+const find = (code: string): Item | undefined => snapshot().items.find((c) => c.code === code);
+
+/** Whether a service is shown on the site: the catalogue's flag, and S3 only while the S3_DPDP_PAGE flag is on. */
+function visible(item: Item): boolean {
+  return item.code === "S3" ? flags.S3_DPDP_PAGE : item.showOnSite;
+}
+
+/** For pages and the services hub: false means "do not build the page, do not list it" (WEB-G-17). */
+export function isServiceOnSite(code: string): boolean {
+  const item = find(code);
+  return item !== undefined && visible(item);
+}
+
+function entry(fn: string, code: string): Item {
+  const item = find(code);
+  if (!item) throw new Error(`${fn}: no catalogue entry ${code}`);
+  if (!visible(item))
+    throw new Error(`${fn}: ${code} is hidden from the site (showOnSite: false / flag off)`);
+  return item;
+}
 
 /**
  * The price behind a docs/07 reference. Throws at build time (failing the build, never shipping a wrong price) for an
@@ -26,27 +47,30 @@ export function priceOf(ref: string): SitePrice {
   const match = /^(S\d+)(?:-([a-z]+))?$/.exec(ref);
   if (!match) throw new Error(`priceOf: "${ref}" is not a catalogue reference (S1, S16-essential…)`);
   const [, code, line] = match;
-  const entry = CATALOGUE.find((c) => c.code === code);
-  if (!entry) throw new Error(`priceOf: no catalogue entry ${code}`);
-  if (!entry.showOnSite) throw new Error(`priceOf: ${code} is hidden from the site (showOnSite: false)`);
+  const item = entry("priceOf", code as string);
   if (line) {
-    const l = entry.defaultLines?.find((d) => d.description.toLowerCase() === line);
+    const l = item.defaultLines.find((d) => d.description.toLowerCase() === line);
     if (!l || l.rateInrMinor === null) throw new Error(`priceOf: ${code} has no priced line "${line}"`);
     return {
       inr: money(l.rateInrMinor, "INR"),
       usd: l.rateUsdMinor === null ? null : money(l.rateUsdMinor, "USD"),
     };
   }
-  if (entry.priceInr === null) throw new Error(`priceOf: ${code} has no INR price`);
+  if (item.priceInrMinor === null) throw new Error(`priceOf: ${code} has no INR price`);
   return {
-    inr: money(entry.priceInr, "INR"),
-    usd: entry.priceUsd === null ? null : money(entry.priceUsd, "USD"),
+    inr: money(item.priceInrMinor, "INR"),
+    usd: item.priceUsdMinor === null ? null : money(item.priceUsdMinor, "USD"),
   };
 }
 
 /**
- * An amount as the site prints it: @techaust/core's format, with a zero minor part dropped (site prices are whole
- * rupees and dollars: "₹3,00,000", "$12,000"). String only, no maths. Phase 2: a whole-unit option in core replaces
- * the trim (M2.1 follow-up).
+ * The payment schedule of a service as text (WEB-SVC-05), worded from the catalogue steps and never typed:
+ * "40 % on acceptance, 30 % at the midpoint milestone, 30 % on delivery", "Paid in full upfront", "Monthly in advance".
+ * Throws for an unknown or hidden code.
  */
-export const displayAmount = (m: Money): string => formatMoney(m).replace(/\.00$/, "");
+export function scheduleOf(code: string): string {
+  return scheduleText(entry("scheduleOf", code).schedule);
+}
+
+/** An amount as the site prints it: whole rupees and dollars without a zero minor part ("₹3,00,000", "$12,000"). */
+export const displayAmount = (m: Money): string => formatMoney(m, { wholeUnits: true });
