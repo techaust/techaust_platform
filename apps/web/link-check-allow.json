@@ -9,6 +9,86 @@
       "path": "/get-a-quote",
       "milestone": "M2.4",
       "reason": "The quote form is built in M2.4; the service pages and the CTA bands already link it."
+    },
+    {
+      "path": "/about",
+      "milestone": "M2.3 step 2b",
+      "reason": "The designer builds this page in M2.3 step 2b; the M2.1 shell and the M2.2 pages already link it. The checker fails once the page exists, so remove this entry then."
+    },
+    {
+      "path": "/accessibility",
+      "milestone": "M2.3 step 2b",
+      "reason": "The designer builds this page in M2.3 step 2b; the M2.1 shell and the M2.2 pages already link it. The checker fails once the page exists, so remove this entry then."
+    },
+    {
+      "path": "/blog",
+      "milestone": "M2.3 step 2b",
+      "reason": "The designer builds this page in M2.3 step 2b; the M2.1 shell and the M2.2 pages already link it. The checker fails once the page exists, so remove this entry then."
+    },
+    {
+      "path": "/cookies",
+      "milestone": "M2.3 step 2b",
+      "reason": "The designer builds this page in M2.3 step 2b; the M2.1 shell and the M2.2 pages already link it. The checker fails once the page exists, so remove this entry then."
+    },
+    {
+      "path": "/delivery-policy",
+      "milestone": "M2.3 step 2b",
+      "reason": "The designer builds this page in M2.3 step 2b; the M2.1 shell and the M2.2 pages already link it. The checker fails once the page exists, so remove this entry then."
+    },
+    {
+      "path": "/how-we-build-ai",
+      "milestone": "M2.3 step 2b",
+      "reason": "The designer builds this page in M2.3 step 2b; the M2.1 shell and the M2.2 pages already link it. The checker fails once the page exists, so remove this entry then."
+    },
+    {
+      "path": "/how-we-work",
+      "milestone": "M2.3 step 2b",
+      "reason": "The designer builds this page in M2.3 step 2b; the M2.1 shell and the M2.2 pages already link it. The checker fails once the page exists, so remove this entry then."
+    },
+    {
+      "path": "/industries/finance-accounting-legal",
+      "milestone": "M2.3 step 2b",
+      "reason": "The designer builds this page in M2.3 step 2b; the M2.1 shell and the M2.2 pages already link it. The checker fails once the page exists, so remove this entry then."
+    },
+    {
+      "path": "/industries/retail-ecommerce-logistics",
+      "milestone": "M2.3 step 2b",
+      "reason": "The designer builds this page in M2.3 step 2b; the M2.1 shell and the M2.2 pages already link it. The checker fails once the page exists, so remove this entry then."
+    },
+    {
+      "path": "/industries/saas-startups",
+      "milestone": "M2.3 step 2b",
+      "reason": "The designer builds this page in M2.3 step 2b; the M2.1 shell and the M2.2 pages already link it. The checker fails once the page exists, so remove this entry then."
+    },
+    {
+      "path": "/pricing",
+      "milestone": "M2.3 step 2b",
+      "reason": "The designer builds this page in M2.3 step 2b; the M2.1 shell and the M2.2 pages already link it. The checker fails once the page exists, so remove this entry then."
+    },
+    {
+      "path": "/privacy",
+      "milestone": "M2.3 step 2b",
+      "reason": "The designer builds this page in M2.3 step 2b; the M2.1 shell and the M2.2 pages already link it. The checker fails once the page exists, so remove this entry then."
+    },
+    {
+      "path": "/refund-policy",
+      "milestone": "M2.3 step 2b",
+      "reason": "The designer builds this page in M2.3 step 2b; the M2.1 shell and the M2.2 pages already link it. The checker fails once the page exists, so remove this entry then."
+    },
+    {
+      "path": "/security",
+      "milestone": "M2.3 step 2b",
+      "reason": "The designer builds this page in M2.3 step 2b; the M2.1 shell and the M2.2 pages already link it. The checker fails once the page exists, so remove this entry then."
+    },
+    {
+      "path": "/terms",
+      "milestone": "M2.3 step 2b",
+      "reason": "The designer builds this page in M2.3 step 2b; the M2.1 shell and the M2.2 pages already link it. The checker fails once the page exists, so remove this entry then."
+    },
+    {
+      "path": "/work",
+      "milestone": "M2.3 step 2b",
+      "reason": "The designer builds this page in M2.3 step 2b; the M2.1 shell and the M2.2 pages already link it. The checker fails once the page exists, so remove this entry then."
     }
   ]
 }

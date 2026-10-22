@@ -139,7 +139,7 @@ export function checkLinksIn(files, allow = []) {
           : `link-check-allow.json: ${key} (${e.milestone}) is not linked from any page: remove the entry`,
       );
     }
-  return problems;
+  return [...new Set(problems)]; // a footer link repeated in a page is reported once
 }
 
 /** Reads dist and runs the check; `webDir` is apps/web. */
