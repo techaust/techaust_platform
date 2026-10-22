@@ -129,7 +129,10 @@ const name = `currency-${id}`;
   // No stored choice and no fresh geo answer (the head script left ₹): ask /api/geo once, keep it 30 days (WEB-G-06).
   try {
     const chosen = localStorage.getItem("ta_currency");
-    const geo = JSON.parse(localStorage.getItem("ta_geo") || "null");
+    let geo: { at: number } | null = null;
+    try {
+      geo = JSON.parse(localStorage.getItem("ta_geo") || "null");
+    } catch {} // corrupt cache = no cache: ask /api/geo again
     if (chosen !== "inr" && chosen !== "usd" && !(geo && geo.at > Date.now() - 2592e6)) {
       fetch("/api/geo")
         .then((r) => (r.ok ? r.json() : null))

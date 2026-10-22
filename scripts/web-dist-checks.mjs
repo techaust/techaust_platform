@@ -123,7 +123,10 @@ export function checkText(name, text, { ga4Id = "" } = {}) {
   const problems = [];
   if (GSTIN.test(text)) problems.push(`${name}: a GSTIN-shaped value (never public, WEB-G-12/M-3)`);
   if (/techaustsocial/i.test(text)) problems.push(`${name}: "@techaustsocial" (never public)`);
-  if (/rupak\s+sarkar/i.test(text)) problems.push(`${name}: the proprietor's name (never public)`);
+  // The proprietor's name is kept out of the footer only (WEB-G-04); About and the legal pages must show it (04 §0).
+  const footer = (text.match(/<footer[\s\S]*?<\/footer>/gi) ?? []).join("\n");
+  if (/rupak\s+sarkar/i.test(footer))
+    problems.push(`${name}: the proprietor's name in the footer (WEB-G-04)`);
   if (!ga4Id && GA.test(text))
     problems.push(`${name}: Google Analytics code or cookie name while the GA4 ID is empty`);
   if (/sample content\s*[—-]\s*not final copy/i.test(text)) problems.push(`${name}: a design-preview sample`);
@@ -134,10 +137,14 @@ export function checkText(name, text, { ga4Id = "" } = {}) {
 export function checkAmountLiterals(name, source) {
   const problems = [];
   const lines = source.split(/\r?\n/);
+  // Code comments are skipped in code files only: in Markdown/data files a leading "*" is a list item, not a comment.
+  const code = /\.(astro|ts|tsx)$/.test(name);
   lines.forEach((line, i) => {
     const t = line.trim();
-    if (t.startsWith("//") || t.startsWith("*") || t.startsWith("/*") || t.startsWith("<!--")) return;
-    if (/(?:₹|\bRs\.?|\bINR|\bUSD|US\$|\$)\s*\d|\d\s*(?:₹|\bINR\b|\bUSD\b)/.test(t))
+    if (code && (t.startsWith("//") || t.startsWith("*") || t.startsWith("/*") || t.startsWith("<!--")))
+      return;
+    const rupee = "(?:₹|&#8377;|&#x20b9;|&inr;|\\bRs\\.?|\\bINR|\\bUSD|US\\$|\\$)";
+    if (new RegExp(`${rupee}\\s*\\d|\\d\\s*(?:₹|&#8377;|&#x20b9;|\\bINR\\b|\\bUSD\\b)`, "i").test(t))
       problems.push(
         `${name}:${i + 1}: a price amount typed into a template (use {{price:Sx}} / formatMoney)`,
       );
@@ -186,7 +193,7 @@ export function checkWeb(webDir) {
   }
   for (const file of walk(join(webDir, "src"))) {
     const name = relative(webDir, file).split(sep).join("/");
-    if (name.startsWith("src/preview/") || !/\.(astro|ts|tsx|md|mdx)$/.test(name)) continue;
+    if (name.startsWith("src/preview/") || !/\.(astro|ts|tsx|md|mdx|ya?ml|json)$/.test(name)) continue;
     if (name === "src/config/site.ts") continue;
     problems.push(...checkAmountLiterals(name, readFileSync(file, "utf8")));
   }

@@ -60,7 +60,11 @@ describe("content that must never be public (WEB-G-12, WEB-G-18, M-3)", () => {
   it("fails on a GSTIN, @techaustsocial and the proprietor's name", () => {
     expect(c.checkText("a.html", "GSTIN 19ABCDE1234F1Z5")).toHaveLength(1);
     expect(c.checkText("a.html", "@TechAustSocial")).toHaveLength(1);
-    expect(c.checkText("a.html", "by Rupak  Sarkar")).toHaveLength(1);
+    expect(c.checkText("a.html", "<footer><p>by Rupak  Sarkar</p></footer>")).toHaveLength(1);
+    // About and the legal pages must name the founder (04 §0): allowed outside the footer.
+    expect(
+      c.checkText("a.html", "<main>Grievance Officer: Rupak Sarkar, Founder</main><footer>x</footer>"),
+    ).toEqual([]);
     expect(c.checkText("a.html", "Balurghat, West Bengal")).toEqual([]);
   });
 
@@ -105,6 +109,10 @@ describe("no price literals in templates (WEB-G-07)", () => {
       c.checkAmountLiterals("t.astro", "<p>{formatMoney(m)}</p>\n<p>Pay in ₹ or $</p>\n// from ₹3,000 + GST"),
     ).toEqual([]);
     expect(c.checkAmountLiterals("t.astro", ["const a = `$", "{x} items`;"].join(""))).toEqual([]);
+    // Markdown list items and HTML entities are not comments or escapes: still caught.
+    expect(c.checkAmountLiterals("p.md", "* From ₹3,00,000")).toHaveLength(1);
+    expect(c.checkAmountLiterals("p.astro", "<p>&#8377;5000</p>")).toHaveLength(1);
+    expect(c.checkAmountLiterals("p.yaml", "price: &#x20B9;12,000")).toHaveLength(1);
   });
 });
 
