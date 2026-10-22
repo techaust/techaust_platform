@@ -1,0 +1,19 @@
+Reference: L-7K3Q9
+Service: AI Document Automation
+Budget: 1l-3l
+Country: IN
+Name: Sample Visitor
+Email: sample.visitor@example.test
+Phone: +91 90000 00000
+Company: Example Traders (sample)
+Timeline: 1-3-months
+Currency: INR
+Tools: tally, excel-sheets
+Best time for a call: 10:00–13:00 IST
+Message: Sample message (test data).
+We retype about 400 supplier invoices a month into Tally.
+Page: /services/ai-document-automation
+
+Open in admin: http://localhost:5173/
+
+TecHaust Technologies · Balurghat, West Bengal, India · contact@techaust.com

@@ -8,7 +8,7 @@ const tables = (Object.values(schema) as unknown[]).filter((v): v is SQLiteTable
 
 describe("migrations apply cleanly to a fresh D1", () => {
   it("creates every table in the Drizzle schema, with every column", async () => {
-    expect(tables.length).toBe(37);
+    expect(tables.length).toBe(39);
     for (const table of tables) {
       const { name, columns } = getTableConfig(table);
       const live = await all<{ name: string }>(`SELECT name FROM pragma_table_info(?)`, name);
@@ -28,7 +28,28 @@ describe("migrations apply cleanly to a fresh D1", () => {
       "0006_portal_triggers.sql",
       "0007_issue_guard.sql",
       "0008_indexes_fk_lookups.sql",
+      "0009_email_log.sql",
+      "0010_leads_request_type_plan.sql",
     ]);
+  });
+
+  it("email_log has its indexes and only known statuses; email_suppressions is keyed by address (0009, M2.4)", async () => {
+    const idx = await all<{ name: string }>("SELECT name FROM pragma_index_list('email_log')");
+    expect(idx.map((i) => i.name)).toEqual(expect.arrayContaining(["email_log_entity", "email_log_status"]));
+    const base = ["x", "a@example.com", "lead.alert"] as const;
+    await rejects(
+      run("INSERT INTO email_log (id, to_email, template, status) VALUES (?, ?, ?, 'bogus')", ...base),
+      /CHECK constraint failed: email_log_status/,
+    );
+    await run("INSERT INTO email_log (id, to_email, template, status) VALUES (?, ?, ?, 'skipped')", ...base);
+    await run("UPDATE email_log SET status = 'sending' WHERE id = 'x'");
+    const cols = await all<{ name: string }>("SELECT name FROM pragma_table_info('leads')");
+    expect(cols.map((c) => c.name)).toEqual(expect.arrayContaining(["request_type", "plan"]));
+    await run("INSERT INTO email_suppressions (email, reason, at) VALUES ('a@example.com', 'bounce', 1)");
+    await rejects(
+      run("INSERT INTO email_suppressions (email, reason, at) VALUES ('a@example.com', 'complaint', 2)"),
+      /UNIQUE/,
+    );
   });
 
   it("foreign keys that the API filters or joins on are indexed (0008)", async () => {

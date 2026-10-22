@@ -1,0 +1,21 @@
+---
+// ErrorSummary (docs/06 §5.3/§5.4): at the top of the form after a submit or a "Continue" that finds problems, a list of
+// links to each field (each link moves focus to its field). It takes focus when shown, so a screen reader reads it
+// first. Hidden and empty until scripts/forms.ts fills it.
+import { formUi } from "../../content/forms";
+import Icon from "../Icon.astro";
+
+interface Props {
+  id: string;
+}
+
+const { id } = Astro.props;
+---
+
+<div class="error-summary" id={id} tabindex="-1" role="group" aria-labelledby={`${id}-title`} data-error-summary hidden>
+  <h2 class="error-summary__title" id={`${id}-title`}>
+    <Icon name="alert-circle" size={24} />
+    {formUi.problem}
+  </h2>
+  <ul class="error-summary__list" role="list" data-error-list></ul>
+</div>

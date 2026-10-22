@@ -17,7 +17,7 @@ import { CATALOGUE } from "@techaust/db/catalogue";
  * directory): walk up from here to the folder holding astro.config.mjs. (Astro may bundle this module into a chunk
  * below dist/, so a fixed "../.." is not safe.)
  */
-function appRoot(): string {
+export function appRoot(): string {
   let dir = dirname(fileURLToPath(import.meta.url));
   for (let i = 0; i < 8; i++) {
     if (existsSync(join(dir, "astro.config.mjs"))) return dir;

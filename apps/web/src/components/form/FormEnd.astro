@@ -1,0 +1,43 @@
+---
+// The end of a form (FRM-05, 07 §5.8): the optional updates checkbox (never pre-ticked), the consent notice beside the
+// submit button, the owner's note for visitors without JavaScript (2026-10-23) and the line where scripts/forms.ts
+// reports a server error. The submit button keeps its colour while sending (a spinner and "Sending"), and ignores a
+// second press. The `back` slot holds the quote form's Back button.
+import { formUi, noJsNote } from "../../content/forms";
+import CopyText from "../CopyText.astro";
+import Icon from "../Icon.astro";
+
+interface Props {
+  submit: string;
+  consent: { notice: string; marketing: string };
+  id: string;
+}
+
+const { submit, consent, id } = Astro.props;
+---
+
+<div class="form-end">
+  <label class="check" for={`${id}-marketing`}>
+    <input class="check__input" type="checkbox" id={`${id}-marketing`} name="marketing" value="on" />
+    <span>{consent.marketing}</span>
+  </label>
+  <p class="form-note no-js-only" id={`${id}-nojs`}>
+    <Icon name="info" size={20} />
+    <span>{noJsNote}</span>
+  </p>
+  <div class="form-end__row">
+    <CopyText text={consent.notice} class="form-end__notice" />
+    <div class="form-end__actions">
+      <slot name="back" />
+      <button type="submit" class="btn btn--primary btn--lg form-end__submit" data-submit>
+        <span class="spinner" aria-hidden="true"></span>
+        <span data-submit-label>{submit}</span>
+        <span class="needs-js" hidden data-sending-label>{formUi.sending}</span>
+      </button>
+    </div>
+  </div>
+  <p class="form-status" role="alert" data-status>
+    <Icon name="alert-circle" size={20} />
+    <span data-status-text></span>
+  </p>
+</div>

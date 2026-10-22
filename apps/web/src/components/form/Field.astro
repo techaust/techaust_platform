@@ -1,0 +1,93 @@
+---
+// FormField (docs/06 §5.3/§5.4, site version): the label above the field, the hint under the label, the error under
+// the field (danger colour and an icon, never colour alone). The field names its hint and its error with
+// aria-describedby; the error stays empty (so it says nothing) until scripts/forms.ts fills it. Styles: styles/forms.css.
+import Icon from "../Icon.astro";
+
+interface Props {
+  name: string;
+  label: string;
+  hint?: string;
+  type?: "text" | "email" | "tel" | "textarea" | "select";
+  autocomplete?: string;
+  inputmode?: "text" | "email" | "tel";
+  required?: boolean;
+  maxlength?: number;
+  rows?: number;
+  /** For a select: the options, the first one usually empty. */
+  options?: readonly { value: string; label: string }[];
+  /** Grid placement in a two-column row (md and up). */
+  half?: boolean;
+  id?: string;
+}
+
+const {
+  name,
+  label,
+  hint,
+  type = "text",
+  autocomplete,
+  inputmode,
+  required = false,
+  maxlength,
+  rows = 6,
+  options = [],
+  half = false,
+  id = `f-${name}`,
+} = Astro.props;
+const hintId = hint ? `${id}-hint` : undefined;
+const errorId = `${id}-error`;
+const describedBy = [hintId, errorId].filter(Boolean).join(" ");
+---
+
+<div class:list={["field", half && "field--half"]} data-field={name}>
+  <label class="field__label" for={id}>{label}</label>
+  {hint && <p class="field__hint" id={hintId}>{hint}</p>}
+  {
+    type === "textarea" ? (
+      <textarea
+        class="input input--area"
+        id={id}
+        name={name}
+        rows={rows}
+        maxlength={maxlength}
+        required={required}
+        autocomplete={autocomplete}
+        aria-describedby={describedBy}
+      />
+    ) : type === "select" ? (
+      <span class="select">
+        <select
+          class="input"
+          id={id}
+          name={name}
+          required={required}
+          autocomplete={autocomplete}
+          aria-describedby={describedBy}
+        >
+          {options.map((o) => (
+            <option value={o.value}>{o.label}</option>
+          ))}
+        </select>
+        <Icon name="chevron-down" size={20} class="select__icon" />
+      </span>
+    ) : (
+      <input
+        class="input"
+        id={id}
+        name={name}
+        type={type}
+        maxlength={maxlength}
+        required={required}
+        autocomplete={autocomplete}
+        inputmode={inputmode}
+        spellcheck={type === "email" || type === "tel" ? "false" : undefined}
+        aria-describedby={describedBy}
+      />
+    )
+  }
+  <p class="field__error" id={errorId} data-error>
+    <Icon name="alert-circle" size={20} />
+    <span data-error-text></span>
+  </p>
+</div>

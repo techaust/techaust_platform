@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { secureHeaders } from "hono/secure-headers";
+import { handleQueue } from "./queue.ts";
 
 const app = new Hono<{ Bindings: Env }>();
 app.use(secureHeaders());
@@ -14,4 +15,6 @@ export default {
   fetch: app.fetch,
   // Cron dispatcher: only enqueues work (docs/05 §11.3). Implemented in M5.4.
   async scheduled(_controller, _env, _ctx) {},
+  // Queue consumers: leads and email, with their dead-letter queues (M2.4).
+  queue: handleQueue,
 } satisfies ExportedHandler<Env>;

@@ -22,7 +22,7 @@ export type ConsentReceipt = {
   at: number;
   ipHash: string;
   marketing: boolean;
-  withdrawnAt?: number;
+  withdrawnAt?: number | null;
 };
 
 export type Utm = Partial<Record<"source" | "medium" | "campaign" | "term" | "content", string>>;
@@ -42,6 +42,9 @@ export const leads = sqliteTable(
     source: text("source", { enum: LEAD_SOURCES }).notNull(),
     formVersion: text("form_version"),
     serviceCode: text("service_code"),
+    /** Quote link carried from the pages (`?type=pilot`, `?plan=<tier>`); lower-case slugs. */
+    requestType: text("request_type"),
+    plan: text("plan"),
     budgetBand: text("budget_band").$type<BudgetBand>(),
     timeline: text("timeline", { enum: TIMELINES }),
     currency: text("currency", { enum: CURRENCY_CODES }),

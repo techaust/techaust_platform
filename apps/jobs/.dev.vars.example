@@ -1,0 +1,3 @@
+# Local-only email secrets. Create apps/jobs/.dev.vars with `pnpm dev:secrets` (placeholders: the local `log` transport sends nothing; git-ignored).
+SES_ACCESS_KEY_ID=
+SES_SECRET_ACCESS_KEY=

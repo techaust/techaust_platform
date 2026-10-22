@@ -1,0 +1,52 @@
+---
+// One radio or checkbox card (docs/06 §5.4 "Radio cards"): a native input inside its label, so the whole card is the
+// target and the arrow keys move through a radio group. The selected card carries the brand's one device, the T bar
+// with its 45° cut, along its top edge. `sub` is a second, quieter line (the call windows' local time).
+interface Props {
+  type?: "radio" | "checkbox";
+  name: string;
+  value: string;
+  label: string;
+  sub?: string;
+  checked?: boolean;
+  disabled?: boolean;
+  required?: boolean;
+  id?: string;
+  /** Extra data attributes for scripts/forms.ts (the call window's minutes). */
+  data?: Record<string, string | number>;
+  class?: string;
+}
+
+const {
+  type = "radio",
+  name,
+  value,
+  label,
+  sub,
+  checked = false,
+  disabled = false,
+  required = false,
+  id = `c-${name}-${value}`.replace(/[^A-Za-z0-9_-]/g, "-"),
+  data = {},
+  class: cls,
+} = Astro.props;
+const attrs = Object.fromEntries(Object.entries(data).map(([k, v]) => [`data-${k}`, String(v)]));
+---
+
+<label class:list={["choice", `choice--${type}`, cls]} for={id}>
+  <input
+    class="choice__input"
+    type={type}
+    id={id}
+    name={name}
+    value={value}
+    checked={checked}
+    disabled={disabled}
+    required={required}
+    {...attrs}
+  />
+  <span class="choice__text">
+    <span class="choice__label">{label}</span>
+    {sub !== undefined && <span class="choice__sub" data-sub>{sub}</span>}
+  </span>
+</label>

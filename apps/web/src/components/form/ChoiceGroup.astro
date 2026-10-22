@@ -1,0 +1,47 @@
+---
+// A group of radio or checkbox cards (docs/06 §5.4): a <fieldset> whose <legend> is the question, the hint under it,
+// the group's error (filled by scripts/forms.ts, empty until then) and the cards in a grid. The cards are Choice.astro.
+import Icon from "../Icon.astro";
+
+interface Props {
+  name: string;
+  legend: string;
+  hint?: string;
+  /** The legend's look: a question (default) or a quieter sub-heading (the service groups). */
+  size?: "question" | "group";
+  /** Card columns from 480 px / 768 px. */
+  cols?: { sm?: 1 | 2; md?: 2 | 3 | 4 };
+  id?: string;
+  class?: string;
+}
+
+const {
+  name,
+  legend,
+  hint,
+  size = "question",
+  cols = { sm: 2, md: 2 },
+  id = `g-${name}`,
+  class: cls,
+} = Astro.props;
+const hintId = hint ? `${id}-hint` : undefined;
+const errorId = `${id}-error`;
+---
+
+<fieldset
+  class:list={["cgroup", cls]}
+  data-field={name}
+  id={id}
+  aria-describedby={[hintId, errorId].filter(Boolean).join(" ")}
+>
+  <legend class:list={["cgroup__legend", size === "group" && "cgroup__legend--group"]}>{legend}</legend>
+  {hint && <p class="field__hint" id={hintId}>{hint}</p>}
+  <p class="field__error" id={errorId} data-error>
+    <Icon name="alert-circle" size={20} />
+    <span data-error-text></span>
+  </p>
+  <div class:list={["cgroup__grid", `cgroup__grid--sm${cols.sm ?? 2}`, `cgroup__grid--md${cols.md ?? 2}`]}>
+    <slot />
+  </div>
+  <slot name="after" />
+</fieldset>

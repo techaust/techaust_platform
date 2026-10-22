@@ -9,10 +9,11 @@
     "build": "astro build && node ../../scripts/check-web-dist.mjs && wrangler deploy --dry-run --outdir .wrangler/dry-run",
     "typecheck": "wrangler types && astro check && tsc -p tsconfig.worker.json",
     "test": "vitest run",
-    "deploy:staging": "astro build && wrangler deploy --env staging",
+    "deploy:staging": "CLOUDFLARE_ENV=staging astro build && wrangler deploy --env staging",
     "types": "wrangler types"
   },
   "dependencies": {
+    "@techaust/auth": "workspace:*",
     "@techaust/core": "workspace:*",
     "@techaust/db": "workspace:*",
     "@techaust/ui": "workspace:*",

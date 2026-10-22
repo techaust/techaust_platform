@@ -1,5 +1,6 @@
 import { secureHeaders } from "hono/secure-headers";
 import { Hono } from "hono/tiny";
+import { forms } from "./forms.ts";
 
 // Runs ONLY for the run_worker_first paths in wrangler.jsonc (/api/geo, /api/forms/*): add every new route there
 // (test/worker-config.test.ts fails otherwise). Static pages and other /api paths never invoke this Worker.
@@ -27,8 +28,8 @@ app.get("/geo", (c) => {
   });
 });
 
-// Lead forms (FRM-*) are implemented in M2.4.
-app.post("/forms/*", (c) => c.json({ ok: false, error: "not_implemented" }, 501));
+// Lead forms (FRM-*, M2.4): /api/forms/contact and /api/forms/quote (src/forms.ts).
+app.route("/", forms);
 
 app.notFound((c) => c.json({ ok: false, error: "not_found" }, 404));
 
