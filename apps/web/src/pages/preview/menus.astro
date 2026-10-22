@@ -12,7 +12,7 @@ import "../../styles/preview.css";
 <BaseLayout title="Preview: menus | TecHaust Technologies" noindex placeholders openMenu="services">
   <div class="container pv-intro">
     <Notice variant="illustrative" label="Preview.">
-      The Services menu starts open in the header above (from 1024 px wide; below that, “Menu” opens the full-screen
+      The Services menu starts open in the header above (from 1280 px wide; below that, “Menu” opens the full-screen
       menu). Click Services, Industries or Menu to try them; Esc closes. The same menus are shown below as specimens.
     </Notice>
   </div>
@@ -24,7 +24,7 @@ import "../../styles/preview.css";
         Services, grouped as in 07 §2.1 with each group’s one-line intro from the services hub (07 §5.1).
       </p>
       <div class="pv-frame pv-frame--flush">
-        <span class="pv-frame__label">Services menu (desktop, ≥ 1024 px)</span>
+        <span class="pv-frame__label">Services menu (desktop, ≥ 1280 px)</span>
         <div class="pv-frame__body pv-scroll">
           <div class="pv-panel nav-panel" style="position: static; min-width: 60rem;">
             <ServicesPanel idPrefix="pv-svc" />
@@ -47,7 +47,7 @@ import "../../styles/preview.css";
     </section>
 
     <section class="pv-section" aria-labelledby="pv-mobile">
-      <h2 class="t-h4" id="pv-mobile">Mobile menu (below 1024 px)</h2>
+      <h2 class="t-h4" id="pv-mobile">Menu on phones and tablets (below 1280 px)</h2>
       <p class="pv-note">
         Full screen, with its own bar; focus stays inside until it closes. Services is open here. Without JavaScript
         the same menu opens under the header from a disclosure.
@@ -55,7 +55,7 @@ import "../../styles/preview.css";
       <div class="pv-frame pv-frame--flush pv-phone">
         <span class="pv-frame__label">375 px wide</span>
         <div class="pv-frame__body">
-          <MobileNav idPrefix="pv-m" openServices />
+          <MobileNav idPrefix="pv-m" openServices navLabel="Main (specimen)" />
         </div>
       </div>
     </section>

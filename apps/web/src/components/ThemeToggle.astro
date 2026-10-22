@@ -22,10 +22,13 @@ const { labelled = false, class: cls } = Astro.props;
   aria-label={shell.themeName.system}
   title={shell.themeName.system}
 >
-  <Icon name="monitor" class="tt-system" />
-  <Icon name="sun" class="tt-light" />
-  <Icon name="moon" class="tt-dark" />
-  {labelled && <span class="tt-text" aria-hidden="true">{draft.themeShort}: <span data-theme-word>system</span></span>}
+  {labelled && <span class="tt-label" aria-hidden="true">{draft.themeShort}</span>}
+  <span class="tt-state">
+    <Icon name="monitor" class="tt-system" />
+    <Icon name="sun" class="tt-light" />
+    <Icon name="moon" class="tt-dark" />
+    {labelled && <span class="tt-word" aria-hidden="true" data-theme-word>system</span>}
+  </span>
 </button>
 
 <style>
@@ -33,27 +36,50 @@ const { labelled = false, class: cls } = Astro.props;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: var(--space-2);
     min-width: var(--target-min);
     min-height: var(--target-min);
-    padding: 0 var(--space-3);
-    border: 1px solid transparent;
+    padding: 0;
+    border: 0;
     border-radius: var(--radius-md);
     background: transparent;
     color: var(--color-text);
+  }
+
+  .tt-state {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    min-width: var(--target-min);
+    min-height: var(--target-min);
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
     transition: background-color var(--duration-fast) var(--ease-standard);
   }
 
-  .theme-toggle:not(.theme-toggle--labelled) {
-    padding: 0;
-  }
-
-  .theme-toggle--labelled {
-    border-color: var(--color-border-control);
-  }
-
-  .theme-toggle:hover {
+  .theme-toggle:hover .tt-state {
     background: var(--color-fill-subtle);
+  }
+
+  /* Labelled (the mobile menu): a settings row, "Theme" on the left and the state as a control on the right, in
+     line with "Show prices in" above it. */
+  .theme-toggle--labelled {
+    justify-content: space-between;
+    gap: var(--space-4);
+    inline-size: 100%;
+  }
+
+  .theme-toggle--labelled .tt-state {
+    padding: 0 var(--space-4) 0 var(--space-3);
+    border-color: var(--color-border);
+  }
+
+  .tt-label {
+    font-weight: 500;
+  }
+
+  .tt-word {
+    font-weight: 600;
   }
 
   .theme-toggle :global(.tt-light),
@@ -71,9 +97,6 @@ const { labelled = false, class: cls } = Astro.props;
     display: block;
   }
 
-  .tt-text {
-    font-weight: 500;
-  }
 </style>
 
 <script>

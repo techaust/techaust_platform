@@ -61,6 +61,24 @@
   padding: 0;
 }
 
+.pv-bleed {
+  display: grid;
+  gap: var(--space-6);
+}
+
+.pv-frame--bleed {
+  border-inline: 0;
+  border-radius: 0;
+}
+
+.pv-frame--bleed .pv-frame__label {
+  padding-inline: 0;
+}
+
+.pv-frame--bleed .pv-frame__label .container {
+  display: block;
+}
+
 .pv-row {
   display: flex;
   flex-wrap: wrap;
@@ -166,4 +184,18 @@
 
 .pv-section-y {
   padding-block: var(--section-y);
+}
+
+.pv-about {
+  margin-block-start: var(--block-gap);
+}
+
+@media (max-width: 47.99rem) {
+  .pv-intro {
+    padding-block-start: var(--space-4);
+  }
+
+  .pv-hero {
+    padding-block-start: var(--space-8);
+  }
 }

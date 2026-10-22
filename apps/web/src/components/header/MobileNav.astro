@@ -1,5 +1,5 @@
 ---
-// The mobile menu's content (< 1024 px; WEB-G-03). With JavaScript the header moves it into a full-screen modal
+// The mobile menu's content (< 1280 px; WEB-G-03). With JavaScript the header moves it into a full-screen modal
 // <dialog> (focus stays inside, Esc closes and focus returns to "Menu"); without it, it opens under the header from a
 // <details>. Services and Industries are <details> sections. Styles: styles/header.css.
 import { discoveryHref } from "../../config/site";
@@ -14,9 +14,11 @@ interface Props {
   idPrefix?: string;
   /** Open the Services section (the menus preview). */
   openServices?: boolean;
+  /** Preview specimens: a distinct name for the nav landmark. */
+  navLabel?: string;
 }
 
-const { current, idPrefix = "m", openServices = false } = Astro.props;
+const { current, idPrefix = "m", openServices = false, navLabel = draft.mainNav } = Astro.props;
 const inServices = current?.startsWith("/services") ?? false;
 const inIndustries = current?.startsWith("/industries") ?? false;
 ---
@@ -30,7 +32,7 @@ const inIndustries = current?.startsWith("/industries") ?? false;
     </button>
   </div>
   <div class="mnav__body">
-    <nav class="mnav__nav" aria-label={draft.mainNav}>
+    <nav class="mnav__nav" aria-label={navLabel}>
       <ul role="list">
         <li>
           <details class="mnav__section" open={openServices || undefined}>

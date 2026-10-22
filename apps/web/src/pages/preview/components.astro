@@ -27,43 +27,44 @@ const nf = shell.notFound;
 >
   <CookieConsent dialogId="cookie-settings-launch" analytics={false} />
 
-  <div class="container pv-intro">
+  <div class="container pv-intro pv-stack">
+    <h1 class="t-display-2">Components</h1>
     <Notice variant="illustrative" label="Preview.">
       The site shell’s components and their states. The footer at the bottom of this page is the real one, with
       labelled placeholders where owner inputs are pending.
     </Notice>
   </div>
 
-  <div class="container">
-    <section class="pv-section" aria-labelledby="pv-header">
-      <h1 class="t-h2" id="pv-header">Components</h1>
-      <h2 class="t-h4" id="pv-header-states">Header</h2>
+  {/* Header specimens run the full width of the window, like the real header. */}
+  <section class="pv-section" aria-labelledby="pv-header">
+    <div class="container">
+      <h2 class="t-h4" id="pv-header">Header</h2>
       <p class="pv-note">
         At the top of the page the bar sits on the page colour; once the page scrolls it takes the surface colour and a
         hairline. The current page is marked by a short bar with a 45° end: the T bar of the mark in miniature.
       </p>
-      <div class="pv-grid">
-        <div class="pv-frame pv-frame--flush">
-          <span class="pv-frame__label">At the top</span>
-          <div class="pv-frame__body"><SiteHeader specimen="top" idPrefix="pv-h1" /></div>
-        </div>
-        <div class="pv-frame pv-frame--flush">
-          <span class="pv-frame__label">Scrolled (sticky)</span>
-          <div class="pv-frame__body"><SiteHeader specimen="scrolled" idPrefix="pv-h2" /></div>
-        </div>
-        <div class="pv-frame pv-frame--flush">
-          <span class="pv-frame__label">On the Pricing page (current page)</span>
-          <div class="pv-frame__body"><SiteHeader specimen="scrolled" idPrefix="pv-h3" current="/pricing" /></div>
-        </div>
-        <div class="pv-frame pv-frame--flush">
-          <span class="pv-frame__label">On a service page (inside Services)</span>
-          <div class="pv-frame__body">
-            <SiteHeader specimen="scrolled" idPrefix="pv-h4" current="/services/care-plans" />
-          </div>
-        </div>
+    </div>
+    <div class="pv-bleed">
+      <div class="pv-frame pv-frame--bleed">
+        <span class="pv-frame__label"><span class="container">At the top</span></span>
+        <SiteHeader specimen="top" idPrefix="pv-h1" />
       </div>
-    </section>
+      <div class="pv-frame pv-frame--bleed">
+        <span class="pv-frame__label"><span class="container">Scrolled (sticky)</span></span>
+        <SiteHeader specimen="scrolled" idPrefix="pv-h2" />
+      </div>
+      <div class="pv-frame pv-frame--bleed">
+        <span class="pv-frame__label"><span class="container">On the Pricing page (current page)</span></span>
+        <SiteHeader specimen="scrolled" idPrefix="pv-h3" current="/pricing" />
+      </div>
+      <div class="pv-frame pv-frame--bleed">
+        <span class="pv-frame__label"><span class="container">On a service page (inside Services)</span></span>
+        <SiteHeader specimen="scrolled" idPrefix="pv-h4" current="/services/care-plans" />
+      </div>
+    </div>
+  </section>
 
+  <div class="container">
     <section class="pv-section" aria-labelledby="pv-toggles">
       <h2 class="t-h4" id="pv-toggles">Toggles</h2>
       <p class="pv-note">

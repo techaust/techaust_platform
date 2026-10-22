@@ -1,6 +1,6 @@
 /* SiteHeader, its two menus and the mobile menu (components/SiteHeader.astro, components/header/*). Global rather
    than scoped: the header's script rebuilds the <summary> triggers as <button>s and moves the mobile menu into a
-   <dialog>, and those new elements must keep their styles. Tokens only. Full nav from 1024 px (lg, docs/06 §4.2);
+   <dialog>, and those new elements must keep their styles. Tokens only. Full nav from 1280 px (xl: at 1024 px the six items, the toggles and the CTA need ~1,150 px and the bar has ~950);
    below that, the logo, the CTA (from 768 px) and "Menu". */
 
 .scroll-sentinel {
@@ -74,7 +74,7 @@
   }
 }
 
-@media (min-width: 64rem) {
+@media (min-width: 80rem) {
   .primary-nav {
     display: block;
     min-inline-size: 0;
@@ -199,11 +199,21 @@ details[open] > .nav-trigger .chev {
   inline-size: 24rem;
 }
 
+/* Five columns; name, intro and links share rows across the columns (subgrid), so the hairlines line up even when
+   an intro wraps. */
 .svc-menu__groups {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: var(--space-8);
+  grid-template-rows: auto auto 1fr;
+  column-gap: var(--space-8);
   padding: var(--space-8);
+}
+
+.svc-menu__group {
+  display: grid;
+  grid-row: span 3;
+  grid-template-rows: subgrid;
+  align-content: start;
 }
 
 .svc-menu__name {
@@ -236,7 +246,7 @@ details[open] > .nav-trigger .chev {
   color: var(--color-text);
   line-height: var(--text-sm--line-height);
   text-decoration: none;
-  text-wrap: balance;
+  text-wrap: pretty;
 }
 
 .svc-menu__links a:hover,
@@ -472,11 +482,8 @@ details[open] > .nav-trigger .chev {
 }
 
 .mnav__tools {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4) var(--space-6);
+  display: grid;
+  gap: var(--space-2);
 }
 
 .mnav__cta {

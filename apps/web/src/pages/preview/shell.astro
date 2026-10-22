@@ -54,10 +54,7 @@ const faqs = [
   consent={{ banner: "always", analytics: true }}
 >
   <div class="container pv-intro">
-    <Notice variant="illustrative" label="Sample content — not final copy.">
-      M2.1 preview of the site shell: the header, footer, toggles and consent banner. The sections below reuse
-      approved home-page copy only to fill the page; the home page is designed in M2.2.
-    </Notice>
+    <Notice variant="illustrative" label="Sample content — not final copy." />
   </div>
 
   <section class="container pv-hero" aria-labelledby="hero-title">
@@ -122,5 +119,10 @@ const faqs = [
         ))
       }
     </div>
+    <Notice variant="illustrative" label="About this preview." class="pv-about">
+      M2.1 preview of the site shell: the header, footer, toggles and consent banner. The sections above reuse approved
+      home-page copy only to fill the page; the home page is designed in M2.2. The consent banner is shown on every
+      load here; the launch site has no Google Analytics, so it won’t appear there.
+    </Notice>
   </section>
 </BaseLayout>

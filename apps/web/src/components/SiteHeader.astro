@@ -181,7 +181,7 @@ const inIndustries = current?.startsWith("/industries") ?? false;
     dialog.addEventListener("click", (event) => {
       if ((event.target as Element).closest("a")) dialog.close();
     });
-    window.matchMedia("(min-width: 64rem)").addEventListener("change", (event) => {
+    window.matchMedia("(min-width: 80rem)").addEventListener("change", (event) => {
       if (event.matches && dialog.open) dialog.close();
     });
   }

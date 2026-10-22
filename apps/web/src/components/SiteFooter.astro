@@ -279,6 +279,7 @@ const columns = [
     display: flex;
     align-items: center;
     min-block-size: var(--target-min);
+    padding-block: var(--space-1);
     text-decoration: none;
     line-height: var(--text-sm--line-height);
   }
@@ -309,6 +310,7 @@ const columns = [
     display: inline-flex;
     align-items: center;
     min-block-size: var(--target-min);
+    min-inline-size: var(--target-min);
     color: var(--color-text-muted);
     text-decoration: none;
   }
@@ -319,26 +321,29 @@ const columns = [
 
   @media (min-width: 48rem) {
     .site-footer__nav {
-      grid-template-columns: repeat(4, minmax(0, 1fr));
+      /* Services and Industries carry the longest names. */
+      grid-template-columns: minmax(0, 1.35fr) minmax(0, 1.25fr) minmax(0, 1fr) minmax(0, 0.9fr);
     }
 
-    .site-footer__legal {
-      flex-direction: row;
-      align-items: center;
-      justify-content: space-between;
-      gap: var(--space-6);
-    }
+  }
+
+  .site-footer__legal p {
+    white-space: nowrap;
   }
 
   @media (min-width: 64rem) {
     .site-footer__inner {
       grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
-      column-gap: var(--space-16);
+      column-gap: var(--space-12);
       padding-block-start: var(--space-20);
     }
 
     .site-footer__legal {
       grid-column: 1 / -1;
+      flex-direction: row;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-6);
     }
   }
 </style>

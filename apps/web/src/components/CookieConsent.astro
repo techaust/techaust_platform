@@ -191,9 +191,16 @@ const titleId = `${dialogId}-title`;
     padding-inline: var(--space-3);
   }
 
-  /* While the banner shows, the page can scroll its last lines (and any CTA) above it. */
-  :root.has-consent-banner body {
+  /* While the banner shows, the page can scroll its last lines above it: the footer grows by the banner's height
+     (so the extra room is ink, not a strip of page colour under the footer). */
+  :root.has-consent-banner .site-footer {
     padding-block-end: var(--consent-h, 0);
+  }
+
+  @media (min-width: 48rem) {
+    :root.has-consent-banner .site-footer {
+      padding-block-end: calc(var(--consent-h, 0px) + var(--gutter));
+    }
   }
 
   /* ---------- Preferences dialog ---------- */
