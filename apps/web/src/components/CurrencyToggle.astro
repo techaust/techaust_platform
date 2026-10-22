@@ -90,8 +90,11 @@ const name = `currency-${id}`;
     cursor: pointer;
   }
 
-  /* Selected: ink on light, mist on dark (the text colour), never the accent as a large fill (docs/06 §1.7). */
-  .currency__opt:has(input:checked) {
+  /* Selected: ink on light, mist on dark (the text colour), never the accent as a large fill (docs/06 §1.7).
+     It follows <html data-currency>, which the head script sets before the first paint, not the radios' checked
+     state, which the script below syncs a moment later: otherwise a stored "$" paints "₹" first and animates over. */
+  :global(:root[data-currency="inr"]) .currency__opt:has(input[value="inr"]),
+  :global(:root[data-currency="usd"]) .currency__opt:has(input[value="usd"]) {
     background: var(--color-text);
     color: var(--color-bg);
   }
@@ -102,7 +105,8 @@ const name = `currency-${id}`;
   }
 
   @media (forced-colors: active) {
-    .currency__opt:has(input:checked) {
+    :global(:root[data-currency="inr"]) .currency__opt:has(input[value="inr"]),
+    :global(:root[data-currency="usd"]) .currency__opt:has(input[value="usd"]) {
       outline: 2px solid Highlight;
     }
   }
