@@ -87,7 +87,7 @@ export function amountInWords(m: Money): string {
   if (m.amount < 0) throw new RangeError("amountInWords expects a non-negative amount");
   const style = STYLE[m.currency];
   const fraction = m.amount % 100;
-  const whole = (m.amount - fraction) / 100;
+  const whole = Math.trunc(m.amount / 100);
   const head = `${style.major} ${style.words(whole)}`;
   if (fraction === 0) return `${head} Only`;
   return `${head} and ${below100(fraction)} ${style.minor[fraction === 1 ? 0 : 1]} Only`;
