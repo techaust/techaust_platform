@@ -145,3 +145,5 @@ Every run, the lead's and every agent's, loads **every skill that fits its task*
 | A page or report for the owner to view or share (lead) | `artifact-design` |
 
 Analyst and reviewer agents have the Skill tool for this. If a new skill appears that fits a task better, the lead adds it here (a Lead row in 13).
+
+**Skill-spawned helpers (owner decision 2026-10-22: allowed):** when an agent loads `code-review` or `security-review`, the skill may start its own helper run of the built-in `general-purpose` type. These helpers are allowed as an exception to §3's "built-in agents are never used", on two conditions: they only read (no edits, commits, pushes, PR comments or hosted actions; the agent that loaded the skill discards anything else), and they run on an allowed model (Opus or Sonnet 5.5, never Fable, effort low–high). `tools/model-audit.mjs` lists them as `general-purpose` rows; the lead checks their models like any other run. The lead and agents still never start a built-in agent themselves.

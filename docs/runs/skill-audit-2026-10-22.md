@@ -3,7 +3,7 @@
 ```
 Status: done: fixes merged in PR #36 (2026-10-22)
 Tier: A (touches staff-auth and portal Worker code)
-Usage: reviewer claude-opus-5-5/high (audit; skills read from disk as checklists because the Skill tool wasn't available to agents in this session); builder: filled in when it runs
+Usage: reviewer claude-opus-5-5/high (audit; skills read from disk as checklists because the Skill tool wasn't available to agents in this session); builder claude-sonnet-5-5/high (skills: cloudflare:workers-best-practices, cloudflare:wrangler); reviewer claude-opus-5-5/high (skills: code-review, security-review, cloudflare:workers-best-practices, cloudflare:wrangler) — from `node tools/model-audit.mjs 2026-10-22`
 ```
 
 ## Why
@@ -89,3 +89,6 @@ Builder: Sonnet 5.5 (effort as passed by the lead; the `Usage:` line is for the 
 Reviewer (Opus 5.5 high; loaded code-review, security-review, cloudflare:workers-best-practices, cloudflare:wrangler with the Skill tool, checklists only): all eleven fixes correct and complete, no regressions in staff or portal auth, the L5 test-helper changes weaken no assertion and the D1 call counts still hold exactly. `pnpm check`, `pnpm build`, `pnpm test` green (admin 419, portal 404, web 52, db 45, core 279, auth 94, ui 426, jobs 2).
 Lows fixed by the lead: the web Worker comment names the exact `run_worker_first` paths; `check-worker-config.mjs` throws on an unterminated `/*` instead of looping; a test runs `createInviteStatements` with an apostrophe address.
 Still to check on staging after the deploy: `/api/geo` answers and `/api/x` gets the static 404 (Cloudflare's matcher).
+
+## Handover (2026-10-22)
+Done: PR #36 merged and deployed. Next: the owner opens `/api/geo` (JSON) and `/api/x` (static 404) on web staging to confirm the narrowed `run_worker_first`; deferred items are in 12-status "Open follow-ups".
