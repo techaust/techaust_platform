@@ -1,6 +1,6 @@
 # 12: Status
 
-_Replaced (never appended) at the end of every session. Last updated: **2026-10-22** (IST)._
+_Replaced (never appended) at the end of every session. Last updated: **2026-10-22, evening** (IST)._
 
 ## Done
 - **Phases 1–5:** approved 2026-10-06 ([09-roadmap.md](09-roadmap.md)).
@@ -27,16 +27,17 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
 - **Skill-guided audit of M1.5/M1.6/M2.1 and its fixes** ([PR #36](https://github.com/techaust/techaust_platform/pull/36); [runs/skill-audit-2026-10-22.md](runs/skill-audit-2026-10-22.md)): 3 medium + 8 low found, all "fix now" items fixed and reviewed (APPROVE; the narrowed web `run_worker_first` confirmed on staging by the owner): Preview URLs off everywhere + CI guard, header caps before D1, logs privacy for web/jobs, web `run_worker_first` narrowed, `pnpm invite` audit row, production `secrets.required`, access-row write via `waitUntil`.
 
 - **Skill-guided audit of earlier work (M1.1–M1.4, CI, brand scripts) and its fixes** ([PR #38](https://github.com/techaust/techaust_platform/pull/38); [runs/skill-audit-earlier-2026-10-22.md](runs/skill-audit-earlier-2026-10-22.md)): 1 high (gap-free numbering could burn a number), 7 medium, 8 low; fixed in two rounds, analyst GO WITH CHANGES, reviews APPROVE and re-check APPROVE. Migrations 0007 (issue guard drafts-only + `issue_result` post-condition, number ≥ 1) and 0008 (FK indexes); seed conflicts; contrast + two token values; stricter no-floats scanner; brand drift hashes; migration rebuild guard; company GSTIN check; CI guards (triggering actor, step-scoped secrets, gitleaks checksum); heavy.sh PID lock; bench cleanup.
+- **Docs match the built auth** ([PR #41](https://github.com/techaust/techaust_platform/pull/41)): 04 §9 (four permission rows) and NFR-9, 05 §4–§7 and §13 (login challenge, D1 counters and key formats, measured CPU, the portal flow, `PORTAL_KEY_PEPPER`, built routes, CSRF, `request_id`, log sampling), 08 §3.2 and §4, CLAUDE.md (client login). PR #38's staging deploy applied migrations 0007 and 0008 (deploy log checked).
+- **M2.2: home + services: approved 2026-10-22** ([PR #42](https://github.com/techaust/techaust_platform/pull/42), approval [PR #43](https://github.com/techaust/techaust_platform/pull/43), FAQs [PR #44](https://github.com/techaust/techaust_platform/pull/44); [runs/m2.2-home-services.md](runs/m2.2-home-services.md)). Owner-approved design preview first; then `/`, `/services` (five groups) and 14 service pages from one template (S3 DPDP flagged off, 404). Prices only from the catalogue (snapshot file when present, else the seed) via `priceOf`/`scheduleOf` and `{{price:…}}` tokens; zod snapshot schema and whole-unit money in core; INR/USD swap with CLS 0; "Prices exclude GST" beside price groups and "+ GST" in meta (VERIFY WITH CA); S11 "USD price on request". Guards: content lint (banned phrases), one h1, no unrendered tokens. Review APPROVE (3 medium + 11 low fixed), re-check APPROVE (6 low fixed by the lead). Claims confirmed: 30-day warranty (defects vs scope), "20+ projects", sample deliverables on a call. FAQs: five per page on the 12 pages short of them ([07-C](07-content-appendix/C-service-faqs.md), owner-approved), approved on staging.
 
 ## In progress
-- **Doc fixes for M1.5/M1.6** (branch `docs/m1.5-m1.6-doc-fixes`): 04 §9 and NFR-9, 05 §4–§7 and §13, 08 §3.2 and §4, CLAUDE.md now match the built code. PR #38's staging deploy applied migrations 0007 and 0008 (checked in the deploy log).
+- Nothing. Everything from 2026-10-22 is merged; this end-of-day PR records it.
 
 ## Next
-1. **Confirm skills load inside agents in the new session** (the Skill tool wasn't available to agents in the 2026-10-22 session until PR #34; the last two reviewers had it): run `node tools/model-audit.mjs <date>` after the first agent.
+1. **M2.3 other pages** (industries hub + 3, pricing, how we work, how we build AI, about, work, blog with 3 drafted posts, legal pages, security + security.txt; [09](09-roadmap.md)). Brief first, with the skills from 14 §9. Owner inputs below; anything missing becomes a clearly labelled placeholder (the About headshot placeholder is blocked from production).
 2. Lead: the M1.5 staging lockout smoke (needs a run through Access).
-3. **M2.2 home + services** (design preview of the home page first; needs the claims-register confirmations in 07 §1.4). Brief first, with the skills from 14 §9.
 
-**Usage on 2026-10-22:** weekly about 20 % after M2.1, the skills rule and both audits; under the pace. Weekly reset **Mon 26 Oct, 15:30 IST**.
+**Usage on 2026-10-22 (evening):** weekly 23 %, 5-hour 31 %; well under the pace (≈ 45 %). Weekly reset **Mon 26 Oct, 15:30 IST**. Skills now load inside agents (every agent run today listed its skills; model audit: all within the plan).
 
 ## Waits on the owner
 - **Colour note (FYI):** two UI colours were darkened very slightly for accessibility on striped table rows: success green `#47730F` → `#44700E`, input-border grey `#7A8B84` → `#75867F` (3–5/255, not visible). Say if you'd rather keep the old values and accept the contrast gap.
@@ -46,7 +47,7 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
   - **U-1:** the LUT for zero-rated exports (send the ARN if filed).
   - **U-2:** how your AD bank wants the monthly FEMA EDF filed.
   - **U-9:** re-check the GST rules after the 57th GST Council (7/8 Oct 2026).
-- **For the website (M2):** LinkedIn URLs (company + personal), WhatsApp Business number, full postal address, headshot and bio, Cal.com link, 2–3 case-study briefs (GA4 decided: none at launch), one social handle for every platform.
+- **For the website (M2.3):** headshot and bio, full postal address, LinkedIn URLs (company + personal), WhatsApp Business number, Cal.com link, 2–3 case-study briefs (GA4 decided: none at launch), one social handle for every platform; later, review of the 3 blog drafts.
 - **Not blocking:**
   - upload the social kit (README in the zip); check the Upwork banner's "techaust.com" is readable and the Instagram/Threads/WhatsApp/YouTube images on a real phone
   - "since 2019" against the GST registration date if used in official listings (VERIFY WITH CA)
@@ -54,7 +55,8 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
 - **Model menu:** confirm Fable is no longer offered; keep **Opus 5.5, medium** for every conversation.
 
 ## Open follow-ups
-- **M2.1 follow-ups ([run file](runs/m2.1-site-shell.md) "Review"):** M2.2 currency-swap CLS (stack both amounts) + CLS E2E; remove `X-Robots-Tag: noindex` before production; legacy JS MIME types in the inline-script check; header-check host allow-list; WhatsApp `?text=` prefill; whole-unit money formatting in core.
+- **M2.1 follow-ups ([run file](runs/m2.1-site-shell.md) "Review"):** a CLS E2E test for the currency swap (the swap is now CLS 0, measured with PerformanceObserver); remove `X-Robots-Tag: noindex` before production; legacy JS MIME types in the inline-script check; header-check host allow-list; WhatsApp `?text=` prefill.
+- **M2.2 follow-ups ([run file](runs/m2.2-home-services.md) "Integration notes"):** "Who it's for" lines missing in 07 for some pages; the S5 UI/UX section (04 asks, 07 has no copy); the empty ~24 px row under the S11 hero price in INR (cosmetic); fail the build when a published snapshot is expected but missing, and a label convention for custom milestone steps (both M4.1); E2E (keyboard on the FAQ, hub links, the S3 404) when M2.5 adds Playwright runs; not verified anywhere yet: the real first-visit `/api/geo` swap, a true no-JS render, Safari/Firefox, a screen reader, Lighthouse/LCP (M2.5).
 - **Earlier-work audit follow-ups (low, [run file](runs/skill-audit-earlier-2026-10-22.md)):** heavy.sh kills the whole process tree on Windows and writes `child` before `pid`; quote-aware comment stripping in the migration guard; tighter no-floats bigint exemption; post-condition for receipts/proformas/credit notes when the M3/M5 state machine lands.
 - **Skill-audit follow-ups ([runs/skill-audit-2026-10-22.md](runs/skill-audit-2026-10-22.md)):** immutable cache for admin/portal `/assets/*` (M3.1/M4.5); tracing on staging after checking the Workers Logs quota; per-email link-quota lock-out design with Turnstile (M2.4); the Phase 7 WAF/rate-limit rule also covers web `/api/*`; more binding types in `check-web-bindings.mjs`; `documents.parent_id` FK and issued-status transitions with the M3/M5 state machine; retire catalogue items by deactivating (M4.1); GSTIN formats for TDS/UIN/NRTP (VERIFY WITH CA/LEGAL, M5); a single issue-batch builder exported from `packages/db` (M5); emails say "View and pay" (M2.4).
 - **M1.6 follow-ups ([run file](runs/m1.6-portal-auth.md) "Follow-ups"):** admin `ipKey` → IPv6 /64; M2.4 sender via `waitUntil`; M7.1 document-link audit throttling; merge the bundle guards; Phase 7 rate-limit/WAF rule on portal auth routes (owner's yes).

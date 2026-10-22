@@ -587,3 +587,4 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 
 ## 10. Status
 - [x] **Approved by owner 2026-10-06** (copy edits still welcome)
+- [x] 2026-10-22: claims register confirmed (warranty, 20+ projects, sample deliverables); S9 FAQs confirmed; catalogue codes in copy replaced by names; S11 USD wording; service-page FAQs in [07-C](07-content-appendix/C-service-faqs.md) (owner-approved). M2.2 pages built from §2–§5.1.

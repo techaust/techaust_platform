@@ -2,6 +2,12 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-10-22 [#44](https://github.com/techaust/techaust_platform/pull/44) content(web): FAQs for 12 service pages, owner-approved [WEB-SVC-04]
+- 2026-10-22 [#43](https://github.com/techaust/techaust_platform/pull/43) docs: M2.2 approved by the owner on staging
+- 2026-10-22 [#42](https://github.com/techaust/techaust_platform/pull/42) feat(web): M2.2 home page, services hub and 14 service pages [WEB-HOME, WEB-SVCHUB, WEB-SVC-01..06]
+- 2026-10-22 [#41](https://github.com/techaust/techaust_platform/pull/41) docs: match 04, 05, 08 and CLAUDE.md to the built M1.5/M1.6 auth
+- 2026-10-22 [#40](https://github.com/techaust/techaust_platform/pull/40) docs: owner confirmed the narrowed run_worker_first on staging
+- 2026-10-22 [#39](https://github.com/techaust/techaust_platform/pull/39) docs: end of day 2026-10-22 (usage lines, handovers, skill-helper decision)
 - 2026-10-22 [#38](https://github.com/techaust/techaust_platform/pull/38) fix: skill-guided audit of earlier work (gap-free numbering post-condition, FK indexes, contrast, no-floats, brand drift, CI guards)
 - 2026-10-22 [#37](https://github.com/techaust/techaust_platform/pull/37) docs: end of day 2026-10-22
 - 2026-10-22 [#36](https://github.com/techaust/techaust_platform/pull/36) fix: skill-guided audit findings for M1.5/M1.6/M2.1 (preview URLs, header caps, logs privacy, waitUntil, invite audit)
