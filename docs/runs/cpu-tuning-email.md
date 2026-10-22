@@ -90,3 +90,17 @@ Through the whole queue path (`bench-jobs.mjs` with the 100 ms idle; includes `h
 - D1 cost per call.
 
 **Open questions:** none blocking.
+
+## Review (reviewer, Opus 5.5 high, 2026-10-23)
+**SEND BACK** (1 high, 1 medium, 2 low). Skills: `code-review`, `cloudflare:workers-best-practices`, `cloudflare:workers-profiling`. `pnpm check` and `pnpm test` exit 0.
+
+**Evidence (reviewer's probe in the repo's own workerd 1.20261001.1, scratch Worker, no repo files touched):** at module top level workerd refuses `AbortSignal.timeout`, `new Request`, `new Response` and `crypto.getRandomValues` ("Disallowed operation called within global scope"); `new Headers`, `new URL` and Web Crypto (`importKey`, `sign`, `digest`) are allowed. A floating crypto promise at top level finishes during start-up, before the first event (`Date.now()` still reads 0 when it resolves). The branch's `warmSesSigning` resolved `false` with 0 sign calls; a signer-only version resolved `true` with 5.
+
+| # | Sev | Where | Finding | Triage |
+|---|---|---|---|---|
+| 1 | high | `packages/email/src/transport.ts` | `AbortSignal.timeout` (and `AwsClient.sign`'s `new Request`) throw at start-up, so the warm-up never signs | Fixed (lead): `AwsV4Signer(...).sign()` directly, no signal, no `Request` |
+| 2 | medium | `apps/jobs/test/warm.test.ts`, `email.test.ts` | Tests run outside start-up rules, so they pass while production fails | Fixed: a test makes `Request`, `Response`, `fetch`, `setTimeout`, `AbortSignal.timeout` and `getRandomValues` throw and expects `true` with 5 sign calls (the old code fails it) |
+| 3 | low | `email.test.ts` | "leaves the shared key map alone" never checked it | Fixed: the follow-up transport uses the warm-up's own credentials and region (`WARM_KEY_ID`, `WARM_SECRET`) and still needs 5 sign calls |
+| 4 | low | `apps/jobs/src/index.ts` | Dropped result, pass-through wrapper | Fixed: wrapper removed, `void warmSesSigning()` called directly; the result is covered by finding 2's test |
+
+`pnpm check` exit 0; `pnpm test` exit 0 (email 23, jobs 32, the rest unchanged).

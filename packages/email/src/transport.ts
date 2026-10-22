@@ -3,7 +3,7 @@
 //   sent      accepted (SES message id)
 //   permanent a 4xx other than throttling: log `failed` and acknowledge, retrying cannot help
 //   retry     throttling, 5xx or a network error: let the queue redeliver
-import { AwsClient } from "aws4fetch";
+import { AwsClient, AwsV4Signer } from "aws4fetch";
 import { formatAddress, headerValue } from "./headers.ts";
 
 export type SendInput = {
@@ -111,21 +111,21 @@ export function sesTransport(config: SesConfig): Transport {
   };
 }
 
+/** The warm-up's made-up credentials (exported for the test that proves the shared key map stays untouched). */
+export const WARM_KEY_ID = "AKIAWARMUP00000000";
+export const WARM_SECRET = "warm-up-not-a-secret";
+
 /**
  * Start-up warm-up of the SES path (CPU tuning round 2): signs one made-up request with made-up credentials and its own
- * key cache, so the first real email in an isolate does not pay for the first `crypto.subtle` import, HMAC and digest,
- * the `Request` set-up and the JSON build. Nothing is sent and nothing is stored (no `fetch`, not the shared
- * SIGNING_KEYS map); the credentials are fixed dummies, never `env`. Resolves true when the signing worked.
+ * key cache, so the first real email in an isolate does not pay for the first `crypto.subtle` import, HMAC and digest and
+ * the JSON build. Nothing is sent and nothing is stored (no `fetch`, not the shared SIGNING_KEYS map); the credentials
+ * are fixed dummies, never `env`. It uses `AwsV4Signer` directly, with no `Request` and no `AbortSignal`: workerd refuses
+ * both in a Worker's global scope ("Disallowed operation called within global scope"), while Web Crypto is allowed there.
+ * (`Date` reads 0 during start-up, so this signs a 1970 date: harmless, the key cache is its own.) Resolves true when the
+ * signing worked.
  */
 export async function warmSesSigning(): Promise<boolean> {
   try {
-    const client = new AwsClient({
-      accessKeyId: "AKIAWARMUP00000000",
-      secretAccessKey: "warm-up-not-a-secret",
-      service: "ses",
-      region: "ap-south-1",
-      retries: 0,
-    });
     const body = JSON.stringify({
       FromEmailAddress: formatAddress("Warm", "warm@warm-up.invalid"),
       Destination: { ToAddresses: [formatAddress(undefined, "warm@warm-up.invalid")] },
@@ -136,13 +136,18 @@ export async function warmSesSigning(): Promise<boolean> {
         },
       },
     });
-    const req = await client.sign("https://email.ap-south-1.amazonaws.com/v2/email/outbound-emails", {
+    const signed = await new AwsV4Signer({
+      url: "https://email.ap-south-1.amazonaws.com/v2/email/outbound-emails",
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body,
-      signal: AbortSignal.timeout(8_000),
-    });
-    return req.headers.has("authorization");
+      accessKeyId: WARM_KEY_ID,
+      secretAccessKey: WARM_SECRET,
+      service: "ses",
+      region: "ap-south-1",
+      cache: new Map(),
+    }).sign();
+    return signed.headers.has("authorization");
   } catch {
     return false;
   }
