@@ -17,11 +17,11 @@ const usd = draft.usdCode;
 
 <p class:list={["cnote", "needs-js", cls]} data-currency-note>
   <span class="cnote__state">
-    {draft.pricesIn}{" "}<span class="cnote__code" data-cn="inr">{inr}</span><span class="cnote__code" data-cn="usd">{usd}</span>
+    {draft.pricesIn}{" "}<span class="cnote__stack"><span class="cnote__code" data-cn="inr">{inr}</span><span class="cnote__code" data-cn="usd">{usd}</span></span>
   </span>
   <span class="cnote__sep" aria-hidden="true">·</span>
   <button type="button" class="cnote__switch" data-currency-switch>
-    <span data-cn="inr">{draft.showIn} {usd}</span><span data-cn="usd">{draft.showIn} {inr}</span>
+    <span class="cnote__stack"><span data-cn="inr">{draft.showIn} {usd}</span><span data-cn="usd">{draft.showIn} {inr}</span></span>
   </button>
   <span
     class="visually-hidden"
@@ -76,10 +76,20 @@ const usd = draft.usdCode;
     outline-offset: 2px;
   }
 
-  /* One wording per state, from the head script's attribute. */
+  /* One wording per state, from the head script's attribute. Both wordings share one grid cell and the other is
+     only invisible, so "INR"/"USD" (slightly different widths) can't nudge the button when the currency changes
+     (M2.1 follow-up M4: CLS 0 on the first-visit swap). */
+  .cnote__stack {
+    display: inline-grid;
+  }
+
+  .cnote__stack > * {
+    grid-area: 1 / 1;
+  }
+
   :global(:root[data-currency="inr"]) .cnote [data-cn="usd"],
   :global(:root[data-currency="usd"]) .cnote [data-cn="inr"] {
-    display: none;
+    visibility: hidden;
   }
 </style>
 

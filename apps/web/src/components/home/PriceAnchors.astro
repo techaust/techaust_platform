@@ -54,7 +54,21 @@ const p = home.pricing;
     border-block-end: 1px solid var(--color-border);
   }
 
-  @media (min-width: 48rem) {
+  /* Tablets: one row per price, the label left and the amount right, like a rate card. */
+  @media (min-width: 48rem) and (max-width: 63.99rem) {
+    .rate {
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: baseline;
+      column-gap: var(--space-8);
+    }
+
+    /* Both currency lines flush right in their shared cell. */
+    .rate :global(.price__line) {
+      justify-content: flex-end;
+    }
+  }
+
+  @media (min-width: 64rem) {
     .rates {
       grid-template-columns: repeat(3, minmax(0, 1fr));
       border-block-end: 1px solid var(--color-border);
