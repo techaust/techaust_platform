@@ -1,7 +1,7 @@
 # CPU tuning: form post, leads and email consumers
 
 ```
-Status: open
+Status: merged (PR #53); staging measured 2026-10-23
 Tier: B (Workers, queues; docs/14 §2)
 Usage: builder claude-sonnet-5-5/medium (workers-profiling, workers-best-practices, wrangler) · reviewer
   claude-opus-5-5/high (code-review, workers-best-practices, workers-profiling; its code-review helper general-purpose
@@ -144,3 +144,18 @@ The web quote post was not benchmarked separately (same code; its extra cost on 
 - Note taken for the staging test: use the worst of 2 or 3 cold samples where the logs have them.
 
 `pnpm check` exit 0; `pnpm test` exit 0 (core 345, jobs 31, the rest unchanged).
+
+## Staging result (lead, 2026-10-23, Workers Logs read-only)
+PR #53 merged and deployed (jobs version `59d5d894`, web `c9894603`). The owner sent one contact (23:29 UTC) and one quote (23:30 UTC); all four emails `sent` in `email_log`.
+
+| Invocation | Baseline (ms CPU) | After (ms CPU) | ≤ 7 ms |
+|---|---|---|---|
+| web `POST /api/forms/contact` | 6 | 3 | pass |
+| web `POST /api/forms/quote` | 10 | 3 | pass |
+| leads consumer (contact, quote) | 8, 8 | 3, 2 | pass |
+| email: contact acknowledgement, alert | 14, 7 | 6, 3 | pass |
+| email: quote acknowledgement, alert | 5, 4 | 9, 6 | **acknowledgement fails (9)** |
+
+- **Rule 1 (warm-up):** kept. The first web post (3), the first lead (3) and the first email (6) are each below their baseline (10, 8, 14).
+- **Rule 2 (target):** every form post and lead is ≤ 7 ms. One email, the quote acknowledgement, took 9 ms: under the 10 ms limit, over the 7 ms target. Single samples, so noisy, but it is a named follow-up (below), to be done before M2.4b adds templates.
+- **Follow-up: email consumer CPU.** Find where the quote acknowledgement's 9 ms goes (likely a fresh isolate: the SES request signing and fetch set-up, or `alertData`'s labels on the quote path); the reviewer's note: D1 batching saves wall time, not CPU. Measure with several cold samples (worst of 3) before and after.
