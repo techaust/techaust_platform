@@ -251,6 +251,15 @@ importers:
 
   apps/jobs:
     dependencies:
+      '@techaust/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@techaust/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@techaust/email':
+        specifier: workspace:*
+        version: link:../../packages/email
       hono:
         specifier: 4.13.13
         version: 4.13.13

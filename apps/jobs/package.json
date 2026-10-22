@@ -12,6 +12,9 @@
     "types": "wrangler types --env staging"
   },
   "dependencies": {
+    "@techaust/core": "workspace:*",
+    "@techaust/db": "workspace:*",
+    "@techaust/email": "workspace:*",
     "hono": "4.13.13"
   },
   "devDependencies": {
