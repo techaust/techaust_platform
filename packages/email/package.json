@@ -15,5 +15,8 @@
     "@techaust/config": "workspace:*",
     "typescript": "6.0.3",
     "vitest": "4.1.11"
+  },
+  "dependencies": {
+    "aws4fetch": "1.0.20"
   }
 }
