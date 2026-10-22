@@ -134,7 +134,7 @@ describe("SES transport", () => {
   });
 
   it("derives the signing key once per day for all transports, and again when the date changes (CPU)", async () => {
-    const own = { ...cfg, secretAccessKey: "secret-for-the-cache-test" };
+    const own = { ...cfg, secretAccessKey: `secret-for-the-cache-test-${crypto.randomUUID()}` }; // unique, so the shared map starts empty for it
     const spy = fetcher(() => Response.json({ MessageId: "ses-1" }));
     const sign = vi.spyOn(crypto.subtle, "sign");
     vi.useFakeTimers({ toFake: ["Date"] });

@@ -3,10 +3,11 @@
 // data). Run from a Worker's module top level, that cost is paid while the isolate starts, not inside the first
 // form post or queue message, which is the one the Free plan's 10 ms CPU limit applies to (CPU tuning, 2026-10-23).
 // Pure: no I/O, nothing is stored or logged, the sample values are made up, and a failure is swallowed (a warm-up must
-// never stop a Worker from starting).
+// never stop a Worker from starting). Each warm-up returns how many samples parsed, so a test notices a sample that a
+// schema change has made invalid (an invalid sample stops early and no longer warms the success path).
 import { budgetBandLabel, countryName } from "./form-labels.ts";
 import { contactForm, quoteForm } from "./schemas/forms.ts";
-import { emailMessage, formMeta, leadMessage } from "./schemas/messages.ts";
+import { emailMessage, formMeta, type LeadMessage, leadMessage } from "./schemas/messages.ts";
 
 const CONTACT = {
   name: "Warm Up",
@@ -34,23 +35,46 @@ const BASE = {
   utm: {},
   submittedAt: 1,
 };
+const QUOTE_LEAD = { kind: "quote", payload: QUOTE, ...BASE } as const;
 
-/** Parses one made-up submission through every form schema, so their first real use is not the first run. */
-export function warmFormSchemas(): void {
+/** Made-up samples, also used by the jobs warm-up to render a full quote alert. */
+export const WARM_SAMPLES = {
+  /** A quote lead message as the consumer sees it after parsing. */
+  quoteLead: QUOTE_LEAD as unknown as LeadMessage,
+};
+
+const ok = (r: { success: boolean }) => (r.success ? 1 : 0);
+
+/** The web Worker's form post: parses one made-up submission through each schema it uses. Returns the parses that succeeded (3). */
+export function warmWebForms(): number {
   try {
-    contactForm.safeParse(CONTACT);
-    quoteForm.safeParse(QUOTE);
-    formMeta.safeParse({ noticeVersion: "1.0", sourcePage: "/contact", utm: {} });
-    leadMessage.safeParse({ kind: "contact", payload: CONTACT, ...BASE });
-    leadMessage.safeParse({ kind: "quote", payload: QUOTE, ...BASE });
-    emailMessage.safeParse({
-      template: "lead.alert",
-      to: "warm-up@example.invalid",
-      data: {},
-      entity: { type: "lead", id: "L-23456" },
-    });
+    return (
+      ok(contactForm.safeParse(CONTACT)) +
+      ok(quoteForm.safeParse(QUOTE)) +
+      ok(formMeta.safeParse({ noticeVersion: "1.0", sourcePage: "/contact", utm: {} }))
+    );
   } catch {
-    // never stop a Worker from starting
+    return 0; // never stop a Worker from starting
+  }
+}
+
+/** The jobs Worker's consumers: parses one made-up message of each kind. Returns the parses that succeeded (3). */
+export function warmConsumerMessages(): number {
+  try {
+    return (
+      ok(leadMessage.safeParse({ kind: "contact", payload: CONTACT, ...BASE })) +
+      ok(leadMessage.safeParse(QUOTE_LEAD)) +
+      ok(
+        emailMessage.safeParse({
+          template: "lead.alert",
+          to: "warm-up@example.invalid",
+          data: {},
+          entity: { type: "lead", id: "L-23456" },
+        }),
+      )
+    );
+  } catch {
+    return 0; // never stop a Worker from starting
   }
 }
 

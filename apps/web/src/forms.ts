@@ -18,12 +18,12 @@ import {
   type LeadMessage,
   MIN_FILL_MS,
   quoteForm,
-  warmFormSchemas,
+  warmWebForms,
 } from "@techaust/core";
 import { Hono } from "hono/tiny";
 import { isQuotableService } from "./lib/service-visibility";
 
-warmFormSchemas();
+warmWebForms();
 
 export const MAX_BODY_BYTES = 16 * 1024;
 const PAGES: Record<FormKind, string> = { contact: "/contact", quote: "/get-a-quote" };

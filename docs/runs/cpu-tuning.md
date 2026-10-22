@@ -107,3 +107,27 @@ The web quote post was not benchmarked separately (same code; its extra cost on 
 **Candidates not done (no local evidence, or out of scope):** batching the email consumer's INSERT OR IGNORE and claim UPDATE into one `db.batch()` (saves a D1 round trip per message; needs a D1 measurement and changes the query shape); static budget-band labels to avoid `Intl.NumberFormat` (would type amounts, against the "amounts from numbers" rule in `form-labels.ts`, so a lead/owner call); computing `leadId` once per lead message (trivial saving).
 
 **Open questions:** none blocking. Lead: keep or drop the warm-up commit after the staging re-measure.
+
+## Review (reviewer, Opus 5.5 high, 2026-10-23)
+**APPROVE**: no critical or high findings; 4 medium, 6 low. Skills: `code-review`, `cloudflare:workers-best-practices`, `cloudflare:workers-profiling`. `pnpm check` and `pnpm test` exit 0; core coverage 99.48 %. Confirmed: the namespace import gives the same zod objects, types and English messages; the signing-key cache key is aws4fetch's `[secret, date, region, service]`, so a rotated secret, another region or a new day derives a new key; the warm-up does no I/O, uses no timers, randomness or secrets, and stores nothing.
+
+| # | Sev | Where | Finding | Triage |
+|---|---|---|---|---|
+| M1 | medium | `apps/jobs/src/index.ts`, `apps/web/src/forms.ts` | Whether start-up CPU is billed to the first invocation is unproven, above all for queue consumers | Kept, with the staging rule below; local start-up profiled with `wrangler check startup` (lead) |
+| M2 | medium | `packages/core/test/warm.test.ts` | Test never checks the samples still parse | Fixed: warm-ups return the parse count; the test expects 3 + 3 |
+| M3 | medium | run file | 7 ms target for the first email not shown | Pass/fail rule below; a follow-up if it fails |
+| M4 | medium | CLAUDE.md | No rule protects the gains | Fixed: CLAUDE.md "Packages" line; guard test `packages/core/test/zod-import.test.ts` fails on `import { z }` or a default zod import in any package or app source |
+| L1 | low | `apps/jobs/src/warm.ts` | Alert warm-up renders one row | Fixed: renders `alertData` of a full quote sample (`WARM_SAMPLES.quoteLead`) |
+| L2 | low | `packages/core/src/warm.ts` | Web warms consumer schemas it never parses | Fixed: split into `warmWebForms()` and `warmConsumerMessages()` |
+| L3 | low | `packages/email/src/transport.ts` | Signing-key map never trimmed | Fixed: cleared above 8 entries |
+| L4 | low | `warm.test.ts` | Spies not restored on failure | Fixed: `afterEach(vi.restoreAllMocks)` |
+| L5 | low | `email.test.ts` | Cache test depends on fresh module state | Fixed: unique secret per run |
+| L6 | low | `form-labels.ts` | Redundant alias | Kept: the suggested one-liner fails Biome's `noAssignInExpressions`; the alias narrows the type |
+
+## Integration notes (lead, 2026-10-23)
+- Builder branch fast-forwarded into `perf/cpu-tuning`; its worktree removed; benchmark scripts and profiles kept in `.logs/cpu-tuning/perf/` (git-ignored).
+- Review fixes by the lead (all small, listed above).
+- **Local start-up profile in workerd** (`wrangler check startup`, this PC, after the fixes; profiles in `.logs/cpu-tuning/startup/`): jobs 72.5 ms busy, of which the warm-up is 11.1 ms; web 40.0 ms busy, of which the warm-up is 3.4 ms. Both are far under the 1 s start-up limit.
+- **Staging rules (decided by the lead before the measurement):**
+  1. *Warm-up (M1):* kept only if, in a fresh isolate after the deploy, the first web form post, the first lead and the first email are each below their baseline (10, 8 and 14 ms). If any is not, drop the warm-up (the two `warm.ts` files, the two call lines, `WARM_SAMPLES`) in a follow-up PR and re-measure; the import, cache and formatter fixes stay.
+  2. *Target (M3):* every invocation ≤ 7 ms passes. Anything over 7 ms gets a named follow-up before M2.4b adds templates; anything at or over 10 ms is reported to the owner the same day.

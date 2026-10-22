@@ -48,6 +48,8 @@ const SIGNING_KEYS = new Map<string, ArrayBuffer>();
 
 /** The SES v2 `SendEmail` call (JSON, SigV4 for service `ses`). */
 export function sesTransport(config: SesConfig): Transport {
+  // one entry per day (and per rotated secret): drop old ones so a rotated-out secret doesn't stay in memory
+  if (SIGNING_KEYS.size > 8) SIGNING_KEYS.clear();
   const client = new AwsClient({
     accessKeyId: config.accessKeyId,
     secretAccessKey: config.secretAccessKey,
