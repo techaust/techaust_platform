@@ -36,15 +36,28 @@ const lf = (text: string) => text.replaceAll("\r\n", "\n");
 const here = (file: string) => lf(readFileSync(fileURLToPath(new URL(file, import.meta.url)), "utf8"));
 
 /**
- * SHA-256 over the inputs of the print PDFs: the master SVG (letterforms), the measured print CMYK, and the layout
- * code (this file and the geometry it reads). Written into each PDF's Keywords so the drift test can prove the
- * committed files match the current sources without re-rendering them. Line endings are normalised so the hash is
- * the same on Windows and in CI.
+ * SHA-256 over the inputs of the print PDFs: the master SVG, the measured print CMYK, the layout code (this file,
+ * the geometry, the text outliner and the composer) and the bytes of the font the text is outlined from. Written
+ * into each PDF's Keywords so the drift test can prove the committed files match the current sources without
+ * re-rendering them. Text sources have their line endings normalised so the hash is the same on Windows and in CI.
  */
 export function printSourceHash(packageRoot: string): string {
   const master = lf(readFileSync(join(packageRoot, "brand", "source", "techaust-master.svg"), "utf8"));
+  const require = createRequire(join(packageRoot, "package.json"));
+  const fontBytes = readFileSync(require.resolve(WORDMARK.font));
   return createHash("sha256")
-    .update(JSON.stringify([master, printCmyk, here("./print.ts"), here("./geometry.ts")]), "utf8")
+    .update(
+      JSON.stringify([
+        master,
+        printCmyk,
+        here("./print.ts"),
+        here("./geometry.ts"),
+        here("./outline.ts"),
+        here("./compose.ts"),
+      ]),
+      "utf8",
+    )
+    .update(fontBytes)
     .digest("hex");
 }
 

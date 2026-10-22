@@ -199,6 +199,16 @@ describe("print files", () => {
     expect(printSourceHash(root)).toBe(printSourceHash(root));
   });
 
+  it("the print source hash covers every input of the print layout (outliner, composer, font bytes)", () => {
+    const source = readFileSync(join(root, "src/brand/print.ts"), "utf8");
+    for (const input of ["./print.ts", "./geometry.ts", "./outline.ts", "./compose.ts", "WORDMARK.font"]) {
+      expect(source, input).toContain(input);
+    }
+    // print.ts must not import a layout module that the hash does not read.
+    const imports = [...source.matchAll(/from "(\.\/[a-z]+\.ts)"/g)].map((m) => m[1]);
+    for (const file of imports) expect(source.split(`here("${file}")`).length, file).toBe(2);
+  });
+
   it("the business card has trim and bleed boxes (3 mm bleed) on both sides", () => {
     const pdf = readFileSync(join(brandDir, "print", "business-card.pdf"), "latin1");
     expect(pdf.match(/\/TrimBox/g)?.length).toBe(2);
