@@ -12,7 +12,7 @@ const rows = [...page.changes].reverse();
 ---
 
 <div class="prose-table" role="region" tabindex="0" aria-label={P.changes}>
-  <table class="log">
+  <table>
     <thead>
       <tr>
         <th scope="col">{P.colVersion}</th>
@@ -33,9 +33,3 @@ const rows = [...page.changes].reverse();
     </tbody>
   </table>
 </div>
-
-<style>
-  .log {
-    min-inline-size: 26rem;
-  }
-</style>

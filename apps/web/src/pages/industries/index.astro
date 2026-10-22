@@ -184,6 +184,8 @@ const talk = cta.talk();
     .other {
       grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
       column-gap: var(--space-8);
+      /* The entries keep room for their arrow on the right; the same here, so the text columns line up. */
+      padding-inline-end: var(--space-12);
       margin-block-start: var(--space-16);
     }
 
