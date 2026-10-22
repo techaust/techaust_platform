@@ -1,15 +1,15 @@
 ---
 // The illustrative workflow diagram (docs/06 §4.5 and §5.2 DiagramFrame, 07 §1.2 rule 3 and §2.4): a <figure>
 // whose caption is the 07 "Illustrative example" line, holding the stations of the flow as an ordered list (so it
-// reads in order to assistive tech and needs no image). Stations sit on one ink line, joined by arrow icons; across
-// from 1024 px, down on narrower screens. The frame's top-right corner is cut at 45° (docs/06 §4.3: the corner of the
+// reads in order to assistive tech and needs no image). Numbered stations joined by arrow icons; across from
+// 1024 px, down on narrower screens. The frame's top-right corner is cut at 45° (docs/06 §4.3: the corner of the
 // hero image frame). Tokens and currentColor only, so it works in both themes.
 import { shared } from "../../content/shared";
 import Icon from "../Icon.astro";
 
 interface Props {
+  /** The stations in order, as 07 writes them. */
   stations: readonly string[];
-  /** The accessible name of the list ("Inbox to audit log"), from the first and last station. */
   class?: string;
 }
 
