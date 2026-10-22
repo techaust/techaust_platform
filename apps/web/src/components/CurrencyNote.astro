@@ -17,8 +17,7 @@ const usd = draft.usdCode;
 
 <p class:list={["cnote", "needs-js", cls]} data-currency-note>
   <span class="cnote__state">
-    {draft.pricesIn}
-    <span class="cnote__code" data-cn="inr">{inr}</span><span class="cnote__code" data-cn="usd">{usd}</span>
+    {draft.pricesIn}{" "}<span class="cnote__code" data-cn="inr">{inr}</span><span class="cnote__code" data-cn="usd">{usd}</span>
   </span>
   <span class="cnote__sep" aria-hidden="true">·</span>
   <button type="button" class="cnote__switch" data-currency-switch>

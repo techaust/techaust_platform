@@ -155,7 +155,10 @@ export function checkAmpersands(name, html) {
   const text = stripped.replace(/<[^>]*>/g, " ");
   const hit = AMP_TEXT.exec(text);
   if (hit) {
-    const around = text.slice(Math.max(0, hit.index - 30), hit.index + 30).replace(/\s+/g, " ").trim();
+    const around = text
+      .slice(Math.max(0, hit.index - 30), hit.index + 30)
+      .replace(/\s+/g, " ")
+      .trim();
     problems.push(`${name}: "&" in page text ("…${around}…"; write "and")`);
   }
   return problems;
@@ -217,7 +220,8 @@ export function checkWeb(webDir) {
     if (!TEXT_EXT.test(name)) continue;
     const text = readFileSync(file, "utf8");
     problems.push(...checkText(name, text, { ga4Id }));
-    if (name.endsWith(".html")) problems.push(...checkHtml(name, text, headersText), ...checkAmpersands(name, text));
+    if (name.endsWith(".html"))
+      problems.push(...checkHtml(name, text, headersText), ...checkAmpersands(name, text));
   }
   for (const file of walk(join(webDir, "src"))) {
     const name = relative(webDir, file).split(sep).join("/");

@@ -290,12 +290,13 @@ const columns = [
     line-height: var(--text-sm--line-height);
   }
 
-  .site-footer__currency {
+  /* The fieldset belongs to CurrencyToggle, so the footer's scoped styles reach it through :global. */
+  .site-footer__col :global(.site-footer__currency) {
     --cur-bar: var(--color-verdigris-300);
-    margin-block-start: var(--space-4);
+    margin-block-start: var(--space-6);
   }
 
-  .site-footer__currency :global(.cur__legend) {
+  .site-footer__col :global(.site-footer__currency .cur__legend) {
     margin-block-end: var(--space-1);
     font-size: var(--text-sm);
     line-height: var(--text-sm--line-height);

@@ -120,21 +120,28 @@ describe('"and", never "&", in page text (owner, 2026-10-22; docs/07 §1.1)', ()
   const body = (b: string) => `<!doctype html><html><head><title>T</title></head><body>${b}</body></html>`;
 
   it("fails on an escaped or raw ampersand in text", () => {
-    expect(c.checkAmpersands("a.html", body("<a href='/x'>Custom Web Apps &amp; Portals</a>"))).toHaveLength(1);
+    expect(c.checkAmpersands("a.html", body("<a href='/x'>Custom Web Apps &amp; Portals</a>"))).toHaveLength(
+      1,
+    );
     expect(c.checkAmpersands("a.html", body("<p>SaaS &#38; Startups</p>"))).toHaveLength(1);
     expect(c.checkAmpersands("a.html", body("<p>SaaS &#x26; Startups</p>"))).toHaveLength(1);
     expect(c.checkAmpersands("a.html", body("<p>Refunds & cancellations</p>"))).toHaveLength(1);
   });
 
   it("fails on an ampersand in read-out attributes and a text meta", () => {
-    expect(c.checkAmpersands("a.html", body('<nav aria-label="Legal &amp; policies"></nav>'))).toHaveLength(1);
+    expect(c.checkAmpersands("a.html", body('<nav aria-label="Legal &amp; policies"></nav>'))).toHaveLength(
+      1,
+    );
     expect(c.checkAmpersands("a.html", body('<img alt="Q &amp; A" src="/a.png">'))).toHaveLength(1);
     expect(
-      c.checkAmpersands("a.html", `<html><head><meta name="description" content="Apps &amp; AI"></head></html>`),
+      c.checkAmpersands(
+        "a.html",
+        `<html><head><meta name="description" content="Apps &amp; AI"></head></html>`,
+      ),
     ).toHaveLength(1);
   });
 
-  it('allows URLs, scripts, styles, code, comments and other entities', () => {
+  it("allows URLs, scripts, styles, code, comments and other entities", () => {
     const ok = body(
       [
         '<a href="/get-a-quote?service=S1&amp;type=pilot">Get a quote</a>',
