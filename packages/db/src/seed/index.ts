@@ -1,6 +1,7 @@
 // The database seed: service catalogue S1–S18 and the settings defaults (docs/09 M1.3). Idempotent and
 // insert-only: each statement is `INSERT … ON CONFLICT DO NOTHING`, so re-running it (as the staging deploy
-// does on every merge) adds what's missing and never overwrites the Owner's edits. Pure: it returns SQL text,
+// does on every merge) adds what's missing and never overwrites the Owner's edits. The conflict clause has no target on
+// purpose: a changed code or a reused slug (another unique index) skips the row instead of failing the whole seed. Pure: it returns SQL text,
 // which tests run with D1 batches and scripts/seed-sql.ts prints for `wrangler d1 execute`.
 import { SETTINGS_DEFAULTS, SETTINGS_SCHEMAS, type SeededSettingKey, stableId } from "@techaust/core";
 import { CATALOGUE } from "./catalogue.ts";
@@ -22,40 +23,36 @@ export function literal(v: Value): string {
   return `'${s.replaceAll("'", "''")}'`;
 }
 
-const insert = (table: string, row: Record<string, Value>, conflict: string) => {
+const insert = (table: string, row: Record<string, Value>) => {
   const cols = Object.keys(row);
   return `INSERT INTO \`${table}\` (${cols.map((c) => `\`${c}\``).join(", ")}) VALUES (${cols
     .map((c) => literal(row[c] as Value))
-    .join(", ")}) ON CONFLICT(${conflict}) DO NOTHING;`;
+    .join(", ")}) ON CONFLICT DO NOTHING;`;
 };
 
 export function seedStatements(): string[] {
   const settings = (Object.keys(SETTINGS_SCHEMAS) as SeededSettingKey[]).map((key) => {
     const value = SETTINGS_SCHEMAS[key].parse(SETTINGS_DEFAULTS[key]); // a bad default fails the seed, not prod
-    return insert("settings", { key, value, version: 1 }, "`key`");
+    return insert("settings", { key, value, version: 1 });
   });
   const catalogue = CATALOGUE.map((item) =>
-    insert(
-      "catalogue_items",
-      {
-        id: stableId(`catalogue:${item.code}`),
-        code: item.code,
-        name: item.name,
-        category: item.category,
-        short: item.short,
-        unit: item.unit,
-        price_inr_minor: item.priceInr,
-        price_usd_minor: item.priceUsd,
-        sac: item.sac,
-        gst_rate_bp: null, // null = the default rate from tax settings (18 %)
-        default_lines: item.defaultLines ?? null,
-        schedule: item.schedule,
-        slug: item.slug,
-        show_on_site: item.showOnSite,
-        active: true,
-      },
-      "`code`",
-    ),
+    insert("catalogue_items", {
+      id: stableId(`catalogue:${item.code}`),
+      code: item.code,
+      name: item.name,
+      category: item.category,
+      short: item.short,
+      unit: item.unit,
+      price_inr_minor: item.priceInr,
+      price_usd_minor: item.priceUsd,
+      sac: item.sac,
+      gst_rate_bp: null, // null = the default rate from tax settings (18 %)
+      default_lines: item.defaultLines ?? null,
+      schedule: item.schedule,
+      slug: item.slug,
+      show_on_site: item.showOnSite,
+      active: true,
+    }),
   );
   return [...settings, ...catalogue];
 }

@@ -4,19 +4,26 @@
 // the admin (M3.1) and are never committed: this repository is public.
 import { z } from "zod";
 import { DEFAULT_PADDING, SERIES, type Series, validateFormat } from "../numbering.ts";
+import { gstin, stateCode } from "./domain.ts";
 
 const minor = z.int().nonnegative();
 const bp = z.int().min(0).max(10_000);
 
-export const companySettings = z.object({
-  tradeName: z.string().min(1),
-  legalName: z.string().min(1).nullable(),
-  gstin: z.string().length(15).nullable(),
-  stateCode: z.string().regex(/^\d{2}$/),
-  address: z.string().nullable(),
-  documentsEmail: z.email().nullable(),
-  documentsPhone: z.string().nullable(),
-});
+export const companySettings = z
+  .object({
+    tradeName: z.string().min(1),
+    legalName: z.string().min(1).nullable(),
+    /** Checked like any GSTIN: shape, a known state code and the check character (VERIFY WITH CA). */
+    gstin: gstin.nullable(),
+    stateCode,
+    address: z.string().nullable(),
+    documentsEmail: z.email().nullable(),
+    documentsPhone: z.string().nullable(),
+  })
+  .refine((c) => c.gstin === null || c.gstin.startsWith(c.stateCode), {
+    error: "The GSTIN's first two digits must match the company state code",
+    path: ["gstin"],
+  });
 
 export const taxSettings = z.object({
   /** G-1: 18 % on all services (CGST 9 + SGST 9, or IGST 18). */

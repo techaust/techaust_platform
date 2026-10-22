@@ -25,12 +25,14 @@ jobs:
       github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_STAGING }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    # The Cloudflare credentials are set only on the steps that use them (not job-wide), so the install step,
+    # which runs dependency code, never sees them.
     steps:
       - name: Check staging credentials
         id: creds
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_STAGING }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
             echo "Staging secrets not configured yet; skipping deploy."
@@ -56,10 +58,16 @@ jobs:
       # seed is insert-only (it never overwrites edits). Staging only: production D1 is a Phase 7 decision.
       - if: steps.creds.outputs.ready == 'true'
         name: Migrate and seed staging D1
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_STAGING }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           pnpm --filter @techaust/jobs exec wrangler d1 migrations apply DB --remote --env staging
           pnpm --filter @techaust/db seed:sql "$RUNNER_TEMP/seed.sql"
           pnpm --filter @techaust/jobs exec wrangler d1 execute DB --remote --env staging --file "$RUNNER_TEMP/seed.sql"
       - if: steps.creds.outputs.ready == 'true'
         name: Deploy all Workers (staging)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_STAGING }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: pnpm -r --workspace-concurrency=1 run deploy:staging

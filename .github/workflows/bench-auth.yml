@@ -22,16 +22,11 @@ concurrency:
 
 jobs:
   bench:
-    if: github.actor == 'techaust' && github.repository == 'techaust/techaust_platform'
+    if: github.actor == 'techaust' && github.triggering_actor == 'techaust' && github.repository == 'techaust/techaust_platform'
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_STAGING }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_BENCH_CLIENT_ID }}
-      CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_BENCH_CLIENT_SECRET }}
-      BENCH_USERS: ${{ inputs.users }}
-      BENCH_MINUTES: ${{ inputs.minutes }}
+    # No job-level secrets: only the step that runs the benchmark gets them, so `pnpm install` (and its
+    # dependency scripts) and the summary step never see a token.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
@@ -41,6 +36,13 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Run the benchmark
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_STAGING }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_BENCH_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_BENCH_CLIENT_SECRET }}
+          BENCH_USERS: ${{ inputs.users }}
+          BENCH_MINUTES: ${{ inputs.minutes }}
         run: node scripts/bench-auth.mjs
       - name: Show the result on the run page
         if: always()

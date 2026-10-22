@@ -1,5 +1,6 @@
 import { env } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core";
+import { ISSUABLE_STATUSES } from "../src/triggers.ts";
 
 export const db = () => env.DB;
 
@@ -60,14 +61,20 @@ export async function insertDraftInvoice(clientId: string): Promise<string> {
   return id;
 }
 
-/** The issue batch from docs/05 §5.4, with the number formatted in SQL by core's printf pattern. */
+/**
+ * The issue batch from docs/05 §5.4, with the number formatted in SQL by core's printf pattern: guard, counter,
+ * freeze, post-condition. `issuable` is the same constant the guard trigger is generated from; a test can pass a
+ * different list to prove the post-condition catches an UPDATE that matches no row.
+ */
 export function issueBatch(
   documentId: string,
   series: string,
   fy: string,
   pattern: string,
   now = Date.now(),
+  issuable: readonly string[] = ISSUABLE_STATUSES,
 ) {
+  const statuses = issuable.map((s) => `'${s}'`).join(", ");
   return env.DB.batch([
     env.DB.prepare("INSERT INTO issue_guard (document_id) VALUES (?)").bind(documentId),
     env.DB.prepare(
@@ -83,8 +90,13 @@ export function issueBatch(
               number = (SELECT next_no - 1 FROM doc_counters WHERE series = ?1 AND fy = ?2),
               number_display = printf(?3, ?2, (SELECT next_no - 1 FROM doc_counters WHERE series = ?1 AND fy = ?2)),
               status = 'issued', frozen_at = ?4, issue_date = '2026-10-06'
-        WHERE id = ?5 AND status = 'draft' AND frozen_at IS NULL
+        WHERE id = ?5 AND status IN (${statuses}) AND frozen_at IS NULL
         RETURNING id`,
     ).bind(series, fy, pattern, now, documentId),
+    env.DB.prepare("INSERT INTO issue_result (document_id, series, fy) VALUES (?1, ?2, ?3)").bind(
+      documentId,
+      series,
+      fy,
+    ),
   ]);
 }

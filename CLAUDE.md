@@ -77,7 +77,7 @@ The full plan is `docs/14-models-and-usage.md` (owner-approved 2026-10-12, repla
   - stop and report when blocked
   - never touch hosted services; any hosted change needs the owner's yes first
 - **Heavy commands go through the queue, one at a time:** full lint, typecheck, build, database tests and end-to-end tests run via `bash tools/heavy.sh --log <name> <command>` (full output to `.logs/<name>.log`; read the tail and grep, never the whole log).
-  - the lock is `~/.techaust-heavy.lock`, and a lock older than 90 minutes is stale
+  - the lock is `~/.techaust-heavy.lock`, it holds the PIDs of the wrapper and of the command, and is stale when both are gone (a lock without PIDs after 90 minutes, any lock after 6 hours)
   - commands wait while free memory is under 512 MB
   - the whole-repository lint runs only once, as a builder's or designer's final check
 - **Review triage:** critical and high findings are fixed before the merge; medium and low become follow-ups unless they are a one-line fix. Merge `main` into a task before its review if `main` has moved.
@@ -106,7 +106,7 @@ pnpm install            # plain `pnpm` auto-switches to the pinned 12.9.1
 pnpm dev                # all apps locally (web :4321, admin :5173, portal :5174, jobs :8787)
 pnpm lint               # biome check
 pnpm typecheck          # wrangler types + tsc / astro check in every package
-pnpm check              # lint + typecheck + public-Worker binding guard
+pnpm check              # lint + typecheck + public-Worker binding guard + Worker config guard (preview URLs off) + migration rebuild guard
 pnpm test               # vitest (unit + Workers runtime)
 pnpm build              # build all apps (web and jobs also dry-run their Worker bundles)
 pnpm format             # biome format --write
@@ -165,7 +165,7 @@ pnpm admin:reset-2fa --email … [--new-email …] [--staging]   # break-glass (
 - **Documents:** numbers are assigned only at issue, inside one `db.batch()` (gap-free, ≤ 16 characters). Issued documents are frozen (DB triggers); corrections only via credit/debit notes.
 - **Security:** permission declared on every route (deny by default); portal client ID from the session only; webhooks verified on the raw body and idempotent; nothing is marked paid on a redirect; no personal data in logs.
 - **Free plan:** one unit of work per queue message; cron only enqueues; keyset pagination ≤ 50 rows; index every filter; no base64 of big blobs; target p99 CPU ≤ 7 ms.
-- **Migrations:** never edit one that has been applied. When drizzle-kit rebuilds a table (SQLite has no ALTER COLUMN), check its CHECK constraints: it qualifies them with the temporary `__new_…` name, which must be unqualified before committing.
+- **Migrations:** never edit one that has been applied. When drizzle-kit rebuilds a table (SQLite has no ALTER COLUMN), check its CHECK constraints: it qualifies them with the temporary `__new_…` name, which must be unqualified before committing. **Never rebuild (DROP TABLE, or drizzle's `__new_…` copy) a table other tables reference:** D1 ignores `PRAGMA foreign_keys=OFF`, so the drop cascades or breaks the child rows. Change such a table with `ALTER TABLE … ADD COLUMN`, a new table, or a new trigger/index; `scripts/check-migrations.mjs` (in `pnpm check` and CI) fails any migration after 0006 that does it, unless the analyst has checked it and it is allow-listed with a reason in `scripts/migration-rebuild-allowlist.json`.
 - **Packages:** `core` is pure (no I/O) and must keep ≥ 90 % coverage. Apps import packages, never the reverse. `apps/web` has **no D1/R2/KV/Durable Object/Hyperdrive bindings** (CI guard `scripts/check-web-bindings.mjs`).
 - **Workers:** names are `techaust-platform-<app>` (+ `-staging`). Don't hand-write `Env` interfaces; use the generated global `Env` from `wrangler types` (admin, portal and jobs generate from `--env staging` until production has its bindings).
 - **Supply chain:** exact version pins; pnpm `minimumReleaseAge` (1 day) blocks just-published packages (pick the previous release, don't bypass it); install scripts only via `allowBuilds` in `pnpm-workspace.yaml`; GitHub Actions pinned by commit SHA.
