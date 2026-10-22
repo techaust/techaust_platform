@@ -4,7 +4,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
-import { lintBuiltPage, lintSource, readAllowList } from "./web-content-lint.mjs";
+import { lintBuiltPage, lintSource, readAllowList, visibleText } from "./web-content-lint.mjs";
 
 /** The `/*` block of a Cloudflare `_headers` file as a lower-cased-name map. */
 export function parseHeaders(text) {
@@ -166,6 +166,24 @@ export function checkAmpersands(name, html) {
   return problems;
 }
 
+const HIDDEN_ARROW = /<span\b[^>]*\bclass="[^"]*\bvisually-hidden\b[^"]*"[^>]*>\s*[→↔]\s*<\/span>/gi;
+
+/**
+ * Content the renderer should have consumed must not reach a visitor: `{{…}}` price tokens, `**` bold marks and the
+ * arrow characters → / ↔ (not in the fonts; CopyText draws icons). The one allowed arrow is the visually hidden
+ * screen-reader copy CopyText keeps beside each icon (`<span class="visually-hidden">→</span>`).
+ */
+export function checkLeftovers(name, html) {
+  const text = visibleText(html.replace(HIDDEN_ARROW, ""));
+  const hit = /\{\{|\}\}|\*\*|→|↔/.exec(text);
+  if (!hit) return [];
+  const around = text
+    .slice(Math.max(0, hit.index - 30), hit.index + 30)
+    .replace(/\s+/g, " ")
+    .trim();
+  return [`${name}: unrendered content "${hit[0]}" in visible text ("…${around}…")`];
+}
+
 /** WEB-G-07: no money amount typed into a template (prices come from the catalogue snapshot). */
 export function checkAmountLiterals(name, source) {
   const problems = [];
@@ -229,6 +247,7 @@ export function checkWeb(webDir) {
       problems.push(
         ...checkHtml(name, text, headersText),
         ...checkAmpersands(name, text),
+        ...checkLeftovers(name, text),
         ...lintBuiltPage(name, text, allow.entries),
       );
   }

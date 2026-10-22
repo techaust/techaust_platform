@@ -19,7 +19,12 @@ export function percentFromBp(bp: number): string {
   return frac === "" ? String(whole) : `${whole}.${frac}`;
 }
 
-const lowerFirst = (s: string): string => s.charAt(0).toLowerCase() + s.slice(1);
+/** Lower-cases the first letter only when the second is lower case too: "Midpoint" → "midpoint", "UAT sign-off" stays. */
+const lowerFirst = (s: string): string => {
+  const second = s.charAt(1);
+  const acronym = second !== "" && second === second.toUpperCase() && second !== second.toLowerCase();
+  return acronym ? s : s.charAt(0).toLowerCase() + s.slice(1);
+};
 const PREPOSITION = /^(at|on|after|before)\b/i;
 const hasPreposition = (label: string): boolean => PREPOSITION.test(label);
 

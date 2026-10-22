@@ -18,8 +18,8 @@ const AFTER = String.raw`(?![\p{L}\p{N}_-])`;
 
 /** The docs/07 §1.3 list. `id` is what an allow-list entry names. */
 export const BANNED = [
-  { id: "100%", re: String.raw`(?<![\p{L}\p{N}_.,-])100\s?%` },
-  { id: "guarantee", re: String.raw`${BEFORE}guarantee(?:d|s)?${AFTER}` },
+  { id: "100%", re: String.raw`(?<![\p{L}\p{N}_.,-])100\s?(?:%|per\s?cent|percent)(?![\p{L}])` },
+  { id: "guarantee", re: String.raw`${BEFORE}guarantee\w*${AFTER}` },
   { id: "no hallucinations", re: String.raw`${BEFORE}no\s+hallucinations?${AFTER}` },
   { id: "zero errors", re: String.raw`${BEFORE}zero\s+errors?${AFTER}` },
   { id: "zero manual", re: String.raw`${BEFORE}zero\s+manual${AFTER}` },
@@ -102,7 +102,8 @@ export function visibleText(html) {
     /\s(?:aria-label|aria-description|title|alt|placeholder|content)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi,
   )) {
     const v = m[1] ?? m[2] ?? "";
-    if (!/^(https?:|\/|#)/i.test(v)) attrs.push(v);
+    // Only a value that is wholly a URL, path or fragment (no spaces) is skipped; "#1 in India" is text.
+    if (!/^(?:https?:\/\/\S*|\/\S*|#\S*)$/i.test(v)) attrs.push(v);
   }
   const text = stripped
     .replace(/<[^>]*>/g, " ")

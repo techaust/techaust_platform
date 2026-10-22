@@ -3,6 +3,7 @@
 // catalogue's show-on-site flag, and the S3_DPDP_PAGE flag, WEB-G-17). S3 has no content yet: 07 §4.12's full copy is
 // written when a legal partner is confirmed, so turning its flag on without a content file fails the build.
 import { isServiceOnSite } from "../../lib/prices";
+import { home } from "../home";
 import type { ServiceCode, ServiceContent, ServiceLink } from "../types";
 import { aiDocumentAutomation } from "./ai-document-automation";
 import { aiFeaturesForSoftware } from "./ai-features-for-software";
@@ -46,6 +47,9 @@ export function serviceContent(code: ServiceCode): ServiceContent {
 
 /** Every service page to build (WEB-G-17: a flagged-off service gets no page, so its URL is a 404). */
 export const liveServices = (): ServiceContent[] => all.filter((s) => isServiceOnSite(s.code));
+
+/** The home "What we do" cards (07 §3 order), linked and priced from the service pages like the hub's items. */
+export const homeCards = (): ServiceLink[] => home.services.cards.map((c) => serviceLink(c.price));
 
 /**
  * A service as one item of an index (hub, related): its 07 §2.1 name, link, the 07 §3 one-liner where 07 has one

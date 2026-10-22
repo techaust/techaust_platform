@@ -16,6 +16,10 @@ describe("banned phrases (07 §1.3)", () => {
     ["Delivered with 100 % accuracy", "100%"],
     ["We guarantee results", "guarantee"],
     ["Guaranteed delivery", "guarantee"],
+    ["Guaranteeing results", "guarantee"],
+    ["Delivered with 100 per cent accuracy", "100%"],
+    ["Delivered with 100percent accuracy", "100%"],
+    ["100 Percent uptime", "100%"],
     ["There will be no hallucinations", "no hallucinations"],
     ["Zero errors in production", "zero errors"],
     ["Zero manual work", "zero manual"],
@@ -48,8 +52,9 @@ describe("banned phrases (07 §1.3)", () => {
 
   it("is word-bounded: it does not flag longer words or similar text", () => {
     expect(
-      ids("uncertified? decertified, realtimer, guaranteeing, ironclads, #10, #1a2b3c, 3100%, 1100 %"),
+      ids("uncertified? decertified, realtimer, preguarantee, ironclads, #10, #1a2b3c, 3100%, 1100 %"),
     ).toEqual([]);
+    expect(ids("100 percentage points, 1000 per centre")).toEqual([]);
     expect(ids("We offer a 30-day warranty; a discovery report.")).toEqual([]);
   });
 
@@ -117,6 +122,21 @@ describe("built HTML", () => {
         ),
       ),
     ).toEqual([]);
+  });
+
+  it("does not skip an attribute that merely STARTS like a URL, path or fragment (review finding 3)", () => {
+    const meta = (c: string) => page("<h1>Hi</h1>", `<meta name="description" content="${c}">`);
+    expect(lint.checkBannedHtml("a.html", meta("#1 studio in India"))).toHaveLength(1);
+    expect(lint.checkBannedHtml("a.html", meta("/ guaranteed results"))).toHaveLength(1);
+    expect(
+      lint.checkBannedHtml("a.html", meta("https://example.com and a 100 per cent promise")),
+    ).toHaveLength(1);
+    expect(
+      lint.checkBannedHtml("a.html", page('<img alt="Guaranteeing quality" src="/x.png">')),
+    ).toHaveLength(1);
+    // whole values that are only a URL, path or fragment are still skipped
+    for (const url of ["https://example.com/ironclad", "/guaranteed", "#ironclad"])
+      expect(lint.checkBannedHtml("a.html", meta(url))).toEqual([]);
   });
 
   it("honours the allow-list for a built page", () => {

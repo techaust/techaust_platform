@@ -5,7 +5,8 @@
 //
 // References (the {{price:…}} tokens of docs/07):
 //   "S5"            the entry's headline "from" price
-//   "S16-essential" a named default line of the entry (07: {{price:Sx-<line>}}), matched on its description
+//   "S16-essential" a named default line of the entry (07: {{price:Sx-<line>}}), matched on the FIRST WORD of its
+//                   description ("Monthly management" is S11-monthly); the word must be unique within the entry
 import { formatMoney, type Money, money, scheduleText } from "@techaust/core";
 import { flags } from "../config/site";
 import { snapshot } from "./catalogue";
@@ -13,16 +14,27 @@ import { snapshot } from "./catalogue";
 /** A price as the site shows it: INR always, USD where the service is offered internationally. */
 export type SitePrice = { readonly inr: Money; readonly usd: Money | null };
 
-/** The {{price:…}} token pattern of docs/07 (CopyText finds prices in running text with it). */
-export const PRICE_TOKEN = /\{\{price:(S\d+(?:-[a-z]+)?)\}\}/g;
-
 type Item = ReturnType<typeof snapshot>["items"][number];
 
 const find = (code: string): Item | undefined => snapshot().items.find((c) => c.code === code);
 
-/** Whether a service is shown on the site: the catalogue's flag, and S3 only while the S3_DPDP_PAGE flag is on. */
-function visible(item: Item): boolean {
-  return item.code === "S3" ? flags.S3_DPDP_PAGE : item.showOnSite;
+/** Whether a service is shown on the site: the catalogue's flag, and for S3 also the S3_DPDP_PAGE flag (both must allow). */
+export function isVisible(item: { code: string; showOnSite: boolean }, s3Flag: boolean): boolean {
+  return item.showOnSite && (item.code !== "S3" || s3Flag);
+}
+const visible = (item: Item): boolean => isVisible(item, flags.S3_DPDP_PAGE);
+
+/** The default line whose description starts with `word` (case-insensitive); throws when two do (ambiguous). */
+export function lineByFirstWord<L extends { description: string }>(
+  code: string,
+  lines: readonly L[],
+  word: string,
+): L | undefined {
+  const first = (d: string): string => (d.trim().split(/\s+/)[0] ?? "").toLowerCase();
+  const hits = lines.filter((d) => first(d.description) === word);
+  if (hits.length > 1)
+    throw new Error(`priceOf: ${code} has more than one line starting with "${word}": ambiguous reference`);
+  return hits[0];
 }
 
 /** For pages and the services hub: false means "do not build the page, do not list it" (WEB-G-17). */
@@ -49,7 +61,7 @@ export function priceOf(ref: string): SitePrice {
   const [, code, line] = match;
   const item = entry("priceOf", code as string);
   if (line) {
-    const l = item.defaultLines.find((d) => d.description.toLowerCase() === line);
+    const l = lineByFirstWord(code as string, item.defaultLines, line);
     if (!l || l.rateInrMinor === null) throw new Error(`priceOf: ${code} has no priced line "${line}"`);
     return {
       inr: money(l.rateInrMinor, "INR"),

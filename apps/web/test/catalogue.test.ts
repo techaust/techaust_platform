@@ -1,13 +1,20 @@
 // The catalogue snapshot loader, scheduleOf, the S3 flag and the token renderer [ADM-CAT-05, WEB-G-07, WEB-G-17,
 // WEB-SVC-05]. Expected values come from the seed catalogue, so a catalogue edit shows up here on purpose.
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { catalogueSnapshot } from "@techaust/core";
 import { CATALOGUE } from "@techaust/db/catalogue";
 import { afterAll, describe, expect, it } from "vitest";
 import { flags } from "../src/config/site";
-import { loadSnapshot, snapshotFromSeed } from "../src/lib/catalogue";
+import {
+  loadSnapshot,
+  SNAPSHOT_FILE,
+  snapshot,
+  snapshotFromSeed,
+  snapshotSource,
+} from "../src/lib/catalogue";
 import { displayAmount, isServiceOnSite, priceOf, scheduleOf } from "../src/lib/prices";
 import { hasTokens, parseTokens, renderPlain } from "../src/lib/tokens";
 
@@ -49,6 +56,26 @@ describe("snapshot from the seed", () => {
       "proposalValidityDays",
       "smallJobThreshold",
     ]);
+  });
+});
+
+describe("snapshot location and source (review findings 8, 11)", () => {
+  it("resolves the file from the module, inside apps/web, whatever the working directory", () => {
+    expect(isAbsolute(SNAPSHOT_FILE)).toBe(true);
+    expect(SNAPSHOT_FILE).toBe(
+      join(fileURLToPath(new URL("..", import.meta.url)), "catalogue-snapshot.json"),
+    );
+  });
+
+  it("names the source in words", () => {
+    expect(snapshotSource(join(dir, "nope.json"))).toMatch(/^seed \(no snapshot file at /);
+    expect(snapshotSource(write("here.json", "{}"))).toMatch(/^snapshot file /);
+  });
+
+  it("tests are pinned to a missing snapshot, so they read the seed (vitest config)", () => {
+    expect(process.env.CATALOGUE_SNAPSHOT).toBeDefined();
+    expect(existsSync(process.env.CATALOGUE_SNAPSHOT as string)).toBe(false);
+    expect(snapshot()).toEqual(snapshotFromSeed());
   });
 });
 
@@ -130,7 +157,7 @@ describe("token renderer", () => {
   });
 
   it("renders plain text in INR", () => {
-    expect(renderPlain("Pilot from {{price-plain:S9}}.")).toBe("Pilot from ₹2,00,000.");
+    expect(renderPlain("Pilot from {{price-plain:S9}}.")).toBe("Pilot from ₹2,00,000 + GST.");
     expect(renderPlain("Care from {{price:S16-essential}} a month.")).toBe("Care from ₹9,999 + GST a month.");
     expect(renderPlain("Sprint {{price:S1}}.")).toBe("Sprint from ₹40,000 + GST.");
     expect(renderPlain("No tokens.")).toBe("No tokens.");

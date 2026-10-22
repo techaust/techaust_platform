@@ -9,7 +9,14 @@ export default defineConfig({
         plugins: [cloudflareTest({ wrangler: { configPath: "./wrangler.jsonc" } })],
         test: { name: "worker", include: ["test/worker/**/*.test.ts"] },
       },
-      { test: { name: "node", include: ["test/*.test.ts"] } },
+      {
+        // A path that never exists: tests read the seed, never a developer's own catalogue-snapshot.json.
+        test: {
+          name: "node",
+          include: ["test/*.test.ts"],
+          env: { CATALOGUE_SNAPSHOT: "test/.no-such-snapshot.json" },
+        },
+      },
     ],
   },
 });

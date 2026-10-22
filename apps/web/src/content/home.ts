@@ -4,7 +4,9 @@
 // are drawn as icons by CopyText (→ and ↔ are not in the fonts, docs/06 §3.1). Change copy in docs/07 first.
 // Section headings that 07 gives only as section names ("Who we help", "What we do", "How we work", "FAQ") are
 // used as the visible h2s, as in the approved M2.1 shell preview.
-import type { FaqItem, ServiceLink, Step } from "./types";
+// The "What we do" cards hold only the 07 §3 title, one-liner and catalogue code; their link and unit come from the
+// service pages through homeCards() (content/services), so a slug or a unit is never copied by hand.
+import type { FaqItem, ServiceCode, Step } from "./types";
 
 export const home = {
   meta: {
@@ -38,43 +40,35 @@ export const home = {
     cards: [
       {
         title: "Custom Web Apps and Portals",
-        href: "/services/custom-web-apps",
         text: "Internal tools, client and dealer portals, and the Excel sheet your business secretly runs on, rebuilt as a proper web app.",
         price: "S5",
       },
       {
         title: "AI Document Automation",
-        href: "/services/ai-document-automation",
         text: "Invoices, purchase orders and contracts read, checked and posted to Tally, Zoho, QuickBooks or Xero, with a person reviewing exceptions.",
         price: "S9",
       },
       {
         title: "Workflow Automation and AI Agents",
-        href: "/services/workflow-automation",
         text: "Hand off the repetitive steps between email, sheets, CRM and accounting, with monitoring so nothing fails silently.",
         price: "S10",
-        unit: "per workflow",
       },
       {
         title: "Business Systems Integration",
-        href: "/services/business-systems-integration",
         text: "Tally ↔ Zoho, GST e-invoicing and e-way bills, Shopify, payments: connected, monitored and documented.",
         price: "S14",
-        unit: "per connector",
       },
       {
         title: "MVP and SaaS Development",
-        href: "/services/mvp-saas-development",
         text: "A production-grade first version in 6–10 weeks, with staging from day one and the code handed over to you.",
         price: "S6",
       },
       {
         title: "Discovery Sprint",
-        href: "/services/discovery-sprint",
         text: "Not sure where to start? In 1–2 weeks we map the work and give you a costed plan and a fixed quote.",
         price: "S1",
       },
-    ] satisfies ServiceLink[],
+    ] satisfies { title: string; text: string; price: ServiceCode }[],
     more: { label: "All services", href: "/services" },
   },
   how: {

@@ -2,9 +2,11 @@
 // string renders (tokens resolve, no "&"), FAQs within WEB-SVC-04 where shown, related links point at live pages,
 // and every pricing section carries the catalogue's payment schedule (WEB-SVC-05).
 import { describe, expect, it } from "vitest";
-import { liveServices, serviceContent, serviceLink } from "../src/content/services";
+import { home } from "../src/content/home";
+import { homeCards, liveServices, serviceContent, serviceLink } from "../src/content/services";
 import { servicesHub } from "../src/content/services-hub";
-import { SCHEDULE, type ServiceContent } from "../src/content/types";
+import { SCHEDULE, type ServiceCode, type ServiceContent } from "../src/content/types";
+import { snapshot } from "../src/lib/catalogue";
 import { isServiceOnSite, scheduleOf } from "../src/lib/prices";
 import { parseTokens } from "../src/lib/tokens";
 
@@ -26,6 +28,27 @@ describe("service pages", () => {
     expect(isServiceOnSite("S3")).toBe(false);
     expect(live.some((s) => s.slug === "dpdp-readiness")).toBe(false);
     expect(() => serviceContent("S3")).toThrow(/hidden/);
+  });
+
+  it("uses the catalogue's slug and name for every content file (no hand-copied slug)", () => {
+    const items = snapshot().items;
+    for (const s of live) {
+      const c = items.find((i) => i.code === s.code);
+      expect(c, s.code).toBeDefined();
+      expect(s.slug, `${s.code} slug`).toBe(c?.slug);
+    }
+  });
+
+  it("links and prices every home 'What we do' card from its service page", () => {
+    const cards = homeCards();
+    expect(cards).toHaveLength(6);
+    for (const c of cards) {
+      const code = home.services.cards.find((h) => h.title === c.title)?.price;
+      expect(code, c.title).toBeDefined();
+      expect(c.href).toBe(`/services/${serviceContent(code as ServiceCode).slug}`);
+      expect(c.unit).toBe(serviceContent(code as ServiceCode).hero.price.unit);
+      expect(c.text).toBe(home.services.cards.find((h) => h.price === code)?.text);
+    }
   });
 
   it("gives every page a unique slug", () => {

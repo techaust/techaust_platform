@@ -7,12 +7,25 @@
 //      silent fallback would ship stale prices).
 //   2. else the same shape built from the owner-approved seed (packages/db, Phase 2).
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { type CatalogueSnapshot, catalogueSnapshot, SETTINGS_DEFAULTS } from "@techaust/core";
 import { CATALOGUE } from "@techaust/db/catalogue";
 
-/** Where the published snapshot lives (the build runs in apps/web); CATALOGUE_SNAPSHOT overrides it for tests. */
-export const SNAPSHOT_FILE = "catalogue-snapshot.json";
+/**
+ * The published snapshot, apps/web/catalogue-snapshot.json, resolved from this module (never from the working
+ * directory): walk up from here to the folder holding astro.config.mjs. (Astro may bundle this module into a chunk
+ * below dist/, so a fixed "../.." is not safe.)
+ */
+function appRoot(): string {
+  let dir = dirname(fileURLToPath(import.meta.url));
+  for (let i = 0; i < 8; i++) {
+    if (existsSync(join(dir, "astro.config.mjs"))) return dir;
+    dir = dirname(dir);
+  }
+  throw new Error("catalogue: cannot find apps/web (astro.config.mjs) above " + import.meta.url);
+}
+export const SNAPSHOT_FILE = join(appRoot(), "catalogue-snapshot.json");
 
 /** The snapshot as the seed builds it: public fields only (no SAC code, no internal notes). */
 export function snapshotFromSeed(): CatalogueSnapshot {
@@ -68,8 +81,17 @@ export function loadSnapshot(file: string): CatalogueSnapshot {
 
 let cached: CatalogueSnapshot | undefined;
 
-/** The snapshot for this build (read once). */
+/** Which source a build uses, in words: the snapshot file, or the seed when there is none at `file`. */
+export function snapshotSource(file: string): string {
+  return existsSync(file) ? `snapshot file ${file}` : `seed (no snapshot file at ${file})`;
+}
+
+/** The snapshot for this build (read once; one log line names the source). CATALOGUE_SNAPSHOT overrides the path (tests). */
 export function snapshot(): CatalogueSnapshot {
-  cached ??= loadSnapshot(process.env.CATALOGUE_SNAPSHOT ?? join(process.cwd(), SNAPSHOT_FILE));
+  if (!cached) {
+    const file = process.env.CATALOGUE_SNAPSHOT ?? SNAPSHOT_FILE;
+    cached = loadSnapshot(file);
+    console.log(`catalogue: ${snapshotSource(file)}`);
+  }
   return cached;
 }

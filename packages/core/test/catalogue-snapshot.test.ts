@@ -135,6 +135,21 @@ describe("scheduleText", () => {
     ).toBe("50 % on acceptance, 50 % at go-live");
   });
 
+  it("keeps acronyms and labels like 'UAT sign-off' intact (lower-cases only a lower-case word)", () => {
+    expect(
+      scheduleText([
+        { label: "Deposit", pctBp: 5_000, trigger: "milestone" },
+        { label: "UAT sign-off", pctBp: 5_000, trigger: "milestone" },
+      ]),
+    ).toBe("50 % at the deposit, 50 % at the UAT sign-off");
+    expect(
+      scheduleText([
+        { label: "On UAT pass", pctBp: 5_000, trigger: "milestone" },
+        { label: "Final", pctBp: 5_000, trigger: "milestone" },
+      ]),
+    ).toBe("50 % on UAT pass, 50 % at the final");
+  });
+
   it("rejects an empty schedule or one that is not 100 %", () => {
     expect(() => scheduleText([])).toThrow(RangeError);
     expect(() => scheduleText([{ label: "x", pctBp: 9_000, trigger: "delivery" }])).toThrow(/100/);
