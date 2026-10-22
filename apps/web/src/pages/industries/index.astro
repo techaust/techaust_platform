@@ -1,0 +1,220 @@
+---
+// Industries hub (/industries, WEB-IND, docs/07 §5.2 + 07-D §1): the h1 and lede, one entry per industry (its name, the
+// 07-D label, and the industry page's h1 as the card text), then the closing line with "Talk to us". The entries are
+// a contents list rather than boxed cards: an ink rule over each, the whole entry one link, and hover or focus draws
+// the mark's T bar along the rule (as on the service index).
+import "../../styles/page.css";
+import Button from "../../components/Button.astro";
+import Icon from "../../components/Icon.astro";
+import PageHero from "../../components/PageHero.astro";
+import { industries, industriesHub as hub } from "../../content/industries";
+import { cta } from "../../content/shared";
+import BaseLayout from "../../layouts/BaseLayout.astro";
+
+const talk = cta.talk();
+---
+
+<BaseLayout title={hub.meta.title}>
+  <PageHero title={hub.h1} lede={hub.lede} />
+
+  <section class="section section--flush-top">
+    <div class="container">
+      <ul class="inds" role="list">
+        {
+          industries.map((x) => (
+            <li class="ind">
+              <div class="ind__head">
+                <h2 class="ind__name">
+                  <a class="ind__link" href={`/industries/${x.slug}`}>
+                    {x.name}
+                  </a>
+                </h2>
+                <p class="ind__label">{x.label}</p>
+              </div>
+              <p class="ind__line">{x.h1}</p>
+              <Icon name="arrow-right" size={24} class="ind__arrow" />
+            </li>
+          ))
+        }
+      </ul>
+      <div class="other">
+        <p class="other__text">{hub.closing}</p>
+        <div class="actions">
+          <Button href={talk.href} size="lg">{talk.label}</Button>
+        </div>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .inds {
+    display: grid;
+  }
+
+  .ind {
+    position: relative;
+    display: grid;
+    gap: var(--space-4) var(--space-8);
+    padding-block: var(--space-8) var(--space-10);
+    padding-inline-end: var(--space-12);
+    border-block-start: 2px solid var(--color-text);
+  }
+
+  .ind:last-child {
+    border-block-end: 1px solid var(--color-border);
+  }
+
+  @media (min-width: 64rem) {
+    .ind {
+      grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+      align-items: start;
+      padding-block: var(--space-10) var(--space-12);
+    }
+  }
+
+  /* The T bar on the rule: grows from the left on hover and focus. */
+  .ind::before {
+    content: "";
+    position: absolute;
+    inset-block-start: -2px;
+    inset-inline-start: 0;
+    inline-size: var(--space-24);
+    block-size: 4px;
+    background: var(--color-text-accent);
+    clip-path: polygon(0 0, 100% 0, calc(100% - 4px) 100%, 0 100%);
+    transform: scaleX(0);
+    transform-origin: left center;
+    transition: transform var(--duration-base) var(--ease-standard);
+  }
+
+  .ind:hover::before,
+  .ind:focus-within::before {
+    transform: none;
+  }
+
+  .ind__head {
+    display: grid;
+    gap: var(--space-2);
+  }
+
+  .ind__name {
+    font-family: var(--font-display);
+    font-stretch: var(--font-display--stretch);
+    font-size: var(--text-h3);
+    line-height: var(--text-h3--line-height);
+    font-weight: 560;
+    text-wrap: balance;
+  }
+
+  .ind__link {
+    color: var(--color-text);
+    text-decoration: none;
+  }
+
+  .ind__link::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+  }
+
+  .ind__link:focus-visible {
+    outline: none;
+  }
+
+  .ind__link:focus-visible::after {
+    outline: 2px solid var(--color-focus);
+    outline-offset: var(--space-1);
+    border-radius: var(--radius-sm);
+  }
+
+  .ind:hover .ind__link {
+    color: var(--color-link-hover);
+  }
+
+  .ind__label {
+    color: var(--color-text-muted);
+  }
+
+  /* The industry page's h1, as the entry's text (07-D §1). */
+  .ind__line {
+    font-size: var(--text-lede);
+    line-height: var(--text-lede--line-height);
+    max-inline-size: 34ch;
+    text-wrap: pretty;
+  }
+
+  @media (min-width: 64rem) {
+    .ind__line {
+      font-size: var(--text-h3);
+      line-height: var(--text-h3--line-height);
+    }
+  }
+
+  .ind :global(.ind__arrow) {
+    position: absolute;
+    inset-block-start: var(--space-8);
+    inset-inline-end: 0;
+    color: var(--color-text-muted);
+    transition:
+      translate var(--duration-fast) var(--ease-standard),
+      color var(--duration-fast) var(--ease-standard);
+  }
+
+  @media (min-width: 64rem) {
+    .ind :global(.ind__arrow) {
+      inset-block-start: var(--space-10);
+    }
+  }
+
+  .ind:hover :global(.ind__arrow),
+  .ind:focus-within :global(.ind__arrow) {
+    translate: var(--space-1) 0;
+    color: var(--color-text-accent);
+  }
+
+  /* The closing line under the entries, in their text column, "Talk to us" under it. */
+  .other {
+    display: grid;
+    gap: var(--space-6);
+    margin-block-start: var(--space-12);
+  }
+
+  @media (min-width: 64rem) {
+    .other {
+      grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+      column-gap: var(--space-8);
+      margin-block-start: var(--space-16);
+    }
+
+    .other > * {
+      grid-column: 2;
+    }
+  }
+
+  .other__text {
+    font-size: var(--text-body-lg);
+    line-height: var(--text-body-lg--line-height);
+    color: var(--color-text-muted);
+    max-inline-size: 52ch;
+    text-wrap: pretty;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ind::before,
+    .ind :global(.ind__arrow) {
+      transition: none;
+    }
+
+    .ind:hover :global(.ind__arrow),
+    .ind:focus-within :global(.ind__arrow) {
+      translate: none;
+    }
+  }
+
+  @media (forced-colors: active) {
+    .ind::before {
+      background: Highlight;
+    }
+  }
+</style>

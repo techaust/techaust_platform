@@ -40,3 +40,57 @@ export const serviceLabels = {
   /** The services hub's jump nav, for assistive technology (lead, 2026-10-22: its own name, not the page's). */
   kinds: "Kinds of work",
 } as const;
+
+/**
+ * Labels of the M2.3 pages (industries, pricing, about, work, blog, legal). Same rule as above: the source is noted;
+ * NEW (M2.3 build) marks interface words that docs/07 doesn't have, listed in the run file for the owner.
+ */
+export const pageLabels = {
+  /** The nav label (07 §2.1), as the breadcrumb's first crumb on the industry pages. */
+  industries: "Industries",
+  /** 07-D §2 section label of "The problems we see" (used on all three industry pages). */
+  problems: "What slows teams down",
+  /** 07 §5.2 "Use cases". */
+  useCases: "Use cases",
+  /** 07-D §2 section label of "Tools we connect" (finance and retail); SaaS has its own (07-D §4). */
+  tools: "Works with",
+  stacks: "Stacks we use",
+  /** 07 §5.3 sections. */
+  whatAffects: "What affects the price",
+  howPayment: "How payment works",
+  /** NEW: the price list's column headings (07 §5.3 "the price table grouped by category"). */
+  colService: "Service",
+  colPrice: "Starting price",
+  colPayment: "Payment",
+  /** 07 §5.7 section names. */
+  founder: "Founder",
+  team: "The team",
+  values: "What we value",
+  where: "Where we are",
+  /** 07 §5.4 detail template. */
+  context: "Context",
+  industry: "Industry",
+  size: "Size",
+  region: "Region",
+  problem: "The problem",
+  stack: "Stack",
+  similar: "Similar project?",
+  /** 07 §3 Proof ("Anonymised at the client's request"). */
+  anonymised: "Anonymised at the client’s request",
+  /** The footer label (07 §2.2), as the blog's h1 and breadcrumb (07 gives /blog no h1). */
+  blog: "Blog",
+  /** NEW: blog post meta. */
+  updated: "Updated",
+  minRead: "min read",
+  by: "By",
+  tags: "Tags",
+  /** NEW: the contents list of long pages (docs/06 §5.2 TOC). */
+  onThisPage: "On this page",
+  /** 07-A: "Summary (shown first, in a box)"; the version log (07-A "a short changelog at the bottom"). */
+  summary: "Summary",
+  changes: "Changes",
+  /** NEW: the version log's column headings. */
+  colVersion: "Version",
+  colDate: "Date",
+  colNote: "What changed",
+} as const;

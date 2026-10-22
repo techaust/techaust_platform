@@ -57,6 +57,25 @@ export type Plans = {
 };
 
 /**
+ * An industry page (WEB-IND, docs/07 §5.2 and 07-D §2–§4): the h1, the problems we see, the use cases, the tools
+ * (with their section label), related services (≥ 3 catalogue codes, linked with "from" prices) and the FAQ.
+ */
+export type IndustryContent = {
+  slug: string;
+  /** The industries-menu name (07 §2.1). */
+  name: string;
+  /** The hub card's label (07-D §1). */
+  label: string;
+  meta: { title: string; description: string };
+  h1: string;
+  problems: string[];
+  useCases: string[];
+  tools: { label: string; items: string[] };
+  related: ServiceCode[];
+  faqs: FaqItem[];
+};
+
+/**
  * A service page (docs/04 §3.2, WEB-SVC-01…06): the template renders the sections in this order and omits any
  * section with no content (WEB-SVC-02). Copy from docs/07 §4.
  */

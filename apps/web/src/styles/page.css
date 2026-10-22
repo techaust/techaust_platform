@@ -57,6 +57,50 @@
   gap: var(--space-3);
 }
 
+/* A section's one statement (the service pages' "problem" size): lede on phones, h3 size from 1024 px. */
+.statement {
+  font-size: var(--text-lede);
+  line-height: var(--text-lede--line-height);
+  max-inline-size: var(--container-lede);
+  text-wrap: pretty;
+}
+
+@media (min-width: 64rem) {
+  .statement {
+    font-size: var(--text-h3);
+    line-height: var(--text-h3--line-height);
+    padding-block-start: var(--space-2);
+  }
+}
+
+/* A ruled list (use cases, what affects the price, payment rules): an ink rule over it, a hairline under each item. */
+.ruled {
+  display: grid;
+  border-block-start: 2px solid var(--color-text);
+}
+
+.ruled > li {
+  padding-block: var(--space-4);
+  border-block-end: 1px solid var(--color-border);
+  font-size: var(--text-body-lg);
+  line-height: var(--text-body-lg--line-height);
+  text-wrap: pretty;
+}
+
+/* 07 writes some lists in lower case (they read as one sentence there); as list items they start upper case. */
+.ruled--cap > li::first-letter {
+  text-transform: uppercase;
+}
+
+/* The page's closing words before the CTA band, or a quiet note under a section. */
+.muted-note {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  max-inline-size: var(--container-prose);
+  text-wrap: pretty;
+}
+
 /* Inside an ink panel (the CTA band): the dark-theme colours, in both themes, so every child keeps using the
    semantic tokens (same approach as the footer). */
 .on-ink {
