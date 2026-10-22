@@ -3,6 +3,7 @@
 // Runs in Node (it reads files).
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import vm from "node:vm";
 import { describe, expect, it } from "vitest";
 // @ts-expect-error plain .mjs without types
 import * as c from "../../../scripts/web-dist-checks.mjs";
@@ -104,6 +105,48 @@ describe("no price literals in templates (WEB-G-07)", () => {
       c.checkAmountLiterals("t.astro", "<p>{formatMoney(m)}</p>\n<p>Pay in ₹ or $</p>\n// from ₹3,000 + GST"),
     ).toEqual([]);
     expect(c.checkAmountLiterals("t.astro", ["const a = `$", "{x} items`;"].join(""))).toEqual([]);
+  });
+});
+
+describe("the inline head script (first paint, WEB-G-06)", () => {
+  const webDir = fileURLToPath(new URL("..", import.meta.url)).replace(/[\\/]$/, "");
+  const built = existsSync(`${webDir}/dist/404.html`);
+  const now = Date.now();
+
+  function run(store: Record<string, string>) {
+    const code = c.inlineScripts(readFileSync(`${webDir}/dist/404.html`, "utf8"))[0] as string;
+    const classes: string[] = [];
+    const root = {
+      classList: { add: (n: string) => classes.push(n) },
+      dataset: {} as Record<string, string>,
+    };
+    const localStorage = { getItem: (k: string) => store[k] ?? null };
+    vm.runInNewContext(code.replace("(document.documentElement)", "(root)"), { root, localStorage, Date });
+    return { dataset: root.dataset, classes };
+  }
+
+  it.skipIf(!built)("defaults to rupees with no stored value", () => {
+    expect(run({}).dataset.currency).toBe("inr");
+  });
+
+  it.skipIf(!built)("a stored choice wins over the cached geo answer", () => {
+    const usd = JSON.stringify({ c: "usd", at: now });
+    expect(run({ ta_currency: "inr", ta_geo: usd }).dataset.currency).toBe("inr");
+    expect(run({ ta_currency: "usd", ta_geo: JSON.stringify({ c: "inr", at: now }) }).dataset.currency).toBe(
+      "usd",
+    );
+  });
+
+  it.skipIf(!built)("uses the cached geo answer for 30 days, then rupees until a new answer arrives", () => {
+    expect(run({ ta_geo: JSON.stringify({ c: "usd", at: now - 29 * 864e5 }) }).dataset.currency).toBe("usd");
+    expect(run({ ta_geo: JSON.stringify({ c: "usd", at: now - 31 * 864e5 }) }).dataset.currency).toBe("inr");
+  });
+
+  it.skipIf(!built)("survives corrupt storage and sets the theme and the js class before paint", () => {
+    expect(run({ ta_geo: "{not json" }).dataset.currency).toBe("inr");
+    const r = run({ ta_theme: "dark" });
+    expect(r.dataset.theme).toBe("dark");
+    expect(r.classes).toContain("js");
   });
 });
 
