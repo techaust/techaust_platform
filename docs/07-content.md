@@ -49,15 +49,16 @@
 |---|---|---|
 | "A small senior team with 10+ years' experience" | Owner interview, 02 §1 | Confirmed (owner, 2026-10-16) |
 | "Serving clients since 2019" / "Est. 2019" (TecHaust Technologies, under this name) | Owner, 2026-10-16 | Confirmed |
-| "20+ projects delivered (web apps, AI and automation, mobile, websites)" | Owner interview, 02 §1 | 🟧 OWNER confirms |
+| "20+ projects delivered (web apps, AI and automation, mobile, websites)" | Owner interview, 02 §1 | Confirmed (owner, 2026-10-22) |
 | "Experience with Tally integration and GST e-invoice / GSP APIs" | Owner, 03 §0 | Confirmed (03 §0) |
 | "React Native/Expo and Flutter" | Owner, 03 §0 | Confirmed |
 | "Based in Balurghat, West Bengal, India" | Owner | Confirmed |
 | "We reply within one business day (Mon–Sat, 10:00–19:00 IST)" | Owner, Phase 4 | Confirmed |
 | Care-plan response times (business hours) | Owner, Phase 4 | Confirmed |
 | Case-study metrics | Case-study briefs (§6) | 🟧 OWNER per study |
+| "Ask us for a sample deliverable (a discovery report or an architecture document) on a call" | Owner, 2026-10-22 (an anonymised sample exists) | Confirmed |
 | "IP transferred to you on full payment" | Proposal terms | Confirmed in the terms block |
-| "30-day warranty after launch" | 02 §4 S5 | 🟧 OWNER confirms the warranty length and scope |
+| "30-day warranty after launch": defects against the agreed written scope fixed free for 30 days after launch; new features not covered | 02 §4 S5 | Confirmed (owner, 2026-10-22) |
 | "Discovery Sprint fee credited if you proceed within 60 days" | 02 §4 S1 | Confirmed (owner approved in Phase 2) |
 
 ---
@@ -245,7 +246,7 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
   3. **AI Ops:** monthly monitoring and tuning (S17).
 - **Honest note:** "Accuracy depends on your documents. In the pilot we measure it on your own samples and agree the target with you before rollout. We don't promise a number we haven't measured."
 - **Pricing:** Pilot {{price:S9}} · production rollout quoted after the pilot · optional per-document pricing with a monthly minimum.
-- **FAQs:** "Does our data leave India?" ("It can stay in India-region services where needed; we document every system that touches it.") · "Which AI models do you use?" ("Chosen per project for accuracy, cost and data-handling terms; we never let providers train on your data where an opt-out exists.") · "What about handwritten or poor scans?" · "Do you work with Tally Prime?" ("Yes, via Tally's XML/ODBC interfaces or connectors.") 🟧 OWNER confirms
+- **FAQs:** "Does our data leave India?" ("It can stay in India-region services where needed; we document every system that touches it.") · "Which AI models do you use?" ("Chosen per project for accuracy, cost and data-handling terms; we never let providers train on your data where an opt-out exists.") · "What about handwritten or poor scans?" ("We test them in the pilot. Clear printed documents work best; handwriting and poor scans usually go to the review screen for a person to check, and we tell you the share we can handle automatically before rollout.") · "Do you work with Tally Prime?" ("Yes, via Tally's XML/ODBC interfaces or connectors.") (owner confirmed all four, 2026-10-22)
 - **CTA:** Start a pilot
 
 ### 4.6 Workflow Automation and AI Agents (S10) · `/services/workflow-automation`
