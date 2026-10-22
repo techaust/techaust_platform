@@ -60,7 +60,7 @@ export function leadId(m: Pick<LeadMessage, "ref" | "submittedAt" | "ipHash">): 
 }
 
 /** The values of the internal alert (docs/07 §8) with human labels: no raw codes. */
-export function alertData(env: Env, m: LeadMessage, ref: string): Record<string, string> {
+export function alertData(env: { ADMIN_URL: string }, m: LeadMessage, ref: string): Record<string, string> {
   const p = m.payload;
   const quote =
     m.kind === "quote" ? (m.payload as Extract<LeadMessage, { kind: "quote" }>["payload"]) : undefined;

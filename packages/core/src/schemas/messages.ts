@@ -1,7 +1,7 @@
 // Queue messages and the form's extra fields (M2.4). The web Worker validates a submission and puts a `LeadMessage`
 // on the `leads` queue; the jobs Worker validates it again before touching the database. An `EmailMessage` goes on
 // the `email` queue (docs/05 §11.1). No raw IP address appears in any of them: only `ipHash` (FRM-02).
-import { z } from "zod";
+import * as z from "zod";
 import { LEAD_REF } from "../lead-ref.ts";
 import { contactForm, quoteForm } from "./forms.ts";
 

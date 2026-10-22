@@ -38,14 +38,25 @@ const THROTTLE_CODES = [
   "ServiceUnavailable",
 ];
 
+/**
+ * Derived SigV4 signing keys, shared by every client made in this isolate. aws4fetch keeps the key (one per secret, day,
+ * region and service) in the `cache` it is given, but the consumer makes a new transport for each message, so without
+ * this shared map each email would repeat the four HMACs of the derivation. A new day derives a new key (the date is part
+ * of aws4fetch's cache key), so an old key is never reused.
+ */
+const SIGNING_KEYS = new Map<string, ArrayBuffer>();
+
 /** The SES v2 `SendEmail` call (JSON, SigV4 for service `ses`). */
 export function sesTransport(config: SesConfig): Transport {
+  // one entry per day, region and secret: cap the map at 8 entries, clearing it when it grows past that
+  if (SIGNING_KEYS.size > 8) SIGNING_KEYS.clear();
   const client = new AwsClient({
     accessKeyId: config.accessKeyId,
     secretAccessKey: config.secretAccessKey,
     service: "ses",
     region: config.region,
     retries: 0, // the queue retries (one unit of work per message)
+    cache: SIGNING_KEYS,
   });
   const url = `https://email.${config.region}.amazonaws.com/v2/email/outbound-emails`;
   return {

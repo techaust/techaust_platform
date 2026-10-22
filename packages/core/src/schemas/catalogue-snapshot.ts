@@ -2,7 +2,7 @@
 // every object is strict, so a field that isn't listed here (SAC code, GST rate, internal notes, deliverables,
 // assumptions, exclusions, IDs, timestamps…) makes the whole file invalid. Amounts are integer minor units.
 // test/catalogue-snapshot.test.ts proves the internal fields can't pass.
-import { z } from "zod";
+import * as z from "zod";
 import { SCHEDULE_TRIGGERS } from "../schedule-text.ts";
 
 const minor = z.int().nonnegative();

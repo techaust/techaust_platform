@@ -133,6 +133,32 @@ describe("SES transport", () => {
     spy.mockRestore();
   });
 
+  it("derives the signing key once per day for all transports, and again when the date changes (CPU)", async () => {
+    const own = { ...cfg, secretAccessKey: `secret-for-the-cache-test-${crypto.randomUUID()}` }; // unique, so the shared map starts empty for it
+    const spy = fetcher(() => Response.json({ MessageId: "ses-1" }));
+    const sign = vi.spyOn(crypto.subtle, "sign");
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2026-10-23T10:00:00Z"));
+      await sesTransport(own).send(input);
+      expect(sign).toHaveBeenCalledTimes(5); // four HMACs for the key, one for the signature
+      sign.mockClear();
+      await sesTransport(own).send(input); // a new transport, the same day: the signature only
+      expect(sign).toHaveBeenCalledTimes(1);
+      const first = (spy.mock.calls[0]?.[0] as Request | undefined)?.headers.get("authorization");
+      const second = (spy.mock.calls[1]?.[0] as Request | undefined)?.headers.get("authorization");
+      expect(second).toBe(first); // same request, same instant, same signature as the uncached one
+      sign.mockClear();
+      vi.setSystemTime(new Date("2026-10-24T10:00:00Z"));
+      await sesTransport(own).send(input);
+      expect(sign).toHaveBeenCalledTimes(5); // the next day derives a new key
+    } finally {
+      vi.useRealTimers();
+      sign.mockRestore();
+      spy.mockRestore();
+    }
+  });
+
   it("a 4xx (not throttling) is permanent", async () => {
     const spy = fetcher(() =>
       Response.json(

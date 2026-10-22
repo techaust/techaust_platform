@@ -1,5 +1,5 @@
 // Shared schemas for domain values (admin forms and the API), built on the pure validators.
-import { z } from "zod";
+import * as z from "zod";
 import { type CalendarDate, parseIsoDate } from "../dates.ts";
 import { isStateCode, type StateCode, validateGstin } from "../gstin.ts";
 import { CURRENCIES, type Currency, type Money, parseMoney } from "../money.ts";

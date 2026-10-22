@@ -1,5 +1,5 @@
 // Reusable field rules for the shared form schemas [FRM-01]. Error messages follow docs/07 §forms.
-import { z } from "zod";
+import * as z from "zod";
 
 // C0/C1 control characters. Single-line fields reject all of them (this also blocks CR/LF reaching an
 // email header, FRM-03); multi-line fields allow only tab, line feed and carriage return.

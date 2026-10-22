@@ -90,8 +90,10 @@ export const callWindowText = (w: { from: number; to: number }): string =>
   `${hhmm(w.from)}–${hhmm(w.to)} IST`;
 
 /** A country's English name from its ISO 3166-1 code (ICU data), "and" never "&"; the code itself when unknown. */
+let regionNames: Intl.DisplayNames | undefined; // built on first use and kept (constructing one is not free)
 export function countryName(code: string): string {
-  const names = new Intl.DisplayNames("en-IN", { type: "region", fallback: "none" });
+  regionNames ??= new Intl.DisplayNames("en-IN", { type: "region", fallback: "none" });
+  const names = regionNames;
   let name: string | undefined;
   try {
     name = names.of(code);
