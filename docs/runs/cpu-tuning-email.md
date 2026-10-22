@@ -3,7 +3,11 @@
 ```
 Status: open
 Tier: B (Workers, queues; docs/14 §2)
-Usage: (filled by the lead from node tools/model-audit.mjs)
+Usage: builder claude-sonnet-5-5/medium (workers-profiling, workers-best-practices, wrangler,
+  aws-messaging-and-streaming) · reviewer claude-opus-5-5/high (code-review, workers-best-practices, workers-profiling;
+  helper general-purpose opus/high, allowed) · re-check reviewer claude-opus-5-5/medium (code-review,
+  workers-best-practices; helper general-purpose opus/low, allowed): weekly 31 → 31 %, 5-h 5 → 8 % (model audit: all
+  runs within the plan)
 ```
 
 ## Before the build (2026-10-23)
@@ -104,3 +108,12 @@ Through the whole queue path (`bench-jobs.mjs` with the 100 ms idle; includes `h
 | 4 | low | `apps/jobs/src/index.ts` | Dropped result, pass-through wrapper | Fixed: wrapper removed, `void warmSesSigning()` called directly; the result is covered by finding 2's test |
 
 `pnpm check` exit 0; `pnpm test` exit 0 (email 23, jobs 32, the rest unchanged).
+
+## Re-check (reviewer, Opus 5.5 medium, 2026-10-23)
+**APPROVE** on `e2e209d`: findings 1–4 fixed, nothing new. In the repo's workerd: the branch's real `warmSesSigning` bundled from `transport.ts` and called at module top level resolved `true` with 5 sign calls during start-up (the old code: `false`, 0); the whole jobs entry booted with the warm-up done before the first fetch, `/healthz` 200.
+
+## Integration notes (lead, 2026-10-23)
+- Builder branch fast-forwarded into `perf/email-cpu`, `main` (with #54) merged in before the review; builder worktree removed, harness kept in `.logs/cpu-tuning-email/perf/`.
+- Review fixes by the lead (small, one area). `pnpm check` and `pnpm test` exit 0.
+- **Process note:** the builder's `wrangler check startup` was refused by the permission classifier; the reviewer's Miniflare probe (local workerd) settled the start-up question instead. Node benchmarks don't apply workerd's start-up rules, so future warm-up work is checked in workerd (a start-up-rules test, as in `email.test.ts`).
+- **Staging check:** the owner sends two quote requests and one contact, a few minutes apart; the lead reads every email's `cpuTimeMs`. Pass: every email ≤ 7 ms.

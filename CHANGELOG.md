@@ -2,6 +2,7 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-10-23 [#55](https://github.com/techaust/techaust_platform/pull/55) perf(email): warm the SES signing path at start-up (email consumer CPU) [FRM-04]
 - 2026-10-23 [#53](https://github.com/techaust/techaust_platform/pull/53) perf(forms): CPU tuning: namespace zod imports (bundles 2.5–3× smaller), shared SES signing key, start-up warm-up [FRM-01, FRM-04]
 - 2026-10-23 [#52](https://github.com/techaust/techaust_platform/pull/52) docs: end of day 2026-10-23 (night)
 - 2026-10-23 [#51](https://github.com/techaust/techaust_platform/pull/51) docs: M2.4 approved by the owner on staging
