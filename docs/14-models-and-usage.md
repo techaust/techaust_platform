@@ -145,3 +145,5 @@ Every run, the lead's and every agent's, loads **every skill that fits its task*
 | A page or report for the owner to view or share (lead) | `artifact-design` |
 
 Analyst and reviewer agents have the Skill tool for this. If a new skill appears that fits a task better, the lead adds it here (a Lead row in 13).
+
+**Skill-spawned helpers (found 2026-10-22, owner decision pending):** when an agent loads `code-review` or `security-review`, the skill starts its own helper run of the built-in `general-purpose` type (seen in `tools/model-audit.mjs` as `general-purpose` rows, each on the parent's model: Opus or Sonnet 5.5). §3 says the built-in agents are never used, so this needs a rule: allow these skill-spawned helpers (they read only, on allowed models), or use the two review skills as written checklists only (read from disk, no helper). Until decided, agents keep loading them and the audit lists the helpers.
