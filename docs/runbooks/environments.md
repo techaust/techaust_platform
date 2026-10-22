@@ -1,6 +1,6 @@
 # Runbook: environments and Cloudflare resources
 
-Cloudflare account: **Techaust Technologies** (`153cd8b23edd2bc9dec570ffaf467c2f`), owner `admin@techaust.com`. _Last updated 2026-10-17._
+Cloudflare account: **Techaust Technologies** (`153cd8b23edd2bc9dec570ffaf467c2f`), owner `admin@techaust.com`. _Last updated 2026-10-23._
 The live site is the old Worker **`techaust-web`**. **Never deploy to, rename or delete it** (rollback target until Phase 7 + 2 weeks).
 
 ## Staging (created 2026-10-06, P5.6, approved by the owner)
@@ -8,12 +8,14 @@ The live site is the old Worker **`techaust-web`**. **Never deploy to, rename or
 | Resource | Name | ID / note | Used from |
 |---|---|---|---|
 | D1 | `techaust-staging` | `879c63dd-fedd-4710-9b13-21d8804879a9` (location hint apac); bound to admin, portal and jobs; **migrated and seeded on every merge** (seed is insert-only, no personal data) | M1.3 |
-| Queue | `techaust-staging-leads` (+ `-dlq`) | — | M2.4 |
+| Queue | `techaust-staging-leads` (+ `-dlq`) | web produces, jobs consumes both (since M2.4, 2026-10-23) | M2.4 |
 | Queue | `techaust-staging-pdf` (+ `-dlq`) | — | M4.4 |
-| Queue | `techaust-staging-email` (+ `-dlq`) | — | M2.4 |
+| Queue | `techaust-staging-email` (+ `-dlq`) | jobs produces and consumes both (since M2.4) | M2.4 |
 | Queue | `techaust-staging-events` (+ `-dlq`) | — | M6 |
 | R2 | `techaust-staging-files`, `techaust-staging-docs` | **Not created yet** (owner deferred; R2 may need a payment method on file) | M3.4 / M4.4 |
-| Turnstile widget | staging hostnames | **Not created yet**: dashboard checklist at M2.4 | M2.4 |
+| Turnstile widget | `techaust-staging-forms` (managed, hostname: the staging web host only) | **Created 2026-10-23** by the owner; site key in `apps/web/wrangler.jsonc` (staging vars), secret `TURNSTILE_SECRET` on the web Worker ([ses-and-turnstile.md](ses-and-turnstile.md)) | M2.4 |
+| Access app | `web-staging public logos`: path `brand/*` on the staging web host, one **Bypass / Everyone** policy | **Created 2026-10-23** (owner decision) so email clients can load the logos; every other staging path stays behind Access | M2.4 |
+| Amazon SES (AWS, ap-south-1) | domain `techaust.com` (Easy DKIM, MAIL FROM `noreply.techaust.com`), configuration set `techaust-transactional`, verified recipient `admin@techaust.com`, IAM user `techaust-ses-sender-staging`; sandbox | Owner, 2026-10-23 ([ses-and-turnstile.md](ses-and-turnstile.md)); keys are jobs secrets | M2.4 |
 | Access app | the staging `*.workers.dev` hosts | **On since 2026-10-17** ([access-staging.md](access-staging.md)): one Access app per staging Worker, all traffic, the "Cloudflare account" policy (the owner is the only member), Preview URLs off, Zero Trust Free; after Part 2, a Service Auth policy for the benchmark token on the admin app only | M1.4 |
 | Workers | `techaust-platform-{web,admin,portal,jobs}-staging` | **Deployed 2026-10-06** (PR #1); health routes return 200 | — |
 
