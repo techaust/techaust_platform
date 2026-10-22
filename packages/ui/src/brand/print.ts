@@ -1,7 +1,10 @@
 // Print-ready PDFs (vector, CMYK, trim + bleed boxes, all text outlined): logos, business card, A4 letterhead.
 // Node-only (HarfBuzz outlines from the font file). Written by scripts/build-brand.ts.
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { cmyk, PDFDocument, type PDFPage } from "@cantoo/pdf-lib";
 import printCmyk from "../../tokens/print-cmyk.json" with { type: "json" };
 import type { Brand } from "./compose.ts";
@@ -25,6 +28,25 @@ const ink = (key: string) => {
   const [cc = 0, m = 0, y = 0, k = 0] = c.map((v) => v / 100);
   return cmyk(cc, m, y, k);
 };
+
+/** PDF Keywords entry holding the hash of everything the print files are built from (see printSourceHash). */
+export const PRINT_SOURCE_KEY = "techaust:source-sha256";
+
+const lf = (text: string) => text.replaceAll("\r\n", "\n");
+const here = (file: string) => lf(readFileSync(fileURLToPath(new URL(file, import.meta.url)), "utf8"));
+
+/**
+ * SHA-256 over the inputs of the print PDFs: the master SVG (letterforms), the measured print CMYK, and the layout
+ * code (this file and the geometry it reads). Written into each PDF's Keywords so the drift test can prove the
+ * committed files match the current sources without re-rendering them. Line endings are normalised so the hash is
+ * the same on Windows and in CI.
+ */
+export function printSourceHash(packageRoot: string): string {
+  const master = lf(readFileSync(join(packageRoot, "brand", "source", "techaust-master.svg"), "utf8"));
+  return createHash("sha256")
+    .update(JSON.stringify([master, printCmyk, here("./print.ts"), here("./geometry.ts")]), "utf8")
+    .digest("hex");
+}
 
 /** Business card content (3.5 × 2 in, the common Indian size). Phone/WhatsApp is added once the owner confirms it. */
 export const CARD = {
@@ -80,10 +102,12 @@ export async function buildPrintFiles(
     for (const g of brand.glyphs) mark(g, dark ? "mist" : "ink-900", wx, my, s);
     return (vbH * s) as number;
   };
+  const sourceHash = printSourceHash(packageRoot);
   const doc = async () => {
     const d = await PDFDocument.create({ updateMetadata: false });
     d.setTitle("TecHaust Technologies");
     d.setAuthor("TecHaust Technologies");
+    d.setKeywords([`${PRINT_SOURCE_KEY}=${sourceHash}`]);
     d.setCreationDate(new Date("2026-10-06T00:00:00Z"));
     d.setModificationDate(new Date("2026-10-06T00:00:00Z"));
     return d;

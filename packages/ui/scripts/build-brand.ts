@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 import { createBrand, parseMaster } from "../src/brand/compose.ts";
 import { brandFiles, rasterPlan } from "../src/brand/files.ts";
+import { tagPng } from "../src/brand/png.ts";
 import { buildPrintFiles } from "../src/brand/print.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -29,7 +30,10 @@ for (const f of readdirSync(brandDir)) if (!keep.has(f)) rmSync(join(brandDir, f
 
 for (const [file, svg] of Object.entries(vectors)) writeFileSync(join(brandDir, file), svg);
 
-const png = (svg: string) => sharp(Buffer.from(svg)).png({ compressionLevel: 9 }).toBuffer();
+// Every raster is tagged sRGB and stamped with the hash of its SVG source (the drift test reads it back); an
+// ICO's embedded PNGs each carry the hash of their own size's SVG.
+const png = async (svg: string) =>
+  tagPng(await sharp(Buffer.from(svg)).png({ compressionLevel: 9 }).toBuffer(), svg);
 for (const r of rasters) {
   if (r.kind === "png") {
     writeFileSync(join(brandDir, r.file), await png(r.svg));
