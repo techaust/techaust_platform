@@ -4,12 +4,26 @@ import { secureHeaders } from "hono/secure-headers";
 // Runs ONLY for /api/* (run_worker_first). Static pages never invoke this Worker.
 
 const app = new Hono<{ Bindings: Env }>().basePath("/api");
-app.use(secureHeaders());
+// WEB-G-12 for the API answers too (_headers covers only static assets). JSON only, so the CSP is "nothing".
+app.use(
+  secureHeaders({
+    strictTransportSecurity: "max-age=31536000; includeSubDomains",
+    xContentTypeOptions: "nosniff",
+    referrerPolicy: "strict-origin-when-cross-origin",
+    crossOriginOpenerPolicy: "same-origin",
+    permissionsPolicy: { camera: [], microphone: [], geolocation: [], payment: [] },
+    contentSecurityPolicy: { defaultSrc: ["'none'"], frameAncestors: ["'none'"] },
+  }),
+);
 
-// Visitor country for the ₹/$ default (WEB-G-06). Cached privately for a day.
+// Default currency for the ₹/$ toggle (WEB-G-06): India sees INR, everyone else (and an unknown country) USD. Only the
+// currency is returned, never the country or IP. Private and never stored by a shared cache (the answer depends on who
+// asks); the browser keeps it for 30 days in localStorage, and a choice the visitor made wins (CurrencyToggle).
 app.get("/geo", (c) => {
-  const country = (c.req.raw.cf?.country as string | undefined) ?? "XX";
-  return c.json({ country }, 200, { "Cache-Control": "private, max-age=86400" });
+  const country = (c.req.raw.cf?.country as string | undefined)?.toUpperCase();
+  return c.json({ currency: country === "IN" ? "INR" : "USD" }, 200, {
+    "Cache-Control": "private, no-store",
+  });
 });
 
 // Lead forms (FRM-*) are implemented in M2.4.

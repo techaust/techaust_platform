@@ -6,9 +6,9 @@
   "scripts": {
     "dev": "astro dev --port 4321",
     "dev:worker": "astro build && wrangler dev",
-    "build": "astro build && wrangler deploy --dry-run --outdir .wrangler/dry-run",
+    "build": "astro build && node ../../scripts/check-web-dist.mjs && wrangler deploy --dry-run --outdir .wrangler/dry-run",
     "typecheck": "wrangler types && astro check && tsc -p tsconfig.worker.json",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run",
     "deploy:staging": "astro build && wrangler deploy --env staging",
     "types": "wrangler types"
   },
@@ -20,6 +20,7 @@
   "devDependencies": {
     "@techaust/config": "workspace:*",
     "@astrojs/check": "0.9.10",
+    "@cloudflare/vitest-plugin": "1.3.6",
     "astro": "7.3.5",
     "typescript": "6.0.3",
     "vitest": "4.1.11",

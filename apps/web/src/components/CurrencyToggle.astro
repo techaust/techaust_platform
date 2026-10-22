@@ -2,7 +2,7 @@
 // CurrencyToggle ⚡ (docs/06 §5.2, WEB-G-06): a ₹ / $ segmented control with radio-group semantics (native radios,
 // so arrow keys work), named "Show prices in" (07 §2.1). Every price is in the HTML in both currencies and CSS shows
 // the active one (PriceTag), so switching moves nothing. Hidden without JavaScript, where both prices show.
-// Choosing a currency is stored as ta_currency (07-A §5). The /api/geo default arrives in phase 2 (builder).
+// Choosing a currency is stored as ta_currency (07-A §5). With no stored choice, the default comes from /api/geo once (cached 30 days as ta_geo; a stored choice always wins).
 import { draft, shell } from "../content/shell";
 
 interface Props {
@@ -119,7 +119,32 @@ const name = `currency-${id}`;
     }
   }
 
-  sync(root.dataset.currency === "usd" ? "usd" : "inr");
+  function apply(cur: Currency) {
+    root.dataset.currency = cur;
+    sync(cur);
+  }
+
+  apply(root.dataset.currency === "usd" ? "usd" : "inr");
+
+  // No stored choice and no fresh geo answer (the head script left ₹): ask /api/geo once, keep it 30 days (WEB-G-06).
+  try {
+    const chosen = localStorage.getItem("ta_currency");
+    const geo = JSON.parse(localStorage.getItem("ta_geo") || "null");
+    if (chosen !== "inr" && chosen !== "usd" && !(geo && geo.at > Date.now() - 2592e6)) {
+      fetch("/api/geo")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((j: { currency?: string } | null) => {
+          const cur: Currency = j?.currency === "USD" ? "usd" : "inr";
+          localStorage.setItem("ta_geo", JSON.stringify({ c: cur, at: Date.now() }));
+          // The visitor may have chosen while the request was in flight.
+          const now = localStorage.getItem("ta_currency");
+          if (now !== "inr" && now !== "usd") apply(cur);
+        })
+        .catch(() => {});
+    }
+  } catch {
+    // Storage blocked: stay on ₹.
+  }
   document.addEventListener("change", (event) => {
     const input = event.target as HTMLInputElement | null;
     if (!input?.closest("[data-currency-toggle]")) return;
