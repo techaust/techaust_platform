@@ -2,6 +2,11 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-10-22 [#36](https://github.com/techaust/techaust_platform/pull/36) fix: skill-guided audit findings for M1.5/M1.6/M2.1 (preview URLs, header caps, logs privacy, waitUntil, invite audit)
+- 2026-10-22 [#35](https://github.com/techaust/techaust_platform/pull/35) feat(web): currency switch out of the header, INR/USD codes, "and" instead of "&" [WEB-G-03, WEB-G-06]
+- 2026-10-22 [#34](https://github.com/techaust/techaust_platform/pull/34) chore(agents): skills are mandatory for every run
+- 2026-10-22 [#33](https://github.com/techaust/techaust_platform/pull/33) chore(agents): the designer loads the frontend-design skill first; "&" decision recorded
+- 2026-10-22 [#32](https://github.com/techaust/techaust_platform/pull/32) fix(web): no ₹/$ or theme-icon flash on reload [WEB-G-05, WEB-G-06]
 - 2026-10-22 [#31](https://github.com/techaust/techaust_platform/pull/31) feat(web): M2.1 site shell [WEB-G-03..08, WEB-G-12]
 - 2026-10-22 [#30](https://github.com/techaust/techaust_platform/pull/30) docs(m1.6): staging results and owner's check
 - 2026-10-21 [#29](https://github.com/techaust/techaust_platform/pull/29) feat(portal): M1.6 portal auth [POR-01..03, POR-06]
