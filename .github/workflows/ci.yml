@@ -38,7 +38,7 @@ jobs:
         run: pnpm typecheck
       - name: Public Worker binding guard
         run: node scripts/check-web-bindings.mjs
-      - name: Build (before the tests: apps/web tests read the built site)
+      - name: Build (before the tests, which read the built site)
         run: pnpm build
       - name: Tests (unit + Workers runtime)
         run: pnpm test
