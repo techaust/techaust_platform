@@ -178,8 +178,10 @@ techaust_platform/
 |---|---|---|---|
 | `web` | `techaust.com` (+ `www` 301) / `techaust-platform-web-staging.<acct>.workers.dev` | `ASSETS`, `LEADS_QUEUE` (producer), `RL_FORMS` (rate limit) | `TURNSTILE_SECRET` |
 | `admin` | `admin.techaust.com` / `techaust-platform-admin-staging…` | `ASSETS`, `DB`, `FILES` (R2), `DOCS` (R2), `PDF_QUEUE`, `EMAIL_QUEUE`, `EVENTS_QUEUE`, `RL_AUTH`, `RL_API` | `PASSWORD_PEPPER`, `SALT_PEPPER`, `TOTP_ENC_KEY`, `SESSION_HMAC_KEY`, `TURNSTILE_SECRET`, gateway keys (create checkout/refund), `BUILD_SNAPSHOT_TOKEN` |
-| `portal` | `portal.techaust.com` / `techaust-platform-portal-staging…` | `ASSETS`, `DB`, `FILES`, `DOCS`, `EMAIL_QUEUE`, `EVENTS_QUEUE`, `RL_AUTH`, `RL_API` | `SESSION_HMAC_KEY`, `MAGIC_LINK_KEY`, `DOC_TOKEN_KEY`, `TURNSTILE_SECRET`, gateway keys (create checkout) |
+| `portal` | `portal.techaust.com` / `techaust-platform-portal-staging…` | `ASSETS`, `DB`, `FILES`, `DOCS`, `EMAIL_QUEUE`, `EVENTS_QUEUE`, `RL_AUTH`, `RL_API` | `PORTAL_KEY_PEPPER` (HMACs the counter keys; sign-in links, sessions and document links are random tokens stored as SHA-256, so they need no key), `TURNSTILE_SECRET` (M2.4), gateway keys (create checkout) |
 | `jobs` | `hooks.techaust.com` / `techaust-platform-jobs-staging…` | `DB`, `FILES`, `DOCS`, `BROWSER`, consumers of `leads` / `pdf` / `email` / `events` (+ DLQs), cron triggers | `RAZORPAY_WEBHOOK_SECRET`, `STRIPE_WEBHOOK_SECRET`, `PAYPAL_*`, `SES_ACCESS_KEY_ID`, `SES_SECRET_ACCESS_KEY`, `SES_EVENTS_TOKEN`, gateway API keys (status checks, refunds), `SENTRY_DSN` |
+
+**Built so far (M1.5, M1.6):** admin binds `ASSETS` and `DB` and requires `PASSWORD_PEPPER`, `SALT_PEPPER`, `TOTP_ENC_KEY`, `SESSION_HMAC_KEY`; portal binds `ASSETS` and `DB` and requires `PORTAL_KEY_PEPPER` (`secrets.required` in each `wrangler.jsonc`). The other bindings and secrets above arrive with the milestones that use them; the Rate Limiting bindings are not used yet (all counters are exact D1 rows, §6.1).
 
 **Plain (non-secret) vars:** `ENVIRONMENT` (`local|staging|production`), `APP_ORIGIN`, `PAYMENTS_LIVE_ALLOWED` (`false` until the Phase 7 approval), `SES_REGION=ap-south-1`, `SES_CONFIG_SET`, sender addresses.
 
@@ -211,9 +213,9 @@ techaust_platform/
 | `staff_recovery_codes` | id, user_id, code_hash, used_at |
 | `staff_sessions` | id (= SHA-256 of the token), user_id, created_at, last_seen_at, idle_expires_at, abs_expires_at, step_up_until, ip, user_agent, revoked_at · idx(user_id) |
 | `staff_invites` | token_hash, email, role, invited_by, expires_at, used_at |
-| `auth_attempts` | key (`acct:<id>` / `ip:<ip>`), window_start, failures, locked_until (exact lockout counter) |
+| `auth_attempts` | key, window_start, failures, locked_until (exact counters). Keys: staff `acct:<SHA-256 of the email, 32 hex>` (passwords), `code:<user id>` (TOTP, recovery and step-up codes), `ip:<HMAC(SALT_PEPPER) of the address>`; portal `p:req:` (link requests per address), `p:mail:` (per email), `p:fail:` (failed link checks per address), each an HMAC under `PORTAL_KEY_PEPPER`. No raw address or email is stored. |
 | `client_sessions` | id (hash), contact_id, client_id, created_at, last_seen_at, idle/abs expiry, ip, user_agent, revoked_at |
-| `magic_link_tokens` | token_hash, contact_id, expires_at (15 min), used_at, request_ip |
+| `magic_link_tokens` | token_hash, contact_id, expires_at (15 min), used_at, request_ip (left NULL: the access row already holds the address, LD15 of M1.6) |
 | `doc_access_tokens` | token_hash, document_id, purpose (`view_pay`), expires_at, revoked_at (POR-06) |
 
 **Settings and reference data**
@@ -336,7 +338,7 @@ The formatted number is computed in SQL from the counter value (`printf('TH/INV/
 ```text
 Browser (admin SPA)                       admin Worker (Hono)                         D1
 ───────────────────                       ───────────────────                         ──
-1. POST /api/v1/auth/salt {email}  ─────▶ rate-limit (ip+route); Turnstile if flagged
+1. POST /api/v1/auth/salt {email}  ─────▶ per-IP failure counter (D1); Turnstile from M2.4
                                           salt = user ? user.pw_salt
                                                       : HMAC(SALT_PEPPER, lower(email))[:16]
                                    ◀───── {salt, params:{v,m,t,p}}  (same shape and timing)
@@ -346,8 +348,8 @@ Browser (admin SPA)                       admin Worker (Hono)                   
                                           expected = HMAC-SHA256(PASSWORD_PEPPER, salt‖clientHash)
                                           constant-time compare with user.pw_hmac   ─────▶ read user
                                           on failure: increment counters, generic error
-                                   ◀───── {next: "totp", challenge}  (a short-lived, signed,
-                                          single-use pre-auth token; no session yet)
+                                   ◀───── {next: "totp", challenge}  (a signed pre-auth token,
+                                          valid 5 min; no session yet)
 4. POST /api/v1/auth/totp {challenge, code}
                                    ─────▶ verify TOTP (±1 step) and step > totp_last_step
                                           (replay guard); create session ─────────────▶ insert session
@@ -362,21 +364,25 @@ Browser (admin SPA)                       admin Worker (Hono)                   
 | No enumeration | Unknown emails get a deterministic fake salt; responses and timing are uniform; "invalid email or password" for everything. |
 | Password strength | Checked **in the browser**: length ≥ 12, zxcvbn-ts score ≥ 3, and an optional HIBP k-anonymity range check (the browser calls `api.pwnedpasswords.com/range/<5 hex>`; CSP allows it on the password pages only). The server never sees the plain password. |
 | TOTP | `@oslojs/otp`; the secret is encrypted with AES-GCM (`TOTP_ENC_KEY`). Enrolment shows a QR (otpauth URI) + secret; verified before it is enabled. 10 recovery codes (16 chars, base32), stored as SHA-256 hashes. |
-| Sessions | 32 random bytes → cookie; DB stores SHA-256(token). Idle 12 h, absolute 7 days; `last_seen_at` written at most every 15 min; rotated on login and privilege change; "sign out everywhere". |
+| Sessions | 32 random bytes → cookie; DB stores SHA-256(token). Idle 12 h, absolute 7 days; `last_seen_at` written at most every 15 min; a new session at every sign-in; a role change, deactivation or reset ends that person's sessions; step-up doesn't issue a new token; "sign out everywhere". |
 | Step-up | Sensitive actions (ADM-AUTH-08) need `step_up_until > now` (10 min), set by re-entering TOTP. |
-| Lockout | Exact counters in D1 (`auth_attempts`): Turnstile after 3 failures; 15-min lock after 10 failures per hour per account; per-IP limits via the Rate Limiting binding (approximate) + D1 (exact). Emails on lockout. |
+| Challenge | The challenge is **not single-use**: within its 5 minutes it can be retried (a mistyped code doesn't send the person back to the password). Guessing is bounded by the `code:` counter, and a code can't be used twice because of the replay guard (`totp_last_step`, moved in the same batch as the new session). Decided in M1.5 (LD13). |
+| Lockout | Exact counters in D1 (`auth_attempts`, key formats in §5.2). Each attempt is counted first, atomically, then checked. 15-min lock after 10 failures per hour per account (`acct:` for passwords, `code:` for codes); a full sign-in clears both. Per address: 100 failures an hour block it for 15 min (`ip:`), and a request from a blocked address writes nothing. Turnstile after 3 failures arrives with M2.4; the Rate Limiting binding isn't used. A lockout of a real account writes an `alert.lockout` audit row; the emails come with M2.4. |
 | Invites | Single-use invite link (48 h) → set password (browser Argon2id) → enrol TOTP → active. |
 | Password reset | Owner-initiated only (no self-service email reset for staff, which removes a whole attack class). The Owner's own recovery: recovery codes, or a break-glass procedure documented in [08 §6](08-security-compliance.md). |
-| CPU | Login ≈ 1 HMAC + 1 TOTP + 2–3 D1 queries: well under 1 ms of CPU (local measurement); **verified on Workers in M1**. |
+| CPU | Measured on staging Workers (benchmark run 4, M1.5, [cpu-baseline.md](runbooks/cpu-baseline.md)): CPU p99 is salt 4 ms, login 5 ms, totp 7 ms, me 3 ms; the first request of an isolate costs 3–7 ms. 3 warm requests in 1,107 reached 13 ms (watched in M7.5). |
 
 ### 6.2 Client login (portal): magic links
-1. `POST /api/v1/auth/magic {email, turnstile}` → the same response every time. If the email belongs to a contact with `portal_access`: create a 32-byte token, store its SHA-256 (expires in 15 min), and send an email from `no-reply@`.
-2. The link opens `portal…/auth/callback#t=<token>`. The **fragment** keeps the token out of server logs and referrers. The SPA POSTs it to `/api/v1/auth/magic/verify`, which marks it used (single use) and creates the session cookie `__Host-ta_portal` (SameSite=Lax; 30 days idle / 90 days absolute).
-3. Email security scanners that pre-fetch links don't consume the token, because consumption requires the POST from the SPA.
+1. `POST /api/v1/auth/magic {email}` → always `200 {ok: true}`, whatever the email (a quota hit is a uniform `429 rate_limited` with `Retry-After`). If the email belongs to a contact with `portal_access` (not anonymised): one link **per organisation** that contact belongs to, each a 32-byte token stored as SHA-256, expiring in 15 min. Quotas: 10 requests an hour per address (`p:req:`), 3 per 15 min per email (`p:mail:`). The `turnstile` field is added in M2.4.
+2. **Delivery:** M2.4 sends the email from `no-reply@`. Until then the Worker sends nothing (a `MagicLinkSender` interface with no sending implementation) and links are made by hand with `pnpm portal:link` (lead only, audit-logged as `portal.link_minted`).
+3. The link opens `portal…/auth/callback#t=<token>`. The **fragment** keeps the token out of server logs and referrers, and the SPA strips it from the address bar at once. The person clicks **Continue**; only then does the SPA POST it to `/api/v1/auth/magic/verify`, which marks it used (single use) and creates the session cookie `__Host-ta_portal` (`HttpOnly; Secure; SameSite=Lax; Max-Age` = 90 days; the server ends the session after 30 days idle or 90 days absolute). Failed checks count on `p:fail:` (20 an hour per address → 15-min block).
+4. Email security scanners that pre-fetch links, even ones that run JavaScript, don't consume the token, because consumption needs the click and the POST.
+5. Every sign-in creates a new session; removing a contact's portal access, anonymising it or moving it to another client ends its sessions at once (the session guard joins the contact). "Sign out of all devices" covers this contact only.
 
 ### 6.3 Single-document access tokens (POR-06)
-- "View & pay" links contain an unguessable token (≥ 128 bits). Its hash is stored in `doc_access_tokens`, bound to one document, valid until paid + 30 days and revocable.
-- It grants read access to that document plus starting a checkout for it, nothing else. Its use is audit-logged.
+- "View & pay" links contain an unguessable token (32 random bytes). Its hash is stored in `doc_access_tokens`, bound to one document, valid until paid + 30 days and revocable.
+- The link is `portal…/t#<token>`: the token sits in the fragment and travels only in a request body (`POST /api/v1/t/document {token}`), never in a path or query.
+- It grants read access to that document plus starting a checkout for it, nothing else. Drafts, documents pending approval and voided ones are refused, with the same 404 as an unknown token; failed checks count on `p:fail:`. Every use is audit-logged (`doc_token.use`). M1.6 returns the document header only; the "View & pay" page is M7.1.
 
 ### 6.4 Authorisation
 - `core/permissions` holds the matrix ([04 §9](04-prd.md)) as data: `can(role, action, resource, context)`.
@@ -389,10 +395,10 @@ Browser (admin SPA)                       admin Worker (Hono)                   
 
 ### 7.1 Conventions
 - **Base:** `/api/v1/…` on each realm host (admin, portal); `/api/forms/*` and `/api/geo` on web; `/razorpay`, `/stripe`, `/paypal`, `/ses`, `/healthz` on hooks.
-- **JSON only.** Unsafe methods require `Content-Type: application/json` and `Origin` = the app origin (our CSRF middleware; Hono's built-in `csrf()` doesn't cover JSON). There is no CORS at all (same-origin SPA ↔ API).
+- **JSON only.** Unsafe methods need `Origin` = the app origin (or, with no `Origin` header, `Sec-Fetch-Site: same-origin`), and any request with a body must be `Content-Type: application/json`. This is our CSRF middleware: the pure `csrfCheck` in `packages/auth`, wrapped by each Worker; Hono's built-in `csrf()` checks only form bodies and isn't used. There is no CORS at all (same-origin SPA ↔ API).
 - **Typed client:** Hono RPC (`hc<AppType>`) per module, imported by the SPA (no codegen).
 - **Validation:** shared zod schemas from `core` via `@hono/standard-validator`; request body limit 64 KB (uploads go to R2 via a separate route with a size cap).
-- **Errors:** `{"error": {"code": "approval_required", "message": "…", "fields": {"lines.2.rate": "…"}}}` with the correct HTTP status. No stack traces or internals (fixes audit M-1). Each error carries a `request_id`.
+- **Errors:** `{"error": {"code": "approval_required", "message": "…", "fields": {"lines.2.rate": "…"}}, "request_id": "…"}` with the correct HTTP status. No stack traces or internals (fixes audit M-1). The `request_id` is the `cf-ray` header, else 16 random hex characters; audit and access rows carry the same value.
 - **Pagination:** keyset: `?limit=25&cursor=<opaque>` → `{items, next_cursor}`; max 50.
 - **Idempotency:** money and document state transitions accept an `Idempotency-Key` header (stored for 24 h). The SPA always sends one for issue, record payment, refund, accept and checkout.
 - **Concurrency:** documents carry an `updated_at` version. Updates send `If-Match`, and a mismatch returns 409.
@@ -402,8 +408,9 @@ Browser (admin SPA)                       admin Worker (Hono)                   
 
 | Module | Routes (all under `/api/v1`) |
 |---|---|
-| Auth | `POST auth/salt`, `auth/login`, `auth/totp`, `auth/step-up`, `auth/logout`, `GET auth/sessions`, `DELETE auth/sessions/:id`, `POST auth/totp/enrol`, `auth/totp/confirm`, `auth/recovery/regenerate`, `POST invites`, `POST invites/:token/accept` |
-| Users & settings | `GET/POST/PATCH users`, `GET/PUT settings/:key`, `GET/PUT bank-accounts`, `GET/PUT numbering`, `POST settings/test-email` |
+| Auth (built in M1.5) | `POST auth/salt`, `auth/login`, `auth/totp`, `auth/recovery` (a recovery code in place of TOTP), `auth/logout`; invite acceptance `POST auth/invite/start`, `auth/invite/finish`, `auth/invite/totp` (enrolment is part of the invite); account `GET auth/me`, `POST auth/step-up`, `GET auth/sessions`, `DELETE auth/sessions/:id`, `POST auth/sessions/revoke-all`, `POST auth/recovery/regenerate` (step-up) |
+| Users (built in M1.5) | `GET users`, `GET users/invites`, `POST users/invites`, `POST users/invites/:tokenHash/revoke`, `PATCH users/:id` (role), `POST users/:id/deactivate`, `POST users/:id/reset-2fa`, `POST users/sessions/revoke-all` |
+| Settings | `GET/PUT settings/:key`, `GET/PUT bank-accounts`, `GET/PUT numbering`, `POST settings/test-email` |
 | Dashboard | `GET dashboard` |
 | Leads | `GET/POST leads`, `GET/PATCH leads/:id`, `POST leads/:id/activities`, `POST leads/:id/convert`, `POST leads/:id/email` |
 | Clients | `GET/POST clients`, `GET/PATCH clients/:id`, `GET/POST clients/:id/contacts`, `PATCH contacts/:id`, `GET clients/:id/statement?from&to`, `POST contacts/:id/export`, `POST contacts/:id/erase` |
@@ -418,7 +425,7 @@ Browser (admin SPA)                       admin Worker (Hono)                   
 | DSR | `GET/POST dsr`, `PATCH dsr/:id` |
 
 ### 7.3 Portal API (summary)
-`POST auth/magic`, `auth/magic/verify`, `auth/logout`; `GET me`; `GET home`; `GET documents?type=`; `GET documents/:id`; `GET documents/:id/pdf`; `POST documents/:id/accept`; `POST documents/:id/decline`; `POST documents/:id/checkout {provider, amount?}`; `POST documents/:id/bank-transfer-notice`; `GET projects`, `GET projects/:id`; `GET files/:id/download`; `POST requests` (contact change, data request). **Token routes:** `GET t/:token` (a single document) and `POST t/:token/checkout`.
+Built in M1.6: `POST auth/magic`, `auth/magic/verify`, `auth/logout`, `auth/sessions/revoke-all` (this contact's sessions); `GET me` (the signed-in contact and client); `POST t/document {token}` (§6.3). Planned: `GET home`; `GET documents?type=`; `GET documents/:id`; `GET documents/:id/pdf`; `POST documents/:id/accept`; `POST documents/:id/decline`; `POST documents/:id/checkout {provider, amount?}`; `POST documents/:id/bank-transfer-notice`; `GET projects`, `GET projects/:id`; `GET files/:id/download`; `POST requests` (contact change, data request). **Token routes:** the token always travels in the body, never in the path: `POST t/document {token}` (built) and a checkout route of the same shape (M7.1).
 
 ### 7.4 Public endpoints (web)
 - `POST /api/forms/quote`
@@ -601,7 +608,7 @@ Budget: about 3 operations per message, with 10k ops/day (≈ 3.3k messages). Ex
 ---
 
 ## 13. Observability
-- **Logs:** structured JSON (`request_id`, realm, route, status, `cpu_ms`, `rows_read`, `rows_written`), with no bodies on auth/payment routes and no personal data. Info logs are sampled at 20 %; errors always. Workers Logs keep 7 days (0.5 GB/day cap from 2026-12-01).
+- **Logs:** structured JSON (`request_id`, realm, route, status, `cpu_ms`, `rows_read`, `rows_written`), with no bodies on auth/payment routes and no personal data. No sampling is configured: staging keeps 100 % (the CPU benchmarks read every request), and production's sampling is set in Phase 7 if the volume needs it. Query strings are redacted (`redact_query_string`) and so are sensitive header values (`cookie`, `cf-access-jwt-assertion`). Workers Logs keep 7 days (0.5 GB/day cap from 2026-12-01).
 - **Security log:** `access_log` in D1 (13 months).
 - **Errors:** Sentry (errors only, `sendDefaultPii: false`, a `beforeSend` scrubber). One free seat (Owner); alerts are emailed.
 - **Uptime:** Sentry's free uptime monitor on `techaust.com`, plus one more free monitor (UptimeRobot or Better Stack; check the terms in Phase 7) on `admin.`/`portal.`/`hooks.` `/healthz` (no D1 query).

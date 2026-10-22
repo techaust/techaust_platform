@@ -29,13 +29,12 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
 - **Skill-guided audit of earlier work (M1.1–M1.4, CI, brand scripts) and its fixes** ([PR #38](https://github.com/techaust/techaust_platform/pull/38); [runs/skill-audit-earlier-2026-10-22.md](runs/skill-audit-earlier-2026-10-22.md)): 1 high (gap-free numbering could burn a number), 7 medium, 8 low; fixed in two rounds, analyst GO WITH CHANGES, reviews APPROVE and re-check APPROVE. Migrations 0007 (issue guard drafts-only + `issue_result` post-condition, number ≥ 1) and 0008 (FK indexes); seed conflicts; contrast + two token values; stricter no-floats scanner; brand drift hashes; migration rebuild guard; company GSTIN check; CI guards (triggering actor, step-scoped secrets, gitleaks checksum); heavy.sh PID lock; bench cleanup.
 
 ## In progress
-- Nothing. Everything from 2026-10-22 is merged or listed below.
+- **Doc fixes for M1.5/M1.6** (branch `docs/m1.5-m1.6-doc-fixes`): 04 §9 and NFR-9, 05 §4–§7 and §13, 08 §3.2 and §4, CLAUDE.md now match the built code. PR #38's staging deploy applied migrations 0007 and 0008 (checked in the deploy log).
 
 ## Next
-1. **Check PR #38 merged and the staging deploy applied migrations 0007 and 0008** (Actions → Deploy staging log).
-2. **Confirm skills load inside agents in the new session** (the Skill tool wasn't available to agents in the 2026-10-22 session until PR #34; the last two reviewers had it): run `node tools/model-audit.mjs <date>` after the first agent.
-3. Lead: the M1.5 staging lockout smoke (needs a run through Access) and the doc fixes listed in the M1.5/M1.6 run files ("Docs that disagree"); reword session-key rotation in 08 §3.2.
-4. **M2.2 home + services** (design preview of the home page first; needs the claims-register confirmations in 07 §1.4). Brief first, with the skills from 14 §9.
+1. **Confirm skills load inside agents in the new session** (the Skill tool wasn't available to agents in the 2026-10-22 session until PR #34; the last two reviewers had it): run `node tools/model-audit.mjs <date>` after the first agent.
+2. Lead: the M1.5 staging lockout smoke (needs a run through Access).
+3. **M2.2 home + services** (design preview of the home page first; needs the claims-register confirmations in 07 §1.4). Brief first, with the skills from 14 §9.
 
 **Usage on 2026-10-22:** weekly about 20 % after M2.1, the skills rule and both audits; under the pace. Weekly reset **Mon 26 Oct, 15:30 IST**.
 
@@ -62,7 +61,6 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
 - **M1.5 break-glass (low):** read back the audit row after a break-glass run; optional "still the only owner" SQL guard.
 - **M1.5 review (medium/low, [run file](runs/m1.5-staff-auth.md) "Review"):** M2 focus falls to `<body>` after a step-up over a confirm dialog; L1 parallel `/invite/totp` in one millisecond can add 10 unseen recovery codes (guard the insert); L2 Users success notice above the viewport; L3 enrolment timeout shows the generic error; `session.tsx` state set inside an updater.
 - **M1.5 other:** DPDP retention/erasure position for IP, user agent and location in the append-only audit log (VERIFY WITH CA/LEGAL) before real staff use; keyset pagination on `GET /users` (M3.1); HIBP `connect-src` and removing the "hashing took N ms" line in M3.1; a last-owner check on any future delete-user feature.
-- **Docs:** reword session-key rotation in 08 §3.2 (left from the PR #7 follow-up; the rest of it is done).
 - **Social kit:** Upwork banner domain line may need enlarging after a real-device check (review finding 8, low).
 - **Wallpapers (low, test strength; [runs/brand-wallpapers.md](runs/brand-wallpapers.md)):** network anchors vs the real channel/mark geometry; compare wire coordinates, not just counts; optional pixel re-render test; build the fitted-mark expectation from `MARK_PARAMS`.
 - **Models and usage:** the cost report after the first Tier A build (the M1.4 tuning will be the first), the first designer task and the first two Tier B reviews ([14 §8](14-models-and-usage.md)). Audits 2026-10-16 and 2026-10-17 (twice): all runs within the plan.

@@ -442,7 +442,7 @@ Every service page uses one template, with sections in this order ([03 §3A.3](0
 | NFR-6 | Privacy | Data minimisation; no personal data in logs or analytics; consent-gated GA4; retention jobs; DPDP-aware notices (VERIFY WITH CA/LEGAL) |
 | NFR-7 | Reliability | Zero data loss on queue failure (DLQ); RPO ≤ 24 h (nightly off-site) and ≤ minutes within 7 days (D1 Time Travel); RTO ≤ 4 h (restore runbook) |
 | NFR-8 | Browsers | The last 2 versions of Chrome, Edge, Firefox and Safari (desktop + mobile); Samsung Internet; the site degrades gracefully without JS |
-| NFR-9 | Observability | Structured logs (request ID, route, status, CPU ms) with no personal data; Sentry for errors; alerts on webhook failures, DLQ messages, CPU-limit errors, failed backups. **Security log retention ≥ 13 months:** Workers Logs keep only 3 days on free, so auth, admin and portal access events are written to a D1 `access_log` table (pruned at 13 months, included in backups). |
+| NFR-9 | Observability | Structured logs (request ID, route, status, CPU ms) with no personal data; Sentry for errors; alerts on webhook failures, DLQ messages, CPU-limit errors, failed backups. **Security log retention ≥ 13 months:** Workers Logs keep only a few days (7 at the time of writing, with a daily volume cap), so auth, admin and portal access events are written to a D1 `access_log` table (pruned at 13 months, included in backups). |
 | NFR-10 | Maintainability | TypeScript strict; shared packages; ≥ 90 % line coverage on `packages/core` (money, tax, numbering, schedules, permissions); conventional commits; ADRs for major decisions |
 | NFR-11 | Cost | ≤ ₹1,000/month all-in; target ≈ ₹5–50. Any paid upgrade is proposed separately. |
 | NFR-12 | Honesty | No fabricated metrics, testimonials, team members or "live" data (WEB-G-14) |
@@ -455,7 +455,11 @@ Every service page uses one template, with sections in this order ([03 §3A.3](0
 
 | Capability | Owner/Admin | Staff | Sales/BD | Accountant |
 |---|---|---|---|---|
-| Users, roles, settings, gateway modes, tax and numbering | ✅ | — | — | 👁 tax/numbering |
+| Users and invites: view (`users.read`) | ✅ | — | — | — |
+| Users and invites: invite, change role, deactivate, reset sign-in (`users.manage`) | ✅ (step-up) | — | — | — |
+| Own account: sessions, sign out, sign out everywhere (`account.own`) | ✅ | ✅ | ✅ | ✅ |
+| Own recovery codes: make a new set (`account.recoveryCodes`) | ✅ (step-up) | ✅ (step-up) | ✅ (step-up) | ✅ (step-up) |
+| Settings, gateway modes, tax and numbering | ✅ | — | — | 👁 tax/numbering |
 | Bank details | ✅ (step-up) | — | — | 👁 masked |
 | Leads & pipeline | ✅ | ✅ | ✅ | — |
 | Clients & contacts | ✅ | ✅ | ✅ (no finance tabs) | 👁 |
