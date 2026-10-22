@@ -6,16 +6,24 @@ import { WARM_SAMPLES, warmConsumerMessages, warmLabels } from "@techaust/core";
 import { renderEmail } from "@techaust/email";
 import { alertData } from "./leads.ts";
 
-export function warmConsumers(): void {
-  warmConsumerMessages();
+/** Returns the parses and renders that succeeded (3 + 2), so a test notices a warm-up that silently stopped working. */
+export function warmConsumers(): number {
+  const parsed = warmConsumerMessages();
   warmLabels();
+  let rendered = 0;
   try {
     const opts = { assetBase: "https://warm-up.invalid/" };
     renderEmail("lead.acknowledgement", { first_name: "Warm", service_name: "Warm", ref: "L-23456" }, opts);
+    rendered++;
     // a full quote alert, so the row building and escaping run as they do for a real lead
-    const env = { ADMIN_URL: "https://warm-up.invalid/" } as unknown as Env; // alertData reads only ADMIN_URL
-    renderEmail("lead.alert", alertData(env, WARM_SAMPLES.quoteLead, "L-23456"), opts);
+    renderEmail(
+      "lead.alert",
+      alertData({ ADMIN_URL: "https://warm-up.invalid/" }, WARM_SAMPLES.quoteLead, "L-23456"),
+      opts,
+    );
+    rendered++;
   } catch {
     // never stop a Worker from starting
   }
+  return parsed + rendered;
 }

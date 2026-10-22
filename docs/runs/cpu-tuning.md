@@ -3,7 +3,11 @@
 ```
 Status: open
 Tier: B (Workers, queues; docs/14 §2)
-Usage: (filled by the lead from node tools/model-audit.mjs)
+Usage: builder claude-sonnet-5-5/medium (workers-profiling, workers-best-practices, wrangler) · reviewer
+  claude-opus-5-5/high (code-review, workers-best-practices, workers-profiling; its code-review helper general-purpose
+  opus/high, allowed) · re-check reviewer claude-opus-5-5/medium (code-review, workers-best-practices; helper
+  general-purpose opus/medium, allowed): weekly 30 → 31 %, 5-h 43 → 4 % (window reset during the task) for the whole
+  task (model audit: all runs within the plan)
 ```
 
 ## Before the build (2026-10-23)
@@ -131,3 +135,12 @@ The web quote post was not benchmarked separately (same code; its extra cost on 
 - **Staging rules (decided by the lead before the measurement):**
   1. *Warm-up (M1):* kept only if, in a fresh isolate after the deploy, the first web form post, the first lead and the first email are each below their baseline (10, 8 and 14 ms). If any is not, drop the warm-up (the two `warm.ts` files, the two call lines, `WARM_SAMPLES`) in a follow-up PR and re-measure; the import, cache and formatter fixes stay.
   2. *Target (M3):* every invocation ≤ 7 ms passes. Anything over 7 ms gets a named follow-up before M2.4b adds templates; anything at or over 10 ms is reported to the owner the same day.
+
+## Re-check (reviewer, Opus 5.5 medium, 2026-10-23)
+**APPROVE** on `93a92fb`: every Fixed item fixed, nothing newly broken; `WARM_SAMPLES.quoteLead` without parsing is safe for `alertData`; the guard scans the right files on Windows and Linux. Three new lows, all fixed by the lead:
+- L-a: the guard missed `import { z, type … }`, `{ z as zod }` and `export { z }`: pattern widened, self-test covers them.
+- L-b: the `as unknown as Env` cast: `alertData` now takes `{ ADMIN_URL: string }` (no cast); `warmConsumers()` returns its successes and `apps/jobs/test/warm.test.ts` expects 5 in workerd.
+- L-c: the key-map comment reworded.
+- Note taken for the staging test: use the worst of 2 or 3 cold samples where the logs have them.
+
+`pnpm check` exit 0; `pnpm test` exit 0 (core 345, jobs 31, the rest unchanged).

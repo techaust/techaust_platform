@@ -8,7 +8,8 @@ import { describe, expect, it } from "vitest";
 const REPO = join(import.meta.dirname, "..", "..", "..");
 const SCAN = ["packages", "apps"];
 const SKIP = new Set(["node_modules", "dist", "test", ".wrangler", "generated"]);
-const BAD = /import\s+(?:\{\s*z\s*\}|z)\s+from\s+["']zod(?:\/[\w-]+)?["']/;
+// a value import or re-export of `z` (alone, in a list, or renamed) or a default import; `import type` is fine
+const BAD = /(?:import(?!\s+type\b)|export)\s+(?:z|\{[^}]*\bz\b[^}]*\})\s+from\s+["']zod(?:\/[\w-]+)?["']/;
 
 function sources(dir: string, out: string[] = []): string[] {
   for (const e of readdirSync(dir, { withFileTypes: true })) {
@@ -31,6 +32,11 @@ describe("zod imports", () => {
   it("the pattern catches the forms it bans", () => {
     expect(BAD.test('import { z } from "zod";')).toBe(true);
     expect(BAD.test("import z from 'zod';")).toBe(true);
+    expect(BAD.test('import { z, type ZodType } from "zod";')).toBe(true);
+    expect(BAD.test('import { type ZodError, z } from "zod";')).toBe(true);
+    expect(BAD.test('import { z as zod } from "zod";')).toBe(true);
+    expect(BAD.test('export { z } from "zod";')).toBe(true);
+    expect(BAD.test('import type { ZodType } from "zod";')).toBe(false);
     expect(BAD.test('import * as z from "zod";')).toBe(false);
     expect(BAD.test('import * as z from "zod/mini";')).toBe(false);
   });
