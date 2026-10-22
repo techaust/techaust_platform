@@ -203,7 +203,7 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 - **H1:** "The software your business actually runs on, built properly."
 - **Who it's for:** operations, finance and sales teams outgrowing spreadsheets and email threads; companies replacing per-seat SaaS that doesn't fit.
 - **Problem:** "Most businesses run on a patchwork: a shared Excel file, a WhatsApp group and a SaaS tool that does 60 % of the job. It works until it doesn't. Then nobody knows which version is right."
-- **What you get:** discovery and UX design (S8 included) · a web app with roles and permissions · integrations with your existing tools · automated tests · staging and production environments · documentation and handover · a 30-day warranty · an optional care plan.
+- **What you get:** discovery and UX design (UI/UX design included) · a web app with roles and permissions · integrations with your existing tools · automated tests · staging and production environments · documentation and handover · a 30-day warranty · an optional care plan.
 - **Sub-section "From Excel or Access to a real app":** "We keep what works about your spreadsheet (the speed, the familiarity) and add what it lacks: one source of truth, permissions, an audit trail, and nobody overwriting anyone else's work."
 - **How it works:** Discover (1–2 weeks) → Design (1–2 weeks) → Build in milestones with fortnightly demos → Launch → Warranty → Care plan. Typical timeline: 6–14 weeks.
 - **Pricing:** {{price:S5}} · fixed per milestone · {{schedule:S5}} · change requests quoted before work.
@@ -265,7 +265,7 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 - **H1:** "Meet customers on WhatsApp, with your systems behind it."
 - **Problem:** "Your customers already message you on WhatsApp. Answering by hand doesn't scale, and order details end up trapped in chats."
 - **What you get:** WhatsApp Business Platform setup through an official provider · flows for order updates, payment links and reminders, catalogue ordering, COD confirmation and returns · handover to a person · integration with your order, billing or CRM system · reporting.
-- **Pricing:** setup {{price:S11-setup}} + management {{price:S11-monthly}}/month · "**Meta's per-message charges are passed through at cost.**" 🟧 OWNER: a USD price for the Gulf/international market? (Currently INR only.)
+- **Pricing:** setup {{price:S11-setup}} + management {{price:S11-monthly}}/month · "**Meta's per-message charges are passed through at cost.**" USD: no USD price; USD visitors see the INR price with "USD price on request" (owner, 2026-10-22).
 - **FAQs:** "Do we need a new number?" · "Can a person take over a chat?" (yes) · "What does Meta charge?" ("Per message, by category and country; we show you the current rates before you start.")
 - **CTA:** Get a quote
 
@@ -346,7 +346,7 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 - **Meta:** "Senior developer subscription, monthly | TecHaust" · "A senior development and design subscription: one active request at a time, an unlimited queue, and pause or cancel monthly. From {{price-plain:S18}} a month."
 - **H1:** "A senior development team on a monthly subscription."
 - **How it works:** "Add requests to your queue. We work on one at a time, in priority order, and ship each as soon as it's done. Pause or cancel any month."
-- **Good for:** SaaS teams and agencies with steady work; not for fixed-deadline projects (use S5/S6).
+- **Good for:** SaaS teams and agencies with steady work; not for fixed-deadline projects (for those, see Custom Web Apps or MVP and SaaS Development).
 - **Capacity note:** "We take a small number of subscriptions at a time so quality stays high. If we're full, we'll tell you when the next opening is." (No counters.)
 - **Pricing:** {{price:S18}} per month.
 - **CTA:** Start a subscription
