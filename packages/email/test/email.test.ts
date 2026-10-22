@@ -8,6 +8,9 @@ import {
   quoteDisplayName,
   renderEmail,
   sesTransport,
+  WARM_KEY_ID,
+  WARM_SECRET,
+  warmSesSigning,
 } from "../src/index.ts";
 
 const input = {
@@ -195,5 +198,53 @@ describe("SES transport", () => {
     expect(r.kind).toBe("permanent");
     expect(spy).not.toHaveBeenCalled();
     spy.mockRestore();
+  });
+});
+
+describe("SES signing warm-up (CPU tuning)", () => {
+  it("signs with made-up credentials, sends nothing and leaves the shared key map alone", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const sign = vi.spyOn(crypto.subtle, "sign");
+    try {
+      expect(await warmSesSigning()).toBe(true);
+      expect(sign).toHaveBeenCalledTimes(5); // four HMACs for the key, one for the signature
+      expect(fetchSpy).not.toHaveBeenCalled();
+      // a real transport with the warm-up's own secret and region still derives its key: the warm-up's key went into
+      // its own cache, not SIGNING_KEYS (had it, this send would make 1 sign call, not 5)
+      sign.mockClear();
+      fetchSpy.mockResolvedValue(new Response(JSON.stringify({ MessageId: "m" }), { status: 200 }));
+      const same = { ...cfg, accessKeyId: WARM_KEY_ID, secretAccessKey: WARM_SECRET, region: "ap-south-1" };
+      expect((await sesTransport(same).send(input)).kind).toBe("sent");
+      expect(sign).toHaveBeenCalledTimes(5);
+    } finally {
+      fetchSpy.mockRestore();
+      sign.mockRestore();
+    }
+  });
+
+  it("works under workerd's start-up rules (no Request, Response, AbortSignal.timeout, fetch, timers or random values)", async () => {
+    // At module top level workerd refuses these with "Disallowed operation called within global scope"; inside a test
+    // they are allowed, so make them throw to see what the warm-up does at start-up.
+    const refuse = () => {
+      throw new Error("Disallowed operation called within global scope");
+    };
+    const g = globalThis as Record<string, unknown>;
+    const saved = { Request: g.Request, Response: g.Response, fetch: g.fetch, setTimeout: g.setTimeout };
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockImplementation(refuse);
+    const random = vi.spyOn(crypto, "getRandomValues").mockImplementation(refuse);
+    const sign = vi.spyOn(crypto.subtle, "sign");
+    g.Request = refuse;
+    g.Response = refuse;
+    g.fetch = refuse;
+    g.setTimeout = refuse;
+    try {
+      expect(await warmSesSigning()).toBe(true);
+      expect(sign).toHaveBeenCalledTimes(5);
+    } finally {
+      Object.assign(g, saved);
+      timeout.mockRestore();
+      random.mockRestore();
+      sign.mockRestore();
+    }
   });
 });
