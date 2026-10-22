@@ -1,0 +1,149 @@
+---
+// A case study page (/work/<slug>, WEB-WORK, 07 §5.4 detail template): Context (industry, size, region) · The problem
+// · the Markdown body (What we did, Results with how they were measured, What's next) · Stack · "Similar project?
+// Talk to us". The outcome line is the hero's lede. Only verified, non-draft entries reach a page (lib/work.ts); the
+// dev preview renders a labelled sample through the same component.
+import "../../styles/page.css";
+import { pageLabels as P } from "../../content/labels";
+import { cta } from "../../content/shared";
+import { workPage } from "../../content/work-page";
+import type { CaseStudy } from "../../lib/work";
+import CTABand from "../CTABand.astro";
+import PageHero from "../PageHero.astro";
+import Prose from "../Prose.astro";
+
+interface Props {
+  data: CaseStudy;
+}
+
+const { data } = Astro.props;
+const context = [
+  { label: P.industry, value: data.industry },
+  { label: P.size, value: data.size },
+  { label: P.region, value: data.region },
+];
+---
+
+<PageHero title={data.title} lede={data.outcome} trail={[{ label: workPage.h1, href: "/work" }, { label: data.title }]}>
+  <p class="cs-tag">{P.anonymised}</p>
+  <dl class="cs-context">
+    {
+      context.map((c) => (
+        <div class="cs-context__item">
+          <dt>{c.label}</dt>
+          <dd>{c.value}</dd>
+        </div>
+      ))
+    }
+  </dl>
+</PageHero>
+
+<section class="section section--alt" aria-labelledby="cs-problem">
+  <div class="container split">
+    <h2 class="t-h2" id="cs-problem">{P.problem}</h2>
+    <p class="statement">{data.problem}</p>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container split">
+    <Prose class="cs-body">
+      <slot />
+    </Prose>
+  </div>
+</section>
+
+{
+  data.stack.length > 0 && (
+    <section class="section section--flush-top" aria-labelledby="cs-stack">
+      <div class="container split">
+        <h2 class="t-h2" id="cs-stack">
+          {P.stack}
+        </h2>
+        <ul class="cs-stack" role="list">
+          {data.stack.map((s) => (
+            <li>{s}</li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  )
+}
+
+<CTABand title={P.similar} primary={cta.talk()} />
+
+<style>
+  @media (min-width: 64rem) {
+    .split > :global(.cs-body) {
+      grid-column: 2;
+    }
+  }
+
+  .cs-tag {
+    display: inline-flex;
+    padding: var(--space-1) var(--space-3);
+    border: 1px solid var(--color-border-control);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+    color: var(--color-text-muted);
+  }
+
+  .cs-context {
+    display: grid;
+    margin-block-start: var(--space-8);
+    border-block: 1px solid var(--color-border);
+  }
+
+  @media (min-width: 48rem) {
+    .cs-context {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  .cs-context__item {
+    display: grid;
+    gap: var(--space-1);
+    padding-block: var(--space-4);
+  }
+
+  .cs-context__item + .cs-context__item {
+    border-block-start: 1px solid var(--color-border);
+  }
+
+  @media (min-width: 48rem) {
+    .cs-context__item + .cs-context__item {
+      border-block-start: 0;
+      border-inline-start: 1px solid var(--color-border);
+      padding-inline-start: var(--space-6);
+    }
+  }
+
+  .cs-context dt {
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+    font-weight: 600;
+    color: var(--color-text-muted);
+  }
+
+  .cs-context dd {
+    margin: 0;
+    font-size: var(--text-body-lg);
+    line-height: var(--text-body-lg--line-height);
+  }
+
+  .cs-stack {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 12rem), 1fr));
+    column-gap: var(--space-6);
+    border-block-start: 2px solid var(--color-text);
+  }
+
+  .cs-stack li {
+    padding-block: var(--space-4);
+    border-block-end: 1px solid var(--color-border);
+    font-size: var(--text-body-lg);
+    line-height: var(--text-body-lg--line-height);
+    font-weight: 500;
+  }
+</style>

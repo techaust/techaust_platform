@@ -12,7 +12,8 @@ const devPreviewPages = {
     "astro:config:setup": ({ command, injectRoute }) => {
       if (command !== "dev") return;
       // M2.1: shell, menus, components. (M2.2's home and service previews became the real / and /services/*.)
-      for (const page of ["shell", "menus", "components"]) {
+      // M2.3: the case-study and blog-post templates with labelled samples (no real entries are published yet).
+      for (const page of ["shell", "menus", "components", "work", "blog-post"]) {
         injectRoute({ pattern: `/preview/${page}`, entrypoint: `./src/preview/${page}.astro` });
       }
     },

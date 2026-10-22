@@ -1,0 +1,12 @@
+---
+// /delivery-policy (WEB-LEGAL): the delivery policy (07-A §4). VERIFY WITH CA/LEGAL. Layout: LegalPage.astro.
+import LegalPage from "../components/legal/LegalPage.astro";
+import { legalPages } from "../content/legal-pages";
+import BaseLayout from "../layouts/BaseLayout.astro";
+
+const doc = legalPages["delivery-policy"];
+---
+
+<BaseLayout title={doc.meta.title}>
+  <LegalPage doc={doc} />
+</BaseLayout>

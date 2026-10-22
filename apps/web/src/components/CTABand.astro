@@ -9,7 +9,8 @@ import Placeholder from "./Placeholder.astro";
 
 interface Props {
   title: string;
-  text: string;
+  /** The line under the title; 07 §5.4's case-study CTA ("Similar project? Talk to us") has none. */
+  text?: string;
   primary: { label: string; href: string };
   whatsappLabel?: string;
   /** Preview pages: show a placeholder where a pending owner input goes. */
@@ -25,7 +26,7 @@ const wa = site.whatsapp ? `https://wa.me/${site.whatsapp}` : "";
   <div class="container">
     <div class="band on-ink">
       <h2 class="t-h2 band__title" id={id}>{title}</h2>
-      <p class="t-body-lg band__text">{text}</p>
+      {text && <p class="t-body-lg band__text">{text}</p>}
       <div class="actions band__actions">
         <Button href={primary.href} size="lg">{primary.label}</Button>
         {

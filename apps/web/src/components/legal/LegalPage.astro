@@ -1,0 +1,346 @@
+---
+// One long-form layout for the legal pages and /security (WEB-LEGAL, WEB-SEC; copy: content/legal-pages.ts from 07-A).
+// - The h1, then the version line from content/legal.ts ("Version 0.1 · Effective 22 October 2026"; the dist check
+//   looks for it).
+// - Privacy: the summary box first (07-A "shown first, in a box").
+// - Pages with numbered sections (privacy, terms): a contents list, sticky beside the text from 1024 px, and beside
+//   each heading a link to it (to share one clause). The number is drawn by CSS from data-num, so the heading's text
+//   is the title alone (the version-log heading must start with "Changes" for the dist check).
+// - Tables scroll sideways inside their own box on phones, never the page.
+// - "Changes" at the end: 07-A's own "Changes" section where the page has one (privacy §12, terms §13), else a new
+//   one; either way it holds the version log.
+// - The slot: page-specific content after the text (/security shows its security.txt).
+import "../../styles/page.css";
+import { legal } from "../../content/legal";
+import type { LegalDoc } from "../../content/legal-pages";
+import { pageLabels as P } from "../../content/labels";
+import { versionLine } from "../../lib/legal";
+import CopyText from "../CopyText.astro";
+import Icon from "../Icon.astro";
+import PageHero from "../PageHero.astro";
+import Prose from "../Prose.astro";
+import ChangeLog from "./ChangeLog.astro";
+import LegalBlocks from "./LegalBlocks.astro";
+
+interface Props {
+  doc: LegalDoc;
+}
+
+const { doc } = Astro.props;
+const version = legal[doc.slug];
+const sections = doc.sections ?? [];
+const showToc = sections.length >= 4;
+const hasChanges = sections.some((s) => s.id === "changes");
+---
+
+<PageHero title={doc.title} class="phero--tight">
+  <p class="legal-version">{versionLine(version)}</p>
+</PageHero>
+
+<section class="section section--flush-top">
+  <div class:list={["container", "legal", showToc && "legal--toc"]}>
+    {
+      showToc && (
+        <nav class="toc" aria-labelledby="toc-title">
+          <h2 class="toc__title" id="toc-title">
+            {P.onThisPage}
+          </h2>
+          <ol role="list" class="toc__list">
+            {sections.map((s) => (
+              <li>
+                <a href={`#${s.id}`}>
+                  <span class="toc__num">{s.num}</span>
+                  <span class="toc__text">{s.title}</span>
+                </a>
+              </li>
+            ))}
+          </ol>
+        </nav>
+      )
+    }
+
+    <div class="legal__body">
+      {
+        doc.summary && (
+          <section class="summary" aria-labelledby="summary-title">
+            <h2 class="summary__title" id="summary-title">
+              {P.summary}
+            </h2>
+            <dl class="summary__list">
+              {doc.summary.map((item) => (
+                <div class="summary__item">
+                  <dt>{item.term}</dt>
+                  <dd>
+                    {item.text && <CopyText text={item.text} class="summary__text" />}
+                    {item.list && (
+                      <ul>
+                        {item.list.map((li) => (
+                          <li>
+                            <CopyText text={li} as="span" />
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        )
+      }
+
+      <Prose class="legal__prose">
+        {doc.blocks && <LegalBlocks blocks={doc.blocks} label={doc.title} />}
+
+        {
+          sections.map((s) => (
+            <section class="legal__section" aria-labelledby={s.id}>
+              <div class="legal__head">
+                <h2 id={s.id} data-num={s.num}>
+                  {s.title}
+                </h2>
+                <a class="legal__anchor" href={`#${s.id}`} aria-labelledby={s.id}>
+                  <Icon name="link" size={16} />
+                </a>
+              </div>
+              <LegalBlocks blocks={s.blocks} label={s.title} />
+              {s.id === "changes" && <ChangeLog page={version} />}
+            </section>
+          ))
+        }
+
+        <slot />
+
+        {
+          !hasChanges && (
+            <section class="legal__section" aria-labelledby="changes">
+              <div class="legal__head">
+                <h2 id="changes">{P.changes}</h2>
+              </div>
+              <ChangeLog page={version} />
+            </section>
+          )
+        }
+      </Prose>
+    </div>
+  </div>
+</section>
+
+<style>
+  .legal-version {
+    display: inline-flex;
+    padding-block: var(--space-3);
+    border-block: 1px solid var(--color-border);
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text-muted);
+  }
+
+  .legal {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-10);
+  }
+
+  /* With a contents list: list and text on the page's 4 + 8 grid. Without: the text from the left edge, its tables
+     no wider than about 52 rem. */
+  .legal:not(.legal--toc) .legal__body {
+    max-inline-size: 52rem;
+  }
+
+  @media (min-width: 64rem) {
+    .legal--toc {
+      grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
+      column-gap: var(--space-8);
+    }
+
+    .legal--toc .legal__body {
+      grid-column: 2;
+    }
+  }
+
+  .legal__body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-12);
+    align-content: start;
+    min-inline-size: 0;
+  }
+
+  /* Contents: above the text on phones and tablets; a sticky column beside it from 1024 px, scrolling on its own
+     when it is taller than the window. */
+  .toc {
+    padding-block-start: var(--space-4);
+    border-block-start: 2px solid var(--color-text);
+  }
+
+  @media (min-width: 64rem) {
+    .toc {
+      position: sticky;
+      inset-block-start: calc(var(--header-h) + var(--space-6));
+      align-self: start;
+      max-block-size: calc(100dvh - var(--header-h) - var(--space-12));
+      overflow-y: auto;
+    }
+  }
+
+  .toc__title {
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+    font-weight: 600;
+    color: var(--color-text-muted);
+  }
+
+  .toc__list {
+    display: grid;
+    margin-block-start: var(--space-2);
+  }
+
+  .toc__list a {
+    display: grid;
+    grid-template-columns: var(--space-8) minmax(0, 1fr);
+    align-items: center;
+    min-block-size: var(--target-min);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+    color: var(--color-text);
+    text-decoration: none;
+  }
+
+  .toc__list a:hover {
+    color: var(--color-link-hover);
+  }
+
+  .toc__list a:hover .toc__text {
+    text-decoration: underline;
+  }
+
+  .toc__num {
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text-muted);
+  }
+
+  /* The privacy summary: a quiet box under an ink rule; label and text side by side from 768 px. */
+  .summary {
+    padding: var(--space-5) var(--space-6) var(--space-3);
+    border-block-start: 2px solid var(--color-text);
+    background: var(--color-surface-alt);
+    max-inline-size: var(--container-prose);
+  }
+
+  .summary__title {
+    font-family: var(--font-display);
+    font-stretch: var(--font-display--stretch);
+    font-size: var(--text-h4);
+    line-height: var(--text-h4--line-height);
+    font-weight: 560;
+  }
+
+  .summary__list {
+    display: grid;
+    margin-block-start: var(--space-4);
+  }
+
+  .summary__item {
+    display: grid;
+    gap: var(--space-1) var(--space-6);
+    padding-block: var(--space-3);
+    border-block-start: 1px solid var(--color-border);
+  }
+
+  @media (min-width: 48rem) {
+    .summary__item {
+      grid-template-columns: 9rem minmax(0, 1fr);
+    }
+  }
+
+  .summary__item dt {
+    font-weight: 600;
+  }
+
+  .summary__item dd {
+    margin: 0;
+    text-wrap: pretty;
+  }
+
+  .summary__item dd ul {
+    display: grid;
+    gap: var(--space-1);
+    padding-inline-start: var(--space-5);
+  }
+
+  /* 07-A writes the summary's answers in lower case after a colon; beside their label they start upper case. */
+  .summary__item dd :global(.summary__text)::first-letter,
+  .summary__item dd li::first-letter {
+    text-transform: uppercase;
+  }
+
+  /* A numbered section: the heading (07-A's number from data-num) and, beside it, a link to the section. */
+  .legal__head {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-1);
+    margin-block-start: var(--space-16);
+  }
+
+  .legal__section:first-child .legal__head {
+    margin-block-start: 0;
+  }
+
+  .legal__head h2 {
+    margin: 0;
+  }
+
+  .legal__head h2[data-num]::before {
+    content: attr(data-num);
+    display: inline-block;
+    min-inline-size: var(--space-10);
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text-accent);
+  }
+
+  .legal__anchor {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    inline-size: var(--target-min);
+    block-size: var(--target-min);
+    align-self: center;
+    color: var(--color-text-muted);
+    opacity: 0;
+    transition: opacity var(--duration-fast) var(--ease-standard);
+  }
+
+  .legal__head:hover .legal__anchor,
+  .legal__anchor:focus-visible {
+    opacity: 1;
+  }
+
+  @media (hover: none) {
+    .legal__anchor {
+      opacity: 1;
+    }
+  }
+
+  .legal__anchor:hover {
+    color: var(--color-link-hover);
+  }
+
+  .legal__section > :global(* + *) {
+    margin-block-start: var(--stack);
+  }
+
+  .legal__section > .legal__head + :global(*) {
+    margin-block-start: var(--space-3);
+  }
+
+  .legal__section :global(h2) {
+    scroll-margin-block-start: var(--space-24);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .legal__anchor {
+      transition: none;
+    }
+  }
+</style>

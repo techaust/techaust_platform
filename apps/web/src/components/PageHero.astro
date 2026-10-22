@@ -57,6 +57,11 @@ const { title, lede, trail, id = "page-title", class: cls } = Astro.props;
     }
   }
 
+  /* Long-form pages (legal): the text follows the version line more closely. */
+  .phero--tight {
+    padding-block-end: var(--block-gap);
+  }
+
   .phero__lede {
     margin-block-start: var(--space-6);
   }

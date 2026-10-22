@@ -13,7 +13,8 @@
 // 4. Links. 07-A writes Markdown links ("[Cookie policy](/cookies)"); they become <a>. The target "#cookie-settings"
 //    is the footer's "Cookie settings" control: a link to the cookie policy that opens the preferences dialog when
 //    JavaScript runs (CookieConsent handles every [data-cookie-settings]).
-// 5. A pending owner input ({{postal_address}} while site.postalAddress is empty) is drawn as a marked gap, never as
+// 5. Inline code. 07-A's `ta_consent`-style names become <code>.
+// 6. A pending owner input ({{postal_address}} while site.postalAddress is empty) is drawn as a marked gap, never as
 //    ordinary text, so nobody mistakes it for the address.
 import { shared } from "../content/shared";
 import { draft } from "../content/shell";
@@ -34,7 +35,8 @@ type Bit =
   | { kind: "text"; value: string; bold: boolean }
   | { kind: "arrow"; char: "→" | "↔"; bold: boolean }
   | { kind: "link"; label: string; href: string; bold: boolean }
-  | { kind: "pending"; value: string };
+  | { kind: "pending"; value: string }
+  | { kind: "code"; value: string };
 const LINK = /\[([^\]]+)\]\(([^)\s]+)\)/g;
 type Part = Bit | PricePart;
 
@@ -52,10 +54,16 @@ for (const p of parseTokens(text)) {
   p.text.split("**").forEach((run, i) => {
     if (i > 0) bold = !bold;
     const plain = (t: string) => {
-      for (const bit of t.split(/([→↔])/)) {
-        if (bit === "→" || bit === "↔") parts.push({ kind: "arrow", char: bit, bold });
-        else if (bit) parts.push({ kind: "text", value: bit, bold });
-      }
+      t.split("`").forEach((piece, j) => {
+        if (j % 2 === 1) {
+          parts.push({ kind: "code", value: piece });
+          return;
+        }
+        for (const bit of piece.split(/([→↔])/)) {
+          if (bit === "→" || bit === "↔") parts.push({ kind: "arrow", char: bit, bold });
+          else if (bit) parts.push({ kind: "text", value: bit, bold });
+        }
+      });
     };
     let at = 0;
     for (const m of run.matchAll(LINK)) {
@@ -95,6 +103,8 @@ const modes: (Mode | null)[] = priced ? ["both", "inr", "usd"] : [null];
                 {p.bold ? <strong class="copy__strong">{p.label}</strong> : p.label}
               </a>
             )
+          ) : p.kind === "code" ? (
+            <code class="copy__code">{p.value}</code>
           ) : p.kind === "pending" ? (
             <span class="copy__pending">{p.value}</span>
           ) : p.kind === "arrow" ? (
@@ -147,6 +157,13 @@ const modes: (Mode | null)[] = priced ? ["both", "inr", "usd"] : [null];
   .copy__price,
   .copy__amount {
     white-space: nowrap;
+  }
+
+  /* 07-A's `names` (cookie and storage keys): the mono face, a touch smaller so it sits on the text's x-height. */
+  .copy__code {
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+    overflow-wrap: anywhere;
   }
 
   /* A pending owner input inside running text: a dashed underline in the warning colour, the words say what's missing. */

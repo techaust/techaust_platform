@@ -1,0 +1,24 @@
+---
+// A case study (/work/<slug>, WEB-WORK): one page per published, verified entry of src/content/work (none yet, so no
+// pages are built). Drafts never get a page (lib/work.ts publishedCases).
+import { getCollection, render } from "astro:content";
+import CaseStudy from "../../components/work/CaseStudy.astro";
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { publishedCases } from "../../lib/work";
+
+export async function getStaticPaths() {
+  return publishedCases(await getCollection("caseStudies")).map((entry) => ({
+    params: { slug: entry.id },
+    props: { entry },
+  }));
+}
+
+const { entry } = Astro.props;
+const { Content } = await render(entry);
+---
+
+<BaseLayout title={`${entry.data.title} | TecHaust`} description={entry.data.outcome}>
+  <CaseStudy data={entry.data}>
+    <Content />
+  </CaseStudy>
+</BaseLayout>
