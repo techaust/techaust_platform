@@ -27,7 +27,29 @@ describe("migrations apply cleanly to a fresh D1", () => {
       "0005_drop_access_log_at.sql",
       "0006_portal_triggers.sql",
       "0007_issue_guard.sql",
+      "0008_indexes_fk_lookups.sql",
     ]);
+  });
+
+  it("foreign keys that the API filters or joins on are indexed (0008)", async () => {
+    const wanted: Record<string, string> = {
+      documents: "project_id care_plan_id",
+      approvals: "document_id",
+      acceptances: "contact_id",
+      leads: "client_id",
+      projects: "owner_id",
+      milestones: "document_id",
+    };
+    for (const [table, columns] of Object.entries(wanted)) {
+      for (const column of columns.split(" ")) {
+        const hit = await all(
+          `SELECT i.name FROM pragma_index_list(?1) i JOIN pragma_index_info(i.name) c WHERE c.seqno = 0 AND c.name = ?2`,
+          table,
+          column,
+        );
+        expect(hit.length, `${table}.${column} has an index starting with it`).toBeGreaterThan(0);
+      }
+    }
   });
 
   it("access_log has no index on `at` (M1.6, LD19: 3 rows written per access row instead of 4)", async () => {
