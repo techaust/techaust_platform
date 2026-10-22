@@ -42,6 +42,8 @@ jobs:
         run: pnpm typecheck
       - name: Public Worker binding guard
         run: node scripts/check-web-bindings.mjs
+      - name: Worker config guard (preview URLs off)
+        run: node scripts/check-worker-config.mjs
       - name: Migration rebuild guard (no migration rebuilds a referenced table)
         run: node scripts/check-migrations.mjs
       - name: Build (before the tests, which read the built site)

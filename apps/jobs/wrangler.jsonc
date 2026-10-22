@@ -7,7 +7,11 @@
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
-  "observability": { "enabled": true },
+  // Version/Preview URLs skip Cloudflare Access, so they stay off at every level (docs/runbooks/access-staging.md;
+  // CI guard: scripts/check-worker-config.mjs).
+  "preview_urls": false,
+  // Workers Logs: query strings are removed from logged URLs (owner decision 2026-10-21, all four Workers).
+  "observability": { "enabled": true, "redact_query_string": true },
   "vars": { "ENVIRONMENT": "local", "PAYMENTS_LIVE_ALLOWED": "false" },
   // D1 (docs/05 §5). Migrations live in packages/db; local dev and tests use a local database.
   "d1_databases": [
@@ -37,6 +41,14 @@
     "production": {
       "name": "techaust-platform-jobs",
       "workers_dev": false,
+      "preview_urls": false,
+      // Production: NO invocation logs from day one (they carry the client IP, user agent and location of every
+      // request, which the append-only access log already holds for security). Console logs stay on.
+      "observability": {
+        "enabled": true,
+        "redact_query_string": true,
+        "logs": { "enabled": true, "invocation_logs": false }
+      },
       "vars": { "ENVIRONMENT": "production", "PAYMENTS_LIVE_ALLOWED": "false" }
     }
   }

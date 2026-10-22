@@ -32,6 +32,16 @@ export type Guard =
   | GuardSql
   | "changes";
 
+/**
+ * Longest header value that may reach a log row (audit 2026-10-22, M2): a client controls its User-Agent, and an
+ * address that did not come from the edge could be anything, so neither is stored unbounded.
+ */
+export const HEADER_LIMITS = { ua: 512, ip: 64, requestId: 64 } as const;
+
+/** A header value cut to `max` characters; a missing value stays null. */
+export const clipHeader = (value: string | null | undefined, max: number): string | null =>
+  value == null ? null : value.slice(0, max);
+
 /** Who and where, copied onto every row; `ip` and `ua` serve security only (docs/08). */
 export type RequestInfo = { requestId: string | null; ip: string | null; ua: string | null };
 

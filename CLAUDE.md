@@ -106,7 +106,7 @@ pnpm install            # plain `pnpm` auto-switches to the pinned 12.9.1
 pnpm dev                # all apps locally (web :4321, admin :5173, portal :5174, jobs :8787)
 pnpm lint               # biome check
 pnpm typecheck          # wrangler types + tsc / astro check in every package
-pnpm check              # lint + typecheck + public-Worker binding guard + migration rebuild guard
+pnpm check              # lint + typecheck + public-Worker binding guard + Worker config guard (preview URLs off) + migration rebuild guard
 pnpm test               # vitest (unit + Workers runtime)
 pnpm build              # build all apps (web and jobs also dry-run their Worker bundles)
 pnpm format             # biome format --write

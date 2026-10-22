@@ -2,8 +2,7 @@
 // as the portal's (apps/portal/worker/csrf.test.ts), because both call `csrfCheck` [ADM-G-02, POR-02, 05 §7.1].
 import { describe, expect, it } from "vitest";
 import { CSRF_CORPUS } from "../../../packages/auth/test/csrf-corpus.ts";
-import app from "./index.ts";
-import { counted, ORIGIN } from "./test-helpers.ts";
+import { counted, ORIGIN, send } from "./test-helpers.ts";
 
 const APP_ORIGIN = "https://app.example";
 
@@ -19,7 +18,7 @@ describe("the shared CSRF corpus, through the admin [05 §7.1]", () => {
       if (contentType !== null) headers["Content-Type"] = contentType;
       const safe = ["GET", "HEAD", "OPTIONS"].includes(method);
       const counter = counted();
-      const res = await app.request(
+      const res = await send(
         `${ORIGIN}/api/v1/${safe ? "health" : "auth/logout"}`,
         { method, headers, body: (c.input.hasBody ?? true) && !safe ? "{}" : null },
         counter.env,

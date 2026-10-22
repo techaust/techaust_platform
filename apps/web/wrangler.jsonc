@@ -8,8 +8,18 @@
   "main": "src/worker.ts",
   "compatibility_date": "2026-10-01",
   "workers_dev": false,
-  "observability": { "enabled": true },
-  "assets": { "directory": "./dist", "not_found_handling": "404-page", "run_worker_first": ["/api/*"] },
+  // Version/Preview URLs skip Cloudflare Access, so they stay off at every level (docs/runbooks/access-staging.md;
+  // CI guard: scripts/check-worker-config.mjs).
+  "preview_urls": false,
+  // Workers Logs: query strings are removed from logged URLs (owner decision 2026-10-21, all four Workers).
+  "observability": { "enabled": true, "redact_query_string": true },
+  // Only the routes the Worker implements run it; any other /api path gets the static 404 without an invocation.
+  // (The Worker keeps its own 404 for unknown /api routes. Add each new route here when it is built: M2.4.)
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "404-page",
+    "run_worker_first": ["/api/geo", "/api/forms/*"]
+  },
   "vars": { "ENVIRONMENT": "local" },
   "env": {
     "staging": {
@@ -22,6 +32,14 @@
     "production": {
       "name": "techaust-platform-web",
       "workers_dev": false,
+      "preview_urls": false,
+      // Production: NO invocation logs from day one (they carry the client IP, user agent and location of every
+      // request, which the append-only access log already holds for security). Console logs stay on.
+      "observability": {
+        "enabled": true,
+        "redact_query_string": true,
+        "logs": { "enabled": true, "invocation_logs": false }
+      },
       "vars": { "ENVIRONMENT": "production" }
     }
   }

@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
-import { accessStmt, auditStmt } from "../src/log.ts";
+import { accessStmt, auditStmt, clipHeader, HEADER_LIMITS } from "../src/log.ts";
 import { all, run } from "./helpers.ts";
 
 const info = { requestId: "rid-1", ip: "203.0.113.5", ua: "test-agent" };
@@ -207,5 +207,15 @@ describe("the staff statements keep their exact SQL (the admin's M1.5 behaviour 
       `INSERT INTO audit_log (${AUDIT_COLS}) SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11 WHERE changes() > 0`,
     );
     expect(seen[3]?.values).toHaveLength(11);
+  });
+});
+
+describe("clipHeader (audit M2)", () => {
+  it("cuts to the limit, keeps short values and null", () => {
+    expect(HEADER_LIMITS).toEqual({ ua: 512, ip: 64, requestId: 64 });
+    expect(clipHeader("x".repeat(10_000), HEADER_LIMITS.ua)).toHaveLength(512);
+    expect(clipHeader("short", 64)).toBe("short");
+    expect(clipHeader(undefined, 64)).toBeNull();
+    expect(clipHeader(null, 64)).toBeNull();
   });
 });

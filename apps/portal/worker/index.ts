@@ -1,5 +1,5 @@
 import { hex, randomBytes } from "@techaust/auth";
-import { accessStmt } from "@techaust/db/log";
+import { accessStmt, clipHeader, HEADER_LIMITS } from "@techaust/db/log";
 import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
@@ -44,34 +44,40 @@ export function createApp(deps: Deps = {}) {
     createMiddleware<AppEnv>(async (c, next) => {
       isolateId ??= hex(randomBytes(3));
       const n = ++isolateRequests; // taken before next(), so concurrent requests get distinct numbers
-      c.set("rid", c.req.header("cf-ray") ?? hex(randomBytes(8)));
-      c.set("ip", c.req.header("CF-Connecting-IP") ?? null);
-      c.set("ua", c.req.header("User-Agent") ?? null);
+      // Header values are the client's: cut before they reach a log row (audit M2).
+      c.set("rid", clipHeader(c.req.header("cf-ray"), HEADER_LIMITS.requestId) ?? hex(randomBytes(8)));
+      c.set("ip", clipHeader(c.req.header("CF-Connecting-IP"), HEADER_LIMITS.ip));
+      c.set("ua", clipHeader(c.req.header("User-Agent"), HEADER_LIMITS.ua));
       c.set("sender", sender);
       const row = routeFor(c.req.method, routePath(c, -1)) ?? null;
       c.set("route", row);
       await next();
       c.header("Cache-Control", "no-store");
       if (row && row.log !== false && c.var.scope && !c.var.accessDone) {
-        try {
-          const stmts = [
-            ...(c.var.touch ? [c.var.touch] : []),
-            accessStmt(c.env.DB, accessEntry(c, c.res.status)),
-          ];
-          if (stmts.length === 1) await stmts[0]?.run();
-          else await c.env.DB.batch(stmts);
-        } catch (e) {
-          // A logging failure never changes the answer.
-          console.error(
-            JSON.stringify({
-              level: "error",
-              route: row.path,
-              message: "access log write failed",
-              rid: c.var.rid,
-              cause: e instanceof Error ? e.name : "unknown",
-            }),
-          );
-        }
+        // The write rides in the execution context: the response does not wait for it (audit L5). The statements
+        // are built before the first await, so they see this request's final state.
+        const write = async () => {
+          try {
+            const stmts = [
+              ...(c.var.touch ? [c.var.touch] : []),
+              accessStmt(c.env.DB, accessEntry(c, c.res.status)),
+            ];
+            if (stmts.length === 1) await stmts[0]?.run();
+            else await c.env.DB.batch(stmts);
+          } catch (e) {
+            // A logging failure never changes the answer.
+            console.error(
+              JSON.stringify({
+                level: "error",
+                route: row.path,
+                message: "access log write failed",
+                rid: c.var.rid,
+                cause: e instanceof Error ? e.name : "unknown",
+              }),
+            );
+          }
+        };
+        c.executionCtx.waitUntil(write());
       }
       console.log(
         JSON.stringify({

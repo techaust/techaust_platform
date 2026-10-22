@@ -2,6 +2,7 @@
 import { env } from "cloudflare:workers";
 import { INVITE_TTL_MS, tokenHash } from "@techaust/auth";
 import { describe, expect, it } from "vitest";
+import { createInviteStatements } from "../../../scripts/create-invite-sql.mjs";
 import {
   breakGlassStatements,
   checkBreakGlass,
@@ -66,6 +67,16 @@ describe("inviting [ADM-AUTH-07]", () => {
     expect(
       await countOf("audit_log", "action = 'user.invite' AND actor_id = ? AND entity_id = ?", o.id, hash),
     ).toBe(1);
+    // L3: the audit summary holds the role only; the address stays in the erasable invite row.
+    const audit = await one<{ summary: string }>(
+      "SELECT summary FROM audit_log WHERE action = 'user.invite' AND entity_id = ?",
+      hash,
+    );
+    expect(JSON.parse(audit?.summary as string)).toEqual({ role: "sales" });
+    expect(audit?.summary).not.toContain(email);
+    expect(JSON.stringify(await rows("SELECT * FROM audit_log WHERE entity_id = ?", hash))).not.toContain(
+      email,
+    );
   });
 
   it("the link works once, end to end: name, password, code → an active member of that role", async () => {
@@ -938,5 +949,117 @@ describe("break-glass for the only owner: a second owner is invited [ADM-AUTH-07
         /already has a live invite/,
       );
     });
+  });
+});
+
+describe("pnpm invite: the first owner and throwaway users [ADM-AUTH-07, audit L2]", () => {
+  const statementsFor = async (email: string, token: string, role = "owner") => {
+    const now = Date.now();
+    const sql = createInviteStatements({
+      email,
+      role,
+      tokenHash: await tokenHash(token),
+      now,
+      expiresAt: now + INVITE_TTL_MS,
+      auditId: crypto.randomUUID(),
+    });
+    expect(sql.every((s) => !s.includes("\n"))).toBe(true); // one statement per line
+    return sql.join("\n");
+  };
+  const tok = (c: string) => c.repeat(43);
+
+  it("stores the invite (48 h, no inviter), writes `user.invite` by the system with the role only, and the link works once", async () => {
+    const email = newEmail();
+    await env.DB.exec(await statementsFor(email, tok("d")));
+    const hash = await tokenHash(tok("d"));
+    expect(
+      await one("SELECT email, role, invited_by, used_at FROM staff_invites WHERE token_hash = ?", hash),
+    ).toEqual({ email, role: "owner", invited_by: null, used_at: null });
+    const audits = await rows<{
+      actor_type: string;
+      actor_id: string | null;
+      entity_type: string;
+      summary: string;
+    }>(
+      "SELECT actor_type, actor_id, entity_type, summary FROM audit_log WHERE action = 'user.invite' AND entity_id = ?",
+      hash,
+    );
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({ actor_type: "system", actor_id: null, entity_type: "staff_invite" });
+    expect(JSON.parse(audits[0]?.summary as string)).toEqual({ via: "cli", role: "owner" });
+    expect(audits[0]?.summary).not.toContain(email);
+    const e = await accept(tok("d"), "First Owner");
+    expect(e.email).toBe(email);
+    expect((await call("/auth/me", { cookie: e.cookie })).status).toBe(200);
+    expect((await call("/auth/invite/start", { body: { token: tok("d") } })).status).toBe(400);
+  });
+
+  it("an address with an apostrophe is stored as typed and nothing else runs", async () => {
+    const email = `o'brien.${crypto.randomUUID().slice(0, 8)}@example.test`;
+    await env.DB.exec(await statementsFor(email, tok("q"), "staff"));
+    const hash = await tokenHash(tok("q"));
+    expect(await one("SELECT email, role FROM staff_invites WHERE token_hash = ?", hash)).toEqual({
+      email,
+      role: "staff",
+    });
+    const audits = await rows<{ summary: string }>(
+      "SELECT summary FROM audit_log WHERE action = 'user.invite' AND entity_id = ?",
+      hash,
+    );
+    expect(audits).toHaveLength(1);
+    expect(JSON.parse(audits[0]?.summary as string)).toEqual({ via: "cli", role: "staff" });
+  });
+
+  it("a second invite for the same address expires the older pending one (never deleted)", async () => {
+    const email = newEmail();
+    await env.DB.exec(await statementsFor(email, tok("e"), "staff"));
+    await env.DB.exec(await statementsFor(email, tok("f"), "sales"));
+    expect((await call("/auth/invite/start", { body: { token: tok("e") } })).status).toBe(400);
+    expect((await call("/auth/invite/start", { body: { token: tok("f") } })).status).toBe(200);
+    expect(await countOf("staff_invites", "email = ?", email)).toBe(2);
+    expect(
+      await countOf("staff_invites", "email = ? AND used_at IS NULL AND expires_at > ?", email, Date.now()),
+    ).toBe(1);
+  });
+
+  it("refuses an address that already has an active or deactivated account: nothing written, older invites untouched", async () => {
+    const active = await sessionFor("staff");
+    const gone = await sessionFor("staff");
+    await env.DB.prepare("UPDATE staff_users SET status = 'deactivated' WHERE id = ?").bind(gone.id).run();
+    for (const email of [active.email, gone.email]) {
+      await env.DB.prepare(
+        "INSERT INTO staff_invites (token_hash, email, role, expires_at) VALUES (?, ?, 'staff', ?)",
+      )
+        .bind(await tokenHash(tok(email === active.email ? "g" : "h")), email, Date.now() + 60_000)
+        .run();
+    }
+    const before = { invites: await countOf("staff_invites"), audits: await countOf("audit_log") };
+    await env.DB.exec(await statementsFor(active.email, tok("i")));
+    await env.DB.exec(await statementsFor(gone.email, tok("j")));
+    expect({ invites: await countOf("staff_invites"), audits: await countOf("audit_log") }).toEqual(before);
+    // The older pending invites still stand: the refused run expired nothing.
+    expect(
+      await countOf("staff_invites", "used_at IS NULL AND expires_at > ?", Date.now()),
+    ).toBeGreaterThanOrEqual(2);
+    expect((await call("/auth/invite/start", { body: { token: tok("g") } })).status).toBe(200);
+  });
+
+  it("an address whose member is still 'invited' (an earlier reset) gets a fresh invite", async () => {
+    const e = await enrol(newEmail(), "staff");
+    await sessionFor("owner");
+    const now = Date.now();
+    await env.DB.exec(
+      resetStatements({
+        email: e.email,
+        tokenHash: await tokenHash(tok("k")),
+        now,
+        expiresAt: now + INVITE_TTL_MS,
+        auditId: crypto.randomUUID(),
+        alertId: crypto.randomUUID(),
+      }).join("\n"),
+    );
+    await env.DB.exec(await statementsFor(e.email, tok("l"), "staff"));
+    expect((await call("/auth/invite/start", { body: { token: tok("k") } })).status).toBe(400);
+    expect((await call("/auth/invite/start", { body: { token: tok("l") } })).status).toBe(200);
   });
 });

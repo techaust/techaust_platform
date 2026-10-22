@@ -3,8 +3,7 @@
 import { describe, expect, it } from "vitest";
 import { CSRF_CORPUS } from "../../../packages/auth/test/csrf-corpus.ts";
 import { fixtures } from "./fixtures.ts";
-import app from "./index.ts";
-import { bodyOf, counted, countOf, nextIp, ORIGIN, sessionFor } from "./test-helpers.ts";
+import { bodyOf, counted, countOf, nextIp, ORIGIN, send, sessionFor } from "./test-helpers.ts";
 
 const APP_ORIGIN = "https://app.example";
 
@@ -21,7 +20,7 @@ async function run(c: (typeof CSRF_CORPUS)[number], cookie?: string) {
   const hasBody = c.input.hasBody ?? true;
   const safe = ["GET", "HEAD", "OPTIONS"].includes(method);
   const counter = counted();
-  const res = await app.request(
+  const res = await send(
     `${ORIGIN}/api/v1/${safe ? "health" : "auth/logout"}`,
     { method, headers, body: hasBody && !safe ? "{}" : null },
     counter.env,
@@ -64,7 +63,7 @@ describe("CSRF on the portal's own routes [POR-02]", () => {
       "/t/document",
     ]) {
       const counter = counted();
-      const res = await app.request(
+      const res = await send(
         `${ORIGIN}/api/v1${path}`,
         {
           method: "POST",
@@ -81,19 +80,19 @@ describe("CSRF on the portal's own routes [POR-02]", () => {
       expect(res.status, path).toBe(403);
       expect(counter.calls(), path).toBe(0);
     }
-    expect(
-      (await app.request(`${ORIGIN}/api/v1/me`, { headers: { Cookie: s.cookie } }, counted().env)).status,
-    ).toBe(200); // the session survived
+    expect((await send(`${ORIGIN}/api/v1/me`, { headers: { Cookie: s.cookie } }, counted().env)).status).toBe(
+      200,
+    ); // the session survived
   });
 
   it("a same-origin JSON POST and a Sec-Fetch-Site: same-origin POST without Origin pass", async () => {
-    const withOrigin = await app.request(
+    const withOrigin = await send(
       `${ORIGIN}/api/v1/auth/logout`,
       { method: "POST", headers: { Origin: ORIGIN } },
       counted().env,
     );
     expect(withOrigin.status).toBe(204);
-    const fetchSite = await app.request(
+    const fetchSite = await send(
       `${ORIGIN}/api/v1/auth/logout`,
       { method: "POST", headers: { "Sec-Fetch-Site": "same-origin" } },
       counted().env,
@@ -103,7 +102,7 @@ describe("CSRF on the portal's own routes [POR-02]", () => {
 
   it("a body over 16 KB is refused (413, the generic body) before anything runs", async () => {
     const counter = counted();
-    const res = await app.request(
+    const res = await send(
       `${ORIGIN}/api/v1/auth/magic`,
       {
         method: "POST",

@@ -21,6 +21,8 @@ import {
   one,
   rows,
   sampleRequest,
+  send,
+  sendTo,
   sessionFor,
   tokenOfLink,
   userId,
@@ -102,7 +104,8 @@ describe("route coverage: deny by default [ADM-G-02]", () => {
     extra.get("/v1/_undeclared", (c) => c.json({ leaked: true }));
     const o = await sessionFor("owner", { stepUp: true });
     const before = await countOf("access_log");
-    const res = await extra.request(
+    const res = await sendTo(
+      extra,
       `${ORIGIN}/api/v1/_undeclared`,
       { headers: { Origin: ORIGIN, Cookie: o.cookie } },
       env,
@@ -537,7 +540,7 @@ describe("the access log [NFR-9, Q2]", () => {
 // ---------------------------------------------------------------------------------------------------------------
 describe("CSRF: JSON only, from our own origin (docs/05 §7.1) [ADM-G-02]", () => {
   const s = () => sessionFor("owner", { stepUp: true });
-  const raw = (path: string, init: RequestInit) => app.request(`${ORIGIN}/api/v1${path}`, init, env);
+  const raw = (path: string, init: RequestInit) => send(`${ORIGIN}/api/v1${path}`, init, env);
   const json = { "Content-Type": "application/json" };
 
   it("a cross-origin JSON POST or DELETE is 403, and does nothing", async () => {
@@ -666,7 +669,7 @@ describe("request ids and response headers (LD7, docs/05 §7.1)", () => {
       const without = await call(path, init);
       expect(((await without.json()) as { request_id: string }).request_id).toMatch(/^[0-9a-f]{16}$/);
     }
-    const wrongType = await app.request(
+    const wrongType = await send(
       `${ORIGIN}/api/v1/users/invites`,
       {
         method: "POST",
