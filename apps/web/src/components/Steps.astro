@@ -17,7 +17,8 @@ const { steps, class: cls } = Astro.props;
     steps.map((s) => (
       <li class="step">
         <h3 class="t-h4 step__title">{s.title}</h3>
-        <p class="step__text">{s.text}</p>
+        {s.when && <p class="t-sm step__when">{s.when}</p>}
+        {s.text && <p class="step__text">{s.text}</p>}
       </li>
     ))
   }
@@ -47,6 +48,17 @@ const { steps, class: cls } = Astro.props;
 
   .steps--n5 {
     --n: 5;
+  }
+
+  .steps--n6 {
+    --n: 6;
+  }
+
+  /* A step's duration or week, as 07 writes it ("60 min", "Week 1"). */
+  .step__when {
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text-muted);
   }
 
   .step {

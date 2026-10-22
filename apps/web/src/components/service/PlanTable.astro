@@ -1,0 +1,265 @@
+---
+// ComparisonTable (docs/06 §5.2, 07 §4.14): the care-plan tiers as a real <table> (column and row headers with
+// `scope`) from 1024 px; below that, the same data stacked as one block per tier. Only one of the two is displayed
+// at a time (display: none takes the other out of the accessibility tree too). ✓ and — (07) are icons with a
+// visually hidden "Included" / "Not included". Each tier's "Choose a plan" carries the tier in its URL (07 §2.3) and,
+// visually hidden, in its accessible name. Prices come from the catalogue's default lines (PriceTag).
+import { serviceLabels as L } from "../../content/labels";
+import { cta } from "../../content/shared";
+import type { PlanCell, Plans } from "../../content/types";
+import { priceOf } from "../../lib/prices";
+import Button from "../Button.astro";
+import CopyText from "../CopyText.astro";
+import Icon from "../Icon.astro";
+import PriceTag from "../PriceTag.astro";
+
+interface Props {
+  plans: Plans;
+  /** The id of the section heading that names the table. */
+  labelledby: string;
+}
+
+const { plans, labelledby } = Astro.props;
+const tiers = plans.tiers.map((t) => ({ ...t, p: priceOf(t.price.ref), link: cta.plan(t.plan) }));
+---
+
+<div class="plans">
+  <table class="plans__table" aria-labelledby={labelledby}>
+    <colgroup>
+      <col class="plans__col-label" />
+      {tiers.map(() => <col />)}
+    </colgroup>
+    <thead>
+      <tr>
+        <td></td>
+        {
+          tiers.map((t) => (
+            <th scope="col" class="plans__tier">
+              <span class="plans__name">{t.name}</span>
+              <PriceTag inr={t.p.inr} usd={t.p.usd} unit={t.price.unit} size="md" />
+            </th>
+          ))
+        }
+      </tr>
+    </thead>
+    <tbody>
+      {
+        plans.rows.map((r) => (
+          <tr>
+            <th scope="row">
+              <CopyText text={r.label} as="span" />
+            </th>
+            {r.cells.map((c) => (
+              <td>
+                {c === true ? (
+                  <span class="plans__yes">
+                    <Icon name="check" size={20} />
+                    <span class="visually-hidden">{L.included}</span>
+                  </span>
+                ) : c === false ? (
+                  <span class="plans__no">
+                    <Icon name="minus" size={20} />
+                    <span class="visually-hidden">{L.notIncluded}</span>
+                  </span>
+                ) : (
+                  <CopyText text={String(c)} as="span" />
+                )}
+              </td>
+            ))}
+          </tr>
+        ))
+      }
+    </tbody>
+    <tfoot>
+      <tr>
+        <td></td>
+        {
+          tiers.map((t) => (
+            <td>
+              <Button href={t.link.href} variant="secondary">
+                {t.link.label}
+                <span class="visually-hidden">({t.name})</span>
+              </Button>
+            </td>
+          ))
+        }
+      </tr>
+    </tfoot>
+  </table>
+
+  <ul class="plans__cards" role="list">
+    {
+      tiers.map((t, i) => (
+        <li class="plans__card">
+          <h3 class="t-h3 plans__name">{t.name}</h3>
+          <PriceTag inr={t.p.inr} usd={t.p.usd} unit={t.price.unit} size="md" />
+          <dl class="plans__list">
+            {plans.rows.map((r) => {
+              const c = r.cells[i] as PlanCell;
+              return (
+                <div class:list={["plans__row", c === false && "plans__row--no"]}>
+                  <dt>
+                    <CopyText text={r.label} as="span" />
+                  </dt>
+                  <dd>
+                    {c === true ? (
+                      <span class="plans__yes">
+                        <Icon name="check" size={20} />
+                        <span class="visually-hidden">{L.included}</span>
+                      </span>
+                    ) : c === false ? (
+                      <span class="plans__no">
+                        <Icon name="minus" size={20} />
+                        <span class="visually-hidden">{L.notIncluded}</span>
+                      </span>
+                    ) : (
+                      <CopyText text={c} as="span" />
+                    )}
+                  </dd>
+                </div>
+              );
+            })}
+          </dl>
+          <Button href={t.link.href} variant="secondary">
+            {t.link.label}
+            <span class="visually-hidden">({t.name})</span>
+          </Button>
+        </li>
+      ))
+    }
+  </ul>
+</div>
+
+<style>
+  .plans__name {
+    font-family: var(--font-display);
+    font-stretch: var(--font-display--stretch);
+    font-size: var(--text-h3);
+    line-height: var(--text-h3--line-height);
+    font-weight: 560;
+    color: var(--color-text);
+  }
+
+  .plans__yes,
+  .plans__no {
+    display: inline-flex;
+    vertical-align: middle;
+  }
+
+  .plans__yes {
+    color: var(--color-text-accent);
+  }
+
+  .plans__no {
+    color: var(--color-text-muted);
+  }
+
+  /* Phones and tablets: one block per tier. */
+  .plans__table {
+    display: none;
+  }
+
+  .plans__cards {
+    display: grid;
+    gap: var(--block-gap);
+  }
+
+  @media (min-width: 48rem) {
+    .plans__cards {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      column-gap: var(--space-6);
+    }
+  }
+
+  .plans__card {
+    display: grid;
+    grid-template-rows: auto auto 1fr auto;
+    align-content: start;
+    gap: var(--space-3);
+    padding-block-start: var(--space-5);
+    border-block-start: 2px solid var(--color-text);
+  }
+
+  .plans__list {
+    display: grid;
+    margin-block: var(--space-3) var(--space-2);
+    border-block-start: 1px solid var(--color-border);
+  }
+
+  .plans__row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-4);
+    align-items: start;
+    padding-block: var(--space-2);
+    border-block-end: 1px solid var(--color-border);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+  }
+
+  .plans__row dd {
+    margin: 0;
+    text-align: end;
+  }
+
+  .plans__row--no dt {
+    color: var(--color-text-muted);
+  }
+
+  /* Wide screens: the table. */
+  @media (min-width: 64rem) {
+    .plans__cards {
+      display: none;
+    }
+
+    .plans__table {
+      display: table;
+      inline-size: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+
+    .plans__table thead th,
+    .plans__table thead td {
+      padding-block: 0 var(--space-6);
+      border-block-end: 2px solid var(--color-text);
+    }
+
+    .plans__table th,
+    .plans__table td {
+      padding: var(--space-4) var(--space-6) var(--space-4) 0;
+      text-align: start;
+      vertical-align: top;
+    }
+
+    .plans__table thead th {
+      vertical-align: bottom;
+    }
+
+    .plans__tier {
+      font-weight: 400;
+    }
+
+    .plans__tier .plans__name {
+      display: block;
+      margin-block-end: var(--space-2);
+    }
+
+    .plans__col-label {
+      inline-size: 34%;
+    }
+
+    .plans__table tbody th {
+      font-weight: 400;
+      color: var(--color-text);
+    }
+
+    .plans__table tbody tr {
+      border-block-end: 1px solid var(--color-border);
+    }
+
+    .plans__table tfoot td {
+      padding-block-start: var(--space-6);
+    }
+  }
+</style>

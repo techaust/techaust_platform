@@ -1,0 +1,58 @@
+---
+// DeliverablesList (docs/06 §5.2): a ruled list with a check mark per item (list semantics; the icons are hidden from
+// assistive technology). Items are 07 copy as written: lower-case fragments get their capital from CSS, so the text
+// stays word for word; arrows, bold and prices are drawn by CopyText.
+import CopyText from "./CopyText.astro";
+import Icon from "./Icon.astro";
+
+interface Props {
+  items: readonly string[];
+  class?: string;
+}
+
+const { items, class: cls } = Astro.props;
+---
+
+<ul class:list={["deliv", cls]} role="list">
+  {
+    items.map((d) => (
+      <li class="deliv__item">
+        <Icon name="check" size={20} class="deliv__icon" />
+        <CopyText text={d} as="span" class="deliv__text" />
+      </li>
+    ))
+  }
+</ul>
+
+<style>
+  .deliv {
+    display: grid;
+    border-block-start: 1px solid var(--color-border);
+  }
+
+  .deliv__item {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--space-3);
+    align-items: start;
+    padding-block: var(--space-3);
+    border-block-end: 1px solid var(--color-border);
+    font-size: var(--text-body-lg);
+    line-height: var(--text-body-lg--line-height);
+  }
+
+  .deliv :global(.deliv__icon) {
+    margin-block-start: calc((var(--text-body-lg) * var(--text-body-lg--line-height) - 20px) / 2);
+    color: var(--color-text-accent);
+  }
+
+  /* A block, so ::first-letter applies. */
+  .deliv :global(.deliv__text) {
+    display: block;
+    text-wrap: pretty;
+  }
+
+  .deliv :global(.deliv__text)::first-letter {
+    text-transform: uppercase;
+  }
+</style>

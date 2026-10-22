@@ -1,16 +1,17 @@
 ---
-// CopyText: one piece of docs/07 copy, rendered as written. It does two jobs the plain string can't:
-// 1. Arrows. 07 writes "→" and "↔"; neither is in the fonts (docs/06 §3.1), so each becomes an icon, with the
+// CopyText: one piece of docs/07 copy, rendered as written. It does three jobs the plain string can't:
+// 1. Prices in running text, through lib/tokens.ts parseTokens (the one renderer, WEB-G-07): {{price:Sx}} →
+//    "from ₹40,000 + GST" or "from $2,000" ("from" once when 07 already writes it); {{price-plain:Sx}} → the amount
+//    alone. An unknown token or a hidden service fails the build. No layout shift when the currency changes (WEB-G-06):
+//    the whole text is written once per currency and both versions sit in the same grid cell; the inactive one is
+//    `visibility: hidden`, so the box is always as tall as the longer one. Without JavaScript a third version shows
+//    both amounts ("from ₹40,000 + GST · $2,000").
+// 2. Arrows. 07 writes "→" and "↔"; neither is in the fonts (docs/06 §3.1), so each becomes an icon, with the
 //    character kept, visually hidden, for assistive technology and copy-paste.
-// 2. Prices in running text ({{price:Sx}}, docs/07 "How to read"): "from ₹40,000 + GST" or "from $2,000". When 07
-//    already writes "from" before the token ("from {{price:S16-essential}} a month"), the token adds no second "from".
-//    No layout shift when the currency changes (WEB-G-06, M2.1 follow-up M4): the whole sentence is written once per
-//    currency and both versions sit in the same grid cell; the inactive one is `visibility: hidden`, so the box is
-//    always as tall as the longer one and swapping moves nothing. Without JavaScript a third version shows both
-//    amounts ("from ₹40,000 + GST · $2,000").
-import type { Money } from "@techaust/core";
+// 3. Bold. 07's **…** becomes <strong> (S1 credit rule, S4 "Led personally by our founder.", the care-plan SLAs).
 import { draft } from "../content/shell";
-import { displayAmount, PRICE_TOKEN, priceOf } from "../lib/prices";
+import { displayAmount } from "../lib/prices";
+import { type PricePart, parseTokens } from "../lib/tokens";
 import Icon from "./Icon.astro";
 
 interface Props {
@@ -22,27 +23,25 @@ interface Props {
 const { text, as: Tag = "p", class: cls } = Astro.props;
 
 type Mode = "both" | "inr" | "usd";
-type Part =
-  | { kind: "text"; value: string }
-  | { kind: "arrow"; char: "→" | "↔" }
-  | { kind: "price"; inr: Money; usd: Money | null; from: boolean };
+type Bit = { kind: "text"; value: string; bold: boolean } | { kind: "arrow"; char: "→" | "↔"; bold: boolean };
+type Part = Bit | PricePart;
 
 const parts: Part[] = [];
-const pushText = (s: string) => {
-  for (const bit of s.split(/([→↔])/)) {
-    if (bit === "→" || bit === "↔") parts.push({ kind: "arrow", char: bit });
-    else if (bit) parts.push({ kind: "text", value: bit });
+let bold = false;
+for (const p of parseTokens(text)) {
+  if (p.kind === "price") {
+    parts.push(p);
+    continue;
   }
-};
-let last = 0;
-for (const m of text.matchAll(PRICE_TOKEN)) {
-  const before = text.slice(last, m.index);
-  pushText(before);
-  const { inr, usd } = priceOf(m[1] as string);
-  parts.push({ kind: "price", inr, usd, from: !/\bfrom\s$/i.test(before) });
-  last = (m.index ?? 0) + m[0].length;
+  p.text.split("**").forEach((run, i) => {
+    if (i > 0) bold = !bold;
+    for (const bit of run.split(/([→↔])/)) {
+      if (bit === "→" || bit === "↔") parts.push({ kind: "arrow", char: bit, bold });
+      else if (bit) parts.push({ kind: "text", value: bit, bold });
+    }
+  });
 }
-pushText(text.slice(last));
+if (bold) throw new Error(`CopyText: unbalanced "**" in "${text.slice(0, 60)}"`);
 
 const priced = parts.some((p) => p.kind === "price");
 const modes: (Mode | null)[] = priced ? ["both", "inr", "usd"] : [null];
@@ -54,11 +53,20 @@ const modes: (Mode | null)[] = priced ? ["both", "inr", "usd"] : [null];
       <span class:list={["copy__v", mode && `copy__v--${mode}`]}>
         {parts.map((p) =>
           p.kind === "text" ? (
-            p.value
+            p.bold ? (
+              <strong class="copy__strong">{p.value}</strong>
+            ) : (
+              p.value
+            )
           ) : p.kind === "arrow" ? (
             <span class="copy__arrow">
               <Icon name={p.char === "→" ? "arrow-right" : "move-horizontal"} size={16} />
               <span class="visually-hidden">{p.char}</span>
+            </span>
+          ) : p.plain ? (
+            <span class="copy__amount">
+              {mode === "usd" && p.usd ? displayAmount(p.usd) : displayAmount(p.inr)}
+              {mode === "both" && p.usd && ` · ${displayAmount(p.usd)}`}
             </span>
           ) : (
             <>
@@ -85,10 +93,14 @@ const modes: (Mode | null)[] = priced ? ["both", "inr", "usd"] : [null];
 </Tag>
 
 <style>
-  .copy__amount {
+  .copy__amount,
+  .copy__strong {
     font-weight: 600;
-    font-variant-numeric: tabular-nums;
     color: var(--color-text);
+  }
+
+  .copy__amount {
+    font-variant-numeric: tabular-nums;
   }
 
   /* "₹40,000 + GST" never breaks inside. */

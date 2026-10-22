@@ -1,0 +1,23 @@
+---
+// The service pages (/services/<slug>, docs/04 §3.2, docs/07 §4): one static page per service on the site. A service
+// hidden from the site (S3 while S3_DPDP_PAGE is off, WEB-G-17) gets no page, so its URL is the 404.
+import ServicePage from "../../components/service/ServicePage.astro";
+import { liveServices } from "../../content/services";
+import type { ServiceContent } from "../../content/types";
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { plainText } from "../../lib/copy";
+
+export function getStaticPaths() {
+  return liveServices().map((service) => ({ params: { slug: service.slug }, props: { service } }));
+}
+
+interface Props {
+  service: ServiceContent;
+}
+
+const { service } = Astro.props;
+---
+
+<BaseLayout title={service.meta.title} description={plainText(service.meta.description)}>
+  <ServicePage service={service} />
+</BaseLayout>

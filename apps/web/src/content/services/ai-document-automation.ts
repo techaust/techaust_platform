@@ -1,21 +1,16 @@
-// AI Document Automation (S9): docs/07-content.md §4.5, word for word (FAQs confirmed by the owner, 2026-10-22).
+// AI Document Automation (S9): docs/07-content.md §4.5, word for word (FAQs confirmed by the owner, 2026-10-22;
+// "(S17)" dropped from step 3 and the related services set by the owner, 2026-10-22).
 // Typesetting only: curly apostrophes, and 07's lower-case list fragments start with a capital where they stand alone
 // (the pricing lines). No "Tech" line in 07 for S9 and no case study or sample, so those sections are omitted
-// (WEB-SVC-02, -03). Related services: not listed in 07; the three below are the lead-reviewable choice of the
-// preview (run file), with their home-page one-liners from 07 §3.
-import { home } from "../home";
-import type { ServiceContent } from "../types";
-
-const card = (href: string) => {
-  const c = home.services.cards.find((s) => s.href === href);
-  if (!c) throw new Error(`No home card for ${href}`);
-  return c;
-};
+// (WEB-SVC-02, -03). The payment schedule comes from the catalogue (WEB-SVC-05).
+import { cta, homeOneLiner } from "../shared";
+import { SCHEDULE, type ServiceContent } from "../types";
 
 export const aiDocumentAutomation: ServiceContent = {
   code: "S9",
   slug: "ai-document-automation",
   name: "AI Document Automation",
+  oneLiner: homeOneLiner("S9"),
   meta: {
     title: "AI document automation: invoices, POs, contracts | TecHaust",
     description:
@@ -25,7 +20,7 @@ export const aiDocumentAutomation: ServiceContent = {
     h1: "Stop retyping invoices. Keep control of every entry.",
     whoFor: "CA and accounting firms, finance teams in SMBs, NBFCs, logistics companies and online sellers.",
     price: { ref: "S9", lead: "Pilot" },
-    primary: { label: "Start a pilot", href: "/get-a-quote?service=S9&type=pilot" },
+    primary: cta.pilot("S9"),
   },
   problem:
     "Somewhere in your office, skilled people copy numbers from PDFs into Tally all day. It’s slow, it’s error-prone, and it’s the first job they’d happily give up.",
@@ -52,11 +47,11 @@ export const aiDocumentAutomation: ServiceContent = {
     note: "Accuracy depends on your documents. In the pilot we measure it on your own samples and agree the target with you before rollout. We don’t promise a number we haven’t measured.",
   },
   pricing: {
-    lead: "Pilot",
-    ref: "S9",
+    prices: [{ ref: "S9", lead: "Pilot" }],
     lines: [
       "Production rollout quoted after the pilot",
       "Optional per-document pricing with a monthly minimum",
+      SCHEDULE,
     ],
   },
   faqs: [
@@ -74,9 +69,5 @@ export const aiDocumentAutomation: ServiceContent = {
     },
     { q: "Do you work with Tally Prime?", a: "Yes, via Tally’s XML/ODBC interfaces or connectors." },
   ],
-  related: [
-    card("/services/workflow-automation"),
-    card("/services/business-systems-integration"),
-    card("/services/discovery-sprint"),
-  ],
+  related: ["S10", "S14", "S1"],
 };

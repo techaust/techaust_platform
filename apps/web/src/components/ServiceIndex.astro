@@ -14,13 +14,15 @@ interface Props {
   items: readonly ServiceLink[];
   /** The heading level of each item's title (the section's h2 is above). */
   level?: "h3" | "h4";
+  /** At most two columns (the services hub, where the list sits in the wide right column). */
+  narrow?: boolean;
   class?: string;
 }
 
-const { items, level: Heading = "h3", class: cls } = Astro.props;
+const { items, level: Heading = "h3", narrow = false, class: cls } = Astro.props;
 ---
 
-<ul class:list={["svc-index", cls]} role="list">
+<ul class:list={["svc-index", narrow && "svc-index--narrow", cls]} role="list">
   {
     items.map((s) => {
       const p = priceOf(s.price);
@@ -32,7 +34,7 @@ const { items, level: Heading = "h3", class: cls } = Astro.props;
             </a>
           </Heading>
           <CopyText text={s.text} class="svc__text" />
-          <PriceTag inr={p.inr} usd={p.usd} unit={s.unit} size="md" class="svc__price" />
+          <PriceTag inr={p.inr} usd={p.usd} lead={s.lead} unit={s.unit} size="md" class="svc__price" />
           <Icon name="arrow-right" size={24} class="svc__arrow" />
         </li>
       );
@@ -54,7 +56,7 @@ const { items, level: Heading = "h3", class: cls } = Astro.props;
   }
 
   @media (min-width: 64rem) {
-    .svc-index {
+    .svc-index:not(.svc-index--narrow) {
       grid-template-columns: repeat(3, minmax(0, 1fr));
     }
   }

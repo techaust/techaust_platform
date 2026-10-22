@@ -1,12 +1,14 @@
 ---
-// Service hero (WEB-SVC-01): breadcrumb, the outcome headline (h1, the LCP element), then a two-cell spec row
-// (who it's for · the "from" price with its currency note) between two rules, then the primary CTA and "See pricing".
+// Service hero (WEB-SVC-01): breadcrumb, the outcome headline (h1, the LCP element), an optional lede (07 "Intro"),
+// then a spec row between two rules: who it's for (where 07 has it) · the "from" price with its currency note. Then
+// the primary CTA and "See pricing". Without a "who it's for" line, the price stands alone in the row.
 import { serviceLabels } from "../../content/labels";
 import { shared } from "../../content/shared";
 import type { ServiceContent } from "../../content/types";
 import { priceOf } from "../../lib/prices";
 import Breadcrumbs from "../Breadcrumbs.astro";
 import Button from "../Button.astro";
+import CopyText from "../CopyText.astro";
 import CurrencyNote from "../CurrencyNote.astro";
 import PriceTag from "../PriceTag.astro";
 
@@ -23,11 +25,16 @@ const p = priceOf(h.price.ref);
   <div class="container">
     <Breadcrumbs trail={[{ label: serviceLabels.services, href: "/services" }, { label: service.name }]} />
     <h1 class="t-display-2 shero__title" id="hero-title">{h.h1}</h1>
-    <div class="shero__spec">
-      <div class="shero__cell">
-        <p class="t-sm shero__label">{serviceLabels.whoFor}</p>
-        <p class="t-lede shero__who">{h.whoFor}</p>
-      </div>
+    {h.lede && <p class="t-lede shero__lede">{h.lede}</p>}
+    <div class:list={["shero__spec", !h.whoFor && "shero__spec--price"]}>
+      {
+        h.whoFor && (
+          <div class="shero__cell">
+            <p class="t-sm shero__label">{serviceLabels[h.whoForLabel ?? "whoFor"]}</p>
+            <CopyText text={h.whoFor} class="t-lede shero__who" />
+          </div>
+        )
+      }
       <div class="shero__cell shero__cell--price">
         <PriceTag inr={p.inr} usd={p.usd} lead={h.price.lead} unit={h.price.unit} />
         <CurrencyNote />
@@ -61,6 +68,12 @@ const p = priceOf(h.price.ref);
     }
   }
 
+  .shero__lede {
+    margin-block-start: var(--space-6);
+    color: var(--color-text-muted);
+    text-wrap: pretty;
+  }
+
   .shero__spec {
     display: grid;
     margin-block-start: var(--space-12);
@@ -79,7 +92,7 @@ const p = priceOf(h.price.ref);
   }
 
   @media (min-width: 64rem) {
-    .shero__spec {
+    .shero__spec:not(.shero__spec--price) {
       grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
     }
 
