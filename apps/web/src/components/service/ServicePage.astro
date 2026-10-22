@@ -137,7 +137,10 @@ const buildTitle = s.build?.title ?? (s.build?.deliverables ? L.deliverables : L
 
 {
   s.sections?.map((x) => (
-    <section class="section section--alt" aria-labelledby={`${x.id}-title`}>
+    <section
+      class:list={["section", (s.build || s.plans) && "section--flush-top"]}
+      aria-labelledby={`${x.id}-title`}
+    >
       <div class="container split">
         <h2 class="t-h2" id={`${x.id}-title`}>
           {x.title}
@@ -159,7 +162,7 @@ const buildTitle = s.build?.title ?? (s.build?.deliverables ? L.deliverables : L
 {
   s.how && (
     <section
-      class:list={["section", !s.sections && !s.plans && s.build && "section--flush-top"]}
+      class:list={["section", (s.sections || s.plans || s.build) && "section--flush-top"]}
       aria-labelledby="how-title"
     >
       <div class="container">
@@ -425,6 +428,13 @@ const buildTitle = s.build?.title ?? (s.build?.deliverables ? L.deliverables : L
 
   .how__aside {
     margin-block-start: var(--block-gap);
+  }
+
+  /* Wide screens: in the content column of the 4 + 8 grid, under the facts' values. */
+  @media (min-width: 64rem) {
+    .how__aside {
+      margin-inline-start: calc((100% - var(--space-8)) * 4 / 12 + var(--space-8));
+    }
   }
 
   .container > :global(.how__note) {

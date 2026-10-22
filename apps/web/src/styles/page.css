@@ -11,6 +11,11 @@
   padding-block-start: 0;
 }
 
+/* A plain section straight after a page hero shares the hero's bottom space (the hero ends on --section-y). */
+.page-hero + .section:not(.section--alt) {
+  padding-block-start: 0;
+}
+
 .section--alt {
   background: var(--color-surface-alt);
 }
