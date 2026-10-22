@@ -280,6 +280,12 @@ const countryOptions = [
       column-gap: var(--space-8);
       align-items: start;
     }
+
+    /* Without JavaScript there is no step rail: the long form takes the page's left edge, at the steps' width. */
+    :root:not(.js) .quote__form {
+      grid-column: 1 / -1;
+      max-inline-size: calc((var(--container-page) - 2 * var(--gutter)) * 2 / 3);
+    }
   }
 
   /* ---------- The step rail (1024 px and up): the four steps, the current one under the T bar ---------- */
@@ -444,7 +450,7 @@ const countryOptions = [
   }
 
   .qstep__body > .field__hint {
-    margin-block-start: calc(-1 * var(--space-6));
+    margin-block-start: calc(-1 * var(--space-4));
   }
 
   .qstep__nav {

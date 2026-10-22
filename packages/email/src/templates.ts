@@ -214,7 +214,7 @@ export function leadAlert(d: AlertData, opts?: LayoutOptions): Rendered {
 ${rows
   .map(
     ([k, v]) => `<tr>
-<td class="ln k" width="152" style="${cell}width:152px;padding-right:16px;"><p class="mu" style="${textStyle(T.text.sm.size, T.text.sm.lineHeight, C.textMuted, "font-weight:500;")}">${e(k)}</p></td>
+<td class="ln k" width="152" style="${cell}width:152px;padding-right:16px;"><p class="mu" style="${textStyle(T.text.sm.size, T.text.sm.lineHeight, C.textMuted, "font-weight:500;padding-top:2px;")}">${e(k)}</p></td>
 <td class="ln" style="${cell}"><p class="tx" style="${textStyle(T.text.body.size, T.text.body.lineHeight, C.text, "word-break:break-word;")}">${lines(v)}</p></td>
 </tr>`,
   )

@@ -26,6 +26,7 @@
 
 .field {
   display: grid;
+  align-content: start;
   gap: var(--space-2);
   min-inline-size: 0;
 }
@@ -457,9 +458,14 @@
   overflow: hidden;
 }
 
-/* The Turnstile widget takes no room unless Cloudflare needs the visitor to act. */
-.turnstile:empty {
-  display: none;
+/* The Turnstile widget takes no room (and adds no grid gap) unless Cloudflare needs the visitor to act: the script
+   marks it idle, and lifts the mark in Turnstile's before-interactive callback. */
+.turnstile:empty,
+.turnstile[data-idle] {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
 }
 
 @media (forced-colors: active) {

@@ -14,6 +14,7 @@
 //   - sending: JSON to the form's own action, one request at a time; success goes to /thanks?ref=…; a refusal says
 //     what to do in plain words (the two lines in content/forms.ts) and keeps everything typed
 import { contactForm, FORM_FIELDS, LEAD_REF, MIN_FILL_MS, quoteSteps } from "@techaust/core";
+import { localWindow } from "./call-time";
 
 type Values = Record<string, string | string[]>;
 type Issue = { path: PropertyKey[]; message: string };
@@ -224,6 +225,7 @@ function enhance(form: HTMLFormElement) {
         const dark =
           root.dataset.theme === "dark" ||
           (root.dataset.theme !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+        box.setAttribute("data-idle", "");
         widgetId = ts.render(box, {
           sitekey: siteKey,
           action: box.dataset.action,
@@ -231,6 +233,9 @@ function enhance(form: HTMLFormElement) {
           theme: dark ? "dark" : "light",
           size: "flexible",
           "refresh-expired": "auto",
+          // Shown only while Cloudflare needs the visitor to act (a click on the checkbox).
+          "before-interactive-callback": () => box.removeAttribute("data-idle"),
+          "after-interactive-callback": () => box.setAttribute("data-idle", ""),
           callback: (t: string) => {
             failed = false;
             settle(t);
@@ -370,17 +375,18 @@ function enhance(form: HTMLFormElement) {
     }
 
     // "Best time for a call": the visitor's own time beside each IST window, when their clock isn't on IST.
-    const IST = 330;
-    if (-new Date().getTimezoneOffset() !== IST) {
-      const fmt = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
-      const now = new Date();
-      const day = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-      const at = (min: number) => fmt.format(new Date(day + (min - IST) * 60_000));
-      for (const input of $$<HTMLInputElement>("[data-from]")) {
-        const sub = $<HTMLElement>("[data-sub]", input.closest("label") ?? form);
-        if (sub)
-          sub.textContent = `${msg.yourTime} ${at(Number(input.dataset.from))}–${at(Number(input.dataset.to))}`;
-      }
+    const now = new Date();
+    const fmt = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+    for (const input of $$<HTMLInputElement>("[data-from]")) {
+      const local = localWindow(
+        Number(input.dataset.from),
+        Number(input.dataset.to),
+        now,
+        -now.getTimezoneOffset(),
+        (d) => fmt.format(d),
+      );
+      const sub = $<HTMLElement>("[data-sub]", input.closest("label") ?? form);
+      if (sub && local) sub.textContent = `${msg.yourTime} ${local}`;
     }
 
     go(1, false);
