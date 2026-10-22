@@ -26,6 +26,7 @@ describe("migrations apply cleanly to a fresh D1", () => {
       "0004_auth_triggers.sql",
       "0005_drop_access_log_at.sql",
       "0006_portal_triggers.sql",
+      "0007_issue_guard.sql",
     ]);
   });
 

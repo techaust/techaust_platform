@@ -1,6 +1,6 @@
 // Writes a set of integrity triggers into a new, empty custom migration created by
 // `drizzle-kit generate --custom --name <set>`. <set> is a key of TRIGGER_SETS in src/triggers.ts
-// (`triggers` is the default, `auth_triggers` is M1.5, `portal_triggers` is M1.6). Applied migrations are never edited.
+// (`triggers` is the default, `auth_triggers` is M1.5, `portal_triggers` is M1.6, `issue_guard` narrows the guard and adds the issue post-condition). Applied migrations are never edited.
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { TRIGGER_SETS, type TriggerSet, triggerMigrationSql } from "../src/triggers.ts";

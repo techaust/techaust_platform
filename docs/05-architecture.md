@@ -30,7 +30,7 @@
 > 13. **Generated design outputs are committed** (`packages/ui/generated/`, `fonts/`, `brand/`), since packages stay source-only. Drift tests fail if they don't match their sources.
 >
 > **Changes made during Phase 6 M1.3 (2026-10-06):**
-> 14. **Issue guard (fixes a gap in §5.4).** An `UPDATE … WHERE status = 'draft'` that matches no row doesn't fail, so the original batch could consume a number for a document that wasn't a draft. Every issue batch now starts with `INSERT INTO issue_guard (document_id) VALUES (?)`, a view whose trigger aborts the whole batch unless the document is an unfrozen draft. **Owner decision 2026-10-07:** only drafts can be issued; a document waiting for approval must be approved first. The guard in code (`packages/db/src/triggers.ts`) still also accepts `pending_approval`; a new migration narrows it to `draft` before issuing is built (M3/M5, see [12-status](12-status.md)).
+> 14. **Issue guard (fixes a gap in §5.4).** An `UPDATE … WHERE status = 'draft'` that matches no row doesn't fail, so the original batch could consume a number for a document that wasn't a draft. Every issue batch now starts with `INSERT INTO issue_guard (document_id) VALUES (?)`, a view whose trigger aborts the whole batch unless the document is an unfrozen draft. **Owner decision 2026-10-07:** only drafts can be issued; a document waiting for approval must be approved first. Migration 0007 narrows the guard to `draft`: the constant `ISSUABLE_STATUSES` in `packages/db/src/triggers.ts` feeds both the guard trigger and the reference batch in the tests. An approval (`approvals`, kind `issue`) is a record next to the draft, never a document status, so the Owner issues the draft itself. The same migration adds the post-condition `issue_result` (see §5.4).
 > 15. **Triggers are generated from the schema** (`packages/db/src/triggers.ts`), so every content column of `documents` is covered. A test reads the installed trigger and fails if a column is missing. Migrations are never edited after they are applied; a new document column needs a new migration that recreates the trigger.
 > 16. **Staging D1 is migrated and seeded on every merge** (owner decision), before the Workers deploy. The seed is insert-only (`ON CONFLICT DO NOTHING`), so it never overwrites edits made in the admin.
 > 17. **Tables arrive with their milestones.** M1.3 creates identity, settings, CRM, catalogue, documents and the audit/access logs (36 tables). Payments, checkout sessions, webhook events, credits and settlements come with M6; email log and suppressions with M2.4; notifications, review items, DSR requests, idempotency keys and stats with the features that use them.
@@ -297,18 +297,22 @@ techaust_platform/
 Issue happens in **one `db.batch()`**. D1 runs a batch as a single transaction: if any statement fails, everything rolls back and no number is consumed.
 
 ```sql
--- guard: abort the whole batch unless ?3 is an unfrozen draft (M1.3, change 14)
+-- guard: abort the whole batch unless ?3 is an unfrozen draft (change 14, migration 0007)
 INSERT INTO issue_guard(document_id) VALUES (?3);
 -- 0. ensure counter row exists for this FY
 INSERT INTO doc_counters(series, fy, next_no) VALUES (?1, ?2, 1) ON CONFLICT DO NOTHING;
 -- 1. take the number
 UPDATE doc_counters SET next_no = next_no + 1 WHERE series = ?1 AND fy = ?2;
--- 2. freeze the draft with that number (fails if not a draft → whole batch rolls back)
+-- 2. freeze the draft with that number
 UPDATE documents
-   SET number = (SELECT next_no - 1 FROM doc_counters WHERE series = ?1 AND fy = ?2),
+   SET series = ?1, fy = ?2,
+       number = (SELECT next_no - 1 FROM doc_counters WHERE series = ?1 AND fy = ?2),
        number_display = ?formatted_by_sql_or_app,   -- format applied from core
        status = 'issued', frozen_at = ?now, issued_by = ?user, snapshot_sha256 = ?hash
  WHERE id = ?3 AND status = 'draft' AND frozen_at IS NULL;
+-- post-condition: abort (rolling the counter back) unless step 2 really froze ?3 with next_no - 1.
+-- An UPDATE that matches no row does not fail, so without this the counter would move for nothing.
+INSERT INTO issue_result(document_id, series, fy) VALUES (?3, ?1, ?2);
 -- 3. audit
 INSERT INTO audit_log(...) VALUES (...);
 ```
