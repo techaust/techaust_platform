@@ -120,9 +120,9 @@ describe("unrendered content in visible text (review finding 4)", () => {
   const body = (b: string) => `<!doctype html><html><head><title>T</title></head><body>${b}</body></html>`;
 
   it("fails on a leftover price token, bold mark or arrow character", () => {
-    expect(c.checkLeftovers("a.html", body("<p>From {{price:S1}}</p>"))).toHaveLength(1);
+    expect(c.checkLeftovers("a.html", body("<p>From {{price:S1}}</p>"))).toHaveLength(2); // "{{" and "}}"
     expect(c.checkLeftovers("a.html", body("<p>half token }}</p>"))).toHaveLength(1);
-    expect(c.checkLeftovers("a.html", body("<p>**bold** text</p>"))).toHaveLength(1);
+    expect(c.checkLeftovers("a.html", body("<p>**bold** text</p>"))).toHaveLength(2);
     expect(c.checkLeftovers("a.html", body("<p>Tally → Zoho</p>"))).toHaveLength(1);
     expect(c.checkLeftovers("a.html", body("<p>Tally ↔ Zoho</p>"))).toHaveLength(1);
     expect(
@@ -130,8 +130,13 @@ describe("unrendered content in visible text (review finding 4)", () => {
         "a.html",
         `<html><head><meta name="description" content="x {{price:S1}}"></head></html>`,
       ),
-    ).toHaveLength(1);
+    ).toHaveLength(2);
     expect(c.checkLeftovers("a.html", body('<p class="visually-hidden">→</p>'))).toHaveLength(1);
+  });
+
+  it("reports every hit and decodes arrow entities (re-check finding 5)", () => {
+    expect(c.checkLeftovers("a.html", body("<p>{{price:S1}} and **bold**</p>"))).toHaveLength(4);
+    expect(c.checkLeftovers("a.html", body("<p>Tally &rarr; Zoho &#x2194; Xero</p>"))).toHaveLength(2);
   });
 
   it("allows the visually hidden arrow CopyText keeps for screen readers, and scripts and comments", () => {

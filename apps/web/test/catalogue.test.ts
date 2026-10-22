@@ -8,13 +8,7 @@ import { catalogueSnapshot } from "@techaust/core";
 import { CATALOGUE } from "@techaust/db/catalogue";
 import { afterAll, describe, expect, it } from "vitest";
 import { flags } from "../src/config/site";
-import {
-  loadSnapshot,
-  SNAPSHOT_FILE,
-  snapshot,
-  snapshotFromSeed,
-  snapshotSource,
-} from "../src/lib/catalogue";
+import { loadSnapshot, snapshot, snapshotFile, snapshotFromSeed, snapshotSource } from "../src/lib/catalogue";
 import { displayAmount, isServiceOnSite, priceOf, scheduleOf } from "../src/lib/prices";
 import { hasTokens, parseTokens, renderPlain } from "../src/lib/tokens";
 
@@ -61,8 +55,8 @@ describe("snapshot from the seed", () => {
 
 describe("snapshot location and source (review findings 8, 11)", () => {
   it("resolves the file from the module, inside apps/web, whatever the working directory", () => {
-    expect(isAbsolute(SNAPSHOT_FILE)).toBe(true);
-    expect(SNAPSHOT_FILE).toBe(
+    expect(isAbsolute(snapshotFile())).toBe(true);
+    expect(snapshotFile()).toBe(
       join(fileURLToPath(new URL("..", import.meta.url)), "catalogue-snapshot.json"),
     );
   });

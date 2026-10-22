@@ -31,7 +31,7 @@ export function lineByFirstWord<L extends { description: string }>(
   word: string,
 ): L | undefined {
   const first = (d: string): string => (d.trim().split(/\s+/)[0] ?? "").toLowerCase();
-  const hits = lines.filter((d) => first(d.description) === word);
+  const hits = lines.filter((d) => first(d.description) === word.toLowerCase());
   if (hits.length > 1)
     throw new Error(`priceOf: ${code} has more than one line starting with "${word}": ambiguous reference`);
   return hits[0];

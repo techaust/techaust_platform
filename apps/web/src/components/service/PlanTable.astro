@@ -22,6 +22,8 @@ interface Props {
 
 const { plans, labelledby } = Astro.props;
 const tiers = plans.tiers.map((t) => ({ ...t, p: priceOf(t.price.ref), link: cta.plan(t.plan) }));
+// The tiers are one price group: "USD price on request" shows once, on the last tier without a USD amount.
+const askAt = tiers.findLastIndex((t) => t.p.usd === null);
 for (const r of plans.rows) {
   if (r.cells.length !== tiers.length)
     throw new Error(
@@ -40,10 +42,10 @@ for (const r of plans.rows) {
       <tr>
         <td></td>
         {
-          tiers.map((t) => (
+          tiers.map((t, i) => (
             <th scope="col" class="plans__tier">
               <span class="plans__name">{t.name}</span>
-              <PriceTag inr={t.p.inr} usd={t.p.usd} unit={t.price.unit} size="md" from={false} />
+              <PriceTag inr={t.p.inr} usd={t.p.usd} unit={t.price.unit} size="md" from={false} ask={i === askAt} />
             </th>
           ))
         }
@@ -99,7 +101,7 @@ for (const r of plans.rows) {
       tiers.map((t, i) => (
         <li class="plans__card">
           <h3 class="t-h3 plans__name">{t.name}</h3>
-          <PriceTag inr={t.p.inr} usd={t.p.usd} unit={t.price.unit} size="md" from={false} />
+          <PriceTag inr={t.p.inr} usd={t.p.usd} unit={t.price.unit} size="md" from={false} ask={i === askAt} />
           <dl class="plans__list">
             {plans.rows.map((r) => {
               const c = r.cells[i] as PlanCell;

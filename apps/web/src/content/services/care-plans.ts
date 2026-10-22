@@ -1,8 +1,7 @@
 // Care Plans (S16, with the AI Ops add-on S17): docs/07-content.md §4.14, word for word (07's bold kept). Typesetting
 // only: curly apostrophes; 07's "Intro" is the hero lede; the table's "/mo" stays as written. Tier prices are the
 // catalogue's default lines ({{price:S16-essential}} …), the add-on's price is in running text ({{price:S17}}).
-// The schedule line is scheduleOf("S16") (WEB-SVC-05); the rules repeat it in words ("Billed monthly in advance"),
-// as 07 writes them (run file: open question).
+// No separate schedule line: the rules already say "Billed monthly in advance" (lead, 2026-10-22; WEB-SVC-05).
 // Each tier's "Choose a plan" takes its tier (07 §2.3 `plan=<tier>`); the hero and the band have no tier.
 // GAP (run file): no "Who it's for" and no FAQs in 07 (WEB-SVC-04 wants 4–8): FAQ section not shown.
 // Related: the designer's pick.

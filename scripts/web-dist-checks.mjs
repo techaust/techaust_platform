@@ -173,15 +173,20 @@ const HIDDEN_ARROW = /<span\b[^>]*\bclass="[^"]*\bvisually-hidden\b[^"]*"[^>]*>\
  * arrow characters → / ↔ (not in the fonts; CopyText draws icons). The one allowed arrow is the visually hidden
  * screen-reader copy CopyText keeps beside each icon (`<span class="visually-hidden">→</span>`).
  */
+// Arrow entities Astro could write instead of the characters (it doesn't today).
+const ARROW_ENTITY = /&(?:rarr|harr|#8594|#8596|#x2192|#x2194);/gi;
+
 export function checkLeftovers(name, html) {
-  const text = visibleText(html.replace(HIDDEN_ARROW, ""));
-  const hit = /\{\{|\}\}|\*\*|→|↔/.exec(text);
-  if (!hit) return [];
-  const around = text
-    .slice(Math.max(0, hit.index - 30), hit.index + 30)
-    .replace(/\s+/g, " ")
-    .trim();
-  return [`${name}: unrendered content "${hit[0]}" in visible text ("…${around}…")`];
+  const text = visibleText(html.replace(HIDDEN_ARROW, "").replace(ARROW_ENTITY, "→"));
+  const problems = [];
+  for (const hit of text.matchAll(/\{\{|\}\}|\*\*|→|↔/g)) {
+    const around = text
+      .slice(Math.max(0, hit.index - 30), hit.index + 30)
+      .replace(/\s+/g, " ")
+      .trim();
+    problems.push(`${name}: unrendered content "${hit[0]}" in visible text ("…${around}…")`);
+  }
+  return problems;
 }
 
 /** WEB-G-07: no money amount typed into a template (prices come from the catalogue snapshot). */

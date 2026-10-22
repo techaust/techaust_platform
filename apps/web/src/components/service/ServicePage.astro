@@ -8,6 +8,7 @@
 // GST notes (WEB-SVC-06, VERIFY WITH CA): one PriceNote per group of prices (the hero, the pricing, the plans, an
 // extra section with a price, the related services), never one per price.
 import "../../styles/page.css";
+import { lowerFirst } from "@techaust/core";
 import { home } from "../../content/home";
 import { serviceLabels as L } from "../../content/labels";
 import { serviceLink } from "../../content/services";
@@ -39,7 +40,6 @@ const prices = (s.pricing?.prices ?? []).map((p) => ({ ...p, v: priceOf(p.ref) }
 // "USD price on request" once per group: on the last price without a USD amount.
 const askAt = prices.findLastIndex((p) => p.v.usd === null);
 // "Setup: paid in full upfront": the catalogue's wording, its first letter lower-cased unless it starts an acronym.
-const lowerFirst = (t: string): string => (/^[A-Z][^A-Z]/.test(t) ? t[0]?.toLowerCase() + t.slice(1) : t);
 const line = (l: PricingLine): string => {
   if (typeof l === "string") return l;
   const text = scheduleOf(s.code);

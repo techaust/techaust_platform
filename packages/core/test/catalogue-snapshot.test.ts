@@ -5,6 +5,7 @@ import {
   type CatalogueSnapshot,
   catalogueSnapshot,
   formatMoney,
+  lowerFirst,
   money,
   percentFromBp,
   scheduleText,
@@ -133,6 +134,15 @@ describe("scheduleText", () => {
         { label: "At go-live", pctBp: 5_000, trigger: "milestone" },
       ]),
     ).toBe("50 % on acceptance, 50 % at go-live");
+  });
+
+  it("lowerFirst keeps acronyms and codes ('UAT', 'Q1', 'M2') and lower-cases a word", () => {
+    expect(lowerFirst("Midpoint milestone")).toBe("midpoint milestone");
+    expect(lowerFirst("UAT sign-off")).toBe("UAT sign-off");
+    expect(lowerFirst("Q1 review")).toBe("Q1 review");
+    expect(lowerFirst("M2 delivery")).toBe("M2 delivery");
+    expect(lowerFirst("A")).toBe("A");
+    expect(lowerFirst("")).toBe("");
   });
 
   it("keeps acronyms and labels like 'UAT sign-off' intact (lower-cases only a lower-case word)", () => {

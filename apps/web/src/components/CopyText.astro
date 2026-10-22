@@ -46,6 +46,8 @@ for (const p of parseTokens(text)) {
 if (bold) throw new Error(`CopyText: unbalanced "**" in "${text.slice(0, 60)}"`);
 
 const priced = parts.some((p) => p.kind === "price");
+// "USD price on request" once per string: after the last price without a USD amount.
+const askAt = parts.findLastIndex((p) => p.kind === "price" && !p.plain && !p.usd);
 const modes: (Mode | null)[] = priced ? ["both", "inr", "usd"] : [null];
 ---
 
@@ -53,7 +55,7 @@ const modes: (Mode | null)[] = priced ? ["both", "inr", "usd"] : [null];
   {
     modes.map((mode) => (
       <span class:list={["copy__v", mode && `copy__v--${mode}`]}>
-        {parts.map((p) =>
+        {parts.map((p, i) =>
           p.kind === "text" ? (
             p.bold ? (
               <strong class="copy__strong">{p.value}</strong>
@@ -86,7 +88,7 @@ const modes: (Mode | null)[] = priced ? ["both", "inr", "usd"] : [null];
                   )}
                 </span>
               )}
-              {mode !== "inr" && !p.usd && ` · ${shared.usdOnRequest}`}
+              {mode !== "inr" && i === askAt && ` · ${shared.usdOnRequest}`}
             </>
           ),
         )}

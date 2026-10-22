@@ -25,7 +25,8 @@ function appRoot(): string {
   }
   throw new Error("catalogue: cannot find apps/web (astro.config.mjs) above " + import.meta.url);
 }
-export const SNAPSHOT_FILE = join(appRoot(), "catalogue-snapshot.json");
+/** The default snapshot path, found only when needed (the walk throws outside apps/web; CATALOGUE_SNAPSHOT skips it). */
+export const snapshotFile = (): string => join(appRoot(), "catalogue-snapshot.json");
 
 /** The snapshot as the seed builds it: public fields only (no SAC code, no internal notes). */
 export function snapshotFromSeed(): CatalogueSnapshot {
@@ -89,7 +90,7 @@ export function snapshotSource(file: string): string {
 /** The snapshot for this build (read once; one log line names the source). CATALOGUE_SNAPSHOT overrides the path (tests). */
 export function snapshot(): CatalogueSnapshot {
   if (!cached) {
-    const file = process.env.CATALOGUE_SNAPSHOT ?? SNAPSHOT_FILE;
+    const file = process.env.CATALOGUE_SNAPSHOT ?? snapshotFile();
     cached = loadSnapshot(file);
     console.log(`catalogue: ${snapshotSource(file)}`);
   }
