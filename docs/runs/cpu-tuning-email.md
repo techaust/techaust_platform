@@ -44,3 +44,49 @@ Reviewer (Opus 5.5, high; `code-review`, `cloudflare:workers-best-practices`), f
 |---|---|
 | New templates (magic link, staff security) | M2.4b |
 | SES bounce events | M7.2 |
+
+## Builder report (Step 1, Sonnet 5.5, 2026-10-23)
+
+**Skills loaded:** `cloudflare:workers-profiling` (method: per-step timing, then a profile, smallest fix; no hosted capture), `cloudflare:workers-best-practices` (no module-level request state, no secrets at top level, async work fully handled), `cloudflare:wrangler` (checked `wrangler check startup`; see Not verified), `aws-core:aws-messaging-and-streaming` (read only; SES itself belongs to the `amazon-ses` skill, not needed for a CPU change; no AWS call made). Context7 not needed.
+
+**Files changed:** `packages/email/src/transport.ts` (new `warmSesSigning`), `packages/email/test/email.test.ts`, `apps/jobs/src/warm.ts` (new `warmSes`), `apps/jobs/src/index.ts` (one call line), `apps/jobs/test/warm.test.ts`. No new package, no `wrangler.jsonc` change. Email bytes, logs and statuses unchanged.
+
+**Method.** Node only (workerd CPU cannot be read locally). A step harness (`.logs/perf/steps.mjs`, git-ignored) bundles the real modules with wrangler-like esbuild settings, then times each step of one email in a fresh process: message parse, `emailLogId`, `transportFor`, `renderEmail`, "sign and build" (JSON body, `AbortSignal`, `Request`, SigV4: body digest, canonical request, key derivation, signature, up to the `fetch` call) and "fetch and response handling" (stub). First message cold (after round one's warm-up), second, and warm (51st). Then round one's queue harness (`bench-jobs.mjs`, with a 100 ms idle before the first message so start-up work can finish, as in a real isolate) and an inspector profile of the first message. D1 is a stub, so its JS-side cost and I/O are not measured.
+
+**Per-step breakdown, first email in a fresh isolate, ms (Node; after round one's warm-up, before this change)**
+
+| Step | ack | alert | warm (51st) |
+|---|---|---|---|
+| parse (zod) | 0.14 | 0.2 | 0.01 |
+| emailLogId | 0.19 | 0.18 | 0.01 |
+| transportFor | 0.10 | 0.11 | 0 |
+| renderEmail | 0.03 | 0.07 | 0.01 to 0.03 |
+| **sign and build (first SigV4)** | **6.6** | **4.5 to 7.4** | 0.25 to 0.34 |
+| fetch and response | 0.18 | 0.19 | 0.03 |
+| total | 7.2 | 5.6 | 0.4 |
+
+Without any warm-up the first email's parse adds 2 to 4 ms and render 0.4 to 0.65 (total 10 to 13, the same as round one's baseline). **One cost dominates: the first SigV4 signature in an isolate** (first `crypto.subtle` use, the HMAC and digest paths, `Request` and header set-up, the JSON build). Everything else in the message is under 0.6 ms together. Round one's warm-up did not cover it, because it needs a transport and credentials. This fits staging's 9 ms (quote acknowledgement) and 6 ms (alert).
+
+**Fix (one commit):** `warmSesSigning()` in `packages/email`, started from the jobs module top level (`void warmSes()`): it signs one made-up request (fixed dummy credentials, never `env`, its own key cache so the shared `SIGNING_KEYS` map is untouched, no `fetch`), swallows every error, resolves true when it signed. Tests: email package (signs, calls `subtle.sign`, never calls `fetch`, a real transport afterwards still derives its own key: exactly 5 `sign` calls) and jobs in workerd (`warmSes()` is true and `fetch` is not called).
+
+**After (Node, ms, first email in a fresh isolate, 4 runs each)**
+
+| | ack | alert |
+|---|---|---|
+| sign and build | 1.3 to 1.7 (was 6.6) | 1.3 to 1.5 (was 4.5 to 7.4) |
+| first email, six steps together | 1.9 to 2.0, one run 3.9 (was 7.2) | 2.0 to 2.6 (was 5.6) |
+| warm | about 0.4, unchanged | about 0.4, unchanged |
+
+Through the whole queue path (`bench-jobs.mjs` with the 100 ms idle; includes `handleQueue`, stub D1 promises, `ack`, and Node-only undici/webstream first use): first message before 8.2 to 9.8 (alert) and 9.9 to 15.4 (ack); after 4.8 to 7.9 (alert) and 5.1 to 6.8 (ack); second message 2.3 to 3.4 before, 1.1 to 2.2 after; warm median 0.5 unchanged. The 1.3 to 1.7 ms left in "sign and build" is the real key derivation (4 HMACs with the real secret): it cannot be warmed without the secret and happens once per isolate per day.
+
+**Not changed, and why:** D1 round trips (INSERT OR IGNORE, claim UPDATE, suppression SELECT, status UPDATE: four calls; a `db.batch()` of the first two keeps the semantics and saves one call, but its CPU cannot be measured locally and it changes the query shape: a candidate only if staging still shows more than 7 ms). `stableId`, template escaping, JSON, `transportFor` and regexes are each under 0.2 ms cold and about 0.01 ms warm.
+
+**Commands:** `pnpm install --frozen-lockfile --prefer-offline`; `pnpm --filter @techaust/email test` exit 0 (22); `pnpm --filter @techaust/jobs test` exit 0 (32, workerd); `pnpm check` exit 0; `pnpm build` exit 0; `pnpm test` exit 0; `pnpm lint` exit 0 (6 existing infos).
+
+**Not verified:**
+- Real workerd CPU (all figures Node, relative). Expected on staging: the first email in an isolate no longer carries the 4 to 6 ms first-signature cost.
+- **Whether `crypto.subtle` is allowed in workerd's global scope.** `warmSesSigning` catches every error, so a refusal makes the warm-up a no-op (returns false), never a failed start. The workerd unit test runs it in a request-like context, not the global scope. I tried `wrangler check startup` for this, but the permission classifier denied it; the lead should run `pnpm --filter @techaust/jobs exec wrangler check startup --env staging` locally (it also shows the start-up cost of the new call) and read the first email's `cpuTimeMs` on staging. If there is no gain, the fallback is to do the same signing lazily on the first lead message (which has 2 to 3 ms of room), not on the email.
+- Whether the warm-up's remaining CPU is billed to the first invocation (same open question as round one).
+- D1 cost per call.
+
+**Open questions:** none blocking.
