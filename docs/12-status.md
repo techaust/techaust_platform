@@ -1,6 +1,6 @@
 # 12: Status
 
-_Replaced (never appended) at the end of every session. Last updated: **2026-10-23, early morning** (IST)._
+_Replaced (never appended) at the end of every session. Last updated: **2026-10-23, 04:00** (IST)._
 
 ## Done
 - **Phases 1–5:** approved 2026-10-06 ([09-roadmap.md](09-roadmap.md)).
@@ -15,21 +15,27 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
   - machine files and checks: `/rss.xml`, `/.well-known/security.txt`, legal versioning, blog and case-study collections, link and fragment checker, meta-description check, `{{terms:…}}` and `{{postal_address}}` tokens, the pre-production readiness check (deploy-prod only)
   - copy word for word from 07, 07-A, 07-D and the new [07-F](07-content-appendix/F-m2.3-meta-descriptions.md) (meta descriptions); GA lines hidden while no GA4 ID is set
   - builder (Sonnet medium) → designer (Opus high) → reviewer APPROVE (5 medium + 8 low) → fixes in parallel (builder + designer) → re-check APPROVE (1 medium + 2 low, fixed by the lead); `pnpm check` and `pnpm test` (2,020 tests) green; CI green; staging deploy succeeded; owner reviewed staging and approved
-- **Record:** CLAUDE.md now documents the M2.3 code (content, legal versioning, collections, link checker, readiness check) and the agent-branch and clean-up practice; [05](05-architecture.md) CI and deploy-prod rows updated.
+- **M2.4 forms, leads and emails: approved 2026-10-23** ([PR #50](https://github.com/techaust/techaust_platform/pull/50); [runs/m2.4-forms-leads-email.md](runs/m2.4-forms-leads-email.md)):
+  - `/contact`, `/get-a-quote` (4 steps; one long form without JavaScript, with the email-fallback note), `/thanks` with the lead reference
+  - web Worker form endpoints (Origin, size, honeypot, fill time, rate limit, Turnstile, shared schemas) → leads queue → jobs Worker (exact per-address limits, lead + consent receipt in one batch) → email queue → SES; dead letters alert the owner with the full lead
+  - the owner's staging setup is done ([runbooks/ses-and-turnstile.md](runbooks/ses-and-turnstile.md)): SES domain and DNS (already in place), `admin@techaust.com` verified, send-only IAM user, Turnstile widget, four secrets, the `/brand/*` Access bypass for email logos
+  - builder → designer → review SEND BACK (1 high) → fixes → re-check APPROVE (1 medium, fixed by the lead); 2,134 tests green; owner's test: two leads stored, all four emails arrived
+- **Record:** CLAUDE.md now documents the forms, leads and email pipeline; and the M2.3 code (content, legal versioning, collections, link checker, readiness check) and the agent-branch and clean-up practice; [05](05-architecture.md) CI and deploy-prod rows updated.
 
 ## In progress
-- Nothing. The end-of-day PR records today; it merges itself on green.
+- Nothing. The M2.4 approval PR records today; it merges itself on green.
 
 ## Next
-1. **M2.4 forms → leads → email** ([09](09-roadmap.md)): Tier B. In a new conversation ("continue"): the brief, with the skills from 14 §9, and the owner's click-by-click steps for SES (ap-south-1 identity + IAM user via a hidden-input script), the DKIM DNS records (owner's yes first), verified test inboxes and Turnstile.
-2. Then M2.5 (SEO, performance, accessibility pass), which completes the public website.
-3. Lead: the M1.5 staging lockout smoke (needs a run through Access).
+1. **CPU tuning (owner-approved follow-up, Tier B):** the form post (6–10 ms) and the email consumer (up to 14 ms) are above the 7 ms target and at or over the Free plan's 10 ms on cold starts. Profile with `cloudflare:workers-profiling`; likely lazy-load zod and the email templates, trim the web bundle (141 KB gzipped). Re-measure on staging.
+2. **M2.4b** (Tier A): portal magic-link email from `no-reply@`, staff security emails (login alert, lockout, 2FA change), Turnstile on the admin and portal sign-in forms.
+3. **M2.5** (SEO, performance, accessibility pass), which completes the public website.
+4. Lead: the M1.5 staging lockout smoke (needs a run through Access).
 
-**Usage at the end of the session:** weekly 26 %, 5-hour 15 %; well under the pace (≈ 46 %). Weekly reset **Mon 26 Oct, 15:30 IST**. Model audit: all runs within the plan (the two `general-purpose` runs are the review skills' own read-only helpers, allowed by the 2026-10-22 decision).
+**Usage now:** weekly 30 %, 5-hour 41 %; well under the pace (≈ 49 %). Weekly reset **Mon 26 Oct, 15:30 IST**. Model audit: all M2.4 runs within the plan.
 
 ## Waits on the owner
 - **For the website:** headshot and bio, full postal address, LinkedIn URLs (company + personal), WhatsApp Business number, Cal.com link, 2–3 case-study briefs, one social handle per platform; review of the 3 blog drafts ([07-E](07-content-appendix/E-blog-drafts.md); each goes live only on approval). Before production: confirm the Zoho aliases security@ and privacy@ deliver (U-5) and that "encrypted off-site backups" on /security is true.
-- **For M2.4 (when it starts):** the AWS SES and IAM steps, the DKIM DNS approval, test inboxes, the Turnstile widget.
+- **SES key rotation:** the staging IAM key `techaust-ses-sender-staging` is rotated every 90 days (08); next by **2027-01-21**.
 - **Time-sensitive compliance** ([08 §0](08-security-compliance.md); all VERIFY WITH CA): U-3 UPI MDR from 15 Oct 2026 (check Razorpay pricing); U-1 the LUT (send the ARN if filed); U-2 how your AD bank wants the FEMA EDF filed; U-9 GST rules after the 57th GST Council.
 - **Colour note (FYI):** success green `#47730F` → `#44700E` and input-border grey `#7A8B84` → `#75867F` for contrast (not visible); say if you'd rather keep the old values.
 - Optional: approve `@axe-core/playwright` for automated accessibility checks.
@@ -37,6 +43,7 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
 - **Model menu:** keep **Opus 5.5, medium** for every conversation.
 
 ## Open follow-ups
+- **M2.4 ([run file](runs/m2.4-forms-leads-email.md) "Integration notes", "Re-check"):** CPU tuning (Next 1); the Worker reads the seed catalogue while the pages read the snapshot (M4.1); retention for `email_log`, the `f:` counters and a D1 `dead_letters` row, and confirm the Queues retention figure (retention job); real mail clients beyond Zoho; the "your time" line outside IST; Lighthouse and a screen reader on the form pages (M2.5).
 - **M2.3 ([run file](runs/m2.3-other-pages.md) "Re-check and integration"):** the website liability cap into the settings defaults (M3.1); renew `securityTxtExpires` before **2027-10-22** (the build fails once it lapses); before production the lead sets `site.launchDate` and every legal `effective` to the launch day; ask the owner before committing the postal address, bio and headshot to the public repo; not verified: Safari/Firefox and forced colours for the table cue, a screen reader, GA-on legal pages in a real build, the `deploy-prod.yml` run.
 - **M2.1 follow-ups ([run file](runs/m2.1-site-shell.md) "Review"):** a CLS E2E test for the currency swap; remove `X-Robots-Tag: noindex` before production; legacy JS MIME types in the inline-script check; header-check host allow-list; WhatsApp `?text=` prefill.
 - **M2.2 follow-ups ([run file](runs/m2.2-home-services.md) "Integration notes"):** "Who it's for" lines missing in 07 for some pages; the S5 UI/UX section; the empty ~24 px row under the S11 hero price in INR; fail the build when a published snapshot is expected but missing, and a label convention for custom milestone steps (both M4.1); E2E (FAQ keyboard, hub links, the S3 404) in M2.5; not verified: the real first-visit `/api/geo` swap, a true no-JS render, Safari/Firefox, a screen reader, Lighthouse/LCP (M2.5).
