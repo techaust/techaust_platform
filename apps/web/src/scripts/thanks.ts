@@ -6,5 +6,6 @@ const ref = new URLSearchParams(location.search).get("ref") ?? "";
 if (LEAD_REF.test(ref)) {
   const code = document.querySelector<HTMLElement>("[data-ref]");
   if (code) code.textContent = ref;
-  for (const el of document.querySelectorAll<HTMLElement>("[data-ref-line], [data-ref-only]")) el.hidden = false;
+  for (const el of document.querySelectorAll<HTMLElement>("[data-ref-line], [data-ref-only]"))
+    el.hidden = false;
 }

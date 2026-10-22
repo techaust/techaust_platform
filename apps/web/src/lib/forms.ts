@@ -3,8 +3,8 @@
 import { BUDGET_BANDS, type Currency, formatMoney, money } from "@techaust/core";
 import { formUi, quotePage } from "../content/forms";
 import { legal } from "../content/legal";
-import { servicesHub } from "../content/services-hub";
 import { serviceContent } from "../content/services";
+import { servicesHub } from "../content/services-hub";
 import { isServiceOnSite } from "./prices";
 
 /**
@@ -79,7 +79,8 @@ export const CALL_WINDOWS = [
   { from: 960, to: 1140 },
 ] as const;
 
-const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+const hhmm = (m: number) =>
+  `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 
 export function callWindows(): { value: string; from?: number; to?: number }[] {
   return [
@@ -95,7 +96,9 @@ export function serviceGroups() {
       id: g.id,
       name: g.name,
       intro: g.intro,
-      services: g.codes.filter((c) => isServiceOnSite(c)).map((c) => ({ code: c, name: serviceContent(c).name })),
+      services: g.codes
+        .filter((c) => isServiceOnSite(c))
+        .map((c) => ({ code: c, name: serviceContent(c).name })),
     }))
     .filter((g) => g.services.length > 0);
 }

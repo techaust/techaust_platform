@@ -22,7 +22,8 @@ export const FOOTER = "TecHaust Technologies · Balurghat, West Bengal, India ·
  * Where the email logos are hosted: the website's /brand/ path (the web build copies them there from
  * packages/ui/brand). Staging until Phase 7; production sends with `assetBase` https://techaust.com/brand/.
  */
-export const ASSET_BASE = "https://techaust-platform-web-staging.techaust-technologies-153.workers.dev/brand/";
+export const ASSET_BASE =
+  "https://techaust-platform-web-staging.techaust-technologies-153.workers.dev/brand/";
 
 export type AcknowledgementData = {
   first_name: string;

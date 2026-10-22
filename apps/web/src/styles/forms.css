@@ -214,6 +214,11 @@
   text-wrap: pretty;
 }
 
+/* Money in the budget bands lines up. */
+.choice--money .choice__label {
+  font-variant-numeric: tabular-nums;
+}
+
 .choice__sub {
   font-size: var(--text-sm);
   line-height: var(--text-sm--line-height);
@@ -255,11 +260,6 @@
 
 .choice:has(.choice__input:disabled) {
   cursor: not-allowed;
-}
-
-/* Money in the budget bands lines up. */
-.choice--money .choice__label {
-  font-variant-numeric: tabular-nums;
 }
 
 /* ---------- Checkbox line (the updates opt-in) ---------- */
@@ -341,8 +341,9 @@
   display: inline-block;
 }
 
-[data-sending] .btn--primary,
-[data-sending] .btn--primary:hover {
+[data-sending] .btn--primary[aria-disabled="true"],
+[data-sending] .btn--primary[aria-disabled="true"]:hover {
+  border-color: transparent;
   background: var(--color-btn-primary-bg);
   color: var(--color-btn-primary-fg);
   cursor: progress;

@@ -15,7 +15,15 @@ interface Props {
   class?: string;
 }
 
-const { name, legend, hint, size = "question", cols = { sm: 2, md: 2 }, id = `g-${name}`, class: cls } = Astro.props;
+const {
+  name,
+  legend,
+  hint,
+  size = "question",
+  cols = { sm: 2, md: 2 },
+  id = `g-${name}`,
+  class: cls,
+} = Astro.props;
 const hintId = hint ? `${id}-hint` : undefined;
 const errorId = `${id}-error`;
 ---

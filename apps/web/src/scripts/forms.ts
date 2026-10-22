@@ -70,7 +70,9 @@ function enhance(form: HTMLFormElement) {
   form.noValidate = true;
 
   const $ = <T extends Element>(sel: string, scope: ParentNode = form) => scope.querySelector<T>(sel);
-  const $$ = <T extends Element>(sel: string, scope: ParentNode = form) => [...scope.querySelectorAll<T>(sel)];
+  const $$ = <T extends Element>(sel: string, scope: ParentNode = form) => [
+    ...scope.querySelectorAll<T>(sel),
+  ];
   const summary = $<HTMLElement>("[data-error-summary]");
   const summaryList = $<HTMLElement>("[data-error-list]");
   const statusText = $<HTMLElement>("[data-status-text]");
@@ -117,7 +119,8 @@ function enhance(form: HTMLFormElement) {
     else shown.delete(name);
     wrap.toggleAttribute("data-invalid", Boolean(message));
     for (const c of controlsOf(name))
-      if (c.type !== "radio" && c.type !== "checkbox") c.setAttribute("aria-invalid", String(Boolean(message)));
+      if (c.type !== "radio" && c.type !== "checkbox")
+        c.setAttribute("aria-invalid", String(Boolean(message)));
   }
 
   /** Re-checks one field and updates its error and, if it is showing, the summary. */
@@ -330,7 +333,8 @@ function enhance(form: HTMLFormElement) {
     const title = $<HTMLElement>("[data-step-title]", steps[n - 1] ?? form);
     const progressN = $<HTMLElement>("[data-progress-n]");
     const progressTitle = $<HTMLElement>("[data-progress-title]");
-    if (progressN) progressN.textContent = msg.step.replace("{n}", String(n)).replace("{total}", String(steps.length));
+    if (progressN)
+      progressN.textContent = msg.step.replace("{n}", String(n)).replace("{total}", String(steps.length));
     if (progressTitle && title) progressTitle.textContent = title.textContent;
     for (const item of $$<HTMLElement>("[data-rail-step]", document)) {
       const i = Number(item.dataset.railStep);
@@ -453,7 +457,8 @@ function enhance(form: HTMLFormElement) {
     if (data?.error === "invalid" && Array.isArray(data.fields)) {
       // The server found what this page didn't: show the shared schema's messages for those fields if it can.
       const all = kind === "contact" ? check(contactForm, values()) : new Map<string, string>();
-      if (kind === "quote") for (const s of QUOTE_STEPS) for (const [k, m] of check(s, values())) all.set(k, m);
+      if (kind === "quote")
+        for (const s of QUOTE_STEPS) for (const [k, m] of check(s, values())) all.set(k, m);
       const named = (data.fields as unknown[]).map(String).filter((f) => all.has(f));
       if (named.length > 0) {
         for (const f of named) setError(f, all.get(f));

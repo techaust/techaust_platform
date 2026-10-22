@@ -19,7 +19,15 @@ interface Props {
 
 const { action } = Astro.props;
 const siteKey = turnstileSiteKey();
-const meta = ["sourcePage", "referrerHost", "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"];
+const meta = [
+  "sourcePage",
+  "referrerHost",
+  "utm_source",
+  "utm_medium",
+  "utm_campaign",
+  "utm_term",
+  "utm_content",
+];
 ---
 
 <div class="hp" aria-hidden="true">

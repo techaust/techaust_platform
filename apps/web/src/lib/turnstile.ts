@@ -44,7 +44,9 @@ export function siteKeyOf(config: Config, env?: string): string {
   if (!scope) throw new Error(`turnstile: CLOUDFLARE_ENV="${env}" is not an environment in wrangler.jsonc`);
   const key = scope.vars?.TURNSTILE_SITE_KEY ?? "";
   if (env === "staging" && !key)
-    throw new Error("turnstile: env.staging has no TURNSTILE_SITE_KEY (the forms would ship without spam protection)");
+    throw new Error(
+      "turnstile: env.staging has no TURNSTILE_SITE_KEY (the forms would ship without spam protection)",
+    );
   return key;
 }
 

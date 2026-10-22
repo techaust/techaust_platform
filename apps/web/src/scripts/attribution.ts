@@ -3,14 +3,15 @@
 // No cookies, nothing sent anywhere until the visitor sends a form (scripts/forms.ts reads it). Runs on every page.
 const KEY = "ta_attr";
 const UTM = ["source", "medium", "campaign", "term", "content"] as const;
+// biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are dropped, never stored
+const CONTROL = /[\u0000-\u001f\u007f-\u009f]/g;
 
 try {
   if (!sessionStorage.getItem(KEY)) {
     const q = new URLSearchParams(location.search);
     const utm: Record<string, string> = {};
     for (const k of UTM) {
-      // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are dropped, never stored
-      const v = (q.get(`utm_${k}`) ?? "").replace(/[\u0000-\u001f\u007f-\u009f]/g, "").trim().slice(0, 100);
+      const v = (q.get(`utm_${k}`) ?? "").replace(CONTROL, "").trim().slice(0, 100);
       if (v) utm[k] = v;
     }
     let ref = "";
