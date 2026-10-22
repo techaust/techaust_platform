@@ -1,24 +1,15 @@
 // Pre-production check (M2.3): run by .github/workflows/deploy-prod.yml before a production deploy, NEVER by CI or the
 // staging deploy. It fails while a pending owner input is still a placeholder, so production can't ship with one.
 // Each failure line says what the owner must supply. Pure functions for the tests; the CLI is at the bottom.
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { POSTAL_PLACEHOLDER_TEXT, readSiteBool, readSiteString, walk } from "./web-shared.mjs";
+
+export { POSTAL_PLACEHOLDER_TEXT, readSiteBool, readSiteString };
 
 /** The marker the `Placeholder` component writes (apps/web/src/components/Placeholder.astro). */
 export const PLACEHOLDER_MARKER = "placeholder__tag";
-/** The text `{{postal_address}}` shows while the address is empty (apps/web/src/lib/tokens.ts). */
-export const POSTAL_PLACEHOLDER_TEXT = "[Postal address: owner input pending]";
-
-/** A string value of `key: "…"` in site.ts ("" when empty or missing). */
-export function readSiteString(siteTs, key) {
-  return new RegExp(`\\b${key}:\\s*"([^"]*)"`).exec(siteTs)?.[1] ?? "";
-}
-/** A boolean value of `key: true|false` in site.ts (false when missing). */
-export function readSiteBool(siteTs, key) {
-  return new RegExp(`\\b${key}:\\s*(true|false)\\b`).exec(siteTs)?.[1] === "true";
-}
-
 /** Config the owner must have filled in: [{ key, what }]. */
 const REQUIRED_TEXT = [
   [
@@ -40,6 +31,29 @@ export function checkSiteConfig(siteTs) {
       "The owner must confirm that the security@ and privacy@ aliases deliver (U-5), then set site.aliasesConfirmed to true.",
     );
   return problems;
+}
+
+/**
+ * The launch day (site.launchDate) must be set, and every legal page's `effective` in content/legal.ts must equal it
+ * (owner, 2026-10-22: the effective date is the launch day). `legalTs` is the text of apps/web/src/content/legal.ts.
+ */
+export function checkLaunchDate(siteTs, legalTs) {
+  const launch = readSiteString(siteTs, "launchDate").trim();
+  if (!launch)
+    return [
+      "The launch date is not set: the lead sets site.launchDate and every legal page's `effective` date (apps/web/src/content/legal.ts) to the launch day, together, before production.",
+    ];
+  const dates = [...legalTs.matchAll(/\beffective:\s*"([^"]*)"/g)].map((m) => m[1]);
+  if (dates.length === 0)
+    return [
+      "No `effective` dates found in apps/web/src/content/legal.ts (the readiness check cannot read them).",
+    ];
+  const wrong = [...new Set(dates.filter((d) => d !== launch))];
+  return wrong.length
+    ? [
+        `Legal page effective date(s) ${wrong.join(", ")} differ from site.launchDate ${launch}: the lead sets both to the launch day before production.`,
+      ]
+    : [];
 }
 
 /** Problems in one built page: a Placeholder component or the postal-address placeholder is still on it. */
@@ -64,21 +78,13 @@ export function checkNoindex(headersText) {
     : [];
 }
 
-function walk(dir) {
-  const out = [];
-  for (const entry of readdirSync(dir)) {
-    const p = join(dir, entry);
-    if (statSync(p).isDirectory()) out.push(...walk(p));
-    else out.push(p);
-  }
-  return out;
-}
-
 /** Everything for `webDir` (apps/web); needs dist built. Returns the problems (empty = ready). */
 export function checkProdReadiness(webDir) {
   const dist = join(webDir, "dist");
   if (!existsSync(dist)) return [`${dist} does not exist: build the site first.`];
-  const problems = checkSiteConfig(readFileSync(join(webDir, "src", "config", "site.ts"), "utf8"));
+  const siteTs = readFileSync(join(webDir, "src", "config", "site.ts"), "utf8");
+  const problems = checkSiteConfig(siteTs);
+  problems.push(...checkLaunchDate(siteTs, readFileSync(join(webDir, "src", "content", "legal.ts"), "utf8")));
   for (const file of walk(dist))
     if (file.endsWith(".html"))
       problems.push(...checkBuiltPage(relative(dist, file).split(sep).join("/"), readFileSync(file, "utf8")));

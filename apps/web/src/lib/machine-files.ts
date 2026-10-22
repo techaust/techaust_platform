@@ -1,6 +1,8 @@
 // The machine-readable files the site publishes: /rss.xml (RSS 2.0, written by hand, no package) and
 // /.well-known/security.txt (RFC 9116, docs/07-A §6). Pure functions; the endpoints in src/pages call them.
 
+import { blogPage } from "../content/work-page";
+
 /** The canonical origin of the public site (astro.config.mjs `site`). */
 export const ORIGIN = "https://techaust.com";
 
@@ -42,7 +44,7 @@ export function buildRss(posts: readonly FeedPost[], origin: string = ORIGIN): s
   <channel>
     <title>TecHaust Technologies: Blog</title>
     <link>${origin}/blog</link>
-    <description>Plain-spoken writing on software, automation and AI from TecHaust Technologies.</description>
+    <description>${xmlEscape(blogPage.meta.description)}</description>
     <language>en-IN</language>
     <atom:link href="${origin}/rss.xml" rel="self" type="application/rss+xml" />${lastBuild}${items ? `\n${items}` : ""}
   </channel>

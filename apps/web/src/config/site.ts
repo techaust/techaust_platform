@@ -35,6 +35,12 @@ export const site = {
    */
   aliasesConfirmed: false as boolean,
   /**
+   * OWNER: the launch day, ISO date (YYYY-MM-DD). Every legal page's effective date is the launch day (owner,
+   * 2026-10-22). Empty blocks the production deploy; the lead sets this and every `effective` in content/legal.ts
+   * together before production (scripts/check-prod-readiness.mjs).
+   */
+  launchDate: "" as string,
+  /**
    * `Expires` of /.well-known/security.txt (RFC 9116), ISO 8601, set to one year after it was written. The dist check
    * fails when it is in the past or more than 366 days away: renew it before it lapses.
    */

@@ -1,9 +1,14 @@
 // The blog collection (WEB-BLOG): front-matter schema and pure helpers. `src/content.config.ts` registers the collection
 // with this schema; the helpers take plain entries so Vitest can test them without Astro. Drafts (the default) are
 // excluded from every route and from RSS: pages and the feed read only `published()`.
+import { istDate, toIsoDate } from "@techaust/core";
 import { z } from "astro/zod";
 
-/** The schema; `codes` are the catalogue codes `relatedServices` may name. */
+/**
+ * The schema; `codes` are the codes `relatedServices` may name: the services that have a live page on the site (a
+ * post that names one with no page, such as S8 or S3 while flagged off, would break the build; the caller passes
+ * `linkableServiceCodes()`).
+ */
 export function blogSchema(codes: readonly string[]) {
   return z.strictObject({
     title: z.string().min(1),
@@ -13,7 +18,11 @@ export function blogSchema(codes: readonly string[]) {
     tags: z.array(z.string().min(1)).default([]),
     draft: z.boolean().default(true),
     relatedServices: z
-      .array(z.string().refine((c) => codes.includes(c), { message: "not a catalogue code (S1, S5 ...)" }))
+      .array(
+        z.string().refine((c) => codes.includes(c), {
+          message: `not a service with a live page (use one of: ${codes.join(", ")})`,
+        }),
+      )
       .default([]),
     faq: z.array(z.strictObject({ q: z.string().min(1), a: z.string().min(1) })).optional(),
   });
@@ -29,7 +38,7 @@ export function published<T extends { id: string; data: { draft: boolean; date: 
     .sort((a, b) => b.data.date.getTime() - a.data.date.getTime() || a.id.localeCompare(b.id));
 }
 
-/** The text without Markdown code fences, for counting words and finding headings. */
+/** The text without Markdown code fences, for counting words. */
 const prose = (md: string): string => md.replace(/```[\s\S]*?```/g, " ");
 
 /** Minutes to read: words ÷ 200, rounded up, at least 1. */
@@ -38,24 +47,8 @@ export function readingTime(markdown: string): number {
   return Math.max(1, Math.ceil(words / 200));
 }
 
-export type TocItem = { depth: 2 | 3; text: string; slug: string };
+/** A table-of-contents entry (the post page reads Astro's own heading list, which has these fields). */
+export type TocItem = { depth: number; text: string; slug: string };
 
-/** GitHub-style slug of a heading, as Astro's Markdown renderer writes ids. */
-export const headingSlug = (text: string): string =>
-  text
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s-]/gu, "")
-    .trim()
-    .replace(/\s+/g, "-");
-
-/** h2 and h3 headings of a Markdown body for a table of contents (code fences skipped). */
-export function headings(markdown: string): TocItem[] {
-  const out: TocItem[] = [];
-  for (const line of prose(markdown).split(/\r?\n/)) {
-    const m = /^(#{2,3})\s+(.+?)\s*#*\s*$/.exec(line);
-    if (!m) continue;
-    const text = (m[2] as string).replace(/[*_`]/g, "");
-    out.push({ depth: (m[1] as string).length as 2 | 3, text, slug: headingSlug(text) });
-  }
-  return out;
-}
+/** A post date as the IST calendar day, "YYYY-MM-DD" (for visible dates and JSON-LD; never the UTC day). */
+export const istDay = (d: Date): string => toIsoDate(istDate(d.getTime()));

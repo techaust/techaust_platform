@@ -7,7 +7,7 @@
 // they can be clicked, and 07-A's Markdown links as written; a bold lead that 07-A ends with "." becomes the section
 // heading on the pages with numbered sections (privacy, terms), without that full stop. Numbers are 07-A's. The
 // version line and the version log ("Changes") come from content/legal.ts (lib/legal.ts), not from here; 07-A's
-// "*Version x · Effective {{effective_date}}*" footers are replaced by that line at the top of each page.
+// "*Version x · Effective <date>*" footers are replaced by that line at the top of each page.
 // {{postal_address}} renders site.postalAddress, or a marked gap while the owner hasn't supplied it.
 // "Cookie settings" links (#cookie-settings) open the footer's preferences dialog (CopyText).
 import { money } from "@techaust/core";
@@ -29,8 +29,8 @@ export type LegalDoc = {
   slug: LegalSlug;
   /** The page's h1 (07-A's heading for the page). */
   title: string;
-  /** 07-A gives no meta: the title is the h1 with the site suffix; no description until the owner writes one. */
-  meta: { title: string };
+  /** Title: the h1 with the site suffix. Description: docs/07-content-appendix/F (07-A gives none). */
+  meta: { title: string; description: string };
   /** Privacy only: "Summary (shown first, in a box)". */
   summary?: { term: string; text?: string; list?: string[] }[];
   /** Text before the first numbered section (or the whole page when it has no sections). */
@@ -54,12 +54,17 @@ const WEBSITE_LIABILITY_CAP = displayAmount(money(1_000_000, "INR"));
  * 07-A §5 (cookie policy) while the GA4 ID setting is empty (lead decision 2026-10-22, docs/13): the Google Analytics
  * sentence and the `_ga` row are left out. They come back as written when site.ga4Id is set.
  */
-const ga = Boolean(site.ga4Id);
+const GA_ON = Boolean(site.ga4Id);
 
-const privacy: LegalDoc = {
+const makePrivacy = (ga: boolean): LegalDoc => ({
   slug: "privacy",
   title: "Privacy notice",
-  meta: { title: "Privacy notice | TecHaust" },
+  // 07-F (owner-approved 2026-10-22).
+  meta: {
+    title: "Privacy notice | TecHaust",
+    description:
+      "What personal data TecHaust Technologies collects and why, who we share it with, how long we keep it, and how to use your rights.",
+  },
   summary: [
     {
       term: "Who we are",
@@ -83,7 +88,7 @@ const privacy: LegalDoc = {
     },
     {
       term: "Your choices",
-      text: "analytics cookies only with your consent; marketing emails only if you opt in; you can ask us to access, correct or delete your data.",
+      text: `${ga ? "analytics cookies only with your consent; " : ""}marketing emails only if you opt in; you can ask us to access, correct or delete your data.`,
     },
     { term: "Contact", text: `Rupak Sarkar, Founder (Grievance Officer) · ${PRIVACY}.` },
   ],
@@ -117,12 +122,17 @@ const privacy: LegalDoc = {
                 // VERIFY WITH CA/LEGAL (07-A): the EU/UK basis.
                 "India: provided voluntarily by using the site for that purpose (DPDP s.7(a)). EU/UK: legitimate interests",
               ],
-              [
-                "**Visitor who accepts analytics**",
-                "Google Analytics identifiers and usage events",
-                "Understand which pages help visitors",
-                "**Consent** (withdraw at any time via “Cookie settings”)",
-              ],
+              // Google Analytics rows: only while GA is on (site.ga4Id set).
+              ...(ga
+                ? [
+                    [
+                      "**Visitor who accepts analytics**",
+                      "Google Analytics identifiers and usage events",
+                      "Understand which pages help visitors",
+                      "**Consent** (withdraw at any time via “Cookie settings”)",
+                    ],
+                  ]
+                : []),
               [
                 "**Enquirer** (contact or quote form, email, WhatsApp, booking)",
                 "Name, work email, company, country, phone/WhatsApp (optional), project details, budget band, timeline, preferred call time, the page you came from",
@@ -175,7 +185,9 @@ const privacy: LegalDoc = {
               ["Razorpay Software Pvt Ltd", "Payments in INR", "India"],
               ["Stripe (if used)", "Card payments in USD", "USA / global"],
               ["PayPal", "Payments in USD", "Global"],
-              ["Google (Analytics)", "Website analytics, **only with your consent**", "USA / global"],
+              ...(ga
+                ? [["Google (Analytics)", "Website analytics, **only with your consent**", "USA / global"]]
+                : []),
               ["Zoho Corporation", "Our email inbox", "India"],
               ["Cal.com", "Call booking (if you use the booking link)", "USA / EU"],
               [
@@ -219,7 +231,7 @@ const privacy: LegalDoc = {
               ],
               ["Security and access logs", "13 months"],
               ["Email delivery records", "13 months"],
-              ["Analytics (Google, with consent)", "14 months (Google’s setting)"],
+              ...(ga ? [["Analytics (Google, with consent)", "14 months (Google’s setting)"]] : []),
               // VERIFY WITH CA/LEGAL (07-A): proof of consent for 3 years.
               ["Newsletter consent", "Until you unsubscribe, plus proof of consent for 3 years after"],
               [
@@ -344,12 +356,17 @@ const privacy: LegalDoc = {
       ],
     },
   ],
-};
+});
 
 const terms: LegalDoc = {
   slug: "terms",
   title: "Website terms of use",
-  meta: { title: "Website terms of use | TecHaust" },
+  // 07-F (owner-approved 2026-10-22).
+  meta: {
+    title: "Website terms of use | TecHaust",
+    description:
+      "The terms for using techaust.com and our client portal: prices and tax, our content, acceptable use, liability and the law that applies.",
+  },
   sections: [
     {
       id: "about-these-terms",
@@ -491,7 +508,12 @@ const terms: LegalDoc = {
 const refunds: LegalDoc = {
   slug: "refund-policy",
   title: "Refunds and cancellations",
-  meta: { title: "Refunds and cancellations | TecHaust" },
+  // 07-F (owner-approved 2026-10-22).
+  meta: {
+    title: "Refunds and cancellations | TecHaust",
+    description:
+      "How cancellations and refunds work for fixed-price projects, small fixed jobs, care plans and subscriptions, and how to ask for a refund.",
+  },
   blocks: [
     // VERIFY WITH CA/LEGAL (07-A).
     {
@@ -535,7 +557,12 @@ const refunds: LegalDoc = {
 const delivery: LegalDoc = {
   slug: "delivery-policy",
   title: "Delivery policy",
-  meta: { title: "Delivery policy | TecHaust" },
+  // 07-F (owner-approved 2026-10-22).
+  meta: {
+    title: "Delivery policy | TecHaust",
+    description:
+      "How we deliver software, designs and automations: nothing is shipped physically. Delivery methods, timelines, acceptance and ownership.",
+  },
   blocks: [
     {
       ol: [
@@ -560,7 +587,7 @@ const delivery: LegalDoc = {
   ],
 };
 
-const cookieRows: string[][] = [
+const cookieRows = (ga: boolean): string[][] => [
   ["`ta_consent` (browser storage)", "TecHaust", "Remembers your cookie choice", "Necessary", "12 months"],
   [
     "`ta_theme`, `ta_currency` (browser storage)",
@@ -591,26 +618,39 @@ const cookieRows: string[][] = [
   ["`__Host-ta_admin`", "TecHaust", "Keeps staff signed in to the admin", "Necessary", "Up to 7 days"],
 ];
 
-const cookies: LegalDoc = {
+const makeCookies = (ga: boolean): LegalDoc => ({
   slug: "cookies",
   title: "Cookie policy",
-  meta: { title: "Cookie policy | TecHaust" },
+  // 07-F (owner-approved 2026-10-22).
+  meta: {
+    title: "Cookie policy | TecHaust",
+    description:
+      "The cookies and browser storage techaust.com uses, why each is needed and how long it lasts. We count visits with cookieless analytics.",
+  },
   blocks: [
     { p: "**What cookies are.** Small files or browser storage that a website uses to remember things." },
     {
       p: `**Our approach.** Our website works without analytics cookies. We use Cloudflare Web Analytics, which doesn’t use cookies, to count visits.${ga ? " **Google Analytics loads only if you click “Accept analytics”.**" : ""}`,
     },
-    { table: { head: ["Name", "Provider", "Purpose", "Type", "Duration"], rows: cookieRows } },
+    { table: { head: ["Name", "Provider", "Purpose", "Type", "Duration"], rows: cookieRows(ga) } },
     {
-      p: "**Your choice.** Use “[Cookie settings](#cookie-settings)” in the footer to accept or reject analytics at any time. Rejecting is as easy as accepting. You can also delete cookies in your browser. We record your choice (and when you made it) so we can show we respected it.",
+      // While GA is off there is nothing to accept or reject (lead wording, docs/13 2026-10-22).
+      p: ga
+        ? "**Your choice.** Use “[Cookie settings](#cookie-settings)” in the footer to accept or reject analytics at any time. Rejecting is as easy as accepting. You can also delete cookies in your browser. We record your choice (and when you made it) so we can show we respected it."
+        : "**Your choice.** You can delete cookies in your browser.",
     },
   ],
-};
+});
 
 const security: LegalDoc = {
   slug: "security",
   title: "Security and responsible disclosure",
-  meta: { title: "Security and responsible disclosure | TecHaust" },
+  // 07-F (owner-approved 2026-10-22).
+  meta: {
+    title: "Security and responsible disclosure | TecHaust",
+    description:
+      "How we protect our systems and how to report a vulnerability: what is in scope, the rules for testing, and our safe harbour for good-faith research.",
+  },
   blocks: [
     {
       p: "**How we protect our systems.** HTTPS everywhere, two-factor sign-in for staff, role-based access, audit logs, encrypted off-site backups and regular updates. We keep these claims modest and true.",
@@ -644,7 +684,12 @@ const security: LegalDoc = {
 const accessibility: LegalDoc = {
   slug: "accessibility",
   title: "Accessibility statement",
-  meta: { title: "Accessibility statement | TecHaust" },
+  // 07-F (owner-approved 2026-10-22).
+  meta: {
+    title: "Accessibility statement | TecHaust",
+    description:
+      "Our aim to meet WCAG 2.2 level AA on techaust.com, the client portal and the admin, what we do to get there, and how to tell us about a problem.",
+  },
   // 07-A §8: "Draft. VERIFY WITH CA/LEGAL. Source: 08 §7.3 L-15 and 04 WEB-G-16."
   blocks: [
     {
@@ -669,12 +714,15 @@ const accessibility: LegalDoc = {
   ],
 };
 
-export const legalPages: Record<LegalSlug, LegalDoc> = {
-  privacy,
+/** The seven pages; `ga` is whether site.ga4Id is set (the GA lines in privacy and cookies come back when it is). */
+export const buildLegalPages = (ga: boolean): Record<LegalSlug, LegalDoc> => ({
+  privacy: makePrivacy(ga),
   terms,
   "refund-policy": refunds,
   "delivery-policy": delivery,
-  cookies,
+  cookies: makeCookies(ga),
   accessibility,
   security,
-};
+});
+
+export const legalPages = buildLegalPages(GA_ON);

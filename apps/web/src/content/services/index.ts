@@ -48,6 +48,12 @@ export function serviceContent(code: ServiceCode): ServiceContent {
 /** Every service page to build (WEB-G-17: a flagged-off service gets no page, so its URL is a 404). */
 export const liveServices = (): ServiceContent[] => all.filter((s) => isServiceOnSite(s.code));
 
+/**
+ * The codes a blog post may name in `relatedServices` (blogSchema): the services with a live page and a content file.
+ * Not S8, S15 or S17 (no page of their own), and not S3 while its flag is off.
+ */
+export const linkableServiceCodes = (): string[] => liveServices().map((s) => s.code);
+
 /** The home "What we do" cards (07 §3 order), linked and priced from the service pages like the hub's items. */
 export const homeCards = (): ServiceLink[] => home.services.cards.map((c) => serviceLink(c.price));
 

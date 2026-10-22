@@ -8,14 +8,14 @@ import PageHero from "../../components/PageHero.astro";
 import { pageLabels as P } from "../../content/labels";
 import { blogPage } from "../../content/work-page";
 import BaseLayout from "../../layouts/BaseLayout.astro";
-import { published, readingTime } from "../../lib/blog";
+import { istDay, published, readingTime } from "../../lib/blog";
 import { formatLegalDate } from "../../lib/legal";
 
 const posts = published(await getCollection("blog"));
-const iso = (d: Date) => d.toISOString().slice(0, 10);
+const iso = istDay;
 ---
 
-<BaseLayout title={blogPage.meta.title} rss={posts.length > 0}>
+<BaseLayout title={blogPage.meta.title} description={blogPage.meta.description} rss={posts.length > 0}>
   <PageHero title={P.blog} />
 
   <section class="section section--flush-top">

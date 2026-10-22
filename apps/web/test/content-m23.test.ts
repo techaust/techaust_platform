@@ -1,18 +1,25 @@
 // M2.3 data and machine files: the blog and case-study schemas, RSS, security.txt, legal version data and the
-// {{terms:…}} / {{postal_address}} / {{effective_date}} tokens (WEB-BLOG, WEB-WORK, WEB-LEGAL, WEB-SEC, WEB-G-11).
+// {{terms:…}} / {{postal_address}} tokens (WEB-BLOG, WEB-WORK, WEB-LEGAL, WEB-SEC, WEB-G-11).
 // Runs in Node.
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 // @ts-expect-error plain .mjs without types
 import * as c from "../../../scripts/web-dist-checks.mjs";
-import { blogSchema, headings, published, readingTime } from "../src/lib/blog";
-import { snapshot } from "../src/lib/catalogue";
+import { flags } from "../src/config/site";
+import { legal } from "../src/content/legal";
+import { legalPages } from "../src/content/legal-pages";
+import { linkableServiceCodes } from "../src/content/services";
+import { blogPage } from "../src/content/work-page";
+import { blogSchema, istDay, published, readingTime } from "../src/lib/blog";
 import { formatLegalDate, LEGAL_SLUGS, validateLegal, versionLine } from "../src/lib/legal";
 import { buildRss, buildSecurityTxt } from "../src/lib/machine-files";
 import { POSTAL_ADDRESS_PLACEHOLDER, parseTokens, renderPlain } from "../src/lib/tokens";
 import { caseStudySchema, publishedCases } from "../src/lib/work";
 import { fixturePost } from "./fixtures/blog-post";
 
-const codes = snapshot().items.map((i) => i.code);
+const codes = linkableServiceCodes();
 const schema = blogSchema(codes);
 const post = (over: Record<string, unknown> = {}) => schema.parse({ ...fixturePost.data, ...over });
 
@@ -23,8 +30,8 @@ describe("blog front-matter (WEB-BLOG)", () => {
     expect(schema.parse(noDraft).draft).toBe(true);
   });
 
-  it("rejects a related service that is not a catalogue code, and unknown keys", () => {
-    expect(() => post({ relatedServices: ["S99"] })).toThrow(/catalogue code/);
+  it("rejects a related service that is not a live service page, and unknown keys", () => {
+    expect(() => post({ relatedServices: ["S99"] })).toThrow(/live page/);
     expect(() => post({ surprise: 1 })).toThrow();
     expect(() => post({ date: "not a date" })).toThrow();
   });
@@ -46,11 +53,23 @@ describe("blog front-matter (WEB-BLOG)", () => {
     expect(readingTime(`${"word ".repeat(10)}\n\`\`\`\n${"code ".repeat(500)}\n\`\`\``)).toBe(1);
   });
 
-  it("lists h2 and h3 headings, skipping code fences", () => {
-    expect(headings(fixturePost.body)).toEqual([
-      { depth: 2, text: "First heading", slug: "first-heading" },
-      { depth: 3, text: "Second level", slug: "second-level" },
-    ]);
+  it("accepts only services that have a page: not S8, S15, S17, and not S3 while its flag is off", () => {
+    for (const code of ["S8", "S15", "S17"]) {
+      expect(codes).not.toContain(code);
+      expect(() => post({ relatedServices: [code] })).toThrow(/live page/);
+    }
+    if (!flags.S3_DPDP_PAGE) {
+      expect(codes).not.toContain("S3");
+      expect(() => post({ relatedServices: ["S3"] })).toThrow(/live page/);
+    }
+    expect(codes).toContain("S1");
+  });
+
+  it("shows post dates as the IST day (an early-morning +05:30 time is the same day, not the UTC day before)", () => {
+    expect(istDay(new Date("2026-10-23T02:00:00+05:30"))).toBe("2026-10-23");
+    expect(new Date("2026-10-23T02:00:00+05:30").toISOString().slice(0, 10)).toBe("2026-10-22"); // the old, UTC answer
+    expect(istDay(new Date("2026-10-22T23:00:00Z"))).toBe("2026-10-23");
+    expect(istDay(new Date("2026-10-22"))).toBe("2026-10-22");
   });
 });
 
@@ -212,7 +231,7 @@ describe("legal page versioning (WEB-LEGAL)", () => {
   });
 });
 
-describe("{{terms:…}}, {{postal_address}} and {{effective_date}} tokens", () => {
+describe("{{terms:…}} and {{postal_address}} tokens", () => {
   it("renders the small-job threshold in both currencies, whole units, no GST", () => {
     const [p] = parseTokens("{{terms:small_job_threshold}}");
     if (p?.kind !== "price") throw new Error("expected a price part");
@@ -232,10 +251,68 @@ describe("{{terms:…}}, {{postal_address}} and {{effective_date}} tokens", () =
     expect(POSTAL_ADDRESS_PLACEHOLDER).toMatch(/owner input pending/);
   });
 
-  it("renders the effective date only where the page gives it", () => {
-    expect(renderPlain("From {{effective_date}}.", { effectiveDate: "22 October 2026" })).toBe(
-      "From 22 October 2026.",
+  it("has no {{effective_date}} token any more (the pages print versionLine)", () => {
+    expect(() => parseTokens("{{effective_date}}")).toThrow(/Unknown content token/);
+  });
+
+  it("keeps the postal-address placeholder in step with the readiness scripts' copy of it", async () => {
+    // @ts-expect-error plain .mjs without types
+    const shared = await import("../../../scripts/web-shared.mjs");
+    expect(shared.POSTAL_PLACEHOLDER_TEXT).toBe(POSTAL_ADDRESS_PLACEHOLDER);
+  });
+});
+
+describe("RSS description and meta descriptions (07-F, owner-approved)", () => {
+  it("uses the /blog description for the RSS channel", () => {
+    expect(buildRss([])).toContain(`<description>${blogPage.meta.description}</description>`);
+    expect(blogPage.meta.description).toBe(
+      "Practical notes on custom software, AI document automation, workflow automation and connecting business systems, from the TecHaust team.",
     );
-    expect(() => parseTokens("{{effective_date}}")).toThrow(/effective date/);
+  });
+
+  it("gives every legal page a description of at most 155 characters, word for word from 07-F", () => {
+    expect(legalPages.privacy.meta.description).toBe(
+      "What personal data TecHaust Technologies collects and why, who we share it with, how long we keep it, and how to use your rights.",
+    );
+    expect(legalPages.security.meta.description).toBe(
+      "How we protect our systems and how to report a vulnerability: what is in scope, the rules for testing, and our safe harbour for good-faith research.",
+    );
+    for (const slug of LEGAL_SLUGS) {
+      const d = legalPages[slug].meta.description;
+      expect(d.length).toBeGreaterThan(0);
+      expect(d.length).toBeLessThanOrEqual(155);
+    }
+  });
+
+  it("checks a built page's description: present, non-empty, at most 155 characters", () => {
+    const page = (d: string) => `<head><meta name="description" content="${d}"></head>`;
+    expect(c.checkMetaDescription("a.html", page("Fine."))).toEqual([]);
+    expect(c.checkMetaDescription("a.html", "<head></head>").join()).toMatch(/no meta description/);
+    expect(c.checkMetaDescription("a.html", page("")).join()).toMatch(/no meta description/);
+    expect(c.checkMetaDescription("a.html", page("x".repeat(156))).join()).toMatch(/156 characters/);
+    expect(c.checkMetaDescription("a.html", page("x".repeat(155)))).toEqual([]);
+    expect(c.checkMetaDescription("404.html", "<head></head>")).toEqual([]);
+  });
+
+  it("reports a legal page that is missing from the build", () => {
+    const dir = mkdtempSync(join(tmpdir(), "legal-"));
+    try {
+      writeFileSync(join(dir, "privacy.html"), "<h2>Changes</h2>Version 0.1 · Effective 22 October 2026");
+      const out = c.checkLegalPages(dir).join("\n");
+      expect(out).toContain("terms.html: legal page not built");
+      expect(out).not.toContain("privacy.html");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("accessibility statement version (07-A §8)", () => {
+  it("is 0.2 with one change entry, 'First published version.'", () => {
+    expect(legal.accessibility.version).toBe("0.2");
+    expect(legal.accessibility.changes).toEqual([
+      { version: "0.2", date: "2026-10-22", note: "First published version." },
+    ]);
+    expect(legal.privacy.version).toBe("0.1");
   });
 });

@@ -7,6 +7,6 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 const doc = legalPages["refund-policy"];
 ---
 
-<BaseLayout title={doc.meta.title}>
+<BaseLayout title={doc.meta.title} description={doc.meta.description}>
   <LegalPage doc={doc} />
 </BaseLayout>

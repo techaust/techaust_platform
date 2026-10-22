@@ -7,9 +7,10 @@
 //     text, plus the one-h1 rule
 // Exceptions live in apps/web/content-lint-allow.json: { "allow": [{ "file", "phrase", "reason" }] }. Every entry needs a
 // reason (the comment 07 §1.3 asks for); `file` is the path relative to apps/web (source) or to dist (built HTML).
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { walk } from "./web-shared.mjs";
 
 // Word-bounded: not glued to letters, digits, "_" or "-" on either side. `caseSensitive` is for "LIVE" as a badge,
 // which must not catch the ordinary word "live".
@@ -127,16 +128,6 @@ export function checkOneH1(name, html) {
       .match(/<h1[\s>]/gi) ?? []
   ).length;
   return n === 1 ? [] : [`${name}: ${n} <h1> elements (exactly one per page)`];
-}
-
-function walk(dir) {
-  const out = [];
-  for (const entry of readdirSync(dir)) {
-    const p = join(dir, entry);
-    if (statSync(p).isDirectory()) out.push(...walk(p));
-    else out.push(p);
-  }
-  return out;
 }
 
 /** The allow-list of apps/web ({ entries, problems }); a missing file means no exceptions. */
