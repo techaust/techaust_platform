@@ -14,7 +14,14 @@ export type Link = { label: string; href: string };
 export type PriceSpec = { ref: PriceRef; lead?: string; unit?: string };
 
 /** One service in an index (home "What we do", "Related services", the services hub). */
-export type ServiceLink = { title: string; href: string; text: string; price: PriceRef; lead?: string; unit?: string };
+export type ServiceLink = {
+  title: string;
+  href: string;
+  text: string;
+  price: PriceRef;
+  lead?: string;
+  unit?: string;
+};
 
 /**
  * One step of an ordered process (home "How we work", a service's "How it works"). `when` is the step's duration or

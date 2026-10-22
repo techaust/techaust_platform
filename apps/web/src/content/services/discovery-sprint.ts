@@ -51,8 +51,7 @@ export const discoverySprint: ServiceContent = {
       { title: "Analysis and prototype", when: "Week 1–2" },
       { title: "Walkthrough and proposal" },
     ],
-    needs:
-      "2–4 hours of your team’s time and sample documents or data (we sign an NDA first if you like).",
+    needs: "2–4 hours of your team’s time and sample documents or data (we sign an NDA first if you like).",
   },
   pricing: {
     prices: [{ ref: "S1" }],

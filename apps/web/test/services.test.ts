@@ -41,13 +41,16 @@ describe("service pages", () => {
     expect(text.join("\n")).not.toMatch(/&/);
   });
 
-  it.each(live.map((s) => [s.code, s] as [string, ServiceContent]))("%s: pricing shows the schedule", (_, s) => {
-    if (s.plans) {
-      expect(scheduleOf(s.code)).toBe("Monthly in advance");
-      return;
-    }
-    expect(s.pricing?.lines).toContain(SCHEDULE);
-  });
+  it.each(live.map((s) => [s.code, s] as [string, ServiceContent]))(
+    "%s: pricing shows the schedule",
+    (_, s) => {
+      if (s.plans) {
+        expect(scheduleOf(s.code)).toBe("Monthly in advance");
+        return;
+      }
+      expect(s.pricing?.lines).toContain(SCHEDULE);
+    },
+  );
 
   it("shows FAQs only within WEB-SVC-04 (4–8); S1 and S9 have them", () => {
     for (const s of live) expect((s.faqs ?? []).length).toBeLessThanOrEqual(8);

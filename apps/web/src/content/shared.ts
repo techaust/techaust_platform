@@ -33,7 +33,10 @@ export const shared = {
 export const cta = {
   discovery: (): Link => ({ label: shared.cta.discovery, href: discoveryHref }),
   quote: (code: string): Link => ({ label: shared.cta.quote, href: `/get-a-quote?service=${code}` }),
-  pilot: (code: string): Link => ({ label: shared.cta.pilot, href: `/get-a-quote?service=${code}&type=pilot` }),
+  pilot: (code: string): Link => ({
+    label: shared.cta.pilot,
+    href: `/get-a-quote?service=${code}&type=pilot`,
+  }),
   audit: (): Link => ({ label: shared.cta.audit, href: "/get-a-quote?service=S2" }),
   talk: (): Link => ({ label: shared.cta.talk, href: "/contact" }),
   /** 07 §2.3 "Choose a plan": `plan` is the tier ("essential"); without it, the quote form for S16. */
