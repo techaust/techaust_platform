@@ -55,7 +55,7 @@ const usd = draft.usdCode;
     min-block-size: var(--target-min);
     /* A wider target than the words; pulled back so the text sits where a plain link would. */
     padding-inline: var(--space-2);
-    margin-inline: calc(-1 * var(--space-2));
+    margin-inline: 0 calc(-1 * var(--space-2)); /* not on the left: the focus ring would cover the separator */
     border: 0;
     border-radius: var(--radius-sm);
     background: transparent;
