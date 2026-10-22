@@ -147,3 +147,15 @@ node .\node_modules\wrangler\bin\wrangler.js login
 - **SES production access** (AWS → SES → Account dashboard → **Request production access**), so the visitor's acknowledgement reaches any address.
 - A production IAM user and key, the production Turnstile widget on `techaust.com`, and the production queue.
 - DMARC: check the existing `_dmarc.techaust.com` record, then move from `p=none` to `quarantine` after a few weeks of clean reports.
+
+## Part 7. Let the email logo through Access on staging (owner decision 2026-10-23; about 3 minutes)
+
+The emails load the logo from `https://techaust-platform-web-staging.techaust-technologies-153.workers.dev/brand/…`. Email apps can't sign in to Access, so this one folder (public logo files only) gets a **Bypass**; everything else on staging stays locked.
+
+1. Open **https://one.dash.cloudflare.com** and pick the **Techaust Technologies** account.
+2. Left menu: **Access controls → Applications** → **Add an application** → **Self-hosted**.
+3. Application name: `web-staging public logos`.
+4. **Add public hostname** (or "Destination"): choose the domain `techaust-platform-web-staging.techaust-technologies-153.workers.dev` (if it's offered as a subdomain + domain pair, pick `techaust-technologies-153.workers.dev` as the domain and type `techaust-platform-web-staging` as the subdomain), and in **Path** type `brand/*`. If the workers.dev name can't be chosen at all, stop and tell me.
+5. **Access policies** → **Create new policy**: name `Public logos`, Action **Bypass**, Include selector **Everyone**. Save the policy and make sure it's the only policy on this application.
+6. Leave session settings as they are; **Save** the application.
+7. Check: open a private browser window at `https://techaust-platform-web-staging.techaust-technologies-153.workers.dev/brand/logo-email-light.png`. Before the M2.4 deploy it shows a "not found" page (not the Access sign-in); after the deploy, the logo. The home page in the same private window must still show the Access sign-in.
