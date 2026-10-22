@@ -8,6 +8,9 @@
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
+  // Version/Preview URLs skip Cloudflare Access, so they stay off at every level (docs/runbooks/access-staging.md;
+  // CI guard: scripts/check-worker-config.mjs).
+  "preview_urls": false,
   // Workers Logs (M1.6, LD14; the owner's admin decision applies): invocation logs stay ON here and in staging (the
   // CPU check reads `cpuTimeMs` from them; only the owner's visits reach staging). The app's own `ev: "req"` lines and
   // errors are console logs and stay on everywhere. Query strings are removed from logged URLs.
@@ -47,7 +50,9 @@
     "production": {
       "name": "techaust-platform-portal",
       "workers_dev": false,
+      "preview_urls": false,
       "vars": { "ENVIRONMENT": "production", "PAYMENTS_LIVE_ALLOWED": "false" },
+      "secrets": { "required": ["PORTAL_KEY_PEPPER"] },
       // Production: NO invocation logs from day one (they carry the client IP, user agent and location of every
       // request, which the append-only access log already holds for security). Console logs stay on.
       "observability": {

@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono } from "hono/tiny";
 import { secureHeaders } from "hono/secure-headers";
 
 // Runs ONLY for /api/* (run_worker_first). Static pages never invoke this Worker.
