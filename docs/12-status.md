@@ -1,6 +1,6 @@
 # 12: Status
 
-_Replaced (never appended) at the end of every session. Last updated: **2026-10-21** (IST)._
+_Replaced (never appended) at the end of every session. Last updated: **2026-10-22** (IST)._
 
 ## Done
 - **Phases 1–5:** approved 2026-10-06 ([09-roadmap.md](09-roadmap.md)).
@@ -22,19 +22,19 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
 - **M1.5: staff auth (complete): approved 2026-10-21** ([PR #27](https://github.com/techaust/techaust_platform/pull/27), break-glass [PR #28](https://github.com/techaust/techaust_platform/pull/28); [runs/m1.5-staff-auth.md](runs/m1.5-staff-auth.md), [runs/m1.5-break-glass.md](runs/m1.5-break-glass.md)). Owner signed in on staging; benchmark run 4 met every target (login p99 5 ms, cold starts 3–7 ms; [cpu-baseline.md](runbooks/cpu-baseline.md)); break-glass = a one-time owner invite to a second address.
 
 ## In progress
-- **M1.6: portal auth**, Tier A ([PR #29](https://github.com/techaust/techaust_platform/pull/29) once open; [runs/m1.6-portal-auth.md](runs/m1.6-portal-auth.md)). Owner's answers 2026-10-21: portal security log = sign-ins + signed-in actions (not unauthenticated refusals); labelled sample organisations on staging/local; one link per organisation. `PORTAL_KEY_PEPPER` set on staging by the owner.
+- **M1.6: portal auth**, Tier A, merged and on staging, **waiting for the owner's "approved"** ([PR #29](https://github.com/techaust/techaust_platform/pull/29); [runs/m1.6-portal-auth.md](runs/m1.6-portal-auth.md)). Owner's answers 2026-10-21: portal security log = sign-ins + signed-in actions (not unauthenticated refusals); labelled sample organisations on staging/local; one link per organisation. `PORTAL_KEY_PEPPER` set on staging by the owner.
   - Builder → analyst GO WITH CHANGES (sign-out write flood, route-driven scoping proof, `changes() = 1` proof, console watch; all fixed) → designer (sign-in, callback with click-to-continue, interim home) → reviewer **APPROVE** (one medium and one low, both fixed by the lead).
   - Tests: portal 401, admin 411, auth 94, db 44, core 279; portal Worker 55 KB.
 
 ## Next
-1. Merge M1.6 → staging deploy (migrations 0005 drop index, 0006 triggers).
-2. Lead: `pnpm portal:sample --staging`, then a sample sign-in link for the owner; read `cpuTimeMs`, verify 200 on real D1 and cookie redaction from Workers Logs. Also the M1.5 staging lockout smoke (unknown email, 11 wrong passwords → 429) and the doc fixes listed in both run files.
+1. Done 2026-10-22: staging deploy, sample organisations, the owner's sign-in check ("everything working"), every portal request ≤ 10 ms CPU (verify 8 ms cold), cookies redacted in Workers Logs.
+2. Lead: the M1.5 staging lockout smoke (unknown email, 11 wrong passwords → 429; needs a run through Access) and the doc fixes listed in both run files ("Docs that disagree").
 3. On the owner's "approved": M2.1 site shell (design preview first, docs/14 §4; needs the GA4 decision).
 
 **Usage on 2026-10-21:** weekly 12 % after M1.5, the break-glass follow-up and M1.6; 5-hour peak 23 %; under the pace. Weekly reset **Mon 26 Oct, 15:30 IST**.
 
 ## Waits on the owner
-- **M1.6 on staging:** open the sample sign-in link I send, pass Access, press "Continue", look around, sign out; then "approved" (note: "Email me a sign-in link" sends nothing until M2.4).
+- **M1.6:** checked on staging 2026-10-22; **say "approved"** to start M2.1 (site shell; a design preview comes first).
 - Optional: approve installing `@axe-core/playwright` for automated accessibility checks (planned for M2.1 tests).
 - **Time-sensitive compliance** ([08 §0](08-security-compliance.md); all VERIFY WITH CA):
   - **U-3 UPI MDR from 15 Oct 2026:** check the Razorpay pricing.
