@@ -2,7 +2,7 @@
 // capitals at the start of 07's lower-case fragments where they stand alone, and 07's pricing line
 // "pilot {{price:S12}} → production → AI Ops" set as the pilot price plus the path. The payment schedule is
 // scheduleOf("S12") (WEB-SVC-05). 07 calls the list "What makes ours different"; the honest note follows it.
-// GAP (run file): no FAQs in 07 (WEB-SVC-04 wants 4–8): FAQ section not shown. Related: the designer's pick.
+// FAQs: 07-C, drafted by the lead, confirmed by the owner (2026-10-22). Related: the designer's pick.
 import { cta } from "../shared";
 import { SCHEDULE, type ServiceContent } from "../types";
 
@@ -38,5 +38,27 @@ export const aiKnowledgeAssistants: ServiceContent = {
     prices: [{ ref: "S12", lead: "Pilot" }],
     lines: ["Pilot → production → AI Ops", "Model and API usage passed through at cost", SCHEDULE],
   },
+  faqs: [
+    {
+      q: "Can people see documents they shouldn’t?",
+      a: "It’s built so they can’t: access control means each person only gets answers from documents they’re allowed to see.",
+    },
+    {
+      q: "How do we know the answers are right?",
+      a: "Every answer shows its sources, one click away, and we measure quality on a test set of your own questions before and after every change. When the sources don’t cover a question, it says it doesn’t know.",
+    },
+    {
+      q: "Can it run in India or on our own servers?",
+      a: "Yes. India-hosted and on-premises options are available where you need them.",
+    },
+    {
+      q: "What about model and API costs?",
+      a: "They’re passed through at cost, with no mark-up. Once it’s live, AI Ops tracks the costs each month.",
+    },
+    {
+      q: "Does it work in Indian languages?",
+      a: "Yes, for the languages your documents and users need; we test them in the pilot.",
+    },
+  ],
   related: ["S9", "S13", "S16"],
 };

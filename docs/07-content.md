@@ -208,7 +208,7 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 - **How it works:** Discover (1–2 weeks) → Design (1–2 weeks) → Build in milestones with fortnightly demos → Launch → Warranty → Care plan. Typical timeline: 6–14 weeks.
 - **Pricing:** {{price:S5}} · fixed per milestone · {{schedule:S5}} · change requests quoted before work.
 - **Tech:** "Modern web stack (TypeScript, React, cloud hosting in India or abroad), chosen per project and documented."
-- **FAQs:** "Can it work on phones?" (yes, responsive; native apps via S7) · "Where is it hosted?" (your cloud account or ours on a care plan; India regions available) · "Can you take over an existing app?" (yes, via App Rescue) · "Who owns it?" (you, on full payment).
+- **FAQs:** the five in [07-C](07-content-appendix/C-service-faqs.md) (owner-approved 2026-10-22).
 - **CTA:** Get a quote
 
 ### 4.3 MVP and SaaS Product Development (S6) · `/services/mvp-saas-development`
@@ -220,7 +220,7 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 - **How it works:** Blueprint (week 0–1) → 2-week sprints with demos → launch → stabilise.
 - **Time zones:** "We overlap 3–4 hours with UK and European working days, and with US East-coast mornings by arrangement. Written updates every week."
 - **Pricing:** {{price:S6}} · fixed, sprint-based · {{schedule:S6}}.
-- **FAQs:** "Can you work with our in-house developer?" · "What if scope changes mid-sprint?" (re-prioritise within the sprint or quote a change) · "Do you take equity?" ("No. We work for fees, so incentives stay simple.") · "Will you sign our contract?" ("Usually yes, after a review; we have a standard MSA too.")
+- **FAQs:** the five in [07-C](07-content-appendix/C-service-faqs.md) (owner-approved 2026-10-22).
 - **CTA:** Get a quote
 
 ### 4.4 Mobile Apps (S7) · `/services/mobile-apps`
@@ -229,7 +229,7 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 - **Problem:** "A mobile app on its own is rarely the point. It's the field team's order form, the customer's tracking screen, the dealer's catalogue. It has to talk to everything else."
 - **What you get:** UX for small screens · a cross-platform app (React Native/Expo or Flutter, chosen per project) · API and back-end integration · store submission support · crash and analytics monitoring.
 - **Pricing:** {{price:S7}} · fixed · {{schedule:S7}}.
-- **FAQs:** "React Native or Flutter?" → "Whichever fits your team and existing code; we use both." · "Do you publish to the stores?" → "We prepare and submit under your developer accounts."
+- **FAQs:** the five in [07-C](07-content-appendix/C-service-faqs.md) (owner-approved 2026-10-22).
 - **CTA:** Get a quote
 
 ### 4.5 AI Document Automation (S9) · `/services/ai-document-automation`
@@ -257,7 +257,7 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 - **What you get:** a workflow map · built and tested automations (n8n, Make or custom code) · narrow AI agents where they help (lead qualification, collection follow-ups, order-status replies, report drafting) · error alerts · a run-book · optional monitoring on a care plan.
 - **Quick-Win bundle:** "3–5 small automations delivered together: the fastest way to see what automation can do for you."
 - **Pricing:** {{price:S10}} per workflow · Quick-Win bundles quoted · monthly retainer for monitoring and new workflows.
-- **FAQs:** "n8n, Make or custom?" · "Who owns the accounts?" ("You do; we build in your workspace.") · "What happens when an API changes?" ("Alerts tell us; on a care plan we fix it.")
+- **FAQs:** the five in [07-C](07-content-appendix/C-service-faqs.md) (owner-approved 2026-10-22).
 - **CTA:** Automate a workflow
 
 ### 4.7 WhatsApp Business Automation (S11) · `/services/whatsapp-automation`
@@ -266,7 +266,7 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 - **Problem:** "Your customers already message you on WhatsApp. Answering by hand doesn't scale, and order details end up trapped in chats."
 - **What you get:** WhatsApp Business Platform setup through an official provider · flows for order updates, payment links and reminders, catalogue ordering, COD confirmation and returns · handover to a person · integration with your order, billing or CRM system · reporting.
 - **Pricing:** setup {{price:S11-setup}} + management {{price:S11-monthly}}/month · "**Meta's per-message charges are passed through at cost.**" USD: no USD price; USD visitors see the INR price with "USD price on request" (owner, 2026-10-22).
-- **FAQs:** "Do we need a new number?" · "Can a person take over a chat?" (yes) · "What does Meta charge?" ("Per message, by category and country; we show you the current rates before you start.")
+- **FAQs:** the five in [07-C](07-content-appendix/C-service-faqs.md) (owner-approved 2026-10-22).
 - **CTA:** Get a quote
 
 ### 4.8 AI Knowledge Assistants (S12) · `/services/ai-knowledge-assistants`
@@ -277,14 +277,16 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 - **What makes ours different:** access control (people only see what they're allowed to) · citations on every answer · a quality test set we run before and after changes · India-hosted or on-premises options where needed · honest "I don't know" behaviour when the sources don't cover a question.
 - **Honest note:** "No AI system is right every time. We design for traceability: every answer shows its sources, and we measure quality on your own questions."
 - **Pricing:** pilot {{price:S12}} → production → AI Ops · model and API usage passed through at cost.
-- **CTA:** Start a pilot
+- **FAQs:** the five in [07-C](07-content-appendix/C-service-faqs.md) (owner-approved 2026-10-22).
+ Start a pilot
 
 ### 4.9 AI Features for Your Software (S13) · `/services/ai-features-for-software`
 - **Meta:** "Add AI features, MCP servers and agent-ready APIs | TecHaust" · "Smart search, summaries, copilots and document understanding in your product, plus MCP servers so AI assistants can use it. From {{price-plain:S13}}."
 - **H1:** "Add useful AI to the product you already have."
 - **What you get:** feature discovery (where AI actually helps your users) · implementation (search, summarisation, extraction, copilots) · **MCP servers and agent-ready APIs** so your product works inside ChatGPT, Claude and Copilot · evaluation and cost controls · documentation.
 - **Pricing:** {{price:S13}} · fixed.
-- **CTA:** Get a quote
+- **FAQs:** the five in [07-C](07-content-appendix/C-service-faqs.md) (owner-approved 2026-10-22).
+ Get a quote
 
 ### 4.10 Business Systems Integration (S14, + S15) · `/services/business-systems-integration`
 - **Meta:** "Tally, Zoho, GST e-invoice, Shopify integration | TecHaust" · "Connectors between Tally, Zoho, GST e-invoicing and e-way bills, Shopify, QuickBooks, Xero and payments, monitored and documented."
@@ -293,7 +295,7 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 - **What you get:** connectors (Tally ↔ Zoho, GST e-invoicing and e-way bills via a GST Suvidha Provider, Shopify ↔ ERP, CRM ↔ accounting, QuickBooks, Xero, HubSpot, Stripe) · sync monitoring and error alerts · documentation · a care plan.
 - **Section "Payments and billing" (S15):** "Razorpay, Cashfree or Stripe; UPI AutoPay and subscriptions; payment links, webhooks and reconciliation, from {{price:S15}}."
 - **Pricing:** {{price:S14}} per connector.
-- **FAQs:** "Do you need our Tally licence?" · "Is GST e-invoicing mandatory for us?" ("It depends on your turnover; your CA confirms it. We build the integration either way.") · "What if Tally is on a local PC?"
+- **FAQs:** the five in [07-C](07-content-appendix/C-service-faqs.md) (owner-approved 2026-10-22).
 - **CTA:** Get a quote
 
 ### 4.11 App Rescue and Production-Readiness Audit (S2) · `/services/app-rescue`
@@ -303,7 +305,8 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 - **What you get:** a code, security and performance review · a risk-ranked fix list · an optional fixed-price hardening sprint · handover to a care plan.
 - **Scope note:** "This is an engineering review, not a formal penetration test. If you need one, we'll recommend a specialist."
 - **Pricing:** audit {{price:S2}} · hardening sprint quoted from the findings.
-- **CTA:** Book an audit
+- **FAQs:** the five in [07-C](07-content-appendix/C-service-faqs.md) (owner-approved 2026-10-22).
+ Book an audit
 
 ### 4.12 DPDP Readiness for Apps (S3) · `/services/dpdp-readiness` · **feature-flagged OFF**
 - **Banner:** "We implement the technical side of DPDP compliance. Legal interpretation comes from your lawyer or our legal partner."
@@ -315,7 +318,8 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 - **Who it's for:** non-technical founders, SMB owners managing in-house or outsourced developers, and startups between technical leaders.
 - **What you get:** a fixed number of hours each month · architecture and build-vs-buy decisions · vendor and code-quality reviews · hiring help (job specs, interviews) · a roadmap and a monthly written report. **Led personally by our founder.**
 - **Pricing:** {{price:S4}} per month · monthly retainer · 30 days' notice to stop.
-- **CTA:** Talk to us
+- **FAQs:** the five in [07-C](07-content-appendix/C-service-faqs.md) (owner-approved 2026-10-22).
+ Talk to us
 
 ### 4.14 Care Plans (S16 + S17) · `/services/care-plans`
 - **Meta:** "Website and app care plans, clear response times | TecHaust" · "Monitoring, security patches, backups, small changes and business-hours response times. Essential, Growth and Scale plans from {{price-plain:S16-essential}} a month."
@@ -340,7 +344,8 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 
 - **Rules (small print):** "Essential: no rollover. Growth and Scale: unused hours roll over for one month. Extra hours are billed at the plan rate. Pay annually and save 10 %. Out-of-hours cover can be quoted separately. Billed monthly in advance; cancel with 30 days' notice." (10 % confirmed by the owner, 2026-10-07.)
 - **AI Ops add-on (S17):** "For AI systems in production: monitoring, test-set reruns, prompt and model updates, and cost tracking, from {{price:S17}} a month."
-- **CTA:** Choose a plan
+- **FAQs:** the five in [07-C](07-content-appendix/C-service-faqs.md) (owner-approved 2026-10-22).
+ Choose a plan
 
 ### 4.15 Dev Subscription (S18) · `/services/dev-subscription`
 - **Meta:** "Senior developer subscription, monthly | TecHaust" · "A senior development and design subscription: one active request at a time, an unlimited queue, and pause or cancel monthly. From {{price-plain:S18}} a month."
@@ -349,7 +354,8 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 - **Good for:** SaaS teams and agencies with steady work; not for fixed-deadline projects (for those, see Custom Web Apps or MVP and SaaS Development).
 - **Capacity note:** "We take a small number of subscriptions at a time so quality stays high. If we're full, we'll tell you when the next opening is." (No counters.)
 - **Pricing:** {{price:S18}} per month.
-- **CTA:** Start a subscription
+- **FAQs:** the five in [07-C](07-content-appendix/C-service-faqs.md) (owner-approved 2026-10-22).
+ Start a subscription
 
 ---
 

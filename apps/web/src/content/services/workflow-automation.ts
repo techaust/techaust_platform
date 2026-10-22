@@ -2,8 +2,7 @@
 // and capitals at the start of 07's lower-case fragments where they stand alone. The payment schedule is
 // scheduleOf("S10") (WEB-SVC-05). The page's own CTA "Automate a workflow" (07 §4.6, 04 §3.2) is not in the 07 §2.3
 // table, so it takes the build-quote target.
-// GAP (run file): 07 writes answers for two of the three FAQs ("n8n, Make or custom?" has none): fewer than 4
-// (WEB-SVC-04), so the FAQ section is not shown until 07 has them. Related: the designer's pick.
+// FAQs: 07-C, drafted by the lead, confirmed by the owner (2026-10-22). Related: the designer's pick.
 import { cta, homeOneLiner } from "../shared";
 import { SCHEDULE, type ServiceContent } from "../types";
 
@@ -43,8 +42,26 @@ export const workflowAutomation: ServiceContent = {
     lines: ["Quick-Win bundles quoted", "Monthly retainer for monitoring and new workflows", SCHEDULE],
   },
   faqs: [
-    { q: "Who owns the accounts?", a: "You do; we build in your workspace." },
-    { q: "What happens when an API changes?", a: "Alerts tell us; on a care plan we fix it." },
+    {
+      q: "n8n, Make or custom code?",
+      a: "Whichever fits the job and your team: n8n or Make for flows your team may want to adjust themselves, custom code where volume, reliability or a missing connector calls for it. The workflow map explains the choice.",
+    },
+    {
+      q: "Who owns the accounts?",
+      a: "You do; we build in your workspace.",
+    },
+    {
+      q: "What happens when an API changes?",
+      a: "Alerts tell us; on a care plan we fix it.",
+    },
+    {
+      q: "What’s in a Quick-Win bundle?",
+      a: "3–5 small automations delivered together for one quoted price: the fastest way to see what automation can do for you.",
+    },
+    {
+      q: "How is it priced?",
+      a: "From {{price:S10}} per workflow. Quick-Win bundles are quoted, and monitoring plus new workflows can run on a monthly retainer.",
+    },
   ],
   related: ["S9", "S11", "S14"],
 };

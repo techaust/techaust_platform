@@ -1,9 +1,7 @@
 // MVP and SaaS Product Development (S6): docs/07-content.md §4.3, word for word. Typesetting only: curly apostrophes,
 // capitals at the start of 07's lower-case fragments where they stand alone, and the step's bracketed week set as its
 // duration. {{schedule:S6}} is scheduleOf("S6") (WEB-SVC-05).
-// GAP (run file): 07 writes answers for two of the four FAQs ("Do you take equity?", "Will you sign our contract?");
-// "Can you work with our in-house developer?" has none and "What if scope changes mid-sprint?" has a note in brackets.
-// Fewer than 4 (WEB-SVC-04), so the FAQ section is not shown until 07 has the answers. Related: the designer's pick.
+// FAQs: 07-C, drafted by the lead, confirmed by the owner (2026-10-22). Related: the designer's pick.
 import { cta, homeOneLiner } from "../shared";
 import { SCHEDULE, type ServiceContent } from "../types";
 
@@ -54,8 +52,26 @@ export const mvpSaasDevelopment: ServiceContent = {
     lines: ["Fixed, sprint-based", SCHEDULE],
   },
   faqs: [
-    { q: "Do you take equity?", a: "No. We work for fees, so incentives stay simple." },
-    { q: "Will you sign our contract?", a: "Usually yes, after a review; we have a standard MSA too." },
+    {
+      q: "Can you work with our in-house developer?",
+      a: "Yes. We share the repository, review each other’s code, and agree in the plan who owns which parts.",
+    },
+    {
+      q: "What if scope changes mid-sprint?",
+      a: "We re-prioritise within the sprint, or quote the change before we do it.",
+    },
+    {
+      q: "Do you take equity?",
+      a: "No. We work for fees, so incentives stay simple.",
+    },
+    {
+      q: "Will you sign our contract?",
+      a: "Usually yes, after a review. We also have a standard MSA.",
+    },
+    {
+      q: "Who owns the code?",
+      a: "You do. The code, documentation and IP transfer to you on payment.",
+    },
   ],
   related: ["S1", "S7", "S18"],
 };

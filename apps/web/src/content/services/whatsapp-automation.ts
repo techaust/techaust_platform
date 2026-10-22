@@ -4,8 +4,7 @@
 // per line (lead, 2026-10-22): the setup from the catalogue (scheduleOf("S11"), WEB-SVC-05), the management as
 // "billed monthly in advance". S11 has no USD price: USD visitors see the INR price with "USD price on request"
 // (07 §4.7, owner 2026-10-22).
-// GAP (run file): one FAQ with a written answer ("What does Meta charge?"); "Do we need a new number?" has none and
-// "Can a person take over a chat?" only "(yes)". Fewer than 4 (WEB-SVC-04): FAQ section not shown.
+// FAQs: 07-C, drafted by the lead, confirmed by the owner (2026-10-22).
 // Related: the designer's pick.
 import { cta } from "../shared";
 import { type ServiceContent, scheduleLine } from "../types";
@@ -45,8 +44,24 @@ export const whatsappAutomation: ServiceContent = {
   },
   faqs: [
     {
+      q: "Do we need a new number?",
+      a: "Not always. An existing number can usually move to the WhatsApp Business Platform, but it then stops working in the regular WhatsApp Business app, so many businesses use a new number. We check your case before setup.",
+    },
+    {
+      q: "Can a person take over a chat?",
+      a: "Yes. Any chat can be handed to someone on your team, with the conversation so far in front of them.",
+    },
+    {
       q: "What does Meta charge?",
       a: "Per message, by category and country; we show you the current rates before you start.",
+    },
+    {
+      q: "Which provider do you use?",
+      a: "An official Meta Business Solution Provider, chosen for your volume and needs.",
+    },
+    {
+      q: "Can it connect to our order or billing system?",
+      a: "Yes. The flows read and update your order, billing or CRM system, so customers get current order status and payment links.",
     },
   ],
   related: ["S10", "S14", "S1"],

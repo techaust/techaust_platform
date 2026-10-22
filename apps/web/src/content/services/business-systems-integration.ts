@@ -1,9 +1,7 @@
 // Business Systems Integration (S14, with S15): docs/07-content.md §4.10, word for word. Typesetting only: capitals
 // at the start of 07's lower-case fragments where they stand alone. The "Payments and billing" section (S15) carries
 // its price in running text ({{price:S15}}). The payment schedule is scheduleOf("S14") (WEB-SVC-05).
-// GAP (run file): one FAQ with a written answer ("Is GST e-invoicing mandatory for us?"); "Do you need our Tally
-// licence?" and "What if Tally is on a local PC?" have none. Fewer than 4 (WEB-SVC-04): FAQ section not shown.
-// No "Who it's for" in 07. Related: the designer's pick.
+// FAQs: 07-C, drafted by the lead, confirmed by the owner (2026-10-22). No "Who it's for" in 07. Related: the designer's pick.
 import { cta, homeOneLiner } from "../shared";
 import { SCHEDULE, type ServiceContent } from "../types";
 
@@ -45,8 +43,24 @@ export const businessSystemsIntegration: ServiceContent = {
   },
   faqs: [
     {
+      q: "Do you need our Tally licence?",
+      a: "We work with your existing Tally and its licence; you don’t buy anything new from Tally for the integration.",
+    },
+    {
       q: "Is GST e-invoicing mandatory for us?",
       a: "It depends on your turnover; your CA confirms it. We build the integration either way.",
+    },
+    {
+      q: "What if Tally is on a local PC?",
+      a: "That’s common. A small connector runs on that PC or your server and syncs over the internet; Tally needs to be running for the sync, and an alert tells you if it stops.",
+    },
+    {
+      q: "What happens if a sync fails?",
+      a: "Monitoring raises an alert and shows what failed, so it can be corrected and sent again.",
+    },
+    {
+      q: "Who looks after it afterwards?",
+      a: "A care plan. Vendors change their systems, and someone has to notice: on a plan, we monitor the sync and fix breakages.",
     },
   ],
   related: ["S9", "S10", "S16"],

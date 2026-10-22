@@ -3,7 +3,7 @@
 // catalogue's default lines ({{price:S16-essential}} …), the add-on's price is in running text ({{price:S17}}).
 // No separate schedule line: the rules already say "Billed monthly in advance" (lead, 2026-10-22; WEB-SVC-05).
 // Each tier's "Choose a plan" takes its tier (07 §2.3 `plan=<tier>`); the hero and the band have no tier.
-// GAP (run file): no "Who it's for" and no FAQs in 07 (WEB-SVC-04 wants 4–8): FAQ section not shown.
+// GAP (run file): no "Who it's for" in 07. FAQs: 07-C, drafted by the lead, confirmed by the owner (2026-10-22).
 // Related: the designer's pick.
 import { cta } from "../shared";
 import type { ServiceContent } from "../types";
@@ -52,6 +52,28 @@ export const carePlans: ServiceContent = {
       id: "ai-ops",
       title: "AI Ops add-on",
       text: "For AI systems in production: monitoring, test-set reruns, prompt and model updates, and cost tracking, from {{price:S17}} a month.",
+    },
+  ],
+  faqs: [
+    {
+      q: "What counts as a critical issue?",
+      a: "Your site or app is down, or a core function such as sign-in, payments or orders isn’t working for your users.",
+    },
+    {
+      q: "Do you offer out-of-hours cover?",
+      a: "Response times are in business hours (Mon–Sat, 10:00–19:00 IST). Out-of-hours cover can be quoted separately.",
+    },
+    {
+      q: "What happens to unused hours?",
+      a: "On Essential they don’t roll over. On Growth and Scale they roll over for one month. Extra hours are billed at the plan rate.",
+    },
+    {
+      q: "Can you look after software someone else built?",
+      a: "Yes, usually after an App Rescue audit, so we both know what we’re taking on.",
+    },
+    {
+      q: "Can we pay annually?",
+      a: "Yes: pay annually and save 10 %. Otherwise plans are billed monthly in advance, and you can cancel with 30 days’ notice.",
     },
   ],
   related: ["S2", "S18", "S14"],
