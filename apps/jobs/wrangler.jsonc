@@ -36,14 +36,15 @@
       "migrations_dir": "../../packages/db/migrations"
     }
   ],
-  // Queues (docs/05 §11): one unit of work per message, 5 tries, then the dead-letter queue. The web Worker produces to
+  // Queues (docs/05 §11): one unit of work per message, 5 tries, then the dead-letter queue. max_batch_size is 1 (the
+  // brief said 5): the Free plan's 10 ms CPU limit applies per invocation, so a batch of five messages could pass it. The web Worker produces to
   // the leads queue; this Worker consumes it and produces to the email queue.
   "queues": {
     "producers": [{ "binding": "EMAIL_QUEUE", "queue": "techaust-local-email" }],
     "consumers": [
       {
         "queue": "techaust-local-leads",
-        "max_batch_size": 5,
+        "max_batch_size": 1,
         "max_concurrency": 1,
         "max_retries": 5,
         "dead_letter_queue": "techaust-local-leads-dlq"
@@ -51,7 +52,7 @@
       { "queue": "techaust-local-leads-dlq", "max_batch_size": 1, "max_retries": 3 },
       {
         "queue": "techaust-local-email",
-        "max_batch_size": 5,
+        "max_batch_size": 1,
         "max_concurrency": 2,
         "max_retries": 5,
         "dead_letter_queue": "techaust-local-email-dlq"
@@ -91,7 +92,7 @@
         "consumers": [
           {
             "queue": "techaust-staging-leads",
-            "max_batch_size": 5,
+            "max_batch_size": 1,
             "max_concurrency": 1,
             "max_retries": 5,
             "dead_letter_queue": "techaust-staging-leads-dlq"
@@ -99,7 +100,7 @@
           { "queue": "techaust-staging-leads-dlq", "max_batch_size": 1, "max_retries": 3 },
           {
             "queue": "techaust-staging-email",
-            "max_batch_size": 5,
+            "max_batch_size": 1,
             "max_concurrency": 2,
             "max_retries": 5,
             "dead_letter_queue": "techaust-staging-email-dlq"

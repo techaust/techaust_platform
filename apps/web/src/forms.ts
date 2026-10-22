@@ -6,6 +6,8 @@
 //   -> honeypot and fill time -> Turnstile -> zod -> queue.
 // Errors are `{ok:false, error:<code>}` only (plus `fields` for a validation failure). A plain HTML form POST gets a
 // 303 to the page (`?error=<code>`) or to /thanks?ref=…; a JSON request gets JSON.
+
+import { addressOf } from "@techaust/auth";
 import {
   contactForm,
   FORM_FIELDS,
@@ -113,7 +115,7 @@ async function turnstileOk(env: Env, kind: FormKind, token: string, ip: string):
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       signal: AbortSignal.timeout(5_000),
-      body: new URLSearchParams({ secret: env.TURNSTILE_SECRET, response: token, remoteip: ip }),
+      body: new URLSearchParams({ secret: env.TURNSTILE_SECRET ?? "", response: token, remoteip: ip }),
     });
     if (!res.ok) return false;
     const r = (await res.json()) as { success?: boolean; action?: string; hostname?: string };
@@ -167,7 +169,7 @@ forms.all("/forms/:kind", async (c) => {
   if (!origin || !origins.includes(origin)) return fail("forbidden_origin");
 
   const ip = req.headers.get("cf-connecting-ip") ?? "unknown";
-  const ipHash = await hashAddress(env.FORMS_IP_PEPPER, ip);
+  const ipHash = await hashAddress(env.FORMS_IP_PEPPER, addressOf(ip));
   const limit = await env.RL_FORMS.limit({ key: ipHash });
   if (!limit.success) return fail("rate_limited", undefined, { "Retry-After": "60" });
 

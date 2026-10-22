@@ -13,7 +13,9 @@ export default defineConfig({
             miniflare: { bindings: { TURNSTILE_SECRET: "test-secret", FORMS_IP_PEPPER: "test-pepper" } },
           }),
         ],
-        test: { name: "worker", include: ["test/worker/**/*.test.ts"] },
+        // 20 s: the first request of a file loads the Worker with zod and the shared schemas, which is slow when the whole
+        // repository's tests run at once.
+        test: { name: "worker", include: ["test/worker/**/*.test.ts"], testTimeout: 20_000 },
       },
       {
         // A path that never exists: tests read the seed, never a developer's own catalogue-snapshot.json.

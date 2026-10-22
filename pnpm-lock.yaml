@@ -346,6 +346,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@techaust/auth':
+        specifier: workspace:*
+        version: link:../../packages/auth
       '@techaust/core':
         specifier: workspace:*
         version: link:../../packages/core

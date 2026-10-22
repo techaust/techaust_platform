@@ -116,6 +116,14 @@ describe("happy path", () => {
     expect(limitCalls).toEqual([m.ipHash]);
   });
 
+  it("counts an IPv6 visitor by the /64 prefix, so rotating inside it does not dodge the limits", async () => {
+    await request(valid(), { ip: "2001:db8:0:1::1" });
+    await request(valid(), { ip: "2001:db8:0:1:abcd:ef01:2345:6789" });
+    await request(valid(), { ip: "2001:db8:0:2::1" });
+    expect(limitCalls[0]).toBe(limitCalls[1]);
+    expect(limitCalls[0]).not.toBe(limitCalls[2]);
+  });
+
   it("sends the visitor's address to Turnstile only as remoteip and checks the action and hostname", async () => {
     await request(valid());
     expect(verifyBodies[0]?.get("remoteip")).toBe("203.0.113.9");
