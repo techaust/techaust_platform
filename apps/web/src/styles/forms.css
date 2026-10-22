@@ -420,6 +420,12 @@
   display: none;
 }
 
+/* The summary takes focus from the script (after a mouse click too), so :focus rather than :focus-visible. */
+.error-summary:focus {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 3px;
+}
+
 .error-summary__title {
   display: flex;
   gap: var(--space-3);

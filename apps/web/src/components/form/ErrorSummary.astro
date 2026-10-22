@@ -12,7 +12,7 @@ interface Props {
 const { id } = Astro.props;
 ---
 
-<div class="error-summary" id={id} tabindex="-1" aria-labelledby={`${id}-title`} data-error-summary hidden>
+<div class="error-summary" id={id} tabindex="-1" role="group" aria-labelledby={`${id}-title`} data-error-summary hidden>
   <h2 class="error-summary__title" id={`${id}-title`}>
     <Icon name="alert-circle" size={24} />
     {formUi.problem}
