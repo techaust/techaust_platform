@@ -29,6 +29,7 @@ describe("migrations apply cleanly to a fresh D1", () => {
       "0007_issue_guard.sql",
       "0008_indexes_fk_lookups.sql",
       "0009_email_log.sql",
+      "0010_leads_request_type_plan.sql",
     ]);
   });
 
@@ -41,6 +42,9 @@ describe("migrations apply cleanly to a fresh D1", () => {
       /CHECK constraint failed: email_log_status/,
     );
     await run("INSERT INTO email_log (id, to_email, template, status) VALUES (?, ?, ?, 'skipped')", ...base);
+    await run("UPDATE email_log SET status = 'sending' WHERE id = 'x'");
+    const cols = await all<{ name: string }>("SELECT name FROM pragma_table_info('leads')");
+    expect(cols.map((c) => c.name)).toEqual(expect.arrayContaining(["request_type", "plan"]));
     await run("INSERT INTO email_suppressions (email, reason, at) VALUES ('a@example.com', 'bounce', 1)");
     await rejects(
       run("INSERT INTO email_suppressions (email, reason, at) VALUES ('a@example.com', 'complaint', 2)"),

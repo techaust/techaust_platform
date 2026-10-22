@@ -23,7 +23,8 @@
     "EMAIL_ALLOWED_RECIPIENTS": "",
     "SES_REGION": "ap-south-1",
     "SES_CONFIGURATION_SET": "techaust-transactional",
-    "ADMIN_URL": "http://localhost:5173/"
+    "ADMIN_URL": "http://localhost:5173/",
+    "EMAIL_ASSET_BASE": "http://localhost:4321/brand/"
   },
   // SES keys: names only; values come from `wrangler secret put` (docs/runbooks/ses-and-turnstile.md). Not inherited.
   "secrets": { "required": ["SES_ACCESS_KEY_ID", "SES_SECRET_ACCESS_KEY"] },
@@ -38,7 +39,9 @@
   ],
   // Queues (docs/05 §11): one unit of work per message, 5 tries, then the dead-letter queue. max_batch_size is 1 (the
   // brief said 5): the Free plan's 10 ms CPU limit applies per invocation, so a batch of five messages could pass it. The web Worker produces to
-  // the leads queue; this Worker consumes it and produces to the email queue.
+  // the leads queue; this Worker consumes it and produces to the email queue. The dead-letter consumers have no further
+  // queue behind them, so a failed alert is retried with long delays (src/queue.ts) and max_retries is the queue maximum
+  // (100): a dead-lettered lead is never dropped after 3 tries. EMAIL_ASSET_BASE: where the email logos are hosted.
   "queues": {
     "producers": [{ "binding": "EMAIL_QUEUE", "queue": "techaust-local-email" }],
     "consumers": [
@@ -49,7 +52,7 @@
         "max_retries": 5,
         "dead_letter_queue": "techaust-local-leads-dlq"
       },
-      { "queue": "techaust-local-leads-dlq", "max_batch_size": 1, "max_retries": 3 },
+      { "queue": "techaust-local-leads-dlq", "max_batch_size": 1, "max_retries": 100 },
       {
         "queue": "techaust-local-email",
         "max_batch_size": 1,
@@ -57,7 +60,7 @@
         "max_retries": 5,
         "dead_letter_queue": "techaust-local-email-dlq"
       },
-      { "queue": "techaust-local-email-dlq", "max_batch_size": 1, "max_retries": 3 }
+      { "queue": "techaust-local-email-dlq", "max_batch_size": 1, "max_retries": 100 }
     ]
   },
   "env": {
@@ -76,7 +79,8 @@
         "EMAIL_ALLOWED_RECIPIENTS": "admin@techaust.com",
         "SES_REGION": "ap-south-1",
         "SES_CONFIGURATION_SET": "techaust-transactional",
-        "ADMIN_URL": "https://techaust-platform-admin-staging.techaust-technologies-153.workers.dev/"
+        "ADMIN_URL": "https://techaust-platform-admin-staging.techaust-technologies-153.workers.dev/",
+        "EMAIL_ASSET_BASE": "https://techaust-platform-web-staging.techaust-technologies-153.workers.dev/brand/"
       },
       "secrets": { "required": ["SES_ACCESS_KEY_ID", "SES_SECRET_ACCESS_KEY"] },
       "d1_databases": [
@@ -97,7 +101,7 @@
             "max_retries": 5,
             "dead_letter_queue": "techaust-staging-leads-dlq"
           },
-          { "queue": "techaust-staging-leads-dlq", "max_batch_size": 1, "max_retries": 3 },
+          { "queue": "techaust-staging-leads-dlq", "max_batch_size": 1, "max_retries": 100 },
           {
             "queue": "techaust-staging-email",
             "max_batch_size": 1,
@@ -105,7 +109,7 @@
             "max_retries": 5,
             "dead_letter_queue": "techaust-staging-email-dlq"
           },
-          { "queue": "techaust-staging-email-dlq", "max_batch_size": 1, "max_retries": 3 }
+          { "queue": "techaust-staging-email-dlq", "max_batch_size": 1, "max_retries": 100 }
         ]
       }
     },
@@ -121,7 +125,11 @@
         "logs": { "enabled": true, "invocation_logs": false }
       },
       // No D1, queues or SES secrets in production until Phase 7 (owner approval).
-      "vars": { "ENVIRONMENT": "production", "PAYMENTS_LIVE_ALLOWED": "false" }
+      "vars": {
+        "ENVIRONMENT": "production",
+        "PAYMENTS_LIVE_ALLOWED": "false",
+        "EMAIL_ASSET_BASE": "https://techaust.com/brand/"
+      }
     }
   }
 }

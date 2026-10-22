@@ -4,9 +4,9 @@ import { env as realEnv } from "cloudflare:workers";
 import { type EmailMessage, generateLeadRef, type LeadMessage } from "@techaust/core";
 import type { SendInput, SendResult, Transport } from "@techaust/email";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { processDeadLetter, processEmail } from "../src/email.ts";
+import { CLAIM_TIMEOUT_MS, emailLogId, processDeadLetter, processEmail } from "../src/email.ts";
 import { processLead } from "../src/leads.ts";
-import { handleQueue } from "../src/queue.ts";
+import { dlqRetryDelay, handleQueue } from "../src/queue.ts";
 
 const T0 = 1_760_000_000_000;
 const HASH = "a".repeat(64);
@@ -20,6 +20,7 @@ const makeEnv = (over: Record<string, unknown> = {}) =>
     EMAIL_ALLOWED_RECIPIENTS: "",
     EMAIL_TRANSPORT: "log",
     ADMIN_URL: "https://admin.example/",
+    EMAIL_ASSET_BASE: "https://assets.example.test/brand/",
     EMAIL_QUEUE: {
       sendBatch: async (items: { body: EmailMessage }[]) => {
         for (const i of items) queued.push(i.body);
@@ -126,6 +127,7 @@ describe("lead pipeline [ADM-LEAD-01, FRM-05, FRM-06]", () => {
       at: T0,
       ipHash: HASH,
       marketing: true,
+      withdrawnAt: null,
     });
     // delete_after = submission + 12 months (retention.leadsMonths default)
     expect(new Date(lead?.delete_after as number).toISOString()).toBe(
@@ -172,7 +174,32 @@ describe("lead pipeline [ADM-LEAD-01, FRM-05, FRM-06]", () => {
     expect(JSON.parse(lead?.tools as string)).toEqual(["tally", "excel-sheets"]);
     expect(JSON.parse(lead?.consent as string).purposes).toEqual(["respond_to_enquiry"]);
     expect(queued[1]?.data.service_name).toBe("Custom Web Apps & Business Portals");
-    expect(queued[1]?.data.country).toBe("IN");
+  });
+
+  it("the alert shows words, not codes: budget band, timeline, tools, country and currency", async () => {
+    await processLead(makeEnv(), quoteMessage(), T0);
+    expect(queued[1]?.data).toMatchObject({
+      budget_band: "₹1,00,000 to ₹3,00,000",
+      timeline: "As soon as possible",
+      tools: "Tally, Excel/Sheets",
+      country: "India",
+      currency: "INR",
+      call_window: "Weekdays 4 to 6 pm IST",
+    });
+    const { sent, transport } = recorder();
+    await processEmail(makeEnv(), queued[1] as EmailMessage, transport, T0);
+    expect(sent[0]?.subject).toContain("₹1,00,000 to ₹3,00,000 · India");
+    expect(sent[0]?.text).not.toMatch(/\b1l-3l\b|\basap\b|excel-sheets/);
+    // the logos come from the Worker's EMAIL_ASSET_BASE
+    expect(sent[0]?.html).toContain("https://assets.example.test/brand/logo-email-badge%402x.png");
+  });
+
+  it("stores the quote link's type and plan on the lead and shows them in the alert", async () => {
+    const m = { ...quoteMessage(), type: "pilot", plan: "essential" } as LeadMessage;
+    await processLead(makeEnv(), m, T0);
+    const [lead] = await rows<Record<string, string | null>>("SELECT request_type, plan FROM leads");
+    expect(lead).toEqual({ request_type: "pilot", plan: "essential" });
+    expect(queued[1]?.data).toMatchObject({ type: "pilot", plan: "essential" });
   });
 
   it("keeps no raw address anywhere: the lead, the counters and the queued emails hold only the hash", async () => {
@@ -235,6 +262,47 @@ describe("lead pipeline [ADM-LEAD-01, FRM-05, FRM-06]", () => {
       `f:10m:${HASH}`,
     );
     expect(c?.failures).toBe(1);
+  });
+
+  it("a retry after the emails could not be queued counts once, and makes no second lead", async () => {
+    let fail = true;
+    const env = makeEnv({
+      EMAIL_QUEUE: {
+        sendBatch: async (items: { body: EmailMessage }[]) => {
+          if (fail) throw new Error("queue down");
+          for (const i of items) queued.push(i.body);
+        },
+      },
+    });
+    const m = contactMessage();
+    await expect(processLead(env, m, T0)).rejects.toThrow("queue down");
+    fail = false;
+    expect(await processLead(env, m, T0 + 30_000)).toBe("duplicate");
+    expect(await count("leads")).toBe(1);
+    expect(queued).toHaveLength(2);
+    const [c] = await rows<{ failures: number }>(
+      "SELECT failures FROM auth_attempts WHERE key = ?1",
+      `f:10m:${HASH}`,
+    );
+    expect(c?.failures).toBe(1);
+  });
+
+  it("a redelivery after a reference clash is still found: no third lead, no extra count", async () => {
+    const env = makeEnv();
+    const first = contactMessage({}, "first@example.com");
+    await processLead(env, first, T0);
+    const second = contactMessage({ ref: first.ref, submittedAt: T0 + 1 }, "second@example.com");
+    expect(await processLead(env, second, T0 + 1)).toBe("created");
+    expect(await processLead(env, second, T0 + 2)).toBe("duplicate");
+    expect(await count("leads")).toBe(2);
+    const [c] = await rows<{ failures: number }>(
+      "SELECT failures FROM auth_attempts WHERE key = ?1",
+      `f:10m:${HASH}`,
+    );
+    expect(c?.failures).toBe(2);
+    // the redelivered emails carry the lead's real (new) reference
+    const stored = await rows<{ ref: string }>("SELECT ref FROM leads WHERE contact_email = 'second@example.com'");
+    expect(queued.at(-1)?.entity.id).toBe(stored[0]?.ref);
   });
 
   it("a reference clash with a different submission gets a new reference, carried by the acknowledgement", async () => {
@@ -338,6 +406,60 @@ describe("email consumer [FRM-07]", () => {
     expect(await count("email_log")).toBe(0);
   });
 
+  it("a failed status write after a successful send does not send again on redelivery", async () => {
+    const { sent, transport } = recorder();
+    const flaky = makeEnv({
+      // The email consumer only calls prepare(); the write that records `sent` fails once, as a D1 blip would.
+      DB: {
+        prepare: (sql: string) => {
+          const stmt = realEnv.DB.prepare(sql);
+          if (!sql.startsWith("UPDATE email_log SET status = ?2")) return stmt;
+          return {
+            bind: (...args: unknown[]) => ({
+              run: async () => {
+                if (args[1] === "sent") throw new Error("D1 blip");
+                return stmt.bind(...args).run();
+              },
+            }),
+          };
+        },
+      },
+    });
+    const m = msg("a@example.com", "L-IIIII");
+    expect(await processEmail(flaky, m, transport, T0)).toBe("sent");
+    expect(sent).toHaveLength(1);
+    // the queue redelivers the same message: the claim is held, so nothing is sent again
+    expect(await processEmail(makeEnv(), m, transport, T0 + 1_000)).toBe("duplicate");
+    expect(sent).toHaveLength(1);
+  });
+
+  it("two concurrent deliveries of one message send it once", async () => {
+    const { sent, transport } = recorder();
+    const m = msg("c@example.com", "L-JJJJJ");
+    const results = await Promise.all([
+      processEmail(makeEnv(), m, transport, T0),
+      processEmail(makeEnv(), m, transport, T0),
+      processEmail(makeEnv(), m, transport, T0),
+    ]);
+    expect(results.filter((r) => r === "sent")).toHaveLength(1);
+    expect(results.filter((r) => r === "duplicate")).toHaveLength(2);
+    expect(sent).toHaveLength(1);
+  });
+
+  it("an abandoned claim (older than 5 minutes) can be taken again; a fresh one cannot", async () => {
+    const { sent, transport } = recorder();
+    const m = msg("d@example.com", "L-KKKKK");
+    await realEnv.DB.prepare(
+      `INSERT INTO email_log (id, to_email, template, entity_type, entity_id, status, created_at, updated_at)
+       VALUES (?1, 'd@example.com', 'lead.acknowledgement', 'lead', 'L-KKKKK', 'sending', ?2, ?2)`,
+    )
+      .bind(emailLogId(m), T0)
+      .run();
+    expect(await processEmail(makeEnv(), m, transport, T0 + CLAIM_TIMEOUT_MS - 1)).toBe("duplicate");
+    expect(await processEmail(makeEnv(), m, transport, T0 + CLAIM_TIMEOUT_MS + 1)).toBe("sent");
+    expect(sent).toHaveLength(1);
+  });
+
   it("the queue handler acknowledges a sent email and retries one whose consumer threw", async () => {
     const mk = (body: unknown) => ({
       id: "1",
@@ -382,7 +504,7 @@ describe("dead-letter queues [FRM-07]", () => {
   it("writes a log line without personal data and alerts LEAD_ALERT_TO directly", async () => {
     const lines = vi.spyOn(console, "log").mockImplementation(() => {});
     const { sent, transport } = recorder();
-    expect(await processDeadLetter(makeEnv(), "techaust-staging-leads-dlq", transport)).toBe(true);
+    expect(await processDeadLetter(makeEnv(), "techaust-staging-leads-dlq", { anything: "x" }, transport)).toBe(true);
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({ to: "owner@example.test", from: { address: "hello@techaust.com" } });
     expect(sent[0]?.text).toContain("A lead or email failed after 5 tries: open the admin.");
@@ -409,7 +531,93 @@ describe("dead-letter queues [FRM-07]", () => {
     expect(dead.ack).toHaveBeenCalled();
 
     const failing = recorder([{ kind: "permanent", error: "400" }]);
-    expect(await processDeadLetter(makeEnv(), "techaust-local-email-dlq", failing.transport)).toBe(false);
+    expect(await processDeadLetter(makeEnv(), "techaust-local-email-dlq", {}, failing.transport)).toBe(false);
+    quiet.mockRestore();
+  });
+
+  it("a dead-lettered lead is alerted with its whole summary and the reference in the subject [NFR-7]", async () => {
+    const lines = vi.spyOn(console, "log").mockImplementation(() => {});
+    const m = { ...quoteMessage(), type: "pilot", plan: "essential" } as LeadMessage;
+    const { sent, transport } = recorder();
+    expect(await processDeadLetter(makeEnv(), "techaust-staging-leads-dlq", m, transport)).toBe(true);
+    const mail = sent[0];
+    expect(mail?.to).toBe("owner@example.test");
+    expect(mail?.subject).toContain(m.ref);
+    expect(mail?.subject).toContain("Failed after 5 tries (techaust-staging-leads-dlq)");
+    for (const field of [
+      "Meera Iyer",
+      "meera@example.com",
+      "Replace the spreadsheet we use today for orders.",
+      "₹1,00,000 to ₹3,00,000",
+      "As soon as possible",
+      "Tally, Excel/Sheets",
+      "India",
+      "Weekdays 4 to 6 pm IST",
+      "Type: pilot",
+      "Plan: essential",
+    ])
+      expect(mail?.text, field).toContain(field);
+    // the log line carries the reference only
+    const logged = lines.mock.calls.flat().join("");
+    expect(logged).toContain(m.ref);
+    expect(logged).not.toContain("meera");
+    expect(logged).not.toContain("Meera");
+    lines.mockRestore();
+  });
+
+  it("a dead-lettered email names its template and lead reference, not the address", async () => {
+    const quiet = vi.spyOn(console, "log").mockImplementation(() => {});
+    const { sent, transport } = recorder();
+    const body: EmailMessage = {
+      template: "lead.alert",
+      to: "owner@example.test",
+      data: {},
+      entity: { type: "lead", id: "L-ABCDE" },
+    };
+    await processDeadLetter(makeEnv(), "techaust-staging-email-dlq", body, transport);
+    expect(sent[0]?.subject).toBe("Failed after 5 tries (techaust-staging-email-dlq): L-ABCDE");
+    expect(sent[0]?.text).toContain("Email: lead.alert");
+    expect(sent[0]?.text).toContain("Lead: L-ABCDE");
+    quiet.mockRestore();
+  });
+
+  it("a dead letter whose alert fails is retried with a long delay, not acknowledged", async () => {
+    const quiet = vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response("down", { status: 503 }));
+    const env = makeEnv({
+      EMAIL_TRANSPORT: "ses",
+      SES_ACCESS_KEY_ID: "AKIATEST",
+      SES_SECRET_ACCESS_KEY: "secret",
+      SES_REGION: "ap-south-1",
+      SES_CONFIGURATION_SET: "set",
+    });
+    const dead = {
+      id: "1",
+      timestamp: new Date(),
+      body: contactMessage(),
+      attempts: 3,
+      ack: vi.fn(),
+      retry: vi.fn(),
+    };
+    await handleQueue(
+      { queue: "techaust-staging-leads-dlq", messages: [dead] } as unknown as MessageBatch<unknown>,
+      env,
+    );
+    expect(dead.ack).not.toHaveBeenCalled();
+    expect(dead.retry).toHaveBeenCalledWith({ delaySeconds: dlqRetryDelay(3) });
+    expect(dlqRetryDelay(1)).toBe(300);
+    expect(dlqRetryDelay(3)).toBe(1_200);
+    expect(dlqRetryDelay(50)).toBe(4 * 3_600);
+
+    // a throw inside the consumer also retries with the long delay
+    const thrown = { ...dead, attempts: 2, ack: vi.fn(), retry: vi.fn(), body: "x" };
+    await handleQueue(
+      { queue: "techaust-staging-email-dlq", messages: [thrown] } as unknown as MessageBatch<unknown>,
+      { ...env, LEAD_ALERT_TO: undefined, ADMIN_URL: undefined } as unknown as Env,
+    );
+    expect(thrown.ack).not.toHaveBeenCalled();
+    expect(thrown.retry).toHaveBeenCalledWith({ delaySeconds: dlqRetryDelay(2) });
+    vi.restoreAllMocks();
     quiet.mockRestore();
   });
 });

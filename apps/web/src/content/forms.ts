@@ -3,6 +3,7 @@
 // from the shared schemas in @techaust/core (07 §5.9's examples), so the browser and the server say the same thing.
 // Everything under `formUi` and every line marked NEW is NOT in docs/07: interface words these pages need, listed in
 // the run file for the owner to approve or change. Change copy in docs/07 first, then here.
+import { ANY_TIME, BAND_WORDS, TIMELINE_LABELS, TOOL_LABELS } from "@techaust/core";
 import { site } from "../config/site";
 
 /** 07 §2.4 response promise, as the pages write it. */
@@ -68,32 +69,18 @@ export const quotePage = {
     hint: "e.g. 'Stop retyping 400 invoices a month into Tally'",
     tools: "Which tools do you use today?",
   },
-  /** 07 §5.9 tool names, by the schema's values (TOOLS in @techaust/core). */
-  tools: {
-    tally: "Tally",
-    zoho: "Zoho",
-    "excel-sheets": "Excel/Sheets",
-    quickbooks: "QuickBooks",
-    xero: "Xero",
-    shopify: "Shopify",
-    "whatsapp-business": "WhatsApp Business",
-    other: "Other",
-  },
+  /** 07 §5.9 tool names: one list in @techaust/core (form-labels.ts), shared with the lead alert. */
+  tools: TOOL_LABELS,
   budget: {
     /** NEW: the two questions of step 3 (07 names the step "Budget and timing"). */
     budgetLegend: "Budget",
     timelineLegend: "Timeline",
     hint: "This helps us suggest the right approach. It isn't a commitment.",
     /** 04 FRM-QUOTE "Not sure" band. */
-    notSure: "Not sure",
+    notSure: BAND_WORDS.notSure,
   },
-  /** 07 §5.9 timeline options, by the schema's values (TIMELINES in @techaust/core). */
-  timelines: {
-    asap: "As soon as possible",
-    "1-3-months": "1–3 months",
-    "3-6-months": "3–6 months",
-    exploring: "Just exploring",
-  },
+  /** 07 §5.9 timeline options: one list in @techaust/core, shared with the lead alert. */
+  timelines: TIMELINE_LABELS,
   contact: {
     name: "Your name",
     email: "Work email",
@@ -149,12 +136,8 @@ export const formUi = {
   /** The step list's state words for assistive technology. */
   done: "done",
   current: "current step",
-  /** The budget bands: "Under ₹1,00,000", "₹1,00,000 to ₹3,00,000", "₹15,00,000 or more" (amounts from core). */
-  under: "Under",
-  to: "to",
-  orMore: "or more",
-  /** "Best time for a call": a window with no preference. */
-  anyTime: "Any time",
+  /** "Best time for a call": a window with no preference (the band words are in @techaust/core with the amounts). */
+  anyTime: ANY_TIME,
   /** The country list's empty first option (the schema's own wording). */
   chooseCountry: "Choose your country",
   /** The honeypot's label: hidden from people and screen readers, read only by form-filling bots. */

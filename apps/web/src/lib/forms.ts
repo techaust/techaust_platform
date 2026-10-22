@@ -1,51 +1,27 @@
 // Build-time data for the form pages (M2.4): the budget bands as money, the country list, the call windows, the
 // service picker's groups and the consent notice version. Nothing here is copy except through content/forms.ts.
-import { BUDGET_BANDS, type Currency, formatMoney, money } from "@techaust/core";
-import { formUi, quotePage } from "../content/forms";
+// The budget bands, call windows and country names live in @techaust/core (form-labels.ts) because the lead alert in
+// apps/jobs shows the same words; this file re-exports them for the pages.
+import {
+  ANY_TIME,
+  BAND_BOUNDS,
+  budgetBandOptions,
+  CALL_WINDOWS,
+  type Currency,
+  callWindowText,
+  countryName,
+} from "@techaust/core";
 import { legal } from "../content/legal";
 import { serviceContent } from "../content/services";
 import { servicesHub } from "../content/services-hub";
 import { isServiceOnSite } from "./prices";
 
-/**
- * The budget bands of 04 FRM-QUOTE as amounts in minor units (paise, cents): [from, up to). The labels are written from
- * these with @techaust/core's formatMoney, never typed (WEB-G-07). One lakh rupees is 1,00,00,000 paise.
- */
-const LAKH = 10_000_000;
-const THOUSAND_USD = 100_000;
-export const BAND_BOUNDS: Record<Currency, Record<string, readonly [number | null, number | null]>> = {
-  INR: {
-    "lt-1l": [null, 1 * LAKH],
-    "1l-3l": [1 * LAKH, 3 * LAKH],
-    "3l-7l": [3 * LAKH, 7 * LAKH],
-    "7l-15l": [7 * LAKH, 15 * LAKH],
-    "15l-plus": [15 * LAKH, null],
-  },
-  USD: {
-    "lt-2k": [null, 2 * THOUSAND_USD],
-    "2k-5k": [2 * THOUSAND_USD, 5 * THOUSAND_USD],
-    "5k-15k": [5 * THOUSAND_USD, 15 * THOUSAND_USD],
-    "15k-40k": [15 * THOUSAND_USD, 40 * THOUSAND_USD],
-    "40k-plus": [40 * THOUSAND_USD, null],
-  },
-};
+export { BAND_BOUNDS, CALL_WINDOWS };
 
 export type Band = { value: string; label: string };
 
 /** One currency's bands in the schema's order (BUDGET_BANDS in @techaust/core), "Not sure" last. */
-export function budgetBands(currency: Currency): Band[] {
-  return BUDGET_BANDS[currency].map((value) => {
-    if (value === "not-sure") return { value, label: quotePage.budget.notSure };
-    const bounds = BAND_BOUNDS[currency][value];
-    if (!bounds) throw new Error(`budgetBands: no amounts for ${currency} band "${value}"`);
-    const [from, upTo] = bounds;
-    const f = (n: number) => formatMoney(money(n, currency), { wholeUnits: true });
-    if (from === null && upTo !== null) return { value, label: `${formUi.under} ${f(upTo)}` };
-    if (from !== null && upTo === null) return { value, label: `${f(from)} ${formUi.orMore}` };
-    if (from !== null && upTo !== null) return { value, label: `${f(from)} ${formUi.to} ${f(upTo)}` };
-    throw new Error(`budgetBands: ${currency} band "${value}" has no amounts`);
-  });
-}
+export const budgetBands = (currency: Currency): Band[] => budgetBandOptions(currency);
 
 /** ISO 3166-1 alpha-2 codes (the 249 officially assigned); the names come from the browser-independent ICU data. */
 const ISO_CODES =
@@ -59,33 +35,23 @@ const ISO_CODES =
 
 /** Every country as { code, name }, sorted by name; "and", never "&", in the names (ICU writes "Antigua & Barbuda"). */
 export function countries(): { code: string; name: string }[] {
-  const names = new Intl.DisplayNames("en-IN", { type: "region", fallback: "none" });
   return ISO_CODES.split(" ")
     .map((code) => {
-      const name = names.of(code);
-      if (!name) throw new Error(`countries: no name for ${code}`);
-      return { code, name: name.replace(/\s*&\s*/g, " and ") };
+      const name = countryName(code);
+      if (name === code) throw new Error(`countries: no name for ${code}`);
+      return { code, name };
     })
     .sort((a, b) => a.name.localeCompare(b.name, "en"));
 }
 
 /**
- * "Best time for a call" (07 §5.9): windows inside the published hours (Mon–Sat, 10:00–19:00 IST), as minutes after
- * midnight IST. The value sent is the IST text; the page adds the visitor's own clock beside each window.
+ * "Best time for a call" (07 §5.9): the windows and the text sent are in @techaust/core; the page adds the visitor's own
+ * clock beside each window.
  */
-export const CALL_WINDOWS = [
-  { from: 600, to: 780 },
-  { from: 780, to: 960 },
-  { from: 960, to: 1140 },
-] as const;
-
-const hhmm = (m: number) =>
-  `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
-
 export function callWindows(): { value: string; from?: number; to?: number }[] {
   return [
-    ...CALL_WINDOWS.map((w) => ({ value: `${hhmm(w.from)}–${hhmm(w.to)} IST`, from: w.from, to: w.to })),
-    { value: formUi.anyTime },
+    ...CALL_WINDOWS.map((w) => ({ value: callWindowText(w), from: w.from, to: w.to })),
+    { value: ANY_TIME },
   ];
 }
 

@@ -1,11 +1,24 @@
 // The email consumer (docs/05 §11.1) and the DLQ alerts. Every later sender (magic links, staff alerts, invoices)
 // reuses this path. One message = one email:
-//   validate -> claim the `email_log` row (idempotent) -> suppression and (staging) allow-list checks -> render -> send.
-// `email_log.status`: queued -> sent | skipped | failed. A retryable SES answer leaves the row `queued` and the queue
-// redelivers; a permanent one is `failed` and acknowledged.
-import { type EmailMessage, emailMessage, stableId } from "@techaust/core";
-import { dlqAlert, logTransport, renderEmail, SENDERS, sesTransport, type Transport } from "@techaust/email";
+//   validate -> create the `email_log` row (idempotent) -> claim it with a conditional UPDATE -> suppression and
+//   (staging) allow-list checks -> render -> send.
+// `email_log.status`: queued -> sending -> sent | skipped | failed. A retryable SES answer puts the row back to
+// `queued` and the queue redelivers; a permanent one is `failed` and acknowledged.
+import { type EmailMessage, emailMessage, leadMessage, stableId } from "@techaust/core";
+import {
+  dlqAlert,
+  logTransport,
+  type Rendered,
+  renderEmail,
+  SENDERS,
+  sesTransport,
+  type Transport,
+} from "@techaust/email";
+import { alertData } from "./leads.ts";
 import { logEvent } from "./log.ts";
+
+/** A `sending` claim older than this is taken as abandoned (the isolate died mid-send) and can be claimed again. */
+export const CLAIM_TIMEOUT_MS = 5 * 60_000;
 
 export type EmailResult = "sent" | "skipped" | "failed" | "duplicate" | "retry" | "invalid";
 
@@ -68,11 +81,17 @@ export async function processEmail(
   )
     .bind(id, to, m.template, m.entity.type, m.entity.id, now)
     .run();
-  const row = await env.DB.prepare("SELECT status FROM email_log WHERE id = ?1")
-    .bind(id)
-    .first<{ status: string }>();
-  if (row && row.status !== "queued") {
-    logEvent("email.duplicate", { template: m.template, status: row.status });
+  // The claim: one conditional UPDATE. Only the delivery that changes the row (queued -> sending, or an abandoned
+  // `sending` claim older than 5 minutes) goes on to send; every other delivery, concurrent or a redelivery after the
+  // email was sent, finds nothing to claim and sends nothing.
+  const claim = await env.DB.prepare(
+    `UPDATE email_log SET status = 'sending', updated_at = ?2
+     WHERE id = ?1 AND (status = 'queued' OR (status = 'sending' AND updated_at < ?3))`,
+  )
+    .bind(id, now, now - CLAIM_TIMEOUT_MS)
+    .run();
+  if (claim.meta.changes !== 1) {
+    logEvent("email.duplicate", { template: m.template });
     return "duplicate";
   }
 
@@ -93,7 +112,7 @@ export async function processEmail(
 
   let rendered: ReturnType<typeof renderEmail>;
   try {
-    rendered = renderEmail(m.template, m.data);
+    rendered = renderEmail(m.template, m.data, { assetBase: env.EMAIL_ASSET_BASE });
   } catch {
     await setStatus(env.DB, id, "failed", { error: "render failed" }, now);
     logEvent("email.failed", { template: m.template, why: "render" });
@@ -109,7 +128,16 @@ export async function processEmail(
     text: rendered.text,
   });
   if (result.kind === "sent") {
-    await setStatus(env.DB, id, "sent", { sesMessageId: result.messageId }, now);
+    // The email has left. If the status write fails, the message must NOT be retried (that would send it again): the
+    // row stays `sending`, which no later delivery claims for 5 minutes, and the delivery is acknowledged.
+    try {
+      await setStatus(env.DB, id, "sent", { sesMessageId: result.messageId }, now);
+    } catch (e) {
+      logEvent("email.status_write_failed", {
+        template: m.template,
+        error: e instanceof Error ? e.name : "unknown",
+      });
+    }
     logEvent("email.sent", { template: m.template });
     return "sent";
   }
@@ -130,17 +158,41 @@ export async function processEmail(
 export async function processDeadLetter(
   env: Env,
   queue: string,
+  body: unknown,
   transport: Transport = transportFor(env),
 ): Promise<boolean> {
-  logEvent("queue.dead_letter", { queue });
-  const alert = dlqAlert({ queue, admin_url: env.ADMIN_URL });
+  const opts = { assetBase: env.EMAIL_ASSET_BASE };
+  let rendered: Rendered | undefined;
+  let ref: string | undefined;
+
+  // A dead-lettered lead must not be lost (NFR-7): the alert carries the whole lead summary, the same content and
+  // recipient as the normal `lead.alert`, with the queue in the subject. The log line carries the reference only.
+  const lead = queue.endsWith("-leads-dlq") ? leadMessage.safeParse(body) : undefined;
+  if (lead?.success) {
+    ref = lead.data.ref;
+    rendered = renderEmail(
+      "lead.alert",
+      { ...alertData(env, lead.data, ref), failed_queue: queue },
+      opts,
+    );
+  } else if (queue.endsWith("-email-dlq")) {
+    // A failed email: which template and which lead (its reference), never the address or the text.
+    const email = emailMessage.safeParse(body);
+    if (email.success) {
+      ref = email.data.entity.type === "lead" ? email.data.entity.id : undefined;
+      rendered = dlqAlert({ queue, admin_url: env.ADMIN_URL, template: email.data.template, ref }, opts);
+    }
+  }
+  logEvent("queue.dead_letter", { queue, ref, readable: rendered !== undefined });
+  rendered ??= dlqAlert({ queue, admin_url: env.ADMIN_URL }, opts);
+
   const r = await transport.send({
     from: SENDERS.hello,
     to: env.LEAD_ALERT_TO,
-    subject: alert.subject,
-    html: alert.html,
-    text: alert.text,
+    subject: rendered.subject,
+    html: rendered.html,
+    text: rendered.text,
   });
-  if (r.kind !== "sent") logEvent("queue.dead_letter_alert_failed", { queue, why: r.error });
+  if (r.kind !== "sent") logEvent("queue.dead_letter_alert_failed", { queue, ref, why: r.error });
   return r.kind === "sent";
 }

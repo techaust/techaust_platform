@@ -1,7 +1,11 @@
 // The branded email layout (docs/06 §6; M2.4 designer): snapshots of both lead emails (HTML and text, with clearly fake
 // sample data) and the rules the layout must keep. The snapshots are files, so a reviewer can open the HTML.
 import { describe, expect, it } from "vitest";
-import { ASSET_BASE, FOOTER, leadAcknowledgement, leadAlert } from "../src/index.ts";
+import { FOOTER, leadAcknowledgement, leadAlert } from "../src/index.ts";
+
+/** The logos come from the Worker's EMAIL_ASSET_BASE; the package holds no host, so the tests use a made-up one. */
+const ASSET_BASE = "https://assets.example.test/brand/";
+const OPTS = { assetBase: ASSET_BASE };
 
 /** Sample data only (example.test addresses, an obviously fake person). */
 const ack = { first_name: "Sample", service_name: "Discovery Sprint", ref: "L-7K3Q9" };
@@ -25,40 +29,51 @@ const alert = {
 
 describe("lead emails in the brand layout (docs/06 §6)", () => {
   it("acknowledgement: HTML and text snapshots", async () => {
-    const r = leadAcknowledgement(ack);
+    const r = leadAcknowledgement(ack, OPTS);
     await expect(r.html).toMatchFileSnapshot("./__snapshots__/lead-acknowledgement.html");
     await expect(r.text).toMatchFileSnapshot("./__snapshots__/lead-acknowledgement.txt");
   });
 
   it("acknowledgement with a Cal.com link: HTML snapshot", async () => {
-    const r = leadAcknowledgement({ ...ack, cal_link: "https://cal.example.test/techaust/discovery" });
+    const r = leadAcknowledgement({ ...ack, cal_link: "https://cal.example.test/techaust/discovery" }, OPTS);
     await expect(r.html).toMatchFileSnapshot("./__snapshots__/lead-acknowledgement-cal.html");
   });
 
   it("internal alert: HTML and text snapshots", async () => {
-    const r = leadAlert(alert);
+    const r = leadAlert(alert, OPTS);
     await expect(r.html).toMatchFileSnapshot("./__snapshots__/lead-alert.html");
     await expect(r.text).toMatchFileSnapshot("./__snapshots__/lead-alert.txt");
   });
 
   it("the wordmark is a hosted image with alt text, never live text; light badge and dark lockup", () => {
-    for (const html of [leadAcknowledgement(ack).html, leadAlert(alert).html]) {
-      expect(html).toContain(`src="${ASSET_BASE}logo-email-badge@2x.png"`);
-      expect(html).toContain(`src="${ASSET_BASE}logo-email-dark@2x.png"`);
+    for (const html of [leadAcknowledgement(ack, OPTS).html, leadAlert(alert, OPTS).html]) {
+      expect(html).toContain(`src="${ASSET_BASE}logo-email-badge%402x.png"`);
+      expect(html).toContain(`src="${ASSET_BASE}logo-email-dark%402x.png"`);
       expect(html.match(/alt="TecHaust Technologies"/g)?.length).toBe(2);
       // "TecHaust" as text appears only in the footer line and the sign-off, never as a header in a live font.
       expect(html).not.toMatch(/<h1[^>]*>[^<]*TecHaust/);
     }
   });
 
-  it("the image host can be changed (production in Phase 7)", () => {
+  it("the image host comes only from the caller (EMAIL_ASSET_BASE), never from this package", () => {
     const html = leadAcknowledgement(ack, { assetBase: "https://techaust.com/brand/" }).html;
-    expect(html).toContain('src="https://techaust.com/brand/logo-email-badge@2x.png"');
+    expect(html).toContain('src="https://techaust.com/brand/logo-email-badge%402x.png"');
     expect(html).not.toContain(ASSET_BASE);
+    expect(html).not.toContain("workers.dev");
+  });
+
+  it("the alert shows the quote link's type and plan, and a dead-lettered lead says so in subject and body", () => {
+    const r = leadAlert({ ...alert, type: "pilot", plan: "essential", failed_queue: "techaust-staging-leads-dlq" }, OPTS);
+    expect(r.subject).toBe(
+      "Failed after 5 tries (techaust-staging-leads-dlq): New lead L-7K3Q9: AI Document Automation · 1l-3l · IN",
+    );
+    expect(r.text).toContain("Type: pilot\nPlan: essential");
+    expect(r.text).toContain("This lead failed after 5 tries and may be missing from the admin.");
+    expect(leadAlert(alert, OPTS).text).not.toContain("failed after 5 tries");
   });
 
   it("keeps the email rules: lang, presentation tables, dark mode, 600 px, the 07 §8 footer, a VML button", () => {
-    const html = leadAlert(alert).html;
+    const html = leadAlert(alert, OPTS).html;
     expect(html).toMatch(/<html lang="en-IN"/);
     expect(html).toContain('<meta name="color-scheme" content="light dark">');
     expect(html).toContain("@media (prefers-color-scheme: dark)");
@@ -73,7 +88,7 @@ describe("lead emails in the brand layout (docs/06 §6)", () => {
   });
 
   it("keeps the visitor's line breaks in the alert and escapes everything", () => {
-    const html = leadAlert({ ...alert, message: "<script>x</script>\nline two" }).html;
+    const html = leadAlert({ ...alert, message: "<script>x</script>\nline two" }, OPTS).html;
     expect(html).toContain("&lt;script&gt;x&lt;/script&gt;<br>line two");
     expect(html).not.toContain("<script>");
   });

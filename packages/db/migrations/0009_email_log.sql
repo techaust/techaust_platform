@@ -9,7 +9,7 @@ CREATE TABLE `email_log` (
 	`error` text,
 	`created_at` integer DEFAULT (cast(unixepoch('subsec') * 1000 as integer)) NOT NULL,
 	`updated_at` integer DEFAULT (cast(unixepoch('subsec') * 1000 as integer)) NOT NULL,
-	CONSTRAINT "email_log_status" CHECK("email_log"."status" in ('queued', 'sent', 'delivered', 'bounced', 'complained', 'failed', 'skipped'))
+	CONSTRAINT "email_log_status" CHECK("email_log"."status" in ('queued', 'sending', 'sent', 'delivered', 'bounced', 'complained', 'failed', 'skipped'))
 );
 --> statement-breakpoint
 CREATE INDEX `email_log_entity` ON `email_log` (`entity_type`,`entity_id`);--> statement-breakpoint

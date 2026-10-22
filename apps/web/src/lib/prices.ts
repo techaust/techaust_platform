@@ -10,6 +10,7 @@
 import { formatMoney, type Money, money, scheduleText } from "@techaust/core";
 import { flags } from "../config/site";
 import { snapshot } from "./catalogue";
+import { isVisible } from "./service-visibility";
 
 /** A price as the site shows it: INR always, USD where the service is offered internationally. */
 export type SitePrice = { readonly inr: Money; readonly usd: Money | null };
@@ -18,10 +19,7 @@ type Item = ReturnType<typeof snapshot>["items"][number];
 
 const find = (code: string): Item | undefined => snapshot().items.find((c) => c.code === code);
 
-/** Whether a service is shown on the site: the catalogue's flag, and for S3 also the S3_DPDP_PAGE flag (both must allow). */
-export function isVisible(item: { code: string; showOnSite: boolean }, s3Flag: boolean): boolean {
-  return item.showOnSite && (item.code !== "S3" || s3Flag);
-}
+export { isVisible };
 const visible = (item: Item): boolean => isVisible(item, flags.S3_DPDP_PAGE);
 
 /** The default line whose description starts with `word` (case-insensitive); throws when two do (ambiguous). */

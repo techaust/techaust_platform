@@ -10,7 +10,13 @@ export default defineConfig({
         plugins: [
           cloudflareTest({
             wrangler: { configPath: "./wrangler.jsonc" },
-            miniflare: { bindings: { TURNSTILE_SECRET: "test-secret", FORMS_IP_PEPPER: "test-pepper" } },
+            miniflare: {
+              bindings: {
+                TURNSTILE_SECRET: "test-secret",
+                // base64 of 32 bytes, like the real pepper
+                FORMS_IP_PEPPER: "cHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHA=",
+              },
+            },
           }),
         ],
         // 20 s: the first request of a file loads the Worker with zod and the shared schemas, which is slow when the whole

@@ -17,6 +17,7 @@ const input = {
   html: "<p>Hi</p>",
   text: "Hi",
 };
+const OPTS = { assetBase: "https://assets.example.test/brand/" };
 const cfg = {
   accessKeyId: "AKIATEST",
   secretAccessKey: "secret",
@@ -42,7 +43,10 @@ describe("header sanitising [FRM-03]", () => {
 
 describe("templates (docs/07 §8)", () => {
   it("acknowledgement: subject and text word for word, cal link left out while empty", () => {
-    const r = leadAcknowledgement({ first_name: "Asha", service_name: "Discovery Sprint", ref: "L-7K3Q9" });
+    const r = leadAcknowledgement(
+      { first_name: "Asha", service_name: "Discovery Sprint", ref: "L-7K3Q9" },
+      OPTS,
+    );
     expect(r.subject).toBe("We've received your request (L-7K3Q9)");
     expect(r.text).toBe(
       "Hi Asha, thanks for getting in touch about Discovery Sprint. We'll reply within one business day (Mon–Sat, 10:00–19:00 IST). Your reference: L-7K3Q9. — TecHaust Technologies\n\nTecHaust Technologies · Balurghat, West Bengal, India · contact@techaust.com\n",
@@ -51,28 +55,29 @@ describe("templates (docs/07 §8)", () => {
   });
 
   it("acknowledgement: the cal link appears when set; visitor text is escaped in HTML", () => {
-    const r = leadAcknowledgement({
-      first_name: "<b>Asha</b>",
-      service_name: "S",
-      ref: "L-7K3Q9",
-      cal_link: "https://cal.example/x",
-    });
+    const r = leadAcknowledgement(
+      { first_name: "<b>Asha</b>", service_name: "S", ref: "L-7K3Q9", cal_link: "https://cal.example/x" },
+      OPTS,
+    );
     expect(r.text).toContain("If you'd like to pick a call time now: https://cal.example/x.");
     expect(r.html).toContain("&lt;b&gt;Asha&lt;/b&gt;");
     expect(r.html).not.toContain("<b>Asha");
   });
 
   it("alert: subject from the template, CR/LF never reach it, empty fields are left out", () => {
-    const r = leadAlert({
-      ref: "L-7K3Q9",
-      service_name: "Fractional CTO\r\nBcc: x@y.z",
-      budget_band: "1l-3l",
-      country: "IN",
-      name: "Asha",
-      email: "asha@example.com",
-      message: "Hello there, a long enough message.",
-      admin_url: "https://admin.example/",
-    });
+    const r = leadAlert(
+      {
+        ref: "L-7K3Q9",
+        service_name: "Fractional CTO\r\nBcc: x@y.z",
+        budget_band: "1l-3l",
+        country: "IN",
+        name: "Asha",
+        email: "asha@example.com",
+        message: "Hello there, a long enough message.",
+        admin_url: "https://admin.example/",
+      },
+      OPTS,
+    );
     expect(r.subject).toBe("New lead L-7K3Q9: Fractional CTO Bcc: x@y.z · 1l-3l · IN");
     expect(r.subject).not.toMatch(/[\r\n]/);
     expect(r.text).not.toContain("Phone:");
@@ -80,13 +85,14 @@ describe("templates (docs/07 §8)", () => {
   });
 
   it("renderEmail picks hello@ with Reply-To hello@ and rejects unknown templates", () => {
-    const r = renderEmail("lead.acknowledgement", { first_name: "A", service_name: "S", ref: "L-7K3Q9" });
+    const r = renderEmail("lead.acknowledgement", { first_name: "A", service_name: "S", ref: "L-7K3Q9" }, OPTS);
     expect(r.from.address).toBe("hello@techaust.com");
     expect(r.replyTo).toBe("hello@techaust.com");
-    expect(renderEmail("lead.alert", { ref: "L-7K3Q9", admin_url: "https://a/" }).subject).toContain(
-      "L-7K3Q9",
-    );
-    expect(() => renderEmail("nope", {})).toThrow(/Unknown email template/);
+    expect(r.html).toContain("https://assets.example.test/brand/logo-email-badge%402x.png");
+    expect(
+      renderEmail("lead.alert", { ref: "L-7K3Q9", admin_url: "https://a/" }, OPTS).subject,
+    ).toContain("L-7K3Q9");
+    expect(() => renderEmail("nope", {}, OPTS)).toThrow(/Unknown email template/);
   });
 });
 

@@ -5,13 +5,22 @@ import { processDeadLetter, processEmail } from "./email.ts";
 import { processLead } from "./leads.ts";
 import { logEvent } from "./log.ts";
 
+/**
+ * A dead-lettered message whose alert could not be sent is retried with long, growing delays (5 minutes, doubling, at
+ * most 4 hours) and is never dropped quietly: the consumer's `max_retries` is the queue maximum (wrangler.jsonc), so the
+ * Free plan's 24-hour message retention is the only limit left, and each failure writes a log line with the reference.
+ */
+export const dlqRetryDelay = (attempts: number): number =>
+  Math.min(4 * 3_600, 300 * 2 ** Math.max(0, attempts - 1));
+
 export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promise<void> {
   const queue = batch.queue;
+  const isDlq = queue.endsWith("-leads-dlq") || queue.endsWith("-email-dlq");
   for (const message of batch.messages) {
     try {
-      if (queue.endsWith("-leads-dlq") || queue.endsWith("-email-dlq")) {
-        if (await processDeadLetter(env, queue)) message.ack();
-        else message.retry({ delaySeconds: 60 });
+      if (isDlq) {
+        if (await processDeadLetter(env, queue, message.body)) message.ack();
+        else message.retry({ delaySeconds: dlqRetryDelay(message.attempts) });
       } else if (queue.endsWith("-leads")) {
         await processLead(env, message.body);
         message.ack();
@@ -29,7 +38,9 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
         attempts: message.attempts,
         error: e instanceof Error ? e.name : "unknown",
       });
-      message.retry({ delaySeconds: Math.min(300, 10 * 2 ** message.attempts) });
+      message.retry({
+        delaySeconds: isDlq ? dlqRetryDelay(message.attempts) : Math.min(300, 10 * 2 ** message.attempts),
+      });
     }
   }
 }

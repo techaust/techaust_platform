@@ -91,6 +91,14 @@ describe("queue messages", () => {
 });
 
 describe("form meta [FRM-05, FRM-06]", () => {
+  it("carries type and plan as lower-case slugs, drops empty ones and rejects the rest", () => {
+    const ok = formMeta.parse({ noticeVersion: "0.1", type: "pilot", plan: "care-plus" });
+    expect(ok).toMatchObject({ type: "pilot", plan: "care-plus" });
+    expect(formMeta.parse({ noticeVersion: "0.1", type: "", plan: "" })).toMatchObject({ type: undefined });
+    for (const bad of ["Pilot", "a b", "x".repeat(31), "a\r\nb"])
+      expect(formMeta.safeParse({ noticeVersion: "0.1", plan: bad }).success).toBe(false);
+  });
+
   it("treats empty fields as missing and requires the notice version", () => {
     const r = formMeta.parse({
       noticeVersion: "0.1",

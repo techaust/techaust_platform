@@ -26,6 +26,8 @@ const text = (max: number) => z.string().trim().min(1).max(max);
 // biome-ignore lint/suspicious/noControlCharactersInRegex: rejecting control characters is the point
 const NO_CONTROL = /^[^\u0000-\u001f\u007f-\u009f]*$/;
 
+const SLUG = /^[a-z0-9-]{1,30}$/;
+
 /** Attribution and consent fields posted with the form (FRM-05, FRM-06). Anything else is ignored. */
 export const formMeta = z.object({
   noticeVersion: z.string().regex(/^\d{1,3}(\.\d{1,3}){0,2}$/, { error: "Missing notice version" }),
@@ -47,6 +49,9 @@ export const formMeta = z.object({
       .optional(),
   ),
   currency: z.preprocess(empty, z.enum(["INR", "USD"]).optional()),
+  /** `?type=pilot` and `?plan=<tier>` of the quote link (lower-case slugs). */
+  type: z.preprocess(empty, z.string().regex(SLUG).optional()),
+  plan: z.preprocess(empty, z.string().regex(SLUG).optional()),
   utm: z
     .object({
       source: z.preprocess(empty, text(100).regex(NO_CONTROL).optional()),
@@ -69,6 +74,8 @@ const messageBase = {
   referrerHost: formMeta.shape.referrerHost,
   utm: formMeta.shape.utm,
   currency: formMeta.shape.currency,
+  type: formMeta.shape.type,
+  plan: formMeta.shape.plan,
   /** UTC ms when the Worker accepted the submission. */
   submittedAt: z.int().positive(),
 };

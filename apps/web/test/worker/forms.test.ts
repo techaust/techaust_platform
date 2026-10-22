@@ -17,7 +17,7 @@ const env = () =>
   ({
     ENVIRONMENT: "staging",
     TURNSTILE_SECRET: "test-secret",
-    FORMS_IP_PEPPER: "test-pepper",
+    FORMS_IP_PEPPER: "cHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHA=",
     TURNSTILE_HOSTNAMES: "web.test",
     FORMS_ALLOWED_ORIGINS: ORIGIN,
     LEADS_QUEUE: {
@@ -274,12 +274,12 @@ describe("abuse [FRM-02, FRM-03]", () => {
       { type: "application/x-www-form-urlencoded" },
     );
     expect(res.status).toBe(303);
-    expect(res.headers.get("location")).toBe("/contact?error=nojs");
+    expect(res.headers.get("location")).toBe("/contact?error=nojs#contact-nojs");
     const quote = await request(
       { ...valid(), "cf-turnstile-response": "" },
       { type: "application/x-www-form-urlencoded", kind: "quote" },
     );
-    expect(quote.headers.get("location")).toBe("/get-a-quote?error=nojs");
+    expect(quote.headers.get("location")).toBe("/get-a-quote?error=nojs#quote-nojs");
     expect(verifyBodies).toHaveLength(0);
   });
 
@@ -304,5 +304,91 @@ describe("abuse [FRM-02, FRM-03]", () => {
 
   it("an unknown form kind is a 404", async () => {
     expect((await request(valid(), { kind: "admin" })).status).toBe(404);
+  });
+});
+
+describe("review fixes [FRM-02, FRM-03, FRM-QUOTE]", () => {
+  const post = (e: Env, body: unknown) =>
+    app.fetch(
+      new Request(`${ORIGIN}/api/forms/contact`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Origin: ORIGIN, "CF-Connecting-IP": "203.0.113.9" },
+        body: JSON.stringify(body),
+      }),
+      e,
+    );
+
+  it("any present, non-empty honeypot value counts as filled: a number, true, a list, an object", async () => {
+    for (const filled of [0, 5, true, ["x"], { a: 1 }, " "]) {
+      const res = await request({ ...valid(), company_website: filled });
+      expect(res.status, JSON.stringify(filled)).toBe(400);
+    }
+    expect(sent).toHaveLength(0);
+    // empty values are not a trap
+    for (const empty of ["", null, []]) {
+      expect((await request({ ...valid(), company_website: empty })).status).toBe(200);
+    }
+  });
+
+  it("the limiter runs after the honeypot and fill-time checks, so those rejections spend no limiter call", async () => {
+    await request({ ...valid(), company_website: "spam" });
+    await request({ ...valid(), form_elapsed_ms: "100" });
+    expect(limitCalls).toHaveLength(0);
+    await request(valid());
+    expect(limitCalls).toHaveLength(1);
+  });
+
+  it("a failing rate-limit binding does not turn the visitor away (a code-only line is logged)", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    const e = {
+      ...env(),
+      RL_FORMS: {
+        limit: async () => {
+          throw new Error("internal error");
+        },
+      },
+    } as unknown as Env;
+    const res = await post(e, valid());
+    expect(res.status).toBe(200);
+    expect(sent).toHaveLength(1);
+    expect(log).toHaveBeenCalledWith('{"ev":"forms.rate_limiter_error"}');
+    expect(String(log.mock.calls)).not.toContain("203.0.113.9");
+  });
+
+  it("a mis-set pepper answers 503 and is never echoed", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await post({ ...env(), FORMS_IP_PEPPER: "short" } as unknown as Env, valid());
+    expect(res.status).toBe(503);
+    expect(String(log.mock.calls)).not.toContain("short");
+  });
+
+  const quote = () => ({
+    ...valid(),
+    goals: "Replace the spreadsheet we use today for orders.",
+    tools: ["tally"],
+    currency: "INR",
+    budget: "1l-3l",
+    timeline: "asap",
+    country: "in",
+    service: "S5",
+  });
+
+  it("type and plan from the quote link are carried into the queue message", async () => {
+    siteverify = { success: true, action: "quote", hostname: "web.test" };
+    expect((await request({ ...quote(), type: "pilot", plan: "standard" }, { kind: "quote" })).status).toBe(200);
+    expect(sent[0]).toMatchObject({ type: "pilot", plan: "standard" });
+    const bad = await request({ ...quote(), plan: "Standard Plan" }, { kind: "quote" });
+    expect(bad.status).toBe(422);
+  });
+
+  it("a service that is not on the site is refused; 'not-sure' and live services are accepted", async () => {
+    siteverify = { success: true, action: "quote", hostname: "web.test" };
+    // S3 (DPDP readiness) is flagged off; S99 is not a service at all
+    const hidden = await request({ ...quote(), service: "S3" }, { kind: "quote" });
+    expect(hidden.status).toBe(422);
+    expect(await hidden.json()).toEqual({ ok: false, error: "invalid", fields: ["service"] });
+    expect((await request({ ...quote(), service: "S99" }, { kind: "quote" })).status).toBe(422);
+    expect((await request({ ...quote(), service: "not-sure" }, { kind: "quote" })).status).toBe(200);
+    expect((await request({ ...quote(), service: "S5" }, { kind: "quote" })).status).toBe(200);
   });
 });

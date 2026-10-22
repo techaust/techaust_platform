@@ -2,12 +2,12 @@
 // puts one message on the leads queue; the jobs Worker makes the lead and sends the emails. No D1 here (CI guard).
 //
 // Order of checks (each failure answers at once, nothing later runs):
-//   method -> content type -> body size (stream, hard cap) -> Origin -> rate limit -> [no token: no-JS notice]
-//   -> honeypot and fill time -> Turnstile -> zod -> queue.
+//   method -> content type -> body size (stream, hard cap) -> Origin -> [no token: no-JS notice]
+//   -> honeypot and fill time -> rate limit -> Turnstile -> zod (and the service check) -> queue.
 // Errors are `{ok:false, error:<code>}` only (plus `fields` for a validation failure). A plain HTML form POST gets a
 // 303 to the page (`?error=<code>`) or to /thanks?ref=…; a JSON request gets JSON.
 
-import { addressOf } from "@techaust/auth";
+import { addressOf, enc, hex, hmacSha256 } from "@techaust/auth";
 import {
   contactForm,
   FORM_FIELDS,
@@ -20,6 +20,7 @@ import {
   quoteForm,
 } from "@techaust/core";
 import { Hono } from "hono/tiny";
+import { isQuotableService } from "./lib/service-visibility";
 
 export const MAX_BODY_BYTES = 16 * 1024;
 const PAGES: Record<FormKind, string> = { contact: "/contact", quote: "/get-a-quote" };
@@ -49,17 +50,20 @@ const STATUS: Record<ErrorCode, number> = {
   nojs: 400,
 };
 
-/** HMAC-SHA-256 (hex) of the visitor's address under the pepper: the only form of the address that is kept (FRM-02). */
+/**
+ * HMAC-SHA-256 (hex) of the visitor's address under the pepper: the only form of the address that is kept (FRM-02).
+ * Uses `@techaust/auth`'s helper, which keeps the imported key per isolate. The pepper is a base64 secret of at least
+ * 32 bytes (as `pnpm dev:secrets` and the runbook script make it); anything else throws.
+ */
 export async function hashAddress(pepper: string, address: string): Promise<string> {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(pepper),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const mac = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(address)));
-  return Array.from(mac, (b) => b.toString(16).padStart(2, "0")).join("");
+  return hex(await hmacSha256(pepper, enc.encode(address)));
+}
+
+/** A honeypot counts as filled for any present, non-empty value: text, a number, true, an object or a non-empty list. */
+function isFilled(v: unknown): boolean {
+  if (v === undefined || v === null || v === "") return false;
+  if (Array.isArray(v)) return v.some(isFilled);
+  return true;
 }
 
 /** Reads at most `max` bytes as text; null when the body is larger (the stream is cancelled, never buffered whole). */
@@ -155,7 +159,9 @@ forms.all("/forms/:kind", async (c) => {
     if (!isForm) return json(error, extra, h);
     const q = new URLSearchParams({ error });
     if (Array.isArray(extra?.fields)) q.set("fields", (extra.fields as string[]).join(","));
-    return c.redirect(`${PAGES[kind]}?${q}`, 303);
+    // No JavaScript: land on the page's no-JS note (the ids exist on both pages), not at the top.
+    const hash = error === "nojs" ? `#${kind === "contact" ? "contact" : "quote"}-nojs` : "";
+    return c.redirect(`${PAGES[kind]}?${q}${hash}`, 303);
   };
 
   if (!env.LEADS_QUEUE || !env.RL_FORMS || !env.TURNSTILE_SECRET || !env.FORMS_IP_PEPPER)
@@ -168,11 +174,6 @@ forms.all("/forms/:kind", async (c) => {
   const origin = req.headers.get("origin");
   if (!origin || !origins.includes(origin)) return fail("forbidden_origin");
 
-  const ip = req.headers.get("cf-connecting-ip") ?? "unknown";
-  const ipHash = await hashAddress(env.FORMS_IP_PEPPER, addressOf(ip));
-  const limit = await env.RL_FORMS.limit({ key: ipHash });
-  if (!limit.success) return fail("rate_limited", undefined, { "Retry-After": "60" });
-
   const f = parseBody(text, isForm);
   if (!f) return fail("bad_request");
 
@@ -180,10 +181,27 @@ forms.all("/forms/:kind", async (c) => {
   // No JavaScript, so no widget and no token: show the page's notice (owner decision 2026-10-23).
   if (isForm && token === "") return fail("nojs");
 
-  const honeypot = f[FORM_FIELDS.honeypot];
+  // Honeypot and fill time come before the limiter, so a bot that trips them does not spend the binding's calls.
   const elapsed = Number(str(f[FORM_FIELDS.elapsed]));
-  if ((typeof honeypot === "string" && honeypot !== "") || !Number.isFinite(elapsed) || elapsed < MIN_FILL_MS)
+  if (isFilled(f[FORM_FIELDS.honeypot]) || !Number.isFinite(elapsed) || elapsed < MIN_FILL_MS)
     return fail("bad_request");
+
+  const ip = req.headers.get("cf-connecting-ip") ?? "unknown";
+  let ipHash: string;
+  try {
+    ipHash = await hashAddress(env.FORMS_IP_PEPPER, addressOf(ip));
+  } catch {
+    console.error(JSON.stringify({ ev: "forms.pepper_invalid" })); // a mis-set secret: code only, never the value
+    return fail("unavailable");
+  }
+  // First layer of FRM-02 (2 per 60 s per address). If the binding itself fails, the visitor is not turned away: the
+  // exact per-address limits are enforced again by the jobs consumer (docs/13, 2026-10-23).
+  try {
+    const limit = await env.RL_FORMS.limit({ key: ipHash });
+    if (!limit.success) return fail("rate_limited", undefined, { "Retry-After": "60" });
+  } catch {
+    console.error(JSON.stringify({ ev: "forms.rate_limiter_error" }));
+  }
   if (!(await turnstileOk(env, kind, token, ip))) return fail("bad_request");
 
   const payload = (kind === "contact" ? contactForm : quoteForm).safeParse(f);
@@ -192,6 +210,8 @@ forms.all("/forms/:kind", async (c) => {
     sourcePage: f.sourcePage,
     referrerHost: f.referrerHost,
     currency: f.currency,
+    type: f.type,
+    plan: f.plan,
     utm: {
       source: f.utm_source,
       medium: f.utm_medium,
@@ -208,6 +228,11 @@ forms.all("/forms/:kind", async (c) => {
     return fail("invalid", { fields: [...new Set(issues.map((i) => String(i.path[0] ?? "form")))] });
   }
 
+  // A service the site doesn't offer (hidden by the catalogue or a flag, or not a service at all) is refused, so the
+  // schema's S1–S18 range does not let a visitor name one (the seed catalogue's rule, the same as the pages').
+  if ("service" in payload.data && !isQuotableService(payload.data.service))
+    return fail("invalid", { fields: ["service"] });
+
   const ref = generateLeadRef();
   const message = {
     kind,
@@ -220,6 +245,8 @@ forms.all("/forms/:kind", async (c) => {
     referrerHost: meta.data.referrerHost,
     utm: meta.data.utm,
     currency: meta.data.currency,
+    type: meta.data.type,
+    plan: meta.data.plan,
     submittedAt: Date.now(),
   } as LeadMessage;
   try {
