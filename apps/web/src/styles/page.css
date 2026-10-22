@@ -1,0 +1,79 @@
+/* Page sections (home and the service-page template). Tokens only. The rhythm: every section is --section-y tall
+   at the top and bottom; wide sections put the heading in a narrow left column and the content in a wide right one
+   (4 + 8 of 12 columns from 1024 px), so the eye runs down one edge of headings. */
+
+.section {
+  padding-block: var(--section-y);
+}
+
+/* Two plain sections in a row share their spacing (no double gap). */
+.section--flush-top {
+  padding-block-start: 0;
+}
+
+/* A plain section straight after a page hero shares the hero's bottom space (the hero ends on --section-y). */
+.page-hero + .section:not(.section--alt) {
+  padding-block-start: 0;
+}
+
+.section--alt {
+  background: var(--color-surface-alt);
+}
+
+/* Heading column + content column. */
+.split {
+  display: grid;
+  gap: var(--block-gap);
+}
+
+.split > * {
+  min-inline-size: 0;
+}
+
+@media (min-width: 64rem) {
+  .split {
+    grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
+    column-gap: var(--space-8);
+  }
+}
+
+/* A section heading with something beside it (the currency note), wrapping under it on narrow screens. */
+.section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-8);
+  margin-block-end: var(--block-gap);
+}
+
+.stack > * + * {
+  margin-block-start: var(--stack);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+/* Inside an ink panel (the CTA band): the dark-theme colours, in both themes, so every child keeps using the
+   semantic tokens (same approach as the footer). */
+.on-ink {
+  --color-text: var(--color-mist);
+  --color-text-muted: var(--color-ink-300);
+  --color-text-accent: var(--color-verdigris-300);
+  --color-link: var(--color-mist);
+  --color-link-hover: var(--color-verdigris-300);
+  --color-focus: var(--color-verdigris-300);
+  --color-border: var(--color-ink-600);
+  --color-border-control: var(--color-ink-500);
+  --color-fill-subtle: var(--color-ink-700);
+  --color-btn-primary-bg: var(--color-verdigris-300);
+  --color-btn-primary-fg: var(--color-ink-950);
+  --color-btn-primary-hover: var(--color-verdigris-200);
+  --color-btn-secondary-fg: var(--color-mist);
+  --placeholder-accent: var(--color-text);
+  color: var(--color-text);
+  color-scheme: dark;
+}

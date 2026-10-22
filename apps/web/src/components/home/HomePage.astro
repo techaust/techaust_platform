@@ -1,0 +1,33 @@
+---
+// The home page body (WEB-HOME, docs/07 §3), section by section, rendered inside BaseLayout by pages/index.astro
+// (the owner-approved M2.2 preview).
+import "../../styles/page.css";
+import { discoveryHref } from "../../config/site";
+import { home } from "../../content/home";
+import CTABand from "../CTABand.astro";
+import FaqSection from "../FaqSection.astro";
+import CareTeaser from "./CareTeaser.astro";
+import Hero from "./Hero.astro";
+import HowWeWork from "./HowWeWork.astro";
+import PriceAnchors from "./PriceAnchors.astro";
+import RecentWork from "./RecentWork.astro";
+import WhatWeDo from "./WhatWeDo.astro";
+import WhoWeHelp from "./WhoWeHelp.astro";
+
+const b = home.band;
+---
+
+<Hero />
+<WhoWeHelp />
+<WhatWeDo />
+<HowWeWork />
+<CareTeaser />
+<PriceAnchors />
+<RecentWork />
+<FaqSection title={home.faq.h2} items={home.faq.items} flushTop />
+<CTABand
+  title={b.h2}
+  text={b.text}
+  primary={{ label: b.primary, href: discoveryHref }}
+  whatsappLabel={b.whatsapp}
+/>

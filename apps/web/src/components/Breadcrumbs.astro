@@ -1,0 +1,63 @@
+---
+// Breadcrumbs (docs/06 §5.2, WEB-G-09): nav "Breadcrumb", an ordered list, the current page last with
+// aria-current. Separators are icons hidden from assistive tech. The BreadcrumbList JSON-LD is M2.5.
+import { serviceLabels } from "../content/labels";
+import Icon from "./Icon.astro";
+
+interface Props {
+  trail: readonly { label: string; href?: string }[];
+}
+
+const { trail } = Astro.props;
+---
+
+<nav class="crumbs" aria-label={serviceLabels.breadcrumb}>
+  <ol role="list">
+    {
+      trail.map((c, i) => (
+        <li>
+          {i > 0 && <Icon name="chevron-right" size={16} class="crumbs__sep" />}
+          {c.href ? (
+            <a href={c.href}>{c.label}</a>
+          ) : (
+            <span aria-current="page">{c.label}</span>
+          )}
+        </li>
+      ))
+    }
+  </ol>
+</nav>
+
+<style>
+  .crumbs ol {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0 var(--space-1);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+    color: var(--color-text-muted);
+  }
+
+  .crumbs li {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+  }
+
+  .crumbs a {
+    display: inline-flex;
+    align-items: center;
+    min-block-size: var(--target-min);
+    min-inline-size: var(--target-min);
+    color: var(--color-text-muted);
+  }
+
+  .crumbs a:hover {
+    color: var(--color-link-hover);
+  }
+
+  .crumbs [aria-current] {
+    color: var(--color-text);
+  }
+</style>

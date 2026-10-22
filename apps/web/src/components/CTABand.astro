@@ -1,0 +1,105 @@
+---
+// CTABand (docs/06 §5.2): the closing call to action, an ink panel with a verdigris-300 primary button. It sits inside
+// the page width (not full bleed), so it reads as its own block above the ink footer, and its top-right corner is
+// cut at 45° (docs/06 §4.3, the signature detail on banners). The WhatsApp button needs the number from site
+// config (WEB-G-18): hidden while it's empty; preview pages show a labelled placeholder instead.
+import { site } from "../config/site";
+import Button from "./Button.astro";
+import Placeholder from "./Placeholder.astro";
+
+interface Props {
+  title: string;
+  text: string;
+  primary: { label: string; href: string };
+  whatsappLabel?: string;
+  /** Preview pages: show a placeholder where a pending owner input goes. */
+  placeholders?: boolean;
+  id?: string;
+}
+
+const { title, text, primary, whatsappLabel, placeholders = false, id = "cta-title" } = Astro.props;
+const wa = site.whatsapp ? `https://wa.me/${site.whatsapp}` : "";
+---
+
+<section class="section band-wrap" aria-labelledby={id}>
+  <div class="container">
+    <div class="band on-ink">
+      <h2 class="t-h2 band__title" id={id}>{title}</h2>
+      <p class="t-body-lg band__text">{text}</p>
+      <div class="actions band__actions">
+        <Button href={primary.href} size="lg">{primary.label}</Button>
+        {
+          whatsappLabel && wa && (
+            <Button href={wa} variant="secondary" size="lg">
+              {whatsappLabel}
+            </Button>
+          )
+        }
+        {
+          whatsappLabel && !wa && placeholders && (
+            <Placeholder what={`“${whatsappLabel}” button, hidden until the WhatsApp number is set`} />
+          )
+        }
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .band {
+    --cut: var(--space-8);
+    display: grid;
+    gap: var(--space-5);
+    padding: var(--space-12) var(--space-6);
+    background: var(--color-ink-900);
+    clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, 0 100%);
+  }
+
+  @media (min-width: 48rem) {
+    .band {
+      --cut: var(--space-12);
+      padding: var(--space-16) var(--space-12);
+    }
+  }
+
+  @media (min-width: 64rem) {
+    .band {
+      grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+      column-gap: var(--space-12);
+      align-items: end;
+      padding: var(--space-20) var(--space-16);
+    }
+
+    .band__title {
+      grid-column: 1;
+      grid-row: 1 / span 2;
+      align-self: start;
+    }
+  }
+
+  .band__text {
+    color: var(--color-text-muted);
+  }
+
+  .band__actions {
+    margin-block-start: var(--space-3);
+  }
+
+  /* Dark theme: one step up from the page, as the dark surfaces are (the footer below is ink-750). */
+  :global(:root[data-theme="dark"]) .band {
+    background: var(--color-ink-800);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :global(:root:not([data-theme="light"])) .band {
+      background: var(--color-ink-800);
+    }
+  }
+
+  @media (forced-colors: active) {
+    .band {
+      clip-path: none;
+      border: 1px solid CanvasText;
+    }
+  }
+</style>

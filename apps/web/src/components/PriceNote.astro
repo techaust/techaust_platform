@@ -1,0 +1,38 @@
+---
+// PriceNote (WEB-SVC-06, docs/07 §2.4): the GST note beside INR prices, the export note beside USD prices. Both are
+// in the HTML in one grid cell; the active currency's note shows and the other is `visibility: hidden`, so a swap
+// moves nothing. Without JavaScript (both currencies on screen) both notes show, one under the other.
+// The GST wording is VERIFY WITH CA (07 §2.4).
+import { shared } from "../content/shared";
+
+interface Props {
+  class?: string;
+}
+
+const { class: cls } = Astro.props;
+---
+
+<p class:list={["pnote", cls]}>
+  <span class="pnote__v pnote__v--inr">{shared.gstNote}</span>
+  <span class="pnote__v pnote__v--usd">{shared.usdNote}</span>
+</p>
+
+<style>
+  .pnote {
+    display: grid;
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+    color: var(--color-text-muted);
+    max-inline-size: var(--container-prose);
+    text-wrap: pretty;
+  }
+
+  :global(:root.js) .pnote__v {
+    grid-area: 1 / 1;
+  }
+
+  :global(:root[data-currency="inr"]) .pnote__v--usd,
+  :global(:root[data-currency="usd"]) .pnote__v--inr {
+    visibility: hidden;
+  }
+</style>

@@ -1,0 +1,208 @@
+---
+// Services hub (WEB-SVCHUB, docs/07 §5.1): the five kinds of work, in the menu's order (07 §2.1), each with its intro
+// and its services: name, one-liner, "from" price and link. Every service on the site is listed exactly once; one
+// hidden from the site (S3 while its flag is off) isn't (WEB-G-17). The hero's group index jumps to each group: the
+// five parts of one bar, the page's one brand moment, like the home page's base line. Closing band: the home band
+// with "Book a Discovery Sprint" (07 gives the hub no band of its own).
+import "../../styles/page.css";
+import CTABand from "../../components/CTABand.astro";
+import CurrencyNote from "../../components/CurrencyNote.astro";
+import PriceNote from "../../components/PriceNote.astro";
+import ServiceIndex from "../../components/ServiceIndex.astro";
+import { discoveryHref } from "../../config/site";
+import { home } from "../../content/home";
+import { serviceLabels } from "../../content/labels";
+import { serviceLink } from "../../content/services";
+import { servicesHub as hub } from "../../content/services-hub";
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { isServiceOnSite } from "../../lib/prices";
+
+const groups = hub.groups
+  .map((g) => ({ ...g, items: g.codes.filter((c) => isServiceOnSite(c)).map(serviceLink) }))
+  .filter((g) => g.items.length > 0);
+---
+
+<BaseLayout title={hub.meta.title} description={hub.meta.description}>
+  <section class="hub-hero page-hero" aria-labelledby="hub-title">
+    <div class="container">
+      <h1 class="t-display-2" id="hub-title">{hub.h1}</h1>
+      <p class="t-lede hub-hero__lede">{hub.lede}</p>
+      <nav class="kinds" aria-label={serviceLabels.kinds}>
+        <ul role="list" class="kinds__list">
+          {
+            groups.map((g) => (
+              <li class="kind">
+                <a class="kind__link" href={`#${g.id}`}>
+                  {g.name}
+                </a>
+              </li>
+            ))
+          }
+        </ul>
+      </nav>
+      <div class="hub-hero__notes">
+        <CurrencyNote />
+        <PriceNote />
+      </div>
+    </div>
+  </section>
+
+  {
+    groups.map((g) => (
+      <section class="section group" id={g.id} aria-labelledby={`${g.id}-title`}>
+        <div class="container">
+          <div class="split group__inner">
+            <div class="group__head">
+              <h2 class="t-h2" id={`${g.id}-title`}>
+                {g.name}
+              </h2>
+              <p class="t-lede group__intro">{g.intro}</p>
+            </div>
+            <ServiceIndex items={g.items} narrow />
+          </div>
+        </div>
+      </section>
+    ))
+  }
+
+  <CTABand
+    title={home.band.h2}
+    text={home.band.text}
+    primary={{ label: home.band.primary, href: discoveryHref }}
+    whatsappLabel={home.band.whatsapp}
+  />
+</BaseLayout>
+
+<style>
+  .hub-hero {
+    padding-block: var(--space-10) var(--section-y);
+  }
+
+  @media (min-width: 48rem) {
+    .hub-hero {
+      padding-block-start: var(--space-16);
+    }
+  }
+
+  .hub-hero__lede {
+    margin-block-start: var(--space-6);
+    color: var(--color-text-muted);
+    text-wrap: pretty;
+  }
+
+  /* The five kinds of work as the five parts of one bar: an ink rule over each name; hover and focus draw the
+     verdigris T bar (end cut at 45°) along it, as on the service index. */
+  .kinds {
+    margin-block-start: var(--space-12);
+  }
+
+  .kinds__list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-2) var(--space-3);
+  }
+
+  @media (min-width: 30rem) {
+    .kinds__list {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  @media (min-width: 48rem) {
+    .kinds__list {
+      grid-auto-flow: column;
+      grid-auto-columns: minmax(0, 1fr);
+      grid-template-columns: none;
+      gap: var(--space-2);
+    }
+  }
+
+  .kind {
+    position: relative;
+    border-block-start: 3px solid var(--color-text);
+  }
+
+  .kind::before {
+    content: "";
+    position: absolute;
+    inset-block-start: -3px;
+    inset-inline: 0;
+    block-size: 3px;
+    background: var(--color-text-accent);
+    clip-path: polygon(0 0, 100% 0, calc(100% - 3px) 100%, 0 100%);
+    transform: scaleX(0);
+    transform-origin: left center;
+    transition: transform var(--duration-base) var(--ease-standard);
+  }
+
+  .kind:hover::before,
+  .kind:focus-within::before {
+    transform: none;
+  }
+
+  .kind__link {
+    display: flex;
+    align-items: center;
+    min-block-size: var(--space-12);
+    padding-block: var(--space-2);
+    font-family: var(--font-display);
+    font-stretch: var(--font-display--stretch);
+    font-size: var(--text-h4);
+    line-height: var(--text-h4--line-height);
+    font-weight: 560;
+    color: var(--color-text);
+    text-decoration: none;
+  }
+
+  .kind__link:hover {
+    color: var(--color-link-hover);
+  }
+
+  .kind__link:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: var(--space-1);
+  }
+
+  .hub-hero__notes {
+    display: grid;
+    gap: var(--space-1);
+    margin-block-start: var(--space-8);
+  }
+
+  /* Each group under an ink rule; its name and intro in the left column, its services in the right. */
+  .group {
+    padding-block-start: 0;
+  }
+
+  .group__inner {
+    padding-block-start: var(--space-8);
+    border-block-start: 2px solid var(--color-text);
+  }
+
+  .group__head {
+    display: grid;
+    align-content: start;
+    gap: var(--space-3);
+  }
+
+  .group__intro {
+    color: var(--color-text-muted);
+  }
+
+  /* An anchor jump lands the group's rule below the sticky header. */
+  .group {
+    scroll-margin-block-start: var(--space-16);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .kind::before {
+      transition: none;
+    }
+  }
+
+  @media (forced-colors: active) {
+    .kind::before {
+      background: Highlight;
+    }
+  }
+</style>

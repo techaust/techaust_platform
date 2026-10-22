@@ -4,15 +4,17 @@
 interface Props {
   /** What is missing, e.g. "LinkedIn company URL". */
   what: string;
+  /** Why it is missing (default: a pending owner input). */
+  reason?: string;
   class?: string;
 }
 
-const { what, class: cls } = Astro.props;
+const { what, reason = "owner input pending", class: cls } = Astro.props;
 ---
 
 <span class:list={["placeholder", cls]}>
   <span class="placeholder__tag">Placeholder</span>
-  <span>{what} (owner input pending)</span>
+  <span>{what} ({reason})</span>
 </span>
 
 <style>

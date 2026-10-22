@@ -1,0 +1,44 @@
+---
+// Care Plans teaser (WEB-HOME): the after-launch promise, with the Essential plan's monthly price in the sentence.
+import { home } from "../../content/home";
+import Button from "../Button.astro";
+import CopyText from "../CopyText.astro";
+import CurrencyNote from "../CurrencyNote.astro";
+
+const c = home.care;
+---
+
+<section class="section section--alt" aria-labelledby="care-title">
+  <div class="container split">
+    <h2 class="t-h2" id="care-title">{c.h2}</h2>
+    <div class="care">
+      <CopyText text={c.text} class="t-lede care__text" />
+      <CurrencyNote />
+      <div class="actions care__cta">
+        <Button href={c.cta.href} variant="secondary" size="lg">{c.cta.label}</Button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .care {
+    display: grid;
+    align-content: start;
+    gap: var(--space-2);
+  }
+
+  @media (min-width: 64rem) {
+    .care {
+      padding-block-start: var(--space-2);
+    }
+  }
+
+  .care :global(.care__text) {
+    color: var(--color-text);
+  }
+
+  .care__cta {
+    margin-block-start: var(--space-4);
+  }
+</style>

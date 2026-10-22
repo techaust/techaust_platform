@@ -1,0 +1,28 @@
+---
+// How we work (WEB-HOME): the four steps, then the link to the full page.
+import { home } from "../../content/home";
+import Button from "../Button.astro";
+import Steps from "../Steps.astro";
+
+const h = home.how;
+---
+
+<section class="section section--flush-top" aria-labelledby="how-title">
+  <div class="container">
+    <h2 class="t-h2 how__title" id="how-title">{h.h2}</h2>
+    <Steps steps={h.steps} />
+    <div class="how__more">
+      <Button href={h.more.href} variant="text" arrow>{h.more.label}</Button>
+    </div>
+  </div>
+</section>
+
+<style>
+  .how__title {
+    margin-block-end: var(--block-gap);
+  }
+
+  .how__more {
+    margin-block-start: var(--block-gap);
+  }
+</style>

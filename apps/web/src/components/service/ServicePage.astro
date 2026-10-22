@@ -1,0 +1,498 @@
+---
+// The service-page template (docs/04 §3.2, WEB-SVC-01…06): one layout for every live service, fed by a ServiceContent
+// object (copy from docs/07 §4). Sections in the template's order, with the parts 07 adds for some pages placed
+// where they belong (S1's two flavours after the problem; S14's "Payments and billing" and S16's plans and add-on
+// after "What you get"). A section with no content is left out, never shown empty (WEB-SVC-02). Proof (WEB-SVC-03)
+// is omitted until a service has a case study or a sample. FAQs show only with 4–8 written answers (WEB-SVC-04).
+// Every content field goes through CopyText, so 07's price tokens, bold and arrows render wherever they're written.
+// GST notes (WEB-SVC-06, VERIFY WITH CA): one PriceNote per group of prices (the hero, the pricing, the plans, an
+// extra section with a price, the related services), never one per price.
+import "../../styles/page.css";
+import { lowerFirst } from "@techaust/core";
+import { home } from "../../content/home";
+import { serviceLabels as L } from "../../content/labels";
+import { serviceLink } from "../../content/services";
+import type { PricingLine, ServiceContent } from "../../content/types";
+import { priceOf, scheduleOf } from "../../lib/prices";
+import { hasTokens } from "../../lib/tokens";
+import Button from "../Button.astro";
+import CopyText from "../CopyText.astro";
+import CTABand from "../CTABand.astro";
+import CurrencyNote from "../CurrencyNote.astro";
+import DeliverablesList from "../DeliverablesList.astro";
+import FaqSection from "../FaqSection.astro";
+import Notice from "../Notice.astro";
+import PriceNote from "../PriceNote.astro";
+import PriceTag from "../PriceTag.astro";
+import ServiceIndex from "../ServiceIndex.astro";
+import Steps from "../Steps.astro";
+import PlanTable from "./PlanTable.astro";
+import ServiceHero from "./ServiceHero.astro";
+import WorkflowDiagram from "./WorkflowDiagram.astro";
+
+interface Props {
+  service: ServiceContent;
+}
+
+const { service: s } = Astro.props;
+
+const prices = (s.pricing?.prices ?? []).map((p) => ({ ...p, v: priceOf(p.ref) }));
+// "USD price on request" once per group: on the last price without a USD amount.
+const askAt = prices.findLastIndex((p) => p.v.usd === null);
+// "Setup: paid in full upfront": the catalogue's wording, its first letter lower-cased unless it starts an acronym.
+const line = (l: PricingLine): string => {
+  if (typeof l === "string") return l;
+  const text = scheduleOf(s.code);
+  return l.label ? `${l.label}: ${lowerFirst(text)}` : text;
+};
+const faqs = s.faqs ?? [];
+if (faqs.length > 8) throw new Error(`${s.code}: ${faqs.length} FAQs; WEB-SVC-04 allows 4–8`);
+const showFaqs = faqs.length >= 4;
+const related = (s.related ?? []).map(serviceLink);
+const buildTitle = s.build?.title ?? (s.build?.deliverables ? L.deliverables : L.build);
+---
+
+<ServiceHero service={s} />
+
+{
+  s.problem && (
+    <section class="section section--alt" aria-labelledby="problem-title">
+      <div class="container split">
+        <h2 class="t-h2" id="problem-title">
+          {L.problem}
+        </h2>
+        <CopyText text={s.problem} class="statement" />
+      </div>
+    </section>
+  )
+}
+
+{
+  s.flavours && (
+    <section class="section" aria-labelledby="flavours-title">
+      <div class="container split">
+        <h2 class="t-h2" id="flavours-title">
+          {L.flavours}
+        </h2>
+        <ul class="flavours" role="list">
+          {s.flavours.map((f) => (
+            <li class="flavour">
+              <h3 class="t-h3 flavour__title">{f.title}</h3>
+              <CopyText text={f.text} class="t-body-lg flavour__text" />
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  )
+}
+
+{
+  s.build && (
+    <section class:list={["section", s.flavours && "section--flush-top"]} aria-labelledby="build-title">
+      <div class="container">
+        <div class="split">
+          <h2 class="t-h2" id="build-title">
+            {buildTitle}
+          </h2>
+          <div class="build">
+            {s.build.text && <CopyText text={s.build.text} class="t-body-lg" />}
+            {s.build.deliverables && <DeliverablesList items={s.build.deliverables} />}
+            {s.build.highlight && <CopyText text={s.build.highlight} class="t-body-lg highlight" />}
+            {s.build.uses && (
+              <div class="uses">
+                <h3 class="t-h4">{L.uses}</h3>
+                <ul class="uses__list" role="list">
+                  {s.build.uses.map((u) => (
+                    <li>
+                      <CopyText text={u} as="span" />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {s.build.aside && (
+              <div class="aside">
+                <h3 class="t-h3 aside__title">{s.build.aside.title}</h3>
+                <CopyText text={s.build.aside.text} class="t-body-lg" />
+              </div>
+            )}
+            {s.build.note && <Notice variant="info">{s.build.note}</Notice>}
+          </div>
+        </div>
+        {s.build.diagram && <WorkflowDiagram stations={s.build.diagram} class="build__diagram" />}
+      </div>
+    </section>
+  )
+}
+
+{s.plans && (
+  <section class="section section--flush-top" aria-labelledby="plans-title">
+    <div class="container">
+      <div class="section-head">
+        <h2 class="t-h2" id="plans-title">
+          {L.compare}
+        </h2>
+        <CurrencyNote />
+      </div>
+      <PlanTable plans={s.plans} labelledby="plans-title" />
+      <div class="plans-foot">
+        <CopyText text={s.plans.rules} class="plans-foot__rules" />
+        <PriceNote />
+      </div>
+    </div>
+  </section>
+)}
+
+{
+  s.sections?.map((x) => (
+    <section
+      class:list={["section", (s.build || s.plans) && "section--flush-top"]}
+      aria-labelledby={`${x.id}-title`}
+    >
+      <div class="container split">
+        <h2 class="t-h2" id={`${x.id}-title`}>
+          {x.title}
+        </h2>
+        <div class="extra">
+          <CopyText text={x.text} class="statement" />
+          {hasTokens(x.text) && (
+            <>
+              <CurrencyNote />
+              <PriceNote />
+            </>
+          )}
+        </div>
+      </div>
+    </section>
+  ))
+}
+
+{
+  s.how && (
+    <section
+      class:list={["section", (s.sections || s.plans || s.build) && "section--flush-top"]}
+      aria-labelledby="how-title"
+    >
+      <div class="container">
+        {s.how.steps ? (
+          <>
+            <h2 class="t-h2 how__title" id="how-title">
+              {L.how}
+            </h2>
+            <Steps steps={s.how.steps} />
+          </>
+        ) : (
+          <div class="split">
+            <h2 class="t-h2" id="how-title">
+              {L.how}
+            </h2>
+            {s.how.text && <CopyText text={s.how.text} class="statement" />}
+          </div>
+        )}
+        {(s.how.timeline || s.how.needs) && (
+          <dl class="how__facts">
+            {s.how.timeline && (
+              <div class="how__fact">
+                <dt>{L.timeline}</dt>
+                <dd>
+                  <CopyText text={s.how.timeline} as="span" />
+                </dd>
+              </div>
+            )}
+            {s.how.needs && (
+              <div class="how__fact">
+                <dt>{L.needs}</dt>
+                <dd>
+                  <CopyText text={s.how.needs} as="span" />
+                </dd>
+              </div>
+            )}
+          </dl>
+        )}
+        {s.how.aside && (
+          <div class="aside how__aside">
+            <h3 class="t-h3 aside__title">{s.how.aside.title}</h3>
+            <CopyText text={s.how.aside.text} class="t-body-lg" />
+          </div>
+        )}
+        {s.how.note && (
+          <Notice variant="info" class="how__note">
+            {s.how.note}
+          </Notice>
+        )}
+      </div>
+    </section>
+  )
+}
+
+{
+  s.pricing && (
+    <section class="section section--alt" aria-labelledby="pricing-title">
+      <div class="container split">
+        <div class="pricing__head">
+          <h2 class="t-h2" id="pricing-title">
+            {L.pricing}
+          </h2>
+        </div>
+        <div class="pricing">
+          <div class="pricing__main">
+            {prices.map((p, i) => (
+              <PriceTag inr={p.v.inr} usd={p.v.usd} lead={p.lead} unit={p.unit} ask={i === askAt} />
+            ))}
+            <CurrencyNote />
+          </div>
+          <ul class="pricing__lines" role="list">
+            {s.pricing.lines.map((l) => (
+              <li>
+                <CopyText text={line(l)} as="span" />
+              </li>
+            ))}
+          </ul>
+          {s.pricing.highlight && <CopyText text={s.pricing.highlight} class="t-body-lg highlight" />}
+          {s.pricing.note && <Notice variant="info">{s.pricing.note}</Notice>}
+          <PriceNote />
+          <div class="actions">
+            <Button href={s.hero.primary.href} size="lg">
+              {s.hero.primary.label}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+{
+  s.tech && (
+    <section class="section" aria-labelledby="tech-title">
+      <div class="container split">
+        <h2 class="t-h2" id="tech-title">
+          {L.tech}
+        </h2>
+        <CopyText text={s.tech} class="t-body-lg" />
+      </div>
+    </section>
+  )
+}
+
+{showFaqs && <FaqSection title={L.faqs} items={faqs} flushTop={Boolean(s.tech)} />}
+
+{
+  related.length > 0 && (
+    <section class:list={["section", (showFaqs || s.tech) && "section--flush-top"]} aria-labelledby="related-title">
+      <div class="container">
+        <div class="section-head">
+          <h2 class="t-h2" id="related-title">
+            {L.related}
+          </h2>
+          <CurrencyNote />
+        </div>
+        <ServiceIndex items={related} />
+        <PriceNote class="related__note" />
+      </div>
+    </section>
+  )
+}
+
+<CTABand title={home.band.h2} text={home.band.text} primary={s.hero.primary} whatsappLabel={home.band.whatsapp} />
+
+<style>
+  .container :global(.statement) {
+    font-size: var(--text-lede);
+    line-height: var(--text-lede--line-height);
+    max-inline-size: var(--container-lede);
+    text-wrap: pretty;
+  }
+
+  @media (min-width: 64rem) {
+    .container :global(.statement) {
+      font-size: var(--text-h3);
+      line-height: var(--text-h3--line-height);
+      font-weight: 400;
+      padding-block-start: var(--space-2);
+    }
+  }
+
+  .build,
+  .extra {
+    display: grid;
+    gap: var(--space-10);
+    align-content: start;
+  }
+
+  .extra {
+    gap: var(--space-4);
+  }
+
+  .uses {
+    display: grid;
+    gap: var(--space-3);
+  }
+
+  .uses__list {
+    display: grid;
+    border-block-start: 1px solid var(--color-border);
+  }
+
+  .uses__list li {
+    padding-block: var(--space-3);
+    border-block-end: 1px solid var(--color-border);
+  }
+
+  .uses__list li::first-letter {
+    text-transform: uppercase;
+  }
+
+  /* A bold line from 07 (S1 credit rule, S4 "Led personally by our founder.", S11 Meta charges). */
+  .build :global(.highlight),
+  .pricing :global(.highlight) {
+    padding-inline-start: var(--space-4);
+    border-inline-start: 3px solid var(--color-text-accent);
+  }
+
+  /* A titled block inside a section (07 "sub-section"): an ink rule over it, like the rate card. */
+  .aside {
+    display: grid;
+    gap: var(--space-3);
+    padding-block-start: var(--space-5);
+    border-block-start: 2px solid var(--color-text);
+    max-inline-size: var(--container-prose);
+  }
+
+  .aside__title {
+    text-wrap: balance;
+  }
+
+  /* S1: the two flavours side by side from 768 px. */
+  .flavours {
+    display: grid;
+    gap: var(--block-gap) var(--space-8);
+  }
+
+  @media (min-width: 48rem) {
+    .flavours {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  .flavour {
+    display: grid;
+    align-content: start;
+    gap: var(--space-3);
+    padding-block-start: var(--space-5);
+    border-block-start: 2px solid var(--color-text);
+  }
+
+  .flavour__title {
+    font-family: var(--font-display);
+    font-stretch: var(--font-display--stretch);
+    font-weight: 560;
+  }
+
+  .flavour :global(.flavour__text) {
+    color: var(--color-text-muted);
+    text-wrap: pretty;
+  }
+
+  .container > :global(.build__diagram) {
+    margin-block-start: var(--block-gap);
+  }
+
+  .how__title {
+    margin-block-end: var(--block-gap);
+  }
+
+  /* "Typical timeline", "What we need from you": label and value on the page's 4 + 8 grid, one ruled row each. */
+  .how__facts {
+    display: grid;
+    margin-block-start: var(--block-gap);
+    border-block-start: 1px solid var(--color-border);
+  }
+
+  .how__fact {
+    display: grid;
+    gap: var(--space-1) var(--space-8);
+    padding-block: var(--space-4);
+    border-block-end: 1px solid var(--color-border);
+  }
+
+  @media (min-width: 64rem) {
+    .how__fact {
+      grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
+      align-items: baseline;
+    }
+  }
+
+  .how__fact dt {
+    font-weight: 600;
+    color: var(--color-text);
+  }
+
+  .how__fact dd {
+    margin: 0;
+    font-size: var(--text-body-lg);
+    line-height: var(--text-body-lg--line-height);
+    max-inline-size: var(--container-prose);
+    text-wrap: pretty;
+  }
+
+  .how__aside {
+    margin-block-start: var(--block-gap);
+  }
+
+  /* Wide screens: in the content column of the 4 + 8 grid, under the facts' values. */
+  @media (min-width: 64rem) {
+    .how__aside {
+      margin-inline-start: calc((100% - var(--space-8)) * 4 / 12 + var(--space-8));
+    }
+  }
+
+  .container > :global(.how__note) {
+    margin-block-start: var(--block-gap);
+  }
+
+  .plans-foot {
+    display: grid;
+    gap: var(--space-3);
+    margin-block-start: var(--block-gap);
+    max-inline-size: var(--container-prose);
+  }
+
+  .plans-foot :global(.plans-foot__rules) {
+    color: var(--color-text-muted);
+    text-wrap: pretty;
+  }
+
+  .container > :global(.related__note) {
+    margin-block-start: var(--block-gap);
+  }
+
+  .pricing {
+    display: grid;
+    gap: var(--space-5);
+    align-content: start;
+  }
+
+  .pricing__main {
+    display: grid;
+    gap: var(--space-2);
+    padding-block-end: var(--space-5);
+    border-block-end: 2px solid var(--color-text);
+  }
+
+  .pricing__lines {
+    display: grid;
+  }
+
+  .pricing__lines li {
+    padding-block: var(--space-3);
+    border-block-end: 1px solid var(--color-border);
+    font-size: var(--text-body-lg);
+    line-height: var(--text-body-lg--line-height);
+  }
+
+  .pricing__lines li::first-letter {
+    text-transform: uppercase;
+  }
+</style>

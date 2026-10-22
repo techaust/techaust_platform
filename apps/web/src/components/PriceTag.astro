@@ -1,100 +1,183 @@
 ---
-// PriceTag (docs/06 §5.2, WEB-G-06): "from" + the amount (text-price-lg, tabular) + a unit + the GST note. Both
-// currencies are in the HTML; <html data-currency> (scripts/currency.ts) shows one, and without JavaScript both show
-// ("from ₹3,00,000 + GST · $12,000"). Amounts are minor units formatted only by @techaust/core; the site's prices
-// come from the catalogue snapshot (WEB-G-07, M2.2+). The preview passes clearly fake amounts with `sample`.
-import { formatMoney, type Money } from "@techaust/core";
+// PriceTag (docs/06 §5.2, WEB-G-06): an optional lead ("Pilot") + "from" + the amount (tabular) + "+ GST" for INR + a
+// unit ("per workflow"). Amounts are minor units from lib/prices.ts (the catalogue), formatted only by @techaust/core.
+//
+// No layout shift when the currency changes (M2.1 follow-up M4): the INR and USD versions are complete lines that
+// share one grid cell, and the inactive one is `visibility: hidden`, so the tag is always the size of the longer
+// line and a first-visit INR → USD swap (/api/geo) moves nothing. The lines end with the unit, so a shorter USD
+// line leaves its spare room at the end, where it can't be seen. Without JavaScript a third line shows both
+// ("from ₹3,00,000 + GST · $12,000").
+//
+// A price without a USD amount (S11, 07 §4.7): the USD line shows the INR amount and, on its own row, "USD price on
+// request". Only the USD line has that row; the INR line shares the cell, so the tag keeps the same height in both
+// currencies (the INR view has the row's room as space under the price) and the swap moves nothing.
+import type { Money } from "@techaust/core";
+import { shared } from "../content/shared";
 import { draft } from "../content/shell";
+import { displayAmount } from "../lib/prices";
 
 interface Props {
   inr: Money;
   usd: Money | null;
   unit?: string;
+  /** A word before "from", as 07 writes it ("Pilot {{price:S9}}"). */
+  lead?: string;
+  /** lg: text-price-lg (heroes, pricing); md: card prices. */
+  size?: "lg" | "md";
+  /** "from" before the amount (default). Exact prices (care-plan tiers, owner 2026-10-22) leave it out. */
+  from?: boolean;
+  /** "USD price on request" in the USD line when there's no USD amount (default). Off for all but one tag of a group. */
+  ask?: boolean;
   /** Labels the tag "Sample" (preview pages only). */
   sample?: boolean;
+  class?: string;
 }
 
-const { inr, usd, unit, sample = false } = Astro.props;
-// Site prices are whole rupees and dollars: drop a zero minor part (".00") from the core format, nothing else.
-// OPEN (run file): @techaust/core could offer this as an option of formatMoney.
-const whole = (m: Money) => formatMoney(m).replace(/\.00$/, "");
+const {
+  inr,
+  usd,
+  unit,
+  lead,
+  size = "lg",
+  from = true,
+  ask = true,
+  sample = false,
+  class: cls,
+} = Astro.props;
+const lines = [
+  { mode: "both", amounts: usd ? [inr, usd] : [inr] },
+  { mode: "inr", amounts: [inr] },
+  { mode: "usd", amounts: [usd ?? inr] },
+] as const;
+// "/month" (07 writes it attached) rides with the amount and "+ GST", so it never wraps onto a line of its own.
+const tight = unit?.startsWith("/") ?? false;
 ---
 
-<p class="price">
+<p class:list={["price", `price--${size}`, cls]}>
   {sample && <span class="price__sample">{draft.sample}</span>}
-  <span class="price__from">{draft.priceFrom}</span>
-  <span class="price__amounts">
-    <span class="price__cur" data-cur="inr">
-      <span class="price__amount">{whole(inr)}</span>
-      <span class="price__gst">{draft.gst}</span>
-    </span>
+  <span class="price__stack">
     {
-      usd && (
-        <>
-          <span class="price__sep" aria-hidden="true">
-            ·
-          </span>
-          <span class="price__cur" data-cur="usd">
-            <span class="price__amount">{whole(usd)}</span>
-          </span>
-        </>
-      )
+      lines.map(({ mode, amounts }) => (
+        <span class={`price__line price__line--${mode}`}>
+          {lead && <span class="price__lead">{lead}</span>}
+          {from && <span class="price__from">{draft.priceFrom}</span>}
+          {amounts.map((m, i) => (
+            <>
+              {i > 0 && (
+                <span class="price__sep" aria-hidden="true">
+                  ·
+                </span>
+              )}
+              <span class="price__fig">
+                <span class="price__amount">{displayAmount(m)}</span>
+                {m.currency === "INR" && <span class="price__gst">{draft.gst}</span>}
+                {tight && i === amounts.length - 1 && <span class="price__unit price__unit--tight">{unit}</span>}
+              </span>
+            </>
+          ))}
+          {unit && !tight && <span class="price__unit">{unit}</span>}
+          {mode !== "inr" && !usd && ask && <span class="price__ask">{shared.usdOnRequest}</span>}
+        </span>
+      ))
     }
   </span>
-  {unit && <span class="price__unit">{unit}</span>}
 </p>
 
 <style>
   .price {
     display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    column-gap: var(--space-2);
-    row-gap: var(--space-1);
+    flex-direction: column;
+    gap: var(--space-1);
   }
 
   .price__sample {
-    flex-basis: 100%;
     font-size: var(--text-caption);
     line-height: var(--text-caption--line-height);
     font-weight: 600;
     color: var(--color-warning);
   }
 
-  .price__from,
-  .price__unit,
-  .price__gst {
-    color: var(--color-text-muted);
+  .price__stack {
+    display: grid;
   }
 
-  .price__amounts {
-    display: inline-flex;
+  .price__line {
+    grid-area: 1 / 1;
+    display: flex;
     flex-wrap: wrap;
     align-items: baseline;
     column-gap: var(--space-2);
+    row-gap: 0;
   }
 
-  .price__cur {
-    display: inline-flex;
-    align-items: baseline;
-    gap: var(--space-2);
+  .price__lead {
+    font-weight: 600;
+    color: var(--color-text);
   }
 
-  .price__amount {
-    font-size: var(--text-price-lg);
-    line-height: var(--text-price-lg--line-height);
-    font-weight: var(--text-price-lg--font-weight);
-    font-variant-numeric: tabular-nums;
-  }
-
+  .price__from,
+  .price__unit,
+  .price__gst,
   .price__sep {
     color: var(--color-text-muted);
   }
 
-  /* With a currency chosen, show only that one (no layout change between the two: one line either way). */
-  :global(:root[data-currency="inr"]) [data-cur="usd"],
-  :global(:root[data-currency="usd"]) [data-cur="inr"],
-  :global(:root[data-currency]) .price__sep {
+  /* "USD price on request": its own row under the amount, in the quiet small size. */
+  .price__ask {
+    flex-basis: 100%;
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+    color: var(--color-text-muted);
+  }
+
+  /* The amount, "+ GST" and an attached unit: one unbreakable group. */
+  .price__fig {
+    display: inline-flex;
+    align-items: baseline;
+    column-gap: var(--space-2);
+    white-space: nowrap;
+  }
+
+  /* "/mo", "/month" (07 writes them attached): no gap before the slash. */
+  .price__unit--tight {
+    margin-inline-start: calc(-1 * var(--space-2));
+  }
+
+  .price__amount {
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text);
+  }
+
+  .price--lg .price__amount {
+    font-size: var(--text-price-lg);
+    line-height: var(--text-price-lg--line-height);
+    font-weight: var(--text-price-lg--font-weight);
+  }
+
+  .price--md .price__amount {
+    font-size: var(--text-h4);
+    line-height: var(--text-h4--line-height);
+    font-weight: 600;
+  }
+
+  .price--md .price__lead,
+  .price--md .price__from,
+  .price--md .price__unit,
+  .price--md .price__gst,
+  .price--md .price__sep {
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+  }
+
+  /* Without JavaScript: only the line with both amounts. With it: the two single-currency lines in one cell. */
+  :global(:root:not(.js)) .price__line--inr,
+  :global(:root:not(.js)) .price__line--usd,
+  :global(:root.js) .price__line--both {
     display: none;
+  }
+
+  :global(:root[data-currency="inr"]) .price__line--usd,
+  :global(:root[data-currency="usd"]) .price__line--inr {
+    visibility: hidden;
   }
 </style>

@@ -1,0 +1,100 @@
+---
+// FAQ (docs/06 §5.2, WEB-SVC-04): a native <details>/<summary> disclosure list, so it works without JavaScript and
+// the browser handles keyboard and state. Questions and answers come in as data (FaqItem), the single source for
+// the FAQPage JSON-LD added in M2.5, so the visible text and the structured data can't drift apart.
+// The plus loses its upright stroke when an item opens (the only motion: ≤ 200 ms, none with reduced motion).
+import type { FaqItem } from "../content/types";
+import CopyText from "./CopyText.astro";
+import Icon from "./Icon.astro";
+
+interface Props {
+  items: readonly FaqItem[];
+  /** Preview only: open these items (by index) on load, for the screenshots. */
+  open?: readonly number[];
+  class?: string;
+}
+
+const { items, open = [], class: cls } = Astro.props;
+---
+
+<div class:list={["faq", cls]}>
+  {
+    items.map((f, i) => (
+      <details class="faq__item" open={open.includes(i)}>
+        <summary class="faq__q">
+          <span class="t-h4 faq__qtext">{f.q}</span>
+          <Icon name="plus" size={24} class="faq__icon" />
+        </summary>
+        <CopyText text={f.a} class="t-body-lg faq__a" />
+      </details>
+    ))
+  }
+</div>
+
+<style>
+  .faq {
+    border-block-end: 1px solid var(--color-border);
+  }
+
+  .faq__item {
+    border-block-start: 1px solid var(--color-border);
+  }
+
+  .faq__q {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-6);
+    min-block-size: var(--target-min);
+    padding-block: var(--space-5);
+    list-style: none;
+    cursor: pointer;
+  }
+
+  .faq__q:focus-visible {
+    outline-offset: var(--space-1);
+    border-radius: var(--radius-sm);
+  }
+
+  .faq__q::-webkit-details-marker {
+    display: none;
+  }
+
+  .faq__q:hover .faq__qtext {
+    color: var(--color-link-hover);
+  }
+
+  .faq__qtext {
+    text-wrap: balance;
+    transition: color var(--duration-fast) var(--ease-standard);
+  }
+
+  .faq__q :global(.faq__icon) {
+    margin-block-start: 0;
+    color: var(--color-text-accent);
+  }
+
+  .faq__q :global(.faq__icon .icon-plus__v) {
+    transform-box: fill-box;
+    transform-origin: center;
+    transition: transform var(--duration-base) var(--ease-standard);
+  }
+
+  .faq__item[open] :global(.faq__icon .icon-plus__v) {
+    transform: scaleY(0);
+  }
+
+  .faq__item :global(.faq__a) {
+    padding-block-end: var(--space-6);
+    padding-inline-end: var(--space-6);
+    max-inline-size: var(--container-prose);
+    text-wrap: pretty;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .faq__q :global(.faq__icon .icon-plus__v),
+    .faq__qtext {
+      transition: none;
+    }
+  }
+</style>

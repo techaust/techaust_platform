@@ -7,6 +7,8 @@ export * from "./ids.ts";
 export * from "./money.ts";
 export * from "./numbering.ts";
 export * from "./permissions.ts";
+export * from "./schedule-text.ts";
+export * from "./schemas/catalogue-snapshot.ts";
 export * as domainSchemas from "./schemas/domain.ts";
 export * as fields from "./schemas/fields.ts";
 export * from "./schemas/forms.ts";

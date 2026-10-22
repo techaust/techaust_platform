@@ -49,15 +49,16 @@
 |---|---|---|
 | "A small senior team with 10+ years' experience" | Owner interview, 02 §1 | Confirmed (owner, 2026-10-16) |
 | "Serving clients since 2019" / "Est. 2019" (TecHaust Technologies, under this name) | Owner, 2026-10-16 | Confirmed |
-| "20+ projects delivered (web apps, AI and automation, mobile, websites)" | Owner interview, 02 §1 | 🟧 OWNER confirms |
+| "20+ projects delivered (web apps, AI and automation, mobile, websites)" | Owner interview, 02 §1 | Confirmed (owner, 2026-10-22) |
 | "Experience with Tally integration and GST e-invoice / GSP APIs" | Owner, 03 §0 | Confirmed (03 §0) |
 | "React Native/Expo and Flutter" | Owner, 03 §0 | Confirmed |
 | "Based in Balurghat, West Bengal, India" | Owner | Confirmed |
 | "We reply within one business day (Mon–Sat, 10:00–19:00 IST)" | Owner, Phase 4 | Confirmed |
 | Care-plan response times (business hours) | Owner, Phase 4 | Confirmed |
 | Case-study metrics | Case-study briefs (§6) | 🟧 OWNER per study |
+| "Ask us for a sample deliverable (a discovery report or an architecture document) on a call" | Owner, 2026-10-22 (an anonymised sample exists) | Confirmed |
 | "IP transferred to you on full payment" | Proposal terms | Confirmed in the terms block |
-| "30-day warranty after launch" | 02 §4 S5 | 🟧 OWNER confirms the warranty length and scope |
+| "30-day warranty after launch": defects against the agreed written scope fixed free for 30 days after launch; new features not covered | 02 §4 S5 | Confirmed (owner, 2026-10-22) |
 | "Discovery Sprint fee credited if you proceed within 60 days" | 02 §4 S1 | Confirmed (owner approved in Phase 2) |
 
 ---
@@ -202,7 +203,7 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 - **H1:** "The software your business actually runs on, built properly."
 - **Who it's for:** operations, finance and sales teams outgrowing spreadsheets and email threads; companies replacing per-seat SaaS that doesn't fit.
 - **Problem:** "Most businesses run on a patchwork: a shared Excel file, a WhatsApp group and a SaaS tool that does 60 % of the job. It works until it doesn't. Then nobody knows which version is right."
-- **What you get:** discovery and UX design (S8 included) · a web app with roles and permissions · integrations with your existing tools · automated tests · staging and production environments · documentation and handover · a 30-day warranty · an optional care plan.
+- **What you get:** discovery and UX design (UI/UX design included) · a web app with roles and permissions · integrations with your existing tools · automated tests · staging and production environments · documentation and handover · a 30-day warranty · an optional care plan.
 - **Sub-section "From Excel or Access to a real app":** "We keep what works about your spreadsheet (the speed, the familiarity) and add what it lacks: one source of truth, permissions, an audit trail, and nobody overwriting anyone else's work."
 - **How it works:** Discover (1–2 weeks) → Design (1–2 weeks) → Build in milestones with fortnightly demos → Launch → Warranty → Care plan. Typical timeline: 6–14 weeks.
 - **Pricing:** {{price:S5}} · fixed per milestone · {{schedule:S5}} · change requests quoted before work.
@@ -242,10 +243,11 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 - **How it works:**
   1. **Pilot (about 4 weeks):** one document type, your real samples, a baseline (e.g. minutes per invoice today) and a test set we measure against.
   2. **Production rollout:** integrations, monitoring, guardrails, training.
-  3. **AI Ops:** monthly monitoring and tuning (S17).
+  3. **AI Ops:** monthly monitoring and tuning.
 - **Honest note:** "Accuracy depends on your documents. In the pilot we measure it on your own samples and agree the target with you before rollout. We don't promise a number we haven't measured."
 - **Pricing:** Pilot {{price:S9}} · production rollout quoted after the pilot · optional per-document pricing with a monthly minimum.
-- **FAQs:** "Does our data leave India?" ("It can stay in India-region services where needed; we document every system that touches it.") · "Which AI models do you use?" ("Chosen per project for accuracy, cost and data-handling terms; we never let providers train on your data where an opt-out exists.") · "What about handwritten or poor scans?" · "Do you work with Tally Prime?" ("Yes, via Tally's XML/ODBC interfaces or connectors.") 🟧 OWNER confirms
+- **FAQs:** "Does our data leave India?" ("It can stay in India-region services where needed; we document every system that touches it.") · "Which AI models do you use?" ("Chosen per project for accuracy, cost and data-handling terms; we never let providers train on your data where an opt-out exists.") · "What about handwritten or poor scans?" ("We test them in the pilot. Clear printed documents work best; handwriting and poor scans usually go to the review screen for a person to check, and we tell you the share we can handle automatically before rollout.") · "Do you work with Tally Prime?" ("Yes, via Tally's XML/ODBC interfaces or connectors.") (owner confirmed all four, 2026-10-22)
+- **Related:** Workflow Automation and AI Agents · Business Systems Integration · Discovery Sprint (owner, 2026-10-22)
 - **CTA:** Start a pilot
 
 ### 4.6 Workflow Automation and AI Agents (S10) · `/services/workflow-automation`
@@ -263,7 +265,7 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 - **H1:** "Meet customers on WhatsApp, with your systems behind it."
 - **Problem:** "Your customers already message you on WhatsApp. Answering by hand doesn't scale, and order details end up trapped in chats."
 - **What you get:** WhatsApp Business Platform setup through an official provider · flows for order updates, payment links and reminders, catalogue ordering, COD confirmation and returns · handover to a person · integration with your order, billing or CRM system · reporting.
-- **Pricing:** setup {{price:S11-setup}} + management {{price:S11-monthly}}/month · "**Meta's per-message charges are passed through at cost.**" 🟧 OWNER: a USD price for the Gulf/international market? (Currently INR only.)
+- **Pricing:** setup {{price:S11-setup}} + management {{price:S11-monthly}}/month · "**Meta's per-message charges are passed through at cost.**" USD: no USD price; USD visitors see the INR price with "USD price on request" (owner, 2026-10-22).
 - **FAQs:** "Do we need a new number?" · "Can a person take over a chat?" (yes) · "What does Meta charge?" ("Per message, by category and country; we show you the current rates before you start.")
 - **CTA:** Get a quote
 
@@ -344,7 +346,7 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 - **Meta:** "Senior developer subscription, monthly | TecHaust" · "A senior development and design subscription: one active request at a time, an unlimited queue, and pause or cancel monthly. From {{price-plain:S18}} a month."
 - **H1:** "A senior development team on a monthly subscription."
 - **How it works:** "Add requests to your queue. We work on one at a time, in priority order, and ship each as soon as it's done. Pause or cancel any month."
-- **Good for:** SaaS teams and agencies with steady work; not for fixed-deadline projects (use S5/S6).
+- **Good for:** SaaS teams and agencies with steady work; not for fixed-deadline projects (for those, see Custom Web Apps or MVP and SaaS Development).
 - **Capacity note:** "We take a small number of subscriptions at a time so quality stays high. If we're full, we'll tell you when the next opening is." (No counters.)
 - **Pricing:** {{price:S18}} per month.
 - **CTA:** Start a subscription

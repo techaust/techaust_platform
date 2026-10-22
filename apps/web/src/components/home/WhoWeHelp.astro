@@ -1,0 +1,44 @@
+---
+// Who we help (WEB-HOME): India and international, side by side under one heading.
+import { home } from "../../content/home";
+
+const w = home.who;
+---
+
+<section class="section section--alt" aria-labelledby="who-title">
+  <div class="container split">
+    <h2 class="t-h2" id="who-title">{w.h2}</h2>
+    <div class="who">
+      {
+        w.columns.map((c) => (
+          <div class="who__col">
+            <h3 class="t-h4">{c.title}</h3>
+            <p class="t-body-lg">{c.text}</p>
+          </div>
+        ))
+      }
+    </div>
+  </div>
+</section>
+
+<style>
+  .who {
+    display: grid;
+    gap: var(--space-10);
+  }
+
+  @media (min-width: 48rem) {
+    .who {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      column-gap: var(--space-8);
+    }
+  }
+
+  .who__col {
+    display: grid;
+    align-content: start;
+    gap: var(--space-3);
+    padding-block-start: var(--space-5);
+    border-block-start: 1px solid var(--color-border);
+  }
+</style>

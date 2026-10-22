@@ -116,6 +116,41 @@ describe("no price literals in templates (WEB-G-07)", () => {
   });
 });
 
+describe("unrendered content in visible text (review finding 4)", () => {
+  const body = (b: string) => `<!doctype html><html><head><title>T</title></head><body>${b}</body></html>`;
+
+  it("fails on a leftover price token, bold mark or arrow character", () => {
+    expect(c.checkLeftovers("a.html", body("<p>From {{price:S1}}</p>"))).toHaveLength(2); // "{{" and "}}"
+    expect(c.checkLeftovers("a.html", body("<p>half token }}</p>"))).toHaveLength(1);
+    expect(c.checkLeftovers("a.html", body("<p>**bold** text</p>"))).toHaveLength(2);
+    expect(c.checkLeftovers("a.html", body("<p>Tally → Zoho</p>"))).toHaveLength(1);
+    expect(c.checkLeftovers("a.html", body("<p>Tally ↔ Zoho</p>"))).toHaveLength(1);
+    expect(
+      c.checkLeftovers(
+        "a.html",
+        `<html><head><meta name="description" content="x {{price:S1}}"></head></html>`,
+      ),
+    ).toHaveLength(2);
+    expect(c.checkLeftovers("a.html", body('<p class="visually-hidden">→</p>'))).toHaveLength(1);
+  });
+
+  it("reports every hit and decodes arrow entities (re-check finding 5)", () => {
+    expect(c.checkLeftovers("a.html", body("<p>{{price:S1}} and **bold**</p>"))).toHaveLength(4);
+    expect(c.checkLeftovers("a.html", body("<p>Tally &rarr; Zoho &#x2194; Xero</p>"))).toHaveLength(2);
+  });
+
+  it("allows the visually hidden arrow CopyText keeps for screen readers, and scripts and comments", () => {
+    const ok = body(
+      [
+        '<p>Tally <span class="copy__arrow astro-x1"><svg></svg><span class="visually-hidden astro-x1">→</span></span> Zoho</p>',
+        '<span class="visually-hidden">↔</span>',
+        "<script>const a = '{{x}}';</script><!-- ** → -->",
+      ].join(""),
+    );
+    expect(c.checkLeftovers("a.html", ok)).toEqual([]);
+  });
+});
+
 describe('"and", never "&", in page text (owner, 2026-10-22; docs/07 §1.1)', () => {
   const body = (b: string) => `<!doctype html><html><head><title>T</title></head><body>${b}</body></html>`;
 

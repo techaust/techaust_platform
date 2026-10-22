@@ -1,0 +1,29 @@
+---
+// Recent work (WEB-HOME, 07 §3 Proof): no case studies yet, so the honest fallback and "Talk to us". When the owner
+// sends case-study briefs (07 §6), 2–3 CaseStudyCards replace the paragraph (WEB-WORK, verified only).
+import { home } from "../../content/home";
+import Button from "../Button.astro";
+
+const p = home.proof;
+---
+
+<section class="section section--flush-top" aria-labelledby="work-title">
+  <div class="container split">
+    <h2 class="t-h2" id="work-title">{p.h2}</h2>
+    <div class="work">
+      <p class="t-body-lg">{p.fallback}</p>
+      <div class="actions">
+        <Button href={p.cta.href} variant="secondary" size="lg">{p.cta.label}</Button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .work {
+    display: grid;
+    gap: var(--space-6);
+    padding-block-start: var(--space-5);
+    border-block-start: 1px solid var(--color-border);
+  }
+</style>

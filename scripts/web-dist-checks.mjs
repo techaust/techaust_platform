@@ -4,6 +4,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
+import { lintBuiltPage, lintSource, readAllowList, visibleText } from "./web-content-lint.mjs";
 
 /** The `/*` block of a Cloudflare `_headers` file as a lower-cased-name map. */
 export function parseHeaders(text) {
@@ -165,6 +166,29 @@ export function checkAmpersands(name, html) {
   return problems;
 }
 
+const HIDDEN_ARROW = /<span\b[^>]*\bclass="[^"]*\bvisually-hidden\b[^"]*"[^>]*>\s*[→↔]\s*<\/span>/gi;
+
+/**
+ * Content the renderer should have consumed must not reach a visitor: `{{…}}` price tokens, `**` bold marks and the
+ * arrow characters → / ↔ (not in the fonts; CopyText draws icons). The one allowed arrow is the visually hidden
+ * screen-reader copy CopyText keeps beside each icon (`<span class="visually-hidden">→</span>`).
+ */
+// Arrow entities Astro could write instead of the characters (it doesn't today).
+const ARROW_ENTITY = /&(?:rarr|harr|#8594|#8596|#x2192|#x2194);/gi;
+
+export function checkLeftovers(name, html) {
+  const text = visibleText(html.replace(HIDDEN_ARROW, "").replace(ARROW_ENTITY, "→"));
+  const problems = [];
+  for (const hit of text.matchAll(/\{\{|\}\}|\*\*|→|↔/g)) {
+    const around = text
+      .slice(Math.max(0, hit.index - 30), hit.index + 30)
+      .replace(/\s+/g, " ")
+      .trim();
+    problems.push(`${name}: unrendered content "${hit[0]}" in visible text ("…${around}…")`);
+  }
+  return problems;
+}
+
 /** WEB-G-07: no money amount typed into a template (prices come from the catalogue snapshot). */
 export function checkAmountLiterals(name, source) {
   const problems = [];
@@ -210,6 +234,9 @@ export function checkWeb(webDir) {
   const headersText = readFileSync(headersPath, "utf8");
   problems.push(...checkHeaders(headersText));
   const ga4Id = readGa4Id(readFileSync(join(webDir, "src", "config", "site.ts"), "utf8"));
+  // WEB-G-14 and the heading rule (scripts/web-content-lint.mjs): the source content, then each built page below.
+  const allow = readAllowList(webDir);
+  problems.push(...lintSource(webDir));
   for (const file of walk(dist)) {
     const name = relative(dist, file).split(sep).join("/");
     if (/^preview(\/|\.|$)/i.test(name)) problems.push(`${name}: preview pages must not be in the build`);
@@ -222,7 +249,12 @@ export function checkWeb(webDir) {
     const text = readFileSync(file, "utf8");
     problems.push(...checkText(name, text, { ga4Id }));
     if (name.endsWith(".html"))
-      problems.push(...checkHtml(name, text, headersText), ...checkAmpersands(name, text));
+      problems.push(
+        ...checkHtml(name, text, headersText),
+        ...checkAmpersands(name, text),
+        ...checkLeftovers(name, text),
+        ...lintBuiltPage(name, text, allow.entries),
+      );
   }
   for (const file of walk(join(webDir, "src"))) {
     const name = relative(webDir, file).split(sep).join("/");

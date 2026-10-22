@@ -1,0 +1,153 @@
+---
+// Steps (docs/06 §5.2): a numbered process with ordered-list semantics. The steps sit on one ink line, each marked
+// by a square one stroke wide; across on wide screens, down the left edge on phones. Numbers come from the list
+// order (CSS counter), so content stays plain text.
+import type { Step } from "../content/types";
+import CopyText from "./CopyText.astro";
+
+interface Props {
+  steps: readonly Step[];
+  class?: string;
+}
+
+const { steps, class: cls } = Astro.props;
+---
+
+<ol class:list={["steps", `steps--n${steps.length}`, cls]} role="list">
+  {
+    steps.map((s) => (
+      <li class="step">
+        <h3 class="t-h4 step__title">
+          <CopyText text={s.title} as="span" />
+        </h3>
+        {s.when && <p class="t-sm step__when">{s.when}</p>}
+        {s.text && <CopyText text={s.text} class="step__text" />}
+      </li>
+    ))
+  }
+</ol>
+
+<style>
+  .steps {
+    --mark: var(--space-3);
+    --line: 2px;
+    counter-reset: step;
+    display: grid;
+    gap: var(--space-10);
+  }
+
+  /* The number of steps, for the line's length (no inline style: the CSP allows none). */
+  .steps--n2 {
+    --n: 2;
+  }
+
+  .steps--n3 {
+    --n: 3;
+  }
+
+  .steps--n4 {
+    --n: 4;
+  }
+
+  .steps--n5 {
+    --n: 5;
+  }
+
+  .steps--n6 {
+    --n: 6;
+  }
+
+  /* A step's duration or week, as 07 writes it ("60 min", "Week 1"). */
+  .step__when {
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text-muted);
+  }
+
+  .step {
+    counter-increment: step;
+    position: relative;
+    display: grid;
+    align-content: start;
+    gap: var(--space-2);
+    padding-inline-start: var(--space-12);
+  }
+
+  /* The number, then the square on the line. */
+  .step::before {
+    content: counter(step);
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline-start: 0;
+    font-family: var(--font-display);
+    font-stretch: var(--font-display--stretch);
+    font-size: var(--text-h4);
+    line-height: var(--text-h4--line-height);
+    font-weight: 560;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text-accent);
+  }
+
+  /* Phones and tablets: the line runs down from each number to the next. */
+  .step:not(:last-child)::after {
+    content: "";
+    position: absolute;
+    inset-block: calc(var(--space-8) + var(--space-2)) calc(-1 * var(--space-10) + var(--space-2));
+    inset-inline-start: calc((var(--space-3) - var(--line)) / 2);
+    inline-size: var(--line);
+    background: var(--color-border);
+  }
+
+  .step :global(.step__text) {
+    color: var(--color-text-muted);
+    text-wrap: pretty;
+    max-inline-size: 36ch;
+  }
+
+  /* Wide screens: one row, a line across the top joining a square per step. */
+  @media (min-width: 64rem) {
+    .steps {
+      grid-auto-flow: column;
+      grid-auto-columns: minmax(0, 1fr);
+      gap: var(--space-8);
+      padding-block-start: calc(var(--mark) + var(--space-8));
+      position: relative;
+    }
+
+    .steps::before {
+      content: "";
+      position: absolute;
+      inset-block-start: calc((var(--mark) - var(--line)) / 2);
+      inset-inline: 0;
+      block-size: var(--line);
+      background: var(--color-text);
+    }
+
+    .step {
+      padding-inline-start: 0;
+      gap: var(--space-3);
+    }
+
+    .step::before {
+      position: static;
+      margin-block-end: var(--space-1);
+    }
+
+    /* (0,2,1): replaces the phone line of every step, the last one included. */
+    .steps .step::after {
+      content: "";
+      position: absolute;
+      inset-block: calc(-1 * (var(--mark) + var(--space-8))) auto;
+      inset-inline-start: 0;
+      inline-size: var(--mark);
+      block-size: var(--mark);
+      background: var(--color-text);
+    }
+
+    /* The line ends on the last square: nothing runs past the last step. */
+    .steps::before {
+      inset-inline-end: auto;
+      inline-size: calc(100% - (100% - var(--space-8) * (var(--n, 4) - 1)) / var(--n, 4) + var(--mark));
+    }
+  }
+</style>

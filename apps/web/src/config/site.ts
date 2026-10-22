@@ -25,5 +25,15 @@ export const site = {
   ga4Id: "",
 } as const;
 
+/**
+ * Content feature flags (WEB-G-17). A flagged-off page isn't built, isn't in the sitemap, hub or nav, and its direct URL
+ * returns 404 (nothing in `dist`, so the static host answers 404). The service pages and the services hub read these
+ * through `isServiceOnSite()` in lib/prices.ts, never directly.
+ */
+export const flags = {
+  /** DPDP Readiness for Apps (S3): off until a legal partner exists (Q-B12). */
+  S3_DPDP_PAGE: false,
+} as const;
+
 /** The target of every "Book a Discovery Sprint" in the shell (header, mobile menu). */
 export const discoveryHref: string = site.calUrl || site.discoveryFallback;

@@ -1,0 +1,109 @@
+---
+// Pricing anchors (WEB-HOME): three published "from" prices set as a rate card: one ink rule over three columns,
+// hairlines between them, the amounts large and tabular. Then the honesty line, the GST/export note and the link.
+import { home } from "../../content/home";
+import { priceOf } from "../../lib/prices";
+import Button from "../Button.astro";
+import CurrencyNote from "../CurrencyNote.astro";
+import PriceNote from "../PriceNote.astro";
+import PriceTag from "../PriceTag.astro";
+
+const p = home.pricing;
+---
+
+<section class="section" aria-labelledby="pricing-title">
+  <div class="container">
+    <div class="section-head">
+      <h2 class="t-h2" id="pricing-title">{p.h2}</h2>
+      <CurrencyNote />
+    </div>
+    <ul class="rates" role="list">
+      {
+        p.tiles.map((t) => {
+          const v = priceOf(t.price);
+          return (
+            <li class="rate">
+              <h3 class="t-h4 rate__label">{t.label}</h3>
+              <PriceTag inr={v.inr} usd={v.usd} unit={"unit" in t ? t.unit : undefined} />
+            </li>
+          );
+        })
+      }
+    </ul>
+    <div class="rates__foot">
+      <div class="rates__words">
+        <p class="t-body-lg">{p.text}</p>
+        <PriceNote />
+      </div>
+      <Button href={p.cta.href} variant="secondary" size="lg">{p.cta.label}</Button>
+    </div>
+  </div>
+</section>
+
+<style>
+  .rates {
+    display: grid;
+    border-block-start: 2px solid var(--color-text);
+  }
+
+  .rate {
+    display: grid;
+    align-content: start;
+    gap: var(--space-4);
+    padding-block: var(--space-6) var(--space-8);
+    border-block-end: 1px solid var(--color-border);
+  }
+
+  /* Tablets: one row per price, the label left and the amount right, like a rate card. */
+  @media (min-width: 48rem) and (max-width: 63.99rem) {
+    .rate {
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: baseline;
+      column-gap: var(--space-8);
+    }
+
+    /* Both currency lines flush right in their shared cell. */
+    .rate :global(.price__line) {
+      justify-content: flex-end;
+    }
+  }
+
+  @media (min-width: 64rem) {
+    .rates {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      border-block-end: 1px solid var(--color-border);
+    }
+
+    .rate {
+      padding: var(--space-6) var(--space-6) var(--space-10);
+      border-block-end: 0;
+    }
+
+    .rate + .rate {
+      border-inline-start: 1px solid var(--color-border);
+    }
+
+    .rate:first-child {
+      padding-inline-start: 0;
+    }
+  }
+
+  .rate__label {
+    color: var(--color-text);
+  }
+
+  .rates__foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: var(--space-6) var(--space-12);
+    margin-block-start: var(--space-8);
+  }
+
+  .rates__words {
+    display: grid;
+    gap: var(--space-2);
+    max-inline-size: var(--container-prose);
+  }
+</style>
