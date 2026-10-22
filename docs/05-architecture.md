@@ -181,7 +181,7 @@ techaust_platform/
 | `portal` | `portal.techaust.com` / `techaust-platform-portal-staging…` | `ASSETS`, `DB`, `FILES`, `DOCS`, `EMAIL_QUEUE`, `EVENTS_QUEUE`, `RL_AUTH`, `RL_API` | `PORTAL_KEY_PEPPER` (HMACs the counter keys; sign-in links, sessions and document links are random tokens stored as SHA-256, so they need no key), `TURNSTILE_SECRET` (M2.4), gateway keys (create checkout) |
 | `jobs` | `hooks.techaust.com` / `techaust-platform-jobs-staging…` | `DB`, `FILES`, `DOCS`, `BROWSER`, consumers of `leads` / `pdf` / `email` / `events` (+ DLQs), cron triggers | `RAZORPAY_WEBHOOK_SECRET`, `STRIPE_WEBHOOK_SECRET`, `PAYPAL_*`, `SES_ACCESS_KEY_ID`, `SES_SECRET_ACCESS_KEY`, `SES_EVENTS_TOKEN`, gateway API keys (status checks, refunds), `SENTRY_DSN` |
 
-**Built so far (M1.5, M1.6):** admin binds `ASSETS` and `DB` and requires `PASSWORD_PEPPER`, `SALT_PEPPER`, `TOTP_ENC_KEY`, `SESSION_HMAC_KEY`; portal binds `ASSETS` and `DB` and requires `PORTAL_KEY_PEPPER` (`secrets.required` in each `wrangler.jsonc`). The other bindings and secrets above arrive with the milestones that use them; the Rate Limiting bindings are not used yet (all counters are exact D1 rows, §6.1).
+**Built so far (M1.5, M1.6, M2.4):** web binds `ASSETS`, `LEADS_QUEUE` (producer) and `RL_FORMS` (2 per 60 s) with vars `TURNSTILE_SITE_KEY`, `TURNSTILE_HOSTNAMES`, `FORMS_ALLOWED_ORIGINS` and secrets `TURNSTILE_SECRET`, `FORMS_IP_PEPPER`; jobs consumes `leads`, `email` and both DLQs (batch 1; DLQ `max_retries` 100), produces `EMAIL_QUEUE`, with vars `LEAD_ALERT_TO`, `EMAIL_ALLOWED_RECIPIENTS`, `EMAIL_TRANSPORT`, `SES_REGION`, `SES_CONFIGURATION_SET`, `EMAIL_ASSET_BASE`, `ADMIN_URL` and secrets `SES_ACCESS_KEY_ID`, `SES_SECRET_ACCESS_KEY` (production gets its queue and widget in Phase 7); admin binds `ASSETS` and `DB` and requires `PASSWORD_PEPPER`, `SALT_PEPPER`, `TOTP_ENC_KEY`, `SESSION_HMAC_KEY`; portal binds `ASSETS` and `DB` and requires `PORTAL_KEY_PEPPER` (`secrets.required` in each `wrangler.jsonc`). The other bindings and secrets above arrive with the milestones that use them; the Rate Limiting bindings are not used yet (all counters are exact D1 rows, §6.1).
 
 **Plain (non-secret) vars:** `ENVIRONMENT` (`local|staging|production`), `APP_ORIGIN`, `PAYMENTS_LIVE_ALLOWED` (`false` until the Phase 7 approval), `SES_REGION=ap-south-1`, `SES_CONFIG_SET`, sender addresses.
 
@@ -338,7 +338,7 @@ The formatted number is computed in SQL from the counter value (`printf('TH/INV/
 ```text
 Browser (admin SPA)                       admin Worker (Hono)                         D1
 ───────────────────                       ───────────────────                         ──
-1. POST /api/v1/auth/salt {email}  ─────▶ per-IP failure counter (D1); Turnstile from M2.4
+1. POST /api/v1/auth/salt {email}  ─────▶ per-IP failure counter (D1); Turnstile from M2.4b
                                           salt = user ? user.pw_salt
                                                       : HMAC(SALT_PEPPER, lower(email))[:16]
                                    ◀───── {salt, params:{v,m,t,p}}  (same shape and timing)
@@ -374,7 +374,7 @@ Browser (admin SPA)                       admin Worker (Hono)                   
 
 ### 6.2 Client login (portal): magic links
 1. `POST /api/v1/auth/magic {email}` → always `200 {ok: true}`, whatever the email (a quota hit is a uniform `429 rate_limited` with `Retry-After`). If the email belongs to a contact with `portal_access` (not anonymised): one link **per organisation** that contact belongs to, each a 32-byte token stored as SHA-256, expiring in 15 min. Quotas: 10 requests an hour per address (`p:req:`), 3 per 15 min per email (`p:mail:`). The `turnstile` field is added in M2.4.
-2. **Delivery:** M2.4 sends the email from `no-reply@`. Until then the Worker sends nothing (a `MagicLinkSender` interface with no sending implementation) and links are made by hand with `pnpm portal:link` (lead only, audit-logged as `portal.link_minted`).
+2. **Delivery:** M2.4b sends the email from `no-reply@` (moved from M2.4, lead decision 2026-10-23). Until then the Worker sends nothing (a `MagicLinkSender` interface with no sending implementation) and links are made by hand with `pnpm portal:link` (lead only, audit-logged as `portal.link_minted`).
 3. The link opens `portal…/auth/callback#t=<token>`. The **fragment** keeps the token out of server logs and referrers, and the SPA strips it from the address bar at once. The person clicks **Continue**; only then does the SPA POST it to `/api/v1/auth/magic/verify`, which marks it used (single use) and creates the session cookie `__Host-ta_portal` (`HttpOnly; Secure; SameSite=Lax; Max-Age` = 90 days; the server ends the session after 30 days idle or 90 days absolute). Failed checks count on `p:fail:` (20 an hour per address → 15-min block).
 4. Email security scanners that pre-fetch links, even ones that run JavaScript, don't consume the token, because consumption needs the click and the POST.
 5. Every sign-in creates a new session; removing a contact's portal access, anonymising it or moving it to another client ends its sessions at once (the session guard joins the contact). "Sign out of all devices" covers this contact only.
