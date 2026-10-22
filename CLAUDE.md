@@ -146,7 +146,7 @@ pnpm admin:reset-2fa --email … [--new-email …] [--staging]   # break-glass (
 
 # Client login (apps/portal + packages/auth)
 pnpm portal:sample [--staging]                               # sample clients A and B with @example.test contacts (never production)
-pnpm portal:link --email … [--client CODE] [--staging]       # 15-minute sign-in link by hand until M2.4 sends emails (audit-logged; share it only with that person)
+pnpm portal:link --email … [--client CODE] [--staging]       # 15-minute sign-in link by hand until M2.4b sends emails (audit-logged; share it only with that person)
 ```
 
 ## How the code fits together
