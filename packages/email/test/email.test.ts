@@ -85,13 +85,17 @@ describe("templates (docs/07 §8)", () => {
   });
 
   it("renderEmail picks hello@ with Reply-To hello@ and rejects unknown templates", () => {
-    const r = renderEmail("lead.acknowledgement", { first_name: "A", service_name: "S", ref: "L-7K3Q9" }, OPTS);
+    const r = renderEmail(
+      "lead.acknowledgement",
+      { first_name: "A", service_name: "S", ref: "L-7K3Q9" },
+      OPTS,
+    );
     expect(r.from.address).toBe("hello@techaust.com");
     expect(r.replyTo).toBe("hello@techaust.com");
     expect(r.html).toContain("https://assets.example.test/brand/logo-email-badge%402x.png");
-    expect(
-      renderEmail("lead.alert", { ref: "L-7K3Q9", admin_url: "https://a/" }, OPTS).subject,
-    ).toContain("L-7K3Q9");
+    expect(renderEmail("lead.alert", { ref: "L-7K3Q9", admin_url: "https://a/" }, OPTS).subject).toContain(
+      "L-7K3Q9",
+    );
     expect(() => renderEmail("nope", {}, OPTS)).toThrow(/Unknown email template/);
   });
 });

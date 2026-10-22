@@ -375,7 +375,9 @@ describe("review fixes [FRM-02, FRM-03, FRM-QUOTE]", () => {
 
   it("type and plan from the quote link are carried into the queue message", async () => {
     siteverify = { success: true, action: "quote", hostname: "web.test" };
-    expect((await request({ ...quote(), type: "pilot", plan: "standard" }, { kind: "quote" })).status).toBe(200);
+    expect((await request({ ...quote(), type: "pilot", plan: "standard" }, { kind: "quote" })).status).toBe(
+      200,
+    );
     expect(sent[0]).toMatchObject({ type: "pilot", plan: "standard" });
     const bad = await request({ ...quote(), plan: "Standard Plan" }, { kind: "quote" });
     expect(bad.status).toBe(422);

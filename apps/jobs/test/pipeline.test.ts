@@ -301,7 +301,9 @@ describe("lead pipeline [ADM-LEAD-01, FRM-05, FRM-06]", () => {
     );
     expect(c?.failures).toBe(2);
     // the redelivered emails carry the lead's real (new) reference
-    const stored = await rows<{ ref: string }>("SELECT ref FROM leads WHERE contact_email = 'second@example.com'");
+    const stored = await rows<{ ref: string }>(
+      "SELECT ref FROM leads WHERE contact_email = 'second@example.com'",
+    );
     expect(queued.at(-1)?.entity.id).toBe(stored[0]?.ref);
   });
 
@@ -504,7 +506,9 @@ describe("dead-letter queues [FRM-07]", () => {
   it("writes a log line without personal data and alerts LEAD_ALERT_TO directly", async () => {
     const lines = vi.spyOn(console, "log").mockImplementation(() => {});
     const { sent, transport } = recorder();
-    expect(await processDeadLetter(makeEnv(), "techaust-staging-leads-dlq", { anything: "x" }, transport)).toBe(true);
+    expect(
+      await processDeadLetter(makeEnv(), "techaust-staging-leads-dlq", { anything: "x" }, transport),
+    ).toBe(true);
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({ to: "owner@example.test", from: { address: "hello@techaust.com" } });
     expect(sent[0]?.text).toContain("A lead or email failed after 5 tries: open the admin.");

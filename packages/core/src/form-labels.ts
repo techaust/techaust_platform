@@ -68,7 +68,8 @@ export const TOOL_LABELS: Record<(typeof TOOLS)[number], string> = {
 };
 
 /** The label of a coded answer; the code itself when unknown (a label list that lags never hides an answer). */
-export const labelOf = (labels: Readonly<Record<string, string>>, code: string): string => labels[code] ?? code;
+export const labelOf = (labels: Readonly<Record<string, string>>, code: string): string =>
+  labels[code] ?? code;
 
 /**
  * "Best time for a call" (07 §5.9): windows inside the published hours (Mon–Sat, 10:00–19:00 IST), as minutes after

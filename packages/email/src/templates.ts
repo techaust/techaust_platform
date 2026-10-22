@@ -16,7 +16,8 @@ import { escapeHtml, headerValue } from "./headers.ts";
 export type Rendered = { subject: string; html: string; text: string };
 
 /** NEW copy (M2.4 review fix): the line at the top of a lead alert that came from a dead-letter queue. */
-const DLQ_LEAD_LINE = "This lead failed after 5 tries and may be missing from the admin. Its details are below.";
+const DLQ_LEAD_LINE =
+  "This lead failed after 5 tries and may be missing from the admin. Its details are below.";
 
 /** docs/07 §8 footer, on every email. */
 export const FOOTER = "TecHaust Technologies · Balurghat, West Bengal, India · contact@techaust.com";
@@ -70,8 +71,8 @@ export type DlqAlertData = {
   queue: string;
   admin_url: string;
   /** What was dead-lettered, when the message could be read: an email's template and its lead reference. */
-  template?: string;
-  ref?: string;
+  template?: string | undefined;
+  ref?: string | undefined;
 };
 
 const C = T.color;

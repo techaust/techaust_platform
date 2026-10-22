@@ -52,7 +52,9 @@ export function deleteAfter(submittedAt: number, months = SETTINGS_DEFAULTS.rete
  */
 export function leadId(m: Pick<LeadMessage, "ref" | "submittedAt" | "ipHash">): string {
   const digest = stableId(`lead:${m.ref}:${m.submittedAt}:${m.ipHash}`).replace(/-/g, "");
-  const random = Uint8Array.from({ length: 10 }, (_, i) => Number.parseInt(digest.slice(i * 2, i * 2 + 2), 16));
+  const random = Uint8Array.from({ length: 10 }, (_, i) =>
+    Number.parseInt(digest.slice(i * 2, i * 2 + 2), 16),
+  );
   return uuidv7(m.submittedAt, random);
 }
 
@@ -182,7 +184,10 @@ export async function processLead(env: Env, body: unknown, now = Date.now()): Pr
   for (let attempt = 0; ; attempt++) {
     try {
       // One transaction: count both windows, then insert only while both are within their limits.
-      const results = await env.DB.batch([...countStatements(env.DB, m.ipHash, now), insertStatement(env, m, ref)]);
+      const results = await env.DB.batch([
+        ...countStatements(env.DB, m.ipHash, now),
+        insertStatement(env, m, ref),
+      ]);
       if ((results[2]?.meta.changes ?? 0) === 0) {
         logEvent("lead.rate_limited", { kind: m.kind });
         return "limited";

@@ -170,11 +170,7 @@ export async function processDeadLetter(
   const lead = queue.endsWith("-leads-dlq") ? leadMessage.safeParse(body) : undefined;
   if (lead?.success) {
     ref = lead.data.ref;
-    rendered = renderEmail(
-      "lead.alert",
-      { ...alertData(env, lead.data, ref), failed_queue: queue },
-      opts,
-    );
+    rendered = renderEmail("lead.alert", { ...alertData(env, lead.data, ref), failed_queue: queue }, opts);
   } else if (queue.endsWith("-email-dlq")) {
     // A failed email: which template and which lead (its reference), never the address or the text.
     const email = emailMessage.safeParse(body);

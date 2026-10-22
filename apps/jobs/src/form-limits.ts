@@ -27,11 +27,3 @@ export const withinLimitsSql = (a: number, b: number): string =>
   `(SELECT failures FROM auth_attempts WHERE key = ?${a}) <= ${LIMIT_10M} AND (SELECT failures FROM auth_attempts WHERE key = ?${b}) <= ${LIMIT_DAY}`;
 
 export const limitKeys = (ipHash: string): [string, string] => [`f:10m:${ipHash}`, `f:day:${ipHash}`];
-
-/** Counts one submission for `ipHash` in both windows (one `db.batch()`), true when it is within both limits. */
-export async function countSubmission(db: D1Database, ipHash: string, now: number): Promise<boolean> {
-  const [short, day] = await db.batch<{ failures: number }>(countStatements(db, ipHash, now));
-  const a = short?.results[0]?.failures ?? Number.POSITIVE_INFINITY;
-  const b = day?.results[0]?.failures ?? Number.POSITIVE_INFINITY;
-  return a <= LIMIT_10M && b <= LIMIT_DAY;
-}

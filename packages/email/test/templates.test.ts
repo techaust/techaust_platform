@@ -63,7 +63,10 @@ describe("lead emails in the brand layout (docs/06 §6)", () => {
   });
 
   it("the alert shows the quote link's type and plan, and a dead-lettered lead says so in subject and body", () => {
-    const r = leadAlert({ ...alert, type: "pilot", plan: "essential", failed_queue: "techaust-staging-leads-dlq" }, OPTS);
+    const r = leadAlert(
+      { ...alert, type: "pilot", plan: "essential", failed_queue: "techaust-staging-leads-dlq" },
+      OPTS,
+    );
     expect(r.subject).toBe(
       "Failed after 5 tries (techaust-staging-leads-dlq): New lead L-7K3Q9: AI Document Automation · 1l-3l · IN",
     );

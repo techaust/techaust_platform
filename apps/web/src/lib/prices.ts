@@ -20,6 +20,7 @@ type Item = ReturnType<typeof snapshot>["items"][number];
 const find = (code: string): Item | undefined => snapshot().items.find((c) => c.code === code);
 
 export { isVisible };
+
 const visible = (item: Item): boolean => isVisible(item, flags.S3_DPDP_PAGE);
 
 /** The default line whose description starts with `word` (case-insensitive); throws when two do (ambiguous). */
