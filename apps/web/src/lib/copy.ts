@@ -13,4 +13,4 @@ export const plainText = renderPlain;
 export const plainCopy = (text: string): string =>
   renderPlain(text)
     .replaceAll("**", "")
-    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, "$1");
+    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_link, label: string) => label);

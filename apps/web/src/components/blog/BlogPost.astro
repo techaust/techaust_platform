@@ -9,7 +9,7 @@ import "../../styles/page.css";
 import { discoveryHref } from "../../config/site";
 import { about } from "../../content/company";
 import { home } from "../../content/home";
-import { pageLabels as P, serviceLabels as L } from "../../content/labels";
+import { serviceLabels as L, pageLabels as P } from "../../content/labels";
 import { serviceContent, serviceLink } from "../../content/services";
 import type { ServiceCode } from "../../content/types";
 import type { BlogData, TocItem } from "../../lib/blog";
@@ -39,7 +39,9 @@ const showToc = toc.length >= 3;
 const codes = data.relatedServices as ServiceCode[];
 const related = codes.map(serviceLink);
 const first = codes[0];
-const primary = first ? serviceContent(first).hero.primary : { label: home.band.primary, href: discoveryHref };
+const primary = first
+  ? serviceContent(first).hero.primary
+  : { label: home.band.primary, href: discoveryHref };
 const url = `${ORIGIN}/blog/${slug}`;
 const article = {
   "@type": "Article",

@@ -6,7 +6,10 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
 import { published, readingTime } from "../../lib/blog";
 
 export async function getStaticPaths() {
-  return published(await getCollection("blog")).map((entry) => ({ params: { slug: entry.id }, props: { entry } }));
+  return published(await getCollection("blog")).map((entry) => ({
+    params: { slug: entry.id },
+    props: { entry },
+  }));
 }
 
 const { entry } = Astro.props;

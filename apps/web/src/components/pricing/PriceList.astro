@@ -155,7 +155,9 @@ const groups = servicesHub.groups
 
   .plist__name a {
     display: inline-flex;
-    min-block-size: var(--space-8);
+    align-items: center;
+    min-block-size: var(--target-min);
+    margin-block: calc((var(--space-8) - var(--target-min)) / 2);
     color: var(--color-text);
     text-decoration-color: var(--color-border);
   }

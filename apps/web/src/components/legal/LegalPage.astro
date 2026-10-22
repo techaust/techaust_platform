@@ -11,9 +11,9 @@
 //   one; either way it holds the version log.
 // - The slot: page-specific content after the text (/security shows its security.txt).
 import "../../styles/page.css";
+import { pageLabels as P } from "../../content/labels";
 import { legal } from "../../content/legal";
 import type { LegalDoc } from "../../content/legal-pages";
-import { pageLabels as P } from "../../content/labels";
 import { versionLine } from "../../lib/legal";
 import CopyText from "../CopyText.astro";
 import Icon from "../Icon.astro";
@@ -208,6 +208,12 @@ const hasChanges = sections.some((s) => s.id === "changes");
 
   .toc__list a:hover {
     color: var(--color-link-hover);
+  }
+
+  /* The list scrolls on its own (overflow), which would clip an outside ring: draw it inside. */
+  .toc__list a:focus-visible {
+    outline-offset: -2px;
+    border-radius: var(--radius-sm);
   }
 
   .toc__list a:hover .toc__text {

@@ -9,7 +9,8 @@ import type { Step } from "./types";
 export type DetailedStep = Step & { more: string };
 
 const [discover, plan, build, launch] = home.how.steps as readonly Step[];
-if (!discover || !plan || !build || !launch) throw new Error("How we work: the home page has fewer than four steps");
+if (!discover || !plan || !build || !launch)
+  throw new Error("How we work: the home page has fewer than four steps");
 
 export const howWeWork = {
   meta: {
@@ -156,5 +157,6 @@ export const about = {
     "Honest numbers",
     "Look after what we build",
   ],
-  where: "Balurghat, West Bengal, India. We work remotely with clients everywhere, and visit in India when it helps.",
+  where:
+    "Balurghat, West Bengal, India. We work remotely with clients everywhere, and visit in India when it helps.",
 } as const;

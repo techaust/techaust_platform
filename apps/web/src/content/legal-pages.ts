@@ -187,7 +187,9 @@ const privacy: LegalDoc = {
             ],
           },
         },
-        { p: "We may also disclose information when the law requires it, or to protect our rights in a legal dispute." },
+        {
+          p: "We may also disclose information when the law requires it, or to protect our rights in a legal dispute.",
+        },
       ],
     },
     {
@@ -316,7 +318,9 @@ const privacy: LegalDoc = {
       id: "children",
       num: "10",
       title: "Children",
-      blocks: [{ p: "Our services are for businesses. We don’t knowingly collect data from children (under 18)." }],
+      blocks: [
+        { p: "Our services are for businesses. We don’t knowingly collect data from children (under 18)." },
+      ],
     },
     {
       id: "languages",
@@ -567,9 +571,23 @@ const cookieRows: string[][] = [
   ],
   ["Turnstile (`cf_*`, if set)", "Cloudflare", "Protects forms from bots", "Necessary", "Session"],
   ...(ga
-    ? [["`_ga`, `_ga_<id>`", "Google", "Analytics (only after consent)", "Analytics", "Up to 2 years (GA4 default)"]]
+    ? [
+        [
+          "`_ga`, `_ga_<id>`",
+          "Google",
+          "Analytics (only after consent)",
+          "Analytics",
+          "Up to 2 years (GA4 default)",
+        ],
+      ]
     : []),
-  ["`__Host-ta_portal`", "TecHaust", "Keeps you signed in to the client portal", "Necessary", "Up to 90 days"],
+  [
+    "`__Host-ta_portal`",
+    "TecHaust",
+    "Keeps you signed in to the client portal",
+    "Necessary",
+    "Up to 90 days",
+  ],
   ["`__Host-ta_admin`", "TecHaust", "Keeps staff signed in to the admin", "Necessary", "Up to 7 days"],
 ];
 
