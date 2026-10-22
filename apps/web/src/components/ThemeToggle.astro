@@ -87,13 +87,15 @@ const { labelled = false, class: cls } = Astro.props;
     display: none;
   }
 
-  .theme-toggle[data-state="light"] :global(.tt-system),
-  .theme-toggle[data-state="dark"] :global(.tt-system) {
+  /* The icon follows <html data-theme>, which the head script sets before the first paint, so a stored theme shows
+     the right icon at once (the script below sets data-state later, which only covers the toggle's own clicks). */
+  :global(:root[data-theme="light"]) .theme-toggle :global(.tt-system),
+  :global(:root[data-theme="dark"]) .theme-toggle :global(.tt-system) {
     display: none;
   }
 
-  .theme-toggle[data-state="light"] :global(.tt-light),
-  .theme-toggle[data-state="dark"] :global(.tt-dark) {
+  :global(:root[data-theme="light"]) .theme-toggle :global(.tt-light),
+  :global(:root[data-theme="dark"]) .theme-toggle :global(.tt-dark) {
     display: block;
   }
 
