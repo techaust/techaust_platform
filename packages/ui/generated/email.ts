@@ -16,7 +16,7 @@ export const emailTokens = {
     "link": "#14231f",
     "linkHover": "#1e6b5c",
     "border": "#d3dbd6",
-    "borderControl": "#7a8b84",
+    "borderControl": "#75867f",
     "accentDecor": "#2e8b77",
     "btnPrimaryBg": "#1e6b5c",
     "btnPrimaryFg": "#ffffff",
@@ -24,7 +24,7 @@ export const emailTokens = {
     "btnSecondaryFg": "#14231f",
     "focus": "#1e6b5c",
     "selection": "#d7ece5",
-    "success": "#47730f",
+    "success": "#44700e",
     "warning": "#8f5b00",
     "danger": "#b3261e",
     "info": "#2b5797"

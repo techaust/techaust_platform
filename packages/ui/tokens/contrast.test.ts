@@ -17,7 +17,7 @@ const PAIRS: Record<Theme, Pair[]> = {
     ["text", "bg", AAA, "body text"],
     ["text-muted", "bg", AAA, "muted text"],
     ...textOn(
-      ["bg", "surface", "surface-alt"],
+      ["bg", "surface", "surface-alt", "fill-subtle"],
       [
         ["text", AA],
         ["text-muted", AA],
@@ -30,13 +30,14 @@ const PAIRS: Record<Theme, Pair[]> = {
         ["info", AA],
       ],
     ),
-    ["text", "fill-subtle", AA, "table stripes / code background"],
     ["accent-decor", "bg", UI, "decorative verdigris: large text and non-text only"],
     ["btn-primary-fg", "btn-primary-bg", AA, "primary button"],
     ["btn-primary-fg", "btn-primary-hover", AA, "primary button, hover"],
     ["btn-secondary-fg", "bg", AA, "secondary button"],
     ["border-control", "bg", UI, "input borders"],
     ["border-control", "surface", UI, "input borders on cards"],
+    ["border-control", "fill-subtle", UI, "input borders on table stripes and code backgrounds"],
+    ["text", "selection", AA, "selected text"],
     ["focus", "bg", UI, "focus ring"],
     ["focus", "surface", UI, "focus ring on cards"],
   ],
@@ -45,7 +46,7 @@ const PAIRS: Record<Theme, Pair[]> = {
     ["text-muted", "bg", AAA, "muted text"],
     ["text-muted", "surface", AAA, "muted text on cards"],
     ...textOn(
-      ["bg", "surface", "surface-alt", "surface-raised"],
+      ["bg", "surface", "surface-alt", "surface-raised", "fill-subtle"],
       [
         ["text", AA],
         ["text-muted", AA],
@@ -64,6 +65,9 @@ const PAIRS: Record<Theme, Pair[]> = {
     ["border-control", "bg", UI, "input borders"],
     ["border-control", "surface", UI, "input borders on cards"],
     ["border-control", "surface-raised", UI, "input borders in dialogs"],
+    ["border-control", "fill-subtle", UI, "input borders on table stripes and code backgrounds"],
+    ["accent-decor", "bg", UI, "decorative verdigris: large text and non-text only"],
+    ["text", "selection", AA, "selected text"],
     ["focus", "bg", UI, "focus ring"],
     ["focus", "surface", UI, "focus ring on cards"],
     ["focus", "surface-raised", UI, "focus ring in dialogs"],
