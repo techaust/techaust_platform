@@ -1,6 +1,7 @@
 // What the portal writes to its logs [NFR-6, NFR-9, Q1 = A]: one console line per /api request with exactly
 // ev, r, s, rid, iso and n and no personal data anywhere; the audit rows of the sign-in events; the access rows of a
 // signed-in contact's requests and of every sign-in event, and none for an anonymous request that is simply refused.
+import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import { fixtures } from "./fixtures.ts";
@@ -15,10 +16,12 @@ import {
   nextIp,
   ORIGIN,
   rows,
+  send,
   sessionFor,
   spyConsole,
   tokenOfLink,
   verify,
+  withDb,
 } from "./test-helpers.ts";
 
 const reqLines = (lines: string[]) =>
@@ -326,7 +329,7 @@ describe("access rows: every signed-in request and every sign-in event, nothing 
         "csrf-415",
         415,
         async () =>
-          app.request(
+          send(
             `${ORIGIN}/api/v1/auth/magic`,
             {
               method: "POST",
@@ -386,5 +389,95 @@ describe("access rows: every signed-in request and every sign-in event, nothing 
       "status",
       "user_agent",
     ]);
+  });
+});
+
+describe("header values are cut before they reach a log row (audit M2)", () => {
+  it("a 10 KB User-Agent is stored as 512 characters, an oversized address and cf-ray as 64", async () => {
+    const f = await fixtures();
+    const s = await sessionFor(f.a.plain);
+    const res = await call("/me", {
+      cookie: s.cookie,
+      headers: { "cf-ray": "ray.".repeat(50), "User-Agent": "A".repeat(10_240) },
+      ip: "9".repeat(200),
+    });
+    expect(res.status).toBe(200);
+    const logged = await rows<{ ip: string; user_agent: string; request_id: string }>(
+      "SELECT ip, user_agent, request_id FROM access_log WHERE actor_id = ?1 AND route = '/api/v1/me'",
+      f.a.plain.id,
+    );
+    expect(logged.at(-1)?.user_agent).toBe("A".repeat(512));
+    expect(logged.at(-1)?.ip).toBe("9".repeat(64));
+    expect(logged.at(-1)?.request_id).toHaveLength(64);
+    expect(logged.at(-1)?.request_id.startsWith("ray.ray.")).toBe(true);
+  });
+});
+
+describe("the access-row write rides in the execution context (audit L5)", () => {
+  const request = (cookie: string, e: Env = env) => {
+    const ctx = createExecutionContext();
+    const waited: Promise<unknown>[] = [];
+    const orig = ctx.waitUntil.bind(ctx);
+    ctx.waitUntil = (p: Promise<unknown>) => {
+      waited.push(p);
+      orig(p);
+    };
+    const res = app.request(
+      `${ORIGIN}/api/v1/me`,
+      { headers: { Origin: ORIGIN, Cookie: cookie, "CF-Connecting-IP": nextIp() } },
+      e,
+      ctx,
+    );
+    return { res, ctx, waited };
+  };
+
+  it("hands the write to waitUntil exactly once, and the row exists once the context has settled", async () => {
+    const f = await fixtures();
+    const s = await sessionFor(f.a.plain);
+    const before = await countOf("access_log", "actor_id = ?1", f.a.plain.id);
+    const { res, ctx, waited } = request(s.cookie);
+    expect((await res).status).toBe(200);
+    expect(waited).toHaveLength(1);
+    await waitOnExecutionContext(ctx);
+    expect(await countOf("access_log", "actor_id = ?1", f.a.plain.id)).toBe(before + 1);
+  });
+
+  it("a failing write still answers 200 and logs only the route pattern, the request id and the error class", async () => {
+    const f = await fixtures();
+    const s = await sessionFor(f.a.plain);
+    // Statements whose `run` (the access row, alone in its call) rejects; everything else reads the real database.
+    const wrapStmt = (st: D1PreparedStatement): D1PreparedStatement =>
+      new Proxy(st, {
+        get(t, k) {
+          if (k === "run") return () => Promise.reject(new Error("disk full: secret-sql-detail"));
+          if (k === "bind") return (...a: unknown[]) => wrapStmt(t.bind(...a));
+          const v = Reflect.get(t, k) as unknown;
+          return typeof v === "function" ? v.bind(t) : v;
+        },
+      });
+    const failing = withDb({
+      prepare: (q: string) => wrapStmt(env.DB.prepare(q)),
+      batch: (b: D1PreparedStatement[]) => env.DB.batch(b),
+    } as unknown as D1Database);
+    const spy = spyConsole();
+    let res: Response;
+    try {
+      const r = request(s.cookie, failing);
+      res = await r.res;
+      await waitOnExecutionContext(r.ctx);
+    } finally {
+      spy.stop();
+    }
+    expect(res.status).toBe(200);
+    const errors = spy.lines
+      .map((l) => JSON.parse(l) as Record<string, unknown>)
+      .filter((l) => l.level === "error");
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({
+      route: "/api/v1/me",
+      message: "access log write failed",
+      cause: "Error",
+    });
+    expect(spy.lines.join(String.fromCharCode(10))).not.toContain("secret-sql-detail");
   });
 });
