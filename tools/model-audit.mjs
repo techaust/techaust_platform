@@ -63,7 +63,8 @@ for (const file of files) {
     models.add(model);
     if (entry.effort) efforts.add(entry.effort);
     for (const part of Array.isArray(entry.message?.content) ? entry.message.content : [])
-      if (part?.type === "tool_use" && part.name === "Skill" && part.input?.skill) skills.add(part.input.skill);
+      if (part?.type === "tool_use" && part.name === "Skill" && part.input?.skill)
+        skills.add(part.input.skill);
     if (!first) first = entry.timestamp;
   }
   if (!models.size) continue;
@@ -71,7 +72,8 @@ for (const file of files) {
   for (const m of models) if (!MODELS.has(m)) problems.push(`model ${m} not allowed`);
   for (const e of efforts) if (!EFFORTS.has(e)) problems.push(`effort ${e} not allowed`);
   if (!isAgent && [...efforts].some((e) => e !== "medium")) problems.push("lead not on medium");
-  if (["builder", "designer", "analyst", "reviewer"].includes(agent) && !skills.size) problems.push("no skill loaded");
+  if (["builder", "designer", "analyst", "reviewer"].includes(agent) && !skills.size)
+    problems.push("no skill loaded");
   const id = basename(file, ".jsonl");
   runs.push({ first, agent, id, models: [...models], efforts: [...efforts], skills: [...skills], problems });
 }
