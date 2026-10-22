@@ -1,0 +1,3 @@
+# Local-only form secrets. Create apps/web/.dev.vars with `pnpm dev:secrets` (random pepper, Turnstile's always-pass TEST secret; git-ignored).
+TURNSTILE_SECRET=
+FORMS_IP_PEPPER=

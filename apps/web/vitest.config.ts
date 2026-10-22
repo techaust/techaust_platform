@@ -6,7 +6,13 @@ export default defineConfig({
   test: {
     projects: [
       {
-        plugins: [cloudflareTest({ wrangler: { configPath: "./wrangler.jsonc" } })],
+        // Fixed test secrets, used only here (the form tests hand-build their own Env; these keep the plugin quiet).
+        plugins: [
+          cloudflareTest({
+            wrangler: { configPath: "./wrangler.jsonc" },
+            miniflare: { bindings: { TURNSTILE_SECRET: "test-secret", FORMS_IP_PEPPER: "test-pepper" } },
+          }),
+        ],
         test: { name: "worker", include: ["test/worker/**/*.test.ts"] },
       },
       {
