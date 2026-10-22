@@ -111,6 +111,43 @@ export function sesTransport(config: SesConfig): Transport {
   };
 }
 
+/**
+ * Start-up warm-up of the SES path (CPU tuning round 2): signs one made-up request with made-up credentials and its own
+ * key cache, so the first real email in an isolate does not pay for the first `crypto.subtle` import, HMAC and digest,
+ * the `Request` set-up and the JSON build. Nothing is sent and nothing is stored (no `fetch`, not the shared
+ * SIGNING_KEYS map); the credentials are fixed dummies, never `env`. Resolves true when the signing worked.
+ */
+export async function warmSesSigning(): Promise<boolean> {
+  try {
+    const client = new AwsClient({
+      accessKeyId: "AKIAWARMUP00000000",
+      secretAccessKey: "warm-up-not-a-secret",
+      service: "ses",
+      region: "ap-south-1",
+      retries: 0,
+    });
+    const body = JSON.stringify({
+      FromEmailAddress: formatAddress("Warm", "warm@warm-up.invalid"),
+      Destination: { ToAddresses: [formatAddress(undefined, "warm@warm-up.invalid")] },
+      Content: {
+        Simple: {
+          Subject: { Data: "warm", Charset: "UTF-8" },
+          Body: { Text: { Data: "warm", Charset: "UTF-8" } },
+        },
+      },
+    });
+    const req = await client.sign("https://email.ap-south-1.amazonaws.com/v2/email/outbound-emails", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+      signal: AbortSignal.timeout(8_000),
+    });
+    return req.headers.has("authorization");
+  } catch {
+    return false;
+  }
+}
+
 /** Local and test transport: nothing leaves the machine and nothing personal is printed. */
 export function logTransport(log: (line: string) => void = console.log): Transport {
   return {

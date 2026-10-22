@@ -1,9 +1,10 @@
 import { Hono } from "hono";
 import { secureHeaders } from "hono/secure-headers";
 import { handleQueue } from "./queue.ts";
-import { warmConsumers } from "./warm.ts";
+import { warmConsumers, warmSes } from "./warm.ts";
 
 warmConsumers();
+void warmSes();
 
 const app = new Hono<{ Bindings: Env }>();
 app.use(secureHeaders());

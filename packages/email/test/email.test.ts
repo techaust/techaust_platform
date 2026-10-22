@@ -8,6 +8,7 @@ import {
   quoteDisplayName,
   renderEmail,
   sesTransport,
+  warmSesSigning,
 } from "../src/index.ts";
 
 const input = {
@@ -195,5 +196,26 @@ describe("SES transport", () => {
     expect(r.kind).toBe("permanent");
     expect(spy).not.toHaveBeenCalled();
     spy.mockRestore();
+  });
+});
+
+describe("SES signing warm-up (CPU tuning)", () => {
+  it("signs with made-up credentials, sends nothing and leaves the shared key map alone", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const sign = vi.spyOn(crypto.subtle, "sign");
+    try {
+      expect(await warmSesSigning()).toBe(true);
+      expect(sign).toHaveBeenCalled();
+      expect(fetchSpy).not.toHaveBeenCalled();
+      // a real transport still derives its own key afterwards (4 HMACs + the signature)
+      sign.mockClear();
+      fetchSpy.mockResolvedValue(new Response(JSON.stringify({ MessageId: "m" }), { status: 200 }));
+      const own = { ...cfg, secretAccessKey: `secret-after-warm-${crypto.randomUUID()}` };
+      expect((await sesTransport(own).send(input)).kind).toBe("sent");
+      expect(sign.mock.calls.length).toBe(5);
+    } finally {
+      fetchSpy.mockRestore();
+      sign.mockRestore();
+    }
   });
 });
