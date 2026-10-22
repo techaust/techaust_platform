@@ -28,6 +28,8 @@
 - **Outcomes, then method.** "Your team stops retyping invoices into Tally" comes before "we use document AI".
 - **India + global:** INR in the lakh format (₹3,00,000) for India, USD for international. Times in IST, with the reader's local time where it helps.
 - **English (India/UK spelling):** organisation, optimise, colour, programme (but "program" for software).
+- **"and", never "&"** in website text (owner, 2026-10-22: Archivo's ampersand reads like a reversed "3" at menu sizes). URLs and code keep "&". The web build fails on "&" in page text (`scripts/web-dist-checks.mjs`).
+- **Currency switches use codes:** "INR" / "USD", never "$" alone (owner, 2026-10-22: "$" is also AUD, CAD, SGD). Prices keep their symbols ("₹3,00,000", "$12,000").
 
 ### 1.2 Honesty rules (audit C-1, C-2, H-3; [08-B §14](08-research-appendix/B-dpdp-legal.md))
 1. No metric without evidence on file (the claims register, §1.4).
@@ -65,15 +67,15 @@
 ### 2.1 Header
 - **Nav:** Services ▾ · Industries ▾ · Pricing · Work · About · Contact
 - **Services menu** (grouped):
-  - **Advise:** Discovery Sprint · App Rescue & Audit · Fractional CTO
-  - **Build:** Custom Web Apps & Portals · MVP & SaaS Development · Mobile Apps
-  - **Automate:** AI Document Automation · Workflow Automation & AI Agents · WhatsApp Automation · AI Knowledge Assistants · AI Features for Your Software
+  - **Advise:** Discovery Sprint · App Rescue and Audit · Fractional CTO
+  - **Build:** Custom Web Apps and Portals · MVP and SaaS Development · Mobile Apps
+  - **Automate:** AI Document Automation · Workflow Automation and AI Agents · WhatsApp Automation · AI Knowledge Assistants · AI Features for Your Software
   - **Connect:** Business Systems Integration
   - **Run:** Care Plans · Dev Subscription
   - Footer link of the menu: "All services →"
-- **Industries menu:** Finance, Accounting & Legal · Retail, E-commerce & Logistics · SaaS & Startups
+- **Industries menu:** Finance, Accounting and Legal · Retail, E-commerce and Logistics · SaaS and Startups
 - **Header CTA:** "Book a Discovery Sprint"
-- **Toggles:** "₹ / $" (accessible name: "Show prices in"), theme (accessible name: "Theme: system/light/dark")
+- **Currency:** "INR / USD" (accessible name: "Show prices in"; codes, never "$" alone), in the footer and the phone menu, and beside prices: "Prices in INR · Show in USD" (owner, 2026-10-22: not in the header; the default follows the visitor's country). **Theme toggle** (accessible name: "Theme: system/light/dark")
 
 ### 2.2 Footer
 - **Brand line:** "TecHaust Technologies is a senior software and AI automation studio in India. We build the software your business runs on, and automate the paperwork around it."
@@ -84,7 +86,7 @@
   - **Help:** Contact · Get a quote · Security · Cookie settings
 - **Contact block:** contact@techaust.com · WhatsApp {{whatsapp}} (Mon–Sat, 10:00–19:00 IST) · Balurghat, West Bengal, India
 - **Social:** LinkedIn (company) 🟧 OWNER URL · Founder on LinkedIn 🟧 OWNER URL
-- **Legal row:** © {{year}} TecHaust Technologies · Privacy · Terms · Refunds & cancellations · Delivery policy · Cookies · Accessibility
+- **Legal row:** © {{year}} TecHaust Technologies · Privacy · Terms · Refunds and cancellations · Delivery policy · Cookies · Accessibility
 
 ### 2.3 Standard CTA labels (use exactly these; audit M-9)
 
@@ -113,7 +115,7 @@
 **Meta description:** "Senior engineers who build custom software and automate back-office paperwork: Tally, Zoho, GST, WhatsApp. Fixed prices, India and international." (145)
 
 **Hero**
-- Eyebrow: "Software & AI automation studio · India"
+- Eyebrow: "Software and AI automation studio · India"
 - **H1:** "Build it right. Automate the rest."
 - Lede: "We're a small senior team that builds the custom software your business runs on, and automates the paperwork around it: invoices into Tally, orders from WhatsApp, reports that write themselves. Fixed prices, written scope, and support after launch."
 - CTAs: **Book a Discovery Sprint** · See pricing
@@ -127,11 +129,11 @@
 
 | Card | One-liner |
 |---|---|
-| Custom Web Apps & Portals | "Internal tools, client and dealer portals, and the Excel sheet your business secretly runs on, rebuilt as a proper web app." |
+| Custom Web Apps and Portals | "Internal tools, client and dealer portals, and the Excel sheet your business secretly runs on, rebuilt as a proper web app." |
 | AI Document Automation | "Invoices, purchase orders and contracts read, checked and posted to Tally, Zoho, QuickBooks or Xero, with a person reviewing exceptions." |
-| Workflow Automation & AI Agents | "Hand off the repetitive steps between email, sheets, CRM and accounting, with monitoring so nothing fails silently." |
+| Workflow Automation and AI Agents | "Hand off the repetitive steps between email, sheets, CRM and accounting, with monitoring so nothing fails silently." |
 | Business Systems Integration | "Tally ↔ Zoho, GST e-invoicing and e-way bills, Shopify, payments: connected, monitored and documented." |
-| MVP & SaaS Development | "A production-grade first version in 6–10 weeks, with staging from day one and the code handed over to you." |
+| MVP and SaaS Development | "A production-grade first version in 6–10 weeks, with staging from day one and the code handed over to you." |
 | Discovery Sprint | "Not sure where to start? In 1–2 weeks we map the work and give you a costed plan and a fixed quote." |
 
 Link: "All services →"
@@ -175,7 +177,7 @@ Link: "How we work →"
 
 ## 4. Service pages
 
-Every page follows the template in [04 §3.2](04-prd.md): hero → problem → what you get → how it works → pricing & engagement → tech → proof → FAQs → related → CTA. Below is the copy per page. "Proof" follows WEB-SVC-03 (a case study if available, otherwise a sample, otherwise omitted).
+Every page follows the template in [04 §3.2](04-prd.md): hero → problem → what you get → how it works → pricing and engagement → tech → proof → FAQs → related → CTA. Below is the copy per page. "Proof" follows WEB-SVC-03 (a case study if available, otherwise a sample, otherwise omitted).
 
 ### 4.1 Discovery Sprint (S1) · `/services/discovery-sprint`
 - **Meta:** "Discovery Sprint: a fixed price before you build | TecHaust" · "A 1–2 week paid sprint: workflow map, ROI-ranked roadmap or product blueprint, and a fixed quote. Fee credited to your build."
@@ -195,7 +197,7 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
   - "Do you sign NDAs?" → "Yes, before you share any data."
 - **CTA:** Book a Discovery Sprint
 
-### 4.2 Custom Web Apps & Business Portals (S5) · `/services/custom-web-apps`
+### 4.2 Custom Web Apps and Business Portals (S5) · `/services/custom-web-apps`
 - **Meta:** "Custom web apps and business portals | TecHaust" · "Internal tools, client and dealer portals, and Excel or Access processes rebuilt as secure web apps. Fixed price, from {{price-plain:S5}}."
 - **H1:** "The software your business actually runs on, built properly."
 - **Who it's for:** operations, finance and sales teams outgrowing spreadsheets and email threads; companies replacing per-seat SaaS that doesn't fit.
@@ -208,7 +210,7 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 - **FAQs:** "Can it work on phones?" (yes, responsive; native apps via S7) · "Where is it hosted?" (your cloud account or ours on a care plan; India regions available) · "Can you take over an existing app?" (yes, via App Rescue) · "Who owns it?" (you, on full payment).
 - **CTA:** Get a quote
 
-### 4.3 MVP & SaaS Product Development (S6) · `/services/mvp-saas-development`
+### 4.3 MVP and SaaS Product Development (S6) · `/services/mvp-saas-development`
 - **Meta:** "MVP and SaaS development with a senior team | TecHaust" · "A production-grade MVP in 6–10 weeks: design, web app, auth, payments, admin and analytics. Staging from day one; IP transferred on payment."
 - **H1:** "A first version you won't have to throw away."
 - **Who it's for:** seed and pre-seed founders, and innovation teams inside larger companies.
@@ -246,7 +248,7 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 - **FAQs:** "Does our data leave India?" ("It can stay in India-region services where needed; we document every system that touches it.") · "Which AI models do you use?" ("Chosen per project for accuracy, cost and data-handling terms; we never let providers train on your data where an opt-out exists.") · "What about handwritten or poor scans?" · "Do you work with Tally Prime?" ("Yes, via Tally's XML/ODBC interfaces or connectors.") 🟧 OWNER confirms
 - **CTA:** Start a pilot
 
-### 4.6 Workflow Automation & AI Agents (S10) · `/services/workflow-automation`
+### 4.6 Workflow Automation and AI Agents (S10) · `/services/workflow-automation`
 - **Meta:** "Workflow automation and AI agents | TecHaust" · "Automations across email, sheets, CRM and accounting with n8n, Make or custom code, monitored and documented. From {{price-plain:S10}} per workflow."
 - **H1:** "Hand off the repetitive work, without losing sight of it."
 - **Problem:** "Copying leads from email to the CRM, chasing payments, building the Monday report: small jobs that eat hours, and break quietly when someone changes a column."
@@ -287,12 +289,12 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 - **H1:** "Make your systems talk to each other, reliably."
 - **Problem:** "Sales are in Shopify, accounts in Tally, invoices in Zoho, and someone re-enters everything at month end. Every copy is a chance for a mistake."
 - **What you get:** connectors (Tally ↔ Zoho, GST e-invoicing and e-way bills via a GST Suvidha Provider, Shopify ↔ ERP, CRM ↔ accounting, QuickBooks, Xero, HubSpot, Stripe) · sync monitoring and error alerts · documentation · a care plan.
-- **Section "Payments & billing" (S15):** "Razorpay, Cashfree or Stripe; UPI AutoPay and subscriptions; payment links, webhooks and reconciliation, from {{price:S15}}."
+- **Section "Payments and billing" (S15):** "Razorpay, Cashfree or Stripe; UPI AutoPay and subscriptions; payment links, webhooks and reconciliation, from {{price:S15}}."
 - **Pricing:** {{price:S14}} per connector.
 - **FAQs:** "Do you need our Tally licence?" · "Is GST e-invoicing mandatory for us?" ("It depends on your turnover; your CA confirms it. We build the integration either way.") · "What if Tally is on a local PC?"
 - **CTA:** Get a quote
 
-### 4.11 App Rescue & Production-Readiness Audit (S2) · `/services/app-rescue`
+### 4.11 App Rescue and Production-Readiness Audit (S2) · `/services/app-rescue`
 - **Meta:** "App rescue and production-readiness audit | TecHaust" · "A senior review of apps built fast (AI-generated, freelancer or legacy), then a fixed-price hardening plan. Audit from {{price-plain:S2}}."
 - **H1:** "Your app works in the demo. Let's make it work in production."
 - **Problem:** "Apps built quickly, by AI tools, freelancers or a past team, often hide the same problems: weak security, no tests, fragile deployments, and nobody who understands all of it."
@@ -365,7 +367,7 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 ### 5.2 Industries
 **Hub (`/industries`).** **H1:** "Industries we know well". Lede: "We work across sectors, but these three are where our experience runs deepest."
 
-**Finance, Accounting & Legal (`/industries/finance-accounting-legal`)**
+**Finance, Accounting and Legal (`/industries/finance-accounting-legal`)**
 - **Meta:** "Automation for CA firms, finance and legal teams | TecHaust" · "Invoice-to-Tally automation, GSTR-2B reconciliation, contract extraction and client portals for finance, accounting and legal teams."
 - **H1:** "Less data entry. More time for the work clients pay you for."
 - **Use cases:**
@@ -377,13 +379,13 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 - **Related:** S9, S14, S10, S12, S5
 - **FAQ:** "Do you understand GST workflows?" → "We build software for them every day; your CA stays in charge of tax decisions." · "Is client data safe?" → "Access control, audit logs, encryption, and documented data handling. We'll walk your team through it."
 
-**Retail, E-commerce & Logistics (`/industries/retail-ecommerce-logistics`)**
+**Retail, E-commerce and Logistics (`/industries/retail-ecommerce-logistics`)**
 - **Meta:** "Automation for sellers, distributors, logistics | TecHaust" · "WhatsApp commerce, Shopify-to-ERP sync, delivery-proof and freight-invoice extraction, and dealer ordering portals."
 - **H1:** "Orders, stock and paperwork that keep up with your sales."
 - **Use cases:** WhatsApp ordering and payment reminders · Shopify ↔ Tally/Zoho sync · delivery-proof and freight-invoice extraction · dealer and distributor ordering portals · COD confirmation and returns flows
 - **Related:** S11, S14, S9, S5
 
-**SaaS & Startups (`/industries/saas-startups`)**
+**SaaS and Startups (`/industries/saas-startups`)**
 - **Meta:** "Product engineering and AI for SaaS and founders | TecHaust" · "Production-grade MVPs, AI features, MCP servers, a dev subscription and fractional CTO support for startups and SaaS companies."
 - **H1:** "A senior product team when you need one, without hiring one."
 - **Use cases:** MVP builds · AI features and MCP servers · rescuing a fast-built prototype · steady capacity via the dev subscription · technical leadership via the fractional CTO

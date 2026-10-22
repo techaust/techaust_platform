@@ -1,0 +1,88 @@
+---
+// CurrencyNote ⚡ (WEB-G-06): one quiet line beside a price block, "Prices in INR · Show in USD", the second part a
+// real button that switches (the wording flips for USD). Codes, never "$" alone (owner, 2026-10-22). Both wordings
+// are in the HTML and CSS shows the one for <html data-currency>, which the head script sets before the first paint,
+// so a stored "USD" is drawn at once. State, storage and /api/geo: scripts/currency.ts (shared with CurrencyToggle).
+// Hidden without JavaScript, where every price shows in both currencies.
+import { draft } from "../content/shell";
+
+interface Props {
+  class?: string;
+}
+
+const { class: cls } = Astro.props;
+const inr = draft.inrCode;
+const usd = draft.usdCode;
+---
+
+<p class:list={["cnote", "needs-js", cls]} data-currency-note>
+  <span class="cnote__state">
+    {draft.pricesIn}{" "}<span class="cnote__code" data-cn="inr">{inr}</span><span class="cnote__code" data-cn="usd">{usd}</span>
+  </span>
+  <span class="cnote__sep" aria-hidden="true">·</span>
+  <button type="button" class="cnote__switch" data-currency-switch>
+    <span data-cn="inr">{draft.showIn} {usd}</span><span data-cn="usd">{draft.showIn} {inr}</span>
+  </button>
+  <span
+    class="visually-hidden"
+    role="status"
+    data-currency-status
+    data-inr={`${draft.pricesIn} ${inr}`}
+    data-usd={`${draft.pricesIn} ${usd}`}
+  ></span>
+</p>
+
+<style>
+  .cnote {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: var(--space-2);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+    color: var(--color-text-muted);
+  }
+
+  .cnote__code {
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--color-text);
+  }
+
+  .cnote__switch {
+    display: inline-flex;
+    align-items: center;
+    min-block-size: var(--target-min);
+    /* A wider target than the words; pulled back so the text sits where a plain link would. */
+    padding-inline: var(--space-2);
+    margin-inline: 0 calc(-1 * var(--space-2)); /* not on the left: the focus ring would cover the separator */
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    font: inherit;
+    color: var(--color-link);
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.22em;
+    cursor: pointer;
+  }
+
+  .cnote__switch:hover {
+    color: var(--color-link-hover);
+  }
+
+  .cnote__switch:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+
+  /* One wording per state, from the head script's attribute. */
+  :global(:root[data-currency="inr"]) .cnote [data-cn="usd"],
+  :global(:root[data-currency="usd"]) .cnote [data-cn="inr"] {
+    display: none;
+  }
+</style>
+
+<script>
+  import "../scripts/currency";
+</script>

@@ -66,7 +66,7 @@ const og = new URL(ogImage ?? ogDefault, Astro.site).href;
     <link rel="preload" href={archivoLatin} as="font" type="font/woff2" crossorigin />
     <meta name="color-scheme" content="light dark" />
     {/* First paint in the right theme and currency (< 1 KB; hashed in the CSP, WEB-G-12). A stored choice (ta_currency)
-        wins over the cached /api/geo answer (ta_geo, 30 days, set by the CurrencyToggle); else ₹. */}
+        wins over the cached /api/geo answer (ta_geo, 30 days, set by scripts/currency.ts); else INR. */}
     <script is:inline>
       (function (d) {
         d.classList.add("js");
