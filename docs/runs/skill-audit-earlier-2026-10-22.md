@@ -99,3 +99,21 @@ Branch `fix/skill-audit-earlier` (this file is its first commit), own worktree. 
 - Migrations 0007 and 0008 will first run on staging at the next merge deploy.
 
 **Open questions:** (1) Keep the darker `stone-500`, or meet 3:1 on `fill-subtle` another way? (2) Which name should docs/05's API section use for the post-condition when the issue route is built (M3/M5)? I called it `issue_result`.
+
+## Analyst check, 2026-10-22: GO WITH CHANGES
+Migrations 0007 and 0008 correct and safe; "drafts only" matches the owner's 2026-10-07 decision and ADM-INV-02/-04; the post-condition aborts the whole batch (counter included); no race, no double number (unique index), no unsafe window. Required: (1) a drift test comparing the installed `issue_guard_check` / `issue_result_check` SQL with `issueGuardStatements()`; (2) the merge with PR #36 (keep both `check` guards in `package.json` and both CI steps; update CLAUDE.md's `pnpm check` comment); (3) recommended: `migration-guard.mjs` strips `--` comments before splitting and matches `DROP TABLE` / `CREATE TABLE` anywhere in a statement (tests: two statements on one line; a trailing comment before a DROP). Note: require `d.number >= 1` in the post-condition.
+
+## Review, 2026-10-22: APPROVE
+Reviewer (Opus 5.5 high; code-review, security-review, cloudflare:wrangler, frontend-design via the Skill tool, checklists only): no critical or high. `pnpm build`, `pnpm check`, `pnpm test` (web 41 with none skipped), `pnpm db:generate` green; tokens recomputed and matching; brand PNG/ICO pixels and PDF content identical; gitleaks digest matches GitHub's asset digest.
+Medium/low findings, all to fix now (owner: 10/10): M1 the no-floats scanner drops `${…}` expressions in template literals (and the bigint exemption covers the whole line); M2 heavy.sh records only the wrapper PID, so a hard-killed wrapper with a live child lets a second heavy command start; L3 heavy.sh edge races and no absolute ceiling; L4 the print-PDF source hash misses `outline.ts`, `compose.ts` and the font bytes; L6 `bench-auth.yml` exposes secrets job-wide (move to the steps). L5 (pixel hash beside the source tag) accepted as is: it follows the wallpaper pattern.
+
+## Lead decisions (2026-10-22)
+- The light `stone-500` (border-control) `#7A8B84` → `#75867F` and `success` `#47730F` → `#44700E` changes are accepted: required by WCAG 1.4.11 / 1.4.3 on `fill-subtle` (hard rule), 3–5/255 per channel, not visible; the owner is told in the end-of-day report.
+- The builder's GSTIN-prefix = state-code refine is accepted (VERIFY WITH CA/LEGAL stays on the tax rule itself).
+- The post-condition view name `issue_result` is kept; docs/05 uses it.
+
+## Round 2 brief (builder, Sonnet medium; then a reviewer re-check)
+1. Merge `origin/main` (now includes PR #36) into this branch; resolve `package.json` `check` (both guards: `check-worker-config.mjs` and `check-migrations.mjs`) and `.github/workflows/ci.yml` (both steps); update CLAUDE.md's `pnpm check` comment to name both guards.
+2. Analyst (1): installed-SQL drift test for `issue_guard_check` and `issue_result_check`. Analyst (3): migration guard comment stripping and unanchored matching, with the two tests. Analyst note: `d.number >= 1` in `issue_result_check` — **this edits 0007, which has never been applied to staging** (only local DBs); allowed before the merge, but regenerate it with `scripts/write-triggers.ts issue_guard` (not by hand) and say so; add a test.
+3. Reviewer M1: scan `${…}` expressions inside template literals; bigint exemption only for divisions with bigint operands; tests for both examples. M2 + L3: heavy.sh runs the command in the background, writes the child PID to `$LOCK/child`, treats the lock as stale only when both PIDs are dead, re-checks age under the reaper, keeps a 6 h absolute ceiling; extend `tools/heavy.selftest.sh`. L4: add `outline.ts`, `compose.ts` and the font bytes to `printSourceHash`, rebuild with `build:brand` (PDF content must stay identical apart from `/Keywords`). L6: move `bench-auth.yml` secrets to the steps that use them.
+4. Skills first (Skill tool): cloudflare:wrangler, code-review and security-review (checklists only). Final `pnpm check`, `pnpm build`, `pnpm test`, `pnpm db:generate` (no diff), one whole-repo lint; append "Builder report: round 2"; commit; no push.
