@@ -98,11 +98,12 @@ export function toDecimalString(a: Money): string {
 const MINUS = "−"; // the typographic minus, in our fonts (docs/06): −₹1,000.00
 
 const formatters = new Map<string, Intl.NumberFormat>();
-function formatter(currency: Currency, symbol: boolean): Intl.NumberFormat {
-  const key = `${currency}:${symbol}`;
+function formatter(currency: Currency, symbol: boolean, whole: boolean): Intl.NumberFormat {
+  const key = `${currency}:${symbol}:${whole}`;
   let f = formatters.get(key);
   if (!f) {
-    const { locale, minorDigits } = CURRENCIES[currency];
+    const { locale, minorDigits: digits } = CURRENCIES[currency];
+    const minorDigits = whole ? 0 : digits;
     f = new Intl.NumberFormat(locale, {
       ...(symbol ? { style: "currency", currency } : { style: "decimal" }),
       minimumFractionDigits: minorDigits,
@@ -116,11 +117,15 @@ function formatter(currency: Currency, symbol: boolean): Intl.NumberFormat {
 /**
  * Format for display: INR in the Indian system (₹1,23,456.50), USD in the international one ($123,456.50).
  * Negative amounts use a typographic minus (−₹1,000.00). `symbol: false` drops the currency symbol.
+ * `wholeUnits: true` drops a zero minor part (₹3,00,000, not ₹3,00,000.00; ₹99.50 keeps its paise): for the public
+ * price lists, where prices are whole rupees and dollars.
  */
-export function formatMoney(a: Money, options: { symbol?: boolean } = {}): string {
+export function formatMoney(a: Money, options: { symbol?: boolean; wholeUnits?: boolean } = {}): string {
   // A decimal string is formatted exactly by Intl (no float conversion).
-  const out = formatter(a.currency, options.symbol ?? true).format(
-    toDecimalString(a) as Intl.StringNumericLiteral,
+  const decimal = toDecimalString(a);
+  const whole = options.wholeUnits === true && decimal.endsWith(".00");
+  const out = formatter(a.currency, options.symbol ?? true, whole).format(
+    (whole ? decimal.slice(0, -3) : decimal) as Intl.StringNumericLiteral,
   );
   return out.replace("-", MINUS);
 }
