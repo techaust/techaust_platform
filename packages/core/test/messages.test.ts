@@ -44,7 +44,9 @@ describe("header values [FRM-03]", () => {
   it("removes CR, LF and other control characters", () => {
     expect(stripCrLf("Asha\r\nBcc: evil@example.com")).toBe("Asha Bcc: evil@example.com");
     expect(stripCrLf("a\u0000b c")).toBe("a b c");
-    fc.assert(fc.property(fc.string(), (s) => !/[\r\n\u0000-\u001f]/.test(stripCrLf(s))));
+    fc.assert(
+      fc.property(fc.string(), (s) => [...stripCrLf(s)].every((ch) => (ch.codePointAt(0) as number) > 0x1f)),
+    );
   });
 });
 
