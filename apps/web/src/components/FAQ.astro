@@ -51,6 +51,11 @@ const { items, open = [], class: cls } = Astro.props;
     cursor: pointer;
   }
 
+  .faq__q:focus-visible {
+    outline-offset: var(--space-1);
+    border-radius: var(--radius-sm);
+  }
+
   .faq__q::-webkit-details-marker {
     display: none;
   }
