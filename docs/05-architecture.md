@@ -278,7 +278,7 @@ techaust_platform/
 
 | Table | Key columns |
 |---|---|
-| `email_log` | id, to_email, template, entity_type, entity_id, ses_message_id, status (`queued`/`sent`/`delivered`/`bounced`/`complained`/`failed`), error, created_at, updated_at · idx(entity_type, entity_id) |
+| `email_log` | id, to_email, template, entity_type, entity_id, ses_message_id, status (`queued`/`sending`/`sent`/`skipped`/`delivered`/`bounced`/`complained`/`failed`; `sending` is the one-delivery claim, `skipped` a suppressed or, on staging, non-allowed recipient), error, created_at, updated_at · idx(entity_type, entity_id) |
 | `email_suppressions` | email, reason, at |
 | `audit_log` | id, at, actor_type (`staff`/`contact`/`system`/`webhook`), actor_id, role, action, entity_type, entity_id, summary (JSON diff, sensitive fields masked), ip, user_agent, request_id · **triggers block UPDATE/DELETE** |
 | `access_log` | id, at, realm, actor_id, method, route, status, ip, user_agent, request_id (security log, 13-month retention) |

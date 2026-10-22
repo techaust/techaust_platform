@@ -35,7 +35,8 @@ const NOT_STATED = "not stated";
 const serviceName = (code: string | undefined): string => {
   if (!code) return GENERAL;
   if (code === "not-sure") return NOT_SURE;
-  return CATALOGUE.find((s) => s.code === code)?.name ?? code;
+  // The seed's names use "&"; text the visitor reads says "and" (docs/07 §1).
+  return (CATALOGUE.find((s) => s.code === code)?.name ?? code).replaceAll(" & ", " and ");
 };
 
 /** `delete_after` = submission time plus the leads retention (settings default, in calendar months). */

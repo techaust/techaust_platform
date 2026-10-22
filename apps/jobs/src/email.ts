@@ -14,13 +14,13 @@ import {
   sesTransport,
   type Transport,
 } from "@techaust/email";
-import { alertData } from "./leads.ts";
+import { alertData, leadId } from "./leads.ts";
 import { logEvent } from "./log.ts";
 
 /** A `sending` claim older than this is taken as abandoned (the isolate died mid-send) and can be claimed again. */
 export const CLAIM_TIMEOUT_MS = 5 * 60_000;
 
-export type EmailResult = "sent" | "skipped" | "failed" | "duplicate" | "retry" | "invalid";
+export type EmailResult = "sent" | "skipped" | "failed" | "duplicate" | "busy" | "retry" | "invalid";
 
 /** The transport named by EMAIL_TRANSPORT: `ses`, or `log` (the default: nothing leaves the machine). */
 export function transportFor(env: Env): Transport {
@@ -91,10 +91,38 @@ export async function processEmail(
     .bind(id, now, now - CLAIM_TIMEOUT_MS)
     .run();
   if (claim.meta.changes !== 1) {
+    // Only an email that has ended (sent, skipped or failed) is a duplicate. A row still `sending` is another delivery's
+    // claim, or one abandoned by a delivery that threw: the queue retries after the claim has gone stale
+    // (queue.ts), so the email is sent once either way and never silently dropped.
+    const row = await env.DB.prepare("SELECT status FROM email_log WHERE id = ?1")
+      .bind(id)
+      .first<{ status: string }>();
+    if (row?.status === "sending") {
+      logEvent("email.busy", { template: m.template });
+      return "busy";
+    }
     logEvent("email.duplicate", { template: m.template });
     return "duplicate";
   }
 
+  try {
+    return await sendClaimed(env, m, to, id, transport, now);
+  } catch (e) {
+    // A database or network error before the email was handed to SES: give the claim back so the redelivery can send
+    // at once (best effort; if this write fails too, the claim goes stale after 5 minutes and is taken again).
+    await setStatus(env.DB, id, "queued", { error: "retry: error" }, now).catch(() => undefined);
+    throw e;
+  }
+}
+
+async function sendClaimed(
+  env: Env,
+  m: EmailMessage,
+  to: string,
+  id: string,
+  transport: Transport,
+  now: number,
+): Promise<EmailResult> {
   const suppressed = await env.DB.prepare("SELECT 1 AS x FROM email_suppressions WHERE email = ?1")
     .bind(to)
     .first();
@@ -169,13 +197,22 @@ export async function processDeadLetter(
   // recipient as the normal `lead.alert`, with the queue in the subject. The log line carries the reference only.
   const lead = queue.endsWith("-leads-dlq") ? leadMessage.safeParse(body) : undefined;
   if (lead?.success) {
-    ref = lead.data.ref;
+    // After a reference clash the lead is stored under a new reference: name the stored one when it exists.
+    const stored = await env.DB.prepare("SELECT ref FROM leads WHERE id = ?1")
+      .bind(leadId(lead.data))
+      .first<{ ref: string }>()
+      .catch(() => null);
+    ref = stored?.ref ?? lead.data.ref;
     rendered = renderEmail("lead.alert", { ...alertData(env, lead.data, ref), failed_queue: queue }, opts);
   } else if (queue.endsWith("-email-dlq")) {
     // A failed email: which template and which lead (its reference), never the address or the text.
     const email = emailMessage.safeParse(body);
     if (email.success) {
       ref = email.data.entity.type === "lead" ? email.data.entity.id : undefined;
+      // The email's log row ends as failed, so it never reads as still pending (best effort).
+      await setStatus(env.DB, emailLogId(email.data), "failed", { error: "dead-lettered" }, Date.now()).catch(
+        () => undefined,
+      );
       rendered = dlqAlert({ queue, admin_url: env.ADMIN_URL, template: email.data.template, ref }, opts);
     }
   }

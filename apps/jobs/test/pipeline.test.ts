@@ -173,7 +173,7 @@ describe("lead pipeline [ADM-LEAD-01, FRM-05, FRM-06]", () => {
     });
     expect(JSON.parse(lead?.tools as string)).toEqual(["tally", "excel-sheets"]);
     expect(JSON.parse(lead?.consent as string).purposes).toEqual(["respond_to_enquiry"]);
-    expect(queued[1]?.data.service_name).toBe("Custom Web Apps & Business Portals");
+    expect(queued[1]?.data.service_name).toBe("Custom Web Apps and Business Portals");
   });
 
   it("the alert shows words, not codes: budget band, timeline, tools, country and currency", async () => {
@@ -430,8 +430,50 @@ describe("email consumer [FRM-07]", () => {
     const m = msg("a@example.com", "L-IIIII");
     expect(await processEmail(flaky, m, transport, T0)).toBe("sent");
     expect(sent).toHaveLength(1);
-    // the queue redelivers the same message: the claim is held, so nothing is sent again
-    expect(await processEmail(makeEnv(), m, transport, T0 + 1_000)).toBe("duplicate");
+    // a redelivery of the same message finds the claim still held: "busy" (retried later), nothing is sent now
+    expect(await processEmail(makeEnv(), m, transport, T0 + 1_000)).toBe("busy");
+    expect(sent).toHaveLength(1);
+  });
+
+  it("a database error after the claim gives the claim back, so the redelivery sends exactly once", async () => {
+    const { sent, transport } = recorder();
+    let fail = true;
+    const flaky = makeEnv({
+      DB: {
+        prepare: (sql: string) => {
+          if (fail && sql.includes("FROM email_suppressions")) {
+            fail = false;
+            throw new Error("D1 blip");
+          }
+          return realEnv.DB.prepare(sql);
+        },
+      },
+    });
+    const m = msg("e@example.com", "L-MMMMM");
+    await expect(processEmail(flaky, m, transport, T0)).rejects.toThrow("D1 blip");
+    expect(sent).toHaveLength(0);
+    expect(await processEmail(makeEnv(), m, transport, T0 + 20_000)).toBe("sent");
+    expect(await processEmail(makeEnv(), m, transport, T0 + 40_000)).toBe("duplicate");
+    expect(sent).toHaveLength(1);
+  });
+
+  it("a claim left behind by a delivery that threw is busy until stale, then sent once (never acked unsent)", async () => {
+    const { sent, transport } = recorder();
+    const m = msg("f@example.com", "L-NNNNN");
+    await realEnv.DB.prepare(
+      `INSERT INTO email_log (id, to_email, template, entity_type, entity_id, status, created_at, updated_at)
+       VALUES (?1, 'f@example.com', 'lead.acknowledgement', 'lead', 'L-NNNNN', 'sending', ?2, ?2)`,
+    )
+      .bind(emailLogId(m), Date.now()) // handleQueue uses the real clock: a claim made just now
+      .run();
+    const busy = { id: "1", timestamp: new Date(), body: m, attempts: 2, ack: vi.fn(), retry: vi.fn() };
+    await handleQueue(
+      { queue: "techaust-local-email", messages: [busy] } as unknown as MessageBatch<unknown>,
+      makeEnv(),
+    );
+    expect(busy.ack).not.toHaveBeenCalled();
+    expect(busy.retry).toHaveBeenCalledWith({ delaySeconds: CLAIM_TIMEOUT_MS / 1_000 + 30 });
+    expect(await processEmail(makeEnv(), m, transport, Date.now() + CLAIM_TIMEOUT_MS + 1)).toBe("sent");
     expect(sent).toHaveLength(1);
   });
 
@@ -444,7 +486,8 @@ describe("email consumer [FRM-07]", () => {
       processEmail(makeEnv(), m, transport, T0),
     ]);
     expect(results.filter((r) => r === "sent")).toHaveLength(1);
-    expect(results.filter((r) => r === "duplicate")).toHaveLength(2);
+    // the others find the claim held ("busy", retried later) or the email already sent ("duplicate")
+    expect(results.filter((r) => r === "busy" || r === "duplicate")).toHaveLength(2);
     expect(sent).toHaveLength(1);
   });
 
@@ -457,7 +500,7 @@ describe("email consumer [FRM-07]", () => {
     )
       .bind(emailLogId(m), T0)
       .run();
-    expect(await processEmail(makeEnv(), m, transport, T0 + CLAIM_TIMEOUT_MS - 1)).toBe("duplicate");
+    expect(await processEmail(makeEnv(), m, transport, T0 + CLAIM_TIMEOUT_MS - 1)).toBe("busy");
     expect(await processEmail(makeEnv(), m, transport, T0 + CLAIM_TIMEOUT_MS + 1)).toBe("sent");
     expect(sent).toHaveLength(1);
   });
@@ -578,10 +621,21 @@ describe("dead-letter queues [FRM-07]", () => {
       data: {},
       entity: { type: "lead", id: "L-ABCDE" },
     };
+    await realEnv.DB.prepare(
+      `INSERT INTO email_log (id, to_email, template, entity_type, entity_id, status, error, created_at, updated_at)
+       VALUES (?1, 'owner@example.test', 'lead.alert', 'lead', 'L-ABCDE', 'queued', 'retry: 503', ?2, ?2)`,
+    )
+      .bind(emailLogId(body), T0)
+      .run();
     await processDeadLetter(makeEnv(), "techaust-staging-email-dlq", body, transport);
     expect(sent[0]?.subject).toBe("Failed after 5 tries (techaust-staging-email-dlq): L-ABCDE");
     expect(sent[0]?.text).toContain("Email: lead.alert");
     expect(sent[0]?.text).toContain("Lead: L-ABCDE");
+    // its log row ends as failed, never pending
+    const row = await realEnv.DB.prepare("SELECT status, error FROM email_log WHERE id = ?1")
+      .bind(emailLogId(body))
+      .first<{ status: string; error: string }>();
+    expect(row).toEqual({ status: "failed", error: "dead-lettered" });
     quiet.mockRestore();
   });
 

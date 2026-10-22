@@ -1,7 +1,7 @@
 // The queue entry point: routes a batch to its consumer by queue name (`techaust-<env>-leads`, `-leads-dlq`, `-email`,
 // `-email-dlq`). Each message is acknowledged on success and retried when its consumer throws or asks for a retry;
 // after 5 tries the queue moves it to the dead-letter queue (wrangler.jsonc).
-import { processDeadLetter, processEmail } from "./email.ts";
+import { CLAIM_TIMEOUT_MS, processDeadLetter, processEmail } from "./email.ts";
 import { processLead } from "./leads.ts";
 import { logEvent } from "./log.ts";
 
@@ -25,7 +25,11 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
         await processLead(env, message.body);
         message.ack();
       } else if (queue.endsWith("-email")) {
-        if ((await processEmail(env, message.body)) === "retry") message.retry({ delaySeconds: 30 });
+        const result = await processEmail(env, message.body);
+        if (result === "retry") message.retry({ delaySeconds: 30 });
+        // Another claim holds the email: come back once that claim would have gone stale (it counts as a try, so a claim
+        // that never clears still ends in the dead-letter queue and its alert).
+        else if (result === "busy") message.retry({ delaySeconds: CLAIM_TIMEOUT_MS / 1_000 + 30 });
         else message.ack();
       } else {
         logEvent("queue.unknown", { queue });
