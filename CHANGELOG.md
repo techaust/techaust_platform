@@ -2,6 +2,7 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-10-23 [#48](https://github.com/techaust/techaust_platform/pull/48) docs: M2.3 approved by the owner on staging
 - 2026-10-23 [#47](https://github.com/techaust/techaust_platform/pull/47) feat(web): M2.3 other pages (industries, pricing, how we work, AI, about, work, blog, legal, security) [WEB-IND, WEB-PRICING, WEB-WORK, WEB-HOW, WEB-AI, WEB-ABOUT, WEB-BLOG, WEB-LEGAL, WEB-SEC]
 - 2026-10-22 [#46](https://github.com/techaust/techaust_platform/pull/46) docs(m2.3): brief, 07-D draft copy, decisions
 - 2026-10-22 [#45](https://github.com/techaust/techaust_platform/pull/45) docs: end of day 2026-10-22, evening
