@@ -70,7 +70,7 @@ function code(src: string): string {
       out += '""';
       templateText();
     } else if (c === "{" && braces.length > 0) {
-      braces[braces.length - 1]++;
+      braces[braces.length - 1] = (braces[braces.length - 1] ?? 0) + 1;
       out += c;
       i++;
     } else if (c === "}" && braces.length > 0) {
@@ -80,7 +80,7 @@ function code(src: string): string {
         out += " ) ";
         templateText();
       } else {
-        braces[braces.length - 1]--;
+        braces[braces.length - 1] = (braces[braces.length - 1] ?? 1) - 1;
         out += c;
       }
     } else if (
