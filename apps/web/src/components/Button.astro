@@ -1,0 +1,34 @@
+---
+// Button / ButtonLink (docs/06 §5.2): a real <a> for navigation (pass href), a <button> for actions. Variants
+// primary, secondary, ghost and text; sizes md (44 px) and lg (52 px). The arrow is an icon (never "→").
+// Styles: .btn in styles/global.css (shared with the toggles and dialogs).
+import type { HTMLAttributes } from "astro/types";
+import Icon from "./Icon.astro";
+
+type Props = {
+  variant?: "primary" | "secondary" | "ghost" | "text";
+  size?: "md" | "lg";
+  href?: string;
+  block?: boolean;
+  arrow?: boolean;
+  class?: string;
+} & Omit<HTMLAttributes<"button">, "class"> &
+  Omit<HTMLAttributes<"a">, "class">;
+
+const { variant = "primary", size = "md", href, block, arrow, class: cls, ...rest } = Astro.props;
+const classes = ["btn", `btn--${variant}`, size === "lg" && "btn--lg", block && "btn--block", cls];
+---
+
+{
+  href ? (
+    <a href={href} class:list={classes} {...rest}>
+      <slot />
+      {arrow && <Icon name="arrow-right" size={20} />}
+    </a>
+  ) : (
+    <button type="button" class:list={classes} {...rest}>
+      <slot />
+      {arrow && <Icon name="arrow-right" size={20} />}
+    </button>
+  )
+}

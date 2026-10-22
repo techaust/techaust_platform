@@ -1,0 +1,118 @@
+---
+// ThemeToggle ⚡ (docs/06 §5.2, WEB-G-05): one button cycling system → light → dark, with an icon and the
+// accessible name "Theme: system/light/dark" (07 §2.1). The head script (layouts/BaseLayout.astro) applies the saved
+// choice before the first paint; this island only changes it. Hidden without JavaScript (the OS theme applies).
+import { draft, shell } from "../content/shell";
+import Icon from "./Icon.astro";
+
+interface Props {
+  /** Show the word "Theme" beside the icon (the mobile menu). */
+  labelled?: boolean;
+  class?: string;
+}
+
+const { labelled = false, class: cls } = Astro.props;
+---
+
+<button
+  type="button"
+  class:list={["theme-toggle", "needs-js", labelled && "theme-toggle--labelled", cls]}
+  data-theme-toggle
+  data-state="system"
+  aria-label={shell.themeName.system}
+  title={shell.themeName.system}
+>
+  <Icon name="monitor" class="tt-system" />
+  <Icon name="sun" class="tt-light" />
+  <Icon name="moon" class="tt-dark" />
+  {labelled && <span class="tt-text" aria-hidden="true">{draft.themeShort}: <span data-theme-word>system</span></span>}
+</button>
+
+<style>
+  .theme-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    min-width: var(--target-min);
+    min-height: var(--target-min);
+    padding: 0 var(--space-3);
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--color-text);
+    transition: background-color var(--duration-fast) var(--ease-standard);
+  }
+
+  .theme-toggle:not(.theme-toggle--labelled) {
+    padding: 0;
+  }
+
+  .theme-toggle--labelled {
+    border-color: var(--color-border-control);
+  }
+
+  .theme-toggle:hover {
+    background: var(--color-fill-subtle);
+  }
+
+  .theme-toggle :global(.tt-light),
+  .theme-toggle :global(.tt-dark) {
+    display: none;
+  }
+
+  .theme-toggle[data-state="light"] :global(.tt-system),
+  .theme-toggle[data-state="dark"] :global(.tt-system) {
+    display: none;
+  }
+
+  .theme-toggle[data-state="light"] :global(.tt-light),
+  .theme-toggle[data-state="dark"] :global(.tt-dark) {
+    display: block;
+  }
+
+  .tt-text {
+    font-weight: 500;
+  }
+</style>
+
+<script>
+  // Theme: "system" (no stored choice, the OS decides) → "light" → "dark". Stored as ta_theme (07-A §5: necessary).
+  type Theme = "system" | "light" | "dark";
+  const NEXT: Record<Theme, Theme> = { system: "light", light: "dark", dark: "system" };
+  const root = document.documentElement;
+
+  function current(): Theme {
+    const t = root.dataset.theme;
+    return t === "light" || t === "dark" ? t : "system";
+  }
+
+  function render(theme: Theme) {
+    for (const btn of document.querySelectorAll<HTMLButtonElement>("[data-theme-toggle]")) {
+      const name = `Theme: ${theme}`;
+      btn.dataset.state = theme;
+      btn.setAttribute("aria-label", name);
+      btn.title = name;
+      const word = btn.querySelector("[data-theme-word]");
+      if (word) word.textContent = theme;
+    }
+  }
+
+  function apply(theme: Theme) {
+    if (theme === "system") delete root.dataset.theme;
+    else root.dataset.theme = theme;
+    try {
+      if (theme === "system") localStorage.removeItem("ta_theme");
+      else localStorage.setItem("ta_theme", theme);
+    } catch {
+      // Storage blocked: the choice lasts for this page view.
+    }
+    render(theme);
+  }
+
+  render(current());
+  document.addEventListener("click", (event) => {
+    const btn = (event.target as Element | null)?.closest("[data-theme-toggle]");
+    if (btn) apply(NEXT[current()]);
+  });
+</script>

@@ -13,6 +13,8 @@
     "types": "wrangler types"
   },
   "dependencies": {
+    "@techaust/core": "workspace:*",
+    "@techaust/ui": "workspace:*",
     "hono": "4.13.13"
   },
   "devDependencies": {

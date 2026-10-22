@@ -1,0 +1,344 @@
+---
+// SiteFooter (07 §2.2, WEB-G-04): brand line, Services · Industries · Company · Help, the contact block, LinkedIn,
+// the legal row with ©. Never a GSTIN, the proprietor's name or @techaustsocial (WEB-G-04). Ink in both themes, with
+// the mark tone-on-tone bleeding off the corner (docs/06 §4.3): the one large brand moment of the shell.
+// Items whose config value is empty are hidden; preview pages pass `placeholders` to show labelled placeholders.
+import symbolInk from "@techaust/ui/brand/logo-symbol-ink.svg?url";
+import { site } from "../config/site";
+import { draft, shell } from "../content/shell";
+import Icon from "./Icon.astro";
+import Logo from "./Logo.astro";
+import Placeholder from "./Placeholder.astro";
+
+interface Props {
+  placeholders?: boolean;
+}
+
+const { placeholders = false } = Astro.props;
+const f = shell.footer;
+const c = f.columns;
+const year = new Date().getFullYear();
+const wa = site.whatsapp ? `https://wa.me/${site.whatsapp}` : "";
+const columns = [
+  { title: c.services.title, links: c.services.links },
+  { title: c.industries.title, links: shell.industriesMenu },
+  { title: c.company.title, links: c.company.links },
+];
+---
+
+<footer class="site-footer" style={`--brand-mark: url("${symbolInk}")`}>
+  <div class="site-footer__inner">
+    <div class="site-footer__brand">
+      <Logo tone="on-dark" />
+      <p class="site-footer__line">{f.brandLine}</p>
+      <h2 class="visually-hidden">{draft.contactTitle}</h2>
+      <ul role="list" class="site-footer__contact">
+        <li>
+          <a href={`mailto:${site.email}`}>
+            <Icon name="mail" />
+            <span>{site.email}</span>
+          </a>
+        </li>
+        {
+          wa ? (
+            <li>
+              <a href={wa} rel="noopener">
+                <Icon name="message" />
+                <span>
+                  {f.whatsapp} <span class="site-footer__hours">({site.hours})</span>
+                </span>
+              </a>
+            </li>
+          ) : (
+            placeholders && (
+              <li>
+                <Placeholder what="WhatsApp number, shown with the hours (Mon–Sat, 10:00–19:00 IST)" />
+              </li>
+            )
+          )
+        }
+        <li class="site-footer__place">
+          <Icon name="map-pin" />
+          <span>{site.locality}</span>
+        </li>
+      </ul>
+      <ul role="list" class="site-footer__social">
+        {
+          site.linkedinCompany ? (
+            <li>
+              <a href={site.linkedinCompany} rel="noopener">
+                {f.linkedinCompany}
+                <Icon name="arrow-up-right" size={16} />
+              </a>
+            </li>
+          ) : (
+            placeholders && (
+              <li>
+                <Placeholder what="LinkedIn company page URL" />
+              </li>
+            )
+          )
+        }
+        {
+          site.linkedinFounder ? (
+            <li>
+              <a href={site.linkedinFounder} rel="noopener">
+                {f.linkedinFounder}
+                <Icon name="arrow-up-right" size={16} />
+              </a>
+            </li>
+          ) : (
+            placeholders && (
+              <li>
+                <Placeholder what="Founder’s LinkedIn URL" />
+              </li>
+            )
+          )
+        }
+      </ul>
+    </div>
+
+    <nav class="site-footer__nav" aria-label={draft.footerNav}>
+      {
+        columns.map((col) => (
+          <div class="site-footer__col">
+            <h2 class="site-footer__title">{col.title}</h2>
+            <ul role="list">
+              {col.links.map((link) => (
+                <li>
+                  <a href={link.href}>{link.label}</a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))
+      }
+      <div class="site-footer__col">
+        <h2 class="site-footer__title">{c.help.title}</h2>
+        <ul role="list">
+          {
+            c.help.links.map((link) => (
+              <li>
+                <a href={link.href}>{link.label}</a>
+              </li>
+            ))
+          }
+          <li>
+            <a href="/cookies" data-cookie-settings>{c.help.cookieSettings}</a>
+          </li>
+        </ul>
+      </div>
+    </nav>
+
+    <div class="site-footer__legal">
+      <p class="tabular">© {year} {site.name}</p>
+      <nav aria-label={draft.legalNav}>
+        <ul role="list">
+          {
+            f.legal.map((link) => (
+              <li>
+                <a href={link.href}>{link.label}</a>
+              </li>
+            ))
+          }
+        </ul>
+      </nav>
+    </div>
+  </div>
+</footer>
+
+<style>
+  /* The footer is an ink surface in both themes: the semantic tokens are pointed at their on-dark palette values
+     here, so every child keeps using --color-text, --color-link, --color-focus… (contrast in the run file). */
+  .site-footer {
+    --color-text: var(--color-mist);
+    --color-text-muted: var(--color-ink-300);
+    --color-link: var(--color-mist);
+    --color-link-hover: var(--color-verdigris-300);
+    --color-focus: var(--color-verdigris-300);
+    --color-border: var(--color-ink-600);
+    --placeholder-accent: var(--color-text);
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+    margin-block-start: var(--section-y);
+    background: var(--color-ink-900);
+    color: var(--color-text);
+    color-scheme: dark;
+  }
+
+  :global(:root[data-theme="dark"]) .site-footer {
+    background: var(--color-ink-750);
+    border-block-start: 1px solid var(--color-ink-600);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :global(:root:not([data-theme="light"])) .site-footer {
+      background: var(--color-ink-750);
+      border-block-start: 1px solid var(--color-ink-600);
+    }
+  }
+
+  /* The mark, one tone above the footer, bleeding off the bottom-right corner (never redrawn: the generated symbol
+     file is the mask). Only where there is room for it. */
+  @media (min-width: 48rem) {
+    .site-footer::before {
+      content: "";
+      position: absolute;
+      z-index: -1;
+      inset-block-end: calc(-0.18 * var(--mark-size));
+      inset-inline-end: calc(-0.12 * var(--mark-size));
+      --mark-size: min(36rem, 52vw);
+      inline-size: var(--mark-size);
+      aspect-ratio: 1;
+      background: var(--color-ink-700);
+      -webkit-mask:
+        var(--brand-mark) center / contain no-repeat,
+        var(--brand-mark) calc(50% + 1px) center / contain no-repeat;
+      mask:
+        var(--brand-mark) center / contain no-repeat,
+        var(--brand-mark) calc(50% + 1px) center / contain no-repeat;
+      pointer-events: none;
+    }
+  }
+
+  @media (forced-colors: active) {
+    .site-footer::before {
+      display: none;
+    }
+  }
+
+  .site-footer__inner {
+    display: grid;
+    gap: var(--space-12);
+    max-inline-size: var(--container-page);
+    margin-inline: auto;
+    padding: var(--space-16) var(--gutter) var(--space-6);
+  }
+
+  .site-footer__brand {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-6);
+  }
+
+  .site-footer__line {
+    max-inline-size: 38ch;
+    color: var(--color-text-muted);
+    text-wrap: pretty;
+  }
+
+  .site-footer__contact,
+  .site-footer__social {
+    display: grid;
+    gap: var(--space-1);
+  }
+
+  .site-footer__contact a,
+  .site-footer__place,
+  .site-footer__social a {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-block-size: var(--target-min);
+  }
+
+  .site-footer__contact :global(.icon),
+  .site-footer__place :global(.icon) {
+    color: var(--color-verdigris-300);
+  }
+
+  .site-footer__hours {
+    color: var(--color-text-muted);
+  }
+
+  .site-footer__social {
+    margin-block-start: calc(-1 * var(--space-4));
+  }
+
+  .site-footer__social a {
+    gap: var(--space-2);
+  }
+
+  .site-footer__nav {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-10) var(--space-6);
+  }
+
+  .site-footer__title {
+    margin-block-end: var(--space-3);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+    font-weight: 600;
+    color: var(--color-text-muted);
+  }
+
+  .site-footer__col a {
+    display: flex;
+    align-items: center;
+    min-block-size: var(--target-min);
+    text-decoration: none;
+    line-height: var(--text-sm--line-height);
+  }
+
+  .site-footer a:hover {
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+  }
+
+  .site-footer__legal {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding-block-start: var(--space-6);
+    border-block-start: 1px solid var(--color-border);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+    color: var(--color-text-muted);
+  }
+
+  .site-footer__legal ul {
+    display: flex;
+    flex-wrap: wrap;
+    column-gap: var(--space-5);
+  }
+
+  .site-footer__legal a {
+    display: inline-flex;
+    align-items: center;
+    min-block-size: var(--target-min);
+    color: var(--color-text-muted);
+    text-decoration: none;
+  }
+
+  .site-footer__legal a:hover {
+    color: var(--color-link-hover);
+  }
+
+  @media (min-width: 48rem) {
+    .site-footer__nav {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .site-footer__legal {
+      flex-direction: row;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-6);
+    }
+  }
+
+  @media (min-width: 64rem) {
+    .site-footer__inner {
+      grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
+      column-gap: var(--space-16);
+      padding-block-start: var(--space-20);
+    }
+
+    .site-footer__legal {
+      grid-column: 1 / -1;
+    }
+  }
+</style>

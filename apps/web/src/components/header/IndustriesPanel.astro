@@ -1,0 +1,24 @@
+---
+// The Industries menu's content (07 §2.1: three industries). Styles: styles/header.css.
+import { shell } from "../../content/shell";
+import Icon from "../Icon.astro";
+
+interface Props {
+  current?: string | undefined;
+}
+
+const { current } = Astro.props;
+---
+
+<ul role="list" class="ind-menu">
+  {
+    shell.industriesMenu.map((link) => (
+      <li>
+        <a href={link.href} aria-current={current === link.href ? "page" : undefined}>
+          <span>{link.label}</span>
+          <Icon name="arrow-right" size={20} />
+        </a>
+      </li>
+    ))
+  }
+</ul>

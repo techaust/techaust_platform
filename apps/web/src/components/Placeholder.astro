@@ -1,0 +1,39 @@
+---
+// Preview only: marks a pending owner input (docs/07 §9) where the real value will go. Never a link and never an
+// invented value; the built site hides the item while its config value is empty (config/site.ts).
+interface Props {
+  /** What is missing, e.g. "LinkedIn company URL". */
+  what: string;
+  class?: string;
+}
+
+const { what, class: cls } = Astro.props;
+---
+
+<span class:list={["placeholder", cls]}>
+  <span class="placeholder__tag">Placeholder</span>
+  <span>{what} (owner input pending)</span>
+</span>
+
+<style>
+  .placeholder {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1) var(--space-2);
+    min-height: var(--target-min);
+    padding: var(--space-1) var(--space-3);
+    border: 1px dashed var(--placeholder-accent, var(--color-warning));
+    border-radius: var(--radius-sm);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+    color: var(--color-text);
+  }
+
+  .placeholder__tag {
+    font-size: var(--text-caption);
+    line-height: var(--text-caption--line-height);
+    font-weight: 600;
+    color: var(--placeholder-accent, var(--color-warning));
+  }
+</style>

@@ -1,0 +1,64 @@
+---
+// Notice (docs/06 §5.2): variants info, legal ("Pending legal review") and illustrative ("Illustrative example").
+// An icon and a text label, never colour alone (docs/06 §2.3). The slot holds the message.
+import Icon from "./Icon.astro";
+
+interface Props {
+  variant?: "info" | "legal" | "illustrative";
+  /** The bold lead-in; defaults per variant are in 07 §2.4 / 06 §5.2 where they exist. */
+  label?: string;
+  class?: string;
+}
+
+const { variant = "info", label, class: cls } = Astro.props;
+const defaults = { info: "", legal: "Pending legal review", illustrative: "Illustrative example" } as const;
+const lead = label ?? defaults[variant];
+---
+
+<div class:list={["notice", `notice--${variant}`, cls]}>
+  <Icon name="info" size={20} />
+  <p>
+    {lead && <strong>{lead}</strong>}
+    <slot />
+  </p>
+</div>
+
+<style>
+  .notice {
+    display: flex;
+    gap: var(--space-3);
+    align-items: flex-start;
+    max-width: var(--container-prose);
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+    color: var(--color-text);
+  }
+
+  .notice :global(.icon) {
+    margin-top: 1px;
+    color: var(--color-info);
+  }
+
+  .notice--illustrative {
+    border-style: dashed;
+    border-color: var(--color-border-control);
+    background: transparent;
+  }
+
+  .notice--illustrative :global(.icon) {
+    color: var(--color-text-accent);
+  }
+
+  .notice--legal :global(.icon) {
+    color: var(--color-warning);
+  }
+
+  strong {
+    font-weight: 600;
+    margin-inline-end: var(--space-1);
+  }
+</style>

@@ -1,0 +1,169 @@
+/* Preview pages only (/preview/*, noindex): the frames around specimens and the sample page body. Not part of the
+   site's design; removed or kept dev-only in phase 2. Tokens only. */
+
+.pv-intro {
+  padding-block: var(--space-8) 0;
+}
+
+.pv-section {
+  padding-block: var(--space-12);
+  border-block-end: 1px solid var(--color-border);
+}
+
+.pv-section:last-child {
+  border-block-end: 0;
+}
+
+.pv-section > h2 {
+  margin-block-end: var(--space-2);
+}
+
+.pv-note {
+  max-inline-size: var(--container-prose);
+  margin-block-end: var(--space-6);
+  color: var(--color-text-muted);
+  text-wrap: pretty;
+}
+
+.pv-grid {
+  display: grid;
+  gap: var(--space-6);
+}
+
+@media (min-width: 48rem) {
+  .pv-grid--2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.pv-frame {
+  position: relative;
+  border: 1px dashed var(--color-border-control);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg);
+}
+
+.pv-frame__label {
+  display: block;
+  padding: var(--space-2) var(--space-4);
+  border-block-end: 1px dashed var(--color-border-control);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.pv-frame__body {
+  padding: var(--space-6);
+}
+
+.pv-frame--flush .pv-frame__body {
+  padding: 0;
+}
+
+.pv-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.pv-cap {
+  display: block;
+  margin-block-start: var(--space-2);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  color: var(--color-text-muted);
+}
+
+/* ---------- Sample page body (/preview/shell) ---------- */
+
+.pv-hero {
+  display: grid;
+  gap: var(--space-6);
+  padding-block: var(--space-12) var(--section-y);
+}
+
+.pv-hero .t-lede {
+  max-inline-size: var(--container-lede);
+}
+
+.pv-hero__ctas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-block-start: var(--space-2);
+}
+
+.pv-band {
+  padding-block: var(--section-y);
+  background: var(--color-surface-alt);
+}
+
+.pv-cols {
+  display: grid;
+  gap: var(--block-gap);
+  margin-block-start: var(--block-gap);
+}
+
+@media (min-width: 48rem) {
+  .pv-cols {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.pv-cols h3 {
+  margin-block-end: var(--space-3);
+}
+
+.pv-steps {
+  display: grid;
+  gap: var(--block-gap);
+  margin-block-start: var(--block-gap);
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+@media (min-width: 64rem) {
+  .pv-steps {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.pv-steps li {
+  counter-increment: step;
+  padding-block-start: var(--space-4);
+  border-block-start: 1px solid var(--color-border);
+}
+
+.pv-steps li::before {
+  content: counter(step);
+  display: block;
+  margin-block-end: var(--space-3);
+  font-family: var(--font-display);
+  font-stretch: var(--font-display--stretch);
+  font-size: var(--text-h3);
+  font-weight: var(--text-h2--font-weight);
+  color: var(--color-text-accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.pv-steps h3 {
+  margin-block-end: var(--space-2);
+}
+
+.pv-prose {
+  display: grid;
+  gap: var(--stack);
+  max-inline-size: var(--container-prose);
+  margin-block-start: var(--block-gap);
+}
+
+.pv-prose h3 {
+  margin-block-start: var(--space-4);
+}
+
+.pv-section-y {
+  padding-block: var(--section-y);
+}

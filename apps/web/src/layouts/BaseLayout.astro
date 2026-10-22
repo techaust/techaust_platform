@@ -1,0 +1,115 @@
+---
+// The base layout of every page (WEB-G-05, -16): en-IN, the skip link, landmarks (header, main, footer), the inline
+// theme script for a first paint in the right theme, the one font file preloaded, and meta slots for the title,
+// description, canonical and link preview (filled per page in M2.5, WEB-G-09).
+import "@techaust/ui/fonts.css";
+import "@techaust/ui/tokens.css";
+import "../styles/global.css";
+import archivoLatin from "@techaust/ui/fonts/archivo-latin.woff2?url";
+import appleTouch from "@techaust/ui/brand/apple-touch-icon.png?url";
+import favicon from "@techaust/ui/brand/favicon.svg?url";
+import ogDefault from "@techaust/ui/brand/og-default.png?url";
+import CookieConsent from "../components/CookieConsent.astro";
+import SiteFooter from "../components/SiteFooter.astro";
+import SiteHeader from "../components/SiteHeader.astro";
+import { site } from "../config/site";
+import { draft } from "../content/shell";
+
+interface Props {
+  title: string;
+  description?: string;
+  /** Path on techaust.com for the canonical link (defaults to this page's path). */
+  canonical?: string;
+  ogImage?: string;
+  noindex?: boolean;
+  /** For aria-current in the header (defaults to this page's path). */
+  current?: string;
+  /** Preview pages: show labelled placeholders for pending owner inputs. */
+  placeholders?: boolean;
+  /** Preview pages: override the consent banner (the build follows site.ga4Id). */
+  consent?: { banner: "off" | "auto" | "always"; analytics: boolean };
+  /** Preview pages: open a header menu on load. */
+  openMenu?: "services" | "industries";
+}
+
+const {
+  title,
+  description,
+  canonical = Astro.url.pathname,
+  ogImage,
+  noindex = false,
+  current = Astro.url.pathname,
+  placeholders = false,
+  consent = { banner: site.ga4Id ? "auto" : "off", analytics: Boolean(site.ga4Id) },
+  openMenu,
+} = Astro.props;
+const canonicalUrl = new URL(canonical, Astro.site).href;
+const og = new URL(ogImage ?? ogDefault, Astro.site).href;
+---
+
+<!doctype html>
+<html lang="en-IN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    {description && <meta name="description" content={description} />}
+    {noindex ? <meta name="robots" content="noindex, nofollow" /> : <link rel="canonical" href={canonicalUrl} />}
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={title} />
+    {description && <meta property="og:description" content={description} />}
+    <meta property="og:url" content={canonicalUrl} />
+    <meta property="og:image" content={og} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" href={favicon} type="image/svg+xml" />
+    <link rel="apple-touch-icon" href={appleTouch} />
+    <link rel="preload" href={archivoLatin} as="font" type="font/woff2" crossorigin />
+    <meta name="color-scheme" content="light dark" />
+    {/* First paint in the right theme and currency (< 1 KB; hashed in the CSP in phase 2, WEB-G-12). */}
+    <script is:inline>
+      (function (d) {
+        d.classList.add("js");
+        try {
+          var t = localStorage.getItem("ta_theme");
+          if (t === "light" || t === "dark") d.dataset.theme = t;
+          d.dataset.currency = localStorage.getItem("ta_currency") === "usd" ? "usd" : "inr";
+        } catch (e) {
+          d.dataset.currency = "inr";
+        }
+      })(document.documentElement);
+    </script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">{draft.skipLink}</a>
+    <CookieConsent banner={consent.banner} analytics={consent.analytics} />
+    <SiteHeader current={current} open={openMenu} />
+    <main id="main" tabindex="-1">
+      <slot />
+    </main>
+    <SiteFooter placeholders={placeholders} />
+  </body>
+</html>
+
+<style is:global>
+  .skip-link {
+    position: absolute;
+    inset-block-start: var(--space-2);
+    inset-inline-start: var(--space-2);
+    z-index: 100;
+    display: inline-flex;
+    align-items: center;
+    min-block-size: var(--target-min);
+    padding: 0 var(--space-4);
+    border-radius: var(--radius-md);
+    background: var(--color-text);
+    color: var(--color-bg);
+    font-weight: 600;
+    text-decoration: none;
+    translate: 0 calc(-100% - var(--space-4));
+  }
+
+  .skip-link:focus-visible {
+    translate: none;
+    color: var(--color-bg);
+  }
+</style>

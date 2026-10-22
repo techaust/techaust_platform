@@ -1,0 +1,438 @@
+---
+// CookieBanner ⚡ + the preferences dialog (docs/06 §5.2, WEB-G-08, 07-A §5). The banner is a bottom sheet, not a
+// modal: it never traps focus, "Reject" and "Accept analytics" have equal weight, and it stays low enough not to
+// cover the hero CTA at 375 px. Owner decision 2026-10-22: no GA4 at launch, so while site.ga4Id is empty the
+// banner isn't rendered and the dialog (footer "Cookie settings") lists the necessary storage only.
+// The choice is stored as ta_consent (necessary, 12 months). Loading GA4 after consent comes with the GA4 ID, later.
+import { draft, shell } from "../content/shell";
+import Icon from "./Icon.astro";
+
+interface Props {
+  /** "off": not rendered; "auto": shown until a choice is stored; "always": shown on every load (preview). */
+  banner?: "off" | "auto" | "always";
+  /** List Analytics in the dialog (only when GA4 is configured, or on the preview). */
+  analytics?: boolean;
+  dialogId?: string;
+  /** Preview only: render the banner in the page flow, as a specimen. */
+  specimen?: boolean;
+}
+
+const { banner = "off", analytics = false, dialogId = "cookie-settings", specimen = false } = Astro.props;
+const t = shell.consent;
+const titleId = `${dialogId}-title`;
+---
+
+{
+  banner !== "off" && (
+    <section
+      class:list={["consent", specimen && "consent--specimen"]}
+      aria-label={t.settingsTitle}
+      data-consent-banner={specimen ? undefined : banner}
+      hidden={!specimen}
+    >
+      <p class="consent__text">
+        {t.bannerText}{" "}
+        <button type="button" class="consent__prefs" data-open-dialog={dialogId}>
+          {t.preferences}
+        </button>
+      </p>
+      <div class="consent__actions">
+        <button type="button" class="btn btn--secondary" data-consent="reject">
+          {t.reject}
+        </button>
+        <button type="button" class="btn btn--secondary" data-consent="accept">
+          {t.accept}
+        </button>
+      </div>
+    </section>
+  )
+}
+
+{
+  !specimen && (
+    <dialog class="consent-dialog" id={dialogId} aria-labelledby={titleId} data-consent-dialog>
+      <form method="dialog" class="consent-dialog__form">
+        <div class="consent-dialog__head">
+          <h2 id={titleId} class="consent-dialog__title">
+            {t.settingsTitle}
+          </h2>
+          <button type="submit" value="cancel" class="consent-dialog__close" aria-label={draft.close}>
+            <Icon name="x" size={24} />
+          </button>
+        </div>
+        <p class="consent-dialog__intro">{t.settingsIntro}</p>
+        <ul role="list" class="consent-dialog__rows">
+          <li class="consent-row">
+            <div>
+              <p class="consent-row__name">{t.necessary}</p>
+              <p class="consent-row__text">{t.necessaryText}</p>
+            </div>
+            <span class="consent-row__state">{draft.alwaysOn}</span>
+          </li>
+          {analytics && (
+            <li class="consent-row">
+              <label class="consent-row__label" for={`${dialogId}-analytics`}>
+                <span class="consent-row__name">{t.analytics}</span>
+                <span class="consent-row__text">{t.analyticsText}</span>
+              </label>
+              <input
+                type="checkbox"
+                role="switch"
+                class="switch"
+                id={`${dialogId}-analytics`}
+                data-consent-analytics
+              />
+            </li>
+          )}
+        </ul>
+        <div class="consent-dialog__actions">
+          {analytics ? (
+            <button type="submit" value="save" class="btn btn--primary">
+              {draft.saveChoices}
+            </button>
+          ) : (
+            <button type="submit" value="cancel" class="btn btn--secondary">
+              {draft.done}
+            </button>
+          )}
+        </div>
+      </form>
+    </dialog>
+  )
+}
+
+<style is:global>
+  /* ---------- Banner: a bottom sheet (full width on phones, a card bottom-right from 768 px) ---------- */
+  .consent {
+    position: fixed;
+    inset-inline: 0;
+    inset-block-end: 0;
+    z-index: 60;
+    display: grid;
+    gap: var(--space-3);
+    padding: var(--space-4) var(--gutter) calc(var(--space-4) + env(safe-area-inset-bottom));
+    background: var(--color-surface-raised);
+    border-block-start: 1px solid var(--color-border);
+    box-shadow: var(--shadow-2);
+    transition:
+      opacity var(--duration-slow) var(--ease-standard),
+      translate var(--duration-slow) var(--ease-standard);
+  }
+
+  @starting-style {
+    .consent {
+      opacity: 0;
+      translate: 0 var(--space-4);
+    }
+  }
+
+  .consent[hidden] {
+    display: none;
+  }
+
+  .consent--specimen {
+    position: relative;
+    inset: auto;
+    z-index: auto;
+    max-inline-size: 30rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+  }
+
+  @media (min-width: 48rem) {
+    .consent {
+      /* Bottom-right: page content and hero CTAs are left-aligned, so the card stays clear of them. */
+      inset-inline: auto var(--gutter);
+      inset-block-end: var(--gutter);
+      max-inline-size: 30rem;
+      padding: var(--space-5);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-lg);
+    }
+  }
+
+  .consent__text {
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+    color: var(--color-text);
+    text-wrap: pretty;
+  }
+
+  /* "Preferences": a text link (inline), with a 44 px tall hit area that doesn't push the line apart. */
+  .consent__prefs {
+    position: relative;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--color-link);
+    font-weight: 600;
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.22em;
+  }
+
+  .consent__prefs::after {
+    content: "";
+    position: absolute;
+    inset: calc(-1 * var(--space-3)) calc(-1 * var(--space-2));
+  }
+
+  .consent__prefs:hover {
+    color: var(--color-link-hover);
+  }
+
+  .consent__actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-3);
+  }
+
+  .consent__actions .btn {
+    padding-inline: var(--space-3);
+  }
+
+  /* While the banner shows, the page can scroll its last lines (and any CTA) above it. */
+  :root.has-consent-banner body {
+    padding-block-end: var(--consent-h, 0);
+  }
+
+  /* ---------- Preferences dialog ---------- */
+  .consent-dialog {
+    inline-size: min(36rem, calc(100% - 2 * var(--gutter)));
+    max-block-size: calc(100dvh - 2 * var(--gutter));
+    padding: 0;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: var(--color-surface-raised);
+    color: var(--color-text);
+    box-shadow: var(--shadow-2);
+  }
+
+  .consent-dialog[open] {
+    transition: opacity var(--duration-slow) var(--ease-standard);
+  }
+
+  @starting-style {
+    .consent-dialog[open] {
+      opacity: 0;
+    }
+  }
+
+  .consent-dialog::backdrop {
+    background: var(--color-ink-950);
+    opacity: 0.6;
+  }
+
+  .consent-dialog__form {
+    display: grid;
+    gap: var(--space-5);
+    padding: var(--space-6);
+  }
+
+  .consent-dialog__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+    margin-block: calc(-1 * var(--space-2));
+  }
+
+  .consent-dialog__title {
+    font-family: var(--font-display);
+    font-stretch: var(--font-display--stretch);
+    font-size: var(--text-h3);
+    line-height: var(--text-h3--line-height);
+    font-weight: var(--text-h2--font-weight);
+  }
+
+  .consent-dialog__close {
+    display: inline-grid;
+    place-items: center;
+    inline-size: var(--target-min);
+    block-size: var(--target-min);
+    margin-inline-end: calc(-1 * var(--space-2));
+    border: 0;
+    border-radius: var(--radius-md);
+    background: transparent;
+  }
+
+  .consent-dialog__close:hover {
+    background: var(--color-fill-subtle);
+  }
+
+  .consent-dialog__intro {
+    color: var(--color-text-muted);
+    text-wrap: pretty;
+  }
+
+  .consent-dialog__rows {
+    border-block-start: 1px solid var(--color-border);
+  }
+
+  .consent-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-6);
+    padding-block: var(--space-4);
+    border-block-end: 1px solid var(--color-border);
+  }
+
+  .consent-row__label {
+    display: grid;
+    flex: 1;
+    min-block-size: var(--target-min);
+    cursor: pointer;
+  }
+
+  .consent-row__name {
+    display: block;
+    font-weight: 600;
+  }
+
+  .consent-row__text {
+    display: block;
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+    color: var(--color-text-muted);
+  }
+
+  .consent-row__state {
+    flex: none;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--color-text-muted);
+  }
+
+  .consent-dialog__actions {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  /* A switch: a native checkbox (role="switch"), 44 × 24 px, its label row is the larger target. */
+  .switch {
+    appearance: none;
+    flex: none;
+    position: relative;
+    inline-size: var(--target-min);
+    block-size: var(--space-6);
+    margin: 0;
+    border: 1px solid var(--color-border-control);
+    border-radius: var(--radius-full);
+    background: var(--color-fill-subtle);
+    cursor: pointer;
+    transition: background-color var(--duration-fast) var(--ease-standard);
+  }
+
+  .switch::before {
+    content: "";
+    position: absolute;
+    inset-block-start: 2px;
+    inset-inline-start: 2px;
+    inline-size: calc(var(--space-6) - 6px);
+    block-size: calc(var(--space-6) - 6px);
+    border-radius: var(--radius-full);
+    background: var(--color-text-muted);
+    transition: translate var(--duration-fast) var(--ease-standard);
+  }
+
+  .switch:checked {
+    background: var(--color-btn-primary-bg);
+    border-color: var(--color-btn-primary-bg);
+  }
+
+  .switch:checked::before {
+    background: var(--color-btn-primary-fg);
+    translate: calc(var(--target-min) - var(--space-6)) 0;
+  }
+
+  @media (forced-colors: active) {
+    .switch:checked::before {
+      background: Highlight;
+    }
+  }
+</style>
+
+<script>
+  // ta_consent = { analytics, at } (07-A §5: "we record your choice, and when you made it").
+  type Record = { analytics: boolean; at: number };
+  const KEY = "ta_consent";
+  const root = document.documentElement;
+
+  function read(): Record | null {
+    try {
+      const raw = localStorage.getItem(KEY);
+      return raw ? (JSON.parse(raw) as Record) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function write(analytics: boolean) {
+    try {
+      localStorage.setItem(KEY, JSON.stringify({ analytics, at: Date.now() } satisfies Record));
+    } catch {
+      // Storage blocked: the banner will ask again next time.
+    }
+    // GA4 would load here when analytics is true and a GA4 ID is set (later; owner decision 2026-10-22).
+  }
+
+  const banner = document.querySelector<HTMLElement>("[data-consent-banner]");
+  let observer: ResizeObserver | undefined;
+
+  function showBanner() {
+    if (!banner) return;
+    banner.hidden = false;
+    root.classList.add("has-consent-banner");
+    observer = new ResizeObserver(() => root.style.setProperty("--consent-h", `${banner.offsetHeight}px`));
+    observer.observe(banner);
+  }
+
+  function hideBanner() {
+    if (!banner || banner.hidden) return;
+    const hadFocus = banner.contains(document.activeElement);
+    banner.hidden = true;
+    observer?.disconnect();
+    root.classList.remove("has-consent-banner");
+    if (hadFocus) document.getElementById("main")?.focus();
+  }
+
+  if (banner && (banner.dataset.consentBanner === "always" || !read())) showBanner();
+
+  function openDialog(id: string) {
+    const dialog = document.getElementById(id);
+    if (!(dialog instanceof HTMLDialogElement)) return false;
+    const box = dialog.querySelector<HTMLInputElement>("[data-consent-analytics]");
+    if (box) box.checked = read()?.analytics ?? false;
+    dialog.returnValue = "";
+    dialog.showModal();
+    return true;
+  }
+
+  document.addEventListener("click", (event) => {
+    const el = (event.target as Element | null)?.closest<HTMLElement>(
+      "[data-consent], [data-open-dialog], [data-cookie-settings]",
+    );
+    if (!el) return;
+    if (el.dataset.consent) {
+      if (el.closest("[data-consent-banner]")) {
+        write(el.dataset.consent === "accept");
+        hideBanner();
+      }
+    } else if (el.dataset.openDialog) {
+      openDialog(el.dataset.openDialog);
+    } else if (openDialog("cookie-settings")) {
+      // The footer's "Cookie settings" opens the dialog; without JavaScript it goes to the cookie policy.
+      event.preventDefault();
+    }
+  });
+
+  for (const dialog of document.querySelectorAll<HTMLDialogElement>("[data-consent-dialog]")) {
+    dialog.addEventListener("close", () => {
+      if (dialog.returnValue !== "save") return;
+      const box = dialog.querySelector<HTMLInputElement>("[data-consent-analytics]");
+      write(box?.checked ?? false);
+      hideBanner();
+    });
+  }
+</script>

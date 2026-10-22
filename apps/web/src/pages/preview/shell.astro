@@ -1,0 +1,126 @@
+---
+// M2.1 preview (noindex): the full shell around a labelled sample body. The sample sections reuse approved copy from
+// docs/07 §3 word for word, only to give the shell a realistic page; the home page itself is designed in M2.2.
+// The consent banner is forced on here (the build hides it while there is no GA4 ID, owner decision 2026-10-22).
+import Button from "../../components/Button.astro";
+import Notice from "../../components/Notice.astro";
+import { discoveryHref } from "../../config/site";
+import { shell } from "../../content/shell";
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import "../../styles/preview.css";
+
+const steps = [
+  {
+    title: "Discover.",
+    text: "A paid Discovery Sprint, or a free first call for smaller jobs. We learn how the work is done today and what ‘better’ means in numbers.",
+  },
+  {
+    title: "Plan and price.",
+    text: "A written proposal: scope, deliverables, timeline, a fixed price and a payment schedule. No surprises later.",
+  },
+  {
+    title: "Build in the open.",
+    text: "Staging from the first week, regular demos, and you can see progress at any time.",
+  },
+  {
+    title: "Launch and look after it.",
+    text: "We launch, fix anything we got wrong under warranty, and keep it healthy on a care plan.",
+  },
+];
+const faqs = [
+  {
+    q: "Do you work with clients outside India?",
+    a: "Yes. We invoice in USD and keep 3–4 hours of overlap with UK and European working days, and with US mornings by arrangement.",
+  },
+  {
+    q: "Who will actually do the work?",
+    a: "Senior engineers with 10+ years’ experience, and the founder reviews every project. We don’t hand your project to a junior bench.",
+  },
+  {
+    q: "Who owns the code?",
+    a: "You do. Intellectual property transfers to you on full payment, and you get the repository, documentation and access.",
+  },
+  {
+    q: "What happens after launch?",
+    a: "A 30-day warranty for defects, then an optional care plan for monitoring, updates and small changes.",
+  },
+];
+---
+
+<BaseLayout
+  title="Preview: site shell | TecHaust Technologies"
+  noindex
+  placeholders
+  consent={{ banner: "always", analytics: true }}
+>
+  <div class="container pv-intro">
+    <Notice variant="illustrative" label="Sample content — not final copy.">
+      M2.1 preview of the site shell: the header, footer, toggles and consent banner. The sections below reuse
+      approved home-page copy only to fill the page; the home page is designed in M2.2.
+    </Notice>
+  </div>
+
+  <section class="container pv-hero" aria-labelledby="hero-title">
+    <p class="t-eyebrow">Software &amp; AI automation studio · India</p>
+    <h1 class="t-display-1" id="hero-title">Build it right. Automate the rest.</h1>
+    <p class="t-lede">
+      We’re a small senior team that builds the custom software your business runs on, and automates the paperwork
+      around it: invoices into Tally, orders from WhatsApp, reports that write themselves. Fixed prices, written
+      scope, and support after launch.
+    </p>
+    <div class="pv-hero__ctas">
+      <Button href={discoveryHref} size="lg">{shell.cta}</Button>
+      <Button href="/pricing" variant="secondary" size="lg">See pricing</Button>
+    </div>
+  </section>
+
+  <section class="pv-band" aria-labelledby="who-title">
+    <div class="container">
+      <h2 class="t-h2" id="who-title">Who we help</h2>
+      <div class="pv-cols">
+        <div>
+          <h3 class="t-h4">In India</h3>
+          <p class="t-body-lg">
+            Finance-heavy SMBs, CA, accounting and legal firms, distributors and online sellers running on Tally, Zoho,
+            WhatsApp and spreadsheets. We connect those systems and automate the manual work between them.
+          </p>
+        </div>
+        <div>
+          <h3 class="t-h4">Internationally</h3>
+          <p class="t-body-lg">
+            Founders, SaaS teams and growing businesses that need a senior product team, or AI added to the tools they
+            already use, at Indian rates with overlap in your working hours.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="container pv-section-y" aria-labelledby="how-title">
+    <h2 class="t-h2" id="how-title">How we work</h2>
+    <ol class="pv-steps">
+      {
+        steps.map((s) => (
+          <li>
+            <h3 class="t-h4">{s.title}</h3>
+            <p class="t-muted">{s.text}</p>
+          </li>
+        ))
+      }
+    </ol>
+  </section>
+
+  <section class="container" aria-labelledby="faq-title">
+    <h2 class="t-h2" id="faq-title">FAQ</h2>
+    <div class="pv-prose">
+      {
+        faqs.map((f) => (
+          <>
+            <h3 class="t-h4">{f.q}</h3>
+            <p class="t-body-lg">{f.a}</p>
+          </>
+        ))
+      }
+    </div>
+  </section>
+</BaseLayout>

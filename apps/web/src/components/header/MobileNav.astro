@@ -1,0 +1,107 @@
+---
+// The mobile menu's content (< 1024 px; WEB-G-03). With JavaScript the header moves it into a full-screen modal
+// <dialog> (focus stays inside, Esc closes and focus returns to "Menu"); without it, it opens under the header from a
+// <details>. Services and Industries are <details> sections. Styles: styles/header.css.
+import { discoveryHref } from "../../config/site";
+import { draft, shell } from "../../content/shell";
+import CurrencyToggle from "../CurrencyToggle.astro";
+import Icon from "../Icon.astro";
+import Logo from "../Logo.astro";
+import ThemeToggle from "../ThemeToggle.astro";
+
+interface Props {
+  current?: string | undefined;
+  idPrefix?: string;
+  /** Open the Services section (the menus preview). */
+  openServices?: boolean;
+}
+
+const { current, idPrefix = "m", openServices = false } = Astro.props;
+const inServices = current?.startsWith("/services") ?? false;
+const inIndustries = current?.startsWith("/industries") ?? false;
+---
+
+<div class="mnav">
+  <div class="mnav__top">
+    <Logo />
+    <button type="button" class="menu-trigger" data-menu-close>
+      <span>{draft.close}</span>
+      <Icon name="x" size={24} />
+    </button>
+  </div>
+  <div class="mnav__body">
+    <nav class="mnav__nav" aria-label={draft.mainNav}>
+      <ul role="list">
+        <li>
+          <details class="mnav__section" open={openServices || undefined}>
+            <summary class:list={["mnav__item", inServices && "is-current"]}>
+              <span>{shell.nav.services}</span>
+              <Icon name="chevron-down" size={24} class="chev" />
+            </summary>
+            <div class="mnav__sub">
+              {
+                shell.servicesMenu.map((group) => (
+                  <div class="mnav__group" role="group" aria-labelledby={`${idPrefix}-grp-${group.name.toLowerCase()}`}>
+                    <p class="mnav__group-name" id={`${idPrefix}-grp-${group.name.toLowerCase()}`}>
+                      {group.name}
+                    </p>
+                    <ul role="list">
+                      {group.links.map((link) => (
+                        <li>
+                          <a href={link.href} aria-current={current === link.href ? "page" : undefined}>
+                            {link.label}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))
+              }
+              <a class="btn btn--text mnav__all" href={shell.allServices.href}>
+                {shell.allServices.label}
+                <Icon name="arrow-right" size={20} />
+              </a>
+            </div>
+          </details>
+        </li>
+        <li>
+          <details class="mnav__section">
+            <summary class:list={["mnav__item", inIndustries && "is-current"]}>
+              <span>{shell.nav.industries}</span>
+              <Icon name="chevron-down" size={24} class="chev" />
+            </summary>
+            <div class="mnav__sub">
+              <ul role="list">
+                {
+                  shell.industriesMenu.map((link) => (
+                    <li>
+                      <a href={link.href} aria-current={current === link.href ? "page" : undefined}>
+                        {link.label}
+                      </a>
+                    </li>
+                  ))
+                }
+              </ul>
+            </div>
+          </details>
+        </li>
+        {
+          shell.nav.links.map((link) => (
+            <li>
+              <a class="mnav__item" href={link.href} aria-current={current === link.href ? "page" : undefined}>
+                {link.label}
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+    </nav>
+    <div class="mnav__tools needs-js">
+      <CurrencyToggle id={`${idPrefix}-cur`} labelled />
+      <ThemeToggle labelled />
+    </div>
+    <div class="mnav__cta">
+      <a class="btn btn--primary btn--lg btn--block" href={discoveryHref}>{shell.cta}</a>
+    </div>
+  </div>
+</div>

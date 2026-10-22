@@ -1,0 +1,241 @@
+---
+// M2.1 preview (noindex): every shell component and its states. The consent banner and the preferences dialog are
+// shown here although the build hides the banner while there is no GA4 ID (owner decision 2026-10-22).
+import { money } from "@techaust/core";
+import Button from "../../components/Button.astro";
+import CookieConsent from "../../components/CookieConsent.astro";
+import CurrencyToggle from "../../components/CurrencyToggle.astro";
+import Notice from "../../components/Notice.astro";
+import PriceTag from "../../components/PriceTag.astro";
+import SiteHeader from "../../components/SiteHeader.astro";
+import ThemeToggle from "../../components/ThemeToggle.astro";
+import { draft, shell } from "../../content/shell";
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import "../../styles/preview.css";
+
+// Clearly fake sample amounts (minor units), labelled "Sample" on the page; formatted only by @techaust/core.
+const sampleInr = money(123456_00, "INR");
+const sampleUsd = money(1234_00, "USD");
+const nf = shell.notFound;
+---
+
+<BaseLayout
+  title="Preview: components | TecHaust Technologies"
+  noindex
+  placeholders
+  consent={{ banner: "off", analytics: true }}
+>
+  <CookieConsent dialogId="cookie-settings-launch" analytics={false} />
+
+  <div class="container pv-intro">
+    <Notice variant="illustrative" label="Preview.">
+      The site shell’s components and their states. The footer at the bottom of this page is the real one, with
+      labelled placeholders where owner inputs are pending.
+    </Notice>
+  </div>
+
+  <div class="container">
+    <section class="pv-section" aria-labelledby="pv-header">
+      <h1 class="t-h2" id="pv-header">Components</h1>
+      <h2 class="t-h4" id="pv-header-states">Header</h2>
+      <p class="pv-note">
+        At the top of the page the bar sits on the page colour; once the page scrolls it takes the surface colour and a
+        hairline. The current page is marked by a short bar with a 45° end: the T bar of the mark in miniature.
+      </p>
+      <div class="pv-grid">
+        <div class="pv-frame pv-frame--flush">
+          <span class="pv-frame__label">At the top</span>
+          <div class="pv-frame__body"><SiteHeader specimen="top" idPrefix="pv-h1" /></div>
+        </div>
+        <div class="pv-frame pv-frame--flush">
+          <span class="pv-frame__label">Scrolled (sticky)</span>
+          <div class="pv-frame__body"><SiteHeader specimen="scrolled" idPrefix="pv-h2" /></div>
+        </div>
+        <div class="pv-frame pv-frame--flush">
+          <span class="pv-frame__label">On the Pricing page (current page)</span>
+          <div class="pv-frame__body"><SiteHeader specimen="scrolled" idPrefix="pv-h3" current="/pricing" /></div>
+        </div>
+        <div class="pv-frame pv-frame--flush">
+          <span class="pv-frame__label">On a service page (inside Services)</span>
+          <div class="pv-frame__body">
+            <SiteHeader specimen="scrolled" idPrefix="pv-h4" current="/services/care-plans" />
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="pv-section" aria-labelledby="pv-toggles">
+      <h2 class="t-h4" id="pv-toggles">Toggles</h2>
+      <p class="pv-note">
+        ₹ / $ is a radio group named “Show prices in” (arrow keys move between the two); the theme button cycles
+        system, light and dark and says which one is on. Both are hidden without JavaScript, where every price shows in
+        both currencies and the theme follows the device.
+      </p>
+      <div class="pv-grid pv-grid--2">
+        <div class="pv-frame">
+          <span class="pv-frame__label">In the header</span>
+          <div class="pv-frame__body pv-row">
+            <CurrencyToggle id="pv-cur-a" />
+            <ThemeToggle />
+          </div>
+        </div>
+        <div class="pv-frame">
+          <span class="pv-frame__label">In the mobile menu (labelled)</span>
+          <div class="pv-frame__body pv-row">
+            <CurrencyToggle id="pv-cur-b" labelled />
+            <ThemeToggle labelled />
+          </div>
+        </div>
+      </div>
+      <div class="pv-frame pv-price">
+        <span class="pv-frame__label">PriceTag (switches with ₹ / $; both show without JavaScript)</span>
+        <div class="pv-frame__body">
+          <PriceTag inr={sampleInr} usd={sampleUsd} unit="per workflow" sample />
+        </div>
+      </div>
+    </section>
+
+    <section class="pv-section" aria-labelledby="pv-buttons">
+      <h2 class="t-h4" id="pv-buttons">Buttons</h2>
+      <p class="pv-note">
+        Primary, secondary, ghost and text link; 44 px (md) and 52 px (lg). Navigation uses links, actions use buttons.
+        Hover and focus are shown forced on the right.
+      </p>
+      <div class="pv-frame">
+        <span class="pv-frame__label">Variants × states (default · hover · focus · disabled)</span>
+        <div class="pv-frame__body pv-buttons">
+          <div class="pv-row">
+            <Button href="#pv-buttons">{shell.cta}</Button>
+            <Button href="#pv-buttons" class="is-hover">{shell.cta}</Button>
+            <Button href="#pv-buttons" class="is-focus">{shell.cta}</Button>
+            <Button disabled>{shell.cta}</Button>
+          </div>
+          <div class="pv-row">
+            <Button href="#pv-buttons" variant="secondary">See pricing</Button>
+            <Button href="#pv-buttons" variant="secondary" class="is-hover">See pricing</Button>
+            <Button href="#pv-buttons" variant="secondary" class="is-focus">See pricing</Button>
+            <Button variant="secondary" disabled>See pricing</Button>
+          </div>
+          <div class="pv-row">
+            <Button href="#pv-buttons" variant="ghost">Talk to us</Button>
+            <Button href="#pv-buttons" variant="ghost" class="is-hover">Talk to us</Button>
+            <Button href="#pv-buttons" variant="ghost" class="is-focus">Talk to us</Button>
+            <Button variant="ghost" disabled>Talk to us</Button>
+          </div>
+          <div class="pv-row">
+            <Button href="#pv-buttons" variant="text" arrow>{shell.allServices.label}</Button>
+            <Button href="#pv-buttons" variant="text" arrow class="is-hover">{shell.allServices.label}</Button>
+            <Button href="#pv-buttons" variant="text" arrow class="is-focus">{shell.allServices.label}</Button>
+          </div>
+          <div class="pv-row">
+            <Button href="#pv-buttons" size="lg">{shell.cta}</Button>
+            <Button href="#pv-buttons" size="lg" variant="secondary">See pricing</Button>
+            <span class="pv-cap">Large (52 px): hero and CTA bands</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="pv-section" aria-labelledby="pv-notice">
+      <h2 class="t-h4" id="pv-notice">Notice and skip link</h2>
+      <div class="pv-grid pv-grid--2">
+        <div class="pv-frame">
+          <span class="pv-frame__label">Notice: illustrative · legal · info</span>
+          <div class="pv-frame__body pv-stack">
+            <Notice variant="illustrative">Not a real client system.</Notice>
+            <Notice variant="legal">Sample notice text.</Notice>
+            <Notice variant="info" label="Sample.">Notice text.</Notice>
+          </div>
+        </div>
+        <div class="pv-frame">
+          <span class="pv-frame__label">Skip link (first Tab on every page)</span>
+          <div class="pv-frame__body">
+            <span class="skip-link pv-skip" aria-hidden="true">{draft.skipLink}</span>
+            <span class="pv-cap">Press Tab at the top of any page to see it in place.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="pv-section" aria-labelledby="pv-consent">
+      <h2 class="t-h4" id="pv-consent">Cookie banner and settings</h2>
+      <p class="pv-note">
+        Not shown on the launch site: there is no Google Analytics at launch, so there is nothing to ask. It appears
+        only once a GA4 ID is set. “Reject” and “Accept analytics” have equal weight; the banner never blocks the page.
+        The footer’s “Cookie settings” opens the launch version of the dialog (necessary only).
+      </p>
+      <div class="pv-grid pv-grid--2">
+        <div class="pv-frame">
+          <span class="pv-frame__label">Banner (on phones: full width at the bottom; wider: a card bottom-right)</span>
+          <div class="pv-frame__body">
+            <CookieConsent banner="always" specimen dialogId="cookie-settings" />
+          </div>
+        </div>
+        <div class="pv-frame">
+          <span class="pv-frame__label">Settings dialog</span>
+          <div class="pv-frame__body pv-stack">
+            <Button variant="secondary" data-open-dialog="cookie-settings">Open: with Analytics (when GA4 is set)</Button>
+            <Button variant="secondary" data-open-dialog="cookie-settings-launch">Open: launch (necessary only)</Button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="pv-section" aria-labelledby="pv-404">
+      <h2 class="t-h4" id="pv-404">404 page</h2>
+      <p class="pv-note">Copy from 07 §5.12, inside the full shell.</p>
+      <div class="pv-frame">
+        <span class="pv-frame__label">404 sample</span>
+        <div class="pv-frame__body pv-404">
+          <p class="t-display-2">{nf.title}</p>
+          <p class="t-lede">{nf.text}</p>
+          <ul role="list" class="pv-404__links">
+            {
+              nf.links.map((link) => (
+                <li>
+                  <a class="btn btn--text" href={link.href}>
+                    {link.label}
+                  </a>
+                </li>
+              ))
+            }
+          </ul>
+        </div>
+      </div>
+    </section>
+  </div>
+</BaseLayout>
+
+<style>
+  .pv-price {
+    margin-block-start: var(--space-6);
+  }
+
+  .pv-buttons {
+    display: grid;
+    gap: var(--space-5);
+  }
+
+  .pv-stack {
+    display: grid;
+    gap: var(--space-4);
+    justify-items: start;
+  }
+
+  .pv-skip {
+    position: static;
+    translate: none;
+  }
+
+  .pv-404 {
+    display: grid;
+    gap: var(--space-5);
+    padding-block: var(--space-12);
+  }
+
+  .pv-404__links {
+    display: flex;
+    flex-wrap: wrap;
+    column-gap: var(--space-8);
+  }
+</style>

@@ -1,0 +1,100 @@
+---
+// PriceTag (docs/06 §5.2, WEB-G-06): "from" + the amount (text-price-lg, tabular) + a unit + the GST note. Both
+// currencies are in the HTML; <html data-currency> (CurrencyToggle) shows one, and without JavaScript both show
+// ("from ₹3,00,000 + GST · $12,000"). Amounts are minor units formatted only by @techaust/core; the site's prices
+// come from the catalogue snapshot (WEB-G-07, M2.2+). The preview passes clearly fake amounts with `sample`.
+import { formatMoney, type Money } from "@techaust/core";
+import { draft } from "../content/shell";
+
+interface Props {
+  inr: Money;
+  usd: Money | null;
+  unit?: string;
+  /** Labels the tag "Sample" (preview pages only). */
+  sample?: boolean;
+}
+
+const { inr, usd, unit, sample = false } = Astro.props;
+// Site prices are whole rupees and dollars: drop a zero minor part (".00") from the core format, nothing else.
+// OPEN (run file): @techaust/core could offer this as an option of formatMoney.
+const whole = (m: Money) => formatMoney(m).replace(/\.00$/, "");
+---
+
+<p class="price">
+  {sample && <span class="price__sample">{draft.sample}</span>}
+  <span class="price__from">{draft.priceFrom}</span>
+  <span class="price__amounts">
+    <span class="price__cur" data-cur="inr">
+      <span class="price__amount">{whole(inr)}</span>
+      <span class="price__gst">{draft.gst}</span>
+    </span>
+    {
+      usd && (
+        <>
+          <span class="price__sep" aria-hidden="true">
+            ·
+          </span>
+          <span class="price__cur" data-cur="usd">
+            <span class="price__amount">{whole(usd)}</span>
+          </span>
+        </>
+      )
+    }
+  </span>
+  {unit && <span class="price__unit">{unit}</span>}
+</p>
+
+<style>
+  .price {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: var(--space-2);
+    row-gap: var(--space-1);
+  }
+
+  .price__sample {
+    flex-basis: 100%;
+    font-size: var(--text-caption);
+    line-height: var(--text-caption--line-height);
+    font-weight: 600;
+    color: var(--color-warning);
+  }
+
+  .price__from,
+  .price__unit,
+  .price__gst {
+    color: var(--color-text-muted);
+  }
+
+  .price__amounts {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: var(--space-2);
+  }
+
+  .price__cur {
+    display: inline-flex;
+    align-items: baseline;
+    gap: var(--space-2);
+  }
+
+  .price__amount {
+    font-size: var(--text-price-lg);
+    line-height: var(--text-price-lg--line-height);
+    font-weight: var(--text-price-lg--font-weight);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .price__sep {
+    color: var(--color-text-muted);
+  }
+
+  /* With a currency chosen, show only that one (no layout change between the two: one line either way). */
+  :global(:root[data-currency="inr"]) [data-cur="usd"],
+  :global(:root[data-currency="usd"]) [data-cur="inr"],
+  :global(:root[data-currency]) .price__sep {
+    display: none;
+  }
+</style>

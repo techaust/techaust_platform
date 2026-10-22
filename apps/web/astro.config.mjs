@@ -7,4 +7,6 @@ export default defineConfig({
   output: "static",
   trailingSlash: "never",
   build: { format: "file" },
+  // The dev toolbar overlays the page and would sit in every design screenshot.
+  devToolbar: { enabled: false },
 });

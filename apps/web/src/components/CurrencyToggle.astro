@@ -1,0 +1,134 @@
+---
+// CurrencyToggle ⚡ (docs/06 §5.2, WEB-G-06): a ₹ / $ segmented control with radio-group semantics (native radios,
+// so arrow keys work), named "Show prices in" (07 §2.1). Every price is in the HTML in both currencies and CSS shows
+// the active one (PriceTag), so switching moves nothing. Hidden without JavaScript, where both prices show.
+// Choosing a currency is stored as ta_currency (07-A §5). The /api/geo default arrives in phase 2 (builder).
+import { draft, shell } from "../content/shell";
+
+interface Props {
+  /** Unique per instance on a page (the radios' name). */
+  id: string;
+  /** Show "Show prices in" as visible text (the mobile menu); otherwise it is the hidden legend. */
+  labelled?: boolean;
+  class?: string;
+}
+
+const { id, labelled = false, class: cls } = Astro.props;
+const name = `currency-${id}`;
+---
+
+<fieldset class:list={["currency", "needs-js", labelled && "currency--labelled", cls]} data-currency-toggle>
+  <legend class:list={[labelled ? "currency__legend" : "visually-hidden"]}>{shell.currencyName}</legend>
+  <div class="currency__track">
+    <label class="currency__opt">
+      <input type="radio" name={name} value="inr" checked />
+      <span aria-hidden="true">₹</span>
+      <span class="visually-hidden">{draft.inrName}</span>
+    </label>
+    <label class="currency__opt">
+      <input type="radio" name={name} value="usd" />
+      <span aria-hidden="true">$</span>
+      <span class="visually-hidden">{draft.usdName}</span>
+    </label>
+  </div>
+</fieldset>
+
+<style>
+  .currency {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-3);
+  }
+
+  .currency__legend {
+    float: left;
+    padding: 0;
+    margin-inline-end: var(--space-3);
+    font-weight: 500;
+  }
+
+  .currency--labelled {
+    justify-content: space-between;
+  }
+
+  .currency__track {
+    display: inline-flex;
+    padding: 1px;
+    /* The track is a hairline; the selected segment (a solid fill) carries the state. */
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+  }
+
+  .currency__opt {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    /* 44 px including the track's border and padding. */
+    min-width: calc(var(--target-min) - 2px);
+    min-height: calc(var(--target-min) - 4px);
+    border-radius: calc(var(--radius-md) - 2px);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    transition:
+      background-color var(--duration-fast) var(--ease-standard),
+      color var(--duration-fast) var(--ease-standard);
+  }
+
+  .currency__opt:hover {
+    color: var(--color-text);
+  }
+
+  .currency__opt input {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  /* Selected: ink on light, mist on dark (the text colour), never the accent as a large fill (docs/06 §1.7). */
+  .currency__opt:has(input:checked) {
+    background: var(--color-text);
+    color: var(--color-bg);
+  }
+
+  .currency__opt:has(input:focus-visible) {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+
+  @media (forced-colors: active) {
+    .currency__opt:has(input:checked) {
+      outline: 2px solid Highlight;
+    }
+  }
+</style>
+
+<script>
+  // One state for every toggle on the page (the header and the mobile menu): <html data-currency>.
+  type Currency = "inr" | "usd";
+  const root = document.documentElement;
+
+  function sync(cur: Currency) {
+    for (const input of document.querySelectorAll<HTMLInputElement>("[data-currency-toggle] input")) {
+      input.checked = input.value === cur;
+    }
+  }
+
+  sync(root.dataset.currency === "usd" ? "usd" : "inr");
+  document.addEventListener("change", (event) => {
+    const input = event.target as HTMLInputElement | null;
+    if (!input?.closest("[data-currency-toggle]")) return;
+    const cur: Currency = input.value === "usd" ? "usd" : "inr";
+    root.dataset.currency = cur;
+    try {
+      localStorage.setItem("ta_currency", cur);
+    } catch {
+      // Storage blocked: the choice lasts for this page view.
+    }
+    sync(cur);
+  });
+</script>
