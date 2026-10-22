@@ -3,7 +3,6 @@
 // the legal row with ©. Never a GSTIN, the proprietor's name or @techaustsocial (WEB-G-04). Ink in both themes, with
 // the mark tone-on-tone bleeding off the corner (docs/06 §4.3): the one large brand moment of the shell.
 // Items whose config value is empty are hidden; preview pages pass `placeholders` to show labelled placeholders.
-import symbolInk from "@techaust/ui/brand/logo-symbol-ink.svg?url";
 import { site } from "../config/site";
 import { draft, shell } from "../content/shell";
 import Icon from "./Icon.astro";
@@ -19,6 +18,8 @@ const f = shell.footer;
 const c = f.columns;
 const year = new Date().getFullYear();
 const wa = site.whatsapp ? `https://wa.me/${site.whatsapp}` : "";
+// No empty list when neither LinkedIn URL is set (the build today).
+const showSocial = placeholders || Boolean(site.linkedinCompany || site.linkedinFounder);
 const columns = [
   { title: c.services.title, links: c.services.links },
   { title: c.industries.title, links: shell.industriesMenu },
@@ -26,7 +27,7 @@ const columns = [
 ];
 ---
 
-<footer class="site-footer" style={`--brand-mark: url("${symbolInk}")`}>
+<footer class="site-footer">
   <div class="site-footer__inner">
     <div class="site-footer__brand">
       <Logo tone="on-dark" />
@@ -62,7 +63,7 @@ const columns = [
           <span>{site.locality}</span>
         </li>
       </ul>
-      <ul role="list" class="site-footer__social">
+      {showSocial && <ul role="list" class="site-footer__social">
         {
           site.linkedinCompany ? (
             <li>
@@ -95,7 +96,7 @@ const columns = [
             )
           )
         }
-      </ul>
+      </ul>}
     </div>
 
     <nav class="site-footer__nav" aria-label={draft.footerNav}>
@@ -192,12 +193,14 @@ const columns = [
       inline-size: var(--mark-size);
       aspect-ratio: 1;
       background: var(--color-ink-700);
+      /* Vite resolves and fingerprints the generated file, so no inline style is needed (CSP). Twice, 1 px apart: the
+         symbol's two parts meet edge to edge, and one layer leaves an anti-aliased seam. */
       -webkit-mask:
-        var(--brand-mark) center / contain no-repeat,
-        var(--brand-mark) calc(50% + 1px) center / contain no-repeat;
+        url("@techaust/ui/brand/logo-symbol-ink.svg") center / contain no-repeat,
+        url("@techaust/ui/brand/logo-symbol-ink.svg") calc(50% + 1px) center / contain no-repeat;
       mask:
-        var(--brand-mark) center / contain no-repeat,
-        var(--brand-mark) calc(50% + 1px) center / contain no-repeat;
+        url("@techaust/ui/brand/logo-symbol-ink.svg") center / contain no-repeat,
+        url("@techaust/ui/brand/logo-symbol-ink.svg") calc(50% + 1px) center / contain no-repeat;
       pointer-events: none;
     }
   }

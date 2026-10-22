@@ -14,11 +14,16 @@ export const site = {
   linkedinCompany: "",
   /** OWNER: founder's LinkedIn URL. Empty = hidden. */
   linkedinFounder: "",
-  /** OWNER: Cal.com booking URL. Until it exists the header CTA goes to the contact form (brief, 2026-10-22). */
-  calUrl: "",
+  /** OWNER: Cal.com booking URL. When set, "Book a Discovery Sprint" goes there (owner, 2026-10-22). */
+  calUrl: "" as string,
+  /**
+   * Where "Book a Discovery Sprint" goes while there is no Cal.com link (owner, 2026-10-22): the contact form until
+   * the quote form exists, then `/get-a-quote?service=S1` (07 §2.3) — switch this value in M2.4.
+   */
+  discoveryFallback: "/contact?service=discovery-sprint",
   /** Owner decision 2026-10-22: no GA4 at launch. Empty = no consent banner, preferences show necessary only. */
   ga4Id: "",
 } as const;
 
-/** The header CTA's target while there is no Cal.com link (run file m2.1, "Before the build"). */
-export const discoveryHref = "/contact?service=discovery-sprint";
+/** The target of every "Book a Discovery Sprint" in the shell (header, mobile menu). */
+export const discoveryHref: string = site.calUrl || site.discoveryFallback;

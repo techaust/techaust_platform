@@ -2,16 +2,16 @@
 // M2.1 preview (noindex): every shell component and its states. The consent banner and the preferences dialog are
 // shown here although the build hides the banner while there is no GA4 ID (owner decision 2026-10-22).
 import { money } from "@techaust/core";
-import Button from "../../components/Button.astro";
-import CookieConsent from "../../components/CookieConsent.astro";
-import CurrencyToggle from "../../components/CurrencyToggle.astro";
-import Notice from "../../components/Notice.astro";
-import PriceTag from "../../components/PriceTag.astro";
-import SiteHeader from "../../components/SiteHeader.astro";
-import ThemeToggle from "../../components/ThemeToggle.astro";
-import { draft, shell } from "../../content/shell";
-import BaseLayout from "../../layouts/BaseLayout.astro";
-import "../../styles/preview.css";
+import Button from "../components/Button.astro";
+import CookieConsent from "../components/CookieConsent.astro";
+import CurrencyToggle from "../components/CurrencyToggle.astro";
+import Notice from "../components/Notice.astro";
+import PriceTag from "../components/PriceTag.astro";
+import SiteHeader from "../components/SiteHeader.astro";
+import ThemeToggle from "../components/ThemeToggle.astro";
+import { draft, shell } from "../content/shell";
+import BaseLayout from "../layouts/BaseLayout.astro";
+import "../styles/preview.css";
 
 // Clearly fake sample amounts (minor units), labelled "Sample" on the page; formatted only by @techaust/core.
 const sampleInr = money(123456_00, "INR");

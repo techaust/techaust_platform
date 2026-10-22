@@ -2,12 +2,12 @@
 // M2.1 preview (noindex): the full shell around a labelled sample body. The sample sections reuse approved copy from
 // docs/07 §3 word for word, only to give the shell a realistic page; the home page itself is designed in M2.2.
 // The consent banner is forced on here (the build hides it while there is no GA4 ID, owner decision 2026-10-22).
-import Button from "../../components/Button.astro";
-import Notice from "../../components/Notice.astro";
-import { discoveryHref } from "../../config/site";
-import { shell } from "../../content/shell";
-import BaseLayout from "../../layouts/BaseLayout.astro";
-import "../../styles/preview.css";
+import Button from "../components/Button.astro";
+import Notice from "../components/Notice.astro";
+import { discoveryHref } from "../config/site";
+import { shell } from "../content/shell";
+import BaseLayout from "../layouts/BaseLayout.astro";
+import "../styles/preview.css";
 
 const steps = [
   {
