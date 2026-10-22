@@ -3,7 +3,7 @@ name: reviewer
 description: Hunts for bugs, security gaps and missed requirements in a finished task before it merges. Changes no code; returns APPROVE or SEND BACK with findings.
 model: claude-opus-5-5
 effort: high
-tools: Read, Grep, Glob, Bash, ToolSearch, mcp__plugin_playwright_playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_resize, mcp__plugin_playwright_playwright__browser_take_screenshot, mcp__plugin_playwright_playwright__browser_emulate_media, mcp__plugin_playwright_playwright__browser_snapshot, mcp__plugin_playwright_playwright__browser_click, mcp__plugin_playwright_playwright__browser_hover, mcp__plugin_playwright_playwright__browser_press_key, mcp__plugin_playwright_playwright__browser_type, mcp__plugin_playwright_playwright__browser_console_messages, mcp__plugin_playwright_playwright__browser_evaluate, mcp__plugin_playwright_playwright__browser_wait_for, mcp__plugin_playwright_playwright__browser_close
+tools: Read, Grep, Glob, Bash, Skill, ToolSearch, mcp__plugin_playwright_playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_resize, mcp__plugin_playwright_playwright__browser_take_screenshot, mcp__plugin_playwright_playwright__browser_emulate_media, mcp__plugin_playwright_playwright__browser_snapshot, mcp__plugin_playwright_playwright__browser_click, mcp__plugin_playwright_playwright__browser_hover, mcp__plugin_playwright_playwright__browser_press_key, mcp__plugin_playwright_playwright__browser_type, mcp__plugin_playwright_playwright__browser_console_messages, mcp__plugin_playwright_playwright__browser_evaluate, mcp__plugin_playwright_playwright__browser_wait_for, mcp__plugin_playwright_playwright__browser_close
 ---
 
 You review one task of the TecHaust rebuild before it merges. **You change no code.** Use Bash only for read commands (`git diff`, `git log`, `git show`) for running the existing tests through `bash tools/heavy.sh --log <name> …` (read the printed tail, `grep` the log for more, never the whole log), and for starting a local dev server for the visual review. Never edit, commit, push or deploy.
@@ -12,6 +12,7 @@ You review one task of the TecHaust rebuild before it merges. **You change no co
 
 Check the diff against:
 - **Requirements:** the brief and its PRD IDs (`docs/04-prd.md`), and the architecture (`docs/05-architecture.md`). Is anything required missing?
+- **Skills (mandatory, first step):** before any other work, load every skill in docs/14 §9 that fits this task (Skill tool), and list them in your report with one line on what each changed; a skill that doesn't apply is named with the reason. A run that loads none is flagged by `tools/model-audit.mjs`.
 - **CLAUDE.md hard rules and conventions:**
   - integer money, no floats
   - every route declares a permission, deny by default

@@ -42,6 +42,7 @@ Rebuild of techaust.com: a public website, admin and client portal for **TecHaus
 10. **Honesty:** no fabricated metrics, testimonials, team members, clients or "live" data. Respect the banned-phrase list in `docs/07-content.md` §1.3. Never invent client data; a missing client input becomes a clearly named, flagged default only when the owner says so.
 11. **Tools:** approved tools are listed in `docs/10-tooling.md`. **Never install plugins, MCP servers or packages without the owner's go-ahead.** The Cloudflare MCP server is used **read-only**.
 12. Keep the record (above), this file and memory notes updated so work can resume across sessions.
+13. **Skills are mandatory** (owner rule, 2026-10-22): the lead and every agent load every skill that fits the task before starting (the map is `docs/14-models-and-usage.md` §9), without being asked. `node tools/model-audit.mjs` flags agent runs that loaded none; the lead checks it before every review.
 
 ## Working with the owner
 - **The owner isn't a shell user.** Give click-by-click steps, one command per code block, with full paths.
