@@ -1,6 +1,9 @@
 ---
-// Preview only: marks a pending owner input (docs/07 §9) where the real value will go. Never a link and never an
-// invented value; the built site hides the item while its config value is empty (config/site.ts).
+// Marks a pending owner input (docs/07 §9) where the real value will go. Never a link and never an invented value.
+// The shell hides its optional items while their config value is empty and shows this only on preview pages; the
+// About page shows it on the built site for the founder's headshot, bio and LinkedIn (M2.3 brief), and the
+// pre-production check (scripts/check-prod-readiness.mjs) fails while any built page still contains the
+// `placeholder__tag` marker, so none reaches production. Keep the class name.
 interface Props {
   /** What is missing, e.g. "LinkedIn company URL". */
   what: string;

@@ -10,10 +10,16 @@
 // 2. Arrows. 07 writes "→" and "↔"; neither is in the fonts (docs/06 §3.1), so each becomes an icon, with the
 //    character kept, visually hidden, for assistive technology and copy-paste.
 // 3. Bold. 07's **…** becomes <strong> (S1 credit rule, S4 "Led personally by our founder.", the care-plan SLAs).
+// 4. Links. 07-A writes Markdown links ("[Cookie policy](/cookies)"); they become <a>. The target "#cookie-settings"
+//    is the footer's "Cookie settings" control: a link to the cookie policy that opens the preferences dialog when
+//    JavaScript runs (CookieConsent handles every [data-cookie-settings]).
+// 5. Inline code. 07-A's `ta_consent`-style names become <code>.
+// 6. A pending owner input ({{postal_address}} while site.postalAddress is empty) is drawn as a marked gap, never as
+//    ordinary text, so nobody mistakes it for the address.
 import { shared } from "../content/shared";
 import { draft } from "../content/shell";
 import { displayAmount } from "../lib/prices";
-import { type PricePart, parseTokens } from "../lib/tokens";
+import { POSTAL_ADDRESS_PLACEHOLDER, type PricePart, parseTokens } from "../lib/tokens";
 import Icon from "./Icon.astro";
 
 interface Props {
@@ -25,7 +31,13 @@ interface Props {
 const { text, as: Tag = "p", class: cls } = Astro.props;
 
 type Mode = "both" | "inr" | "usd";
-type Bit = { kind: "text"; value: string; bold: boolean } | { kind: "arrow"; char: "→" | "↔"; bold: boolean };
+type Bit =
+  | { kind: "text"; value: string; bold: boolean }
+  | { kind: "arrow"; char: "→" | "↔"; bold: boolean }
+  | { kind: "link"; label: string; href: string; bold: boolean }
+  | { kind: "pending"; value: string }
+  | { kind: "code"; value: string };
+const LINK = /\[([^\]]+)\]\(([^)\s]+)\)/g;
 type Part = Bit | PricePart;
 
 const parts: Part[] = [];
@@ -35,12 +47,31 @@ for (const p of parseTokens(text)) {
     parts.push(p);
     continue;
   }
+  if (p.text === POSTAL_ADDRESS_PLACEHOLDER) {
+    parts.push({ kind: "pending", value: p.text });
+    continue;
+  }
   p.text.split("**").forEach((run, i) => {
     if (i > 0) bold = !bold;
-    for (const bit of run.split(/([→↔])/)) {
-      if (bit === "→" || bit === "↔") parts.push({ kind: "arrow", char: bit, bold });
-      else if (bit) parts.push({ kind: "text", value: bit, bold });
+    const plain = (t: string) => {
+      t.split("`").forEach((piece, j) => {
+        if (j % 2 === 1) {
+          parts.push({ kind: "code", value: piece });
+          return;
+        }
+        for (const bit of piece.split(/([→↔])/)) {
+          if (bit === "→" || bit === "↔") parts.push({ kind: "arrow", char: bit, bold });
+          else if (bit) parts.push({ kind: "text", value: bit, bold });
+        }
+      });
+    };
+    let at = 0;
+    for (const m of run.matchAll(LINK)) {
+      plain(run.slice(at, m.index));
+      parts.push({ kind: "link", label: m[1] as string, href: m[2] as string, bold });
+      at = m.index + m[0].length;
     }
+    plain(run.slice(at));
   });
 }
 if (bold) throw new Error(`CopyText: unbalanced "**" in "${text.slice(0, 60)}"`);
@@ -62,6 +93,20 @@ const modes: (Mode | null)[] = priced ? ["both", "inr", "usd"] : [null];
             ) : (
               p.value
             )
+          ) : p.kind === "link" ? (
+            p.href === "#cookie-settings" ? (
+              <a href="/cookies" data-cookie-settings>
+                {p.bold ? <strong class="copy__strong">{p.label}</strong> : p.label}
+              </a>
+            ) : (
+              <a href={p.href} rel={/^https?:/.test(p.href) ? "noopener" : undefined}>
+                {p.bold ? <strong class="copy__strong">{p.label}</strong> : p.label}
+              </a>
+            )
+          ) : p.kind === "code" ? (
+            <code class="copy__code">{p.value}</code>
+          ) : p.kind === "pending" ? (
+            <span class="copy__pending">{p.value}</span>
           ) : p.kind === "arrow" ? (
             <span class="copy__arrow">
               <Icon name={p.char === "→" ? "arrow-right" : "move-horizontal"} size={16} />
@@ -112,6 +157,22 @@ const modes: (Mode | null)[] = priced ? ["both", "inr", "usd"] : [null];
   .copy__price,
   .copy__amount {
     white-space: nowrap;
+  }
+
+  /* 07-A's `names` (cookie and storage keys): the mono face, a touch smaller so it sits on the text's x-height. */
+  .copy__code {
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+    overflow-wrap: anywhere;
+  }
+
+  /* A pending owner input inside running text: a dashed underline in the warning colour, the words say what's missing. */
+  .copy__pending {
+    font-weight: 600;
+    color: var(--color-text);
+    text-decoration: underline dashed var(--color-warning);
+    text-decoration-thickness: 2px;
+    text-underline-offset: 0.25em;
   }
 
   .copy__arrow {

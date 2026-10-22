@@ -1,0 +1,168 @@
+---
+// The blog (/blog, WEB-BLOG): published posts newest first (title, date, reading time, tags, description), or, until
+// the owner approves the first post, the 07-D §6 line (no list, no feed items). The RSS feed is linked in the head
+// for feed readers once there is something in it.
+import { getCollection } from "astro:content";
+import "../../styles/page.css";
+import PageHero from "../../components/PageHero.astro";
+import { pageLabels as P } from "../../content/labels";
+import { blogPage } from "../../content/work-page";
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { istDay, published, readingTime } from "../../lib/blog";
+import { formatLegalDate } from "../../lib/legal";
+
+const posts = published(await getCollection("blog"));
+const iso = istDay;
+---
+
+<BaseLayout title={blogPage.meta.title} description={blogPage.meta.description} rss={posts.length > 0}>
+  <PageHero title={P.blog} />
+
+  <section class="section section--flush-top">
+    <div class="container">
+      {
+        posts.length > 0 ? (
+          <ul class="posts" role="list">
+            {posts.map((p) => (
+              <li class="entry">
+                <p class="entry__meta">
+                  <time datetime={iso(p.data.date)}>{formatLegalDate(iso(p.data.date))}</time>
+                  <span class="tabular">
+                    {readingTime(p.body ?? "")} {P.minRead}
+                  </span>
+                </p>
+                <h2 class="entry__title">
+                  <a class="entry__link" href={`/blog/${p.id}`}>
+                    {p.data.title}
+                  </a>
+                </h2>
+                <p class="entry__desc">{p.data.description}</p>
+                {p.data.tags.length > 0 && (
+                  <ul class="entry__tags" role="list" aria-label={P.tags}>
+                    {p.data.tags.map((t) => (
+                      <li>{t}</li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p class="empty">{blogPage.empty}</p>
+        )
+      }
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .empty {
+    max-inline-size: var(--container-lede);
+    padding-block-start: var(--space-6);
+    border-block-start: 2px solid var(--color-text);
+    font-size: var(--text-lede);
+    line-height: var(--text-lede--line-height);
+    text-wrap: pretty;
+  }
+
+  .posts {
+    display: grid;
+    border-block-start: 2px solid var(--color-text);
+  }
+
+  /* One post per row: meta in the narrow column, title and description in the wide one (4 + 8 from 1024 px). */
+  .entry {
+    position: relative;
+    display: grid;
+    gap: var(--space-2) var(--space-8);
+    padding-block: var(--space-8);
+    border-block-end: 1px solid var(--color-border);
+  }
+
+  @media (min-width: 64rem) {
+    .entry {
+      grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
+    }
+
+    .entry > :not(.entry__meta) {
+      grid-column: 2;
+    }
+
+    .entry__meta {
+      grid-row: 1 / span 3;
+    }
+  }
+
+  .entry__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-4);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+    color: var(--color-text-muted);
+  }
+
+  @media (min-width: 64rem) {
+    .entry__meta {
+      flex-direction: column;
+      padding-block-start: var(--space-2);
+    }
+  }
+
+  .entry__title {
+    font-family: var(--font-display);
+    font-stretch: var(--font-display--stretch);
+    font-size: var(--text-h3);
+    line-height: var(--text-h3--line-height);
+    font-weight: 560;
+    text-wrap: balance;
+  }
+
+  .entry__link {
+    color: var(--color-text);
+    text-decoration: none;
+  }
+
+  .entry__link::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+  }
+
+  .entry__link:focus-visible {
+    outline: none;
+  }
+
+  .entry__link:focus-visible::after {
+    outline: 2px solid var(--color-focus);
+    outline-offset: var(--space-1);
+    border-radius: var(--radius-sm);
+  }
+
+  .entry:hover .entry__link {
+    color: var(--color-link-hover);
+  }
+
+  .entry__desc {
+    color: var(--color-text-muted);
+    max-inline-size: var(--container-lede);
+    text-wrap: pretty;
+  }
+
+  .entry__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin-block-start: var(--space-2);
+  }
+
+  .entry__tags li {
+    padding: var(--space-1) var(--space-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-caption);
+    line-height: var(--text-caption--line-height);
+    font-weight: 500;
+    color: var(--color-text-muted);
+  }
+</style>

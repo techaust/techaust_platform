@@ -1,0 +1,19 @@
+---
+// /security (WEB-SEC, docs/07 §5.11 + 07-A §6): the responsible-disclosure policy, then the published security.txt
+// exactly as /.well-known/security.txt serves it (built by the same function, so the two can't differ).
+// VERIFY WITH CA/LEGAL. Layout: components/legal/LegalPage.astro.
+import LegalPage from "../components/legal/LegalPage.astro";
+import { site } from "../config/site";
+import { legalPages } from "../content/legal-pages";
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { buildSecurityTxt } from "../lib/machine-files";
+
+const doc = legalPages.security;
+const txt = buildSecurityTxt(site.securityTxtExpires).trimEnd();
+---
+
+<BaseLayout title={doc.meta.title} description={doc.meta.description}>
+  <LegalPage doc={doc}>
+    <pre class="sectxt"><code>{txt}</code></pre>
+  </LegalPage>
+</BaseLayout>

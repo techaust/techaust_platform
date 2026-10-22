@@ -1,0 +1,13 @@
+---
+// /accessibility (WEB-LEGAL, WEB-G-16): the accessibility statement (07-A §8). VERIFY WITH CA/LEGAL. Layout:
+// components/legal/LegalPage.astro.
+import LegalPage from "../components/legal/LegalPage.astro";
+import { legalPages } from "../content/legal-pages";
+import BaseLayout from "../layouts/BaseLayout.astro";
+
+const doc = legalPages.accessibility;
+---
+
+<BaseLayout title={doc.meta.title} description={doc.meta.description}>
+  <LegalPage doc={doc} />
+</BaseLayout>

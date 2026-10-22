@@ -1,0 +1,166 @@
+---
+// Prose (docs/06 §5.2): long-form typography for Markdown (blog posts, case studies) and the legal pages. Site prose
+// size (text-body-lg), a 68-character measure, headings in the display face with room above them, lists, tables
+// (each wrapped by its page in a scroll box on phones), blockquotes, code, images with captions. Headings land below
+// the sticky header when a link jumps to them.
+interface Props {
+  class?: string;
+}
+
+const { class: cls } = Astro.props;
+---
+
+<div class:list={["prose", cls]}>
+  <slot />
+</div>
+
+<style>
+  .prose {
+    font-size: var(--text-body-lg);
+    line-height: var(--text-body-lg--line-height);
+  }
+
+  /* The measure is per block of text; tables may use the column's full width. */
+  .prose :global(:is(p, ul, ol, blockquote, pre, h2, h3, h4, figure)) {
+    max-inline-size: var(--container-prose);
+  }
+
+  .prose :global(> * + *) {
+    margin-block-start: var(--stack);
+  }
+
+  .prose :global(:is(h2, h3, h4)) {
+    scroll-margin-block-start: var(--space-24);
+    text-wrap: balance;
+  }
+
+  .prose :global(h2) {
+    margin-block-start: var(--space-16);
+    font-family: var(--font-display);
+    font-stretch: var(--font-display--stretch);
+    font-size: var(--text-h3);
+    line-height: var(--text-h3--line-height);
+    font-weight: 560;
+  }
+
+  .prose :global(h3) {
+    margin-block-start: var(--space-10);
+    font-size: var(--text-h4);
+    line-height: var(--text-h4--line-height);
+    font-weight: 600;
+  }
+
+  .prose :global(:is(h2, h3) + *) {
+    margin-block-start: var(--space-4);
+  }
+
+  .prose :global(> :first-child) {
+    margin-block-start: 0;
+  }
+
+  .prose :global(p) {
+    text-wrap: pretty;
+  }
+
+  .prose :global(:is(ul, ol)) {
+    padding-inline-start: var(--space-6);
+  }
+
+  .prose :global(li + li),
+  .prose :global(li > :is(ul, ol)) {
+    margin-block-start: var(--space-2);
+  }
+
+  .prose :global(li::marker) {
+    color: var(--color-text-muted);
+  }
+
+  .prose :global(strong) {
+    font-weight: 600;
+  }
+
+  .prose :global(blockquote) {
+    margin-inline: 0;
+    padding-inline-start: var(--space-5);
+    border-inline-start: 3px solid var(--color-text-accent);
+    color: var(--color-text-muted);
+  }
+
+  .prose :global(code) {
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+  }
+
+  .prose :global(pre) {
+    overflow-x: auto;
+    padding: var(--space-4) var(--space-5);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    font-size: var(--text-code);
+    line-height: var(--text-code--line-height);
+  }
+
+  .prose :global(pre code) {
+    font-size: inherit;
+  }
+
+  .prose :global(hr) {
+    margin-block: var(--space-12);
+    border: 0;
+    border-block-start: 1px solid var(--color-border);
+  }
+
+  .prose :global(:is(img, figure)) {
+    max-inline-size: 100%;
+    block-size: auto;
+  }
+
+  .prose :global(figcaption) {
+    margin-block-start: var(--space-2);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+    color: var(--color-text-muted);
+  }
+
+  /* Tables: real tables, small type, hairlines; a page wraps each in .prose-table for sideways scroll on phones. */
+  .prose :global(table) {
+    inline-size: 100%;
+    border-collapse: collapse;
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+  }
+
+  .prose :global(:is(th, td)) {
+    padding: var(--space-3) var(--space-4) var(--space-3) 0;
+    border-block-end: 1px solid var(--color-border);
+    text-align: start;
+    vertical-align: top;
+  }
+
+  .prose :global(thead th) {
+    font-weight: 600;
+    border-block-end: 2px solid var(--color-text);
+  }
+
+  /* Scroll cue (CSS only): a hard verdigris rule stands on each edge that still hides columns. Two page-coloured
+     covers ride on the content ("local") and slide over a rule once that edge is reached; the rules stay on the box
+     ("scroll"). A table that fits shows no rule at all. Flat brand edge, no shadow or fade. The rules sit 1px in from every
+     edge so a box on a fractional pixel never lets a sliver of them bleed past the covers. */
+  .prose :global(.prose-table) {
+    --cue: var(--space-1);
+    --cover: var(--space-3);
+    overflow-x: auto;
+    background:
+      linear-gradient(var(--color-bg), var(--color-bg)) left top / var(--cover) 100% no-repeat local,
+      linear-gradient(var(--color-bg), var(--color-bg)) right top / var(--cover) 100% no-repeat local,
+      linear-gradient(var(--color-text-accent), var(--color-text-accent)) left 1px top 1px / var(--cue)
+      calc(100% - 2px) no-repeat scroll,
+      linear-gradient(var(--color-text-accent), var(--color-text-accent)) right 1px top 1px / var(--cue)
+      calc(100% - 2px) no-repeat scroll;
+  }
+
+  .prose :global(.prose-table:focus-visible) {
+    outline-offset: var(--space-1);
+  }
+</style>

@@ -1,0 +1,35 @@
+---
+// The version log of a legal page (WEB-LEGAL, content/legal.ts): newest first, one row per version.
+import { pageLabels as P } from "../../content/labels";
+import { formatLegalDate, type LegalPage } from "../../lib/legal";
+
+interface Props {
+  page: LegalPage;
+}
+
+const { page } = Astro.props;
+const rows = [...page.changes].reverse();
+---
+
+<div class="prose-table" role="region" tabindex="0" aria-label={P.changes}>
+  <table>
+    <thead>
+      <tr>
+        <th scope="col">{P.colVersion}</th>
+        <th scope="col">{P.colDate}</th>
+        <th scope="col">{P.colNote}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {
+        rows.map((c) => (
+          <tr>
+            <td class="tabular">{c.version}</td>
+            <td class="tabular">{formatLegalDate(c.date)}</td>
+            <td>{c.note}</td>
+          </tr>
+        ))
+      }
+    </tbody>
+  </table>
+</div>

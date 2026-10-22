@@ -1,6 +1,6 @@
 # 07-D: Copy for the M2.3 pages that 07 doesn't have yet
 
-_Drafted by the lead on 2026-10-22 for the industry pages and How we work ([07 §5.2, §5.5](../07-content.md)); **awaiting the owner's approval.** Once approved, the pages show this text word for word and 07 §5 points here._
+_Drafted by the lead on 2026-10-22 for the industry pages and How we work ([07 §5.2, §5.5](../07-content.md)); **Approved by the owner on 2026-10-22, including every 🟧 line.** The pages show this text word for word; 07 §5 points here._
 
 **Notes:**
 - Every answer uses only facts that are already approved (07, 07-C, the claims register 07 §1.4, decisions). No client names, numbers or results.

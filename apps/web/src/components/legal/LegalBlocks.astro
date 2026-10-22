@@ -1,0 +1,106 @@
+---
+// The blocks of a legal page (content/legal-pages.ts): paragraphs, lists, 07-A's numbered items, a quoted note and
+// tables. Every string goes through CopyText (bold, links, inline code, the postal-address gap). Each table sits in
+// its own scroll box, named for assistive technology and focusable so a keyboard can scroll it on a phone.
+import type { LegalBlock } from "../../content/legal-pages";
+import CopyText from "../CopyText.astro";
+
+interface Props {
+  blocks: readonly LegalBlock[];
+  /** Names the tables' scroll boxes (the section or page title). */
+  label: string;
+}
+
+const { blocks, label } = Astro.props;
+---
+
+{
+  blocks.map((b) =>
+    "p" in b ? (
+      <CopyText text={b.p} />
+    ) : "ul" in b ? (
+      <ul>
+        {b.ul.map((li) => (
+          <li>
+            <CopyText text={li} as="span" />
+          </li>
+        ))}
+      </ul>
+    ) : "ol" in b ? (
+      <ol class="legal-ol">
+        {b.ol.map((li) => (
+          <li>
+            <CopyText text={li.text} />
+            {li.list && (
+              <ul>
+                {li.list.map((x) => (
+                  <li>
+                    <CopyText text={x} as="span" />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </li>
+        ))}
+      </ol>
+    ) : "quote" in b ? (
+      <blockquote>
+        <CopyText text={b.quote} />
+      </blockquote>
+    ) : "table" in b ? (
+      <div class="prose-table" role="region" tabindex="0" aria-label={label}>
+        <table class={`cols-${b.table.head.length}`}>
+          <thead>
+            <tr>
+              {b.table.head.map((h) => (
+                <th scope="col">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {b.table.rows.map((r) => (
+              <tr>
+                {r.map((c) => (
+                  <td>
+                    <CopyText text={c} as="span" />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    ) : (
+      <pre><code>{b.pre}</code></pre>
+    ),
+  )
+}
+
+<style>
+  /* Tables keep readable columns and scroll inside their box on narrow screens (about 10 rem a column). */
+  .cols-3 {
+    min-inline-size: 30rem;
+  }
+
+  .cols-4 {
+    min-inline-size: 40rem;
+  }
+
+  .cols-5 {
+    min-inline-size: 44rem;
+  }
+
+  .legal-ol > li + li {
+    margin-block-start: var(--space-4);
+  }
+
+  .legal-ol li > ul {
+    margin-block-start: var(--space-3);
+  }
+
+  .legal-ol > li::marker {
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text-accent);
+    font-weight: 600;
+  }
+</style>

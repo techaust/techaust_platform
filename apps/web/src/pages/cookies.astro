@@ -1,0 +1,14 @@
+---
+// /cookies (WEB-LEGAL): the cookie policy (07-A §5), without the Google Analytics sentence and the _ga row while the
+// GA4 ID is empty (docs/13, 2026-10-22); "Cookie settings" opens the footer's preferences dialog. VERIFY WITH
+// CA/LEGAL. Layout: components/legal/LegalPage.astro.
+import LegalPage from "../components/legal/LegalPage.astro";
+import { legalPages } from "../content/legal-pages";
+import BaseLayout from "../layouts/BaseLayout.astro";
+
+const doc = legalPages.cookies;
+---
+
+<BaseLayout title={doc.meta.title} description={doc.meta.description}>
+  <LegalPage doc={doc} />
+</BaseLayout>

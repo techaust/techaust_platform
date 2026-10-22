@@ -1,0 +1,210 @@
+---
+// A blog post (/blog/<slug>, WEB-BLOG): breadcrumb, the title (h1), the description as the lede, then one meta line:
+// date (and "Updated" date), reading time, and the author linked to About (07 §7: the founder writes them). Long posts
+// (three or more sections) get a contents list beside the text from 1024 px (sticky; above the text on narrower
+// screens; no script, docs/06 TOC without the scroll highlight). After the text: the post's FAQ (with FAQPage JSON-LD),
+// its related services as the priced index, and the closing band with the first related service's own CTA
+// (e.g. "Start a pilot" for S9), else "Book a Discovery Sprint". Article JSON-LD from the front-matter.
+import "../../styles/page.css";
+import { discoveryHref } from "../../config/site";
+import { about } from "../../content/company";
+import { home } from "../../content/home";
+import { serviceLabels as L, pageLabels as P } from "../../content/labels";
+import { serviceContent, serviceLink } from "../../content/services";
+import type { ServiceCode } from "../../content/types";
+import { type BlogData, istDay, type TocItem } from "../../lib/blog";
+import { formatLegalDate } from "../../lib/legal";
+import { ORIGIN } from "../../lib/machine-files";
+import CTABand from "../CTABand.astro";
+import CurrencyNote from "../CurrencyNote.astro";
+import FaqJsonLd from "../FaqJsonLd.astro";
+import FaqSection from "../FaqSection.astro";
+import JsonLd from "../JsonLd.astro";
+import PageHero from "../PageHero.astro";
+import PriceNote from "../PriceNote.astro";
+import Prose from "../Prose.astro";
+import ServiceIndex from "../ServiceIndex.astro";
+
+interface Props {
+  slug: string;
+  data: BlogData;
+  headings: readonly TocItem[];
+  minutes: number;
+}
+
+const { slug, data, headings, minutes } = Astro.props;
+const iso = istDay;
+const toc = headings.filter((h) => h.depth === 2);
+const showToc = toc.length >= 3;
+const codes = data.relatedServices as ServiceCode[];
+const related = codes.map(serviceLink);
+const first = codes[0];
+const primary = first
+  ? serviceContent(first).hero.primary
+  : { label: home.band.primary, href: discoveryHref };
+const url = `${ORIGIN}/blog/${slug}`;
+const article = {
+  "@type": "Article",
+  headline: data.title,
+  description: data.description,
+  datePublished: iso(data.date),
+  dateModified: iso(data.updated ?? data.date),
+  author: { "@type": "Person", name: about.founder.name, url: `${ORIGIN}/about` },
+  publisher: { "@type": "Organization", name: "TecHaust Technologies", url: ORIGIN },
+  mainEntityOfPage: url,
+  inLanguage: "en-IN",
+};
+---
+
+<PageHero title={data.title} lede={data.description} trail={[{ label: P.blog, href: "/blog" }, { label: data.title }]}>
+  <p class="post-meta">
+    <time datetime={iso(data.date)}>{formatLegalDate(iso(data.date))}</time>
+    {
+      data.updated && (
+        <span>
+          {P.updated} <time datetime={iso(data.updated)}>{formatLegalDate(iso(data.updated))}</time>
+        </span>
+      )
+    }
+    <span class="tabular">
+      {minutes} {P.minRead}
+    </span>
+    <span>
+      {P.by} <a href="/about">{about.founder.name}</a>
+    </span>
+  </p>
+</PageHero>
+
+<section class="section section--flush-top">
+  <div class:list={["container", "post", showToc && "post--toc"]}>
+    {
+      showToc && (
+        <nav class="toc" aria-labelledby="toc-title">
+          <h2 class="toc__title" id="toc-title">
+            {P.onThisPage}
+          </h2>
+          <ol role="list" class="toc__list">
+            {toc.map((h) => (
+              <li>
+                <a href={`#${h.slug}`}>{h.text}</a>
+              </li>
+            ))}
+          </ol>
+        </nav>
+      )
+    }
+    <Prose class="post__body">
+      <slot />
+    </Prose>
+  </div>
+</section>
+
+{
+  data.faq && data.faq.length > 0 && (
+    <>
+      <FaqSection title={L.faqs} items={data.faq} flushTop />
+      <FaqJsonLd items={data.faq} />
+    </>
+  )
+}
+
+{
+  related.length > 0 && (
+    <section class="section section--flush-top" aria-labelledby="related-title">
+      <div class="container">
+        <div class="section-head">
+          <h2 class="t-h2" id="related-title">
+            {L.related}
+          </h2>
+          <CurrencyNote />
+        </div>
+        <ServiceIndex items={related} />
+        <PriceNote class="post__note" />
+      </div>
+    </section>
+  )
+}
+
+<CTABand title={home.band.h2} text={home.band.text} primary={primary} whatsappLabel={home.band.whatsapp} />
+<JsonLd data={article} />
+
+<style>
+  .post-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1) var(--space-6);
+    padding-block: var(--space-4);
+    border-block: 1px solid var(--color-border);
+    color: var(--color-text-muted);
+  }
+
+  .post-meta a {
+    display: inline-flex;
+    align-items: center;
+    min-block-size: var(--target-min);
+    color: var(--color-text);
+  }
+
+  .post {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-10);
+  }
+
+  @media (min-width: 64rem) {
+    .post {
+      grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
+      column-gap: var(--space-8);
+    }
+
+    .post > :global(.post__body) {
+      grid-column: 2;
+    }
+  }
+
+  /* Contents: above the text on phones and tablets; a sticky column beside it from 1024 px. */
+  .toc {
+    padding-block-start: var(--space-4);
+    border-block-start: 2px solid var(--color-text);
+  }
+
+  @media (min-width: 64rem) {
+    .toc {
+      position: sticky;
+      inset-block-start: calc(var(--header-h) + var(--space-6));
+      align-self: start;
+    }
+  }
+
+  .toc__title {
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+    font-weight: 600;
+    color: var(--color-text-muted);
+  }
+
+  .toc__list {
+    display: grid;
+    margin-block-start: var(--space-2);
+  }
+
+  .toc__list a {
+    display: flex;
+    align-items: center;
+    min-block-size: var(--target-min);
+    padding-block: var(--space-1);
+    color: var(--color-text);
+    text-decoration: none;
+    text-wrap: pretty;
+  }
+
+  .toc__list a:hover {
+    color: var(--color-link-hover);
+    text-decoration: underline;
+  }
+
+  .container > :global(.post__note) {
+    margin-block-start: var(--block-gap);
+  }
+</style>

@@ -1,0 +1,34 @@
+---
+// M2.3 preview (dev server only, noindex): the case-study template with a labelled, invented-for-layout sample (no
+// real client, no real numbers). There are no case studies yet; real ones come from the owner's briefs (07 §6).
+import Notice from "../components/Notice.astro";
+import CaseStudy from "../components/work/CaseStudy.astro";
+import BaseLayout from "../layouts/BaseLayout.astro";
+
+const data = {
+  title: "Sample case study title for the layout preview",
+  industry: "Sample industry",
+  size: "Sample size band",
+  region: "Sample region",
+  problem:
+    "Sample problem statement: what was slow, costly or risky, in a sentence or two. Not a real client.",
+  outcome: "Sample outcome line. A real case study states only results measured on the project.",
+  stack: ["Sample tool A", "Sample tool B", "Sample tool C"],
+  verified: false,
+  draft: true,
+};
+---
+
+<BaseLayout title="Preview: case study | TecHaust Technologies" noindex placeholders>
+  <div class="container">
+    <Notice variant="illustrative" label="Preview.">Sample case study; not a real client or result. Never built.</Notice>
+  </div>
+  <CaseStudy data={data}>
+    <h2 id="what-we-did">What we did</h2>
+    <p>Sample paragraph describing the main features, integrations and users. Not real content.</p>
+    <h2 id="results">Results</h2>
+    <p>Sample paragraph: each result with how it was measured. Not real content.</p>
+    <h2 id="whats-next">What’s next</h2>
+    <p>Sample paragraph. Not real content.</p>
+  </CaseStudy>
+</BaseLayout>

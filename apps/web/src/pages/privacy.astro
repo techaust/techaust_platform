@@ -1,0 +1,12 @@
+---
+// /privacy (WEB-LEGAL): the privacy notice (07-A §1). VERIFY WITH CA/LEGAL. Layout: components/legal/LegalPage.astro.
+import LegalPage from "../components/legal/LegalPage.astro";
+import { legalPages } from "../content/legal-pages";
+import BaseLayout from "../layouts/BaseLayout.astro";
+
+const doc = legalPages.privacy;
+---
+
+<BaseLayout title={doc.meta.title} description={doc.meta.description}>
+  <LegalPage doc={doc} />
+</BaseLayout>

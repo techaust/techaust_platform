@@ -1,0 +1,203 @@
+---
+// About (/about, WEB-ABOUT, docs/07 §5.7): the h1 with the story as its lede; the founder (headshot, name and role,
+// bio, LinkedIn); the team (no names or photos until each person agrees); what we value; where we are; "Talk to us".
+// Pending owner inputs (07 §9: headshot, bio, founder LinkedIn) come from site config; while one is empty the page
+// shows the Placeholder component in its place (never an invented value), and scripts/check-prod-readiness.mjs keeps
+// production blocked until each is supplied. The headshot frame has its top-right corner cut at 45° (docs/06 §4.3,
+// the signature detail "on the top-right corner of the hero image frame").
+import "../styles/page.css";
+import CopyText from "../components/CopyText.astro";
+import CTABand from "../components/CTABand.astro";
+import Icon from "../components/Icon.astro";
+import PageHero from "../components/PageHero.astro";
+import Placeholder from "../components/Placeholder.astro";
+import { site } from "../config/site";
+import { about } from "../content/company";
+import { home } from "../content/home";
+import { pageLabels as P } from "../content/labels";
+import { cta } from "../content/shared";
+import { shell } from "../content/shell";
+import BaseLayout from "../layouts/BaseLayout.astro";
+
+const f = about.founder;
+const talk = cta.talk();
+---
+
+<BaseLayout title={about.meta.title} description={about.meta.description}>
+  <PageHero title={about.h1} lede={about.story} />
+
+  <section class="section section--alt" aria-labelledby="founder-title">
+    <div class="container split">
+      <h2 class="t-h2" id="founder-title">{P.founder}</h2>
+      <div class="founder">
+        <figure class="founder__photo">
+          {
+            site.founderPhoto ? (
+              <img src={site.founderPhoto} alt={f.name} width="480" height="600" loading="lazy" decoding="async" />
+            ) : (
+              <Placeholder what="Founder headshot, at least 1200 px, plain background" class="founder__ph" />
+            )
+          }
+        </figure>
+        <div class="founder__text">
+          <p class="founder__name">
+            <strong>{f.name}</strong>, {f.role}
+          </p>
+          {
+            site.founderBio ? (
+              <CopyText text={site.founderBio} class="t-body-lg founder__bio" />
+            ) : (
+              <Placeholder what="Founder bio, about 80 to 120 words" />
+            )
+          }
+          {
+            site.linkedinFounder ? (
+              <p>
+                <a class="founder__link" href={site.linkedinFounder} rel="noopener">
+                  {shell.footer.linkedinFounder}
+                  <Icon name="arrow-up-right" size={16} />
+                </a>
+              </p>
+            ) : (
+              <Placeholder what="Founder’s LinkedIn URL" />
+            )
+          }
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" aria-labelledby="team-title">
+    <div class="container split">
+      <h2 class="t-h2" id="team-title">{P.team}</h2>
+      <CopyText text={about.team} class="statement" />
+    </div>
+  </section>
+
+  <section class="section section--flush-top" aria-labelledby="values-title">
+    <div class="container split">
+      <h2 class="t-h2" id="values-title">{P.values}</h2>
+      <ul class="values" role="list">
+        {about.values.map((v) => <li class="value">{v}</li>)}
+      </ul>
+    </div>
+  </section>
+
+  <section class="section section--flush-top" aria-labelledby="where-title">
+    <div class="container split">
+      <h2 class="t-h2" id="where-title">{P.where}</h2>
+      <div class="where">
+        <Icon name="map-pin" size={24} class="where__icon" />
+        <CopyText text={about.where} class="t-body-lg" />
+      </div>
+    </div>
+  </section>
+
+  <CTABand title={home.band.h2} text={home.band.text} primary={talk} whatsappLabel={home.band.whatsapp} />
+</BaseLayout>
+
+<style>
+  .founder {
+    display: grid;
+    gap: var(--space-8);
+    align-items: start;
+  }
+
+  @media (min-width: 48rem) {
+    .founder {
+      grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+      column-gap: var(--space-10);
+    }
+  }
+
+  /* The headshot frame: 4:5, a hairline edge, the top-right corner cut at 45°. */
+  .founder__photo {
+    --cut: var(--space-8);
+    position: relative;
+    display: grid;
+    place-items: center;
+    max-inline-size: 22rem;
+    aspect-ratio: 4 / 5;
+    padding: var(--space-4);
+    /* One step up from the section in both themes (white on stone; ink-700 on ink-750). */
+    background: var(--color-surface-raised);
+    clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, 0 100%);
+  }
+
+  .founder__photo img {
+    position: absolute;
+    inset: 0;
+    inline-size: 100%;
+    block-size: 100%;
+    object-fit: cover;
+  }
+
+  .founder__photo :global(.founder__ph) {
+    background: var(--color-bg);
+  }
+
+  .founder__text {
+    display: grid;
+    gap: var(--space-5);
+    align-content: start;
+    justify-items: start;
+  }
+
+  .founder__name {
+    font-size: var(--text-h4);
+    line-height: var(--text-h4--line-height);
+    color: var(--color-text-muted);
+  }
+
+  .founder__name strong {
+    font-family: var(--font-display);
+    font-stretch: var(--font-display--stretch);
+    font-size: var(--text-h3);
+    font-weight: 560;
+    color: var(--color-text);
+  }
+
+  .founder__link {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-block-size: var(--target-min);
+    font-weight: 600;
+  }
+
+  /* What we value: five lines in display type on hairlines, under an ink rule. */
+  .values {
+    display: grid;
+    border-block-start: 2px solid var(--color-text);
+  }
+
+  .value {
+    padding-block: var(--space-5);
+    border-block-end: 1px solid var(--color-border);
+    font-family: var(--font-display);
+    font-stretch: var(--font-display--stretch);
+    font-size: var(--text-h3);
+    line-height: var(--text-h3--line-height);
+    font-weight: 560;
+    text-wrap: balance;
+  }
+
+  .where {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--space-3);
+    align-items: start;
+  }
+
+  .where :global(.where__icon) {
+    margin-block-start: var(--space-1);
+    color: var(--color-text-accent);
+  }
+
+  @media (forced-colors: active) {
+    .founder__photo {
+      clip-path: none;
+      border: 1px solid CanvasText;
+    }
+  }
+</style>

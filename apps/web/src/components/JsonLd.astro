@@ -1,0 +1,13 @@
+---
+// Structured data (WEB-SVC-04, WEB-BLOG): one <script type="application/ld+json"> data block. Not executed, so the CSP
+// doesn't govern it (scripts/web-dist-checks.mjs skips data blocks). "<" is escaped so no text can close the element.
+// Callers build the object from the same content the page shows (the FAQ items, the post's front-matter).
+interface Props {
+  data: Record<string, unknown>;
+}
+
+const { data } = Astro.props;
+const json = JSON.stringify({ "@context": "https://schema.org", ...data }).replace(/</g, "\\u003c");
+---
+
+<script is:inline type="application/ld+json" set:html={json} />

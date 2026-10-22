@@ -1,0 +1,148 @@
+---
+// An industry page (WEB-IND, 07 §5.2 + 07-D §2–§4): the outcome headline, then what slows these teams down (the
+// reader's own week, in their words), the use cases beside the tools we connect (one spec sheet, two columns on wide
+// screens), the related services as the priced service index (≥ 3, linked), the FAQ with its FAQPage JSON-LD from
+// the same data, and the closing band. Every string goes through CopyText (prices, arrows).
+import "../../styles/page.css";
+import { discoveryHref } from "../../config/site";
+import { home } from "../../content/home";
+import { serviceLabels as L, pageLabels as P } from "../../content/labels";
+import { serviceLink } from "../../content/services";
+import { shared } from "../../content/shared";
+import type { IndustryContent } from "../../content/types";
+import Button from "../Button.astro";
+import CopyText from "../CopyText.astro";
+import CTABand from "../CTABand.astro";
+import CurrencyNote from "../CurrencyNote.astro";
+import FaqJsonLd from "../FaqJsonLd.astro";
+import FaqSection from "../FaqSection.astro";
+import PageHero from "../PageHero.astro";
+import PriceNote from "../PriceNote.astro";
+import ServiceIndex from "../ServiceIndex.astro";
+
+interface Props {
+  industry: IndustryContent;
+}
+
+const { industry: x } = Astro.props;
+if (x.related.length < 3) throw new Error(`${x.slug}: WEB-IND asks for at least 3 related services`);
+const related = x.related.map(serviceLink);
+const primary = { label: home.band.primary, href: discoveryHref };
+---
+
+<PageHero title={x.h1} trail={[{ label: P.industries, href: "/industries" }, { label: x.name }]}>
+  <p class="t-lede ind__who">{x.label}</p>
+  <div class="actions ind__ctas">
+    <Button href={primary.href} size="lg">{primary.label}</Button>
+    <Button href="/pricing" variant="secondary" size="lg">{shared.cta.pricing}</Button>
+  </div>
+</PageHero>
+
+<section class="section section--alt" aria-labelledby="problems-title">
+  <div class="container split">
+    <h2 class="t-h2" id="problems-title">{P.problems}</h2>
+    <ul class="pains" role="list">
+      {
+        x.problems.map((p) => (
+          <li class="pain">
+            <CopyText text={p} class="pain__text" />
+          </li>
+        ))
+      }
+    </ul>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container sheet">
+    <div class="sheet__col">
+      <h2 class="t-h2 sheet__title" id="uses-title">{P.useCases}</h2>
+      <ul class="ruled ruled--cap" role="list" aria-labelledby="uses-title">
+        {
+          x.useCases.map((u) => (
+            <li>
+              <CopyText text={u} as="span" />
+            </li>
+          ))
+        }
+      </ul>
+    </div>
+    <div class="sheet__col">
+      <h2 class="t-h2 sheet__title" id="tools-title">{x.tools.label}</h2>
+      <ul class="tools" role="list" aria-labelledby="tools-title">
+        {x.tools.items.map((t) => <li class="tool">{t}</li>)}
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="section section--flush-top" aria-labelledby="related-title">
+  <div class="container">
+    <div class="section-head">
+      <h2 class="t-h2" id="related-title">{L.related}</h2>
+      <CurrencyNote />
+    </div>
+    <ServiceIndex items={related} />
+    <PriceNote class="ind__note" />
+  </div>
+</section>
+
+<FaqSection title={L.faqs} items={x.faqs} flushTop />
+<FaqJsonLd items={x.faqs} />
+
+<CTABand title={home.band.h2} text={home.band.text} primary={primary} whatsappLabel={home.band.whatsapp} />
+
+<style>
+  .ind__who {
+    margin-block-start: calc(-1 * var(--space-2));
+  }
+
+  .ind__ctas {
+    margin-block-start: var(--space-8);
+  }
+
+  /* What slows teams down: four statements on ink rules, two by two from 768 px. */
+  .pains {
+    display: grid;
+    gap: var(--space-8) var(--space-8);
+  }
+
+  @media (min-width: 48rem) {
+    .pains {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      row-gap: var(--space-10);
+    }
+  }
+
+  .pain {
+    padding-block-start: var(--space-5);
+    border-block-start: 2px solid var(--color-text);
+  }
+
+  .pain :global(.pain__text) {
+    font-size: var(--text-lede);
+    line-height: var(--text-lede--line-height);
+    text-wrap: pretty;
+  }
+
+  /* Tools: names in a grid of hairline cells (a list of systems, not tags). */
+  .tools {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 12rem), 1fr));
+    column-gap: var(--space-6);
+    border-block-start: 2px solid var(--color-text);
+  }
+
+  .tool {
+    padding-block: var(--space-4);
+    border-block-end: 1px solid var(--color-border);
+    font-size: var(--text-body-lg);
+    line-height: var(--text-body-lg--line-height);
+    font-weight: 500;
+    text-wrap: pretty;
+  }
+
+  .container > :global(.ind__note) {
+    margin-block-start: var(--block-gap);
+  }
+</style>

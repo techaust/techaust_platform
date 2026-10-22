@@ -1,0 +1,159 @@
+---
+// Work (/work, WEB-WORK, docs/07 §5.4): the h1 and lede, then the published case studies (verified only, lib/work.ts)
+// as an index (docs/06 CaseStudyCard: industry, problem, headline result, "Anonymised" tag), or, while there are
+// none, 07's empty state with "Talk to us" (as the home page's proof fallback).
+import { getCollection } from "astro:content";
+import "../../styles/page.css";
+import Button from "../../components/Button.astro";
+import Icon from "../../components/Icon.astro";
+import PageHero from "../../components/PageHero.astro";
+import { pageLabels as P } from "../../content/labels";
+import { cta } from "../../content/shared";
+import { workPage as w } from "../../content/work-page";
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { publishedCases } from "../../lib/work";
+
+const cases = publishedCases(await getCollection("caseStudies"));
+const talk = cta.talk();
+---
+
+<BaseLayout title={w.meta.title} description={w.meta.description}>
+  <PageHero title={w.h1} lede={w.lede} />
+
+  <section class="section section--flush-top">
+    <div class="container">
+      {
+        cases.length > 0 ? (
+          <ul class="cases" role="list">
+            {cases.map((c) => (
+              <li class="case">
+                <p class="case__industry">{c.data.industry}</p>
+                <h2 class="case__title">
+                  <a class="case__link" href={`/work/${c.id}`}>
+                    {c.data.title}
+                  </a>
+                </h2>
+                <p class="case__problem">{c.data.problem}</p>
+                <p class="case__outcome">{c.data.outcome}</p>
+                <p class="case__tag">{P.anonymised}</p>
+                <Icon name="arrow-right" size={24} class="case__arrow" />
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div class="empty">
+            <p class="empty__text">{w.empty}</p>
+            <div class="actions">
+              <Button href={talk.href} variant="secondary" size="lg">
+                {talk.label}
+              </Button>
+            </div>
+          </div>
+        )
+      }
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  /* The empty state: one ruled block in the page's text column. */
+  .empty {
+    display: grid;
+    gap: var(--space-6);
+    max-inline-size: var(--container-lede);
+    padding-block-start: var(--space-6);
+    border-block-start: 2px solid var(--color-text);
+  }
+
+  .empty__text {
+    font-size: var(--text-lede);
+    line-height: var(--text-lede--line-height);
+    text-wrap: pretty;
+  }
+
+  .cases {
+    display: grid;
+    gap: var(--space-12) var(--space-8);
+  }
+
+  @media (min-width: 48rem) {
+    .cases {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  .case {
+    position: relative;
+    display: grid;
+    align-content: start;
+    gap: var(--space-3);
+    padding-block-start: var(--space-5);
+    padding-inline-end: var(--space-10);
+    border-block-start: 2px solid var(--color-text);
+  }
+
+  .case__industry,
+  .case__tag {
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+    color: var(--color-text-muted);
+  }
+
+  .case__title {
+    font-family: var(--font-display);
+    font-stretch: var(--font-display--stretch);
+    font-size: var(--text-h3);
+    line-height: var(--text-h3--line-height);
+    font-weight: 560;
+    text-wrap: balance;
+  }
+
+  .case__link {
+    color: var(--color-text);
+    text-decoration: none;
+  }
+
+  .case__link::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+  }
+
+  .case__link:focus-visible {
+    outline: none;
+  }
+
+  .case__link:focus-visible::after {
+    outline: 2px solid var(--color-focus);
+    outline-offset: var(--space-2);
+    border-radius: var(--radius-sm);
+  }
+
+  .case:hover .case__link {
+    color: var(--color-link-hover);
+  }
+
+  .case__problem {
+    color: var(--color-text-muted);
+    text-wrap: pretty;
+  }
+
+  .case__outcome {
+    font-size: var(--text-h4);
+    line-height: var(--text-h4--line-height);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .case :global(.case__arrow) {
+    position: absolute;
+    inset-block-start: var(--space-5);
+    inset-inline-end: 0;
+    color: var(--color-text-muted);
+  }
+
+  .case:hover :global(.case__arrow),
+  .case:focus-within :global(.case__arrow) {
+    color: var(--color-text-accent);
+  }
+</style>

@@ -197,7 +197,9 @@ for (const r of plans.rows) {
 
   .plans__row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    /* The value never takes more than half the row, so a long one ("4 business hours for critical issues") wraps
+       instead of squeezing its label to nothing in the narrow three-up cards at tablet width. */
+    grid-template-columns: minmax(0, 1fr) fit-content(50%);
     gap: var(--space-4);
     align-items: start;
     padding-block: var(--space-2);

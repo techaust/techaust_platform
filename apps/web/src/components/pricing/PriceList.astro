@@ -1,0 +1,251 @@
+---
+// The price list (WEB-PRICING, 07 §5.3 "the price table grouped by category"): every service on the site in the
+// services hub's five groups and order (07 §2.1, §5.1), plus the catalogue entries shown as a section of another page
+// (content/pricing.ts). Per row: the service (linked), its starting price(s) exactly as its page shows them (the
+// pricing block's prices, else the hero price), and the payment schedule worded from the catalogue (scheduleOf).
+// A service hidden from the site (S3 while flagged off) is left out (isServiceOnSite).
+//
+// One real <table>: a header row, then per group a header cell spanning the row (scope="rowgroup"), then one row per
+// service with the name as the row header. Below 768 px the rows stack (name, price, payment) and the column names
+// go; the explicit ARIA table roles keep the table semantics that `display: block` would otherwise drop.
+// Prices: PriceTag (both currencies in one cell, so the currency swap moves nothing).
+import { pageLabels as P } from "../../content/labels";
+import { pricingExtras } from "../../content/pricing";
+import { serviceContent } from "../../content/services";
+import { servicesHub } from "../../content/services-hub";
+import type { PriceSpec, ServiceCode } from "../../content/types";
+import { isServiceOnSite, priceOf, scheduleOf } from "../../lib/prices";
+import PriceTag from "../PriceTag.astro";
+
+interface Props {
+  id: string;
+  labelledby: string;
+}
+
+const { id, labelledby } = Astro.props;
+
+type Row = { code: ServiceCode; title: string; href: string; prices: PriceSpec[]; extra?: boolean };
+
+const rowOf = (code: ServiceCode): Row => {
+  const s = serviceContent(code);
+  return {
+    code,
+    title: s.name,
+    href: `/services/${s.slug}`,
+    prices: s.pricing?.prices ?? [s.hero.price],
+  };
+};
+
+const groups = servicesHub.groups
+  .map((g) => {
+    const rows: Row[] = [];
+    for (const code of g.codes.filter((c) => isServiceOnSite(c))) {
+      rows.push(rowOf(code));
+      for (const x of pricingExtras.filter((e) => e.after === code && isServiceOnSite(e.code)))
+        rows.push({ code: x.code, title: x.title, href: x.href, prices: [x.price], extra: true });
+    }
+    return { ...g, rows };
+  })
+  .filter((g) => g.rows.length > 0);
+---
+
+<table class="plist" id={id} aria-labelledby={labelledby} role="table">
+  <thead role="rowgroup" class="plist__head">
+    <tr role="row">
+      <th scope="col" role="columnheader">{P.colService}</th>
+      <th scope="col" role="columnheader">{P.colPrice}</th>
+      <th scope="col" role="columnheader">{P.colPayment}</th>
+    </tr>
+  </thead>
+  {
+    groups.map((g) => (
+      <tbody role="rowgroup" class="plist__body">
+        <tr role="row" class="plist__group">
+          <th scope="rowgroup" colspan="3" role="rowheader">
+            <span class="plist__gname">{g.name}</span>
+            <span class="plist__gintro">{g.intro}</span>
+          </th>
+        </tr>
+        {g.rows.map((r) => {
+          const tags = r.prices.map((p) => ({ ...p, v: priceOf(p.ref) }));
+          const askAt = tags.findLastIndex((t) => t.v.usd === null);
+          return (
+            <tr role="row" class:list={["plist__row", r.extra && "plist__row--extra"]}>
+              <th scope="row" role="rowheader" class="plist__name">
+                <a href={r.href}>{r.title}</a>
+              </th>
+              <td role="cell" class="plist__price">
+                {tags.map((t, i) => (
+                  <PriceTag inr={t.v.inr} usd={t.v.usd} lead={t.lead} unit={t.unit} size="md" ask={i === askAt} />
+                ))}
+              </td>
+              <td role="cell" class="plist__pay">
+                {scheduleOf(r.code)}
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    ))
+  }
+</table>
+
+<style>
+  .plist {
+    inline-size: 100%;
+    border-collapse: collapse;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .plist th {
+    font-weight: inherit;
+    text-align: start;
+  }
+
+  /* Column names: quiet, over the ink rule of the first group. */
+  .plist__head th {
+    padding-block: 0 var(--space-3);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+    font-weight: 600;
+    color: var(--color-text-muted);
+  }
+
+  /* A group: its name in display type on an ink rule, the hub's one-line intro beside it. */
+  .plist__group {
+    border-block-end: 2px solid var(--color-text);
+  }
+
+  .plist__group th {
+    padding-block: var(--space-10) var(--space-4);
+  }
+
+  .plist__body:first-of-type .plist__group th {
+    padding-block-start: var(--space-4);
+  }
+
+  .plist__gname {
+    font-family: var(--font-display);
+    font-stretch: var(--font-display--stretch);
+    font-size: var(--text-h3);
+    line-height: var(--text-h3--line-height);
+    font-weight: 560;
+    margin-inline-end: var(--space-4);
+  }
+
+  .plist__gintro {
+    color: var(--color-text-muted);
+  }
+
+  .plist__row {
+    border-block-end: 1px solid var(--color-border);
+  }
+
+  .plist__row > * {
+    padding-block: var(--space-5);
+    vertical-align: top;
+  }
+
+  .plist .plist__name {
+    padding-inline-end: var(--space-6);
+    font-size: var(--text-h4);
+    line-height: var(--text-h4--line-height);
+    font-weight: 600;
+  }
+
+  .plist__name a {
+    display: inline-flex;
+    align-items: center;
+    min-block-size: var(--target-min);
+    margin-block: calc((var(--space-8) - var(--target-min)) / 2);
+    color: var(--color-text);
+    text-decoration-color: var(--color-border);
+  }
+
+  .plist__name a:hover {
+    color: var(--color-link-hover);
+    text-decoration-color: currentColor;
+  }
+
+  /* A section of another page (S15, S17): set in from its parent service, a quiet weight. */
+  .plist .plist__row--extra .plist__name {
+    padding-inline-start: var(--space-6);
+    font-size: var(--text-body-lg);
+    font-weight: 500;
+  }
+
+  .plist__price {
+    padding-inline-end: var(--space-6);
+  }
+
+  .plist__price > :global(* + *) {
+    margin-block-start: var(--space-2);
+  }
+
+  .plist__pay {
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+    color: var(--color-text-muted);
+    text-wrap: pretty;
+  }
+
+  .plist__pay::first-letter {
+    text-transform: uppercase;
+  }
+
+  /* Phones: each service a block (name, price, payment); the column names go (the cells say what they are). */
+  @media (max-width: 47.99rem) {
+    .plist,
+    .plist tbody,
+    .plist tr,
+    .plist th,
+    .plist td {
+      display: block;
+    }
+
+    .plist__head {
+      position: absolute;
+      inline-size: 1px;
+      block-size: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+
+    .plist__gname {
+      display: block;
+      margin-block-end: var(--space-1);
+    }
+
+    .plist__row {
+      display: grid;
+      gap: var(--space-2);
+      padding-block: var(--space-5);
+      border-block-end: 1px solid var(--color-border);
+    }
+
+    .plist__row > *,
+    .plist .plist__name {
+      padding: 0;
+    }
+
+    .plist .plist__row--extra .plist__name {
+      padding-inline-start: 0;
+    }
+  }
+
+  /* Wide screens: three columns. */
+  @media (min-width: 48rem) {
+    .plist {
+      table-layout: fixed;
+    }
+
+    .plist__head th:nth-child(1) {
+      inline-size: 38%;
+    }
+
+    .plist__head th:nth-child(2) {
+      inline-size: 34%;
+    }
+  }
+</style>

@@ -1,0 +1,72 @@
+---
+// The hero of a plain page (industries, pricing, about, work, blog, legal): an optional breadcrumb, the h1 (the LCP
+// element), an optional lede, then whatever the page adds (prices notes, a version line, CTAs) in the slot. Same
+// spacing as the service hero and the services hub, so every page starts on the same line.
+import Breadcrumbs from "./Breadcrumbs.astro";
+
+interface Props {
+  title: string;
+  lede?: string;
+  trail?: readonly { label: string; href?: string }[];
+  id?: string;
+  class?: string;
+}
+
+const { title, lede, trail, id = "page-title", class: cls } = Astro.props;
+---
+
+<section class:list={["phero", "page-hero", !trail && "phero--plain", cls]} aria-labelledby={id}>
+  <div class="container">
+    {trail && <Breadcrumbs trail={trail} />}
+    <h1 class="t-display-2 phero__title" id={id}>{title}</h1>
+    {lede && <p class="t-lede phero__lede">{lede}</p>}
+    {Astro.slots.has("default") && (
+      <div class="phero__extra">
+        <slot />
+      </div>
+    )}
+  </div>
+</section>
+
+<style>
+  .phero {
+    padding-block: var(--space-6) var(--section-y);
+  }
+
+  .phero--plain {
+    padding-block-start: var(--space-10);
+  }
+
+  @media (min-width: 48rem) {
+    .phero {
+      padding-block-start: var(--space-10);
+    }
+
+    .phero--plain {
+      padding-block-start: var(--space-16);
+    }
+  }
+
+  .phero:not(.phero--plain) .phero__title {
+    margin-block-start: var(--space-8);
+  }
+
+  @media (min-width: 48rem) {
+    .phero:not(.phero--plain) .phero__title {
+      margin-block-start: var(--space-12);
+    }
+  }
+
+  /* Long-form pages (legal): the text follows the version line more closely. */
+  .phero--tight {
+    padding-block-end: var(--block-gap);
+  }
+
+  .phero__lede {
+    margin-block-start: var(--space-6);
+  }
+
+  .phero__extra {
+    margin-block-start: var(--space-8);
+  }
+</style>

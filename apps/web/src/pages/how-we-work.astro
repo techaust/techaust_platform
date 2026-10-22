@@ -1,0 +1,276 @@
+---
+// How we work (/how-we-work, WEB-HOW, docs/07 §5.5 + 07-D §5): the nine sections in 07's order. The four steps are
+// the page's spine: one numbered row each (a real sequence), the home title and line, then the expanded text.
+// Engagement models as four entries on ink rules; sections 3–8 as one ruled ledger (each its own h2, so each is
+// linkable and listed by assistive technology); "After launch" with the care-plan price; the closing band with
+// "Book a Discovery Sprint" (07 §5.5 CTA).
+import "../styles/page.css";
+import Button from "../components/Button.astro";
+import CopyText from "../components/CopyText.astro";
+import CTABand from "../components/CTABand.astro";
+import CurrencyNote from "../components/CurrencyNote.astro";
+import PageHero from "../components/PageHero.astro";
+import PriceNote from "../components/PriceNote.astro";
+import { discoveryHref } from "../config/site";
+import { howWeWork as h } from "../content/company";
+import { home } from "../content/home";
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { plainText } from "../lib/copy";
+---
+
+<BaseLayout title={h.meta.title} description={plainText(h.meta.description)}>
+  <PageHero title={h.h1} />
+
+  <section class="section" aria-labelledby="steps-title">
+    <div class="container">
+      <div class="section-head">
+        <h2 class="t-h2" id="steps-title">{h.steps.title}</h2>
+        <CurrencyNote />
+      </div>
+      <ol class="flow" role="list">
+        {
+          h.steps.items.map((s, i) => (
+            <li class="flow__step">
+              <p class="flow__n" aria-hidden="true">
+                {i + 1}
+              </p>
+              <h3 class="flow__title">
+                <CopyText text={s.title} as="span" />
+              </h3>
+              <div class="flow__body">
+                {s.text && <CopyText text={s.text} class="flow__line" />}
+                <CopyText text={s.more} class="flow__more" />
+              </div>
+            </li>
+          ))
+        }
+      </ol>
+      <PriceNote class="flow__note" />
+    </div>
+  </section>
+
+  <section class="section section--alt" aria-labelledby="models-title">
+    <div class="container split">
+      <h2 class="t-h2" id="models-title">{h.models.title}</h2>
+      <ul class="models" role="list">
+        {
+          h.models.items.map((m) => (
+            <li class="model">
+              <CopyText text={m.name} as="span" class="model__name" />
+              <span class="model__note">({m.note})</span>
+            </li>
+          ))
+        }
+      </ul>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <ul class="ledger" role="list">
+        {
+          h.terms.map((t) => (
+            <li class="ledger__row">
+              <h2 class="ledger__title" id={t.id}>
+                {t.title}
+              </h2>
+              <CopyText text={t.text} class="ledger__text" />
+            </li>
+          ))
+        }
+      </ul>
+    </div>
+  </section>
+
+  <section class="section section--flush-top" aria-labelledby="after-title">
+    <div class="container split after">
+      <h2 class="t-h2" id="after-title">{h.after.title}</h2>
+      <div class="after__body">
+        <CopyText text={h.after.text} class="t-body-lg" />
+        <div class="after__notes">
+          <CurrencyNote />
+          <PriceNote />
+        </div>
+        <div>
+          <Button href={h.after.link.href} variant="text" arrow>{h.after.link.label}</Button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <CTABand
+    title={home.band.h2}
+    text={home.band.text}
+    primary={{ label: home.band.primary, href: discoveryHref }}
+    whatsappLabel={home.band.whatsapp}
+  />
+</BaseLayout>
+
+<style>
+  /* The four steps: one row each on a hairline; the number in verdigris display figures, the title beside it, the
+     home line in the text colour and the expanded text muted under it. From 1024 px: number | title | text. */
+  .flow {
+    display: grid;
+    border-block-start: 2px solid var(--color-text);
+  }
+
+  .flow__step {
+    display: grid;
+    grid-template-columns: var(--space-12) minmax(0, 1fr);
+    gap: var(--space-3) var(--space-4);
+    padding-block: var(--space-8);
+    border-block-end: 1px solid var(--color-border);
+  }
+
+  @media (min-width: 64rem) {
+    .flow__step {
+      grid-template-columns: var(--space-20) minmax(0, 3fr) minmax(0, 6fr);
+      column-gap: var(--space-8);
+      padding-block: var(--space-10);
+    }
+  }
+
+  .flow__n {
+    font-family: var(--font-display);
+    font-stretch: var(--font-display--stretch);
+    font-size: var(--text-h2);
+    line-height: var(--text-h2--line-height);
+    font-weight: 560;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text-accent);
+  }
+
+  .flow__title {
+    align-self: center;
+    font-family: var(--font-display);
+    font-stretch: var(--font-display--stretch);
+    font-size: var(--text-h3);
+    line-height: var(--text-h3--line-height);
+    font-weight: 560;
+    text-wrap: balance;
+  }
+
+  @media (min-width: 64rem) {
+    .flow__title {
+      align-self: start;
+      padding-block-start: var(--space-2);
+    }
+  }
+
+  .flow__body {
+    display: grid;
+    gap: var(--space-3);
+    grid-column: 2;
+  }
+
+  @media (min-width: 64rem) {
+    .flow__body {
+      grid-column: 3;
+      padding-block-start: var(--space-2);
+    }
+  }
+
+  .flow__body :global(.flow__line) {
+    font-size: var(--text-lede);
+    line-height: var(--text-lede--line-height);
+    max-inline-size: var(--container-lede);
+    text-wrap: pretty;
+  }
+
+  .flow__body :global(.flow__more) {
+    font-size: var(--text-body-lg);
+    line-height: var(--text-body-lg--line-height);
+    color: var(--color-text-muted);
+    max-inline-size: var(--container-prose);
+    text-wrap: pretty;
+  }
+
+  .container > :global(.flow__note) {
+    margin-block-start: var(--space-5);
+  }
+
+  /* Engagement models: four entries on ink rules, two by two from 480 px. */
+  .models {
+    display: grid;
+    gap: var(--space-6) var(--space-8);
+  }
+
+  @media (min-width: 30rem) {
+    .models {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  .model {
+    display: grid;
+    align-content: start;
+    gap: var(--space-1);
+    padding-block-start: var(--space-4);
+    border-block-start: 2px solid var(--color-text);
+  }
+
+  .model :global(.model__name) {
+    display: block;
+    font-family: var(--font-display);
+    font-stretch: var(--font-display--stretch);
+    font-size: var(--text-h4);
+    line-height: var(--text-h4--line-height);
+    font-weight: 560;
+  }
+
+  .model :global(.model__name)::first-letter {
+    text-transform: uppercase;
+  }
+
+  .model__note {
+    color: var(--color-text-muted);
+  }
+
+  /* Sections 3–8: a ledger, title left and text right on the page's 4 + 8 grid. */
+  .ledger {
+    display: grid;
+    border-block-start: 2px solid var(--color-text);
+  }
+
+  .ledger__row {
+    display: grid;
+    gap: var(--space-3) var(--space-8);
+    padding-block: var(--space-8);
+    border-block-end: 1px solid var(--color-border);
+  }
+
+  @media (min-width: 64rem) {
+    .ledger__row {
+      grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
+      padding-block: var(--space-10);
+    }
+  }
+
+  .ledger__title {
+    font-family: var(--font-display);
+    font-stretch: var(--font-display--stretch);
+    font-size: var(--text-h3);
+    line-height: var(--text-h3--line-height);
+    font-weight: 560;
+    text-wrap: balance;
+    scroll-margin-block-start: var(--space-24);
+  }
+
+  .ledger__row :global(.ledger__text) {
+    font-size: var(--text-lede);
+    line-height: var(--text-lede--line-height);
+    max-inline-size: var(--container-lede);
+    text-wrap: pretty;
+  }
+
+  .after__body {
+    display: grid;
+    gap: var(--space-5);
+    align-content: start;
+  }
+
+  .after__notes {
+    display: grid;
+    gap: var(--space-1);
+  }
+</style>

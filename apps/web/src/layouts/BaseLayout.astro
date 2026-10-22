@@ -30,6 +30,8 @@ interface Props {
   consent?: { banner: "off" | "auto" | "always"; analytics: boolean };
   /** Preview pages: open a header menu on load. */
   openMenu?: "services" | "industries";
+  /** Link the blog's RSS feed in the head (the blog index, once a post is published). */
+  rss?: boolean;
 }
 
 const {
@@ -42,6 +44,7 @@ const {
   placeholders = false,
   consent = { banner: site.ga4Id ? "auto" : "off", analytics: Boolean(site.ga4Id) },
   openMenu,
+  rss = false,
 } = Astro.props;
 const canonicalUrl = new URL(canonical, Astro.site).href;
 const og = new URL(ogImage ?? ogDefault, Astro.site).href;
@@ -65,6 +68,7 @@ const og = new URL(ogImage ?? ogDefault, Astro.site).href;
     <link rel="apple-touch-icon" href={appleTouch} />
     <link rel="preload" href={archivoLatin} as="font" type="font/woff2" crossorigin />
     <meta name="color-scheme" content="light dark" />
+    {rss && <link rel="alternate" type="application/rss+xml" title="TecHaust Technologies: Blog" href="/rss.xml" />}
     {/* First paint in the right theme and currency (< 1 KB; hashed in the CSP, WEB-G-12). A stored choice (ta_currency)
         wins over the cached /api/geo answer (ta_geo, 30 days, set by scripts/currency.ts); else INR. */}
     <script is:inline>

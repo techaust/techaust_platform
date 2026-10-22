@@ -1,0 +1,22 @@
+---
+// The industry pages (/industries/<slug>, WEB-IND, docs/07 §5.2 and 07-D §2–§4).
+import IndustryPage from "../../components/industry/IndustryPage.astro";
+import { industries } from "../../content/industries";
+import type { IndustryContent } from "../../content/types";
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { plainText } from "../../lib/copy";
+
+export function getStaticPaths() {
+  return industries.map((industry) => ({ params: { slug: industry.slug }, props: { industry } }));
+}
+
+interface Props {
+  industry: IndustryContent;
+}
+
+const { industry } = Astro.props;
+---
+
+<BaseLayout title={industry.meta.title} description={plainText(industry.meta.description)}>
+  <IndustryPage industry={industry} />
+</BaseLayout>

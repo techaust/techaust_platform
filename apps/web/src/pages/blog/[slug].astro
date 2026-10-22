@@ -1,0 +1,28 @@
+---
+// A blog post (/blog/<slug>, WEB-BLOG): one page per published post (drafts never get one, lib/blog.ts published).
+import { getCollection, render } from "astro:content";
+import BlogPost from "../../components/blog/BlogPost.astro";
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { published, readingTime } from "../../lib/blog";
+
+export async function getStaticPaths() {
+  return published(await getCollection("blog")).map((entry) => ({
+    params: { slug: entry.id },
+    props: { entry },
+  }));
+}
+
+const { entry } = Astro.props;
+// The ids Astro's Markdown renderer actually wrote, so every contents link lands (the link checker checks fragments).
+const { Content, headings } = await render(entry);
+const toc = headings
+  .filter((h) => h.depth === 2 || h.depth === 3)
+  .map((h) => ({ depth: h.depth as 2 | 3, text: h.text, slug: h.slug }));
+const body = entry.body ?? "";
+---
+
+<BaseLayout title={`${entry.data.title} | TecHaust`} description={entry.data.description}>
+  <BlogPost slug={entry.id} data={entry.data} headings={toc} minutes={readingTime(body)}>
+    <Content />
+  </BlogPost>
+</BaseLayout>

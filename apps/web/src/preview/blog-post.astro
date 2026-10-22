@@ -1,0 +1,35 @@
+---
+// M2.3 preview (dev server only, noindex): the blog post template with labelled sample front-matter and text, since
+// every real post is still a draft (never built). Not copy: nothing here reaches the site.
+import BlogPost from "../components/blog/BlogPost.astro";
+import Notice from "../components/Notice.astro";
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { readingTime } from "../lib/blog";
+import { Content, getHeadings, rawContent } from "./sample-post.md";
+
+const data = {
+  title: "Sample post title for the layout preview",
+  description: "Sample description: one or two sentences that say what the post covers. Not a real article.",
+  date: new Date("2026-10-20"),
+  updated: new Date("2026-10-22"),
+  tags: ["sample"],
+  draft: false,
+  relatedServices: ["S9", "S14", "S1"],
+  faq: [
+    { q: "Sample question one?", a: "Sample answer. Not real content." },
+    { q: "Sample question two?", a: "Sample answer. Not real content." },
+  ],
+};
+const headings = getHeadings()
+  .filter((h) => h.depth === 2 || h.depth === 3)
+  .map((h) => ({ depth: h.depth as 2 | 3, text: h.text, slug: h.slug }));
+---
+
+<BaseLayout title="Preview: blog post | TecHaust Technologies" noindex placeholders>
+  <div class="container">
+    <Notice variant="illustrative" label="Preview.">Sample post with placeholder text; never built.</Notice>
+  </div>
+  <BlogPost slug="sample-post" data={data} headings={headings} minutes={readingTime(rawContent())}>
+    <Content />
+  </BlogPost>
+</BaseLayout>
