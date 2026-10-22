@@ -1,0 +1,86 @@
+---
+// How we build AI (/how-we-build-ai, WEB-AI, docs/07 §5.6): the h1 and lede, the seven principles, and "Start a pilot"
+// to the quote form for AI Document Automation (S9, as on that page). The principles are not a sequence, so they
+// carry no numbers: two columns of ruled entries from 768 px, the last one ("Honest limits", 07's closing principle)
+// across both columns as the page's last word before the band.
+import "../styles/page.css";
+import CopyText from "../components/CopyText.astro";
+import CTABand from "../components/CTABand.astro";
+import PageHero from "../components/PageHero.astro";
+import { howWeBuildAi as ai } from "../content/company";
+import { home } from "../content/home";
+import { cta } from "../content/shared";
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { plainText } from "../lib/copy";
+
+const pilot = cta.pilot("S9");
+---
+
+<BaseLayout title={ai.meta.title} description={plainText(ai.meta.description)}>
+  <PageHero title={ai.h1} lede={ai.lede} />
+
+  <section class="section section--alt" aria-labelledby="principles-title">
+    <div class="container">
+      <h2 class="t-h2 pr__title" id="principles-title">{ai.principlesTitle}</h2>
+      <ul class="principles" role="list">
+        {
+          ai.principles.map((p) => (
+            <li class="principle">
+              <h3 class="principle__title">{p.title}</h3>
+              <CopyText text={p.text} class="principle__text" />
+            </li>
+          ))
+        }
+      </ul>
+    </div>
+  </section>
+
+  <CTABand title={home.band.h2} text={home.band.text} primary={pilot} whatsappLabel={home.band.whatsapp} />
+</BaseLayout>
+
+<style>
+  .pr__title {
+    margin-block-end: var(--block-gap);
+  }
+
+  .principles {
+    display: grid;
+    gap: var(--space-10) var(--space-12);
+  }
+
+  @media (min-width: 48rem) {
+    .principles {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      row-gap: var(--space-12);
+    }
+
+    /* The seventh principle closes the list across both columns. */
+    .principle:last-child:nth-child(odd) {
+      grid-column: 1 / -1;
+    }
+  }
+
+  .principle {
+    display: grid;
+    align-content: start;
+    gap: var(--space-3);
+    padding-block-start: var(--space-5);
+    border-block-start: 2px solid var(--color-text);
+  }
+
+  .principle__title {
+    font-family: var(--font-display);
+    font-stretch: var(--font-display--stretch);
+    font-size: var(--text-h3);
+    line-height: var(--text-h3--line-height);
+    font-weight: 560;
+    text-wrap: balance;
+  }
+
+  .principle :global(.principle__text) {
+    font-size: var(--text-lede);
+    line-height: var(--text-lede--line-height);
+    max-inline-size: var(--container-lede);
+    text-wrap: pretty;
+  }
+</style>
