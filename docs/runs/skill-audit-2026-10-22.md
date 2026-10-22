@@ -84,3 +84,8 @@ Builder: Sonnet 5.5 (effort as passed by the lead; the `Usage:` line is for the 
 **Deviations from the brief:** (1) M2 caps `cf-ray` rather than a separate "non-cf-ray request ID" (none exists). (2) The L2 SQL lives in a new `scripts/create-invite-sql.mjs` instead of inline in `create-invite.mjs`, so the tests run exactly the SQL the script runs (same pattern as the break-glass script). (3) The CI workflow got a new step for the guard (a file in the repo; no hosted setting changed).
 
 **Open questions:** none for the owner. For the lead: the web `run_worker_first` list must be extended by each M2.4 route (the new test fails if it is not).
+
+## Review, 2026-10-22: APPROVE
+Reviewer (Opus 5.5 high; loaded code-review, security-review, cloudflare:workers-best-practices, cloudflare:wrangler with the Skill tool, checklists only): all eleven fixes correct and complete, no regressions in staff or portal auth, the L5 test-helper changes weaken no assertion and the D1 call counts still hold exactly. `pnpm check`, `pnpm build`, `pnpm test` green (admin 419, portal 404, web 52, db 45, core 279, auth 94, ui 426, jobs 2).
+Lows fixed by the lead: the web Worker comment names the exact `run_worker_first` paths; `check-worker-config.mjs` throws on an unterminated `/*` instead of looping; a test runs `createInviteStatements` with an apostrophe address.
+Still to check on staging after the deploy: `/api/geo` answers and `/api/x` gets the static 404 (Cloudflare's matcher).

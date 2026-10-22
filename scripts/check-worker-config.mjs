@@ -20,7 +20,9 @@ export function parseJsonc(text) {
     } else if (ch === "/" && text[i + 1] === "/") {
       while (i < text.length && text[i] !== "\n") i++;
     } else if (ch === "/" && text[i + 1] === "*") {
-      i = text.indexOf("*/", i + 2) + 2;
+      const end = text.indexOf("*/", i + 2);
+      if (end < 0) throw new Error("unterminated /* comment");
+      i = end + 2;
     } else {
       out += ch;
       i++;

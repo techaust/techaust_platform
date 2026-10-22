@@ -994,6 +994,22 @@ describe("pnpm invite: the first owner and throwaway users [ADM-AUTH-07, audit L
     expect((await call("/auth/invite/start", { body: { token: tok("d") } })).status).toBe(400);
   });
 
+  it("an address with an apostrophe is stored as typed and nothing else runs", async () => {
+    const email = `o'brien.${crypto.randomUUID().slice(0, 8)}@example.test`;
+    await env.DB.exec(await statementsFor(email, tok("q"), "staff"));
+    const hash = await tokenHash(tok("q"));
+    expect(await one("SELECT email, role FROM staff_invites WHERE token_hash = ?", hash)).toEqual({
+      email,
+      role: "staff",
+    });
+    const audits = await rows<{ summary: string }>(
+      "SELECT summary FROM audit_log WHERE action = 'user.invite' AND entity_id = ?",
+      hash,
+    );
+    expect(audits).toHaveLength(1);
+    expect(JSON.parse(audits[0]?.summary as string)).toEqual({ via: "cli", role: "staff" });
+  });
+
   it("a second invite for the same address expires the older pending one (never deleted)", async () => {
     const email = newEmail();
     await env.DB.exec(await statementsFor(email, tok("e"), "staff"));

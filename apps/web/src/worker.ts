@@ -1,7 +1,8 @@
 import { secureHeaders } from "hono/secure-headers";
 import { Hono } from "hono/tiny";
 
-// Runs ONLY for /api/* (run_worker_first). Static pages never invoke this Worker.
+// Runs ONLY for the run_worker_first paths in wrangler.jsonc (/api/geo, /api/forms/*): add every new route there
+// (test/worker-config.test.ts fails otherwise). Static pages and other /api paths never invoke this Worker.
 
 const app = new Hono<{ Bindings: Env }>().basePath("/api");
 // WEB-G-12 for the API answers too (_headers covers only static assets). JSON only, so the CSP is "nothing".
