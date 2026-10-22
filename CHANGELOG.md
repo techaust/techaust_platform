@@ -2,6 +2,9 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-10-23 [#47](https://github.com/techaust/techaust_platform/pull/47) feat(web): M2.3 other pages (industries, pricing, how we work, AI, about, work, blog, legal, security) [WEB-IND, WEB-PRICING, WEB-WORK, WEB-HOW, WEB-AI, WEB-ABOUT, WEB-BLOG, WEB-LEGAL, WEB-SEC]
+- 2026-10-22 [#46](https://github.com/techaust/techaust_platform/pull/46) docs(m2.3): brief, 07-D draft copy, decisions
+- 2026-10-22 [#45](https://github.com/techaust/techaust_platform/pull/45) docs: end of day 2026-10-22, evening
 - 2026-10-22 [#44](https://github.com/techaust/techaust_platform/pull/44) content(web): FAQs for 12 service pages, owner-approved [WEB-SVC-04]
 - 2026-10-22 [#43](https://github.com/techaust/techaust_platform/pull/43) docs: M2.2 approved by the owner on staging
 - 2026-10-22 [#42](https://github.com/techaust/techaust_platform/pull/42) feat(web): M2.2 home page, services hub and 14 service pages [WEB-HOME, WEB-SVCHUB, WEB-SVC-01..06]
