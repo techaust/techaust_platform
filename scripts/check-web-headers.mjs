@@ -28,7 +28,10 @@ const haveAuth = Object.keys(auth).length > 0;
 class Blocked extends Error {}
 
 async function get(path) {
-  const res = await fetch(new URL(path, `${base}/`), { redirect: "manual", headers: auth });
+  const res = await fetch(new URL(path, `${base}/`), {
+    redirect: "manual",
+    headers: { ...auth, Connection: "close" },
+  });
   const loc = res.headers.get("location") ?? "";
   const viaAccess =
     /cloudflareaccess\.com/i.test(loc) || (res.status === 302 && /cdn-cgi\/access/i.test(loc));
@@ -83,14 +86,21 @@ try {
 } catch (e) {
   if (e instanceof Blocked) {
     console.error(e.message);
-    process.exit(2);
+    process.exitCode = 2;
+  } else {
+    throw e;
   }
-  throw e;
 }
 
-if (problems.length > 0) {
-  console.error(`\ncheck-web-headers: ${problems.length} problem(s) on ${base}`);
-  for (const p of problems) console.error(`  - ${p}`);
-  process.exit(1);
+if (process.exitCode !== 2) {
+  if (problems.length > 0) {
+    console.log(`
+check-web-headers: ${problems.length} problem(s) on ${base}`);
+    for (const p of problems) console.log(`  - ${p}`);
+    process.exitCode = 1;
+  } else {
+    console.log(`
+check-web-headers: ok, ${checked} responses on ${base}`);
+  }
 }
-console.log(`\ncheck-web-headers: ok, ${checked} responses on ${base}`);
+// Not process.exit(): on Windows Node can abort when it exits while sockets are closing. Let the loop drain.

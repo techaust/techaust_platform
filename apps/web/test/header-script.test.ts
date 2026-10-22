@@ -164,7 +164,7 @@ describe("check-web-headers.mjs", () => {
 
   it.skipIf(!hasDist)("fails (exit 1) when a response leaves a header out", async () => {
     const { code, out } = await run(await staticServer("cross-origin-opener-policy"));
-    expect(code).toBe(1);
+    expect(code, out).toBe(1);
     expect(out).toContain("missing cross-origin-opener-policy");
   });
 });
