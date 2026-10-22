@@ -2,8 +2,7 @@
 // "Good for" fragment. "How it works" is a paragraph in 07; the capacity note sits with the pricing (no counters,
 // 07 §1.2). The payment schedule is scheduleOf("S18") (WEB-SVC-05). The page's own CTA "Start a subscription"
 // (07 §4.15, 04 §3.2) is not in the 07 §2.3 table, so it takes the build-quote target.
-// OPEN (run file): "Good for" ends "(use S5/S6)", catalogue codes a visitor doesn't know (the owner dropped "(S17)"
-// from S9 for the same reason); shown as written until the owner decides.
+// "Good for" names the other services instead of their catalogue codes, as 07 now reads (owner, 2026-10-22).
 // GAP (run file): no problem statement and no FAQs in 07 (WEB-SVC-04 wants 4–8): FAQ section not shown.
 // Related: the designer's pick.
 import { cta } from "../shared";
@@ -20,7 +19,8 @@ export const devSubscription: ServiceContent = {
   },
   hero: {
     h1: "A senior development team on a monthly subscription.",
-    whoFor: "SaaS teams and agencies with steady work; not for fixed-deadline projects (use S5/S6).",
+    whoFor:
+      "SaaS teams and agencies with steady work; not for fixed-deadline projects (for those, see Custom Web Apps or MVP and SaaS Development).",
     whoForLabel: "goodFor",
     price: { ref: "S18", unit: "per month" },
     primary: cta.own("Start a subscription", "S18"),

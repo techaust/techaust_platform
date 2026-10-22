@@ -5,10 +5,12 @@
 //    alone. An unknown token or a hidden service fails the build. No layout shift when the currency changes (WEB-G-06):
 //    the whole text is written once per currency and both versions sit in the same grid cell; the inactive one is
 //    `visibility: hidden`, so the box is always as tall as the longer one. Without JavaScript a third version shows
-//    both amounts ("from ₹40,000 + GST · $2,000").
+//    both amounts ("from ₹40,000 + GST · $2,000"). A price without a USD amount (S11) shows the INR amount in the USD
+//    version too, followed by "· USD price on request" (07 §4.7).
 // 2. Arrows. 07 writes "→" and "↔"; neither is in the fonts (docs/06 §3.1), so each becomes an icon, with the
 //    character kept, visually hidden, for assistive technology and copy-paste.
 // 3. Bold. 07's **…** becomes <strong> (S1 credit rule, S4 "Led personally by our founder.", the care-plan SLAs).
+import { shared } from "../content/shared";
 import { draft } from "../content/shell";
 import { displayAmount } from "../lib/prices";
 import { type PricePart, parseTokens } from "../lib/tokens";
@@ -84,6 +86,7 @@ const modes: (Mode | null)[] = priced ? ["both", "inr", "usd"] : [null];
                   )}
                 </span>
               )}
+              {mode !== "inr" && !p.usd && ` · ${shared.usdOnRequest}`}
             </>
           ),
         )}

@@ -3,6 +3,7 @@
 // by a square one stroke wide; across on wide screens, down the left edge on phones. Numbers come from the list
 // order (CSS counter), so content stays plain text.
 import type { Step } from "../content/types";
+import CopyText from "./CopyText.astro";
 
 interface Props {
   steps: readonly Step[];
@@ -16,9 +17,11 @@ const { steps, class: cls } = Astro.props;
   {
     steps.map((s) => (
       <li class="step">
-        <h3 class="t-h4 step__title">{s.title}</h3>
+        <h3 class="t-h4 step__title">
+          <CopyText text={s.title} as="span" />
+        </h3>
         {s.when && <p class="t-sm step__when">{s.when}</p>}
-        {s.text && <p class="step__text">{s.text}</p>}
+        {s.text && <CopyText text={s.text} class="step__text" />}
       </li>
     ))
   }
@@ -95,7 +98,7 @@ const { steps, class: cls } = Astro.props;
     background: var(--color-border);
   }
 
-  .step__text {
+  .step :global(.step__text) {
     color: var(--color-text-muted);
     text-wrap: pretty;
     max-inline-size: 36ch;

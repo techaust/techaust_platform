@@ -1,10 +1,12 @@
 ---
 // What we do (WEB-HOME): the five headline services and the Discovery Sprint, each with its "from" price, then
-// "All services". The section's currency note sits beside its heading.
+// "All services". The section's currency note sits beside its heading; the GST note (WEB-SVC-06, VERIFY WITH CA)
+// once, under the list.
 import { home } from "../../content/home";
 import { homeCards } from "../../content/services";
 import Button from "../Button.astro";
 import CurrencyNote from "../CurrencyNote.astro";
+import PriceNote from "../PriceNote.astro";
 import ServiceIndex from "../ServiceIndex.astro";
 
 const s = home.services;
@@ -17,6 +19,7 @@ const s = home.services;
       <CurrencyNote />
     </div>
     <ServiceIndex items={homeCards()} />
+    <PriceNote class="note" />
     <div class="more">
       <Button href={s.more.href} variant="text" arrow>{s.more.label}</Button>
     </div>
@@ -24,6 +27,10 @@ const s = home.services;
 </section>
 
 <style>
+  .container > :global(.note) {
+    margin-block-start: var(--block-gap);
+  }
+
   .more {
     margin-block-start: var(--block-gap);
   }

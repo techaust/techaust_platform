@@ -38,9 +38,14 @@ export type FaqItem = { q: string; a: string };
 /** A titled block inside a section (07 "sub-section", e.g. S5 "From Excel or Access to a real app"). */
 export type Aside = { title: string; text: string };
 
-/** The payment-schedule line of a pricing section (WEB-SVC-05): rendered from the catalogue by scheduleOf(). */
-export const SCHEDULE = { schedule: true } as const;
-export type PricingLine = string | typeof SCHEDULE;
+/**
+ * The payment-schedule line of a pricing section (WEB-SVC-05): rendered from the catalogue by scheduleOf(). With a
+ * label it reads "Setup: paid in full upfront" (a page whose price has parts, S11).
+ */
+export type ScheduleLine = { schedule: true; label?: string };
+export const SCHEDULE: ScheduleLine = { schedule: true };
+export const scheduleLine = (label: string): ScheduleLine => ({ schedule: true, label });
+export type PricingLine = string | ScheduleLine;
 
 /** The care-plan comparison (07 §4.14): a cell is included (true), not included (false) or a value as written. */
 export type PlanCell = boolean | string;
@@ -110,8 +115,6 @@ export type ServiceContent = {
     /** A bold line under the lines (S1 credit rule, S11 Meta charges). */
     highlight?: string;
     note?: string;
-    /** A price the page needs but can't render yet: shown as a labelled placeholder (listed in the run file). */
-    pending?: string;
   };
   tech?: string;
   faqs?: FaqItem[];

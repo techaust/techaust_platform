@@ -11,6 +11,7 @@ import PriceNote from "../../components/PriceNote.astro";
 import ServiceIndex from "../../components/ServiceIndex.astro";
 import { discoveryHref } from "../../config/site";
 import { home } from "../../content/home";
+import { serviceLabels } from "../../content/labels";
 import { serviceLink } from "../../content/services";
 import { servicesHub as hub } from "../../content/services-hub";
 import BaseLayout from "../../layouts/BaseLayout.astro";
@@ -26,7 +27,7 @@ const groups = hub.groups
     <div class="container">
       <h1 class="t-display-2" id="hub-title">{hub.h1}</h1>
       <p class="t-lede hub-hero__lede">{hub.lede}</p>
-      <nav class="kinds" aria-labelledby="hub-title">
+      <nav class="kinds" aria-label={serviceLabels.kinds}>
         <ul role="list" class="kinds__list">
           {
             groups.map((g) => (

@@ -3,7 +3,8 @@
 // `scope`) from 1024 px; below that, the same data stacked as one block per tier. Only one of the two is displayed
 // at a time (display: none takes the other out of the accessibility tree too). ✓ and — (07) are icons with a
 // visually hidden "Included" / "Not included". Each tier's "Choose a plan" carries the tier in its URL (07 §2.3) and,
-// visually hidden, in its accessible name. Prices come from the catalogue's default lines (PriceTag).
+// visually hidden, in its accessible name. Prices come from the catalogue's default lines (PriceTag), exact, so
+// without "from" (owner, 2026-10-22). A row with a cell count other than the tier count fails the build, naming it.
 import { serviceLabels as L } from "../../content/labels";
 import { cta } from "../../content/shared";
 import type { PlanCell, Plans } from "../../content/types";
@@ -21,6 +22,12 @@ interface Props {
 
 const { plans, labelledby } = Astro.props;
 const tiers = plans.tiers.map((t) => ({ ...t, p: priceOf(t.price.ref), link: cta.plan(t.plan) }));
+for (const r of plans.rows) {
+  if (r.cells.length !== tiers.length)
+    throw new Error(
+      `PlanTable: row "${r.label}" has ${r.cells.length} cells for ${tiers.length} tiers (${tiers.map((t) => t.name).join(", ")})`,
+    );
+}
 ---
 
 <div class="plans">
@@ -36,7 +43,7 @@ const tiers = plans.tiers.map((t) => ({ ...t, p: priceOf(t.price.ref), link: cta
           tiers.map((t) => (
             <th scope="col" class="plans__tier">
               <span class="plans__name">{t.name}</span>
-              <PriceTag inr={t.p.inr} usd={t.p.usd} unit={t.price.unit} size="md" />
+              <PriceTag inr={t.p.inr} usd={t.p.usd} unit={t.price.unit} size="md" from={false} />
             </th>
           ))
         }
@@ -92,7 +99,7 @@ const tiers = plans.tiers.map((t) => ({ ...t, p: priceOf(t.price.ref), link: cta
       tiers.map((t, i) => (
         <li class="plans__card">
           <h3 class="t-h3 plans__name">{t.name}</h3>
-          <PriceTag inr={t.p.inr} usd={t.p.usd} unit={t.price.unit} size="md" />
+          <PriceTag inr={t.p.inr} usd={t.p.usd} unit={t.price.unit} size="md" from={false} />
           <dl class="plans__list">
             {plans.rows.map((r) => {
               const c = r.cells[i] as PlanCell;

@@ -37,4 +37,6 @@ export const serviceLabels = {
   /** NEW: the comparison table's cells, for assistive technology (07 writes ✓ and —). */
   included: "Included",
   notIncluded: "Not included",
+  /** The services hub's jump nav, for assistive technology (lead, 2026-10-22: its own name, not the page's). */
+  kinds: "Kinds of work",
 } as const;

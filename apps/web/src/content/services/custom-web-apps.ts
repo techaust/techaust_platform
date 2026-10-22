@@ -1,9 +1,10 @@
 // Custom Web Apps and Business Portals (S5): docs/07-content.md §4.2, word for word. Typesetting only: curly
 // apostrophes, capitals at the start of 07's lower-case fragments where they stand alone, and each step's bracketed
 // time set as its duration. {{schedule:S5}} is scheduleOf("S5") (WEB-SVC-05).
-// GAPS (run file): 07's four FAQs are notes in brackets, not written answers, so the FAQ section is omitted (never
-// written by the designer); 04 asks for a UI/UX section (S8) and 07 has no copy for it beyond the deliverable
-// "discovery and UX design (S8 included)", shown as written. Related services: the designer's pick (run file).
+// The UI/UX work (S8) is the deliverable "discovery and UX design (UI/UX design included)", as 07 now reads (owner,
+// 2026-10-22: names, not catalogue codes).
+// GAP (run file): 07's four FAQs are notes in brackets, not written answers, so the FAQ section is omitted (never
+// written by the designer). Related services: the designer's pick (run file).
 import { cta, homeOneLiner } from "../shared";
 import { SCHEDULE, type ServiceContent } from "../types";
 
@@ -28,7 +29,7 @@ export const customWebApps: ServiceContent = {
     "Most businesses run on a patchwork: a shared Excel file, a WhatsApp group and a SaaS tool that does 60 % of the job. It works until it doesn’t. Then nobody knows which version is right.",
   build: {
     deliverables: [
-      "discovery and UX design (S8 included)",
+      "discovery and UX design (UI/UX design included)",
       "a web app with roles and permissions",
       "integrations with your existing tools",
       "automated tests",

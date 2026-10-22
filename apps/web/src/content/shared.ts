@@ -14,6 +14,8 @@ export const shared = {
   /** VERIFY WITH CA (07 §2.4). */
   gstNote: "Prices exclude GST (18 %).",
   usdNote: "International projects are invoiced from India in USD as an export of services.",
+  /** A price with no USD amount, in the USD view (07 §4.7, owner 2026-10-22). */
+  usdOnRequest: "USD price on request",
   illustrative: "Illustrative example. Not a real client system.",
   cta: {
     discovery: "Book a Discovery Sprint",

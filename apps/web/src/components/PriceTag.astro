@@ -7,7 +7,12 @@
 // line and a first-visit INR → USD swap (/api/geo) moves nothing. The lines end with the unit, so a shorter USD
 // line leaves its spare room at the end, where it can't be seen. Without JavaScript a third line shows both
 // ("from ₹3,00,000 + GST · $12,000").
+//
+// A price without a USD amount (S11, 07 §4.7): the USD line shows the INR amount and, on its own row, "USD price on
+// request". Only the USD line has that row; the INR line shares the cell, so the tag keeps the same height in both
+// currencies (the INR view has the row's room as space under the price) and the swap moves nothing.
 import type { Money } from "@techaust/core";
+import { shared } from "../content/shared";
 import { draft } from "../content/shell";
 import { displayAmount } from "../lib/prices";
 
@@ -19,12 +24,26 @@ interface Props {
   lead?: string;
   /** lg: text-price-lg (heroes, pricing); md: card prices. */
   size?: "lg" | "md";
+  /** "from" before the amount (default). Exact prices (care-plan tiers, owner 2026-10-22) leave it out. */
+  from?: boolean;
+  /** "USD price on request" in the USD line when there's no USD amount (default). Off for all but one tag of a group. */
+  ask?: boolean;
   /** Labels the tag "Sample" (preview pages only). */
   sample?: boolean;
   class?: string;
 }
 
-const { inr, usd, unit, lead, size = "lg", sample = false, class: cls } = Astro.props;
+const {
+  inr,
+  usd,
+  unit,
+  lead,
+  size = "lg",
+  from = true,
+  ask = true,
+  sample = false,
+  class: cls,
+} = Astro.props;
 const lines = [
   { mode: "both", amounts: usd ? [inr, usd] : [inr] },
   { mode: "inr", amounts: [inr] },
@@ -39,7 +58,7 @@ const lines = [
       lines.map(({ mode, amounts }) => (
         <span class={`price__line price__line--${mode}`}>
           {lead && <span class="price__lead">{lead}</span>}
-          <span class="price__from">{draft.priceFrom}</span>
+          {from && <span class="price__from">{draft.priceFrom}</span>}
           {amounts.map((m, i) => (
             <>
               {i > 0 && (
@@ -52,6 +71,7 @@ const lines = [
             </>
           ))}
           {unit && <span class:list={["price__unit", unit.startsWith("/") && "price__unit--tight"]}>{unit}</span>}
+          {mode !== "inr" && !usd && ask && <span class="price__ask">{shared.usdOnRequest}</span>}
         </span>
       ))
     }
@@ -94,6 +114,14 @@ const lines = [
   .price__unit,
   .price__gst,
   .price__sep {
+    color: var(--color-text-muted);
+  }
+
+  /* "USD price on request": its own row under the amount, in the quiet small size. */
+  .price__ask {
+    flex-basis: 100%;
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
     color: var(--color-text-muted);
   }
 

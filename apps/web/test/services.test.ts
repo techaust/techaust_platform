@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { home } from "../src/content/home";
 import { homeCards, liveServices, serviceContent, serviceLink } from "../src/content/services";
 import { servicesHub } from "../src/content/services-hub";
-import { SCHEDULE, type ServiceCode, type ServiceContent } from "../src/content/types";
+import { SCHEDULE, type ServiceCode, type ServiceContent, scheduleLine } from "../src/content/types";
 import { snapshot } from "../src/lib/catalogue";
 import { isServiceOnSite, scheduleOf } from "../src/lib/prices";
 import { parseTokens } from "../src/lib/tokens";
@@ -68,12 +68,26 @@ describe("service pages", () => {
     "%s: pricing shows the schedule",
     (_, s) => {
       if (s.plans) {
+        // The rules already say it (07 §4.14), so the page has no separate schedule line.
         expect(scheduleOf(s.code)).toBe("Monthly in advance");
+        expect(s.plans.rules).toContain("Billed monthly in advance");
         return;
       }
-      expect(s.pricing?.lines).toContain(SCHEDULE);
+      if (s.code === "S11") {
+        // Worded per line (lead, 2026-10-22): the setup from the catalogue, the management monthly.
+        expect(s.pricing?.lines).toEqual([scheduleLine("Setup"), "Management: billed monthly in advance"]);
+        return;
+      }
+      expect(s.pricing?.lines).toContainEqual(SCHEDULE);
     },
   );
+
+  it("gives every care-plan row one cell per tier (PlanTable fails the build otherwise)", () => {
+    for (const s of live) {
+      if (!s.plans) continue;
+      for (const r of s.plans.rows) expect(r.cells, r.label).toHaveLength(s.plans.tiers.length);
+    }
+  });
 
   it("shows FAQs only within WEB-SVC-04 (4–8); S1 and S9 have them", () => {
     for (const s of live) expect((s.faqs ?? []).length).toBeLessThanOrEqual(8);

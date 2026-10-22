@@ -1,15 +1,14 @@
 // WhatsApp Business Automation (S11): docs/07-content.md §4.7, word for word. Typesetting only: curly apostrophes
-// and capitals at the start of 07's lower-case fragments where they stand alone ("setup …" → "Setup"). The payment
-// schedule is scheduleOf("S11") (WEB-SVC-05). S11 has no USD price (07 §4.7: an open owner question), so USD
-// visitors see the INR price.
-// BLOCKED (run file): 07's "management {{price:S11-monthly}}/month" can't render: priceOf("S11-monthly") matches a
-// default line by its whole description, and the catalogue line is "Monthly management" (builder's lib/prices.ts or
-// the seed). Shown as a labelled placeholder until fixed.
+// and capitals at the start of 07's lower-case fragments where they stand alone ("setup …" → "Setup"). Pricing is
+// 07's "setup {{price:S11-setup}} + management {{price:S11-monthly}}/month" as two price tags. The schedule is worded
+// per line (lead, 2026-10-22): the setup from the catalogue (scheduleOf("S11"), WEB-SVC-05), the management as
+// "billed monthly in advance". S11 has no USD price: USD visitors see the INR price with "USD price on request"
+// (07 §4.7, owner 2026-10-22).
 // GAP (run file): one FAQ with a written answer ("What does Meta charge?"); "Do we need a new number?" has none and
 // "Can a person take over a chat?" only "(yes)". Fewer than 4 (WEB-SVC-04): FAQ section not shown.
 // Related: the designer's pick.
 import { cta } from "../shared";
-import { SCHEDULE, type ServiceContent } from "../types";
+import { type ServiceContent, scheduleLine } from "../types";
 
 export const whatsappAutomation: ServiceContent = {
   code: "S11",
@@ -37,9 +36,11 @@ export const whatsappAutomation: ServiceContent = {
     ],
   },
   pricing: {
-    prices: [{ ref: "S11-setup", lead: "Setup" }],
-    pending: "“+ management … /month”: the monthly price from the catalogue",
-    lines: [SCHEDULE],
+    prices: [
+      { ref: "S11-setup", lead: "Setup" },
+      { ref: "S11-monthly", lead: "+ management", unit: "/month" },
+    ],
+    lines: [scheduleLine("Setup"), "Management: billed monthly in advance"],
     highlight: "**Meta’s per-message charges are passed through at cost.**",
   },
   faqs: [

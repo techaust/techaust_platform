@@ -4,6 +4,9 @@
 // where they belong (S1's two flavours after the problem; S14's "Payments and billing" and S16's plans and add-on
 // after "What you get"). A section with no content is left out, never shown empty (WEB-SVC-02). Proof (WEB-SVC-03)
 // is omitted until a service has a case study or a sample. FAQs show only with 4–8 written answers (WEB-SVC-04).
+// Every content field goes through CopyText, so 07's price tokens, bold and arrows render wherever they're written.
+// GST notes (WEB-SVC-06, VERIFY WITH CA): one PriceNote per group of prices (the hero, the pricing, the plans, an
+// extra section with a price, the related services), never one per price.
 import "../../styles/page.css";
 import { home } from "../../content/home";
 import { serviceLabels as L } from "../../content/labels";
@@ -18,7 +21,6 @@ import CurrencyNote from "../CurrencyNote.astro";
 import DeliverablesList from "../DeliverablesList.astro";
 import FaqSection from "../FaqSection.astro";
 import Notice from "../Notice.astro";
-import Placeholder from "../Placeholder.astro";
 import PriceNote from "../PriceNote.astro";
 import PriceTag from "../PriceTag.astro";
 import ServiceIndex from "../ServiceIndex.astro";
@@ -34,7 +36,15 @@ interface Props {
 const { service: s } = Astro.props;
 
 const prices = (s.pricing?.prices ?? []).map((p) => ({ ...p, v: priceOf(p.ref) }));
-const line = (l: PricingLine): string => (typeof l === "string" ? l : scheduleOf(s.code));
+// "USD price on request" once per group: on the last price without a USD amount.
+const askAt = prices.findLastIndex((p) => p.v.usd === null);
+// "Setup: paid in full upfront": the catalogue's wording, its first letter lower-cased unless it starts an acronym.
+const lowerFirst = (t: string): string => (/^[A-Z][^A-Z]/.test(t) ? t[0]?.toLowerCase() + t.slice(1) : t);
+const line = (l: PricingLine): string => {
+  if (typeof l === "string") return l;
+  const text = scheduleOf(s.code);
+  return l.label ? `${l.label}: ${lowerFirst(text)}` : text;
+};
 const faqs = s.faqs ?? [];
 if (faqs.length > 8) throw new Error(`${s.code}: ${faqs.length} FAQs; WEB-SVC-04 allows 4–8`);
 const showFaqs = faqs.length >= 4;
@@ -51,7 +61,7 @@ const buildTitle = s.build?.title ?? (s.build?.deliverables ? L.deliverables : L
         <h2 class="t-h2" id="problem-title">
           {L.problem}
         </h2>
-        <p class="statement">{s.problem}</p>
+        <CopyText text={s.problem} class="statement" />
       </div>
     </section>
   )
@@ -68,7 +78,7 @@ const buildTitle = s.build?.title ?? (s.build?.deliverables ? L.deliverables : L
           {s.flavours.map((f) => (
             <li class="flavour">
               <h3 class="t-h3 flavour__title">{f.title}</h3>
-              <p class="t-body-lg flavour__text">{f.text}</p>
+              <CopyText text={f.text} class="t-body-lg flavour__text" />
             </li>
           ))}
         </ul>
@@ -86,7 +96,7 @@ const buildTitle = s.build?.title ?? (s.build?.deliverables ? L.deliverables : L
             {buildTitle}
           </h2>
           <div class="build">
-            {s.build.text && <p class="t-body-lg">{s.build.text}</p>}
+            {s.build.text && <CopyText text={s.build.text} class="t-body-lg" />}
             {s.build.deliverables && <DeliverablesList items={s.build.deliverables} />}
             {s.build.highlight && <CopyText text={s.build.highlight} class="t-body-lg highlight" />}
             {s.build.uses && (
@@ -104,7 +114,7 @@ const buildTitle = s.build?.title ?? (s.build?.deliverables ? L.deliverables : L
             {s.build.aside && (
               <div class="aside">
                 <h3 class="t-h3 aside__title">{s.build.aside.title}</h3>
-                <p class="t-body-lg">{s.build.aside.text}</p>
+                <CopyText text={s.build.aside.text} class="t-body-lg" />
               </div>
             )}
             {s.build.note && <Notice variant="info">{s.build.note}</Notice>}
@@ -127,8 +137,7 @@ const buildTitle = s.build?.title ?? (s.build?.deliverables ? L.deliverables : L
       </div>
       <PlanTable plans={s.plans} labelledby="plans-title" />
       <div class="plans-foot">
-        <p class="t-body-lg plans-foot__schedule">{scheduleOf(s.code)}</p>
-        <p class="plans-foot__rules">{s.plans.rules}</p>
+        <CopyText text={s.plans.rules} class="plans-foot__rules" />
         <PriceNote />
       </div>
     </div>
@@ -178,7 +187,7 @@ const buildTitle = s.build?.title ?? (s.build?.deliverables ? L.deliverables : L
             <h2 class="t-h2" id="how-title">
               {L.how}
             </h2>
-            {s.how.text && <p class="statement">{s.how.text}</p>}
+            {s.how.text && <CopyText text={s.how.text} class="statement" />}
           </div>
         )}
         {(s.how.timeline || s.how.needs) && (
@@ -186,13 +195,17 @@ const buildTitle = s.build?.title ?? (s.build?.deliverables ? L.deliverables : L
             {s.how.timeline && (
               <div class="how__fact">
                 <dt>{L.timeline}</dt>
-                <dd>{s.how.timeline}</dd>
+                <dd>
+                  <CopyText text={s.how.timeline} as="span" />
+                </dd>
               </div>
             )}
             {s.how.needs && (
               <div class="how__fact">
                 <dt>{L.needs}</dt>
-                <dd>{s.how.needs}</dd>
+                <dd>
+                  <CopyText text={s.how.needs} as="span" />
+                </dd>
               </div>
             )}
           </dl>
@@ -200,7 +213,7 @@ const buildTitle = s.build?.title ?? (s.build?.deliverables ? L.deliverables : L
         {s.how.aside && (
           <div class="aside how__aside">
             <h3 class="t-h3 aside__title">{s.how.aside.title}</h3>
-            <p class="t-body-lg">{s.how.aside.text}</p>
+            <CopyText text={s.how.aside.text} class="t-body-lg" />
           </div>
         )}
         {s.how.note && (
@@ -224,10 +237,9 @@ const buildTitle = s.build?.title ?? (s.build?.deliverables ? L.deliverables : L
         </div>
         <div class="pricing">
           <div class="pricing__main">
-            {prices.map((p) => (
-              <PriceTag inr={p.v.inr} usd={p.v.usd} lead={p.lead} unit={p.unit} />
+            {prices.map((p, i) => (
+              <PriceTag inr={p.v.inr} usd={p.v.usd} lead={p.lead} unit={p.unit} ask={i === askAt} />
             ))}
-            {s.pricing.pending && <Placeholder what={s.pricing.pending} reason="see the M2.2 run file" />}
             <CurrencyNote />
           </div>
           <ul class="pricing__lines" role="list">
@@ -258,7 +270,7 @@ const buildTitle = s.build?.title ?? (s.build?.deliverables ? L.deliverables : L
         <h2 class="t-h2" id="tech-title">
           {L.tech}
         </h2>
-        <p class="t-body-lg">{s.tech}</p>
+        <CopyText text={s.tech} class="t-body-lg" />
       </div>
     </section>
   )
@@ -277,6 +289,7 @@ const buildTitle = s.build?.title ?? (s.build?.deliverables ? L.deliverables : L
           <CurrencyNote />
         </div>
         <ServiceIndex items={related} />
+        <PriceNote class="related__note" />
       </div>
     </section>
   )
@@ -285,8 +298,7 @@ const buildTitle = s.build?.title ?? (s.build?.deliverables ? L.deliverables : L
 <CTABand title={home.band.h2} text={home.band.text} primary={s.hero.primary} whatsappLabel={home.band.whatsapp} />
 
 <style>
-  .statement,
-  .extra :global(.statement) {
+  .container :global(.statement) {
     font-size: var(--text-lede);
     line-height: var(--text-lede--line-height);
     max-inline-size: var(--container-lede);
@@ -294,8 +306,7 @@ const buildTitle = s.build?.title ?? (s.build?.deliverables ? L.deliverables : L
   }
 
   @media (min-width: 64rem) {
-    .statement,
-    .extra :global(.statement) {
+    .container :global(.statement) {
       font-size: var(--text-h3);
       line-height: var(--text-h3--line-height);
       font-weight: 400;
@@ -379,7 +390,7 @@ const buildTitle = s.build?.title ?? (s.build?.deliverables ? L.deliverables : L
     font-weight: 560;
   }
 
-  .flavour__text {
+  .flavour :global(.flavour__text) {
     color: var(--color-text-muted);
     text-wrap: pretty;
   }
@@ -448,15 +459,13 @@ const buildTitle = s.build?.title ?? (s.build?.deliverables ? L.deliverables : L
     max-inline-size: var(--container-prose);
   }
 
-  /* The schedule as a pricing line (WEB-SVC-05), ruled like the other pages' lines. */
-  .plans-foot__schedule {
-    padding-block: var(--space-3);
-    border-block: 1px solid var(--color-border);
-  }
-
-  .plans-foot__rules {
+  .plans-foot :global(.plans-foot__rules) {
     color: var(--color-text-muted);
     text-wrap: pretty;
+  }
+
+  .container > :global(.related__note) {
+    margin-block-start: var(--block-gap);
   }
 
   .pricing {
