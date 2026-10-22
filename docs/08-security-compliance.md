@@ -96,7 +96,7 @@ See [05 §6](05-architecture.md). Key controls:
 - [ ] HMAC-SHA-256 with `PASSWORD_PEPPER`
 - [ ] Fake salts via `SALT_PEPPER`
 - [ ] Mandatory TOTP with replay guard; hashed recovery codes
-- [ ] Sessions: hashed tokens, idle/absolute expiry, rotation, remote sign-out
+- [ ] Sessions: hashed tokens, idle/absolute expiry, a new session (new token) at every sign-in, the person's sessions ended when their role changes or they are deactivated or reset, remote sign-out (step-up doesn't issue a new token; M1.5 LD5)
 - [ ] Step-up for sensitive actions
 - [ ] Exact lockout counters + rate limits + Turnstile
 - [ ] Login and 2FA-change alerts
@@ -137,7 +137,8 @@ See [05 §6](05-architecture.md). Key controls:
 | Secret | Where stored | Who can read | Rotation |
 |---|---|---|---|
 | `PASSWORD_PEPPER`, `SALT_PEPPER` | Wrangler secret (admin), staging and prod differ | Cloudflare account owner only | **Never routinely** (rotation forces password resets). Rotate only on suspected compromise, with a reset procedure. |
-| `SESSION_HMAC_KEY`, `MAGIC_LINK_KEY`, `DOC_TOKEN_KEY`, `TOTP_ENC_KEY` | Wrangler secrets | Owner | Yearly or on suspicion. `SESSION_HMAC_KEY` signs only the short-lived login (5-minute) and enrolment (10-minute) challenges (sessions are random tokens stored as SHA-256 hashes), so rotating it needs no key ID: it only cancels sign-ins in progress; to end sessions, use "sign out everyone". `TOTP_ENC_KEY` rotation re-encrypts the secrets via a script. |
+| `PORTAL_KEY_PEPPER` | Wrangler secret (portal), staging and prod differ | Owner | On suspicion. It only HMACs the portal's counter keys (`p:req:`, `p:mail:`, `p:fail:`); sign-in links, client sessions and document links are random tokens stored as SHA-256, so they need no key. Rotating it only resets the counters. (It replaces the planned `MAGIC_LINK_KEY` and `DOC_TOKEN_KEY`, M1.6 LD4.) |
+| `SESSION_HMAC_KEY`, `TOTP_ENC_KEY` | Wrangler secrets (admin) | Owner | Yearly or on suspicion. `SESSION_HMAC_KEY` signs only the short-lived login (5-minute) and enrolment (10-minute) challenges (sessions are random tokens stored as SHA-256 hashes), so rotating it needs no key ID: it only cancels sign-ins in progress; to end sessions, use "sign out everyone". `TOTP_ENC_KEY` rotation re-encrypts the secrets via a script. |
 | Gateway API keys and webhook secrets (Razorpay, Stripe, PayPal) | Wrangler secrets (admin/portal: create-only keys where providers allow restricted keys; jobs: status/refund) | Owner | Yearly or on staff change. **Test keys only until Phase 7.** Stripe **restricted keys** with minimal permissions. |
 | SES IAM access key | Wrangler secret (jobs) | Owner | 90 days (calendar reminder + a cron alert from key age) |
 | `SES_EVENTS_TOKEN` | Wrangler secret + EventBridge connection | Owner | Yearly |
@@ -303,3 +304,4 @@ All 15 questions are in [08-A, the last section](08-research-appendix/A-gst-invo
 | 2026-10-06 | Phase 4 approved. |
 | 2026-10-07 | Quality pass: status column on §0 and a new U-9 (57th GST Council re-check); FEMA and UPI items re-worded (VERIFY WITH CA); staging Workers threat row and the Access secret names; break-glass and Time Travel restore steps corrected; §3 checklist ticked for what M1.2 and M1.3 built; §7.1 notes which defaults are settings today and adds the estimate and proposal series; runbook references point to M7.5 and L7. Owner decisions: the long-term backup holds finance/GST tables only (§6.1); G-11 also stops at the annual-return filing date (VERIFY WITH CA/LEGAL). |
 | 2026-10-17 | §4: `SESSION_HMAC_KEY` rotation reworded for the M1.4 design (it signs only short-lived challenges; sessions are hashed random tokens, so no key ID is needed). |
+| 2026-10-22 | §3.2 session wording matches M1.5 (a new session at every sign-in, sessions ended on role change, deactivation or reset; no token change on step-up); §4 secrets table lists the portal's one secret `PORTAL_KEY_PEPPER` (M1.6) in place of the planned `MAGIC_LINK_KEY` and `DOC_TOKEN_KEY`. |
