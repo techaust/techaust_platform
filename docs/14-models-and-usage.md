@@ -128,3 +128,20 @@ Each lock covers the others' gaps. All were tested on 2026-10-12 on Claude Code 
 - In the first full week (from Monday 12 Oct 2026) only one agent runs at a time, so each reading belongs to one run.
 - **Quality guard:** if a Tier B or C task gets a critical finding, or is sent back twice, that tier's builder or designer fix effort goes up one step for the next task, at most to high. The lead records it as a [13-decisions.md](13-decisions.md) row and tells the owner.
 - **The cost report:** after the first Tier A build, the first designer task and the first two Tier B reviews, the lead reports the cost of each kind of run against the pace. Effort levels change only with the owner's approval, and never downwards for Tier A work, screens or reviews.
+
+## 9. Skills (mandatory, owner rule 2026-10-22)
+Every run, the lead's and every agent's, loads **every skill that fits its task** before it starts work, and its report lists them. The owner never has to ask. `node tools/model-audit.mjs` lists the skills each run loaded and flags a builder, designer, analyst or reviewer run that loaded none; the lead checks it before every review and records the skills in the run file's `Usage:` line. A skill that doesn't apply is skipped and the report says why; a skill that can't run inside an agent is reported, not silently dropped.
+
+| Task | Skills to load |
+|---|---|
+| Any screen, page, component, email template, PDF layout, social or brand image (designer) | `frontend-design:frontend-design`; `dataviz` for any chart, stat tile or dashboard |
+| Worker code, Hono routes, D1/Drizzle, queues, cron, bindings, `wrangler.jsonc` (builder; analyst for Tier A) | `cloudflare:workers-best-practices`, `cloudflare:wrangler` |
+| CPU budgets, cold starts, benchmarks (builder, analyst, lead) | `cloudflare:workers-profiling` |
+| Website performance, headers, caching, Lighthouse, SEO (M2.x) | `cloudflare:web-perf` |
+| Cloudflare platform features: Access, Workers Logs, Rate Limiting, WAF, Turnstile, Browser Run, R2, Queues (any role) | `cloudflare:cloudflare`; Turnstile also `cloudflare:turnstile-spin` |
+| SES email, IAM users and policies (M2.4, M7.2) | `aws-core:aws-messaging-and-streaming` (routes to SES), `aws-core:aws-iam` |
+| Every review (reviewer) | `code-review` (as the review recipe, findings verified by the reviewer); also `security-review` for Tier A, auth, payments, webhooks and anything public-facing |
+| Starting and ending a day (lead) | `start-session`, `end-session` |
+| A page or report for the owner to view or share (lead) | `artifact-design` |
+
+Analyst and reviewer agents have the Skill tool for this. If a new skill appears that fits a task better, the lead adds it here (a Lead row in 13).

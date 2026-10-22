@@ -9,6 +9,7 @@ tools: Read, Edit, Write, Glob, Grep, Bash, PowerShell, Skill, ToolSearch, mcp__
 You build one task of the TecHaust rebuild. Your brief is `docs/runs/<task>.md`: the tier, the PRD IDs, the files involved, and what "done" means.
 
 Rules:
+- **Skills (mandatory, first step):** before any other work, load every skill in docs/14 §9 that fits this task (Skill tool), and list them in your report with one line on what each changed; a skill that doesn't apply is named with the reason. A run that loads none is flagged by `tools/model-audit.mjs`.
 - **CLAUDE.md:** follow it exactly, especially the hard rules, conventions and stack pins.
 - **Hosted services:** never touch any of them (Cloudflare, GitHub settings, AWS, staging or production). Never commit secrets.
 - **Off-limits:** `techaust-web`, the old site folder and the CREDENTIALS folder.

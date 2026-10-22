@@ -1,6 +1,7 @@
 // Lists every Claude Code run in this project since a date, with the model and effort its own log
 // recorded, and flags anything outside docs/14-models-and-usage.md: a model other than Opus, Sonnet
-// or Haiku 5.5, effort xhigh/max, or the lead on an effort other than medium.
+// or Haiku 5.5, effort xhigh/max, or the lead on an effort other than medium. It also lists the skills each run
+// loaded and flags a builder, designer, analyst or reviewer run that loaded none (skills are mandatory: docs/14 §9).
 // Usage: node tools/model-audit.mjs [YYYY-MM-DD]   (default: today). Exit code 1 if anything is flagged.
 // Reads only the local logs in ~/.claude/projects/<this repo>/; prints no message content.
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -46,6 +47,7 @@ for (const file of files) {
   }
   const models = new Set();
   const efforts = new Set();
+  const skills = new Set();
   let first = "";
   for (const line of readFileSync(file, "utf8").split("\n")) {
     if (!line.includes('"type":"assistant"')) continue;
@@ -60,6 +62,9 @@ for (const file of files) {
     if (!model || model === "<synthetic>") continue;
     models.add(model);
     if (entry.effort) efforts.add(entry.effort);
+    for (const part of Array.isArray(entry.message?.content) ? entry.message.content : [])
+      if (part?.type === "tool_use" && part.name === "Skill" && part.input?.skill)
+        skills.add(part.input.skill);
     if (!first) first = entry.timestamp;
   }
   if (!models.size) continue;
@@ -67,8 +72,10 @@ for (const file of files) {
   for (const m of models) if (!MODELS.has(m)) problems.push(`model ${m} not allowed`);
   for (const e of efforts) if (!EFFORTS.has(e)) problems.push(`effort ${e} not allowed`);
   if (!isAgent && [...efforts].some((e) => e !== "medium")) problems.push("lead not on medium");
+  if (["builder", "designer", "analyst", "reviewer"].includes(agent) && !skills.size)
+    problems.push("no skill loaded");
   const id = basename(file, ".jsonl");
-  runs.push({ first, agent, id, models: [...models], efforts: [...efforts], problems });
+  runs.push({ first, agent, id, models: [...models], efforts: [...efforts], skills: [...skills], problems });
 }
 
 runs.sort((a, b) => a.first.localeCompare(b.first));
@@ -76,7 +83,8 @@ console.log(`Runs since ${since}: ${runs.length}`);
 for (const r of runs) {
   const used = `${r.models.join(",")} / ${r.efforts.join(",") || "?"}`;
   const flag = r.problems.length ? `  FLAG: ${r.problems.join("; ")}` : "";
-  console.log(`${r.first.slice(0, 16)}  ${r.agent.padEnd(12)} ${used}  (${r.id})${flag}`);
+  const sk = r.skills.length ? `  skills: ${r.skills.join(", ")}` : "  skills: none";
+  console.log(`${r.first.slice(0, 16)}  ${r.agent.padEnd(12)} ${used}${sk}  (${r.id})${flag}`);
 }
 const flagged = runs.filter((r) => r.problems.length).length;
 console.log(flagged ? `${flagged} run(s) flagged.` : "All runs within the plan.");

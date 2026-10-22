@@ -19,7 +19,7 @@ Then these sections:
    - the commands run and their results
    - anything not verified
    - open questions
-4. **Designer report**, written by the designer: the same, plus the screenshot paths and any placeholder text. For a preview, the owner's approval follows it.
+4. **Designer report**, written by the designer: the same, plus the screenshot paths, any placeholder text, and confirmation that the `frontend-design` skill was loaded first (the lead checks this before the review). For a preview, the owner's approval follows it.
 5. **Review**, the reviewer's reply (APPROVE or SEND BACK, with each finding's severity, and the visual review when there are screens), copied in by the lead.
 6. **Integration notes**, written by the lead:
    - how the task was merged

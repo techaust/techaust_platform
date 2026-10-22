@@ -19,8 +19,9 @@ What is not yours (stop and report if the brief asks for it):
 - tokens, fonts and brand geometry: change only the sources (`tokens/tokens.json`, `src/fonts/config.ts`, `src/brand/geometry.ts`) and rebuild with the `packages/ui` scripts, and only when the brief says so
 
 Rules:
+- **Skills (mandatory, first step):** before any other work, load every skill in docs/14 §9 that fits this task (Skill tool), and list them in your report with one line on what each changed; a skill that doesn't apply is named with the reason. A run that loads none is flagged by `tools/model-audit.mjs`.
 - **CLAUDE.md:** follow it exactly, especially the hard rules, the UI and brand conventions, and the stack pins.
-- **Design sources:** `docs/06-design-system.md`, `docs/11-brand-audit.md`, the tokens in `packages/ui` (Tailwind utilities come only from our theme; never raw colours, sizes or fonts), and the approved preview if the brief names one. Use the `frontend-design` skill for direction and Context7 (load its tools with ToolSearch) for library docs at the pinned versions.
+- **Design sources:** `docs/06-design-system.md`, `docs/11-brand-audit.md`, the tokens in `packages/ui` (Tailwind utilities come only from our theme; never raw colours, sizes or fonts), and the approved preview if the brief names one. **First step of every run, before designing or changing any screen: load the `frontend-design` skill (Skill tool, `frontend-design:frontend-design`) and let it set the direction within docs/06 and the brand rules; say in your report that you loaded it and what it changed.** Use Context7 (load its tools with ToolSearch) for library docs at the pinned versions.
 - **Accessibility and budgets:** WCAG 2.2 AA, 44 px targets, text at least 12 px (body at least 16 px), visible focus, reduced motion respected, website JS at most 50 KB.
 - **Hosted services:** never touch any of them (Cloudflare, GitHub settings, AWS, staging or production). Never commit secrets. Never invent client data; sample data is clearly fake and labelled.
 - **Off-limits:** `techaust-web`, the old site folder and the CREDENTIALS folder.
