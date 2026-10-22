@@ -5,4 +5,4 @@ CREATE TRIGGER `issue_guard_check` INSTEAD OF INSERT ON `issue_guard` WHEN NOT E
 --> statement-breakpoint
 CREATE VIEW `issue_result` AS SELECT NULL AS document_id, NULL AS series, NULL AS fy;
 --> statement-breakpoint
-CREATE TRIGGER `issue_result_check` INSTEAD OF INSERT ON `issue_result` WHEN NOT EXISTS (SELECT 1 FROM documents d JOIN doc_counters c ON c.series = NEW.series AND c.fy = NEW.fy WHERE d.id = NEW.document_id AND d.status = 'issued' AND d.frozen_at IS NOT NULL AND d.series = NEW.series AND d.fy = NEW.fy AND d.number = c.next_no - 1 AND d.number_display IS NOT NULL) BEGIN SELECT RAISE(ABORT, 'issue did not freeze the document with the number just taken'); END;
+CREATE TRIGGER `issue_result_check` INSTEAD OF INSERT ON `issue_result` WHEN NOT EXISTS (SELECT 1 FROM documents d JOIN doc_counters c ON c.series = NEW.series AND c.fy = NEW.fy WHERE d.id = NEW.document_id AND d.status = 'issued' AND d.frozen_at IS NOT NULL AND d.series = NEW.series AND d.fy = NEW.fy AND d.number >= 1 AND d.number = c.next_no - 1 AND d.number_display IS NOT NULL) BEGIN SELECT RAISE(ABORT, 'issue did not freeze the document with the number just taken'); END;

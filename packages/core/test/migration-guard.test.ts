@@ -101,6 +101,32 @@ describe("referenced-table rebuild guard", () => {
     );
   });
 
+  it("sees two statements on one line", () => {
+    const sneaky: Migration = {
+      name: "0007_oneline.sql",
+      sql: "ALTER TABLE `lines` ADD `note` text; DROP TABLE `clients`;",
+    };
+    expect(violations([BASE, sneaky])).toHaveLength(1);
+  });
+
+  it("sees a DROP after a trailing comment, and ignores a DROP that is only inside a comment", () => {
+    const afterComment: Migration = {
+      name: "0007_comment.sql",
+      sql: "ALTER TABLE `lines` ADD `note` text; -- harmless; really\nDROP TABLE `clients`;",
+    };
+    expect(violations([BASE, afterComment])).toHaveLength(1);
+    const onlyComment: Migration = {
+      name: "0007_commented.sql",
+      sql: "-- DROP TABLE `clients`;\nALTER TABLE `lines` ADD `note` text;",
+    };
+    expect(violations([BASE, onlyComment])).toEqual([]);
+  });
+
+  it("matches a DROP anywhere in the statement, not only at its start", () => {
+    const wrapped: Migration = { name: "0007_wrapped.sql", sql: "BEGIN DROP TABLE `clients`" };
+    expect(violations([BASE, wrapped])).toHaveLength(1);
+  });
+
   it("the repository's real migrations pass", () => {
     const dir = join(import.meta.dirname, "..", "..", "db", "migrations");
     const allowFile = join(

@@ -11,11 +11,14 @@ export const FIRST_CHECKED = 7;
 
 const NAME = "[`\"']?([A-Za-z0-9_]+)[`\"']?";
 const normal = (table) => table.replace(/^__new_/, "");
+// Comments are stripped first (the drizzle breakpoint is itself a comment), then the SQL is split on every `;`, so
+// two statements on one line, or a comment before a DROP, cannot hide it. A `;` inside a trigger body only cuts
+// that body into pieces; none of the pieces we look for (CREATE/ALTER/DROP TABLE) occurs inside one.
 const statements = (sql) =>
   sql
-    .split("--> statement-breakpoint")
-    .flatMap((chunk) => chunk.split(/;\s*(?:\r?\n|$)/))
-    .map((s) => s.replace(/--[^\n]*/g, "").trim())
+    .replace(/--[^\n]*/g, "")
+    .split(";")
+    .map((s) => s.trim())
     .filter(Boolean);
 
 /** parent table -> the other tables that reference it, from every CREATE TABLE and ALTER TABLE in the migrations. */
@@ -50,10 +53,13 @@ export function findRebuildViolations(migrations, allow = []) {
     if (Number.parseInt(name, 10) < FIRST_CHECKED) continue;
     const rebuilt = new Set();
     for (const s of statements(sql)) {
-      const drop = new RegExp(`^DROP TABLE\\s+(?:IF EXISTS\\s+)?${NAME}`, "i").exec(s)?.[1];
-      const copy = new RegExp(`^CREATE TABLE\\s+(?:IF NOT EXISTS\\s+)?${NAME}`, "i").exec(s)?.[1];
-      if (drop) rebuilt.add(normal(drop));
-      if (copy?.startsWith("__new_")) rebuilt.add(normal(copy));
+      // Matched anywhere in the statement (not anchored), so leading junk cannot hide a DROP.
+      for (const m of s.matchAll(new RegExp(`\\bDROP\\s+TABLE\\s+(?:IF\\s+EXISTS\\s+)?${NAME}`, "gi"))) {
+        rebuilt.add(normal(m[1]));
+      }
+      for (const m of s.matchAll(new RegExp(`\\bCREATE\\s+TABLE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?${NAME}`, "gi"))) {
+        if (m[1].startsWith("__new_")) rebuilt.add(normal(m[1]));
+      }
     }
     for (const table of rebuilt) {
       const children = [...(parents.get(table) ?? [])].filter((c) => c !== table);

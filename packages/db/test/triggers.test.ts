@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   frozenDocumentColumns,
   ISSUABLE_STATUSES,
+  issueGuardStatements,
   MUTABLE_AFTER_FREEZE,
   SET_ONCE_AFTER_FREEZE,
 } from "../src/triggers.ts";
@@ -251,6 +252,41 @@ describe("gap-free numbering (docs/05 §5.4, ADM-INV-03)", () => {
       /issue did not freeze the document/,
     );
     expect(await counter()).toBe(before);
+  });
+
+  it("the post-condition rejects number 0, even when it equals next_no - 1", async () => {
+    const clientId = await insertClient("C-ZEROTH");
+    const id = await insertDraftInvoice(clientId);
+    await rejects(
+      env.DB.batch([
+        env.DB.prepare("INSERT INTO issue_guard (document_id) VALUES (?)").bind(id),
+        env.DB.prepare("INSERT INTO doc_counters (series, fy, next_no) VALUES ('invoice', '2098', 1)"),
+        env.DB.prepare(
+          "UPDATE documents SET series = 'invoice', fy = '2098', number = 0, number_display = 'X/0', status = 'issued', frozen_at = 1 WHERE id = ?",
+        ).bind(id),
+        env.DB.prepare(
+          "INSERT INTO issue_result (document_id, series, fy) VALUES (?, 'invoice', '2098')",
+        ).bind(id),
+      ]),
+      /issue did not freeze the document/,
+    );
+    expect(await first("SELECT 1 AS x FROM doc_counters WHERE fy = '2098'")).toBeNull();
+  });
+
+  it("the installed issue_guard_check and issue_result_check are exactly what issueGuardStatements() generates", async () => {
+    const installed = await all<{ name: string; sql: string }>(
+      "SELECT name, sql FROM sqlite_master WHERE name IN ('issue_guard_check', 'issue_result', 'issue_result_check')",
+    );
+    const bySuffix = (name: string) => installed.find((r) => r.name === name)?.sql;
+    // sqlite_master stores the statement as written, without the trailing semicolon.
+    const written = issueGuardStatements().map((s) => s.replace(/;$/, ""));
+    for (const statement of written.filter((s) => /^CREATE /.test(s))) {
+      const name = /(?:TRIGGER|VIEW) `([a-z_]+)`/.exec(statement)?.[1] ?? "";
+      expect(bySuffix(name), name).toBe(statement);
+    }
+    expect(installed.map((r) => r.name).sort()).toEqual(
+      ["issue_guard_check", "issue_result", "issue_result_check"].sort(),
+    );
   });
 
   it("each FY has its own counter, and counters never go down or disappear", async () => {
