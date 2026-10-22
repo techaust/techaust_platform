@@ -145,8 +145,8 @@ const { class: cls } = Astro.props;
 
   /* Scroll cue (CSS only): a hard verdigris rule stands on each edge that still hides columns. Two page-coloured
      covers ride on the content ("local") and slide over a rule once that edge is reached; the rules stay on the box
-     ("scroll"). A table that fits shows no rule at all. Flat brand edge, no shadow or fade. The rules sit 1px in from the edge
-     so a box on a fractional pixel never lets a sliver of them bleed past the covers. */
+     ("scroll"). A table that fits shows no rule at all. Flat brand edge, no shadow or fade. The rules sit 1px in from every
+     edge so a box on a fractional pixel never lets a sliver of them bleed past the covers. */
   .prose :global(.prose-table) {
     --cue: var(--space-1);
     --cover: var(--space-3);
@@ -154,10 +154,10 @@ const { class: cls } = Astro.props;
     background:
       linear-gradient(var(--color-bg), var(--color-bg)) left top / var(--cover) 100% no-repeat local,
       linear-gradient(var(--color-bg), var(--color-bg)) right top / var(--cover) 100% no-repeat local,
-      linear-gradient(var(--color-text-accent), var(--color-text-accent)) left 1px top / var(--cue) 100% no-repeat
-      scroll,
-      linear-gradient(var(--color-text-accent), var(--color-text-accent)) right 1px top / var(--cue) 100% no-repeat
-      scroll;
+      linear-gradient(var(--color-text-accent), var(--color-text-accent)) left 1px top 1px / var(--cue)
+      calc(100% - 2px) no-repeat scroll,
+      linear-gradient(var(--color-text-accent), var(--color-text-accent)) right 1px top 1px / var(--cue)
+      calc(100% - 2px) no-repeat scroll;
   }
 
   .prose :global(.prose-table:focus-visible) {

@@ -1,10 +1,13 @@
 // The dist link checker and the pre-production readiness check (scripts/web-link-check.mjs,
 // scripts/check-prod-readiness.mjs). Each must fail on bad input. Runs in Node.
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 // @ts-expect-error plain .mjs without types
 import * as r from "../../../scripts/check-prod-readiness.mjs";
 // @ts-expect-error plain .mjs without types
 import * as l from "../../../scripts/web-link-check.mjs";
+import { legal } from "../src/content/legal";
 
 const html = (body: string) => `<!doctype html><html><head></head><body>${body}</body></html>`;
 const site = (pages: Record<string, string>, extra: string[] = []) =>
@@ -124,6 +127,12 @@ describe("pre-production readiness (never run by CI or staging)", () => {
     );
     expect(r.checkLaunchDate('launchDate: "2026-10-22",', legalTs)).toEqual([]);
     expect(r.checkLaunchDate('launchDate: "2026-10-22",', "nothing here").join()).toMatch(/No `effective`/);
+  });
+
+  it("reads every real legal page's effective date from content/legal.ts (they must stay string literals)", () => {
+    const legalTs = readFileSync(fileURLToPath(new URL("../src/content/legal.ts", import.meta.url)), "utf8");
+    const literals = new Set([...legalTs.matchAll(/\beffective:\s*"([^"]*)"/g)].map((m) => m[1]));
+    for (const page of Object.values(legal)) expect(literals).toContain(page.effective);
   });
 
   it("fails on a built page that still has a Placeholder or the postal-address placeholder", () => {
