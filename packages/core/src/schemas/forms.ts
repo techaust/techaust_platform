@@ -1,7 +1,7 @@
 // Shared website form schemas [FRM-01]: the browser and the server import these same modules, so they can't
 // drift (fixes audit H-4). Spam checks (Turnstile, honeypot, timing, rate limits, FRM-02) and the consent
 // receipt (FRM-05) are added by the form endpoint, not the visitor's payload.
-import { z } from "zod";
+import * as z from "zod";
 import { checkbox, company, country, email, multiLine, name, optional, phone, singleLine } from "./fields.ts";
 
 /** FRM-CONTACT: name, email, message (20–2,000), optional company and phone. */

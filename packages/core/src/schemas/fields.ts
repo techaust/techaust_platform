@@ -1,5 +1,5 @@
 // Reusable field rules for the shared form schemas [FRM-01]. Error messages follow docs/07 §forms.
-import { z } from "zod";
+import * as z from "zod";
 
 // C0/C1 control characters. Single-line fields reject all of them (this also blocks CR/LF reaching an
 // email header, FRM-03); multi-line fields allow only tab, line feed and carriage return.
@@ -34,7 +34,9 @@ export const multiLine = (opts: { min: number; max: number; required: string; to
         .string()
         .min(1, { error: opts.required })
         .min(opts.min, { error: opts.tooShort })
-        .max(opts.max, { error: `Keep this under ${opts.max.toLocaleString("en-IN")} characters` }),
+        // A function, so the locale formatting (loading ICU data costs about 17 ms of CPU) runs only when a message
+        // is too long, not when the schema is built at module load.
+        .max(opts.max, { error: () => `Keep this under ${opts.max.toLocaleString("en-IN")} characters` }),
     );
 
 /** Optional: an empty or blank value becomes `undefined`. */

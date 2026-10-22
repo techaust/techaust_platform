@@ -2,7 +2,7 @@
 // ADM-SET-*. VERIFY WITH CA/LEGAL: every tax and legal rule here is a default the Owner can change, never
 // settled advice. Company identity (legal name, GSTIN, address) and bank details are entered by the Owner in
 // the admin (M3.1) and are never committed: this repository is public.
-import { z } from "zod";
+import * as z from "zod";
 import { DEFAULT_PADDING, SERIES, type Series, validateFormat } from "../numbering.ts";
 import { gstin, stateCode } from "./domain.ts";
 
