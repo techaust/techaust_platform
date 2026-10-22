@@ -71,7 +71,7 @@ A subagent can't start another subagent, so builders and designers read their ow
 - **One browser user at a time:** the designer and the reviewer share the Playwright browser and the dev-server ports, so the lead never runs two of them at once.
 - **Commits as it goes:** at least every 20 minutes and at each finished layer or screen, so a stopped agent loses nothing.
 - **Severity triage:** critical and high findings are fixed before the merge. Medium and low ones become follow-ups in [12-status.md](12-status.md), unless they are a one-line fix.
-- **`main` taken early:** if `main` has moved since the task branched, the lead merges it into the task before the review, not after. If the task's migrations change a table, trigger, constraint or foreign key, the analyst plans that merge first.
+- **`main` taken early:** if `main` has moved since the task branched, the lead merges it into the task before the review, not after. If the task's migrations change a table, trigger, constraint or foreign key, the analyst plans that merge first. **Analyst gate for migrations:** the analyst also confirms that no migration rebuilds (drops, or copies through `__new_…`) a table other tables reference; `scripts/check-migrations.mjs` fails CI for any such migration after 0006, and the only way past it is the analyst's written check plus an entry (with the reason) in `scripts/migration-rebuild-allowlist.json`.
 
 ## 5. The budget gate
 Before starting any agent, the lead reads the usage (the `get_usage` session tool: "Weekly · all models" and "5-hour limit").

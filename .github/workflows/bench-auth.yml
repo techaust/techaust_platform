@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   bench:
-    if: github.actor == 'techaust' && github.repository == 'techaust/techaust_platform'
+    if: github.actor == 'techaust' && github.triggering_actor == 'techaust' && github.repository == 'techaust/techaust_platform'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
