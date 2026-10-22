@@ -1,7 +1,7 @@
 # Skill-guided audit of earlier work (M1.1–M1.4, brand scripts) and fixes (2026-10-22)
 
 ```
-Status: open: fixes
+Status: done: fixes merged (2026-10-22)
 Tier: A (gap-free numbering trigger and migration; money tests)
 Usage: reviewer claude-opus-5-5/high (audit; loaded workers-best-practices, wrangler, security-review, code-review, frontend-design with the Skill tool); builder and analyst: filled in when they run
 ```
@@ -159,3 +159,10 @@ Medium/low findings, all to fix now (owner: 10/10): M1 the no-floats scanner dro
 - The "decide again under the reaper" step is exercised only indirectly (two-waiter and held-reaper tests); a precise interleaving test would need controlled timing.
 - A tiny window remains: a wrapper killed hard between writing `pid` and `child` leaves a lock with a dead wrapper PID and no child file; it is then taken over at once while a just-started command may still run (milliseconds).
 - 0007 and 0008 still first run on staging at the next deploy.
+
+## Re-check of round 2, 2026-10-22: APPROVE
+Reviewer (Opus 5.5 medium; code-review, security-review, cloudflare:wrangler via the Skill tool, checklists only): nothing critical, high or medium. Merge of #36 keeps both guards and both CI steps; 0007 regenerated with `d.number >= 1` and the drift test compares it exactly; migration guard, no-floats scanner, heavy.sh lock, print hash and bench secrets all verified. `pnpm build`, `pnpm check`, `pnpm test` (core 304, db 52, ui 469, auth 94, jobs 2, web 55, admin 420, portal 404), `pnpm db:generate` (no diff), `heavy.selftest.sh` 18/18 green.
+Low follow-ups: heavy.sh should kill the whole process tree on Windows (native node/workerd grandchildren) and write `child` before `pid`; the migration guard's comment stripping isn't quote-aware (`DEFAULT '--'`); the no-floats bigint exemption accepts `Number(x * 1n) / 3`.
+
+## Integration (lead), 2026-10-22
+Merged `main` (PR #37, docs) into the branch cleanly; PR opened with auto-merge. After the deploy, staging D1 gets 0007 and 0008 (watch the deploy log).
