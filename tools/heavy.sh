@@ -4,8 +4,10 @@
 # With --log, the full output goes to .logs/<name>.log (git-ignored) and only the last 40 lines and
 # the exit code are printed, so agents read the tail and grep the log instead of the whole output.
 # One lock per PC (a folder in the home directory, so every worktree shares it). The lock holds the PID of the
-# run that owns it: a lock whose PID is gone is stale and is removed at once (a crashed run no longer blocks the
-# queue for 90 minutes). A lock with no PID file (being created, or from the old script) is stale after 90 minutes.
+# run that owns it, and the PID of the command it runs (`child`; the command runs in the background): a lock is
+# stale, and removed at once, only when both are gone (a crashed run no longer blocks the queue for 90 minutes, and
+# a wrapper killed hard while its command still runs does not let a second heavy command start). A lock with no
+# PID file (being created, or from the old script) is stale after 90 minutes; any lock is stale after 6 hours.
 # Stale removal is serialised by a second folder (<lock>.reaper), so only one waiter removes it and a live lock
 # can't be removed by mistake. Waits while free memory is under HEAVY_MIN_FREE_MB (0 turns the check off).
 # HEAVY_LOCK overrides the lock path (used by tools/heavy.selftest.sh). Exit code = the command's.
@@ -13,6 +15,7 @@ set -u
 LOCK="${HEAVY_LOCK:-$HOME/.techaust-heavy.lock}"
 REAPER="$LOCK.reaper"
 STALE_MIN=90
+CEILING_MIN="${HEAVY_CEILING_MIN:-360}" # absolute ceiling: 6 hours (overridable only for the self-test)
 MIN_FREE_MB="${HEAVY_MIN_FREE_MB:-512}"
 usage() { echo "Usage: bash tools/heavy.sh [--log <name>] <command...>" >&2; exit 2; }
 LOG=""
@@ -31,28 +34,38 @@ free_mb() {
 
 pid_alive() { [ -n "${1:-}" ] && kill -0 "$1" 2>/dev/null; }
 
-# Removes the lock if it is stale. Only the waiter that holds the reaper folder may do it, and it re-reads the PID
-# under that folder, so a lock that was replaced in the meantime is left alone.
+# Why the lock is stale, or nothing (and status 1) if it is not. The lock holds two PIDs: `pid` (this wrapper) and
+# `child` (the command it runs, in the background). A hard-killed wrapper leaves the child running, so the lock is
+# stale only when BOTH are gone. A lock with no PID is stale after STALE_MIN minutes (being created, or the old
+# script). Whatever the PIDs say, a lock older than CEILING_MIN minutes is stale (PIDs get reused; nothing here
+# runs that long).
+stale_reason() {
+  local pid child
+  pid="$(cat "$LOCK/pid" 2>/dev/null)"
+  child="$(cat "$LOCK/child" 2>/dev/null)"
+  if [ -n "$pid" ] && [ -n "$(find "$LOCK/pid" -maxdepth 0 -mmin +$CEILING_MIN 2>/dev/null)" ]; then
+    echo "older than the $CEILING_MIN-minute ceiling"
+  elif [ -z "$pid" ]; then
+    [ -n "$(find "$LOCK" -maxdepth 0 -mmin +$STALE_MIN 2>/dev/null)" ] || return 1
+    echo "no PID, older than $STALE_MIN min"
+  elif pid_alive "$pid" || pid_alive "$child"; then
+    return 1
+  else
+    echo "its owner, PID $pid, and its command are gone"
+  fi
+}
+
+# Removes the lock if it is stale. Only the waiter that holds the reaper folder may do it, and under that folder it
+# decides again (PIDs, age) from a fresh read, so a lock that was replaced in the meantime is left alone.
 reap_if_stale() {
   [ -d "$LOCK" ] || return 0
-  local pid
-  pid="$(cat "$LOCK/pid" 2>/dev/null)"
-  if [ -n "$pid" ]; then
-    pid_alive "$pid" && return 0
-  elif [ -z "$(find "$LOCK" -maxdepth 0 -mmin +$STALE_MIN 2>/dev/null)" ]; then
-    return 0
-  fi
+  stale_reason >/dev/null || return 0
   # A reaper that died leaves its folder behind; give it a few minutes, then clear it.
   if [ -d "$REAPER" ] && [ -n "$(find "$REAPER" -maxdepth 0 -mmin +5 2>/dev/null)" ]; then rm -rf "$REAPER"; fi
   mkdir "$REAPER" 2>/dev/null || return 0 # another waiter is already doing it
-  local again
-  again="$(cat "$LOCK/pid" 2>/dev/null)"
-  if [ -d "$LOCK" ] && [ "$again" = "$pid" ] && ! pid_alive "$pid"; then
-    if [ -n "$pid" ]; then
-      echo "[heavy] removing a stale lock (its owner, PID $pid, is gone)" >&2
-    else
-      echo "[heavy] removing a stale lock (no PID, older than $STALE_MIN min)" >&2
-    fi
+  local why
+  if [ -d "$LOCK" ] && why="$(stale_reason)"; then
+    echo "[heavy] removing a stale lock ($why)" >&2
     rm -rf "$LOCK"
   fi
   rmdir "$REAPER" 2>/dev/null
@@ -77,15 +90,28 @@ done
 
 # Release only our own lock (if it was ever taken from us, never remove somebody else's).
 release() { [ "$(cat "$LOCK/pid" 2>/dev/null)" = "$$" ] && rm -rf "$LOCK"; }
-trap release EXIT INT TERM
+child=""
+# On Ctrl-C or a polite kill, stop the command too, then leave (the EXIT trap releases the lock).
+stop() { [ -n "$child" ] && kill "$child" 2>/dev/null; exit 143; }
+trap release EXIT
+trap stop INT TERM
 printf '%s\n' "$$" > "$LOCK/pid"
 printf '%s\n' "$PWD: $*" > "$LOCK/cmd"
+# The command runs in the background and its PID goes into the lock, so a wrapper that is killed hard (no trap
+# runs) cannot free the queue while the command is still running. Standard input is passed on explicitly,
+# because a background job otherwise reads /dev/null.
 if [ -n "$LOG" ]; then
   mkdir -p .logs
-  "$@" > "$LOG" 2>&1
-  rc=$?
+  "$@" <&0 > "$LOG" 2>&1 &
+else
+  "$@" <&0 &
+fi
+child=$!
+printf '%s\n' "$child" > "$LOCK/child"
+wait "$child"
+rc=$?
+if [ -n "$LOG" ]; then
   tail -n 40 "$LOG"
   echo "[heavy] exit $rc; full log: $LOG" >&2
-  exit "$rc"
 fi
-"$@"
+exit "$rc"

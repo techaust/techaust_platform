@@ -77,7 +77,7 @@ The full plan is `docs/14-models-and-usage.md` (owner-approved 2026-10-12, repla
   - stop and report when blocked
   - never touch hosted services; any hosted change needs the owner's yes first
 - **Heavy commands go through the queue, one at a time:** full lint, typecheck, build, database tests and end-to-end tests run via `bash tools/heavy.sh --log <name> <command>` (full output to `.logs/<name>.log`; read the tail and grep, never the whole log).
-  - the lock is `~/.techaust-heavy.lock`, and a lock older than 90 minutes is stale
+  - the lock is `~/.techaust-heavy.lock`, it holds the PIDs of the wrapper and of the command, and is stale when both are gone (a lock without PIDs after 90 minutes, any lock after 6 hours)
   - commands wait while free memory is under 512 MB
   - the whole-repository lint runs only once, as a builder's or designer's final check
 - **Review triage:** critical and high findings are fixed before the merge; medium and low become follow-ups unless they are a one-line fix. Merge `main` into a task before its review if `main` has moved.

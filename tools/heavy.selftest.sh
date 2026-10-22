@@ -62,5 +62,42 @@ bash "$HEAVY" bash -c "echo 1 > '$HEAVY_LOCK/pid'" >/dev/null 2>&1
 check "release leaves a lock that belongs to someone else" "[ -d '$HEAVY_LOCK' ] && [ \"\$(cat '$HEAVY_LOCK/pid')\" = 1 ]"
 rm -rf "$HEAVY_LOCK"
 
+# 8. The lock also records the PID of the command, and the command's own exit code still comes through.
+bash "$HEAVY" bash -c "cat '$HEAVY_LOCK/child' > '$WORK/child-seen'; echo \$\$ > '$WORK/real-pid'; exit 3" >/dev/null 2>&1; rc=$?
+check "the lock holds the command's PID and the exit code is kept" "[ -s '$WORK/child-seen' ] && [ $rc -eq 3 ]"
+
+# 9. A wrapper killed hard (no trap runs) while its command still runs must NOT free the queue; once the command
+#    is gone too, the lock is taken over at once.
+bash "$HEAVY" sleep 600 >/dev/null 2>&1 &
+W=$!
+for _ in $(seq 1 50); do [ -s "$HEAVY_LOCK/child" ] && break; sleep 0.2; done
+CH="$(cat "$HEAVY_LOCK/child" 2>/dev/null)"
+check "the running command's PID is in the lock" "[ -n '$CH' ] && kill -0 '$CH' 2>/dev/null"
+kill -9 "$W" 2>/dev/null; wait "$W" 2>/dev/null
+check "the wrapper is gone but its command still runs" "! kill -0 '$W' 2>/dev/null && kill -0 '$CH' 2>/dev/null"
+timeout 4 bash "$HEAVY" echo should-not-run > "$WORK/orphan.out" 2>&1; rc=$?
+check "a live command keeps the lock after its wrapper was killed" "[ $rc -eq 124 ] && ! grep -q should-not-run '$WORK/orphan.out' && [ -d '$HEAVY_LOCK' ]"
+kill "$CH" 2>/dev/null
+for _ in $(seq 1 25); do kill -0 "$CH" 2>/dev/null || break; sleep 0.2; done
+out="$(timeout 20 bash "$HEAVY" echo ran-orphan 2>&1)"
+check "…and the lock is taken over once the command is gone too" "[[ \"$out\" == *'removing a stale lock'* && \"$out\" == *ran-orphan* ]]"
+
+# 10. A lock older than the absolute ceiling is stale even if its PIDs look alive (PIDs get reused).
+sleep 600 & BG=$!
+mkdir "$HEAVY_LOCK"; echo "$BG" > "$HEAVY_LOCK/pid"; echo "$BG" > "$HEAVY_LOCK/child"
+touch -d '8 hours ago' "$HEAVY_LOCK/pid"
+out="$(timeout 20 bash "$HEAVY" echo ran-ceiling 2>&1)"
+check "a lock past the 6 hour ceiling is taken over" "[[ \"$out\" == *ceiling* && \"$out\" == *ran-ceiling* ]]"
+kill "$BG" 2>/dev/null; wait "$BG" 2>/dev/null; BG=""
+
+# 11. Under the reaper the decision is made again: a lock that became live again is left alone.
+sleep 600 & BG=$!
+mkdir "$HEAVY_LOCK"; echo "$BG" > "$HEAVY_LOCK/pid"; echo "$BG" > "$HEAVY_LOCK/child"
+mkdir "$HEAVY_LOCK.reaper" # as if another waiter holds it
+timeout 4 bash "$HEAVY" echo should-not-run > "$WORK/reaper.out" 2>&1; rc=$?
+check "a live lock survives a waiter (and a held reaper is not broken early)" "[ $rc -eq 124 ] && [ -d '$HEAVY_LOCK' ] && [ -d '$HEAVY_LOCK.reaper' ]"
+kill "$BG" 2>/dev/null; wait "$BG" 2>/dev/null; BG=""
+rm -rf "$HEAVY_LOCK" "$HEAVY_LOCK.reaper"
+
 echo
 if [ "$fails" -eq 0 ]; then echo "heavy.sh self-test: all passed"; else echo "heavy.sh self-test: $fails failed"; exit 1; fi
