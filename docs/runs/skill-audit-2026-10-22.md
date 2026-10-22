@@ -91,4 +91,4 @@ Lows fixed by the lead: the web Worker comment names the exact `run_worker_first
 Still to check on staging after the deploy: `/api/geo` answers and `/api/x` gets the static 404 (Cloudflare's matcher).
 
 ## Handover (2026-10-22)
-Done: PR #36 merged and deployed. Next: the owner opens `/api/geo` (JSON) and `/api/x` (static 404) on web staging to confirm the narrowed `run_worker_first`; deferred items are in 12-status "Open follow-ups".
+Done: PR #36 merged and deployed. Confirmed by the owner on staging (2026-10-22): `/api/geo` answers `{"currency":"INR"}` and `/api/x` shows the static "We couldn't find that page" page, so the narrowed `run_worker_first` works; deferred items are in 12-status "Open follow-ups".
