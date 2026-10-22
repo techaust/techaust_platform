@@ -49,6 +49,8 @@ const lines = [
   { mode: "inr", amounts: [inr] },
   { mode: "usd", amounts: [usd ?? inr] },
 ] as const;
+// "/month" (07 writes it attached) rides with the amount and "+ GST", so it never wraps onto a line of its own.
+const tight = unit?.startsWith("/") ?? false;
 ---
 
 <p class:list={["price", `price--${size}`, cls]}>
@@ -66,11 +68,14 @@ const lines = [
                   ·
                 </span>
               )}
-              <span class="price__amount">{displayAmount(m)}</span>
-              {m.currency === "INR" && <span class="price__gst">{draft.gst}</span>}
+              <span class="price__fig">
+                <span class="price__amount">{displayAmount(m)}</span>
+                {m.currency === "INR" && <span class="price__gst">{draft.gst}</span>}
+                {tight && i === amounts.length - 1 && <span class="price__unit price__unit--tight">{unit}</span>}
+              </span>
             </>
           ))}
-          {unit && <span class:list={["price__unit", unit.startsWith("/") && "price__unit--tight"]}>{unit}</span>}
+          {unit && !tight && <span class="price__unit">{unit}</span>}
           {mode !== "inr" && !usd && ask && <span class="price__ask">{shared.usdOnRequest}</span>}
         </span>
       ))
@@ -123,6 +128,14 @@ const lines = [
     font-size: var(--text-sm);
     line-height: var(--text-sm--line-height);
     color: var(--color-text-muted);
+  }
+
+  /* The amount, "+ GST" and an attached unit: one unbreakable group. */
+  .price__fig {
+    display: inline-flex;
+    align-items: baseline;
+    column-gap: var(--space-2);
+    white-space: nowrap;
   }
 
   /* "/mo", "/month" (07 writes them attached): no gap before the slash. */
