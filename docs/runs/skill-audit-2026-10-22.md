@@ -1,7 +1,7 @@
 # Skill-guided audit of merged M1.5 / M1.6 / M2.1 code (2026-10-22)
 
 ```
-Status: open: fixes
+Status: done: fixes merged in PR #36 (2026-10-22)
 Tier: A (touches staff-auth and portal Worker code)
 Usage: reviewer claude-opus-5-5/high (audit; skills read from disk as checklists because the Skill tool wasn't available to agents in this session); builder: filled in when it runs
 ```
