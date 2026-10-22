@@ -92,6 +92,32 @@
   text-transform: uppercase;
 }
 
+/* Two lists side by side under their own headings (use cases and tools; what affects the price and how payment works):
+   one column on phones, 7 + 5 (or 5 + 7 with --narrow-first) from 1024 px. */
+.sheet {
+  display: grid;
+  gap: var(--section-y) var(--space-12);
+}
+
+@media (min-width: 64rem) {
+  .sheet {
+    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  }
+
+  .sheet--narrow-first {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  }
+}
+
+.sheet__col {
+  display: grid;
+  align-content: start;
+}
+
+.sheet__title {
+  margin-block-end: var(--space-8);
+}
+
 /* The page's closing words before the CTA band, or a quiet note under a section. */
 .muted-note {
   color: var(--color-text-muted);

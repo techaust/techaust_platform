@@ -1,0 +1,123 @@
+---
+// Pricing (/pricing, WEB-PRICING, docs/07 §5.3): the h1 and lede with the currency switch and the GST note; the price
+// list by kind of work (catalogue); the care-plan tiers (the care-plans page's comparison, the same data); "What
+// affects the price" beside "How payment works" (with the small-job threshold from the settings default and the GST
+// and USD notes of 07 §2.4); the FAQ with its FAQPage JSON-LD; the closing band. 07 gives the page no band of its
+// own, so it is the home band with "Book a Discovery Sprint", as on the services hub.
+import "../styles/page.css";
+import CopyText from "../components/CopyText.astro";
+import CTABand from "../components/CTABand.astro";
+import CurrencyNote from "../components/CurrencyNote.astro";
+import FaqJsonLd from "../components/FaqJsonLd.astro";
+import FaqSection from "../components/FaqSection.astro";
+import PageHero from "../components/PageHero.astro";
+import PriceNote from "../components/PriceNote.astro";
+import PriceList from "../components/pricing/PriceList.astro";
+import PlanTable from "../components/service/PlanTable.astro";
+import { discoveryHref } from "../config/site";
+import { home } from "../content/home";
+import { pageLabels as P, serviceLabels as L } from "../content/labels";
+import { pricing } from "../content/pricing";
+import { serviceContent } from "../content/services";
+import { shared } from "../content/shared";
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { plainText } from "../lib/copy";
+
+const care = serviceContent("S16");
+if (!care.plans) throw new Error("Pricing: the care-plans page has no plan comparison (07 §4.14)");
+const plans = care.plans;
+---
+
+<BaseLayout title={pricing.meta.title} description={plainText(pricing.meta.description)}>
+  <PageHero title={pricing.h1} lede={pricing.lede}>
+    <div class="pr-notes">
+      <CurrencyNote />
+      <PriceNote />
+    </div>
+  </PageHero>
+
+  <section class="section section--flush-top" aria-labelledby="page-title">
+    <div class="container">
+      <PriceList id="price-list" labelledby="page-title" />
+    </div>
+  </section>
+
+  <section class="section section--alt" aria-labelledby="plans-title">
+    <div class="container">
+      <div class="section-head">
+        <h2 class="t-h2" id="plans-title">{L.compare}</h2>
+        <CurrencyNote />
+      </div>
+      <PlanTable plans={plans} labelledby="plans-title" />
+      <div class="pr-foot">
+        <CopyText text={plans.rules} class="pr-foot__rules" />
+        <PriceNote />
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container sheet sheet--narrow-first">
+      <div class="sheet__col">
+        <h2 class="t-h2 sheet__title" id="affects-title">{P.whatAffects}</h2>
+        <ul class="ruled ruled--cap" role="list" aria-labelledby="affects-title">
+          {pricing.affects.map((a) => <li>{a}</li>)}
+        </ul>
+      </div>
+      <div class="sheet__col">
+        <h2 class="t-h2 sheet__title" id="payment-title">{P.howPayment}</h2>
+        <ul class="ruled" role="list" aria-labelledby="payment-title">
+          {
+            pricing.payment.map((line) => (
+              <li>
+                <CopyText text={line} as="span" />
+              </li>
+            ))
+          }
+        </ul>
+        <div class="pay-notes">
+          <p>{shared.gstNote}</p>
+          <p>{shared.usdNote}</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <FaqSection title={L.faqs} items={pricing.faqs} flushTop />
+  <FaqJsonLd items={pricing.faqs} />
+
+  <CTABand
+    title={home.band.h2}
+    text={home.band.text}
+    primary={{ label: home.band.primary, href: discoveryHref }}
+    whatsappLabel={home.band.whatsapp}
+  />
+</BaseLayout>
+
+<style>
+  .pr-notes {
+    display: grid;
+    gap: var(--space-1);
+  }
+
+  .pr-foot {
+    display: grid;
+    gap: var(--space-3);
+    margin-block-start: var(--block-gap);
+    max-inline-size: var(--container-prose);
+  }
+
+  .pr-foot :global(.pr-foot__rules) {
+    color: var(--color-text-muted);
+    text-wrap: pretty;
+  }
+
+  .pay-notes {
+    display: grid;
+    gap: var(--space-1);
+    margin-block-start: var(--space-5);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+    color: var(--color-text-muted);
+  }
+</style>

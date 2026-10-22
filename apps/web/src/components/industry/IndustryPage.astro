@@ -125,27 +125,6 @@ const primary = { label: home.band.primary, href: discoveryHref };
     text-wrap: pretty;
   }
 
-  /* Use cases and tools: one spec sheet; side by side from 1024 px, each column under its own heading. */
-  .sheet {
-    display: grid;
-    gap: var(--section-y) var(--space-12);
-  }
-
-  @media (min-width: 64rem) {
-    .sheet {
-      grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
-    }
-  }
-
-  .sheet__col {
-    display: grid;
-    align-content: start;
-  }
-
-  .sheet__title {
-    margin-block-end: var(--space-8);
-  }
-
   /* Tools: names in a grid of hairline cells (a list of systems, not tags). */
   .tools {
     display: grid;
