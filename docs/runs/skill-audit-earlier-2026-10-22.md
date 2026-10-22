@@ -117,3 +117,45 @@ Medium/low findings, all to fix now (owner: 10/10): M1 the no-floats scanner dro
 2. Analyst (1): installed-SQL drift test for `issue_guard_check` and `issue_result_check`. Analyst (3): migration guard comment stripping and unanchored matching, with the two tests. Analyst note: `d.number >= 1` in `issue_result_check` — **this edits 0007, which has never been applied to staging** (only local DBs); allowed before the merge, but regenerate it with `scripts/write-triggers.ts issue_guard` (not by hand) and say so; add a test.
 3. Reviewer M1: scan `${…}` expressions inside template literals; bigint exemption only for divisions with bigint operands; tests for both examples. M2 + L3: heavy.sh runs the command in the background, writes the child PID to `$LOCK/child`, treats the lock as stale only when both PIDs are dead, re-checks age under the reaper, keeps a 6 h absolute ceiling; extend `tools/heavy.selftest.sh`. L4: add `outline.ts`, `compose.ts` and the font bytes to `printSourceHash`, rebuild with `build:brand` (PDF content must stay identical apart from `/Keywords`). L6: move `bench-auth.yml` secrets to the steps that use them.
 4. Skills first (Skill tool): cloudflare:wrangler, code-review and security-review (checklists only). Final `pnpm check`, `pnpm build`, `pnpm test`, `pnpm db:generate` (no diff), one whole-repo lint; append "Builder report: round 2"; commit; no push.
+
+## Builder report: round 2 (Sonnet 5.5, medium; 2026-10-22)
+
+**Skills (Skill tool):** `cloudflare:wrangler` (loaded; no wrangler config touched; reminded me that migrations are applied by wrangler from `packages/db/migrations`, so 0007 is only safe to edit because it has not reached staging). `code-review` and `security-review` (loaded as checklists only; both printed output about unrelated or empty diffs, which I ignored; no agents, comments or cloud work). They prompted a re-read of the heavy.sh signal/PID paths and of the bench workflow's secret scope.
+
+**Commits (on `fix/skill-audit-earlier`):**
+- `b73b490` merge origin/main (PR #36)
+- `739ad68` + `222211e` item 2 (post-condition, drift test, migration guard)
+- `afd95e9` + `03ddd21` item 3 M1 (no-floats scanner)
+- `d9f0bec` item 3 M2 + L3 (heavy.sh)
+- `21acb38` item 3 L4 + L6
+- plus this report's commit
+
+**Item 1, merge.** `git merge origin/main` conflicted in `package.json` and `.github/workflows/ci.yml`, as expected. `check` now runs `lint && typecheck && check-web-bindings.mjs && check-worker-config.mjs && check-migrations.mjs`; ci.yml keeps both steps (worker config guard, then migration rebuild guard). CLAUDE.md's `pnpm check` comment names both guards. `pnpm db:generate` after the merge: "No schema changes".
+
+**Item 2.**
+- Migration 0007 was edited, which is allowed only because it has never been applied to staging (only local DBs). I did not edit it by hand: I changed `issueGuardStatements()` in `packages/db/src/triggers.ts` (`AND d.number >= 1` in `issue_result_check`), emptied the file and re-ran `node scripts/write-triggers.ts issue_guard`. The diff of 0007 is that one condition. 0000-0006 and 0008 untouched, no `__new_`.
+- db tests (`triggers.test.ts`): a drift test comparing the installed `issue_guard_check`, `issue_result` and `issue_result_check` SQL in `sqlite_master` with `issueGuardStatements()`; a test that number 0 (equal to `next_no - 1` on a fresh counter) is rejected and the counter row does not appear.
+- `scripts/migration-guard.mjs`: comments are stripped before the SQL is split, it splits on every `;`, and `DROP TABLE` / `CREATE TABLE __new_` are matched anywhere in a statement. Tests added in `migration-guard.test.ts`: two statements on one line; a DROP after a trailing comment containing `;`; a DROP only inside a comment is ignored; a DROP not at the start of the statement.
+
+**Item 3.**
+- M1 (`no-floats.test.ts`): the regex noise-stripper is replaced by a small scanner. Template-literal text is blanked, but `${…}` expressions are kept as code (nested templates and braces included), so decimals and divisions inside them are caught. The bigint exemption now applies per division: the operand left or right of that `/` (a name, a call, or a parenthesised group) must hold `100n`, `BigInt(` or `divRoundHalfUp(`; a marker elsewhere on the line no longer exempts. Tests: a division inside a template expression, a nested template, `a * b / 100 + 5n` flagged, `(a * 7) / 3, y = 5n` flagged, and the allowed forms still pass. The real money files still pass.
+- M2 + L3 (`tools/heavy.sh`): the command runs in the background; the lock holds `pid` (wrapper) and `child` (command); stale only when both are dead; the decision is taken again from a fresh read under the reaper folder; a lock older than 360 min (6 h, measured on the `pid` file) is stale whatever the PIDs; Ctrl-C/TERM stops the command and releases; stdin is passed on (`<&0`). Self-test extended to 18 checks: command PID recorded and exit code kept; a wrapper killed with `kill -9` while its command runs keeps the lock (a second heavy times out), and the lock is taken over at once after the command dies; the 6 h ceiling; a live lock and a held reaper are not broken early. CLAUDE.md's lock sentence updated to match.
+- L4: `printSourceHash` now also hashes `outline.ts`, `compose.ts` and the Archivo font file bytes (the file `WORDMARK.font` resolves to). `build:brand` run. **Proof the output is unchanged:** `git status` shows only the 4 PDFs changed (all PNG/ICO/SVG outputs are byte-identical); for each PDF I compared HEAD against the rebuilt file byte by byte (script in the session scratchpad): same length, 89 differing bytes each, 0 of them outside the `/Keywords <hex>` string, so content streams, xref offsets and every other object are identical. A new brand test checks that `print.ts` hashes every layout module it imports.
+- L6: `bench-auth.yml` job-level `env` removed; the secrets and the two inputs are on the "Run the benchmark" step only.
+
+**Checks (all via `tools/heavy.sh --log`, in this worktree):**
+- `pnpm check`: exit 0 (lint, typecheck, web binding guard, worker config guard, migration guard "9 migrations").
+- `pnpm build`: exit 0.
+- `pnpm test`: exit 0; core 304 (statements 99.77 %, branches 98.56 %), db 52, ui 469 passed + 2 skipped, auth 94, jobs 2, web 55, admin 420, portal 404.
+- `pnpm db:generate`: "No schema changes"; `git status` clean afterwards.
+- Whole-repo `pnpm lint`: exit 0 (344 files).
+- `bash tools/heavy.selftest.sh`: all 18 passed (run directly; it uses a throwaway lock).
+
+**Deviations:** CLAUDE.md's heavy-lock sentence was edited (not in the brief) because the old "older than 90 minutes is stale" became wrong. The ceiling can be overridden with `HEAVY_CEILING_MIN` (default 360).
+
+**Not verified:**
+- The workflow edits (ci.yml merge, bench-auth.yml) have not run on GitHub.
+- heavy.sh liveness (`kill -0`, `kill -9` of a wrapper) was tested only in Git Bash on this Windows PC.
+- The "decide again under the reaper" step is exercised only indirectly (two-waiter and held-reaper tests); a precise interleaving test would need controlled timing.
+- A tiny window remains: a wrapper killed hard between writing `pid` and `child` leaves a lock with a dead wrapper PID and no child file; it is then taken over at once while a just-started command may still run (milliseconds).
+- 0007 and 0008 still first run on staging at the next deploy.
