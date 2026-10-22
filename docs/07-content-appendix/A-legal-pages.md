@@ -152,7 +152,7 @@ We'll post changes here and update the date. For significant changes affecting c
 
 ---
 
-## 3. Refunds & cancellations (`/refund-policy`)
+## 3. Refunds and cancellations (`/refund-policy`)
 
 > This policy summarises our standard terms. Your proposal may set different terms for your project, and if so, the proposal applies. (VERIFY WITH CA/LEGAL)
 
@@ -178,7 +178,7 @@ We'll post changes here and update the date. For significant changes affecting c
 1. **What we deliver:** software, designs, documents, automations and services. **Nothing is shipped physically.**
 2. **How:** through our client portal, by email, in code repositories (such as GitHub) under your account or transferred to it, or by deploying to hosting you choose.
 3. **When:** timelines and milestones are set out in your proposal. We update you weekly and tell you promptly if a date is at risk.
-4. **Acceptance:** each milestone is reviewed by you, as described in our [Refunds & cancellations](/refund-policy) policy.
+4. **Acceptance:** each milestone is reviewed by you, as described in our [Refunds and cancellations](/refund-policy) policy.
 5. **Access and ownership:** on full payment, ownership of the deliverables passes to you as stated in your proposal.
 6. **Questions:** contact@techaust.com.
 
@@ -195,7 +195,7 @@ We'll post changes here and update the date. For significant changes affecting c
 | Name | Provider | Purpose | Type | Duration |
 |---|---|---|---|---|
 | `ta_consent` (browser storage) | TecHaust | Remembers your cookie choice | Necessary | 12 months |
-| `ta_theme`, `ta_currency` (browser storage) | TecHaust | Remember light/dark theme and ₹/$ choice | Necessary (preferences) | Until cleared |
+| `ta_theme`, `ta_currency` (browser storage) | TecHaust | Remember light/dark theme and INR/USD choice | Necessary (preferences) | Until cleared |
 | Turnstile (`cf_*`, if set) | Cloudflare | Protects forms from bots | Necessary | Session |
 | `_ga`, `_ga_<id>` | Google | Analytics (only after consent) | Analytics | Up to 2 years (GA4 default) |
 | `__Host-ta_portal` | TecHaust | Keeps you signed in to the client portal | Necessary | Up to 90 days |
@@ -207,7 +207,7 @@ We'll post changes here and update the date. For significant changes affecting c
 
 ---
 
-## 6. Security & responsible disclosure (`/security`)
+## 6. Security and responsible disclosure (`/security`)
 
 **How we protect our systems.** HTTPS everywhere, two-factor sign-in for staff, role-based access, audit logs, encrypted off-site backups and regular updates. We keep these claims modest and true.
 

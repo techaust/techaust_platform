@@ -4,6 +4,7 @@
 import { money } from "@techaust/core";
 import Button from "../components/Button.astro";
 import CookieConsent from "../components/CookieConsent.astro";
+import CurrencyNote from "../components/CurrencyNote.astro";
 import CurrencyToggle from "../components/CurrencyToggle.astro";
 import Notice from "../components/Notice.astro";
 import PriceTag from "../components/PriceTag.astro";
@@ -68,30 +69,31 @@ const nf = shell.notFound;
     <section class="pv-section" aria-labelledby="pv-toggles">
       <h2 class="t-h4" id="pv-toggles">Toggles</h2>
       <p class="pv-note">
-        ₹ / $ is a radio group named “Show prices in” (arrow keys move between the two); the theme button cycles
-        system, light and dark and says which one is on. Both are hidden without JavaScript, where every price shows in
-        both currencies and the theme follows the device.
+        The currency follows the visitor’s country and is changed beside prices, in the footer or in the phone menu
+        (not in the header). The setting is a radio group named “Show prices in” (arrow keys move between INR and USD);
+        the theme button cycles system, light and dark and says which one is on. All are hidden without JavaScript,
+        where every price shows in both currencies and the theme follows the device.
       </p>
       <div class="pv-grid pv-grid--2">
         <div class="pv-frame">
-          <span class="pv-frame__label">In the header</span>
+          <span class="pv-frame__label">In the header (theme only)</span>
           <div class="pv-frame__body pv-row">
-            <CurrencyToggle id="pv-cur-a" />
             <ThemeToggle />
           </div>
         </div>
         <div class="pv-frame">
-          <span class="pv-frame__label">In the mobile menu (labelled)</span>
-          <div class="pv-frame__body pv-row">
-            <CurrencyToggle id="pv-cur-b" labelled />
+          <span class="pv-frame__label">In the phone menu (settings rows)</span>
+          <div class="pv-frame__body pv-stack-tight">
+            <CurrencyToggle id="pv-cur-b" layout="row" />
             <ThemeToggle labelled />
           </div>
         </div>
       </div>
-      <div class="pv-frame pv-price">
-        <span class="pv-frame__label">PriceTag (switches with ₹ / $; both show without JavaScript)</span>
-        <div class="pv-frame__body">
+      <div class="pv-frame pv-price" data-pv-price>
+        <span class="pv-frame__label">PriceTag with the CurrencyNote (both prices show without JavaScript)</span>
+        <div class="pv-frame__body pv-stack-tight">
           <PriceTag inr={sampleInr} usd={sampleUsd} unit="per workflow" sample />
+          <CurrencyNote />
         </div>
       </div>
     </section>

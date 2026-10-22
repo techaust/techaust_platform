@@ -1,6 +1,6 @@
 ---
 // PriceTag (docs/06 §5.2, WEB-G-06): "from" + the amount (text-price-lg, tabular) + a unit + the GST note. Both
-// currencies are in the HTML; <html data-currency> (CurrencyToggle) shows one, and without JavaScript both show
+// currencies are in the HTML; <html data-currency> (scripts/currency.ts) shows one, and without JavaScript both show
 // ("from ₹3,00,000 + GST · $12,000"). Amounts are minor units formatted only by @techaust/core; the site's prices
 // come from the catalogue snapshot (WEB-G-07, M2.2+). The preview passes clearly fake amounts with `sample`.
 import { formatMoney, type Money } from "@techaust/core";

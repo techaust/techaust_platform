@@ -273,7 +273,8 @@ The base is 16 px; display sizes are fluid between 360 px and 1280 px viewports.
 | `Logo` | The SVG lockup chosen by width; `aria-label="TecHaust Technologies – home"` |
 | `SiteHeader` ⚡ | Sticky after scroll (no hide-on-scroll jank); dropdowns are disclosure buttons (`aria-expanded`), not `role="menu"`; mobile menu = a dialog with a focus trap |
 | `ThemeToggle` ⚡ | A three-state cycle: system → light → dark. Icon + accessible name ("Theme: system"). |
-| `CurrencyToggle` ⚡ | ₹ / $ segmented control (radio group semantics); persists the choice |
+| `CurrencyToggle` ⚡ | Text radio group "Show prices in" with the codes INR / USD (never "$" alone); the selected code in the text colour with the 45° bar, the other muted; footer (stacked) and phone menu (row), not the header; state from `<html data-currency>` (no flash); persists the choice |
+| `CurrencyNote` ⚡ | One quiet line next to a price block: "Prices in INR · Show in USD" (the second part a real button; wording flips for USD); both wordings in the HTML, CSS shows one |
 | `PriceTag` | "from" label + amount (`text-price-lg`, tabular) + unit ("/month", "per workflow") + GST note slot; renders both currencies, and CSS shows the active one |
 | `Button` / `ButtonLink` | Variants: primary, secondary, ghost, text-link. Sizes: md (44 px), lg (52 px). Icon slot. Real `<a>` for navigation, `<button>` for actions. |
 | `Eyebrow` + `SectionHeader` | Eyebrow (caption, uppercase, accent) + h2 + lede |

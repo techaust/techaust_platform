@@ -5,6 +5,7 @@
 // Items whose config value is empty are hidden; preview pages pass `placeholders` to show labelled placeholders.
 import { site } from "../config/site";
 import { draft, shell } from "../content/shell";
+import CurrencyToggle from "./CurrencyToggle.astro";
 import Icon from "./Icon.astro";
 import Logo from "./Logo.astro";
 import Placeholder from "./Placeholder.astro";
@@ -128,6 +129,8 @@ const columns = [
             <a href="/cookies" data-cookie-settings>{c.help.cookieSettings}</a>
           </li>
         </ul>
+        {/* The site's other setting sits with "Cookie settings" (owner, 2026-10-22: out of the header). */}
+        <CurrencyToggle id="ft-cur" class="site-footer__currency" />
       </div>
     </nav>
 
@@ -285,6 +288,20 @@ const columns = [
     padding-block: var(--space-1);
     text-decoration: none;
     line-height: var(--text-sm--line-height);
+  }
+
+  /* The fieldset belongs to CurrencyToggle, so the footer's scoped styles reach it through :global. */
+  .site-footer__col :global(.site-footer__currency) {
+    --cur-bar: var(--color-verdigris-300);
+    margin-block-start: var(--space-6);
+  }
+
+  .site-footer__col :global(.site-footer__currency .cur__legend) {
+    margin-block-end: var(--space-1);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+    font-weight: 600;
+    color: var(--color-text-muted);
   }
 
   .site-footer a:hover {

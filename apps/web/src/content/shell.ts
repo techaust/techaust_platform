@@ -26,7 +26,7 @@ export const shell = {
       intro: "Clarity before code.",
       links: [
         svc("Discovery Sprint", "discovery-sprint"),
-        svc("App Rescue & Audit", "app-rescue"),
+        svc("App Rescue and Audit", "app-rescue"),
         svc("Fractional CTO", "fractional-cto"),
       ],
     },
@@ -34,8 +34,8 @@ export const shell = {
       name: "Build",
       intro: "Software made to last.",
       links: [
-        svc("Custom Web Apps & Portals", "custom-web-apps"),
-        svc("MVP & SaaS Development", "mvp-saas-development"),
+        svc("Custom Web Apps and Portals", "custom-web-apps"),
+        svc("MVP and SaaS Development", "mvp-saas-development"),
         svc("Mobile Apps", "mobile-apps"),
       ],
     },
@@ -44,7 +44,7 @@ export const shell = {
       intro: "Less manual work, more control.",
       links: [
         svc("AI Document Automation", "ai-document-automation"),
-        svc("Workflow Automation & AI Agents", "workflow-automation"),
+        svc("Workflow Automation and AI Agents", "workflow-automation"),
         svc("WhatsApp Automation", "whatsapp-automation"),
         svc("AI Knowledge Assistants", "ai-knowledge-assistants"),
         svc("AI Features for Your Software", "ai-features-for-software"),
@@ -64,9 +64,9 @@ export const shell = {
   /** 07 §2.1: "All services →" (the arrow is an icon, docs/06 §3.1). */
   allServices: { label: "All services", href: "/services" },
   industriesMenu: [
-    { label: "Finance, Accounting & Legal", href: "/industries/finance-accounting-legal" },
-    { label: "Retail, E-commerce & Logistics", href: "/industries/retail-ecommerce-logistics" },
-    { label: "SaaS & Startups", href: "/industries/saas-startups" },
+    { label: "Finance, Accounting and Legal", href: "/industries/finance-accounting-legal" },
+    { label: "Retail, E-commerce and Logistics", href: "/industries/retail-ecommerce-logistics" },
+    { label: "SaaS and Startups", href: "/industries/saas-startups" },
   ] satisfies NavLink[],
   cta: "Book a Discovery Sprint",
   currencyName: "Show prices in",
@@ -79,11 +79,11 @@ export const shell = {
         title: "Services",
         // "The 6 headline services": the six home-page cards of 07 §3, in that order.
         links: [
-          svc("Custom Web Apps & Portals", "custom-web-apps"),
+          svc("Custom Web Apps and Portals", "custom-web-apps"),
           svc("AI Document Automation", "ai-document-automation"),
-          svc("Workflow Automation & AI Agents", "workflow-automation"),
+          svc("Workflow Automation and AI Agents", "workflow-automation"),
           svc("Business Systems Integration", "business-systems-integration"),
-          svc("MVP & SaaS Development", "mvp-saas-development"),
+          svc("MVP and SaaS Development", "mvp-saas-development"),
           svc("Discovery Sprint", "discovery-sprint"),
           { label: "All services", href: "/services" },
         ] satisfies NavLink[],
@@ -116,7 +116,7 @@ export const shell = {
     legal: [
       { label: "Privacy", href: "/privacy" },
       { label: "Terms", href: "/terms" },
-      { label: "Refunds & cancellations", href: "/refund-policy" },
+      { label: "Refunds and cancellations", href: "/refund-policy" },
       { label: "Delivery policy", href: "/delivery-policy" },
       { label: "Cookies", href: "/cookies" },
       { label: "Accessibility", href: "/accessibility" },
@@ -132,7 +132,7 @@ export const shell = {
     settingsIntro:
       "Our website works without analytics cookies. We use Cloudflare Web Analytics, which doesn’t use cookies, to count visits.",
     necessary: "Necessary",
-    necessaryText: "Remembers your cookie choice, and your light/dark theme and ₹/$ choice.",
+    necessaryText: "Remembers your cookie choice, and your light/dark theme and INR/USD choice.",
     analytics: "Analytics",
     analyticsText: "Google Analytics, only after consent.",
   },
@@ -163,7 +163,13 @@ export const draft = {
   priceFrom: "from",
   gst: "+ GST",
   themeShort: "Theme",
-  inrName: "Indian rupees (₹)",
-  usdName: "US dollars ($)",
+  // The currency switches use codes, never "$" alone (owner, 2026-10-22: "$" is also AUD, CAD, SGD…).
+  inrCode: "INR",
+  usdCode: "USD",
+  inrName: "Indian rupees (INR)",
+  usdName: "US dollars (USD)",
+  /** CurrencyNote: "Prices in INR · Show in USD". */
+  pricesIn: "Prices in",
+  showIn: "Show in",
   sample: "Sample",
 } as const;

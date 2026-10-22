@@ -61,8 +61,8 @@ const { labelled = false, class: cls } = Astro.props;
     background: var(--color-fill-subtle);
   }
 
-  /* Labelled (the mobile menu): a settings row, "Theme" on the left and the state as a control on the right, in
-     line with "Show prices in" above it. */
+  /* Labelled (the phone menu): a settings row, "Theme" on the left and the state as text on the right, in line with
+     the "Show prices in  INR / USD" row above it (no box: both rows read as settings, not as buttons). */
   .theme-toggle--labelled {
     justify-content: space-between;
     gap: var(--space-4);
@@ -70,8 +70,8 @@ const { labelled = false, class: cls } = Astro.props;
   }
 
   .theme-toggle--labelled .tt-state {
-    padding: 0 var(--space-4) 0 var(--space-3);
-    border-color: var(--color-border);
+    margin-inline-end: calc(-1 * var(--space-2));
+    padding-inline: var(--space-2);
   }
 
   .tt-label {

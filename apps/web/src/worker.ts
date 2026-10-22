@@ -19,7 +19,7 @@ app.use(
 
 // Default currency for the ₹/$ toggle (WEB-G-06): India sees INR, everyone else (and an unknown country) USD. Only the
 // currency is returned, never the country or IP. Private and never stored by a shared cache (the answer depends on who
-// asks); the browser keeps it for 30 days in localStorage, and a choice the visitor made wins (CurrencyToggle).
+// asks); the browser keeps it for 30 days in localStorage, and a choice the visitor made wins (scripts/currency.ts).
 app.get("/geo", (c) => {
   const country = (c.req.raw.cf?.country as string | undefined)?.toUpperCase();
   return c.json({ currency: country === "IN" ? "INR" : "USD" }, 200, {
