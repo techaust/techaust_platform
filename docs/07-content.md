@@ -375,6 +375,8 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 ### 5.2 Industries
 **Hub (`/industries`).** **H1:** "Industries we know well". Lede: "We work across sectors, but these three are where our experience runs deepest."
 
+_Card labels, each page's problems, tools and FAQs, and the hub's closing line: [07-D](07-content-appendix/D-m2.3-missing-copy.md) §1–§4 (owner-approved 2026-10-22)._
+
 **Finance, Accounting and Legal (`/industries/finance-accounting-legal`)**
 - **Meta:** "Automation for CA firms, finance and legal teams | TecHaust" · "Invoice-to-Tally automation, GSTR-2B reconciliation, contract extraction and client portals for finance, accounting and legal teams."
 - **H1:** "Less data entry. More time for the work clients pay you for."
@@ -428,7 +430,7 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 - **Meta:** "How we work: process, pricing rules and ownership | TecHaust" · "Our 4-step process, fixed-price rules, IP transfer, time-zone overlap, communication cadence, AI-use policy and warranty."
 - **H1:** "How we work"
 - **Sections:**
-  1. **The four steps:** as on Home, expanded.
+  1. **The four steps:** as on Home, expanded ([07-D](07-content-appendix/D-m2.3-missing-copy.md) §5, owner-approved 2026-10-22; also "After launch", item 9).
   2. **Engagement models:** fixed price (most projects) · pilot → rollout (AI) · retainer (care plans, fractional CTO) · subscription (dev subscription).
   3. **Fixed-price rules:** "The price covers the written scope. If you want something new, we quote it before doing it, and you decide. We don't bill for our own estimating mistakes."
   4. **Ownership:** "On full payment, the code, designs and documentation are yours. We keep the right to reuse general know-how and our own pre-existing tools, which we list in the proposal."
@@ -588,3 +590,4 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 ## 10. Status
 - [x] **Approved by owner 2026-10-06** (copy edits still welcome)
 - [x] 2026-10-22: claims register confirmed (warranty, 20+ projects, sample deliverables); S9 FAQs confirmed; catalogue codes in copy replaced by names; S11 USD wording; service-page FAQs in [07-C](07-content-appendix/C-service-faqs.md) (owner-approved). M2.2 pages built from §2–§5.1.
+- [x] 2026-10-22: [07-D](07-content-appendix/D-m2.3-missing-copy.md) approved by the owner: industry problems, tools and FAQs (§5.2), the expanded four steps and "After launch" (§5.5), the blog empty-state line.
