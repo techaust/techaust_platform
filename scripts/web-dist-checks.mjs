@@ -135,7 +135,8 @@ export function checkText(name, text, { ga4Id = "" } = {}) {
 
 // "&" as text: the raw character followed by a space, or any of its escapes (Astro writes text "&" as "&amp;").
 const AMP_TEXT = /&(?:amp;|#0*38;|#x0*26;)|&\s/i;
-const READ_ATTRS = /\s(aria-label|aria-description|aria-roledescription|title|alt|placeholder|value|content)\s*=\s*("([^"]*)"|'([^']*)')/gi;
+const READ_ATTRS =
+  /\s(aria-label|aria-description|aria-roledescription|title|alt|placeholder|value|content)\s*=\s*("([^"]*)"|'([^']*)')/gi;
 
 /**
  * "and", never "&", in what a visitor reads or hears (owner, 2026-10-22; docs/07 §1.1): page text, and the attributes
