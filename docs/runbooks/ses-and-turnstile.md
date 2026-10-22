@@ -15,6 +15,16 @@ Sources: AWS docs "Creating and verifying identities in Amazon SES", "Easy DKIM"
 
 ---
 
+## Parts 1 and 2: ✅ done before M2.4 (lead check 2026-10-23)
+
+You had already verified `techaust.com` in SES. Your custom MAIL FROM domain is **`noreply.techaust.com`** (not `mail.`, as the steps below assumed; the code doesn't depend on it). Public DNS lookups through Cloudflare's resolver on 2026-10-23 matched SES's three record files exactly:
+- the three DKIM CNAMEs `…._domainkey.techaust.com` → `….dkim.amazonses.com` (DNS only, not proxied, as they must be)
+- `noreply.techaust.com` MX `10 feedback-smtp.ap-south-1.amazonses.com` and TXT `v=spf1 include:amazonses.com ~all` (the `ap-south-1` in the MX shows the identity is in Mumbai)
+- `_dmarc.techaust.com` `v=DMARC1; p=none; rua=…@dmarc-reports.cloudflare.net` (SES's minimum plus Cloudflare's DMARC reports; stays `p=none` until Phase 7)
+- Zoho's MX and SPF on `techaust.com` are untouched. The old `amazonses:…` TXT on `techaust.com` is a leftover verification record from SES's older method: harmless, keep it.
+
+The steps below are kept for reference (a second domain, or a rebuild).
+
 ## Part 1. SES: the sending domain (about 10 minutes, then a wait for DNS)
 
 1. Sign in to **https://console.aws.amazon.com** with your AWS account (not a work-in-progress IAM user).
