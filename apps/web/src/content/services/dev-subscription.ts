@@ -3,7 +3,7 @@
 // 07 §1.2). The payment schedule is scheduleOf("S18") (WEB-SVC-05). The page's own CTA "Start a subscription"
 // (07 §4.15, 04 §3.2) is not in the 07 §2.3 table, so it takes the build-quote target.
 // "Good for" names the other services instead of their catalogue codes, as 07 now reads (owner, 2026-10-22).
-// GAP (run file): no problem statement and no FAQs in 07 (WEB-SVC-04 wants 4–8): FAQ section not shown.
+// GAP (run file): no problem statement in 07. FAQs: 07-C, drafted by the lead, confirmed by the owner (2026-10-22).
 // Related: the designer's pick.
 import { cta } from "../shared";
 import { SCHEDULE, type ServiceContent } from "../types";
@@ -33,5 +33,27 @@ export const devSubscription: ServiceContent = {
     lines: [SCHEDULE],
     note: "We take a small number of subscriptions at a time so quality stays high. If we’re full, we’ll tell you when the next opening is.",
   },
+  faqs: [
+    {
+      q: "How does the queue work?",
+      a: "Add as many requests as you like. We work on one at a time, in your priority order, and ship each as soon as it’s done.",
+    },
+    {
+      q: "Can we pause or cancel?",
+      a: "Yes, any month.",
+    },
+    {
+      q: "Is it right for a fixed-deadline project?",
+      a: "No. For a fixed scope and deadline, a fixed-price build fits better: see Custom Web Apps or MVP and SaaS Development.",
+    },
+    {
+      q: "Who does the work?",
+      a: "Senior engineers with 10+ years’ experience, and the founder reviews the work.",
+    },
+    {
+      q: "Are you taking new subscriptions?",
+      a: "We take a small number at a time so quality stays high. If we’re full, we’ll tell you when the next opening is.",
+    },
+  ],
   related: ["S6", "S5", "S16"],
 };

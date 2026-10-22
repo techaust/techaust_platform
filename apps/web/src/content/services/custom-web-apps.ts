@@ -3,8 +3,7 @@
 // time set as its duration. {{schedule:S5}} is scheduleOf("S5") (WEB-SVC-05).
 // The UI/UX work (S8) is the deliverable "discovery and UX design (UI/UX design included)", as 07 now reads (owner,
 // 2026-10-22: names, not catalogue codes).
-// GAP (run file): 07's four FAQs are notes in brackets, not written answers, so the FAQ section is omitted (never
-// written by the designer). Related services: the designer's pick (run file).
+// FAQs: 07-C, drafted by the lead, confirmed by the owner (2026-10-22). Related services: the designer's pick.
 import { cta, homeOneLiner } from "../shared";
 import { SCHEDULE, type ServiceContent } from "../types";
 
@@ -59,5 +58,27 @@ export const customWebApps: ServiceContent = {
     lines: ["Fixed per milestone", SCHEDULE, "Change requests quoted before work"],
   },
   tech: "Modern web stack (TypeScript, React, cloud hosting in India or abroad), chosen per project and documented.",
+  faqs: [
+    {
+      q: "Can it work on phones?",
+      a: "Yes. Everything we build works on phones and tablets in the browser. If you also need an app in the stores, we build it alongside (see Mobile Apps).",
+    },
+    {
+      q: "Where is it hosted?",
+      a: "In your own cloud account, or in ours while you’re on a care plan. Hosting in India is available where your data needs to stay here.",
+    },
+    {
+      q: "Can you take over an existing app?",
+      a: "Yes. We start with an App Rescue audit, so you know what you have before anything changes.",
+    },
+    {
+      q: "Who owns it?",
+      a: "You do. The code, documentation and access transfer to you on full payment.",
+    },
+    {
+      q: "How long does it take?",
+      a: "Typically 6–14 weeks, depending on scope. The timeline is in the written proposal, with a demo every fortnight.",
+    },
+  ],
   related: ["S7", "S2", "S16"],
 };
