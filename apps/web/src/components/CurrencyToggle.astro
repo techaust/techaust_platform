@@ -1,88 +1,99 @@
 ---
-// CurrencyToggle ⚡ (docs/06 §5.2, WEB-G-06): a ₹ / $ segmented control with radio-group semantics (native radios,
-// so arrow keys work), named "Show prices in" (07 §2.1). Every price is in the HTML in both currencies and CSS shows
-// the active one (PriceTag), so switching moves nothing. Hidden without JavaScript, where both prices show.
-// Choosing a currency is stored as ta_currency (07-A §5). With no stored choice, the default comes from /api/geo once (cached 30 days as ta_geo; a stored choice always wins).
+// CurrencyToggle ⚡ (docs/06 §5.2, WEB-G-06): the currency setting in the footer and the phone menu, a radio group
+// named "Show prices in" (07 §2.1) with the options as text, "INR / USD" (owner, 2026-10-22: codes, never "$" alone).
+// Native radios, so arrow keys work. The selected code carries the 45° bar of the active nav item (the T bar of the
+// mark in miniature). Every price is in the HTML in both currencies and CSS shows the active one (PriceTag), so
+// switching moves nothing; hidden without JavaScript, where both prices show. State, storage and /api/geo:
+// scripts/currency.ts; the look follows <html data-currency> (set by the head script), never the radios' state.
 import { draft, shell } from "../content/shell";
 
 interface Props {
   /** Unique per instance on a page (the radios' name). */
   id: string;
-  /** Show "Show prices in" as visible text (the mobile menu); otherwise it is the hidden legend. */
-  labelled?: boolean;
+  /** "stack": the legend above the options (the footer); "row": legend left, options right (the phone menu). */
+  layout?: "stack" | "row";
   class?: string;
 }
 
-const { id, labelled = false, class: cls } = Astro.props;
+const { id, layout = "stack", class: cls } = Astro.props;
 const name = `currency-${id}`;
 ---
 
-<fieldset class:list={["currency", "needs-js", labelled && "currency--labelled", cls]} data-currency-toggle>
-  <legend class:list={[labelled ? "currency__legend" : "visually-hidden"]}>{shell.currencyName}</legend>
-  <div class="currency__track">
-    <label class="currency__opt">
+<fieldset class:list={["cur", `cur--${layout}`, "needs-js", cls]} data-currency-toggle>
+  <legend class="cur__legend">{shell.currencyName}</legend>
+  <div class="cur__options">
+    <label class="cur__opt" data-cur-opt="inr">
       <input type="radio" name={name} value="inr" checked />
-      <span aria-hidden="true">₹</span>
+      <span class="cur__code" aria-hidden="true">{draft.inrCode}</span>
       <span class="visually-hidden">{draft.inrName}</span>
     </label>
-    <label class="currency__opt">
+    <span class="cur__sep" aria-hidden="true">/</span>
+    <label class="cur__opt" data-cur-opt="usd">
       <input type="radio" name={name} value="usd" />
-      <span aria-hidden="true">$</span>
+      <span class="cur__code" aria-hidden="true">{draft.usdCode}</span>
       <span class="visually-hidden">{draft.usdName}</span>
     </label>
   </div>
 </fieldset>
 
 <style>
-  .currency {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-3);
+  .cur {
+    /* The options' inner padding; the group is pulled back by it so the first code lines up with the text above. */
+    --cur-pad: var(--space-2);
   }
 
-  .currency__legend {
+  .cur__legend {
     float: left;
     padding: 0;
-    margin-inline-end: var(--space-3);
-    font-weight: 500;
   }
 
-  .currency--labelled {
-    display: flex;
-    justify-content: space-between;
+  .cur--stack .cur__legend {
     inline-size: 100%;
   }
 
-  .currency__track {
-    display: inline-flex;
-    /* The track is a hairline (drawn inside, so each segment keeps a full 44 × 44 px target); the selected segment,
-       a solid fill, carries the state. */
-    box-shadow: inset 0 0 0 1px var(--color-border);
-    border-radius: var(--radius-md);
+  .cur--row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+    inline-size: 100%;
   }
 
-  .currency__opt {
+  .cur--row .cur__legend {
+    font-weight: 500;
+  }
+
+  .cur__options {
+    display: flex;
+    align-items: center;
+    margin-inline: calc(-1 * var(--cur-pad));
+  }
+
+  .cur--stack .cur__options {
+    clear: both;
+  }
+
+  .cur__opt {
     position: relative;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: var(--target-min);
-    min-height: var(--target-min);
-    border-radius: var(--radius-md);
+    min-inline-size: var(--target-min);
+    min-block-size: var(--target-min);
+    padding-inline: var(--cur-pad);
+    border-radius: var(--radius-sm);
     font-weight: 600;
-    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.04em;
     color: var(--color-text-muted);
     cursor: pointer;
-    transition:
-      background-color var(--duration-fast) var(--ease-standard),
-      color var(--duration-fast) var(--ease-standard);
+    transition: color var(--duration-fast) var(--ease-standard);
   }
 
-  .currency__opt:hover {
+  .cur__opt:hover {
     color: var(--color-text);
   }
 
-  .currency__opt input {
+  .cur__opt input {
     position: absolute;
     inset: 0;
     margin: 0;
@@ -90,78 +101,42 @@ const name = `currency-${id}`;
     cursor: pointer;
   }
 
-  /* Selected: ink on light, mist on dark (the text colour), never the accent as a large fill (docs/06 §1.7).
-     It follows <html data-currency>, which the head script sets before the first paint, not the radios' checked
-     state, which the script below syncs a moment later: otherwise a stored "$" paints "₹" first and animates over. */
-  :global(:root[data-currency="inr"]) .currency__opt:has(input[value="inr"]),
-  :global(:root[data-currency="usd"]) .currency__opt:has(input[value="usd"]) {
-    background: var(--color-text);
-    color: var(--color-bg);
+  .cur__sep {
+    color: var(--color-border-control);
+    user-select: none;
   }
 
-  .currency__opt:has(input:focus-visible) {
+  /* Selected: the text colour and the bar. Both follow <html data-currency>, which the head script sets before the
+     first paint, so a stored "USD" is drawn at once (the radios are synced a moment later, by script). */
+  :global(:root[data-currency="inr"]) .cur__opt[data-cur-opt="inr"],
+  :global(:root[data-currency="usd"]) .cur__opt[data-cur-opt="usd"] {
+    color: var(--color-text);
+  }
+
+  :global(:root[data-currency="inr"]) .cur__opt[data-cur-opt="inr"]::after,
+  :global(:root[data-currency="usd"]) .cur__opt[data-cur-opt="usd"]::after {
+    content: "";
+    position: absolute;
+    inset-inline: var(--cur-pad);
+    inset-block-end: var(--space-1);
+    block-size: 3px;
+    background: var(--cur-bar, var(--color-accent-decor));
+    clip-path: polygon(0 0, 100% 0, calc(100% - 3px) 100%, 0 100%);
+  }
+
+  .cur__opt:has(input:focus-visible) {
     outline: 2px solid var(--color-focus);
     outline-offset: 2px;
   }
 
   @media (forced-colors: active) {
-    :global(:root[data-currency="inr"]) .currency__opt:has(input[value="inr"]),
-    :global(:root[data-currency="usd"]) .currency__opt:has(input[value="usd"]) {
-      outline: 2px solid Highlight;
+    :global(:root[data-currency="inr"]) .cur__opt[data-cur-opt="inr"]::after,
+    :global(:root[data-currency="usd"]) .cur__opt[data-cur-opt="usd"]::after {
+      background: Highlight;
     }
   }
 </style>
 
 <script>
-  // One state for every toggle on the page (the header and the mobile menu): <html data-currency>.
-  type Currency = "inr" | "usd";
-  const root = document.documentElement;
-
-  function sync(cur: Currency) {
-    for (const input of document.querySelectorAll<HTMLInputElement>("[data-currency-toggle] input")) {
-      input.checked = input.value === cur;
-    }
-  }
-
-  function apply(cur: Currency) {
-    root.dataset.currency = cur;
-    sync(cur);
-  }
-
-  apply(root.dataset.currency === "usd" ? "usd" : "inr");
-
-  // No stored choice and no fresh geo answer (the head script left ₹): ask /api/geo once, keep it 30 days (WEB-G-06).
-  try {
-    const chosen = localStorage.getItem("ta_currency");
-    let geo: { at: number } | null = null;
-    try {
-      geo = JSON.parse(localStorage.getItem("ta_geo") || "null");
-    } catch {} // corrupt cache = no cache: ask /api/geo again
-    if (chosen !== "inr" && chosen !== "usd" && !(geo && geo.at > Date.now() - 2592e6)) {
-      fetch("/api/geo")
-        .then((r) => (r.ok ? r.json() : null))
-        .then((j: { currency?: string } | null) => {
-          const cur: Currency = j?.currency === "USD" ? "usd" : "inr";
-          localStorage.setItem("ta_geo", JSON.stringify({ c: cur, at: Date.now() }));
-          // The visitor may have chosen while the request was in flight.
-          const now = localStorage.getItem("ta_currency");
-          if (now !== "inr" && now !== "usd") apply(cur);
-        })
-        .catch(() => {});
-    }
-  } catch {
-    // Storage blocked: stay on ₹.
-  }
-  document.addEventListener("change", (event) => {
-    const input = event.target as HTMLInputElement | null;
-    if (!input?.closest("[data-currency-toggle]")) return;
-    const cur: Currency = input.value === "usd" ? "usd" : "inr";
-    root.dataset.currency = cur;
-    try {
-      localStorage.setItem("ta_currency", cur);
-    } catch {
-      // Storage blocked: the choice lasts for this page view.
-    }
-    sync(cur);
-  });
+  import "../scripts/currency";
 </script>

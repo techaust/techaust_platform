@@ -133,6 +133,34 @@ export function checkText(name, text, { ga4Id = "" } = {}) {
   return problems;
 }
 
+// "&" as text: the raw character followed by a space, or any of its escapes (Astro writes text "&" as "&amp;").
+const AMP_TEXT = /&(?:amp;|#0*38;|#x0*26;)|&\s/i;
+const READ_ATTRS = /\s(aria-label|title|alt|placeholder|content)\s*=\s*("([^"]*)"|'([^']*)')/gi;
+
+/**
+ * "and", never "&", in what a visitor reads or hears (owner, 2026-10-22; docs/07 §1.1): page text, and the attributes
+ * that are read out or shown (aria-label, title, alt, placeholder, a meta content that isn't a URL). Scripts, styles,
+ * comments, URLs (href, src, srcset…) and code keep their "&".
+ */
+export function checkAmpersands(name, html) {
+  const problems = [];
+  const stripped = html
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<(script|style|code|pre)\b[\s\S]*?<\/\1>/gi, "");
+  for (const m of stripped.matchAll(READ_ATTRS)) {
+    const value = m[3] ?? m[4] ?? "";
+    if (m[1].toLowerCase() === "content" && /^(https?:|\/)/i.test(value)) continue;
+    if (AMP_TEXT.test(value)) problems.push(`${name}: "&" in ${m[1]}="${value.slice(0, 60)}" (write "and")`);
+  }
+  const text = stripped.replace(/<[^>]*>/g, " ");
+  const hit = AMP_TEXT.exec(text);
+  if (hit) {
+    const around = text.slice(Math.max(0, hit.index - 30), hit.index + 30).replace(/\s+/g, " ").trim();
+    problems.push(`${name}: "&" in page text ("…${around}…"; write "and")`);
+  }
+  return problems;
+}
+
 /** WEB-G-07: no money amount typed into a template (prices come from the catalogue snapshot). */
 export function checkAmountLiterals(name, source) {
   const problems = [];
@@ -189,7 +217,7 @@ export function checkWeb(webDir) {
     if (!TEXT_EXT.test(name)) continue;
     const text = readFileSync(file, "utf8");
     problems.push(...checkText(name, text, { ga4Id }));
-    if (name.endsWith(".html")) problems.push(...checkHtml(name, text, headersText));
+    if (name.endsWith(".html")) problems.push(...checkHtml(name, text, headersText), ...checkAmpersands(name, text));
   }
   for (const file of walk(join(webDir, "src"))) {
     const name = relative(webDir, file).split(sep).join("/");

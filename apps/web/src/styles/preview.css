@@ -92,6 +92,11 @@
   gap: var(--space-4);
 }
 
+.pv-stack-tight {
+  display: grid;
+  gap: var(--space-2);
+}
+
 .pv-cap {
   display: block;
   margin-block-start: var(--space-2);

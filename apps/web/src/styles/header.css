@@ -1,6 +1,6 @@
 /* SiteHeader, its two menus and the mobile menu (components/SiteHeader.astro, components/header/*). Global rather
    than scoped: the header's script rebuilds the <summary> triggers as <button>s and moves the mobile menu into a
-   <dialog>, and those new elements must keep their styles. Tokens only. Full nav from 1280 px (xl: at 1024 px the six items, the toggles and the CTA need ~1,150 px and the bar has ~950);
+   <dialog>, and those new elements must keep their styles. Tokens only. Full nav from 1280 px (xl: at 1024 px the six items, the toggles and the CTA needed ~1,150 px and the bar has ~950; kept with the theme toggle alone);
    below that, the logo, the CTA (from 768 px) and "Menu". */
 
 .scroll-sentinel {

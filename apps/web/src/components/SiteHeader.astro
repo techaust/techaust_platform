@@ -1,12 +1,12 @@
 ---
 // SiteHeader ⚡ (docs/06 §5.2, 07 §2.1, WEB-G-03): logo, Services ▾ · Industries ▾ · Pricing · Work · About · Contact,
-// ₹/$ and theme toggles, and the CTA. Sticky, with a hairline once the page scrolls (no hide-on-scroll).
+// the theme toggle, and the CTA. The currency is not in the header (owner, 2026-10-22): it follows the country
+// (/api/geo), and the visitor changes it beside prices (CurrencyNote), in the footer or in the phone menu. Sticky, with a hairline once the page scrolls (no hide-on-scroll).
 // Without JavaScript the two menus and the mobile menu are <details>; the script (below) turns them into disclosure
 // buttons with aria-expanded (Esc closes and returns focus) and the mobile menu into a modal dialog.
 import { discoveryHref } from "../config/site";
 import { draft, shell } from "../content/shell";
 import "../styles/header.css";
-import CurrencyToggle from "./CurrencyToggle.astro";
 import IndustriesPanel from "./header/IndustriesPanel.astro";
 import MobileNav from "./header/MobileNav.astro";
 import ServicesPanel from "./header/ServicesPanel.astro";
@@ -75,7 +75,6 @@ const inIndustries = current?.startsWith("/industries") ?? false;
     </nav>
     <div class="site-header__tools">
       <div class="site-header__toggles">
-        <CurrencyToggle id={`${idPrefix}-cur`} />
         <ThemeToggle />
       </div>
       <a class="btn btn--primary site-header__cta" href={discoveryHref}>{shell.cta}</a>
