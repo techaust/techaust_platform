@@ -181,13 +181,8 @@ forms.all("/forms/:kind", async (c) => {
   if (isForm && token === "") return fail("nojs");
 
   const honeypot = f[FORM_FIELDS.honeypot];
-  const started = Number(str(f[FORM_FIELDS.startedAt]));
-  const now = Date.now();
-  if (
-    (typeof honeypot === "string" && honeypot !== "") ||
-    !Number.isFinite(started) ||
-    now - started < MIN_FILL_MS
-  )
+  const elapsed = Number(str(f[FORM_FIELDS.elapsed]));
+  if ((typeof honeypot === "string" && honeypot !== "") || !Number.isFinite(elapsed) || elapsed < MIN_FILL_MS)
     return fail("bad_request");
   if (!(await turnstileOk(env, kind, token, ip))) return fail("bad_request");
 
@@ -225,7 +220,7 @@ forms.all("/forms/:kind", async (c) => {
     referrerHost: meta.data.referrerHost,
     utm: meta.data.utm,
     currency: meta.data.currency,
-    submittedAt: now,
+    submittedAt: Date.now(),
   } as LeadMessage;
   try {
     await env.LEADS_QUEUE.send(message);

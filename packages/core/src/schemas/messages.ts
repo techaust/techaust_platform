@@ -8,7 +8,8 @@ import { contactForm, quoteForm } from "./forms.ts";
 /** Names of the fields the form pages post besides the visitor's answers (the designer's step uses these). */
 export const FORM_FIELDS = {
   honeypot: "company_website",
-  startedAt: "form_started_at",
+  /** Milliseconds the form was open, measured by the page (`performance.now()`), so a wrong device clock can't matter. */
+  elapsed: "form_elapsed_ms",
   turnstile: "cf-turnstile-response",
 } as const;
 

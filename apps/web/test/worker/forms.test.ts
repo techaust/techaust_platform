@@ -56,7 +56,7 @@ const valid = () => ({
   sourcePage: "/contact",
   referrerHost: "www.google.com",
   utm_source: "newsletter",
-  form_started_at: String(Date.now() - 10_000),
+  form_elapsed_ms: "10000",
   company_website: "",
   "cf-turnstile-response": "token-1",
 });
@@ -221,8 +221,8 @@ describe("abuse [FRM-02, FRM-03]", () => {
     await run(valid());
     siteverify = { success: true, action: "contact", hostname: "web.test" };
     await run({ ...valid(), company_website: "http://spam.example" });
-    await run({ ...valid(), form_started_at: String(Date.now() - 500) });
-    await run({ ...valid(), form_started_at: undefined });
+    await run({ ...valid(), form_elapsed_ms: "500" });
+    await run({ ...valid(), form_elapsed_ms: undefined });
     expect(new Set(answers.map((a) => JSON.stringify(a)))).toEqual(
       new Set(['{"ok":false,"error":"bad_request"}']),
     );
