@@ -47,7 +47,7 @@ export const aiDocumentAutomation: ServiceContent = {
         text: "One document type, your real samples, a baseline (e.g. minutes per invoice today) and a test set we measure against.",
       },
       { title: "Production rollout", text: "Integrations, monitoring, guardrails, training." },
-      { title: "AI Ops", text: "Monthly monitoring and tuning (S17)." },
+      { title: "AI Ops", text: "Monthly monitoring and tuning." },
     ],
     note: "Accuracy depends on your documents. In the pilot we measure it on your own samples and agree the target with you before rollout. We don’t promise a number we haven’t measured.",
   },

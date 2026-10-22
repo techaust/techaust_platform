@@ -243,10 +243,11 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 - **How it works:**
   1. **Pilot (about 4 weeks):** one document type, your real samples, a baseline (e.g. minutes per invoice today) and a test set we measure against.
   2. **Production rollout:** integrations, monitoring, guardrails, training.
-  3. **AI Ops:** monthly monitoring and tuning (S17).
+  3. **AI Ops:** monthly monitoring and tuning.
 - **Honest note:** "Accuracy depends on your documents. In the pilot we measure it on your own samples and agree the target with you before rollout. We don't promise a number we haven't measured."
 - **Pricing:** Pilot {{price:S9}} · production rollout quoted after the pilot · optional per-document pricing with a monthly minimum.
 - **FAQs:** "Does our data leave India?" ("It can stay in India-region services where needed; we document every system that touches it.") · "Which AI models do you use?" ("Chosen per project for accuracy, cost and data-handling terms; we never let providers train on your data where an opt-out exists.") · "What about handwritten or poor scans?" ("We test them in the pilot. Clear printed documents work best; handwriting and poor scans usually go to the review screen for a person to check, and we tell you the share we can handle automatically before rollout.") · "Do you work with Tally Prime?" ("Yes, via Tally's XML/ODBC interfaces or connectors.") (owner confirmed all four, 2026-10-22)
+- **Related:** Workflow Automation and AI Agents · Business Systems Integration · Discovery Sprint (owner, 2026-10-22)
 - **CTA:** Start a pilot
 
 ### 4.6 Workflow Automation and AI Agents (S10) · `/services/workflow-automation`
