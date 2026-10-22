@@ -40,8 +40,9 @@ main {
   flex: 1 0 auto;
 }
 
-/* Opening the mobile menu or a dialog stops the page behind it from scrolling. */
-html:has(dialog[open]:modal) {
+/* The full-screen mobile menu stops the page behind it from scrolling (it covers the page, so the scrollbar
+   going away shifts nothing visible). Smaller dialogs leave the page as it is, with no sideways jump. */
+html:has(dialog.mobile-dialog[open]) {
   overflow: hidden;
 }
 
@@ -67,8 +68,8 @@ fieldset {
   margin: 0;
 }
 
-ul[role="list"],
-ol[role="list"] {
+/* Zero specificity, so a component's own padding always wins. */
+:where(ul[role="list"], ol[role="list"]) {
   list-style: none;
   padding: 0;
 }

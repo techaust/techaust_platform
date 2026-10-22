@@ -27,7 +27,13 @@
 
 .pv-grid {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-6);
+}
+
+.pv-wrap {
+  white-space: normal;
+  text-align: start;
 }
 
 @media (min-width: 48rem) {

@@ -64,12 +64,13 @@
   gap: var(--space-1);
 }
 
-.site-header__cta {
+/* Doubled class: wins over .btn whatever order the bundles load in. */
+.site-header__cta.site-header__cta {
   display: none;
 }
 
 @media (min-width: 48rem) {
-  .site-header__cta {
+  .site-header__cta.site-header__cta {
     display: inline-flex;
   }
 }
