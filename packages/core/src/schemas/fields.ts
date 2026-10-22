@@ -34,9 +34,7 @@ export const multiLine = (opts: { min: number; max: number; required: string; to
         .string()
         .min(1, { error: opts.required })
         .min(opts.min, { error: opts.tooShort })
-        // A function, so the locale formatting (loading ICU data costs about 17 ms of CPU) runs only when a message
-        // is too long, not when the schema is built at module load.
-        .max(opts.max, { error: () => `Keep this under ${opts.max.toLocaleString("en-IN")} characters` }),
+        .max(opts.max, { error: `Keep this under ${opts.max.toLocaleString("en-IN")} characters` }),
     );
 
 /** Optional: an empty or blank value becomes `undefined`. */
