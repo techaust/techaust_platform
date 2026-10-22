@@ -11,7 +11,7 @@ import CopyText from "../CopyText.astro";
 import CurrencyNote from "../CurrencyNote.astro";
 
 const h = home.hero;
-// The h1 keeps its text exactly; each sentence is set on its own line where there is room.
+// The h1 keeps its text exactly; each sentence starts a new line from 480 px (a <br> hidden on phones).
 const lines = h.h1.split(/(?<=\.)\s+/);
 ---
 
@@ -22,8 +22,9 @@ const lines = h.h1.split(/(?<=\.)\s+/);
       {
         lines.map((l, i) => (
           <>
+            {i > 0 && <br class="hero__br" />}
             {i > 0 && " "}
-            <span class="hero__line">{l}</span>
+            {l}
           </>
         ))
       }
@@ -63,9 +64,10 @@ const lines = h.h1.split(/(?<=\.)\s+/);
     max-inline-size: none;
   }
 
-  @media (min-width: 30rem) {
-    .hero__line {
-      display: block;
+  /* One text block (not a block per sentence), so the whole h1 is the page's largest paint (LCP). */
+  @media (max-width: 29.99rem) {
+    .hero__br {
+      display: none;
     }
   }
 
