@@ -11,5 +11,5 @@ if (problems.length > 0) {
   process.exit(1);
 }
 console.log(
-  "check-web-dist: ok (CSP hashes, no inline styles, no GSTIN / @techaustsocial / proprietor name / GA, no preview pages, no price literals)",
+  "check-web-dist: ok (CSP hashes, no inline styles, no GSTIN / @techaustsocial / proprietor name / GA, no preview pages, no price literals, no '&' in page text)",
 );
