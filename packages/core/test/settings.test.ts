@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { financialYear } from "../src/dates.ts";
+import { gstinCheckChar } from "../src/gstin.ts";
 import { formatDocumentNumber, MAX_NUMBER_LENGTH, maxNumber } from "../src/numbering.ts";
 import { SETTINGS_DEFAULTS, SETTINGS_SCHEMAS, type SeededSettingKey } from "../src/schemas/settings.ts";
 
@@ -53,5 +54,34 @@ describe("settings defaults (docs/08 §7.1, VERIFY WITH CA)", () => {
     expect(
       SETTINGS_SCHEMAS.retention.safeParse({ ...SETTINGS_DEFAULTS.retention, financialYears: 7 }).success,
     ).toBe(false);
+  });
+});
+
+describe("company GSTIN and state code (ADM-SET-01)", () => {
+  const company = (patch: Record<string, unknown>) =>
+    SETTINGS_SCHEMAS.company.safeParse({ ...SETTINGS_DEFAULTS.company, ...patch });
+  const first14 = "19ABCDE1234F1Z";
+  const valid = `${first14}${gstinCheckChar(first14)}`;
+
+  it("accepts a real GSTIN (normalised) or none", () => {
+    expect(company({ gstin: null }).success).toBe(true);
+    const parsed = company({ gstin: valid.toLowerCase(), stateCode: "19" });
+    expect(parsed.success && parsed.data.gstin).toBe(valid);
+  });
+
+  it("rejects a wrong check character, a wrong length, a shapeless value and an unknown state", () => {
+    const wrong = `${first14}${gstinCheckChar(first14) === "A" ? "B" : "A"}`;
+    expect(company({ gstin: wrong }).success).toBe(false);
+    expect(company({ gstin: valid.slice(0, 14) }).success).toBe(false);
+    expect(company({ gstin: "x".repeat(15) }).success).toBe(false);
+    const unknown = `39ABCDE1234F1Z`;
+    expect(company({ gstin: `${unknown}${gstinCheckChar(unknown)}`, stateCode: "39" }).success).toBe(false);
+  });
+
+  it("the state code must be a real GST state code, and agree with the GSTIN", () => {
+    expect(company({ stateCode: "99" }).success).toBe(false);
+    expect(company({ stateCode: "1" }).success).toBe(false);
+    expect(company({ gstin: valid, stateCode: "27" }).success).toBe(false);
+    expect(company({ gstin: valid, stateCode: "19" }).success).toBe(true);
   });
 });

@@ -115,6 +115,9 @@ const users = Array.from({ length: USERS }, (_, i) => ({
   password: randomBytes(18).toString("base64url"),
   token: randomBytes(32).toString("base64url"),
 }));
+/** The unknown-email probes' addresses: their `acct:` counters are the only others this run creates. */
+const probeEmails = [];
+const acctKey = (email) => `acct:${createHash("sha256").update(email).digest("hex").slice(0, 32)}`;
 console.log(`Run ${RUN}: ${USERS} throwaway users, ${MINUTES} min of logins against ${ADMIN}`);
 const windowStart = new Date();
 d1(
@@ -179,6 +182,7 @@ try {
       if (logins % 10 === 0) {
         // Unknown-email path (fake salt, no account): must cost the same as a real one.
         const email = `nobody-${RUN}-${logins}@bench.invalid`;
+        probeEmails.push(email);
         const fake = await call("/salt", { email });
         await call("/login", {
           email,
@@ -192,9 +196,8 @@ try {
 } finally {
   // ---------- 4. cleanup ----------
   const emails = users.map((u) => q(u.email)).join(", ");
-  const keys = users
-    .map((u) => q(`acct:${createHash("sha256").update(u.email).digest("hex").slice(0, 32)}`))
-    .join(", ");
+  // Only this run's own counters (the bench users' and the probes' accounts), never a real account's.
+  const keys = [...users.map((u) => u.email), ...probeEmails].map((e) => q(acctKey(e))).join(", ");
   d1(
     [
       // `code:<user id>` counters first (they need the ids); known devices and recovery codes go with the user (cascade).
@@ -203,7 +206,6 @@ try {
       `DELETE FROM staff_users WHERE email IN (${emails});`,
       `DELETE FROM staff_invites WHERE email IN (${emails});`,
       `DELETE FROM auth_attempts WHERE key IN (${keys});`,
-      `DELETE FROM auth_attempts WHERE key LIKE 'acct:%' AND window_start >= ${windowStart.getTime()} AND failures <= 1;`,
     ].join("\n"),
   );
   console.log("Cleaned up the bench users.");

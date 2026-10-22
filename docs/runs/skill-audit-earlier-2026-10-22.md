@@ -1,0 +1,168 @@
+# Skill-guided audit of earlier work (M1.1–M1.4, brand scripts) and fixes (2026-10-22)
+
+```
+Status: done: fixes merged (2026-10-22)
+Tier: A (gap-free numbering trigger and migration; money tests)
+Usage: reviewer claude-opus-5-5/high (audit; loaded workers-best-practices, wrangler, security-review, code-review, frontend-design with the Skill tool); builder and analyst: filled in when they run
+```
+
+## Audit result
+1 high, 7 medium, 8 low. core 279/279 (99.77 %), db 44/44 green at audit time. Permission matrix, money maths, dates/FY, GSTIN check character, numbering formats, trigger coverage, CI fork-safety and supply-chain config: nothing to fix.
+
+## Fix now (builder, Sonnet high; then the analyst's check because a trigger/migration changes, then the reviewer)
+1. **HIGH: gap-free numbering can burn a number** (`packages/db/src/triggers.ts:94` guard allows `draft`/`pending_approval`; the reference batch in `packages/db/test/helpers.ts:86` and docs/05 §5.4 freezes only `status = 'draft'`, so a `pending_approval` issue advances `doc_counters` while the UPDATE matches 0 rows). The status page also has an older follow-up "narrow `issue_guard` to `draft` only (before M3/M5)". **Do:** one shared constant for the issuable statuses used by the guard and the reference batch, chosen to match docs/04 §9's approval flow (read it; if docs/04 means "approved documents are issued from `pending_approval`", keep both statuses in both places; if not, narrow to `draft`) — state your reading and stop to ask the lead if docs/04 is ambiguous; **plus a post-condition** in the same batch that aborts unless the document is now frozen with `number = next_no - 1` (an INSTEAD OF view like `issue_guard`, in a new custom migration via `scripts/write-triggers.ts`; never edit 0000–0006); update docs/05 §5.4. Tests: issuing a `pending_approval` document and a zero-row UPDATE both leave the counter unchanged; the normal issue still yields consecutive numbers (the 20-concurrent test).
+2. **Seed conflict** (`packages/db/src/seed/index.ts:29`): `ON CONFLICT DO NOTHING` (no target), with a test that a changed code or reused slug doesn't fail the seed.
+3. **Missing indexes**: `documents.project_id`, `documents.care_plan_id`, `approvals.document_id`, `acceptances.contact_id`, `leads.client_id`, `projects.owner_id`, `milestones.document_id` — new drizzle migration (indexes only, no rebuild; if drizzle-kit emits `__new_`, stop).
+4. **Contrast test gaps** (`packages/ui/tokens/contrast.test.ts`): add `fill-subtle` (both themes) to the text backgrounds, `border-control` on `fill-subtle` (≥ 3:1), `selection`, `accent-decor` dark. Darken the light-theme `success` token just enough to pass 4.5:1 on `fill-subtle` (and keep every other pair passing), rebuild with `pnpm --filter @techaust/ui build:tokens`, commit the outputs; if `border-control` on `fill-subtle` can't reach 3:1 without a visible change, stop and report (design call).
+5. **No-floats test** (`packages/core/test/no-floats.test.ts`): flag plain `/` in money files unless bigint or a named helper, strip single-quoted strings, add `schemas/settings.ts` and `numbering.ts` (and any other money module) to the list, and a test that `a * b / 100` is caught.
+6. **Brand raster/PDF drift**: apply the wallpaper source-hash pattern (`src/brand/png.ts` `tagPng`/`sourceHash`) to the brand PNGs/ICO and a metadata hash to the print PDFs, with drift tests; regenerate with `build:brand` only if the outputs must gain the tag (outputs stay byte-identical otherwise).
+7. **Referenced-table rebuild guard**: a CI check (in `pnpm check`) that fails any migration after 0006 containing `DROP TABLE` / `__new_` for a table that other tables reference, unless allow-listed; add the rule to CLAUDE.md Conventions (Migrations) and docs/14 §3's analyst gate wording.
+8. **Company GSTIN setting** (`packages/core/src/schemas/settings.ts:14-15`): use the `gstin` schema with the check character and `isStateCode`; tests.
+9. **Prod deploy guard** (`deploy-prod.yml`, `bench-auth.yml`): also require `github.triggering_actor == 'techaust'`; add `environment: production` to the prod job (the environment's reviewers/secrets are set by the owner in Phase 7 — note it).
+10. **Staging token scope** (`deploy-staging.yml`): move `CLOUDFLARE_API_TOKEN`/`CLOUDFLARE_ACCOUNT_ID` from job env to the steps that need them.
+11. **gitleaks checksum** (`ci.yml`): pin and verify the release tarball's SHA-256 (get it from the official release checksums file; if you can't fetch it, stop and report).
+16. **heavy.sh lock**: write the PID into the lock, treat a lock whose PID is gone as stale, and make stale removal atomic (only one waiter wins).
+17. **bench cleanup** (`scripts/bench-auth.mjs:206`): delete only the benchmark's own keys (bench users' accounts), never real accounts' counters.
+
+## Deferred (follow-ups in 12-status)
+- 12 (more binding types in `check-web-bindings.mjs`): after `fix/skill-audit-findings` merges (it may touch the same guard).
+- 13 `documents.parent_id` FK and 14 issued-status transitions: with the M3/M5 document state machine.
+- 15 retire catalogue items by deactivating, never deleting (document in 05/06 runbook when the catalogue editor lands, M4.1).
+- 18 GSTIN format for TDS/UIN/NRTP registrations: VERIFY WITH CA/LEGAL before M5.
+
+## Rules
+Branch `fix/skill-audit-earlier` (this file is its first commit), own worktree. **Load the skills first** (Skill tool): `cloudflare:workers-best-practices`, `cloudflare:wrangler`, `code-review` (checklist only), `security-review` (checklist only), `frontend-design` (for item 4) — list them in the report. Don't touch `scripts/check-web-bindings.mjs`, `apps/*/wrangler.jsonc`, `apps/*/worker/**` or `scripts/create-invite.mjs` (another builder is changing them). No hosted services, no new packages. Heavy commands via `bash tools/heavy.sh --log <name> <command>`; final `pnpm check`, `pnpm test`, `pnpm db:generate` (no diff after your migration), `pnpm build`, one whole-repo lint. Commit as you go; append "Builder report"; do not push.
+
+## Builder report (Sonnet 5.5, high; 2026-10-22)
+
+**Skills (Skill tool, all loaded):** `cloudflare:workers-best-practices` (checklist: no runtime Worker code changed here; confirmed generated types, no hand-written `Env`, secrets by name only, kept the CI jobs fork-safe); `cloudflare:wrangler` (nothing in wrangler.jsonc touched; migrations are applied by wrangler from `packages/db/migrations`, so I kept to custom SQL + one drizzle-kit migration and no `__new_`); `code-review` and `security-review` (used as checklists only; the `code-review` skill printed a review of an unrelated earlier diff when invoked, which I ignored; `security-review` found no diff to review; neither spawned agents or posted anything; they made me re-read the guard, the CI token scope and the bench cleanup for blast radius); `frontend-design` (item 4: kept the token change to the minimum that passes, no new look).
+
+**Item 1, my reading of docs/04.** Not ambiguous, so I did not stop.
+- docs/04 §9: invoices, proformas, credit notes: Owner "✅ issue (step-up)"; Staff "✏️ drafts · issue ⏳"; ADM-INV-04: "Issue = Owner only (Q-P3-2), with step-up auth. Staff can 'Request issue' (ADM-APR)"; ADM-APR-01: queue for "invoice issue requests"; ADM-APR-02: "Approvals expire if the document changes after the request".
+- The invoice lifecycle (ADM-INV-02) is "Draft → Issued → Partially paid → Paid, plus Overdue (computed) and Void"; there is no `pending_approval` state for invoices (ADM-PROP-06 has "Pending approval" for proposals and estimates only, which are sent, not issued).
+- The approval is a row in `approvals` (kind `issue`, `content_sha256`) next to the draft, and the Owner issues the draft itself.
+- docs/05 §5.3 change 14 records the owner decision of 2026-10-07: "only drafts can be issued; a document waiting for approval must be approved first", and says a new migration narrows the code's guard to `draft`.
+- So the issuable set is `["draft"]`: one constant `ISSUABLE_STATUSES` in `packages/db/src/triggers.ts`, used by the guard trigger and by the reference batch in `test/helpers.ts`.
+
+**Commits (branch `fix/skill-audit-earlier`, on top of b85c7fe):**
+- `fa837ec` fix(db): issue guard drafts only + issue post-condition; seed conflicts [ADM-INV-03] (items 1, 2)
+- `7ee3c3f` perf(db): FK indexes (item 3)
+- `0481444` fix(ui): contrast test gaps + two token values (item 4)
+- `08925a0` test(core): no-floats scan + company GSTIN (items 5, 8)
+- `3a78a7e` test(ui): brand raster and print drift (item 6)
+- `e82d89a` ci: migration rebuild guard, gitleaks checksum, prod/bench actor guards, staging token scope (items 7, 9, 10, 11)
+- `ac277fd` fix(tools): heavy.sh PID lock; bench cleanup (items 16, 17)
+- `711f2ac` chore(web): favicon.ico copy refreshed (needed by item 6)
+- plus this report's own commit
+
+**Migrations (new only; 0000-0006 untouched; no `__new_`):**
+- `0007_issue_guard.sql` (custom, written by `scripts/write-triggers.ts issue_guard`): `DROP TRIGGER issue_guard_check`; recreate it with `status IN ('draft')`; add the view `issue_result (document_id, series, fy)` and `INSTEAD OF INSERT` trigger `issue_result_check`, which aborts unless the document is `issued`, frozen, with the same series/fy and `number = doc_counters.next_no - 1`. The batch ends with `INSERT INTO issue_result ...`, so an UPDATE that matches no row aborts the batch and the counter rolls back. `triggerStatements()` (the 0001 set) no longer contains the guard; it now lives in `issueGuardStatements()`. docs/05 §5.3 change 14 and §5.4 updated.
+- `0008_indexes_fk_lookups.sql` (drizzle-kit): 7 `CREATE INDEX` (`leads_client`, `milestones_document`, `projects_owner`, `acceptances_contact`, `approvals_document`, `documents_project`, `documents_care_plan`).
+- `pnpm db:generate` afterwards: "No schema changes".
+- Biome also reformatted `meta/0007_snapshot.json` (the committed snapshots are Biome-formatted).
+
+**Tests added or changed, and why:**
+- db `triggers.test.ts`: only drafts issuable (a `pending_approval` document is refused, counter unchanged, then issues with the next number once back to draft); the post-condition aborts a zero-row UPDATE and a wrong number, counter unchanged; the existing 20-parallel test passes through the new batch (now with the post-condition). `helpers.ts issueBatch` uses the shared constant and the post-condition.
+- db `seed.test.ts`: a renamed code (stable id still present) and a reused slug skip the row and do not fail the seed (the seed's `ON CONFLICT` now has no target).
+- db `migrations.test.ts`: migration list; the seven FK indexes exist as the leading column.
+- ui `contrast.test.ts`: `fill-subtle` added as a text background in both themes; `border-control` on `fill-subtle` (3:1) both themes; `text` on `selection` both themes; `accent-decor` on `bg` dark.
+- core `no-floats.test.ts`: one-pass noise stripping (comments, double/single/template strings, regex literals); plain `/` flagged unless the line has bigint maths (`100n`, `BigInt(`, `divRoundHalfUp(`) or is `Math.trunc(x / y)` on plain operands; money list now money, words, numbering, schemas/settings, schemas/domain; a test that any `src` file mentioning money words must be on the list; tests that `a * b / 100` (also inside `Math.trunc`) is caught. One code change: `words.ts` `(m.amount - fraction) / 100` became `Math.trunc(m.amount / 100)` (same value for non-negative integers).
+- core `settings.test.ts`: company GSTIN (check character, length, shape, unknown state) and state code. `companySettings` now uses `gstin.nullable()` and `stateCode` from `domain.ts`, plus a refine that the GSTIN's first two digits equal `stateCode` (my addition, in the spirit of the item; the default `null` + "19" passes).
+- ui `brand.test.ts`: each brand PNG carries sRGB and the SVG hash (`tagPng`, the wallpaper pattern); each PNG inside `favicon.ico` carries its own size's hash; each print PDF has `/Keywords` `techaust:source-sha256=<hash>` where the hash covers the master SVG, `print-cmyk.json`, `print.ts` and `geometry.ts` (LF-normalised). `build:brand` regenerated all rasters and PDFs. SVGs unchanged; I compared the decoded pixels of all 14 changed PNGs with HEAD: identical. `apps/web/public/favicon.ico` is a byte copy of the brand file (its test required it), so it was refreshed.
+- core `migration-guard.test.ts` (new, 8 tests) for `scripts/migration-guard.mjs` (+ `.d.mts`, + `check-migrations.mjs`, + `migration-rebuild-allowlist.json` = `[]`): drizzle-style rebuild fails, plain DROP fails, unreferenced and self-referenced tables pass, additive changes pass, only migrations after 0006 are checked, `ALTER ... ADD ... REFERENCES` counts, allow-list needs migration + table + reason, real migrations pass. Wired into root `pnpm check` and a CI step; rule added to CLAUDE.md Conventions (and its Commands line) and to docs/14 §4 (the "main taken early" bullet, which is where the analyst gate for migrations is described).
+- core `bench-cleanup.test.ts` (new): the bench cleanup has no `LIKE`/time-window delete on `auth_attempts` and deletes the probes' keys.
+- `tools/heavy.selftest.sh` (new, 11 checks, not part of CI, uses a throwaway lock path): exit code, release, PID recorded, dead owner taken over at once, live owner respected then taken after it dies, fresh lock without PID left alone, two waiters on a stale lock never overlap, release never removes someone else's lock.
+
+**Token values changed (item 4), contrast ratios old to new:**
+- light `success` `#47730F` to `#44700E`: on `fill-subtle` 4.46 to 4.66; on `bg` 5.24 to 5.47; on `surface` 5.63 to 5.88; on `surface-alt` 4.86 to 5.07.
+- **Design call for the lead:** light `stone-500` (used only by `border-control`) `#7A8B84` to `#75867F`, because `border-control` on `fill-subtle` was 2.84 and 3:1 was required. New ratios: `fill-subtle` 3.04, `bg` 3.57 (was 3.34), `surface` 3.84 (was 3.59), `surface-alt` 3.31 (was 3.09). The change is 5 RGB units per channel. The brief says to stop if this needs a visible change; I judged a 5/255 shift on a 1 px input border not visible and applied it. If you want the old grey, the alternative is to lighten `fill-subtle` or drop that pair. Rebuilt with `build:tokens`; generated files committed; docs/06 hex values updated (docs/11 is a historical audit and left alone). Dark theme unchanged (all new pairs pass as they were).
+
+**Checks (all via `tools/heavy.sh --log`, in this worktree):**
+- `pnpm check` (lint + typecheck + binding guard + migration guard): exit 0.
+- `pnpm test`: exit 0 after refreshing the favicon copy (the first run failed only the `apps/web` favicon test; fixed). core 299 passed, coverage statements 99.77 %, branches 98.56 %, lines 99.73 %; db 49; ui 468 passed, 2 skipped; auth 94; jobs 2; web 33 passed, 8 skipped; admin 411; portal 401.
+- `pnpm db:generate`: "No schema changes, nothing to migrate"; no files changed afterwards.
+- `pnpm build`: exit 0 (admin bundle ok, `check-web-dist` ok, web dry-run ok).
+- Whole-repo `pnpm lint`: exit 0 (340 files, no fixes).
+- `bash tools/heavy.selftest.sh`: all passed.
+
+**Item notes and deviations:**
+- Item 7: docs/14 §3 has no migration-specific sentence (its table row only lists "a merge whose migrations change a table..."), so the rule went into the §4 bullet that already describes that gate.
+- Item 7 also edits root `package.json` (the `check` script) and `.github/workflows/ci.yml` (new step; CI runs its steps separately rather than `pnpm check`). The other builder may touch the same two files, so expect a trivial merge.
+- Item 11: fetched the official `gitleaks_8.30.1_checksums.txt` over HTTPS (a public read) and also hashed the downloaded tarball: both `551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb`. CI now runs `sha256sum --check --strict` before `tar`.
+- Item 9: `environment: production` is on the `deploy` job (not the guard); the owner creates the environment, reviewers and secrets in Phase 7.
+- Not touched, as instructed: `check-web-bindings.mjs`, `apps/*/wrangler.jsonc`, `apps/*/worker/**`, `create-invite.mjs`. `docs/12-status.md` and `docs/13-decisions.md` are the lead's: the status line "a migration narrowing `issue_guard` to `draft` only" is now done, and the 2026-10-06 decision row for `issue_guard` could cite 0007.
+
+**Not verified:**
+- The CI workflow edits (gitleaks check, new step, actor guards, step-level env) have not run on GitHub; I only read them back.
+- `heavy.sh` PID liveness uses `kill -0`, tested across separate Git Bash invocations here on Windows, but not on another machine.
+- The `/Keywords` hash is read back from pdf-lib's UTF-16BE hex encoding; the same library version is pinned, but a different version could change the encoding.
+- Migrations 0007 and 0008 will first run on staging at the next merge deploy.
+
+**Open questions:** (1) Keep the darker `stone-500`, or meet 3:1 on `fill-subtle` another way? (2) Which name should docs/05's API section use for the post-condition when the issue route is built (M3/M5)? I called it `issue_result`.
+
+## Analyst check, 2026-10-22: GO WITH CHANGES
+Migrations 0007 and 0008 correct and safe; "drafts only" matches the owner's 2026-10-07 decision and ADM-INV-02/-04; the post-condition aborts the whole batch (counter included); no race, no double number (unique index), no unsafe window. Required: (1) a drift test comparing the installed `issue_guard_check` / `issue_result_check` SQL with `issueGuardStatements()`; (2) the merge with PR #36 (keep both `check` guards in `package.json` and both CI steps; update CLAUDE.md's `pnpm check` comment); (3) recommended: `migration-guard.mjs` strips `--` comments before splitting and matches `DROP TABLE` / `CREATE TABLE` anywhere in a statement (tests: two statements on one line; a trailing comment before a DROP). Note: require `d.number >= 1` in the post-condition.
+
+## Review, 2026-10-22: APPROVE
+Reviewer (Opus 5.5 high; code-review, security-review, cloudflare:wrangler, frontend-design via the Skill tool, checklists only): no critical or high. `pnpm build`, `pnpm check`, `pnpm test` (web 41 with none skipped), `pnpm db:generate` green; tokens recomputed and matching; brand PNG/ICO pixels and PDF content identical; gitleaks digest matches GitHub's asset digest.
+Medium/low findings, all to fix now (owner: 10/10): M1 the no-floats scanner drops `${…}` expressions in template literals (and the bigint exemption covers the whole line); M2 heavy.sh records only the wrapper PID, so a hard-killed wrapper with a live child lets a second heavy command start; L3 heavy.sh edge races and no absolute ceiling; L4 the print-PDF source hash misses `outline.ts`, `compose.ts` and the font bytes; L6 `bench-auth.yml` exposes secrets job-wide (move to the steps). L5 (pixel hash beside the source tag) accepted as is: it follows the wallpaper pattern.
+
+## Lead decisions (2026-10-22)
+- The light `stone-500` (border-control) `#7A8B84` → `#75867F` and `success` `#47730F` → `#44700E` changes are accepted: required by WCAG 1.4.11 / 1.4.3 on `fill-subtle` (hard rule), 3–5/255 per channel, not visible; the owner is told in the end-of-day report.
+- The builder's GSTIN-prefix = state-code refine is accepted (VERIFY WITH CA/LEGAL stays on the tax rule itself).
+- The post-condition view name `issue_result` is kept; docs/05 uses it.
+
+## Round 2 brief (builder, Sonnet medium; then a reviewer re-check)
+1. Merge `origin/main` (now includes PR #36) into this branch; resolve `package.json` `check` (both guards: `check-worker-config.mjs` and `check-migrations.mjs`) and `.github/workflows/ci.yml` (both steps); update CLAUDE.md's `pnpm check` comment to name both guards.
+2. Analyst (1): installed-SQL drift test for `issue_guard_check` and `issue_result_check`. Analyst (3): migration guard comment stripping and unanchored matching, with the two tests. Analyst note: `d.number >= 1` in `issue_result_check` — **this edits 0007, which has never been applied to staging** (only local DBs); allowed before the merge, but regenerate it with `scripts/write-triggers.ts issue_guard` (not by hand) and say so; add a test.
+3. Reviewer M1: scan `${…}` expressions inside template literals; bigint exemption only for divisions with bigint operands; tests for both examples. M2 + L3: heavy.sh runs the command in the background, writes the child PID to `$LOCK/child`, treats the lock as stale only when both PIDs are dead, re-checks age under the reaper, keeps a 6 h absolute ceiling; extend `tools/heavy.selftest.sh`. L4: add `outline.ts`, `compose.ts` and the font bytes to `printSourceHash`, rebuild with `build:brand` (PDF content must stay identical apart from `/Keywords`). L6: move `bench-auth.yml` secrets to the steps that use them.
+4. Skills first (Skill tool): cloudflare:wrangler, code-review and security-review (checklists only). Final `pnpm check`, `pnpm build`, `pnpm test`, `pnpm db:generate` (no diff), one whole-repo lint; append "Builder report: round 2"; commit; no push.
+
+## Builder report: round 2 (Sonnet 5.5, medium; 2026-10-22)
+
+**Skills (Skill tool):** `cloudflare:wrangler` (loaded; no wrangler config touched; reminded me that migrations are applied by wrangler from `packages/db/migrations`, so 0007 is only safe to edit because it has not reached staging). `code-review` and `security-review` (loaded as checklists only; both printed output about unrelated or empty diffs, which I ignored; no agents, comments or cloud work). They prompted a re-read of the heavy.sh signal/PID paths and of the bench workflow's secret scope.
+
+**Commits (on `fix/skill-audit-earlier`):**
+- `b73b490` merge origin/main (PR #36)
+- `739ad68` + `222211e` item 2 (post-condition, drift test, migration guard)
+- `afd95e9` + `03ddd21` item 3 M1 (no-floats scanner)
+- `d9f0bec` item 3 M2 + L3 (heavy.sh)
+- `21acb38` item 3 L4 + L6
+- plus this report's commit
+
+**Item 1, merge.** `git merge origin/main` conflicted in `package.json` and `.github/workflows/ci.yml`, as expected. `check` now runs `lint && typecheck && check-web-bindings.mjs && check-worker-config.mjs && check-migrations.mjs`; ci.yml keeps both steps (worker config guard, then migration rebuild guard). CLAUDE.md's `pnpm check` comment names both guards. `pnpm db:generate` after the merge: "No schema changes".
+
+**Item 2.**
+- Migration 0007 was edited, which is allowed only because it has never been applied to staging (only local DBs). I did not edit it by hand: I changed `issueGuardStatements()` in `packages/db/src/triggers.ts` (`AND d.number >= 1` in `issue_result_check`), emptied the file and re-ran `node scripts/write-triggers.ts issue_guard`. The diff of 0007 is that one condition. 0000-0006 and 0008 untouched, no `__new_`.
+- db tests (`triggers.test.ts`): a drift test comparing the installed `issue_guard_check`, `issue_result` and `issue_result_check` SQL in `sqlite_master` with `issueGuardStatements()`; a test that number 0 (equal to `next_no - 1` on a fresh counter) is rejected and the counter row does not appear.
+- `scripts/migration-guard.mjs`: comments are stripped before the SQL is split, it splits on every `;`, and `DROP TABLE` / `CREATE TABLE __new_` are matched anywhere in a statement. Tests added in `migration-guard.test.ts`: two statements on one line; a DROP after a trailing comment containing `;`; a DROP only inside a comment is ignored; a DROP not at the start of the statement.
+
+**Item 3.**
+- M1 (`no-floats.test.ts`): the regex noise-stripper is replaced by a small scanner. Template-literal text is blanked, but `${…}` expressions are kept as code (nested templates and braces included), so decimals and divisions inside them are caught. The bigint exemption now applies per division: the operand left or right of that `/` (a name, a call, or a parenthesised group) must hold `100n`, `BigInt(` or `divRoundHalfUp(`; a marker elsewhere on the line no longer exempts. Tests: a division inside a template expression, a nested template, `a * b / 100 + 5n` flagged, `(a * 7) / 3, y = 5n` flagged, and the allowed forms still pass. The real money files still pass.
+- M2 + L3 (`tools/heavy.sh`): the command runs in the background; the lock holds `pid` (wrapper) and `child` (command); stale only when both are dead; the decision is taken again from a fresh read under the reaper folder; a lock older than 360 min (6 h, measured on the `pid` file) is stale whatever the PIDs; Ctrl-C/TERM stops the command and releases; stdin is passed on (`<&0`). Self-test extended to 18 checks: command PID recorded and exit code kept; a wrapper killed with `kill -9` while its command runs keeps the lock (a second heavy times out), and the lock is taken over at once after the command dies; the 6 h ceiling; a live lock and a held reaper are not broken early. CLAUDE.md's lock sentence updated to match.
+- L4: `printSourceHash` now also hashes `outline.ts`, `compose.ts` and the Archivo font file bytes (the file `WORDMARK.font` resolves to). `build:brand` run. **Proof the output is unchanged:** `git status` shows only the 4 PDFs changed (all PNG/ICO/SVG outputs are byte-identical); for each PDF I compared HEAD against the rebuilt file byte by byte (script in the session scratchpad): same length, 89 differing bytes each, 0 of them outside the `/Keywords <hex>` string, so content streams, xref offsets and every other object are identical. A new brand test checks that `print.ts` hashes every layout module it imports.
+- L6: `bench-auth.yml` job-level `env` removed; the secrets and the two inputs are on the "Run the benchmark" step only.
+
+**Checks (all via `tools/heavy.sh --log`, in this worktree):**
+- `pnpm check`: exit 0 (lint, typecheck, web binding guard, worker config guard, migration guard "9 migrations").
+- `pnpm build`: exit 0.
+- `pnpm test`: exit 0; core 304 (statements 99.77 %, branches 98.56 %), db 52, ui 469 passed + 2 skipped, auth 94, jobs 2, web 55, admin 420, portal 404.
+- `pnpm db:generate`: "No schema changes"; `git status` clean afterwards.
+- Whole-repo `pnpm lint`: exit 0 (344 files).
+- `bash tools/heavy.selftest.sh`: all 18 passed (run directly; it uses a throwaway lock).
+
+**Deviations:** CLAUDE.md's heavy-lock sentence was edited (not in the brief) because the old "older than 90 minutes is stale" became wrong. The ceiling can be overridden with `HEAVY_CEILING_MIN` (default 360).
+
+**Not verified:**
+- The workflow edits (ci.yml merge, bench-auth.yml) have not run on GitHub.
+- heavy.sh liveness (`kill -0`, `kill -9` of a wrapper) was tested only in Git Bash on this Windows PC.
+- The "decide again under the reaper" step is exercised only indirectly (two-waiter and held-reaper tests); a precise interleaving test would need controlled timing.
+- A tiny window remains: a wrapper killed hard between writing `pid` and `child` leaves a lock with a dead wrapper PID and no child file; it is then taken over at once while a just-started command may still run (milliseconds).
+- 0007 and 0008 still first run on staging at the next deploy.
+
+## Re-check of round 2, 2026-10-22: APPROVE
+Reviewer (Opus 5.5 medium; code-review, security-review, cloudflare:wrangler via the Skill tool, checklists only): nothing critical, high or medium. Merge of #36 keeps both guards and both CI steps; 0007 regenerated with `d.number >= 1` and the drift test compares it exactly; migration guard, no-floats scanner, heavy.sh lock, print hash and bench secrets all verified. `pnpm build`, `pnpm check`, `pnpm test` (core 304, db 52, ui 469, auth 94, jobs 2, web 55, admin 420, portal 404), `pnpm db:generate` (no diff), `heavy.selftest.sh` 18/18 green.
+Low follow-ups: heavy.sh should kill the whole process tree on Windows (native node/workerd grandchildren) and write `child` before `pid`; the migration guard's comment stripping isn't quote-aware (`DEFAULT '--'`); the no-floats bigint exemption accepts `Number(x * 1n) / 3`.
+
+## Integration (lead), 2026-10-22
+Merged `main` (PR #37, docs) into the branch cleanly; PR opened with auto-merge. After the deploy, staging D1 gets 0007 and 0008 (watch the deploy log).

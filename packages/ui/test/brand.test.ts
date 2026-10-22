@@ -7,7 +7,8 @@ import { createBrand, parseMaster, SCHEMES } from "../src/brand/compose.ts";
 import { brandFiles, rasterPlan } from "../src/brand/files.ts";
 import { MARK, MARK_PARAMS, pixelMark, STROKE } from "../src/brand/geometry.ts";
 import { renderMaster } from "../src/brand/master.ts";
-import { PRINT_CMYK } from "../src/brand/print.ts";
+import { pngInfo, sourceHash } from "../src/brand/png.ts";
+import { PRINT_CMYK, PRINT_SOURCE_KEY, printSourceHash } from "../src/brand/print.ts";
 import { tokens } from "../src/tokens/model.ts";
 
 const root = join(import.meta.dirname, "..");
@@ -137,6 +138,28 @@ describe("raster files", () => {
     expect(pngSize(buf)).toEqual([w, h]);
   });
 
+  // Drift: each PNG is tagged sRGB and carries the hash of the SVG it was rendered from (as the wallpapers do), so a
+  // changed master, geometry or palette fails here until `build:brand` is run again.
+  it.each(pngs.map((r) => [r.file, r.svg] as const))("%s was rendered from today's SVG", (file, svg) => {
+    const info = pngInfo(readFileSync(join(brandDir, file)));
+    expect(info.srgb, "tagged sRGB").toBe(true);
+    expect(info.source, "rendered from today's SVG: run build:brand").toBe(sourceHash(svg));
+  });
+
+  it("favicon.ico's embedded PNGs were rendered from today's SVGs", () => {
+    const plan = rasterPlan(brand).find((r) => r.kind === "ico");
+    if (plan?.kind !== "ico") throw new Error("no ico in the raster plan");
+    const ico = readFileSync(join(brandDir, plan.file));
+    expect(ico.readUInt16LE(4)).toBe(plan.sizes.length);
+    plan.sizes.forEach((s, i) => {
+      const length = ico.readUInt32LE(6 + 16 * i + 8);
+      const offset = ico.readUInt32LE(6 + 16 * i + 12);
+      const info = pngInfo(ico.subarray(offset, offset + length));
+      expect(info.width, `${s.size}px entry`).toBe(s.size);
+      expect(info.source, "run build:brand").toBe(sourceHash(s.svg));
+    });
+  });
+
   it("favicon.ico holds 16, 32 and 48 px PNGs", () => {
     const ico = readFileSync(join(brandDir, "favicon.ico"));
     expect([ico.readUInt16LE(0), ico.readUInt16LE(2)]).toEqual([0, 1]);
@@ -146,6 +169,13 @@ describe("raster files", () => {
     expect(ico.subarray(off + 1, off + 4).toString()).toBe("PNG");
   });
 });
+
+/** The Info dictionary's /Keywords string (pdf-lib writes it as UTF-16BE hex). */
+function pdfKeywords(pdf: string): string | undefined {
+  const hex = /\/Keywords\s*<([0-9A-Fa-f]+)>/.exec(pdf)?.[1];
+  if (hex) return Buffer.from(hex, "hex").subarray(2).swap16().toString("utf16le");
+  return /\/Keywords\s*\(([^)]*)\)/.exec(pdf)?.[1];
+}
 
 describe("print files", () => {
   const files = [
@@ -157,6 +187,26 @@ describe("print files", () => {
   it.each(files)("%s is a PDF", (f) => {
     const buf = readFileSync(join(brandDir, "print", f));
     expect(buf.subarray(0, 5).toString()).toBe("%PDF-");
+  });
+
+  it.each(files)("%s was built from today's master, print CMYK and layout code", (f) => {
+    const keywords = pdfKeywords(readFileSync(join(brandDir, "print", f), "latin1"));
+    expect(keywords, "run build:brand").toBe(`${PRINT_SOURCE_KEY}=${printSourceHash(root)}`);
+  });
+
+  it("the print source hash is a stable SHA-256", () => {
+    expect(printSourceHash(root)).toMatch(/^[0-9a-f]{64}$/);
+    expect(printSourceHash(root)).toBe(printSourceHash(root));
+  });
+
+  it("the print source hash covers every input of the print layout (outliner, composer, font bytes)", () => {
+    const source = readFileSync(join(root, "src/brand/print.ts"), "utf8");
+    for (const input of ["./print.ts", "./geometry.ts", "./outline.ts", "./compose.ts", "WORDMARK.font"]) {
+      expect(source, input).toContain(input);
+    }
+    // print.ts must not import a layout module that the hash does not read.
+    const imports = [...source.matchAll(/from "(\.\/[a-z]+\.ts)"/g)].map((m) => m[1]);
+    for (const file of imports) expect(source.split(`here("${file}")`).length, file).toBe(2);
   });
 
   it("the business card has trim and bleed boxes (3 mm bleed) on both sides", () => {

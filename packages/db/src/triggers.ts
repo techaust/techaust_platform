@@ -87,11 +87,8 @@ export function triggerStatements(): string[] {
     // Gap-free numbering: counters only move forward and are never deleted (ADM-SET-04, ADM-INV-03).
     `CREATE TRIGGER \`doc_counters_no_decrease\` BEFORE UPDATE ON \`${table(docCounters)}\` WHEN NEW.next_no < OLD.next_no OR NEW.series IS NOT OLD.series OR NEW.fy IS NOT OLD.fy BEGIN ${abort("document counters only move forward")} END;`,
     `CREATE TRIGGER \`doc_counters_no_delete\` BEFORE DELETE ON \`${table(docCounters)}\` BEGIN ${abort("document counters cannot be deleted")} END;`,
-    // Issue guard: the first statement of every issue batch is `INSERT INTO issue_guard (document_id) VALUES (?)`.
-    // It aborts the whole batch unless the document is an unfrozen draft, so no number is consumed for a
-    // document that can't be issued (an UPDATE matching zero rows would not fail on its own).
-    "CREATE VIEW `issue_guard` AS SELECT NULL AS document_id;",
-    `CREATE TRIGGER \`issue_guard_check\` INSTEAD OF INSERT ON \`issue_guard\` WHEN NOT EXISTS (SELECT 1 FROM documents WHERE id = NEW.document_id AND status IN ('draft', 'pending_approval') AND frozen_at IS NULL) BEGIN ${abort("document is not an issuable draft")} END;`,
+    // The issue guard and its post-condition live in issueGuardStatements() (migration 0007). 0001 first created
+    // an `issue_guard` that also accepted `pending_approval`; 0007 narrows it to `draft`.
   ];
 }
 
@@ -125,11 +122,40 @@ export function portalTriggerStatements(): string[] {
   ];
 }
 
+/** The only statuses a document can be issued from (docs/05 §5.4 change 14: drafts only; owner decision 2026-10-07).
+ * An approval (`approvals`, kind `issue`) is a record next to the draft, not a document status. Shared by the guard
+ * trigger below and by the reference issue batch in test/helpers.ts, so the two cannot drift apart again. */
+export const ISSUABLE_STATUSES = ["draft"] as const;
+const issuableSql = ISSUABLE_STATUSES.map((s) => `'${s}'`).join(", ");
+
+/**
+ * The issue guard and post-condition (docs/05 §5.4), a separate set and migration (0007) because 0001's guard
+ * accepted `pending_approval` and its trigger can't be edited in place. Every issue batch is:
+ *   1. `INSERT INTO issue_guard (document_id) VALUES (?)`: aborts unless the document is an unfrozen draft;
+ *   2. take the number (counter row, increment) and freeze the document with it;
+ *   3. `INSERT INTO issue_result (document_id, series, fy) VALUES (?, ?, ?)`: aborts unless the document is now
+ *      issued and frozen with exactly the number the counter just handed out (a zero-row UPDATE passes silently
+ *      otherwise, and the counter would have moved for nothing).
+ * D1 runs the batch as one transaction, so an abort rolls the counter back too.
+ */
+export function issueGuardStatements(): string[] {
+  return [
+    "DROP TRIGGER `issue_guard_check`;",
+    `CREATE TRIGGER \`issue_guard_check\` INSTEAD OF INSERT ON \`issue_guard\` WHEN NOT EXISTS (SELECT 1 FROM documents WHERE id = NEW.document_id AND status IN (${issuableSql}) AND frozen_at IS NULL) BEGIN ${abort("document is not an issuable draft")} END;`,
+    "CREATE VIEW `issue_result` AS SELECT NULL AS document_id, NULL AS series, NULL AS fy;",
+    `CREATE TRIGGER \`issue_result_check\` INSTEAD OF INSERT ON \`issue_result\` WHEN NOT EXISTS (SELECT 1 FROM documents d JOIN doc_counters c ON c.series = NEW.series AND c.fy = NEW.fy WHERE d.id = NEW.document_id AND d.status = 'issued' AND d.frozen_at IS NOT NULL AND d.series = NEW.series AND d.fy = NEW.fy AND d.number >= 1 AND d.number = c.next_no - 1 AND d.number_display IS NOT NULL) BEGIN ${abort("issue did not freeze the document with the number just taken")} END;`,
+  ];
+}
+
 /** The trigger sets, by the name the migration is created with (`drizzle-kit generate --custom --name <set>`). */
 export const TRIGGER_SETS = {
   triggers: { what: "integrity triggers (docs/05 §5.3)", statements: triggerStatements },
   auth_triggers: { what: "staff-auth triggers (M1.5)", statements: authTriggerStatements },
   portal_triggers: { what: "portal-auth triggers (M1.6)", statements: portalTriggerStatements },
+  issue_guard: {
+    what: "issue guard narrowed to drafts, plus the issue post-condition (docs/05 §5.4)",
+    statements: issueGuardStatements,
+  },
 } as const;
 export type TriggerSet = keyof typeof TRIGGER_SETS;
 

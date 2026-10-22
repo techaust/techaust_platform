@@ -142,6 +142,8 @@ export const documents = sqliteTable(
     index("documents_client_type_status").on(t.clientId, t.type, t.status),
     index("documents_status_due").on(t.status, t.dueDate),
     index("documents_parent").on(t.parentId),
+    index("documents_project").on(t.projectId),
+    index("documents_care_plan").on(t.carePlanId),
     check("documents_type", oneOf(t.type, DOCUMENT_TYPES)),
     check("documents_status", oneOf(t.status, DOCUMENT_STATUSES)),
     check("documents_currency", oneOf(t.currency, CURRENCY_CODES)),
@@ -249,7 +251,7 @@ export const acceptances = sqliteTable(
     termsVersionId: text("terms_version_id").references(() => termsVersions.id),
     certificateR2Key: text("certificate_r2_key"),
   },
-  (t) => [uniqueIndex("acceptances_document").on(t.documentId)],
+  (t) => [uniqueIndex("acceptances_document").on(t.documentId), index("acceptances_contact").on(t.contactId)],
 );
 
 export const APPROVAL_KINDS = ["discount", "issue", "payment_verify", "refund"] as const;
@@ -277,6 +279,7 @@ export const approvals = sqliteTable(
   },
   (t) => [
     index("approvals_status").on(t.status, t.createdAt),
+    index("approvals_document").on(t.documentId),
     index("approvals_requested_by").on(t.requestedBy, t.status),
     check("approvals_kind", oneOf(t.kind, APPROVAL_KINDS)),
     check("approvals_status", oneOf(t.status, APPROVAL_STATUSES)),

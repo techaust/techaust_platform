@@ -2,6 +2,8 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-10-22 [#38](https://github.com/techaust/techaust_platform/pull/38) fix: skill-guided audit of earlier work (gap-free numbering post-condition, FK indexes, contrast, no-floats, brand drift, CI guards)
+- 2026-10-22 [#37](https://github.com/techaust/techaust_platform/pull/37) docs: end of day 2026-10-22
 - 2026-10-22 [#36](https://github.com/techaust/techaust_platform/pull/36) fix: skill-guided audit findings for M1.5/M1.6/M2.1 (preview URLs, header caps, logs privacy, waitUntil, invite audit)
 - 2026-10-22 [#35](https://github.com/techaust/techaust_platform/pull/35) feat(web): currency switch out of the header, INR/USD codes, "and" instead of "&" [WEB-G-03, WEB-G-06]
 - 2026-10-22 [#34](https://github.com/techaust/techaust_platform/pull/34) chore(agents): skills are mandatory for every run

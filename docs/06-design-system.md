@@ -107,9 +107,9 @@ CMYK values come from a real ICC profile, not a formula. `scripts/measure-cmyk.p
 |---|---|
 | **Ink** (text, dark surfaces) | `ink-950 #0D1613` · `ink-900 #14231F` (brand ink) · `ink-800 #15211D` · `ink-750 #111C18` · `ink-700 #1B2924` · `ink-600 #26352F` · `ink-500 #61796F` · `ink-400 #485752` · `ink-300 #9DB0A8` |
 | **Verdigris** (brand accent) | `verdigris-900 #1F4A40` · `-800 #175548` · `-700 #1E6B5C` (brand) · `-500 #2E8B77` · `-300 #6CC4AE` (brand, dark) · `-200 #8AD4C1` · `-100 #D7ECE5` |
-| **Stone** (light neutrals) | `stone-50 #F6F7F5` (page) · `-100 #ECEFEB` · `-200 #E1E6E2` · `-300 #D3DBD6` · `-500 #7A8B84` (control borders) |
+| **Stone** (light neutrals) | `stone-50 #F6F7F5` (page) · `-100 #ECEFEB` · `-200 #E1E6E2` · `-300 #D3DBD6` · `-500 #75867F` (control borders) |
 | **Other** | `mist #E4EBE7` (dark-theme text) · `white` · `black` |
-| **Status** (always with an icon + label) | success `#47730F` / `#A9D46B` (80° of hue away from verdigris, so success never reads as "brand") · warning `#8F5B00` / `#E9B44C` · danger `#B3261E` / `#FF8A80` · info `#2B5797` / `#8DB4FF` |
+| **Status** (always with an icon + label) | success `#44700E` / `#A9D46B` (80° of hue away from verdigris, so success never reads as "brand") · warning `#8F5B00` / `#E9B44C` · danger `#B3261E` / `#FF8A80` · info `#2B5797` / `#8DB4FF` |
 
 ### 2.2 Semantic tokens (what components use)
 

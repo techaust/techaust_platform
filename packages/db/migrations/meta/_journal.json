@@ -50,6 +50,20 @@
       "when": 1792564909555,
       "tag": "0006_portal_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1792667463988,
+      "tag": "0007_issue_guard",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1792667643403,
+      "tag": "0008_indexes_fk_lookups",
+      "breakpoints": true
     }
   ]
 }

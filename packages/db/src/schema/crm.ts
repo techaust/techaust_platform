@@ -72,6 +72,7 @@ export const leads = sqliteTable(
     index("leads_stage").on(t.stage),
     index("leads_owner_next_action").on(t.ownerId, t.nextActionAt),
     index("leads_email").on(t.contactEmail),
+    index("leads_client").on(t.clientId),
     index("leads_delete_after").on(t.deleteAfter),
     check("leads_stage", oneOf(t.stage, LEAD_STAGES)),
     check("leads_source", oneOf(t.source, LEAD_SOURCES)),
@@ -189,6 +190,7 @@ export const projects = sqliteTable(
   (t) => [
     uniqueIndex("projects_code").on(t.code),
     index("projects_client_status").on(t.clientId, t.status),
+    index("projects_owner").on(t.ownerId),
     check("projects_status", oneOf(t.status, PROJECT_STATUSES)),
     check("projects_currency", oneOf(t.currency, CURRENCY_CODES)),
   ],
@@ -217,6 +219,7 @@ export const milestones = sqliteTable(
   },
   (t) => [
     uniqueIndex("milestones_project_position").on(t.projectId, t.position),
+    index("milestones_document").on(t.documentId),
     check("milestones_status", oneOf(t.status, MILESTONE_STATUSES)),
     check("milestones_pct", sql`${t.pctBp} is null or ${t.pctBp} between 0 and 10000`),
   ],
