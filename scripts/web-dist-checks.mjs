@@ -273,7 +273,8 @@ export function checkLegalPages(dist) {
 }
 
 const META_MAX = 155;
-const NO_DESCRIPTION = new Set(["404.html"]);
+// noindex pages that no search result shows: the 404 and the form's thank-you page (07 §5.10 gives it no description).
+const NO_DESCRIPTION = new Set(["404.html", "thanks.html"]);
 
 /** WEB-G-09 / 07 §1: every built page has a meta description, not empty and at most 155 characters. */
 export function checkMetaDescription(name, html) {

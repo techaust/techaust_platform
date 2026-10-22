@@ -100,6 +100,11 @@ const og = new URL(ogImage ?? ogDefault, Astro.site).href;
   </body>
 </html>
 
+<script>
+  // First-touch attribution for the forms (FRM-06): UTM parameters and an outside referrer, sessionStorage only.
+  import "../scripts/attribution";
+</script>
+
 <style is:global>
   .skip-link {
     position: absolute;

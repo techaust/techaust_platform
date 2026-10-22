@@ -1,14 +1,3 @@
 {
-  "allow": [
-    {
-      "path": "/contact",
-      "milestone": "M2.4",
-      "reason": "The contact page and form are built in M2.4; the header, footer and service pages already link it."
-    },
-    {
-      "path": "/get-a-quote",
-      "milestone": "M2.4",
-      "reason": "The quote form is built in M2.4; the service pages and the CTA bands already link it."
-    }
-  ]
+  "allow": []
 }

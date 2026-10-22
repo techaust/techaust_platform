@@ -1,0 +1,473 @@
+/* The website's forms (M2.4: /contact, /get-a-quote; docs/06 §5.4). Tokens only. Fields sit straight on the page
+   (no card around the form): a white field with a control-coloured hairline, the label above it, the hint under the
+   label and the error under the field. The brand's one device, the T bar with its 45° cut, marks what is chosen: the
+   selected card and the current step. Nothing else decorates. */
+
+/* ---------- Layout ---------- */
+
+.form {
+  display: grid;
+  gap: var(--space-10);
+  min-inline-size: 0;
+}
+
+.form-row {
+  display: grid;
+  gap: var(--space-8) var(--space-6);
+}
+
+@media (min-width: 48rem) {
+  .form-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* ---------- Fields ---------- */
+
+.field {
+  display: grid;
+  gap: var(--space-2);
+  min-inline-size: 0;
+}
+
+.field__label,
+.cgroup__legend {
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.field__hint {
+  margin-block-start: calc(-1 * var(--space-1));
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  color: var(--color-text-muted);
+  text-wrap: pretty;
+}
+
+.input {
+  inline-size: 100%;
+  min-block-size: var(--space-12);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
+  transition: border-color var(--duration-fast) var(--ease-standard);
+}
+
+.input:hover {
+  border-color: var(--color-text-muted);
+}
+
+.input--area {
+  min-block-size: 10rem;
+  resize: vertical;
+}
+
+.select {
+  position: relative;
+  display: block;
+}
+
+.select .input {
+  appearance: none;
+  padding-inline-end: var(--space-12);
+  cursor: pointer;
+}
+
+.select .select__icon {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-end: var(--space-4);
+  translate: 0 -50%;
+  color: var(--color-text-muted);
+  pointer-events: none;
+}
+
+/* An invalid field: a 2 px danger edge drawn inside the border (no layout shift). */
+.input[aria-invalid="true"] {
+  border-color: var(--color-danger);
+  box-shadow: inset 0 0 0 1px var(--color-danger);
+}
+
+.field__error,
+.form-status {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  font-weight: 500;
+  color: var(--color-danger);
+}
+
+.field__error .icon,
+.form-status .icon {
+  margin-block-start: -1px;
+}
+
+/* Empty = nothing to say: no icon, no space. */
+.field__error:has([data-error-text]:empty),
+.form-status:has([data-status-text]:empty) {
+  display: none;
+}
+
+/* ---------- Choice cards (radio and checkbox) ---------- */
+
+.cgroup {
+  display: grid;
+  gap: var(--space-3);
+  min-inline-size: 0;
+}
+
+.cgroup__legend {
+  padding: 0;
+  margin-block-end: var(--space-1);
+}
+
+.cgroup__legend--group {
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+.cgroup__grid {
+  display: grid;
+  gap: var(--space-2);
+}
+
+@media (min-width: 30rem) {
+  .cgroup__grid--sm2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 48rem) {
+  .cgroup__grid--md2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cgroup__grid--md3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .cgroup__grid--md4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.choice {
+  position: relative;
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  min-block-size: var(--space-12);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.choice:hover {
+  border-color: var(--color-border-control);
+}
+
+.choice__input {
+  flex: none;
+  inline-size: 1.125rem;
+  block-size: 1.125rem;
+  margin: 0.1875rem 0 0;
+  accent-color: var(--color-btn-primary-bg);
+  cursor: pointer;
+}
+
+/* The card draws the focus ring (one ring, around the whole target). */
+.choice__input:focus-visible {
+  outline: none;
+}
+
+.choice:has(.choice__input:focus-visible) {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.choice__text {
+  display: grid;
+  gap: var(--space-1);
+  min-inline-size: 0;
+}
+
+.choice__label {
+  font-size: var(--text-body);
+  line-height: 1.4;
+  text-wrap: pretty;
+}
+
+.choice__sub {
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.choice__sub:empty {
+  display: none;
+}
+
+/* Selected: a verdigris edge and the T bar along the top, its end cut at 45°. */
+.choice:has(.choice__input:checked) {
+  border-color: var(--color-text-accent);
+  box-shadow: inset 0 0 0 1px var(--color-text-accent);
+}
+
+.choice:has(.choice__input:checked) .choice__label {
+  font-weight: 600;
+}
+
+.choice::before {
+  content: "";
+  position: absolute;
+  inset-block-start: -1px;
+  inset-inline-start: var(--space-4);
+  inline-size: var(--space-12);
+  block-size: 4px;
+  background: var(--color-text-accent);
+  clip-path: polygon(0 0, 100% 0, calc(100% - 4px) 100%, 0 100%);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform var(--duration-base) var(--ease-standard);
+}
+
+.choice:has(.choice__input:checked)::before {
+  transform: none;
+}
+
+.choice:has(.choice__input:disabled) {
+  cursor: not-allowed;
+}
+
+/* Money in the budget bands lines up. */
+.choice--money .choice__label {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Checkbox line (the updates opt-in) ---------- */
+
+.check {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  min-block-size: var(--target-min);
+  padding-block: var(--space-2);
+  cursor: pointer;
+  max-inline-size: var(--container-prose);
+}
+
+.check__input {
+  flex: none;
+  inline-size: 1.25rem;
+  block-size: 1.25rem;
+  margin: 0.125rem 0 0;
+  accent-color: var(--color-btn-primary-bg);
+  cursor: pointer;
+}
+
+/* ---------- The end of the form ---------- */
+
+.form-end {
+  display: grid;
+  gap: var(--space-6);
+  padding-block-start: var(--space-8);
+  border-block-start: 2px solid var(--color-text);
+}
+
+.form-end__row {
+  display: grid;
+  gap: var(--space-5);
+  align-items: center;
+}
+
+@media (min-width: 48rem) {
+  .form-end__row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-10);
+  }
+}
+
+.form-end__notice {
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  color: var(--color-text-muted);
+  max-inline-size: 52ch;
+  text-wrap: pretty;
+}
+
+.form-end__actions {
+  display: flex;
+  flex-wrap: wrap-reverse;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+@media (max-width: 47.99rem) {
+  .form-end__submit {
+    flex: 1 1 auto;
+  }
+}
+
+/* Sending: the button keeps its colour, shows a spinner and "Sending", and ignores a second press. */
+.spinner {
+  display: none;
+  inline-size: 1.125rem;
+  block-size: 1.125rem;
+  border: 2px solid currentColor;
+  border-inline-end-color: transparent;
+  border-radius: var(--radius-full);
+  animation: form-spin 0.8s linear infinite;
+}
+
+[data-sending] .spinner {
+  display: inline-block;
+}
+
+[data-sending] .btn--primary,
+[data-sending] .btn--primary:hover {
+  background: var(--color-btn-primary-bg);
+  color: var(--color-btn-primary-fg);
+  cursor: progress;
+}
+
+@keyframes form-spin {
+  to {
+    rotate: 1turn;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 2.4s;
+  }
+
+  .choice,
+  .choice::before,
+  .input {
+    transition: none;
+  }
+}
+
+/* The server's answer when it isn't "sent": a quiet ruled line, the words in danger colour. */
+.form-status {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-danger);
+  border-inline-start-width: 4px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
+}
+
+/* ---------- Notes ---------- */
+
+.form-note {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  max-inline-size: var(--container-prose);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border-control);
+  border-inline-start: 4px solid var(--color-info);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
+}
+
+.form-note .icon {
+  margin-block-start: 2px;
+  color: var(--color-info);
+}
+
+/* Shown only without JavaScript (the head script adds .js to <html>). */
+:root.js .no-js-only {
+  display: none;
+}
+
+/* ---------- Error summary ---------- */
+
+.error-summary {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-5) var(--space-6);
+  border: 1px solid var(--color-danger);
+  border-inline-start-width: 4px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+}
+
+.error-summary[hidden] {
+  display: none;
+}
+
+.error-summary__title {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  font-size: var(--text-h4);
+  line-height: var(--text-h4--line-height);
+  font-weight: var(--text-h4--font-weight);
+  color: var(--color-danger);
+}
+
+.error-summary__list {
+  display: grid;
+  gap: var(--space-1);
+  padding-inline-start: calc(var(--space-6) + var(--space-3));
+}
+
+.error-summary__list a {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: var(--target-min);
+  color: var(--color-text);
+  font-weight: 500;
+}
+
+.error-summary__list a:hover {
+  color: var(--color-link-hover);
+}
+
+/* ---------- Spam protection ---------- */
+
+/* The honeypot: off screen, not just invisible, so no layout and no click can reach it. */
+.hp {
+  position: absolute;
+  inset-inline-start: -10000px;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+}
+
+/* The Turnstile widget takes no room unless Cloudflare needs the visitor to act. */
+.turnstile:empty {
+  display: none;
+}
+
+@media (forced-colors: active) {
+  .choice:has(.choice__input:checked) {
+    border-color: Highlight;
+  }
+
+  .choice::before {
+    background: Highlight;
+  }
+}

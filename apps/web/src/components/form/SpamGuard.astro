@@ -1,0 +1,32 @@
+---
+// The form's spam protection and its consent and attribution fields (FRM-02, FRM-05, FRM-06), the names from the
+// builder's contract (FORM_FIELDS in @techaust/core):
+//   - the honeypot `company_website`: off screen, hidden from screen readers (aria-hidden), out of the tab order and
+//     never autofilled; a person never sees it, a form-filling bot fills it and the server refuses the request
+//   - `form_elapsed_ms`: filled by scripts/forms.ts with the milliseconds since the form was shown (performance.now())
+//   - the Turnstile widget: rendered explicitly by scripts/forms.ts (managed mode, shown only if a check needs the
+//     visitor), with this form's action and the build's site key (lib/turnstile.ts); nothing without JavaScript
+//   - `noticeVersion` (the privacy notice the consent links to) and the attribution fields, filled by the script
+//     from sessionStorage (first touch, no cookies)
+import { FORM_FIELDS } from "@techaust/core";
+import { formUi } from "../../content/forms";
+import { noticeVersion } from "../../lib/forms";
+import { turnstileSiteKey } from "../../lib/turnstile";
+
+interface Props {
+  action: "contact" | "quote";
+}
+
+const { action } = Astro.props;
+const siteKey = turnstileSiteKey();
+const meta = ["sourcePage", "referrerHost", "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"];
+---
+
+<div class="hp" aria-hidden="true">
+  <label for={`${action}-hp`}>{formUi.honeypot}</label>
+  <input id={`${action}-hp`} name={FORM_FIELDS.honeypot} type="text" tabindex="-1" autocomplete="off" />
+</div>
+<input type="hidden" name={FORM_FIELDS.elapsed} value="" data-elapsed />
+<input type="hidden" name="noticeVersion" value={noticeVersion} />
+{meta.map((m) => <input type="hidden" name={m} value="" data-meta={m} />)}
+<div class="turnstile needs-js" data-turnstile data-sitekey={siteKey} data-action={action}></div>

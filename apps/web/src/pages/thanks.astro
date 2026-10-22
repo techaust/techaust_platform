@@ -1,0 +1,142 @@
+---
+// Thanks (/thanks, docs/07 §5.10; FRM-07). A static page: the reference comes from `?ref=` and is shown only when it
+// has the lead-reference shape (L- and five Crockford base32 characters, LEAD_REF in @techaust/core); anything else
+// (or no JavaScript) shows the text without a reference. The WhatsApp line needs a number and a reference, the Cal.com
+// line a link: both stay out while their value is empty (WEB-G-18). noindex: nobody arrives here from a search.
+import "../styles/page.css";
+import Icon from "../components/Icon.astro";
+import { site } from "../config/site";
+import { thanksPage as t } from "../content/forms";
+import BaseLayout from "../layouts/BaseLayout.astro";
+---
+
+<BaseLayout title={t.meta.title} noindex>
+  <section class="container thanks" aria-labelledby="thanks-title">
+    <h1 class="t-display-2 thanks__title" id="thanks-title">{t.h1}</h1>
+    <div class="thanks__body">
+      <p class="thanks__ref" data-ref-line hidden>
+        {t.refBefore} <strong class="thanks__code" data-ref></strong>{t.refAfter}
+      </p>
+      <p class="t-lede thanks__reply">{t.reply}</p>
+      {
+        site.whatsapp && (
+          <p class="thanks__urgent" data-ref-only hidden>
+            <a href={`https://wa.me/${site.whatsapp}`} rel="noopener">
+              {t.urgent}
+            </a>
+          </p>
+        )
+      }
+      {
+        site.calUrl && (
+          <p class="thanks__call">
+            <a class="btn btn--primary btn--lg" href={site.calUrl} rel="noopener">
+              {t.call}
+              <Icon name="arrow-right" size={20} />
+            </a>
+          </p>
+        )
+      }
+    </div>
+    <nav class="thanks__next" aria-labelledby="thanks-next">
+      <p id="thanks-next" class="thanks__next-label">{t.whileYouWait}</p>
+      <ul role="list" class="thanks__links">
+        {
+          t.links.map((link) => (
+            <li>
+              <a class="btn btn--text" href={link.href}>
+                {link.label}
+                <Icon name="arrow-right" size={20} />
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+    </nav>
+  </section>
+</BaseLayout>
+
+<script>
+  import "../scripts/thanks";
+</script>
+
+<style>
+  .thanks {
+    display: grid;
+    gap: var(--space-8);
+    padding-block: var(--space-16) var(--section-y);
+  }
+
+  @media (min-width: 48rem) {
+    .thanks {
+      padding-block-start: var(--space-24);
+    }
+  }
+
+  .thanks__title {
+    max-inline-size: 18ch;
+  }
+
+  .thanks__body {
+    display: grid;
+    gap: var(--space-4);
+    max-inline-size: var(--container-lede);
+  }
+
+  /* The reference: the one thing to keep, set large on the T bar (the brand's one device), its end cut at 45°. */
+  .thanks__ref {
+    position: relative;
+    justify-self: start;
+    padding-block-start: var(--space-5);
+    font-size: var(--text-h4);
+    line-height: var(--text-h4--line-height);
+  }
+
+  .thanks__ref::before {
+    content: "";
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline-start: 0;
+    inline-size: var(--space-16);
+    block-size: 4px;
+    background: var(--color-text-accent);
+    clip-path: polygon(0 0, 100% 0, calc(100% - 4px) 100%, 0 100%);
+  }
+
+  .thanks__code {
+    font-family: var(--font-display);
+    font-stretch: var(--font-display--stretch);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+  }
+
+  .thanks__reply {
+    color: var(--color-text);
+  }
+
+  .thanks__call {
+    margin-block-start: var(--space-4);
+  }
+
+  .thanks__next {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1) var(--space-6);
+    padding-block-start: var(--space-6);
+    border-block-start: 1px solid var(--color-border);
+    max-inline-size: var(--container-lede);
+  }
+
+  .thanks__next-label {
+    color: var(--color-text-muted);
+  }
+
+  .thanks__links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 var(--space-6);
+  }
+</style>

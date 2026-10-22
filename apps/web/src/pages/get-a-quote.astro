@@ -1,0 +1,513 @@
+---
+// Get a quote (/get-a-quote, WEB-QUOTE, FRM-QUOTE, docs/07 §5.9). Four steps, each a <fieldset> with its question as
+// an h2 inside the legend (focus moves to it on a step change, docs/06 §5.4). With JavaScript one step shows at a time;
+// "Continue" checks the step with the shared schema (quoteSteps, @techaust/core) and the error summary links to each
+// field; "Back" keeps every answer. Without JavaScript all four steps show as one long form, with the owner's note above
+// the button (2026-10-23). `?service=Sx` pre-selects a service; `type=pilot` and `plan=<tier>` (07 §2.3) are carried in
+// hidden fields. The budget bands follow the currency switch (INR or USD), their amounts formatted by @techaust/core.
+// "Best time for a call" is in IST, with the visitor's own time beside each window (filled in by the script).
+import "../styles/page.css";
+import "../styles/forms.css";
+import CurrencyNote from "../components/CurrencyNote.astro";
+import Choice from "../components/form/Choice.astro";
+import ChoiceGroup from "../components/form/ChoiceGroup.astro";
+import ErrorSummary from "../components/form/ErrorSummary.astro";
+import Field from "../components/form/Field.astro";
+import FormEnd from "../components/form/FormEnd.astro";
+import SpamGuard from "../components/form/SpamGuard.astro";
+import Icon from "../components/Icon.astro";
+import PageHero from "../components/PageHero.astro";
+import { formUi, noJsNote, quotePage as q } from "../content/forms";
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { budgetBands, callWindows, countries, serviceGroups } from "../lib/forms";
+
+const stepOf = (n: number) => formUi.stepOf.replace("{n}", String(n)).replace("{total}", "4");
+const steps = [q.steps.service, q.steps.goals, q.steps.budget, q.steps.contact];
+const groups = serviceGroups();
+const bands = { INR: budgetBands("INR"), USD: budgetBands("USD") } as const;
+const countryOptions = [
+  { value: "", label: formUi.chooseCountry },
+  ...countries().map((c) => ({ value: c.code, label: c.name })),
+];
+---
+
+<BaseLayout title={q.meta.title} description={q.meta.description}>
+  <PageHero title={q.h1} />
+
+  <section class="section">
+    <div class="container quote">
+      <ol class="rail needs-js" role="list" aria-label={formUi.progress} data-rail>
+        {
+          steps.map((title, i) => (
+            <li class="rail__item" data-rail-step={i + 1} aria-current={i === 0 ? "step" : undefined}>
+              <span class="rail__num" aria-hidden="true">
+                <span class="rail__digit">{i + 1}</span>
+                <Icon name="check" size={20} class="rail__check" />
+              </span>
+              <span class="rail__title">{title}</span>
+              <span class="visually-hidden" data-rail-state />
+            </li>
+          ))
+        }
+      </ol>
+
+      <form
+        class="form quote__form"
+        id="quote-form"
+        action="/api/forms/quote"
+        method="post"
+        aria-labelledby="page-title"
+        data-form="quote"
+        data-step="1"
+        data-msg-generic={formUi.generic}
+        data-msg-rate={formUi.rateLimited}
+        data-msg-nojs={noJsNote}
+        data-msg-yourtime={q.contact.yourTime}
+        data-msg-step={formUi.stepOf}
+      >
+        <ErrorSummary id="quote-errors" />
+        <p class="form-note no-js-only">
+          <Icon name="info" size={20} />
+          <span>{noJsNote}</span>
+        </p>
+
+        <div class="qprogress needs-js" data-progress>
+          <p class="qprogress__text">
+            <span data-progress-n>{stepOf(1)}</span>: <span data-progress-title>{steps[0]}</span>
+          </p>
+          <div class="qbar" aria-hidden="true">
+            {steps.map((_, i) => <span class="qbar__seg" data-seg={i + 1} />)}
+          </div>
+        </div>
+
+        <!-- Step 1: the service -->
+        <fieldset class="qstep" data-qstep="1" data-field="service" aria-describedby="service-hint g-service-error">
+          <legend class="qstep__legend">
+            <h2 class="t-h3 qstep__title" tabindex="-1" data-step-title>{steps[0]}</h2>
+          </legend>
+          <div class="qstep__body">
+            <p class="field__hint" id="service-hint">{q.service.hint}</p>
+            <p class="field__error" id="g-service-error" data-error>
+              <Icon name="alert-circle" size={20} />
+              <span data-error-text></span>
+            </p>
+            {
+              groups.map((g) => (
+                <fieldset class="cgroup sgroup">
+                  <legend class="cgroup__legend sgroup__legend">
+                    <span class="sgroup__name">{g.name}</span>
+                    <span class="sgroup__intro">{g.intro}</span>
+                  </legend>
+                  <div class="cgroup__grid cgroup__grid--sm2 cgroup__grid--md2">
+                    {g.services.map((s) => (
+                      <Choice name="service" value={s.code} label={s.name} required />
+                    ))}
+                  </div>
+                </fieldset>
+              ))
+            }
+            <div class="cgroup__grid cgroup__grid--sm2 cgroup__grid--md2 sgroup--unsure">
+              <Choice name="service" value="not-sure" label={q.service.notSure} />
+            </div>
+            <div class="qstep__nav needs-js">
+              <button type="button" class="btn btn--primary btn--lg" data-next>
+                {formUi.next}
+                <Icon name="arrow-right" size={20} />
+              </button>
+            </div>
+          </div>
+        </fieldset>
+
+        <!-- Step 2: goals and tools -->
+        <fieldset class="qstep" data-qstep="2">
+          <legend class="qstep__legend">
+            <h2 class="t-h3 qstep__title" tabindex="-1" data-step-title>{steps[1]}</h2>
+          </legend>
+          <div class="qstep__body">
+            <Field name="goals" label={q.goals.label} hint={q.goals.hint} type="textarea" required maxlength={2000} />
+            <ChoiceGroup name="tools" legend={q.goals.tools} cols={{ sm: 2, md: 4 }}>
+              {
+                Object.entries(q.tools).map(([value, label]) => (
+                  <Choice type="checkbox" name="tools" value={value} label={label} />
+                ))
+              }
+            </ChoiceGroup>
+            <div class="qstep__nav needs-js">
+              <button type="button" class="btn btn--secondary btn--lg" data-back>{formUi.back}</button>
+              <button type="button" class="btn btn--primary btn--lg" data-next>
+                {formUi.next}
+                <Icon name="arrow-right" size={20} />
+              </button>
+            </div>
+          </div>
+        </fieldset>
+
+        <!-- Step 3: budget and timing -->
+        <fieldset class="qstep" data-qstep="3">
+          <legend class="qstep__legend">
+            <h2 class="t-h3 qstep__title" tabindex="-1" data-step-title>{steps[2]}</h2>
+          </legend>
+          <div class="qstep__body">
+            <fieldset class="cgroup" data-field="budget" id="g-budget" aria-describedby="g-budget-hint g-budget-error">
+              <legend class="cgroup__legend">{q.budget.budgetLegend}</legend>
+              <p class="field__hint" id="g-budget-hint">{q.budget.hint}</p>
+              <CurrencyNote class="bands__note" />
+              <p class="field__error" id="g-budget-error" data-error>
+                <Icon name="alert-circle" size={20} />
+                <span data-error-text></span>
+              </p>
+              {
+                (["INR", "USD"] as const).map((cur) => (
+                  <div class="cgroup__grid cgroup__grid--sm2 cgroup__grid--md3 bands" data-bands={cur}>
+                    {bands[cur].map((b) => (
+                      <Choice
+                        name="budget"
+                        value={b.value}
+                        label={b.label}
+                        id={`c-budget-${cur}-${b.value}`}
+                        class="choice--money"
+                        required
+                      />
+                    ))}
+                  </div>
+                ))
+              }
+              <input type="hidden" name="currency" value="INR" data-currency-field />
+            </fieldset>
+            <ChoiceGroup name="timeline" legend={q.budget.timelineLegend} cols={{ sm: 2, md: 4 }}>
+              {
+                Object.entries(q.timelines).map(([value, label]) => (
+                  <Choice name="timeline" value={value} label={label} required />
+                ))
+              }
+            </ChoiceGroup>
+            <div class="qstep__nav needs-js">
+              <button type="button" class="btn btn--secondary btn--lg" data-back>{formUi.back}</button>
+              <button type="button" class="btn btn--primary btn--lg" data-next>
+                {formUi.next}
+                <Icon name="arrow-right" size={20} />
+              </button>
+            </div>
+          </div>
+        </fieldset>
+
+        <!-- Step 4: contact details, consent and send -->
+        <fieldset class="qstep" data-qstep="4">
+          <legend class="qstep__legend">
+            <h2 class="t-h3 qstep__title" tabindex="-1" data-step-title>{steps[3]}</h2>
+          </legend>
+          <div class="qstep__body">
+            <div class="form-row">
+              <Field name="name" label={q.contact.name} autocomplete="name" required maxlength={100} id="q-name" />
+              <Field
+                name="email"
+                label={q.contact.email}
+                type="email"
+                autocomplete="email"
+                inputmode="email"
+                required
+                maxlength={254}
+                id="q-email"
+              />
+              <Field
+                name="company"
+                label={q.contact.company}
+                autocomplete="organization"
+                maxlength={120}
+                id="q-company"
+              />
+              <Field
+                name="country"
+                label={q.contact.country}
+                type="select"
+                autocomplete="country"
+                required
+                options={countryOptions}
+                id="q-country"
+              />
+              <Field
+                name="phone"
+                label={q.contact.phone}
+                type="tel"
+                autocomplete="tel"
+                inputmode="tel"
+                maxlength={30}
+                id="q-phone"
+              />
+            </div>
+            <ChoiceGroup name="callWindow" legend={q.contact.callWindow} cols={{ sm: 2, md: 2 }}>
+              {
+                callWindows().map((w) => (
+                  <Choice
+                    name="callWindow"
+                    value={w.value}
+                    label={w.value}
+                    sub=""
+                    data={w.from === undefined ? {} : { from: w.from, to: w.to ?? 0 }}
+                  />
+                ))
+              }
+            </ChoiceGroup>
+            <FormEnd submit={q.submit} consent={q.consent} id="quote">
+              <button type="button" class="btn btn--secondary btn--lg needs-js" data-back slot="back">
+                {formUi.back}
+              </button>
+            </FormEnd>
+          </div>
+        </fieldset>
+
+        <input type="hidden" name="type" value="" data-carry="type" />
+        <input type="hidden" name="plan" value="" data-carry="plan" />
+        <SpamGuard action="quote" />
+      </form>
+    </div>
+  </section>
+</BaseLayout>
+
+<script>
+  import "../scripts/forms";
+</script>
+
+<style>
+  .quote {
+    display: grid;
+    gap: var(--space-10);
+  }
+
+  @media (min-width: 64rem) {
+    .quote {
+      grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
+      column-gap: var(--space-8);
+      align-items: start;
+    }
+  }
+
+  /* ---------- The step rail (1024 px and up): the four steps, the current one under the T bar ---------- */
+
+  .rail {
+    display: none;
+  }
+
+  @media (min-width: 64rem) {
+    :root.js .rail {
+      position: sticky;
+      inset-block-start: calc(var(--header-h) + var(--space-8));
+      display: grid;
+      border-block-start: 2px solid var(--color-border);
+    }
+  }
+
+  .rail__item {
+    position: relative;
+    display: grid;
+    grid-template-columns: var(--space-10) minmax(0, 1fr);
+    align-items: baseline;
+    padding-block: var(--space-4);
+    border-block-end: 1px solid var(--color-border);
+    color: var(--color-text-muted);
+  }
+
+  .rail__item::before {
+    content: "";
+    position: absolute;
+    inset-block-start: -2px;
+    inset-inline-start: 0;
+    inline-size: 100%;
+    block-size: 2px;
+    background: var(--color-text-accent);
+    clip-path: polygon(0 0, 100% 0, calc(100% - 2px) 100%, 0 100%);
+    transform: scaleX(0);
+    transform-origin: left center;
+    transition: transform var(--duration-slow) var(--ease-standard);
+  }
+
+  .rail__item[aria-current="step"]::before {
+    transform: none;
+  }
+
+  .rail__item[aria-current="step"] {
+    color: var(--color-text);
+    font-weight: 600;
+  }
+
+  .rail__num {
+    font-family: var(--font-display);
+    font-stretch: var(--font-display--stretch);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .rail__item :global(.rail__check) {
+    display: none;
+    color: var(--color-text-accent);
+    translate: 0 3px;
+  }
+
+  .rail__item.is-done .rail__digit {
+    display: none;
+  }
+
+  .rail__item.is-done :global(.rail__check) {
+    display: block;
+  }
+
+  /* ---------- The phone and tablet progress line and bar ---------- */
+
+  .qprogress {
+    display: grid;
+    gap: var(--space-3);
+  }
+
+  @media (min-width: 64rem) {
+    .qprogress {
+      display: none;
+    }
+  }
+
+  :root:not(.js) .qprogress {
+    display: none;
+  }
+
+  .qprogress__text {
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+    color: var(--color-text-muted);
+  }
+
+  .qprogress__text [data-progress-n] {
+    font-weight: 600;
+    color: var(--color-text);
+  }
+
+  .qbar {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: var(--space-1);
+  }
+
+  .qbar__seg {
+    block-size: 4px;
+    background: var(--color-border);
+  }
+
+  .qbar__seg:last-child {
+    clip-path: polygon(0 0, 100% 0, calc(100% - 4px) 100%, 0 100%);
+  }
+
+  [data-step="1"] .qbar__seg:nth-child(-n + 1),
+  [data-step="2"] .qbar__seg:nth-child(-n + 2),
+  [data-step="3"] .qbar__seg:nth-child(-n + 3),
+  [data-step="4"] .qbar__seg:nth-child(-n + 4) {
+    background: var(--color-text-accent);
+  }
+
+  /* ---------- Steps ---------- */
+
+  .qstep {
+    min-inline-size: 0;
+  }
+
+  /* With JavaScript, one step at a time (the script sets `hidden`; before it runs, only the first). */
+  :root.js .qstep + .qstep {
+    display: none;
+  }
+
+  :root.js [data-ready] .qstep {
+    display: block;
+  }
+
+  :root.js [data-ready] .qstep[hidden] {
+    display: none;
+  }
+
+  /* Without JavaScript the steps follow each other as one long form, ruled apart. */
+  :root:not(.js) .qstep + .qstep {
+    padding-block-start: var(--space-10);
+    border-block-start: 1px solid var(--color-border);
+  }
+
+  .qstep__legend {
+    padding: 0;
+    margin-block-end: var(--space-6);
+  }
+
+  .qstep__title {
+    max-inline-size: var(--container-heading);
+  }
+
+  .qstep__title:focus {
+    outline: none;
+  }
+
+  .qstep__body {
+    display: grid;
+    gap: var(--space-8);
+  }
+
+  .qstep__body > .field__hint {
+    margin-block-start: calc(-1 * var(--space-6));
+  }
+
+  .qstep__nav {
+    display: flex;
+    flex-wrap: wrap-reverse;
+    gap: var(--space-3);
+    padding-block-start: var(--space-8);
+    border-block-start: 2px solid var(--color-text);
+  }
+
+  .qstep__nav [data-next] {
+    margin-inline-start: auto;
+  }
+
+  @media (max-width: 29.99rem) {
+    .qstep__nav .btn {
+      flex: 1 1 auto;
+    }
+  }
+
+  /* The service groups: each group's name and intro on one line, ruled above. */
+  .sgroup {
+    padding-block-start: var(--space-4);
+    border-block-start: 1px solid var(--color-border);
+  }
+
+  .sgroup__legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 var(--space-3);
+    align-items: baseline;
+  }
+
+  .sgroup__name {
+    font-weight: 600;
+    color: var(--color-text);
+  }
+
+  .sgroup__intro {
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+    font-weight: 400;
+    color: var(--color-text-muted);
+  }
+
+  .sgroup--unsure {
+    padding-block-start: var(--space-4);
+    border-block-start: 1px solid var(--color-border);
+  }
+
+  /* The budget bands follow <html data-currency> (INR until the visitor or /api/geo says USD). */
+  :root[data-currency="usd"] [data-bands="INR"],
+  :root:not([data-currency="usd"]) [data-bands="USD"] {
+    display: none;
+  }
+
+  :global(.bands__note) {
+    margin-block-start: calc(-1 * var(--space-2));
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .rail__item::before {
+      transition: none;
+    }
+  }
+</style>

@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@techaust/core": "workspace:*",
+    "@techaust/ui": "workspace:*",
     "aws4fetch": "1.0.20"
   }
 }
