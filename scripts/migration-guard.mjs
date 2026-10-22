@@ -57,7 +57,9 @@ export function findRebuildViolations(migrations, allow = []) {
       for (const m of s.matchAll(new RegExp(`\\bDROP\\s+TABLE\\s+(?:IF\\s+EXISTS\\s+)?${NAME}`, "gi"))) {
         rebuilt.add(normal(m[1]));
       }
-      for (const m of s.matchAll(new RegExp(`\\bCREATE\\s+TABLE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?${NAME}`, "gi"))) {
+      for (const m of s.matchAll(
+        new RegExp(`\\bCREATE\\s+TABLE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?${NAME}`, "gi"),
+      )) {
         if (m[1].startsWith("__new_")) rebuilt.add(normal(m[1]));
       }
     }
