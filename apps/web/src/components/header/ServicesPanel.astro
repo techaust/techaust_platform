@@ -1,0 +1,43 @@
+---
+// The Services menu's content (07 §2.1, grouped, with the group intros of 07 §5.1). Used by the desktop disclosure
+// and by the menus preview. Styles: styles/header.css (global, because the header's script rebuilds its triggers).
+import { shell } from "../../content/shell";
+import Icon from "../Icon.astro";
+
+interface Props {
+  current?: string | undefined;
+  idPrefix?: string;
+}
+
+const { current, idPrefix = "nav" } = Astro.props;
+---
+
+<div class="svc-menu">
+  <div class="svc-menu__groups">
+    {
+      shell.servicesMenu.map((group) => (
+        <div class="svc-menu__group" role="group" aria-labelledby={`${idPrefix}-grp-${group.name.toLowerCase()}`}>
+          <p class="svc-menu__name" id={`${idPrefix}-grp-${group.name.toLowerCase()}`}>
+            {group.name}
+          </p>
+          <p class="svc-menu__intro">{group.intro}</p>
+          <ul role="list" class="svc-menu__links">
+            {group.links.map((link) => (
+              <li>
+                <a href={link.href} aria-current={current === link.href ? "page" : undefined}>
+                  {link.label}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))
+    }
+  </div>
+  <div class="svc-menu__foot">
+    <a class="btn btn--text" href={shell.allServices.href}>
+      {shell.allServices.label}
+      <Icon name="arrow-right" size={20} />
+    </a>
+  </div>
+</div>

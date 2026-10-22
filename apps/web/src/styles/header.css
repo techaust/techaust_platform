@@ -1,0 +1,502 @@
+/* SiteHeader, its two menus and the mobile menu (components/SiteHeader.astro, components/header/*). Global rather
+   than scoped: the header's script rebuilds the <summary> triggers as <button>s and moves the mobile menu into a
+   <dialog>, and those new elements must keep their styles. Tokens only. Full nav from 1280 px (xl: at 1024 px the six items, the toggles and the CTA need ~1,150 px and the bar has ~950);
+   below that, the logo, the CTA (from 768 px) and "Menu". */
+
+.scroll-sentinel {
+  position: absolute;
+  inset-block-start: 0;
+  inline-size: 1px;
+  block-size: 1px;
+  pointer-events: none;
+}
+
+/* ---------- The bar ---------- */
+
+.site-header {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 50;
+  background: var(--color-bg);
+  border-block-end: 1px solid transparent;
+  transition:
+    background-color var(--duration-base) var(--ease-standard),
+    border-color var(--duration-base) var(--ease-standard);
+}
+
+/* Scrolled: the surface colour and a hairline, so the bar reads as a layer above the page (docs/06 §1.7). */
+.site-header[data-scrolled],
+:root:not(.js) .site-header {
+  background: var(--color-surface);
+  border-block-end-color: var(--color-border);
+}
+
+.site-header--specimen {
+  position: relative;
+  z-index: 5;
+}
+
+.site-header__bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  block-size: var(--header-h);
+  max-inline-size: var(--container-page);
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+.primary-nav {
+  display: none;
+}
+
+.site-header__tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-inline-start: auto;
+}
+
+.site-header__toggles {
+  display: none;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* Doubled class: wins over .btn whatever order the bundles load in. */
+.site-header__cta.site-header__cta {
+  display: none;
+}
+
+@media (min-width: 48rem) {
+  .site-header__cta.site-header__cta {
+    display: inline-flex;
+  }
+}
+
+@media (min-width: 80rem) {
+  .primary-nav {
+    display: block;
+    min-inline-size: 0;
+  }
+
+  .site-header__toggles {
+    display: flex;
+  }
+
+  .site-header .mobile-menu,
+  .site-header .menu-trigger {
+    display: none;
+  }
+}
+
+/* ---------- Primary nav ---------- */
+
+.primary-nav__list {
+  display: flex;
+  align-items: center;
+}
+
+.primary-nav__item {
+  position: relative;
+}
+
+/* The Services panel spans the bar, so its item doesn't position it. */
+.primary-nav__item--wide {
+  position: static;
+}
+
+.nav-link {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-block-size: var(--target-min);
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--color-text);
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+  list-style: none;
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-standard);
+}
+
+.nav-link::-webkit-details-marker {
+  display: none;
+}
+
+.nav-link:hover {
+  color: var(--color-link-hover);
+}
+
+.nav-trigger .chev {
+  color: var(--color-text-muted);
+  transition: rotate var(--duration-base) var(--ease-standard);
+}
+
+.nav-trigger[aria-expanded="true"],
+details[open] > .nav-trigger {
+  color: var(--color-text-accent);
+}
+
+.nav-trigger[aria-expanded="true"] .chev,
+details[open] > .nav-trigger .chev {
+  rotate: 180deg;
+  color: currentColor;
+}
+
+/* The current page: a short bar under the label with its end cut at 45°, the T bar of the mark in miniature
+   (docs/06 §4.3, "the corner of the active-nav indicator"). */
+.nav-link[aria-current="page"]::after,
+.nav-link.is-current::after {
+  content: "";
+  position: absolute;
+  inset-inline: var(--space-3);
+  inset-block-end: var(--space-1);
+  block-size: 3px;
+  background: var(--color-accent-decor);
+  clip-path: polygon(0 0, 100% 0, calc(100% - 3px) 100%, 0 100%);
+}
+
+/* ---------- Menu panels ---------- */
+
+.nav-panel {
+  position: absolute;
+  z-index: 10;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-2);
+  transition:
+    opacity var(--duration-base) var(--ease-standard),
+    translate var(--duration-base) var(--ease-standard);
+}
+
+@starting-style {
+  .nav-panel {
+    opacity: 0;
+    translate: 0 calc(-1 * var(--space-1));
+  }
+}
+
+.nav-panel[hidden] {
+  display: none;
+}
+
+.nav-panel--services {
+  inset-block-start: calc(100% + var(--space-2));
+  inset-inline: var(--gutter);
+}
+
+/* Same top edge as the Services panel: the item sits centred in the bar. */
+.nav-panel--industries {
+  inset-block-start: calc(100% + (var(--header-h) - var(--target-min)) / 2 + var(--space-2));
+  inset-inline-start: 0;
+  inline-size: 24rem;
+}
+
+/* Five columns; name, intro and links share rows across the columns (subgrid), so the hairlines line up even when
+   an intro wraps. */
+.svc-menu__groups {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-rows: auto auto 1fr;
+  column-gap: var(--space-8);
+  padding: var(--space-8);
+}
+
+.svc-menu__group {
+  display: grid;
+  grid-row: span 3;
+  grid-template-rows: subgrid;
+  align-content: start;
+}
+
+.svc-menu__name {
+  font-family: var(--font-display);
+  font-stretch: var(--font-display--stretch);
+  font-size: var(--text-h4);
+  line-height: var(--text-h4--line-height);
+  font-weight: var(--text-h2--font-weight);
+}
+
+.svc-menu__intro {
+  margin-block-start: var(--space-1);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  color: var(--color-text-muted);
+}
+
+.svc-menu__links {
+  margin-block-start: var(--space-4);
+  padding-block-start: var(--space-2);
+  border-block-start: 1px solid var(--color-border);
+}
+
+.svc-menu__links a,
+.ind-menu a {
+  display: flex;
+  align-items: center;
+  min-block-size: var(--target-min);
+  padding-block: var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  line-height: var(--text-sm--line-height);
+  text-decoration: none;
+  text-wrap: pretty;
+}
+
+.svc-menu__links a:hover,
+.ind-menu a:hover {
+  color: var(--color-link-hover);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.22em;
+}
+
+.svc-menu__links a[aria-current="page"],
+.ind-menu a[aria-current="page"],
+.mnav a[aria-current="page"] {
+  color: var(--color-text-accent);
+  font-weight: 600;
+}
+
+.svc-menu__foot {
+  display: flex;
+  align-items: center;
+  padding: var(--space-1) var(--space-8);
+  border-block-start: 1px solid var(--color-border);
+  border-end-start-radius: var(--radius-lg);
+  border-end-end-radius: var(--radius-lg);
+  background: var(--color-surface-alt);
+}
+
+.ind-menu {
+  padding: var(--space-2) var(--space-6);
+}
+
+.ind-menu li + li {
+  border-block-start: 1px solid var(--color-border);
+}
+
+.ind-menu a {
+  justify-content: space-between;
+  gap: var(--space-4);
+  min-block-size: var(--space-16);
+  font-weight: 500;
+}
+
+.ind-menu .icon {
+  color: var(--color-text-muted);
+  transition: translate var(--duration-fast) var(--ease-standard);
+}
+
+.ind-menu a:hover .icon {
+  color: currentColor;
+  translate: var(--space-1) 0;
+}
+
+/* ---------- "Menu" and "Close" ---------- */
+
+.menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-block-size: var(--target-min);
+  padding: 0 var(--space-3) 0 var(--space-4);
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text);
+  font-weight: 500;
+  list-style: none;
+  cursor: pointer;
+}
+
+.menu-trigger::-webkit-details-marker {
+  display: none;
+}
+
+.menu-trigger:hover {
+  background: var(--color-fill-subtle);
+}
+
+/* Without JavaScript the menu opens under the bar, in the page's colours. */
+.mobile-menu[open] > .mobile-panel {
+  position: fixed;
+  inset: var(--header-h) 0 0;
+  z-index: 40;
+  overflow-y: auto;
+  background: var(--color-bg);
+  border-block-start: 1px solid var(--color-border);
+}
+
+/* With JavaScript: a full-screen modal dialog with its own bar (the same height and logo position as the header). */
+.mobile-dialog {
+  inline-size: 100%;
+  block-size: 100%;
+  max-inline-size: none;
+  max-block-size: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.mobile-dialog[open] {
+  transition: opacity var(--duration-base) var(--ease-standard);
+}
+
+@starting-style {
+  .mobile-dialog[open] {
+    opacity: 0;
+  }
+}
+
+.mobile-dialog::backdrop {
+  background: var(--color-bg);
+}
+
+.mnav {
+  display: flex;
+  flex-direction: column;
+  min-block-size: 100%;
+}
+
+.mnav__top {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  block-size: var(--header-h);
+  padding-inline: var(--gutter);
+  border-block-end: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+/* Without JavaScript the header's own bar stays above the menu, so the menu's bar isn't needed. */
+.mobile-menu .mnav__top {
+  display: none;
+}
+
+.mnav__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  inline-size: 100%;
+  max-inline-size: var(--container-page);
+  margin-inline: auto;
+  padding: var(--space-2) var(--gutter) var(--space-8);
+}
+
+.mnav__nav > ul > li {
+  border-block-end: 1px solid var(--color-border);
+}
+
+.mnav__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  min-block-size: var(--space-16);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-display);
+  font-stretch: var(--font-display--stretch);
+  font-size: var(--text-h3);
+  line-height: var(--text-h3--line-height);
+  font-weight: var(--text-h2--font-weight);
+  color: var(--color-text);
+  text-decoration: none;
+  list-style: none;
+  cursor: pointer;
+}
+
+.mnav__item::-webkit-details-marker {
+  display: none;
+}
+
+.mnav__item:hover,
+.mnav__item.is-current,
+.mnav .mnav__item[aria-current="page"] {
+  color: var(--color-text-accent);
+}
+
+.mnav__chev {
+  color: var(--color-text-muted);
+  transition: rotate var(--duration-base) var(--ease-standard);
+}
+
+.mnav__section[open] > summary .mnav__chev {
+  rotate: 180deg;
+}
+
+.mnav__sub {
+  display: grid;
+  gap: var(--space-5);
+  padding-block-end: var(--space-6);
+}
+
+@media (min-width: 30rem) {
+  .mnav__sub:has(.mnav__group) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: var(--space-8);
+  }
+
+  .mnav__all {
+    grid-column: 1 / -1;
+  }
+}
+
+.mnav__group-name {
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.mnav__sub a:not(.btn) {
+  display: flex;
+  align-items: center;
+  min-block-size: var(--target-min);
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.mnav__sub a:not(.btn):hover {
+  color: var(--color-link-hover);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.22em;
+}
+
+.mnav__all {
+  justify-self: start;
+}
+
+.mnav__tools {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.mnav__cta {
+  margin-block-start: auto;
+}
+
+@media (forced-colors: active) {
+  .nav-panel,
+  .mobile-dialog {
+    border: 1px solid CanvasText;
+  }
+}

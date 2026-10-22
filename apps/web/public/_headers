@@ -1,9 +1,19 @@
-# Security headers for every static asset (docs/08-security-compliance.md §3.1). Tightened in M2.1.
+# Security headers on every static response (WEB-G-12; docs/08-security-compliance.md §3.1). /api/* answers come from
+# the Worker, which sets its own (src/worker.ts).
+# The one inline script (the theme/currency head script in src/layouts/BaseLayout.astro) is allowed by its sha256 hash.
+# If you change that script, `pnpm --filter @techaust/web build` fails and prints the new hash: copy it here.
+# Cloudflare Insights (cookieless Web Analytics) and Turnstile (forms, M2.4) are allowed; Google Tag Manager / GA is
+# NOT (no GA4 at launch, owner 2026-10-22): add it here in the same change that sets the GA4 ID.
+# X-Robots-Tag keeps staging out of search; it MUST be removed for production (Phase 7, with the M2.5 robots work).
 /*
   Strict-Transport-Security: max-age=31536000; includeSubDomains
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
-  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
   Cross-Origin-Opener-Policy: same-origin
-  Content-Security-Policy: default-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-wDRHJled15aR6MzW5WblEL2Mygm3aBO3lPaRsez3XCY=' https://static.cloudflareinsights.com https://challenges.cloudflare.com; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://cloudflareinsights.com; frame-src https://challenges.cloudflare.com; manifest-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'
   X-Robots-Tag: noindex
+
+# Astro writes content-hashed file names, so these can be cached for a year.
+/_astro/*
+  Cache-Control: public, max-age=31536000, immutable

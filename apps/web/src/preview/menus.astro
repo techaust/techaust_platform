@@ -1,0 +1,74 @@
+---
+// M2.1 preview (noindex): the Services and Industries menus and the mobile menu, live in the header (Services
+// starts open) and as static specimens below, so every state can be seen at any width.
+import IndustriesPanel from "../components/header/IndustriesPanel.astro";
+import MobileNav from "../components/header/MobileNav.astro";
+import ServicesPanel from "../components/header/ServicesPanel.astro";
+import Notice from "../components/Notice.astro";
+import BaseLayout from "../layouts/BaseLayout.astro";
+import "../styles/preview.css";
+---
+
+<BaseLayout title="Preview: menus | TecHaust Technologies" noindex placeholders openMenu="services">
+  <div class="container pv-intro">
+    <Notice variant="illustrative" label="Preview.">
+      The Services menu starts open in the header above (from 1280 px wide; below that, “Menu” opens the full-screen
+      menu). Click Services, Industries or Menu to try them; Esc closes. The same menus are shown below as specimens.
+    </Notice>
+  </div>
+
+  <div class="container">
+    <section class="pv-section" aria-labelledby="pv-services">
+      <h1 class="t-h2" id="pv-services">Menus</h1>
+      <p class="pv-note">
+        Services, grouped as in 07 §2.1 with each group’s one-line intro from the services hub (07 §5.1).
+      </p>
+      <div class="pv-frame pv-frame--flush">
+        <span class="pv-frame__label">Services menu (desktop, ≥ 1280 px)</span>
+        <div class="pv-frame__body pv-scroll">
+          <div class="pv-panel nav-panel" style="position: static; min-width: 60rem;">
+            <ServicesPanel idPrefix="pv-svc" />
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="pv-section" aria-labelledby="pv-ind">
+      <h2 class="t-h4" id="pv-ind">Industries menu (desktop)</h2>
+      <p class="pv-note">Three industries (07 §2.1).</p>
+      <div class="pv-frame">
+        <span class="pv-frame__label">Industries menu</span>
+        <div class="pv-frame__body">
+          <div class="nav-panel" style="position: static; max-width: 24rem;">
+            <IndustriesPanel />
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="pv-section" aria-labelledby="pv-mobile">
+      <h2 class="t-h4" id="pv-mobile">Menu on phones and tablets (below 1280 px)</h2>
+      <p class="pv-note">
+        Full screen, with its own bar; focus stays inside until it closes. Services is open here. Without JavaScript
+        the same menu opens under the header from a disclosure.
+      </p>
+      <div class="pv-frame pv-frame--flush pv-phone">
+        <span class="pv-frame__label">375 px wide</span>
+        <div class="pv-frame__body">
+          <MobileNav idPrefix="pv-m" openServices navLabel="Main (specimen)" />
+        </div>
+      </div>
+    </section>
+  </div>
+</BaseLayout>
+
+<style>
+  .pv-scroll {
+    overflow-x: auto;
+    padding: var(--space-6);
+  }
+
+  .pv-phone {
+    max-inline-size: calc(375px + 2px);
+  }
+</style>

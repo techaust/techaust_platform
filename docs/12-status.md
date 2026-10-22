@@ -20,21 +20,20 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
   - Owner: accept and move to M1.5; cold starts go into M1.5; the $5 plan is looked at again before real staff use.
 
 - **M1.5: staff auth (complete): approved 2026-10-21** ([PR #27](https://github.com/techaust/techaust_platform/pull/27), break-glass [PR #28](https://github.com/techaust/techaust_platform/pull/28); [runs/m1.5-staff-auth.md](runs/m1.5-staff-auth.md), [runs/m1.5-break-glass.md](runs/m1.5-break-glass.md)). Owner signed in on staging; benchmark run 4 met every target (login p99 5 ms, cold starts 3–7 ms; [cpu-baseline.md](runbooks/cpu-baseline.md)); break-glass = a one-time owner invite to a second address.
+- **M1.6: portal auth: approved 2026-10-22** ([PR #29](https://github.com/techaust/techaust_platform/pull/29); [runs/m1.6-portal-auth.md](runs/m1.6-portal-auth.md)). Magic-link sign-in with click-to-continue, client sessions, client scoping with route-driven tests, document tokens; security log = sign-ins + signed-in actions (owner). Owner's sample sign-in on staging passed; every request ≤ 10 ms CPU; cookies redacted in Workers Logs.
 
 ## In progress
-- **M1.6: portal auth**, Tier A, merged and on staging, **waiting for the owner's "approved"** ([PR #29](https://github.com/techaust/techaust_platform/pull/29); [runs/m1.6-portal-auth.md](runs/m1.6-portal-auth.md)). Owner's answers 2026-10-21: portal security log = sign-ins + signed-in actions (not unauthenticated refusals); labelled sample organisations on staging/local; one link per organisation. `PORTAL_KEY_PEPPER` set on staging by the owner.
-  - Builder → analyst GO WITH CHANGES (sign-out write flood, route-driven scoping proof, `changes() = 1` proof, console watch; all fixed) → designer (sign-in, callback with click-to-continue, interim home) → reviewer **APPROVE** (one medium and one low, both fixed by the lead).
-  - Tests: portal 401, admin 411, auth 94, db 44, core 279; portal Worker 55 KB.
+- **M2.1: site shell**, Tier C ([PR #31](https://github.com/techaust/techaust_platform/pull/31); [runs/m2.1-site-shell.md](runs/m2.1-site-shell.md)). Owner approved the design preview 2026-10-22 (full nav from 1,280 px, logo + CTA + Menu below; CTA to Contact until the quote form; ink footer); no GA4 at launch. Designer (preview + 404, favicon, dev-only previews) → builder (`/api/geo`, `_headers` CSP with hashed head script, build checks for GSTIN / `@techaustsocial` / founder name in the footer / GA / price literals) → reviewer **APPROVE** (no CSP violations; four medium findings, three fixed by the lead, one for M2.2).
 
 ## Next
-1. Done 2026-10-22: staging deploy, sample organisations, the owner's sign-in check ("everything working"), every portal request ≤ 10 ms CPU (verify 8 ms cold), cookies redacted in Workers Logs.
-2. Lead: the M1.5 staging lockout smoke (unknown email, 11 wrong passwords → 429; needs a run through Access) and the doc fixes listed in both run files ("Docs that disagree").
-3. On the owner's "approved": M2.1 site shell (design preview first, docs/14 §4; needs the GA4 decision).
+1. M2.1 merges → staging; the owner looks at the shell on staging (any page shows the 404 inside the shell until M2.2) and approves.
+2. Lead: the M1.5 staging lockout smoke and the doc fixes listed in the M1.5/M1.6 run files (both need little; the smoke needs a run through Access).
+3. On approval: M2.2 home + services (design preview of the home page first; needs the claims-register confirmations in 07 §1.4).
 
-**Usage on 2026-10-21:** weekly 12 % after M1.5, the break-glass follow-up and M1.6; 5-hour peak 23 %; under the pace. Weekly reset **Mon 26 Oct, 15:30 IST**.
+**Usage on 2026-10-22:** weekly 16 %; under the pace. Weekly reset **Mon 26 Oct, 15:30 IST**.
 
 ## Waits on the owner
-- **M1.6:** checked on staging 2026-10-22; **say "approved"** to start M2.1 (site shell; a design preview comes first).
+- **M2.1 on staging:** look at the shell (header, menus, footer, toggles) and say "approved".
 - Optional: approve installing `@axe-core/playwright` for automated accessibility checks (planned for M2.1 tests).
 - **Time-sensitive compliance** ([08 §0](08-security-compliance.md); all VERIFY WITH CA):
   - **U-3 UPI MDR from 15 Oct 2026:** check the Razorpay pricing.
@@ -49,6 +48,7 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
 - **Model menu:** confirm Fable is no longer offered; keep **Opus 5.5, medium** for every conversation.
 
 ## Open follow-ups
+- **M2.1 follow-ups ([run file](runs/m2.1-site-shell.md) "Review"):** M2.2 currency-swap CLS (stack both amounts) + CLS E2E; remove `X-Robots-Tag: noindex` before production; legacy JS MIME types in the inline-script check; header-check host allow-list; WhatsApp `?text=` prefill; whole-unit money formatting in core.
 - **M1.6 follow-ups ([run file](runs/m1.6-portal-auth.md) "Follow-ups"):** admin `ipKey` → IPv6 /64; portal `env.production` `secrets.required` (Phase 7); M2.4 sender via `waitUntil`; M7.1 document-link audit throttling; merge the bundle guards; Phase 7 rate-limit/WAF rule on portal auth routes (owner's yes).
 - **M1.5 break-glass (low):** read back the audit row after a break-glass run; optional "still the only owner" SQL guard.
 - **M1.5 review (medium/low, [run file](runs/m1.5-staff-auth.md) "Review"):** M2 focus falls to `<body>` after a step-up over a confirm dialog; L1 parallel `/invite/totp` in one millisecond can add 10 unseen recovery codes (guard the insert); L2 Users success notice above the viewport; L3 enrolment timeout shows the generic error; `session.tsx` state set inside an updater.

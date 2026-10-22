@@ -1,0 +1,60 @@
+---
+// The primary lockup as the home link (docs/06 §1.4, §5.2). The generated files are used as they are (never redrawn,
+// never set in a live font): full colour on light, the on-dark version on dark. Both are in the HTML and the theme
+// shows one, so the logo follows the theme toggle as well as the OS. The size follows the width (styles below).
+import logoColor from "@techaust/ui/brand/logo-primary-color.svg?url";
+import logoDark from "@techaust/ui/brand/logo-primary-dark.svg?url";
+
+interface Props {
+  /** "auto" follows the theme; "on-dark" always uses the on-dark version (the ink footer). */
+  tone?: "auto" | "on-dark";
+  /** Render as the home link (default) or as a plain image group (specimens). */
+  link?: boolean;
+  class?: string;
+}
+
+const { tone = "auto", link = true, class: cls } = Astro.props;
+// The lockup's view box is 910.69 × 128; width and height attributes reserve the space before it loads.
+const w = 228;
+const h = 32;
+const Tag = link ? "a" : "span";
+---
+
+<Tag
+  class:list={["logo", cls]}
+  href={link ? "/" : undefined}
+  aria-label={link ? "TecHaust Technologies – home" : "TecHaust Technologies"}
+  role={link ? undefined : "img"}
+>
+  {
+    tone === "on-dark" ? (
+      <img src={logoDark} alt="" width={w} height={h} decoding="async" />
+    ) : (
+      <>
+        <img class="only-light" src={logoColor} alt="" width={w} height={h} decoding="async" />
+        <img class="only-dark" src={logoDark} alt="" width={w} height={h} decoding="async" />
+      </>
+    )
+  }
+</Tag>
+
+<style>
+  .logo {
+    display: inline-flex;
+    align-items: center;
+    /* Clear space of one mark stroke is inside the 44 px target (docs/06 §1.4). */
+    min-height: var(--target-min);
+    flex: none;
+  }
+
+  .logo img {
+    height: var(--logo-h, 1.5rem);
+    width: auto;
+  }
+
+  @media (min-width: 30rem) {
+    .logo img {
+      height: var(--logo-h-sm, 1.75rem);
+    }
+  }
+</style>

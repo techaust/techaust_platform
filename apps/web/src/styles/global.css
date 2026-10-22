@@ -1,0 +1,373 @@
+/* The website's base styles. Tokens only (@techaust/ui/tokens.css): every colour, size, space, radius, shadow and
+   duration below is a custom property generated from packages/ui/tokens/tokens.json. Plain CSS, no framework
+   (run file m2.1). Component styles live in their components; this file holds the reset, the type scale, the
+   container, buttons and the few shared utilities. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  /* Room for the sticky header when jumping to an anchor (the skip link, in-page links). */
+  scroll-padding-top: var(--space-20);
+  /* The header's height, read by the header and the mobile menu. */
+  --header-h: var(--space-16);
+}
+
+@media (min-width: 64rem) {
+  html {
+    --header-h: calc(var(--space-16) + var(--space-2));
+  }
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
+}
+
+main {
+  flex: 1 0 auto;
+}
+
+/* The full-screen mobile menu stops the page behind it from scrolling (it covers the page, so the scrollbar
+   going away shifts nothing visible). Smaller dialogs leave the page as it is, with no sideways jump. */
+html:has(dialog.mobile-dialog[open]) {
+  overflow: hidden;
+}
+
+::selection {
+  background: var(--color-selection);
+}
+
+img,
+svg {
+  display: block;
+  max-width: 100%;
+}
+
+h1,
+h2,
+h3,
+h4,
+p,
+ul,
+ol,
+figure,
+fieldset {
+  margin: 0;
+}
+
+/* Zero specificity, so a component's own padding always wins. */
+:where(ul[role="list"], ol[role="list"]) {
+  list-style: none;
+  padding: 0;
+}
+
+fieldset {
+  border: 0;
+  padding: 0;
+  min-inline-size: 0;
+}
+
+button,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+a {
+  color: var(--color-link);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.22em;
+}
+
+a:hover {
+  color: var(--color-link-hover);
+}
+
+/* docs/06 §5.1: the same visible focus on every interactive element, in both themes. */
+:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+[tabindex="-1"]:focus {
+  outline: none;
+}
+
+.icon {
+  flex: none;
+}
+
+/* Theme-dependent artwork (the two logo versions): the active theme shows one. */
+.only-dark {
+  display: none;
+}
+
+:root[data-theme="dark"] .only-light {
+  display: none;
+}
+
+:root[data-theme="dark"] .only-dark {
+  display: revert;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .only-light {
+    display: none;
+  }
+
+  :root:not([data-theme="light"]) .only-dark {
+    display: revert;
+  }
+}
+
+/* Controls that only work with JavaScript (the toggles) are hidden without it; the head script adds .js.
+   (0,3,0): beats the components' own display rules without !important. */
+:root:not(.js) .needs-js {
+  display: none;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---------- Layout ---------- */
+
+.container {
+  width: 100%;
+  max-width: var(--container-page);
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+/* ---------- Type scale (docs/06 §3.2) ---------- */
+
+.t-display-1,
+.t-display-2,
+.t-h2 {
+  font-family: var(--font-display);
+  font-stretch: var(--font-display--stretch);
+  max-width: var(--container-heading);
+  text-wrap: balance;
+}
+
+.t-display-1 {
+  font-size: var(--text-display-1);
+  line-height: var(--text-display-1--line-height);
+  font-weight: var(--text-display-1--font-weight);
+}
+
+.t-display-2 {
+  font-size: var(--text-display-2);
+  line-height: var(--text-display-2--line-height);
+  font-weight: var(--text-display-2--font-weight);
+}
+
+.t-h2 {
+  font-size: var(--text-h2);
+  line-height: var(--text-h2--line-height);
+  font-weight: var(--text-h2--font-weight);
+}
+
+.t-h3 {
+  font-size: var(--text-h3);
+  line-height: var(--text-h3--line-height);
+  font-weight: var(--text-h3--font-weight);
+  text-wrap: balance;
+}
+
+.t-h4 {
+  font-size: var(--text-h4);
+  line-height: var(--text-h4--line-height);
+  font-weight: var(--text-h4--font-weight);
+}
+
+.t-lede {
+  font-size: var(--text-lede);
+  line-height: var(--text-lede--line-height);
+  font-weight: var(--text-lede--font-weight);
+  color: var(--color-text-muted);
+  max-width: var(--container-lede);
+  text-wrap: pretty;
+}
+
+.t-body-lg {
+  font-size: var(--text-body-lg);
+  line-height: var(--text-body-lg--line-height);
+  max-width: var(--container-prose);
+  text-wrap: pretty;
+}
+
+.t-sm {
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.t-caption {
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  font-weight: var(--text-caption--font-weight);
+}
+
+.t-eyebrow {
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  font-weight: 600;
+  letter-spacing: var(--text-caption--letter-spacing);
+  text-transform: uppercase;
+  color: var(--color-text-accent);
+}
+
+.t-muted {
+  color: var(--color-text-muted);
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Buttons (docs/06 §5.2: primary, secondary, ghost, text-link; md 44 px, lg 52 px) ---------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--target-min);
+  padding: 0 var(--space-5);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  font-size: var(--text-body);
+  font-weight: 600;
+  line-height: 1.2;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.btn--lg {
+  min-height: calc(var(--space-12) + var(--space-1));
+  padding: 0 var(--space-6);
+}
+
+.btn--block {
+  width: 100%;
+}
+
+.btn--primary {
+  background: var(--color-btn-primary-bg);
+  color: var(--color-btn-primary-fg);
+}
+
+.btn--primary:hover,
+.btn--primary.is-hover {
+  background: var(--color-btn-primary-hover);
+  color: var(--color-btn-primary-fg);
+}
+
+.btn--secondary {
+  background: transparent;
+  border-color: var(--color-border-control);
+  color: var(--color-btn-secondary-fg);
+}
+
+.btn--secondary:hover,
+.btn--secondary.is-hover {
+  background: var(--color-fill-subtle);
+  border-color: var(--color-btn-secondary-fg);
+  color: var(--color-btn-secondary-fg);
+}
+
+.btn--ghost {
+  background: transparent;
+  color: var(--color-btn-secondary-fg);
+}
+
+.btn--ghost:hover,
+.btn--ghost.is-hover {
+  background: var(--color-fill-subtle);
+  color: var(--color-btn-secondary-fg);
+}
+
+.btn--text {
+  min-height: var(--target-min);
+  padding: 0;
+  border: 0;
+  color: var(--color-link);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.22em;
+}
+
+.btn--text:hover,
+.btn--text.is-hover {
+  color: var(--color-link-hover);
+}
+
+.btn--text .icon {
+  transition: translate var(--duration-fast) var(--ease-standard);
+}
+
+.btn--text:hover .icon,
+.btn--text.is-hover .icon {
+  translate: var(--space-1) 0;
+}
+
+.btn:active {
+  filter: brightness(0.96);
+}
+
+.btn.is-focus {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.btn:disabled,
+.btn[aria-disabled="true"] {
+  background: var(--color-fill-subtle);
+  border-color: var(--color-border);
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+  filter: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn--text:hover .icon,
+  .btn--text.is-hover .icon {
+    translate: none;
+  }
+}
+
+/* Windows high-contrast mode: keep every control's edge. */
+@media (forced-colors: active) {
+  .btn {
+    border-color: ButtonText;
+  }
+}

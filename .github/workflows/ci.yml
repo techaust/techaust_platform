@@ -38,6 +38,8 @@ jobs:
         run: pnpm typecheck
       - name: Public Worker binding guard
         run: node scripts/check-web-bindings.mjs
+      - name: Build (before the tests, which read the built site)
+        run: pnpm build
       - name: Tests (unit + Workers runtime)
         run: pnpm test
       - name: Migrations match the Drizzle schema
@@ -48,5 +50,3 @@ jobs:
             git status --porcelain packages/db/migrations
             exit 1
           fi
-      - name: Build
-        run: pnpm build

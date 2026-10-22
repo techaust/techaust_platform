@@ -1,16 +1,43 @@
 ---
+// 404 (07 §5.12, WEB-G-09: noindex). Served by Workers static assets for any unknown path (`not_found_handling:
+// "404-page"`), inside the full shell. The look is the approved preview specimen.
+import Icon from "../components/Icon.astro";
+import { shell } from "../content/shell";
+import BaseLayout from "../layouts/BaseLayout.astro";
+
+const nf = shell.notFound;
 ---
-<html lang="en-IN">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="robots" content="noindex" />
-    <title>Page not found | TecHaust Technologies</title>
-  </head>
-  <body>
-    <main>
-      <h1>We couldn't find that page</h1>
-      <p><a href="/">Go to the home page</a></p>
-    </main>
-  </body>
-</html>
+
+<BaseLayout title="Page not found | TecHaust Technologies" noindex current="">
+  <section class="container not-found" aria-labelledby="nf-title">
+    <h1 class="t-display-2" id="nf-title">{nf.title}</h1>
+    <p class="t-lede">{nf.text}</p>
+    <ul role="list" class="not-found__links">
+      {
+        nf.links.map((link) => (
+          <li>
+            <a class="btn btn--text" href={link.href}>
+              {link.label}
+              <Icon name="arrow-right" size={20} />
+            </a>
+          </li>
+        ))
+      }
+    </ul>
+  </section>
+</BaseLayout>
+
+<style>
+  .not-found {
+    display: grid;
+    gap: var(--space-5);
+    padding-block: var(--section-y);
+  }
+
+  .not-found__links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-8);
+    margin-block-start: var(--space-2);
+  }
+</style>
