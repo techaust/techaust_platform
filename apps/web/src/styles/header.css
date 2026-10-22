@@ -336,10 +336,6 @@ details[open] > .nav-trigger .chev {
   border-block-start: 1px solid var(--color-border);
 }
 
-.mobile-menu .mnav__top {
-  display: none;
-}
-
 /* With JavaScript: a full-screen modal dialog with its own bar (the same height and logo position as the header). */
 .mobile-dialog {
   inline-size: 100%;
@@ -389,6 +385,11 @@ details[open] > .nav-trigger .chev {
   background: var(--color-surface);
 }
 
+/* Without JavaScript the header's own bar stays above the menu, so the menu's bar isn't needed. */
+.mobile-menu .mnav__top {
+  display: none;
+}
+
 .mnav__body {
   flex: 1;
   display: flex;
@@ -432,12 +433,12 @@ details[open] > .nav-trigger .chev {
   color: var(--color-text-accent);
 }
 
-.mnav__item .chev {
+.mnav__chev {
   color: var(--color-text-muted);
   transition: rotate var(--duration-base) var(--ease-standard);
 }
 
-.mnav__section[open] > summary .chev {
+.mnav__section[open] > summary .mnav__chev {
   rotate: 180deg;
 }
 

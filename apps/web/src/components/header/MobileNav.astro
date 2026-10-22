@@ -38,7 +38,7 @@ const inIndustries = current?.startsWith("/industries") ?? false;
           <details class="mnav__section" open={openServices || undefined}>
             <summary class:list={["mnav__item", inServices && "is-current"]}>
               <span>{shell.nav.services}</span>
-              <Icon name="chevron-down" size={24} class="chev" />
+              <Icon name="chevron-down" size={24} class="mnav__chev" />
             </summary>
             <div class="mnav__sub">
               {
@@ -70,7 +70,7 @@ const inIndustries = current?.startsWith("/industries") ?? false;
           <details class="mnav__section">
             <summary class:list={["mnav__item", inIndustries && "is-current"]}>
               <span>{shell.nav.industries}</span>
-              <Icon name="chevron-down" size={24} class="chev" />
+              <Icon name="chevron-down" size={24} class="mnav__chev" />
             </summary>
             <div class="mnav__sub">
               <ul role="list">

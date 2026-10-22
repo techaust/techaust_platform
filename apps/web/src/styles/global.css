@@ -137,9 +137,10 @@ a:hover {
   }
 }
 
-/* Controls that only work with JavaScript (the toggles) are hidden without it; the head script adds .js. */
+/* Controls that only work with JavaScript (the toggles) are hidden without it; the head script adds .js.
+   (0,3,0): beats the components' own display rules without !important. */
 :root:not(.js) .needs-js {
-  display: none !important;
+  display: none;
 }
 
 .visually-hidden {
