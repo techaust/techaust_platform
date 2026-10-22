@@ -9,4 +9,6 @@ export default defineConfig({
   build: { format: "file" },
   // The dev toolbar overlays the page and would sit in every design screenshot.
   devToolbar: { enabled: false },
+  // Fonts, icons and logos stay files (cacheable, and allowed by the CSP's font-src/img-src 'self'), never data: URIs.
+  vite: { build: { assetsInlineLimit: 0 } },
 });

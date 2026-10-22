@@ -243,6 +243,7 @@ details[open] > .nav-trigger .chev {
   align-items: center;
   min-block-size: var(--target-min);
   padding-block: var(--space-2);
+  border-radius: var(--radius-sm);
   color: var(--color-text);
   line-height: var(--text-sm--line-height);
   text-decoration: none;
@@ -408,6 +409,7 @@ details[open] > .nav-trigger .chev {
   justify-content: space-between;
   gap: var(--space-4);
   min-block-size: var(--space-16);
+  border-radius: var(--radius-sm);
   font-family: var(--font-display);
   font-stretch: var(--font-display--stretch);
   font-size: var(--text-h3);
