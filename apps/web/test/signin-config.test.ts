@@ -1,7 +1,7 @@
 // M2.4b configuration of the admin and portal Workers [ADM-AUTH-06, POR-01, ADM-MAIL-01]. Runs in Node (it reads files).
 // The sign-in widget's keys and hosts, the email-queue producer in every environment that has a queue, and the build-time
 // site key (scripts/turnstile-site-key.mjs). Nothing here talks to Cloudflare.
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 // @ts-expect-error plain .mjs without types
 import * as guard from "../../../scripts/check-worker-config.mjs";
@@ -92,4 +92,27 @@ describe("the build-time site key (scripts/turnstile-site-key.mjs)", () => {
     expect(siteKeyOf({ vars: { TURNSTILE_SITE_KEY: "k" } }, undefined)).toBe("k");
     expect(siteKeyOf({}, undefined)).toBe("");
   });
+});
+
+describe("what the admin and portal Workers import (CPU budget: the Free plan's 10 ms)", () => {
+  for (const app of ["admin", "portal"] as const) {
+    const dir = new URL(`../../${app}/worker/`, import.meta.url);
+    const sources = readdirSync(dir)
+      .filter(
+        (f) => f.endsWith(".ts") && !f.endsWith(".test.ts") && !f.startsWith("test-") && f !== "fixtures.ts",
+      )
+      .map((f) => [f, readFileSync(new URL(f, dir), "utf8")] as const);
+
+    it(`${app}: no @techaust/email, and @techaust/core only as types (the zod schemas stay out of the bundle)`, () => {
+      expect(sources.length).toBeGreaterThan(3);
+      for (const [file, text] of sources) {
+        expect(text, `${app}/worker/${file}`).not.toMatch(/from\s+["']@techaust\/email/);
+        // a value import is `import …` that is not `import type …`
+        const valueImports = [
+          ...text.matchAll(/^import(?!\s+type\s)\s[^;]*?from\s+["']@techaust\/core["']/gm),
+        ];
+        expect(valueImports, `${app}/worker/${file} imports the core index as a value`).toEqual([]);
+      }
+    });
+  }
 });
