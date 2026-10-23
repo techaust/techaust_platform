@@ -43,7 +43,7 @@ const {
   canonical = cleanPath(Astro.url.pathname),
   ogImage,
   noindex = false,
-  current = Astro.url.pathname,
+  current = cleanPath(Astro.url.pathname),
   placeholders = false,
   consent = { banner: site.ga4Id ? "auto" : "off", analytics: Boolean(site.ga4Id) },
   openMenu,
