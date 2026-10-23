@@ -24,7 +24,7 @@ export const site = {
   /** Owner decision 2026-10-22: no GA4 at launch. Empty = no consent banner, preferences show necessary only. */
   ga4Id: "",
   /** OWNER: postal address for the legal pages (07-A `{{postal_address}}`). Empty = a labelled placeholder (never invented). */
-  postalAddress: "" as string,
+  postalAddress: "Pirozpur, Balurghat, Dakshin Dinajpur, West Bengal 733133" as string,
   /** OWNER: founder's headshot, a path under /brand or a built asset. Empty = the About page shows a placeholder. */
   founderPhoto: "" as string,
   /** OWNER: founder's short bio (About, 07 §5.7). Empty = placeholder. */

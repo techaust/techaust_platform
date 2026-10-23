@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 // @ts-expect-error plain .mjs without types
 import * as c from "../../../scripts/web-dist-checks.mjs";
-import { flags } from "../src/config/site";
+import { flags, site } from "../src/config/site";
 import { legal } from "../src/content/legal";
 import { legalPages } from "../src/content/legal-pages";
 import { linkableServiceCodes } from "../src/content/services";
@@ -246,8 +246,12 @@ describe("{{terms:…}} and {{postal_address}} tokens", () => {
     expect(() => parseTokens("{{terms:}}")).toThrow(/Unknown content token/);
   });
 
-  it("shows a labelled placeholder while the postal address is empty", () => {
-    expect(renderPlain("Write to {{postal_address}}.")).toBe(`Write to ${POSTAL_ADDRESS_PLACEHOLDER}.`);
+  it("renders the owner's postal address, or a labelled placeholder while it is empty", () => {
+    expect(renderPlain("Write to {{postal_address}}.")).toBe(
+      `Write to ${site.postalAddress || POSTAL_ADDRESS_PLACEHOLDER}.`,
+    );
+    // Every use adds ", India" after the token, so the address itself never ends with the country.
+    expect(site.postalAddress).not.toMatch(/India\s*$/);
     expect(POSTAL_ADDRESS_PLACEHOLDER).toMatch(/owner input pending/);
   });
 

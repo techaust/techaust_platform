@@ -42,7 +42,7 @@ export const contactPage = {
     call: "Prefer a call?",
     callLink: "Book a time",
     address: "Address",
-    postal: "{{postal_address}}",
+    postal: "{{postal_address}}, India",
   },
   consent,
 } as const;
