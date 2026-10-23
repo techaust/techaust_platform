@@ -1,6 +1,6 @@
 # 12: Status
 
-_Replaced (never appended) at the end of every session. Last updated: **2026-10-23, 04:00** (IST)._
+_Replaced (never appended) at the end of every session. Last updated: **2026-10-23, 05:55** (IST)._
 
 ## Done
 - **Phases 1–5:** approved 2026-10-06 ([09-roadmap.md](09-roadmap.md)).
@@ -20,16 +20,16 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
   - web Worker form endpoints (Origin, size, honeypot, fill time, rate limit, Turnstile, shared schemas) → leads queue → jobs Worker (exact per-address limits, lead + consent receipt in one batch) → email queue → SES; dead letters alert the owner with the full lead
   - the owner's staging setup is done ([runbooks/ses-and-turnstile.md](runbooks/ses-and-turnstile.md)): SES domain and DNS (already in place), `admin@techaust.com` verified, send-only IAM user, Turnstile widget, four secrets, the `/brand/*` Access bypass for email logos
   - builder → designer → review SEND BACK (1 high) → fixes → re-check APPROVE (1 medium, fixed by the lead); 2,134 tests green; owner's test: two leads stored, all four emails arrived
+- **CPU tuning: done 2026-10-23** ([PR #53](https://github.com/techaust/techaust_platform/pull/53), [#55](https://github.com/techaust/techaust_platform/pull/55); [runs/cpu-tuning.md](runs/cpu-tuning.md), [runs/cpu-tuning-email.md](runs/cpu-tuning-email.md)): namespace zod imports (web and jobs bundles 2.5–3× smaller, guard test), SES signing key shared per isolate, start-up warm-ups (schemas, labels, templates, SES signing without `Request`/`AbortSignal`, which workerd refuses at start-up). Staging: form posts 2–4 ms, leads 3–4 ms, emails 2–5 ms; the first lead after a deploy 9 ms, **accepted and watched by the owner** (re-read at M2.4b's staging test; at 10 ms remove the SES warm-up or propose Workers Paid).
 - **Record:** CLAUDE.md now documents the forms, leads and email pipeline; and the M2.3 code (content, legal versioning, collections, link checker, readiness check) and the agent-branch and clean-up practice; [05](05-architecture.md) CI and deploy-prod rows updated.
 
 ## In progress
-- Nothing. The M2.4 approval PR records today; it merges itself on green.
+- Nothing. CPU tuning is done (below); its result PR #56 merges itself on green.
 
 ## Next
-1. **CPU tuning (owner-approved follow-up, Tier B):** the form post (6–10 ms) and the email consumer (up to 14 ms) are above the 7 ms target and at or over the Free plan's 10 ms on cold starts. Profile with `cloudflare:workers-profiling`; likely lazy-load zod and the email templates, trim the web bundle (141 KB gzipped). Re-measure on staging.
-2. **M2.4b** (Tier A): portal magic-link email from `no-reply@`, staff security emails (login alert, lockout, 2FA change), Turnstile on the admin and portal sign-in forms.
-3. **M2.5** (SEO, performance, accessibility pass), which completes the public website.
-4. Lead: the M1.5 staging lockout smoke (needs a run through Access).
+1. **M2.4b** (Tier A, next conversation: "continue"; the analyst drafts the brief first): portal magic-link email from `no-reply@`, staff security emails (login alert, lockout, 2FA change), Turnstile on the admin and portal sign-in forms.
+2. **M2.5** (SEO, performance, accessibility pass), which completes the public website.
+3. Lead: the M1.5 staging lockout smoke (needs a run through Access).
 
 **Usage now:** weekly 30 %, 5-hour 41 %; well under the pace (≈ 49 %). Weekly reset **Mon 26 Oct, 15:30 IST**. Model audit: all M2.4 runs within the plan.
 
