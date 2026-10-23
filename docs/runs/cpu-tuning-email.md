@@ -1,7 +1,7 @@
 # CPU tuning 2: the email consumer
 
 ```
-Status: open
+Status: done (PR #55); staging measured, result accepted by the owner 2026-10-23
 Tier: B (Workers, queues; docs/14 §2)
 Usage: builder claude-sonnet-5-5/medium (workers-profiling, workers-best-practices, wrangler,
   aws-messaging-and-streaming) · reviewer claude-opus-5-5/high (code-review, workers-best-practices, workers-profiling;
@@ -117,3 +117,19 @@ Through the whole queue path (`bench-jobs.mjs` with the 100 ms idle; includes `h
 - Review fixes by the lead (small, one area). `pnpm check` and `pnpm test` exit 0.
 - **Process note:** the builder's `wrangler check startup` was refused by the permission classifier; the reviewer's Miniflare probe (local workerd) settled the start-up question instead. Node benchmarks don't apply workerd's start-up rules, so future warm-up work is checked in workerd (a start-up-rules test, as in `email.test.ts`).
 - **Staging check:** the owner sends two quote requests and one contact, a few minutes apart; the lead reads every email's `cpuTimeMs`. Pass: every email ≤ 7 ms.
+
+## Staging result (lead, 2026-10-23, Workers Logs and `email_log` read-only)
+PR #55 deployed (jobs version `aa4f8c7c`, web `16243f23`). The owner sent a quote (00:05 UTC), a second quote (00:12) and a contact (00:15); all six emails `sent`.
+
+| Submission | Web post | Lead | Acknowledgement | Alert |
+|---|---|---|---|---|
+| quote 1 (first after the deploy) | 4 | **9** | 5 | 3 |
+| quote 2 | 2 | 4 | 4 | 2 |
+| contact | 3 | 3 | 4 | 3 |
+
+- **Emails:** every one is ≤ 7 ms (2–5 ms; round one's staging: 3–9 ms). The brief's pass test is met.
+- **But:** the first lead after the deploy took 9 ms (round one: 2–3 ms). The likely reason: the SES warm-up is async, and on Cloudflare its Web Crypto work seems to finish inside the isolate's first event rather than during start-up (locally in workerd it finished during start-up), so the cost moved from the first email to the first lead. One sample, so not proven. Every invocation is under the 10 ms limit; an overrun would fail that one invocation and the queue would retry it (leads are idempotent by lead id), so nothing would be lost.
+- **Owner decision (2026-10-23):** accept and watch: keep everything as is and move on to M2.4b. Watch item: the first jobs invocation after each deploy, read from Workers Logs when M2.4b is measured on staging; if any invocation reaches 10 ms, the options are removing the SES warm-up or the Workers Paid plan (a separate proposal).
+
+## Handover (lead, 2026-10-23, 05:55 IST)
+Both CPU tuning rounds are merged and on staging (#53, #55); the results are recorded (#54, #56) and accepted by the owner. Nothing in flight. **Next conversation ("continue"): M2.4b planning** (Tier A: portal magic-link email, staff security emails, Turnstile on the admin and portal sign-in). Start with the analyst's brief draft (Opus high), per CLAUDE.md. Carry the watch item into M2.4b's staging test: read the first jobs invocation's `cpuTimeMs` after the deploy, and keep new templates and form schemas covered by the warm-ups (CLAUDE.md "Packages").
