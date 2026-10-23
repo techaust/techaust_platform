@@ -113,6 +113,8 @@ const inIndustries = current?.startsWith("/industries") ?? false;
     btn.type = "button";
     btn.className = summary.className;
     btn.innerHTML = summary.innerHTML;
+    const current = summary.getAttribute("aria-current");
+    if (current) btn.setAttribute("aria-current", current);
     return btn;
   }
 
