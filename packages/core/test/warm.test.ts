@@ -15,7 +15,7 @@ describe("start-up warm-up", () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
     expect(warmWebForms()).toBe(3);
-    expect(warmConsumerMessages()).toBe(3);
+    expect(warmConsumerMessages()).toBe(5);
     expect(() => warmLabels()).not.toThrow();
     expect(leadMessage.safeParse(WARM_SAMPLES.quoteLead).success).toBe(true);
     expect(log).not.toHaveBeenCalled();

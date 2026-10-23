@@ -15,11 +15,15 @@ export interface MagicLinkSender {
   send(links: MagicLink[]): Promise<void>;
 }
 
-/** The email-queue message for one link (the consumer renders `portal.magic_link` from `data`). */
-export const magicLinkMessage = (l: MagicLink): EmailMessage => ({
+/**
+ * The email-queue message for one link (the consumer renders `portal.magic_link` from `data`). `accounts` is how many
+ * links this request made (one per organisation the address belongs to): the template shows "This link signs you in to
+ * {{org_name}}." only when it is 2 or more (07-G).
+ */
+export const magicLinkMessage = (l: MagicLink, accounts: number): EmailMessage => ({
   template: "portal.magic_link",
   to: l.to,
-  data: { url: l.url, org_name: l.orgName, expires_at: String(l.expiresAt) },
+  data: { url: l.url, org_name: l.orgName, expires_at: String(l.expiresAt), accounts: String(accounts) },
   entity: { type: "magic_link", id: l.tokenHash },
 });
 
@@ -29,6 +33,6 @@ export const magicLinkMessage = (l: MagicLink): EmailMessage => ({
  */
 export const queueSender = (env: Pick<Env, "EMAIL_QUEUE">): MagicLinkSender => ({
   async send(links) {
-    await env.EMAIL_QUEUE.sendBatch(links.map((l) => ({ body: magicLinkMessage(l) })));
+    await env.EMAIL_QUEUE.sendBatch(links.map((l) => ({ body: magicLinkMessage(l, links.length) })));
   },
 });

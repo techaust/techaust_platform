@@ -123,10 +123,10 @@ describe("a new-device alert [ADM-AUTH-09]", () => {
         to: m.email,
         data: {
           name: "Asha Rao",
+          first_name: "Asha",
           time: "23 Oct 2026, 14:05 IST",
           device: "Chrome on Windows",
           location: "Kolkata, India",
-          admin_url: "https://admin.example/",
         },
         entity: { type: "audit_log", id: auditId },
       },
@@ -184,12 +184,31 @@ describe("a 2FA-change alert [ADM-AUTH-09]", () => {
     },
   );
 
-  it("a change it does not know is left empty, never echoed", async () => {
+  it("carries the time and the first name only: no device and no place (an owner's reset would show the owner's browser)", async () => {
+    const m = await member({ name: "Meera Iyer" });
+    for (const change of ["recovery_code_used", "recovery_codes_regenerated", "reset_by_owner"]) {
+      const { mails } = await expand(
+        await alertRow(m.id, {
+          action: "alert.2fa_change",
+          summary: { ua: "Mozilla/5.0 Chrome/140.0", country: "IN", city: "Kolkata", change },
+        }),
+      );
+      expect(Object.keys(mails[0]?.data ?? {}).sort()).toEqual(["change", "first_name", "name", "time"]);
+      expect(mails[0]?.data.first_name).toBe("Meera");
+      expect(JSON.stringify(mails)).not.toMatch(/Kolkata|Chrome|admin\.example/);
+    }
+  });
+
+  it("an unknown or missing change sends nothing: it is logged ignored, never guessed at or echoed", async () => {
     const m = await member();
-    const { mails } = await expand(
-      await alertRow(m.id, { action: "alert.2fa_change", summary: { change: "<script>" } }),
-    );
-    expect(mails[0]?.data.change).toBe("");
+    for (const summary of [{ change: "<script>" }, { ua: null }, { change: 5 }]) {
+      const { result, mails } = await expand(await alertRow(m.id, { action: "alert.2fa_change", summary }));
+      expect([result, mails]).toEqual(["ignored", []]);
+    }
+    expect(
+      logs.filter((l) => l.includes("staff_alert.ignored") && l.includes('"why":"change"')),
+    ).toHaveLength(3);
+    expect(logs.join("\n")).not.toContain("<script>");
   });
 });
 
@@ -212,14 +231,20 @@ describe("a lockout alert [ADM-AUTH-06]", () => {
     );
     for (const m of mails) expect(m.entity).toEqual(entity);
     const ownerCopy = mails.find((m) => m.to === o1.email) as EmailMessage;
-    expect(ownerCopy.data).toMatchObject({
+    // the owner's copy: who is locked and when, and the "[Open in admin]" link; not the member's address or role
+    expect(ownerCopy.data).toEqual({
       name: "Owner One",
+      first_name: "Owner",
       member_name: "Meera Iyer",
-      member_email: staff.email,
-      member_role: "staff",
+      time: "23 Oct 2026, 14:05 IST",
+      admin_url: "https://admin.example/",
+    });
+    // the member's copy: the time alone (no device or place of whoever typed the passwords, no admin link)
+    expect((mails.find((m) => m.to === staff.email) as EmailMessage).data).toEqual({
+      name: "Meera Iyer",
+      first_name: "Meera",
       time: "23 Oct 2026, 14:05 IST",
     });
-    expect((mails.find((m) => m.to === staff.email) as EmailMessage).data.member_name).toBeUndefined();
   });
 
   it("an owner whose own account is locked gets one email, their own", async () => {
@@ -243,7 +268,7 @@ describe("a lockout alert [ADM-AUTH-06]", () => {
     expect(mails.some((m) => m.to === gone.email)).toBe(false);
   });
 
-  it("at most one lockout email an hour per person: a second lock in the hour is acked and sends nothing new", async () => {
+  it("at most one lockout email per person per clock hour (UTC): a second lock in the same hour is acked and sends nothing new", async () => {
     const o = await member({ role: "owner" });
     const staff = await member({ role: "staff" });
     const { sent, transport } = recorder();
@@ -259,9 +284,11 @@ describe("a lockout alert [ADM-AUTH-06]", () => {
     const firstSent = sent.length;
     expect(firstSent).toBeGreaterThanOrEqual(2);
     expect(sent.map((s) => s.to)).toEqual(expect.arrayContaining([o.email, staff.email]));
-    expect(await everyone(AT + 20 * 60_000)).toEqual(["duplicate"]); // the same hour: nothing new
+    expect(await everyone(AT + 20 * 60_000)).toEqual(["duplicate"]); // 08:55, the same clock hour: nothing new
     expect(sent).toHaveLength(firstSent);
-    expect(await everyone(AT + HOUR)).toEqual(["sent"]); // the next hour: told again
+    // The throttle is the clock hour, not a sliding 60 minutes: a lock 10 minutes later that crosses 09:00 is told again, so
+    // at most two emails in any 60 minutes.
+    expect(await everyone(AT + 30 * 60_000)).toEqual(["sent"]); // 09:05
     expect(sent).toHaveLength(2 * firstSent);
     // every lock wrote its audit row
     expect(

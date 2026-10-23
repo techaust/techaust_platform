@@ -280,27 +280,33 @@ export function dlqAlert(d: DlqAlertData, opts: LayoutOptions): Rendered {
   };
 }
 
-// ---- M2.4b: the sign-in link and the staff security emails (PLACEHOLDERS) --------------------------------------------------
-// The subjects are 07 §8 word for word; the bodies below only carry the facts in the M2.4 layout, so the queue, the
-// consumer and the tests can run end to end. The designer replaces the bodies with the approved copy (07 §8 and the appendix
-// 07-G) and the final layout; every line marked PLACEHOLDER is a gap, never final text. Variables are strings, escaped.
+// ---- M2.4b: the sign-in link and the staff security emails (PLACEHOLDER BODIES) -------------------------------------------
+// The subjects are final (07 §8 and the approved appendix 07-G). The bodies below only carry the facts in the M2.4 layout, so
+// the queue, the consumer and the tests run end to end. The designer replaces each body with the approved 07-G sentences
+// (docs/07-content-appendix/G-m2.4b-security-emails.md, word for word) and the final layout; every line marked PLACEHOLDER is
+// a gap, never final text. Variables are strings, escaped. The lockout bodies print "15 minutes" and "10 wrong sign-in
+// attempts within an hour" as literal copy: packages/auth/test/lockout.test.ts pins those figures to LOCK_MS, LOCK_AFTER and
+// WINDOW_MS, so a change there fails a test that names 07-G and this file.
 
-export type MagicLinkData = { url: string; org_name: string; expires_at: string };
-export type StaffFacts = { name: string; time: string; device: string; location: string; admin_url: string };
-export type TwoFaChangeData = StaffFacts & { change: string };
-export type LockoutOwnerData = StaffFacts & {
-  member_name: string;
-  member_email: string;
-  member_role: string;
+export type MagicLinkData = { url: string; org_name: string; expires_at: string; accounts: string };
+export type NewDeviceData = {
+  name: string;
+  first_name: string;
+  time: string;
+  device: string;
+  location: string;
 };
+export type TwoFaChangeData = { name: string; first_name: string; time: string; change: string };
+export type LockoutData = { name: string; first_name: string; time: string };
+export type LockoutOwnerData = LockoutData & { member_name: string; admin_url: string };
 
-/** 07 §8 subjects. `LOCKOUT_OWNER_SUBJECT_GAP` has no approved line yet (07-G): a visible placeholder. */
+/** The subjects: 07 §8 for the first four, 07-G for the owner's lockout email. */
 export const SUBJECTS = {
   magicLink: "Your sign-in link for the TecHaust client portal",
   newDevice: "New sign-in to your TecHaust admin account",
   twoFaChange: "Security change on your account",
   lockout: "Your account is temporarily locked",
-  lockoutOwner: "PLACEHOLDER (copy pending 07-G): a staff account is temporarily locked",
+  lockoutOwner: "A team member's admin account is locked",
 } as const;
 
 const PLACEHOLDER = "PLACEHOLDER (the designer writes this from 07 §8 and 07-G)";
@@ -323,21 +329,30 @@ ${rows
   };
 }
 
-/** The sign-in link (to the client, from no-reply@). Sentences are 07 §8; the layout is the designer's. */
+/**
+ * The sign-in link (to the client, from no-reply@). Sentences are 07 §8; the organisation line ("This link signs you in to
+ * {{org_name}}.") shows only when the request made 2 or more links (07-G). The layout is the designer's.
+ */
 export function portalMagicLink(d: MagicLinkData, opts: LayoutOptions): Rendered {
   const subject = headerValue(SUBJECTS.magicLink);
+  const org = Number(d.accounts) >= 2 ? `This link signs you in to ${d.org_name}.` : "";
   const use = "Use this link to sign in. It works once and expires in 15 minutes.";
   const ignore = "If you didn't ask for it, you can ignore this email.";
   const html = layout(
     subject,
     heading(e(subject)) +
-      bodyP(e(`PLACEHOLDER layout. For: ${d.org_name}.`), "", true) +
+      bodyP(e("PLACEHOLDER layout."), "", true) +
       bodyP(e(use)) +
+      (org ? bodyP(e(org)) : "") +
       button("Sign in", d.url) +
       bodyP(e(ignore)),
     opts,
   );
-  return { subject, html, text: `${use}\n\nSign in: ${d.url}\n\n${ignore}\n\n${FOOTER}\n` };
+  return {
+    subject,
+    html,
+    text: `${use}\n\n${org ? `${org}\n\n` : ""}Sign in: ${d.url}\n\n${ignore}\n\n${FOOTER}\n`,
+  };
 }
 
 function securityEmail(
@@ -346,72 +361,75 @@ function securityEmail(
   opts: LayoutOptions,
   lead: string,
   tail?: string,
+  action?: { label: string; url: string },
 ): Rendered {
   const rows = factRows(facts);
   const html = layout(
     subject,
-    heading(e(subject)) + bodyP(e(lead), "", true) + rows.html + (tail ? bodyP(e(tail)) : ""),
+    heading(e(subject)) +
+      bodyP(e(lead), "", true) +
+      rows.html +
+      (action ? button(action.label, action.url) : "") +
+      (tail ? bodyP(e(tail)) : ""),
     opts,
   );
   return {
     subject,
     html,
-    text: `${lead}
-
-${rows.text}
-${
-  tail
-    ? `
-${tail}
-`
-    : ""
-}
-${FOOTER}
-`,
+    text: `${lead}\n\n${rows.text}\n${action ? `\n${action.label}: ${action.url}\n` : ""}${tail ? `\n${tail}\n` : ""}\n${FOOTER}\n`,
   };
 }
 
-const whenWhere = (d: StaffFacts): [string, string][] => [
-  ["Time", d.time],
-  ["Location", d.location],
-  ["Device", d.device],
-];
-
-/** New sign-in (to the staff member). 07 §8: time (IST), approximate location, device; "Not you? Contact the owner immediately." */
-export function staffNewDevice(d: StaffFacts, opts: LayoutOptions): Rendered {
+/** 07 §8: time (IST), approximate location, device; "Not you? Contact the owner immediately." */
+export function staffNewDevice(d: NewDeviceData, opts: LayoutOptions): Rendered {
   return securityEmail(
     headerValue(SUBJECTS.newDevice),
-    whenWhere(d),
+    [
+      ["When", d.time],
+      ["Where (approximate)", d.location],
+      ["Device", d.device],
+    ],
     opts,
-    `PLACEHOLDER layout. Hi ${d.name}.`,
+    `${PLACEHOLDER}. Hi ${d.first_name}.`,
     "Not you? Contact the owner immediately.",
   );
 }
 
-/** Security change on the account (to the staff member): which change, then the facts. The bodies are a gap (07-G). */
+/** Security change on the account (to the staff member): which change, and when. No device or place (07-G). */
 export function staffTwoFaChange(d: TwoFaChangeData, opts: LayoutOptions): Rendered {
-  const subject = headerValue(SUBJECTS.twoFaChange);
   return securityEmail(
-    subject,
-    [["Change", d.change], ...whenWhere(d)],
+    headerValue(SUBJECTS.twoFaChange),
+    [
+      ["Change", d.change],
+      ["When", d.time],
+    ],
     opts,
-    `${PLACEHOLDER}. Hi ${d.name}.`,
+    `${PLACEHOLDER}. Hi ${d.first_name}.`,
   );
 }
 
-/** The account is locked (to the staff member). The body is a gap (07-G). */
-export function staffLockout(d: StaffFacts, opts: LayoutOptions): Rendered {
-  const subject = headerValue(SUBJECTS.lockout);
-  return securityEmail(subject, whenWhere(d), opts, `${PLACEHOLDER}. Hi ${d.name}.`);
+/** The account is locked (to the staff member). */
+export function staffLockout(d: LockoutData, opts: LayoutOptions): Rendered {
+  return securityEmail(
+    headerValue(SUBJECTS.lockout),
+    [["When", d.time]],
+    opts,
+    `${PLACEHOLDER}. Hi ${d.first_name}.`,
+    "Not you? Contact the owner immediately.",
+  );
 }
 
-/** The same lock, to each owner (ADM-AUTH-06). Subject and body are a gap (07-G). */
+/** The same lock, to each owner (ADM-AUTH-06): who, when, and "[Open in admin]". */
 export function staffLockoutOwner(d: LockoutOwnerData, opts: LayoutOptions): Rendered {
-  const subject = headerValue(SUBJECTS.lockoutOwner);
   return securityEmail(
-    subject,
-    [["Member", d.member_name], ["Address", d.member_email], ["Role", d.member_role], ...whenWhere(d)],
+    headerValue(SUBJECTS.lockoutOwner),
+    [
+      ["Member", d.member_name],
+      ["When", d.time],
+    ],
     opts,
-    `${PLACEHOLDER}. Hi ${d.name}.`,
+    `${PLACEHOLDER}. Hi ${d.first_name}.`,
+    "Not you? Sign in now, choose Sign out everywhere under Account, and create new recovery codes.",
+    { label: "Open in admin", url: d.admin_url },
   );
 }

@@ -261,3 +261,21 @@ describe("reserveAttemptGated [ADM-AUTH-06]", () => {
     );
   });
 });
+
+// The lockout email copy (docs/07-content-appendix/G-m2.4b-security-emails.md, approved word for word) says "locked for 15
+// minutes ... after 10 wrong sign-in attempts within an hour" as literal text in packages/email/src/templates.ts. If a constant
+// below changes, that copy is wrong: change 07-G (the owner approves it) and templates.ts together, then update this pin.
+describe("the lockout figures that 07-G prints as words", () => {
+  it("10 wrong attempts within an hour lock the account for 15 minutes (07-G, packages/email/src/templates.ts)", () => {
+    expect(
+      LOCK_AFTER,
+      "07-G says 10 wrong sign-in attempts: update 07-G and packages/email/src/templates.ts",
+    ).toBe(10);
+    expect(LOCK_MS, "07-G says 15 minutes: update 07-G and packages/email/src/templates.ts").toBe(
+      15 * 60 * 1000,
+    );
+    expect(WINDOW_MS, "07-G says within an hour: update 07-G and packages/email/src/templates.ts").toBe(
+      60 * 60 * 1000,
+    );
+  });
+});

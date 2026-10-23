@@ -6,6 +6,7 @@ import { env } from "cloudflare:workers";
 import {
   type Attempts,
   accountKey,
+  IP_LOCK_AFTER,
   ipKey,
   LOCK_AFTER,
   LOCK_MS,
@@ -344,7 +345,7 @@ describe("/login and the Turnstile step [ADM-AUTH-06]", () => {
     expect((await login(e.email, e.clientHash, { turnstile: token() })).status).toBe(200);
   });
 
-  it("a refusal does not touch the per-address counter either (the brief: it counts nothing)", async () => {
+  it("a refusal counts one failure for the ADDRESS, never for the account, so a token-less script ends up blocked", async () => {
     const e = await enrol("gate-ip@example.com");
     const ip = "198.51.100.77";
     const ik = await ipKey(env.SALT_PEPPER, ip);
@@ -353,13 +354,30 @@ describe("/login and the Turnstile step [ADM-AUTH-06]", () => {
         body: { email: e.email, clientHash: hash() },
         headers: { "CF-Connecting-IP": ip },
       });
-    const before = await attemptsRow(ik);
-    expect(before?.failures).toBe(3);
+    const acct = await accountKey(e.email);
+    expect((await attemptsRow(ik))?.failures).toBe(3);
+    expect((await attemptsRow(acct))?.failures).toBe(3);
+    const refused = await call("/auth/login", {
+      body: { email: e.email, clientHash: hash() },
+      headers: { "CF-Connecting-IP": ip },
+    });
+    expect(await bodyOf(refused)).toEqual(REQUIRED);
+    expect((await attemptsRow(ik))?.failures).toBe(4); // the address counted it...
+    expect((await attemptsRow(acct))?.failures).toBe(3); // ...the account did not
+
+    // a script that keeps going is blocked at the address limit, like any other source of failures
+    await seed(ik, IP_LOCK_AFTER - 1);
     await call("/auth/login", {
       body: { email: e.email, clientHash: hash() },
       headers: { "CF-Connecting-IP": ip },
     });
-    expect(await attemptsRow(ik)).toEqual(before);
+    expect((await attemptsRow(ik))?.locked_until).toBeGreaterThan(Date.now());
+    const blocked = await call("/auth/login", {
+      body: { email: e.email, clientHash: hash() },
+      headers: { "CF-Connecting-IP": ip },
+    });
+    expect([blocked.status, await bodyOf(blocked)]).toEqual([429, LOCKED]);
+    expect((await attemptsRow(acct))?.failures).toBe(3);
   });
 
   it("only /login has the step: salt, totp, recovery and step-up never call siteverify", async () => {

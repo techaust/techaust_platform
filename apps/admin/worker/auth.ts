@@ -8,7 +8,8 @@
 //
 // Turnstile (M2.4b, ADM-AUTH-06): only /login, and only from the 4th failure of an hour on. The token (if any) is checked
 // BEFORE the reservation; the reservation (`RESERVE_GATED_SQL`) counts a request without a verified token only while fewer
-// than 3 failures stand. A refused request counts nothing, so a script without a token can never lock a staff account.
+// than 3 failures stand. A refused request does not move the ACCOUNT counter, so a script without a token can never lock a
+// staff account; it does count one failure for its own ADDRESS (`ip:`), so it cannot write access rows without end.
 import { sValidator } from "@hono/standard-validator";
 import {
   ATTEMPT_READ,
@@ -172,11 +173,12 @@ async function refuse(c: Ctx, a: Pick<Attempt, "ipk" | "t">, alerts: Alert[] = [
 
 /**
  * A password attempt that needs Turnstile and has no verified token. Answered the same for every email (the counter is
- * keyed by a hash, so unknown emails behave exactly like real ones). It counts nothing; the access row is written like
- * every admin refusal. The request carried a token or not: a bad one is no different from none.
+ * keyed by a hash, so unknown emails behave exactly like real ones). The account counter does not move; the caller's
+ * address counts one failure, in the same single call that writes the access row (as for a locked account), so a script
+ * without tokens ends up blocked. The request carried a token or not: a bad one is no different from none.
  */
-async function turnstileRequired(c: Ctx) {
-  await logBatch(c, 401);
+async function turnstileRequired(c: Ctx, a: Pick<Attempt, "ipk" | "t">) {
+  await logBatch(c, 401, ipFail(c, a));
   return err(c, TURNSTILE_REQUIRED, 401);
 }
 
@@ -362,7 +364,7 @@ export const auth = new Hono<AppEnv>()
     const a = await attempt(c, key, [db.prepare(LOGIN_READ).bind(email)], { verified });
     if (a.ipLocked) return locked(c, a);
     // Nothing reserved: the account is locked (429) or this attempt needs a verified token (401). Nothing was counted.
-    if (!a.reserved) return a.accountLocked ? locked(c, a) : turnstileRequired(c);
+    if (!a.reserved) return a.accountLocked ? locked(c, a) : turnstileRequired(c, a);
     const row = a.reads[0] as
       | {
           id: string;

@@ -169,7 +169,8 @@ describe("the link email goes through the queue [POR-01, ADM-MAIL-01]", () => {
     expect(parsed.map((m) => m.to)).toEqual([email, email]);
     expect(parsed.map((m) => m.data.org_name).sort()).toEqual([f.a.name, f.b.name].sort());
     for (const m of parsed) {
-      expect(Object.keys(m.data).sort()).toEqual(["expires_at", "org_name", "url"]);
+      expect(Object.keys(m.data).sort()).toEqual(["accounts", "expires_at", "org_name", "url"]);
+      expect(m.data.accounts).toBe("2"); // two links in this request: the email names the organisation (07-G)
       const url = new URL(m.data.url as string);
       expect(url.origin).toBe(ORIGIN);
       expect(url.pathname).toBe("/auth/callback");
@@ -186,6 +187,14 @@ describe("the link email goes through the queue [POR-01, ADM-MAIL-01]", () => {
       expect(Number(m.data.expires_at) - t0).toBeGreaterThanOrEqual(EXPIRES_IN);
     }
     expect(new Set(parsed.map((m) => m.entity.id)).size).toBe(2);
+  });
+
+  it("a request that makes one link says accounts: 1 (no organisation line in the email)", async () => {
+    const f = await fixtures();
+    const q = captureQueue();
+    expect((await ask((await extraContact(f.a.id)).email, { turnstile: token() }, q.env)).status).toBe(200);
+    expect(q.sent).toHaveLength(1);
+    expect(emailMessage.parse(q.sent[0]).data.accounts).toBe("1");
   });
 
   it("two real requests within 15 minutes are two emails (different token hashes), not one", async () => {

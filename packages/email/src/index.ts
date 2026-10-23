@@ -29,13 +29,7 @@ export const NO_REPLY_REPLY_TO = "contact@techaust.com";
 
 type Data = Record<string, string>;
 
-const staffFacts = (get: (k: string) => string) => ({
-  name: get("name"),
-  time: get("time"),
-  device: get("device"),
-  location: get("location"),
-  admin_url: get("admin_url"),
-});
+const who = (get: (k: string) => string) => ({ name: get("name"), first_name: get("first_name") });
 
 /**
  * Renders a queued message to its email and picks the sender. Unknown templates throw (the consumer acknowledges
@@ -94,25 +88,44 @@ export function renderEmail(
       return {
         ...noReply,
         ...portalMagicLink(
-          { url: get("url"), org_name: get("org_name"), expires_at: get("expires_at") },
+          {
+            url: get("url"),
+            org_name: get("org_name"),
+            expires_at: get("expires_at"),
+            accounts: get("accounts"),
+          },
           opts,
         ),
       };
     case "staff.new_device":
-      return { ...noReply, ...staffNewDevice(staffFacts(get), opts) };
+      return {
+        ...noReply,
+        ...staffNewDevice(
+          {
+            ...who(get),
+            time: get("time"),
+            device: get("device"),
+            location: get("location"),
+          },
+          opts,
+        ),
+      };
     case "staff.2fa_change":
-      return { ...noReply, ...staffTwoFaChange({ ...staffFacts(get), change: get("change") }, opts) };
+      return {
+        ...noReply,
+        ...staffTwoFaChange({ ...who(get), time: get("time"), change: get("change") }, opts),
+      };
     case "staff.lockout":
-      return { ...noReply, ...staffLockout(staffFacts(get), opts) };
+      return { ...noReply, ...staffLockout({ ...who(get), time: get("time") }, opts) };
     case "staff.lockout_owner":
       return {
         ...noReply,
         ...staffLockoutOwner(
           {
-            ...staffFacts(get),
+            ...who(get),
+            time: get("time"),
             member_name: get("member_name"),
-            member_email: get("member_email"),
-            member_role: get("member_role"),
+            admin_url: get("admin_url"),
           },
           opts,
         ),

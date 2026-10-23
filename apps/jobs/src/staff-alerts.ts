@@ -8,7 +8,7 @@
 //
 // Who is told: new device and 2FA change -> the member (active or just invited). Lockout -> the member (active or invited)
 // and every active owner, each address once; a deactivated member gets none, an owner's copy still goes. Lockout emails
-// are at most one an hour per person: the entity is `<user id>:<hour>`, and the alert row of a second lock stays.
+// are at most one per person per clock hour (UTC): the entity is `<user id>:<hour>`, and the alert row of a second lock stays.
 import {
   countryName,
   describeUserAgent,
@@ -83,12 +83,14 @@ export async function processStaffAlert(env: Env, body: unknown): Promise<StaffA
   } catch {
     // a summary that is not JSON still gives an email, without device and place
   }
-  const facts = {
-    time: formatIstDateTime(row.at),
-    device: describeUserAgent(text(summary.ua)),
-    location: placeOf(summary),
-    admin_url: env.ADMIN_URL,
-  };
+  // A 2FA alert must say WHAT changed (07-G has one body per change): an unknown or missing `change` is not guessed at.
+  const change = CHANGES.find((c) => c === summary.change);
+  if (action === "alert.2fa_change" && !change) {
+    logEvent("staff_alert.ignored", { why: "change" });
+    return "ignored";
+  }
+  const time = formatIstDateTime(row.at);
+  const who = (m: Member) => ({ name: m.name, first_name: m.name.trim().split(/\s+/)[0] ?? m.name });
   const live = member.status === "active" || member.status === "invited";
   const messages: EmailMessage[] = [];
   const told = new Set<string>();
@@ -104,36 +106,39 @@ export async function processStaffAlert(env: Env, body: unknown): Promise<StaffA
     messages.push({ template, to, data, entity });
   };
 
+  // Only the facts each email prints. Where and on what device only for a new sign-in; a 2FA change or a lock names the time
+  // alone (for an owner's reset the device in the row is the owner's, so it must never be shown to the member). The admin
+  // link only in the owner's lockout email ("[Open in admin]").
   if (action === "alert.new_device" && live)
     add(
       member.email,
       "staff.new_device",
-      { name: member.name, ...facts },
+      {
+        ...who(member),
+        time,
+        device: describeUserAgent(text(summary.ua)),
+        location: placeOf(summary),
+      },
       { type: "audit_log", id: auditId },
     );
-  if (action === "alert.2fa_change" && live) {
-    const change = CHANGES.find((c) => c === summary.change);
+  if (action === "alert.2fa_change" && live)
     add(
       member.email,
       "staff.2fa_change",
-      { name: member.name, change: change ?? "", ...facts },
+      { ...who(member), time, change: change ?? "" },
       { type: "audit_log", id: auditId },
     );
-  }
   if (action === "alert.lockout") {
+    // One lockout email per person per CLOCK hour (UTC): the entity is `<user id>:<hours since the epoch>`, so a second lock
+    // in the same clock hour sends nothing new (its audit row stays). Two locks minutes apart that straddle an hour boundary
+    // are two emails: at most two in any 60 minutes.
     const entity = { type: "staff_lockout", id: `${member.id}:${Math.floor(row.at / HOUR_MS)}` };
-    if (live) add(member.email, "staff.lockout", { name: member.name, ...facts }, entity);
+    if (live) add(member.email, "staff.lockout", { ...who(member), time }, entity);
     for (const owner of (ownerRead?.results ?? []) as Member[])
       add(
         owner.email,
         "staff.lockout_owner",
-        {
-          name: owner.name,
-          member_name: member.name,
-          member_email: member.email,
-          member_role: member.role,
-          ...facts,
-        },
+        { ...who(owner), member_name: member.name, time, admin_url: env.ADMIN_URL },
         entity,
       );
   }
