@@ -1,6 +1,6 @@
 // Routes and layout stability: the services hub links all resolve, the flagged-off S3 page is a 404 (WEB-G-17), and the
 // currency swap moves nothing (CLS, WEB-G-06, NFR-1).
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 
 test.describe("services hub", () => {
   test("every link on it resolves, and none points at the flagged-off DPDP page", async ({
@@ -117,4 +117,34 @@ test.describe("no Content Security Policy violations (WEB-G-13)", () => {
       expect([...fromPage, ...issues]).toEqual([]);
     });
   }
+});
+
+test.describe("aria-current in the header (WEB-G-11)", () => {
+  const currentLinks = (page: Page) =>
+    page
+      .locator("header a[aria-current='page']")
+      .evaluateAll((as) => [...new Set(as.map((a) => (a as HTMLAnchorElement).getAttribute("href")))]);
+
+  test("a service page marks its own menu link 'page' and the Services trigger 'true'", async ({ page }) => {
+    await page.goto("/services/app-rescue");
+    // Attribute checks, so the desktop and the phone menu are both covered whichever one the viewport shows.
+    await expect(page.locator("#hd-services a[href='/services/app-rescue']")).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    await expect(page.locator(".nav-trigger", { hasText: "Services" })).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
+    // No other link in the header claims to be the current page.
+    expect(await currentLinks(page)).toEqual(["/services/app-rescue"]);
+  });
+
+  test("Pricing marks its own link 'page' (the built page is /pricing, not /pricing.html)", async ({
+    page,
+  }) => {
+    await page.goto("/pricing");
+    await expect(page.locator("header a.nav-link[href='/pricing']")).toHaveAttribute("aria-current", "page");
+    expect(await currentLinks(page)).toEqual(["/pricing"]);
+  });
 });
