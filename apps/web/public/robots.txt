@@ -1,3 +1,0 @@
-# Scaffold: block indexing until launch (Phase 7).
-User-agent: *
-Disallow: /

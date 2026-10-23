@@ -1,7 +1,11 @@
 ---
 // Breadcrumbs (docs/06 §5.2, WEB-G-09): nav "Breadcrumb", an ordered list, the current page last with
-// aria-current. Separators are icons hidden from assistive tech. The BreadcrumbList JSON-LD is M2.5.
+// aria-current. Separators are icons hidden from assistive tech. The same trail becomes the page's BreadcrumbList
+// JSON-LD (M2.5), added to the page graph here so the markup and the data have one source.
 import { serviceLabels } from "../content/labels";
+import { addLd } from "../lib/ld-collector";
+import { cleanPath } from "../lib/page-path";
+import { breadcrumbNode } from "../lib/structured-data";
 import Icon from "./Icon.astro";
 
 interface Props {
@@ -9,6 +13,7 @@ interface Props {
 }
 
 const { trail } = Astro.props;
+addLd(Astro.request, breadcrumbNode(trail, cleanPath(Astro.url.pathname)));
 ---
 
 <nav class="crumbs" aria-label={serviceLabels.breadcrumb}>

@@ -15,7 +15,7 @@ concurrency:
 jobs:
   checks:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30 # the browser tests and Lighthouse (M2.5) run in this job
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -52,6 +52,33 @@ jobs:
         run: pnpm build
       - name: Tests (unit + Workers runtime)
         run: pnpm test
+      # M2.5 browser checks of the public site (WEB-G-09, WEB-G-13, NFR-1). They run on the built site (the Build step
+      # above), serve it with `wrangler dev` (local mode, no Cloudflare login) and use only Cloudflare's public Turnstile
+      # TEST keys. No secret is used, so this is safe on fork pull requests. Reports stay on the runner as workflow
+      # artifacts (7 days): nothing is uploaded to Lighthouse's public storage or anywhere else.
+      - name: Browser setup (Chromium for Playwright and Lighthouse; local-only dev secrets)
+        run: |
+          pnpm --filter @techaust/web exec playwright install --with-deps chromium
+          pnpm dev:secrets
+      - name: Browser tests (Playwright and axe, apps/web/e2e)
+        run: pnpm --filter @techaust/web e2e
+        env:
+          WRANGLER_SEND_METRICS: "false"
+      - name: Lighthouse CI (mobile, per template; performance 95, accessibility, best practices and SEO 100)
+        run: pnpm --filter @techaust/web lhci
+        env:
+          WRANGLER_SEND_METRICS: "false"
+      - name: Upload the Playwright report and Lighthouse reports (on the runner's workflow artifacts only)
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: web-browser-reports
+          path: |
+            apps/web/playwright-report
+            apps/web/test-results
+            apps/web/.lighthouseci
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Migrations match the Drizzle schema
         run: |
           pnpm db:generate

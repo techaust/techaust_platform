@@ -2,9 +2,14 @@
 // Rules: docs/04 WEB-G-07, -12, -18 and audit M-3 (see scripts/web-dist-checks.mjs).
 import { fileURLToPath } from "node:url";
 import { checkWeb } from "./web-dist-checks.mjs";
+import { measureJs } from "./web-seo-checks.mjs";
 
 const webDir = fileURLToPath(new URL("../apps/web", import.meta.url));
 const problems = checkWeb(webDir);
+// The five heaviest pages by gzipped JavaScript (budget 50 KB per page, WEB-G-13).
+const { rows } = measureJs(`${webDir}/dist`);
+console.log("check-web-dist: heaviest pages by gzipped JavaScript");
+for (const r of rows.slice(0, 5)) console.log(`  ${(r.total / 1024).toFixed(1).padStart(5)} KB  ${r.name}`);
 if (problems.length > 0) {
   console.error(`check-web-dist: ${problems.length} problem(s)`);
   for (const p of problems) console.error(`  - ${p}`);

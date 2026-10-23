@@ -253,7 +253,7 @@ The base is 16 px; display sizes are fluid between 360 px and 1280 px viewports.
 - **Icons:** Lucide (ISC licence), 1.5 px stroke, sizes 16 / 20 / 24, inlined as SVG (the site) or tree-shaken (apps). Decorative icons get `aria-hidden`; meaningful ones get a label.
 - **Diagrams:** custom SVG (architecture, workflow, process), built with the tokens, labelled "Illustrative" where they don't depict a real client system. They must work in both themes (via `currentColor` + CSS variables).
 - **Photography:** only real photos (the founder headshot at launch). No stock "team" photos.
-- **OG images:** generated at build on the `og-default` layout: stone or ink background, the lockup, the page title in Archivo Expanded (outlined), the domain, and the tone-on-tone mark bleeding off the right edge.
+- **OG images:** generated at build on the `og-default` layout: stone background, the lockup, the page's category (Services, Industries, Company, Blog, Legal, Pricing) in IBM Plex Mono uppercase verdigris above the page title in Archivo Expanded (outlined, ink; the part before " | ", without a leading "TecHaust Technologies: "), the domain, and the tone-on-tone mark bleeding off the right edge. Titles fit by size first, then the part before the first ": ", then whole words with an ellipsis (`packages/ui/src/brand/og.ts`; added M2.5).
 
 ---
 

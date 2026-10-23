@@ -15,6 +15,12 @@ Thumbs.db
 !.dev.vars.example
 # generated
 worker-configuration.d.ts
+# browser test and Lighthouse output of apps/web (M2.5): reports stay on the machine or the CI runner
+apps/web/playwright-report/
+apps/web/test-results/
+apps/web/.lighthouseci/
+apps/web/.lhci/
+apps/web/wrangler.lhci.jsonc
 # owner-supplied originals (moved into packages/ui/brand/source in M1.1)
 brand-incoming/
 .claude/launch.json

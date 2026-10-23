@@ -10,10 +10,13 @@ import favicon from "@techaust/ui/brand/favicon.svg?url";
 import ogDefault from "@techaust/ui/brand/og-default.png?url";
 import archivoLatin from "@techaust/ui/fonts/archivo-latin.woff2?url";
 import CookieConsent from "../components/CookieConsent.astro";
+import PageGraph from "../components/PageGraph.astro";
 import SiteFooter from "../components/SiteFooter.astro";
 import SiteHeader from "../components/SiteHeader.astro";
 import { site } from "../config/site";
 import { draft } from "../content/shell";
+import { ogPath } from "../lib/og";
+import { cleanPath } from "../lib/page-path";
 
 interface Props {
   title: string;
@@ -37,17 +40,22 @@ interface Props {
 const {
   title,
   description,
-  canonical = Astro.url.pathname,
+  canonical = cleanPath(Astro.url.pathname),
   ogImage,
   noindex = false,
-  current = Astro.url.pathname,
+  current = cleanPath(Astro.url.pathname),
   placeholders = false,
   consent = { banner: site.ga4Id ? "auto" : "off", analytics: Boolean(site.ga4Id) },
   openMenu,
   rss = false,
 } = Astro.props;
 const canonicalUrl = new URL(canonical, Astro.site).href;
-const og = new URL(ogImage ?? ogDefault, Astro.site).href;
+// Every page has a share image of its own, /og/<slug>.png, rendered after the build (scripts/build-og.mjs); the 404
+// keeps the default image.
+const og = new URL(
+  ogImage ?? (cleanPath(Astro.url.pathname) === "/404" ? ogDefault : ogPath(Astro.url.pathname)),
+  Astro.site,
+).href;
 ---
 
 <!doctype html>
@@ -97,6 +105,7 @@ const og = new URL(ogImage ?? ogDefault, Astro.site).href;
       <slot />
     </main>
     <SiteFooter placeholders={placeholders} />
+    <PageGraph />
   </body>
 </html>
 

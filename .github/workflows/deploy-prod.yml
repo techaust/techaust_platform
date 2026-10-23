@@ -56,6 +56,9 @@ jobs:
       # founder's LinkedIn, headshot and bio, unconfirmed aliases, a Placeholder on a built page, noindex).
       # Run here only, never by CI or the staging deploy.
       - name: Pre-production readiness (owner inputs)
+        env:
+          # robots.txt is built per environment (src/pages/robots.txt.ts): production allows crawling.
+          CLOUDFLARE_ENV: production
         run: |
           pnpm --filter @techaust/web exec astro build
           node scripts/check-prod-readiness.mjs

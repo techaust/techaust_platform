@@ -123,3 +123,12 @@ Approved with the replacement of [14-models-and-usage.md](14-models-and-usage.md
 | `tools/model-guard.mjs` | Repo script (Claude Code `PreToolUse` hook, Node) | Refuses agents on other models, effort xhigh/max, or the built-in Explore/Plan/general-purpose/`claude` agents; tells the lead its effort level | Local only; reads the hook input, writes one small file per session in the temp folder |
 | `tools/model-audit.mjs` | Repo script (Node) | Lists each run's model and effort from its own log and flags anything outside the plan; run at the end of each day | Reads only this project's local Claude Code logs; prints no message content |
 | Claude Code command-line copy | Existing tool, updated | 2.1.288 → 2.1.295 (the version the app runs; Haiku 5.5 needs 2.1.293+) | Updated with the owner's approval, 2026-10-12 |
+
+## 12. M2.5 browser checks (2026-10-23, owner-approved)
+Three npm packages, exact pins, dev-only in `apps/web`: they run on the developer's PC and in CI, and never reach a Worker bundle. Each was published more than a day before it was added (pnpm's `minimumReleaseAge`). None has an install script, so `allowBuilds` is unchanged. Reports stay on the machine or the CI runner (CI keeps them as workflow artifacts for 7 days); nothing is uploaded to Lighthouse's public storage.
+
+| Package | Version | What it does | Where it runs |
+|---|---|---|---|
+| **@playwright/test** | 1.64.1 | Drives Chromium against the built site served by `wrangler dev`: keyboard paths, the forms, the currency swap and layout shift (`apps/web/e2e`, `pnpm --filter @techaust/web e2e`) | Local and CI |
+| **@axe-core/playwright** | 4.14.0 | Runs the open-source axe-core accessibility rules inside those tests, on every page in light and dark | Local and CI |
+| **@lhci/cli** | 0.15.1 | Lighthouse CI: mobile scores per template with thresholds (`apps/web/lighthouserc.json`, `pnpm --filter @techaust/web lhci`), reports to the filesystem only | Local and CI |

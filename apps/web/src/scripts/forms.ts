@@ -13,6 +13,8 @@
 //   - attribution and consent fields (FRM-05, FRM-06) from sessionStorage (scripts/attribution.ts), no cookies
 //   - sending: JSON to the form's own action, one request at a time; success goes to /thanks?ref=…; a refusal says
 //     what to do in plain words (the two lines in content/forms.ts) and keeps everything typed
+// First, before @techaust/core builds its schemas: no zod eval probe under our CSP (see the file).
+import "./zod-jitless";
 import { contactForm, FORM_FIELDS, LEAD_REF, MIN_FILL_MS, quoteSteps } from "@techaust/core";
 import { localWindow } from "./call-time";
 

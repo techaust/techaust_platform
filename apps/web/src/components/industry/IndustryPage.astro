@@ -14,7 +14,6 @@ import Button from "../Button.astro";
 import CopyText from "../CopyText.astro";
 import CTABand from "../CTABand.astro";
 import CurrencyNote from "../CurrencyNote.astro";
-import FaqJsonLd from "../FaqJsonLd.astro";
 import FaqSection from "../FaqSection.astro";
 import PageHero from "../PageHero.astro";
 import PriceNote from "../PriceNote.astro";
@@ -88,7 +87,6 @@ const primary = { label: home.band.primary, href: discoveryHref };
 </section>
 
 <FaqSection title={L.faqs} items={x.faqs} flushTop />
-<FaqJsonLd items={x.faqs} />
 
 <CTABand title={home.band.h2} text={home.band.text} primary={primary} whatsappLabel={home.band.whatsapp} />
 
