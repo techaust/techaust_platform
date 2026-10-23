@@ -8,6 +8,7 @@
 import "../styles/page.css";
 import CopyText from "../components/CopyText.astro";
 import CTABand from "../components/CTABand.astro";
+import ExternalLink from "../components/ExternalLink.astro";
 import Icon from "../components/Icon.astro";
 import PageHero from "../components/PageHero.astro";
 import Placeholder from "../components/Placeholder.astro";
@@ -53,10 +54,9 @@ const talk = cta.talk();
           {
             site.linkedinFounder ? (
               <p>
-                <a class="founder__link" href={site.linkedinFounder} rel="noopener">
+                <ExternalLink class="founder__link" href={site.linkedinFounder}>
                   {shell.footer.linkedinFounder}
-                  <Icon name="arrow-up-right" size={16} />
-                </a>
+                </ExternalLink>
               </p>
             ) : (
               <Placeholder what="Founder’s LinkedIn URL" />

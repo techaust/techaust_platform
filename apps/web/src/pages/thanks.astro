@@ -4,6 +4,7 @@
 // (or no JavaScript) shows the text without a reference. The WhatsApp line needs a number and a reference, the Cal.com
 // line a link: both stay out while their value is empty (WEB-G-18). noindex: nobody arrives here from a search.
 import "../styles/page.css";
+import ExternalLink from "../components/ExternalLink.astro";
 import Icon from "../components/Icon.astro";
 import { site } from "../config/site";
 import { thanksPage as t } from "../content/forms";
@@ -21,19 +22,16 @@ import BaseLayout from "../layouts/BaseLayout.astro";
       {
         site.whatsapp && (
           <p class="thanks__urgent" data-ref-only hidden>
-            <a href={`https://wa.me/${site.whatsapp}`} rel="noopener">
-              {t.urgent}
-            </a>
+            <ExternalLink href={`https://wa.me/${site.whatsapp}`}>{t.urgent}</ExternalLink>
           </p>
         )
       }
       {
         site.calUrl && (
           <p class="thanks__call">
-            <a class="btn btn--primary btn--lg" href={site.calUrl} rel="noopener">
+            <ExternalLink class="btn btn--primary btn--lg" href={site.calUrl} iconSize={20}>
               {t.call}
-              <Icon name="arrow-right" size={20} />
-            </a>
+            </ExternalLink>
           </p>
         )
       }

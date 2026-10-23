@@ -9,6 +9,8 @@ export type NavGroup = { name: string; intro: string; links: NavLink[] };
 const svc = (label: string, slug: string): NavLink => ({ label, href: `/services/${slug}` });
 
 export const shell = {
+  /** Screen-reader note on links that open another site in a new tab (owner, 2026-10-23). */
+  newTab: "(opens in a new tab)",
   nav: {
     services: "Services",
     industries: "Industries",

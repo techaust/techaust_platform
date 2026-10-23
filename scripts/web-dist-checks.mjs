@@ -291,6 +291,37 @@ export function checkMetaDescription(name, html) {
     : [];
 }
 
+/** The screen-reader note `ExternalLink.astro` prints (apps/web/src/content/shell.ts `newTab`). */
+export const NEW_TAB_TEXT = "(opens in a new tab)";
+
+/**
+ * Links off techaust.com open in a new tab and say so (owner, 2026-10-23; WCAG G201): every `<a>` whose href is
+ * http(s) to another host needs `target="_blank"`, `rel` with `noopener` and `noreferrer`, and the new-tab note.
+ * A same-site link must not open a new tab. `mailto:`/`tel:` and relative links are left alone.
+ */
+export function checkExternalLinks(name, html) {
+  const problems = [];
+  for (const m of html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi)) {
+    const attrs = m[1];
+    const href = /\shref\s*=\s*"([^"]*)"/i.exec(attrs)?.[1] ?? "";
+    const external =
+      /^https?:\/\//i.test(href) && !/^https?:\/\/([a-z0-9-]+\.)*techaust\.com(\/|$)/i.test(href);
+    const blank = /\starget\s*=\s*"_blank"/i.test(attrs);
+    const rel = /\srel\s*=\s*"([^"]*)"/i.exec(attrs)?.[1] ?? "";
+    if (!external) {
+      if (blank) problems.push(`${name}: same-site link ${href || "(no href)"} opens a new tab`);
+      continue;
+    }
+    if (!blank)
+      problems.push(`${name}: external link ${href} doesn't open a new tab (use ExternalLink.astro)`);
+    if (!/\bnoopener\b/.test(rel) || !/\bnoreferrer\b/.test(rel))
+      problems.push(`${name}: external link ${href} needs rel="noopener noreferrer"`);
+    if (!m[2].includes(NEW_TAB_TEXT))
+      problems.push(`${name}: external link ${href} doesn't say "${NEW_TAB_TEXT}"`);
+  }
+  return problems;
+}
+
 /** Everything: `webDir` is apps/web. Returns a list of problems (empty = all good). */
 export function checkWeb(webDir) {
   const problems = [];
@@ -320,6 +351,7 @@ export function checkWeb(webDir) {
         ...checkAmpersands(name, text),
         ...checkLeftovers(name, text),
         ...checkMetaDescription(name, text),
+        ...checkExternalLinks(name, text),
         ...lintBuiltPage(name, text, allow.entries),
       );
   }

@@ -312,7 +312,7 @@ const makePrivacy = (ga: boolean): LegalDoc => ({
       num: "8",
       title: "Grievance Officer and privacy contact",
       blocks: [
-        { p: `**Rupak Sarkar**, Founder, TecHaust Technologies · ${PRIVACY} · {{postal_address}}.` },
+        { p: `**Rupak Sarkar**, Founder, TecHaust Technologies · ${PRIVACY} · {{postal_address}}, India.` },
         { p: "We acknowledge complaints within 48 hours and aim to resolve them within one month." },
       ],
     },
@@ -548,7 +548,7 @@ const refunds: LegalDoc = {
         {
           text: "**Disputes:** please contact us first. We’d rather fix the problem. This doesn’t affect your rights with your bank or card provider.",
         },
-        { text: `**Contact:** ${BILLING} · {{postal_address}}.` },
+        { text: `**Contact:** ${BILLING} · {{postal_address}}, India.` },
       ],
     },
   ],
