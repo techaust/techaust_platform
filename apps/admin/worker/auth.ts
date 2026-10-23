@@ -378,26 +378,18 @@ export const auth = new Hono<AppEnv>()
     const usable = !!row && row.status === "active" && row.totp_enabled_at !== null;
     const salt = usable && row.pw_salt ? row.pw_salt : await fakeSalt(c.env.SALT_PEPPER, email);
     const ok = await verifyPassword(c.env.PASSWORD_PEPPER, salt, clientHash, usable ? row.pw_hmac : null);
-    // A lock that started with THIS attempt on a real account raises an alert (unknown emails get none).
-    const alerts = row && a.reserved.failures >= LOCK_AFTER ? [lockoutAlert(c, row.id, row.role)] : [];
-    if (!ok || !row) return refuse(c, a, alerts);
+    // A lock that started with THIS (failed) attempt on a real account raises an alert (unknown emails get none).
+    // A correct password on the 10th reserved attempt is a sign-in, not a lock.
+    if (!ok || !row) {
+      const alerts = row && a.reserved.failures >= LOCK_AFTER ? [lockoutAlert(c, row.id, row.role)] : [];
+      return refuse(c, a, alerts);
+    }
     const challenge = await signChallenge(c.env.SESSION_HMAC_KEY, {
       purpose: "login_totp",
       sub: row.id,
       exp: now() + CHALLENGE_TTL_MS,
       ak: key,
     });
-    if (alerts.length) {
-      await logBatch(
-        c,
-        200,
-        alerts.map((x) => x.stmt),
-      );
-      queueAlerts(
-        c,
-        alerts.map((x) => x.id),
-      );
-    }
     return c.json({ next: "totp", challenge });
   })
 

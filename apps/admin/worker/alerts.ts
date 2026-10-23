@@ -55,29 +55,28 @@ export const lockoutAlert = (c: Ctx, userId: string, role: Who["role"]) =>
   alertStmt(c, "alert.lockout", { userId, role, actor: { type: "system", id: null } });
 
 /**
- * Puts one `staff.alert` message per audit ID on the email queue, AFTER the alert rows are written and without making the
- * response wait: each send rides `ctx.waitUntil`. A failed send never changes the answer; it writes one line with the
+ * Puts one `staff.alert` message per audit ID on the email queue (one `sendBatch`), AFTER the alert rows are written and without making the
+ * response wait: the send rides one `ctx.waitUntil`. A failed send never changes the answer; it writes one line with the
  * error class only (no address, no ID). The alert row stays either way (it is the security log).
  */
 export function queueAlerts(c: Ctx, ids: string[]): void {
-  for (const auditId of ids) {
-    const message: StaffAlertMessage = { kind: "staff.alert", auditId };
-    c.executionCtx.waitUntil(
-      (async () => {
-        try {
-          await c.env.EMAIL_QUEUE.send(message);
-        } catch (e) {
-          console.error(
-            JSON.stringify({
-              level: "error",
-              route: c.var.route?.path ?? "other",
-              message: "staff alert not queued",
-              rid: c.var.rid,
-              cause: e instanceof Error ? e.name : "unknown",
-            }),
-          );
-        }
-      })(),
-    );
-  }
+  if (!ids.length) return;
+  const batch = ids.map((auditId) => ({ body: { kind: "staff.alert", auditId } satisfies StaffAlertMessage }));
+  c.executionCtx.waitUntil(
+    (async () => {
+      try {
+        await c.env.EMAIL_QUEUE.sendBatch(batch);
+      } catch (e) {
+        console.error(
+          JSON.stringify({
+            level: "error",
+            route: c.var.route?.path ?? "other",
+            message: "staff alert not queued",
+            rid: c.var.rid,
+            cause: e instanceof Error ? e.name : "unknown",
+          }),
+        );
+      }
+    })(),
+  );
 }

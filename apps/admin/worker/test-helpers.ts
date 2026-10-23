@@ -482,20 +482,22 @@ export function stubSiteverify(): Siteverify {
 export const withEnv = (base: Env, over: Record<string, unknown>): Env =>
   new Proxy(base, { get: (t, k) => (k in over ? over[k as string] : Reflect.get(t, k)) }) as Env;
 
-export type CapturedQueue = { env: Env; sent: unknown[] };
+export type CapturedQueue = { env: Env; sent: unknown[]; batches: number; singles: number };
 
 /** `base` whose EMAIL_QUEUE records what is sent (the real queue would hand it to the jobs Worker). */
 export function captureQueue(base: Env = env, fail?: () => unknown): CapturedQueue {
-  const sent: unknown[] = [];
+  const out = { sent: [] as unknown[], batches: 0, singles: 0 };
   const queue = {
     send: async (m: unknown) => {
+      out.singles++;
       if (fail) throw fail();
-      sent.push(m);
+      out.sent.push(m);
     },
     sendBatch: async (ms: { body: unknown }[]) => {
+      out.batches++;
       if (fail) throw fail();
-      for (const m of ms) sent.push(m.body);
+      for (const m of ms) out.sent.push(m.body);
     },
   };
-  return { env: withEnv(base, { EMAIL_QUEUE: queue }), sent };
+  return Object.assign(out, { env: withEnv(base, { EMAIL_QUEUE: queue }) });
 }

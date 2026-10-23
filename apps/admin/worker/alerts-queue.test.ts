@@ -106,6 +106,7 @@ describe("2FA-change alerts [ADM-AUTH-09]", () => {
     ).toBe(200);
     const kinds = fresh.sent.map((m) => (m as { auditId: string }).auditId);
     expect(kinds).toHaveLength(2);
+    expect([fresh.batches, fresh.singles]).toEqual([1, 0]); // one sendBatch with both messages
     const all = await alertRows();
     const actions = kinds.map((id) => all.find((a) => a.id === id)?.action);
     expect(actions.sort()).toEqual(["alert.2fa_change", "alert.new_device"]);
@@ -183,6 +184,23 @@ describe("lockout alerts [ADM-AUTH-06, ADM-AUTH-09]", () => {
     expect(ghost.sent).toEqual([]);
   });
 
+  it("9 wrong passwords then the right one: a sign-in, no lockout alert, nothing queued", async () => {
+    const e = await enrol("alerts-lock-right@example.com");
+    const id = await userId(e.email);
+    const q = captureQueue();
+    for (let i = 0; i < 9; i++)
+      await call("/auth/login", { body: { email: e.email, clientHash: hash(), turnstile: token() } }, q.env);
+    const right = await call(
+      "/auth/login",
+      { body: { email: e.email, clientHash: e.clientHash, turnstile: token() } },
+      q.env,
+    );
+    expect(right.status).toBe(200);
+    expect(((await right.json()) as { next: string }).next).toBe("totp");
+    expect((await alertRows("alert.lockout")).filter((a) => a.entity_id === id)).toHaveLength(0);
+    expect(q.sent).toEqual([]);
+  });
+
   it("a lock started by wrong codes queues one message too", async () => {
     const e = await enrol("alerts-lock-code@example.com");
     const challenge = await challengeFor(e.email, e.clientHash);
@@ -224,7 +242,7 @@ describe("the queue never changes the answer", () => {
     let sends = 0;
     const hung = withEnv(env, {
       EMAIL_QUEUE: {
-        send: () => {
+        sendBatch: () => {
           sends++;
           return new Promise(() => {});
         },
