@@ -13,7 +13,7 @@ import { csrf } from "./csrf.ts";
 import { docToken } from "./doc-token.ts";
 import { guard, ROUTES, tableOf } from "./guard.ts";
 import { me } from "./me.ts";
-import { type MagicLinkSender, noSender } from "./sender.ts";
+import type { MagicLinkSender } from "./sender.ts";
 
 let isolateId: string | undefined;
 let isolateRequests = 0;
@@ -22,14 +22,14 @@ let isolateRequests = 0;
 export type TestRoute = { def: RouteDef; handler: (c: Ctx) => Response | Promise<Response> };
 
 export type Deps = {
-  /** How a link reaches a person. The default sends nothing (M2.4 plugs in the email queue). */
+  /** How a link reaches a person. Default: the email queue (`queueSender`); tests inject a capturing sender. */
   sender?: MagicLinkSender;
   testRoutes?: TestRoute[];
 };
 
 /** The API. A factory so a test can inject a capturing sender and add routes the table does not declare. */
 export function createApp(deps: Deps = {}) {
-  const sender = deps.sender ?? noSender;
+  const sender = deps.sender;
   const routeFor = tableOf([...ROUTES, ...(deps.testRoutes ?? []).map((t) => t.def)]);
   const app = new Hono<AppEnv>().basePath("/api");
   app.use(secureHeaders());

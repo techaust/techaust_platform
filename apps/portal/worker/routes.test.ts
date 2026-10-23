@@ -15,6 +15,7 @@ import {
   extraContact,
   pairs,
   sessionFor,
+  token,
   writes,
 } from "./test-helpers.ts";
 
@@ -175,7 +176,7 @@ describe("through the real entry point (exports.default.fetch)", () => {
     }
   });
 
-  it("the default Worker sends nothing: a link request answers 200 and the link exists only as its hash", async () => {
+  it("the default Worker hands the link to the email queue: a link request answers 200 through the real entry point", async () => {
     const f = await fixtures();
     const res = await exports.default.fetch("https://portal.example/api/v1/auth/magic", {
       method: "POST",
@@ -184,7 +185,7 @@ describe("through the real entry point (exports.default.fetch)", () => {
         Origin: "https://portal.example",
         "CF-Connecting-IP": "192.0.2.150",
       },
-      body: JSON.stringify({ email: (await extraContact(f.a.id)).email }),
+      body: JSON.stringify({ email: (await extraContact(f.a.id)).email, turnstile: token() }),
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ ok: true });
