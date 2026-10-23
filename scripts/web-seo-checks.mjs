@@ -329,6 +329,15 @@ export function pageScripts(html) {
   return [...out];
 }
 
+/** The bodies of the page's inline `<script type="module">` blocks (no `src`). */
+export function inlineModules(html) {
+  const out = [];
+  for (const m of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) {
+    if (/\btype="module"/i.test(m[1]) && !/\bsrc=/i.test(m[1]) && m[2].trim()) out.push(m[2]);
+  }
+  return out;
+}
+
 /** Static imports of a module (`import"./a.js"`, `import x from"./a.js"`, `export*from"./a.js"`); dynamic import() is not followed. */
 export function staticImports(code) {
   const out = [];
@@ -355,6 +364,11 @@ export function pageJs(html, read) {
     }
   };
   for (const s of pageScripts(html)) visit(s);
+  // Inline module scripts count too: their own bytes (as "inline module N") and the files they import.
+  inlineModules(html).forEach((code, i) => {
+    files.set(`inline module ${i + 1}`, gzipSync(Buffer.from(code), { level: 9 }).length);
+    for (const spec of staticImports(code)) visit(spec.startsWith("/") ? spec : posix.normalize(`/${spec}`));
+  });
   const list = [...files].map(([file, bytes]) => ({ file, bytes }));
   return { total: list.reduce((n, f) => n + Math.max(f.bytes, 0), 0), files: list };
 }

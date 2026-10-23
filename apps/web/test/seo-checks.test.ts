@@ -133,6 +133,23 @@ describe("JavaScript budget (WEB-G-13, NFR-1)", () => {
     );
   });
 
+  it("counts an inline module script: its own bytes and the files it imports (a plain inline script is not JS from a file)", () => {
+    const body = 'import"/_astro/a.js";console.log("inline")';
+    const h = `<script type="module">${body}</script><script>plain()</script><script type="application/ld+json">{"a":1}</script>`;
+    expect(seo.inlineModules(h)).toEqual([body]);
+    const { total, files: list } = seo.pageJs(h, read);
+    expect(list.map((f: { file: string }) => f.file).sort()).toEqual([
+      "/_astro/a.js",
+      "/_astro/b.js",
+      "/_astro/c.js",
+      "inline module 1",
+    ]);
+    expect(total).toBeGreaterThan(seo.pageJs(html("/_astro/a.js"), read).total);
+    // A big inline module alone goes over the budget.
+    const big = `<script type="module">${files["/_astro/big.js"]}</script>`;
+    expect(seo.pageJs(big, read).total).toBeGreaterThan(seo.JS_BUDGET_BYTES);
+  });
+
   it("does not follow a dynamic import()", () => {
     expect(seo.staticImports('const m=()=>import("./lazy.js");import"./a.js"')).toEqual(["./a.js"]);
   });
