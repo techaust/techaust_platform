@@ -1,11 +1,11 @@
 # CPU tuning 3: staff security emails and portal `/magic`
 
 ```
-Status: open
+Status: review approved; PR open
 Tier: B (Workers, queues; docs/14 §2)
 Usage: builder claude-sonnet-5-5 / medium (workers-profiling, workers-best-practices, wrangler, turnstile-spin), 17 min,
   212k tokens · reviewer claude-opus-5-5 / high (code-review, security-review, workers-best-practices, workers-profiling), 11 min,
-  125k tokens: weekly 39 → 39 %, 5-h 24 → 27 % (model audit: all runs within the plan)
+  125k tokens · re-check reviewer claude-opus-5-5 / medium (code-review, workers-best-practices), 4 min, 54k tokens: weekly 39 → 39 %, 5-h 24 → 27 % (model audit: all runs within the plan)
 ```
 
 ## Before the build (2026-10-23)
@@ -123,3 +123,6 @@ The `batch(5)` step (counter-key HMACs and the reserve SQL) dropped from 1.7 to 
 - The reviewer's next step, done here: jobs `logEvent` lines carry `iso` (random per isolate, made at the first invocation) and `n` (this isolate's invocation count, counted at the start of `handleQueue`); a test checks the keys, a stable `iso` and a growing `n`. No personal data.
 - Checks (heavy.sh, main checkout): `pnpm test` green (jobs 60, portal 425, all packages); `pnpm check` green; `pnpm build` green (portal 57,527 bytes, admin 83,942).
 - Next: re-check (reviewer, Opus medium) of this fix diff, then the PR, staging, and Step 3 with the owner (read `cpuTimeMs` with `n`).
+
+## Re-check (reviewer Opus 5.5 medium, 2026-10-23): APPROVE
+`b716896..4ba0174`: the three lows fixed; `iso`/`n` carry no personal data, `getRandomValues` runs only inside an invocation (the warm-up test proves it never logs), fields can't overwrite callers' keys and are absent outside queue runs; existing log assertions hold. Checks: jobs 60, portal 425, auth 126, `pnpm check` green. One new **low**: nothing proved `handleQueue` calls `noteInvocation()`. **Lead fix:** the dead-letter handler test in `pipeline.test.ts` now finds the `queue.dead_letter` line and asserts its `iso` (6 hex) and `n` (≥ 1); jobs 60/60 and `pnpm check` green.
