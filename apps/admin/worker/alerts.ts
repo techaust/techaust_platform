@@ -61,7 +61,9 @@ export const lockoutAlert = (c: Ctx, userId: string, role: Who["role"]) =>
  */
 export function queueAlerts(c: Ctx, ids: string[]): void {
   if (!ids.length) return;
-  const batch = ids.map((auditId) => ({ body: { kind: "staff.alert", auditId } satisfies StaffAlertMessage }));
+  const batch = ids.map((auditId) => ({
+    body: { kind: "staff.alert", auditId } satisfies StaffAlertMessage,
+  }));
   c.executionCtx.waitUntil(
     (async () => {
       try {
