@@ -21,7 +21,7 @@ const c = f.columns;
 const year = new Date().getFullYear();
 const wa = site.whatsapp ? `https://wa.me/${site.whatsapp}` : "";
 // No empty list when neither LinkedIn URL is set (the build today).
-const showSocial = placeholders || Boolean(site.linkedinCompany || site.linkedinFounder);
+const showSocial = placeholders || Boolean(site.linkedinCompany);
 const columns = [
   { title: c.services.title, links: c.services.links },
   { title: c.industries.title, links: shell.industriesMenu },
@@ -79,20 +79,7 @@ const columns = [
             )
           )
         }
-        {
-          site.linkedinFounder ? (
-            <li>
-              <ExternalLink href={site.linkedinFounder}>{f.linkedinFounder}</ExternalLink>
-            </li>
-          ) : (
-            placeholders && (
-              <li>
-                <Placeholder what="Founder’s LinkedIn URL" />
-              </li>
-            )
-          )
-        }
-      </ul>}
+</ul>}
     </div>
 
     <nav class="site-footer__nav" aria-label={draft.footerNav}>
@@ -236,9 +223,10 @@ const columns = [
     gap: var(--space-1);
   }
 
-  .site-footer__contact a,
+  /* :global(a): external links are rendered by ExternalLink.astro, outside this file’s style scope. */
+  .site-footer__contact :global(a),
   .site-footer__place,
-  .site-footer__social a {
+  .site-footer__social :global(a) {
     display: inline-flex;
     align-items: center;
     gap: var(--space-3);
@@ -258,7 +246,7 @@ const columns = [
     margin-block-start: calc(-1 * var(--space-4));
   }
 
-  .site-footer__social a {
+  .site-footer__social :global(a) {
     gap: var(--space-2);
   }
 

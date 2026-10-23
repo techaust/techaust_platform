@@ -16,6 +16,6 @@ interface Props {
 const { href, class: cls, iconSize = 16 } = Astro.props;
 ---
 
-<a href={href} class:list={[cls]} target="_blank" rel="noopener noreferrer"
+<a href={href} class:list={["ext-link", cls]} target="_blank" rel="noopener noreferrer"
   ><slot /><span class="visually-hidden"> {shell.newTab}</span><Icon name="arrow-up-right" size={iconSize} /></a
 >
