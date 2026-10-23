@@ -136,13 +136,27 @@ export function visibleCrumbs(html, path) {
   });
 }
 
-/** The JSON-LD graph against the page: one graph, the right nodes, required fields, and text equal to what is shown. */
-/** The hero's price tag: the lead word and the unit it prints (the first INR line on the page). */
+/** A monthly unit ("a month", "per month", "/mo"); the same pattern as `MONTHLY` in apps/web/src/lib/structured-data.ts (a test pins them). */
+export const MONTHLY_UNIT = /(^|[\s/])(month|mo)$/i;
+
+/** The inner HTML of the first `<span>` whose opening tag matches `open`, read to its own closing tag (nested spans counted). */
+function spanInner(html, open) {
+  const start = open.exec(html);
+  if (start === null) return undefined;
+  const from = start.index + start[0].length;
+  const tags = /<span\b[^>]*>|<\/span>/gi;
+  tags.lastIndex = from;
+  let depth = 1;
+  for (let t = tags.exec(html); t !== null; t = tags.exec(html)) {
+    depth += t[0][1] === "/" ? -1 : 1;
+    if (depth === 0) return html.slice(from, t.index);
+  }
+  return undefined;
+}
+
+/** The hero's price tag: the lead word and the unit it prints (the first INR line on the page, with or without a USD line after it). */
 function heroPriceWords(html) {
-  const line =
-    /<span class="price__line price__line--inr"[^>]*>([\s\S]*?)<span class="price__line price__line--usd"/.exec(
-      html,
-    )?.[1];
+  const line = spanInner(html, /<span class="price__line price__line--inr"[^>]*>/);
   if (line === undefined) return { lead: "", unit: "" };
   const pick = (cls) =>
     textOf(new RegExp(`<span class="${cls}[^"]*"[^>]*>([^<]*)</span>`).exec(line)?.[1] ?? "");
@@ -157,7 +171,7 @@ function checkOfferWording(name, html, offer) {
   if (unit) {
     if (spec["@type"] !== "UnitPriceSpecification" || alnum(spec.unitText ?? "") !== alnum(unit))
       out.push(`${name}: the page shows the unit "${unit}" but the Offer's UnitPriceSpecification lacks it`);
-    if (/(^|[\s/])(month|mo)$/i.test(unit) && spec.referenceQuantity?.unitCode !== "MON")
+    if (MONTHLY_UNIT.test(unit) && spec.referenceQuantity?.unitCode !== "MON")
       out.push(`${name}: the page shows a monthly price but the Offer has no referenceQuantity of one month`);
   } else if (spec.unitText || spec.referenceQuantity) {
     out.push(`${name}: the Offer states a unit the page does not show`);
@@ -168,6 +182,7 @@ function checkOfferWording(name, html, offer) {
   return out;
 }
 
+/** The JSON-LD graph against the page: one graph, the right nodes, required fields, and text equal to what is shown. */
 export function checkStructuredData(name, html) {
   const problems = [];
   const path = pagePath(name);

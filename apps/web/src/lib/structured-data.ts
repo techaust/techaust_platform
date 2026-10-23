@@ -96,7 +96,7 @@ export function decimalAmount(m: Money): string {
 }
 
 /** A unit that means "per month": "a month", "per month", "/month", "/mo". */
-export const MONTHLY = /(^|[\s/])(month|mo)$/i;
+export const MONTHLY = /(^|[\s/])(month|mo)$/i; // scripts/web-seo-checks.mjs `MONTHLY_UNIT` matches it (pinned by a test)
 
 export type ServiceInput = {
   name: string;

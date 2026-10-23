@@ -237,9 +237,14 @@ describe("the inline head script (first paint, WEB-G-06)", () => {
 
 describe("the real build (skipped until apps/web/dist exists)", () => {
   const webDir = fileURLToPath(new URL("..", import.meta.url)).replace(/[\\/]$/, "");
-  it.skipIf(!existsSync(`${webDir}/dist/404.html`))("passes every check", () => {
-    expect(c.checkWeb(webDir)).toEqual([]);
-  });
+  // Reads every built page and asset (SEO, JSON-LD, share images, JS budget): seconds under a parallel `pnpm test`.
+  it.skipIf(!existsSync(`${webDir}/dist/404.html`))(
+    "passes every check",
+    () => {
+      expect(c.checkWeb(webDir)).toEqual([]);
+    },
+    30_000,
+  );
 
   it.skipIf(!existsSync(`${webDir}/dist/404.html`))(
     "has the head script's hash in the committed _headers",

@@ -16,6 +16,7 @@ import {
   buildGraph,
   decimalAmount,
   faqNode,
+  MONTHLY,
   organizationNode,
   postalAddressNode,
   serviceNode,
@@ -190,13 +191,16 @@ describe("checkStructuredData (WEB-SVC-04, WEB-BLOG)", () => {
   });
 
   describe("the Offer states the unit and lead the hero shows", () => {
-    const hero = (lead: string, unit: string) =>
+    const hero = (lead: string, unit: string, usd = true) =>
       `<p class="price price--lg"><span class="price__stack"><span class="price__line price__line--inr">${
         lead ? `<span class="price__lead">${lead}</span>` : ""
       }<span class="price__from">from</span><span class="price__fig"><span class="price__amount">₹9,999</span></span>${
         unit ? `<span class="price__unit">${unit}</span>` : ""
-      }</span><span class="price__line price__line--usd"></span></span></p>`;
-    const run = (input: { unit?: string; lead?: string }, shown: { unit?: string; lead?: string }) =>
+      }</span>${usd ? '<span class="price__line price__line--usd"></span>' : ""}</span></p>`;
+    const run = (
+      input: { unit?: string; lead?: string },
+      shown: { unit?: string; lead?: string; usd?: boolean },
+    ) =>
       seo
         .checkStructuredData(
           "services/app-rescue.html",
@@ -213,7 +217,7 @@ describe("checkStructuredData (WEB-SVC-04, WEB-BLOG)", () => {
               }),
               crumb(),
             ],
-            crumbsHtml + hero(shown.lead ?? "", shown.unit ?? ""),
+            crumbsHtml + hero(shown.lead ?? "", shown.unit ?? "", shown.usd ?? true),
           ),
         )
         .join();
@@ -259,6 +263,19 @@ describe("checkStructuredData (WEB-SVC-04, WEB-BLOG)", () => {
       expect(run({}, { lead: "Pilot" })).toContain("Offer's name");
       expect(run({ unit: "per workflow" }, {})).toContain("a unit the page does not show");
       expect(run({ lead: "Pilot" }, {})).toContain("a name the page does not show");
+    });
+
+    it("reads the hero when it has no USD line (an INR-only price)", () => {
+      expect(run({}, { unit: "per month", usd: false })).toContain("lacks it");
+      expect(run({}, { lead: "Pilot", usd: false })).toContain("Offer's name");
+      expect(run({ unit: "a month", lead: "Audit" }, { unit: "a month", lead: "Audit", usd: false })).toBe(
+        "",
+      );
+    });
+
+    it("uses the same monthly pattern as the Offer builder", () => {
+      expect(seo.MONTHLY_UNIT.source).toBe(MONTHLY.source);
+      expect(seo.MONTHLY_UNIT.flags).toBe(MONTHLY.flags);
     });
   });
 
