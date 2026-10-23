@@ -2,8 +2,8 @@
 // renderer (a 1200 x 630 PNG; a title that cannot fit fails the build). Runs in Node.
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
-import { createOgRenderer } from "../../../packages/ui/src/brand/og-render.ts";
+import { beforeAll, describe, expect, it } from "vitest";
+import { createOgRenderer, type OgRenderer } from "../../../packages/ui/src/brand/og-render.ts";
 // @ts-expect-error plain .mjs without types
 import * as og from "../../../scripts/web-og.mjs";
 // @ts-expect-error plain .mjs without types
@@ -45,8 +45,13 @@ describe("ogPath and ogCategory", () => {
 });
 
 describe("the renderer", () => {
+  // One renderer for the file: loading the fonts and the brand master is the slow part.
+  let r: OgRenderer;
+  beforeAll(async () => {
+    r = await createOgRenderer();
+  });
+
   it("renders a 1200 x 630 PNG", async () => {
-    const r = await createOgRenderer();
     const png = await r.png({
       title: "Automation for CA firms, finance and legal teams",
       category: "Industries",
@@ -56,7 +61,6 @@ describe("the renderer", () => {
   });
 
   it("sets short titles large and long ones smaller, on at most three balanced lines", async () => {
-    const r = await createOgRenderer();
     expect(r.layout("Privacy notice")).toEqual({ lines: ["Privacy notice"], cap: 64, fallback: "none" });
     const long = r.layout("Add AI features, MCP servers and agent-ready APIs");
     expect(long.fallback).toBe("none");
@@ -71,7 +75,6 @@ describe("the renderer", () => {
   });
 
   it("falls back to the part before the colon, then to whole words and an ellipsis (never fails on length)", async () => {
-    const r = await createOgRenderer();
     const colon = r.layout(
       "A deliberately overlong sample title: it runs on well past three lines to show the shorter fallback rule at work here",
     );
@@ -87,14 +90,12 @@ describe("the renderer", () => {
   });
 
   it("draws the lockup and the mark from the brand master, never the name in a live font", async () => {
-    const r = await createOgRenderer();
     const svg = r.svg({ title: "Privacy notice", category: "Legal" });
     expect(svg).not.toMatch(/<text\b/);
     expect(svg).toContain("<title>TecHaust Technologies</title>");
   });
 
   it("fails on a character the font does not have (it would print as a box)", async () => {
-    const r = await createOgRenderer();
     expect(() => r.svg({ title: "Price ₹ 5", category: "Company" })).toThrow(/no glyph/);
   });
 });

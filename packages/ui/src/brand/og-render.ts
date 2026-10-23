@@ -134,7 +134,21 @@ export async function createOgRenderer() {
       if (short) return { ...short, fallback: "before-colon" };
     }
     const words = text.split(/\s+/).filter(Boolean);
-    for (let k = words.length - 1; k >= 1; k--) {
+    // Start from what a greedy fill of three lines holds at the smallest size (nothing longer can fit), not from every
+    // word: the answer is the same, found in a few tries instead of one per word.
+    const last = TITLE_STEPS[TITLE_STEPS.length - 1];
+    let upper = 0;
+    for (let line = 0, used = 0; line < MAX_TITLE_LINES && upper < words.length; line++, used = 0) {
+      let text = "";
+      while (upper < words.length) {
+        const next = text ? `${text} ${words[upper]}` : (words[upper] ?? "");
+        if (used > 0 && measure(next, last.cap) > OG_FRAME.textWidth) break;
+        text = next;
+        used++;
+        upper++;
+      }
+    }
+    for (let k = Math.min(words.length - 1, upper); k >= 1; k--) {
       const kept = words
         .slice(0, k)
         .join(" ")
