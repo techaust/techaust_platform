@@ -251,3 +251,43 @@ describe("the real build (skipped until apps/web/dist exists)", () => {
     },
   );
 });
+
+describe("links off techaust.com open in a new tab and say so (owner, 2026-10-23)", () => {
+  const note = `<span class="visually-hidden"> ${c.NEW_TAB_TEXT}</span>`;
+  const ok = `<a href="https://www.linkedin.com/in/x" target="_blank" rel="noopener noreferrer">LinkedIn${note}</a>`;
+
+  it("passes a proper external link, internal links, mail links and subdomains of techaust.com", () => {
+    const html = `${ok}<a href="/pricing">Pricing</a><a href="mailto:contact@techaust.com">Mail</a><a href="https://portal.techaust.com/x">Portal</a>`;
+    expect(c.checkExternalLinks("a.html", html)).toEqual([]);
+  });
+
+  it("fails an external link without a new tab, the rel values or the note", () => {
+    expect(
+      c.checkExternalLinks("a.html", `<a href="https://wa.me/1" rel="noopener noreferrer">WA${note}</a>`),
+    ).toHaveLength(1);
+    expect(
+      c.checkExternalLinks(
+        "a.html",
+        `<a href="https://wa.me/1" target="_blank" rel="noopener">WA${note}</a>`,
+      ),
+    ).toHaveLength(1);
+    expect(
+      c.checkExternalLinks(
+        "a.html",
+        `<a href="https://wa.me/1" target="_blank" rel="noopener noreferrer">WA</a>`,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("fails a same-site link that opens a new tab, and a look-alike domain is external", () => {
+    expect(c.checkExternalLinks("a.html", `<a href="/about" target="_blank">About</a>`)).toHaveLength(1);
+    expect(c.checkExternalLinks("a.html", `<a href="https://techaust.com.evil.example/">x</a>`)).toHaveLength(
+      3,
+    );
+  });
+
+  it("keeps the note in step with the shell copy", async () => {
+    const { shell } = await import("../src/content/shell");
+    expect(shell.newTab).toBe(c.NEW_TAB_TEXT);
+  });
+});
