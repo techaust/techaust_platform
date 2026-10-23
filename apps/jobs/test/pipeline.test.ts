@@ -576,6 +576,18 @@ describe("dead-letter queues [FRM-07]", () => {
       makeEnv(),
     );
     expect(dead.ack).toHaveBeenCalled();
+    // CPU tuning 3: the handler counts its invocation, so its log lines name the isolate and the invocation
+    const line = quiet.mock.calls
+      .map((c) => {
+        try {
+          return JSON.parse(String(c[0])) as { ev?: string; iso?: string; n?: number };
+        } catch {
+          return {};
+        }
+      })
+      .find((l) => l.ev === "queue.dead_letter");
+    expect(line?.iso).toMatch(/^[0-9a-f]{6}$/);
+    expect(line?.n).toBeGreaterThanOrEqual(1);
 
     const failing = recorder([{ kind: "permanent", error: "400" }]);
     expect(await processDeadLetter(makeEnv(), "techaust-local-email-dlq", {}, failing.transport)).toBe(false);

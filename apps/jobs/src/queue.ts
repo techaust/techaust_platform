@@ -3,7 +3,7 @@
 // after 5 tries the queue moves it to the dead-letter queue (wrangler.jsonc).
 import { CLAIM_TIMEOUT_MS, processDeadLetter, processEmail } from "./email.ts";
 import { processLead } from "./leads.ts";
-import { logEvent } from "./log.ts";
+import { logEvent, noteInvocation } from "./log.ts";
 import { processStaffAlert } from "./staff-alerts.ts";
 
 /** A staff alert (`{ kind: "staff.alert", auditId }`) shares the email queue with ordinary emails (M2.4b). */
@@ -19,6 +19,7 @@ export const dlqRetryDelay = (attempts: number): number =>
   Math.min(4 * 3_600, 300 * 2 ** Math.max(0, attempts - 1));
 
 export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promise<void> {
+  noteInvocation();
   const queue = batch.queue;
   const isDlq = queue.endsWith("-leads-dlq") || queue.endsWith("-email-dlq");
   for (const message of batch.messages) {

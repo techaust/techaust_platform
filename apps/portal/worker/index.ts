@@ -14,6 +14,7 @@ import { docToken } from "./doc-token.ts";
 import { guard, ROUTES, tableOf } from "./guard.ts";
 import { me } from "./me.ts";
 import type { MagicLinkSender } from "./sender.ts";
+import "./warm.ts"; // start-up warm-up of the sign-in path (CPU tuning 3)
 
 let isolateId: string | undefined;
 let isolateRequests = 0;
