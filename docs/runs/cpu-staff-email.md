@@ -1,7 +1,7 @@
 # CPU tuning 3: staff security emails and portal `/magic`
 
 ```
-Status: review approved; PR open
+Status: merged; staging test waits for the owner
 Tier: B (Workers, queues; docs/14 §2)
 Usage: builder claude-sonnet-5-5 / medium (workers-profiling, workers-best-practices, wrangler, turnstile-spin), 17 min,
   212k tokens · reviewer claude-opus-5-5 / high (code-review, security-review, workers-best-practices, workers-profiling), 11 min,
@@ -126,3 +126,6 @@ The `batch(5)` step (counter-key HMACs and the reserve SQL) dropped from 1.7 to 
 
 ## Re-check (reviewer Opus 5.5 medium, 2026-10-23): APPROVE
 `b716896..4ba0174`: the three lows fixed; `iso`/`n` carry no personal data, `getRandomValues` runs only inside an invocation (the warm-up test proves it never logs), fields can't overwrite callers' keys and are absent outside queue runs; existing log assertions hold. Checks: jobs 60, portal 425, auth 126, `pnpm check` green. One new **low**: nothing proved `handleQueue` calls `noteInvocation()`. **Lead fix:** the dead-letter handler test in `pipeline.test.ts` now finds the `queue.dead_letter` line and asserts its `iso` (6 hex) and `n` (≥ 1); jobs 60/60 and `pnpm check` green.
+
+## Handover (lead, 2026-10-23, 21:45 IST)
+Merged as [PR #69](https://github.com/techaust/techaust_platform/pull/69); its staging deploy follows `main`'s CI. **Next: Step 3 with the owner** (about 10 minutes): a sign-in to staging admin from a new browser (new-device email), one recovery code (2FA-change email), and a portal sign-in link. The lead reads each invocation's `cpuTimeMs` with `iso`/`n` from Workers Logs (read-only) and records them here. Pass: each staff send and `/magic` ≤ 7 ms. If cold (`n=1`) staff sends stay at 8 ms: try deriving the SES signing key during the `staff.alert` expansion, else bring the owner the options (accept 8 ms for rare cold sends, or a Paid-plan proposal).

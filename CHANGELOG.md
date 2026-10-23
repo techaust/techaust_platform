@@ -2,6 +2,13 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-10-23 [#69](https://github.com/techaust/techaust_platform/pull/69) perf(portal,jobs): warm the sign-in path at start-up; isolate markers on queue logs [POR-01, ADM-MAIL-01]
+- 2026-10-23 [#68](https://github.com/techaust/techaust_platform/pull/68) docs: first cost report (docs/14 §8)
+- 2026-10-23 [#67](https://github.com/techaust/techaust_platform/pull/67) docs: M2.5 NVDA check guide for the owner [WEB-G-13]
+- 2026-10-23 [#66](https://github.com/techaust/techaust_platform/pull/66) feat(web): M2.5 SEO, performance and accessibility pass [WEB-G-09, WEB-G-11, WEB-G-13, WEB-OG]
+- 2026-10-23 [#65](https://github.com/techaust/techaust_platform/pull/65) docs: M2.5 plan approval and brief [WEB-G-09, WEB-G-11, WEB-G-13, WEB-OG]
+- 2026-10-23 [#64](https://github.com/techaust/techaust_platform/pull/64) test(admin): back-date the break-glass re-issue clock so the expired invite can't race the real clock [ADM-AUTH-07]
+- 2026-10-23 [#63](https://github.com/techaust/techaust_platform/pull/63) docs: end of day 2026-10-23 (M2.4b)
 - 2026-10-23 [#62](https://github.com/techaust/techaust_platform/pull/62) docs: M2.4b staging result and approval
 - 2026-10-23 [#61](https://github.com/techaust/techaust_platform/pull/61) feat(auth): M2.4b sign-in emails, staff security emails, Turnstile on sign-in [POR-01, ADM-AUTH-06, ADM-AUTH-09, ADM-MAIL-01]
 - 2026-10-23 [#60](https://github.com/techaust/techaust_platform/pull/60) fix(web): company-only social links in the footer; external-link arrow aligned again [WEB-G-11]
