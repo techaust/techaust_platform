@@ -17,8 +17,12 @@ export const IP_LOCK_MS = LOCK_MS;
 export type Attempts = { windowStart: number; failures: number; lockedUntil: number | null };
 
 export const isLocked = (a: Attempts | null, nowMs: number) => !!a?.lockedUntil && a.lockedUntil > nowMs;
-export const needsTurnstile = (a: Attempts | null, nowMs: number) =>
-  !!a && nowMs - a.windowStart < WINDOW_MS && a.failures >= TURNSTILE_AFTER;
+export const needsTurnstile = (
+  a: Attempts | null,
+  nowMs: number,
+  turnstileAfter = TURNSTILE_AFTER,
+  windowMs = WINDOW_MS,
+) => !!a && nowMs - a.windowStart < windowMs && a.failures >= turnstileAfter;
 
 /** The row after one more failure. */
 export function recordFailure(
@@ -78,8 +82,7 @@ export function reserveAttemptGated(
   windowMs = WINDOW_MS,
 ): GatedReservation {
   if (isLocked(a, nowMs)) return { allowed: false, row: a as Attempts };
-  const fresh = !a || nowMs - a.windowStart >= windowMs;
-  if (!fresh && a.failures >= turnstileAfter && !verified)
+  if (a && needsTurnstile(a, nowMs, turnstileAfter, windowMs) && !verified)
     return { allowed: false, row: a, turnstileRequired: true };
   return reserveAttempt(a, nowMs, lockAfter, lockMs, windowMs);
 }
