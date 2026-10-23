@@ -2,6 +2,7 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-10-23 [#62](https://github.com/techaust/techaust_platform/pull/62) docs: M2.4b staging result and approval
 - 2026-10-23 [#61](https://github.com/techaust/techaust_platform/pull/61) feat(auth): M2.4b sign-in emails, staff security emails, Turnstile on sign-in [POR-01, ADM-AUTH-06, ADM-AUTH-09, ADM-MAIL-01]
 - 2026-10-23 [#60](https://github.com/techaust/techaust_platform/pull/60) fix(web): company-only social links in the footer; external-link arrow aligned again [WEB-G-11]
 - 2026-10-23 [#59](https://github.com/techaust/techaust_platform/pull/59) feat(web): external links open in a new tab and say so; LinkedIn standard address [WEB-G-11]
