@@ -583,6 +583,8 @@ input[readonly] {
   min-height: 4.0625rem;
   margin-bottom: var(--space-5);
   border-radius: var(--radius-sm);
+  /* The widget's frame sits inline inside Cloudflare's shadow root: no line box under it (no gap below the frame). */
+  line-height: 0;
 }
 
 .turnstile[data-size="compact"] {
@@ -594,11 +596,6 @@ input[readonly] {
 .turnstile[data-state="loading"],
 .turnstile:empty {
   background: var(--color-fill-subtle);
-}
-
-/* The widget's frame sits inline inside Cloudflare's shadow root: no line box under it (no gap below the frame). */
-.turnstile {
-  line-height: 0;
 }
 
 /* The 07-G line sits right above the check it asks for. */
