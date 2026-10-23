@@ -114,6 +114,13 @@ a:hover {
   flex: none;
 }
 
+/* ExternalLink.astro: the text and its trailing arrow on one line, centred. Before .btn, so a button keeps its own. */
+.ext-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
 /* Theme-dependent artwork (the two logo versions): the active theme shows one. */
 .only-dark {
   display: none;
