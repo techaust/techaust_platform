@@ -13,13 +13,12 @@ import { serviceLabels as L, pageLabels as P } from "../../content/labels";
 import { serviceContent, serviceLink } from "../../content/services";
 import type { ServiceCode } from "../../content/types";
 import { type BlogData, istDay, type TocItem } from "../../lib/blog";
+import { addLd } from "../../lib/ld-collector";
 import { formatLegalDate } from "../../lib/legal";
-import { ORIGIN } from "../../lib/machine-files";
+import { articleNode } from "../../lib/structured-data";
 import CTABand from "../CTABand.astro";
 import CurrencyNote from "../CurrencyNote.astro";
-import FaqJsonLd from "../FaqJsonLd.astro";
 import FaqSection from "../FaqSection.astro";
-import JsonLd from "../JsonLd.astro";
 import PageHero from "../PageHero.astro";
 import PriceNote from "../PriceNote.astro";
 import Prose from "../Prose.astro";
@@ -42,18 +41,17 @@ const first = codes[0];
 const primary = first
   ? serviceContent(first).hero.primary
   : { label: home.band.primary, href: discoveryHref };
-const url = `${ORIGIN}/blog/${slug}`;
-const article = {
-  "@type": "Article",
-  headline: data.title,
-  description: data.description,
-  datePublished: iso(data.date),
-  dateModified: iso(data.updated ?? data.date),
-  author: { "@type": "Person", name: about.founder.name, url: `${ORIGIN}/about` },
-  publisher: { "@type": "Organization", name: "TecHaust Technologies", url: ORIGIN },
-  mainEntityOfPage: url,
-  inLanguage: "en-IN",
-};
+addLd(
+  Astro.request,
+  articleNode({
+    slug,
+    headline: data.title,
+    description: data.description,
+    datePublished: iso(data.date),
+    dateModified: iso(data.updated ?? data.date),
+    authorName: about.founder.name,
+  }),
+);
 ---
 
 <PageHero title={data.title} lede={data.description} trail={[{ label: P.blog, href: "/blog" }, { label: data.title }]}>
@@ -99,14 +97,7 @@ const article = {
   </div>
 </section>
 
-{
-  data.faq && data.faq.length > 0 && (
-    <>
-      <FaqSection title={L.faqs} items={data.faq} flushTop />
-      <FaqJsonLd items={data.faq} />
-    </>
-  )
-}
+{data.faq && data.faq.length > 0 && <FaqSection title={L.faqs} items={data.faq} flushTop />}
 
 {
   related.length > 0 && (
@@ -126,7 +117,6 @@ const article = {
 }
 
 <CTABand title={home.band.h2} text={home.band.text} primary={primary} whatsappLabel={home.band.whatsapp} />
-<JsonLd data={article} />
 
 <style>
   .post-meta {

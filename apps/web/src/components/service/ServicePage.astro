@@ -13,7 +13,10 @@ import { home } from "../../content/home";
 import { serviceLabels as L } from "../../content/labels";
 import { serviceLink } from "../../content/services";
 import type { PricingLine, ServiceContent } from "../../content/types";
+import { plainText } from "../../lib/copy";
+import { addLd } from "../../lib/ld-collector";
 import { priceOf, scheduleOf } from "../../lib/prices";
+import { serviceNode } from "../../lib/structured-data";
 import { hasTokens } from "../../lib/tokens";
 import Button from "../Button.astro";
 import CopyText from "../CopyText.astro";
@@ -35,6 +38,18 @@ interface Props {
 }
 
 const { service: s } = Astro.props;
+// The page's Service node for the JSON-LD graph (M2.5): the "from" price the hero shows, in INR (from the catalogue).
+const heroPrice = priceOf(s.hero.price.ref);
+addLd(
+  Astro.request,
+  serviceNode({
+    name: s.name,
+    description: plainText(s.meta.description),
+    path: `/services/${s.slug}`,
+    fromInr: heroPrice.inr,
+    international: heroPrice.usd !== null,
+  }),
+);
 
 const prices = (s.pricing?.prices ?? []).map((p) => ({ ...p, v: priceOf(p.ref) }));
 // "USD price on request" once per group: on the last price without a USD amount.

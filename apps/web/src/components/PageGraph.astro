@@ -1,0 +1,12 @@
+---
+// The page's one JSON-LD @graph (M2.5): the Organization, the WebSite and whatever the page's components added through
+// lib/ld-collector.ts (breadcrumbs, service, FAQ, article). Rendered by BaseLayout after the page's content, so the
+// collection is complete. Builders: lib/structured-data.ts.
+import { takeLd } from "../lib/ld-collector";
+import { buildGraph } from "../lib/structured-data";
+import JsonLd from "./JsonLd.astro";
+
+const data = buildGraph(takeLd(Astro.request));
+---
+
+<JsonLd data={data} />

@@ -6,6 +6,14 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { lintBuiltPage, lintSource, readAllowList, visibleText } from "./web-content-lint.mjs";
 import { checkLinks } from "./web-link-check.mjs";
+import { checkOgImage, readDist } from "./web-og.mjs";
+import {
+  checkSeoTags,
+  checkSitemap,
+  checkStructuredData,
+  checkUniqueTitles,
+  measureJs,
+} from "./web-seo-checks.mjs";
 import { readSiteString, walk } from "./web-shared.mjs";
 
 /** The `/*` block of a Cloudflare `_headers` file as a lower-cased-name map. */
@@ -334,6 +342,7 @@ export function checkWeb(webDir) {
   // WEB-G-14 and the heading rule (scripts/web-content-lint.mjs): the source content, then each built page below.
   const allow = readAllowList(webDir);
   problems.push(...lintSource(webDir));
+  const pages = [];
   for (const file of walk(dist)) {
     const name = relative(dist, file).split(sep).join("/");
     if (/^preview(\/|\.|$)/i.test(name)) problems.push(`${name}: preview pages must not be in the build`);
@@ -345,7 +354,8 @@ export function checkWeb(webDir) {
     if (!TEXT_EXT.test(name)) continue;
     const text = readFileSync(file, "utf8");
     problems.push(...checkText(name, text, { ga4Id }));
-    if (name.endsWith(".html"))
+    if (name.endsWith(".html")) {
+      pages.push([name, text]);
       problems.push(
         ...checkHtml(name, text, headersText),
         ...checkAmpersands(name, text),
@@ -353,8 +363,24 @@ export function checkWeb(webDir) {
         ...checkMetaDescription(name, text),
         ...checkExternalLinks(name, text),
         ...lintBuiltPage(name, text, allow.entries),
+        // M2.5: SEO tags, JSON-LD against the page, and the share image (WEB-G-09, WEB-SVC-04, WEB-OG).
+        ...checkSeoTags(name, text),
+        ...checkStructuredData(name, text),
+        ...checkOgImage(name, text, readDist(dist)),
       );
+    }
   }
+  problems.push(...checkUniqueTitles(pages));
+  for (const f of ["sitemap.xml", "robots.txt", "llms.txt"])
+    if (!existsSync(join(dist, f))) problems.push(`${f}: not built (WEB-G-11)`);
+  if (existsSync(join(dist, "sitemap.xml")))
+    problems.push(
+      ...checkSitemap(
+        readFileSync(join(dist, "sitemap.xml"), "utf8"),
+        pages.map(([n]) => n),
+      ),
+    );
+  problems.push(...measureJs(dist).problems);
   problems.push(...checkLinks(webDir));
   const sec = join(dist, ".well-known", "security.txt");
   if (existsSync(sec)) problems.push(...checkSecurityTxt(readFileSync(sec, "utf8")));

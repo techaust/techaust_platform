@@ -8,7 +8,6 @@ import "../styles/page.css";
 import CopyText from "../components/CopyText.astro";
 import CTABand from "../components/CTABand.astro";
 import CurrencyNote from "../components/CurrencyNote.astro";
-import FaqJsonLd from "../components/FaqJsonLd.astro";
 import FaqSection from "../components/FaqSection.astro";
 import PageHero from "../components/PageHero.astro";
 import PriceNote from "../components/PriceNote.astro";
@@ -84,7 +83,6 @@ const plans = care.plans;
   </section>
 
   <FaqSection title={L.faqs} items={pricing.faqs} flushTop />
-  <FaqJsonLd items={pricing.faqs} />
 
   <CTABand
     title={home.band.h2}
