@@ -28,7 +28,9 @@
   // Login secrets (docs/05 §4): names only; values are set with `wrangler secret put` (docs/runbooks/access-staging.md).
   // TURNSTILE_SECRET is the secret of the widget above (local: `pnpm dev:secrets` writes the always-pass test secret).
   // Not inherited by environments, so each env lists them too.
-  "secrets": { "required": ["PASSWORD_PEPPER", "SALT_PEPPER", "TOTP_ENC_KEY", "SESSION_HMAC_KEY", "TURNSTILE_SECRET"] },
+  "secrets": {
+    "required": ["PASSWORD_PEPPER", "SALT_PEPPER", "TOTP_ENC_KEY", "SESSION_HMAC_KEY", "TURNSTILE_SECRET"]
+  },
   // Email queue (producer, M2.4b): the staff security alerts go to the jobs Worker as an audit-row ID only (no address
   // leaves this Worker). The jobs Worker consumes it. Production has no queue until Phase 7 (owner approval).
   "queues": { "producers": [{ "binding": "EMAIL_QUEUE", "queue": "techaust-local-email" }] },
@@ -55,7 +57,9 @@
         "TURNSTILE_SITE_KEY": "0x4AAAAAAFhrfYyx9bhG6lmt",
         "TURNSTILE_HOSTNAMES": "techaust-platform-admin-staging.techaust-technologies-153.workers.dev"
       },
-      "secrets": { "required": ["PASSWORD_PEPPER", "SALT_PEPPER", "TOTP_ENC_KEY", "SESSION_HMAC_KEY", "TURNSTILE_SECRET"] },
+      "secrets": {
+        "required": ["PASSWORD_PEPPER", "SALT_PEPPER", "TOTP_ENC_KEY", "SESSION_HMAC_KEY", "TURNSTILE_SECRET"]
+      },
       "queues": { "producers": [{ "binding": "EMAIL_QUEUE", "queue": "techaust-staging-email" }] },
       "d1_databases": [
         {
@@ -77,7 +81,9 @@
         "TURNSTILE_SITE_KEY": "",
         "TURNSTILE_HOSTNAMES": "admin.techaust.com"
       },
-      "secrets": { "required": ["PASSWORD_PEPPER", "SALT_PEPPER", "TOTP_ENC_KEY", "SESSION_HMAC_KEY", "TURNSTILE_SECRET"] },
+      "secrets": {
+        "required": ["PASSWORD_PEPPER", "SALT_PEPPER", "TOTP_ENC_KEY", "SESSION_HMAC_KEY", "TURNSTILE_SECRET"]
+      },
       // Production: NO invocation logs from day one (they carry the client IP, user agent and location of every staff
       // request, which the append-only access log already holds for security). Console logs stay on.
       "observability": {

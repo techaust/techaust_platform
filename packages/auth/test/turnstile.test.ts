@@ -46,6 +46,11 @@ describe("verifyTurnstile", () => {
     );
   });
 
+  it("leaves remoteip out when the caller has no address (Cloudflare treats it as optional)", async () => {
+    expect(await verifyTurnstile({ ...base, remoteip: "" })).toBe(true);
+    expect((calls[0]?.init?.body as URLSearchParams | undefined)?.has("remoteip")).toBe(false);
+  });
+
   it("accepts any host in the comma list", async () => {
     answer = { success: true, action: "admin_login", hostname: "other.example" };
     expect(await verifyTurnstile(base)).toBe(true);

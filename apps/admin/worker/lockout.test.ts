@@ -30,10 +30,16 @@ import {
   hash,
   rows,
   sessionFor,
+  stubSiteverify,
+  token,
   userId,
   withDb,
   wrongCode,
 } from "./test-helpers.ts";
+
+// From the 4th failure of an hour /login wants a Turnstile token (M2.4b): the tests below that drive more than three wrong
+// passwords send a fresh one each time, and this stub plays Cloudflare's siteverify (see turnstile.test.ts for the gate).
+stubSiteverify();
 
 const T0 = 1_700_000_000_000;
 const H = WINDOW_MS;
@@ -191,7 +197,10 @@ describe("account lockout over HTTP [ADM-AUTH-06]", () => {
   it("10 wrong passwords lock /login: the 11th is 429 even with the right password", async () => {
     const e = await enrol("lock-pw@example.com");
     for (let i = 0; i < 10; i++)
-      expect((await call("/auth/login", { body: { email: e.email, clientHash: hash() } })).status).toBe(401);
+      expect(
+        (await call("/auth/login", { body: { email: e.email, clientHash: hash(), turnstile: token() } }))
+          .status,
+      ).toBe(401);
     const res = await call("/auth/login", { body: { email: e.email, clientHash: e.clientHash } });
     expect(res.status).toBe(429);
     expect(await bodyOf(res)).toEqual({
@@ -224,19 +233,23 @@ describe("account lockout over HTTP [ADM-AUTH-06]", () => {
     const e = await enrol("lock-mixed@example.com");
     const id = await userId(e.email);
     const challenge = await challengeFor(e.email, e.clientHash); // counts 1 password attempt
-    for (let i = 0; i < 5; i++) await call("/auth/login", { body: { email: e.email, clientHash: hash() } });
+    for (let i = 0; i < 5; i++)
+      await call("/auth/login", { body: { email: e.email, clientHash: hash(), turnstile: token() } });
     for (let i = 0; i < 5; i++) await call("/auth/totp", { body: { challenge, code: wrongCode(e.secret) } });
     expect((await attemptsRow(await accountKey(e.email)))?.failures).toBe(6);
     expect((await attemptsRow(codeKey(id)))?.failures).toBe(5);
-    expect((await call("/auth/login", { body: { email: e.email, clientHash: e.clientHash } })).status).toBe(
-      200,
-    );
+    // six failures stand, so the password step wants a token now (M2.4b); the code counter has nothing to do with it
+    const again = await call("/auth/login", {
+      body: { email: e.email, clientHash: e.clientHash, turnstile: token() },
+    });
+    expect(again.status).toBe(200);
   });
 
   it("the lock lasts 15 minutes, then one verified attempt is allowed, then it is locked again", async () => {
     const e = await enrol("lock-expiry@example.com");
     const k = await accountKey(e.email);
-    for (let i = 0; i < 10; i++) await call("/auth/login", { body: { email: e.email, clientHash: hash() } });
+    for (let i = 0; i < 10; i++)
+      await call("/auth/login", { body: { email: e.email, clientHash: hash(), turnstile: token() } });
     expect((await call("/auth/login", { body: { email: e.email, clientHash: e.clientHash } })).status).toBe(
       429,
     );
@@ -244,7 +257,10 @@ describe("account lockout over HTTP [ADM-AUTH-06]", () => {
     await env.DB.prepare("UPDATE auth_attempts SET locked_until = ? WHERE key = ?")
       .bind(Date.now() - 1, k)
       .run();
-    const once = await call("/auth/login", { body: { email: e.email, clientHash: e.clientHash } });
+    // the lock is over, but this is the 11th failure of the hour: a token is due (M2.4b), and with one the attempt counts
+    const once = await call("/auth/login", {
+      body: { email: e.email, clientHash: e.clientHash, turnstile: token() },
+    });
     expect(once.status).toBe(200); // verified: the right password gets its challenge
     expect((await attemptsRow(k))?.failures).toBe(11); // but the attempt was counted, and the lock is back
     expect((await call("/auth/login", { body: { email: e.email, clientHash: e.clientHash } })).status).toBe(
@@ -256,12 +272,14 @@ describe("account lockout over HTTP [ADM-AUTH-06]", () => {
   it("an unknown email locks like a real account: the 11th login is 429 with the same body", async () => {
     const email = "ghost-lock@example.com";
     for (let i = 0; i < 10; i++)
-      expect((await call("/auth/login", { body: { email, clientHash: hash() } })).status).toBe(401);
-    const ghost = await counting("/auth/login", { body: { email, clientHash: hash() } });
+      expect(
+        (await call("/auth/login", { body: { email, clientHash: hash(), turnstile: token() } })).status,
+      ).toBe(401);
+    const ghost = await counting("/auth/login", { body: { email, clientHash: hash(), turnstile: token() } });
     expect(ghost.res.status).toBe(429);
     const real = await enrol("real-lock@example.com");
     for (let i = 0; i < 10; i++)
-      await call("/auth/login", { body: { email: real.email, clientHash: hash() } });
+      await call("/auth/login", { body: { email: real.email, clientHash: hash(), turnstile: token() } });
     const locked = await counting("/auth/login", {
       body: { email: real.email, clientHash: real.clientHash },
     });
@@ -291,7 +309,7 @@ describe("the per-address counter [ADM-AUTH-06]", () => {
     await seed(k, IP_LOCK_AFTER - 1);
     // One more failure (any account, even an unknown one) reaches the limit.
     const wrong = await call("/auth/login", {
-      body: { email: "nobody-ip@example.com", clientHash: hash() },
+      body: { email: "nobody-ip@example.com", clientHash: hash(), turnstile: token() },
       headers: from(ip),
     });
     expect(wrong.status).toBe(401);
@@ -346,7 +364,10 @@ describe("the per-address counter [ADM-AUTH-06]", () => {
 
   it("the address key is an HMAC: the raw address is stored nowhere in auth_attempts", async () => {
     const ip = "198.51.100.30";
-    await call("/auth/login", { body: { email: "who@example.com", clientHash: hash() }, headers: from(ip) });
+    await call("/auth/login", {
+      body: { email: "who@example.com", clientHash: hash(), turnstile: token() },
+      headers: from(ip),
+    });
     const keys = (await rows<{ key: string }>("SELECT key FROM auth_attempts")).map((r) => r.key);
     expect(keys.some((x) => x.includes(ip))).toBe(false);
     expect(await ipKey(env.SALT_PEPPER, ip)).toMatch(/^ip:[0-9a-f]{32}$/);
@@ -361,7 +382,7 @@ describe("the per-address counter [ADM-AUTH-06]", () => {
     await seed(ak, 10, Date.now(), Date.now() + LOCK_MS);
     for (let i = 1; i <= 3; i++) {
       const r = await counting("/auth/login", {
-        body: { email: e.email, clientHash: hash() },
+        body: { email: e.email, clientHash: hash(), turnstile: token() },
         headers: from(ip),
       });
       expect([r.res.status, r.calls]).toEqual([429, 2]); // still one batch + the access row's batch... = 2
@@ -371,14 +392,14 @@ describe("the per-address counter [ADM-AUTH-06]", () => {
     // The 100th failure from the address blocks it, and from then on nothing is written at all.
     await seed(ik, IP_LOCK_AFTER - 1);
     const hundredth = await call("/auth/login", {
-      body: { email: e.email, clientHash: hash() },
+      body: { email: e.email, clientHash: hash(), turnstile: token() },
       headers: from(ip),
     });
     expect(hundredth.status).toBe(429);
     expect((await attemptsRow(ik))?.locked_until).toBeGreaterThan(Date.now());
     const before = { access: await countOf("access_log"), attempts: await countOf("auth_attempts") };
     const blocked = await counting("/auth/login", {
-      body: { email: e.email, clientHash: hash() },
+      body: { email: e.email, clientHash: hash(), turnstile: token() },
       headers: from(ip),
     });
     expect([blocked.res.status, blocked.calls]).toEqual([429, 1]);
@@ -460,7 +481,7 @@ describe("parallel attempts can't slip past the lock (the M1.4 pre-read finding)
     const k = await accountKey(e.email);
     await seed(k, 9);
     const rs = await parallel(5, (env_) =>
-      call("/auth/login", { body: { email: e.email, clientHash: hash() } }, env_),
+      call("/auth/login", { body: { email: e.email, clientHash: hash(), turnstile: token() } }, env_),
     );
     expect(statuses(rs)).toEqual([401, 429, 429, 429, 429]);
     const row = await attemptsRow(k);
@@ -486,7 +507,7 @@ describe("parallel attempts can't slip past the lock (the M1.4 pre-read finding)
   it("10 parallel wrong logins add exactly 10 failures and lock the account (no lost update)", async () => {
     const e = await enrol("race-ten@example.com");
     const rs = await parallel(10, (env_) =>
-      call("/auth/login", { body: { email: e.email, clientHash: hash() } }, env_),
+      call("/auth/login", { body: { email: e.email, clientHash: hash(), turnstile: token() } }, env_),
     );
     expect(statuses(rs)).toEqual(Array(10).fill(401));
     const row = await attemptsRow(await accountKey(e.email));
@@ -531,10 +552,11 @@ describe("alert.lockout [ADM-AUTH-09]", () => {
   it("one alert row when a lock starts on a real account, none for an unknown email, none afterwards", async () => {
     const e = await enrol("alert-lock@example.com");
     const id = await userId(e.email);
-    for (let i = 0; i < 9; i++) await call("/auth/login", { body: { email: e.email, clientHash: hash() } });
+    for (let i = 0; i < 9; i++)
+      await call("/auth/login", { body: { email: e.email, clientHash: hash(), turnstile: token() } });
     expect(await alerts(id)).toHaveLength(0);
     const tenth = await counting("/auth/login", {
-      body: { email: e.email, clientHash: hash() },
+      body: { email: e.email, clientHash: hash(), turnstile: token() },
       headers: { "User-Agent": "TestAgent/1.0" },
     });
     expect([tenth.res.status, tenth.calls]).toEqual([401, 2]); // the alert rides in the same batch: no extra call
@@ -546,12 +568,13 @@ describe("alert.lockout [ADM-AUTH-09]", () => {
       country: null,
       city: null,
     });
-    await call("/auth/login", { body: { email: e.email, clientHash: hash() } }); // 429: nothing new
+    await call("/auth/login", { body: { email: e.email, clientHash: hash(), turnstile: token() } }); // 429: nothing new
     expect(await alerts(id)).toHaveLength(1);
 
     const before = await countOf("audit_log", "action = 'alert.lockout'");
     const ghost = "ghost-alert@example.com";
-    for (let i = 0; i < 11; i++) await call("/auth/login", { body: { email: ghost, clientHash: hash() } });
+    for (let i = 0; i < 11; i++)
+      await call("/auth/login", { body: { email: ghost, clientHash: hash(), turnstile: token() } });
     expect(await countOf("audit_log", "action = 'alert.lockout'")).toBe(before);
   });
 

@@ -14,7 +14,7 @@ export type VerifyTurnstile = {
   secret: string;
   /** The `cf-turnstile-response` value the browser sent. */
   token: string;
-  /** The visitor's address, sent to Cloudflare as `remoteip` (the raw header, never an HMAC or a /64). */
+  /** The visitor's address, sent to Cloudflare as `remoteip` (the raw header, never an HMAC or a /64). Empty: not sent. */
   remoteip: string;
   /** The action this surface's widget asks for (`contact`, `quote`, `admin_login`, `portal_link`). */
   action: string;
@@ -33,11 +33,13 @@ type SiteverifyAnswer = { success?: unknown; action?: unknown; hostname?: unknow
 export async function verifyTurnstile(o: VerifyTurnstile): Promise<boolean> {
   if (!o.secret || o.token.length === 0 || o.token.length > MAX_TOKEN_LENGTH) return false;
   try {
+    const form = new URLSearchParams({ secret: o.secret, response: o.token });
+    if (o.remoteip) form.set("remoteip", o.remoteip);
     const res = await fetch(SITEVERIFY_URL, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       signal: AbortSignal.timeout(TIMEOUT_MS),
-      body: new URLSearchParams({ secret: o.secret, response: o.token, remoteip: o.remoteip }),
+      body: form,
     });
     if (!res.ok) return false;
     const r = (await res.json()) as SiteverifyAnswer;
