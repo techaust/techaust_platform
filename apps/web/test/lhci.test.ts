@@ -44,7 +44,8 @@ describe("lighthouserc.json (WEB-G-13)", () => {
   });
 
   it("asserts performance 0.95 and accessibility, best practices and SEO 1 (the 404 has noindex, so no SEO score)", () => {
-    const [pages, notFound] = rc.ci.assert.assertMatrix;
+    const [pages, forms, notFound] = rc.ci.assert.assertMatrix;
+    expect(forms.assertions["categories:best-practices"][1].minScore).toBe(0.95); // Turnstile: see the run file
     expect(pages.assertions["categories:performance"][1].minScore).toBe(0.95);
     for (const c of ["accessibility", "best-practices", "seo"])
       expect(pages.assertions[`categories:${c}`][1].minScore).toBe(1);

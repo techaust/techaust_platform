@@ -3,7 +3,7 @@
 // them and draws the mark from the brand geometry. PLACEHOLDER layout (ink ground, the mark, category, title, domain):
 // the designer replaces it in M2.5 step 2b, keeping the input shape and the 1200 × 630 size.
 import { color, SCHEMES } from "./compose.ts";
-import type { Outlined } from "./outline.ts";
+import type { Outlined } from "./outline-set.ts";
 import { fitMark } from "./wallpapers.ts";
 
 export const OG_SIZE = { width: 1200, height: 630 } as const;

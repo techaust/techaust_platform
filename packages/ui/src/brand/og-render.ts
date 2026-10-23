@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 import { OG_SIZE, ogSvg } from "./og.ts";
-import { createOutliner, type Outlined } from "./outline.ts";
+import { createOutliner, type Outlined } from "./outline-set.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const require = createRequire(join(root, "package.json"));
