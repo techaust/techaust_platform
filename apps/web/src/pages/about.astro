@@ -157,7 +157,8 @@ const talk = cta.talk();
     color: var(--color-text);
   }
 
-  .founder__link {
+  /* The link is rendered by ExternalLink.astro, outside this page's style scope. */
+  .founder :global(.founder__link) {
     display: inline-flex;
     align-items: center;
     gap: var(--space-1);
