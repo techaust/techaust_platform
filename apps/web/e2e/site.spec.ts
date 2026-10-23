@@ -105,8 +105,9 @@ test.describe("no Content Security Policy violations (WEB-G-13)", () => {
           w.__csp.push(`${e.violatedDirective} ${e.blockedURI} ${e.sourceFile}:${e.columnNumber}`),
         );
       });
-      await page.goto(path);
-      await page.waitForLoadState("networkidle");
+      // "load", then a short settle: Turnstile keeps a connection open on the form pages, so "networkidle" never comes.
+      await page.goto(path, { waitUntil: "load" });
+      await page.waitForTimeout(2000);
       // Use the form a little, so its schemas have been built and run.
       if (path === "/contact") {
         await page.locator("#f-name").fill("Sample Visitor");
