@@ -27,7 +27,7 @@ export function resetStatements({ email, tokenHash, now, expiresAt, auditId, ale
     `UPDATE staff_invites SET expires_at = ${now} WHERE email = ${e} AND used_at IS NULL AND expires_at > ${now} AND EXISTS (${target});`,
     `INSERT INTO staff_invites (token_hash, email, role, invited_by, expires_at) SELECT ${q(tokenHash)}, email, role, NULL, ${expiresAt} FROM staff_users WHERE email = ${e} AND ${fresh};`,
     `INSERT INTO audit_log (id, actor_type, actor_id, action, entity_type, entity_id, summary) SELECT ${q(auditId)}, 'system', NULL, 'user.reset_2fa', 'staff_user', id, '{"via":"cli"}' FROM staff_users WHERE email = ${e} AND ${fresh};`,
-    `INSERT INTO audit_log (id, actor_type, actor_id, action, entity_type, entity_id, summary) SELECT ${q(alertId)}, 'system', NULL, 'alert.2fa_change', 'staff_user', id, '{"via":"cli"}' FROM staff_users WHERE email = ${e} AND ${fresh};`,
+    `INSERT INTO audit_log (id, actor_type, actor_id, action, entity_type, entity_id, summary) SELECT ${q(alertId)}, 'system', NULL, 'alert.2fa_change', 'staff_user', id, '{"via":"cli","change":"reset_by_owner"}' FROM staff_users WHERE email = ${e} AND ${fresh};`,
   ];
 }
 

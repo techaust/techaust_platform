@@ -132,5 +132,5 @@ runFile(
 const [after] = rows(`SELECT status FROM staff_users WHERE email = ${q(email)}`);
 if (after?.status !== "invited") throw new Error("The reset did not apply; nothing was changed.");
 console.log(
-  `${user.status === "invited" ? "New link issued" : "Reset done"} for ${email}: password, authenticator and recovery codes cleared, sessions ended.\nOne-time link, valid ${hours} h:\n${origin}/invite#t=${token}`,
+  `${user.status === "invited" ? "New link issued" : "Reset done"} for ${email}: password, authenticator and recovery codes cleared, sessions ended.\nNo email is sent about this reset: tell the member yourself.\nOne-time link, valid ${hours} h:\n${origin}/invite#t=${token}`,
 );
