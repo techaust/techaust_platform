@@ -1,0 +1,6 @@
+Use this link to sign in. It works once and expires in 15 minutes:
+http://localhost:5174/auth/callback#t=SAMPLE-TOKEN-NOT-REAL-0000000000000000000
+
+If you didn't ask for it, you can ignore this email.
+
+TecHaust Technologies · Balurghat, West Bengal, India · contact@techaust.com

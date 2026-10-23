@@ -1,0 +1,8 @@
+This link signs you in to Sample Client B (sample).
+
+Use this link to sign in. It works once and expires in 15 minutes:
+http://localhost:5174/auth/callback#t=SAMPLE-TOKEN-NOT-REAL-1111111111111111111
+
+If you didn't ask for it, you can ignore this email.
+
+TecHaust Technologies · Balurghat, West Bengal, India · contact@techaust.com

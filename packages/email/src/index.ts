@@ -106,6 +106,7 @@ export function renderEmail(
             time: get("time"),
             device: get("device"),
             location: get("location"),
+            role: get("role"),
           },
           opts,
         ),
@@ -113,10 +114,13 @@ export function renderEmail(
     case "staff.2fa_change":
       return {
         ...noReply,
-        ...staffTwoFaChange({ ...who(get), time: get("time"), change: get("change") }, opts),
+        ...staffTwoFaChange(
+          { ...who(get), time: get("time"), change: get("change"), role: get("role") },
+          opts,
+        ),
       };
     case "staff.lockout":
-      return { ...noReply, ...staffLockout({ ...who(get), time: get("time") }, opts) };
+      return { ...noReply, ...staffLockout({ ...who(get), time: get("time"), role: get("role") }, opts) };
     case "staff.lockout_owner":
       return {
         ...noReply,

@@ -111,13 +111,22 @@ describe("what the bodies carry", () => {
     }
   });
 
-  it("the owner's copy names the locked member, links to the admin and has the owner's line", () => {
+  it("the owner's copy names the locked member and links to the admin; it has no 'Not you?' line (07-G)", () => {
     const r = renderEmail("staff.lockout_owner", data.lockoutOwner, opts);
     expect(r.text).toContain("Meera Iyer");
     expect(r.text).toContain("https://admin.example/");
     expect(r.html).toContain('href="https://admin.example/"');
-    expect(r.text).toContain(
+    expect(r.text).not.toContain("Not you?");
+  });
+
+  it("an owner reading their own alert gets the owner's 'Not you?' line (07-G §2)", () => {
+    const owner = renderEmail("staff.lockout", { ...data.lockout, role: "owner" }, opts);
+    expect(owner.text).toContain(
       "Not you? Sign in now, choose Sign out everywhere under Account, and create new recovery codes.",
+    );
+    expect(owner.text).not.toContain("Contact the owner immediately");
+    expect(renderEmail("staff.lockout", data.lockout, opts).text).toContain(
+      "Not you? Contact the owner immediately.",
     );
   });
 
