@@ -8,6 +8,7 @@
 import "../styles/page.css";
 import "../styles/forms.css";
 import CopyText from "../components/CopyText.astro";
+import ExternalLink from "../components/ExternalLink.astro";
 import ErrorSummary from "../components/form/ErrorSummary.astro";
 import Field from "../components/form/Field.astro";
 import FormEnd from "../components/form/FormEnd.astro";
@@ -83,9 +84,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
                   {shell.footer.whatsapp}
                 </dt>
                 <dd>
-                  <a href={`https://wa.me/${site.whatsapp}`} rel="noopener">
-                    {c.panel.whatsapp}
-                  </a>
+                  <ExternalLink href={`https://wa.me/${site.whatsapp}`}>{c.panel.whatsapp}</ExternalLink>
                   <span class="details__note">{site.hours}</span>
                 </dd>
               </div>
@@ -99,9 +98,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
                   {c.panel.call}
                 </dt>
                 <dd>
-                  <a href={site.calUrl} rel="noopener">
-                    {c.panel.callLink}
-                  </a>
+                  <ExternalLink href={site.calUrl}>{c.panel.callLink}</ExternalLink>
                 </dd>
               </div>
             )

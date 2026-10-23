@@ -1,0 +1,21 @@
+---
+// A link to another site (LinkedIn, WhatsApp, Cal.com …). It opens in a new tab (owner, 2026-10-23), so it says so:
+// a visible arrow icon and, for screen readers, "(opens in a new tab)" (WCAG technique G201). `noopener noreferrer`
+// keeps the new page from reaching back to this one. scripts/web-dist-checks.mjs fails the build on any external
+// link without all three, so every link off techaust.com goes through this component.
+import { shell } from "../content/shell";
+import Icon from "./Icon.astro";
+
+interface Props {
+  href: string;
+  class?: string;
+  /** The trailing icon's size; the default matches body text. */
+  iconSize?: 16 | 20 | 24;
+}
+
+const { href, class: cls, iconSize = 16 } = Astro.props;
+---
+
+<a href={href} class:list={[cls]} target="_blank" rel="noopener noreferrer"
+  ><slot /><span class="visually-hidden"> {shell.newTab}</span><Icon name="arrow-up-right" size={iconSize} /></a
+>

@@ -6,6 +6,7 @@
 import { site } from "../config/site";
 import { draft, shell } from "../content/shell";
 import CurrencyToggle from "./CurrencyToggle.astro";
+import ExternalLink from "./ExternalLink.astro";
 import Icon from "./Icon.astro";
 import Logo from "./Logo.astro";
 import Placeholder from "./Placeholder.astro";
@@ -44,12 +45,12 @@ const columns = [
         {
           wa ? (
             <li>
-              <a href={wa} rel="noopener">
+              <ExternalLink href={wa}>
                 <Icon name="message" />
                 <span>
                   {f.whatsapp} <span class="site-footer__hours">({site.hours})</span>
                 </span>
-              </a>
+              </ExternalLink>
             </li>
           ) : (
             placeholders && (
@@ -68,10 +69,7 @@ const columns = [
         {
           site.linkedinCompany ? (
             <li>
-              <a href={site.linkedinCompany} rel="noopener">
-                {f.linkedinCompany}
-                <Icon name="arrow-up-right" size={16} />
-              </a>
+              <ExternalLink href={site.linkedinCompany}>{f.linkedinCompany}</ExternalLink>
             </li>
           ) : (
             placeholders && (
@@ -84,10 +82,7 @@ const columns = [
         {
           site.linkedinFounder ? (
             <li>
-              <a href={site.linkedinFounder} rel="noopener">
-                {f.linkedinFounder}
-                <Icon name="arrow-up-right" size={16} />
-              </a>
+              <ExternalLink href={site.linkedinFounder}>{f.linkedinFounder}</ExternalLink>
             </li>
           ) : (
             placeholders && (
