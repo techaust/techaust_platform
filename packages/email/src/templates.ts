@@ -279,3 +279,256 @@ export function dlqAlert(d: DlqAlertData, opts: LayoutOptions): Rendered {
     text: `${line}\n${what.length ? `${what.join("\n")}\n` : ""}${d.admin_url}\n\n${FOOTER}\n`,
   };
 }
+
+// ---- M2.4b: the sign-in link and the staff security emails ------------------------------------------------------------------
+// Words: 07 §8 (subjects, the magic-link body, the "Not you?" line) and the owner-approved appendix 07-G
+// (docs/07-content-appendix/G-m2.4b-security-emails.md), word for word. Each heading is the email's subject. The layout is
+// the M2.4 one; security emails carry no marketing line and no unsubscribe link (transactional). The lockout bodies print
+// "15 minutes" and "10 wrong sign-in attempts within an hour" as literal 07-G copy: packages/auth/test/lockout.test.ts pins
+// those figures to LOCK_MS, LOCK_AFTER and WINDOW_MS, so a change there fails a test that names 07-G and this file.
+// Presentation only, never new words: the facts of a new sign-in ("When: …. Where (approximate): …. Device: ….") are set as
+// label and value rows in HTML (the plain text keeps the sentences); the time is bold; the "Not you?" line stands apart.
+
+export type MagicLinkData = { url: string; org_name: string; expires_at: string; accounts: string };
+/**
+ * `role`: the reader's staff role. An owner reads 07-G's owner "Not you?" line ("Contact the owner" can't help them); any
+ * other role, or none, reads the team member's line (07 §8).
+ */
+export type NewDeviceData = {
+  name: string;
+  first_name: string;
+  time: string;
+  device: string;
+  location: string;
+  role?: string;
+};
+export type TwoFaChange = "recovery_code_used" | "recovery_codes_regenerated" | "reset_by_owner";
+export type TwoFaChangeData = {
+  name: string;
+  first_name: string;
+  time: string;
+  change: string;
+  role?: string;
+};
+export type LockoutData = { name: string; first_name: string; time: string; role?: string };
+export type LockoutOwnerData = {
+  name: string;
+  first_name: string;
+  time: string;
+  member_name: string;
+  admin_url: string;
+};
+
+/** The subjects: 07 §8 for the first four, 07-G for the owner's lockout email. */
+export const SUBJECTS = {
+  magicLink: "Your sign-in link for the TecHaust client portal",
+  newDevice: "New sign-in to your TecHaust admin account",
+  twoFaChange: "Security change on your account",
+  lockout: "Your account is temporarily locked",
+  lockoutOwner: "A team member's admin account is locked",
+} as const;
+
+/** 07-G §2: the "Not you?" line, by reader. */
+export const NOT_YOU = {
+  member: "Not you? Contact the owner immediately.",
+  owner: "Not you? Sign in now, choose Sign out everywhere under Account, and create new recovery codes.",
+} as const;
+
+const notYouFor = (role: string | undefined) => (role === "owner" ? NOT_YOU.owner : NOT_YOU.member);
+
+/** One paragraph of an email: plain text and HTML (already escaped), so both versions say the same words. */
+type Para = { text: string; html: string };
+const para = (text: string, html = e(text)): Para => ({ text, html });
+/** A sentence with the time in it: the time bold (and kept on one line) in HTML. */
+const withTime = (before: string, time: string, after: string): Para => ({
+  text: `${before}${time}${after}`,
+  html: `${e(before)}<strong style="font-weight:600;white-space:nowrap;">${e(time)}</strong>${e(after)}`,
+});
+
+/** The "Not you?" line, set apart under a verdigris rule (the reference block of the acknowledgement, 06 §6). */
+function notYouBlock(line: string): string {
+  const q = "Not you?";
+  const words = line.startsWith(`${q} `)
+    ? `<strong style="font-weight:600;">${e(q)}</strong> ${e(line.slice(q.length + 1))}`
+    : e(line);
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 16px;"><tr>
+<td class="ac" width="4" style="width:4px;background-color:${C.btnPrimaryBg};font-size:0;line-height:0;">&nbsp;</td>
+<td style="padding:4px 0 4px 16px;"><p class="tx" style="${textStyle(T.text.body.size, T.text.body.lineHeight, C.text)}">${words}</p></td>
+</tr></table>`;
+}
+
+/** Label and value rows (the lead alert's table, 06 §6), for the facts of a new sign-in. */
+function factTable(rows: [string, string][]): string {
+  const cell = `border-top:1px solid ${C.border};padding:10px 0;vertical-align:top;`;
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px;border-bottom:1px solid ${C.border};" class="ln">
+${rows
+  .map(
+    ([k, v]) => `<tr>
+<td class="ln k" width="152" style="${cell}width:152px;padding-right:16px;"><p class="mu" style="${textStyle(T.text.sm.size, T.text.sm.lineHeight, C.textMuted, "font-weight:500;padding-top:2px;")}">${e(k)}</p></td>
+<td class="ln" style="${cell}"><p class="tx" style="${textStyle(T.text.body.size, T.text.body.lineHeight, C.text, "word-break:break-word;")}">${e(v)}</p></td>
+</tr>`,
+  )
+  .join("\n")}
+</table>`;
+}
+
+/** Text: the paragraphs, a blank line apart, then the footer. */
+const textOf = (parts: string[]) => `${parts.filter(Boolean).join("\n\n")}\n\n${FOOTER}\n`;
+
+/**
+ * The sign-in link (to the client, from no-reply@): 07 §8. The organisation line (07-G) only when the request made 2 or more
+ * links, one per organisation, above the button.
+ */
+export function portalMagicLink(d: MagicLinkData, opts: LayoutOptions): Rendered {
+  const subject = headerValue(SUBJECTS.magicLink);
+  const org = Number(d.accounts) >= 2 ? `This link signs you in to ${d.org_name}.` : "";
+  const use = "Use this link to sign in. It works once and expires in 15 minutes:";
+  const ignore = "If you didn't ask for it, you can ignore this email.";
+  const html = layout(
+    subject,
+    heading(e(subject)) +
+      (org ? bodyP(`<strong style="font-weight:600;">${e(org)}</strong>`) : "") +
+      bodyP(e(use), "padding-bottom:8px;") +
+      button("Sign in", d.url) +
+      bodyP(e(ignore), "padding-bottom:0;", true),
+    opts,
+  );
+  return { subject, html, text: textOf([org, `${use}\n${d.url}`, ignore]) };
+}
+
+/** A staff security email: the subject as its heading, the paragraphs, then optional extras in order. */
+function securityEmail(
+  subject: string,
+  opts: LayoutOptions,
+  parts: {
+    before: Para[];
+    facts?: { rows: [string, string][]; text: string };
+    after?: Para[];
+    notYou?: string;
+    action?: { label: string; url: string };
+  },
+): Rendered {
+  const after = parts.after ?? [];
+  const html = layout(
+    subject,
+    heading(e(subject)) +
+      parts.before.map((p) => bodyP(p.html)).join("") +
+      (parts.facts ? factTable(parts.facts.rows) : "") +
+      after.map((p) => bodyP(p.html)).join("") +
+      (parts.action ? button(parts.action.label, parts.action.url) : "") +
+      (parts.notYou ? notYouBlock(parts.notYou) : ""),
+    opts,
+  );
+  const text = textOf([
+    ...parts.before.map((p) => p.text),
+    parts.facts?.text ?? "",
+    ...after.map((p) => p.text),
+    parts.action ? `${parts.action.label}: ${parts.action.url}` : "",
+    parts.notYou ?? "",
+  ]);
+  return { subject, html, text };
+}
+
+/** Login alert (07 §8 outline, 07-G body): when, where (approximate), device; then the reader's "Not you?" line. */
+export function staffNewDevice(d: NewDeviceData, opts: LayoutOptions): Rendered {
+  return securityEmail(headerValue(SUBJECTS.newDevice), opts, {
+    before: [
+      para(
+        `Hi ${d.first_name}, your TecHaust admin account was just signed in to from a device or browser we haven't seen before.`,
+      ),
+    ],
+    facts: {
+      rows: [
+        ["When", d.time],
+        ["Where (approximate)", d.location],
+        ["Device", d.device],
+      ],
+      text: `When: ${d.time}.\nWhere (approximate): ${d.location}.\nDevice: ${d.device}.`,
+    },
+    after: [para("If this was you, there's nothing to do.")],
+    notYou: notYouFor(d.role),
+  });
+}
+
+/**
+ * Security change on the account (07-G, three bodies by `change`). Only the change and the time: never a device or a place
+ * (for an owner's reset those would be the owner's). An unknown change throws (the consumer logs it failed; jobs never
+ * queues one).
+ */
+export function staffTwoFaChange(d: TwoFaChangeData, opts: LayoutOptions): Rendered {
+  const subject = headerValue(SUBJECTS.twoFaChange);
+  const hi = `Hi ${d.first_name}, `;
+  switch (d.change as TwoFaChange) {
+    case "recovery_code_used":
+      return securityEmail(subject, opts, {
+        before: [
+          withTime(
+            `${hi}a recovery code was used to sign in to your TecHaust admin account on `,
+            d.time,
+            ". That code can't be used again.",
+          ),
+          para("When you can, sign in and create a new set of recovery codes under Account."),
+        ],
+        notYou: notYouFor(d.role),
+      });
+    case "recovery_codes_regenerated":
+      return securityEmail(subject, opts, {
+        before: [
+          withTime(
+            `${hi}a new set of recovery codes was created for your TecHaust admin account on `,
+            d.time,
+            ". Your old codes no longer work.",
+          ),
+        ],
+        notYou: notYouFor(d.role),
+      });
+    case "reset_by_owner":
+      return securityEmail(subject, opts, {
+        before: [
+          withTime(
+            `${hi}the owner reset the password and two-step sign-in on your TecHaust admin account on `,
+            d.time,
+            ", and you were signed out everywhere.",
+          ),
+          para(
+            "To get back in, use the new link the owner sends you (it works for 48 hours) to choose a new password and set up your authenticator app again.",
+          ),
+          para("If you didn't expect this, contact the owner."),
+        ],
+      });
+    default:
+      throw new Error("Unknown 2FA change");
+  }
+}
+
+/** The account is locked (to the member, 07-G); then the reader's "Not you?" line. */
+export function staffLockout(d: LockoutData, opts: LayoutOptions): Rendered {
+  return securityEmail(headerValue(SUBJECTS.lockout), opts, {
+    before: [
+      withTime(
+        `Hi ${d.first_name}, your TecHaust admin account was locked for 15 minutes on `,
+        d.time,
+        " after 10 wrong sign-in attempts within an hour.",
+      ),
+      para("Nothing else was changed. After 15 minutes you can sign in as usual."),
+    ],
+    notYou: notYouFor(d.role),
+  });
+}
+
+/** The same lock, to each owner (ADM-AUTH-06, 07-G): who, when, what to do, and "[Open in admin]". No "Not you?" line. */
+export function staffLockoutOwner(d: LockoutOwnerData, opts: LayoutOptions): Rendered {
+  return securityEmail(headerValue(SUBJECTS.lockoutOwner), opts, {
+    before: [
+      withTime(
+        `${d.member_name}'s TecHaust admin account was locked for 15 minutes on `,
+        d.time,
+        " after 10 wrong sign-in attempts within an hour.",
+      ),
+      para(
+        `If ${d.member_name} doesn't know about this, someone may be trying to guess the password. You can sign them out everywhere or deactivate the account under Users.`,
+      ),
+    ],
+    action: { label: "Open in admin", url: d.admin_url },
+  });
+}

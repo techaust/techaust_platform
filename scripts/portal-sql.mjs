@@ -61,8 +61,39 @@ export const SAMPLE = [
   })),
 }));
 
-/** Insert-only, stable IDs, safe to run again. */
-export function sampleStatements() {
+/**
+ * One extra sample contact on a REAL inbox the owner can read (M2.4b: the staging test of the sign-in email): portal access
+ * and finance, at "Sample Client A (sample)". Its ID comes from the address, so the same address is the same contact on a
+ * re-run and a different address is a different one. Only ever for local and staging (the tool has no production option).
+ * @param {string} email already normalised (`normaliseEmail`)
+ */
+export const inboxContact = (email) => ({
+  kind: "inbox",
+  name: "Verified Inbox Contact",
+  portal: 1,
+  finance: 1,
+  id: stableId(`portal-sample:inbox:${email}`),
+  email,
+});
+
+/**
+ * Insert-only, stable IDs, safe to run again. With `inboxEmail`, one more contact on that address at Sample Client A.
+ * @param {string} [inboxEmail]
+ */
+export function sampleStatements(inboxEmail) {
+  const inbox = inboxEmail ? inboxContact(inboxEmail) : null;
+  const a = SAMPLE[0];
+  return [
+    ...sampleBase(),
+    ...(inbox && a
+      ? [
+          `INSERT OR IGNORE INTO contacts (id, client_id, name, email, portal_access, can_see_finance) VALUES (${q(inbox.id)}, ${q(a.id)}, ${q(`${inbox.name} (${a.name})`)}, ${q(inbox.email)}, ${inbox.portal}, ${inbox.finance});`,
+        ]
+      : []),
+  ];
+}
+
+function sampleBase() {
   return SAMPLE.flatMap((c) => [
     `INSERT OR IGNORE INTO clients (id, code, legal_name, display_name, type, country, gst_status, currency) VALUES (${q(c.id)}, ${q(c.code)}, ${q(c.name)}, ${q(c.name)}, 'business', 'IN', 'unregistered', 'INR');`,
     ...c.contacts.map(

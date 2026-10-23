@@ -7,7 +7,13 @@
 // schema change has made invalid (an invalid sample stops early and no longer warms the success path).
 import { budgetBandLabel, countryName } from "./form-labels.ts";
 import { contactForm, quoteForm } from "./schemas/forms.ts";
-import { emailMessage, formMeta, type LeadMessage, leadMessage } from "./schemas/messages.ts";
+import {
+  emailMessage,
+  formMeta,
+  type LeadMessage,
+  leadMessage,
+  staffAlertMessage,
+} from "./schemas/messages.ts";
 
 const CONTACT = {
   name: "Warm Up",
@@ -58,7 +64,10 @@ export function warmWebForms(): number {
   }
 }
 
-/** The jobs Worker's consumers: parses one made-up message of each kind. Returns the parses that succeeded (3). */
+/**
+ * The jobs Worker's consumers: parses one made-up message of each kind (a contact lead, a quote lead, a lead email, a sign-in
+ * link email, a staff alert). Returns the parses that succeeded (5).
+ */
 export function warmConsumerMessages(): number {
   try {
     return (
@@ -71,6 +80,22 @@ export function warmConsumerMessages(): number {
           data: {},
           entity: { type: "lead", id: "L-23456" },
         }),
+      ) +
+      ok(
+        emailMessage.safeParse({
+          template: "portal.magic_link",
+          to: "warm-up@example.invalid",
+          data: {
+            url: "https://warm-up.invalid/auth/callback#t=x",
+            org_name: "Warm",
+            expires_at: "1",
+            accounts: "1",
+          },
+          entity: { type: "magic_link", id: "0".repeat(64) },
+        }),
+      ) +
+      ok(
+        staffAlertMessage.safeParse({ kind: "staff.alert", auditId: "00000000-0000-7000-8000-000000000000" }),
       )
     );
   } catch {

@@ -4,7 +4,7 @@
 //   (staging) allow-list checks -> render -> send.
 // `email_log.status`: queued -> sending -> sent | skipped | failed. A retryable SES answer puts the row back to
 // `queued` and the queue redelivers; a permanent one is `failed` and acknowledged.
-import { type EmailMessage, emailMessage, leadMessage, stableId } from "@techaust/core";
+import { type EmailMessage, emailMessage, leadMessage, stableId, staffAlertMessage } from "@techaust/core";
 import {
   dlqAlert,
   logTransport,
@@ -123,6 +123,15 @@ async function sendClaimed(
   transport: Transport,
   now: number,
 ): Promise<EmailResult> {
+  // A sign-in link that ran out while it waited (queue delay, retries) is never sent: the person asks for a new one.
+  if (m.template === "portal.magic_link") {
+    const expiresAt = Number(m.data.expires_at);
+    if (Number.isFinite(expiresAt) && now > expiresAt) {
+      await setStatus(env.DB, id, "skipped", { error: "expired" }, now);
+      logEvent("email.skipped", { template: m.template, why: "expired" });
+      return "skipped";
+    }
+  }
   const suppressed = await env.DB.prepare("SELECT 1 AS x FROM email_suppressions WHERE email = ?1")
     .bind(to)
     .first();
@@ -205,9 +214,12 @@ export async function processDeadLetter(
     ref = stored?.ref ?? lead.data.ref;
     rendered = renderEmail("lead.alert", { ...alertData(env, lead.data, ref), failed_queue: queue }, opts);
   } else if (queue.endsWith("-email-dlq")) {
-    // A failed email: which template and which lead (its reference), never the address or the text.
+    // A failed email: which template and which lead (its reference), never the address, the link or the text. A failed
+    // staff alert is named as "staff alert": its audit ID, the member and the summary stay out of the alert.
     const email = emailMessage.safeParse(body);
-    if (email.success) {
+    if (!email.success && staffAlertMessage.safeParse(body).success) {
+      rendered = dlqAlert({ queue, admin_url: env.ADMIN_URL, template: "staff alert" }, opts);
+    } else if (email.success) {
       ref = email.data.entity.type === "lead" ? email.data.entity.id : undefined;
       // The email's log row ends as failed, so it never reads as still pending (best effort).
       await setStatus(env.DB, emailLogId(email.data), "failed", { error: "dead-lettered" }, Date.now()).catch(

@@ -16,4 +16,12 @@ export const SAMPLE: {
   id: string;
   contacts: { kind: string; name: string; portal: number; finance: number; id: string; email: string }[];
 }[];
-export function sampleStatements(): string[];
+export function inboxContact(email: string): {
+  kind: string;
+  name: string;
+  portal: number;
+  finance: number;
+  id: string;
+  email: string;
+};
+export function sampleStatements(inboxEmail?: string): string[];

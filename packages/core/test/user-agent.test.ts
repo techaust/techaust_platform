@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeUserAgent } from "./user-agent.ts";
+import { describeUserAgent } from "../src/user-agent.ts";
 
 describe("describeUserAgent (sessions list) [ADM-AUTH-05]", () => {
   it.each([

@@ -3,6 +3,7 @@
 // (`ip:`). Pure decision functions; the Worker stores the rows in `auth_attempts` and its SQL is tested against
 // these functions (`RESERVE_SQL` agrees with `reserveAttempt`).
 import { enc, hex, hmacSha256, sha256 } from "./crypto.ts";
+import { addressOf } from "./portal.ts";
 
 export const WINDOW_MS = 60 * 60 * 1000;
 export const LOCK_AFTER = 10;
@@ -16,8 +17,12 @@ export const IP_LOCK_MS = LOCK_MS;
 export type Attempts = { windowStart: number; failures: number; lockedUntil: number | null };
 
 export const isLocked = (a: Attempts | null, nowMs: number) => !!a?.lockedUntil && a.lockedUntil > nowMs;
-export const needsTurnstile = (a: Attempts | null, nowMs: number) =>
-  !!a && nowMs - a.windowStart < WINDOW_MS && a.failures >= TURNSTILE_AFTER;
+export const needsTurnstile = (
+  a: Attempts | null,
+  nowMs: number,
+  turnstileAfter = TURNSTILE_AFTER,
+  windowMs = WINDOW_MS,
+) => !!a && nowMs - a.windowStart < windowMs && a.failures >= turnstileAfter;
 
 /** The row after one more failure. */
 export function recordFailure(
@@ -59,6 +64,29 @@ export function reserveAttempt(
   return { allowed: true, row, lockStarted: row.failures >= lockAfter };
 }
 
+/** A refusal because the count has reached `TURNSTILE_AFTER` and the request has no verified Turnstile token. */
+export type GatedReservation = Reservation | { allowed: false; row: Attempts; turnstileRequired: true };
+
+/**
+ * `reserveAttempt` with the Turnstile step (M2.4b, ADM-AUTH-06): inside the window, from `turnstileAfter` failures on,
+ * an attempt without a verified token is refused and NOT counted (the row stays as it was). A lock in force still
+ * refuses first (the caller answers 429 for it). `RESERVE_GATED_SQL` is this function in SQL.
+ */
+export function reserveAttemptGated(
+  a: Attempts | null,
+  nowMs: number,
+  verified: boolean,
+  turnstileAfter = TURNSTILE_AFTER,
+  lockAfter = LOCK_AFTER,
+  lockMs = LOCK_MS,
+  windowMs = WINDOW_MS,
+): GatedReservation {
+  if (isLocked(a, nowMs)) return { allowed: false, row: a as Attempts };
+  if (a && needsTurnstile(a, nowMs, turnstileAfter, windowMs) && !verified)
+    return { allowed: false, row: a, turnstileRequired: true };
+  return reserveAttempt(a, nowMs, lockAfter, lockMs, windowMs);
+}
+
 /** Password counter key: a hash of the email, so unknown emails behave exactly like real ones. */
 export const accountKey = async (email: string) =>
   `acct:${hex(await sha256(enc.encode(email))).slice(0, 32)}`;
@@ -66,6 +94,10 @@ export const accountKey = async (email: string) =>
 /** Code counter key (TOTP, recovery code, step-up code), one per account: `code:<user id>`. */
 export const codeKey = (userId: string) => `code:${userId}`;
 
-/** Per-IP key: an HMAC of the address (no new secret, no raw IP stored in the counter table). */
+/**
+ * Per-IP key: an HMAC of the address (no new secret, no raw IP stored in the counter table). An IPv6 address counts as
+ * its /64 prefix (`addressOf`, as the portal's quotas do): one household holds a whole /64 and can rotate inside it,
+ * so counting single addresses would make the per-address block free to dodge (M1.6 follow-up, closed in M2.4b).
+ */
 export const ipKey = async (saltPepper: string, ip: string) =>
-  `ip:${hex(await hmacSha256(saltPepper, enc.encode(`ip:${ip}`))).slice(0, 32)}`;
+  `ip:${hex(await hmacSha256(saltPepper, enc.encode(`ip:${addressOf(ip)}`))).slice(0, 32)}`;

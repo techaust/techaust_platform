@@ -68,8 +68,12 @@ async function send<T>(path: string, { body, signedIn = true, noContent = false 
 const pub = { signedIn: false } as const;
 
 export const api = {
-  /** Ask for a sign-in link. Always `{ ok: true }` (known or unknown email alike) unless rate limited (429). */
-  requestLink: (email: string) => send<{ ok: true }>("/auth/magic", { ...pub, body: { email } }),
+  /**
+   * Ask for a sign-in link with the Turnstile token of this attempt (M2.4b). Always `{ ok: true }` (known or unknown email
+   * alike) unless the check failed (400 `turnstile_failed`) or rate limited (429).
+   */
+  requestLink: (email: string, turnstile: string) =>
+    send<{ ok: true }>("/auth/magic", { ...pub, body: { email, turnstile } }),
   /** Use a sign-in link: 200 sets the session cookie; 401 `link_invalid` for every kind of bad link. */
   verify: (token: string) => send<{ ok: true }>("/auth/magic/verify", { ...pub, body: { token } }),
   me: () => send<Me>("/me", {}),

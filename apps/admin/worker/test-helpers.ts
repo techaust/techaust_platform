@@ -9,6 +9,7 @@ import {
   newToken,
   passwordHmac,
   randomBytes,
+  SITEVERIFY_URL,
   sealTotpSecret,
   secretFromBase32,
   tokenHash,
@@ -16,7 +17,7 @@ import {
 } from "@techaust/auth";
 import type { Role } from "@techaust/core";
 import { uuidv7 } from "@techaust/core";
-import { expect } from "vitest";
+import { afterEach, beforeEach, expect, vi } from "vitest";
 import type { RouteDef } from "./context.ts";
 import app from "./index.ts";
 
@@ -230,20 +231,22 @@ export type Enrolled = {
 };
 
 /** Accept an invite token through the real API: start, finish (name + password hash), authenticator code. */
-export async function accept(inviteToken: string, name = "Test Person"): Promise<Enrolled> {
-  const start = await call("/auth/invite/start", { body: { token: inviteToken } });
+export async function accept(inviteToken: string, name = "Test Person", e_: Env = env): Promise<Enrolled> {
+  const start = await call("/auth/invite/start", { body: { token: inviteToken } }, e_);
   expect(start.status).toBe(200);
   const { email } = (await start.json()) as { email: string };
   const clientHash = hash();
-  const finish = await call("/auth/invite/finish", { body: { token: inviteToken, clientHash, name } });
+  const finish = await call("/auth/invite/finish", { body: { token: inviteToken, clientHash, name } }, e_);
   expect(finish.status).toBe(200);
   const f = (await finish.json()) as { secret: string; challenge: string; totpUri: string };
   expect(f.totpUri).toMatch(/^otpauth:\/\/totp\/TecHaust:/);
   const secret = secretFromBase32(f.secret);
   const step = currentStep(Date.now());
-  const done = await call("/auth/invite/totp", {
-    body: { challenge: f.challenge, code: totpCode(secret, step) },
-  });
+  const done = await call(
+    "/auth/invite/totp",
+    { body: { challenge: f.challenge, code: totpCode(secret, step) } },
+    e_,
+  );
   expect(done.status).toBe(200);
   const body = (await done.clone().json()) as { recoveryCodes: string[] };
   return {
@@ -272,8 +275,13 @@ export const enrolCode = (challenge: string, secret: Uint8Array) =>
   call("/auth/invite/totp", { body: { challenge, code: totpCode(secret, currentStep(Date.now())) } });
 
 /** A new member through a database invite (the owner's `invite` script does the same). */
-export async function enrol(email: string, role = "owner", name = "Test Person"): Promise<Enrolled> {
-  return accept(await invite(email, role), name);
+export async function enrol(
+  email: string,
+  role = "owner",
+  name = "Test Person",
+  e: Env = env,
+): Promise<Enrolled> {
+  return accept(await invite(email, role), name, e);
 }
 
 /** The token inside an invite link (`…/invite#t=<token>`). */
@@ -417,4 +425,79 @@ export async function nextCode(s: TestSession) {
   const step = Math.max((last ?? 0) + 1, now - 1);
   expect(step).toBeLessThanOrEqual(now + 1); // the server accepts one step of drift either way
   return { code: totpCode(s.secret, step), step };
+}
+
+// ---- Turnstile and the email queue (M2.4b) -------------------------------------------------------------------
+
+export type SiteverifyAnswer =
+  | Record<string, unknown>
+  | "network-error"
+  | "not-json"
+  | { httpStatus: number };
+
+export type Siteverify = {
+  /** What the stub answers. A successful answer is single-use per token (a second use is `timeout-or-duplicate`). */
+  answer: SiteverifyAnswer;
+  /** The form body of every siteverify call, in order. */
+  calls: URLSearchParams[];
+};
+
+let tokenSeq = 0;
+/** A fresh Turnstile token for the stub (tokens starting `bad` are always refused). */
+export const token = () => `tok-${++tokenSeq}`;
+
+/**
+ * Replaces `fetch` for the length of each test with Cloudflare's siteverify: every token is real once, and `bad…` tokens
+ * never are. The Workers make no other fetch, so anything else throws. Call it once per file, in the describe scope.
+ */
+export function stubSiteverify(): Siteverify {
+  const sv: Siteverify = { answer: { success: true }, calls: [] };
+  const used = new Set<string>();
+  beforeEach(() => {
+    sv.answer = { success: true };
+    sv.calls = [];
+    used.clear();
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      if (String(input) !== SITEVERIFY_URL) throw new Error(`unexpected fetch: ${String(input)}`);
+      const body = init?.body as URLSearchParams;
+      sv.calls.push(body);
+      const a = sv.answer;
+      if (a === "network-error") throw new TypeError("fetch failed");
+      if (a === "not-json") return new Response("<html>bad gateway</html>", { status: 200 });
+      if ("httpStatus" in a) return new Response("{}", { status: a.httpStatus as number });
+      const t = body.get("response") ?? "";
+      if (a.success === true && (t.startsWith("bad") || used.has(t)))
+        return Response.json({ success: false, "error-codes": ["timeout-or-duplicate"] });
+      if (a.success === true) used.add(t);
+      return Response.json(a);
+    });
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+  return sv;
+}
+
+/** `base` with some bindings or vars replaced. */
+export const withEnv = (base: Env, over: Record<string, unknown>): Env =>
+  new Proxy(base, { get: (t, k) => (k in over ? over[k as string] : Reflect.get(t, k)) }) as Env;
+
+export type CapturedQueue = { env: Env; sent: unknown[]; batches: number; singles: number };
+
+/** `base` whose EMAIL_QUEUE records what is sent (the real queue would hand it to the jobs Worker). */
+export function captureQueue(base: Env = env, fail?: () => unknown): CapturedQueue {
+  const out = { sent: [] as unknown[], batches: 0, singles: 0 };
+  const queue = {
+    send: async (m: unknown) => {
+      out.singles++;
+      if (fail) throw fail();
+      out.sent.push(m);
+    },
+    sendBatch: async (ms: { body: unknown }[]) => {
+      out.batches++;
+      if (fail) throw fail();
+      for (const m of ms) out.sent.push(m.body);
+    },
+  };
+  return Object.assign(out, { env: withEnv(base, { EMAIL_QUEUE: queue }) });
 }

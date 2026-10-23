@@ -2,6 +2,10 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-10-23 [#60](https://github.com/techaust/techaust_platform/pull/60) fix(web): company-only social links in the footer; external-link arrow aligned again [WEB-G-11]
+- 2026-10-23 [#59](https://github.com/techaust/techaust_platform/pull/59) feat(web): external links open in a new tab and say so; LinkedIn standard address [WEB-G-11]
+- 2026-10-23 [#58](https://github.com/techaust/techaust_platform/pull/58) feat(web): founder's LinkedIn link [WEB-G-11]
+- 2026-10-23 [#57](https://github.com/techaust/techaust_platform/pull/57) feat(web): owner's postal address on the contact and legal pages [WEB-LEGAL]
 - 2026-10-23 [#56](https://github.com/techaust/techaust_platform/pull/56) docs(runs): email CPU staging result, accepted by the owner
 - 2026-10-23 [#55](https://github.com/techaust/techaust_platform/pull/55) perf(email): warm the SES signing path at start-up (email consumer CPU) [FRM-04]
 - 2026-10-23 [#54](https://github.com/techaust/techaust_platform/pull/54) docs(runs): CPU tuning staging result

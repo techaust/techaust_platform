@@ -12,6 +12,8 @@ import {
   LOCK_MS,
   recordFailure,
   reserveAttempt,
+  reserveAttemptGated,
+  TURNSTILE_AFTER,
   WINDOW_MS,
 } from "../src/lockout.ts";
 import {
@@ -179,5 +181,101 @@ describe("counter keys", () => {
     expect(k).not.toBe(await ipKey(KEY2, "203.0.113.5"));
     expect(k).not.toContain("203");
     expect(await ipKey(KEY, "2001:db8::1")).toMatch(/^ip:[0-9a-f]{32}$/);
+  });
+
+  it("ip: counts IPv6 by its /64, so rotating inside it does not dodge the block (M1.6 follow-up)", async () => {
+    const a = await ipKey(KEY, "2001:db8:0:1::1");
+    expect(await ipKey(KEY, "2001:db8:0:1:abcd:ef01:2345:6789")).toBe(a);
+    expect(await ipKey(KEY, "2001:0db8:0000:0001:0000:0000:0000:0002")).toBe(a);
+    expect(await ipKey(KEY, "[2001:DB8:0:1::5]")).toBe(a);
+    expect(await ipKey(KEY, "2001:db8:0:2::1")).not.toBe(a);
+    expect(await ipKey(KEY, "::ffff:203.0.113.5")).toBe(await ipKey(KEY, "203.0.113.5")); // mapped IPv4
+    expect(await ipKey(KEY, "unknown")).toMatch(/^ip:[0-9a-f]{32}$/); // unparsable: one stable bucket
+  });
+});
+
+describe("reserveAttemptGated [ADM-AUTH-06]", () => {
+  const row = (failures: number, windowStart = 0, lockedUntil: number | null = null): Attempts => ({
+    windowStart,
+    failures,
+    lockedUntil,
+  });
+
+  it("counts the first three attempts without a token, then asks for one without counting", () => {
+    let a: Attempts | null = null;
+    for (let i = 1; i <= TURNSTILE_AFTER; i++) {
+      const r = reserveAttemptGated(a, 1000 + i, false);
+      expect(r.allowed).toBe(true);
+      if (r.allowed) a = r.row;
+    }
+    expect(a?.failures).toBe(3);
+    const refused = reserveAttemptGated(a, 2000, false);
+    expect(refused).toEqual({ allowed: false, row: a, turnstileRequired: true });
+    const verified = reserveAttemptGated(a, 2000, true);
+    expect(verified.allowed && verified.row.failures).toBe(4);
+  });
+
+  it("a lock in force refuses first, whatever the token says", () => {
+    const locked = row(10, 0, 5000);
+    expect(reserveAttemptGated(locked, 4000, true)).toEqual({ allowed: false, row: locked });
+    expect(reserveAttemptGated(locked, 4000, false)).toEqual({ allowed: false, row: locked });
+  });
+
+  it("after the lock ends the count goes on only with a verified token", () => {
+    const ended = row(10, 0, 5000);
+    expect(reserveAttemptGated(ended, 5000, false)).toMatchObject({
+      allowed: false,
+      turnstileRequired: true,
+    });
+    expect(reserveAttemptGated(ended, 5000, true).allowed).toBe(true);
+  });
+
+  it("an expired window restarts at 1 and needs no token", () => {
+    const old = row(7, 0, null);
+    const r = reserveAttemptGated(old, WINDOW_MS, false);
+    expect(r.allowed && r.row).toEqual({ windowStart: WINDOW_MS, failures: 1, lockedUntil: null });
+    expect(reserveAttemptGated(old, WINDOW_MS - 1, false)).toMatchObject({ turnstileRequired: true });
+  });
+
+  it("with a verified token it is exactly reserveAttempt (property)", () => {
+    fc.assert(
+      fc.property(fc.option(attempts, { nil: null }), fc.integer({ min: 0, max: 5_000_000 }), (a, now) => {
+        expect(reserveAttemptGated(a, now, true)).toEqual(reserveAttempt(a, now));
+      }),
+    );
+  });
+
+  it("without a token it is reserveAttempt except where a token is due, and then it changes nothing (property)", () => {
+    fc.assert(
+      fc.property(fc.option(attempts, { nil: null }), fc.integer({ min: 0, max: 5_000_000 }), (a, now) => {
+        const g = reserveAttemptGated(a, now, false);
+        if (!g.allowed && "turnstileRequired" in g) {
+          expect(a).not.toBeNull();
+          expect(isLocked(a, now)).toBe(false);
+          expect(a && now - a.windowStart < WINDOW_MS && a.failures >= TURNSTILE_AFTER).toBe(true);
+          expect(g.row).toBe(a);
+        } else {
+          expect(g).toEqual(reserveAttempt(a, now));
+        }
+      }),
+    );
+  });
+});
+
+// The lockout email copy (docs/07-content-appendix/G-m2.4b-security-emails.md, approved word for word) says "locked for 15
+// minutes ... after 10 wrong sign-in attempts within an hour" as literal text in packages/email/src/templates.ts. If a constant
+// below changes, that copy is wrong: change 07-G (the owner approves it) and templates.ts together, then update this pin.
+describe("the lockout figures that 07-G prints as words", () => {
+  it("10 wrong attempts within an hour lock the account for 15 minutes (07-G, packages/email/src/templates.ts)", () => {
+    expect(
+      LOCK_AFTER,
+      "07-G says 10 wrong sign-in attempts: update 07-G and packages/email/src/templates.ts",
+    ).toBe(10);
+    expect(LOCK_MS, "07-G says 15 minutes: update 07-G and packages/email/src/templates.ts").toBe(
+      15 * 60 * 1000,
+    );
+    expect(WINDOW_MS, "07-G says within an hour: update 07-G and packages/email/src/templates.ts").toBe(
+      60 * 60 * 1000,
+    );
   });
 });

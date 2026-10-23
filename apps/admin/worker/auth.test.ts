@@ -30,9 +30,14 @@ import {
   rows,
   sessionFor,
   signIn,
+  stubSiteverify,
+  token,
   userId,
   wrongCode,
 } from "./test-helpers.ts";
+
+// The lock test below drives more than three wrong passwords, which needs Turnstile tokens (M2.4b).
+stubSiteverify();
 
 const INVALID_BODY = { error: { code: "invalid_credentials", message: "Invalid email, password or code" } };
 const post = (path: string, body: unknown, cookie?: string) =>
@@ -235,7 +240,8 @@ describe("D1 calls per route [NFR-2]", () => {
   it("a locked login is 1 batch + the access row, and answers 429", async () => {
     const email = "budget-locked@example.com";
     const e = await enrol(email);
-    for (let i = 0; i < 10; i++) await call("/auth/login", { body: { email, clientHash: hash() } });
+    for (let i = 0; i < 10; i++)
+      await call("/auth/login", { body: { email, clientHash: hash(), turnstile: token() } });
     const locked = await counting("/auth/login", { body: { email, clientHash: e.clientHash } });
     expect([locked.res.status, locked.calls]).toEqual([429, 2]);
   });

@@ -6,6 +6,7 @@ import { tokenHash, MAGIC_TTL_MS as WORKER_TTL } from "@techaust/auth";
 import { describe, expect, it } from "vitest";
 import {
   eligibleSql,
+  inboxContact,
   linkStatements,
   linkUrl,
   MAGIC_TTL_MS,
@@ -142,6 +143,45 @@ describe("portal:sample [Q2 = yes]", () => {
 
   it("never touches existing rows (INSERT OR IGNORE only) and has no production origin", () => {
     for (const s of sampleStatements()) expect(s).toMatch(/^INSERT OR IGNORE INTO (clients|contacts) /);
+    for (const s of sampleStatements("inbox@sample-owner.test"))
+      expect(s).toMatch(/^INSERT OR IGNORE INTO (clients|contacts) /);
     expect(JSON.stringify(ORIGINS)).not.toMatch(/production|techaust\.com/);
+  });
+
+  it("--email adds ONE contact on that address at Sample Client A: portal access, finance, safe to run twice (M2.4b)", async () => {
+    const base = sampleStatements();
+    const withInbox = sampleStatements("owner-inbox@sample-owner.test");
+    expect(withInbox.slice(0, base.length)).toEqual(base); // the rest is exactly the plain sample
+    expect(withInbox).toHaveLength(base.length + 1);
+    await run(withInbox);
+    await run(withInbox);
+    const found = await rows<{
+      client_id: string;
+      portal_access: number;
+      can_see_finance: number;
+      display_name: string;
+    }>(
+      "SELECT c.client_id, c.portal_access, c.can_see_finance, cl.display_name FROM contacts c JOIN clients cl ON cl.id = c.client_id WHERE c.email = 'owner-inbox@sample-owner.test'",
+    );
+    expect(found).toEqual([
+      {
+        client_id: SAMPLE[0]?.id,
+        portal_access: 1,
+        can_see_finance: 1,
+        display_name: "Sample Client A (sample)",
+      },
+    ]);
+    // the Worker would send it a link: it is eligible
+    const eligible = await rows<{ display_name: string }>(eligibleSql("owner-inbox@sample-owner.test"));
+    expect(eligible.map((r) => r.display_name)).toEqual(["Sample Client A (sample)"]);
+    // a different address is a different contact; the same address is the same one
+    expect(inboxContact("a@sample-owner.test").id).not.toBe(inboxContact("b@sample-owner.test").id);
+    expect(inboxContact("a@sample-owner.test").id).toBe(inboxContact("a@sample-owner.test").id);
+  });
+
+  it("the address is escaped into the statement (a quote cannot break out of it)", async () => {
+    const odd = normaliseEmail("o'brien@sample-owner.test") as string;
+    await run(sampleStatements(odd));
+    expect(await countOf("contacts", "email = ?", odd)).toBe(1);
   });
 });

@@ -3,3 +3,5 @@ PASSWORD_PEPPER=
 SALT_PEPPER=
 TOTP_ENC_KEY=
 SESSION_HMAC_KEY=
+# Cloudflare's always-pass Turnstile TEST secret (written by `pnpm dev:secrets`); staging and production use the real widget secret.
+TURNSTILE_SECRET=

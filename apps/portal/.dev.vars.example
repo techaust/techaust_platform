@@ -1,2 +1,4 @@
-# Local-only portal secret. Create apps/portal/.dev.vars with `pnpm dev:secrets` (a random value, git-ignored).
+# Local-only portal secrets. Create apps/portal/.dev.vars with `pnpm dev:secrets` (a random value, git-ignored).
 PORTAL_KEY_PEPPER=
+# Cloudflare's always-pass Turnstile TEST secret (written by `pnpm dev:secrets`); staging and production use the real widget secret.
+TURNSTILE_SECRET=

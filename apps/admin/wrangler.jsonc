@@ -16,10 +16,24 @@
   // are console logs and stay on everywhere. Query strings are removed from logged URLs.
   "observability": { "enabled": true, "redact_query_string": true },
   "assets": { "not_found_handling": "single-page-application", "run_worker_first": ["/api/*"] },
-  "vars": { "ENVIRONMENT": "local", "PAYMENTS_LIVE_ALLOWED": "false" },
+  // Turnstile on /login after 3 failures (M2.4b, ADM-AUTH-06). TURNSTILE_SITE_KEY: local = Cloudflare's always-pass TEST
+  // key (public); the SPA reads it from here at build time, per CLOUDFLARE_ENV (a staging build with an empty key fails).
+  // TURNSTILE_HOSTNAMES: the hosts the widget may run on (the Worker checks the hostname Cloudflare returns).
+  "vars": {
+    "ENVIRONMENT": "local",
+    "PAYMENTS_LIVE_ALLOWED": "false",
+    "TURNSTILE_SITE_KEY": "1x00000000000000000000AA",
+    "TURNSTILE_HOSTNAMES": "localhost"
+  },
   // Login secrets (docs/05 §4): names only; values are set with `wrangler secret put` (docs/runbooks/access-staging.md).
+  // TURNSTILE_SECRET is the secret of the widget above (local: `pnpm dev:secrets` writes the always-pass test secret).
   // Not inherited by environments, so each env lists them too.
-  "secrets": { "required": ["PASSWORD_PEPPER", "SALT_PEPPER", "TOTP_ENC_KEY", "SESSION_HMAC_KEY"] },
+  "secrets": {
+    "required": ["PASSWORD_PEPPER", "SALT_PEPPER", "TOTP_ENC_KEY", "SESSION_HMAC_KEY", "TURNSTILE_SECRET"]
+  },
+  // Email queue (producer, M2.4b): the staff security alerts go to the jobs Worker as an audit-row ID only (no address
+  // leaves this Worker). The jobs Worker consumes it. Production has no queue until Phase 7 (owner approval).
+  "queues": { "producers": [{ "binding": "EMAIL_QUEUE", "queue": "techaust-local-email" }] },
   // D1 (docs/05 §5). Migrations live in packages/db; local dev and tests use a local database.
   "d1_databases": [
     {
@@ -35,8 +49,18 @@
       "workers_dev": true,
       // Version/Preview URLs would skip Cloudflare Access (docs/runbooks/access-staging.md).
       "preview_urls": false,
-      "vars": { "ENVIRONMENT": "staging", "PAYMENTS_LIVE_ALLOWED": "false" },
-      "secrets": { "required": ["PASSWORD_PEPPER", "SALT_PEPPER", "TOTP_ENC_KEY", "SESSION_HMAC_KEY"] },
+      // TURNSTILE_SITE_KEY: the public key of the widget "techaust-staging-signin" (owner, 2026-10-23), shared with the
+      // portal's staging host. Its secret is the Worker secret TURNSTILE_SECRET.
+      "vars": {
+        "ENVIRONMENT": "staging",
+        "PAYMENTS_LIVE_ALLOWED": "false",
+        "TURNSTILE_SITE_KEY": "0x4AAAAAAFhrfYyx9bhG6lmt",
+        "TURNSTILE_HOSTNAMES": "techaust-platform-admin-staging.techaust-technologies-153.workers.dev"
+      },
+      "secrets": {
+        "required": ["PASSWORD_PEPPER", "SALT_PEPPER", "TOTP_ENC_KEY", "SESSION_HMAC_KEY", "TURNSTILE_SECRET"]
+      },
+      "queues": { "producers": [{ "binding": "EMAIL_QUEUE", "queue": "techaust-staging-email" }] },
       "d1_databases": [
         {
           "binding": "DB",
@@ -50,8 +74,16 @@
       "name": "techaust-platform-admin",
       "workers_dev": false,
       "preview_urls": false,
-      "vars": { "ENVIRONMENT": "production", "PAYMENTS_LIVE_ALLOWED": "false" },
-      "secrets": { "required": ["PASSWORD_PEPPER", "SALT_PEPPER", "TOTP_ENC_KEY", "SESSION_HMAC_KEY"] },
+      // Production gets no queue and no widget until Phase 7 (owner approval): TURNSTILE_SITE_KEY stays empty.
+      "vars": {
+        "ENVIRONMENT": "production",
+        "PAYMENTS_LIVE_ALLOWED": "false",
+        "TURNSTILE_SITE_KEY": "",
+        "TURNSTILE_HOSTNAMES": "admin.techaust.com"
+      },
+      "secrets": {
+        "required": ["PASSWORD_PEPPER", "SALT_PEPPER", "TOTP_ENC_KEY", "SESSION_HMAC_KEY", "TURNSTILE_SECRET"]
+      },
       // Production: NO invocation logs from day one (they carry the client IP, user agent and location of every staff
       // request, which the append-only access log already holds for security). Console logs stay on.
       "observability": {

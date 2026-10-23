@@ -1,12 +1,15 @@
 // Ask for a sign-in link [POR-01]. One field. The reply is the same generic sentence for every email, known or not
 // (the API answers 200 `{ ok: true }` for both); only a rate limit (429) or a failure to reach us reads differently.
-// The form never says an email "has been sent" as a fact: until M2.4 nothing is sent at all, and afterwards only
-// to addresses that can use the portal.
+// The form never says an email "has been sent" as a fact: a link goes only to addresses that can use the portal.
+// M2.4b: the Turnstile check is always on this form (managed widget, action `portal_link`); each request takes the
+// widget's current token once, and the widget is reset after every request that didn't succeed (tokens are single use).
+import type { TurnstileWidget } from "@techaust/auth/client";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { api } from "../api.ts";
 import { Mail } from "../components/icons.tsx";
+import { TurnstileBox } from "../components/turnstile.tsx";
 import { Card, Field, Notice, Reference } from "../components/ui.tsx";
-import { COPY, emailProblem, type LinkOutcome, linkOutcome } from "../copy.ts";
+import { COPY, checkFailed, emailProblem, type LinkOutcome, linkOutcome } from "../copy.ts";
 import { useSession } from "../session.tsx";
 
 export function SignIn() {
@@ -19,6 +22,7 @@ export function SignIn() {
   const sent = outcome?.kind === "sent";
   const titleRef = useRef<HTMLHeadingElement>(null);
   const emailRef = useRef<HTMLInputElement>(null);
+  const widget = useRef<TurnstileWidget | null>(null);
   // Focus follows the step: the reply's heading once a link is requested; the field after "Use a different email".
   useEffect(() => {
     if (sent) titleRef.current?.focus();
@@ -35,11 +39,20 @@ export function SignIn() {
     }
     setBusy(true);
     setOutcome(null);
+    const token = (await widget.current?.token()) ?? "";
+    if (!token) {
+      // No token in time (the check is still running, failed, or its script couldn't load): nothing is sent.
+      setOutcome(checkFailed());
+      widget.current?.reset();
+      setBusy(false);
+      return;
+    }
     try {
-      await api.requestLink(email.trim());
+      await api.requestLink(email.trim(), token);
       setOutcome(linkOutcome());
     } catch (err) {
       setOutcome(linkOutcome(err));
+      widget.current?.reset();
     } finally {
       setBusy(false);
     }
@@ -79,6 +92,7 @@ export function SignIn() {
           {outcome.text}
         </Notice>
       )}
+      {outcome?.kind === "check_failed" && <Notice tone="error">{outcome.text}</Notice>}
       {outcome?.kind === "error" && (
         <Notice tone="error" more={outcome.requestId ? <Reference id={outcome.requestId} /> : undefined}>
           {outcome.text}
@@ -103,6 +117,7 @@ export function SignIn() {
           error={fieldError}
           inputRef={emailRef}
         />
+        <TurnstileBox action="portal_link" widgetRef={widget} />
         <button
           type="submit"
           className="btn btn--primary btn--block"

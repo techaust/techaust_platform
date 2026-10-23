@@ -18,6 +18,7 @@ export default defineConfig(async () => ({
           SALT_PEPPER: TEST_KEY(2),
           TOTP_ENC_KEY: TEST_KEY(3),
           SESSION_HMAC_KEY: TEST_KEY(4),
+          TURNSTILE_SECRET: "test-turnstile-secret",
         },
       },
     }),

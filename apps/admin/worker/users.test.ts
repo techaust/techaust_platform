@@ -715,6 +715,9 @@ describe("break-glass: pnpm admin:reset-2fa [ADM-AUTH-07, docs/08 §3.2]", () =>
         id,
       ),
     ).toBe(1);
+    expect(
+      await one("SELECT summary FROM audit_log WHERE action = 'alert.2fa_change' AND entity_id = ?", id),
+    ).toEqual({ summary: '{"via":"cli","change":"reset_by_owner"}' });
     const fresh = await accept(token, "Back Again");
     expect(fresh.email).toBe(e.email);
     expect((await call("/auth/me", { cookie: fresh.cookie })).status).toBe(200);

@@ -1,9 +1,16 @@
 // Shared helpers of the portal API tests (workerd, a fresh D1 per test file with every migration applied).
 import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
 import { env } from "cloudflare:workers";
-import { newToken, PORTAL_ABS_MS, PORTAL_COOKIE, PORTAL_IDLE_MS, tokenHash } from "@techaust/auth";
+import {
+  newToken,
+  PORTAL_ABS_MS,
+  PORTAL_COOKIE,
+  PORTAL_IDLE_MS,
+  SITEVERIFY_URL,
+  tokenHash,
+} from "@techaust/auth";
 import { uuidv7 } from "@techaust/core";
-import { expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { RouteDef } from "./context.ts";
 import type { Fixtures, FxContact } from "./fixtures.ts";
 import app, { createApp } from "./index.ts";
@@ -134,6 +141,8 @@ export type CallInit = {
   ip?: string | null;
   /** Skip the JSON content type and Origin (for CSRF tests): give your own headers. */
   raw?: boolean;
+  /** Send the body exactly as given: no Turnstile token is added to a link request. */
+  bare?: boolean;
 };
 
 type Handler = {
@@ -164,6 +173,15 @@ export const callerFor =
   (target: Handler) =>
   async (path: string, init: CallInit = {}, e: Env = env) => {
     const ip = init.ip === undefined ? nextIp() : init.ip;
+    // A link request needs a Turnstile token (M2.4b): the tests that are about something else get a fresh real one.
+    const body =
+      path === "/auth/magic" &&
+      !init.bare &&
+      init.body &&
+      typeof init.body === "object" &&
+      !("turnstile" in init.body)
+        ? { ...init.body, turnstile: token() }
+        : init.body;
     return sendTo(
       target,
       `${ORIGIN}/api/v1${path}`,
@@ -180,7 +198,7 @@ export const callerFor =
           ...(init.cookie ? { Cookie: init.cookie } : {}),
           ...init.headers,
         },
-        body: init.body === undefined ? null : JSON.stringify(init.body),
+        body: body === undefined ? null : JSON.stringify(body),
       },
       e,
     );
@@ -447,3 +465,79 @@ export function crossTenant(
 
 /** Every route the table declares as a (method, path) pair, for the coverage tests. */
 export const pairs = (rs: readonly RouteDef[]) => rs.map((r) => `${r.method} ${r.path}`).sort();
+
+// ---- Turnstile and the email queue (M2.4b) -------------------------------------------------------------------
+
+export type SiteverifyAnswer =
+  | Record<string, unknown>
+  | "network-error"
+  | "not-json"
+  | { httpStatus: number };
+
+export type Siteverify = {
+  /** What the stub answers. A successful answer is single-use per token (a second use is `timeout-or-duplicate`). */
+  answer: SiteverifyAnswer;
+  /** The form body of every siteverify call, in order. */
+  calls: URLSearchParams[];
+};
+
+let tokenSeq = 0;
+/** A fresh Turnstile token for the stub (tokens starting `bad` are always refused). */
+export const token = () => `tok-${++tokenSeq}`;
+
+/**
+ * Replaces `fetch` for the length of each test with Cloudflare's siteverify: every token is real once, and `bad…` tokens
+ * never are. The Workers make no other fetch, so anything else throws.
+ */
+export function stubSiteverify(): Siteverify {
+  const sv: Siteverify = { answer: { success: true }, calls: [] };
+  const used = new Set<string>();
+  beforeEach(() => {
+    sv.answer = { success: true };
+    sv.calls = [];
+    used.clear();
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      if (String(input) !== SITEVERIFY_URL) throw new Error(`unexpected fetch: ${String(input)}`);
+      const body = init?.body as URLSearchParams;
+      sv.calls.push(body);
+      const a = sv.answer;
+      if (a === "network-error") throw new TypeError("fetch failed");
+      if (a === "not-json") return new Response("<html>bad gateway</html>", { status: 200 });
+      if ("httpStatus" in a) return new Response("{}", { status: a.httpStatus as number });
+      const t = body.get("response") ?? "";
+      if (a.success === true && (t.startsWith("bad") || used.has(t)))
+        return Response.json({ success: false, "error-codes": ["timeout-or-duplicate"] });
+      if (a.success === true) used.add(t);
+      return Response.json(a);
+    });
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+  return sv;
+}
+
+/** Every test file that imports these helpers gets the stub (a link request needs a token, see `callerFor`). */
+export const siteverify = stubSiteverify();
+
+/** `base` with some bindings or vars replaced. */
+export const withEnv = (base: Env, over: Record<string, unknown>): Env =>
+  new Proxy(base, { get: (t, k) => (k in over ? over[k as string] : Reflect.get(t, k)) }) as Env;
+
+export type CapturedQueue = { env: Env; sent: unknown[] };
+
+/** `base` whose EMAIL_QUEUE records what is sent (the real queue would hand it to the jobs Worker). */
+export function captureQueue(base: Env = env, fail?: () => unknown): CapturedQueue {
+  const sent: unknown[] = [];
+  const queue = {
+    send: async (m: unknown) => {
+      if (fail) throw fail();
+      sent.push(m);
+    },
+    sendBatch: async (ms: { body: unknown }[]) => {
+      if (fail) throw fail();
+      for (const m of ms) sent.push(m.body);
+    },
+  };
+  return { env: withEnv(base, { EMAIL_QUEUE: queue }), sent };
+}

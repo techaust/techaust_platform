@@ -1,12 +1,22 @@
 // Sign in [ADM-AUTH-01, -02, -04, -06]: email and password (hashed in the browser), then the authenticator code,
 // or a recovery code instead. One generic error for every wrong answer (no hint which part was wrong); a lockout
 // message after too many attempts.
-import { type FormEvent, useState } from "react";
+// M2.4b: after 3 wrong attempts the server asks for the Turnstile check (401 `turnstile_required`). The check then
+// appears above the button with the 07-G line, and stays for every later attempt on this page: each attempt takes the
+// widget's current token once, and the widget is reset after every attempt that didn't succeed (tokens are single
+// use). The password's client hash is reused from memory (lib/password-sign-in.ts), never hashed twice or stored.
+import type { TurnstileWidget } from "@techaust/auth/client";
+import { type FormEvent, useRef, useState } from "react";
 import { api, errorText, hashPassword, RequestError } from "../api.ts";
+import { TurnstileBox } from "../components/turnstile.tsx";
 import { Card, CodeField, Field, Notice } from "../components/ui.tsx";
+import { passwordSignIn } from "../lib/password-sign-in.ts";
 import { useSession } from "../session.tsx";
 
 type Step = "password" | "code" | "recovery";
+
+/** 07-G §3 (owner-approved, M2.4b): the line with the Turnstile check. */
+const CHECK_LINE = "To keep your account safe, please complete the check below, then sign in again.";
 
 const HEADINGS: Record<Step, string> = {
   password: "Sign in",
@@ -28,6 +38,14 @@ export function SignIn() {
   const [ms, setMs] = useState<number | null>(null);
   // Focus goes to the one field of each step (its label and hint are read out); after "Start again", to the email.
   const [restarted, setRestarted] = useState(false);
+  // The Turnstile check: off until the server asks for it, then on for the rest of this page. `nudge` re-announces
+  // the line when an attempt had no token to send.
+  const [check, setCheck] = useState(false);
+  const [nudge, setNudge] = useState(0);
+  const widget = useRef<TurnstileWidget | null>(null);
+  const [signIn] = useState(() =>
+    passwordSignIn({ salt: api.salt, hash: hashPassword, login: api.login, onHashed: setMs }),
+  );
 
   const fail = (err: unknown) =>
     setError({ text: errorText(err), locked: err instanceof RequestError && err.code === "locked" });
@@ -43,6 +61,7 @@ export function SignIn() {
   function startAgain() {
     setChallenge(null);
     setPassword("");
+    signIn.forget();
     setRestarted(true);
     go("password");
   }
@@ -52,14 +71,28 @@ export function SignIn() {
     setBusy(true);
     setError(null);
     try {
-      const { salt, params } = await api.salt(email);
-      const hashed = await hashPassword({ password, salt, params });
-      setMs(hashed.ms);
-      setChallenge((await api.login(email, hashed.hash)).challenge);
-      setPassword("");
-      go("code");
-    } catch (err) {
-      fail(err);
+      let token: string | undefined;
+      if (check) {
+        token = (await widget.current?.token()) ?? "";
+        if (!token) {
+          // No token in time (the check is still running or failed): nothing is sent; the line says what to do.
+          widget.current?.reset();
+          setNudge((n) => n + 1);
+          return;
+        }
+      }
+      const r = await signIn.attempt(email, password, token);
+      if (r.kind === "challenge") {
+        setChallenge(r.challenge);
+        setPassword("");
+        go("code");
+        return;
+      }
+      if (check) widget.current?.reset();
+      if (r.kind === "check_required") {
+        setCheck(true);
+        setNudge((n) => n + 1);
+      } else fail(r.error);
     } finally {
       setBusy(false);
     }
@@ -126,7 +159,10 @@ export function SignIn() {
             type="email"
             inputMode="email"
             value={email}
-            onChange={setEmail}
+            onChange={(v) => {
+              signIn.forget();
+              setEmail(v);
+            }}
             autoComplete="username"
             spellCheck={false}
             autoCapitalize="none"
@@ -137,9 +173,20 @@ export function SignIn() {
             label="Password"
             type="password"
             value={password}
-            onChange={setPassword}
+            onChange={(v) => {
+              signIn.forget();
+              setPassword(v);
+            }}
             autoComplete="current-password"
           />
+          {check && (
+            <div className="bot-check">
+              <Notice tone="info" key={nudge}>
+                {CHECK_LINE}
+              </Notice>
+              <TurnstileBox action="admin_login" widgetRef={widget} />
+            </div>
+          )}
           <button
             type="submit"
             className="btn btn--primary btn--block"

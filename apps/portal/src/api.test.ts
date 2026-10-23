@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api, onUnauthenticated, RequestError } from "./api.ts";
-import { COPY, emailProblem, linkOutcome, waitText } from "./copy.ts";
+import { COPY, checkFailed, emailProblem, linkOutcome, waitText } from "./copy.ts";
+
+/** A stand-in Turnstile token (the widget's real ones are opaque strings). */
+const TOKEN = "XXXX.DUMMY.TOKEN.XXXX";
 
 const json = (status: number, body: unknown, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", ...headers } });
@@ -24,11 +27,14 @@ describe("request a sign-in link [POR-01]", () => {
     const fetchFn = vi.fn().mockImplementation(async () => json(200, { ok: true, request_id: "r" }));
     vi.stubGlobal("fetch", fetchFn);
     for (const email of ["finance.a@example.test", "nobody@example.test"]) {
-      expect(await outcomeOf(api.requestLink(email))).toEqual({ kind: "sent" });
+      expect(await outcomeOf(api.requestLink(email, TOKEN))).toEqual({ kind: "sent" });
     }
     expect(fetchFn).toHaveBeenCalledTimes(2);
     expect(fetchFn.mock.calls[0]?.[0]).toBe("/api/v1/auth/magic");
-    expect(JSON.parse(fetchFn.mock.calls[0]?.[1].body)).toEqual({ email: "finance.a@example.test" });
+    expect(JSON.parse(fetchFn.mock.calls[0]?.[1].body)).toEqual({
+      email: "finance.a@example.test",
+      turnstile: TOKEN,
+    });
     expect(COPY.signIn.sent).toBe(
       "If this email can use the portal, we've sent a sign-in link. It works once, for 15 minutes.",
     );
@@ -37,12 +43,29 @@ describe("request a sign-in link [POR-01]", () => {
   it("429 reads as a rate limit with the wait from Retry-After, and is not retried", async () => {
     const fetchFn = vi.fn().mockResolvedValue(json(429, RATE_LIMITED, { "Retry-After": "900" }));
     vi.stubGlobal("fetch", fetchFn);
-    const o = await outcomeOf(api.requestLink("finance.a@example.test"));
+    const o = await outcomeOf(api.requestLink("finance.a@example.test", TOKEN));
+    // 07-G §3 (M2.4b): an earlier link still works.
     expect(o).toEqual({
       kind: "rate_limited",
-      text: "Too many link requests. Wait 15 minutes, then try again.",
+      text: "Too many link requests. If a link already arrived, it still works for 15 minutes. Otherwise wait 15 minutes, then try again.",
       more: COPY.signIn.rateLimitedMore,
     });
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it("400 turnstile_failed reads as the 07-G check line, not as a server fault, and is not retried [M2.4b]", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      json(400, {
+        error: { code: "turnstile_failed", message: "Verification failed. Try again." },
+        request_id: "r2",
+      }),
+    );
+    vi.stubGlobal("fetch", fetchFn);
+    expect(await outcomeOf(api.requestLink("finance.a@example.test", TOKEN))).toEqual({
+      kind: "check_failed",
+      text: "We couldn't confirm the check. Please try it again, then request your link.",
+    });
+    expect(checkFailed()).toEqual({ kind: "check_failed", text: COPY.signIn.checkFailed });
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
@@ -56,7 +79,7 @@ describe("request a sign-in link [POR-01]", () => {
 
   it("a network failure and a server fault read differently; the fault carries its reference", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
-    expect(await outcomeOf(api.requestLink("a@example.test"))).toEqual({
+    expect(await outcomeOf(api.requestLink("a@example.test", TOKEN))).toEqual({
       kind: "error",
       text: COPY.network,
       requestId: null,
@@ -67,7 +90,7 @@ describe("request a sign-in link [POR-01]", () => {
         .fn()
         .mockResolvedValue(json(500, { error: { code: "internal", message: "x" }, request_id: "ray-1" })),
     );
-    expect(await outcomeOf(api.requestLink("a@example.test"))).toEqual({
+    expect(await outcomeOf(api.requestLink("a@example.test", TOKEN))).toEqual({
       kind: "error",
       text: COPY.server,
       requestId: "ray-1",

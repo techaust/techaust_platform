@@ -7,7 +7,7 @@ import { emailAddress, INVITE_TTL_MS, newToken, tokenHash } from "@techaust/auth
 import { ROLES } from "@techaust/core/permissions";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
-import { alertStmt } from "./alerts.ts";
+import { alertStmt, queueAlerts } from "./alerts.ts";
 import { json } from "./auth.ts";
 import {
   type ApiError,
@@ -217,6 +217,7 @@ export const users = new Hono<AppEnv>()
     const db = c.env.DB;
     const token = newToken();
     const hash = await tokenHash(token);
+    let alertId: string | undefined;
     const result = await guarded(c, () =>
       mutate(c, {
         main: db
@@ -247,16 +248,22 @@ export const users = new Hono<AppEnv>()
               `INSERT INTO staff_invites (token_hash, email, role, invited_by, expires_at) SELECT ?1, email, role, ?2, ?3 FROM staff_users WHERE id = ?4 AND ${g.sql(5)}`,
             )
             .bind(hash, u.id, t + INVITE_TTL_MS, id, ...g.params),
-          alertStmt(
-            c,
-            "alert.2fa_change",
-            { userId: id, role: u.role, actor: { type: "staff", id: u.id } },
-            { auditId },
-          ),
+          (() => {
+            // About the member who was reset (the device and place in the row are the owner's, who did it).
+            const alert = alertStmt(
+              c,
+              "alert.2fa_change",
+              { userId: id, role: u.role, actor: { type: "staff", id: u.id }, change: "reset_by_owner" },
+              { auditId },
+            );
+            alertId = alert.id;
+            return alert.stmt;
+          })(),
         ],
       }),
     );
     if (result instanceof Response) return result;
     if (!result) return whyNot(c, id);
+    if (alertId) queueAlerts(c, [alertId]);
     return c.json({ link: `${new URL(c.req.url).origin}/invite#t=${token}`, expires_at: t + INVITE_TTL_MS });
   });

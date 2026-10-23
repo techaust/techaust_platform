@@ -9,6 +9,10 @@
 // The security log (owner's Q1 = A): a SIGN-IN EVENT writes an access row (link requested, link used or refused,
 // sign-out; document links in doc-token.ts); an anonymous request that is simply refused (no cookie, CSRF, quota,
 // unknown route) writes none: the Worker's own log line counts it without personal data.
+//
+// Turnstile (M2.4b, POR-01): the link request carries a token that is checked FIRST, before any quota or database read, so
+// a script without one can neither use up a victim's `p:mail:` quota nor fill the access log. A failed check is a 400 with
+// nothing written; the widget is always shown, so a normal request always has a token.
 import {
   clearPortalCookie,
   FAIL_SQL,
@@ -34,6 +38,7 @@ import {
   RESERVE_SQL,
   readPortalCookie,
   tokenHash,
+  verifyTurnstile,
 } from "@techaust/auth";
 import { uuidv7 } from "@techaust/core/ids";
 import { accessStmt, auditStmt } from "@techaust/db/log";
@@ -49,11 +54,18 @@ import {
   requestInfo,
 } from "./context.ts";
 import { scope } from "./scope.ts";
+import { type MagicLink, queueSender } from "./sender.ts";
 import { json } from "./validate.ts";
 
 const LINK_INVALID: ApiError = {
   code: "link_invalid",
   message: "This link has expired or was already used. Request a new link.",
+};
+
+/** 400, not 401/403: nothing is known about the caller yet, and nothing is written. The SPA shows its own words. */
+const TURNSTILE_FAILED: ApiError = {
+  code: "turnstile_failed",
+  message: "Verification failed. Try again.",
 };
 
 const now = () => Date.now();
@@ -90,7 +102,21 @@ export const authRoutes = new Hono<AppEnv>()
   //    contact read. The email's reservation is issued FIRST so that "the address is blocked" means blocked BEFORE
   //    this request: the 10th request of an hour (the one that sets the address's lock) is still counted per email.
   .post("/magic", json(magicRequest), async (c) => {
-    const { email } = c.req.valid("json");
+    const { email, turnstile } = c.req.valid("json");
+    // BEFORE any quota or read: no token, no cost to anyone else. `remoteip` is the raw address, never the /64 the quotas use.
+    const human = await verifyTurnstile({
+      secret: c.env.TURNSTILE_SECRET,
+      token: turnstile,
+      remoteip: c.var.ip ?? "",
+      action: "portal_link",
+      hostnames: c.env.TURNSTILE_HOSTNAMES,
+      // the generated Env type comes from the staging config, so the literal is widened before the comparison
+      local: (c.env.ENVIRONMENT as string) === "local",
+    });
+    if (!human) {
+      console.log(JSON.stringify({ ev: "magic.turnstile_failed", rid: c.var.rid })); // a code, no personal data
+      return err(c, TURNSTILE_FAILED, 400);
+    }
     const db = c.env.DB;
     const t = now();
     const pepper = c.env.PORTAL_KEY_PEPPER;
@@ -112,34 +138,48 @@ export const authRoutes = new Hono<AppEnv>()
     const eligible = (contacts?.results ?? []) as { id: string; display_name: string }[];
     const origin = new URL(c.req.url).origin;
     const stmts: D1PreparedStatement[] = [];
-    const links: { to: string; orgName: string; url: string }[] = [];
+    const links: MagicLink[] = [];
     for (const contact of eligible) {
       const token = newToken();
+      const hash = await tokenHash(token);
       stmts.push(
         db
           .prepare("INSERT INTO magic_link_tokens (token_hash, contact_id, expires_at) VALUES (?1, ?2, ?3)")
-          .bind(await tokenHash(token), contact.id, t + MAGIC_TTL_MS),
+          .bind(hash, contact.id, t + MAGIC_TTL_MS),
       );
-      links.push({ to: email, orgName: contact.display_name, url: `${origin}/auth/callback#t=${token}` });
+      links.push({
+        to: email,
+        orgName: contact.display_name,
+        url: `${origin}/auth/callback#t=${token}`,
+        tokenHash: hash,
+        expiresAt: t + MAGIC_TTL_MS,
+      });
     }
     // The access row of a link request: a sign-in event with no actor yet. Written for known and unknown alike.
     stmts.push(accessStmt(db, accessEntry(c, 200, null)));
     c.set("accessDone", true);
     await db.batch(stmts);
     if (links.length) {
-      try {
-        await c.var.sender.send(links);
-      } catch (e) {
-        // Delivery trouble never changes the answer (it would reveal that the email is known). Class name only.
-        console.error(
-          JSON.stringify({
-            level: "error",
-            route: c.var.route?.path ?? "other",
-            message: "link delivery failed",
-            cause: e instanceof Error ? e.name : "unknown",
-          }),
-        );
-      }
+      // Delivery rides in the execution context: the response never waits for it (a known email must not answer later
+      // than an unknown one), and trouble with it never changes the answer. Class name only in the log.
+      const sender = c.var.sender ?? queueSender(c.env);
+      const route = c.var.route?.path ?? "other";
+      c.executionCtx.waitUntil(
+        (async () => {
+          try {
+            await sender.send(links);
+          } catch (e) {
+            console.error(
+              JSON.stringify({
+                level: "error",
+                route,
+                message: "link delivery failed",
+                cause: e instanceof Error ? e.name : "unknown",
+              }),
+            );
+          }
+        })(),
+      );
     }
     return c.json({ ok: true });
   })

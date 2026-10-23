@@ -17,7 +17,7 @@ import {
   WINDOW_MS,
 } from "@techaust/auth";
 import { Hono } from "hono/tiny";
-import { alertStmt, lockoutAlert } from "./alerts.ts";
+import { alertStmt, lockoutAlert, queueAlerts } from "./alerts.ts";
 import { insertRecoveryCodes, json, RESERVE_SQL } from "./auth.ts";
 import {
   type ApiError,
@@ -77,7 +77,15 @@ export const account = new Hono<AppEnv>()
         )
       : ({ ok: false } as const);
     const refuse = async () => {
-      await logBatch(c, 400, alerts);
+      await logBatch(
+        c,
+        400,
+        alerts.map((x) => x.stmt),
+      );
+      queueAlerts(
+        c,
+        alerts.map((x) => x.id),
+      );
       return err(c, INVALID_CODE, 400);
     };
     if (!result.ok) return refuse();
@@ -176,17 +184,29 @@ export const account = new Hono<AppEnv>()
     const db = c.env.DB;
     const codes = newRecoveryCodes();
     const hashes = await Promise.all(codes.map((x) => recoveryCodeHash(x)));
-    await mutate(c, {
+    let alertId: string | undefined;
+    const done = await mutate(c, {
       action: "auth.recovery_regenerate",
       entityType: "staff_user",
       entityId: u.id,
-      side: (g, auditId) => [
-        db
-          .prepare(`DELETE FROM staff_recovery_codes WHERE user_id = ?1 AND ${g.sql(2)}`)
-          .bind(u.id, ...g.params),
-        insertRecoveryCodes(db, u.id, hashes, g),
-        alertStmt(c, "alert.2fa_change", { userId: u.id, role: u.role }, { auditId }),
-      ],
+      side: (g, auditId) => {
+        const alert = alertStmt(
+          c,
+          "alert.2fa_change",
+          { userId: u.id, role: u.role, change: "recovery_codes_regenerated" },
+          { auditId },
+        );
+        alertId = alert.id;
+        return [
+          db
+            .prepare(`DELETE FROM staff_recovery_codes WHERE user_id = ?1 AND ${g.sql(2)}`)
+            .bind(u.id, ...g.params),
+          insertRecoveryCodes(db, u.id, hashes, g),
+          alert.stmt,
+        ];
+      },
     });
+    // The alert row exists exactly when the audit row it is guarded on was written.
+    if (done && alertId) queueAlerts(c, [alertId]);
     return c.json({ recoveryCodes: codes.map(formatRecoveryCode) });
   });

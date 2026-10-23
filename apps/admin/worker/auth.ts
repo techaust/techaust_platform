@@ -5,8 +5,14 @@
 // Lockout (LD1, ADM-AUTH-06): an attempt is COUNTED FIRST, atomically (`RESERVE_SQL`), then verified. Passwords count
 // on `acct:<hash of email>`, codes on `code:<user id>`; a full sign-in deletes both. A per-IP failure counter
 // (`ip:`) blocks an address after 100 failures an hour; a request from a blocked address writes nothing at all.
+//
+// Turnstile (M2.4b, ADM-AUTH-06): only /login, and only from the 4th failure of an hour on. The token (if any) is checked
+// BEFORE the reservation; the reservation (`RESERVE_GATED_SQL`) counts a request without a verified token only while fewer
+// than 3 failures stand. A refused request does not move the ACCOUNT counter, so a script without a token can never lock a
+// staff account; it does count one failure for its own ADDRESS (`ip:`), so it cannot write access rows without end.
 import { sValidator } from "@hono/standard-validator";
 import {
+  ATTEMPT_READ,
   accountKey,
   base32,
   CHALLENGE_TTL_MS,
@@ -37,6 +43,7 @@ import {
   normaliseRecoveryCode,
   openTotpSecret,
   passwordHmac,
+  RESERVE_GATED_SQL,
   RESERVE_SQL,
   readCookie,
   recoveryCodeHash,
@@ -45,19 +52,21 @@ import {
   sealTotpSecret,
   sessionCookie,
   signChallenge,
+  TURNSTILE_AFTER,
   tokenHash,
   totpRequest,
   totpUri,
   verifyChallenge,
   verifyPassword,
   verifyTotp,
+  verifyTurnstile,
   WINDOW_MS,
 } from "@techaust/auth";
 import { uuidv7 } from "@techaust/core/ids";
 import type { Role } from "@techaust/core/permissions";
 import { accessStmt, auditStmt, type GuardSql } from "@techaust/db/log";
 import { Hono } from "hono/tiny";
-import { alertStmt, lockoutAlert } from "./alerts.ts";
+import { type Alert, alertStmt, lockoutAlert, queueAlerts } from "./alerts.ts";
 import {
   type ApiError,
   type AppEnv,
@@ -81,6 +90,11 @@ type UserRow = {
 
 const INVALID: ApiError = { code: "invalid_credentials", message: "Invalid email, password or code" };
 const LOCKED: ApiError = { code: "locked", message: "Too many attempts. Try again in 15 minutes." };
+/** 401 with its own code: the SPA shows the widget and sends the same client hash again with a token. */
+export const TURNSTILE_REQUIRED: ApiError = {
+  code: "turnstile_required",
+  message: "Verification required",
+};
 const INVITE_INVALID: ApiError = {
   code: "invite_invalid",
   message: "This invite link is invalid or has expired",
@@ -112,22 +126,32 @@ type Counted = { failures: number; locked_until: number | null };
  * The first call of /login, /totp and /recovery: [ip lock read, reservation, ...reads] in one batch. When the
  * address is blocked the reservation is skipped by its own SQL, so nothing was written.
  */
-async function attempt(c: Ctx, key: string, reads: D1PreparedStatement[]) {
+async function attempt(c: Ctx, key: string, reads: D1PreparedStatement[], gate?: { verified: boolean }) {
   const db = c.env.DB;
   const t = now();
   const ipk = c.var.ip ? await ipKey(c.env.SALT_PEPPER, c.var.ip) : null;
-  const results = await db.batch([
-    db.prepare(IP_READ).bind(ipk),
-    db.prepare(RESERVE_SQL).bind(key, t, WINDOW_MS, LOCK_AFTER, LOCK_MS, ipk),
-    ...reads,
-  ]);
+  // With a `gate` (the password counter, M2.4b) the batch also reads the counter BEFORE the reservation, so a refusal can
+  // be told apart: a lock in force (429) or a missing Turnstile token (401). Nothing is written in either case.
+  const guard = gate
+    ? [
+        db.prepare(ATTEMPT_READ).bind(key),
+        db
+          .prepare(RESERVE_GATED_SQL)
+          .bind(key, t, WINDOW_MS, LOCK_AFTER, LOCK_MS, ipk, gate.verified ? 1 : 0, TURNSTILE_AFTER),
+      ]
+    : [db.prepare(RESERVE_SQL).bind(key, t, WINDOW_MS, LOCK_AFTER, LOCK_MS, ipk)];
+  const results = await db.batch([db.prepare(IP_READ).bind(ipk), ...guard, ...reads]);
   const ip = results[0]?.results[0] as { locked_until: number | null } | undefined;
+  const before = gate ? (results[1]?.results[0] as { locked_until: number | null } | undefined) : undefined;
+  const first = gate ? 3 : 2;
   return {
     t,
     ipk,
     ipLocked: !!ip?.locked_until && ip.locked_until > t,
-    reserved: results[1]?.results[0] as Counted | undefined,
-    reads: results.slice(2).map((r) => r.results[0]),
+    /** The account counter's lock was in force before this request (only with a `gate`). */
+    accountLocked: !!before?.locked_until && before.locked_until > t,
+    reserved: results[first - 1]?.results[0] as Counted | undefined,
+    reads: results.slice(first).map((r) => r.results[0]),
   };
 }
 
@@ -138,9 +162,24 @@ type Attempt = { ipk: string | null; t: number; ipLocked: boolean };
 const ipFail = (c: Ctx, a: Pick<Attempt, "ipk" | "t">) =>
   a.ipk ? [c.env.DB.prepare(FAIL_SQL).bind(a.ipk, a.t, IP_WINDOW_MS, IP_LOCK_AFTER, IP_LOCK_MS)] : [];
 
-async function refuse(c: Ctx, a: Pick<Attempt, "ipk" | "t">, alerts: D1PreparedStatement[] = []) {
-  await logBatch(c, 401, [...ipFail(c, a), ...alerts]);
+async function refuse(c: Ctx, a: Pick<Attempt, "ipk" | "t">, alerts: Alert[] = []) {
+  await logBatch(c, 401, [...ipFail(c, a), ...alerts.map((x) => x.stmt)]);
+  queueAlerts(
+    c,
+    alerts.map((x) => x.id),
+  );
   return err(c, INVALID, 401);
+}
+
+/**
+ * A password attempt that needs Turnstile and has no verified token. Answered the same for every email (the counter is
+ * keyed by a hash, so unknown emails behave exactly like real ones). The account counter does not move; the caller's
+ * address counts one failure, in the same single call that writes the access row (as for a locked account), so a script
+ * without tokens ends up blocked. The request carried a token or not: a bad one is no different from none.
+ */
+async function turnstileRequired(c: Ctx, a: Pick<Attempt, "ipk" | "t">) {
+  await logBatch(c, 401, ipFail(c, a));
+  return err(c, TURNSTILE_REQUIRED, 401);
 }
 
 /**
@@ -179,6 +218,12 @@ export async function startSession(c: Ctx, o: SessionStart) {
   const uid = o.user.id;
   const live = (at: number) => `EXISTS (SELECT 1 FROM staff_sessions WHERE id = ?${at})`;
   const info = requestInfo(c);
+  // Alerts ride in the same batch; the ones whose statement changed a row go to the email queue afterwards.
+  const alerts: { at: number; id: string }[] = [];
+  const addAlert = (a: Alert) => {
+    alerts.push({ at: stmts.length, id: a.id });
+    stmts.push(a.stmt);
+  };
   const stmts: D1PreparedStatement[] = [
     o.guard,
     db
@@ -205,12 +250,19 @@ export async function startSession(c: Ctx, o: SessionStart) {
       db
         .prepare(`UPDATE staff_users SET last_login_at = ?2, updated_at = ?2 WHERE id = ?1 AND ${live(3)}`)
         .bind(uid, t, s.id),
-      alertStmt(c, "alert.2fa_change", { userId: uid, role: o.user.role }, s.id),
+    );
+    addAlert(
+      alertStmt(
+        c,
+        "alert.2fa_change",
+        { userId: uid, role: o.user.role, change: "recovery_code_used" },
+        s.id,
+      ),
     );
   }
   if (o.via !== "invite") {
     // A new device raises an alert; this runs BEFORE the device row is stored, so a known device is skipped.
-    stmts.push(
+    addAlert(
       alertStmt(
         c,
         "alert.new_device",
@@ -245,6 +297,12 @@ export async function startSession(c: Ctx, o: SessionStart) {
   c.set("accessDone", true);
   c.header("Set-Cookie", sessionCookie(s.token, Math.floor((s.absExpiresAt - t) / 1000)), { append: true });
   c.header("Set-Cookie", deviceCookie(device.token), { append: true });
+  // A new device means the guarded insert ran (a new browser, never the enrolment); a 2FA alert means the recovery code
+  // was used. Only an alert whose row exists is queued.
+  queueAlerts(
+    c,
+    alerts.filter((x) => results[x.at]?.meta.changes === 1).map((x) => x.id),
+  );
   return s;
 }
 
@@ -288,12 +346,25 @@ export const auth = new Hono<AppEnv>()
   // 2. Client hash → a short-lived challenge for the code step (no session yet). One batch: the address's lock,
   //    the reservation (counts the attempt), the user.
   .post("/login", json(loginRequest), async (c) => {
-    const { email, clientHash } = c.req.valid("json");
+    const { email, clientHash, turnstile } = c.req.valid("json");
     const key = await accountKey(email);
     const db = c.env.DB;
-    const a = await attempt(c, key, [db.prepare(LOGIN_READ).bind(email)]);
+    // Checked BEFORE any counter moves. A normal sign-in carries no token and makes no siteverify call.
+    const verified = turnstile
+      ? await verifyTurnstile({
+          secret: c.env.TURNSTILE_SECRET,
+          token: turnstile,
+          remoteip: c.var.ip ?? "",
+          action: "admin_login",
+          hostnames: c.env.TURNSTILE_HOSTNAMES,
+          // the generated Env type comes from the staging config, so the literal is widened before the comparison
+          local: (c.env.ENVIRONMENT as string) === "local",
+        })
+      : false;
+    const a = await attempt(c, key, [db.prepare(LOGIN_READ).bind(email)], { verified });
     if (a.ipLocked) return locked(c, a);
-    if (!a.reserved) return locked(c, a);
+    // Nothing reserved: the account is locked (429) or this attempt needs a verified token (401). Nothing was counted.
+    if (!a.reserved) return a.accountLocked ? locked(c, a) : turnstileRequired(c, a);
     const row = a.reads[0] as
       | {
           id: string;
@@ -307,16 +378,18 @@ export const auth = new Hono<AppEnv>()
     const usable = !!row && row.status === "active" && row.totp_enabled_at !== null;
     const salt = usable && row.pw_salt ? row.pw_salt : await fakeSalt(c.env.SALT_PEPPER, email);
     const ok = await verifyPassword(c.env.PASSWORD_PEPPER, salt, clientHash, usable ? row.pw_hmac : null);
-    // A lock that started with THIS attempt on a real account raises an alert (unknown emails get none).
-    const alerts = row && a.reserved.failures >= LOCK_AFTER ? [lockoutAlert(c, row.id, row.role)] : [];
-    if (!ok || !row) return refuse(c, a, alerts);
+    // A lock that started with THIS (failed) attempt on a real account raises an alert (unknown emails get none).
+    // A correct password on the 10th attempt raises no alert; the reserved lock stays until a full sign-in clears it.
+    if (!ok || !row) {
+      const alerts = row && a.reserved.failures >= LOCK_AFTER ? [lockoutAlert(c, row.id, row.role)] : [];
+      return refuse(c, a, alerts);
+    }
     const challenge = await signChallenge(c.env.SESSION_HMAC_KEY, {
       purpose: "login_totp",
       sub: row.id,
       exp: now() + CHALLENGE_TTL_MS,
       ak: key,
     });
-    if (alerts.length) await logBatch(c, 200, alerts);
     return c.json({ next: "totp", challenge });
   })
 

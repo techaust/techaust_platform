@@ -16,3 +16,6 @@ export async function clientHash(password: string, salt: string, params: ArgonPa
   });
   return b64url(out);
 }
+
+// The Turnstile loader of the sign-in screens (M2.4b), shared by both SPAs.
+export * from "./turnstile-client.ts";
