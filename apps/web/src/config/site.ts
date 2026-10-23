@@ -13,7 +13,7 @@ export const site = {
   /** OWNER: LinkedIn company page URL. Empty = hidden. */
   linkedinCompany: "",
   /** OWNER: founder's LinkedIn URL. Empty = hidden. */
-  linkedinFounder: "",
+  linkedinFounder: "https://in.linkedin.com/in/r4rupak1997",
   /** OWNER: Cal.com booking URL. When set, "Book a Discovery Sprint" goes there (owner, 2026-10-22). */
   calUrl: "" as string,
   /**
