@@ -3,7 +3,9 @@
 ```
 Status: open
 Tier: B (Workers, queues; docs/14 §2)
-Usage: (filled in per agent run from node tools/model-audit.mjs)
+Usage: builder claude-sonnet-5-5 / medium (workers-profiling, workers-best-practices, wrangler, turnstile-spin), 17 min,
+  212k tokens · reviewer claude-opus-5-5 / high (code-review, security-review, workers-best-practices, workers-profiling), 11 min,
+  125k tokens: weekly 39 → 39 %, 5-h 24 → 27 % (model audit: all runs within the plan)
 ```
 
 ## Before the build (2026-10-23)
@@ -104,3 +106,20 @@ The `batch(5)` step (counter-key HMACs and the reserve SQL) dropped from 1.7 to 
 **Open questions for the lead:**
 1. **The staff email 8 ms is not explained by any code difference I can find.** If staging still shows more than 7 ms after this change, the next steps, smallest first: (a) read cold and warm staff emails separately on staging (two sends right after an idle period, two in a row) to separate isolate/connection coldness from per-message cost; (b) one `db.batch([INSERT OR IGNORE, claim UPDATE])` in `processEmail` instead of two awaits (same semantics, one D1 call fewer; its CPU is unmeasurable locally). If cold-connection cost is the cause, no code change fixes it on the Free plan: that is the design-change case you asked me to report (options then: accept 8 ms, under the 10 ms limit, for rare cold emails and set the target for them separately, or a Paid-plan proposal).
 2. `/step-up` and `/totp` untouched (out of scope).
+
+## Review (reviewer Opus 5.5 high, 2026-10-23): APPROVE
+`b716896` against `main`. Checks (heavy.sh): `pnpm check`, `pnpm test` (auth 126, portal 424, all green), `pnpm build` (portal bundle 57,521 bytes, admin 83,983) green. Security: the made-up key can't reach the real pepper's cached key, counters or responses; nothing logged; no call refused at start-up; can't throw or reject.
+
+| # | Sev | Finding | Where |
+|---|---|---|---|
+| 1 | Low | `btoa(...)` at module top level can't be tree-shaken: a dead call in the admin bundle (and likely web) | `packages/auth/src/warm.ts:13` |
+| 2 | Low | No test fails if the entry stops running the warm-up | `apps/portal/worker/warm.test.ts`, `index.ts:20` |
+| 3 | Low | Comments state the start-up effect as fact; only local workerd shows it | `index.ts:18-19`, `warm.ts:2-4` |
+
+**The staff-email 8 ms (reviewer's assessment):** the builder's TLS hypothesis is very unlikely (`cpuTimeMs` excludes waiting on subrequests, and the magic-link send uses the same `fetch`); batching is ruled out (`max_batch_size: 1`); start-up billed to the first event is ruled out (first jobs invocations measured 4 ms). Most plausible: isolate coldness in what no start-up warm-up can reach (the real SigV4 key derivation, the first `Request`/`fetch`/`Response` handling, the D1 wrapper's first use, the queue glue); whole-millisecond rounding may make "8" about 7.5. The M2.4b samples can't tell cold from warm: jobs log lines carry no isolate marker. **Recommended next step:** add the portal's `iso`/`n` to the jobs log lines and read `cpuTimeMs` with `n` on staging; if the `n=1` sends are the 8 ms ones, the candidate change is deriving the SES signing key during the `staff.alert` expansion (a hypothesis until measured); the `email_log` batch idea is low value. Also: the portal SPA calls `/me` first, so `/magic` is usually `n=2`; read `n` for `/magic` too.
+
+## Lead fixes after the review (2026-10-23)
+- 1: the key is a base64 literal (the admin build no longer contains the string). 2: `apps/portal/worker/warm.ts` exports `portalWarm`; the entry imports it for its side effect; the test awaits it in workerd and scans the entry's source for the import. 3: comments reworded ("shown in local workerd; confirmed on staging").
+- The reviewer's next step, done here: jobs `logEvent` lines carry `iso` (random per isolate, made at the first invocation) and `n` (this isolate's invocation count, counted at the start of `handleQueue`); a test checks the keys, a stable `iso` and a growing `n`. No personal data.
+- Checks (heavy.sh, main checkout): `pnpm test` green (jobs 60, portal 425, all packages); `pnpm check` green; `pnpm build` green (portal 57,527 bytes, admin 83,942).
+- Next: re-check (reviewer, Opus medium) of this fix diff, then the PR, staging, and Step 3 with the owner (read `cpuTimeMs` with `n`).
