@@ -575,6 +575,34 @@ input[readonly] {
   font-weight: 560;
 }
 
+/* The Turnstile check (M2.4b): Cloudflare's managed widget is 65 px tall ("flexible" fills the column like the fields;
+   "compact", for columns under 300 px, is 140 px). The box holds that height while the script loads, so the button
+   under it doesn't move when the widget arrives; a quiet, still placeholder fills it until then, and stays if the
+   script can't load at all. */
+.turnstile {
+  min-height: 4.0625rem;
+  margin-bottom: var(--space-5);
+  border-radius: var(--radius-sm);
+}
+
+.turnstile[data-size="compact"] {
+  min-height: 8.75rem;
+}
+
+.turnstile[data-state="loading"],
+.turnstile:empty {
+  background: var(--color-fill-subtle);
+}
+
+.turnstile iframe {
+  display: block;
+}
+
+/* The 07-G line sits right above the check it asks for. */
+.check .notice {
+  margin-bottom: var(--space-3);
+}
+
 /* ---------- Invite: progress, meter, enrolment ---------- */
 
 .progress {

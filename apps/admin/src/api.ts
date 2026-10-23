@@ -113,8 +113,15 @@ export const api = {
   // Sign-in (public)
   salt: (email: string) =>
     request<{ salt: string; params: ArgonParams }>("/auth/salt", { ...pub, body: { email } }),
-  login: (email: string, clientHash: string) =>
-    request<{ challenge: string }>("/auth/login", { ...pub, body: { email, clientHash } }),
+  /**
+   * `turnstile`: only once the server has asked for the check (401 `turnstile_required`, after 3 failures; M2.4b,
+   * ADM-AUTH-06). A normal sign-in sends none.
+   */
+  login: (email: string, clientHash: string, turnstile?: string) =>
+    request<{ challenge: string }>("/auth/login", {
+      ...pub,
+      body: turnstile ? { email, clientHash, turnstile } : { email, clientHash },
+    }),
   totp: (challenge: string, code: string) =>
     request<{ user: User }>("/auth/totp", { ...pub, body: { challenge, code } }),
   recovery: (challenge: string, code: string) =>

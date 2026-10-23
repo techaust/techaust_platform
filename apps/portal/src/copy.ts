@@ -34,8 +34,12 @@ export const COPY = {
     sentHelp:
       "Nothing yet? It can take a minute or two. Check your spam folder, and check that this is the address TecHaust has for you.",
     again: "Use a different email address",
-    rateLimited: (wait: string) => `Too many link requests. Wait ${wait}, then try again.`,
+    // 07-G §3 (owner-approved, M2.4b): replaces the M1.6 line.
+    rateLimited: (wait: string) =>
+      `Too many link requests. If a link already arrived, it still works for 15 minutes. Otherwise wait ${wait}, then try again.`,
     rateLimitedMore: "This limit protects your account from misuse.",
+    // 07-G §3: the Turnstile check didn't pass (the server's `turnstile_failed`, or no token from the widget in time).
+    checkFailed: "We couldn't confirm the check. Please try it again, then request your link.",
   },
 
   signedOut: "You've signed out.",
@@ -89,6 +93,7 @@ export const COPY = {
 export type LinkOutcome =
   | { kind: "sent" }
   | { kind: "rate_limited"; text: string; more: string }
+  | { kind: "check_failed"; text: string }
   | { kind: "error"; text: string; requestId: string | null };
 
 /** `undefined`: the request went through (the generic reply); otherwise the error it failed with. */
@@ -96,6 +101,7 @@ export function linkOutcome(error?: unknown): LinkOutcome {
   if (error === undefined) return { kind: "sent" };
   if (!(error instanceof RequestError) || error.code === "network")
     return { kind: "error", text: COPY.network, requestId: null };
+  if (error.code === "turnstile_failed") return checkFailed();
   if (error.status === 429)
     return {
       kind: "rate_limited",
@@ -103,6 +109,11 @@ export function linkOutcome(error?: unknown): LinkOutcome {
       more: COPY.signIn.rateLimitedMore,
     };
   return { kind: "error", text: COPY.server, requestId: error.requestId };
+}
+
+/** The Turnstile check didn't pass: the server said so, or the widget gave no token in time (nothing was sent). */
+export function checkFailed(): LinkOutcome {
+  return { kind: "check_failed", text: COPY.signIn.checkFailed };
 }
 
 /** A simple shape check before sending (the server validates properly): something@something.something. */

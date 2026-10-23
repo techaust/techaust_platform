@@ -85,6 +85,22 @@ describe("API client: step-up and expired sessions [ADM-AUTH-08, ADM-AUTH-05]", 
     });
   });
 
+  it("sign-in sends the Turnstile token only once the check is on the screen [ADM-AUTH-06]", async () => {
+    const fetchFn = vi.fn().mockImplementation(async () => json(200, { challenge: "c" }));
+    vi.stubGlobal("fetch", fetchFn);
+    await api.login("a@example.test", "h".repeat(43));
+    await api.login("a@example.test", "h".repeat(43), "XXXX.DUMMY.TOKEN.XXXX");
+    expect(JSON.parse(fetchFn.mock.calls[0]?.[1].body)).toEqual({
+      email: "a@example.test",
+      clientHash: "h".repeat(43),
+    });
+    expect(JSON.parse(fetchFn.mock.calls[1]?.[1].body)).toEqual({
+      email: "a@example.test",
+      clientHash: "h".repeat(43),
+      turnstile: "XXXX.DUMMY.TOKEN.XXXX",
+    });
+  });
+
   it("a network failure reads as a plain connection message", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
     await expect(api.me()).rejects.toMatchObject({ code: "network", status: 0 });
