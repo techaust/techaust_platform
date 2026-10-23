@@ -623,7 +623,9 @@ describe("break-glass: pnpm admin:reset-2fa [ADM-AUTH-07, docs/08 §3.2]", () =>
     await signIn(u);
     await sessionFor("owner");
     expect(await countOf("staff_known_devices", "user_id = ?", u.id)).toBe(1);
-    const now = Date.now();
+    // Back-dated by a second: the re-issue below ends the older invite at `later`, and the Worker compares that with the
+    // real clock. With `now = Date.now()` a fast run reached /invite/start inside those 5 ms and the old link still worked.
+    const now = Date.now() - 1000;
     const exec = (sql: string[]) => env.DB.exec(sql.join("\n"));
     await exec(
       resetStatements({
