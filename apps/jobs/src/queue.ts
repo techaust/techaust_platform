@@ -4,6 +4,11 @@
 import { CLAIM_TIMEOUT_MS, processDeadLetter, processEmail } from "./email.ts";
 import { processLead } from "./leads.ts";
 import { logEvent } from "./log.ts";
+import { processStaffAlert } from "./staff-alerts.ts";
+
+/** A staff alert (`{ kind: "staff.alert", auditId }`) shares the email queue with ordinary emails (M2.4b). */
+const isStaffAlert = (body: unknown) =>
+  typeof body === "object" && body !== null && (body as { kind?: unknown }).kind === "staff.alert";
 
 /**
  * A dead-lettered message whose alert could not be sent is retried with long, growing delays (5 minutes, doubling, at
@@ -23,6 +28,10 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
         else message.retry({ delaySeconds: dlqRetryDelay(message.attempts) });
       } else if (queue.endsWith("-leads")) {
         await processLead(env, message.body);
+        message.ack();
+      } else if (queue.endsWith("-email") && isStaffAlert(message.body)) {
+        // Expanded into ordinary emails; an alert that cannot be read or has no row is acknowledged (a retry cannot help).
+        await processStaffAlert(env, message.body);
         message.ack();
       } else if (queue.endsWith("-email")) {
         const result = await processEmail(env, message.body);

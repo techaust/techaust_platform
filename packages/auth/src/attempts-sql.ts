@@ -36,5 +36,29 @@ ON CONFLICT(key) DO UPDATE SET
 WHERE locked_until IS NULL OR locked_until <= ?2
 RETURNING failures, locked_until`;
 
+/**
+ * `RESERVE_SQL` for the staff password counter once Turnstile applies (M2.4b, ADM-AUTH-06): the same upsert, with two
+ * more binds. ?7 is 1 when this request carried a Turnstile token that Cloudflare confirmed (else 0); ?8 is
+ * `TURNSTILE_AFTER` (3). The INSERT (no row yet) always counts. An existing row counts only when its lock is over AND
+ * (the request is verified, OR its window has run out and the count restarts at 1, OR it has fewer than ?8 failures).
+ * So the first three wrong passwords of an hour need no token; from the fourth on, a request without a verified token
+ * counts nothing and returns no row. It is `reserveAttemptGated` in SQL (the admin tests prove the two agree).
+ * `RESERVE_SQL` itself is unchanged and still serves every counter that has no Turnstile step.
+ */
+export const RESERVE_GATED_SQL = `INSERT INTO auth_attempts (key, window_start, failures, locked_until)
+SELECT ?1, ?2, 1, CASE WHEN 1 >= ?4 THEN ?2 + ?5 ELSE NULL END
+WHERE NOT EXISTS (SELECT 1 FROM auth_attempts WHERE key = ?6 AND locked_until > ?2)
+ON CONFLICT(key) DO UPDATE SET
+  window_start = CASE WHEN ?2 - window_start >= ?3 THEN ?2 ELSE window_start END,
+  failures = CASE WHEN ?2 - window_start >= ?3 THEN 1 ELSE failures + 1 END,
+  locked_until = CASE WHEN (CASE WHEN ?2 - window_start >= ?3 THEN 1 ELSE failures + 1 END) >= ?4
+                      THEN ?2 + ?5 ELSE locked_until END
+WHERE (locked_until IS NULL OR locked_until <= ?2)
+  AND (?7 = 1 OR ?2 - window_start >= ?3 OR failures < ?8)
+RETURNING failures, locked_until`;
+
+/** The pre-read that tells a refused gated reservation apart: a lock in force (429) or a missing token (401). */
+export const ATTEMPT_READ = "SELECT window_start, failures, locked_until FROM auth_attempts WHERE key = ?1";
+
 /** The block read: is this counter's lock in force? (?1 key.) */
 export const IP_READ = "SELECT locked_until FROM auth_attempts WHERE key = ?1";

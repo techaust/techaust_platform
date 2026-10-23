@@ -7,7 +7,7 @@
 // Errors are `{ok:false, error:<code>}` only (plus `fields` for a validation failure). A plain HTML form POST gets a
 // 303 to the page (`?error=<code>`) or to /thanks?ref=…; a JSON request gets JSON.
 
-import { addressOf, enc, hex, hmacSha256 } from "@techaust/auth";
+import { addressOf, enc, hex, hmacSha256, verifyTurnstile } from "@techaust/auth";
 import {
   contactForm,
   FORM_FIELDS,
@@ -28,7 +28,6 @@ warmWebForms();
 export const MAX_BODY_BYTES = 16 * 1024;
 const PAGES: Record<FormKind, string> = { contact: "/contact", quote: "/get-a-quote" };
 const ACTIONS: Record<FormKind, string> = { contact: "contact", quote: "quote" };
-const SITEVERIFY = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 
 type ErrorCode =
   | "method_not_allowed"
@@ -115,29 +114,6 @@ function parseBody(text: string, isForm: boolean): Fields | null {
   }
 }
 
-async function turnstileOk(env: Env, kind: FormKind, token: string, ip: string): Promise<boolean> {
-  if (token.length === 0 || token.length > 2048) return false;
-  try {
-    const res = await fetch(SITEVERIFY, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      signal: AbortSignal.timeout(5_000),
-      body: new URLSearchParams({ secret: env.TURNSTILE_SECRET ?? "", response: token, remoteip: ip }),
-    });
-    if (!res.ok) return false;
-    const r = (await res.json()) as { success?: boolean; action?: string; hostname?: string };
-    if (r.success !== true) return false;
-    // Cloudflare's local test keys do not echo our action and hostname; every real environment checks both.
-    if (env.ENVIRONMENT === "local") return true;
-    const hosts = env.TURNSTILE_HOSTNAMES.split(",")
-      .map((h) => h.trim())
-      .filter(Boolean);
-    return r.action === ACTIONS[kind] && typeof r.hostname === "string" && hosts.includes(r.hostname);
-  } catch {
-    return false; // fail closed
-  }
-}
-
 const str = (v: unknown) => (typeof v === "string" ? v : undefined);
 
 export const forms = new Hono<{ Bindings: Env }>();
@@ -205,7 +181,15 @@ forms.all("/forms/:kind", async (c) => {
   } catch {
     console.error(JSON.stringify({ ev: "forms.rate_limiter_error" }));
   }
-  if (!(await turnstileOk(env, kind, token, ip))) return fail("bad_request");
+  const human = await verifyTurnstile({
+    secret: env.TURNSTILE_SECRET,
+    token,
+    remoteip: ip,
+    action: ACTIONS[kind],
+    hostnames: env.TURNSTILE_HOSTNAMES,
+    local: env.ENVIRONMENT === "local",
+  });
+  if (!human) return fail("bad_request");
 
   const payload = (kind === "contact" ? contactForm : quoteForm).safeParse(f);
   const meta = formMeta.safeParse({

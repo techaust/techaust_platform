@@ -13,3 +13,4 @@ export * from "./schemas.ts";
 export * from "./session.ts";
 export * from "./tokens.ts";
 export * from "./totp.ts";
+export * from "./turnstile.ts";

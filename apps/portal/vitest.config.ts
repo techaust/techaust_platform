@@ -14,6 +14,7 @@ export default defineConfig(async () => ({
         bindings: {
           TEST_MIGRATIONS: await readD1Migrations(join(import.meta.dirname, "../../packages/db/migrations")),
           PORTAL_KEY_PEPPER: TEST_KEY(5),
+          TURNSTILE_SECRET: "test-turnstile-secret",
         },
       },
     }),

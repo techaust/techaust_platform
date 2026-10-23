@@ -279,3 +279,139 @@ export function dlqAlert(d: DlqAlertData, opts: LayoutOptions): Rendered {
     text: `${line}\n${what.length ? `${what.join("\n")}\n` : ""}${d.admin_url}\n\n${FOOTER}\n`,
   };
 }
+
+// ---- M2.4b: the sign-in link and the staff security emails (PLACEHOLDERS) --------------------------------------------------
+// The subjects are 07 §8 word for word; the bodies below only carry the facts in the M2.4 layout, so the queue, the
+// consumer and the tests can run end to end. The designer replaces the bodies with the approved copy (07 §8 and the appendix
+// 07-G) and the final layout; every line marked PLACEHOLDER is a gap, never final text. Variables are strings, escaped.
+
+export type MagicLinkData = { url: string; org_name: string; expires_at: string };
+export type StaffFacts = { name: string; time: string; device: string; location: string; admin_url: string };
+export type TwoFaChangeData = StaffFacts & { change: string };
+export type LockoutOwnerData = StaffFacts & {
+  member_name: string;
+  member_email: string;
+  member_role: string;
+};
+
+/** 07 §8 subjects. `LOCKOUT_OWNER_SUBJECT_GAP` has no approved line yet (07-G): a visible placeholder. */
+export const SUBJECTS = {
+  magicLink: "Your sign-in link for the TecHaust client portal",
+  newDevice: "New sign-in to your TecHaust admin account",
+  twoFaChange: "Security change on your account",
+  lockout: "Your account is temporarily locked",
+  lockoutOwner: "PLACEHOLDER (copy pending 07-G): a staff account is temporarily locked",
+} as const;
+
+const PLACEHOLDER = "PLACEHOLDER (the designer writes this from 07 §8 and 07-G)";
+
+/** Facts as label/value rows, in text and HTML. */
+function factRows(rows: [string, string][]): { text: string; html: string } {
+  const cell = `border-top:1px solid ${C.border};padding:10px 0;vertical-align:top;`;
+  return {
+    text: rows.map(([k, v]) => `${k}: ${v}`).join("\n"),
+    html: `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 24px;border-bottom:1px solid ${C.border};" class="ln">
+${rows
+  .map(
+    ([k, v]) => `<tr>
+<td class="ln k" width="152" style="${cell}width:152px;padding-right:16px;"><p class="mu" style="${textStyle(T.text.sm.size, T.text.sm.lineHeight, C.textMuted, "font-weight:500;padding-top:2px;")}">${e(k)}</p></td>
+<td class="ln" style="${cell}"><p class="tx" style="${textStyle(T.text.body.size, T.text.body.lineHeight, C.text, "word-break:break-word;")}">${lines(v)}</p></td>
+</tr>`,
+  )
+  .join("\n")}
+</table>`,
+  };
+}
+
+/** The sign-in link (to the client, from no-reply@). Sentences are 07 §8; the layout is the designer's. */
+export function portalMagicLink(d: MagicLinkData, opts: LayoutOptions): Rendered {
+  const subject = headerValue(SUBJECTS.magicLink);
+  const use = "Use this link to sign in. It works once and expires in 15 minutes.";
+  const ignore = "If you didn't ask for it, you can ignore this email.";
+  const html = layout(
+    subject,
+    heading(e(subject)) +
+      bodyP(e(`PLACEHOLDER layout. For: ${d.org_name}.`), "", true) +
+      bodyP(e(use)) +
+      button("Sign in", d.url) +
+      bodyP(e(ignore)),
+    opts,
+  );
+  return { subject, html, text: `${use}\n\nSign in: ${d.url}\n\n${ignore}\n\n${FOOTER}\n` };
+}
+
+function securityEmail(
+  subject: string,
+  facts: [string, string][],
+  opts: LayoutOptions,
+  lead: string,
+  tail?: string,
+): Rendered {
+  const rows = factRows(facts);
+  const html = layout(
+    subject,
+    heading(e(subject)) + bodyP(e(lead), "", true) + rows.html + (tail ? bodyP(e(tail)) : ""),
+    opts,
+  );
+  return {
+    subject,
+    html,
+    text: `${lead}
+
+${rows.text}
+${
+  tail
+    ? `
+${tail}
+`
+    : ""
+}
+${FOOTER}
+`,
+  };
+}
+
+const whenWhere = (d: StaffFacts): [string, string][] => [
+  ["Time", d.time],
+  ["Location", d.location],
+  ["Device", d.device],
+];
+
+/** New sign-in (to the staff member). 07 §8: time (IST), approximate location, device; "Not you? Contact the owner immediately." */
+export function staffNewDevice(d: StaffFacts, opts: LayoutOptions): Rendered {
+  return securityEmail(
+    headerValue(SUBJECTS.newDevice),
+    whenWhere(d),
+    opts,
+    `PLACEHOLDER layout. Hi ${d.name}.`,
+    "Not you? Contact the owner immediately.",
+  );
+}
+
+/** Security change on the account (to the staff member): which change, then the facts. The bodies are a gap (07-G). */
+export function staffTwoFaChange(d: TwoFaChangeData, opts: LayoutOptions): Rendered {
+  const subject = headerValue(SUBJECTS.twoFaChange);
+  return securityEmail(
+    subject,
+    [["Change", d.change], ...whenWhere(d)],
+    opts,
+    `${PLACEHOLDER}. Hi ${d.name}.`,
+  );
+}
+
+/** The account is locked (to the staff member). The body is a gap (07-G). */
+export function staffLockout(d: StaffFacts, opts: LayoutOptions): Rendered {
+  const subject = headerValue(SUBJECTS.lockout);
+  return securityEmail(subject, whenWhere(d), opts, `${PLACEHOLDER}. Hi ${d.name}.`);
+}
+
+/** The same lock, to each owner (ADM-AUTH-06). Subject and body are a gap (07-G). */
+export function staffLockoutOwner(d: LockoutOwnerData, opts: LayoutOptions): Rendered {
+  const subject = headerValue(SUBJECTS.lockoutOwner);
+  return securityEmail(
+    subject,
+    [["Member", d.member_name], ["Address", d.member_email], ["Role", d.member_role], ...whenWhere(d)],
+    opts,
+    `${PLACEHOLDER}. Hi ${d.name}.`,
+  );
+}

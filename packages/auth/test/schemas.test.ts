@@ -21,9 +21,10 @@ import {
 const email = z.string().trim().toLowerCase().max(254).pipe(z.email());
 const b64url43 = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
 const clientHash = b64url43.refine(isClientHash);
+const turnstile = z.string().min(1).max(2048);
 const classic = {
   saltRequest: z.object({ email }),
-  loginRequest: z.object({ email, clientHash }),
+  loginRequest: z.object({ email, clientHash, turnstile: turnstile.optional() }),
   totpRequest: z.object({ challenge: z.string().max(512), code: z.string().regex(/^\d{6}$/) }),
   recoveryRequest: z.object({ challenge: z.string().max(512), code: z.string().max(40) }),
   stepUpRequest: z.object({ code: z.string().regex(/^\d{6}$/) }),
@@ -31,7 +32,7 @@ const classic = {
   inviteStartRequest: z.object({ token: b64url43 }),
   inviteFinishRequest: z.object({ token: b64url43, clientHash, name: z.string().trim().min(1).max(100) }),
   // portal (M1.6)
-  magicRequest: z.object({ email }),
+  magicRequest: z.object({ email, turnstile }),
   magicVerifyRequest: z.object({ token: z.string().max(256) }),
   docTokenRequest: z.object({ token: z.string().max(256) }),
 };
@@ -113,6 +114,9 @@ const strings: unknown[] = [
   "x".repeat(41),
   "c".repeat(512),
   "c".repeat(513),
+  // Turnstile tokens (1 to 2,048)
+  "t".repeat(2048),
+  "t".repeat(2049),
   // hex ids
   "a".repeat(255),
   "a".repeat(256),
@@ -130,14 +134,14 @@ const nonStrings: unknown[] = [null, undefined, 0, 1, true, [], {}, ["a@b.co"], 
 function inputsFor(name: keyof typeof classic): unknown[] {
   const valid: Record<string, Record<string, unknown>> = {
     saltRequest: { email: "a@b.co" },
-    loginRequest: { email: "a@b.co", clientHash: good43 },
+    loginRequest: { email: "a@b.co", clientHash: good43, turnstile: "tok" },
     totpRequest: { challenge: "c", code: "123456" },
     recoveryRequest: { challenge: "c", code: "ABCD" },
     stepUpRequest: { code: "123456" },
     sessionIdParam: { id: "a".repeat(64) },
     inviteStartRequest: { token: good43 },
     inviteFinishRequest: { token: good43, clientHash: good43, name: "Asha" },
-    magicRequest: { email: "a@b.co" },
+    magicRequest: { email: "a@b.co", turnstile: "tok" },
     magicVerifyRequest: { token: good43 },
     docTokenRequest: { token: good43 },
   };
@@ -185,12 +189,27 @@ describe("zod/mini request schemas = the classic ones [ADM-AUTH-01, -02, -03, -0
 
   it("the cleaned values are what the Worker relies on: trimmed lower-case email, trimmed name", () => {
     expect(saltRequest.parse({ email: "  Mixed@Case.IN " })).toEqual({ email: "mixed@case.in" });
-    expect(magicRequest.parse({ email: "  Mixed@Case.IN " })).toEqual({ email: "mixed@case.in" }); // [POR-01]
+    expect(magicRequest.parse({ email: "  Mixed@Case.IN ", turnstile: "t" })).toEqual({
+      email: "mixed@case.in",
+      turnstile: "t",
+    }); // [POR-01]
     // a token of the wrong shape is NOT a validation error (it is a counted failed check), only an oversize one is
     expect(magicVerifyRequest.safeParse({ token: "short" }).success).toBe(true);
     expect(docTokenRequest.safeParse({ token: "x".repeat(257) }).success).toBe(false);
     expect(inviteFinishRequest.parse({ token: good43, clientHash: good43, name: "  Asha Verma " }).name).toBe(
       "Asha Verma",
     );
+  });
+
+  it("Turnstile tokens: the link request needs one, the staff login may carry one [ADM-AUTH-06, POR-01]", () => {
+    expect(magicRequest.safeParse({ email: "a@b.co" }).success).toBe(false);
+    expect(magicRequest.safeParse({ email: "a@b.co", turnstile: "" }).success).toBe(false);
+    expect(magicRequest.safeParse({ email: "a@b.co", turnstile: "t".repeat(2049) }).success).toBe(false);
+    expect(magicRequest.safeParse({ email: "a@b.co", turnstile: "t".repeat(2048) }).success).toBe(true);
+    expect(loginRequest.safeParse({ email: "a@b.co", clientHash: good43 }).success).toBe(true);
+    expect(loginRequest.safeParse({ email: "a@b.co", clientHash: good43, turnstile: "" }).success).toBe(
+      false,
+    );
+    expect(loginRequest.parse({ email: "a@b.co", clientHash: good43, turnstile: "x" }).turnstile).toBe("x");
   });
 });

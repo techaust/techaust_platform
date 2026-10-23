@@ -31,7 +31,8 @@ export type Vars = {
   ip: string | null;
   ua: string | null;
   route: RouteDef | null;
-  sender: MagicLinkSender;
+  /** Injected by tests; absent in production, where the email queue is used. */
+  sender?: MagicLinkSender | undefined;
   /** Set by the guard only, from the session row. Read it with `scope(c)`. */
   scope?: ClientScope;
   who?: Who;
