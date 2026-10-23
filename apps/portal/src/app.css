@@ -332,13 +332,16 @@ input[aria-invalid="true"] {
   min-height: 8.75rem;
 }
 
+/* Under the full-width widget too, so a frame the browser hasn't painted yet never shows as a hole. */
+.turnstile[data-size="flexible"],
 .turnstile[data-state="loading"],
 .turnstile:empty {
   background: var(--color-fill-subtle);
 }
 
-.turnstile iframe {
-  display: block;
+/* The widget's frame sits inline inside Cloudflare's shadow root: no line box under it (no gap below the frame). */
+.turnstile {
+  line-height: 0;
 }
 
 /* ---------- Buttons ---------- */

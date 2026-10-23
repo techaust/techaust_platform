@@ -180,7 +180,7 @@ export function SignIn() {
             autoComplete="current-password"
           />
           {check && (
-            <div className="check">
+            <div className="bot-check">
               <Notice tone="info" key={nudge}>
                 {CHECK_LINE}
               </Notice>
