@@ -28,14 +28,19 @@ describe("ogPath and ogCategory", () => {
     expect(og.ogCategory("/")).toBe("Company");
   });
 
-  it("prints the title without the site suffix", () => {
+  it("prints the title without the site suffix, a second clause or a leading company name", () => {
     expect(og.imageTitle("Pricing: published starting prices | TecHaust")).toBe(
       "Pricing: published starting prices",
     );
+    // The lockup above the title already names the company.
     expect(og.imageTitle("TecHaust Technologies: Software and AI automation studio")).toBe(
-      "TecHaust Technologies: Software and AI automation studio",
+      "Software and AI automation studio",
     );
     expect(og.imageTitle("Thanks | TecHaust Technologies")).toBe("Thanks");
+    expect(og.imageTitle("About TecHaust Technologies | Senior software studio, India")).toBe(
+      "About TecHaust Technologies",
+    );
+    expect(og.imageTitle("TecHaust Technologies")).toBe("TecHaust Technologies");
   });
 });
 
@@ -50,15 +55,42 @@ describe("the renderer", () => {
     expect(r.svg({ title: "Pricing", category: "Pricing" })).toContain('viewBox="0 0 1200 630"');
   });
 
-  it("shrinks a long title to fit three lines and refuses one that cannot fit", async () => {
+  it("sets short titles large and long ones smaller, on at most three balanced lines", async () => {
     const r = await createOgRenderer();
-    expect(() =>
-      r.svg({
-        title: "A fairly long title for a page that wraps over several lines of the share image",
-        category: "Company",
-      }),
-    ).not.toThrow();
-    expect(() => r.svg({ title: "word ".repeat(80), category: "Company" })).toThrow(/does not fit/);
+    expect(r.layout("Privacy notice")).toEqual({ lines: ["Privacy notice"], cap: 64, fallback: "none" });
+    const long = r.layout("Add AI features, MCP servers and agent-ready APIs");
+    expect(long.fallback).toBe("none");
+    expect(long.lines.length).toBeLessThanOrEqual(3);
+    expect(long.cap).toBeLessThan(64);
+    // Breaks where the title's own phrasing does, and never leaves one short word alone on the last line.
+    expect(r.layout("Cross-platform mobile apps: React Native, Flutter").lines).toContain(
+      "React Native, Flutter",
+    );
+    const rescue = r.layout("App rescue and production-readiness audit").lines;
+    expect(rescue[rescue.length - 1]).not.toBe("audit");
+  });
+
+  it("falls back to the part before the colon, then to whole words and an ellipsis (never fails on length)", async () => {
+    const r = await createOgRenderer();
+    const colon = r.layout(
+      "A deliberately overlong sample title: it runs on well past three lines to show the shorter fallback rule at work here",
+    );
+    expect(colon).toMatchObject({
+      fallback: "before-colon",
+      lines: ["A deliberately", "overlong sample title"],
+    });
+    const words = r.layout("word ".repeat(80));
+    expect(words.fallback).toBe("ellipsis");
+    expect(words.lines.length).toBeLessThanOrEqual(3);
+    expect(words.lines.at(-1)).toMatch(/word…$/);
+    expect(() => r.svg({ title: "word ".repeat(80), category: "Company" })).not.toThrow();
+  });
+
+  it("draws the lockup and the mark from the brand master, never the name in a live font", async () => {
+    const r = await createOgRenderer();
+    const svg = r.svg({ title: "Privacy notice", category: "Legal" });
+    expect(svg).not.toMatch(/<text\b/);
+    expect(svg).toContain("<title>TecHaust Technologies</title>");
   });
 
   it("fails on a character the font does not have (it would print as a box)", async () => {

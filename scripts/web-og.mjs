@@ -48,8 +48,16 @@ export function metaContent(html, key) {
   return undefined;
 }
 
-/** The title as printed on the image: without the " | TecHaust" or " | TecHaust Technologies" suffix. */
-export const imageTitle = (title) => title.replace(/\s*\|\s*TecHaust(?: Technologies)?\s*$/, "").trim();
+/**
+ * The title as printed on the image, taken from the page's own <title> (no new words): the part before the first " | "
+ * (the site suffix "| TecHaust", or a second clause such as About's), without a leading "TecHaust Technologies: "
+ * (the lockup above the title already names the company). Falls back to the whole title if that leaves nothing.
+ */
+export function imageTitle(title) {
+  const first = title.split(/\s+\|\s+/)[0]?.trim() ?? "";
+  const short = first.replace(/^TecHaust(?: Technologies)?:\s+/, "").trim();
+  return short || first || title.trim();
+}
 
 /** The category shown on a page's image, from its path. */
 export function ogCategory(path) {
