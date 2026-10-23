@@ -1,6 +1,6 @@
 # 07-G: Sign-in and security email copy for M2.4b that 07 doesn't have
 
-_Drafted by the lead on 2026-10-23 from approved facts (07 §8; 04 POR-01, ADM-AUTH-06, ADM-AUTH-09; the admin and portal screens as built). **Waiting for the owner's word-for-word approval.** Subjects and the magic-link body already in 07 §8 stay as they are. Every email ends with the 07 §8 footer; these are transactional, so they carry no "Why you're receiving this" line and no unsubscribe link. `{{…}}` are filled in by the system._
+_Drafted by the lead on 2026-10-23 from approved facts (07 §8; 04 POR-01, ADM-AUTH-06, ADM-AUTH-09; the admin and portal screens as built). **Approved by the owner on 2026-10-23, word for word.** Subjects and the magic-link body already in 07 §8 stay as they are. Every email ends with the 07 §8 footer; these are transactional, so they carry no "Why you're receiving this" line and no unsubscribe link. `{{…}}` are filled in by the system._
 
 ## 1. Emails
 
