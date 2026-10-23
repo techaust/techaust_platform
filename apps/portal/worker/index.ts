@@ -1,4 +1,4 @@
-import { hex, randomBytes, warmPortalAuth } from "@techaust/auth";
+import { hex, randomBytes } from "@techaust/auth";
 import { accessStmt, clipHeader, HEADER_LIMITS } from "@techaust/db/log";
 import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
@@ -14,10 +14,7 @@ import { docToken } from "./doc-token.ts";
 import { guard, ROUTES, tableOf } from "./guard.ts";
 import { me } from "./me.ts";
 import type { MagicLinkSender } from "./sender.ts";
-
-// CPU tuning 3: the first zod parse, the first HMAC and the first regexes of a sign-in request move into isolate start-up.
-// Web Crypto is allowed at start-up and finishes before the first event; errors are swallowed inside.
-void warmPortalAuth();
+import "./warm.ts"; // start-up warm-up of the sign-in path (CPU tuning 3)
 
 let isolateId: string | undefined;
 let isolateRequests = 0;
