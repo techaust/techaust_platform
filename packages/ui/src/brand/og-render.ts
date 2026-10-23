@@ -136,13 +136,13 @@ export async function createOgRenderer() {
     const words = text.split(/\s+/).filter(Boolean);
     // Start from what a greedy fill of three lines holds at the smallest size (nothing longer can fit), not from every
     // word: the answer is the same, found in a few tries instead of one per word.
-    const last = TITLE_STEPS[TITLE_STEPS.length - 1];
+    const smallest = Math.min(...TITLE_STEPS.map((s) => s.cap));
     let upper = 0;
     for (let line = 0, used = 0; line < MAX_TITLE_LINES && upper < words.length; line++, used = 0) {
       let text = "";
       while (upper < words.length) {
         const next = text ? `${text} ${words[upper]}` : (words[upper] ?? "");
-        if (used > 0 && measure(next, last.cap) > OG_FRAME.textWidth) break;
+        if (used > 0 && measure(next, smallest) > OG_FRAME.textWidth) break;
         text = next;
         used++;
         upper++;
