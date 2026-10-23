@@ -194,7 +194,13 @@ describe("a 2FA-change alert [ADM-AUTH-09]", () => {
           summary: { ua: "Mozilla/5.0 Chrome/140.0", country: "IN", city: "Kolkata", change },
         }),
       );
-      expect(Object.keys(mails[0]?.data ?? {}).sort()).toEqual(["change", "first_name", "name", "role", "time"]);
+      expect(Object.keys(mails[0]?.data ?? {}).sort()).toEqual([
+        "change",
+        "first_name",
+        "name",
+        "role",
+        "time",
+      ]);
       expect(mails[0]?.data.first_name).toBe("Meera");
       expect(JSON.stringify(mails)).not.toMatch(/Kolkata|Chrome|admin\.example/);
     }

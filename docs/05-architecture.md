@@ -338,13 +338,16 @@ The formatted number is computed in SQL from the counter value (`printf('TH/INV/
 ```text
 Browser (admin SPA)                       admin Worker (Hono)                         D1
 ───────────────────                       ───────────────────                         ──
-1. POST /api/v1/auth/salt {email}  ─────▶ per-IP failure counter (D1); Turnstile from M2.4b
+1. POST /api/v1/auth/salt {email}  ─────▶ per-IP failure counter (D1)
                                           salt = user ? user.pw_salt
                                                       : HMAC(SALT_PEPPER, lower(email))[:16]
                                    ◀───── {salt, params:{v,m,t,p}}  (same shape and timing)
 2. Web Worker: clientHash = Argon2id(password, salt, m=19MiB, t=2, p=1, 32 bytes)
 3. POST /api/v1/auth/login {email, clientHash, turnstile?}
-                                   ─────▶ check lockout (auth_attempts)
+                                   ─────▶ Turnstile siteverify first when a token is sent (M2.4b); after 3
+                                          failures without a verified token: 401 turnstile_required
+                                          (counts the address, never the account)
+                                          check lockout (auth_attempts)
                                           expected = HMAC-SHA256(PASSWORD_PEPPER, salt‖clientHash)
                                           constant-time compare with user.pw_hmac   ─────▶ read user
                                           on failure: increment counters, generic error
@@ -539,7 +542,8 @@ document:  tax totals = Σ line taxes;  grand = taxable + taxes
 
 ### 11.1 Email (`packages/email`)
 - **Send:** an `EMAIL_QUEUE` message `{template, to, data, entity}` → the consumer renders HTML + text (string templates, tokens inlined at build) → SESv2 `SendEmail` (aws4fetch SigV4, ≈ 0.25 ms CPU) with configuration set `techaust-transactional` → `email_log`.
-- **Senders:** `hello@` (leads, proposals), `billing@` (invoices, reminders, receipts), `no-reply@` (magic links, security). Reply-To goes to the matching Zoho mailbox.
+- **Senders:** `hello@` (leads, proposals), `billing@` (invoices, reminders, receipts), `no-reply@` (magic links, security). Reply-To goes to the matching Zoho mailbox; `no-reply@` emails reply to `contact@` (owner, 2026-10-23).
+- **Staff security alerts (M2.4b):** the admin Worker writes the alert as an audit row and puts only `{kind: "staff.alert", auditId}` on `EMAIL_QUEUE` (in `waitUntil`); the jobs consumer reads the row, the member and (for a lockout) the active owners in one D1 batch and queues ordinary emails. No email address leaves the admin Worker. Lockout emails: one set per person per clock hour.
 - **Events:** SES configuration set → **EventBridge → API destination** `https://hooks.techaust.com/ses` with a secret header (`SES_EVENTS_TOKEN`, constant-time compare) → updates `email_log`. Hard bounces/complaints → `email_suppressions` + the contact is flagged. The SES account-level suppression list is enabled too.
 - **DNS** (with your approval, at the time): Easy DKIM CNAMEs, a custom MAIL FROM `mail.techaust.com` (MX + SPF), DMARC staying `p=none` while monitoring, then `quarantine`. **SES production access** is requested by you in the AWS console.
 - **IAM:** a dedicated IAM user restricted to `ses:SendEmail` on the `techaust.com` identity and the configuration set (Workers can't use OIDC roles). Keys go in Wrangler secrets, rotated every 90 days ([08](08-security-compliance.md)).
