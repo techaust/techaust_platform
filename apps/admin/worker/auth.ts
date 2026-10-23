@@ -379,7 +379,7 @@ export const auth = new Hono<AppEnv>()
     const salt = usable && row.pw_salt ? row.pw_salt : await fakeSalt(c.env.SALT_PEPPER, email);
     const ok = await verifyPassword(c.env.PASSWORD_PEPPER, salt, clientHash, usable ? row.pw_hmac : null);
     // A lock that started with THIS (failed) attempt on a real account raises an alert (unknown emails get none).
-    // A correct password on the 10th reserved attempt is a sign-in, not a lock.
+    // A correct password on the 10th attempt raises no alert; the reserved lock stays until a full sign-in clears it.
     if (!ok || !row) {
       const alerts = row && a.reserved.failures >= LOCK_AFTER ? [lockoutAlert(c, row.id, row.role)] : [];
       return refuse(c, a, alerts);
