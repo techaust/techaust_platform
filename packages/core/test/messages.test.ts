@@ -1,8 +1,15 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { stripCrLf } from "../src/header.ts";
+import { uuidv7 } from "../src/ids.ts";
 import { generateLeadRef, LEAD_REF } from "../src/lead-ref.ts";
-import { emailMessage, formMeta, leadMessage } from "../src/schemas/messages.ts";
+import {
+  EMAIL_TEMPLATES,
+  emailMessage,
+  formMeta,
+  leadMessage,
+  staffAlertMessage,
+} from "../src/schemas/messages.ts";
 
 const base = {
   ref: "L-7K3Q9",
@@ -87,6 +94,53 @@ describe("queue messages", () => {
     expect(emailMessage.safeParse({ ...ok, template: "other" }).success).toBe(false);
     expect(emailMessage.safeParse({ ...ok, to: "not an address" }).success).toBe(false);
     expect(emailMessage.safeParse({ ...ok, data: { n: 5 } }).success).toBe(false);
+  });
+});
+
+describe("M2.4b messages [POR-01, ADM-AUTH-09, ADM-MAIL-01]", () => {
+  it("names the five new templates besides the two lead ones", () => {
+    expect([...EMAIL_TEMPLATES]).toEqual([
+      "lead.acknowledgement",
+      "lead.alert",
+      "portal.magic_link",
+      "staff.new_device",
+      "staff.2fa_change",
+      "staff.lockout",
+      "staff.lockout_owner",
+    ]);
+    for (const template of EMAIL_TEMPLATES)
+      expect(
+        emailMessage.safeParse({ template, to: "a@example.com", data: {}, entity: { type: "t", id: "1" } })
+          .success,
+      ).toBe(true);
+  });
+
+  it("a staff alert carries a kind and an audit ID and nothing else is kept", () => {
+    const auditId = uuidv7();
+    expect(staffAlertMessage.parse({ kind: "staff.alert", auditId, to: "x@example.com" })).toEqual({
+      kind: "staff.alert",
+      auditId,
+    });
+    for (const bad of [
+      {},
+      { kind: "staff.alert" },
+      { auditId },
+      { kind: "other", auditId },
+      { kind: "staff.alert", auditId: "not-a-uuid" },
+      { kind: "staff.alert", auditId: 5 },
+    ])
+      expect(staffAlertMessage.safeParse(bad).success).toBe(false);
+  });
+
+  it("a staff alert is not an email message and an email message is not a staff alert", () => {
+    const email = {
+      template: "lead.alert",
+      to: "a@example.com",
+      data: {},
+      entity: { type: "lead", id: "x" },
+    };
+    expect(staffAlertMessage.safeParse(email).success).toBe(false);
+    expect(emailMessage.safeParse({ kind: "staff.alert", auditId: uuidv7() }).success).toBe(false);
   });
 });
 

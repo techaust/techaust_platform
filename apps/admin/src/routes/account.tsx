@@ -1,12 +1,13 @@
 // Your account [ADM-AUTH-04, -05, -08]: where you're signed in (sign out one, or everywhere) and your recovery
 // codes (how many are left; make new ones after a fresh step-up). Loaded with import() (route chunk).
+
+import { describeUserAgent } from "@techaust/core/user-agent";
 import { useCallback, useEffect, useState } from "react";
 import { api, errorText, type Session } from "../api.ts";
 import { ConfirmDialog } from "../components/confirm-dialog.tsx";
 import { RecoveryCodes } from "../components/recovery-codes.tsx";
 import { Card, Notice, SkeletonRows } from "../components/ui.tsx";
 import { when } from "../lib/format.ts";
-import { describeUserAgent } from "../lib/user-agent.ts";
 import { useSession, useUser } from "../session.tsx";
 
 type Data = { sessions: Session[]; recovery_codes_remaining: number };

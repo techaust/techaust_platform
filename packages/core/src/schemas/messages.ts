@@ -86,7 +86,16 @@ export const leadMessage = z.discriminatedUnion("kind", [
 ]);
 export type LeadMessage = z.infer<typeof leadMessage>;
 
-export const EMAIL_TEMPLATES = ["lead.acknowledgement", "lead.alert"] as const;
+export const EMAIL_TEMPLATES = [
+  "lead.acknowledgement",
+  "lead.alert",
+  // M2.4b: the client portal's sign-in link and the staff security emails (ADM-MAIL-01)
+  "portal.magic_link",
+  "staff.new_device",
+  "staff.2fa_change",
+  "staff.lockout",
+  "staff.lockout_owner",
+] as const;
 export type EmailTemplate = (typeof EMAIL_TEMPLATES)[number];
 
 export const emailMessage = z.object({
@@ -98,3 +107,14 @@ export const emailMessage = z.object({
   entity: z.object({ type: z.string().min(1).max(40), id: z.string().min(1).max(80) }),
 });
 export type EmailMessage = z.infer<typeof emailMessage>;
+
+/**
+ * A staff security alert on the email queue (M2.4b, ADM-AUTH-09). The admin Worker puts ONLY the audit row's ID here: no
+ * address, name or device text leaves it, and its sign-in paths gain no D1 read. The jobs Worker expands it into
+ * ordinary `EmailMessage`s (the member, and for a lockout every active owner).
+ */
+export const staffAlertMessage = z.object({ kind: z.literal("staff.alert"), auditId: z.uuid() });
+export type StaffAlertMessage = z.infer<typeof staffAlertMessage>;
+
+/** What the `email` queue carries: an email to send, or a staff alert to expand into emails. */
+export type EmailQueueMessage = EmailMessage | StaffAlertMessage;

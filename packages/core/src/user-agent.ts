@@ -1,4 +1,4 @@
-// A small, local user-agent reader for the sessions list: "Chrome on Windows", "Safari on iPhone". It only names
+// A small, local user-agent reader for the sessions list and the staff security emails: "Chrome on Windows", "Safari on iPhone". It only names
 // the browser and the system; it never claims a version or a device model. Unknown parts read "Unknown browser".
 
 const BROWSERS: [RegExp, string][] = [
