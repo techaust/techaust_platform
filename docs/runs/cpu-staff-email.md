@@ -52,3 +52,55 @@ The owner, about 10 minutes: sign in to staging admin from a new browser (new-de
 | `/step-up` (up to 9 ms since M1.5), `/totp` | a later CPU round if needed, or M3.1 |
 | Workers Paid plan | a separate proposal, only if ≤ 7 ms needs a design change |
 | Any copy or template wording | none (bytes unchanged) |
+
+## Builder report (Step 1, Sonnet 5.5, 2026-10-23)
+
+**Skills loaded:** `cloudflare:workers-profiling` (per-step timing in a fresh process, then a profile; no hosted capture), `cloudflare:workers-best-practices` (no env or secrets at top level, async work handled, no refused global-scope calls), `cloudflare:wrangler` (local config reading only; no deploy, no `wrangler dev`), `cloudflare:turnstile-spin` (siteverify rules only: `verifyTurnstile` already checks success, action, hostname, token length and fails closed; unchanged; the wizard was not run). Context7 not needed.
+
+**Files changed:** `packages/auth/src/warm.ts` (new `warmPortalAuth`), `packages/auth/src/index.ts` (one export line), `packages/auth/test/warm.test.ts`, `apps/portal/worker/index.ts` (`void warmPortalAuth()` at module top level), `apps/portal/worker/warm.test.ts`. No new package, no `wrangler.jsonc` change, no change to `apps/jobs` or `packages/email`: the email consumer has no fix to make on this evidence (below).
+
+**Method.** Same as rounds 1 and 2: a step harness in `.logs/perf/` (git-ignored) bundles the real modules with workerd-style esbuild settings and times each step in a fresh Node process, first message after the module warm-up and a 100 ms idle ("cold"), the second, and the 51st ("warm"). Medians of 15 fresh processes for `/magic`. Added this round: a **workerd** probe, a temporary vitest file in `apps/jobs/test/` (deleted, not committed). In the local workerd the clock moves in whole milliseconds, so it is coarse but real V8 and workerd; D1 and fetch are stubbed or absent, so it shows JS CPU only. Not available: workerd's own CPU time per invocation (only Workers Logs on staging), the real TLS connection to SES, D1's JS-side cost.
+
+**Staff emails vs the magic-link email (the gap).**
+
+| Message, first in a fresh isolate, JS only | Node total, ms | workerd probe, total ms (5 runs, cold) |
+|---|---|---|
+| portal.magic_link | 2.2 | 2, 1, 4, 15 (outlier), 2 |
+| staff.new_device | 3.8 (1.07 ms of it logId noise) | 2, 2, 4, 1, 1 |
+| staff.2fa_change | 2.4 | 3, 4, 15 (outlier), 1, 2 |
+| staff.lockout | 2.5 | 4, 1, 1, 1, 2 |
+| staff.lockout_owner | 2.6 | not run |
+| any of them, warm (51st) | 0.3 to 0.45 | 0 to 1 |
+
+Cold per step (Node, all five templates alike): parse 0.1 to 0.3, `emailLogId` 0.2, `transportFor` 0.1, `renderEmail` 0.05 to 0.1, sign (the real key derivation with the real secret) 1.6 to 1.9, response 0.2. **No template-specific cost exists.** The staff templates render in 0.05 to 0.1 ms cold, the HTML sizes are alike, the warm-up already renders every branch real data reaches (the extra `role` field only picks one of two strings), and the staff and magic-link emails take the same code in `processEmail` except one `if` for the magic link's expiry. So the staging gap (8 ms against 4 ms) is **not in the code the two messages differ in**; the workerd probe shows the same 1 to 4 ms of JS for both. What the staging numbers can still contain, which nothing local can show, in order of plausibility:
+1. **The isolate's first SES connection (TLS) and the first signature of the UTC day.** Staff emails come minutes apart, from new sign-ins, so each lands in an isolate that has not just sent an email; the magic link was measured right after other emails. The day's signing key (about 1.7 ms) cannot be warmed because it needs the secret, and `fetch` is refused at start-up.
+2. The queue invocation's own overhead (message deserialising, four sequential D1 calls: INSERT OR IGNORE, claim, suppression SELECT, status UPDATE), the same for both.
+
+This is a hypothesis, not a finding: only another staging reading (two staff emails and a magic link back to back, then the same set after an idle period) separates cold from warm.
+
+**Portal `/magic`: found and fixed.** Cold cost of each piece in a fresh process (Node, ms): first zod parse of `magicRequest` 3.7 to 3.9, first HMAC (import of the pepper plus sign) 1.2 to 1.5, `addressOf` 0.2 to 0.3 (regex build), `res.json` 0.3, `newToken` 0.2, the rest under 0.15. Separately, **the first run of the Hono pipeline costs about 3 ms in Node** (a bare `GET /api/v1/health` cold: 3.1 to 3.6 ms, then 0.6): `secureHeaders`, `csrf`, `bodyLimit`, `guard`, `sValidator` and the exit log line are compiled on first use. **Fix (one commit):** `warmPortalAuth()` in `packages/auth/src/warm.ts`, started from the portal's module top level. It parses one made-up body through `magicRequest`, `magicVerifyRequest` and `docTokenRequest`, runs `addressOf` (IPv4 and IPv6) and `readPortalCookie`, the three counter-key HMACs with a made-up 32-byte key (the HMAC key cache is keyed by secret, so this adds one dummy entry and never touches the real pepper) and one SHA-256. It never reads `env`, uses none of `getRandomValues`, `new Request`, `new Response`, `fetch` or timers (workerd refuses them in the global scope, so `newToken` cannot be warmed), swallows every error, and returns the number of steps that worked (9). Tests: auth package (9 steps; none of the refused calls used, nothing logged; no throw when Web Crypto fails) and portal in workerd (9 steps).
+
+**Not fixed, and why.** The Hono pipeline's 3 ms cannot be warmed from the global scope without a `Request` and a `Response`, which workerd refuses there. Running the app on a fake request that throws at the first `Response` would compile part of it, but risks a start-up log line and is fragile, so I did not do it. Left as is: the real pepper's HMAC import (needs the secret), the siteverify `fetch` (I/O), `newToken` (`getRandomValues`).
+
+**Before / after (Node, ms, `/magic`, first request in a fresh isolate, median of 15 fresh processes; the ranges are wide on this PC)**
+
+| | before | after |
+|---|---|---|
+| first, run 1 | 11.6 (min 9.9) | 8.5 (min 6.2) |
+| first, run 2 (repeat) | 10.6 (min 7.1) | 9.2 (min 7.9) |
+| second | 2.1 to 5 | 1.4 to 2.4 |
+| warm | about 0.5 | about 0.4 |
+
+The `batch(5)` step (counter-key HMACs and the reserve SQL) dropped from 1.7 to 0.75; the rest of the gain is zod. Node over-states workerd (staging's first `/magic` was 6 to 8 ms against Node's 10 to 12 before the change), so the expected staging first request is about 4 to 6 ms; **a reading of the first `/magic` in a fresh isolate on staging decides**. Warm `/magic` was never the problem (0.4 ms in Node). Email consumer: unchanged, so no before/after.
+
+**Commands:** `pnpm --filter @techaust/auth test` exit 0 (126); `pnpm --filter @techaust/portal test` exit 0 (424, workerd); `pnpm check` exit 0; `pnpm test` exit 0; `pnpm build` exit 0; `pnpm lint` exit 0 (6 existing infos). `biome check` on the changed files: clean. Dev servers: none started.
+
+**Not verified:**
+- Real workerd CPU per invocation (`cpuTimeMs`); every figure is Node or the coarse workerd JS probe.
+- That `warmPortalAuth` (Web Crypto at start-up) runs in the real global scope: the unit tests simulate the refused calls; the same pattern is proven for the SES warm-up by round 2's reviewer, and the function swallows a refusal anyway. `wrangler check startup` was not run.
+- Whether the first TLS connection to SES is what makes the staff emails 8 ms (hypothesis 1).
+- D1's JS-side cost per call.
+
+**Open questions for the lead:**
+1. **The staff email 8 ms is not explained by any code difference I can find.** If staging still shows more than 7 ms after this change, the next steps, smallest first: (a) read cold and warm staff emails separately on staging (two sends right after an idle period, two in a row) to separate isolate/connection coldness from per-message cost; (b) one `db.batch([INSERT OR IGNORE, claim UPDATE])` in `processEmail` instead of two awaits (same semantics, one D1 call fewer; its CPU is unmeasurable locally). If cold-connection cost is the cause, no code change fixes it on the Free plan: that is the design-change case you asked me to report (options then: accept 8 ms, under the 10 ms limit, for rare cold emails and set the target for them separately, or a Paid-plan proposal).
+2. `/step-up` and `/totp` untouched (out of scope).
