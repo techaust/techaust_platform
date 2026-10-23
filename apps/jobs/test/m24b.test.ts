@@ -124,6 +124,7 @@ describe("a new-device alert [ADM-AUTH-09]", () => {
         data: {
           name: "Asha Rao",
           first_name: "Asha",
+          role: "staff",
           time: "23 Oct 2026, 14:05 IST",
           device: "Chrome on Windows",
           location: "Kolkata, India",
@@ -193,7 +194,7 @@ describe("a 2FA-change alert [ADM-AUTH-09]", () => {
           summary: { ua: "Mozilla/5.0 Chrome/140.0", country: "IN", city: "Kolkata", change },
         }),
       );
-      expect(Object.keys(mails[0]?.data ?? {}).sort()).toEqual(["change", "first_name", "name", "time"]);
+      expect(Object.keys(mails[0]?.data ?? {}).sort()).toEqual(["change", "first_name", "name", "role", "time"]);
       expect(mails[0]?.data.first_name).toBe("Meera");
       expect(JSON.stringify(mails)).not.toMatch(/Kolkata|Chrome|admin\.example/);
     }
@@ -243,6 +244,7 @@ describe("a lockout alert [ADM-AUTH-06]", () => {
     expect((mails.find((m) => m.to === staff.email) as EmailMessage).data).toEqual({
       name: "Meera Iyer",
       first_name: "Meera",
+      role: "staff",
       time: "23 Oct 2026, 14:05 IST",
     });
   });
@@ -258,6 +260,8 @@ describe("a lockout alert [ADM-AUTH-06]", () => {
       ]),
     );
     expect(mails.filter((m) => m.to === o.email)).toHaveLength(1);
+    // their own copy says they are an owner, so it carries 07-G's owner "Not you?" line
+    expect(mails.find((m) => m.to === o.email)?.data.role).toBe("owner");
   });
 
   it("a deactivated member gets none, the owners still do", async () => {

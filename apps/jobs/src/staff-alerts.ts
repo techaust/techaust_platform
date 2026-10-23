@@ -91,6 +91,9 @@ export async function processStaffAlert(env: Env, body: unknown): Promise<StaffA
   }
   const time = formatIstDateTime(row.at);
   const who = (m: Member) => ({ name: m.name, first_name: m.name.trim().split(/\s+/)[0] ?? m.name });
+  // The member's own emails also carry their role: it picks 07-G's "Not you?" line (an owner gets the owner line, since
+  // "Contact the owner" can't help them; everyone else the member line). The owners' lockout copy has no such line.
+  const reader = (m: Member) => ({ ...who(m), role: m.role });
   const live = member.status === "active" || member.status === "invited";
   const messages: EmailMessage[] = [];
   const told = new Set<string>();
@@ -114,7 +117,7 @@ export async function processStaffAlert(env: Env, body: unknown): Promise<StaffA
       member.email,
       "staff.new_device",
       {
-        ...who(member),
+        ...reader(member),
         time,
         device: describeUserAgent(text(summary.ua)),
         location: placeOf(summary),
@@ -125,7 +128,7 @@ export async function processStaffAlert(env: Env, body: unknown): Promise<StaffA
     add(
       member.email,
       "staff.2fa_change",
-      { ...who(member), time, change: change ?? "" },
+      { ...reader(member), time, change: change ?? "" },
       { type: "audit_log", id: auditId },
     );
   if (action === "alert.lockout") {
@@ -133,7 +136,7 @@ export async function processStaffAlert(env: Env, body: unknown): Promise<StaffA
     // in the same clock hour sends nothing new (its audit row stays). Two locks minutes apart that straddle an hour boundary
     // are two emails: at most two in any 60 minutes.
     const entity = { type: "staff_lockout", id: `${member.id}:${Math.floor(row.at / HOUR_MS)}` };
-    if (live) add(member.email, "staff.lockout", { ...who(member), time }, entity);
+    if (live) add(member.email, "staff.lockout", { ...reader(member), time }, entity);
     for (const owner of (ownerRead?.results ?? []) as Member[])
       add(
         owner.email,
