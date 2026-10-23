@@ -44,8 +44,11 @@ describe("lighthouserc.json (WEB-G-13)", () => {
   });
 
   it("asserts performance 0.95 and accessibility, best practices and SEO 1 (the 404 has noindex, so no SEO score)", () => {
-    const [pages, forms, notFound] = rc.ci.assert.assertMatrix;
-    expect(forms.assertions["categories:best-practices"][1].minScore).toBe(0.95); // Turnstile: see the run file
+    // Two entries only: every page but the 404 (the form pages included: no lower best-practices floor), then the 404.
+    expect(rc.ci.assert.assertMatrix).toHaveLength(2);
+    const [pages, notFound] = rc.ci.assert.assertMatrix;
+    expect(new RegExp(pages.matchingUrlPattern).test("http://localhost:8798/contact")).toBe(true);
+    expect(new RegExp(pages.matchingUrlPattern).test("http://localhost:8798/404")).toBe(false);
     expect(pages.assertions["categories:performance"][1].minScore).toBe(0.95);
     for (const c of ["accessibility", "best-practices", "seo"])
       expect(pages.assertions[`categories:${c}`][1].minScore).toBe(1);

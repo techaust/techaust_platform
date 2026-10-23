@@ -85,3 +85,35 @@ test.describe("currency swap does not shift the layout (CLS <= 0.05)", () => {
     }
   }
 });
+
+// Lighthouse's Best Practices counts every DevTools issue ("inspector-issues"). On the form pages zod's eval probe was
+// blocked by our CSP (it scored 96; src/scripts/zod-jitless.ts turns the probe off): this keeps any CSP violation, on
+// the pages that run scripts, from coming back unnoticed.
+test.describe("no Content Security Policy violations (WEB-G-13)", () => {
+  for (const path of ["/contact", "/get-a-quote", "/", "/pricing", "/services/app-rescue"]) {
+    test(path, async ({ page, context }) => {
+      const cdp = await context.newCDPSession(page);
+      const issues: string[] = [];
+      cdp.on("Audits.issueAdded", (e) => {
+        if (e.issue.code === "ContentSecurityPolicyIssue") issues.push(JSON.stringify(e.issue.details));
+      });
+      await cdp.send("Audits.enable");
+      await page.addInitScript(() => {
+        const w = window as unknown as { __csp: string[] };
+        w.__csp = [];
+        document.addEventListener("securitypolicyviolation", (e) =>
+          w.__csp.push(`${e.violatedDirective} ${e.blockedURI} ${e.sourceFile}:${e.columnNumber}`),
+        );
+      });
+      await page.goto(path);
+      await page.waitForLoadState("networkidle");
+      // Use the form a little, so its schemas have been built and run.
+      if (path === "/contact") {
+        await page.locator("#f-name").fill("Sample Visitor");
+        await page.locator("#f-message").focus();
+      }
+      const fromPage = await page.evaluate(() => (window as unknown as { __csp: string[] }).__csp);
+      expect([...fromPage, ...issues]).toEqual([]);
+    });
+  }
+});
