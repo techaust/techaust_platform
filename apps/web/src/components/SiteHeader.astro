@@ -42,7 +42,10 @@ const inIndustries = current?.startsWith("/industries") ?? false;
       <ul role="list" class="primary-nav__list">
         <li class="primary-nav__item primary-nav__item--wide">
           <details class="nav-disclosure" data-disclosure open={open === "services" || undefined}>
-            <summary class:list={["nav-link", "nav-trigger", inServices && "is-current"]}>
+            <summary
+              class:list={["nav-link", "nav-trigger", inServices && "is-current"]}
+              aria-current={inServices ? "true" : undefined}
+            >
               {shell.nav.services}
               <Icon name="chevron-down" size={16} class="chev" />
             </summary>
@@ -53,7 +56,10 @@ const inIndustries = current?.startsWith("/industries") ?? false;
         </li>
         <li class="primary-nav__item">
           <details class="nav-disclosure" data-disclosure open={open === "industries" || undefined}>
-            <summary class:list={["nav-link", "nav-trigger", inIndustries && "is-current"]}>
+            <summary
+              class:list={["nav-link", "nav-trigger", inIndustries && "is-current"]}
+              aria-current={inIndustries ? "true" : undefined}
+            >
               {shell.nav.industries}
               <Icon name="chevron-down" size={16} class="chev" />
             </summary>

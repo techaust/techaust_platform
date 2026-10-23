@@ -481,6 +481,13 @@ details[open] > .nav-trigger .chev {
   text-underline-offset: 0.22em;
 }
 
+/* The current page in a menu section: accent and bold, as in the desktop panels (the rule above has the same
+   specificity as `.mnav a[aria-current="page"]` and comes later, so it is restated here). */
+.mnav__sub a[aria-current="page"]:not(.btn) {
+  color: var(--color-text-accent);
+  font-weight: 600;
+}
+
 .mnav__all {
   justify-self: start;
 }
