@@ -189,6 +189,79 @@ describe("checkStructuredData (WEB-SVC-04, WEB-BLOG)", () => {
     expect(seo.checkStructuredData("services/app-rescue.html", html)).toEqual([]);
   });
 
+  describe("the Offer states the unit and lead the hero shows", () => {
+    const hero = (lead: string, unit: string) =>
+      `<p class="price price--lg"><span class="price__stack"><span class="price__line price__line--inr">${
+        lead ? `<span class="price__lead">${lead}</span>` : ""
+      }<span class="price__from">from</span><span class="price__fig"><span class="price__amount">₹9,999</span></span>${
+        unit ? `<span class="price__unit">${unit}</span>` : ""
+      }</span><span class="price__line price__line--usd"></span></span></p>`;
+    const run = (input: { unit?: string; lead?: string }, shown: { unit?: string; lead?: string }) =>
+      seo
+        .checkStructuredData(
+          "services/app-rescue.html",
+          page(
+            [
+              ...base(),
+              serviceNode({
+                name: "App Rescue",
+                description: "d",
+                path: "/services/app-rescue",
+                fromInr: { amount: 999900, currency: "INR" },
+                international: false,
+                ...input,
+              }),
+              crumb(),
+            ],
+            crumbsHtml + hero(shown.lead ?? "", shown.unit ?? ""),
+          ),
+        )
+        .join();
+
+    it("builds a monthly, a per-unit and a qualified Offer", () => {
+      const month = serviceNode({
+        name: "x",
+        description: "d",
+        path: "/services/x",
+        fromInr: { amount: 999900, currency: "INR" },
+        international: false,
+        unit: "a month",
+      }) as J;
+      expect(month.offers.priceSpecification).toMatchObject({
+        "@type": "UnitPriceSpecification",
+        unitText: "a month",
+        referenceQuantity: { "@type": "QuantitativeValue", value: 1, unitCode: "MON" },
+      });
+      const per = serviceNode({
+        name: "x",
+        description: "d",
+        path: "/services/x",
+        fromInr: { amount: 999900, currency: "INR" },
+        international: false,
+        unit: "per workflow",
+        lead: "Pilot",
+      }) as J;
+      expect(per.offers.name).toBe("Pilot");
+      expect(per.offers.priceSpecification.unitText).toBe("per workflow");
+      expect(per.offers.priceSpecification).not.toHaveProperty("referenceQuantity");
+    });
+
+    it("accepts an Offer that matches the hero", () => {
+      expect(run({ unit: "a month" }, { unit: "a month" })).toBe("");
+      expect(run({ unit: "per workflow" }, { unit: "per workflow" })).toBe("");
+      expect(run({ lead: "Audit" }, { lead: "Audit" })).toBe("");
+    });
+
+    it("fails when the page shows a unit or a lead the Offer lacks, or the Offer adds one", () => {
+      expect(run({}, { unit: "per month" })).toContain("lacks it");
+      expect(run({}, { unit: "per month" })).toContain("referenceQuantity");
+      expect(run({}, { unit: "per connector" })).toContain("lacks it");
+      expect(run({}, { lead: "Pilot" })).toContain("Offer's name");
+      expect(run({ unit: "per workflow" }, {})).toContain("a unit the page does not show");
+      expect(run({ lead: "Pilot" }, {})).toContain("a name the page does not show");
+    });
+  });
+
   it("fails when the FAQ answer in the data differs from the visible one", () => {
     const html = page(
       [...base(), svc(), crumb(), faqNode([{ q: "What?", a: "Something else." }], "/services/app-rescue")],

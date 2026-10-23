@@ -95,12 +95,19 @@ export function decimalAmount(m: Money): string {
   return `${sign}${abs / 100n}.${String(abs % 100n).padStart(2, "0")}`;
 }
 
+/** A unit that means "per month": "a month", "per month", "/month", "/mo". */
+export const MONTHLY = /(^|[\s/])(month|mo)$/i;
+
 export type ServiceInput = {
   name: string;
   description: string;
   path: string;
   /** The catalogue "from" price in INR (the one the page shows); omitted when the page shows none. */
   fromInr?: Money;
+  /** The unit the hero prints after the price ("a month", "per workflow"), as the page words it. */
+  unit?: string;
+  /** The lead word the hero prints before "from" ("Pilot", "Audit", "Setup"); becomes the Offer's name. */
+  lead?: string;
   /** The page shows a USD price too, so the service is offered outside India. */
   international: boolean;
 };
@@ -123,10 +130,16 @@ export function serviceNode(i: ServiceInput): LdNode {
           offers: {
             "@type": "Offer",
             priceCurrency: "INR",
+            ...(i.lead ? { name: i.lead } : {}),
             priceSpecification: {
-              "@type": "PriceSpecification",
+              "@type": i.unit ? "UnitPriceSpecification" : "PriceSpecification",
               minPrice: decimalAmount(i.fromInr),
               priceCurrency: "INR",
+              ...(i.unit ? { unitText: i.unit } : {}),
+              // A monthly price also says so in a form machines read: one month.
+              ...(i.unit && MONTHLY.test(i.unit)
+                ? { referenceQuantity: { "@type": "QuantitativeValue", value: 1, unitCode: "MON" } }
+                : {}),
             },
             url,
           },

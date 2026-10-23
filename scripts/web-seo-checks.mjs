@@ -137,6 +137,37 @@ export function visibleCrumbs(html, path) {
 }
 
 /** The JSON-LD graph against the page: one graph, the right nodes, required fields, and text equal to what is shown. */
+/** The hero's price tag: the lead word and the unit it prints (the first INR line on the page). */
+function heroPriceWords(html) {
+  const line =
+    /<span class="price__line price__line--inr"[^>]*>([\s\S]*?)<span class="price__line price__line--usd"/.exec(
+      html,
+    )?.[1];
+  if (line === undefined) return { lead: "", unit: "" };
+  const pick = (cls) =>
+    textOf(new RegExp(`<span class="${cls}[^"]*"[^>]*>([^<]*)</span>`).exec(line)?.[1] ?? "");
+  return { lead: pick("price__lead"), unit: pick("price__unit") };
+}
+
+/** The Offer states the unit and the lead the hero shows, in the page's own words (no new words). */
+function checkOfferWording(name, html, offer) {
+  const out = [];
+  const { lead, unit } = heroPriceWords(html);
+  const spec = offer.priceSpecification ?? {};
+  if (unit) {
+    if (spec["@type"] !== "UnitPriceSpecification" || alnum(spec.unitText ?? "") !== alnum(unit))
+      out.push(`${name}: the page shows the unit "${unit}" but the Offer's UnitPriceSpecification lacks it`);
+    if (/(^|[\s/])(month|mo)$/i.test(unit) && spec.referenceQuantity?.unitCode !== "MON")
+      out.push(`${name}: the page shows a monthly price but the Offer has no referenceQuantity of one month`);
+  } else if (spec.unitText || spec.referenceQuantity) {
+    out.push(`${name}: the Offer states a unit the page does not show`);
+  }
+  if (lead && alnum(offer.name ?? "") !== alnum(lead))
+    out.push(`${name}: the page shows "${lead}" before the price but the Offer's name is not "${lead}"`);
+  if (!lead && offer.name) out.push(`${name}: the Offer has a name the page does not show before the price`);
+  return out;
+}
+
 export function checkStructuredData(name, html) {
   const problems = [];
   const path = pagePath(name);
@@ -229,6 +260,7 @@ export function checkStructuredData(name, html) {
     const price = s.offers?.priceSpecification?.minPrice;
     if (s.offers && (!/^\d+\.\d{2}$/.test(price ?? "") || s.offers.priceCurrency !== "INR"))
       problems.push(`${name}: Service offer must be an INR price like 200000.00`);
+    if (s.offers) problems.push(...checkOfferWording(name, html, s.offers));
     if (crumbs && s.name !== crumbs.at(-1)?.name)
       problems.push(`${name}: Service name differs from the page's breadcrumb`);
   }

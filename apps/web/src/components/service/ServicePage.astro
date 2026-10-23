@@ -47,6 +47,8 @@ addLd(
     description: plainText(s.meta.description),
     path: `/services/${s.slug}`,
     fromInr: heroPrice.inr,
+    unit: s.hero.price.unit,
+    lead: s.hero.price.lead,
     international: heroPrice.usd !== null,
   }),
 );
