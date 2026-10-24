@@ -7,6 +7,7 @@ import {
   CALL_WINDOWS,
   callWindowText,
   countryName,
+  isCountryCode,
   labelOf,
   TIMELINE_LABELS,
   TOOL_LABELS,
@@ -51,5 +52,12 @@ describe("form labels (shared by the quote page and the lead alert)", () => {
     expect(countryName("IN")).toBe("India");
     expect(countryName("AG")).toBe("Antigua and Barbuda");
     expect(countryName("zz-bad")).toBe("zz-bad");
+  });
+});
+
+describe("isCountryCode", () => {
+  it("accepts assigned ISO 3166-1 codes only", () => {
+    for (const c of ["IN", "US", "GB", "AG", "AU"]) expect(isCountryCode(c)).toBe(true);
+    for (const c of ["ZZ", "XX", "in", "IND", "", "I", "1N", "AA"]) expect(isCountryCode(c), c).toBe(false);
   });
 });

@@ -5,7 +5,7 @@
 // Some tables can never be emptied (triggers: audit_log, doc_counters, terms_versions, terms_blocks are append-only or
 // forward-only), and tests in one file share a database, so those tests each use their own series or block kind.
 import { env } from "cloudflare:workers";
-import { gstinCheckChar, SETTINGS_DEFAULTS } from "@techaust/core";
+import { deleteAfter, gstinCheckChar, SETTINGS_DEFAULTS } from "@techaust/core";
 import { fyOf } from "@techaust/core/dates";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { bodyOf, call, captureQueue, countOf, one, rows, sessionFor } from "./test-helpers.ts";
@@ -926,5 +926,139 @@ describe("Settings > Email: test send [ADM-SET-07]", () => {
     expect(res.status).toBe(202);
     expect(logged.join("\n")).toContain("email not queued");
     expect(logged.join("\n")).not.toContain("sample.person");
+  });
+});
+
+describe("numbering is guarded inside the write (L-d) [ADM-SET-03]", () => {
+  const fy = fyOf(Date.now()).token;
+  const counter = (series: string) =>
+    one<{ next_no: number }>("SELECT next_no FROM doc_counters WHERE series = ? AND fy = ?", series, fy);
+
+  it("an invoice issued between the check and the write still stops the save (409 series_in_use, nothing written)", async () => {
+    await clear("numbering");
+    await store("numbering", SETTINGS_DEFAULTS.numbering, 1);
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO doc_counters (series, fy, next_no) VALUES ('refundVoucher', ?, 5)",
+    )
+      .bind(fy)
+      .run();
+    const start = (await counter("refundVoucher"))?.next_no;
+    const o = await owner();
+    // The Worker's own checks run first and pass (nothing is issued yet); then, just before the one batch, the document is issued.
+    const racing = {
+      prepare: (q: string) => env.DB.prepare(q),
+      batch: async (stmts: D1PreparedStatement[]) => {
+        await env.DB.prepare(
+          "INSERT OR IGNORE INTO clients (id, code, legal_name, display_name, type, country, gst_status, currency) VALUES ('c-race', 'CRACE', 'Race Traders', 'Race', 'business', 'IN', 'unregistered', 'INR')",
+        ).run();
+        await env.DB.prepare(
+          "INSERT INTO documents (id, type, status, client_id, currency, series, fy, number, number_display, frozen_at) VALUES ('d-race', 'refund_voucher', 'issued', 'c-race', 'INR', 'refundVoucher', ?1, 5, 'RF/5', 1)",
+        )
+          .bind(fy)
+          .run();
+        return env.DB.batch(stmts);
+      },
+    } as unknown as D1Database;
+    const value = {
+      ...SETTINGS_DEFAULTS.numbering,
+      refundVoucher: { template: "RF/{FY}/{N}", padding: 4 },
+    };
+    const res = await call(
+      GROUP("numbering"),
+      { method: "PUT", body: { version: 1, value }, cookie: o.cookie },
+      new Proxy(env, { get: (t, k) => (k === "DB" ? racing : Reflect.get(t, k)) }) as Env,
+    );
+    expect(res.status).toBe(409);
+    const body = await json(res);
+    expect(body.error.code).toBe("series_in_use");
+    expect(body.series).toEqual(["refundVoucher"]);
+    const stored = await one<{ version: number; value: string }>(
+      "SELECT version, value FROM settings WHERE key = 'numbering'",
+    );
+    expect(stored?.version).toBe(1);
+    expect(JSON.parse(stored?.value ?? "{}").refundVoucher).toEqual(
+      SETTINGS_DEFAULTS.numbering.refundVoucher,
+    );
+    expect((await counter("refundVoucher"))?.next_no).toBe(start);
+  });
+
+  it("a save that changes nothing answers 200 changed: false, with no version bump, no audit row and no counter write", async () => {
+    await clear("numbering");
+    await store("numbering", SETTINGS_DEFAULTS.numbering, 3);
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO doc_counters (series, fy, next_no) VALUES ('receiptVoucher', ?, 9)",
+    )
+      .bind(fy)
+      .run();
+    const start = (await counter("receiptVoucher"))?.next_no;
+    const o = await owner();
+    const before = await countOf("audit_log", "action = 'settings.numbering.update'");
+    const res = await put(GROUP("numbering"), o.cookie, {
+      version: 3,
+      value: SETTINGS_DEFAULTS.numbering,
+      nextNumbers: { receiptVoucher: start },
+    });
+    expect(res.status).toBe(200);
+    expect(await json(res)).toMatchObject({ ok: true, changed: false, version: 3 });
+    expect(
+      (await one<{ version: number }>("SELECT version FROM settings WHERE key = 'numbering'"))?.version,
+    ).toBe(3);
+    expect(await countOf("audit_log", "action = 'settings.numbering.update'")).toBe(before);
+    expect((await counter("receiptVoucher"))?.next_no).toBe(start);
+  });
+});
+
+describe("the leads retention re-dates the leads the clean-up may delete [ADM-SET-09, ADM-LEAD-05]", () => {
+  const T = Date.UTC(2026, 5, 15, 8, 30, 0, 250);
+  const lead = (id: string, over: { client?: string | null; hold?: number } = {}) =>
+    env.DB.prepare(
+      "INSERT INTO leads (id, ref, source, contact_name, contact_email, client_id, legal_hold, last_activity_at, delete_after) VALUES (?1, ?2, 'web', 'Pat', ?3, ?4, ?5, ?6, 1)",
+    )
+      .bind(
+        id,
+        `L-${id.slice(-5).toUpperCase()}`,
+        `${id}@example.com`,
+        over.client ?? null,
+        over.hold ?? 0,
+        T,
+      )
+      .run();
+  const deleteAfterOf = async (id: string) =>
+    (await one<{ delete_after: number }>("SELECT delete_after FROM leads WHERE id = ?", id))?.delete_after;
+
+  it("a new figure re-dates open leads from their last activity in the same batch; converted and held leads are left alone", async () => {
+    await clear("retention");
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO clients (id, code, legal_name, display_name, type, country, gst_status, currency) VALUES ('c-ret', 'CRET', 'Ret Traders', 'Ret', 'business', 'IN', 'unregistered', 'INR')",
+    ).run();
+    await lead("ret-open-1");
+    await lead("ret-held-1", { hold: 1 });
+    await lead("ret-conv-1", { client: "c-ret" });
+    const o = await owner();
+    const res = await put(GROUP("retention"), o.cookie, {
+      version: 0,
+      value: { ...SETTINGS_DEFAULTS.retention, leadsMonths: 24 },
+    });
+    expect(res.status).toBe(200);
+    expect(await deleteAfterOf("ret-open-1")).toBe(deleteAfter(T, 24));
+    expect(await deleteAfterOf("ret-held-1")).toBe(1);
+    expect(await deleteAfterOf("ret-conv-1")).toBe(1);
+    expect(JSON.parse((await lastAudit("settings.retention.update"))?.summary ?? "{}")).toMatchObject({
+      leadsRedated: true,
+    });
+
+    // Another retention figure (not the leads one) re-dates nothing; saving the same value changes nothing at all.
+    await env.DB.prepare("UPDATE leads SET delete_after = 1 WHERE id = 'ret-open-1'").run();
+    const other = await put(GROUP("retention"), o.cookie, {
+      version: 1,
+      value: { ...SETTINGS_DEFAULTS.retention, leadsMonths: 24, emailLogMonths: 14 },
+    });
+    expect(other.status).toBe(200);
+    expect(await deleteAfterOf("ret-open-1")).toBe(1);
+    const same = await put(GROUP("retention"), o.cookie, {
+      version: 2,
+      value: { ...SETTINGS_DEFAULTS.retention, leadsMonths: 24, emailLogMonths: 14 },
+    });
+    expect(await json(same)).toMatchObject({ changed: false });
   });
 });

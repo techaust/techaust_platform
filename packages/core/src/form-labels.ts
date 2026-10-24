@@ -108,7 +108,9 @@ export function isCountryCode(code: string): boolean {
   if (!/^[A-Z]{2}$/.test(code)) return false;
   regionNames ??= new Intl.DisplayNames("en-IN", { type: "region", fallback: "none" });
   try {
-    return regionNames.of(code) !== undefined;
+    const name = regionNames.of(code);
+    // ICU names the reserved codes too (ZZ is "Unknown Region"); the code itself comes back when it has no name
+    return name !== undefined && name !== code && !/unknown/i.test(name);
   } catch {
     return false;
   }

@@ -299,3 +299,106 @@ describe("POST /leads/:id/convert [ADM-LEAD-04]", () => {
     });
   });
 });
+
+describe("conversion: consent, country and the draft link (analyst early check)", () => {
+  it("carries marketing consent to the contact only while it stands (not withdrawn)", async () => {
+    const s = await sessionFor("owner");
+    const stands = await addLead({
+      consent: JSON.stringify({ marketing: true, at: 1_700_000_000_000, withdrawnAt: null }),
+    });
+    const withdrawn = await addLead({
+      consent: JSON.stringify({ marketing: true, at: 1_700_000_000_000, withdrawnAt: 1_700_000_100_000 }),
+    });
+    const never = await addLead({ consent: JSON.stringify({ marketing: false, at: 1_700_000_000_000 }) });
+    const none = await addLead({ consent: null });
+    const consentOf = async (leadId: string) => {
+      const r = await convert(leadId, GOOD, s.cookie);
+      const { contactId } = (await r.res.json()) as { contactId: string };
+      return (
+        await one<{ marketing_consent: string | null }>(
+          "SELECT marketing_consent FROM contacts WHERE id = ?",
+          contactId,
+        )
+      )?.marketing_consent;
+    };
+    expect(JSON.parse((await consentOf(stands.id)) ?? "null")).toMatchObject({
+      granted: true,
+      source: `lead:${stands.ref}`,
+    });
+    expect(await consentOf(withdrawn.id)).toBeNull();
+    expect(await consentOf(never.id)).toBeNull();
+    expect(await consentOf(none.id)).toBeNull();
+  });
+
+  it("checks the country against the GST status: registered and unregistered need IN, overseas needs another real country", async () => {
+    const s = await sessionFor("owner");
+    const lead = await addLead();
+    const clients = await countOf("clients");
+    const refuse = async (body: Body) => {
+      const { res } = await convert(lead.id, body, s.cookie);
+      expect(res.status, JSON.stringify(body)).toBe(400);
+      expect(((await bodyOf(res)) as { error: { code: string } }).error.code).toBe("country_mismatch");
+    };
+    await refuse({ ...GOOD, gstStatus: "unregistered", country: "US" });
+    await refuse({ ...GOOD, gstStatus: "registered", country: "US", gstin: VALID_GSTIN });
+    await refuse({ ...GOOD, gstStatus: "overseas", country: "IN" });
+    await refuse({ ...GOOD, gstStatus: "overseas", country: "ZZ" }); // not a country
+    await refuse({ ...GOOD, country: "XX" });
+    expect(await countOf("clients")).toBe(clients);
+    const ok = await convert(
+      lead.id,
+      { ...GOOD, type: "business", gstStatus: "overseas", country: "US", currency: "USD" },
+      s.cookie,
+    );
+    expect(ok.res.status).toBe(201);
+    expect(
+      await one(
+        "SELECT country, gst_status, currency FROM clients ORDER BY created_at DESC, rowid DESC LIMIT 1",
+      ),
+    ).toEqual({
+      country: "US",
+      gst_status: "overseas",
+      currency: "USD",
+    });
+  });
+
+  it("the draft link is a foreign key: a deleted draft clears proposal_id, and a made-up one is refused", async () => {
+    const s = await sessionFor("owner");
+    const lead = await addLead();
+    const { res } = await convert(lead.id, GOOD, s.cookie);
+    const { proposalId } = (await res.json()) as { proposalId: string };
+    expect(await one("SELECT proposal_id FROM leads WHERE id = ?", lead.id)).toEqual({
+      proposal_id: proposalId,
+    });
+    await env.DB.prepare("DELETE FROM documents WHERE id = ?").bind(proposalId).run();
+    expect(await one("SELECT proposal_id FROM leads WHERE id = ?", lead.id)).toEqual({ proposal_id: null });
+    await expect(
+      env.DB.prepare("UPDATE leads SET proposal_id = 'no-such-document' WHERE id = ?").bind(lead.id).run(),
+    ).rejects.toThrow(/FOREIGN KEY/);
+  });
+
+  it("a deleted earlier lead clears the duplicate link (ON DELETE SET NULL)", async () => {
+    const first = await addLead();
+    const second = await addLead();
+    await env.DB.prepare("UPDATE leads SET duplicate_of = ? WHERE id = ?").bind(first.id, second.id).run();
+    await env.DB.prepare("DELETE FROM leads WHERE id = ?").bind(first.id).run();
+    expect(await one("SELECT duplicate_of FROM leads WHERE id = ?", second.id)).toEqual({
+      duplicate_of: null,
+    });
+  });
+});
+
+// Last in the file: it adds a five-digit code, which changes what "the next code" means for the tests above.
+describe("client codes keep working after C9999", () => {
+  it("continues with C10000 and C10001; codes that are not C plus digits are ignored", async () => {
+    await env.DB.prepare(
+      "INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, currency) VALUES ('c-9999', 'C9999', 'N', 'N', 'business', 'IN', 'unregistered', 'INR'), ('c-junk', 'C99AB', 'N', 'N', 'business', 'IN', 'unregistered', 'INR'), ('c-junk2', 'C10000X', 'N', 'N', 'business', 'IN', 'unregistered', 'INR')",
+    ).run();
+    // the highest real code in the table is at least C9999, whatever the earlier tests made
+    const s = await sessionFor("owner");
+    const a = await convert((await addLead()).id, GOOD, s.cookie);
+    const b = await convert((await addLead()).id, GOOD, s.cookie);
+    expect(((await a.res.json()) as { clientCode: string }).clientCode).toBe("C10000");
+    expect(((await b.res.json()) as { clientCode: string }).clientCode).toBe("C10001");
+  });
+});
