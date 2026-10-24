@@ -663,6 +663,27 @@ describe("replies [ADM-LEAD-06]", () => {
   });
 });
 
+describe("GET /leads/assignees: who a lead can be assigned to [ADM-LEAD-03]", () => {
+  it("lists active members whose role works leads, by name, and says which one is the caller", async () => {
+    const s = await sessionFor("sales", { name: "Zara Assignee Sales" });
+    const owner = await sessionFor("owner", { name: "Aaron Assignee Owner" });
+    const accountant = await sessionFor("accountant", { name: "Assignee Accountant" });
+    const gone = await sessionFor("staff", { name: "Assignee Deactivated" });
+    await env.DB.prepare("UPDATE staff_users SET status = 'deactivated' WHERE id = ?1").bind(gone.id).run();
+    const res = await get("/leads/assignees", s.cookie);
+    expect(res.status).toBe(200);
+    const body = await json(res);
+    expect(body.me).toBe(s.id);
+    const ids = (body.assignees as { id: string; name: string }[]).map((a) => a.id);
+    expect(ids).toContain(s.id);
+    expect(ids).toContain(owner.id);
+    expect(ids).not.toContain(accountant.id);
+    expect(ids).not.toContain(gone.id);
+    expect(ids.indexOf(owner.id)).toBeLessThan(ids.indexOf(s.id));
+    expect(Object.keys(body.assignees[0]).sort()).toEqual(["id", "name"]);
+  });
+});
+
 describe("no personal data in any lead audit row", () => {
   it("no lead.* audit summary holds an email address, a phone number or a name", async () => {
     const all = await rows<{ summary: string | null }>(

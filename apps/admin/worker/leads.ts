@@ -26,6 +26,7 @@ import { decide, ROLES } from "@techaust/core/permissions";
 import {
   fillReplyTemplate,
   hasUnfilledGap,
+  LEAD_REPLIES_PER_HOUR,
   REPLY_TEMPLATES,
   replyTemplateById,
 } from "@techaust/core/reply-templates";
@@ -398,8 +399,8 @@ const replyRequest = z.object({
   templateId: z.optional(z.string().check(z.maxLength(40))),
 });
 
-/** Replies one member may send per hour. */
-export const REPLIES_PER_HOUR = 20;
+/** Replies one member may send per hour (shared with the reply screen). */
+export const REPLIES_PER_HOUR = LEAD_REPLIES_PER_HOUR;
 
 const norm = (v: string | null | undefined) => {
   const t = v?.trim();
@@ -440,6 +441,16 @@ export const leads = new Hono<AppEnv>()
         };
       }),
     });
+  })
+
+  // ---- who a lead can be assigned to: active members whose role works leads (the owner picker and filter), and the caller ----
+  .get("/assignees", async (c) => {
+    const { results } = await c.env.DB.prepare(
+      `SELECT id, name FROM staff_users WHERE status = 'active' AND role IN (${LEAD_READERS.map((_, i) => `?${i + 1}`).join(", ")}) ORDER BY name COLLATE NOCASE, id`,
+    )
+      .bind(...LEAD_READERS)
+      .all<{ id: string; name: string }>();
+    return c.json({ me: actor(c).id, assignees: results });
   })
 
   // ---- create by hand (ADM-LEAD-01) ----

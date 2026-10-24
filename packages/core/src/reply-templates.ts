@@ -6,6 +6,9 @@
 // Pure data and string functions in core (not in packages/email) because the admin Worker must not import @techaust/email at all
 // (CPU budget guard, apps/web/test/signin-config.test.ts); the `lead.reply` email itself is rendered in packages/email.
 
+/** Replies one member may send per hour (the admin Worker counts them in the conditional write; the reply screen says so). */
+export const LEAD_REPLIES_PER_HOUR = 20;
+
 export type ReplyTemplate = {
   id: string;
   label: string;

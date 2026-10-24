@@ -68,6 +68,7 @@ export const ROUTES: readonly RouteDef[] = [
   // Leads (M3.2, ADM-LEAD-01..06). Converting also needs proposals.draft (checked in the handler).
   R("GET", "/leads", "leads.read"),
   R("GET", "/leads/board", "leads.read"),
+  R("GET", "/leads/assignees", "leads.read"),
   R("POST", "/leads", "leads.write", { audit: "lead.create" }),
   R("GET", "/leads/:id", "leads.read"),
   R("GET", "/leads/:id/activities", "leads.read"),
