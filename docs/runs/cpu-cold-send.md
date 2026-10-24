@@ -1,7 +1,7 @@
 # CPU tuning 4: the 2FA-change send and portal `/magic`
 
 ```
-Status: re-check APPROVE; PR #72 (auto-merge), then the owner's staging reading
+Status: merged (PR #72); staging reading PASSED 2026-10-24
 Tier: B (Workers, queues; docs/14 §2)
 Usage: builder claude-sonnet-5-5 / medium (workers-profiling, workers-best-practices, wrangler), 11 min, 133k tokens ·
   reviewer claude-opus-5-5 / high (code-review, security-review, workers-best-practices, workers-profiling), 8 min, 96k tokens:
@@ -94,3 +94,18 @@ No critical or high. Checks on 21b6c34: email 52, auth 126, jobs 61, portal 425,
 
 ## Re-check (reviewer Opus 5.5 medium, 2026-10-24): APPROVE
 M1, L1–L3 and L5 do what the triage says; `sesClient` keeps the exact aws4fetch options and cache key. Three lows, all fixed by the lead: the `log`-transport test now passes SES credentials so only the guard stops the prime (it passed with the guard deleted); a stale cap comment removed from `sesTransport`; the isolate comment no longer implies `max_concurrency: 1` guarantees the same isolate. Jobs 62/62 and email 52/52 after the fixes.
+
+## Step 3: staging reading (owner and lead, 2026-10-24, about 16:02 IST): PASSED
+After PR #72's deploy (10:18 UTC). The owner signed in from an InPrivate window (authenticator), made new recovery codes and requested one portal link for an address with an account; all three emails arrived. Read-only Workers Logs, `cpuTimeMs`:
+
+| Invocation | Isolate `iso` / `n` | CPU ms | Before (CPU 3 reading) |
+|---|---|---|---|
+| jobs: `staff.alert` expansion, new device (with the SES prime) | 1bdc84 / 1 (fresh isolate) | 2 | 2 |
+| jobs: send `staff.new_device` | 1bdc84 / 2 | 4 | 4 |
+| jobs: `staff.alert` expansion, 2FA change | 1bdc84 / 3 | 1 | 4 |
+| jobs: send `staff.2fa_change` | 1bdc84 / 4 | 3 | **11** |
+| jobs: send `portal.magic_link` | 1bdc84 / 5 | 3 | 2 |
+| portal `/magic` (account address) | 886ebf / 2 | 6 | **8** |
+| admin `/salt`, `/login`, `/totp`, `/step-up`, `/recovery/regenerate` | fb896a / 1–7 | 4, 6, 6, 5, 4 | 2–5, `/totp` 8 |
+
+Every invocation ≤ 7 ms. **Honest limit:** this time both staff emails went through one jobs isolate, so the 2FA send ran warm (`n=4`); the cold-isolate case was the new-device pair (prime in the expansion at 2 ms, then the send at 4 ms), which is the case the prime is for. The earlier 11 ms was not reproduced and stays unexplained (possibly a one-off). Follow-up kept for before launch: re-read CPU on the first real staff emails after Phase 7.
