@@ -45,7 +45,7 @@ export async function enqueueDue(
 }
 
 export const purgeMode = (env: Pick<Env, "LEAD_PURGE_MODE">): "live" | "dry_run" =>
-  env.LEAD_PURGE_MODE === "live" ? "live" : "dry_run";
+  (env.LEAD_PURGE_MODE as string | undefined) === "live" ? "live" : "dry_run";
 
 export type PurgeResult = "deleted" | "dry_run" | "skipped";
 

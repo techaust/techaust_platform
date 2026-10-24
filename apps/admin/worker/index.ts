@@ -13,6 +13,7 @@ import { auth } from "./auth.ts";
 import { type AppEnv, accessEntry, BAD_REQUEST, type Ctx, err, FORBIDDEN, NOT_FOUND } from "./context.ts";
 import { csrf } from "./csrf.ts";
 import { guard, routeFor } from "./guard.ts";
+import { leads } from "./leads.ts";
 import { notifications } from "./notifications.ts";
 import { search } from "./search.ts";
 import { settings } from "./settings.ts";
@@ -96,6 +97,7 @@ export function createApp() {
   app.route("/v1/auth", account);
   app.route("/v1/users", users);
   app.route("/v1/settings", settings);
+  app.route("/v1/leads", leads);
   app.route("/v1/notifications", notifications);
   app.route("/v1/search", search);
   app.route("/v1/audit", audit);

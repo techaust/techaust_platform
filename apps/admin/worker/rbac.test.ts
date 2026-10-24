@@ -241,6 +241,26 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
         actor: s,
       };
     },
+    "POST /api/v1/leads/:id/convert": async () => {
+      const s = await sessionFor("sales");
+      const leadId = uuidv7();
+      await env.DB.prepare(
+        "INSERT INTO leads (id, ref, source, contact_name, contact_email) VALUES (?1, ?2, 'manual', 'Test Person', 'convert-scenario@example.com')",
+      )
+        .bind(leadId, `L-${leadId.slice(-5).toUpperCase()}`)
+        .run();
+      const rid = `ray-${crypto.randomUUID()}`;
+      return {
+        res: await call(`/leads/${leadId}/convert`, {
+          method: "POST",
+          body: { type: "business", country: "IN", gstStatus: "unregistered", currency: "INR" },
+          cookie: s.cookie,
+          headers: headers(rid),
+        }),
+        rid,
+        actor: s,
+      };
+    },
     "POST /api/v1/users/sessions/revoke-all": async () => {
       const s = await owner();
       const rid = `ray-${crypto.randomUUID()}`;

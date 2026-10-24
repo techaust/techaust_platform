@@ -65,6 +65,8 @@ export const ROUTES: readonly RouteDef[] = [
   R("GET", "/settings/terms/:block", "settings.manage"),
   R("POST", "/settings/terms/:block", "settings.manage", { audit: "settings.terms.update" }),
   R("POST", "/settings/email/test-send", "settings.manage", { audit: "settings.email.test_send" }),
+  // Leads (M3.2, ADM-LEAD-01..06). Converting also needs proposals.draft (checked in the handler).
+  R("POST", "/leads/:id/convert", "clients.write", { audit: "lead.convert" }),
   // The bell, the global search and the audit viewer (M3.1, ADM-G-09, ADM-G-05, ADM-AUD-02).
   R("GET", "/notifications", "notifications.own"),
   R("POST", "/notifications/read-all", "notifications.own", { audit: "notification.read_all" }),
