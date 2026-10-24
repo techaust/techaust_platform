@@ -225,7 +225,8 @@ techaust_platform/
 | `settings` | key (`company`, `tax`, `numbering`, `payment_terms`, `email`, `retention`, `flags`, `gateways`), value (JSON, zod-validated), version, updated_by, updated_at. Each change is audit-logged with a before/after. |
 | `bank_accounts` | id, kind (`INR`/`USD_SWIFT`), account_name, account_no, ifsc, swift, bank_name, branch, bank_address, intermediary, active |
 | `doc_counters` | series, fy (`2627`), next_no · PK(series, fy) |
-| `terms_versions` | id, kind (`proposal`/`invoice`/`website`), version, body_md, sha256, created_at |
+| `terms_versions` | id, kind (`proposal`/`invoice`/`website`), version, body_md, sha256, created_at · **triggers block UPDATE/DELETE** (a change is a new version). Holds the proposal terms and the invoice footer notes (documents and acceptances reference it); `website` is static site content and not editable in the admin |
+| `terms_blocks` | id, kind (`standard_terms`/`export_declaration`/`refund_link`), version, body_md, sha256, created_by, created_at · unique(kind, version) · **triggers block UPDATE/DELETE**. The three ADM-SET-08 blocks that `terms_versions`' CHECK cannot hold (M3.1, migrations 0011-0012). Documents do not reference it yet: M5 adds the columns (`ADD COLUMN`, analyst-checked) |
 | `fx_rates` | date, pair (`USDINR`), rate_micros, source (`FBIL/RBI`/manual), entered_by |
 
 **CRM and delivery**
@@ -282,7 +283,7 @@ techaust_platform/
 | `email_suppressions` | email, reason, at |
 | `audit_log` | id, at, actor_type (`staff`/`contact`/`system`/`webhook`), actor_id, role, action, entity_type, entity_id, summary (JSON diff, sensitive fields masked), ip, user_agent, request_id · **triggers block UPDATE/DELETE** |
 | `access_log` | id, at, realm, actor_id, method, route, status, ip, user_agent, request_id (security log, 13-month retention) |
-| `notifications` | id, user_id, kind, entity_type, entity_id, title, read_at |
+| `notifications` | id, user_id, kind, entity_type, entity_id, title, link, read_at, created_at · unique(user_id, kind, entity_id) (M3.1, migration 0014; first event `lead.new`) |
 | `review_items` | id, source (`webhook`/`dlq`/`recon`), ref, summary, payload_r2_key, status, resolved_by |
 | `dsr_requests` | id, contact_id or email, kind (`access`/`correction`/`erasure`/`withdraw`/`nominate`), status, received_at, due_at (30 days), closed_at, notes |
 | `idempotency_keys` | key, realm, route, request_sha256, response_status, response_body (small), created_at (24 h TTL) |

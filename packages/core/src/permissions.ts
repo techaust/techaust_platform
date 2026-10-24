@@ -32,6 +32,12 @@ const MATRIX = {
   "account.own": { owner: "allow", staff: "allow", sales: "allow", accountant: "allow" },
   "account.recoveryCodes": { owner: "step-up", staff: "step-up", sales: "step-up", accountant: "step-up" },
   "settings.manage": { owner: "allow" },
+  // The settings overview and a group's read: the handler then filters by group (the accountant sees only tax, numbering
+  // and masked bank details; everything else is the owner's) [ADM-SET-01..10, M3.1]
+  "settings.read": { owner: "allow", accountant: "allow" },
+  // The bell and the global search: every signed-in member; each handler returns only what the role may read [ADM-G-05, ADM-G-09]
+  "notifications.own": { owner: "allow", staff: "allow", sales: "allow", accountant: "allow" },
+  "search.use": { owner: "allow", staff: "allow", sales: "allow", accountant: "allow" },
   "settings.taxNumbering.read": { owner: "allow", accountant: "allow" },
   "gateways.manage": { owner: "step-up" },
   // Bank details

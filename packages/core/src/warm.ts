@@ -14,6 +14,7 @@ import {
   leadMessage,
   staffAlertMessage,
 } from "./schemas/messages.ts";
+import { SETTINGS_DEFAULTS, SETTINGS_SCHEMAS, type SeededSettingKey } from "./schemas/settings.ts";
 
 const CONTACT = {
   name: "Warm Up",
@@ -98,6 +99,23 @@ export function warmConsumerMessages(): number {
         staffAlertMessage.safeParse({ kind: "staff.alert", auditId: "00000000-0000-7000-8000-000000000000" }),
       )
     );
+  } catch {
+    return 0; // never stop a Worker from starting
+  }
+}
+
+/**
+ * The admin Worker's settings API (M3.1): parses the defaults of every settings schema once, so the first Settings request
+ * does not pay for building them. Returns how many parsed (8: company, tax, numbering, payment terms, retention, flags,
+ * gateways, email).
+ */
+export function warmSettings(): number {
+  try {
+    let n = 0;
+    for (const key of Object.keys(SETTINGS_SCHEMAS) as SeededSettingKey[]) {
+      n += ok(SETTINGS_SCHEMAS[key].safeParse(SETTINGS_DEFAULTS[key]));
+    }
+    return n;
   } catch {
     return 0; // never stop a Worker from starting
   }

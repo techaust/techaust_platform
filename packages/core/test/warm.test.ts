@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { budgetBandLabel, countryName } from "../src/form-labels.ts";
 import { contactForm } from "../src/schemas/forms.ts";
 import { leadMessage } from "../src/schemas/messages.ts";
-import { WARM_SAMPLES, warmConsumerMessages, warmLabels, warmWebForms } from "../src/warm.ts";
+import { WARM_SAMPLES, warmConsumerMessages, warmLabels, warmSettings, warmWebForms } from "../src/warm.ts";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -16,6 +16,7 @@ describe("start-up warm-up", () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
     expect(warmWebForms()).toBe(3);
     expect(warmConsumerMessages()).toBe(5);
+    expect(warmSettings()).toBe(8); // one per settings schema: a new schema adds a sample here
     expect(() => warmLabels()).not.toThrow();
     expect(leadMessage.safeParse(WARM_SAMPLES.quoteLead).success).toBe(true);
     expect(log).not.toHaveBeenCalled();

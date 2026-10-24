@@ -10,7 +10,7 @@
 // "*Version x · Effective <date>*" footers are replaced by that line at the top of each page.
 // {{postal_address}} renders site.postalAddress, or a marked gap while the owner hasn't supplied it.
 // "Cookie settings" links (#cookie-settings) open the footer's preferences dialog (CopyText).
-import { money } from "@techaust/core";
+import { money, SETTINGS_DEFAULTS } from "@techaust/core";
 import { site } from "../config/site";
 import type { LegalSlug } from "../lib/legal";
 import { displayAmount } from "../lib/prices";
@@ -48,7 +48,9 @@ const SECURITY = mail("security@techaust.com");
  * 07-A §2 item 10: the website liability cap (VERIFY WITH CA/LEGAL). Not a catalogue price, so not a {{price}} token:
  * an integer amount in paise, formatted by @techaust/core like every amount on the site (never typed as text).
  */
-const WEBSITE_LIABILITY_CAP = displayAmount(money(1_000_000, "INR"));
+const WEBSITE_LIABILITY_CAP = displayAmount(
+  money(SETTINGS_DEFAULTS.payment_terms.websiteLiabilityCapInrMinor, "INR"),
+);
 
 /**
  * 07-A §5 (cookie policy) while the GA4 ID setting is empty (lead decision 2026-10-22, docs/13): the Google Analytics

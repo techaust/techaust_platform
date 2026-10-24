@@ -95,6 +95,8 @@ export const EMAIL_TEMPLATES = [
   "staff.2fa_change",
   "staff.lockout",
   "staff.lockout_owner",
+  // M3.1: the invitation to join the admin (ADM-AUTH-07, ADM-MAIL-01; body in 07-H)
+  "staff.invite",
 ] as const;
 export type EmailTemplate = (typeof EMAIL_TEMPLATES)[number];
 

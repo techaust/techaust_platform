@@ -5,6 +5,28 @@
 import * as z from "zod";
 import { DEFAULT_PADDING, SERIES, type Series, validateFormat } from "../numbering.ts";
 import { gstin, stateCode } from "./domain.ts";
+import { EMAIL_TEMPLATES } from "./messages.ts";
+
+/**
+ * The brand logo files a document may use (ADM-SET-01), file names under `packages/ui/brand`. A fixed list: the PDF and the
+ * admin read the file by name, so a name outside it is refused. A test in packages/ui checks that every file exists.
+ */
+export const BRAND_LOGOS = [
+  "logo-primary-color.svg",
+  "logo-primary-dark.svg",
+  "logo-primary-ink.svg",
+  "logo-primary-black.svg",
+  "logo-primary-white.svg",
+  "logo-stacked-color.svg",
+  "logo-stacked-dark.svg",
+  "logo-stacked-ink.svg",
+  "logo-stacked-black.svg",
+  "logo-stacked-white.svg",
+] as const;
+
+/** ADM-SET-01: the PAN is part of the GSTIN (characters 3 to 12). Derived, never typed or stored. */
+export const panOf = (gstinValue: string | null): string | null =>
+  gstinValue && gstinValue.length === 15 ? gstinValue.slice(2, 12) : null;
 
 const minor = z.int().nonnegative();
 const bp = z.int().min(0).max(10_000);
@@ -19,6 +41,11 @@ export const companySettings = z
     address: z.string().nullable(),
     documentsEmail: z.email().nullable(),
     documentsPhone: z.string().nullable(),
+    /** ADM-SET-01: the principal place of business printed on documents (may differ from the registered address). */
+    principalPlace: z.string().max(500).nullable(),
+    /** ADM-SET-01 (lead decision): the logos are chosen from the generated brand files, never uploaded (uploads wait for R2, M3.4). */
+    logoLight: z.enum(BRAND_LOGOS),
+    logoDark: z.enum(BRAND_LOGOS),
   })
   .refine((c) => c.gstin === null || c.gstin.startsWith(c.stateCode), {
     error: "The GSTIN's first two digits must match the company state code",
@@ -97,6 +124,13 @@ export const paymentTermsSettings = z
     /** ADM-INV-13: reminder offsets relative to the due date, sent 09:00–19:00 IST only. */
     reminderOffsetsDays: z.array(z.int().min(-30).max(90)).min(1),
     reminderWindowIst: z.object({ fromHour: z.int().min(0).max(23), toHour: z.int().min(1).max(24) }),
+    /** ADM-SET-05: the smallest part-payment a Razorpay link may ask for (INR minor; the full balance if lower). */
+    razorpayMinPartialInrMinor: minor,
+    /**
+     * The website's liability cap (INR minor), printed on /terms (M2.3 follow-up, 07-A section 2 item 10). One source: apps/web reads
+     * it from SETTINGS_DEFAULTS. VERIFY WITH CA/LEGAL (08 L-12).
+     */
+    websiteLiabilityCapInrMinor: minor,
   })
   .refine((t) => t.buildSchedule.reduce((a, s) => a + s.pctBp, 0) === 10_000, {
     error: "The build schedule must add up to 100 %",
@@ -119,7 +153,53 @@ export const flagSettings = z.object({
   /** S3 DPDP Readiness page stays hidden until a legal partner exists (Q-B12). */
   dpdpReadinessPage: z.boolean(),
   weeklyDigest: z.boolean(),
+  /** ADM-SET-10: these reach the website only through the publish snapshot (M4.1); nothing here changes the site by itself. */
+  blogEnabled: z.boolean(),
+  calComUrl: z
+    .url({ protocol: /^https$/ })
+    .max(300)
+    .nullable(),
+  /** International format (E.164). */
+  whatsappNumber: z
+    .string()
+    .regex(/^\+[1-9][0-9]{7,14}$/, { error: "Use the international format, e.g. +919800000000" })
+    .nullable(),
+  ga4Id: z
+    .string()
+    .regex(/^G-[A-Z0-9]{6,12}$/, { error: "A Google Analytics 4 ID looks like G-XXXXXXXXXX" })
+    .nullable(),
 });
+
+/** Payment gateways that have a mode setting (ADM-SET-06). */
+export const GATEWAYS = ["razorpay", "stripe", "paypal"] as const;
+export type Gateway = (typeof GATEWAYS)[number];
+export const GATEWAY_MODES = ["test", "live"] as const;
+/** The Worker secret names that make a gateway "configured" (names only, from .env.example; values are never read out). */
+export const GATEWAY_SECRETS: Record<Gateway, readonly string[]> = {
+  razorpay: ["RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET", "RAZORPAY_WEBHOOK_SECRET"],
+  stripe: ["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET"],
+  paypal: ["PAYPAL_CLIENT_ID", "PAYPAL_CLIENT_SECRET", "PAYPAL_WEBHOOK_ID"],
+};
+
+/** ADM-SET-06: the mode only. Keys are Worker secrets; status (configured / missing) is computed, never stored. */
+export const gatewaySettings = z
+  .object({
+    razorpay: z.object({ mode: z.enum(GATEWAY_MODES) }).strict(),
+    stripe: z.object({ mode: z.enum(GATEWAY_MODES) }).strict(),
+    paypal: z.object({ mode: z.enum(GATEWAY_MODES) }).strict(),
+  })
+  .strict();
+
+/** ADM-SET-07: sender identities, reply-to, a copy to the owner per template, and the footer line. */
+export const emailSettings = z
+  .object({
+    senders: z.object({ hello: z.email(), billing: z.email(), noReply: z.email() }).strict(),
+    replyTo: z.email(),
+    /** A blind copy to the owner, per template; a missing template means no copy. */
+    bccOwner: z.partialRecord(z.enum(EMAIL_TEMPLATES), z.boolean()),
+    footerText: z.string().min(1).max(500),
+  })
+  .strict();
 
 export const SETTINGS_SCHEMAS = {
   company: companySettings,
@@ -128,9 +208,37 @@ export const SETTINGS_SCHEMAS = {
   payment_terms: paymentTermsSettings,
   retention: retentionSettings,
   flags: flagSettings,
+  gateways: gatewaySettings,
+  email: emailSettings,
 } as const;
 export type SeededSettingKey = keyof typeof SETTINGS_SCHEMAS;
 export type Settings = { [K in SeededSettingKey]: z.infer<(typeof SETTINGS_SCHEMAS)[K]> };
+
+/** Group names a person may open in Settings (the 8 stored here, plus bank details and the terms blocks, which have their own tables). */
+export const SETTINGS_GROUPS = [
+  "company",
+  "bank",
+  "tax",
+  "numbering",
+  "payment_terms",
+  "gateways",
+  "email",
+  "terms",
+  "retention",
+  "flags",
+] as const;
+export type SettingsGroup = (typeof SETTINGS_GROUPS)[number];
+
+/**
+ * A stored setting as the app reads it: the defaults merged under the stored value, then validated. Rows saved before a field
+ * existed (the seed is insert-only, so staging and production rows keep their old shape) still read as complete.
+ * Throws if the merged value is invalid (a corrupted row), which the caller turns into a 500, never a silent default.
+ */
+export function resolveSetting<K extends SeededSettingKey>(key: K, stored: unknown): Settings[K] {
+  const base: Record<string, unknown> = SETTINGS_DEFAULTS[key];
+  const over = stored !== null && typeof stored === "object" && !Array.isArray(stored) ? stored : {};
+  return SETTINGS_SCHEMAS[key].parse({ ...base, ...over }) as Settings[K];
+}
 
 /** The defaults the database is seeded with (VERIFY WITH CA/LEGAL). */
 export const SETTINGS_DEFAULTS: Settings = {
@@ -142,6 +250,9 @@ export const SETTINGS_DEFAULTS: Settings = {
     address: null,
     documentsEmail: "contact@techaust.com",
     documentsPhone: null,
+    principalPlace: null,
+    logoLight: "logo-primary-color.svg",
+    logoDark: "logo-primary-dark.svg",
   },
   tax: {
     defaultRateBp: 1_800,
@@ -183,7 +294,29 @@ export const SETTINGS_DEFAULTS: Settings = {
     smallJobThreshold: { INR: 1_00_000_00, USD: 2_000_00 },
     reminderOffsetsDays: [-3, 0, 3, 7, 14],
     reminderWindowIst: { fromHour: 9, toHour: 19 },
+    // VERIFY WITH CA/LEGAL: the default part-payment floor (docs/04 ADM-SET-05): INR 10,000.
+    razorpayMinPartialInrMinor: 10_000_00,
+    // VERIFY WITH CA/LEGAL (08 L-12): INR 10,000, the figure the site printed before this setting existed.
+    websiteLiabilityCapInrMinor: 1_000_000,
   },
   retention: { leadsMonths: 12, emailLogMonths: 13, securityLogMonths: 13, financialYears: 10 },
-  flags: { dpdpReadinessPage: false, weeklyDigest: true },
+  flags: {
+    dpdpReadinessPage: false,
+    weeklyDigest: true,
+    blogEnabled: true,
+    calComUrl: null,
+    whatsappNumber: null,
+    ga4Id: null,
+  },
+  gateways: { razorpay: { mode: "test" }, stripe: { mode: "test" }, paypal: { mode: "test" } },
+  email: {
+    senders: {
+      hello: "hello@techaust.com",
+      billing: "billing@techaust.com",
+      noReply: "no-reply@techaust.com",
+    },
+    replyTo: "contact@techaust.com",
+    bccOwner: {},
+    footerText: "TecHaust Technologies · Balurghat, West Bengal, India · contact@techaust.com",
+  },
 };
