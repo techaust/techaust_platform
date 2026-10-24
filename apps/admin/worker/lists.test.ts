@@ -424,11 +424,32 @@ describe("global search [ADM-G-05]", () => {
     expect((await call("/search", { cookie: o.cookie })).status).toBe(400);
   });
 
-  it("the lead lookup uses the reference and email indexes, never a scan of the leads table", async () => {
-    const plan = await rows<{ detail: string }>(`EXPLAIN QUERY PLAN ${LEADS_SQL}`, "L-A", "L-B", "a", "b");
+  it("finds a lead by the start of the company name, without regard to case", async () => {
+    await env.DB.prepare(
+      "INSERT INTO leads (id, ref, source, form_version, contact_name, contact_email, contact_company) VALUES (?1, 'L-COMP1', 'web', 'contact-1', 'Pat Person', 'pat.person@example.test', 'Zebra Traders')",
+    )
+      .bind(uuidv7())
+      .run();
+    const o = await owner();
+    expect(group(await find(o.cookie, "zebra tr"), "lead").items.map((i: J) => i.title)).toEqual([
+      "L-COMP1 Pat Person",
+    ]);
+  });
+
+  it("the lead lookup uses the reference, email and company indexes, never a scan of the leads table", async () => {
+    const plan = await rows<{ detail: string }>(
+      `EXPLAIN QUERY PLAN ${LEADS_SQL}`,
+      "L-A",
+      "L-B",
+      "a",
+      "b",
+      "c",
+      "d",
+    );
     const text = plan.map((p) => p.detail).join("\n");
     expect(text).toMatch(/leads_ref/);
     expect(text).toMatch(/leads_email/);
+    expect(text).toMatch(/leads_company_nocase/);
     expect(text).not.toMatch(/SCAN leads/);
     // the staff table is a handful of rows: its name match is a scan by design, its email match uses the unique index
     const users = (await rows<{ detail: string }>(`EXPLAIN QUERY PLAN ${USERS_SQL}`, "a", "b", "a%"))
