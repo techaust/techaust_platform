@@ -230,12 +230,7 @@ function NewClient() {
                 />
               )}
             </FormField>
-            <FormField
-              id={`${P}-displayName`}
-              label="Display name"
-              optional
-              hint="The legal name is used when this is empty."
-            >
+            <FormField id={`${P}-displayName`} label="Display name" optional>
               {(a) => (
                 <input
                   {...a}

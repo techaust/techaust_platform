@@ -204,8 +204,8 @@ function ContactRow(props: {
           {tools && (
             <MenuButton
               label={`Data tools for ${c.name}`}
-              text="Data"
-              hiddenText={` tools for ${c.name}`}
+              text="Data tools"
+              hiddenText={` for ${c.name}`}
               buttonClass="btn btn--text"
               icon={<MoreHorizontal size={16} />}
               items={[

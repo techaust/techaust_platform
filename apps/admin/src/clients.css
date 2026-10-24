@@ -48,7 +48,7 @@
   }
 
   .clients-table .dtable__table {
-    min-width: 50rem;
+    min-width: 40rem;
   }
 
   .clients-table .dtable__table thead th {
@@ -169,12 +169,24 @@
   margin-bottom: var(--space-4);
 }
 
+/* Each part of a long panel form starts on a hairline, in the panel title's voice. */
 .panel-form .lead-panel__sub {
-  margin-top: var(--space-4);
+  margin: var(--space-6) 0 var(--space-4);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text);
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
 }
 
 .panel-link {
   margin-top: calc(var(--space-3) - var(--reach));
+}
+
+/* The side column is narrow: a fact's label sits above its value, so an email address keeps the full width. */
+.client-overview .lead-page__side .facts > div {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
 }
 
 .panel-empty {

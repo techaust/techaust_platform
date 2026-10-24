@@ -84,7 +84,9 @@ export function Overview(props: {
               {primary.phone && <Fact label="Phone">{primary.phone}</Fact>}
             </dl>
           ) : (
-            <p className="muted">No contact yet.</p>
+            <p className="muted">
+              {props.data.contacts.length ? "No primary contact yet." : "No contact yet."}
+            </p>
           )}
           <button type="button" className="btn btn--text panel-link" onClick={props.onContacts}>
             <User size={16} />
@@ -245,12 +247,7 @@ function Details(props: Parameters<typeof Overview>[0] & { canWrite: boolean }) 
                 />
               )}
             </FormField>
-            <FormField
-              id="cd-displayName"
-              label="Display name"
-              optional
-              hint="The legal name is used when this is empty."
-            >
+            <FormField id="cd-displayName" label="Display name" optional>
               {(a) => (
                 <input
                   {...a}

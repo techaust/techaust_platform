@@ -309,23 +309,21 @@ export function EraseDialog(props: { contact: ContactView | null; onClose: () =>
           </p>
         )}
         {blocked && (
-          <div className="notice notice--error" role="alert">
-            <div>
-              <p>{blocked.text}</p>
-              {blocked.code === "on_issued_document" && (
-                <button
-                  type="button"
-                  className="btn btn--secondary"
-                  onClick={() => {
-                    pick("anonymise");
-                    document.getElementById("erase-confirm")?.focus();
-                  }}
-                >
-                  Anonymise instead
-                </button>
-              )}
-            </div>
-          </div>
+          <Notice tone="error">
+            <p>{blocked.text}</p>
+            {blocked.code === "on_issued_document" && (
+              <button
+                type="button"
+                className="btn btn--secondary"
+                onClick={() => {
+                  pick("anonymise");
+                  document.getElementById("erase-confirm")?.focus();
+                }}
+              >
+                Anonymise instead
+              </button>
+            )}
+          </Notice>
         )}
         <fieldset
           className="radios"
