@@ -22,6 +22,7 @@ import { StaleNotice } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { Notice } from "../../components/ui.tsx";
 import { allowed } from "../../lib/access.ts";
+import { type ContactsExtras, contactsCursor } from "../../lib/clients.ts";
 import { sentence } from "../../lib/format.ts";
 import { useUser } from "../../session.tsx";
 import { EraseDialog, ExportDialog } from "./data-tools.tsx";
@@ -47,10 +48,12 @@ export function Contacts(props: { data: ClientPage; reload: () => void }) {
     setMoreError(null);
     try {
       const last = list.at(-1);
-      // The page holds the first 100 by email; the list endpoint pages on from the start, so walk it to the end of ours.
-      let r = await api.clientContacts(props.data.client.id, more?.next ?? undefined);
+      // The page holds the first 100 by email. The API's `contactsNext` continues right after them; without it (before
+      // the API fix), the list endpoint pages on from the start, so walk it to the end of ours.
+      const pageCursor = contactsCursor(props.data as ClientPage & ContactsExtras);
+      let r = await api.clientContacts(props.data.client.id, more?.next ?? pageCursor ?? undefined);
       let acc = [...(more?.list ?? []), ...r.contacts];
-      while (!more && r.next && last && !acc.some((c) => c.id === last.id)) {
+      while (!more && !pageCursor && r.next && last && !acc.some((c) => c.id === last.id)) {
         r = await api.clientContacts(props.data.client.id, r.next);
         acc = [...acc, ...r.contacts];
       }
