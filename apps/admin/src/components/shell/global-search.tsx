@@ -8,21 +8,56 @@ import { Search, X } from "../icons.tsx";
 export type SearchResult = { id: string; title: string; sub: string; href: string };
 export type SearchGroup = { label: string; icon: ReactNode; results: SearchResult[] };
 
-export function GlobalSearch(props: { search: (q: string) => SearchGroup[]; placeholder?: string }) {
+/** How long typing must pause before a search is sent (one request per pause, not per key). */
+const DEBOUNCE_MS = 200;
+
+export function GlobalSearch(props: {
+  /** Runs the search (the API); throws on failure. Results arrive for the term they were asked for only. */
+  search: (q: string) => Promise<SearchGroup[]>;
+  placeholder: string;
+  /** What the panel says before anything is typed: what can be found. */
+  intro: string;
+}) {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
   const [unfolded, setUnfolded] = useState(false);
+  const [found, setFound] = useState<{ term: string; groups: SearchGroup[] } | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const wrap = useRef<HTMLDivElement>(null);
   const opener = useRef<HTMLButtonElement>(null);
   const listId = useId();
   const navigate = useNavigate();
+  const { search } = props;
 
   const term = q.trim();
+  useEffect(() => {
+    if (term.length < 2) return;
+    let live = true;
+    const t = setTimeout(() => {
+      search(term).then(
+        (groups) => {
+          if (!live) return;
+          setFailed(null);
+          setFound({ term, groups });
+        },
+        () => {
+          if (live) setFailed(term);
+        },
+      );
+    }, DEBOUNCE_MS);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+  }, [term, search]);
+
+  const current = found && found.term === term ? found : null;
+  const pending = term.length >= 2 && !current && failed !== term;
   const groups = useMemo(
-    () => (term.length >= 2 ? props.search(term).filter((g) => g.results.length) : []),
-    [term, props.search],
+    () => (term.length >= 2 && current ? current.groups.filter((g) => g.results.length) : []),
+    [term, current],
   );
   const flat = groups.flatMap((g) => g.results);
   const count = flat.length;
@@ -91,7 +126,7 @@ export function GlobalSearch(props: { search: (q: string) => SearchGroup[]; plac
           aria-autocomplete="list"
           aria-activedescendant={open && active >= 0 ? `${listId}-${active}` : undefined}
           aria-describedby="gsearch-hint"
-          placeholder={props.placeholder ?? "Search leads, clients, projects, documents"}
+          placeholder={props.placeholder}
           autoComplete="off"
           spellCheck={false}
           value={q}
@@ -169,13 +204,15 @@ export function GlobalSearch(props: { search: (q: string) => SearchGroup[]; plac
             );
           })}
         </div>
-        {term.length < 2 && (
-          <p className="gsearch__msg">Search leads, clients, contacts, projects and documents by number.</p>
+        {term.length < 2 && <p className="gsearch__msg">{props.intro}</p>}
+        {pending && <p className="gsearch__msg">Searching…</p>}
+        {term.length >= 2 && failed === term && (
+          <p className="gsearch__msg">Search didn't work just now. Check your connection and type again.</p>
         )}
-        {term.length >= 2 && count === 0 && <p className="gsearch__msg">Nothing matches “{term}”.</p>}
+        {current && count === 0 && <p className="gsearch__msg">Nothing matches “{term}”.</p>}
       </div>
       <p className="visually-hidden" role="status">
-        {open && term.length >= 2 ? (count === 1 ? "1 result" : `${count} results`) : ""}
+        {open && current ? (count === 1 ? "1 result" : `${count} results`) : ""}
       </p>
     </div>
   );

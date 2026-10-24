@@ -1,6 +1,8 @@
 // The admin's left navigation, in the order of ADM-G-01. Sections that a later milestone builds carry what arrives
 // and when (by milestone, never a date), for their "coming soon" screen.
+import type { Role } from "@techaust/core/permissions";
 import type { ReactNode } from "react";
+import { canSee, type NavKey } from "../../lib/access.ts";
 import {
   BarChart,
   Building,
@@ -19,22 +21,7 @@ import {
   Wallet,
 } from "../icons.tsx";
 
-export type NavKey =
-  | "dashboard"
-  | "leads"
-  | "clients"
-  | "projects"
-  | "care-plans"
-  | "time"
-  | "catalogue"
-  | "proposals"
-  | "estimates"
-  | "invoices"
-  | "payments"
-  | "reports"
-  | "approvals"
-  | "audit"
-  | "settings";
+export type { NavKey };
 
 export type NavItem = {
   key: NavKey;
@@ -187,3 +174,6 @@ export const NAV: NavItem[] = [
 ];
 
 export const navItem = (key: NavKey) => NAV.find((n) => n.key === key) as NavItem;
+
+/** The rail for one role, in the PRD order (lib/access.ts says who sees what). */
+export const navFor = (role: Role) => NAV.filter((n) => canSee(role, n.key));

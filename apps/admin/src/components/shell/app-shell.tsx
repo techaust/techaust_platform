@@ -7,7 +7,7 @@ import symbolDark from "@techaust/ui/brand/logo-symbol-dark.svg?url";
 import { type ReactNode, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { Link } from "react-router";
 import { Menu, PanelLeftClose, PanelLeftOpen, X } from "../icons.tsx";
-import { NAV, type NavItem, type NavKey } from "./nav.tsx";
+import type { NavItem, NavKey } from "./nav.tsx";
 
 const NAV_KEY = "ta-admin-nav";
 const narrowQuery = "(max-width: 63.99rem)";
@@ -34,14 +34,15 @@ function useMedia(query: string) {
 }
 
 export function AppShell(props: {
+  /** The sections this role may open, in the PRD order (`navFor`). */
+  items: NavItem[];
   current: NavKey | null;
   hrefOf: (item: NavItem) => string;
   homeHref: string;
+  /** Global search; null when the role has nothing to search yet. */
   search: ReactNode;
   bell: ReactNode;
   account: ReactNode;
-  /** A strip above the top bar (the preview label). */
-  banner?: ReactNode | undefined;
   children: ReactNode;
 }) {
   const narrow = useMedia(narrowQuery);
@@ -67,6 +68,7 @@ export function AppShell(props: {
       </a>
       <aside className="shell__rail" id={navId}>
         <SideNav
+          items={props.items}
           current={props.current}
           hrefOf={props.hrefOf}
           homeHref={props.homeHref}
@@ -88,7 +90,6 @@ export function AppShell(props: {
         />
       </aside>
       <div className="shell__main">
-        {props.banner}
         <header className="topbar">
           <button
             type="button"
@@ -114,6 +115,7 @@ export function AppShell(props: {
       </div>
       <Drawer open={drawer} onClose={() => setDrawer(false)}>
         <SideNav
+          items={props.items}
           current={props.current}
           hrefOf={props.hrefOf}
           homeHref={props.homeHref}
@@ -126,6 +128,7 @@ export function AppShell(props: {
 }
 
 function SideNav(props: {
+  items: NavItem[];
   current: NavKey | null;
   hrefOf: (item: NavItem) => string;
   homeHref: string;
@@ -134,7 +137,9 @@ function SideNav(props: {
   onNavigate?: () => void;
 }) {
   const [tip, setTip] = useState<{ label: string; top: number } | null>(null);
-  const groups = [0, 1, 2, 3, 4].map((g) => NAV.filter((n) => n.group === g));
+  const groups = [0, 1, 2, 3, 4]
+    .map((g) => props.items.filter((n) => n.group === g))
+    .filter((items) => items.length > 0);
   const show = (label: string, el: HTMLElement) => {
     if (!props.collapsed) return;
     const r = el.getBoundingClientRect();

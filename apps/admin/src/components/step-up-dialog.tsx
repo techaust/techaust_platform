@@ -4,6 +4,7 @@
 // `invalid_code`; ten wrong codes lock the account for 15 minutes (429 `locked`).
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { api, errorText, onStepUpRequired, RequestError } from "../api.ts";
+import { WRONG_CODE } from "../lib/step-up.ts";
 import { StepUpPrompt } from "./step-up-auth.tsx";
 
 export function StepUpDialog({ onConfirmed }: { onConfirmed?: (until: number) => void }) {
@@ -48,11 +49,7 @@ export function StepUpDialog({ onConfirmed }: { onConfirmed?: (until: number) =>
       finish(true);
     } catch (err) {
       setCode("");
-      setError(
-        err instanceof RequestError && err.code === "invalid_code"
-          ? "That code didn't work. It may be the one you signed in with, which can't be used again. Wait for the next code and enter it."
-          : errorText(err),
-      );
+      setError(err instanceof RequestError && err.code === "invalid_code" ? WRONG_CODE : errorText(err));
     } finally {
       setBusy(false);
     }

@@ -2,7 +2,7 @@
 // and buttons), not ARIA menus: they hold ordinary links, a radio group and a sign-out button.
 
 import type { Role } from "@techaust/core/permissions";
-import { useId } from "react";
+import { useEffect, useId } from "react";
 import { Link } from "react-router";
 import { ROLE_LABELS, relative } from "../../lib/format.ts";
 import { setTheme, THEME_LABELS, THEME_PREFS, useTheme } from "../../lib/theme.ts";
@@ -12,7 +12,7 @@ import { usePopover } from "../popover.tsx";
 export type Notification = {
   id: string;
   title: string;
-  detail: string;
+  detail?: string | undefined;
   at: number;
   href: string;
   unread: boolean;
@@ -20,13 +20,24 @@ export type Notification = {
 
 export function NotificationBell(props: {
   items: Notification[];
+  /** The unread count from the server (it may count rows beyond the loaded page). */
+  unread: number;
   onOpenItem: (id: string) => void;
   onMarkAllRead: () => void;
+  /** Called each time the panel opens (a fresh read). */
+  onOpen?: (() => void) | undefined;
+  /** Older notifications exist: show the "Show older" button. */
+  onMore?: (() => void) | undefined;
+  /** The last read failed: the panel says so and keeps what it had. */
+  error?: string | null | undefined;
   now?: number;
 }) {
   const p = usePopover();
   const panelId = useId();
-  const unread = props.items.filter((n) => n.unread).length;
+  const { unread, onOpen } = props;
+  useEffect(() => {
+    if (p.open) onOpen?.();
+  }, [p.open, onOpen]);
   return (
     <div className="pop" ref={p.wrapRef}>
       <button
@@ -54,7 +65,12 @@ export function NotificationBell(props: {
             </button>
           )}
         </div>
-        {props.items.length === 0 ? (
+        {props.error && (
+          <p className="notes__empty" role="status">
+            {props.error}
+          </p>
+        )}
+        {props.items.length === 0 && !props.error ? (
           <p className="notes__empty">Nothing new. New leads and other alerts will show here.</p>
         ) : (
           <ul className="notes__list">
@@ -75,13 +91,20 @@ export function NotificationBell(props: {
                       {n.unread && <span className="visually-hidden">Unread: </span>}
                       {n.title}
                     </span>
-                    <span className="notes__detail">{n.detail}</span>
+                    {n.detail && <span className="notes__detail">{n.detail}</span>}
                     <span className="notes__time">{relative(n.at, props.now)}</span>
                   </span>
                 </Link>
               </li>
             ))}
           </ul>
+        )}
+        {props.onMore && (
+          <div className="notes__more">
+            <button type="button" className="btn btn--text" onClick={props.onMore}>
+              Show older
+            </button>
+          </div>
         )}
       </div>
     </div>

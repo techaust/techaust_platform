@@ -154,17 +154,22 @@ export function SettingRow(props: {
   children: ReactNode;
   /** The control is a switch or a group: the label is a span referenced by aria-labelledby, not a <label>. */
   labelFor?: string | undefined;
+  /** Forms mark the optional fields (owner decision 2026-10-24). */
+  optional?: boolean | undefined;
 }) {
+  const opt = props.optional && <span className="field__optional"> (optional)</span>;
   return (
     <div className="setting">
       <div className="setting__text">
         {props.labelFor ? (
           <label htmlFor={props.labelFor} id={`${props.id}-label`} className="setting__label">
             {props.label}
+            {opt}
           </label>
         ) : (
           <span id={`${props.id}-label`} className="setting__label">
             {props.label}
+            {opt}
           </span>
         )}
         {props.description && (

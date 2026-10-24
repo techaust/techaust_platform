@@ -5,8 +5,9 @@ import { describeUserAgent } from "@techaust/core/user-agent";
 import { useCallback, useEffect, useState } from "react";
 import { api, errorText, type Session } from "../api.ts";
 import { ConfirmDialog } from "../components/confirm-dialog.tsx";
+import { PageHeader } from "../components/display.tsx";
 import { RecoveryCodes } from "../components/recovery-codes.tsx";
-import { Card, Notice, SkeletonRows } from "../components/ui.tsx";
+import { Notice, SkeletonRows } from "../components/ui.tsx";
 import { when } from "../lib/format.ts";
 import { useSession, useUser } from "../session.tsx";
 
@@ -53,7 +54,16 @@ export function Component() {
   }
 
   return (
-    <Card title="Your account" wide focusTitle back={{ to: "/", label: "Home" }} busy={!data && !loadError}>
+    <div className="page" aria-busy={(!data && !loadError) || undefined}>
+      <PageHeader
+        title="Your account"
+        lede={
+          <>
+            Signed in as <strong className="break">{user.email}</strong>. Where you're signed in, and your
+            recovery codes.
+          </>
+        }
+      />
       {notice && <Notice tone="success">{notice}</Notice>}
       {loadError && (
         <div className="load-error">
@@ -217,6 +227,6 @@ export function Component() {
           authenticator code first.
         </p>
       </ConfirmDialog>
-    </Card>
+    </div>
   );
 }

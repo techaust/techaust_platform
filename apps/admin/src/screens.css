@@ -1,0 +1,253 @@
+/* M3.1 real screens: the few pieces the preview didn't need (shell.css has the rest). Tokens only (@techaust/ui).
+   Loaded with the shell, never on the sign-in screen. */
+
+/* A page inside the shell that isn't a list or a settings form (Your account). */
+.page {
+  max-width: 52rem;
+}
+
+.page .section:first-of-type {
+  margin-top: var(--space-6);
+}
+
+/* The settings form's controls sit in one fieldset, so a read-only role or a save in flight disables them together.
+   Read-only values keep full contrast: the accountant reads them. */
+.settings-form__body {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.settings-form__body:disabled :is(input, select, textarea) {
+  color: var(--color-text);
+  -webkit-text-fill-color: var(--color-text);
+  opacity: 1;
+}
+
+.skeleton-field {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-4) 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.setlist__wait {
+  display: inline-flex;
+  width: 5rem;
+}
+
+.stale {
+  margin-bottom: var(--space-6);
+}
+
+.stale p {
+  margin: 0 0 var(--space-3);
+}
+
+.notes__more {
+  padding: var(--space-2) var(--space-4) var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+/* Document numbers and their previews: monospaced, so formats line up. */
+.docno {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.num-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: baseline;
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface-alt);
+  border-radius: var(--radius-sm);
+}
+
+.locked-note {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+  margin: 0 0 var(--space-4);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.locked-note .icon {
+  flex: none;
+  margin-top: var(--space-1);
+}
+
+/* SAC codes: five short fields in a grid. */
+.sac-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));
+  gap: var(--space-3);
+}
+
+.sac-grid__item {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.sac-grid__item label {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.sac-grid__item input {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Two controls side by side (day and month, from and to). */
+.pair {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.pair > select {
+  width: auto;
+  min-width: 8rem;
+}
+
+.pair__day {
+  width: 4.5rem;
+}
+
+/* Editable lists (reminders, instalments): one row per item with its remove button. */
+.edit-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+  padding: 0;
+  list-style: none;
+}
+
+.edit-list:focus {
+  outline: none;
+}
+
+.edit-list__row {
+  display: grid;
+  grid-template-columns: 4.5rem minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.edit-list__row > .field-error,
+.edit-list__read {
+  grid-column: 1 / -1;
+}
+
+.edit-list__read {
+  font-size: var(--text-sm);
+}
+
+.edit-list__row--step {
+  grid-template-columns: minmax(0, 1fr) 6.5rem auto;
+}
+
+.edit-list__num {
+  font-variant-numeric: tabular-nums;
+}
+
+.sum {
+  margin: 0 0 var(--space-2);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.sum--ok {
+  color: var(--color-text);
+}
+
+/* Logo picker: the tile shows the file on its own ground; the select is under it. */
+.logo-tile__cap--pick {
+  display: grid;
+  gap: var(--space-1);
+  justify-content: stretch;
+  margin-top: var(--space-2);
+}
+
+.logo-tile__cap--pick label {
+  color: var(--color-text);
+  font-weight: 500;
+}
+
+.logo-tile__art .logo-tile__img {
+  width: auto;
+  max-width: 11rem;
+  max-height: 4rem;
+}
+
+/* Terms: the editor in place of the text, and the history dialog. */
+.prewrap {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.versioned__text .prewrap {
+  max-height: 14rem;
+  overflow: auto;
+}
+
+.versioned__edit {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.versioned__edit textarea {
+  min-height: 12rem;
+}
+
+.versions {
+  display: grid;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.versions__item {
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.versions__item:last-child {
+  border-bottom: 0;
+}
+
+.versions__title {
+  margin: 0;
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
+}
+
+.versions__meta {
+  margin: var(--space-1) 0 var(--space-2);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+/* Audit entries: plain facts (the role invited, the template tested) under the meta line. */
+.entry__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-4);
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-sm);
+}
+
+.entry--skeleton {
+  align-items: center;
+}

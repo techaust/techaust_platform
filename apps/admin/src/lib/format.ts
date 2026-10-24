@@ -49,5 +49,8 @@ export const inviteTokenFromHash = (hash: string) => new URLSearchParams(hash.re
 /** Base32 secret in groups of four, for typing into an authenticator app. */
 export const groupSecret = (secret: string) => secret.match(/.{1,4}/g)?.join(" ") ?? secret;
 
+/** A server message as a sentence: the API's messages have no full stop ("Check the form and try again"). */
+export const sentence = (text: string) => (/[.!?]$/.test(text.trim()) ? text.trim() : `${text.trim()}.`);
+
 /** Keep only digits (people paste "123 456" or "123-456"). */
 export const digitsOnly = (value: string) => value.replace(/\D/g, "").slice(0, 6);

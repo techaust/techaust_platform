@@ -840,66 +840,6 @@ input[readonly] {
 
 /* ---------- Signed-in: landing, lists ---------- */
 
-.whoami {
-  margin: calc(-1 * var(--space-4)) 0 var(--space-6);
-}
-
-.whoami__name {
-  margin: 0;
-  font-weight: 600;
-  font-size: var(--text-body-lg);
-}
-
-.whoami__meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2) var(--space-3);
-  margin: 0;
-  color: var(--color-text-muted);
-  overflow-wrap: anywhere;
-}
-
-.nav-list {
-  list-style: none;
-  margin: 0 0 var(--space-6);
-  padding: 0;
-  border-top: 1px solid var(--color-border);
-}
-
-.nav-list__link {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  min-height: var(--target-min);
-  padding: var(--space-4) var(--space-2);
-  border-bottom: 1px solid var(--color-border);
-  text-decoration: none;
-  transition: background-color var(--duration-fast) var(--ease-standard);
-}
-
-.nav-list__link:hover {
-  background: var(--color-surface-alt);
-  color: var(--color-link);
-}
-
-.nav-list__link .icon {
-  color: var(--color-text-accent);
-}
-
-.nav-list__title {
-  display: block;
-  font-weight: 600;
-}
-
-.nav-list__desc {
-  display: block;
-  color: var(--color-text-muted);
-  font-size: var(--text-sm);
-  text-wrap: pretty;
-}
-
 .card > .hint + .btn {
   margin-top: var(--space-5);
 }

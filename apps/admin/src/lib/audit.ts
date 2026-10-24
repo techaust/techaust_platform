@@ -1,0 +1,193 @@
+// How the audit log reads (ADM-AUD-02): action and record names in words, a change summary as before and after rows
+// (sensitive values arrive as "[masked]" and stay masked), and the CSV export built in the browser from the loaded
+// entries. Pure, so the wording and the CSV are tested without a browser.
+import { formatIstDateTime, MASKED } from "@techaust/core";
+import type { AuditEntry } from "../api.ts";
+
+/** Every action the API writes today, in words. Unknown ones read as their own name ("lead.created"). */
+export const ACTION_LABELS: Record<string, string> = {
+  "auth.login": "signed in",
+  "auth.logout": "signed out",
+  "auth.step_up": "confirmed with an authenticator code",
+  "auth.session_revoke": "signed out a session",
+  "auth.session_revoke_all": "signed out everywhere",
+  "auth.recovery_regenerate": "made new recovery codes",
+  "alert.new_device": "signed in on a new device",
+  "alert.2fa_change": "changed two-step sign-in",
+  "alert.lockout": "was locked out after wrong codes",
+  "user.invite": "invited someone",
+  "user.invite_revoke": "revoked an invite",
+  "user.role_change": "changed a role",
+  "user.deactivate": "deactivated a user",
+  "user.reactivate": "reactivated a user",
+  "user.reset_2fa": "reset someone's sign-in",
+  "user.sessions_revoke_all": "signed out everyone else",
+  "settings.company.update": "changed the company profile",
+  "settings.bank.update": "changed the bank details",
+  "settings.tax.update": "changed the tax settings",
+  "settings.numbering.update": "changed the numbering",
+  "settings.payment_terms.update": "changed the payment terms",
+  "settings.gateways.update": "changed the gateway modes",
+  "settings.email.update": "changed the email settings",
+  "settings.email.test_send": "sent a test email",
+  "settings.terms.update": "saved a new version of the document terms",
+  "settings.retention.update": "changed data retention",
+  "settings.flags.update": "changed the feature flags",
+  "notification.read": "read a notification",
+  "notification.read_all": "marked all notifications as read",
+  "lead.created": "created a lead",
+  "portal.login": "signed in to the client portal",
+  "portal.logout": "signed out of the client portal",
+  "portal.sessions_revoke_all": "signed out of the client portal everywhere",
+  "portal.link_minted": "made a portal sign-in link",
+  "doc_token.use": "opened a document link",
+};
+
+/** Groups for the action filter (the API filters by one exact action). */
+export const ACTION_GROUPS: { label: string; prefix: string }[] = [
+  { label: "Sign-ins and security", prefix: "auth." },
+  { label: "Security alerts", prefix: "alert." },
+  { label: "Users and invites", prefix: "user." },
+  { label: "Settings", prefix: "settings." },
+  { label: "Notifications", prefix: "notification." },
+  { label: "Client portal", prefix: "portal." },
+];
+
+/** Record types the API writes (`entity_type`), for the record filter. */
+export const ENTITY_LABELS: Record<string, string> = {
+  settings: "Settings",
+  bank_account: "Bank details",
+  terms: "Document terms",
+  staff_user: "Staff",
+  staff_invite: "Invites",
+  staff_session: "Staff sessions",
+  notification: "Notifications",
+  contact: "Contacts",
+  client_session: "Client portal sessions",
+  document: "Documents",
+};
+
+export const actionText = (action: string) => ACTION_LABELS[action] ?? action;
+
+/** Who did it: a staff member's name, or what kind of actor it was (the log keeps no client names). */
+export function actorText(e: Pick<AuditEntry, "actorType" | "actorName">): string {
+  if (e.actorType === "staff") return e.actorName || "A former staff member";
+  if (e.actorType === "contact") return "A client contact";
+  if (e.actorType === "webhook") return "A payment webhook";
+  return "The system";
+}
+
+const SETTING_GROUPS: Record<string, string> = {
+  company: "Company profile",
+  tax: "Tax",
+  numbering: "Numbering",
+  payment_terms: "Payment terms",
+  gateways: "Gateways",
+  email: "Email",
+  retention: "Data retention",
+  flags: "Feature flags",
+};
+
+/** What the entry is about, e.g. "Settings: Tax", "Staff: Asha Verma" (with names the page knows). */
+export function targetText(e: AuditEntry, names: ReadonlyMap<string, string> = new Map()): string {
+  const kind = ENTITY_LABELS[e.entityType] ?? e.entityType;
+  if (e.entityType === "settings" && e.entityId)
+    return `Settings: ${SETTING_GROUPS[e.entityId] ?? e.entityId}`;
+  if (e.entityType === "staff_user" && e.entityId)
+    return `${kind}: ${names.get(e.entityId) ?? "a staff member"}`;
+  if (e.entityType === "terms" && e.entityId) return `${kind}: ${e.entityId.replaceAll("_", " ")}`;
+  return kind;
+}
+
+/** "tradeName" → "Trade name", "lut.arn" → "Lut arn", "accountNo" → "Account no". Known keys get better words. */
+const FIELD_LABELS: Record<string, string> = {
+  accountNo: "Account number",
+  accountName: "Account name",
+  bankName: "Bank",
+  bankAddress: "Bank address",
+  ifsc: "IFSC",
+  swift: "SWIFT / BIC",
+  gstin: "GSTIN",
+  stateCode: "State code",
+  defaultRateBp: "Default GST rate (basis points)",
+  sacByCategory: "SAC codes",
+  lut: "LUT",
+  ga4Id: "Google Analytics ID",
+  calComUrl: "Cal.com link",
+  dpdpReadinessPage: "DPDP readiness page",
+  sha256: "Text fingerprint (SHA-256)",
+  nextNumbers: "Next numbers",
+  bccOwner: "Copy to the owner",
+};
+
+export function fieldLabel(key: string): string {
+  const known = FIELD_LABELS[key];
+  if (known) return known;
+  const words = key
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replaceAll("_", " ")
+    .toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** A value as one short line: empty, masked, text, or compact JSON for objects. */
+export function valueText(v: unknown): string {
+  if (v === undefined || v === null || v === "") return "Empty";
+  if (v === MASKED) return "Masked";
+  if (typeof v === "string") return v;
+  if (typeof v === "boolean") return v ? "On" : "Off";
+  if (typeof v === "number") return String(v);
+  return JSON.stringify(v);
+}
+
+export type DiffRow = { field: string; before: string; after: string; masked: boolean };
+export type Fact = { field: string; value: string };
+
+const isChange = (v: unknown): v is { before: unknown; after: unknown } =>
+  typeof v === "object" && v !== null && !Array.isArray(v) && ("before" in v || "after" in v);
+
+/** A summary as rows: `{ field: { before, after } }` are changes; anything else is a plain fact ("Role: staff"). */
+export function readSummary(summary: Record<string, unknown> | null): { changes: DiffRow[]; facts: Fact[] } {
+  const changes: DiffRow[] = [];
+  const facts: Fact[] = [];
+  for (const [k, v] of Object.entries(summary ?? {})) {
+    if (isChange(v))
+      changes.push({
+        field: fieldLabel(k),
+        before: valueText(v.before),
+        after: valueText(v.after),
+        masked: v.before === MASKED || v.after === MASKED,
+      });
+    else facts.push({ field: fieldLabel(k), value: valueText(v) });
+  }
+  return { changes, facts };
+}
+
+/** One CSV cell: quoted when it holds a comma, quote or line break; a leading = + - @ is defused (spreadsheet formulas). */
+export function csvCell(v: string): string {
+  const safe = /^[=+\-@\t\r]/.test(v) ? `'${v}` : v;
+  return /[",\n\r]/.test(safe) ? `"${safe.replaceAll('"', '""')}"` : safe;
+}
+
+/** The CSV of the entries, newest first, times in IST. */
+export function auditCsv(entries: AuditEntry[], names: ReadonlyMap<string, string> = new Map()): string {
+  const head = ["Time (IST)", "Who", "Role", "Action", "Record", "Changes", "IP address", "Device"];
+  const rows = entries.map((e) => {
+    const { changes, facts } = readSummary(e.summary);
+    const detail = [
+      ...changes.map((c) => `${c.field}: ${c.before} to ${c.after}`),
+      ...facts.map((f) => `${f.field}: ${f.value}`),
+    ].join("; ");
+    return [
+      formatIstDateTime(e.at),
+      actorText(e),
+      e.role ?? "",
+      actionText(e.action),
+      targetText(e, names),
+      detail,
+      e.ip ?? "",
+      e.userAgent ?? "",
+    ];
+  });
+  return `${[head, ...rows].map((r) => r.map(csvCell).join(",")).join("\r\n")}\r\n`;
+}

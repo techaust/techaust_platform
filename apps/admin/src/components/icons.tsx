@@ -479,3 +479,31 @@ export const Compass = (p: P) => (
     <path d="m16.24 7.76-2.12 6.36-6.36 2.12 2.12-6.36z" />
   </Icon>
 );
+
+export const WifiOff = (p: P) => (
+  <Icon {...p}>
+    <path d="M12 20h.01" />
+    <path d="M8.5 16.43a5 5 0 0 1 7 0" />
+    <path d="M5 12.86a10 10 0 0 1 5.17-2.69" />
+    <path d="M19 12.86a10 10 0 0 0-2.01-1.52" />
+    <path d="M2 8.82a15 15 0 0 1 4.18-2.65" />
+    <path d="M22 8.82a15 15 0 0 0-11.29-3.76" />
+    <path d="m2 2 20 20" />
+  </Icon>
+);
+
+export const RefreshCw = (p: P) => (
+  <Icon {...p}>
+    <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+    <path d="M21 3v5h-5" />
+    <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+    <path d="M8 16H3v5" />
+  </Icon>
+);
+
+export const Eye = (p: P) => (
+  <Icon {...p}>
+    <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z" />
+    <circle cx="12" cy="12" r="3" />
+  </Icon>
+);
