@@ -88,27 +88,29 @@ const spec: GroupSpec<"tax", Form> = {
   build: (f, doc): Built<"tax"> => {
     const e: FieldErrors = {};
     const rate = percentToBp(f.rate);
-    if (rate === null) e["f-defaultRateBp"] = "Enter a rate from 0 to 100 %, with at most 2 decimals.";
+    if (rate === null)
+      e["f-defaultRateBp"] = "Enter the default GST rate: 0 to 100 %, with at most 2 decimals.";
     for (const c of CATEGORIES)
       if (!/^\d{6}$/.test(f.sac[c.key].trim()))
         e[`f-sacByCategory-${c.key}`] = `The ${c.label} SAC has 6 digits.`;
     if (f.exportMode === "lut" && f.lutArn.trim() && !f.lutFy)
       e["f-lut-fy"] = "Pick the financial year the LUT covers.";
     const alertDays = intIn(f.invoiceAlertDays, 1, 30);
-    if (alertDays === null) e["f-invoiceAlertDays"] = "Enter a number of days from 1 to 30.";
+    if (alertDays === null) e["f-invoiceAlertDays"] = "Enter the tax invoice reminder in days, from 1 to 30.";
     const cnMonth = intIn(f.cnMonth, 1, 12);
     const cnDay = intIn(f.cnDay, 1, 31);
-    if (cnDay === null) e["f-creditNoteCutoff-day"] = "Enter a day from 1 to 31.";
+    if (cnDay === null) e["f-creditNoteCutoff-day"] = "Enter the credit note cut-off day, from 1 to 31.";
     const b2c = moneyFrom(f.b2c, "INR");
-    if (!b2c.ok) e["f-b2cDetailsThresholdInrMinor"] = b2c.error;
+    if (!b2c.ok) e["f-b2cDetailsThresholdInrMinor"] = `Unregistered buyer details from: ${b2c.error}`;
     const warn = intIn(f.warnMonths, 1);
-    if (warn === null) e["f-realisation-warnMonths"] = "Enter a number of months, 1 or more.";
+    if (warn === null) e["f-realisation-warnMonths"] = "Enter the months before the warning, 1 or more.";
     const esc = intIn(f.escalateMonths, 1);
-    if (esc === null) e["f-realisation-escalateMonths"] = "Enter a number of months, 1 or more.";
+    if (esc === null) e["f-realisation-escalateMonths"] = "Enter the months before escalating, 1 or more.";
     const extra = intIn(f.escalateExtraDays, 0);
-    if (extra === null) e["f-realisation-escalateExtraDays"] = "Enter a number of days, 0 or more.";
+    if (extra === null)
+      e["f-realisation-escalateExtraDays"] = "Enter the days before the final reminder, 0 or more.";
     const cross = moneyFrom(f.crossBorder, "INR");
-    if (!cross.ok) e["f-crossBorderWarnInrMinor"] = cross.error;
+    if (!cross.ok) e["f-crossBorderWarnInrMinor"] = `Cross-border payment warning: ${cross.error}`;
     if (!f.reverseChargeText.trim()) e["f-reverseChargeText"] = "Enter the reverse-charge line.";
     if (
       Object.keys(e).length ||

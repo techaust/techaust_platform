@@ -76,17 +76,18 @@ const spec: GroupSpec<"payment_terms", Form> = {
   build: (f, doc): Built<"payment_terms"> => {
     const e: FieldErrors = {};
     const due = intIn(f.dueDays, 0, 90);
-    if (due === null) e["f-dueDays"] = "Enter a number of days from 0 to 90.";
+    if (due === null) e["f-dueDays"] = "Enter the payment due days, from 0 to 90.";
     const validity = intIn(f.validity, 1, 90);
-    if (validity === null) e["f-proposalValidityDays"] = "Enter a number of days from 1 to 90.";
+    if (validity === null)
+      e["f-proposalValidityDays"] = "Enter how many days proposals stay valid, from 1 to 90.";
     const inr = moneyFrom(f.smallInr, "INR");
-    if (!inr.ok) e["f-smallJobThreshold-INR"] = inr.error;
+    if (!inr.ok) e["f-smallJobThreshold-INR"] = `Small-job threshold in rupees: ${inr.error}`;
     const usd = moneyFrom(f.smallUsd, "USD");
-    if (!usd.ok) e["f-smallJobThreshold-USD"] = usd.error;
+    if (!usd.ok) e["f-smallJobThreshold-USD"] = `Small-job threshold in dollars: ${usd.error}`;
     const rz = moneyFrom(f.razorpayMin, "INR");
-    if (!rz.ok) e["f-razorpayMinPartialInrMinor"] = rz.error;
+    if (!rz.ok) e["f-razorpayMinPartialInrMinor"] = `Smallest part-payment: ${rz.error}`;
     const cap = moneyFrom(f.cap, "INR");
-    if (!cap.ok) e["f-websiteLiabilityCapInrMinor"] = cap.error;
+    if (!cap.ok) e["f-websiteLiabilityCapInrMinor"] = `Website liability cap: ${cap.error}`;
     const offsets: number[] = [];
     f.reminders.forEach((r, i) => {
       const n = intIn(r.days, 0, r.when === "before" ? 30 : 90);

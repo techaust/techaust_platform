@@ -15,7 +15,7 @@ const ROWS = [
     unit: "months",
     min: 12,
     desc: "Deleted this long after their last activity. Never below 12 months (DPDP Rule 8(3)).",
-    error: "At least 12 months (DPDP Rule 8(3)).",
+    error: "Keep unconverted leads at least 12 months (DPDP Rule 8(3)).",
   },
   {
     key: "email",
@@ -24,7 +24,7 @@ const ROWS = [
     unit: "months",
     min: 1,
     desc: "The record of each email sent: to whom, which template, delivered or not.",
-    error: "At least 1 month.",
+    error: "Keep email logs at least 1 month.",
   },
   {
     key: "security",
@@ -33,7 +33,7 @@ const ROWS = [
     unit: "months",
     min: 13,
     desc: "Sign-ins and requests. Never below 13 months (DPDP Rule 6 asks for a year, CERT-In for 180 days).",
-    error: "At least 13 months.",
+    error: "Keep security and access logs at least 13 months.",
   },
   {
     key: "financial",
@@ -42,7 +42,7 @@ const ROWS = [
     unit: "years",
     min: 8,
     desc: "Never below 8 years from the end of the financial year. Financial records are never deleted, only archived.",
-    error: "At least 8 years.",
+    error: "Keep the audit log and financial records at least 8 years.",
   },
 ] as const;
 

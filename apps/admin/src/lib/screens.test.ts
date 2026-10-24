@@ -5,7 +5,15 @@ import { describe, expect, it } from "vitest";
 import type { AuditEntry, Invite, StaffMember } from "../api.ts";
 import { canSee, NAV_KEYS, sectionOf, settingsFor, settingsPage } from "./access.ts";
 import { actionText, actorText, auditCsv, csvCell, factText, readSummary, targetText } from "./audit.ts";
-import { bpToPercent, fieldId, intIn, moneyFrom, moneyInput, nearestField, percentToBp } from "./settings-form.ts";
+import {
+  bpToPercent,
+  fieldId,
+  intIn,
+  moneyFrom,
+  moneyInput,
+  nearestField,
+  percentToBp,
+} from "./settings-form.ts";
 import { userRows } from "./users.ts";
 
 describe("what each role sees [ADM-G-01, ADM-G-02]", () => {
@@ -142,7 +150,11 @@ const entry = (over: Partial<AuditEntry>): AuditEntry => ({
   action: "settings.bank.update",
   entityType: "bank_account",
   entityId: "b1",
-  summary: { kind: "INR", accountNo: { before: "[masked]", after: "[masked]" }, ifsc: { before: null, after: "SMPL0001234" } },
+  summary: {
+    kind: "INR",
+    accountNo: { before: "[masked]", after: "[masked]" },
+    ifsc: { before: null, after: "SMPL0001234" },
+  },
   ip: "203.0.113.5",
   userAgent: null,
   ...over,
@@ -173,7 +185,9 @@ describe("the audit log in words and as CSV [ADM-AUD-02]", () => {
     expect(factText("role", "accountant")).toBe("Accountant");
     expect(factText("via", "totp")).toBe("Authenticator code");
     expect(factText("until", Date.UTC(2026, 9, 24, 6, 30))).toBe("24 Oct 2026, 12:00 IST");
-    expect(readSummary({ ua: "Mozilla/5.0", via: "invite" }).facts).toEqual([{ field: "How", value: "Invite link" }]);
+    expect(readSummary({ ua: "Mozilla/5.0", via: "invite" }).facts).toEqual([
+      { field: "How", value: "Invite link" },
+    ]);
   });
 
   it("the CSV quotes what needs quoting and defuses formulas", () => {
@@ -183,7 +197,9 @@ describe("the audit log in words and as CSV [ADM-AUD-02]", () => {
     const csv = auditCsv([entry({})]);
     const [head, row] = csv.trim().split("\r\n");
     expect(head).toBe("Time (IST),Who,Role,Action,Record,Changes,IP address,Device");
-    expect(row).toContain('"24 Oct 2026, 12:00 IST",Meera Sample,Owner,changed the bank details,Bank details,');
+    expect(row).toContain(
+      '"24 Oct 2026, 12:00 IST",Meera Sample,Owner,changed the bank details,Bank details,',
+    );
     expect(row).toContain("Account number: Masked to Masked; IFSC: Empty to SMPL0001234; Kind: INR");
     expect(csv).not.toMatch(/\d{9,}/); // no account number can appear: the API never sends one
   });
