@@ -84,7 +84,9 @@ export function ComingSoon({ section }: { section: NavKey }) {
           <p className="hint">
             {settings
               ? "Until then, settings, users and the audit log are ready to use."
-              : "Until then, your account and its sign-in settings are ready to use."}
+              : user.role === "staff" || user.role === "sales"
+                ? "Until then, Leads, your account and its sign-in settings are ready to use."
+                : "Until then, your account and its sign-in settings are ready to use."}
           </p>
         </EmptyState>
       )}

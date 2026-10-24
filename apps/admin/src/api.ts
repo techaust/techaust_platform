@@ -521,7 +521,8 @@ export const api = {
   auditExport: (q: AuditQuery = {}) => request<Page<"entries", AuditEntry>>(`/audit/export${qs(q)}`),
 
   // Leads (M3.2)
-  leads: (q: LeadsQuery = {}) => request<Page<"leads", LeadItem>>(`/leads${qs(q)}`),
+  leads: (q: LeadsQuery = {}) =>
+    request<Page<"leads", LeadItem> & { purgeMode?: "live" | "dry_run" }>(`/leads${qs(q)}`),
   leadsBoard: () => request<{ stages: BoardColumn[] }>("/leads/board"),
   leadAssignees: () => request<{ me: string; assignees: Assignee[] }>("/leads/assignees"),
   lead: (id: string) => request<LeadPage>(`/leads/${encodeURIComponent(id)}`),

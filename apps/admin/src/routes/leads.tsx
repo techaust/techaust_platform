@@ -14,6 +14,7 @@ import { type Column, DataTable, FilterBar, Pager, type Sort } from "../componen
 import { EmptyState, PageHeader } from "../components/display.tsx";
 import { FolderKanban, Inbox, List, Plus, Search, Trash } from "../components/icons.tsx";
 import { LoadFailed, useLoad } from "../components/states.tsx";
+import { Notice } from "../components/ui.tsx";
 import { allowed } from "../lib/access.ts";
 import { relative } from "../lib/format.ts";
 import {
@@ -401,6 +402,11 @@ function Deletion() {
 
   return (
     <>
+      {list.state === "ready" && list.data.purgeMode === "dry_run" && (
+        <Notice tone="info">
+          Nothing is deleted yet: the clean-up is in trial mode and only records what it would delete.
+        </Notice>
+      )}
       {list.state === "failed" ? (
         <LoadFailed error={list.error} onRetry={() => list.reload()} />
       ) : (

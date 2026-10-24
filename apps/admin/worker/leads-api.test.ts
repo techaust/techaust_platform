@@ -236,6 +236,9 @@ describe("GET /leads: the list [ADM-LEAD-02]", () => {
     expect(res.leads.every((l: J) => l.scheduledForDeletion && !l.legalHold && l.clientId === null)).toBe(
       true,
     );
+    // The test config's LEAD_PURGE_MODE is the wrangler.jsonc dry_run: the view says nothing is deleted yet (owner, 2026-10-24).
+    expect(res.purgeMode).toBe("dry_run");
+    expect((await json(await get("/leads", s.cookie))).purgeMode).toBeUndefined();
     const plan = (
       await rows<{ detail: string }>(
         "EXPLAIN QUERY PLAN SELECT l.id FROM leads AS l INDEXED BY leads_delete_due WHERE l.client_id IS NULL AND l.legal_hold = 0 AND l.delete_after <= 5 ORDER BY l.delete_after, l.id",

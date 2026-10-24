@@ -258,7 +258,14 @@ async function runList(c: Ctx, f: z.infer<typeof listQuery>) {
     .bind(...bind)
     .all<ListRow>();
   const page = pageOf(results, limit, dir, cur !== null, (r) => ({ k: r.k, id: r.id }));
-  return c.json({ leads: page.items.map((r) => listItem(r, now)), next: page.next, prev: page.prev });
+  const items = { leads: page.items.map((r) => listItem(r, now)), next: page.next, prev: page.prev };
+  // The deletion view says whether the clean-up only lists (owner, 2026-10-24); anything but "live" is a dry run, as in jobs.
+  if (deletion)
+    return c.json({
+      ...items,
+      purgeMode: (c.env.LEAD_PURGE_MODE as string | undefined) === "live" ? "live" : "dry_run",
+    });
+  return c.json(items);
 }
 
 /** The list's own SQL for a test to EXPLAIN (search over four prefix ranges). */
