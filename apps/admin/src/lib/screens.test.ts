@@ -71,6 +71,7 @@ const invite = (over: Partial<Invite>): Invite => ({
   invited_by: null,
   expires_at: 10,
   created_at: 5,
+  existing_member: false,
   ...over,
 });
 
