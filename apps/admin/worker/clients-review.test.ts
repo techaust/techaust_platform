@@ -111,11 +111,12 @@ describe("the email-log export keeps only this client's lead and document mail [
     await log("document", docA, "t.docA");
     await log("document", docB, "t.docB");
     await log("lead", "missing-lead", "t.leadGone");
+    await log("document", "missing-doc", "t.docGone");
     await log("magic_link", "tokenhash", "t.link");
     await log(null, null, "t.plain");
     const res = await call(`/contacts/${a.id}/export`, { cookie: o.cookie, body: { part: "email_log" } });
     const got = ((await json(res)).items as J[]).map((r) => r.template).sort();
-    expect(got).toEqual(["t.docA", "t.leadA", "t.leadNone", "t.link", "t.plain"]);
+    expect(got).toEqual(["t.docA", "t.docGone", "t.leadA", "t.leadGone", "t.leadNone", "t.link", "t.plain"]);
   });
 });
 
