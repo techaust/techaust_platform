@@ -5,6 +5,7 @@ import {
   budgetBandLabel,
   budgetBandOptions,
   CALL_WINDOWS,
+  COUNTRY_CODES,
   callWindowText,
   countryName,
   isCountryCode,
@@ -58,6 +59,32 @@ describe("form labels (shared by the quote page and the lead alert)", () => {
 describe("isCountryCode", () => {
   it("accepts assigned ISO 3166-1 codes only", () => {
     for (const c of ["IN", "US", "GB", "AG", "AU"]) expect(isCountryCode(c)).toBe(true);
-    for (const c of ["ZZ", "XX", "in", "IND", "", "I", "1N", "AA"]) expect(isCountryCode(c), c).toBe(false);
+    for (const c of [
+      "ZZ",
+      "XX",
+      "in",
+      "IND",
+      "",
+      "I",
+      "1N",
+      "AA",
+      "UN",
+      "EU",
+      "EZ",
+      "XA",
+      "XB",
+      "QO",
+      "UK",
+      "DD",
+      "SU",
+      "YU",
+      "CS",
+    ])
+      expect(isCountryCode(c), c).toBe(false);
+  });
+  it("is exactly the 249 ISO codes, no duplicates, each with a real name", () => {
+    expect(COUNTRY_CODES).toHaveLength(249);
+    expect(new Set(COUNTRY_CODES).size).toBe(249);
+    for (const c of COUNTRY_CODES) expect(countryName(c), c).not.toBe(c);
   });
 });

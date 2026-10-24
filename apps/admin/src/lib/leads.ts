@@ -2,7 +2,7 @@
 // (docs/04 ADM-LEAD-02); the enquiry field names are the internal lead alert's (packages/email leadAlert). Pure: no I/O,
 // so the helpers are tested in lib/leads.test.ts.
 import { fromIst, istDate, parseIsoDate, toIsoDate } from "@techaust/core/dates";
-import { countryName, isCountryCode } from "@techaust/core/form-labels";
+import { COUNTRY_CODES, countryName } from "@techaust/core/form-labels";
 import { LEAD_STAGES } from "@techaust/core/lead-lifecycle";
 import { CATALOGUE } from "@techaust/db/catalogue";
 import type { LeadActivity, LeadStage, LostReason } from "../api.ts";
@@ -62,13 +62,7 @@ export const serviceLabel = (code: string | null) =>
 let countries: { value: string; label: string }[] | undefined;
 export function countryOptions(): { value: string; label: string }[] {
   if (countries) return countries;
-  const A = 65;
-  const all: { value: string; label: string }[] = [];
-  for (let i = 0; i < 26; i++)
-    for (let j = 0; j < 26; j++) {
-      const code = String.fromCharCode(A + i, A + j);
-      if (isCountryCode(code)) all.push({ value: code, label: countryName(code) });
-    }
+  const all = COUNTRY_CODES.map((code) => ({ value: code, label: countryName(code) }));
   all.sort((a, b) => (a.value === "IN" ? -1 : b.value === "IN" ? 1 : a.label.localeCompare(b.label)));
   countries = all;
   return all;
