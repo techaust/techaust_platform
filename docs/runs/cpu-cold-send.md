@@ -90,4 +90,7 @@ No critical or high. Checks on 21b6c34: email 52, auth 126, jobs 61, portal 425,
 - **L3:** the warm-up also renders one member (`staff`) 2FA email; `warmConsumers` count 14 → 15.
 - **L4:** new `m24b.test.ts` case: the `log` transport signs nothing during the expansion. The UTC-midnight flake of the exact sign count is kept (one run a day at worst, the test retries clean).
 - **L5:** recorded as not verified; Step 3 uses a portal address that has an account.
-- Checks: jobs 62/62, email 52/52, `pnpm check` exit 0.
+- Checks: jobs 62/62, email 52/52, `pnpm check` exit 0; full `pnpm test` green (admin 489, jobs 62, portal 425, web 396, auth 126, core 360, db 53, email 52, ui 469).
+
+## Re-check (reviewer Opus 5.5 medium, 2026-10-24): APPROVE
+M1, L1–L3 and L5 do what the triage says; `sesClient` keeps the exact aws4fetch options and cache key. Three lows, all fixed by the lead: the `log`-transport test now passes SES credentials so only the guard stops the prime (it passed with the guard deleted); a stale cap comment removed from `sesTransport`; the isolate comment no longer implies `max_concurrency: 1` guarantees the same isolate. Jobs 62/62 and email 52/52 after the fixes.

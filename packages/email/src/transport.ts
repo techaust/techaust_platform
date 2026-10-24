@@ -67,7 +67,6 @@ const sesUrl = (region: string) => `https://email.${region}.amazonaws.com/v2/ema
 
 /** The SES v2 `SendEmail` call (JSON, SigV4 for service `ses`). */
 export function sesTransport(config: SesConfig): Transport {
-  // one entry per day, region and secret: cap the map at 8 entries, clearing it when it grows past that
   const client = sesClient(config);
   const url = sesUrl(config.region);
   return {

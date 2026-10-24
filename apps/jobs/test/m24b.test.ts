@@ -166,7 +166,13 @@ describe("a new-device alert [ADM-AUTH-09]", () => {
     const auditId = await alertRow(m.id);
     const sign = vi.spyOn(crypto.subtle, "sign");
     try {
-      const { result } = await expand(auditId);
+      // SES credentials present, so only the transport guard stops the prime
+      const env = makeEnv({
+        SES_ACCESS_KEY_ID: "AKIAPRIMETEST00000",
+        SES_SECRET_ACCESS_KEY: "log-transport-test",
+        SES_REGION: "ap-south-1",
+      });
+      const { result } = await expand(auditId, env);
       expect(result).toBe("queued");
       expect(sign).not.toHaveBeenCalled();
     } finally {
