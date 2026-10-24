@@ -1,7 +1,7 @@
 // The whole-screen states inside the shell (docs/06 §5.5): not found, no access, a section a later milestone builds,
 // and a read that failed (offline or a server error) with a way to try again. Each has one h1 (PageHeader) so focus
 // lands on it when the screen changes.
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { errorText, RequestError } from "../api.ts";
 import { notFoundLine } from "../lib/access.ts";
@@ -161,4 +161,31 @@ export function useLoad<T>(load: () => Promise<T>, key: string) {
     };
   }, [run, key]);
   return { ...s, reload: run } as Loaded<T> & { reload: (quiet?: boolean) => void };
+}
+
+/**
+ * Someone else saved first (409 `stale_version`): say so, keep nothing half-saved, offer the latest. It takes focus and
+ * scrolls into view, because it appears after a save from anywhere on the page. `title` names what changed (settings by
+ * default; the lead page passes its own).
+ */
+export function StaleNotice({ onReload, title }: { onReload: () => void; title?: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    ref.current?.focus();
+    ref.current?.scrollIntoView({ block: "center" });
+  }, []);
+  return (
+    <div className="notice notice--error stale" role="alert" ref={ref} tabIndex={-1}>
+      <RefreshCw size={20} />
+      <div>
+        <p>
+          <strong>{title ?? "Someone saved these settings since you opened them."}</strong> Reload to see the
+          latest, then make your change again. Nothing of yours was saved.
+        </p>
+        <button type="button" className="btn btn--secondary" onClick={onReload}>
+          Reload the latest
+        </button>
+      </div>
+    </div>
+  );
 }

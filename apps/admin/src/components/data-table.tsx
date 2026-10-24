@@ -234,9 +234,14 @@ export function FilterBar(props: {
   onClear: () => void;
   /** "4 users match", read out politely when it changes. */
   result: string;
+  /** Filters that aren't chips (a select with many options), drawn after the chip groups and folded with them on phones. */
+  extra?: ReactNode | undefined;
+  /** How many of the `extra` filters are set (for "Clear filters" and the phone button's count). */
+  extraOn?: number | undefined;
 }) {
-  const active = props.query !== "" || props.groups.some((g) => g.selected.length > 0);
-  const on = props.groups.reduce((n, g) => n + g.selected.length, 0);
+  const extraOn = props.extraOn ?? 0;
+  const active = props.query !== "" || props.groups.some((g) => g.selected.length > 0) || extraOn > 0;
+  const on = props.groups.reduce((n, g) => n + g.selected.length, 0) + extraOn;
   const [open, setOpen] = useState(false);
   const groupsId = useId();
   return (
@@ -290,6 +295,7 @@ export function FilterBar(props: {
           </div>
         </div>
       ))}
+      {props.extra}
       <div className="filters__foot">
         <p className="filters__result" role="status">
           {props.result}

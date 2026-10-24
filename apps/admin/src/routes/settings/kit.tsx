@@ -4,12 +4,11 @@
 // The unsaved-changes guard and the save bar come with it. Read-only roles (the accountant on tax and numbering) see the
 // same page without the controls that change anything.
 import { SETTINGS_SCHEMAS, type Settings } from "@techaust/core/settings";
-import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useState } from "react";
 import { api, errorText, type GroupMeta, type JsonGroup, RequestError, type SettingsDoc } from "../../api.ts";
 import { Skeleton } from "../../components/display.tsx";
 import { ErrorSummary, SaveBar, type SummaryError, VerifyNote } from "../../components/form.tsx";
-import { RefreshCw } from "../../components/icons.tsx";
-import { LoadFailed, useLoad } from "../../components/states.tsx";
+import { LoadFailed, StaleNotice, useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { FieldError, Notice } from "../../components/ui.tsx";
 import { UnsavedChangesGuard } from "../../components/unsaved.tsx";
@@ -184,28 +183,8 @@ function GroupFormBody<K extends JsonGroup, F>(props: {
 }
 
 /** 409: someone saved first. Reloading shows their version (the draft here is dropped). */
-export function StaleNotice({ onReload }: { onReload: () => void }) {
-  // It appears after a save from the bottom of a long form: bring it into view and start reading there.
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    ref.current?.focus();
-    ref.current?.scrollIntoView({ block: "center" });
-  }, []);
-  return (
-    <div className="notice notice--error stale" role="alert" ref={ref} tabIndex={-1}>
-      <RefreshCw size={20} />
-      <div>
-        <p>
-          <strong>Someone saved these settings since you opened them.</strong> Reload to see the latest, then
-          make your change again. Nothing of yours was saved.
-        </p>
-        <button type="button" className="btn btn--secondary" onClick={onReload}>
-          Reload the latest
-        </button>
-      </div>
-    </div>
-  );
-}
+/** The 409 notice (moved to components/states.tsx so the lead page shares it). */
+export { StaleNotice };
 
 export function FormSkeleton() {
   return (

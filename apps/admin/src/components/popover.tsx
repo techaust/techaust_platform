@@ -58,6 +58,9 @@ export function MenuButton(props: {
   /** Visible text on the button; without it the button shows the "more" icon only. */
   text?: string | undefined;
   align?: "start" | "end" | undefined;
+  /** The button's class when it has text (default: a secondary button), and an icon after the text (a chevron). */
+  buttonClass?: string | undefined;
+  icon?: ReactNode | undefined;
 }) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
@@ -125,7 +128,7 @@ export function MenuButton(props: {
       <button
         ref={buttonRef}
         type="button"
-        className={props.text ? "btn btn--secondary" : "icon-btn"}
+        className={props.text ? (props.buttonClass ?? "btn btn--secondary") : "icon-btn"}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
@@ -133,7 +136,14 @@ export function MenuButton(props: {
         onClick={() => (open ? setOpen(false) : openAt(0))}
         onKeyDown={onButtonKey}
       >
-        {props.text ?? <MoreHorizontal />}
+        {props.text ? (
+          <>
+            {props.text}
+            {props.icon}
+          </>
+        ) : (
+          <MoreHorizontal />
+        )}
       </button>
       {open && (
         <div

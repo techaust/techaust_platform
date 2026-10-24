@@ -174,7 +174,8 @@ export function Section() {
   const { section } = useParams();
   const user = useUser();
   const key = section ? sectionOf(`/${section}`) : null;
-  if (!key || key === "dashboard" || key === "audit" || key === "settings") return <NotFound />;
+  // Built sections have their own routes; an unknown address under one of them is a 404.
+  if (!key || key === "dashboard" || !navItem(key).arrives) return <NotFound />;
   return canSee(user.role, key) ? <ComingSoon section={key} /> : <NoAccess what={navItem(key).label} />;
 }
 
