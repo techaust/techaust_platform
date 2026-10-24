@@ -8,8 +8,15 @@
 // `new Request` and timers are refused in a Worker's global scope, so none is used here (`newToken` is not warmed).
 import { b64url, enc, hex, sha256 } from "./crypto.ts";
 import { addressOf, portalFailKey, portalMailKey, portalReqKey, readPortalCookie } from "./portal.ts";
-import { docTokenRequest, magicRequest, magicVerifyRequest } from "./schemas.ts";
+import {
+  docTokenRequest,
+  magicRequest,
+  magicVerifyRequest,
+  sessionIdParam,
+  stepUpRequest,
+} from "./schemas.ts";
 import { isToken } from "./tokens.ts";
+import { openTotpSecret, verifyTotp } from "./totp.ts";
 
 /**
  * The warm-up's made-up HMAC key (32 bytes, base64 of "warm-up-key-not-a-secret-0000000"), only ever used with made-up
@@ -58,3 +65,34 @@ export async function warmPortalAuth(): Promise<number> {
 const fail = (): never => {
   throw new Error("warm-up sample did not parse");
 };
+
+/**
+ * A sealed value made once with the warm-up key above: 20 zero bytes under AAD "totp:warm-up" (the shape of a stored TOTP secret).
+ * Opening it needs no randomness, so it can run at start-up; it is made-up data, not a secret.
+ */
+const WARM_SEALED_TOTP = "fUdIFWufsle1jImbaqsZXMt8EknnaK_pN9pa2yqEzy9jGfChBW97NBaWDs47GzgO";
+
+/**
+ * Start-up warm-up of the staff step-up path (M3.1; `/auth/step-up` measured up to 9 ms on staging, 2026-10-23). Opens the sealed
+ * made-up TOTP secret (the AES-GCM engine and the key import), checks a made-up code against it (the three SHA-1 HOTPs of the
+ * `@oslojs/otp` code, the digit check) and parses one body through each schema the account routes use. Resolves the number of steps
+ * that worked (4), so a test notices a step that silently stopped working.
+ */
+export async function warmStepUp(): Promise<number> {
+  let done = 0;
+  const step = async (f: () => unknown) => {
+    try {
+      await f();
+      done++;
+    } catch {
+      // never stop a Worker from starting
+    }
+  };
+  await step(() => stepUpRequest.safeParse({ code: "123456" }).success || fail());
+  await step(() => sessionIdParam.safeParse({ id: "0".repeat(64) }).success || fail());
+  await step(
+    async () => (await openTotpSecret(WARM_PEPPER, "warm-up", WARM_SEALED_TOTP)).length === 20 || fail(),
+  );
+  await step(() => verifyTotp(new Uint8Array(20), "000000", 90_000, null));
+  return done;
+}

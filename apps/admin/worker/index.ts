@@ -1,5 +1,4 @@
 import { hex, randomBytes } from "@techaust/auth";
-import { warmSettings } from "@techaust/core/settings";
 import { accessStmt, clipHeader, HEADER_LIMITS } from "@techaust/db/log";
 import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
@@ -19,8 +18,7 @@ import { search } from "./search.ts";
 import { settings } from "./settings.ts";
 import { users } from "./users.ts";
 
-// Start-up warm-up (CPU tuning): the settings schemas are parsed once while the isolate starts, not in the first Settings request.
-warmSettings();
+import "./warm.ts"; // start-up warm-up of the settings schemas and the step-up path (M3.1)
 
 let isolateId: string | undefined;
 let isolateRequests = 0;
