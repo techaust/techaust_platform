@@ -21,6 +21,7 @@ import {
   NOT_FOUND,
   type SideGuard,
 } from "./context.ts";
+import { idParam, query } from "./http.ts";
 import { type Direction, decodeCursor, keysetSql, PREFIX_END, pageOf } from "./keyset.ts";
 import { queueEmail } from "./mail.ts";
 
@@ -34,7 +35,6 @@ const SELF_RESET: ApiError = { code: "self_reset", message: "You can't reset you
 
 const inviteRequest = z.object({ email: emailAddress, role: z.enum(ROLES) });
 const roleRequest = z.object({ role: z.enum(ROLES) });
-const idParam = z.object({ id: z.string().check(z.minLength(1), z.maxLength(64)) });
 const hashParam = z.object({ tokenHash: z.string().check(z.regex(/^[0-9a-f]{64}$/)) });
 const listQuery = z.object({
   limit: z.optional(z.enum(["25", "50"])),
@@ -84,63 +84,59 @@ const revokeSessionsOf = (c: Ctx, userId: string, t: number) => (g: SideGuard) =
 export const users = new Hono<AppEnv>()
   // The staff list (ADM-AUTH-07, ADM-G-03): keyset pages of 25 or 50, sorted by name or created date, filtered by role and
   // status, searched by the start of the name or the email. Every filter and both sorts have an index (migration 0014).
-  .get(
-    "/",
-    sValidator("query", listQuery, (r, c) => (r.success ? undefined : err(c as Ctx, BAD_REQUEST, 400))),
-    async (c) => {
-      const f = c.req.valid("query");
-      const limit = f.limit === "50" ? 50 : 25;
-      const byName = f.sort === "name";
-      const asc = (f.dir ?? "asc") === "asc";
-      const dir: Direction = f.before ? "before" : "after";
-      const raw = f.before ?? f.after;
-      const cur = raw === undefined ? null : decodeCursor(raw);
-      // A cursor made for the other sort (a number for the name sort, text for the date sort) is a bad request, not a 500.
-      if (raw !== undefined && (!cur || typeof cur.k !== (byName ? "string" : "number")))
-        return err(c, BAD_REQUEST, 400);
-      const col = byName ? "name" : "created_at";
-      const where: string[] = [];
-      const bind: unknown[] = [];
-      const add = (sql: string, ...v: unknown[]) => {
-        where.push(sql.replaceAll("?#", () => `?${bind.length + 1}`));
-        bind.push(...v);
-      };
-      if (f.role) add("role = ?#", f.role);
-      if (f.status) add("status = ?#", f.status);
-      const q = f.q?.trim().toLowerCase();
-      if (q) {
-        // Email is stored lower case, so a start-of-address match is a range on its index; the name is matched with LIKE.
-        const like = `${escapeLike(q)}%`;
-        const n = bind.length;
-        where.push(`((email >= ?${n + 1} AND email < ?${n + 2}) OR name LIKE ?${n + 3} ESCAPE '\\')`);
-        bind.push(q, `${q}${PREFIX_END}`, like);
-      }
-      const order = keysetSql(col, "id", asc, dir, bind.length + 1);
-      if (cur) {
-        where.push(order.where);
-        bind.push(byName ? String(cur.k) : Number(cur.k), cur.id);
-      }
-      const sql = `SELECT id, email, name, role, status, last_login_at, created_at FROM staff_users${
-        where.length ? ` WHERE ${where.join(" AND ")}` : ""
-      } ORDER BY ${order.order} LIMIT ${limit + 1}`;
-      const { results } = await c.env.DB.prepare(sql)
-        .bind(...bind)
-        .all<{
-          id: string;
-          email: string;
-          name: string;
-          role: string;
-          status: string;
-          last_login_at: number | null;
-          created_at: number;
-        }>();
-      const page = pageOf(results, limit, dir, cur !== null, (r) => ({
-        k: byName ? r.name : r.created_at,
-        id: r.id,
-      }));
-      return c.json({ users: page.items, next: page.next, prev: page.prev });
-    },
-  )
+  .get("/", query(listQuery), async (c) => {
+    const f = c.req.valid("query");
+    const limit = f.limit === "50" ? 50 : 25;
+    const byName = f.sort === "name";
+    const asc = (f.dir ?? "asc") === "asc";
+    const dir: Direction = f.before ? "before" : "after";
+    const raw = f.before ?? f.after;
+    const cur = raw === undefined ? null : decodeCursor(raw);
+    // A cursor made for the other sort (a number for the name sort, text for the date sort) is a bad request, not a 500.
+    if (raw !== undefined && (!cur || typeof cur.k !== (byName ? "string" : "number")))
+      return err(c, BAD_REQUEST, 400);
+    const col = byName ? "name" : "created_at";
+    const where: string[] = [];
+    const bind: unknown[] = [];
+    const add = (sql: string, ...v: unknown[]) => {
+      where.push(sql.replaceAll("?#", () => `?${bind.length + 1}`));
+      bind.push(...v);
+    };
+    if (f.role) add("role = ?#", f.role);
+    if (f.status) add("status = ?#", f.status);
+    const q = f.q?.trim().toLowerCase();
+    if (q) {
+      // Email is stored lower case, so a start-of-address match is a range on its index; the name is matched with LIKE.
+      const like = `${escapeLike(q)}%`;
+      const n = bind.length;
+      where.push(`((email >= ?${n + 1} AND email < ?${n + 2}) OR name LIKE ?${n + 3} ESCAPE '\\')`);
+      bind.push(q, `${q}${PREFIX_END}`, like);
+    }
+    const order = keysetSql(col, "id", asc, dir, bind.length + 1);
+    if (cur) {
+      where.push(order.where);
+      bind.push(byName ? String(cur.k) : Number(cur.k), cur.id);
+    }
+    const sql = `SELECT id, email, name, role, status, last_login_at, created_at FROM staff_users${
+      where.length ? ` WHERE ${where.join(" AND ")}` : ""
+    } ORDER BY ${order.order} LIMIT ${limit + 1}`;
+    const { results } = await c.env.DB.prepare(sql)
+      .bind(...bind)
+      .all<{
+        id: string;
+        email: string;
+        name: string;
+        role: string;
+        status: string;
+        last_login_at: number | null;
+        created_at: number;
+      }>();
+    const page = pageOf(results, limit, dir, cur !== null, (r) => ({
+      k: byName ? r.name : r.created_at,
+      id: r.id,
+    }));
+    return c.json({ users: page.items, next: page.next, prev: page.prev });
+  })
 
   .get("/invites", async (c) => {
     const { results } = await c.env.DB.prepare(

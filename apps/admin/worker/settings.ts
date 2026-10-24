@@ -10,7 +10,6 @@
 //  - a stored row is read as the defaults merged under it (`resolveSetting`), so rows saved before a field existed still read;
 //  - changes affect new documents only (nothing here edits an issued document).
 
-import { sValidator } from "@hono/standard-validator";
 import { hex } from "@techaust/auth";
 import { auditSummary } from "@techaust/core/audit";
 import { ACCOUNT_NO, cleanAccountNo, IFSC, SWIFT } from "@techaust/core/bank";
@@ -50,6 +49,7 @@ import {
   type SideGuard,
 } from "./context.ts";
 import { sampleData, TEMPLATE_NAMES } from "./email-fixtures.ts";
+import { param } from "./http.ts";
 import { queueEmail } from "./mail.ts";
 
 /** The notice before a lead is deleted: a re-dated lead is never due sooner than this (VERIFY WITH CA/LEGAL). */
@@ -372,7 +372,7 @@ export const settings = new Hono<AppEnv>()
     return c.json({ groups });
   })
 
-  .get("/groups/:group", sValidatorParam(groupParam), async (c) => {
+  .get("/groups/:group", param(groupParam), async (c) => {
     const { group } = c.req.valid("param");
     if (decide(actor(c).role, READ_ACTION[group]) === "deny") return err(c, FORBIDDEN_GROUP, 403);
     const row = await loadRow(c.env.DB, group);
@@ -386,7 +386,7 @@ export const settings = new Hono<AppEnv>()
     });
   })
 
-  .put("/groups/:group", sValidatorParam(groupParam), async (c) => {
+  .put("/groups/:group", param(groupParam), async (c) => {
     const { group } = c.req.valid("param");
     const raw = await bodyOf(c);
     if (group === "numbering") return saveNumbering(c, raw);
@@ -449,7 +449,7 @@ export const settings = new Hono<AppEnv>()
     });
   })
 
-  .put("/bank/:kind", sValidatorParam(kindParam), async (c) => saveBank(c, c.req.valid("param").kind))
+  .put("/bank/:kind", param(kindParam), async (c) => saveBank(c, c.req.valid("param").kind))
 
   // Document terms (ADM-SET-08): the five blocks, versioned.
   .get("/terms", async (c) => {
@@ -497,7 +497,7 @@ export const settings = new Hono<AppEnv>()
     });
   })
 
-  .get("/terms/:block", sValidatorParam(blockParam), async (c) => {
+  .get("/terms/:block", param(blockParam), async (c) => {
     const target = termsTarget(c.req.valid("param").block);
     if (!target) return err(c, NOT_FOUND, 404);
     const used =
@@ -522,7 +522,7 @@ export const settings = new Hono<AppEnv>()
     });
   })
 
-  .post("/terms/:block", sValidatorParam(blockParam), async (c) => {
+  .post("/terms/:block", param(blockParam), async (c) => {
     const name = c.req.valid("param").block;
     const target = termsTarget(name);
     if (!target) return err(c, NOT_FOUND, 404);
@@ -834,9 +834,4 @@ async function saveBank(c: Ctx, kind: "INR" | "USD_SWIFT") {
   }
   if (!done) return c.json({ error: STALE, request_id: c.var.rid }, 409);
   return c.json({ ok: true, changed: true, updatedAt: t });
-}
-
-// A path-parameter validator that answers 404 (not 400) for a name that isn't one of ours: `/groups/anything` is "not found".
-function sValidatorParam<S extends Parameters<typeof sValidator>[1]>(schema: S) {
-  return sValidator("param", schema, (r, c) => (r.success ? undefined : err(c as Ctx, NOT_FOUND, 404)));
 }

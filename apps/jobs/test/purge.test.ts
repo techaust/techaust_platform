@@ -95,7 +95,7 @@ describe("enqueueDue: the cron only enqueues [JOB-CRON-01]", () => {
     await addLead({ deleteAfter: NOW + DAY }); // not due
     await addLead({ deleteAfter: null });
     await realEnv.DB.prepare(
-      "INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, currency) VALUES ('c1','C0001','A','A','business','IN','unregistered','INR')",
+      "INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, state_code, currency) VALUES ('c1','C0001','A','A','business','IN','unregistered','19','INR')",
     ).run();
     await addLead({ clientId: "c1" }); // converted
     await addLead({ hold: true }); // legal hold
@@ -198,7 +198,7 @@ describe("purgeLead [ADM-LEAD-05]", () => {
 
   it("leaves a converted lead and a lead under legal hold, even when enqueued", async () => {
     await realEnv.DB.prepare(
-      "INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, currency) VALUES ('c1','C0001','A','A','business','IN','unregistered','INR')",
+      "INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, state_code, currency) VALUES ('c1','C0001','A','A','business','IN','unregistered','19','INR')",
     ).run();
     const converted = await addLead({ clientId: "c1" });
     const held = await addLead({ hold: true });

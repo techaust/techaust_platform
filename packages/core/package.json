@@ -9,6 +9,7 @@
     ".": "./src/index.ts",
     "./audit": "./src/audit.ts",
     "./bank": "./src/bank.ts",
+    "./clients": "./src/clients.ts",
     "./dates": "./src/dates.ts",
     "./email-templates": "./src/email-templates.ts",
     "./gstin": "./src/gstin.ts",

@@ -221,7 +221,7 @@ describe("GET /leads: the list [ADM-LEAD-02]", () => {
   it("the scheduled-for-deletion view (also the dry-run report) lists open leads due within 14 days, soonest first", async () => {
     const s = await sessionFor("owner");
     await env.DB.prepare(
-      "INSERT OR IGNORE INTO clients (id, code, legal_name, display_name, type, country, gst_status, currency) VALUES ('c-del', 'CDEL', 'Del', 'Del', 'business', 'IN', 'unregistered', 'INR')",
+      "INSERT OR IGNORE INTO clients (id, code, legal_name, display_name, type, country, gst_status, state_code, currency) VALUES ('c-del', 'CDEL', 'Del', 'Del', 'business', 'IN', 'unregistered', '19', 'INR')",
     ).run();
     const soon = await addLead({ delete_after: Date.now() + 2 * DAY });
     const sooner = await addLead({ delete_after: Date.now() + DAY });

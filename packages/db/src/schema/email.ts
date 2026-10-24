@@ -35,6 +35,8 @@ export const emailLog = sqliteTable(
   (t) => [
     index("email_log_entity").on(t.entityType, t.entityId),
     index("email_log_status").on(t.status),
+    // M3.3: the data-subject export reads a person's emails by address.
+    index("email_log_to").on(t.toEmail, t.createdAt, t.id),
     check("email_log_status", oneOf(t.status, EMAIL_STATUSES)),
   ],
 );

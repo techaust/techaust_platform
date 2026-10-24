@@ -22,7 +22,7 @@ async function portalSession() {
   const now = Date.now();
   await env.DB.batch([
     env.DB.prepare(
-      "INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, currency) VALUES (?1, ?2, 'Realm Test Pvt Ltd', 'Realm Test', 'business', 'IN', 'unregistered', 'INR')",
+      "INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, state_code, currency) VALUES (?1, ?2, 'Realm Test Pvt Ltd', 'Realm Test', 'business', 'IN', 'unregistered', '19', 'INR')",
     ).bind(clientId, `RT-${clientId.slice(-8)}`),
     env.DB.prepare(
       "INSERT INTO contacts (id, client_id, name, email, portal_access) VALUES (?1, ?2, 'Realm Contact', ?3, 1)",

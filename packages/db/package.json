@@ -6,6 +6,7 @@
   "description": "Drizzle schema, SQL migrations (incl. triggers), repositories and seed data for D1.",
   "exports": {
     ".": "./src/index.ts",
+    "./contact-access": "./src/contact-access.ts",
     "./lead-stage": "./src/lead-stage.ts",
     "./log": "./src/log.ts",
     "./catalogue": "./src/seed/catalogue.ts"
