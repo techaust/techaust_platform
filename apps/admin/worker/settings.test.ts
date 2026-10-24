@@ -1071,9 +1071,13 @@ describe("the leads retention re-dates the leads the clean-up may delete [ADM-SE
       .bind(old)
       .run();
     const o = await owner();
+    await put(GROUP("retention"), o.cookie, {
+      version: 0,
+      value: { ...SETTINGS_DEFAULTS.retention, leadsMonths: 24 },
+    });
     const before = Date.now();
     const res = await put(GROUP("retention"), o.cookie, {
-      version: 0,
+      version: 1,
       value: { ...SETTINGS_DEFAULTS.retention, leadsMonths: 12 },
     });
     expect(res.status).toBe(200);
