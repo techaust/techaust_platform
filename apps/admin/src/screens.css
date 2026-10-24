@@ -388,7 +388,9 @@ body:has(.savebar) .toasts {
   margin-bottom: var(--space-6);
   overflow-x: auto;
   border-bottom: 1px solid var(--color-border);
+  /* Review 9: a thin thumb on a clear track, so Windows draws no grey gutter or arrow buttons under the open tab's rule. */
   scrollbar-width: thin;
+  scrollbar-color: var(--color-border-control) transparent;
 }
 
 .tabs__list {

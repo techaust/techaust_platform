@@ -25,6 +25,7 @@ import {
   type ClientDraftAction,
   type ClientDrafts,
   CURRENCY_LABELS,
+  contactCountText,
   type DetailsForm,
   detailsOf,
   detailsPatch,
@@ -90,9 +91,7 @@ export function Overview(props: {
           )}
           <button type="button" className="btn btn--text panel-link" onClick={props.onContacts}>
             <User size={16} />
-            {props.data.contacts.length === 1
-              ? "1 contact"
-              : `${props.data.contacts.length}${props.data.moreContacts ? "+" : ""} contacts`}
+            {contactCountText(props.data)}
           </button>
         </section>
         {props.data.sourceLead && (

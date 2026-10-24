@@ -11,6 +11,8 @@ import {
   billingOf,
   billingPatch,
   clientDrafts,
+  contactCountText,
+  contactsCursor,
   detailsOf,
   detailsPatch,
   ERASE_REASON_LABELS,
@@ -255,5 +257,29 @@ describe("activity and export", () => {
     expect(f.parts).toEqual({ leads: [{ id: "l1" }], sessions: [] });
     expect(f.exportedAt).toBe("2026-10-25T00:00:00.000Z");
     expect(exportFileName("k1", "2026-10-25")).toBe("techaust-data-export-k1-2026-10-25.json");
+  });
+});
+
+describe("the client page's contacts (review 5 and 7)", () => {
+  const live = { anonymisedAt: null };
+  const gone = { anonymisedAt: 1 };
+
+  it("counts live contacts only, exact when the API sends the count", () => {
+    expect(contactCountText({ contacts: [live, gone, live], moreContacts: false })).toBe("2 contacts");
+    expect(contactCountText({ contacts: [live, gone], moreContacts: false })).toBe("1 contact");
+    expect(contactCountText({ contacts: [gone], moreContacts: false })).toBe("0 contacts");
+    expect(contactCountText({ contacts: [live], moreContacts: true })).toBe("1+ contacts");
+    expect(contactCountText({ contacts: [live, gone], moreContacts: true, liveContactCount: 140 })).toBe(
+      "140 contacts",
+    );
+    expect(contactCountText({ contacts: [live, gone], moreContacts: false, liveContactCount: 1 })).toBe(
+      "1 contact",
+    );
+  });
+
+  it("continues from the API's cursor when there is one", () => {
+    expect(contactsCursor({ contactsNext: "cursor-100" })).toBe("cursor-100");
+    expect(contactsCursor({ contactsNext: null })).toBeNull();
+    expect(contactsCursor({})).toBeNull();
   });
 });
