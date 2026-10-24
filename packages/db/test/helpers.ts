@@ -37,7 +37,7 @@ export async function rejects(promise: Promise<unknown>, message: RegExp): Promi
 export async function insertClient(code = "C-0001"): Promise<string> {
   const id = uuidv7();
   await run(
-    "INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, currency) VALUES (?, ?, ?, ?, 'business', 'IN', 'unregistered', 'INR')",
+    "INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, state_code, currency) VALUES (?, ?, ?, ?, 'business', 'IN', 'unregistered', '19', 'INR')",
     id,
     code,
     "Example Traders",

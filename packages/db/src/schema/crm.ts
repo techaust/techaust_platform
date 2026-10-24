@@ -157,6 +157,9 @@ export const clients = sqliteTable(
   (t) => [
     uniqueIndex("clients_code").on(t.code),
     index("clients_display_name").on(t.displayName),
+    // M3.3: the list (newest first) and the name prefix search (no case).
+    index("clients_created").on(t.createdAt, t.id),
+    index("clients_name_nocase").on(sql`${t.displayName} collate nocase`),
     uniqueIndex("clients_gstin").on(t.gstin).where(sql`${t.gstin} is not null`),
     check("clients_type", oneOf(t.type, CLIENT_TYPES)),
     check("clients_gst_status", oneOf(t.gstStatus, GST_STATUSES)),
@@ -185,12 +188,16 @@ export const contacts = sqliteTable(
     marketingConsent: text("marketing_consent", { mode: "json" }).$type<MarketingConsent>(),
     bouncedAt: integer("bounced_at"),
     anonymisedAt: integer("anonymised_at"),
+    /** M3.3: a held contact is never erased or anonymised (added with ALTER TABLE: `acceptances` references contacts). */
+    legalHold: flag("legal_hold"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
     uniqueIndex("contacts_client_email").on(t.clientId, t.email),
     index("contacts_email").on(t.email),
+    // M3.3: one primary contact per client (the API unsets the old one first, in the same batch).
+    uniqueIndex("contacts_one_primary").on(t.clientId).where(sql`${t.isPrimary} = 1`),
     check("contacts_email_lower", sql`${t.email} = lower(${t.email})`),
   ],
 );

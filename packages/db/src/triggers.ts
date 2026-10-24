@@ -2,6 +2,7 @@
 // once into a hand-written migration (scripts/write-triggers.ts); a later schema change that adds a document
 // column needs a new migration that drops and recreates the trigger, and test/triggers.test.ts fails until
 // the installed trigger covers every content column.
+import { INVOICE_FAMILY_SQL } from "@techaust/core/clients";
 import { getTableColumns } from "drizzle-orm";
 import { getTableConfig } from "drizzle-orm/sqlite-core";
 import { documentLines, documentSections, paymentSchedules } from "./schema/documents.ts";
@@ -134,6 +135,29 @@ export function termsTriggerStatements(): string[] {
   return [...appendOnly(table(termsVersions)), ...appendOnly(table(termsBlocks))];
 }
 
+/**
+ * Client and contact triggers (M3.3, ADM-CLI-01, ADM-CLI-05; a separate set because the existing triggers have no IF NOT EXISTS;
+ * neither table is rebuilt, they are referenced). VERIFY WITH CA/LEGAL:
+ * - a client's currency cannot change once ANY invoice-family document of any status exists (the API's conditional write is
+ *   the first line, this is the backstop; a proposal or estimate alone does not lock it);
+ * - an anonymised contact is frozen (the tombstone cannot be edited or revived);
+ * - a client in India (registered or unregistered) has a two-digit state code and an overseas client has none (owner answer
+ *   Q1, 2026-10-25). The existing rows are not checked: only an insert, or a change to the status or the state, is.
+ */
+export function clientTriggerStatements(): string[] {
+  const needsState =
+    "NEW.gst_status IN ('registered', 'unregistered') AND (NEW.state_code IS NULL OR NOT (NEW.state_code GLOB '[0-9][0-9]'))";
+  const noState = "NEW.gst_status = 'overseas' AND NEW.state_code IS NOT NULL";
+  const bad = `(${needsState}) OR (${noState})`;
+  const msg = abort("a client in India needs a state code and an overseas client has none");
+  return [
+    `CREATE TRIGGER \`clients_currency_locked\` BEFORE UPDATE OF currency ON \`clients\` WHEN NEW.currency IS NOT OLD.currency AND EXISTS (SELECT 1 FROM documents WHERE client_id = OLD.id AND type IN (${INVOICE_FAMILY_SQL})) BEGIN ${abort("currency is locked: the client has an invoice")} END;`,
+    `CREATE TRIGGER \`contacts_anonymised_frozen\` BEFORE UPDATE ON \`contacts\` WHEN OLD.anonymised_at IS NOT NULL BEGIN ${abort("an anonymised contact cannot change")} END;`,
+    `CREATE TRIGGER \`clients_state_check_insert\` BEFORE INSERT ON \`clients\` WHEN ${bad} BEGIN ${msg} END;`,
+    `CREATE TRIGGER \`clients_state_check_update\` BEFORE UPDATE OF gst_status, state_code ON \`clients\` WHEN ${bad} BEGIN ${msg} END;`,
+  ];
+}
+
 /** The only statuses a document can be issued from (docs/05 §5.4 change 14: drafts only; owner decision 2026-10-07).
  * An approval (`approvals`, kind `issue`) is a record next to the draft, not a document status. Shared by the guard
  * trigger below and by the reference issue batch in test/helpers.ts, so the two cannot drift apart again. */
@@ -165,6 +189,10 @@ export const TRIGGER_SETS = {
   auth_triggers: { what: "staff-auth triggers (M1.5)", statements: authTriggerStatements },
   portal_triggers: { what: "portal-auth triggers (M1.6)", statements: portalTriggerStatements },
   terms_triggers: { what: "document-terms append-only triggers (M3.1)", statements: termsTriggerStatements },
+  client_triggers: {
+    what: "client currency lock, anonymised-contact freeze and state-code check (M3.3)",
+    statements: clientTriggerStatements,
+  },
   issue_guard: {
     what: "issue guard narrowed to drafts, plus the issue post-condition (docs/05 §5.4)",
     statements: issueGuardStatements,

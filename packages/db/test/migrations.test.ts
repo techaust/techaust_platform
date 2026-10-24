@@ -37,6 +37,8 @@ describe("migrations apply cleanly to a fresh D1", () => {
       "0015_bank_active_kind_notifications_unread.sql",
       "0016_leads_duplicate_proposal_retention.sql",
       "0017_drop_unused_lead_indexes.sql",
+      "0018_clients_contacts_indexes.sql",
+      "0019_client_triggers.sql",
     ]);
   });
 
@@ -115,7 +117,7 @@ describe("migrations apply cleanly to a fresh D1", () => {
   it("fills created_at/updated_at with the current time in UTC ms", async () => {
     const before = Date.now();
     await run(
-      "INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, currency) VALUES ('x', 'C-X', 'X', 'X', 'business', 'IN', 'unregistered', 'INR')",
+      "INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, state_code, currency) VALUES ('x', 'C-X', 'X', 'X', 'business', 'IN', 'unregistered', '19', 'INR')",
     );
     const row = await first<{ created_at: number; updated_at: number }>(
       "SELECT created_at, updated_at FROM clients WHERE id = 'x'",
@@ -136,6 +138,7 @@ describe("CHECK constraints", () => {
       type: "business",
       country: "IN",
       gst_status: "unregistered",
+      state_code: "19",
       currency: "INR",
       ...fields,
     };

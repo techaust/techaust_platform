@@ -58,7 +58,11 @@ const MATRIX = {
   "clients.read": { owner: "allow", staff: "allow", sales: "allow", accountant: "allow" },
   "clients.write": { owner: "allow", staff: "allow", sales: "allow" },
   "clients.finance.read": { owner: "allow", staff: "allow", accountant: "allow" },
+  // M3.3: the billing fields (tax identity, currency, terms) are changed only by Owner and Staff; Sales sets them once, at creation
+  // or conversion. Erasing or anonymising a person is the Owner's, with a fresh step-up (owner answer 2026-10-25).
+  "clients.finance.write": { owner: "allow", staff: "allow" },
   "clients.dataExport": { owner: "step-up" },
+  "clients.dataErase": { owner: "step-up" },
   // Projects, milestones, notes, files
   "projects.read": { owner: "allow", staff: "allow", sales: "allow" },
   "projects.write": { owner: "allow", staff: "allow" },

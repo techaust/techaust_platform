@@ -19,6 +19,8 @@ export const FINANCE_AUDIT_ACTIONS = [
   "payment.verify",
   "refund.issue",
   "export.gst",
+  // M3.3: a client's billing fields (tax identity, currency, terms); Sales does not see these in a client's activity.
+  "client.billing_update",
 ] as const;
 
 /** What replaces the value of a sensitive field, on both sides of the change. */
