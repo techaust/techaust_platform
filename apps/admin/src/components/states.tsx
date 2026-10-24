@@ -170,7 +170,16 @@ export function useLoad<T>(load: () => Promise<T>, key: string) {
  * scrolls into view, because it appears after a save from anywhere on the page. `title` names what changed (settings by
  * default; the lead page passes its own).
  */
-export function StaleNotice({ onReload, title }: { onReload: () => void; title?: ReactNode }) {
+export function StaleNotice({
+  onReload,
+  title,
+  body,
+}: {
+  onReload: () => void;
+  title?: ReactNode;
+  /** Replaces the default "Reload … Nothing of yours was saved." when that isn't true (the lead page's draft conflict). */
+  body?: ReactNode;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     ref.current?.focus();
@@ -181,8 +190,8 @@ export function StaleNotice({ onReload, title }: { onReload: () => void; title?:
       <RefreshCw size={20} />
       <div>
         <p>
-          <strong>{title ?? "Someone saved these settings since you opened them."}</strong> Reload to see the
-          latest, then make your change again. Nothing of yours was saved.
+          <strong>{title ?? "Someone saved these settings since you opened them."}</strong>{" "}
+          {body ?? "Reload to see the latest, then make your change again. Nothing of yours was saved."}
         </p>
         <button type="button" className="btn btn--secondary" onClick={onReload}>
           Reload the latest

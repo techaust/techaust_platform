@@ -2,8 +2,10 @@
 // read-only), the pipeline panel (stage with "Move to…", owner, next action), the contact (editable), the linked
 // records (client, draft proposal, the same email within 30 days), and the timeline with notes, replies, stage changes
 // and edits (keyset "Show older"). Reply and Convert open their dialogs (reply.tsx, convert.tsx).
-// Every edit sends the `updatedAt` it was loaded with; a 409 `stale_version` shows the shared "changed by someone else"
-// notice, keeps nothing half-saved and offers the latest. Leaving with unsaved edits asks first (ADM-G-04).
+// Every edit sends the `updatedAt` it was loaded with and only the fields the person changed (drafts.ts); a 409
+// `stale_version`, or a reload that brings someone else's change to a field a draft holds, shows the shared "changed
+// by someone else" notice, keeps nothing half-saved and offers the latest. Leaving with unsaved edits asks first
+// (ADM-G-04).
 import { formatDate, istDate } from "@techaust/core/dates";
 import {
   budgetBandLabel,
@@ -47,7 +49,6 @@ import { relative } from "../../lib/format.ts";
 import {
   type Change,
   countryOptions,
-  dateToMs,
   FIELD_LABELS,
   LOST_REASON_LABELS,
   msToDate,
@@ -59,10 +60,12 @@ import { useUser } from "../../session.tsx";
 import { ConvertDialog } from "./convert.tsx";
 import {
   type Contact,
+  contactPatch,
   type DraftAction,
   type Drafts,
   drafts as draftsReducer,
   type Follow,
+  followPatch,
   NO_DRAFTS,
 } from "./drafts.ts";
 import { CRUMBS, LeadsGate, LostDialog, MoveMenu, StagePill } from "./parts.tsx";
@@ -82,6 +85,13 @@ function LeadScreen({ id }: { id: string }) {
   const page = useLoad(() => api.lead(id), id);
   const people = useLoad(() => api.leadAssignees(), "");
   const [drafts, draft] = useReducer(draftsReducer, NO_DRAFTS);
+  // Every fresh copy of the lead carries the drafts onto it before it is shown (re-check R1): untouched fields take
+  // the stored values, and a draft whose changed field someone else changed too is dropped with the stale notice.
+  const [seen, setSeen] = useState<LeadPageData | null>(null);
+  if (page.state === "ready" && page.data !== seen) {
+    setSeen(page.data);
+    draft({ type: "loaded", contact: contactOf(page.data.lead), follow: followOf(page.data.lead) });
+  }
 
   if (page.state === "failed") {
     if (page.error instanceof RequestError && page.error.status === 404) return <NotFound />;
@@ -103,7 +113,7 @@ function LeadScreen({ id }: { id: string }) {
       drafts={drafts}
       draft={draft}
       reload={(cause = "own") => {
-        draft({ type: "reloaded", cause });
+        if (cause === "stale") draft({ type: "reloaded-latest" });
         page.reload(true);
       }}
     />
@@ -122,8 +132,6 @@ const contactOf = (l: LeadDetail): Contact => ({
   company: l.company ?? "",
   country: l.country ?? "",
 });
-const nullable = (v: string) => (v.trim() ? v.trim() : null);
-
 function LeadView({
   data,
   assignees,
@@ -142,12 +150,15 @@ function LeadView({
   const lead = data.lead;
   const canWrite = allowed(user.role, "leads.write");
   const canConvert = allowed(user.role, "clients.write") && allowed(user.role, "proposals.draft");
-  const [stale, setStale] = useState(false);
-  const follow = drafts.follow ?? followOf(lead);
-  const setFollow = (value: Follow | null) => draft({ type: "follow", value });
+  const [saveStale, setStale] = useState(false);
+  const stale = saveStale || drafts.conflict;
+  const follow = drafts.follow?.value ?? followOf(lead);
+  const followBase = drafts.follow?.base ?? followOf(lead);
+  const setFollow = (value: Follow | null) => draft({ type: "follow", value, base: followOf(lead) });
   const editing = drafts.contact !== null;
-  const contact = drafts.contact ?? contactOf(lead);
-  const setContact = (value: Contact | null) => draft({ type: "contact", value });
+  const contact = drafts.contact?.value ?? contactOf(lead);
+  const contactBase = drafts.contact?.base ?? contactOf(lead);
+  const setContact = (value: Contact | null) => draft({ type: "contact", value, base: contactOf(lead) });
   const [busy, setBusy] = useState<"follow" | "contact" | null>(null);
   const [error, setError] = useState<{ where: "follow" | "contact"; text: string } | null>(null);
   const [emailError, setEmailError] = useState<string | null>(null);
@@ -157,8 +168,8 @@ function LeadView({
   const [replying, setReplying] = useState(false);
   const [converting, setConverting] = useState(false);
 
-  const followDirty = JSON.stringify(follow) !== JSON.stringify(followOf(lead));
-  const contactDirty = editing && JSON.stringify(contact) !== JSON.stringify(contactOf(lead));
+  const followDirty = JSON.stringify(follow) !== JSON.stringify(followBase);
+  const contactDirty = editing && JSON.stringify(contact) !== JSON.stringify(contactBase);
   const dirty = followDirty || contactDirty || note.trim() !== "";
 
   const names = new Map<string, string>(assignees.map((a) => [a.id, a.name]));
@@ -183,12 +194,8 @@ function LeadView({
 
   function saveFollow(e: FormEvent) {
     e.preventDefault();
-    const was = followOf(lead);
-    const patch: Omit<LeadPatch, "expectedUpdatedAt"> = {};
-    if (follow.ownerId !== was.ownerId) patch.ownerId = follow.ownerId || null;
-    if (follow.date !== was.date) patch.nextActionAt = follow.date ? dateToMs(follow.date) : null;
-    if (follow.note !== was.note) patch.nextActionNote = nullable(follow.note);
-    save("follow", patch);
+    // Only what differs from the draft's base is sent (re-check R1).
+    save("follow", followPatch({ base: followBase, value: follow }));
   }
 
   function saveContact(e: FormEvent) {
@@ -203,14 +210,7 @@ function LeadView({
       return;
     }
     setEmailError(null);
-    const was = contactOf(lead);
-    const patch: Omit<LeadPatch, "expectedUpdatedAt"> = {};
-    if (contact.name.trim() !== was.name) patch.name = contact.name.trim();
-    if (contact.email.trim().toLowerCase() !== was.email) patch.email = contact.email.trim();
-    if (contact.phone.trim() !== was.phone) patch.phone = nullable(contact.phone);
-    if (contact.company.trim() !== was.company) patch.company = nullable(contact.company);
-    if (contact.country !== was.country) patch.country = contact.country || null;
-    save("contact", patch);
+    save("contact", contactPatch({ base: contactBase, value: contact }));
   }
 
   async function addNote(e: FormEvent) {
@@ -269,7 +269,17 @@ function LeadView({
           ) : undefined
         }
       />
-      {stale && <StaleNotice title="Someone else changed this lead." onReload={() => reload("stale")} />}
+      {stale &&
+        (saveStale ? (
+          <StaleNotice title="Someone else changed this lead." onReload={() => reload("stale")} />
+        ) : (
+          // A reload found someone else's change to a field a draft held (owner's wording, 2026-10-25).
+          <StaleNotice
+            title="Someone else changed this lead while you were editing it."
+            body="Your unsaved changes to those fields were set aside so theirs aren't overwritten; anything you had already saved is kept, and so is your note. Reload to see the latest, then make your change again."
+            onReload={() => reload("stale")}
+          />
+        ))}
       {lead.scheduledForDeletion && lead.deleteAfter !== null && (
         <Notice tone="info">
           Scheduled for deletion on <strong>{formatDate(istDate(lead.deleteAfter))}</strong>, when its

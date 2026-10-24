@@ -700,11 +700,12 @@ a.lead-card__name:hover {
   color: var(--color-text-muted);
 }
 
-/* Long values (a note, an email address) wrap inside their cell instead of widening the page. */
+/* Long values (a note, an email address) wrap inside their cell instead of widening the page; words break only when
+   one is wider than its cell (break-word, not anywhere, so "renamed" isn't split at 375 px). */
 .act__diff {
   margin-top: var(--space-2);
   table-layout: fixed;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 .act__diff thead th:first-child {
@@ -807,8 +808,10 @@ a.lead-card__name:hover {
   font-weight: 600;
 }
 
+/* A single line break stays a line break, as the email's <br> does ("Regards," and the name on two lines). */
 .mail__p {
   margin: 0 0 var(--space-3);
+  white-space: pre-line;
 }
 
 .mail__p:last-child {

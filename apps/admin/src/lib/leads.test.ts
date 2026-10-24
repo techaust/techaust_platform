@@ -110,11 +110,22 @@ describe("reply gaps (07-I)", () => {
     expect(text.slice(gaps[0]?.start, gaps[0]?.end)).toBe("[your questions]");
   });
 
+  it("an ordinary square bracket is text, not a gap; both template gaps still are (re-check R2)", () => {
+    expect(findGaps("See point [1] and [a note].")).toEqual([]);
+    expect(hasUnfilledGap("See point [1] and [a note].")).toBe(false);
+    const text = "See point [1]. [Optional: a suggestion of where to look instead.] Then [your questions].";
+    expect(findGaps(text).map((g) => g.text)).toEqual([
+      "[Optional: a suggestion of where to look instead.]",
+      "[your questions]",
+    ]);
+    expect(hasUnfilledGap(text)).toBe(true);
+  });
+
   it("splits text into plain runs and gaps without losing a character", () => {
-    const text = "a [b] c [d]";
+    const text = "a [your questions] c [1] [your questions]";
     const parts = splitGaps(text);
     expect(parts.map((p) => p.text).join("")).toBe(text);
-    expect(parts.filter((p) => p.gap).map((p) => p.text)).toEqual(["[b]", "[d]"]);
+    expect(parts.filter((p) => p.gap).map((p) => p.text)).toEqual(["[your questions]", "[your questions]"]);
   });
 
   it("paragraphs break at blank lines, as the email does", () => {

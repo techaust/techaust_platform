@@ -4,6 +4,7 @@
 import { fromIst, istDate, parseIsoDate, toIsoDate } from "@techaust/core/dates";
 import { COUNTRY_CODES, countryName } from "@techaust/core/form-labels";
 import { LEAD_STAGES } from "@techaust/core/lead-lifecycle";
+import { REPLY_GAPS } from "@techaust/core/reply-templates";
 import { CATALOGUE } from "@techaust/db/catalogue";
 import type { LeadActivity, LeadStage, LostReason } from "../api.ts";
 import type { PillTone } from "../components/display.tsx";
@@ -155,14 +156,18 @@ export function readActivity(a: Pick<LeadActivity, "kind" | "body">): ActivityVi
 
 export type Gap = { start: number; end: number; text: string };
 
-/** Every square-bracketed gap left in the text, in order (the same pattern as the API's `hasUnfilledGap`). */
+/**
+ * Every template gap left in the text, in order. Only the exact gaps in `REPLY_GAPS` count, the list the API's
+ * `hasUnfilledGap` refuses; any other square bracket ("See point [1]") is ordinary text (re-check R2).
+ */
 export function findGaps(text: string): Gap[] {
   const out: Gap[] = [];
-  for (const m of text.matchAll(/\[[^\]]*\]/g)) {
-    const start = m.index ?? 0;
-    out.push({ start, end: start + m[0].length, text: m[0] });
+  for (const g of REPLY_GAPS) {
+    for (let at = text.indexOf(g); at !== -1; at = text.indexOf(g, at + g.length)) {
+      out.push({ start: at, end: at + g.length, text: g });
+    }
   }
-  return out;
+  return out.sort((a, b) => a.start - b.start);
 }
 
 /** The text cut into plain runs and gaps, for the preview's highlighting. */
