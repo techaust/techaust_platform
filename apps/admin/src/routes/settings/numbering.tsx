@@ -43,7 +43,14 @@ function sample(format: NumberingFormat, fyToken: string, n: number): string | n
 export function NumberingSettings({ readOnly }: { readOnly: boolean }) {
   const loaded = useLoad(() => api.settingsGroup("numbering"), "");
   const [editing, setEditing] = useState<Series | null>(null);
+  // The row button that opened the dialog: focus goes back to it when the dialog closes (the dialog unmounts, so
+  // the Modal's own return can't run).
+  const opener = useRef<HTMLButtonElement | null>(null);
   const toast = useToast();
+  const close = () => {
+    setEditing(null);
+    requestAnimationFrame(() => opener.current?.isConnected && opener.current.focus());
+  };
   if (loaded.state === "loading") return <FormSkeleton />;
   if (loaded.state === "failed") return <LoadFailed error={loaded.error} onRetry={() => loaded.reload()} />;
   const doc = loaded.data;
@@ -98,7 +105,10 @@ export function NumberingSettings({ readOnly }: { readOnly: boolean }) {
                 <button
                   type="button"
                   className="btn btn--text"
-                  onClick={() => setEditing(s)}
+                  onClick={(e) => {
+                    opener.current = e.currentTarget;
+                    setEditing(s);
+                  }}
                   aria-label={`${state(s).locked ? "View" : "Edit"} ${SERIES[s].label} numbering`}
                 >
                   {state(s).locked ? "View" : "Edit"}
@@ -112,9 +122,9 @@ export function NumberingSettings({ readOnly }: { readOnly: boolean }) {
           series={editing}
           doc={doc}
           state={state(editing)}
-          onClose={() => setEditing(null)}
+          onClose={close}
           onSaved={(changed) => {
-            setEditing(null);
+            close();
             toast(
               "success",
               changed
@@ -271,7 +281,10 @@ function SeriesForm(props: {
           <button
             type="button"
             className="btn btn--secondary"
-            onClick={() => setConfirming(null)}
+            onClick={() => {
+              setConfirming(null);
+              requestAnimationFrame(() => document.getElementById("num-next")?.focus());
+            }}
             disabled={busy}
           >
             Go back
