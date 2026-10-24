@@ -2,7 +2,7 @@
 // (docs/07-content-appendix/I-m3.2-lead-replies.md), approved by the owner on 2026-10-24: do not reword them here.
 //
 // A template only fills the reply box: the sender reads and edits it before sending. `{{name}}` is filled in by the system
-// (`fillReplyTemplate`); `[...]` is a gap the sender must fill: a reply that still holds one is refused (`hasUnfilledGap`).
+// (`fillReplyTemplate`); each `[...]` in `REPLY_GAPS` is a gap the sender must fill: a reply that still holds one is refused (`hasUnfilledGap`).
 // Pure data and string functions in core (not in packages/email) because the admin Worker must not import @techaust/email at all
 // (CPU budget guard, apps/web/test/signin-config.test.ts); the `lead.reply` email itself is rendered in packages/email.
 
@@ -60,9 +60,13 @@ export function fillReplyTemplate(t: ReplyTemplate, vars: ReplyVars): { subject:
   return { subject: fill(t.subject, vars), body: fill(t.body, vars) };
 }
 
-/** A square-bracketed placeholder left in the text (a gap the sender has not filled). */
-const GAP = /\[[^\]]*\]/;
-export const hasUnfilledGap = (...texts: string[]): boolean => texts.some((t) => GAP.test(t));
+/**
+ * The gaps the 07-I templates contain. Only these exact texts block sending: any other square bracket ("See point [1]")
+ * is ordinary text. A new template gap must be added here (a test checks every bracket in the templates is listed).
+ */
+export const REPLY_GAPS: readonly string[] = ["[your questions]", "[Optional: a suggestion of where to look instead.]"];
+export const hasUnfilledGap = (...texts: string[]): boolean =>
+  texts.some((t) => REPLY_GAPS.some((g) => t.includes(g)));
 
 export const replyTemplateById = (id: string): ReplyTemplate | undefined =>
   REPLY_TEMPLATES.find((t) => t.id === id);

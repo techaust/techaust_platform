@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   fillReplyTemplate,
   hasUnfilledGap,
+  REPLY_GAPS,
   REPLY_TEMPLATES,
   replyTemplateById,
 } from "@techaust/core/reply-templates";
@@ -59,8 +60,14 @@ describe("07-I reply templates", () => {
     if (!book) throw new Error("missing template");
     expect(hasUnfilledGap(fillReplyTemplate(book, vars).body)).toBe(false);
     expect(hasUnfilledGap("Fine", "no gap here (really)")).toBe(false);
-    expect(hasUnfilledGap("Fine", "a [x] gap")).toBe(true);
-    expect(hasUnfilledGap("[ ]")).toBe(true);
+    expect(hasUnfilledGap("Fine", "a [x] gap")).toBe(false);
+    expect(hasUnfilledGap("See point [1]", "[ ]")).toBe(false);
+    expect(hasUnfilledGap("ok", "Hi: [your questions].")).toBe(true);
+    expect(hasUnfilledGap("[Optional: a suggestion of where to look instead.]")).toBe(true);
+    // every bracket the templates contain is a listed gap
+    for (const t of REPLY_TEMPLATES)
+      for (const m of `${t.subject} ${t.body}`.match(/\[[^\]]*\]/g) ?? [])
+        expect(REPLY_GAPS, m).toContain(m);
   });
 });
 

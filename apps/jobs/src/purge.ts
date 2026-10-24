@@ -6,7 +6,8 @@
 //     `delete_after` passed: a lead that got an activity after it was enqueued has a later date and is left alone), then in ONE
 //     db.batch() writes the audit row (lead id and ref only, no personal data) and deletes the bell rows and the lead
 //     (`lead_activities` cascade, `duplicate_of` links are set to NULL by the foreign key). A redelivery finds nothing to do.
-//   LEAD_PURGE_MODE: anything but "live" is a dry run: the lead reference that would be deleted is logged, nothing is deleted.
+//   LEAD_PURGE_MODE: anything but "live" is a dry run: the cron logs one count per page (`lead.purge_dry_run_page`) and enqueues
+//   no per-lead messages; nothing is deleted. (A message already in flight still logs the reference in `purgeLead`.)
 import { LEAD_DELETABLE_SQL, LEAD_PURGE_PAGE, type LeadPurgeScanMessage, uuidv7 } from "@techaust/core";
 import { logEvent } from "./log.ts";
 
@@ -33,7 +34,9 @@ export async function enqueueDue(
   const page = results.slice(0, LEAD_PURGE_PAGE);
   const more = results.length > LEAD_PURGE_PAGE;
   const last = page.at(-1);
-  const bodies: unknown[] = page.map((r) => ({ kind: "lead.purge", leadId: r.id }));
+  const dry = purgeMode(env) === "dry_run";
+  // A dry run only counts: no per-lead message, so the same leads are not re-enqueued every day (the scan still walks the pages).
+  const bodies: unknown[] = dry ? [] : page.map((r) => ({ kind: "lead.purge", leadId: r.id }));
   if (more && last)
     bodies.push({
       kind: "lead.purge.scan",
@@ -41,8 +44,13 @@ export async function enqueueDue(
       cursor: { at: last.at, id: last.id },
     } satisfies LeadPurgeScanMessage);
   if (bodies.length) await env.LEADS_QUEUE.sendBatch(bodies.map((body) => ({ body })));
-  logEvent("lead.purge_enqueued", { queued: page.length, more, mode: purgeMode(env) });
-  return { queued: page.length, more };
+  const queued = dry ? 0 : page.length;
+  logEvent(dry ? "lead.purge_dry_run_page" : "lead.purge_enqueued", {
+    ...(dry ? { due: page.length } : { queued }),
+    more,
+    mode: dry ? "dry_run" : "live",
+  });
+  return { queued, more };
 }
 
 export const purgeMode = (env: Pick<Env, "LEAD_PURGE_MODE">): "live" | "dry_run" =>

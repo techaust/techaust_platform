@@ -6,7 +6,7 @@ import { uuidv7 } from "@techaust/core/ids";
 import { deleteAfter } from "@techaust/core/lead-lifecycle";
 import { describe, expect, it } from "vitest";
 import { SEARCH_PLAN_SQL } from "./leads.ts";
-import { call, captureQueue, countOf, one, rows, sessionFor } from "./test-helpers.ts";
+import { call, captureQueue, countOf, one, rows, sessionFor, withEnv } from "./test-helpers.ts";
 
 // biome-ignore lint/suspicious/noExplicitAny: response bodies in tests are read loosely
 type J = Record<string, any>;
@@ -429,6 +429,29 @@ describe("PATCH /leads/:id [ADM-LEAD-03]", () => {
     expect([a.status, b.status]).toEqual([200, 409]);
   });
 
+  it("an owner must be an active member who can read leads (not an accountant)", async () => {
+    const s = await sessionFor("owner");
+    const acc = await sessionFor("accountant");
+    const sales = await sessionFor("sales");
+    const lead = await addLead();
+    const v = lead.updated_at;
+    const r = await send(`/leads/${lead.id}`, "PATCH", { expectedUpdatedAt: v, ownerId: acc.id }, s.cookie);
+    expect(r.status).toBe(400);
+    const ok = await send(`/leads/${lead.id}`, "PATCH", { expectedUpdatedAt: v, ownerId: sales.id }, s.cookie);
+    expect(ok.status).toBe(200);
+  });
+
+  it("country must be an assigned ISO code: UN, EU, UK and ZZ are refused", async () => {
+    const s = await sessionFor("owner");
+    const lead = await addLead();
+    for (const country of ["UN", "EU", "UK", "ZZ"])
+      expect(
+        (await send(`/leads/${lead.id}`, "PATCH", { expectedUpdatedAt: lead.updated_at, country }, s.cookie))
+          .status,
+        country,
+      ).toBe(400);
+  });
+
   it("refuses an inactive owner, a made-up country and a bad email; an unknown lead is 404", async () => {
     const s = await sessionFor("owner");
     const lead = await addLead();
@@ -608,7 +631,7 @@ describe("replies [ADM-LEAD-06]", () => {
     const before = await countOf("audit_log", "action = 'lead.reply'");
     for (const body of [
       { subject: "Re: your enquiry", body: "Hi, before we suggest a price: [your questions]. Regards" },
-      { subject: "Re: [subject]", body: "Hello there" },
+      { subject: "Re: [your questions]", body: "Hello there" },
       {
         subject: "Re: your enquiry",
         body: "We wish you well. [Optional: a suggestion of where to look instead.] Regards",
@@ -629,6 +652,67 @@ describe("replies [ADM-LEAD-06]", () => {
       q.env,
     );
     expect(ok.status).toBe(202);
+  });
+
+  it("other square brackets are ordinary text: 'See point [1]' is sent", async () => {
+    const s = await sessionFor("sales");
+    const lead = await addLead();
+    const q = captureQueue();
+    const res = await reply(
+      lead.id,
+      { subject: "Re: your enquiry [1]", body: "See point [1] of our note, and [2]." },
+      s.cookie,
+      q.env,
+    );
+    expect(res.status).toBe(202);
+    expect(q.sent).toHaveLength(1);
+  });
+
+  it("a lead deleted between the read and the write answers 404, not 429", async () => {
+    const s = await sessionFor("sales");
+    const lead = await addLead();
+    const q = captureQueue();
+    const real = env.DB;
+    const racing = new Proxy(real, {
+      get(t, k) {
+        if (k !== "prepare") {
+          const v = Reflect.get(t, k);
+          return typeof v === "function" ? v.bind(t) : v;
+        }
+        return (sql: string) => {
+          const st = t.prepare(sql);
+          if (!sql.startsWith("SELECT ref, contact_email FROM leads")) return st;
+          return new Proxy(st, {
+            get(a, m) {
+              if (m !== "bind") return Reflect.get(a, m);
+              return (...args: unknown[]) => {
+                const bound = a.bind(...args);
+                return new Proxy(bound, {
+                  get(b, n) {
+                    if (n === "first")
+                      return async () => {
+                        const row = await b.first();
+                        await t.prepare("DELETE FROM leads WHERE id = ?1").bind(lead.id).run();
+                        return row;
+                      };
+                    const v = Reflect.get(b, n);
+                    return typeof v === "function" ? v.bind(b) : v;
+                  },
+                });
+              };
+            },
+          });
+        };
+      },
+    });
+    const res = await reply(
+      lead.id,
+      { subject: "Hi", body: "Hello" },
+      s.cookie,
+      withEnv(q.env, { DB: racing }),
+    );
+    expect(res.status).toBe(404);
+    expect(q.sent).toEqual([]);
   });
 
   it("refuses a multi-line subject, an unknown template, an empty body; an unknown lead is 404", async () => {

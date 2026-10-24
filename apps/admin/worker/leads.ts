@@ -114,9 +114,15 @@ const guardedActivity = (
     )
     .bind(id, leadId, kind, bodyText, actorId, t, ...g.params);
 
+/** Who the lead notifies and who may own one (members who may read leads), derived from the matrix. */
+const LEAD_READERS = ROLES.filter((r) => decide(r, "leads.read") !== "deny");
+
+/** An active member who can read leads (the roles are code constants, so they are safe in the SQL text). */
 const activeStaff = async (db: D1Database, id: string) =>
   (await db
-    .prepare("SELECT 1 AS x FROM staff_users WHERE id = ?1 AND status = 'active'")
+    .prepare(
+      `SELECT 1 AS x FROM staff_users WHERE id = ?1 AND status = 'active' AND role IN (${LEAD_READERS.map((r) => `'${r}'`).join(", ")})`,
+    )
     .bind(id)
     .first()) !== null;
 
@@ -413,9 +419,6 @@ const norm = (v: string | null | undefined) => {
   const t = v?.trim();
   return t ? t : null;
 };
-
-/** Who the lead notifies (members who may read leads), derived from the matrix. */
-const LEAD_READERS = ROLES.filter((r) => decide(r, "leads.read") !== "deny");
 
 export const leads = new Hono<AppEnv>()
   // ---- list and board ----
@@ -813,7 +816,11 @@ export const leads = new Hono<AppEnv>()
         ),
       ],
     });
-    if (!done) return err(c, RATE_LIMITED, 429);
+    if (!done) {
+      // Nothing matched: the member is over the limit, or the lead was deleted since the read above.
+      const still = await db.prepare("SELECT 1 AS x FROM leads WHERE id = ?1").bind(id).first();
+      return still ? err(c, RATE_LIMITED, 429) : err(c, NOT_FOUND, 404);
+    }
     // Through the email queue and `email_log` like every other email: from hello@, Reply-To hello@ (the template `lead.reply`).
     // One email per reply: its entity is this reply's timeline row, not the lead.
     queueEmail(c, {

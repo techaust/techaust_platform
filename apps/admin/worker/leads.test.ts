@@ -255,6 +255,16 @@ describe("POST /leads/:id/convert [ADM-LEAD-04]", () => {
     expect(await one("SELECT client_id FROM leads WHERE id = ?", other.id)).toEqual({ client_id: null });
   });
 
+  it("a non-country code (UN, EU, UK) is refused and no client is made", async () => {
+    const s = await sessionFor("owner");
+    const lead = await addLead();
+    for (const country of ["UN", "EU", "UK"]) {
+      const r = await convert(lead.id, { ...GOOD, gstStatus: "overseas", country }, s.cookie);
+      expect(r.res.status, country).toBe(400);
+    }
+    expect(await one("SELECT client_id FROM leads WHERE id = ?", lead.id)).toEqual({ client_id: null });
+  });
+
   it("unknown lead is 404; bad bodies are 400; the accountant is refused (403)", async () => {
     const s = await sessionFor("sales");
     expect((await convert("no-such-lead", GOOD, s.cookie)).res.status).toBe(404);
