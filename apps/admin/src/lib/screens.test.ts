@@ -310,3 +310,11 @@ describe("bank form checks and the stale guard [ADM-SET-02]", () => {
     expect(checkBlock("INR", { ...f, accountNoAgain: "1234 5678" }, stored).errors).toEqual({});
   });
 });
+
+describe("audit labels read own keys only (re-check 2, low 2)", () => {
+  it("a free-form filter value never reads an inherited property", () => {
+    expect(factText("filters", { entity: "constructor", action: "toString" })).toBe(
+      "Record: constructor, Action: toString",
+    );
+  });
+});

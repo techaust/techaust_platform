@@ -6,6 +6,10 @@ import { ROLE_LABELS } from "@techaust/core/permissions";
 import type { AuditEntry } from "../api.ts";
 
 /** Every action the API writes today, in words. Unknown ones read as their own name ("lead.created"). */
+/** A label by its own key only: a free-form value such as "constructor" never reads an inherited property. */
+const own = (map: Record<string, string>, k: string): string | undefined =>
+  Object.hasOwn(map, k) ? map[k] : undefined;
+
 export const ACTION_LABELS: Record<string, string> = {
   "auth.login": "signed in",
   "auth.logout": "signed out",
@@ -71,7 +75,7 @@ export const ENTITY_LABELS: Record<string, string> = {
   audit_log: "Audit log",
 };
 
-export const actionText = (action: string) => ACTION_LABELS[action] ?? action;
+export const actionText = (action: string) => own(ACTION_LABELS, action) ?? action;
 
 /** Who did it: a staff member's name, or what kind of actor it was (the log keeps no client names). */
 export function actorText(e: Pick<AuditEntry, "actorType" | "actorName">): string {
@@ -94,7 +98,7 @@ const SETTING_GROUPS: Record<string, string> = {
 
 /** What the entry is about, e.g. "Settings: Tax", "Staff: Asha Verma" (with names the page knows). */
 export function targetText(e: AuditEntry, names: ReadonlyMap<string, string> = new Map()): string {
-  const kind = ENTITY_LABELS[e.entityType] ?? e.entityType;
+  const kind = own(ENTITY_LABELS, e.entityType) ?? e.entityType;
   if (e.entityType === "settings" && e.entityId)
     return `Settings: ${SETTING_GROUPS[e.entityId] ?? e.entityId}`;
   if (e.entityType === "staff_user" && e.entityId)
@@ -169,13 +173,13 @@ const filterText = (k: string, x: unknown): string =>
   k === "action" && typeof x === "string"
     ? actionText(x)
     : k === "entity" && typeof x === "string"
-      ? (ENTITY_LABELS[x] ?? x)
+      ? (own(ENTITY_LABELS, x) ?? x)
       : valueText(x);
 
 /** A fact's value in words: roles and sign-in methods named, instants (UTC ms) as IST times. */
 export function factText(key: string, v: unknown): string {
-  if (key === "role" && typeof v === "string") return ROLE_WORDS[v] ?? v;
-  if (key === "via" && typeof v === "string") return VIA[v] ?? v;
+  if (key === "role" && typeof v === "string") return own(ROLE_WORDS, v) ?? v;
+  if (key === "via" && typeof v === "string") return own(VIA, v) ?? v;
   if (key === "firstPage" && typeof v === "boolean") return v ? "Yes" : "No";
   if (typeof v === "number" && v > 1_000_000_000_000 && /until|at$|At$|expires/i.test(key))
     return formatIstDateTime(v);
@@ -228,7 +232,7 @@ export function auditCsv(entries: AuditEntry[], names: ReadonlyMap<string, strin
     return [
       formatIstDateTime(e.at),
       actorText(e),
-      e.role ? (ROLE_WORDS[e.role] ?? e.role) : "",
+      e.role ? (own(ROLE_WORDS, e.role) ?? e.role) : "",
       actionText(e.action),
       targetText(e, names),
       detail,

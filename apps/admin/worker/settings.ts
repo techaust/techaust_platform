@@ -704,7 +704,7 @@ async function saveBank(c: Ctx, kind: "INR" | "USD_SWIFT") {
   const diff = auditSummary(before, after, ["accountNo"]);
   // `updatedAt` goes back so the screen sends it with its next save of this block (review re-check L-b).
   if (existing && !Object.keys(diff).length)
-    return c.json({ ok: true, changed: false, updatedAt: b.expectedUpdatedAt });
+    return c.json({ ok: true, changed: false, updatedAt: existing.updated_at });
   const t = Date.now();
   const id = existing?.id ?? uuidv7();
   const main = existing

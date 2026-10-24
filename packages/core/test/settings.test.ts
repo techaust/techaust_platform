@@ -176,6 +176,7 @@ describe("M3.1 settings fields", () => {
     const out = resolveSetting("flags", stored) as Record<string, unknown>;
     expect(Object.getPrototypeOf(out)).toBe(Object.prototype);
     expect(out.dpdpReadinessPage).toBe(true);
+    expect(out.weeklyDigest).toBe(SETTINGS_DEFAULTS.flags.weeklyDigest); // the dropped payload changes nothing
   });
 
   it("resolveSetting merges nested objects too (a field added inside a nested object)", () => {

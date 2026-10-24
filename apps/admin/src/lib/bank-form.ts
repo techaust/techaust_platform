@@ -1,6 +1,6 @@
 // The bank details form's pure parts (ADM-SET-02): the fields of one block, the same checks as the API worded for the
 // form, and the PUT body. Every body carries `expectedUpdatedAt`, the `updatedAt` the form was opened with (null for an
-// account not entered yet), so a save over someone else's newer one is refused (409 `stale_version`, review M1).
+// account not entered yet; the screen swaps in the one its own last save of the block returned), so a save over someone else's newer one is refused (409 `stale_version`, review M1).
 import { ACCOUNT_NO, cleanAccountNo, IFSC, SWIFT } from "@techaust/core/bank";
 import type { BankAccount, BankInput, BankKind } from "../api.ts";
 import { orNull } from "./settings-form.ts";

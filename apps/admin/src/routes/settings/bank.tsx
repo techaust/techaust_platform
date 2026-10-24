@@ -209,8 +209,8 @@ function BankForm(props: {
     try {
       for (const w of work) {
         current = w.k;
-        // A block that already saved in an earlier try of this form (the other block failed) isn't sent again: its
-        // `expectedUpdatedAt` is now old, so a resend would be refused as stale (review L10 keeps two PUTs).
+        // A block that already saved in an earlier try of this form (the other block failed) isn't sent again unchanged;
+        // if it was edited since, it goes with the `updatedAt` its own save returned (review L10 keeps two PUTs).
         const sent = JSON.stringify(w.body);
         if (savedRef.current[w.k] === sent) continue;
         const latest = latestRef.current[w.k];
