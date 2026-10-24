@@ -208,7 +208,7 @@ export function auditCsv(entries: AuditEntry[], names: ReadonlyMap<string, strin
     return [
       formatIstDateTime(e.at),
       actorText(e),
-      e.role ?? "",
+      e.role ? (ROLE_WORDS[e.role] ?? e.role) : "",
       actionText(e.action),
       targetText(e, names),
       detail,
