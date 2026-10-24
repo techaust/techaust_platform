@@ -47,7 +47,7 @@ export async function enqueueDue(
   const queued = dry ? 0 : page.length;
   logEvent(dry ? "lead.purge_dry_run_page" : "lead.purge_enqueued", {
     // A dry run is the report (owner, 2026-10-24): the refs it would delete, never a name or an address.
-    ...(dry ? { due: page.length, refs: page.map((r) => r.ref) } : { queued }),
+    ...(dry ? { due: page.length, refs: page.map((r) => r.ref).join(" ") } : { queued }),
     more,
     mode: dry ? "dry_run" : "live",
   });
