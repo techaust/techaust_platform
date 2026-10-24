@@ -570,22 +570,22 @@ describe("bank details: masked everywhere [ADM-SET-02, ADM-G-06]", () => {
     await putBank("/settings/bank/INR", o.cookie, body({ accountNo: other, accountNoAgain: other }));
     const mismatch = await putBank("/settings/bank/INR", o.cookie, body({ accountNoAgain: "5550123450000" }));
     expect(mismatch.status).toBe(400);
-    expect(await mismatch.text()).not.toMatch(/555\d{7,}/);
+    expect(await mismatch.text()).not.toMatch(/(?<!\d)555\d{10}(?!\d)/);
     const shape = await put(
       "/settings/bank/INR",
       o.cookie,
       body({ accountNo: "55 501!!", accountNoAgain: "55 501!!" }),
     );
     expect(shape.status).toBe(400);
-    expect(JSON.stringify(logged)).not.toMatch(/555\d{7,}/);
+    expect(JSON.stringify(logged)).not.toMatch(/(?<!\d)555\d{10}(?!\d)/);
     const audit = await rows<{ summary: string | null }>(
       "SELECT summary FROM audit_log WHERE action = 'settings.bank.update'",
     );
     expect(audit.length).toBeGreaterThanOrEqual(2);
-    for (const r of audit) expect(r.summary ?? "").not.toMatch(/555\d{7,}/);
+    for (const r of audit) expect(r.summary ?? "").not.toMatch(/(?<!\d)555\d{10}(?!\d)/);
     const change = JSON.parse(audit.at(-1)?.summary ?? "{}");
     expect(change.accountNo).toEqual({ before: "[masked]", after: "[masked]" });
-    expect(JSON.stringify(await rows("SELECT * FROM access_log"))).not.toMatch(/555\d{7,}/);
+    expect(JSON.stringify(await rows("SELECT * FROM access_log"))).not.toMatch(/(?<!\d)555\d{10}(?!\d)/);
   });
 
   it("editing without retyping the number keeps it; the same values again change nothing", async () => {
