@@ -48,3 +48,26 @@ Reviewer (Opus 5.5, high; `code-review`, `security-review` (sign-in code), `clou
 
 ### Step 3: staging reading (owner and lead, about 10 minutes)
 The owner signs in to staging admin from an InPrivate window (new-device email), makes new recovery codes (2FA-change email, `recovery_codes_regenerated`), and requests a portal sign-in link **for an address with an account**. The lead reads `cpuTimeMs` with `iso`/`n` (read-only). **Pass:** each staff send and `/magic` ≤ 7 ms, nothing else above its earlier figure.
+
+## Builder report (2026-10-24, Sonnet 5.5, medium)
+Usage: builder; model and effort to be taken from `node tools/model-audit.mjs` by the lead.
+
+**Skills loaded:** `cloudflare:workers-profiling` (method only: no hosted profile; cold steps measured locally in a fresh Node process), `cloudflare:workers-best-practices` (warm-ups stay free of `env`, `Request` and random values at module scope; no secret logged), `cloudflare:wrangler` (config untouched; no binding or type change). Not loaded as not applicable: AWS skills (the SES path is plain aws4fetch), designer skills (no screens).
+
+**Files:** `apps/jobs/src/{warm,staff-alerts}.ts`, `packages/email/src/transport.ts` (new `primeSesSigning`), `packages/auth/src/warm.ts`; tests `apps/jobs/test/{warm,m24b}.test.ts`, `packages/email/test/email.test.ts`, `packages/auth/test/warm.test.ts`, `apps/portal/worker/warm.test.ts`.
+
+**Method:** fresh Node process (V8, like workerd), after the current warm-ups, `performance.now()` per step. Timers are coarse and runs vary by a few ms, so figures are indicative only. Local workerd gives no CPU time, so nothing here is a staging figure.
+
+**Clue 1 (2FA change values): not the cause.** Values: `recovery_code_used`, `recovery_codes_regenerated`, `reset_by_owner` (anything else throws; jobs never queues one). The first render of any of them after the old warm-up costs 0.03 to 0.07 ms (0.1 ms with `role`). The old warm-up lacked two values and never passed `role` (the real alert data carries it and it picks the "Not you?" line). Fixed anyway because it is free: the warm-up renders all three with `role: "owner"` (renders 7 to 9, `warmConsumers()` count 12 to 14).
+
+**Clue 3 (cold SES path): measured, explains about 3 to 4 ms, not 11.** First send in a process, network faked: key derivation 0.4 to 0.7 ms, first `new Request` about 1.8 ms, first sign 1.3 ms, 3 to 5 ms in total (second send under 1 ms). This matches `new_device` at 4 ms on staging. The old `warmSesSigning` uses its own cache and dummy credentials, so the real key is derived in the first real send. Change: `primeSesSigning(config)` signs a made-up `{}` body with the real credentials into the shared `SIGNING_KEYS` (no request sent, nothing logged, never throws), and `processStaffAlert` calls it before `sendBatch`, only when `EMAIL_TRANSPORT === "ses"`. This moves about 2 to 3 ms from the email send into the staff.alert expansion (same isolate in the staging reading), which measured 4 ms. Tests: 5 `crypto.subtle.sign` calls and no `fetch`, then the next real send signs once; the secret is not in the logs; it never throws.
+
+**Clue 2 (portal `/magic`):** the known-address branch adds `newToken`, `tokenHash`, `new URL(request.url)`, the token insert, the queue message and `waitUntil`. JS-side first-call costs before the change: `newToken` 0.73 ms, `tokenHash` 0.18 ms, `URL` 1.7 ms; after: 0.16, 0.16, 0.02 ms (about 2.3 ms saved). `warmPortalAuth` now also runs the base64url encoder and `isToken` on a constant and parses a URL (steps 9 to 11; three count tests updated). The rest of the 5 ms to 8 ms gap (an extra D1 `INSERT` in the batch, `sendBatch` serialisation, `waitUntil`) is runtime and binding work that cannot be warmed from the global scope; not changed. I could not tell the with-account and without-account cases apart locally (no workerd CPU timer), so the clue stays a probable explanation, not a proven one.
+
+**Not explained:** the 11 ms for `staff.2fa_change` against 4 ms for `new_device` in the same situation. Nothing in `email.ts`, the template or the transport differs between them, and no local step comes near 11 ms. It may have been a one-off (garbage collection, a slow D1 write). I am not claiming the change fixes it.
+
+**Checks:** `pnpm check` exit 0; `pnpm build` exit 0; `pnpm test` exit 0 (portal 425, admin 489, jobs 61, auth 126, email 52 passed, none failed); whole-repo `pnpm lint` exit 0 (6 infos only). `pnpm install --frozen-lockfile --offline` was needed in the fresh worktree (lockfile only, no new packages). Throwaway measurement script in `.logs/cpu_m2.mjs` (git-ignored). No dev server was started.
+
+**Not verified:** any staging figure; whether the 11 ms and the 8 ms drop to 7 ms or lower (Step 3). The priming adds 2 to 3 ms to the expansion, so its staging figure (4 ms before) must be read too. If the 2FA send still exceeds 7 ms, the next candidates are the three `email_log` D1 round trips per message and the response `text()` and `JSON.parse`; merging the claim and the insert would be a design change.
+
+**Open questions:** none for the owner.
