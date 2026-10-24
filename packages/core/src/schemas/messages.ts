@@ -2,6 +2,7 @@
 // on the `leads` queue; the jobs Worker validates it again before touching the database. An `EmailMessage` goes on
 // the `email` queue (docs/05 §11.1). No raw IP address appears in any of them: only `ipHash` (FRM-02).
 import * as z from "zod";
+import { EMAIL_TEMPLATES } from "../email-templates.ts";
 import { LEAD_REF } from "../lead-ref.ts";
 import { contactForm, quoteForm } from "./forms.ts";
 
@@ -86,19 +87,7 @@ export const leadMessage = z.discriminatedUnion("kind", [
 ]);
 export type LeadMessage = z.infer<typeof leadMessage>;
 
-export const EMAIL_TEMPLATES = [
-  "lead.acknowledgement",
-  "lead.alert",
-  // M2.4b: the client portal's sign-in link and the staff security emails (ADM-MAIL-01)
-  "portal.magic_link",
-  "staff.new_device",
-  "staff.2fa_change",
-  "staff.lockout",
-  "staff.lockout_owner",
-  // M3.1: the invitation to join the admin (ADM-AUTH-07, ADM-MAIL-01; body in 07-H)
-  "staff.invite",
-] as const;
-export type EmailTemplate = (typeof EMAIL_TEMPLATES)[number];
+export { EMAIL_TEMPLATES, type EmailTemplate } from "../email-templates.ts";
 
 export const emailMessage = z.object({
   template: z.enum(EMAIL_TEMPLATES),

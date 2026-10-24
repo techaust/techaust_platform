@@ -1,7 +1,7 @@
 // The five document-terms blocks of ADM-SET-08 and where each one lives. `terms_versions` (kinds proposal | invoice | website,
 // referenced by `documents` and `acceptances`) keeps the proposal terms and the invoice footer notes; the other three are in
 // `terms_blocks`. `website` is static site content (the legal pages are built from the repository), so the API refuses it.
-import * as z from "zod";
+import * as z from "zod/mini"; // mini: the admin Worker bundle must not carry classic zod
 
 export const TERMS_BLOCKS = {
   standard_terms: { table: "terms_blocks", kind: "standard_terms", label: "Standard terms" },
@@ -21,5 +21,5 @@ export const termsTarget = (name: string) =>
 /** The text of a new version: the refund-policy link must be an https address, the rest is Markdown text. */
 export const termsBody = (id: TermsBlockId) =>
   id === "refund_link"
-    ? z.url({ protocol: /^https$/, error: "Enter a full https:// address" }).max(300)
-    : z.string().trim().min(1, { error: "Enter the text" }).max(20_000);
+    ? z.url({ protocol: /^https$/, error: "Enter a full https:// address" }).check(z.maxLength(300))
+    : z.string().check(z.trim(), z.minLength(1, { error: "Enter the text" }), z.maxLength(12_000));

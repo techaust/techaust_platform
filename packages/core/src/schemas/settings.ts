@@ -2,14 +2,17 @@
 // ADM-SET-*. VERIFY WITH CA/LEGAL: every tax and legal rule here is a default the Owner can change, never
 // settled advice. Company identity (legal name, GSTIN, address) and bank details are entered by the Owner in
 // the admin (M3.1) and are never committed: this repository is public.
-import * as z from "zod";
+//
+// Written with `zod/mini` (M3.1): the admin Worker validates these on every Settings save, and its bundle guard
+// (scripts/check-admin-bundle.mjs) keeps classic zod (~150 KB) out. The behaviour is the same as the classic version.
+import * as z from "zod/mini";
+import { EMAIL_TEMPLATES } from "../email-templates.ts";
+import { STATE_CODES, type StateCode, validateGstin } from "../gstin.ts";
 import { DEFAULT_PADDING, SERIES, type Series, validateFormat } from "../numbering.ts";
-import { gstin, stateCode } from "./domain.ts";
-import { EMAIL_TEMPLATES } from "./messages.ts";
 
 /**
  * The brand logo files a document may use (ADM-SET-01), file names under `packages/ui/brand`. A fixed list: the PDF and the
- * admin read the file by name, so a name outside it is refused. A test in packages/ui checks that every file exists.
+ * admin read the file by name, so a name outside it is refused. A test checks that every file exists.
  */
 export const BRAND_LOGOS = [
   "logo-primary-color.svg",
@@ -28,29 +31,53 @@ export const BRAND_LOGOS = [
 export const panOf = (gstinValue: string | null): string | null =>
   gstinValue && gstinValue.length === 15 ? gstinValue.slice(2, 12) : null;
 
-const minor = z.int().nonnegative();
-const bp = z.int().min(0).max(10_000);
+const nonneg = z.int().check(z.gte(0));
+const minor = nonneg;
+const bp = z.int().check(z.gte(0), z.lte(10_000));
+const intBetween = (min: number, max?: number) =>
+  z.int().check(z.gte(min), ...(max === undefined ? [] : [z.lte(max)]));
+const text = (min: number, max?: number) =>
+  z.string().check(z.minLength(min), ...(max === undefined ? [] : [z.maxLength(max)]));
+
+/** A GSTIN, normalised (trim, upper case, no spaces) and checked: shape, known state, check character (VERIFY WITH CA). */
+const gstin = z.pipe(
+  z.string({ error: "Enter the GSTIN" }),
+  z.transform((value, ctx) => {
+    const result = validateGstin(value);
+    if (!result.ok) {
+      ctx.issues.push({ code: "custom", message: result.error, input: value });
+      return z.NEVER;
+    }
+    return result.gstin;
+  }),
+);
+
+const stateCode = z.enum(Object.keys(STATE_CODES) as [StateCode, ...StateCode[]], {
+  error: "Choose a state",
+});
 
 export const companySettings = z
-  .object({
-    tradeName: z.string().min(1),
-    legalName: z.string().min(1).nullable(),
+  .strictObject({
+    tradeName: text(1),
+    legalName: z.nullable(text(1)),
     /** Checked like any GSTIN: shape, a known state code and the check character (VERIFY WITH CA). */
-    gstin: gstin.nullable(),
+    gstin: z.nullable(gstin),
     stateCode,
-    address: z.string().nullable(),
-    documentsEmail: z.email().nullable(),
-    documentsPhone: z.string().nullable(),
+    address: z.nullable(z.string()),
+    documentsEmail: z.nullable(z.email()),
+    documentsPhone: z.nullable(z.string()),
     /** ADM-SET-01: the principal place of business printed on documents (may differ from the registered address). */
-    principalPlace: z.string().max(500).nullable(),
+    principalPlace: z.nullable(text(0, 500)),
     /** ADM-SET-01 (lead decision): the logos are chosen from the generated brand files, never uploaded (uploads wait for R2, M3.4). */
     logoLight: z.enum(BRAND_LOGOS),
     logoDark: z.enum(BRAND_LOGOS),
   })
-  .refine((c) => c.gstin === null || c.gstin.startsWith(c.stateCode), {
-    error: "The GSTIN's first two digits must match the company state code",
-    path: ["gstin"],
-  });
+  .check(
+    z.refine((c) => c.gstin === null || c.gstin.startsWith(c.stateCode), {
+      error: "The GSTIN's first two digits must match the company state code",
+      path: ["gstin"],
+    }),
+  );
 
 export const taxSettings = z.object({
   /** G-1: 18 % on all services (CGST 9 + SGST 9, or IGST 18). */
@@ -59,7 +86,7 @@ export const taxSettings = z.object({
   /** G-2: SAC by catalogue category (6 digits printed). */
   sacByCategory: z.record(
     z.enum(["advise", "build", "automate", "connect", "run"]),
-    z.string().regex(/^\d{6}$/),
+    z.string().check(z.regex(/^\d{6}$/)),
   ),
   /** G-10: tax per line per head, half-up to the paisa; INR grand total to the nearest ₹1; USD not rounded. */
   rounding: z.object({
@@ -70,11 +97,8 @@ export const taxSettings = z.object({
   /** G-8: exports under LUT (0 % IGST) by default; needs a saved ARN for the FY. */
   exportMode: z.enum(["lut", "igst_paid"]),
   lut: z.object({
-    arn: z.string().nullable(),
-    fy: z
-      .string()
-      .regex(/^\d{4}$/)
-      .nullable(),
+    arn: z.nullable(z.string()),
+    fy: z.nullable(z.string().check(z.regex(/^\d{4}$/))),
   }),
   /** G-6: Proforma → automatic Tax Invoice on payment; alternatives selectable. */
   advanceMode: z.enum(["proforma", "invoice_upfront", "receipt_voucher"]),
@@ -82,48 +106,48 @@ export const taxSettings = z.object({
   fxSource: z.enum(["FBIL/RBI", "manual"]),
   /** G-14: off while AATO ≤ ₹5 Cr (assumed). */
   eInvoicing: z.boolean(),
-  reverseChargeText: z.string().min(1),
+  reverseChargeText: text(1),
   /** G-5: warn this many days after supply if no tax invoice yet (services are due within 30 days). */
-  invoiceAlertDays: z.int().min(1).max(30),
+  invoiceAlertDays: intBetween(1, 30),
   /** G-11: credit notes are blocked after this date following the FY of supply (or the annual return). */
-  creditNoteCutoff: z.object({ month: z.int().min(1).max(12), day: z.int().min(1).max(31) }),
+  creditNoteCutoff: z.object({ month: intBetween(1, 12), day: intBetween(1, 31) }),
   /** ADM-INV-06: unregistered recipients at or above this value need name, address and state. */
   b2cDetailsThresholdInrMinor: minor,
   /** G-12: export realisation warnings (FEMA). */
   realisation: z.object({
-    warnMonths: z.int().min(1),
-    escalateMonths: z.int().min(1),
-    escalateExtraDays: z.int().min(0),
+    warnMonths: intBetween(1),
+    escalateMonths: intBetween(1),
+    escalateExtraDays: intBetween(0),
   }),
   /** G-18: warn above this amount per cross-border gateway transaction. */
   crossBorderWarnInrMinor: minor,
 });
 
-const numberingFormat = z
-  .object({ template: z.string(), padding: z.int() })
-  .refine((f) => validateFormat(f).ok, {
+const numberingFormat = z.object({ template: z.string(), padding: z.int() }).check(
+  z.refine((f) => validateFormat(f).ok, {
     error: (i) => `Invalid numbering format ${JSON.stringify(i.input)}`,
-  });
+  }),
+);
 
 export const numberingSettings = z.record(
   z.enum(Object.keys(SERIES) as [Series, ...Series[]]),
   numberingFormat,
 );
 
-const scheduleStep = z.object({ label: z.string().min(1), pctBp: bp });
+const scheduleStep = z.object({ label: text(1), pctBp: bp });
 
 export const paymentTermsSettings = z
   .object({
     /** Net 7 by default (ADM-INV-09); clients can override. */
-    dueDays: z.int().min(0).max(90),
+    dueDays: intBetween(0, 90),
     /** Q-P3-6: proposals and estimates are valid for 15 days. */
-    proposalValidityDays: z.int().min(1).max(90),
+    proposalValidityDays: intBetween(1, 90),
     /** Q-P3-6: builds 40/30/30; small fixed jobs (under the thresholds) 100 % upfront; care plans monthly in advance. */
-    buildSchedule: z.array(scheduleStep).min(1),
+    buildSchedule: z.array(scheduleStep).check(z.minLength(1)),
     smallJobThreshold: z.object({ INR: minor, USD: minor }),
     /** ADM-INV-13: reminder offsets relative to the due date, sent 09:00–19:00 IST only. */
-    reminderOffsetsDays: z.array(z.int().min(-30).max(90)).min(1),
-    reminderWindowIst: z.object({ fromHour: z.int().min(0).max(23), toHour: z.int().min(1).max(24) }),
+    reminderOffsetsDays: z.array(intBetween(-30, 90)).check(z.minLength(1)),
+    reminderWindowIst: z.object({ fromHour: intBetween(0, 23), toHour: intBetween(1, 24) }),
     /** ADM-SET-05: the smallest part-payment a Razorpay link may ask for (INR minor; the full balance if lower). */
     razorpayMinPartialInrMinor: minor,
     /**
@@ -132,22 +156,22 @@ export const paymentTermsSettings = z
      */
     websiteLiabilityCapInrMinor: minor,
   })
-  .refine((t) => t.buildSchedule.reduce((a, s) => a + s.pctBp, 0) === 10_000, {
-    error: "The build schedule must add up to 100 %",
-    path: ["buildSchedule"],
-  });
+  .check(
+    z.refine((t) => t.buildSchedule.reduce((a, s) => a + s.pctBp, 0) === 10_000, {
+      error: "The build schedule must add up to 100 %",
+      path: ["buildSchedule"],
+    }),
+  );
 
-export const retentionSettings = z
-  .object({
-    /** ADM-SET-09: unconverted leads; never below the 1-year minimum (DPDP Rule 8(3)). */
-    leadsMonths: z.int().min(12),
-    emailLogMonths: z.int().min(1),
-    /** ≥ 13 months (DPDP Rule 6: 1 year; CERT-In: 180 days). */
-    securityLogMonths: z.int().min(13),
-    /** Financial records and the audit log: 10 years by default, never below 8 (s.36). */
-    financialYears: z.int().min(8),
-  })
-  .strict();
+export const retentionSettings = z.strictObject({
+  /** ADM-SET-09: unconverted leads; never below the 1-year minimum (DPDP Rule 8(3)). */
+  leadsMonths: intBetween(12),
+  emailLogMonths: intBetween(1),
+  /** ≥ 13 months (DPDP Rule 6: 1 year; CERT-In: 180 days). */
+  securityLogMonths: intBetween(13),
+  /** Financial records and the audit log: 10 years by default, never below 8 (s.36). */
+  financialYears: intBetween(8),
+});
 
 export const flagSettings = z.object({
   /** S3 DPDP Readiness page stays hidden until a legal partner exists (Q-B12). */
@@ -155,19 +179,18 @@ export const flagSettings = z.object({
   weeklyDigest: z.boolean(),
   /** ADM-SET-10: these reach the website only through the publish snapshot (M4.1); nothing here changes the site by itself. */
   blogEnabled: z.boolean(),
-  calComUrl: z
-    .url({ protocol: /^https$/ })
-    .max(300)
-    .nullable(),
+  calComUrl: z.nullable(z.url({ protocol: /^https$/ }).check(z.maxLength(300))),
   /** International format (E.164). */
-  whatsappNumber: z
-    .string()
-    .regex(/^\+[1-9][0-9]{7,14}$/, { error: "Use the international format, e.g. +919800000000" })
-    .nullable(),
-  ga4Id: z
-    .string()
-    .regex(/^G-[A-Z0-9]{6,12}$/, { error: "A Google Analytics 4 ID looks like G-XXXXXXXXXX" })
-    .nullable(),
+  whatsappNumber: z.nullable(
+    z
+      .string()
+      .check(z.regex(/^\+[1-9][0-9]{7,14}$/, { error: "Use the international format, e.g. +919800000000" })),
+  ),
+  ga4Id: z.nullable(
+    z
+      .string()
+      .check(z.regex(/^G-[A-Z0-9]{6,12}$/, { error: "A Google Analytics 4 ID looks like G-XXXXXXXXXX" })),
+  ),
 });
 
 /** Payment gateways that have a mode setting (ADM-SET-06). */
@@ -182,24 +205,20 @@ export const GATEWAY_SECRETS: Record<Gateway, readonly string[]> = {
 };
 
 /** ADM-SET-06: the mode only. Keys are Worker secrets; status (configured / missing) is computed, never stored. */
-export const gatewaySettings = z
-  .object({
-    razorpay: z.object({ mode: z.enum(GATEWAY_MODES) }).strict(),
-    stripe: z.object({ mode: z.enum(GATEWAY_MODES) }).strict(),
-    paypal: z.object({ mode: z.enum(GATEWAY_MODES) }).strict(),
-  })
-  .strict();
+export const gatewaySettings = z.strictObject({
+  razorpay: z.strictObject({ mode: z.enum(GATEWAY_MODES) }),
+  stripe: z.strictObject({ mode: z.enum(GATEWAY_MODES) }),
+  paypal: z.strictObject({ mode: z.enum(GATEWAY_MODES) }),
+});
 
 /** ADM-SET-07: sender identities, reply-to, a copy to the owner per template, and the footer line. */
-export const emailSettings = z
-  .object({
-    senders: z.object({ hello: z.email(), billing: z.email(), noReply: z.email() }).strict(),
-    replyTo: z.email(),
-    /** A blind copy to the owner, per template; a missing template means no copy. */
-    bccOwner: z.partialRecord(z.enum(EMAIL_TEMPLATES), z.boolean()),
-    footerText: z.string().min(1).max(500),
-  })
-  .strict();
+export const emailSettings = z.strictObject({
+  senders: z.strictObject({ hello: z.email(), billing: z.email(), noReply: z.email() }),
+  replyTo: z.email(),
+  /** A blind copy to the owner, per template; a missing template means no copy. */
+  bccOwner: z.partialRecord(z.enum(EMAIL_TEMPLATES), z.boolean()),
+  footerText: text(1, 500),
+});
 
 export const SETTINGS_SCHEMAS = {
   company: companySettings,
@@ -320,3 +339,20 @@ export const SETTINGS_DEFAULTS: Settings = {
     footerText: "TecHaust Technologies · Balurghat, West Bengal, India · contact@techaust.com",
   },
 };
+
+/**
+ * The admin Worker's settings API (M3.1): parses the defaults of every settings schema once, so the first Settings request
+ * does not pay for building them. Returns how many parsed (8: company, tax, numbering, payment terms, retention, flags,
+ * gateways, email).
+ */
+export function warmSettings(): number {
+  try {
+    let n = 0;
+    for (const key of Object.keys(SETTINGS_SCHEMAS) as SeededSettingKey[]) {
+      n += SETTINGS_SCHEMAS[key].safeParse(SETTINGS_DEFAULTS[key]).success ? 1 : 0;
+    }
+    return n;
+  } catch {
+    return 0; // never stop a Worker from starting
+  }
+}

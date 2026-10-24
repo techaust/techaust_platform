@@ -20,18 +20,31 @@ import {
   NOT_FOUND,
   type SideGuard,
 } from "./context.ts";
+import { type Direction, decodeCursor, keysetSql, pageOf } from "./keyset.ts";
+import { queueEmail } from "./mail.ts";
 
 const USER_EXISTS: ApiError = {
   code: "user_exists",
   message: "That email already belongs to a staff member",
 };
 const LAST_OWNER: ApiError = { code: "last_owner", message: "There must always be one active owner" };
+const NOT_DEACTIVATED: ApiError = { code: "not_deactivated", message: "That member isn't deactivated" };
 const SELF_RESET: ApiError = { code: "self_reset", message: "You can't reset your own two-step sign-in" };
 
 const inviteRequest = z.object({ email: emailAddress, role: z.enum(ROLES) });
 const roleRequest = z.object({ role: z.enum(ROLES) });
 const idParam = z.object({ id: z.string().check(z.minLength(1), z.maxLength(64)) });
 const hashParam = z.object({ tokenHash: z.string().check(z.regex(/^[0-9a-f]{64}$/)) });
+const listQuery = z.object({
+  limit: z.optional(z.enum(["25", "50"])),
+  sort: z.optional(z.enum(["name", "created"])),
+  dir: z.optional(z.enum(["asc", "desc"])),
+  role: z.optional(z.enum(ROLES)),
+  status: z.optional(z.enum(["invited", "active", "deactivated"])),
+  q: z.optional(z.string().check(z.maxLength(100))),
+  after: z.optional(z.string().check(z.maxLength(400))),
+  before: z.optional(z.string().check(z.maxLength(400))),
+});
 const param = <S extends Parameters<typeof sValidator>[1]>(schema: S) =>
   sValidator("param", schema, (r, c) => (r.success ? undefined : err(c as Ctx, BAD_REQUEST, 400)));
 
@@ -68,12 +81,63 @@ const revokeSessionsOf = (c: Ctx, userId: string, t: number) => (g: SideGuard) =
   ).bind(t, userId, ...g.params);
 
 export const users = new Hono<AppEnv>()
-  .get("/", async (c) => {
-    const { results } = await c.env.DB.prepare(
-      "SELECT id, email, name, role, status, last_login_at, created_at FROM staff_users ORDER BY created_at, id LIMIT 50",
-    ).all();
-    return c.json({ users: results });
-  })
+  // The staff list (ADM-AUTH-07, ADM-G-03): keyset pages of 25 or 50, sorted by name or created date, filtered by role and
+  // status, searched by the start of the name or the email. Every filter and both sorts have an index (migration 0014).
+  .get(
+    "/",
+    sValidator("query", listQuery, (r, c) => (r.success ? undefined : err(c as Ctx, BAD_REQUEST, 400))),
+    async (c) => {
+      const f = c.req.valid("query");
+      const limit = f.limit === "50" ? 50 : 25;
+      const byName = f.sort === "name";
+      const asc = (f.dir ?? "asc") === "asc";
+      const dir: Direction = f.before ? "before" : "after";
+      const raw = f.before ?? f.after;
+      const cur = raw === undefined ? null : decodeCursor(raw);
+      if (raw !== undefined && !cur) return err(c, BAD_REQUEST, 400);
+      const col = byName ? "name" : "created_at";
+      const where: string[] = [];
+      const bind: unknown[] = [];
+      const add = (sql: string, ...v: unknown[]) => {
+        where.push(sql.replaceAll("?#", () => `?${bind.length + 1}`));
+        bind.push(...v);
+      };
+      if (f.role) add("role = ?#", f.role);
+      if (f.status) add("status = ?#", f.status);
+      const q = f.q?.trim().toLowerCase();
+      if (q) {
+        // Email is stored lower case, so a start-of-address match is a range on its index; the name is matched with LIKE.
+        const like = `${q.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
+        const n = bind.length;
+        where.push(`((email >= ?${n + 1} AND email < ?${n + 2}) OR name LIKE ?${n + 3} ESCAPE '\\')`);
+        bind.push(q, `${q}￿`, like);
+      }
+      const order = keysetSql(col, "id", asc, dir, bind.length + 1);
+      if (cur) {
+        where.push(order.where);
+        bind.push(byName ? String(cur.k) : Number(cur.k), cur.id);
+      }
+      const sql = `SELECT id, email, name, role, status, last_login_at, created_at FROM staff_users${
+        where.length ? ` WHERE ${where.join(" AND ")}` : ""
+      } ORDER BY ${order.order} LIMIT ${limit + 1}`;
+      const { results } = await c.env.DB.prepare(sql)
+        .bind(...bind)
+        .all<{
+          id: string;
+          email: string;
+          name: string;
+          role: string;
+          status: string;
+          last_login_at: number | null;
+          created_at: number;
+        }>();
+      const page = pageOf(results, limit, dir, cur !== null, (r) => ({
+        k: byName ? r.name : r.created_at,
+        id: r.id,
+      }));
+      return c.json({ users: page.items, next: page.next, prev: page.prev });
+    },
+  )
 
   .get("/invites", async (c) => {
     const { results } = await c.env.DB.prepare(
@@ -114,10 +178,16 @@ export const users = new Hono<AppEnv>()
       ],
     });
     if (!done) return err(c, USER_EXISTS, 409);
-    return c.json(
-      { link: `${new URL(c.req.url).origin}/invite#t=${token}`, expires_at: t + INVITE_TTL_MS },
-      201,
-    );
+    const link = `${new URL(c.req.url).origin}/invite#t=${token}`;
+    // The invitation email (07-H, ADM-MAIL-01): once per invite (its entity is the token hash). The link is also returned
+    // to the owner, for when the email can't be delivered (a staging allow-list, a typo).
+    queueEmail(c, {
+      template: "staff.invite",
+      to: email,
+      data: { inviter_name: u.name, role, url: link },
+      entity: { type: "staff_invite", id: hash },
+    });
+    return c.json({ link, expires_at: t + INVITE_TTL_MS, email_queued: true }, 201);
   })
 
   .post("/invites/:tokenHash/revoke", param(hashParam), async (c) => {
@@ -205,6 +275,27 @@ export const users = new Hono<AppEnv>()
     );
     if (result instanceof Response) return result;
     return result ? c.json({ ok: true }) : whyNot(c, id);
+  })
+
+  // Reactivating a deactivated member (ADM-AUTH-07): their password and authenticator are as they were, they sign in again;
+  // their sessions ended when they were deactivated. Needs a fresh step-up like every user change.
+  .post("/:id/reactivate", param(idParam), async (c) => {
+    const { id } = c.req.valid("param");
+    const t = now();
+    const done = await mutate(c, {
+      main: c.env.DB.prepare(
+        "UPDATE staff_users SET status = 'active', updated_at = ?1 WHERE id = ?2 AND status = 'deactivated' AND totp_enabled_at IS NOT NULL",
+      ).bind(t, id),
+      action: "user.reactivate",
+      entityType: "staff_user",
+      entityId: id,
+      summary: { status: { before: "deactivated", after: "active" } },
+    });
+    if (done) return c.json({ ok: true });
+    const row = await c.env.DB.prepare("SELECT status FROM staff_users WHERE id = ?1")
+      .bind(id)
+      .first<{ status: string }>();
+    return row ? err(c, NOT_DEACTIVATED, 409) : err(c, NOT_FOUND, 404);
   })
 
   // Two-step reset (also the owner-started password reset): the person goes back to "invited" with no password,
