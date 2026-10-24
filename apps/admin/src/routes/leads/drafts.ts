@@ -6,8 +6,9 @@
 // Each contact or pipeline draft keeps the values it was started from (its base). A save sends only the fields whose
 // value differs from that base, so a field the person didn't touch is never sent back over someone else's change
 // (re-check R1). When the lead is loaded again, `rebase` moves every untouched field to the stored value; if a field
-// the person changed was also changed in the store by someone else, that draft is dropped and the page shows the
-// "Someone else changed this lead." notice. The note has no base and always survives: adding a note never conflicts.
+// the person changed was also changed in the store by someone else, only that field's edit is dropped (it shows the
+// stored value; the person's other edits stay) and the page shows the owner's "Someone else changed this lead while you
+// were editing it." notice (re-check 2). The note has no base and always survives: adding a note never conflicts.
 import type { LeadPatch } from "../../api.ts";
 import { dateToMs } from "../../lib/leads.ts";
 
@@ -23,7 +24,8 @@ export type Drafts = {
   contact: Draft<Contact> | null;
   /** The pipeline form once it has been touched; null means it shows what is stored. */
   follow: Draft<Follow> | null;
-  /** A reload found someone else's change in a field a draft held; the draft was dropped. */
+  /** A reload found someone else's change in a field a draft held; that field's edit was dropped. Cleared by the
+   *  person's own next save or cancel of that form, or by "Reload the latest". */
   conflict: boolean;
 };
 
@@ -50,8 +52,8 @@ export function changedFields<T extends Record<string, string>>(d: Draft<T>): (k
 
 /**
  * Carries a draft onto a fresh copy of what is stored. Untouched fields take the stored value; a field the person
- * changed keeps their value. Null with `conflict` when someone else changed a field the person changed too (to a
- * different value).
+ * changed keeps their value, unless someone else changed it too (to a different value): then that field alone takes
+ * the stored value and `conflict` is set. The draft itself stays (an open form stays open).
  */
 export function rebase<T extends Record<string, string>>(
   d: Draft<T> | null,
@@ -59,11 +61,10 @@ export function rebase<T extends Record<string, string>>(
 ): { draft: Draft<T> | null; conflict: boolean } {
   if (d === null) return { draft: null, conflict: false };
   const changed = changedFields(d);
-  if (changed.some((k) => now[k] !== d.base[k] && now[k] !== d.value[k]))
-    return { draft: null, conflict: true };
+  const clash = changed.filter((k) => now[k] !== d.base[k] && now[k] !== d.value[k]);
   const value = { ...now };
-  for (const k of changed) value[k] = d.value[k];
-  return { draft: { base: now, value }, conflict: false };
+  for (const k of changed) if (!clash.includes(k)) value[k] = d.value[k];
+  return { draft: { base: now, value }, conflict: clash.length > 0 };
 }
 
 const nullable = (v: string) => (v.trim() ? v.trim() : null);
@@ -93,10 +94,19 @@ export function drafts(state: Drafts, a: DraftAction): Drafts {
   switch (a.type) {
     case "note":
       return { ...state, note: a.text };
+    // Closing a form (its save went through, or the person cancelled it) also clears a conflict notice.
     case "contact":
-      return { ...state, contact: start(state.contact, a.value, a.base) };
+      return {
+        ...state,
+        contact: start(state.contact, a.value, a.base),
+        conflict: a.value === null ? false : state.conflict,
+      };
     case "follow":
-      return { ...state, follow: start(state.follow, a.value, a.base) };
+      return {
+        ...state,
+        follow: start(state.follow, a.value, a.base),
+        conflict: a.value === null ? false : state.conflict,
+      };
     case "loaded": {
       const contact = rebase(state.contact, a.contact);
       const follow = rebase(state.follow, a.follow);

@@ -124,15 +124,39 @@ describe("drafts on a lead's page (review finding 4)", () => {
     expect(s.follow && followPatch(s.follow)).toEqual({ ownerId: "member-1" });
   });
 
-  it("someone else's change to a field the draft changed drops that draft and raises the notice; the note stays", () => {
+  it("someone else's change to a field the draft changed drops that field's edit and raises the notice; the note stays", () => {
     let s = drafts(NO_DRAFTS, { type: "note", text: "Asked about the timeline" });
     s = drafts(s, { type: "contact", value: { ...contact, phone: "+91 00000 00000" }, base: contact });
     s = drafts(s, { type: "follow", value: { ...follow, note: "Send the proposal" }, base: follow });
     s = loaded(s, { ...contact, phone: "+91 99999 99999" }, follow);
-    expect(s.contact).toBeNull();
+    expect(s.contact?.value.phone).toBe("+91 99999 99999");
+    expect(s.contact && contactPatch(s.contact)).toEqual({});
     expect(s.follow?.value.note).toBe("Send the proposal");
     expect(s.conflict).toBe(true);
     expect(s.note).toBe("Asked about the timeline");
+  });
+
+  it("a conflict drops only the clashing field: the person's other edits in that form stay", () => {
+    let s = drafts(NO_DRAFTS, {
+      type: "contact",
+      value: { ...contact, phone: "+91 00000 00000", company: "New Co" },
+      base: contact,
+    });
+    s = loaded(s, { ...contact, phone: "+91 99999 99999" }, follow);
+    expect(s.conflict).toBe(true);
+    expect(s.contact && contactPatch(s.contact)).toEqual({ company: "New Co" });
+  });
+
+  it("closing the form (a save or a cancel) clears the conflict notice", () => {
+    let s = drafts(NO_DRAFTS, {
+      type: "contact",
+      value: { ...contact, phone: "+91 00000 00000" },
+      base: contact,
+    });
+    s = loaded(s, { ...contact, phone: "+91 99999 99999" }, follow);
+    expect(s.conflict).toBe(true);
+    s = drafts(s, { type: "contact", value: null, base: contact });
+    expect(s.conflict).toBe(false);
   });
 
   it("the same change made by both is no conflict", () => {

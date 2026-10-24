@@ -716,6 +716,23 @@ a.lead-card__name:hover {
   width: 1.75rem;
 }
 
+/* Phones: tighter cells and a narrower Field column give Before and After about 96 px each at 375 px, so ordinary
+   words fit whole (re-check 2); only a word wider than that (a long email address) still breaks. */
+@media (max-width: 29.99rem) {
+  .act__diff thead th:first-child {
+    width: 24%;
+  }
+
+  .act__diff thead th:nth-child(3) {
+    width: 1.25rem;
+  }
+
+  table.diff__table.act__diff th,
+  table.diff__table.act__diff td {
+    padding-inline: var(--space-1);
+  }
+}
+
 /* ---------- Dialogs: Lost reason, convert, reply ---------- */
 
 .lost-reasons {

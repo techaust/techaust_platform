@@ -86,7 +86,7 @@ function LeadScreen({ id }: { id: string }) {
   const people = useLoad(() => api.leadAssignees(), "");
   const [drafts, draft] = useReducer(draftsReducer, NO_DRAFTS);
   // Every fresh copy of the lead carries the drafts onto it before it is shown (re-check R1): untouched fields take
-  // the stored values, and a draft whose changed field someone else changed too is dropped with the stale notice.
+  // the stored values, and a field someone else changed too drops only that edit, with the stale notice.
   const [seen, setSeen] = useState<LeadPageData | null>(null);
   if (page.state === "ready" && page.data !== seen) {
     setSeen(page.data);
@@ -247,7 +247,8 @@ function LeadView({
   const converted = data.client !== null;
   return (
     <>
-      <UnsavedChangesGuard dirty={dirty && !stale} what="this lead" />
+      {/* Drafts survive a draft conflict, so they stay guarded; only a refused save (409) lifts it, the note still guarded. */}
+      <UnsavedChangesGuard dirty={note.trim() !== "" || (dirty && !saveStale)} what="this lead" />
       <PageHeader
         title={lead.name}
         crumbs={CRUMBS}
