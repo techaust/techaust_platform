@@ -26,6 +26,7 @@ import {
   one,
   rows,
   tokenOfLink,
+  withDb,
   writes,
 } from "./test-helpers.ts";
 
@@ -391,5 +392,60 @@ describe("D1 calls and the access row [NFR-2, NFR-9]", () => {
     const late = await extraContact(f.b.id, { email: "late-joiner@example.test" });
     await ask(cap, late.email);
     expect(cap.sent).toHaveLength(1);
+  });
+});
+
+describe("a link is not minted for a contact an admin changed after the read (M3.3 race)", () => {
+  /** `env` whose second D1 batch (the token writes) waits for `hook`: a change that lands between the read and the write. */
+  const hooked = (hook: () => Promise<void>): Env => {
+    let batches = 0;
+    return withDb({
+      prepare: (q: string) => env.DB.prepare(q),
+      batch: async (stmts: D1PreparedStatement[]) => {
+        if (++batches === 2) await hook();
+        return env.DB.batch(stmts);
+      },
+    } as unknown as D1Database);
+  };
+  const raced = async (change: (contactId: string) => string) => {
+    const f = await fixtures();
+    const cap = capture();
+    const c = await extraContact(f.a.id);
+    const before = await countOf("magic_link_tokens");
+    const res = await callerFor(cap.app)(
+      "/auth/magic",
+      { body: { email: c.email } },
+      hooked(async () => {
+        await env.DB.prepare(change(c.id)).bind(c.id).run();
+      }),
+    );
+    return { res, cap, c, minted: (await countOf("magic_link_tokens")) - before };
+  };
+
+  it("an email changed in between: no token, nothing sent, the same answer", async () => {
+    const r = await raced(() => "UPDATE contacts SET email = 'moved.on@example.test' WHERE id = ?");
+    expect(r.res.status).toBe(200);
+    expect(await bodyOf(r.res)).toEqual({ ok: true });
+    expect(r.minted).toBe(0);
+    expect(r.cap.sent).toEqual([]);
+  });
+
+  it("portal access turned off in between, or the contact anonymised: no token, nothing sent", async () => {
+    for (const change of [
+      "UPDATE contacts SET portal_access = 0 WHERE id = ?",
+      "UPDATE contacts SET anonymised_at = 1 WHERE id = ?",
+    ]) {
+      const r = await raced(() => change);
+      expect(r.res.status, change).toBe(200);
+      expect(await bodyOf(r.res), change).toEqual({ ok: true });
+      expect(r.minted, change).toBe(0);
+      expect(r.cap.sent, change).toEqual([]);
+    }
+  });
+
+  it("with no change in between the link is minted and sent as before", async () => {
+    const r = await raced(() => "UPDATE contacts SET name = name WHERE id = ?");
+    expect(r.minted).toBe(1);
+    expect(r.cap.sent).toHaveLength(1);
   });
 });

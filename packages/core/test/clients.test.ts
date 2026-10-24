@@ -3,8 +3,9 @@ import {
   ANONYMISED_CLIENT,
   ANONYMISED_CONTACT,
   anonymisedEmail,
-  CLIENT_BILLING_KEYS,
-  CLIENT_FINANCE_FIELDS,
+  CLIENT_BILLING_FIELDS,
+  CLIENT_FINANCE_READ_FIELDS,
+  CLIENT_TYPE_LOCKED_MESSAGE,
   clientTaxCheck,
   ERASE_REASONS,
   INVOICE_FAMILY,
@@ -117,11 +118,21 @@ describe("clientTaxCheck [ADM-CLI-01, owner Q1 2026-10-25]", () => {
 });
 
 describe("client constants", () => {
-  it("the finance fields are unique and the billing keys add only the country", () => {
-    expect(new Set(CLIENT_FINANCE_FIELDS).size).toBe(CLIENT_FINANCE_FIELDS.length);
+  it("the billing and finance-read lists are unique; only currencyLocked of the read list is not a billing field", () => {
+    expect(new Set(CLIENT_BILLING_FIELDS).size).toBe(CLIENT_BILLING_FIELDS.length);
+    expect(new Set(CLIENT_FINANCE_READ_FIELDS).size).toBe(CLIENT_FINANCE_READ_FIELDS.length);
     expect(
-      CLIENT_BILLING_KEYS.filter((k) => !(CLIENT_FINANCE_FIELDS as readonly string[]).includes(k)),
-    ).toEqual(["country"]);
+      CLIENT_FINANCE_READ_FIELDS.filter((k) => !(CLIENT_BILLING_FIELDS as readonly string[]).includes(k)),
+    ).toEqual(["currencyLocked"]);
+    // The tax identity is not on the hidden list: the PRD hides the finance tabs, not who the client is for tax.
+    for (const k of ["gstStatus", "gstin", "stateCode", "billingAddress", "currency", "country"])
+      expect(CLIENT_FINANCE_READ_FIELDS as readonly string[]).not.toContain(k);
+  });
+
+  it("the type-lock text is the owner-pending sentence", () => {
+    expect(CLIENT_TYPE_LOCKED_MESSAGE).toBe(
+      "The client type can't change once this client has an issued document.",
+    );
   });
 
   it("the invoice family never holds the quotes, and the SQL list quotes each type", () => {

@@ -267,7 +267,10 @@ describe("POST /contacts/:id/export [ADM-CLI-05]", () => {
     expect((await part("acceptances")).map((r) => r.document_id)).toEqual([propA]);
     expect((await part("documents")).map((r) => r.id)).toEqual([docA]);
     expect((await part("email_log")).map((r) => r.template)).toEqual(["portal.link"]);
-    expect((await part("audit_log")).map((r) => r.actor_id)).toEqual([a.id]);
+    // The person's own actions; staff rows about them (this request's earlier exports) come with the audit part too.
+    expect(
+      (await part("audit_log")).filter((r) => r.actor_type === "contact").map((r) => r.actor_id),
+    ).toEqual([a.id]);
     expect((await part("access_log")).map((r) => r.actor_id)).toEqual([a.id]);
     // An individual client's contact gets every issued document of the client.
     const ind = await mkClient({ type: "individual" });
@@ -333,6 +336,59 @@ describe("POST /contacts/:id/export [ADM-CLI-05]", () => {
     expect((await exportPart(o.cookie, "nope")).status).toBe(404);
     expect((await exportPart(o.cookie, c.id, { clientId: client })).status).toBe(400);
     expect(await countOf("audit_log", "action = 'contact.export' AND entity_id = ?", client)).toBe(3);
+  });
+
+  it("the audit part holds what staff did about this person, shows an address only for the person's own actions, and is bounded by the entity index", async () => {
+    const o = await owner();
+    const client = await mkClient();
+    const c = await mkContact(client);
+    const other = await mkContact(client);
+    await insert("audit_log", {
+      id: uuidv7(),
+      actor_type: "contact",
+      actor_id: c.id,
+      action: "portal.login",
+      entity_type: "contact",
+      entity_id: c.id,
+      ip: "203.0.113.4",
+      user_agent: "ContactAgent/1",
+    });
+    const staffHeaders = { "CF-Connecting-IP": "203.0.113.77", "User-Agent": "StaffAgent/1" };
+    for (const who of [c, other]) {
+      const res = await call(`/contacts/${who.id}`, {
+        method: "PATCH",
+        cookie: o.cookie,
+        headers: staffHeaders,
+        body: { expectedUpdatedAt: await updatedAtOf(o.cookie, client, who.id), title: "Buyer" },
+      });
+      expect(res.status).toBe(200);
+    }
+    const items = (await json(await exportPart(o.cookie, c.id, { part: "audit_log" }))).items as J[];
+    const staffRows = items.filter((r) => r.actor_type === "staff");
+    expect(items.some((r) => r.action === "portal.login")).toBe(true);
+    expect(staffRows.map((r) => r.action)).toEqual(["contact.update"]); // this person's, not the other contact's
+    expect(JSON.parse(staffRows[0]?.summary).contactId).toBe(c.id);
+    expect(staffRows.every((r) => r.ip === null && r.user_agent === null)).toBe(true);
+    expect(items.find((r) => r.action === "portal.login")).toMatchObject({
+      ip: "203.0.113.4",
+      user_agent: "ContactAgent/1",
+    });
+    expect(JSON.stringify(items)).not.toMatch(/203\.0\.113\.77|StaffAgent/);
+    // The export's own audit row about this person is there too, still without the staff address.
+    const again = (await json(await exportPart(o.cookie, c.id, { part: "audit_log" }))).items as J[];
+    expect(again.some((r) => r.action === "contact.export" && r.ip === null)).toBe(true);
+    // The third arm is read through the entity index (entity type, entity id), never a scan.
+    const detail = (
+      await rows<{ detail: string }>(
+        `EXPLAIN QUERY PLAN ${EXPORT_PARTS.audit_log?.sql(false)}`,
+        "c",
+        "e@example.test",
+        "k",
+      )
+    )
+      .map((r) => r.detail)
+      .join("\n");
+    expect(detail).toContain("audit_log_entity");
   });
 
   it("every part reads through an index, never a scan of its table", async () => {

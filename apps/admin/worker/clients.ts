@@ -6,16 +6,17 @@
 // address. Client and contact audit rows are all written on entity `client` (the contact's id is in the summary), so a client's
 // activity still shows them after a contact was erased.
 //
-// Finance boundary: `CLIENT_FINANCE_FIELDS` (core) is the one list. `clientView` drops them for a role without
-// `clients.finance.read` (Sales); only `PATCH /clients/:id/billing` (`clients.finance.write`) changes them after creation, and
-// `PATCH /clients/:id` refuses them with a 400.
+// Finance boundary: `CLIENT_FINANCE_READ_FIELDS` (core) is hidden from a role without `clients.finance.read` (Sales): `clientView` drops
+// them. Every `CLIENT_BILLING_FIELDS` field is changed after creation only by `PATCH /clients/:id/billing` (`clients.finance.write`), and
+// `PATCH /clients/:id` refuses them with a 400. The tax identity (GST status, GSTIN, state, billing address, currency) is readable.
 import { emailAddress } from "@techaust/auth";
 import { FINANCE_AUDIT_ACTIONS } from "@techaust/core/audit";
 import {
   ANONYMISED_CLIENT,
   ANONYMISED_CONTACT,
   anonymisedEmail,
-  type ClientFinanceField,
+  CLIENT_TYPE_LOCKED_MESSAGE,
+  type ClientBillingField,
   clientTaxCheck,
   ERASE_REASONS,
   INVOICE_FAMILY_SQL,
@@ -63,6 +64,7 @@ const CURRENCY_LOCKED: ApiError = {
   code: "currency_locked",
   message: "The currency can't change once this client has an invoice.",
 };
+const TYPE_LOCKED: ApiError = { code: "type_locked", message: CLIENT_TYPE_LOCKED_MESSAGE };
 const GSTIN_IN_USE: ApiError = { code: "gstin_in_use", message: "A client with that GSTIN already exists" };
 const EMAIL_IN_USE: ApiError = {
   code: "email_in_use",
@@ -136,7 +138,7 @@ const canFinance = (role: Role) => decide(role, "clients.finance.read") !== "den
 
 /**
  * The ONE mapper from a client row to a response. The finance fields are added only for a role with `clients.finance.read`;
- * a test proves that none of `CLIENT_FINANCE_FIELDS` is in what Sales gets, and that the list, this mapper, the billing
+ * a test proves that none of `CLIENT_FINANCE_READ_FIELDS` is in what Sales gets, and that the lists, this mapper, the billing
  * schema and the table's columns agree.
  */
 export function clientView(r: ClientRow, role: Role) {
@@ -147,6 +149,12 @@ export function clientView(r: ClientRow, role: Role) {
     displayName: r.display_name,
     type: r.type,
     country: r.country,
+    // The tax identity is who the client is for tax: every role that reads clients reads it.
+    gstStatus: r.gst_status,
+    gstin: r.gstin,
+    stateCode: r.state_code,
+    billingAddress: json(r.billing_address),
+    currency: r.currency,
     serviceAddress: json(r.service_address),
     tags: json(r.tags),
     notes: r.notes,
@@ -155,12 +163,7 @@ export function clientView(r: ClientRow, role: Role) {
     updatedAt: r.updated_at,
   };
   if (!canFinance(role)) return view;
-  const finance: Record<ClientFinanceField, unknown> = {
-    gstStatus: r.gst_status,
-    gstin: r.gstin,
-    stateCode: r.state_code,
-    billingAddress: json(r.billing_address),
-    currency: r.currency,
+  const finance: Record<Exclude<ClientBillingField, keyof typeof view>, unknown> = {
     paymentTermsDays: r.payment_terms_days,
     reminderPolicy: json(r.reminder_policy),
     careAutoIssue: Boolean(r.care_auto_issue),
@@ -211,7 +214,7 @@ export type NewClient = {
 
 /**
  * The client insert shared by `POST /clients` and the lead conversion: the next free code taken in the same statement, written
- * only `WHERE <cond>` (the caller's guard; its first placeholder is ?11). A code race is caught by the unique index and retried.
+ * only `WHERE <cond>` (the caller's guard; its first placeholder is ?13). A code race is caught by the unique index and retried.
  */
 export const insertClientStmt = (
   db: D1Database,
@@ -414,8 +417,6 @@ export const CLIENT_SEARCH_SQL = (at: number) =>
 
 const listClients = async (c: Ctx, f: z.infer<typeof listQuery>) => {
   const role = actor(c).role;
-  // A filter on a finance field would tell Sales what they may not read.
-  if (!canFinance(role) && (f.gstStatus || f.currency)) return err(c, BAD_REQUEST, 400);
   const limit = limitOf(f.limit);
   const dir: Direction = f.before ? "before" : "after";
   const raw = f.before ?? f.after;
@@ -447,6 +448,8 @@ const listClients = async (c: Ctx, f: z.infer<typeof listQuery>) => {
 
 /** The unlock check: an invoice-family document of any status. */
 const HAS_INVOICE_SQL = `EXISTS (SELECT 1 FROM documents WHERE client_id = c.id AND type IN (${INVOICE_FAMILY_SQL}))`;
+const NO_FROZEN_DOC_SQL =
+  "NOT EXISTS (SELECT 1 FROM documents WHERE client_id = ?1 AND frozen_at IS NOT NULL)";
 const NO_INVOICE_SQL = `NOT EXISTS (SELECT 1 FROM documents WHERE client_id = ?1 AND type IN (${INVOICE_FAMILY_SQL}))`;
 
 const clientExists = async (c: Ctx, id: string) =>
@@ -541,7 +544,7 @@ export const clients = new Hono<AppEnv>()
       db
         .prepare(`SELECT ${CONTACT_COLS} FROM contacts WHERE client_id = ?1 ORDER BY email, id LIMIT 101`)
         .bind(id),
-      db.prepare("SELECT id, ref FROM leads WHERE client_id = ?1 LIMIT 1").bind(id),
+      db.prepare("SELECT id, ref FROM leads WHERE client_id = ?1 ORDER BY created_at, id LIMIT 1").bind(id),
       db.prepare(`SELECT ${HAS_INVOICE_SQL} AS x FROM clients c WHERE c.id = ?1`).bind(id),
     ]);
     const row = client?.results[0] as ClientRow | undefined;
@@ -584,10 +587,13 @@ export const clients = new Hono<AppEnv>()
     );
     if (!changes.length) return c.json({ ok: true, changed: false, updatedAt: row.updated_at });
     const t = Date.now();
+    // The type decides which erase rules apply, so once an issued (frozen) document exists it is fixed: the condition is part
+    // of the write, like the currency lock (an individual client cannot be turned into a business to make a contact erasable).
+    const typeChanges = changes.some(([name]) => name === "type");
     const done = await mutate(c, {
       main: db
         .prepare(
-          `UPDATE clients SET ${changes.map(([, col], i) => `${col} = ?${i + 4}`).join(", ")}, updated_at = ?3 WHERE id = ?1 AND updated_at = ?2`,
+          `UPDATE clients SET ${changes.map(([, col], i) => `${col} = ?${i + 4}`).join(", ")}, updated_at = ?3 WHERE id = ?1 AND updated_at = ?2${typeChanges ? ` AND ${NO_FROZEN_DOC_SQL}` : ""}`,
         )
         .bind(id, f.expectedUpdatedAt, t, ...changes.map((ch) => ch[2])),
       action: "client.update",
@@ -595,7 +601,16 @@ export const clients = new Hono<AppEnv>()
       entityId: id,
       summary: { clientCode: row.code, changed: changes.map(([name]) => name) },
     });
-    if (!done) return err(c, STALE_VERSION, 409);
+    if (!done) {
+      const again = await db
+        .prepare("SELECT updated_at FROM clients WHERE id = ?1")
+        .bind(id)
+        .first<{ updated_at: number }>();
+      if (!again) return err(c, NOT_FOUND, 404);
+      return again.updated_at !== f.expectedUpdatedAt || !typeChanges
+        ? err(c, STALE_VERSION, 409)
+        : err(c, TYPE_LOCKED, 409);
+    }
     return c.json({ ok: true, changed: true, updatedAt: t });
   })
 
@@ -632,7 +647,7 @@ export const clients = new Hono<AppEnv>()
 
     const j = (v: unknown) => (v === null || v === undefined ? null : JSON.stringify(v));
     const cur = row as unknown as Record<string, unknown>;
-    const wanted: [ClientFinanceField | "country", unknown][] = [
+    const wanted: [ClientBillingField, unknown][] = [
       ["country", f.country],
       ["gstStatus", f.gstStatus],
       ["gstin", tax.gstin],
@@ -645,7 +660,7 @@ export const clients = new Hono<AppEnv>()
       ["attachPdf", f.attachPdf === undefined ? undefined : f.attachPdf ? 1 : 0],
     ];
     const changes = wanted.filter(
-      (w): w is [ClientFinanceField | "country", string | number | null] =>
+      (w): w is [ClientBillingField, string | number | null] =>
         w[1] !== undefined && w[1] !== cur[snake(w[0])],
     );
     if (!changes.length)
@@ -866,7 +881,7 @@ export const EXPORT_PARTS: Record<string, { sql: (cur: boolean) => string; time?
   },
   audit_log: {
     sql: (cur) =>
-      `SELECT * FROM (SELECT id, at, actor_type, actor_id, action, entity_type, entity_id, summary, ip, user_agent FROM audit_log WHERE actor_id = ?1 UNION SELECT id, at, actor_type, actor_id, action, entity_type, entity_id, summary, ip, user_agent FROM audit_log WHERE entity_type = 'contact' AND entity_id = ?1)${cur ? " WHERE (at, id) > (?4, ?5)" : ""} ORDER BY at, id LIMIT 51`,
+      `SELECT id, at, actor_type, actor_id, action, entity_type, entity_id, summary, CASE WHEN actor_id = ?1 THEN ip END AS ip, CASE WHEN actor_id = ?1 THEN user_agent END AS user_agent FROM (SELECT id, at, actor_type, actor_id, action, entity_type, entity_id, summary, ip, user_agent FROM audit_log WHERE actor_id = ?1 UNION SELECT id, at, actor_type, actor_id, action, entity_type, entity_id, summary, ip, user_agent FROM audit_log WHERE entity_type = 'contact' AND entity_id = ?1 UNION SELECT id, at, actor_type, actor_id, action, entity_type, entity_id, summary, ip, user_agent FROM audit_log WHERE entity_type = 'client' AND entity_id = ?3 AND json_extract(summary, '$.contactId') = ?1)${cur ? " WHERE (at, id) > (?4, ?5)" : ""} ORDER BY at, id LIMIT 51`,
     time: true,
   },
   access_log: {

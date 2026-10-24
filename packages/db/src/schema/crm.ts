@@ -160,6 +160,9 @@ export const clients = sqliteTable(
     // M3.3: the list (newest first) and the name prefix search (no case).
     index("clients_created").on(t.createdAt, t.id),
     index("clients_name_nocase").on(sql`${t.displayName} collate nocase`),
+    // M3.3 review: the list filters by GST status or currency, newest first, on a keyset.
+    index("clients_gst_status_created").on(t.gstStatus, t.createdAt, t.id),
+    index("clients_currency_created").on(t.currency, t.createdAt, t.id),
     uniqueIndex("clients_gstin").on(t.gstin).where(sql`${t.gstin} is not null`),
     check("clients_type", oneOf(t.type, CLIENT_TYPES)),
     check("clients_gst_status", oneOf(t.gstStatus, GST_STATUSES)),

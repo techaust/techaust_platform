@@ -1,6 +1,6 @@
 // M3.3 database rules: the client and contact triggers, the new indexes and column, and the contact-access statements.
 import { uuidv7 } from "@techaust/core";
-import { CLIENT_FINANCE_FIELDS, INVOICE_FAMILY, QUOTE_DOCUMENT_TYPES } from "@techaust/core/clients";
+import { CLIENT_BILLING_FIELDS, INVOICE_FAMILY, QUOTE_DOCUMENT_TYPES } from "@techaust/core/clients";
 import { getTableColumns } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import {
@@ -64,7 +64,10 @@ describe("0018/0019: what M3.3 added", () => {
     const contactId = await addContact(c, "a@example.com");
     expect(await first("SELECT legal_hold FROM contacts WHERE id = ?", contactId)).toEqual({ legal_hold: 0 });
     for (const [table, names] of [
-      ["clients", ["clients_created", "clients_name_nocase"]],
+      [
+        "clients",
+        ["clients_created", "clients_name_nocase", "clients_gst_status_created", "clients_currency_created"],
+      ],
       ["contacts", ["contacts_one_primary"]],
       ["email_log", ["email_log_to"]],
     ] as const) {
@@ -94,9 +97,9 @@ describe("0018/0019: what M3.3 added", () => {
     expect([...INVOICE_FAMILY, ...QUOTE_DOCUMENT_TYPES].sort()).toEqual([...DOCUMENT_TYPES].sort());
   });
 
-  it("every finance field is a column of the clients table", () => {
+  it("every billing field is a column of the clients table", () => {
     const columns = Object.keys(getTableColumns(clients));
-    for (const f of CLIENT_FINANCE_FIELDS) expect(columns, f).toContain(f);
+    for (const f of CLIENT_BILLING_FIELDS) expect(columns, f).toContain(f);
   });
 });
 

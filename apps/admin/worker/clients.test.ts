@@ -2,7 +2,7 @@
 // contacts, the list, the search and the activity. Erase, export and portal access are in clients-data.test.ts.
 import { env } from "cloudflare:workers";
 import { FINANCE_AUDIT_ACTIONS } from "@techaust/core/audit";
-import { CLIENT_BILLING_KEYS, CLIENT_FINANCE_FIELDS } from "@techaust/core/clients";
+import { CLIENT_BILLING_FIELDS, CLIENT_FINANCE_READ_FIELDS } from "@techaust/core/clients";
 import { gstinCheckChar } from "@techaust/core/gstin";
 import { uuidv7 } from "@techaust/core/ids";
 import { describe, expect, it } from "vitest";
@@ -49,33 +49,48 @@ async function richClient(gstin = newGstin()) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-describe("the finance boundary: Sales never gets finance data [ADM-CLI-03]", () => {
-  it("the list of finance fields, the billing schema, the mapper and the table columns agree", async () => {
+describe("the finance boundary: Sales never gets the finance tab's data [ADM-CLI-03]", () => {
+  it("the billing list, the finance-read list, the billing schema, the mapper and the table columns agree", async () => {
     const billing = Object.keys(patchBilling.shape).filter((k) => k !== "expectedUpdatedAt");
-    expect([...billing].sort()).toEqual([...CLIENT_BILLING_KEYS].sort());
-    // The mapper: the owner's view holds every finance field, Sales's none.
+    expect([...billing].sort()).toEqual([...CLIENT_BILLING_FIELDS].sort());
+    // The mapper: the owner's view holds every field of both lists that a client row carries; Sales's view holds the billing
+    // fields except the finance-read ones (the PRD hides the finance tab, not the tax identity).
     const id = await richClient();
     const row = (await one<ClientRow>(`SELECT ${CLIENT_COLS} FROM clients WHERE id = ?`, id)) as ClientRow;
     const ownerKeys = Object.keys(clientView(row, "owner"));
     const salesKeys = Object.keys(clientView(row, "sales"));
-    for (const f of CLIENT_FINANCE_FIELDS) {
+    for (const f of CLIENT_BILLING_FIELDS) expect(ownerKeys, f).toContain(f);
+    for (const f of CLIENT_FINANCE_READ_FIELDS.filter((k) => k !== "currencyLocked")) {
       expect(ownerKeys, f).toContain(f);
       expect(salesKeys, f).not.toContain(f);
     }
+    for (const f of CLIENT_BILLING_FIELDS.filter(
+      (k) => !(CLIENT_FINANCE_READ_FIELDS as readonly string[]).includes(k),
+    ))
+      expect(salesKeys, f).toContain(f);
     expect(Object.keys(clientView(row, "accountant"))).toEqual(ownerKeys);
-    // The columns: every finance field is a column of the table (camel case to snake case).
+    // The page: currencyLocked is the finance-read field the row mapper does not carry.
+    const o = await owner();
+    const s = await sessionFor("sales");
+    expect(
+      Object.keys(await json(await call(`/clients/${id}`, { cookie: o.cookie }))).includes("currencyLocked"),
+    ).toBe(true);
+    expect(
+      Object.keys(await json(await call(`/clients/${id}`, { cookie: s.cookie }))).includes("currencyLocked"),
+    ).toBe(false);
+    // The columns: every billing field is a column of the table (camel case to snake case).
     const cols = (await rows<{ name: string }>("SELECT name FROM pragma_table_info('clients')")).map(
       (c) => c.name,
     );
-    for (const f of CLIENT_FINANCE_FIELDS)
+    for (const f of CLIENT_BILLING_FIELDS)
       expect(cols, f).toContain(f.replace(/[A-Z]/g, (m) => `_${m.toLowerCase()}`));
   });
 
-  it("every response Sales gets (page, list, contacts, activity, search, create, patch) has no finance field", async () => {
+  it("every response Sales gets (page, list, contacts, activity, search, create, patch) has no finance-read field", async () => {
     const gstin = newGstin();
     const id = await richClient(gstin);
     const s = await sessionFor("sales");
-    const banned = new Set<string>([...CLIENT_FINANCE_FIELDS, "currencyLocked"]);
+    const banned = new Set<string>(CLIENT_FINANCE_READ_FIELDS);
     const seen: string[] = [];
     const scan = async (res: Response) => {
       expect(res.status, await res.clone().text()).toBeLessThan(300);
@@ -99,26 +114,23 @@ describe("the finance boundary: Sales never gets finance data [ADM-CLI-03]", () 
         },
       }),
     );
-    const page = await json(await call(`/clients/${id}`, { cookie: s.cookie }));
+    const fresh = await json(await call(`/clients/${id}`, { cookie: s.cookie }));
     await scan(
       await call(`/clients/${id}`, {
         method: "PATCH",
         cookie: s.cookie,
-        body: { expectedUpdatedAt: page.client.updatedAt, notes: "Prefers a call" },
+        body: { expectedUpdatedAt: fresh.client.updatedAt, notes: "Prefers a call" },
       }),
     );
     expect(seen.length).toBeGreaterThan(20);
     expect(seen.filter((k) => banned.has(k))).toEqual([]);
-    // The values are not hiding under other names either: the GSTIN and the currency of this client appear nowhere.
-    const text = JSON.stringify(
-      await Promise.all(
-        [`/clients/${id}`, "/clients?limit=50", `/clients/${id}/activity`, "/search?q=Test"].map(async (p) =>
-          json(await call(p, { cookie: s.cookie })),
-        ),
-      ),
-    );
-    expect(text).not.toContain(gstin);
-    expect(text).not.toContain("1 Test Road");
+    // What Sales may read is there: the tax identity and the address. The finance tab's facts are nowhere, under any name.
+    const page = await json(await call(`/clients/${id}`, { cookie: s.cookie }));
+    expect(page.client).toMatchObject({ gstStatus: "registered", gstin, currency: "USD", stateCode: "27" });
+    expect(page.client.billingAddress).toMatchObject({ city: "Pune" });
+    const text = JSON.stringify(page);
+    expect(text).not.toContain("offsetsDays");
+    expect(text).not.toContain("paymentTermsDays");
   });
 
   it("the finance routes, the statement and the billing write answer Sales with 403 (the API, not just the screen)", async () => {
@@ -140,11 +152,11 @@ describe("the finance boundary: Sales never gets finance data [ADM-CLI-03]", () 
     expect((await one("SELECT payment_terms_days AS d FROM clients WHERE id = ?", id))?.d).toBeNull();
   });
 
-  it("Sales cannot filter the list by a finance field, and cannot slip one into PATCH /clients/:id (400)", async () => {
+  it("Sales may filter the list by GST status and currency (tax identity), and cannot slip a billing field into PATCH /clients/:id (400)", async () => {
     const id = await mkClient();
     const s = await sessionFor("sales");
-    expect((await call("/clients?gstStatus=registered", { cookie: s.cookie })).status).toBe(400);
-    expect((await call("/clients?currency=USD", { cookie: s.cookie })).status).toBe(400);
+    expect((await call("/clients?gstStatus=registered", { cookie: s.cookie })).status).toBe(200);
+    expect((await call("/clients?currency=USD", { cookie: s.cookie })).status).toBe(200);
     const page = await json(await call(`/clients/${id}`, { cookie: s.cookie }));
     for (const key of [
       "currency",
@@ -598,6 +610,17 @@ describe("clients: create, edit, the page, the list, the search [ADM-CLI-01, ADM
       `SELECT ${CLIENT_COLS} FROM clients c ORDER BY c.created_at DESC, c.id DESC LIMIT 26`,
     );
     expect(bare).toContain("clients_created");
+    for (const [filter, index] of [
+      ["c.gst_status", "clients_gst_status_created"],
+      ["c.currency", "clients_currency_created"],
+    ] as const)
+      expect(
+        await plan(
+          `SELECT ${CLIENT_COLS} FROM clients c WHERE ${filter} = ?1 ORDER BY c.created_at DESC, c.id DESC LIMIT 26`,
+          "registered",
+        ),
+        filter,
+      ).toContain(index);
     const clients = await plan(CLIENTS_SQL, "A", "B", "a", "b");
     expect(clients).toContain("clients_code");
     expect(clients).toContain("clients_name_nocase");
@@ -859,5 +882,82 @@ describe("contacts: create, edit, one primary, consent [ADM-CLI-02]", () => {
     expect(second.contacts.map((c: J) => c.email)).toEqual(["page25@example.test", "page26@example.test"]);
     expect(second.next).toBeNull();
     expect((await call(`/clients/${id}/contacts?limit=7`, { cookie: o.cookie })).status).toBe(400);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+describe("the client type is locked by an issued document [ADM-CLI-05; analyst early check]", () => {
+  const setType = (cookie: string, id: string, expected: number, type: string, e: Env = env) =>
+    call(`/clients/${id}`, { method: "PATCH", cookie, body: { expectedUpdatedAt: expected, type } }, e);
+  const updatedAt = async (cookie: string, id: string) =>
+    (await json(await call(`/clients/${id}`, { cookie }))).client.updatedAt as number;
+
+  it("an individual client with an issued document cannot be flipped to business to make its contact erasable", async () => {
+    const o = await owner();
+    const id = await mkClient({ type: "individual" });
+    const person = await mkContact(id);
+    await mkDoc(id, "tax_invoice", { frozen: true });
+    const res = await setType(o.cookie, id, await updatedAt(o.cookie, id), "business");
+    expect(res.status).toBe(409);
+    expect(await bodyOf(res)).toEqual({
+      error: {
+        code: "type_locked",
+        message: "The client type can't change once this client has an issued document.",
+      },
+    });
+    expect((await one("SELECT type FROM clients WHERE id = ?", id))?.type).toBe("individual");
+    expect(await countOf("audit_log", "entity_id = ? AND action = 'client.update'", id)).toBe(0);
+    // ...and the person is still not erasable.
+    const erase = await call(`/contacts/${person.id}/erase`, {
+      cookie: o.cookie,
+      body: { mode: "erase", reason: "requested" },
+    });
+    expect(erase.status).toBe(409);
+    expect(await code(erase)).toBe("on_issued_document");
+  });
+
+  it("other fields still change with an issued document; a draft or an unissued proposal does not lock the type", async () => {
+    const o = await owner();
+    const locked = await mkClient({ type: "business" });
+    await mkDoc(locked, "tax_invoice", { frozen: true });
+    const rename = await call(`/clients/${locked}`, {
+      method: "PATCH",
+      cookie: o.cookie,
+      body: { expectedUpdatedAt: await updatedAt(o.cookie, locked), displayName: "Renamed Locked" },
+    });
+    expect(rename.status).toBe(200);
+    // Setting the same type is no change, so it is not refused.
+    expect(
+      await json(await setType(o.cookie, locked, await updatedAt(o.cookie, locked), "business")),
+    ).toMatchObject({
+      changed: false,
+    });
+
+    const free = await mkClient({ type: "business" });
+    await mkDoc(free, "tax_invoice"); // a draft
+    await mkDoc(free, "proposal");
+    expect((await setType(o.cookie, free, await updatedAt(o.cookie, free), "individual")).status).toBe(200);
+    expect((await one("SELECT type FROM clients WHERE id = ?", free))?.type).toBe("individual");
+  });
+
+  it("a stale page is still 409 stale_version; a document issued after the read but before the write locks the type", async () => {
+    const o = await owner();
+    const id = await mkClient({ type: "individual" });
+    const stale = await setType(o.cookie, id, 1, "business");
+    expect(stale.status).toBe(409);
+    expect(await code(stale)).toBe("stale_version");
+    const raced = await setType(
+      o.cookie,
+      id,
+      await updatedAt(o.cookie, id),
+      "business",
+      beforeBatch(async () => {
+        await mkDoc(id, "tax_invoice", { frozen: true });
+      }),
+    );
+    expect(raced.status).toBe(409);
+    expect(await code(raced)).toBe("type_locked");
+    expect((await one("SELECT type FROM clients WHERE id = ?", id))?.type).toBe("individual");
+    expect(await countOf("audit_log", "entity_id = ? AND action = 'client.update'", id)).toBe(0);
   });
 });

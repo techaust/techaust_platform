@@ -4,11 +4,13 @@ import { isCountryCode } from "./countries.ts";
 import { isStateCode, STATE_CODES, type StateCode, validateGstin } from "./gstin.ts";
 
 /**
- * The finance fields of a client: the ONE list. A role without `clients.finance.read` never gets them in a response (the
- * mapper `clientView` drops them), and only the billing route (`clients.finance.write`) changes them after creation. A test
- * ties this list to the billing request schema, the response mapper and the `clients` table columns.
+ * The billing fields of a client: tax identity, address and billing terms, plus the country (it decides what a GST status may
+ * be). They are written after creation ONLY through the billing route (`clients.finance.write`). The PRD hides the finance
+ * tabs, not the tax identity (lead call, 2026-10-25), so every role that reads clients reads most of these. A test ties this
+ * list to the billing request schema and the `clients` table columns.
  */
-export const CLIENT_FINANCE_FIELDS = [
+export const CLIENT_BILLING_FIELDS = [
+  "country",
   "gstStatus",
   "gstin",
   "stateCode",
@@ -19,10 +21,25 @@ export const CLIENT_FINANCE_FIELDS = [
   "careAutoIssue",
   "attachPdf",
 ] as const;
-export type ClientFinanceField = (typeof CLIENT_FINANCE_FIELDS)[number];
+export type ClientBillingField = (typeof CLIENT_BILLING_FIELDS)[number];
 
-/** What the billing route accepts: the finance fields plus the country (it decides what a GST status may be). */
-export const CLIENT_BILLING_KEYS = [...CLIENT_FINANCE_FIELDS, "country"] as const;
+/**
+ * The fields only a role with `clients.finance.read` is shown (the finance tab's facts): payment terms and reminder settings,
+ * the invoicing switches, and whether the currency is locked. `clientView` drops them for Sales; a test scans every response
+ * Sales gets for these keys.
+ */
+export const CLIENT_FINANCE_READ_FIELDS = [
+  "paymentTermsDays",
+  "reminderPolicy",
+  "careAutoIssue",
+  "attachPdf",
+  "currencyLocked",
+] as const;
+
+/** The 409 text when a client's type is locked by an issued (frozen) document. */
+// pending owner approval (07-J)
+export const CLIENT_TYPE_LOCKED_MESSAGE =
+  "The client type can't change once this client has an issued document.";
 
 /**
  * The document types that fix a client's currency once one exists (any status): everything except the quotes. A proposal or

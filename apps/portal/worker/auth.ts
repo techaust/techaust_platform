@@ -142,10 +142,14 @@ export const authRoutes = new Hono<AppEnv>()
     for (const contact of eligible) {
       const token = newToken();
       const hash = await tokenHash(token);
+      // Conditional on the contact STILL having this address and portal access (an admin change between the read above and this
+      // write mints nothing: no link for an old address). Nothing in the answer tells the caller.
       stmts.push(
         db
-          .prepare("INSERT INTO magic_link_tokens (token_hash, contact_id, expires_at) VALUES (?1, ?2, ?3)")
-          .bind(hash, contact.id, t + MAGIC_TTL_MS),
+          .prepare(
+            "INSERT INTO magic_link_tokens (token_hash, contact_id, expires_at) SELECT ?1, id, ?3 FROM contacts WHERE id = ?2 AND email = ?4 AND portal_access = 1 AND anonymised_at IS NULL",
+          )
+          .bind(hash, contact.id, t + MAGIC_TTL_MS, email),
       );
       links.push({
         to: email,
@@ -158,8 +162,10 @@ export const authRoutes = new Hono<AppEnv>()
     // The access row of a link request: a sign-in event with no actor yet. Written for known and unknown alike.
     stmts.push(accessStmt(db, accessEntry(c, 200, null)));
     c.set("accessDone", true);
-    await db.batch(stmts);
-    if (links.length) {
+    const written = await db.batch(stmts);
+    // Only the links whose token row was written are sent (the last result is the access row).
+    const sendable = links.filter((_, i) => written[i]?.meta.changes === 1);
+    if (sendable.length) {
       // Delivery rides in the execution context: the response never waits for it (a known email must not answer later
       // than an unknown one), and trouble with it never changes the answer. Class name only in the log.
       const sender = c.var.sender ?? queueSender(c.env);
@@ -167,7 +173,7 @@ export const authRoutes = new Hono<AppEnv>()
       c.executionCtx.waitUntil(
         (async () => {
           try {
-            await sender.send(links);
+            await sender.send(sendable);
           } catch (e) {
             console.error(
               JSON.stringify({

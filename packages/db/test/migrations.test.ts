@@ -39,6 +39,7 @@ describe("migrations apply cleanly to a fresh D1", () => {
       "0017_drop_unused_lead_indexes.sql",
       "0018_clients_contacts_indexes.sql",
       "0019_client_triggers.sql",
+      "0020_clients_filter_indexes.sql",
     ]);
   });
 
