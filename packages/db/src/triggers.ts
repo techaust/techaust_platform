@@ -158,6 +158,17 @@ export function clientTriggerStatements(): string[] {
   ];
 }
 
+/**
+ * Client type lock (M3.3 review, ADM-CLI-01; a separate set, the earlier ones have no IF NOT EXISTS): a client's type decides
+ * which erase rules apply, so it cannot change once any issued (frozen) document exists. The API's conditional write is the first
+ * line, this is the backstop. VERIFY WITH CA/LEGAL.
+ */
+export function clientTypeLockStatements(): string[] {
+  return [
+    `CREATE TRIGGER \`clients_type_locked\` BEFORE UPDATE OF type ON \`clients\` WHEN NEW.type IS NOT OLD.type AND EXISTS (SELECT 1 FROM documents WHERE client_id = OLD.id AND frozen_at IS NOT NULL) BEGIN ${abort("client type is locked: the client has an issued document")} END;`,
+  ];
+}
+
 /** The only statuses a document can be issued from (docs/05 §5.4 change 14: drafts only; owner decision 2026-10-07).
  * An approval (`approvals`, kind `issue`) is a record next to the draft, not a document status. Shared by the guard
  * trigger below and by the reference issue batch in test/helpers.ts, so the two cannot drift apart again. */
@@ -192,6 +203,10 @@ export const TRIGGER_SETS = {
   client_triggers: {
     what: "client currency lock, anonymised-contact freeze and state-code check (M3.3)",
     statements: clientTriggerStatements,
+  },
+  client_type_lock: {
+    what: "client type lock once a document is issued (M3.3 review)",
+    statements: clientTypeLockStatements,
   },
   issue_guard: {
     what: "issue guard narrowed to drafts, plus the issue post-condition (docs/05 §5.4)",

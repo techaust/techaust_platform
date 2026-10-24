@@ -77,6 +77,8 @@ export const leads = sqliteTable(
     duplicateOf: text("duplicate_of").references((): AnySQLiteColumn => leads.id, { onDelete: "set null" }),
     /** M3.2: the draft proposal made when the lead was converted. A lazy reference: documents imports this file. */
     proposalId: text("proposal_id").references((): AnySQLiteColumn => documents.id, { onDelete: "set null" }),
+    /** M3.3 review: the contact this lead became on conversion, so erase and anonymise still find the lead after the contact's email changes. Added with ALTER TABLE only (`leads` is referenced). */
+    contactId: text("contact_id").references((): AnySQLiteColumn => contacts.id, { onDelete: "set null" }),
     lastActivityAt: integer("last_activity_at"),
     deleteAfter: integer("delete_after"),
     legalHold: flag("legal_hold"),
@@ -85,6 +87,7 @@ export const leads = sqliteTable(
   },
   (t) => [
     uniqueIndex("leads_ref").on(t.ref),
+    index("leads_contact").on(t.contactId),
     index("leads_owner_next_action").on(t.ownerId, t.nextActionAt),
     index("leads_email").on(t.contactEmail),
     index("leads_client").on(t.clientId),

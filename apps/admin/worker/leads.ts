@@ -904,10 +904,10 @@ export const leads = new Hono<AppEnv>()
         .bind(uuidv7(), proposalId, title, scopeBody),
       db
         .prepare(
-          `UPDATE leads SET client_id = ?2, proposal_id = ?3, ${touchLeadSql("?4")}, updated_at = ?4
+          `UPDATE leads SET client_id = ?2, proposal_id = ?3, contact_id = (SELECT id FROM contacts WHERE id = ?5), ${touchLeadSql("?4")}, updated_at = ?4
            WHERE id = ?1 AND client_id IS NULL AND EXISTS (SELECT 1 FROM clients WHERE id = ?2) AND EXISTS (SELECT 1 FROM documents WHERE id = ?3)`,
         )
-        .bind(id, clientId, proposalId, t),
+        .bind(id, clientId, proposalId, t, contactId),
     ];
 
     let done = false;

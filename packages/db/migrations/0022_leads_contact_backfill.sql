@@ -1,0 +1,2 @@
+-- Hand-written (M3.3 review): link each converted lead to the contact made from it. A lead converted to a client whose contact still has the lead's address (case aside) gets that contact's id; the rest stay NULL and keep matching by address. Data only, no table is rebuilt.
+UPDATE `leads` SET `contact_id` = (SELECT c.`id` FROM `contacts` c WHERE c.`client_id` = `leads`.`client_id` AND c.`email` = lower(`leads`.`contact_email`) ORDER BY c.`id` LIMIT 1) WHERE `client_id` IS NOT NULL AND `contact_id` IS NULL;

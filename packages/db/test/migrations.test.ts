@@ -40,6 +40,9 @@ describe("migrations apply cleanly to a fresh D1", () => {
       "0018_clients_contacts_indexes.sql",
       "0019_client_triggers.sql",
       "0020_clients_filter_indexes.sql",
+      "0021_leads_contact_id.sql",
+      "0022_leads_contact_backfill.sql",
+      "0023_client_type_lock.sql",
     ]);
   });
 

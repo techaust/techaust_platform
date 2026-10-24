@@ -356,6 +356,10 @@ export type ClientPage = {
   client: ClientView;
   contacts: ContactView[];
   moreContacts: boolean;
+  /** Where "Show more" continues: pass it as `after` to GET /clients/:id/contacts. Null when there is no more. */
+  contactsNext: string | null;
+  /** Contacts that are not anonymised (the list keeps the tombstones). */
+  liveContactCount: number;
   sourceLead: { id: string; ref: string } | null;
   /** Only for a finance role: an invoice exists, so the currency can't change. */
   currencyLocked?: boolean;

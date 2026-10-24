@@ -537,12 +537,15 @@ export const clients = new Hono<AppEnv>()
     const { id } = c.req.valid("param");
     const role = actor(c).role;
     const db = c.env.DB;
-    const [client, contacts, lead, locked] = await db.batch<
-      ClientRow & ContactRow & { ref: string; x: number }
+    const [client, contacts, live, lead, locked] = await db.batch<
+      ClientRow & ContactRow & { ref: string; x: number; n: number }
     >([
       db.prepare(`SELECT ${CLIENT_COLS} FROM clients WHERE id = ?1`).bind(id),
       db
         .prepare(`SELECT ${CONTACT_COLS} FROM contacts WHERE client_id = ?1 ORDER BY email, id LIMIT 101`)
+        .bind(id),
+      db
+        .prepare("SELECT count(*) AS n FROM contacts WHERE client_id = ?1 AND anonymised_at IS NULL")
         .bind(id),
       db.prepare("SELECT id, ref FROM leads WHERE client_id = ?1 ORDER BY created_at, id LIMIT 1").bind(id),
       db.prepare(`SELECT ${HAS_INVOICE_SQL} AS x FROM clients c WHERE c.id = ?1`).bind(id),
@@ -550,10 +553,16 @@ export const clients = new Hono<AppEnv>()
     const row = client?.results[0] as ClientRow | undefined;
     if (!row) return err(c, NOT_FOUND, 404);
     const list = (contacts?.results ?? []) as ContactRow[];
+    const shown = list.slice(0, 100);
+    const last = shown[shown.length - 1];
     return c.json({
       client: clientView(row, role),
-      contacts: list.slice(0, 100).map(contactView),
+      contacts: shown.map(contactView),
       moreContacts: list.length > 100,
+      // Where "Show more" continues: the same cursor as GET /clients/:id/contacts?after=.
+      contactsNext: list.length > 100 && last ? encodeCursor({ k: last.email, id: last.id }) : null,
+      // Contacts that are not anonymised (the list above keeps the tombstones).
+      liveContactCount: (live?.results[0] as { n: number } | undefined)?.n ?? 0,
       sourceLead: (lead?.results[0] as { id: string; ref: string } | undefined) ?? null,
       // The lock is a finance fact: only a role that reads finance is told.
       ...(canFinance(role)
@@ -590,17 +599,24 @@ export const clients = new Hono<AppEnv>()
     // The type decides which erase rules apply, so once an issued (frozen) document exists it is fixed: the condition is part
     // of the write, like the currency lock (an individual client cannot be turned into a business to make a contact erasable).
     const typeChanges = changes.some(([name]) => name === "type");
-    const done = await mutate(c, {
-      main: db
-        .prepare(
-          `UPDATE clients SET ${changes.map(([, col], i) => `${col} = ?${i + 4}`).join(", ")}, updated_at = ?3 WHERE id = ?1 AND updated_at = ?2${typeChanges ? ` AND ${NO_FROZEN_DOC_SQL}` : ""}`,
-        )
-        .bind(id, f.expectedUpdatedAt, t, ...changes.map((ch) => ch[2])),
-      action: "client.update",
-      entityType: "client",
-      entityId: id,
-      summary: { clientCode: row.code, changed: changes.map(([name]) => name) },
-    });
+    let done: boolean;
+    try {
+      done = await mutate(c, {
+        main: db
+          .prepare(
+            `UPDATE clients SET ${changes.map(([, col], i) => `${col} = ?${i + 4}`).join(", ")}, updated_at = ?3 WHERE id = ?1 AND updated_at = ?2${typeChanges ? ` AND ${NO_FROZEN_DOC_SQL}` : ""}`,
+          )
+          .bind(id, f.expectedUpdatedAt, t, ...changes.map((ch) => ch[2])),
+        action: "client.update",
+        entityType: "client",
+        entityId: id,
+        summary: { clientCode: row.code, changed: changes.map(([name]) => name) },
+      });
+    } catch (e) {
+      // The trigger `clients_type_locked` is the backstop behind the condition above.
+      if (refusedWith(e, /client type is locked/)) return err(c, TYPE_LOCKED, 409);
+      throw e;
+    }
     if (!done) {
       const again = await db
         .prepare("SELECT updated_at FROM clients WHERE id = ?1")
@@ -642,16 +658,23 @@ export const clients = new Hono<AppEnv>()
               ? null
               : row.state_code,
     };
-    const tax = clientTaxCheck(next);
-    if (!tax.ok) return taxError(c, tax);
+    // The tax rules run only when the save touches the tax identity: a terms-only save on an old client with no state still works.
+    const taxTouched =
+      f.country !== undefined ||
+      f.gstStatus !== undefined ||
+      f.gstin !== undefined ||
+      f.stateCode !== undefined;
+    const tax = taxTouched ? clientTaxCheck(next) : null;
+    if (tax && !tax.ok) return taxError(c, tax);
+    const warnings = tax?.ok ? taxWarnings(tax) : [];
 
     const j = (v: unknown) => (v === null || v === undefined ? null : JSON.stringify(v));
     const cur = row as unknown as Record<string, unknown>;
     const wanted: [ClientBillingField, unknown][] = [
       ["country", f.country],
       ["gstStatus", f.gstStatus],
-      ["gstin", tax.gstin],
-      ["stateCode", tax.stateCode],
+      ["gstin", tax?.ok ? tax.gstin : undefined],
+      ["stateCode", tax?.ok ? tax.stateCode : undefined],
       ["billingAddress", f.billingAddress === undefined ? undefined : j(f.billingAddress)],
       ["currency", f.currency],
       ["paymentTermsDays", f.paymentTermsDays],
@@ -663,8 +686,7 @@ export const clients = new Hono<AppEnv>()
       (w): w is [ClientBillingField, string | number | null] =>
         w[1] !== undefined && w[1] !== cur[snake(w[0])],
     );
-    if (!changes.length)
-      return c.json({ ok: true, changed: false, updatedAt: row.updated_at, warnings: taxWarnings(tax) });
+    if (!changes.length) return c.json({ ok: true, changed: false, updatedAt: row.updated_at, warnings });
 
     const t = Date.now();
     const currencyChanges = changes.some(([k]) => k === "currency");
@@ -693,11 +715,11 @@ export const clients = new Hono<AppEnv>()
         .bind(id)
         .first<{ updated_at: number }>();
       if (!again) return err(c, NOT_FOUND, 404);
-      return again.updated_at !== f.expectedUpdatedAt
+      return again.updated_at !== f.expectedUpdatedAt || !currencyChanges
         ? err(c, STALE_VERSION, 409)
         : err(c, CURRENCY_LOCKED, 409);
     }
-    return c.json({ ok: true, changed: true, updatedAt: t, warnings: taxWarnings(tax) });
+    return c.json({ ok: true, changed: true, updatedAt: t, warnings });
   })
 
   // ---- the finance tabs and the statement arrive with invoicing (M5/M6); the boundary is in place now ----
@@ -851,11 +873,11 @@ const UNIQUE_PRIMARY = /contacts\.client_id|contacts_one_primary/;
 export const EXPORT_PARTS: Record<string, { sql: (cur: boolean) => string; time?: true }> = {
   leads: {
     sql: (cur) =>
-      `SELECT * FROM leads WHERE contact_email = ?2 AND (client_id IS NULL OR client_id = ?3)${cur ? " AND id > ?5" : ""} ORDER BY id LIMIT 51`,
+      `SELECT * FROM leads WHERE (contact_id = ?1 OR (contact_email = ?2 AND (client_id IS NULL OR client_id = ?3)))${cur ? " AND id > ?5" : ""} ORDER BY id LIMIT 51`,
   },
   lead_activities: {
     sql: (cur) =>
-      `SELECT id, lead_id, kind, body, actor_id, created_at FROM lead_activities WHERE lead_id IN (SELECT id FROM leads WHERE contact_email = ?2 AND (client_id IS NULL OR client_id = ?3))${cur ? " AND id > ?5" : ""} ORDER BY id LIMIT 51`,
+      `SELECT id, lead_id, kind, body, actor_id, created_at FROM lead_activities WHERE lead_id IN (SELECT id FROM leads WHERE contact_id = ?1 OR (contact_email = ?2 AND (client_id IS NULL OR client_id = ?3)))${cur ? " AND id > ?5" : ""} ORDER BY id LIMIT 51`,
   },
   // No token hash: a session is described by its times and where it came from.
   sessions: {
@@ -876,7 +898,7 @@ export const EXPORT_PARTS: Record<string, { sql: (cur: boolean) => string; time?
   },
   email_log: {
     sql: (cur) =>
-      `SELECT id, to_email, template, entity_type, entity_id, status, created_at AS at FROM email_log WHERE to_email = ?2${cur ? " AND (created_at, id) > (?4, ?5)" : ""} ORDER BY created_at, id LIMIT 51`,
+      `SELECT id, to_email, template, entity_type, entity_id, status, created_at AS at FROM email_log WHERE to_email = ?2 AND (entity_type IS NULL OR entity_type NOT IN ('lead', 'document') OR (entity_type = 'lead' AND EXISTS (SELECT 1 FROM leads x WHERE x.id = email_log.entity_id AND (x.client_id IS NULL OR x.client_id = ?3))) OR (entity_type = 'document' AND EXISTS (SELECT 1 FROM documents x WHERE x.id = email_log.entity_id AND (x.client_id IS NULL OR x.client_id = ?3))))${cur ? " AND (created_at, id) > (?4, ?5)" : ""} ORDER BY created_at, id LIMIT 51`,
     time: true,
   },
   audit_log: {
@@ -891,11 +913,11 @@ export const EXPORT_PARTS: Record<string, { sql: (cur: boolean) => string; time?
   },
 };
 
-/** The statements that anonymise (or delete) a person's leads: found by the contact's email, at this client or at none. */
+/** The statements that anonymise (or delete) a person's leads: the lead this contact was made from (`leads.contact_id`, which survives an email change), or by the contact's current email at this client or at none. */
 const MATCHED_LEADS =
-  "SELECT l.id FROM leads l WHERE l.contact_email = (SELECT email FROM contacts WHERE id = ?1) AND (l.client_id IS NULL OR l.client_id = (SELECT client_id FROM contacts WHERE id = ?1))";
+  "SELECT l.id FROM leads l WHERE l.contact_id = ?1 OR (l.contact_email = (SELECT email FROM contacts WHERE id = ?1) AND (l.client_id IS NULL OR l.client_id = (SELECT client_id FROM contacts WHERE id = ?1)))";
 const HELD_LEAD_SQL =
-  "EXISTS (SELECT 1 FROM leads l WHERE l.legal_hold = 1 AND l.contact_email = c.email AND (l.client_id IS NULL OR l.client_id = c.client_id))";
+  "EXISTS (SELECT 1 FROM leads l WHERE l.legal_hold = 1 AND (l.contact_id = c.id OR (l.contact_email = c.email AND (l.client_id IS NULL OR l.client_id = c.client_id))))";
 
 export const contacts = new Hono<AppEnv>()
   .patch("/:id", param(idParam), body(patchContact), async (c) => {
