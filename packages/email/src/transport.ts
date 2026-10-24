@@ -46,11 +46,14 @@ const THROTTLE_CODES = [
  */
 const SIGNING_KEYS = new Map<string, ArrayBuffer>();
 
-/** The SES v2 `SendEmail` call (JSON, SigV4 for service `ses`). */
-export function sesTransport(config: SesConfig): Transport {
+/**
+ * The one SES client set-up, shared by `sesTransport` and `primeSesSigning` so both use the same cache key (secret, day,
+ * region, service) and the prime keeps helping after an edit.
+ */
+function sesClient(config: SesConfig): AwsClient {
   // one entry per day, region and secret: cap the map at 8 entries, clearing it when it grows past that
   if (SIGNING_KEYS.size > 8) SIGNING_KEYS.clear();
-  const client = new AwsClient({
+  return new AwsClient({
     accessKeyId: config.accessKeyId,
     secretAccessKey: config.secretAccessKey,
     service: "ses",
@@ -58,7 +61,15 @@ export function sesTransport(config: SesConfig): Transport {
     retries: 0, // the queue retries (one unit of work per message)
     cache: SIGNING_KEYS,
   });
-  const url = `https://email.${config.region}.amazonaws.com/v2/email/outbound-emails`;
+}
+
+const sesUrl = (region: string) => `https://email.${region}.amazonaws.com/v2/email/outbound-emails`;
+
+/** The SES v2 `SendEmail` call (JSON, SigV4 for service `ses`). */
+export function sesTransport(config: SesConfig): Transport {
+  // one entry per day, region and secret: cap the map at 8 entries, clearing it when it grows past that
+  const client = sesClient(config);
+  const url = sesUrl(config.region);
   return {
     async send(input) {
       let body: string;
@@ -119,23 +130,11 @@ export function sesTransport(config: SesConfig): Transport {
  */
 export async function primeSesSigning(config: SesConfig): Promise<boolean> {
   try {
-    if (SIGNING_KEYS.size > 8) SIGNING_KEYS.clear();
-    const client = new AwsClient({
-      accessKeyId: config.accessKeyId,
-      secretAccessKey: config.secretAccessKey,
-      service: "ses",
-      region: config.region,
-      retries: 0,
-      cache: SIGNING_KEYS,
+    const signed = await sesClient(config).sign(sesUrl(config.region), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
     });
-    const signed = await client.sign(
-      `https://email.${config.region}.amazonaws.com/v2/email/outbound-emails`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: "{}",
-      },
-    );
     return signed.headers.has("authorization");
   } catch {
     return false;

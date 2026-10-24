@@ -151,8 +151,9 @@ export async function processStaffAlert(env: Env, body: unknown): Promise<StaffA
     logEvent("staff_alert.nobody", { action });
     return "none";
   }
-  // The emails follow in this isolate, and the first one pays for the SES signing key: derive it now, while this unit of work
-  // has room (CPU tuning 4). Only when mail really goes to SES; nothing is sent.
+  // The emails usually follow in this isolate, and the first one pays for the SES signing key: derive it now, while this unit
+  // of work has room (CPU tuning 4). Not guaranteed: with `max_concurrency` above 1 a send can land in another isolate and
+  // stay cold. Only when mail really goes to SES; nothing is sent.
   if (env.EMAIL_TRANSPORT === "ses")
     await primeSesSigning({
       accessKeyId: env.SES_ACCESS_KEY_ID,

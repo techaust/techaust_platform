@@ -161,6 +161,19 @@ describe("a new-device alert [ADM-AUTH-09]", () => {
     }
   });
 
+  it("with the log transport it never primes: no signing during the expansion", async () => {
+    const m = await member();
+    const auditId = await alertRow(m.id);
+    const sign = vi.spyOn(crypto.subtle, "sign");
+    try {
+      const { result } = await expand(auditId);
+      expect(result).toBe("queued");
+      expect(sign).not.toHaveBeenCalled();
+    } finally {
+      sign.mockRestore();
+    }
+  });
+
   it("an invited member is told, a deactivated one is not", async () => {
     const invited = await member({ status: "invited" });
     expect((await expand(await alertRow(invited.id))).mails).toHaveLength(1);

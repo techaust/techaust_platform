@@ -1,9 +1,11 @@
 # CPU tuning 4: the 2FA-change send and portal `/magic`
 
 ```
-Status: brief written; builder next
+Status: reviewed (APPROVE), lead fixes in; PR next, then the owner's staging reading
 Tier: B (Workers, queues; docs/14 §2)
-Usage: (filled in after each run)
+Usage: builder claude-sonnet-5-5 / medium (workers-profiling, workers-best-practices, wrangler), 11 min, 133k tokens ·
+  reviewer claude-opus-5-5 / high (code-review, security-review, workers-best-practices, workers-profiling), 8 min, 96k tokens:
+  weekly 40 → 40 %, 5-h 0 → 3 % (model audit: all runs within the plan)
 ```
 
 ## Before the build (2026-10-24)
@@ -47,7 +49,7 @@ Usage: (filled in after each run)
 Reviewer (Opus 5.5, high; `code-review`, `security-review` (sign-in code), `cloudflare:workers-best-practices`, `cloudflare:workers-profiling`), fixes, re-check at medium, PR with auto-merge and Auto-fix, staging deploy.
 
 ### Step 3: staging reading (owner and lead, about 10 minutes)
-The owner signs in to staging admin from an InPrivate window (new-device email), makes new recovery codes (2FA-change email, `recovery_codes_regenerated`), and requests a portal sign-in link **for an address with an account**. The lead reads `cpuTimeMs` with `iso`/`n` (read-only). **Pass:** each staff send and `/magic` ≤ 7 ms, nothing else above its earlier figure.
+The owner signs in to staging admin from an InPrivate window (new-device email), makes new recovery codes (2FA-change email, `recovery_codes_regenerated`), and requests a portal sign-in link **for an address with an account**. The lead reads `cpuTimeMs` with `iso`/`n` (read-only), **including each `staff.alert` expansion** (it now carries the SES prime). **Pass (restated after review M1):** each `staff.alert` expansion ≤ 7 ms, each staff send ≤ 7 ms and `/magic` ≤ 7 ms; everything else no higher than before. If the 2FA send is still over 7 ms, that is the brief's design-change stop: the lead brings the owner the options (next candidates: the three `email_log` D1 round trips, the response `text()`/`JSON.parse`). If an expansion goes over 7 ms, the cheaper prime (key derivation only, no `Request`) is the fallback.
 
 ## Builder report (2026-10-24, Sonnet 5.5, medium)
 Usage: builder; model and effort to be taken from `node tools/model-audit.mjs` by the lead.
@@ -71,3 +73,21 @@ Usage: builder; model and effort to be taken from `node tools/model-audit.mjs` b
 **Not verified:** any staging figure; whether the 11 ms and the 8 ms drop to 7 ms or lower (Step 3). The priming adds 2 to 3 ms to the expansion, so its staging figure (4 ms before) must be read too. If the 2FA send still exceeds 7 ms, the next candidates are the three `email_log` D1 round trips per message and the response `text()` and `JSON.parse`; merging the claim and the insert would be a design change.
 
 **Open questions:** none for the owner.
+
+## Review (reviewer Opus 5.5 high, 2026-10-24): APPROVE
+No critical or high. Checks on 21b6c34: email 52, auth 126, jobs 61, portal 425, `pnpm check` exit 0. `primeSesSigning` only signs (no `fetch`, no log, never throws), writes exactly the cache entry the first real send reads (aws4fetch 1.0.20 key `[secret, date, region, service]`), runs only with `EMAIL_TRANSPORT=ses`; warm-ups use no `env`, `getRandomValues`, `Request` or timers; behaviour and bytes unchanged.
+- **M1** the prime moves 2–3 ms into the `staff.alert` expansion (4 ms on staging) and can bring the 11 ms send to about 8 ms at best; Step 3's "nothing above its earlier figure" fails by design.
+- **L1** the send is not guaranteed to land in the same isolate (`max_concurrency: 2`).
+- **L2** client and URL set-up duplicated between `sesTransport` and `primeSesSigning`.
+- **L3** the 2FA warm-up renders only the owner's "Not you?" line.
+- **L4** no test proves the prime is skipped with the `log` transport.
+- **L5** `/magic` with/without account not separated locally; savings are Node first-call timings; the 11 ms stays unexplained.
+
+## Lead triage and fixes (2026-10-24)
+- **M1:** Step 3's pass rule restated above (expansion, send and `/magic` each ≤ 7 ms; the expansion read too); the prime stays as built, the cheaper prime is the fallback.
+- **L1:** the comment in `staff-alerts.ts` says "usually this isolate" and names the `max_concurrency` limit; kept as a known limit.
+- **L2:** one `sesClient(config)` and `sesUrl(region)` in `transport.ts`, used by both.
+- **L3:** the warm-up also renders one member (`staff`) 2FA email; `warmConsumers` count 14 → 15.
+- **L4:** new `m24b.test.ts` case: the `log` transport signs nothing during the expansion. The UTC-midnight flake of the exact sign count is kept (one run a day at worst, the test retries clean).
+- **L5:** recorded as not verified; Step 3 uses a portal address that has an account.
+- Checks: jobs 62/62, email 52/52, `pnpm check` exit 0.
