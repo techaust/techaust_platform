@@ -2,14 +2,14 @@
 // `lead.reply` email (hello@, plain text escaped in the HTML, no unsubscribe line).
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
-import { renderEmail, SENDERS } from "../src/index.ts";
 import {
   fillReplyTemplate,
   hasUnfilledGap,
   REPLY_TEMPLATES,
   replyTemplateById,
-} from "../src/reply-templates.ts";
+} from "@techaust/core/reply-templates";
+import { describe, expect, it } from "vitest";
+import { renderEmail, SENDERS } from "../src/index.ts";
 
 const vars = {
   first_name: "Asha",

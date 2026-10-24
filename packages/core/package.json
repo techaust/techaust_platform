@@ -18,6 +18,7 @@
     "./lead-lifecycle": "./src/lead-lifecycle.ts",
     "./numbering": "./src/numbering.ts",
     "./permissions": "./src/permissions.ts",
+    "./reply-templates": "./src/reply-templates.ts",
     "./settings": "./src/schemas/settings.ts",
     "./terms": "./src/terms.ts",
     "./text": "./src/text.ts",

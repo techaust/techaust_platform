@@ -16,7 +16,6 @@
     "@techaust/auth": "workspace:*",
     "@techaust/core": "workspace:*",
     "@techaust/db": "workspace:*",
-    "@techaust/email": "workspace:*",
     "@techaust/ui": "workspace:*",
     "@zxcvbn-ts/core": "4.2.0",
     "@zxcvbn-ts/language-common": "4.1.3",

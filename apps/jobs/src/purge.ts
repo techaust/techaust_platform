@@ -66,7 +66,7 @@ export async function purgeLead(env: Env, leadId: string, now = Date.now()): Pro
 
   const auditId = uuidv7();
   const audited = "EXISTS (SELECT 1 FROM audit_log WHERE id = ?1)";
-  const [audit] = await env.DB.batch([
+  const [audit, , , refRow] = await env.DB.batch<{ ref: string }>([
     env.DB.prepare(
       `INSERT INTO audit_log (id, actor_type, action, entity_type, entity_id, summary)
        SELECT ?1, 'system', 'lead.purge', 'lead', id, json_object('ref', ref, 'reason', 'retention') FROM leads WHERE id = ?3 AND ${DUE}`,
@@ -75,16 +75,13 @@ export async function purgeLead(env: Env, leadId: string, now = Date.now()): Pro
       `DELETE FROM notifications WHERE entity_type = 'lead' AND entity_id = ?2 AND ${audited}`,
     ).bind(auditId, leadId),
     env.DB.prepare(`DELETE FROM leads WHERE id = ?2 AND ${audited}`).bind(auditId, leadId),
+    // the reference for the log line, read in the same round trip
+    env.DB.prepare("SELECT json_extract(summary, '$.ref') AS ref FROM audit_log WHERE id = ?1").bind(auditId),
   ]);
   if ((audit?.meta.changes ?? 0) === 0) {
     logEvent("lead.purge_skipped", { mode: "live" });
     return "skipped";
   }
-  const ref = await env.DB.prepare(
-    "SELECT json_extract(summary, '$.ref') AS ref FROM audit_log WHERE id = ?1",
-  )
-    .bind(auditId)
-    .first<{ ref: string }>();
-  logEvent("lead.purged", { ref: ref?.ref });
+  logEvent("lead.purged", { ref: refRow?.results[0]?.ref });
   return "deleted";
 }

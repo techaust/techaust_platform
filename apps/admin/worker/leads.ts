@@ -23,13 +23,13 @@ import {
 } from "@techaust/core/lead-lifecycle";
 import { generateLeadRef } from "@techaust/core/lead-ref";
 import { decide, ROLES } from "@techaust/core/permissions";
-import { CATALOGUE } from "@techaust/db/catalogue";
 import {
   fillReplyTemplate,
   hasUnfilledGap,
   REPLY_TEMPLATES,
   replyTemplateById,
-} from "@techaust/email/reply-templates";
+} from "@techaust/core/reply-templates";
+import { CATALOGUE } from "@techaust/db/catalogue";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import {

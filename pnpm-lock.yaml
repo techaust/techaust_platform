@@ -187,9 +187,6 @@ importers:
       '@techaust/db':
         specifier: workspace:*
         version: link:../../packages/db
-      '@techaust/email':
-        specifier: workspace:*
-        version: link:../../packages/email
       '@techaust/ui':
         specifier: workspace:*
         version: link:../../packages/ui

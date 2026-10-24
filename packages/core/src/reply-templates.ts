@@ -3,7 +3,8 @@
 //
 // A template only fills the reply box: the sender reads and edits it before sending. `{{name}}` is filled in by the system
 // (`fillReplyTemplate`); `[...]` is a gap the sender must fill: a reply that still holds one is refused (`hasUnfilledGap`).
-// Pure data and string functions, so the admin Worker can import this file alone (`@techaust/email/reply-templates`).
+// Pure data and string functions in core (not in packages/email) because the admin Worker must not import @techaust/email at all
+// (CPU budget guard, apps/web/test/signin-config.test.ts); the `lead.reply` email itself is rendered in packages/email.
 
 export type ReplyTemplate = {
   id: string;
