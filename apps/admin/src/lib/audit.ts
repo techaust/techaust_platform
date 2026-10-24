@@ -118,6 +118,8 @@ const FIELD_LABELS: Record<string, string> = {
   sha256: "Text fingerprint (SHA-256)",
   nextNumbers: "Next numbers",
   bccOwner: "Copy to the owner",
+  via: "How",
+  until: "Until",
 };
 
 export function fieldLabel(key: string): string {
@@ -140,6 +142,31 @@ export function valueText(v: unknown): string {
   return JSON.stringify(v);
 }
 
+/** Facts the entry already shows another way (the device line is the user agent in words). */
+const HIDDEN_FACTS = new Set(["ua", "userAgent"]);
+
+const VIA: Record<string, string> = {
+  totp: "Authenticator code",
+  recovery: "Recovery code",
+  invite: "Invite link",
+  cli: "Command line (owner's setup script)",
+};
+const ROLE_WORDS: Record<string, string> = {
+  owner: "Owner",
+  staff: "Staff",
+  sales: "Sales",
+  accountant: "Accountant",
+};
+
+/** A fact's value in words: roles and sign-in methods named, instants (UTC ms) as IST times. */
+export function factText(key: string, v: unknown): string {
+  if (key === "role" && typeof v === "string") return ROLE_WORDS[v] ?? v;
+  if (key === "via" && typeof v === "string") return VIA[v] ?? v;
+  if (typeof v === "number" && v > 1_000_000_000_000 && /until|at$|At$|expires/i.test(key))
+    return formatIstDateTime(v);
+  return valueText(v);
+}
+
 export type DiffRow = { field: string; before: string; after: string; masked: boolean };
 export type Fact = { field: string; value: string };
 
@@ -158,7 +185,7 @@ export function readSummary(summary: Record<string, unknown> | null): { changes:
         after: valueText(v.after),
         masked: v.before === MASKED || v.after === MASKED,
       });
-    else facts.push({ field: fieldLabel(k), value: valueText(v) });
+    else if (!HIDDEN_FACTS.has(k)) facts.push({ field: fieldLabel(k), value: factText(k, v) });
   }
   return { changes, facts };
 }

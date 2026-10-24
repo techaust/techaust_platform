@@ -55,6 +55,7 @@ function scheduleTotal(steps: Step[]): number | null {
 const spec: GroupSpec<"payment_terms", Form> = {
   group: "payment_terms",
   what: "the payment terms",
+  forDocuments: true,
   savedText: "Payment terms saved. They apply to new documents only.",
   toForm: (v) => ({
     dueDays: String(v.dueDays),
@@ -130,7 +131,7 @@ export function PaymentTerms() {
       spec={spec}
       readOnly={false}
       intro={
-        <p className="hint">
+        <p className="hint form-intro">
           How an advance is documented (proforma, tax invoice upfront or receipt voucher) is under{" "}
           <Link to="/settings/tax">Tax</Link>.
         </p>
@@ -286,9 +287,7 @@ export function PaymentTerms() {
                           <option value="before">days before</option>
                           <option value="after">days after</option>
                         </select>
-                        <span className="edit-list__read muted">
-                          {days === null ? "" : offsetText(r.when === "before" ? -days : days)}
-                        </span>
+                        {days === 0 && <span className="edit-list__read muted">{offsetText(0)}</span>}
                         <button
                           type="button"
                           className="icon-btn"

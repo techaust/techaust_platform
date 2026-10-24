@@ -13,6 +13,7 @@ import {
 } from "@techaust/core";
 import { type FormEvent, useState } from "react";
 import { api, errorText, RequestError, type SeriesState, type SettingsDoc } from "../../api.ts";
+import { DataTable } from "../../components/data-table.tsx";
 import { Modal } from "../../components/dialog.tsx";
 import { StatusPill } from "../../components/display.tsx";
 import { FormField } from "../../components/form.tsx";
@@ -56,57 +57,47 @@ export function NumberingSettings({ readOnly }: { readOnly: boolean }) {
         {fy ? fyFromToken(fy).label : ""}.
       </p>
       {readOnly && <Notice tone="info">You can read these settings. Only the owner can change them.</Notice>}
-      <div className="dtable dtable--static">
-        <table className="dtable__table">
-          <caption className="visually-hidden">Number formats by document type</caption>
-          <thead>
-            <tr>
-              <th scope="col">Document</th>
-              <th scope="col">Next number</th>
-              <th scope="col">Status</th>
-              {!readOnly && (
-                <th scope="col">
-                  <span className="visually-hidden">Actions</span>
-                </th>
-              )}
-            </tr>
-          </thead>
-          <tbody>
-            {ALL.map((s) => {
-              const st = state(s);
-              return (
-                <tr key={s}>
-                  <th scope="row">{SERIES[s].label}</th>
-                  <td className="docno">{sample(doc.value[s], fy, st.nextNo) ?? "—"}</td>
-                  <td>
-                    {st.used ? (
-                      <StatusPill tone="info" icon="send">
-                        In use, format fixed
-                      </StatusPill>
-                    ) : (
-                      <StatusPill tone="neutral" icon="pencil">
-                        Not used this year
-                      </StatusPill>
-                    )}
-                  </td>
-                  {!readOnly && (
-                    <td className="dtable__actions">
-                      <button
-                        type="button"
-                        className="btn btn--text"
-                        onClick={() => setEditing(s)}
-                        aria-label={`Edit ${SERIES[s].label} numbering`}
-                      >
-                        Edit
-                      </button>
-                    </td>
-                  )}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        caption="Number formats by document type"
+        rows={ALL}
+        rowKey={(s) => s}
+        columns={[
+          { key: "doc", header: "Document", card: "title", cell: (s) => SERIES[s].label },
+          {
+            key: "next",
+            header: "Next number",
+            cell: (s) => <span className="docno">{sample(doc.value[s], fy, state(s).nextNo) ?? "—"}</span>,
+          },
+          {
+            key: "status",
+            header: "Status",
+            cell: (s) =>
+              state(s).used ? (
+                <StatusPill tone="info" icon="send">
+                  In use, format fixed
+                </StatusPill>
+              ) : (
+                <StatusPill tone="neutral" icon="pencil">
+                  Not used this year
+                </StatusPill>
+              ),
+          },
+        ]}
+        actions={
+          readOnly
+            ? undefined
+            : (s) => (
+                <button
+                  type="button"
+                  className="btn btn--text"
+                  onClick={() => setEditing(s)}
+                  aria-label={`Edit ${SERIES[s].label} numbering`}
+                >
+                  Edit
+                </button>
+              )
+        }
+      />
       {editing && (
         <SeriesDialog
           key={editing}

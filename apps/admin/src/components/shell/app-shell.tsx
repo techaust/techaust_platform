@@ -3,6 +3,7 @@
 // that on this device; below md it becomes a drawer opened from the top bar. The current section is marked with
 // aria-current and the brand's 45° cut (docs/06 §4.3).
 import logoDark from "@techaust/ui/brand/logo-primary-dark.svg?url";
+import symbolColor from "@techaust/ui/brand/logo-symbol-color.svg?url";
 import symbolDark from "@techaust/ui/brand/logo-symbol-dark.svg?url";
 import { type ReactNode, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { Link } from "react-router";
@@ -63,7 +64,17 @@ export function AppShell(props: {
 
   return (
     <div className="shell" data-collapsed={collapsed || undefined}>
-      <a className="skip-link" href="#main">
+      {/* biome-ignore lint/a11y/useValidAnchor: a real link to #main (it works without script); the click only skips the hash change */}
+      <a
+        className="skip-link"
+        href="#main"
+        onClick={(e) => {
+          // Focus the content without changing the URL hash: a hash change is a navigation the router (and the
+          // unsaved-changes guard) would have to handle.
+          e.preventDefault();
+          document.getElementById("main")?.focus();
+        }}
+      >
         Skip to content
       </a>
       <aside className="shell__rail" id={navId}>
@@ -101,7 +112,21 @@ export function AppShell(props: {
             <Menu />
           </button>
           <Link to={props.homeHref} className="topbar__mark">
-            <img src={symbolDark} alt="TecHaust admin, dashboard" width="28" height="28" />
+            {/* The top bar is light or dark with the theme: the symbol for that ground (the T stays ink on light). */}
+            <img
+              src={symbolColor}
+              className="mark--on-light"
+              alt="TecHaust admin, dashboard"
+              width="28"
+              height="28"
+            />
+            <img
+              src={symbolDark}
+              className="mark--on-dark"
+              alt="TecHaust admin, dashboard"
+              width="28"
+              height="28"
+            />
           </Link>
           <div className="topbar__search">{props.search}</div>
           <div className="topbar__end">

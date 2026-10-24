@@ -3,6 +3,7 @@
 // sign-in screen's first paint carries neither.
 import "../shell.css";
 import "../screens.css";
+import type { Role } from "@techaust/core/permissions";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Outlet, useLocation, useParams } from "react-router";
 import { type Notification as ApiNotification, api, errorText } from "../api.ts";
@@ -14,6 +15,7 @@ import { AccountMenu, NotificationBell } from "../components/shell/top-menus.tsx
 import { ComingSoon, NoAccess, NotFound } from "../components/states.tsx";
 import { ToastProvider } from "../components/toast.tsx";
 import { allowed, canSee, type NavKey, sectionOf } from "../lib/access.ts";
+import { ROLE_LABELS } from "../lib/format.ts";
 import { useSession, useUser } from "../session.tsx";
 
 const hrefOf = (item: NavItem) => item.path;
@@ -27,7 +29,13 @@ async function runSearch(q: string): Promise<SearchGroup[]> {
   return r.groups.map((g) => ({
     label: g.label,
     icon: SEARCH_ICONS[g.type],
-    results: g.items.map((i) => ({ id: `${g.type}-${i.id}`, title: i.title, sub: i.subtitle, href: i.link })),
+    results: g.items.map((i) => ({
+      id: `${g.type}-${i.id}`,
+      title: i.title,
+      // Staff results end with the role as stored ("…, owner"): shown as its label.
+      sub: i.subtitle.replace(/, (owner|staff|sales|accountant)$/, (_, r: Role) => `, ${ROLE_LABELS[r]}`),
+      href: i.link,
+    })),
   }));
 }
 

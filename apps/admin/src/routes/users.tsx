@@ -282,7 +282,6 @@ function Users() {
           loading={loading}
           skeletonRows={6}
           actions={actionsFor}
-          cardSub={(r) => (r.name ? null : <span className="muted">Name not set yet</span>)}
           empty={
             <EmptyState
               icon={<Search />}

@@ -4,7 +4,7 @@
 // The unsaved-changes guard and the save bar come with it. Read-only roles (the accountant on tax and numbering) see the
 // same page without the controls that change anything.
 import { SETTINGS_SCHEMAS, type Settings } from "@techaust/core/settings";
-import { type FormEvent, type ReactNode, useEffect, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { api, errorText, type GroupMeta, type JsonGroup, RequestError, type SettingsDoc } from "../../api.ts";
 import { Skeleton } from "../../components/display.tsx";
 import { ErrorSummary, SaveBar, type SummaryError, VerifyNote } from "../../components/form.tsx";
@@ -25,6 +25,8 @@ export type GroupSpec<K extends JsonGroup, F> = {
   what: string;
   /** The toast after a save. */
   savedText: string;
+  /** The group feeds documents (company, tax, payment terms): say that changes apply to new ones only. */
+  forDocuments?: boolean;
   toForm: (value: Settings[K], meta: GroupMeta) => F;
   /** The form's own checks, in the order the fields appear; the value to save when there are none. */
   build: (form: F, doc: SettingsDoc<K>) => Built<K>;
@@ -158,7 +160,8 @@ function GroupFormBody<K extends JsonGroup, F>(props: {
         {failure && <Notice tone="error">{failure}</Notice>}
         {!readOnly && (
           <p className="hint">
-            All fields are needed unless marked optional. Changes apply to new documents only.
+            All fields are needed unless marked optional.
+            {spec.forDocuments ? " Changes apply to new documents only." : ""}
           </p>
         )}
         <fieldset className="settings-form__body" disabled={readOnly || busy}>
@@ -182,8 +185,14 @@ function GroupFormBody<K extends JsonGroup, F>(props: {
 
 /** 409: someone saved first. Reloading shows their version (the draft here is dropped). */
 export function StaleNotice({ onReload }: { onReload: () => void }) {
+  // It appears after a save from the bottom of a long form: bring it into view and start reading there.
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    ref.current?.focus();
+    ref.current?.scrollIntoView({ block: "center" });
+  }, []);
   return (
-    <div className="notice notice--error stale" role="alert">
+    <div className="notice notice--error stale" role="alert" ref={ref} tabIndex={-1}>
       <RefreshCw size={20} />
       <div>
         <p>

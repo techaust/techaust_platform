@@ -66,6 +66,7 @@ const ID = {
 const spec: GroupSpec<"company", Form> = {
   group: "company",
   what: "the company profile",
+  forDocuments: true,
   savedText: "Company profile saved. New documents use it from now on.",
   toForm: (v) => ({
     tradeName: v.tradeName,

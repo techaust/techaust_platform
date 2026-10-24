@@ -12,7 +12,7 @@ import {
   errorText,
   RequestError,
 } from "../../api.ts";
-import { EmptyState, When } from "../../components/display.tsx";
+import { When } from "../../components/display.tsx";
 import { ErrorSummary, FormField, type SummaryError } from "../../components/form.tsx";
 import { Landmark, Lock } from "../../components/icons.tsx";
 import { LoadFailed, useLoad } from "../../components/states.tsx";
@@ -170,11 +170,13 @@ function BankBlock({ account, kind }: { account: BankAccount | undefined; kind: 
         <h2 id={titleId} className="bank__title">
           {TITLE[kind]}
         </h2>
-        <EmptyState icon={<Landmark />} title="Not entered yet" headingLevel={3}>
-          <p>
-            Invoices can't show {kind === "INR" ? "INR" : "USD"} payment details until the owner enters them.
-          </p>
-        </EmptyState>
+        <p className="bank__empty">
+          <Landmark />
+          <span>
+            <strong>Not entered yet.</strong> Invoices can't show {kind === "INR" ? "INR" : "USD"} payment
+            details until the owner enters them.
+          </span>
+        </p>
       </section>
     );
   return (

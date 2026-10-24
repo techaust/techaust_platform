@@ -25,6 +25,68 @@
   opacity: 1;
 }
 
+/* Toasts never cover the save bar's buttons (a toast pauses while hovered, so it could sit there). */
+body:has(.savebar) .toasts {
+  bottom: calc(var(--space-20) + var(--space-2));
+}
+
+@media (max-width: 47.99rem) {
+  body:has(.savebar) .toasts {
+    bottom: calc(var(--space-32) + var(--space-2));
+  }
+}
+
+/* The top bar's symbol (phones): the colour file on light, the on-dark file in dark (system or chosen). Hidden by
+   display, so only one is in the accessibility tree. */
+.topbar__mark .mark--on-dark {
+  display: none;
+}
+
+:root[data-theme="dark"] .topbar__mark .mark--on-light {
+  display: none;
+}
+
+:root[data-theme="dark"] .topbar__mark .mark--on-dark {
+  display: block;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .topbar__mark .mark--on-light {
+    display: none;
+  }
+
+  :root:not([data-theme="light"]) .topbar__mark .mark--on-dark {
+    display: block;
+  }
+}
+
+.logo-tile__cap--pick select {
+  font-size: var(--text-body);
+}
+
+.bank__empty {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.bank__empty .icon {
+  flex: none;
+  margin-top: var(--space-1);
+  color: var(--color-text-accent);
+}
+
+.bank__empty strong {
+  color: var(--color-text);
+}
+
+.form-section > legend + .hint {
+  margin-top: calc(-1 * var(--space-2));
+  margin-bottom: var(--space-4);
+}
+
 .skeleton-field {
   display: grid;
   gap: var(--space-2);
@@ -146,6 +208,16 @@
 .edit-list__row > .field-error,
 .edit-list__read {
   grid-column: 1 / -1;
+}
+
+/* The remove button stays at the end of the first line, whatever follows it. */
+.edit-list__row > .icon-btn {
+  grid-row: 1;
+  grid-column: -2;
+}
+
+.form-intro {
+  margin-bottom: var(--space-3);
 }
 
 .edit-list__read {

@@ -63,6 +63,7 @@ type Form = {
 const spec: GroupSpec<"tax", Form> = {
   group: "tax",
   what: "the tax settings",
+  forDocuments: true,
   savedText: "Tax settings saved. They apply to new documents only.",
   toForm: (v) => ({
     rate: bpToPercent(v.defaultRateBp),

@@ -1284,7 +1284,7 @@ body:has(.shell) {
     column-gap: var(--space-3);
   }
 
-  .filters--audit > .field:nth-child(-n + 2),
+  .filters--audit > .field:nth-child(-n + 3),
   .filters--audit > .filters__foot {
     grid-column: 1 / -1;
   }
@@ -1332,7 +1332,7 @@ body:has(.shell) {
 
 @media (min-width: 64rem) {
   .filters--audit {
-    grid-template-columns: repeat(4, minmax(10rem, 14rem));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 
   .filters__foot {
@@ -1546,18 +1546,10 @@ th[aria-sort="descending"] .dtable__sort {
     display: none;
   }
 
-  .dtable--static .dtable__table {
-    display: table;
-  }
-
   .dcards {
     display: grid;
     gap: var(--space-2);
   }
-}
-
-.dtable--static {
-  overflow-x: auto;
 }
 
 .dcard {
