@@ -54,6 +54,24 @@ export function warmConsumers(): number {
       opts,
     );
     rendered++;
+    // M3.1: the staff invite, and the same email as a Settings test send (subject and first line)
+    renderEmail(
+      "staff.invite",
+      { inviter_name: "Warm Owner", role: "staff", url: "https://warm-up.invalid/invite#t=x" },
+      opts,
+    );
+    rendered++;
+    renderEmail(
+      "staff.invite",
+      {
+        inviter_name: "Warm Owner",
+        role: "staff",
+        url: "https://warm-up.invalid/invite#t=x",
+        test_name: "Staff invite",
+      },
+      opts,
+    );
+    rendered++;
     // the user-agent reader the staff alerts use (compiles its patterns on first match)
     describeUserAgent(
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",

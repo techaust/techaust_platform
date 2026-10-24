@@ -532,3 +532,44 @@ export function staffLockoutOwner(d: LockoutOwnerData, opts: LayoutOptions): Ren
     action: { label: "Open in admin", url: d.admin_url },
   });
 }
+
+// ---- M3.1 (words: 07 §8 subject, 07-H body and test line, owner-approved 2026-10-24) ---------------------------------------
+
+export type StaffInviteData = { inviter_name: string; role: string; url: string };
+
+/** The invitation to join the admin (to the invited person, from no-reply@): link valid 48 h, authenticator app required. */
+export function staffInvite(d: StaffInviteData, opts: LayoutOptions): Rendered {
+  const subject = headerValue("You've been invited to TecHaust admin");
+  const intro = `Hi, ${d.inviter_name} has invited you to join TecHaust admin as ${d.role}.`;
+  const how =
+    "To accept, choose a password and add TecHaust to an authenticator app on your phone, such as Google Authenticator, Microsoft Authenticator or 1Password: every sign-in needs a code from it.";
+  const expiry = "The link works once and expires in 48 hours:";
+  const ignore = "If you weren't expecting this, you can ignore this email.";
+  const html = layout(
+    subject,
+    heading(e(subject)) +
+      bodyP(e(intro)) +
+      bodyP(e(how)) +
+      bodyP(e(expiry), "padding-bottom:8px;") +
+      button("Accept the invite", d.url) +
+      bodyP(e(ignore), "padding-bottom:0;", true),
+    opts,
+  );
+  return { subject, html, text: textOf([intro, how, `${expiry}\n${d.url}`, ignore]) };
+}
+
+/**
+ * Settings > Email "Send a test" (07-H section 1): the subject gets "Test: ", and one line goes above the email as it would be sent.
+ * The line is put straight after the heading in the HTML (and first in the text), so the template itself is unchanged.
+ */
+export function withTestNotice(r: Rendered, templateName: string): Rendered {
+  const subject = headerValue(`Test: ${templateName}`);
+  const line = `This is a test of the ${templateName} email, sent from Settings to you only. It uses sample data, so the names, numbers and links below are not real.`;
+  const notice = bodyP(`<strong style="font-weight:600;">${e(line)}</strong>`);
+  const at = r.html.indexOf("</h1>");
+  const html =
+    at === -1
+      ? r.html.replace(/<body[^>]*>/, (m) => `${m}${notice}`)
+      : `${r.html.slice(0, at + 5)}${notice}${r.html.slice(at + 5)}`;
+  return { subject, html, text: `${line}\n\n${r.text}` };
+}
