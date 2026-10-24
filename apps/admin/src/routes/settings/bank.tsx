@@ -2,6 +2,7 @@
 // characters in every view (the API never sends more). "Edit bank details" asks for a fresh authenticator code first
 // (bank.manage is a step-up action); only then do the fields unlock. The account number field starts empty: leaving it
 // empty keeps the stored number. The accountant reads the masked blocks only.
+import { ACCOUNT_NO, IFSC, SWIFT } from "@techaust/core/bank";
 import { type FormEvent, type ReactNode, useState } from "react";
 import {
   api,
@@ -38,9 +39,6 @@ type Forms = Record<BankKind, BlockForm>;
 
 const KINDS: BankKind[] = ["INR", "USD_SWIFT"];
 const TITLE: Record<BankKind, string> = { INR: "INR account", USD_SWIFT: "USD account (SWIFT)" };
-const ACCOUNT_NO = /^[A-Z0-9]{5,34}$/;
-const IFSC = /^[A-Z]{4}0[A-Z0-9]{6}$/;
-const SWIFT = /^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$/;
 
 const fid = (kind: BankKind, field: string) => `bank-${kind}-${field}`;
 const clean = (s: string) => s.replace(/[\s-]/g, "").toUpperCase();

@@ -50,7 +50,13 @@ export const bankAccounts = sqliteTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [check("bank_accounts_kind", oneOf(t.kind, BANK_KINDS))],
+  (t) => [
+    check("bank_accounts_kind", oneOf(t.kind, BANK_KINDS)),
+    // One active account per kind (two simultaneous first saves cannot both win).
+    uniqueIndex("bank_accounts_active_kind")
+      .on(t.kind)
+      .where(sql`${t.active} = 1`),
+  ],
 );
 
 /** Gap-free counters per document series and FY (docs/05 §5.4). A trigger stops next_no going down. */

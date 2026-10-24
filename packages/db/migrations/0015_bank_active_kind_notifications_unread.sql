@@ -1,0 +1,2 @@
+CREATE INDEX `notifications_user_unread` ON `notifications` (`user_id`,`read_at`,`created_at`,`id`);--> statement-breakpoint
+CREATE UNIQUE INDEX `bank_accounts_active_kind` ON `bank_accounts` (`kind`) WHERE active = 1;

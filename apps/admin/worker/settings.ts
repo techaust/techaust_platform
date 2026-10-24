@@ -13,6 +13,7 @@
 import { sValidator } from "@hono/standard-validator";
 import { hex } from "@techaust/auth";
 import { auditSummary } from "@techaust/core/audit";
+import { ACCOUNT_NO, cleanAccountNo, IFSC, SWIFT } from "@techaust/core/bank";
 import { formatIstDateTime, fyOf } from "@techaust/core/dates";
 import { EMAIL_TEMPLATES, type EmailTemplate } from "@techaust/core/email-templates";
 import { uuidv7 } from "@techaust/core/ids";
@@ -637,25 +638,26 @@ const bankBody = z.object({
   branch: z.optional(z.nullable(z.string().check(z.maxLength(120)))),
   bankAddress: z.optional(z.nullable(z.string().check(z.maxLength(300)))),
   intermediary: z.optional(z.nullable(z.string().check(z.maxLength(300)))),
+  /** The `updatedAt` the form was loaded with (GET /settings/bank); null or missing for a first save. A different value is a 409. */
+  expectedUpdatedAt: z.optional(z.nullable(z.int())),
 });
 const norm = (v: string | null | undefined) => {
   const t = v?.trim();
   return t ? t : null;
 };
-const ACCOUNT_NO = /^[A-Z0-9]{5,34}$/;
-const IFSC = /^[A-Z]{4}0[A-Z0-9]{6}$/;
-const SWIFT = /^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$/;
 
 async function saveBank(c: Ctx, kind: "INR" | "USD_SWIFT") {
   const parsed = bankBody.safeParse(await bodyOf(c));
   if (!parsed.success) return invalid(c, parsed.error.issues);
   const b = parsed.data;
   const bad: { path: string[]; message: string }[] = [];
-  const typed = norm(b.accountNo)?.replace(/[\s-]/g, "").toUpperCase() ?? null;
-  const again = norm(b.accountNoAgain)?.replace(/[\s-]/g, "").toUpperCase() ?? null;
+  const typed = cleanAccountNo(norm(b.accountNo) ?? "") || null;
+  const again = cleanAccountNo(norm(b.accountNoAgain) ?? "") || null;
   if (typed !== null && !ACCOUNT_NO.test(typed))
     bad.push({ path: ["accountNo"], message: "Use letters and digits only, 5 to 34 characters" });
-  if (typed !== null && typed !== again)
+  if (typed !== null && again === null)
+    bad.push({ path: ["accountNoAgain"], message: "Type the account number again." });
+  else if (typed !== null && typed !== again)
     bad.push({ path: ["accountNoAgain"], message: "The two account numbers don't match" });
   const ifsc = norm(b.ifsc)?.toUpperCase() ?? null;
   const swift = norm(b.swift)?.toUpperCase() ?? null;
@@ -669,7 +671,12 @@ async function saveBank(c: Ctx, kind: "INR" | "USD_SWIFT") {
   const db = c.env.DB;
   const existing = (await bankRows(db)).find((r) => r.kind === kind);
   if (!existing && typed === null) bad.push({ path: ["accountNo"], message: "Enter the account number" });
+  if (existing && b.expectedUpdatedAt === undefined)
+    bad.push({ path: ["expectedUpdatedAt"], message: "Reload the page and try again" });
   if (bad.length) return invalid(c, bad);
+  // The stale check: the form must have been loaded from the row as it is now (a first save expects no row).
+  if ((existing?.updated_at ?? null) !== (b.expectedUpdatedAt ?? null))
+    return c.json({ error: STALE, request_id: c.var.rid }, 409);
 
   const after = {
     accountName: b.accountName,
@@ -714,7 +721,7 @@ async function saveBank(c: Ctx, kind: "INR" | "USD_SWIFT") {
           after.intermediary,
           t,
           id,
-          existing.updated_at,
+          b.expectedUpdatedAt,
         )
     : db
         .prepare(
@@ -733,13 +740,24 @@ async function saveBank(c: Ctx, kind: "INR" | "USD_SWIFT") {
           after.intermediary,
           t,
         );
-  const done = await mutate(c, {
-    main,
-    action: "settings.bank.update",
-    entityType: "bank_account",
-    entityId: id,
-    summary: { kind, ...diff },
-  });
+  let done: boolean;
+  try {
+    done = await mutate(c, {
+      main,
+      action: "settings.bank.update",
+      entityType: "bank_account",
+      entityId: id,
+      summary: { kind, ...diff },
+    });
+  } catch (e) {
+    // Two first saves at once: the unique index (one active account per kind) lets one win and refuses the other.
+    if (
+      !existing &&
+      /UNIQUE/.test(`${e instanceof Error ? e.message : ""} ${String((e as Error)?.cause ?? "")}`)
+    )
+      return c.json({ error: STALE, request_id: c.var.rid }, 409);
+    throw e;
+  }
   if (!done) return c.json({ error: STALE, request_id: c.var.rid }, 409);
   return c.json({ ok: true, changed: true });
 }

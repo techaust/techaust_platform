@@ -4,7 +4,8 @@
 // side effects (revoking the target's sessions, inserting the new invite) that only happen if it applied.
 import { sValidator } from "@hono/standard-validator";
 import { emailAddress, INVITE_TTL_MS, newToken, tokenHash } from "@techaust/auth";
-import { ROLES } from "@techaust/core/permissions";
+import { ROLE_LABELS, ROLES } from "@techaust/core/permissions";
+import { escapeLike } from "@techaust/core/text";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { alertStmt, queueAlerts } from "./alerts.ts";
@@ -94,7 +95,9 @@ export const users = new Hono<AppEnv>()
       const dir: Direction = f.before ? "before" : "after";
       const raw = f.before ?? f.after;
       const cur = raw === undefined ? null : decodeCursor(raw);
-      if (raw !== undefined && !cur) return err(c, BAD_REQUEST, 400);
+      // A cursor made for the other sort (a number for the name sort, text for the date sort) is a bad request, not a 500.
+      if (raw !== undefined && (!cur || typeof cur.k !== (byName ? "string" : "number")))
+        return err(c, BAD_REQUEST, 400);
       const col = byName ? "name" : "created_at";
       const where: string[] = [];
       const bind: unknown[] = [];
@@ -107,7 +110,7 @@ export const users = new Hono<AppEnv>()
       const q = f.q?.trim().toLowerCase();
       if (q) {
         // Email is stored lower case, so a start-of-address match is a range on its index; the name is matched with LIKE.
-        const like = `${q.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
+        const like = `${escapeLike(q)}%`;
         const n = bind.length;
         where.push(`((email >= ?${n + 1} AND email < ?${n + 2}) OR name LIKE ?${n + 3} ESCAPE '\\')`);
         bind.push(q, `${q}${PREFIX_END}`, like);
@@ -141,11 +144,13 @@ export const users = new Hono<AppEnv>()
 
   .get("/invites", async (c) => {
     const { results } = await c.env.DB.prepare(
-      "SELECT token_hash, email, role, invited_by, expires_at, created_at FROM staff_invites WHERE used_at IS NULL AND expires_at > ?1 ORDER BY created_at DESC, token_hash LIMIT 50",
+      // `existing_member` = the address already has a row in the staff list (a 2FA reset or reactivation issues an invite for
+      // one): the list shows it once, as the member, not twice.
+      "SELECT i.token_hash, i.email, i.role, i.invited_by, i.expires_at, i.created_at, EXISTS (SELECT 1 FROM staff_users m WHERE m.email = i.email) AS existing_member FROM staff_invites i WHERE i.used_at IS NULL AND i.expires_at > ?1 ORDER BY i.created_at DESC, i.token_hash LIMIT 50",
     )
       .bind(now())
-      .all();
-    return c.json({ invites: results });
+      .all<Record<string, unknown> & { existing_member: number }>();
+    return c.json({ invites: results.map((r) => ({ ...r, existing_member: r.existing_member === 1 })) });
   })
 
   // Invite: the link is returned ONCE (it stands in for the email until M2.4); only its hash is stored.
@@ -184,7 +189,8 @@ export const users = new Hono<AppEnv>()
     queueEmail(c, {
       template: "staff.invite",
       to: email,
-      data: { inviter_name: u.name, role, url: link },
+      // The person-facing label ("Accountant"), never the code.
+      data: { inviter_name: u.name, role: ROLE_LABELS[role], url: link },
       entity: { type: "staff_invite", id: hash },
     });
     return c.json({ link, expires_at: t + INVITE_TTL_MS, email_queued: true }, 201);

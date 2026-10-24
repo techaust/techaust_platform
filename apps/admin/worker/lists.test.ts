@@ -110,6 +110,41 @@ describe("GET /users: keyset pages, sort, filters, search [ADM-G-03, ADM-AUTH-07
 });
 
 // ---------------------------------------------------------------------------------------------------------------
+describe("users list cursor and pending-invite flag [ADM-G-03, ADM-AUTH-07]", () => {
+  it("a cursor made for the other sort is 400, never a 500", async () => {
+    const o = await owner();
+    for (let i = 0; i < 3; i++)
+      await sessionFor("staff", { name: `cur-${i}`, email: `cur-${i}@example.test` });
+    const byName = await json(await call("/users?q=cur-&limit=25&sort=name", { cookie: o.cookie }));
+    expect(byName.users.length).toBeGreaterThan(0);
+    // a cursor for the date sort (a number) used with the name sort, and the reverse
+    const dated = await json(await call("/users?sort=created&limit=25", { cookie: o.cookie }));
+    const b64u = (o: unknown) =>
+      btoa(JSON.stringify(o)).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
+    const numeric = b64u({ k: 5, id: "x" });
+    const text = b64u({ k: "abc", id: "x" });
+    expect((await call(`/users?sort=name&after=${numeric}`, { cookie: o.cookie })).status).toBe(400);
+    expect((await call(`/users?sort=created&after=${text}`, { cookie: o.cookie })).status).toBe(400);
+    expect(dated.users.length).toBeGreaterThan(0);
+  });
+
+  it("GET /users/invites flags an invite whose address is already in the staff list (a reset member), and not a new invitee", async () => {
+    const o = await owner();
+    const member = await sessionFor("sales", { name: "Reset Person", email: "reset.person@example.test" });
+    expect((await call(`/users/${member.id}/reset-2fa`, { method: "POST", cookie: o.cookie })).status).toBe(
+      200,
+    );
+    const fresh = "brand.new.invitee@example.test";
+    expect(
+      (await call("/users/invites", { body: { email: fresh, role: "staff" }, cookie: o.cookie })).status,
+    ).toBe(201);
+    const { invites } = await json(await call("/users/invites", { cookie: o.cookie }));
+    const flag = (email: string) => invites.find((i: J) => i.email === email)?.existing_member;
+    expect(flag("reset.person@example.test")).toBe(true);
+    expect(flag(fresh)).toBe(false);
+  });
+});
+
 describe("reactivating a member [ADM-AUTH-07]", () => {
   it("brings a deactivated member back (active again, signs in with what they had), and audits status before and after", async () => {
     const o = await owner();
@@ -179,7 +214,7 @@ describe("the staff invite email [ADM-AUTH-07, ADM-MAIL-01]", () => {
     expect(m).toMatchObject({
       template: "staff.invite",
       to: email,
-      data: { inviter_name: "Sample Owner (test)", role: "accountant", url: body.link },
+      data: { inviter_name: "Sample Owner (test)", role: "Accountant", url: body.link },
       entity: { type: "staff_invite" },
     });
     expect(m.entity.id).toMatch(/^[0-9a-f]{64}$/); // the token's hash, so a redelivery sends nothing twice
@@ -326,6 +361,17 @@ describe("the bell [ADM-G-09]", () => {
       const s = await sessionFor(role);
       expect((await call("/notifications", { cookie: s.cookie })).status, role).toBe(200);
     }
+  });
+
+  it("the unread count and 'mark all read' are served by the (user, read_at, created_at, id) index [ADM-G-09]", async () => {
+    const plan = async (sql: string, ...p: unknown[]) =>
+      (await rows<{ detail: string }>(`EXPLAIN QUERY PLAN ${sql}`, ...p)).map((r) => r.detail).join(" | ");
+    expect(
+      await plan("SELECT count(*) AS n FROM notifications WHERE user_id = ?1 AND read_at IS NULL", "u"),
+    ).toMatch(/USING (COVERING )?INDEX notifications_user_unread \(user_id=\? AND read_at=\?\)/);
+    expect(
+      await plan("UPDATE notifications SET read_at = ?1 WHERE user_id = ?2 AND read_at IS NULL", 1, "u"),
+    ).toMatch(/USING (COVERING )?INDEX notifications_user_unread \(user_id=\? AND read_at=\?\)/);
   });
 });
 

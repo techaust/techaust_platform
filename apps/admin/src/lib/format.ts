@@ -1,6 +1,5 @@
 // Display helpers. Times are stored as UTC ms and shown in IST (CLAUDE.md conventions).
 import { formatIstDateTime } from "@techaust/core";
-import type { Role } from "@techaust/core/permissions";
 
 export const when = (utcMs: number | null | undefined) => (utcMs ? formatIstDateTime(utcMs) : "Never");
 
@@ -30,12 +29,7 @@ export function relative(utcMs: number, now = Date.now()): string {
   return rtf.format(Math.round(s / size), unit);
 }
 
-export const ROLE_LABELS: Record<Role, string> = {
-  owner: "Owner",
-  staff: "Staff",
-  sales: "Sales",
-  accountant: "Accountant",
-};
+export { ROLE_LABELS } from "@techaust/core/permissions";
 
 export const STATUS_LABELS = {
   active: "Active",

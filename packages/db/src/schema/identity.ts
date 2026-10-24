@@ -185,5 +185,6 @@ export const notifications = sqliteTable(
   (t) => [
     uniqueIndex("notifications_user_event").on(t.userId, t.kind, t.entityId),
     index("notifications_user_created").on(t.userId, t.createdAt, t.id),
+    index("notifications_user_unread").on(t.userId, t.readAt, t.createdAt, t.id),
   ],
 );

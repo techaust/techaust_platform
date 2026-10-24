@@ -65,6 +65,6 @@ export function sampleData(
     case "staff.lockout_owner":
       return { ...person, time, member_name: "Sample Member", admin_url: SAMPLE };
     case "staff.invite":
-      return { inviter_name: who.name, role: "staff", url: `${SAMPLE}/invite` };
+      return { inviter_name: who.name, role: "Staff", url: `${SAMPLE}/invite` };
   }
 }

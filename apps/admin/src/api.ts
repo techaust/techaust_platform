@@ -34,6 +34,8 @@ export type Invite = {
   invited_by: string | null;
   expires_at: number;
   created_at: number;
+  /** The address already has a row in the staff list (a reset member): show the person once, not the invite as well. */
+  existing_member: boolean;
 };
 export type InviteLink = { link: string; expires_at: number; email_queued?: boolean };
 export type Page<K extends string, T> = { [key in K]: T[] } & { next: string | null; prev: string | null };
@@ -395,6 +397,8 @@ export const api = {
   readAllNotifications: () => request<{ ok: true }>("/notifications/read-all", { body: {} }),
   search: (q: string) => request<{ q: string; groups: SearchGroupData[] }>(`/search${qs({ q })}`),
   audit: (q: AuditQuery = {}) => request<Page<"entries", AuditEntry>>(`/audit${qs(q)}`),
+  /** One page of the CSV export: same rows as `audit`, but every page needs a fresh step-up (403 `step_up_required` opens the dialog) and is audited. */
+  auditExport: (q: AuditQuery = {}) => request<Page<"entries", AuditEntry>>(`/audit/export${qs(q)}`),
 };
 
 /** A message to show for any failure: the server's own words, or a plain network message. */

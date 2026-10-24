@@ -16,6 +16,16 @@ type J = Record<string, any>;
 const json = async (res: Response): Promise<J> => (await res.json()) as J;
 const owner = () => sessionFor("owner", { stepUp: true });
 const put = (path: string, cookie: string, body: unknown) => call(path, { method: "PUT", body, cookie });
+/** A bank save as the screen sends it: with the `updatedAt` of the row it loaded (null before the first save). */
+const putBank = async (path: string, cookie: string, body: Record<string, unknown>) => {
+  if ("expectedUpdatedAt" in body) return put(path, cookie, body);
+  const kind = path.split("/").at(-1);
+  const list = (await (await call("/settings/bank", { cookie })).json()) as {
+    accounts?: { kind: string; updatedAt: number | null }[];
+  };
+  const updatedAt = list.accounts?.find((x) => x.kind === kind)?.updatedAt ?? null;
+  return put(path, cookie, { ...body, expectedUpdatedAt: updatedAt });
+};
 const GROUP = (g: string) => `/settings/groups/${g}`;
 
 const clear = async (...keys: string[]) => {
@@ -511,11 +521,11 @@ describe("bank details: masked everywhere [ADM-SET-02, ADM-G-06]", () => {
   it("a change needs a fresh step-up; the accountant reads masked and can't change", async () => {
     await reset();
     const noStep = await sessionFor("owner");
-    const res = await put("/settings/bank/INR", noStep.cookie, body());
+    const res = await putBank("/settings/bank/INR", noStep.cookie, body());
     expect(res.status).toBe(403);
     expect((await json(res)).error.code).toBe("step_up_required");
     const a = await sessionFor("accountant", { stepUp: true });
-    expect((await put("/settings/bank/INR", a.cookie, body())).status).toBe(403);
+    expect((await putBank("/settings/bank/INR", a.cookie, body())).status).toBe(403);
     expect((await call("/settings/bank", { cookie: a.cookie })).status).toBe(200);
     for (const role of ["staff", "sales"] as const) {
       const s = await sessionFor(role, { stepUp: true });
@@ -527,7 +537,7 @@ describe("bank details: masked everywhere [ADM-SET-02, ADM-G-06]", () => {
   it("every response shows the last four characters only, for the owner and the accountant, on write and read", async () => {
     await reset();
     const o = await owner();
-    const saved = await put("/settings/bank/INR", o.cookie, body());
+    const saved = await putBank("/settings/bank/INR", o.cookie, body());
     expect(saved.status).toBe(200);
     expect(await saved.text()).not.toContain(NUMBER);
     for (const who of [o, await sessionFor("accountant")]) {
@@ -555,10 +565,10 @@ describe("bank details: masked everywhere [ADM-SET-02, ADM-G-06]", () => {
     for (const m of ["log", "info", "warn", "error"] as const)
       vi.spyOn(console, m).mockImplementation((...a: unknown[]) => void logged.push(a.map(String).join(" ")));
     const o = await owner();
-    await put("/settings/bank/INR", o.cookie, body());
+    await putBank("/settings/bank/INR", o.cookie, body());
     const other = "5559999999999";
-    await put("/settings/bank/INR", o.cookie, body({ accountNo: other, accountNoAgain: other }));
-    const mismatch = await put("/settings/bank/INR", o.cookie, body({ accountNoAgain: "5550123450000" }));
+    await putBank("/settings/bank/INR", o.cookie, body({ accountNo: other, accountNoAgain: other }));
+    const mismatch = await putBank("/settings/bank/INR", o.cookie, body({ accountNoAgain: "5550123450000" }));
     expect(mismatch.status).toBe(400);
     expect(await mismatch.text()).not.toMatch(/555\d{7,}/);
     const shape = await put(
@@ -581,18 +591,18 @@ describe("bank details: masked everywhere [ADM-SET-02, ADM-G-06]", () => {
   it("editing without retyping the number keeps it; the same values again change nothing", async () => {
     await reset();
     const o = await owner();
-    await put("/settings/bank/INR", o.cookie, body());
+    await putBank("/settings/bank/INR", o.cookie, body());
     const edit = {
       accountName: "Sample Account (test)",
       ifsc: "SMPL0000001",
       bankName: "Sample Bank Renamed",
     };
-    expect((await put("/settings/bank/INR", o.cookie, edit)).status).toBe(200);
+    expect((await putBank("/settings/bank/INR", o.cookie, edit)).status).toBe(200);
     const row = await one<{ account_no: string; bank_name: string }>(
       "SELECT account_no, bank_name FROM bank_accounts",
     );
     expect(row).toEqual({ account_no: NUMBER, bank_name: "Sample Bank Renamed" });
-    const same = await put("/settings/bank/INR", o.cookie, edit);
+    const same = await putBank("/settings/bank/INR", o.cookie, edit);
     expect((await json(same)).changed).toBe(false);
     expect(await countOf("bank_accounts")).toBe(1);
   });
@@ -600,24 +610,24 @@ describe("bank details: masked everywhere [ADM-SET-02, ADM-G-06]", () => {
   it("INR needs a valid IFSC; USD needs a SWIFT and the bank's address; a first entry needs the number", async () => {
     await reset();
     const o = await owner();
-    expect((await put("/settings/bank/INR", o.cookie, body({ ifsc: "BAD" }))).status).toBe(400);
+    expect((await putBank("/settings/bank/INR", o.cookie, body({ ifsc: "BAD" }))).status).toBe(400);
     const noNumber = { accountName: "A", bankName: "B", ifsc: "SMPL0000001" };
-    expect((await put("/settings/bank/INR", o.cookie, noNumber)).status).toBe(400);
+    expect((await putBank("/settings/bank/INR", o.cookie, noNumber)).status).toBe(400);
     const usd = {
       accountName: "Sample Account (test)",
       accountNo: NUMBER,
       accountNoAgain: NUMBER,
       bankName: "Sample Bank",
     };
-    const noAddress = await put("/settings/bank/USD_SWIFT", o.cookie, { ...usd, swift: "SMPLINBB" });
+    const noAddress = await putBank("/settings/bank/USD_SWIFT", o.cookie, { ...usd, swift: "SMPLINBB" });
     expect(noAddress.status).toBe(400);
-    const badSwift = await put("/settings/bank/USD_SWIFT", o.cookie, {
+    const badSwift = await putBank("/settings/bank/USD_SWIFT", o.cookie, {
       ...usd,
       swift: "X",
       bankAddress: "Street",
     });
     expect(badSwift.status).toBe(400);
-    const ok = await put("/settings/bank/USD_SWIFT", o.cookie, {
+    const ok = await putBank("/settings/bank/USD_SWIFT", o.cookie, {
       ...usd,
       swift: "smplinbb",
       bankAddress: "Sample street",
@@ -630,7 +640,88 @@ describe("bank details: masked everywhere [ADM-SET-02, ADM-G-06]", () => {
       ["USD_SWIFT", true],
     ]);
     expect(both.accounts[1].swift).toBe("SMPLINBB");
-    expect((await put("/settings/bank/EUR", o.cookie, body())).status).toBe(404);
+    expect((await putBank("/settings/bank/EUR", o.cookie, body())).status).toBe(404);
+  });
+
+  it("a stale save is refused: two forms loaded from the same row, the second save is 409 and changes nothing [ADM-SET-02]", async () => {
+    await reset();
+    const o = await owner();
+    expect((await putBank("/settings/bank/INR", o.cookie, body())).status).toBe(200);
+    const loaded = (await json(await call("/settings/bank", { cookie: o.cookie }))).accounts[0].updatedAt;
+    expect(typeof loaded).toBe("number");
+    await new Promise((r) => setTimeout(r, 5));
+    const edit = (name: string) => ({
+      accountName: "Sample Account (test)",
+      ifsc: "SMPL0000001",
+      bankName: name,
+      expectedUpdatedAt: loaded,
+    });
+    expect((await putBank("/settings/bank/INR", o.cookie, edit("First editor"))).status).toBe(200);
+    const second = await putBank("/settings/bank/INR", o.cookie, edit("Second editor"));
+    expect(second.status).toBe(409);
+    expect((await json(second)).error.code).toBe("stale_version");
+    expect((await one<{ bank_name: string }>("SELECT bank_name FROM bank_accounts"))?.bank_name).toBe(
+      "First editor",
+    );
+    // a no-change resend of an old form is stale too, not a silent "ok"
+    const same = await putBank("/settings/bank/INR", o.cookie, edit("First editor"));
+    expect(same.status).toBe(409);
+    // without the field the server cannot check: 400 for an existing account
+    const none = await put("/settings/bank/INR", o.cookie, {
+      accountName: "Sample Account (test)",
+      ifsc: "SMPL0000001",
+      bankName: "X",
+    });
+    expect(none.status).toBe(400);
+    // a first save that expects an existing row, or an existing row saved as a first save: 409
+    const ghost = await put("/settings/bank/USD_SWIFT", o.cookie, {
+      accountName: "A",
+      accountNo: NUMBER,
+      accountNoAgain: NUMBER,
+      swift: "SMPLINBB",
+      bankAddress: "Street",
+      bankName: "B",
+      expectedUpdatedAt: 123,
+    });
+    expect(ghost.status).toBe(409);
+    const firstAgain = await put("/settings/bank/INR", o.cookie, { ...body(), expectedUpdatedAt: null });
+    expect(firstAgain.status).toBe(409);
+  });
+
+  it("two first saves of one kind cannot both create an account: the unique index refuses the second (409) [ADM-SET-02]", async () => {
+    await reset();
+    const o = await owner();
+    const [a, b] = await Promise.all([
+      put("/settings/bank/INR", o.cookie, { ...body(), expectedUpdatedAt: null }),
+      put("/settings/bank/INR", o.cookie, { ...body(), expectedUpdatedAt: null }),
+    ]);
+    expect([a.status, b.status].sort()).toEqual([200, 409]);
+    expect(await countOf("bank_accounts", "kind = 'INR' AND active = 1")).toBe(1);
+    // the database itself refuses a second active account of a kind, while an inactive one may exist
+    await expect(
+      env.DB.prepare(
+        "INSERT INTO bank_accounts (id, kind, account_name, account_no, bank_name, active) VALUES ('x2', 'INR', 'A', 'AB12345', 'B', 1)",
+      ).run(),
+    ).rejects.toThrow(/UNIQUE/);
+    await env.DB.prepare(
+      "INSERT INTO bank_accounts (id, kind, account_name, account_no, bank_name, active) VALUES ('x3', 'INR', 'A', 'AB12345', 'B', 0)",
+    ).run();
+  });
+
+  it("an empty second account-number field says 'Type the account number again.'; a different one says they don't match [ADM-SET-02]", async () => {
+    await reset();
+    const o = await owner();
+    const empty = await json(await putBank("/settings/bank/INR", o.cookie, body({ accountNoAgain: "" })));
+    expect(empty.fields).toEqual([{ path: "accountNoAgain", message: "Type the account number again." }]);
+    const { accountNoAgain: _drop, ...without } = body();
+    const none = await json(
+      await put("/settings/bank/INR", o.cookie, { ...without, expectedUpdatedAt: null }),
+    );
+    expect(none.fields[0].message).toBe("Type the account number again.");
+    const other = await json(
+      await putBank("/settings/bank/INR", o.cookie, body({ accountNoAgain: "5550123450000" })),
+    );
+    expect(other.fields[0].message).toBe("The two account numbers don't match");
   });
 });
 

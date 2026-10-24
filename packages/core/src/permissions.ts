@@ -8,6 +8,14 @@
 
 export const ROLES = ["owner", "staff", "sales", "accountant"] as const;
 export type Role = (typeof ROLES)[number];
+
+/** How a role is written for a person (screens and emails); the code ("accountant") is never shown. */
+export const ROLE_LABELS: Record<Role, string> = {
+  owner: "Owner",
+  staff: "Staff",
+  sales: "Sales",
+  accountant: "Accountant",
+};
 export type Decision = "allow" | "step-up" | "approval" | "deny";
 
 /** Staff and Sales may send a proposal themselves only up to this document discount (10 %). */

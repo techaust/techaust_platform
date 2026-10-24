@@ -4,6 +4,7 @@
 // documents join as their milestones create them (M3.2 and later). Read-only, so no audit row (the access log has the request).
 import { sValidator } from "@hono/standard-validator";
 import { decide } from "@techaust/core/permissions";
+import { escapeLike } from "@techaust/core/text";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { type AppEnv, actor, BAD_REQUEST, type Ctx, err } from "./context.ts";
@@ -19,8 +20,6 @@ type Group = { type: "user" | "lead"; label: string; items: Item[] };
 /** The two reads, exported so a test can EXPLAIN them: leads by the start of the reference or the email (index ranges), staff by email range or name. */
 export const LEADS_SQL = `SELECT id, ref, contact_name, contact_email FROM leads WHERE (ref >= ?1 AND ref < ?2) OR (contact_email >= ?3 AND contact_email < ?4) ORDER BY ref LIMIT ${PER_TYPE}`;
 export const USERS_SQL = `SELECT id, name, email, role FROM staff_users WHERE (email >= ?1 AND email < ?2) OR name LIKE ?3 ESCAPE '\\' ORDER BY name LIMIT ${PER_TYPE}`;
-
-const escapeLike = (s: string) => s.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
 
 export const search = new Hono<AppEnv>().get(
   "/",
