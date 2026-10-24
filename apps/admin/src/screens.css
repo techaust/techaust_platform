@@ -363,3 +363,72 @@ body:has(.savebar) .toasts {
 .entry--skeleton {
   align-items: center;
 }
+
+/* A note under a field that isn't an error (the GSTIN state warning of 07-J, M3.3): an icon and text, never a block. */
+.field-warning {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.field-warning .icon {
+  flex: none;
+  margin-top: 0.125rem;
+  color: var(--color-warning);
+}
+
+/* ---------- Tabs (components/tabs.tsx; the client page, M3.3) ----------
+   A row of text tabs on a hairline; the open tab carries a 2 px verdigris rule and the heavier weight (never colour
+   alone). The row scrolls sideways inside its own box on narrow screens, so the page itself never does. */
+
+.tabs__scroll {
+  margin-bottom: var(--space-6);
+  overflow-x: auto;
+  border-bottom: 1px solid var(--color-border);
+  scrollbar-width: thin;
+}
+
+.tabs__list {
+  display: flex;
+  gap: var(--space-1);
+  min-width: max-content;
+}
+
+.tabs__tab {
+  min-height: var(--target-min);
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: none;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: inset 0 -2px 0 transparent;
+}
+
+.tabs__tab:hover {
+  color: var(--color-text);
+  background: var(--color-surface-alt);
+}
+
+.tabs__tab[aria-selected="true"] {
+  color: var(--color-text);
+  font-weight: 600;
+  box-shadow: inset 0 -2px 0 var(--color-text-accent);
+}
+
+.tabs__tab:focus-visible {
+  outline-offset: -3px;
+}
+
+.tabs__panel:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 4px;
+  border-radius: var(--radius-sm);
+}

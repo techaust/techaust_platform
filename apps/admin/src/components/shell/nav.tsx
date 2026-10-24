@@ -59,10 +59,6 @@ export const NAV: NavItem[] = [
     path: "/clients",
     icon: <Building />,
     group: 1,
-    arrives: {
-      milestone: "M3.3",
-      what: "Clients and their contacts, who can use the client portal, and each client's statement.",
-    },
   },
   {
     key: "projects",

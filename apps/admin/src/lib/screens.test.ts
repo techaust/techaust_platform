@@ -68,10 +68,9 @@ describe("what each role sees [ADM-G-01, ADM-G-02]", () => {
     expect(hasSearch("owner")).toBe(true);
     expect(notFoundLine("owner")).toContain("Use search above");
     for (const r of ROLES) expect(notFoundLine(r).includes("search")).toBe(hasSearch(r));
-    expect(hasSearch("accountant")).toBe(false);
-    expect(notFoundLine("accountant")).toBe(
-      "The link may be old, or the record was removed. Start again from the dashboard.",
-    );
+    // M3.3: every role that reads clients gets the box (clients and contacts are searchable), the accountant included.
+    expect(hasSearch("accountant")).toBe(true);
+    expect(notFoundLine("accountant")).toContain("Use search above");
   });
 });
 

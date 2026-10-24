@@ -133,7 +133,7 @@ export type Notification = {
   createdAt: number;
 };
 export type SearchGroupData = {
-  type: "user" | "lead";
+  type: "user" | "lead" | "client" | "contact";
   label: string;
   items: { id: string; title: string; subtitle: string; link: string }[];
 };
@@ -279,13 +279,178 @@ export type ReplyTemplateFilled = { id: string; label: string; subject: string; 
 export type ConvertInput = {
   type: "business" | "individual";
   country: string;
-  gstStatus: "registered" | "unregistered" | "overseas";
+  gstStatus: GstStatus;
   gstin?: string;
-  currency: "INR" | "USD";
+  /** Required for registered and unregistered Indian clients (defaults to the GSTIN's for registered ones). */
+  stateCode?: string;
+  /** The new contact is the billing contact (and may see finance by default). */
+  billingContact?: boolean;
+  currency: Currency;
   legalName?: string;
   displayName?: string;
 };
 export type Changed = { ok: true; changed: boolean; updatedAt: number };
+/** A passed tax check's notes (07-J): `gstin_state_mismatch` today, never a block. */
+export type TaxWarning = { code: string; message: string };
+
+// Clients and contacts (M3.3, ADM-CLI-01..05): the shapes of apps/admin/worker/clients.ts.
+export type GstStatus = "registered" | "unregistered" | "overseas";
+export type Currency = "INR" | "USD";
+export type ClientType = "business" | "individual";
+export type Address = {
+  line1: string;
+  line2?: string;
+  city: string;
+  state?: string;
+  stateCode?: string;
+  postalCode?: string;
+  country: string;
+};
+export type ReminderPolicy = { enabled: boolean; offsetsDays?: number[] };
+/** What every role that reads clients sees. */
+export type ClientView = {
+  id: string;
+  code: string;
+  legalName: string;
+  displayName: string;
+  type: ClientType;
+  country: string;
+  gstStatus: GstStatus;
+  gstin: string | null;
+  stateCode: string | null;
+  billingAddress: Address | null;
+  currency: Currency;
+  serviceAddress: Address | null;
+  tags: string[] | null;
+  notes: string | null;
+  legalHold: boolean;
+  createdAt: number;
+  /** Send back as `expectedUpdatedAt` with the next PATCH (details or billing). */
+  updatedAt: number;
+  // Only for a role with `clients.finance.read` (the API leaves them out for Sales).
+  paymentTermsDays?: number | null;
+  reminderPolicy?: ReminderPolicy | null;
+  careAutoIssue?: boolean;
+  attachPdf?: boolean;
+};
+export type MarketingConsent = { granted: boolean; at?: number; source?: string; withdrawnAt?: number };
+export type ContactView = {
+  id: string;
+  clientId: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  title: string | null;
+  isPrimary: boolean;
+  isBilling: boolean;
+  portalAccess: boolean;
+  canSeeFinance: boolean;
+  marketingConsent: MarketingConsent | null;
+  bouncedAt: number | null;
+  anonymisedAt: number | null;
+  legalHold: boolean;
+  createdAt: number;
+  updatedAt: number;
+};
+export type ClientPage = {
+  client: ClientView;
+  contacts: ContactView[];
+  moreContacts: boolean;
+  sourceLead: { id: string; ref: string } | null;
+  /** Only for a finance role: an invoice exists, so the currency can't change. */
+  currencyLocked?: boolean;
+};
+export type ClientsQuery = {
+  limit?: "25" | "50" | undefined;
+  q?: string | undefined;
+  gstStatus?: GstStatus | undefined;
+  currency?: Currency | undefined;
+  after?: string | undefined;
+  before?: string | undefined;
+};
+export type ContactInput = {
+  name: string;
+  email: string;
+  phone?: string | null;
+  title?: string | null;
+  isPrimary?: true;
+  isBilling?: boolean;
+  portalAccess?: boolean;
+  canSeeFinance?: boolean;
+  marketingConsent?: boolean;
+};
+export type NewClientInput = {
+  legalName: string;
+  displayName?: string;
+  type: ClientType;
+  country: string;
+  gstStatus: GstStatus;
+  gstin?: string;
+  stateCode?: string;
+  currency: Currency;
+  serviceAddress?: Address;
+  tags?: string[];
+  notes?: string | null;
+  contact?: ContactInput;
+};
+export type ClientPatch = {
+  expectedUpdatedAt: number;
+  legalName?: string;
+  displayName?: string;
+  type?: ClientType;
+  serviceAddress?: Address | null;
+  tags?: string[] | null;
+  notes?: string | null;
+};
+export type BillingPatch = {
+  expectedUpdatedAt: number;
+  country?: string;
+  gstStatus?: GstStatus;
+  gstin?: string | null;
+  stateCode?: string | null;
+  billingAddress?: Address | null;
+  currency?: Currency;
+  paymentTermsDays?: number | null;
+  reminderPolicy?: ReminderPolicy | null;
+  careAutoIssue?: boolean;
+  attachPdf?: boolean;
+};
+export type ContactPatch = Partial<Omit<ContactInput, "name" | "email">> & {
+  expectedUpdatedAt: number;
+  name?: string;
+  email?: string;
+};
+export type ClientActivity = {
+  id: string;
+  at: number;
+  actorType: string;
+  actorId: string | null;
+  actorName: string | null;
+  action: string;
+  entityType: string;
+  entityId: string;
+  summary: Record<string, unknown> | null;
+};
+export const EXPORT_PARTS = [
+  "leads",
+  "lead_activities",
+  "sessions",
+  "magic_links",
+  "acceptances",
+  "documents",
+  "email_log",
+  "audit_log",
+  "access_log",
+] as const;
+export type ExportPart = (typeof EXPORT_PARTS)[number];
+export type ExportSummary = {
+  contact: Record<string, unknown>;
+  client: Record<string, unknown> | null;
+  suppression: Record<string, unknown> | null;
+  manifest: ExportPart[];
+};
+export type ExportPage = { part: ExportPart; items: Record<string, unknown>[]; next: string | null };
+export type EraseMode = "erase" | "anonymise";
 
 /** A field the server refused (400 `invalid`): its dotted path in the request body and our own message. */
 export type FieldIssue = { path: string; message: string };
@@ -544,10 +709,56 @@ export const api = {
   replyToLead: (id: string, body: { subject: string; body: string; templateId?: string }) =>
     request<{ ok: true; queued: true; id: string }>(`/leads/${encodeURIComponent(id)}/reply`, { body }),
   convertLead: (id: string, body: ConvertInput) =>
-    request<{ clientId: string; clientCode: string; contactId: string; proposalId: string }>(
-      `/leads/${encodeURIComponent(id)}/convert`,
-      { body },
+    request<{
+      clientId: string;
+      clientCode: string;
+      contactId: string;
+      proposalId: string;
+      warnings?: TaxWarning[];
+    }>(`/leads/${encodeURIComponent(id)}/convert`, { body }),
+
+  // Clients and contacts (M3.3)
+  clients: (q: ClientsQuery = {}) => request<Page<"clients", ClientView>>(`/clients${qs(q)}`),
+  client: (id: string) => request<ClientPage>(`/clients/${encodeURIComponent(id)}`),
+  createClient: (body: NewClientInput) =>
+    request<{ id: string; code: string; contactId?: string; warnings: TaxWarning[] }>("/clients", { body }),
+  updateClient: (id: string, body: ClientPatch) =>
+    request<Changed>(`/clients/${encodeURIComponent(id)}`, { method: "PATCH", body }),
+  updateBilling: (id: string, body: BillingPatch) =>
+    request<Changed & { warnings: TaxWarning[] }>(`/clients/${encodeURIComponent(id)}/billing`, {
+      method: "PATCH",
+      body,
+    }),
+  clientFinance: (id: string) =>
+    request<{ available: boolean }>(`/clients/${encodeURIComponent(id)}/finance`),
+  clientStatement: (id: string, from: string, to: string) =>
+    request<{ available: boolean; from: string; to: string }>(
+      `/clients/${encodeURIComponent(id)}/statement${qs({ from, to })}`,
     ),
+  clientActivity: (id: string, after?: string) =>
+    request<{ entries: ClientActivity[]; next: string | null }>(
+      `/clients/${encodeURIComponent(id)}/activity${qs({ after })}`,
+    ),
+  clientContacts: (id: string, after?: string) =>
+    request<{ contacts: ContactView[]; next: string | null }>(
+      `/clients/${encodeURIComponent(id)}/contacts${qs({ limit: "50", after })}`,
+    ),
+  addContact: (clientId: string, body: ContactInput) =>
+    request<{ id: string }>(`/clients/${encodeURIComponent(clientId)}/contacts`, { body }),
+  updateContact: (id: string, body: ContactPatch) =>
+    request<Changed>(`/contacts/${encodeURIComponent(id)}`, { method: "PATCH", body }),
+  /** Owner only, step-up: the summary and the manifest of the export. */
+  exportSummary: (id: string) =>
+    request<ExportSummary>(`/contacts/${encodeURIComponent(id)}/export`, { body: {} }),
+  /** Owner only, step-up: one page (at most 50 rows) of one part of the export. */
+  exportPart: (id: string, part: ExportPart, after?: string) =>
+    request<ExportPage>(`/contacts/${encodeURIComponent(id)}/export`, {
+      body: after ? { part, after } : { part },
+    }),
+  eraseContact: (id: string, mode: EraseMode, reason: string) =>
+    request<{ ok: true; mode: EraseMode }>(`/contacts/${encodeURIComponent(id)}/erase`, {
+      body: { mode, reason },
+    }),
 };
 
 /** A message to show for any failure: the server's own words, or a plain network message. */

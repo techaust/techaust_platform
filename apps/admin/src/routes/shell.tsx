@@ -7,7 +7,7 @@ import type { Role } from "@techaust/core/permissions";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Outlet, useLocation, useParams } from "react-router";
 import { type Notification as ApiNotification, api, errorText } from "../api.ts";
-import { Inbox, Users } from "../components/icons.tsx";
+import { Building, Inbox, User, Users } from "../components/icons.tsx";
 import { AppShell } from "../components/shell/app-shell.tsx";
 import { GlobalSearch, type SearchGroup } from "../components/shell/global-search.tsx";
 import { type NavItem, navFor, navItem } from "../components/shell/nav.tsx";
@@ -22,7 +22,7 @@ const hrefOf = (item: NavItem) => item.path;
 /** How often the bell asks for new notifications while the tab is visible. */
 const BELL_POLL_MS = 120_000;
 
-const SEARCH_ICONS = { lead: <Inbox />, user: <Users /> } as const;
+const SEARCH_ICONS = { lead: <Inbox />, user: <Users />, client: <Building />, contact: <User /> } as const;
 
 async function runSearch(q: string): Promise<SearchGroup[]> {
   const r = await api.search(q);
@@ -39,17 +39,25 @@ async function runSearch(q: string): Promise<SearchGroup[]> {
   }));
 }
 
-/** What the box can find for this role today (leads with leads.read, staff for the owner), or null for nothing. */
-function searchCopy(canLeads: boolean, canUsers: boolean) {
-  if (canLeads && canUsers)
-    return {
-      placeholder: "Search leads and staff",
-      intro: "Find a lead by its reference or email, or a staff member by name or email.",
-    };
-  if (canLeads)
-    return { placeholder: "Search leads", intro: "Find a lead by its reference or the contact's email." };
-  if (canUsers) return { placeholder: "Search staff", intro: "Find a staff member by name or email." };
-  return null;
+/**
+ * What the box can find for this role today (leads with leads.read; clients by code or name and contacts by email
+ * with clients.read, M3.3; staff for the owner), or null for nothing.
+ */
+function searchCopy(canLeads: boolean, canClients: boolean, canUsers: boolean) {
+  const kinds = [canLeads && "leads", canClients && "clients", canUsers && "staff"].filter(
+    (k): k is string => typeof k === "string",
+  );
+  if (!kinds.length) return null;
+  const finds = [
+    canLeads && "a lead by its reference or email",
+    canClients && "a client by its code or name, or a contact by email",
+    canUsers && "a staff member by name or email",
+  ].filter((k): k is string => typeof k === "string");
+  const list = (xs: string[]) =>
+    xs.length < 2 ? (xs[0] ?? "") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`;
+  const findList =
+    finds.length < 2 ? (finds[0] ?? "") : `${finds.slice(0, -1).join("; ")}; or ${finds.at(-1)}`;
+  return { placeholder: `Search ${list(kinds)}`, intro: `Find ${findList}.` };
 }
 
 function useBell() {
@@ -124,7 +132,11 @@ export function Component() {
   const { pathname } = useLocation();
   const items = useMemo(() => navFor(user.role), [user.role]);
   const bell = useBell();
-  const copy = searchCopy(allowed(user.role, "leads.read"), allowed(user.role, "users.read"));
+  const copy = searchCopy(
+    allowed(user.role, "leads.read"),
+    allowed(user.role, "clients.read"),
+    allowed(user.role, "users.read"),
+  );
   const current = sectionOf(pathname);
 
   function signOut() {
