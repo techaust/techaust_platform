@@ -13,7 +13,7 @@ import { useToast } from "../components/toast.tsx";
 export function StatesPreview() {
   const toast = useToast();
   const [voiding, setVoiding] = useState(false);
-  const [submits, setSubmits] = useState(1);
+  const [submits, setSubmits] = useState(0);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("ravi@");
   const nameErr = name.trim() ? null : "Enter the client's name.";

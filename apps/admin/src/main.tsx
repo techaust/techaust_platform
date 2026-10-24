@@ -73,7 +73,9 @@ function Failed() {
 const router = createBrowserRouter([
   // M3.1 design preview: `vite dev` only. In a build `import.meta.env.DEV` is the literal false, so this entry, its
   // import() and the whole src/preview folder (sample data included) are left out of the bundle.
-  ...(import.meta.env.DEV ? [{ path: "/preview/*", lazy: () => import("./preview/index.tsx") }] : []),
+  ...(import.meta.env.DEV
+    ? [{ path: "/preview/*", HydrateFallback: Loading, lazy: () => import("./preview/index.tsx") }]
+    : []),
   {
     path: "/",
     HydrateFallback: Loading,

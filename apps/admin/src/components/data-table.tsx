@@ -2,8 +2,18 @@
 // sortable columns (`aria-sort` on the header, a button inside it); below `md` the same rows render as cards that
 // keep every label. Paging is keyset ("Previous" / "Next" from a cursor; no page numbers, no total count). Filters
 // are chips that toggle (aria-pressed) and live in the URL, so a filtered list can be bookmarked and shared.
-import type { ReactNode } from "react";
-import { ArrowDown, ArrowUp, ArrowUpDown, Check, ChevronLeft, ChevronRight, Search, X } from "./icons.tsx";
+import { type ReactNode, useId, useState } from "react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Filter,
+  Search,
+  X,
+} from "./icons.tsx";
 
 export type SortDir = "asc" | "desc";
 export type Sort = { key: string; dir: SortDir };
@@ -226,8 +236,11 @@ export function FilterBar(props: {
   result: string;
 }) {
   const active = props.query !== "" || props.groups.some((g) => g.selected.length > 0);
+  const on = props.groups.reduce((n, g) => n + g.selected.length, 0);
+  const [open, setOpen] = useState(false);
+  const groupsId = useId();
   return (
-    <section className="filters" aria-label="Filters">
+    <section className="filters" aria-label="Filters" data-open={open || undefined} id={groupsId}>
       <div className="filters__search">
         <label htmlFor="filter-q">{props.searchLabel}</label>
         <div className="field-icon">
@@ -242,6 +255,16 @@ export function FilterBar(props: {
           />
         </div>
       </div>
+      <button
+        type="button"
+        className="btn btn--secondary filters__toggle"
+        aria-expanded={open}
+        aria-controls={groupsId}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <Filter size={20} />
+        {on ? `Filters (${on} on)` : "Filters"}
+      </button>
       {props.groups.map((g) => (
         // biome-ignore lint/a11y/useSemanticElements: a set of toggle buttons, not form controls in a fieldset
         <div key={g.key} className="chips" role="group" aria-labelledby={`chips-${g.key}`}>

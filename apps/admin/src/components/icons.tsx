@@ -418,6 +418,12 @@ export const Landmark = (p: P) => (
   </Icon>
 );
 
+export const Filter = (p: P) => (
+  <Icon {...p}>
+    <path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z" />
+  </Icon>
+);
+
 export const Hash = (p: P) => (
   <Icon {...p}>
     <path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18" />

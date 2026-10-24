@@ -58,7 +58,8 @@ export function ErrorSummary({ errors, focusKey }: { errors: SummaryError[]; foc
   const ref = useRef<HTMLElement>(null);
   // biome-ignore lint/correctness/useExhaustiveDependencies: focus again on every submit (focusKey changes)
   useEffect(() => {
-    if (errors.length) ref.current?.focus();
+    // focusKey counts submits: 0 means none yet, so nothing takes focus while the page loads.
+    if (errors.length && focusKey > 0) ref.current?.focus();
   }, [focusKey]);
   if (!errors.length) return null;
   return (

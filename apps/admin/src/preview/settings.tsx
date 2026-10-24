@@ -342,7 +342,7 @@ function CompanyProfile() {
 
   return (
     <>
-      <PreviewControls label="Try a GSTIN">
+      <PreviewControls label="Try a GSTIN (all three are made up: the sample GSTIN is not a real registration)">
         {[
           { label: "Valid sample", value: SAMPLE_GSTIN },
           { label: "Wrong format", value: SAMPLE_GSTIN_BAD_FORMAT },
@@ -423,7 +423,7 @@ function CompanyProfile() {
               id="company-gstin"
               label="GSTIN"
               className="field--gstin"
-              hint="15 characters. Checked as you finish typing. This sample GSTIN is made up for the preview."
+              hint="15 characters, checked when you finish typing."
               error={errors.gstin ?? gstError}
               status={
                 gst?.ok ? (
@@ -1183,6 +1183,7 @@ function Gateways() {
               </label>
               <label className="segmented__opt" aria-describedby={`gw-${g.name}-live`}>
                 <input type="radio" name={`gw-${g.name}`} disabled />
+                <Lock size={16} />
                 Live
               </label>
             </fieldset>

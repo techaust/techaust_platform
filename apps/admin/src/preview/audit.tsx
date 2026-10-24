@@ -230,7 +230,7 @@ function Entry({ a }: { a: AuditEntry }) {
           <span>IP {a.ip}</span>
         </p>
         {a.diff && (
-          <details className="diff">
+          <details className="diff" open={a.id === "a01" || undefined}>
             <summary>
               {a.diff.length === 1 ? "1 change" : `${a.diff.length} changes`}
               <span className="visually-hidden">, {a.action}</span>

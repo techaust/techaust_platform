@@ -7,6 +7,7 @@
 
 body:has(.shell) {
   display: block;
+  place-items: normal;
   padding: 0;
 }
 
@@ -54,13 +55,17 @@ body:has(.shell) {
   top: var(--space-2);
 }
 
+/* The column runs the full height of the page; the rail inside it stays in view while the content scrolls. */
 .shell__rail {
-  position: sticky;
-  top: 0;
-  height: 100dvh;
   z-index: 5;
   background: var(--rail-bg);
   border-inline-end: 1px solid var(--rail-edge);
+}
+
+.shell__rail > .rail {
+  position: sticky;
+  top: 0;
+  height: 100dvh;
 }
 
 .shell__main {
@@ -121,7 +126,7 @@ body:has(.shell) {
 .rail__group {
   list-style: none;
   margin: 0;
-  padding: var(--space-2) 0;
+  padding: var(--space-1) 0;
 }
 
 .rail__group + .rail__group {
@@ -257,6 +262,7 @@ body:has(.shell) {
 /* ---------- Drawer (below md) ---------- */
 
 .drawer {
+  --color-focus: var(--color-verdigris-300);
   margin: 0;
   width: min(20rem, 86vw);
   height: 100dvh;
@@ -288,7 +294,7 @@ body:has(.shell) {
   }
 }
 
-.drawer__close {
+.drawer .drawer__close {
   position: absolute;
   top: var(--space-2);
   right: var(--space-2);
@@ -297,7 +303,7 @@ body:has(.shell) {
   --color-focus: var(--color-verdigris-300);
 }
 
-.drawer__close:hover {
+.drawer .drawer__close:hover {
   background: color-mix(in srgb, var(--color-mist) 8%, transparent);
 }
 
@@ -316,8 +322,8 @@ body:has(.shell) {
   border-bottom: 1px solid var(--color-border);
 }
 
-.topbar__menu,
-.topbar__mark {
+.topbar .topbar__menu,
+.topbar .topbar__mark {
   display: none;
 }
 
@@ -371,8 +377,8 @@ body:has(.shell) {
     display: none;
   }
 
-  .topbar__menu,
-  .topbar__mark {
+  .topbar .topbar__menu,
+  .topbar .topbar__mark {
     display: inline-grid;
   }
 
@@ -563,9 +569,9 @@ body:has(.shell) {
     display: none;
   }
 
+  /* Unfolded, the search covers the top bar; the list hangs just below it. */
   .gsearch__panel {
-    position: fixed;
-    top: calc(var(--topbar-h) + var(--space-1));
+    top: calc(100% + var(--space-1));
     left: var(--space-2);
     right: var(--space-2);
     min-width: 0;
@@ -590,10 +596,15 @@ body:has(.shell) {
   box-shadow: var(--elevation-2);
 }
 
+/* Phones: the panels take the width of the top bar (their containing block), just below it. */
 @media (max-width: 29.99rem) {
-  .pop__panel {
-    position: fixed;
-    top: calc(var(--topbar-h) + var(--space-1));
+  .pop {
+    position: static;
+  }
+
+  .pop__panel,
+  .pop__panel.account {
+    top: calc(100% + var(--space-1));
     left: var(--space-2);
     right: var(--space-2);
     width: auto;
@@ -749,8 +760,10 @@ body:has(.shell) {
   }
 }
 
-.pop__panel.account {
-  width: 18rem;
+@media (min-width: 30rem) {
+  .pop__panel.account {
+    width: 18rem;
+  }
 }
 
 .account__who {
@@ -1218,6 +1231,10 @@ body:has(.shell) {
   line-height: var(--text-sm--line-height);
 }
 
+.when time {
+  white-space: nowrap;
+}
+
 .when__rel {
   color: var(--color-text-muted);
   font-size: var(--text-caption);
@@ -1252,13 +1269,63 @@ body:has(.shell) {
   font-weight: 560;
 }
 
-@media (min-width: 64rem) {
+.filters__toggle {
+  display: none;
+}
+
+@media (max-width: 47.99rem) {
+  .filters--audit {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: var(--space-3);
+  }
+
+  .filters--audit > .field:nth-child(-n + 2),
+  .filters--audit > .filters__foot {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Phones: the search stays; the chip groups fold behind a "Filters" button, so the list comes first. */
+@media (max-width: 47.99rem) {
+  .filters__toggle {
+    display: inline-flex;
+    justify-self: start;
+  }
+
+  .filters:not([data-open]) .chips {
+    display: none;
+  }
+}
+
+@media (min-width: 48rem) {
   .filters {
-    grid-template-columns: minmax(14rem, 22rem) auto auto;
+    grid-template-columns: max-content max-content;
     justify-content: start;
     column-gap: var(--space-8);
   }
 
+  .filters__search {
+    grid-column: 1 / -1;
+    max-width: 28rem;
+  }
+
+  .filters__foot {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (min-width: 80rem) {
+  .filters {
+    grid-template-columns: minmax(12rem, 22rem) max-content max-content;
+    column-gap: var(--space-6);
+  }
+
+  .filters__search {
+    grid-column: auto;
+  }
+}
+
+@media (min-width: 64rem) {
   .filters--audit {
     grid-template-columns: repeat(4, minmax(10rem, 14rem));
   }
@@ -1299,14 +1366,18 @@ body:has(.shell) {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
+  padding-block: var(--space-1);
 }
 
+/* The pill is 36 px tall; an invisible 4 px band above and below makes the target 44 px (rows are 8 px apart,
+   so the bands never overlap). */
 .chip {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  min-height: var(--target-min);
-  padding: 0 var(--space-4);
+  min-height: 2.25rem;
+  padding: 0 var(--space-3);
   border: 1px solid var(--color-border-control);
   border-radius: var(--radius-full);
   background: transparent;
@@ -1318,12 +1389,18 @@ body:has(.shell) {
   transition: background-color var(--duration-fast) var(--ease-standard);
 }
 
+.chip::after {
+  content: "";
+  position: absolute;
+  inset: calc(-1 * var(--space-1)) 0;
+}
+
 .chip:hover {
   background: var(--color-surface-alt);
 }
 
 .chip[aria-pressed="true"] {
-  padding-inline-start: var(--space-3);
+  padding-inline-start: var(--space-2);
   border-color: var(--color-text-accent);
   background: var(--color-selection);
   font-weight: 600;
@@ -1776,26 +1853,42 @@ input[readonly] {
   gap: var(--space-2);
 }
 
+/* Fixed to the bottom of the content column (beside the rail), whatever the layout inside the page. */
 .savebar {
-  position: sticky;
+  position: fixed;
   bottom: 0;
-  z-index: 3;
+  left: var(--app-sidenav);
+  right: 0;
+  z-index: 4;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  margin: var(--space-6) calc(-1 * var(--gutter)) calc(-1 * var(--space-16));
   padding: var(--space-3) var(--gutter);
   background: var(--color-surface-raised);
   border-top: 1px solid var(--color-border);
   box-shadow: var(--elevation-2);
 }
 
+.shell[data-collapsed] .savebar {
+  left: var(--app-sidenav-collapsed);
+}
+
+.shell__content:has(.savebar) {
+  padding-bottom: calc(var(--space-16) + var(--space-12));
+}
+
 @media (min-width: 64rem) {
   .savebar {
-    margin-inline: calc(-1 * var(--space-10));
     padding-inline: var(--space-10);
+  }
+}
+
+@media (max-width: 47.99rem) {
+  .savebar,
+  .shell[data-collapsed] .savebar {
+    left: 0;
   }
 }
 
@@ -2007,6 +2100,7 @@ input[readonly] {
 
 .setlist__text {
   display: grid;
+  flex: 1;
   min-width: 0;
 }
 
@@ -2039,6 +2133,10 @@ input[readonly] {
   max-width: 52rem;
 }
 
+.settings-form > .hint {
+  margin-bottom: var(--space-6);
+}
+
 .form-section {
   min-width: 0;
   margin: 0 0 var(--space-8);
@@ -2057,6 +2155,10 @@ input[readonly] {
 .form-grid {
   display: grid;
   gap: 0 var(--space-6);
+}
+
+.form-grid > .field {
+  align-content: start;
 }
 
 @media (min-width: 48rem) {
@@ -2207,8 +2309,8 @@ input[readonly] {
 }
 
 @media (min-width: 48rem) {
-  .bank-blocks {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .facts > div {
+    grid-template-columns: 11rem minmax(0, 1fr);
   }
 }
 
@@ -2329,6 +2431,11 @@ input[readonly] {
   font-size: var(--text-sm);
 }
 
+.hint + .versioned-list,
+.hint + .dtable {
+  margin-top: var(--space-4);
+}
+
 .versioned-list {
   display: grid;
   gap: var(--space-3);
@@ -2429,6 +2536,10 @@ input[readonly] {
   color: var(--color-text-muted);
   font-size: var(--text-sm);
   line-height: var(--text-sm--line-height);
+}
+
+.dialog__body > .hint:first-child {
+  margin-bottom: var(--space-5);
 }
 
 .dialog .radios {
