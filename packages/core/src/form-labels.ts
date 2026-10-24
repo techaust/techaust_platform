@@ -102,3 +102,14 @@ export function countryName(code: string): string {
   }
   return name ? name.replace(/\s*&\s*/g, " and ") : code;
 }
+
+/** True when `code` is an assigned ISO 3166-1 alpha-2 country (the same ICU data `countryName` reads). */
+export function isCountryCode(code: string): boolean {
+  if (!/^[A-Z]{2}$/.test(code)) return false;
+  regionNames ??= new Intl.DisplayNames("en-IN", { type: "region", fallback: "none" });
+  try {
+    return regionNames.of(code) !== undefined;
+  } catch {
+    return false;
+  }
+}

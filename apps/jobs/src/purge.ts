@@ -7,14 +7,17 @@
 //     db.batch() writes the audit row (lead id and ref only, no personal data) and deletes the bell rows and the lead
 //     (`lead_activities` cascade, `duplicate_of` links are set to NULL by the foreign key). A redelivery finds nothing to do.
 //   LEAD_PURGE_MODE: anything but "live" is a dry run: the lead reference that would be deleted is logged, nothing is deleted.
-import { LEAD_PURGE_PAGE, type LeadPurgeScanMessage, uuidv7 } from "@techaust/core";
+import { LEAD_DELETABLE_SQL, LEAD_PURGE_PAGE, type LeadPurgeScanMessage, uuidv7 } from "@techaust/core";
 import { logEvent } from "./log.ts";
 
 /** The cron expression of wrangler.jsonc that triggers the clean-up. */
 export const PURGE_CRON = "0 22 * * *";
 
 /** The conditions of a due lead (`?1` is the lead id, `?2` the time). */
-const DUE = "delete_after IS NOT NULL AND delete_after <= ?2 AND client_id IS NULL AND legal_hold = 0";
+const DUE = `delete_after IS NOT NULL AND delete_after <= ?2 AND ${LEAD_DELETABLE_SQL}`;
+
+/** The scan, exported so a test can EXPLAIN it (it must use the partial index `leads_delete_due`). */
+export const SCAN_SQL = `SELECT id, delete_after AS at FROM leads INDEXED BY leads_delete_due WHERE delete_after <= ?1 AND ${LEAD_DELETABLE_SQL} AND (delete_after, id) > (?2, ?3) ORDER BY delete_after, id LIMIT ${LEAD_PURGE_PAGE + 1}`;
 
 type Cursor = { at: number; id: string };
 
@@ -24,9 +27,7 @@ export async function enqueueDue(
   asOf: number,
   cursor?: Cursor,
 ): Promise<{ queued: number; more: boolean }> {
-  const { results } = await env.DB.prepare(
-    `SELECT id, delete_after AS at FROM leads WHERE delete_after <= ?1 AND client_id IS NULL AND legal_hold = 0 AND (delete_after > ?2 OR (delete_after = ?2 AND id > ?3)) ORDER BY delete_after, id LIMIT ${LEAD_PURGE_PAGE + 1}`,
-  )
+  const { results } = await env.DB.prepare(SCAN_SQL)
     .bind(asOf, cursor?.at ?? -1, cursor?.id ?? "")
     .all<{ id: string; at: number }>();
   const page = results.slice(0, LEAD_PURGE_PAGE);

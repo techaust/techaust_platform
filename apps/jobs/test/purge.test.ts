@@ -1,11 +1,17 @@
 // Lead retention clean-up and the duplicate link [ADM-LEAD-05, JOB-CRON-01, FRM-04]: due / not due / converted / legal hold /
 // dry run / redelivery / activity after the enqueue; the cron only enqueues; one lead per message.
 import { env as realEnv } from "cloudflare:workers";
-import { generateLeadRef, LEAD_PURGE_PAGE, type LeadMessage } from "@techaust/core";
+import {
+  deleteAfter,
+  deleteAfterSql,
+  generateLeadRef,
+  LEAD_PURGE_PAGE,
+  type LeadMessage,
+} from "@techaust/core";
 import { beforeEach, describe, expect, it } from "vitest";
 import worker from "../src/index.ts";
 import { processLead } from "../src/leads.ts";
-import { enqueueDue, PURGE_CRON, purgeLead } from "../src/purge.ts";
+import { enqueueDue, PURGE_CRON, purgeLead, SCAN_SQL } from "../src/purge.ts";
 import { handleQueue } from "../src/queue.ts";
 
 const NOW = 1_800_000_000_000;
@@ -273,6 +279,9 @@ describe("duplicate link at insert [FRM-04]", () => {
     const real = Date.now();
     const first = msg("same@example.com", real - 10 * DAY);
     expect(await processLead(makeEnv(), first, real - 10 * DAY)).toBe("created");
+    await realEnv.DB.prepare("UPDATE leads SET created_at = ?1 WHERE contact_email = 'same@example.com'")
+      .bind(real - 10 * DAY)
+      .run();
     const second = { ...msg("same@example.com", real), ipHash: "e".repeat(64) };
     expect(await processLead(makeEnv(), second, real)).toBe("created");
     const rows = (
@@ -296,5 +305,112 @@ describe("duplicate link at insert [FRM-04]", () => {
     await processLead(makeEnv(), { ...msg("other@example.com", real), ipHash: "9".repeat(64) }, real);
     const n = await count("leads", "duplicate_of IS NOT NULL");
     expect(n).toBe(0);
+  });
+});
+
+const setRetention = (months: number | null) =>
+  months === null
+    ? realEnv.DB.prepare("DELETE FROM settings WHERE key = 'retention'").run()
+    : realEnv.DB.prepare("INSERT OR REPLACE INTO settings (key, value, version) VALUES ('retention', ?1, 1)")
+        .bind(
+          JSON.stringify({
+            leadsMonths: months,
+            emailLogMonths: 13,
+            securityLogMonths: 13,
+            financialYears: 10,
+          }),
+        )
+        .run();
+const sqlDate = async (t: number) =>
+  (
+    await realEnv.DB.prepare(`SELECT ${deleteAfterSql("?1")} AS d`)
+      .bind(t)
+      .first<{ d: number }>()
+  )?.d;
+
+describe("one retention expression [ADM-SET-09, ADM-LEAD-05]", () => {
+  const times = [
+    Date.UTC(2026, 9, 24, 10, 30, 15, 123),
+    Date.UTC(2026, 0, 31, 23, 59, 59, 999),
+    Date.UTC(2027, 1, 28, 0, 0, 0, 0),
+    Date.UTC(2028, 1, 29, 12, 0, 0, 1),
+  ];
+
+  it("gives the same date as deleteAfter() with the default 12 months, from the stored setting, and never less than 12", async () => {
+    await setRetention(null);
+    for (const t of times) expect(await sqlDate(t)).toBe(deleteAfter(t, 12));
+    await setRetention(18);
+    for (const t of times) expect(await sqlDate(t)).toBe(deleteAfter(t, 18));
+    await setRetention(3); // below the floor (the settings schema refuses it; the SQL is the second guard)
+    for (const t of times) expect(await sqlDate(t)).toBe(deleteAfter(t, 12));
+    await setRetention(null);
+  });
+
+  it("the jobs insert uses the stored months", async () => {
+    await setRetention(24);
+    const real = Date.now();
+    const m = {
+      kind: "contact",
+      payload: {
+        name: "Rita",
+        email: "rita@example.com",
+        message: "A question about our books.",
+        marketing: false,
+      },
+      ref: generateLeadRef(),
+      ipHash: "a".repeat(64),
+      formVersion: "contact-1",
+      noticeVersion: "0.1",
+      utm: {},
+      submittedAt: real,
+    } as LeadMessage;
+    expect(await processLead(makeEnv(), m, real)).toBe("created");
+    const row = await realEnv.DB.prepare(
+      "SELECT delete_after, last_activity_at FROM leads WHERE contact_email = 'rita@example.com'",
+    ).first<{
+      delete_after: number;
+      last_activity_at: number;
+    }>();
+    expect(row?.last_activity_at).toBe(real);
+    expect(row?.delete_after).toBe(deleteAfter(real, 24));
+    await setRetention(null);
+  });
+});
+
+describe("queries use their indexes", () => {
+  it("the clean-up scan uses the partial index leads_delete_due", async () => {
+    const plan = await realEnv.DB.prepare(`EXPLAIN QUERY PLAN ${SCAN_SQL}`)
+      .bind(NOW, -1, "")
+      .all<{ detail: string }>();
+    const text = plan.results.map((r) => r.detail).join(" | ");
+    expect(text).toContain("leads_delete_due");
+    expect(text).not.toMatch(/SCAN leads(?! USING)/);
+  });
+});
+
+describe("duplicate link only looks at earlier leads [FRM-04]", () => {
+  it("a lead created after the submission time is not the original", async () => {
+    const real = Date.now();
+    await addLead({ email: "later@example.com" });
+    await realEnv.DB.prepare("UPDATE leads SET created_at = ?1 WHERE contact_email = 'later@example.com'")
+      .bind(real + DAY)
+      .run();
+    const m = {
+      kind: "contact",
+      payload: {
+        name: "Asha",
+        email: "later@example.com",
+        message: "Hello there, a short question.",
+        marketing: false,
+      },
+      ref: generateLeadRef(),
+      ipHash: "b".repeat(64),
+      formVersion: "contact-1",
+      noticeVersion: "0.1",
+      utm: {},
+      submittedAt: real,
+    } as LeadMessage;
+    expect(await processLead(makeEnv(), m, real)).toBe("created");
+    expect(await count("leads", "contact_email = 'later@example.com' AND duplicate_of IS NOT NULL")).toBe(0);
   });
 });

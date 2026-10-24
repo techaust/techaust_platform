@@ -12,7 +12,7 @@ import {
   type Currency,
   can,
   countryName,
-  deleteAfter,
+  deleteAfterSql,
   type EmailMessage,
   generateLeadRef,
   LEAD_DUPLICATE_WINDOW_MS,
@@ -132,14 +132,14 @@ function insertStatement(env: Env, m: LeadMessage, ref: string): D1PreparedState
   const quote =
     m.kind === "quote" ? (m.payload as Extract<LeadMessage, { kind: "quote" }>["payload"]) : undefined;
   const [keyShort, keyDay] = limitKeys(m.ipHash);
-  const rest = Array.from({ length: 21 }, (_, i) => `?${i + 3}`).join(", "); // ?3 .. ?23
+  const rest = Array.from({ length: 20 }, (_, i) => `?${i + 3}`).join(", "); // ?3 .. ?22 (the last is the submission time)
   return env.DB.prepare(
     `INSERT INTO leads (id, ref, source, form_version, service_code, request_type, plan, budget_band, timeline,
        currency, message, tools, contact_name, contact_email, contact_phone, contact_company, contact_country,
        call_window, utm, source_page, referrer_host, consent, last_activity_at, delete_after, duplicate_of)
-     SELECT ?1, ?2, 'web', ${rest},
-       (SELECT id FROM leads WHERE contact_email = ?26 AND created_at >= ?27 ORDER BY created_at DESC LIMIT 1)
-     WHERE ${withinLimitsSql(24, 25)}`,
+     SELECT ?1, ?2, 'web', ${rest}, ${deleteAfterSql("?22")},
+       (SELECT id FROM leads WHERE contact_email = ?25 AND created_at >= ?26 AND created_at <= ?22 ORDER BY created_at DESC LIMIT 1)
+     WHERE ${withinLimitsSql(23, 24)}`,
   ).bind(
     leadId(m),
     ref,
@@ -170,7 +170,6 @@ function insertStatement(env: Env, m: LeadMessage, ref: string): D1PreparedState
       withdrawnAt: null,
     }),
     m.submittedAt,
-    deleteAfter(m.submittedAt),
     keyShort,
     keyDay,
     // FRM-04: the earlier lead with the same address within 30 days is linked, never merged (the form lower-cases the address).

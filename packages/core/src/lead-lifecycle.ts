@@ -64,3 +64,23 @@ export function isPurgeScanMessage(body: unknown): body is LeadPurgeScanMessage 
   const c = b.cursor as { at?: unknown; id?: unknown } | null;
   return typeof c === "object" && c !== null && typeof c.at === "number" && typeof c.id === "string";
 }
+
+// ---- retention in SQL ----------------------------------------------------------------------------------------------
+// ONE expression for the leads retention, used by the jobs insert, every activity update (admin), the settings re-dating and
+// the 0016 backfill, so the figure cannot drift (analyst early check, M3.2). Months come from the stored `retention` setting,
+// floored at 12 (the settings schema's minimum, DPDP Rule 8(3)) and 12 when the setting was never saved. VERIFY WITH CA/LEGAL.
+
+/** Months of lead retention, as a SQL expression over the `settings` table. */
+export const LEAD_RETENTION_MONTHS_SQL =
+  "max(12, coalesce((SELECT json_extract(value, '$.leadsMonths') FROM settings WHERE key = 'retention'), 12))";
+
+/** `delete_after` for an activity at `activityMs` (a placeholder or expression, UTC ms): the calendar-month arithmetic of `deleteAfter`. */
+export const deleteAfterSql = (activityMs: string): string =>
+  `(cast(strftime('%s', datetime((${activityMs}) / 1000, 'unixepoch', '+' || ${LEAD_RETENTION_MONTHS_SQL} || ' months')) AS integer) * 1000 + ((${activityMs}) % 1000))`;
+
+/** The two assignments every activity makes: `last_activity_at = t` and `delete_after` from it (`t` is a placeholder such as `?4`). */
+export const touchLeadSql = (t: string): string =>
+  `last_activity_at = ${t}, delete_after = ${deleteAfterSql(t)}`;
+
+/** The leads the clean-up and the "scheduled for deletion" view consider (matches the partial index `leads_delete_due`). */
+export const LEAD_DELETABLE_SQL = "client_id IS NULL AND legal_hold = 0";

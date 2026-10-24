@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "511afac8-f5ec-4dfe-9d05-0d91b5e8d8e0",
+  "id": "8bbc39e5-483a-41e8-8146-7426b082a96c",
   "prevId": "387d1656-4158-4c06-8d56-dcd15bec9f73",
   "tables": {
     "catalogue_items": {
@@ -1668,6 +1668,32 @@
           "name": "leads_proposal",
           "columns": ["proposal_id"],
           "isUnique": false
+        },
+        "leads_stage_activity": {
+          "name": "leads_stage_activity",
+          "columns": ["stage", "last_activity_at", "id"],
+          "isUnique": false
+        },
+        "leads_service_code": {
+          "name": "leads_service_code",
+          "columns": ["service_code"],
+          "isUnique": false
+        },
+        "leads_name_nocase": {
+          "name": "leads_name_nocase",
+          "columns": ["\"contact_name\" collate nocase"],
+          "isUnique": false
+        },
+        "leads_company_nocase": {
+          "name": "leads_company_nocase",
+          "columns": ["\"contact_company\" collate nocase"],
+          "isUnique": false
+        },
+        "leads_delete_due": {
+          "name": "leads_delete_due",
+          "columns": ["delete_after", "id"],
+          "isUnique": false,
+          "where": "\"leads\".\"client_id\" is null and \"leads\".\"legal_hold\" = 0"
         }
       },
       "foreignKeys": {
@@ -1694,6 +1720,15 @@
           "tableFrom": "leads",
           "tableTo": "leads",
           "columnsFrom": ["duplicate_of"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "leads_proposal_id_documents_id_fk": {
+          "name": "leads_proposal_id_documents_id_fk",
+          "tableFrom": "leads",
+          "tableTo": "documents",
+          "columnsFrom": ["proposal_id"],
           "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
@@ -4886,6 +4921,21 @@
     "columns": {}
   },
   "internal": {
-    "indexes": {}
+    "indexes": {
+      "leads_name_nocase": {
+        "columns": {
+          "\"contact_name\" collate nocase": {
+            "isExpression": true
+          }
+        }
+      },
+      "leads_company_nocase": {
+        "columns": {
+          "\"contact_company\" collate nocase": {
+            "isExpression": true
+          }
+        }
+      }
+    }
   }
 }
