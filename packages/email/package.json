@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Email templates (HTML + text), header sanitising and the SES v2 client.",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./reply-templates": "./src/reply-templates.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

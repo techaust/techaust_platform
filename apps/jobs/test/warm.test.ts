@@ -6,7 +6,7 @@ import { warmConsumers } from "../src/warm.ts";
 // (The SES warm-up's start-up rules are tested in packages/email.)
 describe("jobs start-up warm-up", () => {
   it("parses 5 samples (two leads, a lead email, a sign-in link email, a staff alert) and renders 10 emails (the three 2FA changes and the member line included)", () => {
-    expect(warmConsumers()).toBe(17);
+    expect(warmConsumers()).toBe(18);
   });
 
   it("works under workerd's start-up rules and prints nothing (M2.4b: the five new templates and the staff alert are included)", () => {
@@ -26,7 +26,7 @@ describe("jobs start-up warm-up", () => {
     g.fetch = refuse;
     g.setTimeout = refuse;
     try {
-      expect(warmConsumers()).toBe(17);
+      expect(warmConsumers()).toBe(18);
       expect(log).not.toHaveBeenCalled();
       expect(error).not.toHaveBeenCalled();
     } finally {

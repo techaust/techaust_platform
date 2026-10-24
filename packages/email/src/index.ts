@@ -3,6 +3,7 @@ import {
   type LayoutOptions,
   leadAcknowledgement,
   leadAlert,
+  leadReply,
   portalMagicLink,
   type Rendered,
   staffInvite,
@@ -155,6 +156,8 @@ function renderTemplate(
         ...noReply,
         ...staffInvite({ inviter_name: get("inviter_name"), role: get("role"), url: get("url") }, opts),
       };
+    case "lead.reply":
+      return { ...hello, ...leadReply({ subject: get("subject"), body: get("body") }, opts) };
     default:
       throw new Error(`Unknown email template: ${template}`);
   }
