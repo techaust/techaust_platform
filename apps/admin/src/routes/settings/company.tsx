@@ -1,0 +1,366 @@
+// Company profile (ADM-SET-01): names, the GSTIN with its live check and the PAN taken from it, the state (fixed by a
+// valid GSTIN), the address and contact printed on documents, and the two logos, picked from the generated brand files
+// (lead decision: no uploads until file storage, M3.4). Changes apply to new documents only (VERIFY WITH CA for the GST
+// fields).
+import { STATE_CODES, type StateCode, selectableStates, validateGstin } from "@techaust/core";
+import { BRAND_LOGOS, type Settings } from "@techaust/core/settings";
+import primaryBlack from "@techaust/ui/brand/logo-primary-black.svg?url";
+import primaryColor from "@techaust/ui/brand/logo-primary-color.svg?url";
+import primaryDark from "@techaust/ui/brand/logo-primary-dark.svg?url";
+import primaryInk from "@techaust/ui/brand/logo-primary-ink.svg?url";
+import primaryWhite from "@techaust/ui/brand/logo-primary-white.svg?url";
+import stackedBlack from "@techaust/ui/brand/logo-stacked-black.svg?url";
+import stackedColor from "@techaust/ui/brand/logo-stacked-color.svg?url";
+import stackedDark from "@techaust/ui/brand/logo-stacked-dark.svg?url";
+import stackedInk from "@techaust/ui/brand/logo-stacked-ink.svg?url";
+import stackedWhite from "@techaust/ui/brand/logo-stacked-white.svg?url";
+import { useState } from "react";
+import { StatusPill } from "../../components/display.tsx";
+import { FormField } from "../../components/form.tsx";
+import { type FieldErrors, fieldId, looksLikeEmail, orNull } from "../../lib/settings-form.ts";
+import { type Built, GroupForm, type GroupSpec } from "./kit.tsx";
+
+type Logo = (typeof BRAND_LOGOS)[number];
+
+/** The generated brand files a document may use, with what each one is. */
+const LOGOS: Record<Logo, { url: string; label: string; ground: "light" | "dark" }> = {
+  "logo-primary-color.svg": { url: primaryColor, label: "Primary, colour", ground: "light" },
+  "logo-primary-ink.svg": { url: primaryInk, label: "Primary, ink", ground: "light" },
+  "logo-primary-black.svg": { url: primaryBlack, label: "Primary, black", ground: "light" },
+  "logo-primary-dark.svg": { url: primaryDark, label: "Primary, for dark grounds", ground: "dark" },
+  "logo-primary-white.svg": { url: primaryWhite, label: "Primary, white", ground: "dark" },
+  "logo-stacked-color.svg": { url: stackedColor, label: "Stacked, colour", ground: "light" },
+  "logo-stacked-ink.svg": { url: stackedInk, label: "Stacked, ink", ground: "light" },
+  "logo-stacked-black.svg": { url: stackedBlack, label: "Stacked, black", ground: "light" },
+  "logo-stacked-dark.svg": { url: stackedDark, label: "Stacked, for dark grounds", ground: "dark" },
+  "logo-stacked-white.svg": { url: stackedWhite, label: "Stacked, white", ground: "dark" },
+};
+
+type Form = {
+  tradeName: string;
+  legalName: string;
+  gstin: string;
+  stateCode: StateCode;
+  address: string;
+  principalPlace: string;
+  documentsEmail: string;
+  documentsPhone: string;
+  logoLight: Logo;
+  logoDark: Logo;
+};
+
+const ID = {
+  tradeName: fieldId("tradeName"),
+  legalName: fieldId("legalName"),
+  gstin: fieldId("gstin"),
+  pan: "f-pan",
+  stateCode: fieldId("stateCode"),
+  address: fieldId("address"),
+  principalPlace: fieldId("principalPlace"),
+  documentsEmail: fieldId("documentsEmail"),
+  documentsPhone: fieldId("documentsPhone"),
+  logoLight: fieldId("logoLight"),
+  logoDark: fieldId("logoDark"),
+};
+
+const spec: GroupSpec<"company", Form> = {
+  group: "company",
+  what: "the company profile",
+  forDocuments: true,
+  savedText: "Company profile saved. New documents use it from now on.",
+  toForm: (v) => ({
+    tradeName: v.tradeName,
+    legalName: v.legalName ?? "",
+    gstin: v.gstin ?? "",
+    stateCode: v.stateCode,
+    address: v.address ?? "",
+    principalPlace: v.principalPlace ?? "",
+    documentsEmail: v.documentsEmail ?? "",
+    documentsPhone: v.documentsPhone ?? "",
+    logoLight: v.logoLight,
+    logoDark: v.logoDark,
+  }),
+  build: (f): Built<"company"> => {
+    const e: FieldErrors = {};
+    if (!f.tradeName.trim()) e[ID.tradeName] = "Enter the trade name.";
+    if (!f.legalName.trim()) e[ID.legalName] = "Enter the legal name: the proprietor's name.";
+    const g = f.gstin.trim() ? validateGstin(f.gstin) : null;
+    if (!g) e[ID.gstin] = "Enter the GSTIN. It prints on every tax invoice.";
+    else if (!g.ok) e[ID.gstin] = `${g.error}.`;
+    if (!f.address.trim()) e[ID.address] = "Enter the address printed on documents.";
+    if (!looksLikeEmail(f.documentsEmail))
+      e[ID.documentsEmail] = "Enter an email address, like accounts@example.com.";
+    if (Object.keys(e).length || !g?.ok) return { errors: e };
+    const value: Settings["company"] = {
+      tradeName: f.tradeName.trim(),
+      legalName: f.legalName.trim(),
+      gstin: g.gstin,
+      stateCode: g.stateCode as StateCode,
+      address: f.address.trim(),
+      principalPlace: orNull(f.principalPlace),
+      documentsEmail: f.documentsEmail.trim(),
+      documentsPhone: orNull(f.documentsPhone),
+      logoLight: f.logoLight,
+      logoDark: f.logoDark,
+    };
+    return { value };
+  },
+};
+
+export function CompanyProfile() {
+  return (
+    <GroupForm spec={spec} readOnly={false}>
+      {({ form: f, set, error }) => <Fields f={f} set={set} error={error} />}
+    </GroupForm>
+  );
+}
+
+function Fields({
+  f,
+  set,
+  error,
+}: {
+  f: Form;
+  set: (p: Partial<Form>) => void;
+  error: (id: string) => string | undefined;
+}) {
+  // The GSTIN is checked once it is complete or the field is left, never while the first characters go in.
+  const [checked, setChecked] = useState(f.gstin.trim() !== "");
+  const gst = f.gstin.trim() ? validateGstin(f.gstin) : null;
+  const liveError = checked && gst && !gst.ok ? `${gst.error}.` : null;
+  const lockedState = gst?.ok ? (gst.stateCode as StateCode) : null;
+  const states = selectableStates();
+
+  return (
+    <>
+      <fieldset className="form-section">
+        <legend>Names</legend>
+        <div className="form-grid">
+          <FormField
+            id={ID.tradeName}
+            label="Trade name"
+            hint="As it appears on documents."
+            error={error(ID.tradeName)}
+          >
+            {(a) => (
+              <input
+                {...a}
+                autoComplete="organization"
+                value={f.tradeName}
+                onChange={(e) => set({ tradeName: e.target.value })}
+              />
+            )}
+          </FormField>
+          <FormField
+            id={ID.legalName}
+            label="Legal name"
+            hint="The proprietor's name, as registered for GST."
+            error={error(ID.legalName)}
+          >
+            {(a) => (
+              <input
+                {...a}
+                autoComplete="name"
+                value={f.legalName}
+                onChange={(e) => set({ legalName: e.target.value })}
+              />
+            )}
+          </FormField>
+        </div>
+      </fieldset>
+
+      <fieldset className="form-section">
+        <legend>GST registration</legend>
+        <div className="form-grid">
+          <FormField
+            id={ID.gstin}
+            label="GSTIN"
+            className="field--gstin"
+            hint="15 characters, checked when you finish typing."
+            error={error(ID.gstin) ?? liveError}
+            status={
+              gst?.ok ? (
+                <>
+                  <StatusPill tone="success" icon="check">
+                    Valid
+                  </StatusPill>
+                  <span>
+                    Registered in {gst.state} ({gst.stateCode})
+                  </span>
+                </>
+              ) : undefined
+            }
+          >
+            {(a) => (
+              <input
+                {...a}
+                autoComplete="off"
+                spellCheck={false}
+                autoCapitalize="characters"
+                maxLength={18}
+                value={f.gstin}
+                onChange={(e) => {
+                  const v = e.target.value.toUpperCase();
+                  set({ gstin: v });
+                  setChecked(v.replace(/\s/g, "").length >= 15);
+                }}
+                onBlur={() => setChecked(true)}
+              />
+            )}
+          </FormField>
+          <FormField id={ID.pan} label="PAN" hint="Taken from the GSTIN (characters 3 to 12).">
+            {(a) => (
+              <input
+                {...a}
+                readOnly
+                value={gst?.ok ? gst.pan : ""}
+                placeholder="Appears with a valid GSTIN"
+              />
+            )}
+          </FormField>
+          <FormField
+            id={ID.stateCode}
+            label="State and code"
+            hint={
+              lockedState
+                ? "Set by the GSTIN's first two digits."
+                : "Pick the state of your principal place of business."
+            }
+          >
+            {(a) =>
+              lockedState ? (
+                <input {...a} readOnly value={`${STATE_CODES[lockedState].name} (${lockedState})`} />
+              ) : (
+                <select
+                  {...a}
+                  value={f.stateCode}
+                  onChange={(e) => set({ stateCode: e.target.value as StateCode })}
+                >
+                  {states.map((s) => (
+                    <option key={s.code} value={s.code}>
+                      {s.name} ({s.code})
+                    </option>
+                  ))}
+                </select>
+              )
+            }
+          </FormField>
+        </div>
+      </fieldset>
+
+      <fieldset className="form-section">
+        <legend>Address and contact on documents</legend>
+        <FormField id={ID.address} label="Address on documents" error={error(ID.address)}>
+          {(a) => (
+            <textarea
+              {...a}
+              rows={3}
+              autoComplete="street-address"
+              value={f.address}
+              onChange={(e) => set({ address: e.target.value })}
+            />
+          )}
+        </FormField>
+        <FormField
+          id={ID.principalPlace}
+          label="Principal place of business"
+          optional
+          hint="As on your GST registration, if it differs from the address above."
+          error={error(ID.principalPlace)}
+        >
+          {(a) => (
+            <textarea
+              {...a}
+              rows={2}
+              value={f.principalPlace}
+              onChange={(e) => set({ principalPlace: e.target.value })}
+            />
+          )}
+        </FormField>
+        <div className="form-grid">
+          <FormField id={ID.documentsEmail} label="Email on documents" error={error(ID.documentsEmail)}>
+            {(a) => (
+              <input
+                {...a}
+                type="email"
+                inputMode="email"
+                autoComplete="email"
+                value={f.documentsEmail}
+                onChange={(e) => set({ documentsEmail: e.target.value })}
+              />
+            )}
+          </FormField>
+          <FormField
+            id={ID.documentsPhone}
+            label="Phone on documents"
+            optional
+            error={error(ID.documentsPhone)}
+          >
+            {(a) => (
+              <input
+                {...a}
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
+                value={f.documentsPhone}
+                onChange={(e) => set({ documentsPhone: e.target.value })}
+              />
+            )}
+          </FormField>
+        </div>
+      </fieldset>
+
+      <fieldset className="form-section">
+        <legend>Logos</legend>
+        <p className="hint">
+          Picked from the brand files, so documents always carry the real logo. A signature image arrives with
+          file uploads (milestone M3.4).
+        </p>
+        <div className="logo-tiles">
+          <LogoPick
+            id={ID.logoLight}
+            label="On light paper and screens"
+            value={f.logoLight}
+            ground="light"
+            onChange={(logoLight) => set({ logoLight })}
+          />
+          <LogoPick
+            id={ID.logoDark}
+            label="On dark screens"
+            value={f.logoDark}
+            ground="dark"
+            onChange={(logoDark) => set({ logoDark })}
+          />
+        </div>
+      </fieldset>
+    </>
+  );
+}
+
+function LogoPick(props: {
+  id: string;
+  label: string;
+  value: Logo;
+  ground: "light" | "dark";
+  onChange: (l: Logo) => void;
+}) {
+  const logo = LOGOS[props.value];
+  const options = BRAND_LOGOS.filter((l) => LOGOS[l].ground === props.ground || l === props.value);
+  return (
+    <figure className="logo-tile">
+      <div className={`logo-tile__art logo-tile__art--${logo.ground}`}>
+        <img src={logo.url} alt="" className="logo-tile__img" />
+      </div>
+      <figcaption className="logo-tile__cap logo-tile__cap--pick">
+        <label htmlFor={props.id}>{props.label}</label>
+        <select id={props.id} value={props.value} onChange={(e) => props.onChange(e.target.value as Logo)}>
+          {options.map((l) => (
+            <option key={l} value={l}>
+              {LOGOS[l].label}
+            </option>
+          ))}
+        </select>
+      </figcaption>
+    </figure>
+  );
+}

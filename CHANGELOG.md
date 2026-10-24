@@ -2,6 +2,8 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-10-24 [#74](https://github.com/techaust/techaust_platform/pull/74) feat(admin): M3.1 admin shell, users and settings [ADM-G-01, ADM-G-02, ADM-SET-01..10, ADM-AUD-02, ADM-AUTH-07]
+- 2026-10-24 [#73](https://github.com/techaust/techaust_platform/pull/73) docs: decisions and CPU tuning 4 staging reading (2026-10-24 midday)
 - 2026-10-24 [#72](https://github.com/techaust/techaust_platform/pull/72) perf(jobs,portal): prime the SES key on staff alerts, warm every 2FA-change body and token encoding [ADM-AUTH-09, ADM-MAIL-01, POR-01]
 - 2026-10-23 [#69](https://github.com/techaust/techaust_platform/pull/69) perf(portal,jobs): warm the sign-in path at start-up; isolate markers on queue logs [POR-01, ADM-MAIL-01]
 - 2026-10-23 [#68](https://github.com/techaust/techaust_platform/pull/68) docs: first cost report (docs/14 §8)

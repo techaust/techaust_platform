@@ -391,6 +391,9 @@ export function sampleRequest(route: RouteDef) {
   const path = route.path
     .replace("/api/v1", "")
     .replace(":tokenHash", "a".repeat(64))
+    .replace(":group", "tax")
+    .replace(":kind", "INR")
+    .replace(":block", "standard_terms")
     .replace(":id", "no-such-id");
   const body =
     route.method === "GET" || route.method === "DELETE"

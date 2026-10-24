@@ -5,10 +5,12 @@ import {
   leadAlert,
   portalMagicLink,
   type Rendered,
+  staffInvite,
   staffLockout,
   staffLockoutOwner,
   staffNewDevice,
   staffTwoFaChange,
+  withTestNotice,
 } from "./templates.ts";
 
 export * from "./headers.ts";
@@ -32,10 +34,24 @@ type Data = Record<string, string>;
 const who = (get: (k: string) => string) => ({ name: get("name"), first_name: get("first_name") });
 
 /**
+ * Renders a queued message to its email and picks the sender. A message with `test_name` in its data is a Settings test send
+ * (07-H): the subject and a first line say so.
+ */
+export function renderEmail(
+  template: string,
+  data: Data,
+  opts: LayoutOptions,
+): Rendered & { from: { name: string; address: string }; replyTo: string } {
+  const r = renderTemplate(template, data, opts);
+  const testName = data.test_name;
+  return testName ? { ...r, ...withTestNotice(r, testName) } : r;
+}
+
+/**
  * Renders a queued message to its email and picks the sender. Unknown templates throw (the consumer acknowledges
  * and logs them `failed`: retrying cannot help).
  */
-export function renderEmail(
+function renderTemplate(
   template: string,
   data: Data,
   opts: LayoutOptions,
@@ -133,6 +149,11 @@ export function renderEmail(
           },
           opts,
         ),
+      };
+    case "staff.invite":
+      return {
+        ...noReply,
+        ...staffInvite({ inviter_name: get("inviter_name"), role: get("role"), url: get("url") }, opts),
       };
     default:
       throw new Error(`Unknown email template: ${template}`);

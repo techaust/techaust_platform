@@ -51,6 +51,28 @@ export const ROUTES: readonly RouteDef[] = [
   R("PATCH", "/users/:id", "users.manage", { audit: "user.role_change" }),
   R("POST", "/users/:id/deactivate", "users.manage", { audit: "user.deactivate" }),
   R("POST", "/users/:id/reset-2fa", "users.manage", { audit: "user.reset_2fa" }),
+  R("POST", "/users/:id/reactivate", "users.manage", { audit: "user.reactivate" }),
+  // Settings (M3.1, ADM-SET-01..10). The generic groups name their audit action by group (`settings.<group>.update`); bank
+  // details and gateways have their own rows because they need a fresh step-up (the matrix: bank.manage, gateways.manage).
+  R("GET", "/settings", "settings.read"),
+  R("GET", "/settings/groups/:group", "settings.read"),
+  R("PUT", "/settings/groups/:group", "settings.manage", { audit: "settings.<group>.update" }),
+  R("GET", "/settings/gateways", "settings.manage"),
+  R("PUT", "/settings/gateways", "gateways.manage", { audit: "settings.gateways.update" }),
+  R("GET", "/settings/bank", "bank.readMasked"),
+  R("PUT", "/settings/bank/:kind", "bank.manage", { audit: "settings.bank.update" }),
+  R("GET", "/settings/terms", "settings.manage"),
+  R("GET", "/settings/terms/:block", "settings.manage"),
+  R("POST", "/settings/terms/:block", "settings.manage", { audit: "settings.terms.update" }),
+  R("POST", "/settings/email/test-send", "settings.manage", { audit: "settings.email.test_send" }),
+  // The bell, the global search and the audit viewer (M3.1, ADM-G-09, ADM-G-05, ADM-AUD-02).
+  R("GET", "/notifications", "notifications.own"),
+  R("POST", "/notifications/read-all", "notifications.own", { audit: "notification.read_all" }),
+  R("POST", "/notifications/:id/read", "notifications.own", { audit: "notification.read" }),
+  R("GET", "/search", "search.use"),
+  R("GET", "/audit", "audit.readFinance"),
+  // The CSV export reads the same list through its own step-up action; each page is audited (`audit.export`).
+  R("GET", "/audit/export", "audit.export", { audit: "audit.export" }),
 ];
 
 const BY_ROUTE = new Map(ROUTES.map((r) => [`${r.method} ${r.path}`, r]));

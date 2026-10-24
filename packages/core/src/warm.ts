@@ -15,6 +15,8 @@ import {
   staffAlertMessage,
 } from "./schemas/messages.ts";
 
+export { warmSettings } from "./schemas/settings.ts";
+
 const CONTACT = {
   name: "Warm Up",
   email: "warm-up@example.invalid",

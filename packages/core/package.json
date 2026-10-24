@@ -7,8 +7,16 @@
   "description": "Pure domain logic: money, tax engine, numbering, FY dates, schedules, permissions, shared schemas (no I/O).",
   "exports": {
     ".": "./src/index.ts",
+    "./audit": "./src/audit.ts",
+    "./bank": "./src/bank.ts",
+    "./dates": "./src/dates.ts",
+    "./email-templates": "./src/email-templates.ts",
     "./ids": "./src/ids.ts",
+    "./numbering": "./src/numbering.ts",
     "./permissions": "./src/permissions.ts",
+    "./settings": "./src/schemas/settings.ts",
+    "./terms": "./src/terms.ts",
+    "./text": "./src/text.ts",
     "./user-agent": "./src/user-agent.ts"
   },
   "scripts": {

@@ -2,7 +2,7 @@
 // (docs/05 §7.1) and request IDs (LD7).
 import { env } from "cloudflare:workers";
 import { currentStep, ipKey, tokenHash, totpCode } from "@techaust/auth";
-import { ACTIONS, decide, ROLES } from "@techaust/core";
+import { ACTIONS, decide, ROLES, SETTINGS_DEFAULTS, uuidv7 } from "@techaust/core";
 import { describe, expect, it } from "vitest";
 import { ROUTES } from "./guard.ts";
 import app, { createApp } from "./index.ts";
@@ -123,7 +123,32 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
   const headers = (rid: string) => ({ "cf-ray": rid, "CF-Connecting-IP": IP, "User-Agent": "RbacTest/1.0" });
   const owner = () => sessionFor("owner", { stepUp: true });
 
-  type Scenario = () => Promise<{ res: Response; rid: string; actor: { id: string; role: string } }>;
+  type Scenario = () => Promise<{
+    res: Response;
+    rid: string;
+    actor: { id: string; role: string };
+    /** When the route's audit action depends on the request (settings groups). */
+    action?: string;
+  }>;
+  const run = async (
+    s: { cookie: string; id: string; role: string },
+    path: string,
+    init: { method?: string; body?: unknown },
+    action?: string,
+  ) => {
+    const rid = `ray-${crypto.randomUUID()}`;
+    const res = await call(path, { ...init, cookie: s.cookie, headers: headers(rid) });
+    return { res, rid, actor: s, ...(action ? { action } : {}) };
+  };
+  const bell = async (userId: string) => {
+    const id = uuidv7();
+    await env.DB.prepare(
+      "INSERT INTO notifications (id, user_id, kind, entity_type, entity_id, title, link) VALUES (?1, ?2, 'lead.new', 'lead', ?1, 'New lead: A, B', '/leads/x')",
+    )
+      .bind(id, userId)
+      .run();
+    return id;
+  };
   const scenarios: Record<string, Scenario> = {
     "POST /api/v1/auth/step-up": async () => {
       const s = await sessionFor("owner");
@@ -272,6 +297,70 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
         actor: s,
       };
     },
+    "POST /api/v1/users/:id/reactivate": async () => {
+      const s = await owner();
+      const t = await sessionFor("staff");
+      await env.DB.prepare("UPDATE staff_users SET status = 'deactivated' WHERE id = ?").bind(t.id).run();
+      return run(s, `/users/${t.id}/reactivate`, { method: "POST" });
+    },
+    "PUT /api/v1/settings/groups/:group": async () => {
+      const s = await owner();
+      return run(
+        s,
+        "/settings/groups/flags",
+        { method: "PUT", body: { version: 0, value: { ...SETTINGS_DEFAULTS.flags, weeklyDigest: false } } },
+        "settings.flags.update",
+      );
+    },
+    "PUT /api/v1/settings/gateways": async () => {
+      const s = await owner();
+      const live = { ...SETTINGS_DEFAULTS.gateways, razorpay: { mode: "live" } };
+      await env.DB.prepare("INSERT OR REPLACE INTO settings (key, value, version) VALUES ('gateways', ?, 1)")
+        .bind(JSON.stringify(live))
+        .run();
+      return run(s, "/settings/gateways", {
+        method: "PUT",
+        body: { version: 1, value: SETTINGS_DEFAULTS.gateways },
+      });
+    },
+    "PUT /api/v1/settings/bank/:kind": async () => {
+      const s = await owner();
+      return run(s, "/settings/bank/INR", {
+        method: "PUT",
+        body: {
+          accountName: "Sample Account (test)",
+          accountNo: "000123456789",
+          accountNoAgain: "000123456789",
+          ifsc: "SMPL0000001",
+          bankName: "Sample Bank",
+        },
+      });
+    },
+    "POST /api/v1/settings/terms/:block": async () => {
+      const s = await owner();
+      return run(s, "/settings/terms/standard_terms", {
+        method: "POST",
+        body: { body: "Sample terms text." },
+      });
+    },
+    "POST /api/v1/settings/email/test-send": async () => {
+      const s = await owner();
+      return run(s, "/settings/email/test-send", { method: "POST", body: { template: "lead.alert" } });
+    },
+    "GET /api/v1/audit/export": async () => {
+      const s = await owner();
+      return run(s, "/audit/export?limit=25", {});
+    },
+    "POST /api/v1/notifications/read-all": async () => {
+      const s = await sessionFor("sales");
+      await bell(s.id);
+      return run(s, "/notifications/read-all", { method: "POST" });
+    },
+    "POST /api/v1/notifications/:id/read": async () => {
+      const s = await sessionFor("staff");
+      const id = await bell(s.id);
+      return run(s, `/notifications/${id}/read`, { method: "POST" });
+    },
   };
 
   it("there is a scenario for every route that declares an audit action", () => {
@@ -281,8 +370,8 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
 
   for (const route of ROUTES.filter((r) => r.audit)) {
     it(`${route.method} ${route.path} → one ${route.audit} row with actor, role, request_id, ip and user agent`, async () => {
-      const run = scenarios[`${route.method} ${route.path}`] as Scenario;
-      const { res, rid, actor } = await run();
+      const scenario = scenarios[`${route.method} ${route.path}`] as Scenario;
+      const { res, rid, actor, action } = await scenario();
       expect(res.status, await res.clone().text()).toBeLessThan(300);
       const audit = await rows<{
         action: string;
@@ -298,7 +387,7 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
       );
       expect(audit).toHaveLength(1);
       expect(audit[0]).toEqual({
-        action: route.audit,
+        action: action ?? route.audit,
         actor_id: actor.id,
         role: actor.role,
         actor_type: "staff",

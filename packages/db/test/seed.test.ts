@@ -18,7 +18,9 @@ describe("seed [ADM-CAT-01]", () => {
     const keys = await all<{ key: string }>("SELECT key FROM settings ORDER BY key");
     expect(keys.map((k) => k.key)).toEqual([
       "company",
+      "email",
       "flags",
+      "gateways",
       "numbering",
       "payment_terms",
       "retention",

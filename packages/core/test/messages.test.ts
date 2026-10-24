@@ -107,6 +107,7 @@ describe("M2.4b messages [POR-01, ADM-AUTH-09, ADM-MAIL-01]", () => {
       "staff.2fa_change",
       "staff.lockout",
       "staff.lockout_owner",
+      "staff.invite",
     ]);
     for (const template of EMAIL_TEMPLATES)
       expect(

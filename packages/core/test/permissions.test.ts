@@ -9,6 +9,9 @@ const EXPECTED: Record<Exclude<Action, "proposals.send">, string> = {
   "account.own": "AAAA",
   "account.recoveryCodes": "SSSS",
   "settings.manage": "A---",
+  "settings.read": "A--A",
+  "notifications.own": "AAAA",
+  "search.use": "AAAA",
   "settings.taxNumbering.read": "A--A",
   "gateways.manage": "S---",
   "bank.manage": "S---",
@@ -47,6 +50,7 @@ const EXPECTED: Record<Exclude<Action, "proposals.send">, string> = {
   "exports.gst": "S--S",
   "audit.read": "A---",
   "audit.readFinance": "A--A",
+  "audit.export": "S--S",
   "approvals.decide": "A---",
   "approvals.readOwn": "AAA-",
 };

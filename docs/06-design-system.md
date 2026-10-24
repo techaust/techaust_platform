@@ -322,11 +322,12 @@ Built on **Radix UI primitives** (Dialog, Popover, DropdownMenu, Tabs, Tooltip, 
 | `EmptyState` | Explains what goes here + the primary action |
 | `Skeleton` | Loading placeholders for app data (no spinners for page loads; a spinner only inside buttons) |
 | `Toast` | `role="status"` for success, `role="alert"` for errors; auto-dismiss ≥ 6 s with pause on hover/focus; never the only place an error appears |
-| `FormField` | Label, hint, error (linked via `aria-describedby`), required marker (text, not just *) |
+| `FormField` | Label, hint, error (linked via `aria-describedby`); optional fields are marked "(optional)" in text after the label, and the form says once "All fields are needed unless marked optional" (owner decision 2026-10-24) |
 | `ErrorSummary` | At the top of a form on submit, linking to each invalid field; receives focus |
 
 ### 5.4 Forms (site and apps)
 - Labels above fields; hints below labels; errors below fields in `danger`, with an icon.
+- **Required and optional (owner decision 2026-10-24):** forms mark the optional fields, not the required ones: "(optional)" in text after the label, and one line at the top of the form, "All fields are needed unless marked optional".
 - **Validation:** on blur, and on submit; never while typing the first characters.
 - Correct `autocomplete` tokens (name, email, organization, tel, country) and `inputmode` (email, tel, numeric).
 - **Multi-step quote form:**

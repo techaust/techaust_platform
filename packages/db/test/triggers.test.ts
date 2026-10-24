@@ -7,6 +7,8 @@ import {
   issueGuardStatements,
   MUTABLE_AFTER_FREEZE,
   SET_ONCE_AFTER_FREEZE,
+  TRIGGER_SETS,
+  triggerMigrationSql,
 } from "../src/triggers.ts";
 import { all, first, insertClient, insertDraftInvoice, issueBatch, rejects, run } from "./helpers.ts";
 
@@ -144,6 +146,42 @@ describe("append-only tables", () => {
       "INSERT INTO catalogue_price_history (id, item_id, field, old_minor, new_minor) VALUES ('ph', 'ci', 'price_inr_minor', 1, 2)",
     );
     await rejects(run("DELETE FROM catalogue_price_history"), /append-only/);
+  });
+});
+
+describe("document terms are append-only (ADM-SET-08, migration 0012)", () => {
+  it("terms_versions and terms_blocks refuse UPDATE and DELETE; a new version is a new row", async () => {
+    await run(
+      "INSERT INTO terms_versions (id, kind, version, body_md, sha256) VALUES ('tv1', 'proposal', 1, 'a', 'h1')",
+    );
+    await run(
+      "INSERT INTO terms_blocks (id, kind, version, body_md, sha256) VALUES ('tb1', 'standard_terms', 1, 'a', 'h1')",
+    );
+    await run(
+      "INSERT INTO terms_blocks (id, kind, version, body_md, sha256) VALUES ('tb2', 'standard_terms', 2, 'b', 'h2')",
+    );
+    await rejects(run("UPDATE terms_versions SET body_md = 'x'"), /terms_versions is append-only/);
+    await rejects(run("DELETE FROM terms_versions"), /terms_versions is append-only/);
+    await rejects(run("UPDATE terms_blocks SET body_md = 'x'"), /terms_blocks is append-only/);
+    await rejects(run("DELETE FROM terms_blocks"), /terms_blocks is append-only/);
+    await rejects(
+      run(
+        "INSERT INTO terms_blocks (id, kind, version, body_md, sha256) VALUES ('tb3', 'standard_terms', 2, 'c', 'h3')",
+      ),
+      /UNIQUE/,
+    );
+    await rejects(
+      run(
+        "INSERT INTO terms_blocks (id, kind, version, body_md, sha256) VALUES ('tb4', 'proposal', 1, 'c', 'h3')",
+      ),
+      /CHECK/,
+    );
+    await rejects(
+      run(
+        "INSERT INTO terms_blocks (id, kind, version, body_md, sha256) VALUES ('tb5', 'refund_link', 0, 'c', 'h3')",
+      ),
+      /CHECK/,
+    );
   });
 });
 
@@ -455,4 +493,32 @@ describe("portal-auth triggers (0006; POR-01, POR-02)", () => {
     await session("s3");
     await run("DELETE FROM client_sessions WHERE id = 's3'");
   });
+});
+
+describe("installed trigger migrations equal what src/triggers.ts generates", () => {
+  // Strip the leading "-- Hand-written" comment and collapse whitespace, so the comparison is about the SQL.
+  const norm = (sql: string) =>
+    sql
+      .replace(/^--[^\n]*\n/gm, "")
+      .replaceAll("--> statement-breakpoint", "")
+      .replaceAll(";", "")
+      .replace(/\s+/g, " ")
+      .trim();
+  for (const set of Object.keys(TRIGGER_SETS) as (keyof typeof TRIGGER_SETS)[]) {
+    it(`${set}`, () => {
+      const file = env.TEST_MIGRATIONS.find((m) => m.name.slice(5).replace(".sql", "") === set);
+      expect(file, `a migration NNNN_${set}.sql exists`).toBeDefined();
+      const installed = norm((file?.queries ?? []).join(" "));
+      const wanted = norm(triggerMigrationSql(set).replaceAll("\n--> statement-breakpoint\n", " "));
+      // 0001 also holds the first issue guard (a view and a trigger), which migration 0007 replaces; the generator no
+      // longer writes them, so for that one set the generated part is the start of the installed file.
+      const same = set === "triggers" ? installed.startsWith(wanted) : installed === wanted;
+      let at = 0;
+      while (at < wanted.length && installed[at] === wanted[at]) at++;
+      expect(
+        same,
+        `first difference at ${at}: installed [${installed.slice(at, at + 80)}] vs wanted [${wanted.slice(at, at + 80)}]`,
+      ).toBe(true);
+    });
+  }
 });

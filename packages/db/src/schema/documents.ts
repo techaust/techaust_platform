@@ -144,6 +144,7 @@ export const documents = sqliteTable(
     index("documents_parent").on(t.parentId),
     index("documents_project").on(t.projectId),
     index("documents_care_plan").on(t.carePlanId),
+    index("documents_terms_version").on(t.termsVersionId),
     check("documents_type", oneOf(t.type, DOCUMENT_TYPES)),
     check("documents_status", oneOf(t.status, DOCUMENT_STATUSES)),
     check("documents_currency", oneOf(t.currency, CURRENCY_CODES)),

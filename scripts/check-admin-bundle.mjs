@@ -6,18 +6,19 @@ import { fileURLToPath } from "node:url";
 
 const M0_RAW_BYTES = 277_252;
 const LIMIT = Math.floor(M0_RAW_BYTES / 2);
-// Class names only classic zod registers (zod/mini and the shared core never mention these).
-const CLASSIC_MARKERS = ["ZodNumber", "ZodArray", "ZodUnion", "ZodBoolean"];
+// Names only classic zod registers. zod/mini's shared core registers the same classes with a leading "$" (`$ZodNumber`), which
+// appear as soon as a schema uses a number, array or boolean (the M3.1 settings schemas do), so a marker counts only when the
+// quoted name has no "$" before it.
+const CLASSIC_MARKER = /["'`]Zod(?:Number|Array|Union|Boolean)["'`]/;
 
 const file = fileURLToPath(new URL("../apps/admin/dist/techaust_platform_admin/index.js", import.meta.url));
 const size = statSync(file).size;
 const text = readFileSync(file, "utf8");
-const found = CLASSIC_MARKERS.filter((m) => text.includes(m));
+const found = CLASSIC_MARKER.exec(text);
 const problems = [];
 if (size > LIMIT)
   problems.push(`the Worker bundle is ${size} bytes; the limit is ${LIMIT} (50 % of the M0 baseline)`);
-if (found.length)
-  problems.push(`classic zod is in the Worker bundle (${found.join(", ")}): import from "zod/mini"`);
+if (found) problems.push(`classic zod is in the Worker bundle (${found[0]}): import from "zod/mini"`);
 if (problems.length) {
   console.error(`admin bundle check failed:\n- ${problems.join("\n- ")}`);
   process.exit(1);

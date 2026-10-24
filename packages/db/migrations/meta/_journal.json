@@ -78,6 +78,41 @@
       "when": 1792703704939,
       "tag": "0010_leads_request_type_plan",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1792841417547,
+      "tag": "0011_terms_blocks",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1792841419081,
+      "tag": "0012_terms_triggers",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1792841850445,
+      "tag": "0013_documents_terms_version_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1792841888788,
+      "tag": "0014_notifications_and_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "6",
+      "when": 1792850276094,
+      "tag": "0015_bank_active_kind_notifications_unread",
+      "breakpoints": true
     }
   ]
 }

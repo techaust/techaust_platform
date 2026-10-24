@@ -8,11 +8,17 @@ import { secureHeaders } from "hono/secure-headers";
 import { Hono } from "hono/tiny";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { account } from "./account.ts";
+import { audit } from "./audit.ts";
 import { auth } from "./auth.ts";
 import { type AppEnv, accessEntry, BAD_REQUEST, type Ctx, err, FORBIDDEN, NOT_FOUND } from "./context.ts";
 import { csrf } from "./csrf.ts";
 import { guard, routeFor } from "./guard.ts";
+import { notifications } from "./notifications.ts";
+import { search } from "./search.ts";
+import { settings } from "./settings.ts";
 import { users } from "./users.ts";
+
+import "./warm.ts"; // start-up warm-up of the settings schemas and the step-up path (M3.1)
 
 let isolateId: string | undefined;
 let isolateRequests = 0;
@@ -89,6 +95,10 @@ export function createApp() {
   app.route("/v1/auth", auth);
   app.route("/v1/auth", account);
   app.route("/v1/users", users);
+  app.route("/v1/settings", settings);
+  app.route("/v1/notifications", notifications);
+  app.route("/v1/search", search);
+  app.route("/v1/audit", audit);
 
   app.notFound((c) => err(c, NOT_FOUND, 404));
   app.onError((e, c) => {

@@ -50,7 +50,11 @@ export const bankAccounts = sqliteTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [check("bank_accounts_kind", oneOf(t.kind, BANK_KINDS))],
+  (t) => [
+    check("bank_accounts_kind", oneOf(t.kind, BANK_KINDS)),
+    // One active account per kind (two simultaneous first saves cannot both win).
+    uniqueIndex("bank_accounts_active_kind").on(t.kind).where(sql`${t.active} = 1`),
+  ],
 );
 
 /** Gap-free counters per document series and FY (docs/05 §5.4). A trigger stops next_no going down. */
@@ -83,6 +87,33 @@ export const termsVersions = sqliteTable(
   (t) => [
     uniqueIndex("terms_versions_kind_version").on(t.kind, t.version),
     check("terms_versions_kind", oneOf(t.kind, TERMS_KINDS)),
+  ],
+);
+
+/**
+ * The document-terms blocks that `terms_versions` cannot hold (ADM-SET-08, M3.1). Its CHECK allows only
+ * proposal | invoice | website and `documents` references it, so it is not rebuilt: the proposal terms
+ * (`proposal`) and the invoice footer notes (`invoice`) stay in `terms_versions`; the other three live here.
+ * Append-only: a new version is a new row; "used by N documents" for these kinds arrives with the M5 columns
+ * that let a document record them.
+ */
+export const TERMS_BLOCK_KINDS = ["standard_terms", "export_declaration", "refund_link"] as const;
+
+export const termsBlocks = sqliteTable(
+  "terms_blocks",
+  {
+    id: id(),
+    kind: text("kind", { enum: TERMS_BLOCK_KINDS }).notNull(),
+    version: integer("version").notNull(),
+    bodyMd: text("body_md").notNull(),
+    sha256: text("sha256").notNull(),
+    createdBy: text("created_by").references(() => staffUsers.id),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("terms_blocks_kind_version").on(t.kind, t.version),
+    check("terms_blocks_kind", oneOf(t.kind, TERMS_BLOCK_KINDS)),
+    check("terms_blocks_version", sql`${t.version} >= 1`),
   ],
 );
 

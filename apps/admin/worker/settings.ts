@@ -1,0 +1,770 @@
+// Settings API [ADM-SET-01..10, ADM-G-06, ADM-AUD-01]: the ten groups of docs/04 section 5.18. Eight are JSON documents in
+// `settings` (company, tax, numbering, payment terms, gateways, email, retention, flags), validated by the shared schemas of
+// `@techaust/core/settings`; bank details are `bank_accounts` rows; document terms are the append-only version tables.
+//
+// Rules that hold for every save:
+//  - optimistic concurrency on the row's `version` (409 `stale_version`); one conditional statement + its audit row + its access
+//    row in ONE batch (`mutate`), so a lost race writes nothing;
+//  - the audit row carries a before -> after diff of the CHANGED fields only; bank account numbers are masked there ("[masked]")
+//    and in every response (last four characters only), and are never logged;
+//  - a stored row is read as the defaults merged under it (`resolveSetting`), so rows saved before a field existed still read;
+//  - changes affect new documents only (nothing here edits an issued document).
+
+import { sValidator } from "@hono/standard-validator";
+import { hex } from "@techaust/auth";
+import { auditSummary } from "@techaust/core/audit";
+import { ACCOUNT_NO, cleanAccountNo, IFSC, SWIFT } from "@techaust/core/bank";
+import { formatIstDateTime, fyOf } from "@techaust/core/dates";
+import { EMAIL_TEMPLATES, type EmailTemplate } from "@techaust/core/email-templates";
+import { uuidv7 } from "@techaust/core/ids";
+import { canSetNextNumber, maxNumber, SERIES, type Series } from "@techaust/core/numbering";
+import { type Action, decide } from "@techaust/core/permissions";
+import {
+  BRAND_LOGOS,
+  GATEWAY_SECRETS,
+  GATEWAYS,
+  panOf,
+  resolveSetting,
+  SETTINGS_SCHEMAS,
+  type SeededSettingKey,
+  type Settings,
+} from "@techaust/core/settings";
+import {
+  TERMS_BLOCK_IDS,
+  TERMS_BLOCKS,
+  type TermsBlockId,
+  termsBody,
+  termsTarget,
+} from "@techaust/core/terms";
+import { Hono } from "hono/tiny";
+import * as z from "zod/mini";
+import {
+  type ApiError,
+  type AppEnv,
+  actor,
+  type Ctx,
+  err,
+  mutate,
+  NOT_FOUND,
+  type SideGuard,
+} from "./context.ts";
+import { sampleData, TEMPLATE_NAMES } from "./email-fixtures.ts";
+import { queueEmail } from "./mail.ts";
+
+const STALE: ApiError = {
+  code: "stale_version",
+  message: "Someone saved these settings since you opened them. Reload to see the latest, then try again",
+};
+const LIVE_LOCKED: ApiError = { code: "live_locked", message: "Live is locked until go-live" };
+const SERIES_IN_USE: ApiError = {
+  code: "series_in_use",
+  message:
+    "That numbering series has already issued a number this financial year, so its format and next number can't change",
+};
+const SERIES_LOCK_REASON = "A number from this series has been issued this financial year";
+const NEXT_LOWER: ApiError = {
+  code: "next_number_lower",
+  message: "The next number can only go up, never down",
+};
+const TEST_LIMIT: ApiError = {
+  code: "rate_limited",
+  message: "Five test emails an hour is the limit. Try again later",
+};
+const FORBIDDEN_GROUP: ApiError = { code: "forbidden", message: "You can't do that" };
+
+/** The groups served by `/settings/groups/:group` (bank, gateways and terms have their own routes). */
+const GENERIC = ["company", "tax", "numbering", "payment_terms", "email", "retention", "flags"] as const;
+type Generic = (typeof GENERIC)[number];
+const READ_ACTION: Record<Generic, Action> = {
+  company: "settings.manage",
+  tax: "settings.taxNumbering.read",
+  numbering: "settings.taxNumbering.read",
+  payment_terms: "settings.manage",
+  email: "settings.manage",
+  retention: "settings.manage",
+  flags: "settings.manage",
+};
+const VERIFY: Partial<Record<Generic | "gateways", string>> = {
+  tax: "VERIFY WITH CA",
+  payment_terms: "VERIFY WITH CA/LEGAL",
+  retention: "VERIFY WITH CA/LEGAL",
+};
+
+const groupParam = z.object({ group: z.enum(GENERIC) });
+const kindParam = z.object({ kind: z.enum(["INR", "USD_SWIFT"]) });
+const blockParam = z.object({ block: z.string().check(z.minLength(1), z.maxLength(40)) });
+
+/** `{ error, fields }` for a body that failed its schema: the field paths and our own messages, never the values. */
+const invalid = (c: Ctx, issues: readonly { path: readonly PropertyKey[]; message: string }[]) =>
+  c.json(
+    {
+      error: { code: "invalid", message: "Check the form and try again" },
+      fields: issues.slice(0, 20).map((i) => ({ path: i.path.map(String).join("."), message: i.message })),
+      request_id: c.var.rid,
+    },
+    400,
+  );
+
+async function bodyOf(c: Ctx): Promise<unknown> {
+  try {
+    return await c.req.json();
+  } catch {
+    return undefined;
+  }
+}
+
+type Row = { value: unknown; version: number; updatedAt: number };
+async function loadRow(db: D1Database, key: SeededSettingKey): Promise<Row | null> {
+  const r = await db
+    .prepare("SELECT value, version, updated_at FROM settings WHERE key = ?1")
+    .bind(key)
+    .first<{ value: string; version: number; updated_at: number }>();
+  return r ? { value: JSON.parse(r.value), version: r.version, updatedAt: r.updated_at } : null;
+}
+
+/** The conditional write: inserts the row, or updates it only while it is still at the version the person saw. */
+const UPSERT = `INSERT INTO settings (key, value, version, updated_by, updated_at)
+ SELECT ?1, ?2, ?3 + 1, ?4, ?5 WHERE (SELECT coalesce(max(version), 0) FROM settings WHERE key = ?1) = ?3
+ ON CONFLICT(key) DO UPDATE SET value = excluded.value, version = excluded.version, updated_by = excluded.updated_by, updated_at = excluded.updated_at
+ WHERE settings.version = ?3`;
+
+type Opts<K extends SeededSettingKey> = {
+  /** A rule that depends on the stored value or the environment; returns the refusal, or null. */
+  rule?: (before: Settings[K], after: Settings[K]) => Promise<Response | null> | Response | null;
+  /** Extra audit fields and statements (numbering's next numbers). */
+  extra?: { summary: Record<string, unknown>; side: (g: SideGuard) => D1PreparedStatement[] };
+};
+
+/** Validate, check the version, diff, and write one JSON settings document with its audit row. */
+async function save<K extends SeededSettingKey>(
+  c: Ctx,
+  key: K,
+  value: unknown,
+  version: number,
+  opts: Opts<K> = {},
+) {
+  const parsed = SETTINGS_SCHEMAS[key].safeParse(value);
+  if (!parsed.success) return invalid(c, parsed.error.issues);
+  const after = parsed.data as Settings[K];
+  const row = await loadRow(c.env.DB, key);
+  const current = row?.version ?? 0;
+  if (version !== current)
+    return c.json({ error: STALE, current_version: current, request_id: c.var.rid }, 409);
+  const before = resolveSetting(key, row?.value);
+  const refused = await opts.rule?.(before, after);
+  if (refused) return refused;
+  const diff = auditSummary(before as Record<string, unknown>, after as Record<string, unknown>);
+  if (!Object.keys(diff).length && !opts.extra) return c.json({ ok: true, changed: false, version: current });
+  const u = actor(c);
+  const done = await mutate(c, {
+    main: c.env.DB.prepare(UPSERT).bind(key, JSON.stringify(after), current, u.id, Date.now()),
+    action: `settings.${key}.update`,
+    entityType: "settings",
+    entityId: key,
+    summary: { ...diff, ...opts.extra?.summary },
+    ...(opts.extra ? { side: (g) => opts.extra?.side(g) ?? [] } : {}),
+  });
+  if (!done) return c.json({ error: STALE, current_version: current, request_id: c.var.rid }, 409);
+  return c.json({ ok: true, changed: true, version: current + 1 });
+}
+
+const envelope = z.object({ version: z.int().check(z.gte(0)), value: z.unknown() });
+const numberingEnvelope = z.object({
+  version: z.int().check(z.gte(0)),
+  value: z.unknown(),
+  nextNumbers: z.optional(
+    z.partialRecord(z.enum(Object.keys(SERIES) as [Series, ...Series[]]), z.int().check(z.gte(1))),
+  ),
+});
+
+// ---- reading -------------------------------------------------------------------------------------------------------
+
+/** Live mode is allowed only once the owner's go-live sets the deploy-time variable (ADM-SET-06, Phase 7). The type is the literal from wrangler.jsonc, so compare as text. */
+const liveAllowed = (env: Env) => (env.PAYMENTS_LIVE_ALLOWED as string) === "true";
+
+type GatewayStatus = Record<(typeof GATEWAYS)[number], { configured: boolean; missing: readonly string[] }>;
+/** Which Worker secrets exist, by name (a value is never read out or returned). */
+const gatewayStatus = (env: Env): GatewayStatus => {
+  const has = (name: string) => Boolean((env as unknown as Record<string, unknown>)[name]);
+  const one = (g: (typeof GATEWAYS)[number]) => {
+    const missing = GATEWAY_SECRETS[g].filter((name) => !has(name));
+    return { configured: missing.length === 0, missing };
+  };
+  return { razorpay: one("razorpay"), stripe: one("stripe"), paypal: one("paypal") };
+};
+
+type CounterRow = { series: string; next_no: number };
+const counters = async (db: D1Database, fy: string) =>
+  (await db.prepare("SELECT series, next_no FROM doc_counters WHERE fy = ?1").bind(fy).all<CounterRow>())
+    .results;
+
+/**
+ * The series that have an issued document this financial year (a number is assigned only at issue, so `number IS NOT NULL` is
+ * "issued"; a voided document keeps its number). Served by the unique index (series, fy, number). Once a series is in this set,
+ * its format and next number are locked: changing either would leave a gap or a different style inside the printed run
+ * (CGST Rule 46(b); VERIFY WITH CA/LEGAL).
+ */
+const issuedSeries = async (db: D1Database, fy: string): Promise<Set<string>> => {
+  const names = Object.keys(SERIES);
+  const marks = names.map((_, i) => `?${i + 2}`).join(", ");
+  const { results } = await db
+    .prepare(
+      `SELECT DISTINCT series FROM documents WHERE fy = ?1 AND series IN (${marks}) AND number IS NOT NULL`,
+    )
+    .bind(fy, ...names)
+    .all<{ series: string }>();
+  return new Set(results.map((r) => r.series));
+};
+
+type BankRow = {
+  id: string;
+  kind: string;
+  account_name: string;
+  account_no: string;
+  ifsc: string | null;
+  swift: string | null;
+  bank_name: string;
+  branch: string | null;
+  bank_address: string | null;
+  intermediary: string | null;
+  updated_at: number;
+};
+const BANK_COLUMNS =
+  "id, kind, account_name, account_no, ifsc, swift, bank_name, branch, bank_address, intermediary, updated_at";
+const bankRows = async (db: D1Database) =>
+  (
+    await db
+      .prepare(`SELECT ${BANK_COLUMNS} FROM bank_accounts WHERE active = 1 ORDER BY created_at DESC, id DESC`)
+      .all<BankRow>()
+  ).results;
+
+/** Last four characters only; the number itself never leaves the database in an admin response (ADM-SET-02). */
+const last4 = (n: string) => n.slice(-4);
+const bankView = (kind: "INR" | "USD_SWIFT", r: BankRow | undefined) => ({
+  kind,
+  exists: r !== undefined,
+  accountName: r?.account_name ?? null,
+  accountNoLast4: r ? last4(r.account_no) : null,
+  ifsc: r?.ifsc ?? null,
+  swift: r?.swift ?? null,
+  bankName: r?.bank_name ?? null,
+  branch: r?.branch ?? null,
+  bankAddress: r?.bank_address ?? null,
+  intermediary: r?.intermediary ?? null,
+  updatedAt: r?.updated_at ?? null,
+});
+
+async function groupMeta(c: Ctx, group: Generic | "gateways", value: unknown) {
+  const verify = VERIFY[group];
+  switch (group) {
+    case "company":
+      return { pan: panOf((value as Settings["company"]).gstin), logos: BRAND_LOGOS };
+    case "numbering": {
+      const fy = fyOf(Date.now()).token;
+      const [rows, issued] = await Promise.all([counters(c.env.DB, fy), issuedSeries(c.env.DB, fy)]);
+      return {
+        fy,
+        series: Object.keys(SERIES).map((s) => {
+          const nextNo = rows.find((r) => r.series === s)?.next_no ?? 1;
+          // `used` = a document of this series was issued this FY; `locked` is the same fact for the screen (format and next
+          // number read-only, with `lockReason`). A start number set before the first issue does not lock anything.
+          const locked = issued.has(s);
+          return { series: s, nextNo, used: locked, locked, lockReason: locked ? SERIES_LOCK_REASON : null };
+        }),
+      };
+    }
+    case "retention":
+      return {
+        verify,
+        notes:
+          "Legal hold and the nightly deletion job arrive in M7.4; these figures are stored and enforced as minimums only.",
+      };
+    default:
+      return verify ? { verify } : {};
+  }
+}
+
+// ---- routes --------------------------------------------------------------------------------------------------------
+
+export const settings = new Hono<AppEnv>()
+  // The overview: which groups this role may open, with a short "needs attention" note each.
+  .get("/", async (c) => {
+    const u = actor(c);
+    const { results } = await c.env.DB.prepare("SELECT key, value, version, updated_at FROM settings").all<{
+      key: string;
+      value: string;
+      version: number;
+      updated_at: number;
+    }>();
+    const stored = new Map(results.map((r) => [r.key, r]));
+    const get = <K extends SeededSettingKey>(k: K) =>
+      resolveSetting(k, JSON.parse(stored.get(k)?.value ?? "null"));
+    const can = (a: Action) => decide(u.role, a) !== "deny";
+    const groups: { group: string; version: number | null; updatedAt: number | null; attention: string[] }[] =
+      [];
+    const row = (group: string, key: string, attention: string[] = []) =>
+      groups.push({
+        group,
+        version: stored.get(key)?.version ?? null,
+        updatedAt: stored.get(key)?.updated_at ?? null,
+        attention,
+      });
+    if (can("settings.manage")) {
+      const company = get("company");
+      row(
+        "company",
+        "company",
+        company.legalName && company.gstin && company.address ? [] : ["Company details not entered yet"],
+      );
+    }
+    if (can("bank.readMasked")) {
+      const banks = await bankRows(c.env.DB);
+      groups.push({
+        group: "bank",
+        version: null,
+        updatedAt: banks[0]?.updated_at ?? null,
+        attention: banks.length ? [] : ["No bank details entered yet"],
+      });
+    }
+    if (can("settings.taxNumbering.read")) {
+      const tax = get("tax");
+      row("tax", "tax", tax.exportMode === "lut" && !tax.lut.arn ? ["LUT ARN missing"] : []);
+      row("numbering", "numbering");
+    }
+    if (can("settings.manage")) {
+      row("payment_terms", "payment_terms");
+      const status = gatewayStatus(c.env);
+      const open = GATEWAYS.filter((g) => !status[g].configured).length;
+      row("gateways", "gateways", open ? [`${open} of ${GATEWAYS.length} gateways have no keys yet`] : []);
+      row("email", "email");
+      groups.push({ group: "terms", version: null, updatedAt: null, attention: [] });
+      row("retention", "retention");
+      row("flags", "flags");
+    }
+    return c.json({ groups });
+  })
+
+  .get("/groups/:group", sValidatorParam(groupParam), async (c) => {
+    const { group } = c.req.valid("param");
+    if (decide(actor(c).role, READ_ACTION[group]) === "deny") return err(c, FORBIDDEN_GROUP, 403);
+    const row = await loadRow(c.env.DB, group);
+    const value = resolveSetting(group, row?.value);
+    return c.json({
+      group,
+      version: row?.version ?? 0,
+      updatedAt: row?.updatedAt ?? null,
+      value,
+      meta: await groupMeta(c, group, value),
+    });
+  })
+
+  .put("/groups/:group", sValidatorParam(groupParam), async (c) => {
+    const { group } = c.req.valid("param");
+    const raw = await bodyOf(c);
+    if (group === "numbering") return saveNumbering(c, raw);
+    const env = envelope.safeParse(raw);
+    if (!env.success) return invalid(c, env.error.issues);
+    return save(c, group, env.data.value, env.data.version);
+  })
+
+  // Gateways: the mode only (keys are Worker secrets). Live stays locked until the owner's go-live (PAYMENTS_LIVE_ALLOWED).
+  .get("/gateways", async (c) => {
+    const row = await loadRow(c.env.DB, "gateways");
+    return c.json({
+      group: "gateways",
+      version: row?.version ?? 0,
+      updatedAt: row?.updatedAt ?? null,
+      value: resolveSetting("gateways", row?.value),
+      meta: { status: gatewayStatus(c.env), liveAllowed: liveAllowed(c.env) },
+    });
+  })
+
+  .put("/gateways", async (c) => {
+    const env = envelope.safeParse(await bodyOf(c));
+    if (!env.success) return invalid(c, env.error.issues);
+    return save(c, "gateways", env.data.value, env.data.version, {
+      rule: (before, after) => {
+        const toLive = GATEWAYS.some((g) => after[g].mode === "live" && before[g].mode !== "live");
+        return toLive && !liveAllowed(c.env) ? err(c, LIVE_LOCKED, 409) : null;
+      },
+    });
+  })
+
+  // Bank details (ADM-SET-02): masked in every response; a change needs a fresh step-up (the route's action).
+  .get("/bank", async (c) => {
+    const rows = await bankRows(c.env.DB);
+    return c.json({
+      accounts: (["INR", "USD_SWIFT"] as const).map((k) =>
+        bankView(
+          k,
+          rows.find((r) => r.kind === k),
+        ),
+      ),
+    });
+  })
+
+  .put("/bank/:kind", sValidatorParam(kindParam), async (c) => saveBank(c, c.req.valid("param").kind))
+
+  // Document terms (ADM-SET-08): the five blocks, versioned.
+  .get("/terms", async (c) => {
+    const [latestBlocks, latestVersions] = await c.env.DB.batch<{
+      id: string;
+      kind: string;
+      version: number;
+      body_md: string;
+      sha256: string;
+      created_at: number;
+      used_by?: number;
+    }>([
+      c.env.DB.prepare(
+        "SELECT t.id, t.kind, t.version, t.body_md, t.sha256, t.created_at FROM terms_blocks t WHERE t.version = (SELECT max(version) FROM terms_blocks WHERE kind = t.kind)",
+      ),
+      c.env.DB.prepare(
+        "SELECT t.id, t.kind, t.version, t.body_md, t.sha256, t.created_at, (SELECT count(*) FROM documents d WHERE d.terms_version_id = t.id) AS used_by FROM terms_versions t WHERE t.kind IN ('proposal', 'invoice') AND t.version = (SELECT max(version) FROM terms_versions WHERE kind = t.kind)",
+      ),
+    ]);
+    const all = [...(latestBlocks?.results ?? []), ...(latestVersions?.results ?? [])];
+    return c.json({
+      blocks: TERMS_BLOCK_IDS.map((id) => {
+        const t = TERMS_BLOCKS[id];
+        const cur = all.find((r) => r.kind === t.kind);
+        return {
+          block: id,
+          label: t.label,
+          current: cur
+            ? {
+                version: cur.version,
+                bodyMd: cur.body_md,
+                sha256: cur.sha256,
+                createdAt: cur.created_at,
+                // Documents record the version they used only for the two blocks in `terms_versions`; the other three arrive with M5.
+                usedBy: t.table === "terms_versions" ? (cur.used_by ?? 0) : null,
+              }
+            : null,
+        };
+      }),
+      meta: {
+        verify: "VERIFY WITH CA/LEGAL",
+        usedByNote:
+          "Used-by counts exist for proposal terms and invoice footer notes; the other blocks are not yet recorded on documents.",
+      },
+    });
+  })
+
+  .get("/terms/:block", sValidatorParam(blockParam), async (c) => {
+    const target = termsTarget(c.req.valid("param").block);
+    if (!target) return err(c, NOT_FOUND, 404);
+    const used =
+      target.table === "terms_versions"
+        ? ", (SELECT count(*) FROM documents d WHERE d.terms_version_id = t.id) AS used_by"
+        : "";
+    const { results } = await c.env.DB.prepare(
+      `SELECT t.version, t.body_md, t.sha256, t.created_at${used} FROM ${target.table} t WHERE t.kind = ?1 ORDER BY t.version DESC LIMIT 50`,
+    )
+      .bind(target.kind)
+      .all<{ version: number; body_md: string; sha256: string; created_at: number; used_by?: number }>();
+    return c.json({
+      block: c.req.valid("param").block,
+      label: target.label,
+      versions: results.map((r) => ({
+        version: r.version,
+        bodyMd: r.body_md,
+        sha256: r.sha256,
+        createdAt: r.created_at,
+        usedBy: target.table === "terms_versions" ? (r.used_by ?? 0) : null,
+      })),
+    });
+  })
+
+  .post("/terms/:block", sValidatorParam(blockParam), async (c) => {
+    const name = c.req.valid("param").block;
+    const target = termsTarget(name);
+    if (!target) return err(c, NOT_FOUND, 404);
+    const id = name as TermsBlockId;
+    const parsed = z.object({ body: termsBody(id) }).safeParse(await bodyOf(c));
+    if (!parsed.success) return invalid(c, parsed.error.issues);
+    const text = parsed.data.body;
+    const sha = hex(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))));
+    const db = c.env.DB;
+    const latest = await db
+      .prepare(`SELECT version, sha256 FROM ${target.table} WHERE kind = ?1 ORDER BY version DESC LIMIT 1`)
+      .bind(target.kind)
+      .first<{ version: number; sha256: string }>();
+    if (latest?.sha256 === sha) return c.json({ ok: true, changed: false, version: latest.version });
+    const rowId = uuidv7();
+    // The next version is computed by the INSERT itself (max + 1 of this kind, one statement); the unique (kind, version)
+    // index turns two simultaneous saves into one 409 for the loser.
+    const insert =
+      target.table === "terms_blocks"
+        ? db
+            .prepare(
+              "INSERT INTO terms_blocks (id, kind, version, body_md, sha256, created_by) SELECT ?1, ?2, coalesce(max(version), 0) + 1, ?3, ?4, ?5 FROM terms_blocks WHERE kind = ?2",
+            )
+            .bind(rowId, target.kind, text, sha, actor(c).id)
+        : db
+            .prepare(
+              "INSERT INTO terms_versions (id, kind, version, body_md, sha256) SELECT ?1, ?2, coalesce(max(version), 0) + 1, ?3, ?4 FROM terms_versions WHERE kind = ?2",
+            )
+            .bind(rowId, target.kind, text, sha);
+    try {
+      await mutate(c, {
+        main: insert,
+        action: "settings.terms.update",
+        entityType: "terms",
+        entityId: id,
+        // The block and the new text's fingerprint; the text itself stays in the terms table, not in the log.
+        summary: { block: id, sha256: { before: latest?.sha256 ?? null, after: sha } },
+        status: 201,
+      });
+    } catch (e) {
+      if (/UNIQUE/.test(`${e instanceof Error ? e.message : ""} ${String((e as Error)?.cause ?? "")}`))
+        return err(
+          c,
+          {
+            code: "version_clash",
+            message: "Someone saved a new version at the same moment. Reload and try again",
+          },
+          409,
+        );
+      throw e;
+    }
+    const saved = await db
+      .prepare(`SELECT version FROM ${target.table} WHERE id = ?1`)
+      .bind(rowId)
+      .first<{ version: number }>();
+    return c.json({ ok: true, changed: true, version: saved?.version ?? null, sha256: sha }, 201);
+  })
+
+  // Settings > Email "Send a test": one email to the signed-in member only (the address comes from the session, never the body).
+  .post("/email/test-send", async (c) => {
+    const parsed = z.object({ template: z.enum(EMAIL_TEMPLATES) }).safeParse(await bodyOf(c));
+    if (!parsed.success) return invalid(c, parsed.error.issues);
+    const template: EmailTemplate = parsed.data.template;
+    const u = actor(c);
+    const t = Date.now();
+    // Five an hour per member, counted from the audit log (indexed by actor and time).
+    const recent = await c.env.DB.prepare(
+      "SELECT count(*) AS n FROM audit_log WHERE actor_id = ?1 AND action = 'settings.email.test_send' AND at > ?2",
+    )
+      .bind(u.id, t - 3_600_000)
+      .first<{ n: number }>();
+    if ((recent?.n ?? 0) >= 5) return err(c, TEST_LIMIT, 429);
+    const name = TEMPLATE_NAMES[template];
+    const entityId = uuidv7();
+    await mutate(c, {
+      action: "settings.email.test_send",
+      entityType: "settings",
+      entityId: "email",
+      summary: { template },
+      status: 202,
+    });
+    queueEmail(c, {
+      template,
+      to: u.email,
+      data: {
+        ...sampleData(template, { name: u.name, role: u.role }, formatIstDateTime(t)),
+        test_name: name,
+      },
+      entity: { type: "settings_test", id: entityId },
+    });
+    return c.json({ ok: true, queued: true, template }, 202);
+  });
+
+// ---- numbering -----------------------------------------------------------------------------------------------------
+
+async function saveNumbering(c: Ctx, raw: unknown) {
+  const env = numberingEnvelope.safeParse(raw);
+  if (!env.success) return invalid(c, env.error.issues);
+  const { version, value, nextNumbers = {} } = env.data;
+  const fy = fyOf(Date.now()).token;
+  const [have, issued] = await Promise.all([counters(c.env.DB, fy), issuedSeries(c.env.DB, fy)]);
+  const nextOf = (s: string) => have.find((r) => r.series === s)?.next_no ?? 1;
+  const asked = Object.entries(nextNumbers) as [Series, number][];
+  return save(c, "numbering", value, version, {
+    rule: (before, after) => {
+      // A series with an issued document this financial year is locked: its format AND its next number (any change, up or
+      // down; a raised number leaves a gap in the series). Before the first issue both stay editable.
+      const formatChanged = (Object.keys(after) as Series[]).filter(
+        (s) => JSON.stringify(after[s]) !== JSON.stringify(before[s]),
+      );
+      const numberChanged = asked.filter(([s, n]) => n !== nextOf(s)).map(([s]) => s);
+      const locked = [...new Set([...formatChanged, ...numberChanged])].filter((s) => issued.has(s));
+      if (locked.length) return c.json({ error: SERIES_IN_USE, series: locked, request_id: c.var.rid }, 409);
+      // The next number only goes up (the doc_counters trigger refuses a lower one too; this answers first, with a reason).
+      const lower = asked.filter(([s, n]) => !canSetNextNumber(nextOf(s), n)).map(([s]) => s);
+      if (lower.length) return c.json({ error: NEXT_LOWER, series: lower, request_id: c.var.rid }, 409);
+      const over = asked.filter(([s, n]) => n > maxNumber(after[s]));
+      if (over.length)
+        return invalid(
+          c,
+          over.map(([s]) => ({
+            path: ["nextNumbers", s],
+            message: "That number doesn't fit the padding of this series",
+          })),
+        );
+      return null;
+    },
+    ...(asked.length
+      ? {
+          extra: {
+            summary: {
+              nextNumbers: {
+                before: Object.fromEntries(asked.map(([s]) => [s, nextOf(s)])),
+                after: Object.fromEntries(asked),
+              },
+            },
+            side: (g) =>
+              asked.map(([s, n]) =>
+                c.env.DB.prepare(
+                  `INSERT INTO doc_counters (series, fy, next_no) SELECT ?1, ?2, ?3 WHERE ${g.sql(4)} AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.series = ?1 AND d.fy = ?2 AND d.number IS NOT NULL) ON CONFLICT(series, fy) DO UPDATE SET next_no = excluded.next_no WHERE excluded.next_no >= doc_counters.next_no`,
+                ).bind(s, fy, n, ...g.params),
+              ),
+          },
+        }
+      : {}),
+  });
+}
+
+// ---- bank ----------------------------------------------------------------------------------------------------------
+
+const bankBody = z.object({
+  accountName: z.string().check(z.trim(), z.minLength(1), z.maxLength(120)),
+  /** Empty or missing = keep the number already stored. */
+  accountNo: z.optional(z.string().check(z.maxLength(60))),
+  accountNoAgain: z.optional(z.string().check(z.maxLength(60))),
+  ifsc: z.optional(z.nullable(z.string().check(z.maxLength(20)))),
+  swift: z.optional(z.nullable(z.string().check(z.maxLength(20)))),
+  bankName: z.string().check(z.trim(), z.minLength(1), z.maxLength(120)),
+  branch: z.optional(z.nullable(z.string().check(z.maxLength(120)))),
+  bankAddress: z.optional(z.nullable(z.string().check(z.maxLength(300)))),
+  intermediary: z.optional(z.nullable(z.string().check(z.maxLength(300)))),
+  /** The `updatedAt` the form was loaded with (GET /settings/bank); null or missing for a first save. A different value is a 409. */
+  expectedUpdatedAt: z.optional(z.nullable(z.int())),
+});
+const norm = (v: string | null | undefined) => {
+  const t = v?.trim();
+  return t ? t : null;
+};
+
+async function saveBank(c: Ctx, kind: "INR" | "USD_SWIFT") {
+  const parsed = bankBody.safeParse(await bodyOf(c));
+  if (!parsed.success) return invalid(c, parsed.error.issues);
+  const b = parsed.data;
+  const bad: { path: string[]; message: string }[] = [];
+  const typed = cleanAccountNo(norm(b.accountNo) ?? "") || null;
+  const again = cleanAccountNo(norm(b.accountNoAgain) ?? "") || null;
+  if (typed !== null && !ACCOUNT_NO.test(typed))
+    bad.push({ path: ["accountNo"], message: "Use letters and digits only, 5 to 34 characters" });
+  if (typed !== null && again === null)
+    bad.push({ path: ["accountNoAgain"], message: "Type the account number again." });
+  else if (typed !== null && typed !== again)
+    bad.push({ path: ["accountNoAgain"], message: "The two account numbers don't match" });
+  const ifsc = norm(b.ifsc)?.toUpperCase() ?? null;
+  const swift = norm(b.swift)?.toUpperCase() ?? null;
+  if (kind === "INR" && (!ifsc || !IFSC.test(ifsc)))
+    bad.push({ path: ["ifsc"], message: "An IFSC has 11 characters, like HDFC0001234" });
+  if (kind === "USD_SWIFT") {
+    if (!swift || !SWIFT.test(swift))
+      bad.push({ path: ["swift"], message: "A SWIFT/BIC has 8 or 11 characters" });
+    if (!norm(b.bankAddress)) bad.push({ path: ["bankAddress"], message: "Enter the bank's address" });
+  }
+  const db = c.env.DB;
+  const existing = (await bankRows(db)).find((r) => r.kind === kind);
+  if (!existing && typed === null) bad.push({ path: ["accountNo"], message: "Enter the account number" });
+  if (existing && b.expectedUpdatedAt === undefined)
+    bad.push({ path: ["expectedUpdatedAt"], message: "Reload the page and try again" });
+  if (bad.length) return invalid(c, bad);
+  // The stale check: the form must have been loaded from the row as it is now (a first save expects no row).
+  if ((existing?.updated_at ?? null) !== (b.expectedUpdatedAt ?? null))
+    return c.json({ error: STALE, request_id: c.var.rid }, 409);
+
+  const after = {
+    accountName: b.accountName,
+    accountNo: typed ?? existing?.account_no ?? "",
+    ifsc: kind === "INR" ? ifsc : null,
+    swift: kind === "USD_SWIFT" ? swift : null,
+    bankName: b.bankName,
+    branch: norm(b.branch),
+    bankAddress: norm(b.bankAddress),
+    intermediary: norm(b.intermediary),
+  };
+  const before = existing
+    ? {
+        accountName: existing.account_name,
+        accountNo: existing.account_no,
+        ifsc: existing.ifsc,
+        swift: existing.swift,
+        bankName: existing.bank_name,
+        branch: existing.branch,
+        bankAddress: existing.bank_address,
+        intermediary: existing.intermediary,
+      }
+    : null;
+  // The account number is masked on both sides of the diff ("[masked]"): the log never holds it.
+  const diff = auditSummary(before, after, ["accountNo"]);
+  // `updatedAt` goes back so the screen sends it with its next save of this block (review re-check L-b).
+  if (existing && !Object.keys(diff).length)
+    return c.json({ ok: true, changed: false, updatedAt: existing.updated_at });
+  const t = Date.now();
+  const id = existing?.id ?? uuidv7();
+  const main = existing
+    ? db
+        .prepare(
+          "UPDATE bank_accounts SET account_name = ?1, account_no = ?2, ifsc = ?3, swift = ?4, bank_name = ?5, branch = ?6, bank_address = ?7, intermediary = ?8, updated_at = ?9 WHERE id = ?10 AND active = 1 AND updated_at = ?11",
+        )
+        .bind(
+          after.accountName,
+          after.accountNo,
+          after.ifsc,
+          after.swift,
+          after.bankName,
+          after.branch,
+          after.bankAddress,
+          after.intermediary,
+          t,
+          id,
+          b.expectedUpdatedAt,
+        )
+    : db
+        .prepare(
+          "INSERT INTO bank_accounts (id, kind, account_name, account_no, ifsc, swift, bank_name, branch, bank_address, intermediary, active, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 1, ?11, ?11)",
+        )
+        .bind(
+          id,
+          kind,
+          after.accountName,
+          after.accountNo,
+          after.ifsc,
+          after.swift,
+          after.bankName,
+          after.branch,
+          after.bankAddress,
+          after.intermediary,
+          t,
+        );
+  let done: boolean;
+  try {
+    done = await mutate(c, {
+      main,
+      action: "settings.bank.update",
+      entityType: "bank_account",
+      entityId: id,
+      summary: { kind, ...diff },
+    });
+  } catch (e) {
+    // Two first saves at once: the unique index (one active account per kind) lets one win and refuses the other.
+    if (
+      !existing &&
+      /UNIQUE/.test(`${e instanceof Error ? e.message : ""} ${String((e as Error)?.cause ?? "")}`)
+    )
+      return c.json({ error: STALE, request_id: c.var.rid }, 409);
+    throw e;
+  }
+  if (!done) return c.json({ error: STALE, request_id: c.var.rid }, 409);
+  return c.json({ ok: true, changed: true, updatedAt: t });
+}
+
+// A path-parameter validator that answers 404 (not 400) for a name that isn't one of ours: `/groups/anything` is "not found".
+function sValidatorParam<S extends Parameters<typeof sValidator>[1]>(schema: S) {
+  return sValidator("param", schema, (r, c) => (r.success ? undefined : err(c as Ctx, NOT_FOUND, 404)));
+}

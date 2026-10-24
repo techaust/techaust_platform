@@ -2,6 +2,25 @@
 // masked, so the audit log never becomes a second copy of secrets or personal data. Pure; the Worker stores the
 // result as the `summary` JSON of an `audit_log` row (after, never before, an UPDATE trigger would refuse it).
 
+/**
+ * The audit actions the accountant may read (`audit.readFinance`, ADM-AUD-02, docs/04 section 9): changes to the money
+ * and tax settings, and the finance events of later milestones. ONE list, here; the audit API filters with it
+ * (`action IN (...)`), and a test pins it. The owner (`audit.read`) sees everything.
+ */
+export const FINANCE_AUDIT_ACTIONS = [
+  "settings.tax.update",
+  "settings.numbering.update",
+  "settings.payment_terms.update",
+  "settings.bank.update",
+  "settings.gateways.update",
+  "document.issue",
+  "document.void",
+  "payment.record",
+  "payment.verify",
+  "refund.issue",
+  "export.gst",
+] as const;
+
 /** What replaces the value of a sensitive field, on both sides of the change. */
 export const MASKED = "[masked]";
 

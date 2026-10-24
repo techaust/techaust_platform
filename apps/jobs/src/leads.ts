@@ -10,12 +10,14 @@
 import {
   budgetBandLabel,
   type Currency,
+  can,
   countryName,
   type EmailMessage,
   generateLeadRef,
   type LeadMessage,
   labelOf,
   leadMessage,
+  ROLES,
   SETTINGS_DEFAULTS,
   stableId,
   TIMELINE_LABELS,
@@ -105,6 +107,26 @@ function emailsFor(env: Env, m: LeadMessage, ref: string): EmailMessage[] {
   ];
 }
 
+/** The roles that may read leads: they get the bell entry (ADM-G-09). Derived from the permission matrix, never listed twice. */
+const LEAD_READERS = ROLES.filter((r) => can(r, "leads.read"));
+
+/**
+ * The bell entry for a new lead (ADM-G-09; wording 07-H section 2): one row per active member who may read leads, in the SAME
+ * batch as the lead, and only if the lead exists. `INSERT OR IGNORE` on the unique (member, kind, lead): a redelivery adds nothing.
+ */
+function notifyStatement(env: Env, m: LeadMessage): D1PreparedStatement {
+  const quote =
+    m.kind === "quote" ? (m.payload as Extract<LeadMessage, { kind: "quote" }>["payload"]) : undefined;
+  const id = leadId(m);
+  const title = `New lead: ${m.payload.name}, ${serviceName(quote?.service)}`.slice(0, 200);
+  const roles = LEAD_READERS.map((_, i) => `?${i + 4}`).join(", ");
+  return env.DB.prepare(
+    `INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
+     SELECT 'n_' || lower(hex(randomblob(16))), u.id, 'lead.new', 'lead', ?1, ?2, ?3 FROM staff_users u
+     WHERE u.status = 'active' AND u.role IN (${roles}) AND EXISTS (SELECT 1 FROM leads WHERE id = ?1)`,
+  ).bind(id, title, `/leads/${id}`, ...LEAD_READERS);
+}
+
 const clash = (e: unknown, column: string) =>
   new RegExp(`UNIQUE constraint failed: leads\\.${column}`).test(
     String(e) + String((e as Error)?.cause ?? ""),
@@ -188,6 +210,7 @@ export async function processLead(env: Env, body: unknown, now = Date.now()): Pr
       const results = await env.DB.batch([
         ...countStatements(env.DB, m.ipHash, now),
         insertStatement(env, m, ref),
+        notifyStatement(env, m),
       ]);
       if ((results[2]?.meta.changes ?? 0) === 0) {
         logEvent("lead.rate_limited", { kind: m.kind });

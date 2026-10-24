@@ -14,7 +14,7 @@ import type { Context } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 
 export type RouteDef = {
-  method: "GET" | "POST" | "PATCH" | "DELETE";
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   /** The full Hono pattern, e.g. `/api/v1/users/:id`. */
   path: string;
   /** `public`: no session needed (the handler does its own checks); otherwise the matrix action it needs. */

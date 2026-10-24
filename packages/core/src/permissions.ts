@@ -8,6 +8,14 @@
 
 export const ROLES = ["owner", "staff", "sales", "accountant"] as const;
 export type Role = (typeof ROLES)[number];
+
+/** How a role is written for a person (screens and emails); the code ("accountant") is never shown. */
+export const ROLE_LABELS: Record<Role, string> = {
+  owner: "Owner",
+  staff: "Staff",
+  sales: "Sales",
+  accountant: "Accountant",
+};
 export type Decision = "allow" | "step-up" | "approval" | "deny";
 
 /** Staff and Sales may send a proposal themselves only up to this document discount (10 %). */
@@ -32,6 +40,12 @@ const MATRIX = {
   "account.own": { owner: "allow", staff: "allow", sales: "allow", accountant: "allow" },
   "account.recoveryCodes": { owner: "step-up", staff: "step-up", sales: "step-up", accountant: "step-up" },
   "settings.manage": { owner: "allow" },
+  // The settings overview and a group's read: the handler then filters by group (the accountant sees only tax, numbering
+  // and masked bank details; everything else is the owner's) [ADM-SET-01..10, M3.1]
+  "settings.read": { owner: "allow", accountant: "allow" },
+  // The bell and the global search: every signed-in member; each handler returns only what the role may read [ADM-G-05, ADM-G-09]
+  "notifications.own": { owner: "allow", staff: "allow", sales: "allow", accountant: "allow" },
+  "search.use": { owner: "allow", staff: "allow", sales: "allow", accountant: "allow" },
   "settings.taxNumbering.read": { owner: "allow", accountant: "allow" },
   "gateways.manage": { owner: "step-up" },
   // Bank details
@@ -85,6 +99,8 @@ const MATRIX = {
   // Audit log
   "audit.read": { owner: "allow" },
   "audit.readFinance": { owner: "allow", accountant: "allow" },
+  // The CSV export (owner decision 2026-10-24): a fresh step-up for both; the accountant's rows are the finance events only.
+  "audit.export": { owner: "step-up", accountant: "step-up" },
   // Approvals queue
   "approvals.decide": { owner: "allow" },
   "approvals.readOwn": { owner: "allow", staff: "allow", sales: "allow" },
