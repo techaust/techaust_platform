@@ -15,6 +15,8 @@ import {
   documents,
   magicLinkTokens,
   staffUsers,
+  termsBlocks,
+  termsVersions,
 } from "./schema/index.ts";
 
 /** Columns of an issued document that may still change (ledger, status, void and e-invoice fields). */
@@ -122,6 +124,16 @@ export function portalTriggerStatements(): string[] {
   ];
 }
 
+/**
+ * Document-terms triggers (M3.1, ADM-SET-08; a separate set because the existing triggers have no IF NOT EXISTS):
+ * a terms version is never edited or deleted, a change is a new version. Covers `terms_versions` (proposal and
+ * invoice footer, referenced by documents) and `terms_blocks` (the other three kinds). No table is rebuilt.
+ */
+export function termsTriggerStatements(): string[] {
+  const table = (t: Parameters<typeof getTableConfig>[0]) => getTableConfig(t).name;
+  return [...appendOnly(table(termsVersions)), ...appendOnly(table(termsBlocks))];
+}
+
 /** The only statuses a document can be issued from (docs/05 §5.4 change 14: drafts only; owner decision 2026-10-07).
  * An approval (`approvals`, kind `issue`) is a record next to the draft, not a document status. Shared by the guard
  * trigger below and by the reference issue batch in test/helpers.ts, so the two cannot drift apart again. */
@@ -152,6 +164,7 @@ export const TRIGGER_SETS = {
   triggers: { what: "integrity triggers (docs/05 §5.3)", statements: triggerStatements },
   auth_triggers: { what: "staff-auth triggers (M1.5)", statements: authTriggerStatements },
   portal_triggers: { what: "portal-auth triggers (M1.6)", statements: portalTriggerStatements },
+  terms_triggers: { what: "document-terms append-only triggers (M3.1)", statements: termsTriggerStatements },
   issue_guard: {
     what: "issue guard narrowed to drafts, plus the issue post-condition (docs/05 §5.4)",
     statements: issueGuardStatements,

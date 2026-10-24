@@ -147,6 +147,42 @@ describe("append-only tables", () => {
   });
 });
 
+describe("document terms are append-only (ADM-SET-08, migration 0012)", () => {
+  it("terms_versions and terms_blocks refuse UPDATE and DELETE; a new version is a new row", async () => {
+    await run(
+      "INSERT INTO terms_versions (id, kind, version, body_md, sha256) VALUES ('tv1', 'proposal', 1, 'a', 'h1')",
+    );
+    await run(
+      "INSERT INTO terms_blocks (id, kind, version, body_md, sha256) VALUES ('tb1', 'standard_terms', 1, 'a', 'h1')",
+    );
+    await run(
+      "INSERT INTO terms_blocks (id, kind, version, body_md, sha256) VALUES ('tb2', 'standard_terms', 2, 'b', 'h2')",
+    );
+    await rejects(run("UPDATE terms_versions SET body_md = 'x'"), /terms_versions is append-only/);
+    await rejects(run("DELETE FROM terms_versions"), /terms_versions is append-only/);
+    await rejects(run("UPDATE terms_blocks SET body_md = 'x'"), /terms_blocks is append-only/);
+    await rejects(run("DELETE FROM terms_blocks"), /terms_blocks is append-only/);
+    await rejects(
+      run(
+        "INSERT INTO terms_blocks (id, kind, version, body_md, sha256) VALUES ('tb3', 'standard_terms', 2, 'c', 'h3')",
+      ),
+      /UNIQUE/,
+    );
+    await rejects(
+      run(
+        "INSERT INTO terms_blocks (id, kind, version, body_md, sha256) VALUES ('tb4', 'proposal', 1, 'c', 'h3')",
+      ),
+      /CHECK/,
+    );
+    await rejects(
+      run(
+        "INSERT INTO terms_blocks (id, kind, version, body_md, sha256) VALUES ('tb5', 'refund_link', 0, 'c', 'h3')",
+      ),
+      /CHECK/,
+    );
+  });
+});
+
 describe("gap-free numbering (docs/05 §5.4, ADM-INV-03)", () => {
   it("formats the number in SQL exactly as core does", async () => {
     const id = await issuedInvoice();

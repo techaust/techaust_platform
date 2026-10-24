@@ -86,6 +86,33 @@ export const termsVersions = sqliteTable(
   ],
 );
 
+/**
+ * The document-terms blocks that `terms_versions` cannot hold (ADM-SET-08, M3.1). Its CHECK allows only
+ * proposal | invoice | website and `documents` references it, so it is not rebuilt: the proposal terms
+ * (`proposal`) and the invoice footer notes (`invoice`) stay in `terms_versions`; the other three live here.
+ * Append-only: a new version is a new row; "used by N documents" for these kinds arrives with the M5 columns
+ * that let a document record them.
+ */
+export const TERMS_BLOCK_KINDS = ["standard_terms", "export_declaration", "refund_link"] as const;
+
+export const termsBlocks = sqliteTable(
+  "terms_blocks",
+  {
+    id: id(),
+    kind: text("kind", { enum: TERMS_BLOCK_KINDS }).notNull(),
+    version: integer("version").notNull(),
+    bodyMd: text("body_md").notNull(),
+    sha256: text("sha256").notNull(),
+    createdBy: text("created_by").references(() => staffUsers.id),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("terms_blocks_kind_version").on(t.kind, t.version),
+    check("terms_blocks_kind", oneOf(t.kind, TERMS_BLOCK_KINDS)),
+    check("terms_blocks_version", sql`${t.version} >= 1`),
+  ],
+);
+
 export const FX_SOURCES = ["FBIL/RBI", "manual"] as const;
 
 /** Reference FX rates (ADM-INV-08): INR micros per unit of the foreign currency. */

@@ -78,6 +78,20 @@
       "when": 1792703704939,
       "tag": "0010_leads_request_type_plan",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1792841417547,
+      "tag": "0011_terms_blocks",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1792841419081,
+      "tag": "0012_terms_triggers",
+      "breakpoints": true
     }
   ]
 }
