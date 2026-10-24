@@ -16,6 +16,7 @@ import {
   formatIstDateTime,
   staffAlertMessage,
 } from "@techaust/core";
+import { primeSesSigning } from "@techaust/email";
 import { logEvent } from "./log.ts";
 
 export type StaffAlertResult = "queued" | "none" | "missing" | "ignored" | "invalid";
@@ -150,6 +151,15 @@ export async function processStaffAlert(env: Env, body: unknown): Promise<StaffA
     logEvent("staff_alert.nobody", { action });
     return "none";
   }
+  // The emails usually follow in this isolate, and the first one pays for the SES signing key: derive it now, while this unit
+  // of work has room (CPU tuning 4). Not guaranteed: the send can run in another isolate (more likely with
+  // `max_concurrency` above 1) and stay cold. Only when mail really goes to SES; nothing is sent.
+  if (env.EMAIL_TRANSPORT === "ses")
+    await primeSesSigning({
+      accessKeyId: env.SES_ACCESS_KEY_ID,
+      secretAccessKey: env.SES_SECRET_ACCESS_KEY,
+      region: env.SES_REGION,
+    });
   await env.EMAIL_QUEUE.sendBatch(messages.map((body) => ({ body })));
   logEvent("staff_alert.queued", { action, emails: messages.length });
   return "queued";

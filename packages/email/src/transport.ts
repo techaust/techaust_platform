@@ -46,11 +46,14 @@ const THROTTLE_CODES = [
  */
 const SIGNING_KEYS = new Map<string, ArrayBuffer>();
 
-/** The SES v2 `SendEmail` call (JSON, SigV4 for service `ses`). */
-export function sesTransport(config: SesConfig): Transport {
+/**
+ * The one SES client set-up, shared by `sesTransport` and `primeSesSigning` so both use the same cache key (secret, day,
+ * region, service) and the prime keeps helping after an edit.
+ */
+function sesClient(config: SesConfig): AwsClient {
   // one entry per day, region and secret: cap the map at 8 entries, clearing it when it grows past that
   if (SIGNING_KEYS.size > 8) SIGNING_KEYS.clear();
-  const client = new AwsClient({
+  return new AwsClient({
     accessKeyId: config.accessKeyId,
     secretAccessKey: config.secretAccessKey,
     service: "ses",
@@ -58,7 +61,14 @@ export function sesTransport(config: SesConfig): Transport {
     retries: 0, // the queue retries (one unit of work per message)
     cache: SIGNING_KEYS,
   });
-  const url = `https://email.${config.region}.amazonaws.com/v2/email/outbound-emails`;
+}
+
+const sesUrl = (region: string) => `https://email.${region}.amazonaws.com/v2/email/outbound-emails`;
+
+/** The SES v2 `SendEmail` call (JSON, SigV4 for service `ses`). */
+export function sesTransport(config: SesConfig): Transport {
+  const client = sesClient(config);
+  const url = sesUrl(config.region);
   return {
     async send(input) {
       let body: string;
@@ -109,6 +119,25 @@ export function sesTransport(config: SesConfig): Transport {
       return { kind: "permanent", error };
     },
   };
+}
+
+/**
+ * Primes the SES path in an isolate that is about to send (CPU tuning 4): derives the day's signing key into the shared
+ * `SIGNING_KEYS` map and builds one `Request`, by signing a made-up body with the REAL credentials. Nothing is sent, nothing
+ * is logged, and the secret goes nowhere but the signer. A caller that has `env` and expects email to follow (the staff
+ * alert expansion) calls it so the first real send finds the key derived. Resolves true when the signing worked; never throws.
+ */
+export async function primeSesSigning(config: SesConfig): Promise<boolean> {
+  try {
+    const signed = await sesClient(config).sign(sesUrl(config.region), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    return signed.headers.has("authorization");
+  } catch {
+    return false;
+  }
 }
 
 /** The warm-up's made-up credentials (exported for the test that proves the shared key map stays untouched). */

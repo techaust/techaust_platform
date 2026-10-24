@@ -129,3 +129,22 @@ The `batch(5)` step (counter-key HMACs and the reserve SQL) dropped from 1.7 to 
 
 ## Handover (lead, 2026-10-23, 21:45 IST)
 Merged as [PR #69](https://github.com/techaust/techaust_platform/pull/69); its staging deploy follows `main`'s CI. **Next: Step 3 with the owner** (about 10 minutes): a sign-in to staging admin from a new browser (new-device email), one recovery code (2FA-change email), and a portal sign-in link. The lead reads each invocation's `cpuTimeMs` with `iso`/`n` from Workers Logs (read-only) and records them here. Pass: each staff send and `/magic` ≤ 7 ms. If cold (`n=1`) staff sends stay at 8 ms: try deriving the SES signing key during the `staff.alert` expansion, else bring the owner the options (accept 8 ms for rare cold sends, or a Paid-plan proposal).
+
+## Step 3: staging reading (owner and lead, 2026-10-24, about 14:50 IST): NOT PASSED
+The owner signed in to staging admin from an InPrivate window (authenticator code, not a recovery code: the owner had no codes), made new recovery codes (2FA-change email instead of "recovery code used") and requested a portal sign-in link; all three emails arrived. Read-only Workers Logs, `cpuTimeMs`:
+
+| Invocation | Isolate `iso` / `n` | CPU ms | Pass (≤ 7) |
+|---|---|---|---|
+| jobs: `staff_alert.queued` new device | ad4972 / 1 | 2 | yes |
+| jobs: send `staff.new_device` | ad4972 / 2 | 4 | yes (was 8) |
+| jobs: `staff_alert.queued` 2FA change | d143c0 / 1 | 4 | yes |
+| jobs: send `staff.2fa_change` | d143c0 / 2 | **11** | **no** (over the 10 ms Free limit; outcome ok) |
+| jobs: send `portal.magic_link` | ad4972 / 3 | 2 | yes |
+| portal `/magic` (first) | a7d5a2 / 1 | 5 | yes |
+| portal `/magic` (second) | b8bc8e / 2 | **8** | **no** |
+| admin `/login`, `/salt`, `/step-up`, `/recovery/regenerate` | 0694f7 | 2–5 | yes |
+| admin `/totp` | 0694f7 / 3 | 8 | out of scope (later round) |
+
+Reading: a warm isolate's staff send is now 4 ms, but the first send in a fresh jobs isolate (d143c0, whose only earlier work was the alert expansion) took 11 ms: the cold-send case predicted in the handover (first SES TLS and the day's signing key). Portal `/magic` was 5 ms cold and 8 ms on a second-request isolate, so the warm-up did not settle it. Single readings; CPU time on Workers varies by 1–3 ms between runs.
+
+**Next (lead's proposal, owner decides):** the handover's candidate: derive the SES signing key during the `staff.alert` expansion (same isolate, one invocation earlier), and profile `/magic`'s second-request 8 ms; otherwise the owner's options (accept rare cold sends over 7 ms, or a Paid-plan proposal).

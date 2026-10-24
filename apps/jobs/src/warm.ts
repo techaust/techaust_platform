@@ -6,7 +6,7 @@ import { describeUserAgent, WARM_SAMPLES, warmConsumerMessages, warmLabels } fro
 import { renderEmail } from "@techaust/email";
 import { alertData } from "./leads.ts";
 
-/** Returns the parses and renders that succeeded (5 + 7), so a test notices a warm-up that silently stopped working. */
+/** Returns the parses and renders that succeeded (5 + 10), so a test notices a warm-up that silently stopped working. */
 export function warmConsumers(): number {
   const parsed = warmConsumerMessages();
   warmLabels();
@@ -38,7 +38,13 @@ export function warmConsumers(): number {
       opts,
     );
     rendered++;
-    renderEmail("staff.2fa_change", { ...who, time, change: "recovery_code_used" }, opts);
+    // every `change` the alert can carry, with a role (the real data has one; it picks the "Not you?" line): the owner's line
+    // for each change, then the member's line once
+    for (const change of ["recovery_code_used", "recovery_codes_regenerated", "reset_by_owner"]) {
+      renderEmail("staff.2fa_change", { ...who, time, change, role: "owner" }, opts);
+      rendered++;
+    }
+    renderEmail("staff.2fa_change", { ...who, time, change: "recovery_code_used", role: "staff" }, opts);
     rendered++;
     renderEmail("staff.lockout", { ...who, time }, opts);
     rendered++;

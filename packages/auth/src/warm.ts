@@ -6,9 +6,10 @@
 // Pure of `env`: the key is a made-up constant, never a secret (the pepper only exists inside a request). Nothing is sent,
 // stored or logged; every error is swallowed (a warm-up must never stop a Worker from starting). `crypto.getRandomValues`,
 // `new Request` and timers are refused in a Worker's global scope, so none is used here (`newToken` is not warmed).
-import { enc, hex, sha256 } from "./crypto.ts";
+import { b64url, enc, hex, sha256 } from "./crypto.ts";
 import { addressOf, portalFailKey, portalMailKey, portalReqKey, readPortalCookie } from "./portal.ts";
 import { docTokenRequest, magicRequest, magicVerifyRequest } from "./schemas.ts";
+import { isToken } from "./tokens.ts";
 
 /**
  * The warm-up's made-up HMAC key (32 bytes, base64 of "warm-up-key-not-a-secret-0000000"), only ever used with made-up
@@ -18,7 +19,9 @@ const WARM_PEPPER = "d2FybS11cC1rZXktbm90LWEtc2VjcmV0LTAwMDAwMDA=";
 
 /**
  * Parses one made-up body through each portal schema, reads the shared address and cookie parsers once, and runs one HMAC and
- * one SHA-256. Resolves the number of steps that worked (3 schemas + 1 address + 1 cookie + 3 keys + 1 digest = 9), so a test
+ * one SHA-256, then the pieces of a known address's branch that need no randomness (CPU tuning 4: the token's base64url encoder
+ * and shape check, the request URL parser). Resolves the number of steps that worked (3 schemas + 1 address + 1 cookie + 3 keys
+ * + 1 digest + 1 token encoding + 1 URL = 11), so a test
  * notices a step that silently stopped working.
  */
 export async function warmPortalAuth(): Promise<number> {
@@ -44,6 +47,11 @@ export async function warmPortalAuth(): Promise<number> {
   await step(() => portalMailKey(WARM_PEPPER, "warm-up@example.invalid"));
   await step(() => portalFailKey(WARM_PEPPER, "203.0.113.9"));
   await step(async () => hex(await sha256(enc.encode("warm-up"))));
+  // `newToken` itself needs `getRandomValues` (refused at start-up); its other half, the base64url encoder, and the shape check
+  // run here on a constant, so the first real token costs only the random bytes.
+  await step(() => isToken(b64url(new Uint8Array(32))) || fail());
+  // `new URL(request.url).origin` builds the link's origin in the known-address branch
+  await step(() => new URL("https://warm-up.invalid/api/v1/auth/magic").origin);
   return done;
 }
 

@@ -5,6 +5,7 @@ import {
   leadAcknowledgement,
   leadAlert,
   logTransport,
+  primeSesSigning,
   quoteDisplayName,
   renderEmail,
   sesTransport,
@@ -198,6 +199,37 @@ describe("SES transport", () => {
     expect(r.kind).toBe("permanent");
     expect(spy).not.toHaveBeenCalled();
     spy.mockRestore();
+  });
+});
+
+describe("SES signing prime (CPU tuning 4)", () => {
+  it("derives the real key into the shared map without sending, so the next send only signs once", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const sign = vi.spyOn(crypto.subtle, "sign");
+    try {
+      const prime = { ...cfg, secretAccessKey: "prime-test-secret-not-real", region: "ap-south-1" };
+      expect(await primeSesSigning(prime)).toBe(true);
+      expect(sign).toHaveBeenCalledTimes(5); // four HMACs for the key, one for the signature
+      expect(fetchSpy).not.toHaveBeenCalled();
+      sign.mockClear();
+      fetchSpy.mockResolvedValue(new Response(JSON.stringify({ MessageId: "m" }), { status: 200 }));
+      expect((await sesTransport(prime).send(input)).kind).toBe("sent");
+      expect(sign).toHaveBeenCalledTimes(1); // the key was already derived
+    } finally {
+      fetchSpy.mockRestore();
+      sign.mockRestore();
+    }
+  });
+
+  it("never throws", async () => {
+    const sign = vi.spyOn(crypto.subtle, "sign").mockRejectedValue(new Error("no crypto"));
+    try {
+      expect(
+        await primeSesSigning({ ...cfg, secretAccessKey: "another-test-secret", region: "ap-south-1" }),
+      ).toBe(false);
+    } finally {
+      sign.mockRestore();
+    }
   });
 });
 

@@ -3,8 +3,8 @@ import { warmPortalAuth } from "../src/warm.ts";
 
 // The portal's start-up warm-up (CPU tuning 3): every step works, and it works under workerd's start-up rules.
 describe("portal start-up warm-up", () => {
-  it("runs all 9 steps (3 schemas, address, cookie, 3 counter keys, 1 digest)", async () => {
-    expect(await warmPortalAuth()).toBe(9);
+  it("runs all 11 steps (3 schemas, address, cookie, 3 counter keys, 1 digest, token encoding, URL)", async () => {
+    expect(await warmPortalAuth()).toBe(11);
   });
 
   it("uses nothing a Worker refuses at start-up, prints nothing and sends nothing", async () => {
@@ -23,7 +23,7 @@ describe("portal start-up warm-up", () => {
     g.fetch = refuse;
     g.setTimeout = refuse;
     try {
-      expect(await warmPortalAuth()).toBe(9);
+      expect(await warmPortalAuth()).toBe(11);
       expect(log).not.toHaveBeenCalled();
       expect(error).not.toHaveBeenCalled();
     } finally {
@@ -39,7 +39,7 @@ describe("portal start-up warm-up", () => {
     const sign = vi.spyOn(crypto.subtle, "sign").mockRejectedValue(new Error("no crypto"));
     try {
       const done = await warmPortalAuth();
-      expect(done).toBeLessThan(9);
+      expect(done).toBeLessThan(11);
     } finally {
       sign.mockRestore();
     }
