@@ -284,45 +284,47 @@ function LeadList() {
       {list.state === "failed" ? (
         <LoadFailed error={list.error} onRetry={() => list.reload()} />
       ) : (
-        <DataTable
-          caption="Leads"
-          columns={columns}
-          rows={rows}
-          rowKey={(r) => r.id}
-          sort={sort}
-          onSort={(k) => {
-            const key = isSort(k) ? k : "created";
-            const base = key === "next_action" ? "asc" : "desc";
-            const nextDir = sortKey === key ? (dir === "asc" ? "desc" : "asc") : base;
-            set({ sort: key === "created" ? null : key, dir: nextDir === base ? null : nextDir });
-          }}
-          loading={loading}
-          skeletonRows={6}
-          empty={
-            <EmptyState
-              icon={filtered ? <Search /> : <Inbox />}
-              title={filtered ? "No leads match these filters" : "No leads yet"}
-              action={
-                filtered ? (
-                  <button type="button" className="btn btn--secondary" onClick={clear}>
-                    Clear filters
-                  </button>
-                ) : allowed(user.role, "leads.write") ? (
-                  <Link to="/leads/new" className="btn btn--primary">
-                    <Plus />
-                    New lead
-                  </Link>
-                ) : undefined
-              }
-            >
-              <p>
-                {filtered
-                  ? "Try fewer filters, or search for the start of a name or an email address."
-                  : "Enquiries from the website's forms appear here as they arrive. Add one by hand for a call or an email."}
-              </p>
-            </EmptyState>
-          }
-        />
+        <div className="leads-table">
+          <DataTable
+            caption="Leads"
+            columns={columns}
+            rows={rows}
+            rowKey={(r) => r.id}
+            sort={sort}
+            onSort={(k) => {
+              const key = isSort(k) ? k : "created";
+              const base = key === "next_action" ? "asc" : "desc";
+              const nextDir = sortKey === key ? (dir === "asc" ? "desc" : "asc") : base;
+              set({ sort: key === "created" ? null : key, dir: nextDir === base ? null : nextDir });
+            }}
+            loading={loading}
+            skeletonRows={6}
+            empty={
+              <EmptyState
+                icon={filtered ? <Search /> : <Inbox />}
+                title={filtered ? "No leads match these filters" : "No leads yet"}
+                action={
+                  filtered ? (
+                    <button type="button" className="btn btn--secondary" onClick={clear}>
+                      Clear filters
+                    </button>
+                  ) : allowed(user.role, "leads.write") ? (
+                    <Link to="/leads/new" className="btn btn--primary">
+                      <Plus />
+                      New lead
+                    </Link>
+                  ) : undefined
+                }
+              >
+                <p>
+                  {filtered
+                    ? "Try fewer filters, or search for the start of a name or an email address."
+                    : "Enquiries from the website's forms appear here as they arrive. Add one by hand for a call or an email."}
+                </p>
+              </EmptyState>
+            }
+          />
+        </div>
       )}
 
       {list.state === "ready" && rows.length > 0 && (
@@ -402,19 +404,21 @@ function Deletion() {
       {list.state === "failed" ? (
         <LoadFailed error={list.error} onRetry={() => list.reload()} />
       ) : (
-        <DataTable
-          caption="Leads scheduled for deletion"
-          columns={columns}
-          rows={rows}
-          rowKey={(r) => r.id}
-          loading={list.state === "loading"}
-          skeletonRows={4}
-          empty={
-            <EmptyState icon={<Trash />} title="Nothing scheduled for deletion">
-              <p>No lead is due for deletion in the next {LEAD_PURGE_NOTICE_DAYS} days.</p>
-            </EmptyState>
-          }
-        />
+        <div className="leads-table leads-table--short">
+          <DataTable
+            caption="Leads scheduled for deletion"
+            columns={columns}
+            rows={rows}
+            rowKey={(r) => r.id}
+            loading={list.state === "loading"}
+            skeletonRows={4}
+            empty={
+              <EmptyState icon={<Trash />} title="Nothing scheduled for deletion">
+                <p>No lead is due for deletion in the next {LEAD_PURGE_NOTICE_DAYS} days.</p>
+              </EmptyState>
+            }
+          />
+        </div>
       )}
       {list.state === "ready" && rows.length > 0 && (
         <Pager

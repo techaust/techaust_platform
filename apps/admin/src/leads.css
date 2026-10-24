@@ -94,6 +94,26 @@
   }
 }
 
+/* Seven columns need about 58rem: between the phone cards and a wide window the table scrolls sideways inside its
+   own box (its header then stays put instead of sticking). */
+.leads-table .lead-name {
+  min-width: 10rem;
+}
+
+@media (min-width: 48rem) and (max-width: 89.99rem) {
+  .leads-table .dtable {
+    overflow-x: auto;
+  }
+
+  .leads-table:not(.leads-table--short) .dtable__table {
+    min-width: 58rem;
+  }
+
+  .leads-table .dtable__table thead th {
+    position: static;
+  }
+}
+
 .lead-name__ref {
   font-size: var(--text-sm);
   color: var(--color-text-muted);
@@ -641,8 +661,19 @@ a.lead-card__name:hover {
   color: var(--color-text-muted);
 }
 
+/* Long values (a note, an email address) wrap inside their cell instead of widening the page. */
 .act__diff {
   margin-top: var(--space-2);
+  table-layout: fixed;
+  overflow-wrap: anywhere;
+}
+
+.act__diff thead th:first-child {
+  width: 30%;
+}
+
+.act__diff thead th:nth-child(3) {
+  width: 1.75rem;
 }
 
 /* ---------- Dialogs: Lost reason, convert, reply ---------- */
