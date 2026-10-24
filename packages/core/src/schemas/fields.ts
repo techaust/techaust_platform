@@ -1,5 +1,6 @@
 // Reusable field rules for the shared form schemas [FRM-01]. Error messages follow docs/07 §forms.
 import * as z from "zod";
+import { isCountryCode } from "../countries.ts";
 
 // C0/C1 control characters. Single-line fields reject all of them (this also blocks CR/LF reaching an
 // email header, FRM-03); multi-line fields allow only tab, line feed and carriage return.
@@ -69,7 +70,9 @@ export const country = z
   .string({ error: "Choose your country" })
   .trim()
   .toUpperCase()
-  .regex(/^[A-Z]{2}$/, { error: "Choose your country" });
+  .regex(/^[A-Z]{2}$/, { error: "Choose your country" })
+  // Only an assigned code: ICU also names UN, EU, UK and pseudo-locales, which a crafted request could otherwise store.
+  .refine(isCountryCode, { error: "Choose your country" });
 
 /** An HTML checkbox: "on"/"true"/true when ticked; missing when not. Never pre-ticked (FRM-05). */
 export const checkbox = z.preprocess((v) => v === true || v === "on" || v === "true", z.boolean());

@@ -558,6 +558,31 @@ export function staffInvite(d: StaffInviteData, opts: LayoutOptions): Rendered {
   return { subject, html, text: textOf([intro, how, `${expiry}\n${d.url}`, ignore]) };
 }
 
+// ---- M3.2 (the sender's own words; starting texts in 07-I, owner-approved 2026-10-24) -------------------------------------
+
+export type LeadReplyData = { subject: string; body: string };
+
+/**
+ * A reply written on the lead page (to the lead, from hello@, Reply-To hello@). The text is the sender's, sent as plain text and
+ * escaped in the HTML; blank lines start a new paragraph. It is a reply to an enquiry the person sent, so there is no "Why you're
+ * receiving this" line and no unsubscribe link. The designer owns the layout polish; the words are never changed here.
+ */
+export function leadReply(d: LeadReplyData, opts: LayoutOptions): Rendered {
+  const subject = headerValue(d.subject);
+  const paragraphs = d.body
+    .split(/\n{2,}|\r\n(?:\r\n)+/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  const html = layout(
+    subject,
+    paragraphs
+      .map((p, i) => bodyP(lines(p), i === paragraphs.length - 1 ? "padding-bottom:0;" : ""))
+      .join(""),
+    opts,
+  );
+  return { subject, html, text: `${d.body.trim()}\n\n${FOOTER}\n` };
+}
+
 /**
  * Settings > Email "Send a test" (07-H section 1): the subject gets "Test: ", and one line goes above the email as it would be sent.
  * The line is put straight after the heading in the HTML (and first in the text), so the template itself is unchanged.

@@ -24,8 +24,13 @@
     "SES_REGION": "ap-south-1",
     "SES_CONFIGURATION_SET": "techaust-transactional",
     "ADMIN_URL": "http://localhost:5173/",
-    "EMAIL_ASSET_BASE": "http://localhost:4321/brand/"
+    "EMAIL_ASSET_BASE": "http://localhost:4321/brand/",
+    // Lead retention clean-up (M3.2): "dry_run" only logs the lead references it would delete; "live" deletes. Dry run
+    // everywhere until the owner says otherwise; production has no value (and no cron) until Phase 7.
+    "LEAD_PURGE_MODE": "dry_run"
   },
+  // Daily 22:00 UTC (03:30 IST): enqueues the leads due for deletion, nothing else (JOB-CRON-01). Not inherited.
+  "triggers": { "crons": ["0 22 * * *"] },
   // SES keys: names only; values come from `wrangler secret put` (docs/runbooks/ses-and-turnstile.md). Not inherited.
   "secrets": { "required": ["SES_ACCESS_KEY_ID", "SES_SECRET_ACCESS_KEY"] },
   // D1 (docs/05 §5). Migrations live in packages/db; local dev and tests use a local database.
@@ -43,7 +48,11 @@
   // queue behind them, so a failed alert is retried with long delays (src/queue.ts) and max_retries is the queue maximum
   // (100): a dead-lettered lead is never dropped after 3 tries. EMAIL_ASSET_BASE: where the email logos are hosted.
   "queues": {
-    "producers": [{ "binding": "EMAIL_QUEUE", "queue": "techaust-local-email" }],
+    "producers": [
+      { "binding": "EMAIL_QUEUE", "queue": "techaust-local-email" },
+      // The clean-up enqueues onto the leads queue this Worker also consumes (M3.2; no new queue).
+      { "binding": "LEADS_QUEUE", "queue": "techaust-local-leads" }
+    ],
     "consumers": [
       {
         "queue": "techaust-local-leads",
@@ -80,8 +89,10 @@
         "SES_REGION": "ap-south-1",
         "SES_CONFIGURATION_SET": "techaust-transactional",
         "ADMIN_URL": "https://techaust-platform-admin-staging.techaust-technologies-153.workers.dev/",
-        "EMAIL_ASSET_BASE": "https://techaust-platform-web-staging.techaust-technologies-153.workers.dev/brand/"
+        "EMAIL_ASSET_BASE": "https://techaust-platform-web-staging.techaust-technologies-153.workers.dev/brand/",
+        "LEAD_PURGE_MODE": "dry_run"
       },
+      "triggers": { "crons": ["0 22 * * *"] },
       "secrets": { "required": ["SES_ACCESS_KEY_ID", "SES_SECRET_ACCESS_KEY"] },
       "d1_databases": [
         {
@@ -92,7 +103,10 @@
         }
       ],
       "queues": {
-        "producers": [{ "binding": "EMAIL_QUEUE", "queue": "techaust-staging-email" }],
+        "producers": [
+          { "binding": "EMAIL_QUEUE", "queue": "techaust-staging-email" },
+          { "binding": "LEADS_QUEUE", "queue": "techaust-staging-leads" }
+        ],
         "consumers": [
           {
             "queue": "techaust-staging-leads",

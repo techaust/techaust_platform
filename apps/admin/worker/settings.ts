@@ -17,6 +17,7 @@ import { ACCOUNT_NO, cleanAccountNo, IFSC, SWIFT } from "@techaust/core/bank";
 import { formatIstDateTime, fyOf } from "@techaust/core/dates";
 import { EMAIL_TEMPLATES, type EmailTemplate } from "@techaust/core/email-templates";
 import { uuidv7 } from "@techaust/core/ids";
+import { deleteAfterSql, LEAD_DELETABLE_SQL, LEAD_PURGE_NOTICE_DAYS } from "@techaust/core/lead-lifecycle";
 import { canSetNextNumber, maxNumber, SERIES, type Series } from "@techaust/core/numbering";
 import { type Action, decide } from "@techaust/core/permissions";
 import {
@@ -50,6 +51,9 @@ import {
 } from "./context.ts";
 import { sampleData, TEMPLATE_NAMES } from "./email-fixtures.ts";
 import { queueEmail } from "./mail.ts";
+
+/** The notice before a lead is deleted: a re-dated lead is never due sooner than this (VERIFY WITH CA/LEGAL). */
+const LEAD_NOTICE_MS = LEAD_PURGE_NOTICE_DAYS * 86_400_000;
 
 const STALE: ApiError = {
   code: "stale_version",
@@ -123,8 +127,13 @@ async function loadRow(db: D1Database, key: SeededSettingKey): Promise<Row | nul
 }
 
 /** The conditional write: inserts the row, or updates it only while it is still at the version the person saw. */
-const UPSERT = `INSERT INTO settings (key, value, version, updated_by, updated_at)
- SELECT ?1, ?2, ?3 + 1, ?4, ?5 WHERE (SELECT coalesce(max(version), 0) FROM settings WHERE key = ?1) = ?3
+/**
+ * The conditional write: inserts the row, or updates it only while it is still at the version the person saw. `guard` adds a
+ * condition that is checked by the same statement (numbering: no series being changed may have an issued document this year, L-d),
+ * so there is no gap between the check and the write.
+ */
+const upsert = (guard = "") => `INSERT INTO settings (key, value, version, updated_by, updated_at)
+ SELECT ?1, ?2, ?3 + 1, ?4, ?5 WHERE (SELECT coalesce(max(version), 0) FROM settings WHERE key = ?1) = ?3${guard}
  ON CONFLICT(key) DO UPDATE SET value = excluded.value, version = excluded.version, updated_by = excluded.updated_by, updated_at = excluded.updated_at
  WHERE settings.version = ?3`;
 
@@ -132,8 +141,14 @@ type Opts<K extends SeededSettingKey> = {
   /** A rule that depends on the stored value or the environment; returns the refusal, or null. */
   rule?: (before: Settings[K], after: Settings[K]) => Promise<Response | null> | Response | null;
   /** Extra audit fields and statements (numbering's next numbers). */
-  extra?: { summary: Record<string, unknown>; side: (g: SideGuard) => D1PreparedStatement[] };
+  extra?: Extra;
+  /** A condition (SQL over numbered params from ?6) that must hold in the write itself; if the write is refused, `refused` says why. */
+  guardFor?: (before: Settings[K], after: Settings[K]) => Guard | undefined;
+  /** The same, decided from the before and after values (retention re-dates the leads only when the leads figure changed). */
+  extraFor?: (before: Settings[K], after: Settings[K]) => Extra | undefined;
 };
+type Guard = { sql: string; params: unknown[]; refused: () => Promise<Response | null> };
+type Extra = { summary: Record<string, unknown>; side: (g: SideGuard) => D1PreparedStatement[] };
 
 /** Validate, check the version, diff, and write one JSON settings document with its audit row. */
 async function save<K extends SeededSettingKey>(
@@ -154,17 +169,30 @@ async function save<K extends SeededSettingKey>(
   const refused = await opts.rule?.(before, after);
   if (refused) return refused;
   const diff = auditSummary(before as Record<string, unknown>, after as Record<string, unknown>);
-  if (!Object.keys(diff).length && !opts.extra) return c.json({ ok: true, changed: false, version: current });
+  const extra = opts.extra ?? opts.extraFor?.(before, after);
+  const guard = opts.guardFor?.(before, after);
+  if (!Object.keys(diff).length && !extra) return c.json({ ok: true, changed: false, version: current });
   const u = actor(c);
   const done = await mutate(c, {
-    main: c.env.DB.prepare(UPSERT).bind(key, JSON.stringify(after), current, u.id, Date.now()),
+    main: c.env.DB.prepare(upsert(guard ? ` AND ${guard.sql}` : "")).bind(
+      key,
+      JSON.stringify(after),
+      current,
+      u.id,
+      Date.now(),
+      ...(guard?.params ?? []),
+    ),
     action: `settings.${key}.update`,
     entityType: "settings",
     entityId: key,
-    summary: { ...diff, ...opts.extra?.summary },
-    ...(opts.extra ? { side: (g) => opts.extra?.side(g) ?? [] } : {}),
+    summary: { ...diff, ...extra?.summary },
+    ...(extra ? { side: (g) => extra.side(g) } : {}),
   });
-  if (!done) return c.json({ error: STALE, current_version: current, request_id: c.var.rid }, 409);
+  if (!done)
+    return (
+      (await guard?.refused()) ??
+      c.json({ error: STALE, current_version: current, request_id: c.var.rid }, 409)
+    );
   return c.json({ ok: true, changed: true, version: current + 1 });
 }
 
@@ -364,6 +392,24 @@ export const settings = new Hono<AppEnv>()
     if (group === "numbering") return saveNumbering(c, raw);
     const env = envelope.safeParse(raw);
     if (!env.success) return invalid(c, env.error.issues);
+    // The leads retention (ADM-SET-09): a new figure re-dates the deletion date of every lead the clean-up may delete, in the same
+    // batch (after the settings write, so the shared SQL expression reads the new months). Converted leads and leads under legal
+    // hold are left alone. A lowered figure never puts a date earlier than 14 days from now, so the notice period is kept
+    // (the clean-up never deletes a lead the same day the owner lowers the months). VERIFY WITH CA/LEGAL.
+    if (group === "retention")
+      return save(c, "retention", env.data.value, env.data.version, {
+        extraFor: (before, after) =>
+          before.leadsMonths === after.leadsMonths
+            ? undefined
+            : {
+                summary: { leadsRedated: true },
+                side: (g) => [
+                  c.env.DB.prepare(
+                    `UPDATE leads SET delete_after = max(${deleteAfterSql("coalesce(last_activity_at, created_at)")}, ${Date.now() + LEAD_NOTICE_MS}) WHERE ${LEAD_DELETABLE_SQL} AND ${g.sql(1)}`,
+                  ).bind(...g.params),
+                ],
+              },
+      });
     return save(c, group, env.data.value, env.data.version);
   })
 
@@ -580,6 +626,7 @@ async function saveNumbering(c: Ctx, raw: unknown) {
   const [have, issued] = await Promise.all([counters(c.env.DB, fy), issuedSeries(c.env.DB, fy)]);
   const nextOf = (s: string) => have.find((r) => r.series === s)?.next_no ?? 1;
   const asked = Object.entries(nextNumbers) as [Series, number][];
+  const effective = asked.filter(([s, n]) => n !== nextOf(s));
   return save(c, "numbering", value, version, {
     rule: (before, after) => {
       // A series with an issued document this financial year is locked: its format AND its next number (any change, up or
@@ -604,17 +651,42 @@ async function saveNumbering(c: Ctx, raw: unknown) {
         );
       return null;
     },
-    ...(asked.length
+    // The series whose format or next number this save changes must not have an issued document this year: checked by the write
+    // itself (L-d), so an invoice issued between the read above and the write cannot slip through. VERIFY WITH CA/LEGAL (CGST Rule 46(b)).
+    guardFor: (before, after) => {
+      const changed = [
+        ...new Set([
+          ...(Object.keys(after) as Series[]).filter(
+            (s) => JSON.stringify(after[s]) !== JSON.stringify(before[s]),
+          ),
+          ...effective.map(([s]) => s),
+        ]),
+      ];
+      if (!changed.length) return undefined;
+      return {
+        sql: `NOT EXISTS (SELECT 1 FROM documents d WHERE d.fy = ?6 AND d.number IS NOT NULL AND d.series IN (${changed.map((_, i) => `?${i + 7}`).join(", ")}))`,
+        params: [fy, ...changed],
+        refused: async () => {
+          const now = await issuedSeries(c.env.DB, fy);
+          const locked = changed.filter((s) => now.has(s));
+          return locked.length
+            ? c.json({ error: SERIES_IN_USE, series: locked, request_id: c.var.rid }, 409)
+            : null;
+        },
+      };
+    },
+    // A next number equal to the current one changes nothing: no counter write, no version bump (answers changed: false).
+    ...(effective.length
       ? {
           extra: {
             summary: {
               nextNumbers: {
-                before: Object.fromEntries(asked.map(([s]) => [s, nextOf(s)])),
-                after: Object.fromEntries(asked),
+                before: Object.fromEntries(effective.map(([s]) => [s, nextOf(s)])),
+                after: Object.fromEntries(effective),
               },
             },
             side: (g) =>
-              asked.map(([s, n]) =>
+              effective.map(([s, n]) =>
                 c.env.DB.prepare(
                   `INSERT INTO doc_counters (series, fy, next_no) SELECT ?1, ?2, ?3 WHERE ${g.sql(4)} AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.series = ?1 AND d.fy = ?2 AND d.number IS NOT NULL) ON CONFLICT(series, fy) DO UPDATE SET next_no = excluded.next_no WHERE excluded.next_no >= doc_counters.next_no`,
                 ).bind(s, fy, n, ...g.params),

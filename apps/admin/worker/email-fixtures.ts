@@ -13,6 +13,7 @@ export const TEMPLATE_NAMES: Record<EmailTemplate, string> = {
   "staff.lockout": "Account locked",
   "staff.lockout_owner": "Account locked (to owners)",
   "staff.invite": "Staff invite",
+  "lead.reply": "Lead reply",
 };
 
 const SAMPLE = "https://example.test/sample";
@@ -66,5 +67,12 @@ export function sampleData(
       return { ...person, time, member_name: "Sample Member", admin_url: SAMPLE };
     case "staff.invite":
       return { inviter_name: who.name, role: "Staff", url: `${SAMPLE}/invite` };
+    case "lead.reply":
+      return {
+        subject: "Re: your enquiry (L-23456)",
+        body: `Hi Sample, a made-up reply that shows how a reply from the lead page reads.
+
+Regards, ${who.name}, TecHaust Technologies`,
+      };
   }
 }

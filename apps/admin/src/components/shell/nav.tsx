@@ -52,10 +52,6 @@ export const NAV: NavItem[] = [
     path: "/leads",
     icon: <Inbox />,
     group: 1,
-    arrives: {
-      milestone: "M3.2",
-      what: "Enquiries from the website's contact and quote forms, as a list and a board, each with its timeline and a way to turn it into a client.",
-    },
   },
   {
     key: "clients",

@@ -102,3 +102,5 @@ export function countryName(code: string): string {
   }
   return name ? name.replace(/\s*&\s*/g, " and ") : code;
 }
+
+export { COUNTRY_CODES, isCountryCode } from "./countries.ts";

@@ -11,5 +11,7 @@ export const EMAIL_TEMPLATES = [
   "staff.lockout_owner",
   // M3.1: the invitation to join the admin (ADM-AUTH-07, ADM-MAIL-01; body in 07-H)
   "staff.invite",
+  // M3.2: a reply written on the lead page (ADM-LEAD-06; the starting texts are in 07-I)
+  "lead.reply",
 ] as const;
 export type EmailTemplate = (typeof EMAIL_TEMPLATES)[number];

@@ -149,6 +149,16 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
       .run();
     return id;
   };
+  const scenarioLead = async () => {
+    const id = uuidv7();
+    const updatedAt = Date.now() - 1000;
+    await env.DB.prepare(
+      "INSERT INTO leads (id, ref, source, contact_name, contact_email, updated_at) VALUES (?1, ?2, 'manual', 'Test Person', 'scenario@example.com', ?3)",
+    )
+      .bind(id, `L-${id.slice(-5).toUpperCase()}`, updatedAt)
+      .run();
+    return { id, updatedAt };
+  };
   const scenarios: Record<string, Scenario> = {
     "POST /api/v1/auth/step-up": async () => {
       const s = await sessionFor("owner");
@@ -234,6 +244,96 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
       return {
         res: await call(`/users/invites/${hash}/revoke`, {
           method: "POST",
+          cookie: s.cookie,
+          headers: headers(rid),
+        }),
+        rid,
+        actor: s,
+      };
+    },
+    "POST /api/v1/leads/:id/convert": async () => {
+      const s = await sessionFor("sales");
+      const leadId = uuidv7();
+      await env.DB.prepare(
+        "INSERT INTO leads (id, ref, source, contact_name, contact_email) VALUES (?1, ?2, 'manual', 'Test Person', 'convert-scenario@example.com')",
+      )
+        .bind(leadId, `L-${leadId.slice(-5).toUpperCase()}`)
+        .run();
+      const rid = `ray-${crypto.randomUUID()}`;
+      return {
+        res: await call(`/leads/${leadId}/convert`, {
+          method: "POST",
+          body: { type: "business", country: "IN", gstStatus: "unregistered", currency: "INR" },
+          cookie: s.cookie,
+          headers: headers(rid),
+        }),
+        rid,
+        actor: s,
+      };
+    },
+    "POST /api/v1/leads": async () => {
+      const s = await sessionFor("staff");
+      const rid = `ray-${crypto.randomUUID()}`;
+      return {
+        res: await call("/leads", {
+          body: { name: "Pat Person", email: `pat-${rid}@example.com` },
+          cookie: s.cookie,
+          headers: headers(rid),
+        }),
+        rid,
+        actor: s,
+      };
+    },
+    "PATCH /api/v1/leads/:id": async () => {
+      const s = await sessionFor("sales");
+      const { id, updatedAt } = await scenarioLead();
+      const rid = `ray-${crypto.randomUUID()}`;
+      return {
+        res: await call(`/leads/${id}`, {
+          method: "PATCH",
+          body: { expectedUpdatedAt: updatedAt, nextActionNote: "Call on Monday" },
+          cookie: s.cookie,
+          headers: headers(rid),
+        }),
+        rid,
+        actor: s,
+      };
+    },
+    "POST /api/v1/leads/:id/notes": async () => {
+      const s = await sessionFor("staff");
+      const { id } = await scenarioLead();
+      const rid = `ray-${crypto.randomUUID()}`;
+      return {
+        res: await call(`/leads/${id}/notes`, {
+          body: { body: "Spoke to them" },
+          cookie: s.cookie,
+          headers: headers(rid),
+        }),
+        rid,
+        actor: s,
+      };
+    },
+    "POST /api/v1/leads/:id/stage": async () => {
+      const s = await sessionFor("sales");
+      const { id } = await scenarioLead();
+      const rid = `ray-${crypto.randomUUID()}`;
+      return {
+        res: await call(`/leads/${id}/stage`, {
+          body: { stage: "qualified" },
+          cookie: s.cookie,
+          headers: headers(rid),
+        }),
+        rid,
+        actor: s,
+      };
+    },
+    "POST /api/v1/leads/:id/reply": async () => {
+      const s = await sessionFor("owner");
+      const { id } = await scenarioLead();
+      const rid = `ray-${crypto.randomUUID()}`;
+      return {
+        res: await call(`/leads/${id}/reply`, {
+          body: { subject: "Re: your enquiry", body: "Thanks, we will be in touch." },
           cookie: s.cookie,
           headers: headers(rid),
         }),

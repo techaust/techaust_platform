@@ -122,6 +122,14 @@ describe("quote form [FRM-QUOTE]", () => {
       country: "Choose your country",
     });
   });
+
+  it("the country must be an assigned ISO code: UN, EU and UK are refused, GB is fine", () => {
+    for (const country of ["UN", "EU", "UK", "XA"])
+      expect(errors(quoteSteps.contact.safeParse({ name: "A", email: "a@b.co", country }))).toEqual({
+        country: "Choose your country",
+      });
+    expect(quoteSteps.contact.safeParse({ name: "A", email: "a@b.co", country: "gb" }).success).toBe(true);
+  });
 });
 
 describe("domain schemas", () => {

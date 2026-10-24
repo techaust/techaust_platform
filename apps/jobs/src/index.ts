@@ -1,6 +1,8 @@
 import { warmSesSigning } from "@techaust/email";
 import { Hono } from "hono";
 import { secureHeaders } from "hono/secure-headers";
+import { noteInvocation } from "./log.ts";
+import { enqueueDue, PURGE_CRON } from "./purge.ts";
 import { handleQueue } from "./queue.ts";
 import { warmConsumers } from "./warm.ts";
 
@@ -19,8 +21,11 @@ app.notFound((c) => c.json({ error: { code: "not_found", message: "Not found" } 
 
 export default {
   fetch: app.fetch,
-  // Cron dispatcher: only enqueues work (docs/05 §11.3). Implemented in M5.4.
-  async scheduled(_controller, _env, _ctx) {},
+  // Cron dispatcher: only enqueues work (docs/05 §11.3). The lead clean-up (M3.2) is the first; the rest arrive in M5.4.
+  async scheduled(controller, env, _ctx) {
+    noteInvocation();
+    if (controller.cron === PURGE_CRON) await enqueueDue(env, controller.scheduledTime);
+  },
   // Queue consumers: leads and email, with their dead-letter queues (M2.4).
   queue: handleQueue,
 } satisfies ExportedHandler<Env>;

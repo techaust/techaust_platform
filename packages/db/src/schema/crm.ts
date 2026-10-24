@@ -1,8 +1,17 @@
 // CRM and delivery (docs/05 §5.2): leads, clients, contacts, projects, care plans, time.
 import { type BUDGET_BANDS, TIMELINES, type TOOLS } from "@techaust/core";
 import { sql } from "drizzle-orm";
-import { check, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import {
+  type AnySQLiteColumn,
+  check,
+  index,
+  integer,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from "drizzle-orm/sqlite-core";
 import { CURRENCY_CODES, createdAt, currency, flag, id, oneOf, updatedAt } from "./common.ts";
+import { documents } from "./documents.ts";
 import { staffUsers } from "./identity.ts";
 
 export type Address = {
@@ -64,6 +73,10 @@ export const leads = sqliteTable(
     nextActionAt: integer("next_action_at"),
     nextActionNote: text("next_action_note"),
     clientId: text("client_id").references(() => clients.id),
+    /** M3.2: the earlier lead with the same email within 30 days (linked, never merged). Added with ALTER TABLE only: `lead_activities` references leads. */
+    duplicateOf: text("duplicate_of").references((): AnySQLiteColumn => leads.id, { onDelete: "set null" }),
+    /** M3.2: the draft proposal made when the lead was converted. A lazy reference: documents imports this file. */
+    proposalId: text("proposal_id").references((): AnySQLiteColumn => documents.id, { onDelete: "set null" }),
     lastActivityAt: integer("last_activity_at"),
     deleteAfter: integer("delete_after"),
     legalHold: flag("legal_hold"),
@@ -72,11 +85,24 @@ export const leads = sqliteTable(
   },
   (t) => [
     uniqueIndex("leads_ref").on(t.ref),
-    index("leads_stage").on(t.stage),
     index("leads_owner_next_action").on(t.ownerId, t.nextActionAt),
     index("leads_email").on(t.contactEmail),
     index("leads_client").on(t.clientId),
-    index("leads_delete_after").on(t.deleteAfter),
+    // M3.2: the list's sorts (created, last activity, next action), the duplicate link and the draft proposal lookups.
+    index("leads_created").on(t.createdAt, t.id),
+    index("leads_last_activity").on(t.lastActivityAt, t.id),
+    index("leads_next_action").on(t.nextActionAt, t.id),
+    index("leads_duplicate_of").on(t.duplicateOf),
+    index("leads_proposal").on(t.proposalId),
+    // M3.2: the board (a stage's newest activity first), the service filter, prefix search on name and company (no case), and
+    // the clean-up scan and the 14-day view (only leads the clean-up may delete).
+    index("leads_stage_activity").on(t.stage, t.lastActivityAt, t.id),
+    index("leads_service_code").on(t.serviceCode),
+    index("leads_name_nocase").on(sql`${t.contactName} collate nocase`),
+    index("leads_company_nocase").on(sql`${t.contactCompany} collate nocase`),
+    index("leads_delete_due")
+      .on(t.deleteAfter, t.id)
+      .where(sql`${t.clientId} is null and ${t.legalHold} = 0`),
     check("leads_stage", oneOf(t.stage, LEAD_STAGES)),
     check("leads_source", oneOf(t.source, LEAD_SOURCES)),
     check("leads_lost_reason", sql`(${t.stage} = 'lost') = (${t.lostReason} is not null)`),

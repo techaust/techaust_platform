@@ -1,0 +1,892 @@
+/* M3.2 Leads: the list's extras, the board, the lead page and its dialogs. Tokens only (@techaust/ui), the M3.1 look:
+   flat surfaces, hairlines, verdigris only where it marks something (the current view, the lane a card is dropped on,
+   focus). The board's lane counts are the one large figure. Loaded with the Leads screens, never on sign-in. */
+
+/* ---------- The view switch (list, board, scheduled for deletion) ---------- */
+
+.view-switch {
+  display: inline-flex;
+  flex-wrap: wrap;
+  margin-bottom: var(--space-4);
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.view-switch__opt {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--target-min);
+  padding: 0 var(--space-4);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.view-switch__opt + .view-switch__opt {
+  border-inline-start: 1px solid var(--color-border-control);
+}
+
+.view-switch__opt .icon {
+  color: var(--color-text-muted);
+}
+
+.view-switch__opt:hover {
+  color: var(--color-text);
+  background: var(--color-surface-alt);
+}
+
+.view-switch__opt[aria-current="page"] {
+  background: var(--color-selection);
+  font-weight: 600;
+}
+
+.view-switch__opt:where([aria-current="page"]) .icon {
+  color: var(--color-text-accent);
+}
+
+.view-switch__opt:focus-visible {
+  outline-offset: -3px;
+}
+
+@media (max-width: 47.99rem) {
+  .view-switch {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1.6fr;
+    width: 100%;
+  }
+
+  .view-switch__opt {
+    justify-content: center;
+    padding: var(--space-1) var(--space-2);
+    text-align: center;
+    line-height: var(--text-sm--line-height);
+  }
+
+  .view-switch__opt .icon {
+    display: none;
+  }
+}
+
+/* ---------- The list ---------- */
+
+/* Four chip groups and a select: on wider screens the search takes its own row and the groups flow after it. Doubled
+   class: this must beat the shared grid in shell.css whichever stylesheet loads first (the dev server's order differs
+   from the build's on a cold load of /leads). */
+@media (min-width: 48rem) {
+  .filters.filters--leads {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: var(--space-4) var(--space-8);
+  }
+
+  .filters--leads .filters__search {
+    flex: 1 1 100%;
+  }
+
+  .filters--leads .filters__search .field-icon {
+    max-width: 28rem;
+  }
+
+  .filters--leads .filters__foot {
+    flex: 1 1 100%;
+  }
+}
+
+/* Seven columns need about 58rem: between the phone cards and a wide window the table scrolls sideways inside its
+   own box (its header then stays put instead of sticking). */
+.leads-table .lead-name {
+  min-width: 10rem;
+}
+
+@media (min-width: 48rem) and (max-width: 89.99rem) {
+  .leads-table .dtable {
+    overflow-x: auto;
+  }
+
+  .leads-table:not(.leads-table--short) .dtable__table {
+    min-width: 58rem;
+  }
+
+  .leads-table .dtable__table thead th {
+    position: static;
+  }
+}
+
+.lead-name__ref {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.filters__select select {
+  width: auto;
+  min-width: 14rem;
+  max-width: 100%;
+}
+
+/* The links in the side panels and the enquiry's facts (email, page, referrer) are inline blocks, which keeps the
+   spaces in a link's mixed text. */
+.lead-page .lead-links a,
+.lead-page .facts a {
+  display: inline-block;
+}
+
+/* The lead's links (its name, the earlier lead) are 44px targets without moving the text around them (review finding
+   3): padding on every side grows the box by the difference between a line and the target, an equal negative margin
+   gives that space back, and the target reaches into the lines around it. A name that wraps keeps its full height. The
+   focus ring is pulled in by the same amount, so it still hugs the words rather than crossing the next line. */
+.lead-name__link,
+.lead-name__dup,
+a.lead-card__name,
+.lead-page .lead-links a,
+.lead-page .facts a {
+  --reach: calc((var(--target-min) - 1lh) / 2);
+  padding: var(--reach);
+  margin: calc(-1 * var(--reach));
+}
+
+.lead-name__link:focus-visible,
+.lead-name__dup:focus-visible,
+a.lead-card__name:focus-visible,
+.lead-page .lead-links a:focus-visible,
+.lead-page .facts a:focus-visible {
+  outline-offset: calc(2px - var(--reach));
+}
+
+.lead-name__link,
+.lead-name__dup,
+a.lead-card__name {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  min-width: var(--target-min);
+}
+
+.lead-name__link {
+  text-decoration: none;
+}
+
+.lead-name__link:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.lead-name__dup {
+  margin-top: calc(var(--space-1) - var(--reach));
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.next-action {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.next-action__date {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.next-action--overdue .next-action__date time {
+  font-weight: 600;
+}
+
+.next-action__note {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.dcard__sub .docno {
+  font-size: var(--text-sm);
+}
+
+/* ---------- The board ---------- */
+
+.board__scroll {
+  /* Sideways scrolling stays inside the board: the page itself never scrolls sideways (phones included). Positioned, so
+     the cards' visually hidden labels (absolutely placed) are clipped with the lanes instead of widening the page. */
+  position: relative;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  margin-inline: calc(-1 * var(--space-1));
+  padding: var(--space-1) var(--space-1) var(--space-3);
+}
+
+.board__scroll[data-dragging] {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.board__lanes {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(11rem, 1fr);
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (max-width: 47.99rem) {
+  .board__scroll {
+    scroll-snap-type: x mandatory;
+    scroll-padding-inline: var(--space-1);
+  }
+
+  .board__lanes {
+    grid-auto-columns: min(82%, 18rem);
+  }
+
+  .lane {
+    scroll-snap-align: start;
+  }
+}
+
+.lane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 18rem;
+  padding: var(--space-2);
+  background: color-mix(in srgb, var(--color-fill-subtle) 55%, var(--color-bg));
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+/* The lane a card would land in: the selection ground and a verdigris edge along the top (the rail's current-item edge,
+   turned on its side). */
+.lane[data-over] {
+  background: var(--color-selection);
+  border-color: var(--color-text-accent);
+  box-shadow: inset 0 3px 0 var(--color-verdigris-500);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .lane {
+    transition:
+      background-color var(--duration-fast) var(--ease-standard),
+      border-color var(--duration-fast) var(--ease-standard);
+  }
+}
+
+.lane__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2) var(--space-3);
+}
+
+.lane__name {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: var(--text-sm--line-height);
+}
+
+.lane__count {
+  font-family: var(--font-display);
+  font-size: var(--text-h3);
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+}
+
+.lane__cards {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lane__empty {
+  margin: 0;
+  padding: var(--space-6) var(--space-2);
+  border: 1px dashed var(--color-border-control);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
+.lane__more {
+  align-self: center;
+  margin-top: var(--space-2);
+  min-height: var(--target-min);
+  font-size: var(--text-sm);
+}
+
+.lead-card {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-3) var(--space-3) var(--space-1);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.lead-card[data-lead] {
+  cursor: grab;
+}
+
+.lead-card:hover {
+  border-color: var(--color-border-control);
+}
+
+/* The card being dragged keeps its place, dimmed and dashed; the copy under the pointer carries it. */
+.lead-card[data-lifted] {
+  opacity: 0.5;
+  border-style: dashed;
+}
+
+.lead-card--ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 60;
+  padding-bottom: var(--space-3);
+  border-color: var(--color-text-accent);
+  box-shadow: var(--elevation-2);
+  pointer-events: none;
+}
+
+.lead-card--skeleton {
+  padding-bottom: var(--space-3);
+}
+
+.lead-card__who {
+  display: grid;
+  min-width: 0;
+}
+
+.lead-card__name {
+  color: var(--color-text);
+  font-size: var(--text-body);
+  font-weight: 600;
+  line-height: var(--text-body--line-height);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+a.lead-card__name:hover {
+  color: var(--color-text);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.lead-card__company {
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.lead-card__service {
+  margin: 0;
+}
+
+.lead-card__facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+}
+
+.lead-card__facts dd {
+  margin: 0;
+}
+
+.lead-card__next {
+  flex-basis: 100%;
+}
+
+.lead-card__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-inline: calc(-1 * var(--space-2));
+  padding-top: var(--space-1);
+  border-top: 1px solid var(--color-border);
+}
+
+.lead-card__grip {
+  display: inline-grid;
+  padding-inline: var(--space-1);
+  color: var(--color-text-muted);
+}
+
+.move-btn.btn--text {
+  min-height: var(--target-min);
+  padding-inline: var(--space-2);
+  font-size: var(--text-sm);
+}
+
+/* ---------- The lead page ---------- */
+
+.lead-page {
+  display: grid;
+  gap: var(--space-4);
+  align-items: start;
+}
+
+@media (min-width: 64rem) {
+  .lead-page {
+    grid-template-columns: minmax(0, 1fr) minmax(18rem, 22rem);
+    gap: var(--space-6);
+  }
+
+  .lead-page__side {
+    grid-column: 2;
+    grid-row: 1;
+    position: sticky;
+    top: calc(var(--topbar-h, 4rem) + var(--space-4));
+  }
+
+  .lead-page__main {
+    grid-column: 1;
+    grid-row: 1;
+  }
+}
+
+.lead-page__side,
+.lead-page__main {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.lead-panel {
+  min-width: 0;
+  padding: var(--space-5) var(--space-6);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+@media (max-width: 29.99rem) {
+  .lead-panel {
+    padding: var(--space-4);
+  }
+}
+
+.lead-panel__title {
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-body);
+  font-weight: 600;
+  line-height: var(--text-body--line-height);
+}
+
+.lead-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin: calc(-1 * var(--space-2)) 0 var(--space-2);
+}
+
+.lead-panel__head .lead-panel__title {
+  margin: 0;
+}
+
+.lead-panel__head .btn--text {
+  min-height: var(--target-min);
+}
+
+.lead-panel__sub {
+  margin: var(--space-6) 0 var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: var(--text-sm--line-height);
+  color: var(--color-text-muted);
+}
+
+.lead-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.lead-panel .field:last-of-type {
+  margin-bottom: var(--space-4);
+}
+
+.lead-stage {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+  padding-bottom: var(--space-5);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.lead-stage__label {
+  margin: 0 0 var(--space-1);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+/* Facts sit in two columns only when the panel itself is wide enough (the panel's width, not the window's). */
+.lead-page__main .lead-panel {
+  container-type: inline-size;
+}
+
+.facts--two > div {
+  grid-template-columns: 8.5rem minmax(0, 1fr);
+}
+
+@container (min-width: 46rem) {
+  .facts--two {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: var(--space-8);
+  }
+}
+
+@container (max-width: 26rem) {
+  .facts--two > div {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+}
+
+.lead-page__side .facts > div {
+  grid-template-columns: 6rem minmax(0, 1fr);
+}
+
+.lead-message {
+  max-width: var(--container-prose);
+  margin: 0;
+}
+
+.lead-links {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lead-links li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.lead-links .icon {
+  flex: none;
+  margin-top: var(--space-1);
+  color: var(--color-text-muted);
+}
+
+.lead-links__label {
+  display: block;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+/* The timeline inside its panel: the note box first, then the entries on hairlines (the audit log's entry layout). */
+.lead-note {
+  display: grid;
+  justify-items: start;
+  gap: 0;
+  margin-bottom: var(--space-5);
+}
+
+.lead-note .field {
+  width: 100%;
+  margin-bottom: var(--space-2);
+}
+
+.lead-timeline__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--color-border);
+}
+
+.lead-timeline__list .entry {
+  grid-template-columns: 7rem minmax(0, 1fr);
+  padding-inline: 0;
+}
+
+@media (max-width: 29.99rem) {
+  .lead-timeline__list .entry {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.lead-timeline__more {
+  margin-top: var(--space-4);
+}
+
+.lead-timeline .empty-state {
+  padding: var(--space-4) 0;
+  border: 0;
+  background: none;
+}
+
+.act {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.act__icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+}
+
+.act__main {
+  flex: 1;
+  min-width: 0;
+  padding-top: var(--space-1);
+}
+
+.act__text {
+  margin: var(--space-1) 0 0;
+  max-width: var(--container-prose);
+}
+
+.act__mail {
+  margin-top: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface-alt);
+  border-inline-start: 3px solid var(--color-border-control);
+  border-radius: var(--radius-sm);
+}
+
+.act__subject {
+  margin: 0;
+  font-weight: 600;
+}
+
+.act__excerpt {
+  margin: var(--space-1) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.act__move {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-1) 0 0;
+  font-weight: 500;
+}
+
+.act__move .icon {
+  color: var(--color-text-muted);
+}
+
+/* Long values (a note, an email address) wrap inside their cell instead of widening the page; words break only when
+   one is wider than its cell (break-word, not anywhere, so "renamed" isn't split at 375 px). */
+.act__diff {
+  margin-top: var(--space-2);
+  table-layout: fixed;
+  overflow-wrap: break-word;
+}
+
+.act__diff thead th:first-child {
+  width: 30%;
+}
+
+.act__diff thead th:nth-child(3) {
+  width: 1.75rem;
+}
+
+/* Phones: tighter cells and a narrower Field column give Before and After about 96 px each at 375 px, so ordinary
+   words fit whole (re-check 2); only a word wider than that (a long email address) still breaks. */
+@media (max-width: 29.99rem) {
+  .act__diff thead th:first-child {
+    width: 24%;
+  }
+
+  .act__diff thead th:nth-child(3) {
+    width: 1.25rem;
+  }
+
+  /* Not the first column (its start inset stays 0) and not the arrow cell (no padding): either load order (re-check 3). */
+  table.diff__table.act__diff th:not(:first-child),
+  table.diff__table.act__diff td:not(.diff__arrow) {
+    padding-inline: var(--space-1);
+  }
+}
+
+/* ---------- Dialogs: Lost reason, convert, reply ---------- */
+
+.lost-reasons {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.convert .segmented {
+  margin-top: var(--space-1);
+}
+
+.convert .radios {
+  margin-bottom: var(--space-5);
+}
+
+.convert .verify-note {
+  margin: calc(-1 * var(--space-2)) 0 var(--space-5);
+}
+
+.dialog--wide {
+  width: min(100% - 2rem, 62rem);
+}
+
+.reply {
+  display: grid;
+  gap: var(--space-5);
+}
+
+@media (min-width: 56rem) {
+  .reply {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+    gap: var(--space-6);
+    align-items: start;
+  }
+}
+
+.reply__envelope {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0 0 var(--space-5);
+  font-size: var(--text-sm);
+}
+
+.reply__row {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.reply__envelope dt {
+  flex: none;
+  width: 3rem;
+  color: var(--color-text-muted);
+}
+
+.reply__envelope dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.reply__compose textarea {
+  min-height: 14rem;
+}
+
+.reply__preview {
+  padding: var(--space-4);
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.reply__preview-title {
+  margin: 0 0 var(--space-3);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: var(--text-sm--line-height);
+}
+
+/* The preview borrows the email's own frame: a surface under a 2 px verdigris rule (docs/06 §6). */
+.mail {
+  padding: var(--space-5);
+  background: var(--color-surface);
+  border-top: 2px solid var(--color-verdigris-500);
+  border-radius: var(--radius-sm);
+  overflow-wrap: anywhere;
+}
+
+.mail__subject {
+  margin: 0 0 var(--space-4);
+  font-weight: 600;
+}
+
+/* A single line break stays a line break, as the email's <br> does ("Regards," and the name on two lines). */
+.mail__p {
+  margin: 0 0 var(--space-3);
+  white-space: pre-line;
+}
+
+.mail__p:last-child {
+  margin-bottom: 0;
+}
+
+mark.gap {
+  padding: 0 0.125rem;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-warning) 22%, transparent);
+  outline: 1px dashed var(--color-warning);
+  color: var(--color-text);
+}
+
+.gaps {
+  margin: calc(-1 * var(--space-2)) 0 var(--space-5);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface-alt);
+  border-inline-start: 3px solid var(--color-warning);
+  border-radius: var(--radius-sm);
+}
+
+.gaps--error {
+  border-inline-start-color: var(--color-danger);
+}
+
+.gaps__title {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.gaps__list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gaps__go {
+  min-height: var(--target-min);
+  padding-inline: var(--space-1);
+  text-decoration: none;
+}
+
+.gaps__subject {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+/* ---------- New lead ---------- */
+
+.lead-new__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}

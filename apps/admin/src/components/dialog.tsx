@@ -13,6 +13,8 @@ export function Modal(props: {
   tone?: "default" | "danger" | undefined;
   /** The title takes focus when the content changes under it (a result step). */
   titleRef?: Ref<HTMLHeadingElement> | undefined;
+  /** A wider dialog for a form with a preview beside it (the lead reply). */
+  wide?: boolean | undefined;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const opener = useRef<Element | null>(null);
@@ -34,7 +36,7 @@ export function Modal(props: {
   return (
     <dialog
       ref={ref}
-      className={props.tone === "danger" ? "dialog dialog--danger" : "dialog"}
+      className={`dialog${props.tone === "danger" ? " dialog--danger" : ""}${props.wide ? " dialog--wide" : ""}`}
       aria-labelledby={titleId}
       onCancel={(e) => {
         e.preventDefault();

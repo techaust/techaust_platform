@@ -172,6 +172,121 @@ export type AuditQuery = {
   before?: string | undefined;
 };
 
+// Leads (M3.2, ADM-LEAD-01..06): the shapes of apps/admin/worker/leads.ts.
+export type LeadStage = "new" | "qualified" | "proposal_sent" | "won" | "lost";
+export type LostReason = "price" | "timing" | "scope_fit" | "no_response" | "competitor" | "other";
+export type LeadItem = {
+  id: string;
+  ref: string;
+  stage: LeadStage;
+  lostReason: LostReason | null;
+  source: "web" | "manual";
+  serviceCode: string | null;
+  serviceName: string | null;
+  name: string;
+  email: string;
+  company: string | null;
+  ownerId: string | null;
+  ownerName: string | null;
+  nextActionAt: number | null;
+  nextActionNote: string | null;
+  nextActionOverdue: boolean;
+  clientId: string | null;
+  duplicateOf: string | null;
+  lastActivityAt: number | null;
+  deleteAfter: number | null;
+  scheduledForDeletion: boolean;
+  legalHold: boolean;
+  createdAt: number;
+};
+export type LeadConsent = {
+  noticeVersion?: string;
+  purposes?: string[];
+  at?: number;
+  marketing?: boolean;
+  withdrawnAt?: number | null;
+};
+export type LeadDetail = LeadItem & {
+  requestType: string | null;
+  plan: string | null;
+  budgetBand: string | null;
+  timeline: string | null;
+  currency: "INR" | "USD" | null;
+  message: string | null;
+  tools: string[] | null;
+  phone: string | null;
+  country: string | null;
+  callWindow: string | null;
+  utm: Record<string, string> | null;
+  sourcePage: string | null;
+  referrerHost: string | null;
+  consent: LeadConsent | null;
+  proposalId: string | null;
+  /** Send back as `expectedUpdatedAt` with the next PATCH. */
+  updatedAt: number;
+};
+export type LeadActivity = {
+  id: string;
+  kind: string;
+  body: string | null;
+  actorId: string | null;
+  actorName: string | null;
+  createdAt: number;
+};
+export type LeadPage = {
+  lead: LeadDetail;
+  client: { id: string; code: string | null; name: string | null } | null;
+  proposal: { id: string; status: string | null } | null;
+  duplicates: {
+    id: string;
+    ref: string;
+    stage: LeadStage;
+    createdAt: number;
+    relation: "earlier" | "later";
+  }[];
+  timeline: { items: LeadActivity[]; next: string | null };
+};
+export type LeadsQuery = {
+  limit?: "25" | "50" | undefined;
+  stage?: LeadStage | undefined;
+  owner?: string | undefined;
+  source?: "web" | "manual" | undefined;
+  service?: string | undefined;
+  overdue?: "1" | undefined;
+  deletion?: "1" | undefined;
+  sort?: "created" | "activity" | "next_action" | undefined;
+  dir?: "asc" | "desc" | undefined;
+  q?: string | undefined;
+  after?: string | undefined;
+  before?: string | undefined;
+};
+export type BoardColumn = { stage: LeadStage; count: number; leads: LeadItem[]; next: string | null };
+export type Assignee = { id: string; name: string };
+export type NewLead = {
+  name: string;
+  email: string;
+  phone?: string | null;
+  company?: string | null;
+  country?: string | null;
+  serviceCode?: string | null;
+  message?: string | null;
+  ownerId?: string | null;
+  nextActionAt?: number | null;
+  nextActionNote?: string | null;
+};
+export type LeadPatch = Omit<Partial<NewLead>, "serviceCode" | "message"> & { expectedUpdatedAt: number };
+export type ReplyTemplateFilled = { id: string; label: string; subject: string; body: string };
+export type ConvertInput = {
+  type: "business" | "individual";
+  country: string;
+  gstStatus: "registered" | "unregistered" | "overseas";
+  gstin?: string;
+  currency: "INR" | "USD";
+  legalName?: string;
+  displayName?: string;
+};
+export type Changed = { ok: true; changed: boolean; updatedAt: number };
+
 /** A field the server refused (400 `invalid`): its dotted path in the request body and our own message. */
 export type FieldIssue = { path: string; message: string };
 
@@ -404,6 +519,35 @@ export const api = {
   audit: (q: AuditQuery = {}) => request<Page<"entries", AuditEntry>>(`/audit${qs(q)}`),
   /** One page of the CSV export: same rows as `audit`, but every page needs a fresh step-up (403 `step_up_required` opens the dialog) and is audited. */
   auditExport: (q: AuditQuery = {}) => request<Page<"entries", AuditEntry>>(`/audit/export${qs(q)}`),
+
+  // Leads (M3.2)
+  leads: (q: LeadsQuery = {}) =>
+    request<Page<"leads", LeadItem> & { purgeMode?: "live" | "dry_run" }>(`/leads${qs(q)}`),
+  leadsBoard: () => request<{ stages: BoardColumn[] }>("/leads/board"),
+  leadAssignees: () => request<{ me: string; assignees: Assignee[] }>("/leads/assignees"),
+  lead: (id: string) => request<LeadPage>(`/leads/${encodeURIComponent(id)}`),
+  leadActivities: (id: string, after: string) =>
+    request<{ items: LeadActivity[]; next: string | null }>(
+      `/leads/${encodeURIComponent(id)}/activities${qs({ after })}`,
+    ),
+  createLead: (body: NewLead) => request<{ id: string; ref: string }>("/leads", { body }),
+  updateLead: (id: string, body: LeadPatch) =>
+    request<Changed>(`/leads/${encodeURIComponent(id)}`, { method: "PATCH", body }),
+  addLeadNote: (id: string, body: string) =>
+    request<{ id: string }>(`/leads/${encodeURIComponent(id)}/notes`, { body: { body } }),
+  setLeadStage: (id: string, stage: LeadStage, lostReason?: LostReason) =>
+    request<Changed>(`/leads/${encodeURIComponent(id)}/stage`, {
+      body: lostReason ? { stage, lostReason } : { stage },
+    }),
+  replyTemplates: (id: string) =>
+    request<{ templates: ReplyTemplateFilled[] }>(`/leads/${encodeURIComponent(id)}/reply-templates`),
+  replyToLead: (id: string, body: { subject: string; body: string; templateId?: string }) =>
+    request<{ ok: true; queued: true; id: string }>(`/leads/${encodeURIComponent(id)}/reply`, { body }),
+  convertLead: (id: string, body: ConvertInput) =>
+    request<{ clientId: string; clientCode: string; contactId: string; proposalId: string }>(
+      `/leads/${encodeURIComponent(id)}/convert`,
+      { body },
+    ),
 };
 
 /** A message to show for any failure: the server's own words, or a plain network message. */
