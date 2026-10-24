@@ -17,7 +17,7 @@ import { ACCOUNT_NO, cleanAccountNo, IFSC, SWIFT } from "@techaust/core/bank";
 import { formatIstDateTime, fyOf } from "@techaust/core/dates";
 import { EMAIL_TEMPLATES, type EmailTemplate } from "@techaust/core/email-templates";
 import { uuidv7 } from "@techaust/core/ids";
-import { deleteAfterSql, LEAD_DELETABLE_SQL } from "@techaust/core/lead-lifecycle";
+import { deleteAfterSql, LEAD_DELETABLE_SQL, LEAD_PURGE_NOTICE_DAYS } from "@techaust/core/lead-lifecycle";
 import { canSetNextNumber, maxNumber, SERIES, type Series } from "@techaust/core/numbering";
 import { type Action, decide } from "@techaust/core/permissions";
 import {
@@ -53,7 +53,7 @@ import { sampleData, TEMPLATE_NAMES } from "./email-fixtures.ts";
 import { queueEmail } from "./mail.ts";
 
 /** The notice before a lead is deleted: a re-dated lead is never due sooner than this (VERIFY WITH CA/LEGAL). */
-const LEAD_NOTICE_MS = 14 * 86_400_000;
+const LEAD_NOTICE_MS = LEAD_PURGE_NOTICE_DAYS * 86_400_000;
 
 const STALE: ApiError = {
   code: "stale_version",

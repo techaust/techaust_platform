@@ -114,6 +114,10 @@ describe("enqueueDue: the cron only enqueues [JOB-CRON-01]", () => {
     expect(logs.some((l) => l.includes('"ev":"lead.purge_dry_run_page"') && l.includes('"due":2'))).toBe(
       true,
     );
+    // The dry-run log line is the report: refs only, never a name or an address.
+    const line = logs.find((l) => l.includes('"ev":"lead.purge_dry_run_page"')) ?? "";
+    expect(line).toMatch(/"refs":\["L-[^"]+","L-[^"]+"\]/);
+    expect(line).not.toMatch(/@|Asha/);
   });
 
   it("carries a cursor in a scan message when more than one page is due", async () => {

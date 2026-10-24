@@ -18,7 +18,7 @@ export const PURGE_CRON = "0 22 * * *";
 const DUE = `delete_after IS NOT NULL AND delete_after <= ?2 AND ${LEAD_DELETABLE_SQL}`;
 
 /** The scan, exported so a test can EXPLAIN it (it must use the partial index `leads_delete_due`). */
-export const SCAN_SQL = `SELECT id, delete_after AS at FROM leads INDEXED BY leads_delete_due WHERE delete_after <= ?1 AND ${LEAD_DELETABLE_SQL} AND (delete_after, id) > (?2, ?3) ORDER BY delete_after, id LIMIT ${LEAD_PURGE_PAGE + 1}`;
+export const SCAN_SQL = `SELECT id, ref, delete_after AS at FROM leads INDEXED BY leads_delete_due WHERE delete_after <= ?1 AND ${LEAD_DELETABLE_SQL} AND (delete_after, id) > (?2, ?3) ORDER BY delete_after, id LIMIT ${LEAD_PURGE_PAGE + 1}`;
 
 type Cursor = { at: number; id: string };
 
@@ -30,7 +30,7 @@ export async function enqueueDue(
 ): Promise<{ queued: number; more: boolean }> {
   const { results } = await env.DB.prepare(SCAN_SQL)
     .bind(asOf, cursor?.at ?? -1, cursor?.id ?? "")
-    .all<{ id: string; at: number }>();
+    .all<{ id: string; ref: string; at: number }>();
   const page = results.slice(0, LEAD_PURGE_PAGE);
   const more = results.length > LEAD_PURGE_PAGE;
   const last = page.at(-1);
@@ -46,7 +46,8 @@ export async function enqueueDue(
   if (bodies.length) await env.LEADS_QUEUE.sendBatch(bodies.map((body) => ({ body })));
   const queued = dry ? 0 : page.length;
   logEvent(dry ? "lead.purge_dry_run_page" : "lead.purge_enqueued", {
-    ...(dry ? { due: page.length } : { queued }),
+    // A dry run is the report (owner, 2026-10-24): the refs it would delete, never a name or an address.
+    ...(dry ? { due: page.length, refs: page.map((r) => r.ref) } : { queued }),
     more,
     mode: dry ? "dry_run" : "live",
   });
