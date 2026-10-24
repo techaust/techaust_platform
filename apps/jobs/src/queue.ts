@@ -1,9 +1,11 @@
 // The queue entry point: routes a batch to its consumer by queue name (`techaust-<env>-leads`, `-leads-dlq`, `-email`,
 // `-email-dlq`). Each message is acknowledged on success and retried when its consumer throws or asks for a retry;
 // after 5 tries the queue moves it to the dead-letter queue (wrangler.jsonc).
+import { isPurgeMessage, isPurgeScanMessage } from "@techaust/core";
 import { CLAIM_TIMEOUT_MS, processDeadLetter, processEmail } from "./email.ts";
 import { processLead } from "./leads.ts";
 import { logEvent, noteInvocation } from "./log.ts";
+import { enqueueDue, purgeLead } from "./purge.ts";
 import { processStaffAlert } from "./staff-alerts.ts";
 
 /** A staff alert (`{ kind: "staff.alert", auditId }`) shares the email queue with ordinary emails (M2.4b). */
@@ -24,9 +26,19 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
   const isDlq = queue.endsWith("-leads-dlq") || queue.endsWith("-email-dlq");
   for (const message of batch.messages) {
     try {
-      if (isDlq) {
+      if (isDlq && (isPurgeMessage(message.body) || isPurgeScanMessage(message.body))) {
+        // A clean-up message that ran out of tries: the next daily run enqueues the lead again, so no alert and no retry.
+        logEvent("lead.purge_dead_letter", { queue });
+        message.ack();
+      } else if (isDlq) {
         if (await processDeadLetter(env, queue, message.body)) message.ack();
         else message.retry({ delaySeconds: dlqRetryDelay(message.attempts) });
+      } else if (queue.endsWith("-leads") && isPurgeScanMessage(message.body)) {
+        await enqueueDue(env, message.body.asOf, message.body.cursor);
+        message.ack();
+      } else if (queue.endsWith("-leads") && isPurgeMessage(message.body)) {
+        await purgeLead(env, message.body.leadId);
+        message.ack();
       } else if (queue.endsWith("-leads")) {
         await processLead(env, message.body);
         message.ack();

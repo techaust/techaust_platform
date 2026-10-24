@@ -1,7 +1,15 @@
 // CRM and delivery (docs/05 §5.2): leads, clients, contacts, projects, care plans, time.
 import { type BUDGET_BANDS, TIMELINES, type TOOLS } from "@techaust/core";
 import { sql } from "drizzle-orm";
-import { check, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import {
+  type AnySQLiteColumn,
+  check,
+  index,
+  integer,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from "drizzle-orm/sqlite-core";
 import { CURRENCY_CODES, createdAt, currency, flag, id, oneOf, updatedAt } from "./common.ts";
 import { staffUsers } from "./identity.ts";
 
@@ -64,6 +72,10 @@ export const leads = sqliteTable(
     nextActionAt: integer("next_action_at"),
     nextActionNote: text("next_action_note"),
     clientId: text("client_id").references(() => clients.id),
+    /** M3.2: the earlier lead with the same email within 30 days (linked, never merged). Added with ALTER TABLE only: `lead_activities` references leads. */
+    duplicateOf: text("duplicate_of").references((): AnySQLiteColumn => leads.id, { onDelete: "set null" }),
+    /** M3.2: the draft proposal made when the lead was converted (a plain id: documents is defined after this table). */
+    proposalId: text("proposal_id"),
     lastActivityAt: integer("last_activity_at"),
     deleteAfter: integer("delete_after"),
     legalHold: flag("legal_hold"),
@@ -77,6 +89,12 @@ export const leads = sqliteTable(
     index("leads_email").on(t.contactEmail),
     index("leads_client").on(t.clientId),
     index("leads_delete_after").on(t.deleteAfter),
+    // M3.2: the list's sorts (created, last activity, next action), the duplicate link and the draft proposal lookups.
+    index("leads_created").on(t.createdAt, t.id),
+    index("leads_last_activity").on(t.lastActivityAt, t.id),
+    index("leads_next_action").on(t.nextActionAt, t.id),
+    index("leads_duplicate_of").on(t.duplicateOf),
+    index("leads_proposal").on(t.proposalId),
     check("leads_stage", oneOf(t.stage, LEAD_STAGES)),
     check("leads_source", oneOf(t.source, LEAD_SOURCES)),
     check("leads_lost_reason", sql`(${t.stage} = 'lost') = (${t.lostReason} is not null)`),

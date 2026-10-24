@@ -184,6 +184,8 @@ export const notifications = sqliteTable(
   },
   (t) => [
     uniqueIndex("notifications_user_event").on(t.userId, t.kind, t.entityId),
+    // M3.2: deleting a purged lead's bell rows by what they point at.
+    index("notifications_entity").on(t.entityType, t.entityId),
     index("notifications_user_created").on(t.userId, t.createdAt, t.id),
     index("notifications_user_unread").on(t.userId, t.readAt, t.createdAt, t.id),
   ],
