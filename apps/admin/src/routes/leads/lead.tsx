@@ -12,7 +12,7 @@ import {
   TIMELINE_LABELS,
   TOOL_LABELS,
 } from "@techaust/core/form-labels";
-import { type FormEvent, type ReactNode, useId, useState } from "react";
+import { type Dispatch, type FormEvent, type ReactNode, useId, useReducer, useState } from "react";
 import { Link, useParams } from "react-router";
 import {
   type Assignee,
@@ -57,21 +57,31 @@ import {
 } from "../../lib/leads.ts";
 import { useUser } from "../../session.tsx";
 import { ConvertDialog } from "./convert.tsx";
+import {
+  type Contact,
+  type DraftAction,
+  type Drafts,
+  drafts as draftsReducer,
+  type Follow,
+  NO_DRAFTS,
+} from "./drafts.ts";
 import { CRUMBS, LeadsGate, LostDialog, MoveMenu, StagePill } from "./parts.tsx";
 import { ReplyDialog } from "./reply.tsx";
 
 export function Component() {
+  const { id = "" } = useParams();
   return (
     <LeadsGate>
-      <LeadScreen />
+      {/* Another lead is a fresh page: its drafts start empty. */}
+      <LeadScreen key={id} id={id} />
     </LeadsGate>
   );
 }
 
-function LeadScreen() {
-  const { id = "" } = useParams();
+function LeadScreen({ id }: { id: string }) {
   const page = useLoad(() => api.lead(id), id);
   const people = useLoad(() => api.leadAssignees(), "");
+  const [drafts, draft] = useReducer(draftsReducer, NO_DRAFTS);
 
   if (page.state === "failed") {
     if (page.error instanceof RequestError && page.error.status === 404) return <NotFound />;
@@ -85,17 +95,20 @@ function LeadScreen() {
   if (page.state === "loading") return <LeadSkeleton />;
   return (
     <LeadView
-      // A fresh copy of the lead (after a save or a reload) starts the forms again from what's stored.
+      // A fresh copy of the lead (after a save or a reload) starts the page again from what's stored; what the person
+      // has typed and not saved (the drafts) is held here, above the reload, and carried across it.
       key={page.data.lead.updatedAt}
       data={page.data}
       assignees={people.data?.assignees ?? []}
-      reload={() => page.reload(true)}
+      drafts={drafts}
+      draft={draft}
+      reload={(cause = "own") => {
+        draft({ type: "reloaded", cause });
+        page.reload(true);
+      }}
     />
   );
 }
-
-type Follow = { ownerId: string; date: string; note: string };
-type Contact = { name: string; email: string; phone: string; company: string; country: string };
 
 const followOf = (l: LeadDetail): Follow => ({
   ownerId: l.ownerId ?? "",
@@ -114,11 +127,15 @@ const nullable = (v: string) => (v.trim() ? v.trim() : null);
 function LeadView({
   data,
   assignees,
+  drafts,
+  draft,
   reload,
 }: {
   data: LeadPageData;
   assignees: Assignee[];
-  reload: () => void;
+  drafts: Drafts;
+  draft: Dispatch<DraftAction>;
+  reload: (cause?: "own" | "stale") => void;
 }) {
   const user = useUser();
   const toast = useToast();
@@ -126,13 +143,16 @@ function LeadView({
   const canWrite = allowed(user.role, "leads.write");
   const canConvert = allowed(user.role, "clients.write") && allowed(user.role, "proposals.draft");
   const [stale, setStale] = useState(false);
-  const [follow, setFollow] = useState<Follow>(() => followOf(lead));
-  const [contact, setContact] = useState<Contact>(() => contactOf(lead));
-  const [editing, setEditing] = useState(false);
+  const follow = drafts.follow ?? followOf(lead);
+  const setFollow = (value: Follow | null) => draft({ type: "follow", value });
+  const editing = drafts.contact !== null;
+  const contact = drafts.contact ?? contactOf(lead);
+  const setContact = (value: Contact | null) => draft({ type: "contact", value });
   const [busy, setBusy] = useState<"follow" | "contact" | null>(null);
   const [error, setError] = useState<{ where: "follow" | "contact"; text: string } | null>(null);
   const [emailError, setEmailError] = useState<string | null>(null);
-  const [note, setNote] = useState("");
+  const note = drafts.note;
+  const setNote = (text: string) => draft({ type: "note", text });
   const [lost, setLost] = useState(false);
   const [replying, setReplying] = useState(false);
   const [converting, setConverting] = useState(false);
@@ -150,7 +170,8 @@ function LeadView({
     try {
       const r = await api.updateLead(lead.id, { ...patch, expectedUpdatedAt: lead.updatedAt });
       toast("success", r.changed ? "Saved." : "No change: that's already saved.");
-      if (where === "contact") setEditing(false);
+      if (where === "contact") setContact(null);
+      else setFollow(null);
       reload();
     } catch (e) {
       if (e instanceof RequestError && e.code === "stale_version") setStale(true);
@@ -248,7 +269,7 @@ function LeadView({
           ) : undefined
         }
       />
-      {stale && <StaleNotice title="Someone else changed this lead." onReload={reload} />}
+      {stale && <StaleNotice title="Someone else changed this lead." onReload={() => reload("stale")} />}
       {lead.scheduledForDeletion && lead.deleteAfter !== null && (
         <Notice tone="info">
           Scheduled for deletion on <strong>{formatDate(istDate(lead.deleteAfter))}</strong>, when its
@@ -330,7 +351,7 @@ function LeadView({
                     <button
                       type="button"
                       className="btn btn--secondary"
-                      onClick={() => setFollow(followOf(lead))}
+                      onClick={() => setFollow(null)}
                       disabled={busy === "follow"}
                     >
                       Discard
@@ -366,14 +387,7 @@ function LeadView({
                 Contact
               </h2>
               {canWrite && !editing && (
-                <button
-                  type="button"
-                  className="btn btn--text"
-                  onClick={() => {
-                    setContact(contactOf(lead));
-                    setEditing(true);
-                  }}
-                >
+                <button type="button" className="btn btn--text" onClick={() => setContact(contactOf(lead))}>
                   <Pencil size={16} />
                   Edit<span className="visually-hidden"> contact</span>
                 </button>
@@ -451,7 +465,7 @@ function LeadView({
                     type="button"
                     className="btn btn--secondary"
                     onClick={() => {
-                      setEditing(false);
+                      setContact(null);
                       setEmailError(null);
                       setError(null);
                     }}

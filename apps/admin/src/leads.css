@@ -72,9 +72,11 @@
 
 /* ---------- The list ---------- */
 
-/* Four chip groups and a select: on wider screens the search takes its own row and the groups flow after it. */
+/* Four chip groups and a select: on wider screens the search takes its own row and the groups flow after it. Doubled
+   class: this must beat the shared grid in shell.css whichever stylesheet loads first (the dev server's order differs
+   from the build's on a cold load of /leads). */
 @media (min-width: 48rem) {
-  .filters--leads {
+  .filters.filters--leads {
     display: flex;
     flex-wrap: wrap;
     align-items: flex-start;
@@ -125,6 +127,44 @@
   max-width: 100%;
 }
 
+/* The links in the side panels and the enquiry's facts (email, page, referrer) are inline blocks, which keeps the
+   spaces in a link's mixed text. */
+.lead-page .lead-links a,
+.lead-page .facts a {
+  display: inline-block;
+}
+
+/* The lead's links (its name, the earlier lead) are 44px targets without moving the text around them (review finding
+   3): padding on every side grows the box by the difference between a line and the target, an equal negative margin
+   gives that space back, and the target reaches into the lines around it. A name that wraps keeps its full height. The
+   focus ring is pulled in by the same amount, so it still hugs the words rather than crossing the next line. */
+.lead-name__link,
+.lead-name__dup,
+a.lead-card__name,
+.lead-page .lead-links a,
+.lead-page .facts a {
+  --reach: calc((var(--target-min) - 1lh) / 2);
+  padding: var(--reach);
+  margin: calc(-1 * var(--reach));
+}
+
+.lead-name__link:focus-visible,
+.lead-name__dup:focus-visible,
+a.lead-card__name:focus-visible,
+.lead-page .lead-links a:focus-visible,
+.lead-page .facts a:focus-visible {
+  outline-offset: calc(2px - var(--reach));
+}
+
+.lead-name__link,
+.lead-name__dup,
+a.lead-card__name {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  min-width: var(--target-min);
+}
+
 .lead-name__link {
   text-decoration: none;
 }
@@ -135,11 +175,10 @@
 }
 
 .lead-name__dup {
-  display: inline-flex;
-  align-items: center;
+  margin-top: calc(var(--space-1) - var(--reach));
   gap: var(--space-1);
-  margin-top: var(--space-1);
   font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
 }
 
 .next-action {
