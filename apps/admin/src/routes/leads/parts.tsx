@@ -65,6 +65,10 @@ export function LeadName({ lead, link = true }: { lead: LeadItem; link?: boolean
         <span className="person__name">{lead.name}</span>
       )}
       <span className="person__email">{lead.company ?? lead.email}</span>
+      <span className="lead-name__ref">
+        <span className="visually-hidden">Reference </span>
+        <span className="docno">{lead.ref}</span>
+      </span>
       {lead.duplicateOf && (
         <Link className="lead-name__dup" to={`/leads/${lead.duplicateOf}`}>
           <Clock size={16} />
@@ -82,6 +86,7 @@ export function MoveMenu(props: { lead: LeadItem; onMove: (to: LeadStage) => voi
       label={`Move ${props.lead.name} to`}
       text="Move to…"
       buttonClass={props.compact ? "btn btn--text move-btn" : "btn btn--secondary move-btn"}
+      floating={props.compact}
       icon={<ChevronDown size={16} />}
       items={STAGES.filter((s) => s !== props.lead.stage).map((s) => ({
         label: STAGE_LABELS[s],

@@ -148,6 +148,8 @@ export function Board() {
   function down(e: ReactPointerEvent<HTMLLIElement>, lead: LeadItem) {
     if (!canMove || e.button !== 0 || e.pointerType === "touch") return;
     if ((e.target as Element).closest("button, input, select, textarea")) return;
+    // No text selection while a card is pressed (the name link still opens on a click).
+    e.preventDefault();
     const r = e.currentTarget.getBoundingClientRect();
     setDrag({
       id: lead.id,

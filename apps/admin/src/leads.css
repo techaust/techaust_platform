@@ -72,6 +72,33 @@
 
 /* ---------- The list ---------- */
 
+/* Four chip groups and a select: on wider screens the search takes its own row and the groups flow after it. */
+@media (min-width: 48rem) {
+  .filters--leads {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: var(--space-4) var(--space-8);
+  }
+
+  .filters--leads .filters__search {
+    flex: 1 1 100%;
+  }
+
+  .filters--leads .filters__search .field-icon {
+    max-width: 28rem;
+  }
+
+  .filters--leads .filters__foot {
+    flex: 1 1 100%;
+  }
+}
+
+.lead-name__ref {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
 .filters__select select {
   width: auto;
   min-width: 14rem;
@@ -125,7 +152,9 @@
 /* ---------- The board ---------- */
 
 .board__scroll {
-  /* Sideways scrolling stays inside the board: the page itself never scrolls sideways (phones included). */
+  /* Sideways scrolling stays inside the board: the page itself never scrolls sideways (phones included). Positioned, so
+     the cards' visually hidden labels (absolutely placed) are clipped with the lanes instead of widening the page. */
+  position: relative;
   overflow-x: auto;
   overscroll-behavior-x: contain;
   margin-inline: calc(-1 * var(--space-1));
@@ -140,8 +169,8 @@
 .board__lanes {
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: minmax(11.5rem, 1fr);
-  gap: var(--space-3);
+  grid-auto-columns: minmax(11rem, 1fr);
+  gap: var(--space-2);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -452,21 +481,31 @@ a.lead-card__name:hover {
   font-size: var(--text-sm);
 }
 
-@media (min-width: 48rem) {
-  .facts--two {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    column-gap: var(--space-6);
-  }
+/* Facts sit in two columns only when the panel itself is wide enough (the panel's width, not the window's). */
+.lead-page__main .lead-panel {
+  container-type: inline-size;
 }
 
 .facts--two > div {
-  grid-template-columns: 7.5rem minmax(0, 1fr);
+  grid-template-columns: 8.5rem minmax(0, 1fr);
 }
 
-@media (max-width: 29.99rem) {
+@container (min-width: 46rem) {
+  .facts--two {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: var(--space-8);
+  }
+}
+
+@container (max-width: 26rem) {
   .facts--two > div {
     grid-template-columns: 1fr;
+    gap: 0;
   }
+}
+
+.lead-page__side .facts > div {
+  grid-template-columns: 6rem minmax(0, 1fr);
 }
 
 .lead-message {
@@ -521,7 +560,14 @@ a.lead-card__name:hover {
 }
 
 .lead-timeline__list .entry {
+  grid-template-columns: 7rem minmax(0, 1fr);
   padding-inline: 0;
+}
+
+@media (max-width: 29.99rem) {
+  .lead-timeline__list .entry {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .lead-timeline__more {
@@ -642,7 +688,7 @@ a.lead-card__name:hover {
   font-size: var(--text-sm);
 }
 
-.reply__envelope > div {
+.reply__row {
   display: flex;
   gap: var(--space-3);
 }

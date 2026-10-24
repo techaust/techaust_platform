@@ -127,11 +127,11 @@ export function ReplyDialog(props: {
         <div className="dialog__body reply">
           <div className="reply__compose">
             <dl className="reply__envelope">
-              <div>
+              <div className="reply__row">
                 <dt>From</dt>
                 <dd>{FROM}</dd>
               </div>
-              <div>
+              <div className="reply__row">
                 <dt>To</dt>
                 <dd className="break">{props.lead.email}</dd>
               </div>

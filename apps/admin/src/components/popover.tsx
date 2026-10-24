@@ -61,8 +61,12 @@ export function MenuButton(props: {
   /** The button's class when it has text (default: a secondary button), and an icon after the text (a chevron). */
   buttonClass?: string | undefined;
   icon?: ReactNode | undefined;
+  /** Inside a scrolling box (a board lane): the list is placed against the window, so the box never clips it. It
+   * closes when anything scrolls or the window resizes, rather than drifting away from its button. */
+  floating?: boolean | undefined;
 }) {
   const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const [active, setActive] = useState(0);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -71,8 +75,19 @@ export function MenuButton(props: {
   const { items } = props;
 
   useEffect(() => {
-    if (open) itemRefs.current[active]?.focus();
-  }, [open, active]);
+    if (open) itemRefs.current[active]?.focus({ preventScroll: !!props.floating });
+  }, [open, active, props.floating]);
+
+  useEffect(() => {
+    if (!open || !props.floating) return;
+    const close = () => setOpen(false);
+    addEventListener("scroll", close, true);
+    addEventListener("resize", close);
+    return () => {
+      removeEventListener("scroll", close, true);
+      removeEventListener("resize", close);
+    };
+  }, [open, props.floating]);
 
   useEffect(() => {
     if (!open) return;
@@ -84,6 +99,16 @@ export function MenuButton(props: {
   }, [open]);
 
   function openAt(i: number) {
+    const b = buttonRef.current;
+    if (props.floating && b) {
+      const r = b.getBoundingClientRect();
+      const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+      const width = 12 * rem;
+      const height = items.length * 2.75 * rem + rem;
+      const left = Math.max(8, Math.min(r.right - width, innerWidth - width - 8));
+      const below = r.bottom + 4;
+      setPos({ left, top: below + height > innerHeight ? Math.max(8, r.top - height - 4) : below });
+    }
     setActive(i);
     setOpen(true);
   }
@@ -151,6 +176,11 @@ export function MenuButton(props: {
           role="menu"
           aria-label={props.label}
           className={props.align === "start" ? "menu__list menu__list--start" : "menu__list"}
+          style={
+            props.floating && pos
+              ? { position: "fixed", top: pos.top, left: pos.left, right: "auto" }
+              : undefined
+          }
           onKeyDown={onMenuKey}
         >
           {items.map((it, i) => (

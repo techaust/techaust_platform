@@ -171,8 +171,7 @@ function LeadList() {
 
   const others = (people.data?.assignees ?? []).filter((a) => a.id !== people.data?.me);
   const columns: Column<LeadItem>[] = [
-    { key: "name", header: "Lead", card: "title", cell: (r) => <LeadName lead={r} /> },
-    { key: "ref", header: "Reference", cell: (r) => <span className="docno">{r.ref}</span> },
+    { key: "name", header: "Lead", card: "title", width: "30%", cell: (r) => <LeadName lead={r} /> },
     { key: "stage", header: "Stage", cell: (r) => <StagePill stage={r.stage} reason={r.lostReason} /> },
     {
       key: "service",
@@ -215,6 +214,7 @@ function LeadList() {
   return (
     <>
       <FilterBar
+        className="filters--leads"
         searchLabel="Search by the start of a name, email, company or reference"
         query={q}
         onQuery={(v) => set({ q: v })}
@@ -298,7 +298,6 @@ function LeadList() {
           }}
           loading={loading}
           skeletonRows={6}
-          cardSub={(r) => <span className="docno">{r.ref}</span>}
           empty={
             <EmptyState
               icon={filtered ? <Search /> : <Inbox />}
@@ -365,8 +364,7 @@ function Deletion() {
   const now = Date.now();
 
   const columns: Column<LeadItem>[] = [
-    { key: "name", header: "Lead", card: "title", cell: (r) => <LeadName lead={r} /> },
-    { key: "ref", header: "Reference", cell: (r) => <span className="docno">{r.ref}</span> },
+    { key: "name", header: "Lead", card: "title", width: "30%", cell: (r) => <LeadName lead={r} /> },
     {
       key: "activity",
       header: "Last activity",
@@ -411,7 +409,6 @@ function Deletion() {
           rowKey={(r) => r.id}
           loading={list.state === "loading"}
           skeletonRows={4}
-          cardSub={(r) => <span className="docno">{r.ref}</span>}
           empty={
             <EmptyState icon={<Trash />} title="Nothing scheduled for deletion">
               <p>No lead is due for deletion in the next {LEAD_PURGE_NOTICE_DAYS} days.</p>

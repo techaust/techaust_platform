@@ -747,7 +747,7 @@ function Timeline(props: {
           <p>Notes, replies and stage changes appear here.</p>
         </EmptyState>
       ) : (
-        <ol className="timeline__list lead-timeline__list">
+        <ol className="lead-timeline__list">
           {items.map((a) => (
             <Activity key={a.id} a={a} names={props.names} now={now} />
           ))}
