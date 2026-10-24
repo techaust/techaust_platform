@@ -183,6 +183,11 @@
   margin-top: calc(var(--space-3) - var(--reach));
 }
 
+/* A panel head is as tall with or without its Edit button (a role that can't edit sees the same rhythm). */
+.client-overview .lead-panel__head {
+  min-height: var(--target-min);
+}
+
 /* The side column is narrow: a fact's label sits above its value, so an email address keeps the full width. */
 .client-overview .lead-page__side .facts > div {
   grid-template-columns: minmax(0, 1fr);
