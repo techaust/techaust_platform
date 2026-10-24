@@ -299,7 +299,7 @@ describe("numbering [ADM-SET-04]", () => {
   /** An issued document with a number in this series and year (a number is assigned only at issue). */
   const issue = async (series: string, number: number, docFy = fy) => {
     await env.DB.prepare(
-      "INSERT OR IGNORE INTO clients (id, code, legal_name, display_name, type, country, gst_status, currency) VALUES ('c-num', 'CNUM', 'Sample Traders', 'Sample', 'business', 'IN', 'unregistered', 'INR')",
+      "INSERT OR IGNORE INTO clients (id, code, legal_name, display_name, type, country, gst_status, state_code, currency) VALUES ('c-num', 'CNUM', 'Sample Traders', 'Sample', 'business', 'IN', 'unregistered', '19', 'INR')",
     ).run();
     await env.DB.prepare(
       "INSERT INTO documents (id, type, status, client_id, currency, series, fy, number, number_display, frozen_at) VALUES (?1, 'tax_invoice', 'issued', 'c-num', 'INR', ?2, ?3, ?4, ?5, 1)",
@@ -830,7 +830,7 @@ describe("document terms: versioned, append-only [ADM-SET-08]", () => {
     const o = await owner();
     const tv = await one<{ id: string }>("SELECT id FROM terms_versions WHERE kind = 'proposal'");
     await env.DB.prepare(
-      "INSERT OR IGNORE INTO clients (id, code, legal_name, display_name, type, country, gst_status, currency) VALUES ('c-terms', 'CTERMS', 'Sample Traders', 'Sample', 'business', 'IN', 'unregistered', 'INR')",
+      "INSERT OR IGNORE INTO clients (id, code, legal_name, display_name, type, country, gst_status, state_code, currency) VALUES ('c-terms', 'CTERMS', 'Sample Traders', 'Sample', 'business', 'IN', 'unregistered', '19', 'INR')",
     ).run();
     for (const id of ["d-terms-1", "d-terms-2"])
       await env.DB.prepare(
@@ -949,7 +949,7 @@ describe("numbering is guarded inside the write (L-d) [ADM-SET-03]", () => {
       prepare: (q: string) => env.DB.prepare(q),
       batch: async (stmts: D1PreparedStatement[]) => {
         await env.DB.prepare(
-          "INSERT OR IGNORE INTO clients (id, code, legal_name, display_name, type, country, gst_status, currency) VALUES ('c-race', 'CRACE', 'Race Traders', 'Race', 'business', 'IN', 'unregistered', 'INR')",
+          "INSERT OR IGNORE INTO clients (id, code, legal_name, display_name, type, country, gst_status, state_code, currency) VALUES ('c-race', 'CRACE', 'Race Traders', 'Race', 'business', 'IN', 'unregistered', '19', 'INR')",
         ).run();
         await env.DB.prepare(
           "INSERT INTO documents (id, type, status, client_id, currency, series, fy, number, number_display, frozen_at) VALUES ('d-race', 'refund_voucher', 'issued', 'c-race', 'INR', 'refundVoucher', ?1, 5, 'RF/5', 1)",
@@ -1029,7 +1029,7 @@ describe("the leads retention re-dates the leads the clean-up may delete [ADM-SE
   it("a new figure re-dates open leads from their last activity in the same batch; converted and held leads are left alone", async () => {
     await clear("retention");
     await env.DB.prepare(
-      "INSERT OR IGNORE INTO clients (id, code, legal_name, display_name, type, country, gst_status, currency) VALUES ('c-ret', 'CRET', 'Ret Traders', 'Ret', 'business', 'IN', 'unregistered', 'INR')",
+      "INSERT OR IGNORE INTO clients (id, code, legal_name, display_name, type, country, gst_status, state_code, currency) VALUES ('c-ret', 'CRET', 'Ret Traders', 'Ret', 'business', 'IN', 'unregistered', '19', 'INR')",
     ).run();
     await lead("ret-open-1");
     await lead("ret-held-1", { hold: 1 });

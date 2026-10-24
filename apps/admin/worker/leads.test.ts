@@ -7,7 +7,13 @@ import { describe, expect, it } from "vitest";
 import { bodyOf, call, countOf, one, rows, sessionFor } from "./test-helpers.ts";
 
 type Body = Record<string, unknown>;
-const GOOD: Body = { type: "business", country: "IN", gstStatus: "unregistered", currency: "INR" };
+const GOOD: Body = {
+  type: "business",
+  country: "IN",
+  gstStatus: "unregistered",
+  stateCode: "19",
+  currency: "INR",
+};
 const GSTIN14 = "19AAACT2727Q1Z";
 const VALID_GSTIN = GSTIN14 + gstinCheckChar(GSTIN14);
 const WRONG_GSTIN = GSTIN14 + (gstinCheckChar(GSTIN14) === "0" ? "1" : "0");
@@ -161,7 +167,7 @@ describe("POST /leads/:id/convert [ADM-LEAD-04]", () => {
 
   it("takes the next free client code and ignores the sample clients' codes; the SQL format equals clientCode()", async () => {
     await env.DB.prepare(
-      "INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, currency) VALUES ('sample-a', 'SAMPLE-A', 'A', 'A', 'business', 'IN', 'unregistered', 'INR')",
+      "INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, state_code, currency) VALUES ('sample-a', 'SAMPLE-A', 'A', 'A', 'business', 'IN', 'unregistered', '19', 'INR')",
     ).run();
     const s = await sessionFor("owner");
     const before = (await one<{ n: number }>(
@@ -357,7 +363,14 @@ describe("conversion: consent, country and the draft link (analyst early check)"
     expect(await countOf("clients")).toBe(clients);
     const ok = await convert(
       lead.id,
-      { ...GOOD, type: "business", gstStatus: "overseas", country: "US", currency: "USD" },
+      {
+        ...GOOD,
+        type: "business",
+        gstStatus: "overseas",
+        country: "US",
+        currency: "USD",
+        stateCode: undefined,
+      },
       s.cookie,
     );
     expect(ok.res.status).toBe(201);
@@ -402,7 +415,7 @@ describe("conversion: consent, country and the draft link (analyst early check)"
 describe("client codes keep working after C9999", () => {
   it("continues with C10000 and C10001; codes that are not C plus digits are ignored", async () => {
     await env.DB.prepare(
-      "INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, currency) VALUES ('c-9999', 'C9999', 'N', 'N', 'business', 'IN', 'unregistered', 'INR'), ('c-junk', 'C99AB', 'N', 'N', 'business', 'IN', 'unregistered', 'INR'), ('c-junk2', 'C10000X', 'N', 'N', 'business', 'IN', 'unregistered', 'INR')",
+      "INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, state_code, currency) VALUES ('c-9999', 'C9999', 'N', 'N', 'business', 'IN', 'unregistered', '19', 'INR'), ('c-junk', 'C99AB', 'N', 'N', 'business', 'IN', 'unregistered', '19', 'INR'), ('c-junk2', 'C10000X', 'N', 'N', 'business', 'IN', 'unregistered', '19', 'INR')",
     ).run();
     // the highest real code in the table is at least C9999, whatever the earlier tests made
     const s = await sessionFor("owner");

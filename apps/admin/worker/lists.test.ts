@@ -402,15 +402,23 @@ describe("global search [ADM-G-05]", () => {
     expect(group(staff, "lead").items).toHaveLength(0); // "searchable" starts neither the ref nor the lead's email
   });
 
-  it("returns what the role may read: sales leads only, the accountant nothing, owner both", async () => {
+  it("returns what the role may read: sales no staff, the accountant clients and contacts only, owner everything", async () => {
     await lead("L-ROLE1", "Role Lead", "role.lead@example.test");
     const sales = await sessionFor("sales");
     const res = await find(sales.cookie, "L-ROLE");
-    expect(res.groups.map((g: J) => g.type)).toEqual(["lead"]);
+    expect(res.groups.map((g: J) => g.type)).toEqual(["lead", "client", "contact"]);
     const accountant = await sessionFor("accountant");
-    expect((await find(accountant.cookie, "L-ROLE")).groups).toEqual([]);
+    expect((await find(accountant.cookie, "L-ROLE")).groups.map((g: J) => g.type)).toEqual([
+      "client",
+      "contact",
+    ]);
     const o = await owner();
-    expect((await find(o.cookie, "L-ROLE")).groups.map((g: J) => g.type)).toEqual(["lead", "user"]);
+    expect((await find(o.cookie, "L-ROLE")).groups.map((g: J) => g.type)).toEqual([
+      "lead",
+      "client",
+      "contact",
+      "user",
+    ]);
   });
 
   it("at most five per type; under two characters is empty; % and _ are not wildcards; a long query is 400", async () => {

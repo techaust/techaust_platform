@@ -95,7 +95,7 @@ export function sampleStatements(inboxEmail) {
 
 function sampleBase() {
   return SAMPLE.flatMap((c) => [
-    `INSERT OR IGNORE INTO clients (id, code, legal_name, display_name, type, country, gst_status, currency) VALUES (${q(c.id)}, ${q(c.code)}, ${q(c.name)}, ${q(c.name)}, 'business', 'IN', 'unregistered', 'INR');`,
+    `INSERT OR IGNORE INTO clients (id, code, legal_name, display_name, type, country, gst_status, state_code, currency) VALUES (${q(c.id)}, ${q(c.code)}, ${q(c.name)}, ${q(c.name)}, 'business', 'IN', 'unregistered', '19', 'INR');`,
     ...c.contacts.map(
       (p) =>
         `INSERT OR IGNORE INTO contacts (id, client_id, name, email, portal_access, can_see_finance) VALUES (${q(p.id)}, ${q(c.id)}, ${q(`${p.name} (${c.name})`)}, ${q(p.email)}, ${p.portal}, ${p.finance});`,

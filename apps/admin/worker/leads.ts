@@ -5,10 +5,9 @@
 // so a lead's audit row holds the lead reference, ids, field NAMES and stage codes, never a name, an email address, a phone number,
 // a note or a message. What changed in a lead's contact fields (before and after) goes on the lead's timeline (`lead_activities`),
 // which is deleted with the lead by the retention clean-up.
-import { sValidator } from "@hono/standard-validator";
 import { emailAddress } from "@techaust/auth";
+import { clientTaxCheck } from "@techaust/core/clients";
 import { isCountryCode } from "@techaust/core/form-labels";
-import { validateGstin } from "@techaust/core/gstin";
 import { uuidv7 } from "@techaust/core/ids";
 import {
   deleteAfterSql,
@@ -33,6 +32,7 @@ import {
 import { CATALOGUE } from "@techaust/db/catalogue";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
+import { insertClientStmt, taxError, taxWarnings } from "./clients.ts";
 import {
   type ApiError,
   type AppEnv,
@@ -44,6 +44,7 @@ import {
   mutate,
   NOT_FOUND,
 } from "./context.ts";
+import { body, idParam, isUnique, optText, param, query, STALE_VERSION, text } from "./http.ts";
 import { type Direction, decodeCursor, keysetSql, PREFIX_END, pageOf } from "./keyset.ts";
 import { queueEmail } from "./mail.ts";
 
@@ -51,15 +52,6 @@ import { queueEmail } from "./mail.ts";
 
 const ALREADY_CONVERTED: ApiError = { code: "already_converted", message: "That lead is already a client" };
 const GSTIN_IN_USE: ApiError = { code: "gstin_in_use", message: "A client with that GSTIN already exists" };
-const GSTIN_INVALID = (message: string): ApiError => ({ code: "gstin_invalid", message });
-const COUNTRY_MISMATCH: ApiError = {
-  code: "country_mismatch",
-  message: "Registered and unregistered clients are in India (IN); overseas clients are not",
-};
-const STALE_VERSION: ApiError = {
-  code: "stale_version",
-  message: "Someone else changed this lead. Reload it and try again",
-};
 const OWNER_INVALID: ApiError = { code: "owner_invalid", message: "Choose an active member of staff" };
 const LOST_REASON_REQUIRED: ApiError = {
   code: "lost_reason_required",
@@ -74,21 +66,8 @@ const RATE_LIMITED: ApiError = {
   message: "You have sent a lot of replies this hour. Try again later",
 };
 
-const idParam = z.object({ id: z.string().check(z.minLength(1), z.maxLength(64)) });
-const param = <S extends Parameters<typeof sValidator>[1]>(schema: S) =>
-  sValidator("param", schema, (r, c) => (r.success ? undefined : err(c as Ctx, NOT_FOUND, 404)));
-const body = <S extends Parameters<typeof sValidator>[1]>(schema: S) =>
-  sValidator("json", schema, (r, c) => (r.success ? undefined : err(c as Ctx, BAD_REQUEST, 400)));
-const query = <S extends Parameters<typeof sValidator>[1]>(schema: S) =>
-  sValidator("query", schema, (r, c) => (r.success ? undefined : err(c as Ctx, BAD_REQUEST, 400)));
-
-const text = (max: number) => z.string().check(z.trim(), z.minLength(1), z.maxLength(max));
-const optText = (max: number) => z.nullable(z.string().check(z.trim(), z.maxLength(max)));
 const country = z.string().check(z.regex(/^[A-Z]{2}$/));
 const SERVICE_CODES: readonly string[] = [...CATALOGUE.map((s) => s.code), "not-sure"];
-
-const isUnique = (e: unknown, column: string) =>
-  new RegExp(`UNIQUE constraint failed: ${column}`).test(String(e) + String((e as Error)?.cause ?? ""));
 
 /** The service the lead asked for, as the words a person reads ("and", never "&"). */
 function serviceTitle(code: string | null): string | null {
@@ -355,6 +334,10 @@ export const convertRequest = z.object({
   country,
   gstStatus: z.enum(["registered", "unregistered", "overseas"]),
   gstin: z.optional(text(20)),
+  /** Required for unregistered Indian clients (owner Q1, 2026-10-25); a registered client's defaults to the GSTIN's. VERIFY WITH CA/LEGAL. */
+  stateCode: z.optional(z.string().check(z.regex(/^\d{2}$/))),
+  /** The lead becomes the client's billing contact, who by default may see finance (M3.2 carry-in). */
+  billingContact: z.optional(z.boolean()),
   currency: z.enum(["INR", "USD"]),
   legalName: z.optional(text(200)),
   displayName: z.optional(text(120)),
@@ -841,22 +824,11 @@ export const leads = new Hono<AppEnv>()
     const f = c.req.valid("json");
     const db = c.env.DB;
 
-    // Country: a real country; India (IN) for registered and unregistered clients, anywhere else for overseas.
+    // The tax identity as one rule (core): India for registered and unregistered, a state code, a GSTIN exactly when registered.
     // VERIFY WITH CA/LEGAL: the place-of-supply treatment is decided at proposal and invoice time (M4).
-    if (!isCountryCode(f.country) || (f.gstStatus === "overseas") === (f.country === "IN"))
-      return err(c, COUNTRY_MISMATCH, 400);
-
-    // GSTIN: present exactly when the client is registered (the table's CHECK says the same; answer 400 first).
-    let gstin: string | null = null;
-    let stateCode: string | null = null;
-    if (f.gstStatus === "registered") {
-      const g = validateGstin(f.gstin ?? "");
-      if (!g.ok) return err(c, GSTIN_INVALID(g.error), 400);
-      gstin = g.gstin;
-      stateCode = g.stateCode;
-    } else if (f.gstin !== undefined) {
-      return err(c, BAD_REQUEST, 400);
-    }
+    const tax = clientTaxCheck(f);
+    if (!tax.ok) return taxError(c, tax);
+    const { gstin, stateCode } = tax;
 
     const lead = await db
       .prepare(
@@ -883,36 +855,31 @@ export const leads = new Hono<AppEnv>()
         : null;
     const title = serviceTitle(lead.service_code);
     const scopeBody = lead.message ? lead.message.slice(0, 2000) : null;
-    const unconverted = "EXISTS (SELECT 1 FROM leads WHERE id = ?1 AND client_id IS NULL)";
+    const unconverted = "EXISTS (SELECT 1 FROM leads WHERE id = ?13 AND client_id IS NULL)";
 
     // One batch: the client (next free code), its primary contact, the draft proposal (no number: numbers come only at issue),
     // the service as a section of the draft, then the lead's own update LAST (the audit row follows only if that changed a row).
     // Every statement depends on the one before it, so a lead converted in the meantime changes nothing at all.
     const build = () => [
-      db
-        .prepare(
-          // Codes are C plus digits only (4 or more, so the scheme keeps working after C9999); the sample clients' codes don't match.
-          `INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, gstin, state_code, currency)
-           SELECT ?2, (SELECT printf('C%04d', coalesce(max(cast(substr(code, 2) AS integer)), 0) + 1) FROM clients
-                       WHERE code GLOB 'C[0-9][0-9][0-9][0-9]*' AND substr(code, 2) NOT GLOB '*[^0-9]*'),
-             ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10 WHERE ${unconverted}`,
-        )
-        .bind(
-          id,
-          clientId,
+      insertClientStmt(
+        db,
+        {
+          id: clientId,
           legalName,
           displayName,
-          f.type,
-          f.country,
-          f.gstStatus,
+          type: f.type,
+          country: f.country,
+          gstStatus: f.gstStatus,
           gstin,
           stateCode,
-          f.currency,
-        ),
+          currency: f.currency,
+        },
+        { sql: unconverted, params: [id] },
+      ),
       db
         .prepare(
-          `INSERT INTO contacts (id, client_id, name, email, phone, is_primary, marketing_consent)
-           SELECT ?1, ?2, ?3, ?4, ?5, 1, ?6 WHERE EXISTS (SELECT 1 FROM clients WHERE id = ?2)`,
+          `INSERT INTO contacts (id, client_id, name, email, phone, is_primary, is_billing, can_see_finance, marketing_consent)
+           SELECT ?1, ?2, ?3, ?4, ?5, 1, ?7, ?7, ?6 WHERE EXISTS (SELECT 1 FROM clients WHERE id = ?2)`,
         )
         .bind(
           contactId,
@@ -921,6 +888,7 @@ export const leads = new Hono<AppEnv>()
           normaliseEmail(lead.contact_email),
           lead.contact_phone,
           marketing,
+          f.billingContact ? 1 : 0,
         ),
       db
         .prepare(
@@ -981,5 +949,8 @@ export const leads = new Hono<AppEnv>()
       .prepare("SELECT code FROM clients WHERE id = ?1")
       .bind(clientId)
       .first<{ code: string }>();
-    return c.json({ clientId, clientCode: made?.code ?? "", contactId, proposalId }, 201);
+    return c.json(
+      { clientId, clientCode: made?.code ?? "", contactId, proposalId, warnings: taxWarnings(tax) },
+      201,
+    );
   });
