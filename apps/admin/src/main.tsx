@@ -1,15 +1,20 @@
 import "@techaust/ui/fonts.css";
 import "@techaust/ui/tokens.css";
 import "./app.css";
+import "./shell.css";
 import { can } from "@techaust/core/permissions";
 import { type ReactNode, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { createBrowserRouter, Navigate, Outlet, RouterProvider, useLocation } from "react-router";
 import { StepUpDialog } from "./components/step-up-dialog.tsx";
 import { Card } from "./components/ui.tsx";
+import { applyStoredTheme } from "./lib/theme.ts";
 import { Home } from "./routes/home.tsx";
 import { SignIn } from "./routes/sign-in.tsx";
 import { SessionProvider, useSession } from "./session.tsx";
+
+// The theme chosen on this device (system, light or dark), before the first paint.
+applyStoredTheme();
 
 // Sign-in and the landing card are in the main chunk (every visit needs them). The invite, account and staff
 // screens load with import() when opened, so the first load stays small (NFR-3: initial JS ≤ 250 KB gzip).
@@ -66,6 +71,9 @@ function Failed() {
 }
 
 const router = createBrowserRouter([
+  // M3.1 design preview: `vite dev` only. In a build `import.meta.env.DEV` is the literal false, so this entry, its
+  // import() and the whole src/preview folder (sample data included) are left out of the bundle.
+  ...(import.meta.env.DEV ? [{ path: "/preview/*", lazy: () => import("./preview/index.tsx") }] : []),
   {
     path: "/",
     HydrateFallback: Loading,

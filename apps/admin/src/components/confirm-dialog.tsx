@@ -4,7 +4,7 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { errorText } from "../api.ts";
 import { Modal } from "./dialog.tsx";
-import { Notice } from "./ui.tsx";
+import { CodeField, Notice } from "./ui.tsx";
 
 export function ConfirmDialog(props: {
   open: boolean;
@@ -13,8 +13,11 @@ export function ConfirmDialog(props: {
   confirmLabel: string;
   busyLabel?: string | undefined;
   tone?: "default" | "danger" | undefined;
-  /** Runs the action. Throws to show an error and stay open; returns content to show a result step. */
-  onConfirm: () => Promise<ReactNode | undefined>;
+  /** Runs the action. Throws to show an error and stay open; returns content to show a result step.
+   * With `stepUp`, it receives the 6-digit code typed in the dialog. */
+  onConfirm: (code?: string) => Promise<ReactNode | undefined>;
+  /** The step-up slot (docs/06 §5.3): the authenticator code is asked for in this dialog, not a second one. */
+  stepUp?: boolean | undefined;
   onClose: () => void;
   /** Disable the confirm button (e.g. nothing picked yet). */
   disabled?: boolean | undefined;
@@ -24,6 +27,8 @@ export function ConfirmDialog(props: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ReactNode | null>(null);
+  const [code, setCode] = useState("");
+  const [codeError, setCodeError] = useState<string | null>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
   // The confirm button is gone once the result shows: focus goes to the title so the result is read next.
   useEffect(() => {
@@ -33,14 +38,22 @@ export function ConfirmDialog(props: {
   function close() {
     setError(null);
     setResult(null);
+    setCode("");
+    setCodeError(null);
     props.onClose();
   }
 
   async function confirm() {
+    if (props.stepUp && code.length !== 6) {
+      setCodeError("Enter the 6-digit code from your authenticator app.");
+      document.getElementById("confirm-code")?.focus();
+      return;
+    }
+    setCodeError(null);
     setBusy(true);
     setError(null);
     try {
-      const shown = await props.onConfirm();
+      const shown = await props.onConfirm(props.stepUp ? code : undefined);
       if (shown) setResult(shown);
       else close();
     } catch (e) {
@@ -71,6 +84,16 @@ export function ConfirmDialog(props: {
       ) : (
         <>
           <div className="dialog__body">{props.children}</div>
+          {props.stepUp && (
+            <CodeField
+              id="confirm-code"
+              label="Authenticator code"
+              hint="A fresh code from your authenticator app confirms it's you."
+              value={code}
+              onChange={setCode}
+              error={codeError}
+            />
+          )}
           {error && <Notice tone="error">{error}</Notice>}
           <div className="dialog__actions">
             <button type="button" className="btn btn--secondary" onClick={close} disabled={busy}>

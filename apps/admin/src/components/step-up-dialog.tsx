@@ -4,8 +4,7 @@
 // `invalid_code`; ten wrong codes lock the account for 15 minutes (429 `locked`).
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { api, errorText, onStepUpRequired, RequestError } from "../api.ts";
-import { Modal } from "./dialog.tsx";
-import { CodeField } from "./ui.tsx";
+import { StepUpPrompt } from "./step-up-auth.tsx";
 
 export function StepUpDialog({ onConfirmed }: { onConfirmed?: (until: number) => void }) {
   const [open, setOpen] = useState(false);
@@ -60,32 +59,14 @@ export function StepUpDialog({ onConfirmed }: { onConfirmed?: (until: number) =>
   }
 
   return (
-    <Modal open={open} title="Confirm it's you" onClose={() => finish(false)} busy={busy}>
-      <form onSubmit={submit} noValidate>
-        <div className="dialog__body">
-          <p>
-            This change needs a fresh code from your authenticator app. Once confirmed, you won't be asked
-            again for 10 minutes.
-          </p>
-          <CodeField
-            id="step-up-code"
-            label="Authenticator code"
-            hint="Use a new code. The one you signed in with won't work twice, so wait for the next one if needed."
-            value={code}
-            onChange={setCode}
-            error={error}
-            autoFocus
-          />
-        </div>
-        <div className="dialog__actions">
-          <button type="button" className="btn btn--secondary" onClick={() => finish(false)} disabled={busy}>
-            Cancel
-          </button>
-          <button type="submit" className="btn btn--primary" disabled={busy} aria-busy={busy || undefined}>
-            {busy ? "Checking…" : "Confirm"}
-          </button>
-        </div>
-      </form>
-    </Modal>
+    <StepUpPrompt
+      open={open}
+      code={code}
+      onCode={setCode}
+      onSubmit={submit}
+      onCancel={() => finish(false)}
+      busy={busy}
+      error={error}
+    />
   );
 }
