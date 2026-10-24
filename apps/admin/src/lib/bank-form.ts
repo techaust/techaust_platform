@@ -1,7 +1,7 @@
 // The bank details form's pure parts (ADM-SET-02): the fields of one block, the same checks as the API worded for the
 // form, and the PUT body. Every body carries `expectedUpdatedAt`, the `updatedAt` the form was opened with (null for an
 // account not entered yet), so a save over someone else's newer one is refused (409 `stale_version`, review M1).
-import { ACCOUNT_NO, IFSC, SWIFT } from "@techaust/core/bank";
+import { ACCOUNT_NO, cleanAccountNo, IFSC, SWIFT } from "@techaust/core/bank";
 import type { BankAccount, BankInput, BankKind } from "../api.ts";
 import { orNull } from "./settings-form.ts";
 
@@ -22,7 +22,8 @@ export const BANK_KINDS: readonly BankKind[] = ["INR", "USD_SWIFT"];
 /** The id of a field in the form (also where a server error for that field lands). */
 export const bankFieldId = (kind: BankKind, field: string) => `bank-${kind}-${field}`;
 
-const clean = (s: string) => s.replace(/[\s-]/g, "").toUpperCase();
+// Spaces and hyphens dropped, upper case: the same clean-up the Worker applies (core).
+const clean = cleanAccountNo;
 
 /** The form as it opens: what is stored, with both account number fields empty (empty keeps the stored number). */
 export const toBlockForm = (a: Partial<BankAccount>): BlockForm => ({

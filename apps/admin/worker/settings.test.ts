@@ -656,7 +656,19 @@ describe("bank details: masked everywhere [ADM-SET-02, ADM-G-06]", () => {
       bankName: name,
       expectedUpdatedAt: loaded,
     });
-    expect((await putBank("/settings/bank/INR", o.cookie, edit("First editor"))).status).toBe(200);
+    const first = await putBank("/settings/bank/INR", o.cookie, edit("First editor"));
+    expect(first.status).toBe(200);
+    // the save hands back its new updatedAt, so the same form's next save of this block isn't stale (re-check L-b)
+    const after = (await json(first)).updatedAt;
+    expect(after).toBe(
+      (await json(await call("/settings/bank", { cookie: o.cookie }))).accounts[0].updatedAt,
+    );
+    const again = await putBank("/settings/bank/INR", o.cookie, {
+      ...edit("First editor"),
+      expectedUpdatedAt: after,
+    });
+    expect(again.status).toBe(200);
+    expect((await json(again)).updatedAt).toBe(after); // no change: the same instant back
     const second = await putBank("/settings/bank/INR", o.cookie, edit("Second editor"));
     expect(second.status).toBe(409);
     expect((await json(second)).error.code).toBe("stale_version");

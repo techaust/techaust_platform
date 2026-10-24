@@ -4,7 +4,16 @@ import { ROLES } from "@techaust/core/permissions";
 import { describe, expect, it } from "vitest";
 import type { AuditEntry, BankAccount, Invite, SeriesState, StaffMember } from "../api.ts";
 import { canSee, hasSearch, NAV_KEYS, notFoundLine, sectionOf, settingsFor, settingsPage } from "./access.ts";
-import { actionText, actorText, auditCsv, csvCell, factText, readSummary, targetText } from "./audit.ts";
+import {
+  actionText,
+  actorText,
+  auditCsv,
+  csvCell,
+  ENTITY_LABELS,
+  factText,
+  readSummary,
+  targetText,
+} from "./audit.ts";
 import { checkBlock, toBlockForm } from "./bank-form.ts";
 import { lockedNote, needsStartConfirm } from "./numbering.ts";
 import {
@@ -236,9 +245,13 @@ describe("an audit export reads in words [ADM-AUTH-08, ADM-AUD-02]", () => {
     expect(facts).toEqual([
       { field: "Entries", value: "9" },
       { field: "Filters", value: "From: 2026-10-01, To: 2026-10-31" },
-      { field: "First page", value: "On" },
+      { field: "First page", value: "Yes" },
     ]);
     expect(factText("filters", {})).toBe("None");
+    // actions and records by their labels (re-check L-a)
+    expect(factText("filters", { action: "audit.export", entity: "bank_account" })).toBe(
+      `Action: ${actionText("audit.export")}, Record: ${ENTITY_LABELS.bank_account ?? "bank_account"}`,
+    );
   });
 });
 

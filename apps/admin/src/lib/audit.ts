@@ -2,6 +2,7 @@
 // (sensitive values arrive as "[masked]" and stay masked), and the CSV export built in the browser from the loaded
 // entries. Pure, so the wording and the CSV are tested without a browser.
 import { formatIstDateTime, MASKED } from "@techaust/core";
+import { ROLE_LABELS } from "@techaust/core/permissions";
 import type { AuditEntry } from "../api.ts";
 
 /** Every action the API writes today, in words. Unknown ones read as their own name ("lead.created"). */
@@ -161,23 +162,27 @@ const VIA: Record<string, string> = {
   invite: "Invite link",
   cli: "Command line (owner's setup script)",
 };
-const ROLE_WORDS: Record<string, string> = {
-  owner: "Owner",
-  staff: "Staff",
-  sales: "Sales",
-  accountant: "Accountant",
-};
+const ROLE_WORDS: Record<string, string> = ROLE_LABELS;
+
+/** An export filter's value in words: actions and records by their labels (the person filter stays its ID). */
+const filterText = (k: string, x: unknown): string =>
+  k === "action" && typeof x === "string"
+    ? actionText(x)
+    : k === "entity" && typeof x === "string"
+      ? (ENTITY_LABELS[x] ?? x)
+      : valueText(x);
 
 /** A fact's value in words: roles and sign-in methods named, instants (UTC ms) as IST times. */
 export function factText(key: string, v: unknown): string {
   if (key === "role" && typeof v === "string") return ROLE_WORDS[v] ?? v;
   if (key === "via" && typeof v === "string") return VIA[v] ?? v;
+  if (key === "firstPage" && typeof v === "boolean") return v ? "Yes" : "No";
   if (typeof v === "number" && v > 1_000_000_000_000 && /until|at$|At$|expires/i.test(key))
     return formatIstDateTime(v);
   // An export's filters, e.g. "From: 2026-10-01, To: 2026-10-31" (the dates as typed, IST days); none is "None".
   if (key === "filters" && typeof v === "object" && v !== null && !Array.isArray(v)) {
     const set = Object.entries(v).filter(([, x]) => x !== undefined && x !== null && x !== "");
-    return set.length ? set.map(([k, x]) => `${fieldLabel(k)}: ${valueText(x)}`).join(", ") : "None";
+    return set.length ? set.map(([k, x]) => `${fieldLabel(k)}: ${filterText(k, x)}`).join(", ") : "None";
   }
   return valueText(v);
 }

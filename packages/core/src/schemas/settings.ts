@@ -268,7 +268,10 @@ function mergeDefaults(base: unknown, stored: unknown): unknown {
   if (stored === undefined) return base;
   if (!isPlain(stored)) return stored;
   const out: Record<string, unknown> = { ...base };
-  for (const [k, v] of Object.entries(stored)) out[k] = k in base ? mergeDefaults(base[k], v) : v;
+  for (const [k, v] of Object.entries(stored)) {
+    if (k === "__proto__") continue;
+    out[k] = Object.hasOwn(base, k) ? mergeDefaults(base[k], v) : v;
+  }
   return out;
 }
 

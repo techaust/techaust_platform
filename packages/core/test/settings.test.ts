@@ -169,6 +169,15 @@ describe("M3.1 settings fields", () => {
     expect(() => resolveSetting("retention", { leadsMonths: 3 })).toThrow();
   });
 
+  it("resolveSetting ignores a stored __proto__ key and inherited names (re-check L-e)", () => {
+    const stored = JSON.parse(
+      '{"__proto__": {"weeklyDigest": false}, "toString": 1, "dpdpReadinessPage": true}',
+    );
+    const out = resolveSetting("flags", stored) as Record<string, unknown>;
+    expect(Object.getPrototypeOf(out)).toBe(Object.prototype);
+    expect(out.dpdpReadinessPage).toBe(true);
+  });
+
   it("resolveSetting merges nested objects too (a field added inside a nested object)", () => {
     const { fy: _fy, ...lutOld } = SETTINGS_DEFAULTS.tax.lut;
     const stored = { ...SETTINGS_DEFAULTS.tax, lut: { ...lutOld, arn: "AD1234567890123" } };

@@ -21,8 +21,8 @@ export function StepUpPrompt(props: {
         <div className="dialog__body">
           {props.intro ?? (
             <p>
-              This needs a fresh code from your authenticator app. Once confirmed, you won't be asked
-              again for 10 minutes.
+              This needs a fresh code from your authenticator app. Once confirmed, you won't be asked again
+              for 10 minutes.
             </p>
           )}
           <CodeField

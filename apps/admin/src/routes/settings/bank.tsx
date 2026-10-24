@@ -185,6 +185,8 @@ function BankForm(props: {
   const [stale, setStale] = useState(false);
   const savedRef = useRef<Partial<Record<BankKind, string>>>({});
   const changedRef = useRef(false);
+  // The `updatedAt` each block got from its last save in this form: a later save of that block sends it (review re-check L-b).
+  const latestRef = useRef<Partial<Record<BankKind, number | null>>>({});
   const dirty = JSON.stringify(forms) !== JSON.stringify(initial);
 
   const set = (k: BankKind, patch: Partial<BlockForm>) =>
@@ -211,8 +213,13 @@ function BankForm(props: {
         // `expectedUpdatedAt` is now old, so a resend would be refused as stale (review L10 keeps two PUTs).
         const sent = JSON.stringify(w.body);
         if (savedRef.current[w.k] === sent) continue;
-        const r = await api.saveBank(w.k, w.body);
+        const latest = latestRef.current[w.k];
+        const r = await api.saveBank(
+          w.k,
+          latest === undefined ? w.body : { ...w.body, expectedUpdatedAt: latest },
+        );
         savedRef.current[w.k] = sent;
+        latestRef.current[w.k] = r.updatedAt;
         changedRef.current ||= r.changed;
       }
       props.onSaved(changedRef.current);

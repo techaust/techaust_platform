@@ -702,7 +702,9 @@ async function saveBank(c: Ctx, kind: "INR" | "USD_SWIFT") {
     : null;
   // The account number is masked on both sides of the diff ("[masked]"): the log never holds it.
   const diff = auditSummary(before, after, ["accountNo"]);
-  if (existing && !Object.keys(diff).length) return c.json({ ok: true, changed: false });
+  // `updatedAt` goes back so the screen sends it with its next save of this block (review re-check L-b).
+  if (existing && !Object.keys(diff).length)
+    return c.json({ ok: true, changed: false, updatedAt: b.expectedUpdatedAt });
   const t = Date.now();
   const id = existing?.id ?? uuidv7();
   const main = existing
@@ -759,7 +761,7 @@ async function saveBank(c: Ctx, kind: "INR" | "USD_SWIFT") {
     throw e;
   }
   if (!done) return c.json({ error: STALE, request_id: c.var.rid }, 409);
-  return c.json({ ok: true, changed: true });
+  return c.json({ ok: true, changed: true, updatedAt: t });
 }
 
 // A path-parameter validator that answers 404 (not 400) for a name that isn't one of ours: `/groups/anything` is "not found".

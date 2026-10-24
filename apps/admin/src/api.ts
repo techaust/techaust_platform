@@ -377,7 +377,10 @@ export const api = {
     request<Saved>("/settings/gateways", { method: "PUT", body: { version, value } }),
   bank: () => request<{ accounts: BankAccount[] }>("/settings/bank"),
   saveBank: (kind: BankKind, body: BankInput) =>
-    request<Saved>(`/settings/bank/${kind}`, { method: "PUT", body }),
+    request<{ ok: true; changed: boolean; updatedAt: number | null }>(`/settings/bank/${kind}`, {
+      method: "PUT",
+      body,
+    }),
   terms: () =>
     request<{ blocks: TermsBlock[]; meta: { verify: string; usedByNote: string } }>("/settings/terms"),
   termsHistory: (block: TermsBlockId) =>
