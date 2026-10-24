@@ -125,6 +125,20 @@
   max-width: 100%;
 }
 
+/* The lead's links (its name, the earlier lead) are 44px targets without moving the lines around them: the box grows
+   to the target height and an equal negative margin gives the extra back, so it reaches into the gaps above and below
+   (review finding 3). */
+.lead-name__link,
+.lead-name__dup,
+a.lead-card__name {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  min-width: var(--target-min);
+  min-height: var(--target-min);
+  margin-block: calc((1lh - var(--target-min)) / 2);
+}
+
 .lead-name__link {
   text-decoration: none;
 }
@@ -135,11 +149,9 @@
 }
 
 .lead-name__dup {
-  display: inline-flex;
-  align-items: center;
   gap: var(--space-1);
-  margin-top: var(--space-1);
   font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
 }
 
 .next-action {

@@ -61,6 +61,9 @@ export function MenuButton(props: {
   /** The button's class when it has text (default: a secondary button), and an icon after the text (a chevron). */
   buttonClass?: string | undefined;
   icon?: ReactNode | undefined;
+  /** Words only a screen reader hears, after the visible text: what the button acts on, so a row of identical buttons
+   * gets distinct names while the visible text stays the start of each name (WCAG 2.4.6, 2.5.3). */
+  hiddenText?: string | undefined;
   /** Inside a scrolling box (a board lane): the list is placed against the window, so the box never clips it. It
    * closes when anything scrolls or the window resizes, rather than drifting away from its button. */
   floating?: boolean | undefined;
@@ -164,6 +167,7 @@ export function MenuButton(props: {
         {props.text ? (
           <>
             {props.text}
+            {props.hiddenText && <span className="visually-hidden">{props.hiddenText}</span>}
             {props.icon}
           </>
         ) : (
