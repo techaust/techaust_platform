@@ -111,6 +111,37 @@ export function sesTransport(config: SesConfig): Transport {
   };
 }
 
+/**
+ * Primes the SES path in an isolate that is about to send (CPU tuning 4): derives the day's signing key into the shared
+ * `SIGNING_KEYS` map and builds one `Request`, by signing a made-up body with the REAL credentials. Nothing is sent, nothing
+ * is logged, and the secret goes nowhere but the signer. A caller that has `env` and expects email to follow (the staff
+ * alert expansion) calls it so the first real send finds the key derived. Resolves true when the signing worked; never throws.
+ */
+export async function primeSesSigning(config: SesConfig): Promise<boolean> {
+  try {
+    if (SIGNING_KEYS.size > 8) SIGNING_KEYS.clear();
+    const client = new AwsClient({
+      accessKeyId: config.accessKeyId,
+      secretAccessKey: config.secretAccessKey,
+      service: "ses",
+      region: config.region,
+      retries: 0,
+      cache: SIGNING_KEYS,
+    });
+    const signed = await client.sign(
+      `https://email.${config.region}.amazonaws.com/v2/email/outbound-emails`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      },
+    );
+    return signed.headers.has("authorization");
+  } catch {
+    return false;
+  }
+}
+
 /** The warm-up's made-up credentials (exported for the test that proves the shared key map stays untouched). */
 export const WARM_KEY_ID = "AKIAWARMUP00000000";
 export const WARM_SECRET = "warm-up-not-a-secret";

@@ -137,6 +137,30 @@ describe("a new-device alert [ADM-AUTH-09]", () => {
     expect(JSON.stringify(mails)).not.toMatch(/203\.0\.113\.5|SomeAgent|Mozilla/);
   });
 
+  it("with the SES transport it primes the signing key first (CPU tuning 4): nothing is sent, the secret is never logged", async () => {
+    const m = await member();
+    const auditId = await alertRow(m.id);
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const sign = vi.spyOn(crypto.subtle, "sign");
+    try {
+      const secret = "prime-secret-from-alert-test";
+      const env = makeEnv({
+        EMAIL_TRANSPORT: "ses",
+        SES_ACCESS_KEY_ID: "AKIAPRIMETEST00000",
+        SES_SECRET_ACCESS_KEY: secret,
+        SES_REGION: "ap-south-1",
+      });
+      const { result, mails } = await expand(auditId, env);
+      expect([result, mails.length]).toEqual(["queued", 1]);
+      expect(sign).toHaveBeenCalledTimes(5);
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(logs.join("\n")).not.toContain(secret);
+    } finally {
+      fetchSpy.mockRestore();
+      sign.mockRestore();
+    }
+  });
+
   it("an invited member is told, a deactivated one is not", async () => {
     const invited = await member({ status: "invited" });
     expect((await expand(await alertRow(invited.id))).mails).toHaveLength(1);
