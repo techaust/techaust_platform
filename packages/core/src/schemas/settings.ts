@@ -254,9 +254,22 @@ export type SettingsGroup = (typeof SETTINGS_GROUPS)[number];
  * Throws if the merged value is invalid (a corrupted row), which the caller turns into a 500, never a silent default.
  */
 export function resolveSetting<K extends SeededSettingKey>(key: K, stored: unknown): Settings[K] {
-  const base: Record<string, unknown> = SETTINGS_DEFAULTS[key];
-  const over = stored !== null && typeof stored === "object" && !Array.isArray(stored) ? stored : {};
-  return SETTINGS_SCHEMAS[key].parse({ ...base, ...over }) as Settings[K];
+  return SETTINGS_SCHEMAS[key].parse(
+    mergeDefaults(SETTINGS_DEFAULTS[key], stored ?? undefined),
+  ) as Settings[K];
+}
+
+const isPlain = (v: unknown): v is Record<string, unknown> =>
+  v !== null && typeof v === "object" && !Array.isArray(v);
+
+/** Defaults under the stored value at every depth of plain objects; arrays and scalars in the stored value win whole. */
+function mergeDefaults(base: unknown, stored: unknown): unknown {
+  if (!isPlain(base)) return stored === undefined ? base : stored;
+  if (stored === undefined) return base;
+  if (!isPlain(stored)) return stored;
+  const out: Record<string, unknown> = { ...base };
+  for (const [k, v] of Object.entries(stored)) out[k] = k in base ? mergeDefaults(base[k], v) : v;
+  return out;
 }
 
 /** The defaults the database is seeded with (VERIFY WITH CA/LEGAL). */

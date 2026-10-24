@@ -47,7 +47,13 @@ export function NumberingSettings({ readOnly }: { readOnly: boolean }) {
   const doc = loaded.data;
   const fy = doc.meta.fy ?? "";
   const state = (s: Series): SeriesState =>
-    doc.meta.series?.find((x) => x.series === s) ?? { series: s, nextNo: 1, used: false };
+    doc.meta.series?.find((x) => x.series === s) ?? {
+      series: s,
+      nextNo: 1,
+      used: false,
+      locked: false,
+      lockReason: null,
+    };
 
   return (
     <>

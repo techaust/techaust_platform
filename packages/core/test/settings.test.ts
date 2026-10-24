@@ -168,4 +168,13 @@ describe("M3.1 settings fields", () => {
     expect(resolveSetting("flags", { ...oldFlags, weeklyDigest: false }).weeklyDigest).toBe(false);
     expect(() => resolveSetting("retention", { leadsMonths: 3 })).toThrow();
   });
+
+  it("resolveSetting merges nested objects too (a field added inside a nested object)", () => {
+    const { fy: _fy, ...lutOld } = SETTINGS_DEFAULTS.tax.lut;
+    const stored = { ...SETTINGS_DEFAULTS.tax, lut: { ...lutOld, arn: "AD1234567890123" } };
+    const tax = resolveSetting("tax", stored);
+    expect(tax.lut).toEqual({ arn: "AD1234567890123", fy: null });
+    // an explicit stored value of the wrong type is not hidden by the default
+    expect(() => resolveSetting("tax", { ...SETTINGS_DEFAULTS.tax, lut: null })).toThrow();
+  });
 });

@@ -286,11 +286,24 @@ describe("numbering [ADM-SET-04]", () => {
     expect((await counter("estimate"))?.next_no).toBe(150);
   });
 
-  it("a series that has issued a number this year keeps its format (409 series_in_use); other series can still change", async () => {
+  /** An issued document with a number in this series and year (a number is assigned only at issue). */
+  const issue = async (series: string, number: number, docFy = fy) => {
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO clients (id, code, legal_name, display_name, type, country, gst_status, currency) VALUES ('c-num', 'CNUM', 'Sample Traders', 'Sample', 'business', 'IN', 'unregistered', 'INR')",
+    ).run();
+    await env.DB.prepare(
+      "INSERT INTO documents (id, type, status, client_id, currency, series, fy, number, number_display, frozen_at) VALUES (?1, 'tax_invoice', 'issued', 'c-num', 'INR', ?2, ?3, ?4, ?5, 1)",
+    )
+      .bind(`d-num-${series}-${docFy}-${number}`, series, docFy, number, `X/${number}`)
+      .run();
+  };
+
+  it("a series with an issued document this year is locked: format AND next number, up or down (409 series_in_use)", async () => {
     await clear("numbering");
     await env.DB.prepare("INSERT INTO doc_counters (series, fy, next_no) VALUES ('debitNote', ?, 8)")
       .bind(fy)
       .run();
+    await issue("debitNote", 7);
     const o = await owner();
     const changed = {
       ...SETTINGS_DEFAULTS.numbering,
@@ -301,8 +314,103 @@ describe("numbering [ADM-SET-04]", () => {
     const body = await json(res);
     expect(body.error.code).toBe("series_in_use");
     expect(body.series).toEqual(["debitNote"]);
+    // raising the next number leaves a gap in the printed run: refused
+    const raise = await put(GROUP("numbering"), o.cookie, {
+      version: 0,
+      value: SETTINGS_DEFAULTS.numbering,
+      nextNumbers: { debitNote: 50 },
+    });
+    expect(raise.status).toBe(409);
+    expect((await json(raise)).error.code).toBe("series_in_use");
+    // so is lowering it (series_in_use answers before next_number_lower)
+    const down = await put(GROUP("numbering"), o.cookie, {
+      version: 0,
+      value: SETTINGS_DEFAULTS.numbering,
+      nextNumbers: { debitNote: 3 },
+    });
+    expect(down.status).toBe(409);
+    expect((await json(down)).error.code).toBe("series_in_use");
+    expect((await counter("debitNote"))?.next_no).toBe(8);
+    // another series is unaffected
     const other = { ...SETTINGS_DEFAULTS.numbering, proforma: { template: "TH/PF/{FY}/{N}", padding: 4 } };
     expect((await put(GROUP("numbering"), o.cookie, { version: 0, value: other })).status).toBe(200);
+  });
+
+  it("an issue in an earlier year does not lock this year", async () => {
+    await clear("numbering");
+    await issue("receipt", 4, "2425");
+    const o = await owner();
+    const value = { ...SETTINGS_DEFAULTS.numbering, receipt: { template: "TH/RC/{FY}/{N}", padding: 4 } };
+    const res = await put(GROUP("numbering"), o.cookie, { version: 0, value, nextNumbers: { receipt: 20 } });
+    expect(res.status, await res.clone().text()).toBe(200);
+  });
+
+  it("a start number set before the first issue does not lock: the format can still change, then the series locks at its first issue", async () => {
+    await clear("numbering");
+    const o = await owner();
+    const first = await put(GROUP("numbering"), o.cookie, {
+      version: 0,
+      value: SETTINGS_DEFAULTS.numbering,
+      nextNumbers: { refundVoucher: 100 },
+    });
+    expect(first.status).toBe(200);
+    expect((await counter("refundVoucher"))?.next_no).toBe(100);
+    const meta = (await json(await call(GROUP("numbering"), { cookie: o.cookie }))).meta.series.find(
+      (x: J) => x.series === "refundVoucher",
+    );
+    expect(meta).toEqual({
+      series: "refundVoucher",
+      nextNo: 100,
+      used: false,
+      locked: false,
+      lockReason: null,
+    });
+    // the format change after the start number: allowed
+    const value = {
+      ...SETTINGS_DEFAULTS.numbering,
+      refundVoucher: { template: "TH/R/{FY}/{N}", padding: 5 },
+    };
+    const second = await put(GROUP("numbering"), o.cookie, {
+      version: 1,
+      value,
+      nextNumbers: { refundVoucher: 120 },
+    });
+    expect(second.status, await second.clone().text()).toBe(200);
+    expect((await counter("refundVoucher"))?.next_no).toBe(120);
+    // the first issue locks it, and the screen can say why
+    await issue("refundVoucher", 120);
+    const locked = (await json(await call(GROUP("numbering"), { cookie: o.cookie }))).meta.series.find(
+      (x: J) => x.series === "refundVoucher",
+    );
+    expect(locked.locked).toBe(true);
+    expect(locked.used).toBe(true);
+    expect(locked.lockReason).toMatch(/issued this financial year/);
+    const after = await put(GROUP("numbering"), o.cookie, {
+      version: 2,
+      value,
+      nextNumbers: { refundVoucher: 130 },
+    });
+    expect(after.status).toBe(409);
+    expect((await json(after)).series).toEqual(["refundVoucher"]);
+  });
+
+  it("the doc_counters trigger still refuses a lower counter directly", async () => {
+    await env.DB.prepare(
+      "INSERT OR REPLACE INTO doc_counters (series, fy, next_no) VALUES ('estimate', '2099', 5)",
+    ).run();
+    await expect(
+      env.DB.prepare("UPDATE doc_counters SET next_no = 2 WHERE series = 'estimate' AND fy = '2099'").run(),
+    ).rejects.toThrow(/move forward/);
+  });
+
+  it("the issued-series lookup is served by the (series, fy, number) index", async () => {
+    const plan = await rows<{ detail: string }>(
+      "EXPLAIN QUERY PLAN SELECT DISTINCT series FROM documents WHERE fy = ?1 AND series IN (?2, ?3) AND number IS NOT NULL",
+      fy,
+      "invoice",
+      "export",
+    );
+    expect(plan.map((r) => r.detail).join(" ")).toMatch(/USING (COVERING )?INDEX documents_series_fy_number/);
   });
 
   it("a next number that doesn't fit the padding is 400", async () => {
@@ -318,16 +426,19 @@ describe("numbering [ADM-SET-04]", () => {
 
   it("GET shows each series' counter and whether it has been used", async () => {
     await clear("numbering");
-    await env.DB.prepare("INSERT INTO doc_counters (series, fy, next_no) VALUES ('creditNote', ?, 3)")
+    await env.DB.prepare(
+      "INSERT OR REPLACE INTO doc_counters (series, fy, next_no) VALUES ('creditNote', ?, 3)",
+    )
       .bind(fy)
       .run();
+    await issue("creditNote", 2);
     const o = await owner();
     const res = await json(await call(GROUP("numbering"), { cookie: o.cookie }));
     expect(res.meta.fy).toBe(fy);
     const credit = res.meta.series.find((s: J) => s.series === "creditNote");
-    expect(credit).toEqual({ series: "creditNote", nextNo: 3, used: true });
+    expect(credit).toMatchObject({ series: "creditNote", nextNo: 3, used: true, locked: true });
     const invoice = res.meta.series.find((s: J) => s.series === "invoice");
-    expect(invoice).toEqual({ series: "invoice", nextNo: 1, used: false });
+    expect(invoice).toEqual({ series: "invoice", nextNo: 1, used: false, locked: false, lockReason: null });
   });
 });
 

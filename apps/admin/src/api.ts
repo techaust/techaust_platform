@@ -58,7 +58,14 @@ export type OverviewGroup = {
   updatedAt: number | null;
   attention: string[];
 };
-export type SeriesState = { series: string; nextNo: number; used: boolean };
+/** `used`/`locked`: a document of the series was issued this financial year; format and next number are then read-only. */
+export type SeriesState = {
+  series: string;
+  nextNo: number;
+  used: boolean;
+  locked: boolean;
+  lockReason: string | null;
+};
 export type GroupMeta = {
   verify?: string;
   notes?: string;

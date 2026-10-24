@@ -58,8 +58,9 @@ const LIVE_LOCKED: ApiError = { code: "live_locked", message: "Live is locked un
 const SERIES_IN_USE: ApiError = {
   code: "series_in_use",
   message:
-    "That numbering series has already issued a number this financial year, so its format can't change",
+    "That numbering series has already issued a number this financial year, so its format and next number can't change",
 };
+const SERIES_LOCK_REASON = "A number from this series has been issued this financial year";
 const NEXT_LOWER: ApiError = {
   code: "next_number_lower",
   message: "The next number can only go up, never down",
@@ -196,6 +197,24 @@ const counters = async (db: D1Database, fy: string) =>
   (await db.prepare("SELECT series, next_no FROM doc_counters WHERE fy = ?1").bind(fy).all<CounterRow>())
     .results;
 
+/**
+ * The series that have an issued document this financial year (a number is assigned only at issue, so `number IS NOT NULL` is
+ * "issued"; a voided document keeps its number). Served by the unique index (series, fy, number). Once a series is in this set,
+ * its format and next number are locked: changing either would leave a gap or a different style inside the printed run
+ * (CGST Rule 46(b); VERIFY WITH CA/LEGAL).
+ */
+const issuedSeries = async (db: D1Database, fy: string): Promise<Set<string>> => {
+  const names = Object.keys(SERIES);
+  const marks = names.map((_, i) => `?${i + 2}`).join(", ");
+  const { results } = await db
+    .prepare(
+      `SELECT DISTINCT series FROM documents WHERE fy = ?1 AND series IN (${marks}) AND number IS NOT NULL`,
+    )
+    .bind(fy, ...names)
+    .all<{ series: string }>();
+  return new Set(results.map((r) => r.series));
+};
+
 type BankRow = {
   id: string;
   kind: string;
@@ -241,12 +260,15 @@ async function groupMeta(c: Ctx, group: Generic | "gateways", value: unknown) {
       return { pan: panOf((value as Settings["company"]).gstin), logos: BRAND_LOGOS };
     case "numbering": {
       const fy = fyOf(Date.now()).token;
-      const rows = await counters(c.env.DB, fy);
+      const [rows, issued] = await Promise.all([counters(c.env.DB, fy), issuedSeries(c.env.DB, fy)]);
       return {
         fy,
         series: Object.keys(SERIES).map((s) => {
           const nextNo = rows.find((r) => r.series === s)?.next_no ?? 1;
-          return { series: s, nextNo, used: nextNo > 1 };
+          // `used` = a document of this series was issued this FY; `locked` is the same fact for the screen (format and next
+          // number read-only, with `lockReason`). A start number set before the first issue does not lock anything.
+          const locked = issued.has(s);
+          return { series: s, nextNo, used: locked, locked, lockReason: locked ? SERIES_LOCK_REASON : null };
         }),
       };
     }
@@ -554,15 +576,18 @@ async function saveNumbering(c: Ctx, raw: unknown) {
   if (!env.success) return invalid(c, env.error.issues);
   const { version, value, nextNumbers = {} } = env.data;
   const fy = fyOf(Date.now()).token;
-  const have = await counters(c.env.DB, fy);
+  const [have, issued] = await Promise.all([counters(c.env.DB, fy), issuedSeries(c.env.DB, fy)]);
   const nextOf = (s: string) => have.find((r) => r.series === s)?.next_no ?? 1;
   const asked = Object.entries(nextNumbers) as [Series, number][];
   return save(c, "numbering", value, version, {
     rule: (before, after) => {
-      // A series that has issued a number this financial year keeps its format (the numbers already printed follow it).
-      const locked = (Object.keys(after) as Series[]).filter(
-        (s) => nextOf(s) > 1 && JSON.stringify(after[s]) !== JSON.stringify(before[s]),
+      // A series with an issued document this financial year is locked: its format AND its next number (any change, up or
+      // down; a raised number leaves a gap in the series). Before the first issue both stay editable.
+      const formatChanged = (Object.keys(after) as Series[]).filter(
+        (s) => JSON.stringify(after[s]) !== JSON.stringify(before[s]),
       );
+      const numberChanged = asked.filter(([s, n]) => n !== nextOf(s)).map(([s]) => s);
+      const locked = [...new Set([...formatChanged, ...numberChanged])].filter((s) => issued.has(s));
       if (locked.length) return c.json({ error: SERIES_IN_USE, series: locked, request_id: c.var.rid }, 409);
       // The next number only goes up (the doc_counters trigger refuses a lower one too; this answers first, with a reason).
       const lower = asked.filter(([s, n]) => !canSetNextNumber(nextOf(s), n)).map(([s]) => s);
@@ -590,7 +615,7 @@ async function saveNumbering(c: Ctx, raw: unknown) {
             side: (g) =>
               asked.map(([s, n]) =>
                 c.env.DB.prepare(
-                  `INSERT INTO doc_counters (series, fy, next_no) SELECT ?1, ?2, ?3 WHERE ${g.sql(4)} ON CONFLICT(series, fy) DO UPDATE SET next_no = excluded.next_no WHERE excluded.next_no >= doc_counters.next_no`,
+                  `INSERT INTO doc_counters (series, fy, next_no) SELECT ?1, ?2, ?3 WHERE ${g.sql(4)} AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.series = ?1 AND d.fy = ?2 AND d.number IS NOT NULL) ON CONFLICT(series, fy) DO UPDATE SET next_no = excluded.next_no WHERE excluded.next_no >= doc_counters.next_no`,
                 ).bind(s, fy, n, ...g.params),
               ),
           },
