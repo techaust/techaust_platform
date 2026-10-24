@@ -34,7 +34,10 @@ describe("labels", () => {
     const c = countryOptions();
     expect(c[0]).toEqual({ value: "IN", label: "India" });
     expect(c.some((x) => x.value === "ZZ")).toBe(false);
-    expect(c.length).toBeGreaterThan(200);
+    expect(c).toHaveLength(249);
+    expect(new Set(c.map((x) => x.value)).size).toBe(249);
+    for (const bad of ["UN", "EU", "EZ", "UK", "XA", "QO"])
+      expect(c.some((x) => x.value === bad)).toBe(false);
   });
 });
 

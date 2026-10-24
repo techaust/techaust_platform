@@ -52,6 +52,9 @@ import {
 import { sampleData, TEMPLATE_NAMES } from "./email-fixtures.ts";
 import { queueEmail } from "./mail.ts";
 
+/** The notice before a lead is deleted: a re-dated lead is never due sooner than this (VERIFY WITH CA/LEGAL). */
+const LEAD_NOTICE_MS = 14 * 86_400_000;
+
 const STALE: ApiError = {
   code: "stale_version",
   message: "Someone saved these settings since you opened them. Reload to see the latest, then try again",
@@ -391,7 +394,8 @@ export const settings = new Hono<AppEnv>()
     if (!env.success) return invalid(c, env.error.issues);
     // The leads retention (ADM-SET-09): a new figure re-dates the deletion date of every lead the clean-up may delete, in the same
     // batch (after the settings write, so the shared SQL expression reads the new months). Converted leads and leads under legal
-    // hold are left alone. VERIFY WITH CA/LEGAL.
+    // hold are left alone. A lowered figure never puts a date earlier than 14 days from now, so the notice period is kept
+    // (the clean-up never deletes a lead the same day the owner lowers the months). VERIFY WITH CA/LEGAL.
     if (group === "retention")
       return save(c, "retention", env.data.value, env.data.version, {
         extraFor: (before, after) =>
@@ -401,7 +405,7 @@ export const settings = new Hono<AppEnv>()
                 summary: { leadsRedated: true },
                 side: (g) => [
                   c.env.DB.prepare(
-                    `UPDATE leads SET delete_after = ${deleteAfterSql("coalesce(last_activity_at, created_at)")} WHERE ${LEAD_DELETABLE_SQL} AND ${g.sql(1)}`,
+                    `UPDATE leads SET delete_after = max(${deleteAfterSql("coalesce(last_activity_at, created_at)")}, ${Date.now() + LEAD_NOTICE_MS}) WHERE ${LEAD_DELETABLE_SQL} AND ${g.sql(1)}`,
                   ).bind(...g.params),
                 ],
               },

@@ -120,6 +120,13 @@
       "when": 1792864057882,
       "tag": "0016_leads_duplicate_proposal_retention",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1792871732755,
+      "tag": "0017_drop_unused_lead_indexes",
+      "breakpoints": true
     }
   ]
 }

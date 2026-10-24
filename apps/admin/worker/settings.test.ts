@@ -1061,4 +1061,28 @@ describe("the leads retention re-dates the leads the clean-up may delete [ADM-SE
     });
     expect(await json(same)).toMatchObject({ changed: false });
   });
+
+  it("lowering the months never puts a date inside the 14-day notice", async () => {
+    await clear("retention");
+    const old = Date.UTC(2020, 0, 5);
+    await env.DB.prepare(
+      "INSERT INTO leads (id, ref, source, contact_name, contact_email, last_activity_at, delete_after) VALUES ('ret-old-1', 'L-RETOLD', 'web', 'Pat', 'old@example.com', ?1, 1)",
+    )
+      .bind(old)
+      .run();
+    const o = await owner();
+    await put(GROUP("retention"), o.cookie, {
+      version: 0,
+      value: { ...SETTINGS_DEFAULTS.retention, leadsMonths: 24 },
+    });
+    const before = Date.now();
+    const res = await put(GROUP("retention"), o.cookie, {
+      version: 1,
+      value: { ...SETTINGS_DEFAULTS.retention, leadsMonths: 12 },
+    });
+    expect(res.status).toBe(200);
+    const at = (await deleteAfterOf("ret-old-1")) as number;
+    expect(at).toBeGreaterThanOrEqual(before + 14 * 86_400_000);
+    expect(at).toBeLessThan(Date.now() + 14 * 86_400_000 + 5_000);
+  });
 });

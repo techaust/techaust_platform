@@ -85,11 +85,9 @@ export const leads = sqliteTable(
   },
   (t) => [
     uniqueIndex("leads_ref").on(t.ref),
-    index("leads_stage").on(t.stage),
     index("leads_owner_next_action").on(t.ownerId, t.nextActionAt),
     index("leads_email").on(t.contactEmail),
     index("leads_client").on(t.clientId),
-    index("leads_delete_after").on(t.deleteAfter),
     // M3.2: the list's sorts (created, last activity, next action), the duplicate link and the draft proposal lookups.
     index("leads_created").on(t.createdAt, t.id),
     index("leads_last_activity").on(t.lastActivityAt, t.id),

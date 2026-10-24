@@ -2,7 +2,8 @@
 // It returns statements for the caller's own `db.batch()`, so the stage move commits with the proposal change. The rule is in
 // SQL (`stage IN (...)`), so a person's later manual stage (won, lost) is never overwritten, even with a stale read.
 // Subpath export (`@techaust/db/lead-stage`) so a Worker importing it doesn't pull in the Drizzle schema.
-import { PROPOSAL_EVENT_RULES, type ProposalEvent, touchLeadSql, uuidv7 } from "@techaust/core";
+import { uuidv7 } from "@techaust/core/ids";
+import { PROPOSAL_EVENT_RULES, type ProposalEvent, touchLeadSql } from "@techaust/core/lead-lifecycle";
 
 /**
  * The statements for the lead linked to a proposal (`leads.proposal_id = documentId`): move the stage forward if the rule

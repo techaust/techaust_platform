@@ -105,6 +105,17 @@ describe("enqueueDue: the cron only enqueues [JOB-CRON-01]", () => {
     expect(await count("leads")).toBe(5); // nothing deleted by the enqueue
   });
 
+  it("a dry run logs one count per page and enqueues no per-lead messages", async () => {
+    await addLead();
+    await addLead();
+    const r = await enqueueDue(makeEnv("dry_run"), NOW);
+    expect(r).toEqual({ queued: 0, more: false });
+    expect(sent).toEqual([]);
+    expect(logs.some((l) => l.includes('"ev":"lead.purge_dry_run_page"') && l.includes('"due":2'))).toBe(
+      true,
+    );
+  });
+
   it("carries a cursor in a scan message when more than one page is due", async () => {
     for (let i = 0; i < LEAD_PURGE_PAGE + 3; i++) await addLead({ deleteAfter: NOW - 1000 + i });
     const first = await enqueueDue(makeEnv(), NOW);
