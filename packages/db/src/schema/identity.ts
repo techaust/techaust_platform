@@ -28,6 +28,11 @@ export const staffUsers = sqliteTable(
   },
   (t) => [
     uniqueIndex("staff_users_email").on(t.email),
+    // Keyset sort and the role / status filters of GET /users (M3.1): indexes only, no column change.
+    index("staff_users_created").on(t.createdAt, t.id),
+    index("staff_users_name").on(t.name, t.id),
+    index("staff_users_role").on(t.role),
+    index("staff_users_status").on(t.status),
     check("staff_users_email_lower", sql`${t.email} = lower(${t.email})`),
     check("staff_users_role", oneOf(t.role, ROLES)),
     check("staff_users_status", oneOf(t.status, STAFF_STATUSES)),
@@ -155,5 +160,30 @@ export const docAccessTokens = sqliteTable(
   (t) => [
     index("doc_access_tokens_document").on(t.documentId),
     check("doc_access_tokens_purpose", oneOf(t.purpose, DOC_TOKEN_PURPOSES)),
+  ],
+);
+
+/**
+ * The bell (ADM-G-09, M3.1): one row per member per event, own rows only. `(user_id, kind, entity_id)` is unique, so a
+ * redelivered queue message adds nothing twice. `title` is the approved wording (07-H); `link` is the admin path of the record.
+ */
+export const notifications = sqliteTable(
+  "notifications",
+  {
+    id: id(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => staffUsers.id),
+    kind: text("kind").notNull(),
+    entityType: text("entity_type").notNull(),
+    entityId: text("entity_id").notNull(),
+    title: text("title").notNull(),
+    link: text("link").notNull(),
+    readAt: integer("read_at"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("notifications_user_event").on(t.userId, t.kind, t.entityId),
+    index("notifications_user_created").on(t.userId, t.createdAt, t.id),
   ],
 );

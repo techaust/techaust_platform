@@ -1,0 +1,1 @@
+CREATE INDEX `documents_terms_version` ON `documents` (`terms_version_id`);

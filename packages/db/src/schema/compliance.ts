@@ -29,6 +29,8 @@ export const auditLog = sqliteTable(
     index("audit_log_entity").on(t.entityType, t.entityId, t.at),
     index("audit_log_at").on(t.at),
     index("audit_log_actor").on(t.actorId, t.at),
+    // The audit viewer's action filter and the accountant's finance-only list (M3.1, ADM-AUD-02).
+    index("audit_log_action").on(t.action, t.at),
     check("audit_log_actor_type", oneOf(t.actorType, ACTOR_TYPES)),
     check("audit_log_role", sql`${t.role} is null or ${oneOf(t.role, ROLES)}`),
   ],

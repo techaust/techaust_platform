@@ -7,6 +7,8 @@ import {
   issueGuardStatements,
   MUTABLE_AFTER_FREEZE,
   SET_ONCE_AFTER_FREEZE,
+  TRIGGER_SETS,
+  triggerMigrationSql,
 } from "../src/triggers.ts";
 import { all, first, insertClient, insertDraftInvoice, issueBatch, rejects, run } from "./helpers.ts";
 
@@ -491,4 +493,32 @@ describe("portal-auth triggers (0006; POR-01, POR-02)", () => {
     await session("s3");
     await run("DELETE FROM client_sessions WHERE id = 's3'");
   });
+});
+
+describe("installed trigger migrations equal what src/triggers.ts generates", () => {
+  // Strip the leading "-- Hand-written" comment and collapse whitespace, so the comparison is about the SQL.
+  const norm = (sql: string) =>
+    sql
+      .replace(/^--[^\n]*\n/gm, "")
+      .replaceAll("--> statement-breakpoint", "")
+      .replaceAll(";", "")
+      .replace(/\s+/g, " ")
+      .trim();
+  for (const set of Object.keys(TRIGGER_SETS) as (keyof typeof TRIGGER_SETS)[]) {
+    it(`${set}`, () => {
+      const file = env.TEST_MIGRATIONS.find((m) => m.name.slice(5).replace(".sql", "") === set);
+      expect(file, `a migration NNNN_${set}.sql exists`).toBeDefined();
+      const installed = norm((file?.queries ?? []).join(" "));
+      const wanted = norm(triggerMigrationSql(set).replaceAll("\n--> statement-breakpoint\n", " "));
+      // 0001 also holds the first issue guard (a view and a trigger), which migration 0007 replaces; the generator no
+      // longer writes them, so for that one set the generated part is the start of the installed file.
+      const same = set === "triggers" ? installed.startsWith(wanted) : installed === wanted;
+      let at = 0;
+      while (at < wanted.length && installed[at] === wanted[at]) at++;
+      expect(
+        same,
+        `first difference at ${at}: installed [${installed.slice(at, at + 80)}] vs wanted [${wanted.slice(at, at + 80)}]`,
+      ).toBe(true);
+    });
+  }
 });
