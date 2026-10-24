@@ -727,8 +727,9 @@ a.lead-card__name:hover {
     width: 1.25rem;
   }
 
-  table.diff__table.act__diff th,
-  table.diff__table.act__diff td {
+  /* Not the first column (its start inset stays 0) and not the arrow cell (no padding): either load order (re-check 3). */
+  table.diff__table.act__diff th:not(:first-child),
+  table.diff__table.act__diff td:not(.diff__arrow) {
     padding-inline: var(--space-1);
   }
 }

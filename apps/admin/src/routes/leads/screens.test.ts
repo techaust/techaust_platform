@@ -10,6 +10,7 @@ import {
   drafts,
   type Follow,
   followPatch,
+  hasConflict,
   NO_DRAFTS,
 } from "./drafts.ts";
 import { MoveMenu } from "./parts.tsx";
@@ -78,7 +79,7 @@ describe("drafts on a lead's page (review finding 4)", () => {
     s = loaded(s, contact, follow);
     expect(s.note).toBe("Asked about the timeline");
     expect(s.contact?.value.phone).toBe("+91 00000 00000");
-    expect(s.conflict).toBe(false);
+    expect(hasConflict(s)).toBe(false);
   });
 
   it("a pipeline save clears only the pipeline draft", () => {
@@ -91,7 +92,7 @@ describe("drafts on a lead's page (review finding 4)", () => {
       note: "Draft",
       contact: { base: contact, value: contact },
       follow: null,
-      conflict: false,
+      conflict: { contact: false, follow: false },
     });
   });
 
@@ -117,7 +118,7 @@ describe("drafts on a lead's page (review finding 4)", () => {
     const v2: Contact = { ...contact, name: "Sample Lead A (renamed)" };
     const f2: Follow = { ...follow, date: "2026-11-09" };
     s = loaded(s, v2, f2);
-    expect(s.conflict).toBe(false);
+    expect(hasConflict(s)).toBe(false);
     expect(s.contact?.value).toEqual({ ...v2, phone: "+91 00000 00000" });
     expect(s.follow?.value).toEqual({ ...f2, ownerId: "member-1" });
     expect(s.contact && contactPatch(s.contact)).toEqual({ phone: "+91 00000 00000" });
@@ -132,7 +133,7 @@ describe("drafts on a lead's page (review finding 4)", () => {
     expect(s.contact?.value.phone).toBe("+91 99999 99999");
     expect(s.contact && contactPatch(s.contact)).toEqual({});
     expect(s.follow?.value.note).toBe("Send the proposal");
-    expect(s.conflict).toBe(true);
+    expect(hasConflict(s)).toBe(true);
     expect(s.note).toBe("Asked about the timeline");
   });
 
@@ -143,7 +144,7 @@ describe("drafts on a lead's page (review finding 4)", () => {
       base: contact,
     });
     s = loaded(s, { ...contact, phone: "+91 99999 99999" }, follow);
-    expect(s.conflict).toBe(true);
+    expect(hasConflict(s)).toBe(true);
     expect(s.contact && contactPatch(s.contact)).toEqual({ company: "New Co" });
   });
 
@@ -154,9 +155,23 @@ describe("drafts on a lead's page (review finding 4)", () => {
       base: contact,
     });
     s = loaded(s, { ...contact, phone: "+91 99999 99999" }, follow);
-    expect(s.conflict).toBe(true);
+    expect(hasConflict(s)).toBe(true);
     s = drafts(s, { type: "contact", value: null, base: contact });
-    expect(s.conflict).toBe(false);
+    expect(hasConflict(s)).toBe(false);
+  });
+
+  it("closing the other form keeps the notice for the form that clashed", () => {
+    let s = drafts(NO_DRAFTS, {
+      type: "contact",
+      value: { ...contact, phone: "+91 00000 00000" },
+      base: contact,
+    });
+    s = drafts(s, { type: "follow", value: { ...follow, note: "Send the proposal" }, base: follow });
+    s = loaded(s, { ...contact, phone: "+91 99999 99999" }, follow);
+    s = drafts(s, { type: "follow", value: null, base: follow });
+    expect(hasConflict(s)).toBe(true);
+    s = drafts(s, { type: "contact", value: null, base: contact });
+    expect(hasConflict(s)).toBe(false);
   });
 
   it("the same change made by both is no conflict", () => {
@@ -166,7 +181,7 @@ describe("drafts on a lead's page (review finding 4)", () => {
       base: contact,
     });
     s = loaded(s, { ...contact, company: "Example Co" }, follow);
-    expect(s.conflict).toBe(false);
+    expect(hasConflict(s)).toBe(false);
     expect(s.contact && contactPatch(s.contact)).toEqual({});
   });
 

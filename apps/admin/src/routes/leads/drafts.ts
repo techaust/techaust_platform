@@ -26,8 +26,11 @@ export type Drafts = {
   follow: Draft<Follow> | null;
   /** A reload found someone else's change in a field a draft held; that field's edit was dropped. Cleared by the
    *  person's own next save or cancel of that form, or by "Reload the latest". */
-  conflict: boolean;
+  conflict: { contact: boolean; follow: boolean };
 };
+
+/** True while either form's notice should show. */
+export const hasConflict = (d: Drafts): boolean => d.conflict.contact || d.conflict.follow;
 
 export type DraftAction =
   | { type: "note"; text: string }
@@ -39,7 +42,12 @@ export type DraftAction =
   /** "Reload the latest" after a 409 or a conflict: start again from what is stored, keeping only the note. */
   | { type: "reloaded-latest" };
 
-export const NO_DRAFTS: Drafts = { note: "", contact: null, follow: null, conflict: false };
+export const NO_DRAFTS: Drafts = {
+  note: "",
+  contact: null,
+  follow: null,
+  conflict: { contact: false, follow: false },
+};
 
 function start<T>(current: Draft<T> | null, value: T | null, base: T): Draft<T> | null {
   return value === null ? null : { base: current?.base ?? base, value };
@@ -94,18 +102,18 @@ export function drafts(state: Drafts, a: DraftAction): Drafts {
   switch (a.type) {
     case "note":
       return { ...state, note: a.text };
-    // Closing a form (its save went through, or the person cancelled it) also clears a conflict notice.
+    // Closing a form (its save went through, or the person cancelled it) clears that form's conflict only (re-check 3).
     case "contact":
       return {
         ...state,
         contact: start(state.contact, a.value, a.base),
-        conflict: a.value === null ? false : state.conflict,
+        conflict: a.value === null ? { ...state.conflict, contact: false } : state.conflict,
       };
     case "follow":
       return {
         ...state,
         follow: start(state.follow, a.value, a.base),
-        conflict: a.value === null ? false : state.conflict,
+        conflict: a.value === null ? { ...state.conflict, follow: false } : state.conflict,
       };
     case "loaded": {
       const contact = rebase(state.contact, a.contact);
@@ -114,7 +122,10 @@ export function drafts(state: Drafts, a: DraftAction): Drafts {
         note: state.note,
         contact: contact.draft,
         follow: follow.draft,
-        conflict: state.conflict || contact.conflict || follow.conflict,
+        conflict: {
+          contact: state.conflict.contact || contact.conflict,
+          follow: state.conflict.follow || follow.conflict,
+        },
       };
     }
     case "reloaded-latest":

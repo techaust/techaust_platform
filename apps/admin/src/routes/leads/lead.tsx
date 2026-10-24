@@ -66,6 +66,7 @@ import {
   drafts as draftsReducer,
   type Follow,
   followPatch,
+  hasConflict,
   NO_DRAFTS,
 } from "./drafts.ts";
 import { CRUMBS, LeadsGate, LostDialog, MoveMenu, StagePill } from "./parts.tsx";
@@ -151,7 +152,7 @@ function LeadView({
   const canWrite = allowed(user.role, "leads.write");
   const canConvert = allowed(user.role, "clients.write") && allowed(user.role, "proposals.draft");
   const [saveStale, setStale] = useState(false);
-  const stale = saveStale || drafts.conflict;
+  const stale = saveStale || hasConflict(drafts);
   const follow = drafts.follow?.value ?? followOf(lead);
   const followBase = drafts.follow?.base ?? followOf(lead);
   const setFollow = (value: Follow | null) => draft({ type: "follow", value, base: followOf(lead) });
