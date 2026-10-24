@@ -1,0 +1,28 @@
+# Headers on every static response of the admin SPA (M3.1; docs/08-security-compliance.md section 3.1). /api/* answers come
+# from the Worker, which sets its own (secureHeaders in worker/index.ts).
+# The Content-Security-Policy has no 'unsafe-inline' and no 'unsafe-eval':
+#  - script-src: our own files; 'wasm-unsafe-eval' lets the browser compile the Argon2id module (hash-wasm) in the sign-in
+#    Web Worker, which is WebAssembly only and does not allow JavaScript eval; challenges.cloudflare.com is the Turnstile widget.
+#  - frame-src: the Turnstile widget's frame.
+#  - connect-src: our API and the Have I Been Pwned range check made while a password is chosen (k-anonymity: only the first
+#    five characters of a hash leave the browser).
+#  - zod would probe `new Function` once; src/lib/zod-jitless.ts turns that probe off, so no CSP violation is reported.
+# X-Robots-Tag keeps staging out of search; the admin is never meant to be indexed, so it stays in production too.
+/*
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
+  Cross-Origin-Opener-Policy: same-origin
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://challenges.cloudflare.com; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://api.pwnedpasswords.com; frame-src https://challenges.cloudflare.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'
+  X-Robots-Tag: noindex, nofollow
+
+# The page itself is always re-checked, so a new deploy shows at once.
+/
+  Cache-Control: no-cache
+/index.html
+  Cache-Control: no-cache
+
+# Vite writes content-hashed file names under /assets/, so these never change under the same name and can be cached for a year.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable

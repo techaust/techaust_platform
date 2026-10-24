@@ -1,3 +1,4 @@
+import "./lib/zod-jitless.ts"; // first: it must run before any module builds a zod schema (CSP: no 'unsafe-eval')
 import "@techaust/ui/fonts.css";
 import "@techaust/ui/tokens.css";
 import "./app.css";

@@ -7,6 +7,7 @@ import { decide } from "@techaust/core/permissions";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { type AppEnv, actor, BAD_REQUEST, type Ctx, err } from "./context.ts";
+import { PREFIX_END } from "./keyset.ts";
 
 const query = z.object({ q: z.string().check(z.maxLength(100)) });
 const PER_TYPE = 5;
@@ -14,6 +15,10 @@ const MIN_CHARS = 2;
 
 type Item = { id: string; title: string; subtitle: string; link: string };
 type Group = { type: "user" | "lead"; label: string; items: Item[] };
+
+/** The two reads, exported so a test can EXPLAIN them: leads by the start of the reference or the email (index ranges), staff by email range or name. */
+export const LEADS_SQL = `SELECT id, ref, contact_name, contact_email FROM leads WHERE (ref >= ?1 AND ref < ?2) OR (contact_email >= ?3 AND contact_email < ?4) ORDER BY ref LIMIT ${PER_TYPE}`;
+export const USERS_SQL = `SELECT id, name, email, role FROM staff_users WHERE (email >= ?1 AND email < ?2) OR name LIKE ?3 ESCAPE '\\' ORDER BY name LIMIT ${PER_TYPE}`;
 
 const escapeLike = (s: string) => s.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
 
@@ -30,23 +35,11 @@ export const search = new Hono<AppEnv>().get(
     const kinds: Group["type"][] = [];
     if (decide(role, "leads.read") !== "deny") {
       const ref = q.toUpperCase();
-      stmts.push(
-        db
-          .prepare(
-            `SELECT id, ref, contact_name, contact_email FROM leads WHERE (ref >= ?1 AND ref < ?2) OR (contact_email >= ?3 AND contact_email < ?4) ORDER BY ref LIMIT ${PER_TYPE}`,
-          )
-          .bind(ref, `${ref}￿`, lower, `${lower}￿`),
-      );
+      stmts.push(db.prepare(LEADS_SQL).bind(ref, `${ref}${PREFIX_END}`, lower, `${lower}${PREFIX_END}`));
       kinds.push("lead");
     }
     if (decide(role, "users.read") !== "deny") {
-      stmts.push(
-        db
-          .prepare(
-            `SELECT id, name, email, role FROM staff_users WHERE (email >= ?1 AND email < ?2) OR name LIKE ?3 ESCAPE '\\' ORDER BY name LIMIT ${PER_TYPE}`,
-          )
-          .bind(lower, `${lower}￿`, `${escapeLike(q)}%`),
-      );
+      stmts.push(db.prepare(USERS_SQL).bind(lower, `${lower}${PREFIX_END}`, `${escapeLike(q)}%`));
       kinds.push("user");
     }
     const results = stmts.length ? await db.batch<Record<string, string>>(stmts) : [];

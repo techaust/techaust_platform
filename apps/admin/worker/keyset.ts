@@ -1,6 +1,9 @@
 // Keyset paging for the admin lists (ADM-G-03): 25 or 50 rows, an opaque cursor made of the sort value and the row id, a
 // look-ahead row to know whether another page exists. No OFFSET, no COUNT. Used by the users, audit and notification lists.
 
+/** Appended to a prefix to make the upper bound of an index range: `col >= prefix AND col < prefix + PREFIX_END`. */
+export const PREFIX_END = String.fromCharCode(0xffff);
+
 export type Cursor = { k: string | number; id: string };
 
 const toB64 = (bytes: Uint8Array) => {

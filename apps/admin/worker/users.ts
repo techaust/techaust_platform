@@ -20,7 +20,7 @@ import {
   NOT_FOUND,
   type SideGuard,
 } from "./context.ts";
-import { type Direction, decodeCursor, keysetSql, pageOf } from "./keyset.ts";
+import { type Direction, decodeCursor, keysetSql, PREFIX_END, pageOf } from "./keyset.ts";
 import { queueEmail } from "./mail.ts";
 
 const USER_EXISTS: ApiError = {
@@ -110,7 +110,7 @@ export const users = new Hono<AppEnv>()
         const like = `${q.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
         const n = bind.length;
         where.push(`((email >= ?${n + 1} AND email < ?${n + 2}) OR name LIKE ?${n + 3} ESCAPE '\\')`);
-        bind.push(q, `${q}￿`, like);
+        bind.push(q, `${q}${PREFIX_END}`, like);
       }
       const order = keysetSql(col, "id", asc, dir, bind.length + 1);
       if (cur) {
