@@ -40,13 +40,15 @@ describe("07-I reply templates", () => {
   it("registers exactly the three approved templates, word for word", () => {
     expect(rows).toHaveLength(3);
     // Words and punctuation are the document's; the line breaks (greeting, message, sign-off on their own lines) are the only difference.
-    const oneLine = (x: string) => x.replace(/\s*\n+\s*/g, " ");
+    // The owner's layout (2026-10-25) also starts the message (the first paragraph after the greeting) with a capital letter.
+    const oneLine = (x: string) =>
+      x.replace(/\n\n(\p{L})/u, (_, c: string) => ` ${c.toLowerCase()}`).replace(/\s*\n+\s*/g, " ");
     expect(REPLY_TEMPLATES.map((t) => [t.label, t.subject, oneLine(t.body)])).toEqual(rows);
     for (const t of REPLY_TEMPLATES) {
       const parts = t.body.split("\n\n");
       expect(parts, t.id).toHaveLength(3);
       expect(parts[0]).toBe("Hi {{first_name}},");
-      expect(parts[2]).toBe("Regards, {{sender_name}}, TecHaust Technologies");
+      expect(parts[2]).toBe("Regards,\n{{sender_name}}, TecHaust Technologies");
     }
   });
 
@@ -55,8 +57,8 @@ describe("07-I reply templates", () => {
     if (!t) throw new Error("missing template");
     const f = fillReplyTemplate(t, vars);
     expect(f.subject).toBe("Re: your enquiry (L-7K3Q9)");
-    expect(f.body).toContain("Hi Asha,\n\nthanks for getting in touch about Tally invoicing.");
-    expect(f.body).toContain("Regards, Rupak Sarkar, TecHaust Technologies");
+    expect(f.body).toContain("Hi Asha,\n\nThanks for getting in touch about Tally invoicing.");
+    expect(f.body).toContain("Regards,\nRupak Sarkar, TecHaust Technologies");
     expect(f.body).toContain("[your questions]");
     expect(f.body).not.toContain("{{");
   });
@@ -105,7 +107,7 @@ describe("lead.reply email", () => {
     if (!t) throw new Error("missing template");
     const body = fillReplyTemplate(t, { ...vars, first_name: "<i>Asha</i>" }).body;
     const x = renderEmail("lead.reply", { subject: "Re: x", body }, opts);
-    expect(x.text).toContain("Hi <i>Asha</i>,\n\nthanks for telling us");
+    expect(x.text).toContain("Hi <i>Asha</i>,\n\nThanks for telling us");
     expect(x.html).toContain("Hi &lt;i&gt;Asha&lt;/i&gt;,");
     expect(x.html).not.toContain("<i>Asha</i>");
     // the greeting, the message and the sign-off are separate blocks

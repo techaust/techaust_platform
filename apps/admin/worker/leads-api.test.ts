@@ -585,8 +585,8 @@ describe("replies [ADM-LEAD-06]", () => {
     ]);
     const book = res.templates[0];
     expect(book.subject).toBe(`Re: your enquiry (${lead.ref})`);
-    expect(book.body).toContain("Hi Asha,\n\nthanks for telling us about");
-    expect(book.body).toContain("Regards, Rupak Sarkar, TecHaust Technologies");
+    expect(book.body).toContain("Hi Asha,\n\nThanks for telling us about");
+    expect(book.body).toContain("Regards,\nRupak Sarkar, TecHaust Technologies");
     expect(book.body).not.toContain("{{");
     expect(res.templates[1].body).toContain("[your questions]");
     expect((await get("/leads/no-such/reply-templates", s.cookie)).status).toBe(404);

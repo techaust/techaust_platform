@@ -22,19 +22,19 @@ export const REPLY_TEMPLATES: readonly ReplyTemplate[] = [
     id: "book_a_call",
     label: "Book a call",
     subject: "Re: your enquiry ({{ref}})",
-    body: "Hi {{first_name}},\n\nthanks for telling us about {{service_or_request}}. The next step is a short call, about 30 minutes, so we can understand what you need and tell you honestly whether we're a good fit. Could you reply with two or three times that suit you? We're available Mon–Sat, 10:00–19:00 IST.\n\nRegards, {{sender_name}}, TecHaust Technologies",
+    body: "Hi {{first_name}},\n\nThanks for telling us about {{service_or_request}}. The next step is a short call, about 30 minutes, so we can understand what you need and tell you honestly whether we're a good fit. Could you reply with two or three times that suit you? We're available Mon–Sat, 10:00–19:00 IST.\n\nRegards,\n{{sender_name}}, TecHaust Technologies",
   },
   {
     id: "a_few_questions_first",
     label: "A few questions first",
     subject: "Re: your enquiry ({{ref}})",
-    body: "Hi {{first_name}},\n\nthanks for getting in touch about {{service_or_request}}. Before we suggest an approach and a price, it would help to know a little more: [your questions]. A few lines on each is plenty.\n\nRegards, {{sender_name}}, TecHaust Technologies",
+    body: "Hi {{first_name}},\n\nThanks for getting in touch about {{service_or_request}}. Before we suggest an approach and a price, it would help to know a little more: [your questions]. A few lines on each is plenty.\n\nRegards,\n{{sender_name}}, TecHaust Technologies",
   },
   {
     id: "not_the_right_fit",
     label: "Not the right fit",
     subject: "Re: your enquiry ({{ref}})",
-    body: "Hi {{first_name}},\n\nthank you for considering us for {{service_or_request}}. Having looked at what you need, we don't think we're the right team for it, and we'd rather tell you now than take up your time. [Optional: a suggestion of where to look instead.] We wish you the best with it.\n\nRegards, {{sender_name}}, TecHaust Technologies",
+    body: "Hi {{first_name}},\n\nThank you for considering us for {{service_or_request}}. Having looked at what you need, we don't think we're the right team for it, and we'd rather tell you now than take up your time. [Optional: a suggestion of where to look instead.] We wish you the best with it.\n\nRegards,\n{{sender_name}}, TecHaust Technologies",
   },
 ];
 
