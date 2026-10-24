@@ -81,7 +81,7 @@ export function NumberingSettings({ readOnly }: { readOnly: boolean }) {
             header: "Status",
             cell: (s) =>
               state(s).locked ? (
-                <StatusPill tone="info" icon="send">
+                <StatusPill tone="info" icon="lock">
                   Issued this year, fixed
                 </StatusPill>
               ) : (
@@ -152,7 +152,7 @@ function SeriesDialog(props: {
             <Lock size={16} />
             <span>{lockedNote(state)}</span>
           </p>
-          <dl className="key-facts">
+          <dl className="locked-facts">
             <div>
               <dt>Format</dt>
               <dd className="mono">{current.template}</dd>

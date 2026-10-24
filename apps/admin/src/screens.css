@@ -145,6 +145,24 @@ body:has(.savebar) .toasts {
   margin-top: var(--space-1);
 }
 
+/* A locked series in its dialog: each fact as a label over its value, in one column. */
+.locked-facts {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.locked-facts dt {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.locked-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 /* A new start number, confirmed before it is saved (it can't be lowered again this financial year). The number as it
    prints leads; the rule follows in the body size. */
 .start-confirm {

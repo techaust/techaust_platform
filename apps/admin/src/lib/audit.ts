@@ -41,6 +41,7 @@ export const ACTION_LABELS: Record<string, string> = {
   "portal.sessions_revoke_all": "signed out of the client portal everywhere",
   "portal.link_minted": "made a portal sign-in link",
   "doc_token.use": "opened a document link",
+  "audit.export": "exported the audit log",
 };
 
 /** Groups for the action filter (the API filters by one exact action). */
@@ -51,6 +52,7 @@ export const ACTION_GROUPS: { label: string; prefix: string }[] = [
   { label: "Settings", prefix: "settings." },
   { label: "Notifications", prefix: "notification." },
   { label: "Client portal", prefix: "portal." },
+  { label: "Audit log", prefix: "audit." },
 ];
 
 /** Record types the API writes (`entity_type`), for the record filter. */
@@ -65,6 +67,7 @@ export const ENTITY_LABELS: Record<string, string> = {
   contact: "Contacts",
   client_session: "Client portal sessions",
   document: "Documents",
+  audit_log: "Audit log",
 };
 
 export const actionText = (action: string) => ACTION_LABELS[action] ?? action;
@@ -120,6 +123,13 @@ const FIELD_LABELS: Record<string, string> = {
   bccOwner: "Copy to the owner",
   via: "How",
   until: "Until",
+  rows: "Entries",
+  firstPage: "First page",
+  from: "From",
+  to: "To",
+  actor: "Person",
+  entity: "Record",
+  action: "Action",
 };
 
 export function fieldLabel(key: string): string {
@@ -164,6 +174,11 @@ export function factText(key: string, v: unknown): string {
   if (key === "via" && typeof v === "string") return VIA[v] ?? v;
   if (typeof v === "number" && v > 1_000_000_000_000 && /until|at$|At$|expires/i.test(key))
     return formatIstDateTime(v);
+  // An export's filters, e.g. "From: 2026-10-01, To: 2026-10-31" (the dates as typed, IST days); none is "None".
+  if (key === "filters" && typeof v === "object" && v !== null && !Array.isArray(v)) {
+    const set = Object.entries(v).filter(([, x]) => x !== undefined && x !== null && x !== "");
+    return set.length ? set.map(([k, x]) => `${fieldLabel(k)}: ${valueText(x)}`).join(", ") : "None";
+  }
   return valueText(v);
 }
 

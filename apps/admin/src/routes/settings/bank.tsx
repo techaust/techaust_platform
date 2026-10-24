@@ -46,8 +46,8 @@ export function BankDetails({ readOnly }: { readOnly: boolean }) {
   return (
     <>
       <Notice tone="info">
-        The INR and USD accounts printed on invoices. Invoices show them in full; in the admin, account
-        numbers show only their last 4 characters
+        Only the owner enters these, here and nowhere else. They print in full on invoices; in the admin,
+        account numbers show only their last 4 characters
         {readOnly ? "." : ", and the accountant sees them read-only."}
       </Notice>
       {mode === "view" ? (

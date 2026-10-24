@@ -43,7 +43,7 @@ const ABOUT: Record<SettingsGroupKey, { label: string; icon: ReactNode; desc: st
   bank: {
     label: "Bank details",
     icon: <Landmark />,
-    desc: "The INR and USD accounts printed on invoices. Only the owner enters them.",
+    desc: "The INR and USD accounts printed on invoices.",
   },
   tax: { label: "Tax", icon: <Percent />, desc: "GST rate, SAC codes, rounding and exports under LUT." },
   numbering: {

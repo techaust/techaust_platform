@@ -225,6 +225,23 @@ describe("the audit log in words and as CSV [ADM-AUD-02]", () => {
   });
 });
 
+describe("an audit export reads in words [ADM-AUTH-08, ADM-AUD-02]", () => {
+  it("names the action and the record, and lists the filters", () => {
+    expect(actionText("audit.export")).toBe("exported the audit log");
+    const { facts } = readSummary({
+      rows: 9,
+      filters: { from: "2026-10-01", to: "2026-10-31" },
+      firstPage: true,
+    });
+    expect(facts).toEqual([
+      { field: "Entries", value: "9" },
+      { field: "Filters", value: "From: 2026-10-01, To: 2026-10-31" },
+      { field: "First page", value: "On" },
+    ]);
+    expect(factText("filters", {})).toBe("None");
+  });
+});
+
 describe("numbering: a series is locked once it has issued this FY [ADM-SET-04]", () => {
   const open: SeriesState = { series: "INV", nextNo: 1, used: false, locked: false, lockReason: null };
   const locked: SeriesState = {
