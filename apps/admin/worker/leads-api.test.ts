@@ -437,7 +437,12 @@ describe("PATCH /leads/:id [ADM-LEAD-03]", () => {
     const v = lead.updated_at;
     const r = await send(`/leads/${lead.id}`, "PATCH", { expectedUpdatedAt: v, ownerId: acc.id }, s.cookie);
     expect(r.status).toBe(400);
-    const ok = await send(`/leads/${lead.id}`, "PATCH", { expectedUpdatedAt: v, ownerId: sales.id }, s.cookie);
+    const ok = await send(
+      `/leads/${lead.id}`,
+      "PATCH",
+      { expectedUpdatedAt: v, ownerId: sales.id },
+      s.cookie,
+    );
     expect(ok.status).toBe(200);
   });
 
@@ -580,7 +585,7 @@ describe("replies [ADM-LEAD-06]", () => {
     ]);
     const book = res.templates[0];
     expect(book.subject).toBe(`Re: your enquiry (${lead.ref})`);
-    expect(book.body).toContain("Hi Asha, thanks for telling us about");
+    expect(book.body).toContain("Hi Asha,\n\nthanks for telling us about");
     expect(book.body).toContain("Regards, Rupak Sarkar, TecHaust Technologies");
     expect(book.body).not.toContain("{{");
     expect(res.templates[1].body).toContain("[your questions]");

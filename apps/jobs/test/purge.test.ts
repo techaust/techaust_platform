@@ -111,7 +111,9 @@ describe("enqueueDue: the cron only enqueues [JOB-CRON-01]", () => {
     const r = await enqueueDue(makeEnv("dry_run"), NOW);
     expect(r).toEqual({ queued: 0, more: false });
     expect(sent).toEqual([]);
-    expect(logs.some((l) => l.includes('"ev":"lead.purge_dry_run_page"') && l.includes('"due":2'))).toBe(true);
+    expect(logs.some((l) => l.includes('"ev":"lead.purge_dry_run_page"') && l.includes('"due":2'))).toBe(
+      true,
+    );
   });
 
   it("carries a cursor in a scan message when more than one page is due", async () => {

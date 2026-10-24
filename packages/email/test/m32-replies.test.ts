@@ -39,7 +39,15 @@ describe("07-I reply templates", () => {
 
   it("registers exactly the three approved templates, word for word", () => {
     expect(rows).toHaveLength(3);
-    expect(REPLY_TEMPLATES.map((t) => [t.label, t.subject, t.body])).toEqual(rows);
+    // Words and punctuation are the document's; the line breaks (greeting, message, sign-off on their own lines) are the only difference.
+    const oneLine = (x: string) => x.replace(/\s*\n+\s*/g, " ");
+    expect(REPLY_TEMPLATES.map((t) => [t.label, t.subject, oneLine(t.body)])).toEqual(rows);
+    for (const t of REPLY_TEMPLATES) {
+      const parts = t.body.split("\n\n");
+      expect(parts, t.id).toHaveLength(3);
+      expect(parts[0]).toBe("Hi {{first_name}},");
+      expect(parts[2]).toBe("Regards, {{sender_name}}, TecHaust Technologies");
+    }
   });
 
   it("fills first_name, service_or_request, sender_name and ref, and leaves the gaps", () => {
@@ -47,7 +55,7 @@ describe("07-I reply templates", () => {
     if (!t) throw new Error("missing template");
     const f = fillReplyTemplate(t, vars);
     expect(f.subject).toBe("Re: your enquiry (L-7K3Q9)");
-    expect(f.body).toContain("Hi Asha, thanks for getting in touch about Tally invoicing.");
+    expect(f.body).toContain("Hi Asha,\n\nthanks for getting in touch about Tally invoicing.");
     expect(f.body).toContain("Regards, Rupak Sarkar, TecHaust Technologies");
     expect(f.body).toContain("[your questions]");
     expect(f.body).not.toContain("{{");
@@ -66,8 +74,7 @@ describe("07-I reply templates", () => {
     expect(hasUnfilledGap("[Optional: a suggestion of where to look instead.]")).toBe(true);
     // every bracket the templates contain is a listed gap
     for (const t of REPLY_TEMPLATES)
-      for (const m of `${t.subject} ${t.body}`.match(/\[[^\]]*\]/g) ?? [])
-        expect(REPLY_GAPS, m).toContain(m);
+      for (const m of `${t.subject} ${t.body}`.match(/\[[^\]]*\]/g) ?? []) expect(REPLY_GAPS, m).toContain(m);
   });
 });
 
@@ -91,6 +98,19 @@ describe("lead.reply email", () => {
     expect(r.html).toContain("&lt;b&gt;Asha&lt;/b&gt;");
     expect(r.text).toContain("TecHaust Technologies · Balurghat, West Bengal, India · contact@techaust.com");
     expect(`${r.text}${r.html}`).not.toMatch(/unsubscribe|Why you're receiving this/i);
+  });
+
+  it("lays a filled template out as three paragraphs in the HTML, escaped, and keeps the line breaks in the text", () => {
+    const t = replyTemplateById("book_a_call");
+    if (!t) throw new Error("missing template");
+    const body = fillReplyTemplate(t, { ...vars, first_name: "<i>Asha</i>" }).body;
+    const x = renderEmail("lead.reply", { subject: "Re: x", body }, opts);
+    expect(x.text).toContain("Hi <i>Asha</i>,\n\nthanks for telling us");
+    expect(x.html).toContain("Hi &lt;i&gt;Asha&lt;/i&gt;,");
+    expect(x.html).not.toContain("<i>Asha</i>");
+    // the greeting, the message and the sign-off are separate blocks
+    expect(x.html).not.toMatch(/Asha&lt;\/i&gt;,\s*thanks/);
+    expect(x.html).not.toMatch(/IST\.\s*Regards/);
   });
 
   it("cannot be used to inject a header", () => {
