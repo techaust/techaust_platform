@@ -2,6 +2,7 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-10-25 [#76](https://github.com/techaust/techaust_platform/pull/76) feat(leads): M3.2 leads list, board, lead page, convert, replies and retention clean-up [ADM-LEAD-01..06]
 - 2026-10-24 [#75](https://github.com/techaust/techaust_platform/pull/75) docs: M3.1 approved on staging; status for M3.2
 - 2026-10-24 [#74](https://github.com/techaust/techaust_platform/pull/74) feat(admin): M3.1 admin shell, users and settings [ADM-G-01, ADM-G-02, ADM-SET-01..10, ADM-AUD-02, ADM-AUTH-07]
 - 2026-10-24 [#73](https://github.com/techaust/techaust_platform/pull/73) docs: decisions and CPU tuning 4 staging reading (2026-10-24 midday)
