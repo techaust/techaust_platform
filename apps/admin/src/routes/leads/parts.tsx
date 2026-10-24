@@ -79,8 +79,11 @@ export function LeadName({ lead, link = true }: { lead: LeadItem; link?: boolean
   );
 }
 
-/** What a screen reader hears after "Move to…": the lead, so every card's button has its own name (review finding 2). */
-export const moveHiddenText = (name: string) => ` (${name})`;
+/**
+ * What a screen reader hears after "Move to…": the lead's name and ref, so every card's button has its own name, even
+ * for two leads with the same name (review finding 2, re-check R4).
+ */
+export const moveHiddenText = (lead: { name: string; ref: string }) => ` (${lead.name}, ${lead.ref})`;
 
 /** The keyboard and screen-reader way to move a lead (docs/06 Kanban): every other stage, in pipeline order. */
 export function MoveMenu(props: { lead: LeadItem; onMove: (to: LeadStage) => void; compact?: boolean }) {
@@ -88,7 +91,7 @@ export function MoveMenu(props: { lead: LeadItem; onMove: (to: LeadStage) => voi
     <MenuButton
       label={`Move ${props.lead.name} to`}
       text="Move to…"
-      hiddenText={moveHiddenText(props.lead.name)}
+      hiddenText={moveHiddenText(props.lead)}
       buttonClass={props.compact ? "btn btn--text move-btn" : "btn btn--secondary move-btn"}
       floating={props.compact}
       icon={<ChevronDown size={16} />}
