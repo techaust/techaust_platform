@@ -1,7 +1,7 @@
 # CPU tuning 4: the 2FA-change send and portal `/magic`
 
 ```
-Status: reviewed (APPROVE), lead fixes in; PR next, then the owner's staging reading
+Status: re-check APPROVE; PR #72 (auto-merge), then the owner's staging reading
 Tier: B (Workers, queues; docs/14 §2)
 Usage: builder claude-sonnet-5-5 / medium (workers-profiling, workers-best-practices, wrangler), 11 min, 133k tokens ·
   reviewer claude-opus-5-5 / high (code-review, security-review, workers-best-practices, workers-profiling), 8 min, 96k tokens:

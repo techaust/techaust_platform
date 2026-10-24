@@ -2,6 +2,7 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-10-24 [#72](https://github.com/techaust/techaust_platform/pull/72) perf(jobs,portal): prime the SES key on staff alerts, warm every 2FA-change body and token encoding [ADM-AUTH-09, ADM-MAIL-01, POR-01]
 - 2026-10-23 [#69](https://github.com/techaust/techaust_platform/pull/69) perf(portal,jobs): warm the sign-in path at start-up; isolate markers on queue logs [POR-01, ADM-MAIL-01]
 - 2026-10-23 [#68](https://github.com/techaust/techaust_platform/pull/68) docs: first cost report (docs/14 §8)
 - 2026-10-23 [#67](https://github.com/techaust/techaust_platform/pull/67) docs: M2.5 NVDA check guide for the owner [WEB-G-13]
