@@ -91,6 +91,8 @@ const MATRIX = {
   // Audit log
   "audit.read": { owner: "allow" },
   "audit.readFinance": { owner: "allow", accountant: "allow" },
+  // The CSV export (owner decision 2026-10-24): a fresh step-up for both; the accountant's rows are the finance events only.
+  "audit.export": { owner: "step-up", accountant: "step-up" },
   // Approvals queue
   "approvals.decide": { owner: "allow" },
   "approvals.readOwn": { owner: "allow", staff: "allow", sales: "allow" },

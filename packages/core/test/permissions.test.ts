@@ -50,6 +50,7 @@ const EXPECTED: Record<Exclude<Action, "proposals.send">, string> = {
   "exports.gst": "S--S",
   "audit.read": "A---",
   "audit.readFinance": "A--A",
+  "audit.export": "S--S",
   "approvals.decide": "A---",
   "approvals.readOwn": "AAA-",
 };

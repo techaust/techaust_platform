@@ -71,6 +71,8 @@ export const ROUTES: readonly RouteDef[] = [
   R("POST", "/notifications/:id/read", "notifications.own", { audit: "notification.read" }),
   R("GET", "/search", "search.use"),
   R("GET", "/audit", "audit.readFinance"),
+  // The CSV export reads the same list through its own step-up action; each page is audited (`audit.export`).
+  R("GET", "/audit/export", "audit.export", { audit: "audit.export" }),
 ];
 
 const BY_ROUTE = new Map(ROUTES.map((r) => [`${r.method} ${r.path}`, r]));

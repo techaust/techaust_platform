@@ -347,6 +347,10 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
       const s = await owner();
       return run(s, "/settings/email/test-send", { method: "POST", body: { template: "lead.alert" } });
     },
+    "GET /api/v1/audit/export": async () => {
+      const s = await owner();
+      return run(s, "/audit/export?limit=25", {});
+    },
     "POST /api/v1/notifications/read-all": async () => {
       const s = await sessionFor("sales");
       await bell(s.id);

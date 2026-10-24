@@ -495,6 +495,57 @@ describe("audit-log API [ADM-AUD-02]", () => {
     }
   });
 
+  it("the export needs a fresh step-up on every page: owner and accountant; staff and sales are refused [ADM-AUD-02]", async () => {
+    const exp = (cookie: string, q = "") => call(`/audit/export?${q}`, { cookie });
+    for (const role of ["owner", "accountant"] as const) {
+      const cold = await sessionFor(role);
+      const refused = await exp(cold.cookie);
+      expect(refused.status, role).toBe(403);
+      expect((await json(refused)).error.code).toBe("step_up_required");
+      const warm = await sessionFor(role, { stepUp: true });
+      expect((await exp(warm.cookie)).status, role).toBe(200);
+      // an expired step-up is refused again, on a page with a cursor too
+      const lapsed = await sessionFor(role, { stepUp: Date.now() - 1_000 });
+      expect((await exp(lapsed.cookie, "limit=50")).status, role).toBe(403);
+    }
+    for (const role of ["staff", "sales"] as const) {
+      const s = await sessionFor(role, { stepUp: true });
+      expect((await exp(s.cookie)).status, role).toBe(403);
+    }
+    // the plain list is not an export: no step-up needed there
+    const plain = await sessionFor("owner");
+    expect((await call("/audit", { cookie: plain.cookie })).status).toBe(200);
+  });
+
+  it("the export gives the same rows as the list (the accountant: finance events only, no network details) and writes one audit.export row per page", async () => {
+    await entry({ action: "settings.bank.update", entity: "exp-test" });
+    await entry({ action: "user.invite", entity: "exp-test" });
+    const acc = await sessionFor("accountant", { stepUp: true });
+    const res = await json(
+      await call("/audit/export?entity=exp-test&from=2026-01-01", { cookie: acc.cookie }),
+    );
+    expect(res.entries.map((e: J) => e.action)).toEqual(["settings.bank.update"]);
+    expect(res.entries[0].ip).toBeNull();
+    const o = await sessionFor("owner", { stepUp: true });
+    const all = await json(await call("/audit/export?entity=exp-test", { cookie: o.cookie }));
+    expect(all.entries.map((e: J) => e.action).sort()).toEqual(["settings.bank.update", "user.invite"]);
+    const logged = await rows<{ actor_id: string; role: string; summary: string }>(
+      "SELECT actor_id, role, summary FROM audit_log WHERE action = 'audit.export' AND actor_id IN (?1, ?2)",
+      acc.id,
+      o.id,
+    );
+    expect(logged).toHaveLength(2);
+    const mine = JSON.parse(logged.find((r) => r.actor_id === acc.id)?.summary ?? "{}");
+    expect(mine.rows).toBe(1);
+    expect(mine.filters).toEqual({ entity: "exp-test", from: "2026-01-01" });
+    // the entries themselves are never copied into the log
+    expect(JSON.stringify(logged)).not.toMatch(/203\.0\.113\.9/);
+    // a refused export (no step-up) writes no export row
+    const before = await countOf("audit_log", "action = 'audit.export'");
+    await call("/audit/export", { cookie: (await sessionFor("owner")).cookie });
+    expect(await countOf("audit_log", "action = 'audit.export'")).toBe(before);
+  });
+
   it("a made-up cursor or a bad limit is 400", async () => {
     const o = await owner();
     for (const q of ["after=x", "before=%20", "limit=10", "limit=51"])
