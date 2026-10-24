@@ -62,12 +62,6 @@ body:has(.shell) {
   border-inline-end: 1px solid var(--rail-edge);
 }
 
-.shell__rail > .rail {
-  position: sticky;
-  top: 0;
-  height: 100dvh;
-}
-
 .shell__main {
   display: flex;
   flex-direction: column;
@@ -99,6 +93,12 @@ body:has(.shell) {
   flex-direction: column;
   height: 100%;
   color: var(--color-mist);
+}
+
+.shell__rail > .rail {
+  position: sticky;
+  top: 0;
+  height: 100dvh;
 }
 
 .rail__brand {
@@ -382,7 +382,7 @@ body:has(.shell) {
     display: inline-grid;
   }
 
-  .topbar__mark {
+  .topbar .topbar__mark {
     place-items: center;
     width: var(--target-min);
     height: var(--target-min);
@@ -519,6 +519,11 @@ body:has(.shell) {
   color: var(--color-text-muted);
   font-size: var(--text-sm);
   line-height: var(--text-sm--line-height);
+}
+
+/* On the selection tint, secondary text goes full strength (muted text drops under 4.5:1 there in dark). */
+.gsearch__option[aria-selected="true"] .gsearch__sub {
+  color: var(--color-text);
 }
 
 .gsearch__msg {
@@ -1744,6 +1749,9 @@ input[readonly] {
 }
 
 .error-summary a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
   color: var(--color-danger);
   font-weight: 560;
 }
@@ -2431,17 +2439,17 @@ input[readonly] {
   font-size: var(--text-sm);
 }
 
-.hint + .versioned-list,
-.hint + .dtable {
-  margin-top: var(--space-4);
-}
-
 .versioned-list {
   display: grid;
   gap: var(--space-3);
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.hint + .versioned-list,
+.hint + .dtable {
+  margin-top: var(--space-4);
 }
 
 .versioned {
@@ -2536,6 +2544,10 @@ input[readonly] {
   color: var(--color-text-muted);
   font-size: var(--text-sm);
   line-height: var(--text-sm--line-height);
+}
+
+.role-option:has(input:checked) .role-option__help {
+  color: var(--color-text);
 }
 
 .dialog__body > .hint:first-child {

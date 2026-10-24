@@ -3,14 +3,14 @@
 
 import { formatIstDateTime } from "@techaust/core";
 import { type ReactNode, useEffect, useRef } from "react";
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
 import { relative } from "../lib/format.ts";
 import { Ban, CheckCircle, ChevronRight, Clock, Pencil, Send } from "./icons.tsx";
 import { MenuButton, type MenuItem } from "./popover.tsx";
 
-// The first screen of a visit keeps focus where the browser put it; after that, every screen change moves focus to
-// the new h1, so keyboard and screen-reader users start at the top of what changed.
-let firstScreen = true;
+// The first screen of a visit keeps focus where the browser put it (React Router's first location has the key
+// "default"); after that, every screen change moves focus to the new h1, so keyboard and screen-reader users start
+// at the top of what changed.
 
 export type Crumb = { label: string; to?: string | undefined };
 
@@ -26,13 +26,12 @@ export function PageHeader(props: {
   status?: ReactNode | undefined;
 }) {
   const h1 = useRef<HTMLHeadingElement>(null);
+  const { key, pathname } = useLocation();
+  // Only a new path moves focus: filters and paging change the query string and keep focus where it is.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the path changes, not on every query change
   useEffect(() => {
-    if (firstScreen) {
-      firstScreen = false;
-      return;
-    }
-    h1.current?.focus();
-  }, []);
+    if (key !== "default") h1.current?.focus();
+  }, [pathname]);
   return (
     <header className="page-header">
       {props.crumbs && props.crumbs.length > 0 && (
