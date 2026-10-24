@@ -34,6 +34,7 @@ describe("migrations apply cleanly to a fresh D1", () => {
       "0012_terms_triggers.sql",
       "0013_documents_terms_version_index.sql",
       "0014_notifications_and_indexes.sql",
+      "0015_bank_active_kind_notifications_unread.sql",
     ]);
   });
 
