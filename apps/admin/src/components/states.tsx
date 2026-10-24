@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { errorText, RequestError } from "../api.ts";
+import { notFoundLine } from "../lib/access.ts";
 import { ROLE_LABELS, sentence } from "../lib/format.ts";
 import { useUser } from "../session.tsx";
 import { type Crumb, EmptyState, PageHeader } from "./display.tsx";
@@ -11,6 +12,7 @@ import { Compass, RefreshCw, ShieldAlert, WifiOff } from "./icons.tsx";
 import { type NavKey, navItem } from "./shell/nav.tsx";
 
 export function NotFound() {
+  const user = useUser();
   return (
     <>
       <PageHeader title="Page not found" />
@@ -23,7 +25,7 @@ export function NotFound() {
           </Link>
         }
       >
-        <p>The link may be old, or the record was removed. Use search above, or start from the dashboard.</p>
+        <p>{notFoundLine(user.role)}</p>
       </EmptyState>
     </>
   );

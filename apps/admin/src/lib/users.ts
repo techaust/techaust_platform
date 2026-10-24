@@ -1,6 +1,7 @@
 // The users list's rows (ADM-AUTH-07): staff members from the keyset `GET /users` page, plus the pending invites of
 // people who haven't joined yet (`GET /users/invites`, at most 50), shown as "Invited" on the first page. A member whose
-// sign-in was reset is "invited" too and has a pending invite under the same email: the two become one row.
+// sign-in was reset is "invited" too and has a pending invite under the same email: the two become one row, and such
+// an invite (the API flags it `existing_member`) never shows on its own, so a member on another page isn't listed twice.
 import type { Role } from "@techaust/core/permissions";
 import type { Invite, StaffMember } from "../api.ts";
 
@@ -69,7 +70,7 @@ export function userRows(
   const memberEmails = new Set(members.map((m) => m.email));
   const pending = firstPage
     ? [...byEmail.values()]
-        .filter((i) => !memberEmails.has(i.email) && inviteMatches(i, f))
+        .filter((i) => !i.existing_member && !memberEmails.has(i.email) && inviteMatches(i, f))
         .sort((a, b) => b.created_at - a.created_at)
         .map(fromInvite)
     : [];

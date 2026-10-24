@@ -2,9 +2,11 @@
 // log's wording and CSV [ADM-G-01, ADM-G-02, ADM-SET-01..10, ADM-AUD-02, ADM-AUTH-07].
 import { ROLES } from "@techaust/core/permissions";
 import { describe, expect, it } from "vitest";
-import type { AuditEntry, Invite, StaffMember } from "../api.ts";
-import { canSee, NAV_KEYS, sectionOf, settingsFor, settingsPage } from "./access.ts";
+import type { AuditEntry, BankAccount, Invite, SeriesState, StaffMember } from "../api.ts";
+import { canSee, hasSearch, NAV_KEYS, notFoundLine, sectionOf, settingsFor, settingsPage } from "./access.ts";
 import { actionText, actorText, auditCsv, csvCell, factText, readSummary, targetText } from "./audit.ts";
+import { checkBlock, toBlockForm } from "./bank-form.ts";
+import { lockedNote, needsStartConfirm } from "./numbering.ts";
 import {
   bpToPercent,
   fieldId,
@@ -52,6 +54,16 @@ describe("what each role sees [ADM-G-01, ADM-G-02]", () => {
     expect(sectionOf("/account")).toBeNull();
     expect(sectionOf("/dashboard")).toBeNull();
   });
+
+  it("the 404 line points to search only for a role that has the box (review L6)", () => {
+    expect(hasSearch("owner")).toBe(true);
+    expect(notFoundLine("owner")).toContain("Use search above");
+    for (const r of ROLES) expect(notFoundLine(r).includes("search")).toBe(hasSearch(r));
+    expect(hasSearch("accountant")).toBe(false);
+    expect(notFoundLine("accountant")).toBe(
+      "The link may be old, or the record was removed. Start again from the dashboard.",
+    );
+  });
 });
 
 const member = (over: Partial<StaffMember>): StaffMember => ({
@@ -85,6 +97,13 @@ describe("the users list rows [ADM-AUTH-07]", () => {
       ["a@example.test", "active", false],
     ]);
     expect(userRows([member({})], [invite({})], none, false)).toHaveLength(1);
+  });
+
+  it("an existing member's invite never shows on its own, even with the member on another page (review L4)", () => {
+    const i = invite({ email: "r@example.test", existing_member: true });
+    expect(userRows([member({})], [i], none, true).map((r) => r.email)).toEqual(["a@example.test"]);
+    const m = member({ status: "invited", email: "r@example.test" });
+    expect(userRows([m], [i], none, true)[0]?.invite).toBe(i);
   });
 
   it("a reset member's invite joins their row (one row, revoke possible)", () => {
@@ -203,5 +222,61 @@ describe("the audit log in words and as CSV [ADM-AUD-02]", () => {
     );
     expect(row).toContain("Account number: Masked to Masked; IFSC: Empty to SMPL0001234; Kind: INR");
     expect(csv).not.toMatch(/\d{9,}/); // no account number can appear: the API never sends one
+  });
+});
+
+describe("numbering: a series is locked once it has issued this FY [ADM-SET-04]", () => {
+  const open: SeriesState = { series: "INV", nextNo: 1, used: false, locked: false, lockReason: null };
+  const locked: SeriesState = {
+    series: "INV",
+    nextNo: 13,
+    used: true,
+    locked: true,
+    lockReason: "A number from this series has been issued this financial year",
+  };
+
+  it("a locked series shows the API's reason and no way to raise the number (review H1)", () => {
+    expect(lockedNote(locked)).toBe(
+      "A number from this series has been issued this financial year. Its format and next number stay as they are until 1 April.",
+    );
+    expect(lockedNote(locked)).not.toMatch(/raise/i);
+    expect(needsStartConfirm(locked, 20)).toBe(false);
+  });
+
+  it("a new start number on an open series is confirmed first; an unchanged one is not", () => {
+    expect(needsStartConfirm(open, 50)).toBe(true);
+    expect(needsStartConfirm(open, 1)).toBe(false);
+  });
+});
+
+describe("bank form checks and the stale guard [ADM-SET-02]", () => {
+  const stored: BankAccount = {
+    kind: "INR",
+    exists: true,
+    accountName: "Sample Account",
+    accountNoLast4: "1234",
+    ifsc: "SMPL0001234",
+    swift: null,
+    bankName: "Sample Bank",
+    branch: null,
+    bankAddress: null,
+    intermediary: null,
+    updatedAt: 1_700_000_000_000,
+  };
+
+  it("every body carries the updatedAt the form opened with, null for a first save (review M1)", () => {
+    expect(checkBlock("INR", toBlockForm(stored), stored).body.expectedUpdatedAt).toBe(stored.updatedAt);
+    const first = { ...toBlockForm({}), accountName: "A", accountNo: "12345678", accountNoAgain: "12345678" };
+    expect(checkBlock("INR", first, undefined).body.expectedUpdatedAt).toBeNull();
+    const notYet = { ...stored, exists: false, updatedAt: null };
+    expect(checkBlock("INR", first, notYet).body.expectedUpdatedAt).toBeNull();
+  });
+
+  it("an empty second account number asks for it again; a different one says they differ (review L8)", () => {
+    const f = { ...toBlockForm(stored), accountNo: "12345678" };
+    const again = (x: typeof f) => checkBlock("INR", x, stored).errors["bank-INR-accountNoAgain"];
+    expect(again(f)).toBe("Type the account number again.");
+    expect(again({ ...f, accountNoAgain: "12345679" })).toBe("The two account numbers don't match.");
+    expect(checkBlock("INR", { ...f, accountNoAgain: "1234 5678" }, stored).errors).toEqual({});
   });
 });

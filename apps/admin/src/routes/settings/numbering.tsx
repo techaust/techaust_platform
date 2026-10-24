@@ -1,7 +1,8 @@
 // Numbering (ADM-SET-04): one row per document series with the next number as it will print. Each series is edited in
 // its own dialog: the format ({FY} and {N}, at most 16 characters of A-Z, 0-9, "/" and "-") and the padding, and the next
-// number, which can only go up. A series that has issued a number this financial year keeps its format until 1 April
-// (the API answers 409 `series_in_use`; the dialog says why before anyone tries). The accountant reads the table only.
+// number, which can only go up (a new start number is confirmed first: it can't be lowered later this financial year).
+// A series that has issued a number this financial year is locked: format and next number stay until 1 April (the API
+// answers 409 `series_in_use`), and its dialog only shows them with the reason. The accountant reads the table only.
 import {
   financialYear,
   formatDocumentNumber,
@@ -11,7 +12,7 @@ import {
   type Series,
   validateFormat,
 } from "@techaust/core";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import { api, errorText, RequestError, type SeriesState, type SettingsDoc } from "../../api.ts";
 import { DataTable } from "../../components/data-table.tsx";
 import { Modal } from "../../components/dialog.tsx";
@@ -21,6 +22,7 @@ import { Lock } from "../../components/icons.tsx";
 import { LoadFailed, useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { Notice } from "../../components/ui.tsx";
+import { lockedNote, needsStartConfirm } from "../../lib/numbering.ts";
 import { intIn } from "../../lib/settings-form.ts";
 import { FormSkeleton, StaleNotice } from "./kit.tsx";
 
@@ -59,8 +61,8 @@ export function NumberingSettings({ readOnly }: { readOnly: boolean }) {
     <>
       <p className="hint">
         A number has at most 16 characters: capital letters, digits, “/” and “-”. Numbers restart each 1
-        April, never go down, and a format is fixed once its first number of the year is used. Financial year{" "}
-        {fy ? fyFromToken(fy).label : ""}.
+        April, never go down, and a series is fixed once its first number of the year is issued. Financial
+        year {fy ? fyFromToken(fy).label : ""}.
       </p>
       {readOnly && <Notice tone="info">You can read these settings. Only the owner can change them.</Notice>}
       <DataTable
@@ -78,9 +80,9 @@ export function NumberingSettings({ readOnly }: { readOnly: boolean }) {
             key: "status",
             header: "Status",
             cell: (s) =>
-              state(s).used ? (
+              state(s).locked ? (
                 <StatusPill tone="info" icon="send">
-                  In use, format fixed
+                  Issued this year, fixed
                 </StatusPill>
               ) : (
                 <StatusPill tone="neutral" icon="pencil">
@@ -97,9 +99,9 @@ export function NumberingSettings({ readOnly }: { readOnly: boolean }) {
                   type="button"
                   className="btn btn--text"
                   onClick={() => setEditing(s)}
-                  aria-label={`Edit ${SERIES[s].label} numbering`}
+                  aria-label={`${state(s).locked ? "View" : "Edit"} ${SERIES[s].label} numbering`}
                 >
-                  Edit
+                  {state(s).locked ? "View" : "Edit"}
                 </button>
               )
         }
@@ -141,6 +143,52 @@ function SeriesDialog(props: {
 }) {
   const { series, doc, state } = props;
   const current = doc.value[series];
+  const fy = doc.meta.fy ?? "";
+  if (state.locked)
+    return (
+      <Modal open title={`${SERIES[series].label} numbering`} onClose={props.onClose}>
+        <div className="dialog__body">
+          <p className="locked-note">
+            <Lock size={16} />
+            <span>{lockedNote(state)}</span>
+          </p>
+          <dl className="key-facts">
+            <div>
+              <dt>Format</dt>
+              <dd className="mono">{current.template}</dd>
+            </div>
+            <div>
+              <dt>Digits in the number</dt>
+              <dd>{current.padding}</dd>
+            </div>
+            <div>
+              <dt>Next number</dt>
+              <dd>
+                <span className="docno">{sample(current, fy, state.nextNo) ?? "—"}</span>
+              </dd>
+            </div>
+          </dl>
+        </div>
+        <div className="dialog__actions">
+          <button type="button" className="btn btn--primary" onClick={props.onClose}>
+            Close
+          </button>
+        </div>
+      </Modal>
+    );
+  return <SeriesForm {...props} />;
+}
+
+function SeriesForm(props: {
+  series: Series;
+  doc: SettingsDoc<"numbering">;
+  state: SeriesState;
+  onClose: () => void;
+  onSaved: (changed: boolean) => void;
+  onReload: () => void;
+}) {
+  const { series, doc, state } = props;
+  const current = doc.value[series];
   const [template, setTemplate] = useState(current.template);
   const [padding, setPadding] = useState(String(current.padding));
   const [next, setNext] = useState(String(state.nextNo));
@@ -148,13 +196,21 @@ function SeriesDialog(props: {
   const [failure, setFailure] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
   const [busy, setBusy] = useState(false);
+  /** The start number waiting for its "can't be lowered" confirmation (null while editing). */
+  const [confirming, setConfirming] = useState<number | null>(null);
+  const confirmRef = useRef<HTMLDivElement>(null);
   const fy = doc.meta.fy ?? "";
   const format: NumberingFormat = { template: template.trim(), padding: Number(padding) };
   const check = validateFormat(format);
   const n = intIn(next, 1);
   const preview = check.ok && n !== null ? sample(format, fy, Math.min(n, maxNumber(format))) : null;
 
-  async function save(e: FormEvent) {
+  // The confirmation replaces the form: focus goes to it so it is read first.
+  useEffect(() => {
+    if (confirming !== null) confirmRef.current?.focus();
+  }, [confirming]);
+
+  function validate(e: FormEvent) {
     e.preventDefault();
     const found: Record<string, string> = {};
     if (!check.ok) found["num-template"] = `${check.error}.`;
@@ -169,6 +225,11 @@ function SeriesDialog(props: {
       document.getElementById(Object.keys(found)[0] ?? "")?.focus();
       return;
     }
+    if (needsStartConfirm(state, n)) setConfirming(n);
+    else void save(n);
+  }
+
+  async function save(start: number) {
     setBusy(true);
     try {
       const value = { ...doc.value, [series]: format };
@@ -176,11 +237,16 @@ function SeriesDialog(props: {
         "numbering",
         doc.version,
         value,
-        n !== state.nextNo ? { nextNumbers: { [series]: n } } : {},
+        start !== state.nextNo ? { nextNumbers: { [series]: start } } : {},
       );
       props.onSaved(r.changed);
     } catch (err) {
+      setConfirming(null);
       if (err instanceof RequestError && err.code === "stale_version") setStale(true);
+      else if (err instanceof RequestError && err.code === "series_in_use")
+        setFailure(
+          "A number from this series was issued since you opened it, so it stays as it is until 1 April. Nothing was saved.",
+        );
       else if (err instanceof RequestError && err.fields.length)
         setFailure(err.fields.map((f) => f.message).join(". "));
       else setFailure(errorText(err));
@@ -189,21 +255,46 @@ function SeriesDialog(props: {
     }
   }
 
+  if (confirming !== null)
+    return (
+      <Modal open title={`${SERIES[series].label} numbering`} onClose={props.onClose} busy={busy}>
+        <div className="dialog__body">
+          <div className="start-confirm" ref={confirmRef} tabIndex={-1}>
+            <p className="start-confirm__lead">
+              The next one will be <span className="docno">{preview ?? "—"}</span>.
+            </p>
+            <p>Once saved, the next number can't be lowered again this financial year.</p>
+          </div>
+          {failure && <Notice tone="error">{failure}</Notice>}
+        </div>
+        <div className="dialog__actions">
+          <button
+            type="button"
+            className="btn btn--secondary"
+            onClick={() => setConfirming(null)}
+            disabled={busy}
+          >
+            Go back
+          </button>
+          <button
+            type="button"
+            className="btn btn--primary"
+            onClick={() => save(confirming)}
+            disabled={busy}
+            aria-busy={busy || undefined}
+          >
+            {busy ? "Saving…" : `Save, start at ${confirming}`}
+          </button>
+        </div>
+      </Modal>
+    );
+
   return (
     <Modal open title={`${SERIES[series].label} numbering`} onClose={props.onClose} busy={busy}>
-      <form onSubmit={save} noValidate>
+      <form onSubmit={validate} noValidate>
         <div className="dialog__body">
           {stale && <StaleNotice onReload={props.onReload} />}
           {failure && <Notice tone="error">{failure}</Notice>}
-          {state.used ? (
-            <p className="locked-note">
-              <Lock size={16} />
-              <span>
-                This series has issued numbers this financial year, so its format stays as it is until 1
-                April. You can still raise the next number.
-              </span>
-            </p>
-          ) : null}
           <FormField
             id="num-template"
             label="Format"
@@ -215,7 +306,6 @@ function SeriesDialog(props: {
                 {...a}
                 className="mono"
                 value={template}
-                readOnly={state.used}
                 spellCheck={false}
                 autoCapitalize="characters"
                 autoComplete="off"
@@ -224,19 +314,15 @@ function SeriesDialog(props: {
             )}
           </FormField>
           <FormField id="num-padding" label="Digits in the number" hint="4 digits print 1 as 0001.">
-            {(a) =>
-              state.used ? (
-                <input {...a} readOnly value={padding} />
-              ) : (
-                <select {...a} value={padding} onChange={(e) => setPadding(e.target.value)}>
-                  {[1, 2, 3, 4, 5, 6, 7, 8].map((d) => (
-                    <option key={d} value={String(d)}>
-                      {d}
-                    </option>
-                  ))}
-                </select>
-              )
-            }
+            {(a) => (
+              <select {...a} value={padding} onChange={(e) => setPadding(e.target.value)}>
+                {[1, 2, 3, 4, 5, 6, 7, 8].map((d) => (
+                  <option key={d} value={String(d)}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+            )}
           </FormField>
           <FormField
             id="num-next"

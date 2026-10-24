@@ -2,17 +2,8 @@
 // characters in every view (the API never sends more). "Edit bank details" asks for a fresh authenticator code first
 // (bank.manage is a step-up action); only then do the fields unlock. The account number field starts empty: leaving it
 // empty keeps the stored number. The accountant reads the masked blocks only.
-import { ACCOUNT_NO, IFSC, SWIFT } from "@techaust/core/bank";
-import { type FormEvent, type ReactNode, useState } from "react";
-import {
-  api,
-  type BankAccount,
-  type BankInput,
-  type BankKind,
-  ensureStepUp,
-  errorText,
-  RequestError,
-} from "../../api.ts";
+import { type FormEvent, type ReactNode, useRef, useState } from "react";
+import { api, type BankAccount, type BankKind, ensureStepUp, errorText, RequestError } from "../../api.ts";
 import { When } from "../../components/display.tsx";
 import { ErrorSummary, FormField, type SummaryError } from "../../components/form.tsx";
 import { Landmark, Lock } from "../../components/icons.tsx";
@@ -20,72 +11,20 @@ import { LoadFailed, useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { Notice } from "../../components/ui.tsx";
 import { UnsavedChangesGuard } from "../../components/unsaved.tsx";
+import {
+  type BlockForm,
+  checkBlock,
+  bankFieldId as fid,
+  BANK_KINDS as KINDS,
+  toBlockForm as toForm,
+  touchedBlock as touched,
+} from "../../lib/bank-form.ts";
 import { sentence } from "../../lib/format.ts";
-import { orNull } from "../../lib/settings-form.ts";
 import { FormSkeleton, StaleNotice } from "./kit.tsx";
 
-type BlockForm = {
-  accountName: string;
-  accountNo: string;
-  accountNoAgain: string;
-  ifsc: string;
-  swift: string;
-  bankName: string;
-  branch: string;
-  bankAddress: string;
-  intermediary: string;
-};
 type Forms = Record<BankKind, BlockForm>;
 
-const KINDS: BankKind[] = ["INR", "USD_SWIFT"];
 const TITLE: Record<BankKind, string> = { INR: "INR account", USD_SWIFT: "USD account (SWIFT)" };
-
-const fid = (kind: BankKind, field: string) => `bank-${kind}-${field}`;
-const clean = (s: string) => s.replace(/[\s-]/g, "").toUpperCase();
-
-const toForm = (a: BankAccount): BlockForm => ({
-  accountName: a.accountName ?? "",
-  accountNo: "",
-  accountNoAgain: "",
-  ifsc: a.ifsc ?? "",
-  swift: a.swift ?? "",
-  bankName: a.bankName ?? "",
-  branch: a.branch ?? "",
-  bankAddress: a.bankAddress ?? "",
-  intermediary: a.intermediary ?? "",
-});
-
-/** Has anything been typed into a block that has no account yet? (An untouched new block is skipped.) */
-const touched = (f: BlockForm) => Object.values(f).some((v) => v.trim() !== "");
-
-/** The same checks as the API, worded for the form. Returns the errors (by field id) and the request body. */
-export function checkBlock(kind: BankKind, f: BlockForm, exists: boolean) {
-  const e: Record<string, string> = {};
-  const no = clean(f.accountNo);
-  const again = clean(f.accountNoAgain);
-  if (!f.accountName.trim()) e[fid(kind, "accountName")] = "Enter the account name.";
-  if (!exists && !no) e[fid(kind, "accountNo")] = "Enter the account number.";
-  else if (no && !ACCOUNT_NO.test(no))
-    e[fid(kind, "accountNo")] = "Use letters and digits only, 5 to 34 characters.";
-  if (no && no !== again) e[fid(kind, "accountNoAgain")] = "The two account numbers don't match.";
-  if (kind === "INR" && !IFSC.test(clean(f.ifsc)))
-    e[fid(kind, "ifsc")] = "An IFSC has 11 characters: 4 letters, a zero, then 6 letters or digits.";
-  if (kind === "USD_SWIFT" && !SWIFT.test(clean(f.swift)))
-    e[fid(kind, "swift")] = "A SWIFT/BIC has 8 or 11 letters and digits.";
-  if (!f.bankName.trim()) e[fid(kind, "bankName")] = "Enter the bank's name.";
-  if (kind === "USD_SWIFT" && !f.bankAddress.trim())
-    e[fid(kind, "bankAddress")] = "Enter the bank's address.";
-  const body: BankInput = {
-    accountName: f.accountName.trim(),
-    bankName: f.bankName.trim(),
-    branch: orNull(f.branch),
-    bankAddress: orNull(f.bankAddress),
-    intermediary: orNull(f.intermediary),
-    ...(kind === "INR" ? { ifsc: clean(f.ifsc) } : { swift: clean(f.swift) }),
-    ...(no ? { accountNo: no, accountNoAgain: again } : {}),
-  };
-  return { errors: e, body };
-}
 
 export function BankDetails({ readOnly }: { readOnly: boolean }) {
   const loaded = useLoad(() => api.bank(), "");
@@ -107,8 +46,8 @@ export function BankDetails({ readOnly }: { readOnly: boolean }) {
   return (
     <>
       <Notice tone="info">
-        Only the owner enters these, here and nowhere else. They print in full on invoices; in the admin,
-        account numbers show only their last 4 characters
+        The INR and USD accounts printed on invoices. Invoices show them in full; in the admin, account
+        numbers show only their last 4 characters
         {readOnly ? "." : ", and the accountant sees them read-only."}
       </Notice>
       {mode === "view" ? (
@@ -172,7 +111,7 @@ function BankBlock({ account, kind }: { account: BankAccount | undefined; kind: 
           <Landmark />
           <span>
             <strong>Not entered yet.</strong> Invoices can't show {kind === "INR" ? "INR" : "USD"} payment
-            details until the owner enters them.
+            details until they're entered.
           </span>
         </p>
       </section>
@@ -235,8 +174,8 @@ function BankForm(props: {
 }) {
   const byKind = (k: BankKind) => props.accounts.find((a) => a.kind === k);
   const [initial] = useState<Forms>(() => ({
-    INR: toForm(byKind("INR") ?? ({} as BankAccount)),
-    USD_SWIFT: toForm(byKind("USD_SWIFT") ?? ({} as BankAccount)),
+    INR: toForm(byKind("INR") ?? {}),
+    USD_SWIFT: toForm(byKind("USD_SWIFT") ?? {}),
   }));
   const [forms, setForms] = useState<Forms>(initial);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -244,6 +183,8 @@ function BankForm(props: {
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
+  const savedRef = useRef<Partial<Record<BankKind, string>>>({});
+  const changedRef = useRef(false);
   const dirty = JSON.stringify(forms) !== JSON.stringify(initial);
 
   const set = (k: BankKind, patch: Partial<BlockForm>) =>
@@ -254,7 +195,7 @@ function BankForm(props: {
     if (busy) return;
     const work = KINDS.filter((k) => byKind(k)?.exists || touched(forms[k])).map((k) => ({
       k,
-      ...checkBlock(k, forms[k], byKind(k)?.exists ?? false),
+      ...checkBlock(k, forms[k], byKind(k)),
     }));
     const found = Object.assign({}, ...work.map((w) => w.errors)) as Record<string, string>;
     setErrors(found);
@@ -262,15 +203,19 @@ function BankForm(props: {
     setFailure(null);
     if (Object.keys(found).length) return;
     setBusy(true);
-    let changed = false;
     let current: BankKind = "INR";
     try {
       for (const w of work) {
         current = w.k;
+        // A block that already saved in an earlier try of this form (the other block failed) isn't sent again: its
+        // `expectedUpdatedAt` is now old, so a resend would be refused as stale (review L10 keeps two PUTs).
+        const sent = JSON.stringify(w.body);
+        if (savedRef.current[w.k] === sent) continue;
         const r = await api.saveBank(w.k, w.body);
-        changed ||= r.changed;
+        savedRef.current[w.k] = sent;
+        changedRef.current ||= r.changed;
       }
-      props.onSaved(changed);
+      props.onSaved(changedRef.current);
     } catch (err) {
       if (err instanceof RequestError && err.code === "stale_version") setStale(true);
       else if (err instanceof RequestError && err.fields.length) {

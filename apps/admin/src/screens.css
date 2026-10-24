@@ -145,6 +145,28 @@ body:has(.savebar) .toasts {
   margin-top: var(--space-1);
 }
 
+/* A new start number, confirmed before it is saved (it can't be lowered again this financial year). The number as it
+   prints leads; the rule follows in the body size. */
+.start-confirm {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-inline-start: 3px solid var(--color-accent-decor);
+  background: var(--color-surface-alt);
+  border-start-end-radius: var(--radius-sm);
+  border-end-end-radius: var(--radius-sm);
+}
+
+.start-confirm p {
+  margin: 0;
+}
+
+.start-confirm__lead {
+  font-size: var(--text-h4);
+  line-height: var(--text-h4--line-height);
+  font-weight: var(--text-h4--font-weight);
+}
+
 /* SAC codes: five short fields in a grid. */
 .sac-grid {
   display: grid;

@@ -1,13 +1,14 @@
 // The audit log (ADM-AUD-02, ADM-G-06): newest first, grouped by IST day, keyset pages of 25 or 50. Filters by person,
 // record, action and IST dates live in the URL. Changes open a before and after table (masked fields stay masked).
-// "Export CSV" walks the API's pages for the current filters in the browser and downloads them (no server export).
+// "Export CSV" asks for the authenticator code first (ADM-AUTH-08, data exports), then walks the export route's pages
+// for the current filters in the browser and downloads them. The server checks the step-up on every page.
 // The owner sees everything; the accountant sees the finance events only, without network details (the API decides).
 import { formatDate, isRole, istDate, toIsoDate, toIst } from "@techaust/core";
 import { FINANCE_AUDIT_ACTIONS } from "@techaust/core/audit";
 import { describeUserAgent } from "@techaust/core/user-agent";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
-import { type AuditEntry, type AuditQuery, api, errorText } from "../api.ts";
+import { type AuditEntry, type AuditQuery, api, ensureStepUp, errorText } from "../api.ts";
 import { EmptyState, PageHeader, Skeleton } from "../components/display.tsx";
 import { ArrowRight, Download, History } from "../components/icons.tsx";
 import { LoadFailed, NoAccess, useLoad } from "../components/states.tsx";
@@ -103,13 +104,15 @@ function AuditLog() {
   const people = [...names.entries()].sort((a, b) => a[1].localeCompare(b[1]));
 
   async function exportCsv() {
+    // The code first: cancelling the dialog leaves the page as it was, nothing fetched.
+    if (!(await ensureStepUp())) return;
     setExporting("Preparing the file…");
     const all: AuditEntry[] = [];
     let after: string | undefined;
     let more = false;
     try {
       for (let i = 0; i < EXPORT_PAGES; i++) {
-        const r = await api.audit({ ...query, limit: "50", before: undefined, after });
+        const r = await api.auditExport({ ...query, limit: "50", before: undefined, after });
         all.push(...r.entries);
         setExporting(`Preparing the file: ${all.length} entries so far…`);
         if (!r.next) break;

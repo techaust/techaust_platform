@@ -94,3 +94,12 @@ export const settingsFor = (role: Role) => SETTINGS_PAGES.filter((p) => allowed(
 
 /** Only the owner manages users (the Users page lives inside Settings, owner decision 2026-10-24). */
 export const canManageUsers = (role: Role) => allowed(role, "users.read");
+
+/** Does this role get the global search box (leads, or staff for the owner)? The shell and the 404 line both ask. */
+export const hasSearch = (role: Role) => allowed(role, "leads.read") || canManageUsers(role);
+
+/** The 404 page's line: it points to search only for a role that has the box (review L6). */
+export const notFoundLine = (role: Role) =>
+  hasSearch(role)
+    ? "The link may be old, or the record was removed. Use search above, or start from the dashboard."
+    : "The link may be old, or the record was removed. Start again from the dashboard.";

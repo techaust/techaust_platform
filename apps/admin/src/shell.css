@@ -1265,6 +1265,14 @@ body:has(.shell) {
 
 .filters .field {
   margin: 0;
+  min-width: 0;
+}
+
+/* Date inputs carry an intrinsic minimum width (the browser's picker chrome): let them shrink to their grid cell, so
+   two side by side fit a 375 px screen (review M4). */
+.filters input[type="date"] {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .filters__search label,

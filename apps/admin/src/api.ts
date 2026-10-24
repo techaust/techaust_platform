@@ -111,6 +111,8 @@ export type BankInput = {
   branch?: string | null;
   bankAddress?: string | null;
   intermediary?: string | null;
+  /** The `updatedAt` from GET /settings/bank (null for a first save); a different one on the server is a 409. */
+  expectedUpdatedAt: number | null;
 };
 export type TermsVersion = {
   version: number;
