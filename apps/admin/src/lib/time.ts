@@ -178,7 +178,7 @@ export function entryMinutes(f: Pick<EntryForm, "hours" | "minutes">): number | 
 export function entryInput(
   f: EntryForm,
   /** `originalDate`, when editing: the saved date. The date rule applies only if the date changed. */
-  ctx: { today: string; canWriteAny: boolean; me: string; originalDate?: string },
+  ctx: { today: string; canWriteAny: boolean; me: string; originalDate?: string | undefined },
 ): { ok: true; body: NewTimeInput } | { ok: false; errors: EntryErrors } {
   const errors: EntryErrors = {};
   if (!parseIsoDate(f.workDate)) errors.workDate = TIME_PENDING.enterDate;
