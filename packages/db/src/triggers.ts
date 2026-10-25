@@ -211,6 +211,58 @@ export function projectTriggerStatements(): string[] {
   ];
 }
 
+/**
+ * Care plans, their history and time logs (M3.5, ADM-CARE-01, ADM-TIME-01..03; a separate set, the earlier ones have no IF NOT EXISTS;
+ * no table is rebuilt: `care_plans` and `time_logs` are referenced). Every abort message starts with the trigger's name, so the API
+ * can tell which rule refused a write. The API checks the same rules in SQL conditions first; these are the backstop for whatever
+ * writes to the tables.
+ *   - an entry belongs to exactly one project or care plan; a person logs at most 24 hours a day; a work date is a real date;
+ *   - a care-plan entry needs the plan to be ACTIVE on the work date (its newest status row on or before that date);
+ *   - nothing is logged on a cancelled project; an entry's person never changes;
+ *   - the two history tables are append-only; a plan's client, currency, billing day and start date never change;
+ *   - the plan's price, hours, rate and rollover (and status) are always the newest history row (the mirror cannot drift).
+ */
+export function timeTriggerStatements(): string[] {
+  const named = (name: string, message: string) => abort(`${name}: ${message}`);
+  const oneTargetBad = "(NEW.project_id IS NULL) = (NEW.care_plan_id IS NULL)";
+  const dayCapBad =
+    "(SELECT coalesce(sum(minutes), 0) FROM time_logs WHERE user_id = NEW.user_id AND work_date = NEW.work_date AND id IS NOT NEW.id) + NEW.minutes > 1440";
+  const dateBad = "date(NEW.work_date) IS NOT NEW.work_date";
+  const planInactiveBad =
+    "NEW.care_plan_id IS NOT NULL AND (SELECT status FROM care_plan_status_log WHERE care_plan_id = NEW.care_plan_id AND effective_on <= NEW.work_date ORDER BY effective_on DESC, created_at DESC, id DESC LIMIT 1) IS NOT 'active'";
+  const projectClosedBad =
+    "NEW.project_id IS NOT NULL AND (SELECT status FROM projects WHERE id = NEW.project_id) = 'cancelled'";
+  const history = (table: string) => [
+    `CREATE TRIGGER \`${table}_no_update\` BEFORE UPDATE ON \`${table}\` BEGIN ${named(`${table}_no_update`, `${table} is append-only`)} END;`,
+    `CREATE TRIGGER \`${table}_no_delete\` BEFORE DELETE ON \`${table}\` BEGIN ${named(`${table}_no_delete`, `${table} is append-only`)} END;`,
+  ];
+  const newestTerms =
+    "(SELECT id FROM care_plan_terms WHERE care_plan_id = NEW.id ORDER BY effective_from DESC, created_at DESC, id DESC LIMIT 1)";
+  const termsDrift = `NOT EXISTS (SELECT 1 FROM care_plan_terms t WHERE t.id = ${newestTerms} AND t.tier IS NEW.tier AND t.price_minor IS NEW.price_minor AND t.included_minutes IS NEW.included_minutes AND t.ai_ops_minor IS NEW.ai_ops_minor AND t.overage_rate_minor IS NEW.overage_rate_minor AND t.rollover IS NEW.rollover)`;
+  const statusDrift =
+    "NEW.status IS NOT (SELECT status FROM care_plan_status_log WHERE care_plan_id = NEW.id ORDER BY effective_on DESC, created_at DESC, id DESC LIMIT 1)";
+  const fixed =
+    "NEW.client_id IS NOT OLD.client_id OR NEW.currency IS NOT OLD.currency OR NEW.billing_day IS NOT OLD.billing_day OR NEW.start_date IS NOT OLD.start_date";
+  return [
+    `CREATE TRIGGER \`time_logs_one_target_insert\` BEFORE INSERT ON \`time_logs\` WHEN ${oneTargetBad} BEGIN ${named("time_logs_one_target_insert", "an entry belongs to exactly one project or care plan")} END;`,
+    `CREATE TRIGGER \`time_logs_one_target_update\` BEFORE UPDATE OF project_id, care_plan_id ON \`time_logs\` WHEN ${oneTargetBad} BEGIN ${named("time_logs_one_target_update", "an entry belongs to exactly one project or care plan")} END;`,
+    `CREATE TRIGGER \`time_logs_day_cap_insert\` BEFORE INSERT ON \`time_logs\` WHEN ${dayCapBad} BEGIN ${named("time_logs_day_cap_insert", "a person logs at most 24 hours a day")} END;`,
+    `CREATE TRIGGER \`time_logs_day_cap_update\` BEFORE UPDATE OF user_id, work_date, minutes ON \`time_logs\` WHEN ${dayCapBad} BEGIN ${named("time_logs_day_cap_update", "a person logs at most 24 hours a day")} END;`,
+    `CREATE TRIGGER \`time_logs_date_valid_insert\` BEFORE INSERT ON \`time_logs\` WHEN ${dateBad} BEGIN ${named("time_logs_date_valid_insert", "the work date is not a date")} END;`,
+    `CREATE TRIGGER \`time_logs_date_valid_update\` BEFORE UPDATE OF work_date ON \`time_logs\` WHEN ${dateBad} BEGIN ${named("time_logs_date_valid_update", "the work date is not a date")} END;`,
+    `CREATE TRIGGER \`time_logs_plan_active_insert\` BEFORE INSERT ON \`time_logs\` WHEN ${planInactiveBad} BEGIN ${named("time_logs_plan_active_insert", "the care plan is not active on that date")} END;`,
+    `CREATE TRIGGER \`time_logs_plan_active_update\` BEFORE UPDATE OF care_plan_id, work_date ON \`time_logs\` WHEN ${planInactiveBad} BEGIN ${named("time_logs_plan_active_update", "the care plan is not active on that date")} END;`,
+    `CREATE TRIGGER \`time_logs_project_open_insert\` BEFORE INSERT ON \`time_logs\` WHEN ${projectClosedBad} BEGIN ${named("time_logs_project_open_insert", "the project is cancelled")} END;`,
+    `CREATE TRIGGER \`time_logs_project_open_update\` BEFORE UPDATE OF project_id ON \`time_logs\` WHEN NEW.project_id IS NOT OLD.project_id AND ${projectClosedBad} BEGIN ${named("time_logs_project_open_update", "the project is cancelled")} END;`,
+    `CREATE TRIGGER \`time_logs_user_fixed\` BEFORE UPDATE OF user_id ON \`time_logs\` WHEN NEW.user_id IS NOT OLD.user_id BEGIN ${named("time_logs_user_fixed", "the person of a time entry cannot change")} END;`,
+    ...history("care_plan_terms"),
+    ...history("care_plan_status_log"),
+    `CREATE TRIGGER \`care_plans_fixed\` BEFORE UPDATE OF client_id, currency, billing_day, start_date ON \`care_plans\` WHEN ${fixed} BEGIN ${named("care_plans_fixed", "the client, currency, billing day and start date of a care plan cannot change")} END;`,
+    `CREATE TRIGGER \`care_plans_terms_match\` BEFORE UPDATE OF tier, price_minor, included_minutes, ai_ops_minor, overage_rate_minor, rollover ON \`care_plans\` WHEN ${termsDrift} BEGIN ${named("care_plans_terms_match", "the terms of a care plan are the newest row of its terms history")} END;`,
+    `CREATE TRIGGER \`care_plans_status_match\` BEFORE UPDATE OF status ON \`care_plans\` WHEN ${statusDrift} BEGIN ${named("care_plans_status_match", "the status of a care plan is the newest row of its status history")} END;`,
+  ];
+}
+
 /** The only statuses a document can be issued from (docs/05 §5.4 change 14: drafts only; owner decision 2026-10-07).
  * An approval (`approvals`, kind `issue`) is a record next to the draft, not a document status. Shared by the guard
  * trigger below and by the reference issue batch in test/helpers.ts, so the two cannot drift apart again. */
@@ -253,6 +305,10 @@ export const TRIGGER_SETS = {
   project_triggers: {
     what: "project, milestone, note and file integrity (M3.4)",
     statements: projectTriggerStatements,
+  },
+  time_triggers: {
+    what: "time-log, care-plan history and mirror integrity (M3.5)",
+    statements: timeTriggerStatements,
   },
   issue_guard: {
     what: "issue guard narrowed to drafts, plus the issue post-condition (docs/05 §5.4)",

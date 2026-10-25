@@ -8,7 +8,7 @@ const tables = (Object.values(schema) as unknown[]).filter((v): v is SQLiteTable
 
 describe("migrations apply cleanly to a fresh D1", () => {
   it("creates every table in the Drizzle schema, with every column", async () => {
-    expect(tables.length).toBe(41);
+    expect(tables.length).toBe(44);
     for (const table of tables) {
       const { name, columns } = getTableConfig(table);
       const live = await all<{ name: string }>(`SELECT name FROM pragma_table_info(?)`, name);
@@ -45,6 +45,8 @@ describe("migrations apply cleanly to a fresh D1", () => {
       "0023_client_type_lock.sql",
       "0024_project_indexes.sql",
       "0025_project_triggers.sql",
+      "0026_care_time.sql",
+      "0027_time_triggers.sql",
     ]);
   });
 
@@ -186,8 +188,14 @@ describe("CHECK constraints", () => {
     await run(
       "INSERT INTO staff_users (id, email, name, role) VALUES ('u3', 'staff@example.com', 'S', 'staff')",
     );
+    // M3.5: an entry needs exactly one target (a trigger that runs before the CHECK), so this one names a project.
+    await run(
+      "INSERT INTO projects (id, code, client_id, name, currency) VALUES ('pj', 'PRJ-MIG', 'cp-client', 'P', 'INR')",
+    );
     await rejects(
-      run("INSERT INTO time_logs (id, user_id, work_date, minutes) VALUES ('t1', 'u3', '2026-10-06', 20)"),
+      run(
+        "INSERT INTO time_logs (id, user_id, work_date, minutes, project_id) VALUES ('t1', 'u3', '2026-10-06', 20, 'pj')",
+      ),
       /time_logs_minutes/,
     );
   });
