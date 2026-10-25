@@ -91,7 +91,7 @@ function Projects() {
       key: "client",
       header: "Client",
       cell: (r) => (
-        <span className="person">
+        <span className="person project-client">
           <Link className="client-name__link" to={`/clients/${r.clientId}?tab=projects`}>
             {r.clientName}
           </Link>
@@ -160,7 +160,7 @@ function Projects() {
               ...others.map((a) => ({ value: a.id, label: a.name || "Name not set yet" })),
             ],
           },
-        ]}
+        ].filter((g) => g.options.length > 0)}
         onToggle={(group, value) => {
           const cur = { status, owner }[group as "status" | "owner"];
           set({ [group]: cur === value ? null : value });

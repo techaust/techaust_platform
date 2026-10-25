@@ -50,7 +50,10 @@ function block(b: Block, i: number): ReactNode {
   return null;
 }
 
+/** The note as React elements (exported for the test that proves no HTML is ever set). */
+export const markdownElements = (source: string): ReactNode[] => parseMarkdown(source).map(block);
+
 export function Markdown({ source, className }: { source: string; className?: string }) {
-  const blocks = useMemo(() => parseMarkdown(source), [source]);
-  return <div className={className ? `md ${className}` : "md"}>{blocks.map(block)}</div>;
+  const nodes = useMemo(() => markdownElements(source), [source]);
+  return <div className={className ? `md ${className}` : "md"}>{nodes}</div>;
 }

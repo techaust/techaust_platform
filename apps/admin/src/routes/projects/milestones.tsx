@@ -243,7 +243,7 @@ export function Milestones({ data, reload }: { data: ProjectPage; reload: Reload
                 <div className="ledger__title">
                   <span className="visually-hidden">{`${i + 1}. `}</span>
                   {m.title}
-                  {m.status === "ready_to_bill" && (
+                  {canWrite && m.status === "ready_to_bill" && (
                     <span className="ledger__invoice">
                       <button
                         type="button"

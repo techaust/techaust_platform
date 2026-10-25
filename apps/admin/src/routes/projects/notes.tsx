@@ -3,6 +3,7 @@
 // it, M7.1); sharing, when a note is written or later, asks first with the 07-K words. The author and the owner may edit or
 // delete a note (the API answers 403 to anyone else); Sales reads. A client's list holds its project notes too, each linked to
 // its project.
+import { formatIstDateTime } from "@techaust/core";
 import { type FormEvent, useState } from "react";
 import { Link } from "react-router";
 import { api, type NoteView, type NoteVisibility, RequestError, type VaultScope } from "../../api.ts";
@@ -10,6 +11,7 @@ import { ConfirmDialog } from "../../components/confirm-dialog.tsx";
 import { When } from "../../components/display.tsx";
 import { FolderKanban, Pencil, Trash } from "../../components/icons.tsx";
 import { Markdown } from "../../components/markdown.tsx";
+import { MenuButton } from "../../components/popover.tsx";
 import { LoadFailed, StaleNotice, useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { FieldError, Notice, SkeletonRows } from "../../components/ui.tsx";
@@ -315,35 +317,32 @@ function NoteItem(props: {
           <span className="note__author">{n.authorName ?? "A former staff member"}</span>
           <When ms={n.createdAt} inline />
           <VisibilityPill shared={n.visibility === "shared"} />
+          {props.scope.kind === "client" && n.projectId && (
+            <span className="note__project">
+              <FolderKanban size={16} />
+              <Link to={`/projects/${n.projectId}?tab=notes`}>Open the project</Link>
+            </span>
+          )}
         </p>
         {props.mayTouch && !editing && (
-          <span className="note__actions">
-            <button
-              type="button"
-              className="btn btn--text"
-              onClick={() => {
-                setBody(n.bodyMd);
-                setVisibility(n.visibility);
-                setEditing(true);
-                requestAnimationFrame(() => document.getElementById(`${id}-body`)?.focus());
-              }}
-            >
-              <Pencil size={16} />
-              Edit<span className="visually-hidden"> this note</span>
-            </button>
-            <button type="button" className="btn btn--text btn--danger-text" onClick={props.onDelete}>
-              <Trash size={16} />
-              Delete<span className="visually-hidden"> this note</span>
-            </button>
-          </span>
+          <MenuButton
+            label={`Actions for the note by ${n.authorName ?? "a former staff member"}, ${formatIstDateTime(n.createdAt)}`}
+            items={[
+              {
+                label: "Edit",
+                icon: <Pencil size={16} />,
+                onSelect: () => {
+                  setBody(n.bodyMd);
+                  setVisibility(n.visibility);
+                  setEditing(true);
+                  requestAnimationFrame(() => document.getElementById(`${id}-body`)?.focus());
+                },
+              },
+              { label: "Delete", icon: <Trash size={16} />, tone: "danger", onSelect: props.onDelete },
+            ]}
+          />
         )}
       </div>
-      {props.scope.kind === "client" && n.projectId && (
-        <p className="note__project">
-          <FolderKanban size={16} />
-          <Link to={`/projects/${n.projectId}?tab=notes`}>Open the project</Link>
-        </p>
-      )}
       {stale && (
         <StaleNotice
           title={PENDING.staleNote}
