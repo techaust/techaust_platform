@@ -36,6 +36,13 @@ export function Contacts(props: { data: ClientPage; reload: () => void }) {
   const [exporting, setExporting] = useState<ContactView | null>(null);
   const [erasing, setErasing] = useState<ContactView | null>(null);
   const [more, setMore] = useState<{ list: ContactView[]; next: string | null } | null>(null);
+  // A reload (after an edit or an erase) starts the list again from the page's first rows, so no stale row stays shown
+  // (reset during render when the page data changes, React's pattern for state derived from props).
+  const [seenData, setSeenData] = useState(props.data);
+  if (seenData !== props.data) {
+    setSeenData(props.data);
+    setMore(null);
+  }
   const [loadingMore, setLoadingMore] = useState(false);
   const [moreError, setMoreError] = useState<string | null>(null);
   const first = props.data.contacts;
@@ -91,7 +98,7 @@ export function Contacts(props: { data: ClientPage; reload: () => void }) {
           <p>The people you deal with at this client, who can be given access to the client portal.</p>
         </EmptyState>
       ) : (
-        <ul className="contact-list" ref={listRef} tabIndex={-1} aria-label="Contacts">
+        <ul className="contact-list" ref={listRef} tabIndex={-1} aria-labelledby="contacts-h">
           {list.map((c) => (
             <ContactRow
               key={c.id}
