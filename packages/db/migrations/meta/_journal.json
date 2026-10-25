@@ -232,6 +232,20 @@
       "when": 1792956281675,
       "tag": "0032_document_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "6",
+      "when": 1792960147081,
+      "tag": "0033_offers",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "6",
+      "when": 1792960149827,
+      "tag": "0034_offer_triggers",
+      "breakpoints": true
     }
   ]
 }
