@@ -66,7 +66,7 @@ _Drafted by the lead on 2026-10-25 from approved facts: 04 ADM-CARE-01, -03, ADM
 ## Project page (replaces the 07-K line)
 | Where | Copy |
 |---|---|
-| Hours figure | "Hours logged: {total}, of which {billable} billable" |
+| Hours figure (under the "Hours logged" label) | "{total}, of which {billable} billable" |
 
 ## Toasts
 "Care plan added." · "Terms changed from {date}." · "Care plan paused." · "Care plan resumed." · "Care plan cancelled." · "Time logged." · "Time entry saved." · "Time entry deleted."
