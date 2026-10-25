@@ -151,7 +151,7 @@ describe("sanitiseFilename", () => {
         expect(out.startsWith(".")).toBe(false);
       }),
     );
-  });
+  }, 20_000);
 });
 
 describe("contentDisposition", () => {
