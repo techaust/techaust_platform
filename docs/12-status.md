@@ -27,7 +27,7 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
 - **Staging readings 2026-10-25:** every admin call in the owner's session ≤ 7 ms (clients list 7, client page 4, sign-in 3–5); the first lead clean-up dry run: 0 due, 2 ms. Convert, export and erase were not used on staging yet.
 
 ## In progress
-- **The owner's M3.3 answers** (`fix/m3.3-owner-answers`, PR to follow): an anonymised individual client's GSTIN is cleared (VERIFY WITH CA/LEGAL), the Attach PDF hint, a VERIFY WITH CA/LEGAL note in the data-tool dialogs. Lead-built; reviewer re-check, then auto-merge.
+- **The owner's M3.3 answers** ([PR #78](https://github.com/techaust/techaust_platform/pull/78), auto-merge and Auto-fix on): an anonymised individual client's GSTIN is cleared (VERIFY WITH CA/LEGAL), the Attach PDF hint, a VERIFY WITH CA/LEGAL note in the data-tool dialogs. Lead-built; reviewer re-check APPROVE, its 2 low findings fixed.
 
 ## Next
 1. **Before M3.4:** a structural plan for the admin Worker size (cold-start CPU as the metric) instead of raising the limit again; presented to the owner first.
