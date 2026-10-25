@@ -11,8 +11,8 @@ import {
   type PlanErrors,
   QUARTERS,
   ROLLOVER_LABELS,
-  TIER_LABELS,
   type TermsForm,
+  TIER_LABELS,
 } from "../../lib/care.ts";
 import { MoneyIn } from "../projects/parts.tsx";
 
@@ -108,7 +108,12 @@ export function TermsFields(props: {
       <div className="form-grid">
         <FormField id={`${P}-price`} label="Price per month" error={errors.price}>
           {(a) => (
-            <MoneyIn a11y={a} currency={props.currency} value={f.price} onChange={(v) => props.onChange({ price: v })} />
+            <MoneyIn
+              a11y={a}
+              currency={props.currency}
+              value={f.price}
+              onChange={(v) => props.onChange({ price: v })}
+            />
           )}
         </FormField>
         <FormField

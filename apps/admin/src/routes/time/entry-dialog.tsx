@@ -3,12 +3,7 @@
 // GET /time/targets: open projects, plans active today), billable and a note. The same dialog edits an entry, sending only what
 // changed with the version it was loaded with; the owner editing an entry locked for its author sees the 07-M notice first.
 import { type FormEvent, useState } from "react";
-import {
-  api,
-  RequestError,
-  type TimeEntry,
-  type TimePatch,
-} from "../../api.ts";
+import { api, RequestError, type TimeEntry, type TimePatch } from "../../api.ts";
 import { Modal } from "../../components/dialog.tsx";
 import { FormField } from "../../components/form.tsx";
 import { Search } from "../../components/icons.tsx";
@@ -16,6 +11,7 @@ import { useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { FieldError, Notice } from "../../components/ui.tsx";
 import { careErrorText, QUARTERS, TIER_LABELS } from "../../lib/care.ts";
+import { PENDING } from "../../lib/projects.ts";
 import {
   type EntryErrors,
   type EntryForm,
@@ -27,7 +23,6 @@ import {
   TIME_PENDING,
   TIME_TOASTS,
 } from "../../lib/time.ts";
-import { PENDING } from "../../lib/projects.ts";
 import { useDebounced } from "../projects/client-filter.tsx";
 
 const P = "te";
@@ -67,7 +62,9 @@ export function EntryDialog(props: {
       busy={busy}
       wide
     >
-      {props.open && <EntryFormBody {...props} key={props.entry?.id ?? "new"} busy={busy} setBusy={setBusy} />}
+      {props.open && (
+        <EntryFormBody {...props} key={props.entry?.id ?? "new"} busy={busy} setBusy={setBusy} />
+      )}
     </Modal>
   );
 }
@@ -146,117 +143,121 @@ function EntryFormBody(
 
   return (
     <form onSubmit={submit} noValidate className="entry-form">
-        <div className="dialog__body">
-          {props.override && <Notice tone="info">{TIME_COPY.ownerOverride}</Notice>}
-          {failure && <Notice tone="error">{failure}</Notice>}
-          {props.canWriteAny && !props.entry && others.length > 0 && (
-            <div className="field">
-              <label htmlFor={`${P}-userId`}>{TIME_COPY.logFor}</label>
-              <select {...a11y("userId")} value={f.userId} onChange={(e) => set({ userId: e.target.value })}>
-                <option value={props.me.id}>{`${props.me.name || "Name not set yet"} (you)`}</option>
-                {others.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name || "Name not set yet"}
-                  </option>
-                ))}
-              </select>
-              {err("userId")}
-            </div>
-          )}
-          {props.entry && props.entry.userId !== props.me.id && (
-            <p className="entry-form__who">
-              <span className="muted">Person</span> {props.entry.userName ?? "A former staff member"}
-            </p>
-          )}
-          <div className="form-grid">
-            <div className="field">
-              <label htmlFor={`${P}-workDate`}>Date</label>
-              <input
-                {...a11y("workDate")}
-                type="date"
-                value={f.workDate}
-                max={props.today}
-                min={earliestDate(props.today, props.canWriteAny)}
-                onChange={(e) => set({ workDate: e.target.value })}
-              />
-              {err("workDate")}
-            </div>
-            <fieldset className="field duration" aria-describedby={`${P}-hours-hint`}>
-              <legend>Time spent</legend>
-              <p className="hint" id={`${P}-hours-hint`}>
-                {TIME_COPY.minutesHint}
-              </p>
-              <div className="duration__row">
-                <div className="duration__part">
-                  <label htmlFor={`${P}-hours`} className="duration__label">
-                    Hours
-                  </label>
-                  <input
-                    {...a11y("hours")}
-                    inputMode="numeric"
-                    autoComplete="off"
-                    maxLength={2}
-                    value={f.hours}
-                    onChange={(e) => set({ hours: e.target.value })}
-                  />
-                </div>
-                <div className="duration__part">
-                  <label htmlFor={`${P}-minutes`} className="duration__label">
-                    Minutes
-                  </label>
-                  <select id={`${P}-minutes`} value={f.minutes} onChange={(e) => set({ minutes: e.target.value })}>
-                    {QUARTERS.map((q) => (
-                      <option key={q} value={q}>
-                        {q === "0" ? "00" : q}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              {err("hours")}
-            </fieldset>
+      <div className="dialog__body">
+        {props.override && <Notice tone="info">{TIME_COPY.ownerOverride}</Notice>}
+        {failure && <Notice tone="error">{failure}</Notice>}
+        {props.canWriteAny && !props.entry && others.length > 0 && (
+          <div className="field">
+            <label htmlFor={`${P}-userId`}>{TIME_COPY.logFor}</label>
+            <select {...a11y("userId")} value={f.userId} onChange={(e) => set({ userId: e.target.value })}>
+              <option value={props.me.id}>{`${props.me.name || "Name not set yet"} (you)`}</option>
+              {others.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name || "Name not set yet"}
+                </option>
+              ))}
+            </select>
+            {err("userId")}
           </div>
-
-          <TargetField
-            value={f.target}
-            picking={picking}
-            onPick={(t) => {
-              set({ target: t });
-              setPicking(false);
-              setErrors((x) => ({ ...x, target: undefined }));
-            }}
-            onChange={() => {
-              setPicking(true);
-              requestAnimationFrame(() => document.getElementById(`${P}-target-q`)?.focus());
-            }}
-            error={errors.target}
-          />
-
-          <label className="check">
-            <input type="checkbox" checked={f.billable} onChange={(e) => set({ billable: e.target.checked })} />
-            <span>Billable</span>
-          </label>
-          <FormField id={`${P}-note`} label="Note" optional error={errors.note}>
-            {(a) => (
-              <textarea
-                {...a}
-                rows={3}
-                maxLength={1000}
-                value={f.note}
-                onChange={(e) => set({ note: e.target.value })}
-              />
-            )}
-          </FormField>
+        )}
+        {props.entry && props.entry.userId !== props.me.id && (
+          <p className="entry-form__who">
+            <span className="muted">Person</span> {props.entry.userName ?? "A former staff member"}
+          </p>
+        )}
+        <div className="form-grid">
+          <div className="field">
+            <label htmlFor={`${P}-workDate`}>Date</label>
+            <input
+              {...a11y("workDate")}
+              type="date"
+              value={f.workDate}
+              max={props.today}
+              min={earliestDate(props.today, props.canWriteAny)}
+              onChange={(e) => set({ workDate: e.target.value })}
+            />
+            {err("workDate")}
+          </div>
+          <fieldset className="field duration" aria-describedby={`${P}-hours-hint`}>
+            <legend>Time spent</legend>
+            <p className="hint" id={`${P}-hours-hint`}>
+              {TIME_COPY.minutesHint}
+            </p>
+            <div className="duration__row">
+              <div className="duration__part">
+                <label htmlFor={`${P}-hours`} className="duration__label">
+                  Hours
+                </label>
+                <input
+                  {...a11y("hours")}
+                  inputMode="numeric"
+                  autoComplete="off"
+                  maxLength={2}
+                  value={f.hours}
+                  onChange={(e) => set({ hours: e.target.value })}
+                />
+              </div>
+              <div className="duration__part">
+                <label htmlFor={`${P}-minutes`} className="duration__label">
+                  Minutes
+                </label>
+                <select
+                  id={`${P}-minutes`}
+                  value={f.minutes}
+                  onChange={(e) => set({ minutes: e.target.value })}
+                >
+                  {QUARTERS.map((q) => (
+                    <option key={q} value={q}>
+                      {q === "0" ? "00" : q}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            {err("hours")}
+          </fieldset>
         </div>
-        <div className="dialog__actions">
-          <button type="button" className="btn btn--secondary" onClick={props.onClose} disabled={busy}>
-            Cancel
-          </button>
-          <button type="submit" className="btn btn--primary" disabled={busy} aria-busy={busy || undefined}>
-            {busy ? "Saving…" : props.entry ? "Save entry" : "Log time"}
-          </button>
-        </div>
-      </form>
+
+        <TargetField
+          value={f.target}
+          picking={picking}
+          onPick={(t) => {
+            set({ target: t });
+            setPicking(false);
+            setErrors(({ target: _gone, ...rest }) => rest);
+          }}
+          onChange={() => {
+            setPicking(true);
+            requestAnimationFrame(() => document.getElementById(`${P}-target-q`)?.focus());
+          }}
+          error={errors.target}
+        />
+
+        <label className="check">
+          <input type="checkbox" checked={f.billable} onChange={(e) => set({ billable: e.target.checked })} />
+          <span>Billable</span>
+        </label>
+        <FormField id={`${P}-note`} label="Note" optional error={errors.note}>
+          {(a) => (
+            <textarea
+              {...a}
+              rows={3}
+              maxLength={1000}
+              value={f.note}
+              onChange={(e) => set({ note: e.target.value })}
+            />
+          )}
+        </FormField>
+      </div>
+      <div className="dialog__actions">
+        <button type="button" className="btn btn--secondary" onClick={props.onClose} disabled={busy}>
+          Cancel
+        </button>
+        <button type="submit" className="btn btn--primary" disabled={busy} aria-busy={busy || undefined}>
+          {busy ? "Saving…" : props.entry ? "Save entry" : "Log time"}
+        </button>
+      </div>
+    </form>
   );
 }
 
@@ -270,7 +271,10 @@ function TargetField(props: {
 }) {
   const [q, setQ] = useState("");
   const term = useDebounced(q.trim().length >= 2 ? q.trim() : "");
-  const found = useLoad(() => (props.picking ? api.timeTargets(term) : Promise.resolve(null)), `${props.picking}:${term}`);
+  const found = useLoad(
+    () => (props.picking ? api.timeTargets(term) : Promise.resolve(null)),
+    `${props.picking}:${term}`,
+  );
   if (!props.picking && props.value)
     return (
       <div className="field">
@@ -320,7 +324,11 @@ function TargetField(props: {
         )}
       </FormField>
       <p className="visually-hidden" role="status">
-        {found.state === "loading" ? "Loading…" : found.state === "ready" && term ? TIME_PENDING.targetsFound(n) : ""}
+        {found.state === "loading"
+          ? "Loading…"
+          : found.state === "ready" && term
+            ? TIME_PENDING.targetsFound(n)
+            : ""}
       </p>
       {found.state === "failed" ? (
         <Notice tone="error">{careErrorText(found.error)}</Notice>

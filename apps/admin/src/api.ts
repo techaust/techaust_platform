@@ -627,7 +627,12 @@ export type CarePlanBase = {
 };
 export type CarePlanTermsSummary = { current: CareTerms | null; pending: CareTerms | null };
 export type CarePlanRow = CarePlanBase & { terms: CarePlanTermsSummary; usage: CareUsage | null };
-export type CarePlanList = { today: string; carePlans: CarePlanRow[]; next: string | null; prev: string | null };
+export type CarePlanList = {
+  today: string;
+  carePlans: CarePlanRow[];
+  next: string | null;
+  prev: string | null;
+};
 export type CarePlanPage = {
   today: string;
   plan: CarePlanBase;
@@ -669,7 +674,10 @@ export type NewCarePlanInput = {
   billingDay: number;
 };
 export type CareTermsInput = Partial<
-  Pick<NewCarePlanInput, "tier" | "priceMinor" | "includedMinutes" | "aiOpsMinor" | "overageRateMinor" | "rollover">
+  Pick<
+    NewCarePlanInput,
+    "tier" | "priceMinor" | "includedMinutes" | "aiOpsMinor" | "overageRateMinor" | "rollover"
+  >
 > & { expectedUpdatedAt: number };
 
 export type TimeEntry = {

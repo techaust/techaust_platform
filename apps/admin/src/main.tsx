@@ -73,7 +73,10 @@ const router = createBrowserRouter([
       {
         lazy: shell,
         children: [
-          { index: true, lazy: async () => ({ Component: (await shell()).Dashboard }) },
+          {
+            index: true,
+            lazy: async () => ({ Component: (await import("./routes/dashboard.tsx")).Dashboard }),
+          },
           { path: "account", lazy: () => import("./routes/account.tsx") },
           { path: "settings", lazy: async () => ({ Component: (await settings()).SettingsIndex }) },
           { path: "settings/users", lazy: () => import("./routes/users.tsx") },
@@ -88,6 +91,10 @@ const router = createBrowserRouter([
           { path: "projects", lazy: () => import("./routes/projects.tsx") },
           { path: "projects/new", lazy: () => import("./routes/projects/new.tsx") },
           { path: "projects/:id", lazy: () => import("./routes/projects/project.tsx") },
+          { path: "care-plans", lazy: () => import("./routes/care-plans.tsx") },
+          { path: "care-plans/new", lazy: () => import("./routes/care/new.tsx") },
+          { path: "care-plans/:id", lazy: () => import("./routes/care/plan.tsx") },
+          { path: "time", lazy: () => import("./routes/time.tsx") },
           // The M1.5 address of the staff screen.
           { path: "users", element: <Navigate to="/settings/users" replace /> },
           { path: ":section/*", lazy: async () => ({ Component: (await shell()).Section }) },

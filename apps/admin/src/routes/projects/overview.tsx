@@ -11,6 +11,7 @@ import { useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { FieldError, Notice } from "../../components/ui.tsx";
 import { allowed } from "../../lib/access.ts";
+import { hoursLoggedLine } from "../../lib/care.ts";
 import {
   COPY,
   type DetailsErrors,
@@ -29,7 +30,6 @@ import {
   totalsWarning,
   typeName,
 } from "../../lib/projects.ts";
-import { hoursLoggedLine } from "../../lib/care.ts";
 import { useUser } from "../../session.tsx";
 import { Fact } from "../clients/overview.tsx";
 import { Day, MilestonePill, MoneyIn, VisibilityPill } from "./parts.tsx";

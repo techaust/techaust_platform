@@ -47,7 +47,9 @@ export const TIME_PENDING = {
   targetsFound: (n: number) => pending(`${n} ${n === 1 ? "match" : "matches"} found`),
   exportRange: pending("Choose dates no more than 366 days apart, the first before the second."),
   noteTooLong: pending("Keep the note to 1,000 characters."),
-  truncated: pending("This week has more rows than the timesheet shows. Filter by person or target to see them all."),
+  truncated: pending(
+    "This week has more rows than the timesheet shows. Filter by person or target to see them all.",
+  ),
 } as const;
 
 // ---- the week ----------------------------------------------------------------------------------------------------------------
@@ -91,7 +93,8 @@ export function targetOf(
     carePlanTier?: CareTier | null;
   },
 ): TargetRef | null {
-  if (g.projectId) return { kind: "project", id: g.projectId, code: g.projectCode ?? "", label: g.projectCode ?? "" };
+  if (g.projectId)
+    return { kind: "project", id: g.projectId, code: g.projectCode ?? "", label: g.projectCode ?? "" };
   if (g.carePlanId) {
     const tier = g.carePlanTier ? ` (${TIER_LABELS[g.carePlanTier]})` : "";
     const code = g.carePlanClientCode ?? "";
@@ -150,7 +153,8 @@ export type EntryForm = {
 };
 
 export const entryFormOf = (e: TimeEntry | null, today: string, me: string): EntryForm => ({
-  userId: e?.userId ?? me,
+  // "" is the viewer themselves (the API's default); the owner may pick someone else.
+  userId: e?.userId ?? (me || ""),
   workDate: e?.workDate ?? today,
   hours: e ? String(Math.trunc(e.minutes / 60)) : "",
   minutes: e ? String(e.minutes % 60) : "0",
@@ -202,23 +206,24 @@ export function entryInput(
 }
 
 /** The earliest date a person may pick: 7 days back, or none for the owner. */
-export const earliestDate = (today: string, canWriteAny: boolean) => (canWriteAny ? undefined : shift(today, -LOCK_DAYS));
+export const earliestDate = (today: string, canWriteAny: boolean) =>
+  canWriteAny ? undefined : shift(today, -LOCK_DAYS);
 
 // ---- the lock ----------------------------------------------------------------------------------------------------------------
 
 /**
  * How an entry stands for the viewer: `open` (theirs to change), `locked` (the author's 7 days are over and the viewer can't
  * override), `override` (locked for the author, but the owner may still change it and the audit log records it), or `readonly`
- * (another person's entry the viewer only reads).
+ * (the accountant, who reads everyone's time and writes none). The API's `canEdit` decides; a viewer who logs only their own time
+ * sees only their own entries (the API scopes them), so an entry they can't edit is one their lock has closed.
  */
 export function lockState(
-  e: Pick<TimeEntry, "canEdit" | "createdAt" | "userId">,
-  viewer: { id: string; canWriteAny: boolean },
+  e: Pick<TimeEntry, "canEdit" | "createdAt">,
+  viewer: { canWriteOwn: boolean; canWriteAny: boolean },
   now = Date.now(),
 ): "open" | "locked" | "override" | "readonly" {
-  const lockedForAuthor = authorLocked(e.createdAt, now);
-  if (e.canEdit) return lockedForAuthor && viewer.canWriteAny ? "override" : "open";
-  return e.userId === viewer.id && lockedForAuthor ? "locked" : "readonly";
+  if (e.canEdit) return viewer.canWriteAny && authorLocked(e.createdAt, now) ? "override" : "open";
+  return viewer.canWriteOwn && !viewer.canWriteAny ? "locked" : "readonly";
 }
 
 // ---- the CSV export ------------------------------------------------------------------------------------------------------------

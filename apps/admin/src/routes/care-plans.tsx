@@ -8,13 +8,7 @@ import { EmptyState, PageHeader } from "../components/display.tsx";
 import { LifeBuoy, Plus, Search } from "../components/icons.tsx";
 import { LoadFailed, useLoad } from "../components/states.tsx";
 import { allowed } from "../lib/access.ts";
-import {
-  CARE_COPY,
-  CARE_PENDING,
-  CARE_STATUS_LABELS,
-  CARE_STATUSES,
-  moneyText,
-} from "../lib/care.ts";
+import { CARE_COPY, CARE_PENDING, CARE_STATUS_LABELS, CARE_STATUSES, moneyText } from "../lib/care.ts";
 import { useUser } from "../session.tsx";
 import { CareGate, CarePill, FlagPill, HoursBar, PlanName, tierOf, tierText } from "./care/parts.tsx";
 import { ClientFilter } from "./projects/client-filter.tsx";
@@ -204,23 +198,21 @@ function CarePlans() {
       )}
 
       {list.state === "ready" && rows.length > 0 && (
-        <>
-          <Pager
-            noun="care plans"
-            from={offset + 1}
-            to={offset + rows.length}
-            hasPrev={list.data.prev !== null}
-            hasNext={list.data.next !== null}
-            onPrev={() =>
-              pageNo <= 2
-                ? set({})
-                : set({ before: list.data.prev, after: null, page: String(pageNo - 1) }, true)
-            }
-            onNext={() => set({ after: list.data.next, before: null, page: String(pageNo + 1) }, true)}
-            pageSize={size}
-            onPageSize={(n) => set({ size: n === 50 ? "50" : null })}
-          />
-        </>
+        <Pager
+          noun="care plans"
+          from={offset + 1}
+          to={offset + rows.length}
+          hasPrev={list.data.prev !== null}
+          hasNext={list.data.next !== null}
+          onPrev={() =>
+            pageNo <= 2
+              ? set({})
+              : set({ before: list.data.prev, after: null, page: String(pageNo - 1) }, true)
+          }
+          onNext={() => set({ after: list.data.next, before: null, page: String(pageNo + 1) }, true)}
+          pageSize={size}
+          onPageSize={(n) => set({ size: n === 50 ? "50" : null })}
+        />
       )}
     </>
   );

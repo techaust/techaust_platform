@@ -5,13 +5,7 @@
 // today (or on the start date); new terms from the next billing period (owner's Q1). The server decides every rule again.
 import { type FormEvent, type ReactNode, useState } from "react";
 import { Link, useParams } from "react-router";
-import {
-  api,
-  type CarePlanPage,
-  type CareStatus,
-  type CareUsage,
-  RequestError,
-} from "../../api.ts";
+import { api, type CarePlanPage, type CareStatus, type CareUsage, RequestError } from "../../api.ts";
 import { ConfirmDialog } from "../../components/confirm-dialog.tsx";
 import { type Column, DataTable } from "../../components/data-table.tsx";
 import { Modal } from "../../components/dialog.tsx";
@@ -43,11 +37,11 @@ import {
   statusToast,
   type TermChange,
   type TermsForm,
+  TIER_LABELS,
   termsChange,
   termsConfirm,
   termsDate,
   termsFormOf,
-  TIER_LABELS,
 } from "../../lib/care.ts";
 import { useUser } from "../../session.tsx";
 import { Fact } from "../clients/overview.tsx";
@@ -160,7 +154,16 @@ function PlanStrip({ data }: { data: CarePlanPage }) {
         <span className="docno strip-client__code">{p.clientCode}</span>
       </span>,
     ],
-    ["Tier", t ? TIER_LABELS[t.tier] : <span className="muted">{CARE_COPY.notStarted}</span>],
+    [
+      "Tier",
+      t ? (
+        TIER_LABELS[t.tier]
+      ) : (
+        <span key="t" className="muted">
+          {CARE_COPY.notStarted}
+        </span>
+      ),
+    ],
     [
       "Price per month",
       t ? (
@@ -168,7 +171,9 @@ function PlanStrip({ data }: { data: CarePlanPage }) {
           {moneyText(t.priceMinor, p.currency)}
         </span>
       ) : (
-        <span className="muted">{CARE_COPY.notStarted}</span>
+        <span key="p" className="muted">
+          {CARE_COPY.notStarted}
+        </span>
       ),
     ],
     ["Start date", <Day key="s" iso={p.startDate} />],
@@ -324,7 +329,13 @@ const Hours = ({ m }: { m: number }) => <span className="tnum">{hoursText(m)}</s
 
 // ---- terms and status history ------------------------------------------------------------------------------------------------
 
-function TermsList({ t, currency }: { t: NonNullable<CarePlanPage["terms"]["current"]>; currency: CarePlanPage["plan"]["currency"] }) {
+function TermsList({
+  t,
+  currency,
+}: {
+  t: NonNullable<CarePlanPage["terms"]["current"]>;
+  currency: CarePlanPage["plan"]["currency"];
+}) {
   const money = (v: number | null) =>
     v === null ? <span className="muted">None</span> : <span className="tnum">{moneyText(v, currency)}</span>;
   return (
@@ -558,17 +569,25 @@ function TermsChange(props: { data: CarePlanPage; name: string; onStale: () => v
                 <caption className="visually-hidden">What changes</caption>
                 <thead>
                   <tr>
-                    <th scope="col">Term</th>
-                    <th scope="col">Now</th>
-                    <th scope="col">From {date ? <Day iso={date} /> : null}</th>
+                    <th scope="col" className="terms-diff__cell terms-diff__head">
+                      Term
+                    </th>
+                    <th scope="col" className="terms-diff__cell terms-diff__head">
+                      Now
+                    </th>
+                    <th scope="col" className="terms-diff__cell terms-diff__head">
+                      From <Day iso={date} />
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {review.changes.map((c) => (
                     <tr key={c.field}>
-                      <th scope="row">{c.field}</th>
-                      <td className="tnum">{c.from}</td>
-                      <td className="tnum terms-diff__to">{c.to}</td>
+                      <th scope="row" className="terms-diff__cell terms-diff__term">
+                        {c.field}
+                      </th>
+                      <td className="tnum terms-diff__cell">{c.from}</td>
+                      <td className="tnum terms-diff__cell terms-diff__to">{c.to}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -577,7 +596,12 @@ function TermsChange(props: { data: CarePlanPage; name: string; onStale: () => v
             </div>
             {failure && <Notice tone="error">{failure}</Notice>}
             <div className="dialog__actions">
-              <button type="button" className="btn btn--secondary" onClick={() => setReview(null)} disabled={busy}>
+              <button
+                type="button"
+                className="btn btn--secondary"
+                onClick={() => setReview(null)}
+                disabled={busy}
+              >
                 Back
               </button>
               <button

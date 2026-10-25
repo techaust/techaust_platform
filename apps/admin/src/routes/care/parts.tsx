@@ -84,11 +84,17 @@ export function HoursBar({
 
 export const tierText = (tier: CareTier | null | undefined) => (tier ? TIER_LABELS[tier] : "Care plan");
 /** The tier in force (or, before the start, the one booked for it). */
-export const tierOf = (r: { terms: { current: { tier: CareTier } | null; pending: { tier: CareTier } | null } }) =>
-  r.terms.current?.tier ?? r.terms.pending?.tier ?? null;
+export const tierOf = (r: {
+  terms: { current: { tier: CareTier } | null; pending: { tier: CareTier } | null };
+}) => r.terms.current?.tier ?? r.terms.pending?.tier ?? null;
 
 /** How a plan is named in lists: a link to the plan (the client's name, or the tier on the client's own page), its code and tier. */
-export function PlanName(props: { id: string; title: string; code?: string | undefined; sub?: string | undefined }) {
+export function PlanName(props: {
+  id: string;
+  title: string;
+  code?: string | undefined;
+  sub?: string | undefined;
+}) {
   return (
     <span className="person client-name">
       <Link className="person__name client-name__link" to={`/care-plans/${props.id}`}>

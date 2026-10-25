@@ -6,7 +6,7 @@
 // sentence the screens need and 07-M lacks is a PLACEHOLDER: it carries a visible "[Placeholder]" tag (`pending()` from the M3.4
 // words), sits in `CARE_PENDING` below, and is listed in the designer report. Labels (buttons, columns, field names) come from the
 // PRD and the existing screens. Amounts are formatted only through @techaust/core; the screens never add money up themselves.
-import { formatDate, parseIsoDate } from "@techaust/core/dates";
+
 import {
   CARE_STEP_MINUTES,
   CARE_TRANSITIONS,
@@ -14,6 +14,7 @@ import {
   statusEffectiveOn,
   termsEffectiveFrom,
 } from "@techaust/core/care";
+import { formatDate, parseIsoDate } from "@techaust/core/dates";
 import type {
   CareDefaults,
   CarePlanBase,
@@ -250,7 +251,11 @@ export type PlanForm = {
 };
 
 /** The form for a new plan with the catalogue's prefill for a tier (nothing invented: an undecided value stays empty). */
-export function planFormFor(tier: CareTier, d: CareDefaults, base?: Partial<PlanForm>): PlanForm {
+export function planFormFor(
+  tier: CareTier,
+  d: CareDefaults,
+  base?: { [K in keyof PlanForm]?: PlanForm[K] | undefined },
+): PlanForm {
   const t = d.tiers[tier];
   return {
     tier,
@@ -368,10 +373,15 @@ export function termsChange(
   }
   if (b.rollover !== newest.rollover) {
     body.rollover = b.rollover;
-    changes.push({ field: "Rollover", from: ROLLOVER_LABELS[newest.rollover], to: ROLLOVER_LABELS[b.rollover] });
+    changes.push({
+      field: "Rollover",
+      from: ROLLOVER_LABELS[newest.rollover],
+      to: ROLLOVER_LABELS[b.rollover],
+    });
   }
   return { ok: true, body, changes };
 }
 
 /** The terms a change is laid over (the server's rule): the newest row, i.e. the pending one when a change is booked. */
-export const newestTerms = (t: { current: CareTerms | null; pending: CareTerms | null }) => t.pending ?? t.current;
+export const newestTerms = (t: { current: CareTerms | null; pending: CareTerms | null }) =>
+  t.pending ?? t.current;
