@@ -1,6 +1,6 @@
 # 12: Status
 
-_Replaced (never appended) at the end of every session. Last updated: **2026-10-24, 22:50** (IST)._
+_Replaced (never appended) at the end of every session. Last updated: **2026-10-25, 06:30** (IST)._
 
 ## Done
 - **Phases 1–5:** approved 2026-10-06 ([09-roadmap.md](09-roadmap.md)).
@@ -15,24 +15,34 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
   - analyst brief → builder → analyst early check (CHANGE minor) → designer → review APPROVE (8 findings, all fixed or kept with a reason) → re-check APPROVE; `pnpm check` and `pnpm test` green
   - owner's staging test: all four emails arrived, check and lockout worked; CPU all under 10 ms (first jobs invocation after deploy 4 ms; staff email sends 8 ms, accepted with a follow-up)
 - **Owner inputs on the site (2026-10-23):** postal address on Contact and the legal pages ([PR #57](https://github.com/techaust/techaust_platform/pull/57)); the founder's LinkedIn on About ([PR #58](https://github.com/techaust/techaust_platform/pull/58)); external links open in a new tab with a notice and a build check ([PR #59](https://github.com/techaust/techaust_platform/pull/59)); footer shows company links only, arrow alignment fixed ([PR #60](https://github.com/techaust/techaust_platform/pull/60)).
-
 - **M2.5 SEO, performance and accessibility: approved 2026-10-24** after the owner's NVDA pass on every page ([PR #66](https://github.com/techaust/techaust_platform/pull/66), [#67](https://github.com/techaust/techaust_platform/pull/67); [run file](runs/m2.5-seo-perf-a11y.md)). **M2 (public website) is complete.**
 - **First cost report** ([PR #68](https://github.com/techaust/techaust_platform/pull/68); [appendix](14-models-and-usage-appendix/cost-report-2026-10-23.md)): the week was 20 points under the pace; no model or effort change recommended (the owner has not decided yet).
 - **CPU tuning 3 and 4: done 2026-10-24** ([PR #69](https://github.com/techaust/techaust_platform/pull/69), [#72](https://github.com/techaust/techaust_platform/pull/72); [run file](runs/cpu-cold-send.md)): the staging reading passed, every invocation ≤ 7 ms (2FA send 3, `/magic` 6, expansions 1–2, admin sign-in steps 4–6). Re-read on the first real staff emails after Phase 7.
 - **PR #70** (the overnight-batch plan) closed unmerged; the owner keeps the original plan (hard rule 2).
 - **M3.1 admin shell, users and settings: approved 2026-10-24** ([PR #74](https://github.com/techaust/techaust_platform/pull/74); [run file](runs/m3.1-admin-shell.md); copy [07-H](07-content-appendix/H-m3.1-admin-emails.md)): app shell and navigation; users (invite email, roles, deactivate and reactivate, keyset list); every Settings screen (company, bank with step-up and masked numbers, numbering with the issued-series lock, terms, tax, email, payments with the go-live flag off, retention); the audit-log viewer with a step-up CSV export; the bell; admin CSP and immutable `/assets/*`. Preview approved → builder → analyst check → designer → review (send back) → fixes → two re-checks APPROVE; CI green; staging deployed.
 
+- **M3.2 Leads: on staging, awaiting the owner's review** ([PR #76](https://github.com/techaust/techaust_platform/pull/76), merged 2026-10-25; [run file](runs/m3.2-leads.md); copy [07-I](07-content-appendix/I-m3.2-lead-replies.md)): list and board (drag + keyboard "Move to…"), lead page and timeline, manual leads, duplicate links, convert → client + contact + draft proposal (one batch), replies from `hello@` with the three 07-I templates, the retention clean-up (cron 03:30 IST, **dry run** on staging) with the 14-day "Scheduled for deletion" view, stage automation for M4, the numbering lock inside the write (L-d). Migrations 0016–0017 applied on staging. Builder → analyst check → designer → review → fixes → three re-checks APPROVE.
+
 ## In progress
-- Nothing building. This record update is its own docs PR.
+- **M3.3 Clients and contacts (Tier A): built, reviewed, PR open** ([PR #77](https://github.com/techaust/techaust_platform/pull/77), auto-merge and Auto-fix on; [run file](runs/m3.3-clients.md); copy [07-J](07-content-appendix/J-m3.3-client-screens.md)). Started before M3.2's approval on the owner's word (one-time exception to hard rule 2; docs/13). Clients list and page with tabs; Sales reads the tax identity but never money settings, invoices, statement or data tools; currency and type locks; state required for Indian clients; contacts with portal access (off or an email change signs them out); owner-only export and erase/anonymise with step-up (VERIFY WITH CA/LEGAL). Migrations 0018–0023 (add/index/trigger only). Admin Worker 194,114 of 207,939 bytes (limit raised to 75 % of M0, Lead).
 
 ## Next
-1. **M3.2 Leads** (Tier B; ADM-LEAD-01…06; docs/09): the lead presents the plan, the owner approves it, then builder → designer → review → staging → approval. Carries the M3.1 follow-up L-d (the settings format write inside the issue-safe batch; VERIFY WITH CA/LEGAL).
-2. **Cost report after M3.1** ([14 §8](14-models-and-usage.md)).
+1. **The owner reviews M3.2 and M3.3 on staging** (below); any M3.2 change first, then M3.3's.
+2. **Staging readings (lead):** `cpuTimeMs` for `convert`, the client page, export, erase, and the admin sign-in cold start (the admin Worker grew about 45 % since M3.1); the first lead clean-up dry run (log line `lead.purge_dry_run_page`).
+3. **Before M3.4:** a structural plan for the admin Worker size (cold-start CPU as the metric) instead of raising the limit again.
+4. **Cost report after M3.1** ([14 §8](14-models-and-usage.md)).
 
-**Usage now:** weekly 48 %, 5-hour 13 %; under the pace (≈ 74 %). Weekly reset **Mon 26 Oct, 15:30 IST**.
+**Usage now:** weekly about 56 %, 5-hour low; under the pace. Weekly reset **Mon 26 Oct, 15:30 IST**.
 
 ## Waits on the owner
-- **Today's items:** approve the M3.2 plan; if not done yet, enter the real company details and both bank accounts in staging Settings; whether to accept the first cost report's "no change".
+- **Today (2026-10-25):**
+  - try **M3.2 Leads** and **M3.3 Clients** on staging admin and say "approved" (or what to change) for each
+  - approve the type-lock sentence: "The client type can't change once this client has an issued document."
+  - check the other new admin sentences listed in [runs/m3.3-clients.md](runs/m3.3-clients.md) "Designer report: screens"
+  - a one-line hint for "Attach PDF" (the lead drafts it from docs/04 ADM-PROP-07)
+  - whether the export and erase dialogs show a "VERIFY WITH CA/LEGAL" line, and its words
+  - VERIFY WITH CA/LEGAL: should anonymising an individual client also clear its GSTIN (it contains the PAN)?
+  - if not done yet: the real company details and both bank accounts in staging Settings; the first cost report's "no change"
 - **For the website:**
   - a **new headshot** (iPhone guide given 2026-10-23; no photo is used until then)
   - **bio facts** (the lead drafts 80–120 words from them; you approve word for word)
@@ -50,6 +60,8 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
 - **Model menu:** keep **Opus 5.5, medium** for every conversation.
 
 ## Open follow-ups
+- **M3.3 ([run file](runs/m3.3-clients.md)):** `contactId` in the document recipient snapshot and keep `CONTACT_ON_ISSUED_DOCUMENT_SQL` current (M4.2/M5); an invoice-currency trigger (M5); scope client-tied email kinds explicitly in the export when M4 adds them (VERIFY WITH CA/LEGAL); `anonymised_at` on clients (M7.4); jobs skip a queued magic-link email whose token was deleted; the 0022 backfill folds ASCII case only; a component test for "Show more contacts".
+- **M3.2 ([run file](runs/m3.2-leads.md)):** the `lead.reply` email restyled with the M4 email set; `email_log` rows of purged leads removed by M7.4's age job; the bundle's structural plan before M3.4.
 - **M3.1 ([run file](runs/m3.1-admin-shell.md)):** the series-lock guard inside the issue batch (M3.2; VERIFY WITH CA/LEGAL); the bank purpose-code hint and senders reading the stored Settings › Email values (M5); bell-row erasure and pruning (M7.4); gateway secret names and a live gateway reverting when the go-live flag is turned off (Phase 7); optional audit export id (L-c); a lost bank-save response gives a false 409 (reloading recovers); remove the "hashing took N ms" line after the owner's phone timing check.
 - **M2.5 ([run file](runs/m2.5-seo-perf-a11y.md)):** `zod/mini` on `/contact` and `/get-a-quote` (≈ 20 KB gzipped); not verified: Google's Rich Results validator, real LinkedIn/WhatsApp previews, Safari/Firefox.
 - **M2.4b ([run file](runs/m2.4b-signin-email.md) "Re-check", "Handover"):** **Phase 7 checklist:** production `EMAIL_QUEUE` for admin and portal, the production Turnstile widget, fail the production SPA build on an empty `TURNSTILE_SITE_KEY` (via `check-prod-readiness.mjs`); product question "correct password, code never completed: alert?"; `/totp` and `/recovery` build the lockout alert before verifying (kept, rare and true); the React Turnstile wrapper is duplicated in admin and portal (share it when a third screen needs it); the break-glass CLI reset sends no email (prints a reminder); real mail clients beyond Zoho.
