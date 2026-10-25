@@ -4,6 +4,7 @@ import {
   ATTACHMENT_KEY,
   CONFIRMATION_LINK_DAYS,
   certificateKey,
+  certificateKeyOfPdfKey,
   checkDecline,
   confirmationLinkExpiry,
   DECLINE_NOTE_MAX,
@@ -11,8 +12,10 @@ import {
   effectiveOfferStatus,
   headRatesBp,
   isDeclineReason,
+  mintOfferToken,
   normaliseTypedName,
   offerLinkExpiry,
+  offerLinkUrl,
   todayIst,
 } from "../src/offers.ts";
 import { pdfKeys } from "../src/pdf-jobs.ts";
@@ -172,6 +175,29 @@ describe("headRatesBp", () => {
   it("refuses a negative or fractional rate", () => {
     expect(() => headRatesBp({ effectiveRateBp: -1 }, "intra")).toThrow(RangeError);
     expect(() => headRatesBp({ effectiveRateBp: 1.5 }, "inter")).toThrow(RangeError);
+  });
+});
+
+describe("link tokens and urls", () => {
+  it("a token is 43 URL-safe characters, its hash is the SHA-256 hex, and two tokens differ", async () => {
+    const a = await mintOfferToken();
+    const b = await mintOfferToken();
+    expect(a.token).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(a.hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(a.token).not.toBe(b.token);
+    const again = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(a.token));
+    expect(a.hash).toBe(Array.from(new Uint8Array(again), (x) => x.toString(16).padStart(2, "0")).join(""));
+  });
+  it("the link carries the token in the fragment only", () => {
+    expect(offerLinkUrl("https://portal.example/", "abc")).toBe("https://portal.example/o#t=abc");
+    expect(offerLinkUrl("https://portal.example", "abc")).toBe("https://portal.example/o#t=abc");
+    expect(new URL(offerLinkUrl("https://portal.example", "abc")).search).toBe("");
+  });
+  it("the certificate key follows the PDF key", () => {
+    const pdf = pdfKeys({ type: "proposal", fy: "2026-27", number: 3, version: 2 }).pdf;
+    expect(certificateKeyOfPdfKey(pdf)).toBe(
+      certificateKey({ type: "proposal", fy: "2026-27", number: 3, version: 2 }),
+    );
   });
 });
 

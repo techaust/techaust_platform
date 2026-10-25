@@ -108,6 +108,27 @@ export const ATTACHMENT_KEY =
 /** The largest attachment the email consumer will read (the CPU budget on the Free plan decides; measured in stage B). */
 export const ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024;
 
+/** The browser link of an offer: the token is in the URL FRAGMENT (never sent to a server, never in a log) and is used after a click. */
+export const offerLinkUrl = (portalBase: string, token: string): string =>
+  `${portalBase.replace(/\/+$/, "")}/o#t=${token}`;
+
+const toBase64Url = (bytes: Uint8Array): string => {
+  let s = "";
+  for (const b of bytes) s += String.fromCharCode(b);
+  return btoa(s).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+};
+
+/** A new link token: 32 random bytes as 43 URL-safe characters, and the SHA-256 (hex) of it that the database keeps. */
+export async function mintOfferToken(): Promise<{ token: string; hash: string }> {
+  const token = toBase64Url(crypto.getRandomValues(new Uint8Array(32)));
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+  return { token, hash: Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("") };
+}
+
+/** The certificate key that belongs to a PDF key (`.../0003-v1.pdf` becomes `.../0003-v1-certificate.pdf`). */
+export const certificateKeyOfPdfKey = (pdfKey: string): string =>
+  pdfKey.replace(/\.pdf$/, "-certificate.pdf");
+
 export type HeadRates = { readonly cgstBp: number; readonly sgstBp: number; readonly igstBp: number };
 
 /**
