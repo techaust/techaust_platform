@@ -4,9 +4,15 @@
 import { env } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core/ids";
 import { deleteAfter } from "@techaust/core/lead-lifecycle";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { SEARCH_PLAN_SQL } from "./leads.ts";
+import { mkItem } from "./test-catalogue.ts";
 import { call, captureQueue, countOf, one, rows, sessionFor, withEnv } from "./test-helpers.ts";
+
+// M4.1: a lead's service name is read from catalogue_items (no seed import), so the item the leads point at exists here.
+beforeAll(async () => {
+  await mkItem({ code: "S5", name: "Custom Web Apps & Business Portals" });
+});
 
 // biome-ignore lint/suspicious/noExplicitAny: response bodies in tests are read loosely
 type J = Record<string, any>;
@@ -130,6 +136,56 @@ describe("POST /leads: a lead entered by hand [ADM-LEAD-01]", () => {
       { name: "X", email: "x@example.com", ownerId: "no-such-member" },
     ];
     for (const b of bad) expect((await send("/leads", "POST", b, s.cookie)).status).toBe(400);
+  });
+
+  it("refuses a retired service code and writes nothing; once it is active again the lead is made (review finding 6)", async () => {
+    const s = await sessionFor("owner");
+    const retired = await mkItem({ active: 0 });
+    const before = await countOf("leads");
+    const body = { name: "Retired Ask", email: "retired-ask@example.com", serviceCode: retired.code };
+    const refused = await send("/leads", "POST", body, s.cookie);
+    expect(refused.status).toBe(400);
+    expect(await countOf("leads")).toBe(before);
+    await env.DB.prepare("UPDATE catalogue_items SET active = 1 WHERE code = ?1").bind(retired.code).run();
+    const made = await send("/leads", "POST", body, s.cookie);
+    expect(made.status).toBe(201);
+    expect(await countOf("leads")).toBe(before + 1);
+    // 'not-sure' needs no catalogue row and is still accepted.
+    const notSure = await send(
+      "/leads",
+      "POST",
+      { name: "Not Sure", email: "not-sure-ask@example.com", serviceCode: "not-sure" },
+      s.cookie,
+    );
+    expect(notSure.status).toBe(201);
+  });
+});
+
+describe("the service name comes from the catalogue (M4.1)", () => {
+  it("shows a renamed item's new name in the list, words '&' as 'and', and accepts 'not-sure'", async () => {
+    const s = await sessionFor("owner");
+    const lead = await addLead({ service_code: "S5" });
+    const names = async () =>
+      (await json(await get(`/leads?q=${lead.ref}`, s.cookie))).leads.map((l: J) => l.serviceName);
+    expect(await names()).toEqual(["Custom Web Apps and Business Portals"]);
+    await env.DB.prepare(
+      "UPDATE catalogue_items SET name = 'Renamed Portals & Apps' WHERE code = 'S5'",
+    ).run();
+    expect(await names()).toEqual(["Renamed Portals and Apps"]);
+    const notSure = await addLead({ service_code: "not-sure" });
+    expect((await json(await get(`/leads?q=${notSure.ref}`, s.cookie))).leads[0].serviceName).toBe(
+      "Not sure yet",
+    );
+    const made = await send(
+      "/leads",
+      "POST",
+      { name: "X", email: "ns@example.com", serviceCode: "not-sure" },
+      s.cookie,
+    );
+    expect(made.status).toBe(201);
+    await env.DB.prepare(
+      "UPDATE catalogue_items SET name = 'Custom Web Apps & Business Portals' WHERE code = 'S5'",
+    ).run();
   });
 });
 

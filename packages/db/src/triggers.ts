@@ -15,7 +15,9 @@ import {
   docCounters,
   documents,
   magicLinkTokens,
+  siteSnapshots,
   staffUsers,
+  templates,
   termsBlocks,
   termsVersions,
 } from "./schema/index.ts";
@@ -263,6 +265,24 @@ export function timeTriggerStatements(): string[] {
   ];
 }
 
+/**
+ * Catalogue triggers (M4.1, ADM-CAT-03..05; a separate set, the earlier ones have no IF NOT EXISTS). A template is never edited
+ * or deleted (an edit is a new version), a published snapshot is never edited or deleted (the website build and the audit read
+ * it), and a catalogue item is never deleted (it is retired by deactivating it, so documents that snapshot a line keep their
+ * code). `catalogue_price_history` is already append-only since 0001. No table is rebuilt.
+ */
+export function catalogueTriggerStatements(): string[] {
+  const table = (t: Parameters<typeof getTableConfig>[0]) => getTableConfig(t).name;
+  return [
+    // SQLite treats NULLs as distinct, so the unique index on (kind, category, version) does not stop two versions of a block
+    // without a category. drizzle-kit cannot write an expression index over several columns, so it is written here.
+    "CREATE UNIQUE INDEX `templates_kind_category_version_coalesced` ON `templates` (`kind`, coalesce(`category`, ''), `version`);",
+    ...appendOnly(table(templates)),
+    ...appendOnly(table(siteSnapshots)),
+    `CREATE TRIGGER \`catalogue_items_no_delete\` BEFORE DELETE ON \`catalogue_items\` BEGIN ${abort("a catalogue item is retired by deactivating it, never deleted")} END;`,
+  ];
+}
+
 /** The only statuses a document can be issued from (docs/05 §5.4 change 14: drafts only; owner decision 2026-10-07).
  * An approval (`approvals`, kind `issue`) is a record next to the draft, not a document status. Shared by the guard
  * trigger below and by the reference issue batch in test/helpers.ts, so the two cannot drift apart again. */
@@ -305,6 +325,10 @@ export const TRIGGER_SETS = {
   project_triggers: {
     what: "project, milestone, note and file integrity (M3.4)",
     statements: projectTriggerStatements,
+  },
+  catalogue_triggers: {
+    what: "catalogue append-only triggers and no delete of items (M4.1)",
+    statements: catalogueTriggerStatements,
   },
   time_triggers: {
     what: "time-log, care-plan history and mirror integrity (M3.5)",

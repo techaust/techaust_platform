@@ -5,6 +5,7 @@
 // which tests run with D1 batches and scripts/seed-sql.ts prints for `wrangler d1 execute`.
 import { SETTINGS_DEFAULTS, SETTINGS_SCHEMAS, type SeededSettingKey, stableId } from "@techaust/core";
 import { CATALOGUE } from "./catalogue.ts";
+import { SEED_TEMPLATES } from "./templates.ts";
 
 /** Bump when the seed's content changes (recorded nowhere else; it documents intent in reviews). */
 export const SEED_VERSION = 1;
@@ -54,7 +55,17 @@ export function seedStatements(): string[] {
       active: true,
     }),
   );
-  return [...settings, ...catalogue];
+  // Version 1 of each template; later versions are written by the admin and never touched here.
+  const templates = SEED_TEMPLATES.map((t) =>
+    insert("templates", {
+      id: stableId(`template:${t.kind}:${t.category ?? "none"}:1`),
+      category: t.category,
+      kind: t.kind,
+      version: 1,
+      body: t.body,
+    }),
+  );
+  return [...settings, ...catalogue, ...templates];
 }
 
 export const seedSql = () =>

@@ -122,7 +122,8 @@ function ProjectView(props: {
         crumbs={CRUMBS}
         status={
           <>
-            <span className="client-code docno">{project.code}</span>
+            {/* After an erase the name is the code itself: no second copy. */}
+            {project.name !== project.code && <span className="client-code docno">{project.code}</span>}
             <ProjectPill status={project.status} />
           </>
         }

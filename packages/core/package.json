@@ -8,6 +8,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./audit": "./src/audit.ts",
+    "./catalogue": "./src/catalogue.ts",
     "./bank": "./src/bank.ts",
     "./care": "./src/care.ts",
     "./clients": "./src/clients.ts",
@@ -27,6 +28,7 @@
     "./reply-templates": "./src/reply-templates.ts",
     "./settings": "./src/schemas/settings.ts",
     "./stats": "./src/stats.ts",
+    "./site-references": "./src/site-references.ts",
     "./tax": "./src/tax/index.ts",
     "./terms": "./src/terms.ts",
     "./text": "./src/text.ts",

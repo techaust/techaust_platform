@@ -16,7 +16,7 @@ import {
   UNAUTHENTICATED,
 } from "./context.ts";
 
-type Opts = { audit?: string; log?: boolean | "refusals"; body?: "upload" };
+type Opts = { audit?: string; log?: boolean | "refusals"; body?: "upload" | "large" };
 const R = (
   method: RouteDef["method"],
   path: string,
@@ -137,6 +137,20 @@ export const ROUTES: readonly RouteDef[] = [
   R("PATCH", "/time/:id", "time.writeOwn", { audit: "time.update" }),
   R("DELETE", "/time/:id", "time.writeOwn", { audit: "time.delete" }),
   R("GET", "/dashboard", "dashboard.read"),
+  // Catalogue, templates and publishing (M4.1, ADM-CAT-01..05). Static paths (`snapshots`, `publish`) are declared before `:id`.
+  R("GET", "/catalogue", "catalogue.read"),
+  R("GET", "/catalogue/snapshots", "catalogue.read"),
+  R("POST", "/catalogue/publish", "catalogue.publish", { audit: "catalogue.publish" }),
+  // A service with all its texts and lines can pass 16 KB (its fields allow about 21 KB of plain text), so the saves take 32 KB.
+  R("POST", "/catalogue", "catalogue.write", { audit: "catalogue.create", body: "large" }),
+  R("GET", "/catalogue/:id", "catalogue.read"),
+  R("PATCH", "/catalogue/:id", "catalogue.write", { audit: "catalogue.update", body: "large" }),
+  // The audit action is `catalogue.activate` or `catalogue.deactivate`, by the request.
+  R("POST", "/catalogue/:id/active", "catalogue.write", { audit: "catalogue.activate" }),
+  R("GET", "/templates", "catalogue.read"),
+  R("GET", "/templates/:id", "catalogue.read"),
+  // A template body is up to 12,000 characters, which passes 16 KB once it holds a few multi-byte characters (the rupee sign).
+  R("POST", "/templates", "catalogue.write", { audit: "template.version", body: "large" }),
   // The bell, the global search and the audit viewer (M3.1, ADM-G-09, ADM-G-05, ADM-AUD-02).
   R("GET", "/notifications", "notifications.own"),
   R("POST", "/notifications/read-all", "notifications.own", { audit: "notification.read_all" }),

@@ -406,11 +406,13 @@ describe("global search [ADM-G-05]", () => {
     await lead("L-ROLE1", "Role Lead", "role.lead@example.test");
     const sales = await sessionFor("sales");
     const res = await find(sales.cookie, "L-ROLE");
-    expect(res.groups.map((g: J) => g.type)).toEqual(["lead", "client", "contact", "project"]);
+    // M3.4 projects and M4.1 catalogue: Sales reads both.
+    expect(res.groups.map((g: J) => g.type)).toEqual(["lead", "client", "contact", "project", "catalogue"]);
     const accountant = await sessionFor("accountant");
     expect((await find(accountant.cookie, "L-ROLE")).groups.map((g: J) => g.type)).toEqual([
       "client",
       "contact",
+      "catalogue",
     ]);
     const o = await owner();
     expect((await find(o.cookie, "L-ROLE")).groups.map((g: J) => g.type)).toEqual([
@@ -418,8 +420,29 @@ describe("global search [ADM-G-05]", () => {
       "client",
       "contact",
       "project",
+      "catalogue",
       "user",
     ]);
+  });
+
+  it("finds catalogue items by the start of the code or the name, for every role (M4.1)", async () => {
+    await env.DB.prepare(
+      "INSERT INTO catalogue_items (id, code, name, category, short, unit, sac, schedule) VALUES ('cat-s1', 'S9001', 'Searchable Widget Work', 'build', 's', 'fixed', '998314', '[]')",
+    ).run();
+    for (const role of ["owner", "staff", "sales", "accountant"] as const) {
+      const s = await sessionFor(role);
+      expect(group(await find(s.cookie, "s9001"), "catalogue").items).toEqual([
+        {
+          id: "cat-s1",
+          title: "S9001 Searchable Widget Work",
+          subtitle: "Catalogue item",
+          link: "/catalogue/cat-s1",
+        },
+      ]);
+      expect(group(await find(s.cookie, "searchable wid"), "catalogue").items).toHaveLength(1);
+    }
+    const o = await owner();
+    expect(group(await find(o.cookie, "idget"), "catalogue").items).toEqual([]); // prefix, not substring
   });
 
   it("at most five per type; under two characters is empty; % and _ are not wildcards; a long query is 400", async () => {

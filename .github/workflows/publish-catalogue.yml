@@ -1,0 +1,92 @@
+name: Publish catalogue
+
+# ADM-CAT-05 (owner decision 2026-10-25): when the owner publishes the catalogue in the admin, the STAGING website is rebuilt from the new
+# snapshot within about 30 minutes, with no new secret. Every 30 minutes this reads the newest snapshot's row id from the staging D1 (a
+# read with the existing staging token). If a cache entry `catalogue-<id>` says that snapshot row was already deployed, it stops.
+# Otherwise it builds the website with the snapshot, deploys the WEB Worker only (`--env staging`), and the cache entry is saved when the
+# job ends successfully. A failed deploy saves nothing, so the next check tries again.
+# The key is the row id, not the SHA: publishing an earlier list again (A, B, A) makes a new row with an old SHA, and staging must go back.
+# Production follows the normal approved deploy (deploy-prod.yml, owner-approved), never this workflow.
+# Notes: GitHub removes a cache entry nobody used for 7 days, which only means one harmless re-deploy of the same snapshot. GitHub pauses
+# scheduled workflows after 60 days without repository activity (a run of "workflow_dispatch" by hand also works).
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Its own group. It must not share `deploy-staging`: a group holds one running and one pending run, so a check that arrives while a merge
+# deploy is pending would replace that merge deploy (which then ends "cancelled"). A web deploy running beside a merge deploy is safe
+# only when both built the same commit, so the deploy step refuses (and caches nothing) when main has moved since this run checked
+# it out.
+concurrency:
+  group: publish-catalogue
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    # Only this repository's main branch; schedules never run for forks, and a manual run must be on main.
+    if: github.repository == 'techaust/techaust_platform' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # The Cloudflare credentials are set only on the steps that use them, so the install step never sees them.
+    steps:
+      - name: Check staging credentials
+        id: creds
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_STAGING }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "Staging secrets not configured yet; skipping."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.creds.outputs.ready == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - if: steps.creds.outputs.ready == 'true'
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - if: steps.creds.outputs.ready == 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - if: steps.creds.outputs.ready == 'true'
+        run: pnpm install --frozen-lockfile
+      # Reads the newest snapshot (read-only) and writes apps/web/catalogue-snapshot.json. Outputs: found, id, sha.
+      - if: steps.creds.outputs.ready == 'true'
+        name: Fetch the published catalogue snapshot
+        id: snapshot
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_STAGING }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: node scripts/fetch-catalogue-snapshot.mjs --out apps/web/catalogue-snapshot.json --github-output "$GITHUB_OUTPUT"
+      # An exact-key lookup on the snapshot ROW id. A hit means this row is already on staging. On a miss, the post step of this action
+      # saves `.catalogue-published/id.txt` under the key when the job succeeds (the file is written after the deploy, below).
+      - if: steps.creds.outputs.ready == 'true' && steps.snapshot.outputs.found == 'true'
+        id: deployed
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .catalogue-published
+          key: catalogue-${{ steps.snapshot.outputs.id }}
+      - if: steps.creds.outputs.ready == 'true' && steps.snapshot.outputs.found == 'true' && steps.deployed.outputs.cache-hit != 'true'
+        name: Build and deploy the web Worker (staging)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_STAGING }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          SNAPSHOT_ID: ${{ steps.snapshot.outputs.id }}
+        run: |
+          # Main may have moved since this run checked it out; deploying this older commit would put old code over a newer merge
+          # deploy. Then fail without caching: the next check builds the new main.
+          git fetch --depth=1 origin main
+          if [ "$(git rev-parse origin/main)" != "$GITHUB_SHA" ]; then echo "main moved since checkout; not deploying"; exit 1; fi
+          pnpm --filter @techaust/web run deploy:staging
+          mkdir -p .catalogue-published
+          echo "$SNAPSHOT_ID" > .catalogue-published/id.txt
+      - if: steps.creds.outputs.ready == 'true' && steps.deployed.outputs.cache-hit == 'true'
+        env:
+          SNAPSHOT_ID: ${{ steps.snapshot.outputs.id }}
+        run: echo "Snapshot $SNAPSHOT_ID is already on staging; nothing to do."

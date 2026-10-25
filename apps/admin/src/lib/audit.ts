@@ -72,6 +72,13 @@ export const ACTION_LABELS: Record<string, string> = {
   "file.upload": "uploaded a file",
   "file.share": "shared a file",
   "file.delete": "deleted a file",
+  // M4.1 catalogue, templates and publishing (07-L).
+  "catalogue.create": "added a service",
+  "catalogue.update": "changed a service",
+  "catalogue.deactivate": "retired a service",
+  "catalogue.activate": "made a service active again",
+  "template.version": "saved a template version",
+  "catalogue.publish": "published prices",
 };
 
 /** Groups for the action filter (the API filters by one exact action). */
@@ -87,6 +94,8 @@ export const ACTION_GROUPS: { label: string; prefix: string }[] = [
   { label: "Milestones", prefix: "milestone." },
   { label: "Notes", prefix: "note." },
   { label: "Files", prefix: "file." },
+  { label: "Catalogue", prefix: "catalogue." },
+  { label: "Templates", prefix: "template." },
   { label: "Client portal", prefix: "portal." },
   { label: "Audit log", prefix: "audit." },
 ];
@@ -102,6 +111,9 @@ export const ENTITY_LABELS: Record<string, string> = {
   notification: "Notifications",
   client: "Clients",
   contact: "Contacts",
+  catalogue_item: "Catalogue",
+  template: "Templates",
+  site_snapshot: "Published price lists",
   client_session: "Client portal sessions",
   project: "Projects",
   milestone: "Milestones",

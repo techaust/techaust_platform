@@ -7,7 +7,7 @@ import type { Role } from "@techaust/core/permissions";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Outlet, useLocation, useParams } from "react-router";
 import { type Notification as ApiNotification, api, errorText } from "../api.ts";
-import { Building, FolderKanban, Inbox, User, Users } from "../components/icons.tsx";
+import { Building, FolderKanban, Inbox, Package, User, Users } from "../components/icons.tsx";
 import { AppShell } from "../components/shell/app-shell.tsx";
 import { GlobalSearch, type SearchGroup } from "../components/shell/global-search.tsx";
 import { type NavItem, navFor, navItem } from "../components/shell/nav.tsx";
@@ -28,6 +28,7 @@ const SEARCH_ICONS = {
   client: <Building />,
   contact: <User />,
   project: <FolderKanban />,
+  catalogue: <Package />,
 } as const;
 
 async function runSearch(q: string): Promise<SearchGroup[]> {

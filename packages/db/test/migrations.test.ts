@@ -45,9 +45,11 @@ describe("migrations apply cleanly to a fresh D1", () => {
       "0023_client_type_lock.sql",
       "0024_project_indexes.sql",
       "0025_project_triggers.sql",
-      "0026_care_time.sql",
-      "0027_time_triggers.sql",
-      "0028_drop_time_logs_care_plan_date.sql",
+      "0026_catalogue_indexes.sql",
+      "0027_catalogue_triggers.sql",
+      "0028_care_time.sql",
+      "0029_time_triggers.sql",
+      "0030_drop_time_logs_care_plan_date.sql",
     ]);
   });
 
