@@ -109,6 +109,6 @@ export const siteSnapshots = sqliteTable(
   (t) => [
     index("site_snapshots_published").on(t.publishedAt),
     // One row per distinct snapshot: publishing the same data twice adds nothing (M4.1).
-    uniqueIndex("site_snapshots_sha256").on(t.sha256),
+    index("site_snapshots_sha256").on(t.sha256),
   ],
 );

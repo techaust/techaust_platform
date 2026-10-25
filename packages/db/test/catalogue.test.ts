@@ -47,12 +47,12 @@ describe("append-only catalogue tables (0025; ADM-CAT-03, -04, -05)", () => {
     );
   });
 
-  it("site_snapshots refuse UPDATE and DELETE and a second row with the same SHA", async () => {
+  it("site_snapshots refuse UPDATE and DELETE; an older SHA may be stored again (a revert)", async () => {
     await run("INSERT INTO site_snapshots (id, sha256, json) VALUES ('s1', 'aa', '{}')");
     await rejects(run("UPDATE site_snapshots SET json = '[]'"), /site_snapshots is append-only/);
     await rejects(run("DELETE FROM site_snapshots"), /site_snapshots is append-only/);
-    await rejects(run("INSERT INTO site_snapshots (id, sha256, json) VALUES ('s2', 'aa', '{}')"), /UNIQUE/);
     await run("INSERT INTO site_snapshots (id, sha256, json) VALUES ('s3', 'bb', '{}')");
+    await run("INSERT INTO site_snapshots (id, sha256, json) VALUES ('s4', 'aa', '{}')");
   });
 
   it("price history is append-only and a catalogue item is never deleted", async () => {

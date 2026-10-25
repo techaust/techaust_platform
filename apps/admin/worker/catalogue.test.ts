@@ -545,7 +545,7 @@ describe("publish [ADM-CAT-05, WEB-G-07]", () => {
     expect(b.sha256).not.toBe(a.sha256);
     expect(b.unchanged).toBe(false);
     expect(JSON.parse((await newest())?.json ?? "{}").items[0].priceInrMinor).toBe(200_000);
-    // Going back to the old prices gives the old SHA, which exists but is no longer the newest.
+    // Going back to the old prices gives the old SHA; it isn't the newest, so it is stored again and becomes the newest.
     const backEdit = await call(`/catalogue/${live.id}`, {
       method: "PATCH",
       body: { expectedUpdatedAt: (await json(edit)).updatedAt, priceInrMinor: 100_000 },
@@ -553,8 +553,12 @@ describe("publish [ADM-CAT-05, WEB-G-07]", () => {
     });
     expect(backEdit.status).toBe(200);
     const back = await publish(o.cookie);
-    expect(back.status).toBe(409);
-    expect(await code(back)).toBe("already_published_earlier");
+    expect(back.status).toBe(201);
+    expect((await json(back)).sha256).toBe(a.sha256);
+    expect((await newest())?.sha256).toBe(a.sha256);
+    expect(JSON.parse((await newest())?.json ?? "{}").items[0].priceInrMinor).toBe(100_000);
+    // Publishing the same again is unchanged.
+    expect(await json(await publish(o.cookie))).toMatchObject({ sha256: a.sha256, unchanged: true });
   });
 
   it("refuses an item the site cannot show (an hourly unit) and stores nothing", async () => {

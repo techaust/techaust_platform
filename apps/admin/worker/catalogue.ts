@@ -64,10 +64,6 @@ const SNAPSHOT_INVALID: ApiError = {
   code: "snapshot_invalid",
   message: "The catalogue cannot be published yet. Fix the items listed",
 };
-const SNAPSHOT_EARLIER: ApiError = {
-  code: "already_published_earlier",
-  message: "These exact prices were published before, and a later snapshot replaced them",
-};
 
 // ---- rows and views ----------------------------------------------------------------------------------------------------
 
@@ -283,7 +279,7 @@ export const catalogue = new Hono<AppEnv>()
     const done = await mutate(c, {
       main: db
         .prepare(
-          "INSERT INTO site_snapshots (id, sha256, json, published_by) SELECT ?1, ?2, ?3, ?4 WHERE NOT EXISTS (SELECT 1 FROM site_snapshots WHERE sha256 = ?2)",
+          "INSERT INTO site_snapshots (id, sha256, json, published_by) SELECT ?1, ?2, ?3, ?4 WHERE ?2 IS NOT (SELECT sha256 FROM site_snapshots ORDER BY created_at DESC, id DESC LIMIT 1)",
         )
         .bind(id, sha256, json, actor(c).id),
       action: "catalogue.publish",
@@ -293,13 +289,9 @@ export const catalogue = new Hono<AppEnv>()
       status: 201,
     });
     if (done) return c.json({ sha256, unchanged: false, id, items: parsed.data.items.length }, 201);
-    // Not stored: this SHA exists. It is "unchanged" only while it is the newest; a snapshot that was replaced by a later one
-    // cannot be stored again (one row per SHA), which the caller is told.
-    const newest = await db
-      .prepare("SELECT sha256 FROM site_snapshots ORDER BY created_at DESC, id DESC LIMIT 1")
-      .first<{ sha256: string }>();
-    if (newest?.sha256 === sha256) return c.json({ sha256, unchanged: true });
-    return err(c, SNAPSHOT_EARLIER, 409);
+    // Not stored: the newest snapshot already has this SHA. Republishing an older price list stores a new row (lead, 2026-10-25),
+    // so the website can go back to it.
+    return c.json({ sha256, unchanged: true });
   })
 
   .post("/", body(createEntry), async (c) => {
