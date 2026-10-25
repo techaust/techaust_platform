@@ -78,7 +78,10 @@ describe("estimate -> invoice draft [ADM-EST-02]", () => {
       frozen_at: null,
       content_sha256: null,
       version_group_id: null,
+      // the offer's validity belongs to the offer, not to the invoice
+      validity_days: null,
     });
+    expect(estimate.validityDays).toBe(15);
     // 250,000 + 18 % (2 x 22,500) = 295,000, the estimate's own total
     expect(draft).toMatchObject({
       taxable_minor: estimate.totals.taxableMinor,
@@ -88,7 +91,7 @@ describe("estimate -> invoice draft [ADM-EST-02]", () => {
     });
     expect(estimate.totals.totalMinor).toBe(295_000);
     const lines = await rows<J>(
-      "SELECT description, rate_minor, taxable_minor, line_total_minor, catalogue_rate_minor FROM document_lines WHERE document_id = ?",
+      "SELECT description, rate_minor, taxable_minor, line_total_minor, catalogue_rate_minor, catalogue_line FROM document_lines WHERE document_id = ?",
       out.id,
     );
     expect(lines).toHaveLength(1);
@@ -97,6 +100,7 @@ describe("estimate -> invoice draft [ADM-EST-02]", () => {
       taxable_minor: 250_000,
       line_total_minor: 295_000,
       catalogue_rate_minor: null,
+      catalogue_line: null,
     });
     expect(await one("SELECT status FROM documents WHERE id = ?", made.id)).toEqual({ status: "accepted" }); // the estimate is untouched
     const audit = await one<{ summary: string }>(
@@ -373,10 +377,15 @@ describe("a sent offer and the people it names [ADM-CLI-05, O-Q4; VERIFY WITH CA
       price: 20_000_000,
     });
     const v = await discount(o, draft.id, "fixed", 5_000_000);
-    await call(`/documents/${draft.id}/approval-request`, {
+    const asked = await call(`/documents/${draft.id}/approval-request`, {
       cookie: o.cookie,
       body: { expectedUpdatedAt: v.updatedAt },
     });
+    const approvalId = ((await json(asked)) as J).id as string;
+    // the owners' bell holds a row about the approval (its title is the draft's title)
+    expect(
+      await countOf("notifications", "entity_type = 'approval' AND entity_id = ?", approvalId),
+    ).toBeGreaterThan(0);
     const revision = await json(await call(`/documents/${sold.id}/revise`, { cookie: o.cookie, body: {} }));
     const estimate = await mkDraft(o, {
       type: "estimate",
@@ -392,6 +401,8 @@ describe("a sent offer and the people it names [ADM-CLI-05, O-Q4; VERIFY WITH CA
     for (const id of [draft.id, revision.id, estimate.id])
       expect(await countOf("documents", "id = ?", id), id).toBe(0);
     expect(await countOf("approvals", "document_id = ?", draft.id)).toBe(0);
+    // the bell rows about the erased drafts' approvals go with them (their titles named the draft; VERIFY WITH CA/LEGAL)
+    expect(await countOf("notifications", "entity_type = 'approval' AND entity_id = ?", approvalId)).toBe(0);
     expect(
       await countOf("document_lines", "document_id IN (?, ?, ?)", draft.id, revision.id, estimate.id),
     ).toBe(0);
@@ -408,8 +419,11 @@ describe("a sent offer and the people it names [ADM-CLI-05, O-Q4; VERIFY WITH CA
     const draft = await mkDraft(o, { clientId: client.clientId, contactId: second.id });
     const ok = await erase(o.cookie, second.id, "erase");
     expect(ok.status, await ok.clone().text()).toBe(200);
-    expect(await one("SELECT contact_id FROM documents WHERE id = ?", draft.id)).toEqual({
+    // the draft's hash no longer matches its content (the addressee is part of it): it is cleared, so the draft is saved again before
+    // it can be sent and no approval of the old content stands
+    expect(await one("SELECT contact_id, content_sha256 FROM documents WHERE id = ?", draft.id)).toEqual({
       contact_id: null,
+      content_sha256: null,
     });
     expect((await getDoc(o, draft.id)).contact).toBeNull();
   });

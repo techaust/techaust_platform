@@ -84,7 +84,7 @@ export function stepsFromBuildSchedule(steps: readonly { label: string; pctBp: n
 }
 
 /** Σ quantity × rate of a service's lines, each rounded half up like the engine's lines (bigint: the product can pass 2^53). */
-const referenceOf = (lines: readonly LineState[]) =>
+export const referenceOf = (lines: readonly LineState[]) =>
   lines.reduce((a, l) => a + divRoundHalfUp(BigInt(l.qtyMilli) * BigInt(l.rateMinor), 1000n), 0n);
 
 function readTemplate(raw: unknown): TemplateBody | null {
