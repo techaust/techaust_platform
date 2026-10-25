@@ -521,7 +521,15 @@ type TemplateRow = {
   version: number;
   body: string;
   created_at: number;
+  saved_by_name: string | null;
 };
+
+/**
+ * Who saved a version: templates have no author column, so it is the actor of the version's own `template.version` audit row
+ * (index `audit_log_entity`). Seeded versions have none (null). For the screens' "Version {n}, saved by {person}" line (07-L).
+ */
+const SAVED_BY = (t: string) =>
+  `(SELECT u.name FROM audit_log a JOIN staff_users u ON u.id = a.actor_id WHERE a.entity_type = 'template' AND a.entity_id = ${t}.id AND a.action = 'template.version' LIMIT 1) AS saved_by_name`;
 
 const templateMeta = (r: Omit<TemplateRow, "body">) => ({
   id: r.id,
@@ -529,6 +537,7 @@ const templateMeta = (r: Omit<TemplateRow, "body">) => ({
   category: r.category,
   version: r.version,
   createdAt: r.created_at,
+  savedByName: r.saved_by_name,
 });
 
 const BLOCK_KINDS = ["care_block", "terms_block"];
@@ -554,7 +563,7 @@ export const templates = new Hono<AppEnv>()
       bind.push(cur.k, cur.id);
     }
     const { results } = await c.env.DB.prepare(
-      `SELECT t.id, t.category, t.kind, t.version, t.created_at FROM templates t${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY ${order.order} LIMIT ${limit + 1}`,
+      `SELECT t.id, t.category, t.kind, t.version, t.created_at, ${SAVED_BY("t")} FROM templates t${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY ${order.order} LIMIT ${limit + 1}`,
     )
       .bind(...bind)
       .all<Omit<TemplateRow, "body">>();
@@ -566,13 +575,15 @@ export const templates = new Hono<AppEnv>()
     const { id } = c.req.valid("param");
     const db = c.env.DB;
     const row = await db
-      .prepare("SELECT id, category, kind, version, body, created_at FROM templates WHERE id = ?1")
+      .prepare(
+        `SELECT t.id, t.category, t.kind, t.version, t.body, t.created_at, ${SAVED_BY("t")} FROM templates t WHERE t.id = ?1`,
+      )
       .bind(id)
       .first<TemplateRow>();
     if (!row) return err(c, NOT_FOUND, 404);
     const { results } = await db
       .prepare(
-        "SELECT id, category, kind, version, created_at FROM templates WHERE kind = ?1 AND coalesce(category, '') = coalesce(?2, '') ORDER BY version DESC LIMIT 50",
+        `SELECT t.id, t.category, t.kind, t.version, t.created_at, ${SAVED_BY("t")} FROM templates t WHERE t.kind = ?1 AND coalesce(t.category, '') = coalesce(?2, '') ORDER BY t.version DESC LIMIT 50`,
       )
       .bind(row.kind, row.category)
       .all<Omit<TemplateRow, "body">>();

@@ -397,6 +397,31 @@ describe("templates [ADM-CAT-03]", () => {
     ).toBe(2);
   });
 
+  it("each version names who saved it (from its own audit row); a version without one has none", async () => {
+    const o = await sessionFor("owner", { stepUp: true, name: "Sample Owner (sample)" });
+    const body = {
+      kind: "estimate",
+      category: "advise",
+      body: { sections: [{ key: "estimate", heading: "Estimate", body: "{{service.name}}" }] },
+    };
+    const saved = await json(await call("/templates", { body, cookie: o.cookie }));
+    const page = await json(await call(`/templates/${saved.id}`, { cookie: o.cookie }));
+    expect(page.template.savedByName).toBe("Sample Owner (sample)");
+    expect(page.versions[0]).toMatchObject({ id: saved.id, savedByName: "Sample Owner (sample)" });
+    const list = await json(await call("/templates?kind=estimate&category=advise", { cookie: o.cookie }));
+    expect(list.templates[0]).toMatchObject({ id: saved.id, savedByName: "Sample Owner (sample)" });
+    // A version written without the API (as the seed does) has no audit row, so no name.
+    const seeded = crypto.randomUUID();
+    await env.DB.prepare(
+      "INSERT INTO templates (id, category, kind, version, body) VALUES (?1, 'advise', 'proposal', 900, ?2)",
+    )
+      .bind(seeded, JSON.stringify(body.body))
+      .run();
+    expect(
+      (await json(await call(`/templates/${seeded}`, { cookie: o.cookie }))).template.savedByName,
+    ).toBeNull();
+  });
+
   it("blocks have no category and versions count up per kind", async () => {
     const o = await owner();
     const block = {
