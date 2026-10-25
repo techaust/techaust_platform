@@ -172,7 +172,7 @@ describe("GET /projects and /clients/:id/projects [ADM-PRJ-01, ADM-CLI-03]", () 
 
 // ---------------------------------------------------------------------------------------------------------------
 describe("GET /projects/:id [ADM-PRJ-05]", () => {
-  it("returns the project, the client, milestones with totals, five recent notes and files, and the figures that arrive later", async () => {
+  it("returns the project, the client, milestones with totals, five recent notes and files, and the figures (billed against paid arrives later)", async () => {
     const o = await owner();
     const clientId = await mkClient({ display_name: "Detail Co" });
     const p = await mkProject(clientId, { budget_minor: 1_000_00 });
@@ -197,7 +197,7 @@ describe("GET /projects/:id [ADM-PRJ-05]", () => {
     expect(JSON.stringify(res)).not.toContain("r2Key");
     expect(res.figures).toEqual({
       billedVsPaid: { available: false, arrivesWith: "invoicing" },
-      hours: { available: false, arrivesWith: "time_logs" },
+      hours: { available: true, totalMinutes: 0, billableMinutes: 0 }, // M3.5: the time-log totals (no entries yet)
     });
     expect((await call("/projects/no-such-project", { cookie: o.cookie })).status).toBe(404);
   });

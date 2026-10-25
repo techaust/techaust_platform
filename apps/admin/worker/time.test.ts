@@ -5,6 +5,7 @@ import { env } from "cloudflare:workers";
 import { addDays, parseIsoDate, toIsoDate } from "@techaust/core/dates";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ROUTES } from "./guard.ts";
+import { PROJECT_HOURS_SQL } from "./projects.ts";
 import { longSession, mkLog, mkOpenProject, mkPlan, today } from "./test-care.ts";
 import { mkClient } from "./test-clients.ts";
 import { bodyOf, call, countOf, one, rows, sessionFor } from "./test-helpers.ts";
@@ -519,6 +520,50 @@ describe("a cancelled project takes no change of time, only a note [early check 
     expect(await code(bad)).toBe("plan_not_active");
     const ok = await patch(s.cookie, made.id, { expectedUpdatedAt: made.updatedAt, note: "just a note" });
     expect(ok.status, await ok.clone().text()).toBe(200);
+  });
+});
+
+describe("the hours on the project page [ADM-PRJ-05]", () => {
+  it("equal the entries (billable apart), count nothing from other projects or plans, and show every role totals only", async () => {
+    const a = await sessionFor("staff", { name: "Hours Alma" });
+    const b = await sessionFor("staff", { name: "Hours Bruno" });
+    const p = await mkOpenProject();
+    const other = await mkOpenProject();
+    const plan = await mkPlan(a.id, { start: back(30) });
+    await mkLog(a.id, today(), 60, { project: p.id }, { note: "alma private words" });
+    await mkLog(b.id, today(), 45, { project: p.id }, { billable: 0, note: "bruno private words" });
+    await mkLog(b.id, back(1), 15, { project: p.id });
+    await mkLog(a.id, back(1), 30, { project: other.id });
+    await mkLog(a.id, back(2), 120, { plan: plan.id });
+    const expected = { available: true, totalMinutes: 120, billableMinutes: 75 };
+    for (const role of ["owner", "staff", "sales"] as const) {
+      const s = await sessionFor(role);
+      const res = await call(`/projects/${p.id}`, { cookie: s.cookie });
+      expect(res.status, role).toBe(200);
+      const body = await json(res);
+      expect(body.figures.hours, role).toEqual(expected);
+      const text = JSON.stringify(body);
+      for (const secret of ["private words", "Hours Alma", "Hours Bruno", a.id, b.id])
+        expect(text).not.toContain(secret);
+    }
+    // a project with nothing logged reads 0
+    const empty = await json(await call(`/projects/${other.id}`, { cookie: a.cookie }));
+    expect(empty.figures.hours).toEqual({ available: true, totalMinutes: 30, billableMinutes: 30 });
+    const none = await mkOpenProject();
+    expect((await json(await call(`/projects/${none.id}`, { cookie: a.cookie }))).figures.hours).toEqual({
+      available: true,
+      totalMinutes: 0,
+      billableMinutes: 0,
+    });
+  });
+
+  it("the statement is served by the project/date index", async () => {
+    const plan = await rows<{ detail: string }>(
+      `EXPLAIN QUERY PLAN ${PROJECT_HOURS_SQL}`.replace("?1", "'x'"),
+    );
+    expect(plan.map((r) => r.detail).join("\n")).toMatch(
+      /SEARCH time_logs USING (COVERING )?INDEX time_logs_project_date/,
+    );
   });
 });
 
