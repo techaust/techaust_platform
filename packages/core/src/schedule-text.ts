@@ -31,7 +31,8 @@ export const lowerFirst = (s: string): string => {
 const PREPOSITION = /^(at|on|after|before)\b/i;
 const hasPreposition = (label: string): boolean => PREPOSITION.test(label);
 
-function when(step: ScheduleStepLike): string {
+/** When a step is paid, as words ("on acceptance", "at the midpoint milestone"): one source for the site, the PDF and the portal. */
+export function scheduleWhen(step: ScheduleStepLike): string {
   switch (step.trigger) {
     case "on_accept":
       return "on acceptance";
@@ -56,7 +57,7 @@ export function scheduleText(steps: readonly ScheduleStepLike[]): string {
   if (only && steps.length === 1) {
     if (only.trigger === "monthly") return "Monthly in advance";
     if (only.trigger === "on_accept") return "Paid in full upfront";
-    return `Paid in full ${when(only)}`;
+    return `Paid in full ${scheduleWhen(only)}`;
   }
-  return steps.map((s) => `${percentFromBp(s.pctBp)} % ${when(s)}`).join(", ");
+  return steps.map((s) => `${percentFromBp(s.pctBp)} % ${scheduleWhen(s)}`).join(", ");
 }

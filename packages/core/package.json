@@ -27,6 +27,7 @@
     "./file-types": "./src/file-types.ts",
     "./markdown": "./src/markdown.ts",
     "./money": "./src/money.ts",
+    "./offers": "./src/offers.ts",
     "./projects": "./src/projects.ts",
     "./numbering": "./src/numbering.ts",
     "./pdf-jobs": "./src/pdf-jobs.ts",
