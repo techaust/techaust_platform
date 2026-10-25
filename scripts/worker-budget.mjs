@@ -55,7 +55,7 @@ export const BUDGETS = {
  */
 export function measureStartup(code, runs = 7) {
   // The export list ends the code; a trailing license comment (the jobs bundle has one) may follow it.
-  const src = code.replace(/^export\s*\{[^}]*\};?[ ]*$/m, "");
+  const src = code.replace(/\bexport\s*\{[^}]*\};?[ ]*$/m, "");
   const times = [];
   for (let i = 0; i < runs; i++) {
     const context = vm.createContext({
