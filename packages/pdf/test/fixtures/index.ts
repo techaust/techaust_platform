@@ -111,6 +111,25 @@ const requiredSections = (): EnvSection[] => [
   { kind: "acceptance", title: null, bodyMd: "Accept this offer in the client portal.", hidden: false },
 ];
 
+const longLines = (n: number): LineSpec[] =>
+  Array.from({ length: n }, (_, i) => ({
+    description: `Sample line ${i + 1}: a description long enough to wrap onto a second line of the items table`,
+    ...(i % 3 === 0 ? { detail: `Sample detail ${i + 1} with more words` } : {}),
+    qtyMilli: 1000 + (i % 4) * 500,
+    unit: i % 2 === 0 ? "days" : "hours",
+    rateMinor: 150_000 + i * 12_345,
+    ...(i % 7 === 0 ? { discount: { kind: "percent" as const, bp: 500 } } : {}),
+  }));
+
+/** Sections that fill the cap: 16 sections of about `chars` characters each. */
+const capSections = (chars: number): EnvSection[] =>
+  Array.from({ length: 16 }, (_, i) => ({
+    kind: i === 13 ? "estimate" : i === 14 ? "terms" : i === 15 ? "acceptance" : "custom",
+    title: `Sample section ${i + 1}`,
+    bodyMd: `${para(40, "cap")}`.slice(0, chars),
+    hidden: false,
+  }));
+
 const wbClient: RecipientSnap = {
   legalName: "Sample Client Private Limited",
   displayName: "Sample Client",
@@ -183,14 +202,7 @@ const SPECS: Record<FixtureName, Spec> = {
         country: "IN",
       },
     },
-    lines: Array.from({ length: 40 }, (_, i) => ({
-      description: `Sample line ${i + 1}: a description long enough to wrap onto a second line of the items table`,
-      ...(i % 3 === 0 ? { detail: `Sample detail ${i + 1} with more words` } : {}),
-      qtyMilli: 1000 + (i % 4) * 500,
-      unit: i % 2 === 0 ? "days" : "hours",
-      rateMinor: 150_000 + i * 12_345,
-      ...(i % 7 === 0 ? { discount: { kind: "percent" as const, bp: 500 } } : {}),
-    })),
+    lines: longLines(40),
     sections: fullSections(),
     steps: [
       { label: "On acceptance", trigger: "on_accept", pctBp: 2500 },
@@ -324,9 +336,14 @@ export type Fixture = { name: FixtureName; envelope: Envelope; computed: Compute
 /** Builds one fixture envelope. `bareSupplier` leaves the company fields empty, as on a staging that has no settings filled in. */
 export async function buildFixture(
   name: FixtureName,
-  options: { bareSupplier?: boolean } = {},
+  options: { bareSupplier?: boolean; lineCount?: number; sectionChars?: number; termsChars?: number } = {},
 ): Promise<Fixture> {
-  const spec = SPECS[name];
+  const base = SPECS[name];
+  const spec: Spec = {
+    ...base,
+    lines: options.lineCount ? longLines(options.lineCount) : base.lines,
+    sections: options.sectionChars ? capSections(options.sectionChars) : base.sections,
+  };
   const bare = options.bareSupplier ?? spec.bareSupplier ?? false;
   const lineInputs: LineInput[] = spec.lines.map((l) => ({
     sac: "998314",
@@ -381,7 +398,9 @@ export async function buildFixture(
     detail: s.detail ?? null,
     targetDate: null,
   }));
-  const termsBody = "Sample terms.\n\n1. Payment is due as scheduled.\n2. Work starts on acceptance.";
+  const termsBody = options.termsChars
+    ? para(120, "terms").slice(0, options.termsChars)
+    : "Sample terms.\n\n1. Payment is due as scheduled.\n2. Work starts on acceptance.";
   const termsSha = await sha256Hex(termsBody);
   const computedJson = JSON.stringify(computed);
   const company = bare
