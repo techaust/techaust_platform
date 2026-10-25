@@ -62,7 +62,7 @@ export function usableDate(date: CalendarDate): boolean {
 }
 
 /**
- * The warnings of a fixed supply (credit and debit notes, inclusive splits, an estimate turned into an invoice): the same
+ * The warnings of a fixed supply (debit notes, inclusive splits, an estimate turned into an invoice; credit notes don't raise them yet, M5.3): the same
  * LUT check `determineSupply` makes. The document date picks the FY.
  */
 export function fixedSupplyWarnings(

@@ -216,4 +216,12 @@ describe("creditNote: exceeds_creditable is named by the position in the request
       ),
     ).toEqual(["exceeds_creditable@request.lines.0", "credit_line_invalid@request.lines.1"]);
   });
+
+  it("an INR original carrying an FX view is a damaged snapshot (M4.2 re-check L4)", () => {
+    const original = invoice();
+    const damaged = { ...original, fxRateMicros: 83_000_000 };
+    expect(errorsOf(creditNote(damaged, none(2), { kind: "full" }, DEFAULTS))).toContain(
+      "credit_shape_mismatch@original.fxRateMicros",
+    );
+  });
 });

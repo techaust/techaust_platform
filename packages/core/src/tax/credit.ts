@@ -152,6 +152,10 @@ function originalIssues(original: ComputedDocument): TaxIssue[] {
     issues.push(issue("credit_shape_mismatch", "original", "totalMinor"));
   }
   const rate = original.fxRateMicros;
+  // An INR document has no FX view; a damaged snapshot that carries one is refused.
+  if (original.currency === "INR" && (rate !== null || original.inr !== null)) {
+    issues.push(issue("credit_shape_mismatch", "original", "fxRateMicros"));
+  }
   if (rate !== null && (!isInt(rate) || rate < 1)) {
     issues.push(issue("credit_shape_mismatch", "original", "fxRateMicros"));
   }
