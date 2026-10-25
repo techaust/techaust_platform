@@ -1,4 +1,4 @@
-// The dashboard (M3.5, ADM-DASH-01, the CRM tiles): ONE `db.batch`, live figures from indexed reads (docs/05 section 1.2 rule 7: `stats_daily`
+// The dashboard (M3.5, ADM-DASH-01, the CRM tiles): ONE `db.batch` (a second only for the care tile, past 100 active plans), live figures from indexed reads (docs/05 section 1.2 rule 7: `stats_daily`
 // is the nightly history, not what this reads). `tilesFor(role)` decides which tiles are built; a tile the role may not see is ABSENT from
 // the answer (never an "unavailable" stub), and its statements are never run. The finance tile arrives with M5/M6, the usage tile with
 // M7.5; the pipeline-value tile is live since M4.3. The activity feed lists exact action names per role (core/dashboard.ts) and never carries the
@@ -16,7 +16,15 @@ import {
 import { addDays, istDate, parseIsoDate, toIsoDate } from "@techaust/core/dates";
 import { LEAD_STAGES } from "@techaust/core/lead-lifecycle";
 import { DAY_MS, weekOf } from "@techaust/core/time";
-import { assembleCare, careStatements, currentUsage } from "@techaust/db/care";
+import {
+  assembleCare,
+  careStatements,
+  currentUsage,
+  type PlanRaw,
+  type StatusRaw,
+  type TermsRaw,
+  type UsageRaw,
+} from "@techaust/db/care";
 import { Hono } from "hono/tiny";
 import { LIST_PERIODS_BACK, usageWindow } from "./care.ts";
 import { type AppEnv, actor } from "./context.ts";
@@ -51,6 +59,10 @@ export const ACTIVITY_SQL = (ownOnly: boolean, byAction: boolean) =>
  */
 export const PIPELINE_SQL =
   "SELECT currency, count(*) AS n, coalesce(sum(taxable_minor), 0) AS taxable FROM documents INDEXED BY documents_status_valid_until WHERE status IN ('sent', 'viewed') AND valid_until >= ?1 AND +type IN ('proposal', 'estimate') GROUP BY currency ORDER BY currency";
+
+/** Active plans that have started and that have not (past 100 active plans, where the loaded ones are not all of them), by `care_plans_status_created`. */
+export const CARE_TOTALS_SQL =
+  "SELECT sum(start_date <= ?1) AS started, sum(start_date > ?1) AS pending FROM care_plans WHERE status = 'active'";
 
 export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
   const me = actor(c);
@@ -213,7 +225,7 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
     };
   }
   if (tiles.has("careBurn")) {
-    const { plans, truncated } = assembleCare(
+    const first = assembleCare(
       {
         plans: rows("care", 0),
         terms: rows("care", 1),
@@ -222,6 +234,29 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
       },
       CARE_PLAN_CAP,
     );
+    let plans = first.plans;
+    const truncated = first.truncated;
+    // More active plans than the tile loads (the 101st exists): the 100 OLDEST are not the ones to show. A second call loads the 100 started
+    // plans with the highest burn (picked in SQL, `PlanSource.byBurn`), so a plan over its hours is never missed because it is new, and
+    // counts the started and not-yet-started plans exactly. This costs one more D1 call, only past 100 active plans.
+    let totals: { started: number; pending: number } | null = null;
+    if (truncated) {
+      const [a, b, s, u, t] = await db.batch([
+        ...careStatements(db, { byBurn: CARE_PLAN_CAP, today }, usageWindow(today, LIST_PERIODS_BACK)),
+        db.prepare(CARE_TOTALS_SQL).bind(today),
+      ]);
+      plans = assembleCare(
+        {
+          plans: (a?.results ?? []) as PlanRaw[],
+          terms: (b?.results ?? []) as TermsRaw[],
+          status: (s?.results ?? []) as StatusRaw[],
+          usage: (u?.results ?? []) as UsageRaw[],
+        },
+        CARE_PLAN_CAP,
+      ).plans;
+      const row = t?.results[0] as { started: number | null; pending: number | null } | undefined;
+      totals = { started: row?.started ?? 0, pending: row?.pending ?? 0 };
+    }
     const burn = [...plans.values()].flatMap((d) => {
       const u = currentUsage(d, today);
       return u ? [{ d, u }] : [];
@@ -237,8 +272,8 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
     out.careBurn = {
       counts: {
         /** Plans with a current period; a plan whose start date hasn't come is counted apart (`notStarted`), never in the burn. */
-        active: burn.length,
-        notStarted: plans.size - burn.length,
+        active: totals ? totals.started : burn.length,
+        notStarted: totals ? totals.pending : plans.size - burn.length,
         near: burn.filter((b) => b.u.flag === "near").length,
         reached: burn.filter((b) => b.u.flag === "reached").length,
       },
