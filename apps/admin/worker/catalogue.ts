@@ -269,7 +269,7 @@ export const catalogue = new Hono<AppEnv>()
     const db = c.env.DB;
     const [items, setting] = await db.batch([
       db.prepare(
-        "SELECT code, name, slug, category, unit, price_inr_minor, price_usd_minor, schedule, default_lines, show_on_site, active FROM catalogue_items",
+        "SELECT id, code, name, slug, category, unit, price_inr_minor, price_usd_minor, schedule, default_lines, show_on_site, active FROM catalogue_items",
       ),
       db.prepare("SELECT value FROM settings WHERE key = 'payment_terms'"),
     ]);
@@ -292,12 +292,19 @@ export const catalogue = new Hono<AppEnv>()
     // that lacks something the pages use (core's SITE_REFERENCES) is refused here, not stored (review finding 2). The paths are
     // codes (`items.S7`, `items.S11.lines.setup`), never values; `needs` says the same in a form the screen can word.
     const gaps = siteGaps(parsed.data.items);
+    // The service's id (when it exists at all) lets the screen link straight to it: a search for "S1" also lists S10 to S18.
+    const idOf = new Map(
+      ((items?.results ?? []) as { id: string; code: string }[]).map((r) => [r.code, r.id]),
+    );
     if (gaps.length)
       return c.json(
         {
           error: { code: SNAPSHOT_INVALID.code, message: SNAPSHOT_INVALID.message },
           paths: gaps.map((g) => g.path),
-          needs: gaps.map(needOf),
+          needs: gaps.map((g) => {
+            const n = needOf(g);
+            return { ...n, id: idOf.get(n.code) ?? null };
+          }),
           request_id: c.var.rid,
         },
         422,

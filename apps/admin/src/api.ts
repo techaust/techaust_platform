@@ -683,7 +683,15 @@ async function send<T>(path: string, { method, body, signedIn = true }: Options)
     data.request_id ?? null,
     Array.isArray(data.fields) ? data.fields : [],
     Array.isArray(data.paths) ? data.paths.filter((p) => typeof p === "string") : [],
-    Array.isArray(data.needs) ? data.needs : [],
+    Array.isArray(data.needs)
+      ? data.needs.filter(
+          (n: unknown): n is SiteNeedAnswer =>
+            typeof n === "object" &&
+            n !== null &&
+            typeof (n as { code?: unknown }).code === "string" &&
+            typeof (n as { missing?: unknown }).missing === "string",
+        )
+      : [],
   );
   if (signedIn && res.status === 401 && e.code === "unauthenticated") unauthenticatedHandler?.();
   throw error;
@@ -1022,10 +1030,12 @@ export type EntryStep = CreateEntry["schedule"][number];
 export type { CreateEntry, PatchEntry, TemplateBody };
 
 /** 422 `snapshot_invalid`: what the website needs that the snapshot lacks (codes and field words only, never values). */
-export type SiteNeedAnswer =
+/** `id`: the service's id when it exists (retired or off the website included), for a direct link. */
+export type SiteNeedAnswer = { id?: string | null } & (
   | { code: string; missing: "service" }
   | { code: string; missing: "price"; currency: "inr" | "usd" }
-  | { code: string; missing: "line"; line: string; currency: "inr" | "usd" | null; ambiguous: boolean };
+  | { code: string; missing: "line"; line: string; currency: "inr" | "usd" | null; ambiguous: boolean }
+);
 
 /** A row of GET /catalogue. Prices are minor units (null: not offered in that currency). */
 export type CatalogueListItem = {

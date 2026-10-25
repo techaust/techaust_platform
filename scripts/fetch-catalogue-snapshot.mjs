@@ -54,7 +54,7 @@ export function snapshotFromOutput(text) {
   if (row === undefined) return null;
   if (
     typeof row.id !== "string" ||
-    row.id === "" ||
+    !/^[0-9a-f-]{36}$/.test(row.id) ||
     typeof row.json !== "string" ||
     typeof row.sha256 !== "string"
   )

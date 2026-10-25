@@ -18,9 +18,9 @@ permissions:
   contents: read
 
 # Its own group. It must not share `deploy-staging`: a group holds one running and one pending run, so a check that arrives while a merge
-# deploy is pending would replace that merge deploy (which then ends "cancelled"). A web deploy running at the same time as a merge
-# deploy is harmless: both build the website from the newest snapshot and deploy the same Worker, so whichever finishes last has the
-# same content.
+# deploy is pending would replace that merge deploy (which then ends "cancelled"). A web deploy running beside a merge deploy is safe
+# only when both built the same commit, so the deploy step refuses (and caches nothing) when main has moved since this run checked
+# it out.
 concurrency:
   group: publish-catalogue
   cancel-in-progress: false
@@ -77,9 +77,16 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_STAGING }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          SNAPSHOT_ID: ${{ steps.snapshot.outputs.id }}
         run: |
+          # Main may have moved since this run checked it out; deploying this older commit would put old code over a newer merge
+          # deploy. Then fail without caching: the next check builds the new main.
+          git fetch --depth=1 origin main
+          if [ "$(git rev-parse origin/main)" != "$GITHUB_SHA" ]; then echo "main moved since checkout; not deploying"; exit 1; fi
           pnpm --filter @techaust/web run deploy:staging
           mkdir -p .catalogue-published
-          echo "${{ steps.snapshot.outputs.id }}" > .catalogue-published/id.txt
+          echo "$SNAPSHOT_ID" > .catalogue-published/id.txt
       - if: steps.creds.outputs.ready == 'true' && steps.deployed.outputs.cache-hit == 'true'
-        run: echo "Snapshot ${{ steps.snapshot.outputs.id }} is already on staging; nothing to do."
+        env:
+          SNAPSHOT_ID: ${{ steps.snapshot.outputs.id }}
+        run: echo "Snapshot $SNAPSHOT_ID is already on staging; nothing to do."

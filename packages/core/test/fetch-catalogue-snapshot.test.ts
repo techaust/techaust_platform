@@ -24,7 +24,7 @@ const wrangler = (results: unknown[], success = true) =>
 const ok =
   (stdout: string): (() => WranglerRun) =>
   () => ({ status: 0, stdout, stderr: "" });
-const ID = "snap-0001";
+const ID = "0195f0e2-7c1a-7a00-8000-000000000001";
 const ROW = { id: ID, json: JSON_TEXT, sha256: SHA };
 
 describe("reading wrangler's output", () => {
@@ -50,6 +50,10 @@ describe("reading wrangler's output", () => {
     ["a failed statement", wrangler([], false)],
     ["a row without a sha", wrangler([{ id: ID, json: JSON_TEXT }])],
     ["a row without an id", wrangler([{ json: JSON_TEXT, sha256: SHA }])],
+    [
+      "an id that is not a UUID (it goes into the job's output file)",
+      wrangler([{ id: `x${"\n"}EVIL=1`, json: JSON_TEXT, sha256: SHA }]),
+    ],
     ["a sha that does not match the text", wrangler([{ id: ID, json: JSON_TEXT, sha256: "0".repeat(64) }])],
     [
       "text that is not JSON",

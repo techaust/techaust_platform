@@ -660,6 +660,9 @@ describe("publish [ADM-CAT-05, WEB-G-07]", () => {
 });
 
 // ---------------------------------------------------------------------------------------------------------------
+/** The needs without the service ids the screen links with (checked once on their own). */
+const withoutIds = (needs: J[]) => needs.map(({ id: _id, ...n }) => n);
+
 describe("publish refuses a snapshot the website cannot be built from [ADM-CAT-05; review finding 2]", () => {
   beforeAll(async () => {
     await putPaymentTerms();
@@ -694,7 +697,8 @@ describe("publish refuses a snapshot the website cannot be built from [ADM-CAT-0
     ).toBe(200);
     const out = await refused(o.cookie);
     expect(out.paths).toEqual(["items.S7"]);
-    expect(out.needs).toEqual([{ code: "S7", missing: "service" }]);
+    expect(withoutIds(out.needs)).toEqual([{ code: "S7", missing: "service" }]);
+    expect(typeof out.needs[0].id).toBe("string"); // the retired service still exists: the screen links to it
     // Bringing it back lets the publish through.
     await call(`/catalogue/${s7?.id}/active`, { body: { active: true }, cookie: o.cookie });
     // The same list as the one published by the control test above, so it answers "unchanged" (200), not 422.
@@ -712,7 +716,7 @@ describe("publish refuses a snapshot the website cannot be built from [ADM-CAT-0
     expect(edit.status).toBe(200);
     const out = await refused(o.cookie);
     expect(out.paths).toEqual(["items.S5.priceInrMinor"]);
-    expect(out.needs).toEqual([{ code: "S5", missing: "price", currency: "inr" }]);
+    expect(withoutIds(out.needs)).toEqual([{ code: "S5", missing: "price", currency: "inr" }]);
     expect(JSON.stringify(out)).not.toContain("5000000");
   });
 
@@ -724,7 +728,7 @@ describe("publish refuses a snapshot the website cannot be built from [ADM-CAT-0
     expect(edit.status).toBe(200);
     const out = await refused(o.cookie);
     expect(out.paths).toEqual(["items.S9"]);
-    expect(out.needs).toEqual([{ code: "S9", missing: "service" }]);
+    expect(withoutIds(out.needs)).toEqual([{ code: "S9", missing: "service" }]);
   });
 
   it("renaming a default line the website reads by its first word stops the publish", async () => {
@@ -745,7 +749,7 @@ describe("publish refuses a snapshot the website cannot be built from [ADM-CAT-0
     expect(edit.status).toBe(200);
     const out = await refused(o.cookie);
     expect(out.paths).toEqual(["items.S11.lines.setup"]);
-    expect(out.needs).toEqual([
+    expect(withoutIds(out.needs)).toEqual([
       { code: "S11", missing: "line", line: "setup", currency: null, ambiguous: false },
     ]);
   });
@@ -768,7 +772,7 @@ describe("publish refuses a snapshot the website cannot be built from [ADM-CAT-0
     expect(cleared.status).toBe(200);
     const a = await refused(o.cookie);
     expect(a.paths).toEqual(["items.S16.lines.growth"]);
-    expect(a.needs).toEqual([
+    expect(withoutIds(a.needs)).toEqual([
       { code: "S16", missing: "line", line: "growth", currency: "inr", ambiguous: false },
     ]);
     const twice = await patch(s16?.id ?? "", o.cookie, {
@@ -782,7 +786,7 @@ describe("publish refuses a snapshot the website cannot be built from [ADM-CAT-0
     });
     expect(twice.status).toBe(200);
     const b = await refused(o.cookie);
-    expect(b.needs).toEqual([
+    expect(withoutIds(b.needs)).toEqual([
       { code: "S16", missing: "line", line: "essential", currency: null, ambiguous: true },
     ]);
   });

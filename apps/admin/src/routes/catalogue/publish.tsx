@@ -142,10 +142,9 @@ function AnswerNotice({ answer }: { answer: Answer }) {
           p.kind === "site" ? (
             // biome-ignore lint/suspicious/noArrayIndexKey: the problems in their order
             <li key={i}>
-              <Link to={`/catalogue?q=${encodeURIComponent(p.code)}`}>
-                <span className="docno">{p.code}</span>
-              </Link>{" "}
-              {ERRORS.siteNeeds(p.code, p.what)}
+              <Link to={p.id ? `/catalogue/${p.id}` : `/catalogue?q=${encodeURIComponent(p.code)}`}>
+                {ERRORS.siteNeeds(p.code, p.what)}
+              </Link>
             </li>
           ) : p.kind === "service" ? (
             // biome-ignore lint/suspicious/noArrayIndexKey: the problems in their order

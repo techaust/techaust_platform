@@ -180,18 +180,6 @@ export const PENDING = {
   otherFix: pending("Something outside the services can't be published. Check the payment terms."),
   noneOnSite: pending("No active service is marked for the website, or two share a code."),
   latestVersion: (n: number) => pending(`This is an older version. Version ${n} is the newest.`),
-  // What the website lacks, after "The website needs {code}:" (07-L has the sentence, not these words).
-  needService: pending("this service, active and on the website"),
-  needPrice: (currency: "inr" | "usd") =>
-    pending(`a from price in ${currency === "inr" ? "rupees" : "US dollars"}`),
-  needLine: (word: string, currency: "inr" | "usd" | null, ambiguous: boolean) =>
-    pending(
-      ambiguous
-        ? `only one default line that starts with "${word}"`
-        : currency === null
-          ? `a default line that starts with "${word}"`
-          : `a rate in ${currency === "inr" ? "rupees" : "US dollars"} on the default line that starts with "${word}"`,
-    ),
 } as const;
 
 // ---- money and numbers ---------------------------------------------------------------------------------------------------
@@ -579,13 +567,25 @@ export type PublishProblem =
   | { kind: "terms" }
   | { kind: "items" }
   /** The website needs this service and the snapshot lacks it (or a price or default line of it): `what` is the missing piece. */
-  | { kind: "site"; code: string; what: string };
+  | { kind: "site"; code: string; id: string | null; what: string };
+
+/** What the website lacks, after "The website needs {code}:" (07-L, draft pending the owner). */
+export const NEED_WORDS = {
+  needService: "this service, active and on the website",
+  needPrice: (currency: "inr" | "usd") => `a from price in ${currency === "inr" ? "rupees" : "US dollars"}`,
+  needLine: (word: string, currency: "inr" | "usd" | null, ambiguous: boolean) =>
+    ambiguous
+      ? `only one default line that starts with "${word}"`
+      : currency === null
+        ? `a default line that starts with "${word}"`
+        : `a rate in ${currency === "inr" ? "rupees" : "US dollars"} on the default line that starts with "${word}"`,
+} as const;
 
 /** What the website lacks, in words (after "The website needs S7:"). */
 export function siteNeedText(n: SiteNeedAnswer): string {
-  if (n.missing === "service") return PENDING.needService;
-  if (n.missing === "price") return PENDING.needPrice(n.currency);
-  return PENDING.needLine(n.line, n.currency, n.ambiguous);
+  if (n.missing === "service") return NEED_WORDS.needService;
+  if (n.missing === "price") return NEED_WORDS.needPrice(n.currency);
+  return NEED_WORDS.needLine(n.line, n.currency, n.ambiguous);
 }
 
 /**
@@ -616,7 +616,12 @@ export function publishProblems(
       services.set(i, set);
     } else items = true;
   }
-  const out: PublishProblem[] = needs.map((n) => ({ kind: "site", code: n.code, what: siteNeedText(n) }));
+  const out: PublishProblem[] = needs.map((n) => ({
+    kind: "site",
+    code: n.code,
+    id: n.id ?? null,
+    what: siteNeedText(n),
+  }));
   out.push(
     ...[...services.entries()]
       .sort(([a], [b]) => a - b)
