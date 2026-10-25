@@ -75,7 +75,7 @@ describe("rounding and percentages", () => {
   });
 });
 
-describe("allocate: payment schedules always add up [ADM-PROP-03]", () => {
+describe("allocate: parts always add up (document discounts, FX, credit notes) [ADM-PROP-03, ADM-INV-09]", () => {
   it("splits by weight with the leftover paise going to the largest remainders", () => {
     expect(allocate(inr(100), [1, 1, 1]).map((m) => m.amount)).toEqual([34, 33, 33]);
     expect(allocate(inr(10_000_01), [4_000, 3_000, 3_000]).map((m) => m.amount)).toEqual([

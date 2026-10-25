@@ -21,6 +21,7 @@
     "./permissions": "./src/permissions.ts",
     "./reply-templates": "./src/reply-templates.ts",
     "./settings": "./src/schemas/settings.ts",
+    "./tax": "./src/tax/index.ts",
     "./terms": "./src/terms.ts",
     "./text": "./src/text.ts",
     "./user-agent": "./src/user-agent.ts"
