@@ -360,6 +360,8 @@ export type ClientPage = {
   contactsNext: string | null;
   /** Contacts that are not anonymised (the list keeps the tombstones). */
   liveContactCount: number;
+  /** An individual whose personal details were removed: nothing new can be added to it (client_anonymised). */
+  anonymised: boolean;
   sourceLead: { id: string; ref: string } | null;
   /** Only for a finance role: an invoice exists, so the currency can't change. */
   currencyLocked?: boolean;
@@ -445,6 +447,8 @@ export const EXPORT_PARTS = [
   "email_log",
   "audit_log",
   "access_log",
+  "notes",
+  "files",
 ] as const;
 export type ExportPart = (typeof EXPORT_PARTS)[number];
 export type ExportSummary = {
@@ -523,6 +527,8 @@ export type FileView = {
 export type ProjectPage = {
   project: ProjectView;
   milestones: MilestoneView[];
+  /** The client is an anonymised individual: the screens are read-only. */
+  clientAnonymised: boolean;
   milestoneTotals: { totalMinor: number; mismatch: boolean };
   recentNotes: NoteView[];
   recentFiles: FileView[];

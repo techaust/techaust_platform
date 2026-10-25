@@ -33,12 +33,14 @@ export function NotesPanel(props: {
   scope: VaultScope;
   /** Named in the share confirmation. */
   clientName: string;
+  /** The client is an anonymised individual: the panel is read-only (client_anonymised). */
+  readOnly?: boolean;
   /** The panel heading's level and words (the client overview nests it under its own h2s). */
   title?: string;
 }) {
   const user = useUser();
   const toast = useToast();
-  const canWrite = allowed(user.role, "projects.write");
+  const canWrite = allowed(user.role, "projects.write") && !props.readOnly;
   const key = `${props.scope.kind}:${props.scope.id}`;
   const first = useLoad(() => api.notes(props.scope), key);
   // Who "you" are, for the author's own edit and delete (the owner may touch any note).

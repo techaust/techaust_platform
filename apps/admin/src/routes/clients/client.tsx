@@ -16,6 +16,7 @@ import { FileText, Lock, Receipt } from "../../components/icons.tsx";
 import { navItem } from "../../components/shell/nav.tsx";
 import { LoadFailed, NotFound, StaleNotice, useLoad } from "../../components/states.tsx";
 import { type TabItem, Tabs } from "../../components/tabs.tsx";
+import { Notice } from "../../components/ui.tsx";
 import { UnsavedChangesGuard } from "../../components/unsaved.tsx";
 import { allowed } from "../../lib/access.ts";
 import {
@@ -27,7 +28,7 @@ import {
   stateText,
   TYPE_LABELS,
 } from "../../lib/clients.ts";
-import { COPY } from "../../lib/projects.ts";
+import { COPY, PENDING } from "../../lib/projects.ts";
 import { useUser } from "../../session.tsx";
 import { ClientProjects } from "../projects/client-tabs.tsx";
 import { FilesPanel } from "../projects/files.tsx";
@@ -157,6 +158,7 @@ function ClientView(props: {
         }
       />
       <IdentityStrip data={props.data} finance={finance} />
+      {props.data.anonymised && <Notice tone="info">{PENDING.clientAnonymised}</Notice>}
       {(saveStale || conflict) &&
         (saveStale ? (
           <StaleNotice title="Someone else changed this client." onReload={() => props.reload("stale")} />
@@ -180,9 +182,13 @@ function ClientView(props: {
         ) : tab === "contacts" ? (
           <Contacts data={props.data} reload={() => props.reload()} />
         ) : tab === "projects" ? (
-          <ClientProjects clientId={client.id} />
+          <ClientProjects clientId={client.id} readOnly={props.data.anonymised} />
         ) : tab === "files" ? (
-          <FilesPanel scope={{ kind: "client", id: client.id }} emptyText={COPY.clientFilesEmpty} />
+          <FilesPanel
+            scope={{ kind: "client", id: client.id }}
+            emptyText={COPY.clientFilesEmpty}
+            readOnly={props.data.anonymised}
+          />
         ) : tab === "activity" ? (
           <Activity clientId={client.id} contacts={props.data.contacts} />
         ) : tab === "invoices" ? (

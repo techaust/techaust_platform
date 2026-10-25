@@ -74,7 +74,11 @@ export function Overview(props: {
         <Details {...props} canWrite={canWrite} />
         <Billing {...props} canFinance={canFinance} canBilling={canBilling} />
         {canProjects && (
-          <NotesPanel scope={{ kind: "client", id: client.id }} clientName={client.displayName} />
+          <NotesPanel
+            scope={{ kind: "client", id: client.id }}
+            clientName={client.displayName}
+            readOnly={props.data.anonymised}
+          />
         )}
       </div>
       <aside className="lead-page__side" aria-label="Summary">

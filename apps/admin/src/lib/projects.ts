@@ -112,7 +112,7 @@ export const shareConfirm = (client: string) =>
 export const fileDeleteConfirm = (filename: string) => `Delete ${filename}? This can't be undone.`;
 /** 07-K addition to the 07-J erase and anonymise confirmations (VERIFY WITH CA/LEGAL). */
 export const lastContactLine = (client: string) =>
-  `This is ${client}'s last contact, so their project notes and files are deleted too.`;
+  `This is ${client}'s last contact, so their notes and files are deleted too, and their projects keep only their codes.`;
 
 export const TOASTS = {
   projectAdded: "Project added.",
@@ -153,6 +153,14 @@ export const PENDING = {
   enterPercent: pending("Enter a percentage from 0 to 100, with at most 2 decimals."),
   enterNote: pending("Write the note first."),
   datesOrder: pending("The target date can't be before the start date."),
+  clientAnonymised: pending(
+    "This client's personal details were removed, so nothing new can be added to it.",
+  ),
+  budgetLocked: pending("The budget can't change while a percentage milestone is invoiced or paid."),
+  milestoneInvalidTransition: (from: MilestoneStatus, to: MilestoneStatus) =>
+    pending(
+      `A milestone can't move from ${MILESTONE_STATUS_LABELS[from]} to ${MILESTONE_STATUS_LABELS[to]}.`,
+    ),
   /** API codes with no 07-K sentence: the server's own words, marked. */
   serverWords: (message: string) => pending(sentence(message)),
 } as const;
@@ -175,15 +183,30 @@ const ERRORS: Record<string, string> = {
   order_mismatch: "The milestones changed while you were reordering. Reload and try again.",
 };
 /** M3.4 codes 07-K has no sentence for yet: the server's words, marked as placeholders. */
-const UNWORDED = new Set(["dates_order", "bad_owner", "currency_mismatch", "empty_file", "forbidden"]);
+const UNWORDED = new Set([
+  "milestone_invalid_transition",
+  "dates_order",
+  "bad_owner",
+  "currency_mismatch",
+  "empty_file",
+  "forbidden",
+]);
 
 export const invalidTransition = (from: ProjectStatus, to: ProjectStatus) =>
   `A project can't move from ${PROJECT_STATUS_LABELS[from]} to ${PROJECT_STATUS_LABELS[to]}.`;
 
 /** The sentence for a failed M3.4 request: 07-K by code, a marked placeholder for an unworded code, else the usual text. */
-export function projectErrorText(e: unknown, move?: { from: ProjectStatus; to: ProjectStatus }): string {
+export function projectErrorText(
+  e: unknown,
+  move?: { from: ProjectStatus; to: ProjectStatus },
+  milestoneMove?: { from: MilestoneStatus; to: MilestoneStatus },
+): string {
   if (!(e instanceof RequestError)) return "Couldn't reach the server. Check your connection and try again.";
   if (e.code === "invalid_transition" && move) return invalidTransition(move.from, move.to);
+  if (e.code === "milestone_invalid_transition" && milestoneMove)
+    return PENDING.milestoneInvalidTransition(milestoneMove.from, milestoneMove.to);
+  if (e.code === "client_anonymised") return PENDING.clientAnonymised;
+  if (e.code === "budget_locked") return PENDING.budgetLocked;
   const known = ERRORS[e.code];
   if (known) return known;
   if (UNWORDED.has(e.code)) return PENDING.serverWords(e.message);

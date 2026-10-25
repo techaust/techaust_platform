@@ -45,7 +45,7 @@ const START_AFTER = 6;
 export function Milestones({ data, reload }: { data: ProjectPage; reload: Reload }) {
   const user = useUser();
   const toast = useToast();
-  const canWrite = allowed(user.role, "projects.write");
+  const canWrite = allowed(user.role, "projects.write") && !data.clientAnonymised;
   const { project } = data;
   const [order, setOrder] = useState<MilestoneView[]>(data.milestones);
   const [seen, setSeen] = useState(data.milestones);
@@ -116,7 +116,7 @@ export function Milestones({ data, reload }: { data: ProjectPage; reload: Reload
       toast("success", TOASTS.milestoneSaved);
       reload();
     } catch (e) {
-      const text = projectErrorText(e);
+      const text = projectErrorText(e, undefined, { from: m.status, to });
       setFailure(text);
       toast("error", text);
     }

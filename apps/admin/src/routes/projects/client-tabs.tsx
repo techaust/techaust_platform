@@ -14,10 +14,10 @@ import { COPY, moneyText, projectErrorText } from "../../lib/projects.ts";
 import { useUser } from "../../session.tsx";
 import { Day, ProjectName, ProjectPill } from "./parts.tsx";
 
-export function ClientProjects({ clientId }: { clientId: string }) {
+export function ClientProjects({ clientId, readOnly }: { clientId: string; readOnly?: boolean }) {
   const user = useUser();
   const toast = useToast();
-  const canWrite = allowed(user.role, "projects.write");
+  const canWrite = allowed(user.role, "projects.write") && !readOnly;
   const first = useLoad(() => api.clientProjects(clientId), clientId);
   const [more, setMore] = useState<{ projects: ProjectView[]; next: string | null } | null>(null);
   const [busy, setBusy] = useState(false);

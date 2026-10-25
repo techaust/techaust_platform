@@ -16,6 +16,7 @@ import { allowed } from "../../lib/access.ts";
 import { type DetailsForm, detailsErrors, PENDING, projectErrorText, TOASTS } from "../../lib/projects.ts";
 import { moneyFrom } from "../../lib/settings-form.ts";
 import { useUser } from "../../session.tsx";
+import { useDebounced } from "./client-filter.tsx";
 import { CRUMBS, MoneyIn, ProjectsGate } from "./parts.tsx";
 
 export function Component() {
@@ -244,7 +245,7 @@ function ClientPicker(props: {
   onChoose: (c: ClientView) => void;
 }) {
   const [q, setQ] = useState("");
-  const term = q.trim().length >= 2 ? q.trim() : "";
+  const term = useDebounced(q.trim().length >= 2 ? q.trim() : "");
   const found = useLoad(() => api.clients({ q: term || undefined }), term);
   const rows = found.state === "ready" ? found.data.clients : [];
   return (

@@ -47,10 +47,16 @@ type Queued = {
   abort: AbortController;
 };
 
-export function FilesPanel(props: { scope: VaultScope; title?: string; emptyText?: string }) {
+export function FilesPanel(props: {
+  scope: VaultScope;
+  title?: string;
+  emptyText?: string;
+  /** The client is an anonymised individual: no upload, share or delete (client_anonymised). */
+  readOnly?: boolean;
+}) {
   const user = useUser();
   const toast = useToast();
-  const canWrite = allowed(user.role, "projects.write");
+  const canWrite = allowed(user.role, "projects.write") && !props.readOnly;
   const key = `${props.scope.kind}:${props.scope.id}`;
   const first = useLoad(() => api.files(props.scope), key);
   const [more, setMore] = useState<{ files: FileView[]; next: string | null } | null>(null);

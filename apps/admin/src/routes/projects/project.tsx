@@ -134,6 +134,7 @@ function ProjectView(props: {
       />
       <ProjectStrip data={props.data} />
       {moveFailure && <Notice tone="error">{moveFailure}</Notice>}
+      {props.data.clientAnonymised && <Notice tone="info">{PENDING.clientAnonymised}</Notice>}
       {(saveStale || props.drafts.conflict) &&
         (saveStale ? (
           <StaleNotice
@@ -163,9 +164,9 @@ function ProjectView(props: {
         ) : tab === "milestones" ? (
           <Milestones data={props.data} reload={props.reload} />
         ) : tab === "notes" ? (
-          <NotesPanel scope={scope} clientName={project.clientName} />
+          <NotesPanel scope={scope} clientName={project.clientName} readOnly={props.data.clientAnonymised} />
         ) : (
-          <FilesPanel scope={scope} />
+          <FilesPanel scope={scope} readOnly={props.data.clientAnonymised} />
         )}
       </Tabs>
     </>

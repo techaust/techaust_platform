@@ -109,7 +109,7 @@ describe("07-K copy, word for word [ADM-PRJ-01..05]", () => {
     );
     expect(fileDeleteConfirm("a.pdf")).toBe("Delete a.pdf? This can't be undone.");
     expect(lastContactLine("Acme")).toBe(
-      "This is Acme's last contact, so their project notes and files are deleted too.",
+      "This is Acme's last contact, so their notes and files are deleted too, and their projects keep only their codes.",
     );
     expect(Object.values(TOASTS)).toEqual([
       "Project added.",
@@ -128,7 +128,7 @@ describe("07-K copy, word for word [ADM-PRJ-01..05]", () => {
 
   it("every sentence 07-K lacks is marked as a placeholder", () => {
     for (const v of Object.values(PENDING)) {
-      const text = typeof v === "function" ? v("X") : v;
+      const text = typeof v === "function" ? (v as (...a: string[]) => string)("pending", "paid") : v;
       expect(text.startsWith(`${PLACEHOLDER_TAG} `)).toBe(true);
     }
   });
@@ -154,6 +154,15 @@ describe("errors by API code", () => {
     expect(projectErrorText(e("file_too_large"))).toBe("This file is larger than 25 MB.");
     for (const c of ["length_required", "length_mismatch", "checksum_mismatch"])
       expect(projectErrorText(e(c))).toBe("The upload didn't arrive complete. Try again.");
+    expect(
+      projectErrorText(e("milestone_invalid_transition"), undefined, { from: "invoiced", to: "pending" }),
+    ).toBe("[Placeholder] A milestone can't move from Invoiced to Pending.");
+    expect(projectErrorText(e("client_anonymised"))).toBe(
+      "[Placeholder] This client's personal details were removed, so nothing new can be added to it.",
+    );
+    expect(projectErrorText(e("budget_locked"))).toBe(
+      "[Placeholder] The budget can't change while a percentage milestone is invoiced or paid.",
+    );
     expect(projectErrorText(e("milestone_limit"))).toBe("A project can have up to 100 milestones.");
     expect(projectErrorText(e("milestone_locked"))).toBe(
       "This milestone is already invoiced, so it can't be changed or deleted.",

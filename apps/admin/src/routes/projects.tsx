@@ -9,6 +9,7 @@ import { LoadFailed, useLoad } from "../components/states.tsx";
 import { allowed } from "../lib/access.ts";
 import { COPY, moneyText, PROJECT_STATUS_LABELS, PROJECT_STATUSES } from "../lib/projects.ts";
 import { useUser } from "../session.tsx";
+import { ClientFilter } from "./projects/client-filter.tsx";
 import { Day, ProjectName, ProjectPill, ProjectsGate } from "./projects/parts.tsx";
 
 export function Component() {
@@ -63,8 +64,6 @@ function Projects() {
   };
   const list = useLoad(() => api.projects(query), JSON.stringify(query));
   const people = useLoad(() => api.leadAssignees(), "");
-  // The client filter: the newest clients (up to 50) and, when the URL names one that isn't among them, that one too.
-  const clients = useLoad(() => api.clients({ limit: "50" }), "");
   const rows = list.state === "ready" ? list.data.projects : [];
   const loading = list.state === "loading";
   const offset = (pageNo - 1) * size;
@@ -72,18 +71,6 @@ function Projects() {
 
   const me = people.data?.me;
   const others = (people.data?.assignees ?? []).filter((a) => a.id !== me);
-  const clientOptions = (clients.data?.clients ?? []).map((c) => ({
-    id: c.id,
-    label: c.displayName,
-    code: c.code,
-  }));
-  const named = rows.find((r) => r.clientId === client);
-  if (client && !clientOptions.some((c) => c.id === client))
-    clientOptions.unshift({
-      id: client,
-      label: named?.clientName ?? "This client",
-      code: named?.clientCode ?? "",
-    });
 
   const columns: Column<ProjectView>[] = [
     { key: "name", header: "Project", card: "title", width: "28%", cell: (r) => <ProjectName project={r} /> },
@@ -165,21 +152,7 @@ function Projects() {
           const cur = { status, owner }[group as "status" | "owner"];
           set({ [group]: cur === value ? null : value });
         }}
-        extra={
-          <div className="chips filters__select">
-            <label className="chips__label" htmlFor="project-client">
-              Client
-            </label>
-            <select id="project-client" value={client} onChange={(e) => set({ client: e.target.value })}>
-              <option value="">All clients</option>
-              {clientOptions.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.code ? `${c.label} (${c.code})` : c.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        }
+        extra={<ClientFilter clientId={client} onChange={(id) => set({ client: id })} />}
         extraOn={client ? 1 : 0}
         onClear={clear}
         result={

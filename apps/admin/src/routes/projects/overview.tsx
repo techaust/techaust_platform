@@ -43,7 +43,7 @@ export function Overview(props: {
   onTab: (k: TabKey) => void;
 }) {
   const user = useUser();
-  const canWrite = allowed(user.role, "projects.write");
+  const canWrite = allowed(user.role, "projects.write") && !props.data.clientAnonymised;
   return (
     <div className="lead-page project-overview client-overview">
       <div className="lead-page__main">
@@ -92,7 +92,11 @@ export function Overview(props: {
 
 // ---- details ------------------------------------------------------------------------------------------------------------------
 
-const FIELD_OF: Record<string, keyof DetailsForm> = { dates_order: "targetDate", bad_owner: "ownerId" };
+const FIELD_OF: Record<string, keyof DetailsForm> = {
+  dates_order: "targetDate",
+  bad_owner: "ownerId",
+  budget_locked: "budget",
+};
 
 function Details(props: Parameters<typeof Overview>[0] & { canWrite: boolean }) {
   const toast = useToast();

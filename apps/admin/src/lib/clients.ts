@@ -405,6 +405,8 @@ export const EXPORT_PART_LABELS: Record<ExportPart, string> = {
   email_log: "Emails sent",
   audit_log: "Activity",
   access_log: "Portal requests",
+  notes: "Notes",
+  files: "File records",
 };
 
 // ---- the page's drafts (held above every reload, as on the lead page) ------------------------------------------------

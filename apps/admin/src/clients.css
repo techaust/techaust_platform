@@ -42,7 +42,20 @@
   text-underline-offset: 0.2em;
 }
 
-@media (min-width: 48rem) and (max-width: 79.99rem) {
+/* At exactly 768 px the table would scroll inside its box (M3.4 review, finding 7): these two lists (clients, projects) turn
+   into cards up to and including 48rem, the scrolling table starts above it. */
+@media (max-width: 48rem) {
+  .clients-table .dtable__table {
+    display: none;
+  }
+
+  .clients-table .dcards {
+    display: grid;
+    gap: var(--space-2);
+  }
+}
+
+@media (min-width: 48.01rem) and (max-width: 79.99rem) {
   .clients-table .dtable {
     overflow-x: auto;
   }

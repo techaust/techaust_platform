@@ -18,10 +18,97 @@
   font-weight: 400;
 }
 
-@media (min-width: 48rem) and (max-width: 79.99rem) {
+@media (min-width: 48.01rem) and (max-width: 79.99rem) {
   .projects-table .dtable__table {
     min-width: 46rem;
   }
+}
+
+/* ---------- The client filter on the list ---------- */
+
+.client-filter {
+  display: grid;
+  gap: var(--space-2);
+  align-content: start;
+}
+
+.client-filter__search {
+  display: grid;
+  gap: var(--space-2);
+  max-width: 24rem;
+}
+
+.client-filter__chosen {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  min-height: var(--target-min);
+  padding: 0 var(--space-1) 0 var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-alt);
+}
+
+.client-filter__name {
+  font-weight: 560;
+  overflow-wrap: anywhere;
+}
+
+.client-filter__remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--target-min);
+  height: var(--target-min);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.client-filter__remove:hover {
+  color: var(--color-text);
+}
+
+.client-filter__results {
+  display: grid;
+  max-height: 14rem;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.client-filter__results li + li {
+  border-top: 1px solid var(--color-border);
+}
+
+.client-filter__results button {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: var(--target-min);
+  padding: var(--space-2) var(--space-4);
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.client-filter__results button:hover {
+  background: var(--color-surface-alt);
+}
+
+.client-filter .hint {
+  margin: 0;
 }
 
 /* ---------- The project strip (the M3.3 identity strip with the client as a link) ---------- */
