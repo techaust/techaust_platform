@@ -152,7 +152,12 @@ export type OfferExpansionMessage =
   | OfferAcceptedMessage
   | ApprovalNotifyMessage;
 
-export const OFFER_EXPANSION_KINDS = ["offer.send", "offer.decided", "offer.accepted", "approval.notify"] as const;
+export const OFFER_EXPANSION_KINDS = [
+  "offer.send",
+  "offer.decided",
+  "offer.accepted",
+  "approval.notify",
+] as const;
 /** True for a body of the M4.5 expansion family (valid or not), so a malformed one is never handed to the ordinary email consumer. */
 export const isOfferExpansionKind = (body: unknown): body is { kind: OfferExpansionMessage["kind"] } =>
   typeof body === "object" &&

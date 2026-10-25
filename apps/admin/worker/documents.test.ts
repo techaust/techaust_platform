@@ -18,6 +18,7 @@ import {
   mkService,
   mkTerms,
   patchDoc,
+  sendBodyOf,
   sendDoc,
 } from "./test-quotes.ts";
 
@@ -443,7 +444,7 @@ async function sendOk(s: { cookie: string }, id: string) {
   const doc = await json(await call(`/documents/${id}`, { cookie: s.cookie }));
   const res = await call(`/documents/${id}/send`, {
     cookie: s.cookie,
-    body: { expectedUpdatedAt: doc.updatedAt },
+    body: await sendBodyOf(id, doc.updatedAt),
   });
   expect(res.status, await res.clone().text()).toBe(200);
   return json(res);

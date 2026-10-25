@@ -5,7 +5,15 @@
 import { clipHeader } from "@techaust/db/log";
 
 /** The statuses a client may see. A `converted` estimate is shown as accepted (lead decision, 2026-10-26: conversion is internal to TecHaust); drafts are never shown. */
-export const CLIENT_STATUSES = ["sent", "viewed", "accepted", "converted", "rejected", "expired", "revised"] as const;
+export const CLIENT_STATUSES = [
+  "sent",
+  "viewed",
+  "accepted",
+  "converted",
+  "rejected",
+  "expired",
+  "revised",
+] as const;
 const list = (xs: readonly string[]) => xs.map((x) => `'${x}'`).join(", ");
 const STATUSES_SQL = list(CLIENT_STATUSES);
 const QUOTES = "('proposal', 'estimate')";

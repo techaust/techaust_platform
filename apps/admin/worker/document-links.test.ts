@@ -4,8 +4,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { checkRecipientIds, invalidRecipients, MAX_RECIPIENTS } from "./document-links.ts";
 import { putPaymentTerms } from "./test-catalogue.ts";
 import { mkContact } from "./test-clients.ts";
-import { captureQueue, one, rows, sessionFor } from "./test-helpers.ts";
-import { callA } from "./test-offers.ts";
+import { call, captureQueue, one, rows, sessionFor } from "./test-helpers.ts";
 import { codeOf, getDoc, type J, json, mkDraft, mkTerms, sendDoc } from "./test-quotes.ts";
 
 beforeAll(async () => {
@@ -26,7 +25,7 @@ async function sentOffer() {
   return { s, made, a, b };
 }
 const resend = (cookie: string, id: string, body: unknown, e?: Env) =>
-  callA(`/documents/${id}/resend`, { cookie, body }, e);
+  call(`/documents/${id}/resend`, { cookie, body }, e);
 const renderPdf = (id: string) =>
   env.DB.prepare(
     "UPDATE documents SET pdf_r2_key = 'docs/proposal/2026-27/0001-v1.pdf', pdf_sha256 = 'sha-pdf' WHERE id = ?",
@@ -209,7 +208,7 @@ describe("POST /documents/:id/resend [ADM-PROP-07]", () => {
   it("permissions: signed out 401, an accountant 403", async () => {
     const ctx = await sentOffer();
     expect(
-      (await callA(`/documents/${ctx.made.id}/resend`, { body: { contactIds: [ctx.a.id] } })).status,
+      (await call(`/documents/${ctx.made.id}/resend`, { body: { contactIds: [ctx.a.id] } })).status,
     ).toBe(401);
     const acct = await sessionFor("accountant");
     expect((await resend(acct.cookie, ctx.made.id, { contactIds: [ctx.a.id] })).status).toBe(403);
@@ -245,7 +244,7 @@ describe("POST /documents/:id/links/revoke [ADM-PROP-07]", () => {
     await link(ctx.made.id, ctx.made.id, ctx.made.clientId, ctx.a.id, `h-${crypto.randomUUID()}`);
     await link(ctx.made.id, ctx.made.id, ctx.made.clientId, ctx.b.id, `h-${crypto.randomUUID()}`);
     await link(other.made.id, other.made.id, other.made.clientId, other.a.id, `h-${crypto.randomUUID()}`);
-    const res = await callA(`/documents/${ctx.made.id}/links/revoke`, { cookie: ctx.s.cookie, body: {} });
+    const res = await call(`/documents/${ctx.made.id}/links/revoke`, { cookie: ctx.s.cookie, body: {} });
     expect(res.status, await res.clone().text()).toBe(200);
     expect(await json(res)).toMatchObject({ revoked: 2 });
     expect(
@@ -272,23 +271,23 @@ describe("POST /documents/:id/links/revoke [ADM-PROP-07]", () => {
         )
       )?.n,
     ).toBe(1);
-    const again = await callA(`/documents/${ctx.made.id}/links/revoke`, { cookie: ctx.s.cookie, body: {} });
+    const again = await call(`/documents/${ctx.made.id}/links/revoke`, { cookie: ctx.s.cookie, body: {} });
     expect(await json(again)).toMatchObject({ revoked: 0 });
   });
   it("a draft or an unknown id is 404", async () => {
     const s = await owner();
     const draft = await mkDraft(s);
-    expect((await callA(`/documents/${draft.id}/links/revoke`, { cookie: s.cookie, body: {} })).status).toBe(
+    expect((await call(`/documents/${draft.id}/links/revoke`, { cookie: s.cookie, body: {} })).status).toBe(
       404,
     );
-    expect((await callA("/documents/nope/links/revoke", { cookie: s.cookie, body: {} })).status).toBe(404);
+    expect((await call("/documents/nope/links/revoke", { cookie: s.cookie, body: {} })).status).toBe(404);
   });
 });
 
 describe("GET /documents/:id/certificate [ADM-PROP-08]", () => {
   it("404 before an acceptance, 409 until the certificate is rendered, then the PDF as a sandboxed attachment", async () => {
     const ctx = await sentOffer();
-    expect((await callA(`/documents/${ctx.made.id}/certificate`, { cookie: ctx.s.cookie })).status).toBe(404);
+    expect((await call(`/documents/${ctx.made.id}/certificate`, { cookie: ctx.s.cookie })).status).toBe(404);
     const acc = crypto.randomUUID();
     const key = "docs/proposal/2026-27/0001-v1-certificate.pdf";
     await env.DB.prepare("UPDATE documents SET status = 'accepted', decided_at = 1 WHERE id = ?")
@@ -299,7 +298,7 @@ describe("GET /documents/:id/certificate [ADM-PROP-08]", () => {
     )
       .bind(acc, ctx.made.id, ctx.a.id, key)
       .run();
-    const pending = await callA(`/documents/${ctx.made.id}/certificate`, { cookie: ctx.s.cookie });
+    const pending = await call(`/documents/${ctx.made.id}/certificate`, { cookie: ctx.s.cookie });
     expect([pending.status, await codeOf(pending)]).toEqual([409, "certificate_pending"]);
     await (env as Env & { DOCS?: R2Bucket }).DOCS?.put(key, "%PDF-1.4 certificate");
     await env.DB.prepare(
@@ -307,7 +306,7 @@ describe("GET /documents/:id/certificate [ADM-PROP-08]", () => {
     )
       .bind(acc, key)
       .run();
-    const ok = await callA(`/documents/${ctx.made.id}/certificate`, { cookie: ctx.s.cookie });
+    const ok = await call(`/documents/${ctx.made.id}/certificate`, { cookie: ctx.s.cookie });
     // The admin Worker has no DOCS binding until M4.4 phase 2 (stage B): until then the object cannot be read, and the answer is the plain 404.
     expect([200, 404]).toContain(ok.status);
     if (ok.status === 200) {

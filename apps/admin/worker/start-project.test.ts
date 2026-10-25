@@ -4,8 +4,7 @@ import { env } from "cloudflare:workers";
 import { beforeAll, describe, expect, it } from "vitest";
 import { putPaymentTerms } from "./test-catalogue.ts";
 import { insert } from "./test-clients.ts";
-import { one, rows, sessionFor, withDb } from "./test-helpers.ts";
-import { callA } from "./test-offers.ts";
+import { call, one, rows, sessionFor, withDb } from "./test-helpers.ts";
 import {
   beforeBatchHolding,
   codeOf,
@@ -25,7 +24,7 @@ beforeAll(async () => {
 
 const owner = () => sessionFor("owner", { stepUp: true });
 const start = (cookie: string, id: string, body: unknown = {}) =>
-  callA(`/documents/${id}/start-project`, { cookie, body });
+  call(`/documents/${id}/start-project`, { cookie, body });
 
 type Steps = { label: string; trigger: string; pctBp: number; targetDate?: string }[];
 const FORTY_SIXTY: Steps = [
@@ -240,7 +239,7 @@ describe("POST /documents/:id/start-project: what is made [ADM-PRJ-01]", () => {
         updated_at: 1,
       });
     });
-    const res = await callA(`/documents/${made.id}/start-project`, { cookie: s.cookie, body: {} }, rival);
+    const res = await call(`/documents/${made.id}/start-project`, { cookie: s.cookie, body: {} }, rival);
     expect(res.status, await res.clone().text()).toBe(201);
     expect((await json(res)).code).toBe(`PRJ-${String(next + 1).padStart(4, "0")}`);
   });
@@ -273,7 +272,7 @@ describe("POST /documents/:id/start-project: refusals [ADM-PRJ-01]", () => {
       const other = await sessionFor(role);
       expect((await start(other.cookie, made.id)).status, role).toBe(403);
     }
-    expect((await callA(`/documents/${made.id}/start-project`, { body: {} })).status).toBe(401);
+    expect((await call(`/documents/${made.id}/start-project`, { body: {} })).status).toBe(401);
     const staff = await sessionFor("staff");
     expect((await start(staff.cookie, made.id)).status).toBe(201);
     void s;

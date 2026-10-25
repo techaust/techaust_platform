@@ -46,6 +46,12 @@ export type SendArgs = {
     /** The version needs the owner's approval of this exact content: an approved `discount` approval for the current hash must exist. */
     approvalNeeded: boolean;
   };
+  /**
+   * M4.5: who receives the offer. The freeze UPDATE is guarded on every contact still being valid (portal access on, not anonymised, this
+   * client's), so a recipient who lost access between the read and the batch refuses the WHOLE send (no number is taken); the
+   * `document_sends` rows are written after the freeze, in the same batch, guarded on the freeze having happened. `attachPdf` null: the client's setting.
+   */
+  sends?: { rows: readonly { id: string; contactId: string }[]; attachPdf: boolean | null };
 };
 
 export type SendStatements = {
@@ -72,12 +78,16 @@ export function sendStatements(db: D1Database, a: SendArgs): SendStatements {
         number: first("number"),
         display: first("number_display"),
       };
+  const recipientGuard = a.sends
+    ? " AND (SELECT count(*) FROM contacts rc WHERE rc.client_id = documents.client_id AND rc.portal_access = 1 AND rc.anonymised_at IS NULL AND rc.id IN (SELECT json_extract(value, '$.contactId') FROM json_each(?17))) = ?18"
+    : "";
   const approval = a.expected.approvalNeeded
     ? " AND EXISTS (SELECT 1 FROM approvals ap WHERE ap.document_id = documents.id AND ap.kind = 'discount' AND ap.status = 'approved' AND ap.content_sha256 = documents.content_sha256)"
     : "";
   // ?1 id, ?2 series, ?3 fy, ?4 group, ?5 pattern, ?6 now, ?7 issue date, ?8 valid until, ?9 recipient, ?10 issuer, ?11 computed,
-  // ?12 snapshot sha, ?13 issued by, ?14 expected updated_at, ?15 expected content sha, ?16 numbering version. Exactly 16 values are
-  // bound, whichever branch is built (D1 refuses more values than the highest placeholder).
+  // ?12 snapshot sha, ?13 issued by, ?14 expected updated_at, ?15 expected content sha, ?16 numbering version, and with recipients (M4.5)
+  // ?17 the recipients as JSON and ?18 their count. Exactly as many values as the highest placeholder are bound, whichever branch is built
+  // (D1 refuses more values than the highest placeholder).
   const freeze = db
     .prepare(
       `UPDATE documents SET series = ${numbering.series}, fy = ${numbering.fy}, number = ${numbering.number}, number_display = ${numbering.display},
@@ -85,7 +95,7 @@ export function sendStatements(db: D1Database, a: SendArgs): SendStatements {
          snapshot_sha256 = ?12, issued_by = ?13, updated_at = ?6
        WHERE id = ?1 AND status = 'draft' AND frozen_at IS NULL AND updated_at = ?14 AND content_sha256 = ?15
          AND (SELECT version FROM settings WHERE key = 'numbering') IS ?16
-         AND NOT EXISTS (SELECT 1 FROM documents x WHERE x.version_group_id = ?4 AND x.status = 'accepted')${approval}
+         AND NOT EXISTS (SELECT 1 FROM documents x WHERE x.version_group_id = ?4 AND x.status = 'accepted')${approval}${recipientGuard}
        RETURNING number_display, valid_until`,
     )
     .bind(
@@ -105,6 +115,7 @@ export function sendStatements(db: D1Database, a: SendArgs): SendStatements {
       a.expected.updatedAt,
       a.expected.contentSha256,
       a.expected.numberingVersion,
+      ...(a.sends ? [JSON.stringify(a.sends.rows), a.sends.rows.length] : []),
     );
   const main: D1PreparedStatement[] = [
     db.prepare("INSERT INTO issue_guard (document_id) VALUES (?1)").bind(a.documentId),
@@ -138,6 +149,28 @@ export function sendStatements(db: D1Database, a: SendArgs): SendStatements {
              AND EXISTS (SELECT 1 FROM documents n WHERE n.id = ?3 AND n.status = 'sent' AND n.frozen_at IS NOT NULL)`,
         )
         .bind(a.groupId, a.version, a.documentId),
+      // M4.5: one `document_sends` row per recipient, written only for the document this very batch froze (its `frozen_at` is `now`). The email
+      // waits (`queued_at` NULL) until the jobs Worker has stored the PDF.
+      ...(a.sends
+        ? [
+            db
+              .prepare(
+                `INSERT INTO document_sends (id, document_id, version_group_id, client_id, contact_id, email, attach_pdf, kind, queued_at, created_by, created_at)
+                 SELECT json_extract(j.value, '$.id'), d.id, d.version_group_id, d.client_id, c.id, lower(c.email),
+                   coalesce(?3, (SELECT cl.attach_pdf FROM clients cl WHERE cl.id = d.client_id)), 'send', NULL, ?4, ?5
+                 FROM documents d JOIN json_each(?2) j
+                   JOIN contacts c ON c.id = json_extract(j.value, '$.contactId') AND c.client_id = d.client_id AND c.portal_access = 1 AND c.anonymised_at IS NULL
+                 WHERE d.id = ?1 AND d.status = 'sent' AND d.frozen_at = ?5`,
+              )
+              .bind(
+                a.documentId,
+                JSON.stringify(a.sends.rows),
+                a.sends.attachPdf === null ? null : a.sends.attachPdf ? 1 : 0,
+                a.issuedBy,
+                a.now,
+              ),
+          ]
+        : []),
     ],
   };
 }

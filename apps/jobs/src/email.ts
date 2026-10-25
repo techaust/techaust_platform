@@ -269,9 +269,11 @@ export async function processDeadLetter(
       rendered = dlqAlert({ queue, admin_url: env.ADMIN_URL, template: "staff alert" }, opts);
     } else if (!email.success && isOfferExpansionKind(body)) {
       // M4.5: which step failed, never the ids, the names or the addresses.
-      const template = { "offer.send": "offer email", "offer.accepted": "acceptance confirmation", "approval.notify": "approval notice" }[
-        body.kind as string
-      ];
+      const template = {
+        "offer.send": "offer email",
+        "offer.accepted": "acceptance confirmation",
+        "approval.notify": "approval notice",
+      }[body.kind as string];
       rendered = dlqAlert({ queue, admin_url: env.ADMIN_URL, template: template ?? "offer message" }, opts);
     } else if (email.success) {
       ref = email.data.entity.type === "lead" ? email.data.entity.id : undefined;

@@ -30,7 +30,7 @@ import {
   userId,
 } from "./test-helpers.ts";
 import { mkFile, mkMilestone, mkNote, mkProject, PDF_BYTES, upload } from "./test-projects.ts";
-import { discount, mkDraft, mkQuoteClient, mkService, mkTerms, sendDoc } from "./test-quotes.ts";
+import { discount, mkDraft, mkQuoteClient, mkService, mkTerms, sendBodyOf, sendDoc } from "./test-quotes.ts";
 
 const newEmail = () => `rbac-${Math.random().toString(36).slice(2, 10)}@example.com`;
 const PUBLIC = ROUTES.filter((r) => r.access === "public");
@@ -789,7 +789,7 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
       const made = await mkDraft(s);
       return run(s, `/documents/${made.id}/send`, {
         method: "POST",
-        body: { expectedUpdatedAt: made.updatedAt },
+        body: await sendBodyOf(made.id, made.updatedAt),
       });
     },
     // The PDF (M4.4): a retry of a sent version, and the signature image (a small PNG header; the type is read from the bytes).

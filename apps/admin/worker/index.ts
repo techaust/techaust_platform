@@ -19,9 +19,11 @@ import { type AppEnv, accessEntry, BAD_REQUEST, type Ctx, err, FORBIDDEN, NOT_FO
 import { csrf } from "./csrf.ts";
 import { dashboard } from "./dashboard.ts";
 import { documentConvert } from "./document-convert.ts";
+import { documentLinks } from "./document-links.ts";
 import { documentPdf } from "./document-pdf.ts";
 import { documentSave } from "./document-save.ts";
 import { documentSend } from "./document-send.ts";
+import { documentStart } from "./document-start.ts";
 import { documents } from "./documents.ts";
 import { files } from "./files.ts";
 import { guard, routeFor } from "./guard.ts";
@@ -142,6 +144,8 @@ export function createApp() {
   app.route("/v1/documents", documentSend);
   app.route("/v1/documents", documentConvert);
   app.route("/v1/documents", documentPdf);
+  app.route("/v1/documents", documentLinks);
+  app.route("/v1/documents", documentStart);
   app.route("/v1/approvals", approvals);
   app.route("/v1/projects", projects);
   app.route("/v1/milestones", milestones);

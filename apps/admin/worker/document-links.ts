@@ -224,12 +224,13 @@ export const documentLinks = new Hono<AppEnv>()
       headers: {
         "Content-Type": "application/pdf",
         "Content-Length": String(object.size),
-        "Content-Disposition": contentDisposition(certificateFilename(row.number_display ?? "document", row.version)),
+        "Content-Disposition": contentDisposition(
+          certificateFilename(row.number_display ?? "document", row.version),
+        ),
         "X-Content-Type-Options": "nosniff",
         "Content-Security-Policy": "default-src 'none'; sandbox",
         "Cache-Control": "no-store",
         "X-Robots-Tag": "noindex",
       },
     });
-  });
   });

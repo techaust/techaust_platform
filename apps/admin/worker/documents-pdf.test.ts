@@ -15,7 +15,7 @@ import { pdfFilename } from "./document-pdf.ts";
 import { putPaymentTerms } from "./test-catalogue.ts";
 import { insert } from "./test-clients.ts";
 import { call, one, rows, sessionFor, withEnv } from "./test-helpers.ts";
-import { getDoc, json, mkDraft, sendDoc } from "./test-quotes.ts";
+import { getDoc, json, mkDraft, sendBodyOf, sendDoc } from "./test-quotes.ts";
 
 const owner = () => sessionFor("owner", { stepUp: true });
 
@@ -64,7 +64,7 @@ async function sentDoc(type: "proposal" | "estimate" = "proposal") {
   const q = pdfQueue();
   const res = await call(
     `/documents/${made.id}/send`,
-    { cookie: s.cookie, body: { expectedUpdatedAt: made.updatedAt } },
+    { cookie: s.cookie, body: await sendBodyOf(made.id, made.updatedAt) },
     q.env,
   );
   expect(res.status).toBe(200);
@@ -166,7 +166,7 @@ describe("afterSend enqueues the snapshot", () => {
     const q = pdfQueue(true);
     const res = await call(
       `/documents/${made.id}/send`,
-      { cookie: s.cookie, body: { expectedUpdatedAt: made.updatedAt } },
+      { cookie: s.cookie, body: await sendBodyOf(made.id, made.updatedAt) },
       q.env,
     );
     expect(res.status).toBe(200);

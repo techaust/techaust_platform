@@ -7,6 +7,7 @@
 // audit row, the lead does not move). Nothing is decided from a read alone: when the batch refused, one read says why.
 import { fyOf, istDate, toIsoDate } from "@techaust/core/dates";
 import { validUntil } from "@techaust/core/documents";
+import { uuidv7 } from "@techaust/core/ids";
 import { sqlPrintfPattern } from "@techaust/core/numbering";
 import { decide } from "@techaust/core/permissions";
 import { sealOf } from "@techaust/db/documents";
@@ -17,6 +18,7 @@ import * as z from "zod/mini";
 import { clientGoneSql } from "./anonymised.ts";
 import { type ApiError, type AppEnv, actor, type Ctx, err, FORBIDDEN, mutate, NOT_FOUND } from "./context.ts";
 import { afterSend } from "./document-events.ts";
+import { checkRecipientIds, invalidRecipients } from "./document-links.ts";
 import { customLinesOf } from "./document-view.ts";
 import { readContext } from "./documents.ts";
 import { body, idParam, param, refusedWith, STALE_VERSION } from "./http.ts";
@@ -37,10 +39,35 @@ import {
   todayIst,
 } from "./quote-model.ts";
 
-export const sendBody = z.strictObject({ expectedUpdatedAt: z.int() });
+/**
+ * `contactIds`: who receives the offer (1 to 5 distinct contacts of this client with portal access; the count has its own error codes, so the
+ * schema only bounds the size). `attachPdf` defaults to the client's setting. There is no free-text message: the email is the fixed 07 §8 text.
+ */
+export const sendBody = z.strictObject({
+  expectedUpdatedAt: z.int(),
+  contactIds: z.array(z.string().check(z.minLength(1), z.maxLength(64))).check(z.maxLength(50)),
+  attachPdf: z.optional(z.boolean()),
+});
 
 const SEND_REFUSED =
   /issue did not freeze|not an issuable draft|documents_(version|status|contact)|UNIQUE constraint failed: documents\./;
+
+const RECIPIENT_INVALID: ApiError = {
+  code: "recipient_invalid",
+  message: "Some contacts can't receive this",
+};
+
+/** The recipient errors carry the offending contact ids (the screen marks them); the codes are in the run file. */
+function recipientRefusal(c: Ctx, e: ApiError, status: 400 | 409, contactIds?: readonly string[]) {
+  return c.json(
+    {
+      error: { code: e.code, message: e.message },
+      request_id: c.var.rid,
+      ...(contactIds && contactIds.length > 0 ? { contactIds } : {}),
+    },
+    status,
+  );
+}
 
 export const documentSend = new Hono<AppEnv>().post(
   "/:id/send",
@@ -51,6 +78,9 @@ export const documentSend = new Hono<AppEnv>().post(
     const f = c.req.valid("json");
     const u = actor(c);
     const db = c.env.DB;
+    // The shape of the recipient list needs no database: refuse it before anything is read.
+    const shape = checkRecipientIds(f.contactIds);
+    if (!shape.ok) return recipientRefusal(c, shape.error, shape.status, shape.invalid);
     const ctx = await readContext(c, id);
     if (!ctx) return err(c, NOT_FOUND, 404);
     const d = ctx.bundle.document;
@@ -58,6 +88,8 @@ export const documentSend = new Hono<AppEnv>().post(
     if (d.frozen_at !== null || d.status !== "draft") return err(c, FROZEN, 409);
     if (d.updated_at !== f.expectedUpdatedAt) return err(c, STALE_VERSION, 409);
     if (ctx.client.anonymised_at !== null) return err(c, CLIENT_GONE, 409);
+    const invalid = await invalidRecipients(db, d.client_id, shape.ids);
+    if (invalid.length > 0) return recipientRefusal(c, RECIPIENT_INVALID, 409, invalid);
 
     const settings = readSettings(ctx.settingsRows);
     const state = stateOfBundle(ctx.bundle);
@@ -149,6 +181,7 @@ export const documentSend = new Hono<AppEnv>().post(
       terms: { id: terms.id, version: terms.version, sha256: terms.sha256 },
       instalmentAmounts: (computation.instalments ?? []).map((x) => x.amountMinor),
     });
+    const sendRows = shape.ids.map((contactId) => ({ id: uuidv7(), contactId }));
     const batch = sendStatements(db, {
       documentId: id,
       series,
@@ -166,6 +199,7 @@ export const documentSend = new Hono<AppEnv>().post(
       computedJson: seal.computedJson,
       snapshotSha256: seal.snapshotSha256,
       issuedBy: u.id,
+      sends: { rows: sendRows, attachPdf: f.attachPdf ?? null },
       expected: {
         updatedAt: d.updated_at,
         contentSha256: computation.hash,
@@ -211,7 +245,15 @@ export const documentSend = new Hono<AppEnv>().post(
       if (!refusedWith(e, SEND_REFUSED)) throw e;
     }
     if (!done)
-      return explain(c, id, f.expectedUpdatedAt, computation.hash, settings.numberingVersion, needsApproval);
+      return explain(
+        c,
+        id,
+        f.expectedUpdatedAt,
+        computation.hash,
+        settings.numberingVersion,
+        needsApproval,
+        shape.ids,
+      );
 
     afterSend(c, { documentId: id, groupId, version: d.version });
     return c.json({
@@ -235,9 +277,10 @@ async function explain(
   hash: string,
   numberingVersion: number | null,
   approvalNeeded: boolean,
+  recipientIds: readonly string[],
 ) {
   const row = await c.env.DB.prepare(
-    `SELECT d.status, d.frozen_at, d.updated_at, d.content_sha256, ${clientGoneSql("d.client_id")} AS gone,
+    `SELECT d.client_id, d.status, d.frozen_at, d.updated_at, d.content_sha256, ${clientGoneSql("d.client_id")} AS gone,
        (SELECT version FROM settings WHERE key = 'numbering') AS numbering_version,
        EXISTS (SELECT 1 FROM documents x WHERE x.version_group_id = d.version_group_id AND x.status = 'accepted') AS accepted,
        EXISTS (SELECT 1 FROM approvals a WHERE a.document_id = d.id AND a.kind = 'discount' AND a.status = 'approved' AND a.content_sha256 = d.content_sha256) AS approved
@@ -245,6 +288,7 @@ async function explain(
   )
     .bind(id)
     .first<{
+      client_id: string;
       status: string;
       frozen_at: number | null;
       updated_at: number;
@@ -263,5 +307,8 @@ async function explain(
   if (row.accepted === 1) return refuse(ALREADY_ACCEPTED, 409);
   if ((row.numbering_version ?? null) !== numberingVersion) return refuse(NUMBERING_CHANGED, 409);
   if (approvalNeeded && row.approved !== 1) return refuse(APPROVAL_REQUIRED, 403);
+  // A recipient lost portal access (or was anonymised) between the read and the batch: the whole send was refused, no number was taken.
+  const invalid = await invalidRecipients(c.env.DB, row.client_id, recipientIds);
+  if (invalid.length > 0) return recipientRefusal(c, RECIPIENT_INVALID, 409, invalid);
   return refuse(STALE_VERSION, 409);
 }

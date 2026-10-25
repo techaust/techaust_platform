@@ -16,8 +16,8 @@
 import {
   isPdfMessage,
   nextUtcMidnight,
-  PDF_MAX_HOPS,
   type OfferSweepMessage,
+  PDF_MAX_HOPS,
   type PdfCertificateMessage,
   type PdfRenderMessage,
   type PdfSnapshotMessage,
@@ -30,9 +30,9 @@ import {
   envelopeOfBundle,
   parseEnvelope,
   pdfOptionsFor,
+  renderCertificateHtml,
   renderDocumentHtml,
   serializeEnvelope,
-  renderCertificateHtml,
   toPdfView,
   verifyEnvelope,
 } from "@techaust/pdf";
@@ -424,7 +424,11 @@ export async function processCertificate(
   const bytes = stored.created ? result.bytes : new Uint8Array(await stored.existing.arrayBuffer());
   await insert(await sha256Bytes(bytes), { browserMs: result.browserMs });
   await onRendered(env, { kind: "certificate", acceptanceId: msg.acceptanceId });
-  logEvent("pdf.certificate_rendered", { bytes: bytes.byteLength, browserMs: result.browserMs, hop: msg.hop });
+  logEvent("pdf.certificate_rendered", {
+    bytes: bytes.byteLength,
+    browserMs: result.browserMs,
+    hop: msg.hop,
+  });
   return "rendered";
 }
 

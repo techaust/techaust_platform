@@ -29,3 +29,26 @@ export async function enqueuePdf(env: Env, documentId: string, reason: PdfSnapsh
 export function afterSend(c: Ctx, event: SendEvent): void {
   c.executionCtx.waitUntil(enqueuePdf(c.env, event.documentId, "send"));
 }
+
+/**
+ * The two approval emails of 07 §8 (M4.5, ADM-APR-01): the owners are told of a request, the requester of the decision. ONE message with the
+ * approval's id only (no address, name or reason leaves this Worker); the jobs Worker reads the rows and queues the emails. After the answer,
+ * through `waitUntil`: a queue that fails is logged and never fails the request (the bell, written in the same batch, still rings).
+ */
+export function notifyApproval(c: Ctx, approvalId: string, event: "requested" | "decided"): void {
+  c.executionCtx.waitUntil(
+    (async () => {
+      try {
+        await c.env.EMAIL_QUEUE.send({ kind: "approval.notify", approvalId, event });
+      } catch (e) {
+        console.error(
+          JSON.stringify({
+            level: "error",
+            message: "approval email not queued",
+            cause: e instanceof Error ? e.name : "unknown",
+          }),
+        );
+      }
+    })(),
+  );
+}

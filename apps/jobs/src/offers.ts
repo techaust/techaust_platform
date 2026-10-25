@@ -19,9 +19,9 @@ import {
   formatMoney,
   money,
   type OfferAcceptedMessage,
+  type OfferSendMessage,
   offerAcceptedMessage,
   offerDecidedMessage,
-  type OfferSendMessage,
   offerSendMessage,
   parseIsoDate,
 } from "@techaust/core";
@@ -431,7 +431,11 @@ export async function processOfferMessage(
  * second call finds nothing, and a call that died between the two steps queues the same rows again (the email is claimed once by `email_log`).
  * A document that was never sent to anyone (an estimate staff only download) has no rows and costs one read.
  */
-export async function queueWaitingSends(env: OfferEnv, documentId: string, now = Date.now()): Promise<number> {
+export async function queueWaitingSends(
+  env: OfferEnv,
+  documentId: string,
+  now = Date.now(),
+): Promise<number> {
   const { results } = await env.DB.prepare(
     "SELECT id FROM document_sends WHERE document_id = ?1 AND queued_at IS NULL AND contact_id IS NOT NULL ORDER BY id LIMIT 5",
   )
