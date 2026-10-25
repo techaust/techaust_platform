@@ -3,7 +3,7 @@
 // dashboard-stress.test.ts.
 import { env } from "cloudflare:workers";
 import { FINANCE_AUDIT_ACTIONS } from "@techaust/core/audit";
-import { ACTIVITY_ACTIONS, ACTIVITY_OWN_ONLY } from "@techaust/core/dashboard";
+import { ACTIVITY_ACTIONS } from "@techaust/core/dashboard";
 import { addDays, parseIsoDate, toIsoDate } from "@techaust/core/dates";
 import { ROLES } from "@techaust/core/permissions";
 import { SETTINGS_SCHEMAS } from "@techaust/core/settings";

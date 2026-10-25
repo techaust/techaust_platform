@@ -32,7 +32,7 @@ async function fixture(kind: "individual" | "business", clientOver: Record<strin
     { note: "Called Asha about her mother's invoice" },
   );
   const onPlan = await mkLog(by.id, today(), 45, { plan: plan.id }, { note: "Reset the password for Asha" });
-  return { by, clientId, contact, onProject: onProject.id, onPlan: onPlan.id };
+  return { by, clientId, contact, projectId: project.id, onProject: onProject.id, onPlan: onPlan.id };
 }
 
 describe("erase and anonymise: time-entry notes [Q7]", () => {
@@ -101,9 +101,7 @@ describe("erase and anonymise: time-entry notes [Q7]", () => {
       today(),
       15,
       {
-        project: (
-          await one<{ project_id: string }>("SELECT project_id FROM time_logs WHERE id = ?", f.onProject)
-        )?.project_id,
+        project: f.projectId,
       },
       { note: null },
     );

@@ -7,7 +7,7 @@ import { addDays, parseIsoDate, toIsoDate } from "@techaust/core/dates";
 import { describe, expect, it } from "vitest";
 import { carePlanPageSql } from "./care.ts";
 import { ROUTES } from "./guard.ts";
-import { mkLog, mkOpenProject, mkPlan, today } from "./test-care.ts";
+import { mkLog, mkOpenProject, today } from "./test-care.ts";
 import { insert, mkClient, mkContact } from "./test-clients.ts";
 import { bodyOf, call, countOf, one, rows, sessionFor } from "./test-helpers.ts";
 
@@ -644,7 +644,7 @@ describe("GET /care-plans and /care-plans/:id [ADM-CARE-03]", () => {
         .bind(p.id, 1_800_000_000_000 + i)
         .run();
     }
-    const first = await json(await call("/care-plans?clientId=" + clientA, { cookie: o.cookie }));
+    const first = await json(await call(`/care-plans?clientId=${clientA}`, { cookie: o.cookie }));
     expect(first.carePlans).toHaveLength(25);
     expect(first.prev).toBeNull();
     const second = await json(
