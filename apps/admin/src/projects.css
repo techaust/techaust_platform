@@ -167,8 +167,9 @@
   max-width: 28rem;
 }
 
+/* A block, not a grid: grid rows in a scrolling fieldset overlapped on phones (the target picker's fix, M3.5). */
 .client-picker__list {
-  display: grid;
+  display: block;
   max-height: 20rem;
   margin: var(--space-2) 0 0;
   overflow-y: auto;
@@ -605,6 +606,15 @@
 .figures .panel-empty {
   font-size: var(--text-sm);
   line-height: var(--text-sm--line-height);
+}
+
+/* M3.5: the hours logged are a figure, not a missing one: the text reads in ink, the icon stays quiet. */
+.figures .hours-figure {
+  color: var(--color-text);
+}
+
+.hours-figure .icon {
+  color: var(--color-text-muted);
 }
 
 /* ---------- Notes ---------- */

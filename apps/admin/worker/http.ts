@@ -1,6 +1,7 @@
 // Request helpers shared by the admin routes (M3.3): validators that answer in the API's error shape, the text schemas, the
 // unique-constraint test and the stale-version error. One copy, so the bundle carries them once.
 import { sValidator } from "@hono/standard-validator";
+import { parseIsoDate } from "@techaust/core/dates";
 import * as z from "zod/mini";
 import { type ApiError, BAD_REQUEST, type Ctx, err, NOT_FOUND } from "./context.ts";
 
@@ -35,6 +36,12 @@ export const STALE_VERSION: ApiError = {
   code: "stale_version",
   message: "Someone else changed this record. Reload it and try again",
 };
+
+/** A calendar date as the date inputs and the date columns write it: `2026-11-30`, and a real day. */
+export const isoDate = z.string().check(
+  z.regex(/^\d{4}-\d{2}-\d{2}$/),
+  z.refine((s) => parseIsoDate(s) !== null),
+);
 
 /** The look-ahead page size of the list routes: 25 (default) or 50. */
 export const limitOf = (v: string | undefined) => (v === "50" ? 50 : 25);

@@ -14,7 +14,7 @@ import { type NavItem, navFor, navItem } from "../components/shell/nav.tsx";
 import { AccountMenu, NotificationBell } from "../components/shell/top-menus.tsx";
 import { ComingSoon, NoAccess, NotFound } from "../components/states.tsx";
 import { ToastProvider } from "../components/toast.tsx";
-import { allowed, canSee, type NavKey, sectionOf } from "../lib/access.ts";
+import { allowed, canSee, sectionOf } from "../lib/access.ts";
 import { ROLE_LABELS } from "../lib/format.ts";
 import { useSession, useUser } from "../session.tsx";
 
@@ -201,8 +201,4 @@ export function Section() {
   // Built sections have their own routes; an unknown address under one of them is a 404.
   if (!key || key === "dashboard" || !navItem(key).arrives) return <NotFound />;
   return canSee(user.role, key) ? <ComingSoon section={key} /> : <NoAccess what={navItem(key).label} />;
-}
-
-export function Dashboard() {
-  return <ComingSoon section={"dashboard" satisfies NavKey} />;
 }

@@ -30,6 +30,7 @@ import {
 } from "../../lib/clients.ts";
 import { COPY, PENDING } from "../../lib/projects.ts";
 import { useUser } from "../../session.tsx";
+import { ClientCarePlans } from "../care/client-tab.tsx";
 import { ClientProjects } from "../projects/client-tabs.tsx";
 import { FilesPanel } from "../projects/files.tsx";
 import { Activity } from "./activity.tsx";
@@ -195,6 +196,8 @@ function ClientView(props: {
           <InvoicesTab id={client.id} />
         ) : tab === "statement" ? (
           <StatementTab id={client.id} />
+        ) : tab === "care-plans" ? (
+          <ClientCarePlans clientId={client.id} readOnly={props.data.anonymised} />
         ) : (
           <ComingTab tab={tab} />
         )}
@@ -280,7 +283,6 @@ function StatementTab({ id }: { id: string }) {
 
 const COMING: Record<string, { section: Parameters<typeof navItem>[0]; label: string }> = {
   proposals: { section: "proposals", label: "Proposals and estimates" },
-  "care-plans": { section: "care-plans", label: "Care plans" },
 };
 
 /** A tab a later milestone builds: the M3.1 "coming soon" state, with the milestone and what arrives. */

@@ -71,6 +71,8 @@ const MATRIX = {
   "carePlans.write": { owner: "allow", staff: "allow" },
   "carePlans.changePrice": { owner: "allow" },
   // Time logs
+  // M3.5: `time.read` opens the time routes; the handler scopes to the member's own entries unless the role has `time.readAll`.
+  "time.read": { owner: "allow", staff: "allow", sales: "allow", accountant: "allow" },
   "time.readOwn": { owner: "allow", staff: "allow", sales: "allow" },
   "time.readAll": { owner: "allow", accountant: "allow" },
   "time.writeOwn": { owner: "allow", staff: "allow", sales: "allow" },
@@ -94,6 +96,8 @@ const MATRIX = {
   // Refunds
   "refunds.read": { owner: "allow", accountant: "allow" },
   "refunds.issue": { owner: "step-up" },
+  // The dashboard (M3.5): every role; the handler keeps only the tiles the role may see (core/dashboard.ts)
+  "dashboard.read": { owner: "allow", staff: "allow", sales: "allow", accountant: "allow" },
   // Reports
   "reports.finance": { owner: "allow", accountant: "allow" },
   "reports.delivery": { owner: "allow", staff: "allow" },

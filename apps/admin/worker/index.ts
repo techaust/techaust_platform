@@ -1,9 +1,9 @@
-import { hex, randomBytes } from "@techaust/auth";
+import { answeringRow, hex, randomBytes } from "@techaust/auth";
 import { accessStmt, clipHeader, HEADER_LIMITS } from "@techaust/db/log";
 import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
-import { routePath } from "hono/route";
+import { matchedRoutes } from "hono/route";
 import { secureHeaders } from "hono/secure-headers";
 import { Hono } from "hono/tiny";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
@@ -11,11 +11,13 @@ import { account } from "./account.ts";
 import { approvalRequests, approvals } from "./approvals.ts";
 import { audit } from "./audit.ts";
 import { auth } from "./auth.ts";
+import { carePlans } from "./care.ts";
 import { catalogue, templates } from "./catalogue.ts";
 import { clientTabs } from "./client-tabs.ts";
 import { clients, contacts } from "./clients.ts";
 import { type AppEnv, accessEntry, BAD_REQUEST, type Ctx, err, FORBIDDEN, NOT_FOUND } from "./context.ts";
 import { csrf } from "./csrf.ts";
+import { dashboard } from "./dashboard.ts";
 import { documentConvert } from "./document-convert.ts";
 import { documentSave } from "./document-save.ts";
 import { documentSend } from "./document-send.ts";
@@ -28,6 +30,7 @@ import { notifications } from "./notifications.ts";
 import { milestones, projects } from "./projects.ts";
 import { search } from "./search.ts";
 import { settings } from "./settings.ts";
+import { timeLogs } from "./time-logs.ts";
 import { users } from "./users.ts";
 
 import "./warm.ts"; // start-up warm-up of the settings schemas and the step-up path (M3.1)
@@ -55,7 +58,9 @@ export function createApp() {
       c.set("rid", clipHeader(c.req.header("cf-ray"), HEADER_LIMITS.requestId) ?? hex(randomBytes(8)));
       c.set("ip", clipHeader(c.req.header("CF-Connecting-IP"), HEADER_LIMITS.ip));
       c.set("ua", clipHeader(c.req.header("User-Agent"), HEADER_LIMITS.ua));
-      const row = routeFor(c.req.method, routePath(c, -1)) ?? null;
+      // The row of the handler that ANSWERS: the first matched pattern that is a table row. Hono runs a static path registered before
+      // `/:id` first (`/care-plans/defaults`), but the LAST match is `/:id`, whose guard row may differ (shared with the portal).
+      const row = answeringRow(matchedRoutes(c), (p) => routeFor(c.req.method, p));
       c.set("route", row);
       await next();
       c.header("Cache-Control", "no-store");
@@ -136,6 +141,9 @@ export function createApp() {
   app.route("/v1/approvals", approvals);
   app.route("/v1/projects", projects);
   app.route("/v1/milestones", milestones);
+  app.route("/v1/care-plans", carePlans);
+  app.route("/v1/time", timeLogs);
+  app.route("/v1/dashboard", dashboard);
   app.route("/v1/notes", notes);
   app.route("/v1/files", files);
   app.route("/v1/contacts", contacts);

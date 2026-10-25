@@ -2,11 +2,13 @@
 // `-email-dlq`). Each message is acknowledged on success and retried when its consumer throws or asks for a retry;
 // after 5 tries the queue moves it to the dead-letter queue (wrangler.jsonc).
 import { isPurgeMessage, isPurgeScanMessage } from "@techaust/core";
+import { isStatsKind, isStatsMessage } from "@techaust/core/stats";
 import { CLAIM_TIMEOUT_MS, processDeadLetter, processEmail } from "./email.ts";
 import { processLead } from "./leads.ts";
 import { logEvent, noteInvocation } from "./log.ts";
 import { enqueueDue, purgeLead } from "./purge.ts";
 import { processStaffAlert } from "./staff-alerts.ts";
+import { logStatsDeadLetter, processStats, skipStats } from "./stats.ts";
 
 /** A staff alert (`{ kind: "staff.alert", auditId }`) shares the email queue with ordinary emails (M2.4b). */
 const isStaffAlert = (body: unknown) =>
@@ -30,6 +32,10 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
         // A clean-up message that ran out of tries: the next daily run enqueues the lead again, so no alert and no retry.
         logEvent("lead.purge_dead_letter", { queue });
         message.ack();
+      } else if (isDlq && isStatsKind(message.body)) {
+        // A statistics message that ran out of tries: the next night records its date again, so no alert and no retry.
+        logStatsDeadLetter(queue, message.body);
+        message.ack();
       } else if (isDlq) {
         if (await processDeadLetter(env, queue, message.body)) message.ack();
         else message.retry({ delaySeconds: dlqRetryDelay(message.attempts) });
@@ -38,6 +44,11 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
         message.ack();
       } else if (queue.endsWith("-leads") && isPurgeMessage(message.body)) {
         await purgeLead(env, message.body.leadId);
+        message.ack();
+      } else if (queue.endsWith("-leads") && isStatsKind(message.body)) {
+        // Before the lead fall-through, so a statistics body (valid or not) can never become a lead.
+        if (isStatsMessage(message.body)) await processStats(env, message.body);
+        else skipStats(message.body);
         message.ack();
       } else if (queue.endsWith("-leads")) {
         await processLead(env, message.body);

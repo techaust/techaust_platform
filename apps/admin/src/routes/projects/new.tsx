@@ -32,7 +32,7 @@ export function Component() {
   );
 }
 
-const P = "np";
+const NP = "np";
 const EMPTY: DetailsForm = { name: "", ownerId: "", startDate: "", targetDate: "", budget: "" };
 const FIELD_OF: Record<string, keyof DetailsForm> = { dates_order: "targetDate", bad_owner: "ownerId" };
 
@@ -74,9 +74,9 @@ function NewProject() {
   async function submit(e: FormEvent) {
     e.preventDefault();
     const list: SummaryError[] = [];
-    if (!client) list.push({ id: `${P}-client-q`, text: PENDING.chooseClient });
+    if (!client) list.push({ id: `${NP}-client-q`, text: PENDING.chooseClient });
     const errs = client ? detailsErrors(f, client.currency) : detailsErrors(f, "INR");
-    for (const [k, v] of Object.entries(errs)) if (v) list.push({ id: `${P}-${k}`, text: v });
+    for (const [k, v] of Object.entries(errs)) if (v) list.push({ id: `${NP}-${k}`, text: v });
     setErrors(list);
     setSubmits((n) => n + 1);
     if (list.length || !client) return;
@@ -97,7 +97,7 @@ function NewProject() {
     } catch (err) {
       const field = err instanceof RequestError ? FIELD_OF[err.code] : undefined;
       if (field) {
-        setErrors([{ id: `${P}-${field}`, text: projectErrorText(err) }]);
+        setErrors([{ id: `${NP}-${field}`, text: projectErrorText(err) }]);
         setSubmits((n) => n + 1);
       } else setFailure(err instanceof RequestError ? projectErrorText(err) : errorText(err));
     } finally {
@@ -127,7 +127,7 @@ function NewProject() {
                 className="btn btn--text"
                 onClick={() => {
                   setPicking(true);
-                  requestAnimationFrame(() => document.getElementById(`${P}-client-q`)?.focus());
+                  requestAnimationFrame(() => document.getElementById(`${NP}-client-q`)?.focus());
                 }}
               >
                 Change<span className="visually-hidden"> the client</span>
@@ -136,15 +136,15 @@ function NewProject() {
           ) : (
             <ClientPicker
               chosen={client}
-              error={errorOf(`${P}-client-q`)}
+              error={errorOf(`${NP}-client-q`)}
               onChoose={(c) => {
                 setClient(c);
-                setErrors((x) => x.filter((e) => e.id !== `${P}-client-q`));
+                setErrors((x) => x.filter((e) => e.id !== `${NP}-client-q`));
               }}
             />
           )}
           <div className="field">
-            <span className="label-like" id={`${P}-currency-label`}>
+            <span className="label-like" id={`${NP}-currency-label`}>
               Currency
             </span>
             <p className="locked-value">
@@ -162,7 +162,7 @@ function NewProject() {
 
         <fieldset className="form-section">
           <legend>Project</legend>
-          <FormField id={`${P}-name`} label="Name" error={errorOf(`${P}-name`)}>
+          <FormField id={`${NP}-name`} label="Name" error={errorOf(`${NP}-name`)}>
             {(a) => (
               <input
                 {...a}
@@ -174,7 +174,7 @@ function NewProject() {
             )}
           </FormField>
           <div className="form-grid">
-            <FormField id={`${P}-ownerId`} label="Owner" optional error={errorOf(`${P}-ownerId`)}>
+            <FormField id={`${NP}-ownerId`} label="Owner" optional error={errorOf(`${NP}-ownerId`)}>
               {(a) => (
                 <select {...a} value={f.ownerId} onChange={(e) => set({ ownerId: e.target.value })}>
                   <option value="">No owner</option>
@@ -188,7 +188,7 @@ function NewProject() {
                 </select>
               )}
             </FormField>
-            <FormField id={`${P}-budget`} label="Budget" optional error={errorOf(`${P}-budget`)}>
+            <FormField id={`${NP}-budget`} label="Budget" optional error={errorOf(`${NP}-budget`)}>
               {(a) => (
                 <MoneyIn
                   a11y={a}
@@ -198,7 +198,7 @@ function NewProject() {
                 />
               )}
             </FormField>
-            <FormField id={`${P}-startDate`} label="Start date" optional error={errorOf(`${P}-startDate`)}>
+            <FormField id={`${NP}-startDate`} label="Start date" optional error={errorOf(`${NP}-startDate`)}>
               {(a) => (
                 <input
                   {...a}
@@ -208,7 +208,12 @@ function NewProject() {
                 />
               )}
             </FormField>
-            <FormField id={`${P}-targetDate`} label="Target date" optional error={errorOf(`${P}-targetDate`)}>
+            <FormField
+              id={`${NP}-targetDate`}
+              label="Target date"
+              optional
+              error={errorOf(`${NP}-targetDate`)}
+            >
               {(a) => (
                 <input
                   {...a}
@@ -239,11 +244,14 @@ function NewProject() {
  * The client, chosen from the newest clients or a search by the start of a code or name (GET /clients, the list's own search):
  * native radios, so arrow keys move through the results and the choice is one field in the form.
  */
-function ClientPicker(props: {
+export function ClientPicker(props: {
   chosen: ClientView | null;
   error: string | undefined;
   onChoose: (c: ClientView) => void;
+  /** The ids' stem (the new care plan form reuses the picker, M3.5). */
+  prefix?: string | undefined;
 }) {
+  const P = props.prefix ?? NP;
   const [q, setQ] = useState("");
   const term = useDebounced(q.trim().length >= 2 ? q.trim() : "");
   const found = useLoad(() => api.clients({ q: term || undefined }), term);

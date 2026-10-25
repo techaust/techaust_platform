@@ -11,6 +11,7 @@ import { useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { FieldError, Notice } from "../../components/ui.tsx";
 import { allowed } from "../../lib/access.ts";
+import { hoursLoggedLine } from "../../lib/care.ts";
 import {
   COPY,
   type DetailsErrors,
@@ -65,10 +66,22 @@ export function Overview(props: {
               </span>
             </Fact>
             <Fact label="Hours logged">
-              <span className="panel-empty">
-                <Clock size={20} />
-                <span>{COPY.hoursLogged}</span>
-              </span>
+              {props.data.figures.hours.available ? (
+                <span className="panel-empty hours-figure">
+                  <Clock size={20} />
+                  <span className="tnum">
+                    {hoursLoggedLine(
+                      props.data.figures.hours.totalMinutes,
+                      props.data.figures.hours.billableMinutes,
+                    )}
+                  </span>
+                </span>
+              ) : (
+                <span className="panel-empty">
+                  <Clock size={20} />
+                  <span>{COPY.hoursLogged}</span>
+                </span>
+              )}
             </Fact>
           </dl>
         </section>

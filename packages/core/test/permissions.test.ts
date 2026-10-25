@@ -29,6 +29,7 @@ const EXPECTED: Record<Exclude<Action, "proposals.send">, string> = {
   "carePlans.read": "AAAA",
   "carePlans.write": "AA--",
   "carePlans.changePrice": "A---",
+  "time.read": "AAAA", // M3.5: opens the time routes; the handler scopes to own entries without time.readAll
   "time.readOwn": "AAA-",
   "time.readAll": "A--A",
   "time.writeOwn": "AAA-",
@@ -46,6 +47,7 @@ const EXPECTED: Record<Exclude<Action, "proposals.send">, string> = {
   "payments.verify": "A---",
   "refunds.read": "A--A",
   "refunds.issue": "S---",
+  "dashboard.read": "AAAA", // M3.5: every role; the handler keeps only the tiles the role may see
   "reports.finance": "A--A",
   "reports.delivery": "AA--",
   "reports.pipeline": "A-A-",
