@@ -4,7 +4,14 @@
 //   (staging) allow-list checks -> render -> send.
 // `email_log.status`: queued -> sending -> sent | skipped | failed. A retryable SES answer puts the row back to
 // `queued` and the queue redelivers; a permanent one is `failed` and acknowledged.
-import { type EmailMessage, emailMessage, leadMessage, stableId, staffAlertMessage } from "@techaust/core";
+import {
+  type EmailMessage,
+  emailMessage,
+  isOfferExpansionKind,
+  leadMessage,
+  stableId,
+  staffAlertMessage,
+} from "@techaust/core";
 import { ATTACHMENT_MAX_BYTES } from "@techaust/core/offers";
 import {
   type Attachment,
@@ -122,13 +129,12 @@ export async function processEmail(
  * The PDF an email carries (M4.5, ADM-PROP-07), or undefined when it goes link-only: no `DOCS` binding, the object is missing, it is over
  * the cap (the Free plan's 10 ms CPU: reading, base64 and signing the body all count), or this runtime has no native base64 (the fallback
  * costs about 37 ms per MB). Only keys on the allow-list reach here (the message schema). The reason is logged, never the key.
- * Stage A reads `DOCS` through an intersection because the jobs Worker gets the binding with M4.4 phase 2.
  */
 export async function attachmentFor(
   env: Env,
   a: { key: string; filename: string },
 ): Promise<Attachment | undefined> {
-  const docs = (env as Env & { DOCS?: R2Bucket }).DOCS;
+  const docs: R2Bucket | undefined = env.DOCS;
   const skip = (why: string) => {
     logEvent("email.attachment_skipped", { why });
     return undefined;
@@ -261,6 +267,12 @@ export async function processDeadLetter(
     const email = emailMessage.safeParse(body);
     if (!email.success && staffAlertMessage.safeParse(body).success) {
       rendered = dlqAlert({ queue, admin_url: env.ADMIN_URL, template: "staff alert" }, opts);
+    } else if (!email.success && isOfferExpansionKind(body)) {
+      // M4.5: which step failed, never the ids, the names or the addresses.
+      const template = { "offer.send": "offer email", "offer.accepted": "acceptance confirmation", "approval.notify": "approval notice" }[
+        body.kind as string
+      ];
+      rendered = dlqAlert({ queue, admin_url: env.ADMIN_URL, template: template ?? "offer message" }, opts);
     } else if (email.success) {
       ref = email.data.entity.type === "lead" ? email.data.entity.id : undefined;
       // The email's log row ends as failed, so it never reads as still pending (best effort).

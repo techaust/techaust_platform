@@ -2,9 +2,16 @@
 // pay for building schemas, loading locale data and compiling the template code. Doing it here, at module top level, moves
 // that into isolate start-up instead of the first queue message (the one the Free plan's 10 ms CPU limit applies to).
 // Nothing is sent, stored or logged; the sample values are made up.
-import { describeUserAgent, WARM_SAMPLES, warmConsumerMessages, warmLabels } from "@techaust/core";
+import {
+  describeUserAgent,
+  WARM_SAMPLES,
+  warmConsumerMessages,
+  warmLabels,
+  warmOfferMessages,
+} from "@techaust/core";
 import { renderEmail } from "@techaust/email";
-import { warmPdf } from "@techaust/pdf";
+import { renderCertificateHtml, warmPdf } from "@techaust/pdf";
+import { buildCertificateView } from "./certificate.ts";
 import { alertData } from "./leads.ts";
 
 /** Returns the parses and renders that succeeded (5 + 10), so a test notices a warm-up that silently stopped working. */
@@ -89,5 +96,33 @@ export function warmConsumers(): number {
   }
   // M4.4: one sample document through the view, Markdown and HTML code (the render message's CPU, JOB-PDF-01). Returns 0 on failure.
   warmPdf();
+  // M4.5: the four expansion messages of the email queue, and one made-up acceptance certificate through the view and the HTML.
+  warmOfferMessages();
+  try {
+    renderCertificateHtml(
+      buildCertificateView({
+        number_display: "TH/PRP/2627/0001",
+        version: 1,
+        type: "proposal",
+        title: "Warm-up",
+        client_legal_name: "Warm Client",
+        typed_name: "Warm Person",
+        email: "warm-up@example.invalid",
+        accepted_at: 1_790_000_000_000,
+        ip: "203.0.113.7",
+        user_agent: "Mozilla/5.0 (Warm-up)",
+        country: "IN",
+        via: "session",
+        pdf_sha256: "0".repeat(64),
+        snapshot_sha256: "1".repeat(64),
+        terms_version: 1,
+        terms_sha256: "2".repeat(64),
+        certificate_r2_key: "docs/proposal/2026-27/0001-v1-certificate.pdf",
+        rendered_at: null,
+      }),
+    );
+  } catch {
+    // never stop a Worker from starting
+  }
   return parsed + rendered;
 }

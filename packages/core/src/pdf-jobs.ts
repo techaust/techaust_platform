@@ -15,9 +15,17 @@ export type PdfSnapshotMessage = {
 export type PdfRenderMessage = { v: 1; kind: "pdf.render"; documentId: string; hop: number };
 /** From the cron: enqueues the documents whose PDF is still missing (the worker caps a run at 20). */
 export type PdfSweepMessage = { v: 1; kind: "pdf.sweep"; asOf: number };
-// M4.5 adds { v: 1; kind: "pdf.certificate"; acceptanceId: string; hop: number }
+/** M4.5: the acceptance certificate of one acceptance (`hop` counts pacing re-sends like `pdf.render`'s). */
+export type PdfCertificateMessage = { v: 1; kind: "pdf.certificate"; acceptanceId: string; hop: number };
+/** M4.5, from the daily cron: the consumer picks the send rows still waiting for their PDF and the acceptances without a certificate (<= 20 each). */
+export type OfferSweepMessage = { v: 1; kind: "offer.sweep"; asOf: number };
 
-export type PdfMessage = PdfSnapshotMessage | PdfRenderMessage | PdfSweepMessage;
+export type PdfMessage =
+  | PdfSnapshotMessage
+  | PdfRenderMessage
+  | PdfSweepMessage
+  | PdfCertificateMessage
+  | OfferSweepMessage;
 
 export const PDF_MAX_HOPS = 30;
 export const PDF_SNAPSHOT_REASONS: readonly PdfSnapshotReason[] = ["send", "retry", "sweep"];
@@ -39,16 +47,27 @@ export function isPdfMessage(body: unknown): body is PdfMessage {
         body.hop >= 0 &&
         body.hop <= PDF_MAX_HOPS
       );
+    case "pdf.certificate":
+      return (
+        isId(body.acceptanceId) &&
+        typeof body.hop === "number" &&
+        Number.isInteger(body.hop) &&
+        body.hop >= 0 &&
+        body.hop <= PDF_MAX_HOPS
+      );
     case "pdf.sweep":
+    case "offer.sweep":
       return typeof body.asOf === "number" && Number.isSafeInteger(body.asOf) && body.asOf >= 0;
     default:
       return false;
   }
 }
 
-/** True for any body of the PDF family (valid or not), so a malformed one is never handed to another consumer. */
+/** True for any body of the PDF family (valid or not; `offer.sweep` rides this queue too), so a malformed one is never handed to another consumer. */
 export const isPdfKind = (body: unknown): boolean =>
-  isObject(body) && typeof body.kind === "string" && body.kind.startsWith("pdf.");
+  isObject(body) &&
+  typeof body.kind === "string" &&
+  (body.kind.startsWith("pdf.") || body.kind === "offer.sweep");
 
 export type PdfKeyInput = { type: string; fy: string; number: number; version: number };
 

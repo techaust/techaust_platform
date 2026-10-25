@@ -18,8 +18,10 @@ import {
   formatIstDateTime,
   formatMoney,
   money,
+  type OfferAcceptedMessage,
   offerAcceptedMessage,
   offerDecidedMessage,
+  type OfferSendMessage,
   offerSendMessage,
   parseIsoDate,
 } from "@techaust/core";
@@ -31,10 +33,11 @@ import {
   offerLinkUrl,
   todayIst,
 } from "@techaust/core/offers";
+import type { OfferSweepMessage, PdfCertificateMessage } from "@techaust/core/pdf-jobs";
 import { logEvent } from "./log.ts";
 
-/** The jobs Env plus the portal's address, which the jobs Worker gets with M4.4 phase 2 (`PORTAL_URL`). */
-type OfferEnv = Env & { PORTAL_URL?: string };
+/** The jobs Env (PORTAL_URL arrived with M4.4 phase 2). */
+type OfferEnv = Env;
 
 export type OfferSendResult = "queued" | "missing" | "refused" | "pdf_missing" | "invalid";
 export type OfferDecidedResult = "noted" | "missing" | "ignored" | "invalid";
@@ -394,4 +397,108 @@ export async function processApprovalNotify(env: OfferEnv, body: unknown): Promi
   await env.EMAIL_QUEUE.sendBatch(messages.map((m) => ({ body: m })));
   logEvent("approval_notify.queued", { event, emails: messages.length });
   return "queued";
+}
+
+// ---- the dispatcher the email queue calls ------------------------------------------------------------------------------------
+
+/** What the queue does with the message: `retry` (come back later: the PDF or the certificate is not stored yet) or `ack`. */
+export type OfferMessageVerdict = "ack" | "retry";
+
+/** Routes one expansion body (`isOfferExpansionKind` already said it is one of ours) to its consumer. An unreadable body is acknowledged. */
+export async function processOfferMessage(
+  env: OfferEnv,
+  body: { kind: string },
+  now = Date.now(),
+): Promise<OfferMessageVerdict> {
+  switch (body.kind) {
+    case "offer.send":
+      return (await processOfferSend(env, body, now)) === "pdf_missing" ? "retry" : "ack";
+    case "offer.decided":
+      await processOfferDecided(env, body);
+      return "ack";
+    case "offer.accepted":
+      return (await processOfferAccepted(env, body, now)) === "certificate_missing" ? "retry" : "ack";
+    default:
+      await processApprovalNotify(env, body);
+      return "ack";
+  }
+}
+
+// ---- after a PDF is stored (called by pdf.ts `onRendered`) ------------------------------------------------------------------
+
+/**
+ * The offer's PDF now exists: queue `offer.send` for every recipient still waiting (`queued_at IS NULL`), then stamp them. Idempotent: a
+ * second call finds nothing, and a call that died between the two steps queues the same rows again (the email is claimed once by `email_log`).
+ * A document that was never sent to anyone (an estimate staff only download) has no rows and costs one read.
+ */
+export async function queueWaitingSends(env: OfferEnv, documentId: string, now = Date.now()): Promise<number> {
+  const { results } = await env.DB.prepare(
+    "SELECT id FROM document_sends WHERE document_id = ?1 AND queued_at IS NULL AND contact_id IS NOT NULL ORDER BY id LIMIT 5",
+  )
+    .bind(documentId)
+    .all<{ id: string }>();
+  if (results.length === 0) return 0;
+  await env.EMAIL_QUEUE.sendBatch(
+    results.map((r) => ({ body: { kind: "offer.send", sendId: r.id } satisfies OfferSendMessage })),
+  );
+  await env.DB.prepare(
+    "UPDATE document_sends SET queued_at = ?2 WHERE document_id = ?1 AND queued_at IS NULL AND id IN (SELECT value FROM json_each(?3))",
+  )
+    .bind(documentId, now, JSON.stringify(results.map((r) => r.id)))
+    .run();
+  logEvent("offer.sends_queued", { count: results.length });
+  return results.length;
+}
+
+/** The certificate is stored: the confirmation emails can follow (`offer.accepted`). */
+export async function queueAcceptedConfirmation(env: OfferEnv, acceptanceId: string): Promise<void> {
+  await env.EMAIL_QUEUE.send({ kind: "offer.accepted", acceptanceId } satisfies OfferAcceptedMessage);
+}
+
+// ---- offer.sweep ----------------------------------------------------------------------------------------------------------------
+
+/** A sweep looks back this far only, so a row that can never be sent (the contact left) does not fill every run. */
+export const OFFER_SWEEP_LOOKBACK_MS = 14 * 86_400_000;
+/** An acceptance gets this long for its own certificate message before the sweep steps in. */
+export const OFFER_SWEEP_GRACE_MS = 600_000;
+export const OFFER_SWEEP_LIMIT = 20;
+
+/** ?1 oldest created_at taken, ?2 today (IST). Forced onto the partial index `document_sends_waiting`: EXPLAIN-tested. */
+export const WAITING_SENDS_SQL = `SELECT s.id FROM document_sends s INDEXED BY document_sends_waiting JOIN documents d ON d.id = s.document_id
+  WHERE s.queued_at IS NULL AND s.contact_id IS NOT NULL AND s.created_at >= ?1 AND d.pdf_sha256 IS NOT NULL
+    AND d.status IN ('sent', 'viewed') AND d.valid_until >= ?2
+  ORDER BY s.created_at LIMIT ${OFFER_SWEEP_LIMIT}`;
+
+/** ?1 newest accepted_at taken, ?2 oldest. Forced onto `acceptances_accepted_at`: EXPLAIN-tested. */
+export const UNCERTIFIED_SQL = `SELECT a.id FROM acceptances a INDEXED BY acceptances_accepted_at
+  WHERE a.accepted_at <= ?1 AND a.accepted_at >= ?2 AND a.certificate_r2_key IS NOT NULL
+    AND NOT EXISTS (SELECT 1 FROM acceptance_certificates ce WHERE ce.acceptance_id = a.id)
+  ORDER BY a.accepted_at LIMIT ${OFFER_SWEEP_LIMIT}`;
+
+/**
+ * Handles one `offer.sweep` (from the daily cron, which reads no D1): at most 20 waiting send rows whose PDF exists become `offer.send`, and at
+ * most 20 acceptances older than 10 minutes without a certificate become `pdf.certificate`. One read batch, two `sendBatch`es at most.
+ */
+export async function processOfferSweep(
+  env: OfferEnv,
+  msg: OfferSweepMessage,
+): Promise<{ sends: number; certificates: number }> {
+  const [sends, certs] = await env.DB.batch([
+    env.DB.prepare(WAITING_SENDS_SQL).bind(msg.asOf - OFFER_SWEEP_LOOKBACK_MS, todayIst(msg.asOf)),
+    env.DB.prepare(UNCERTIFIED_SQL).bind(msg.asOf - OFFER_SWEEP_GRACE_MS, msg.asOf - OFFER_SWEEP_LOOKBACK_MS),
+  ]);
+  const sendIds = (sends?.results ?? []) as { id: string }[];
+  const certIds = (certs?.results ?? []) as { id: string }[];
+  if (sendIds.length > 0)
+    await env.EMAIL_QUEUE.sendBatch(
+      sendIds.map((r) => ({ body: { kind: "offer.send", sendId: r.id } satisfies OfferSendMessage })),
+    );
+  if (certIds.length > 0)
+    await env.PDF_QUEUE.sendBatch(
+      certIds.map((r) => ({
+        body: { v: 1, kind: "pdf.certificate", acceptanceId: r.id, hop: 0 } satisfies PdfCertificateMessage,
+      })),
+    );
+  logEvent("offer.sweep", { sends: sendIds.length, certificates: certIds.length });
+  return { sends: sendIds.length, certificates: certIds.length };
 }

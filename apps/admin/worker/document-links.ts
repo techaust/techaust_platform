@@ -1,20 +1,26 @@
-// Sending again, revoking links and the certificate download (M4.5; ADM-PROP-07, ADM-PROP-08): wired into the route table and the app in stage B.
+// Sending again, revoking links and the certificate download (M4.5; ADM-PROP-07, ADM-PROP-08): wired into the route table and the app (stage B).
 //   POST /documents/:id/resend {contactIds, attachPdf?}   proposals.send   new `document_sends` rows (kind 'resend') for the latest sent version
 //   POST /documents/:id/links/revoke                      proposals.send   revokes every live offer link of the offer (all its versions)
 //   GET  /documents/:id/certificate                       proposals.read   streams the acceptance certificate
 // The recipients are the same rule as the first send (`checkRecipients`): 1 to 5 distinct contacts of THIS client with portal access, not
 // anonymised. The email follows the PDF: the rows are written "waiting" (queued_at NULL); when the PDF already exists they are queued at
 // once (`offer.send`, one message per row), else the jobs Worker's render step queues them (and a sweep is the safety net).
+import { contentDisposition } from "@techaust/core/file-types";
 import { uuidv7 } from "@techaust/core/ids";
 import { todayIst as todayIstText } from "@techaust/core/offers";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { clientGoneSql } from "./anonymised.ts";
-import { type ApiError, type AppEnv, actor, type Ctx, err, mutate, NOT_FOUND } from "./context.ts";
+import { type ApiError, type AppEnv, actor, err, mutate, NOT_FOUND } from "./context.ts";
+import { pdfFilename } from "./document-pdf.ts";
 import { body, idParam, param } from "./http.ts";
 import { CLIENT_GONE, NOT_A_QUOTE } from "./quote-model.ts";
 
 export const MAX_RECIPIENTS = 5;
+
+/** `TH-PRP-2627-0003-v2-certificate.pdf`. */
+const certificateFilename = (numberDisplay: string, version: number): string =>
+  pdfFilename(numberDisplay, version).replace(/\.pdf$/, "-certificate.pdf");
 
 const RECIPIENTS_REQUIRED: ApiError = {
   code: "recipients_required",
@@ -81,9 +87,6 @@ const OPEN_LATEST =
 
 const NEWEST =
   "NOT EXISTS (SELECT 1 FROM documents n WHERE n.version_group_id = d.version_group_id AND n.version > d.version AND n.frozen_at IS NOT NULL)";
-
-/** Stage B reads `DOCS` straight from `Env`; stage A is written before the binding exists on the admin Worker. */
-const docsOf = (c: Ctx): R2Bucket | undefined => (c.env as Env & { DOCS?: R2Bucket }).DOCS;
 
 export const documentLinks = new Hono<AppEnv>()
   .post("/:id/resend", param(idParam), body(resendBody), async (c) => {
@@ -214,19 +217,19 @@ export const documentLinks = new Hono<AppEnv>()
       | { r2_key: string; number_display: string | null; version: number }
       | undefined;
     if (!row) return acc?.results[0] ? err(c, CERTIFICATE_PENDING, 409) : err(c, NOT_FOUND, 404);
-    const object = await docsOf(c)?.get(row.r2_key);
+    const object = await c.env.DOCS.get(row.r2_key);
     if (!object) return err(c, NOT_FOUND, 404);
-    const stem =
-      (row.number_display ?? "document").replace(/[^A-Za-z0-9.-]+/g, "-").replace(/^-+|-+$/g, "") ||
-      "document";
+    // The same download rules as the proposal's own PDF (document-pdf.ts): an attachment, never rendered, never cached, never sniffed.
     return new Response(object.body, {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="${stem}-v${row.version}-certificate.pdf"`,
         "Content-Length": String(object.size),
-        "Cache-Control": "no-store",
+        "Content-Disposition": contentDisposition(certificateFilename(row.number_display ?? "document", row.version)),
         "X-Content-Type-Options": "nosniff",
-        "Content-Security-Policy": "sandbox",
+        "Content-Security-Policy": "default-src 'none'; sandbox",
+        "Cache-Control": "no-store",
+        "X-Robots-Tag": "noindex",
       },
     });
+  });
   });
