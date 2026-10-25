@@ -29,7 +29,7 @@ The new version keeps every section key and heading from M4.1. Sections marked "
 | Section | Copy |
 |---|---|
 | Estimate | "Estimate for {{service.name}}, prepared for {{client.name}}." · "This is an estimate, not a tax invoice." (VERIFY WITH CA/LEGAL) |
-| Payment schedule | "{{service.schedule}}" · "This estimate is valid for {{proposal.validity_days}} days from the date it's sent." |
+| Validity (the template's second section; the payment schedule itself is the table under Estimate) | "This estimate is valid for {{proposal.validity_days}} days from the date it's sent." |
 
 ### Care plan block
 "Care plans are paid monthly in advance. Hours above the included hours are charged at the overage rate, before GST. Price and hours changes take effect from the next billing period."
@@ -72,7 +72,7 @@ Every line comes from approved copy (07 §5.3, §5.5). Placeholders aren't used 
 | Where | Copy |
 |---|---|
 | Guard line | "{n} % off catalogue prices" |
-| Over 10 % | "More than 10 % off catalogue prices needs the owner's approval before sending." |
+| Over 10 % | Staff and Sales: "More than 10 % off catalogue prices needs the owner's approval before sending." · Owner: "More than 10 % off catalogue prices. As the owner, you can send it without approval." |
 | Request dialog | Title "Ask the owner to approve" · "Reason" · button "Send request" · "The approval applies to this version only. Any change afterwards needs a new approval." |
 | States | "Approval pending" · "Approved by {person} on {date}" · "Rejected by {person}: {note}" · "Approval expired: the document changed after the request." |
 | Owner's queue | Heading "Approvals" · empty "Nothing waiting for your approval." · columns "Document" · "Requested by" · "Discount" · "Total" · "Requested" |
@@ -90,8 +90,8 @@ Every line comes from approved copy (07 §5.3, §5.5). Placeholders aren't used 
 | Versions panel | Heading "Versions" · "v{n}, {status}, {date}" |
 | Revise dialog | Title "Make a new version?" · "v{version} stays acceptable until the new version is sent; then it shows as Revised." · button "Make new version" |
 | Discard dialog | Title "Discard this draft?" · "This can't be undone." · button "Discard" |
-| Create invoice draft | Title "Create an invoice draft from {number} v{version}?" · button "Create invoice draft" · result "Invoice draft created." |
-| Create care plan | Title "Create a care plan from {number} v{version}?" · "Start date" · "Billing day" · button "Create care plan" · result "Care plan {code} created." |
+| Create invoice draft | Title "Create an invoice draft from {number} v{version}?" · button "Create invoice draft" · result "Invoice draft created." · until M5: "Invoices arrive with invoicing." (07-K) |
+| Create care plan | Title "Create a care plan from {number} v{version}?" · "Start date" · "Billing day" · "Included hours" · button "Create care plan" · result "Care plan for {client} ({tier}) created." |
 
 ## 6. Errors (by API code; staff)
 | Code | Copy |
@@ -142,6 +142,7 @@ Every line comes from approved copy (07 §5.3, §5.5). Placeholders aren't used 
 | Dashboard pipeline tile | Heading "Pipeline" · "{n} open, {total} before GST" · empty "No open proposals." |
 | Client page tab | "Proposals and estimates" · empty "No proposals or estimates for this client yet." |
 | Search group | "Proposals and estimates" |
+| Global search box | Placeholder "Search leads, clients, projects, documents and people" · intro "Search by the start of a name, code or number." |
 | Toasts | "Draft created." · "Draft saved." · "Sent as {number} v{version}." · "New version made." · "Draft discarded." · "Approval requested." · "Approved." · "Rejected." |
 | Audit labels | "created a draft" · "changed a draft" · "discarded a draft" · "sent a document" · "made a new version" · "asked for approval" · "decided an approval" · "converted a document" |
 
