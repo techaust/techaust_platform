@@ -24,6 +24,7 @@ import {
   sendTitle,
 } from "../../lib/documents.ts";
 import { type CareConverted, documentsApi } from "../../lib/documents-api.ts";
+import { COPY as PROJECT_COPY } from "../../lib/projects.ts";
 import { intIn } from "../../lib/settings-form.ts";
 import { DurationFields } from "../care/terms-fields.tsx";
 
@@ -179,6 +180,10 @@ export function InvoiceDialog(props: {
   id: string;
   number: string;
   version: number;
+  /** ADM-G-04: the amount and the client, before and after. */
+  totalMinor: number | null;
+  currency: Currency;
+  client: string;
   onDone: () => void;
   onClose: () => void;
 }) {
@@ -189,17 +194,29 @@ export function InvoiceDialog(props: {
       resultTitle={DOC_COPY.invoiceDone}
       confirmLabel={DOC_COPY.invoiceButton}
       onConfirm={async () => {
+        let made: { totalMinor: number };
         try {
-          await documentsApi.toInvoice(props.id);
+          made = await documentsApi.toInvoice(props.id);
         } catch (e) {
           throw mappedError(e);
         }
         props.onDone();
-        return <p>{DOC_COPY.invoiceDone}</p>;
+        return (
+          <>
+            <p className="confirm-figure tnum">
+              {sendLine(moneyText(made.totalMinor, props.currency), props.client)}
+            </p>
+            <p>{PROJECT_COPY.createInvoice}</p>
+          </>
+        );
       }}
       onClose={props.onClose}
     >
-      {null}
+      {props.totalMinor !== null && (
+        <p className="confirm-figure tnum">
+          {sendLine(moneyText(props.totalMinor, props.currency), props.client)}
+        </p>
+      )}
     </ConfirmDialog>
   );
 }

@@ -35,7 +35,7 @@ import {
 } from "../../lib/documents.ts";
 import { COPY as PROJECT_COPY } from "../../lib/projects.ts";
 
-export function SectionsPanel(props: {
+export const SectionsPanel = memo(function SectionsPanel(props: {
   sections: SectionDraft[];
   dispatch: Dispatch<EditorAction>;
   current: () => SectionDraft[];
@@ -147,7 +147,7 @@ export function SectionsPanel(props: {
       )}
     </section>
   );
-}
+});
 
 const SectionRow = memo(function SectionRow(p: {
   s: SectionDraft;

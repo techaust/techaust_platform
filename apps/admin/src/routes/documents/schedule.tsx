@@ -22,7 +22,7 @@ import { percentToBp } from "../../lib/settings-form.ts";
 
 const STEPS_MAX = 24;
 
-export function SchedulePanel(props: {
+export const SchedulePanel = memo(function SchedulePanel(props: {
   steps: StepDraft[];
   amounts: Record<string, number | null>;
   currency: Currency;
@@ -87,7 +87,7 @@ export function SchedulePanel(props: {
           {gap > 0 && <span className="sched-bar__gap" style={{ flexGrow: gap }} />}
         </div>
       )}
-      <ol className="ledger ledger--steps">
+      <ol className="qledger qledger--steps">
         {props.steps.map((s, i) => (
           <StepRow
             key={s.uid}
@@ -128,7 +128,7 @@ export function SchedulePanel(props: {
       )}
     </section>
   );
-}
+});
 
 const StepRow = memo(function StepRow(p: {
   s: StepDraft;
@@ -169,12 +169,12 @@ const StepRow = memo(function StepRow(p: {
     },
   ];
   return (
-    <li className="ledger__row ledger__row--step">
-      <span className="ledger__n tnum" aria-hidden="true">
+    <li className="qledger__row qledger__row--step">
+      <span className="qledger__n tnum" aria-hidden="true">
         {p.n}
       </span>
-      <div className="ledger__desc">
-        <label className="ledger__label" htmlFor={id("label")}>
+      <div className="qledger__desc">
+        <label className="qledger__label" htmlFor={id("label")}>
           {hidden}
           {DOC_COPY.instalment}
         </label>
@@ -187,23 +187,23 @@ const StepRow = memo(function StepRow(p: {
           onBlur={() => setLeft((x) => ({ ...x, label: true }))}
         />
       </div>
-      <p className="ledger__amount tnum">
+      <p className="qledger__amount tnum">
         <span className="visually-hidden">
           {hidden}
           {DOC_COPY.amount}:{" "}
         </span>
         {p.amount === null || p.amount === undefined ? "" : moneyText(p.amount, p.currency)}
       </p>
-      <div className="ledger__act">
+      <div className="qledger__act">
         <MenuButton
           label={`Actions for ${DOC_COPY.instalment.toLowerCase()} ${p.n}`}
           items={items}
           align="end"
         />
       </div>
-      <div className="ledger__work ledger__work--step">
-        <div className="ledger__cell ledger__cell--pct">
-          <label className="ledger__label" htmlFor={id("pct")}>
+      <div className="qledger__work qledger__work--step">
+        <div className="qledger__cell qledger__cell--pct">
+          <label className="qledger__label" htmlFor={id("pct")}>
             {hidden}
             {DOC_COPY.share}
           </label>
@@ -222,8 +222,8 @@ const StepRow = memo(function StepRow(p: {
             </span>
           </div>
         </div>
-        <div className="ledger__cell">
-          <label className="ledger__label" htmlFor={id("when")}>
+        <div className="qledger__cell">
+          <label className="qledger__label" htmlFor={id("when")}>
             {hidden}
             {DOC_COPY.when}
           </label>
@@ -239,8 +239,8 @@ const StepRow = memo(function StepRow(p: {
             ))}
           </select>
         </div>
-        <div className="ledger__cell ledger__cell--what">
-          <label className="ledger__label" htmlFor={id("detail")}>
+        <div className="qledger__cell qledger__cell--what">
+          <label className="qledger__label" htmlFor={id("detail")}>
             {hidden}
             {DOC_COPY.whatYouGet}
           </label>
@@ -252,8 +252,8 @@ const StepRow = memo(function StepRow(p: {
             onChange={(e) => p.onEdit(s.uid, { detail: e.target.value })}
           />
         </div>
-        <div className="ledger__cell">
-          <label className="ledger__label" htmlFor={id("date")}>
+        <div className="qledger__cell">
+          <label className="qledger__label" htmlFor={id("date")}>
             {hidden}
             {DOC_COPY.targetDate}
           </label>
@@ -266,7 +266,7 @@ const StepRow = memo(function StepRow(p: {
         </div>
       </div>
       {(shown("label") || shown("pct")) && (
-        <div className="ledger__errors">
+        <div className="qledger__errors">
           {shown("label") && <FieldError id={`${id("label")}-error`}>{shown("label")}</FieldError>}
           {shown("pct") && <FieldError id={`${id("pct")}-error`}>{shown("pct")}</FieldError>}
         </div>

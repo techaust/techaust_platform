@@ -67,6 +67,10 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
     setS(ref.current);
   }, []);
   const inflight = useRef<Promise<unknown> | null>(null);
+  // Stable readers of the newest lists, so the memoised panels are not drawn again by a new function each render.
+  const currentLines = useCallback(() => ref.current.lines, []);
+  const currentSteps = useCallback(() => ref.current.schedule, []);
+  const currentSections = useCallback(() => ref.current.sections, []);
   const [dialog, setDialog] = useState<"send" | "request" | "discard" | null>(null);
   const canWrite = allowed(user.role, "proposals.draft");
   const canSendRole = allowed(user.role, "proposals.send");
@@ -367,7 +371,7 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
             showErrors={s.showErrors}
             type={view.type}
             dispatch={dispatch}
-            current={() => ref.current.lines}
+            current={currentLines}
           />
 
           <section className="lead-panel doc-totals" aria-labelledby="doc-totals-h">
@@ -421,10 +425,10 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
             currency={s.currency}
             showErrors={s.showErrors}
             dispatch={dispatch}
-            current={() => ref.current.schedule}
+            current={currentSteps}
           />
 
-          <SectionsPanel sections={s.sections} dispatch={dispatch} current={() => ref.current.sections} />
+          <SectionsPanel sections={s.sections} dispatch={dispatch} current={currentSections} />
         </div>
 
         <div className="doc-page__versions">

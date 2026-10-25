@@ -131,19 +131,19 @@
   font-size: var(--text-sm);
 }
 
-.ledger {
+.qledger {
   margin: 0 0 var(--space-4);
   padding: 0;
   list-style: none;
 }
 
-.ledger__row {
+.qledger__row {
   display: grid;
   grid-template-columns: 1.75rem minmax(0, 1fr) auto auto;
   grid-template-areas:
     "n desc amt act"
     ". work work work"
-    ". meta meta meta"
+    ". meta figs figs"
     ". err err err";
   gap: var(--space-2) var(--space-3);
   align-items: center;
@@ -151,12 +151,12 @@
   border-top: 1px solid var(--color-border);
 }
 
-.ledger__row:first-child {
+.qledger__row:first-child {
   border-top: 0;
   padding-top: var(--space-1);
 }
 
-.ledger__n {
+.qledger__n {
   grid-area: n;
   align-self: center;
   color: var(--color-text-muted);
@@ -164,24 +164,24 @@
   text-align: end;
 }
 
-.ledger__desc {
+.qledger__desc {
   grid-area: desc;
   display: grid;
   gap: var(--space-1);
   min-width: 0;
 }
 
-.ledger__desc-in {
+.qledger__desc-in {
   font-weight: 500;
 }
 
-.ledger__detail {
+.qledger__detail {
   color: var(--color-text-muted);
   font-size: var(--text-sm);
   overflow-wrap: anywhere;
 }
 
-.ledger__amount {
+.qledger__amount {
   grid-area: amt;
   min-width: 7rem;
   margin: 0;
@@ -192,43 +192,43 @@
   white-space: nowrap;
 }
 
-.ledger__act {
+.qledger__act {
   grid-area: act;
 }
 
-.ledger__work {
+.qledger__work {
   grid-area: work;
   display: grid;
-  grid-template-columns: minmax(7rem, 9rem) minmax(8rem, 10rem) minmax(10rem, 12rem) minmax(0, 1fr);
+  grid-template-columns: minmax(6rem, 8rem) minmax(8rem, 11rem) minmax(10rem, 13rem);
   gap: var(--space-2) var(--space-3);
   align-items: end;
 }
 
-.ledger__cell {
+.qledger__cell {
   display: grid;
   gap: var(--space-1);
   min-width: 0;
 }
 
-.ledger__label {
+.qledger__label {
   color: var(--color-text-muted);
   font-size: var(--text-sm);
   font-weight: 500;
 }
 
-.ledger__qty {
+.qledger__qty {
   display: flex;
   align-items: stretch;
 }
 
-.ledger__qty input {
+.qledger__qty input {
   width: 4.5rem;
   min-width: 0;
   text-align: end;
   border-radius: var(--radius-sm) 0 0 var(--radius-sm);
 }
 
-.ledger__unit {
+.qledger__unit {
   display: flex;
   align-items: center;
   padding: 0 var(--space-2);
@@ -241,11 +241,11 @@
   white-space: nowrap;
 }
 
-.ledger .money-in {
+.qledger .money-in {
   display: flex;
 }
 
-.ledger .money-in input {
+.qledger .money-in input {
   width: 100%;
   min-width: 0;
   text-align: end;
@@ -273,37 +273,37 @@
   text-align: end;
 }
 
-.ledger__figs {
+.qledger__figs {
+  grid-area: figs;
   display: flex;
   justify-content: flex-end;
   gap: var(--space-5);
   margin: 0;
-  padding-bottom: var(--space-2);
 }
 
-.ledger__figs > div {
+.qledger__figs > div {
   display: grid;
   gap: var(--space-1);
   text-align: end;
 }
 
-.ledger__figs dt {
+.qledger__figs dt {
   color: var(--color-text-muted);
   font-size: var(--text-sm);
 }
 
-.ledger__figs dd {
+.qledger__figs dd {
   margin: 0;
   font-size: var(--text-sm);
   white-space: nowrap;
 }
 
-.ledger__meta {
+.qledger__meta {
   grid-area: meta;
   margin: 0;
 }
 
-.ledger__src {
+.qledger__src {
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
@@ -312,27 +312,27 @@
   font-size: var(--text-sm);
 }
 
-.ledger__src .icon {
+.qledger__src .icon {
   margin-inline-end: calc(-1 * var(--space-2));
 }
 
 /* The lines the discount guard ignores: said in words, marked with the accent text colour. */
-.ledger__src--custom {
+.qledger__src--custom {
   color: var(--color-text-accent);
   font-weight: 500;
 }
 
-.ledger__errors {
+.qledger__errors {
   grid-area: err;
   display: grid;
   gap: var(--space-1);
 }
 
-.ledger__errors .field-error {
+.qledger__errors .field-error {
   margin: 0;
 }
 
-.ledger__warn {
+.qledger__warn {
   margin: 0;
   color: var(--color-warning);
   font-size: var(--text-sm);
@@ -340,60 +340,56 @@
 }
 
 /* Instalments: the name and the amount, then share, when, what you get and the target date. */
-.ledger__work--step {
+.qledger__work--step {
   grid-template-columns: 7rem minmax(9rem, 11rem) minmax(0, 1fr) minmax(9rem, 10rem);
 }
 
-.ledger__cell--pct .number-unit {
+.qledger__cell--pct .number-unit {
   display: flex;
 }
 
-.ledger__cell--pct .number-unit input {
+.qledger__cell--pct .number-unit input {
   width: 100%;
   min-width: 0;
 }
 
 /* The work wraps two by two inside a narrow panel (tablet portrait, phones). */
 @media (max-width: 47.99rem) {
-  .ledger__row {
+  .qledger__row {
     grid-template-columns: 1.5rem minmax(0, 1fr) auto;
     grid-template-areas:
       "n desc act"
       ". amt amt"
       ". work work"
+      ". figs figs"
       ". meta meta"
       ". err err";
   }
 
-  .ledger__amount {
+  .qledger__amount {
     text-align: start;
   }
 
-  .ledger__work,
-  .ledger__work--step {
+  .qledger__work,
+  .qledger__work--step {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .ledger__figs {
-    grid-column: 1 / -1;
+  .qledger__figs {
     justify-content: flex-start;
   }
 
-  .ledger__figs > div {
+  .qledger__figs > div {
     text-align: start;
   }
 }
 
 @media (min-width: 64rem) and (max-width: 87.99rem) {
-  .ledger__work {
+  .qledger__work {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .ledger__figs {
-    grid-column: 1 / -1;
-  }
-
-  .ledger__work--step {
+  .qledger__work--step {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

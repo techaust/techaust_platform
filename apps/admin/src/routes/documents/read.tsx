@@ -218,6 +218,9 @@ export function ReadView({ view, reload }: { view: DocumentView; reload: () => v
         id={v.id}
         number={number}
         version={v.version}
+        totalMinor={v.totals?.totalMinor ?? null}
+        currency={v.currency}
+        client={v.client.name}
         onDone={reload}
         onClose={() => setDialog(null)}
       />

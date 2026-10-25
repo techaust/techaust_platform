@@ -32,7 +32,7 @@ import { MoneyIn } from "../projects/parts.tsx";
 
 export const LINES_MAX = 100;
 
-export function LinesPanel(props: {
+export const LinesPanel = memo(function LinesPanel(props: {
   lines: LineDraft[];
   figures: Record<string, LineFigures>;
   currency: Currency;
@@ -110,7 +110,7 @@ export function LinesPanel(props: {
           <span>{DOC_PENDING.noLines}</span>
         </p>
       ) : (
-        <ol className="ledger" aria-labelledby="doc-lines-h" data-focus={focusId ?? undefined}>
+        <ol className="qledger" aria-labelledby="doc-lines-h" data-focus={focusId ?? undefined}>
           {props.lines.map((l, i) => (
             <LineRow
               key={l.uid}
@@ -186,7 +186,7 @@ export function LinesPanel(props: {
       />
     </section>
   );
-}
+});
 
 type RowProps = {
   line: LineDraft;
@@ -236,18 +236,18 @@ const LineRow = memo(function LineRow(p: RowProps) {
     },
   ];
   return (
-    <li className="ledger__row" data-custom={fromCatalogue ? undefined : true}>
-      <span className="ledger__n tnum" aria-hidden="true">
+    <li className="qledger__row" data-custom={fromCatalogue ? undefined : true}>
+      <span className="qledger__n tnum" aria-hidden="true">
         {p.n}
       </span>
-      <div className="ledger__desc">
-        <label className="ledger__label visually-hidden" htmlFor={id("description")}>
+      <div className="qledger__desc">
+        <label className="qledger__label visually-hidden" htmlFor={id("description")}>
           {hidden}
           {lineColumns.description}
         </label>
         <input
           {...a11y("description")}
-          className="ledger__desc-in"
+          className="qledger__desc-in"
           autoComplete="off"
           maxLength={200}
           value={l.description}
@@ -255,9 +255,9 @@ const LineRow = memo(function LineRow(p: RowProps) {
           onChange={(e) => p.onEdit(l.uid, { description: e.target.value })}
           onBlur={blur("description")}
         />
-        {l.detail.trim() !== "" && <span className="ledger__detail">{l.detail}</span>}
+        {l.detail.trim() !== "" && <span className="qledger__detail">{l.detail}</span>}
       </div>
-      <p className="ledger__amount tnum">
+      <p className="qledger__amount tnum">
         <span className="visually-hidden">
           {hidden}
           {lineColumns.amount}:{" "}
@@ -266,16 +266,16 @@ const LineRow = memo(function LineRow(p: RowProps) {
           ? ""
           : moneyText(f.lineTotalMinor, p.currency)}
       </p>
-      <div className="ledger__act">
+      <div className="qledger__act">
         <MenuButton label={`Actions for line ${p.n}`} items={items} align="end" />
       </div>
-      <div className="ledger__work">
-        <div className="ledger__cell ledger__cell--qty">
-          <label className="ledger__label" htmlFor={id("qty")}>
+      <div className="qledger__work">
+        <div className="qledger__cell qledger__cell--qty">
+          <label className="qledger__label" htmlFor={id("qty")}>
             {hidden}
             {lineColumns.quantity}
           </label>
-          <div className="ledger__qty">
+          <div className="qledger__qty">
             <input
               {...a11y("qty")}
               className="tnum"
@@ -285,11 +285,11 @@ const LineRow = memo(function LineRow(p: RowProps) {
               onChange={(e) => p.onEdit(l.uid, { qty: e.target.value })}
               onBlur={blur("qty")}
             />
-            <span className="ledger__unit">{UNIT_LABELS[l.unit as keyof typeof UNIT_LABELS] ?? l.unit}</span>
+            <span className="qledger__unit">{UNIT_LABELS[l.unit as keyof typeof UNIT_LABELS] ?? l.unit}</span>
           </div>
         </div>
-        <div className="ledger__cell">
-          <label className="ledger__label" htmlFor={id("rate")}>
+        <div className="qledger__cell">
+          <label className="qledger__label" htmlFor={id("rate")}>
             {hidden}
             {lineColumns.rate}
           </label>
@@ -301,8 +301,8 @@ const LineRow = memo(function LineRow(p: RowProps) {
             onBlur={blur("rate")}
           />
         </div>
-        <div className="ledger__cell ledger__cell--disc">
-          <label className="ledger__label" htmlFor={id("disc")}>
+        <div className="qledger__cell qledger__cell--disc">
+          <label className="qledger__label" htmlFor={id("disc")}>
             {hidden}
             {DOC_COPY.lineDiscount}
           </label>
@@ -326,24 +326,24 @@ const LineRow = memo(function LineRow(p: RowProps) {
             />
           </div>
         </div>
-        <dl className="ledger__figs">
-          <div>
-            <dt>{lineColumns.taxable}</dt>
-            <dd className="tnum">
-              {f?.taxableMinor === null || f?.taxableMinor === undefined
-                ? ""
-                : moneyText(f.taxableMinor, p.currency)}
-            </dd>
-          </div>
-          <div>
-            <dt>{lineColumns.tax}</dt>
-            <dd className="tnum">{lineTaxText(f, p.currency, p.supply)}</dd>
-          </div>
-        </dl>
       </div>
-      <p className="ledger__meta">
+      <dl className="qledger__figs">
+        <div>
+          <dt>{lineColumns.taxable}</dt>
+          <dd className="tnum">
+            {f?.taxableMinor === null || f?.taxableMinor === undefined
+              ? ""
+              : moneyText(f.taxableMinor, p.currency)}
+          </dd>
+        </div>
+        <div>
+          <dt>{lineColumns.tax}</dt>
+          <dd className="tnum">{lineTaxText(f, p.currency, p.supply)}</dd>
+        </div>
+      </dl>
+      <p className="qledger__meta">
         {fromCatalogue ? (
-          <span className="ledger__src">
+          <span className="qledger__src">
             <Package size={16} />
             {l.code ?? "Catalogue"}
             {l.catalogueLine && <span>{l.catalogueLine}</span>}
@@ -352,11 +352,11 @@ const LineRow = memo(function LineRow(p: RowProps) {
             )}
           </span>
         ) : (
-          <span className="ledger__src ledger__src--custom">{DOC_COPY.customLine}</span>
+          <span className="qledger__src qledger__src--custom">{DOC_COPY.customLine}</span>
         )}
       </p>
       {(p.monthly || Object.keys(errors).some((k) => shown(k as keyof LineErrors))) && (
-        <div className="ledger__errors">
+        <div className="qledger__errors">
           {(["description", "qty", "rate", "disc", "sac", "gstRate"] as const).map((k) =>
             shown(k) ? (
               <FieldError key={k} id={`${id(k)}-error`}>
@@ -364,7 +364,7 @@ const LineRow = memo(function LineRow(p: RowProps) {
               </FieldError>
             ) : null,
           )}
-          {p.monthly && <p className="ledger__warn">{DOC_ERRORS.monthly_line_in_proposal}</p>}
+          {p.monthly && <p className="qledger__warn">{DOC_ERRORS.monthly_line_in_proposal}</p>}
         </div>
       )}
     </li>
