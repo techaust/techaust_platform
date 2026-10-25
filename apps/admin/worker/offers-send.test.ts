@@ -4,6 +4,7 @@
 import { env } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core/ids";
 import { beforeAll, describe, expect, it } from "vitest";
+import { ACCEPTANCE_SQL, DECISION_SQL, DELIVERY_SQL, PROJECT_SQL } from "./document-offer.ts";
 import { putPaymentTerms } from "./test-catalogue.ts";
 import { insert, mkClient, mkContact } from "./test-clients.ts";
 import { call, countOf, one, rows, sessionFor, withEnv } from "./test-helpers.ts";
@@ -410,6 +411,24 @@ describe("GET /documents/:id tells the offer's story [ADM-PROP-07, ADM-PROP-08]"
     expect(page.startProject).toBeNull();
     expect(page.delivery).toEqual([]);
     expect(page.certificate).toEqual({ state: "none" });
+  });
+});
+
+describe("every filter of the offer history is indexed [Free plan: index every filter]", () => {
+  it("EXPLAIN: each statement reaches its rows by an index, never a scan", async () => {
+    const plan = async (sql: string) =>
+      (await rows<{ detail: string }>(`EXPLAIN QUERY PLAN ${sql}`, "no-such-id"))
+        .map((r) => r.detail)
+        .join(" | ");
+    const delivery = await plan(DELIVERY_SQL);
+    for (const index of ["documents_version", "document_sends_document", "email_log_entity"])
+      expect(delivery).toContain(index);
+    expect(await plan(ACCEPTANCE_SQL)).toContain("acceptances_document");
+    expect(await plan(DECISION_SQL)).toContain("documents_version");
+    expect(await plan(PROJECT_SQL)).toContain("projects_source_document");
+    for (const sql of [DELIVERY_SQL, ACCEPTANCE_SQL, DECISION_SQL, PROJECT_SQL]) {
+      expect(await plan(sql), sql).not.toMatch(/SCAN/);
+    }
   });
 });
 

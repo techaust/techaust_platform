@@ -1,5 +1,5 @@
 // The expansion messages of M4.5 (ADM-PROP-07, ADM-PROP-08, ADM-APR-01, ADM-MAIL-01): `offer.send`, `offer.decided`, `offer.accepted` and
-// `approval.notify`. Not yet routed from queue.ts (stage B wires them). Each is ONE unit of work: read in one D1 batch, write in one batch,
+// `approval.notify`. Routed from queue.ts (`processOfferMessage`). Each is ONE unit of work: read in one D1 batch, write in one batch,
 // queue ordinary `EmailMessage`s with `sendBatch`/`send`, return a result string. The ordinary email consumer then claims each email once by
 // `email_log` (template, entity, address), so a redelivery of any of these sends nothing twice. No address, name, token or note is logged.
 //

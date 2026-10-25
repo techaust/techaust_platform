@@ -2,7 +2,9 @@
 // - M4.4: the PDF. The send route enqueues `pdf.snapshot` here (through `waitUntil`, after the batch); the jobs Worker writes the R2 envelope,
 //   renders the PDF and sets `snapshot_r2_key`, `pdf_r2_key` and `pdf_sha256` once (they may be filled in once after the freeze). A queue
 //   that cannot be reached never fails the send: the daily sweep and the "make the PDF again" route (document-pdf.ts) pick the document up.
-// - M4.5 adds the email to the chosen contacts through the SAME send route (no second send path).
+// - M4.5: the email to the chosen contacts goes through the SAME send route (no second send path), but not from here: the send writes its
+//   `document_sends` rows in its own batch, and the jobs Worker queues each `offer.send` once the PDF is stored (`onRendered`), so no email
+//   ever goes out before the PDF exists. The approval emails are `notifyApproval` below.
 // The send route calls this after the batch has committed, never before.
 import type { PdfSnapshotMessage, PdfSnapshotReason } from "@techaust/core/pdf-jobs";
 import type { Ctx } from "./context.ts";

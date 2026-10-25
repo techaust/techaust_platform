@@ -1,6 +1,6 @@
 // Sending a proposal or estimate (M4.3; ADM-PROP-04, -05, -06, ADM-APR-01/02, ADM-LEAD-02): the database work only. Sending freezes the version, gives
 // version 1 the next number of its series (a later version keeps version 1's number), stamps it `sent`, and moves a linked lead to
-// "proposal sent". Email is M4.5's and the PDF is M4.4's, both through `afterSend` (document-events.ts) on this same route.
+// "proposal sent". The PDF (M4.4) is requested through `afterSend` (document-events.ts); the email (M4.5) follows the PDF: the recipients are written as `document_sends` rows in this same batch.
 //
 // The batch is `sendStatements` (packages/db/src/issue.ts): the guard, the counter, the freeze UPDATE; the request's audit row after it;
 // then the post-condition `issue_result`, UNGUARDED, so a send that changed nothing aborts the whole batch (the counter does not move, no
