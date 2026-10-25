@@ -1,8 +1,17 @@
 // Commercial documents (docs/05 §5.2–5.4): one table for every type. Issued (frozen) documents are protected
 // by triggers in the hand-written migration (see migrations/*_triggers.sql). VERIFY WITH CA/LEGAL throughout.
 import type { Series } from "@techaust/core";
+import type { ComputedDocument } from "@techaust/core/tax";
 import { sql } from "drizzle-orm";
-import { check, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import {
+  type AnySQLiteColumn,
+  check,
+  index,
+  integer,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from "drizzle-orm/sqlite-core";
 import { SCHEDULE_TRIGGERS } from "./catalogue.ts";
 import { CURRENCY_CODES, createdAt, currency, flag, id, oneOf, updatedAt } from "./common.ts";
 import { type Address, carePlans, clients, contacts, milestones, projects } from "./crm.ts";
@@ -57,6 +66,7 @@ export const DOCUMENT_STATUSES = [
 ] as const;
 
 export const SUPPLY_TYPES = ["intra", "inter", "export_lut", "export_igst"] as const;
+export const DISCOUNT_KINDS = ["fixed", "percent"] as const;
 
 /** What the recipient looked like at issue (documents never change when the client record does). */
 export type RecipientSnapshot = {
@@ -67,6 +77,25 @@ export type RecipientSnapshot = {
   address?: Address;
   email?: string;
   country: string;
+  /** M4.3: who the document is addressed to (the contact it was sent to), the client's type and its GST status at send. */
+  contactId?: string;
+  contactName?: string;
+  clientType?: "business" | "individual";
+  gstStatus?: "registered" | "unregistered" | "overseas";
+};
+
+/** The frozen supplier and sender block of a sent proposal or estimate (docs/06 §7: every value comes from the snapshot). */
+export type IssuerSnapshot = {
+  company: {
+    tradeName: string;
+    legalName: string | null;
+    address: string | null;
+    gstin: string | null;
+    stateCode: string;
+    /** The brand logo file the document is printed with (a `BRAND_LOGOS` name, the settings' `logoLight` at send); frozen with it so a later settings change never changes a sent offer (M4.4). */
+    logo: string;
+  };
+  sender: { staffId: string; name: string; email: string };
 };
 
 export const documents = sqliteTable(
@@ -118,6 +147,33 @@ export const documents = sqliteTable(
     pdfSha256: text("pdf_sha256"),
     frozenAt: integer("frozen_at"),
     issuedBy: text("issued_by").references(() => staffUsers.id),
+    // M4.3 (proposals and estimates). The columns M4.4/M4.5 need are reserved here too, so the freeze trigger is recreated once.
+    title: text("title"),
+    /** Who the document is addressed to (the contact belongs to the client: trigger). */
+    contactId: text("contact_id").references(() => contacts.id),
+    validityDays: integer("validity_days"),
+    /** The document discount as typed: minor units for "fixed", basis points for "percent". */
+    discountKind: text("discount_kind", { enum: DISCOUNT_KINDS }),
+    discountValue: integer("discount_value"),
+    /** LD11: this document's export mode; null = the settings'. */
+    exportMode: text("export_mode"),
+    /** SHA-256 of the canonical draft content (core `contentHashInput`); every save writes it; an approval is tied to it. */
+    contentSha256: text("content_sha256"),
+    /** The whole `ComputedDocument` (the lines' INR view included). */
+    computed: text("computed", { mode: "json" }).$type<ComputedDocument>(),
+    /** Server-only: the sum of the catalogue lines at the catalogue price, the discount guard's reference. */
+    catalogueReferenceMinor: integer("catalogue_reference_minor"),
+    /** An estimate → its invoice draft, or the first instalment (M4.5): step 1. */
+    sourceDocumentId: text("source_document_id").references((): AnySQLiteColumn => documents.id),
+    sourceStep: integer("source_step"),
+    issuer: text("issuer", { mode: "json" }).$type<IssuerSnapshot>(),
+    sentAt: integer("sent_at"),
+    // M4.5: the portal's reads and the client's decision. Each can be set once after the freeze (trigger).
+    viewedAt: integer("viewed_at"),
+    decidedAt: integer("decided_at"),
+    decisionReason: text("decision_reason"),
+    decisionNote: text("decision_note"),
+    decidedContactId: text("decided_contact_id").references(() => contacts.id),
     voidedAt: integer("voided_at"),
     voidReason: text("void_reason"),
     realisationDueAt: integer("realisation_due_at"),
@@ -132,9 +188,11 @@ export const documents = sqliteTable(
     updatedAt: updatedAt(),
   },
   (t) => [
-    uniqueIndex("documents_series_fy_number").on(t.series, t.fy, t.number),
+    // M4.3: a later version of a proposal or estimate keeps its first version's number, so `version` is part of both keys
+    // (the number-prefix search reads `documents_number_display` from its first column).
+    uniqueIndex("documents_series_fy_number").on(t.series, t.fy, t.number, t.version),
     uniqueIndex("documents_number_display")
-      .on(t.series, t.numberDisplay)
+      .on(t.numberDisplay, t.series, t.version)
       .where(sql`${t.numberDisplay} is not null`),
     uniqueIndex("documents_version")
       .on(t.versionGroupId, t.version)
@@ -145,6 +203,18 @@ export const documents = sqliteTable(
     index("documents_project").on(t.projectId),
     index("documents_care_plan").on(t.carePlanId),
     index("documents_terms_version").on(t.termsVersionId),
+    // M4.3: the lists (newest first; by type; by type and status), the expiry job, one open draft per version group, one document
+    // per source step (a repeated conversion is refused), and the contact filter.
+    index("documents_type_created").on(t.type, t.createdAt, t.id),
+    index("documents_type_status_created").on(t.type, t.status, t.createdAt, t.id),
+    index("documents_status_valid_until").on(t.status, t.validUntil),
+    uniqueIndex("documents_open_draft")
+      .on(t.versionGroupId)
+      .where(sql`${t.frozenAt} is null and ${t.versionGroupId} is not null`),
+    uniqueIndex("documents_source")
+      .on(t.sourceDocumentId, t.sourceStep)
+      .where(sql`${t.sourceDocumentId} is not null`),
+    index("documents_contact").on(t.contactId),
     check("documents_type", oneOf(t.type, DOCUMENT_TYPES)),
     check("documents_status", oneOf(t.status, DOCUMENT_STATUSES)),
     check("documents_currency", oneOf(t.currency, CURRENCY_CODES)),
@@ -159,8 +229,6 @@ export const documents = sqliteTable(
     check("documents_version", sql`${t.version} >= 1`),
   ],
 );
-
-export const DISCOUNT_KINDS = ["fixed", "percent"] as const;
 
 export const documentLines = sqliteTable(
   "document_lines",
@@ -185,6 +253,16 @@ export const documentLines = sqliteTable(
     sgstMinor: integer("sgst_minor").notNull().default(0),
     igstMinor: integer("igst_minor").notNull().default(0),
     lineTotalMinor: integer("line_total_minor").notNull(),
+    /** M4.3, server-only: the catalogue rate when the line was added (the discount guard's reference); never read from a request. */
+    catalogueRateMinor: integer("catalogue_rate_minor"),
+    /**
+     * M4.3, server-only: for a line made from one of a service's default lines, that default line's name in the catalogue (the key it
+     * was found by, e.g. a care tier); null otherwise. Copied by the server when the line is added and kept across saves and
+     * revisions; never read from a request. The description a person can edit is not a key (M4.3 early check M5).
+     */
+    catalogueLine: text("catalogue_line"),
+    /** M4.3: the second line shown in the portal view (at most 300 characters; the API enforces it). */
+    detail: text("detail"),
   },
   (t) => [
     uniqueIndex("document_lines_position").on(t.documentId, t.position),
@@ -222,6 +300,9 @@ export const paymentSchedules = sqliteTable(
     pctBp: integer("pct_bp").notNull(),
     amountMinor: integer("amount_minor").notNull(),
     milestoneId: text("milestone_id").references(() => milestones.id),
+    /** M4.3: "what you get" (at most 300 characters; the API enforces it) and the target date of the timeline table (06 §7.4). */
+    detail: text("detail"),
+    targetDate: text("target_date"),
   },
   (t) => [
     uniqueIndex("payment_schedules_position").on(t.documentId, t.position),
@@ -282,6 +363,10 @@ export const approvals = sqliteTable(
     index("approvals_status").on(t.status, t.createdAt),
     index("approvals_document").on(t.documentId),
     index("approvals_requested_by").on(t.requestedBy, t.status),
+    // M4.3: the owner's queue, newest first, with no status filter (`approvals_status` serves a filter by status).
+    index("approvals_created").on(t.createdAt, t.id),
+    // M4.3: one pending request per document and kind (a second request for the same version is a 409).
+    uniqueIndex("approvals_document_pending").on(t.documentId, t.kind).where(sql`${t.status} = 'pending'`),
     check("approvals_kind", oneOf(t.kind, APPROVAL_KINDS)),
     check("approvals_status", oneOf(t.status, APPROVAL_STATUSES)),
   ],

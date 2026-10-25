@@ -56,6 +56,29 @@ export const ACTION_LABELS: Record<string, string> = {
   "contact.export": "exported a contact's data",
   "contact.erase": "erased a contact",
   "contact.anonymise": "anonymised a contact",
+  // M3.4 projects, milestones, notes and files (07-K, draft pending the owner).
+  "project.create": "added a project",
+  "project.update": "changed the project",
+  "project.status": "changed the project status",
+  "milestone.create": "added a milestone",
+  "milestone.update": "changed a milestone",
+  "milestone.status": "changed a milestone status",
+  "milestone.delete": "deleted a milestone",
+  "milestone.reorder": "reordered the milestones",
+  "note.create": "added a note",
+  "note.update": "changed a note",
+  "note.share": "shared a note",
+  "note.delete": "deleted a note",
+  "file.upload": "uploaded a file",
+  "file.share": "shared a file",
+  "file.delete": "deleted a file",
+  // M4.1 catalogue, templates and publishing (07-L).
+  "catalogue.create": "added a service",
+  "catalogue.update": "changed a service",
+  "catalogue.deactivate": "retired a service",
+  "catalogue.activate": "made a service active again",
+  "template.version": "saved a template version",
+  "catalogue.publish": "published prices",
 };
 
 /** Groups for the action filter (the API filters by one exact action). */
@@ -67,6 +90,12 @@ export const ACTION_GROUPS: { label: string; prefix: string }[] = [
   { label: "Notifications", prefix: "notification." },
   { label: "Clients", prefix: "client." },
   { label: "Contacts", prefix: "contact." },
+  { label: "Projects", prefix: "project." },
+  { label: "Milestones", prefix: "milestone." },
+  { label: "Notes", prefix: "note." },
+  { label: "Files", prefix: "file." },
+  { label: "Catalogue", prefix: "catalogue." },
+  { label: "Templates", prefix: "template." },
   { label: "Client portal", prefix: "portal." },
   { label: "Audit log", prefix: "audit." },
 ];
@@ -82,7 +111,14 @@ export const ENTITY_LABELS: Record<string, string> = {
   notification: "Notifications",
   client: "Clients",
   contact: "Contacts",
+  catalogue_item: "Catalogue",
+  template: "Templates",
+  site_snapshot: "Published price lists",
   client_session: "Client portal sessions",
+  project: "Projects",
+  milestone: "Milestones",
+  note: "Notes",
+  file: "Files",
   document: "Documents",
   audit_log: "Audit log",
 };
@@ -147,6 +183,14 @@ const FIELD_LABELS: Record<string, string> = {
   actor: "Person",
   entity: "Record",
   action: "Action",
+  // M3.4
+  budgetMinor: "Budget (minor units)",
+  amountMinor: "Amount (minor units)",
+  pctBp: "Percentage (basis points)",
+  ownerId: "Owner",
+  bodyMd: "Note text",
+  mime: "File type",
+  size: "Size (bytes)",
 };
 
 export function fieldLabel(key: string): string {

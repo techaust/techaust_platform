@@ -65,6 +65,15 @@ jobs:
           pnpm --filter @techaust/jobs exec wrangler d1 migrations apply DB --remote --env staging
           pnpm --filter @techaust/db seed:sql "$RUNNER_TEMP/seed.sql"
           pnpm --filter @techaust/jobs exec wrangler d1 execute DB --remote --env staging --file "$RUNNER_TEMP/seed.sql"
+      # ADM-CAT-05: the website is built from the newest PUBLISHED catalogue snapshot (admin: Catalogue, Publish). No snapshot yet means no
+      # file, so the web build uses the seed. If a snapshot exists and the fetch fails, this step fails the job: the staging site never
+      # silently falls back to stale seed prices. The same script runs in publish-catalogue.yml.
+      - if: steps.creds.outputs.ready == 'true'
+        name: Fetch the published catalogue snapshot
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_STAGING }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: node scripts/fetch-catalogue-snapshot.mjs --out apps/web/catalogue-snapshot.json
       - if: steps.creds.outputs.ready == 'true'
         name: Deploy all Workers (staging)
         env:

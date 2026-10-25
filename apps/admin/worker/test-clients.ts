@@ -121,6 +121,8 @@ export async function mkDoc(
     type,
     client_id: clientId,
     currency: "INR",
+    // M4.3: a proposal or estimate is its own version group (the database refuses one without).
+    ...(type === "proposal" || type === "estimate" ? { version_group_id: id } : {}),
     ...(opts.frozen
       ? {
           status: "issued",

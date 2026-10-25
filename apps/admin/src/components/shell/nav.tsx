@@ -41,10 +41,6 @@ export const NAV: NavItem[] = [
     path: "/",
     icon: <LayoutDashboard />,
     group: 0,
-    arrives: {
-      milestone: "M3.5",
-      what: "Tiles for new leads, active projects, care plans and the time logged this week.",
-    },
   },
   {
     key: "leads",
@@ -66,10 +62,6 @@ export const NAV: NavItem[] = [
     path: "/projects",
     icon: <FolderKanban />,
     group: 1,
-    arrives: {
-      milestone: "M3.4",
-      what: "Projects with milestones, notes and files, shared with the client or kept internal.",
-    },
   },
   {
     key: "care-plans",
@@ -77,7 +69,6 @@ export const NAV: NavItem[] = [
     path: "/care-plans",
     icon: <LifeBuoy />,
     group: 1,
-    arrives: { milestone: "M3.5", what: "Care plans with their included hours, renewals and overage." },
   },
   {
     key: "time",
@@ -85,10 +76,6 @@ export const NAV: NavItem[] = [
     path: "/time",
     icon: <Clock />,
     group: 1,
-    arrives: {
-      milestone: "M3.5",
-      what: "Time logged against projects and care plans, locked after 7 days.",
-    },
   },
   {
     key: "catalogue",
@@ -96,10 +83,6 @@ export const NAV: NavItem[] = [
     path: "/catalogue",
     icon: <Package />,
     group: 2,
-    arrives: {
-      milestone: "M4.1",
-      what: "The service catalogue and its prices, and publishing them to the website.",
-    },
   },
   {
     key: "proposals",

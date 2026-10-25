@@ -3,6 +3,14 @@
 // - `step_up_required` (403): the step-up dialog opens; on success the same request is sent once more.
 // - `unauthenticated` (401) on a signed-in route: the session has ended, so the app goes back to sign-in.
 import type { ArgonParams } from "@techaust/auth";
+import type {
+  CATALOGUE_CATEGORIES,
+  CATALOGUE_UNITS,
+  CreateEntry,
+  PatchEntry,
+  TEMPLATE_KIND_VALUES,
+  TemplateBody,
+} from "@techaust/core/catalogue";
 import type { Role } from "@techaust/core/permissions";
 import type { Settings } from "@techaust/core/settings";
 import type { TermsBlockId } from "@techaust/core/terms";
@@ -133,7 +141,7 @@ export type Notification = {
   createdAt: number;
 };
 export type SearchGroupData = {
-  type: "user" | "lead" | "client" | "contact";
+  type: "user" | "lead" | "client" | "contact" | "project" | "catalogue";
   label: string;
   items: { id: string; title: string; subtitle: string; link: string }[];
 };
@@ -360,6 +368,8 @@ export type ClientPage = {
   contactsNext: string | null;
   /** Contacts that are not anonymised (the list keeps the tombstones). */
   liveContactCount: number;
+  /** An individual whose personal details were removed: nothing new can be added to it (client_anonymised). */
+  anonymised: boolean;
   sourceLead: { id: string; ref: string } | null;
   /** Only for a finance role: an invoice exists, so the currency can't change. */
   currencyLocked?: boolean;
@@ -445,6 +455,8 @@ export const EXPORT_PARTS = [
   "email_log",
   "audit_log",
   "access_log",
+  "notes",
+  "files",
 ] as const;
 export type ExportPart = (typeof EXPORT_PARTS)[number];
 export type ExportSummary = {
@@ -456,6 +468,359 @@ export type ExportSummary = {
 export type ExportPage = { part: ExportPart; items: Record<string, unknown>[]; next: string | null };
 export type EraseMode = "erase" | "anonymise";
 
+// Projects, milestones, notes and files (M3.4, ADM-PRJ-01..05): the shapes of apps/admin/worker/{projects,notes,files}.ts.
+export type ProjectStatus = "planned" | "active" | "on_hold" | "completed" | "cancelled";
+export type MilestoneStatus = "pending" | "ready_to_bill" | "invoiced" | "paid";
+export type ProjectView = {
+  id: string;
+  code: string;
+  clientId: string;
+  clientCode: string;
+  clientName: string;
+  sourceDocumentId: string | null;
+  name: string;
+  status: ProjectStatus;
+  /** ISO dates (YYYY-MM-DD), IST days as typed. */
+  startDate: string | null;
+  targetDate: string | null;
+  ownerId: string | null;
+  ownerName: string | null;
+  currency: Currency;
+  budgetMinor: number | null;
+  createdAt: number;
+  /** Send back as `expectedUpdatedAt` with the next PATCH. */
+  updatedAt: number;
+};
+export type MilestoneView = {
+  id: string;
+  projectId: string;
+  position: number;
+  title: string;
+  amountMinor: number | null;
+  pctBp: number | null;
+  /** The amount, or the percentage of the budget (half up); null for a percentage with no budget. */
+  resolvedMinor: number | null;
+  dueDate: string | null;
+  status: MilestoneStatus;
+  deliveredAt: number | null;
+  documentId: string | null;
+  createdAt: number;
+  updatedAt: number;
+};
+export type NoteVisibility = "internal" | "shared";
+export type NoteView = {
+  id: string;
+  clientId: string;
+  projectId: string | null;
+  visibility: NoteVisibility;
+  bodyMd: string;
+  authorId: string | null;
+  authorName: string | null;
+  createdAt: number;
+  updatedAt: number;
+};
+export type FileView = {
+  id: string;
+  clientId: string;
+  projectId: string | null;
+  filename: string;
+  mime: string;
+  size: number;
+  sha256: string;
+  shared: boolean;
+  uploadedBy: string | null;
+  uploadedByName: string | null;
+  createdAt: number;
+};
+export type ProjectPage = {
+  project: ProjectView;
+  milestones: MilestoneView[];
+  /** The client is an anonymised individual: the screens are read-only. */
+  clientAnonymised: boolean;
+  milestoneTotals: { totalMinor: number; mismatch: boolean };
+  recentNotes: NoteView[];
+  recentFiles: FileView[];
+  figures: {
+    billedVsPaid: { available: boolean; arrivesWith: string };
+    /** M3.5: the time logged on the project (totals only, the same for every role). */
+    hours:
+      | { available: true; totalMinutes: number; billableMinutes: number }
+      | { available: false; arrivesWith: string };
+  };
+};
+export type ProjectsQuery = {
+  limit?: "25" | "50" | undefined;
+  q?: string | undefined;
+  status?: ProjectStatus | undefined;
+  clientId?: string | undefined;
+  ownerId?: string | undefined;
+  after?: string | undefined;
+  before?: string | undefined;
+};
+export type NewProjectInput = {
+  clientId: string;
+  name: string;
+  startDate?: string | null;
+  targetDate?: string | null;
+  ownerId?: string | null;
+  budgetMinor?: number | null;
+};
+export type ProjectPatch = Omit<Partial<NewProjectInput>, "clientId"> & { expectedUpdatedAt: number };
+export type MilestoneInput = {
+  title: string;
+  amountMinor?: number | null;
+  pctBp?: number | null;
+  dueDate?: string | null;
+};
+export type MilestonePatch = Partial<MilestoneInput> & { expectedUpdatedAt: number };
+/** Where a note or file belongs: a project, or the client itself. */
+export type VaultScope = { kind: "project" | "client"; id: string };
+const scopePath = (s: VaultScope) =>
+  `/${s.kind === "project" ? "projects" : "clients"}/${encodeURIComponent(s.id)}`;
+export type UploadResult = {
+  id: string;
+  filename: string;
+  mime: string;
+  size: number;
+  sha256: string;
+  createdAt: number;
+};
+
+// Care plans, time logs and the dashboard (M3.5, ADM-CARE-01, -03, ADM-TIME-01..03, ADM-DASH-01): the shapes of
+// apps/admin/worker/{care,time-logs,dashboard}.ts. Hours are minutes; money is minor units in the plan's currency.
+export type CareStatus = "active" | "paused" | "cancelled";
+export type CareTier = "essential" | "growth" | "scale" | "dev_subscription" | "custom";
+export type RolloverRule = "none" | "one_month";
+export type CareTerms = {
+  effectiveFrom: string;
+  tier: CareTier;
+  priceMinor: number;
+  includedMinutes: number;
+  aiOpsMinor: number | null;
+  overageRateMinor: number | null;
+  rollover: RolloverRule;
+  createdAt: number;
+};
+/** One billing period's hours (core's `carePeriodUsage`). */
+export type CareUsage = {
+  period: { start: string; end: string };
+  included: number;
+  rolloverIn: number;
+  available: number;
+  used: number;
+  nonBillable: number;
+  remaining: number;
+  overageMinutes: number;
+  /** Before GST; null when there is overage and no rate. */
+  overageMinor: number | null;
+  rateMissing: boolean;
+  rateMinor: number | null;
+  burnBp: number | null;
+  flag: "none" | "near" | "reached";
+};
+export type CarePlanBase = {
+  id: string;
+  clientId: string;
+  clientCode: string;
+  clientName: string;
+  currency: Currency;
+  startDate: string;
+  billingDay: number;
+  status: CareStatus;
+  pausedAt: number | null;
+  cancelledAt: number | null;
+  createdAt: number;
+  /** Send back as `expectedUpdatedAt`. */
+  updatedAt: number;
+};
+export type CarePlanTermsSummary = { current: CareTerms | null; pending: CareTerms | null };
+export type CarePlanRow = CarePlanBase & { terms: CarePlanTermsSummary; usage: CareUsage | null };
+export type CarePlanList = {
+  today: string;
+  carePlans: CarePlanRow[];
+  next: string | null;
+  prev: string | null;
+};
+export type CarePlanPage = {
+  today: string;
+  plan: CarePlanBase;
+  terms: CarePlanTermsSummary;
+  statusLog: { status: CareStatus; effectiveOn: string; createdAt: number }[];
+  usage: CareUsage | null;
+  /** Newest first, at most 12. */
+  periods: CareUsage[];
+  clientAnonymised: boolean;
+  overage: { addToInvoice: { available: false; arrivesWith: string } };
+};
+export type CarePlansQuery = {
+  limit?: "25" | "50" | undefined;
+  status?: CareStatus | undefined;
+  clientId?: string | undefined;
+  after?: string | undefined;
+  before?: string | undefined;
+};
+export type CareDefaults = {
+  currency: Currency;
+  clientAnonymised: boolean;
+  tiers: Record<
+    CareTier,
+    { priceMinor: number | null; includedMinutes: number | null; rollover: RolloverRule }
+  >;
+  aiOpsMinor: number | null;
+  overageRateMinor: number | null;
+  undecided: string[];
+};
+export type NewCarePlanInput = {
+  clientId: string;
+  tier: CareTier;
+  priceMinor: number;
+  includedMinutes: number;
+  aiOpsMinor?: number | null;
+  overageRateMinor?: number | null;
+  rollover: RolloverRule;
+  startDate: string;
+  billingDay: number;
+};
+export type CareTermsInput = Partial<
+  Pick<
+    NewCarePlanInput,
+    "tier" | "priceMinor" | "includedMinutes" | "aiOpsMinor" | "overageRateMinor" | "rollover"
+  >
+> & { expectedUpdatedAt: number };
+
+export type TimeEntry = {
+  id: string;
+  userId: string;
+  userName: string | null;
+  workDate: string;
+  minutes: number;
+  billable: boolean;
+  note: string | null;
+  projectId: string | null;
+  projectCode: string | null;
+  carePlanId: string | null;
+  carePlanClientCode: string | null;
+  carePlanTier: CareTier | null;
+  createdAt: number;
+  updatedAt: number;
+  /** The viewer may change it now: the owner always, the author for 7 days. */
+  canEdit: boolean;
+};
+export type TimeQuery = {
+  limit?: "25" | "50" | undefined;
+  from?: string | undefined;
+  to?: string | undefined;
+  userId?: string | undefined;
+  projectId?: string | undefined;
+  carePlanId?: string | undefined;
+  billable?: "1" | "0" | undefined;
+  after?: string | undefined;
+};
+export type TimePage = {
+  today: string;
+  range: { from: string; to: string };
+  entries: TimeEntry[];
+  next: string | null;
+  prev: string | null;
+};
+export type TimeWeekGroup = {
+  userId: string;
+  userName: string | null;
+  projectId: string | null;
+  projectCode: string | null;
+  carePlanId: string | null;
+  carePlanClientCode: string | null;
+  workDate: string;
+  minutes: number;
+  billableMinutes: number;
+  entries: number;
+};
+export type TimeWeek = {
+  today: string;
+  week: { start: string; end: string };
+  groups: TimeWeekGroup[];
+  truncated: boolean;
+  dayTotals: { workDate: string; minutes: number; billableMinutes: number; entries: number }[];
+  totalMinutes: number;
+};
+export type TimeWeekQuery = {
+  start?: string | undefined;
+  userId?: string | undefined;
+  projectId?: string | undefined;
+  carePlanId?: string | undefined;
+};
+export type TimeTargets = {
+  projects: { id: string; code: string; name: string; status: ProjectStatus; clientCode: string }[];
+  carePlans: { id: string; tier: CareTier | null; clientCode: string; clientName: string }[];
+};
+export type NewTimeInput = {
+  userId?: string;
+  workDate: string;
+  minutes: number;
+  projectId?: string | null;
+  carePlanId?: string | null;
+  note?: string | null;
+  billable: boolean;
+};
+export type TimePatch = Partial<Omit<NewTimeInput, "userId">> & { expectedUpdatedAt: number };
+
+export type DashboardTiles = {
+  leads?: {
+    openByStage: Record<string, number>;
+    open: number;
+    newLast7Days: number;
+    overdue: { count: number; oldest: { id: string; ref: string; contactName: string; dueAt: number }[] };
+  };
+  pipelineValue?: { available: false; arrivesWith: string };
+  finance?: { available: false; arrivesWith: Record<string, string> };
+  projects?: { active: number; onHold: number };
+  milestones?: {
+    windowDays: number;
+    count: number;
+    next: {
+      id: string;
+      projectId: string;
+      projectCode: string | null;
+      title: string;
+      dueDate: string;
+      status: MilestoneStatus;
+    }[];
+  };
+  careBurn?: {
+    counts: { active: number; notStarted: number; near: number; reached: number };
+    truncated: boolean;
+    rows: {
+      planId: string;
+      clientCode: string;
+      clientName: string;
+      tier: CareTier;
+      period: { start: string; end: string };
+      used: number;
+      available: number;
+      burnBp: number | null;
+      flag: CareUsage["flag"];
+      overageMinutes: number;
+    }[];
+  };
+  myTime?: {
+    week: { minutes: number; billableMinutes: number; start: string; end: string };
+    today: { minutes: number; billableMinutes: number; date: string };
+  };
+  activity?: {
+    days: number;
+    items: {
+      id: string;
+      at: number;
+      actor: string;
+      action: string;
+      entityType: string;
+      entityId: string | null;
+      ref: string | null;
+    }[];
+  };
+};
+export type Dashboard = { asOf: number; today: string; tiles: DashboardTiles };
+
 /** A field the server refused (400 `invalid`): its dotted path in the request body and our own message. */
 export type FieldIssue = { path: string; message: string };
 
@@ -463,6 +828,10 @@ type ApiErrorBody = {
   error?: { code: string; message: string };
   request_id?: string;
   fields?: FieldIssue[];
+  /** 422 `snapshot_invalid` (POST /catalogue/publish): the failing paths of the snapshot, never values. */
+  paths?: string[];
+  /** 422 `snapshot_invalid`: what the website needs that the snapshot lacks. */
+  needs?: SiteNeedAnswer[];
 };
 
 export class RequestError extends Error {
@@ -473,6 +842,10 @@ export class RequestError extends Error {
     readonly requestId: string | null = null,
     /** 400 `invalid`: which fields, with the server's message for each. */
     readonly fields: FieldIssue[] = [],
+    /** 422 `snapshot_invalid`: the snapshot paths that failed ("items.3.unit"). */
+    readonly paths: string[] = [],
+    /** 422 `snapshot_invalid`: what the website needs that the snapshot lacks. */
+    readonly needs: SiteNeedAnswer[] = [],
   ) {
     super(message);
   }
@@ -547,6 +920,16 @@ async function send<T>(path: string, { method, body, signedIn = true }: Options)
     e.message,
     data.request_id ?? null,
     Array.isArray(data.fields) ? data.fields : [],
+    Array.isArray(data.paths) ? data.paths.filter((p) => typeof p === "string") : [],
+    Array.isArray(data.needs)
+      ? data.needs.filter(
+          (n: unknown): n is SiteNeedAnswer =>
+            typeof n === "object" &&
+            n !== null &&
+            typeof (n as { code?: unknown }).code === "string" &&
+            typeof (n as { missing?: unknown }).missing === "string",
+        )
+      : [],
   );
   if (signedIn && res.status === 401 && e.code === "unauthenticated") unauthenticatedHandler?.();
   throw error;
@@ -763,6 +1146,263 @@ export const api = {
     request<{ ok: true; mode: EraseMode }>(`/contacts/${encodeURIComponent(id)}/erase`, {
       body: { mode, reason },
     }),
+
+  // Projects, milestones, notes and files (M3.4)
+  projects: (q: ProjectsQuery = {}) => request<Page<"projects", ProjectView>>(`/projects${qs(q)}`),
+  project: (id: string) => request<ProjectPage>(`/projects/${encodeURIComponent(id)}`),
+  createProject: (body: NewProjectInput) =>
+    request<{ id: string; code: string; updatedAt: number }>("/projects", { body }),
+  updateProject: (id: string, body: ProjectPatch) =>
+    request<Changed>(`/projects/${encodeURIComponent(id)}`, { method: "PATCH", body }),
+  setProjectStatus: (id: string, to: ProjectStatus) =>
+    request<{ ok: true; status: ProjectStatus; updatedAt: number }>(
+      `/projects/${encodeURIComponent(id)}/status`,
+      { body: { to } },
+    ),
+  clientProjects: (clientId: string, after?: string) =>
+    request<{ projects: ProjectView[]; next: string | null }>(
+      `/clients/${encodeURIComponent(clientId)}/projects${qs({ after })}`,
+    ),
+  addMilestone: (projectId: string, body: MilestoneInput) =>
+    request<{ id: string; updatedAt: number }>(`/projects/${encodeURIComponent(projectId)}/milestones`, {
+      body,
+    }),
+  updateMilestone: (id: string, body: MilestonePatch) =>
+    request<Changed>(`/milestones/${encodeURIComponent(id)}`, { method: "PATCH", body }),
+  setMilestoneStatus: (id: string, to: "pending" | "ready_to_bill") =>
+    request<{ ok: true; status: MilestoneStatus; updatedAt: number }>(
+      `/milestones/${encodeURIComponent(id)}/status`,
+      { body: { to } },
+    ),
+  deleteMilestone: (id: string) =>
+    request<{ ok: true }>(`/milestones/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  reorderMilestones: (projectId: string, ids: string[]) =>
+    request<{ ok: true }>(`/projects/${encodeURIComponent(projectId)}/milestones/order`, { body: { ids } }),
+  notes: (scope: VaultScope, after?: string) =>
+    request<{ notes: NoteView[]; next: string | null }>(`${scopePath(scope)}/notes${qs({ after })}`),
+  addNote: (scope: VaultScope, bodyMd: string, visibility: NoteVisibility) =>
+    request<{ id: string; createdAt: number; updatedAt: number }>(`${scopePath(scope)}/notes`, {
+      body: { bodyMd, visibility },
+    }),
+  updateNote: (
+    id: string,
+    body: { expectedUpdatedAt: number; bodyMd?: string; visibility?: NoteVisibility },
+  ) => request<Changed>(`/notes/${encodeURIComponent(id)}`, { method: "PATCH", body }),
+  deleteNote: (id: string) => request<{ ok: true }>(`/notes/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  files: (scope: VaultScope, after?: string) =>
+    request<{ files: FileView[]; next: string | null }>(`${scopePath(scope)}/files${qs({ after })}`),
+  shareFile: (id: string, shared: boolean) =>
+    request<{ ok: true; changed: boolean; shared: boolean }>(`/files/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: { shared },
+    }),
+  deleteFile: (id: string) => request<{ ok: true }>(`/files/${encodeURIComponent(id)}`, { method: "DELETE" }),
+
+  // Care plans, time and the dashboard (M3.5)
+  carePlans: (q: CarePlansQuery = {}) => request<CarePlanList>(`/care-plans${qs(q)}`),
+  carePlan: (id: string) => request<CarePlanPage>(`/care-plans/${encodeURIComponent(id)}`),
+  careDefaults: (clientId: string) => request<CareDefaults>(`/care-plans/defaults${qs({ clientId })}`),
+  createCarePlan: (body: NewCarePlanInput) =>
+    request<{ id: string; updatedAt: number }>("/care-plans", { body }),
+  changeCareTerms: (id: string, body: CareTermsInput) =>
+    request<{ ok: true; changed: boolean; updatedAt: number; effectiveFrom?: string }>(
+      `/care-plans/${encodeURIComponent(id)}/terms`,
+      { body },
+    ),
+  setCareStatus: (id: string, to: CareStatus, expectedUpdatedAt: number) =>
+    request<{ ok: true; status: CareStatus; effectiveOn: string; updatedAt: number }>(
+      `/care-plans/${encodeURIComponent(id)}/status`,
+      { body: { to, expectedUpdatedAt } },
+    ),
+  clientCarePlans: (clientId: string, after?: string) =>
+    request<CarePlanList>(`/clients/${encodeURIComponent(clientId)}/care-plans${qs({ after })}`),
+  timeEntries: (q: TimeQuery = {}) => request<TimePage>(`/time${qs(q)}`),
+  timeWeek: (q: TimeWeekQuery = {}) => request<TimeWeek>(`/time/week${qs(q)}`),
+  timeTargets: (q: string, workDate?: string) => request<TimeTargets>(`/time/targets${qs({ q, workDate })}`),
+  timePeople: () => request<{ people: { id: string; name: string }[] }>("/time/people"),
+  logTime: (body: NewTimeInput) =>
+    request<{ id: string; createdAt: number; updatedAt: number }>("/time", { body }),
+  updateTime: (id: string, body: TimePatch) =>
+    request<Changed & { lockOverride?: boolean }>(`/time/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body,
+    }),
+  deleteTime: (id: string, expectedUpdatedAt: number) =>
+    request<{ ok: true; lockOverride: boolean }>(
+      `/time/${encodeURIComponent(id)}${qs({ expectedUpdatedAt: String(expectedUpdatedAt) })}`,
+      { method: "DELETE" },
+    ),
+  dashboard: () => request<Dashboard>("/dashboard"),
+};
+
+/** The address of a file's download: a plain same-origin GET with the session cookie (an attachment, never rendered). */
+export const fileDownloadHref = (id: string) => `/api/v1/files/${encodeURIComponent(id)}/download`;
+
+/** The headers of a raw upload (M3.4): the browser adds `Content-Length` itself from the File body (a header scripts may
+ * not set), so these are the name, percent-encoded UTF-8, and the SHA-256 the browser computed, which R2 checks. */
+export const uploadHeaders = (name: string, sha256: string): Record<string, string> => ({
+  "Content-Type": "application/octet-stream",
+  "X-File-Name": encodeURIComponent(name),
+  "X-File-Sha256": sha256,
+});
+
+/** The SHA-256 of a file as lower-case hex (`crypto.subtle`; up to 25 MB is read into memory once). */
+export async function sha256Hex(file: Blob): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * Upload one file as a raw body (never multipart). XMLHttpRequest rather than fetch: it reports upload progress and sends the
+ * File with its `Content-Length`. `signal` cancels it (the promise rejects with code `aborted`). Errors arrive as RequestError
+ * with the API's code (`file_type_mismatch`, `file_too_large`, ...); a 401 ends the session as for every other call.
+ */
+export function uploadFile(
+  scope: VaultScope,
+  file: File,
+  sha256: string,
+  onProgress: (sent: number, total: number) => void,
+  signal?: AbortSignal,
+): Promise<UploadResult> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `/api/v1${scopePath(scope)}/files`);
+    xhr.withCredentials = true;
+    for (const [k, v] of Object.entries(uploadHeaders(file.name, sha256))) xhr.setRequestHeader(k, v);
+    xhr.upload.onprogress = (e) => onProgress(e.loaded, e.lengthComputable ? e.total : file.size);
+    xhr.onload = () => {
+      let data: (UploadResult & ApiErrorBody) | null = null;
+      try {
+        data = JSON.parse(xhr.responseText);
+      } catch {
+        data = null;
+      }
+      if (xhr.status >= 200 && xhr.status < 300 && data) return resolve(data);
+      const e = data?.error ?? { code: "network", message: NETWORK };
+      if (xhr.status === 401 && e.code === "unauthenticated") unauthenticatedHandler?.();
+      reject(new RequestError(xhr.status, e.code, e.message, data?.request_id ?? null));
+    };
+    xhr.onerror = () => reject(new RequestError(0, "network", NETWORK));
+    xhr.onabort = () => reject(new RequestError(0, "aborted", "Cancelled"));
+    if (signal) {
+      if (signal.aborted) {
+        reject(new RequestError(0, "aborted", "Cancelled"));
+        return;
+      }
+      signal.addEventListener("abort", () => xhr.abort(), { once: true });
+    }
+    xhr.send(file);
+  });
+}
+// ---- the catalogue, templates and publishing (M4.1, ADM-CAT-01..05) -------------------------------------------------
+
+export type CatalogueCategory = (typeof CATALOGUE_CATEGORIES)[number];
+export type CatalogueUnit = (typeof CATALOGUE_UNITS)[number];
+export type TemplateKind = (typeof TEMPLATE_KIND_VALUES)[number];
+export type EntryLine = NonNullable<CreateEntry["defaultLines"]>[number];
+export type EntryStep = CreateEntry["schedule"][number];
+export type { CreateEntry, PatchEntry, TemplateBody };
+
+/** 422 `snapshot_invalid`: what the website needs that the snapshot lacks (codes and field words only, never values). */
+/** `id`: the service's id when it exists (retired or off the website included), for a direct link. */
+export type SiteNeedAnswer = { id?: string | null } & (
+  | { code: string; missing: "service" }
+  | { code: string; missing: "price"; currency: "inr" | "usd" }
+  | { code: string; missing: "line"; line: string; currency: "inr" | "usd" | null; ambiguous: boolean }
+);
+
+/** A row of GET /catalogue. Prices are minor units (null: not offered in that currency). */
+export type CatalogueListItem = {
+  id: string;
+  code: string;
+  name: string;
+  category: CatalogueCategory;
+  short: string;
+  unit: CatalogueUnit;
+  priceInrMinor: number | null;
+  priceUsdMinor: number | null;
+  slug: string | null;
+  showOnSite: boolean;
+  active: boolean;
+  updatedAt: number;
+};
+/** The whole entry (GET /catalogue/:id): every role reads it, internal fields too. */
+export type CatalogueEntry = CatalogueListItem & {
+  longMd: string | null;
+  sac: string;
+  gstRateBp: number | null;
+  defaultLines: EntryLine[] | null;
+  deliverablesMd: string | null;
+  assumptionsMd: string | null;
+  exclusionsMd: string | null;
+  schedule: EntryStep[];
+  createdAt: number;
+};
+/** One price change (ADM-CAT-04). `field`: price_inr_minor, price_usd_minor, line:<description>:rate_inr_minor or _usd_minor. */
+export type PriceChangeRow = {
+  id: string;
+  field: string;
+  oldMinor: number | null;
+  newMinor: number | null;
+  changedBy: string | null;
+  changedByName: string | null;
+  changedAt: number;
+};
+export type CataloguePage = {
+  item: CatalogueEntry;
+  history: { items: PriceChangeRow[]; next: string | null };
+};
+export type CatalogueQuery = {
+  limit?: "25" | "50" | undefined;
+  category?: CatalogueCategory | undefined;
+  active?: "1" | "0" | undefined;
+  onSite?: "1" | "0" | undefined;
+  q?: string | undefined;
+  after?: string | undefined;
+  before?: string | undefined;
+};
+export type TemplateMeta = {
+  id: string;
+  kind: TemplateKind;
+  category: CatalogueCategory | null;
+  version: number;
+  createdAt: number;
+  /** Who saved the version (null for the seeded versions). */
+  savedByName: string | null;
+};
+export type TemplatePage = { template: TemplateMeta & { body: TemplateBody }; versions: TemplateMeta[] };
+export type SnapshotRow = {
+  id: string;
+  sha256: string;
+  publishedBy: string | null;
+  publishedByName: string | null;
+  publishedAt: number;
+  bytes: number;
+  latest: boolean;
+};
+export type PublishResult =
+  | { sha256: string; unchanged: false; id: string; items: number }
+  | { sha256: string; unchanged: true };
+
+export const catalogueApi = {
+  list: (q: CatalogueQuery = {}) => request<Page<"items", CatalogueListItem>>(`/catalogue${qs(q)}`),
+  item: (id: string, after?: string) =>
+    request<CataloguePage>(`/catalogue/${encodeURIComponent(id)}${qs({ after })}`),
+  create: (body: CreateEntry) => request<{ ok: true; id: string; code: string }>("/catalogue", { body }),
+  update: (id: string, body: PatchEntry) =>
+    request<Changed>(`/catalogue/${encodeURIComponent(id)}`, { method: "PATCH", body }),
+  setActive: (id: string, active: boolean) =>
+    request<{ ok: true; changed: boolean }>(`/catalogue/${encodeURIComponent(id)}/active`, {
+      body: { active },
+    }),
+  /** The newest version of every kind and category (12 seeded rows; at most 50). */
+  templates: () =>
+    request<{ templates: TemplateMeta[]; next: string | null }>(`/templates${qs({ limit: "50" })}`),
+  template: (id: string) => request<TemplatePage>(`/templates/${encodeURIComponent(id)}`),
+  saveTemplate: (body: { kind: TemplateKind; category: CatalogueCategory | null; body: TemplateBody }) =>
+    request<{ ok: true; id: string; version: number }>("/templates", { body }),
+  snapshots: () => request<{ snapshots: SnapshotRow[] }>("/catalogue/snapshots"),
+  publish: () => request<PublishResult>("/catalogue/publish", { body: {} }),
 };
 
 /** A message to show for any failure: the server's own words, or a plain network message. */

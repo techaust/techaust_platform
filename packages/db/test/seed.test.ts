@@ -107,7 +107,13 @@ describe("seed [ADM-CAT-01]", () => {
     await run("UPDATE catalogue_items SET code = 'S1-OLD' WHERE code = 'S1'");
     // S2's row is gone and its slug is now used by another item: the re-run's insert hits the slug index.
     const s2 = await first<{ slug: string }>("SELECT slug FROM catalogue_items WHERE code = 'S2'");
+    // M4.1: the no-delete trigger is off for this one simulation (an item is never deleted any more), then back on.
+    const noDelete = await first<{ sql: string }>(
+      "SELECT sql FROM sqlite_master WHERE name = 'catalogue_items_no_delete'",
+    );
+    await run("DROP TRIGGER catalogue_items_no_delete");
     await run("DELETE FROM catalogue_items WHERE code = 'S2'");
+    await run(noDelete?.sql ?? "");
     await run("UPDATE catalogue_items SET slug = ? WHERE code = 'S4'", s2?.slug);
     await seed();
     expect(await all("SELECT code FROM catalogue_items WHERE code IN ('S1', 'S2')")).toEqual([]);

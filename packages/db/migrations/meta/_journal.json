@@ -169,6 +169,69 @@
       "when": 1792885581439,
       "tag": "0023_client_type_lock",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1792918717522,
+      "tag": "0024_project_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1792918719376,
+      "tag": "0025_project_triggers",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1792934035686,
+      "tag": "0026_catalogue_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "6",
+      "when": 1792934037707,
+      "tag": "0027_catalogue_triggers",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "6",
+      "when": 1792943122254,
+      "tag": "0028_care_time",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "6",
+      "when": 1792943133447,
+      "tag": "0029_time_triggers",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "6",
+      "when": 1792943136181,
+      "tag": "0030_drop_time_logs_care_plan_date",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "6",
+      "when": 1792956258128,
+      "tag": "0031_documents_quotes",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "6",
+      "when": 1792956281675,
+      "tag": "0032_document_triggers",
+      "breakpoints": true
     }
   ]
 }

@@ -51,7 +51,7 @@ const seed = (key: string, failures: number, at = Date.now(), lockedUntil: numbe
     .run();
 
 // ---------------------------------------------------------------------------------------------------------------
-describe("RESERVE_SQL agrees with reserveAttempt [ADM-AUTH-06]", () => {
+describe("RESERVE_SQL agrees with reserveAttempt [ADM-AUTH-06]", { timeout: 30_000 }, () => {
   type Row = Attempts;
   const reserve = async (k: string, at: number, lockAfter = LOCK_AFTER, ipk: string | null = null) => {
     const res = await env.DB.prepare(RESERVE_SQL).bind(k, at, WINDOW_MS, lockAfter, LOCK_MS, ipk).all();

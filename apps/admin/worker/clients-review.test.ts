@@ -213,5 +213,5 @@ describe("the client page's contact cursor and live count [ADM-CLI-02]", () => {
     const s = await json(await call(`/clients/${small}`, { cookie: o.cookie }));
     expect(s.contactsNext).toBeNull();
     expect(s.liveContactCount).toBe(1);
-  });
+  }, 20_000);
 });

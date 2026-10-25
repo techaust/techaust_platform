@@ -16,7 +16,7 @@ describe("worker budget", () => {
   });
 
   it("fails over the startup budget", () => {
-    expect(checkBundle({ ...ok, startupMs: 150 }, admin)[0]).toMatch(/startup is 150\.0 ms/);
+    expect(checkBundle({ ...ok, startupMs: 250 }, admin)[0]).toMatch(/startup is 250\.0 ms/);
   });
 
   it("fails on classic zod but not on zod/mini's $-prefixed names", () => {

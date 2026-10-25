@@ -3,8 +3,14 @@ import { env } from "cloudflare:workers";
 import { gstinCheckChar } from "@techaust/core/gstin";
 import { uuidv7 } from "@techaust/core/ids";
 import { clientCode } from "@techaust/core/lead-lifecycle";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import { mkItem } from "./test-catalogue.ts";
 import { bodyOf, call, countOf, one, rows, sessionFor } from "./test-helpers.ts";
+
+// M4.1: a lead's service name is read from catalogue_items (no seed import), so the item the leads point at exists here.
+beforeAll(async () => {
+  await mkItem({ code: "S5", name: "Custom Web Apps & Business Portals" });
+});
 
 type Body = Record<string, unknown>;
 const GOOD: Body = {
@@ -140,7 +146,7 @@ describe("POST /leads/:id/convert [ADM-LEAD-04]", () => {
           out.proposalId,
         )) as { title: string }
       ).title,
-    ).not.toMatch(/&/);
+    ).toBe("Custom Web Apps and Business Portals"); // the name from catalogue_items, "&" worded as "and"
 
     // The lead: linked, stage unchanged; one timeline row; one audit row with references only.
     expect(await one("SELECT stage, client_id, proposal_id FROM leads WHERE id = ?", lead.id)).toEqual({
@@ -301,7 +307,12 @@ describe("POST /leads/:id/convert [ADM-LEAD-04]", () => {
       legal_name: "Asha Rao",
       display_name: "Asha Rao",
     });
-    expect(await countOf("document_sections", "document_id = ?", proposalId)).toBe(0); // nothing to carry over
+    // M4.3: nothing to carry over from the lead, but every draft has the three sections a proposal always has.
+    expect(
+      (
+        await rows("SELECT kind FROM document_sections WHERE document_id = ? ORDER BY position", proposalId)
+      ).map((r) => r.kind),
+    ).toEqual(["estimate", "terms", "acceptance"]);
     const named = await addLead();
     const r2 = await convert(
       named.id,
@@ -373,7 +384,7 @@ describe("conversion: consent, country and the draft link (analyst early check)"
       },
       s.cookie,
     );
-    expect(ok.res.status).toBe(201);
+    expect(ok.res.status, JSON.stringify(await ok.res.clone().json())).toBe(201);
     expect(
       await one(
         "SELECT country, gst_status, currency FROM clients ORDER BY created_at DESC, rowid DESC LIMIT 1",

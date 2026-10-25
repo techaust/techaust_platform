@@ -1,23 +1,36 @@
-import { hex, randomBytes } from "@techaust/auth";
+import { answeringRow, hex, randomBytes } from "@techaust/auth";
 import { accessStmt, clipHeader, HEADER_LIMITS } from "@techaust/db/log";
 import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
-import { routePath } from "hono/route";
+import { matchedRoutes } from "hono/route";
 import { secureHeaders } from "hono/secure-headers";
 import { Hono } from "hono/tiny";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { account } from "./account.ts";
+import { approvalRequests, approvals } from "./approvals.ts";
 import { audit } from "./audit.ts";
 import { auth } from "./auth.ts";
+import { carePlans } from "./care.ts";
+import { catalogue, templates } from "./catalogue.ts";
+import { clientTabs } from "./client-tabs.ts";
 import { clients, contacts } from "./clients.ts";
 import { type AppEnv, accessEntry, BAD_REQUEST, type Ctx, err, FORBIDDEN, NOT_FOUND } from "./context.ts";
 import { csrf } from "./csrf.ts";
+import { dashboard } from "./dashboard.ts";
+import { documentConvert } from "./document-convert.ts";
+import { documentSave } from "./document-save.ts";
+import { documentSend } from "./document-send.ts";
+import { documents } from "./documents.ts";
+import { files } from "./files.ts";
 import { guard, routeFor } from "./guard.ts";
 import { leads } from "./leads.ts";
+import { notes } from "./notes.ts";
 import { notifications } from "./notifications.ts";
+import { milestones, projects } from "./projects.ts";
 import { search } from "./search.ts";
 import { settings } from "./settings.ts";
+import { timeLogs } from "./time-logs.ts";
 import { users } from "./users.ts";
 
 import "./warm.ts"; // start-up warm-up of the settings schemas and the step-up path (M3.1)
@@ -45,7 +58,9 @@ export function createApp() {
       c.set("rid", clipHeader(c.req.header("cf-ray"), HEADER_LIMITS.requestId) ?? hex(randomBytes(8)));
       c.set("ip", clipHeader(c.req.header("CF-Connecting-IP"), HEADER_LIMITS.ip));
       c.set("ua", clipHeader(c.req.header("User-Agent"), HEADER_LIMITS.ua));
-      const row = routeFor(c.req.method, routePath(c, -1)) ?? null;
+      // The row of the handler that ANSWERS: the first matched pattern that is a table row. Hono runs a static path registered before
+      // `/:id` first (`/care-plans/defaults`), but the LAST match is `/:id`, whose guard row may differ (shared with the portal).
+      const row = answeringRow(matchedRoutes(c), (p) => routeFor(c.req.method, p));
       c.set("route", row);
       await next();
       c.header("Cache-Control", "no-store");
@@ -90,7 +105,21 @@ export function createApp() {
     }),
   );
   app.use(csrf);
-  app.use(bodyLimit({ maxSize: 16 * 1024, onError: (c) => err(c as Ctx, BAD_REQUEST, 413) }));
+  const jsonLimit = bodyLimit({ maxSize: 16 * 1024, onError: (c) => err(c as Ctx, BAD_REQUEST, 413) });
+  // An upload route (`body: "upload"`) checks its own declared length and streams; a route marked `body: "large"` (the catalogue
+  // and template saves) reads up to 32 KB; every other route stays at 16 KB.
+  const largeLimit = bodyLimit({ maxSize: 32 * 1024, onError: (c) => err(c as Ctx, BAD_REQUEST, 413) });
+  // A proposal save (`body: "document"`): 100 lines and 30,000 characters of sections, with room for multi-byte text (lead decision 13).
+  const documentLimit = bodyLimit({ maxSize: 96 * 1024, onError: (c) => err(c as Ctx, BAD_REQUEST, 413) });
+  app.use((c, next) => {
+    const kind = c.var.route?.body;
+    if (kind === "upload") return next();
+    return kind === "document"
+      ? documentLimit(c, next)
+      : kind === "large"
+        ? largeLimit(c, next)
+        : jsonLimit(c, next);
+  });
   app.use(guard);
 
   app.get("/v1/health", (c) => c.json({ ok: true, service: "admin", env: c.env.ENVIRONMENT }));
@@ -99,7 +128,24 @@ export function createApp() {
   app.route("/v1/users", users);
   app.route("/v1/settings", settings);
   app.route("/v1/leads", leads);
+  app.route("/v1/catalogue", catalogue);
+  app.route("/v1/templates", templates);
   app.route("/v1/clients", clients);
+  app.route("/v1/clients", clientTabs);
+  // Proposals and estimates (M4.3): one router per concern, all under /documents. Static paths come before `/:id` where they exist.
+  app.route("/v1/documents", documents);
+  app.route("/v1/documents", documentSave);
+  app.route("/v1/documents", approvalRequests);
+  app.route("/v1/documents", documentSend);
+  app.route("/v1/documents", documentConvert);
+  app.route("/v1/approvals", approvals);
+  app.route("/v1/projects", projects);
+  app.route("/v1/milestones", milestones);
+  app.route("/v1/care-plans", carePlans);
+  app.route("/v1/time", timeLogs);
+  app.route("/v1/dashboard", dashboard);
+  app.route("/v1/notes", notes);
+  app.route("/v1/files", files);
   app.route("/v1/contacts", contacts);
   app.route("/v1/notifications", notifications);
   app.route("/v1/search", search);

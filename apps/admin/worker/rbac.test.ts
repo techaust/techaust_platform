@@ -6,6 +6,8 @@ import { ACTIONS, decide, ROLES, SETTINGS_DEFAULTS, uuidv7 } from "@techaust/cor
 import { describe, expect, it } from "vitest";
 import { ROUTES } from "./guard.ts";
 import app, { createApp } from "./index.ts";
+import { mkLog, mkOpenProject, mkPlan, today } from "./test-care.ts";
+import { entryBody, mkItem, putPaymentTerms, siteItems } from "./test-catalogue.ts";
 import {
   accept,
   bodyOf,
@@ -27,6 +29,8 @@ import {
   tokenOfLink,
   userId,
 } from "./test-helpers.ts";
+import { mkFile, mkMilestone, mkNote, mkProject, PDF_BYTES, upload } from "./test-projects.ts";
+import { discount, mkDraft, mkQuoteClient, mkService, mkTerms, sendDoc } from "./test-quotes.ts";
 
 const newEmail = () => `rbac-${Math.random().toString(36).slice(2, 10)}@example.com`;
 const PUBLIC = ROUTES.filter((r) => r.access === "public");
@@ -174,7 +178,177 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
     ]);
     return { id, contactId, updatedAt };
   };
+  // M3.4: projects, milestones, notes and files. Each fixture is written straight to the database with an old `updated_at`.
+  const scenarioProject = async () => {
+    const { id: clientId } = await scenarioClient();
+    const p = await mkProject(clientId);
+    return { clientId, projectId: p.id, updatedAt: p.updatedAt };
+  };
+  const projectScenarios: Record<string, Scenario> = {
+    "POST /api/v1/projects": async () => {
+      const s = await owner();
+      const { id } = await scenarioClient();
+      return run(s, "/projects", { body: { clientId: id, name: "Scenario project" } });
+    },
+    "PATCH /api/v1/projects/:id": async () => {
+      const s = await owner();
+      const p = await scenarioProject();
+      return run(s, `/projects/${p.projectId}`, {
+        method: "PATCH",
+        body: { expectedUpdatedAt: p.updatedAt, name: "Renamed" },
+      });
+    },
+    "POST /api/v1/projects/:id/status": async () => {
+      const s = await owner();
+      const p = await scenarioProject();
+      return run(s, `/projects/${p.projectId}/status`, { body: { to: "active" } });
+    },
+    "POST /api/v1/projects/:id/milestones": async () => {
+      const s = await owner();
+      const p = await scenarioProject();
+      return run(s, `/projects/${p.projectId}/milestones`, { body: { title: "First", amountMinor: 5000 } });
+    },
+    "POST /api/v1/projects/:id/milestones/order": async () => {
+      const s = await owner();
+      const p = await scenarioProject();
+      const a = await mkMilestone(p.projectId, { position: 1 });
+      const b = await mkMilestone(p.projectId, { position: 2 });
+      return run(s, `/projects/${p.projectId}/milestones/order`, { body: { ids: [b.id, a.id] } });
+    },
+    "PATCH /api/v1/milestones/:id": async () => {
+      const s = await owner();
+      const p = await scenarioProject();
+      const m = await mkMilestone(p.projectId);
+      return run(s, `/milestones/${m.id}`, {
+        method: "PATCH",
+        body: { expectedUpdatedAt: m.updatedAt, title: "Retitled" },
+      });
+    },
+    "POST /api/v1/milestones/:id/status": async () => {
+      const s = await owner();
+      const p = await scenarioProject();
+      const m = await mkMilestone(p.projectId);
+      return run(s, `/milestones/${m.id}/status`, { body: { to: "ready_to_bill" } });
+    },
+    "DELETE /api/v1/milestones/:id": async () => {
+      const s = await owner();
+      const p = await scenarioProject();
+      const m = await mkMilestone(p.projectId);
+      return run(s, `/milestones/${m.id}`, { method: "DELETE" });
+    },
+    "POST /api/v1/projects/:id/notes": async () => {
+      const s = await owner();
+      const p = await scenarioProject();
+      return run(s, `/projects/${p.projectId}/notes`, { body: { bodyMd: "A note" } });
+    },
+    "POST /api/v1/clients/:id/notes": async () => {
+      const s = await owner();
+      const { id } = await scenarioClient();
+      return run(s, `/clients/${id}/notes`, { body: { bodyMd: "A client note", visibility: "shared" } });
+    },
+    "PATCH /api/v1/notes/:id": async () => {
+      const s = await owner();
+      const { id: clientId } = await scenarioClient();
+      const n = await mkNote(clientId);
+      return run(s, `/notes/${n.id}`, {
+        method: "PATCH",
+        body: { expectedUpdatedAt: n.updatedAt, bodyMd: "Edited" },
+      });
+    },
+    "DELETE /api/v1/notes/:id": async () => {
+      const s = await owner();
+      const { id: clientId } = await scenarioClient();
+      const n = await mkNote(clientId);
+      return run(s, `/notes/${n.id}`, { method: "DELETE" });
+    },
+    "POST /api/v1/projects/:id/files": async () => {
+      const s = await owner();
+      const p = await scenarioProject();
+      const rid = `ray-${crypto.randomUUID()}`;
+      const res = await upload(`/projects/${p.projectId}/files`, PDF_BYTES, {
+        cookie: s.cookie,
+        headers: headers(rid),
+      });
+      return { res, rid, actor: s };
+    },
+    "POST /api/v1/clients/:id/files": async () => {
+      const s = await owner();
+      const { id } = await scenarioClient();
+      const rid = `ray-${crypto.randomUUID()}`;
+      const res = await upload(`/clients/${id}/files`, PDF_BYTES, {
+        cookie: s.cookie,
+        headers: headers(rid),
+      });
+      return { res, rid, actor: s };
+    },
+    "PATCH /api/v1/files/:id": async () => {
+      const s = await owner();
+      const { id: clientId } = await scenarioClient();
+      const f = await mkFile(clientId);
+      return run(s, `/files/${f.id}`, { method: "PATCH", body: { shared: true } });
+    },
+    "DELETE /api/v1/files/:id": async () => {
+      const s = await owner();
+      const { id: clientId } = await scenarioClient();
+      const f = await mkFile(clientId);
+      return run(s, `/files/${f.id}`, { method: "DELETE" });
+    },
+  };
+  // M3.5: care plans and time logs. Fixtures are written straight to the database with an old `updated_at`.
+  const careTimeScenarios: Record<string, Scenario> = {
+    "POST /api/v1/care-plans": async () => {
+      const s = await owner();
+      const { id } = await scenarioClient();
+      return run(s, "/care-plans", {
+        body: {
+          clientId: id,
+          tier: "growth",
+          priceMinor: 2_499_900,
+          includedMinutes: 600,
+          rollover: "none",
+          startDate: "2026-01-01",
+          billingDay: 1,
+        },
+      });
+    },
+    "POST /api/v1/care-plans/:id/terms": async () => {
+      const s = await owner();
+      const plan = await mkPlan(s.id);
+      return run(s, `/care-plans/${plan.id}/terms`, {
+        body: { expectedUpdatedAt: plan.updatedAt, priceMinor: 3_000_000 },
+      });
+    },
+    "POST /api/v1/care-plans/:id/status": async () => {
+      const s = await owner();
+      const plan = await mkPlan(s.id);
+      return run(s, `/care-plans/${plan.id}/status`, {
+        body: { to: "paused", expectedUpdatedAt: plan.updatedAt },
+      });
+    },
+    "POST /api/v1/time": async () => {
+      const s = await owner();
+      const p = await mkOpenProject();
+      return run(s, "/time", { body: { workDate: today(), minutes: 60, projectId: p.id, billable: true } });
+    },
+    "PATCH /api/v1/time/:id": async () => {
+      const s = await owner();
+      const p = await mkOpenProject();
+      const e = await mkLog(s.id, today(), 60, { project: p.id });
+      return run(s, `/time/${e.id}`, {
+        method: "PATCH",
+        body: { expectedUpdatedAt: e.updatedAt, minutes: 90 },
+      });
+    },
+    "DELETE /api/v1/time/:id": async () => {
+      const s = await owner();
+      const p = await mkOpenProject();
+      const e = await mkLog(s.id, today(), 60, { project: p.id });
+      return run(s, `/time/${e.id}?expectedUpdatedAt=${e.updatedAt}`, { method: "DELETE" });
+    },
+  };
   const scenarios: Record<string, Scenario> = {
+    ...projectScenarios,
+    ...careTimeScenarios,
     "POST /api/v1/auth/step-up": async () => {
       const s = await sessionFor("owner");
       const rid = `ray-${crypto.randomUUID()}`;
@@ -518,6 +692,42 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
         body: { body: "Sample terms text." },
       });
     },
+    // Catalogue (M4.1): one scenario for each audited route.
+    "POST /api/v1/catalogue": async () => {
+      const s = await owner();
+      return run(s, "/catalogue", { method: "POST", body: entryBody() });
+    },
+    "PATCH /api/v1/catalogue/:id": async () => {
+      const s = await owner();
+      const item = await mkItem();
+      return run(s, `/catalogue/${item.id}`, {
+        method: "PATCH",
+        body: { expectedUpdatedAt: item.updatedAt, priceInrMinor: 123_400 },
+      });
+    },
+    "POST /api/v1/catalogue/:id/active": async () => {
+      const s = await owner();
+      const item = await mkItem({ active: 0 });
+      return run(s, `/catalogue/${item.id}/active`, { method: "POST", body: { active: true } });
+    },
+    "POST /api/v1/catalogue/publish": async () => {
+      const s = await owner();
+      await putPaymentTerms();
+      // The services the website needs (publishing refuses a snapshot without them).
+      await siteItems();
+      return run(s, "/catalogue/publish", { method: "POST" });
+    },
+    "POST /api/v1/templates": async () => {
+      const s = await owner();
+      return run(s, "/templates", {
+        method: "POST",
+        body: {
+          kind: "proposal",
+          category: "run",
+          body: { sections: [{ key: "scope", heading: "Scope", body: "{{service.short}}" }] },
+        },
+      });
+    },
     "POST /api/v1/settings/email/test-send": async () => {
       const s = await owner();
       return run(s, "/settings/email/test-send", { method: "POST", body: { template: "lead.alert" } });
@@ -530,6 +740,78 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
       const s = await sessionFor("sales");
       await bell(s.id);
       return run(s, "/notifications/read-all", { method: "POST" });
+    },
+    // Proposals, estimates and approvals (M4.3): one scenario for each audited route.
+    "POST /api/v1/documents": async () => {
+      const s = await owner();
+      const client = await mkQuoteClient();
+      const item = await mkService();
+      await mkTerms();
+      return run(s, "/documents", {
+        body: { type: "proposal", clientId: client.clientId, services: [{ catalogueItemId: item.id }] },
+      });
+    },
+    "PATCH /api/v1/documents/:id": async () => {
+      const s = await owner();
+      await mkTerms();
+      const made = await mkDraft(s);
+      return run(s, `/documents/${made.id}`, {
+        method: "PATCH",
+        body: { expectedUpdatedAt: made.updatedAt, fields: { title: "Scenario title" } },
+      });
+    },
+    "DELETE /api/v1/documents/:id": async () => {
+      const s = await owner();
+      await mkTerms();
+      const made = await mkDraft(s);
+      return run(s, `/documents/${made.id}?expectedUpdatedAt=${made.updatedAt}`, { method: "DELETE" });
+    },
+    "POST /api/v1/documents/:id/revise": async () => {
+      const s = await owner();
+      await mkTerms();
+      const made = await mkDraft(s);
+      expect((await sendDoc(s, made.id, made.updatedAt)).status).toBe(200);
+      return run(s, `/documents/${made.id}/revise`, { method: "POST", body: {} });
+    },
+    "POST /api/v1/documents/:id/approval-request": async () => {
+      const s = await sessionFor("sales");
+      await mkTerms();
+      const made = await mkDraft(s, { price: 20_000_000 });
+      const v = await discount(s, made.id, "fixed", 5_000_000);
+      return run(s, `/documents/${made.id}/approval-request`, {
+        method: "POST",
+        body: { expectedUpdatedAt: v.updatedAt },
+      });
+    },
+    "POST /api/v1/documents/:id/send": async () => {
+      const s = await owner();
+      await mkTerms();
+      const made = await mkDraft(s);
+      return run(s, `/documents/${made.id}/send`, {
+        method: "POST",
+        body: { expectedUpdatedAt: made.updatedAt },
+      });
+    },
+    "POST /api/v1/documents/:id/convert": async () => {
+      const s = await owner();
+      await mkTerms();
+      const made = await mkDraft(s, { type: "estimate" });
+      expect((await sendDoc(s, made.id, made.updatedAt)).status).toBe(200);
+      await env.DB.prepare("UPDATE documents SET status = 'accepted' WHERE id = ?").bind(made.id).run();
+      return run(s, `/documents/${made.id}/convert`, { method: "POST", body: { to: "invoice" } });
+    },
+    "POST /api/v1/approvals/:id/decide": async () => {
+      const s = await owner();
+      const sales = await sessionFor("sales");
+      await mkTerms();
+      const made = await mkDraft(sales, { price: 20_000_000 });
+      const v = await discount(sales, made.id, "fixed", 5_000_000);
+      const req = await call(`/documents/${made.id}/approval-request`, {
+        cookie: sales.cookie,
+        body: { expectedUpdatedAt: v.updatedAt },
+      });
+      const { id } = (await req.json()) as { id: string };
+      return run(s, `/approvals/${id}/decide`, { method: "POST", body: { decision: "approve" } });
     },
     "POST /api/v1/notifications/:id/read": async () => {
       const s = await sessionFor("staff");

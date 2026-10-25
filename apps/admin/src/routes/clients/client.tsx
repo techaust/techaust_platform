@@ -1,7 +1,8 @@
 // One client (M3.3, ADM-CLI-01..05): the header with the client code, the identity strip (type, GST status, GSTIN or
 // state, currency), and the tabs (ADM-CLI-03), kept in the URL as `?tab=`:
 // - Overview, Contacts and Activity for every role that reads clients;
-// - Projects, Proposals and estimates, Files and Care plans as the M3.1 "coming soon" state, with their milestone;
+// - Projects and Files (M3.4) for every role that reads projects (not the Accountant: the API denies them too);
+// - Proposals and estimates and Care plans as the M3.1 "coming soon" state, with their milestone;
 // - Invoices and payments and Statement only for roles with clients.finance.read (never Sales: the API denies them too),
 //   with the 07-J lines until invoicing exists.
 // What a person has typed and not saved (the details and billing drafts) lives above every reload, as on the lead page.
@@ -15,6 +16,7 @@ import { FileText, Lock, Receipt } from "../../components/icons.tsx";
 import { navItem } from "../../components/shell/nav.tsx";
 import { LoadFailed, NotFound, StaleNotice, useLoad } from "../../components/states.tsx";
 import { type TabItem, Tabs } from "../../components/tabs.tsx";
+import { Notice } from "../../components/ui.tsx";
 import { UnsavedChangesGuard } from "../../components/unsaved.tsx";
 import { allowed } from "../../lib/access.ts";
 import {
@@ -26,7 +28,11 @@ import {
   stateText,
   TYPE_LABELS,
 } from "../../lib/clients.ts";
+import { COPY, PENDING } from "../../lib/projects.ts";
 import { useUser } from "../../session.tsx";
+import { ClientCarePlans } from "../care/client-tab.tsx";
+import { ClientProjects } from "../projects/client-tabs.tsx";
+import { FilesPanel } from "../projects/files.tsx";
 import { Activity } from "./activity.tsx";
 import { Contacts } from "./contacts.tsx";
 import { INVOICES_LINE, Overview } from "./overview.tsx";
@@ -52,12 +58,12 @@ type TabKey =
   | "care-plans"
   | "activity";
 
-/** The tabs in the PRD's order; the finance ones only for a finance role. */
-function tabsFor(finance: boolean): TabItem<TabKey>[] {
+/** The tabs in the PRD's order; the finance ones only for a finance role, Projects and Files only for a projects role. */
+function tabsFor(finance: boolean, projects: boolean): TabItem<TabKey>[] {
   return [
     { key: "overview", label: "Overview" },
     { key: "contacts", label: "Contacts" },
-    { key: "projects", label: "Projects" },
+    ...(projects ? ([{ key: "projects", label: "Projects" }] as TabItem<TabKey>[]) : []),
     { key: "proposals", label: "Proposals and estimates" },
     ...(finance
       ? ([
@@ -65,7 +71,7 @@ function tabsFor(finance: boolean): TabItem<TabKey>[] {
           { key: "statement", label: "Statement" },
         ] as TabItem<TabKey>[])
       : []),
-    { key: "files", label: "Files" },
+    ...(projects ? ([{ key: "files", label: "Files" }] as TabItem<TabKey>[]) : []),
     { key: "care-plans", label: "Care plans" },
     { key: "activity", label: "Activity" },
   ];
@@ -112,7 +118,8 @@ function ClientView(props: {
   const user = useUser();
   const { client } = props.data;
   const finance = allowed(user.role, "clients.finance.read");
-  const tabs = tabsFor(finance);
+  const projects = allowed(user.role, "projects.read");
+  const tabs = tabsFor(finance, projects);
   const [params, setParams] = useSearchParams();
   const asked = params.get("tab");
   const tab: TabKey = tabs.some((t) => t.key === asked) ? (asked as TabKey) : "overview";
@@ -152,6 +159,7 @@ function ClientView(props: {
         }
       />
       <IdentityStrip data={props.data} finance={finance} />
+      {props.data.anonymised && <Notice tone="info">{PENDING.clientAnonymised}</Notice>}
       {(saveStale || conflict) &&
         (saveStale ? (
           <StaleNotice title="Someone else changed this client." onReload={() => props.reload("stale")} />
@@ -174,12 +182,22 @@ function ClientView(props: {
           />
         ) : tab === "contacts" ? (
           <Contacts data={props.data} reload={() => props.reload()} />
+        ) : tab === "projects" ? (
+          <ClientProjects clientId={client.id} readOnly={props.data.anonymised} />
+        ) : tab === "files" ? (
+          <FilesPanel
+            scope={{ kind: "client", id: client.id }}
+            emptyText={COPY.clientFilesEmpty}
+            readOnly={props.data.anonymised}
+          />
         ) : tab === "activity" ? (
           <Activity clientId={client.id} contacts={props.data.contacts} />
         ) : tab === "invoices" ? (
           <InvoicesTab id={client.id} />
         ) : tab === "statement" ? (
           <StatementTab id={client.id} />
+        ) : tab === "care-plans" ? (
+          <ClientCarePlans clientId={client.id} readOnly={props.data.anonymised} />
         ) : (
           <ComingTab tab={tab} />
         )}
@@ -264,10 +282,7 @@ function StatementTab({ id }: { id: string }) {
 }
 
 const COMING: Record<string, { section: Parameters<typeof navItem>[0]; label: string }> = {
-  projects: { section: "projects", label: "Projects" },
   proposals: { section: "proposals", label: "Proposals and estimates" },
-  files: { section: "projects", label: "Files" },
-  "care-plans": { section: "care-plans", label: "Care plans" },
 };
 
 /** A tab a later milestone builds: the M3.1 "coming soon" state, with the milestone and what arrives. */

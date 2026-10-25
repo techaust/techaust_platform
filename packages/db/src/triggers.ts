@@ -2,7 +2,7 @@
 // once into a hand-written migration (scripts/write-triggers.ts); a later schema change that adds a document
 // column needs a new migration that drops and recreates the trigger, and test/triggers.test.ts fails until
 // the installed trigger covers every content column.
-import { INVOICE_FAMILY_SQL } from "@techaust/core/clients";
+import { INVOICE_FAMILY_SQL, QUOTE_DOCUMENT_TYPES } from "@techaust/core/clients";
 import { getTableColumns } from "drizzle-orm";
 import { getTableConfig } from "drizzle-orm/sqlite-core";
 import { documentLines, documentSections, paymentSchedules } from "./schema/documents.ts";
@@ -15,7 +15,9 @@ import {
   docCounters,
   documents,
   magicLinkTokens,
+  siteSnapshots,
   staffUsers,
+  templates,
   termsBlocks,
   termsVersions,
 } from "./schema/index.ts";
@@ -34,8 +36,8 @@ export const MUTABLE_AFTER_FREEZE = [
   "updated_at",
 ] as const;
 
-/** Columns that may be filled in once after freezing (the PDF renders after issue; voiding is one-way). */
-export const SET_ONCE_AFTER_FREEZE = [
+/** Columns that may be filled in once after freezing in migration 0001 (the PDF renders after issue; voiding is one-way). Pinned. */
+export const SET_ONCE_0001 = [
   "snapshot_r2_key",
   "pdf_r2_key",
   "pdf_sha256",
@@ -43,13 +45,79 @@ export const SET_ONCE_AFTER_FREEZE = [
   "void_reason",
 ] as const;
 
+/**
+ * Columns that may be filled in once after freezing, today. M4.3 adds the portal's reads and the client's decision (M4.5 writes
+ * them): each can be set once, then never changed.
+ */
+export const SET_ONCE_AFTER_FREEZE = [
+  ...SET_ONCE_0001,
+  "viewed_at",
+  "decided_at",
+  "decision_reason",
+  "decision_note",
+  "decided_contact_id",
+] as const;
+
 const columnNames = (table: Parameters<typeof getTableColumns>[0]) =>
   Object.values(getTableColumns(table)).map((c) => c.name);
 
-/** Every documents column that is frozen at issue. */
+/** Every documents column that is frozen at issue, over the live schema. */
 export const frozenDocumentColumns = (): string[] => {
   const skip = new Set<string>([...MUTABLE_AFTER_FREEZE, ...SET_ONCE_AFTER_FREEZE]);
   return columnNames(documents).filter((c) => !skip.has(c));
+};
+
+/**
+ * The documents columns frozen by migration 0001, exactly as that file lists them. No documents column had been added before M4.3, so
+ * this is also what the live schema gave then. `triggerStatements()` uses this pinned list, so the `triggers` set still generates
+ * 0001 byte for byte after the table grew; the live list goes into the recreated trigger of the `document_triggers` set (0032).
+ */
+export const FROZEN_COLUMNS_0001 = [
+  "id",
+  "type",
+  "client_id",
+  "project_id",
+  "care_plan_id",
+  "parent_id",
+  "version_group_id",
+  "version",
+  "series",
+  "fy",
+  "number",
+  "number_display",
+  "currency",
+  "issue_date",
+  "due_date",
+  "valid_until",
+  "supply_type",
+  "place_of_supply_code",
+  "recipient",
+  "fx_rate_micros",
+  "fx_date",
+  "fx_source",
+  "subtotal_minor",
+  "discount_minor",
+  "taxable_minor",
+  "cgst_minor",
+  "sgst_minor",
+  "igst_minor",
+  "round_off_minor",
+  "total_minor",
+  "total_inr_minor",
+  "terms_version_id",
+  "snapshot_sha256",
+  "frozen_at",
+  "issued_by",
+  "realisation_due_at",
+  "created_by",
+  "created_at",
+] as const;
+
+/** The freeze trigger of `documents` for a list of frozen columns and a list of set-once columns. */
+const frozenUpdateTrigger = (frozen: readonly string[], setOnceList: readonly string[]) => {
+  const changed = frozen.map((c) => `NEW.\`${c}\` IS NOT OLD.\`${c}\``);
+  const setOnce = setOnceList.map((c) => `(OLD.\`${c}\` IS NOT NULL AND NEW.\`${c}\` IS NOT OLD.\`${c}\`)`);
+  return `CREATE TRIGGER \`documents_frozen_update\` BEFORE UPDATE ON \`documents\` WHEN OLD.frozen_at IS NOT NULL AND (\n  ${[...changed, ...setOnce].join("\n  OR ")}\n) BEGIN ${abort("issued document is frozen")} END;`;
 };
 
 const abort = (message: string) => `SELECT RAISE(ABORT, '${message}');`;
@@ -71,14 +139,11 @@ const frozenChildren = (table: string) => {
 };
 
 export function triggerStatements(): string[] {
-  const changed = frozenDocumentColumns().map((c) => `NEW.\`${c}\` IS NOT OLD.\`${c}\``);
-  const setOnce = SET_ONCE_AFTER_FREEZE.map(
-    (c) => `(OLD.\`${c}\` IS NOT NULL AND NEW.\`${c}\` IS NOT OLD.\`${c}\`)`,
-  );
   const table = (t: Parameters<typeof getTableConfig>[0]) => getTableConfig(t).name;
   return [
     // Issued documents: content is frozen (ADM-INV-07, ADM-PROP-05). Corrections only via credit/debit notes.
-    `CREATE TRIGGER \`documents_frozen_update\` BEFORE UPDATE ON \`documents\` WHEN OLD.frozen_at IS NOT NULL AND (\n  ${[...changed, ...setOnce].join("\n  OR ")}\n) BEGIN ${abort("issued document is frozen")} END;`,
+    // Pinned to what migration 0001 installed; the live list is the `document_triggers` set (M4.3).
+    frozenUpdateTrigger(FROZEN_COLUMNS_0001, SET_ONCE_0001),
     `CREATE TRIGGER \`documents_frozen_delete\` BEFORE DELETE ON \`documents\` WHEN OLD.frozen_at IS NOT NULL BEGIN ${abort("issued document cannot be deleted")} END;`,
     ...frozenChildren(table(documentLines)),
     ...frozenChildren(table(documentSections)),
@@ -169,6 +234,118 @@ export function clientTypeLockStatements(): string[] {
   ];
 }
 
+/**
+ * Projects, milestones, notes and files (M3.4, ADM-PRJ-01..05; a separate set, the earlier ones have no IF NOT EXISTS). The API
+ * checks these too; the triggers are the backstop that holds whatever writes to the tables.
+ *   - a note or file always has a client, and when it names a project, that project belongs to the same client;
+ *   - a project's client never changes;
+ *   - a milestone is a fixed amount or a percentage of the budget (exactly one), and an amount is never negative;
+ *   - a stored file never changes except for its `shared` flag (a different file is a new row).
+ */
+export function projectTriggerStatements(): string[] {
+  const scope = (table: string) => {
+    const bad =
+      "NEW.client_id IS NULL OR (NEW.project_id IS NOT NULL AND (SELECT client_id FROM projects WHERE id = NEW.project_id) IS NOT NEW.client_id)";
+    const msg = abort(`a ${table.slice(0, -1)} needs a client, and its project must belong to that client`);
+    return [
+      `CREATE TRIGGER \`${table}_scope_insert\` BEFORE INSERT ON \`${table}\` WHEN ${bad} BEGIN ${msg} END;`,
+      `CREATE TRIGGER \`${table}_scope_update\` BEFORE UPDATE OF client_id, project_id ON \`${table}\` WHEN ${bad} BEGIN ${msg} END;`,
+    ];
+  };
+  const mBad = "(NEW.amount_minor IS NULL) = (NEW.pct_bp IS NULL) OR NEW.amount_minor < 0";
+  const mMsg = abort("a milestone has an amount or a percentage, not both, and the amount is not negative");
+  const fileCols = [
+    "id",
+    "client_id",
+    "project_id",
+    "r2_key",
+    "filename",
+    "mime",
+    "size",
+    "sha256",
+    "uploaded_by",
+    "created_at",
+  ];
+  return [
+    `CREATE TRIGGER \`projects_client_fixed\` BEFORE UPDATE OF client_id ON \`projects\` WHEN NEW.client_id IS NOT OLD.client_id BEGIN ${abort("the client of a project cannot change")} END;`,
+    ...scope("notes"),
+    ...scope("files"),
+    `CREATE TRIGGER \`milestones_amount_or_pct_insert\` BEFORE INSERT ON \`milestones\` WHEN ${mBad} BEGIN ${mMsg} END;`,
+    `CREATE TRIGGER \`milestones_amount_or_pct_update\` BEFORE UPDATE OF amount_minor, pct_bp ON \`milestones\` WHEN ${mBad} BEGIN ${mMsg} END;`,
+    `CREATE TRIGGER \`files_immutable\` BEFORE UPDATE ON \`files\` WHEN ${fileCols.map((c) => `NEW.${c} IS NOT OLD.${c}`).join(" OR ")} BEGIN ${abort("a stored file cannot change except whether it is shared")} END;`,
+  ];
+}
+
+/**
+ * Care plans, their history and time logs (M3.5, ADM-CARE-01, ADM-TIME-01..03; a separate set, the earlier ones have no IF NOT EXISTS;
+ * no table is rebuilt: `care_plans` and `time_logs` are referenced). Every abort message starts with the trigger's name, so the API
+ * can tell which rule refused a write. The API checks the same rules in SQL conditions first; these are the backstop for whatever
+ * writes to the tables.
+ *   - an entry belongs to exactly one project or care plan; a person logs at most 24 hours a day; a work date is a real date;
+ *   - a care-plan entry needs the plan to be ACTIVE on the work date (its newest status row on or before that date);
+ *   - nothing is logged on a cancelled project; an entry's person never changes;
+ *   - the two history tables are append-only; a plan's client, currency, billing day and start date never change;
+ *   - the plan's price, hours, rate and rollover (and status) are always the newest history row (the mirror cannot drift).
+ */
+export function timeTriggerStatements(): string[] {
+  const named = (name: string, message: string) => abort(`${name}: ${message}`);
+  const oneTargetBad = "(NEW.project_id IS NULL) = (NEW.care_plan_id IS NULL)";
+  const dayCapBad =
+    "(SELECT coalesce(sum(minutes), 0) FROM time_logs WHERE user_id = NEW.user_id AND work_date = NEW.work_date AND id IS NOT NEW.id) + NEW.minutes > 1440";
+  const dateBad = "date(NEW.work_date) IS NOT NEW.work_date";
+  const planInactiveBad =
+    "NEW.care_plan_id IS NOT NULL AND (SELECT status FROM care_plan_status_log WHERE care_plan_id = NEW.care_plan_id AND effective_on <= NEW.work_date ORDER BY effective_on DESC, created_at DESC, id DESC LIMIT 1) IS NOT 'active'";
+  const projectClosedBad =
+    "NEW.project_id IS NOT NULL AND (SELECT status FROM projects WHERE id = NEW.project_id) = 'cancelled'";
+  const history = (table: string) => [
+    `CREATE TRIGGER \`${table}_no_update\` BEFORE UPDATE ON \`${table}\` BEGIN ${named(`${table}_no_update`, `${table} is append-only`)} END;`,
+    `CREATE TRIGGER \`${table}_no_delete\` BEFORE DELETE ON \`${table}\` BEGIN ${named(`${table}_no_delete`, `${table} is append-only`)} END;`,
+  ];
+  const newestTerms =
+    "(SELECT id FROM care_plan_terms WHERE care_plan_id = NEW.id ORDER BY effective_from DESC, created_at DESC, id DESC LIMIT 1)";
+  const termsDrift = `NOT EXISTS (SELECT 1 FROM care_plan_terms t WHERE t.id = ${newestTerms} AND t.tier IS NEW.tier AND t.price_minor IS NEW.price_minor AND t.included_minutes IS NEW.included_minutes AND t.ai_ops_minor IS NEW.ai_ops_minor AND t.overage_rate_minor IS NEW.overage_rate_minor AND t.rollover IS NEW.rollover)`;
+  const statusDrift =
+    "NEW.status IS NOT (SELECT status FROM care_plan_status_log WHERE care_plan_id = NEW.id ORDER BY effective_on DESC, created_at DESC, id DESC LIMIT 1)";
+  const fixed =
+    "NEW.client_id IS NOT OLD.client_id OR NEW.currency IS NOT OLD.currency OR NEW.billing_day IS NOT OLD.billing_day OR NEW.start_date IS NOT OLD.start_date";
+  return [
+    `CREATE TRIGGER \`time_logs_one_target_insert\` BEFORE INSERT ON \`time_logs\` WHEN ${oneTargetBad} BEGIN ${named("time_logs_one_target_insert", "an entry belongs to exactly one project or care plan")} END;`,
+    `CREATE TRIGGER \`time_logs_one_target_update\` BEFORE UPDATE OF project_id, care_plan_id ON \`time_logs\` WHEN ${oneTargetBad} BEGIN ${named("time_logs_one_target_update", "an entry belongs to exactly one project or care plan")} END;`,
+    `CREATE TRIGGER \`time_logs_day_cap_insert\` BEFORE INSERT ON \`time_logs\` WHEN ${dayCapBad} BEGIN ${named("time_logs_day_cap_insert", "a person logs at most 24 hours a day")} END;`,
+    `CREATE TRIGGER \`time_logs_day_cap_update\` BEFORE UPDATE OF user_id, work_date, minutes ON \`time_logs\` WHEN ${dayCapBad} BEGIN ${named("time_logs_day_cap_update", "a person logs at most 24 hours a day")} END;`,
+    `CREATE TRIGGER \`time_logs_date_valid_insert\` BEFORE INSERT ON \`time_logs\` WHEN ${dateBad} BEGIN ${named("time_logs_date_valid_insert", "the work date is not a date")} END;`,
+    `CREATE TRIGGER \`time_logs_date_valid_update\` BEFORE UPDATE OF work_date ON \`time_logs\` WHEN ${dateBad} BEGIN ${named("time_logs_date_valid_update", "the work date is not a date")} END;`,
+    `CREATE TRIGGER \`time_logs_plan_active_insert\` BEFORE INSERT ON \`time_logs\` WHEN ${planInactiveBad} BEGIN ${named("time_logs_plan_active_insert", "the care plan is not active on that date")} END;`,
+    `CREATE TRIGGER \`time_logs_plan_active_update\` BEFORE UPDATE OF care_plan_id, work_date ON \`time_logs\` WHEN ${planInactiveBad} BEGIN ${named("time_logs_plan_active_update", "the care plan is not active on that date")} END;`,
+    `CREATE TRIGGER \`time_logs_project_open_insert\` BEFORE INSERT ON \`time_logs\` WHEN ${projectClosedBad} BEGIN ${named("time_logs_project_open_insert", "the project is cancelled")} END;`,
+    `CREATE TRIGGER \`time_logs_project_open_update\` BEFORE UPDATE OF project_id ON \`time_logs\` WHEN NEW.project_id IS NOT OLD.project_id AND ${projectClosedBad} BEGIN ${named("time_logs_project_open_update", "the project is cancelled")} END;`,
+    `CREATE TRIGGER \`time_logs_user_fixed\` BEFORE UPDATE OF user_id ON \`time_logs\` WHEN NEW.user_id IS NOT OLD.user_id BEGIN ${named("time_logs_user_fixed", "the person of a time entry cannot change")} END;`,
+    ...history("care_plan_terms"),
+    ...history("care_plan_status_log"),
+    `CREATE TRIGGER \`care_plans_fixed\` BEFORE UPDATE OF client_id, currency, billing_day, start_date ON \`care_plans\` WHEN ${fixed} BEGIN ${named("care_plans_fixed", "the client, currency, billing day and start date of a care plan cannot change")} END;`,
+    `CREATE TRIGGER \`care_plans_terms_match\` BEFORE UPDATE OF tier, price_minor, included_minutes, ai_ops_minor, overage_rate_minor, rollover ON \`care_plans\` WHEN ${termsDrift} BEGIN ${named("care_plans_terms_match", "the terms of a care plan are the newest row of its terms history")} END;`,
+    `CREATE TRIGGER \`care_plans_status_match\` BEFORE UPDATE OF status ON \`care_plans\` WHEN ${statusDrift} BEGIN ${named("care_plans_status_match", "the status of a care plan is the newest row of its status history")} END;`,
+  ];
+}
+
+/**
+ * Catalogue triggers (M4.1, ADM-CAT-03..05; a separate set, the earlier ones have no IF NOT EXISTS). A template is never edited
+ * or deleted (an edit is a new version), a published snapshot is never edited or deleted (the website build and the audit read
+ * it), and a catalogue item is never deleted (it is retired by deactivating it, so documents that snapshot a line keep their
+ * code). `catalogue_price_history` is already append-only since 0001. No table is rebuilt.
+ */
+export function catalogueTriggerStatements(): string[] {
+  const table = (t: Parameters<typeof getTableConfig>[0]) => getTableConfig(t).name;
+  return [
+    // SQLite treats NULLs as distinct, so the unique index on (kind, category, version) does not stop two versions of a block
+    // without a category. drizzle-kit cannot write an expression index over several columns, so it is written here.
+    "CREATE UNIQUE INDEX `templates_kind_category_version_coalesced` ON `templates` (`kind`, coalesce(`category`, ''), `version`);",
+    ...appendOnly(table(templates)),
+    ...appendOnly(table(siteSnapshots)),
+    `CREATE TRIGGER \`catalogue_items_no_delete\` BEFORE DELETE ON \`catalogue_items\` BEGIN ${abort("a catalogue item is retired by deactivating it, never deleted")} END;`,
+  ];
+}
+
 /** The only statuses a document can be issued from (docs/05 §5.4 change 14: drafts only; owner decision 2026-10-07).
  * An approval (`approvals`, kind `issue`) is a record next to the draft, not a document status. Shared by the guard
  * trigger below and by the reference issue batch in test/helpers.ts, so the two cannot drift apart again. */
@@ -194,6 +371,69 @@ export function issueGuardStatements(): string[] {
   ];
 }
 
+/**
+ * Proposals and estimates (M4.3, ADM-PROP-05, ADM-PROP-06, ADM-EST-01, ADM-APR-02; a separate set, the earlier ones have no IF NOT EXISTS).
+ * `documents` is referenced by other tables, so nothing is rebuilt: the freeze trigger and the issue post-condition are dropped and
+ * created again, the rest is new. The API checks every rule too; these hold whatever writes to the tables. In this order:
+ *   1. the backfill: a draft the M3.2 convert made has no version group yet (its group is its own id);
+ *   2. `documents_frozen_update` over the live columns, with the M4.5 set-once columns;
+ *   3. `issue_result_check`: a proposal or estimate ends `sent` (an invoice `issued`); version 1 holds the number the counter just
+ *      handed out; a later version holds exactly its first version's number and display, series and FY (the counter does not move);
+ *   4. a new version needs its predecessor frozen, same type, client and currency; version 1 is its own group;
+ *   5. a version's type, client, currency, group and version never change; any other document type has version 1 only;
+ *   6. a later version's number is its group's first version's number;
+ *   7. the status flow of a proposal or estimate (`pending_approval` is a record in `approvals`, never a status);
+ *   8. the contact of a document belongs to its client;
+ *   9. a line from the catalogue carries its catalogue rate (the discount guard's reference);
+ *  10. an approval's identity never changes and it only moves pending to approved, rejected or expired, or approved to expired;
+ *  11. a care plan's source estimate is set once.
+ * Each abort message starts with its trigger's name, so the API can map it.
+ */
+export function documentTriggerStatements(): string[] {
+  const quotes = QUOTE_DOCUMENT_TYPES.map((t) => `'${t}'`).join(", ");
+  const contactScope =
+    "NEW.contact_id IS NOT NULL AND (SELECT client_id FROM contacts WHERE id = NEW.contact_id) IS NOT NEW.client_id";
+  const fromStatus = (s: string) => `OLD.status = '${s}'`;
+  const flow = [
+    `(${fromStatus("draft")} AND NEW.status = 'sent')`,
+    `(${fromStatus("sent")} AND NEW.status = 'viewed')`,
+    `(OLD.status IN ('sent', 'viewed') AND NEW.status IN ('accepted', 'rejected', 'expired', 'revised'))`,
+  ];
+  const approvalMoves = [
+    "(OLD.status = 'pending' AND NEW.status IN ('approved', 'rejected', 'expired'))",
+    "(OLD.status = 'approved' AND NEW.status = 'expired')",
+  ];
+  const sameAsFirst =
+    "v.series = d.series AND v.fy = d.fy AND v.number = d.number AND v.number_display = d.number_display";
+  return [
+    // 1. backfill (before the version triggers exist)
+    `UPDATE documents SET version_group_id = id WHERE type IN (${quotes}) AND version_group_id IS NULL AND frozen_at IS NULL;`,
+    // 2. the freeze trigger over the live schema
+    "DROP TRIGGER `documents_frozen_update`;",
+    frozenUpdateTrigger(frozenDocumentColumns(), SET_ONCE_AFTER_FREEZE),
+    // 3. the issue post-condition
+    "DROP TRIGGER `issue_result_check`;",
+    `CREATE TRIGGER \`issue_result_check\` INSTEAD OF INSERT ON \`issue_result\` WHEN NOT EXISTS (SELECT 1 FROM documents d WHERE d.id = NEW.document_id AND d.status = CASE WHEN d.type IN (${quotes}) THEN 'sent' ELSE 'issued' END AND d.frozen_at IS NOT NULL AND d.series = NEW.series AND d.fy = NEW.fy AND d.number >= 1 AND d.number_display IS NOT NULL AND (((d.type NOT IN (${quotes}) OR d.version = 1) AND d.number = (SELECT c.next_no - 1 FROM doc_counters c WHERE c.series = NEW.series AND c.fy = NEW.fy)) OR (d.type IN (${quotes}) AND d.version > 1 AND EXISTS (SELECT 1 FROM documents v WHERE v.version_group_id = d.version_group_id AND v.version = 1 AND v.frozen_at IS NOT NULL AND ${sameAsFirst})))) BEGIN ${abort("issue did not freeze the document with the number just taken")} END;`,
+    // 4. versions
+    `CREATE TRIGGER \`documents_version_insert\` BEFORE INSERT ON \`documents\` WHEN NEW.type IN (${quotes}) AND (NEW.version_group_id IS NULL OR (NEW.version = 1 AND NEW.version_group_id IS NOT NEW.id) OR (NEW.version > 1 AND NOT EXISTS (SELECT 1 FROM documents p WHERE p.version_group_id = NEW.version_group_id AND p.version = NEW.version - 1 AND p.frozen_at IS NOT NULL AND p.type = NEW.type AND p.client_id = NEW.client_id AND p.currency = NEW.currency))) BEGIN ${abort("documents_version_insert: a proposal or estimate version needs its group, and a later version needs the frozen version before it")} END;`,
+    `CREATE TRIGGER \`documents_version_fixed\` BEFORE UPDATE OF type, client_id, currency, version_group_id, version ON \`documents\` WHEN OLD.type IN (${quotes}) AND (NEW.type IS NOT OLD.type OR NEW.client_id IS NOT OLD.client_id OR NEW.currency IS NOT OLD.currency OR NEW.version_group_id IS NOT OLD.version_group_id OR NEW.version IS NOT OLD.version) BEGIN ${abort("documents_version_fixed: the type, client, currency, group and version of a proposal or estimate never change")} END;`,
+    `CREATE TRIGGER \`documents_version_single_insert\` BEFORE INSERT ON \`documents\` WHEN NEW.type NOT IN (${quotes}) AND NEW.version IS NOT 1 BEGIN ${abort("documents_version_single: only a proposal or estimate has versions; any other document is version 1")} END;`,
+    `CREATE TRIGGER \`documents_version_single_update\` BEFORE UPDATE OF version, type ON \`documents\` WHEN NEW.type NOT IN (${quotes}) AND NEW.version IS NOT 1 BEGIN ${abort("documents_version_single: only a proposal or estimate has versions; any other document is version 1")} END;`,
+    `CREATE TRIGGER \`documents_version_number\` BEFORE UPDATE OF number ON \`documents\` WHEN NEW.type IN (${quotes}) AND NEW.version > 1 AND NEW.number IS NOT NULL AND NEW.number IS NOT (SELECT v.number FROM documents v WHERE v.version_group_id = NEW.version_group_id AND v.version = 1) BEGIN ${abort("documents_version_number: a later version keeps the number of its first version")} END;`,
+    // 7. status flow
+    `CREATE TRIGGER \`documents_status_flow\` BEFORE UPDATE OF status ON \`documents\` WHEN NEW.status IS NOT OLD.status AND OLD.type IN (${quotes}) AND NOT (${flow.join(" OR ")}) BEGIN ${abort("documents_status_flow: that status change is not allowed")} END;`,
+    // 8. contact scope
+    `CREATE TRIGGER \`documents_contact_scope_insert\` BEFORE INSERT ON \`documents\` WHEN ${contactScope} BEGIN ${abort("documents_contact_scope: the contact must belong to the client")} END;`,
+    `CREATE TRIGGER \`documents_contact_scope_update\` BEFORE UPDATE OF contact_id, client_id ON \`documents\` WHEN ${contactScope} BEGIN ${abort("documents_contact_scope: the contact must belong to the client")} END;`,
+    // 9. catalogue reference on a proposal or estimate line
+    `CREATE TRIGGER \`document_lines_catalogue_rate\` BEFORE INSERT ON \`document_lines\` WHEN NEW.catalogue_item_id IS NOT NULL AND NEW.catalogue_rate_minor IS NULL AND (SELECT type FROM documents WHERE id = NEW.document_id) IN (${quotes}) BEGIN ${abort("document_lines_catalogue_rate: a catalogue line needs its catalogue rate")} END;`,
+    // 10. approvals
+    `CREATE TRIGGER \`approvals_flow\` BEFORE UPDATE ON \`approvals\` WHEN NEW.kind IS NOT OLD.kind OR NEW.document_id IS NOT OLD.document_id OR NEW.requested_by IS NOT OLD.requested_by OR NEW.content_sha256 IS NOT OLD.content_sha256 OR (NEW.status IS NOT OLD.status AND NOT (${approvalMoves.join(" OR ")})) BEGIN ${abort("approvals_flow: an approval keeps what it was asked for and only moves forward")} END;`,
+    // 11. care plan source
+    `CREATE TRIGGER \`care_plans_source_fixed\` BEFORE UPDATE OF source_document_id ON \`care_plans\` WHEN OLD.source_document_id IS NOT NULL AND NEW.source_document_id IS NOT OLD.source_document_id BEGIN ${abort("care_plans_source_fixed: the source estimate of a care plan is set once")} END;`,
+  ];
+}
+
 /** The trigger sets, by the name the migration is created with (`drizzle-kit generate --custom --name <set>`). */
 export const TRIGGER_SETS = {
   triggers: { what: "integrity triggers (docs/05 §5.3)", statements: triggerStatements },
@@ -208,9 +448,25 @@ export const TRIGGER_SETS = {
     what: "client type lock once a document is issued (M3.3 review)",
     statements: clientTypeLockStatements,
   },
+  project_triggers: {
+    what: "project, milestone, note and file integrity (M3.4)",
+    statements: projectTriggerStatements,
+  },
+  catalogue_triggers: {
+    what: "catalogue append-only triggers and no delete of items (M4.1)",
+    statements: catalogueTriggerStatements,
+  },
+  time_triggers: {
+    what: "time-log, care-plan history and mirror integrity (M3.5)",
+    statements: timeTriggerStatements,
+  },
   issue_guard: {
     what: "issue guard narrowed to drafts, plus the issue post-condition (docs/05 §5.4)",
     statements: issueGuardStatements,
+  },
+  document_triggers: {
+    what: "proposal and estimate versions, status flow, approvals, the freeze trigger recreated and the issue post-condition for versions (M4.3)",
+    statements: documentTriggerStatements,
   },
 } as const;
 export type TriggerSet = keyof typeof TRIGGER_SETS;

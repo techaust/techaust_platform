@@ -1,4 +1,4 @@
-// Global search [ADM-G-05]: one box over what exists today and what the role may read: staff (owner only, `users.read`) and
+// Global search [ADM-G-05]: one box over what exists today and what the role may read: projects (`projects.read`: code or name prefix, M3.4), staff (owner only, `users.read`) and
 // leads (`leads.read`: by reference, the start of the contact's email or the start of the company name). At most five per type; prefix matches as index
 // ranges (`leads_ref`, `leads_email`, `leads_company_nocase`, `staff_users_email`), never a table scan of a big table. Clients, contacts, projects and
 // documents join as their milestones create them (M3.2 and later). Read-only, so no audit row (the access log has the request).
@@ -15,7 +15,11 @@ const PER_TYPE = 5;
 const MIN_CHARS = 2;
 
 type Item = { id: string; title: string; subtitle: string; link: string };
-type Group = { type: "user" | "lead" | "client" | "contact"; label: string; items: Item[] };
+type Group = {
+  type: "user" | "lead" | "client" | "contact" | "project" | "catalogue" | "document";
+  label: string;
+  items: Item[];
+};
 
 /** The two reads, exported so a test can EXPLAIN them: leads by the start of the reference or the email (index ranges), staff by email range or name. */
 export const LEADS_SQL = `SELECT id, ref, contact_name, contact_email FROM (
@@ -29,6 +33,23 @@ export const CLIENTS_SQL = `SELECT id, code, display_name FROM (
   UNION SELECT id, code, display_name FROM clients WHERE display_name COLLATE NOCASE >= ?3 AND display_name COLLATE NOCASE < ?4
 ) ORDER BY code LIMIT ${PER_TYPE}`;
 export const CONTACTS_SQL = `SELECT id, client_id, name, email FROM contacts WHERE email >= ?1 AND email < ?2 AND anonymised_at IS NULL ORDER BY email LIMIT ${PER_TYPE}`;
+/** Projects by the start of the code or the name (no case): index ranges (`projects_code`, `projects_name_nocase`). */
+export const PROJECTS_SQL = `SELECT id, code, name FROM (
+  SELECT id, code, name FROM projects WHERE code >= ?1 AND code < ?2
+  UNION SELECT id, code, name FROM projects WHERE name COLLATE NOCASE >= ?3 AND name COLLATE NOCASE < ?4
+) ORDER BY code LIMIT ${PER_TYPE}`;
+/** Catalogue items by the start of the code or the name (no case): index ranges (`catalogue_items_code`, `catalogue_items_name_nocase`). */
+export const CATALOGUE_SQL = `SELECT id, code, name FROM (
+  SELECT id, code, name FROM catalogue_items WHERE code >= ?1 AND code < ?2
+  UNION SELECT id, code, name FROM catalogue_items WHERE name COLLATE NOCASE >= ?3 AND name COLLATE NOCASE < ?4
+) ORDER BY code LIMIT ${PER_TYPE}`;
+/**
+ * Proposals and estimates by the start of the number (M4.3, ADM-G-05): an index range on `documents_number_display` (number first). A
+ * later version shares its first version's number, so only the latest version of each is listed. Only these two types: a role that may
+ * search proposals (Sales) must not find invoice numbers once M5 issues them (the unary plus keeps the type test from steering the planner
+ * to the type index instead of the number range). Invoices join in M5, with their own permission.
+ */
+export const DOCUMENTS_SQL = `SELECT d.id, d.number_display, d.type, d.version, d.title FROM documents d WHERE +d.type IN ('proposal', 'estimate') AND d.number_display >= ?1 AND d.number_display < ?2 AND NOT EXISTS (SELECT 1 FROM documents n WHERE n.version_group_id = d.version_group_id AND n.version > d.version) ORDER BY d.number_display LIMIT ${PER_TYPE}`;
 export const USERS_SQL = `SELECT id, name, email, role FROM staff_users WHERE (email >= ?1 AND email < ?2) OR name LIKE ?3 ESCAPE '\\' ORDER BY name LIMIT ${PER_TYPE}`;
 
 export const search = new Hono<AppEnv>().get("/", query(searchQuery), async (c) => {
@@ -55,6 +76,21 @@ export const search = new Hono<AppEnv>().get("/", query(searchQuery), async (c) 
     stmts.push(db.prepare(CONTACTS_SQL).bind(lower, `${lower}${PREFIX_END}`));
     kinds.push("contact");
   }
+  if (decide(role, "projects.read") !== "deny") {
+    const code = q.toUpperCase();
+    stmts.push(db.prepare(PROJECTS_SQL).bind(code, `${code}${PREFIX_END}`, q, `${q}${PREFIX_END}`));
+    kinds.push("project");
+  }
+  if (decide(role, "catalogue.read") !== "deny") {
+    const code = q.toUpperCase();
+    stmts.push(db.prepare(CATALOGUE_SQL).bind(code, `${code}${PREFIX_END}`, q, `${q}${PREFIX_END}`));
+    kinds.push("catalogue");
+  }
+  if (decide(role, "proposals.read") !== "deny") {
+    const number = q.toUpperCase();
+    stmts.push(db.prepare(DOCUMENTS_SQL).bind(number, `${number}${PREFIX_END}`));
+    kinds.push("document");
+  }
   if (decide(role, "users.read") !== "deny") {
     stmts.push(db.prepare(USERS_SQL).bind(lower, `${lower}${PREFIX_END}`, `${escapeLike(q)}%`));
     kinds.push("user");
@@ -73,6 +109,28 @@ export const search = new Hono<AppEnv>().get("/", query(searchQuery), async (c) 
           link: `/clients/${r.id}`,
         })),
       };
+    if (type === "document")
+      return {
+        type,
+        label: "Proposals and estimates",
+        items: rows.map((r) => ({
+          id: r.id as string,
+          title: `${r.number_display} ${r.title ?? ""}`.trim(),
+          subtitle: `${r.type === "proposal" ? "Proposal" : "Estimate"}, version ${r.version}`,
+          link: `/documents/${r.id}`,
+        })),
+      };
+    if (type === "catalogue")
+      return {
+        type,
+        label: "Catalogue",
+        items: rows.map((r) => ({
+          id: r.id as string,
+          title: `${r.code} ${r.name}`,
+          subtitle: "Catalogue item",
+          link: `/catalogue/${r.id}`,
+        })),
+      };
     if (type === "contact")
       return {
         type,
@@ -82,6 +140,17 @@ export const search = new Hono<AppEnv>().get("/", query(searchQuery), async (c) 
           title: r.name as string,
           subtitle: r.email as string,
           link: `/clients/${r.client_id}`,
+        })),
+      };
+    if (type === "project")
+      return {
+        type,
+        label: "Projects",
+        items: rows.map((r) => ({
+          id: r.id as string,
+          title: `${r.code} ${r.name}`,
+          subtitle: "Project",
+          link: `/projects/${r.id}`,
         })),
       };
     return type === "lead"
