@@ -205,7 +205,7 @@ function Projects() {
             empty={
               <EmptyState
                 icon={filtered ? <Search /> : <FolderKanban />}
-                title={filtered ? "No projects match these filters" : "No projects yet"}
+                title={filtered ? "No projects match these filters" : COPY.projectsEmptyTitle}
                 action={
                   filtered ? (
                     <button type="button" className="btn btn--secondary" onClick={clear}>
@@ -219,7 +219,7 @@ function Projects() {
                   ) : undefined
                 }
               >
-                <p>{filtered ? COPY.projectsNoMatch : COPY.projectsEmpty}</p>
+                <p>{filtered ? COPY.projectsNoMatch : COPY.projectsEmptyBody}</p>
               </EmptyState>
             }
           />

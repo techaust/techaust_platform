@@ -185,7 +185,7 @@ export function Milestones({ data, reload }: { data: ProjectPage; reload: Reload
   }
 
   return (
-    <section className="lead-panel ledger-panel" aria-labelledby="ms-h">
+    <section className="lead-panel ledger-panel" aria-labelledby="ms-h" data-write={canWrite || undefined}>
       <div className="lead-panel__head">
         <h2 id="ms-h" className="lead-panel__title">
           Milestones
@@ -205,20 +205,16 @@ export function Milestones({ data, reload }: { data: ProjectPage; reload: Reload
         <p className="muted ledger-empty">{PENDING.milestonesEmpty}</p>
       ) : (
         <>
-          <div className="ledger__head" aria-hidden="true" data-write={canWrite || undefined}>
+          <div className="ledger__head" aria-hidden="true">
+            {canWrite && <span />}
             <span />
             <span>Milestone</span>
             <span>Due</span>
             <span className="num">Amount</span>
             <span>Status</span>
-            <span />
+            {canWrite && <span />}
           </div>
-          <ol
-            className="ledger"
-            ref={list}
-            data-dragging={drag?.moving || undefined}
-            data-write={canWrite || undefined}
-          >
+          <ol className="ledger" ref={list} data-dragging={drag?.moving || undefined}>
             {order.map((m, i) => (
               <li
                 key={m.id}

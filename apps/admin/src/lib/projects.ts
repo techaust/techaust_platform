@@ -80,9 +80,12 @@ export { canMoveProject };
 // ---- 07-K copy, word for word (draft, pending the owner) -----------------------------------------------------------------
 
 export const COPY = {
-  projectsEmpty: "No projects yet. A project starts from an accepted proposal, or you can add one by hand.",
+  // 07-K's empty line in two parts: its first sentence is the empty state's heading (no full stop), the second the body.
+  projectsEmptyTitle: "No projects yet",
+  projectsEmptyBody: "A project starts from an accepted proposal, or you can add one by hand.",
+  /** The client tab's line is the empty state's heading. */
+  clientProjectsEmptyTitle: "No projects for this client yet",
   projectsNoMatch: "Try fewer filters, or search for the start of a project code or name.",
-  clientProjectsEmpty: "No projects for this client yet.",
   clientFilesEmpty: "No files for this client yet.",
   linkedProposal: "The linked proposal arrives with proposals.",
   billedVsPaid: "Billed and paid figures arrive with invoicing.",

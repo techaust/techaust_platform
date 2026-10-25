@@ -159,22 +159,22 @@
 }
 
 /* Columns: handle, position, title, due, amount, status, actions. Without write access there is no handle or menu. */
+.ledger-panel {
+  --ledger-cols: 2rem minmax(0, 1fr) 8rem 9.5rem 9rem;
+  --amount-col: 4;
+}
+
+.ledger-panel[data-write] {
+  --ledger-cols: 1.5rem 2rem minmax(0, 1fr) 8rem 9.5rem 9rem var(--target-min);
+  --amount-col: 5;
+}
+
 .ledger__head,
 .ledger__row {
   display: grid;
-  grid-template-columns: 1.5rem 2rem minmax(0, 1fr) 8rem 9.5rem 9rem var(--target-min);
+  grid-template-columns: var(--ledger-cols);
   align-items: center;
   column-gap: var(--space-3);
-}
-
-.ledger__head:not([data-write]),
-.ledger:not([data-write]) .ledger__row {
-  grid-template-columns: 2rem minmax(0, 1fr) 8rem 9.5rem 9rem;
-}
-
-.ledger__head:not([data-write]) > span:first-child,
-.ledger__head:not([data-write]) > span:last-child {
-  display: none;
 }
 
 .ledger__head {
@@ -331,11 +331,34 @@
   font-weight: 600;
 }
 
+/* On the Milestones tab the foot keeps the ledger's columns: each sum sits under the amounts, its name before it. */
+@media (min-width: 48rem) {
+  .ledger-panel .ledger__foot {
+    display: grid;
+    grid-template-columns: var(--ledger-cols);
+    align-items: baseline;
+    column-gap: var(--space-3);
+    row-gap: var(--space-1);
+  }
+
+  .ledger-panel .ledger__foot > div {
+    display: contents;
+  }
+
+  .ledger-panel .ledger__foot dt {
+    grid-column: 1 / var(--amount-col);
+    justify-self: end;
+  }
+
+  .ledger-panel .ledger__foot dd {
+    grid-column: var(--amount-col);
+    justify-self: end;
+  }
+}
+
 .ledger-warning {
   display: flex;
-  justify-content: flex-end;
   margin: var(--space-3) 0 0;
-  text-align: end;
 }
 
 .ledger-empty {
@@ -348,7 +371,7 @@
   }
 
   .ledger__row,
-  .ledger:not([data-write]) .ledger__row {
+  .ledger-panel .ledger__row {
     grid-template-columns: 1.5rem minmax(0, 1fr) var(--target-min);
     grid-template-areas:
       "pos title actions"
@@ -414,8 +437,7 @@
     font-size: var(--text-sm);
   }
 
-  .ledger-sum,
-  .ledger-warning {
+  .ledger-sum {
     justify-content: flex-start;
     text-align: start;
   }
@@ -423,14 +445,14 @@
 
 /* ---------- The milestones timeline (Overview) ---------- */
 
-.timeline {
+.ms-timeline {
   position: relative;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.timeline__item {
+.ms-timeline__item {
   position: relative;
   display: grid;
   grid-template-columns: 1rem minmax(0, 1fr) auto;
@@ -440,7 +462,7 @@
 }
 
 /* The spine between the dots: drawn per item, so it stops at the last one. */
-.timeline__item:not(:last-child)::before {
+.ms-timeline__item:not(:last-child)::before {
   content: "";
   position: absolute;
   top: calc(var(--space-2) + 1rem);
@@ -450,7 +472,7 @@
   background: var(--color-border-control);
 }
 
-.timeline__dot {
+.ms-timeline__dot {
   width: 0.75rem;
   height: 0.75rem;
   margin: 0.375rem 0.125rem 0;
@@ -459,28 +481,28 @@
   background: var(--color-surface);
 }
 
-.timeline__item[data-status="ready_to_bill"] .timeline__dot,
-.timeline__item[data-status="invoiced"] .timeline__dot {
+.ms-timeline__item[data-status="ready_to_bill"] .ms-timeline__dot,
+.ms-timeline__item[data-status="invoiced"] .ms-timeline__dot {
   border-color: var(--color-accent-decor);
   background: var(--color-accent-decor);
 }
 
-.timeline__item[data-status="paid"] .timeline__dot {
+.ms-timeline__item[data-status="paid"] .ms-timeline__dot {
   border-color: var(--color-text);
   background: var(--color-text);
 }
 
-.timeline__body {
+.ms-timeline__body {
   min-width: 0;
 }
 
-.timeline__title {
+.ms-timeline__title {
   margin: 0;
   font-weight: 560;
   overflow-wrap: anywhere;
 }
 
-.timeline__meta {
+.ms-timeline__meta {
   display: flex;
   flex-wrap: wrap;
   gap: 0 var(--space-4);

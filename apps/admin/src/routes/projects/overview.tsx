@@ -76,7 +76,7 @@ export function Overview(props: {
           <h2 id="linked-h" className="lead-panel__title">
             Linked records
           </h2>
-          <dl className="facts">
+          <dl className="facts figures">
             <Fact label="Proposal">
               <span className="panel-empty">
                 <FileText size={20} />
@@ -283,9 +283,9 @@ function Timeline({ data, onOpen }: { data: ProjectPage; onOpen: () => void }) {
   const { project, milestones, milestoneTotals } = data;
   const warning = totalsWarning(milestoneTotals, project.budgetMinor, project.currency);
   return (
-    <section className="lead-panel" aria-labelledby="timeline-h">
+    <section className="lead-panel" aria-labelledby="ms-timeline-h">
       <div className="lead-panel__head">
-        <h2 id="timeline-h" className="lead-panel__title">
+        <h2 id="ms-timeline-h" className="lead-panel__title">
           Milestones
         </h2>
         <button type="button" className="btn btn--text" onClick={onOpen}>
@@ -296,13 +296,13 @@ function Timeline({ data, onOpen }: { data: ProjectPage; onOpen: () => void }) {
         <p className="muted">{PENDING.milestonesEmpty}</p>
       ) : (
         <>
-          <ol className="timeline">
+          <ol className="ms-timeline">
             {milestones.map((m) => (
-              <li key={m.id} className="timeline__item" data-status={m.status}>
-                <span className="timeline__dot" aria-hidden="true" />
-                <div className="timeline__body">
-                  <p className="timeline__title">{m.title}</p>
-                  <p className="timeline__meta">
+              <li key={m.id} className="ms-timeline__item" data-status={m.status}>
+                <span className="ms-timeline__dot" aria-hidden="true" />
+                <div className="ms-timeline__body">
+                  <p className="ms-timeline__title">{m.title}</p>
+                  <p className="ms-timeline__meta">
                     <span>
                       <span className="visually-hidden">Due </span>
                       <Day iso={m.dueDate} none="No due date" />

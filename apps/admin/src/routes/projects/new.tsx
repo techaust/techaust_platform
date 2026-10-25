@@ -2,7 +2,7 @@
 // `?client=`), the name, an owner, the start and target dates and an optional budget in the client's currency (shown, not
 // chosen: a project uses its client's currency). The code (PRJ-0001 ...) is the server's, given on save. A project made from
 // an accepted proposal arrives with proposals (M4.5). On success the project's page opens.
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { api, type ClientView, errorText, RequestError } from "../../api.ts";
 import { PageHeader } from "../../components/display.tsx";
@@ -47,7 +47,7 @@ function NewProject() {
   const [submits, setSubmits] = useState(0);
   const [failure, setFailure] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [saved, setSaved] = useState<string | null>(null);
   const people = useLoad(() => api.leadAssignees(), "");
   // A client named by the link (the client page's "New project"): loaded once, then shown as chosen.
   const presetLoad = useLoad(() => (preset ? api.client(preset) : Promise.resolve(null)), preset ?? "");
@@ -65,6 +65,10 @@ function NewProject() {
   const set = (patch: Partial<DetailsForm>) => setF((x) => ({ ...x, ...patch }));
   const dirty = !saved && (client !== null || JSON.stringify(f) !== JSON.stringify(EMPTY));
   const errorOf = (id: string) => errors.find((e) => e.id === id)?.text;
+  // Opens the project once the form is no longer dirty (the unsaved-changes guard would ask otherwise).
+  useEffect(() => {
+    if (saved) navigate(`/projects/${saved}`, { replace: true });
+  }, [saved, navigate]);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -88,8 +92,7 @@ function NewProject() {
         ...(budget?.ok ? { budgetMinor: budget.minor } : {}),
       });
       toast("success", TOASTS.projectAdded);
-      setSaved(true);
-      navigate(`/projects/${r.id}`, { replace: true });
+      setSaved(r.id);
     } catch (err) {
       const field = err instanceof RequestError ? FIELD_OF[err.code] : undefined;
       if (field) {
@@ -273,7 +276,7 @@ function ClientPicker(props: {
           </p>
         ) : (
           rows.map((c) => (
-            <label key={c.id} className="client-option">
+            <label key={c.id} className="radio client-option">
               <input
                 type="radio"
                 name={`${P}-client`}

@@ -81,7 +81,7 @@ export function ClientProjects({ clientId }: { clientId: string }) {
           empty={
             <EmptyState
               icon={<FolderKanban />}
-              title="No projects yet"
+              title={COPY.clientProjectsEmptyTitle}
               headingLevel={3}
               action={
                 canWrite ? (
@@ -92,7 +92,7 @@ export function ClientProjects({ clientId }: { clientId: string }) {
                 ) : undefined
               }
             >
-              <p>{COPY.clientProjectsEmpty}</p>
+              {null}
             </EmptyState>
           }
         />
