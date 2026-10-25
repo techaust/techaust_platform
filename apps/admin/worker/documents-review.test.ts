@@ -2,6 +2,7 @@
 // the empty-section send blocker, a rejected request cannot be re-sent unchanged, discard removes the bell rows, a version 2 draft shows its group's
 // number, what a converted estimate became, the `converted` send guard and the live "client erased between read and send" branch.
 import { env } from "cloudflare:workers";
+import { seedStatements } from "@techaust/db";
 import { beforeAll, describe, expect, it } from "vitest";
 import { putPaymentTerms } from "./test-catalogue.ts";
 import { call, countOf, one, rows, sessionFor } from "./test-helpers.ts";
@@ -14,6 +15,7 @@ import {
   type J,
   json,
   mkDraft,
+  mkService,
   mkTerms,
   patchDoc,
   sendDoc,
@@ -276,5 +278,41 @@ describe("the send is written only for a live client (review 11)", () => {
     expect(await counter()).toBe(before);
     expect(JSON.stringify(await rows("SELECT * FROM documents WHERE id = ?", made.id))).toBe(snapshot);
     expect(await countOf("audit_log", "action = 'document.send' AND entity_id = ?", made.id)).toBe(0);
+  });
+});
+
+describe("a draft made from the seeded version 2 template (07-O section 1)", () => {
+  it("takes the newest template, fills the placeholders, and waits for the sections written per proposal", async () => {
+    await env.DB.batch(
+      seedStatements()
+        .filter((s) => s.startsWith("INSERT INTO `templates`"))
+        .map((s) => env.DB.prepare(s)),
+    );
+    const o = await owner();
+    const item = await mkService(500_000, {
+      short: "A new website",
+      deliverables_md: "- Five pages",
+      assumptions_md: "- Content supplied",
+      exclusions_md: "- Hosting",
+    });
+    const made = await mkDraft(o, { item });
+    const doc = await getDoc(o, made.id);
+    const text = (kind: string) => doc.sections.find((x: J) => x.kind === kind)?.bodyMd as string;
+    expect(text("cover")).toMatch(/^.+\n.+\nProposal from .+$/);
+    expect(text("summary")).toMatch(
+      /^This proposal covers .+: what we'll build, how we'll deliver it in stages/,
+    );
+    expect(text("scope")).toBe(
+      "A new website\n\nThe price covers the written scope. If you want something new, we quote it before doing it, and you decide.",
+    );
+    expect(text("acceptance")).toMatch(
+      /^Prepared for Asha Rao\.\n\nTo accept, open this proposal in the client portal/,
+    );
+    expect(text("acceptance")).toMatch(/valid for \d+ days from the date it's sent\.$/);
+    expect(doc.unresolved).toEqual([]);
+    // the sections written per proposal block the send until they are written or hidden
+    const empty = doc.blockers.find((b: J) => b.code === "section_empty");
+    expect(empty.kinds).toEqual(["problem_goals", "timeline", "team"]);
+    expect(doc.canSend).toBe(false);
   });
 });
