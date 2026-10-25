@@ -93,6 +93,18 @@ export const ROUTES: readonly RouteDef[] = [
   R("PATCH", "/contacts/:id", "clients.write", { audit: "contact.update" }),
   R("POST", "/contacts/:id/export", "clients.dataExport", { audit: "contact.export" }),
   R("POST", "/contacts/:id/erase", "clients.dataErase", { audit: "contact.erase" }),
+  // Catalogue, templates and publishing (M4.1, ADM-CAT-01..05). Static paths (`snapshots`, `publish`) are declared before `:id`.
+  R("GET", "/catalogue", "catalogue.read"),
+  R("GET", "/catalogue/snapshots", "catalogue.read"),
+  R("POST", "/catalogue/publish", "catalogue.publish", { audit: "catalogue.publish" }),
+  R("POST", "/catalogue", "catalogue.write", { audit: "catalogue.create" }),
+  R("GET", "/catalogue/:id", "catalogue.read"),
+  R("PATCH", "/catalogue/:id", "catalogue.write", { audit: "catalogue.update" }),
+  // The audit action is `catalogue.activate` or `catalogue.deactivate`, by the request.
+  R("POST", "/catalogue/:id/active", "catalogue.write", { audit: "catalogue.activate" }),
+  R("GET", "/templates", "catalogue.read"),
+  R("GET", "/templates/:id", "catalogue.read"),
+  R("POST", "/templates", "catalogue.write", { audit: "template.version" }),
   // The bell, the global search and the audit viewer (M3.1, ADM-G-09, ADM-G-05, ADM-AUD-02).
   R("GET", "/notifications", "notifications.own"),
   R("POST", "/notifications/read-all", "notifications.own", { audit: "notification.read_all" }),

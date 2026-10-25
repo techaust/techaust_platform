@@ -10,6 +10,7 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { account } from "./account.ts";
 import { audit } from "./audit.ts";
 import { auth } from "./auth.ts";
+import { catalogue, templates } from "./catalogue.ts";
 import { clients, contacts } from "./clients.ts";
 import { type AppEnv, accessEntry, BAD_REQUEST, type Ctx, err, FORBIDDEN, NOT_FOUND } from "./context.ts";
 import { csrf } from "./csrf.ts";
@@ -99,6 +100,8 @@ export function createApp() {
   app.route("/v1/users", users);
   app.route("/v1/settings", settings);
   app.route("/v1/leads", leads);
+  app.route("/v1/catalogue", catalogue);
+  app.route("/v1/templates", templates);
   app.route("/v1/clients", clients);
   app.route("/v1/contacts", contacts);
   app.route("/v1/notifications", notifications);

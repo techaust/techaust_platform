@@ -57,16 +57,16 @@ const fields = {
   name: shortText(120),
   category: z.enum(CATALOGUE_CATEGORIES),
   short: shortText(400),
-  longMd: z.optional(longText(8000)),
+  longMd: z.optional(longText(2500)),
   unit: z.enum(CATALOGUE_UNITS),
   priceInrMinor: z.nullable(minor),
   priceUsdMinor: z.nullable(minor),
   sac: z.string().check(z.regex(/^\d{6}$/)),
   gstRateBp: z.nullable(bp),
   defaultLines: z.nullable(linesField),
-  deliverablesMd: z.optional(longText(8000)),
-  assumptionsMd: z.optional(longText(8000)),
-  exclusionsMd: z.optional(longText(8000)),
+  deliverablesMd: z.optional(longText(2500)),
+  assumptionsMd: z.optional(longText(2500)),
+  exclusionsMd: z.optional(longText(2500)),
   schedule: scheduleField,
   slug: z.nullable(slugText),
   showOnSite: z.boolean(),
@@ -301,6 +301,9 @@ export async function sha256Hex(s: string): Promise<string> {
 
 // ---- templates (ADM-CAT-03) -------------------------------------------------------------------------------------------------
 
+/** The admin API reads a request body of at most 16 KB, so a template body stays well under it (a longer proposal needs its own limit). */
+const BODY_TOTAL = 12_000;
+
 export const TEMPLATE_KIND_VALUES = ["proposal", "estimate", "care_block", "terms_block"] as const;
 
 /** Every placeholder a template may use, and where its value comes from. A name outside this list is refused when a version is saved. */
@@ -353,10 +356,16 @@ export const templateBody = z.strictObject({
       z.strictObject({
         key: z.string().check(z.regex(/^[a-z0-9_]{1,40}$/)),
         heading: shortText(120),
-        body: z.string().check(z.maxLength(8000)),
+        body: z.string().check(z.maxLength(2000)),
       }),
     )
-    .check(z.minLength(1), z.maxLength(30)),
+    .check(
+      z.minLength(1),
+      z.maxLength(14),
+      z.refine((s) => s.reduce((a, x) => a + x.body.length, 0) <= BODY_TOTAL, {
+        error: "The template is too long",
+      }),
+    ),
 });
 export type TemplateBody = z.infer<typeof templateBody>;
 
@@ -387,4 +396,64 @@ export function renderTemplateBody(
     return { key: s.key, heading: h.text, text: b.text };
   });
   return { sections, unresolved: [...unresolved] };
+}
+
+// ---- start-up warm-up ---------------------------------------------------------------------------------------------------------
+
+/**
+ * Parses one made-up sample of each schema (the first parse of a zod schema is the costly one on the Free plan), called from the
+ * admin Worker's `warm.ts`. Pure: nothing is stored or logged, a failure is swallowed, and the number of samples that parsed is
+ * returned so a test notices a sample that a schema change has made invalid.
+ */
+export function warmCatalogue(): number {
+  try {
+    const steps = [{ label: "On acceptance", pctBp: 10_000, trigger: "on_accept" as const }];
+    const entry = {
+      code: "S99",
+      name: "Warm up",
+      category: "build" as const,
+      short: "A made-up sample",
+      unit: "fixed" as const,
+      priceInrMinor: 100,
+      priceUsdMinor: null,
+      sac: "998314",
+      gstRateBp: null,
+      defaultLines: null,
+      schedule: steps,
+      slug: "warm-up",
+      showOnSite: true,
+    };
+    const snapshot = snapshotFromRows(
+      [
+        {
+          code: "S99",
+          name: "Warm up",
+          slug: "warm-up",
+          category: "build",
+          unit: "fixed",
+          price_inr_minor: 100,
+          price_usd_minor: null,
+          schedule: JSON.stringify(steps),
+          default_lines: "[]",
+          show_on_site: 1,
+          active: 1,
+        },
+      ],
+      {
+        dueDays: 7,
+        proposalValidityDays: 15,
+        buildSchedule: [{ label: "On acceptance", pctBp: 10_000 }],
+        smallJobThreshold: { INR: 1, USD: 1 },
+      },
+    );
+    const template = { sections: [{ key: "scope", heading: "Scope", body: "{{service.name}}" }] };
+    return (
+      Number(createEntry.safeParse(entry).success) +
+      Number(patchEntry.safeParse({ expectedUpdatedAt: 1, name: "Warm up" }).success) +
+      Number(parseSnapshot(snapshot).ok) +
+      Number(createTemplate.safeParse({ kind: "proposal", category: "build", body: template }).success)
+    );
+  } catch {
+    return 0;
+  }
 }

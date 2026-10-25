@@ -17,6 +17,7 @@ import {
   snapshotFromRows,
   TEMPLATE_PLACEHOLDERS,
   unknownPlaceholders,
+  warmCatalogue,
 } from "../src/catalogue.ts";
 import { catalogueSnapshot } from "../src/schemas/catalogue-snapshot.ts";
 
@@ -318,5 +319,11 @@ describe("templates (ADM-CAT-03)", () => {
     expect(createTemplate.safeParse(ok).success).toBe(true);
     expect(createTemplate.safeParse({ ...ok, kind: "other" }).success).toBe(false);
     expect(createTemplate.safeParse({ ...ok, body: { sections: [] } }).success).toBe(false);
+  });
+});
+
+describe("start-up warm-up (M4.1)", () => {
+  it("parses all four samples, silently", () => {
+    expect(warmCatalogue()).toBe(4);
   });
 });

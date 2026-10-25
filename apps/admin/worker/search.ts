@@ -15,7 +15,7 @@ const PER_TYPE = 5;
 const MIN_CHARS = 2;
 
 type Item = { id: string; title: string; subtitle: string; link: string };
-type Group = { type: "user" | "lead" | "client" | "contact"; label: string; items: Item[] };
+type Group = { type: "user" | "lead" | "client" | "contact" | "catalogue"; label: string; items: Item[] };
 
 /** The two reads, exported so a test can EXPLAIN them: leads by the start of the reference or the email (index ranges), staff by email range or name. */
 export const LEADS_SQL = `SELECT id, ref, contact_name, contact_email FROM (
@@ -29,6 +29,11 @@ export const CLIENTS_SQL = `SELECT id, code, display_name FROM (
   UNION SELECT id, code, display_name FROM clients WHERE display_name COLLATE NOCASE >= ?3 AND display_name COLLATE NOCASE < ?4
 ) ORDER BY code LIMIT ${PER_TYPE}`;
 export const CONTACTS_SQL = `SELECT id, client_id, name, email FROM contacts WHERE email >= ?1 AND email < ?2 AND anonymised_at IS NULL ORDER BY email LIMIT ${PER_TYPE}`;
+/** Catalogue items by the start of the code or the name (no case): index ranges (`catalogue_items_code`, `catalogue_items_name_nocase`). */
+export const CATALOGUE_SQL = `SELECT id, code, name FROM (
+  SELECT id, code, name FROM catalogue_items WHERE code >= ?1 AND code < ?2
+  UNION SELECT id, code, name FROM catalogue_items WHERE name COLLATE NOCASE >= ?3 AND name COLLATE NOCASE < ?4
+) ORDER BY code LIMIT ${PER_TYPE}`;
 export const USERS_SQL = `SELECT id, name, email, role FROM staff_users WHERE (email >= ?1 AND email < ?2) OR name LIKE ?3 ESCAPE '\\' ORDER BY name LIMIT ${PER_TYPE}`;
 
 export const search = new Hono<AppEnv>().get("/", query(searchQuery), async (c) => {
@@ -55,6 +60,11 @@ export const search = new Hono<AppEnv>().get("/", query(searchQuery), async (c) 
     stmts.push(db.prepare(CONTACTS_SQL).bind(lower, `${lower}${PREFIX_END}`));
     kinds.push("contact");
   }
+  if (decide(role, "catalogue.read") !== "deny") {
+    const code = q.toUpperCase();
+    stmts.push(db.prepare(CATALOGUE_SQL).bind(code, `${code}${PREFIX_END}`, q, `${q}${PREFIX_END}`));
+    kinds.push("catalogue");
+  }
   if (decide(role, "users.read") !== "deny") {
     stmts.push(db.prepare(USERS_SQL).bind(lower, `${lower}${PREFIX_END}`, `${escapeLike(q)}%`));
     kinds.push("user");
@@ -71,6 +81,17 @@ export const search = new Hono<AppEnv>().get("/", query(searchQuery), async (c) 
           title: `${r.code} ${r.display_name}`,
           subtitle: "Client",
           link: `/clients/${r.id}`,
+        })),
+      };
+    if (type === "catalogue")
+      return {
+        type,
+        label: "Catalogue",
+        items: rows.map((r) => ({
+          id: r.id as string,
+          title: `${r.code} ${r.name}`,
+          subtitle: "Catalogue item",
+          link: `/catalogue/${r.id}`,
         })),
       };
     if (type === "contact")

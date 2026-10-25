@@ -29,7 +29,6 @@ import {
   REPLY_TEMPLATES,
   replyTemplateById,
 } from "@techaust/core/reply-templates";
-import { CATALOGUE } from "@techaust/db/catalogue";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { insertClientStmt, taxError, taxWarnings } from "./clients.ts";
@@ -67,13 +66,16 @@ const RATE_LIMITED: ApiError = {
 };
 
 const country = z.string().check(z.regex(/^[A-Z]{2}$/));
-const SERVICE_CODES: readonly string[] = [...CATALOGUE.map((s) => s.code), "not-sure"];
+/** The code a lead carries when the visitor did not know which service. Every other code is a row of `catalogue_items` (M4.1). */
+const NOT_SURE = "not-sure";
+/** The catalogue name of the lead's service code, read in the same statement as the lead (no seed import, M4.1). */
+const SERVICE_NAME_SQL = "(SELECT name FROM catalogue_items WHERE code = l.service_code)";
 
-/** The service the lead asked for, as the words a person reads ("and", never "&"). */
-function serviceTitle(code: string | null): string | null {
+/** The service the lead asked for, as the words a person reads ("and", never "&"); `name` is the catalogue's current name. */
+function serviceTitle(code: string | null, name: string | null): string | null {
   if (!code) return null;
-  if (code === "not-sure") return "Not sure yet";
-  return (CATALOGUE.find((s) => s.code === code)?.name ?? code).replaceAll(" & ", " and ");
+  if (code === NOT_SURE) return "Not sure yet";
+  return (name ?? code).replaceAll(" & ", " and ");
 }
 
 /** The same row, written only while the request's audit row exists (the side statements of `mutate`). */
@@ -132,6 +134,7 @@ type ListRow = {
   lost_reason: string | null;
   source: string;
   service_code: string | null;
+  service_name: string | null;
   contact_name: string;
   contact_email: string;
   contact_company: string | null;
@@ -148,8 +151,7 @@ type ListRow = {
   k: number;
 };
 
-const LIST_COLUMNS =
-  "l.id, l.ref, l.stage, l.lost_reason, l.source, l.service_code, l.contact_name, l.contact_email, l.contact_company, l.owner_id, (SELECT name FROM staff_users WHERE id = l.owner_id) AS owner_name, l.next_action_at, l.next_action_note, l.client_id, l.duplicate_of, l.last_activity_at, l.delete_after, l.legal_hold, l.created_at";
+const LIST_COLUMNS = `l.id, l.ref, l.stage, l.lost_reason, l.source, l.service_code, ${SERVICE_NAME_SQL} AS service_name, l.contact_name, l.contact_email, l.contact_company, l.owner_id, (SELECT name FROM staff_users WHERE id = l.owner_id) AS owner_name, l.next_action_at, l.next_action_note, l.client_id, l.duplicate_of, l.last_activity_at, l.delete_after, l.legal_hold, l.created_at`;
 
 const listItem = (r: ListRow, now: number) => ({
   id: r.id,
@@ -158,7 +160,7 @@ const listItem = (r: ListRow, now: number) => ({
   lostReason: r.lost_reason,
   source: r.source,
   serviceCode: r.service_code,
-  serviceName: serviceTitle(r.service_code),
+  serviceName: serviceTitle(r.service_code, r.service_name),
   name: r.contact_name,
   email: r.contact_email,
   company: r.contact_company,
@@ -351,6 +353,7 @@ type LeadRow = {
   contact_phone: string | null;
   contact_company: string | null;
   service_code: string | null;
+  service_name: string | null;
   message: string | null;
   client_id: string | null;
   consent: string | null;
@@ -453,14 +456,27 @@ export const leads = new Hono<AppEnv>()
     const db = c.env.DB;
     if (f.country && !isCountryCode(f.country)) return err(c, BAD_REQUEST, 400);
     const service = f.serviceCode ?? null;
-    if (service !== null && !SERVICE_CODES.includes(service)) return err(c, BAD_REQUEST, 400);
+    let serviceName: string | null = null;
+    if (service !== null && service !== NOT_SURE) {
+      serviceName =
+        (
+          await db
+            .prepare("SELECT name FROM catalogue_items WHERE code = ?1")
+            .bind(service)
+            .first<{ name: string }>()
+        )?.name ?? null;
+      if (serviceName === null) return err(c, BAD_REQUEST, 400);
+    }
     const owner = f.ownerId ?? null;
     if (owner !== null && !(await activeStaff(db, owner))) return err(c, OWNER_INVALID, 400);
 
     const t = Date.now();
     const id = uuidv7();
     const email = normaliseEmail(f.email);
-    const title = `New lead: ${f.name}, ${serviceTitle(service) ?? "General enquiry"}`.slice(0, 200);
+    const title = `New lead: ${f.name}, ${serviceTitle(service, serviceName) ?? "General enquiry"}`.slice(
+      0,
+      200,
+    );
     const roles = LEAD_READERS.map((_, i) => `?${i + 5}`).join(", ");
     let ref = generateLeadRef();
     for (let attempt = 0; ; attempt++) {
@@ -735,20 +751,23 @@ export const leads = new Hono<AppEnv>()
   .get("/:id/reply-templates", param(idParam), async (c) => {
     const { id } = c.req.valid("param");
     const lead = await c.env.DB.prepare(
-      "SELECT ref, contact_name, service_code, request_type FROM leads WHERE id = ?1",
+      `SELECT ref, contact_name, service_code, ${SERVICE_NAME_SQL} AS service_name, request_type FROM leads AS l WHERE id = ?1`,
     )
       .bind(id)
       .first<{
         ref: string;
         contact_name: string;
         service_code: string | null;
+        service_name: string | null;
         request_type: string | null;
       }>();
     if (!lead) return err(c, NOT_FOUND, 404);
     const vars = {
       first_name: lead.contact_name.trim().split(/\s+/)[0] ?? lead.contact_name,
       service_or_request:
-        serviceTitle(lead.service_code) ?? lead.request_type?.replaceAll("-", " ") ?? "General enquiry",
+        serviceTitle(lead.service_code, lead.service_name) ??
+        lead.request_type?.replaceAll("-", " ") ??
+        "General enquiry",
       sender_name: actor(c).name,
       ref: lead.ref,
     };
@@ -832,7 +851,7 @@ export const leads = new Hono<AppEnv>()
 
     const lead = await db
       .prepare(
-        "SELECT id, ref, contact_name, contact_email, contact_phone, contact_company, service_code, message, client_id, consent FROM leads WHERE id = ?1",
+        `SELECT id, ref, contact_name, contact_email, contact_phone, contact_company, service_code, ${SERVICE_NAME_SQL} AS service_name, message, client_id, consent FROM leads AS l WHERE id = ?1`,
       )
       .bind(id)
       .first<LeadRow>();
@@ -853,7 +872,7 @@ export const leads = new Hono<AppEnv>()
       consent?.marketing && !consent.withdrawnAt
         ? JSON.stringify({ granted: true, at: consent.at ?? t, source: `lead:${lead.ref}` })
         : null;
-    const title = serviceTitle(lead.service_code);
+    const title = serviceTitle(lead.service_code, lead.service_name);
     const scopeBody = lead.message ? lead.message.slice(0, 2000) : null;
     const unconverted = "EXISTS (SELECT 1 FROM leads WHERE id = ?13 AND client_id IS NULL)";
 
