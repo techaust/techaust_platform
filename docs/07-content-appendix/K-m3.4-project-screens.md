@@ -60,7 +60,29 @@ _Drafted by the lead on 2026-10-25 from approved facts (04 ADM-PRJ-01…05; the 
 ## Addition to the erase and anonymise confirmations (07-J), VERIFY WITH CA/LEGAL
 | Where | Copy |
 |---|---|
-| Shown when the contact is an individual client's last live contact | "This is {client}'s last contact, so their project notes and files are deleted too." |
+| Shown when the contact is an individual client's last live contact | "This is {client}'s last contact, so their notes and files are deleted too, and their projects keep only their codes." |
 
 ## Audit labels (Activity)
 "added a project" · "changed the project" · "changed the project status" · "added a milestone" · "changed a milestone" · "changed a milestone status" · "deleted a milestone" · "reordered the milestones" · "added a note" · "changed a note" · "shared a note" · "deleted a note" · "uploaded a file" · "shared a file" · "deleted a file"
+
+## Added after the screens (lead, 2026-10-25; PENDING the owner)
+| Where | Copy |
+|---|---|
+| Milestones, empty | "No milestones yet." |
+| Notes, empty | "No notes yet." |
+| Files, empty (project) | "No files yet." |
+| Client notes, empty | "No notes for this client yet." |
+| Toasts | "Milestone deleted." · "Note deleted." · "Project marked as {status}." |
+| Stale notices (title) | "Someone else changed this project." · "Someone else changed this project while you were editing it." · "Someone else changed this milestone." · "Someone else changed this note." |
+| New project, no client matches | "No client's code or name starts with that." |
+| New project, checks | "Choose the client." · "Enter the project name." |
+| Milestone form, checks | "Enter the milestone title." · "Enter a percentage from 0 to 100, with at most 2 decimals." |
+| Note form, check | "Write the note first." |
+| `dates_order` (and the form check) | "The target date can't be before the start date." |
+| `bad_owner` | "Choose an owner from the active staff." |
+| `currency_mismatch` | "A project uses its client's currency." |
+| `empty_file` | "This file is empty." |
+| `forbidden` | "You don't have access to do this." |
+| `client_anonymised` | "This client's personal details were removed, so nothing new can be added to it." |
+| `budget_locked` | "The budget can't change while a percentage milestone is invoiced or paid." |
+| `milestone_invalid_transition` | "A milestone can't move from {from} to {to}." |
