@@ -168,7 +168,7 @@ The designer's drafts, accepted as wording to approve:
 ## 10. Added after the review (lead, 2026-10-26; PENDING the owner)
 | Where | Copy |
 |---|---|
-| Care plan dialog, included hours | Essential: "Leave empty to use the plan's 2 hours." · Growth and Scale: "Required: this plan's hours are agreed per client." |
+| Care plan dialog, included hours | Essential: "Leave empty to use the plan's 2 hours." · Growth, Scale and Dev Subscription: "Required: this plan's hours are agreed per client." |
 | Care plan dialog, summary (ADM-G-04) | "{tier} care plan for {client}: {price} a month before GST" · with AI Ops: "plus {ai_ops} a month for AI Ops" |
 | `section_empty` | "Write these sections or hide them before sending: {list}." |
 | `approval_rejected` | "The owner rejected this version. Change it before asking again." |

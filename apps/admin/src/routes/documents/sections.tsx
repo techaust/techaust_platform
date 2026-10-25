@@ -9,7 +9,7 @@ import {
   SECTION_BODY_MAX,
   SECTION_TITLE_MAX,
 } from "@techaust/core/documents";
-import { type Dispatch, memo, useCallback, useState } from "react";
+import { type Dispatch, memo, useCallback, useEffect, useState } from "react";
 import {
   AlertTriangle,
   ArrowDown,
@@ -26,11 +26,13 @@ import {
   DOC_COPY,
   DOC_PENDING,
   type EditorAction,
+  isEmptyOptional,
   isRequiredSection,
   moved,
   placeholdersIn,
   type SectionDraft,
   sectionLabel,
+  sectionTitleName,
   uid,
 } from "../../lib/documents.ts";
 import { COPY as PROJECT_COPY } from "../../lib/projects.ts";
@@ -39,15 +41,28 @@ export const SectionsPanel = memo(function SectionsPanel(props: {
   sections: SectionDraft[];
   dispatch: Dispatch<EditorAction>;
   current: () => SectionDraft[];
+  /** A request to open one section and put the cursor in its text (from the send panel's `section_empty` links). */
+  openRequest: { uid: string; n: number } | null;
 }) {
-  const { dispatch, current } = props;
+  const { dispatch, current, openRequest } = props;
   // Open at first: the sections that still need words (a placeholder, or empty and not hidden).
   const [open, setOpen] = useState<Set<string>>(
     () =>
       new Set(
-        props.sections.filter((s) => placeholdersIn(`${s.title} ${s.bodyMd}`).length > 0).map((s) => s.uid),
+        props.sections
+          .filter((s) => placeholdersIn(`${s.title} ${s.bodyMd}`).length > 0 || isEmptyOptional(s))
+          .map((s) => s.uid),
       ),
   );
+  useEffect(() => {
+    if (!openRequest) return;
+    setOpen((o) => new Set(o).add(openRequest.uid));
+    requestAnimationFrame(() => {
+      const body = document.getElementById(`sec-${openRequest.uid}-body`);
+      body?.scrollIntoView({ block: "center" });
+      body?.focus({ preventScroll: true });
+    });
+  }, [openRequest]);
   const toggle = useCallback(
     (u: string) =>
       setOpen((o) => {
@@ -164,6 +179,8 @@ const SectionRow = memo(function SectionRow(p: {
   const holes = placeholdersIn(`${s.title}\n${s.bodyMd}`);
   const empty = s.bodyMd.trim() === "";
   const name = s.title.trim() || sectionLabel(s.kind);
+  // The section's kind names its title field; custom sections (up to three) add their place in the reading order.
+  const kindName = s.kind === "custom" ? `${sectionLabel(s.kind)} ${p.n}` : sectionLabel(s.kind);
   const panel = `sec-${s.uid}-panel`;
   const items = [
     ...(p.n > 1
@@ -240,9 +257,11 @@ const SectionRow = memo(function SectionRow(p: {
           {holes.length > 0 && <p className="section-row__holes">{holes.join(", ")}</p>}
           {!required && empty && !s.hidden && <p className="hint">{DOC_COPY.writtenPerProposal}</p>}
           <div className="field">
+            {/* 07-O §10: the name says whose title it is (several sections are open at once); the visible word stays "Title". */}
             <label htmlFor={`sec-${s.uid}-title`}>Title</label>
             <input
               id={`sec-${s.uid}-title`}
+              aria-label={sectionTitleName(kindName)}
               autoComplete="off"
               maxLength={SECTION_TITLE_MAX}
               value={s.title}

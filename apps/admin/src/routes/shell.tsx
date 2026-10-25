@@ -51,7 +51,20 @@ async function runSearch(q: string): Promise<SearchGroup[]> {
  * What the box can find for this role today (leads with leads.read; clients by code or name and contacts by email
  * with clients.read, M3.3; staff for the owner), or null for nothing.
  */
-function searchCopy(canLeads: boolean, canClients: boolean, canUsers: boolean, canProjects = false) {
+/** 07-O §7: the box for a role that also finds proposals and estimates (kept here, not in lib/documents, so the main chunk stays small). */
+const SEARCH_BOX = {
+  placeholder: "Search leads, clients, projects, documents and people",
+  intro: "Search by the start of a name, code or number.",
+} as const;
+
+function searchCopy(
+  canLeads: boolean,
+  canClients: boolean,
+  canUsers: boolean,
+  canProjects = false,
+  canDocuments = false,
+) {
+  if (canDocuments && canLeads && canClients) return SEARCH_BOX;
   const kinds = [
     canLeads && "leads",
     canClients && "clients",
@@ -149,6 +162,7 @@ export function Component() {
     allowed(user.role, "clients.read"),
     allowed(user.role, "users.read"),
     allowed(user.role, "projects.read"),
+    allowed(user.role, "proposals.read"),
   );
   const current = sectionOf(pathname);
 

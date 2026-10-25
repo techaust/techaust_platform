@@ -2,6 +2,7 @@
 // the owner to approve, make a new version, discard a draft, and the two conversions of an accepted estimate (an invoice draft, or a
 // care plan with its start date and billing day). Each says what happens before it happens; each result links to what was made.
 import "../../care.css";
+import type { CareFromEstimate, CareTier } from "@techaust/core/care";
 import { useState } from "react";
 import { Link } from "react-router";
 import type { Currency } from "../../api.ts";
@@ -11,9 +12,13 @@ import { FormField } from "../../components/form.tsx";
 import { Notice } from "../../components/ui.tsx";
 import { CARE_COPY, CARE_PENDING, type DurationForm, durationMinutes, TIER_LABELS } from "../../lib/care.ts";
 import {
+  CARE_HOURS_HINT,
+  careAiOps,
   careDone,
+  careSummary,
   careTitle,
   DOC_COPY,
+  DOC_ERRORS,
   DOC_PENDING,
   docErrorText,
   invoiceTitle,
@@ -227,7 +232,10 @@ export function CareDialog(props: {
   id: string;
   number: string;
   version: number;
-  clientCode: string;
+  client: string;
+  currency: Currency;
+  /** What the estimate's lines describe (core's mapping of the server's figures), or null while it loads or when they describe none. */
+  care: CareFromEstimate | null;
   onDone: () => void;
   onClose: () => void;
 }) {
@@ -238,7 +246,16 @@ export function CareDialog(props: {
   );
 }
 
-function CareForm(props: { id: string; clientCode: string; onDone: () => void; onClose: () => void }) {
+const tierName = (tier: string) => TIER_LABELS[tier as CareTier] ?? tier;
+
+function CareForm(props: {
+  id: string;
+  client: string;
+  currency: Currency;
+  care: CareFromEstimate | null;
+  onDone: () => void;
+  onClose: () => void;
+}) {
   const [startDate, setStartDate] = useState("");
   const [billingDay, setBillingDay] = useState("1");
   const [included, setIncluded] = useState<DurationForm>({ hours: "", minutes: "0" });
@@ -246,13 +263,19 @@ function CareForm(props: { id: string; clientCode: string; onDone: () => void; o
   const [failure, setFailure] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [made, setMade] = useState<CareConverted | null>(null);
+  const care = props.care;
+  // Essential has a default (2 hours); every other tier's hours are agreed per client, so the field is required (07-O §10).
+  const hoursRequired = care !== null && care.tier !== "essential";
 
   if (made) {
-    const code = `${props.clientCode} ${TIER_LABELS[made.tier as keyof typeof TIER_LABELS] ?? made.tier}`;
     return (
       <>
         <div className="dialog__body">
-          <Notice tone="success">{careDone(code)}</Notice>
+          <Notice tone="success">{careDone(props.client, tierName(made.tier))}</Notice>
+          <p className="confirm-figure confirm-figure--sentence tnum">
+            {careSummary(tierName(made.tier), props.client, moneyText(made.priceMinor, made.currency))}
+            {made.aiOpsMinor !== null && <>, {careAiOps(moneyText(made.aiOpsMinor, made.currency))}</>}
+          </p>
         </div>
         <div className="dialog__actions">
           <button type="button" className="btn btn--secondary" onClick={props.onClose}>
@@ -274,6 +297,7 @@ function CareForm(props: { id: string; clientCode: string; onDone: () => void; o
     const minutes =
       included.hours.trim() === "" && included.minutes === "0" ? null : durationMinutes(included, 2000);
     if (included.hours.trim() !== "" && minutes === null) e.included = CARE_PENDING.enterHours;
+    else if (hoursRequired && minutes === null) e.included = DOC_ERRORS.included_minutes_required;
     setErrors(e);
     const first = e.startDate ? "cv-start" : e.billingDay ? "cv-day" : e.included ? "cv-included" : null;
     if (first) {
@@ -310,6 +334,12 @@ function CareForm(props: { id: string; clientCode: string; onDone: () => void; o
       }}
     >
       <div className="dialog__body">
+        {care && (
+          <p className="confirm-figure confirm-figure--sentence tnum">
+            {careSummary(tierName(care.tier), props.client, moneyText(care.priceMinor, props.currency))}
+            {care.aiOpsMinor !== null && <>, {careAiOps(moneyText(care.aiOpsMinor, props.currency))}</>}
+          </p>
+        )}
         <FormField id="cv-start" label={DOC_COPY.startDate} error={errors.startDate}>
           {(a) => (
             <input {...a} type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
@@ -335,8 +365,14 @@ function CareForm(props: { id: string; clientCode: string; onDone: () => void; o
         <DurationFields
           id="cv-included"
           legend="Included hours"
-          hint={CARE_COPY.includedHint}
-          optional
+          hint={
+            care === null
+              ? CARE_COPY.includedHint
+              : hoursRequired
+                ? CARE_HOURS_HINT.required
+                : CARE_HOURS_HINT.essential
+          }
+          optional={!hoursRequired}
           maxHours={2000}
           value={included}
           onChange={setIncluded}
