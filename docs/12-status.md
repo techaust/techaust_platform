@@ -1,6 +1,6 @@
 # 12: Status
 
-_Replaced (never appended) at the end of every session. Last updated: **2026-10-25, 06:30** (IST)._
+_Replaced (never appended) at the end of every session. Last updated: **2026-10-25, 14:00** (IST)._
 
 ## Done
 - **Phases 1–5:** approved 2026-10-06 ([09-roadmap.md](09-roadmap.md)).
@@ -21,28 +21,24 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
 - **PR #70** (the overnight-batch plan) closed unmerged; the owner keeps the original plan (hard rule 2).
 - **M3.1 admin shell, users and settings: approved 2026-10-24** ([PR #74](https://github.com/techaust/techaust_platform/pull/74); [run file](runs/m3.1-admin-shell.md); copy [07-H](07-content-appendix/H-m3.1-admin-emails.md)): app shell and navigation; users (invite email, roles, deactivate and reactivate, keyset list); every Settings screen (company, bank with step-up and masked numbers, numbering with the issued-series lock, terms, tax, email, payments with the go-live flag off, retention); the audit-log viewer with a step-up CSV export; the bell; admin CSP and immutable `/assets/*`. Preview approved → builder → analyst check → designer → review (send back) → fixes → two re-checks APPROVE; CI green; staging deployed.
 
-- **M3.2 Leads: on staging, awaiting the owner's review** ([PR #76](https://github.com/techaust/techaust_platform/pull/76), merged 2026-10-25; [run file](runs/m3.2-leads.md); copy [07-I](07-content-appendix/I-m3.2-lead-replies.md)): list and board (drag + keyboard "Move to…"), lead page and timeline, manual leads, duplicate links, convert → client + contact + draft proposal (one batch), replies from `hello@` with the three 07-I templates, the retention clean-up (cron 03:30 IST, **dry run** on staging) with the 14-day "Scheduled for deletion" view, stage automation for M4, the numbering lock inside the write (L-d). Migrations 0016–0017 applied on staging. Builder → analyst check → designer → review → fixes → three re-checks APPROVE.
+- **M3.2 Leads: approved 2026-10-25** ([PR #76](https://github.com/techaust/techaust_platform/pull/76), merged 2026-10-25; [run file](runs/m3.2-leads.md); copy [07-I](07-content-appendix/I-m3.2-lead-replies.md)): list and board (drag + keyboard "Move to…"), lead page and timeline, manual leads, duplicate links, convert → client + contact + draft proposal (one batch), replies from `hello@` with the three 07-I templates, the retention clean-up (cron 03:30 IST, **dry run** on staging) with the 14-day "Scheduled for deletion" view, stage automation for M4, the numbering lock inside the write (L-d). Migrations 0016–0017 applied on staging. Builder → analyst check → designer → review → fixes → three re-checks APPROVE.
+
+- **M3.3 Clients and contacts (Tier A): approved 2026-10-25** ([PR #77](https://github.com/techaust/techaust_platform/pull/77); [run file](runs/m3.3-clients.md); copy [07-J](07-content-appendix/J-m3.3-client-screens.md)). Started before M3.2's approval on the owner's word (one-time exception to hard rule 2; docs/13). Clients list and page with tabs; Sales reads the tax identity but never money settings, invoices, statement or data tools; currency and type locks; state required for Indian clients; contacts with portal access (off or an email change signs them out); owner-only export and erase/anonymise with step-up (VERIFY WITH CA/LEGAL). Migrations 0018–0023 applied on staging.
+- **Staging readings 2026-10-25:** every admin call in the owner's session ≤ 7 ms (clients list 7, client page 4, sign-in 3–5); the first lead clean-up dry run: 0 due, 2 ms. Convert, export and erase were not used on staging yet.
 
 ## In progress
-- **M3.3 Clients and contacts (Tier A): built, reviewed, PR open** ([PR #77](https://github.com/techaust/techaust_platform/pull/77), auto-merge and Auto-fix on; [run file](runs/m3.3-clients.md); copy [07-J](07-content-appendix/J-m3.3-client-screens.md)). Started before M3.2's approval on the owner's word (one-time exception to hard rule 2; docs/13). Clients list and page with tabs; Sales reads the tax identity but never money settings, invoices, statement or data tools; currency and type locks; state required for Indian clients; contacts with portal access (off or an email change signs them out); owner-only export and erase/anonymise with step-up (VERIFY WITH CA/LEGAL). Migrations 0018–0023 (add/index/trigger only). Admin Worker 194,114 of 207,939 bytes (limit raised to 75 % of M0, Lead).
+- **The owner's M3.3 answers** ([PR #78](https://github.com/techaust/techaust_platform/pull/78), auto-merge and Auto-fix on): an anonymised individual client's GSTIN is cleared (VERIFY WITH CA/LEGAL), the Attach PDF hint, a VERIFY WITH CA/LEGAL note in the data-tool dialogs. Lead-built; reviewer re-check APPROVE, its 2 low findings fixed.
 
 ## Next
-1. **The owner reviews M3.2 and M3.3 on staging** (below); any M3.2 change first, then M3.3's.
-2. **Staging readings (lead):** `cpuTimeMs` for `convert`, the client page, export, erase, and the admin sign-in cold start (the admin Worker grew about 45 % since M3.1); the first lead clean-up dry run (log line `lead.purge_dry_run_page`).
-3. **Before M3.4:** a structural plan for the admin Worker size (cold-start CPU as the metric) instead of raising the limit again.
-4. **Cost report after M3.1** ([14 §8](14-models-and-usage.md)).
+1. **Before M3.4:** a structural plan for the admin Worker size (cold-start CPU as the metric) instead of raising the limit again; presented to the owner first.
+2. **M3.4 Projects** ([09-roadmap.md](09-roadmap.md)) after that plan.
+3. **Cost report after M3.1** ([14 §8](14-models-and-usage.md)).
+4. **Staging readings on first use:** `cpuTimeMs` for convert, export and erase.
 
-**Usage now:** weekly about 56 %, 5-hour low; under the pace. Weekly reset **Mon 26 Oct, 15:30 IST**.
+**Usage now:** weekly about 58 %, 5-hour low; under the pace. Weekly reset **Mon 26 Oct, 15:30 IST**.
 
 ## Waits on the owner
-- **Today (2026-10-25):**
-  - try **M3.2 Leads** and **M3.3 Clients** on staging admin and say "approved" (or what to change) for each
-  - approve the type-lock sentence: "The client type can't change once this client has an issued document."
-  - check the other new admin sentences listed in [runs/m3.3-clients.md](runs/m3.3-clients.md) "Designer report: screens"
-  - a one-line hint for "Attach PDF" (the lead drafts it from docs/04 ADM-PROP-07)
-  - whether the export and erase dialogs show a "VERIFY WITH CA/LEGAL" line, and its words
-  - VERIFY WITH CA/LEGAL: should anonymising an individual client also clear its GSTIN (it contains the PAN)?
-  - if not done yet: the real company details and both bank accounts in staging Settings; the first cost report's "no change"
+- **When convenient:** the real company details and both bank accounts in staging Settings; the first cost report's "no change".
 - **For the website:**
   - a **new headshot** (iPhone guide given 2026-10-23; no photo is used until then)
   - **bio facts** (the lead drafts 80–120 words from them; you approve word for word)

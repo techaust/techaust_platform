@@ -1146,6 +1146,16 @@ export const contacts = new Hono<AppEnv>()
                AND NOT EXISTS (SELECT 1 FROM contacts o WHERE o.client_id = clients.id AND o.id <> ?1 AND o.anonymised_at IS NULL) AND ${g.sql(4)}`,
           )
           .bind(id, ANONYMISED_CLIENT, t, ...g.params),
+        //    and its GSTIN, which holds the person's PAN: a registered one becomes unregistered (owner, 2026-10-25; issued
+        //    documents keep their own snapshot; VERIFY WITH CA/LEGAL). Its own statement, so the state trigger only meets
+        //    registered rows and an older client without a state still erases.
+        db
+          .prepare(
+            `UPDATE clients SET gstin = NULL, gst_status = 'unregistered'
+             WHERE id = (SELECT client_id FROM contacts WHERE id = ?1) AND type = 'individual' AND gst_status = 'registered'
+               AND NOT EXISTS (SELECT 1 FROM contacts o WHERE o.client_id = clients.id AND o.id <> ?1 AND o.anonymised_at IS NULL) AND ${g.sql(2)}`,
+          )
+          .bind(id, ...g.params),
         // 4. the contact itself
         erase
           ? db.prepare(`DELETE FROM contacts WHERE id = ?1 AND ${g.sql(2)}`).bind(id, ...g.params)

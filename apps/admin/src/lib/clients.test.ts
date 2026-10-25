@@ -3,7 +3,13 @@
 // their field, the 07-J copy is word for word, and the export file holds every part of the manifest.
 import { describe, expect, it } from "vitest";
 import type { ClientView, ExportSummary } from "../api.ts";
-import { anonymiseConfirmation, EXPORT_EXPLAINER, eraseConfirmation } from "../routes/clients/data-tools.tsx";
+import {
+  anonymiseConfirmation,
+  DATA_TOOLS_VERIFY,
+  EXPORT_EXPLAINER,
+  eraseConfirmation,
+} from "../routes/clients/data-tools.tsx";
+import { ATTACH_PDF_HINT } from "../routes/clients/overview.tsx";
 import {
   addressErrors,
   addressForm,
@@ -59,6 +65,12 @@ const client = (over: Partial<ClientView> = {}): ClientView => ({
 });
 
 describe("07-J copy, word for word", () => {
+  it("the owner's 2026-10-25 lines", () => {
+    expect(ATTACH_PDF_HINT).toBe(
+      "Emails to this client carry a link to each document. Turn this on to attach the PDF as well.",
+    );
+    expect(DATA_TOOLS_VERIFY).toBe("Check your obligations before you export or erase someone's data.");
+  });
   it("the data tools and the warning", () => {
     expect(EXPORT_EXPLAINER).toBe(
       "Download everything we hold about this person as a file, to answer their data request: contact details, enquiries, sign-ins, emails sent and activity.",

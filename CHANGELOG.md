@@ -2,6 +2,7 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-10-25 [#78](https://github.com/techaust/techaust_platform/pull/78) fix(clients): owner's M3.3 answers: GSTIN cleared on anonymise, Attach PDF hint, data-tools note; M3.2 and M3.3 approved [ADM-CLI-03, ADM-CLI-05]
 - 2026-10-25 [#77](https://github.com/techaust/techaust_platform/pull/77) feat(clients): M3.3 clients and contacts, finance boundary, data-subject export and erase [ADM-CLI-01..05]
 - 2026-10-25 [#76](https://github.com/techaust/techaust_platform/pull/76) feat(leads): M3.2 leads list, board, lead page, convert, replies and retention clean-up [ADM-LEAD-01..06]
 - 2026-10-24 [#75](https://github.com/techaust/techaust_platform/pull/75) docs: M3.1 approved on staging; status for M3.2

@@ -2,6 +2,7 @@
 // data-subject export (step-up, paged, scoped to one client) and erase / anonymise (owner, step-up, legal hold, issued documents).
 import { env } from "cloudflare:workers";
 import { ANONYMISED_CLIENT, ANONYMISED_CONTACT, anonymisedEmail } from "@techaust/core/clients";
+import { gstinCheckChar } from "@techaust/core/gstin";
 import { uuidv7 } from "@techaust/core/ids";
 import { describe, expect, it } from "vitest";
 import { EXPORT_PARTS } from "./clients.ts";
@@ -611,6 +612,75 @@ describe("POST /contacts/:id/erase: erase and anonymise [ADM-CLI-05; owner answe
     expect(await one("SELECT display_name, notes FROM clients WHERE id = ?", biz)).toEqual({
       display_name: "Plain Business",
       notes: "keep",
+    });
+  });
+
+  it("a registered individual client loses its GSTIN (it holds the PAN) and becomes unregistered with its last contact; a business keeps its GSTIN (owner, 2026-10-25)", async () => {
+    const o = await owner();
+    const gstin = (n: number) => {
+      const first14 = `19ABCPK${String(7000 + n).padStart(4, "0")}A1Z`;
+      return first14 + gstinCheckChar(first14);
+    };
+    for (const [n, mode] of [
+      [1, "erase"],
+      [2, "anonymise"],
+    ] as const) {
+      const ind = await mkClient({ type: "individual", gst_status: "registered", gstin: gstin(n) });
+      const last = await mkContact(ind);
+      expect((await erase(o.cookie, last.id, { mode })).status).toBe(200);
+      expect(
+        await one("SELECT gstin, gst_status, state_code, legal_name FROM clients WHERE id = ?", ind),
+      ).toEqual({
+        gstin: null,
+        gst_status: "unregistered",
+        state_code: "19",
+        legal_name: ANONYMISED_CLIENT,
+      });
+    }
+    // not the last live contact: the GSTIN stays
+    const shared = await mkClient({ type: "individual", gst_status: "registered", gstin: gstin(4) });
+    const first = await mkContact(shared);
+    await mkContact(shared);
+    expect((await erase(o.cookie, first.id, { mode: "anonymise" })).status).toBe(200);
+    expect(await one("SELECT gstin, gst_status FROM clients WHERE id = ?", shared)).toEqual({
+      gstin: gstin(4),
+      gst_status: "registered",
+    });
+    // overseas stays overseas; an older unregistered client without a state (from before 0019) still erases
+    const abroad = await mkClient({
+      type: "individual",
+      country: "US",
+      gst_status: "overseas",
+      state_code: null,
+      currency: "USD",
+    });
+    const triggers = await rows<{ sql: string }>(
+      "SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name IN ('clients_state_check_insert', 'clients_state_check_update')",
+    );
+    await env.DB.batch(
+      ["clients_state_check_insert", "clients_state_check_update"].map((n) =>
+        env.DB.prepare(`DROP TRIGGER ${n}`),
+      ),
+    );
+    const old = await mkClient({ type: "individual", state_code: null });
+    await env.DB.batch(triggers.map((r) => env.DB.prepare(r.sql)));
+    for (const [cl, status] of [
+      [abroad, "overseas"],
+      [old, "unregistered"],
+    ] as const) {
+      const last = await mkContact(cl);
+      expect((await erase(o.cookie, last.id)).status).toBe(200);
+      expect(await one("SELECT gst_status, legal_name FROM clients WHERE id = ?", cl)).toEqual({
+        gst_status: status,
+        legal_name: ANONYMISED_CLIENT,
+      });
+    }
+    const biz = await mkClient({ gst_status: "registered", gstin: gstin(3) });
+    const only = await mkContact(biz);
+    expect((await erase(o.cookie, only.id, { mode: "anonymise" })).status).toBe(200);
+    expect(await one("SELECT gstin, gst_status FROM clients WHERE id = ?", biz)).toEqual({
+      gstin: gstin(3),
+      gst_status: "registered",
     });
   });
 

@@ -19,6 +19,7 @@ import {
   stepUpActive,
 } from "../../api.ts";
 import { Modal } from "../../components/dialog.tsx";
+import { VerifyNote } from "../../components/form.tsx";
 import { Download } from "../../components/icons.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { CodeField, FieldError, Notice } from "../../components/ui.tsx";
@@ -39,6 +40,9 @@ export const eraseConfirmation = (name: string) =>
   `Erase ${name}? This deletes their contact details, their client portal access and the personal details on their enquiries. Records the law requires us to keep, such as issued invoices, stay. This can't be undone.`;
 export const anonymiseConfirmation = (name: string) =>
   `Anonymise ${name}? Their name, email and phone are replaced with 'Removed contact' wherever we can, and their client portal access ends. Issued invoices and acceptances keep the details the law requires. This can't be undone.`;
+
+/** Owner-approved 2026-10-25: shown in both dialogs. */
+export const DATA_TOOLS_VERIFY = "Check your obligations before you export or erase someone's data.";
 
 const CODE_MISSING = "Enter the 6-digit code from your authenticator app.";
 
@@ -135,6 +139,7 @@ export function ExportDialog(props: { contact: ContactView | null; onClose: () =
     >
       <div className="dialog__body data-tool">
         <p>{EXPORT_EXPLAINER}</p>
+        <VerifyNote legal>{DATA_TOOLS_VERIFY}</VerifyNote>
         {state.step === "ready" && needsCode && (
           <CodeField
             id="export-code"
@@ -308,6 +313,7 @@ export function EraseDialog(props: { contact: ContactView | null; onClose: () =>
             {mode === "erase" ? eraseConfirmation(c.name) : anonymiseConfirmation(c.name)}
           </p>
         )}
+        <VerifyNote legal>{DATA_TOOLS_VERIFY}</VerifyNote>
         {blocked && (
           <Notice tone="error">
             <p>{blocked.text}</p>

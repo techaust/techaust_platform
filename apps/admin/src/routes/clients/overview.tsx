@@ -41,6 +41,10 @@ import { sentence } from "../../lib/format.ts";
 import { useUser } from "../../session.tsx";
 import { AddressFields, type Tax, TaxFields, taxFieldErrors } from "./parts.tsx";
 
+/** Owner-approved 2026-10-25. */
+export const ATTACH_PDF_HINT =
+  "Emails to this client carry a link to each document. Turn this on to attach the PDF as well.";
+
 /** 07-J (approved): the lines until invoicing exists. */
 export const INVOICES_LINE = "Invoices and payments arrive with invoicing.";
 export const CURRENCY_LOCKED_LINE = "The currency can't change once this client has an invoice.";
@@ -582,6 +586,7 @@ function Billing(props: Parameters<typeof Overview>[0] & { canFinance: boolean; 
           <SwitchRow
             id="cb-pdf"
             label="Attach PDF"
+            hint={ATTACH_PDF_HINT}
             checked={f.attachPdf === "on"}
             onChange={(on) => setF({ ...f, attachPdf: on ? "on" : "off" })}
           />
