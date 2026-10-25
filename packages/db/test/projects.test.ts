@@ -58,7 +58,10 @@ describe("project triggers (0025)", () => {
     const a = await insertClient("C-M34-C");
     const b = await insertClient("C-M34-D");
     const p = await project(a);
-    await rejects(run("UPDATE projects SET client_id = ? WHERE id = ?", b, p), /client of a project cannot change/);
+    await rejects(
+      run("UPDATE projects SET client_id = ? WHERE id = ?", b, p),
+      /client of a project cannot change/,
+    );
     await run("UPDATE projects SET name = 'Q', client_id = ? WHERE id = ?", a, p);
   });
 

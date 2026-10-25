@@ -232,7 +232,8 @@ export async function uploadFile(c: Ctx, s: Scope) {
     const text = String(putError) + String((putError as Error | null)?.cause ?? "");
     if (/checksum|10037/i.test(text)) return err(c, CHECKSUM, 400);
     // The stream refusing a body of the wrong size is the client's fault (a length that lies), not a server error.
-    if (feedError || /FixedLengthStream|too many bytes|expected bytes/i.test(text)) return err(c, LENGTH_MISMATCH, 400);
+    if (feedError || /FixedLengthStream|too many bytes|expected bytes/i.test(text))
+      return err(c, LENGTH_MISMATCH, 400);
     throw putError;
   }
 
