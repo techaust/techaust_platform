@@ -1,6 +1,5 @@
 // Start project from an accepted proposal (M4.5; ADM-PRJ-01, ADM-PROP-09): `POST /documents/:id/start-project {expectedUpdatedAt?}`.
-One mutation batch makes the project, its milestones (one per payment-schedule step,
-
+// One mutation batch makes the project, its milestones (one per payment-schedule step,
 // the step's exact amount) and, when step 1 is paid on acceptance, the first-instalment invoice DRAFT (never issued here: M5).
 // Idempotent: the project is conditional on "no project with this source document" (and the unique index `projects_source_document` backs
 // it), so a double click or a lost race answers 200 `created: false` with the same project; the draft is backed by `documents_source`.
