@@ -80,7 +80,7 @@ Before starting any agent, the lead reads the usage (the `get_usage` session too
 
 | Reading | What runs |
 |---|---|
-| Weekly at or under the pace, and the 5-hour window at or under 50 % | Up to two agents at once (the 8 GB RAM limit), never two browser users |
+| Weekly at or under the pace, and the 5-hour window at or under 50 % | Up to two agents at once (the 8 GB RAM limit), never two browser users (owner exception 2026-10-26: three until the M3.4–M4.5 batch ends; docs/13) |
 | Weekly over the pace | One agent at a time |
 | Weekly at 85 % or more | No new build or design; only finishing, reviewing and merging what is in flight |
 | The 5-hour window over 50 % | No new builder or designer; a review, an analyst or a running agent may continue |
