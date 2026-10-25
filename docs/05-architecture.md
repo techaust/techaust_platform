@@ -523,7 +523,7 @@ supply_type =
   recipient.country != IN                         → export_lut | export_igst (per settings + LUT ARN present)
   recipient.state_code == 19 (WB)                 → intra  (CGST rate/2 + SGST rate/2)
   else                                            → inter  (IGST rate)
-  unregistered with no state                      → intra (WB)  [08-A §7]
+  unregistered with no state                      → error state_required (owner 2026-10-25)
 
 per line:  taxable = qty × rate − discount           (integer maths; qty in milli-units → round half-up to paise)
            cgst = round_half_up(taxable × rate_bp/2 / 10000), sgst = same  (computed separately)
@@ -533,8 +533,8 @@ document:  tax totals = Σ line taxes;  grand = taxable + taxes
 ```
 
 - Document discounts are allocated across lines proportionally (largest-remainder method), so the line taxable values sum exactly.
-- Payment schedules: instalments = round(total × pct); the remainder goes to the last instalment (exact sum).
-- Amount in words: Indian system for INR ("Rupees One Lakh Twenty-Three Thousand … and Paise Fifty Only"); international for USD.
+- Payment schedules: each instalment but the last = floor(total × pct) to the unit (whole rupees for INR); the last takes the remainder (exact sum, never negative; M4.2 LD5).
+- Amount in words: Indian system for INR ("Rupees One Lakh Twenty-Three Thousand … and Fifty Paise Only"); international for USD.
 - Golden test table: ≥ 40 cases ([04 ADM-INV-05](04-prd.md)) plus property tests (sum invariants, no negatives, idempotence).
 
 ---
