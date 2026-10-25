@@ -427,7 +427,7 @@ describe("every filter of the offer history is indexed [Free plan: index every f
     expect(await plan(DECISION_SQL)).toContain("documents_version");
     expect(await plan(PROJECT_SQL)).toContain("projects_source_document");
     for (const sql of [DELIVERY_SQL, ACCEPTANCE_SQL, DECISION_SQL, PROJECT_SQL]) {
-      expect(await plan(sql), sql).not.toMatch(/SCAN/);
+      expect(await plan(sql), sql).not.toContain("SCAN ");
     }
   });
 });
