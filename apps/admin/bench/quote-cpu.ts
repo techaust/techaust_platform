@@ -95,22 +95,24 @@ const empty: DocState = {
   schedule: [],
 };
 
-/** What the save route does after the read, without the database. */
-async function saveWork() {
+/** What the save route does after the read, without the database. `stored` is the draft as the read gave it (null: the first call). */
+async function saveWork(stored: Parameters<typeof stateOfBundle>[0] | null = null) {
+  // The route parses the body once (the validator) and then reads the validated value.
   const parsed = z.safeParse(patchBody, JSON.parse(requestText));
   if (!parsed.success) throw new Error("body rejected");
-  const f = JSON.parse(requestText) as {
+  const f = parsed.data as unknown as {
     lines: LineIn[];
     sections: { kind: string; title: string; bodyMd: string }[];
     schedule: typeof stepIn;
   };
-  const made = resolveLines(f.lines, [], new Map(), "INR", settings.tax.defaultRateBp);
+  const existing = stored ? stateOfBundle(stored) : empty;
+  const made = resolveLines(f.lines, existing.lines, new Map(), "INR", settings.tax.defaultRateBp);
   if (!made.ok) throw new Error("lines");
   const state: DocState = {
-    ...empty,
+    ...existing,
     lines: made.lines,
-    sections: resolveSections(f.sections, []),
-    schedule: resolveSteps(f.schedule, []),
+    sections: resolveSections(f.sections, existing.sections),
+    schedule: resolveSteps(f.schedule, existing.schedule),
   };
   const computation = await computeQuote(state, taxInputOf(client), tax, today);
   const columns = documentColumns(state, computation);
@@ -159,7 +161,7 @@ function bundleOfPrepared() {
 const bundle = bundleOfPrepared();
 
 async function saveRequest() {
-  const w = await saveWork();
+  const w = await saveWork(bundle);
   const after = {
     ...bundle,
     document: { ...bundle.document, content_sha256: w.computation.hash, updated_at: 2_000 },
