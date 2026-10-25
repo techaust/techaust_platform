@@ -813,19 +813,21 @@ describe("publish refuses a snapshot the website cannot be built from [ADM-CAT-0
 describe("the body limit of the catalogue saves [review finding 4]", () => {
   const long = (n: number, tag: string) => `${tag}`.repeat(Math.ceil(n / tag.length)).slice(0, n);
   /** A service that passes every field cap: four 2,500-character texts and thirty 200-character lines. */
+  const lines = (rate: number) =>
+    Array.from({ length: 30 }, (_, i) => ({
+      description: `Line ${i} ${long(180, "x")}`,
+      unit: "fixed",
+      qtyMilli: 1_000,
+      rateInrMinor: rate,
+      rateUsdMinor: 1_200,
+    }));
   const fullEntry = () =>
     entryBody({
       longMd: long(2500, "Long text. "),
       deliverablesMd: long(2500, "Deliverable. "),
       assumptionsMd: long(2500, "Assumption. "),
       exclusionsMd: long(2500, "Exclusion. "),
-      defaultLines: Array.from({ length: 30 }, (_, i) => ({
-        description: `Line ${i} ${long(180, "x")}`,
-        unit: "fixed",
-        qtyMilli: 1_000,
-        rateInrMinor: 100_000,
-        rateUsdMinor: 1_200,
-      })),
+      defaultLines: lines(100_000),
     });
 
   it("a valid service of about 19 KB is saved (it would not fit the 16 KB limit of other routes)", async () => {
@@ -844,7 +846,7 @@ describe("the body limit of the catalogue saves [review finding 4]", () => {
       body: {
         expectedUpdatedAt: row?.updated_at,
         deliverablesMd: long(2400, "Changed. "),
-        defaultLines: (body.defaultLines as J[]).map((l) => ({ ...l, rateInrMinor: 200_000 })),
+        defaultLines: lines(200_000),
       },
       cookie: o.cookie,
     });
