@@ -175,9 +175,11 @@ function NewDocumentForm(props: { type: QuoteType; clientId?: string | undefined
           {mode === "client" ? (
             client && !changing ? (
               <div className="chosen-client">
-                <span className="client-option__name">{client.displayName}</span>
-                <span className="docno">{client.code}</span>
-                <span className="docno">{client.currency}</span>
+                <p className="chosen-client__name">
+                  {client.displayName}
+                  <span className="docno">{client.code}</span>
+                  <span className="docno">{client.currency}</span>
+                </p>
                 <button type="button" className="btn btn--text" onClick={() => setChanging(true)}>
                   Change<span className="visually-hidden"> the client</span>
                 </button>

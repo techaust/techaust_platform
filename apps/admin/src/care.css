@@ -977,9 +977,11 @@
 
 .pipeline__line {
   color: var(--color-text-muted);
+  text-wrap: balance;
 }
 
 .pipeline__total {
+  white-space: nowrap;
   color: var(--color-text);
   font-family: var(--font-display);
   font-size: var(--text-h4);

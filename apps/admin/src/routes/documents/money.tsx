@@ -83,7 +83,9 @@ const discountText = (l: ViewLine, currency: Currency) =>
 export function LinesTable(props: { lines: ViewLine[]; currency: Currency; supply: Supply | null }) {
   const { currency } = props;
   return (
-    <div className="read-lines">
+    // A box that may scroll sideways on a phone is a Tab stop of its own, so keyboard users can scroll it (WCAG 2.1.1).
+    // biome-ignore lint/a11y/noNoninteractiveTabindex: a scrollable region must be focusable
+    <div className="read-lines" role="region" aria-label="Lines" tabIndex={0}>
       <table>
         <caption className="visually-hidden">Lines</caption>
         <thead>
@@ -159,7 +161,8 @@ export function LinesTable(props: { lines: ViewLine[]; currency: Currency; suppl
 /** A sent version's payment schedule (docs/06 §7.4: instalment, trigger, share, amount; what you get and the target date). */
 export function ScheduleTable(props: { steps: ViewStep[]; currency: Currency }) {
   return (
-    <div className="read-lines read-lines--schedule">
+    // biome-ignore lint/a11y/noNoninteractiveTabindex: a scrollable region must be focusable
+    <div className="read-lines read-lines--schedule" role="region" aria-label="Payment schedule" tabIndex={0}>
       <table>
         <caption className="visually-hidden">Payment schedule</caption>
         <thead>

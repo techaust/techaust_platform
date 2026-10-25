@@ -122,11 +122,8 @@ export const DOC_COPY = {
   billingDay: "Billing day",
   careButton: "Create care plan",
   // §7
-  pipelineHeading: "Pipeline",
-  pipelineEmpty: "No open proposals.",
   clientTab: "Proposals and estimates",
   clientTabEmptyTitle: "No proposals or estimates for this client yet",
-  searchGroup: "Proposals and estimates",
 } as const;
 
 export const lineColumns = {
@@ -175,7 +172,6 @@ export const invoiceTitle = (number: string, version: number) =>
 export const careTitle = (number: string, version: number) =>
   `Create a care plan from ${number} v${version}?`;
 export const careDone = (code: string) => `Care plan ${code} created.`;
-export const pipelineLine = (n: number, total: string) => `${n} open, ${total} before GST`;
 
 export const DOC_TOASTS = {
   created: "Draft created.",
@@ -198,8 +194,6 @@ export const DOC_PENDING = {
   enterLabel: pending("Enter a name for this instalment."),
   enterSac: pending("Enter the six-digit SAC code."),
   enterValidity: pending("Enter a number of days from 1 to 90."),
-  fixFields: pending("Fix the fields marked in red."),
-  frozenNow: pending("This version was sent while you were editing it."),
   /** No title yet: what a version is called in a title or a list until it has one. */
   untitled: pending("Untitled"),
   sectionKind: pending("Section"),
@@ -226,9 +220,7 @@ export const DOC_PENDING = {
   searchNoMatch: pending("No proposal or estimate has a number starting with that."),
   customLinesCount: (n: number) => pending(n === 1 ? "1 custom line" : `${n} custom lines`),
   customLinesHint: pending("Custom lines are not counted in the discount guard."),
-  validUntil: (date: string) => pending(`Valid until ${date}`),
   readOnlyDraft: pending("Your role can read this draft but not change it."),
-  openNewDraft: pending("Open the new version"),
   openCarePlan: pending("Open the care plan"),
   newerDraftExists: pending("A newer version of this document exists."),
   openLatest: pending("Open the newest version"),

@@ -69,7 +69,7 @@ function Approvals() {
   useEffect(() => {
     if (!linked || list.state !== "ready" || !owner) return;
     const row = list.data.approvals.find((a) => a.id === linked);
-    if (row && row.state === "pending") setDeciding(row);
+    if (row && row.state === "pending" && row.document.status === "draft") setDeciding(row);
   }, [linked, list.state, list.data, owner]);
 
   const columns: Column<ApprovalRow>[] = [
@@ -176,7 +176,7 @@ function Approvals() {
             actions={
               owner
                 ? (r) =>
-                    r.state === "pending" ? (
+                    r.state === "pending" && r.document.status === "draft" ? (
                       <button type="button" className="btn btn--secondary" onClick={() => setDeciding(r)}>
                         Decide<span className="visually-hidden"> on {titleOf(r.document.title)}</span>
                       </button>

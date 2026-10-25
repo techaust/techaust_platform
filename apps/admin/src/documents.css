@@ -13,6 +13,10 @@
   margin-bottom: var(--space-5);
 }
 
+.doc-strip .docno {
+  overflow-wrap: anywhere;
+}
+
 .doc-strip a {
   color: var(--color-link);
   text-underline-offset: 0.2em;
@@ -70,6 +74,13 @@
     grid-template-rows: auto auto;
     grid-template-areas:
       "send versions"
+      "main main";
+  }
+
+  /* Nothing can happen next (a reader, or an accepted proposal): the versions take the row. */
+  .doc-page--read:has(> .doc-page__send:empty) {
+    grid-template-areas:
+      "versions versions"
       "main main";
   }
 }
@@ -143,7 +154,7 @@
   grid-template-areas:
     "n desc amt act"
     ". work work work"
-    ". meta figs figs"
+    ". foot foot foot"
     ". err err err";
   gap: var(--space-2) var(--space-3);
   align-items: center;
@@ -274,7 +285,9 @@
 }
 
 .qledger__figs {
-  grid-area: figs;
+  grid-area: foot;
+  justify-self: end;
+  align-self: end;
   display: flex;
   justify-content: flex-end;
   gap: var(--space-5);
@@ -299,7 +312,9 @@
 }
 
 .qledger__meta {
-  grid-area: meta;
+  grid-area: foot;
+  justify-self: start;
+  align-self: end;
   margin: 0;
 }
 
@@ -376,7 +391,13 @@
   }
 
   .qledger__figs {
+    grid-area: figs;
+    justify-self: start;
     justify-content: flex-start;
+  }
+
+  .qledger__meta {
+    grid-area: meta;
   }
 
   .qledger__figs > div {
@@ -996,6 +1017,10 @@
 
 .dcards .doc-amount {
   justify-items: start;
+}
+
+.dcards .doc-amount__custom {
+  text-align: start;
 }
 
 @media (min-width: 48.01rem) and (max-width: 79.99rem) {
