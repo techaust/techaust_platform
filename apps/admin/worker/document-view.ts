@@ -82,6 +82,8 @@ export type ViewInput = {
   today: CalendarDate;
   /** A save already worked the draft out: pass it (and the state it built) instead of computing twice. */
   prepared?: { state: DocState; computation: Computation };
+  /** What an accepted estimate became (an invoice draft or a care plan), or null: read with the document, in the same D1 call. */
+  convertedTo?: { kind: "invoice" | "care_plan"; id: string } | null;
 };
 
 export async function documentView(i: ViewInput) {
@@ -99,6 +101,19 @@ export async function documentView(i: ViewInput) {
   const blockers: Blocker[] =
     !frozen && computation ? sendBlockers(state, computation, { clientGone, contactGone }) : [];
   const lineAt = (i2: number) => computed?.lines[i2];
+  // A sent version shows who it was addressed to AS SENT (the frozen `recipient` and `issuer`), never today's client record (M4.3 review 1).
+  // A draft shows the live client and contact. The ids and the code are the same either way.
+  const recipient = frozen ? d.recipient : null;
+  const issuer = frozen ? d.issuer : null;
+  const frozenContact =
+    recipient?.contactName !== undefined
+      ? {
+          id: recipient.contactId ?? contact?.id ?? null,
+          name: recipient.contactName,
+          email: recipient.email ?? null,
+          anonymised: contactGone,
+        }
+      : null;
   return {
     id: d.id,
     type: d.type,
@@ -119,17 +134,22 @@ export async function documentView(i: ViewInput) {
     client: {
       id: client.id,
       code: client.code,
-      name: client.display_name,
-      type: client.type,
-      gstStatus: client.gst_status,
-      stateCode: client.state_code,
-      country: client.country,
+      name: recipient ? (recipient.displayName ?? recipient.legalName) : client.display_name,
+      type: recipient?.clientType ?? client.type,
+      gstStatus: recipient?.gstStatus ?? client.gst_status,
+      stateCode: recipient ? (recipient.stateCode ?? null) : client.state_code,
+      country: recipient ? recipient.country : client.country,
       currency: client.currency,
       anonymised: clientGone,
     },
-    contact: contact
-      ? { id: contact.id, name: contact.name, email: contact.email, anonymised: contactGone }
-      : null,
+    contact: recipient
+      ? frozenContact
+      : contact
+        ? { id: contact.id, name: contact.name, email: contact.email, anonymised: contactGone }
+        : null,
+    /** The frozen blocks of a sent version, as sealed (null for a draft). */
+    recipient,
+    issuer,
     discount:
       d.discount_kind === null || d.discount_value === null
         ? null
@@ -202,6 +222,8 @@ export async function documentView(i: ViewInput) {
         }
       : null,
     approval: approvalOf(bundle, d.content_sha256),
+    /** For an accepted estimate that was converted: the invoice draft or care plan it became (the screen links to it and hides both conversions). */
+    convertedTo: i.convertedTo ?? null,
     versions: bundle.versions.map((v) => ({
       id: v.id,
       version: v.version,

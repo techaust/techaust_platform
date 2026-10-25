@@ -26,6 +26,7 @@ import {
   APPROVAL_EXPIRED,
   APPROVAL_NOT_NEEDED,
   APPROVAL_PENDING,
+  APPROVAL_REJECTED,
   CLIENT_GONE,
   FROZEN,
   NOT_A_QUOTE,
@@ -50,6 +51,10 @@ export const bellDecidedTitle = (to: "approved" | "rejected", title: string | nu
 /** An approved discount approval exists for the draft's current content: asking again would only shadow it. */
 const APPROVED_NOW =
   "EXISTS (SELECT 1 FROM approvals a WHERE a.document_id = d.id AND a.kind = 'discount' AND a.status = 'approved' AND a.content_sha256 = d.content_sha256)";
+
+/** The owner already rejected THIS exact content: asking again for the same words would only waste the owner's time (M4.3 review 12). */
+const REJECTED_NOW =
+  "EXISTS (SELECT 1 FROM approvals a WHERE a.document_id = d.id AND a.kind = 'discount' AND a.status = 'rejected' AND a.content_sha256 = d.content_sha256)";
 
 export const requestBody = z.strictObject({
   expectedUpdatedAt: z.int(),
@@ -77,7 +82,7 @@ export const approvalRequests = new Hono<AppEnv>().post(
     const db = c.env.DB;
     const row = await db
       .prepare(
-        `SELECT d.type, d.status, d.frozen_at, d.updated_at, d.content_sha256, d.version, d.title, (d.computed IS NOT NULL) AS computes, ${clientGoneSql("d.client_id")} AS gone, ${APPROVED_NOW} AS approved, ${GUARD_SUMS("d")} FROM documents d WHERE d.id = ?1`,
+        `SELECT d.type, d.status, d.frozen_at, d.updated_at, d.content_sha256, d.version, d.title, (d.computed IS NOT NULL) AS computes, ${clientGoneSql("d.client_id")} AS gone, ${APPROVED_NOW} AS approved, ${REJECTED_NOW} AS rejected, ${GUARD_SUMS("d")} FROM documents d WHERE d.id = ?1`,
       )
       .bind(id)
       .first<{
@@ -91,6 +96,7 @@ export const approvalRequests = new Hono<AppEnv>().post(
         computes: number;
         gone: number;
         approved: number;
+        rejected: number;
         reference_minor: number | null;
         taxable_minor: number;
       }>();
@@ -103,6 +109,7 @@ export const approvalRequests = new Hono<AppEnv>().post(
     const figures = guardFigures(row.reference_minor ?? 0, row.taxable_minor);
     if (!figures.needsApproval) return err(c, APPROVAL_NOT_NEEDED, 409);
     if (row.approved === 1) return err(c, APPROVAL_EXISTS, 409);
+    if (row.rejected === 1) return err(c, APPROVAL_REJECTED, 409);
 
     const approvalId = uuidv7();
     const now = Date.now();
@@ -120,7 +127,7 @@ export const approvalRequests = new Hono<AppEnv>().post(
             .prepare(
               `INSERT INTO approvals (id, kind, document_id, requested_by, reason, content_sha256, status, created_at)
                SELECT ?3, 'discount', d.id, ?4, ?5, d.content_sha256, 'pending', ?6 FROM documents d
-               WHERE d.id = ?1 AND d.status = 'draft' AND d.frozen_at IS NULL AND d.updated_at = ?2 AND d.content_sha256 IS NOT NULL AND NOT ${clientGoneSql("d.client_id")} AND NOT ${APPROVED_NOW}`,
+               WHERE d.id = ?1 AND d.status = 'draft' AND d.frozen_at IS NULL AND d.updated_at = ?2 AND d.content_sha256 IS NOT NULL AND NOT ${clientGoneSql("d.client_id")} AND NOT ${APPROVED_NOW} AND NOT ${REJECTED_NOW}`,
             )
             .bind(id, f.expectedUpdatedAt, approvalId, u.id, f.reason ?? null, now),
         ],
@@ -158,13 +165,15 @@ export const approvalRequests = new Hono<AppEnv>().post(
     if (done) return c.json({ id: approvalId, status: "pending", discountBp: figures.discountBp }, 201);
     const again = await db
       .prepare(
-        `SELECT d.frozen_at, d.updated_at, ${APPROVED_NOW} AS approved FROM documents d WHERE d.id = ?1`,
+        `SELECT d.frozen_at, d.updated_at, ${APPROVED_NOW} AS approved, ${REJECTED_NOW} AS rejected FROM documents d WHERE d.id = ?1`,
       )
       .bind(id)
-      .first<{ frozen_at: number | null; updated_at: number; approved: number }>();
+      .first<{ frozen_at: number | null; updated_at: number; approved: number; rejected: number }>();
     if (!again) return err(c, NOT_FOUND, 404);
     if (again.frozen_at !== null) return err(c, FROZEN, 409);
     if (again.updated_at === f.expectedUpdatedAt && again.approved === 1) return err(c, APPROVAL_EXISTS, 409);
+    if (again.updated_at === f.expectedUpdatedAt && again.rejected === 1)
+      return err(c, APPROVAL_REJECTED, 409);
     return err(c, STALE_VERSION, 409);
   },
 );

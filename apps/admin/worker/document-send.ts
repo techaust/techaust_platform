@@ -239,7 +239,7 @@ async function explain(
   const row = await c.env.DB.prepare(
     `SELECT d.status, d.frozen_at, d.updated_at, d.content_sha256, ${clientGoneSql("d.client_id")} AS gone,
        (SELECT version FROM settings WHERE key = 'numbering') AS numbering_version,
-       EXISTS (SELECT 1 FROM documents x WHERE x.version_group_id = d.version_group_id AND x.status = 'accepted') AS accepted,
+       EXISTS (SELECT 1 FROM documents x WHERE x.version_group_id = d.version_group_id AND x.status IN ('accepted', 'converted')) AS accepted,
        EXISTS (SELECT 1 FROM approvals a WHERE a.document_id = d.id AND a.kind = 'discount' AND a.status = 'approved' AND a.content_sha256 = d.content_sha256) AS approved
      FROM documents d WHERE d.id = ?1`,
   )

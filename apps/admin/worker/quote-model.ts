@@ -12,6 +12,7 @@ import {
   type GuardLine,
   type GuardResult,
   type QuoteType,
+  REQUIRED_SECTIONS,
   type SectionDraft,
   unresolvedIn,
 } from "@techaust/core/documents";
@@ -84,6 +85,10 @@ export const APPROVAL_EXPIRED = e(
   "The document changed after the request, so the approval expired",
 );
 export const NUMBERING_CHANGED = e("numbering_changed", "The numbering settings changed. Try again");
+export const APPROVAL_REJECTED = e(
+  "approval_rejected",
+  "The owner rejected this version. Change it before asking again",
+);
 export const ALREADY_ACCEPTED = e("already_accepted", "A version of this document was already accepted");
 export const NOT_LATEST = e("not_latest", "Only the latest sent version can be revised");
 export const DRAFT_EXISTS = e("draft_exists", "A newer draft of this document already exists");
@@ -922,6 +927,9 @@ export type Blocker = {
   codes?: string[];
   /** `tax_errors`: the engine's issues (codes and paths, never values). */
   issues?: readonly TaxIssue[];
+  /** `section_empty`: the visible optional sections with no text, in order: their ids, and their kinds (same order). */
+  sections?: string[];
+  kinds?: string[];
 };
 
 /** Everything that stops a draft being sent, as codes. Empty means it can be sent (the discount approval is a separate 403). */
@@ -939,6 +947,12 @@ export function sendBlockers(
   if (issues.length > 0) out.push({ code: "tax_errors", issues });
   const sectionIssues = checkSections(s.sections);
   if (sectionIssues.length > 0) out.push({ code: SECTIONS_INVALID.code, codes: sectionIssues });
+  // A visible optional section with no text would be frozen and sent as a bare heading: staff write it or hide it (M4.3 review 8).
+  const empty = s.sections.filter(
+    (x) => !x.hidden && !REQUIRED_SECTIONS.some((k) => k === x.kind) && (x.bodyMd ?? "").trim() === "",
+  );
+  if (empty.length > 0)
+    out.push({ code: "section_empty", sections: empty.map((x) => x.id), kinds: empty.map((x) => x.kind) });
   if (s.schedule.length === 0) out.push({ code: "schedule_missing" });
   const names = unresolvedIn([
     s.title,
