@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --port 5174 --strictPort",
-    "build": "vite build && node ../../scripts/check-portal-bundle.mjs",
+    "build": "vite build && node ../../scripts/worker-budget.mjs portal",
     "typecheck": "wrangler types --env staging && tsc -p tsconfig.json && tsc -p tsconfig.worker.json",
     "test": "vitest run",
     "deploy:staging": "CLOUDFLARE_ENV=staging vite build && wrangler deploy",
