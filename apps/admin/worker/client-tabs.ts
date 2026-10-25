@@ -2,6 +2,7 @@
 // path, so the guard rows read `/clients/:id/projects` and so on. The finance tabs of ADM-CLI-03 stay with M3.3.
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
+import { listClientCarePlans } from "./care.ts";
 import type { AppEnv } from "./context.ts";
 import { fileListQuery, listFiles, uploadFile } from "./files.ts";
 import { body, idParam, param, query } from "./http.ts";
@@ -17,6 +18,10 @@ export const clientTabs = new Hono<AppEnv>()
   .get("/:id/projects", param(idParam), query(projectsQuery), (c) => {
     const q = c.req.valid("query");
     return listClientProjects(c, c.req.valid("param").id, q.after, q.limit);
+  })
+  .get("/:id/care-plans", param(idParam), query(projectsQuery), (c) => {
+    const q = c.req.valid("query");
+    return listClientCarePlans(c, c.req.valid("param").id, q.after, q.limit);
   })
   .get("/:id/notes", param(idParam), query(noteListQuery), (c) =>
     listNotes(c, { kind: "client", id: c.req.valid("param").id }, c.req.valid("query")),

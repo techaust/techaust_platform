@@ -119,6 +119,24 @@ export const ROUTES: readonly RouteDef[] = [
   R("PATCH", "/files/:id", "projects.write", { audit: "file.share" }),
   R("DELETE", "/files/:id", "projects.write", { audit: "file.delete" }),
   R("GET", "/files/:id/download", "projects.read"),
+  // Care plans, time logs and the dashboard (M3.5, ADM-CARE-01, -03, ADM-TIME-01..03, ADM-DASH-01). Static paths come before `/:id`.
+  // Price changes are the owner's (`carePlans.changePrice`); the handler also holds cancelling to the owner. Time routes scope to the
+  // member's own entries unless the role has `time.readAll`; logging for someone else needs `time.writeAny` (checked in the handler).
+  R("GET", "/care-plans", "carePlans.read"),
+  R("GET", "/care-plans/defaults", "carePlans.write"),
+  R("POST", "/care-plans", "carePlans.write", { audit: "care_plan.create" }),
+  R("GET", "/care-plans/:id", "carePlans.read"),
+  R("POST", "/care-plans/:id/terms", "carePlans.changePrice", { audit: "care_plan.terms" }),
+  R("POST", "/care-plans/:id/status", "carePlans.write", { audit: "care_plan.status" }),
+  R("GET", "/clients/:id/care-plans", "carePlans.read"),
+  R("GET", "/time", "time.read"),
+  R("GET", "/time/week", "time.read"),
+  R("GET", "/time/targets", "time.writeOwn"),
+  R("GET", "/time/people", "time.read"),
+  R("POST", "/time", "time.writeOwn", { audit: "time.create" }),
+  R("PATCH", "/time/:id", "time.writeOwn", { audit: "time.update" }),
+  R("DELETE", "/time/:id", "time.writeOwn", { audit: "time.delete" }),
+  R("GET", "/dashboard", "dashboard.read"),
   // The bell, the global search and the audit viewer (M3.1, ADM-G-09, ADM-G-05, ADM-AUD-02).
   R("GET", "/notifications", "notifications.own"),
   R("POST", "/notifications/read-all", "notifications.own", { audit: "notification.read_all" }),
