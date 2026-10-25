@@ -45,9 +45,11 @@ export const CATALOGUE_SQL = `SELECT id, code, name FROM (
 ) ORDER BY code LIMIT ${PER_TYPE}`;
 /**
  * Proposals and estimates by the start of the number (M4.3, ADM-G-05): an index range on `documents_number_display` (number first). A
- * later version shares its first version's number, so only the latest version of each is listed. Invoices join in M5.
+ * later version shares its first version's number, so only the latest version of each is listed. Only these two types: a role that may
+ * search proposals (Sales) must not find invoice numbers once M5 issues them (the unary plus keeps the type test from steering the planner
+ * to the type index instead of the number range). Invoices join in M5, with their own permission.
  */
-export const DOCUMENTS_SQL = `SELECT d.id, d.number_display, d.type, d.version, d.title FROM documents d WHERE d.type IN ('proposal', 'estimate') AND d.number_display >= ?1 AND d.number_display < ?2 AND NOT EXISTS (SELECT 1 FROM documents n WHERE n.version_group_id = d.version_group_id AND n.version > d.version) ORDER BY d.number_display LIMIT ${PER_TYPE}`;
+export const DOCUMENTS_SQL = `SELECT d.id, d.number_display, d.type, d.version, d.title FROM documents d WHERE +d.type IN ('proposal', 'estimate') AND d.number_display >= ?1 AND d.number_display < ?2 AND NOT EXISTS (SELECT 1 FROM documents n WHERE n.version_group_id = d.version_group_id AND n.version > d.version) ORDER BY d.number_display LIMIT ${PER_TYPE}`;
 export const USERS_SQL = `SELECT id, name, email, role FROM staff_users WHERE (email >= ?1 AND email < ?2) OR name LIKE ?3 ESCAPE '\\' ORDER BY name LIMIT ${PER_TYPE}`;
 
 export const search = new Hono<AppEnv>().get("/", query(searchQuery), async (c) => {

@@ -85,7 +85,7 @@ export const patchDoc = (s: TestSession, id: string, body: unknown) =>
 export const sendDoc = (s: TestSession, id: string, expectedUpdatedAt: number) =>
   call(`/documents/${id}/send`, { cookie: s.cookie, body: { expectedUpdatedAt } });
 
-/** Set a document discount through a save; returns the saved document. */
+/** Set a document discount through a save; returns the saved document (read back whole: the save itself answers slim). */
 export async function discount(s: TestSession, id: string, kind: "fixed" | "percent", value: number) {
   const doc = await getDoc(s, id);
   const res = await patchDoc(s, id, {
@@ -93,7 +93,7 @@ export async function discount(s: TestSession, id: string, kind: "fixed" | "perc
     fields: { discount: { kind, value } },
   });
   if (res.status !== 200) throw new Error(`discount: ${res.status} ${await res.text()}`);
-  return json(res);
+  return getDoc(s, id);
 }
 
 /** Runs `before` once, just before the SEND batch (the one that holds `issue_guard`) is issued: a change that lands "between the read and the batch". */

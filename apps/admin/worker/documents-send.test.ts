@@ -122,7 +122,9 @@ describe("the discount guard at send [ADM-PROP-04; run file D1, D2; V1]", () => 
       discountBp: 1500,
       needsApproval: true,
     });
-    expect(v.guard.customLines).toEqual([
+    // The slim save answer lists the line by id and value; the full document (GET) names it for the approval screen.
+    expect(v.guard.customLines).toEqual([{ id: expect.any(String), position: 2, taxableMinor: 5_000_000 }]);
+    expect((await getDoc(s, made.id)).guard.customLines).toEqual([
       { position: 2, description: "Pass-through costs", taxableMinor: 5_000_000 },
     ]);
     expect((await sendDoc(s, made.id, v.updatedAt)).status).toBe(403);

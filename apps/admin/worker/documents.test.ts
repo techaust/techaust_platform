@@ -460,7 +460,9 @@ describe("saving a draft [ADM-PROP-02, -03, ADM-APR-02]", () => {
     const first = await json(
       await patchDoc(o, made.id, { expectedUpdatedAt: doc.updatedAt, fields: { title: "A new title" } }),
     );
-    expect(first.title).toBe("A new title");
+    // The save answers slim (ids and figures, no text): the text is read back with a GET.
+    expect(first.title).toBeUndefined();
+    expect((await getDoc(o, made.id)).title).toBe("A new title");
     expect(first.lines.map((l: J) => l.id)).toEqual(lineIds);
     expect(first.sections.map((s: J) => s.id)).toEqual(sectionIds);
     expect(first.contentSha256).not.toBe(doc.contentSha256);
@@ -471,7 +473,7 @@ describe("saving a draft [ADM-PROP-02, -03, ADM-APR-02]", () => {
     expect(same.contentSha256).toBe(first.contentSha256);
     expect(same.updatedAt).toBeGreaterThan(first.updatedAt);
     // a description in a line changes it; going back gives the first hash again (no memory of past content)
-    const line = first.lines[0];
+    const line = doc.lines[0];
     const edit = (description: string, v: J) =>
       patchDoc(o, made.id, {
         expectedUpdatedAt: v.updatedAt,
@@ -609,7 +611,7 @@ describe("saving a draft [ADM-PROP-02, -03, ADM-APR-02]", () => {
         { catalogueItemId: ok.id, description: "Added", qtyMilli: 1000, unit: "fixed", rateMinor: 300_000 },
       ]),
     );
-    expect(saved.lines[1]).toMatchObject({
+    expect((await getDoc(o, made.id)).lines[1]).toMatchObject({
       catalogueItemId: ok.id,
       sac: "998313",
       catalogueRateMinor: 400_000,
@@ -640,8 +642,10 @@ describe("saving a draft [ADM-PROP-02, -03, ADM-APR-02]", () => {
         ],
       }),
     );
-    expect(custom.lines[0].catalogueRateMinor).toBe(100_000);
-    expect(custom.lines[1]).toMatchObject({
+    expect(custom.lines).toHaveLength(2);
+    const customDoc = await getDoc(o, made.id);
+    expect(customDoc.lines[0].catalogueRateMinor).toBe(100_000);
+    expect(customDoc.lines[1]).toMatchObject({
       catalogueItemId: null,
       catalogueRateMinor: null,
       sac: "998314",
@@ -746,8 +750,11 @@ describe("saving a draft [ADM-PROP-02, -03, ADM-APR-02]", () => {
         { kind: "estimate" },
       ]),
     );
-    expect(ok.sections.map((s: J) => s.kind)).toEqual(["acceptance", "scope", "terms", "estimate"]);
-    expect(ok.sections[1].hidden).toBe(true);
+    expect(ok.sections).toHaveLength(4);
+    const okDoc = await getDoc(o, made.id);
+    expect(okDoc.sections.map((s: J) => s.kind)).toEqual(["acceptance", "scope", "terms", "estimate"]);
+    expect(okDoc.sections[1].hidden).toBe(true);
+    expect(okDoc.sections.map((s: J) => s.id)).toEqual(ok.sections.map((s: J) => s.id));
   });
 
   it("engine errors are saved and returned (a draft may be incomplete): no lines, a bad schedule, a discount over the subtotal", async () => {
@@ -874,8 +881,9 @@ describe("saving a draft [ADM-PROP-02, -03, ADM-APR-02]", () => {
         fields: { contactId: null, validityDays: 30 },
       }),
     );
-    expect(cleared.contact).toBeNull();
-    expect(cleared.validityDays).toBe(30);
+    const clearedDoc = await getDoc(o, made.id);
+    expect(clearedDoc.contact).toBeNull();
+    expect(clearedDoc.validityDays).toBe(30);
     expect(
       (await patchDoc(o, made.id, { expectedUpdatedAt: cleared.updatedAt, fields: { validityDays: 91 } }))
         .status,
