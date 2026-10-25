@@ -14,6 +14,8 @@
       "!**/worker-configuration.d.ts",
       "!**/__snapshots__",
       "!packages/ui/generated",
+      "!packages/pdf/src/generated",
+      "!packages/pdf/visual/__snapshots__",
       "!docs",
       "!brand-incoming"
     ]

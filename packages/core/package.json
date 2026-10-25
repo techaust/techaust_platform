@@ -24,6 +24,7 @@
     "./markdown": "./src/markdown.ts",
     "./projects": "./src/projects.ts",
     "./numbering": "./src/numbering.ts",
+    "./pdf-jobs": "./src/pdf-jobs.ts",
     "./permissions": "./src/permissions.ts",
     "./reply-templates": "./src/reply-templates.ts",
     "./settings": "./src/schemas/settings.ts",
