@@ -14,6 +14,7 @@ import {
   type ScheduleStep,
   type Supply,
   splitInclusive,
+  type TaxResult,
 } from "../../src/tax/index.ts";
 import {
   DATE,
@@ -159,8 +160,79 @@ describe("property: the inclusive split", () => {
 // ---------------------------------------------------------------------------------------------- credit notes
 const zeroCredit = { taxableMinor: 0, cgstMinor: 0, sgstMinor: 0, igstMinor: 0 };
 
+/** What the notes issued so far took from an invoice, checked after every note. */
+function ledgerOf(original: ComputedDocument) {
+  const credited = original.lines.map(() => ({ ...zeroCredit }));
+  const inrCredited = original.inr ? original.lines.map(() => ({ ...zeroCredit })) : null;
+  let creditedTotal = 0;
+  let inrTotal = 0;
+  const left = (i: number) =>
+    (original.lines[i]?.taxableMinor as number) - (credited[i]?.taxableMinor as number);
+  const add = (c: typeof zeroCredit, l: typeof zeroCredit) => ({
+    taxableMinor: c.taxableMinor + l.taxableMinor,
+    cgstMinor: c.cgstMinor + l.cgstMinor,
+    sgstMinor: c.sgstMinor + l.sgstMinor,
+    igstMinor: c.igstMinor + l.igstMinor,
+  });
+  const within = (c: typeof zeroCredit, o: typeof zeroCredit) => {
+    expect(c.taxableMinor).toBeLessThanOrEqual(o.taxableMinor);
+    expect(c.cgstMinor).toBeLessThanOrEqual(o.cgstMinor);
+    expect(c.sgstMinor).toBeLessThanOrEqual(o.sgstMinor);
+    expect(c.igstMinor).toBeLessThanOrEqual(o.igstMinor);
+  };
+  return {
+    left,
+    remaining: () => original.lines.reduce((a, _, i) => a + left(i), 0),
+    soFar(): CreditedSoFar {
+      return {
+        lines: credited,
+        creditedTotalMinor: creditedTotal,
+        ...(inrCredited ? { inr: { lines: inrCredited, totalMinor: inrTotal } } : {}),
+      };
+    },
+    apply(cn: ComputedDocument) {
+      for (const l of cn.lines) {
+        credited[l.index] = add(credited[l.index] as typeof zeroCredit, l);
+        if (inrCredited && l.inr) {
+          inrCredited[l.index] = add(inrCredited[l.index] as typeof zeroCredit, l.inr);
+        }
+      }
+      creditedTotal += cn.totalMinor;
+      inrTotal += cn.inr?.totalMinor ?? 0;
+      // after every note: never above the original on any line or head, and the notes never add up to more than the invoice
+      original.lines.forEach((o, i) => {
+        within(credited[i] as typeof zeroCredit, o);
+        if (inrCredited && o.inr) within(inrCredited[i] as typeof zeroCredit, o.inr);
+      });
+      expect(creditedTotal).toBeLessThanOrEqual(original.totalMinor);
+      if (original.inr) expect(inrTotal).toBeLessThanOrEqual(original.inr.totalMinor);
+    },
+    /** Nothing is left: the notes add up to the original, per line, per head and in total (and in INR the same). */
+    expectComplete() {
+      expect(creditedTotal).toBe(original.totalMinor);
+      original.lines.forEach((o, i) => {
+        expect(credited[i]).toEqual({
+          taxableMinor: o.taxableMinor,
+          cgstMinor: o.cgstMinor,
+          sgstMinor: o.sgstMinor,
+          igstMinor: o.igstMinor,
+        });
+        if (inrCredited && o.inr) {
+          expect(inrCredited[i]).toEqual({
+            taxableMinor: o.inr.taxableMinor,
+            cgstMinor: o.inr.cgstMinor,
+            sgstMinor: o.inr.sgstMinor,
+            igstMinor: o.inr.igstMinor,
+          });
+        }
+      });
+      if (original.inr) expect(inrTotal).toBe(original.inr.totalMinor);
+    },
+  };
+}
+
 describe("property: credit-note sequences", () => {
-  it("never take more than the original on any line or head; once nothing is left they add up to the original exactly", () => {
+  it("never take more than the original on any line or head, never add up to more than the invoice, and once nothing is left add up to the original exactly (USD invoices: also in INR)", () => {
     fc.assert(
       fc.property(
         fc.constantFrom(REG_WB, REG_MH, unregistered("33"), OVERSEAS_US),
@@ -183,8 +255,10 @@ describe("property: credit-note sequences", () => {
           }),
           { minLength: 0, maxLength: 4 },
         ),
-        (recipient, rawLines, steps) => {
+        fc.integer({ min: 1_000_000, max: 200_000_000 }),
+        (recipient, rawLines, steps, fxMicros) => {
           const isExport = recipient.gstStatus === "overseas";
+          const lines = rawLines.map((l) => line(l.rate, { gstRateBp: l.bp }));
           const original = good(
             isExport
               ? computeDocument(
@@ -193,44 +267,16 @@ describe("property: credit-note sequences", () => {
                     documentDate: DATE,
                     recipient,
                     exportMode: "igst_paid",
-                    lines: rawLines.map((l) => line(l.rate, { gstRateBp: l.bp })),
+                    lines,
+                    fx: { rateMicros: fxMicros },
                   },
                   DEFAULTS,
                 )
-              : inrDoc(
-                  recipient,
-                  rawLines.map((l) => line(l.rate, { gstRateBp: l.bp })),
-                ),
+              : inrDoc(recipient, lines),
           );
-          const credited = original.lines.map(() => ({ ...zeroCredit }));
-          let creditedTotal = 0;
-          const noteTotals: number[] = [];
-          const left = (i: number) =>
-            (original.lines[i]?.taxableMinor as number) - (credited[i]?.taxableMinor as number);
-          const apply = (cn: ComputedDocument) => {
-            for (const l of cn.lines) {
-              const c = credited[l.index] as typeof zeroCredit;
-              credited[l.index] = {
-                taxableMinor: c.taxableMinor + l.taxableMinor,
-                cgstMinor: c.cgstMinor + l.cgstMinor,
-                sgstMinor: c.sgstMinor + l.sgstMinor,
-                igstMinor: c.igstMinor + l.igstMinor,
-              };
-            }
-            creditedTotal += cn.totalMinor;
-            noteTotals.push(cn.totalMinor);
-            original.lines.forEach((o, i) => {
-              const c = credited[i] as typeof zeroCredit;
-              expect(c.taxableMinor).toBeLessThanOrEqual(o.taxableMinor);
-              expect(c.cgstMinor).toBeLessThanOrEqual(o.cgstMinor);
-              expect(c.sgstMinor).toBeLessThanOrEqual(o.sgstMinor);
-              expect(c.igstMinor).toBeLessThanOrEqual(o.igstMinor);
-            });
-          };
-          const soFar = (): CreditedSoFar => ({ lines: credited, creditedTotalMinor: creditedTotal });
-
+          const ledger = ledgerOf(original);
           for (const step of steps) {
-            const remaining = original.lines.map((_, i) => left(i)).reduce((a, v) => a + v, 0);
+            const remaining = ledger.remaining();
             if (remaining === 0) break;
             let request: CreditRequest;
             if (step.kind === "amount") {
@@ -239,25 +285,63 @@ describe("property: credit-note sequences", () => {
               request = { kind: "amount", taxableMinor: amount };
             } else {
               const i = step.pick % original.lines.length;
-              const part = Math.floor((left(i) * step.share) / 100);
+              const part = Math.floor((ledger.left(i) * step.share) / 100);
               if (part === 0) continue;
               request = { kind: "lines", lines: [{ line: i, taxableMinor: part }] };
             }
-            apply(good(creditNote(original, soFar(), request, DEFAULTS)));
+            ledger.apply(good(creditNote(original, ledger.soFar(), request, DEFAULTS)));
           }
-          const remaining = original.lines.map((_, i) => left(i)).reduce((a, v) => a + v, 0);
-          if (remaining > 0) apply(good(creditNote(original, soFar(), { kind: "full" }, DEFAULTS)));
+          if (ledger.remaining() > 0) {
+            ledger.apply(good(creditNote(original, ledger.soFar(), { kind: "full" }, DEFAULTS)));
+          }
+          ledger.expectComplete();
+        },
+      ),
+      RUNS,
+    );
+  });
 
-          // nothing is left: the notes add up to the original, per line, per head and in total
-          expect(noteTotals.reduce((a, v) => a + v, 0)).toBe(original.totalMinor);
-          original.lines.forEach((o, i) => {
-            expect(credited[i]).toEqual({
-              taxableMinor: o.taxableMinor,
-              cgstMinor: o.cgstMinor,
-              sgstMinor: o.sgstMinor,
-              igstMinor: o.igstMinor,
-            });
-          });
+  it("tiny remainders: 1 to 3 minor units of taxable value left for the final note (INR and USD with FX)", () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom(REG_WB, REG_MH, OVERSEAS_US),
+        fc.array(fc.integer({ min: 1, max: 5_000_000 }), { minLength: 1, maxLength: 3 }),
+        fc.integer({ min: 1, max: 3 }),
+        fc.integer({ min: 1, max: 99 }),
+        fc.integer({ min: 1_000_000, max: 200_000_000 }),
+        (recipient, rates, tiny, firstShare, fxMicros) => {
+          const lines = rates.map((r) => line(r));
+          const original = good(
+            recipient.gstStatus === "overseas"
+              ? computeDocument(
+                  {
+                    currency: "USD",
+                    documentDate: DATE,
+                    recipient,
+                    exportMode: "igst_paid",
+                    lines,
+                    fx: { rateMicros: fxMicros },
+                  },
+                  DEFAULTS,
+                )
+              : inrDoc(recipient, lines),
+          );
+          const ledger = ledgerOf(original);
+          const all = ledger.remaining();
+          if (all <= tiny + 1) return; // nothing to leave behind
+          // a first note for part of the document, then a second that leaves only `tiny` behind, then the final note
+          const first = Math.max(1, Math.floor(((all - tiny) * firstShare) / 100));
+          ledger.apply(
+            good(creditNote(original, ledger.soFar(), { kind: "amount", taxableMinor: first }, DEFAULTS)),
+          );
+          const rest = ledger.remaining() - tiny;
+          if (rest > 0) {
+            ledger.apply(
+              good(creditNote(original, ledger.soFar(), { kind: "amount", taxableMinor: rest }, DEFAULTS)),
+            );
+          }
+          ledger.apply(good(creditNote(original, ledger.soFar(), { kind: "full" }, DEFAULTS)));
+          ledger.expectComplete();
         },
       ),
       RUNS,
@@ -282,7 +366,9 @@ const weird = fc.oneof(
     -0,
   ),
 );
-const shape = (r: { ok: boolean }) => typeof r.ok === "boolean";
+/** A result of the declared shape that is not a swallowed defect (`internal_error`). */
+const sound = (r: TaxResult<unknown>) =>
+  typeof r.ok === "boolean" && (r.ok || !r.errors.some((e) => e.code === "internal_error"));
 
 describe("property: nothing throws, whatever the numbers (NaN, infinity, unsafe, negative, fractional)", () => {
   it("computeDocument", () => {
@@ -328,7 +414,7 @@ describe("property: nothing throws, whatever the numbers (NaN, infinity, unsafe,
               DEFAULTS,
             );
           expect(run).not.toThrow();
-          expect(shape(run())).toBe(true);
+          expect(sound(run())).toBe(true);
         },
       ),
       RUNS,
@@ -354,7 +440,7 @@ describe("property: nothing throws, whatever the numbers (NaN, infinity, unsafe,
           );
           const run = () => computeSchedule(total, "INR", steps, DEFAULTS);
           expect(run).not.toThrow();
-          expect(shape(run())).toBe(true);
+          expect(sound(run())).toBe(true);
         },
       ),
       RUNS,
@@ -380,7 +466,7 @@ describe("property: nothing throws, whatever the numbers (NaN, infinity, unsafe,
               DEFAULTS,
             );
           expect(run).not.toThrow();
-          expect(shape(run())).toBe(true);
+          expect(sound(run())).toBe(true);
         },
       ),
       RUNS,
@@ -419,7 +505,7 @@ describe("property: nothing throws, whatever the numbers (NaN, infinity, unsafe,
               DEFAULTS,
             );
           expect(run).not.toThrow();
-          expect(shape(run())).toBe(true);
+          expect(sound(run())).toBe(true);
         },
       ),
       RUNS,
@@ -431,7 +517,7 @@ describe("property: nothing throws, whatever the numbers (NaN, infinity, unsafe,
       fc.property(fc.record({ year: weird, month: weird, day: weird }), (documentDate) => {
         const run = () => determineSupply(OVERSEAS_US, DEFAULTS, { documentDate, currency: "USD" });
         expect(run).not.toThrow();
-        expect(shape(run())).toBe(true);
+        expect(sound(run())).toBe(true);
       }),
       RUNS,
     );

@@ -1287,4 +1287,121 @@ export const GOLDEN: readonly GoldenCase[] = [
       expect(totals(dn)).toMatchObject({ igst: 9_000, total: 59_000 });
     },
   },
+  // ------------------------------------------------------------------------------------------------ credit notes: the fix list
+  {
+    name: "cn-cumulative-no-overshoot",
+    check: () => {
+      // An invoice to Maharashtra of 100,041 at 18 %: IGST 100,041 x 0.18 = 18,007.38 -> 18,007; preRound 118,048 -> 118,000 (RO -48).
+      const original = good(inrDoc(REG_MH, [line(100_041)]));
+      expect(totals(original)).toMatchObject({
+        taxable: 100_041,
+        igst: 18_007,
+        roundOff: -48,
+        total: 118_000,
+      });
+      // CN1, taxable 42,840: IGST 42,840 x 0.18 = 7,711.2 -> 7,711; preRound 50,551 -> 50,600 (505.51 rounds up); RO +49.
+      const first = good(
+        creditNote(original, noCredit(original), { kind: "amount", taxableMinor: 42_840 }, DEFAULTS),
+      );
+      expect(totals(first)).toMatchObject({ taxable: 42_840, igst: 7_711, roundOff: 49, total: 50_600 });
+      // CN2, taxable 57,200: IGST 57,200 x 0.18 = 10,296 exactly; preRound 67,496. Everything credited so far:
+      // 42,840 + 57,200 + 7,711 + 10,296 = 118,047 -> 118,000; this note = 118,000 - 50,600 = 67,400 (RO 67,400 - 67,496 = -96).
+      // Rounding each note on its own would give 67,500 and 50,600 + 67,500 = 118,100, more than the invoice.
+      const credited1: CreditedSoFar = {
+        lines: [{ taxableMinor: 42_840, cgstMinor: 0, sgstMinor: 0, igstMinor: 7_711 }],
+        creditedTotalMinor: 50_600,
+      };
+      const second = good(
+        creditNote(original, credited1, { kind: "amount", taxableMinor: 57_200 }, DEFAULTS),
+      );
+      expect(totals(second)).toMatchObject({ taxable: 57_200, igst: 10_296, roundOff: -96, total: 67_400 });
+      // Final note: taxable 100,041 - 100,040 = 1, IGST left 18,007 - 18,007 = 0; preRound 1; it takes the total that is left,
+      // 118,000 - 118,000 = 0 (RO -1). The three notes add up to 118,000.
+      const credited2: CreditedSoFar = {
+        lines: [{ taxableMinor: 100_040, cgstMinor: 0, sgstMinor: 0, igstMinor: 18_007 }],
+        creditedTotalMinor: 118_000,
+      };
+      const last = good(creditNote(original, credited2, { kind: "full" }, DEFAULTS));
+      expect(totals(last)).toMatchObject({ taxable: 1, igst: 0, roundOff: -1, total: 0 });
+      expect(first.totalMinor + second.totalMinor + last.totalMinor).toBe(118_000);
+    },
+  },
+  {
+    name: "cn-usd-inr-view-capped",
+    check: () => {
+      // A 3-cent USD invoice under LUT at 83.5 INR per USD: INR taxable 3 x 83.5 = 250.5 -> 251 (no tax, no round-off), INR total 251.
+      const original = good(usdDoc([3], { fx: 83_500_000 }));
+      expect(original.inr).toMatchObject({
+        taxableMinor: 251,
+        igstMinor: 0,
+        roundOffMinor: 0,
+        totalMinor: 251,
+      });
+      // CN1, 1 cent: INR 1 x 83.5 = 83.5 -> 84 (left 251). CN2, 1 cent: 84 (left 167). Taken one by one that is 84 + 84 + 84 = 252,
+      // one paisa more than the invoice; the final note (1 cent, a line credited in full) takes exactly what is left, 251 - 168 = 83.
+      const first = good(
+        creditNote(original, noCredit(original), { kind: "amount", taxableMinor: 1 }, DEFAULTS),
+      );
+      expect(first.totalMinor).toBe(1);
+      expect(first.inr).toMatchObject({ taxableMinor: 84, totalMinor: 84 });
+      const credited1: CreditedSoFar = {
+        lines: [{ taxableMinor: 1, cgstMinor: 0, sgstMinor: 0, igstMinor: 0 }],
+        creditedTotalMinor: 1,
+        inr: { lines: [{ taxableMinor: 84, cgstMinor: 0, sgstMinor: 0, igstMinor: 0 }], totalMinor: 84 },
+      };
+      const second = good(creditNote(original, credited1, { kind: "amount", taxableMinor: 1 }, DEFAULTS));
+      expect(second.inr).toMatchObject({ taxableMinor: 84, totalMinor: 84 });
+      const credited2: CreditedSoFar = {
+        lines: [{ taxableMinor: 2, cgstMinor: 0, sgstMinor: 0, igstMinor: 0 }],
+        creditedTotalMinor: 2,
+        inr: { lines: [{ taxableMinor: 168, cgstMinor: 0, sgstMinor: 0, igstMinor: 0 }], totalMinor: 168 },
+      };
+      const last = good(creditNote(original, credited2, { kind: "full" }, DEFAULTS));
+      expect(last.totalMinor).toBe(1);
+      expect(last.lines[0]?.inr).toEqual({
+        taxableMinor: 83,
+        cgstMinor: 0,
+        sgstMinor: 0,
+        igstMinor: 0,
+        lineTotalMinor: 83,
+      });
+      expect(last.inr).toMatchObject({ taxableMinor: 83, roundOffMinor: 0, totalMinor: 83 });
+      expect(84 + 84 + 83).toBe(251);
+    },
+  },
+  {
+    name: "cn-usd-inr-igst-per-head",
+    check: () => {
+      // IGST-paid USD invoice, 2 lines of 100,000 and 50,000 cents at 83 INR per USD: INR taxable 150,000 x 83 = 12,450,000, split
+      // by weights 100,000 : 50,000 = 8,300,000 and 4,150,000; INR IGST 1,494,000 and 747,000; total 150,000 + 27,000 = 177,000 cents.
+      const original = good(usdDoc([100_000, 50_000], { fx: 83_000_000, ctx: EXPORT_IGST }));
+      expect(original.inr).toMatchObject({
+        taxableMinor: 12_450_000,
+        igstMinor: 2_241_000,
+        totalMinor: 14_691_000,
+      });
+      // Credit line 1 in full (100,000 cents): its INR is exactly what is left of the line, 8,300,000 taxable and 1,494,000 IGST.
+      const cn = good(
+        creditNote(
+          original,
+          noCredit(original),
+          { kind: "lines", lines: [{ line: 0, taxableMinor: 100_000 }] },
+          EXPORT_IGST,
+        ),
+      );
+      expect(cn.lines[0]?.inr).toEqual({
+        taxableMinor: 8_300_000,
+        cgstMinor: 0,
+        sgstMinor: 0,
+        igstMinor: 1_494_000,
+        lineTotalMinor: 9_794_000,
+      });
+      expect(cn.inr).toMatchObject({
+        taxableMinor: 8_300_000,
+        igstMinor: 1_494_000,
+        roundOffMinor: 0,
+        totalMinor: 9_794_000,
+      });
+    },
+  },
 ];

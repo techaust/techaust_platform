@@ -9,6 +9,8 @@ const ROOT = join(import.meta.dirname, "..", "..");
 const TAX_DIR = join(ROOT, "src", "tax");
 const files = readdirSync(TAX_DIR).filter((f) => f.endsWith(".ts"));
 const read = (f: string) => readFileSync(join(TAX_DIR, f), "utf8");
+/** Module-level `let` or `var`, exported or not. */
+const MUTABLE = /^(export\s+)?(let|var)\s/m;
 
 describe("src/tax: settings are inputs, never constants", () => {
   it("has the files the brief names", () => {
@@ -36,13 +38,20 @@ describe("src/tax: settings are inputs, never constants", () => {
 });
 
 describe("src/tax: pure and deterministic", () => {
+  it("the mutable-state check sees exported and plain let and var", () => {
+    for (const bad of ["let a = 1;", "var a = 1;", "export let a = 1;", "export var a = 1;"]) {
+      expect(bad).toMatch(MUTABLE);
+    }
+    expect("const a = 1;\n  let inside = 2;").not.toMatch(MUTABLE);
+  });
+
   it.each(files)(
     "%s has no zod value import, no clock, no randomness, no module-level mutable state",
     (f) => {
       const src = read(f);
       expect(src).not.toMatch(/from "zod/);
       expect(src).not.toMatch(/\bDate\.now\b|\bnew Date\(|\bMath\.random\b|\bperformance\.now\b|\bcrypto\./);
-      expect(src).not.toMatch(/^(let|var) /m);
+      expect(src).not.toMatch(MUTABLE);
       expect(src).not.toMatch(/\bfetch\(|\bprocess\.|\bglobalThis\b/);
     },
   );
