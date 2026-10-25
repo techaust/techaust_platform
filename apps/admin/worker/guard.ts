@@ -16,7 +16,7 @@ import {
   UNAUTHENTICATED,
 } from "./context.ts";
 
-type Opts = { audit?: string; log?: boolean | "refusals"; body?: "large" };
+type Opts = { audit?: string; log?: boolean | "refusals"; body?: "upload" | "large" };
 const R = (
   method: RouteDef["method"],
   path: string,
@@ -93,6 +93,32 @@ export const ROUTES: readonly RouteDef[] = [
   R("PATCH", "/contacts/:id", "clients.write", { audit: "contact.update" }),
   R("POST", "/contacts/:id/export", "clients.dataExport", { audit: "contact.export" }),
   R("POST", "/contacts/:id/erase", "clients.dataErase", { audit: "contact.erase" }),
+  // Projects, milestones, notes and files (M3.4, ADM-PRJ-01..05). The client page's tabs are the /clients/:id/... rows. Uploads are
+  // raw binary bodies (`body: "upload"`); downloads are streamed through the session and appear in the access log.
+  R("GET", "/projects", "projects.read"),
+  R("POST", "/projects", "projects.write", { audit: "project.create" }),
+  R("GET", "/projects/:id", "projects.read"),
+  R("PATCH", "/projects/:id", "projects.write", { audit: "project.update" }),
+  R("POST", "/projects/:id/status", "projects.write", { audit: "project.status" }),
+  R("POST", "/projects/:id/milestones", "projects.write", { audit: "milestone.create" }),
+  R("POST", "/projects/:id/milestones/order", "projects.write", { audit: "milestone.reorder" }),
+  R("PATCH", "/milestones/:id", "projects.write", { audit: "milestone.update" }),
+  R("POST", "/milestones/:id/status", "projects.write", { audit: "milestone.status" }),
+  R("DELETE", "/milestones/:id", "projects.write", { audit: "milestone.delete" }),
+  R("GET", "/projects/:id/notes", "projects.read"),
+  R("POST", "/projects/:id/notes", "projects.write", { audit: "note.create" }),
+  R("GET", "/projects/:id/files", "projects.read"),
+  R("POST", "/projects/:id/files", "projects.write", { audit: "file.upload", body: "upload" }),
+  R("GET", "/clients/:id/projects", "projects.read"),
+  R("GET", "/clients/:id/notes", "projects.read"),
+  R("POST", "/clients/:id/notes", "projects.write", { audit: "note.create" }),
+  R("GET", "/clients/:id/files", "projects.read"),
+  R("POST", "/clients/:id/files", "projects.write", { audit: "file.upload", body: "upload" }),
+  R("PATCH", "/notes/:id", "projects.write", { audit: "note.update" }),
+  R("DELETE", "/notes/:id", "projects.write", { audit: "note.delete" }),
+  R("PATCH", "/files/:id", "projects.write", { audit: "file.share" }),
+  R("DELETE", "/files/:id", "projects.write", { audit: "file.delete" }),
+  R("GET", "/files/:id/download", "projects.read"),
   // Catalogue, templates and publishing (M4.1, ADM-CAT-01..05). Static paths (`snapshots`, `publish`) are declared before `:id`.
   R("GET", "/catalogue", "catalogue.read"),
   R("GET", "/catalogue/snapshots", "catalogue.read"),

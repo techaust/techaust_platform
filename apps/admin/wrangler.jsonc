@@ -45,6 +45,9 @@
       "migrations_dir": "../../packages/db/migrations"
     }
   ],
+  // Private file vault (M3.4, ADM-PRJ-04): uploads and downloads go through this Worker only (no public bucket, no signed
+  // URLs). Local dev and tests use Miniflare's R2. Production has no bucket until Phase 7 (owner approval).
+  "r2_buckets": [{ "binding": "FILES", "bucket_name": "techaust-local-files" }],
   "env": {
     "staging": {
       "name": "techaust-platform-admin-staging",
@@ -64,6 +67,7 @@
         "required": ["PASSWORD_PEPPER", "SALT_PEPPER", "TOTP_ENC_KEY", "SESSION_HMAC_KEY", "TURNSTILE_SECRET"]
       },
       "queues": { "producers": [{ "binding": "EMAIL_QUEUE", "queue": "techaust-staging-email" }] },
+      "r2_buckets": [{ "binding": "FILES", "bucket_name": "techaust-staging-files" }],
       "d1_databases": [
         {
           "binding": "DB",
@@ -87,6 +91,7 @@
       "secrets": {
         "required": ["PASSWORD_PEPPER", "SALT_PEPPER", "TOTP_ENC_KEY", "SESSION_HMAC_KEY", "TURNSTILE_SECRET"]
       },
+      // No R2 bucket (FILES) in production until Phase 7.
       // Production: NO invocation logs from day one (they carry the client IP, user agent and location of every staff
       // request, which the append-only access log already holds for security). Console logs stay on.
       "observability": {

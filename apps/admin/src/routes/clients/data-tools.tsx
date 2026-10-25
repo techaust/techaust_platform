@@ -31,6 +31,7 @@ import {
   exportFileName,
 } from "../../lib/clients.ts";
 import { sentence } from "../../lib/format.ts";
+import { lastContactLine } from "../../lib/projects.ts";
 import { withCode } from "../../lib/step-up.ts";
 
 /** 07-J (approved), word for word. */
@@ -219,7 +220,13 @@ function download(url: string, name: string) {
   a.remove();
 }
 
-export function EraseDialog(props: { contact: ContactView | null; onClose: () => void; onDone: () => void }) {
+export function EraseDialog(props: {
+  contact: ContactView | null;
+  /** The individual client whose last live contact this is (its notes and files go too; 07-K), or null. */
+  lastContactOf?: string | null;
+  onClose: () => void;
+  onDone: () => void;
+}) {
   const toast = useToast();
   const c = props.contact;
   const [mode, setMode] = useState<EraseMode>("erase");
@@ -312,6 +319,9 @@ export function EraseDialog(props: { contact: ContactView | null; onClose: () =>
           <p className="data-tool__confirm" id="erase-confirm" tabIndex={-1}>
             {mode === "erase" ? eraseConfirmation(c.name) : anonymiseConfirmation(c.name)}
           </p>
+        )}
+        {c && props.lastContactOf && (
+          <p className="data-tool__also">{lastContactLine(props.lastContactOf)}</p>
         )}
         <VerifyNote legal>{DATA_TOOLS_VERIFY}</VerifyNote>
         {blocked && (

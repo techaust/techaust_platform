@@ -9,6 +9,7 @@
     "./contact-access": "./src/contact-access.ts",
     "./lead-stage": "./src/lead-stage.ts",
     "./log": "./src/log.ts",
+    "./portal-shared": "./src/portal-shared.ts",
     "./catalogue": "./src/seed/catalogue.ts"
   },
   "scripts": {

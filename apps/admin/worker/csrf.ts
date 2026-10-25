@@ -24,6 +24,7 @@ export const csrf = createMiddleware<AppEnv>(async (c, next) => {
     url: c.req.url,
     contentType: c.req.header("Content-Type"),
     hasBody: hasBody(c),
+    allowBinary: c.var.route?.body === "upload",
   });
   if (verdict === "cross_site") return err(c, CROSS_SITE, 403);
   if (verdict === "not_json") return err(c, NOT_JSON, 415);

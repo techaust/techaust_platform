@@ -11,12 +11,16 @@ import { account } from "./account.ts";
 import { audit } from "./audit.ts";
 import { auth } from "./auth.ts";
 import { catalogue, templates } from "./catalogue.ts";
+import { clientTabs } from "./client-tabs.ts";
 import { clients, contacts } from "./clients.ts";
 import { type AppEnv, accessEntry, BAD_REQUEST, type Ctx, err, FORBIDDEN, NOT_FOUND } from "./context.ts";
 import { csrf } from "./csrf.ts";
+import { files } from "./files.ts";
 import { guard, routeFor } from "./guard.ts";
 import { leads } from "./leads.ts";
+import { notes } from "./notes.ts";
 import { notifications } from "./notifications.ts";
+import { milestones, projects } from "./projects.ts";
 import { search } from "./search.ts";
 import { settings } from "./settings.ts";
 import { users } from "./users.ts";
@@ -92,9 +96,13 @@ export function createApp() {
   );
   app.use(csrf);
   const jsonLimit = bodyLimit({ maxSize: 16 * 1024, onError: (c) => err(c as Ctx, BAD_REQUEST, 413) });
-  // A route marked `body: "large"` (the catalogue and template saves) reads up to 32 KB; every other route stays at 16 KB.
+  // An upload route (`body: "upload"`) checks its own declared length and streams; a route marked `body: "large"` (the catalogue
+  // and template saves) reads up to 32 KB; every other route stays at 16 KB.
   const largeLimit = bodyLimit({ maxSize: 32 * 1024, onError: (c) => err(c as Ctx, BAD_REQUEST, 413) });
-  app.use((c, next) => (c.var.route?.body === "large" ? largeLimit(c, next) : jsonLimit(c, next)));
+  app.use((c, next) => {
+    const kind = c.var.route?.body;
+    return kind === "upload" ? next() : kind === "large" ? largeLimit(c, next) : jsonLimit(c, next);
+  });
   app.use(guard);
 
   app.get("/v1/health", (c) => c.json({ ok: true, service: "admin", env: c.env.ENVIRONMENT }));
@@ -106,6 +114,11 @@ export function createApp() {
   app.route("/v1/catalogue", catalogue);
   app.route("/v1/templates", templates);
   app.route("/v1/clients", clients);
+  app.route("/v1/clients", clientTabs);
+  app.route("/v1/projects", projects);
+  app.route("/v1/milestones", milestones);
+  app.route("/v1/notes", notes);
+  app.route("/v1/files", files);
   app.route("/v1/contacts", contacts);
   app.route("/v1/notifications", notifications);
   app.route("/v1/search", search);

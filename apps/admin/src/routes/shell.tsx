@@ -7,7 +7,7 @@ import type { Role } from "@techaust/core/permissions";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Outlet, useLocation, useParams } from "react-router";
 import { type Notification as ApiNotification, api, errorText } from "../api.ts";
-import { Building, Inbox, Package, User, Users } from "../components/icons.tsx";
+import { Building, FolderKanban, Inbox, Package, User, Users } from "../components/icons.tsx";
 import { AppShell } from "../components/shell/app-shell.tsx";
 import { GlobalSearch, type SearchGroup } from "../components/shell/global-search.tsx";
 import { type NavItem, navFor, navItem } from "../components/shell/nav.tsx";
@@ -27,6 +27,7 @@ const SEARCH_ICONS = {
   user: <Users />,
   client: <Building />,
   contact: <User />,
+  project: <FolderKanban />,
   catalogue: <Package />,
 } as const;
 
@@ -49,14 +50,18 @@ async function runSearch(q: string): Promise<SearchGroup[]> {
  * What the box can find for this role today (leads with leads.read; clients by code or name and contacts by email
  * with clients.read, M3.3; staff for the owner), or null for nothing.
  */
-function searchCopy(canLeads: boolean, canClients: boolean, canUsers: boolean) {
-  const kinds = [canLeads && "leads", canClients && "clients", canUsers && "staff"].filter(
-    (k): k is string => typeof k === "string",
-  );
+function searchCopy(canLeads: boolean, canClients: boolean, canUsers: boolean, canProjects = false) {
+  const kinds = [
+    canLeads && "leads",
+    canClients && "clients",
+    canProjects && "projects",
+    canUsers && "staff",
+  ].filter((k): k is string => typeof k === "string");
   if (!kinds.length) return null;
   const finds = [
     canLeads && "a lead by its reference or email",
     canClients && "a client by its code or name, or a contact by email",
+    canProjects && "a project by its code or name",
     canUsers && "a staff member by name or email",
   ].filter((k): k is string => typeof k === "string");
   const list = (xs: string[]) =>
@@ -142,6 +147,7 @@ export function Component() {
     allowed(user.role, "leads.read"),
     allowed(user.role, "clients.read"),
     allowed(user.role, "users.read"),
+    allowed(user.role, "projects.read"),
   );
   const current = sectionOf(pathname);
 

@@ -139,6 +139,8 @@ export type CallInit = {
   cookie?: string | undefined;
   method?: string;
   headers?: Record<string, string>;
+  /** A raw binary body (an upload): sent as application/octet-stream with its Content-Length, unless `headers` says otherwise. */
+  raw?: Uint8Array;
 };
 
 /** A request to `/api/v1<path>` as the SPA would send it (same origin, JSON), straight into the Hono app. */
@@ -146,14 +148,17 @@ export const call = async (path: string, init: CallInit = {}, e: Env = env) =>
   send(
     `${ORIGIN}/api/v1${path}`,
     {
-      method: init.method ?? (init.body === undefined ? "GET" : "POST"),
+      method: init.method ?? (init.body === undefined && init.raw === undefined ? "GET" : "POST"),
       headers: {
         ...(init.body === undefined ? {} : { "Content-Type": "application/json" }),
+        ...(init.raw === undefined
+          ? {}
+          : { "Content-Type": "application/octet-stream", "Content-Length": String(init.raw.byteLength) }),
         Origin: ORIGIN,
         ...(init.cookie ? { Cookie: init.cookie } : {}),
         ...init.headers,
       },
-      body: init.body === undefined ? null : JSON.stringify(init.body),
+      body: init.raw ?? (init.body === undefined ? null : JSON.stringify(init.body)),
     },
     e,
   );
@@ -403,6 +408,7 @@ export function sampleRequest(route: RouteDef) {
         : route.method === "PATCH"
           ? { role: "staff" }
           : {};
+  if (route.body === "upload") return { path, init: { method: route.method, raw: new Uint8Array([1]) } };
   return { path, init: { method: route.method, body } };
 }
 

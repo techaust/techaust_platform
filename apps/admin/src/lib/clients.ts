@@ -364,6 +364,15 @@ export function contactCountText(page: { liveContactCount: number }): string {
   return n === 1 ? "1 contact" : `${n} contacts`;
 }
 
+/**
+ * Erasing or anonymising this contact also removes the client's project notes and files (owner, 2026-10-25; VERIFY WITH
+ * CA/LEGAL): the client is an individual and this is its last live contact, the API's own condition (clients.ts).
+ */
+export const lastLiveOfIndividual = (
+  page: { client: { type: "business" | "individual" }; liveContactCount: number },
+  contact: { anonymisedAt: number | null },
+) => page.client.type === "individual" && contact.anonymisedAt === null && page.liveContactCount === 1;
+
 // ---- the data-subject export file (ADM-CLI-05) ------------------------------------------------------------------------
 
 /** The file the browser assembles from the summary and every part's pages; nothing is sent anywhere. */
@@ -396,6 +405,8 @@ export const EXPORT_PART_LABELS: Record<ExportPart, string> = {
   email_log: "Emails sent",
   audit_log: "Activity",
   access_log: "Portal requests",
+  notes: "Notes",
+  files: "File records",
 };
 
 // ---- the page's drafts (held above every reload, as on the lead page) ------------------------------------------------
