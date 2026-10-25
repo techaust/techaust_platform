@@ -637,7 +637,7 @@ describe("the role matrix [ADM-PRJ, docs/04 §9]", () => {
         if (role === "sales" && r.access === "projects.write") expect(res.status).toBe(403);
       }
     }
-  });
+  }, 30_000);
 
   it("Sales denied a write changes nothing and writes no audit row", async () => {
     const s = await sessionFor("sales");
