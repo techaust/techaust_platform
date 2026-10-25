@@ -85,7 +85,7 @@ export function LinesTable(props: { lines: ViewLine[]; currency: Currency; suppl
   return (
     // A box that may scroll sideways on a phone is a Tab stop of its own, so keyboard users can scroll it (WCAG 2.1.1).
     // biome-ignore lint/a11y/noNoninteractiveTabindex: a scrollable region must be focusable
-    <div className="read-lines" role="region" aria-label="Lines" tabIndex={0}>
+    <section className="read-lines" aria-label="Lines" tabIndex={0}>
       <table>
         <caption className="visually-hidden">Lines</caption>
         <thead>
@@ -154,7 +154,7 @@ export function LinesTable(props: { lines: ViewLine[]; currency: Currency; suppl
           })}
         </tbody>
       </table>
-    </div>
+    </section>
   );
 }
 
@@ -162,7 +162,7 @@ export function LinesTable(props: { lines: ViewLine[]; currency: Currency; suppl
 export function ScheduleTable(props: { steps: ViewStep[]; currency: Currency }) {
   return (
     // biome-ignore lint/a11y/noNoninteractiveTabindex: a scrollable region must be focusable
-    <div className="read-lines read-lines--schedule" role="region" aria-label="Payment schedule" tabIndex={0}>
+    <section className="read-lines read-lines--schedule" aria-label="Payment schedule" tabIndex={0}>
       <table>
         <caption className="visually-hidden">Payment schedule</caption>
         <thead>
@@ -194,7 +194,7 @@ export function ScheduleTable(props: { steps: ViewStep[]; currency: Currency }) 
           ))}
         </tbody>
       </table>
-    </div>
+    </section>
   );
 }
 
