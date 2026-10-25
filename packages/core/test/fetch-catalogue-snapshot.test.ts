@@ -24,16 +24,17 @@ const wrangler = (results: unknown[], success = true) =>
 const ok =
   (stdout: string): (() => WranglerRun) =>
   () => ({ status: 0, stdout, stderr: "" });
-const ROW = { json: JSON_TEXT, sha256: SHA };
+const ID = "snap-0001";
+const ROW = { id: ID, json: JSON_TEXT, sha256: SHA };
 
 describe("reading wrangler's output", () => {
   it("parses the --json output of the query", () => {
-    expect(snapshotFromOutput(wrangler([ROW]))).toEqual({ json: JSON_TEXT, sha256: SHA });
+    expect(snapshotFromOutput(wrangler([ROW]))).toEqual({ id: ID, json: JSON_TEXT, sha256: SHA });
   });
 
   it("finds the JSON after a banner line", () => {
     const text = ` ⛅️ wrangler 4.147.0\n-------------------\n${wrangler([ROW])}\n`;
-    expect(snapshotFromOutput(text)).toEqual({ json: JSON_TEXT, sha256: SHA });
+    expect(snapshotFromOutput(text)).toEqual({ id: ID, json: JSON_TEXT, sha256: SHA });
     expect(parseWranglerJson(text)).toBeInstanceOf(Array);
   });
 
@@ -47,11 +48,12 @@ describe("reading wrangler's output", () => {
     ["an error object", JSON.stringify({ error: { text: "denied" } })],
     ["an empty array", "[]"],
     ["a failed statement", wrangler([], false)],
-    ["a row without a sha", wrangler([{ json: JSON_TEXT }])],
-    ["a sha that does not match the text", wrangler([{ json: JSON_TEXT, sha256: "0".repeat(64) }])],
+    ["a row without a sha", wrangler([{ id: ID, json: JSON_TEXT }])],
+    ["a row without an id", wrangler([{ json: JSON_TEXT, sha256: SHA }])],
+    ["a sha that does not match the text", wrangler([{ id: ID, json: JSON_TEXT, sha256: "0".repeat(64) }])],
     [
       "text that is not JSON",
-      wrangler([{ json: "nope", sha256: createHash("sha256").update("nope").digest("hex") }]),
+      wrangler([{ id: ID, json: "nope", sha256: createHash("sha256").update("nope").digest("hex") }]),
     ],
   ])("fails on %s", (_name, text) => {
     expect(() => snapshotFromOutput(text)).toThrow();
@@ -59,7 +61,7 @@ describe("reading wrangler's output", () => {
 
   it("asks for the newest row of site_snapshots and nothing else", () => {
     expect(SNAPSHOT_SQL).toBe(
-      "SELECT json, sha256 FROM site_snapshots ORDER BY created_at DESC, id DESC LIMIT 1",
+      "SELECT id, json, sha256 FROM site_snapshots ORDER BY created_at DESC, id DESC LIMIT 1",
     );
     expect(SNAPSHOT_SQL).not.toMatch(/insert|update|delete|drop|alter/i);
   });
@@ -80,11 +82,13 @@ describe("fetchSnapshot and main", () => {
     const logs: string[] = [];
     expect(main({ out, githubOutput: gh, run: ok(wrangler([ROW])), log: (m) => logs.push(m) })).toEqual({
       found: true,
+      id: ID,
       sha256: SHA,
     });
     expect(readFileSync(out, "utf8")).toBe(JSON_TEXT);
-    expect(readFileSync(gh, "utf8")).toBe(`found=true\nsha=${SHA}\n`);
+    expect(readFileSync(gh, "utf8")).toBe(`found=true\nid=${ID}\nsha=${SHA}\n`);
     expect(logs.join(" ")).toContain(SHA.slice(0, 12));
+    expect(logs.join(" ")).toContain(ID);
   });
 
   it("writes nothing when there is no row", () => {
@@ -94,7 +98,7 @@ describe("fetchSnapshot and main", () => {
       found: false,
     });
     expect(existsSync(out)).toBe(false);
-    expect(readFileSync(gh, "utf8")).toBe("found=false\nsha=\n");
+    expect(readFileSync(gh, "utf8")).toBe("found=false\nid=\nsha=\n");
   });
 
   it("writes nothing and throws on a failed fetch or a bad row", () => {
@@ -103,7 +107,7 @@ describe("fetchSnapshot and main", () => {
       main({ out, run: () => ({ status: 2, stdout: "", stderr: "x" }), log: () => undefined }),
     ).toThrow();
     expect(() =>
-      main({ out, run: ok(wrangler([{ json: JSON_TEXT, sha256: "bad" }])), log: () => undefined }),
+      main({ out, run: ok(wrangler([{ id: ID, json: JSON_TEXT, sha256: "bad" }])), log: () => undefined }),
     ).toThrow();
     expect(existsSync(out)).toBe(false);
   });
@@ -131,15 +135,19 @@ describe("the workflows (read, not run)", () => {
     expect(publish).toContain("github.ref == 'refs/heads/main'");
   });
 
-  it("publish-catalogue reads only, with existing secrets, one shared concurrency group, web only", () => {
+  it("publish-catalogue reads only, with existing secrets, its own concurrency group, web only", () => {
     expect(publish).toMatch(/permissions:\n {2}contents: read\n/);
-    expect(publish).toContain("group: deploy-staging");
+    // Its own group: sharing deploy-staging would let a check replace a pending merge deploy (review finding 3).
+    expect(publish).toContain("group: publish-catalogue");
+    expect(publish).not.toContain("group: deploy-staging");
     expect(publish).toContain("cancel-in-progress: false");
     expect(publish).toContain("pnpm --filter @techaust/web run deploy:staging");
     expect(publish).not.toMatch(/deploy:staging\b.*\n.*-r /);
     const secrets = [...publish.matchAll(/secrets\.(\w+)/g)].map((m) => m[1]);
     expect(new Set(secrets)).toEqual(new Set(["CF_API_TOKEN_STAGING", "CLOUDFLARE_ACCOUNT_ID"]));
-    expect(publish).toMatch(/key: catalogue-\$\{\{ steps\.snapshot\.outputs\.sha \}\}/);
+    // The cache is keyed on the snapshot row id, not the SHA: republishing an earlier list (A, B, A) is a new row with an old SHA.
+    expect(publish).toMatch(/key: catalogue-\$\{\{ steps\.snapshot\.outputs\.id \}\}/);
+    expect(publish).not.toMatch(/key: catalogue-\$\{\{ steps\.snapshot\.outputs\.sha/);
     expect(publish).toContain("normal approved deploy");
   });
 

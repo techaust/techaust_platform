@@ -8,7 +8,8 @@
 // - No snapshot row: writes nothing and says so (the web build then uses the seed). A snapshot exists but the fetch fails: the script
 //   FAILS, so a job never falls back to the seed silently while a published snapshot exists (the M2.2 follow-up).
 // - The row's SHA-256 must match the SHA-256 of its text (the stored text is canonical JSON), or the script fails.
-// - `--github-output <file>` appends `found=true|false` and `sha=<sha256>` for the next workflow step.
+// - `--github-output <file>` appends `found=true|false`, `id=<row id>` and `sha=<sha256>` for the next workflow step. The workflow's "already deployed" cache is keyed on the
+//   row `id`, not the SHA: publishing an earlier list again (A, B, A) makes a new row with an old SHA, and staging must go back to it.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
@@ -17,7 +18,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 /** The newest snapshot. (`created_at` is the publish time: the column behind `publishedAt` in the Drizzle schema.) */
 export const SNAPSHOT_SQL =
-  "SELECT json, sha256 FROM site_snapshots ORDER BY created_at DESC, id DESC LIMIT 1";
+  "SELECT id, json, sha256 FROM site_snapshots ORDER BY created_at DESC, id DESC LIMIT 1";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const DEFAULT_OUT = resolve(ROOT, "apps/web/catalogue-snapshot.json");
@@ -51,8 +52,13 @@ export function snapshotFromOutput(text) {
     throw new Error("the snapshot query did not succeed");
   const row = first.results[0];
   if (row === undefined) return null;
-  if (typeof row.json !== "string" || typeof row.sha256 !== "string")
-    throw new Error("the snapshot row has no json or sha256");
+  if (
+    typeof row.id !== "string" ||
+    row.id === "" ||
+    typeof row.json !== "string" ||
+    typeof row.sha256 !== "string"
+  )
+    throw new Error("the snapshot row has no id, json or sha256");
   const actual = createHash("sha256").update(row.json).digest("hex");
   if (actual !== row.sha256) throw new Error("the snapshot text does not match its SHA-256: not using it");
   try {
@@ -60,7 +66,7 @@ export function snapshotFromOutput(text) {
   } catch {
     throw new Error("the snapshot text is not JSON");
   }
-  return { json: row.json, sha256: row.sha256 };
+  return { id: row.id, json: row.json, sha256: row.sha256 };
 }
 
 /** Runs wrangler through the jobs package (its config holds the `DB` binding for `--env staging`). */
@@ -105,14 +111,14 @@ export function main({ out = DEFAULT_OUT, githubOutput, run = runWrangler, log =
   const snap = fetchSnapshot(run);
   if (snap === null) {
     log("catalogue: no published snapshot; the web build uses the seed");
-    if (githubOutput) appendFileSync(githubOutput, "found=false\nsha=\n");
+    if (githubOutput) appendFileSync(githubOutput, "found=false\nid=\nsha=\n");
     return { found: false };
   }
   mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, snap.json);
-  log(`catalogue: snapshot ${snap.sha256.slice(0, 12)} written to ${out}`);
-  if (githubOutput) appendFileSync(githubOutput, `found=true\nsha=${snap.sha256}\n`);
-  return { found: true, sha256: snap.sha256 };
+  log(`catalogue: snapshot ${snap.id} (${snap.sha256.slice(0, 12)}) written to ${out}`);
+  if (githubOutput) appendFileSync(githubOutput, `found=true\nid=${snap.id}\nsha=${snap.sha256}\n`);
+  return { found: true, id: snap.id, sha256: snap.sha256 };
 }
 
 function arg(name) {
