@@ -171,6 +171,10 @@ function refusal(e: unknown): ApiError | null {
 const targetOpen = (project: string, plan: string, date: string) =>
   `(${project} IS NULL OR EXISTS (SELECT 1 FROM projects pr WHERE pr.id = ${project} AND pr.status <> 'cancelled' AND ${clientLiveSql("pr.client_id")})) AND (${plan} IS NULL OR (EXISTS (SELECT 1 FROM care_plans cp WHERE cp.id = ${plan} AND ${clientLiveSql("cp.client_id")}) AND ${PLAN_STATUS_ON(plan, date)} = 'active'))`;
 
+/** Only the client condition of a target: a note edit on a cancelled project or a paused plan is still allowed, an erased client's is not. */
+const targetLive = (project: string, plan: string) =>
+  `(${project} IS NULL OR EXISTS (SELECT 1 FROM projects pr WHERE pr.id = ${project} AND ${clientLiveSql("pr.client_id")})) AND (${plan} IS NULL OR EXISTS (SELECT 1 FROM care_plans cp WHERE cp.id = ${plan} AND ${clientLiveSql("cp.client_id")}))`;
+
 /** Why a target refuses time on `date`, in one read (the write found its conditions false and changed nothing). */
 async function whyTargetRefuses(
   c: Ctx,
@@ -184,6 +188,8 @@ async function whyTargetRefuses(
     minutes: number;
     /** An entry that is being changed: it is not counted in the day total. */
     except?: string;
+    /** A note-only edit: only an anonymised client (or a missing target) refuses it. */
+    liveOnly?: boolean;
   },
 ): Promise<Response | null> {
   const r = await c.env.DB.prepare(
@@ -210,13 +216,14 @@ async function whyTargetRefuses(
   if (t.projectId !== null) {
     if (r.project_status === null) return err(c, NOT_FOUND, 404);
     if (r.project_gone === 1) return refuseAnonymised(c);
-    if (r.project_status === "cancelled") return err(c, PROJECT_CLOSED, 409);
+    if (!t.liveOnly && r.project_status === "cancelled") return err(c, PROJECT_CLOSED, 409);
   }
   if (t.carePlanId !== null) {
     if (r.plan_exists === null) return err(c, NOT_FOUND, 404);
     if (r.plan_gone === 1) return refuseAnonymised(c);
-    if (r.plan_status !== "active") return err(c, PLAN_NOT_ACTIVE, 409);
+    if (!t.liveOnly && r.plan_status !== "active") return err(c, PLAN_NOT_ACTIVE, 409);
   }
+  if (t.liveOnly) return null;
   if (r.day_total + t.minutes > DAY_CAP) return err(c, DAY_CAP_ERROR, 409);
   return null;
 }
@@ -538,17 +545,13 @@ export const timeLogs = new Hono<AppEnv>()
     add("billable", "billable", billable, row.billable);
     if (!sets.length) return c.json({ ok: true, changed: false, updatedAt: row.updated_at });
 
-    // Conditions for what changed: the date or the plan (plan active), the project (open), the date or the minutes (the day).
-    const targetChanged = sets.some(([k]) => k === "projectId" || k === "carePlanId");
+    // Conditions for what changed. The resulting target's client is always checked, even for a note (it could write personal data back
+    // after an erase). A change of minutes, billable flag, date or target needs the target open on the work date (a cancelled project
+    // or a plan not active that day refuses it); only a note edit stays allowed there. The day total is checked when the date or the
+    // minutes change.
+    const timeChanged = sets.some(([k]) => k !== "note");
     const dayChanged = sets.some(([k]) => k === "workDate" || k === "minutes");
-    const dateChanged = sets.some(([k]) => k === "workDate");
-    const conds: string[] = [];
-    if (targetChanged || dateChanged)
-      conds.push(
-        targetChanged
-          ? targetOpen("?12", "?13", "?14")
-          : `(?13 IS NULL OR ${PLAN_STATUS_ON("?13", "?14")} = 'active')`,
-      );
+    const conds: string[] = [timeChanged ? targetOpen("?12", "?13", "?14") : targetLive("?12", "?13")];
     if (dayChanged) conds.push(`${DAY_TOTAL("t.user_id", "?14", "t.id")} + ?15 <= ${DAY_CAP}`);
     const at = Math.max(now, row.updated_at + 1);
     const lockOverride = locked && canAny;
@@ -562,7 +565,7 @@ export const timeLogs = new Hono<AppEnv>()
           entityType: "time_log",
           entityExpr: "t.id",
           summaryExpr: `json_object('timeLogId', t.id, 'userId', t.user_id, 'changed', json(?16), 'workDate', ?14, 'minutes', ?15, 'projectId', ?12, 'carePlanId', ?13${lockOverride ? ", 'lockOverride', json('true')" : ""})`,
-          from: `FROM time_logs t WHERE t.id = ?7 AND t.updated_at = ?8 AND (?9 = 1 OR (t.user_id = ?10 AND ?11 < t.created_at + ${LOCK_MS}))${conds.length ? ` AND ${conds.join(" AND ")}` : ""}`,
+          from: `FROM time_logs t WHERE t.id = ?7 AND t.updated_at = ?8 AND (?9 = 1 OR (t.user_id = ?10 AND ?11 < t.created_at + ${LOCK_MS})) AND ${conds.join(" AND ")}`,
           params: [
             id,
             f.expectedUpdatedAt,
@@ -606,6 +609,7 @@ export const timeLogs = new Hono<AppEnv>()
         except: id,
         userId: again.user_id,
         checkUser: false,
+        liveOnly: !timeChanged,
       })) ?? err(c, CONFLICT, 409)
     );
   })

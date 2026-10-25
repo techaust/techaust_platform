@@ -477,6 +477,51 @@ describe("PATCH and DELETE /time/:id [ADM-TIME-03]", () => {
   });
 });
 
+describe("a cancelled project takes no change of time, only a note [early check M1]", () => {
+  const patch = (cookie: string, id: string, body: Record<string, unknown>) =>
+    call(`/time/${id}`, { cookie, method: "PATCH", body });
+  it("minutes, billable and date changes are 409 project_closed; a note edit and DELETE are 200", async () => {
+    const s = await sessionFor("staff");
+    const p = await mkOpenProject();
+    const e = await created(s.cookie, p.id, { minutes: 60, note: "n" });
+    await env.DB.prepare("UPDATE projects SET status = 'cancelled' WHERE id = ?").bind(p.id).run();
+    const v = e.updatedAt as number;
+    for (const fields of [{ minutes: 75 }, { billable: false }, { workDate: back(1) }]) {
+      const res = await patch(s.cookie, e.id, { expectedUpdatedAt: v, ...fields });
+      expect(res.status, JSON.stringify(fields)).toBe(409);
+      expect(await code(res)).toBe("project_closed");
+    }
+    expect(await one("SELECT minutes, billable, work_date FROM time_logs WHERE id = ?", e.id)).toEqual({
+      minutes: 60,
+      billable: 1,
+      work_date: today(),
+    });
+    const note = await patch(s.cookie, e.id, { expectedUpdatedAt: v, note: "still fine" });
+    expect(note.status, await note.clone().text()).toBe(200);
+    const v2 = (await json(note)).updatedAt as number;
+    const del = await call(`/time/${e.id}?expectedUpdatedAt=${v2}`, { cookie: s.cookie, method: "DELETE" });
+    expect(del.status, await del.clone().text()).toBe(200);
+  });
+
+  it("a plan entry: minutes change on a plan paused before its work date is 409 plan_not_active, a note edit is 200", async () => {
+    const s = await sessionFor("staff");
+    const plan = await mkPlan(s.id, { start: back(30) });
+    const res = await post(s.cookie, { workDate: today(), minutes: 30, carePlanId: plan.id, billable: true });
+    expect(res.status, await res.clone().text()).toBe(201);
+    const made = await json(res);
+    await env.DB.prepare(
+      "INSERT INTO care_plan_status_log (id, care_plan_id, status, effective_on, created_by, created_at) VALUES (?, ?, 'paused', ?, ?, ?)",
+    )
+      .bind(crypto.randomUUID(), plan.id, today(), s.id, Date.now())
+      .run();
+    const bad = await patch(s.cookie, made.id, { expectedUpdatedAt: made.updatedAt, minutes: 45 });
+    expect(bad.status).toBe(409);
+    expect(await code(bad)).toBe("plan_not_active");
+    const ok = await patch(s.cookie, made.id, { expectedUpdatedAt: made.updatedAt, note: "just a note" });
+    expect(ok.status, await ok.clone().text()).toBe(200);
+  });
+});
+
 describe("reading time [ADM-TIME-02]", () => {
   it("Staff and Sales see only their own entries; asking for another person is 403; a deep scan finds no one else", async () => {
     const a = await sessionFor("staff", { name: "Alma Own" });

@@ -121,6 +121,49 @@ describe("erase and anonymise: time-entry notes [Q7]", () => {
   });
 });
 
+describe("after an erase, an entry of the client takes no new text [early check H1]", () => {
+  const version = async (id: string) =>
+    (await one<{ updated_at: number }>("SELECT updated_at FROM time_logs WHERE id = ?", id))?.updated_at ?? 0;
+  const patch = async (cookie: string, id: string, fields: Record<string, unknown>) =>
+    call(`/time/${id}`, {
+      cookie,
+      method: "PATCH",
+      body: { expectedUpdatedAt: await version(id), ...fields },
+    });
+
+  for (const target of ["onProject", "onPlan"] as const) {
+    it(`${target}: PATCH note or minutes is 409 client_anonymised (the note stays NULL, nothing is written); DELETE still works`, async () => {
+      const o = await owner();
+      const f = await fixture("individual");
+      expect((await erase(o.cookie, f.contact.id, "anonymise")).status).toBe(200);
+      const id = f[target];
+      const audit = await countOf("audit_log");
+      const v = await version(id);
+      const noteRes = await patch(f.by.cookie, id, { note: "Asha called again about her mother" });
+      expect(noteRes.status, await noteRes.clone().text()).toBe(409);
+      expect(await code(noteRes)).toBe("client_anonymised");
+      const minRes = await patch(f.by.cookie, id, { minutes: 90 });
+      expect(minRes.status).toBe(409);
+      expect(await code(minRes)).toBe("client_anonymised");
+      // the owner is held to it too
+      expect((await patch(o.cookie, id, { note: "owner note" })).status).toBe(409);
+      expect(await noteOf(id)).toMatchObject({ note: null });
+      expect(await version(id)).toBe(v);
+      expect(await countOf("audit_log")).toBe(audit);
+      const del = await call(`/time/${id}?expectedUpdatedAt=${v}`, { cookie: f.by.cookie, method: "DELETE" });
+      expect(del.status, await del.clone().text()).toBe(200);
+      expect(await noteOf(id)).toBeNull();
+    });
+  }
+
+  it("a business client's entry still takes a note edit", async () => {
+    const f = await fixture("business");
+    const res = await patch(f.by.cookie, f.onProject, { note: "fine" });
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect((await noteOf(f.onProject))?.note).toBe("fine");
+  });
+});
+
 describe("audit hygiene: no note text in any audit row", () => {
   it("create, update, delete and the plan routes write ids and field names, never the note", async () => {
     const s = await longSession("staff");
