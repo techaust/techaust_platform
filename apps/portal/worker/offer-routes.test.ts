@@ -302,7 +302,7 @@ describe("GET /offers/:id: the projected view, view tracking, superseded [POR-05
     expect(c.seen.filter((x) => x.sql.startsWith("SELECT d.id, d.type, d.status")).length).toBe(1);
   });
 
-  it("a missing viewer is a clean 500, never a raw envelope", async () => {
+  it("an unreadable stored copy is a clean 500, never a raw envelope", async () => {
     const f = await fixtures();
     const o = await mkOffer(f.a);
     const bare = createApp();
