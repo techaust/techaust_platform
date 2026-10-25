@@ -9,7 +9,9 @@
     ".": "./src/index.ts",
     "./audit": "./src/audit.ts",
     "./bank": "./src/bank.ts",
+    "./care": "./src/care.ts",
     "./clients": "./src/clients.ts",
+    "./dashboard": "./src/dashboard.ts",
     "./dates": "./src/dates.ts",
     "./email-templates": "./src/email-templates.ts",
     "./gstin": "./src/gstin.ts",
@@ -24,9 +26,11 @@
     "./permissions": "./src/permissions.ts",
     "./reply-templates": "./src/reply-templates.ts",
     "./settings": "./src/schemas/settings.ts",
+    "./stats": "./src/stats.ts",
     "./tax": "./src/tax/index.ts",
     "./terms": "./src/terms.ts",
     "./text": "./src/text.ts",
+    "./time": "./src/time.ts",
     "./user-agent": "./src/user-agent.ts"
   },
   "scripts": {
