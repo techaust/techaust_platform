@@ -50,7 +50,8 @@ describe("a valid link opens exactly one document [POR-06]", () => {
     const row = ROUTES.find((r) => r.path === "/api/v1/t/document");
     expect(row).toMatchObject({ method: "POST", access: "public" });
     for (const r of ROUTES) {
-      expect(r.path, r.path).not.toMatch(/:|\?|token/i);
+      // the only path parameter is an offer's own id (the session's offers); a token is never in a path
+      expect(r.path.replace("/offers/:id", "/offers"), r.path).not.toMatch(/:|\?|token/i);
     }
   });
 

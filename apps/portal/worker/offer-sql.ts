@@ -28,9 +28,9 @@ export const ACCEPTANCE_SQL =
 export const CERTIFICATE_SQL =
   "SELECT c.rendered_at FROM acceptance_certificates c JOIN acceptances a ON a.id = c.acceptance_id JOIN documents d ON d.id = a.document_id WHERE d.client_id = ?1 AND a.document_id = ?2";
 
-/** ?2 document id. The newest frozen version of the same offer. */
+/** ?2 document id. The newest frozen AND rendered version of the same offer (a version still being rendered cannot be shown yet). */
 export const LATEST_SQL =
-  "SELECT n.id, n.version FROM documents n WHERE n.client_id = ?1 AND n.version_group_id = (SELECT g.version_group_id FROM documents g WHERE g.id = ?2 AND g.client_id = ?1) AND n.frozen_at IS NOT NULL ORDER BY n.version DESC LIMIT 1";
+  "SELECT n.id, n.version FROM documents n WHERE n.client_id = ?1 AND n.version_group_id = (SELECT g.version_group_id FROM documents g WHERE g.id = ?2 AND g.client_id = ?1) AND n.frozen_at IS NOT NULL AND n.pdf_sha256 IS NOT NULL ORDER BY n.version DESC LIMIT 1";
 
 /** ?2 document id. The two keys a download streams. */
 export const KEYS_SQL = `SELECT d.pdf_r2_key, d.number_display, d.version, d.status FROM documents d WHERE d.id = ?2 AND d.client_id = ?1 AND (?3 IS NULL OR d.version_group_id = ?3) AND d.type IN ${QUOTES} AND d.frozen_at IS NOT NULL AND d.status IN (${STATUSES_SQL})`;

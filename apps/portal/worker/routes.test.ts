@@ -53,7 +53,7 @@ describe("every guarded route needs a session [POR-02, POR-03]", () => {
     });
   }
 
-  it("the public routes are exactly the sign-in routes, the document link and the health check", () => {
+  it("the public routes are exactly the sign-in routes, the document link, the offer links and the health check", () => {
     expect(pairs(PUBLIC)).toEqual(
       [
         "GET /api/v1/health",
@@ -61,12 +61,28 @@ describe("every guarded route needs a session [POR-02, POR-03]", () => {
         "POST /api/v1/auth/magic/verify",
         "POST /api/v1/auth/logout",
         "POST /api/v1/t/document",
+        "POST /api/v1/t/offer",
+        "POST /api/v1/t/offer/pdf",
+        "POST /api/v1/t/offer/certificate",
+        "POST /api/v1/t/offer/accept",
+        "POST /api/v1/t/offer/decline",
       ].sort(),
     );
   });
 
-  it("the guarded routes are exactly /me and sign-out-of-all-devices; no route uses finance yet", () => {
-    expect(pairs(GUARDED)).toEqual(["GET /api/v1/me", "POST /api/v1/auth/sessions/revoke-all"].sort());
+  it("the guarded routes are /me, sign-out-of-all-devices and the offers; no route uses finance yet", () => {
+    expect(pairs(GUARDED)).toEqual(
+      [
+        "GET /api/v1/me",
+        "POST /api/v1/auth/sessions/revoke-all",
+        "GET /api/v1/offers",
+        "GET /api/v1/offers/:id",
+        "GET /api/v1/offers/:id/pdf",
+        "GET /api/v1/offers/:id/certificate",
+        "POST /api/v1/offers/:id/accept",
+        "POST /api/v1/offers/:id/decline",
+      ].sort(),
+    );
     expect(ROUTES.filter((r) => r.access === "finance")).toEqual([]);
   });
 });

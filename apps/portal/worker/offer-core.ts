@@ -164,7 +164,7 @@ export async function loadOffer(
   const d = doc?.results[0] as DocRow | undefined;
   if (!d || d.pdf_sha256 === null) return null;
   const newest = latest?.results[0] as { id: string; version: number } | undefined;
-  if (d.status === "revised" || (newest && newest.id !== d.id))
+  if (newest && newest.id !== d.id)
     return {
       body: { superseded: { latestId: newest?.id ?? null, version: newest?.version ?? null } },
       viewWrites: [],
