@@ -15,6 +15,7 @@
     "./dashboard": "./src/dashboard.ts",
     "./dates": "./src/dates.ts",
     "./documents": "./src/documents.ts",
+    "./expiry": "./src/expiry.ts",
     "./hash": "./src/hash.ts",
     "./email-templates": "./src/email-templates.ts",
     "./gstin": "./src/gstin.ts",

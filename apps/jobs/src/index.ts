@@ -1,3 +1,4 @@
+import { expireMessage } from "@techaust/core/expiry";
 import { warmSesSigning } from "@techaust/email";
 import { Hono } from "hono";
 import { secureHeaders } from "hono/secure-headers";
@@ -22,14 +23,15 @@ app.notFound((c) => c.json({ error: { code: "not_found", message: "Not found" } 
 
 export default {
   fetch: app.fetch,
-  // Cron dispatcher: only enqueues work (docs/05 §11.3). The daily run (22:00 UTC) enqueues the lead clean-up (M3.2) and the nightly
-  // statistics (M3.5); the rest arrive in M5.4. One failing does not stop the other; the run still fails so the failure is seen.
+  // Cron dispatcher: only enqueues work (docs/05 §11.3). The daily run (22:00 UTC) enqueues the lead clean-up (M3.2), the nightly
+  // statistics (M3.5) and the expiry of sent proposals and estimates (M4.3; one message in the statistics batch, no D1 read); the rest arrive in
+  // M5.4. One failing does not stop the others; the run still fails so the failure is seen.
   async scheduled(controller, env, _ctx) {
     noteInvocation();
     if (controller.cron !== PURGE_CRON) return;
     const done = await Promise.allSettled([
       enqueueDue(env, controller.scheduledTime),
-      enqueueStats(env, controller.scheduledTime),
+      enqueueStats(env, controller.scheduledTime, [expireMessage(controller.scheduledTime)]),
     ]);
     const failed = done.find((d) => d.status === "rejected");
     if (failed?.status === "rejected") throw failed.reason;

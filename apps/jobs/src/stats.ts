@@ -49,11 +49,18 @@ export const GROUPED_METRICS: ReadonlySet<keyof typeof STATS_SQL> = new Set([
 /** The care figures of one page of plans: `?1` date, `?2` metric, `?3` time, `?4` the `[planId, value]` pairs as JSON. */
 export const CARE_STATS_SQL = `${COLUMNS} SELECT ?1, ?2, json_extract(j.value, '$[0]'), json_extract(j.value, '$[1]'), ?3 FROM json_each(?4) j WHERE true ${UPSERT}`;
 
-/** The cron's one job: enqueue a message per metric for the IST day that just ended. No D1 read. Returns that date. */
-export async function enqueueStats(env: Env, scheduledTime: number): Promise<string> {
+/**
+ * The cron's one job: enqueue a message per metric for the IST day that just ended. No D1 read. Returns that date.
+ * `also` rides in the same `sendBatch` (one queue call): the daily document-expiry message (M4.3), which the consumer routes by its kind.
+ */
+export async function enqueueStats(
+  env: Env,
+  scheduledTime: number,
+  also: readonly unknown[] = [],
+): Promise<string> {
   const date = statsDateOf(scheduledTime);
   const bodies = statsMessages(date);
-  await env.LEADS_QUEUE.sendBatch(bodies.map((body) => ({ body })));
+  await env.LEADS_QUEUE.sendBatch([...bodies, ...also].map((body) => ({ body })));
   logEvent("stats.enqueued", { date, metrics: bodies.length });
   return date;
 }
