@@ -9,6 +9,7 @@ export * from "./lockout.ts";
 export * from "./password.ts";
 export * from "./portal.ts";
 export * from "./recovery.ts";
+export * from "./route-table.ts";
 export * from "./schemas.ts";
 export * from "./session.ts";
 export * from "./tokens.ts";

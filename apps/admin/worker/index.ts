@@ -1,8 +1,9 @@
-import { hex, randomBytes } from "@techaust/auth";
+import { answeringRow, hex, randomBytes } from "@techaust/auth";
 import { accessStmt, clipHeader, HEADER_LIMITS } from "@techaust/db/log";
 import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
+import { matchedRoutes } from "hono/route";
 import { secureHeaders } from "hono/secure-headers";
 import { Hono } from "hono/tiny";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
@@ -52,9 +53,8 @@ export function createApp() {
       c.set("ip", clipHeader(c.req.header("CF-Connecting-IP"), HEADER_LIMITS.ip));
       c.set("ua", clipHeader(c.req.header("User-Agent"), HEADER_LIMITS.ua));
       // The row of the handler that ANSWERS: the first matched pattern that is a table row. Hono runs a static path registered before
-      // `/:id` first (`/care-plans/defaults`), but `routePath(c, -1)` names the LAST match, `/:id`, whose guard row may differ.
-      const row =
-        c.req.matchedRoutes.map((r) => routeFor(c.req.method, r.path)).find((r) => r !== undefined) ?? null;
+      // `/:id` first (`/care-plans/defaults`), but the LAST match is `/:id`, whose guard row may differ (shared with the portal).
+      const row = answeringRow(matchedRoutes(c), (p) => routeFor(c.req.method, p));
       c.set("route", row);
       await next();
       c.header("Cache-Control", "no-store");
