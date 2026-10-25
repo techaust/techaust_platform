@@ -164,3 +164,13 @@ The designer's drafts, accepted as wording to approve:
 | Custom lines | "{n} custom lines" · "Custom lines are not counted in the discount guard." |
 | Read view | "Your role can read this draft but not change it." · "Next steps" · "A newer version of this document exists." · "Open the newest version" · "Open the care plan" |
 | Activity feed | "marked a document as expired" · "marked an approval as expired" |
+
+## 10. Added after the review (lead, 2026-10-26; PENDING the owner)
+| Where | Copy |
+|---|---|
+| Care plan dialog, included hours | Essential: "Leave empty to use the plan's 2 hours." · Growth and Scale: "Required: this plan's hours are agreed per client." |
+| Care plan dialog, summary (ADM-G-04) | "{tier} care plan for {client}: {price} a month before GST" · with AI Ops: "plus {ai_ops} a month for AI Ops" |
+| `section_empty` | "Write these sections or hide them before sending: {list}." |
+| `approval_rejected` | "The owner rejected this version. Change it before asking again." |
+| Converted estimate | "Converted to an invoice draft." / "Converted to care plan for {client} ({tier})." · link "Open it" |
+| Section title field (accessible name) | "Title of {section}" |
