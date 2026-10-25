@@ -105,11 +105,14 @@ export function ClientFilter(props: {
           <ul className="client-filter__results">
             {rows.map((c) => (
               <li key={c.id}>
-                <button type="button" onClick={() => {
+                <button
+                  type="button"
+                  onClick={() => {
                     const row = { id: c.id, displayName: c.displayName, code: c.code };
                     setPicked(row);
                     props.onChange(c.id, row);
-                  }}>
+                  }}
+                >
                   <span className="client-filter__name">{c.displayName}</span>
                   <span className="docno">{c.code}</span>
                 </button>

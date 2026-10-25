@@ -87,19 +87,18 @@ describe("the project version always moves [ADM-PRJ-01]", () => {
     const p = await mkProject(await mkClient(), { status: "planned", updated_at: future });
     const res = await call(`/projects/${p.id}/status`, { cookie: o.cookie, body: { to: "active" } });
     expect(res.status).toBe(200);
-    expect(
-      ((await one("SELECT updated_at FROM projects WHERE id = ?", p.id)) as J).updated_at,
-    ).toBeGreaterThan(future);
-    // the version the response carries is the stored one (re-check L4)
     const stored = ((await one("SELECT updated_at FROM projects WHERE id = ?", p.id)) as J).updated_at;
+    expect(stored).toBeGreaterThan(future);
+    // the version the response carries is the stored one (re-check L4)
     expect((await json(res)).updatedAt).toBe(stored);
     // a second move in the same instant moves it again
     const again = await call(`/projects/${p.id}/status`, { cookie: o.cookie, body: { to: "on_hold" } });
     expect(again.status).toBe(200);
-    expect((await json(again)).updatedAt).toBe(
+    const returned = (await json(again)).updatedAt;
+    expect(returned).toBe(
       ((await one("SELECT updated_at FROM projects WHERE id = ?", p.id)) as J).updated_at,
     );
-    expect((await json(again)).updatedAt).toBeGreaterThan(stored);
+    expect(returned).toBeGreaterThan(stored);
   });
 });
 
@@ -263,8 +262,9 @@ describe("an anonymised individual client takes nothing new [ADM-PRJ-01..04; VER
     const o = await owner();
     const { clientId, contact } = await individual();
     expect((await erase(o.cookie, contact.id)).status).toBe(200);
-    expect(((await one("SELECT anonymised_at FROM clients WHERE id = ?", clientId)) as J).anonymised_at).not
-      .toBeNull();
+    expect(
+      ((await one("SELECT anonymised_at FROM clients WHERE id = ?", clientId)) as J).anonymised_at,
+    ).not.toBeNull();
     // any later change to the row (here straight in the database) cannot unlock it
     await env.DB.prepare("UPDATE clients SET display_name = 'Acme Ltd', type = 'business' WHERE id = ?")
       .bind(clientId)
