@@ -87,6 +87,9 @@ export function effectiveOfferStatus(
     case "viewed":
       return row.validUntil !== null && row.validUntil < today ? "expired" : row.status;
     case "accepted":
+    case "converted":
+      // An estimate that staff turned into an invoice or a care plan still reads "Accepted" to the client (lead decision, 2026-10-26).
+      return "accepted";
     case "expired":
     case "revised":
       return row.status;

@@ -16,6 +16,7 @@
     "@techaust/auth": "workspace:*",
     "@techaust/core": "workspace:*",
     "@techaust/db": "workspace:*",
+    "@techaust/pdf": "workspace:*",
     "@techaust/ui": "workspace:*",
     "hono": "4.13.13",
     "react": "19.3.0",

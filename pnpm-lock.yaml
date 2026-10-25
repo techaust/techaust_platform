@@ -300,6 +300,9 @@ importers:
       '@techaust/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@techaust/pdf':
+        specifier: workspace:*
+        version: link:../../packages/pdf
       '@techaust/ui':
         specifier: workspace:*
         version: link:../../packages/ui

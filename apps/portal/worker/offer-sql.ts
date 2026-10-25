@@ -4,8 +4,8 @@
 // VERIFY WITH CA/LEGAL: accepting by a typed name and a ticked box, and the evidence recorded (docs/runs/m4.5-send-accept.md §4).
 import { clipHeader } from "@techaust/db/log";
 
-/** The statuses a client may see. `converted` and drafts are not shown (open question for the lead). */
-export const CLIENT_STATUSES = ["sent", "viewed", "accepted", "rejected", "expired", "revised"] as const;
+/** The statuses a client may see. A `converted` estimate is shown as accepted (lead decision, 2026-10-26: conversion is internal to TecHaust); drafts are never shown. */
+export const CLIENT_STATUSES = ["sent", "viewed", "accepted", "converted", "rejected", "expired", "revised"] as const;
 const list = (xs: readonly string[]) => xs.map((x) => `'${x}'`).join(", ");
 const STATUSES_SQL = list(CLIENT_STATUSES);
 const QUOTES = "('proposal', 'estimate')";
@@ -73,7 +73,7 @@ const contactLive = (client: string, contact: string) =>
  * ?10 ip, ?11 user agent, ?12 country, ?13 via. The address comes from the contact row, never from the request. RETURNING gives
  * the answer without a second read.
  */
-export const ACCEPT_INSERT_SQL = `INSERT INTO acceptances (id, document_id, contact_id, session_id, typed_name, email, accepted_at, ip, user_agent, country, pdf_sha256, terms_version_id, certificate_r2_key, via, offer_link_hash, snapshot_sha256) SELECT ?7, d.id, c.id, ?8, ?9, c.email, ?4, ?10, ?11, ?12, d.pdf_sha256, d.terms_version_id, substr(d.pdf_r2_key, 1, length(d.pdf_r2_key) - 4) || '-certificate.pdf', ?13, ?6, d.snapshot_sha256 FROM documents d JOIN contacts c ON c.id = ?3 AND c.client_id = d.client_id AND c.portal_access = 1 AND c.anonymised_at IS NULL WHERE d.id = ?2 AND d.client_id = ?1 AND d.type IN ${QUOTES} AND d.frozen_at IS NOT NULL AND d.status IN ('sent', 'viewed') AND d.pdf_sha256 IS NOT NULL AND d.pdf_r2_key IS NOT NULL AND d.valid_until >= ?5 AND ${NEWEST} AND NOT EXISTS (SELECT 1 FROM documents g WHERE g.version_group_id = d.version_group_id AND g.status = 'accepted') AND (?6 IS NULL OR ${linkLive("?6", "?4", "d", "c.id")}) RETURNING email, accepted_at, pdf_sha256`;
+export const ACCEPT_INSERT_SQL = `INSERT INTO acceptances (id, document_id, contact_id, session_id, typed_name, email, accepted_at, ip, user_agent, country, pdf_sha256, terms_version_id, certificate_r2_key, via, offer_link_hash, snapshot_sha256) SELECT ?7, d.id, c.id, ?8, ?9, c.email, ?4, ?10, ?11, ?12, d.pdf_sha256, d.terms_version_id, substr(d.pdf_r2_key, 1, length(d.pdf_r2_key) - 4) || '-certificate.pdf', ?13, ?6, d.snapshot_sha256 FROM documents d JOIN contacts c ON c.id = ?3 AND c.client_id = d.client_id AND c.portal_access = 1 AND c.anonymised_at IS NULL WHERE d.id = ?2 AND d.client_id = ?1 AND d.type IN ${QUOTES} AND d.frozen_at IS NOT NULL AND d.status IN ('sent', 'viewed') AND d.pdf_sha256 IS NOT NULL AND d.pdf_r2_key IS NOT NULL AND d.valid_until >= ?5 AND ${NEWEST} AND NOT EXISTS (SELECT 1 FROM documents g WHERE g.version_group_id = d.version_group_id AND g.status IN ('accepted', 'converted')) AND (?6 IS NULL OR ${linkLive("?6", "?4", "d", "c.id")}) RETURNING email, accepted_at, pdf_sha256`;
 
 /** Statement 2: the document follows its acceptance row. ?1 client, ?2 document, ?3 contact, ?4 now, ?7 acceptance id. */
 export const ACCEPT_UPDATE_SQL =
