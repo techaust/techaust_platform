@@ -1206,6 +1206,12 @@ export const contacts = new Hono<AppEnv>()
         //     CA/LEGAL). A sent version keeps its frozen copy (it is evidence of the offer and blocks the erase of the person it names).
         //     The approvals of those drafts go first (they reference the document); a lead's link to a deleted draft is cleared by the
         //     foreign key. Same conditions as step 3, in the same batch, before the contact changes.
+        //     The bell rows about those approvals go too, before the approvals do (their titles hold the draft's title).
+        db
+          .prepare(
+            `DELETE FROM notifications WHERE entity_type = 'approval' AND entity_id IN (SELECT a.id FROM approvals a WHERE a.document_id IN (SELECT id FROM documents WHERE type IN ('proposal', 'estimate') AND frozen_at IS NULL AND ${LAST_LIVE_INDIVIDUAL("documents.client_id")})) AND ${g.sql(2)}`,
+          )
+          .bind(id, ...g.params),
         db
           .prepare(
             `DELETE FROM approvals WHERE document_id IN (SELECT id FROM documents WHERE type IN ('proposal', 'estimate') AND frozen_at IS NULL AND ${LAST_LIVE_INDIVIDUAL("documents.client_id")}) AND ${g.sql(2)}`,
@@ -1241,7 +1247,7 @@ export const contacts = new Hono<AppEnv>()
           ? [
               db
                 .prepare(
-                  `UPDATE documents SET contact_id = NULL WHERE contact_id = ?1 AND frozen_at IS NULL AND ${g.sql(2)}`,
+                  `UPDATE documents SET contact_id = NULL, content_sha256 = NULL WHERE contact_id = ?1 AND frozen_at IS NULL AND ${g.sql(2)}`,
                 )
                 .bind(id, ...g.params),
             ]

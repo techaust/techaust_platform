@@ -75,6 +75,10 @@ CREATE TRIGGER `documents_version_insert` BEFORE INSERT ON `documents` WHEN NEW.
 --> statement-breakpoint
 CREATE TRIGGER `documents_version_fixed` BEFORE UPDATE OF type, client_id, currency, version_group_id, version ON `documents` WHEN OLD.type IN ('proposal', 'estimate') AND (NEW.type IS NOT OLD.type OR NEW.client_id IS NOT OLD.client_id OR NEW.currency IS NOT OLD.currency OR NEW.version_group_id IS NOT OLD.version_group_id OR NEW.version IS NOT OLD.version) BEGIN SELECT RAISE(ABORT, 'documents_version_fixed: the type, client, currency, group and version of a proposal or estimate never change'); END;
 --> statement-breakpoint
+CREATE TRIGGER `documents_version_single_insert` BEFORE INSERT ON `documents` WHEN NEW.type NOT IN ('proposal', 'estimate') AND NEW.version IS NOT 1 BEGIN SELECT RAISE(ABORT, 'documents_version_single: only a proposal or estimate has versions; any other document is version 1'); END;
+--> statement-breakpoint
+CREATE TRIGGER `documents_version_single_update` BEFORE UPDATE OF version, type ON `documents` WHEN NEW.type NOT IN ('proposal', 'estimate') AND NEW.version IS NOT 1 BEGIN SELECT RAISE(ABORT, 'documents_version_single: only a proposal or estimate has versions; any other document is version 1'); END;
+--> statement-breakpoint
 CREATE TRIGGER `documents_version_number` BEFORE UPDATE OF number ON `documents` WHEN NEW.type IN ('proposal', 'estimate') AND NEW.version > 1 AND NEW.number IS NOT NULL AND NEW.number IS NOT (SELECT v.number FROM documents v WHERE v.version_group_id = NEW.version_group_id AND v.version = 1) BEGIN SELECT RAISE(ABORT, 'documents_version_number: a later version keeps the number of its first version'); END;
 --> statement-breakpoint
 CREATE TRIGGER `documents_status_flow` BEFORE UPDATE OF status ON `documents` WHEN NEW.status IS NOT OLD.status AND OLD.type IN ('proposal', 'estimate') AND NOT ((OLD.status = 'draft' AND NEW.status = 'sent') OR (OLD.status = 'sent' AND NEW.status = 'viewed') OR (OLD.status IN ('sent', 'viewed') AND NEW.status IN ('accepted', 'rejected', 'expired', 'revised'))) BEGIN SELECT RAISE(ABORT, 'documents_status_flow: that status change is not allowed'); END;

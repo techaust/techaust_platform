@@ -1,5 +1,6 @@
 // Proposals and estimates, pure (M4.3; ADM-PROP-02, -04, -06, ADM-APR-02, ADM-EST-01). The discount-guard figures are typed by hand, with
 // the arithmetic beside each; they are never computed by the code under test.
+import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { placeholdersOf } from "../src/catalogue.ts";
 import {
@@ -489,6 +490,7 @@ const draft = (): DraftContent => ({
       discountValue: null,
       gstRateBp: 1800,
       catalogueRateMinor: 2_000_000,
+      catalogueLine: null,
     },
   ],
   sections: [sec("estimate"), sec("terms"), sec("acceptance")],
@@ -529,6 +531,7 @@ describe("contentHash [lead decision 4]", () => {
       { ...d, exportMode: "igst_paid" },
       { ...d, lines: [{ ...(d.lines[0] as DraftContent["lines"][number]), description: "Build!" }] },
       { ...d, lines: [{ ...(d.lines[0] as DraftContent["lines"][number]), catalogueRateMinor: 1 }] },
+      { ...d, lines: [{ ...(d.lines[0] as DraftContent["lines"][number]), catalogueLine: "Care tier" }] },
       { ...d, sections: [sec("estimate", { bodyMd: "other" }), sec("terms"), sec("acceptance")] },
       { ...d, sections: [sec("terms"), sec("estimate"), sec("acceptance")] },
       {
@@ -543,6 +546,73 @@ describe("contentHash [lead decision 4]", () => {
     expect(await contentHash(d, computedOf(2_000_001))).not.toBe(base);
   });
 
+  it("format v2: JSON.stringify of the hashed object IS its canonical JSON, for any content [lead item 2]", () => {
+    const str = fc.oneof(
+      fc.string({ unit: "binary" }),
+      fc.constant(
+        ' "\
+',
+      ),
+    );
+    const nullable = <T>(a: fc.Arbitrary<T>) => fc.option(a, { nil: null });
+    const line = fc.record({
+      catalogueItemId: nullable(str),
+      description: str,
+      detail: nullable(str),
+      sac: nullable(str),
+      qtyMilli: fc.integer({ min: 1, max: 1_000_000_000 }),
+      unit: str,
+      rateMinor: fc.integer({ min: 0, max: Number.MAX_SAFE_INTEGER }),
+      discountKind: nullable(fc.constantFrom("fixed", "percent")),
+      discountValue: nullable(fc.integer({ min: 0, max: 10_000 })),
+      gstRateBp: fc.integer({ min: 0, max: 10_000 }),
+      catalogueRateMinor: nullable(fc.integer({ min: 0, max: 1_000_000_000 })),
+      catalogueLine: nullable(str),
+    });
+    const section = fc.record({
+      kind: str,
+      title: nullable(str),
+      bodyMd: nullable(str),
+      hidden: fc.boolean(),
+    });
+    const step = fc.record({
+      label: str,
+      trigger: fc.constantFrom("on_accept" as const, "delivery" as const),
+      pctBp: fc.integer({ min: 0, max: 10_000 }),
+      detail: nullable(str),
+      targetDate: nullable(str),
+    });
+    const content = fc.record({
+      type: fc.constantFrom("proposal" as const, "estimate" as const),
+      clientId: str,
+      contactId: nullable(str),
+      title: nullable(str),
+      currency: fc.constantFrom("INR", "USD"),
+      validityDays: nullable(fc.integer({ min: 1, max: 90 })),
+      termsVersionId: nullable(str),
+      discountKind: nullable(fc.constantFrom("fixed", "percent")),
+      discountValue: nullable(fc.integer({ min: 0, max: 10_000 })),
+      exportMode: nullable(fc.constantFrom("lut", "igst_paid")),
+      lines: fc.array(line, { maxLength: 6 }),
+      sections: fc.array(section, { maxLength: 6 }),
+      schedule: fc.array(step, { maxLength: 4 }),
+    });
+    fc.assert(
+      fc.property(content, nullable(fc.integer({ min: 1, max: 5_000_000 })), (c, rate) => {
+        const input = contentHashInput(c as DraftContent, rate === null ? null : computedOf(rate));
+        expect(JSON.stringify(input)).toBe(canonicalJson(input));
+      }),
+      { numRuns: 200 },
+    );
+  });
+
+  it("format v2: a fixed draft has a fixed hash (a stored contract: sent versions' approvals are tied to it)", async () => {
+    const text = JSON.stringify(contentHashInput(draft(), null));
+    expect(text.startsWith('{"document":{"clientId":')).toBe(true);
+    expect(text.endsWith(',"totals":null,"v":2}')).toBe(true);
+    expect(await contentHash(draft(), null)).toBe(await sha256Hex(text));
+  });
+
   it("a draft that does not compute hashes without totals", async () => {
     const a = await contentHash(draft(), null);
     expect(a).not.toBe(await contentHash(draft(), computedOf()));
@@ -550,7 +620,7 @@ describe("contentHash [lead decision 4]", () => {
   });
 });
 
-describe("the frozen snapshot [M4.4 and M4.5 rebuild and verify it]", () => {
+describe("the frozen snapshot, format v2 [M4.4 and M4.5 rebuild and verify it]", () => {
   const input = () => ({
     document: {
       type: "proposal" as const,
@@ -566,57 +636,58 @@ describe("the frozen snapshot [M4.4 and M4.5 rebuild and verify it]", () => {
       discountKind: null,
       discountValue: null,
       exportMode: null,
-      supplyType: "intra",
-      placeOfSupplyCode: "19",
     },
+    supply: { type: "intra", placeOfSupplyCode: "19", supplierStateCode: "19" },
     recipient: { legalName: "Example", country: "IN", contactId: "contact-1" },
     issuer: { company: { tradeName: "TecHaust Technologies" } },
-    computed: computedOf(),
-    lines: draft().lines,
-    sections: draft().sections,
-    schedule: [
-      {
-        label: "On acceptance",
-        trigger: "on_accept" as const,
-        pctBp: 10_000,
-        detail: null,
-        targetDate: null,
-        amountMinor: 2_360_000,
-      },
-    ],
     terms: { id: "terms-1", version: 1, sha256: "b".repeat(64) },
+    instalmentAmounts: [2_360_000],
+    computedSha256: "c".repeat(64),
   });
 
-  it("holds the content, the recipient, the issuer and the terms reference, but no number or send instant", async () => {
+  it("is a small header: who it is between, the document fields, the terms, the amounts and two hashes of the content", async () => {
     const snap = documentSnapshot(input());
-    expect(Object.keys(snap).sort()).toEqual([
-      "computed",
+    expect(Object.keys(snap).sort()).toEqual(["header", "v"]);
+    expect(snap.v).toBe(2);
+    expect(Object.keys(snap.header).sort()).toEqual([
+      "computedSha256",
       "document",
+      "instalmentAmounts",
       "issuer",
-      "lines",
       "recipient",
-      "schedule",
-      "sections",
+      "supply",
       "terms",
-      "v",
     ]);
     const text = canonicalJson(snap);
     for (const key of ["numberDisplay", "frozenAt", "sentAt", "series"]) expect(text).not.toContain(key);
-    // The internal catalogue reference stays out of the snapshot (it is in the content hash only).
-    expect(text).not.toContain("catalogueRateMinor");
-    expect(text).toContain("catalogueItemId");
+    // The lines, sections and schedule are not repeated: contentSha256 covers them (and the internal catalogue reference with them).
+    for (const key of ["catalogueRateMinor", "bodyMd", "lineTotal", '"lines"'])
+      expect(text).not.toContain(key);
+    expect(text).toContain("contentSha256");
+    expect(text.length).toBeLessThan(1_200);
     expect(await snapshotSha256(input())).toBe(await sha256Hex(canonicalJson(snap)));
+  });
+
+  it("a fixed input has a fixed canonical text (the format is a stored contract: change it only with a new v)", () => {
+    const text = canonicalJson(documentSnapshot(input()));
+    expect(text).toBe(
+      `{"header":{"computedSha256":"${"c".repeat(64)}","document":{"clientId":"client-1","contentSha256":"${"a".repeat(64)}","currency":"INR","discountKind":null,"discountValue":null,"exportMode":null,"issueDate":"2026-10-25","title":"Website build","type":"proposal","validUntil":"2026-11-09","validityDays":15,"version":1,"versionGroupId":"g1"},"instalmentAmounts":[2360000],"issuer":{"company":{"tradeName":"TecHaust Technologies"}},"recipient":{"contactId":"contact-1","country":"IN","legalName":"Example"},"supply":{"placeOfSupplyCode":"19","supplierStateCode":"19","type":"intra"},"terms":{"id":"terms-1","sha256":"${"b".repeat(64)}","version":1}},"v":2}`,
+    );
   });
 
   it("the same input gives the same hash and any change gives another", async () => {
     const base = await snapshotSha256(input());
     expect(await snapshotSha256(input())).toBe(base);
-    expect(
-      await snapshotSha256({ ...input(), terms: { id: "terms-1", version: 2, sha256: "b".repeat(64) } }),
-    ).not.toBe(base);
-    expect(await snapshotSha256({ ...input(), recipient: { legalName: "Other", country: "IN" } })).not.toBe(
-      base,
-    );
+    const changed = [
+      { ...input(), terms: { id: "terms-1", version: 2, sha256: "b".repeat(64) } },
+      { ...input(), recipient: { legalName: "Other", country: "IN" } },
+      { ...input(), computedSha256: "d".repeat(64) },
+      { ...input(), instalmentAmounts: [1, 2_359_999] },
+      { ...input(), document: { ...input().document, contentSha256: "e".repeat(64) } },
+      { ...input(), document: { ...input().document, validUntil: "2026-11-10" } },
+      { ...input(), supply: { type: "inter", placeOfSupplyCode: "27", supplierStateCode: "19" } },
+    ];
+    for (const c of changed) expect(await snapshotSha256(c)).not.toBe(base);
   });
 });
 

@@ -78,7 +78,7 @@ export const documentConvert = new Hono<AppEnv>().post(
     const state: DocState = {
       ...source,
       id: uuidv7(),
-      lines: source.lines.map((l) => ({ ...l, id: uuidv7(), catalogueRateMinor: null })),
+      lines: source.lines.map((l) => ({ ...l, id: uuidv7(), catalogueRateMinor: null, catalogueLine: null })),
       sections: [],
       schedule: [],
     };
@@ -121,6 +121,8 @@ export const documentConvert = new Hono<AppEnv>().post(
             ...cols,
             // An invoice draft has no offer hash, no terms of the offer and no reference for the discount guard.
             content_sha256: null,
+            // An invoice has no validity (it is the estimate's, not the invoice's).
+            validity_days: null,
             terms_version_id: null,
             catalogue_reference_minor: null,
           },

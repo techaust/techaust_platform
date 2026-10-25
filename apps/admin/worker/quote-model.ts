@@ -30,7 +30,7 @@ import {
   type TaxIssue,
   type TaxWarning,
 } from "@techaust/core/tax";
-import type { DocumentBundle } from "@techaust/db/documents";
+import type { DocumentBundle, TermsRef } from "@techaust/db/documents";
 import type { ApiError } from "./context.ts";
 
 // ---- errors ------------------------------------------------------------------------------------------------------------------
@@ -48,6 +48,12 @@ export const SERVICE_NOT_PRICED = e(
 );
 export const CHOOSE_DEFAULT_LINES = e("choose_default_lines", "Choose which lines of the service to offer");
 export const DEFAULT_LINE_UNKNOWN = e("default_line_unknown", "That service has no such line");
+export const TOO_MANY_LINES = e("too_many_lines", "A document can have at most 100 lines");
+export const SERVICE_DUPLICATE = e("service_duplicate", "Each service can be added once");
+export const DEFAULT_LINE_DUPLICATE = e(
+  "default_line_duplicate",
+  "Each line of a service can be chosen once",
+);
 export const LINE_UNKNOWN = e("line_unknown", "That line is not on this document");
 export const LINE_CATALOGUE_CHANGED = e(
   "line_catalogue_changed",
@@ -68,6 +74,10 @@ export const APPROVAL_REQUIRED = e(
   "This discount needs the owner's approval for this version",
 );
 export const APPROVAL_NOT_NEEDED = e("approval_not_needed", "The discount is within what you can send");
+export const APPROVAL_EXISTS = e(
+  "approval_exists",
+  "This exact version is already approved. Send it, or change it first",
+);
 export const APPROVAL_PENDING = e("approval_pending", "An approval is already waiting for the owner");
 export const APPROVAL_EXPIRED = e(
   "approval_expired",
@@ -177,9 +187,9 @@ export type ItemRow = {
 };
 /** Items by id, for a request that names services: `json_each` keeps it to one bound value, whatever the count. */
 export const ITEMS_BY_ID = `SELECT ${ITEM_COLS} FROM catalogue_items WHERE id IN (SELECT value FROM json_each(?1))`;
-/** The newest proposal terms (the one a new draft pins). Version numbers only go up. */
+/** The newest proposal terms (the one a new draft pins), without the text: no admin route reads it. Version numbers only go up. */
 export const NEWEST_TERMS =
-  "SELECT id, kind, version, body_md, sha256 FROM terms_versions WHERE kind = 'proposal' ORDER BY version DESC LIMIT 1";
+  "SELECT id, kind, version, sha256 FROM terms_versions WHERE kind = 'proposal' ORDER BY version DESC LIMIT 1";
 
 // ---- the state of a draft ------------------------------------------------------------------------------------------------------
 
@@ -188,6 +198,8 @@ export type LineState = {
   catalogueItemId: string | null;
   /** Server-only. Copied from the catalogue when the line was added; kept across saves and revisions; never read from a request. */
   catalogueRateMinor: number | null;
+  /** Server-only, like the rate: the name of the catalogue default line this line was made from (a care tier, say), or null. */
+  catalogueLine: string | null;
   description: string;
   detail: string | null;
   sac: string | null;
@@ -229,7 +241,7 @@ const kindOf = (v: string | null): "fixed" | "percent" | null =>
 const stepTrigger = (v: string): ScheduleTrigger => SCHEDULE_TRIGGERS.find((t) => t === v) ?? "on_accept";
 
 /** The editor's state of a draft (or of a sent version, to copy it) from the rows `loadDocument` read. */
-export function stateOfBundle(b: DocumentBundle): DocState {
+export function stateOfBundle(b: DocumentBundle<TermsRef>): DocState {
   const d = b.document;
   return {
     id: d.id,
@@ -247,6 +259,7 @@ export function stateOfBundle(b: DocumentBundle): DocState {
       id: r.id,
       catalogueItemId: r.catalogue_item_id,
       catalogueRateMinor: r.catalogue_rate_minor,
+      catalogueLine: r.catalogue_line,
       description: r.description,
       detail: r.detail,
       sac: r.sac,
@@ -345,10 +358,17 @@ export function itemLines(
 ): { ok: true; lines: LineState[] } | ({ ok: false } & Refusal) {
   const defaults = parseJson<DefaultLineJson[]>(item.default_lines, []);
   const rate = (inr: number | null, usd: number | null) => (currency === "INR" ? inr : usd);
-  const make = (description: string, unit: string, qtyMilli: number, rateMinor: number): LineState => ({
+  const make = (
+    description: string,
+    unit: string,
+    qtyMilli: number,
+    rateMinor: number,
+    catalogueLine: string | null,
+  ): LineState => ({
     id: uuidv7(),
     catalogueItemId: item.id,
     catalogueRateMinor: rateMinor,
+    catalogueLine,
     description,
     detail: null,
     sac: item.sac,
@@ -367,14 +387,14 @@ export function itemLines(
       if (!d) return refuse(DEFAULT_LINE_UNKNOWN);
       const r = rate(d.rateInrMinor, d.rateUsdMinor);
       if (r === null) return refuse(SERVICE_NOT_PRICED, 409);
-      lines.push(make(d.description, d.unit, d.qtyMilli, r));
+      lines.push(make(d.description, d.unit, d.qtyMilli, r, d.description));
     }
     return { ok: true, lines };
   }
   if (chosen && chosen.length > 0) return refuse(DEFAULT_LINE_UNKNOWN);
   const r = rate(item.price_inr_minor, item.price_usd_minor);
   if (r === null) return refuse(SERVICE_NOT_PRICED, 409);
-  return { ok: true, lines: [make(lineName(item.name), item.unit, 1000, r)] };
+  return { ok: true, lines: [make(lineName(item.name), item.unit, 1000, r, null)] };
 }
 
 /**
@@ -413,6 +433,7 @@ export function resolveLines(
         id: old.id,
         catalogueItemId: old.catalogueItemId,
         catalogueRateMinor: old.catalogueRateMinor,
+        catalogueLine: old.catalogueLine,
         description: l.description,
         detail: l.detail ?? null,
         sac: fromCatalogue ? old.sac : l.sac !== undefined ? l.sac : old.sac,
@@ -459,6 +480,7 @@ export function resolveLines(
       id: uuidv7(),
       catalogueItemId: null,
       catalogueRateMinor: null,
+      catalogueLine: null,
       description: l.description,
       detail: l.detail ?? null,
       sac: l.sac ?? null,
@@ -554,6 +576,7 @@ export const draftContentOf = (s: DocState): DraftContent => ({
     discountValue: l.discountValue,
     gstRateBp: l.gstRateBp,
     catalogueRateMinor: l.catalogueRateMinor,
+    catalogueLine: l.catalogueLine,
   })),
   sections: s.sections.map((x) => ({ kind: x.kind, title: x.title, bodyMd: x.bodyMd, hidden: x.hidden })),
   schedule: s.schedule.map((x) => ({
@@ -685,6 +708,7 @@ export function lineRows(s: DocState, c: Computation) {
       igst_minor: k?.igstMinor ?? 0,
       line_total_minor: k?.lineTotalMinor ?? 0,
       catalogue_rate_minor: l.catalogueRateMinor,
+      catalogue_line: l.catalogueLine,
     };
   });
 }
@@ -710,7 +734,7 @@ export const scheduleRows = (s: DocState, c: Computation) =>
   }));
 
 const LINE_INSERT_COLUMNS =
-  "id, document_id, position, catalogue_item_id, description, detail, sac, qty_milli, unit, rate_minor, discount_kind, discount_value, taxable_minor, gst_rate_bp, cgst_minor, sgst_minor, igst_minor, line_total_minor, catalogue_rate_minor";
+  "id, document_id, position, catalogue_item_id, description, detail, sac, qty_milli, unit, rate_minor, discount_kind, discount_value, taxable_minor, gst_rate_bp, cgst_minor, sgst_minor, igst_minor, line_total_minor, catalogue_rate_minor, catalogue_line";
 const LINE_KEYS = [
   "id",
   "position",
@@ -730,6 +754,7 @@ const LINE_KEYS = [
   "igst_minor",
   "line_total_minor",
   "catalogue_rate_minor",
+  "catalogue_line",
 ];
 
 type Guarded = { sql: (at: number) => string; params: readonly unknown[] };

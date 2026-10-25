@@ -253,6 +253,12 @@ export const documentLines = sqliteTable(
     lineTotalMinor: integer("line_total_minor").notNull(),
     /** M4.3, server-only: the catalogue rate when the line was added (the discount guard's reference); never read from a request. */
     catalogueRateMinor: integer("catalogue_rate_minor"),
+    /**
+     * M4.3, server-only: for a line made from one of a service's default lines, that default line's name in the catalogue (the key it
+     * was found by, e.g. a care tier); null otherwise. Copied by the server when the line is added and kept across saves and
+     * revisions; never read from a request. The description a person can edit is not a key (M4.3 early check M5).
+     */
+    catalogueLine: text("catalogue_line"),
     /** M4.3: the second line shown in the portal view (at most 300 characters; the API enforces it). */
     detail: text("detail"),
   },

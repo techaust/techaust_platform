@@ -1,6 +1,6 @@
 {
-  "id": "bd93686b-9a20-4f27-952d-42025d2e756a",
-  "prevId": "a926972b-18be-4bb3-9dfe-510ab4b4d291",
+  "id": "316ef3da-f292-43e6-b860-79fa58879e71",
+  "prevId": "4af48c68-6a2a-4853-904d-6bad8f73cac5",
   "version": "6",
   "dialect": "sqlite",
   "tables": {
@@ -3129,6 +3129,13 @@
         "catalogue_rate_minor": {
           "name": "catalogue_rate_minor",
           "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "catalogue_line": {
+          "name": "catalogue_line",
+          "type": "text",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false

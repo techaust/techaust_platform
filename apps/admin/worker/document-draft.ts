@@ -7,26 +7,31 @@ import type { TaxInput } from "@techaust/core/clients";
 import type { CalendarDate } from "@techaust/core/dates";
 import { sectionsFromTemplate } from "@techaust/core/documents";
 import { uuidv7 } from "@techaust/core/ids";
+import { divRoundHalfUp } from "@techaust/core/money";
 import type { ScheduleTrigger } from "@techaust/core/schedule-text";
 import type { ApiError } from "./context.ts";
 import {
   type Computation,
   computeQuote,
+  DEFAULT_LINE_DUPLICATE,
   type DocState,
   draftColumns,
   type ItemRow,
   insertChildren,
   insertDocument,
   itemLines,
+  LINES_MAX,
   type LineState,
   lineName,
   lineRows,
   type QuoteSettings,
   type Refusal,
+  SERVICE_DUPLICATE,
   type StepState,
   scheduleRows,
   scheduleSentence,
   sectionRows,
+  TOO_MANY_LINES,
   taxContext,
 } from "./quote-model.ts";
 
@@ -78,9 +83,9 @@ export function stepsFromBuildSchedule(steps: readonly { label: string; pctBp: n
   }));
 }
 
-/** Σ quantity × rate of a service's lines (bigint: the product can pass 2^53 for absurd input). */
+/** Σ quantity × rate of a service's lines, each rounded half up like the engine's lines (bigint: the product can pass 2^53). */
 const referenceOf = (lines: readonly LineState[]) =>
-  lines.reduce((a, l) => a + (BigInt(l.qtyMilli) * BigInt(l.rateMinor)) / 1000n, 0n);
+  lines.reduce((a, l) => a + divRoundHalfUp(BigInt(l.qtyMilli) * BigInt(l.rateMinor), 1000n), 0n);
 
 function readTemplate(raw: unknown): TemplateBody | null {
   try {
@@ -98,7 +103,13 @@ export async function buildNewDraft(i: NewDraftInput): Promise<NewDraft> {
   const { settings } = i;
   const lines: LineState[] = [];
   let best: { ref: bigint; item: ItemRow } | null = null;
+  // One service once, and each of its default lines once: asking twice for the same thing made duplicate lines (10 services x 30 lines).
+  const seenServices = new Set<string>();
   for (const s of i.services) {
+    if (seenServices.has(s.item.id)) return { ok: false, error: SERVICE_DUPLICATE, status: 400 };
+    seenServices.add(s.item.id);
+    if (s.chosen && new Set(s.chosen).size !== s.chosen.length)
+      return { ok: false, error: DEFAULT_LINE_DUPLICATE, status: 400 };
     const made = itemLines(s.item, i.client.currency, s.chosen, settings.tax.defaultRateBp);
     if (!made.ok) {
       // A lead convert never fails on the catalogue: a service that needs a choice of lines, or has no price in this currency, gives its sections and schedule and no lines.
@@ -112,6 +123,7 @@ export async function buildNewDraft(i: NewDraftInput): Promise<NewDraft> {
       return made;
     }
     lines.push(...made.lines);
+    if (lines.length > LINES_MAX) return { ok: false, error: TOO_MANY_LINES, status: 400 };
     const ref = referenceOf(made.lines);
     if (!best || ref > best.ref) best = { ref, item: s.item };
   }

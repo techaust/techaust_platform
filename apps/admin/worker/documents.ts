@@ -12,7 +12,7 @@ import {
   LOAD_STATEMENTS,
   loadDocument,
   loadStatements,
-  type TermsRow,
+  type TermsRef,
 } from "@techaust/db/documents";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
@@ -101,13 +101,17 @@ type ListRow = {
   updated_at: number;
   approval_status: string | null;
   approval_sha: string | null;
+  custom_lines: number;
+  custom_taxable_minor: number;
 };
 
 /** The latest version of each group only: no newer version exists (probed through `documents_version`). */
 export const LIST_SQL = (filters: { status: boolean; client: boolean; cursor: boolean }) =>
   `SELECT d.id, d.type, d.version, d.status, d.title, d.number_display, d.client_id, cl.code AS client_code, cl.display_name AS client_name, d.currency, d.taxable_minor, d.total_minor, d.valid_until, d.content_sha256, d.frozen_at, d.created_at, d.updated_at,
      (SELECT a.status FROM approvals a WHERE a.document_id = d.id AND a.kind = 'discount' ORDER BY a.created_at DESC, a.id DESC LIMIT 1) AS approval_status,
-     (SELECT a.content_sha256 FROM approvals a WHERE a.document_id = d.id AND a.kind = 'discount' ORDER BY a.created_at DESC, a.id DESC LIMIT 1) AS approval_sha
+     (SELECT a.content_sha256 FROM approvals a WHERE a.document_id = d.id AND a.kind = 'discount' ORDER BY a.created_at DESC, a.id DESC LIMIT 1) AS approval_sha,
+     (SELECT count(*) FROM document_lines l WHERE l.document_id = d.id AND l.catalogue_item_id IS NULL) AS custom_lines,
+     (SELECT coalesce(sum(l.taxable_minor), 0) FROM document_lines l WHERE l.document_id = d.id AND l.catalogue_item_id IS NULL) AS custom_taxable_minor
    FROM documents d JOIN clients cl ON cl.id = d.client_id
    WHERE d.type = ?1${filters.status ? " AND d.status = ?2" : ""}${filters.client ? ` AND d.client_id = ?${filters.status ? 3 : 2}` : ""}${filters.cursor ? ` AND ${keysetSql("d.created_at", "d.id", false, "after", 1 + (filters.status ? 1 : 0) + (filters.client ? 1 : 0) + 1).where}` : ""}
      AND NOT EXISTS (SELECT 1 FROM documents n WHERE n.version_group_id = d.version_group_id AND n.version > d.version)
@@ -129,6 +133,9 @@ export const listRow = (r: ListRow) => ({
   validUntil: r.valid_until,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
+  // Lines the discount guard ignores (not from the catalogue): how many, and their taxable value together.
+  customLines: r.custom_lines,
+  customTaxableMinor: r.custom_taxable_minor,
   // Pending approval is shown from the approvals row, never stored as a status (owner, 2026-10-07).
   approval:
     r.frozen_at !== null
@@ -185,7 +192,7 @@ export async function listDocuments(
 export async function readContext(c: Ctx, id: string, extra: D1PreparedStatement[] = []) {
   const db = c.env.DB;
   const results = await db.batch([
-    ...loadStatements(db, id),
+    ...loadStatements(db, id, { terms: "ref" }),
     db
       .prepare(
         `SELECT ${CLIENT_COLS} FROM clients WHERE id = (SELECT client_id FROM documents WHERE id = ?1)`,
@@ -200,7 +207,7 @@ export async function readContext(c: Ctx, id: string, extra: D1PreparedStatement
     db.prepare(SETTINGS_READ),
     ...extra,
   ]);
-  const bundle = bundleOf(results.slice(0, LOAD_STATEMENTS));
+  const bundle = bundleOf<TermsRef>(results.slice(0, LOAD_STATEMENTS));
   if (!bundle) return null;
   const [clientR, contactR, termsR, settingsR] = results.slice(LOAD_STATEMENTS);
   const client = clientR?.results[0] as ClientRow | undefined;
@@ -212,7 +219,7 @@ export async function readContext(c: Ctx, id: string, extra: D1PreparedStatement
       (contactR?.results[0] as
         | { id: string; name: string; email: string; anonymised_at: number | null }
         | undefined) ?? null,
-    newestTerms: (termsR?.results[0] as TermsRow | undefined) ?? null,
+    newestTerms: (termsR?.results[0] as TermsRef | undefined) ?? null,
     newestTermsId: (termsR?.results[0] as { id: string } | undefined)?.id ?? null,
     settingsRows: (settingsR?.results ?? []) as { key: string; value: string; version: number }[],
     extra: results.slice(LOAD_STATEMENTS + 4),

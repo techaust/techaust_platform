@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "a926972b-18be-4bb3-9dfe-510ab4b4d291",
+  "id": "4af48c68-6a2a-4853-904d-6bad8f73cac5",
   "prevId": "ed242b91-03a6-464a-bf5a-546e2bd314ae",
   "tables": {
     "catalogue_items": {
@@ -3129,6 +3129,13 @@
         "catalogue_rate_minor": {
           "name": "catalogue_rate_minor",
           "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "catalogue_line": {
+          "name": "catalogue_line",
+          "type": "text",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false

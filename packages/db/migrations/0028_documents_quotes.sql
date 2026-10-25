@@ -29,6 +29,7 @@ CREATE UNIQUE INDEX `documents_number_display` ON `documents` (`number_display`,
 ALTER TABLE `care_plans` ADD `source_document_id` text REFERENCES documents(id);--> statement-breakpoint
 CREATE UNIQUE INDEX `care_plans_source_document` ON `care_plans` (`source_document_id`) WHERE "care_plans"."source_document_id" is not null;--> statement-breakpoint
 ALTER TABLE `document_lines` ADD `catalogue_rate_minor` integer;--> statement-breakpoint
+ALTER TABLE `document_lines` ADD `catalogue_line` text;--> statement-breakpoint
 ALTER TABLE `document_lines` ADD `detail` text;--> statement-breakpoint
 ALTER TABLE `payment_schedules` ADD `detail` text;--> statement-breakpoint
 ALTER TABLE `payment_schedules` ADD `target_date` text;--> statement-breakpoint

@@ -22,12 +22,11 @@ import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { clientGoneSql } from "./anonymised.ts";
 import { type AppEnv, err, mutate, NOT_FOUND } from "./context.ts";
-import { documentView } from "./document-view.ts";
+import { saveAnswer } from "./document-view.ts";
 import { readContext } from "./documents.ts";
 import { body, idParam, param, refusedWith, STALE_VERSION, text } from "./http.ts";
 import {
   CLIENT_GONE,
-  type ClientRow,
   CONTACT_GONE,
   CONTACT_INVALID,
   computeQuote,
@@ -295,7 +294,7 @@ export const documentSave = new Hono<AppEnv>().patch("/:id", param(idParam), bod
     return err(c, STALE_VERSION, 409);
   }
 
-  // The answer is the document as it now is, built from what was just written (no second read).
+  // The answer is slim (`saveAnswer`): what the server decided, built from what was just written (no second read).
   const after = {
     ...ctx.bundle,
     document: {
@@ -319,14 +318,14 @@ export const documentSave = new Hono<AppEnv>().patch("/:id", param(idParam), bod
         : a,
     ),
   };
-  const view = await documentView({
-    bundle: after,
-    client: ctx.client as ClientRow,
-    contact,
-    newestTermsId: ctx.newestTermsId,
-    settings,
-    today: todayIst(),
-    prepared: { state, computation },
-  });
-  return c.json(view);
+  return c.json(
+    saveAnswer({
+      bundle: after,
+      newestTermsId: ctx.newestTermsId,
+      state,
+      computation,
+      clientGone: false,
+      contactGone: contact !== null && contact.anonymised_at !== null,
+    }),
+  );
 });

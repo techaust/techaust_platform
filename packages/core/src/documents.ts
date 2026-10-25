@@ -225,6 +225,8 @@ export type DraftLine = {
   readonly discountValue: number | null;
   readonly gstRateBp: number;
   readonly catalogueRateMinor: number | null;
+  /** Server-only: the catalogue default line this line was made from (its name there), or null. */
+  readonly catalogueLine: string | null;
 };
 
 export type DraftScheduleStep = {
@@ -253,29 +255,57 @@ export type DraftContent = {
 };
 
 /**
- * The canonical object that is hashed: the document fields, lines, sections and schedule in their order; the supply type and place
+ * The object that is hashed (format v2): the document fields, lines, sections and schedule in their order; the supply type and place
  * of supply; and every total (the document's and each line's taxable value, tax heads and total). A different tax setting that moves
  * a total therefore changes the hash too. Ids are left out, so a copy of the content hashes the same.
+ *
+ * Built so that plain `JSON.stringify` of it equals `canonicalJson` of it: every object is written with its keys in sorted order (the
+ * literal order below, checked by a property test) and the many small records (lines, sections, steps, totals) are tuples in a fixed
+ * order. That removes the recursive canonical walk from the hot path of a save and a send (see the builder report for the figures).
+ * Tuple orders: line = [catalogueItemId, description, detail, sac, qtyMilli, unit, rateMinor, discountKind, discountValue, gstRateBp,
+ * catalogueRateMinor, catalogueLine]; section = [kind, title, bodyMd, hidden]; step = [label, trigger, pctBp, detail, targetDate]; totals =
+ * [subtotal, discount, taxable, cgst, sgst, igst, roundOff, total]; line totals = [taxable, cgst, sgst, igst, total].
  */
 export function contentHashInput(draft: DraftContent, computed: ComputedDocument | null) {
   return {
-    v: 1,
     document: {
-      type: draft.type,
       clientId: draft.clientId,
       contactId: draft.contactId,
-      title: draft.title,
       currency: draft.currency,
-      validityDays: draft.validityDays,
-      termsVersionId: draft.termsVersionId,
       discountKind: draft.discountKind,
       discountValue: draft.discountValue,
       exportMode: draft.exportMode,
+      termsVersionId: draft.termsVersionId,
+      title: draft.title,
+      type: draft.type,
+      validityDays: draft.validityDays,
     },
-    lines: draft.lines,
-    sections: draft.sections,
-    schedule: draft.schedule,
-    supply: computed ? computed.supply : null,
+    lineTotals: computed
+      ? computed.lines.map((l) => [l.taxableMinor, l.cgstMinor, l.sgstMinor, l.igstMinor, l.lineTotalMinor])
+      : null,
+    lines: draft.lines.map((l) => [
+      l.catalogueItemId,
+      l.description,
+      l.detail,
+      l.sac,
+      l.qtyMilli,
+      l.unit,
+      l.rateMinor,
+      l.discountKind,
+      l.discountValue,
+      l.gstRateBp,
+      l.catalogueRateMinor,
+      l.catalogueLine,
+    ]),
+    schedule: draft.schedule.map((s) => [s.label, s.trigger, s.pctBp, s.detail, s.targetDate]),
+    sections: draft.sections.map((s) => [s.kind, s.title, s.bodyMd, s.hidden]),
+    supply: computed
+      ? {
+          placeOfSupplyCode: computed.supply.placeOfSupplyCode,
+          supplierStateCode: computed.supply.supplierStateCode,
+          type: computed.supply.type,
+        }
+      : null,
     totals: computed
       ? [
           computed.subtotalMinor,
@@ -288,15 +318,13 @@ export function contentHashInput(draft: DraftContent, computed: ComputedDocument
           computed.totalMinor,
         ]
       : null,
-    lineTotals: computed
-      ? computed.lines.map((l) => [l.taxableMinor, l.cgstMinor, l.sgstMinor, l.igstMinor, l.lineTotalMinor])
-      : null,
+    v: 2,
   };
 }
 
-/** The hex SHA-256 of `contentHashInput`. */
+/** The hex SHA-256 of `contentHashInput`, serialised with plain `JSON.stringify` (equal to `canonicalJson` by construction). */
 export const contentHash = (draft: DraftContent, computed: ComputedDocument | null): Promise<string> =>
-  sha256Hex(canonicalJson(contentHashInput(draft, computed)));
+  sha256Hex(JSON.stringify(contentHashInput(draft, computed)));
 
 // ---- validity (VERIFY WITH CA/LEGAL item 5) -----------------------------------------------------------------------------------
 
@@ -339,41 +367,48 @@ export type SnapshotInput = {
     readonly issueDate: string;
     readonly validUntil: string;
     readonly validityDays: number;
+    /** The content hash of the version: it already covers the lines, sections, schedule and every total. */
     readonly contentSha256: string;
     readonly discountKind: string | null;
     readonly discountValue: number | null;
     readonly exportMode: string | null;
-    readonly supplyType: string;
+  };
+  readonly supply: {
+    readonly type: string;
     readonly placeOfSupplyCode: string;
+    readonly supplierStateCode: string;
   };
   readonly recipient: unknown;
   readonly issuer: unknown;
-  readonly computed: ComputedDocument;
-  readonly lines: readonly DraftLine[];
-  readonly sections: readonly SectionDraft[];
-  readonly schedule: readonly (DraftScheduleStep & { readonly amountMinor: number })[];
   /** The terms version the offer rests on: its id, version and the SHA-256 of its text. */
   readonly terms: { readonly id: string; readonly version: number; readonly sha256: string };
+  /** The amount of each payment step, in order (they are not in the content hash: they follow from the total). */
+  readonly instalmentAmounts: readonly number[];
+  /** The SHA-256 of the exact `computed` JSON text stored in `documents.computed` (so the stored text is what was sealed). */
+  readonly computedSha256: string;
 };
 
 /**
- * The canonical frozen content of a sent version. It holds what the client agreed to and who it is between, and NOT the number, the
- * series, the FY or the instants of the send (those are taken inside the send batch, after this is hashed; the number is in the
- * PDF, M4.4, whose SHA-256 is the acceptance evidence). `snapshot_sha256 = sha256Hex(canonicalJson(snapshot))`.
+ * The sealed header of a sent version (format v2). It holds who the offer is between, the document fields, the supply, the terms
+ * reference, the instalment amounts, the content hash (which covers the lines, sections and schedule) and the hash of the stored
+ * `computed` text. It does NOT hold the number, the series, the FY or the instants of the send (those are taken inside the send batch,
+ * after this is hashed; the number is in the PDF, M4.4, whose SHA-256 is the acceptance evidence), and it does not repeat the content:
+ * hashing a cap-sized snapshot (106 KB) cost 2 to 3 ms of a send. M4.4's copy in R2 is an envelope that holds the full snapshot next to
+ * the number; its integrity is `contentSha256` and `computedSha256`, both checked against this header.
+ * `snapshot_sha256 = sha256Hex(canonicalJson(documentSnapshot(i)))`.
  */
 export function documentSnapshot(i: SnapshotInput) {
   return {
-    v: 1,
-    document: i.document,
-    recipient: i.recipient,
-    issuer: i.issuer,
-    computed: i.computed,
-    // The catalogue rate is our internal reference for the discount guard, not part of the offer: it stays out of the snapshot (which is
-    // copied to R2 and may be shown), though it is part of the content hash. Rebuild a snapshot the same way.
-    lines: i.lines.map(({ catalogueRateMinor: _reference, ...line }) => line),
-    sections: i.sections,
-    schedule: i.schedule,
-    terms: i.terms,
+    v: 2,
+    header: {
+      document: i.document,
+      supply: i.supply,
+      recipient: i.recipient,
+      issuer: i.issuer,
+      terms: i.terms,
+      instalmentAmounts: i.instalmentAmounts,
+      computedSha256: i.computedSha256,
+    },
   };
 }
 

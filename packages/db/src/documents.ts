@@ -56,6 +56,7 @@ export type DocumentRow = {
   updated_at: number;
   recipient: RecipientSnapshot | null;
   issuer: IssuerSnapshot | null;
+  /** The sealed tax result of a SENT version. Always null for a draft (it is not parsed: a draft is worked out again from its parts). */
   computed: ComputedDocument | null;
 };
 
@@ -78,6 +79,8 @@ export type LineRow = {
   igst_minor: number;
   line_total_minor: number;
   catalogue_rate_minor: number | null;
+  /** The catalogue default line this line was made from (its name there), or null. Server-only. */
+  catalogue_line: string | null;
 };
 export type SectionRow = {
   id: string;
@@ -108,7 +111,10 @@ export type VersionRow = {
   total_minor: number;
   updated_at: number;
 };
-export type TermsRow = { id: string; kind: string; version: number; body_md: string; sha256: string };
+/** A terms version without its text: what an admin route needs (the pin, shown as id, version and hash). */
+export type TermsRef = { id: string; kind: string; version: number; sha256: string };
+/** A terms version with its text (the PDF and the portal render it, M4.4 and M4.5). */
+export type TermsRow = TermsRef & { body_md: string };
 export type ApprovalRow = {
   id: string;
   kind: string;
@@ -122,7 +128,7 @@ export type ApprovalRow = {
   created_at: number;
 };
 
-export type DocumentBundle = {
+export type DocumentBundle<T extends TermsRef = TermsRow> = {
   document: DocumentRow;
   lines: LineRow[];
   sections: SectionRow[];
@@ -130,7 +136,7 @@ export type DocumentBundle = {
   /** Every version of the document's group, oldest first. */
   versions: VersionRow[];
   /** The terms version the document is pinned to. */
-  terms: TermsRow | null;
+  terms: T | null;
   /** The discount approvals of this version, newest first (at most 5). */
   approvals: ApprovalRow[];
 };
@@ -142,7 +148,7 @@ const DOCUMENT_COLUMNS =
 export const LOAD_DOCUMENT_SQL = {
   document: `SELECT ${DOCUMENT_COLUMNS} FROM documents WHERE id = ?1`,
   lines:
-    "SELECT id, position, catalogue_item_id, description, detail, sac, qty_milli, unit, rate_minor, discount_kind, discount_value, taxable_minor, gst_rate_bp, cgst_minor, sgst_minor, igst_minor, line_total_minor, catalogue_rate_minor FROM document_lines WHERE document_id = ?1 ORDER BY position",
+    "SELECT id, position, catalogue_item_id, description, detail, sac, qty_milli, unit, rate_minor, discount_kind, discount_value, taxable_minor, gst_rate_bp, cgst_minor, sgst_minor, igst_minor, line_total_minor, catalogue_rate_minor, catalogue_line FROM document_lines WHERE document_id = ?1 ORDER BY position",
   sections:
     "SELECT id, kind, position, hidden, title, body_md FROM document_sections WHERE document_id = ?1 ORDER BY position",
   schedule:
@@ -151,6 +157,9 @@ export const LOAD_DOCUMENT_SQL = {
     "SELECT id, version, status, number_display, sent_at, frozen_at, valid_until, total_minor, updated_at FROM documents WHERE version_group_id = (SELECT version_group_id FROM documents WHERE id = ?1) ORDER BY version",
   terms:
     "SELECT id, kind, version, body_md, sha256 FROM terms_versions WHERE id = (SELECT terms_version_id FROM documents WHERE id = ?1)",
+  /** The same row without the (up to 20 KB) text: the admin routes never need it. */
+  termsRef:
+    "SELECT id, kind, version, sha256 FROM terms_versions WHERE id = (SELECT terms_version_id FROM documents WHERE id = ?1)",
   approvals:
     "SELECT id, kind, status, content_sha256, requested_by, decided_by, decided_at, reason, note, created_at FROM approvals WHERE document_id = ?1 AND kind = 'discount' ORDER BY created_at DESC, id DESC LIMIT 5",
 } as const;
@@ -165,8 +174,15 @@ const parse = <T>(s: string | null): T | null => (s === null ? null : (JSON.pars
 /** How many statements `loadStatements` gives (a caller that adds its own to the same batch reads the rest after them). */
 export const LOAD_STATEMENTS = 7;
 
-/** The statements of `loadDocument`, for a caller that wants them in a batch of its own (one D1 call costs CPU on the Free plan). */
-export function loadStatements(db: D1Database, id: string): D1PreparedStatement[] {
+/**
+ * The statements of `loadDocument`, for a caller that wants them in a batch of its own (one D1 call costs CPU on the Free plan).
+ * `terms: "ref"` reads the terms row without its text (read the bundle with `bundleOf<TermsRef>`).
+ */
+export function loadStatements(
+  db: D1Database,
+  id: string,
+  opts: { terms?: "full" | "ref" } = {},
+): D1PreparedStatement[] {
   const q = LOAD_DOCUMENT_SQL;
   return [
     db.prepare(q.document).bind(id),
@@ -174,7 +190,7 @@ export function loadStatements(db: D1Database, id: string): D1PreparedStatement[
     db.prepare(q.sections).bind(id),
     db.prepare(q.schedule).bind(id),
     db.prepare(q.versions).bind(id),
-    db.prepare(q.terms).bind(id),
+    db.prepare(opts.terms === "ref" ? q.termsRef : q.terms).bind(id),
     db.prepare(q.approvals).bind(id),
   ];
 }
@@ -185,7 +201,9 @@ export async function loadDocument(db: D1Database, id: string): Promise<Document
 }
 
 /** The bundle from the results of `loadStatements` (the first seven results of a batch); null when the document does not exist. */
-export function bundleOf(results: readonly D1Result[]): DocumentBundle | null {
+export function bundleOf<T extends TermsRef = TermsRow>(
+  results: readonly D1Result[],
+): DocumentBundle<T> | null {
   const [doc, lines, sections, schedule, versions, terms, approvals] = results;
   const raw = (doc?.results as RawDocument[] | undefined)?.[0];
   if (!raw) return null;
@@ -194,13 +212,14 @@ export function bundleOf(results: readonly D1Result[]): DocumentBundle | null {
       ...raw,
       recipient: parse<RecipientSnapshot>(raw.recipient),
       issuer: parse<IssuerSnapshot>(raw.issuer),
-      computed: parse<ComputedDocument>(raw.computed),
+      // A draft's stored result is never parsed (60 KB of JSON at the cap): the route works the draft out again anyway.
+      computed: raw.frozen_at === null ? null : parse<ComputedDocument>(raw.computed),
     },
     lines: (lines?.results ?? []) as LineRow[],
     sections: (sections?.results ?? []) as SectionRow[],
     schedule: (schedule?.results ?? []) as ScheduleRow[],
     versions: (versions?.results ?? []) as VersionRow[],
-    terms: ((terms?.results ?? [])[0] as TermsRow | undefined) ?? null,
+    terms: ((terms?.results ?? [])[0] as T | undefined) ?? null,
     approvals: (approvals?.results ?? []) as ApprovalRow[],
   };
 }

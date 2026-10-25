@@ -328,7 +328,7 @@ export function issueGuardStatements(): string[] {
  *   3. `issue_result_check`: a proposal or estimate ends `sent` (an invoice `issued`); version 1 holds the number the counter just
  *      handed out; a later version holds exactly its first version's number and display, series and FY (the counter does not move);
  *   4. a new version needs its predecessor frozen, same type, client and currency; version 1 is its own group;
- *   5. a version's type, client, currency, group and version never change;
+ *   5. a version's type, client, currency, group and version never change; any other document type has version 1 only;
  *   6. a later version's number is its group's first version's number;
  *   7. the status flow of a proposal or estimate (`pending_approval` is a record in `approvals`, never a status);
  *   8. the contact of a document belongs to its client;
@@ -365,6 +365,8 @@ export function documentTriggerStatements(): string[] {
     // 4. versions
     `CREATE TRIGGER \`documents_version_insert\` BEFORE INSERT ON \`documents\` WHEN NEW.type IN (${quotes}) AND (NEW.version_group_id IS NULL OR (NEW.version = 1 AND NEW.version_group_id IS NOT NEW.id) OR (NEW.version > 1 AND NOT EXISTS (SELECT 1 FROM documents p WHERE p.version_group_id = NEW.version_group_id AND p.version = NEW.version - 1 AND p.frozen_at IS NOT NULL AND p.type = NEW.type AND p.client_id = NEW.client_id AND p.currency = NEW.currency))) BEGIN ${abort("documents_version_insert: a proposal or estimate version needs its group, and a later version needs the frozen version before it")} END;`,
     `CREATE TRIGGER \`documents_version_fixed\` BEFORE UPDATE OF type, client_id, currency, version_group_id, version ON \`documents\` WHEN OLD.type IN (${quotes}) AND (NEW.type IS NOT OLD.type OR NEW.client_id IS NOT OLD.client_id OR NEW.currency IS NOT OLD.currency OR NEW.version_group_id IS NOT OLD.version_group_id OR NEW.version IS NOT OLD.version) BEGIN ${abort("documents_version_fixed: the type, client, currency, group and version of a proposal or estimate never change")} END;`,
+    `CREATE TRIGGER \`documents_version_single_insert\` BEFORE INSERT ON \`documents\` WHEN NEW.type NOT IN (${quotes}) AND NEW.version IS NOT 1 BEGIN ${abort("documents_version_single: only a proposal or estimate has versions; any other document is version 1")} END;`,
+    `CREATE TRIGGER \`documents_version_single_update\` BEFORE UPDATE OF version, type ON \`documents\` WHEN NEW.type NOT IN (${quotes}) AND NEW.version IS NOT 1 BEGIN ${abort("documents_version_single: only a proposal or estimate has versions; any other document is version 1")} END;`,
     `CREATE TRIGGER \`documents_version_number\` BEFORE UPDATE OF number ON \`documents\` WHEN NEW.type IN (${quotes}) AND NEW.version > 1 AND NEW.number IS NOT NULL AND NEW.number IS NOT (SELECT v.number FROM documents v WHERE v.version_group_id = NEW.version_group_id AND v.version = 1) BEGIN ${abort("documents_version_number: a later version keeps the number of its first version")} END;`,
     // 7. status flow
     `CREATE TRIGGER \`documents_status_flow\` BEFORE UPDATE OF status ON \`documents\` WHEN NEW.status IS NOT OLD.status AND OLD.type IN (${quotes}) AND NOT (${flow.join(" OR ")}) BEGIN ${abort("documents_status_flow: that status change is not allowed")} END;`,

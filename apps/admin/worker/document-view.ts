@@ -4,7 +4,7 @@
 import type { CalendarDate } from "@techaust/core/dates";
 import { approvalState, catalogueGuard, type GuardLine } from "@techaust/core/documents";
 import type { ComputedDocument } from "@techaust/core/tax";
-import type { DocumentBundle } from "@techaust/db/documents";
+import type { DocumentBundle, TermsRef } from "@techaust/db/documents";
 import {
   type Blocker,
   type ClientRow,
@@ -27,8 +27,49 @@ const guardLines = (s: DocState): GuardLine[] =>
     qtyMilli: l.qtyMilli,
   }));
 
+/** The totals block shared by the full view and the save answer. */
+const totalsOf = (computed: ComputedDocument | null) =>
+  computed
+    ? {
+        subtotalMinor: computed.subtotalMinor,
+        discountMinor: computed.discountMinor,
+        taxableMinor: computed.taxableMinor,
+        cgstMinor: computed.cgstMinor,
+        sgstMinor: computed.sgstMinor,
+        igstMinor: computed.igstMinor,
+        roundOffMinor: computed.roundOffMinor,
+        totalMinor: computed.totalMinor,
+        words: computed.words,
+        totalInrMinor: computed.inr?.totalMinor ?? null,
+      }
+    : null;
+
+/** The lines the discount guard ignores (not from the catalogue), with their taxable value: the approval screen lists them (owner, O-Q1). */
+export const customLinesOf = (state: DocState, computed: ComputedDocument | null) =>
+  state.lines.flatMap((l, n) =>
+    l.catalogueItemId === null
+      ? [{ id: l.id, position: n + 1, taxableMinor: computed?.lines[n]?.taxableMinor ?? null }]
+      : [],
+  );
+
+const approvalOf = (bundle: DocumentBundle<TermsRef>, contentSha256: string | null) => {
+  const latest = bundle.approvals[0] ?? null;
+  return {
+    state: approvalState(
+      latest ? { status: latest.status, contentSha256: latest.content_sha256 } : null,
+      contentSha256,
+    ),
+    id: latest?.id ?? null,
+    requestedBy: latest?.requested_by ?? null,
+    requestedAt: latest?.created_at ?? null,
+    decidedBy: latest?.decided_by ?? null,
+    decidedAt: latest?.decided_at ?? null,
+    note: latest?.note ?? null,
+  };
+};
+
 export type ViewInput = {
-  bundle: DocumentBundle;
+  bundle: DocumentBundle<TermsRef>;
   client: ClientRow;
   contact: ContactFacts | null;
   newestTermsId: string | null;
@@ -53,11 +94,6 @@ export async function documentView(i: ViewInput) {
   const contactGone = contact !== null && contact.anonymised_at !== null;
   const blockers: Blocker[] =
     !frozen && computation ? sendBlockers(state, computation, { clientGone, contactGone }) : [];
-  const latest = bundle.approvals[0] ?? null;
-  const approval = approvalState(
-    latest ? { status: latest.status, contentSha256: latest.content_sha256 } : null,
-    d.content_sha256,
-  );
   const lineAt = (i2: number) => computed?.lines[i2];
   return {
     id: d.id,
@@ -101,6 +137,8 @@ export async function documentView(i: ViewInput) {
       catalogueItemId: l.catalogueItemId,
       // Read-only: the catalogue price when the line was added (the discount guard's reference). A request cannot set it.
       catalogueRateMinor: l.catalogueRateMinor,
+      // Read-only: the catalogue default line this line came from (a care tier, say), or null.
+      catalogueLine: l.catalogueLine,
       description: l.description,
       detail: l.detail,
       sac: l.sac,
@@ -139,20 +177,7 @@ export async function documentView(i: ViewInput) {
       detail: s.detail,
       targetDate: s.targetDate,
     })),
-    totals: computed
-      ? {
-          subtotalMinor: computed.subtotalMinor,
-          discountMinor: computed.discountMinor,
-          taxableMinor: computed.taxableMinor,
-          cgstMinor: computed.cgstMinor,
-          sgstMinor: computed.sgstMinor,
-          igstMinor: computed.igstMinor,
-          roundOffMinor: computed.roundOffMinor,
-          totalMinor: computed.totalMinor,
-          words: computed.words,
-          totalInrMinor: computed.inr?.totalMinor ?? null,
-        }
-      : null,
+    totals: totalsOf(computed),
     supply: computed?.supply ?? null,
     summary: computed?.summary ?? null,
     guard: guard
@@ -172,15 +197,7 @@ export async function documentView(i: ViewInput) {
           ),
         }
       : null,
-    approval: {
-      state: approval,
-      id: latest?.id ?? null,
-      requestedBy: latest?.requested_by ?? null,
-      requestedAt: latest?.created_at ?? null,
-      decidedBy: latest?.decided_by ?? null,
-      decidedAt: latest?.decided_at ?? null,
-      note: latest?.note ?? null,
-    },
+    approval: approvalOf(bundle, d.content_sha256),
     versions: bundle.versions.map((v) => ({
       id: v.id,
       version: v.version,
@@ -211,3 +228,67 @@ export async function documentView(i: ViewInput) {
 }
 
 export type DocumentView = Awaited<ReturnType<typeof documentView>>;
+
+// ---- the answer to a save (slim) ---------------------------------------------------------------------------------------------
+
+export type SaveAnswerInput = {
+  bundle: DocumentBundle<TermsRef>;
+  newestTermsId: string | null;
+  state: DocState;
+  computation: Computation;
+  clientGone: boolean;
+  contactGone: boolean;
+};
+
+/**
+ * What a PATCH answers. The screen already holds what it sent, so this carries only what the server decided: the new `updatedAt` and
+ * `contentSha256`, the worked-out figures (totals, supply, tax summary, each line's tax and total, each instalment), the ids (the
+ * server makes an id for every new line, section and step; all three lists come back in order), the discount guard, the approval,
+ * the blockers, errors and warnings. It never repeats a section's text, a line's description or detail, a step's label or a title:
+ * saving 100 lines and 30,000 characters of sections answers in about 8 KB instead of about 60 KB.
+ */
+export function saveAnswer(i: SaveAnswerInput) {
+  const { bundle, state, computation } = i;
+  const d = bundle.document;
+  const computed = computation.computed;
+  const blockers = sendBlockers(state, computation, { clientGone: i.clientGone, contactGone: i.contactGone });
+  return {
+    id: d.id,
+    updatedAt: d.updated_at,
+    contentSha256: d.content_sha256,
+    totals: totalsOf(computed),
+    supply: computed?.supply ?? null,
+    summary: computed?.summary ?? null,
+    lines: state.lines.map((l, n) => ({
+      id: l.id,
+      position: n + 1,
+      taxableMinor: computed?.lines[n]?.taxableMinor ?? null,
+      cgstMinor: computed?.lines[n]?.cgstMinor ?? null,
+      sgstMinor: computed?.lines[n]?.sgstMinor ?? null,
+      igstMinor: computed?.lines[n]?.igstMinor ?? null,
+      lineTotalMinor: computed?.lines[n]?.lineTotalMinor ?? null,
+    })),
+    sections: state.sections.map((x, n) => ({ id: x.id, position: n + 1 })),
+    schedule: state.schedule.map((x, n) => ({
+      id: x.id,
+      position: n + 1,
+      amountMinor: computation.instalments?.[n]?.amountMinor ?? null,
+    })),
+    guard: { ...computation.guard, customLines: customLinesOf(state, computed) },
+    approval: approvalOf(bundle, d.content_sha256),
+    terms: bundle.terms
+      ? { id: bundle.terms.id, version: bundle.terms.version, sha256: bundle.terms.sha256 }
+      : null,
+    termsOutdated:
+      d.terms_version_id !== null && i.newestTermsId !== null && i.newestTermsId !== d.terms_version_id,
+    errors: computation.errors,
+    warnings: computation.warnings,
+    blockers,
+    unresolved: blockers.find((b) => b.code === "unresolved_placeholders")?.names ?? [],
+    canSend: computed !== null && blockers.length === 0,
+    // Always false right after a save (the hash was just worked out from this very content); present so the shape matches GET.
+    needsResave: false,
+  };
+}
+
+export type SaveAnswer = ReturnType<typeof saveAnswer>;

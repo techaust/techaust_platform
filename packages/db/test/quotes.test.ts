@@ -3,7 +3,13 @@
 import { env } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core";
 import { describe, expect, it } from "vitest";
-import { LOAD_DOCUMENT_SQL, loadDocument } from "../src/documents.ts";
+import {
+  bundleOf,
+  LOAD_DOCUMENT_SQL,
+  LOAD_STATEMENTS,
+  loadDocument,
+  loadStatements,
+} from "../src/documents.ts";
 import { documentTriggerStatements } from "../src/triggers.ts";
 import { all, first, insertClient, rejects, run } from "./helpers.ts";
 import { mkApproval, mkQuote, send, sentQuote } from "./quotes.ts";
@@ -377,6 +383,29 @@ describe("version rules [documents_version_insert, documents_version_fixed]", ()
       );
   });
 
+  it("any other document type is version 1 only [documents_version_single]", async () => {
+    const clientId = await insertClient("C-QSNG");
+    const insert = (id: string, type: string, version: number) =>
+      run(
+        "INSERT INTO documents (id, type, client_id, currency, version) VALUES (?1, ?2, ?3, 'INR', ?4)",
+        id,
+        type,
+        clientId,
+        version,
+      );
+    await insert("single-inv-1", "tax_invoice", 1);
+    await rejects(insert("single-inv-2", "tax_invoice", 2), /documents_version_single/);
+    await rejects(insert("single-cn-3", "credit_note", 3), /documents_version_single/);
+    await rejects(
+      run("UPDATE documents SET version = 2 WHERE id = 'single-inv-1'"),
+      /documents_version_single/,
+    );
+    // Unchanged on a harmless update, and a quote may still have versions.
+    await run("UPDATE documents SET version = 1 WHERE id = 'single-inv-1'");
+    const v1 = await sentQuote({}, { fy: "4849" });
+    await mkQuote({ groupId: v1.groupId, clientId: v1.clientId, version: 2 });
+  });
+
   it("the unique number keys include the version: v1 and v2 share a number, two different documents cannot", async () => {
     await sentQuote({}, { fy: "4344" }); // TH/PRP/4344/0001, version 1
     const clientId = await insertClient("C-QUNQ");
@@ -500,6 +529,8 @@ describe("a catalogue line carries its catalogue rate [document_lines_catalogue_
     await line(q.id, null, null);
     await run("DELETE FROM document_lines WHERE document_id = ?1", q.id);
     await line(q.id, "item-1", 5_000);
+    // `catalogue_line` is a plain column (the default line a line came from): nothing about it is enforced by a trigger.
+    await run("UPDATE document_lines SET catalogue_line = 'Care Basic' WHERE document_id = ?1", q.id);
     const e = await mkQuote({ type: "estimate" });
     await rejects(line(e.id, "item-2", null), /document_lines_catalogue_rate/);
     const clientId = await insertClient("C-QLIN");
@@ -647,7 +678,7 @@ describe("loadDocument reads everything in one call [M4.4, M4.5 read through it]
       q.id,
     );
     await run(
-      "INSERT INTO document_lines (id, document_id, position, description, detail, qty_milli, unit, rate_minor, taxable_minor, line_total_minor, catalogue_rate_minor) VALUES ('l1', ?1, 1, 'Line', 'Second line', 1000, 'fixed', 100, 100, 118, 100)",
+      "INSERT INTO document_lines (id, document_id, position, description, detail, qty_milli, unit, rate_minor, taxable_minor, line_total_minor, catalogue_rate_minor, catalogue_line) VALUES ('l1', ?1, 1, 'Line', 'Second line', 1000, 'fixed', 100, 100, 118, 100, 'Care Basic')",
       q.id,
     );
     await run(
@@ -664,13 +695,15 @@ describe("loadDocument reads everything in one call [M4.4, M4.5 read through it]
       id: q.id,
       title: "Build",
       recipient: { legalName: "X", country: "IN" },
-      computed: { currency: "INR" },
+      // A draft's stored result is never parsed (it is worked out again from the parts).
+      computed: null,
       issuer: null,
     });
     expect(bundle?.lines[0]).toMatchObject({
       description: "Line",
       detail: "Second line",
       catalogue_rate_minor: 100,
+      catalogue_line: "Care Basic",
     });
     expect(bundle?.sections[0]).toMatchObject({ kind: "estimate", body_md: "body" });
     expect(bundle?.schedule[0]).toMatchObject({ detail: "what you get", target_date: "2026-12-01" });
@@ -678,6 +711,26 @@ describe("loadDocument reads everything in one call [M4.4, M4.5 read through it]
     expect(bundle?.terms).toMatchObject({ version: 77, sha256: "tsha" });
     expect(bundle?.approvals).toHaveLength(1);
     expect(await loadDocument(env.DB, "no-such-document")).toBeNull();
+  });
+
+  it("a sent version's stored result is parsed; the terms can be read without their text", async () => {
+    const sent = await sentQuote({}, { fy: "4748" });
+    const full = await loadDocument(env.DB, sent.id);
+    expect(full?.document.computed).toEqual({});
+    expect(full?.document.frozen_at).not.toBeNull();
+    const terms = uuidv7();
+    await run(
+      "INSERT INTO terms_versions (id, kind, version, body_md, sha256) VALUES (?1, 'proposal', 78, 'long terms text', 'tsha2')",
+      terms,
+    );
+    const q = await mkQuote();
+    await run("UPDATE documents SET terms_version_id = ?1 WHERE id = ?2", terms, q.id);
+    const results = await env.DB.batch(loadStatements(env.DB, q.id, { terms: "ref" }));
+    expect(results).toHaveLength(LOAD_STATEMENTS);
+    const ref = bundleOf(results);
+    expect(ref?.terms).toEqual({ id: terms, kind: "proposal", version: 78, sha256: "tsha2" });
+    expect(Object.keys(ref?.terms ?? {})).not.toContain("body_md");
+    expect((await loadDocument(env.DB, q.id))?.terms).toMatchObject({ body_md: "long terms text" });
   });
 
   it("lists every version of the group, oldest first", async () => {

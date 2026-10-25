@@ -47,7 +47,7 @@ export const CATALOGUE_SQL = `SELECT id, code, name FROM (
  * Proposals and estimates by the start of the number (M4.3, ADM-G-05): an index range on `documents_number_display` (number first). A
  * later version shares its first version's number, so only the latest version of each is listed. Invoices join in M5.
  */
-export const DOCUMENTS_SQL = `SELECT d.id, d.number_display, d.type, d.version, d.title FROM documents d WHERE d.number_display >= ?1 AND d.number_display < ?2 AND NOT EXISTS (SELECT 1 FROM documents n WHERE n.version_group_id = d.version_group_id AND n.version > d.version) ORDER BY d.number_display LIMIT ${PER_TYPE}`;
+export const DOCUMENTS_SQL = `SELECT d.id, d.number_display, d.type, d.version, d.title FROM documents d WHERE d.type IN ('proposal', 'estimate') AND d.number_display >= ?1 AND d.number_display < ?2 AND NOT EXISTS (SELECT 1 FROM documents n WHERE n.version_group_id = d.version_group_id AND n.version > d.version) ORDER BY d.number_display LIMIT ${PER_TYPE}`;
 export const USERS_SQL = `SELECT id, name, email, role FROM staff_users WHERE (email >= ?1 AND email < ?2) OR name LIKE ?3 ESCAPE '\\' ORDER BY name LIMIT ${PER_TYPE}`;
 
 export const search = new Hono<AppEnv>().get("/", query(searchQuery), async (c) => {

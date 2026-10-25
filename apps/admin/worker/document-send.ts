@@ -7,6 +7,7 @@
 // audit row, the lead does not move). Nothing is decided from a read alone: when the batch refused, one read says why.
 import { fyOf, istDate, toIsoDate } from "@techaust/core/dates";
 import { snapshotSha256, validUntil } from "@techaust/core/documents";
+import { sha256Hex } from "@techaust/core/hash";
 import { sqlPrintfPattern } from "@techaust/core/numbering";
 import { decide } from "@techaust/core/permissions";
 import { type IssuerSnapshot, type RecipientSnapshot, sendStatements } from "@techaust/db/issue";
@@ -16,6 +17,7 @@ import * as z from "zod/mini";
 import { clientGoneSql } from "./anonymised.ts";
 import { type ApiError, type AppEnv, actor, type Ctx, err, FORBIDDEN, mutate, NOT_FOUND } from "./context.ts";
 import { afterSend } from "./document-events.ts";
+import { customLinesOf } from "./document-view.ts";
 import { readContext } from "./documents.ts";
 import { body, idParam, param, refusedWith, STALE_VERSION } from "./http.ts";
 import {
@@ -122,6 +124,9 @@ export const documentSend = new Hono<AppEnv>().post(
       sender: { staffId: u.id, name: u.name, email: u.email },
     };
     const groupId = d.version_group_id as string;
+    // The sealed header (format v2, core `documentSnapshot`): the stored `computed` text is hashed as written, so what is sealed is
+    // exactly what the freeze UPDATE stores. The lines, sections and schedule are covered by `contentSha256`.
+    const computedJson = JSON.stringify(computed);
     const snapshotSha = await snapshotSha256({
       document: {
         type: d.type,
@@ -137,19 +142,13 @@ export const documentSend = new Hono<AppEnv>().post(
         discountKind: state.discountKind,
         discountValue: state.discountValue,
         exportMode: state.exportMode,
-        supplyType: computed.supply.type,
-        placeOfSupplyCode: computed.supply.placeOfSupplyCode,
       },
+      supply: computed.supply,
       recipient,
       issuer,
-      computed,
-      lines: computation.draft.lines,
-      sections: computation.draft.sections,
-      schedule: computation.draft.schedule.map((s, i) => ({
-        ...s,
-        amountMinor: computation.instalments?.[i]?.amountMinor ?? 0,
-      })),
       terms: { id: terms.id, version: terms.version, sha256: terms.sha256 },
+      instalmentAmounts: (computation.instalments ?? []).map((x) => x.amountMinor),
+      computedSha256: await sha256Hex(computedJson),
     });
     const batch = sendStatements(db, {
       documentId: id,
@@ -165,7 +164,7 @@ export const documentSend = new Hono<AppEnv>().post(
       validUntil: until,
       recipient,
       issuer,
-      computedJson: JSON.stringify(computed),
+      computedJson,
       snapshotSha256: snapshotSha,
       issuedBy: u.id,
       expected: {
@@ -176,6 +175,7 @@ export const documentSend = new Hono<AppEnv>().post(
       },
     });
 
+    const custom = customLinesOf(state, computed);
     let done = false;
     // The number is taken inside the batch, so it comes back from the freeze UPDATE itself (RETURNING): no second read.
     let sent: { number_display: string; valid_until: string } | undefined;
@@ -197,6 +197,9 @@ export const documentSend = new Hono<AppEnv>().post(
           totalMinor: computed.totalMinor,
           currency: d.currency,
           contentSha: computation.hash.slice(0, 12),
+          // Lines the discount guard ignored (not from the catalogue): how many and how much they were worth before tax.
+          customLines: custom.length,
+          customTaxableMinor: custom.reduce((a, x) => a + (x.taxableMinor ?? 0), 0),
         },
         side: (g) => [
           ...batch.postAudit,

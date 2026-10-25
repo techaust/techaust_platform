@@ -23,6 +23,7 @@
     "./lead-lifecycle": "./src/lead-lifecycle.ts",
     "./file-types": "./src/file-types.ts",
     "./markdown": "./src/markdown.ts",
+    "./money": "./src/money.ts",
     "./projects": "./src/projects.ts",
     "./numbering": "./src/numbering.ts",
     "./permissions": "./src/permissions.ts",
