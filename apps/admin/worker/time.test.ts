@@ -302,6 +302,19 @@ describe("POST /time [ADM-TIME-01]", () => {
     expect(await code(res)).toBe("bad_user");
     expect((await post(owner.cookie, entry(p.id, { userId: "no-such-member" }))).status).toBe(400);
   });
+
+  it("the owner cannot log time for the accountant, who does not log time [review fix 3]", async () => {
+    const owner = await sessionFor("owner");
+    const acct = await sessionFor("accountant");
+    const p = await mkOpenProject();
+    const res = await post(owner.cookie, entry(p.id, { userId: acct.id }));
+    expect(res.status).toBe(400);
+    expect(await code(res)).toBe("bad_user");
+    expect(await one("SELECT id FROM time_logs WHERE user_id = ?", acct.id)).toBeNull();
+    // and for a Sales member it is fine
+    const sales = await sessionFor("sales");
+    expect((await post(owner.cookie, entry(p.id, { userId: sales.id }))).status).toBe(201);
+  });
 });
 
 describe("PATCH and DELETE /time/:id [ADM-TIME-03]", () => {
@@ -875,6 +888,13 @@ describe("reading time [ADM-TIME-02]", () => {
     expect(allPlans).toContain(plan.id);
     expect(allPlans).not.toContain(idle.id);
     expect(allPlans).not.toContain(future.id);
+    // the work date decides which plans are offered [review fix 5]: before the pause (back(2)) the paused plan is active, and
+    // before the start date nothing is
+    const earlier = await json(await call(`/time/targets?workDate=${back(5)}`, { cookie: s.cookie }));
+    expect(earlier.carePlans.map((p: J) => p.id)).toEqual(expect.arrayContaining([plan.id, idle.id]));
+    const before = await json(await call(`/time/targets?workDate=${back(30)}`, { cookie: s.cookie }));
+    expect(before.carePlans.map((p: J) => p.id)).not.toContain(plan.id);
+    expect((await call("/time/targets?workDate=nope", { cookie: s.cookie })).status).toBe(400);
     expect(all.projects.length).toBeLessThanOrEqual(20);
     expect(all.carePlans.length).toBeLessThanOrEqual(20);
     const byCode = await json(await call(`/time/targets?q=${open.id}`, { cookie: s.cookie }));

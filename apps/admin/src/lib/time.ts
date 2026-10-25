@@ -177,11 +177,12 @@ export function entryMinutes(f: Pick<EntryForm, "hours" | "minutes">): number | 
 /** The checks the browser makes before sending (the API checks every one again). */
 export function entryInput(
   f: EntryForm,
-  ctx: { today: string; canWriteAny: boolean; me: string },
+  /** `originalDate`, when editing: the saved date. The date rule applies only if the date changed. */
+  ctx: { today: string; canWriteAny: boolean; me: string; originalDate?: string },
 ): { ok: true; body: NewTimeInput } | { ok: false; errors: EntryErrors } {
   const errors: EntryErrors = {};
   if (!parseIsoDate(f.workDate)) errors.workDate = TIME_PENDING.enterDate;
-  else {
+  else if (f.workDate !== ctx.originalDate) {
     const check = entryDateCheck({ today: ctx.today, workDate: f.workDate, canWriteAny: ctx.canWriteAny });
     if (check === "future") errors.workDate = CODE_COPY.future_date as string;
     if (check === "owner_only_date") errors.workDate = CODE_COPY.owner_only_date as string;

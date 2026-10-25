@@ -324,6 +324,7 @@ describe("the figures against a fixture", () => {
     const near = await mk(495);
     const reached = await mk(600);
     const over = await mk(660);
+    const nohours = await mk(60, { included: 0 }); // overage with no hours available: reached, sorted with the reached plans [review fix 4]
     const idle = await mk(0);
     const paused = await mk(300);
     await env.DB.prepare(
@@ -333,13 +334,13 @@ describe("the figures against a fixture", () => {
       .run();
     await env.DB.prepare("UPDATE care_plans SET status = 'paused' WHERE id = ?").bind(paused.id).run();
     const tile = (await dash(staff.cookie)).tiles.careBurn;
-    expect(tile.counts).toMatchObject({ near: 1, reached: 2 });
-    expect(tile.counts.active).toBeGreaterThanOrEqual(5);
+    expect(tile.counts).toMatchObject({ near: 1, reached: 3 });
+    expect(tile.counts.active).toBeGreaterThanOrEqual(6);
     expect(tile.truncated).toBe(false);
     const ids = tile.rows.map((r: J) => r.planId);
     expect(ids).not.toContain(paused.id);
-    const order = [over.id, reached.id, near.id, none.id, idle.id].filter((id) => ids.includes(id));
-    expect(order).toHaveLength(5);
+    const order = [over.id, reached.id, nohours.id, near.id, none.id, idle.id].filter((id) => ids.includes(id));
+    expect(order).toHaveLength(6);
     expect(ids.filter((id: string) => order.includes(id))).toEqual(order);
     expect(tile.rows.find((r: J) => r.planId === over.id)).toMatchObject({
       used: 660,

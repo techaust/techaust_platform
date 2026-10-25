@@ -81,10 +81,10 @@ async function reset() {
     realEnv.DB.prepare("DELETE FROM projects"),
     realEnv.DB.prepare("DELETE FROM leads"),
   ]);
-  // Plans cannot be deleted (history is append-only): earlier tests' plans are cancelled, by a status row that sorts after the rest.
+  // Plans cannot be deleted (history is append-only): earlier tests' plans are cancelled, by a status row that sorts after the rest and is in force on the test date.
   await realEnv.DB.batch([
     realEnv.DB.prepare(
-      "INSERT INTO care_plan_status_log (id, care_plan_id, status, effective_on, created_by, created_at) SELECT lower(hex(randomblob(16))), id, 'cancelled', '2099-01-01', ?1, ?2 FROM care_plans WHERE status = 'active'",
+      "INSERT INTO care_plan_status_log (id, care_plan_id, status, effective_on, created_by, created_at) SELECT lower(hex(randomblob(16))), id, 'cancelled', max('2026-11-29', (SELECT max(l.effective_on) FROM care_plan_status_log l WHERE l.care_plan_id = care_plans.id)), ?1, ?2 FROM care_plans WHERE status = 'active'",
     ).bind(staff, ++tick),
     realEnv.DB.prepare("UPDATE care_plans SET status = 'cancelled' WHERE status = 'active'"),
   ]);
@@ -401,6 +401,49 @@ describe("the metrics [item 6]", () => {
     await realEnv.DB.prepare("UPDATE care_plans SET status = 'cancelled' WHERE id = ?").bind(gone).run();
     await run("care.used_minutes");
     expect(Object.keys(plain(await stat("care.used_minutes")))).toEqual([live]);
+  });
+
+  it("a plan paused after the recorded date keeps that date's row on a rerun (the status on the date decides, not today's) [review fix 6]", async () => {
+    const D2 = "2026-08-05"; // before every other plan in this file started
+    const rowOf = async (id: string, date = D2) => plain(await stat("care.used_minutes", date))[id];
+    const p = await mkPlan({ start: "2026-08-01" });
+    await logTime("2026-08-03", 120, { plan: p });
+    const msg = { kind: "stats.metric", metric: "care.used_minutes", date: D2 } as const;
+    await processStats(makeEnv(), msg, NOW);
+    expect(await rowOf(p)).toBe(120);
+    // paused the day after the recorded date; the mirror column says paused today
+    await realEnv.DB.batch([
+      realEnv.DB.prepare(
+        "INSERT INTO care_plan_status_log (id, care_plan_id, status, effective_on, created_by, created_at) VALUES (?, ?, 'paused', '2026-08-06', ?, ?)",
+      ).bind(uuidv7(), p, staff, ++tick),
+      realEnv.DB.prepare("UPDATE care_plans SET status = 'paused' WHERE id = ?").bind(p),
+    ]);
+    await processStats(makeEnv(), msg, NOW + 1);
+    expect(await rowOf(p)).toBe(120);
+    // a date after the pause no longer includes it
+    await processStats(makeEnv(), { ...msg, date: "2026-08-07" }, NOW + 2);
+    expect(await rowOf(p, "2026-08-07")).toBeUndefined();
+  });
+
+  it("a grouped metric clears a dimension that fell to zero since an earlier run [review fix 6]", async () => {
+    await mkLead("new");
+    await mkLead("qualified");
+    await run("leads.open");
+    expect(plain(await stat("leads.open"))).toEqual({ new: 1, qualified: 1 });
+    await realEnv.DB.prepare("UPDATE leads SET stage = 'won' WHERE stage = 'qualified'").run();
+    await run("leads.open");
+    expect(plain(await stat("leads.open"))).toEqual({ new: 1 });
+    await mkProject("active");
+    await run("projects.status");
+    await realEnv.DB.prepare("DELETE FROM projects").run();
+    expect((await run("projects.status")).rows).toBe(0);
+    expect(await stat("projects.status")).toEqual([]);
+    // other dates and other metrics are left alone
+    await mkLead("new");
+    await run("leads.open");
+    await processStats(makeEnv(), { kind: "stats.metric", metric: "leads.open", date: "2026-11-29" }, NOW);
+    await run("leads.open");
+    expect((await stat("leads.open", "2026-11-29")).length).toBeGreaterThan(0);
   });
 
   it("every statement is served by an index (EXPLAIN)", async () => {

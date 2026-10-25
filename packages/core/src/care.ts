@@ -251,7 +251,9 @@ export function carePeriodUsage(input: CareUsageInput): CarePeriodUsage | null {
   const rateMissing = overageMinutes > 0 && rateMinor === null;
   const burnBp = available > 0 ? Number((BigInt(used) * 10_000n) / BigInt(available)) : null;
   let flag: CareFlag = "none";
-  if (available > 0) {
+  // Overage means the hours are used up, whatever was available (including none: all billable time is then overage).
+  if (overageMinutes > 0) flag = "reached";
+  else if (available > 0) {
     if (BigInt(used) * 10_000n >= BigInt(CARE_REACHED_BP) * BigInt(available)) flag = "reached";
     else if (BigInt(used) * 10_000n >= BigInt(CARE_NEAR_BP) * BigInt(available)) flag = "near";
   }

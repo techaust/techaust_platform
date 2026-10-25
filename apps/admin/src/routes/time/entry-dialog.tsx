@@ -2,6 +2,7 @@
 // date; more than 7 days back is the owner's), the time in 15-minute steps up to 24 hours, the project or care plan (searched through
 // GET /time/targets: open projects, plans active today), billable and a note. The same dialog edits an entry, sending only what
 // changed with the version it was loaded with; the owner editing an entry locked for its author sees the 07-M notice first.
+import { parseIsoDate } from "@techaust/core/dates";
 import { type FormEvent, useState } from "react";
 import { api, RequestError, type TimeEntry, type TimePatch } from "../../api.ts";
 import { Modal } from "../../components/dialog.tsx";
@@ -86,7 +87,9 @@ function EntryFormBody(
 
   async function submit(e: FormEvent) {
     e.preventDefault();
-    const r = entryInput(f, { today: props.today, canWriteAny: props.canWriteAny, me: props.me.id });
+    const r = entryInput(f, { today: props.today, canWriteAny: props.canWriteAny, me: props.me.id,
+      originalDate: props.entry?.workDate,
+    });
     if (!r.ok) {
       setErrors(r.errors);
       const first = (["workDate", "hours", "target", "note"] as const).find((k) => r.errors[k]);
@@ -221,6 +224,7 @@ function EntryFormBody(
         <TargetField
           value={f.target}
           picking={picking}
+          workDate={f.workDate}
           onPick={(t) => {
             set({ target: t });
             setPicking(false);
@@ -265,6 +269,8 @@ function EntryFormBody(
 function TargetField(props: {
   value: TargetRef | null;
   picking: boolean;
+  /** The plans offered are those active on this date. */
+  workDate: string;
   onPick: (t: TargetRef) => void;
   onChange: () => void;
   error: string | undefined;
@@ -272,8 +278,11 @@ function TargetField(props: {
   const [q, setQ] = useState("");
   const term = useDebounced(q.trim().length >= 2 ? q.trim() : "");
   const found = useLoad(
-    () => (props.picking ? api.timeTargets(term) : Promise.resolve(null)),
-    `${props.picking}:${term}`,
+    () =>
+      props.picking
+        ? api.timeTargets(term, parseIsoDate(props.workDate) ? props.workDate : undefined)
+        : Promise.resolve(null),
+    `${props.picking}:${term}:${props.workDate}`,
   );
   if (!props.picking && props.value)
     return (

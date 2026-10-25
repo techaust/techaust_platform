@@ -112,7 +112,7 @@ const weekQuery = z.object({
   projectId: z.optional(id64),
   carePlanId: z.optional(id64),
 });
-const targetsQuery = z.object({ q: z.optional(z.string().check(z.maxLength(100))) });
+const targetsQuery = z.object({ q: z.optional(z.string().check(z.maxLength(100))), workDate: z.optional(isoDate) });
 
 /** Start-up warm-up (worker/warm.ts): parse one sample of each body and query once, so the first request builds no schema. */
 export function warmTime(): number {
@@ -122,7 +122,7 @@ export function warmTime(): number {
   deleteQuery.safeParse({ expectedUpdatedAt: "1" });
   listQuery.safeParse({ limit: "25", from: "2026-01-01", to: "2026-01-31", billable: "1" });
   weekQuery.safeParse({ start: "2026-01-05" });
-  targetsQuery.safeParse({ q: "ab" });
+  targetsQuery.safeParse({ q: "ab", workDate: "2026-01-01" });
   return performance.now() - t;
 }
 
@@ -199,7 +199,7 @@ async function whyTargetRefuses(
   },
 ): Promise<Response | null> {
   const r = await c.env.DB.prepare(
-    `SELECT (SELECT status FROM staff_users WHERE id = ?1) AS user_status,
+    `SELECT (SELECT status FROM staff_users WHERE id = ?1 AND role IN ('owner', 'staff', 'sales')) AS user_status,
             (SELECT status FROM projects WHERE id = ?2) AS project_status,
             (SELECT ${clientGoneSql("pr.client_id")} FROM projects pr WHERE pr.id = ?2) AS project_gone,
             (SELECT 1 FROM care_plans WHERE id = ?3) AS plan_exists,
@@ -376,10 +376,11 @@ export const timeLogs = new Hono<AppEnv>()
     });
   })
 
-  // What time can be logged on: projects that aren't cancelled, and care plans that are active today.
+  // What time can be logged on: projects that aren't cancelled, and care plans active on the work date (default today).
   .get("/targets", query(targetsQuery), async (c) => {
-    const q = c.req.valid("query").q?.trim() ?? "";
-    const today = istToday();
+    const { q: rawQ, workDate } = c.req.valid("query");
+    const q = rawQ?.trim() ?? "";
+    const today = workDate ?? istToday();
     const db = c.env.DB;
     const searching = q.length >= 2;
     const projectsSql = searching
@@ -474,7 +475,7 @@ export const timeLogs = new Hono<AppEnv>()
             entityExpr: "?7",
             summaryExpr:
               "json_object('timeLogId', ?7, 'userId', ?8, 'workDate', ?9, 'minutes', ?10, 'billable', ?13, 'projectId', ?11, 'carePlanId', ?12)",
-            from: `WHERE EXISTS (SELECT 1 FROM staff_users WHERE id = ?8 AND status = 'active') AND ${targetOpen("?11", "?12", "?9")} AND ${DAY_TOTAL("?8", "?9")} + ?10 <= ${DAY_CAP}`,
+            from: `WHERE EXISTS (SELECT 1 FROM staff_users WHERE id = ?8 AND status = 'active' AND role IN ('owner', 'staff', 'sales')) AND ${targetOpen("?11", "?12", "?9")} AND ${DAY_TOTAL("?8", "?9")} + ?10 <= ${DAY_CAP}`,
             params: [id, userId, f.workDate, f.minutes, projectId, carePlanId, billable],
           }),
         after: (g) => [

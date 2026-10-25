@@ -8,7 +8,9 @@
 // PRD and the existing screens. Amounts are formatted only through @techaust/core; the screens never add money up themselves.
 
 import {
+  CARE_STATUSES,
   CARE_STEP_MINUTES,
+  CARE_TIERS,
   CARE_TRANSITIONS,
   MAX_BILLING_DAY,
   statusEffectiveOn,
@@ -35,7 +37,8 @@ import { intIn, moneyFrom, moneyInput } from "./settings-form.ts";
 
 // ---- labels ----------------------------------------------------------------------------------------------------------------
 
-export const CARE_TIERS: readonly CareTier[] = ["essential", "growth", "scale", "dev_subscription", "custom"];
+export { CARE_STATUSES, CARE_TIERS };
+
 /** docs/04 ADM-CARE-01: Essential / Growth / Scale / Dev Subscription / custom. */
 export const TIER_LABELS: Record<CareTier, string> = {
   essential: "Essential",
@@ -44,7 +47,6 @@ export const TIER_LABELS: Record<CareTier, string> = {
   dev_subscription: "Dev Subscription",
   custom: "Custom",
 };
-export const CARE_STATUSES: readonly CareStatus[] = ["active", "paused", "cancelled"];
 /** 07-M statuses. */
 export const CARE_STATUS_LABELS: Record<CareStatus, string> = {
   active: "Active",
@@ -90,9 +92,9 @@ export const CARE_COPY = {
   notStarted: "Not started",
 } as const;
 
-/** 07-M's project page line (replaces 07-K's "arrives with time logs"). */
+/** 07-M's project page figure, shown under the "Hours logged" label. */
 export const hoursLoggedLine = (totalMinutes: number, billableMinutes: number) =>
-  `Hours logged: ${hoursText(totalMinutes)}, of which ${hoursText(billableMinutes)} billable`;
+  `${hoursText(totalMinutes)}, of which ${hoursText(billableMinutes)} billable`;
 
 /** "{start} to {end}", the current period card's heading. */
 export const periodText = (p: { start: string; end: string }) => `${dayText(p.start)} to ${dayText(p.end)}`;

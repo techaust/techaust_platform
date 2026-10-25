@@ -29,6 +29,9 @@ const COLUMNS = "INSERT INTO stats_daily (date, metric, dimension, value, update
 const UPSERT =
   "ON CONFLICT(date, metric, dimension) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at";
 
+/** Clears one metric's rows for a date (`?1` date, `?2` metric) before a grouped metric is written again. */
+const CLEAR_METRIC_SQL = "DELETE FROM stats_daily WHERE date = ?1 AND metric = ?2";
+
 /** The statements of the metrics that are one query (exported so a test can EXPLAIN them). `?1` date, `?2` time, `?3` the end of the milestone window. */
 export const STATS_SQL = {
   "leads.open": `${COLUMNS} SELECT ?1, 'leads.open', stage, count(*), ?2 FROM leads WHERE stage IN (${OPEN_LEAD_STAGES}) GROUP BY stage ${UPSERT}`,
@@ -56,6 +59,17 @@ export async function processStats(env: Env, msg: StatsMessage, now = Date.now()
   const { metric, date } = msg;
   if (metric === "care.used_minutes" || metric === "care.available_minutes") return careMetric(env, msg, now);
   const stmt = env.DB.prepare(STATS_SQL[metric]);
+  if (metric === "leads.open" || metric === "projects.status") {
+    // A grouped metric clears its day's rows first, in the same batch: a stage that fell to zero since an earlier run must not keep
+    // its old count. The batch is one transaction, so a failure leaves the earlier rows.
+    const [, written] = await env.DB.batch([
+      env.DB.prepare(CLEAR_METRIC_SQL).bind(date, metric),
+      stmt.bind(date, now),
+    ]);
+    const rows = written?.meta.changes ?? 0;
+    logEvent("stats.metric", { metric, date, rows });
+    return { rows, continued: false };
+  }
   const res =
     metric === "milestones.due_14d"
       ? await stmt
@@ -78,8 +92,11 @@ export async function processStats(env: Env, msg: StatsMessage, now = Date.now()
 
 async function careMetric(env: Env, msg: StatsMessage, now: number): Promise<StatsResult> {
   const { metric, date } = msg;
+  // The plans active ON the recorded date (status history), not today's status: a plan paused after midnight keeps the day's row.
   const source =
-    msg.after === undefined ? { active: STATS_PLAN_PAGE } : { active: STATS_PLAN_PAGE, after: msg.after };
+    msg.after === undefined
+      ? { active: STATS_PLAN_PAGE, on: date }
+      : { active: STATS_PLAN_PAGE, after: msg.after, on: date };
   const [plans, terms, status, usage] = await env.DB.batch(
     careStatements(env.DB, source, { to: date, periodsBack: 1 }),
   );

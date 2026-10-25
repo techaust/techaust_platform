@@ -303,7 +303,7 @@ describe("overage [ADM-CARE-03]: the analyst's cases, by hand", () => {
       available: 0,
       overageMinutes: 120,
       overageMinor: 300_000,
-      flag: "none",
+      flag: "reached", // overage with no hours available still counts as reached (review fix 4)
       burnBp: null,
     });
   });

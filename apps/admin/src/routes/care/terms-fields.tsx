@@ -1,6 +1,7 @@
 // The terms of a care plan as form fields (M3.5, ADM-CARE-01), shared by the new plan form and the owner's terms change: the tier,
 // the price per month, the included hours (whole hours and a quarter, so they are always 15-minute steps), the AI Ops add-on, the
 // overage rate and the rollover rule. The amounts are typed in the plan's currency (the client's), never chosen here.
+import { useEffect, useRef } from "react";
 import type { Currency } from "../../api.ts";
 import { FormField } from "../../components/form.tsx";
 import { FieldError } from "../../components/ui.tsx";
@@ -84,8 +85,16 @@ export function TermsFields(props: {
   onTier?: ((tier: TermsForm["tier"]) => void) | undefined;
   currency: Currency;
   errors: PlanErrors;
+  /** In a dialog: on open, focus the checked tier (the browser would pick the first radio, which may be unchecked). */
+  focusTier?: boolean | undefined;
 }) {
   const { prefix: P, value: f, errors } = props;
+  const checked = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!props.focusTier) return;
+    const id = requestAnimationFrame(() => checked.current?.focus()); // after the dialog has opened
+    return () => cancelAnimationFrame(id);
+  }, [props.focusTier]);
   return (
     <>
       <fieldset className="radios tier-radios">
@@ -97,6 +106,7 @@ export function TermsFields(props: {
                 type="radio"
                 name={`${P}-tier`}
                 value={t}
+                ref={f.tier === t ? checked : undefined}
                 checked={f.tier === t}
                 onChange={() => (props.onTier ? props.onTier(t) : props.onChange({ tier: t }))}
               />

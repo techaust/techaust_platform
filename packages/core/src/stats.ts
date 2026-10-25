@@ -2,6 +2,7 @@
 // asks for one. The dashboard's figures are LIVE; this table is history for trends and reports (and the care-plan burn per plan).
 // Pure, and no zod: the jobs Worker imports this file.
 import { istDate, parseIsoDate, toIsoDate } from "./dates.ts";
+import { DAY_MS } from "./time.ts";
 
 /** `dimension` is what the value is split by (or empty): a lead stage, a project status, or a care plan id. */
 export const STATS_METRICS = [
@@ -32,7 +33,6 @@ export function isStatsMessage(body: unknown): body is StatsMessage {
 /** The days ahead of the recorded date that `milestones.due_14d` counts (equal to the dashboard's window; a test holds them together). */
 export const STATS_MILESTONE_DAYS = 14;
 
-const DAY_MS = 86_400_000;
 
 /**
  * The IST date the nightly statistics are recorded for: the day that just ENDED when the cron fires (22:00 UTC = 03:30 IST), that is the

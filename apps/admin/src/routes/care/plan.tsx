@@ -629,6 +629,7 @@ function TermsChange(props: { data: CarePlanPage; name: string; onStale: () => v
                 {failure && <Notice tone="error">{failure}</Notice>}
                 <TermsFields
                   prefix="tc"
+                  focusTier
                   value={f}
                   currency={plan.currency}
                   errors={errors}

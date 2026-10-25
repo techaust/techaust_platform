@@ -234,7 +234,7 @@ describe("07-M copy, word for word (draft pending the owner)", () => {
       "No time logged this week.",
       "No recent activity.",
     ]);
-    expect(hoursLoggedLine(750, 600)).toBe("Hours logged: 12 h 30 min, of which 10 h billable");
+    expect(hoursLoggedLine(750, 600)).toBe("12 h 30 min, of which 10 h billable");
   });
 
   it("errors by API code", () => {
@@ -439,6 +439,19 @@ describe("the time entry", () => {
     expect(at("2026-10-01", true).ok).toBe(true);
     expect(earliestDate("2026-10-25", false)).toBe("2026-10-18");
     expect(earliestDate("2026-10-25", true)).toBeUndefined();
+  });
+
+  it("editing: the date rule applies only when the date was changed (a 7-day edit window keeps its old date) [review fix 2]", () => {
+    const old = "2026-10-17"; // 8 days back: not allowed for a new entry by Staff, but the saved date may stay
+    const edit = (workDate: string) =>
+      entryInput({ ...base, target, workDate }, { ...ctx, originalDate: old });
+    expect(edit(old).ok).toBe(true);
+    expect(edit("2026-10-16")).toMatchObject({
+      ok: false,
+      errors: { workDate: "Only the owner can log time more than 7 days back." },
+    });
+    expect(edit("2026-10-26").ok).toBe(false);
+    expect(entryInput({ ...base, target, workDate: old }, ctx).ok).toBe(false); // a new entry: no original
   });
 
   it("needs a project or a care plan, and sends exactly one", () => {

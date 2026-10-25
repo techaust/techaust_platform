@@ -15,13 +15,12 @@ import {
 } from "@techaust/core/dashboard";
 import { addDays, istDate, parseIsoDate, toIsoDate } from "@techaust/core/dates";
 import { LEAD_STAGES } from "@techaust/core/lead-lifecycle";
-import { weekOf } from "@techaust/core/time";
+import { DAY_MS, weekOf } from "@techaust/core/time";
 import { assembleCare, careStatements, currentUsage } from "@techaust/db/care";
 import { Hono } from "hono/tiny";
 import { LIST_PERIODS_BACK, usageWindow } from "./care.ts";
 import { type AppEnv, actor } from "./context.ts";
 
-const DAY_MS = 86_400_000;
 const OPEN_STAGES = LEAD_STAGES.filter((s) => s !== "won" && s !== "lost");
 const STAGE_LIST = OPEN_STAGES.map((s) => `'${s}'`).join(", ");
 const CARE_PLAN_CAP = 100;
@@ -208,7 +207,14 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
       const u = currentUsage(d, today);
       return u ? [{ d, u }] : [];
     });
-    burn.sort((a, b) => (b.u.burnBp ?? -1) - (a.u.burnBp ?? -1) || a.d.plan.id.localeCompare(b.d.plan.id));
+    // Reached first (a plan over its hours, even with none available), then near, then the rest; each by burn, then id.
+    const FLAG_ORDER = { reached: 0, near: 1, none: 2 } as const;
+    burn.sort(
+      (a, b) =>
+        FLAG_ORDER[a.u.flag] - FLAG_ORDER[b.u.flag] ||
+        (b.u.burnBp ?? -1) - (a.u.burnBp ?? -1) ||
+        a.d.plan.id.localeCompare(b.d.plan.id),
+    );
     out.careBurn = {
       counts: {
         /** Plans with a current period; a plan whose start date hasn't come is counted apart (`notStarted`), never in the burn. */

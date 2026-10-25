@@ -1218,7 +1218,7 @@ export const api = {
     request<CarePlanList>(`/clients/${encodeURIComponent(clientId)}/care-plans${qs({ after })}`),
   timeEntries: (q: TimeQuery = {}) => request<TimePage>(`/time${qs(q)}`),
   timeWeek: (q: TimeWeekQuery = {}) => request<TimeWeek>(`/time/week${qs(q)}`),
-  timeTargets: (q: string) => request<TimeTargets>(`/time/targets${qs({ q })}`),
+  timeTargets: (q: string, workDate?: string) => request<TimeTargets>(`/time/targets${qs({ q, workDate })}`),
   timePeople: () => request<{ people: { id: string; name: string }[] }>("/time/people"),
   logTime: (body: NewTimeInput) =>
     request<{ id: string; createdAt: number; updatedAt: number }>("/time", { body }),
