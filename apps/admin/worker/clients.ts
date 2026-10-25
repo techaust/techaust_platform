@@ -44,6 +44,7 @@ import {
   mutate,
   NOT_FOUND,
 } from "./context.ts";
+import { dropObjects } from "./files.ts";
 import {
   body,
   idParam,
@@ -919,6 +920,10 @@ const MATCHED_LEADS =
 const HELD_LEAD_SQL =
   "EXISTS (SELECT 1 FROM leads l WHERE l.legal_hold = 1 AND (l.contact_id = c.id OR (l.contact_email = c.email AND (l.client_id IS NULL OR l.client_id = c.client_id))))";
 
+/** The client of contact `?1` is an individual and this contact is its last live one: the condition of the client's own erase (`col` is the row's client column). */
+const LAST_LIVE_INDIVIDUAL = (col: string) =>
+  `${col} = (SELECT client_id FROM contacts WHERE id = ?1) AND EXISTS (SELECT 1 FROM clients cl WHERE cl.id = ${col} AND cl.type = 'individual') AND NOT EXISTS (SELECT 1 FROM contacts o WHERE o.client_id = ${col} AND o.id <> ?1 AND o.anonymised_at IS NULL)`;
+
 export const contacts = new Hono<AppEnv>()
   .patch("/:id", param(idParam), body(patchContact), async (c) => {
     const { id } = c.req.valid("param");
@@ -1100,10 +1105,16 @@ export const contacts = new Hono<AppEnv>()
     const db = c.env.DB;
     const t = Date.now();
     const erase = mode === "erase";
+    const fileKeys: string[] = [];
     const done = await mutate(c, {
       action: erase ? "contact.erase" : "contact.anonymise",
       entityType: "client",
       entityId: null,
+      // The only statement that returns rows is the files DELETE ... RETURNING r2_key: those objects are deleted after the batch.
+      onResults: (results) => {
+        for (const r of results)
+          for (const row of r.results as { r2_key?: string }[]) if (row.r2_key) fileKeys.push(row.r2_key);
+      },
       // The row is written only while the contact is live, no legal hold stands on the contact, its client or a lead of theirs, and
       // (erase only) the contact is on no issued document. Every following statement is guarded on this row.
       auditFirst: (auditId, who) =>
@@ -1138,6 +1149,17 @@ export const contacts = new Hono<AppEnv>()
           .bind(id, ANONYMISED_CONTACT, anonymisedEmail(id), t, ...g.params),
         // 2. sign-in access: sessions and links of this contact
         ...deleteContactAccess(db, id, g),
+        // 2b. an individual client's notes and files go with its last live contact (owner, 2026-10-25; VERIFY WITH CA/LEGAL; a
+        //     business client's are never touched). The same conditions as step 3, in the same batch, before the contact changes.
+        //     The file rows come back (RETURNING) so their R2 objects can be deleted after the batch.
+        db
+          .prepare(`DELETE FROM notes WHERE ${LAST_LIVE_INDIVIDUAL("notes.client_id")} AND ${g.sql(2)}`)
+          .bind(id, ...g.params),
+        db
+          .prepare(
+            `DELETE FROM files WHERE ${LAST_LIVE_INDIVIDUAL("files.client_id")} AND ${g.sql(2)} RETURNING r2_key`,
+          )
+          .bind(id, ...g.params),
         // 3. an individual client's own record, when this is its last live contact (before the contact changes)
         db
           .prepare(
@@ -1166,7 +1188,10 @@ export const contacts = new Hono<AppEnv>()
               .bind(id, ANONYMISED_CONTACT, anonymisedEmail(id), t, ...g.params),
       ],
     });
-    if (done) return c.json({ ok: true, mode });
+    if (done) {
+      if (fileKeys.length) c.executionCtx.waitUntil(dropObjects(c.env, fileKeys, "client erased"));
+      return c.json({ ok: true, mode });
+    }
     // Nothing was written: say why.
     const why = await c.env.DB.prepare(
       `SELECT c.anonymised_at AS gone, (c.legal_hold = 1 OR cl.legal_hold = 1 OR ${HELD_LEAD_SQL}) AS held, ${CONTACT_ON_ISSUED_DOCUMENT_SQL} AS doc FROM contacts c JOIN clients cl ON cl.id = c.client_id WHERE c.id = ?1`,

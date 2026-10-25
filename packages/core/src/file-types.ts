@@ -48,17 +48,23 @@ function signature(head: Uint8Array): Family | null {
   return null;
 }
 
-const UTF8 = new TextDecoder("utf-8", { fatal: true });
 /** Text: valid UTF-8 (a character cut by the end of the sample is fine), no NUL and no other binary control byte. */
 function isText(head: Uint8Array): boolean {
   for (const v of head) if (v < 0x20 && v !== 0x09 && v !== 0x0a && v !== 0x0c && v !== 0x0d) return false;
   try {
-    UTF8.decode(head, { stream: true });
+    // a new decoder each time: a streaming decoder keeps a cut character for its next call
+    new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(head, { stream: true });
     return true;
   } catch {
     return false;
   }
 }
+
+/** Whether the extension (with or without its dot, any case) is on the allow-list. */
+export const isAllowedExtension = (extension: string) => {
+  const raw = extension.replace(/^\./, "").toLowerCase();
+  return Object.hasOwn(FILE_MIME, raw === "jpeg" ? "jpg" : raw);
+};
 
 /** The extension in lower case without its dot ("" when there is none). */
 export const extOf = (name: string) => {

@@ -23,6 +23,22 @@ describe("csrfCheck [ADM-G-02, POR-02, 05 §7.1]", () => {
     expect(new Set(CSRF_CORPUS.map((c) => c.verdict))).toEqual(new Set(["ok", "cross_site", "not_json"]));
   });
 
+  it("an upload route (allowBinary) takes octet-stream instead of JSON, and still needs the same origin", () => {
+    const up = { ...base, allowBinary: true, contentType: "application/octet-stream" };
+    expect(csrfCheck(up)).toBe("ok");
+    expect(csrfCheck({ ...up, contentType: "Application/Octet-Stream; x=y" })).toBe("ok");
+    expect(csrfCheck({ ...up, contentType: "application/json" })).toBe("not_json");
+    expect(csrfCheck({ ...up, contentType: "multipart/form-data; boundary=x" })).toBe("not_json");
+    expect(csrfCheck({ ...up, contentType: undefined })).toBe("not_json");
+    expect(csrfCheck({ ...up, origin: "https://evil.example" })).toBe("cross_site");
+    expect(csrfCheck({ ...up, origin: undefined, secFetchSite: "cross-site" })).toBe("cross_site");
+    expect(csrfCheck({ ...up, hasBody: false, contentType: undefined })).toBe("ok");
+  });
+
+  it("without allowBinary, octet-stream is refused like any non-JSON body", () => {
+    expect(csrfCheck({ ...base, contentType: "application/octet-stream" })).toBe("not_json");
+  });
+
   it("the app origin is the origin of the request URL (port and scheme included)", () => {
     const u = "https://app.example:8443/x";
     expect(csrfCheck({ ...base, url: u, origin: "https://app.example:8443" })).toBe("ok");
