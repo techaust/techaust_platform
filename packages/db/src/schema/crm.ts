@@ -348,12 +348,17 @@ export const carePlans = sqliteTable(
     pausedAt: integer("paused_at"),
     cancelledAt: integer("cancelled_at"),
     lastBilledPeriod: text("last_billed_period"),
+    /** M4.3: the accepted estimate this plan was made from (set once: trigger). Added with ALTER TABLE only: `care_plans` is referenced. */
+    sourceDocumentId: text("source_document_id").references((): AnySQLiteColumn => documents.id),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
     index("care_plans_client").on(t.clientId),
     index("care_plans_status_billing_day").on(t.status, t.billingDay),
+    uniqueIndex("care_plans_source_document")
+      .on(t.sourceDocumentId)
+      .where(sql`${t.sourceDocumentId} is not null`),
     check("care_plans_billing_day", sql`${t.billingDay} between 1 and 28`),
     check("care_plans_tier", oneOf(t.tier, CARE_TIERS)),
     check("care_plans_status", oneOf(t.status, CARE_STATUSES)),

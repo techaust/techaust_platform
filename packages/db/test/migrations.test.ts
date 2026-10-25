@@ -47,6 +47,8 @@ describe("migrations apply cleanly to a fresh D1", () => {
       "0025_project_triggers.sql",
       "0026_catalogue_indexes.sql",
       "0027_catalogue_triggers.sql",
+      "0028_documents_quotes.sql",
+      "0029_document_triggers.sql",
     ]);
   });
 

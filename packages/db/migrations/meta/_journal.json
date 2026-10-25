@@ -197,6 +197,20 @@
       "when": 1792934037707,
       "tag": "0027_catalogue_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "6",
+      "when": 1792941926871,
+      "tag": "0028_documents_quotes",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "6",
+      "when": 1792942014961,
+      "tag": "0029_document_triggers",
+      "breakpoints": true
     }
   ]
 }

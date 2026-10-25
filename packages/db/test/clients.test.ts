@@ -39,7 +39,9 @@ const newClient = (fields: Record<string, unknown> = {}) => {
 
 const addDoc = (clientId: string, type: string, extra: Record<string, unknown> = {}) => {
   const id = uuidv7();
-  const row: Record<string, unknown> = { id, type, client_id: clientId, currency: "INR", ...extra };
+  // M4.3: a proposal or estimate is its own version group (document_triggers).
+  const group = type === "proposal" || type === "estimate" ? { version_group_id: id } : {};
+  const row: Record<string, unknown> = { id, type, client_id: clientId, currency: "INR", ...group, ...extra };
   const cols = Object.keys(row);
   return run(
     `INSERT INTO documents (${cols.join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`,

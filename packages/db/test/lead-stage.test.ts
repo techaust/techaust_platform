@@ -19,7 +19,7 @@ async function leadWithProposal(stage: LeadStage) {
   const clientId = await insertClient(`C-${crypto.randomUUID().slice(0, 8)}`);
   const docId = uuidv7();
   await run(
-    "INSERT INTO documents (id, type, client_id, currency) VALUES (?, 'proposal', ?, 'INR')",
+    "INSERT INTO documents (id, type, client_id, currency, version_group_id) VALUES (?1, 'proposal', ?2, 'INR', ?1)",
     docId,
     clientId,
   );

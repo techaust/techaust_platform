@@ -281,23 +281,8 @@ export function snapshotFromRows(rows: readonly CatalogueRow[], paymentTerms: Pa
   };
 }
 
-/** JSON with sorted keys and no spaces: the same data always gives the same text, so the same SHA-256. */
-export function canonicalJson(v: unknown): string {
-  if (v === null || typeof v !== "object") return JSON.stringify(v) ?? "null";
-  if (Array.isArray(v)) return `[${v.map(canonicalJson).join(",")}]`;
-  const o = v as Record<string, unknown>;
-  return `{${Object.keys(o)
-    .filter((k) => o[k] !== undefined)
-    .sort()
-    .map((k) => `${JSON.stringify(k)}:${canonicalJson(o[k])}`)
-    .join(",")}}`;
-}
-
-/** Lower-case hex SHA-256 of a string. */
-export async function sha256Hex(s: string): Promise<string> {
-  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
-  return Array.from(new Uint8Array(d), (b) => b.toString(16).padStart(2, "0")).join("");
-}
+// Canonical JSON and SHA-256 now live in `hash.ts` (zod-free, M4.3); re-exported so existing imports keep working.
+export { canonicalJson, sha256Hex } from "./hash.ts";
 
 // ---- templates (ADM-CAT-03) -------------------------------------------------------------------------------------------------
 
