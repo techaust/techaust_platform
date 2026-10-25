@@ -21,8 +21,12 @@ import {
 
 export const MAX_LOADED_PLANS = 100;
 
-/** Which plans to load: these ids (at most 100), or the first `active` active plans by creation (the dashboard's, one more is read to say "truncated"). */
-export type PlanSource = { ids: readonly string[] } | { active: number };
+/**
+ * Which plans to load: these ids (at most 100), or the first `active` active plans by creation (the dashboard's; one more is read to say
+ * "truncated"). `after` pages the active plans: only those after that plan in `(created_at, id)` order, so the nightly statistics walk
+ * every plan in pages of 50 (a continuation message carries the last plan id on).
+ */
+export type PlanSource = { ids: readonly string[] } | { active: number; after?: string };
 
 /**
  * The usage window: the minutes logged up to `to` (an IST date, normally today) and back to the start of the period `periodsBack`
@@ -94,10 +98,13 @@ function idsSql(source: PlanSource): { sql: string; bound: number; bind: unknown
   const n = Math.trunc(source.active);
   if (!Number.isInteger(n) || n < 1 || n > MAX_LOADED_PLANS)
     throw new RangeError(`Active plans: 1 to ${MAX_LOADED_PLANS}`);
+  // The keyset continues on `care_plans_status_created (status, created_at, id)`: the row-value comparison against the previous
+  // plan's own `(created_at, id)` is a range on that index. A plan id that is gone gives NULL, which matches nothing (an empty page).
+  const after = source.after;
   return {
-    sql: `SELECT id FROM (SELECT id FROM care_plans WHERE status = 'active' ORDER BY created_at, id LIMIT ${n + 1})`,
-    bound: 0,
-    bind: [],
+    sql: `SELECT id FROM (SELECT id FROM care_plans WHERE status = 'active'${after === undefined ? "" : " AND (created_at, id) > (SELECT created_at, id FROM care_plans WHERE id = ?1)"} ORDER BY created_at, id LIMIT ${n + 1})`,
+    bound: after === undefined ? 0 : 1,
+    bind: after === undefined ? [] : [after],
   };
 }
 

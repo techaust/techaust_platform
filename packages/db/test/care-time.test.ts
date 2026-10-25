@@ -553,6 +553,40 @@ describe("the shared loader", () => {
     for (const data of out.plans.values()) expect(data.terms.length).toBeGreaterThan(0);
   });
 
+  it("the active source pages with `after`: every active plan once, in (created_at, id) order, and an unknown plan id gives an empty page", async () => {
+    const by = await mkStaff();
+    for (let i = 0; i < 5; i++) await mkPlan(by);
+    const everyone = (
+      await all<{ id: string }>("SELECT id FROM care_plans WHERE status = 'active' ORDER BY created_at, id")
+    ).map((r) => r.id);
+    expect(everyone.length).toBeGreaterThanOrEqual(5);
+    const pageOf = async (after?: string) => {
+      const source = after === undefined ? { active: 2 } : { active: 2, after };
+      const res = await env.DB.batch(careStatements(env.DB, source, { to: "2026-12-31", periodsBack: 1 }));
+      return assembleCare(
+        {
+          plans: res[0]?.results as never,
+          terms: res[1]?.results as never,
+          status: res[2]?.results as never,
+          usage: res[3]?.results as never,
+        },
+        2,
+      );
+    };
+    const seen: string[] = [];
+    let after: string | undefined;
+    for (let guard = 0; guard < 50; guard++) {
+      const page = await pageOf(after);
+      const ids = [...page.plans.keys()];
+      seen.push(...ids);
+      if (!page.truncated) break;
+      expect(ids).toHaveLength(2);
+      after = ids.at(-1);
+    }
+    expect(seen).toEqual(everyone);
+    expect((await pageOf("no-such-plan")).plans.size).toBe(0);
+  });
+
   it("refuses more than 100 plans and an odd cap", () => {
     const w = { to: "2026-01-31", periodsBack: 1 };
     expect(() => careQueries({ ids: Array.from({ length: 101 }, (_, i) => String(i)) }, w)).toThrow(
@@ -563,7 +597,7 @@ describe("the shared loader", () => {
   });
 
   it("every statement is served by an index (EXPLAIN QUERY PLAN)", async () => {
-    for (const source of [{ ids: ["a", "b"] }, { active: 100 }] as const) {
+    for (const source of [{ ids: ["a", "b"] }, { active: 100 }, { active: 50, after: "a" }] as const) {
       for (const q of careQueries(source, { to: "2026-12-31", periodsBack: 1 })) {
         const plan = await all<{ detail: string }>(`EXPLAIN QUERY PLAN ${q.sql}`, ...q.bind);
         const text = plan.map((p) => p.detail).join("\n");

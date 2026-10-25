@@ -1,8 +1,22 @@
 import { describe, expect, it } from "vitest";
 import { FINANCE_AUDIT_ACTIONS } from "../src/audit.ts";
-import { ACTIVITY_ACTIONS, ACTIVITY_OWN_ONLY, TILES, TIME_ACTIONS, tilesFor } from "../src/dashboard.ts";
+import {
+  ACTIVITY_ACTIONS,
+  ACTIVITY_OWN_ONLY,
+  MILESTONE_WINDOW_DAYS,
+  TILES,
+  TIME_ACTIONS,
+  tilesFor,
+} from "../src/dashboard.ts";
 import { ROLES } from "../src/permissions.ts";
-import { isStatsKind, isStatsMessage, STATS_METRICS } from "../src/stats.ts";
+import {
+  isStatsKind,
+  isStatsMessage,
+  STATS_METRICS,
+  STATS_MILESTONE_DAYS,
+  statsDateOf,
+  statsMessages,
+} from "../src/stats.ts";
 
 describe("dashboard tiles by role [ADM-DASH-01]", () => {
   it("owner sees every tile; staff the delivery tiles and their own time; sales the pipeline; the accountant finance", () => {
@@ -54,6 +68,32 @@ describe("activity lists", () => {
   it("every own-only action is in that role's list", () => {
     for (const role of ROLES)
       for (const a of ACTIVITY_OWN_ONLY[role]) expect(ACTIVITY_ACTIONS[role]).toContain(a);
+  });
+});
+
+describe("the nightly date and messages [item 6]", () => {
+  it("the date is the IST day that just ended: 22:00 UTC is 03:30 IST the next morning, minus one day", () => {
+    expect(statsDateOf(Date.UTC(2026, 10, 30, 22, 0))).toBe("2026-11-30"); // fires 2026-12-01 03:30 IST
+    expect(statsDateOf(Date.UTC(2026, 11, 31, 22, 0))).toBe("2026-12-31"); // across a year end
+    expect(statsDateOf(Date.UTC(2028, 1, 28, 22, 0))).toBe("2028-02-28"); // before a leap day
+    expect(statsDateOf(Date.UTC(2028, 1, 29, 22, 0))).toBe("2028-02-29");
+    // a cron that fires late, at 05:00 IST, still names the same day; one that fires at 23:59 IST the evening before names the day before
+    expect(statsDateOf(Date.UTC(2026, 10, 30, 23, 30))).toBe("2026-11-30");
+    expect(statsDateOf(Date.UTC(2026, 10, 30, 18, 29))).toBe("2026-11-29"); // 23:59 IST on the 30th: the 29th ended
+  });
+
+  it("there is one valid message per metric, all for the same date", () => {
+    const msgs = statsMessages("2026-11-30");
+    expect(msgs.map((m) => m.metric)).toEqual([...STATS_METRICS]);
+    for (const m of msgs) {
+      expect(isStatsMessage(m)).toBe(true);
+      expect(m.date).toBe("2026-11-30");
+      expect(m.after).toBeUndefined();
+    }
+  });
+
+  it("the milestone window is the dashboard's", () => {
+    expect(STATS_MILESTONE_DAYS).toBe(MILESTONE_WINDOW_DAYS);
   });
 });
 
