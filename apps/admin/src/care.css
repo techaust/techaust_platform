@@ -358,18 +358,6 @@
   font-size: var(--text-sm);
 }
 
-.hours-figure {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-3);
-}
-
-.hours-figure .icon {
-  flex: none;
-  margin-top: 0.125rem;
-  color: var(--color-text-muted);
-}
-
 /* ---------- Time ---------- */
 
 .filters.filters--time {

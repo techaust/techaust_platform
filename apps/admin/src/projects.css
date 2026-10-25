@@ -607,6 +607,15 @@
   line-height: var(--text-sm--line-height);
 }
 
+/* M3.5: the hours logged are a figure, not a missing one: the text reads in ink, the icon stays quiet. */
+.figures .hours-figure {
+  color: var(--color-text);
+}
+
+.hours-figure .icon {
+  color: var(--color-text-muted);
+}
+
 /* ---------- Notes ---------- */
 
 .notes-panel > .lead-panel__title,

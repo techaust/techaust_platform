@@ -67,7 +67,7 @@ export function Overview(props: {
             </Fact>
             <Fact label="Hours logged">
               {props.data.figures.hours.available ? (
-                <span className="hours-figure">
+                <span className="panel-empty hours-figure">
                   <Clock size={20} />
                   <span className="tnum">
                     {hoursLoggedLine(
