@@ -70,3 +70,4 @@ _Drafted by the lead on 2026-10-25 from approved facts (04 ADM-CAT-01…05, WEB-
 | `snapshot_invalid` for a service the website needs | "The website needs {code}: {what is missing}." |
 | A save that is too long (413) | "This is too long. Shorten the longest texts and save again." |
 | Template version with no person | "Version {n}, saved on {date}" |
+| What the website needs (after "The website needs {code}:") | "this service, active and on the website" · "a from price in rupees" · "a default line that starts with "{word}"" · "a rate in rupees on the default line that starts with "{word}"" · "only one default line that starts with "{word}"" |
