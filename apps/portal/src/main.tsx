@@ -7,7 +7,7 @@ import favicon from "@techaust/ui/brand/favicon.svg?url";
 import mark from "@techaust/ui/brand/logo-symbol-ink.svg?url";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { createBrowserRouter, RouterProvider } from "react-router";
+import { createBrowserRouter, type RouteObject, RouterProvider } from "react-router";
 import { LoadingCard } from "./components/ui.tsx";
 import { CALLBACK_PATH, captureLinkToken } from "./lib/link.ts";
 import { Callback } from "./routes/callback.tsx";
@@ -43,8 +43,21 @@ function Index() {
   return <Home />;
 }
 
+// Dev only: the M4.5 design preview with sample data (/preview/*). In a build `import.meta.env.DEV` is false, so the
+// route and its dynamic import are dropped and no preview code or sample data reaches dist (checked after the build).
+const devRoutes: RouteObject[] = import.meta.env.DEV
+  ? [
+      {
+        path: "/preview/*",
+        errorElement: <Failed />,
+        lazy: async () => ({ Component: (await import("./preview/routes.tsx")).PreviewApp }),
+      },
+    ]
+  : [];
+
 // The callback sits outside the session: it asks nothing of the server until "Continue" is pressed.
 const router = createBrowserRouter([
+  ...devRoutes,
   { path: CALLBACK_PATH, element: <Callback />, errorElement: <Failed /> },
   {
     path: "/",

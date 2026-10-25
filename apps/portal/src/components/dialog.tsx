@@ -1,13 +1,71 @@
 // A confirm dialog on the native <dialog> element (copied from the admin's M1.5 Modal + ConfirmDialog, trimmed):
 // showModal() gives the top layer, an inert page behind, focus inside and Escape to cancel, which is the WAI-ARIA
 // dialog pattern without a library. Focus goes back to the control that opened it.
-import { type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { type ReactNode, type Ref, useEffect, useId, useRef, useState } from "react";
 import { COPY } from "../copy.ts";
 import { Notice } from "./ui.tsx";
 
+/**
+ * A modal for content with its own steps (M4.5: decline with a reason, then confirm). The same native <dialog> pattern
+ * as ConfirmDialog; focus goes back to the opener when it closes, unless the screen moved focus on purpose (a result).
+ */
+export function Modal(props: {
+  open: boolean;
+  title: ReactNode;
+  onClose: () => void;
+  /** While true, Escape doesn't close it (a request is in flight). */
+  busy?: boolean | undefined;
+  /** The title takes focus when the step changes under it. */
+  titleRef?: Ref<HTMLHeadingElement> | undefined;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const opener = useRef<Element | null>(null);
+  const titleId = useId();
+  const { open, busy, onClose } = props;
+
+  useEffect(() => {
+    const d = ref.current;
+    if (!d) return;
+    if (open && !d.open) {
+      opener.current = document.activeElement;
+      d.showModal();
+    } else if (!open && d.open) {
+      d.close();
+      if (opener.current instanceof HTMLElement && opener.current.isConnected) opener.current.focus();
+    }
+  }, [open]);
+
+  return (
+    <dialog
+      ref={ref}
+      className="dialog"
+      aria-labelledby={titleId}
+      onCancel={(e) => {
+        e.preventDefault();
+        if (!busy) onClose();
+      }}
+    >
+      {open && (
+        <>
+          <h2
+            id={titleId}
+            className="dialog__title"
+            ref={props.titleRef}
+            tabIndex={props.titleRef ? -1 : undefined}
+          >
+            {props.title}
+          </h2>
+          {props.children}
+        </>
+      )}
+    </dialog>
+  );
+}
+
 export function ConfirmDialog(props: {
   open: boolean;
-  title: string;
+  title: ReactNode;
   children: ReactNode;
   confirmLabel: string;
   busyLabel: string;

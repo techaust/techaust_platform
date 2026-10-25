@@ -1,0 +1,200 @@
+/* PREVIEW ONLY: the "Preview — sample data" bar above every preview screen, and the email page. Deliberately unlike the
+   product (a dashed warning edge), so a screenshot can never pass for the real portal. Tokens only. */
+
+body:has(.pv) {
+  display: block;
+  place-items: normal;
+  padding: 0;
+}
+
+body:has(.pv)::before {
+  display: none;
+}
+
+.pv {
+  position: relative;
+  z-index: 30;
+  background: var(--color-surface-alt);
+  border-bottom: 2px dashed var(--color-warning);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.pv__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  max-width: calc(var(--container-page) + 2 * var(--gutter));
+  margin-inline: auto;
+  padding: var(--space-1) var(--gutter);
+}
+
+.pv__label {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-3);
+  margin: 0;
+}
+
+.pv__label strong {
+  color: var(--color-warning);
+  font-weight: 600;
+}
+
+.pv__sub {
+  color: var(--color-text-muted);
+}
+
+.pv__screens {
+  position: relative;
+}
+
+.pv__screens summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+  padding: 0 var(--space-3);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pv__screens ul {
+  position: absolute;
+  inset-inline-end: 0;
+  z-index: 40;
+  width: min(22rem, calc(100vw - 2rem));
+  max-height: 70dvh;
+  overflow-y: auto;
+  margin: 0;
+  padding: var(--space-2);
+  list-style: none;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elevation-2);
+}
+
+.pv__screens a {
+  display: flex;
+  align-items: center;
+  min-height: var(--target-min);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+}
+
+.pv__screens a:hover,
+.pv__screens a[aria-current="page"] {
+  background: var(--color-fill-subtle);
+}
+
+.pv__screens a[aria-current="page"] {
+  font-weight: 600;
+}
+
+.pv__said {
+  max-width: calc(var(--container-page) + 2 * var(--gutter));
+  margin: 0 auto;
+  padding: 0 var(--gutter);
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.pv__said:not(:empty) {
+  padding-block: 0 var(--space-2);
+}
+
+/* ---------- The email page ---------- */
+
+.pv-email {
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: var(--space-8) var(--gutter) var(--space-16);
+}
+
+.pv-email__h1 {
+  font-family: var(--font-display);
+  font-stretch: var(--font-display--stretch);
+  font-weight: 560;
+  font-size: var(--text-h2);
+  line-height: var(--text-h2--line-height);
+  margin: 0 0 var(--space-4);
+}
+
+.pv-email__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--target-min);
+  font-weight: 500;
+}
+
+.pv-email__toggle input {
+  width: 1.375rem;
+  height: 1.375rem;
+  min-height: 0;
+  accent-color: var(--color-btn-primary-bg);
+}
+
+.pv-email__one {
+  margin-top: var(--space-10);
+}
+
+.pv-email__one h2 {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-h4);
+  line-height: var(--text-h4--line-height);
+}
+
+.pv-email__head {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.pv-email__head > div {
+  display: grid;
+  grid-template-columns: 5rem minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+.pv-email__head dt {
+  color: var(--color-text-muted);
+}
+
+.pv-email__head dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.pv-email__frame {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+.pv-email__text summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pv-email__text pre {
+  margin: 0;
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
