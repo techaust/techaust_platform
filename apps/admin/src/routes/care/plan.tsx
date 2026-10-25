@@ -131,13 +131,13 @@ function PlanView({ data, reload }: { data: CarePlanPage; reload: () => void }) 
       <div className="lead-page care-page">
         <div className="lead-page__main">
           <PeriodCard usage={data.usage} data={data} />
-          <PastPeriods data={data} />
         </div>
         <aside className="lead-page__side" aria-label="Terms and history">
           <TermsPanel data={data} />
           <StatusPanel data={data} />
         </aside>
       </div>
+      <PastPeriods data={data} />
     </>
   );
 }
@@ -308,7 +308,7 @@ function PastPeriods({ data }: { data: CarePlanPage }) {
     },
   ];
   return (
-    <section className="lead-panel" aria-labelledby="periods-h">
+    <section className="lead-panel periods-panel" aria-labelledby="periods-h">
       <h2 id="periods-h" className="lead-panel__title">
         Last 12 billing periods
       </h2>

@@ -41,14 +41,18 @@ function Tiles({ data }: { data: DashboardData }) {
     t.projects && <ProjectsTile key="projects" tile={t.projects} />,
     t.myTime && <MyTimeTile key="myTime" tile={t.myTime} />,
   ].filter(Boolean);
+  // Two or more figure tiles run across the top; a single one (Sales: leads) heads the main column instead.
+  const strip =
+    kpis.length > 0 ? (
+      <div className="dash__kpis" data-count={kpis.length}>
+        {kpis}
+      </div>
+    ) : null;
   return (
     <div className="dash">
+      {kpis.length > 1 && strip}
       <div className="dash__main">
-        {kpis.length > 0 && (
-          <div className="dash__kpis" data-count={kpis.length}>
-            {kpis}
-          </div>
-        )}
+        {kpis.length === 1 && strip}
         {t.careBurn && <CareTile tile={t.careBurn} />}
         {t.activity && <ActivityTile tile={t.activity} />}
       </div>
@@ -373,17 +377,17 @@ function DashSkeleton() {
 function DashSkeletonTiles() {
   return (
     <div className="dash" aria-hidden="true">
+      <div className="dash__kpis" data-count={3}>
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="lead-panel stack-sm">
+            <Skeleton width="40%" />
+            <Skeleton width="30%" />
+            <Skeleton width="70%" />
+          </div>
+        ))}
+      </div>
       <div className="dash__main">
-        <div className="dash__kpis" data-count={3}>
-          {[0, 1, 2].map((i) => (
-            <div key={i} className="lead-panel stack-sm">
-              <Skeleton width="40%" />
-              <Skeleton width="30%" />
-              <Skeleton width="70%" />
-            </div>
-          ))}
-        </div>
-        <div className="lead-panel stack-sm">
+        <div className="lead-panel stack-sm tile--care">
           <Skeleton width="30%" />
           <Skeleton width="100%" />
           <Skeleton width="100%" />
