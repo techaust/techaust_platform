@@ -155,7 +155,6 @@ export const PENDING = {
   noMatchTitle: pending("No services match these filters"),
   staleService: pending("Someone else changed this service."),
   staleServiceDraft: pending("Someone else changed this service while you were editing it."),
-  staleTemplate: pending("Someone saved a newer version of this template."),
   enterCode: pending("Enter a code: S and up to four digits, for example S19."),
   enterName: pending("Enter the service name."),
   enterShort: pending("Enter a short description."),
@@ -168,14 +167,12 @@ export const PENDING = {
   enterStep: (n: number) => pending(`Name step ${n}.`),
   enterPct: (n: number) => pending(`Enter a percentage for step ${n}.`),
   oneStep: pending("Keep at least one step."),
-
   tooLong: pending("This is too long. Shorten it and save again."),
   emptySections: pending("A section needs a heading."),
   otherFix: pending("Something outside the services can't be published. Check the payment terms."),
   noneOnSite: pending("No active service is marked for the website, or two share a code."),
   latestVersion: (n: number) => pending(`This is an older version. Version ${n} is the newest.`),
   seededBy: pending("the seed"),
-  emptyHistory: pending("No price lists published yet."),
 } as const;
 
 // ---- money and numbers ---------------------------------------------------------------------------------------------------
