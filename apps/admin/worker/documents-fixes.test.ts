@@ -1,8 +1,17 @@
 // The fixes of the M4.3 early check [ADM-PROP-01..07, ADM-APR-01, ADM-APR-02]: the slim save answer, light reads, create limits, the catalogue line
 // key, the approval that already exists, the sealed snapshot (format v2), and the custom-lines facts. Each test names the item of the fix brief.
 import { env } from "cloudflare:workers";
-import { documentSnapshot, snapshotSha256 } from "@techaust/core/documents";
-import { sha256Hex } from "@techaust/core/hash";
+import { documentSnapshot, snapshotHeader, snapshotSha256 } from "@techaust/core/documents";
+import { canonicalJson, sha256Hex } from "@techaust/core/hash";
+import { BRAND_LOGOS } from "@techaust/core/settings";
+import {
+  contentHashOfBundle,
+  draftContentOfBundle,
+  loadDocument,
+  sealOf,
+  sealPartsOfBundle,
+  verifySealed,
+} from "@techaust/db/documents";
 import { beforeAll, describe, expect, it } from "vitest";
 import { referenceOf } from "./document-draft.ts";
 import type { LineState } from "./quote-model.ts";
@@ -478,6 +487,57 @@ describe("the send seals the snapshot, format v2 [item 1]", () => {
       } as Parameters<typeof snapshotSha256>[0]),
     );
     expect(row.content_sha256).toBe(doc.contentSha256);
+  });
+
+  // M4.4 asks (a) and (b): the jobs consumer verifies with the functions the send route itself used (`sealOf`, `contentHash`).
+  it("the exported functions give the same snapshot_sha256 and content_sha256 as the send, for the stored row, and the issuer carries the logo", async () => {
+    const o = await owner();
+    for (const price of [20_000_000, 1_234_567]) {
+      const made = await mkDraft(o, { price });
+      const doc = await getDoc(o, made.id);
+      expect((await sendDoc(o, made.id, doc.updatedAt)).status).toBe(200);
+      const bundle = await loadDocument(env.DB, made.id);
+      if (!bundle) throw new Error("no bundle");
+      const row = (await one<J>(
+        "SELECT snapshot_sha256, content_sha256, issuer FROM documents WHERE id = ?",
+        made.id,
+      )) as J;
+      expect(await contentHashOfBundle(bundle)).toBe(row.content_sha256);
+      expect((await sealOf(sealPartsOfBundle(bundle) as never)).snapshotSha256).toBe(row.snapshot_sha256);
+      expect(await verifySealed(bundle)).toEqual({ content: true, snapshot: true });
+      // the logo is frozen in the issuer, and it is the settings' light logo (a name from the generated brand files)
+      const issuer = JSON.parse(row.issuer as string);
+      expect(issuer.company.logo).toBe("logo-primary-color.svg");
+      expect(BRAND_LOGOS).toContain(issuer.company.logo);
+      // the header is what the exported function returns for the seal's input
+      const seal = await sealOf(sealPartsOfBundle(bundle) as never);
+      expect(await sha256Hex(canonicalJson({ v: 2, header: snapshotHeader(seal.input) }))).toBe(
+        row.snapshot_sha256,
+      );
+      // anything changed after the freeze no longer verifies
+      const tampered = {
+        ...bundle,
+        document: { ...bundle.document, title: `${bundle.document.title}!` },
+      };
+      expect(await verifySealed(tampered)).toEqual({ content: false, snapshot: false });
+      const edited = {
+        ...bundle,
+        sections: bundle.sections.map((s, i) => (i === 0 ? { ...s, body_md: "edited" } : s)),
+      };
+      expect(await verifySealed(edited)).toEqual({ content: false, snapshot: true });
+    }
+  });
+
+  it("a draft, an invoice and a missing block do not verify (null, never a false pass)", async () => {
+    const o = await owner();
+    const made = await mkDraft(o);
+    const bundle = await loadDocument(env.DB, made.id);
+    if (!bundle) throw new Error("no bundle");
+    expect(sealPartsOfBundle(bundle)).toBeNull(); // not frozen
+    expect(await verifySealed(bundle)).toBeNull();
+    expect(
+      draftContentOfBundle({ ...bundle, document: { ...bundle.document, type: "tax_invoice" } }),
+    ).toBeNull();
   });
 });
 

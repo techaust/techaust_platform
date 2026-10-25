@@ -6,10 +6,10 @@
 // then the post-condition `issue_result`, UNGUARDED, so a send that changed nothing aborts the whole batch (the counter does not move, no
 // audit row, the lead does not move). Nothing is decided from a read alone: when the batch refused, one read says why.
 import { fyOf, istDate, toIsoDate } from "@techaust/core/dates";
-import { snapshotSha256, validUntil } from "@techaust/core/documents";
-import { sha256Hex } from "@techaust/core/hash";
+import { validUntil } from "@techaust/core/documents";
 import { sqlPrintfPattern } from "@techaust/core/numbering";
 import { decide } from "@techaust/core/permissions";
+import { sealOf } from "@techaust/db/documents";
 import { type IssuerSnapshot, type RecipientSnapshot, sendStatements } from "@techaust/db/issue";
 import { proposalEventStatements } from "@techaust/db/lead-stage";
 import { Hono } from "hono/tiny";
@@ -120,14 +120,14 @@ export const documentSend = new Hono<AppEnv>().post(
         address: company.address,
         gstin: company.gstin,
         stateCode: company.stateCode,
+        logo: company.logoLight,
       },
       sender: { staffId: u.id, name: u.name, email: u.email },
     };
     const groupId = d.version_group_id as string;
-    // The sealed header (format v2, core `documentSnapshot`): the stored `computed` text is hashed as written, so what is sealed is
-    // exactly what the freeze UPDATE stores. The lines, sections and schedule are covered by `contentSha256`.
-    const computedJson = JSON.stringify(computed);
-    const snapshotSha = await snapshotSha256({
+    // The sealed header (format v2, `sealOf` in db/documents.ts, which M4.4 and M4.5 verify with): the stored `computed` text is hashed as
+    // written, so what is sealed is exactly what the freeze UPDATE stores. The lines, sections and schedule are covered by `contentSha256`.
+    const seal = await sealOf({
       document: {
         type: d.type,
         clientId: d.client_id,
@@ -143,12 +143,11 @@ export const documentSend = new Hono<AppEnv>().post(
         discountValue: state.discountValue,
         exportMode: state.exportMode,
       },
-      supply: computed.supply,
+      computed,
       recipient,
       issuer,
       terms: { id: terms.id, version: terms.version, sha256: terms.sha256 },
       instalmentAmounts: (computation.instalments ?? []).map((x) => x.amountMinor),
-      computedSha256: await sha256Hex(computedJson),
     });
     const batch = sendStatements(db, {
       documentId: id,
@@ -164,8 +163,8 @@ export const documentSend = new Hono<AppEnv>().post(
       validUntil: until,
       recipient,
       issuer,
-      computedJson,
-      snapshotSha256: snapshotSha,
+      computedJson: seal.computedJson,
+      snapshotSha256: seal.snapshotSha256,
       issuedBy: u.id,
       expected: {
         updatedAt: d.updated_at,

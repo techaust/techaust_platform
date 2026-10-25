@@ -23,6 +23,7 @@ import {
   SECTIONS_TOTAL_MAX,
   type SectionDraft,
   sectionsFromTemplate,
+  snapshotHeader,
   snapshotSha256,
   UNRESOLVED_RE,
   unresolvedIn,
@@ -673,6 +674,18 @@ describe("the frozen snapshot, format v2 [M4.4 and M4.5 rebuild and verify it]",
     expect(text).toBe(
       `{"header":{"computedSha256":"${"c".repeat(64)}","document":{"clientId":"client-1","contentSha256":"${"a".repeat(64)}","currency":"INR","discountKind":null,"discountValue":null,"exportMode":null,"issueDate":"2026-10-25","title":"Website build","type":"proposal","validUntil":"2026-11-09","validityDays":15,"version":1,"versionGroupId":"g1"},"instalmentAmounts":[2360000],"issuer":{"company":{"tradeName":"TecHaust Technologies"}},"recipient":{"contactId":"contact-1","country":"IN","legalName":"Example"},"supply":{"placeOfSupplyCode":"19","supplierStateCode":"19","type":"intra"},"terms":{"id":"terms-1","sha256":"${"b".repeat(64)}","version":1}},"v":2}`,
     );
+  });
+
+  it("snapshotHeader is the header of the snapshot, and the logo of the issuer is part of what is sealed (M4.4 asks a and b)", async () => {
+    expect(documentSnapshot(input()).header).toEqual(snapshotHeader(input()));
+    const withLogo = {
+      ...input(),
+      issuer: { company: { tradeName: "TecHaust Technologies", logo: "logo-primary-color.svg" } },
+    };
+    expect(canonicalJson({ v: 2, header: snapshotHeader(withLogo) })).toContain(
+      '"logo":"logo-primary-color.svg"',
+    );
+    expect(await snapshotSha256(withLogo)).not.toBe(await snapshotSha256(input()));
   });
 
   it("the same input gives the same hash and any change gives another", async () => {

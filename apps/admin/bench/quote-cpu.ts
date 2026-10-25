@@ -215,7 +215,14 @@ async function sendRequest() {
     stateCode: "19",
   };
   const issuer = {
-    company: { tradeName: "TecHaust", legalName: "T", address: null, gstin: null, stateCode: "19" },
+    company: {
+      tradeName: "TecHaust",
+      legalName: "T",
+      address: null,
+      gstin: null,
+      stateCode: "19",
+      logo: "logo-primary-color.svg",
+    },
     sender: { staffId: "s", name: "n", email: "e" },
   };
   const document = {
