@@ -77,18 +77,26 @@ export type StartPlan =
 /** The client-record fields a first instalment's tax can lack. */
 export type ClientField = "country" | "gstin" | "state_code";
 
-/** Which of the client's own fields are empty where the tax needs them: country; a registered client's GSTIN; a domestic client's state. */
-export function missingClientFields(c: {
-  country: string;
-  gst_status: string;
-  gstin: string | null;
-  state_code: string | null;
-}): ClientField[] {
-  const out: ClientField[] = [];
-  if (!c.country?.trim()) out.push("country");
-  if (c.gst_status === "registered" && !c.gstin?.trim()) out.push("gstin");
-  if (c.country === "IN" && !c.state_code?.trim()) out.push("state_code");
-  return out;
+const FIELD_OF_ISSUE: Record<string, ClientField> = {
+  country_mismatch: "country",
+  gstin_invalid: "gstin",
+  gstin_not_allowed: "gstin",
+  state_required: "state_code",
+  state_invalid: "state_code",
+  state_not_allowed: "state_code",
+};
+
+/**
+ * Which of the client's own fields the tax engine could not use, from its error codes (country that does not fit the GST status, a GSTIN that is
+ * missing or wrong, a state that is missing or unknown). Empty when the cause is elsewhere (the amounts, the date).
+ */
+export function missingClientFields(issues: readonly TaxIssue[]): ClientField[] {
+  const out = new Set<ClientField>();
+  for (const i of issues) {
+    const field = FIELD_OF_ISSUE[i.code];
+    if (field) out.add(field);
+  }
+  return [...out];
 }
 
 /** Merges groups that share a GST rate, keeping a SAC only when every member has the same one. */
@@ -159,7 +167,7 @@ export function planStartProject(input: {
       ok: false,
       code: "instalment_failed",
       issues: supplyResult.errors,
-      missing: missingClientFields(client),
+      missing: missingClientFields(supplyResult.errors),
     };
 
   const warnings: { code: string }[] = [];
@@ -178,7 +186,7 @@ export function planStartProject(input: {
       ok: false,
       code: "instalment_failed",
       issues: split.errors,
-      missing: missingClientFields(client),
+      missing: missingClientFields(split.errors),
     };
 
   return done({

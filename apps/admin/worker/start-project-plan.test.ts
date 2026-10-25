@@ -4,7 +4,7 @@ import { istDate } from "@techaust/core/dates";
 import { type ComputedDocument, computeDocument, type InclusiveGroup } from "@techaust/core/tax";
 import { describe, expect, it } from "vitest";
 import { type ClientRow, readSettings, taxContext, taxInputOf } from "./quote-model.ts";
-import { mergeByRate, planStartProject, type StepFacts } from "./start-project-plan.ts";
+import { mergeByRate, missingClientFields, planStartProject, type StepFacts } from "./start-project-plan.ts";
 
 const TODAY = istDate(Date.UTC(2026, 9, 26, 6, 0, 0));
 const settings = readSettings([]);
@@ -199,6 +199,17 @@ describe("planStartProject: refusals and merging", () => {
       today: TODAY,
     });
     expect(p.ok).toBe(false);
+    // M4.5 fix L11: the refusal names the empty client field.
+    if (!p.ok) expect(p.missing).toEqual(["state_code"]);
+  });
+
+  it("missingClientFields names the client fields behind the engine's codes, once each, and nothing for other causes", () => {
+    const at = (code: string) => ({ code, path: ["recipient"] }) as never;
+    expect(missingClientFields([at("state_required")])).toEqual(["state_code"]);
+    expect(missingClientFields([at("state_invalid"), at("state_not_allowed")])).toEqual(["state_code"]);
+    expect(missingClientFields([at("gstin_invalid"), at("country_mismatch")])).toEqual(["gstin", "country"]);
+    expect(missingClientFields([at("gross_not_whole_unit"), at("supply_invalid")])).toEqual([]);
+    expect(missingClientFields([])).toEqual([]);
   });
 
   it("a stored proposal without its computed result cannot start an instalment", () => {
@@ -209,7 +220,7 @@ describe("planStartProject: refusals and merging", () => {
       settings,
       today: TODAY,
     });
-    expect(p).toEqual({ ok: false, code: "not_computed", issues: [] });
+    expect(p).toEqual({ ok: false, code: "not_computed", issues: [], missing: [] });
   });
 
   it("more than 10 (SAC, rate) groups are merged by rate, the SAC kept only when shared, and the draft still totals the step exactly", () => {

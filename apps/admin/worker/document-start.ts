@@ -93,7 +93,7 @@ export const documentStart = new Hono<AppEnv>().post(
 
     const plan = startPlanOf(ctx);
     if (!plan.ok) {
-      // Nothing is created (all or nothing). The answer names what the client record lacks, in the words staff use for those fields.
+      // Nothing is created (all or nothing). The answer names the client fields the tax could not use, in the words staff use for them.
       const label = { country: "country", gstin: "GSTIN", state_code: "state" } as const;
       const named = plan.missing.map((f) => label[f]);
       return c.json(
@@ -102,7 +102,7 @@ export const documentStart = new Hono<AppEnv>().post(
             code: PLAN_FAILED.code,
             message:
               named.length > 0
-                ? `${PLAN_FAILED.message}: the client record needs its ${named.join(" and ")}`
+                ? `${PLAN_FAILED.message}: check the client's ${named.join(" and ")}`
                 : PLAN_FAILED.message,
           },
           issues: plan.issues,
