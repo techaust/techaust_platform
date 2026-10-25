@@ -52,6 +52,24 @@ export const DECISION_SQL = `SELECT d.id, d.status, d.decided_at, d.decision_rea
   FROM documents d LEFT JOIN contacts dc ON dc.id = d.decided_contact_id
   WHERE d.version_group_id = ${GROUP} AND d.decided_at IS NOT NULL ORDER BY d.version DESC LIMIT 1`;
 
+/** The same decision for the lead's proposal (`leads.proposal_id` is the group). ?1 lead id. */
+export const LEAD_DECISION_SQL = `SELECT d.status, d.decided_at, d.decision_reason, d.decision_note, dc.name AS contact_name
+  FROM documents d LEFT JOIN contacts dc ON dc.id = d.decided_contact_id
+  WHERE d.version_group_id = (SELECT proposal_id FROM leads WHERE id = ?1) AND d.decided_at IS NOT NULL ORDER BY d.version DESC LIMIT 1`;
+
+/** `{status, reason, note, at, contactName}` from a decision row, or null. */
+export function decisionOf(dec: Record<string, unknown> | undefined) {
+  return dec
+    ? {
+        status: dec.status as string,
+        at: dec.decided_at as number,
+        reason: (dec.decision_reason as string | null) ?? null,
+        note: (dec.decision_note as string | null) ?? null,
+        contactName: (dec.contact_name as string | null) ?? null,
+      }
+    : null;
+}
+
 export const PROJECT_SQL = "SELECT id, code FROM projects WHERE source_document_id = ?1";
 
 /** The four reads, bound to the document id (`?1`). */
@@ -131,6 +149,8 @@ export type OfferSection = {
     milestones: number;
     firstInstalment: { type: string; amountMinor: number; pctBp: number; trigger: string } | null;
     reason?: string;
+    /** When the plan failed: the client fields that are empty (M4.5 fix L11). */
+    missing?: string[];
   } | null;
 };
 
@@ -182,15 +202,7 @@ export function offerSection(
     certificate: {
       state: !a ? "none" : a.rendered_at === null || a.rendered_at === undefined ? "pending" : "ready",
     },
-    decision: dec
-      ? {
-          status: dec.status as string,
-          at: dec.decided_at as number,
-          reason: (dec.decision_reason as string | null) ?? null,
-          note: (dec.decision_note as string | null) ?? null,
-          contactName: (dec.contact_name as string | null) ?? null,
-        }
-      : null,
+    decision: decisionOf(dec),
     startProject:
       plan === null
         ? null
@@ -206,7 +218,11 @@ export function offerSection(
                     trigger: plan.firstInstalment.trigger,
                   }
                 : null,
-            ...(plan.ok ? (plan.reason ? { reason: plan.reason } : {}) : { reason: plan.code }),
+            ...(plan.ok
+              ? plan.reason
+                ? { reason: plan.reason }
+                : {}
+              : { reason: plan.code, missing: plan.missing }),
           },
   };
 }

@@ -92,15 +92,26 @@ export const documentStart = new Hono<AppEnv>().post(
     if (ctx.client.anonymised_at !== null) return err(c, CLIENT_GONE, 409);
 
     const plan = startPlanOf(ctx);
-    if (!plan.ok)
+    if (!plan.ok) {
+      // Nothing is created (all or nothing). The answer names what the client record lacks, in the words staff use for those fields.
+      const label = { country: "country", gstin: "GSTIN", state_code: "state" } as const;
+      const named = plan.missing.map((f) => label[f]);
       return c.json(
         {
-          error: { code: PLAN_FAILED.code, message: PLAN_FAILED.message },
+          error: {
+            code: PLAN_FAILED.code,
+            message:
+              named.length > 0
+                ? `${PLAN_FAILED.message}: the client record needs its ${named.join(" and ")}`
+                : PLAN_FAILED.message,
+          },
           issues: plan.issues,
+          missing: plan.missing,
           request_id: c.var.rid,
         },
         409,
       );
+    }
 
     const projectId = uuidv7();
     const draftId = plan.firstInstalment ? uuidv7() : null;

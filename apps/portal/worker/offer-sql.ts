@@ -22,8 +22,15 @@ const QUOTES = "('proposal', 'estimate')";
 const NEWEST =
   "NOT EXISTS (SELECT 1 FROM documents n WHERE n.version_group_id = d.version_group_id AND n.version > d.version AND n.frozen_at IS NOT NULL)";
 
-/** ?1 client, ?2 now (cursor: sent_at), ?3 cursor id, ?4 limit. A page of the latest version of each offer, newest first. */
-export const LIST_SQL = `SELECT d.id, d.type, d.title, d.number_display, d.version, d.status, d.valid_until, d.total_minor, d.currency, d.decided_at, d.sent_at FROM documents d WHERE d.client_id = ?1 AND d.type IN ${QUOTES} AND d.frozen_at IS NOT NULL AND d.pdf_sha256 IS NOT NULL AND d.status IN (${list(CLIENT_STATUSES.filter((s) => s !== "revised"))}) AND ${NEWEST} AND (?2 IS NULL OR d.sent_at < ?2 OR (d.sent_at = ?2 AND d.id < ?3)) ORDER BY d.sent_at DESC, d.id DESC LIMIT ?4`;
+/**
+ * There is no newer RENDERED frozen version in the group. The list and the downloads use this one: while the next version is still being
+ * rendered, the offer stays visible (and downloadable) on its latest rendered version instead of vanishing (M4.5 fix L5).
+ */
+const NEWEST_RENDERED =
+  "NOT EXISTS (SELECT 1 FROM documents n WHERE n.version_group_id = d.version_group_id AND n.version > d.version AND n.frozen_at IS NOT NULL AND n.pdf_sha256 IS NOT NULL)";
+
+/** ?1 client, ?2 now (cursor: sent_at), ?3 cursor id, ?4 limit. A page of the latest rendered version of each offer, newest first. */
+export const LIST_SQL = `SELECT d.id, d.type, d.title, d.number_display, d.version, d.status, d.valid_until, d.total_minor, d.currency, d.decided_at, d.sent_at FROM documents d WHERE d.client_id = ?1 AND d.type IN ${QUOTES} AND d.frozen_at IS NOT NULL AND d.pdf_sha256 IS NOT NULL AND d.status IN (${STATUSES_SQL}) AND ${NEWEST_RENDERED} AND (?2 IS NULL OR d.sent_at < ?2 OR (d.sent_at = ?2 AND d.id < ?3)) ORDER BY d.sent_at DESC, d.id DESC LIMIT ?4`;
 
 /** ?2 document id. The document of this organisation, as the portal may show it (a sent, rendered or decided offer). */
 export const DOC_SQL = `SELECT d.id, d.type, d.status, d.version, d.title, d.number_display, d.valid_until, d.version_group_id, d.snapshot_r2_key, d.pdf_r2_key, d.pdf_sha256, d.decided_at, d.decision_reason, d.decision_note, dc.name AS decided_by FROM documents d LEFT JOIN contacts dc ON dc.id = d.decided_contact_id AND dc.client_id = d.client_id WHERE d.id = ?2 AND d.client_id = ?1 AND d.type IN ${QUOTES} AND d.frozen_at IS NOT NULL AND d.status IN (${STATUSES_SQL})`;
@@ -40,8 +47,11 @@ export const CERTIFICATE_SQL =
 export const LATEST_SQL =
   "SELECT n.id, n.version FROM documents n WHERE n.client_id = ?1 AND n.version_group_id = (SELECT g.version_group_id FROM documents g WHERE g.id = ?2 AND g.client_id = ?1) AND n.frozen_at IS NOT NULL AND n.pdf_sha256 IS NOT NULL ORDER BY n.version DESC LIMIT 1";
 
-/** ?2 document id. The two keys a download streams. */
-export const KEYS_SQL = `SELECT d.pdf_r2_key, d.number_display, d.version, d.status FROM documents d WHERE d.id = ?2 AND d.client_id = ?1 AND (?3 IS NULL OR d.version_group_id = ?3) AND d.type IN ${QUOTES} AND d.frozen_at IS NOT NULL AND d.status IN (${STATUSES_SQL})`;
+/**
+ * ?2 document id. The key a PDF download streams: the latest rendered version of the offer, or the accepted one (POR-05); an older, revised
+ * version is a 404 (M4.5 fix L8).
+ */
+export const KEYS_SQL = `SELECT d.pdf_r2_key, d.number_display, d.version, d.status FROM documents d WHERE d.id = ?2 AND d.client_id = ?1 AND (?3 IS NULL OR d.version_group_id = ?3) AND d.type IN ${QUOTES} AND d.frozen_at IS NOT NULL AND d.status IN (${STATUSES_SQL}) AND (d.status IN ('accepted', 'converted') OR ${NEWEST_RENDERED})`;
 /** ?2 document id. The certificate key of an accepted offer. */
 export const CERT_KEY_SQL = `SELECT c.r2_key, d.number_display, d.version FROM acceptance_certificates c JOIN acceptances a ON a.id = c.acceptance_id JOIN documents d ON d.id = a.document_id WHERE d.client_id = ?1 AND a.document_id = ?2 AND (?3 IS NULL OR d.version_group_id = ?3) AND d.type IN ${QUOTES}`;
 /** ?2 document id, ?3 the link's group (null on a session). Whether the offer has an acceptance (the certificate may be pending). */
@@ -52,11 +62,11 @@ export const HAS_ACCEPTANCE_SQL =
 export const PRE_SQL = `SELECT d.version_group_id, d.version FROM documents d WHERE d.id = ?2 AND d.client_id = ?1 AND (?3 IS NULL OR d.version_group_id = ?3) AND d.type IN ${QUOTES} AND d.frozen_at IS NOT NULL`;
 
 /**
- * The first view: sent becomes viewed, once. ?1 client, ?2 document, ?3 now. The audit row follows it directly, guarded by
- * `changes()`, so a second view writes nothing.
+ * The first view: sent becomes viewed, once. ?1 client, ?2 document, ?3 now, ?4 today (IST). An offer past its last valid day reads as expired
+ * and is not marked viewed (M4.5 fix L9). The audit row follows it directly, guarded by `changes()`, so a second view writes nothing.
  */
 export const VIEW_SQL =
-  "UPDATE documents SET status = 'viewed', viewed_at = ?3 WHERE id = ?2 AND client_id = ?1 AND status = 'sent' AND viewed_at IS NULL AND pdf_sha256 IS NOT NULL AND type IN ('proposal', 'estimate')";
+  "UPDATE documents SET status = 'viewed', viewed_at = ?3 WHERE id = ?2 AND client_id = ?1 AND status = 'sent' AND viewed_at IS NULL AND pdf_sha256 IS NOT NULL AND valid_until >= ?4 AND type IN ('proposal', 'estimate')";
 
 /** The same live link, by its hash (?LINK): this offer, this contact, an offer link, not revoked, not expired. */
 const linkLive = (link: string, now: string, doc: string, contact: string) =>

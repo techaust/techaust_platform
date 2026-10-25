@@ -66,7 +66,30 @@ export type StartPlan =
       reason?: "no_advance_step";
       warnings: { code: string }[];
     }
-  | { ok: false; code: "not_computed" | "instalment_failed"; issues: TaxIssue[] };
+  | {
+      ok: false;
+      code: "not_computed" | "instalment_failed";
+      issues: TaxIssue[];
+      /** The client-record fields that are empty and that the first instalment's tax needs (M4.5 fix L11); may be empty when the cause is elsewhere. */
+      missing: ClientField[];
+    };
+
+/** The client-record fields a first instalment's tax can lack. */
+export type ClientField = "country" | "gstin" | "state_code";
+
+/** Which of the client's own fields are empty where the tax needs them: country; a registered client's GSTIN; a domestic client's state. */
+export function missingClientFields(c: {
+  country: string;
+  gst_status: string;
+  gstin: string | null;
+  state_code: string | null;
+}): ClientField[] {
+  const out: ClientField[] = [];
+  if (!c.country?.trim()) out.push("country");
+  if (c.gst_status === "registered" && !c.gstin?.trim()) out.push("gstin");
+  if (c.country === "IN" && !c.state_code?.trim()) out.push("state_code");
+  return out;
+}
 
 /** Merges groups that share a GST rate, keeping a SAC only when every member has the same one. */
 export function mergeByRate(groups: readonly InclusiveGroup[]): {
@@ -120,7 +143,7 @@ export function planStartProject(input: {
   const first = schedule[0];
   if (first?.trigger !== "on_accept" || first.amount_minor <= 0)
     return done({ firstInstalment: null, reason: "no_advance_step" });
-  if (!proposal.computed) return { ok: false, code: "not_computed", issues: [] };
+  if (!proposal.computed) return { ok: false, code: "not_computed", issues: [], missing: [] };
 
   const ctx = taxContext(settings);
   const supplyResult = determineSupply(taxInputOf(client), ctx, {
@@ -131,7 +154,13 @@ export function planStartProject(input: {
         ? proposal.export_mode
         : undefined,
   });
-  if (!supplyResult.ok) return { ok: false, code: "instalment_failed", issues: supplyResult.errors };
+  if (!supplyResult.ok)
+    return {
+      ok: false,
+      code: "instalment_failed",
+      issues: supplyResult.errors,
+      missing: missingClientFields(client),
+    };
 
   const warnings: { code: string }[] = [];
   let groups = groupsOf(proposal.computed.summary);
@@ -144,7 +173,13 @@ export function planStartProject(input: {
     documentDate: today,
     recipientStatus: client.gst_status,
   });
-  if (!split.ok) return { ok: false, code: "instalment_failed", issues: split.errors };
+  if (!split.ok)
+    return {
+      ok: false,
+      code: "instalment_failed",
+      issues: split.errors,
+      missing: missingClientFields(client),
+    };
 
   return done({
     warnings,

@@ -5,9 +5,16 @@
 // contact and organisation come from the link row, read by the server). Nothing about either comes from the request body.
 import { uuidv7 } from "@techaust/core/ids";
 import { formatMoney, money } from "@techaust/core/money";
-import { checkDecline, effectiveOfferStatus, normaliseTypedName, todayIst } from "@techaust/core/offers";
+import { LOST_REASON_OF_DECLINE } from "@techaust/core/lead-lifecycle";
+import {
+  checkDecline,
+  type DeclineReason,
+  effectiveOfferStatus,
+  normaliseTypedName,
+  todayIst,
+} from "@techaust/core/offers";
 import { proposalEventStatements } from "@techaust/db/lead-stage";
-import { auditStmt } from "@techaust/db/log";
+import { auditStmt, type GuardSql } from "@techaust/db/log";
 import { type Ctx, err, NOT_FOUND, requestInfo } from "./context.ts";
 import {
   ACCEPT_AUDIT_SQL,
@@ -212,7 +219,7 @@ export async function loadOffer(
   const viewWrites =
     d.status === "sent"
       ? [
-          bound(db, VIEW_SQL, [p.clientId, d.id, now]),
+          bound(db, VIEW_SQL, [p.clientId, d.id, now, todayIst(now)]),
           auditStmt(
             db,
             {
@@ -355,13 +362,21 @@ export async function acceptOffer(
     sql: (at: number) => `EXISTS (SELECT 1 FROM acceptances WHERE id = ?${at})`,
     params: [acceptanceId],
   };
-  const results = await db.batch([
-    bound(db, ACCEPT_INSERT_SQL, all),
-    bound(db, ACCEPT_UPDATE_SQL, all),
-    bound(db, ACCEPT_AUDIT_SQL, all),
-    ...proposalEventStatements(db, pre.version_group_id, "proposal_accepted", t, guard),
-  ]);
-  const written = results[0]?.results[0] as
+  let results: D1Result[] | null;
+  try {
+    results = await db.batch([
+      bound(db, ACCEPT_INSERT_SQL, all),
+      bound(db, ACCEPT_UPDATE_SQL, all),
+      bound(db, ACCEPT_AUDIT_SQL, all),
+      ...proposalEventStatements(db, pre.version_group_id, "proposal_accepted", t, guard),
+    ]);
+  } catch (e) {
+    // Two contacts accepting the same version at the same instant: the database's unique rule on the acceptance lets exactly one in. The
+    // batch rolled back whole, so the loser takes the same re-read as any refused accept (a replay for the same person, else "already accepted").
+    if (!(e instanceof Error && /UNIQUE constraint failed/i.test(e.message))) throw e;
+    results = null;
+  }
+  const written = results?.[0]?.results[0] as
     | { email: string; accepted_at: number; pdf_sha256: string }
     | undefined;
   if (written) {
@@ -401,9 +416,12 @@ export async function declineOffer(
   note: string | null,
 ): Promise<DecisionResult> {
   const db = c.env.DB;
+  const pre = await bound(db, PRE_SQL, [p.clientId, docId, p.group]).first<{ version_group_id: string }>();
+  if (!pre) return { ok: false, refusal: { code: "not_found", status: 404 } };
   const t = Date.now();
   const today = todayIst(t);
   const f = facts(c);
+  const auditId = uuidv7();
   const all = [
     p.clientId,
     docId,
@@ -418,10 +436,28 @@ export async function declineOffer(
     f.ua,
     f.country,
     null,
-    uuidv7(),
+    auditId,
     f.rid,
   ];
-  const results = await db.batch([bound(db, DECLINE_UPDATE_SQL, all), bound(db, DECLINE_AUDIT_SQL, all)]);
+  // The lead follows the decline (owner, 2026-10-26): proposal sent -> lost, with the client's reason as the lost reason. The statements are
+  // guarded on this request's audit row, which exists only when the decline itself was written; the rule is in SQL (only from
+  // `proposal_sent`, never a won or lost lead), so a stale read cannot overwrite a person's later choice.
+  const guard: GuardSql = {
+    sql: (at: number) => `EXISTS (SELECT 1 FROM audit_log WHERE id = ?${at})`,
+    params: [auditId],
+  };
+  const results = await db.batch([
+    bound(db, DECLINE_UPDATE_SQL, all),
+    bound(db, DECLINE_AUDIT_SQL, all),
+    ...proposalEventStatements(
+      db,
+      pre.version_group_id,
+      "proposal_declined",
+      t,
+      guard,
+      LOST_REASON_OF_DECLINE[reason as DeclineReason],
+    ),
+  ]);
   if ((results[0]?.meta.changes ?? 0) > 0) {
     await sendQueued(c, "EMAIL_QUEUE", { kind: "offer.decided", documentId: docId, decision: "declined" });
     return { ok: true, declined: { reason, at: t } };

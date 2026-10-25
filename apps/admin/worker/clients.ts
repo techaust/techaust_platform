@@ -898,6 +898,11 @@ export const EXPORT_PARTS: Record<string, { sql: (cur: boolean) => string; time?
     sql: (cur) =>
       `SELECT rowid AS id, created_at, expires_at, used_at FROM magic_link_tokens WHERE contact_id = ?1${cur ? " AND rowid > ?5" : ""} ORDER BY rowid LIMIT 51`,
   },
+  // M4.5 (VERIFY WITH CA/LEGAL): the offer links sent to this person. Never the token hash; purpose, dates and the revoke only.
+  offer_links: {
+    sql: (cur) =>
+      `SELECT rowid AS id, document_id, send_id, acceptance_id, purpose, expires_at, revoked_at, created_at FROM offer_links WHERE contact_id = ?1${cur ? " AND rowid > ?5" : ""} ORDER BY rowid LIMIT 51`,
+  },
   acceptances: {
     sql: (cur) =>
       `SELECT id, document_id, contact_id, typed_name, email, accepted_at, ip, user_agent, country, pdf_sha256, terms_version_id, via, snapshot_sha256 FROM acceptances WHERE contact_id = ?1${cur ? " AND id > ?5" : ""} ORDER BY id LIMIT 51`,
@@ -1113,7 +1118,7 @@ export const contacts = new Hono<AppEnv>()
       // Id-ordered parts compare the id (?5); time-ordered ones the pair (?4, ?5). rowid parts carry the number as text.
       const sql = part.sql(cur !== null);
       const bind = cur
-        ? [...base, cur.k, f.part === "sessions" || f.part === "magic_links" ? Number(cur.id) : cur.id]
+        ? [...base, cur.k, f.part === "sessions" || f.part === "magic_links" || f.part === "offer_links" ? Number(cur.id) : cur.id]
         : base;
       // Bind exactly as many values as the statement has parameters (D1 refuses extra ones).
       const params = Math.max(...[...sql.matchAll(/\?(\d+)/g)].map((m) => Number(m[1])));
