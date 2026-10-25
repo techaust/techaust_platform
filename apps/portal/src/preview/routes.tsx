@@ -3,16 +3,16 @@
 // Sample data only: no API call is made and nothing is saved; every action changes this page's state and says so in the
 // preview bar.
 import "./preview.css";
+import { formatDate, formatIstDateTime } from "@techaust/core";
 import badge from "@techaust/ui/brand/logo-email-badge@2x.png?url";
 import logoDarkPng from "@techaust/ui/brand/logo-email-dark@2x.png?url";
-import { formatDate, formatIstDateTime } from "@techaust/core";
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { Link, Navigate, Route, Routes, useLocation, useParams, useSearchParams } from "react-router";
-import { COPY } from "../copy.ts";
-import { PENDING } from "../copy-documents.ts";
 import { LogIn } from "../components/icons.tsx";
 import { Ph } from "../components/pending.tsx";
 import { type NavKey, PortalShell, TokenShell } from "../components/shell/portal-shell.tsx";
+import { COPY } from "../copy.ts";
+import { PENDING } from "../copy-documents.ts";
 import { amount, type DocumentView } from "../lib/document-view.ts";
 import { DocumentPage } from "../screens/document-page.tsx";
 import { DocumentsScreen, HomeScreen, NotFoundScreen, SoonScreen } from "../screens/home.tsx";
@@ -58,7 +58,7 @@ function PreviewBar(props: { said: string }) {
   const { pathname, search } = useLocation();
   const here = pathname + search;
   return (
-    <div className="pv" role="region" aria-label="Preview">
+    <section className="pv" aria-label="Preview">
       <div className="pv__row">
         <p className="pv__label">
           <strong>Preview — sample data</strong>
@@ -82,7 +82,7 @@ function PreviewBar(props: { said: string }) {
       <p className="pv__said" role="status">
         {props.said}
       </p>
-    </div>
+    </section>
   );
 }
 

@@ -101,9 +101,10 @@ export function AccountMenu(props: AccountProps & { defaultOpen?: boolean | unde
   const panelId = useId();
 
   useEffect(() => {
-    if (!open) return;
+    const box = wrap.current;
+    if (!open || confirming || !box) return;
     const onDown = (e: PointerEvent) => {
-      if (wrap.current && !wrap.current.contains(e.target as Node)) setOpen(false);
+      if (!box.contains(e.target as Node)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -111,23 +112,22 @@ export function AccountMenu(props: AccountProps & { defaultOpen?: boolean | unde
         button.current?.focus();
       }
     };
+    // Focus left the button and the panel (Tab past the last action): close, as a disclosure does.
+    const onFocusOut = (e: FocusEvent) => {
+      if (e.relatedTarget && !box.contains(e.relatedTarget as Node)) setOpen(false);
+    };
     document.addEventListener("pointerdown", onDown);
     document.addEventListener("keydown", onKey);
+    box.addEventListener("focusout", onFocusOut);
     return () => {
       document.removeEventListener("pointerdown", onDown);
       document.removeEventListener("keydown", onKey);
+      box.removeEventListener("focusout", onFocusOut);
     };
-  }, [open]);
+  }, [open, confirming]);
 
   return (
-    <div
-      className="account"
-      ref={wrap}
-      onBlur={(e) => {
-        // Focus left the button and the panel (Tab past the last action): close, as a disclosure menu does.
-        if (open && !confirming && !e.currentTarget.contains(e.relatedTarget as Node | null)) setOpen(false);
-      }}
-    >
+    <div className="account" ref={wrap}>
       <button
         ref={button}
         type="button"

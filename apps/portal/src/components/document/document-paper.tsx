@@ -3,10 +3,11 @@
 // schedule, assumptions, terms, the validity line and the acceptance block. Set as one sheet of "paper" on the page: a
 // verdigris rule along its top edge and the mark's 45° cut on its top-right corner. Every figure is the frozen
 // snapshot's, computed by the M4.2 engine on the server; this file only formats.
-import logoColor from "@techaust/ui/brand/logo-primary-color.svg?url";
-import logoDark from "@techaust/ui/brand/logo-primary-dark.svg?url";
+
 import { formatDate, formatMoney, money, negate, percentFromBp } from "@techaust/core";
 import type { ComputedLine, ScheduleInstalment, SummaryRow } from "@techaust/core/tax";
+import logoColor from "@techaust/ui/brand/logo-primary-color.svg?url";
+import logoDark from "@techaust/ui/brand/logo-primary-dark.svg?url";
 import type { ReactNode } from "react";
 import { PENDING, WORDS } from "../../copy-documents.ts";
 import { amount, type DocumentView, type LineText, type Milestone } from "../../lib/document-view.ts";

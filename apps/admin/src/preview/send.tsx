@@ -351,13 +351,13 @@ function Page() {
 export function SendPreview() {
   return (
     <>
-      <div className="pv-bar" role="region" aria-label="Preview">
+      <section className="pv-bar" aria-label="Preview">
         <p>
           <strong>Preview — sample data</strong> Nothing is saved or sent.{" "}
           <Link to="/preview/send">Before sending</Link> ·{" "}
           <Link to="/preview/send?state=accepted">After acceptance</Link>
         </p>
-      </div>
+      </section>
       <ToastProvider>
         <AppShell
           items={navFor("owner")}

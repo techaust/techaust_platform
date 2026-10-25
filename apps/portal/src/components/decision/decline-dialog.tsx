@@ -1,7 +1,7 @@
 // Decline with a reason (ADM-PROP-10): step 1 picks a reason (a short list plus "Other", which then needs a few words),
 // step 2 confirms. The reason is required; the note is optional unless "Other" is picked. Focus moves to the step's title
 // on each step, and back to the Decline button if the dialog is cancelled.
-import { type FormEvent, useEffect, useId, useRef, useState } from "react";
+import { type FormEvent, useId, useRef, useState } from "react";
 import { PENDING, WORDS } from "../../copy-documents.ts";
 import { Modal } from "../dialog.tsx";
 import { Ph } from "../pending.tsx";
@@ -27,15 +27,14 @@ export function DeclineDialog(props: {
   const firstRadio = useRef<HTMLInputElement>(null);
   const isOther = reason === WORDS.other;
 
-  // A new step: its title takes focus (not on opening, where the first radio does, as a dialog should).
-  const [stepped, setStepped] = useState(false);
-  useEffect(() => {
-    if (stepped) titleRef.current?.focus();
-  }, [step, stepped]);
+  /** A step change: the new step's title takes focus once it has rendered (on opening, the dialog focuses as usual). */
+  function goTo(next: "reason" | "confirm") {
+    setStep(next);
+    requestAnimationFrame(() => titleRef.current?.focus());
+  }
 
   function reset() {
     setStep("reason");
-    setStepped(false);
     setReason(null);
     setNote("");
     setReasonError(null);
@@ -62,8 +61,7 @@ export function DeclineDialog(props: {
       document.getElementById(noteId)?.focus();
       return;
     }
-    setStepped(true);
-    setStep("confirm");
+    goTo("confirm");
   }
 
   async function confirm() {
@@ -166,9 +164,7 @@ export function DeclineDialog(props: {
             <button
               type="button"
               className="btn btn--secondary"
-              onClick={() => {
-                setStep("reason");
-              }}
+              onClick={() => goTo("reason")}
               disabled={busy}
             >
               {PENDING.back}

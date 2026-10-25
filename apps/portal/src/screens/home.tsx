@@ -4,11 +4,11 @@
 import { formatDate, formatIstDateTime } from "@techaust/core";
 import type { ReactNode } from "react";
 import { Link } from "react-router";
-import { PENDING, WORDS } from "../copy-documents.ts";
 import { ArrowRight, FileText, FolderKanban, Receipt, User } from "../components/icons.tsx";
 import { Ph } from "../components/pending.tsx";
 import { PageTitle } from "../components/shell/portal-shell.tsx";
 import { StatusPill } from "../components/status-pill.tsx";
+import { PENDING, WORDS } from "../copy-documents.ts";
 import { amount, type DocumentView } from "../lib/document-view.ts";
 
 /** What a list or home card needs (the list API returns this much per document). */

@@ -5,12 +5,12 @@
 import { formatDate, formatIstDateTime } from "@techaust/core";
 import type { ReactNode } from "react";
 import { Link } from "react-router";
-import { PENDING, WORDS } from "../copy-documents.ts";
 import { DecisionPanel, type DecisionProps } from "../components/decision/decision-panel.tsx";
 import { DocumentPaper, SECTIONS } from "../components/document/document-paper.tsx";
 import { Alert, ArrowLeft, ArrowRight, Download, Info } from "../components/icons.tsx";
 import { Ph } from "../components/pending.tsx";
 import { StatusPill } from "../components/status-pill.tsx";
+import { PENDING, WORDS } from "../copy-documents.ts";
 import { amount, type DocumentView } from "../lib/document-view.ts";
 
 function Aside(props: { doc: DocumentView; onDownload: () => void }) {
