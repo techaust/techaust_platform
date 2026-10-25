@@ -392,6 +392,9 @@ export const timeLogs = sqliteTable(
     index("time_logs_user_date").on(t.userId, t.workDate),
     // M3.5: the timesheet's date range for everyone (the accountant and the owner read all entries).
     index("time_logs_date").on(t.workDate, t.id),
+    // M3.5: hours used per care plan and period are summed from this index alone (it covers the billable flag and the minutes), so the
+    // dashboard reads one index entry per time entry instead of two rows.
+    index("time_logs_care_usage").on(t.carePlanId, t.workDate, t.billable, t.minutes),
     // ADM-TIME-01: 0.25-hour steps, at most 24 hours (the per-day total is a trigger, `time_logs_day_cap_*`, and a SQL condition).
     check("time_logs_minutes", sql`${t.minutes} between 15 and 1440 and ${t.minutes} % 15 = 0`),
   ],

@@ -199,7 +199,12 @@ describe("the M3.5 tables (0026)", () => {
     const names = async (t: string) =>
       (await all<{ name: string }>(`SELECT name FROM pragma_index_list('${t}')`)).map((i) => i.name);
     expect(await names("time_logs")).toEqual(
-      expect.arrayContaining(["time_logs_date", "time_logs_user_date", "time_logs_care_plan_date"]),
+      expect.arrayContaining([
+        "time_logs_date",
+        "time_logs_care_usage",
+        "time_logs_user_date",
+        "time_logs_care_plan_date",
+      ]),
     );
     expect(await names("care_plans")).toEqual(
       expect.arrayContaining(["care_plans_created", "care_plans_status_created"]),
@@ -461,8 +466,8 @@ describe("periodStartSql is periodOf (billing days 1 to 28, 2026-01-01 to 2029-1
 });
 
 describe("the shared loader", () => {
-  const usageOf = async (plan: string, from: string, to: string) => {
-    const [a, b, c, d] = careStatements(env.DB, { ids: [plan] }, { from, to });
+  const usageOf = async (plan: string, to: string, periodsBack: number) => {
+    const [a, b, c, d] = careStatements(env.DB, { ids: [plan] }, { to, periodsBack });
     const [plans, terms, st, usage] = await env.DB.batch([a, b, c, d]);
     return assembleCare({
       plans: plans?.results as never,
@@ -501,7 +506,7 @@ describe("the shared loader", () => {
       next(),
       tick,
     );
-    const { plans, truncated } = await usageOf(plan, "2026-08-01", "2026-11-30");
+    const { plans, truncated } = await usageOf(plan, "2026-11-30", 3);
     expect(truncated).toBe(false);
     const data = plans.get(plan);
     expect(data?.terms).toHaveLength(1);
@@ -519,6 +524,10 @@ describe("the shared loader", () => {
       burnBp: 10_833,
       flag: "reached",
     });
+    // the short window (this period and the one before) gives the same current period as the long one
+    const short = (await usageOf(plan, "2026-11-20", 1)).plans.get(plan);
+    expect([...(short?.usage.keys() ?? [])].sort()).toEqual(["2026-10-01", "2026-11-01"]);
+    expect(currentUsage(short as never, "2026-11-20")).toEqual(now);
     const past = pastUsage(data as never, "2026-11-20", 12);
     expect(past.map((p) => p.period.start)).toEqual(["2026-11-01", "2026-10-01", "2026-09-01"]);
     expect(past[1]).toMatchObject({ used: 480, overageMinutes: 0 });
@@ -528,7 +537,7 @@ describe("the shared loader", () => {
     const by = await mkStaff();
     const ids = [] as string[];
     for (let i = 0; i < 3; i++) ids.push((await mkPlan(by)).id);
-    const [a, b, c, d] = careStatements(env.DB, { active: 2 }, { from: "2026-01-01", to: "2026-12-31" });
+    const [a, b, c, d] = careStatements(env.DB, { active: 2 }, { to: "2026-12-31", periodsBack: 1 });
     const res = await env.DB.batch([a, b, c, d]);
     const out = assembleCare(
       {
@@ -545,7 +554,7 @@ describe("the shared loader", () => {
   });
 
   it("refuses more than 100 plans and an odd cap", () => {
-    const w = { from: "2026-01-01", to: "2026-01-31" };
+    const w = { to: "2026-01-31", periodsBack: 1 };
     expect(() => careQueries({ ids: Array.from({ length: 101 }, (_, i) => String(i)) }, w)).toThrow(
       RangeError,
     );
@@ -555,7 +564,7 @@ describe("the shared loader", () => {
 
   it("every statement is served by an index (EXPLAIN QUERY PLAN)", async () => {
     for (const source of [{ ids: ["a", "b"] }, { active: 100 }] as const) {
-      for (const q of careQueries(source, { from: "2026-01-01", to: "2026-12-31" })) {
+      for (const q of careQueries(source, { to: "2026-12-31", periodsBack: 1 })) {
         const plan = await all<{ detail: string }>(`EXPLAIN QUERY PLAN ${q.sql}`, ...q.bind);
         const text = plan.map((p) => p.detail).join("\n");
         expect(text, q.sql).not.toMatch(

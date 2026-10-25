@@ -50,4 +50,5 @@ CREATE TABLE `care_plan_terms` (
 CREATE INDEX `care_plan_terms_plan` ON `care_plan_terms` (`care_plan_id`,`effective_from`,`created_at`,`id`);--> statement-breakpoint
 CREATE INDEX `care_plans_created` ON `care_plans` (`created_at`,`id`);--> statement-breakpoint
 CREATE INDEX `care_plans_status_created` ON `care_plans` (`status`,`created_at`,`id`);--> statement-breakpoint
-CREATE INDEX `time_logs_date` ON `time_logs` (`work_date`,`id`);
+CREATE INDEX `time_logs_date` ON `time_logs` (`work_date`,`id`);--> statement-breakpoint
+CREATE INDEX `time_logs_care_usage` ON `time_logs` (`care_plan_id`,`work_date`,`billable`,`minutes`);

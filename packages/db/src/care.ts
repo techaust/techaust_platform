@@ -24,8 +24,12 @@ export const MAX_LOADED_PLANS = 100;
 /** Which plans to load: these ids (at most 100), or the first `active` active plans by creation (the dashboard's, one more is read to say "truncated"). */
 export type PlanSource = { ids: readonly string[] } | { active: number };
 
-/** The usage window: minutes logged from `from` to `to` (inclusive IST dates) are grouped by period. */
-export type UsageWindow = { from: string; to: string };
+/**
+ * The usage window: the minutes logged up to `to` (an IST date, normally today) and back to the start of the period `periodsBack`
+ * periods before the one that contains `to`, per plan (its own billing day decides the start). 1 gives this period and the one before
+ * it (whose unused hours may carry in); 13 gives twelve periods and the one before the oldest.
+ */
+export type UsageWindow = { to: string; periodsBack: number };
 
 export type PlanRaw = {
   id: string;
@@ -66,7 +70,19 @@ export type StatusRaw = {
   created_at: number;
   status: CareStatus;
 };
-export type UsageRaw = { plan_id: string; ps: string; billable: number; non_billable: number };
+/** One period of one plan (the long window groups by period). */
+export type UsagePeriodRaw = { plan_id: string; ps: string; billable: number; non_billable: number };
+/** The short window (this period and the one before it): one row per plan, the two periods side by side. */
+export type UsageRecentRaw = {
+  plan_id: string;
+  cur_start: string;
+  cur_billable: number;
+  cur_non_billable: number;
+  prev_start: string;
+  prev_billable: number;
+  prev_non_billable: number;
+};
+export type UsageRaw = UsagePeriodRaw | UsageRecentRaw;
 
 /** The id list of a source as SQL, and how many placeholders it uses (`?1` is the id list in `ids` mode). */
 function idsSql(source: PlanSource): { sql: string; bound: number; bind: unknown[] } {
@@ -90,13 +106,33 @@ const PLAN_COLS =
 
 export type CareQuery = { sql: string; bind: unknown[] };
 
+/**
+ * Minutes per plan and period. The short window (`periodsBack` 1: the lists and the dashboard) sums this period and the one before it
+ * in ONE row per plan with a conditional sum, grouped by the plan: the (care_plan_id, work_date, billable, minutes) index is read in its
+ * own order, with no sort. A plan that never had a one-month rollover rule carries nothing in, so only its current period is read (its
+ * previous period shows as zero, which is what it carries). `CROSS JOIN` fixes the join order (plans first), which the per-plan lower bound of the window needs. The long window (the plan page) groups by period, `periodStartSql` (a sort of a few hundred entries).
+ */
+function usageSql(ids: string, at: number, periodsBack: number): string {
+  const to = `?${at}`;
+  if (periodsBack === 1) {
+    const cur = periodStartSql(to, "p.billing_day");
+    const prev = `date(${cur}, '-1 months')`;
+    const sum = (flag: number, from: string, until: string) =>
+      `sum(CASE WHEN t.billable = ${flag} AND t.work_date >= ${from}${until} THEN t.minutes ELSE 0 END)`;
+    return `SELECT t.care_plan_id AS plan_id, ${cur} AS cur_start, ${sum(1, cur, "")} AS cur_billable, ${sum(0, cur, "")} AS cur_non_billable, ${prev} AS prev_start, ${sum(1, prev, ` AND t.work_date < ${cur}`)} AS prev_billable, ${sum(0, prev, ` AND t.work_date < ${cur}`)} AS prev_non_billable FROM care_plans p CROSS JOIN time_logs t ON t.care_plan_id = p.id WHERE p.id IN (${ids}) AND t.work_date >= CASE WHEN EXISTS (SELECT 1 FROM care_plan_terms r WHERE r.care_plan_id = p.id AND r.rollover = 'one_month') THEN ${prev} ELSE ${cur} END AND t.work_date <= ${to} GROUP BY t.care_plan_id`;
+  }
+  return `SELECT t.care_plan_id AS plan_id, ${periodStartSql("t.work_date", "p.billing_day")} AS ps, sum(CASE WHEN t.billable = 1 THEN t.minutes ELSE 0 END) AS billable, sum(CASE WHEN t.billable = 0 THEN t.minutes ELSE 0 END) AS non_billable FROM care_plans p CROSS JOIN time_logs t ON t.care_plan_id = p.id WHERE p.id IN (${ids}) AND t.work_date >= date(${periodStartSql(to, "p.billing_day")}, '-' || ${periodsBack} || ' months') AND t.work_date <= ${to} GROUP BY t.care_plan_id, ps`;
+}
+
 /** The four queries, in this order: plans, every terms row, every status row, usage by period (the SQL is exported so a test can EXPLAIN it). */
 export function careQueries(
   source: PlanSource,
   window: UsageWindow,
 ): [CareQuery, CareQuery, CareQuery, CareQuery] {
   const ids = idsSql(source);
-  const from = ids.bound + 1;
+  const at = ids.bound + 1;
+  if (!Number.isInteger(window.periodsBack) || window.periodsBack < 0 || window.periodsBack > 24)
+    throw new RangeError(`Periods back: 0 to 24`);
   return [
     {
       sql: `SELECT ${PLAN_COLS} FROM care_plans p JOIN clients c ON c.id = p.client_id WHERE p.id IN (${ids.sql}) ORDER BY p.created_at, p.id`,
@@ -110,10 +146,7 @@ export function careQueries(
       sql: `SELECT id, care_plan_id, effective_on, created_at, status FROM care_plan_status_log WHERE care_plan_id IN (${ids.sql}) ORDER BY care_plan_id, effective_on, created_at, id`,
       bind: ids.bind,
     },
-    {
-      sql: `SELECT t.care_plan_id AS plan_id, ${periodStartSql("t.work_date", "p.billing_day")} AS ps, sum(CASE WHEN t.billable = 1 THEN t.minutes ELSE 0 END) AS billable, sum(CASE WHEN t.billable = 0 THEN t.minutes ELSE 0 END) AS non_billable FROM time_logs t JOIN care_plans p ON p.id = t.care_plan_id WHERE t.care_plan_id IN (${ids.sql}) AND t.work_date BETWEEN ?${from} AND ?${from + 1} GROUP BY t.care_plan_id, ps`,
-      bind: [...ids.bind, window.from, window.to],
-    },
+    { sql: usageSql(ids.sql, at, window.periodsBack), bind: [...ids.bind, window.to] },
   ];
 }
 
@@ -176,8 +209,15 @@ export function assembleCare(
     out.set(plan.id, { plan, terms: [], statuses: [], usage: new Map() });
   for (const r of results.terms) out.get(r.care_plan_id)?.terms.push(termsRow(r));
   for (const r of results.status) out.get(r.care_plan_id)?.statuses.push(statusRow(r));
-  for (const r of results.usage)
-    out.get(r.plan_id)?.usage.set(r.ps, { billable: r.billable ?? 0, nonBillable: r.non_billable ?? 0 });
+  for (const r of results.usage) {
+    const usage = out.get(r.plan_id)?.usage;
+    if (!usage) continue;
+    if ("ps" in r) usage.set(r.ps, { billable: r.billable ?? 0, nonBillable: r.non_billable ?? 0 });
+    else {
+      usage.set(r.cur_start, { billable: r.cur_billable ?? 0, nonBillable: r.cur_non_billable ?? 0 });
+      usage.set(r.prev_start, { billable: r.prev_billable ?? 0, nonBillable: r.prev_non_billable ?? 0 });
+    }
+  }
   return { plans: out, truncated: results.plans.length > cap };
 }
 

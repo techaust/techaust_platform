@@ -18,7 +18,7 @@ import { LEAD_STAGES } from "@techaust/core/lead-lifecycle";
 import { weekOf } from "@techaust/core/time";
 import { assembleCare, careStatements, currentUsage } from "@techaust/db/care";
 import { Hono } from "hono/tiny";
-import { LIST_WINDOW_DAYS, usageWindow } from "./care.ts";
+import { LIST_PERIODS_BACK, usageWindow } from "./care.ts";
 import { type AppEnv, actor } from "./context.ts";
 
 const DAY_MS = 86_400_000;
@@ -27,11 +27,15 @@ const STAGE_LIST = OPEN_STAGES.map((s) => `'${s}'`).join(", ");
 const CARE_PLAN_CAP = 100;
 const CARE_ROWS = 20;
 
-/** The activity statement, exported so a test can EXPLAIN it. `INDEXED BY` keeps the newest-first scan of `audit_log_at` that stops at the limit. */
-export const ACTIVITY_SQL = (ownOnly: boolean) =>
+/**
+ * The activity statement, exported so a test can EXPLAIN it. Most roles see frequent actions, so `INDEXED BY audit_log_at` keeps the
+ * newest-first scan that stops at the limit. The Accountant sees only the finance events, which are rare among the sign-in noise: a
+ * newest-first scan would read the whole 30 days to find none, so that role reads them through `audit_log_action` (a seek per action).
+ */
+export const ACTIVITY_SQL = (ownOnly: boolean, byAction: boolean) =>
   `SELECT a.id, a.at, (SELECT name FROM staff_users WHERE id = a.actor_id) AS actor_name, a.action, a.entity_type, a.entity_id,
           coalesce(l.ref, cl.code, pr.code, ccl.code) AS ref
-   FROM audit_log a INDEXED BY audit_log_at
+   FROM audit_log a INDEXED BY ${byAction ? "audit_log_action" : "audit_log_at"}
    LEFT JOIN leads l ON a.entity_type = 'lead' AND l.id = a.entity_id
    LEFT JOIN clients cl ON a.entity_type = 'client' AND cl.id = a.entity_id
    LEFT JOIN projects pr ON a.entity_type = 'project' AND pr.id = a.entity_id
@@ -61,12 +65,12 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
       db.prepare("SELECT count(*) AS n FROM leads WHERE created_at >= ?1").bind(now - 7 * DAY_MS),
       db
         .prepare(
-          `SELECT count(*) AS n FROM leads WHERE next_action_at IS NOT NULL AND next_action_at < ?1 AND stage IN (${STAGE_LIST})`,
+          `SELECT count(*) AS n FROM leads INDEXED BY leads_next_action WHERE next_action_at IS NOT NULL AND next_action_at < ?1 AND stage IN (${STAGE_LIST})`,
         )
         .bind(now),
       db
         .prepare(
-          `SELECT id, ref, contact_name, next_action_at FROM leads WHERE next_action_at IS NOT NULL AND next_action_at < ?1 AND stage IN (${STAGE_LIST}) ORDER BY next_action_at, id LIMIT 5`,
+          `SELECT id, ref, contact_name, next_action_at FROM leads INDEXED BY leads_next_action WHERE next_action_at IS NOT NULL AND next_action_at < ?1 AND stage IN (${STAGE_LIST}) ORDER BY next_action_at, id LIMIT 5`,
         )
         .bind(now),
     );
@@ -97,7 +101,7 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
     );
   }
   if (tiles.has("careBurn")) {
-    add("care", ...careStatements(db, { active: CARE_PLAN_CAP }, usageWindow(today, LIST_WINDOW_DAYS)));
+    add("care", ...careStatements(db, { active: CARE_PLAN_CAP }, usageWindow(today, LIST_PERIODS_BACK)));
   }
   if (tiles.has("myTime")) {
     const week = weekOf(today);
@@ -117,7 +121,7 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
     add(
       "activity",
       db
-        .prepare(ACTIVITY_SQL(own.length > 0))
+        .prepare(ACTIVITY_SQL(own.length > 0, me.role === "accountant"))
         .bind(
           now - ACTIVITY_DAYS * DAY_MS,
           JSON.stringify(ACTIVITY_ACTIONS[me.role]),

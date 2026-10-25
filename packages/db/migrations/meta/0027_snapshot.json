@@ -1,6 +1,6 @@
 {
-  "id": "49cc5b46-91d7-42d6-a993-9aaec1f4456f",
-  "prevId": "08c3b77b-127c-44ee-b1e1-1be1f30c272c",
+  "id": "22c93dd0-75f5-41cb-8165-46e025d8c846",
+  "prevId": "5effa588-958f-4037-9b52-132c0d256a17",
   "version": "6",
   "dialect": "sqlite",
   "tables": {
@@ -2914,6 +2914,16 @@
           "columns": [
             "work_date",
             "id"
+          ],
+          "isUnique": false
+        },
+        "time_logs_care_usage": {
+          "name": "time_logs_care_usage",
+          "columns": [
+            "care_plan_id",
+            "work_date",
+            "billable",
+            "minutes"
           ],
           "isUnique": false
         }

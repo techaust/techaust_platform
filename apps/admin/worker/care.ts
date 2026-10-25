@@ -184,16 +184,13 @@ export const planRow = (d: CarePlanData, today: string) => ({
   usage: currentUsage(d, today),
 });
 
-const WINDOW_LIST_DAYS = 62; // this period and the one before it (a period is at most 31 days)
-const WINDOW_DETAIL_DAYS = 13 * 31; // 12 periods and the one before the oldest (its hours may carry in)
+/** This period and the one before it (whose unused hours may carry in). */
+export const LIST_PERIODS_BACK = 1;
+/** Twelve periods and the one before the oldest. */
+const DETAIL_PERIODS_BACK = 13;
 
-/** The loader's window for a call made `today`. */
-export const usageWindow = (today: string, days: number) => {
-  const d = parseIsoDate(today);
-  if (!d) throw new RangeError(`Not a date: ${today}`);
-  return { from: toIsoDate(addDays(d, -days)), to: today };
-};
-export const LIST_WINDOW_DAYS = WINDOW_LIST_DAYS;
+/** The loader's usage window for a call made `today`. */
+export const usageWindow = (today: string, periodsBack: number) => ({ to: today, periodsBack });
 
 // ---- the list -----------------------------------------------------------------------------------------------------------------
 
@@ -239,7 +236,7 @@ async function listPlans(c: Ctx, f: z.infer<typeof listQuery>, afterOnly = false
   const data = new Map<string, CarePlanData>();
   if (page.items.length) {
     const [plans, terms, status, usage] = await db.batch<Record<string, unknown>>(
-      careStatements(db, { ids: page.items.map((r) => r.id) }, usageWindow(today, WINDOW_LIST_DAYS)),
+      careStatements(db, { ids: page.items.map((r) => r.id) }, usageWindow(today, LIST_PERIODS_BACK)),
     );
     const assembled = assembleCare({
       plans: (plans?.results ?? []) as never,
@@ -420,7 +417,7 @@ export const carePlans = new Hono<AppEnv>()
     const db = c.env.DB;
     const today = istToday();
     const [plans, terms, status, usage, gone] = await db.batch<Record<string, unknown>>([
-      ...careStatements(db, { ids: [id] }, usageWindow(today, WINDOW_DETAIL_DAYS)),
+      ...careStatements(db, { ids: [id] }, usageWindow(today, DETAIL_PERIODS_BACK)),
       db.prepare(`SELECT ${clientGoneSql("p.client_id")} AS gone FROM care_plans p WHERE p.id = ?1`).bind(id),
     ]);
     const { plans: loaded } = assembleCare({
