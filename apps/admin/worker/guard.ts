@@ -64,6 +64,10 @@ export const ROUTES: readonly RouteDef[] = [
   R("GET", "/settings/terms", "settings.manage"),
   R("GET", "/settings/terms/:block", "settings.manage"),
   R("POST", "/settings/terms/:block", "settings.manage", { audit: "settings.terms.update" }),
+  // The signature image (M4.4, ADM-SET-01): a raw binary upload of up to 256 KB; the image streams back for the preview.
+  R("GET", "/settings/signature", "settings.manage"),
+  R("PUT", "/settings/signature", "settings.manage", { audit: "settings.signature.update", body: "upload" }),
+  R("DELETE", "/settings/signature", "settings.manage", { audit: "settings.signature.delete" }),
   R("POST", "/settings/email/test-send", "settings.manage", { audit: "settings.email.test_send" }),
   // Leads (M3.2, ADM-LEAD-01..06). Converting also needs proposals.draft (checked in the handler).
   R("GET", "/leads", "leads.read"),
@@ -162,6 +166,9 @@ export const ROUTES: readonly RouteDef[] = [
   R("POST", "/documents/:id/revise", "proposals.draft", { audit: "document.revise" }),
   R("POST", "/documents/:id/approval-request", "proposals.draft", { audit: "approval.request" }),
   R("POST", "/documents/:id/send", "proposals.send", { audit: "document.send" }),
+  // The PDF of a sent version (M4.4, JOB-PDF-01): streamed through the session (an access-log row each); "again" is for a send-level role.
+  R("GET", "/documents/:id/pdf", "proposals.read"),
+  R("POST", "/documents/:id/pdf/retry", "proposals.send", { audit: "document.pdf_retry" }),
   R("POST", "/documents/:id/convert", "invoices.draft", { audit: "document.convert" }),
   R("GET", "/clients/:id/documents", "proposals.read"),
   // The owner's approval queue. Staff and Sales read only their own requests (the handler filters); only the owner decides.

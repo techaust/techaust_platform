@@ -54,7 +54,8 @@
   // URLs). Local dev and tests use Miniflare's R2. Production has no bucket until Phase 7 (owner approval).
   "r2_buckets": [
     { "binding": "FILES", "bucket_name": "techaust-local-files" },
-    // The sent documents bucket (M4.4): staff download a PDF through this Worker (GET /api/v1/documents/:id/pdf); it only reads.
+    // The sent documents bucket (M4.4): staff download a PDF through this Worker (GET /api/v1/documents/:id/pdf), which only reads it, and the
+    // owner's signature image is stored here under a hash-named key (settings/signature-*). The jobs Worker writes the envelopes and PDFs.
     { "binding": "DOCS", "bucket_name": "techaust-local-docs" }
   ],
   "env": {

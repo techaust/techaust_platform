@@ -137,7 +137,7 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
   const run = async (
     s: { cookie: string; id: string; role: string },
     path: string,
-    init: { method?: string; body?: unknown },
+    init: { method?: string; body?: unknown; raw?: Uint8Array },
     action?: string,
   ) => {
     const rid = `ray-${crypto.randomUUID()}`;
@@ -791,6 +791,35 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
         method: "POST",
         body: { expectedUpdatedAt: made.updatedAt },
       });
+    },
+    // The PDF (M4.4): a retry of a sent version, and the signature image (a small PNG header; the type is read from the bytes).
+    "POST /api/v1/documents/:id/pdf/retry": async () => {
+      const s = await owner();
+      await mkTerms();
+      const made = await mkDraft(s);
+      expect((await sendDoc(s, made.id, made.updatedAt)).status).toBe(200);
+      return run(s, `/documents/${made.id}/pdf/retry`, { method: "POST", body: {} });
+    },
+    "PUT /api/v1/settings/signature": async () => {
+      const s = await owner();
+      const png = new Uint8Array(33);
+      png.set([
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 1, 0, 0, 0,
+        0, 64,
+      ]);
+      return run(s, "/settings/signature", { method: "PUT", raw: png });
+    },
+    "DELETE /api/v1/settings/signature": async () => {
+      const s = await owner();
+      const png = new Uint8Array(33);
+      png.set([
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 1, 0, 0, 0,
+        0, 64,
+      ]);
+      expect((await call("/settings/signature", { method: "PUT", cookie: s.cookie, raw: png })).status).toBe(
+        200,
+      );
+      return run(s, "/settings/signature", { method: "DELETE" });
     },
     "POST /api/v1/documents/:id/convert": async () => {
       const s = await owner();

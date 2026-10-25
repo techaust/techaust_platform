@@ -118,7 +118,7 @@ async function bodyOf(c: Ctx): Promise<unknown> {
 }
 
 type Row = { value: unknown; version: number; updatedAt: number };
-async function loadRow(db: D1Database, key: SeededSettingKey): Promise<Row | null> {
+export async function loadRow(db: D1Database, key: SeededSettingKey): Promise<Row | null> {
   const r = await db
     .prepare("SELECT value, version, updated_at FROM settings WHERE key = ?1")
     .bind(key)
@@ -132,7 +132,7 @@ async function loadRow(db: D1Database, key: SeededSettingKey): Promise<Row | nul
  * condition that is checked by the same statement (numbering: no series being changed may have an issued document this year, L-d),
  * so there is no gap between the check and the write.
  */
-const upsert = (guard = "") => `INSERT INTO settings (key, value, version, updated_by, updated_at)
+export const upsert = (guard = "") => `INSERT INTO settings (key, value, version, updated_by, updated_at)
  SELECT ?1, ?2, ?3 + 1, ?4, ?5 WHERE (SELECT coalesce(max(version), 0) FROM settings WHERE key = ?1) = ?3${guard}
  ON CONFLICT(key) DO UPDATE SET value = excluded.value, version = excluded.version, updated_by = excluded.updated_by, updated_at = excluded.updated_at
  WHERE settings.version = ?3`;
@@ -410,6 +410,15 @@ export const settings = new Hono<AppEnv>()
                 ],
               },
       });
+    // The company form can neither set nor clear the signature image (only PUT/DELETE /settings/signature do): whatever the body says,
+    // the stored reference is kept, so a form that never heard of the field cannot drop it.
+    if (group === "company") {
+      const stored = await loadRow(c.env.DB, "company");
+      const keep = resolveSetting("company", stored?.value).signature;
+      const value = env.data.value;
+      if (typeof value === "object" && value !== null && !Array.isArray(value))
+        return save(c, "company", { ...value, signature: keep }, env.data.version);
+    }
     return save(c, group, env.data.value, env.data.version);
   })
 
