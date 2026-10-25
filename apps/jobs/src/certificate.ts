@@ -89,6 +89,6 @@ export async function readCertificateView(
   acceptanceId: string,
 ): Promise<{ view: CertificateView; key: string } | null> {
   const row = await db.prepare(CERTIFICATE_READ).bind(acceptanceId).first<CertificateRow>();
-  if (!row || !row.certificate_r2_key) return null;
+  if (!row?.certificate_r2_key) return null;
   return { view: buildCertificateView(row), key: row.certificate_r2_key };
 }
