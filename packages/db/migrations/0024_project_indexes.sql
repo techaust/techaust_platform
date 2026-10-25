@@ -6,4 +6,6 @@ CREATE INDEX `projects_status_created` ON `projects` (`status`,`created_at`,`id`
 CREATE INDEX `projects_name_nocase` ON `projects` ("name" collate nocase);--> statement-breakpoint
 CREATE UNIQUE INDEX `projects_source_document` ON `projects` (`source_document_id`) WHERE "projects"."source_document_id" is not null;
 --> statement-breakpoint
-ALTER TABLE `clients` ADD `anonymised_at` integer;
+ALTER TABLE `clients` ADD `anonymised_at` integer;--> statement-breakpoint
+-- Individuals anonymised before this column existed (M3.3 on staging) are locked too.
+UPDATE `clients` SET `anonymised_at` = `updated_at` WHERE `type` = 'individual' AND `display_name` = 'Removed client' AND NOT EXISTS (SELECT 1 FROM `contacts` `o` WHERE `o`.`client_id` = `clients`.`id` AND `o`.`anonymised_at` IS NULL) AND EXISTS (SELECT 1 FROM `contacts` `a` WHERE `a`.`client_id` = `clients`.`id` AND `a`.`anonymised_at` IS NOT NULL);

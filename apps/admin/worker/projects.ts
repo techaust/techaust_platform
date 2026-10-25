@@ -446,7 +446,7 @@ export const projects = new Hono<AppEnv>()
       // One read says why: the version, the client's state and the budget lock together.
       const why = await db
         .prepare(
-          `SELECT updated_at, ${clientGoneSql("client_id")} AS gone, ${PCT_LOCKED.replace("?1", "projects.id")} AS locked FROM projects WHERE id = ?1`,
+          `SELECT updated_at, ${clientGoneSql("client_id")} AS gone, ${PCT_LOCKED} AS locked FROM projects WHERE id = ?1`,
         )
         .bind(id)
         .first<{ updated_at: number; gone: number; locked: number }>();
@@ -480,8 +480,12 @@ export const projects = new Hono<AppEnv>()
       summary: { projectId: id, projectCode: row.code, from: row.status, to },
     });
     if (done) return c.json({ ok: true, status: to, updatedAt: t });
-    // Lost a race (someone changed it first): the move may no longer be allowed; or the client is anonymised.
-    return (await projectClientGone(c, id)) ? refuseAnonymised(c) : err(c, INVALID_TRANSITION, 409);
+    // Nothing written: the client is anonymised, someone else edited the project (stale), or its status moved first.
+    if (await projectClientGone(c, id)) return refuseAnonymised(c);
+    const now = await c.env.DB.prepare("SELECT status FROM projects WHERE id = ?1")
+      .bind(id)
+      .first<{ status: ProjectStatus }>();
+    return now?.status === row.status ? err(c, STALE_VERSION, 409) : err(c, INVALID_TRANSITION, 409);
   })
 
   // ---- milestones of a project ----
