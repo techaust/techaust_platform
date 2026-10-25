@@ -451,11 +451,14 @@ describe("the sweep", () => {
 
 // ---------------------------------------------------------------------------------------------------------------------
 describe("the cron", () => {
-  it("enqueues ONE pdf.sweep for its own cron and reads no D1 for it", async () => {
+  it("enqueues ONE pdf.sweep and ONE offer.sweep (one sendBatch) for its own cron and reads no D1 for them", async () => {
     const dead = new Proxy({}, { get: () => () => Promise.reject(new Error("D1 must not be read")) });
     const { env, queue } = makeEnv({}, fakeQueue(), {});
     await enqueueSweep({ ...env, DB: dead } as unknown as Env, T0);
-    expect(queue.sent).toEqual([{ body: { v: 1, kind: "pdf.sweep", asOf: T0 } }]);
+    expect(queue.sent).toEqual([
+      { body: { v: 1, kind: "pdf.sweep", asOf: T0 } },
+      { body: { v: 1, kind: "offer.sweep", asOf: T0 } },
+    ]);
   });
 
   it("the scheduled handler sends the sweep with the daily run and nothing for another cron", async () => {
@@ -478,7 +481,10 @@ describe("the cron", () => {
       env,
       {} as ExecutionContext,
     );
-    expect(q.sent).toEqual([{ body: { v: 1, kind: "pdf.sweep", asOf: T0 } }]);
+    expect(q.sent).toEqual([
+      { body: { v: 1, kind: "pdf.sweep", asOf: T0 } },
+      { body: { v: 1, kind: "offer.sweep", asOf: T0 } },
+    ]);
   });
 });
 
