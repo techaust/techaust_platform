@@ -48,6 +48,9 @@ export const catalogueItems = sqliteTable(
   (t) => [
     uniqueIndex("catalogue_items_code").on(t.code),
     uniqueIndex("catalogue_items_slug").on(t.slug).where(sql`${t.slug} is not null`),
+    // The list filters (M4.1): category, active, on-site, and a name prefix without case.
+    index("catalogue_items_filters").on(t.category, t.active, t.showOnSite),
+    index("catalogue_items_name_nocase").on(sql`${t.name} collate nocase`),
     check("catalogue_items_category", oneOf(t.category, CATEGORIES)),
     check("catalogue_items_unit", oneOf(t.unit, UNITS)),
     check("catalogue_items_sac", sql`${t.sac} glob '[0-9][0-9][0-9][0-9][0-9][0-9]'`),
@@ -103,5 +106,9 @@ export const siteSnapshots = sqliteTable(
     publishedBy: text("published_by").references(() => staffUsers.id),
     publishedAt: createdAt(),
   },
-  (t) => [index("site_snapshots_published").on(t.publishedAt)],
+  (t) => [
+    index("site_snapshots_published").on(t.publishedAt),
+    // One row per distinct snapshot: publishing the same data twice adds nothing (M4.1).
+    uniqueIndex("site_snapshots_sha256").on(t.sha256),
+  ],
 );

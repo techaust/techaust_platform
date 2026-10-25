@@ -169,6 +169,20 @@
       "when": 1792885581439,
       "tag": "0023_client_type_lock",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1792922427572,
+      "tag": "0024_catalogue_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1792922429645,
+      "tag": "0025_catalogue_triggers",
+      "breakpoints": true
     }
   ]
 }
