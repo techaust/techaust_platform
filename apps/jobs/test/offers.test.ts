@@ -17,6 +17,8 @@ import {
   processOfferAccepted,
   processOfferDecided,
   processOfferSend,
+  processOfferSweep,
+  queueWaitingSends,
 } from "../src/offers.ts";
 
 const NOW = Date.UTC(2026, 9, 26, 5, 0, 0); // 26 Oct 2026, 10:30 IST
@@ -114,6 +116,7 @@ async function world(
     rendered?: boolean;
     portal?: boolean;
     pdfKey?: string;
+    recipient?: string;
   } = {},
 ) {
   const owner = await staff("owner", { name: "Rupak" });
@@ -149,7 +152,7 @@ async function world(
     sender: { staffId: sender.id, name: sender.name, email: sender.email },
   });
   await run(
-    "INSERT INTO documents (id, type, status, client_id, currency, version_group_id, version, series, fy, number, number_display, valid_until, title, total_minor, subtotal_minor, taxable_minor, pdf_r2_key, pdf_sha256, snapshot_sha256, frozen_at, sent_at, contact_id, issuer, issue_date) VALUES (?1, 'proposal', ?2, ?3, 'INR', ?1, 1, 'proposal', '2627', ?4, ?5, ?6, 'Website rebuild', 29500000, 25000000, 25000000, ?7, ?8, ?9, ?10, ?10, ?11, ?12, ?13)",
+    "INSERT INTO documents (id, type, status, client_id, currency, version_group_id, version, series, fy, number, number_display, valid_until, title, total_minor, subtotal_minor, taxable_minor, pdf_r2_key, pdf_sha256, snapshot_sha256, frozen_at, sent_at, contact_id, issuer, issue_date, recipient) VALUES (?1, 'proposal', ?2, ?3, 'INR', ?1, 1, 'proposal', '2627', ?4, ?5, ?6, 'Website rebuild', 29500000, 25000000, 25000000, ?7, ?8, ?9, ?10, ?10, ?11, ?12, ?13, ?14)",
     doc,
     o.status ?? "sent",
     clientId,
@@ -163,6 +166,7 @@ async function world(
     contact,
     issuer,
     today,
+    o.recipient ?? null,
   );
   const send = uuidv7();
   await run(
@@ -728,9 +732,27 @@ describe("the certificate view [ADM-PROP-08, docs/08 L-11]", () => {
 describe("the email consumer and a PDF attachment [ADM-PROP-07]", () => {
   const KEY = "docs/proposal/2026-27/0001-v1.pdf";
   const bytes = new TextEncoder().encode("%PDF-1.4 test");
+  /** `reads` counts the R2 calls: the consumer makes ONE `get` and learns the size from it (no `head`). */
+  const reads = { get: 0, head: 0 };
   const docs = (o: { size?: number; missing?: boolean } = {}) => ({
-    head: async () => (o.missing ? null : { size: o.size ?? bytes.byteLength }),
-    get: async () => (o.missing ? null : { arrayBuffer: async () => bytes.buffer.slice(0) }),
+    head: async () => {
+      reads.head++;
+      return o.missing ? null : { size: o.size ?? bytes.byteLength };
+    },
+    get: async () => {
+      reads.get++;
+      return o.missing
+        ? null
+        : {
+            size: o.size ?? bytes.byteLength,
+            body: { cancel: async () => undefined },
+            arrayBuffer: async () => bytes.buffer.slice(0),
+          };
+    },
+  });
+  beforeEach(() => {
+    reads.get = 0;
+    reads.head = 0;
   });
   const message = (to: string, entityId: string, key = KEY): EmailMessage => ({
     template: "offer.sent",
@@ -783,6 +805,23 @@ describe("the email consumer and a PDF attachment [ADM-PROP-07]", () => {
       expect(logs.join("\n")).toContain("email.attachment_skipped");
     });
 
+  it("makes one R2 read (the size comes with the object), and a redelivery (attempt 2 or more) goes link-only without reading it", async () => {
+    const r = recorder();
+    await processEmail(makeEnv({ DOCS: docs() }), message("a5@example.test", uuidv7()), r.transport, NOW);
+    expect(reads).toEqual({ get: 1, head: 0 });
+    expect(r.sent[0]?.attachments).toHaveLength(1);
+    reads.get = 0;
+    // The same message delivered for the second time (a first try that failed): link-only, and the text does not claim an attachment.
+    const again = recorder();
+    const msg = message("a6@example.test", uuidv7());
+    await processEmail(makeEnv({ DOCS: docs() }), msg, again.transport, NOW, 2);
+    expect(reads).toEqual({ get: 0, head: 0 });
+    expect(again.sent[0]?.attachments).toBeUndefined();
+    expect(again.sent[0]?.text).not.toContain("The PDF is attached");
+    expect(again.sent[0]?.text).toContain("Review and accept");
+    expect(logs.join("\n")).toContain("redelivery");
+  });
+
   it("goes link-only on a runtime without native base64 (the fallback costs about 37 ms per MB)", async () => {
     const proto = Uint8Array.prototype as { toBase64?: unknown };
     const saved = proto.toBase64;
@@ -813,5 +852,137 @@ describe("the email consumer and a PDF attachment [ADM-PROP-07]", () => {
       ).toBe("invalid");
     }
     expect(r.sent).toEqual([]);
+  });
+});
+
+// ---- the early-check fixes (M1, M2, M3, L2, L3, L7) -------------------------------------------------------------------------------
+
+describe("revoked links stop the sends (M1) [ADM-PROP-07]", () => {
+  it("a send cancelled after it was queued is refused: no link, no email; the row stays cancelled", async () => {
+    const w = await world();
+    await run("UPDATE document_sends SET queued_at = ?2, cancelled_at = ?2 WHERE id = ?1", w.send, NOW);
+    expect(await processOfferSend(makeEnv(), sendMsg(w), NOW + 5)).toBe("refused");
+    expect(await all("SELECT 1 FROM offer_links WHERE send_id = ?", w.send)).toEqual([]);
+    expect(queued).toEqual([]);
+    expect(
+      (await one<{ cancelled_at: number }>("SELECT cancelled_at FROM document_sends WHERE id = ?", w.send))
+        ?.cancelled_at,
+    ).toBe(NOW);
+  });
+
+  it("a send cancelled while waiting is never queued by the render step or by the sweep", async () => {
+    const w = await world();
+    await run("UPDATE document_sends SET cancelled_at = ?2 WHERE id = ?1", w.send, NOW);
+    expect(await queueWaitingSends(makeEnv(), w.doc, NOW)).toBe(0);
+    // Other offers in the shared database may be waiting too; this one's row must not be among the sweep's messages.
+    await processOfferSweep(makeEnv(), { v: 1, kind: "offer.sweep", asOf: NOW + 1000 });
+    expect(JSON.stringify(queued)).not.toContain(w.send);
+  });
+
+  it("a refused send is marked cancelled so the offer page can say 'not sent' (L7); the stamp is set once", async () => {
+    const w = await world();
+    await run("UPDATE contacts SET portal_access = 0 WHERE id = ?", w.contact);
+    expect(await processOfferSend(makeEnv(), sendMsg(w), NOW)).toBe("refused");
+    expect(
+      (await one<{ cancelled_at: number }>("SELECT cancelled_at FROM document_sends WHERE id = ?", w.send))
+        ?.cancelled_at,
+    ).toBe(NOW);
+    expect(await processOfferSend(makeEnv(), sendMsg(w), NOW + 99)).toBe("refused");
+    expect(
+      (await one<{ cancelled_at: number }>("SELECT cancelled_at FROM document_sends WHERE id = ?", w.send))
+        ?.cancelled_at,
+    ).toBe(NOW);
+  });
+});
+
+describe("the email goes only when the link row was written (L3) [ADM-PROP-07]", () => {
+  it("a contact who loses access between the read and the write gets no email and no link; the row is marked not sent", async () => {
+    const w = await world();
+    const racing = {
+      prepare: (sql: string) => realEnv.DB.prepare(sql),
+      batch: async (stmts: D1PreparedStatement[]) => {
+        await run("UPDATE contacts SET portal_access = 0 WHERE id = ?", w.contact);
+        return realEnv.DB.batch(stmts);
+      },
+    };
+    expect(await processOfferSend(makeEnv({ DB: racing }), sendMsg(w), NOW)).toBe("refused");
+    expect(queued).toEqual([]);
+    expect(await all("SELECT 1 FROM offer_links WHERE send_id = ?", w.send)).toEqual([]);
+    expect(
+      (
+        await one<{ cancelled_at: number | null }>(
+          "SELECT cancelled_at FROM document_sends WHERE id = ?",
+          w.send,
+        )
+      )?.cancelled_at,
+    ).toBe(NOW);
+  });
+});
+
+describe("the render step queues up to 20 waiting sends (L2)", () => {
+  it("takes 8 rows in one go, and at most 20 of 25", async () => {
+    const w = await world();
+    const more = async (n: number) => {
+      for (let i = 0; i < n; i++)
+        await run(
+          "INSERT INTO document_sends (id, document_id, version_group_id, client_id, contact_id, email, attach_pdf, kind, created_by, created_at) VALUES (?1, ?2, ?2, ?3, ?4, 'x@example.test', 0, 'resend', ?5, ?6)",
+          uuidv7(),
+          w.doc,
+          w.clientId,
+          w.contact,
+          w.sender.id,
+          NOW + i,
+        );
+    };
+    await more(7);
+    expect(await queueWaitingSends(makeEnv(), w.doc, NOW)).toBe(8);
+    await more(25);
+    expect(await queueWaitingSends(makeEnv(), w.doc, NOW + 1)).toBe(20);
+    expect(await queueWaitingSends(makeEnv(), w.doc, NOW + 2)).toBe(5);
+  });
+});
+
+describe("the confirmation link is for the address that accepted (M2) [ADM-PROP-08]", () => {
+  it("the same address gets a link bound to it", async () => {
+    const w = await world();
+    const a = await accepted(w);
+    await processOfferAccepted(makeEnv(), { kind: "offer.accepted", acceptanceId: a }, NOW);
+    const client = queued.find((m) => m.template === "offer.accepted.client");
+    expect(client?.data.url).toContain("#t=");
+    expect(await all("SELECT 1 FROM offer_links WHERE acceptance_id = ?", a)).toHaveLength(1);
+  });
+
+  it("a changed address: the mail still goes to the address recorded at acceptance, with the plain portal URL and no link row", async () => {
+    const w = await world();
+    const a = await accepted(w);
+    const recorded = (await one<{ email: string }>("SELECT email FROM acceptances WHERE id = ?", a))?.email;
+    await run("UPDATE contacts SET email = 'someone.else@example.test' WHERE id = ?", w.contact);
+    expect(await processOfferAccepted(makeEnv(), { kind: "offer.accepted", acceptanceId: a }, NOW)).toBe(
+      "queued",
+    );
+    const client = queued.find((m) => m.template === "offer.accepted.client");
+    expect(client?.to).toBe(recorded);
+    expect(client?.data.url).toBe("https://portal.example");
+    expect(client?.data.url).not.toContain("#t=");
+    expect(await all("SELECT 1 FROM offer_links WHERE acceptance_id = ?", a)).toEqual([]);
+    expect(queued.filter((m) => m.template === "offer.accepted.staff").length).toBeGreaterThan(0);
+  });
+});
+
+describe("the certificate prints the legal name frozen in the offer (M3) [ADM-PROP-08]", () => {
+  it("a client renamed after the offer was sent changes nothing", async () => {
+    const w = await world({ recipient: JSON.stringify({ legalName: "Frozen Traders LLP", country: "IN" }) });
+    const a = await accepted(w, { certificate: false });
+    await run("UPDATE clients SET legal_name = 'Renamed Later Pvt Ltd' WHERE id = ?", w.clientId);
+    expect((await readCertificateView(db, a))?.view.clientLegalName).toBe("Frozen Traders LLP");
+  });
+
+  it("an offer with no snapshot, or an empty name in it, falls back to the live name", async () => {
+    for (const recipient of [undefined, JSON.stringify({ legalName: "", country: "IN" })]) {
+      const w = await world(recipient === undefined ? {} : { recipient });
+      const a = await accepted(w, { certificate: false });
+      await run("UPDATE clients SET legal_name = 'Renamed Later Pvt Ltd' WHERE id = ?", w.clientId);
+      expect((await readCertificateView(db, a))?.view.clientLegalName).toBe("Renamed Later Pvt Ltd");
+    }
   });
 });
