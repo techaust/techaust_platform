@@ -198,6 +198,18 @@ describe("M2: the warnings stay on the fixed-supply paths", () => {
     ).toEqual(["supply_invalid@recipientStatus"]);
   });
 
+  it("an unknown recipient status is supply_invalid", () => {
+    const recipientStatus = "company" as unknown as "registered";
+    expect(
+      errorsOf(
+        splitInclusive(100_000, [group(1)], INTRA_SUPPLY, "INR", null, DEFAULTS, {
+          documentDate: DATE,
+          recipientStatus,
+        }),
+      ),
+    ).toEqual(["supply_invalid@recipientStatus"]);
+  });
+
   it("an export_lut split warns when no LUT is saved for the document's FY", () => {
     const run = (ctx = DEFAULTS, documentDate: typeof DATE | typeof DATE_OLD_FY = DATE) =>
       splitInclusive(25_000, [group(1)], EXPORT_LUT_SUPPLY, "USD", null, ctx, { documentDate });
