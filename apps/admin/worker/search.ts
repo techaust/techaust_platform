@@ -1,4 +1,4 @@
-// Global search [ADM-G-05]: one box over what exists today and what the role may read: staff (owner only, `users.read`) and
+// Global search [ADM-G-05]: one box over what exists today and what the role may read: projects (`projects.read`: code or name prefix, M3.4), staff (owner only, `users.read`) and
 // leads (`leads.read`: by reference, the start of the contact's email or the start of the company name). At most five per type; prefix matches as index
 // ranges (`leads_ref`, `leads_email`, `leads_company_nocase`, `staff_users_email`), never a table scan of a big table. Clients, contacts, projects and
 // documents join as their milestones create them (M3.2 and later). Read-only, so no audit row (the access log has the request).
