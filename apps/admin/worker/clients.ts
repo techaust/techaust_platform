@@ -386,6 +386,8 @@ const exportRequest = z.strictObject({
       "sessions",
       "magic_links",
       "acceptances",
+      "decisions",
+      "document_sends",
       "documents",
       "email_log",
       "audit_log",
@@ -898,7 +900,16 @@ export const EXPORT_PARTS: Record<string, { sql: (cur: boolean) => string; time?
   },
   acceptances: {
     sql: (cur) =>
-      `SELECT id, document_id, contact_id, typed_name, email, accepted_at, ip, user_agent, country, pdf_sha256, terms_version_id FROM acceptances WHERE contact_id = ?1${cur ? " AND id > ?5" : ""} ORDER BY id LIMIT 51`,
+      `SELECT id, document_id, contact_id, typed_name, email, accepted_at, ip, user_agent, country, pdf_sha256, terms_version_id, via, snapshot_sha256 FROM acceptances WHERE contact_id = ?1${cur ? " AND id > ?5" : ""} ORDER BY id LIMIT 51`,
+  },
+  // M4.5 (VERIFY WITH CA/LEGAL): the proposals this person declined (the reason and the note are theirs), and the offers sent to them.
+  decisions: {
+    sql: (cur) =>
+      `SELECT id, number_display, version, status, decided_at, decision_reason, decision_note FROM documents WHERE decided_contact_id = ?1 AND status IN ('rejected', 'accepted')${cur ? " AND id > ?5" : ""} ORDER BY id LIMIT 51`,
+  },
+  document_sends: {
+    sql: (cur) =>
+      `SELECT id, document_id, kind, attach_pdf, queued_at, created_at FROM document_sends WHERE contact_id = ?1${cur ? " AND id > ?5" : ""} ORDER BY id LIMIT 51`,
   },
   documents: {
     sql: (cur) =>

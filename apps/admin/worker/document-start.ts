@@ -1,5 +1,6 @@
 // Start project from an accepted proposal (M4.5; ADM-PRJ-01, ADM-PROP-09): `POST /documents/:id/start-project {expectedUpdatedAt?}`.
-// Wired into the route table and the app in stage B. One mutation batch makes the project, its milestones (one per payment-schedule step,
+One mutation batch makes the project, its milestones (one per payment-schedule step,
+
 // the step's exact amount) and, when step 1 is paid on acceptance, the first-instalment invoice DRAFT (never issued here: M5).
 // Idempotent: the project is conditional on "no project with this source document" (and the unique index `projects_source_document` backs
 // it), so a double click or a lost race answers 200 `created: false` with the same project; the draft is backed by `documents_source`.
@@ -13,17 +14,10 @@ import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { clientGoneSql } from "./anonymised.ts";
 import { type ApiError, type AppEnv, actor, err, FORBIDDEN, mutate, NOT_FOUND } from "./context.ts";
+import { startPlanOf } from "./document-offer.ts";
 import { readContext } from "./documents.ts";
 import { body, idParam, isUnique, param, STALE_VERSION } from "./http.ts";
-import {
-  CLIENT_GONE,
-  insertChildren,
-  insertDocument,
-  NOT_A_QUOTE,
-  readSettings,
-  todayIst,
-} from "./quote-model.ts";
-import { planStartProject } from "./start-project-plan.ts";
+import { CLIENT_GONE, insertChildren, insertDocument, NOT_A_QUOTE } from "./quote-model.ts";
 
 const NOT_ACCEPTED: ApiError = {
   code: "not_accepted",
@@ -98,24 +92,7 @@ export const documentStart = new Hono<AppEnv>().post(
       );
     if (ctx.client.anonymised_at !== null) return err(c, CLIENT_GONE, 409);
 
-    const plan = planStartProject({
-      proposal: {
-        currency: d.currency === "USD" ? "USD" : "INR",
-        total_minor: d.total_minor,
-        export_mode: d.export_mode,
-        computed: d.computed,
-      },
-      schedule: ctx.bundle.schedule.map((s) => ({
-        label: s.label,
-        trigger: s.trigger,
-        pct_bp: s.pct_bp,
-        amount_minor: s.amount_minor,
-        target_date: s.target_date,
-      })),
-      client: ctx.client,
-      settings: readSettings(ctx.settingsRows),
-      today: todayIst(),
-    });
+    const plan = startPlanOf(ctx);
     if (!plan.ok)
       return c.json(
         {

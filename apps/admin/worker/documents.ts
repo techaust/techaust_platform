@@ -28,6 +28,7 @@ import {
   NOT_FOUND,
 } from "./context.ts";
 import { buildNewDraft, type ClientFacts, newDraftStatements } from "./document-draft.ts";
+import { offerSection, offerStatements, startPlanOf } from "./document-offer.ts";
 import { documentView } from "./document-view.ts";
 import { body, idParam, isUnique, limitOf, param, query, refusedWith, STALE_VERSION, text } from "./http.ts";
 import { type Direction, decodeCursor, keysetSql, pageOf } from "./keyset.ts";
@@ -383,10 +384,17 @@ export const documents = new Hono<AppEnv>()
 
   // ---- one document ----
   .get("/:id", param(idParam), async (c) => {
-    const ctx = await readContext(c, c.req.valid("param").id);
+    const id = c.req.valid("param").id;
+    // The offer's history (who it went to, the acceptance, the certificate, a decline, the start-project numbers) rides in the same D1 call.
+    const ctx = await readContext(c, id, offerStatements(c.env.DB, id));
     if (!ctx) return err(c, NOT_FOUND, 404);
     if (!(ctx.bundle.document.type === "proposal" || ctx.bundle.document.type === "estimate"))
       return err(c, NOT_FOUND, 404);
+    const accepted = ctx.bundle.document.type === "proposal" && ctx.bundle.document.status === "accepted";
+    const offer = offerSection(ctx.extra, {
+      role: actor(c).role,
+      plan: accepted ? startPlanOf(ctx) : null,
+    });
     const view = await documentView({
       bundle: ctx.bundle,
       client: ctx.client,
@@ -395,7 +403,7 @@ export const documents = new Hono<AppEnv>()
       settings: readSettings(ctx.settingsRows),
       today: todayIst(),
     });
-    return c.json(view);
+    return c.json({ ...view, ...offer });
   })
 
   // ---- discard a draft (ADM-PROP-05: only an unsent draft can go) ----

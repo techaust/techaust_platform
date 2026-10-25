@@ -332,7 +332,7 @@ async function failed(
   msg: PdfRenderMessage | PdfCertificateMessage,
   result: Exclude<Awaited<ReturnType<typeof renderPaced>>, { ok: true }>,
   now: number,
-): Promise<RenderOutcome> {
+): Promise<"delayed"> {
   if (result.kind === "rate" || result.kind === "quota") {
     if (msg.hop >= PDF_MAX_HOPS) throw new Error(`pdf: ${result.kind} limit, ${PDF_MAX_HOPS} hops used`);
     let delay: number;

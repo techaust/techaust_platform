@@ -659,6 +659,7 @@ describe("the certificate view [ADM-PROP-08, docs/08 L-11]", () => {
     terms_version: 4,
     terms_sha256: "c".repeat(64),
     certificate_r2_key: "docs/proposal/2026-27/0003-v2-certificate.pdf",
+    rendered_at: null,
   };
   it("prints both times, the evidence and the hashes; the typed name is passed on verbatim (the page escapes it)", () => {
     const v = buildCertificateView(row);
