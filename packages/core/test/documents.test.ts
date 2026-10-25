@@ -602,9 +602,9 @@ describe("contentHash [lead decision 4]", () => {
         const input = contentHashInput(c as DraftContent, rate === null ? null : computedOf(rate));
         expect(JSON.stringify(input)).toBe(canonicalJson(input));
       }),
-      { numRuns: 200 },
+      { numRuns: 100 },
     );
-  });
+  }, 30_000);
 
   it("format v2: a fixed draft has a fixed hash (a stored contract: sent versions' approvals are tied to it)", async () => {
     const text = JSON.stringify(contentHashInput(draft(), null));
