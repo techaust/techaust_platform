@@ -523,6 +523,35 @@ describe("a cancelled project takes no change of time, only a note [early check 
   });
 });
 
+describe("the tier shown is the one in force today [early check L1]", () => {
+  it("GET /time and /time/targets show the tier of today, not a change booked for the next billing period", async () => {
+    const o = await sessionFor("owner", { stepUp: true });
+    const plan = await mkPlan(o.id, { start: back(40), billingDay: 5, tier: "growth" });
+    const e = await mkLog(o.id, today(), 60, { plan: plan.id });
+    const change = await call(`/care-plans/${plan.id}/terms`, {
+      cookie: o.cookie,
+      body: { expectedUpdatedAt: plan.updatedAt, tier: "scale" },
+    });
+    expect(change.status, await change.clone().text()).toBe(200);
+    // the mirror (the newest row) already says scale; the row in force today still says growth
+    expect(await one("SELECT tier FROM care_plans WHERE id = ?", plan.id)).toEqual({ tier: "scale" });
+    const list = await json(await call("/time", { cookie: o.cookie }));
+    expect(list.entries.find((x: J) => x.id === e.id).carePlanTier).toBe("growth");
+    const targets = await json(await call("/time/targets", { cookie: o.cookie }));
+    expect(targets.carePlans.find((p: J) => p.id === plan.id).tier).toBe("growth");
+    // a row whose date has come takes over (written straight to the history, as if its date were today)
+    await env.DB.prepare(
+      "INSERT INTO care_plan_terms (id, care_plan_id, effective_from, tier, price_minor, included_minutes, rollover, created_by, created_at) VALUES (?, ?, ?, 'essential', 1, 120, 'none', ?, ?)",
+    )
+      .bind(crypto.randomUUID(), plan.id, today(), o.id, Date.now() + 5)
+      .run();
+    const now = await json(await call("/time", { cookie: o.cookie }));
+    expect(now.entries.find((x: J) => x.id === e.id).carePlanTier).toBe("essential");
+    const t2 = await json(await call("/time/targets", { cookie: o.cookie }));
+    expect(t2.carePlans.find((p: J) => p.id === plan.id).tier).toBe("essential");
+  });
+});
+
 describe("the hours on the project page [ADM-PRJ-05]", () => {
   it("equal the entries (billable apart), count nothing from other projects or plans, and show every role totals only", async () => {
     const a = await sessionFor("staff", { name: "Hours Alma" });
@@ -880,7 +909,7 @@ describe("the time routes", () => {
       ],
     ];
     for (const [where, bind] of cases) {
-      const sql = listSql(where, "t.work_date DESC, t.id DESC", 25);
+      const sql = listSql(where, "t.work_date DESC, t.id DESC", 25, "?1");
       const plan = (await rows<{ detail: string }>(`EXPLAIN QUERY PLAN ${sql}`, ...bind))
         .map((r) => r.detail)
         .join("\n");

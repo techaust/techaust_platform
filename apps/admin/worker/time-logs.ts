@@ -138,6 +138,12 @@ const LOCK_MS = LOCK_DAYS * DAY_MS;
 /** The status of a care plan on a date (SQL): its newest status row on or before it. */
 const PLAN_STATUS_ON = (plan: string, date: string) =>
   `(SELECT status FROM care_plan_status_log WHERE care_plan_id = ${plan} AND effective_on <= ${date} ORDER BY effective_on DESC, created_at DESC, id DESC LIMIT 1)`;
+/**
+ * The tier of a care plan in force on a date (SQL): its newest terms row effective on or before it. The `tier` column of `care_plans` is
+ * the NEWEST row, which may be a change booked for the next billing period, so it is not what is in force today (early check L1).
+ */
+const TIER_ON = (plan: string, date: string) =>
+  `(SELECT tier FROM care_plan_terms WHERE care_plan_id = ${plan} AND effective_from <= ${date} ORDER BY effective_from DESC, created_at DESC, id DESC LIMIT 1)`;
 /** The day total of a person, optionally without one entry (SQL). */
 const DAY_TOTAL = (user: string, date: string, except?: string) =>
   `(SELECT coalesce(sum(minutes), 0) FROM time_logs WHERE user_id = ${user} AND work_date = ${date}${except ? ` AND id <> ${except}` : ""})`;
@@ -260,7 +266,7 @@ export const timeLogs = new Hono<AppEnv>()
       where.push(order.where);
       bind.push(cur.k, cur.id);
     }
-    const { results } = await c.env.DB.prepare(listSql(where, order.order, limit))
+    const { results } = await c.env.DB.prepare(listSql(where, order.order, limit, `?${bind.push(today)}`))
       .bind(...bind)
       .all<ListRow>();
     const page = pageOf(results, limit, dir, cur !== null, (r) => ({ k: r.work_date, id: r.id }));
@@ -383,11 +389,11 @@ export const timeLogs = new Hono<AppEnv>()
       : `SELECT p.id, p.code, p.name, p.status, cl.code AS client_code FROM projects p JOIN clients cl ON cl.id = p.client_id
          WHERE p.status <> 'cancelled' AND ${clientLiveSql("p.client_id")} ORDER BY p.created_at DESC, p.id DESC LIMIT 20`;
     const plansSql = searching
-      ? `SELECT cp.id, cp.tier, cl.code AS client_code, cl.display_name AS client_name FROM care_plans cp JOIN clients cl ON cl.id = cp.client_id
+      ? `SELECT cp.id, ${TIER_ON("cp.id", "?1")} AS tier, cl.code AS client_code, cl.display_name AS client_name FROM care_plans cp JOIN clients cl ON cl.id = cp.client_id
          WHERE cp.start_date <= ?1 AND ${PLAN_STATUS_ON("cp.id", "?1")} = 'active' AND ${clientLiveSql("cp.client_id")}
            AND cp.client_id IN (SELECT id FROM clients WHERE code >= ?2 AND code < ?3 UNION SELECT id FROM clients WHERE display_name COLLATE NOCASE >= ?4 AND display_name COLLATE NOCASE < ?5)
          ORDER BY cp.created_at DESC, cp.id DESC LIMIT 20`
-      : `SELECT cp.id, cp.tier, cl.code AS client_code, cl.display_name AS client_name FROM care_plans cp JOIN clients cl ON cl.id = cp.client_id
+      : `SELECT cp.id, ${TIER_ON("cp.id", "?1")} AS tier, cl.code AS client_code, cl.display_name AS client_name FROM care_plans cp JOIN clients cl ON cl.id = cp.client_id
          WHERE cp.start_date <= ?1 AND ${PLAN_STATUS_ON("cp.id", "?1")} = 'active' AND ${clientLiveSql("cp.client_id")} ORDER BY cp.created_at DESC, cp.id DESC LIMIT 20`;
     const upper = q.toUpperCase();
     const [projects, plans] = await db.batch<Record<string, unknown>>([
@@ -668,8 +674,8 @@ type ListRow = EntryRow & {
   care_tier: string | null;
 };
 
-/** The list statement, exported so a test can EXPLAIN it. */
-export const listSql = (where: string[], order: string, limit: number) =>
+/** The list statement, exported so a test can EXPLAIN it. `today` is the placeholder that carries today's IST date (for the tier in force). */
+export const listSql = (where: string[], order: string, limit: number, today: string) =>
   `SELECT ${entryCols()}, (SELECT name FROM staff_users WHERE id = t.user_id) AS user_name, (SELECT code FROM projects WHERE id = t.project_id) AS project_code,
-          (SELECT code FROM clients WHERE id = cp.client_id) AS client_code, cp.tier AS care_tier
+          (SELECT code FROM clients WHERE id = cp.client_id) AS client_code, ${TIER_ON("cp.id", today)} AS care_tier
    FROM time_logs t LEFT JOIN care_plans cp ON cp.id = t.care_plan_id WHERE ${where.join(" AND ")} ORDER BY ${order} LIMIT ${limit + 1}`;
