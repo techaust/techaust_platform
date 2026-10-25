@@ -70,7 +70,7 @@ export const frozenDocumentColumns = (): string[] => {
 /**
  * The documents columns frozen by migration 0001, exactly as that file lists them. No documents column had been added before M4.3, so
  * this is also what the live schema gave then. `triggerStatements()` uses this pinned list, so the `triggers` set still generates
- * 0001 byte for byte after the table grew; the live list goes into the recreated trigger of the `document_triggers` set (0029).
+ * 0001 byte for byte after the table grew; the live list goes into the recreated trigger of the `document_triggers` set (0032).
  */
 export const FROZEN_COLUMNS_0001 = [
   "id",

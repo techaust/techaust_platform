@@ -318,7 +318,7 @@ describe("gap-free numbering (docs/05 §5.4, ADM-INV-03)", () => {
     );
     const bySuffix = (name: string) => installed.find((r) => r.name === name)?.sql;
     // sqlite_master stores the statement as written, without the trailing semicolon. Migration 0007 wrote the first
-    // issue_result_check; 0029 dropped it and created the one that also knows proposal and estimate versions.
+    // issue_result_check; 0032 dropped it and created the one that also knows proposal and estimate versions.
     const written = [
       ...issueGuardStatements().filter((s) => !/issue_result_check/.test(s)),
       ...documentTriggerStatements().filter((s) => /^CREATE TRIGGER `issue_result_check`/.test(s)),
