@@ -39,6 +39,12 @@ export function Component() {
   return <Approvals />;
 }
 
+/** A row's Decide button in the layout on screen (the table and the cards both draw it; one of them is hidden). */
+const visibleDecide = (id: string): HTMLElement | null =>
+  [...document.querySelectorAll<HTMLElement>("[data-decide]")].find(
+    (b) => b.dataset.decide === id && b.offsetParent !== null,
+  ) ?? null;
+
 const isState = (v: string | null): v is Exclude<ApprovalState, "none"> =>
   APPROVAL_FILTERS.includes(v as ApprovalState);
 
@@ -81,9 +87,7 @@ function Approvals() {
       (a) => a.id !== result.id && a.state === "pending" && a.document.status === "draft",
     );
     requestAnimationFrame(() => {
-      const target =
-        (nextRow && document.getElementById(`decide-${nextRow.id}`)) ||
-        document.getElementById("decided-line");
+      const target = (nextRow && visibleDecide(nextRow.id)) || document.getElementById("decided-line");
       target?.focus();
     });
     setResult({ ...result, focused: true });
@@ -211,7 +215,7 @@ function Approvals() {
                     r.state === "pending" && r.document.status === "draft" ? (
                       <button
                         type="button"
-                        id={`decide-${r.id}`}
+                        data-decide={r.id}
                         className="btn btn--secondary"
                         onClick={() => setDeciding(r)}
                       >

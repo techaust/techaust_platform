@@ -272,7 +272,7 @@ function CareForm(props: {
       <>
         <div className="dialog__body">
           <Notice tone="success">{careDone(props.client, tierName(made.tier))}</Notice>
-          <p className="confirm-figure tnum">
+          <p className="confirm-figure confirm-figure--sentence tnum">
             {careSummary(tierName(made.tier), props.client, moneyText(made.priceMinor, made.currency))}
             {made.aiOpsMinor !== null && <>, {careAiOps(moneyText(made.aiOpsMinor, made.currency))}</>}
           </p>
@@ -335,7 +335,7 @@ function CareForm(props: {
     >
       <div className="dialog__body">
         {care && (
-          <p className="confirm-figure tnum">
+          <p className="confirm-figure confirm-figure--sentence tnum">
             {careSummary(tierName(care.tier), props.client, moneyText(care.priceMinor, props.currency))}
             {care.aiOpsMinor !== null && <>, {careAiOps(moneyText(care.aiOpsMinor, props.currency))}</>}
           </p>

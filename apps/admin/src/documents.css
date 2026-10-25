@@ -1296,6 +1296,14 @@
   line-height: var(--text-h4--line-height);
 }
 
+/* A whole sentence (the care plan summary): the body face at reading size, still set apart by weight. */
+.confirm-figure--sentence {
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  font-stretch: var(--font-sans--stretch);
+  line-height: var(--text-body--line-height);
+}
+
 .decision__facts {
   display: grid;
   gap: var(--space-2);
