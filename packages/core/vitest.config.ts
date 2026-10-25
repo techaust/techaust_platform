@@ -10,7 +10,14 @@ export default defineConfig({
       provider: "v8",
       include: ["src/**/*.ts"],
       reporter: ["text-summary"],
-      thresholds: { lines: 90, functions: 90, branches: 90, statements: 90 },
+      // The tax engine (M4.2) is held to 100 %: every branch is a rule, so an untested branch is an unchecked rule.
+      thresholds: {
+        lines: 90,
+        functions: 90,
+        branches: 90,
+        statements: 90,
+        "src/tax/**": { 100: true },
+      },
     },
   },
 });

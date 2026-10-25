@@ -14,6 +14,15 @@ const MONEY_FILES = [
   "src/schemas/domain.ts",
   "src/schemas/catalogue-snapshot.ts",
   "src/schedule-text.ts",
+  "src/tax/credit.ts",
+  "src/tax/document.ts",
+  "src/tax/inclusive.ts",
+  "src/tax/index.ts",
+  "src/tax/lines.ts",
+  "src/tax/schedule.ts",
+  "src/tax/supply.ts",
+  "src/tax/totals.ts",
+  "src/tax/types.ts",
 ];
 /** Files that mention money words but only pass amounts around or validate other things. Say why. */
 const NOT_MONEY_PATHS: Record<string, string> = {};
