@@ -228,14 +228,25 @@ describe("the cost of a typical save on D1's free plan (rows written; reported, 
     const appended = await one("one line appended", {
       lines: [...lines(), { description: "Added at the end", qtyMilli: 1000, unit: "fixed", rateMinor: 5 }],
     });
+    // The structural worst cases: a line removed from the middle and one inserted at the top move the positions of the rows behind it,
+    // and the unique (document, position) index needs those rows parked first (two writes each). Not cheaper than the old whole-part rewrite (about 3 rows a line); held under 500 here.
+    const withoutMiddle = lines();
+    withoutMiddle.splice(50, 1);
+    const removedMiddle = await one("one line removed from the middle", { lines: withoutMiddle });
+    const insertedTop = await one("one line inserted at the top", {
+      lines: [{ description: "First", qtyMilli: 1000, unit: "fixed", rateMinor: 5 }, ...lines()],
+    });
     // The local D1 counts the audit row (6 with its indexes) and the access row (3) of every mutation, and the document's own row (1):
     // that fixed 10 is the title-only figure. What the diff adds on a 100-line draft is the rows that changed:
     // measured here: 99 lines from one 309, title only 10, one line edited 11, one section edited 12, one line appended 13.
-    expect(report).toHaveLength(5);
+    expect(report).toHaveLength(7);
+    expect(removedMiddle).toBeLessThan(500);
+    expect(insertedTop).toBeLessThan(500);
     expect(first).toBeLessThan(1_500);
     expect(title).toBeLessThanOrEqual(11);
     expect(oneLine - title).toBeLessThanOrEqual(2);
     expect(oneSection - title).toBeLessThanOrEqual(3);
     expect(appended - title).toBeLessThanOrEqual(4);
+    // measured with a failing expect on report.join(" | "): removed from the middle 206 rows, inserted at the top 407 (100 lines).
   });
 });
