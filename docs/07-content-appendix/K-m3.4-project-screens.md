@@ -86,3 +86,6 @@ _Drafted by the lead on 2026-10-25 from approved facts (04 ADM-PRJ-01…05; the 
 | `client_anonymised` | "This client's personal details were removed, so nothing new can be added to it." |
 | `budget_locked` | "The budget can't change while a percentage milestone is invoiced or paid." |
 | `milestone_invalid_transition` | "A milestone can't move from {from} to {to}." |
+| Projects client filter, field hint | "Start of a code or name" |
+| Projects client filter, clear | "Show projects of all clients" |
+| Projects client filter, results (screen readers) | "1 client found" · "{n} clients found" · "No client found" |
