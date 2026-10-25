@@ -34,6 +34,7 @@ import {
 } from "@techaust/db/contact-access";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
+import { refuseAnonymised } from "./anonymised.ts";
 import {
   type ApiError,
   type AppEnv,
@@ -44,7 +45,6 @@ import {
   mutate,
   NOT_FOUND,
 } from "./context.ts";
-import { refuseAnonymised } from "./anonymised.ts";
 import { dropObjects } from "./files.ts";
 import {
   body,
