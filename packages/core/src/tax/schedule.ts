@@ -76,8 +76,11 @@ export function computeSchedule(
       errors.push(issue("total_not_whole_unit", "totalMinor"));
     }
     const loose = steps as readonly LooseStep[];
-    const percents = loose.filter((s) => "pctBp" in s).length;
-    const mixed = percents !== 0 && percents !== loose.length;
+    // The kind of a step is its `pctBp`: present means a percent step. A step with both fields is neither kind.
+    const percents = loose.filter((s) => s.pctBp !== undefined).length;
+    const mixed =
+      (percents !== 0 && percents !== loose.length) ||
+      loose.some((s) => s.pctBp !== undefined && s.amountMinor !== undefined);
     if (mixed) errors.push(issue("schedule_mixed_kinds", "steps"));
     const percentKind = percents === loose.length;
     const last = loose.length - 1;
@@ -86,7 +89,8 @@ export function computeSchedule(
       // Every amount step but the last has an amount; the last may have none (it is the remainder) or, if typed, a valid one.
       const amountOk = s.amountMinor === undefined ? i === last : isInt(s.amountMinor) && s.amountMinor >= 0;
       const badAmount = !mixed && !percentKind && !amountOk;
-      const badPercent = !mixed && percentKind && !isIntBetween(s.pctBp, 0, 10000);
+      // The last instalment is the remainder and shows its typed percentage: 0 % on it would hide a real amount.
+      const badPercent = !mixed && percentKind && !isIntBetween(s.pctBp, i === last ? 1 : 0, 10000);
       if (
         label.length < 1 ||
         label.length > LABEL_MAX ||

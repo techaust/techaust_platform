@@ -66,8 +66,14 @@ describe("guard: an overflow and a defect are told apart", () => {
         ),
       ),
     ).toEqual(["internal_error@"]);
-    expect(errorsOf(determineSupply(OVERSEAS_US, broken, { documentDate: DATE, currency: "INR" }))).toEqual([
+    // A context with a known supplier state but no tax settings: the read of `ctx.tax` throws.
+    const noTax = { supplierStateCode: "19" } as unknown as TaxContext;
+    expect(errorsOf(determineSupply(OVERSEAS_US, noTax, { documentDate: DATE, currency: "INR" }))).toEqual([
       "internal_error@",
+    ]);
+    // And one with no supplier state at all is a typed error, not a crash.
+    expect(errorsOf(determineSupply(OVERSEAS_US, broken, { documentDate: DATE, currency: "INR" }))).toEqual([
+      "supply_invalid@ctx.supplierStateCode",
     ]);
     const original = good(inrDoc(REG_WB, [line(100)]));
     expect(
@@ -90,6 +96,7 @@ describe("guard: an overflow and a defect are told apart", () => {
           "INR",
           null,
           broken,
+          { documentDate: DATE },
         ),
       ),
     ).toEqual(["internal_error@"]);

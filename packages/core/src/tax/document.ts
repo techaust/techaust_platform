@@ -4,7 +4,14 @@ import type { TaxInput } from "../clients.ts";
 import type { Currency } from "../money.ts";
 import { isCurrency } from "../money.ts";
 import { prepareLines, taxLines } from "./lines.ts";
-import { determineSupply, type PlaceOfSupplyOverride, supplyIssues, usableDate } from "./supply.ts";
+import {
+  determineSupply,
+  fixedSupplyWarnings,
+  type PlaceOfSupplyOverride,
+  recipientStatusIssues,
+  supplyIssues,
+  usableDate,
+} from "./supply.ts";
 import { assemble } from "./totals.ts";
 import {
   type CalendarDate,
@@ -18,6 +25,7 @@ import {
   issue,
   type LineInput,
   ok,
+  type RecipientStatus,
   type Supply,
   type TaxContext,
   type TaxIssue,
@@ -37,6 +45,21 @@ export type DocumentInput = {
   readonly placeOfSupplyOverride?: PlaceOfSupplyOverride | null | undefined;
   /** Used with `recipient` only: with a fixed `supply` it is `supply_invalid`. */
   readonly exportMode?: ExportMode | undefined;
+  /**
+   * With a fixed `supply` only (with a recipient it is `supply_invalid`): who the document is for, so the B2C details warning
+   * can be given. An overseas status goes with an export supply, the others with a domestic one.
+   */
+  readonly recipientStatus?: RecipientStatus | undefined;
+  /**
+   * With a fixed `supply` only: the line rates come from a source document (a debit note at the original's rate, an inclusive
+   * split recomputed), so today's `allowLineOverride` is not applied to them. With a recipient it is `supply_invalid`.
+   */
+  readonly trustRates?: boolean | undefined;
+  /**
+   * With a fixed `supply` only: sets the total instead of rounding (the same band and whole-unit rules as the final credit
+   * note and the inclusive split). With a recipient it is `supply_invalid`.
+   */
+  readonly targetTotalMinor?: number | undefined;
   readonly lines: readonly LineInput[];
   readonly documentDiscount?: Discount | null | undefined;
   /** INR micros per USD, USD documents only. */
@@ -111,6 +134,15 @@ export function computeDocument(input: DocumentInput, ctx: TaxContext): TaxResul
       // A fixed supply is final: a mode or an override beside it would be silently ignored, so it is refused.
       if (input.exportMode !== undefined) errors.push(issue("supply_invalid", "exportMode"));
       if (input.placeOfSupplyOverride) errors.push(issue("supply_invalid", "placeOfSupplyOverride"));
+      errors.push(...recipientStatusIssues(input.recipientStatus, input.supply, "recipientStatus"));
+      if (errors.length === 0 && usableDate(input.documentDate)) {
+        warnings.push(...fixedSupplyWarnings(input.supply, input.documentDate, ctx));
+      }
+    } else if (hasRecipient) {
+      // These belong to a fixed supply: beside a recipient they would be silently ignored, so they are refused.
+      if (input.recipientStatus !== undefined) errors.push(issue("supply_invalid", "recipientStatus"));
+      if (input.trustRates) errors.push(issue("supply_invalid", "trustRates"));
+      if (input.targetTotalMinor !== undefined) errors.push(issue("supply_invalid", "targetTotalMinor"));
     }
     if (input.recipient !== undefined) {
       const found = determineSupply(input.recipient, ctx, {
@@ -133,7 +165,9 @@ export function computeDocument(input: DocumentInput, ctx: TaxContext): TaxResul
         lines: input.lines,
         documentDiscount: input.documentDiscount,
         fx: input.fx,
-        unregisteredRecipient: input.recipient?.gstStatus === "unregistered",
+        targetTotalMinor: input.targetTotalMinor,
+        trustRates: input.trustRates === true,
+        unregisteredRecipient: (input.recipient?.gstStatus ?? input.recipientStatus) === "unregistered",
         priorErrors: errors,
         priorWarnings: warnings,
       },

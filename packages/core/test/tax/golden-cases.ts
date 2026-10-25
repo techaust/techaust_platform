@@ -312,7 +312,9 @@ export const GOLDEN: readonly GoldenCase[] = [
     check: () => {
       // Gross 1,000,000. T = 847,458: IGST 847,458 x 0.18 = 152,542.44 -> 152,542; sum 1,000,000 (fits).
       // T = 847,459: IGST 152,542.62 -> 152,543; sum 1,000,002 (over). So T = 847,458.
-      const r = splitInclusive(1_000_000, [GROUP_1800], INTER_27_SUPPLY, "INR", null, DEFAULTS);
+      const r = splitInclusive(1_000_000, [GROUP_1800], INTER_27_SUPPLY, "INR", null, DEFAULTS, {
+        documentDate: DATE,
+      });
       const { lines, document: d } = good(r);
       expect(lines).toEqual([
         { sac: "998314", qtyMilli: 1000, rateMinor: 847_458, gstRateBp: 1800, discount: null },
@@ -331,7 +333,7 @@ export const GOLDEN: readonly GoldenCase[] = [
     check: () => {
       // Same gross, intra: 847,458 x 0.09 = 76,271.22 -> 76,271 each; 847,458 + 152,542 = 1,000,000
       const { document: d } = good(
-        splitInclusive(1_000_000, [GROUP_1800], INTRA_SUPPLY, "INR", null, DEFAULTS),
+        splitInclusive(1_000_000, [GROUP_1800], INTRA_SUPPLY, "INR", null, DEFAULTS, { documentDate: DATE }),
       );
       expect(totals(d)).toMatchObject({
         taxable: 847_458,
@@ -347,7 +349,7 @@ export const GOLDEN: readonly GoldenCase[] = [
     check: () => {
       // 4,720,000 = 4,000,000 + 18 % (720,000); 4,000,001 would give 360,000.09 -> 360,000 each = 4,720,001 (over)
       const { document: d } = good(
-        splitInclusive(4_720_000, [GROUP_1800], INTRA_SUPPLY, "INR", null, DEFAULTS),
+        splitInclusive(4_720_000, [GROUP_1800], INTRA_SUPPLY, "INR", null, DEFAULTS, { documentDate: DATE }),
       );
       expect(totals(d)).toMatchObject({
         taxable: 4_000_000,
@@ -363,7 +365,9 @@ export const GOLDEN: readonly GoldenCase[] = [
     check: () => {
       // $1,000.02 = 100,002 cents, IGST paid. T = 84,747: IGST 84,747 x 0.18 = 15,254.46 -> 15,254; sum 100,001 (fits).
       // T = 84,748: IGST 15,254.64 -> 15,255; sum 100,003 (over). One cent is left over: round-off +1, total 100,002.
-      const r = splitInclusive(100_002, [GROUP_1800], EXPORT_IGST_SUPPLY, "USD", null, DEFAULTS);
+      const r = splitInclusive(100_002, [GROUP_1800], EXPORT_IGST_SUPPLY, "USD", null, DEFAULTS, {
+        documentDate: DATE,
+      });
       const { document: d } = good(r);
       expect(totals(d)).toMatchObject({ taxable: 84_747, igst: 15_254, roundOff: 1, total: 100_002 });
       expect(d.words).toBe("US Dollars One Thousand and Two Cents Only");
@@ -1066,18 +1070,19 @@ export const GOLDEN: readonly GoldenCase[] = [
   {
     name: "schedule-zero-instalment",
     check: () => {
-      // 100 % then 0 %: the second instalment is 0, a warning on step 1
+      // 0 % then 100 %: the first instalment is 0 (118,000.00 x 0 = 0), a warning on step 0; the last takes the remainder,
+      // 11,800,000 - 0 = 11,800,000. (A last step typed at 0 % is schedule_step_invalid: see the next case.)
       const r = computeSchedule(
         11_800_000,
         "INR",
         [
-          { label: "On acceptance", trigger: "on_accept", pctBp: 10_000 },
-          { label: "On delivery", trigger: "delivery", pctBp: 0 },
+          { label: "On acceptance", trigger: "on_accept", pctBp: 0 },
+          { label: "On delivery", trigger: "delivery", pctBp: 10_000 },
         ],
         DEFAULTS,
       );
-      expect(good(r).map((i) => i.amountMinor)).toEqual([11_800_000, 0]);
-      expect(r.ok && r.warnings).toEqual([{ code: "schedule_zero_instalment", path: ["steps", 1] }]);
+      expect(good(r).map((i) => i.amountMinor)).toEqual([0, 11_800_000]);
+      expect(r.ok && r.warnings).toEqual([{ code: "schedule_zero_instalment", path: ["steps", 0] }]);
     },
   },
   {
@@ -1105,7 +1110,9 @@ export const GOLDEN: readonly GoldenCase[] = [
     check: () => {
       // Under LUT there is no tax to take out: taxable = gross
       const { document: d } = good(
-        splitInclusive(5_000_000, [GROUP_1800], EXPORT_LUT_SUPPLY, "INR", null, DEFAULTS),
+        splitInclusive(5_000_000, [GROUP_1800], EXPORT_LUT_SUPPLY, "INR", null, DEFAULTS, {
+          documentDate: DATE,
+        }),
       );
       expect(totals(d)).toMatchObject({ taxable: 5_000_000, igst: 0, roundOff: 0, total: 5_000_000 });
     },
@@ -1114,12 +1121,18 @@ export const GOLDEN: readonly GoldenCase[] = [
     name: "inclusive-not-whole-rupee",
     check: () => {
       // Rs 10,000.50 cannot be a tax invoice for the exact amount when totals are whole rupees; USD has no such rule
-      expect(errorsOf(splitInclusive(1_000_050, [GROUP_1800], INTRA_SUPPLY, "INR", null, DEFAULTS))).toEqual([
-        "gross_not_whole_unit@grossMinor",
-      ]);
-      expect(splitInclusive(1_000_050, [GROUP_1800], EXPORT_IGST_SUPPLY, "USD", null, DEFAULTS).ok).toBe(
-        true,
-      );
+      expect(
+        errorsOf(
+          splitInclusive(1_000_050, [GROUP_1800], INTRA_SUPPLY, "INR", null, DEFAULTS, {
+            documentDate: DATE,
+          }),
+        ),
+      ).toEqual(["gross_not_whole_unit@grossMinor"]);
+      expect(
+        splitInclusive(1_000_050, [GROUP_1800], EXPORT_IGST_SUPPLY, "USD", null, DEFAULTS, {
+          documentDate: DATE,
+        }).ok,
+      ).toBe(true);
     },
   },
   {
@@ -1138,6 +1151,7 @@ export const GOLDEN: readonly GoldenCase[] = [
           "INR",
           null,
           DEFAULTS,
+          { documentDate: DATE },
         ),
       );
       expect(lines.map((l) => l.rateMinor)).toEqual([1_000_000, 1_000_000]);

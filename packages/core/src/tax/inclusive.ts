@@ -8,10 +8,11 @@
 import { allocate, type Currency, isCurrency, money } from "../money.ts";
 import { computeCore, fxIssues } from "./document.ts";
 import { effectiveRateBp, headsFor } from "./lines.ts";
-import { supplyIssues } from "./supply.ts";
+import { fixedSupplyWarnings, recipientStatusIssues, supplyIssues, usableDate } from "./supply.ts";
 import { roundingUnit } from "./totals.ts";
 import {
   BP,
+  type CalendarDate,
   type ComputedDocument,
   type Fx,
   fail,
@@ -23,6 +24,7 @@ import {
   type LineInput,
   num,
   ok,
+  type RecipientStatus,
   type SummaryRow,
   type Supply,
   type TaxContext,
@@ -49,8 +51,17 @@ export function groupsOf(summary: readonly SummaryRow[]): InclusiveGroup[] {
   }));
 }
 
+export type InclusiveOptions = {
+  readonly documentDate: CalendarDate;
+  readonly recipientStatus?: RecipientStatus | undefined;
+};
+
 export type InclusiveSplit = {
-  /** One line per group (quantity 1, no discount): feed them to `computeDocument` to get the same document again. */
+  /**
+   * One line per group (quantity 1, no discount). To get the same document again, feed them to `computeDocument` with the same
+   * fixed `supply`, `trustRates: true` and `targetTotalMinor` set to the gross: without the target a USD split comes back
+   * without its round-off, and without `trustRates` today's `allowLineOverride` can refuse the source's rates.
+   */
   readonly lines: LineInput[];
   readonly document: ComputedDocument;
 };
@@ -79,11 +90,16 @@ export function splitInclusive(
   currency: Currency,
   fx: Fx | null | undefined,
   ctx: TaxContext,
+  /** The document date picks the FY for the LUT check; the status (optional) lets the B2C details warning fire. */
+  opts: InclusiveOptions,
 ): TaxResult<InclusiveSplit> {
   return guard(() => {
     if (groups.length === 0) return fail([issue("no_groups", "groups")]);
     if (groups.length > MAX_GROUPS) return fail([issue("too_many_groups", "groups")]);
     const errors: TaxIssue[] = supplyIssues(supply, "supply");
+    const dateOk = usableDate(opts.documentDate);
+    if (!dateOk) errors.push(issue("date_invalid", "documentDate"));
+    errors.push(...recipientStatusIssues(opts.recipientStatus, supply, "recipientStatus"));
     const grossOk = isInt(grossMinor) && grossMinor >= 0;
     if (!grossOk) errors.push(issue("gross_invalid", "grossMinor"));
     if (!isCurrency(currency)) errors.push(issue("currency_invalid", "currency"));
@@ -123,9 +139,9 @@ export function splitInclusive(
         lines,
         fx,
         targetTotalMinor: grossMinor,
-        unregisteredRecipient: false,
+        unregisteredRecipient: opts.recipientStatus === "unregistered",
         priorErrors: [],
-        priorWarnings: [],
+        priorWarnings: fixedSupplyWarnings(supply, opts.documentDate, ctx),
         // The rates are the source document's: today's override switch must not refuse them.
         trustRates: true,
       },

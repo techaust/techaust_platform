@@ -10,7 +10,7 @@
 // - a USD invoice's INR view follows the same rules: per line and per head caps, a line credited in full takes its exact
 //   INR remainder, and the final note's INR total is the original's minus the earlier notes'.
 // A debit note is `computeDocument` with `supply: original.supply` (its FX is M5.3's).
-import { allocate, divRoundHalfUp, money } from "../money.ts";
+import { allocate, divRoundHalfUp, isCurrency, money } from "../money.ts";
 import { type CalcLine, type Heads, headsFor } from "./lines.ts";
 import { supplyIssues } from "./supply.ts";
 import { assemble, type InrLineParts, type InrPlan, roundingUnit } from "./totals.ts";
@@ -21,6 +21,7 @@ import {
   fail,
   guard,
   isInt,
+  isIntBetween,
   issue,
   MICROS,
   num,
@@ -119,7 +120,7 @@ function takeFor(
   return { take, errors: [issue("credit_line_invalid", "request", "kind")] };
 }
 
-const cap = (value: bigint, left: number): bigint => (value > BigInt(left) ? BigInt(left) : value);
+const cap = (value: bigint, left: number): bigint => clamp(value, 0n, BigInt(left));
 
 /** What is left of one line (or of its INR view) after the earlier notes, or null if the stored figures are inconsistent. */
 function leftOf(original: CreditedLine, credited: CreditedLine): Remaining | null {
@@ -137,6 +138,40 @@ function leftOf(original: CreditedLine, credited: CreditedLine): Remaining | nul
     sgst: original.sgstMinor - credited.sgstMinor,
     igst: original.igstMinor - credited.igstMinor,
   };
+}
+
+/**
+ * The parts of the stored original that the maths uses beyond the per-line amounts (those `leftOf` checks): the currency, the
+ * totals, the FX rate and each line's index and rates. A figure that is not a whole number, or a rate outside 0 to 100 %,
+ * means the snapshot is damaged: `credit_shape_mismatch`, never a crash.
+ */
+function originalIssues(original: ComputedDocument): TaxIssue[] {
+  const issues: TaxIssue[] = [];
+  if (!isCurrency(original.currency)) issues.push(issue("credit_shape_mismatch", "original", "currency"));
+  if (!isInt(original.totalMinor) || original.totalMinor < 0) {
+    issues.push(issue("credit_shape_mismatch", "original", "totalMinor"));
+  }
+  const rate = original.fxRateMicros;
+  if (rate !== null && (!isInt(rate) || rate < 1)) {
+    issues.push(issue("credit_shape_mismatch", "original", "fxRateMicros"));
+  }
+  if (
+    rate !== null &&
+    original.inr !== null &&
+    (!isInt(original.inr.totalMinor) || original.inr.totalMinor < 0)
+  ) {
+    issues.push(issue("credit_shape_mismatch", "original", "inr", "totalMinor"));
+  }
+  original.lines.forEach((l, i) => {
+    if (
+      !isInt(l.index) ||
+      !isIntBetween(l.gstRateBp, 0, 10000) ||
+      !isIntBetween(l.effectiveRateBp, 0, 10000)
+    ) {
+      issues.push(issue("credit_shape_mismatch", "original", "lines", i));
+    }
+  });
+  return issues;
 }
 
 const sumOf = (c: CreditedLine): bigint =>
@@ -158,6 +193,7 @@ export function creditNote(
     if (credited.lines.length !== original.lines.length) {
       errors.push(issue("credit_shape_mismatch", "credited", "lines"));
     }
+    errors.push(...originalIssues(original));
     if (errors.length > 0) return fail(errors);
 
     const remaining: Remaining[] = [];

@@ -10,11 +10,14 @@ import { EXPORT_PLACE_OF_SUPPLY, isStateCode, type StateCode, selectableStates }
 import type { Currency } from "../money.ts";
 import {
   type CalendarDate,
+  EXPORT_MODES,
   type ExportMode,
   fail,
   guard,
   issue,
   ok,
+  RECIPIENT_STATUSES,
+  type RecipientStatus,
   SUPPLY_TYPES,
   type Supply,
   type TaxContext,
@@ -50,8 +53,41 @@ const OVERRIDE_REASON_MAX = 500;
  */
 export function usableDate(date: CalendarDate): boolean {
   if (!isValidDate(date)) return false;
-  const startYear = date.month >= 4 ? date.year : date.year - 1;
-  return startYear <= 9998;
+  try {
+    fyOfDate(date);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The warnings of a fixed supply (credit and debit notes, inclusive splits, an estimate turned into an invoice): the same
+ * LUT check `determineSupply` makes. The document date picks the FY.
+ */
+export function fixedSupplyWarnings(
+  supply: Supply,
+  documentDate: CalendarDate,
+  ctx: TaxContext,
+): TaxWarning[] {
+  if (supply.type !== "export_lut") return [];
+  const token = fyOfDate(documentDate).token;
+  return ctx.luts.some((l) => l.fy === token) ? [] : [warn("lut_missing_for_fy", "supply", "type")];
+}
+
+/**
+ * Checks the recipient status given beside a fixed supply: a known value, and an overseas recipient goes with an export,
+ * the others with a domestic supply. A missing status is fine (the B2C warning is then simply not given).
+ */
+export function recipientStatusIssues(
+  status: RecipientStatus | undefined,
+  supply: Supply,
+  ...path: (string | number)[]
+): TaxIssue[] {
+  if (status === undefined) return [];
+  if (!RECIPIENT_STATUSES.includes(status)) return [issue("supply_invalid", ...path)];
+  const isExport = supply.type === "export_lut" || supply.type === "export_igst";
+  return (status === "overseas") === isExport ? [] : [issue("supply_invalid", ...path)];
 }
 
 /**
@@ -78,7 +114,7 @@ function overrideIssues(override: PlaceOfSupplyOverride, overseas: boolean): Tax
   if (!selectableStates().some((state) => state.code === override.code)) {
     issues.push(issue("pos_override_invalid_state", "placeOfSupplyOverride", "code"));
   }
-  const reason = override.reason.trim();
+  const reason = typeof override.reason === "string" ? override.reason.trim() : "";
   if (reason.length < 1 || reason.length > OVERRIDE_REASON_MAX) {
     issues.push(issue("pos_override_reason_required", "placeOfSupplyOverride", "reason"));
   }
@@ -101,10 +137,15 @@ function supplyFor(recipient: TaxInput, ctx: TaxContext, opts: SupplyOptions): T
   const errors: TaxIssue[] = [];
   const warnings: TaxWarning[] = [];
   if (!usableDate(opts.documentDate)) errors.push(issue("date_invalid", "documentDate"));
+  if (!isStateCode(ctx.supplierStateCode)) errors.push(issue("supply_invalid", "ctx", "supplierStateCode"));
   const check = clientTaxCheck(recipient);
   if (!check.ok) errors.push(issue(check.code, "recipient"));
   const override = opts.placeOfSupplyOverride ?? null;
   const overseas = recipient.gstStatus === "overseas";
+  // A mode is for exports only, and only the settings' two values exist: anything else would silently mean IGST.
+  if (opts.exportMode !== undefined && (!overseas || !EXPORT_MODES.includes(opts.exportMode))) {
+    errors.push(issue("supply_invalid", "exportMode"));
+  }
   if (override) errors.push(...overrideIssues(override, overseas));
   if (!check.ok || errors.length > 0) return fail(errors);
 

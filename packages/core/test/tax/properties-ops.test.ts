@@ -52,6 +52,8 @@ describe("property: schedules", () => {
         fc.integer({ min: 0, max: 5_000_000_000 }),
         sharesArb,
         (currency, base, shares) => {
+          // A last step at 0 % is refused (schedule_step_invalid): the property is about the valid schedules.
+          fc.pre((shares[shares.length - 1] as number) > 0);
           const total = currency === "INR" ? base * 100 : base;
           const unit = currency === "INR" ? 100 : 1;
           const steps: ScheduleStep[] = shares.map((pctBp, i) => ({
@@ -138,7 +140,7 @@ describe("property: the inclusive split", () => {
             weightMinor: i === 0 ? g.weight + 1 : g.weight, // never all zero
           }));
           const { lines, document: d } = good(
-            splitInclusive(gross, groups, supply, currency, null, DEFAULTS),
+            splitInclusive(gross, groups, supply, currency, null, DEFAULTS, { documentDate: DATE }),
           );
           expect(d.totalMinor).toBe(gross);
           expect(d.roundOffMinor).toBeGreaterThanOrEqual(0);
@@ -464,6 +466,7 @@ describe("property: nothing throws, whatever the numbers (NaN, infinity, unsafe,
               "USD",
               fx === undefined ? null : { rateMicros: fx },
               DEFAULTS,
+              { documentDate: DATE },
             );
           expect(run).not.toThrow();
           expect(sound(run())).toBe(true);
@@ -501,6 +504,79 @@ describe("property: nothing throws, whatever the numbers (NaN, infinity, unsafe,
                 })),
                 creditedTotalMinor: total,
               },
+              request,
+              DEFAULTS,
+            );
+          expect(run).not.toThrow();
+          expect(sound(run())).toBe(true);
+        },
+      ),
+      RUNS,
+    );
+  });
+
+  it("creditNote with a hostile original (consistent array lengths, arbitrary values)", () => {
+    const usd = good(
+      computeDocument(
+        {
+          currency: "USD",
+          documentDate: DATE,
+          recipient: OVERSEAS_US,
+          lines: [line(1_000_000), line(250_000)],
+          fx: { rateMicros: 83_000_000 },
+        },
+        DEFAULTS,
+      ),
+    );
+    const zero = { taxableMinor: 0, cgstMinor: 0, sgstMinor: 0, igstMinor: 0 };
+    // Mostly the real value, sometimes an arbitrary one, so deep paths are reached as well as the early refusals
+    const maybe = <T>(real: T) =>
+      fc.oneof(
+        { weight: 3, arbitrary: fc.constant<unknown>(real) },
+        { weight: 1, arbitrary: weird as fc.Arbitrary<unknown> },
+      );
+    const lineArb = fc.record({
+      index: maybe(0),
+      gstRateBp: maybe(1800),
+      effectiveRateBp: maybe(0),
+      taxableMinor: maybe(1_000_000),
+      cgstMinor: maybe(0),
+      sgstMinor: maybe(0),
+      igstMinor: maybe(0),
+      inr: fc.oneof(
+        fc.constant(null),
+        fc.record({
+          taxableMinor: maybe(83_000_000),
+          cgstMinor: maybe(0),
+          sgstMinor: maybe(0),
+          igstMinor: maybe(0),
+        }),
+      ),
+    });
+    fc.assert(
+      fc.property(
+        fc.array(lineArb, { minLength: 2, maxLength: 2 }),
+        maybe(usd.totalMinor),
+        maybe(83_000_000),
+        fc.oneof(fc.constant(null), maybe(usd.inr?.totalMinor)),
+        fc.constantFrom("USD", "INR", "EUR"),
+        fc.constantFrom("full", "amount"),
+        weird,
+        (lines, total, fx, inrTotal, currency, kind, amount) => {
+          const hostile = {
+            ...usd,
+            currency,
+            totalMinor: total,
+            fxRateMicros: fx,
+            inr: inrTotal === null ? null : { ...usd.inr, totalMinor: inrTotal },
+            lines: lines.map((l) => ({ ...(usd.lines[0] as object), ...l })),
+          } as unknown as ComputedDocument;
+          const request: CreditRequest =
+            kind === "full" ? { kind: "full" } : { kind: "amount", taxableMinor: amount };
+          const run = () =>
+            creditNote(
+              hostile,
+              { lines: [zero, zero], creditedTotalMinor: 0, inr: { lines: [zero, zero], totalMinor: 0 } },
               request,
               DEFAULTS,
             );

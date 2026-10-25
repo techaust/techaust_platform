@@ -13,6 +13,7 @@ export { computeDocument, type DocumentInput } from "./document.ts";
 export {
   groupsOf,
   type InclusiveGroup,
+  type InclusiveOptions,
   type InclusiveSplit,
   MAX_GROUPS,
   splitInclusive,
@@ -39,6 +40,7 @@ export {
   type Fx,
   type LineInput,
   type Path,
+  type RecipientStatus,
   type ScheduleInstalment,
   type ScheduleStep,
   SUPPLY_TYPES,

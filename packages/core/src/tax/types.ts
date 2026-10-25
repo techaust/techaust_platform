@@ -13,6 +13,11 @@ import type { Settings } from "../schemas/settings.ts";
 export const SUPPLY_TYPES = ["intra", "inter", "export_lut", "export_igst"] as const;
 export type SupplyType = (typeof SUPPLY_TYPES)[number];
 export type ExportMode = Settings["tax"]["exportMode"];
+/** The export modes the settings allow (`tax.exportMode`). */
+export const EXPORT_MODES: readonly ExportMode[] = ["lut", "igst_paid"];
+/** Who a document is for, given where only a fixed supply is (the recipient itself is not): it picks the B2C details warning. */
+export type RecipientStatus = "registered" | "unregistered" | "overseas";
+export const RECIPIENT_STATUSES: readonly RecipientStatus[] = ["registered", "unregistered", "overseas"];
 
 /** The settings the engine reads, as an input: nothing about the supplier or the rules is a constant here. */
 export type TaxContext = {
