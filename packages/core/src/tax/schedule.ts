@@ -43,9 +43,11 @@ function percentInstalments(total: bigint, unit: bigint, bps: readonly number[])
 function shownPercents(total: bigint, amounts: readonly bigint[]): number[] {
   let running = 0n;
   let before = 0n;
-  return amounts.map((a) => {
+  return amounts.map((a, i) => {
     running += a;
-    const cumulative = total === 0n ? 0n : divRoundHalfUp(running * BP, total);
+    // Nothing to divide when the total is 0: the last step then shows the whole 100 %.
+    const cumulative =
+      total === 0n ? (i === amounts.length - 1 ? BP : 0n) : divRoundHalfUp(running * BP, total);
     const share = cumulative - before;
     before = cumulative;
     return num(share);
