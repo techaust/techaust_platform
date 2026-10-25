@@ -51,6 +51,23 @@ describe("the shared CSRF corpus, through the portal [05 §7.1]", () => {
   }
 });
 
+describe("the portal stays JSON-only (M3.4: the admin upload exception does not reach it)", () => {
+  it("an octet-stream body is a 415 on a portal POST and does nothing", async () => {
+    const counter = counted();
+    const res = await send(
+      `${ORIGIN}/api/v1/auth/logout`,
+      {
+        method: "POST",
+        headers: { "CF-Connecting-IP": nextIp(), Origin: ORIGIN, "Content-Type": "application/octet-stream" },
+        body: new Uint8Array([1, 2, 3]),
+      },
+      counter.env,
+    );
+    expect(res.status).toBe(415);
+    expect(counter.calls()).toBe(0);
+  });
+});
+
 describe("CSRF on the portal's own routes [POR-02]", () => {
   it("a cross-origin POST to every unsafe route is a 403 and does nothing, even with a valid session", async () => {
     const f = await fixtures();

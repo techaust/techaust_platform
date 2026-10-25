@@ -23,6 +23,8 @@ export type RouteDef = {
   audit?: string;
   /** false: never an access-log row (health). "refusals": only when the answer is 4xx/5xx (the salt and invite-start lookups). Default true. */
   log?: boolean | "refusals";
+  /** "upload": a raw binary body (the file vault): CSRF accepts `application/octet-stream` and the 16 KB body limit does not apply. Absent: JSON, 16 KB. */
+  body?: "upload";
 };
 
 export type Actor = {
@@ -124,6 +126,11 @@ export type Mutation = {
   after?: (g: SideGuard, auditId: string) => D1PreparedStatement[];
   /** Further statements (revoke sessions, insert an invite…); bind `...g.params` after your own values and use `g.sql(n)`, n = the number of that first placeholder. */
   side?: (g: SideGuard, auditId: string) => D1PreparedStatement[];
+  /**
+   * Called with every statement's result and the index of the audit statement (the `after` / `side` statements follow it, in
+   * order), once the batch has run: for a `DELETE ... RETURNING` whose rows the handler needs (M3.4: the R2 keys of deleted files).
+   */
+  onResults?: (results: D1Result[], auditAt: number) => void;
   /** The status the access row records (the handler must answer with it). Default 200. */
   status?: number;
 };
@@ -170,6 +177,7 @@ export async function mutate(c: Ctx, m: Mutation): Promise<boolean> {
   stmts.push(accessStmt(db, accessEntry(c, m.status ?? 200, user.id), { auditId } satisfies Guard));
   const results = await db.batch(stmts);
   c.set("touch", undefined); // done (or harmless to repeat): the exit write must not add it again
+  m.onResults?.(results, auditAt);
   const written = results[auditAt]?.meta.changes === 1;
   if (written) c.set("accessDone", true);
   return written;

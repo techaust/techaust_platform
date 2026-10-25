@@ -169,6 +169,48 @@ export function clientTypeLockStatements(): string[] {
   ];
 }
 
+/**
+ * Projects, milestones, notes and files (M3.4, ADM-PRJ-01..05; a separate set, the earlier ones have no IF NOT EXISTS). The API
+ * checks these too; the triggers are the backstop that holds whatever writes to the tables.
+ *   - a note or file always has a client, and when it names a project, that project belongs to the same client;
+ *   - a project's client never changes;
+ *   - a milestone is a fixed amount or a percentage of the budget (exactly one), and an amount is never negative;
+ *   - a stored file never changes except for its `shared` flag (a different file is a new row).
+ */
+export function projectTriggerStatements(): string[] {
+  const scope = (table: string) => {
+    const bad =
+      "NEW.client_id IS NULL OR (NEW.project_id IS NOT NULL AND (SELECT client_id FROM projects WHERE id = NEW.project_id) IS NOT NEW.client_id)";
+    const msg = abort(`a ${table.slice(0, -1)} needs a client, and its project must belong to that client`);
+    return [
+      `CREATE TRIGGER \`${table}_scope_insert\` BEFORE INSERT ON \`${table}\` WHEN ${bad} BEGIN ${msg} END;`,
+      `CREATE TRIGGER \`${table}_scope_update\` BEFORE UPDATE OF client_id, project_id ON \`${table}\` WHEN ${bad} BEGIN ${msg} END;`,
+    ];
+  };
+  const mBad = "(NEW.amount_minor IS NULL) = (NEW.pct_bp IS NULL) OR NEW.amount_minor < 0";
+  const mMsg = abort("a milestone has an amount or a percentage, not both, and the amount is not negative");
+  const fileCols = [
+    "id",
+    "client_id",
+    "project_id",
+    "r2_key",
+    "filename",
+    "mime",
+    "size",
+    "sha256",
+    "uploaded_by",
+    "created_at",
+  ];
+  return [
+    `CREATE TRIGGER \`projects_client_fixed\` BEFORE UPDATE OF client_id ON \`projects\` WHEN NEW.client_id IS NOT OLD.client_id BEGIN ${abort("the client of a project cannot change")} END;`,
+    ...scope("notes"),
+    ...scope("files"),
+    `CREATE TRIGGER \`milestones_amount_or_pct_insert\` BEFORE INSERT ON \`milestones\` WHEN ${mBad} BEGIN ${mMsg} END;`,
+    `CREATE TRIGGER \`milestones_amount_or_pct_update\` BEFORE UPDATE OF amount_minor, pct_bp ON \`milestones\` WHEN ${mBad} BEGIN ${mMsg} END;`,
+    `CREATE TRIGGER \`files_immutable\` BEFORE UPDATE ON \`files\` WHEN ${fileCols.map((c) => `NEW.${c} IS NOT OLD.${c}`).join(" OR ")} BEGIN ${abort("a stored file cannot change except whether it is shared")} END;`,
+  ];
+}
+
 /** The only statuses a document can be issued from (docs/05 §5.4 change 14: drafts only; owner decision 2026-10-07).
  * An approval (`approvals`, kind `issue`) is a record next to the draft, not a document status. Shared by the guard
  * trigger below and by the reference issue batch in test/helpers.ts, so the two cannot drift apart again. */
@@ -207,6 +249,10 @@ export const TRIGGER_SETS = {
   client_type_lock: {
     what: "client type lock once a document is issued (M3.3 review)",
     statements: clientTypeLockStatements,
+  },
+  project_triggers: {
+    what: "project, milestone, note and file integrity (M3.4)",
+    statements: projectTriggerStatements,
   },
   issue_guard: {
     what: "issue guard narrowed to drafts, plus the issue post-condition (docs/05 §5.4)",

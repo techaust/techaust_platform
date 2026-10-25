@@ -34,6 +34,7 @@ import {
 } from "@techaust/db/contact-access";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
+import { refuseAnonymised } from "./anonymised.ts";
 import {
   type ApiError,
   type AppEnv,
@@ -44,6 +45,7 @@ import {
   mutate,
   NOT_FOUND,
 } from "./context.ts";
+import { dropObjects } from "./files.ts";
 import {
   body,
   idParam,
@@ -87,7 +89,7 @@ const NOT_AVAILABLE: ApiError = { code: "conflict", message: "Nothing was change
 // ---- rows and views ---------------------------------------------------------------------------------------------------
 
 export const CLIENT_COLS =
-  "id, code, legal_name, display_name, type, country, gst_status, gstin, state_code, billing_address, service_address, currency, payment_terms_days, reminder_policy, care_auto_issue, attach_pdf, tags, notes, legal_hold, created_at, updated_at";
+  "id, code, legal_name, display_name, type, country, gst_status, gstin, state_code, billing_address, service_address, currency, payment_terms_days, reminder_policy, care_auto_issue, attach_pdf, tags, notes, legal_hold, anonymised_at, created_at, updated_at";
 const CONTACT_COLS =
   "id, client_id, name, email, phone, title, is_primary, is_billing, portal_access, can_see_finance, marketing_consent, bounced_at, anonymised_at, legal_hold, created_at, updated_at";
 
@@ -111,6 +113,7 @@ export type ClientRow = {
   tags: string | null;
   notes: string | null;
   legal_hold: number;
+  anonymised_at: number | null;
   created_at: number;
   updated_at: number;
 };
@@ -393,6 +396,8 @@ const exportRequest = z.strictObject({
       "email_log",
       "audit_log",
       "access_log",
+      "notes",
+      "files",
     ]),
   ),
   after: z.optional(z.string().check(z.maxLength(400))),
@@ -563,6 +568,8 @@ export const clients = new Hono<AppEnv>()
       contactsNext: list.length > 100 && last ? encodeCursor({ k: last.email, id: last.id }) : null,
       // Contacts that are not anonymised (the list above keeps the tombstones).
       liveContactCount: (live?.results[0] as { n: number } | undefined)?.n ?? 0,
+      // An individual whose personal details were removed: the screens show it read-only (M3.4 review; see anonymised.ts).
+      anonymised: row.anonymised_at !== null,
       sourceLead: (lead?.results[0] as { id: string; ref: string } | undefined) ?? null,
       // The lock is a finance fact: only a role that reads finance is told.
       ...(canFinance(role)
@@ -604,7 +611,7 @@ export const clients = new Hono<AppEnv>()
       done = await mutate(c, {
         main: db
           .prepare(
-            `UPDATE clients SET ${changes.map(([, col], i) => `${col} = ?${i + 4}`).join(", ")}, updated_at = ?3 WHERE id = ?1 AND updated_at = ?2${typeChanges ? ` AND ${NO_FROZEN_DOC_SQL}` : ""}`,
+            `UPDATE clients SET ${changes.map(([, col], i) => `${col} = ?${i + 4}`).join(", ")}, updated_at = ?3 WHERE id = ?1 AND updated_at = ?2 AND anonymised_at IS NULL${typeChanges ? ` AND ${NO_FROZEN_DOC_SQL}` : ""}`,
           )
           .bind(id, f.expectedUpdatedAt, t, ...changes.map((ch) => ch[2])),
         action: "client.update",
@@ -619,10 +626,11 @@ export const clients = new Hono<AppEnv>()
     }
     if (!done) {
       const again = await db
-        .prepare("SELECT updated_at FROM clients WHERE id = ?1")
+        .prepare("SELECT updated_at, anonymised_at FROM clients WHERE id = ?1")
         .bind(id)
-        .first<{ updated_at: number }>();
+        .first<{ updated_at: number; anonymised_at: number | null }>();
       if (!again) return err(c, NOT_FOUND, 404);
+      if (again.anonymised_at !== null) return refuseAnonymised(c);
       return again.updated_at !== f.expectedUpdatedAt || !typeChanges
         ? err(c, STALE_VERSION, 409)
         : err(c, TYPE_LOCKED, 409);
@@ -695,7 +703,7 @@ export const clients = new Hono<AppEnv>()
       done = await mutate(c, {
         main: db
           .prepare(
-            `UPDATE clients SET ${changes.map(([k], i) => `${snake(k)} = ?${i + 4}`).join(", ")}, updated_at = ?3 WHERE id = ?1 AND updated_at = ?2${currencyChanges ? ` AND ${NO_INVOICE_SQL}` : ""}`,
+            `UPDATE clients SET ${changes.map(([k], i) => `${snake(k)} = ?${i + 4}`).join(", ")}, updated_at = ?3 WHERE id = ?1 AND updated_at = ?2 AND anonymised_at IS NULL${currencyChanges ? ` AND ${NO_INVOICE_SQL}` : ""}`,
           )
           .bind(id, f.expectedUpdatedAt, t, ...changes.map((ch) => ch[1])),
         action: "client.billing_update",
@@ -711,10 +719,11 @@ export const clients = new Hono<AppEnv>()
     }
     if (!done) {
       const again = await db
-        .prepare("SELECT updated_at FROM clients WHERE id = ?1")
+        .prepare("SELECT updated_at, anonymised_at FROM clients WHERE id = ?1")
         .bind(id)
-        .first<{ updated_at: number }>();
+        .first<{ updated_at: number; anonymised_at: number | null }>();
       if (!again) return err(c, NOT_FOUND, 404);
+      if (again.anonymised_at !== null) return refuseAnonymised(c);
       return again.updated_at !== f.expectedUpdatedAt || !currencyChanges
         ? err(c, STALE_VERSION, 409)
         : err(c, CURRENCY_LOCKED, 409);
@@ -822,7 +831,7 @@ export const clients = new Hono<AppEnv>()
             "contact.create",
             "cl.id",
             "json_object('contactId', ?8)",
-            "FROM clients cl WHERE cl.id = ?7 AND NOT EXISTS (SELECT 1 FROM contacts WHERE client_id = cl.id AND email = ?9)",
+            "FROM clients cl WHERE cl.id = ?7 AND cl.anonymised_at IS NULL AND NOT EXISTS (SELECT 1 FROM contacts WHERE client_id = cl.id AND email = ?9)",
             [id, contactId, email],
           ),
         after: (g) => [
@@ -862,7 +871,12 @@ export const clients = new Hono<AppEnv>()
       throw e;
     }
     if (done) return c.json({ id: contactId }, 201);
-    return (await clientExists(c, id)) ? err(c, EMAIL_IN_USE, 409) : err(c, NOT_FOUND, 404);
+    const cl = await db
+      .prepare("SELECT anonymised_at FROM clients WHERE id = ?1")
+      .bind(id)
+      .first<{ anonymised_at: number | null }>();
+    if (!cl) return err(c, NOT_FOUND, 404);
+    return cl.anonymised_at !== null ? refuseAnonymised(c) : err(c, EMAIL_IN_USE, 409);
   });
 
 // ---- contacts ----------------------------------------------------------------------------------------------------------
@@ -911,13 +925,30 @@ export const EXPORT_PARTS: Record<string, { sql: (cur: boolean) => string; time?
       `SELECT id, at, realm, actor_id, method, route, status, ip, user_agent FROM access_log WHERE actor_id = ?1${cur ? " AND (at, id) > (?4, ?5)" : ""} ORDER BY at, id LIMIT 51`,
     time: true,
   },
+  // The client's notes and file records, only where the erase would delete them: the contact is an individual client's last live
+  // contact (`LAST_LIVE_INDIVIDUAL`; the manifest lists these two parts only then, and the SQL repeats the condition). Metadata only:
+  // never the file bytes or the R2 key. Whether the file contents belong in an export is VERIFY WITH CA/LEGAL.
+  notes: {
+    sql: (cur) =>
+      `SELECT n.id, n.body_md AS body, n.visibility, (SELECT code FROM projects WHERE id = n.project_id) AS project_code, n.created_at FROM notes n WHERE n.client_id = ?3 AND ${LAST_LIVE_INDIVIDUAL("n.client_id")}${cur ? " AND n.id > ?5" : ""} ORDER BY n.id LIMIT 51`,
+  },
+  files: {
+    sql: (cur) =>
+      `SELECT f.id, f.filename, f.mime, f.size, f.sha256, f.shared, (SELECT code FROM projects WHERE id = f.project_id) AS project_code, f.created_at FROM files f WHERE f.client_id = ?3 AND ${LAST_LIVE_INDIVIDUAL("f.client_id")}${cur ? " AND f.id > ?5" : ""} ORDER BY f.id LIMIT 51`,
+  },
 };
+/** The export parts that exist only for an individual client's last live contact. */
+const LAST_CONTACT_PARTS = ["notes", "files"];
 
 /** The statements that anonymise (or delete) a person's leads: the lead this contact was made from (`leads.contact_id`, which survives an email change), or by the contact's current email at this client or at none. */
 const MATCHED_LEADS =
   "SELECT l.id FROM leads l WHERE l.contact_id = ?1 OR (l.contact_email = (SELECT email FROM contacts WHERE id = ?1) AND (l.client_id IS NULL OR l.client_id = (SELECT client_id FROM contacts WHERE id = ?1)))";
 const HELD_LEAD_SQL =
   "EXISTS (SELECT 1 FROM leads l WHERE l.legal_hold = 1 AND (l.contact_id = c.id OR (l.contact_email = c.email AND (l.client_id IS NULL OR l.client_id = c.client_id))))";
+
+/** The client of contact `?1` is an individual and this contact is its last live one: the condition of the client's own erase (`col` is the row's client column). */
+const LAST_LIVE_INDIVIDUAL = (col: string) =>
+  `${col} = (SELECT client_id FROM contacts WHERE id = ?1) AND EXISTS (SELECT 1 FROM clients cl WHERE cl.id = ${col} AND cl.type = 'individual') AND NOT EXISTS (SELECT 1 FROM contacts o WHERE o.client_id = ${col} AND o.id <> ?1 AND o.anonymised_at IS NULL)`;
 
 export const contacts = new Hono<AppEnv>()
   .patch("/:id", param(idParam), body(patchContact), async (c) => {
@@ -1026,10 +1057,10 @@ export const contacts = new Hono<AppEnv>()
     const db = c.env.DB;
     const contact = await db
       .prepare(
-        "SELECT c.*, cl.type AS client_type FROM contacts c JOIN clients cl ON cl.id = c.client_id WHERE c.id = ?1",
+        "SELECT c.*, cl.type AS client_type, (cl.type = 'individual' AND NOT EXISTS (SELECT 1 FROM contacts o WHERE o.client_id = c.client_id AND o.id <> c.id AND o.anonymised_at IS NULL)) AS last_live FROM contacts c JOIN clients cl ON cl.id = c.client_id WHERE c.id = ?1",
       )
       .bind(id)
-      .first<ContactRow & { client_type: string }>();
+      .first<ContactRow & { client_type: string; last_live: number }>();
     if (!contact) return err(c, NOT_FOUND, 404);
     if (contact.anonymised_at !== null) return err(c, ANONYMISED, 409);
     const base = [id, contact.email, contact.client_id];
@@ -1047,20 +1078,23 @@ export const contacts = new Hono<AppEnv>()
           .bind(contact.client_id),
         db.prepare("SELECT * FROM email_suppressions WHERE email = ?1").bind(contact.email),
       ]);
-      const { client_type: _kind, ...plain } = contact;
+      const { client_type: _kind, last_live: _last, ...plain } = contact;
       out = {
         contact: plain,
         client: client?.results[0] ?? null,
         suppression: supp?.results[0] ?? null,
-        // The parts to ask for next, in order.
-        manifest: Object.keys(EXPORT_PARTS),
+        // The parts to ask for next, in order (notes and files only for an individual client's last live contact).
+        manifest: Object.keys(EXPORT_PARTS).filter(
+          (p) => contact.last_live === 1 || !LAST_CONTACT_PARTS.includes(p),
+        ),
       };
       rows = 1;
     } else {
       const part = EXPORT_PARTS[f.part];
       const cur = f.after === undefined ? null : decodeCursor(f.after);
       if (f.after !== undefined && !cur) return err(c, BAD_REQUEST, 400);
-      if (!part) return err(c, BAD_REQUEST, 400);
+      if (!part || (LAST_CONTACT_PARTS.includes(f.part) && contact.last_live !== 1))
+        return err(c, BAD_REQUEST, 400);
       // Id-ordered parts compare the id (?5); time-ordered ones the pair (?4, ?5). rowid parts carry the number as text.
       const sql = part.sql(cur !== null);
       const bind = cur
@@ -1100,10 +1134,16 @@ export const contacts = new Hono<AppEnv>()
     const db = c.env.DB;
     const t = Date.now();
     const erase = mode === "erase";
+    const fileKeys: string[] = [];
     const done = await mutate(c, {
       action: erase ? "contact.erase" : "contact.anonymise",
       entityType: "client",
       entityId: null,
+      // The only statement that returns rows is the files DELETE ... RETURNING r2_key: those objects are deleted after the batch.
+      onResults: (results) => {
+        for (const r of results)
+          for (const row of r.results as { r2_key?: string }[]) if (row.r2_key) fileKeys.push(row.r2_key);
+      },
       // The row is written only while the contact is live, no legal hold stands on the contact, its client or a lead of theirs, and
       // (erase only) the contact is on no issued document. Every following statement is guarded on this row.
       auditFirst: (auditId, who) =>
@@ -1138,10 +1178,34 @@ export const contacts = new Hono<AppEnv>()
           .bind(id, ANONYMISED_CONTACT, anonymisedEmail(id), t, ...g.params),
         // 2. sign-in access: sessions and links of this contact
         ...deleteContactAccess(db, id, g),
+        // 2b. an individual client's notes and files go with its last live contact (owner, 2026-10-25; VERIFY WITH CA/LEGAL; a
+        //     business client's are never touched). The same conditions as step 3, in the same batch, before the contact changes.
+        //     The file rows come back (RETURNING) so their R2 objects can be deleted after the batch.
+        db
+          .prepare(`DELETE FROM notes WHERE ${LAST_LIVE_INDIVIDUAL("notes.client_id")} AND ${g.sql(2)}`)
+          .bind(id, ...g.params),
+        db
+          .prepare(
+            `DELETE FROM files WHERE ${LAST_LIVE_INDIVIDUAL("files.client_id")} AND ${g.sql(2)} RETURNING r2_key`,
+          )
+          .bind(id, ...g.params),
+        // 2c. its projects keep only their codes, and their milestones become "Milestone 1, 2, ..." in order (owner, 2026-10-25;
+        //     free-text names can name the person; amounts, dates and statuses stay; VERIFY WITH CA/LEGAL). Same conditions.
+        db
+          .prepare(
+            `UPDATE milestones SET title = 'Milestone ' || (SELECT count(*) FROM milestones m2 WHERE m2.project_id = milestones.project_id AND m2.position <= milestones.position), updated_at = max(?2, updated_at + 1)
+             WHERE project_id IN (SELECT id FROM projects WHERE ${LAST_LIVE_INDIVIDUAL("projects.client_id")}) AND ${g.sql(3)}`,
+          )
+          .bind(id, t, ...g.params),
+        db
+          .prepare(
+            `UPDATE projects SET name = code, updated_at = max(?2, updated_at + 1) WHERE ${LAST_LIVE_INDIVIDUAL("projects.client_id")} AND ${g.sql(3)}`,
+          )
+          .bind(id, t, ...g.params),
         // 3. an individual client's own record, when this is its last live contact (before the contact changes)
         db
           .prepare(
-            `UPDATE clients SET legal_name = ?2, display_name = ?2, billing_address = NULL, service_address = NULL, notes = NULL, tags = NULL, updated_at = ?3
+            `UPDATE clients SET legal_name = ?2, display_name = ?2, billing_address = NULL, service_address = NULL, notes = NULL, tags = NULL, anonymised_at = ?3, updated_at = ?3
              WHERE id = (SELECT client_id FROM contacts WHERE id = ?1) AND type = 'individual'
                AND NOT EXISTS (SELECT 1 FROM contacts o WHERE o.client_id = clients.id AND o.id <> ?1 AND o.anonymised_at IS NULL) AND ${g.sql(4)}`,
           )
@@ -1166,7 +1230,10 @@ export const contacts = new Hono<AppEnv>()
               .bind(id, ANONYMISED_CONTACT, anonymisedEmail(id), t, ...g.params),
       ],
     });
-    if (done) return c.json({ ok: true, mode });
+    if (done) {
+      if (fileKeys.length) c.executionCtx.waitUntil(dropObjects(c.env, fileKeys, "client erased"));
+      return c.json({ ok: true, mode });
+    }
     // Nothing was written: say why.
     const why = await c.env.DB.prepare(
       `SELECT c.anonymised_at AS gone, (c.legal_hold = 1 OR cl.legal_hold = 1 OR ${HELD_LEAD_SQL}) AS held, ${CONTACT_ON_ISSUED_DOCUMENT_SQL} AS doc FROM contacts c JOIN clients cl ON cl.id = c.client_id WHERE c.id = ?1`,

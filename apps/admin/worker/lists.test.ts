@@ -402,11 +402,11 @@ describe("global search [ADM-G-05]", () => {
     expect(group(staff, "lead").items).toHaveLength(0); // "searchable" starts neither the ref nor the lead's email
   });
 
-  it("returns what the role may read: sales no staff, the accountant clients and contacts only, owner everything", async () => {
+  it("returns what the role may read: sales no staff, the accountant clients and contacts only (no projects), owner everything", async () => {
     await lead("L-ROLE1", "Role Lead", "role.lead@example.test");
     const sales = await sessionFor("sales");
     const res = await find(sales.cookie, "L-ROLE");
-    expect(res.groups.map((g: J) => g.type)).toEqual(["lead", "client", "contact"]);
+    expect(res.groups.map((g: J) => g.type)).toEqual(["lead", "client", "contact", "project"]);
     const accountant = await sessionFor("accountant");
     expect((await find(accountant.cookie, "L-ROLE")).groups.map((g: J) => g.type)).toEqual([
       "client",
@@ -417,6 +417,7 @@ describe("global search [ADM-G-05]", () => {
       "lead",
       "client",
       "contact",
+      "project",
       "user",
     ]);
   });

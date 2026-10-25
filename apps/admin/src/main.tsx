@@ -85,6 +85,9 @@ const router = createBrowserRouter([
           { path: "clients", lazy: () => import("./routes/clients.tsx") },
           { path: "clients/new", lazy: () => import("./routes/clients/new.tsx") },
           { path: "clients/:id", lazy: () => import("./routes/clients/client.tsx") },
+          { path: "projects", lazy: () => import("./routes/projects.tsx") },
+          { path: "projects/new", lazy: () => import("./routes/projects/new.tsx") },
+          { path: "projects/:id", lazy: () => import("./routes/projects/project.tsx") },
           // The M1.5 address of the staff screen.
           { path: "users", element: <Navigate to="/settings/users" replace /> },
           { path: ":section/*", lazy: async () => ({ Component: (await shell()).Section }) },

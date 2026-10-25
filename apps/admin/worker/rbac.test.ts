@@ -27,6 +27,7 @@ import {
   tokenOfLink,
   userId,
 } from "./test-helpers.ts";
+import { mkFile, mkMilestone, mkNote, mkProject, PDF_BYTES, upload } from "./test-projects.ts";
 
 const newEmail = () => `rbac-${Math.random().toString(36).slice(2, 10)}@example.com`;
 const PUBLIC = ROUTES.filter((r) => r.access === "public");
@@ -174,7 +175,124 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
     ]);
     return { id, contactId, updatedAt };
   };
+  // M3.4: projects, milestones, notes and files. Each fixture is written straight to the database with an old `updated_at`.
+  const scenarioProject = async () => {
+    const { id: clientId } = await scenarioClient();
+    const p = await mkProject(clientId);
+    return { clientId, projectId: p.id, updatedAt: p.updatedAt };
+  };
+  const projectScenarios: Record<string, Scenario> = {
+    "POST /api/v1/projects": async () => {
+      const s = await owner();
+      const { id } = await scenarioClient();
+      return run(s, "/projects", { body: { clientId: id, name: "Scenario project" } });
+    },
+    "PATCH /api/v1/projects/:id": async () => {
+      const s = await owner();
+      const p = await scenarioProject();
+      return run(s, `/projects/${p.projectId}`, {
+        method: "PATCH",
+        body: { expectedUpdatedAt: p.updatedAt, name: "Renamed" },
+      });
+    },
+    "POST /api/v1/projects/:id/status": async () => {
+      const s = await owner();
+      const p = await scenarioProject();
+      return run(s, `/projects/${p.projectId}/status`, { body: { to: "active" } });
+    },
+    "POST /api/v1/projects/:id/milestones": async () => {
+      const s = await owner();
+      const p = await scenarioProject();
+      return run(s, `/projects/${p.projectId}/milestones`, { body: { title: "First", amountMinor: 5000 } });
+    },
+    "POST /api/v1/projects/:id/milestones/order": async () => {
+      const s = await owner();
+      const p = await scenarioProject();
+      const a = await mkMilestone(p.projectId, { position: 1 });
+      const b = await mkMilestone(p.projectId, { position: 2 });
+      return run(s, `/projects/${p.projectId}/milestones/order`, { body: { ids: [b.id, a.id] } });
+    },
+    "PATCH /api/v1/milestones/:id": async () => {
+      const s = await owner();
+      const p = await scenarioProject();
+      const m = await mkMilestone(p.projectId);
+      return run(s, `/milestones/${m.id}`, {
+        method: "PATCH",
+        body: { expectedUpdatedAt: m.updatedAt, title: "Retitled" },
+      });
+    },
+    "POST /api/v1/milestones/:id/status": async () => {
+      const s = await owner();
+      const p = await scenarioProject();
+      const m = await mkMilestone(p.projectId);
+      return run(s, `/milestones/${m.id}/status`, { body: { to: "ready_to_bill" } });
+    },
+    "DELETE /api/v1/milestones/:id": async () => {
+      const s = await owner();
+      const p = await scenarioProject();
+      const m = await mkMilestone(p.projectId);
+      return run(s, `/milestones/${m.id}`, { method: "DELETE" });
+    },
+    "POST /api/v1/projects/:id/notes": async () => {
+      const s = await owner();
+      const p = await scenarioProject();
+      return run(s, `/projects/${p.projectId}/notes`, { body: { bodyMd: "A note" } });
+    },
+    "POST /api/v1/clients/:id/notes": async () => {
+      const s = await owner();
+      const { id } = await scenarioClient();
+      return run(s, `/clients/${id}/notes`, { body: { bodyMd: "A client note", visibility: "shared" } });
+    },
+    "PATCH /api/v1/notes/:id": async () => {
+      const s = await owner();
+      const { id: clientId } = await scenarioClient();
+      const n = await mkNote(clientId);
+      return run(s, `/notes/${n.id}`, {
+        method: "PATCH",
+        body: { expectedUpdatedAt: n.updatedAt, bodyMd: "Edited" },
+      });
+    },
+    "DELETE /api/v1/notes/:id": async () => {
+      const s = await owner();
+      const { id: clientId } = await scenarioClient();
+      const n = await mkNote(clientId);
+      return run(s, `/notes/${n.id}`, { method: "DELETE" });
+    },
+    "POST /api/v1/projects/:id/files": async () => {
+      const s = await owner();
+      const p = await scenarioProject();
+      const rid = `ray-${crypto.randomUUID()}`;
+      const res = await upload(`/projects/${p.projectId}/files`, PDF_BYTES, {
+        cookie: s.cookie,
+        headers: headers(rid),
+      });
+      return { res, rid, actor: s };
+    },
+    "POST /api/v1/clients/:id/files": async () => {
+      const s = await owner();
+      const { id } = await scenarioClient();
+      const rid = `ray-${crypto.randomUUID()}`;
+      const res = await upload(`/clients/${id}/files`, PDF_BYTES, {
+        cookie: s.cookie,
+        headers: headers(rid),
+      });
+      return { res, rid, actor: s };
+    },
+    "PATCH /api/v1/files/:id": async () => {
+      const s = await owner();
+      const { id: clientId } = await scenarioClient();
+      const f = await mkFile(clientId);
+      return run(s, `/files/${f.id}`, { method: "PATCH", body: { shared: true } });
+    },
+    "DELETE /api/v1/files/:id": async () => {
+      const s = await owner();
+      const { id: clientId } = await scenarioClient();
+      const f = await mkFile(clientId);
+      return run(s, `/files/${f.id}`, { method: "DELETE" });
+    },
+  };
   const scenarios: Record<string, Scenario> = {
+    ...projectScenarios,
     "POST /api/v1/auth/step-up": async () => {
       const s = await sessionFor("owner");
       const rid = `ray-${crypto.randomUUID()}`;

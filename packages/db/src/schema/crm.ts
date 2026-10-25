@@ -154,6 +154,8 @@ export const clients = sqliteTable(
     tags: text("tags", { mode: "json" }).$type<string[]>(),
     notes: text("notes"),
     legalHold: flag("legal_hold"),
+    /** M3.4 review: set (UTC ms) in the batch that erases or anonymises an individual's last live contact; the screens and writes lock on it. Added with ALTER TABLE only (`clients` is referenced). */
+    anonymisedAt: integer("anonymised_at"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -233,6 +235,13 @@ export const projects = sqliteTable(
     uniqueIndex("projects_code").on(t.code),
     index("projects_client_status").on(t.clientId, t.status),
     index("projects_owner").on(t.ownerId),
+    // M3.4: lists, the filters, the name prefix search, and one project per source document (M4.5 "Start project" is idempotent).
+    index("projects_created").on(t.createdAt, t.id),
+    index("projects_status_created").on(t.status, t.createdAt, t.id),
+    index("projects_name_nocase").on(sql`${t.name} collate nocase`),
+    uniqueIndex("projects_source_document")
+      .on(t.sourceDocumentId)
+      .where(sql`${t.sourceDocumentId} is not null`),
     check("projects_status", oneOf(t.status, PROJECT_STATUSES)),
     check("projects_currency", oneOf(t.currency, CURRENCY_CODES)),
   ],
@@ -262,6 +271,7 @@ export const milestones = sqliteTable(
   (t) => [
     uniqueIndex("milestones_project_position").on(t.projectId, t.position),
     index("milestones_document").on(t.documentId),
+    index("milestones_status_due").on(t.status, t.dueDate),
     check("milestones_status", oneOf(t.status, MILESTONE_STATUSES)),
     check("milestones_pct", sql`${t.pctBp} is null or ${t.pctBp} between 0 and 10000`),
   ],
@@ -284,6 +294,7 @@ export const notes = sqliteTable(
   (t) => [
     index("notes_client").on(t.clientId, t.createdAt),
     index("notes_project").on(t.projectId, t.createdAt),
+    index("notes_client_visibility").on(t.clientId, t.visibility, t.createdAt),
     check("notes_visibility", oneOf(t.visibility, NOTE_VISIBILITY)),
   ],
 );
@@ -307,6 +318,7 @@ export const files = sqliteTable(
     uniqueIndex("files_r2_key").on(t.r2Key),
     index("files_client").on(t.clientId, t.createdAt),
     index("files_project").on(t.projectId, t.createdAt),
+    index("files_client_shared").on(t.clientId, t.shared, t.createdAt),
     check("files_size", sql`${t.size} between 1 and 26214400`),
   ],
 );

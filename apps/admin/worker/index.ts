@@ -10,12 +10,16 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { account } from "./account.ts";
 import { audit } from "./audit.ts";
 import { auth } from "./auth.ts";
+import { clientTabs } from "./client-tabs.ts";
 import { clients, contacts } from "./clients.ts";
 import { type AppEnv, accessEntry, BAD_REQUEST, type Ctx, err, FORBIDDEN, NOT_FOUND } from "./context.ts";
 import { csrf } from "./csrf.ts";
+import { files } from "./files.ts";
 import { guard, routeFor } from "./guard.ts";
 import { leads } from "./leads.ts";
+import { notes } from "./notes.ts";
 import { notifications } from "./notifications.ts";
+import { milestones, projects } from "./projects.ts";
 import { search } from "./search.ts";
 import { settings } from "./settings.ts";
 import { users } from "./users.ts";
@@ -90,7 +94,9 @@ export function createApp() {
     }),
   );
   app.use(csrf);
-  app.use(bodyLimit({ maxSize: 16 * 1024, onError: (c) => err(c as Ctx, BAD_REQUEST, 413) }));
+  const jsonLimit = bodyLimit({ maxSize: 16 * 1024, onError: (c) => err(c as Ctx, BAD_REQUEST, 413) });
+  // An upload route (`body: "upload"`) checks its own declared length and streams; every other route stays at 16 KB.
+  app.use((c, next) => (c.var.route?.body === "upload" ? next() : jsonLimit(c, next)));
   app.use(guard);
 
   app.get("/v1/health", (c) => c.json({ ok: true, service: "admin", env: c.env.ENVIRONMENT }));
@@ -100,6 +106,11 @@ export function createApp() {
   app.route("/v1/settings", settings);
   app.route("/v1/leads", leads);
   app.route("/v1/clients", clients);
+  app.route("/v1/clients", clientTabs);
+  app.route("/v1/projects", projects);
+  app.route("/v1/milestones", milestones);
+  app.route("/v1/notes", notes);
+  app.route("/v1/files", files);
   app.route("/v1/contacts", contacts);
   app.route("/v1/notifications", notifications);
   app.route("/v1/search", search);
