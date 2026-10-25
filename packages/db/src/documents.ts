@@ -1,6 +1,16 @@
 // Reading one proposal or estimate with everything that belongs to it, in ONE D1 call (M4.3). The admin editor uses it, and M4.4 (PDF)
 // and M4.5 (portal, accept) read through it. Subpath export (`@techaust/db/documents`) so a Worker importing it doesn't pull in the
 // Drizzle schema. The JSON columns are parsed; everything else is the row as D1 returns it (snake_case).
+import { daysBetween, parseIsoDate } from "@techaust/core/dates";
+import {
+  contentHash,
+  type DraftContent,
+  isQuoteType,
+  type SnapshotInput,
+  snapshotSha256,
+} from "@techaust/core/documents";
+import { sha256Hex } from "@techaust/core/hash";
+import { SCHEDULE_TRIGGERS } from "@techaust/core/schedule-text";
 import type { ComputedDocument } from "@techaust/core/tax";
 import type { IssuerSnapshot, RecipientSnapshot } from "./schema/documents.ts";
 
@@ -198,6 +208,167 @@ export function loadStatements(
 /** The document with its lines, sections, schedule, the group's versions, its terms row and its approvals; null when there is no such id. */
 export async function loadDocument(db: D1Database, id: string): Promise<DocumentBundle | null> {
   return bundleOf(await db.batch(loadStatements(db, id)));
+}
+
+// ---- sealing and verifying a sent version (M4.3; the formats are stored contracts: M4.4's jobs consumer and M4.5 verify with these) ----------
+
+/** Everything the seal of a sent version is made from. The send route fills it from the draft it just worked out; a verifier fills it from the rows. */
+export type SealParts = {
+  readonly document: SnapshotInput["document"];
+  /** The tax result that is stored (as the exact text `computedJson`) in `documents.computed`. */
+  readonly computed: ComputedDocument;
+  readonly recipient: RecipientSnapshot;
+  readonly issuer: IssuerSnapshot;
+  readonly terms: { readonly id: string; readonly version: number; readonly sha256: string };
+  /** The amount of each payment step, in order. */
+  readonly instalmentAmounts: readonly number[];
+};
+
+export type Seal = {
+  /** The exact text written to `documents.computed`. */
+  computedJson: string;
+  computedSha256: string;
+  input: SnapshotInput;
+  /** `documents.snapshot_sha256`: the hash of the canonical `{v: 2, header}` (core `documentSnapshot`). */
+  snapshotSha256: string;
+};
+
+/** The one place the snapshot input and its hash are made: the send route calls it before the freeze, a verifier after. */
+export async function sealOf(p: SealParts): Promise<Seal> {
+  const computedJson = JSON.stringify(p.computed);
+  const computedSha256 = await sha256Hex(computedJson);
+  const input: SnapshotInput = {
+    document: p.document,
+    supply: p.computed.supply,
+    recipient: p.recipient,
+    issuer: p.issuer,
+    terms: p.terms,
+    instalmentAmounts: p.instalmentAmounts,
+    computedSha256,
+  };
+  return { computedJson, computedSha256, input, snapshotSha256: await snapshotSha256(input) };
+}
+
+const kindOf = (v: string | null): "fixed" | "percent" | null =>
+  v === "fixed" || v === "percent" ? v : null;
+
+/**
+ * The editable content of a loaded document, as `contentHash` takes it: the same mapping the admin's editor state makes
+ * (`stateOfBundle` then `draftContentOf`), so a frozen row hashes to the `content_sha256` it was sent with. Null for any type but
+ * a proposal or an estimate.
+ */
+export function draftContentOfBundle(b: DocumentBundle<TermsRef>): DraftContent | null {
+  const d = b.document;
+  if (!isQuoteType(d.type)) return null;
+  return {
+    type: d.type,
+    clientId: d.client_id,
+    contactId: d.contact_id,
+    title: d.title,
+    currency: d.currency === "USD" ? "USD" : "INR",
+    validityDays: d.validity_days,
+    termsVersionId: d.terms_version_id,
+    discountKind: kindOf(d.discount_kind),
+    discountValue: d.discount_value,
+    exportMode: d.export_mode,
+    lines: b.lines.map((r) => ({
+      catalogueItemId: r.catalogue_item_id,
+      description: r.description,
+      detail: r.detail,
+      sac: r.sac,
+      qtyMilli: r.qty_milli,
+      unit: r.unit,
+      rateMinor: r.rate_minor,
+      discountKind: kindOf(r.discount_kind),
+      discountValue: r.discount_value,
+      gstRateBp: r.gst_rate_bp,
+      catalogueRateMinor: r.catalogue_rate_minor,
+      catalogueLine: r.catalogue_line,
+    })),
+    sections: b.sections.map((r) => ({
+      kind: r.kind,
+      title: r.title,
+      bodyMd: r.body_md,
+      hidden: r.hidden === 1,
+    })),
+    schedule: b.schedule.map((r) => ({
+      label: r.label,
+      trigger: SCHEDULE_TRIGGERS.find((t) => t === r.trigger) ?? "on_accept",
+      pctBp: r.pct_bp,
+      detail: r.detail,
+      targetDate: r.target_date,
+    })),
+  };
+}
+
+/** The content hash of a loaded SENT version, worked out again from its rows and its stored `computed` (compare with `content_sha256`). */
+export function contentHashOfBundle(b: DocumentBundle<TermsRef>): Promise<string> | null {
+  const draft = draftContentOfBundle(b);
+  return draft && b.document.computed ? contentHash(draft, b.document.computed) : null;
+}
+
+/**
+ * The seal parts of a loaded SENT proposal or estimate, from its frozen columns: null when it is not one, not sent, or lacks a frozen
+ * block. The validity in days is the distance from the issue date to the last valid day (the send wrote `valid_until` as the issue
+ * date plus the effective validity), so it holds even where the document's own `validity_days` was left empty.
+ */
+export function sealPartsOfBundle(b: DocumentBundle<TermsRef>): SealParts | null {
+  const d = b.document;
+  if (!isQuoteType(d.type) || d.frozen_at === null) return null;
+  const { computed, recipient, issuer } = d;
+  const terms = b.terms;
+  if (!computed || !recipient || !issuer || !terms) return null;
+  if (!d.issue_date || !d.valid_until || !d.content_sha256 || !d.version_group_id) return null;
+  const from = parseIsoDate(d.issue_date);
+  const to = parseIsoDate(d.valid_until);
+  if (!from || !to) return null;
+  return {
+    document: {
+      type: d.type,
+      clientId: d.client_id,
+      versionGroupId: d.version_group_id,
+      version: d.version,
+      currency: d.currency,
+      title: d.title,
+      issueDate: d.issue_date,
+      validUntil: d.valid_until,
+      validityDays: daysBetween(from, to),
+      contentSha256: d.content_sha256,
+      discountKind: kindOf(d.discount_kind),
+      discountValue: d.discount_value,
+      exportMode: d.export_mode,
+    },
+    computed,
+    recipient,
+    issuer,
+    terms: { id: terms.id, version: terms.version, sha256: terms.sha256 },
+    instalmentAmounts: b.schedule.map((r) => r.amount_minor),
+  };
+}
+
+export type SealCheck = {
+  /** The content hash worked out from the rows equals `content_sha256`. */
+  content: boolean;
+  /**
+   * The snapshot hash worked out from the rows equals `snapshot_sha256`. The header holds the hash of the stored `computed` text, and the
+   * parsed result is written out again (`JSON.stringify` of what `JSON.stringify` wrote is the same text), so this also proves `computed`.
+   */
+  snapshot: boolean;
+};
+
+/**
+ * Checks a loaded sent version against the hashes it was sealed with, using the send route's own functions. Null when the bundle is
+ * not a sent proposal or estimate. A caller that needs more (the PDF's SHA-256 of the snapshot copy) compares `snapshotSha256` itself.
+ */
+export async function verifySealed(b: DocumentBundle<TermsRef>): Promise<SealCheck | null> {
+  const parts = sealPartsOfBundle(b);
+  const content = contentHashOfBundle(b);
+  if (!parts || !content) return null;
+  const seal = await sealOf(parts);
+  return {
+    content: (await content) === b.document.content_sha256,
+    snapshot: seal.snapshotSha256 === b.document.snapshot_sha256,
+  };
 }
 
 /** The bundle from the results of `loadStatements` (the first seven results of a batch); null when the document does not exist. */

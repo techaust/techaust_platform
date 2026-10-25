@@ -398,17 +398,22 @@ export type SnapshotInput = {
  * `snapshot_sha256 = sha256Hex(canonicalJson(documentSnapshot(i)))`.
  */
 export function documentSnapshot(i: SnapshotInput) {
+  return { v: 2, header: snapshotHeader(i) };
+}
+
+/**
+ * The `header` of `documentSnapshot`, exported so the jobs Worker (the PDF, M4.4) and the portal (M4.5) check a sent version with the
+ * very function the send route sealed it with. Its key order does not matter: `canonicalJson` sorts keys.
+ */
+export function snapshotHeader(i: SnapshotInput) {
   return {
-    v: 2,
-    header: {
-      document: i.document,
-      supply: i.supply,
-      recipient: i.recipient,
-      issuer: i.issuer,
-      terms: i.terms,
-      instalmentAmounts: i.instalmentAmounts,
-      computedSha256: i.computedSha256,
-    },
+    document: i.document,
+    supply: i.supply,
+    recipient: i.recipient,
+    issuer: i.issuer,
+    terms: i.terms,
+    instalmentAmounts: i.instalmentAmounts,
+    computedSha256: i.computedSha256,
   };
 }
 

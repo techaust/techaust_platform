@@ -29,7 +29,8 @@
     // everywhere until the owner says otherwise; production has no value (and no cron) until Phase 7.
     "LEAD_PURGE_MODE": "dry_run"
   },
-  // Daily 22:00 UTC (03:30 IST): enqueues the leads due for deletion, nothing else (JOB-CRON-01). Not inherited.
+  // Daily 22:00 UTC (03:30 IST): enqueues the leads due for deletion (JOB-CRON-01) and one message per nightly statistic for the IST day that
+  // just ended (M3.5, stats_daily); it enqueues and reads nothing else. Not inherited.
   "triggers": { "crons": ["0 22 * * *"] },
   // SES keys: names only; values come from `wrangler secret put` (docs/runbooks/ses-and-turnstile.md). Not inherited.
   "secrets": { "required": ["SES_ACCESS_KEY_ID", "SES_SECRET_ACCESS_KEY"] },

@@ -224,11 +224,12 @@ export type ChipGroup = {
   selected: string[];
 };
 
-/** Search plus chip groups. Every chip is a toggle button; "Clear filters" appears when anything is set. */
+/** Search plus chip groups. Every chip is a toggle button; "Clear filters" appears when anything is set. A list the API can't
+ * search (care plans) leaves `searchLabel` out and gets the chips alone. */
 export function FilterBar(props: {
-  searchLabel: string;
-  query: string;
-  onQuery: (q: string) => void;
+  searchLabel?: string | undefined;
+  query?: string | undefined;
+  onQuery?: ((q: string) => void) | undefined;
   groups: ChipGroup[];
   onToggle: (group: string, value: string) => void;
   onClear: () => void;
@@ -242,7 +243,8 @@ export function FilterBar(props: {
   extraOn?: number | undefined;
 }) {
   const extraOn = props.extraOn ?? 0;
-  const active = props.query !== "" || props.groups.some((g) => g.selected.length > 0) || extraOn > 0;
+  const query = props.query ?? "";
+  const active = query !== "" || props.groups.some((g) => g.selected.length > 0) || extraOn > 0;
   const on = props.groups.reduce((n, g) => n + g.selected.length, 0) + extraOn;
   const [open, setOpen] = useState(false);
   const groupsId = useId();
@@ -253,20 +255,22 @@ export function FilterBar(props: {
       data-open={open || undefined}
       id={groupsId}
     >
-      <div className="filters__search">
-        <label htmlFor="filter-q">{props.searchLabel}</label>
-        <div className="field-icon">
-          <Search size={20} />
-          <input
-            id="filter-q"
-            type="search"
-            value={props.query}
-            onChange={(e) => props.onQuery(e.target.value)}
-            autoComplete="off"
-            spellCheck={false}
-          />
+      {props.searchLabel && (
+        <div className="filters__search">
+          <label htmlFor="filter-q">{props.searchLabel}</label>
+          <div className="field-icon">
+            <Search size={20} />
+            <input
+              id="filter-q"
+              type="search"
+              value={query}
+              onChange={(e) => props.onQuery?.(e.target.value)}
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </div>
         </div>
-      </div>
+      )}
       <button
         type="button"
         className="btn btn--secondary filters__toggle"

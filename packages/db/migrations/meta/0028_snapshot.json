@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "4af48c68-6a2a-4853-904d-6bad8f73cac5",
+  "id": "c148f82d-2cb1-4374-bb28-0e30764cf4c6",
   "prevId": "ed242b91-03a6-464a-bf5a-546e2bd314ae",
   "tables": {
     "catalogue_items": {
@@ -632,6 +632,302 @@
         }
       }
     },
+    "stats_daily": {
+      "name": "stats_daily",
+      "columns": {
+        "date": {
+          "name": "date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "metric": {
+          "name": "metric",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "dimension": {
+          "name": "dimension",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
+        },
+        "value": {
+          "name": "value",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(cast(unixepoch('subsec') * 1000 as integer))"
+        }
+      },
+      "indexes": {
+        "stats_daily_metric": {
+          "name": "stats_daily_metric",
+          "columns": ["metric", "date"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "stats_daily_date_metric_dimension_pk": {
+          "columns": ["date", "metric", "dimension"],
+          "name": "stats_daily_date_metric_dimension_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "stats_daily_date": {
+          "name": "stats_daily_date",
+          "value": "date(\"stats_daily\".\"date\") is \"stats_daily\".\"date\""
+        },
+        "stats_daily_value": {
+          "name": "stats_daily_value",
+          "value": "typeof(\"stats_daily\".\"value\") = 'integer'"
+        }
+      }
+    },
+    "care_plan_status_log": {
+      "name": "care_plan_status_log",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "care_plan_id": {
+          "name": "care_plan_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "effective_on": {
+          "name": "effective_on",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(cast(unixepoch('subsec') * 1000 as integer))"
+        }
+      },
+      "indexes": {
+        "care_plan_status_log_plan": {
+          "name": "care_plan_status_log_plan",
+          "columns": ["care_plan_id", "effective_on", "created_at", "id"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "care_plan_status_log_care_plan_id_care_plans_id_fk": {
+          "name": "care_plan_status_log_care_plan_id_care_plans_id_fk",
+          "tableFrom": "care_plan_status_log",
+          "tableTo": "care_plans",
+          "columnsFrom": ["care_plan_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "care_plan_status_log_created_by_staff_users_id_fk": {
+          "name": "care_plan_status_log_created_by_staff_users_id_fk",
+          "tableFrom": "care_plan_status_log",
+          "tableTo": "staff_users",
+          "columnsFrom": ["created_by"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "care_plan_status_log_status": {
+          "name": "care_plan_status_log_status",
+          "value": "\"care_plan_status_log\".\"status\" in ('active', 'paused', 'cancelled')"
+        },
+        "care_plan_status_log_date": {
+          "name": "care_plan_status_log_date",
+          "value": "date(\"care_plan_status_log\".\"effective_on\") is \"care_plan_status_log\".\"effective_on\""
+        }
+      }
+    },
+    "care_plan_terms": {
+      "name": "care_plan_terms",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "care_plan_id": {
+          "name": "care_plan_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "effective_from": {
+          "name": "effective_from",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "tier": {
+          "name": "tier",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "price_minor": {
+          "name": "price_minor",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "included_minutes": {
+          "name": "included_minutes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "ai_ops_minor": {
+          "name": "ai_ops_minor",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "overage_rate_minor": {
+          "name": "overage_rate_minor",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "rollover": {
+          "name": "rollover",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(cast(unixepoch('subsec') * 1000 as integer))"
+        }
+      },
+      "indexes": {
+        "care_plan_terms_plan": {
+          "name": "care_plan_terms_plan",
+          "columns": ["care_plan_id", "effective_from", "created_at", "id"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "care_plan_terms_care_plan_id_care_plans_id_fk": {
+          "name": "care_plan_terms_care_plan_id_care_plans_id_fk",
+          "tableFrom": "care_plan_terms",
+          "tableTo": "care_plans",
+          "columnsFrom": ["care_plan_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "care_plan_terms_created_by_staff_users_id_fk": {
+          "name": "care_plan_terms_created_by_staff_users_id_fk",
+          "tableFrom": "care_plan_terms",
+          "tableTo": "staff_users",
+          "columnsFrom": ["created_by"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "care_plan_terms_date": {
+          "name": "care_plan_terms_date",
+          "value": "date(\"care_plan_terms\".\"effective_from\") is \"care_plan_terms\".\"effective_from\""
+        },
+        "care_plan_terms_tier": {
+          "name": "care_plan_terms_tier",
+          "value": "\"care_plan_terms\".\"tier\" in ('essential', 'growth', 'scale', 'dev_subscription', 'custom')"
+        },
+        "care_plan_terms_rollover": {
+          "name": "care_plan_terms_rollover",
+          "value": "\"care_plan_terms\".\"rollover\" in ('none', 'one_month')"
+        },
+        "care_plan_terms_price": {
+          "name": "care_plan_terms_price",
+          "value": "\"care_plan_terms\".\"price_minor\" >= 0"
+        },
+        "care_plan_terms_included": {
+          "name": "care_plan_terms_included",
+          "value": "\"care_plan_terms\".\"included_minutes\" >= 0 and \"care_plan_terms\".\"included_minutes\" % 15 = 0"
+        },
+        "care_plan_terms_ai_ops": {
+          "name": "care_plan_terms_ai_ops",
+          "value": "\"care_plan_terms\".\"ai_ops_minor\" is null or \"care_plan_terms\".\"ai_ops_minor\" >= 0"
+        },
+        "care_plan_terms_rate": {
+          "name": "care_plan_terms_rate",
+          "value": "\"care_plan_terms\".\"overage_rate_minor\" is null or \"care_plan_terms\".\"overage_rate_minor\" >= 0"
+        }
+      }
+    },
     "care_plans": {
       "name": "care_plans",
       "columns": {
@@ -751,13 +1047,6 @@
           "notNull": false,
           "autoincrement": false
         },
-        "source_document_id": {
-          "name": "source_document_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "integer",
@@ -786,11 +1075,15 @@
           "columns": ["status", "billing_day"],
           "isUnique": false
         },
-        "care_plans_source_document": {
-          "name": "care_plans_source_document",
-          "columns": ["source_document_id"],
-          "isUnique": true,
-          "where": "\"care_plans\".\"source_document_id\" is not null"
+        "care_plans_created": {
+          "name": "care_plans_created",
+          "columns": ["created_at", "id"],
+          "isUnique": false
+        },
+        "care_plans_status_created": {
+          "name": "care_plans_status_created",
+          "columns": ["status", "created_at", "id"],
+          "isUnique": false
         }
       },
       "foreignKeys": {
@@ -799,15 +1092,6 @@
           "tableFrom": "care_plans",
           "tableTo": "clients",
           "columnsFrom": ["client_id"],
-          "columnsTo": ["id"],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "care_plans_source_document_id_documents_id_fk": {
-          "name": "care_plans_source_document_id_documents_id_fk",
-          "tableFrom": "care_plans",
-          "tableTo": "documents",
-          "columnsFrom": ["source_document_id"],
           "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
@@ -2349,14 +2633,19 @@
           "columns": ["project_id", "work_date"],
           "isUnique": false
         },
-        "time_logs_care_plan_date": {
-          "name": "time_logs_care_plan_date",
-          "columns": ["care_plan_id", "work_date"],
-          "isUnique": false
-        },
         "time_logs_user_date": {
           "name": "time_logs_user_date",
           "columns": ["user_id", "work_date"],
+          "isUnique": false
+        },
+        "time_logs_date": {
+          "name": "time_logs_date",
+          "columns": ["work_date", "id"],
+          "isUnique": false
+        },
+        "time_logs_care_usage": {
+          "name": "time_logs_care_usage",
+          "columns": ["care_plan_id", "work_date", "billable", "minutes"],
           "isUnique": false
         }
       },
@@ -2643,17 +2932,6 @@
           "name": "approvals_requested_by",
           "columns": ["requested_by", "status"],
           "isUnique": false
-        },
-        "approvals_created": {
-          "name": "approvals_created",
-          "columns": ["created_at", "id"],
-          "isUnique": false
-        },
-        "approvals_document_pending": {
-          "name": "approvals_document_pending",
-          "columns": ["document_id", "kind"],
-          "isUnique": true,
-          "where": "\"approvals\".\"status\" = 'pending'"
         }
       },
       "foreignKeys": {
@@ -2822,27 +3100,6 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
-          "autoincrement": false
-        },
-        "catalogue_rate_minor": {
-          "name": "catalogue_rate_minor",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "catalogue_line": {
-          "name": "catalogue_line",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "detail": {
-          "name": "detail",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
           "autoincrement": false
         }
       },
@@ -3263,132 +3520,6 @@
           "notNull": false,
           "autoincrement": false
         },
-        "title": {
-          "name": "title",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "contact_id": {
-          "name": "contact_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "validity_days": {
-          "name": "validity_days",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "discount_kind": {
-          "name": "discount_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "discount_value": {
-          "name": "discount_value",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "export_mode": {
-          "name": "export_mode",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "content_sha256": {
-          "name": "content_sha256",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "computed": {
-          "name": "computed",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "catalogue_reference_minor": {
-          "name": "catalogue_reference_minor",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "source_document_id": {
-          "name": "source_document_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "source_step": {
-          "name": "source_step",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "issuer": {
-          "name": "issuer",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "sent_at": {
-          "name": "sent_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "viewed_at": {
-          "name": "viewed_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "decided_at": {
-          "name": "decided_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "decision_reason": {
-          "name": "decision_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "decision_note": {
-          "name": "decision_note",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "decided_contact_id": {
-          "name": "decided_contact_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
         "voided_at": {
           "name": "voided_at",
           "type": "integer",
@@ -3472,12 +3603,12 @@
       "indexes": {
         "documents_series_fy_number": {
           "name": "documents_series_fy_number",
-          "columns": ["series", "fy", "number", "version"],
+          "columns": ["series", "fy", "number"],
           "isUnique": true
         },
         "documents_number_display": {
           "name": "documents_number_display",
-          "columns": ["number_display", "series", "version"],
+          "columns": ["series", "number_display"],
           "isUnique": true,
           "where": "\"documents\".\"number_display\" is not null"
         },
@@ -3515,38 +3646,6 @@
         "documents_terms_version": {
           "name": "documents_terms_version",
           "columns": ["terms_version_id"],
-          "isUnique": false
-        },
-        "documents_type_created": {
-          "name": "documents_type_created",
-          "columns": ["type", "created_at", "id"],
-          "isUnique": false
-        },
-        "documents_type_status_created": {
-          "name": "documents_type_status_created",
-          "columns": ["type", "status", "created_at", "id"],
-          "isUnique": false
-        },
-        "documents_status_valid_until": {
-          "name": "documents_status_valid_until",
-          "columns": ["status", "valid_until"],
-          "isUnique": false
-        },
-        "documents_open_draft": {
-          "name": "documents_open_draft",
-          "columns": ["version_group_id"],
-          "isUnique": true,
-          "where": "\"documents\".\"frozen_at\" is null and \"documents\".\"version_group_id\" is not null"
-        },
-        "documents_source": {
-          "name": "documents_source",
-          "columns": ["source_document_id", "source_step"],
-          "isUnique": true,
-          "where": "\"documents\".\"source_document_id\" is not null"
-        },
-        "documents_contact": {
-          "name": "documents_contact",
-          "columns": ["contact_id"],
           "isUnique": false
         }
       },
@@ -3592,33 +3691,6 @@
           "tableFrom": "documents",
           "tableTo": "staff_users",
           "columnsFrom": ["issued_by"],
-          "columnsTo": ["id"],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "documents_contact_id_contacts_id_fk": {
-          "name": "documents_contact_id_contacts_id_fk",
-          "tableFrom": "documents",
-          "tableTo": "contacts",
-          "columnsFrom": ["contact_id"],
-          "columnsTo": ["id"],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "documents_source_document_id_documents_id_fk": {
-          "name": "documents_source_document_id_documents_id_fk",
-          "tableFrom": "documents",
-          "tableTo": "documents",
-          "columnsFrom": ["source_document_id"],
-          "columnsTo": ["id"],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "documents_decided_contact_id_contacts_id_fk": {
-          "name": "documents_decided_contact_id_contacts_id_fk",
-          "tableFrom": "documents",
-          "tableTo": "contacts",
-          "columnsFrom": ["decided_contact_id"],
           "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
@@ -3724,20 +3796,6 @@
         },
         "milestone_id": {
           "name": "milestone_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "detail": {
-          "name": "detail",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "target_date": {
-          "name": "target_date",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

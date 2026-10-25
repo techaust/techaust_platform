@@ -127,6 +127,9 @@ Every line comes from approved copy (07 §5.3, §5.5). Placeholders aren't used 
 | `client_anonymised` / `contact_anonymised` | "This client's or contact's details were erased, so this can't be sent." |
 | `not_accepted` | "Only an accepted version can be converted." |
 | `already_converted` | "This version has already been converted." |
+| `converted_to_care_plan` | "This estimate has already become a care plan, so it can't also become an invoice draft." |
+| `converted_to_invoice` | "This estimate already has an invoice draft, so it can't also become a care plan." |
+| `included_minutes_required` | "Enter the included hours for this plan." |
 | `not_an_estimate` / `not_a_care_estimate` | "Only an estimate can be converted this way." / "Only a care-plan estimate can become a care plan." |
 | `currency_mismatch` | "The currencies don't match." |
 | `monthly_line_in_proposal` | "Monthly lines belong in a care-plan estimate, not a proposal." |

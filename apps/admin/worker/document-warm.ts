@@ -24,6 +24,7 @@ export function warmDocuments(): number {
       requestBody.safeParse({ expectedUpdatedAt: 1, reason: "r" }).success,
       decideBody.safeParse({ decision: "approve", note: "n" }).success,
       convertBody.safeParse({ to: "invoice" }).success,
+      convertBody.safeParse({ to: "care_plan", startDate: "2026-11-01", billingDay: 1 }).success,
       listQuery.safeParse({ type: "proposal", limit: "25" }).success,
     ];
     return samples.filter(Boolean).length;

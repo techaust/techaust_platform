@@ -32,7 +32,7 @@ const create = (cookie: string, body: Record<string, unknown>) => call("/documen
 
 describe("start-up warm-up", () => {
   it("every request schema of the new routes has a sample that parses (seven schemas)", () => {
-    expect(warmDocuments()).toBe(7);
+    expect(warmDocuments()).toBe(8);
   });
 });
 

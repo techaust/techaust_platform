@@ -144,6 +144,10 @@ type ProjectRow = {
   created_at: number;
   updated_at: number;
 };
+/** The hours logged on a project: totals only, served by `time_logs_project_date` (exported so a test can EXPLAIN it). */
+export const PROJECT_HOURS_SQL =
+  "SELECT coalesce(sum(minutes), 0) AS total, coalesce(sum(CASE WHEN billable = 1 THEN minutes END), 0) AS billable FROM time_logs WHERE project_id = ?1";
+
 const PROJECT_COLS =
   "p.id, p.code, p.client_id, c.code AS client_code, c.display_name AS client_name, p.source_document_id, p.name, p.status, p.start_date, p.target_date, p.owner_id, (SELECT name FROM staff_users WHERE id = p.owner_id) AS owner_name, p.currency, p.budget_minor, p.created_at, p.updated_at";
 export const projectView = (r: ProjectRow) => ({
@@ -354,7 +358,7 @@ export const projects = new Hono<AppEnv>()
   .get("/:id", param(idParam), async (c) => {
     const { id } = c.req.valid("param");
     const db = c.env.DB;
-    const [p, ms, ns, fs, gone] = await db.batch<Record<string, unknown>>([
+    const [p, ms, ns, fs, gone, hrs] = await db.batch<Record<string, unknown>>([
       db
         .prepare(
           `SELECT ${PROJECT_COLS} FROM projects p JOIN clients c ON c.id = p.client_id WHERE p.id = ?1`,
@@ -378,9 +382,13 @@ export const projects = new Hono<AppEnv>()
         )
         .bind(id),
       db.prepare(`SELECT ${clientGoneSql("p.client_id")} AS gone FROM projects p WHERE p.id = ?1`).bind(id),
+      // The hours logged on the project (M3.5, ADM-PRJ-05): totals only, never a person or a note, so every role that reads a project
+      // sees the same figure. Served by `time_logs_project_date`; a project has a handful of entries a day at most.
+      db.prepare(PROJECT_HOURS_SQL).bind(id),
     ]);
     const row = p?.results[0] as ProjectRow | undefined;
     if (!row) return err(c, NOT_FOUND, 404);
+    const hours = hrs?.results[0] as { total: number; billable: number } | undefined;
     const milestones = (ms?.results ?? []) as MilestoneRow[];
     return c.json({
       project: projectView(row),
@@ -393,10 +401,10 @@ export const projects = new Hono<AppEnv>()
       ),
       recentNotes: ((ns?.results ?? []) as NoteRow[]).map(noteView),
       recentFiles: ((fs?.results ?? []) as FileRow[]).map(fileView),
-      // The two figures that need other modules say so, instead of showing a zero: the screens print "arrives with ...".
+      // Billed against paid needs invoices and says so, instead of showing a zero: the screens print "arrives with ...".
       figures: {
         billedVsPaid: { available: false, arrivesWith: "invoicing" },
-        hours: { available: false, arrivesWith: "time_logs" },
+        hours: { available: true, totalMinutes: hours?.total ?? 0, billableMinutes: hours?.billable ?? 0 },
       },
     });
   })

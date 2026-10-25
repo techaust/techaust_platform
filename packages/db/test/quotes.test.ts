@@ -1,4 +1,4 @@
-// Proposals and estimates at the database (M4.3; ADM-PROP-05, ADM-PROP-06, ADM-APR-02, ADM-EST-01): the document triggers (0029), the shared
+// Proposals and estimates at the database (M4.3; ADM-PROP-05, ADM-PROP-06, ADM-APR-02, ADM-EST-01): the document triggers (0032), the shared
 // send batch (`sendStatements`) and `loadDocument`. Raw SQL on purpose: the API checks these rules too, but the triggers hold whatever writes.
 import { env } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core";
@@ -617,7 +617,7 @@ describe("care_plans.source_document_id is set once [care_plans_source_fixed]", 
   });
 });
 
-describe("the M3.2 convert backfill (0029, statement 1)", () => {
+describe("the M3.2 convert backfill (0032, statement 1)", () => {
   it("gives a proposal or estimate draft with no group its own id; leaves the rest alone", async () => {
     const clientId = await insertClient("C-QBACK");
     // The M3.2 convert wrote drafts with no group. The version triggers refuse that now (and the backfill itself would be refused by

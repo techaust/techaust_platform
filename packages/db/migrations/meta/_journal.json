@@ -201,15 +201,36 @@
     {
       "idx": 28,
       "version": "6",
-      "when": 1792953590779,
-      "tag": "0028_documents_quotes",
+      "when": 1792943122254,
+      "tag": "0028_care_time",
       "breakpoints": true
     },
     {
       "idx": 29,
       "version": "6",
-      "when": 1792953593531,
-      "tag": "0029_document_triggers",
+      "when": 1792943133447,
+      "tag": "0029_time_triggers",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "6",
+      "when": 1792943136181,
+      "tag": "0030_drop_time_logs_care_plan_date",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "6",
+      "when": 1792956258128,
+      "tag": "0031_documents_quotes",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "6",
+      "when": 1792956281675,
+      "tag": "0032_document_triggers",
       "breakpoints": true
     }
   ]

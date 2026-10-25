@@ -97,7 +97,14 @@ describe("EXPLAIN: no table scan on the lists, the queue, the search and the sen
         validUntil: "2026-11-09",
         recipient: { legalName: "x", country: "IN" },
         issuer: {
-          company: { tradeName: "t", legalName: null, address: null, gstin: null, stateCode: "19" },
+          company: {
+            tradeName: "t",
+            legalName: null,
+            address: null,
+            gstin: null,
+            stateCode: "19",
+            logo: "logo-primary-color.svg",
+          },
           sender: { staffId: "s", name: "n", email: "e" },
         },
         computedJson: "{}",
