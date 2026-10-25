@@ -4,8 +4,10 @@
 // change has made invalid.
 import { decideBody, requestBody } from "./approvals.ts";
 import { convertBody } from "./document-convert.ts";
+import { resendBody } from "./document-links.ts";
 import { patchBody } from "./document-save.ts";
 import { sendBody } from "./document-send.ts";
+import { startBody } from "./document-start.ts";
 import { createBody, listQuery } from "./documents.ts";
 
 export function warmDocuments(): number {
@@ -20,7 +22,9 @@ export function warmDocuments(): number {
         sections: [{ kind: "estimate", title: "Estimate", bodyMd: "x" }],
         schedule: [{ label: "On acceptance", trigger: "on_accept", pctBp: 10_000 }],
       }).success,
-      sendBody.safeParse({ expectedUpdatedAt: 1 }).success,
+      sendBody.safeParse({ expectedUpdatedAt: 1, contactIds: ["c"], attachPdf: true }).success,
+      resendBody.safeParse({ contactIds: ["c"] }).success,
+      startBody.safeParse({ expectedUpdatedAt: 1 }).success,
       requestBody.safeParse({ expectedUpdatedAt: 1, reason: "r" }).success,
       decideBody.safeParse({ decision: "approve", note: "n" }).success,
       convertBody.safeParse({ to: "invoice" }).success,

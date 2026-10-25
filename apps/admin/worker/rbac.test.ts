@@ -8,6 +8,7 @@ import { ROUTES } from "./guard.ts";
 import app, { createApp } from "./index.ts";
 import { mkLog, mkOpenProject, mkPlan, today } from "./test-care.ts";
 import { entryBody, mkItem, putPaymentTerms, siteItems } from "./test-catalogue.ts";
+import { mkContact } from "./test-clients.ts";
 import {
   accept,
   bodyOf,
@@ -828,6 +829,38 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
       expect((await sendDoc(s, made.id, made.updatedAt)).status).toBe(200);
       await env.DB.prepare("UPDATE documents SET status = 'accepted' WHERE id = ?").bind(made.id).run();
       return run(s, `/documents/${made.id}/convert`, { method: "POST", body: { to: "invoice" } });
+    },
+    // Offers to the client (M4.5): send again, end every link, and start the project of an accepted proposal.
+    "POST /api/v1/documents/:id/resend": async () => {
+      const s = await owner();
+      await mkTerms();
+      const made = await mkDraft(s);
+      expect((await sendDoc(s, made.id, made.updatedAt)).status).toBe(200);
+      const other = await mkContact(made.clientId, { portal_access: 1 });
+      return run(s, `/documents/${made.id}/resend`, { method: "POST", body: { contactIds: [other.id] } });
+    },
+    "POST /api/v1/documents/:id/links/revoke": async () => {
+      const s = await owner();
+      await mkTerms();
+      const made = await mkDraft(s);
+      expect((await sendDoc(s, made.id, made.updatedAt)).status).toBe(200);
+      // A live link to end (a revoke that changes nothing writes no audit row): one for the recipient the send wrote.
+      await env.DB.prepare(
+        `INSERT INTO offer_links (token_hash, send_id, document_id, version_group_id, client_id, contact_id, email, purpose, expires_at)
+         SELECT 'scenario-' || s.id, s.id, s.document_id, s.version_group_id, s.client_id, s.contact_id, s.email, 'offer', ?2
+         FROM document_sends s WHERE s.document_id = ?1`,
+      )
+        .bind(made.id, Date.now() + 86_400_000)
+        .run();
+      return run(s, `/documents/${made.id}/links/revoke`, { method: "POST", body: {} });
+    },
+    "POST /api/v1/documents/:id/start-project": async () => {
+      const s = await owner();
+      await mkTerms();
+      const made = await mkDraft(s);
+      expect((await sendDoc(s, made.id, made.updatedAt)).status).toBe(200);
+      await env.DB.prepare("UPDATE documents SET status = 'accepted' WHERE id = ?").bind(made.id).run();
+      return run(s, `/documents/${made.id}/start-project`, { method: "POST", body: {} });
     },
     "POST /api/v1/approvals/:id/decide": async () => {
       const s = await owner();

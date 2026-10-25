@@ -20,6 +20,8 @@ async function sentOffer() {
   const made = await mkDraft(s);
   const v = await getDoc(s, made.id);
   expect((await sendDoc(s, made.id, v.updatedAt)).status).toBe(200);
+  // The send itself wrote a row for its recipient; these tests are about the resend, so they count only the resend's rows.
+  await env.DB.prepare("DELETE FROM document_sends WHERE document_id = ?").bind(made.id).run();
   const a = await mkContact(made.clientId, { portal_access: 1, is_billing: 1, name: "Asha Rao" });
   const b = await mkContact(made.clientId, { portal_access: 1, name: "Bala Sen" });
   return { s, made, a, b };
@@ -311,7 +313,7 @@ describe("GET /documents/:id/certificate [ADM-PROP-08]", () => {
     expect([200, 404]).toContain(ok.status);
     if (ok.status === 200) {
       expect(ok.headers.get("Content-Type")).toBe("application/pdf");
-      expect(ok.headers.get("Content-Security-Policy")).toBe("sandbox");
+      expect(ok.headers.get("Content-Security-Policy")).toBe("default-src 'none'; sandbox");
     }
   });
 });

@@ -93,7 +93,7 @@ export async function recipientsOf(documentId: string): Promise<string[]> {
     "SELECT id FROM contacts WHERE client_id = ? AND anonymised_at IS NULL ORDER BY is_primary DESC, id LIMIT 1",
     doc.client_id,
   );
-  const id = existing?.id ?? (await mkContact(doc.client_id, { is_primary: 1 })).id;
+  const id = existing?.id ?? (await mkContact(doc.client_id, { is_primary: 0 })).id;
   await env.DB.prepare("UPDATE contacts SET portal_access = 1 WHERE id = ?").bind(id).run();
   return [id];
 }

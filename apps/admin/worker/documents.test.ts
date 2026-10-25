@@ -32,8 +32,8 @@ beforeAll(async () => {
 const create = (cookie: string, body: Record<string, unknown>) => call("/documents", { cookie, body });
 
 describe("start-up warm-up", () => {
-  it("every request schema of the new routes has a sample that parses (seven schemas)", () => {
-    expect(warmDocuments()).toBe(8);
+  it("every request schema of the new routes has a sample that parses (ten schemas)", () => {
+    expect(warmDocuments()).toBe(10);
   });
 });
 
