@@ -898,7 +898,7 @@ export const EXPORT_PARTS: Record<string, { sql: (cur: boolean) => string; time?
   },
   email_log: {
     sql: (cur) =>
-      `SELECT id, to_email, template, entity_type, entity_id, status, created_at AS at FROM email_log WHERE to_email = ?2 AND (entity_type IS NULL OR entity_type NOT IN ('lead', 'document') OR (entity_type = 'lead' AND NOT EXISTS (SELECT 1 FROM leads x WHERE x.id = email_log.entity_id AND x.client_id IS NOT NULL AND x.client_id <> ?3)) OR (entity_type = 'document' AND NOT EXISTS (SELECT 1 FROM documents x WHERE x.id = email_log.entity_id AND x.client_id IS NOT NULL AND x.client_id <> ?3)))${cur ? " AND (created_at, id) > (?4, ?5)" : ""} ORDER BY created_at, id LIMIT 51`,
+      `SELECT id, to_email, template, entity_type, entity_id, status, created_at AS at FROM email_log WHERE to_email = ?2 AND (entity_type IS NULL OR entity_type NOT IN ('lead', 'lead_reply', 'document') OR (entity_type = 'lead' AND NOT EXISTS (SELECT 1 FROM leads x WHERE x.ref = email_log.entity_id AND x.client_id IS NOT NULL AND x.client_id <> ?3)) OR (entity_type = 'lead_reply' AND NOT EXISTS (SELECT 1 FROM lead_activities a JOIN leads x ON x.id = a.lead_id WHERE a.id = email_log.entity_id AND x.client_id IS NOT NULL AND x.client_id <> ?3)) OR (entity_type = 'document' AND NOT EXISTS (SELECT 1 FROM documents x WHERE x.id = email_log.entity_id AND x.client_id IS NOT NULL AND x.client_id <> ?3)))${cur ? " AND (created_at, id) > (?4, ?5)" : ""} ORDER BY created_at, id LIMIT 51`,
     time: true,
   },
   audit_log: {

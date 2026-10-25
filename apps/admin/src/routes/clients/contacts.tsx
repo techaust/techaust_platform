@@ -22,7 +22,6 @@ import { StaleNotice } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { Notice } from "../../components/ui.tsx";
 import { allowed } from "../../lib/access.ts";
-import { type ContactsExtras, contactsCursor } from "../../lib/clients.ts";
 import { sentence } from "../../lib/format.ts";
 import { useUser } from "../../session.tsx";
 import { EraseDialog, ExportDialog } from "./data-tools.tsx";
@@ -42,30 +41,29 @@ export function Contacts(props: { data: ClientPage; reload: () => void }) {
   const first = props.data.contacts;
   const list = [...first, ...(more?.list ?? []).filter((c) => !first.some((f) => f.id === c.id))];
   const hasMore = more ? more.next !== null : props.data.moreContacts;
-  // After "Show more", focus moves to the first newly shown contact (the button goes away once the list is complete).
+  // After "Show more", focus moves to the first newly shown contact, or to the list when nothing new arrived (the button
+  // goes away once the list is complete, so focus must not be left on it).
   const listRef = useRef<HTMLUListElement>(null);
   const focusFrom = useRef<number | null>(null);
   useEffect(() => {
     if (more === null || focusFrom.current === null) return;
     const row = listRef.current?.children[focusFrom.current];
     focusFrom.current = null;
-    row?.querySelector<HTMLElement>("a, button")?.focus();
+    const target = row?.querySelector<HTMLElement>("a, button");
+    if (target) target.focus();
+    else listRef.current?.focus();
   }, [more]);
 
   async function loadMore() {
     setLoadingMore(true);
     setMoreError(null);
     try {
-      // The page holds the first 100 by email. The API's `contactsNext` continues right after them; without it (before
-      // the API fix), the list endpoint pages on from the start, so walk it until a row we haven't shown appears.
-      const pageCursor = contactsCursor(props.data as ClientPage & ContactsExtras);
-      const shown = new Set(list.map((c) => c.id));
-      let r = await api.clientContacts(props.data.client.id, more?.next ?? pageCursor ?? undefined);
-      let acc = [...(more?.list ?? []), ...r.contacts];
-      while (!more && !pageCursor && r.next && acc.every((c) => shown.has(c.id))) {
-        r = await api.clientContacts(props.data.client.id, r.next);
-        acc = [...acc, ...r.contacts];
-      }
+      // The page holds the first 100 by email; `contactsNext` (then each page's `next`) continues right after them.
+      const r = await api.clientContacts(
+        props.data.client.id,
+        more?.next ?? props.data.contactsNext ?? undefined,
+      );
+      const acc = [...(more?.list ?? []), ...r.contacts];
       focusFrom.current = list.length;
       setMore({ list: acc, next: r.next });
     } catch (e) {
@@ -93,7 +91,7 @@ export function Contacts(props: { data: ClientPage; reload: () => void }) {
           <p>The people you deal with at this client, who can be given access to the client portal.</p>
         </EmptyState>
       ) : (
-        <ul className="contact-list" ref={listRef}>
+        <ul className="contact-list" ref={listRef} tabIndex={-1} aria-label="Contacts">
           {list.map((c) => (
             <ContactRow
               key={c.id}

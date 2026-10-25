@@ -105,9 +105,19 @@ describe("the email-log export keeps only this client's lead and document mail [
         entity_id,
         status: "sent",
       });
-    await log("lead", leadA, "t.leadA");
-    await log("lead", leadB, "t.leadB");
-    await log("lead", leadNone, "t.leadNone");
+    // As the Workers log them: lead emails by the lead's ref (jobs), staff replies by the reply activity's id (admin).
+    const ref = async (id: string) =>
+      (await rows<{ ref: string }>("SELECT ref FROM leads WHERE id = ?", id))[0]?.ref ?? "";
+    const replyOf = async (leadId: string) => {
+      const rid = uuidv7();
+      await insert("lead_activities", { id: rid, lead_id: leadId, kind: "reply", body: "Re: your enquiry" });
+      return rid;
+    };
+    await log("lead", await ref(leadA), "t.leadA");
+    await log("lead", await ref(leadB), "t.leadB");
+    await log("lead", await ref(leadNone), "t.leadNone");
+    await log("lead_reply", await replyOf(leadA), "t.replyA");
+    await log("lead_reply", await replyOf(leadB), "t.replyB");
     await log("document", docA, "t.docA");
     await log("document", docB, "t.docB");
     await log("lead", "missing-lead", "t.leadGone");
@@ -116,7 +126,16 @@ describe("the email-log export keeps only this client's lead and document mail [
     await log(null, null, "t.plain");
     const res = await call(`/contacts/${a.id}/export`, { cookie: o.cookie, body: { part: "email_log" } });
     const got = ((await json(res)).items as J[]).map((r) => r.template).sort();
-    expect(got).toEqual(["t.docA", "t.docGone", "t.leadA", "t.leadGone", "t.leadNone", "t.link", "t.plain"]);
+    expect(got).toEqual([
+      "t.docA",
+      "t.docGone",
+      "t.leadA",
+      "t.leadGone",
+      "t.leadNone",
+      "t.link",
+      "t.plain",
+      "t.replyA",
+    ]);
   });
 });
 

@@ -357,26 +357,12 @@ export function readClientActivity(
   };
 }
 
-// ---- the client page's contacts: the live count and where "Show more" continues -------------------------------------
-/** The page's two fields from the API fix (review 5 and 7), read only when sent, so the screens work with either API. */
-export type ContactsExtras = { contactsNext?: string | null; liveContactCount?: number };
-type ContactsPage = { contacts: Pick<ContactView, "anonymisedAt">[]; moreContacts: boolean } & ContactsExtras;
-
-/** "N contacts" counts live contacts only (an anonymised one is a tombstone): exact from the API's `liveContactCount`;
- * without it, the loaded live contacts, with "+" while more rows remain unloaded. */
-export function contactCountText(page: ContactsPage): string {
-  const exact = typeof page.liveContactCount === "number";
-  const n = exact
-    ? (page.liveContactCount ?? 0)
-    : page.contacts.filter((c) => c.anonymisedAt === null).length;
-  const plus = !exact && page.moreContacts ? "+" : "";
-  return n === 1 && !plus ? "1 contact" : `${n}${plus} contacts`;
+// ---- the client page's contacts: the live count ------------------------------------------------------------------
+/** "N contacts" counts live contacts only (an anonymised one is a tombstone), from the API's `liveContactCount`. */
+export function contactCountText(page: { liveContactCount: number }): string {
+  const n = page.liveContactCount;
+  return n === 1 ? "1 contact" : `${n} contacts`;
 }
-
-/** Where "Show more contacts" continues after the page's first rows: the API's cursor when it sends one, else null (the
- * caller then walks the list from the start to the end of the loaded rows, as before the cursor existed). */
-export const contactsCursor = (page: ContactsExtras): string | null =>
-  typeof page.contactsNext === "string" && page.contactsNext !== "" ? page.contactsNext : null;
 
 // ---- the data-subject export file (ADM-CLI-05) ------------------------------------------------------------------------
 
