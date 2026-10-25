@@ -2,6 +2,7 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-10-25 [#82](https://github.com/techaust/techaust_platform/pull/82) feat(catalogue): M4.1 catalogue, templates and publish to website [ADM-CAT-01..05, WEB-G-07]
 - 2026-10-25 [#81](https://github.com/techaust/techaust_platform/pull/81) feat(projects): M3.4 projects, milestones, notes and the file vault [ADM-PRJ-01..05]
 - 2026-10-25 [#80](https://github.com/techaust/techaust_platform/pull/80) feat(tax): M4.2 tax engine: supply, per-line GST, discounts, round-off, schedules, inclusive split, credit notes [ADM-INV-05]
 - 2026-10-25 [#79](https://github.com/techaust/techaust_platform/pull/79) chore(build): worker budget guard and the M3.4–M4.5 batch record
