@@ -1138,17 +1138,24 @@ export const contacts = new Hono<AppEnv>()
           .bind(id, ANONYMISED_CONTACT, anonymisedEmail(id), t, ...g.params),
         // 2. sign-in access: sessions and links of this contact
         ...deleteContactAccess(db, id, g),
-        // 3. an individual client's own record, when this is its last live contact (before the contact changes); its GSTIN
-        //    holds the person's PAN, so it is cleared and a registered client becomes unregistered (owner, 2026-10-25;
-        //    issued documents keep their own snapshot). VERIFY WITH CA/LEGAL.
+        // 3. an individual client's own record, when this is its last live contact (before the contact changes)
         db
           .prepare(
-            `UPDATE clients SET legal_name = ?2, display_name = ?2, billing_address = NULL, service_address = NULL, notes = NULL, tags = NULL,
-               gstin = NULL, gst_status = CASE gst_status WHEN 'registered' THEN 'unregistered' ELSE gst_status END, updated_at = ?3
+            `UPDATE clients SET legal_name = ?2, display_name = ?2, billing_address = NULL, service_address = NULL, notes = NULL, tags = NULL, updated_at = ?3
              WHERE id = (SELECT client_id FROM contacts WHERE id = ?1) AND type = 'individual'
                AND NOT EXISTS (SELECT 1 FROM contacts o WHERE o.client_id = clients.id AND o.id <> ?1 AND o.anonymised_at IS NULL) AND ${g.sql(4)}`,
           )
           .bind(id, ANONYMISED_CLIENT, t, ...g.params),
+        //    and its GSTIN, which holds the person's PAN: a registered one becomes unregistered (owner, 2026-10-25; issued
+        //    documents keep their own snapshot; VERIFY WITH CA/LEGAL). Its own statement, so the state trigger only meets
+        //    registered rows and an older client without a state still erases.
+        db
+          .prepare(
+            `UPDATE clients SET gstin = NULL, gst_status = 'unregistered'
+             WHERE id = (SELECT client_id FROM contacts WHERE id = ?1) AND type = 'individual' AND gst_status = 'registered'
+               AND NOT EXISTS (SELECT 1 FROM contacts o WHERE o.client_id = clients.id AND o.id <> ?1 AND o.anonymised_at IS NULL) AND ${g.sql(2)}`,
+          )
+          .bind(id, ...g.params),
         // 4. the contact itself
         erase
           ? db.prepare(`DELETE FROM contacts WHERE id = ?1 AND ${g.sql(2)}`).bind(id, ...g.params)

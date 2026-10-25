@@ -637,6 +637,44 @@ describe("POST /contacts/:id/erase: erase and anonymise [ADM-CLI-05; owner answe
         legal_name: ANONYMISED_CLIENT,
       });
     }
+    // not the last live contact: the GSTIN stays
+    const shared = await mkClient({ type: "individual", gst_status: "registered", gstin: gstin(4) });
+    const first = await mkContact(shared);
+    await mkContact(shared);
+    expect((await erase(o.cookie, first.id, { mode: "anonymise" })).status).toBe(200);
+    expect(await one("SELECT gstin, gst_status FROM clients WHERE id = ?", shared)).toEqual({
+      gstin: gstin(4),
+      gst_status: "registered",
+    });
+    // overseas stays overseas; an older unregistered client without a state (from before 0019) still erases
+    const abroad = await mkClient({
+      type: "individual",
+      country: "US",
+      gst_status: "overseas",
+      state_code: null,
+      currency: "USD",
+    });
+    const triggers = await rows<{ sql: string }>(
+      "SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name IN ('clients_state_check_insert', 'clients_state_check_update')",
+    );
+    await env.DB.batch(
+      ["clients_state_check_insert", "clients_state_check_update"].map((n) =>
+        env.DB.prepare(`DROP TRIGGER ${n}`),
+      ),
+    );
+    const old = await mkClient({ type: "individual", state_code: null });
+    await env.DB.batch(triggers.map((r) => env.DB.prepare(r.sql)));
+    for (const [cl, status] of [
+      [abroad, "overseas"],
+      [old, "unregistered"],
+    ] as const) {
+      const last = await mkContact(cl);
+      expect((await erase(o.cookie, last.id)).status).toBe(200);
+      expect(await one("SELECT gst_status, legal_name FROM clients WHERE id = ?", cl)).toEqual({
+        gst_status: status,
+        legal_name: ANONYMISED_CLIENT,
+      });
+    }
     const biz = await mkClient({ gst_status: "registered", gstin: gstin(3) });
     const only = await mkContact(biz);
     expect((await erase(o.cookie, only.id, { mode: "anonymise" })).status).toBe(200);
