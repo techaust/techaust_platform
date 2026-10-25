@@ -92,10 +92,6 @@ export const NAV: NavItem[] = [
     path: "/catalogue",
     icon: <Package />,
     group: 2,
-    arrives: {
-      milestone: "M4.1",
-      what: "The service catalogue and its prices, and publishing them to the website.",
-    },
   },
   {
     key: "proposals",

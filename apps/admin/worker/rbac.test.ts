@@ -6,6 +6,7 @@ import { ACTIONS, decide, ROLES, SETTINGS_DEFAULTS, uuidv7 } from "@techaust/cor
 import { describe, expect, it } from "vitest";
 import { ROUTES } from "./guard.ts";
 import app, { createApp } from "./index.ts";
+import { entryBody, mkItem, putPaymentTerms, siteItems } from "./test-catalogue.ts";
 import {
   accept,
   bodyOf,
@@ -634,6 +635,42 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
       return run(s, "/settings/terms/standard_terms", {
         method: "POST",
         body: { body: "Sample terms text." },
+      });
+    },
+    // Catalogue (M4.1): one scenario for each audited route.
+    "POST /api/v1/catalogue": async () => {
+      const s = await owner();
+      return run(s, "/catalogue", { method: "POST", body: entryBody() });
+    },
+    "PATCH /api/v1/catalogue/:id": async () => {
+      const s = await owner();
+      const item = await mkItem();
+      return run(s, `/catalogue/${item.id}`, {
+        method: "PATCH",
+        body: { expectedUpdatedAt: item.updatedAt, priceInrMinor: 123_400 },
+      });
+    },
+    "POST /api/v1/catalogue/:id/active": async () => {
+      const s = await owner();
+      const item = await mkItem({ active: 0 });
+      return run(s, `/catalogue/${item.id}/active`, { method: "POST", body: { active: true } });
+    },
+    "POST /api/v1/catalogue/publish": async () => {
+      const s = await owner();
+      await putPaymentTerms();
+      // The services the website needs (publishing refuses a snapshot without them).
+      await siteItems();
+      return run(s, "/catalogue/publish", { method: "POST" });
+    },
+    "POST /api/v1/templates": async () => {
+      const s = await owner();
+      return run(s, "/templates", {
+        method: "POST",
+        body: {
+          kind: "proposal",
+          category: "run",
+          body: { sections: [{ key: "scope", heading: "Scope", body: "{{service.short}}" }] },
+        },
       });
     },
     "POST /api/v1/settings/email/test-send": async () => {

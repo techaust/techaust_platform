@@ -3,6 +3,14 @@
 // - `step_up_required` (403): the step-up dialog opens; on success the same request is sent once more.
 // - `unauthenticated` (401) on a signed-in route: the session has ended, so the app goes back to sign-in.
 import type { ArgonParams } from "@techaust/auth";
+import type {
+  CATALOGUE_CATEGORIES,
+  CATALOGUE_UNITS,
+  CreateEntry,
+  PatchEntry,
+  TEMPLATE_KIND_VALUES,
+  TemplateBody,
+} from "@techaust/core/catalogue";
 import type { Role } from "@techaust/core/permissions";
 import type { Settings } from "@techaust/core/settings";
 import type { TermsBlockId } from "@techaust/core/terms";
@@ -133,7 +141,7 @@ export type Notification = {
   createdAt: number;
 };
 export type SearchGroupData = {
-  type: "user" | "lead" | "client" | "contact" | "project";
+  type: "user" | "lead" | "client" | "contact" | "project" | "catalogue";
   label: string;
   items: { id: string; title: string; subtitle: string; link: string }[];
 };
@@ -582,6 +590,10 @@ type ApiErrorBody = {
   error?: { code: string; message: string };
   request_id?: string;
   fields?: FieldIssue[];
+  /** 422 `snapshot_invalid` (POST /catalogue/publish): the failing paths of the snapshot, never values. */
+  paths?: string[];
+  /** 422 `snapshot_invalid`: what the website needs that the snapshot lacks. */
+  needs?: SiteNeedAnswer[];
 };
 
 export class RequestError extends Error {
@@ -592,6 +604,10 @@ export class RequestError extends Error {
     readonly requestId: string | null = null,
     /** 400 `invalid`: which fields, with the server's message for each. */
     readonly fields: FieldIssue[] = [],
+    /** 422 `snapshot_invalid`: the snapshot paths that failed ("items.3.unit"). */
+    readonly paths: string[] = [],
+    /** 422 `snapshot_invalid`: what the website needs that the snapshot lacks. */
+    readonly needs: SiteNeedAnswer[] = [],
   ) {
     super(message);
   }
@@ -666,6 +682,16 @@ async function send<T>(path: string, { method, body, signedIn = true }: Options)
     e.message,
     data.request_id ?? null,
     Array.isArray(data.fields) ? data.fields : [],
+    Array.isArray(data.paths) ? data.paths.filter((p) => typeof p === "string") : [],
+    Array.isArray(data.needs)
+      ? data.needs.filter(
+          (n: unknown): n is SiteNeedAnswer =>
+            typeof n === "object" &&
+            n !== null &&
+            typeof (n as { code?: unknown }).code === "string" &&
+            typeof (n as { missing?: unknown }).missing === "string",
+        )
+      : [],
   );
   if (signedIn && res.status === 401 && e.code === "unauthenticated") unauthenticatedHandler?.();
   throw error;
@@ -994,6 +1020,116 @@ export function uploadFile(
     xhr.send(file);
   });
 }
+// ---- the catalogue, templates and publishing (M4.1, ADM-CAT-01..05) -------------------------------------------------
+
+export type CatalogueCategory = (typeof CATALOGUE_CATEGORIES)[number];
+export type CatalogueUnit = (typeof CATALOGUE_UNITS)[number];
+export type TemplateKind = (typeof TEMPLATE_KIND_VALUES)[number];
+export type EntryLine = NonNullable<CreateEntry["defaultLines"]>[number];
+export type EntryStep = CreateEntry["schedule"][number];
+export type { CreateEntry, PatchEntry, TemplateBody };
+
+/** 422 `snapshot_invalid`: what the website needs that the snapshot lacks (codes and field words only, never values). */
+/** `id`: the service's id when it exists (retired or off the website included), for a direct link. */
+export type SiteNeedAnswer = { id?: string | null } & (
+  | { code: string; missing: "service" }
+  | { code: string; missing: "price"; currency: "inr" | "usd" }
+  | { code: string; missing: "line"; line: string; currency: "inr" | "usd" | null; ambiguous: boolean }
+);
+
+/** A row of GET /catalogue. Prices are minor units (null: not offered in that currency). */
+export type CatalogueListItem = {
+  id: string;
+  code: string;
+  name: string;
+  category: CatalogueCategory;
+  short: string;
+  unit: CatalogueUnit;
+  priceInrMinor: number | null;
+  priceUsdMinor: number | null;
+  slug: string | null;
+  showOnSite: boolean;
+  active: boolean;
+  updatedAt: number;
+};
+/** The whole entry (GET /catalogue/:id): every role reads it, internal fields too. */
+export type CatalogueEntry = CatalogueListItem & {
+  longMd: string | null;
+  sac: string;
+  gstRateBp: number | null;
+  defaultLines: EntryLine[] | null;
+  deliverablesMd: string | null;
+  assumptionsMd: string | null;
+  exclusionsMd: string | null;
+  schedule: EntryStep[];
+  createdAt: number;
+};
+/** One price change (ADM-CAT-04). `field`: price_inr_minor, price_usd_minor, line:<description>:rate_inr_minor or _usd_minor. */
+export type PriceChangeRow = {
+  id: string;
+  field: string;
+  oldMinor: number | null;
+  newMinor: number | null;
+  changedBy: string | null;
+  changedByName: string | null;
+  changedAt: number;
+};
+export type CataloguePage = {
+  item: CatalogueEntry;
+  history: { items: PriceChangeRow[]; next: string | null };
+};
+export type CatalogueQuery = {
+  limit?: "25" | "50" | undefined;
+  category?: CatalogueCategory | undefined;
+  active?: "1" | "0" | undefined;
+  onSite?: "1" | "0" | undefined;
+  q?: string | undefined;
+  after?: string | undefined;
+  before?: string | undefined;
+};
+export type TemplateMeta = {
+  id: string;
+  kind: TemplateKind;
+  category: CatalogueCategory | null;
+  version: number;
+  createdAt: number;
+  /** Who saved the version (null for the seeded versions). */
+  savedByName: string | null;
+};
+export type TemplatePage = { template: TemplateMeta & { body: TemplateBody }; versions: TemplateMeta[] };
+export type SnapshotRow = {
+  id: string;
+  sha256: string;
+  publishedBy: string | null;
+  publishedByName: string | null;
+  publishedAt: number;
+  bytes: number;
+  latest: boolean;
+};
+export type PublishResult =
+  | { sha256: string; unchanged: false; id: string; items: number }
+  | { sha256: string; unchanged: true };
+
+export const catalogueApi = {
+  list: (q: CatalogueQuery = {}) => request<Page<"items", CatalogueListItem>>(`/catalogue${qs(q)}`),
+  item: (id: string, after?: string) =>
+    request<CataloguePage>(`/catalogue/${encodeURIComponent(id)}${qs({ after })}`),
+  create: (body: CreateEntry) => request<{ ok: true; id: string; code: string }>("/catalogue", { body }),
+  update: (id: string, body: PatchEntry) =>
+    request<Changed>(`/catalogue/${encodeURIComponent(id)}`, { method: "PATCH", body }),
+  setActive: (id: string, active: boolean) =>
+    request<{ ok: true; changed: boolean }>(`/catalogue/${encodeURIComponent(id)}/active`, {
+      body: { active },
+    }),
+  /** The newest version of every kind and category (12 seeded rows; at most 50). */
+  templates: () =>
+    request<{ templates: TemplateMeta[]; next: string | null }>(`/templates${qs({ limit: "50" })}`),
+  template: (id: string) => request<TemplatePage>(`/templates/${encodeURIComponent(id)}`),
+  saveTemplate: (body: { kind: TemplateKind; category: CatalogueCategory | null; body: TemplateBody }) =>
+    request<{ ok: true; id: string; version: number }>("/templates", { body }),
+  snapshots: () => request<{ snapshots: SnapshotRow[] }>("/catalogue/snapshots"),
+  publish: () => request<PublishResult>("/catalogue/publish", { body: {} }),
+};
 
 /** A message to show for any failure: the server's own words, or a plain network message. */
 export const errorText = (e: unknown) => (e instanceof RequestError ? e.message : NETWORK);

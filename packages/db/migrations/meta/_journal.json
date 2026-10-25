@@ -183,6 +183,20 @@
       "when": 1792918719376,
       "tag": "0025_project_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1792934035686,
+      "tag": "0026_catalogue_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "6",
+      "when": 1792934037707,
+      "tag": "0027_catalogue_triggers",
+      "breakpoints": true
     }
   ]
 }

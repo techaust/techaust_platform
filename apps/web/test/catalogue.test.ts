@@ -5,8 +5,9 @@ import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { catalogueSnapshot } from "@techaust/core";
+import { type CatalogueRow, canonicalJson, parseSnapshot, snapshotFromRows } from "@techaust/core/catalogue";
 import { CATALOGUE } from "@techaust/db/catalogue";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { flags } from "../src/config/site";
 import { loadSnapshot, snapshot, snapshotFile, snapshotFromSeed, snapshotSource } from "../src/lib/catalogue";
 import { displayAmount, isServiceOnSite, priceOf, scheduleOf } from "../src/lib/prices";
@@ -169,5 +170,72 @@ describe("token renderer", () => {
     expect(() => parseTokens("{{price:S99}}")).toThrow(/no catalogue entry/);
     expect(() => parseTokens("{{price:S3}}")).toThrow(/hidden/);
     expect(() => parseTokens("{{price:S16-platinum}}")).toThrow(/no priced line/);
+  });
+});
+
+// M4.1: what the admin publishes is what the site is built from. The snapshot here is made the way the admin makes it (the seed's
+// rows through `snapshotFromRows`, canonical JSON, validated by the mini twin), with one price changed, and read by the real loader.
+describe("a published snapshot (ADM-CAT-05, WEB-G-07)", () => {
+  const rows = (): CatalogueRow[] =>
+    CATALOGUE.map((c) => ({
+      code: c.code,
+      name: c.name,
+      slug: c.slug,
+      category: c.category,
+      unit: c.unit,
+      price_inr_minor: c.code === "S1" ? 4_500_000 : c.priceInr,
+      price_usd_minor: c.priceUsd,
+      schedule: JSON.stringify(c.schedule),
+      default_lines: c.defaultLines ? JSON.stringify(c.defaultLines) : null,
+      show_on_site: c.showOnSite ? 1 : 0,
+      active: 1,
+    }));
+  const published = () => {
+    const built = parseSnapshot(snapshotFromRows(rows(), snapshotFromSeed().paymentTerms));
+    if (!built.ok) throw new Error(`the seed does not publish: ${built.paths.join(", ")}`);
+    return canonicalJson(built.data);
+  };
+
+  it("the seed publishes: every on-site item passes both schemas, and S3 (off the site) is left out", () => {
+    const text = published();
+    expect(catalogueSnapshot.safeParse(JSON.parse(text)).success).toBe(true);
+    const codes = (JSON.parse(text).items as { code: string }[]).map((i) => i.code);
+    expect(codes).toEqual(onSite);
+    expect(codes).not.toContain("S3");
+  });
+
+  it("the loader reads the published file and the new price shows up through priceOf and the tokens", async () => {
+    const file = write("published.json", published());
+    const before = process.env.CATALOGUE_SNAPSHOT;
+    process.env.CATALOGUE_SNAPSHOT = file;
+    vi.resetModules();
+    try {
+      const prices = await import("../src/lib/prices");
+      const tokens = await import("../src/lib/tokens");
+      expect(prices.priceOf("S1").inr.amount).toBe(4_500_000);
+      expect(prices.displayAmount(prices.priceOf("S1").inr)).toBe("₹45,000");
+      expect(tokens.renderPlain("Sprint {{price:S1}}.")).toBe("Sprint from ₹45,000 + GST.");
+      // Everything else still resolves from the published file: schedules, default-line prices, the on-site list.
+      expect(prices.scheduleOf("S5")).toBe(
+        "40 % on acceptance, 30 % at the midpoint milestone, 30 % on delivery",
+      );
+      expect(tokens.renderPlain("Care from {{price:S16-essential}} a month.")).toBe(
+        "Care from ₹9,999 + GST a month.",
+      );
+      for (const code of onSite) expect(prices.isServiceOnSite(code), code).toBe(true);
+      expect(prices.isServiceOnSite("S3")).toBe(false);
+    } finally {
+      if (before === undefined) delete process.env.CATALOGUE_SNAPSHOT;
+      else process.env.CATALOGUE_SNAPSHOT = before;
+      vi.resetModules();
+    }
+  });
+
+  it("a tampered published file (an internal field) fails the build instead of falling back to the seed", () => {
+    const bad = JSON.parse(published());
+    bad.items[0].sac = "998313";
+    expect(() => loadSnapshot(write("tampered.json", JSON.stringify(bad)))).toThrow(
+      /not a valid catalogue snapshot/,
+    );
   });
 });

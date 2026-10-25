@@ -13,6 +13,7 @@ const MONEY_FILES = [
   "src/schemas/settings.ts",
   "src/schemas/domain.ts",
   "src/schemas/catalogue-snapshot.ts",
+  "src/catalogue.ts",
   "src/schedule-text.ts",
   "src/projects.ts",
   "src/tax/credit.ts",

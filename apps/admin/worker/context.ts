@@ -23,8 +23,8 @@ export type RouteDef = {
   audit?: string;
   /** false: never an access-log row (health). "refusals": only when the answer is 4xx/5xx (the salt and invite-start lookups). Default true. */
   log?: boolean | "refusals";
-  /** "upload": a raw binary body (the file vault): CSRF accepts `application/octet-stream` and the 16 KB body limit does not apply. Absent: JSON, 16 KB. */
-  body?: "upload";
+  /** "upload": a raw binary body (the file vault): CSRF accepts `application/octet-stream` and the 16 KB body limit does not apply. "large": a JSON body of up to 32 KB (the catalogue's service and template saves can be longer than 16 KB). Absent: JSON, 16 KB. */
+  body?: "upload" | "large";
 };
 
 export type Actor = {
