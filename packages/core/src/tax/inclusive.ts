@@ -8,6 +8,7 @@
 import { allocate, type Currency, isCurrency, money } from "../money.ts";
 import { computeCore, fxIssues } from "./document.ts";
 import { effectiveRateBp, headsFor } from "./lines.ts";
+import { supplyIssues } from "./supply.ts";
 import { roundingUnit } from "./totals.ts";
 import {
   BP,
@@ -22,6 +23,7 @@ import {
   type LineInput,
   num,
   ok,
+  type SummaryRow,
   type Supply,
   type TaxContext,
   type TaxIssue,
@@ -37,6 +39,15 @@ export type InclusiveGroup = {
   readonly gstRateBp: number;
   readonly weightMinor: number;
 };
+
+/** The groups of a computed document's tax summary, weighted by taxable value plus tax (the M4.5 first-instalment draft). */
+export function groupsOf(summary: readonly SummaryRow[]): InclusiveGroup[] {
+  return summary.map((row) => ({
+    sac: row.sac,
+    gstRateBp: row.gstRateBp,
+    weightMinor: row.taxableMinor + row.cgstMinor + row.sgstMinor + row.igstMinor,
+  }));
+}
 
 export type InclusiveSplit = {
   /** One line per group (quantity 1, no discount): feed them to `computeDocument` to get the same document again. */
@@ -72,7 +83,7 @@ export function splitInclusive(
   return guard(() => {
     if (groups.length === 0) return fail([issue("no_groups", "groups")]);
     if (groups.length > MAX_GROUPS) return fail([issue("too_many_groups", "groups")]);
-    const errors: TaxIssue[] = [];
+    const errors: TaxIssue[] = supplyIssues(supply, "supply");
     const grossOk = isInt(grossMinor) && grossMinor >= 0;
     if (!grossOk) errors.push(issue("gross_invalid", "grossMinor"));
     if (!isCurrency(currency)) errors.push(issue("currency_invalid", "currency"));
@@ -115,12 +126,15 @@ export function splitInclusive(
         unregisteredRecipient: false,
         priorErrors: [],
         priorWarnings: [],
+        // The rates are the source document's: today's override switch must not refuse them.
+        trustRates: true,
       },
       ctx,
     );
     if (!computed.ok) return computed;
     const warnings = computed.warnings;
-    if (computed.value.roundOffMinor !== 0) warnings.push(warn("inclusive_residual", "roundOffMinor"));
+    if (currency === "USD" && computed.value.roundOffMinor !== 0)
+      warnings.push(warn("inclusive_residual", "roundOffMinor"));
     return ok({ lines, document: computed.value }, warnings);
   });
 }

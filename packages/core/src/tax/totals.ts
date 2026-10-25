@@ -9,12 +9,13 @@
 
 import { allocate, type Currency, divRoundHalfUp, money } from "../money.ts";
 import { amountInWords } from "../words.ts";
-import { type CalcLine, headsFor } from "./lines.ts";
+import { type CalcLine, type Heads, headsFor } from "./lines.ts";
 import {
   type ComputedDocument,
   type ComputedInr,
   type ComputedLine,
   type ComputedLineInr,
+  clamp,
   fail,
   isInt,
   issue,
@@ -48,7 +49,52 @@ export type AssembleInput = {
   readonly targetTotalMinor?: number | undefined;
   /** The recipient is unregistered (a B2C document): the details warning applies. */
   readonly unregisteredRecipient: boolean;
+  /** The INR view worked out by the caller (credit notes), instead of converting this document's own taxable value. */
+  readonly inrPlan?: InrPlan | undefined;
 };
+
+/** One line's INR taxable value and tax. */
+export type InrLineParts = Heads & { readonly taxable: bigint };
+
+/**
+ * The INR view of a credit note of a USD invoice: the lines are worked out against what is left of the original's INR
+ * figures; `totalLeft` is the original's INR total minus the INR totals of the earlier notes. The final note takes exactly
+ * that; any other note stays within it.
+ */
+export type InrPlan = {
+  readonly lines: readonly InrLineParts[];
+  readonly totalLeft: bigint;
+  readonly final: boolean;
+};
+
+/** The INR document figures from its lines and round-off (the lines' INR taxable values and heads are given). */
+function inrDocument(
+  parts: readonly InrLineParts[],
+  roundOff: bigint,
+): { perLine: ComputedLineInr[]; document: ComputedInr } {
+  const sum = (pick: (p: InrLineParts) => bigint) => parts.reduce((a, p) => a + pick(p), 0n);
+  const taxable = sum((p) => p.taxable);
+  const cgst = sum((p) => p.cgst);
+  const sgst = sum((p) => p.sgst);
+  const igst = sum((p) => p.igst);
+  return {
+    perLine: parts.map((p) => ({
+      taxableMinor: num(p.taxable),
+      cgstMinor: num(p.cgst),
+      sgstMinor: num(p.sgst),
+      igstMinor: num(p.igst),
+      lineTotalMinor: num(p.taxable + p.cgst + p.sgst + p.igst),
+    })),
+    document: {
+      taxableMinor: num(taxable),
+      cgstMinor: num(cgst),
+      sgstMinor: num(sgst),
+      igstMinor: num(igst),
+      roundOffMinor: num(roundOff),
+      totalMinor: num(taxable + cgst + sgst + igst + roundOff),
+    },
+  };
+}
 
 /** The INR view of a USD document: each line's INR taxable value and tax, and the document's. */
 function inrParts(
@@ -57,7 +103,17 @@ function inrParts(
   supply: Supply,
   taxable: bigint,
   roundOff: bigint,
+  plan: InrPlan | undefined,
 ): { perLine: ComputedLineInr[]; document: ComputedInr } {
+  if (plan !== undefined) {
+    // A credit note: the lines are given. The final note's INR total is exactly what is left; the others follow the USD
+    // round-off but never go above what is left (or below 0).
+    const sum = plan.lines.reduce((a, p) => a + p.taxable + p.cgst + p.sgst + p.igst, 0n);
+    const total = plan.final
+      ? plan.totalLeft
+      : clamp(sum + divRoundHalfUp(roundOff * rate, MICROS), 0n, plan.totalLeft);
+    return inrDocument(plan.lines, total - sum);
+  }
   const inrTaxable = divRoundHalfUp(taxable * rate, MICROS);
   // "INR" is the label `allocate` wants; weights are the lines' taxable values in the document currency.
   const shares =
@@ -67,44 +123,30 @@ function inrParts(
           lines.map((l) => num(l.taxable)),
         ).map((m) => BigInt(m.amount))
       : lines.map(() => 0n);
-  const heads = lines.map((l, i) => headsFor(shares[i] as bigint, l.effectiveRateBp, supply.type));
-  const sum = (pick: (h: (typeof heads)[number]) => bigint) => heads.reduce((a, h) => a + pick(h), 0n);
-  const cgst = sum((h) => h.cgst);
-  const sgst = sum((h) => h.sgst);
-  const igst = sum((h) => h.igst);
-  const inrRoundOff = divRoundHalfUp(roundOff * rate, MICROS);
-  return {
-    perLine: lines.map((_, i) => {
-      const h = heads[i] as (typeof heads)[number];
-      const t = shares[i] as bigint;
-      return {
-        taxableMinor: num(t),
-        cgstMinor: num(h.cgst),
-        sgstMinor: num(h.sgst),
-        igstMinor: num(h.igst),
-        lineTotalMinor: num(t + h.cgst + h.sgst + h.igst),
-      };
-    }),
-    document: {
-      taxableMinor: num(inrTaxable),
-      cgstMinor: num(cgst),
-      sgstMinor: num(sgst),
-      igstMinor: num(igst),
-      roundOffMinor: num(inrRoundOff),
-      totalMinor: num(inrTaxable + cgst + sgst + igst + inrRoundOff),
-    },
-  };
+  const parts = lines.map((l, i) => ({
+    taxable: shares[i] as bigint,
+    ...headsFor(shares[i] as bigint, l.effectiveRateBp, supply.type),
+  }));
+  return inrDocument(parts, divRoundHalfUp(roundOff * rate, MICROS));
 }
 
 /** The tax summary grouped by (SAC, rate) in order of first appearance: the PDF's tax table and the GSTR-1 HSN lines. */
 function summarise(lines: readonly CalcLine[]): SummaryRow[] {
   const groups = new Map<
     string,
-    { sac: string | null; gstRateBp: number; t: bigint; c: bigint; s: bigint; i: bigint }
+    { sac: string | null; gstRateBp: number; effective: number; t: bigint; c: bigint; s: bigint; i: bigint }
   >();
   for (const l of lines) {
     const key = `${String(l.sac)}|${l.gstRateBp}`;
-    const g = groups.get(key) ?? { sac: l.sac, gstRateBp: l.gstRateBp, t: 0n, c: 0n, s: 0n, i: 0n };
+    const g = groups.get(key) ?? {
+      sac: l.sac,
+      gstRateBp: l.gstRateBp,
+      effective: l.effectiveRateBp,
+      t: 0n,
+      c: 0n,
+      s: 0n,
+      i: 0n,
+    };
     g.t += l.taxable;
     g.c += l.cgst;
     g.s += l.sgst;
@@ -114,6 +156,7 @@ function summarise(lines: readonly CalcLine[]): SummaryRow[] {
   return [...groups.values()].map((g) => ({
     sac: g.sac,
     gstRateBp: g.gstRateBp,
+    effectiveRateBp: g.effective,
     taxableMinor: num(g.t),
     cgstMinor: num(g.c),
     sgstMinor: num(g.s),
@@ -157,7 +200,7 @@ export function assemble(input: AssembleInput, ctx: TaxContext): TaxResult<Compu
   const inr =
     input.fxRateMicros === null
       ? null
-      : inrParts(lines, BigInt(input.fxRateMicros), supply, taxable, roundOff);
+      : inrParts(lines, BigInt(input.fxRateMicros), supply, taxable, roundOff, input.inrPlan);
   const computedLines: ComputedLine[] = lines.map((l, i) => ({
     index: l.index,
     sac: l.sac,

@@ -77,6 +77,15 @@ const usdDoc = (
 const noCredit = (d: ComputedDocument): CreditedSoFar => ({
   lines: d.lines.map(() => ({ taxableMinor: 0, cgstMinor: 0, sgstMinor: 0, igstMinor: 0 })),
   creditedTotalMinor: 0,
+  // A USD invoice with an FX rate also carries what was credited of its INR view.
+  ...(d.inr
+    ? {
+        inr: {
+          lines: d.lines.map(() => ({ taxableMinor: 0, cgstMinor: 0, sgstMinor: 0, igstMinor: 0 })),
+          totalMinor: 0,
+        },
+      }
+    : {}),
 });
 
 const STEPS_403030: ScheduleStep[] = [
@@ -272,6 +281,7 @@ export const GOLDEN: readonly GoldenCase[] = [
         {
           sac: "998314",
           gstRateBp: 1800,
+          effectiveRateBp: 1800,
           taxableMinor: 1_000_000,
           cgstMinor: 0,
           sgstMinor: 0,
@@ -280,6 +290,7 @@ export const GOLDEN: readonly GoldenCase[] = [
         {
           sac: "998313",
           gstRateBp: 500,
+          effectiveRateBp: 500,
           taxableMinor: 500_000,
           cgstMinor: 0,
           sgstMinor: 0,
@@ -787,7 +798,15 @@ export const GOLDEN: readonly GoldenCase[] = [
       const d = good(inrDoc(REG_MH, [line(1_000_000, { sac: "998313", gstRateBp: 0 })]));
       expect(totals(d)).toMatchObject({ taxable: 1_000_000, igst: 0, total: 1_000_000 });
       expect(d.summary).toEqual([
-        { sac: "998313", gstRateBp: 0, taxableMinor: 1_000_000, cgstMinor: 0, sgstMinor: 0, igstMinor: 0 },
+        {
+          sac: "998313",
+          gstRateBp: 0,
+          effectiveRateBp: 0,
+          taxableMinor: 1_000_000,
+          cgstMinor: 0,
+          sgstMinor: 0,
+          igstMinor: 0,
+        },
       ]);
     },
   },
@@ -900,6 +919,7 @@ export const GOLDEN: readonly GoldenCase[] = [
         {
           sac: "998314",
           gstRateBp: 1800,
+          effectiveRateBp: 1800,
           taxableMinor: 150_000,
           cgstMinor: 0,
           sgstMinor: 0,
@@ -908,12 +928,21 @@ export const GOLDEN: readonly GoldenCase[] = [
         {
           sac: "998313",
           gstRateBp: 1800,
+          effectiveRateBp: 1800,
           taxableMinor: 200_000,
           cgstMinor: 0,
           sgstMinor: 0,
           igstMinor: 36_000,
         },
-        { sac: "998314", gstRateBp: 500, taxableMinor: 10_000, cgstMinor: 0, sgstMinor: 0, igstMinor: 500 },
+        {
+          sac: "998314",
+          gstRateBp: 500,
+          effectiveRateBp: 500,
+          taxableMinor: 10_000,
+          cgstMinor: 0,
+          sgstMinor: 0,
+          igstMinor: 500,
+        },
       ]);
       expect(totals(d)).toMatchObject({ taxable: 360_000, igst: 63_500, total: 423_500 });
     },

@@ -6,14 +6,16 @@
 // - the other place-of-supply rules (s.12(3) to (14)) are treated as not applying; a person may override with a reason.
 import { clientTaxCheck, type TaxInput } from "../clients.ts";
 import { fyOfDate, isValidDate } from "../dates.ts";
-import { EXPORT_PLACE_OF_SUPPLY, isStateCode, type StateCode } from "../gstin.ts";
+import { EXPORT_PLACE_OF_SUPPLY, isStateCode, type StateCode, selectableStates } from "../gstin.ts";
 import type { Currency } from "../money.ts";
 import {
   type CalendarDate,
   type ExportMode,
   fail,
+  guard,
   issue,
   ok,
+  SUPPLY_TYPES,
   type Supply,
   type TaxContext,
   type TaxIssue,
@@ -41,11 +43,39 @@ export function lutsOf(tax: TaxContext["tax"]): { fy: string; arn: string }[] {
 
 const OVERRIDE_REASON_MAX = 500;
 
-/** Checks an override: domestic recipients only, a known state code, a reason of 1 to 500 characters. */
+/**
+ * A date the engine can use: a real calendar date whose financial year can be built. `isValidDate` allows years 100 to 9999
+ * (years 1 to 99 are not real dates for it); the FY of 1 April 9999 onwards would start in 9999, which `financialYear`
+ * refuses, so those dates are refused too.
+ */
+export function usableDate(date: CalendarDate): boolean {
+  if (!isValidDate(date)) return false;
+  const startYear = date.month >= 4 ? date.year : date.year - 1;
+  return startYear <= 9998;
+}
+
+/**
+ * Checks a fixed supply (credit and debit notes, an estimate turned into an invoice): a known type, a known place of supply
+ * and supplier state, and a place of supply that fits the type. It is NOT compared with today's supplier state: a note on
+ * an old invoice keeps the original's.
+ */
+export function supplyIssues(supply: Supply, ...path: (string | number)[]): TaxIssue[] {
+  const bad = [issue("supply_invalid", ...path)];
+  if (!SUPPLY_TYPES.includes(supply.type)) return bad;
+  if (!isStateCode(supply.supplierStateCode)) return bad;
+  const pos = supply.placeOfSupplyCode;
+  if (supply.type === "export_lut" || supply.type === "export_igst") {
+    return pos === EXPORT_PLACE_OF_SUPPLY ? [] : bad;
+  }
+  if (!isStateCode(pos)) return bad;
+  return (pos === supply.supplierStateCode) === (supply.type === "intra") ? [] : bad;
+}
+
+/** Checks an override: domestic recipients only, a state code that can be picked today, a reason of 1 to 500 characters. */
 function overrideIssues(override: PlaceOfSupplyOverride, overseas: boolean): TaxIssue[] {
   const issues: TaxIssue[] = [];
   if (overseas) issues.push(issue("pos_override_not_domestic", "placeOfSupplyOverride"));
-  if (!isStateCode(override.code)) {
+  if (!selectableStates().some((state) => state.code === override.code)) {
     issues.push(issue("pos_override_invalid_state", "placeOfSupplyOverride", "code"));
   }
   const reason = override.reason.trim();
@@ -64,9 +94,13 @@ export function determineSupply(
   ctx: TaxContext,
   opts: SupplyOptions,
 ): TaxResult<Supply> {
+  return guard(() => supplyFor(recipient, ctx, opts));
+}
+
+function supplyFor(recipient: TaxInput, ctx: TaxContext, opts: SupplyOptions): TaxResult<Supply> {
   const errors: TaxIssue[] = [];
   const warnings: TaxWarning[] = [];
-  if (!isValidDate(opts.documentDate)) errors.push(issue("date_invalid", "documentDate"));
+  if (!usableDate(opts.documentDate)) errors.push(issue("date_invalid", "documentDate"));
   const check = clientTaxCheck(recipient);
   if (!check.ok) errors.push(issue(check.code, "recipient"));
   const override = opts.placeOfSupplyOverride ?? null;

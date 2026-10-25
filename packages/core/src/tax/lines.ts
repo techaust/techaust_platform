@@ -82,6 +82,8 @@ export function prepareLines(
   lines: readonly LineInput[],
   documentDiscount: Discount | null | undefined,
   ctx: TaxContext,
+  /** The rates come from a source document that was valid when it was made (inclusive splits): today's override switch does not apply. */
+  trustRates = false,
 ): TaxResult<PreLine[]> {
   if (lines.length === 0) return fail([issue("no_lines", "lines")]);
   if (lines.length > MAX_LINES) return fail([issue("too_many_lines", "lines")]);
@@ -95,7 +97,7 @@ export function prepareLines(
     if (l.gstRateBp !== undefined) {
       if (!isIntBetween(l.gstRateBp, 0, 10000)) {
         errors.push(issue("gst_rate_invalid", "lines", i, "gstRateBp"));
-      } else if (!ctx.tax.allowLineOverride && l.gstRateBp !== rate) {
+      } else if (!trustRates && !ctx.tax.allowLineOverride && l.gstRateBp !== rate) {
         errors.push(issue("rate_override_not_allowed", "lines", i, "gstRateBp"));
       } else {
         rate = l.gstRateBp;

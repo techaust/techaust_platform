@@ -54,6 +54,9 @@ export type TaxErrorCode =
   | "total_too_large"
   | "amount_out_of_range"
   | "total_invalid"
+  | "total_not_whole_unit"
+  | "supply_invalid"
+  | "internal_error"
   | "schedule_empty"
   | "schedule_too_many"
   | "schedule_mixed_kinds"
@@ -106,25 +109,33 @@ export const MICROS = 1000000n;
 /** Basis points: 10,000 = 100 %. */
 export const BP = 10000n;
 
+/** Thrown by `num` only: an amount beyond the safe-integer range. `guard` turns it into `amount_out_of_range`. */
+export class TaxOverflow extends RangeError {}
+
 /** A bigint back to a safe-integer number; anything larger is an overflow, caught by `guard`. */
 export function num(value: bigint): number {
   const n = Number(value);
-  if (!Number.isSafeInteger(n)) throw new RangeError("Amount out of range");
+  if (!Number.isSafeInteger(n)) throw new TaxOverflow("Amount out of range");
   return n;
 }
 
 /** Floor division of two non-negative bigints (all uses are non-negative). */
 export const floorDiv = (a: bigint, b: bigint): bigint => BigInt(a) / BigInt(b);
 
+/** `value` limited to `low` and `high` (low <= high). */
+export const clamp = (value: bigint, low: bigint, high: bigint): bigint =>
+  value < low ? low : value > high ? high : value;
+
 /**
- * Wraps a public function so it never throws: the only throws left after validation are the overflow checks
- * (`num`, the money constructors), and they become `amount_out_of_range`.
+ * Wraps a public function so it never throws: an overflow check (`num`) becomes `amount_out_of_range`, and anything else
+ * that throws (a bug, or a value outside the declared types) becomes `internal_error`, so a defect cannot hide as a
+ * routine input error.
  */
 export function guard<T>(run: () => TaxResult<T>): TaxResult<T> {
   try {
     return run();
-  } catch {
-    return fail([issue("amount_out_of_range")]);
+  } catch (error) {
+    return fail([issue(error instanceof TaxOverflow ? "amount_out_of_range" : "internal_error")]);
   }
 }
 
@@ -187,6 +198,8 @@ export type ComputedLine = {
 export type SummaryRow = {
   readonly sac: string | null;
   readonly gstRateBp: number;
+  /** The rate that was applied (0 under LUT); `gstRateBp` is the line's own rate. */
+  readonly effectiveRateBp: number;
   readonly taxableMinor: number;
   readonly cgstMinor: number;
   readonly sgstMinor: number;

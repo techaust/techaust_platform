@@ -1,11 +1,10 @@
 // A whole document: supply, lines, discounts, tax, totals, round-off, words and the INR view [ADM-INV-05, ADM-EST-01/02,
 // ADM-PROP-03, ADM-INV-08, ADM-INV-09, docs/05 §10]. VERIFY WITH CA/LEGAL (the rules are in supply.ts, lines.ts, totals.ts).
 import type { TaxInput } from "../clients.ts";
-import { isValidDate } from "../dates.ts";
 import type { Currency } from "../money.ts";
 import { isCurrency } from "../money.ts";
 import { prepareLines, taxLines } from "./lines.ts";
-import { determineSupply, type PlaceOfSupplyOverride } from "./supply.ts";
+import { determineSupply, type PlaceOfSupplyOverride, supplyIssues, usableDate } from "./supply.ts";
 import { assemble } from "./totals.ts";
 import {
   type CalendarDate,
@@ -34,9 +33,9 @@ export type DocumentInput = {
   readonly recipient?: TaxInput | undefined;
   /** A fixed supply (credit and debit notes, an estimate turned into an invoice). */
   readonly supply?: Supply | undefined;
-  /** Used with `recipient` only. */
+  /** Used with `recipient` only: with a fixed `supply` it is `supply_invalid`. */
   readonly placeOfSupplyOverride?: PlaceOfSupplyOverride | null | undefined;
-  /** Used with `recipient` only. */
+  /** Used with `recipient` only: with a fixed `supply` it is `supply_invalid`. */
   readonly exportMode?: ExportMode | undefined;
   readonly lines: readonly LineInput[];
   readonly documentDiscount?: Discount | null | undefined;
@@ -62,6 +61,8 @@ export type CoreArgs = {
   readonly unregisteredRecipient: boolean;
   readonly priorErrors: readonly TaxIssue[];
   readonly priorWarnings: readonly TaxWarning[];
+  /** The line rates come from a source document (inclusive splits): the override switch is not applied again. */
+  readonly trustRates?: boolean;
 };
 
 /**
@@ -72,7 +73,7 @@ export function computeCore(args: CoreArgs, ctx: TaxContext): TaxResult<Computed
   const errors = [...args.priorErrors];
   if (!isCurrency(args.currency)) errors.push(issue("currency_invalid", "currency"));
   errors.push(...fxIssues(args.currency, args.fx));
-  const lines = prepareLines(args.lines, args.documentDiscount, ctx);
+  const lines = prepareLines(args.lines, args.documentDiscount, ctx, args.trustRates === true);
   if (!lines.ok) errors.push(...lines.errors);
   if (errors.length > 0 || !lines.ok || args.supply === undefined) return fail(uniqueIssues(errors));
 
@@ -93,7 +94,8 @@ export function computeCore(args: CoreArgs, ctx: TaxContext): TaxResult<Computed
 
 /**
  * Computes a document from its lines. Never throws: bad input comes back as `{ ok: false, errors }` (every error found, as
- * codes and paths). Pass exactly one of `recipient` (the supply and place of supply are worked out) and `supply` (fixed).
+ * codes and paths). Pass exactly one of `recipient` (the supply and place of supply are worked out) and `supply` (fixed, checked with
+ * `supplyIssues`; `exportMode` and `placeOfSupplyOverride` are not allowed beside it).
  * Debit notes are this with `supply: original.supply` (their FX is M5.3's).
  */
 export function computeDocument(input: DocumentInput, ctx: TaxContext): TaxResult<ComputedDocument> {
@@ -102,8 +104,14 @@ export function computeDocument(input: DocumentInput, ctx: TaxContext): TaxResul
     const warnings: TaxWarning[] = [];
     const hasRecipient = input.recipient !== undefined;
     if (hasRecipient === (input.supply !== undefined)) errors.push(issue("recipient_or_supply_required"));
-    if (!isValidDate(input.documentDate)) errors.push(issue("date_invalid", "documentDate"));
+    if (!usableDate(input.documentDate)) errors.push(issue("date_invalid", "documentDate"));
     let supply = input.supply;
+    if (input.supply !== undefined && !hasRecipient) {
+      errors.push(...supplyIssues(input.supply, "supply"));
+      // A fixed supply is final: a mode or an override beside it would be silently ignored, so it is refused.
+      if (input.exportMode !== undefined) errors.push(issue("supply_invalid", "exportMode"));
+      if (input.placeOfSupplyOverride) errors.push(issue("supply_invalid", "placeOfSupplyOverride"));
+    }
     if (input.recipient !== undefined) {
       const found = determineSupply(input.recipient, ctx, {
         documentDate: input.documentDate,

@@ -71,6 +71,10 @@ export function computeSchedule(
     const errors: TaxIssue[] = [];
     if (!isInt(totalMinor) || totalMinor < 0) errors.push(issue("total_invalid", "totalMinor"));
     if (!isCurrency(currency)) errors.push(issue("currency_invalid", "currency"));
+    // An INR total that is not a whole rupee (rounding on) cannot be split into whole-rupee instalments.
+    if (errors.length === 0 && BigInt(totalMinor) % roundingUnit(currency, ctx) !== 0n) {
+      errors.push(issue("total_not_whole_unit", "totalMinor"));
+    }
     const loose = steps as readonly LooseStep[];
     const percents = loose.filter((s) => "pctBp" in s).length;
     const mixed = percents !== 0 && percents !== loose.length;
@@ -79,7 +83,9 @@ export function computeSchedule(
     const last = loose.length - 1;
     loose.forEach((s, i) => {
       const label = s.label.trim();
-      const badAmount = !mixed && !percentKind && i < last && !(isInt(s.amountMinor) && s.amountMinor >= 0);
+      // Every amount step but the last has an amount; the last may have none (it is the remainder) or, if typed, a valid one.
+      const amountOk = s.amountMinor === undefined ? i === last : isInt(s.amountMinor) && s.amountMinor >= 0;
+      const badAmount = !mixed && !percentKind && !amountOk;
       const badPercent = !mixed && percentKind && !isIntBetween(s.pctBp, 0, 10000);
       if (
         label.length < 1 ||
@@ -109,6 +115,11 @@ export function computeSchedule(
       });
       const typedSum = typed.reduce((a, b) => a + b, 0n);
       if (typedSum > total) errors.push(issue("schedule_exceeds_total", "steps"));
+      // The last step is the remainder: an amount typed on it must be exactly that, not silently replaced.
+      const typedLast = (loose[last] as LooseStep).amountMinor;
+      if (typedLast !== undefined && BigInt(typedLast) !== total - typedSum) {
+        errors.push(issue("schedule_step_invalid", "steps", last));
+      }
       if (errors.length > 0) return fail(errors);
       amounts = [...typed, total - typedSum];
       pcts = shownPercents(total, amounts);
@@ -118,7 +129,7 @@ export function computeSchedule(
     const instalments = loose.map((s, i) => {
       if (amounts[i] === 0n) warnings.push(warn("schedule_zero_instalment", "steps", i));
       return {
-        label: s.label,
+        label: s.label.trim(),
         trigger: s.trigger as ScheduleInstalment["trigger"],
         pctBp: pcts[i] as number,
         amountMinor: num(amounts[i] as bigint),

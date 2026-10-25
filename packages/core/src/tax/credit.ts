@@ -2,18 +2,28 @@
 // - a credit note reverses tax per line, never more than what is left of that line's taxable value and of each tax head;
 // - the supply (and the FX rate of a USD invoice) are always the original's;
 // - a line credited in full takes exactly the tax that is left, so the credit notes of a line add up to the original line;
+// - the totals round cumulatively: a note's total is the rounded total of everything credited so far (this note included)
+//   minus the totals of the earlier notes, never more than what is left of the original total, so a run of notes can never
+//   add up to more than the invoice and the remainder can always be credited;
 // - the final credit note (nothing is left on any line) takes the total that is left, so the credit notes add up to the
-//   original total exactly (the round-off absorbs the difference, within the +-99.99 band).
+//   original total exactly (the round-off absorbs the difference, within the +-99.99 band);
+// - a USD invoice's INR view follows the same rules: per line and per head caps, a line credited in full takes its exact
+//   INR remainder, and the final note's INR total is the original's minus the earlier notes'.
 // A debit note is `computeDocument` with `supply: original.supply` (its FX is M5.3's).
-import { allocate, money } from "../money.ts";
+import { allocate, divRoundHalfUp, money } from "../money.ts";
 import { type CalcLine, type Heads, headsFor } from "./lines.ts";
-import { assemble } from "./totals.ts";
+import { supplyIssues } from "./supply.ts";
+import { assemble, type InrLineParts, type InrPlan, roundingUnit } from "./totals.ts";
 import {
   type ComputedDocument,
+  type ComputedLineInr,
+  clamp,
   fail,
   guard,
   isInt,
   issue,
+  MICROS,
+  num,
   type TaxContext,
   type TaxIssue,
   type TaxResult,
@@ -27,10 +37,20 @@ export type CreditedLine = {
   readonly igstMinor: number;
 };
 
-/** What the issued credit notes of an invoice took so far: per original line, and the totals' sum. */
+/** What earlier credit notes took of the INR view of a USD invoice: per original line, and the sum of their INR totals. */
+export type CreditedInr = {
+  readonly lines: readonly CreditedLine[];
+  readonly totalMinor: number;
+};
+
+/**
+ * What the issued credit notes of an invoice took so far: per original line, and the totals' sum. `inr` is required when
+ * the original has an INR view (a USD invoice with an FX rate) and ignored otherwise.
+ */
 export type CreditedSoFar = {
   readonly lines: readonly CreditedLine[];
   readonly creditedTotalMinor: number;
+  readonly inr?: CreditedInr | null | undefined;
 };
 
 export type CreditRequest =
@@ -66,11 +86,15 @@ function takeFor(
         !seen.has(l.line) &&
         isInt(l.taxableMinor) &&
         l.taxableMinor >= 0;
-      if (valid) {
-        seen.add(l.line);
-        take[l.line] = l.taxableMinor;
-      } else {
+      if (!valid) {
         errors.push(issue("credit_line_invalid", "request", "lines", i));
+        return;
+      }
+      seen.add(l.line);
+      take[l.line] = l.taxableMinor;
+      // Named by its position in the request, not by the original's line number.
+      if (l.taxableMinor > (remaining[l.line] as Remaining).taxable) {
+        errors.push(issue("exceeds_creditable", "request", "lines", i));
       }
     });
     return { take, errors };
@@ -97,10 +121,31 @@ function takeFor(
 
 const cap = (value: bigint, left: number): bigint => (value > BigInt(left) ? BigInt(left) : value);
 
+/** What is left of one line (or of its INR view) after the earlier notes, or null if the stored figures are inconsistent. */
+function leftOf(original: CreditedLine, credited: CreditedLine): Remaining | null {
+  const pairs = [
+    [original.taxableMinor, credited.taxableMinor],
+    [original.cgstMinor, credited.cgstMinor],
+    [original.sgstMinor, credited.sgstMinor],
+    [original.igstMinor, credited.igstMinor],
+  ] as const;
+  // Credited more than the original, or not whole numbers: the stored figures are inconsistent.
+  if (!pairs.every(([o, c]) => isInt(o) && isInt(c) && c >= 0 && c <= o)) return null;
+  return {
+    taxable: original.taxableMinor - credited.taxableMinor,
+    cgst: original.cgstMinor - credited.cgstMinor,
+    sgst: original.sgstMinor - credited.sgstMinor,
+    igst: original.igstMinor - credited.igstMinor,
+  };
+}
+
+const sumOf = (c: CreditedLine): bigint =>
+  BigInt(c.taxableMinor) + BigInt(c.cgstMinor) + BigInt(c.sgstMinor) + BigInt(c.igstMinor);
+
 /**
  * A credit note for part or all of an invoice. `credited` is what the earlier credit notes took (per original line, and the
- * sum of their totals). The result is the credit note as a computed document: only the lines credited now, with the
- * original line numbers in `index`.
+ * sum of their totals; for a USD invoice with an FX rate also the INR view). The result is the credit note as a computed
+ * document: only the lines credited now, with the original line numbers in `index`.
  */
 export function creditNote(
   original: ComputedDocument,
@@ -109,62 +154,70 @@ export function creditNote(
   ctx: TaxContext,
 ): TaxResult<ComputedDocument> {
   return guard(() => {
+    const errors: TaxIssue[] = supplyIssues(original.supply, "original", "supply");
     if (credited.lines.length !== original.lines.length) {
-      return fail([issue("credit_shape_mismatch", "credited", "lines")]);
+      errors.push(issue("credit_shape_mismatch", "credited", "lines"));
     }
-    const errors: TaxIssue[] = [];
+    if (errors.length > 0) return fail(errors);
+
     const remaining: Remaining[] = [];
     original.lines.forEach((l, i) => {
-      const c = credited.lines[i] as CreditedLine;
-      const pairs = [
-        [l.taxableMinor, c.taxableMinor],
-        [l.cgstMinor, c.cgstMinor],
-        [l.sgstMinor, c.sgstMinor],
-        [l.igstMinor, c.igstMinor],
-      ] as const;
-      // Credited more than the original line, or not whole numbers: the stored figures are inconsistent.
-      if (pairs.every(([o, d]) => isInt(o) && isInt(d) && d >= 0 && d <= o)) {
-        remaining.push({
-          taxable: l.taxableMinor - c.taxableMinor,
-          cgst: l.cgstMinor - c.cgstMinor,
-          sgst: l.sgstMinor - c.sgstMinor,
-          igst: l.igstMinor - c.igstMinor,
-        });
-      } else {
-        errors.push(issue("credit_shape_mismatch", "credited", "lines", i));
-      }
+      const left = leftOf(l, credited.lines[i] as CreditedLine);
+      if (left) remaining.push(left);
+      else errors.push(issue("credit_shape_mismatch", "credited", "lines", i));
     });
     const so = credited.creditedTotalMinor;
     if (!isInt(so) || so < 0 || so > original.totalMinor) {
       errors.push(issue("credit_shape_mismatch", "credited", "creditedTotalMinor"));
     }
+
+    // The INR view of a USD invoice with a rate: what is left of each line and of the total.
+    const rate = original.fxRateMicros;
+    const inrLeft: Remaining[] = [];
+    let inrTotalLeft = 0n;
+    if (rate !== null) {
+      const originalInr = original.inr;
+      const creditedInr = credited.inr;
+      if (originalInr === null || original.lines.some((l) => l.inr === null)) {
+        errors.push(issue("credit_shape_mismatch", "original", "inr"));
+      } else if (!creditedInr || creditedInr.lines.length !== original.lines.length) {
+        errors.push(issue("credit_shape_mismatch", "credited", "inr", "lines"));
+      } else {
+        original.lines.forEach((l, i) => {
+          const o = l.inr as ComputedLineInr;
+          const left = leftOf(o, creditedInr.lines[i] as CreditedLine);
+          if (left) inrLeft.push(left);
+          else errors.push(issue("credit_shape_mismatch", "credited", "inr", "lines", i));
+        });
+        if (
+          !isInt(creditedInr.totalMinor) ||
+          creditedInr.totalMinor < 0 ||
+          creditedInr.totalMinor > originalInr.totalMinor
+        ) {
+          errors.push(issue("credit_shape_mismatch", "credited", "inr", "totalMinor"));
+        } else {
+          inrTotalLeft = BigInt(originalInr.totalMinor - creditedInr.totalMinor);
+        }
+      }
+    }
     if (errors.length > 0) return fail(errors);
 
     const { take, errors: requestErrors } = takeFor(request, remaining);
     errors.push(...requestErrors);
-    take.forEach((t, i) => {
-      if (t > (remaining[i] as Remaining).taxable) {
-        errors.push(issue("exceeds_creditable", "request", "lines", i));
-      }
-    });
     if (errors.length === 0 && take.every((t) => t === 0)) errors.push(issue("credit_empty", "request"));
     if (errors.length > 0) return fail(errors);
 
     const lines: CalcLine[] = [];
+    const inrLines: InrLineParts[] = [];
     original.lines.forEach((l, i) => {
       const t = take[i] as number;
       const left = remaining[i] as Remaining;
       if (t === 0) return;
       // Credited in full: exactly the tax that is left. Otherwise the line rate, never above what is left of each head.
-      const rated = headsFor(BigInt(t), l.effectiveRateBp, original.supply.type);
-      const heads: Heads =
-        t === left.taxable
-          ? { cgst: BigInt(left.cgst), sgst: BigInt(left.sgst), igst: BigInt(left.igst) }
-          : {
-              cgst: cap(rated.cgst, left.cgst),
-              sgst: cap(rated.sgst, left.sgst),
-              igst: cap(rated.igst, left.igst),
-            };
+      const full = t === left.taxable;
+      const heads: Heads = full
+        ? { cgst: BigInt(left.cgst), sgst: BigInt(left.sgst), igst: BigInt(left.igst) }
+        : capHeads(headsFor(BigInt(t), l.effectiveRateBp, original.supply.type), left);
       lines.push({
         index: l.index,
         sac: l.sac,
@@ -176,18 +229,57 @@ export function creditNote(
         effectiveRateBp: l.effectiveRateBp,
         ...heads,
       });
+      if (rate !== null) {
+        // The same rules in INR: the note's USD taxable value converted at the original's rate (never above what is left),
+        // and the tax on that at the line's rate; a line credited in full takes its exact INR remainder.
+        const inr = inrLeft[i] as Remaining;
+        const taxable = full
+          ? BigInt(inr.taxable)
+          : cap(divRoundHalfUp(BigInt(t) * BigInt(rate), MICROS), inr.taxable);
+        inrLines.push({
+          taxable,
+          ...(full
+            ? { cgst: BigInt(inr.cgst), sgst: BigInt(inr.sgst), igst: BigInt(inr.igst) }
+            : capHeads(headsFor(taxable, l.effectiveRateBp, original.supply.type), inr)),
+        });
+      }
     });
+
     const final = take.every((t, i) => t === (remaining[i] as Remaining).taxable);
+    const left = BigInt(original.totalMinor - so);
+    let target: bigint;
+    if (final) {
+      target = left;
+    } else {
+      // Everything credited so far, this note included, rounded once; this note's total is what that adds to.
+      const unit = roundingUnit(original.currency, ctx);
+      const everything =
+        credited.lines.reduce((a, c) => a + sumOf(c), 0n) +
+        lines.reduce((a, l) => a + l.taxable + l.cgst + l.sgst + l.igst, 0n);
+      target = clamp(divRoundHalfUp(everything, unit) * unit - BigInt(so), 0n, left);
+    }
+    const inrPlan: InrPlan | undefined =
+      rate === null ? undefined : { lines: inrLines, totalLeft: inrTotalLeft, final };
     return assemble(
       {
         currency: original.currency,
         supply: original.supply,
         lines,
-        fxRateMicros: original.fxRateMicros,
-        targetTotalMinor: final ? original.totalMinor - so : undefined,
+        fxRateMicros: rate,
+        targetTotalMinor: num(target),
         unregisteredRecipient: false,
+        inrPlan,
       },
       ctx,
     );
   });
+}
+
+/** Each head limited to what is left of it. */
+function capHeads(heads: Heads, left: Remaining): Heads {
+  return {
+    cgst: cap(heads.cgst, left.cgst),
+    sgst: cap(heads.sgst, left.sgst),
+    igst: cap(heads.igst, left.igst),
+  };
 }

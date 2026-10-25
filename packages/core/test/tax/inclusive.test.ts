@@ -1,14 +1,27 @@
 // The inclusive split [ADM-PROP-09, ADM-INV-10]: the cases the golden table does not name.
 import { describe, expect, it } from "vitest";
-import { type InclusiveGroup, MAX_GROUPS, splitInclusive } from "../../src/tax/index.ts";
 import {
+  computeDocument,
+  groupsOf,
+  type InclusiveGroup,
+  MAX_GROUPS,
+  type Supply,
+  splitInclusive,
+} from "../../src/tax/index.ts";
+import {
+  DATE,
   DEFAULTS,
   EXPORT_IGST_SUPPLY,
+  EXPORT_LUT_SUPPLY,
   errorsOf,
   good,
   INTER_27_SUPPLY,
   INTRA_SUPPLY,
+  inrDoc,
+  line,
   NO_OVERRIDE,
+  OVERSEAS_US,
+  REG_MH,
   warningCodes,
 } from "./fixtures.ts";
 
@@ -76,11 +89,77 @@ describe("splitInclusive: input checks", () => {
     ).toEqual(["fx_invalid@fx.rateMicros"]);
   });
 
-  it("problems with the lines that are built (a rate the settings do not allow, a bad SAC) come back as line errors", () => {
-    expect(
-      errorsOf(splitInclusive(100_000, [group(1, 500)], INTER_27_SUPPLY, "INR", null, NO_OVERRIDE)),
-    ).toEqual(["rate_override_not_allowed@lines.0.gstRateBp"]);
+  it("problems with the lines that are built (a bad SAC) come back as line errors", () => {
     expect(errorsOf(split(100_000, [group(1, 1800, "9983")]))).toEqual(["sac_invalid@lines.0.sac"]);
+  });
+});
+
+describe("splitInclusive: the source document's rates and supply", () => {
+  it("a source at 500 bp still splits when the settings no longer allow line rates", () => {
+    // Rs 1,050.00 at 5 % inter: T = 100,000 (tax 100,000 x 0.05 = 5,000; the sum is exactly 105,000; T + 1 gives 105,001)
+    const { lines, document: d } = good(
+      splitInclusive(105_000, [group(1, 500)], INTER_27_SUPPLY, "INR", null, NO_OVERRIDE),
+    );
+    expect(lines.map((l) => [l.rateMinor, l.gstRateBp])).toEqual([[100_000, 500]]);
+    expect(d).toMatchObject({
+      taxableMinor: 100_000,
+      igstMinor: 5_000,
+      roundOffMinor: 0,
+      totalMinor: 105_000,
+    });
+  });
+
+  it("a fixed supply that does not hold together is supply_invalid", () => {
+    const bad: Supply[] = [
+      { type: "intra", placeOfSupplyCode: "27", supplierStateCode: "19" },
+      { type: "inter", placeOfSupplyCode: "19", supplierStateCode: "19" },
+      { type: "export_lut", placeOfSupplyCode: "27", supplierStateCode: "19" },
+    ];
+    for (const supply of bad) {
+      expect(errorsOf(splitInclusive(100_000, [group(1)], supply, "INR", null, DEFAULTS))).toEqual([
+        "supply_invalid@supply",
+      ]);
+    }
+  });
+});
+
+describe("groupsOf: the source document's tax summary as groups", () => {
+  it("weights are taxable plus tax per (SAC, rate) group", () => {
+    // 1,000,000 at 18 % (IGST 180,000 -> 1,180,000) and 500,000 at 5 % (IGST 25,000 -> 525,000)
+    const doc = good(inrDoc(REG_MH, [line(1_000_000), line(500_000, { sac: "998313", gstRateBp: 500 })]));
+    expect(groupsOf(doc.summary)).toEqual([
+      { sac: "998314", gstRateBp: 1800, weightMinor: 1_180_000 },
+      { sac: "998313", gstRateBp: 500, weightMinor: 525_000 },
+    ]);
+  });
+
+  it("under LUT there is no tax, so the weight is the taxable value, and the split can use the groups", () => {
+    const usd = good(
+      computeDocument(
+        { currency: "USD", documentDate: DATE, recipient: OVERSEAS_US, lines: [line(100_000)] },
+        DEFAULTS,
+      ),
+    );
+    const groups = groupsOf(usd.summary);
+    expect(groups).toEqual([{ sac: "998314", gstRateBp: 1800, weightMinor: 100_000 }]);
+    expect(usd.summary[0]?.effectiveRateBp).toBe(0);
+    // Under LUT the split has no tax: 25,000 cents is all taxable
+    const { document: d } = good(splitInclusive(25_000, groups, EXPORT_LUT_SUPPLY, "USD", null, DEFAULTS));
+    expect(d).toMatchObject({ taxableMinor: 25_000, igstMinor: 0, roundOffMinor: 0, totalMinor: 25_000 });
+  });
+});
+
+describe("splitInclusive: the residual warning is for USD only", () => {
+  it("an INR split with a round-off of 1 paisa has no inclusive_residual warning", () => {
+    // Rs 2.00 inter at 18 %: T = 169 (169 x 0.18 = 30.42 -> 30; sum 199); T = 170 gives 30.6 -> 31, sum 201 > 200. Round-off +1.
+    const r = split(200, [group(1)]);
+    expect(good(r).document).toMatchObject({
+      taxableMinor: 169,
+      igstMinor: 30,
+      roundOffMinor: 1,
+      totalMinor: 200,
+    });
+    expect(warningCodes(r)).toEqual([]);
   });
 });
 

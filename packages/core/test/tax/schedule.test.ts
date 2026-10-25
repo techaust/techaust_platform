@@ -92,8 +92,8 @@ describe("computeSchedule: shape", () => {
 
 describe("computeSchedule: percent steps", () => {
   it("a single step of 100 % is the whole total", () => {
-    const out = good(computeSchedule(10_000_450, "INR", [pct("Upfront", 10_000, "on_accept")], DEFAULTS));
-    expect(out).toEqual([{ label: "Upfront", trigger: "on_accept", pctBp: 10_000, amountMinor: 10_000_450 }]);
+    const out = good(computeSchedule(10_000_400, "INR", [pct("Upfront", 10_000, "on_accept")], DEFAULTS));
+    expect(out).toEqual([{ label: "Upfront", trigger: "on_accept", pctBp: 10_000, amountMinor: 10_000_400 }]);
   });
 
   it("the shares must add up to 100 %", () => {
@@ -102,10 +102,13 @@ describe("computeSchedule: percent steps", () => {
     ]);
   });
 
-  it("a total that is not a whole rupee: the last instalment keeps the paise", () => {
-    // 10,000,450: 50 % = 5,000,225 -> 5,000,200; the last 5,000,250
-    const out = good(computeSchedule(10_000_450, "INR", [pct("A", 5000), pct("B", 5000)], DEFAULTS));
-    expect(out.map((i) => i.amountMinor)).toEqual([5_000_200, 5_000_250]);
+  it("an INR total that is not a whole rupee is refused (rounding on); USD has no such rule", () => {
+    expect(errorsOf(computeSchedule(10_000_450, "INR", [pct("A", 5000), pct("B", 5000)], DEFAULTS))).toEqual([
+      "total_not_whole_unit@totalMinor",
+    ]);
+    // USD 10,000,450 cents: 50 % = 5,000,225 each (unit 1)
+    const out = good(computeSchedule(10_000_450, "USD", [pct("A", 5000), pct("B", 5000)], DEFAULTS));
+    expect(out.map((i) => i.amountMinor)).toEqual([5_000_225, 5_000_225]);
   });
 
   it("a total of 0 gives zero instalments, each with a warning", () => {

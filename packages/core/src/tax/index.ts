@@ -4,10 +4,23 @@
 // researched default (docs/08-research-appendix/A-gst-invoicing.md), and the settings feed it as an input.
 export { type CreditedLine, type CreditedSoFar, type CreditRequest, creditNote } from "./credit.ts";
 export { computeDocument, type DocumentInput } from "./document.ts";
-export { type InclusiveGroup, type InclusiveSplit, MAX_GROUPS, splitInclusive } from "./inclusive.ts";
+export {
+  groupsOf,
+  type InclusiveGroup,
+  type InclusiveSplit,
+  MAX_GROUPS,
+  splitInclusive,
+} from "./inclusive.ts";
 export { effectiveRateBp, headsFor, MAX_LINES } from "./lines.ts";
 export { computeSchedule, MAX_SCHEDULE_STEPS } from "./schedule.ts";
-export { determineSupply, lutsOf, type PlaceOfSupplyOverride, type SupplyOptions } from "./supply.ts";
+export {
+  determineSupply,
+  lutsOf,
+  type PlaceOfSupplyOverride,
+  type SupplyOptions,
+  supplyIssues,
+  usableDate,
+} from "./supply.ts";
 export { ROUND_OFF_BAND, roundingUnit } from "./totals.ts";
 export {
   type CalendarDate,
