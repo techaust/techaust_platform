@@ -71,13 +71,14 @@ export function computeSchedule(
     if (!isCurrency(currency)) errors.push(issue("currency_invalid", "currency"));
     const loose = steps as readonly LooseStep[];
     const percents = loose.filter((s) => "pctBp" in s).length;
-    if (percents !== 0 && percents !== loose.length) errors.push(issue("schedule_mixed_kinds", "steps"));
+    const mixed = percents !== 0 && percents !== loose.length;
+    if (mixed) errors.push(issue("schedule_mixed_kinds", "steps"));
     const percentKind = percents === loose.length;
     const last = loose.length - 1;
     loose.forEach((s, i) => {
       const label = s.label.trim();
-      const badAmount = !percentKind && i < last && !(isInt(s.amountMinor) && s.amountMinor >= 0);
-      const badPercent = percentKind && !isIntBetween(s.pctBp, 0, 10000);
+      const badAmount = !mixed && !percentKind && i < last && !(isInt(s.amountMinor) && s.amountMinor >= 0);
+      const badPercent = !mixed && percentKind && !isIntBetween(s.pctBp, 0, 10000);
       if (
         label.length < 1 ||
         label.length > LABEL_MAX ||

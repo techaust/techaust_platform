@@ -116,6 +116,8 @@ export function prepareLines(
   lineDiscounts.forEach((d, i) => {
     if (d > (grosses[i] as bigint)) errors.push(issue("discount_exceeds_line", "lines", i, "discount"));
   });
+  // A line discount over its line makes the nets meaningless, so the document discount is judged only once the lines are right.
+  if (errors.length > 0) return fail(errors);
   const nets = grosses.map((g, i) => g - (lineDiscounts[i] as bigint));
   const subtotalNet = nets.reduce((a, n) => a + n, 0n);
   const d = discountOf(documentDiscount, subtotalNet);
