@@ -161,6 +161,11 @@ export const paymentTermsSettings = z
       error: "The build schedule must add up to 100 %",
       path: ["buildSchedule"],
     }),
+    // The tax engine refuses a last instalment of 0 % (M4.2 review M4), so the template can't save one.
+    z.refine((t) => (t.buildSchedule.at(-1)?.pctBp ?? 1) >= 1, {
+      error: "The last step of the build schedule can't be 0 %",
+      path: ["buildSchedule"],
+    }),
   );
 
 export const retentionSettings = z.strictObject({

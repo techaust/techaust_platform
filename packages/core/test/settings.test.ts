@@ -57,6 +57,15 @@ describe("settings defaults (docs/08 §7.1, VERIFY WITH CA)", () => {
     expect(SETTINGS_SCHEMAS.numbering.safeParse(missing).success).toBe(false);
     const schedule = { ...SETTINGS_DEFAULTS.payment_terms, buildSchedule: [{ label: "All", pctBp: 9_000 }] };
     expect(SETTINGS_SCHEMAS.payment_terms.safeParse(schedule).success).toBe(false);
+    // A last step of 0 % (the tax engine refuses it; M4.2 re-check).
+    const zeroLast = {
+      ...SETTINGS_DEFAULTS.payment_terms,
+      buildSchedule: [
+        { label: "Start", pctBp: 10_000 },
+        { label: "End", pctBp: 0 },
+      ],
+    };
+    expect(SETTINGS_SCHEMAS.payment_terms.safeParse(zeroLast).success).toBe(false);
     expect(
       SETTINGS_SCHEMAS.retention.safeParse({ ...SETTINGS_DEFAULTS.retention, leadsMonths: 6 }).success,
     ).toBe(false);
