@@ -1,6 +1,13 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { contentDisposition, extOf, fileKey, sanitiseFilename, sniffFileType } from "../src/file-types.ts";
+import {
+  contentDisposition,
+  extOf,
+  fileKey,
+  isAllowedExtension,
+  sanitiseFilename,
+  sniffFileType,
+} from "../src/file-types.ts";
 
 const bytes = (...v: (number | string)[]) =>
   Uint8Array.from(v.flatMap((x) => (typeof x === "string" ? [...x].map((c) => c.charCodeAt(0)) : [x])));
@@ -163,7 +170,24 @@ describe("contentDisposition", () => {
   });
 });
 
+describe("text sampling does not leak between calls", () => {
+  it("a sample cut inside a character does not make the next, unrelated sample pass or fail", () => {
+    const cut = Uint8Array.from([0x61, 0xe2, 0x82]); // 'a' and the first two bytes of a three-byte character
+    expect(sniffFileType(cut, "txt").ok).toBe(true);
+    expect(sniffFileType(Uint8Array.from([0x62, 0x63]), "txt").ok).toBe(true);
+    expect(sniffFileType(Uint8Array.from([0x80, 0x61]), "txt").ok).toBe(false); // a lone continuation byte
+    expect(sniffFileType(cut, "txt").ok).toBe(true);
+  });
+});
+
 describe("helpers", () => {
+  it("isAllowedExtension", () => {
+    for (const e of ["pdf", ".PNG", "jpeg", "jpg", "webp", "docx", "xlsx", "csv", "txt", "zip"])
+      expect(isAllowedExtension(e), e).toBe(true);
+    for (const e of ["svg", "html", "exe", "", "constructor", "__proto__", "toString"])
+      expect(isAllowedExtension(e), e).toBe(false);
+  });
+
   it("extOf and fileKey", () => {
     expect(extOf("a.b.PDF")).toBe("pdf");
     expect(extOf("noext")).toBe("");
