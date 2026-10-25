@@ -95,7 +95,7 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
         if (verdict === "retry") message.retry({ delaySeconds: 60 });
         else message.ack();
       } else if (queue.endsWith("-email")) {
-        const result = await processEmail(env, message.body);
+        const result = await processEmail(env, message.body, undefined, undefined, message.attempts);
         if (result === "retry") message.retry({ delaySeconds: 30 });
         // Another claim holds the email: come back once that claim would have gone stale (it counts as a try, so a claim
         // that never clears still ends in the dead-letter queue and its alert).

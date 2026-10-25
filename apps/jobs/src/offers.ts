@@ -68,7 +68,7 @@ const issuerOf = (json: string | null): { senderId: string | null; senderName: s
 // ---- offer.send ---------------------------------------------------------------------------------------------------------------
 
 const SEND_READ =
-  "SELECT s.id, s.document_id, s.version_group_id, s.client_id, s.contact_id, s.attach_pdf, s.queued_at, d.status, d.valid_until, d.type, d.title, d.number_display, d.version, d.total_minor, d.currency, d.pdf_sha256, d.pdf_r2_key, d.issuer, c.id AS live_contact, c.name AS contact_name, lower(c.email) AS contact_email FROM document_sends s JOIN documents d ON d.id = s.document_id LEFT JOIN contacts c ON c.id = s.contact_id AND c.client_id = s.client_id AND c.portal_access = 1 AND c.anonymised_at IS NULL WHERE s.id = ?1";
+  "SELECT s.id, s.document_id, s.version_group_id, s.client_id, s.contact_id, s.attach_pdf, s.queued_at, s.cancelled_at, d.status, d.valid_until, d.type, d.title, d.number_display, d.version, d.total_minor, d.currency, d.pdf_sha256, d.pdf_r2_key, d.issuer, c.id AS live_contact, c.name AS contact_name, lower(c.email) AS contact_email FROM document_sends s JOIN documents d ON d.id = s.document_id LEFT JOIN contacts c ON c.id = s.contact_id AND c.client_id = s.client_id AND c.portal_access = 1 AND c.anonymised_at IS NULL WHERE s.id = ?1";
 
 type SendRow = {
   id: string;
@@ -78,6 +78,7 @@ type SendRow = {
   contact_id: string | null;
   attach_pdf: number;
   queued_at: number | null;
+  cancelled_at: number | null;
   status: string;
   valid_until: string | null;
   type: string;
@@ -93,6 +94,13 @@ type SendRow = {
   contact_name: string | null;
   contact_email: string | null;
 };
+
+/** Marks a send as never going out (set once, by the trigger's rule); the offer page then shows `not_sent`. */
+async function markNotSent(env: OfferEnv, sendId: string, now: number): Promise<void> {
+  await env.DB.prepare("UPDATE document_sends SET cancelled_at = ?2 WHERE id = ?1 AND cancelled_at IS NULL")
+    .bind(sendId, now)
+    .run();
+}
 
 export async function processOfferSend(
   env: OfferEnv,
@@ -110,15 +118,20 @@ export async function processOfferSend(
     logEvent("offer_send.missing");
     return "missing";
   }
-  // Refused (acknowledged, nothing written): the person lost access or was removed, or the offer is not open any more.
+  // Refused (acknowledged): links were revoked, the person lost access or was removed, or the offer is not open any more. The row is marked
+  // cancelled, so the offer page shows "not sent" instead of "queued" forever (a send that was already cancelled stays as it is).
   if (
+    row.cancelled_at !== null ||
     !row.live_contact ||
     !row.contact_email ||
     !["sent", "viewed"].includes(row.status) ||
     (row.valid_until !== null && row.valid_until < todayIst(now)) ||
     row.valid_until === null
   ) {
-    logEvent("offer_send.refused", { why: !row.live_contact ? "contact" : "document" });
+    logEvent("offer_send.refused", {
+      why: row.cancelled_at !== null ? "cancelled" : !row.live_contact ? "contact" : "document",
+    });
+    if (row.cancelled_at === null) await markNotSent(env, sendId, now);
     return "refused";
   }
   if (row.pdf_sha256 === null || row.pdf_r2_key === null) {
@@ -126,19 +139,25 @@ export async function processOfferSend(
     return "pdf_missing";
   }
   const { token, hash } = await mintOfferToken();
-  // One batch: the link (only while the contact is still live) and the row's queued stamp (set once).
-  await env.DB.batch([
+  // One batch: the link (only while the contact is still live and the send is not cancelled) and the row's queued stamp (set once).
+  const [linked] = await env.DB.batch([
     env.DB.prepare(
       `INSERT INTO offer_links (token_hash, send_id, document_id, version_group_id, client_id, contact_id, email, purpose, expires_at, created_at)
        SELECT ?1, s.id, s.document_id, s.version_group_id, s.client_id, c.id, lower(c.email), 'offer', ?3, ?4
        FROM document_sends s JOIN contacts c ON c.id = s.contact_id AND c.client_id = s.client_id AND c.portal_access = 1 AND c.anonymised_at IS NULL
-       WHERE s.id = ?2`,
+       WHERE s.id = ?2 AND s.cancelled_at IS NULL`,
     ).bind(hash, sendId, offerLinkExpiry(row.valid_until), now),
     env.DB.prepare("UPDATE document_sends SET queued_at = coalesce(queued_at, ?2) WHERE id = ?1").bind(
       sendId,
       now,
     ),
   ]);
+  // Nothing is emailed unless the link row exists: a contact who lost access, or links revoked, between the read and the write.
+  if (linked?.meta.changes !== 1) {
+    logEvent("offer_send.refused", { why: "link_not_written" });
+    await markNotSent(env, sendId, now);
+    return "refused";
+  }
   const number = row.number_display ?? "";
   const attach = row.attach_pdf === 1 && ATTACHMENT_KEY.test(row.pdf_r2_key);
   const message: EmailMessage = {
@@ -285,14 +304,16 @@ export async function processOfferAccepted(
     let url = portalBase(env);
     if (a.portal_access === 1) {
       const { token, hash } = await mintOfferToken();
-      await env.DB.prepare(
+      // The link is bound to the contact's CURRENT address and the mail goes to the address recorded at acceptance, so it is minted only when
+      // they are still the same (else the person holding that old address would receive a link for someone else's mailbox).
+      const written = await env.DB.prepare(
         `INSERT INTO offer_links (token_hash, acceptance_id, document_id, version_group_id, client_id, contact_id, email, purpose, expires_at, created_at)
          SELECT ?1, a.id, a.document_id, ?3, ?4, c.id, lower(c.email), 'confirmation', ?5, ?6 FROM acceptances a JOIN contacts c ON c.id = a.contact_id
-         WHERE a.id = ?2 AND c.portal_access = 1 AND c.anonymised_at IS NULL`,
+         WHERE a.id = ?2 AND c.portal_access = 1 AND c.anonymised_at IS NULL AND lower(c.email) = lower(a.email)`,
       )
         .bind(hash, acceptanceId, a.version_group_id, a.client_id, confirmationLinkExpiry(a.accepted_at), now)
         .run();
-      url = offerLinkUrl(portalBase(env), token);
+      if (written.meta.changes === 1) url = offerLinkUrl(portalBase(env), token);
     }
     add(a.email, "offer.accepted.client", url);
   }
@@ -437,7 +458,7 @@ export async function queueWaitingSends(
   now = Date.now(),
 ): Promise<number> {
   const { results } = await env.DB.prepare(
-    "SELECT id FROM document_sends WHERE document_id = ?1 AND queued_at IS NULL AND contact_id IS NOT NULL ORDER BY id LIMIT 5",
+    "SELECT id FROM document_sends WHERE document_id = ?1 AND queued_at IS NULL AND cancelled_at IS NULL AND contact_id IS NOT NULL ORDER BY id LIMIT 20",
   )
     .bind(documentId)
     .all<{ id: string }>();
@@ -469,7 +490,7 @@ export const OFFER_SWEEP_LIMIT = 20;
 
 /** ?1 oldest created_at taken, ?2 today (IST). Forced onto the partial index `document_sends_waiting`: EXPLAIN-tested. */
 export const WAITING_SENDS_SQL = `SELECT s.id FROM document_sends s INDEXED BY document_sends_waiting JOIN documents d ON d.id = s.document_id
-  WHERE s.queued_at IS NULL AND s.contact_id IS NOT NULL AND s.created_at >= ?1 AND d.pdf_sha256 IS NOT NULL
+  WHERE s.queued_at IS NULL AND s.cancelled_at IS NULL AND s.contact_id IS NOT NULL AND s.created_at >= ?1 AND d.pdf_sha256 IS NOT NULL
     AND d.status IN ('sent', 'viewed') AND d.valid_until >= ?2
   ORDER BY s.created_at LIMIT ${OFFER_SWEEP_LIMIT}`;
 

@@ -75,6 +75,8 @@ export async function processEmail(
   body: unknown,
   transport: Transport = transportFor(env),
   now = Date.now(),
+  /** The queue's delivery count (1 = first). A redelivery sends link-only: an attachment that costs too much CPU would fail every time. */
+  attempts = 1,
 ): Promise<EmailResult> {
   const parsed = emailMessage.safeParse(body);
   if (!parsed.success) {
@@ -116,7 +118,7 @@ export async function processEmail(
   }
 
   try {
-    return await sendClaimed(env, m, to, id, transport, now);
+    return await sendClaimed(env, m, to, id, transport, now, attempts);
   } catch (e) {
     // A database or network error before the email was handed to SES: give the claim back so the redelivery can send
     // at once (best effort; if this write fails too, the claim goes stale after 5 minutes and is taken again).
@@ -128,11 +130,13 @@ export async function processEmail(
 /**
  * The PDF an email carries (M4.5, ADM-PROP-07), or undefined when it goes link-only: no `DOCS` binding, the object is missing, it is over
  * the cap (the Free plan's 10 ms CPU: reading, base64 and signing the body all count), or this runtime has no native base64 (the fallback
- * costs about 37 ms per MB). Only keys on the allow-list reach here (the message schema). The reason is logged, never the key.
+ * costs about 37 ms per MB), or this is a redelivery (`attempts` above 1: a first try that ran out of CPU would do so again, and the link is
+ * enough). Only keys on the allow-list reach here (the message schema). The reason is logged, never the key. One R2 read: the size comes with it.
  */
 export async function attachmentFor(
   env: Env,
   a: { key: string; filename: string },
+  attempts = 1,
 ): Promise<Attachment | undefined> {
   const docs: R2Bucket | undefined = env.DOCS;
   const skip = (why: string) => {
@@ -140,12 +144,14 @@ export async function attachmentFor(
     return undefined;
   };
   if (!docs) return skip("no_binding");
+  if (attempts > 1) return skip("redelivery");
   if (!hasNativeBase64()) return skip("no_native_base64");
-  const head = await docs.head(a.key);
-  if (!head) return skip("missing");
-  if (head.size > ATTACHMENT_MAX_BYTES) return skip("too_large");
   const object = await docs.get(a.key);
   if (!object) return skip("missing");
+  if (object.size > ATTACHMENT_MAX_BYTES) {
+    await object.body.cancel();
+    return skip("too_large");
+  }
   return {
     fileName: a.filename,
     contentType: "application/pdf",
@@ -160,6 +166,7 @@ async function sendClaimed(
   id: string,
   transport: Transport,
   now: number,
+  attempts: number,
 ): Promise<EmailResult> {
   // A sign-in link that ran out while it waited (queue delay, retries) is never sent: the person asks for a new one.
   if (m.template === "portal.magic_link") {
@@ -189,7 +196,7 @@ async function sendClaimed(
   let data = m.data;
   let attachments: Attachment[] | undefined;
   if (m.attachment) {
-    const file = await attachmentFor(env, m.attachment);
+    const file = await attachmentFor(env, m.attachment, attempts);
     if (file) attachments = [file];
     else data = { ...m.data, attached: "0" };
   }

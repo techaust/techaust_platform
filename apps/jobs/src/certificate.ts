@@ -31,9 +31,12 @@ export type CertificateRow = {
   rendered_at: number | null;
 };
 
-/** ?1 acceptance id: the acceptance, its document, the client and the terms version, in one row. */
+/**
+ * ?1 acceptance id: the acceptance, its document, the client and the terms version, in one row. The legal name is the one frozen in the document's
+ * recipient block (what the offer itself says); the live client record is only the fallback for an old document without one.
+ */
 export const CERTIFICATE_READ =
-  "SELECT d.number_display, d.version, d.type, d.title, cl.legal_name AS client_legal_name, a.typed_name, a.email, a.accepted_at, a.ip, a.user_agent, a.country, a.via, a.pdf_sha256, a.snapshot_sha256, t.version AS terms_version, t.sha256 AS terms_sha256, a.certificate_r2_key, ce.rendered_at FROM acceptances a JOIN documents d ON d.id = a.document_id JOIN clients cl ON cl.id = d.client_id LEFT JOIN terms_versions t ON t.id = a.terms_version_id LEFT JOIN acceptance_certificates ce ON ce.acceptance_id = a.id WHERE a.id = ?1";
+  "SELECT d.number_display, d.version, d.type, d.title, coalesce(nullif(CASE WHEN json_valid(d.recipient) THEN json_extract(d.recipient, '$.legalName') END, ''), cl.legal_name) AS client_legal_name, a.typed_name, a.email, a.accepted_at, a.ip, a.user_agent, a.country, a.via, a.pdf_sha256, a.snapshot_sha256, t.version AS terms_version, t.sha256 AS terms_sha256, a.certificate_r2_key, ce.rendered_at FROM acceptances a JOIN documents d ON d.id = a.document_id JOIN clients cl ON cl.id = d.client_id LEFT JOIN terms_versions t ON t.id = a.terms_version_id LEFT JOIN acceptance_certificates ce ON ce.acceptance_id = a.id WHERE a.id = ?1";
 
 const DASH = "–";
 const orDash = (v: string | null | undefined) => (v && v.trim() !== "" ? v : DASH);

@@ -187,19 +187,33 @@ export const documentLinks = new Hono<AppEnv>()
       .first<{ version_group_id: string }>();
     if (!head) return err(c, id ? NOT_FOUND : NOT_A_QUOTE, 404);
     let revoked = 0;
+    let cancelled = 0;
+    // Order matters: first stop the sends that have no link yet (waiting for the PDF, or queued and not yet processed: the jobs Worker
+    // mints a link only while `cancelled_at` is NULL), then revoke every link that exists. One batch, so a link minted a moment before is
+    // revoked here and one minted after finds the send cancelled. The audit row is written for every revoke (nothing may be left to revoke).
     await mutate(c, {
-      main: db
-        .prepare("UPDATE offer_links SET revoked_at = ?2 WHERE version_group_id = ?1 AND revoked_at IS NULL")
-        .bind(head.version_group_id, t),
+      side: (g) => [
+        db
+          .prepare(
+            `UPDATE document_sends SET cancelled_at = ?2 WHERE cancelled_at IS NULL AND document_id IN (SELECT id FROM documents WHERE version_group_id = ?1) AND NOT EXISTS (SELECT 1 FROM offer_links l WHERE l.send_id = document_sends.id) AND ${g.sql(3)}`,
+          )
+          .bind(head.version_group_id, t, ...g.params),
+        db
+          .prepare(
+            `UPDATE offer_links SET revoked_at = ?2 WHERE version_group_id = ?1 AND revoked_at IS NULL AND ${g.sql(3)}`,
+          )
+          .bind(head.version_group_id, t, ...g.params),
+      ],
       action: "document.links_revoke",
       entityType: "document",
       entityId: id,
       summary: { documentId: id },
       onResults: (results, auditAt) => {
-        revoked = results[auditAt - 1]?.meta.changes ?? 0;
+        cancelled = results[auditAt + 1]?.meta.changes ?? 0;
+        revoked = results[auditAt + 2]?.meta.changes ?? 0;
       },
     });
-    return c.json({ ok: true, revoked });
+    return c.json({ ok: true, revoked, cancelled });
   })
 
   .get("/:id/certificate", param(idParam), async (c) => {
