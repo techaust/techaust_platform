@@ -8,6 +8,10 @@
   gap: var(--space-2);
 }
 
+.pill-row__text {
+  font-size: var(--text-sm);
+}
+
 /* The Markdown subset (the M3.4 notes' rules, repeated here so the catalogue screens don't load projects.css). */
 .md {
   max-width: var(--container-prose);
@@ -107,8 +111,20 @@
 }
 
 .dcards .prices,
+.facts .prices,
 .lines-table td .prices {
   justify-items: start;
+}
+
+/* The side panel's facts stack (label over value): the address is long and mono. */
+.svc-site .facts > div {
+  grid-template-columns: 1fr;
+  gap: 0;
+}
+
+.svc-site .docno {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .lines-table td.num .prices {
@@ -459,25 +475,67 @@
   min-width: 0;
 }
 
-.line-row__cell--desc,
-.step-row__cell--label {
-  grid-column: 1 / 3;
+/* Narrow: the description (or the step's name) and remove on the first line, the rest two by two. */
+.line-row {
+  grid-template-areas:
+    "desc desc rm"
+    "unit qty ."
+    "inr usd ."
+    "err err err";
+}
+
+.step-row {
+  grid-template-areas:
+    "label label rm"
+    "pct when ."
+    "err err err";
+}
+
+.line-row > :nth-child(1) {
+  grid-area: desc;
+}
+
+.line-row > :nth-child(2) {
+  grid-area: unit;
+}
+
+.line-row > :nth-child(3) {
+  grid-area: qty;
+}
+
+.line-row > :nth-child(4) {
+  grid-area: inr;
+}
+
+.line-row > :nth-child(5) {
+  grid-area: usd;
+}
+
+.step-row > :nth-child(2) {
+  grid-area: label;
+}
+
+.step-row > :nth-child(3) {
+  grid-area: pct;
+}
+
+.step-row > :nth-child(4) {
+  grid-area: when;
 }
 
 .line-row__remove,
 .step-row__remove {
-  grid-row: 1;
-  grid-column: 3;
+  grid-area: rm;
+}
+
+.line-row__errors {
+  grid-area: err;
 }
 
 .line-row__label {
   color: var(--color-text-muted);
   font-size: var(--text-sm);
   font-weight: 500;
-}
-
-.line-row__errors {
-  grid-column: 1 / -1;
 }
 
 .line-row__errors:empty {
@@ -506,42 +564,41 @@
   display: none;
 }
 
-@container (min-width: 40rem) {
+@container (min-width: 48rem) {
   .line-row {
     grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
+    grid-template-areas:
+      "desc desc desc desc rm"
+      "unit qty inr usd ."
+      "err err err err err";
   }
+}
 
-  .line-row__cell--desc {
-    grid-column: 1 / 5;
-  }
-
-  .line-row__remove {
-    grid-column: 5;
-  }
-
+@container (min-width: 40rem) {
   /* One line per step: its swatch (the bar's colour), name, share, when paid, remove. */
   .step-row {
-    grid-template-columns: var(--space-3) minmax(0, 1fr) 7rem 11rem auto;
+    grid-template-columns: var(--space-2) minmax(0, 1fr) 7rem 11rem auto;
+    grid-template-areas:
+      "sw label pct when rm"
+      "err err err err err";
   }
 
   .step-row__swatch {
     display: block;
+    grid-area: sw;
     align-self: stretch;
-    margin-block: var(--space-6) var(--space-1);
+    margin-block: var(--space-6) 0;
     background: var(--color-text);
   }
 
   .step-row__swatch[data-alt] {
     background: var(--color-accent-decor);
   }
+}
 
-  .step-row__cell--label {
-    grid-column: 2;
-  }
-
-  .step-row__remove {
-    grid-column: 5;
-  }
+.svc-form .lead-panel > .switch-row:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
 }
 
 .svc-form__cancel,

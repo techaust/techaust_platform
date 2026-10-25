@@ -326,7 +326,7 @@ function ServiceRead({ data }: { data: CataloguePage }) {
         </section>
       </div>
       <aside className="lead-page__side" aria-label="Website and price history">
-        <section className="lead-panel" aria-labelledby="svc-site-h">
+        <section className="lead-panel svc-site" aria-labelledby="svc-site-h">
           <h2 id="svc-site-h" className="lead-panel__title">
             Website
           </h2>

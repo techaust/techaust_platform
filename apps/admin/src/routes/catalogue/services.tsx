@@ -82,7 +82,8 @@ export function ServicesTab() {
       header: "Status",
       cell: (r) => (
         <span className="pill-row">
-          <ItemPills item={r} always />
+          <ItemPills item={r} />
+          {r.showOnSite && <span className="muted pill-row__text">{STATUS_LABELS.onSite}</span>}
         </span>
       ),
     },

@@ -38,31 +38,15 @@ export function useCanWrite() {
 }
 
 /** Retired, and not on the website: icon and text, never colour alone. Active and on the website are the quiet default. */
-export function ItemPills({
-  item,
-  always,
-}: {
-  item: Pick<CatalogueListItem, "active" | "showOnSite">;
-  always?: boolean;
-}) {
+export function ItemPills({ item }: { item: Pick<CatalogueListItem, "active" | "showOnSite"> }) {
   return (
     <>
-      {!item.active ? (
+      {!item.active && (
         <StatusPill tone="muted" icon="ban">
           {STATUS_LABELS.retired}
         </StatusPill>
-      ) : always ? (
-        <StatusPill tone="success" icon="check">
-          {STATUS_LABELS.active}
-        </StatusPill>
-      ) : null}
-      {item.showOnSite ? (
-        always ? (
-          <StatusPill tone="info" icon="send">
-            {STATUS_LABELS.onSite}
-          </StatusPill>
-        ) : null
-      ) : (
+      )}
+      {!item.showOnSite && (
         <StatusPill tone="neutral" icon="lock">
           {STATUS_LABELS.offSite}
         </StatusPill>
