@@ -22,7 +22,11 @@ type Picked = { id: string; displayName: string; code: string };
 export function ClientFilter(props: {
   clientId: string;
   onChange: (id: string | null, picked?: Picked) => void;
+  /** The ids' stem and the remove button's words, for another list that reuses the filter (care plans, M3.5). */
+  idBase?: string | undefined;
+  clearLabel?: string | undefined;
 }) {
+  const base = props.idBase ?? "project-client";
   const [q, setQ] = useState("");
   const [picked, setPicked] = useState<Picked | null>(null);
   const term = useDebounced(q.trim().length >= 2 ? q.trim() : "");
@@ -46,7 +50,7 @@ export function ClientFilter(props: {
     const c = known ?? chosen.data?.client;
     return (
       <div className="client-filter">
-        <span className="chips__label" id="project-client-label">
+        <span className="chips__label" id={`${base}-label`}>
           Client
         </span>
         <span className="client-filter__chosen">
@@ -58,11 +62,11 @@ export function ClientFilter(props: {
             onClick={() => {
               setQ("");
               props.onChange(null);
-              requestAnimationFrame(() => document.getElementById("project-client-q")?.focus());
+              requestAnimationFrame(() => document.getElementById(`${base}-q`)?.focus());
             }}
           >
             <X size={16} />
-            <span className="visually-hidden">{PENDING.clientFilterClear}</span>
+            <span className="visually-hidden">{props.clearLabel ?? PENDING.clientFilterClear}</span>
           </button>
         </span>
       </div>
@@ -72,23 +76,23 @@ export function ClientFilter(props: {
   const rows = found.state === "ready" ? (found.data?.clients ?? []) : [];
   return (
     <div className="client-filter">
-      <label className="chips__label" htmlFor="project-client-q">
+      <label className="chips__label" htmlFor={`${base}-q`}>
         Client
       </label>
       <div className="client-filter__search">
         <div className="field-icon">
           <Search size={20} />
           <input
-            id="project-client-q"
+            id={`${base}-q`}
             type="search"
             autoComplete="off"
             placeholder={PENDING.clientFilterHint}
-            aria-describedby="project-client-status"
+            aria-describedby={`${base}-status`}
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
         </div>
-        <p id="project-client-status" className="visually-hidden" role="status">
+        <p id={`${base}-status`} className="visually-hidden" role="status">
           {found.state === "loading" && term
             ? "Loading…"
             : term && rows.length === 0 && found.state === "ready"

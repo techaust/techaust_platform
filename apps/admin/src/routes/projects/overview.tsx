@@ -29,6 +29,7 @@ import {
   totalsWarning,
   typeName,
 } from "../../lib/projects.ts";
+import { hoursLoggedLine } from "../../lib/care.ts";
 import { useUser } from "../../session.tsx";
 import { Fact } from "../clients/overview.tsx";
 import { Day, MilestonePill, MoneyIn, VisibilityPill } from "./parts.tsx";
@@ -65,10 +66,22 @@ export function Overview(props: {
               </span>
             </Fact>
             <Fact label="Hours logged">
-              <span className="panel-empty">
-                <Clock size={20} />
-                <span>{COPY.hoursLogged}</span>
-              </span>
+              {props.data.figures.hours.available ? (
+                <span className="hours-figure">
+                  <Clock size={20} />
+                  <span className="tnum">
+                    {hoursLoggedLine(
+                      props.data.figures.hours.totalMinutes,
+                      props.data.figures.hours.billableMinutes,
+                    )}
+                  </span>
+                </span>
+              ) : (
+                <span className="panel-empty">
+                  <Clock size={20} />
+                  <span>{COPY.hoursLogged}</span>
+                </span>
+              )}
             </Fact>
           </dl>
         </section>

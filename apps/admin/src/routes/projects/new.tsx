@@ -32,7 +32,8 @@ export function Component() {
   );
 }
 
-const P = "np";
+const NP = "np";
+const P = NP;
 const EMPTY: DetailsForm = { name: "", ownerId: "", startDate: "", targetDate: "", budget: "" };
 const FIELD_OF: Record<string, keyof DetailsForm> = { dates_order: "targetDate", bad_owner: "ownerId" };
 
@@ -239,11 +240,14 @@ function NewProject() {
  * The client, chosen from the newest clients or a search by the start of a code or name (GET /clients, the list's own search):
  * native radios, so arrow keys move through the results and the choice is one field in the form.
  */
-function ClientPicker(props: {
+export function ClientPicker(props: {
   chosen: ClientView | null;
   error: string | undefined;
   onChoose: (c: ClientView) => void;
+  /** The ids' stem (the new care plan form reuses the picker, M3.5). */
+  prefix?: string | undefined;
 }) {
+  const P = props.prefix ?? NP;
   const [q, setQ] = useState("");
   const term = useDebounced(q.trim().length >= 2 ? q.trim() : "");
   const found = useLoad(() => api.clients({ q: term || undefined }), term);

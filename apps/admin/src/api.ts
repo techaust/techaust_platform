@@ -534,7 +534,10 @@ export type ProjectPage = {
   recentFiles: FileView[];
   figures: {
     billedVsPaid: { available: boolean; arrivesWith: string };
-    hours: { available: boolean; arrivesWith: string };
+    /** M3.5: the time logged on the project (totals only, the same for every role). */
+    hours:
+      | { available: true; totalMinutes: number; billableMinutes: number }
+      | { available: false; arrivesWith: string };
   };
 };
 export type ProjectsQuery = {
@@ -574,6 +577,233 @@ export type UploadResult = {
   sha256: string;
   createdAt: number;
 };
+
+// Care plans, time logs and the dashboard (M3.5, ADM-CARE-01, -03, ADM-TIME-01..03, ADM-DASH-01): the shapes of
+// apps/admin/worker/{care,time-logs,dashboard}.ts. Hours are minutes; money is minor units in the plan's currency.
+export type CareStatus = "active" | "paused" | "cancelled";
+export type CareTier = "essential" | "growth" | "scale" | "dev_subscription" | "custom";
+export type RolloverRule = "none" | "one_month";
+export type CareTerms = {
+  effectiveFrom: string;
+  tier: CareTier;
+  priceMinor: number;
+  includedMinutes: number;
+  aiOpsMinor: number | null;
+  overageRateMinor: number | null;
+  rollover: RolloverRule;
+  createdAt: number;
+};
+/** One billing period's hours (core's `carePeriodUsage`). */
+export type CareUsage = {
+  period: { start: string; end: string };
+  included: number;
+  rolloverIn: number;
+  available: number;
+  used: number;
+  nonBillable: number;
+  remaining: number;
+  overageMinutes: number;
+  /** Before GST; null when there is overage and no rate. */
+  overageMinor: number | null;
+  rateMissing: boolean;
+  rateMinor: number | null;
+  burnBp: number | null;
+  flag: "none" | "near" | "reached";
+};
+export type CarePlanBase = {
+  id: string;
+  clientId: string;
+  clientCode: string;
+  clientName: string;
+  currency: Currency;
+  startDate: string;
+  billingDay: number;
+  status: CareStatus;
+  pausedAt: number | null;
+  cancelledAt: number | null;
+  createdAt: number;
+  /** Send back as `expectedUpdatedAt`. */
+  updatedAt: number;
+};
+export type CarePlanTermsSummary = { current: CareTerms | null; pending: CareTerms | null };
+export type CarePlanRow = CarePlanBase & { terms: CarePlanTermsSummary; usage: CareUsage | null };
+export type CarePlanList = { today: string; carePlans: CarePlanRow[]; next: string | null; prev: string | null };
+export type CarePlanPage = {
+  today: string;
+  plan: CarePlanBase;
+  terms: CarePlanTermsSummary;
+  statusLog: { status: CareStatus; effectiveOn: string; createdAt: number }[];
+  usage: CareUsage | null;
+  /** Newest first, at most 12. */
+  periods: CareUsage[];
+  clientAnonymised: boolean;
+  overage: { addToInvoice: { available: false; arrivesWith: string } };
+};
+export type CarePlansQuery = {
+  limit?: "25" | "50" | undefined;
+  status?: CareStatus | undefined;
+  clientId?: string | undefined;
+  after?: string | undefined;
+  before?: string | undefined;
+};
+export type CareDefaults = {
+  currency: Currency;
+  clientAnonymised: boolean;
+  tiers: Record<
+    CareTier,
+    { priceMinor: number | null; includedMinutes: number | null; rollover: RolloverRule }
+  >;
+  aiOpsMinor: number | null;
+  overageRateMinor: number | null;
+  undecided: string[];
+};
+export type NewCarePlanInput = {
+  clientId: string;
+  tier: CareTier;
+  priceMinor: number;
+  includedMinutes: number;
+  aiOpsMinor?: number | null;
+  overageRateMinor?: number | null;
+  rollover: RolloverRule;
+  startDate: string;
+  billingDay: number;
+};
+export type CareTermsInput = Partial<
+  Pick<NewCarePlanInput, "tier" | "priceMinor" | "includedMinutes" | "aiOpsMinor" | "overageRateMinor" | "rollover">
+> & { expectedUpdatedAt: number };
+
+export type TimeEntry = {
+  id: string;
+  userId: string;
+  userName: string | null;
+  workDate: string;
+  minutes: number;
+  billable: boolean;
+  note: string | null;
+  projectId: string | null;
+  projectCode: string | null;
+  carePlanId: string | null;
+  carePlanClientCode: string | null;
+  carePlanTier: CareTier | null;
+  createdAt: number;
+  updatedAt: number;
+  /** The viewer may change it now: the owner always, the author for 7 days. */
+  canEdit: boolean;
+};
+export type TimeQuery = {
+  limit?: "25" | "50" | undefined;
+  from?: string | undefined;
+  to?: string | undefined;
+  userId?: string | undefined;
+  projectId?: string | undefined;
+  carePlanId?: string | undefined;
+  billable?: "1" | "0" | undefined;
+  after?: string | undefined;
+};
+export type TimePage = {
+  today: string;
+  range: { from: string; to: string };
+  entries: TimeEntry[];
+  next: string | null;
+  prev: string | null;
+};
+export type TimeWeekGroup = {
+  userId: string;
+  userName: string | null;
+  projectId: string | null;
+  projectCode: string | null;
+  carePlanId: string | null;
+  carePlanClientCode: string | null;
+  workDate: string;
+  minutes: number;
+  billableMinutes: number;
+  entries: number;
+};
+export type TimeWeek = {
+  today: string;
+  week: { start: string; end: string };
+  groups: TimeWeekGroup[];
+  truncated: boolean;
+  dayTotals: { workDate: string; minutes: number; billableMinutes: number; entries: number }[];
+  totalMinutes: number;
+};
+export type TimeWeekQuery = {
+  start?: string | undefined;
+  userId?: string | undefined;
+  projectId?: string | undefined;
+  carePlanId?: string | undefined;
+};
+export type TimeTargets = {
+  projects: { id: string; code: string; name: string; status: ProjectStatus; clientCode: string }[];
+  carePlans: { id: string; tier: CareTier | null; clientCode: string; clientName: string }[];
+};
+export type NewTimeInput = {
+  userId?: string;
+  workDate: string;
+  minutes: number;
+  projectId?: string | null;
+  carePlanId?: string | null;
+  note?: string | null;
+  billable: boolean;
+};
+export type TimePatch = Partial<Omit<NewTimeInput, "userId">> & { expectedUpdatedAt: number };
+
+export type DashboardTiles = {
+  leads?: {
+    openByStage: Record<string, number>;
+    open: number;
+    newLast7Days: number;
+    overdue: { count: number; oldest: { id: string; ref: string; contactName: string; dueAt: number }[] };
+  };
+  pipelineValue?: { available: false; arrivesWith: string };
+  finance?: { available: false; arrivesWith: Record<string, string> };
+  projects?: { active: number; onHold: number };
+  milestones?: {
+    windowDays: number;
+    count: number;
+    next: {
+      id: string;
+      projectId: string;
+      projectCode: string | null;
+      title: string;
+      dueDate: string;
+      status: MilestoneStatus;
+    }[];
+  };
+  careBurn?: {
+    counts: { active: number; notStarted: number; near: number; reached: number };
+    truncated: boolean;
+    rows: {
+      planId: string;
+      clientCode: string;
+      clientName: string;
+      tier: CareTier;
+      period: { start: string; end: string };
+      used: number;
+      available: number;
+      burnBp: number | null;
+      flag: CareUsage["flag"];
+      overageMinutes: number;
+    }[];
+  };
+  myTime?: {
+    week: { minutes: number; billableMinutes: number; start: string; end: string };
+    today: { minutes: number; billableMinutes: number; date: string };
+  };
+  activity?: {
+    days: number;
+    items: {
+      id: string;
+      at: number;
+      actor: string;
+      action: string;
+      entityType: string;
+      entityId: string | null;
+      ref: string | null;
+    }[];
+  };
+};
+export type Dashboard = { asOf: number; today: string; tiles: DashboardTiles };
 
 /** A field the server refused (400 `invalid`): its dotted path in the request body and our own message. */
 export type FieldIssue = { path: string; message: string };
@@ -933,6 +1163,42 @@ export const api = {
       body: { shared },
     }),
   deleteFile: (id: string) => request<{ ok: true }>(`/files/${encodeURIComponent(id)}`, { method: "DELETE" }),
+
+  // Care plans, time and the dashboard (M3.5)
+  carePlans: (q: CarePlansQuery = {}) => request<CarePlanList>(`/care-plans${qs(q)}`),
+  carePlan: (id: string) => request<CarePlanPage>(`/care-plans/${encodeURIComponent(id)}`),
+  careDefaults: (clientId: string) => request<CareDefaults>(`/care-plans/defaults${qs({ clientId })}`),
+  createCarePlan: (body: NewCarePlanInput) =>
+    request<{ id: string; updatedAt: number }>("/care-plans", { body }),
+  changeCareTerms: (id: string, body: CareTermsInput) =>
+    request<{ ok: true; changed: boolean; updatedAt: number; effectiveFrom?: string }>(
+      `/care-plans/${encodeURIComponent(id)}/terms`,
+      { body },
+    ),
+  setCareStatus: (id: string, to: CareStatus, expectedUpdatedAt: number) =>
+    request<{ ok: true; status: CareStatus; effectiveOn: string; updatedAt: number }>(
+      `/care-plans/${encodeURIComponent(id)}/status`,
+      { body: { to, expectedUpdatedAt } },
+    ),
+  clientCarePlans: (clientId: string, after?: string) =>
+    request<CarePlanList>(`/clients/${encodeURIComponent(clientId)}/care-plans${qs({ after })}`),
+  timeEntries: (q: TimeQuery = {}) => request<TimePage>(`/time${qs(q)}`),
+  timeWeek: (q: TimeWeekQuery = {}) => request<TimeWeek>(`/time/week${qs(q)}`),
+  timeTargets: (q: string) => request<TimeTargets>(`/time/targets${qs({ q })}`),
+  timePeople: () => request<{ people: { id: string; name: string }[] }>("/time/people"),
+  logTime: (body: NewTimeInput) =>
+    request<{ id: string; createdAt: number; updatedAt: number }>("/time", { body }),
+  updateTime: (id: string, body: TimePatch) =>
+    request<Changed & { lockOverride?: boolean }>(`/time/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body,
+    }),
+  deleteTime: (id: string, expectedUpdatedAt: number) =>
+    request<{ ok: true; lockOverride: boolean }>(
+      `/time/${encodeURIComponent(id)}${qs({ expectedUpdatedAt: String(expectedUpdatedAt) })}`,
+      { method: "DELETE" },
+    ),
+  dashboard: () => request<Dashboard>("/dashboard"),
 };
 
 /** The address of a file's download: a plain same-origin GET with the session cookie (an attachment, never rendered). */
