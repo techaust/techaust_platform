@@ -148,10 +148,10 @@ describe("the workflows (read, not run)", () => {
     expect(install).not.toContain("secrets.");
   });
 
-  // Every action is pinned to a full commit SHA (CLAUDE.md, supply chain), except the one placeholder below.
+  // Every action is pinned to a full commit SHA (CLAUDE.md, supply chain).
   const uses = (text: string) =>
     [...text.matchAll(/uses:\s*(\S+)@(\S+)/g)].map((m) => ({ action: m[1], ref: m[2] }));
-  it("every action is pinned to a full commit SHA, except actions/cache in publish-catalogue (see the next test)", () => {
+  it("every action is pinned to a full commit SHA", () => {
     for (const f of [
       "ci.yml",
       "deploy-staging.yml",
@@ -160,14 +160,6 @@ describe("the workflows (read, not run)", () => {
       "bench-auth.yml",
       "publish-catalogue.yml",
     ])
-      for (const u of uses(read(f)))
-        if (!(f === "publish-catalogue.yml" && u.action === "actions/cache"))
-          expect(u.ref, `${f} ${u.action}`).toMatch(/^[0-9a-f]{40}$/);
-  });
-  // A reminder that removes itself: it passes while the placeholder is there and FAILS once the action is pinned, which tells the
-  // lead to delete this test and the exception above. Pin with the full commit SHA of a reviewed release of actions/cache.
-  it.fails("TODO(lead): actions/cache in publish-catalogue.yml is pinned to a full commit SHA", () => {
-    const cache = uses(publish).find((u) => u.action === "actions/cache");
-    expect(cache?.ref).toMatch(/^[0-9a-f]{40}$/);
+      for (const u of uses(read(f))) expect(u.ref, `${f} ${u.action}`).toMatch(/^[0-9a-f]{40}$/);
   });
 });

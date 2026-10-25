@@ -62,10 +62,9 @@ jobs:
         run: node scripts/fetch-catalogue-snapshot.mjs --out apps/web/catalogue-snapshot.json --github-output "$GITHUB_OUTPUT"
       # An exact-key lookup. A hit means this snapshot is already on staging. On a miss, the post step of this action saves
       # `.catalogue-published/sha.txt` under the key when the job succeeds (the file is written after the deploy, below).
-      # TODO(lead): pin this action to a full commit SHA like every other action (tools check: packages/core/test/workflows.test.ts).
       - if: steps.creds.outputs.ready == 'true' && steps.snapshot.outputs.found == 'true'
         id: deployed
-        uses: actions/cache@PIN_THE_FULL_COMMIT_SHA # v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .catalogue-published
           key: catalogue-${{ steps.snapshot.outputs.sha }}
