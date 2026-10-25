@@ -2,11 +2,13 @@
 // The build-time assets (fonts, print CSS, logos) are in ./generated/assets.ts and are pulled in by render.ts.
 export const PACKAGE_NAME = "@techaust/pdf" as const;
 
+export * from "./bundle.ts";
 export * from "./envelope.ts";
 export * from "./escape.ts";
 export * from "./hash.ts";
 export * from "./markdown-html.ts";
 export * from "./options.ts";
 export * from "./render.ts";
+export * from "./sample.ts";
 export * from "./types.ts";
 export * from "./view.ts";

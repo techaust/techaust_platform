@@ -3,11 +3,13 @@
 // after 5 tries the queue moves it to the dead-letter queue (wrangler.jsonc).
 import { isPurgeMessage, isPurgeScanMessage } from "@techaust/core";
 import { isExpireKind, isExpireMessage } from "@techaust/core/expiry";
+import { isPdfKind } from "@techaust/core/pdf-jobs";
 import { isStatsKind, isStatsMessage } from "@techaust/core/stats";
 import { CLAIM_TIMEOUT_MS, processDeadLetter, processEmail } from "./email.ts";
 import { logExpireDeadLetter, processExpire, skipExpire } from "./expire.ts";
 import { processLead } from "./leads.ts";
 import { logEvent, noteInvocation } from "./log.ts";
+import { processPdf, processPdfDeadLetter } from "./pdf.ts";
 import { enqueueDue, purgeLead } from "./purge.ts";
 import { processStaffAlert } from "./staff-alerts.ts";
 import { logStatsDeadLetter, processStats, skipStats } from "./stats.ts";
@@ -27,10 +29,19 @@ export const dlqRetryDelay = (attempts: number): number =>
 export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promise<void> {
   noteInvocation();
   const queue = batch.queue;
-  const isDlq = queue.endsWith("-leads-dlq") || queue.endsWith("-email-dlq");
+  const isPdfDlq = queue.endsWith("-pdf-dlq");
+  const isDlq = queue.endsWith("-leads-dlq") || queue.endsWith("-email-dlq") || isPdfDlq;
   for (const message of batch.messages) {
     try {
-      if (isDlq && (isPurgeMessage(message.body) || isPurgeScanMessage(message.body))) {
+      if (isPdfDlq) {
+        // The PDF family has its own dead-letter queue: a bell for the owners, then done (the daily sweep tries the document again).
+        await processPdfDeadLetter(env, message.body);
+        message.ack();
+      } else if (queue.endsWith("-pdf")) {
+        // Snapshot, render and sweep (M4.4). A body of the family this version cannot use is logged and acknowledged inside.
+        await processPdf(env, message.body);
+        message.ack();
+      } else if (isDlq && (isPurgeMessage(message.body) || isPurgeScanMessage(message.body))) {
         // A clean-up message that ran out of tries: the next daily run enqueues the lead again, so no alert and no retry.
         logEvent("lead.purge_dead_letter", { queue });
         message.ack();
@@ -60,6 +71,10 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
         // After the statistics, before the lead fall-through, so an expiry body (valid or not) can never become a lead.
         if (isExpireMessage(message.body)) await processExpire(env, message.body);
         else skipExpire();
+        message.ack();
+      } else if (queue.endsWith("-leads") && isPdfKind(message.body)) {
+        // A PDF body belongs on the PDF queue; here it is logged and dropped, so it can never become a lead.
+        logEvent("pdf.wrong_queue", { queue });
         message.ack();
       } else if (queue.endsWith("-leads")) {
         await processLead(env, message.body);

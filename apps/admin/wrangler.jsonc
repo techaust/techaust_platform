@@ -35,7 +35,12 @@
   },
   // Email queue (producer, M2.4b): the staff security alerts go to the jobs Worker as an audit-row ID only (no address
   // leaves this Worker). The jobs Worker consumes it. Production has no queue until Phase 7 (owner approval).
-  "queues": { "producers": [{ "binding": "EMAIL_QUEUE", "queue": "techaust-local-email" }] },
+  "queues": {
+    "producers": [
+      { "binding": "EMAIL_QUEUE", "queue": "techaust-local-email" },
+      { "binding": "PDF_QUEUE", "queue": "techaust-local-pdf" }
+    ]
+  },
   // D1 (docs/05 §5). Migrations live in packages/db; local dev and tests use a local database.
   "d1_databases": [
     {
@@ -47,7 +52,12 @@
   ],
   // Private file vault (M3.4, ADM-PRJ-04): uploads and downloads go through this Worker only (no public bucket, no signed
   // URLs). Local dev and tests use Miniflare's R2. Production has no bucket until Phase 7 (owner approval).
-  "r2_buckets": [{ "binding": "FILES", "bucket_name": "techaust-local-files" }],
+  "r2_buckets": [
+    { "binding": "FILES", "bucket_name": "techaust-local-files" },
+    // The sent documents bucket (M4.4): staff download a PDF through this Worker (GET /api/v1/documents/:id/pdf), which only reads it, and the
+    // owner's signature image is stored here under a hash-named key (settings/signature-*). The jobs Worker writes the envelopes and PDFs.
+    { "binding": "DOCS", "bucket_name": "techaust-local-docs" }
+  ],
   "env": {
     "staging": {
       "name": "techaust-platform-admin-staging",
@@ -66,8 +76,16 @@
       "secrets": {
         "required": ["PASSWORD_PEPPER", "SALT_PEPPER", "TOTP_ENC_KEY", "SESSION_HMAC_KEY", "TURNSTILE_SECRET"]
       },
-      "queues": { "producers": [{ "binding": "EMAIL_QUEUE", "queue": "techaust-staging-email" }] },
-      "r2_buckets": [{ "binding": "FILES", "bucket_name": "techaust-staging-files" }],
+      "queues": {
+        "producers": [
+          { "binding": "EMAIL_QUEUE", "queue": "techaust-staging-email" },
+          { "binding": "PDF_QUEUE", "queue": "techaust-staging-pdf" }
+        ]
+      },
+      "r2_buckets": [
+        { "binding": "FILES", "bucket_name": "techaust-staging-files" },
+        { "binding": "DOCS", "bucket_name": "techaust-staging-docs" }
+      ],
       "d1_databases": [
         {
           "binding": "DB",

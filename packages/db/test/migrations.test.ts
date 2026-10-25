@@ -52,8 +52,9 @@ describe("migrations apply cleanly to a fresh D1", () => {
       "0030_drop_time_logs_care_plan_date.sql",
       "0031_documents_quotes.sql",
       "0032_document_triggers.sql",
-      "0033_offers.sql",
-      "0034_offer_triggers.sql",
+      "0033_documents_pdf_pending.sql",
+      "0034_offers.sql",
+      "0035_offer_triggers.sql",
     ]);
   });
 

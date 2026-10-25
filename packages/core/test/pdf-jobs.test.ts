@@ -1,12 +1,14 @@
 // JOB-PDF-01: the message guard, the fixed R2 keys, the place-of-supply label and the next UTC midnight.
 import { describe, expect, it } from "vitest";
 import {
+  fyLabelOfToken,
   isPdfKind,
   isPdfMessage,
   nextUtcMidnight,
   PDF_MAX_HOPS,
   pdfKeys,
   placeOfSupplyLabel,
+  utcDateOf,
 } from "../src/pdf-jobs.ts";
 
 describe("isPdfMessage", () => {
@@ -93,5 +95,19 @@ describe("nextUtcMidnight", () => {
   });
   it("crosses a month and year end", () => {
     expect(nextUtcMidnight(Date.UTC(2026, 11, 31, 23, 59, 59))).toBe(Date.UTC(2027, 0, 1));
+  });
+});
+
+describe("utcDateOf and fyLabelOfToken", () => {
+  it("gives the UTC date, not the IST one", () => {
+    expect(utcDateOf(Date.UTC(2026, 9, 26, 23, 59))).toBe("2026-10-26");
+    expect(utcDateOf(Date.UTC(2026, 9, 27))).toBe("2026-10-27");
+  });
+  it("turns an FY token into the label the keys use", () => {
+    expect(fyLabelOfToken("2627")).toBe("2026-27");
+    expect(fyLabelOfToken("9900")).toBe("2099-00");
+  });
+  it.each(["", "26-27", "2628", "2026", "abcd", "26277"])("refuses %j", (t) => {
+    expect(fyLabelOfToken(t)).toBeNull();
   });
 });

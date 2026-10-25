@@ -14,7 +14,8 @@ export type DocumentPdfOptions = {
   displayHeaderFooter: false;
 };
 
-export function pdfOptionsFor(_view: PdfView): DocumentPdfOptions {
+/** The options of every document (the view is passed so a later template can vary the margins). */
+export function pdfOptionsFor(_view?: PdfView): DocumentPdfOptions {
   return {
     format: "a4",
     preferCSSPageSize: true,

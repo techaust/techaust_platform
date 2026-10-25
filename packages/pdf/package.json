@@ -14,7 +14,8 @@
     "test:visual": "playwright test -c playwright.config.ts"
   },
   "dependencies": {
-    "@techaust/core": "workspace:*"
+    "@techaust/core": "workspace:*",
+    "@techaust/db": "workspace:*"
   },
   "devDependencies": {
     "@cantoo/pdf-lib": "2.11.1",

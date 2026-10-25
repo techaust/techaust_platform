@@ -215,6 +215,13 @@ export const documents = sqliteTable(
       .on(t.sourceDocumentId, t.sourceStep)
       .where(sql`${t.sourceDocumentId} is not null`),
     index("documents_contact").on(t.contactId),
+    // M4.4: the PDF sweep reads only sent proposals and estimates that have no PDF yet (a small set), oldest first; the type is in the
+    // predicate so a frozen invoice (M5) that has no PDF yet never keeps the sweep busy.
+    index("documents_pdf_pending")
+      .on(t.frozenAt)
+      .where(
+        sql`${t.frozenAt} is not null and ${t.pdfSha256} is null and ${t.type} in ('proposal', 'estimate')`,
+      ),
     check("documents_type", oneOf(t.type, DOCUMENT_TYPES)),
     check("documents_status", oneOf(t.status, DOCUMENT_STATUSES)),
     check("documents_currency", oneOf(t.currency, CURRENCY_CODES)),

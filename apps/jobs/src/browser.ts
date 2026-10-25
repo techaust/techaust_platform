@@ -2,6 +2,7 @@
 // Not wired into the queue yet (phase 2). The binding is `env.BROWSER` (staging only; no API token). `quickAction` is not supported
 // locally, so `PDF_RENDERER = "stub"` returns a fixed one-page PDF, and only when ENVIRONMENT is "local".
 // Nothing here logs or returns document content: messages are generic.
+import { pdfOptionsFor } from "@techaust/pdf";
 import { type Clock, paced, realClock, spacingFrom } from "./pacer.ts";
 
 export const MAX_PDF_BYTES = 10 * 1024 * 1024;
@@ -30,17 +31,8 @@ export type RenderError =
 export type RenderOk = { ok: true; bytes: Uint8Array; browserMs: number };
 export type RenderResult = RenderOk | RenderError;
 
-/** The options sent to /pdf. `html` is added by `renderPdf`; the template's own `pdfOptions` may override only the margins/title. */
-export const BASE_PDF_OPTIONS = {
-  format: "a4",
-  preferCSSPageSize: true,
-  printBackground: true,
-  tagged: true,
-  outline: true,
-  timeout: 30_000,
-  // footerTemplate is the fallback if staging shows page-margin boxes unsupported
-  displayHeaderFooter: false,
-} as const;
+/** The options sent to /pdf: ONE source, `pdfOptionsFor` in @techaust/pdf. `html` is added by `renderPdf`; `options` may override single values. */
+export const BASE_PDF_OPTIONS: PdfOptions = pdfOptionsFor();
 
 const PDF_MAGIC = [0x25, 0x50, 0x44, 0x46, 0x2d]; // %PDF-
 

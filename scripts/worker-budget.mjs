@@ -35,6 +35,17 @@ export const BUDGETS = {
     maxStartupMs: 200,
     forbidden: [CLASSIC_ZOD, PDF_LIB, PUPPETEER, PDF_FONTS],
   },
+  // M4.4: the jobs Worker is the one that renders PDFs, so it carries the inline fonts (TECHAUST_PDF_FONT_DATA is allowed here and only
+  // here). Measured 2026-10-26 after the PDF consumers: 572,455 bytes (the base64 fonts are most of the growth), startup 43 ms in the
+  // local probe; the ceiling is the measure + 40 %. The staging cold reading stays the gate (docs/runbooks/cpu-baseline.md).
+  // Classic zod is NOT forbidden here: the lead and queue-message schemas of M2.4 (core `schemas/forms.ts`, `messages.ts`) have always
+  // brought it into the jobs bundle (zod/classic/schemas.js), long before M4.4. Only the admin and portal Workers must stay without it.
+  jobs: {
+    file: "apps/jobs/dist/index.js",
+    maxBytes: 800_000,
+    maxStartupMs: 200,
+    forbidden: [PDF_LIB, PUPPETEER],
+  },
 };
 
 /**
@@ -43,7 +54,8 @@ export const BUDGETS = {
  * the guard flaky (lead, 2026-10-25).
  */
 export function measureStartup(code, runs = 7) {
-  const src = code.replace(/export\s*\{[^}]*\};?\s*$/, "");
+  // The export list ends the code; a trailing license comment (the jobs bundle has one) may follow it.
+  const src = code.replace(/\bexport\s*\{[^}]*\};?[ ]*$/m, "");
   const times = [];
   for (let i = 0; i < runs; i++) {
     const context = vm.createContext({
