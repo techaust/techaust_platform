@@ -95,7 +95,7 @@ describe("migrations apply cleanly to a fresh D1", () => {
       projects: "owner_id",
       milestones: "document_id",
       document_sends: "document_id contact_id",
-      offer_links: "contact_id send_id version_group_id",
+      offer_links: "contact_id document_id send_id version_group_id",
     };
     for (const [table, columns] of Object.entries(wanted)) {
       for (const column of columns.split(" ")) {

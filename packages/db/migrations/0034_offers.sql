@@ -16,6 +16,7 @@ CREATE TABLE `document_sends` (
 	`attach_pdf` integer NOT NULL,
 	`kind` text NOT NULL,
 	`queued_at` integer,
+	`cancelled_at` integer,
 	`created_by` text NOT NULL,
 	`created_at` integer DEFAULT (cast(unixepoch('subsec') * 1000 as integer)) NOT NULL,
 	FOREIGN KEY (`document_id`) REFERENCES `documents`(`id`) ON UPDATE no action ON DELETE no action,
@@ -47,6 +48,7 @@ CREATE TABLE `offer_links` (
 	FOREIGN KEY (`contact_id`) REFERENCES `contacts`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
+CREATE INDEX `offer_links_document` ON `offer_links` (`document_id`);--> statement-breakpoint
 CREATE INDEX `offer_links_group` ON `offer_links` (`version_group_id`);--> statement-breakpoint
 CREATE INDEX `offer_links_contact` ON `offer_links` (`contact_id`);--> statement-breakpoint
 CREATE INDEX `offer_links_send` ON `offer_links` (`send_id`);--> statement-breakpoint

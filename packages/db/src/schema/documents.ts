@@ -376,6 +376,8 @@ export const documentSends = sqliteTable(
     attachPdf: integer("attach_pdf").notNull(),
     kind: text("kind", { enum: DOCUMENT_SEND_KINDS }).notNull(),
     queuedAt: integer("queued_at"),
+    /** Set once when staff revoke the links: a waiting or queued send is then never emailed (M4.5 fix M1). */
+    cancelledAt: integer("cancelled_at"),
     createdBy: text("created_by")
       .notNull()
       .references(() => staffUsers.id),
@@ -419,6 +421,7 @@ export const offerLinks = sqliteTable(
     createdAt: createdAt(),
   },
   (t) => [
+    index("offer_links_document").on(t.documentId),
     index("offer_links_group").on(t.versionGroupId),
     index("offer_links_contact").on(t.contactId),
     index("offer_links_send").on(t.sendId),

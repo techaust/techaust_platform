@@ -1,6 +1,6 @@
 {
-  "id": "71da4545-a91d-4d3a-a4ba-8e7fed483cca",
-  "prevId": "99a2056d-3197-4ed7-a382-7ff5b45de11e",
+  "id": "c685724b-b2cd-49ab-b707-76eb45bc3288",
+  "prevId": "a4dcd28c-13fe-4d92-ab34-d3f324670498",
   "version": "6",
   "dialect": "sqlite",
   "tables": {
@@ -3404,6 +3404,13 @@
           "notNull": false,
           "autoincrement": false
         },
+        "cancelled_at": {
+          "name": "cancelled_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "created_by": {
           "name": "created_by",
           "type": "text",
@@ -4293,6 +4300,11 @@
         }
       },
       "indexes": {
+        "offer_links_document": {
+          "name": "offer_links_document",
+          "columns": ["document_id"],
+          "isUnique": false
+        },
         "offer_links_group": {
           "name": "offer_links_group",
           "columns": ["version_group_id"],

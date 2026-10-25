@@ -134,6 +134,19 @@ describe("document_sends (0033, 0034)", () => {
     );
   });
 
+  it("cancelled_at is set once and never cleared (M4.5 fix M1)", async () => {
+    const s = await setup();
+    await run("UPDATE document_sends SET cancelled_at = 20 WHERE id = ?", s.send);
+    await rejects(
+      run("UPDATE document_sends SET cancelled_at = 21 WHERE id = ?", s.send),
+      /document_sends_fixed/,
+    );
+    await rejects(
+      run("UPDATE document_sends SET cancelled_at = NULL WHERE id = ?", s.send),
+      /document_sends_fixed/,
+    );
+  });
+
   it("contact_id and email can be cleared (erase, anonymise) but never re-pointed", async () => {
     const s = await setup();
     const other = await insertClient(`C-${crypto.randomUUID().slice(0, 8)}`);

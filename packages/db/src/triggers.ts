@@ -481,7 +481,7 @@ export function offerTriggerStatements(): string[] {
     `CREATE TRIGGER \`offer_links_purpose_update\` BEFORE UPDATE OF purpose ON \`offer_links\` WHEN NEW.purpose NOT IN (${purposes}) BEGIN ${purposeMsg} END;`,
     `CREATE TRIGGER \`offer_links_fixed\` BEFORE UPDATE ON \`offer_links\` WHEN ${linkFixed} OR (OLD.revoked_at IS NOT NULL AND NEW.revoked_at IS NOT OLD.revoked_at) BEGIN ${abort("offer_links_fixed: an offer link only gets revoked, once")} END;`,
     ...appendOnly(table(acceptanceCertificates)),
-    `CREATE TRIGGER \`document_sends_fixed\` BEFORE UPDATE ON \`document_sends\` WHEN ${sendFixed} OR (OLD.queued_at IS NOT NULL AND NEW.queued_at IS NOT OLD.queued_at) OR (NEW.contact_id IS NOT OLD.contact_id AND NEW.contact_id IS NOT NULL) OR (NEW.email IS NOT OLD.email AND NEW.email IS NOT NULL) BEGIN ${abort("document_sends_fixed: a send changes only when it is queued, or when its contact is erased")} END;`,
+    `CREATE TRIGGER \`document_sends_fixed\` BEFORE UPDATE ON \`document_sends\` WHEN ${sendFixed} OR (OLD.queued_at IS NOT NULL AND NEW.queued_at IS NOT OLD.queued_at) OR (OLD.cancelled_at IS NOT NULL AND NEW.cancelled_at IS NOT OLD.cancelled_at) OR (NEW.contact_id IS NOT OLD.contact_id AND NEW.contact_id IS NOT NULL) OR (NEW.email IS NOT OLD.email AND NEW.email IS NOT NULL) BEGIN ${abort("document_sends_fixed: a send changes only when it is queued or cancelled, or when its contact is erased")} END;`,
   ];
 }
 
