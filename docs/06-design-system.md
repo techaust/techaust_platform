@@ -351,6 +351,8 @@ Built on **Radix UI primitives** (Dialog, Popover, DropdownMenu, Tabs, Tooltip, 
 | Rejected / Expired / Void / Revised | Neutral muted + strikethrough label for Void | x-circle / archive |
 | Pending verification (manual payment) | Warning | shield-question |
 
+In the client portal a rejected proposal or estimate reads **"Declined"** (the client's own action); admin keeps "Rejected" (lead decision with the M4.5 preview, 2026-10-25).
+
 ---
 
 ## 6. Email design
