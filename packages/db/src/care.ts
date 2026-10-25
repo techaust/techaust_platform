@@ -103,7 +103,9 @@ function idsSql(source: PlanSource): { sql: string; bound: number; bind: unknown
   // plan's own `(created_at, id)` is a range on that index. A plan id that is gone gives NULL, which matches nothing (an empty page).
   const after = source.after;
   const keyset =
-    after === undefined ? "" : " AND (created_at, id) > (SELECT created_at, id FROM care_plans WHERE id = ?1)";
+    after === undefined
+      ? ""
+      : " AND (created_at, id) > (SELECT created_at, id FROM care_plans WHERE id = ?1)";
   if (source.on !== undefined) {
     const d = after === undefined ? "?1" : "?2";
     return {

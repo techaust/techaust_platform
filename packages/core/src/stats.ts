@@ -33,7 +33,6 @@ export function isStatsMessage(body: unknown): body is StatsMessage {
 /** The days ahead of the recorded date that `milestones.due_14d` counts (equal to the dashboard's window; a test holds them together). */
 export const STATS_MILESTONE_DAYS = 14;
 
-
 /**
  * The IST date the nightly statistics are recorded for: the day that just ENDED when the cron fires (22:00 UTC = 03:30 IST), that is the
  * IST date of `scheduledTime` minus one day. A billing day's closing burn is therefore kept under that day, not the next.

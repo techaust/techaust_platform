@@ -339,7 +339,9 @@ describe("the figures against a fixture", () => {
     expect(tile.truncated).toBe(false);
     const ids = tile.rows.map((r: J) => r.planId);
     expect(ids).not.toContain(paused.id);
-    const order = [over.id, reached.id, nohours.id, near.id, none.id, idle.id].filter((id) => ids.includes(id));
+    const order = [over.id, reached.id, nohours.id, near.id, none.id, idle.id].filter((id) =>
+      ids.includes(id),
+    );
     expect(order).toHaveLength(6);
     expect(ids.filter((id: string) => order.includes(id))).toEqual(order);
     expect(tile.rows.find((r: J) => r.planId === over.id)).toMatchObject({

@@ -87,7 +87,10 @@ function EntryFormBody(
 
   async function submit(e: FormEvent) {
     e.preventDefault();
-    const r = entryInput(f, { today: props.today, canWriteAny: props.canWriteAny, me: props.me.id,
+    const r = entryInput(f, {
+      today: props.today,
+      canWriteAny: props.canWriteAny,
+      me: props.me.id,
       originalDate: props.entry?.workDate,
     });
     if (!r.ok) {

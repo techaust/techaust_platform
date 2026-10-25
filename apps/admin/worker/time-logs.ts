@@ -112,7 +112,10 @@ const weekQuery = z.object({
   projectId: z.optional(id64),
   carePlanId: z.optional(id64),
 });
-const targetsQuery = z.object({ q: z.optional(z.string().check(z.maxLength(100))), workDate: z.optional(isoDate) });
+const targetsQuery = z.object({
+  q: z.optional(z.string().check(z.maxLength(100))),
+  workDate: z.optional(isoDate),
+});
 
 /** Start-up warm-up (worker/warm.ts): parse one sample of each body and query once, so the first request builds no schema. */
 export function warmTime(): number {

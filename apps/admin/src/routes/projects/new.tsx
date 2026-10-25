@@ -208,7 +208,12 @@ function NewProject() {
                 />
               )}
             </FormField>
-            <FormField id={`${NP}-targetDate`} label="Target date" optional error={errorOf(`${NP}-targetDate`)}>
+            <FormField
+              id={`${NP}-targetDate`}
+              label="Target date"
+              optional
+              error={errorOf(`${NP}-targetDate`)}
+            >
               {(a) => (
                 <input
                   {...a}

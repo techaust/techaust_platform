@@ -327,7 +327,8 @@ describe("overage [ADM-CARE-03]: the analyst's cases, by hand", () => {
       usage: usage({ "2026-11-01": 60 }),
       date: "2026-11-15",
     });
-    expect(none).toMatchObject({ flag: "none", burnBp: null, overageMinutes: 60, overageMinor: 150_000 });
+    // overage with no hours available is flagged reached (review fix 4); the burn stays null
+    expect(none).toMatchObject({ flag: "reached", burnBp: null, overageMinutes: 60, overageMinor: 150_000 });
   });
 
   it("7. half up on a quarter hour", () => {
