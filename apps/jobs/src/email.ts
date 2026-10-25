@@ -5,8 +5,11 @@
 // `email_log.status`: queued -> sending -> sent | skipped | failed. A retryable SES answer puts the row back to
 // `queued` and the queue redelivers; a permanent one is `failed` and acknowledged.
 import { type EmailMessage, emailMessage, leadMessage, stableId, staffAlertMessage } from "@techaust/core";
+import { ATTACHMENT_MAX_BYTES } from "@techaust/core/offers";
 import {
+  type Attachment,
   dlqAlert,
+  hasNativeBase64,
   logTransport,
   type Rendered,
   renderEmail,
@@ -115,6 +118,35 @@ export async function processEmail(
   }
 }
 
+/**
+ * The PDF an email carries (M4.5, ADM-PROP-07), or undefined when it goes link-only: no `DOCS` binding, the object is missing, it is over
+ * the cap (the Free plan's 10 ms CPU: reading, base64 and signing the body all count), or this runtime has no native base64 (the fallback
+ * costs about 37 ms per MB). Only keys on the allow-list reach here (the message schema). The reason is logged, never the key.
+ * Stage A reads `DOCS` through an intersection because the jobs Worker gets the binding with M4.4 phase 2.
+ */
+export async function attachmentFor(
+  env: Env,
+  a: { key: string; filename: string },
+): Promise<Attachment | undefined> {
+  const docs = (env as Env & { DOCS?: R2Bucket }).DOCS;
+  const skip = (why: string) => {
+    logEvent("email.attachment_skipped", { why });
+    return undefined;
+  };
+  if (!docs) return skip("no_binding");
+  if (!hasNativeBase64()) return skip("no_native_base64");
+  const head = await docs.head(a.key);
+  if (!head) return skip("missing");
+  if (head.size > ATTACHMENT_MAX_BYTES) return skip("too_large");
+  const object = await docs.get(a.key);
+  if (!object) return skip("missing");
+  return {
+    fileName: a.filename,
+    contentType: "application/pdf",
+    bytes: new Uint8Array(await object.arrayBuffer()),
+  };
+}
+
 async function sendClaimed(
   env: Env,
   m: EmailMessage,
@@ -147,9 +179,18 @@ async function sendClaimed(
     return "skipped";
   }
 
+  // A stored PDF on the email (M4.5): read from DOCS, or the email goes link-only (and says so: `attached` becomes "0").
+  let data = m.data;
+  let attachments: Attachment[] | undefined;
+  if (m.attachment) {
+    const file = await attachmentFor(env, m.attachment);
+    if (file) attachments = [file];
+    else data = { ...m.data, attached: "0" };
+  }
+
   let rendered: ReturnType<typeof renderEmail>;
   try {
-    rendered = renderEmail(m.template, m.data, { assetBase: env.EMAIL_ASSET_BASE });
+    rendered = renderEmail(m.template, data, { assetBase: env.EMAIL_ASSET_BASE });
   } catch {
     await setStatus(env.DB, id, "failed", { error: "render failed" }, now);
     logEvent("email.failed", { template: m.template, why: "render" });
@@ -163,6 +204,7 @@ async function sendClaimed(
     subject: rendered.subject,
     html: rendered.html,
     text: rendered.text,
+    ...(attachments ? { attachments } : {}),
   });
   if (result.kind === "sent") {
     // The email has left. If the status write fails, the message must NOT be retried (that would send it again): the

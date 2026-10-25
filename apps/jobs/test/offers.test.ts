@@ -721,3 +721,96 @@ describe("the certificate view [ADM-PROP-08, docs/08 L-11]", () => {
     expect(await readCertificateView(db, uuidv7())).toBeNull();
   });
 });
+
+// ---- the attachment path of the email consumer ----------------------------------------------------------------------------------
+
+describe("the email consumer and a PDF attachment [ADM-PROP-07]", () => {
+  const KEY = "docs/proposal/2026-27/0001-v1.pdf";
+  const bytes = new TextEncoder().encode("%PDF-1.4 test");
+  const docs = (o: { size?: number; missing?: boolean } = {}) => ({
+    head: async () => (o.missing ? null : { size: o.size ?? bytes.byteLength }),
+    get: async () => (o.missing ? null : { arrayBuffer: async () => bytes.buffer.slice(0) }),
+  });
+  const message = (to: string, entityId: string, key = KEY): EmailMessage => ({
+    template: "offer.sent",
+    to,
+    data: {
+      first_name: "Asha",
+      kind: "proposal",
+      title: "Website rebuild",
+      number: "TH/PRP/2627/0001",
+      version: "1",
+      valid_until: "30 Nov 2026",
+      total: "₹1.00",
+      url: "https://portal.example/o#t=abc",
+      attached: "1",
+      sender_name: "Sam",
+    },
+    entity: { type: "document_send", id: entityId },
+    attachment: { key, filename: "TH-PRP-2627-0001-v1.pdf" },
+  });
+
+  it("reads the PDF from DOCS and hands it to the transport", async () => {
+    const r = recorder();
+    const res = await processEmail(
+      makeEnv({ DOCS: docs() }),
+      message("a1@example.test", uuidv7()),
+      r.transport,
+      NOW,
+    );
+    expect(res).toBe("sent");
+    expect(r.sent[0]?.attachments).toHaveLength(1);
+    expect(r.sent[0]?.attachments?.[0]).toMatchObject({
+      fileName: "TH-PRP-2627-0001-v1.pdf",
+      contentType: "application/pdf",
+    });
+    expect(new TextDecoder().decode(r.sent[0]?.attachments?.[0]?.bytes)).toBe("%PDF-1.4 test");
+    expect(r.sent[0]?.text).toContain("The PDF is attached");
+  });
+
+  for (const [name, env] of [
+    ["no DOCS binding", () => makeEnv()],
+    ["the object is missing", () => makeEnv({ DOCS: docs({ missing: true }) })],
+    ["the object is over the cap", () => makeEnv({ DOCS: docs({ size: 1024 * 1024 + 1 }) })],
+  ] as const)
+    it(`goes link-only (and does not say it is attached) when ${name}`, async () => {
+      const r = recorder();
+      expect(await processEmail(env(), message("a2@example.test", uuidv7()), r.transport, NOW)).toBe("sent");
+      expect(r.sent[0]?.attachments).toBeUndefined();
+      expect(r.sent[0]?.text).not.toContain("The PDF is attached");
+      expect(r.sent[0]?.text).toContain("Review and accept");
+      expect(logs.join("\n")).toContain("email.attachment_skipped");
+    });
+
+  it("goes link-only on a runtime without native base64 (the fallback costs about 37 ms per MB)", async () => {
+    const proto = Uint8Array.prototype as { toBase64?: unknown };
+    const saved = proto.toBase64;
+    delete proto.toBase64;
+    try {
+      const r = recorder();
+      await processEmail(makeEnv({ DOCS: docs() }), message("a3@example.test", uuidv7()), r.transport, NOW);
+      expect(r.sent[0]?.attachments).toBeUndefined();
+    } finally {
+      if (saved) proto.toBase64 = saved;
+    }
+  });
+
+  it("a key outside the allow-list never reaches the consumer: the message is invalid", async () => {
+    const r = recorder();
+    for (const key of [
+      "docs/tax_invoice/2026-27/0001-v1.pdf",
+      "../etc/passwd",
+      "docs/proposal/2026-27/0001-v1.json",
+    ]) {
+      expect(
+        await processEmail(
+          makeEnv({ DOCS: docs() }),
+          message("a4@example.test", uuidv7(), key),
+          r.transport,
+          NOW,
+        ),
+      ).toBe("invalid");
+    }
+    expect(r.sent).toEqual([]);
+  });
+});

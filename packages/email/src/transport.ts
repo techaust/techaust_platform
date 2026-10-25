@@ -24,6 +24,10 @@ export function toBase64(bytes: Uint8Array): string {
   return btoa(out);
 }
 
+/** True when this runtime has the native `Uint8Array.prototype.toBase64`. Without it, base64 costs about 37 ms per MB (Node, measured), so callers send link-only. */
+export const hasNativeBase64 = (): boolean =>
+  typeof (Uint8Array.prototype as { toBase64?: unknown }).toBase64 === "function";
+
 export type SendInput = {
   /** Display name + address; the name is quoted and stripped of control characters. */
   from: { name?: string; address: string };

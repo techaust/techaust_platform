@@ -105,8 +105,13 @@ export function certificateKey(i: { type: string; fy: string; number: number; ve
 /** The attachment allow-list of the email consumer: only a sent proposal or estimate PDF (or its certificate). */
 export const ATTACHMENT_KEY =
   /^docs\/(proposal|estimate)\/[0-9]{4}-[0-9]{2}\/[0-9]{4}-v[0-9]{1,3}(-certificate)?\.pdf$/;
-/** The largest attachment the email consumer will read (the CPU budget on the Free plan decides; measured in stage B). */
-export const ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024;
+/**
+ * The largest attachment the email consumer will read. The brief said 5 MB; the Free plan's 10 ms CPU says less: the body is base64'd (native
+ * in workerd, about 37 ms per MB without it), put in a JSON string and SHA-256'd by the SigV4 signer. Not measured in workerd (its clock does
+ * not move in tests): 1 MB is the conservative cap until staging's `cpuTimeMs` of an email with a PDF says otherwise. Over the cap the email
+ * goes link-only.
+ */
+export const ATTACHMENT_MAX_BYTES = 1024 * 1024;
 
 /** The browser link of an offer: the token is in the URL FRAGMENT (never sent to a server, never in a log) and is used after a click. */
 export const offerLinkUrl = (portalBase: string, token: string): string =>
