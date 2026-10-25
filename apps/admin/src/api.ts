@@ -133,7 +133,7 @@ export type Notification = {
   createdAt: number;
 };
 export type SearchGroupData = {
-  type: "user" | "lead" | "client" | "contact";
+  type: "user" | "lead" | "client" | "contact" | "project";
   label: string;
   items: { id: string; title: string; subtitle: string; link: string }[];
 };
@@ -456,6 +456,119 @@ export type ExportSummary = {
 export type ExportPage = { part: ExportPart; items: Record<string, unknown>[]; next: string | null };
 export type EraseMode = "erase" | "anonymise";
 
+// Projects, milestones, notes and files (M3.4, ADM-PRJ-01..05): the shapes of apps/admin/worker/{projects,notes,files}.ts.
+export type ProjectStatus = "planned" | "active" | "on_hold" | "completed" | "cancelled";
+export type MilestoneStatus = "pending" | "ready_to_bill" | "invoiced" | "paid";
+export type ProjectView = {
+  id: string;
+  code: string;
+  clientId: string;
+  clientCode: string;
+  clientName: string;
+  sourceDocumentId: string | null;
+  name: string;
+  status: ProjectStatus;
+  /** ISO dates (YYYY-MM-DD), IST days as typed. */
+  startDate: string | null;
+  targetDate: string | null;
+  ownerId: string | null;
+  ownerName: string | null;
+  currency: Currency;
+  budgetMinor: number | null;
+  createdAt: number;
+  /** Send back as `expectedUpdatedAt` with the next PATCH. */
+  updatedAt: number;
+};
+export type MilestoneView = {
+  id: string;
+  projectId: string;
+  position: number;
+  title: string;
+  amountMinor: number | null;
+  pctBp: number | null;
+  /** The amount, or the percentage of the budget (half up); null for a percentage with no budget. */
+  resolvedMinor: number | null;
+  dueDate: string | null;
+  status: MilestoneStatus;
+  deliveredAt: number | null;
+  documentId: string | null;
+  createdAt: number;
+  updatedAt: number;
+};
+export type NoteVisibility = "internal" | "shared";
+export type NoteView = {
+  id: string;
+  clientId: string;
+  projectId: string | null;
+  visibility: NoteVisibility;
+  bodyMd: string;
+  authorId: string | null;
+  authorName: string | null;
+  createdAt: number;
+  updatedAt: number;
+};
+export type FileView = {
+  id: string;
+  clientId: string;
+  projectId: string | null;
+  filename: string;
+  mime: string;
+  size: number;
+  sha256: string;
+  shared: boolean;
+  uploadedBy: string | null;
+  uploadedByName: string | null;
+  createdAt: number;
+};
+export type ProjectPage = {
+  project: ProjectView;
+  milestones: MilestoneView[];
+  milestoneTotals: { totalMinor: number; mismatch: boolean };
+  recentNotes: NoteView[];
+  recentFiles: FileView[];
+  figures: {
+    billedVsPaid: { available: boolean; arrivesWith: string };
+    hours: { available: boolean; arrivesWith: string };
+  };
+};
+export type ProjectsQuery = {
+  limit?: "25" | "50" | undefined;
+  q?: string | undefined;
+  status?: ProjectStatus | undefined;
+  clientId?: string | undefined;
+  ownerId?: string | undefined;
+  after?: string | undefined;
+  before?: string | undefined;
+};
+export type NewProjectInput = {
+  clientId: string;
+  name: string;
+  startDate?: string | null;
+  targetDate?: string | null;
+  ownerId?: string | null;
+  budgetMinor?: number | null;
+};
+export type ProjectPatch = Omit<Partial<NewProjectInput>, "clientId"> & { expectedUpdatedAt: number };
+export type MilestoneInput = {
+  title: string;
+  amountMinor?: number | null;
+  pctBp?: number | null;
+  dueDate?: string | null;
+};
+export type MilestonePatch = Partial<MilestoneInput> & { expectedUpdatedAt: number };
+/** Where a note or file belongs: a project, or the client itself. */
+export type VaultScope = { kind: "project" | "client"; id: string };
+const scopePath = (s: VaultScope) =>
+  `/${s.kind === "project" ? "projects" : "clients"}/${encodeURIComponent(s.id)}`;
+export type UploadResult = {
+  id: string;
+  filename: string;
+  mime: string;
+  size: number;
+  sha256: string;
+  createdAt: number;
+};
+
 /** A field the server refused (400 `invalid`): its dotted path in the request body and our own message. */
 export type FieldIssue = { path: string; message: string };
 
@@ -763,7 +876,118 @@ export const api = {
     request<{ ok: true; mode: EraseMode }>(`/contacts/${encodeURIComponent(id)}/erase`, {
       body: { mode, reason },
     }),
+
+  // Projects, milestones, notes and files (M3.4)
+  projects: (q: ProjectsQuery = {}) => request<Page<"projects", ProjectView>>(`/projects${qs(q)}`),
+  project: (id: string) => request<ProjectPage>(`/projects/${encodeURIComponent(id)}`),
+  createProject: (body: NewProjectInput) =>
+    request<{ id: string; code: string; updatedAt: number }>("/projects", { body }),
+  updateProject: (id: string, body: ProjectPatch) =>
+    request<Changed>(`/projects/${encodeURIComponent(id)}`, { method: "PATCH", body }),
+  setProjectStatus: (id: string, to: ProjectStatus) =>
+    request<{ ok: true; status: ProjectStatus; updatedAt: number }>(
+      `/projects/${encodeURIComponent(id)}/status`,
+      { body: { to } },
+    ),
+  clientProjects: (clientId: string, after?: string) =>
+    request<{ projects: ProjectView[]; next: string | null }>(
+      `/clients/${encodeURIComponent(clientId)}/projects${qs({ after })}`,
+    ),
+  addMilestone: (projectId: string, body: MilestoneInput) =>
+    request<{ id: string; updatedAt: number }>(`/projects/${encodeURIComponent(projectId)}/milestones`, {
+      body,
+    }),
+  updateMilestone: (id: string, body: MilestonePatch) =>
+    request<Changed>(`/milestones/${encodeURIComponent(id)}`, { method: "PATCH", body }),
+  setMilestoneStatus: (id: string, to: "pending" | "ready_to_bill") =>
+    request<{ ok: true; status: MilestoneStatus; updatedAt: number }>(
+      `/milestones/${encodeURIComponent(id)}/status`,
+      { body: { to } },
+    ),
+  deleteMilestone: (id: string) =>
+    request<{ ok: true }>(`/milestones/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  reorderMilestones: (projectId: string, ids: string[]) =>
+    request<{ ok: true }>(`/projects/${encodeURIComponent(projectId)}/milestones/order`, { body: { ids } }),
+  notes: (scope: VaultScope, after?: string) =>
+    request<{ notes: NoteView[]; next: string | null }>(`${scopePath(scope)}/notes${qs({ after })}`),
+  addNote: (scope: VaultScope, bodyMd: string, visibility: NoteVisibility) =>
+    request<{ id: string; createdAt: number; updatedAt: number }>(`${scopePath(scope)}/notes`, {
+      body: { bodyMd, visibility },
+    }),
+  updateNote: (
+    id: string,
+    body: { expectedUpdatedAt: number; bodyMd?: string; visibility?: NoteVisibility },
+  ) => request<Changed>(`/notes/${encodeURIComponent(id)}`, { method: "PATCH", body }),
+  deleteNote: (id: string) => request<{ ok: true }>(`/notes/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  files: (scope: VaultScope, after?: string) =>
+    request<{ files: FileView[]; next: string | null }>(`${scopePath(scope)}/files${qs({ after })}`),
+  shareFile: (id: string, shared: boolean) =>
+    request<{ ok: true; changed: boolean; shared: boolean }>(`/files/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: { shared },
+    }),
+  deleteFile: (id: string) => request<{ ok: true }>(`/files/${encodeURIComponent(id)}`, { method: "DELETE" }),
 };
+
+/** The address of a file's download: a plain same-origin GET with the session cookie (an attachment, never rendered). */
+export const fileDownloadHref = (id: string) => `/api/v1/files/${encodeURIComponent(id)}/download`;
+
+/** The headers of a raw upload (M3.4): the browser adds `Content-Length` itself from the File body (a header scripts may
+ * not set), so these are the name, percent-encoded UTF-8, and the SHA-256 the browser computed, which R2 checks. */
+export const uploadHeaders = (name: string, sha256: string): Record<string, string> => ({
+  "Content-Type": "application/octet-stream",
+  "X-File-Name": encodeURIComponent(name),
+  "X-File-Sha256": sha256,
+});
+
+/** The SHA-256 of a file as lower-case hex (`crypto.subtle`; up to 25 MB is read into memory once). */
+export async function sha256Hex(file: Blob): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * Upload one file as a raw body (never multipart). XMLHttpRequest rather than fetch: it reports upload progress and sends the
+ * File with its `Content-Length`. `signal` cancels it (the promise rejects with code `aborted`). Errors arrive as RequestError
+ * with the API's code (`file_type_mismatch`, `file_too_large`, ...); a 401 ends the session as for every other call.
+ */
+export function uploadFile(
+  scope: VaultScope,
+  file: File,
+  sha256: string,
+  onProgress: (sent: number, total: number) => void,
+  signal?: AbortSignal,
+): Promise<UploadResult> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `/api/v1${scopePath(scope)}/files`);
+    xhr.withCredentials = true;
+    for (const [k, v] of Object.entries(uploadHeaders(file.name, sha256))) xhr.setRequestHeader(k, v);
+    xhr.upload.onprogress = (e) => onProgress(e.loaded, e.lengthComputable ? e.total : file.size);
+    xhr.onload = () => {
+      let data: (UploadResult & ApiErrorBody) | null = null;
+      try {
+        data = JSON.parse(xhr.responseText);
+      } catch {
+        data = null;
+      }
+      if (xhr.status >= 200 && xhr.status < 300 && data) return resolve(data);
+      const e = data?.error ?? { code: "network", message: NETWORK };
+      if (xhr.status === 401 && e.code === "unauthenticated") unauthenticatedHandler?.();
+      reject(new RequestError(xhr.status, e.code, e.message, data?.request_id ?? null));
+    };
+    xhr.onerror = () => reject(new RequestError(0, "network", NETWORK));
+    xhr.onabort = () => reject(new RequestError(0, "aborted", "Cancelled"));
+    if (signal) {
+      if (signal.aborted) {
+        reject(new RequestError(0, "aborted", "Cancelled"));
+        return;
+      }
+      signal.addEventListener("abort", () => xhr.abort(), { once: true });
+    }
+    xhr.send(file);
+  });
+}
 
 /** A message to show for any failure: the server's own words, or a plain network message. */
 export const errorText = (e: unknown) => (e instanceof RequestError ? e.message : NETWORK);

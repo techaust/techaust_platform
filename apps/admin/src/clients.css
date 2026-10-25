@@ -433,6 +433,13 @@
   outline-offset: 2px;
 }
 
+/* M3.4 (07-K): an individual client's last contact takes its project notes and files with it. */
+.data-tool__also {
+  margin: calc(-1 * var(--space-2)) 0 var(--space-4);
+  padding: 0 var(--space-4);
+  border-inline-start: 3px solid var(--color-danger);
+}
+
 .data-tool .notice .btn {
   margin-top: var(--space-2);
 }

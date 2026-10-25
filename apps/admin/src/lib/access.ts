@@ -98,7 +98,10 @@ export const canManageUsers = (role: Role) => allowed(role, "users.read");
 /** Does this role get the global search box (leads, clients and contacts, or staff for the owner)? The shell and the
  * 404 line both ask. */
 export const hasSearch = (role: Role) =>
-  allowed(role, "leads.read") || allowed(role, "clients.read") || canManageUsers(role);
+  allowed(role, "leads.read") ||
+  allowed(role, "clients.read") ||
+  allowed(role, "projects.read") ||
+  canManageUsers(role);
 
 /** The 404 page's line: it points to search only for a role that has the box (review L6). */
 export const notFoundLine = (role: Role) =>

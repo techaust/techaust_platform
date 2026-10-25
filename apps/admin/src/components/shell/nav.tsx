@@ -66,10 +66,6 @@ export const NAV: NavItem[] = [
     path: "/projects",
     icon: <FolderKanban />,
     group: 1,
-    arrives: {
-      milestone: "M3.4",
-      what: "Projects with milestones, notes and files, shared with the client or kept internal.",
-    },
   },
   {
     key: "care-plans",

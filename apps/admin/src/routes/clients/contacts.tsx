@@ -22,6 +22,7 @@ import { StaleNotice } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { Notice } from "../../components/ui.tsx";
 import { allowed } from "../../lib/access.ts";
+import { lastLiveOfIndividual } from "../../lib/clients.ts";
 import { sentence } from "../../lib/format.ts";
 import { useUser } from "../../session.tsx";
 import { EraseDialog, ExportDialog } from "./data-tools.tsx";
@@ -139,6 +140,9 @@ export function Contacts(props: { data: ClientPage; reload: () => void }) {
       {canErase && (
         <EraseDialog
           contact={erasing}
+          lastContactOf={
+            erasing && lastLiveOfIndividual(props.data, erasing) ? props.data.client.displayName : null
+          }
           onClose={() => setErasing(null)}
           onDone={() => {
             setErasing(null);

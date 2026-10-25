@@ -39,6 +39,7 @@ import {
 } from "../../lib/clients.ts";
 import { sentence } from "../../lib/format.ts";
 import { useUser } from "../../session.tsx";
+import { NotesPanel } from "../projects/notes.tsx";
 import { AddressFields, type Tax, TaxFields, taxFieldErrors } from "./parts.tsx";
 
 /** Owner-approved 2026-10-25. */
@@ -65,12 +66,16 @@ export function Overview(props: {
   const canWrite = allowed(user.role, "clients.write");
   const canFinance = allowed(user.role, "clients.finance.read");
   const canBilling = allowed(user.role, "clients.finance.write");
+  const canProjects = allowed(user.role, "projects.read");
   const primary = props.data.contacts.find((c) => c.isPrimary && c.anonymisedAt === null) ?? null;
   return (
     <div className="lead-page client-overview">
       <div className="lead-page__main">
         <Details {...props} canWrite={canWrite} />
         <Billing {...props} canFinance={canFinance} canBilling={canBilling} />
+        {canProjects && (
+          <NotesPanel scope={{ kind: "client", id: client.id }} clientName={client.displayName} />
+        )}
       </div>
       <aside className="lead-page__side" aria-label="Summary">
         {canFinance && <Balance id={client.id} />}
