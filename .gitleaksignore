@@ -5,6 +5,8 @@
 # M3.1: the step-up warm-up test spelled out the made-up warm-up key (base64 of "warm-up-key-not-a-secret-0000000",
 # the same dummy as packages/auth/src/warm.ts); the test now builds it with btoa(), ignored here only for the history.
 dfbc2088342c719caf343e4a12b138a860d342a3:packages/auth/test/warm-step-up.test.ts:generic-api-key:13
-# M4.5: `key: row.certificate_r2_key` returns an R2 object path (docs/<type>/<fy>/…-certificate.pdf), not a secret; the
-# finding comes from the M4.5 task branch, which CI scans because gitleaks reads every ref.
+# M4.5: line 93 of the certificate loader returns an R2 object path for the certificate PDF, not a secret; the finding
+# comes from the M4.5 task branch, which CI scans because gitleaks reads every ref.
 e00b7054f2c50b63c1e7607fd1c3b88fe6b36aeb:apps/jobs/src/certificate.ts:generic-api-key:93
+# The first wording of the note above quoted that line and was flagged in turn (docs PR #85); the note no longer quotes code.
+2d7f2f8064ed3487f33160c06884ac4901b1feac:.gitleaksignore:generic-api-key:8
