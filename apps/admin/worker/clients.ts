@@ -35,6 +35,7 @@ import {
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { refuseAnonymised } from "./anonymised.ts";
+import { auditFirstRow } from "./audit-row.ts";
 import {
   type ApiError,
   type AppEnv,
@@ -259,8 +260,6 @@ export const taxWarnings = (t: Extract<TaxCheck, { ok: true }>) =>
 // ---- audit-first rows -------------------------------------------------------------------------------------------------
 
 type Who = Parameters<NonNullable<Parameters<typeof mutate>[1]["auditFirst"]>>[1];
-const AUDIT_INSERT =
-  "INSERT INTO audit_log (id, actor_type, actor_id, role, action, entity_type, entity_id, summary, ip, user_agent, request_id)";
 
 /**
  * The audit row written FIRST, from the rows as they are now and only if the change may happen (`from` carries the conditions).
@@ -276,12 +275,7 @@ const auditRow = (
   summaryExpr: string,
   from: string,
   params: readonly unknown[],
-) =>
-  db
-    .prepare(
-      `${AUDIT_INSERT} SELECT ?1, 'staff', ?2, ?3, '${action}', 'client', ${entityExpr}, ${summaryExpr}, ?4, ?5, ?6 ${from}`,
-    )
-    .bind(auditId, who.actor.id, who.actor.role, who.ip, who.ua, who.requestId, ...params);
+) => auditFirstRow(db, auditId, who, { action, entityType: "client", entityExpr, summaryExpr, from, params });
 
 // ---- schemas -----------------------------------------------------------------------------------------------------------
 
@@ -950,6 +944,16 @@ const HELD_LEAD_SQL =
 const LAST_LIVE_INDIVIDUAL = (col: string) =>
   `${col} = (SELECT client_id FROM contacts WHERE id = ?1) AND EXISTS (SELECT 1 FROM clients cl WHERE cl.id = ${col} AND cl.type = 'individual') AND NOT EXISTS (SELECT 1 FROM contacts o WHERE o.client_id = ${col} AND o.id <> ?1 AND o.anonymised_at IS NULL)`;
 
+/**
+ * Clears the notes of the time entries on the individual client's projects and care plans (`guard` is the batch guard, `?3` onwards;
+ * `?1` the contact, `?2` the time). Exported so a test can EXPLAIN it: each side of the OR is served by an index
+ * (`time_logs_project_date`, `time_logs_care_usage`).
+ */
+export const TIME_NOTE_CLEAR_SQL = (guard: string) =>
+  `UPDATE time_logs SET note = NULL, updated_at = max(?2, updated_at + 1)
+   WHERE note IS NOT NULL AND (project_id IN (SELECT id FROM projects WHERE ${LAST_LIVE_INDIVIDUAL("projects.client_id")})
+     OR care_plan_id IN (SELECT id FROM care_plans WHERE ${LAST_LIVE_INDIVIDUAL("care_plans.client_id")})) AND ${guard}`;
+
 export const contacts = new Hono<AppEnv>()
   .patch("/:id", param(idParam), body(patchContact), async (c) => {
     const { id } = c.req.valid("param");
@@ -1189,6 +1193,10 @@ export const contacts = new Hono<AppEnv>()
             `DELETE FROM files WHERE ${LAST_LIVE_INDIVIDUAL("files.client_id")} AND ${g.sql(2)} RETURNING r2_key`,
           )
           .bind(id, ...g.params),
+        // 2b2. the notes of time entries on its projects and care plans (owner Q7, 2026-10-25; VERIFY WITH CA/LEGAL): a note can name the
+        //      person. Minutes, dates and who logged them stay (they back invoices and are staff records). Same conditions; a business
+        //      client's entries are never touched.
+        db.prepare(TIME_NOTE_CLEAR_SQL(g.sql(3))).bind(id, t, ...g.params),
         // 2c. its projects keep only their codes, and their milestones become "Milestone 1, 2, ..." in order (owner, 2026-10-25;
         //     free-text names can name the person; amounts, dates and statuses stay; VERIFY WITH CA/LEGAL). Same conditions.
         db

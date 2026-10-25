@@ -1,0 +1,959 @@
+/* M3.5 Care plans, time and the dashboard. Tokens only (@techaust/ui), the M3.1 look with the M3.2 panels (leads.css), the M3.3
+   strip (clients.css) and the M3.4 list parts (projects.css): flat surfaces, hairlines, verdigris only where it marks something.
+   The section's one drawn element is the HOURS BAR: a thin track the width of the hours available, filled as they are used, with
+   a fine mark at 80 % where "Near the limit" begins. The words beside it carry every figure; the bar is a picture of them, so it is
+   hidden from screen readers and its colour follows the flag (calm verdigris, then warning, then danger), always with a labelled
+   pill. Everything else is type and rules. Loaded with these screens only, never on sign-in. */
+
+/* ---------- The hours bar ---------- */
+
+.hours {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.hours__nums {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.hours__used {
+  font-weight: 600;
+}
+
+.hours__of {
+  color: var(--color-text-muted);
+}
+
+.hours__track {
+  position: relative;
+  display: block;
+  height: 0.5rem;
+  overflow: hidden;
+  background: var(--color-fill-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.hours__fill {
+  display: block;
+  height: 100%;
+  max-width: 100%;
+  background: var(--color-accent-decor);
+  border-radius: var(--radius-sm);
+}
+
+.hours__track[data-tone="near"] .hours__fill {
+  background: var(--color-warning);
+}
+
+.hours__track[data-tone="reached"] .hours__fill {
+  background: var(--color-danger);
+}
+
+/* Where "Near the limit" begins: a 2 px gap in the surface colour, so it reads on the track and on the fill alike. */
+.hours__tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 80%;
+  width: 2px;
+  background: var(--color-surface);
+}
+
+.hours--lg {
+  gap: var(--space-3);
+}
+
+.hours--lg .hours__nums {
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
+}
+
+.hours--lg .hours__used {
+  font-family: var(--font-display);
+  font-size: var(--text-h3);
+  font-stretch: var(--font-display--stretch);
+  font-weight: 560;
+  line-height: var(--text-h3--line-height);
+}
+
+.hours--lg .hours__track {
+  height: 0.75rem;
+}
+
+/* ---------- Care plans: the list ---------- */
+
+.plan-hours {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+  min-width: 10rem;
+}
+
+.plan-hours .hours {
+  width: 100%;
+  max-width: 16rem;
+}
+
+.plan-name__meta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-2);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.care-table .dtable__table time {
+  white-space: nowrap;
+}
+
+@media (min-width: 48.01rem) and (max-width: 79.99rem) {
+  .care-table .dtable__table {
+    min-width: 50rem;
+  }
+}
+
+/* ---------- Forms: tiers, durations ---------- */
+
+.radios.tier-radios {
+  margin-bottom: var(--space-5);
+}
+
+.tier-radios__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.tier-radio {
+  padding: 0 var(--space-4) 0 var(--space-3);
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.tier-radio:has(input:checked) {
+  border-color: var(--color-text-accent);
+  background: var(--color-selection);
+}
+
+.duration {
+  min-width: 0;
+  margin: 0 0 var(--space-4);
+  padding: 0;
+  border: 0;
+}
+
+.duration > legend {
+  margin-bottom: var(--space-1);
+  padding: 0;
+  font-weight: 560;
+}
+
+.duration > .hint {
+  margin: 0 0 var(--space-2);
+}
+
+.duration__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.duration__part {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.duration__label {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-weight: 400;
+}
+
+.duration__part input {
+  width: 6rem;
+}
+
+.duration__part select {
+  width: 6rem;
+}
+
+.care-new .check,
+.entry-form .check {
+  margin: 0 0 var(--space-4);
+}
+
+/* ---------- One plan ---------- */
+
+.period-card__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.period-card__head .lead-panel__title {
+  margin: 0;
+}
+
+/* The period's ledger: five figures in a row, closed by a heavier rule on top, the way a column of an account book is closed. */
+.period-card {
+  container-type: inline-size;
+}
+
+.period-ledger {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: var(--space-5) 0 0;
+  border-top: 2px solid var(--color-text);
+}
+
+@container (min-width: 30rem) {
+  .period-ledger {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+.period-ledger > div {
+  display: grid;
+  align-content: start;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-3) var(--space-3) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.period-ledger dt {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.period-ledger dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+.period-ledger__overage:where([data-over]) dt {
+  color: var(--color-danger);
+}
+
+.overage {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.overage__amount {
+  max-width: 18ch;
+  white-space: normal;
+  font-weight: 400;
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.period-card__nonbillable {
+  display: flex;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.period-card__notes {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
+.period-card__notes .hint,
+.period-card__notes .panel-empty {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.period-cell {
+  font-weight: 400;
+}
+
+@media (min-width: 48rem) {
+  .period-cell {
+    white-space: nowrap;
+  }
+}
+
+.periods-panel {
+  margin-top: var(--space-4);
+}
+
+.periods-table .dtable {
+  margin-top: 0;
+}
+
+.periods-table .num {
+  white-space: nowrap;
+}
+
+.periods-table .dtable__table .overage {
+  justify-items: end;
+}
+
+.periods-table .dtable__table .overage__amount {
+  max-width: 26ch;
+}
+
+.terms-pending {
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-border);
+}
+
+.terms-pending .lead-panel__sub {
+  margin-top: var(--space-3);
+  color: var(--color-text);
+}
+
+.status-log {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.status-log__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--text-sm);
+}
+
+.status-log__item:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.status-log__item .when {
+  flex-basis: 100%;
+  color: var(--color-text-muted);
+}
+
+.confirm-move {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.confirm-move__to {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+/* ---------- Time ---------- */
+
+.filters.filters--time {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-4) var(--space-6);
+}
+
+.filters--time .field {
+  flex: 0 1 18rem;
+}
+
+.filters--time .time-export {
+  flex: 1 1 auto;
+  justify-content: flex-end;
+  margin: 0;
+}
+
+.timesheet-panel,
+.entries-panel {
+  margin-top: var(--space-4);
+}
+
+.week-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.week-nav__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-h4);
+  font-stretch: var(--font-display--stretch);
+  font-weight: 560;
+  line-height: var(--text-h4--line-height);
+}
+
+.week-nav__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.week-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-8);
+  margin: 0 0 var(--space-4);
+}
+
+.week-totals > div {
+  display: grid;
+  gap: 0;
+}
+
+.week-totals dt {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.week-totals dd {
+  margin: 0;
+  font-size: var(--text-h4);
+  font-weight: 600;
+  line-height: var(--text-h4--line-height);
+}
+
+.sheet-wrap {
+  overflow-x: auto;
+}
+
+.sheet {
+  width: 100%;
+  min-width: 44rem;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.sheet th,
+.sheet td {
+  padding: var(--space-3) var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+  text-align: start;
+  vertical-align: middle;
+}
+
+.sheet .num {
+  text-align: end;
+}
+
+.sheet thead th {
+  color: var(--color-text-muted);
+  font-weight: 560;
+  white-space: nowrap;
+}
+
+.sheet tbody th {
+  font-weight: 400;
+}
+
+.sheet [data-today] {
+  background: var(--color-surface-alt);
+}
+
+.sheet thead th[data-today] {
+  color: var(--color-text);
+  box-shadow: inset 0 2px 0 var(--color-text-accent);
+}
+
+.sheet__none {
+  color: var(--color-text-muted);
+}
+
+.sheet__rowtotal {
+  font-weight: 600;
+}
+
+.sheet tfoot th,
+.sheet tfoot td {
+  border-bottom: 0;
+  font-weight: 600;
+}
+
+.sheet tfoot tr:first-child th,
+.sheet tfoot tr:first-child td {
+  border-top: 2px solid var(--color-text);
+}
+
+.sheet tfoot tr.sheet__billable th,
+.sheet tfoot tr.sheet__billable td {
+  color: var(--color-text-muted);
+  font-weight: 400;
+}
+
+.sheet-target {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-2);
+}
+
+.sheet-target__kind {
+  color: var(--color-text-muted);
+  font-size: var(--text-caption);
+}
+
+.sheet-days {
+  display: none;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (max-width: 47.99rem) {
+  .sheet-wrap {
+    display: none;
+  }
+
+  .sheet-days {
+    display: grid;
+  }
+}
+
+.sheet-day {
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.sheet-day[data-today] .sheet-day__head span:first-child {
+  color: var(--color-text-accent);
+}
+
+.sheet-day__head {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin: 0;
+  font-weight: 600;
+}
+
+.sheet-day__rows {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-sm);
+}
+
+.sheet-day__rows li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.sheet-day__who {
+  display: block;
+  color: var(--color-text-muted);
+}
+
+.entries-lock {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.entries-table .dtable {
+  margin-top: var(--space-2);
+}
+
+.entry-note {
+  display: block;
+  max-width: 40ch;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+
+.entries-table .dtable__table time,
+.entries-table .dtable__table .num {
+  white-space: nowrap;
+}
+
+.entry-actions {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: 0 var(--space-1);
+}
+
+.entry-actions .btn--text {
+  min-height: var(--target-min);
+  padding-inline: var(--space-2);
+}
+
+.entry-form__who {
+  margin: 0 0 var(--space-4);
+}
+
+.target-picker {
+  margin-bottom: var(--space-4);
+}
+
+.target-picker .field {
+  margin-bottom: var(--space-2);
+}
+
+.target-picker__list {
+  display: block;
+  max-height: 16rem;
+  overflow-y: auto;
+  margin: 0;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.target-picker__group {
+  margin: var(--space-2) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-weight: 560;
+}
+
+/* ---------- The dashboard ---------- */
+
+/* Phones: one column of cards in reading order (the two columns open up into their tiles, which are then ordered). */
+.dash {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.dash__main,
+.dash__side {
+  display: contents;
+}
+
+.dash__kpis {
+  order: 1;
+  display: grid;
+  gap: var(--space-4);
+}
+
+.tile--care {
+  order: 2;
+}
+
+.tile--milestones {
+  order: 3;
+}
+
+.tile--activity {
+  order: 4;
+}
+
+.tile--quiet {
+  order: 5;
+}
+
+@media (min-width: 48rem) {
+  .dash__kpis[data-count="2"],
+  .dash__kpis[data-count="3"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dash__kpis[data-count="3"] > :first-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (min-width: 64rem) {
+  .dash {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(18rem, 24rem);
+    align-items: start;
+    gap: var(--space-6);
+  }
+
+  .dash:not(:has(.dash__side)) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dash__main,
+  .dash__side {
+    display: grid;
+    gap: var(--space-4);
+    min-width: 0;
+  }
+
+  /* In the grid the strip leads (the phone order would place it after the columns). */
+  .dash > .dash__kpis {
+    order: 0;
+    grid-column: 1 / -1;
+  }
+
+  .dash__kpis[data-count="3"] {
+    grid-template-columns: minmax(0, 1.3fr) repeat(2, minmax(0, 1fr));
+  }
+
+  .dash__kpis[data-count="3"] > :first-child {
+    grid-column: auto;
+  }
+}
+
+.tile {
+  display: grid;
+  align-content: start;
+  gap: var(--space-3);
+}
+
+.tile .lead-panel__head {
+  margin-bottom: 0;
+}
+
+.tile__link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+  font-size: var(--text-sm);
+}
+
+.tile--quiet .panel-empty {
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.tile--quiet {
+  background: var(--color-surface-alt);
+}
+
+.figure {
+  display: grid;
+  gap: 0;
+  margin: 0;
+}
+
+.figure__value {
+  font-family: var(--font-display);
+  font-size: var(--text-h3);
+  font-stretch: var(--font-display--stretch);
+  font-weight: 560;
+  line-height: var(--text-h3--line-height);
+}
+
+.figure__label {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.mini-facts {
+  display: grid;
+  gap: 0;
+  margin: 0;
+}
+
+.mini-facts > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-1) 0;
+  border-top: 1px solid var(--color-border);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.mini-facts dt {
+  color: var(--color-text-muted);
+}
+
+.mini-facts dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+.mini-facts > div[data-alert] dt,
+.mini-facts > div[data-tone="near"] dt {
+  color: var(--color-warning);
+}
+
+.mini-facts > div[data-tone="reached"] dt {
+  color: var(--color-danger);
+}
+
+.mini-facts--row {
+  grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+  gap: 0 var(--space-4);
+}
+
+.mini-facts--row > div {
+  display: grid;
+  justify-content: start;
+  gap: 0;
+  border-top: 0;
+  padding: 0;
+}
+
+.mini-facts--row dd {
+  font-size: var(--text-h4);
+  line-height: var(--text-h4--line-height);
+}
+
+.tile-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tile-list > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.tile-list__text {
+  display: grid;
+  min-width: 0;
+}
+
+.tile-list__main {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--target-min);
+  overflow-wrap: anywhere;
+}
+
+.tile-list__meta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-3);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.tile-list--compact .when {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.tile__more {
+  margin: 0;
+}
+
+.burn-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.burn-row {
+  display: grid;
+  gap: var(--space-2) var(--space-6);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.burn-row__who {
+  display: grid;
+  align-content: start;
+  min-width: 0;
+}
+
+.burn-row__who .tile-list__main {
+  font-weight: 560;
+}
+
+.burn-row__hours {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2) var(--space-3);
+}
+
+.burn-row__hours .hours {
+  flex: 1 1 12rem;
+}
+
+@container (min-width: 36rem) {
+  .burn-row {
+    grid-template-columns: minmax(10rem, 1fr) minmax(0, 1.6fr);
+    align-items: center;
+  }
+}
+
+.tile--care {
+  container-type: inline-size;
+}
+
+.activity-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.activity-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-4);
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.activity-item__text {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.activity-item__who {
+  font-weight: 600;
+}
+
+.activity-item .when {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+/* The terms change, before and after. */
+.terms-diff {
+  width: 100%;
+  margin: var(--space-4) 0;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.terms-diff__cell {
+  padding: var(--space-2) var(--space-3) var(--space-2) 0;
+  border-bottom: 1px solid var(--color-border);
+  text-align: start;
+  vertical-align: top;
+}
+
+.terms-diff__head {
+  color: var(--color-text-muted);
+  font-weight: 400;
+}
+
+.terms-diff__term {
+  font-weight: 560;
+}
+
+.terms-diff__to {
+  font-weight: 600;
+}

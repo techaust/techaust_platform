@@ -6,6 +6,7 @@ import { ACTIONS, decide, ROLES, SETTINGS_DEFAULTS, uuidv7 } from "@techaust/cor
 import { describe, expect, it } from "vitest";
 import { ROUTES } from "./guard.ts";
 import app, { createApp } from "./index.ts";
+import { mkLog, mkOpenProject, mkPlan, today } from "./test-care.ts";
 import { entryBody, mkItem, putPaymentTerms, siteItems } from "./test-catalogue.ts";
 import {
   accept,
@@ -292,8 +293,61 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
       return run(s, `/files/${f.id}`, { method: "DELETE" });
     },
   };
+  // M3.5: care plans and time logs. Fixtures are written straight to the database with an old `updated_at`.
+  const careTimeScenarios: Record<string, Scenario> = {
+    "POST /api/v1/care-plans": async () => {
+      const s = await owner();
+      const { id } = await scenarioClient();
+      return run(s, "/care-plans", {
+        body: {
+          clientId: id,
+          tier: "growth",
+          priceMinor: 2_499_900,
+          includedMinutes: 600,
+          rollover: "none",
+          startDate: "2026-01-01",
+          billingDay: 1,
+        },
+      });
+    },
+    "POST /api/v1/care-plans/:id/terms": async () => {
+      const s = await owner();
+      const plan = await mkPlan(s.id);
+      return run(s, `/care-plans/${plan.id}/terms`, {
+        body: { expectedUpdatedAt: plan.updatedAt, priceMinor: 3_000_000 },
+      });
+    },
+    "POST /api/v1/care-plans/:id/status": async () => {
+      const s = await owner();
+      const plan = await mkPlan(s.id);
+      return run(s, `/care-plans/${plan.id}/status`, {
+        body: { to: "paused", expectedUpdatedAt: plan.updatedAt },
+      });
+    },
+    "POST /api/v1/time": async () => {
+      const s = await owner();
+      const p = await mkOpenProject();
+      return run(s, "/time", { body: { workDate: today(), minutes: 60, projectId: p.id, billable: true } });
+    },
+    "PATCH /api/v1/time/:id": async () => {
+      const s = await owner();
+      const p = await mkOpenProject();
+      const e = await mkLog(s.id, today(), 60, { project: p.id });
+      return run(s, `/time/${e.id}`, {
+        method: "PATCH",
+        body: { expectedUpdatedAt: e.updatedAt, minutes: 90 },
+      });
+    },
+    "DELETE /api/v1/time/:id": async () => {
+      const s = await owner();
+      const p = await mkOpenProject();
+      const e = await mkLog(s.id, today(), 60, { project: p.id });
+      return run(s, `/time/${e.id}?expectedUpdatedAt=${e.updatedAt}`, { method: "DELETE" });
+    },
+  };
   const scenarios: Record<string, Scenario> = {
     ...projectScenarios,
+    ...careTimeScenarios,
     "POST /api/v1/auth/step-up": async () => {
       const s = await sessionFor("owner");
       const rid = `ray-${crypto.randomUUID()}`;

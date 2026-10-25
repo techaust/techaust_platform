@@ -1,5 +1,6 @@
 // CRM and delivery (docs/05 §5.2): leads, clients, contacts, projects, care plans, time.
 import { type BUDGET_BANDS, TIMELINES, type TOOLS } from "@techaust/core";
+import { CARE_STATUSES, CARE_TIERS, ROLLOVER_RULES } from "@techaust/core/care";
 import { sql } from "drizzle-orm";
 import {
   type AnySQLiteColumn,
@@ -323,9 +324,8 @@ export const files = sqliteTable(
   ],
 );
 
-export const CARE_TIERS = ["essential", "growth", "scale", "dev_subscription", "custom"] as const;
-export const CARE_STATUSES = ["active", "paused", "cancelled"] as const;
-export const ROLLOVER_RULES = ["none", "one_month"] as const;
+// The lists live in core (the care maths reads them too); re-exported so the schema and the code share one copy.
+export { CARE_STATUSES, CARE_TIERS, ROLLOVER_RULES };
 
 export const carePlans = sqliteTable(
   "care_plans",
@@ -344,9 +344,11 @@ export const carePlans = sqliteTable(
     status: text("status", { enum: CARE_STATUSES }).notNull().default("active"),
     rollover: text("rollover", { enum: ROLLOVER_RULES }).notNull().default("none"),
     overageRateMinor: integer("overage_rate_minor"),
+    /** UNUSED in M3.5 (the monthly invoice is M5.4; the client's `care_auto_issue` is the toggle in use). */
     autoIssue: flag("auto_issue"),
     pausedAt: integer("paused_at"),
     cancelledAt: integer("cancelled_at"),
+    /** UNUSED in M3.5: M5.4 stores the period start (an ISO date) it last billed. */
     lastBilledPeriod: text("last_billed_period"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -354,6 +356,9 @@ export const carePlans = sqliteTable(
   (t) => [
     index("care_plans_client").on(t.clientId),
     index("care_plans_status_billing_day").on(t.status, t.billingDay),
+    // M3.5: the list (newest first, optionally by status) and the dashboard's "active plans" read.
+    index("care_plans_created").on(t.createdAt, t.id),
+    index("care_plans_status_created").on(t.status, t.createdAt, t.id),
     check("care_plans_billing_day", sql`${t.billingDay} between 1 and 28`),
     check("care_plans_tier", oneOf(t.tier, CARE_TIERS)),
     check("care_plans_status", oneOf(t.status, CARE_STATUSES)),
@@ -376,15 +381,82 @@ export const timeLogs = sqliteTable(
     carePlanId: text("care_plan_id").references(() => carePlans.id),
     note: text("note"),
     billable: flag("billable"),
+    /** UNUSED in M3.5: the author's 7-day lock counts from `created_at` (written by the app), so nothing is stored for it. */
     lockedAt: integer("locked_at"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
     index("time_logs_project_date").on(t.projectId, t.workDate),
-    index("time_logs_care_plan_date").on(t.carePlanId, t.workDate),
+    // (M3.5 dropped time_logs_care_plan_date: time_logs_care_usage starts with the same two columns and serves every query it did.)
     index("time_logs_user_date").on(t.userId, t.workDate),
-    // ADM-TIME-01: 0.25-hour steps, at most 24 hours (the per-day total is checked by the app).
+    // M3.5: the timesheet's date range for everyone (the accountant and the owner read all entries).
+    index("time_logs_date").on(t.workDate, t.id),
+    // M3.5: hours used per care plan and period are summed from this index alone (it covers the billable flag and the minutes), so the
+    // dashboard reads one index entry per time entry instead of two rows.
+    index("time_logs_care_usage").on(t.carePlanId, t.workDate, t.billable, t.minutes),
+    // ADM-TIME-01: 0.25-hour steps, at most 24 hours (the per-day total is a trigger, `time_logs_day_cap_*`, and a SQL condition).
     check("time_logs_minutes", sql`${t.minutes} between 15 and 1440 and ${t.minutes} % 15 = 0`),
+  ],
+);
+
+/**
+ * The terms of a care plan over time (M3.5, ADM-CARE-01): price, included minutes, AI Ops, overage rate and rollover rule, each row
+ * from `effective_from`. Append-only (triggers). `care_plans` keeps a mirror of the newest row (a trigger checks it); a reader of a
+ * PAST period (and the monthly invoice of M5.4) uses this table, never the mirror.
+ */
+export const carePlanTerms = sqliteTable(
+  "care_plan_terms",
+  {
+    id: id(),
+    carePlanId: text("care_plan_id")
+      .notNull()
+      .references(() => carePlans.id),
+    /** An IST calendar date: a change made mid-period takes effect from the next billing period (owner answer Q1). */
+    effectiveFrom: text("effective_from").notNull(),
+    tier: text("tier", { enum: CARE_TIERS }).notNull(),
+    priceMinor: integer("price_minor").notNull(),
+    includedMinutes: integer("included_minutes").notNull(),
+    aiOpsMinor: integer("ai_ops_minor"),
+    /** Minor units an hour. */
+    overageRateMinor: integer("overage_rate_minor"),
+    rollover: text("rollover", { enum: ROLLOVER_RULES }).notNull(),
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => staffUsers.id),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("care_plan_terms_plan").on(t.carePlanId, t.effectiveFrom, t.createdAt, t.id),
+    check("care_plan_terms_date", sql`date(${t.effectiveFrom}) is ${t.effectiveFrom}`),
+    check("care_plan_terms_tier", oneOf(t.tier, CARE_TIERS)),
+    check("care_plan_terms_rollover", oneOf(t.rollover, ROLLOVER_RULES)),
+    check("care_plan_terms_price", sql`${t.priceMinor} >= 0`),
+    check("care_plan_terms_included", sql`${t.includedMinutes} >= 0 and ${t.includedMinutes} % 15 = 0`),
+    check("care_plan_terms_ai_ops", sql`${t.aiOpsMinor} is null or ${t.aiOpsMinor} >= 0`),
+    check("care_plan_terms_rate", sql`${t.overageRateMinor} is null or ${t.overageRateMinor} >= 0`),
+  ],
+);
+
+/** A care plan's status over time (M3.5): pause, resume, cancel, each from `effective_on`. Append-only (triggers). */
+export const carePlanStatusLog = sqliteTable(
+  "care_plan_status_log",
+  {
+    id: id(),
+    carePlanId: text("care_plan_id")
+      .notNull()
+      .references(() => carePlans.id),
+    status: text("status", { enum: CARE_STATUSES }).notNull(),
+    /** An IST calendar date: today, or the plan's start date if that is later. */
+    effectiveOn: text("effective_on").notNull(),
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => staffUsers.id),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("care_plan_status_log_plan").on(t.carePlanId, t.effectiveOn, t.createdAt, t.id),
+    check("care_plan_status_log_status", oneOf(t.status, CARE_STATUSES)),
+    check("care_plan_status_log_date", sql`date(${t.effectiveOn}) is ${t.effectiveOn}`),
   ],
 );

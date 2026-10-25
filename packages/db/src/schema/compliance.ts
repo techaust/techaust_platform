@@ -3,7 +3,7 @@
 
 import { ROLES } from "@techaust/core";
 import { sql } from "drizzle-orm";
-import { check, index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { check, index, integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { id, nowMs, oneOf } from "./common.ts";
 
 export const ACTOR_TYPES = ["staff", "contact", "system", "webhook"] as const;
@@ -57,4 +57,28 @@ export const accessLog = sqliteTable(
     requestId: text("request_id"),
   },
   (t) => [index("access_log_actor").on(t.actorId, t.at), check("access_log_realm", oneOf(t.realm, REALMS))],
+);
+
+/**
+ * The nightly history of a few dashboard figures (M3.5, docs/05 section 1.2 rule 7): one integer per date, metric and dimension
+ * (a lead stage, a project status, a care plan id, or empty). The dashboard itself is live; this table is for trends and for the
+ * burn per plan over time. Written by the jobs Worker's cron, one metric per queue message, and idempotent on its primary key.
+ * Per-plan rows are business records about clients: their retention is VERIFY WITH CA/LEGAL (docs/08 L-6).
+ */
+export const statsDaily = sqliteTable(
+  "stats_daily",
+  {
+    /** An IST calendar date. */
+    date: text("date").notNull(),
+    metric: text("metric").notNull(),
+    dimension: text("dimension").notNull().default(""),
+    value: integer("value").notNull(),
+    updatedAt: integer("updated_at").notNull().default(nowMs),
+  },
+  (t) => [
+    primaryKey({ columns: [t.date, t.metric, t.dimension] }),
+    index("stats_daily_metric").on(t.metric, t.date),
+    check("stats_daily_date", sql`date(${t.date}) is ${t.date}`),
+    check("stats_daily_value", sql`typeof(${t.value}) = 'integer'`),
+  ],
 );
