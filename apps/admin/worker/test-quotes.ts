@@ -97,7 +97,11 @@ export async function discount(s: TestSession, id: string, kind: "fixed" | "perc
 }
 
 /** Runs `before` once, just before the SEND batch (the one that holds `issue_guard`) is issued: a change that lands "between the read and the batch". */
-export function beforeSendBatch(before: () => Promise<void>): Env {
+export const beforeSendBatch = (before: () => Promise<void>): Env =>
+  beforeBatchHolding("issue_guard", before);
+
+/** Runs `before` once, just before the first batch that holds a statement containing `marker` is issued. */
+export function beforeBatchHolding(marker: string, before: () => Promise<void>): Env {
   class Stmt {
     constructor(
       readonly real: D1PreparedStatement,
@@ -123,7 +127,7 @@ export function beforeSendBatch(before: () => Promise<void>): Env {
     prepare: (q: string) => new Stmt(env.DB.prepare(q), q),
     batch: async (stmts: (Stmt | D1PreparedStatement)[]) => {
       const wrapped = stmts.map((s) => (s instanceof Stmt ? s : null));
-      if (wrapped.some((s) => s?.sql.includes("issue_guard"))) await before();
+      if (wrapped.some((s) => s?.sql.includes(marker))) await before();
       return env.DB.batch(stmts.map((s) => (s instanceof Stmt ? s.real : s)));
     },
   } as unknown as D1Database;
