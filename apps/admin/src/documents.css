@@ -7,6 +7,20 @@
    A sent version reads as the document: Archivo Expanded headings, a short verdigris rule, the figures in tabular numbers.
    Loaded with these screens only, never on sign-in. */
 
+/* First: the plain icon rules of the review fixes (lower specificity than the state-tinted icon rules further down). */
+.next-line .icon {
+  margin-top: 0.125rem;
+}
+
+.next-line--done .icon {
+  color: var(--color-success);
+}
+
+.decided-line .icon {
+  flex: none;
+  color: var(--color-text-accent);
+}
+
 /* ---------- The page ---------- */
 
 .doc-strip {
@@ -402,6 +416,25 @@
 
   .qledger__figs > div {
     text-align: start;
+  }
+}
+
+/* Phones (review fix 7): quantity and rate stack, each the full width of the row, and a long unit wraps beside its quantity. */
+@media (max-width: 29.99rem) {
+  .qledger__work {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .qledger__qty input {
+    flex: none;
+  }
+
+  .qledger__unit {
+    flex: 1 1 auto;
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: var(--text-sm--line-height);
   }
 }
 
@@ -808,6 +841,46 @@
   font-size: var(--text-sm);
 }
 
+/* `section_empty`: the section names inside the sentence are links (inline, so the 44 px target rule's inline exception applies). */
+.blockers__link {
+  color: var(--color-link);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.blockers__link:hover {
+  color: var(--color-link-hover);
+}
+
+/* The approvals queue's result line: where focus lands after a decision when no other request waits. */
+.decided-line {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.decided-line:empty {
+  display: none;
+}
+
+/* A card in the lists hides a fact with no value (a draft's "Valid until"). */
+.docs-table .dcard__facts > div:has(> dd:empty) {
+  display: none;
+}
+
+/* The client filter beside the chips: wide enough for its whole hint at every width. */
+.filters--docs .client-filter {
+  flex: 1 1 22rem;
+  min-width: 0;
+  max-width: 26rem;
+}
+
+.filters--docs .client-filter__search {
+  max-width: none;
+}
+
 /* ---------- Versions ---------- */
 
 .versions__list {
@@ -888,6 +961,12 @@
 .doc-sheet__for {
   margin: 0;
   color: var(--color-text-muted);
+}
+
+.doc-sheet__from {
+  margin: var(--space-1) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
 }
 
 .doc-sheet__section {

@@ -156,7 +156,7 @@ function DocumentList() {
         <div className="clients-table docs-table">
           <DataTable
             caption={DOC_COPY.listHeading}
-            columns={documentColumns(true)}
+            columns={documentColumns(true, rows)}
             rows={rows}
             rowKey={(r) => r.id}
             loading={loading}

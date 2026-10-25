@@ -9,7 +9,7 @@ import { type Column, DataTable, FilterBar } from "../components/data-table.tsx"
 import { Modal } from "../components/dialog.tsx";
 import { EmptyState, PageHeader, When } from "../components/display.tsx";
 import { FormField } from "../components/form.tsx";
-import { ClipboardCheck, Search } from "../components/icons.tsx";
+import { Ban, CheckCircle, ClipboardCheck, Search } from "../components/icons.tsx";
 import { LoadFailed, NoAccess, useLoad } from "../components/states.tsx";
 import { useToast } from "../components/toast.tsx";
 import { Notice } from "../components/ui.tsx";
@@ -17,6 +17,7 @@ import { allowed } from "../lib/access.ts";
 import {
   APPROVAL_FILTERS,
   APPROVAL_LABELS,
+  bellDecided,
   DOC_COPY,
   DOC_PENDING,
   DOC_TOASTS,
@@ -64,6 +65,29 @@ function Approvals() {
     setMore([]);
     setAfter(null);
   }, [key]);
+
+  // After a decision (review fix 6): once the list has the answer, focus goes to the next request waiting for a decision, else to the
+  // result line, so it never falls back to the page when the decided row's button leaves the list.
+  const [result, setResult] = useState<{
+    id: string;
+    approved: boolean;
+    text: string;
+    focused?: boolean;
+  } | null>(null);
+  useEffect(() => {
+    if (!result || result.focused || list.state !== "ready") return;
+    if (list.data.approvals.some((a) => a.id === result.id && a.state === "pending")) return; // the old page, still
+    const nextRow = [...list.data.approvals, ...more].find(
+      (a) => a.id !== result.id && a.state === "pending" && a.document.status === "draft",
+    );
+    requestAnimationFrame(() => {
+      const target =
+        (nextRow && document.getElementById(`decide-${nextRow.id}`)) ||
+        document.getElementById("decided-line");
+      target?.focus();
+    });
+    setResult({ ...result, focused: true });
+  }, [result, list.state, list.data, more]);
 
   // The bell's link: open that request (the owner decides it; anyone else sees it in the list).
   useEffect(() => {
@@ -162,6 +186,14 @@ function Approvals() {
             : `${rows.length === 1 ? "1 request" : `${rows.length} requests`} on this page`
         }
       />
+      <p id="decided-line" className="decided-line" tabIndex={-1} role="status">
+        {result && (
+          <>
+            {result.approved ? <CheckCircle size={16} /> : <Ban size={16} />}
+            <span>{result.text}</span>
+          </>
+        )}
+      </p>
       {list.state === "failed" ? (
         <LoadFailed error={list.error} onRetry={() => list.reload()} />
       ) : (
@@ -177,7 +209,12 @@ function Approvals() {
               owner
                 ? (r) =>
                     r.state === "pending" && r.document.status === "draft" ? (
-                      <button type="button" className="btn btn--secondary" onClick={() => setDeciding(r)}>
+                      <button
+                        type="button"
+                        id={`decide-${r.id}`}
+                        className="btn btn--secondary"
+                        onClick={() => setDeciding(r)}
+                      >
                         Decide<span className="visually-hidden"> on {titleOf(r.document.title)}</span>
                       </button>
                     ) : null
@@ -218,7 +255,14 @@ function Approvals() {
           if (linked) navigate("/approvals", { replace: true });
         }}
         onDecided={(approved) => {
+          const r = deciding;
           toast("success", approved ? DOC_TOASTS.approved : DOC_TOASTS.rejected);
+          if (r)
+            setResult({
+              id: r.id,
+              approved,
+              text: bellDecided(approved, titleOf(r.document.title), r.document.version),
+            });
           setDeciding(null);
           if (linked) navigate("/approvals", { replace: true });
           list.reload(true);
