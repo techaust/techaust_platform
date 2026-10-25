@@ -11,6 +11,7 @@ import {
   discount,
   getDoc,
   type J,
+  type Made,
   json,
   mkDraft,
   mkQuoteClient,
@@ -366,7 +367,7 @@ describe("the list [ADM-G-03]", () => {
   it("shows the latest version of each document, newest first, keyset-paged, with the derived approval state", async () => {
     const o = await owner();
     const client = await mkQuoteClient();
-    const made = [];
+    const made: Made[] = [];
     for (let i = 0; i < 3; i++)
       made.push(await mkDraft(o, { clientId: client.clientId, contactId: client.contactId }));
     const est = await mkDraft(o, {
