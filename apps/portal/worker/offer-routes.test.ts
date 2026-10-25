@@ -294,7 +294,7 @@ describe("GET /offers/:id: the projected view, view tracking, superseded [POR-05
     const c = counted();
     const res = await sendTo(
       app,
-      "https://portal.example/api/v1/offers/" + o.id,
+      `https://portal.example/api/v1/offers/${o.id}`,
       { headers: { Cookie: s.cookie, "CF-Connecting-IP": "203.0.113.9" } },
       c.env,
     );
