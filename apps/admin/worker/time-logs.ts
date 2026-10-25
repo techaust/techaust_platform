@@ -11,7 +11,7 @@
 
 import { addDays, daysBetween, istDate, parseIsoDate, toIsoDate } from "@techaust/core/dates";
 import { uuidv7 } from "@techaust/core/ids";
-import { can } from "@techaust/core/permissions";
+import { can, ROLES } from "@techaust/core/permissions";
 import {
   authorLocked,
   DAY_CAP,
@@ -38,6 +38,11 @@ import {
 } from "./context.ts";
 import { body, idParam, isoDate, limitOf, param, query, refusedWith, STALE_VERSION } from "./http.ts";
 import { type Direction, decodeCursor, keysetSql, PREFIX_END, pageOf } from "./keyset.ts";
+
+/** The roles that log time (`time.writeOwn`), as an SQL list: the people an entry can be logged for. */
+const TIME_ROLES_SQL = ROLES.filter((r) => can(r, "time.writeOwn"))
+  .map((r) => `'${r}'`)
+  .join(", ");
 
 const DAY_CAP_ERROR: ApiError = {
   code: "day_cap",
@@ -202,7 +207,7 @@ async function whyTargetRefuses(
   },
 ): Promise<Response | null> {
   const r = await c.env.DB.prepare(
-    `SELECT (SELECT status FROM staff_users WHERE id = ?1 AND role IN ('owner', 'staff', 'sales')) AS user_status,
+    `SELECT (SELECT status FROM staff_users WHERE id = ?1 AND role IN (${TIME_ROLES_SQL})) AS user_status,
             (SELECT status FROM projects WHERE id = ?2) AS project_status,
             (SELECT ${clientGoneSql("pr.client_id")} FROM projects pr WHERE pr.id = ?2) AS project_gone,
             (SELECT 1 FROM care_plans WHERE id = ?3) AS plan_exists,
@@ -442,7 +447,7 @@ export const timeLogs = new Hono<AppEnv>()
     if (!wide) return c.json({ people: [{ id: me.id, name: me.name }] });
     // Only roles that log time: the accountant reads the timesheet but never logs, so is not offered as a person.
     const { results } = await c.env.DB.prepare(
-      "SELECT id, name FROM staff_users WHERE status = 'active' AND role IN ('owner', 'staff', 'sales') ORDER BY name COLLATE NOCASE, id LIMIT 100",
+      `SELECT id, name FROM staff_users WHERE status = 'active' AND role IN (${TIME_ROLES_SQL}) ORDER BY name COLLATE NOCASE, id LIMIT 100`,
     ).all<{ id: string; name: string }>();
     return c.json({ people: results });
   })
@@ -478,7 +483,7 @@ export const timeLogs = new Hono<AppEnv>()
             entityExpr: "?7",
             summaryExpr:
               "json_object('timeLogId', ?7, 'userId', ?8, 'workDate', ?9, 'minutes', ?10, 'billable', ?13, 'projectId', ?11, 'carePlanId', ?12)",
-            from: `WHERE EXISTS (SELECT 1 FROM staff_users WHERE id = ?8 AND status = 'active' AND role IN ('owner', 'staff', 'sales')) AND ${targetOpen("?11", "?12", "?9")} AND ${DAY_TOTAL("?8", "?9")} + ?10 <= ${DAY_CAP}`,
+            from: `WHERE EXISTS (SELECT 1 FROM staff_users WHERE id = ?8 AND status = 'active' AND role IN (${TIME_ROLES_SQL})) AND ${targetOpen("?11", "?12", "?9")} AND ${DAY_TOTAL("?8", "?9")} + ?10 <= ${DAY_CAP}`,
             params: [id, userId, f.workDate, f.minutes, projectId, carePlanId, billable],
           }),
         after: (g) => [

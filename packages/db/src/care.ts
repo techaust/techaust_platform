@@ -101,6 +101,8 @@ function idsSql(source: PlanSource): { sql: string; bound: number; bind: unknown
     throw new RangeError(`Active plans: 1 to ${MAX_LOADED_PLANS}`);
   // The keyset continues on `care_plans_status_created (status, created_at, id)`: the row-value comparison against the previous
   // plan's own `(created_at, id)` is a range on that index. A plan id that is gone gives NULL, which matches nothing (an empty page).
+  // With `on` (the status in force on a date) no status column filters: the walk is on `care_plans_created (created_at, id)`, every
+  // plan (cancelled ones too) costs one search on `care_plan_status_log_plan`, and the page size bounds it.
   const after = source.after;
   const keyset =
     after === undefined

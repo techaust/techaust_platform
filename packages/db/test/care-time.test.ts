@@ -610,4 +610,22 @@ describe("the shared loader", () => {
       }
     }
   });
+
+  it("the plans active on a date walk care_plans_created and look the status up by index (EXPLAIN QUERY PLAN)", async () => {
+    for (const source of [
+      { active: 50, on: "2026-11-30" },
+      { active: 50, after: "a", on: "2026-11-30" },
+    ] as const) {
+      const [plans] = careQueries(source, { to: "2026-12-31", periodsBack: 1 });
+      const text = (await all<{ detail: string }>(`EXPLAIN QUERY PLAN ${plans.sql}`, ...plans.bind))
+        .map((p) => p.detail)
+        .join("\n");
+      // The walk is in keyset order on the index and stops at the page size; each plan costs one status-log search.
+      expect(text, plans.sql).toMatch(/care_plans USING (COVERING )?INDEX care_plans_created/);
+      expect(text, plans.sql).toMatch(
+        /SEARCH care_plan_status_log USING (COVERING )?INDEX care_plan_status_log_plan/,
+      );
+      expect(text, plans.sql).not.toMatch(/SCAN care_plan_status_log\b/);
+    }
+  });
 });

@@ -40,6 +40,12 @@ export const STATS_SQL = {
   "time.minutes_prev_day": `${COLUMNS} SELECT ?1, 'time.minutes_prev_day', '', coalesce(sum(minutes), 0), ?2 FROM time_logs WHERE work_date = ?1 ${UPSERT}`,
 } as const;
 
+/** The metrics with one row per dimension (a stage, a status): a rerun clears the date's rows first, so a dimension that fell to zero goes. */
+export const GROUPED_METRICS: ReadonlySet<keyof typeof STATS_SQL> = new Set([
+  "leads.open",
+  "projects.status",
+]);
+
 /** The care figures of one page of plans: `?1` date, `?2` metric, `?3` time, `?4` the `[planId, value]` pairs as JSON. */
 export const CARE_STATS_SQL = `${COLUMNS} SELECT ?1, ?2, json_extract(j.value, '$[0]'), json_extract(j.value, '$[1]'), ?3 FROM json_each(?4) j WHERE true ${UPSERT}`;
 
@@ -59,7 +65,7 @@ export async function processStats(env: Env, msg: StatsMessage, now = Date.now()
   const { metric, date } = msg;
   if (metric === "care.used_minutes" || metric === "care.available_minutes") return careMetric(env, msg, now);
   const stmt = env.DB.prepare(STATS_SQL[metric]);
-  if (metric === "leads.open" || metric === "projects.status") {
+  if (GROUPED_METRICS.has(metric)) {
     // A grouped metric clears its day's rows first, in the same batch: a stage that fell to zero since an earlier run must not keep
     // its old count. The batch is one transaction, so a failure leaves the earlier rows.
     const [, written] = await env.DB.batch([

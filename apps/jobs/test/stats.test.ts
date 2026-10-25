@@ -17,7 +17,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import worker from "../src/index.ts";
 import { PURGE_CRON } from "../src/purge.ts";
 import { handleQueue } from "../src/queue.ts";
-import { CARE_STATS_SQL, enqueueStats, processStats, STATS_SQL } from "../src/stats.ts";
+import { CARE_STATS_SQL, enqueueStats, GROUPED_METRICS, processStats, STATS_SQL } from "../src/stats.ts";
 
 const SCHEDULED = Date.UTC(2026, 11, 1, 22, 0); // 2026-12-02 03:30 IST: the day that just ended is 2026-12-01
 const DATE = "2026-11-30";
@@ -84,7 +84,7 @@ async function reset() {
   // Plans cannot be deleted (history is append-only): earlier tests' plans are cancelled, by a status row that sorts after the rest and is in force on the test date.
   await realEnv.DB.batch([
     realEnv.DB.prepare(
-      "INSERT INTO care_plan_status_log (id, care_plan_id, status, effective_on, created_by, created_at) SELECT lower(hex(randomblob(16))), id, 'cancelled', max('2026-11-29', (SELECT max(l.effective_on) FROM care_plan_status_log l WHERE l.care_plan_id = care_plans.id)), ?1, ?2 FROM care_plans WHERE status = 'active'",
+      "INSERT INTO care_plan_status_log (id, care_plan_id, status, effective_on, created_by, created_at) SELECT lower(hex(randomblob(16))), id, 'cancelled', max('2026-11-29', coalesce((SELECT max(l.effective_on) FROM care_plan_status_log l WHERE l.care_plan_id = care_plans.id), '2026-11-29')), ?1, ?2 FROM care_plans WHERE status = 'active'",
     ).bind(staff, ++tick),
     realEnv.DB.prepare("UPDATE care_plans SET status = 'cancelled' WHERE status = 'active'"),
   ]);
@@ -464,6 +464,11 @@ describe("the metrics [item 6]", () => {
     expect(await plan(CARE_STATS_SQL, DATE, "care.used_minutes", NOW, "[]")).not.toMatch(
       /SCAN (stats_daily|care_plans|time_logs)/,
     );
+  });
+
+  it("every metric with a GROUP BY is cleared before it is written again (GROUPED_METRICS)", () => {
+    for (const [metric, sql] of Object.entries(STATS_SQL))
+      expect(GROUPED_METRICS.has(metric as keyof typeof STATS_SQL), metric).toBe(/\bGROUP BY\b/.test(sql));
   });
 
   it("the INSERT statements are exactly one statement per metric (the upsert target is the primary key)", () => {
