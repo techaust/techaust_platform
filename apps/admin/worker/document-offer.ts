@@ -62,7 +62,7 @@ export const offerStatements = (db: D1Database, id: string): D1PreparedStatement
   db.prepare(PROJECT_SQL).bind(id),
 ];
 
-type Rows = D1Result<Record<string, unknown>> | undefined;
+type Rows = D1Result<unknown> | undefined;
 const rowsOf = (r: Rows): Record<string, unknown>[] => (r?.results ?? []) as Record<string, unknown>[];
 
 export type DeliveryState =
