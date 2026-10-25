@@ -9,7 +9,7 @@ import { useSearchParams } from "react-router";
 import { api, RequestError, type TimeEntry, type TimeWeek } from "../api.ts";
 import { ConfirmDialog } from "../components/confirm-dialog.tsx";
 import { type Column, DataTable } from "../components/data-table.tsx";
-import { EmptyState, PageHeader, StatusPill } from "../components/display.tsx";
+import { EmptyState, PageHeader, Skeleton, StatusPill } from "../components/display.tsx";
 import { ChevronLeft, ChevronRight, Clock, Lock, Pencil, Plus, Trash } from "../components/icons.tsx";
 import { LoadFailed, NoAccess, StaleNotice, useLoad } from "../components/states.tsx";
 import { useToast } from "../components/toast.tsx";
@@ -218,9 +218,15 @@ function TimeScreen() {
         {sheet.state === "failed" ? (
           <LoadFailed error={sheet.error} onRetry={() => sheet.reload()} headingLevel={3} />
         ) : sheet.state === "loading" ? (
-          <p className="hint" role="status">
-            Loading…
-          </p>
+          <div className="stack-sm">
+            <p className="visually-hidden" role="status">
+              Loading the timesheet
+            </p>
+            <Skeleton width="40%" />
+            <Skeleton width="100%" />
+            <Skeleton width="100%" />
+            <Skeleton width="70%" />
+          </div>
         ) : (
           <Timesheet data={sheet.data} today={today} showPeople={showPeople} />
         )}

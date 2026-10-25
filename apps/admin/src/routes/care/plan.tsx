@@ -3,7 +3,7 @@
 // against included plus carried over, as words and a calm bar, the overage and its amount before GST, or the no-rate line), the
 // last 12 periods, the terms in force and any booked for the next period, and the status history. A status change takes effect
 // today (or on the start date); new terms from the next billing period (owner's Q1). The server decides every rule again.
-import { type FormEvent, type ReactNode, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
 import { api, type CarePlanPage, type CareStatus, type CareUsage, RequestError } from "../../api.ts";
 import { ConfirmDialog } from "../../components/confirm-dialog.tsx";
@@ -498,6 +498,11 @@ function TermsChange(props: { data: CarePlanPage; name: string; onStale: () => v
   const [failure, setFailure] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const date = termsDate(props.data.today, plan);
+  // The review replaces the form under the focused button: the title takes focus so the summary is read next.
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (review) titleRef.current?.focus();
+  }, [review]);
 
   if (!newest) return null;
 
@@ -560,6 +565,7 @@ function TermsChange(props: { data: CarePlanPage; name: string; onStale: () => v
         onClose={() => setOpen(false)}
         busy={busy}
         wide
+        titleRef={review ? titleRef : undefined}
       >
         {review ? (
           <>

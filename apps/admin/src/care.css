@@ -117,6 +117,10 @@
 
 /* ---------- Forms: tiers, durations ---------- */
 
+.radios.tier-radios {
+  margin-bottom: var(--space-5);
+}
+
 .tier-radios__row {
   display: flex;
   flex-wrap: wrap;
@@ -291,7 +295,7 @@
   margin-top: 0;
 }
 
-.periods-table .dtable__table .num {
+.periods-table .num {
   white-space: nowrap;
 }
 
@@ -589,9 +593,14 @@
   white-space: pre-line;
 }
 
+.entries-table .dtable__table time,
+.entries-table .dtable__table .num {
+  white-space: nowrap;
+}
+
 .entry-actions {
   display: inline-flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 0 var(--space-1);
 }
 
