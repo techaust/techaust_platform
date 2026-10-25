@@ -1,1 +1,0 @@
-DROP INDEX `time_logs_care_plan_date`;
