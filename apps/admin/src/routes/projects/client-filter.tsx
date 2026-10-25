@@ -17,17 +17,33 @@ export function useDebounced<T>(value: T, ms = 250): T {
   return v;
 }
 
-export function ClientFilter(props: { clientId: string; onChange: (id: string | null) => void }) {
+type Picked = { id: string; displayName: string; code: string };
+
+export function ClientFilter(props: {
+  clientId: string;
+  onChange: (id: string | null, picked?: Picked) => void;
+}) {
   const [q, setQ] = useState("");
+  const [picked, setPicked] = useState<Picked | null>(null);
   const term = useDebounced(q.trim().length >= 2 ? q.trim() : "");
   const found = useLoad(() => (term ? api.clients({ q: term }) : Promise.resolve(null)), term);
+  // The chosen row comes up from the search results; the client is fetched only when the page was opened from a bare URL.
+  const known = picked && picked.id === props.clientId ? picked : null;
   const chosen = useLoad(
-    () => (props.clientId ? api.client(props.clientId) : Promise.resolve(null)),
-    props.clientId,
+    () => (props.clientId && !known ? api.client(props.clientId) : Promise.resolve(null)),
+    known ? "" : props.clientId,
   );
 
+  // The filter was cleared from outside (Clear filters, the chip): forget the search and its results.
+  useEffect(() => {
+    if (!props.clientId) {
+      setQ("");
+      setPicked(null);
+    }
+  }, [props.clientId]);
+
   if (props.clientId) {
-    const c = chosen.data?.client;
+    const c = known ?? chosen.data?.client;
     return (
       <div className="client-filter">
         <span className="chips__label" id="project-client-label">
@@ -46,7 +62,7 @@ export function ClientFilter(props: { clientId: string; onChange: (id: string | 
             }}
           >
             <X size={16} />
-            <span className="visually-hidden">Show projects of all clients</span>
+            <span className="visually-hidden">{PENDING.clientFilterClear}</span>
           </button>
         </span>
       </div>
@@ -66,7 +82,7 @@ export function ClientFilter(props: { clientId: string; onChange: (id: string | 
             id="project-client-q"
             type="search"
             autoComplete="off"
-            placeholder="Start of a code or name"
+            placeholder={PENDING.clientFilterHint}
             aria-describedby="project-client-status"
             value={q}
             onChange={(e) => setQ(e.target.value)}
@@ -78,7 +94,7 @@ export function ClientFilter(props: { clientId: string; onChange: (id: string | 
             : term && rows.length === 0 && found.state === "ready"
               ? PENDING.noClientMatch
               : term && found.state === "ready"
-                ? `${rows.length} clients found`
+                ? PENDING.clientsFound(rows.length)
                 : ""}
         </p>
         {term && found.state === "failed" && <p className="hint">{errorText(found.error)}</p>}
@@ -89,7 +105,11 @@ export function ClientFilter(props: { clientId: string; onChange: (id: string | 
           <ul className="client-filter__results">
             {rows.map((c) => (
               <li key={c.id}>
-                <button type="button" onClick={() => props.onChange(c.id)}>
+                <button type="button" onClick={() => {
+                    const row = { id: c.id, displayName: c.displayName, code: c.code };
+                    setPicked(row);
+                    props.onChange(c.id, row);
+                  }}>
                   <span className="client-filter__name">{c.displayName}</span>
                   <span className="docno">{c.code}</span>
                 </button>

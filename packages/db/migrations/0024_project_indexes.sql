@@ -5,3 +5,5 @@ CREATE INDEX `projects_created` ON `projects` (`created_at`,`id`);--> statement-
 CREATE INDEX `projects_status_created` ON `projects` (`status`,`created_at`,`id`);--> statement-breakpoint
 CREATE INDEX `projects_name_nocase` ON `projects` ("name" collate nocase);--> statement-breakpoint
 CREATE UNIQUE INDEX `projects_source_document` ON `projects` (`source_document_id`) WHERE "projects"."source_document_id" is not null;
+--> statement-breakpoint
+ALTER TABLE `clients` ADD `anonymised_at` integer;

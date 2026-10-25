@@ -94,7 +94,7 @@ function ProjectView(props: {
 }) {
   const user = useUser();
   const { project } = props.data;
-  const canWrite = allowed(user.role, "projects.write");
+  const canWrite = allowed(user.role, "projects.write") && !props.data.clientAnonymised;
   const [params, setParams] = useSearchParams();
   const asked = params.get("tab");
   const tab: TabKey = TABS.some((t) => t.key === asked) ? (asked as TabKey) : "overview";

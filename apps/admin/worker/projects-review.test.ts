@@ -90,7 +90,16 @@ describe("the project version always moves [ADM-PRJ-01]", () => {
     expect(
       ((await one("SELECT updated_at FROM projects WHERE id = ?", p.id)) as J).updated_at,
     ).toBeGreaterThan(future);
-    expect((await json(res)).updatedAt).toBeGreaterThan(future);
+    // the version the response carries is the stored one (re-check L4)
+    const stored = ((await one("SELECT updated_at FROM projects WHERE id = ?", p.id)) as J).updated_at;
+    expect((await json(res)).updatedAt).toBe(stored);
+    // a second move in the same instant moves it again
+    const again = await call(`/projects/${p.id}/status`, { cookie: o.cookie, body: { to: "on_hold" } });
+    expect(again.status).toBe(200);
+    expect((await json(again)).updatedAt).toBe(
+      ((await one("SELECT updated_at FROM projects WHERE id = ?", p.id)) as J).updated_at,
+    );
+    expect((await json(again)).updatedAt).toBeGreaterThan(stored);
   });
 });
 
@@ -215,11 +224,68 @@ describe("an anonymised individual client takes nothing new [ADM-PRJ-01..04; VER
       await call(`/projects/${p.id}/milestones/order`, { cookie: o.cookie, body: { ids: [m2.id, m1.id] } }),
     );
 
+    // the status move and the milestone delete are guarded too (re-check M2)
+    await refused(await call(`/projects/${p.id}/status`, { cookie: o.cookie, body: { to: "cancelled" } }));
+    await refused(await call(`/milestones/${m1.id}`, { method: "DELETE", cookie: o.cookie }));
+    // and so are the client's own edits and a new contact (re-check M1)
+    const stamp = async () =>
+      ((await one("SELECT updated_at FROM clients WHERE id = ?", clientId)) as J).updated_at;
+    await refused(
+      await call(`/clients/${clientId}`, {
+        method: "PATCH",
+        cookie: o.cookie,
+        body: { expectedUpdatedAt: await stamp(), displayName: "Pat Private again" },
+      }),
+    );
+    await refused(
+      await call(`/clients/${clientId}/billing`, {
+        method: "PATCH",
+        cookie: o.cookie,
+        body: { expectedUpdatedAt: await stamp(), paymentTermsDays: 30 },
+      }),
+    );
+    await refused(
+      await call(`/clients/${clientId}/contacts`, {
+        cookie: o.cookie,
+        body: { name: "Someone New", email: "new.person@example.test" },
+      }),
+    );
+    expect(await countOf("contacts", "client_id = ? AND anonymised_at IS NULL", clientId)).toBe(0);
+
     expect(await countOf("notes")).toBe(before.notes);
     expect(await countOf("files")).toBe(before.files);
     expect(await countOf("projects")).toBe(before.projects);
     expect(await countOf("milestones")).toBe(before.milestones);
     expect(await one("SELECT status FROM milestones WHERE id = ?", m1.id)).toEqual({ status: "pending" });
+  });
+
+  it("is stored, so a renamed, retyped or re-contacted client stays locked, and a client merely named 'Removed client' is not", async () => {
+    const o = await owner();
+    const { clientId, contact } = await individual();
+    expect((await erase(o.cookie, contact.id)).status).toBe(200);
+    expect(((await one("SELECT anonymised_at FROM clients WHERE id = ?", clientId)) as J).anonymised_at).not
+      .toBeNull();
+    // any later change to the row (here straight in the database) cannot unlock it
+    await env.DB.prepare("UPDATE clients SET display_name = 'Acme Ltd', type = 'business' WHERE id = ?")
+      .bind(clientId)
+      .run();
+    await mkContact(clientId);
+    const res = await call(`/clients/${clientId}/notes`, { cookie: o.cookie, body: { bodyMd: "x" } });
+    expect(res.status).toBe(409);
+    expect(await code(res)).toBe("client_anonymised");
+    expect((await json(await call(`/clients/${clientId}`, { cookie: o.cookie }))).anonymised).toBe(true);
+
+    // only the stored state counts: a client with that name and no contacts stays writable
+    for (const type of ["individual", "business"]) {
+      const named = await mkClient({ type, legal_name: "Removed client", display_name: "Removed client" });
+      expect((await json(await call(`/clients/${named}`, { cookie: o.cookie }))).anonymised).toBe(false);
+      expect(
+        (await call(`/clients/${named}/notes`, { cookie: o.cookie, body: { bodyMd: "fine" } })).status,
+      ).toBe(201);
+      expect(
+        (await call("/projects", { cookie: o.cookie, body: { clientId: named, name: "P" } })).status,
+      ).toBe(201);
+    }
   });
 
   it("never affects a business client, an individual with a live contact, or an individual that has no contact yet", async () => {

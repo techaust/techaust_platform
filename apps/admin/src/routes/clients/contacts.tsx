@@ -30,7 +30,7 @@ import { ContactFlags, ContactSwitches } from "./parts.tsx";
 
 export function Contacts(props: { data: ClientPage; reload: () => void }) {
   const user = useUser();
-  const canWrite = allowed(user.role, "clients.write");
+  const canWrite = allowed(user.role, "clients.write") && !props.data.anonymised;
   const canExport = allowed(user.role, "clients.dataExport");
   const canErase = allowed(user.role, "clients.dataErase");
   const [editing, setEditing] = useState<ContactView | "new" | null>(null);

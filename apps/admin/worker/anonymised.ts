@@ -1,9 +1,8 @@
 // An individual client whose personal details were removed (M3.3 erase or anonymise of its last live contact) takes nothing new:
-// no projects, milestones, notes or files (M3.4 review, finding 4; VERIFY WITH CA/LEGAL). The state is read from the data, never
-// stored: the client is an individual, the erase renamed it (`ANONYMISED_CLIENT`, set in the same batch that removes the last live
-// contact) and no live contact is left. A business client, or an individual without contacts yet, is never in this state.
+// no projects, milestones, notes, files, contacts or edits (M3.4 review, findings 4 and M1; VERIFY WITH CA/LEGAL). The state is
+// stored: `clients.anonymised_at`, set in the same batch that removes the last live contact and never cleared. A rename, a type
+// change or a new contact cannot unlock it, and a client that merely carries the label "Removed client" is not locked by it.
 // The condition is part of each write (a SQL fragment), so there is no read before the write.
-import { ANONYMISED_CLIENT } from "@techaust/core/clients";
 import { type ApiError, type Ctx, err } from "./context.ts";
 
 export const CLIENT_ANONYMISED: ApiError = {
@@ -13,7 +12,7 @@ export const CLIENT_ANONYMISED: ApiError = {
 
 /** True when the client in `col` (a column or a sub-select giving a client id) is an anonymised individual. */
 export const clientGoneSql = (col: string) =>
-  `(EXISTS (SELECT 1 FROM clients z WHERE z.id = ${col} AND z.type = 'individual' AND z.display_name = '${ANONYMISED_CLIENT}') AND NOT EXISTS (SELECT 1 FROM contacts o WHERE o.client_id = ${col} AND o.anonymised_at IS NULL))`;
+  `EXISTS (SELECT 1 FROM clients z WHERE z.id = ${col} AND z.anonymised_at IS NOT NULL)`;
 
 /** The write condition: the client is not an anonymised individual. */
 export const clientLiveSql = (col: string) => `NOT ${clientGoneSql(col)}`;

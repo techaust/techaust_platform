@@ -63,9 +63,10 @@ export function Overview(props: {
 }) {
   const user = useUser();
   const { client } = props.data;
-  const canWrite = allowed(user.role, "clients.write");
+  // An anonymised individual takes no edits at all (client_anonymised).
+  const canWrite = allowed(user.role, "clients.write") && !props.data.anonymised;
   const canFinance = allowed(user.role, "clients.finance.read");
-  const canBilling = allowed(user.role, "clients.finance.write");
+  const canBilling = allowed(user.role, "clients.finance.write") && !props.data.anonymised;
   const canProjects = allowed(user.role, "projects.read");
   const primary = props.data.contacts.find((c) => c.isPrimary && c.anonymisedAt === null) ?? null;
   return (

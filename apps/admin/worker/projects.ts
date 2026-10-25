@@ -443,12 +443,17 @@ export const projects = new Hono<AppEnv>()
       summary: { projectId: id, projectCode: row.code, changed: changes.map(([name]) => name) },
     });
     if (!done) {
-      const again = await projectRow(c, id);
-      if (!again) return err(c, NOT_FOUND, 404);
-      if (again.updated_at !== f.expectedUpdatedAt) return err(c, STALE_VERSION, 409);
-      if (await projectClientGone(c, id)) return refuseAnonymised(c);
-      const locked = await db.prepare(`SELECT ${PCT_LOCKED} AS locked`).bind(id).first<{ locked: number }>();
-      if (locked?.locked === 1 && changes.some(([name]) => name === "budgetMinor"))
+      // One read says why: the version, the client's state and the budget lock together.
+      const why = await db
+        .prepare(
+          `SELECT updated_at, ${clientGoneSql("client_id")} AS gone, ${PCT_LOCKED.replace("?1", "projects.id")} AS locked FROM projects WHERE id = ?1`,
+        )
+        .bind(id)
+        .first<{ updated_at: number; gone: number; locked: number }>();
+      if (!why) return err(c, NOT_FOUND, 404);
+      if (why.updated_at !== f.expectedUpdatedAt) return err(c, STALE_VERSION, 409);
+      if (why.gone === 1) return refuseAnonymised(c);
+      if (why.locked === 1 && changes.some(([name]) => name === "budgetMinor"))
         return err(c, BUDGET_LOCKED, 409);
       return err(c, BAD_OWNER, 400);
     }
@@ -467,15 +472,16 @@ export const projects = new Hono<AppEnv>()
     const t = Math.max(Date.now(), row.updated_at + 1);
     const done = await mutate(c, {
       main: c.env.DB.prepare(
-        "UPDATE projects SET status = ?2, updated_at = max(?3, updated_at + 1) WHERE id = ?1 AND status = ?4",
-      ).bind(id, to, t, row.status),
+        `UPDATE projects SET status = ?2, updated_at = ?3 WHERE id = ?1 AND status = ?4 AND updated_at = ?5 AND ${clientLiveSql("projects.client_id")}`,
+      ).bind(id, to, t, row.status, row.updated_at),
       action: "project.status",
       entityType: "project",
       entityId: id,
       summary: { projectId: id, projectCode: row.code, from: row.status, to },
     });
-    // Lost a race (someone moved it first): the move may no longer be allowed.
-    return done ? c.json({ ok: true, status: to, updatedAt: t }) : err(c, INVALID_TRANSITION, 409);
+    if (done) return c.json({ ok: true, status: to, updatedAt: t });
+    // Lost a race (someone changed it first): the move may no longer be allowed; or the client is anonymised.
+    return (await projectClientGone(c, id)) ? refuseAnonymised(c) : err(c, INVALID_TRANSITION, 409);
   })
 
   // ---- milestones of a project ----
@@ -658,12 +664,13 @@ export const milestones = new Hono<AppEnv>()
     if (!row) return err(c, NOT_FOUND, 404);
     const done = await mutate(c, {
       main: c.env.DB.prepare(
-        "DELETE FROM milestones WHERE id = ?1 AND status = 'pending' AND document_id IS NULL",
+        `DELETE FROM milestones WHERE id = ?1 AND status = 'pending' AND document_id IS NULL AND ${MILESTONE_CLIENT_LIVE}`,
       ).bind(id),
       action: "milestone.delete",
       entityType: "milestone",
       entityId: id,
       summary: { milestoneId: id, projectId: row.project_id },
     });
-    return done ? c.json({ ok: true }) : err(c, MILESTONE_LOCKED, 409);
+    if (done) return c.json({ ok: true });
+    return (await milestoneClientGone(c, id)) ? refuseAnonymised(c) : err(c, MILESTONE_LOCKED, 409);
   });

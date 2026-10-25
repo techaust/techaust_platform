@@ -117,7 +117,7 @@ export function sanitiseFilename(name: string): string {
   const chars = Array.from(base);
   if (chars.length > room) base = chars.slice(0, room).join("");
   s = `${base}${ext}`;
-  if (base.trim() === "") return `file${ext}`;
+  if (base.trim() === "") return `file${ext.toLowerCase()}`;
   return s;
 }
 

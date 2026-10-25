@@ -154,6 +154,8 @@ export const clients = sqliteTable(
     tags: text("tags", { mode: "json" }).$type<string[]>(),
     notes: text("notes"),
     legalHold: flag("legal_hold"),
+    /** M3.4 review: set (UTC ms) in the batch that erases or anonymises an individual's last live contact; the screens and writes lock on it. Added with ALTER TABLE only (`clients` is referenced). */
+    anonymisedAt: integer("anonymised_at"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

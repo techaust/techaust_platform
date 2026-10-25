@@ -44,6 +44,7 @@ import {
   mutate,
   NOT_FOUND,
 } from "./context.ts";
+import { refuseAnonymised } from "./anonymised.ts";
 import { dropObjects } from "./files.ts";
 import {
   body,
@@ -88,7 +89,7 @@ const NOT_AVAILABLE: ApiError = { code: "conflict", message: "Nothing was change
 // ---- rows and views ---------------------------------------------------------------------------------------------------
 
 export const CLIENT_COLS =
-  "id, code, legal_name, display_name, type, country, gst_status, gstin, state_code, billing_address, service_address, currency, payment_terms_days, reminder_policy, care_auto_issue, attach_pdf, tags, notes, legal_hold, created_at, updated_at";
+  "id, code, legal_name, display_name, type, country, gst_status, gstin, state_code, billing_address, service_address, currency, payment_terms_days, reminder_policy, care_auto_issue, attach_pdf, tags, notes, legal_hold, anonymised_at, created_at, updated_at";
 const CONTACT_COLS =
   "id, client_id, name, email, phone, title, is_primary, is_billing, portal_access, can_see_finance, marketing_consent, bounced_at, anonymised_at, legal_hold, created_at, updated_at";
 
@@ -112,6 +113,7 @@ export type ClientRow = {
   tags: string | null;
   notes: string | null;
   legal_hold: number;
+  anonymised_at: number | null;
   created_at: number;
   updated_at: number;
 };
@@ -567,10 +569,7 @@ export const clients = new Hono<AppEnv>()
       // Contacts that are not anonymised (the list above keeps the tombstones).
       liveContactCount: (live?.results[0] as { n: number } | undefined)?.n ?? 0,
       // An individual whose personal details were removed: the screens show it read-only (M3.4 review; see anonymised.ts).
-      anonymised:
-        row.type === "individual" &&
-        row.display_name === ANONYMISED_CLIENT &&
-        ((live?.results[0] as { n: number } | undefined)?.n ?? 0) === 0,
+      anonymised: row.anonymised_at !== null,
       sourceLead: (lead?.results[0] as { id: string; ref: string } | undefined) ?? null,
       // The lock is a finance fact: only a role that reads finance is told.
       ...(canFinance(role)
@@ -612,7 +611,7 @@ export const clients = new Hono<AppEnv>()
       done = await mutate(c, {
         main: db
           .prepare(
-            `UPDATE clients SET ${changes.map(([, col], i) => `${col} = ?${i + 4}`).join(", ")}, updated_at = ?3 WHERE id = ?1 AND updated_at = ?2${typeChanges ? ` AND ${NO_FROZEN_DOC_SQL}` : ""}`,
+            `UPDATE clients SET ${changes.map(([, col], i) => `${col} = ?${i + 4}`).join(", ")}, updated_at = ?3 WHERE id = ?1 AND updated_at = ?2 AND anonymised_at IS NULL${typeChanges ? ` AND ${NO_FROZEN_DOC_SQL}` : ""}`,
           )
           .bind(id, f.expectedUpdatedAt, t, ...changes.map((ch) => ch[2])),
         action: "client.update",
@@ -627,10 +626,11 @@ export const clients = new Hono<AppEnv>()
     }
     if (!done) {
       const again = await db
-        .prepare("SELECT updated_at FROM clients WHERE id = ?1")
+        .prepare("SELECT updated_at, anonymised_at FROM clients WHERE id = ?1")
         .bind(id)
-        .first<{ updated_at: number }>();
+        .first<{ updated_at: number; anonymised_at: number | null }>();
       if (!again) return err(c, NOT_FOUND, 404);
+      if (again.anonymised_at !== null) return refuseAnonymised(c);
       return again.updated_at !== f.expectedUpdatedAt || !typeChanges
         ? err(c, STALE_VERSION, 409)
         : err(c, TYPE_LOCKED, 409);
@@ -703,7 +703,7 @@ export const clients = new Hono<AppEnv>()
       done = await mutate(c, {
         main: db
           .prepare(
-            `UPDATE clients SET ${changes.map(([k], i) => `${snake(k)} = ?${i + 4}`).join(", ")}, updated_at = ?3 WHERE id = ?1 AND updated_at = ?2${currencyChanges ? ` AND ${NO_INVOICE_SQL}` : ""}`,
+            `UPDATE clients SET ${changes.map(([k], i) => `${snake(k)} = ?${i + 4}`).join(", ")}, updated_at = ?3 WHERE id = ?1 AND updated_at = ?2 AND anonymised_at IS NULL${currencyChanges ? ` AND ${NO_INVOICE_SQL}` : ""}`,
           )
           .bind(id, f.expectedUpdatedAt, t, ...changes.map((ch) => ch[1])),
         action: "client.billing_update",
@@ -719,10 +719,11 @@ export const clients = new Hono<AppEnv>()
     }
     if (!done) {
       const again = await db
-        .prepare("SELECT updated_at FROM clients WHERE id = ?1")
+        .prepare("SELECT updated_at, anonymised_at FROM clients WHERE id = ?1")
         .bind(id)
-        .first<{ updated_at: number }>();
+        .first<{ updated_at: number; anonymised_at: number | null }>();
       if (!again) return err(c, NOT_FOUND, 404);
+      if (again.anonymised_at !== null) return refuseAnonymised(c);
       return again.updated_at !== f.expectedUpdatedAt || !currencyChanges
         ? err(c, STALE_VERSION, 409)
         : err(c, CURRENCY_LOCKED, 409);
@@ -830,7 +831,7 @@ export const clients = new Hono<AppEnv>()
             "contact.create",
             "cl.id",
             "json_object('contactId', ?8)",
-            "FROM clients cl WHERE cl.id = ?7 AND NOT EXISTS (SELECT 1 FROM contacts WHERE client_id = cl.id AND email = ?9)",
+            "FROM clients cl WHERE cl.id = ?7 AND cl.anonymised_at IS NULL AND NOT EXISTS (SELECT 1 FROM contacts WHERE client_id = cl.id AND email = ?9)",
             [id, contactId, email],
           ),
         after: (g) => [
@@ -870,7 +871,12 @@ export const clients = new Hono<AppEnv>()
       throw e;
     }
     if (done) return c.json({ id: contactId }, 201);
-    return (await clientExists(c, id)) ? err(c, EMAIL_IN_USE, 409) : err(c, NOT_FOUND, 404);
+    const cl = await db
+      .prepare("SELECT anonymised_at FROM clients WHERE id = ?1")
+      .bind(id)
+      .first<{ anonymised_at: number | null }>();
+    if (!cl) return err(c, NOT_FOUND, 404);
+    return cl.anonymised_at !== null ? refuseAnonymised(c) : err(c, EMAIL_IN_USE, 409);
   });
 
 // ---- contacts ----------------------------------------------------------------------------------------------------------
@@ -1199,7 +1205,7 @@ export const contacts = new Hono<AppEnv>()
         // 3. an individual client's own record, when this is its last live contact (before the contact changes)
         db
           .prepare(
-            `UPDATE clients SET legal_name = ?2, display_name = ?2, billing_address = NULL, service_address = NULL, notes = NULL, tags = NULL, updated_at = ?3
+            `UPDATE clients SET legal_name = ?2, display_name = ?2, billing_address = NULL, service_address = NULL, notes = NULL, tags = NULL, anonymised_at = ?3, updated_at = ?3
              WHERE id = (SELECT client_id FROM contacts WHERE id = ?1) AND type = 'individual'
                AND NOT EXISTS (SELECT 1 FROM contacts o WHERE o.client_id = clients.id AND o.id <> ?1 AND o.anonymised_at IS NULL) AND ${g.sql(4)}`,
           )
