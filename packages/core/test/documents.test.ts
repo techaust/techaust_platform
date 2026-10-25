@@ -586,6 +586,9 @@ describe("the frozen snapshot [M4.4 and M4.5 rebuild and verify it]", () => {
     ]);
     const text = canonicalJson(snap);
     for (const key of ["numberDisplay", "frozenAt", "sentAt", "series"]) expect(text).not.toContain(key);
+    // The internal catalogue reference stays out of the snapshot (it is in the content hash only).
+    expect(text).not.toContain("catalogueRateMinor");
+    expect(text).toContain("catalogueItemId");
     expect(await snapshotSha256(input())).toBe(await sha256Hex(canonicalJson(snap)));
   });
 

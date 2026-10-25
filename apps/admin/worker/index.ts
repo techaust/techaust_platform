@@ -8,6 +8,7 @@ import { secureHeaders } from "hono/secure-headers";
 import { Hono } from "hono/tiny";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { account } from "./account.ts";
+import { approvalRequests, approvals } from "./approvals.ts";
 import { audit } from "./audit.ts";
 import { auth } from "./auth.ts";
 import { catalogue, templates } from "./catalogue.ts";
@@ -15,6 +16,10 @@ import { clientTabs } from "./client-tabs.ts";
 import { clients, contacts } from "./clients.ts";
 import { type AppEnv, accessEntry, BAD_REQUEST, type Ctx, err, FORBIDDEN, NOT_FOUND } from "./context.ts";
 import { csrf } from "./csrf.ts";
+import { documentConvert } from "./document-convert.ts";
+import { documentSave } from "./document-save.ts";
+import { documentSend } from "./document-send.ts";
+import { documents } from "./documents.ts";
 import { files } from "./files.ts";
 import { guard, routeFor } from "./guard.ts";
 import { leads } from "./leads.ts";
@@ -99,9 +104,16 @@ export function createApp() {
   // An upload route (`body: "upload"`) checks its own declared length and streams; a route marked `body: "large"` (the catalogue
   // and template saves) reads up to 32 KB; every other route stays at 16 KB.
   const largeLimit = bodyLimit({ maxSize: 32 * 1024, onError: (c) => err(c as Ctx, BAD_REQUEST, 413) });
+  // A proposal save (`body: "document"`): 100 lines and 30,000 characters of sections, with room for multi-byte text (lead decision 13).
+  const documentLimit = bodyLimit({ maxSize: 96 * 1024, onError: (c) => err(c as Ctx, BAD_REQUEST, 413) });
   app.use((c, next) => {
     const kind = c.var.route?.body;
-    return kind === "upload" ? next() : kind === "large" ? largeLimit(c, next) : jsonLimit(c, next);
+    if (kind === "upload") return next();
+    return kind === "document"
+      ? documentLimit(c, next)
+      : kind === "large"
+        ? largeLimit(c, next)
+        : jsonLimit(c, next);
   });
   app.use(guard);
 
@@ -115,6 +127,13 @@ export function createApp() {
   app.route("/v1/templates", templates);
   app.route("/v1/clients", clients);
   app.route("/v1/clients", clientTabs);
+  // Proposals and estimates (M4.3): one router per concern, all under /documents. Static paths come before `/:id` where they exist.
+  app.route("/v1/documents", documents);
+  app.route("/v1/documents", documentSave);
+  app.route("/v1/documents", approvalRequests);
+  app.route("/v1/documents", documentSend);
+  app.route("/v1/documents", documentConvert);
+  app.route("/v1/approvals", approvals);
   app.route("/v1/projects", projects);
   app.route("/v1/milestones", milestones);
   app.route("/v1/notes", notes);

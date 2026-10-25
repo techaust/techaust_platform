@@ -1,6 +1,6 @@
 {
-  "id": "3356f6b9-8e95-4293-9a7e-f0149fedd660",
-  "prevId": "1ba894a3-6720-403c-a7f7-2c39287c81ce",
+  "id": "bd93686b-9a20-4f27-952d-42025d2e756a",
+  "prevId": "a926972b-18be-4bb3-9dfe-510ab4b4d291",
   "version": "6",
   "dialect": "sqlite",
   "tables": {
@@ -2925,6 +2925,14 @@
           "columns": [
             "requested_by",
             "status"
+          ],
+          "isUnique": false
+        },
+        "approvals_created": {
+          "name": "approvals_created",
+          "columns": [
+            "created_at",
+            "id"
           ],
           "isUnique": false
         },

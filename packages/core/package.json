@@ -19,6 +19,7 @@
     "./form-labels": "./src/form-labels.ts",
     "./ids": "./src/ids.ts",
     "./lead-ref": "./src/lead-ref.ts",
+    "./schedule-text": "./src/schedule-text.ts",
     "./lead-lifecycle": "./src/lead-lifecycle.ts",
     "./file-types": "./src/file-types.ts",
     "./markdown": "./src/markdown.ts",

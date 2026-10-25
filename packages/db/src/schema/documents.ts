@@ -355,6 +355,8 @@ export const approvals = sqliteTable(
     index("approvals_status").on(t.status, t.createdAt),
     index("approvals_document").on(t.documentId),
     index("approvals_requested_by").on(t.requestedBy, t.status),
+    // M4.3: the owner's queue, newest first, with no status filter (`approvals_status` serves a filter by status).
+    index("approvals_created").on(t.createdAt, t.id),
     // M4.3: one pending request per document and kind (a second request for the same version is a 409).
     uniqueIndex("approvals_document_pending").on(t.documentId, t.kind).where(sql`${t.status} = 'pending'`),
     check("approvals_kind", oneOf(t.kind, APPROVAL_KINDS)),

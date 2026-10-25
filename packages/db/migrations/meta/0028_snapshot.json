@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "1ba894a3-6720-403c-a7f7-2c39287c81ce",
+  "id": "a926972b-18be-4bb3-9dfe-510ab4b4d291",
   "prevId": "ed242b91-03a6-464a-bf5a-546e2bd314ae",
   "tables": {
     "catalogue_items": {
@@ -2925,6 +2925,14 @@
           "columns": [
             "requested_by",
             "status"
+          ],
+          "isUnique": false
+        },
+        "approvals_created": {
+          "name": "approvals_created",
+          "columns": [
+            "created_at",
+            "id"
           ],
           "isUnique": false
         },

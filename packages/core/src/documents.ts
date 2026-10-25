@@ -190,6 +190,16 @@ export function catalogueGuard(lines: readonly GuardLine[], computed: ComputedDo
     reference += divRoundHalfUp(BigInt(l.qtyMilli) * BigInt(l.catalogueRateMinor), 1000n);
     taxable += BigInt(c.taxableMinor);
   });
+  return guardFigures(reference, taxable);
+}
+
+/**
+ * The guard's figures from the two sums, for places that have them already (the approvals list reads the stored reference and the
+ * stored taxable values of the catalogue lines): D = max(0, R - T), basis points rounded up, more than 10 % needs approval.
+ */
+export function guardFigures(referenceMinor: bigint | number, taxableMinor: bigint | number): GuardResult {
+  const reference = BigInt(referenceMinor);
+  const taxable = BigInt(taxableMinor);
   const discount = reference > taxable ? reference - taxable : 0n;
   const bp = reference === 0n ? 0n : (10_000n * discount + reference - 1n) / reference;
   return {
@@ -358,7 +368,9 @@ export function documentSnapshot(i: SnapshotInput) {
     recipient: i.recipient,
     issuer: i.issuer,
     computed: i.computed,
-    lines: i.lines,
+    // The catalogue rate is our internal reference for the discount guard, not part of the offer: it stays out of the snapshot (which is
+    // copied to R2 and may be shown), though it is part of the content hash. Rebuild a snapshot the same way.
+    lines: i.lines.map(({ catalogueRateMinor: _reference, ...line }) => line),
     sections: i.sections,
     schedule: i.schedule,
     terms: i.terms,

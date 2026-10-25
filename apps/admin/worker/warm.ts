@@ -2,12 +2,14 @@
 // the isolate starts, not inside the first request the Free plan's 10 ms CPU limit applies to:
 //  - the settings schemas, each parsed once on its defaults (the first Settings request builds nothing);
 //  - the catalogue schemas (M4.1): the entry, the edit, the snapshot and the template body;
+//  - the proposal and estimate request schemas (M4.3): create, save, send, approval request and decision, convert, list;
 //  - the step-up path (`/auth/step-up` measured up to 9 ms on staging): the AES-GCM engine and key import, the three HOTPs, the
 //    schemas of the account routes.
 // Pure of `env` (made-up keys and values), nothing stored or logged; errors are swallowed inside the helpers.
 import { warmStepUp } from "@techaust/auth";
 import { warmCatalogue } from "@techaust/core/catalogue";
 import { warmSettings } from "@techaust/core/settings";
+import { warmDocuments } from "./document-warm.ts";
 
 export const adminWarm: Promise<number> = (async () =>
-  warmSettings() + warmCatalogue() + (await warmStepUp()))();
+  warmSettings() + warmCatalogue() + warmDocuments() + (await warmStepUp()))();

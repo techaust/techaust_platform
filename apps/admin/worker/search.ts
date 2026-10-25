@@ -16,7 +16,7 @@ const MIN_CHARS = 2;
 
 type Item = { id: string; title: string; subtitle: string; link: string };
 type Group = {
-  type: "user" | "lead" | "client" | "contact" | "project" | "catalogue";
+  type: "user" | "lead" | "client" | "contact" | "project" | "catalogue" | "document";
   label: string;
   items: Item[];
 };
@@ -43,6 +43,11 @@ export const CATALOGUE_SQL = `SELECT id, code, name FROM (
   SELECT id, code, name FROM catalogue_items WHERE code >= ?1 AND code < ?2
   UNION SELECT id, code, name FROM catalogue_items WHERE name COLLATE NOCASE >= ?3 AND name COLLATE NOCASE < ?4
 ) ORDER BY code LIMIT ${PER_TYPE}`;
+/**
+ * Proposals and estimates by the start of the number (M4.3, ADM-G-05): an index range on `documents_number_display` (number first). A
+ * later version shares its first version's number, so only the latest version of each is listed. Invoices join in M5.
+ */
+export const DOCUMENTS_SQL = `SELECT d.id, d.number_display, d.type, d.version, d.title FROM documents d WHERE d.number_display >= ?1 AND d.number_display < ?2 AND NOT EXISTS (SELECT 1 FROM documents n WHERE n.version_group_id = d.version_group_id AND n.version > d.version) ORDER BY d.number_display LIMIT ${PER_TYPE}`;
 export const USERS_SQL = `SELECT id, name, email, role FROM staff_users WHERE (email >= ?1 AND email < ?2) OR name LIKE ?3 ESCAPE '\\' ORDER BY name LIMIT ${PER_TYPE}`;
 
 export const search = new Hono<AppEnv>().get("/", query(searchQuery), async (c) => {
@@ -79,6 +84,11 @@ export const search = new Hono<AppEnv>().get("/", query(searchQuery), async (c) 
     stmts.push(db.prepare(CATALOGUE_SQL).bind(code, `${code}${PREFIX_END}`, q, `${q}${PREFIX_END}`));
     kinds.push("catalogue");
   }
+  if (decide(role, "proposals.read") !== "deny") {
+    const number = q.toUpperCase();
+    stmts.push(db.prepare(DOCUMENTS_SQL).bind(number, `${number}${PREFIX_END}`));
+    kinds.push("document");
+  }
   if (decide(role, "users.read") !== "deny") {
     stmts.push(db.prepare(USERS_SQL).bind(lower, `${lower}${PREFIX_END}`, `${escapeLike(q)}%`));
     kinds.push("user");
@@ -95,6 +105,17 @@ export const search = new Hono<AppEnv>().get("/", query(searchQuery), async (c) 
           title: `${r.code} ${r.display_name}`,
           subtitle: "Client",
           link: `/clients/${r.id}`,
+        })),
+      };
+    if (type === "document")
+      return {
+        type,
+        label: "Proposals and estimates",
+        items: rows.map((r) => ({
+          id: r.id as string,
+          title: `${r.number_display} ${r.title ?? ""}`.trim(),
+          subtitle: `${r.type === "proposal" ? "Proposal" : "Estimate"}, version ${r.version}`,
+          link: `/documents/${r.id}`,
         })),
       };
     if (type === "catalogue")

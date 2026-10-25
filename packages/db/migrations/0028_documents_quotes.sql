@@ -32,4 +32,5 @@ ALTER TABLE `document_lines` ADD `catalogue_rate_minor` integer;--> statement-br
 ALTER TABLE `document_lines` ADD `detail` text;--> statement-breakpoint
 ALTER TABLE `payment_schedules` ADD `detail` text;--> statement-breakpoint
 ALTER TABLE `payment_schedules` ADD `target_date` text;--> statement-breakpoint
+CREATE INDEX `approvals_created` ON `approvals` (`created_at`,`id`);--> statement-breakpoint
 CREATE UNIQUE INDEX `approvals_document_pending` ON `approvals` (`document_id`,`kind`) WHERE "approvals"."status" = 'pending';
