@@ -162,10 +162,13 @@ type RawDocument = Omit<DocumentRow, "recipient" | "issuer" | "computed"> & {
 };
 const parse = <T>(s: string | null): T | null => (s === null ? null : (JSON.parse(s) as T));
 
-/** The document with its lines, sections, schedule, the group's versions, its terms row and its approvals; null when there is no such id. */
-export async function loadDocument(db: D1Database, id: string): Promise<DocumentBundle | null> {
+/** How many statements `loadStatements` gives (a caller that adds its own to the same batch reads the rest after them). */
+export const LOAD_STATEMENTS = 7;
+
+/** The statements of `loadDocument`, for a caller that wants them in a batch of its own (one D1 call costs CPU on the Free plan). */
+export function loadStatements(db: D1Database, id: string): D1PreparedStatement[] {
   const q = LOAD_DOCUMENT_SQL;
-  const [doc, lines, sections, schedule, versions, terms, approvals] = await db.batch([
+  return [
     db.prepare(q.document).bind(id),
     db.prepare(q.lines).bind(id),
     db.prepare(q.sections).bind(id),
@@ -173,7 +176,17 @@ export async function loadDocument(db: D1Database, id: string): Promise<Document
     db.prepare(q.versions).bind(id),
     db.prepare(q.terms).bind(id),
     db.prepare(q.approvals).bind(id),
-  ]);
+  ];
+}
+
+/** The document with its lines, sections, schedule, the group's versions, its terms row and its approvals; null when there is no such id. */
+export async function loadDocument(db: D1Database, id: string): Promise<DocumentBundle | null> {
+  return bundleOf(await db.batch(loadStatements(db, id)));
+}
+
+/** The bundle from the results of `loadStatements` (the first seven results of a batch); null when the document does not exist. */
+export function bundleOf(results: readonly D1Result[]): DocumentBundle | null {
+  const [doc, lines, sections, schedule, versions, terms, approvals] = results;
   const raw = (doc?.results as RawDocument[] | undefined)?.[0];
   if (!raw) return null;
   return {

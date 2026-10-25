@@ -14,6 +14,7 @@ import {
   type DraftContent,
   documentSnapshot,
   type GuardLine,
+  guardFigures,
   isQuoteType,
   MAX_SECTIONS,
   REQUIRED_SECTIONS,
@@ -244,6 +245,21 @@ describe("the discount guard: D1 to D10 (INR in paise unless stated)", () => {
       { catalogueItemId: "y", catalogueRateMinor: 500, qtyMilli: 1000 },
     ];
     expect(catalogueGuard(lines, computed.value).referenceMinor).toBe(0);
+  });
+
+  it("guardFigures gives the same figures from the two sums (the approvals queue reads them stored)", () => {
+    // R 20,000,000 and T 17,999,900: D = 2,000,100, 1000.05 bp rounded up to 1001, over 10 %.
+    expect(guardFigures(20_000_000, 17_999_900)).toEqual({
+      referenceMinor: 20_000_000,
+      taxableMinor: 17_999_900,
+      discountMinor: 2_000_100,
+      discountBp: 1001,
+      needsApproval: true,
+    });
+    // a premium: nothing to discount; no reference: nothing to compare; bigint in, the same out
+    expect(guardFigures(100n, 150n)).toMatchObject({ discountMinor: 0, discountBp: 0, needsApproval: false });
+    expect(guardFigures(0, 500)).toMatchObject({ discountBp: 0, needsApproval: false });
+    expect(guardFigures(1000n, 900n)).toMatchObject({ discountBp: 1000, needsApproval: false });
   });
 
   it("the threshold is the owner's 10 % constant", () => {

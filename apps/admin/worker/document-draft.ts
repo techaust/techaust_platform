@@ -101,7 +101,11 @@ export async function buildNewDraft(i: NewDraftInput): Promise<NewDraft> {
   for (const s of i.services) {
     const made = itemLines(s.item, i.client.currency, s.chosen, settings.tax.defaultRateBp);
     if (!made.ok) {
-      if (i.lenientLines && made.error.code === "choose_default_lines") {
+      // A lead convert never fails on the catalogue: a service that needs a choice of lines, or has no price in this currency, gives its sections and schedule and no lines.
+      if (
+        i.lenientLines &&
+        (made.error.code === "choose_default_lines" || made.error.code === "service_not_priced")
+      ) {
         best ??= { ref: 0n, item: s.item };
         continue;
       }

@@ -3,6 +3,7 @@
 import { env } from "cloudflare:workers";
 import { fyOf } from "@techaust/core/dates";
 import { beforeAll, describe, expect, it } from "vitest";
+import { putPaymentTerms } from "./test-catalogue.ts";
 import { mkLead } from "./test-clients.ts";
 import { call, countOf, one, rows, sessionFor } from "./test-helpers.ts";
 import {
@@ -21,7 +22,6 @@ import {
   patchDoc,
   sendDoc,
 } from "./test-quotes.ts";
-import { putPaymentTerms } from "./test-catalogue.ts";
 
 const owner = () => sessionFor("owner", { stepUp: true });
 const FY = fyOf(Date.now()).token;
@@ -39,7 +39,10 @@ const audit = (action: string, entityId: string) =>
     entityId,
   );
 const request = (cookie: string, id: string, expectedUpdatedAt: number, reason?: string) =>
-  call(`/documents/${id}/approval-request`, { cookie, body: { expectedUpdatedAt, ...(reason ? { reason } : {}) } });
+  call(`/documents/${id}/approval-request`, {
+    cookie,
+    body: { expectedUpdatedAt, ...(reason ? { reason } : {}) },
+  });
 const decide = (cookie: string, id: string, decision: "approve" | "reject", note?: string) =>
   call(`/approvals/${id}/decide`, { cookie, body: { decision, ...(note ? { note } : {}) } });
 
@@ -50,7 +53,12 @@ describe("the discount guard at send [ADM-PROP-04; run file D1, D2; V1]", () => 
       const s = await sessionFor(role);
       const made = await mkDraft(s, { price: S9 });
       const v = await discount(s, made.id, "percent", 1000); // 10 % of 20,000,000 = 2,000,000: T = 18,000,000
-      expect(v.guard).toMatchObject({ referenceMinor: S9, taxableMinor: 18_000_000, discountBp: 1000, needsApproval: false });
+      expect(v.guard).toMatchObject({
+        referenceMinor: S9,
+        taxableMinor: 18_000_000,
+        discountBp: 1000,
+        needsApproval: false,
+      });
       const res = await sendDoc(s, made.id, v.updatedAt);
       expect(res.status, role).toBe(200);
       expect((await json(res)).discountBp).toBe(1000);
@@ -62,7 +70,12 @@ describe("the discount guard at send [ADM-PROP-04; run file D1, D2; V1]", () => 
       const s = await sessionFor(role);
       const made = await mkDraft(s, { price: S9 });
       const v = await discount(s, made.id, "fixed", 2_000_100); // T = 20,000,000 - 2,000,100 = 17,999,900; 1000.05 bp rounds up to 1001
-      expect(v.guard).toMatchObject({ taxableMinor: 17_999_900, discountMinor: 2_000_100, discountBp: 1001, needsApproval: true });
+      expect(v.guard).toMatchObject({
+        taxableMinor: 17_999_900,
+        discountMinor: 2_000_100,
+        discountBp: 1001,
+        needsApproval: true,
+      });
       const before = await counter();
       const res = await sendDoc(s, made.id, v.updatedAt);
       expect(res.status, role).toBe(403);
@@ -81,7 +94,12 @@ describe("the discount guard at send [ADM-PROP-04; run file D1, D2; V1]", () => 
     expect(res.status, await res.clone().text()).toBe(200);
     expect((await json(res)).discountBp).toBe(2500);
     const row = await audit("document.send", made.id);
-    expect(JSON.parse(row?.summary ?? "{}")).toMatchObject({ discountBp: 2500, version: 1, type: "proposal", approvalId: null });
+    expect(JSON.parse(row?.summary ?? "{}")).toMatchObject({
+      discountBp: 2500,
+      version: 1,
+      type: "proposal",
+      approvalId: null,
+    });
   });
 
   it("the guard counts only catalogue lines: a custom line cannot offset a discount (D5) and is listed", async () => {
@@ -98,8 +116,15 @@ describe("the discount guard at send [ADM-PROP-04; run file D1, D2; V1]", () => 
       ],
     });
     const v = await json(res);
-    expect(v.guard).toMatchObject({ referenceMinor: S9, taxableMinor: 17_000_000, discountBp: 1500, needsApproval: true });
-    expect(v.guard.customLines).toEqual([{ position: 2, description: "Pass-through costs", taxableMinor: 5_000_000 }]);
+    expect(v.guard).toMatchObject({
+      referenceMinor: S9,
+      taxableMinor: 17_000_000,
+      discountBp: 1500,
+      needsApproval: true,
+    });
+    expect(v.guard.customLines).toEqual([
+      { position: 2, description: "Pass-through costs", taxableMinor: 5_000_000 },
+    ]);
     expect((await sendDoc(s, made.id, v.updatedAt)).status).toBe(403);
   });
 
@@ -134,13 +159,29 @@ describe("approvals: one request for one version's exact content [ADM-APR-01, -0
     expect((await sendDoc(sales, made.id, v.updatedAt)).status).toBe(403); // pending is not approved
     const ok = await decide(o.cookie, approvalId, "approve", "Fine");
     expect(ok.status, await ok.clone().text()).toBe(200);
-    expect(await countOf("notifications", "entity_id = ? AND user_id = ? AND kind = 'approval.decided'", approvalId, sales.id)).toBe(1);
+    expect(
+      await countOf(
+        "notifications",
+        "entity_id = ? AND user_id = ? AND kind = 'approval.decided'",
+        approvalId,
+        sales.id,
+      ),
+    ).toBe(1);
     const sent = await sendDoc(sales, made.id, v.updatedAt);
     expect(sent.status, await sent.clone().text()).toBe(200);
-    const stored = await one<{ content_sha256: string }>("SELECT content_sha256 FROM documents WHERE id = ?", made.id);
+    const stored = await one<{ content_sha256: string }>(
+      "SELECT content_sha256 FROM documents WHERE id = ?",
+      made.id,
+    );
     expect(stored?.content_sha256).toBe(v.contentSha256);
-    expect((await one<{ content_sha256: string }>("SELECT content_sha256 FROM approvals WHERE id = ?", approvalId))?.content_sha256).toBe(v.contentSha256);
-    expect(JSON.parse((await audit("document.send", made.id))?.summary ?? "{}")).toMatchObject({ discountBp: 2500, approvalId });
+    expect(
+      (await one<{ content_sha256: string }>("SELECT content_sha256 FROM approvals WHERE id = ?", approvalId))
+        ?.content_sha256,
+    ).toBe(v.contentSha256);
+    expect(JSON.parse((await audit("document.send", made.id))?.summary ?? "{}")).toMatchObject({
+      discountBp: 2500,
+      approvalId,
+    });
   });
 
   it("V3: an edit after the approval expires it in the same batch; reverting the text does not revive it", async () => {
@@ -152,17 +193,21 @@ describe("approvals: one request for one version's exact content [ADM-APR-01, -0
     const edited = await json(
       await patchDoc(sales, made.id, {
         expectedUpdatedAt: v.updatedAt,
-        sections: sections.map((s: J) => (s.kind === "estimate" ? { ...s, bodyMd: "A changed sentence" } : s)),
+        sections: sections.map((s: J) =>
+          s.kind === "estimate" ? { ...s, bodyMd: "A changed sentence" } : s,
+        ),
       }),
     );
     expect(edited.contentSha256).not.toBe(v.contentSha256);
-    expect((await one("SELECT status FROM approvals WHERE id = ?", approvalId))).toEqual({ status: "expired" });
+    expect(await one("SELECT status FROM approvals WHERE id = ?", approvalId)).toEqual({ status: "expired" });
     expect(edited.approval.state).toBe("expired");
     expect(await codeOf(await sendDoc(sales, made.id, edited.updatedAt))).toBe("approval_required");
     // back to the text that was approved: the hash is the old one again, the approval stays expired
-    const reverted = await json(await patchDoc(sales, made.id, { expectedUpdatedAt: edited.updatedAt, sections }));
+    const reverted = await json(
+      await patchDoc(sales, made.id, { expectedUpdatedAt: edited.updatedAt, sections }),
+    );
     expect(reverted.contentSha256).toBe(v.contentSha256);
-    expect((await one("SELECT status FROM approvals WHERE id = ?", approvalId))).toEqual({ status: "expired" });
+    expect(await one("SELECT status FROM approvals WHERE id = ?", approvalId)).toEqual({ status: "expired" });
     expect(await codeOf(await sendDoc(sales, made.id, reverted.updatedAt))).toBe("approval_required");
     // and a new request for the reverted content is a new record
     const again = await request(sales.cookie, made.id, reverted.updatedAt);
@@ -192,11 +237,16 @@ describe("approvals: one request for one version's exact content [ADM-APR-01, -0
     const sales = await sessionFor("sales");
     const { made, v, approvalId } = await pendingFor(sales);
     expect(await codeOf(await request(sales.cookie, made.id, v.updatedAt))).toBe("approval_pending");
-    const edited = await json(await patchDoc(sales, made.id, { expectedUpdatedAt: v.updatedAt, fields: { title: "Edited after the request" } }));
+    const edited = await json(
+      await patchDoc(sales, made.id, {
+        expectedUpdatedAt: v.updatedAt,
+        fields: { title: "Edited after the request" },
+      }),
+    );
     const late = await decide(o.cookie, approvalId, "approve");
     expect(late.status).toBe(409);
     expect(await codeOf(late)).toBe("approval_expired");
-    expect((await one("SELECT status FROM approvals WHERE id = ?", approvalId))).toEqual({ status: "expired" });
+    expect(await one("SELECT status FROM approvals WHERE id = ?", approvalId)).toEqual({ status: "expired" });
     // under the threshold: nothing to approve
     const small = await mkDraft(sales, { price: S9 });
     const s = await discount(sales, small.id, "percent", 1000);
@@ -217,7 +267,10 @@ describe("approvals: one request for one version's exact content [ADM-APR-01, -0
     expect((await call("/approvals", { cookie: accountant.cookie })).status).toBe(403);
     const reject = await decide(o.cookie, approvalId, "reject", "Too deep a discount");
     expect(reject.status).toBe(200);
-    expect((await getDoc(sales, made.id)).approval).toMatchObject({ state: "rejected", note: "Too deep a discount" });
+    expect((await getDoc(sales, made.id)).approval).toMatchObject({
+      state: "rejected",
+      note: "Too deep a discount",
+    });
     expect(await codeOf(await decide(o.cookie, approvalId, "approve"))).toBe("approval_decided");
     expect(await codeOf(await sendDoc(sales, made.id, v.updatedAt))).toBe("approval_required");
     // a rejected one does not block a new request, even for the same content
@@ -225,14 +278,22 @@ describe("approvals: one request for one version's exact content [ADM-APR-01, -0
     expect(again.status, await again.clone().text()).toBe(201);
     // lists: the owner sees them all, each of Sales and Staff only their own
     const everyone = await json(await call("/approvals?limit=50", { cookie: o.cookie }));
-    expect(everyone.approvals.map((a: J) => a.id)).toEqual(expect.arrayContaining([approvalId, other.approvalId]));
+    expect(everyone.approvals.map((a: J) => a.id)).toEqual(
+      expect.arrayContaining([approvalId, other.approvalId]),
+    );
     const mine = await json(await call("/approvals?limit=50", { cookie: sales.cookie }));
     expect(mine.approvals.length).toBeGreaterThan(0);
     expect(mine.approvals.every((a: J) => a.requestedBy === sales.id)).toBe(true);
     expect(mine.approvals.map((a: J) => a.id)).not.toContain(other.approvalId);
     // the queue row carries what the owner decides on
     const row = everyone.approvals.find((a: J) => a.id === other.approvalId);
-    expect(row).toMatchObject({ state: "pending", discountBp: 2500, referenceMinor: S9, customLineCount: 0, document: { id: other.made.id, version: 1 } });
+    expect(row).toMatchObject({
+      state: "pending",
+      discountBp: 2500,
+      referenceMinor: S9,
+      customLineCount: 0,
+      document: { id: other.made.id, version: 1 },
+    });
     const pending = await json(await call("/approvals?status=pending&limit=25", { cookie: o.cookie }));
     expect(pending.approvals.every((a: J) => a.state === "pending")).toBe(true);
     expect((await call("/approvals?status=bogus", { cookie: o.cookie })).status).toBe(400);
@@ -252,7 +313,12 @@ describe("approvals: one request for one version's exact content [ADM-APR-01, -0
     await sendDoc(o, sent.id, view.updatedAt);
     expect(await codeOf(await request(o.cookie, sent.id, view.updatedAt))).toBe("frozen");
     const broken = await mkDraft(sales, { price: S9 });
-    const cleared = await json(await patchDoc(sales, broken.id, { expectedUpdatedAt: (await getDoc(sales, broken.id)).updatedAt, lines: [] }));
+    const cleared = await json(
+      await patchDoc(sales, broken.id, {
+        expectedUpdatedAt: (await getDoc(sales, broken.id)).updatedAt,
+        lines: [],
+      }),
+    );
     expect(await codeOf(await request(sales.cookie, broken.id, cleared.updatedAt))).toBe("tax_errors");
     expect(await countOf("approvals", "document_id IN (?, ?)", sent.id, broken.id)).toBe(0);
   });
@@ -272,7 +338,12 @@ describe("numbering and versions [ADM-PROP-05, ADM-INV-03; V5, V6, V7, V8, V9]",
     expect((await dbRow(made.id))?.status).toBe("sent"); // acceptable until v2 is sent
     const v2 = await json(await sendDoc(o, v2made.id, (await getDoc(o, v2made.id)).updatedAt));
     expect(v2.number).toBe(v1.number);
-    expect(await dbRow(v2made.id)).toMatchObject({ version: 2, status: "sent", number_display: v1.number, fy: FY });
+    expect(await dbRow(v2made.id)).toMatchObject({
+      version: 2,
+      status: "sent",
+      number_display: v1.number,
+      fy: FY,
+    });
     expect((await dbRow(made.id))?.status).toBe("revised");
     expect(await counter()).toBe(before + 1);
     expect((await getDoc(o, v2made.id)).versions.map((v: J) => [v.version, v.status])).toEqual([
@@ -296,7 +367,9 @@ describe("numbering and versions [ADM-PROP-05, ADM-INV-03; V5, V6, V7, V8, V9]",
     const views = await Promise.all(drafts.map((d) => getDoc(o, d.id)));
     const results = await Promise.all(drafts.map((d, i) => sendDoc(o, d.id, (views[i] as J).updatedAt)));
     expect(results.map((r) => r.status)).toEqual(Array(20).fill(200));
-    const numbers = (await Promise.all(results.map((r) => json(r)))).map((r) => Number(String(r.number).slice(-4))).sort((a, b) => a - b);
+    const numbers = (await Promise.all(results.map((r) => json(r))))
+      .map((r) => Number(String(r.number).slice(-4)))
+      .sort((a, b) => a - b);
     expect(numbers).toEqual(Array.from({ length: 20 }, (_, i) => first + i));
     expect(await counter()).toBe(first + 20);
 
@@ -314,7 +387,15 @@ describe("numbering and versions [ADM-PROP-05, ADM-INV-03; V5, V6, V7, V8, V9]",
     const client = await mkQuoteClient();
     const item = await mkService();
     const lead = await mkLead("stale@example.com", { client_id: client.clientId, stage: "qualified" });
-    const res = await call("/documents", { cookie: o.cookie, body: { type: "proposal", clientId: client.clientId, leadId: lead, services: [{ catalogueItemId: item.id }] } });
+    const res = await call("/documents", {
+      cookie: o.cookie,
+      body: {
+        type: "proposal",
+        clientId: client.clientId,
+        leadId: lead,
+        services: [{ catalogueItemId: item.id }],
+      },
+    });
     const id = (await json(res)).id as string;
     const v = await getDoc(o, id);
     const before = await counter();
@@ -333,13 +414,29 @@ describe("numbering and versions [ADM-PROP-05, ADM-INV-03; V5, V6, V7, V8, V9]",
     const client = await mkQuoteClient();
     const item = await mkService();
     const lead = await mkLead("race@example.com", { client_id: client.clientId, stage: "new" });
-    const id = (await json(await call("/documents", { cookie: o.cookie, body: { type: "proposal", clientId: client.clientId, leadId: lead, services: [{ catalogueItemId: item.id }] } }))).id as string;
+    const id = (
+      await json(
+        await call("/documents", {
+          cookie: o.cookie,
+          body: {
+            type: "proposal",
+            clientId: client.clientId,
+            leadId: lead,
+            services: [{ catalogueItemId: item.id }],
+          },
+        }),
+      )
+    ).id as string;
     const v = await getDoc(o, id);
     const before = await counter();
     const e = beforeSendBatch(async () => {
       await env.DB.prepare("UPDATE documents SET updated_at = updated_at + 1 WHERE id = ?").bind(id).run();
     });
-    const res = await call(`/documents/${id}/send`, { cookie: o.cookie, body: { expectedUpdatedAt: v.updatedAt } }, e);
+    const res = await call(
+      `/documents/${id}/send`,
+      { cookie: o.cookie, body: { expectedUpdatedAt: v.updatedAt } },
+      e,
+    );
     expect(res.status).toBe(409);
     expect(await codeOf(res)).toBe("stale_version");
     expect(await counter()).toBe(before);
@@ -361,7 +458,11 @@ describe("numbering and versions [ADM-PROP-05, ADM-INV-03; V5, V6, V7, V8, V9]",
         .run();
     });
     try {
-      const res = await call(`/documents/${made.id}/send`, { cookie: o.cookie, body: { expectedUpdatedAt: v.updatedAt } }, e);
+      const res = await call(
+        `/documents/${made.id}/send`,
+        { cookie: o.cookie, body: { expectedUpdatedAt: v.updatedAt } },
+        e,
+      );
       expect(res.status).toBe(409);
       expect(await codeOf(res)).toBe("numbering_changed");
       expect(await counter()).toBe(before);
@@ -402,7 +503,12 @@ describe("numbering and versions [ADM-PROP-05, ADM-INV-03; V5, V6, V7, V8, V9]",
   it("the issue date is the IST day of the send and the offer is valid through that day plus its validity", async () => {
     const o = await owner();
     const made = await mkDraft(o);
-    const v = await json(await patchDoc(o, made.id, { expectedUpdatedAt: (await getDoc(o, made.id)).updatedAt, fields: { validityDays: 10 } }));
+    const v = await json(
+      await patchDoc(o, made.id, {
+        expectedUpdatedAt: (await getDoc(o, made.id)).updatedAt,
+        fields: { validityDays: 10 },
+      }),
+    );
     const sent = await json(await sendDoc(o, made.id, v.updatedAt));
     const row = await dbRow(made.id);
     const ist = new Date(Date.now() + 19_800_000).toISOString().slice(0, 10);
@@ -423,14 +529,22 @@ describe("what a send refuses [ADM-PROP-05, ADM-CAT-03]", () => {
     const text = await json(
       await patchDoc(o, made.id, {
         expectedUpdatedAt: v.updatedAt,
-        sections: v.sections.map((s: J) => ({ id: s.id, kind: s.kind, title: s.title, bodyMd: s.kind === "estimate" ? "Dear {{client.name}} and {{ unknown.thing }}" : s.bodyMd })),
+        sections: v.sections.map((s: J) => ({
+          id: s.id,
+          kind: s.kind,
+          title: s.title,
+          bodyMd: s.kind === "estimate" ? "Dear {{client.name}} and {{ unknown.thing }}" : s.bodyMd,
+        })),
       }),
     );
     const res = await sendDoc(o, made.id, text.updatedAt);
     expect(res.status).toBe(409);
     const body = await json(res);
     expect(body.error.code).toBe("unresolved_placeholders");
-    expect(body.reasons).toContainEqual({ code: "unresolved_placeholders", names: ["client.name", "unknown.thing"] });
+    expect(body.reasons).toContainEqual({
+      code: "unresolved_placeholders",
+      names: ["client.name", "unknown.thing"],
+    });
 
     const empty = await json(
       await patchDoc(o, made.id, {
@@ -439,7 +553,16 @@ describe("what a send refuses [ADM-PROP-05, ADM-CAT-03]", () => {
         lines: [],
         schedule: [],
         sections: [{ kind: "estimate" }, { kind: "terms" }],
-      }).then((r) => (r.status === 400 ? patchDoc(o, made.id, { expectedUpdatedAt: text.updatedAt, fields: { title: null }, lines: [], schedule: [] }) : r)),
+      }).then((r) =>
+        r.status === 400
+          ? patchDoc(o, made.id, {
+              expectedUpdatedAt: text.updatedAt,
+              fields: { title: null },
+              lines: [],
+              schedule: [],
+            })
+          : r,
+      ),
     );
     const reasons = (await json(await sendDoc(o, made.id, empty.updatedAt))).reasons.map((r: J) => r.code);
     expect(reasons).toEqual(expect.arrayContaining(["title_required", "no_lines", "schedule_missing"]));
@@ -452,12 +575,16 @@ describe("what a send refuses [ADM-PROP-05, ADM-CAT-03]", () => {
     const made = await mkDraft(o);
     await env.DB.prepare("UPDATE documents SET terms_version_id = NULL WHERE id = ?").bind(made.id).run();
     // The terms are part of the content: save once so the stored hash follows, then the send is refused for the terms.
-    const v = await json(await patchDoc(o, made.id, { expectedUpdatedAt: (await getDoc(o, made.id)).updatedAt }));
+    const v = await json(
+      await patchDoc(o, made.id, { expectedUpdatedAt: (await getDoc(o, made.id)).updatedAt }),
+    );
     const res = await sendDoc(o, made.id, v.updatedAt);
     expect(res.status).toBe(409);
     expect((await json(res)).reasons.map((r: J) => r.code)).toContain("terms_missing");
     // adopting the newest terms is a save
-    const fixed = await json(await patchDoc(o, made.id, { expectedUpdatedAt: v.updatedAt, fields: { refreshTerms: true } }));
+    const fixed = await json(
+      await patchDoc(o, made.id, { expectedUpdatedAt: v.updatedAt, fields: { refreshTerms: true } }),
+    );
     expect((await sendDoc(o, made.id, fixed.updatedAt)).status).toBe(200);
 
     const other = await mkDraft(o, { price: 1_000_000 });
@@ -472,7 +599,9 @@ describe("what a send refuses [ADM-PROP-05, ADM-CAT-03]", () => {
     const o = await owner();
     const made = await mkDraft(o);
     const v = await getDoc(o, made.id);
-    await env.DB.prepare("UPDATE contacts SET anonymised_at = ?, name = 'Removed contact' WHERE id = ?").bind(Date.now(), made.contactId).run();
+    await env.DB.prepare("UPDATE contacts SET anonymised_at = ?, name = 'Removed contact' WHERE id = ?")
+      .bind(Date.now(), made.contactId)
+      .run();
     const res = await sendDoc(o, made.id, v.updatedAt);
     expect(res.status).toBe(409);
     expect((await json(res)).reasons.map((r: J) => r.code)).toContain("contact_anonymised");
@@ -485,8 +614,24 @@ describe("the lead moves with the first send [ADM-LEAD-02]", () => {
     const o = await owner();
     const client = await mkQuoteClient();
     const item = await mkService();
-    const lead = await mkLead(`${crypto.randomUUID()}@example.com`, { client_id: client.clientId, stage, ...(stage === "lost" ? { lost_reason: "price" } : {}) });
-    const id = (await json(await call("/documents", { cookie: o.cookie, body: { type: "proposal", clientId: client.clientId, leadId: lead, services: [{ catalogueItemId: item.id }] } }))).id as string;
+    const lead = await mkLead(`${crypto.randomUUID()}@example.com`, {
+      client_id: client.clientId,
+      stage,
+      ...(stage === "lost" ? { lost_reason: "price" } : {}),
+    });
+    const id = (
+      await json(
+        await call("/documents", {
+          cookie: o.cookie,
+          body: {
+            type: "proposal",
+            clientId: client.clientId,
+            leadId: lead,
+            services: [{ catalogueItemId: item.id }],
+          },
+        }),
+      )
+    ).id as string;
     return { o, lead, id, client };
   }
 
@@ -494,8 +639,12 @@ describe("the lead moves with the first send [ADM-LEAD-02]", () => {
     for (const stage of ["new", "qualified"]) {
       const { o, lead, id } = await leadDraft(stage);
       await sendDoc(o, id, (await getDoc(o, id)).updatedAt);
-      expect(await one("SELECT stage FROM leads WHERE id = ?", lead), stage).toEqual({ stage: "proposal_sent" });
-      expect(await rows("SELECT kind, actor_id FROM lead_activities WHERE lead_id = ? AND kind = 'stage'", lead)).toEqual([{ kind: "stage", actor_id: null }]);
+      expect(await one("SELECT stage FROM leads WHERE id = ?", lead), stage).toEqual({
+        stage: "proposal_sent",
+      });
+      expect(
+        await rows("SELECT kind, actor_id FROM lead_activities WHERE lead_id = ? AND kind = 'stage'", lead),
+      ).toEqual([{ kind: "stage", actor_id: null }]);
     }
     for (const stage of ["won", "lost"]) {
       const { o, lead, id } = await leadDraft(stage);
@@ -517,7 +666,11 @@ describe("the lead moves with the first send [ADM-LEAD-02]", () => {
   it("an estimate never moves a lead", async () => {
     const o = await owner();
     const made = await mkDraft(o, { type: "estimate" });
-    const lead = await mkLead(`${crypto.randomUUID()}@example.com`, { client_id: made.clientId, stage: "qualified", proposal_id: made.id });
+    const lead = await mkLead(`${crypto.randomUUID()}@example.com`, {
+      client_id: made.clientId,
+      stage: "qualified",
+      proposal_id: made.id,
+    });
     await sendDoc(o, made.id, (await getDoc(o, made.id)).updatedAt);
     expect(await one("SELECT stage FROM leads WHERE id = ?", lead)).toEqual({ stage: "qualified" });
   });

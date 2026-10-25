@@ -29,6 +29,7 @@ import {
   userId,
 } from "./test-helpers.ts";
 import { mkFile, mkMilestone, mkNote, mkProject, PDF_BYTES, upload } from "./test-projects.ts";
+import { discount, mkDraft, mkQuoteClient, mkService, mkTerms, sendDoc } from "./test-quotes.ts";
 
 const newEmail = () => `rbac-${Math.random().toString(36).slice(2, 10)}@example.com`;
 const PUBLIC = ROUTES.filter((r) => r.access === "public");
@@ -685,6 +686,78 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
       const s = await sessionFor("sales");
       await bell(s.id);
       return run(s, "/notifications/read-all", { method: "POST" });
+    },
+    // Proposals, estimates and approvals (M4.3): one scenario for each audited route.
+    "POST /api/v1/documents": async () => {
+      const s = await owner();
+      const client = await mkQuoteClient();
+      const item = await mkService();
+      await mkTerms();
+      return run(s, "/documents", {
+        body: { type: "proposal", clientId: client.clientId, services: [{ catalogueItemId: item.id }] },
+      });
+    },
+    "PATCH /api/v1/documents/:id": async () => {
+      const s = await owner();
+      await mkTerms();
+      const made = await mkDraft(s);
+      return run(s, `/documents/${made.id}`, {
+        method: "PATCH",
+        body: { expectedUpdatedAt: made.updatedAt, fields: { title: "Scenario title" } },
+      });
+    },
+    "DELETE /api/v1/documents/:id": async () => {
+      const s = await owner();
+      await mkTerms();
+      const made = await mkDraft(s);
+      return run(s, `/documents/${made.id}?expectedUpdatedAt=${made.updatedAt}`, { method: "DELETE" });
+    },
+    "POST /api/v1/documents/:id/revise": async () => {
+      const s = await owner();
+      await mkTerms();
+      const made = await mkDraft(s);
+      expect((await sendDoc(s, made.id, made.updatedAt)).status).toBe(200);
+      return run(s, `/documents/${made.id}/revise`, { method: "POST", body: {} });
+    },
+    "POST /api/v1/documents/:id/approval-request": async () => {
+      const s = await sessionFor("sales");
+      await mkTerms();
+      const made = await mkDraft(s, { price: 20_000_000 });
+      const v = await discount(s, made.id, "fixed", 5_000_000);
+      return run(s, `/documents/${made.id}/approval-request`, {
+        method: "POST",
+        body: { expectedUpdatedAt: v.updatedAt },
+      });
+    },
+    "POST /api/v1/documents/:id/send": async () => {
+      const s = await owner();
+      await mkTerms();
+      const made = await mkDraft(s);
+      return run(s, `/documents/${made.id}/send`, {
+        method: "POST",
+        body: { expectedUpdatedAt: made.updatedAt },
+      });
+    },
+    "POST /api/v1/documents/:id/convert": async () => {
+      const s = await owner();
+      await mkTerms();
+      const made = await mkDraft(s, { type: "estimate" });
+      expect((await sendDoc(s, made.id, made.updatedAt)).status).toBe(200);
+      await env.DB.prepare("UPDATE documents SET status = 'accepted' WHERE id = ?").bind(made.id).run();
+      return run(s, `/documents/${made.id}/convert`, { method: "POST", body: { to: "invoice" } });
+    },
+    "POST /api/v1/approvals/:id/decide": async () => {
+      const s = await owner();
+      const sales = await sessionFor("sales");
+      await mkTerms();
+      const made = await mkDraft(sales, { price: 20_000_000 });
+      const v = await discount(sales, made.id, "fixed", 5_000_000);
+      const req = await call(`/documents/${made.id}/approval-request`, {
+        cookie: sales.cookie,
+        body: { expectedUpdatedAt: v.updatedAt },
+      });
+      const { id } = (await req.json()) as { id: string };
+      return run(s, `/approvals/${id}/decide`, { method: "POST", body: { decision: "approve" } });
     },
     "POST /api/v1/notifications/:id/read": async () => {
       const s = await sessionFor("staff");

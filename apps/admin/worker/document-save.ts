@@ -120,18 +120,17 @@ export const documentSave = new Hono<AppEnv>().patch("/:id", param(idParam), bod
     ),
   ];
   const contactId = f.fields?.contactId;
-  const [ctx, extra] = await Promise.all([
-    readContext(c, id),
-    db.batch([
-      db.prepare(ITEMS_BY_ID).bind(JSON.stringify(newItems)),
-      contactId
-        ? db
-            .prepare("SELECT id, client_id, name, email, anonymised_at FROM contacts WHERE id = ?1")
-            .bind(contactId)
-        : db.prepare("SELECT NULL WHERE 0"),
-    ]),
+  // One read batch: the document, its client, contact, terms and the settings, plus the services this save adds and the contact it sets.
+  const ctx = await readContext(c, id, [
+    db.prepare(ITEMS_BY_ID).bind(JSON.stringify(newItems)),
+    contactId
+      ? db
+          .prepare("SELECT id, client_id, name, email, anonymised_at FROM contacts WHERE id = ?1")
+          .bind(contactId)
+      : db.prepare("SELECT NULL WHERE 0"),
   ]);
   if (!ctx) return err(c, NOT_FOUND, 404);
+  const extra = ctx.extra;
   const doc = ctx.bundle.document;
   if (doc.type !== "proposal" && doc.type !== "estimate") return err(c, NOT_A_QUOTE, 404);
   if (doc.frozen_at !== null) return err(c, FROZEN, 409);

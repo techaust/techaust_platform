@@ -177,9 +177,14 @@ export const documentSend = new Hono<AppEnv>().post(
     });
 
     let done = false;
+    // The number is taken inside the batch, so it comes back from the freeze UPDATE itself (RETURNING): no second read.
+    let sent: { number_display: string; valid_until: string } | undefined;
     try {
       done = await mutate(c, {
         main: batch.main,
+        onResults: (results, auditAt) => {
+          sent = results[auditAt - 1]?.results[0] as typeof sent;
+        },
         action: "document.send",
         entityType: "document",
         entityId: id,
@@ -207,10 +212,6 @@ export const documentSend = new Hono<AppEnv>().post(
       return explain(c, id, f.expectedUpdatedAt, computation.hash, settings.numberingVersion, needsApproval);
 
     afterSend(c, { documentId: id, groupId, version: d.version });
-    const sent = await db
-      .prepare("SELECT number_display, valid_until FROM documents WHERE id = ?1")
-      .bind(id)
-      .first<{ number_display: string; valid_until: string }>();
     return c.json({
       ok: true,
       id,

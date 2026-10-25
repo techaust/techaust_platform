@@ -7,7 +7,13 @@
 // was written, one read says why (`stale_version`, `frozen`, ...).
 import { approvalState, TITLE_MAX } from "@techaust/core/documents";
 import { uuidv7 } from "@techaust/core/ids";
-import { loadDocument, type TermsRow } from "@techaust/db/documents";
+import {
+  bundleOf,
+  LOAD_STATEMENTS,
+  loadDocument,
+  loadStatements,
+  type TermsRow,
+} from "@techaust/db/documents";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { clientGoneSql } from "./anonymised.ts";
@@ -171,40 +177,45 @@ export async function listDocuments(
 
 // ---- reading one -------------------------------------------------------------------------------------------------------------------------
 
-/** What a read of one document needs besides the document itself (one D1 call, run beside `loadDocument`). */
-export function contextBatch(db: D1Database, documentId: string) {
-  return db.batch([
+/**
+ * A document with everything a route needs besides it, in ONE D1 call (a call costs CPU on the Free plan): the bundle of `loadDocument`,
+ * its client, its contact, the newest proposal terms and the settings. A route that needs more reads (the services a save adds, the
+ * contact it sets) passes those statements in `extra`; their results come back after the others.
+ */
+export async function readContext(c: Ctx, id: string, extra: D1PreparedStatement[] = []) {
+  const db = c.env.DB;
+  const results = await db.batch([
+    ...loadStatements(db, id),
     db
       .prepare(
         `SELECT ${CLIENT_COLS} FROM clients WHERE id = (SELECT client_id FROM documents WHERE id = ?1)`,
       )
-      .bind(documentId),
+      .bind(id),
     db
       .prepare(
         "SELECT id, name, email, anonymised_at FROM contacts WHERE id = (SELECT contact_id FROM documents WHERE id = ?1)",
       )
-      .bind(documentId),
+      .bind(id),
     db.prepare(NEWEST_TERMS),
     db.prepare(SETTINGS_READ),
+    ...extra,
   ]);
-}
-
-export async function readContext(c: Ctx, id: string) {
-  const db = c.env.DB;
-  const [bundle, ctx] = await Promise.all([loadDocument(db, id), contextBatch(db, id)]);
+  const bundle = bundleOf(results.slice(0, LOAD_STATEMENTS));
   if (!bundle) return null;
-  const client = ctx[0]?.results[0] as ClientRow | undefined;
+  const [clientR, contactR, termsR, settingsR] = results.slice(LOAD_STATEMENTS);
+  const client = clientR?.results[0] as ClientRow | undefined;
   if (!client) return null;
   return {
     bundle,
     client,
     contact:
-      (ctx[1]?.results[0] as
+      (contactR?.results[0] as
         | { id: string; name: string; email: string; anonymised_at: number | null }
         | undefined) ?? null,
-    newestTerms: (ctx[2]?.results[0] as TermsRow | undefined) ?? null,
-    newestTermsId: (ctx[2]?.results[0] as { id: string } | undefined)?.id ?? null,
-    settingsRows: (ctx[3]?.results ?? []) as { key: string; value: string; version: number }[],
+    newestTerms: (termsR?.results[0] as TermsRow | undefined) ?? null,
+    newestTermsId: (termsR?.results[0] as { id: string } | undefined)?.id ?? null,
+    settingsRows: (settingsR?.results ?? []) as { key: string; value: string; version: number }[],
+    extra: results.slice(LOAD_STATEMENTS + 4),
   };
 }
 

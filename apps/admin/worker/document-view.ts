@@ -202,6 +202,8 @@ export async function documentView(i: ViewInput) {
     errors: !frozen && computation ? computation.errors : [],
     warnings: !frozen && computation ? computation.warnings : [],
     blockers,
+    // The placeholders still in the text (`{{client.name}}`): the editor lists them; a document with any cannot be sent.
+    unresolved: blockers.find((b) => b.code === "unresolved_placeholders")?.names ?? [],
     canSend: !frozen && computation !== null && blockers.length === 0,
     // The stored hash is behind the content (a tax setting or the client's record changed): save once to bring them together.
     needsResave: !frozen && computation !== null && computation.hash !== d.content_sha256,
