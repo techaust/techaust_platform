@@ -100,10 +100,10 @@ export function PortalFooter() {
 }
 
 /**
- * The frame for a single document opened from an email link without signing in (POR-06): the band with the lockup and a
- * way to sign in; no sections and no account.
+ * The frame for a single document opened from an email link without signing in (POR-06): the band with the lockup, and a
+ * notice that offers to sign in (on the page); no sections and no account.
  */
-export function TokenShell(props: { signInHref: string; children: ReactNode }) {
+export function TokenShell(props: { children: ReactNode }) {
   return (
     <div className="pshell">
       <SkipLink />
@@ -113,11 +113,6 @@ export function TokenShell(props: { signInHref: string; children: ReactNode }) {
             <img src={logoDark} alt="TecHaust Technologies" width="200" height="28" />
             <span className="pbar__product">{PRODUCT}</span>
           </span>
-          <div className="pbar__end">
-            <Link to={props.signInHref} className="pbar__signin">
-              {WORDS.signIn}
-            </Link>
-          </div>
         </div>
       </header>
       <main id="main" className="pmain" tabIndex={-1}>

@@ -110,8 +110,7 @@ body:has(.pshell)::before {
   gap: var(--space-2);
 }
 
-.pbar__menu,
-.pbar__signin {
+.pbar__menu {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
@@ -127,8 +126,7 @@ body:has(.pshell)::before {
   cursor: pointer;
 }
 
-.pbar__menu:hover,
-.pbar__signin:hover {
+.pbar__menu:hover {
   color: var(--color-mist);
   background: var(--band-hover);
 }
@@ -371,6 +369,11 @@ body:has(.pshell)::before {
   --color-border-control: var(--color-ink-500);
   --color-surface-alt: var(--color-ink-700);
   --color-focus: var(--color-verdigris-300);
+}
+
+/* The page under the open menu doesn't scroll (or show its scrollbar). */
+html:has(.mmenu[open]) {
+  overflow: hidden;
 }
 
 .mmenu::backdrop {
@@ -945,9 +948,6 @@ body:has(.pshell)::before {
     grid-area: side;
     position: sticky;
     top: var(--space-6);
-    max-height: calc(100dvh - 2 * var(--space-6));
-    overflow-y: auto;
-    scrollbar-width: thin;
   }
 }
 
@@ -1047,7 +1047,8 @@ body:has(.pshell)::before {
   display: none;
 }
 
-@media (min-width: 64rem) {
+/* The contents list only where the summary and all ten entries fit in the window beside the sheet. */
+@media (min-width: 64rem) and (min-height: 56rem) {
   .toc {
     display: block;
     margin-top: var(--space-6);

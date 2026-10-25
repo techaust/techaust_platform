@@ -4,6 +4,7 @@
 // preview bar.
 import "./preview.css";
 import badge from "@techaust/ui/brand/logo-email-badge@2x.png?url";
+import logoDarkPng from "@techaust/ui/brand/logo-email-dark@2x.png?url";
 import { formatDate, formatIstDateTime } from "@techaust/core";
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { Link, Navigate, Route, Routes, useLocation, useParams, useSearchParams } from "react-router";
@@ -17,6 +18,9 @@ import { DocumentPage } from "../screens/document-page.tsx";
 import { DocumentsScreen, HomeScreen, NotFoundScreen, SoonScreen } from "../screens/home.tsx";
 import { proposalAccepted, proposalSent } from "./emails.ts";
 import { ESTIMATE, ME, ORG, STATES, type StateKey, summaryOf } from "./sample.ts";
+
+/** Any base works: EmailFrame swaps the logo URLs for the dev server's own. */
+const BASE = "/preview-assets/";
 
 const HREF: Record<NavKey, string> = {
   home: "/preview/home",
@@ -237,7 +241,7 @@ function ProposalPreview() {
 function TokenPreview() {
   const live = useLiveDocument(STATES.sent.doc, false);
   return (
-    <TokenShell signInHref="/preview/token">
+    <TokenShell>
       <DocumentPage
         {...live}
         backHref={null}
@@ -291,7 +295,11 @@ function EmailFrame(props: { title: string; html: string }) {
       ref={ref}
       title={props.title}
       className="pv-email__frame"
-      srcDoc={props.html}
+      // The layout names the logos with "@" percent-encoded (for Workers static assets); the dev server wants the files'
+      // own URLs, absolute (a srcdoc frame has no base of its own).
+      srcDoc={props.html
+        .replaceAll(`${BASE}logo-email-badge%402x.png`, new URL(badge, location.href).href)
+        .replaceAll(`${BASE}logo-email-dark%402x.png`, new URL(logoDarkPng, location.href).href)}
       style={{ height: `${h}px` }}
       onLoad={() => {
         const doc = ref.current?.contentDocument;
@@ -302,7 +310,7 @@ function EmailFrame(props: { title: string; html: string }) {
 }
 
 function EmailPreview() {
-  const base = badge.slice(0, badge.lastIndexOf("/") + 1);
+  const base = BASE;
   const doc = STATES.viewed.doc;
   const [attached, setAttached] = useState(false);
   const sent = proposalSent(
