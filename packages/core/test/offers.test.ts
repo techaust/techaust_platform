@@ -126,6 +126,12 @@ describe("todayIst and effectiveOfferStatus", () => {
     expect(at("revised")).toBe("revised");
     expect(at("rejected")).toBe("declined");
   });
+  it("a converted estimate reads as accepted: converting is internal to TecHaust (lead decision, 2026-10-26)", () => {
+    expect(effectiveOfferStatus({ status: "converted", validUntil: "2020-01-01" }, "2026-01-01")).toBe(
+      "accepted",
+    );
+    expect(effectiveOfferStatus({ status: "converted", validUntil: null }, "2030-01-01")).toBe("accepted");
+  });
   it("a draft is not client-visible", () => {
     expect(() => effectiveOfferStatus({ status: "draft", validUntil: null }, "2026-01-01")).toThrow(
       RangeError,

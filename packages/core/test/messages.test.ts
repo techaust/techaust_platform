@@ -8,6 +8,7 @@ import {
   EMAIL_TEMPLATES,
   emailMessage,
   formMeta,
+  isOfferExpansionKind,
   leadMessage,
   offerAcceptedMessage,
   offerDecidedMessage,
@@ -238,5 +239,22 @@ describe("M4.5 messages [ADM-PROP-07, ADM-PROP-08]", () => {
     expect(
       approvalNotifyMessage.safeParse({ kind: "approval.notify", approvalId: id, event: "x" }).success,
     ).toBe(false);
+  });
+  it("isOfferExpansionKind sees the family even when the body is malformed (it is never sent as an email)", () => {
+    for (const kind of ["offer.send", "offer.decided", "offer.accepted", "approval.notify"]) {
+      expect(isOfferExpansionKind({ kind })).toBe(true);
+    }
+    for (const body of [
+      null,
+      "offer.send",
+      7,
+      {},
+      { kind: 3 },
+      { kind: "staff.alert" },
+      { kind: "offer.sweep" },
+      { template: "offer.sent" },
+    ]) {
+      expect(isOfferExpansionKind(body), JSON.stringify(body)).toBe(false);
+    }
   });
 });
