@@ -141,7 +141,7 @@ export type Notification = {
   createdAt: number;
 };
 export type SearchGroupData = {
-  type: "user" | "lead" | "client" | "contact" | "project" | "catalogue";
+  type: "user" | "lead" | "client" | "contact" | "project" | "catalogue" | "document";
   label: string;
   items: { id: string; title: string; subtitle: string; link: string }[];
 };
@@ -771,7 +771,8 @@ export type DashboardTiles = {
     newLast7Days: number;
     overdue: { count: number; oldest: { id: string; ref: string; contactName: string; dueAt: number }[] };
   };
-  pipelineValue?: { available: false; arrivesWith: string };
+  /** The offers out and still acceptable, before tax, by currency (M4.3, ADM-DASH-01). */
+  pipelineValue?: { asOf: string; byCurrency: { currency: Currency; count: number; taxableMinor: number }[] };
   finance?: { available: false; arrivesWith: Record<string, string> };
   projects?: { active: number; onHold: number };
   milestones?: {

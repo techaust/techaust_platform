@@ -1,0 +1,498 @@
+// A draft proposal or estimate (M4.3, ADM-PROP-01..05, ADM-APR-01..02, ADM-G-04): the details, the lines, the totals with the tax
+// preview, the payment schedule and the sections, with the send panel beside them. Every change saves itself a moment after the person
+// stops typing, through PATCH with only the parts that changed; the answer's figures (totals, each line's tax, the instalments, the
+// discount guard, the approval, what still stops a send) are put beside what was typed without touching the text. Someone else's save
+// shows the "saved at the same moment" notice and stops saving until the latest is loaded.
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Link, useNavigate } from "react-router";
+import { api, RequestError } from "../../api.ts";
+import { PageHeader } from "../../components/display.tsx";
+import { FormField } from "../../components/form.tsx";
+import { FileText, Info, RefreshCw, Trash } from "../../components/icons.tsx";
+import { StaleNotice, useLoad } from "../../components/states.tsx";
+import { useToast } from "../../components/toast.tsx";
+import { Notice } from "../../components/ui.tsx";
+import { UnsavedChangesGuard } from "../../components/unsaved.tsx";
+import { allowed } from "../../lib/access.ts";
+import {
+  buildPatch,
+  DOC_COPY,
+  DOC_ERRORS,
+  DOC_PENDING,
+  DOC_TOASTS,
+  docErrorText,
+  type EditorAction,
+  type EditorState,
+  editor,
+  fieldErrors,
+  formatIstDay,
+  initEditor,
+  isDirty,
+  newerTerms,
+  notSaved,
+  sentAs,
+  TYPE_LABELS,
+  titleOf,
+  UNRESOLVED_AROUND,
+  validFor,
+} from "../../lib/documents.ts";
+import { type DocumentView, documentsApi } from "../../lib/documents-api.ts";
+import { useUser } from "../../session.tsx";
+import { DiscardDialog, RequestDialog, SendDialog } from "./dialogs.tsx";
+import { LinesPanel } from "./lines.tsx";
+import { TaxPreview } from "./money.tsx";
+import { crumbsFor, DocPill } from "./parts.tsx";
+import { SchedulePanel } from "./schedule.tsx";
+import { SectionsPanel } from "./sections.tsx";
+import { SendPanel, VersionsPanel } from "./side.tsx";
+
+/** 07-O's stale_version sentence, its first sentence as the notice's title and the rest as its body. */
+const STALE = ((t: string) => {
+  const i = t.indexOf(". ");
+  return [t.slice(0, i + 1), t.slice(i + 2)] as const;
+})(DOC_ERRORS.stale_version);
+
+/** How long after the last keystroke a draft saves itself. */
+const AUTOSAVE_MS = 1200;
+
+export function DraftEditor({ view, reload }: { view: DocumentView; reload: () => void }) {
+  const user = useUser();
+  const toast = useToast();
+  const navigate = useNavigate();
+  const [s, setS] = useState<EditorState>(() => initEditor(view));
+  // The newest state, also between renders: a save builds its request from it, and a send waits for it.
+  const ref = useRef(s);
+  const dispatch = useCallback((a: EditorAction) => {
+    ref.current = editor(ref.current, a);
+    setS(ref.current);
+  }, []);
+  const inflight = useRef<Promise<unknown> | null>(null);
+  // Stable readers of the newest lists, so the memoised panels are not drawn again by a new function each render.
+  const currentLines = useCallback(() => ref.current.lines, []);
+  const currentSteps = useCallback(() => ref.current.schedule, []);
+  const currentSections = useCallback(() => ref.current.sections, []);
+  const [dialog, setDialog] = useState<"send" | "request" | "discard" | null>(null);
+  const canWrite = allowed(user.role, "proposals.draft");
+  const canSendRole = allowed(user.role, "proposals.send");
+
+  const save = useCallback(async (): Promise<boolean> => {
+    if (inflight.current) await inflight.current.catch(() => null);
+    const cur = ref.current;
+    if (cur.status === "stale" || cur.status === "frozen") return false;
+    const b = buildPatch(cur);
+    if (!b.ok) {
+      dispatch({ type: "invalid", error: b.error });
+      return false;
+    }
+    if (!b.patch) return true;
+    dispatch({ type: "saving" });
+    const p = documentsApi.save(cur.id, b.patch);
+    inflight.current = p;
+    try {
+      const answer = await p;
+      dispatch({ type: "saved", answer, sent: b.sent });
+      return true;
+    } catch (e) {
+      const code = e instanceof RequestError ? e.code : "";
+      if (code === "stale_version")
+        dispatch({ type: "failed", status: "stale", error: DOC_ERRORS.stale_version });
+      else if (code === "frozen" || code === "not_draft")
+        dispatch({ type: "failed", status: "frozen", error: DOC_ERRORS.frozen });
+      else dispatch({ type: "failed", status: "error", error: docErrorText(e) });
+      return false;
+    } finally {
+      inflight.current = null;
+    }
+  }, [dispatch]);
+
+  /** Everything typed is saved; resolves with the `updatedAt` a send or a request must carry, or null when it could not save. */
+  const flush = useCallback(async (): Promise<number | null> => {
+    if (inflight.current) await inflight.current.catch(() => null);
+    for (let i = 0; i < 3 && isDirty(ref.current); i++) if (!(await save())) return null;
+    const cur = ref.current;
+    return cur.status === "stale" || cur.status === "frozen" || isDirty(cur) ? null : cur.updatedAt;
+  }, [save]);
+
+  // Autosave: a moment after the last change. A refused input waits for the next change; a stale or sent draft stops saving.
+  useEffect(() => {
+    if (
+      !canWrite ||
+      !isDirty(s) ||
+      s.saving ||
+      s.status === "stale" ||
+      s.status === "frozen" ||
+      s.status === "error"
+    )
+      return;
+    const t = setTimeout(() => void save(), AUTOSAVE_MS);
+    return () => clearTimeout(t);
+  }, [s, save, canWrite]);
+  // A refused input is tried again once the person changes something.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs on each edit (the revisions), not on each save answer
+  useEffect(() => {
+    if (ref.current.status !== "error" || !isDirty(ref.current)) return;
+    const t = setTimeout(() => void save(), AUTOSAVE_MS);
+    return () => clearTimeout(t);
+  }, [s.rev, save]);
+
+  const contacts = useLoad(() => api.clientContacts(view.client.id), view.client.id);
+  const f = s.figures;
+  const title = titleOf(s.fields.title);
+  const dirty = isDirty(s);
+  const saveLine =
+    s.status === "saving"
+      ? DOC_COPY.saving
+      : (s.status === "error" || s.status === "stale" || s.status === "frozen") && s.error
+        ? notSaved(s.error.replace(/^\[Placeholder\] /, ""))
+        : s.status === "saved"
+          ? DOC_COPY.saved
+          : dirty
+            ? DOC_COPY.saving
+            : null;
+  const fErr = fieldErrors(s.fields, s.currency);
+  const listPath = view.type === "estimate" ? "/estimates" : "/proposals";
+  const latestFrozen = view.versions.filter((v) => v.id !== view.id && v.number).at(-1);
+
+  return (
+    <>
+      <PageHeader
+        title={title}
+        crumbs={crumbsFor(view.type)}
+        status={<DocPill status="draft" approval={f.approval.state} />}
+        more={
+          canWrite
+            ? [
+                {
+                  label: "Discard draft",
+                  icon: <Trash size={16} />,
+                  tone: "danger",
+                  onSelect: () => setDialog("discard"),
+                },
+              ]
+            : undefined
+        }
+      />
+      <dl className="client-strip doc-strip">
+        <div className="client-strip__fact">
+          <dt>Client</dt>
+          <dd>
+            <Link to={`/clients/${encodeURIComponent(view.client.id)}`}>{view.client.name}</Link>{" "}
+            <span className="docno">{view.client.code}</span>
+          </dd>
+        </div>
+        <div className="client-strip__fact">
+          <dt>{DOC_COPY.type}</dt>
+          <dd>
+            {TYPE_LABELS[view.type]}, v{view.version}
+            {latestFrozen?.number && <span className="docno"> {latestFrozen.number}</span>}
+          </dd>
+        </div>
+        <div className="client-strip__fact">
+          <dt>Currency</dt>
+          <dd className="docno">{view.currency}</dd>
+        </div>
+        <div className="client-strip__fact">
+          <dt>Created</dt>
+          <dd>{formatIstDay(view.createdAt)}</dd>
+        </div>
+      </dl>
+
+      <div className="doc-page">
+        <div className="doc-page__send">
+          <SendPanel
+            role={user.role}
+            guard={f.guard}
+            approval={f.approval}
+            blockers={f.blockers}
+            canSend={f.canSend && !dirty && !s.saving}
+            saveStatus={s.status}
+            saveLine={saveLine}
+            dirty={dirty}
+            canWrite={canWrite}
+            canSendRole={canSendRole}
+            onSend={() => setDialog("send")}
+            onRequest={() => setDialog("request")}
+          />
+        </div>
+
+        <div className="doc-page__main">
+          {s.status === "stale" && <StaleNotice title={STALE[0]} body={STALE[1]} onReload={reload} />}
+          {s.status === "frozen" && (
+            <div className="notice notice--info" role="status">
+              <Info size={20} />
+              <div>
+                <p>{DOC_ERRORS.frozen}</p>
+                <button type="button" className="btn btn--secondary" onClick={reload}>
+                  <RefreshCw size={20} />
+                  Reload the latest
+                </button>
+              </div>
+            </div>
+          )}
+          {!canWrite && <Notice tone="info">{DOC_PENDING.readOnlyDraft}</Notice>}
+          {f.needsResave && (
+            <div className="notice notice--info" role="status">
+              <Info size={20} />
+              <div>
+                <p>{DOC_COPY.needsResave}</p>
+                {canWrite && (
+                  <button
+                    type="button"
+                    className="btn btn--secondary"
+                    onClick={() => dispatch({ type: "fields", patch: {} })}
+                  >
+                    Save
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+          {f.termsOutdated && f.newestTermsVersion !== null && (
+            <div className="notice notice--info" role="status">
+              <FileText size={20} />
+              <div>
+                <p>{newerTerms(f.newestTermsVersion)}</p>
+                {canWrite && (
+                  <button
+                    type="button"
+                    className="btn btn--secondary"
+                    onClick={() => dispatch({ type: "fields", patch: { refreshTerms: true } })}
+                  >
+                    {DOC_COPY.useNewerTerms}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+          {f.unresolved.length > 0 && (
+            <div className="notice notice--warning holes" role="status">
+              <Info size={20} />
+              <div>
+                <p>
+                  {UNRESOLVED_AROUND[0]}
+                  {f.unresolved.map((n, i) => (
+                    <span key={n}>
+                      <code className="hole">{`{{${n}}}`}</code>
+                      {i < f.unresolved.length - 1 ? ", " : ""}
+                    </span>
+                  ))}
+                  {UNRESOLVED_AROUND[1]}
+                </p>
+              </div>
+            </div>
+          )}
+
+          <section className="lead-panel doc-details" aria-labelledby="doc-details-h">
+            <h2 id="doc-details-h" className="visually-hidden">
+              {DOC_COPY.type}
+            </h2>
+            <FormField id="doc-title" label="Title">
+              {(a) => (
+                <input
+                  {...a}
+                  className="doc-title-in"
+                  autoComplete="off"
+                  maxLength={200}
+                  value={s.fields.title}
+                  readOnly={!canWrite}
+                  onChange={(e) => dispatch({ type: "fields", patch: { title: e.target.value } })}
+                />
+              )}
+            </FormField>
+            <div className="doc-details__row">
+              <FormField
+                id="doc-contact"
+                label={DOC_COPY.sendTo}
+                hint={s.fields.contactId === null ? DOC_COPY.noContact : undefined}
+              >
+                {(a) => (
+                  <select
+                    {...a}
+                    value={s.fields.contactId ?? ""}
+                    disabled={!canWrite}
+                    onChange={(e) =>
+                      dispatch({ type: "fields", patch: { contactId: e.target.value || null } })
+                    }
+                  >
+                    <option value="">None</option>
+                    {view.contact && !contacts.data?.contacts.some((c) => c.id === view.contact?.id) && (
+                      <option value={view.contact.id}>{view.contact.name}</option>
+                    )}
+                    {(contacts.data?.contacts ?? [])
+                      .filter((c) => c.anonymisedAt === null)
+                      .map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}, {c.email}
+                        </option>
+                      ))}
+                  </select>
+                )}
+              </FormField>
+              <FormField
+                id="doc-validity"
+                label="Validity"
+                error={
+                  fErr.validityDays && (s.showErrors || s.fields.validityDays !== "")
+                    ? fErr.validityDays
+                    : undefined
+                }
+                status={
+                  !fErr.validityDays && s.fields.validityDays !== ""
+                    ? validFor(Number(s.fields.validityDays))
+                    : undefined
+                }
+              >
+                {(a) => (
+                  <div className="number-unit">
+                    <input
+                      {...a}
+                      inputMode="numeric"
+                      autoComplete="off"
+                      maxLength={2}
+                      value={s.fields.validityDays}
+                      readOnly={!canWrite}
+                      onChange={(e) => dispatch({ type: "fields", patch: { validityDays: e.target.value } })}
+                    />
+                    <span className="number-unit__unit" aria-hidden="true">
+                      days
+                    </span>
+                  </div>
+                )}
+              </FormField>
+            </div>
+          </section>
+
+          <LinesPanel
+            lines={s.lines}
+            figures={f.lines}
+            currency={s.currency}
+            supply={f.supply}
+            warnings={f.warnings}
+            showErrors={s.showErrors}
+            type={view.type}
+            dispatch={dispatch}
+            current={currentLines}
+          />
+
+          <section className="lead-panel doc-totals" aria-labelledby="doc-totals-h">
+            <h2 id="doc-totals-h" className="lead-panel__title">
+              {DOC_COPY.total}
+            </h2>
+            <div className="doc-totals__grid">
+              <div className="doc-totals__disc">
+                <FormField
+                  id="doc-disc"
+                  label={DOC_COPY.documentDiscount}
+                  optional
+                  error={fErr.disc && (s.showErrors || s.fields.disc !== "") ? fErr.disc : undefined}
+                >
+                  {(a) => (
+                    <div className="disc-in">
+                      <select
+                        aria-label={`${DOC_COPY.documentDiscount}: ${DOC_COPY.fixed} or ${DOC_COPY.percent}`}
+                        value={s.fields.discKind}
+                        disabled={!canWrite}
+                        onChange={(e) =>
+                          dispatch({
+                            type: "fields",
+                            patch: { discKind: e.target.value as "fixed" | "percent" },
+                          })
+                        }
+                      >
+                        <option value="percent">{DOC_COPY.percent}</option>
+                        <option value="fixed">{DOC_COPY.fixed}</option>
+                      </select>
+                      <input
+                        {...a}
+                        className="tnum disc-in__value"
+                        inputMode="decimal"
+                        autoComplete="off"
+                        value={s.fields.disc}
+                        readOnly={!canWrite}
+                        onChange={(e) => dispatch({ type: "fields", patch: { disc: e.target.value } })}
+                      />
+                    </div>
+                  )}
+                </FormField>
+              </div>
+              <TaxPreview totals={f.totals} supply={f.supply} currency={s.currency} busy={s.saving} />
+            </div>
+          </section>
+
+          <SchedulePanel
+            steps={s.schedule}
+            amounts={f.steps}
+            currency={s.currency}
+            showErrors={s.showErrors}
+            dispatch={dispatch}
+            current={currentSteps}
+          />
+
+          <SectionsPanel sections={s.sections} dispatch={dispatch} current={currentSections} />
+        </div>
+
+        <div className="doc-page__versions">
+          <VersionsPanel versions={view.versions} type={view.type} />
+        </div>
+      </div>
+
+      <UnsavedChangesGuard dirty={canWrite && (dirty || s.saving)} what="this draft" />
+
+      <SendDialog
+        open={dialog === "send"}
+        title={title}
+        version={view.version}
+        totalMinor={f.totals?.totalMinor ?? null}
+        currency={s.currency}
+        client={view.client.name}
+        onClose={() => setDialog(null)}
+        onConfirm={async () => {
+          const at = await flush();
+          if (at === null)
+            throw new RequestError(409, "stale_version", ref.current.error ?? DOC_ERRORS.stale_version);
+          const r = await documentsApi.send(view.id, at);
+          setDialog(null);
+          toast("success", sentAs(r.number ?? "", r.version));
+          reload();
+        }}
+      />
+      <RequestDialog
+        open={dialog === "request"}
+        onClose={() => setDialog(null)}
+        onSend={async (reason) => {
+          const at = await flush();
+          if (at === null) throw new RequestError(409, "stale_version", DOC_ERRORS.stale_version);
+          const r = await documentsApi.requestApproval(view.id, at, reason || undefined);
+          dispatch({
+            type: "approval",
+            approval: {
+              ...ref.current.figures.approval,
+              state: "pending",
+              id: r.id,
+              requestedAt: Date.now(),
+              decidedAt: null,
+              decidedBy: null,
+              decidedByName: null,
+              note: null,
+            },
+          });
+          toast("success", DOC_TOASTS.requested);
+        }}
+      />
+      <DiscardDialog
+        open={dialog === "discard"}
+        onClose={() => setDialog(null)}
+        onConfirm={async () => {
+          if (inflight.current) await inflight.current.catch(() => null);
+          await documentsApi.discard(view.id, ref.current.updatedAt);
+          // Nothing is left to save: leaving must not ask about unsaved changes.
+          ref.current = { ...ref.current, savedRev: { ...ref.current.rev } };
+          setS(ref.current);
+          setDialog(null);
+          toast("success", DOC_TOASTS.discarded);
+          setTimeout(() => navigate(listPath), 0);
+        }}
+      />
+    </>
+  );
+}

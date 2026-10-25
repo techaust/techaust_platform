@@ -13,7 +13,6 @@ import { useParams, useSearchParams } from "react-router";
 import { api, type ClientPage, RequestError } from "../../api.ts";
 import { EmptyState, PageHeader, Skeleton, StatusPill } from "../../components/display.tsx";
 import { FileText, Lock, Receipt } from "../../components/icons.tsx";
-import { navItem } from "../../components/shell/nav.tsx";
 import { LoadFailed, NotFound, StaleNotice, useLoad } from "../../components/states.tsx";
 import { type TabItem, Tabs } from "../../components/tabs.tsx";
 import { Notice } from "../../components/ui.tsx";
@@ -31,6 +30,7 @@ import {
 import { COPY, PENDING } from "../../lib/projects.ts";
 import { useUser } from "../../session.tsx";
 import { ClientCarePlans } from "../care/client-tab.tsx";
+import { ClientDocuments } from "../documents/client-tab.tsx";
 import { ClientProjects } from "../projects/client-tabs.tsx";
 import { FilesPanel } from "../projects/files.tsx";
 import { Activity } from "./activity.tsx";
@@ -199,7 +199,7 @@ function ClientView(props: {
         ) : tab === "care-plans" ? (
           <ClientCarePlans clientId={client.id} readOnly={props.data.anonymised} />
         ) : (
-          <ComingTab tab={tab} />
+          <ClientDocuments clientId={client.id} readOnly={props.data.anonymised} />
         )}
       </Tabs>
     </>
@@ -277,26 +277,6 @@ function StatementTab({ id }: { id: string }) {
   return (
     <EmptyState icon={<FileText />} title="Statement of account">
       <p>Statements arrive with invoicing. There's nothing to show yet.</p>
-    </EmptyState>
-  );
-}
-
-const COMING: Record<string, { section: Parameters<typeof navItem>[0]; label: string }> = {
-  proposals: { section: "proposals", label: "Proposals and estimates" },
-};
-
-/** A tab a later milestone builds: the M3.1 "coming soon" state, with the milestone and what arrives. */
-function ComingTab({ tab }: { tab: string }) {
-  const c = COMING[tab];
-  if (!c) return null;
-  const item = navItem(c.section);
-  return (
-    <EmptyState
-      icon={item.icon}
-      note={item.arrives ? `Arrives in milestone ${item.arrives.milestone}` : undefined}
-      title={`${c.label} isn't built yet`}
-    >
-      <p>{item.arrives?.what}</p>
     </EmptyState>
   );
 }

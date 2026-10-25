@@ -5,7 +5,19 @@ import { formatIstDateTime } from "@techaust/core";
 import { type ReactNode, useEffect, useRef } from "react";
 import { Link, useLocation } from "react-router";
 import { relative } from "../lib/format.ts";
-import { Ban, CheckCircle, ChevronRight, Clock, Flag, Inbox, Lock, Pencil, Send } from "./icons.tsx";
+import {
+  Archive,
+  Ban,
+  CheckCircle,
+  ChevronRight,
+  Clock,
+  Eye,
+  Flag,
+  Inbox,
+  Lock,
+  Pencil,
+  Send,
+} from "./icons.tsx";
 import { MenuButton, type MenuItem } from "./popover.tsx";
 
 // The first screen of a visit keeps focus where the browser put it (React Router's first location has the key
@@ -79,6 +91,8 @@ const PILL_ICON = {
   lock: Lock,
   inbox: Inbox,
   flag: Flag,
+  eye: Eye,
+  archive: Archive,
 } as const;
 
 /** Icon + text + colour, never colour alone (docs/06 §5.5). */

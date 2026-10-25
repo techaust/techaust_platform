@@ -322,6 +322,7 @@ export const documentSave = new Hono<AppEnv>().patch("/:id", param(idParam), bod
     saveAnswer({
       bundle: after,
       newestTermsId: ctx.newestTermsId,
+      newestTermsVersion: ctx.newestTerms?.version ?? null,
       state,
       computation,
       clientGone: false,

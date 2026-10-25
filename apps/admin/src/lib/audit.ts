@@ -79,6 +79,15 @@ export const ACTION_LABELS: Record<string, string> = {
   "catalogue.activate": "made a service active again",
   "template.version": "saved a template version",
   "catalogue.publish": "published prices",
+  // M4.3 proposals, estimates and approvals (07-O §7).
+  "document.create": "created a draft",
+  "document.update": "changed a draft",
+  "document.delete": "discarded a draft",
+  "document.send": "sent a document",
+  "document.revise": "made a new version",
+  "approval.request": "asked for approval",
+  "approval.decide": "decided an approval",
+  "document.convert": "converted a document",
 };
 
 /** Groups for the action filter (the API filters by one exact action). */
@@ -96,6 +105,8 @@ export const ACTION_GROUPS: { label: string; prefix: string }[] = [
   { label: "Files", prefix: "file." },
   { label: "Catalogue", prefix: "catalogue." },
   { label: "Templates", prefix: "template." },
+  { label: "Proposals and estimates", prefix: "document." },
+  { label: "Approvals", prefix: "approval." },
   { label: "Client portal", prefix: "portal." },
   { label: "Audit log", prefix: "audit." },
 ];
@@ -120,6 +131,7 @@ export const ENTITY_LABELS: Record<string, string> = {
   note: "Notes",
   file: "Files",
   document: "Documents",
+  approval: "Approvals",
   audit_log: "Audit log",
 };
 

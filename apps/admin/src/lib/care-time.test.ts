@@ -208,7 +208,7 @@ describe("07-M copy, word for word (draft pending the owner)", () => {
   it("dashboard and the project page", () => {
     expect(Object.values(TILE_TITLES)).toEqual([
       "Leads",
-      "Pipeline value",
+      "Pipeline",
       "Invoiced and collected",
       "Projects",
       "Milestones due in 14 days",
@@ -216,7 +216,6 @@ describe("07-M copy, word for word (draft pending the owner)", () => {
       "My time",
       "Recent activity",
     ]);
-    expect(DASH_COPY.pipelineArrives).toBe("Pipeline value arrives with proposals.");
     expect(DASH_COPY.financeArrives).toBe("Invoiced and collected figures arrive with invoicing.");
     expect(DASH_COPY.paymentsArrive).toBe("Payments waiting for checks arrive with payments.");
     expect([DASH_COPY.notStarted, DASH_COPY.system]).toEqual(["Not started", "System"]);
