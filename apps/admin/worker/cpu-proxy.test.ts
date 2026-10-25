@@ -137,8 +137,10 @@ describe("wall-time proxy for CPU of the M4.3 routes: a 100-line proposal with 3
     show("GET /documents (25 rows)", stat(list));
     // A loose ceiling only (a slow PC and wall time, not CPU); the real gate is the staging cpuTimeMs reading.
     expect(stat(saves).median).toBeLessThan(500);
-    // Local wall time on this PC (median, ms; M4.3, workerd with local D1): PATCH 25, GET 14, send 16; the floor GET /auth/me 5 and a one-call
-    // list 9. Wall time includes the local D1 and is an UPPER BOUND of CPU; the staging cpuTimeMs reading is the gate (docs/05 §10).
+    // Local wall time on this PC (median, ms; M4.3, workerd with local D1), noisy from run to run: PATCH 30 to 44, GET 15 to 25, send 24 to 37; the
+    // floor GET /auth/me 7 and a one-call list 10 to 12 (the same session before the early-check fixes: 34 to 38, 17 to 19, 22 to 26). Wall time
+    // includes the local D1 and the test harness and is an UPPER BOUND of CPU. The CPU of the pure part (parse, zod, engine, hashes, serialising)
+    // is read by `node apps/admin/bench/quote-cpu.ts`; the staging cpuTimeMs reading is the gate (docs/05 §10).
     expect(report.slice(-5)).toHaveLength(5); // to read the numbers, compare report.slice(-5).join(" | ") with "" and read the failure
   }, 180_000);
 });
