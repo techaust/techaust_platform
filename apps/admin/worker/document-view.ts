@@ -75,6 +75,8 @@ export type ViewInput = {
   client: ClientRow;
   contact: ContactFacts | null;
   newestTermsId: string | null;
+  /** The newest proposal terms' version number (the editor's "Newer terms (version n) exist"). */
+  newestTermsVersion?: number | null;
   /** Needed to work a draft out; a sent version does not need it. */
   settings: QuoteSettings | null;
   today: CalendarDate;
@@ -218,6 +220,7 @@ export async function documentView(i: ViewInput) {
       d.terms_version_id !== null &&
       i.newestTermsId !== null &&
       i.newestTermsId !== d.terms_version_id,
+    newestTermsVersion: i.newestTermsVersion ?? null,
     errors: !frozen && computation ? computation.errors : [],
     warnings: !frozen && computation ? computation.warnings : [],
     blockers,
@@ -236,6 +239,7 @@ export type DocumentView = Awaited<ReturnType<typeof documentView>>;
 export type SaveAnswerInput = {
   bundle: DocumentBundle<TermsRef>;
   newestTermsId: string | null;
+  newestTermsVersion?: number | null;
   state: DocState;
   computation: Computation;
   clientGone: boolean;
@@ -283,6 +287,7 @@ export function saveAnswer(i: SaveAnswerInput) {
       : null,
     termsOutdated:
       d.terms_version_id !== null && i.newestTermsId !== null && i.newestTermsId !== d.terms_version_id,
+    newestTermsVersion: i.newestTermsVersion ?? null,
     errors: computation.errors,
     warnings: computation.warnings,
     blockers,

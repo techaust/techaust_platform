@@ -392,6 +392,7 @@ export const documents = new Hono<AppEnv>()
       client: ctx.client,
       contact: ctx.contact,
       newestTermsId: ctx.newestTermsId,
+      newestTermsVersion: ctx.newestTerms?.version ?? null,
       settings: readSettings(ctx.settingsRows),
       today: todayIst(),
     });
