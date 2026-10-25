@@ -20,6 +20,7 @@ import {
   guardLine,
   initEditor,
   isDirty,
+  type LineDraft,
   lineErrors,
   mappedError,
   moved,
@@ -324,7 +325,7 @@ describe("the autosave: what a save sends", () => {
       lines: [
         ...s.lines,
         {
-          ...(s.lines[0] as never),
+          ...(s.lines[0] as LineDraft),
           uid: "n1",
           id: null,
           catalogueItemId: null,
@@ -333,7 +334,7 @@ describe("the autosave: what a save sends", () => {
           rate: "500",
         },
         {
-          ...(s.lines[0] as never),
+          ...(s.lines[0] as LineDraft),
           uid: "n2",
           id: null,
           catalogueItemId: "s16",
@@ -359,7 +360,7 @@ describe("the autosave: how the answer lands", () => {
       type: "lines",
       lines: [
         ...s.lines,
-        { ...(s.lines[0] as never), uid: "n1", id: null, catalogueItemId: null, rate: "500" },
+        { ...(s.lines[0] as LineDraft), uid: "n1", id: null, catalogueItemId: null, rate: "500" },
       ],
     });
     const b = buildPatch(s);

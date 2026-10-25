@@ -67,6 +67,27 @@ describe("the owner's queue and the approval names [ADM-APR-01; 07-O §4]", () =
     });
   });
 
+  it("a draft pinned to older terms names the newest version, in GET and in the save answer (07-O §3)", async () => {
+    const staff = await sessionFor("staff");
+    const made = await mkDraft(staff);
+    const newestId = await mkTerms();
+    const newest = await one<{ version: number }>(
+      "SELECT version FROM terms_versions WHERE id = ?",
+      newestId,
+    );
+    const view = await getDoc(staff, made.id);
+    expect(view.termsOutdated).toBe(true);
+    expect(view.newestTermsVersion).toBe(newest?.version);
+    const saved = await json(
+      await patchDoc(staff, made.id, { expectedUpdatedAt: view.updatedAt, fields: { title: "Terms check" } }),
+    );
+    expect(saved.newestTermsVersion).toBe(newest?.version);
+    const adopted = await json(
+      await patchDoc(staff, made.id, { expectedUpdatedAt: saved.updatedAt, fields: { refreshTerms: true } }),
+    );
+    expect([adopted.termsOutdated, adopted.terms.version]).toEqual([false, newest?.version]);
+  });
+
   it("the bell words for a draft with no title, and for a rejection", () => {
     expect(bellRequestTitle(null, 3)).toBe("Approval needed: Untitled v3");
     expect(bellDecidedTitle("rejected", "Website rebuild", 2)).toBe("Rejected: Website rebuild v2");

@@ -91,6 +91,8 @@ describe("the save answers slim [item 4]", () => {
         "id",
         "lines",
         "needsResave",
+        // M4.3 designer: the newest terms version, for "Newer terms (version n) exist" (07-O §3)
+        "newestTermsVersion",
         "schedule",
         "sections",
         "summary",
