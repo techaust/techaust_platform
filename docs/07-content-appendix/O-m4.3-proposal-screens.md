@@ -148,3 +148,19 @@ Every line comes from approved copy (07 §5.3, §5.5). Placeholders aren't used 
 
 ## 8. Correction to 07 §8
 - **The approval emails:** "Approval needed: {{document_type}} {{number}}" can't work for drafts, which have no number before sending. Subject and bell use the title and version instead: "Approval needed: {{title}} v{{version}}". The decision email becomes "{{decision}}: {{title}} v{{version}}".
+
+## 9. Added after the screens (lead, 2026-10-26; PENDING the owner)
+The designer's drafts, accepted as wording to approve:
+
+| Where | Copy |
+|---|---|
+| Field errors | "Enter a quantity like 1 or 2.5." · "Enter a percentage like 10 or 12.5." · "Enter a description." · "Enter a name for this instalment." · "Enter the six-digit SAC code." · "Enter a number of days from 1 to 90." |
+| Fallbacks | "Untitled" (a draft with no title) · "Section" (a section with no heading) · "the owner" (when no owner name is known) |
+| Lines | "No lines yet. Add a line from the catalogue or a custom line." · "Add from the catalogue" · "Add a custom line" |
+| Schedule, sections | "Add an instalment" · "Add a section" |
+| Create dialog | "Choose a service" · "Search by the start of a lead reference or email" · "Convert this lead to a client first." · "Choose at least one service." · "Choose a client." · "Choose a lead." · "Couldn't load this service's lines. Close the dialog and try again." |
+| Approvals queue | "No requests match these filters." · "Show more requests" |
+| List | "No proposals or estimates match these filters." · "Search by number" · "No proposal or estimate has a number starting with that." |
+| Custom lines | "{n} custom lines" · "Custom lines are not counted in the discount guard." |
+| Read view | "Your role can read this draft but not change it." · "Next steps" · "A newer version of this document exists." · "Open the newest version" · "Open the care plan" |
+| Activity feed | "marked a document as expired" · "marked an approval as expired" |
