@@ -1,5 +1,6 @@
-// @techaust/core: pure domain logic (no I/O). Tax engine, schedules and state machines arrive in later
-// milestones (docs/09-roadmap.md).
+// @techaust/core: pure domain logic (no I/O). The tax engine (M4.2) is the subpath `@techaust/core/tax`, deliberately not
+// re-exported here (bundle size, and its `TaxWarning` would clash with clients.ts's); schedules in documents and state
+// machines arrive in later milestones (docs/09-roadmap.md).
 export * from "./audit.ts";
 export * from "./dates.ts";
 export * from "./form-labels.ts";
