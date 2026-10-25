@@ -41,6 +41,12 @@ const NOT_READY: ApiError = {
 const GUARD_SUMS = (doc: string) =>
   `${doc}.catalogue_reference_minor AS reference_minor, (SELECT coalesce(sum(l.taxable_minor), 0) FROM document_lines l WHERE l.document_id = ${doc}.id AND l.catalogue_item_id IS NOT NULL) AS taxable_minor`;
 
+/** The bell's words (07-O §4 and §8): the title and version, as a draft has no number before it is sent. */
+export const bellRequestTitle = (title: string | null, version: number) =>
+  `Approval needed: ${(title ?? "Untitled").slice(0, 120)} v${version}`;
+export const bellDecidedTitle = (to: "approved" | "rejected", title: string | null, version: number) =>
+  `${to === "approved" ? "Approved" : "Rejected"}: ${(title ?? "Untitled").slice(0, 120)} v${version}`;
+
 /** An approved discount approval exists for the draft's current content: asking again would only shadow it. */
 const APPROVED_NOW =
   "EXISTS (SELECT 1 FROM approvals a WHERE a.document_id = d.id AND a.kind = 'discount' AND a.status = 'approved' AND a.content_sha256 = d.content_sha256)";
@@ -139,7 +145,7 @@ export const approvalRequests = new Hono<AppEnv>().post(
             )
             .bind(
               approvalId,
-              `Approval needed: ${(row.title ?? "Untitled").slice(0, 120)} (version ${row.version})`,
+              bellRequestTitle(row.title, row.version),
               `/approvals/${approvalId}`,
               ...g.params,
             ),
@@ -173,6 +179,7 @@ type ApprovalRow = {
   requested_by: string;
   requester_name: string | null;
   decided_by: string | null;
+  decider_name: string | null;
   content_sha256: string;
   document_id: string;
   type: string;
@@ -181,6 +188,7 @@ type ApprovalRow = {
   document_status: string;
   document_sha: string | null;
   currency: string;
+  total_minor: number;
   reference_minor: number | null;
   taxable_minor: number;
   custom_lines: number;
@@ -192,11 +200,11 @@ type ApprovalRow = {
 export const APPROVALS_SQL = (f: { status: boolean; own: boolean; cursor: boolean }) => {
   const ownAt = 1 + (f.status ? 1 : 0);
   const cursorAt = ownAt + (f.own ? 1 : 0);
-  return `SELECT a.id, a.status, a.created_at, a.decided_at, a.reason, a.note, a.requested_by, ru.name AS requester_name, a.decided_by, a.content_sha256,
-       d.id AS document_id, d.type, d.title, d.version, d.status AS document_status, d.content_sha256 AS document_sha, d.currency, ${GUARD_SUMS("d")},
+  return `SELECT a.id, a.status, a.created_at, a.decided_at, a.reason, a.note, a.requested_by, ru.name AS requester_name, a.decided_by, du.name AS decider_name, a.content_sha256,
+       d.id AS document_id, d.type, d.title, d.version, d.status AS document_status, d.content_sha256 AS document_sha, d.currency, d.total_minor, ${GUARD_SUMS("d")},
        (SELECT count(*) FROM document_lines l WHERE l.document_id = d.id AND l.catalogue_item_id IS NULL) AS custom_lines,
        cl.code AS client_code, cl.display_name AS client_name
-     FROM approvals a JOIN documents d ON d.id = a.document_id JOIN clients cl ON cl.id = d.client_id LEFT JOIN staff_users ru ON ru.id = a.requested_by
+     FROM approvals a JOIN documents d ON d.id = a.document_id JOIN clients cl ON cl.id = d.client_id LEFT JOIN staff_users ru ON ru.id = a.requested_by LEFT JOIN staff_users du ON du.id = a.decided_by
      WHERE a.kind = 'discount'${f.status ? " AND a.status = ?1" : ""}${f.own ? ` AND a.requested_by = ?${ownAt}` : ""}${f.cursor ? ` AND ${keysetSql("a.created_at", "a.id", false, "after", cursorAt).where}` : ""}
      ORDER BY a.created_at DESC, a.id DESC LIMIT`;
 };
@@ -218,6 +226,7 @@ const approvalView = (r: ApprovalRow) => {
     requestedBy: r.requested_by,
     requesterName: r.requester_name,
     decidedBy: r.decided_by,
+    deciderName: r.decider_name,
     document: {
       id: r.document_id,
       type: r.type,
@@ -232,6 +241,8 @@ const approvalView = (r: ApprovalRow) => {
     discountMinor: figures.discountMinor,
     referenceMinor: figures.referenceMinor,
     customLineCount: r.custom_lines,
+    // The draft's total as last saved (the owner's queue shows it, 07-O §4).
+    totalMinor: r.total_minor,
   };
 };
 
@@ -306,7 +317,7 @@ export const approvals = new Hono<AppEnv>()
           )
           .bind(
             id,
-            `Approval ${to}: ${(row.title ?? "Untitled").slice(0, 120)} (version ${row.version})`,
+            bellDecidedTitle(to, row.title, row.version),
             `/documents/${row.document_id}`,
             row.requested_by,
             ...g.params,

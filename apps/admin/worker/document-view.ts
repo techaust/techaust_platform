@@ -61,8 +61,10 @@ const approvalOf = (bundle: DocumentBundle<TermsRef>, contentSha256: string | nu
     ),
     id: latest?.id ?? null,
     requestedBy: latest?.requested_by ?? null,
+    requestedByName: latest?.requested_by_name ?? null,
     requestedAt: latest?.created_at ?? null,
     decidedBy: latest?.decided_by ?? null,
+    decidedByName: latest?.decided_by_name ?? null,
     decidedAt: latest?.decided_at ?? null,
     note: latest?.note ?? null,
   };

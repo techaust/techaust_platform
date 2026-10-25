@@ -136,6 +136,9 @@ export type ApprovalRow = {
   reason: string | null;
   note: string | null;
   created_at: number;
+  /** The staff names behind the ids (the admin's "Approved by {person}"); null for a removed member. */
+  requested_by_name?: string | null;
+  decided_by_name?: string | null;
 };
 
 export type DocumentBundle<T extends TermsRef = TermsRow> = {
@@ -171,7 +174,7 @@ export const LOAD_DOCUMENT_SQL = {
   termsRef:
     "SELECT id, kind, version, sha256 FROM terms_versions WHERE id = (SELECT terms_version_id FROM documents WHERE id = ?1)",
   approvals:
-    "SELECT id, kind, status, content_sha256, requested_by, decided_by, decided_at, reason, note, created_at FROM approvals WHERE document_id = ?1 AND kind = 'discount' ORDER BY created_at DESC, id DESC LIMIT 5",
+    "SELECT a.id, a.kind, a.status, a.content_sha256, a.requested_by, a.decided_by, a.decided_at, a.reason, a.note, a.created_at, (SELECT u.name FROM staff_users u WHERE u.id = a.requested_by) AS requested_by_name, (SELECT u.name FROM staff_users u WHERE u.id = a.decided_by) AS decided_by_name FROM approvals a WHERE a.document_id = ?1 AND a.kind = 'discount' ORDER BY a.created_at DESC, a.id DESC LIMIT 5",
 } as const;
 
 type RawDocument = Omit<DocumentRow, "recipient" | "issuer" | "computed"> & {
