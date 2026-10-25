@@ -485,7 +485,7 @@ describe("pdf.certificate: the same paced render, once [ADM-PROP-08, JOB-PDF-01]
 
 // ---- the routing ---------------------------------------------------------------------------------------------------------------
 
-const batchOf = (queue: string, body: unknown) => {
+const batchOf = (queue: string, body: unknown, attempts = 1) => {
   const calls = { ack: 0, retry: 0, delay: undefined as number | undefined };
   const batch = {
     queue,
@@ -493,7 +493,7 @@ const batchOf = (queue: string, body: unknown) => {
       {
         id: "m1",
         timestamp: new Date(),
-        attempts: 1,
+        attempts,
         body,
         ack: () => void calls.ack++,
         retry: (o?: { delaySeconds?: number }) => {
@@ -534,6 +534,49 @@ describe("the queues route the M4.5 messages before the generic paths", () => {
     await handleQueue(bad.batch, env);
     expect(bad.calls.ack).toBe(1);
     expect(email.sent).toEqual([]);
+  });
+
+  it("the queue's delivery count reaches the email consumer: the first try reads the PDF, a redelivery goes link-only without reading it (L6)", async () => {
+    let reads = 0;
+    const docs = {
+      get: async () => {
+        reads++;
+        return {
+          size: 20,
+          body: { cancel: async () => undefined },
+          arrayBuffer: async () => new TextEncoder().encode("%PDF-1.4 test").buffer,
+        };
+      },
+    };
+    const { env } = makeEnv(
+      {},
+      { DOCS: docs, EMAIL_TRANSPORT: "log", EMAIL_ASSET_BASE: "https://a.example/" },
+    );
+    const body = (id: string) => ({
+      template: "offer.sent",
+      to: "client@example.test",
+      data: {
+        first_name: "Asha",
+        kind: "proposal",
+        title: "Website rebuild",
+        number: "TH/PRP/2627/0001",
+        version: "1",
+        valid_until: "30 Nov 2026",
+        total: "₹1.00",
+        url: "https://portal.example/o#t=abc",
+        attached: "1",
+        sender_name: "Sam",
+      },
+      entity: { type: "document_send", id },
+      attachment: { key: "docs/proposal/2026-27/0001-v1.pdf", filename: "TH-PRP-2627-0001-v1.pdf" },
+    });
+    const first = batchOf("techaust-local-email", body(uuidv7()), 1);
+    await handleQueue(first.batch, env);
+    expect(reads).toBe(1);
+    const second = batchOf("techaust-local-email", body(uuidv7()), 2);
+    await handleQueue(second.batch, env);
+    expect(reads).toBe(1);
+    expect(logs.join("\n")).toContain("redelivery");
   });
 
   it("an offer.accepted whose certificate is not stored yet is retried; once it is, the emails are queued", async () => {
