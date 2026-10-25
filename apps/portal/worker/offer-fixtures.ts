@@ -3,7 +3,7 @@
 // so a test can prove the stored extras (catalogue rates, hidden sections, the sender's staff id) never reach the client.
 import { env } from "cloudflare:workers";
 import { newToken, tokenHash } from "@techaust/auth";
-import { uuidv7 } from "@techaust/core";
+import { uuidv7 } from "@techaust/core/ids";
 import { todayIst } from "@techaust/core/offers";
 import { pdfKeys } from "@techaust/core/pdf-jobs";
 import type { FxContact, FxOrg } from "./fixtures.ts";

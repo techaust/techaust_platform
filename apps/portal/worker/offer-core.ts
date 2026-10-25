@@ -3,7 +3,7 @@
 //
 // A principal is who acts and for which organisation: a signed-in contact (the session, via `scope(c)`) or a live offer link (its
 // contact and organisation come from the link row, read by the server). Nothing about either comes from the request body.
-import { uuidv7 } from "@techaust/core";
+import { uuidv7 } from "@techaust/core/ids";
 import { formatMoney, money } from "@techaust/core/money";
 import { checkDecline, effectiveOfferStatus, normaliseTypedName, todayIst } from "@techaust/core/offers";
 import { proposalEventStatements } from "@techaust/db/lead-stage";

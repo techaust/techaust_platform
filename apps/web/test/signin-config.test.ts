@@ -51,9 +51,16 @@ describe.each(["admin", "portal"] as const)("%s wrangler.jsonc", (app) => {
   });
 
   it("produces to the email queue of each environment that has one (the jobs Worker consumes it)", () => {
-    expect(c.queues?.producers).toEqual([{ binding: "EMAIL_QUEUE", queue: "techaust-local-email" }]);
+    // The portal also asks the jobs Worker for the acceptance certificate (M4.5: PDF_QUEUE); the admin Worker's PDF queue arrives with M4.4.
+    const pdf = (env: string) =>
+      app === "portal" ? [{ binding: "PDF_QUEUE", queue: `techaust-${env}-pdf` }] : [];
+    expect(c.queues?.producers).toEqual([
+      { binding: "EMAIL_QUEUE", queue: "techaust-local-email" },
+      ...pdf("local"),
+    ]);
     expect(c.env.staging.queues?.producers).toEqual([
       { binding: "EMAIL_QUEUE", queue: "techaust-staging-email" },
+      ...pdf("staging"),
     ]);
     const jobs = guard.parseJsonc(
       readFileSync(new URL("../../jobs/wrangler.jsonc", import.meta.url), "utf8"),
