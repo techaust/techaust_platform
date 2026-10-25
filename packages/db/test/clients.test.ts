@@ -219,6 +219,24 @@ describe("CONTACT_ON_ISSUED_DOCUMENT_SQL", () => {
       recipient: email === null ? null : JSON.stringify({ legalName: "L", country: "IN", email }),
     });
 
+  it("is true for the contact a sent proposal is addressed to (recipient.contactId), even after the email changed (M4.3)", async () => {
+    const c = await insertClient("C-M43-DOC");
+    const a = await addContact(c, "old@example.com");
+    const b = await addContact(c, "other@example.com");
+    // A sent proposal names the contact by id and by the email it had then; the email on the record has changed since.
+    await addDoc(c, "proposal", {
+      status: "sent",
+      series: "proposal",
+      fy: "2627",
+      number: 1,
+      number_display: "TH/PRP/2627/0001",
+      frozen_at: Date.now(),
+      recipient: JSON.stringify({ legalName: "L", country: "IN", email: "was@example.com", contactId: a }),
+    });
+    expect(await onDoc(a)).toBe(1);
+    expect(await onDoc(b)).toBe(0);
+  });
+
   it("is false with no document, with a draft, and with another contact's issued document", async () => {
     const c = await insertClient("C-M33-DOC1");
     const a = await addContact(c, "a@example.com");

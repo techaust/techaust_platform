@@ -74,6 +74,25 @@ describe("proposalEventStatements", () => {
         }
       });
 
+  // M4.3: both statements carry the caller's guard (the request's audit row), so a send that wrote nothing moves no lead.
+  it("with a guard that does not hold, neither the stage nor the timeline changes; with one that holds, both do", async () => {
+    const { id, docId } = await leadWithProposal("qualified");
+    const nothing = {
+      sql: (at: number) => `EXISTS (SELECT 1 FROM audit_log WHERE id = ?${at})`,
+      params: ["no-such-audit-row"],
+    };
+    await env.DB.batch(proposalEventStatements(env.DB, docId, "proposal_sent", 1_800_000_000_000, nothing));
+    expect(await first("SELECT stage FROM leads WHERE id = ?", id)).toEqual({ stage: "qualified" });
+    expect(await first("SELECT count(*) AS n FROM lead_activities WHERE lead_id = ?", id)).toEqual({ n: 0 });
+    const holds = { sql: (at: number) => `?${at} = 'yes'`, params: ["yes"] };
+    await env.DB.batch(proposalEventStatements(env.DB, docId, "proposal_sent", 1_800_000_000_000, holds));
+    expect(await first("SELECT stage FROM leads WHERE id = ?", id)).toEqual({ stage: "proposal_sent" });
+    expect(await first("SELECT count(*) AS n FROM lead_activities WHERE lead_id = ?", id)).toEqual({ n: 1 });
+    // A later version's send finds the lead already moved: nothing more is written.
+    await env.DB.batch(proposalEventStatements(env.DB, docId, "proposal_sent", 1_800_000_001_000, holds));
+    expect(await first("SELECT count(*) AS n FROM lead_activities WHERE lead_id = ?", id)).toEqual({ n: 1 });
+  });
+
   it("a document that is not linked to a lead changes nothing", async () => {
     const before = await first<{ n: number }>("SELECT count(*) AS n FROM lead_activities");
     await env.DB.batch(proposalEventStatements(env.DB, "no-such-document", "proposal_accepted"));

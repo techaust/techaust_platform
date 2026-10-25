@@ -7,6 +7,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./contact-access": "./src/contact-access.ts",
+    "./documents": "./src/documents.ts",
+    "./issue": "./src/issue.ts",
     "./lead-stage": "./src/lead-stage.ts",
     "./log": "./src/log.ts",
     "./portal-shared": "./src/portal-shared.ts",
