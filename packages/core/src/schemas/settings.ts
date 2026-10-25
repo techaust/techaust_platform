@@ -4,7 +4,7 @@
 // the admin (M3.1) and are never committed: this repository is public.
 //
 // Written with `zod/mini` (M3.1): the admin Worker validates these on every Settings save, and its bundle guard
-// (scripts/check-admin-bundle.mjs) keeps classic zod (~150 KB) out. The behaviour is the same as the classic version.
+// (scripts/worker-budget.mjs) keeps classic zod (~150 KB) out. The behaviour is the same as the classic version.
 import * as z from "zod/mini";
 import { EMAIL_TEMPLATES } from "../email-templates.ts";
 import { STATE_CODES, type StateCode, validateGstin } from "../gstin.ts";

@@ -97,3 +97,6 @@ Run `mvcb9b836a40`, window 11:26:06–11:31:57 UTC; 143 logins, 0 unexpected fai
 **Browser Argon2id** (m = 19 MiB, t = 2, p = 1; the sign-in page shows the time):
 - this PC (owner's Windows machine, local dev): **86–92 ms**
 - mid-range Android phone: _optional; open the staging sign-in page on your phone and tell me the number shown_ (target ≤ 800 ms)
+
+## Per-milestone cold reading (M3.4–M4.5 batch, lead 2026-10-25)
+After each batch PR deploys to staging, read `$workers.cpuTimeMs` of the first (cold) requests in Workers Logs for `/auth/me`, `/auth/salt` and the milestone's heaviest GET and POST. Pass: each ≤ 7 ms, none above 10. The build-time guard (`scripts/worker-budget.mjs`) is only a local proxy.
