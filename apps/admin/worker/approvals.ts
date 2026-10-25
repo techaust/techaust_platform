@@ -269,6 +269,8 @@ export const approvals = new Hono<AppEnv>()
         version: number;
       }>();
     if (!row) return err(c, NOT_FOUND, 404);
+    // An approval a save already expired (the content changed after the request) answers as expired, not as "decided".
+    if (row.status === "expired") return err(c, APPROVAL_EXPIRED, 409);
     if (row.status !== "pending") return err(c, APPROVAL_DECIDED, 409);
     const to = f.decision === "approve" ? "approved" : "rejected";
     const now = Date.now();

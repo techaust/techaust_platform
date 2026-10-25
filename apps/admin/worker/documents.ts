@@ -7,7 +7,7 @@
 // was written, one read says why (`stale_version`, `frozen`, ...).
 import { approvalState, TITLE_MAX } from "@techaust/core/documents";
 import { uuidv7 } from "@techaust/core/ids";
-import { loadDocument } from "@techaust/db/documents";
+import { loadDocument, type TermsRow } from "@techaust/db/documents";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { clientGoneSql } from "./anonymised.ts";
@@ -202,6 +202,7 @@ export async function readContext(c: Ctx, id: string) {
       (ctx[1]?.results[0] as
         | { id: string; name: string; email: string; anonymised_at: number | null }
         | undefined) ?? null,
+    newestTerms: (ctx[2]?.results[0] as TermsRow | undefined) ?? null,
     newestTermsId: (ctx[2]?.results[0] as { id: string } | undefined)?.id ?? null,
     settingsRows: (ctx[3]?.results ?? []) as { key: string; value: string; version: number }[],
   };

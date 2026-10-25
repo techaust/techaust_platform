@@ -4,7 +4,7 @@ import { env } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core/ids";
 import { mkItem } from "./test-catalogue.ts";
 import { insert, mkClient, mkContact } from "./test-clients.ts";
-import { call, one, type TestSession } from "./test-helpers.ts";
+import { call, one, type TestSession, withDb } from "./test-helpers.ts";
 
 // biome-ignore lint/suspicious/noExplicitAny: response bodies in tests are read loosely
 export type J = Record<string, any>;
@@ -94,6 +94,40 @@ export async function discount(s: TestSession, id: string, kind: "fixed" | "perc
   });
   if (res.status !== 200) throw new Error(`discount: ${res.status} ${await res.text()}`);
   return json(res);
+}
+
+/** Runs `before` once, just before the SEND batch (the one that holds `issue_guard`) is issued: a change that lands "between the read and the batch". */
+export function beforeSendBatch(before: () => Promise<void>): Env {
+  class Stmt {
+    constructor(
+      readonly real: D1PreparedStatement,
+      readonly sql: string,
+    ) {}
+    bind(...values: unknown[]) {
+      return new Stmt(this.real.bind(...values), this.sql);
+    }
+    first(...a: unknown[]) {
+      return (this.real.first as (...x: unknown[]) => Promise<unknown>)(...a);
+    }
+    run() {
+      return this.real.run();
+    }
+    all() {
+      return this.real.all();
+    }
+    raw(...a: unknown[]) {
+      return (this.real.raw as (...x: unknown[]) => Promise<unknown>)(...a);
+    }
+  }
+  const db = {
+    prepare: (q: string) => new Stmt(env.DB.prepare(q), q),
+    batch: async (stmts: (Stmt | D1PreparedStatement)[]) => {
+      const wrapped = stmts.map((s) => (s instanceof Stmt ? s : null));
+      if (wrapped.some((s) => s?.sql.includes("issue_guard"))) await before();
+      return env.DB.batch(stmts.map((s) => (s instanceof Stmt ? s.real : s)));
+    },
+  } as unknown as D1Database;
+  return withDb(db);
 }
 
 export const counter = async (series = "proposal") => {

@@ -311,6 +311,7 @@ export const documentSave = new Hono<AppEnv>().patch("/:id", param(idParam), bod
       export_mode: state.exportMode,
       terms_version_id: termsId,
     },
+    terms: termsId !== null && termsId === ctx.newestTermsId ? ctx.newestTerms : ctx.bundle.terms,
     approvals: ctx.bundle.approvals.map((a) =>
       hashChanged &&
       (a.status === "pending" || a.status === "approved") &&
