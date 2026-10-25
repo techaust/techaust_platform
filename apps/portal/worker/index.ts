@@ -13,7 +13,11 @@ import { csrf } from "./csrf.ts";
 import { docToken } from "./doc-token.ts";
 import { guard, ROUTES, tableOf } from "./guard.ts";
 import { me } from "./me.ts";
+import type { OfferViewer } from "./offer-core.ts";
+import { offerLinks } from "./offer-token.ts";
+import { offers } from "./offers.ts";
 import type { MagicLinkSender } from "./sender.ts";
+import { defaultViewer } from "./viewer.ts";
 import "./warm.ts"; // start-up warm-up of the sign-in path (CPU tuning 3)
 
 let isolateId: string | undefined;
@@ -25,12 +29,15 @@ export type TestRoute = { def: RouteDef; handler: (c: Ctx) => Response | Promise
 export type Deps = {
   /** How a link reaches a person. Default: the email queue (`queueSender`); tests inject a capturing sender. */
   sender?: MagicLinkSender;
+  /** How a stored proposal snapshot becomes the client's view. Default: the PDF's own projection (wired in stage B). */
+  viewer?: OfferViewer;
   testRoutes?: TestRoute[];
 };
 
 /** The API. A factory so a test can inject a capturing sender and add routes the table does not declare. */
 export function createApp(deps: Deps = {}) {
   const sender = deps.sender;
+  const viewer = deps.viewer ?? defaultViewer;
   const routeFor = tableOf([...ROUTES, ...(deps.testRoutes ?? []).map((t) => t.def)]);
   const app = new Hono<AppEnv>().basePath("/api");
   app.use(secureHeaders());
@@ -50,6 +57,7 @@ export function createApp(deps: Deps = {}) {
       c.set("ip", clipHeader(c.req.header("CF-Connecting-IP"), HEADER_LIMITS.ip));
       c.set("ua", clipHeader(c.req.header("User-Agent"), HEADER_LIMITS.ua));
       c.set("sender", sender);
+      c.set("viewer", viewer);
       // The handler that answers, not the last match (shared with admin; see packages/auth/src/route-table.ts).
       const row = answeringRow(matchedRoutes(c), (p) => routeFor(c.req.method, p));
       c.set("route", row);
@@ -62,6 +70,7 @@ export function createApp(deps: Deps = {}) {
           try {
             const stmts = [
               ...(c.var.touch ? [c.var.touch] : []),
+              ...(c.var.after ?? []),
               accessStmt(c.env.DB, accessEntry(c, c.res.status)),
             ];
             if (stmts.length === 1) await stmts[0]?.run();
@@ -100,7 +109,9 @@ export function createApp(deps: Deps = {}) {
   app.get("/v1/health", (c) => c.json({ ok: true, service: "portal", env: c.env.ENVIRONMENT }));
   app.route("/v1/auth", authRoutes);
   app.route("/v1/me", me);
+  app.route("/v1/offers", offers);
   app.route("/v1/t", docToken);
+  app.route("/v1/t/offer", offerLinks);
   for (const t of deps.testRoutes ?? []) {
     const path = t.def.path.replace(/^\/api/, "");
     if (t.def.method === "GET") app.get(path, (c) => t.handler(c));

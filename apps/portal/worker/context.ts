@@ -4,6 +4,7 @@ import { addressOf } from "@techaust/auth";
 import { type AccessEntry, accessStmt } from "@techaust/db/log";
 import type { Context } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
+import type { OfferViewer } from "./offer-core.ts";
 import type { ClientScope } from "./scope.ts";
 import type { MagicLinkSender } from "./sender.ts";
 
@@ -38,6 +39,10 @@ export type Vars = {
   who?: Who;
   /** The 15-minute `last_seen_at` refresh, when one is due: it rides in the request's single access write. */
   touch?: D1PreparedStatement;
+  /** M4.5: how the stored snapshot becomes the client's view (injected; wired to `@techaust/pdf/view` in stage B). */
+  viewer?: OfferViewer | undefined;
+  /** M4.5: statements that ride in the request's single after-the-answer write (the first-view update and its audit row). */
+  after?: D1PreparedStatement[];
   /** The handler already wrote this request's access row (inside its batch), or must write none. */
   accessDone?: boolean;
 };

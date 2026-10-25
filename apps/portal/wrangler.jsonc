@@ -32,7 +32,15 @@
   "secrets": { "required": ["PORTAL_KEY_PEPPER", "TURNSTILE_SECRET"] },
   // Email queue (producer, M2.4b): sign-in links go to the jobs Worker's email consumer. Production has no queue until
   // Phase 7 (owner approval).
-  "queues": { "producers": [{ "binding": "EMAIL_QUEUE", "queue": "techaust-local-email" }] },
+  // M4.5: PDF_QUEUE asks the jobs Worker for the acceptance certificate. DOCS (R2, read only here) serves the frozen proposal
+  // snapshot, the PDF and the certificate; the portal never writes to it. Production has neither until Phase 7.
+  "queues": {
+    "producers": [
+      { "binding": "EMAIL_QUEUE", "queue": "techaust-local-email" },
+      { "binding": "PDF_QUEUE", "queue": "techaust-local-pdf" }
+    ]
+  },
+  "r2_buckets": [{ "binding": "DOCS", "bucket_name": "techaust-local-docs" }],
   // D1 (docs/05 §5). Migrations live in packages/db; local dev and tests use a local database.
   "d1_databases": [
     {
@@ -57,7 +65,13 @@
         "TURNSTILE_HOSTNAMES": "techaust-platform-portal-staging.techaust-technologies-153.workers.dev"
       },
       "secrets": { "required": ["PORTAL_KEY_PEPPER", "TURNSTILE_SECRET"] },
-      "queues": { "producers": [{ "binding": "EMAIL_QUEUE", "queue": "techaust-staging-email" }] },
+      "queues": {
+        "producers": [
+          { "binding": "EMAIL_QUEUE", "queue": "techaust-staging-email" },
+          { "binding": "PDF_QUEUE", "queue": "techaust-staging-pdf" }
+        ]
+      },
+      "r2_buckets": [{ "binding": "DOCS", "bucket_name": "techaust-staging-docs" }],
       "d1_databases": [
         {
           "binding": "DB",
