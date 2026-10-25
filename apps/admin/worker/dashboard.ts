@@ -1,7 +1,7 @@
 // The dashboard (M3.5, ADM-DASH-01, the CRM tiles): ONE `db.batch`, live figures from indexed reads (docs/05 section 1.2 rule 7: `stats_daily`
 // is the nightly history, not what this reads). `tilesFor(role)` decides which tiles are built; a tile the role may not see is ABSENT from
-// the answer (never an "unavailable" stub), and its statements are never run. The finance and pipeline-value tiles arrive with M5/M6
-// and M4.3; the usage tile with M7.5. The activity feed lists exact action names per role (core/dashboard.ts) and never carries the
+// the answer (never an "unavailable" stub), and its statements are never run. The finance tile arrives with M5/M6, the usage tile with
+// M7.5; the pipeline-value tile is live since M4.3. The activity feed lists exact action names per role (core/dashboard.ts) and never carries the
 // audit summary, the IP address or the user agent.
 import { termsOn } from "@techaust/core/care";
 import {
@@ -43,6 +43,15 @@ export const ACTIVITY_SQL = (ownOnly: boolean, byAction: boolean) =>
    WHERE a.at >= ?1 AND a.action IN (SELECT value FROM json_each(?2))${ownOnly ? " AND (a.action NOT IN (SELECT value FROM json_each(?3)) OR a.actor_id = ?4)" : ""}
    ORDER BY a.at DESC, a.rowid DESC LIMIT ${ACTIVITY_LIMIT}`;
 
+/**
+ * The pipeline value (M4.3, ADM-DASH-01, a lead call: before tax): the offers out and still acceptable, by currency. A document is out while it is
+ * `sent` or `viewed` and its `valid_until` (IST date) is today or later. No "latest version" probe is needed: sending version n moves the sent
+ * versions before it to `revised` in the same batch, so at most one version of a group is ever sent or viewed. Both offer types count. The
+ * index is `documents_status_valid_until`; the unary plus keeps the type test from tempting the planner away from it.
+ */
+export const PIPELINE_SQL =
+  "SELECT currency, count(*) AS n, coalesce(sum(taxable_minor), 0) AS taxable FROM documents INDEXED BY documents_status_valid_until WHERE status IN ('sent', 'viewed') AND valid_until >= ?1 AND +type IN ('proposal', 'estimate') GROUP BY currency ORDER BY currency";
+
 export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
   const me = actor(c);
   const db = c.env.DB;
@@ -74,6 +83,7 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
         .bind(now),
     );
   }
+  if (tiles.has("pipelineValue")) add("pipeline", db.prepare(PIPELINE_SQL).bind(today));
   if (tiles.has("projects")) {
     add(
       "projects",
@@ -156,7 +166,16 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
       },
     };
   }
-  if (tiles.has("pipelineValue")) out.pipelineValue = { available: false, arrivesWith: "proposals" };
+  if (tiles.has("pipelineValue")) {
+    out.pipelineValue = {
+      asOf: today,
+      byCurrency: rows<{ currency: string; n: number; taxable: number }>("pipeline").map((r) => ({
+        currency: r.currency,
+        count: r.n,
+        taxableMinor: r.taxable,
+      })),
+    };
+  }
   if (tiles.has("finance"))
     out.finance = {
       available: false,

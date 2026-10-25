@@ -69,6 +69,21 @@ const PROJECT = [
   "file.delete",
 ] as const;
 const CARE = ["care_plan.create", "care_plan.terms", "care_plan.status"] as const;
+/**
+ * Proposals, estimates and their approvals (M4.3). `document.convert` is not here: it is a finance event (FINANCE_AUDIT_ACTIONS), so the owner
+ * and the accountant see it and Staff and Sales do not. `document.expire` is written by the jobs Worker (actor System).
+ */
+const DOCUMENT = [
+  "document.create",
+  "document.update",
+  "document.delete",
+  "document.revise",
+  "document.send",
+  "document.expire",
+  "approval.request",
+  "approval.decide",
+  "approval.expire",
+] as const;
 export const TIME_ACTIONS = ["time.create", "time.update", "time.delete"] as const;
 
 /** The owner's business actions: everything except sign-in and session events (`auth.*`), the bell (`notification.*`) and staff alerts. */
@@ -99,6 +114,7 @@ const OWNER = [
   "contact.anonymise",
   ...PROJECT,
   ...CARE,
+  ...DOCUMENT,
   ...TIME_ACTIONS,
   "audit.export",
   ...FINANCE_AUDIT_ACTIONS,
@@ -116,9 +132,10 @@ export const ACTIVITY_ACTIONS: Record<Role, readonly string[]> = {
     "contact.update",
     ...PROJECT,
     ...CARE,
+    ...DOCUMENT,
     ...TIME_ACTIONS,
   ]),
-  sales: unique([...LEAD, ...CLIENT_PLAIN, ...TIME_ACTIONS]),
+  sales: unique([...LEAD, ...CLIENT_PLAIN, ...DOCUMENT, ...TIME_ACTIONS]),
   accountant: unique(FINANCE_AUDIT_ACTIONS),
 };
 
