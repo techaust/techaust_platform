@@ -45,13 +45,7 @@ export function SectionsPanel(props: {
   const [open, setOpen] = useState<Set<string>>(
     () =>
       new Set(
-        props.sections
-          .filter(
-            (s) =>
-              placeholdersIn(`${s.title} ${s.bodyMd}`).length > 0 ||
-              (!s.hidden && s.bodyMd.trim() === "" && !isRequiredSection(s.kind)),
-          )
-          .map((s) => s.uid),
+        props.sections.filter((s) => placeholdersIn(`${s.title} ${s.bodyMd}`).length > 0).map((s) => s.uid),
       ),
   );
   const toggle = useCallback(

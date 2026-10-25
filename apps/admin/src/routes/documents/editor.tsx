@@ -138,7 +138,7 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
   const saveLine =
     s.status === "saving"
       ? DOC_COPY.saving
-      : s.status === "error" && s.error
+      : (s.status === "error" || s.status === "stale" || s.status === "frozen") && s.error
         ? notSaved(s.error.replace(/^\[Placeholder\] /, ""))
         : s.status === "saved"
           ? DOC_COPY.saved
@@ -263,16 +263,18 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
           {f.unresolved.length > 0 && (
             <div className="notice notice--warning holes" role="status">
               <Info size={20} />
-              <p>
-                {UNRESOLVED_AROUND[0]}
-                {f.unresolved.map((n, i) => (
-                  <span key={n}>
-                    <code className="hole">{`{{${n}}}`}</code>
-                    {i < f.unresolved.length - 1 ? ", " : ""}
-                  </span>
-                ))}
-                {UNRESOLVED_AROUND[1]}
-              </p>
+              <div>
+                <p>
+                  {UNRESOLVED_AROUND[0]}
+                  {f.unresolved.map((n, i) => (
+                    <span key={n}>
+                      <code className="hole">{`{{${n}}}`}</code>
+                      {i < f.unresolved.length - 1 ? ", " : ""}
+                    </span>
+                  ))}
+                  {UNRESOLVED_AROUND[1]}
+                </p>
+              </div>
             </div>
           )}
 

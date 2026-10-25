@@ -238,6 +238,9 @@ function CareForm(props: { id: string; clientCode: string; onDone: () => void; o
           <Notice tone="success">{careDone(code)}</Notice>
         </div>
         <div className="dialog__actions">
+          <button type="button" className="btn btn--secondary" onClick={props.onClose}>
+            Done
+          </button>
           <Link to={`/care-plans/${encodeURIComponent(made.id)}`} className="btn btn--primary">
             {DOC_PENDING.openCarePlan}
           </Link>

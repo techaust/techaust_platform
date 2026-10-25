@@ -151,6 +151,8 @@ export const UNRESOLVED_AROUND = [
   ". Fill them in before sending.",
 ] as const;
 export const unresolvedLine = (list: string) => `${UNRESOLVED_AROUND[0]}${list}${UNRESOLVED_AROUND[1]}`;
+/** 07-O §1, the Terms section's line (the terms text itself is the versioned block). */
+export const termsLine = (n: number) => `The terms below are version ${n} of our proposal terms.`;
 export const notSaved = (reason: string) => `Not saved: ${reason}`;
 export const guardLine = (bp: number) => `${bpToPercent(bp)} % off catalogue prices`;
 export const approvedBy = (person: string, date: string) => `Approved by ${person} on ${date}`;
@@ -224,7 +226,6 @@ export const DOC_PENDING = {
   searchNoMatch: pending("No proposal or estimate has a number starting with that."),
   customLinesCount: (n: number) => pending(n === 1 ? "1 custom line" : `${n} custom lines`),
   customLinesHint: pending("Custom lines are not counted in the discount guard."),
-  sentHeading: pending("Sent"),
   validUntil: (date: string) => pending(`Valid until ${date}`),
   readOnlyDraft: pending("Your role can read this draft but not change it."),
   openNewDraft: pending("Open the new version"),
@@ -432,7 +433,6 @@ export const mappedError = (e: unknown): unknown =>
 
 /** What stops a draft being sent, in 07-O's words (the server's list, in its order). */
 export function blockerText(b: Blocker): string {
-  if (b.code === "unresolved_placeholders" && b.names?.length) return unresolvedLine(b.names.join(", "));
   return errorFor(b.code) ?? b.code;
 }
 

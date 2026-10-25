@@ -15,9 +15,12 @@ import {
   DOC_TOASTS,
   dayText,
   formatIstDay,
+  isRequiredSection,
   moneyText,
+  STATUS_LABELS,
   sectionLabel,
   TYPE_LABELS,
+  termsLine,
   titleOf,
 } from "../../lib/documents.ts";
 import { type DocumentView, documentsApi } from "../../lib/documents-api.ts";
@@ -89,7 +92,7 @@ export function ReadView({ view, reload }: { view: DocumentView; reload: () => v
         </div>
         {v.sentAt && (
           <div className="client-strip__fact">
-            <dt>{DOC_PENDING.sentHeading}</dt>
+            <dt>{STATUS_LABELS.sent}</dt>
             <dd>{formatIstDay(v.sentAt)}</dd>
           </div>
         )}
@@ -180,7 +183,13 @@ export function ReadView({ view, reload }: { view: DocumentView; reload: () => v
                 <h3 id={`rs-${s.id}`} className="doc-sheet__h">
                   {s.title?.trim() || sectionLabel(s.kind)}
                 </h3>
-                <SectionBody bodyMd={s.bodyMd} />
+                {s.bodyMd?.trim() ? (
+                  <SectionBody bodyMd={s.bodyMd} />
+                ) : s.kind === "terms" && v.terms ? (
+                  <p>{termsLine(v.terms.version)}</p>
+                ) : !v.frozen && !isRequiredSection(s.kind) ? (
+                  <SectionBody bodyMd={null} />
+                ) : null}
                 {s.kind === "estimate" && estimateBlock}
               </section>
             ))}

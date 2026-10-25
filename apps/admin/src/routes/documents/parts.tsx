@@ -133,11 +133,7 @@ export function documentColumns(withClient: boolean): Column<ListRow>[] {
       header: "Valid until",
       cell: (r) => {
         const d = dayText(r.validUntil);
-        return d ? (
-          <time dateTime={r.validUntil ?? undefined}>{d}</time>
-        ) : (
-          <span className="muted">Not sent</span>
-        );
+        return d ? <time dateTime={r.validUntil ?? undefined}>{d}</time> : null;
       },
     },
   ];

@@ -96,9 +96,6 @@ export function LinesTable(props: { lines: ViewLine[]; currency: Currency; suppl
               {lineColumns.rate}
             </th>
             <th scope="col" className="num">
-              {lineColumns.discount}
-            </th>
-            <th scope="col" className="num">
               {lineColumns.taxable}
             </th>
             <th scope="col" className="num">
@@ -127,10 +124,26 @@ export function LinesTable(props: { lines: ViewLine[]; currency: Currency; suppl
                     {UNIT_LABELS[l.unit as keyof typeof UNIT_LABELS] ?? l.unit}
                   </span>
                 </td>
-                <td className="num">{moneyText(l.rateMinor, currency)}</td>
-                <td className="num">{discountText(l, currency)}</td>
+                <td className="num">
+                  {moneyText(l.rateMinor, currency)}
+                  {l.discount && (
+                    <span className="read-lines__unit">
+                      {lineColumns.discount} {discountText(l, currency)}
+                    </span>
+                  )}
+                </td>
                 <td className="num">{f.taxableMinor === null ? "" : moneyText(f.taxableMinor, currency)}</td>
-                <td className="num">{lineTaxText(f, currency, props.supply)}</td>
+                <td className="num">
+                  {/* CGST and SGST one under the other, so the column stays narrow. */}
+                  {lineTaxText(f, currency, props.supply)
+                    .split(" + ")
+                    .map((part, i) => (
+                      // biome-ignore lint/suspicious/noArrayIndexKey: CGST then SGST, a fixed pair that never reorders (equal amounts)
+                      <span key={i} className="read-lines__tax">
+                        {part}
+                      </span>
+                    ))}
+                </td>
                 <td className="num">
                   {f.lineTotalMinor === null ? "" : moneyText(f.lineTotalMinor, currency)}
                 </td>
