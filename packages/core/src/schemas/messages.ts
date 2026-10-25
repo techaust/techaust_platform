@@ -4,6 +4,7 @@
 import * as z from "zod";
 import { EMAIL_TEMPLATES } from "../email-templates.ts";
 import { LEAD_REF } from "../lead-ref.ts";
+import { ATTACHMENT_KEY } from "../offers.ts";
 import { contactForm, quoteForm } from "./forms.ts";
 
 /** Names of the fields the form pages post besides the visitor's answers (the designer's step uses these). */
@@ -89,6 +90,20 @@ export type LeadMessage = z.infer<typeof leadMessage>;
 
 export { EMAIL_TEMPLATES, type EmailTemplate } from "../email-templates.ts";
 
+/**
+ * A file on an email (M4.5): a key in the DOCS bucket. The key must match the allow-list (a sent proposal or estimate PDF, or its
+ * certificate), so a crafted message can never make the consumer read another object. The consumer checks the size (5 MB) and
+ * sends the email link-only when the object is missing or too large.
+ */
+export const emailAttachment = z.object({
+  key: z.string().max(120).regex(ATTACHMENT_KEY),
+  filename: z
+    .string()
+    .max(100)
+    .regex(/^[A-Za-z0-9][A-Za-z0-9._ -]*.pdf$/),
+});
+export type EmailAttachment = z.infer<typeof emailAttachment>;
+
 export const emailMessage = z.object({
   template: z.enum(EMAIL_TEMPLATES),
   to: z.email().max(254),
@@ -96,6 +111,8 @@ export const emailMessage = z.object({
   data: z.record(z.string(), z.string().max(5_000)),
   /** What the email is about; with `template` it identifies the email, so a redelivery sends nothing twice. */
   entity: z.object({ type: z.string().min(1).max(40), id: z.string().min(1).max(80) }),
+  /** M4.5: attach a stored PDF (see `emailAttachment`). */
+  attachment: emailAttachment.optional(),
 });
 export type EmailMessage = z.infer<typeof emailMessage>;
 
@@ -107,5 +124,33 @@ export type EmailMessage = z.infer<typeof emailMessage>;
 export const staffAlertMessage = z.object({ kind: z.literal("staff.alert"), auditId: z.uuid() });
 export type StaffAlertMessage = z.infer<typeof staffAlertMessage>;
 
-/** What the `email` queue carries: an email to send, or a staff alert to expand into emails. */
-export type EmailQueueMessage = EmailMessage | StaffAlertMessage;
+/**
+ * M4.5 expansion messages on the `email` queue. Ids only, never an address or a name: the jobs Worker reads the rows and queues
+ * ordinary `EmailMessage`s. `offer.send` is one recipient (a `document_sends` row); `offer.decided` writes the bell rows and
+ * nothing for the client; `offer.accepted` sends the confirmation once the certificate exists; `approval.notify` is the M4.3
+ * approval emails (requested: to the active owners; decided: to the requester).
+ */
+export const offerSendMessage = z.object({ kind: z.literal("offer.send"), sendId: z.uuid() });
+export const offerDecidedMessage = z.object({
+  kind: z.literal("offer.decided"),
+  documentId: z.uuid(),
+  decision: z.enum(["accepted", "declined"]),
+});
+export const offerAcceptedMessage = z.object({ kind: z.literal("offer.accepted"), acceptanceId: z.uuid() });
+export const approvalNotifyMessage = z.object({
+  kind: z.literal("approval.notify"),
+  approvalId: z.uuid(),
+  event: z.enum(["requested", "decided"]),
+});
+export type OfferSendMessage = z.infer<typeof offerSendMessage>;
+export type OfferDecidedMessage = z.infer<typeof offerDecidedMessage>;
+export type OfferAcceptedMessage = z.infer<typeof offerAcceptedMessage>;
+export type ApprovalNotifyMessage = z.infer<typeof approvalNotifyMessage>;
+export type OfferExpansionMessage =
+  | OfferSendMessage
+  | OfferDecidedMessage
+  | OfferAcceptedMessage
+  | ApprovalNotifyMessage;
+
+/** What the `email` queue carries: an email to send, or a message to expand into emails. */
+export type EmailQueueMessage = EmailMessage | StaffAlertMessage | OfferExpansionMessage;

@@ -337,8 +337,8 @@ export const NOT_YOU = {
 const notYouFor = (role: string | undefined) => (role === "owner" ? NOT_YOU.owner : NOT_YOU.member);
 
 /** One paragraph of an email: plain text and HTML (already escaped), so both versions say the same words. */
-type Para = { text: string; html: string };
-const para = (text: string, html = e(text)): Para => ({ text, html });
+export type Para = { text: string; html: string };
+export const para = (text: string, html = e(text)): Para => ({ text, html });
 /** A sentence with the time in it: the time bold (and kept on one line) in HTML. */
 const withTime = (before: string, time: string, after: string): Para => ({
   text: `${before}${time}${after}`,
@@ -397,7 +397,7 @@ export function portalMagicLink(d: MagicLinkData, opts: LayoutOptions): Rendered
 }
 
 /** A staff security email: the subject as its heading, the paragraphs, then optional extras in order. */
-function securityEmail(
+export function securityEmail(
   subject: string,
   opts: LayoutOptions,
   parts: {

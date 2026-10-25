@@ -6,6 +6,24 @@
 import { AwsClient, AwsV4Signer } from "aws4fetch";
 import { formatAddress, headerValue } from "./headers.ts";
 
+/** One file on an email (SES v2 `Simple.Attachments`, confirmed in the SES developer guide): the bytes, a safe file name, a type. */
+export type Attachment = { fileName: string; contentType: string; bytes: Uint8Array };
+
+/**
+ * Base64 of bytes. Uses the native `Uint8Array.prototype.toBase64` where the runtime has it (fast, no string building) and
+ * falls back to `btoa` over 32 KB chunks, so a large PDF never builds one huge argument list.
+ */
+export function toBase64(bytes: Uint8Array): string {
+  const native = (bytes as Uint8Array & { toBase64?: () => string }).toBase64;
+  if (typeof native === "function") return native.call(bytes);
+  let out = "";
+  const step = 0x8000;
+  for (let i = 0; i < bytes.length; i += step) {
+    out += String.fromCharCode(...bytes.subarray(i, i + step));
+  }
+  return btoa(out);
+}
+
 export type SendInput = {
   /** Display name + address; the name is quoted and stripped of control characters. */
   from: { name?: string; address: string };
@@ -14,6 +32,8 @@ export type SendInput = {
   subject: string;
   html: string;
   text: string;
+  /** Optional files (M4.5: the proposal PDF). Absent for every other email. */
+  attachments?: Attachment[];
 };
 
 export type SendResult =
@@ -84,6 +104,17 @@ export function sesTransport(config: SesConfig): Transport {
                 Html: { Data: input.html, Charset: "UTF-8" },
                 Text: { Data: input.text, Charset: "UTF-8" },
               },
+              ...(input.attachments?.length
+                ? {
+                    Attachments: input.attachments.map((a) => ({
+                      RawContent: toBase64(a.bytes),
+                      FileName: a.fileName,
+                      ContentType: a.contentType,
+                      ContentDisposition: "ATTACHMENT",
+                      ContentTransferEncoding: "BASE64",
+                    })),
+                  }
+                : {}),
             },
           },
           ...(config.configurationSet ? { ConfigurationSetName: config.configurationSet } : {}),

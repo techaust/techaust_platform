@@ -14,6 +14,11 @@ export const TEMPLATE_NAMES: Record<EmailTemplate, string> = {
   "staff.lockout_owner": "Account locked (to owners)",
   "staff.invite": "Staff invite",
   "lead.reply": "Lead reply",
+  "offer.sent": "Proposal or estimate sent",
+  "offer.accepted.client": "Acceptance confirmation (client)",
+  "offer.accepted.staff": "Acceptance notice (team)",
+  "approval.requested": "Approval requested",
+  "approval.decided": "Approval decided",
 };
 
 const SAMPLE = "https://example.test/sample";
@@ -67,6 +72,48 @@ export function sampleData(
       return { ...person, time, member_name: "Sample Member", admin_url: SAMPLE };
     case "staff.invite":
       return { inviter_name: who.name, role: "Staff", url: `${SAMPLE}/invite` };
+    case "offer.sent":
+      return {
+        first_name,
+        kind: "proposal",
+        title: "Sample website rebuild",
+        number: "TH/PRP/2627/0001",
+        version: "1",
+        valid_until: "30 Nov 2026",
+        total: "₹1,00,000.00",
+        url: `${SAMPLE}/offer`,
+        attached: "1",
+        sender_name: who.name,
+      };
+    case "offer.accepted.client":
+    case "offer.accepted.staff":
+      return {
+        typed_name: "Sample Person",
+        accepted_at_ist: time,
+        title: "Sample website rebuild",
+        number: "TH/PRP/2627/0001",
+        version: "1",
+        url: `${SAMPLE}/offer`,
+        next_step: "we'll confirm the start date with you",
+      };
+    case "approval.requested":
+      return {
+        requester_name: "Sample Member",
+        request_reason: "a 15 % discount",
+        title: "Sample website rebuild",
+        version: "1",
+        amount: "₹85,000.00",
+        admin_url: SAMPLE,
+      };
+    case "approval.decided":
+      return {
+        decision: "Approved",
+        approver_name: who.name,
+        title: "Sample website rebuild",
+        version: "1",
+        decision_note: "Fine for this client",
+        admin_url: SAMPLE,
+      };
     case "lead.reply":
       return {
         subject: "Re: your enquiry (L-23456)",
