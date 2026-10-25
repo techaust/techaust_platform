@@ -610,7 +610,7 @@
 }
 
 .target-picker__list {
-  display: grid;
+  display: block;
   max-height: 16rem;
   overflow-y: auto;
   margin: 0;

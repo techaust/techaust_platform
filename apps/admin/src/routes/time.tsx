@@ -250,9 +250,14 @@ function TimeScreen() {
         today={today}
         me={{ id: myId, name: user.name }}
         canWriteAny={canWriteAny}
-        onClose={() => setEditing(null)}
+        onClose={() => {
+          setEditing(null);
+          // Opened from the dashboard's "Log time" link: the address forgets it, so a reload doesn't open it again.
+          if (params.get("log")) set({ log: null });
+        }}
         onSaved={() => {
           setEditing(null);
+          if (params.get("log")) set({ log: null });
           reloadAll();
         }}
         onStale={() => {
