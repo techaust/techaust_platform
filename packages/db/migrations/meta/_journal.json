@@ -239,6 +239,20 @@
       "when": 1792959212917,
       "tag": "0033_documents_pdf_pending",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "6",
+      "when": 1792963764820,
+      "tag": "0034_offers",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "6",
+      "when": 1792963766935,
+      "tag": "0035_offer_triggers",
+      "breakpoints": true
     }
   ]
 }
