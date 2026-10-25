@@ -22,7 +22,8 @@ export function cleanSvg(name: string, raw: string): string {
   if (/<script/i.test(svg)) throw new Error(`${name}: contains <script>`);
   if (/\son[a-z]+\s*=/i.test(svg)) throw new Error(`${name}: contains an event handler`);
   if (/(?:xlink:)?href\s*=\s*["'](?!#)/i.test(svg)) throw new Error(`${name}: contains an external href`);
-  if (/<foreignObject/i.test(svg) || /url\(\s*["']?(?!#)/i.test(svg)) throw new Error(`${name}: loads a resource`);
+  if (/<foreignObject/i.test(svg) || /url\(\s*["']?(?!#)/i.test(svg))
+    throw new Error(`${name}: loads a resource`);
   return svg;
 }
 

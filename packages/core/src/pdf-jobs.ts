@@ -5,7 +5,12 @@ import { EXPORT_PLACE_OF_SUPPLY, isStateCode, STATE_CODES } from "./gstin.ts";
 
 export type PdfSnapshotReason = "send" | "retry" | "sweep";
 
-export type PdfSnapshotMessage = { v: 1; kind: "pdf.snapshot"; documentId: string; reason: PdfSnapshotReason };
+export type PdfSnapshotMessage = {
+  v: 1;
+  kind: "pdf.snapshot";
+  documentId: string;
+  reason: PdfSnapshotReason;
+};
 /** `hop` counts pacing re-sends (a 429 sends a delayed copy), capped at `PDF_MAX_HOPS`. */
 export type PdfRenderMessage = { v: 1; kind: "pdf.render"; documentId: string; hop: number };
 /** From the cron: enqueues the documents whose PDF is still missing (the worker caps a run at 20). */
@@ -58,7 +63,8 @@ export function pdfKeys(i: PdfKeyInput): { snapshot: string; pdf: string } {
   if (!Number.isInteger(i.number) || i.number < 1 || i.number > 999_999_999) {
     throw new RangeError("pdfKeys: invalid number");
   }
-  if (!Number.isInteger(i.version) || i.version < 1 || i.version > 999) throw new RangeError("pdfKeys: invalid version");
+  if (!Number.isInteger(i.version) || i.version < 1 || i.version > 999)
+    throw new RangeError("pdfKeys: invalid version");
   const stem = `docs/${i.type}/${i.fy}/${String(i.number).padStart(4, "0")}-v${i.version}`;
   return { snapshot: `${stem}.json`, pdf: `${stem}.pdf` };
 }
