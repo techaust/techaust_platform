@@ -108,11 +108,7 @@ async function putOnce(
 export type SnapshotOutcome = "queued" | "skipped" | "refused";
 
 /** Handles one `pdf.snapshot` message. Throws for anything a retry can fix (D1, R2, the queue); returns for everything else. */
-export async function processSnapshot(
-  env: Env,
-  msg: PdfSnapshotMessage,
-  now = Date.now(),
-): Promise<SnapshotOutcome> {
+export async function processSnapshot(env: Env, msg: PdfSnapshotMessage): Promise<SnapshotOutcome> {
   const bundle = bundleOf<TermsRow>(await env.DB.batch(loadStatements(env.DB, msg.documentId)));
   if (!bundle) return skip("not_found");
   const d = bundle.document;
@@ -391,7 +387,7 @@ export async function processPdf(
     logEvent("pdf.unknown");
     return;
   }
-  if (body.kind === "pdf.snapshot") await processSnapshot(env, body, now);
+  if (body.kind === "pdf.snapshot") await processSnapshot(env, body);
   else if (body.kind === "pdf.render") await processRender(env, body, now, clock);
   else await processSweep(env, body);
 }

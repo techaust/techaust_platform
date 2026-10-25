@@ -91,8 +91,8 @@ export const companySettings = z
     /** ADM-SET-01 (lead decision): the logos are chosen from the generated brand files, never uploaded (uploads wait for R2, M3.4). */
     logoLight: z.enum(BRAND_LOGOS),
     logoDark: z.enum(BRAND_LOGOS),
-    /** ADM-SET-01, M4.4: the signature image (optional). Set and cleared only by `PUT/DELETE /settings/signature`. */
-    signature: z.nullable(signatureRef),
+    /** ADM-SET-01, M4.4: the signature image (optional; absent reads as null). Set and cleared only by `PUT/DELETE /settings/signature`. */
+    signature: z.optional(z.nullable(signatureRef)),
   })
   .check(
     z.refine((c) => c.gstin === null || c.gstin.startsWith(c.stateCode), {

@@ -8,7 +8,7 @@ import { contentHash, type DraftContent, type SnapshotInput, snapshotSha256 } fr
 import { SCHEDULE_TRIGGERS } from "@techaust/core/schedule-text";
 import type { ComputedDocument } from "@techaust/core/tax";
 import { sha256Hex } from "./hash.ts";
-import type { Envelope, EnvelopeSnapshot, RecipientSnap, SnapshotHeader } from "./types.ts";
+import type { Envelope, RecipientSnap, SnapshotHeader } from "./types.ts";
 
 export type VerifyCode =
   | "version"

@@ -129,7 +129,7 @@ export const settingsSignature = new Hono<AppEnv>()
         mime: ref.mime,
         size: ref.size,
         sha12: sha256.slice(0, 12),
-        replaced: before.signature !== null,
+        replaced: Boolean(before.signature),
       },
     });
     if (!done) {

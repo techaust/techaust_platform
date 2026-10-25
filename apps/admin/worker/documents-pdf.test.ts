@@ -3,7 +3,13 @@
 import { env } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core/ids";
 import { loadDocument } from "@techaust/db/documents";
-import { envelopeOfBundle, parseEnvelope, serializeEnvelope, verifyEnvelope } from "@techaust/pdf";
+import {
+  type Envelope,
+  envelopeOfBundle,
+  parseEnvelope,
+  serializeEnvelope,
+  verifyEnvelope,
+} from "@techaust/pdf";
 import { beforeAll, describe, expect, it } from "vitest";
 import { pdfFilename } from "./document-pdf.ts";
 import { putPaymentTerms } from "./test-catalogue.ts";
@@ -98,9 +104,17 @@ describe("the real send path and the PDF engine [JOB-PDF-01]", () => {
     const out = await envelopeOfBundle(bundle as Parameters<typeof envelopeOfBundle>[0]);
     if (!out.ok) throw new Error(out.code);
     const text = serializeEnvelope(out.envelope);
-    const edits: [string, (e: ReturnType<typeof structuredClone>) => void, string][] = [
-      ["a line", (e) => (e.snapshot.lines[0].description = "Changed"), "content_hash"],
-      ["a section", (e) => (e.snapshot.sections[0].bodyMd = "Changed"), "content_hash"],
+    const edits: [string, (e: Envelope) => void, string][] = [
+      [
+        "a line",
+        (e) => ((e.snapshot.lines[0] as { description: string }).description = "Changed"),
+        "content_hash",
+      ],
+      [
+        "a section",
+        (e) => ((e.snapshot.sections[0] as { bodyMd: string }).bodyMd = "Changed"),
+        "content_hash",
+      ],
       ["the recipient", (e) => (e.snapshot.header.recipient.legalName = "Someone Else"), "snapshot_hash"],
       ["the supplier", (e) => (e.snapshot.header.issuer.company.tradeName = "Other"), "snapshot_hash"],
       ["the terms text", (e) => (e.snapshot.terms.bodyMd += " More."), "terms_hash"],
