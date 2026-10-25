@@ -450,7 +450,8 @@ function ScheduleEditor(props: {
     total === 10_000
       ? scheduleWords(parsed.map((s) => ({ label: s.label.trim(), pctBp: s.pctBp ?? 0, trigger: s.trigger })))
       : null;
-  const scheduleError = props.error("ce-schedule");
+  // A total that adds up again clears the error at once (the other field errors wait for the next save).
+  const scheduleError = total === 10_000 && props.steps.length ? undefined : props.error("ce-schedule");
   return (
     <section className="lead-panel" aria-labelledby="ce-sched-h">
       <h2 id="ce-sched-h" className="lead-panel__title">
