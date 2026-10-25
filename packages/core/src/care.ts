@@ -27,6 +27,8 @@ export const CARE_REACHED_BP = 10_000;
 /** Included hours are set in 15-minute steps, so the overage quantity of M5.4 is exact. */
 export const CARE_STEP_MINUTES = 15;
 export const MAX_BILLING_DAY = 28;
+/** The highest overage rate a plan can carry, in minor units per hour (10 million rupees or dollars: a typing slip, not a rate). */
+export const MAX_OVERAGE_RATE_MINOR = 1_000_000_000;
 
 /** Active → paused or cancelled; paused → active or cancelled; cancelled is terminal. */
 export const CARE_TRANSITIONS: Readonly<Record<CareStatus, readonly CareStatus[]>> = {
@@ -207,9 +209,18 @@ const minutesOf = (usage: UsageMap, period: Period, billingDay: number): PeriodM
 const includedOf = (input: CareUsageInput, period: Period): number =>
   hasAllowance(input.statuses, period) ? (termsOn(input.terms, period.start)?.includedMinutes ?? 0) : 0;
 
-/** The amount for `minutes` at `rateMinor` per hour, half up to the minor unit. */
-export const overageAmount = (minutes: number, rateMinor: number): number =>
-  Number(divRoundHalfUp(BigInt(minutes) * BigInt(rateMinor), 60n));
+/**
+ * The amount for `minutes` at `rateMinor` per hour, half up to the minor unit. Throws (RangeError) when the result is not a safe integer,
+ * rather than returning a rounded wrong number; the rate is capped at `MAX_OVERAGE_RATE_MINOR` where it is entered.
+ */
+export const overageAmount = (minutes: number, rateMinor: number): number => {
+  const amount = divRoundHalfUp(BigInt(minutes) * BigInt(rateMinor), 60n);
+  if (amount > BigInt(Number.MAX_SAFE_INTEGER) || amount < BigInt(Number.MIN_SAFE_INTEGER))
+    throw new RangeError(
+      `The overage amount is not a safe integer: ${minutes} minutes at ${rateMinor} an hour`,
+    );
+  return Number(amount);
+};
 
 /**
  * Hours used against hours included for the plan's period that contains `date`; null before the plan starts.

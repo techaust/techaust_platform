@@ -141,6 +141,7 @@ describe("POST /care-plans [ADM-CARE-01]", () => {
       { priceMinor: -1 },
       { priceMinor: 1.5 },
       { overageRateMinor: -5 },
+      { overageRateMinor: 1_000_000_001 }, // above the cap (early check L2)
       { tier: "gold" },
       { rollover: "forever" },
       { currency: "USD" },

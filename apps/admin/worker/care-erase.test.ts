@@ -3,6 +3,7 @@
 // stay. A business client's entries are untouched, and a legal hold writes nothing. Also: no audit row of the care and time routes holds
 // note text.
 import { describe, expect, it } from "vitest";
+import { TIME_NOTE_CLEAR_SQL } from "./clients.ts";
 import { longSession, mkLog, mkOpenProject, mkPlan, today } from "./test-care.ts";
 import { mkClient, mkContact } from "./test-clients.ts";
 import { bodyOf, call, countOf, one, rows, sessionFor } from "./test-helpers.ts";
@@ -118,6 +119,24 @@ describe("erase and anonymise: time-entry notes [Q7]", () => {
       (await one<{ updated_at: number }>("SELECT updated_at FROM time_logs WHERE id = ?", f.onProject))
         ?.updated_at,
     ).toBeGreaterThan(0);
+  });
+});
+
+describe("the note-clearing statement uses indexes, with time_logs_care_plan_date gone [early check L5]", () => {
+  it("each side of the OR is a SEARCH on time_logs (project/date and care usage), never a SCAN", async () => {
+    const plan = (
+      await rows<{ detail: string }>(
+        `EXPLAIN QUERY PLAN ${TIME_NOTE_CLEAR_SQL("EXISTS (SELECT 1 FROM audit_log WHERE id = ?3)")}`,
+        "contact-x",
+        1,
+        "audit-x",
+      )
+    )
+      .map((r) => r.detail)
+      .join("\n");
+    expect(plan).not.toMatch(/SCAN time_logs/);
+    expect(plan).toMatch(/SEARCH time_logs USING (COVERING )?INDEX time_logs_project_date/);
+    expect(plan).toMatch(/SEARCH time_logs USING (COVERING )?INDEX time_logs_care_usage/);
   });
 });
 

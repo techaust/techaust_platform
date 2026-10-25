@@ -19,8 +19,8 @@ import {
   canMoveCare,
   careSourcesOf,
   MAX_BILLING_DAY,
+  MAX_OVERAGE_RATE_MINOR,
   ROLLOVER_RULES,
-  statusEffectiveOn,
   termsEffectiveFrom,
   termsOn,
 } from "@techaust/core/care";
@@ -68,6 +68,8 @@ const MAX_INCLUDED_MINUTES = 120_000;
 // ---- schemas (module top level) ---------------------------------------------------------------------------------------------
 
 const money = z.int().check(z.gte(0), z.lte(MAX_MINOR));
+/** An hourly overage rate: capped so `overageAmount` stays a safe integer for any hours a plan can log. */
+const rate = z.int().check(z.gte(0), z.lte(MAX_OVERAGE_RATE_MINOR));
 const included = z.int().check(
   z.gte(0),
   z.lte(MAX_INCLUDED_MINUTES),
@@ -84,7 +86,7 @@ const createBody = z.strictObject({
   priceMinor: money,
   includedMinutes: included,
   aiOpsMinor: z.optional(z.nullable(money)),
-  overageRateMinor: z.optional(z.nullable(money)),
+  overageRateMinor: z.optional(z.nullable(rate)),
   rollover,
   startDate,
   billingDay: z.int().check(z.gte(1), z.lte(MAX_BILLING_DAY)),
@@ -95,7 +97,7 @@ const termsBody = z.strictObject({
   priceMinor: z.optional(money),
   includedMinutes: z.optional(included),
   aiOpsMinor: z.optional(z.nullable(money)),
-  overageRateMinor: z.optional(z.nullable(money)),
+  overageRateMinor: z.optional(z.nullable(rate)),
   rollover: z.optional(rollover),
 });
 const statusBody = z.strictObject({ to: z.enum(CARE_STATUSES), expectedUpdatedAt: z.int() });
@@ -536,6 +538,8 @@ export const carePlans = new Hono<AppEnv>()
     // The moment of the change is also this plan's new version: the write only happens at `updated_at = expectedUpdatedAt`, so the
     // new version is later than that, even inside the same millisecond, and the history rows keep their order.
     const at = Math.max(Date.now(), expectedUpdatedAt + 1);
+    // The date the change takes effect is the one the history row was written with (`max(today, start date)`), read back from the insert.
+    let effectiveOn: string | undefined;
     const done = await mutate(c, {
       action: "care_plan.status",
       entityType: "care_plan",
@@ -555,7 +559,8 @@ export const carePlans = new Hono<AppEnv>()
         db
           .prepare(
             `INSERT INTO care_plan_status_log (id, care_plan_id, status, effective_on, created_by, created_at)
-             SELECT ?3, p.id, ?4, max(?5, p.start_date), ?6, ?7 FROM care_plans p WHERE p.id = ?1 AND p.updated_at = ?2 AND ${g.sql(8)}`,
+             SELECT ?3, p.id, ?4, max(?5, p.start_date), ?6, ?7 FROM care_plans p WHERE p.id = ?1 AND p.updated_at = ?2 AND ${g.sql(8)}
+             RETURNING effective_on`,
           )
           .bind(id, expectedUpdatedAt, logId, to, today, me.id, at, ...g.params),
         db
@@ -565,17 +570,13 @@ export const carePlans = new Hono<AppEnv>()
           )
           .bind(id, expectedUpdatedAt, to, at, ...g.params),
       ],
+      // The statements after the audit row follow it in order: the history insert is the first.
+      onResults: (results, auditAt) => {
+        effectiveOn = (results[auditAt + 1]?.results[0] as { effective_on?: string } | undefined)
+          ?.effective_on;
+      },
     });
-    if (done) {
-      const plan = await db
-        .prepare("SELECT start_date, billing_day FROM care_plans WHERE id = ?1")
-        .bind(id)
-        .first<{ start_date: string; billing_day: number }>();
-      const effectiveOn = plan
-        ? statusEffectiveOn(today, { billingDay: plan.billing_day, startDate: plan.start_date })
-        : today;
-      return c.json({ ok: true, status: to, effectiveOn, updatedAt: at });
-    }
+    if (done) return c.json({ ok: true, status: to, effectiveOn: effectiveOn ?? today, updatedAt: at });
     const again = await db
       .prepare(
         `SELECT status, updated_at, ${clientGoneSql("client_id")} AS gone FROM care_plans WHERE id = ?1`,

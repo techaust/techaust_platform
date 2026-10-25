@@ -302,6 +302,16 @@ describe("the figures against a fixture", () => {
     expect((await dash((await sessionFor("sales")).cookie)).tiles.myTime).toBeUndefined();
   });
 
+  it("a plan that has not started is counted apart, not as active, and has no row [early check L3]", async () => {
+    const o = await sessionFor("owner");
+    const before = (await dash(o.cookie)).tiles.careBurn;
+    await mkPlan(o.id, { start: plus(20), included: 600 });
+    const after = (await dash(o.cookie)).tiles.careBurn;
+    expect(after.counts.active).toBe(before.counts.active);
+    expect(after.counts.notStarted).toBe(before.counts.notStarted + 1);
+    expect(after.rows).toHaveLength(before.rows.length);
+  });
+
   it("care-plan burn: counts, the rows by burn descending, equal to the plan page; stopped plans are not in it", async () => {
     const o = await sessionFor("owner");
     const staff = await sessionFor("staff");

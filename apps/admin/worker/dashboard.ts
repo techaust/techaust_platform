@@ -211,7 +211,9 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
     burn.sort((a, b) => (b.u.burnBp ?? -1) - (a.u.burnBp ?? -1) || a.d.plan.id.localeCompare(b.d.plan.id));
     out.careBurn = {
       counts: {
-        active: plans.size,
+        /** Plans with a current period; a plan whose start date hasn't come is counted apart (`notStarted`), never in the burn. */
+        active: burn.length,
+        notStarted: plans.size - burn.length,
         near: burn.filter((b) => b.u.flag === "near").length,
         reached: burn.filter((b) => b.u.flag === "reached").length,
       },

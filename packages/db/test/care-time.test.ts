@@ -203,9 +203,11 @@ describe("the M3.5 tables (0026)", () => {
         "time_logs_date",
         "time_logs_care_usage",
         "time_logs_user_date",
-        "time_logs_care_plan_date",
+        "time_logs_project_date",
       ]),
     );
+    // dropped by 0028: time_logs_care_usage starts with the same two columns (early check L5)
+    expect(await names("time_logs")).not.toContain("time_logs_care_plan_date");
     expect(await names("care_plans")).toEqual(
       expect.arrayContaining(["care_plans_created", "care_plans_status_created"]),
     );

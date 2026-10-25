@@ -47,6 +47,7 @@ describe("migrations apply cleanly to a fresh D1", () => {
       "0025_project_triggers.sql",
       "0026_care_time.sql",
       "0027_time_triggers.sql",
+      "0028_drop_time_logs_care_plan_date.sql",
     ]);
   });
 

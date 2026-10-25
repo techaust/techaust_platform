@@ -388,7 +388,7 @@ export const timeLogs = sqliteTable(
   },
   (t) => [
     index("time_logs_project_date").on(t.projectId, t.workDate),
-    index("time_logs_care_plan_date").on(t.carePlanId, t.workDate),
+    // (M3.5 dropped time_logs_care_plan_date: time_logs_care_usage starts with the same two columns and serves every query it did.)
     index("time_logs_user_date").on(t.userId, t.workDate),
     // M3.5: the timesheet's date range for everyone (the accountant and the owner read all entries).
     index("time_logs_date").on(t.workDate, t.id),

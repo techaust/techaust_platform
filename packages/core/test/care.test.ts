@@ -13,6 +13,7 @@ import {
   careSourcesOf,
   hasAllowance,
   lastPeriods,
+  MAX_OVERAGE_RATE_MINOR,
   nextPeriodStart,
   overageAmount,
   overageQuantityMilli,
@@ -335,6 +336,15 @@ describe("overage [ADM-CARE-03]: the analyst's cases, by hand", () => {
     expect(over(199_998)).toBe(50_000);
     expect(over(199_997)).toBe(49_999);
     expect(over(1)).toBe(0);
+  });
+
+  it("7b. throws rather than returning a wrong number when the amount is not a safe integer; the capped rate never does", () => {
+    expect(() => overageAmount(1_440_000_000_000, 1_000_000_000)).toThrow(RangeError);
+    expect(() => overageAmount(Number.MAX_SAFE_INTEGER, 1_000_000_000)).toThrow(RangeError);
+    expect(() => overageAmount(1.5, 100)).toThrow(RangeError); // BigInt of a fraction
+    // the cap, with a whole period of minutes (a year of 24-hour days is 525,600 minutes): far below 2^53
+    expect(overageAmount(525_600, MAX_OVERAGE_RATE_MINOR)).toBe(8_760_000_000_000);
+    expect(overageAmount(15, MAX_OVERAGE_RATE_MINOR)).toBe(250_000_000);
   });
 
   it("8. USD Scale: 1,500 included at 7,500 cents an hour, 1,545 used -> 5,625", () => {
