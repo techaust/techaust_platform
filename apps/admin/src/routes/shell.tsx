@@ -7,7 +7,7 @@ import type { Role } from "@techaust/core/permissions";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Outlet, useLocation, useParams } from "react-router";
 import { type Notification as ApiNotification, api, errorText } from "../api.ts";
-import { Building, Inbox, User, Users } from "../components/icons.tsx";
+import { Building, Inbox, Package, User, Users } from "../components/icons.tsx";
 import { AppShell } from "../components/shell/app-shell.tsx";
 import { GlobalSearch, type SearchGroup } from "../components/shell/global-search.tsx";
 import { type NavItem, navFor, navItem } from "../components/shell/nav.tsx";
@@ -22,7 +22,13 @@ const hrefOf = (item: NavItem) => item.path;
 /** How often the bell asks for new notifications while the tab is visible. */
 const BELL_POLL_MS = 120_000;
 
-const SEARCH_ICONS = { lead: <Inbox />, user: <Users />, client: <Building />, contact: <User /> } as const;
+const SEARCH_ICONS = {
+  lead: <Inbox />,
+  user: <Users />,
+  client: <Building />,
+  contact: <User />,
+  catalogue: <Package />,
+} as const;
 
 async function runSearch(q: string): Promise<SearchGroup[]> {
   const r = await api.search(q);

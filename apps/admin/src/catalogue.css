@@ -1,0 +1,797 @@
+/* The Catalogue screens (M4.1): tokens only, on the M3.2/M3.3 panels (leads.css, clients.css). The one bold element is the
+   payment schedule drawn to scale: a ruled bar of ink and verdigris steps; everything else stays quiet. */
+
+.pill-row {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* The Markdown subset (the M3.4 notes' rules, repeated here so the catalogue screens don't load projects.css). */
+.md {
+  max-width: var(--container-prose);
+  overflow-wrap: anywhere;
+}
+
+.md > * {
+  margin: 0;
+}
+
+.md > * + * {
+  margin-top: var(--space-2);
+}
+
+.md ul,
+.md ol {
+  padding-inline-start: var(--space-6);
+}
+
+.md code {
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-alt);
+  font-family: var(--font-mono);
+  font-size: var(--text-code);
+}
+
+.md pre {
+  padding: var(--space-3) var(--space-4);
+  overflow-x: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-alt);
+}
+
+.md pre code {
+  padding: 0;
+  background: none;
+}
+
+/* ---------- The list ---------- */
+
+.svc-name {
+  display: grid;
+  gap: var(--space-1);
+  font-weight: 400;
+}
+
+.catalogue-table .svc-name {
+  min-width: 14rem;
+}
+
+.svc-name__top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-2);
+}
+
+.svc-name__code {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+/* The name link is a 44 px target without moving the text (the M3.2 lead-name treatment). */
+.svc-name__link {
+  --reach: calc((var(--target-min) - 1lh) / 2);
+  padding: var(--reach) 0;
+  margin: calc(-1 * var(--reach)) 0;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.svc-name__link:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.svc-name__short {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  max-width: 34rem;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.prices {
+  display: inline-grid;
+  justify-items: end;
+  gap: 0;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.dcards .prices,
+.lines-table td .prices {
+  justify-items: start;
+}
+
+.lines-table td.num .prices {
+  justify-items: end;
+}
+
+@media (min-width: 48rem) and (max-width: 79.99rem) {
+  .catalogue-table .dtable {
+    overflow-x: auto;
+  }
+
+  .catalogue-table .dtable__table {
+    min-width: 46rem;
+  }
+
+  .catalogue-table .dtable__table thead th {
+    position: static;
+  }
+}
+
+@media (min-width: 48rem) {
+  .filters.filters--catalogue {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: var(--space-4) var(--space-8);
+  }
+
+  .filters--catalogue .filters__search {
+    flex: 1 1 100%;
+    max-width: 32rem;
+  }
+
+  .filters--catalogue .filters__foot {
+    flex: 1 1 100%;
+  }
+}
+
+/* ---------- The service page ---------- */
+
+.svc-short {
+  margin: 0 0 var(--space-3);
+  max-width: var(--container-prose);
+  font-size: var(--text-body-lg);
+  line-height: var(--text-body-lg--line-height);
+  text-wrap: pretty;
+}
+
+.svc-long {
+  margin-bottom: var(--space-4);
+}
+
+.svc-facts {
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
+.svc-verify {
+  margin: var(--space-4) 0 0;
+}
+
+.md-block + .md-block {
+  margin-top: var(--space-5);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--color-border);
+}
+
+.md-block__title {
+  margin: 0 0 var(--space-2);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: var(--text-sm--line-height);
+}
+
+.lines-table {
+  overflow-x: auto;
+}
+
+.lines-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.lines-table th,
+.lines-table td {
+  padding: var(--space-2) var(--space-3) var(--space-2) 0;
+  border-bottom: 1px solid var(--color-border);
+  text-align: start;
+  vertical-align: top;
+}
+
+.lines-table thead th {
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+.lines-table tbody th {
+  font-weight: 500;
+}
+
+.lines-table tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
+.lines-table .num {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.lines-table tr > :last-child {
+  padding-inline-end: 0;
+}
+
+.price-history {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-2);
+  padding: 0;
+  list-style: none;
+}
+
+.price-history__row {
+  display: grid;
+  gap: var(--space-1);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.price-history__row:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.price-history__row:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.price-history__text {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- The payment schedule, to scale ---------- */
+
+.sched {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.sched__words {
+  margin: 0;
+  max-width: var(--container-prose);
+}
+
+.sched__words--live {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.sched-bar {
+  display: flex;
+  gap: 2px;
+  height: var(--space-3);
+  margin: 0 0 var(--space-2);
+}
+
+.sched-bar__seg {
+  flex-basis: 0;
+  min-width: var(--space-1);
+  background: var(--color-text);
+  transition: flex-grow var(--duration-base) var(--ease-standard);
+}
+
+.sched-bar__seg[data-alt] {
+  background: var(--color-accent-decor);
+}
+
+/* The share still missing: an outline the size of the gap, never a fill. */
+.sched-bar__gap {
+  flex-basis: 0;
+  border: 1px dashed var(--color-border-control);
+}
+
+.sched__steps {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sched__step {
+  display: grid;
+  grid-template-columns: 4.5rem minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  align-items: baseline;
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.sched__step:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.sched__pct {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  text-align: end;
+}
+
+.sched__when {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+@media (max-width: 29.99rem) {
+  .sched__step {
+    grid-template-columns: 3.5rem minmax(0, 1fr);
+  }
+
+  .sched__when {
+    grid-column: 2;
+  }
+}
+
+.sched-sum {
+  margin-top: var(--space-2);
+}
+
+.sched-sum .sum {
+  margin: 0;
+}
+
+/* ---------- The entry form ---------- */
+
+.svc-form > .hint {
+  margin: 0 0 var(--space-4);
+}
+
+.svc-form__body {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.svc-form .lead-panel .field:last-child {
+  margin-bottom: 0;
+}
+
+/* The save bar is fixed at the bottom: keep the end of the form clear of it. */
+.svc-form {
+  padding-bottom: var(--space-16);
+}
+
+.ce-code {
+  max-width: 8rem;
+  text-transform: uppercase;
+}
+
+.slug-in {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.slug-in > span {
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border-control);
+  border-inline-end: 0;
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+  background: var(--color-surface-alt);
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+
+.slug-in input {
+  min-width: 0;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.md-field {
+  margin-bottom: var(--space-5);
+}
+
+.md-field .field {
+  margin-bottom: var(--space-2);
+}
+
+.md-preview {
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.md-preview__title {
+  margin: 0 0 var(--space-2);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: var(--text-sm--line-height);
+}
+
+.lines-hint {
+  margin: calc(-1 * var(--space-2)) 0 var(--space-4);
+}
+
+/* Default lines and schedule steps: each row is a small ruled block; its fields wrap with the panel's width. */
+.line-list,
+.step-list {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  list-style: none;
+}
+
+.step-list:focus {
+  outline: none;
+}
+
+.line-row,
+.step-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+  gap: var(--space-2) var(--space-3);
+  align-items: end;
+  padding: var(--space-3);
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.line-row__cell,
+.step-row__cell {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.line-row__cell--desc,
+.step-row__cell--label {
+  grid-column: 1 / 3;
+}
+
+.line-row__remove,
+.step-row__remove {
+  grid-row: 1;
+  grid-column: 3;
+}
+
+.line-row__label {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+.line-row__errors {
+  grid-column: 1 / -1;
+}
+
+.line-row__errors:empty {
+  display: none;
+}
+
+.line-row .money-in,
+.line-row .money-in input,
+.step-row .number-unit,
+.step-row .number-unit input {
+  width: 100%;
+  min-width: 0;
+}
+
+.line-row .money-in,
+.step-row .number-unit {
+  display: flex;
+}
+
+.line-row__qty {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.step-row__swatch {
+  display: none;
+}
+
+@container (min-width: 40rem) {
+  .line-row {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
+  }
+
+  .line-row__cell--desc {
+    grid-column: 1 / 5;
+  }
+
+  .line-row__remove {
+    grid-column: 5;
+  }
+
+  /* One line per step: its swatch (the bar's colour), name, share, when paid, remove. */
+  .step-row {
+    grid-template-columns: var(--space-3) minmax(0, 1fr) 7rem 11rem auto;
+  }
+
+  .step-row__swatch {
+    display: block;
+    align-self: stretch;
+    margin-block: var(--space-6) var(--space-1);
+    background: var(--color-text);
+  }
+
+  .step-row__swatch[data-alt] {
+    background: var(--color-accent-decor);
+  }
+
+  .step-row__cell--label {
+    grid-column: 2;
+  }
+
+  .step-row__remove {
+    grid-column: 5;
+  }
+}
+
+.svc-form__cancel,
+.svc-form__actions {
+  padding: var(--space-4);
+}
+
+/* ---------- Templates ---------- */
+
+.templates__intro,
+.publish__intro {
+  margin: 0 0 var(--space-6);
+  max-width: var(--container-prose);
+  text-wrap: pretty;
+}
+
+.templates__group + .templates__group {
+  margin-top: var(--space-8);
+}
+
+.templates__h {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-body);
+  font-weight: 600;
+  line-height: var(--text-body--line-height);
+}
+
+.tpl-cell {
+  display: grid;
+  gap: 0;
+  justify-items: start;
+}
+
+.tpl-cell__link {
+  --reach: calc((var(--target-min) - 1lh) / 2);
+  padding: var(--reach) 0;
+  margin: calc(-1 * var(--reach)) 0;
+  font-weight: 600;
+}
+
+.tpl-cell .when {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.tpl-sections {
+  display: grid;
+  gap: var(--space-5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tpl-section + .tpl-section {
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--color-border);
+}
+
+.tpl-section__h {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-body);
+  font-weight: 600;
+  line-height: var(--text-body--line-height);
+}
+
+.tpl-section__body {
+  margin: 0;
+  max-width: var(--container-prose);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.tpl-section__body--echo {
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface-alt);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  line-height: 1.9;
+}
+
+.tpl-sections--edit .field {
+  margin-bottom: var(--space-3);
+}
+
+/* A placeholder as a token: mono, a hairline in the accent; one that doesn't exist, in danger with a dashed edge. */
+.ph {
+  padding: 0.0625rem var(--space-1);
+  border: 1px solid var(--color-accent-decor);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  white-space: nowrap;
+}
+
+.ph[data-unknown] {
+  border: 1px dashed var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 10%, transparent);
+}
+
+.tpl-versions {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tpl-versions__row {
+  display: grid;
+  gap: 0;
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--text-sm);
+}
+
+.tpl-versions__row:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.tpl-versions__row a,
+.tpl-versions__here {
+  font-size: var(--text-body);
+  font-weight: 600;
+}
+
+.tpl-versions__row a {
+  --reach: calc((var(--target-min) - 1lh) / 2);
+  justify-self: start;
+  padding: var(--reach) 0;
+  margin: calc(-1 * var(--reach)) 0;
+}
+
+.tpl-versions__here {
+  color: var(--color-text-accent);
+}
+
+.tpl-versions__who {
+  color: var(--color-text-muted);
+}
+
+.tpl-editor__body {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.ph-chips {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0 0 var(--space-5);
+  padding-bottom: var(--space-5);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.ph-chips__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The chip band is 44 px tall like every filter chip band (M3.1). */
+.ph-chip {
+  min-height: var(--target-min);
+}
+
+.ph-chips .ph-chip code {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+
+/* ---------- Publish ---------- */
+
+.publish {
+  display: grid;
+  gap: var(--space-6);
+  max-width: 52rem;
+}
+
+.publish__intro {
+  margin-bottom: var(--space-5);
+}
+
+.publish__answer {
+  margin-top: var(--space-5);
+}
+
+.publish__answer:empty {
+  display: none;
+}
+
+.publish__answer:focus {
+  outline: none;
+}
+
+.publish__answer:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.publish__answer .notice {
+  margin: 0;
+}
+
+.pub-fix {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+  padding-inline-start: var(--space-5);
+}
+
+.pub-fix a {
+  font-weight: 600;
+}
+
+.pub-fix__fields {
+  display: block;
+  font-size: var(--text-sm);
+}
+
+.pub-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.pub-list li {
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.pub-list li:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.pub-list li:first-child {
+  font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sched-bar__seg {
+    transition: none;
+  }
+}
