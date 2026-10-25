@@ -159,6 +159,21 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
       .run();
     return { id, updatedAt };
   };
+  /** A client with one primary contact, written straight to the database (M3.3). */
+  const scenarioClient = async () => {
+    const id = uuidv7();
+    const contactId = uuidv7();
+    const updatedAt = Date.now() - 1000;
+    await env.DB.batch([
+      env.DB.prepare(
+        "INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, state_code, currency, updated_at) VALUES (?1, ?2, 'Scenario Co', 'Scenario', 'business', 'IN', 'unregistered', '19', 'INR', ?3)",
+      ).bind(id, `CS-${id.slice(-6).toUpperCase()}`, updatedAt),
+      env.DB.prepare(
+        "INSERT INTO contacts (id, client_id, name, email, is_primary, updated_at) VALUES (?1, ?2, 'Scenario Person', ?3, 1, ?4)",
+      ).bind(contactId, id, `scenario-${contactId.slice(-8)}@example.com`, updatedAt),
+    ]);
+    return { id, contactId, updatedAt };
+  };
   const scenarios: Record<string, Scenario> = {
     "POST /api/v1/auth/step-up": async () => {
       const s = await sessionFor("owner");
@@ -263,13 +278,73 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
       return {
         res: await call(`/leads/${leadId}/convert`, {
           method: "POST",
-          body: { type: "business", country: "IN", gstStatus: "unregistered", currency: "INR" },
+          body: {
+            type: "business",
+            country: "IN",
+            gstStatus: "unregistered",
+            stateCode: "19",
+            currency: "INR",
+          },
           cookie: s.cookie,
           headers: headers(rid),
         }),
         rid,
         actor: s,
       };
+    },
+    "POST /api/v1/clients": async () => {
+      const s = await sessionFor("sales");
+      return run(s, "/clients", {
+        body: {
+          legalName: "Scenario Traders",
+          type: "business",
+          country: "IN",
+          gstStatus: "unregistered",
+          stateCode: "19",
+          currency: "INR",
+        },
+      });
+    },
+    "PATCH /api/v1/clients/:id": async () => {
+      const s = await sessionFor("sales");
+      const { id, updatedAt } = await scenarioClient();
+      return run(s, `/clients/${id}`, {
+        method: "PATCH",
+        body: { expectedUpdatedAt: updatedAt, notes: "Prefers email" },
+      });
+    },
+    "PATCH /api/v1/clients/:id/billing": async () => {
+      const s = await sessionFor("staff");
+      const { id, updatedAt } = await scenarioClient();
+      return run(s, `/clients/${id}/billing`, {
+        method: "PATCH",
+        body: { expectedUpdatedAt: updatedAt, paymentTermsDays: 15 },
+      });
+    },
+    "POST /api/v1/clients/:id/contacts": async () => {
+      const s = await sessionFor("sales");
+      const { id } = await scenarioClient();
+      return run(s, `/clients/${id}/contacts`, {
+        body: { name: "Second Person", email: `second-${crypto.randomUUID().slice(0, 8)}@example.com` },
+      });
+    },
+    "PATCH /api/v1/contacts/:id": async () => {
+      const s = await sessionFor("sales");
+      const { contactId, updatedAt } = await scenarioClient();
+      return run(s, `/contacts/${contactId}`, {
+        method: "PATCH",
+        body: { expectedUpdatedAt: updatedAt, title: "Finance lead" },
+      });
+    },
+    "POST /api/v1/contacts/:id/export": async () => {
+      const s = await owner();
+      const { contactId } = await scenarioClient();
+      return run(s, `/contacts/${contactId}/export`, { body: {} });
+    },
+    "POST /api/v1/contacts/:id/erase": async () => {
+      const s = await owner();
+      const { contactId } = await scenarioClient();
+      return run(s, `/contacts/${contactId}/erase`, { body: { mode: "erase", reason: "requested" } });
     },
     "POST /api/v1/leads": async () => {
       const s = await sessionFor("staff");

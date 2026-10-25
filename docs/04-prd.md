@@ -463,6 +463,8 @@ Every service page uses one template, with sections in this order ([03 §3A.3](0
 | Bank details | ✅ (step-up) | — | — | 👁 masked |
 | Leads & pipeline | ✅ | ✅ | ✅ | — |
 | Clients & contacts | ✅ | ✅ | ✅ (no finance tabs) | 👁 |
+| Client billing fields: tax identity, currency, terms (`clients.finance.write`; Sales sets them once at creation or conversion) | ✅ | ✅ | — | — |
+| Export a contact's personal data (`clients.dataExport`) · erase or anonymise a contact (`clients.dataErase`) | ✅ (step-up) | — | — | — |
 | Projects, milestones, notes, files | ✅ | ✅ | 👁 | — |
 | Care plans | ✅ | ✏️ (no price changes) | 👁 | 👁 |
 | Time logs | ✅ (anyone's) | ✏️ own | ✏️ own | 👁 |

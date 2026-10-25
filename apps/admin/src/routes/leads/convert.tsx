@@ -2,18 +2,22 @@
 // that makes the client, its primary contact and a draft proposal together (the API's one batch). The GSTIN gets the
 // same live check as Settings > Company. The API's refusals land on the field they are about: `country_mismatch` on the
 // country, `gstin_invalid` and `gstin_in_use` on the GSTIN; `already_converted` says so and offers the latest.
+// M3.3 carry-ins: the state (required for registered and unregistered Indian clients; it follows a valid GSTIN, a
+// different one shows the 07-J warning) and the billing-contact flag for the new contact.
 // VERIFY WITH CA/LEGAL: GST status and place of supply are confirmed at proposal and invoice time (M4).
-import { validateGstin } from "@techaust/core/gstin";
+import { selectableStates, validateGstin } from "@techaust/core/gstin";
 import { type FormEvent, useState } from "react";
 import { api, type ConvertInput, errorText, type LeadDetail, RequestError } from "../../api.ts";
 import { Modal } from "../../components/dialog.tsx";
 import { StatusPill } from "../../components/display.tsx";
 import { FormField, VerifyNote } from "../../components/form.tsx";
+import { AlertTriangle } from "../../components/icons.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { Notice } from "../../components/ui.tsx";
+import { stateWarning, withGstin } from "../../lib/clients.ts";
 import { countryOptions } from "../../lib/leads.ts";
 
-type Form = Required<Omit<ConvertInput, "gstin">> & { gstin: string };
+type Form = Required<Omit<ConvertInput, "gstin" | "stateCode">> & { gstin: string; stateCode: string };
 
 function initial(lead: LeadDetail): Form {
   const country = lead.country ?? "IN";
@@ -22,6 +26,8 @@ function initial(lead: LeadDetail): Form {
     country,
     gstStatus: country === "IN" ? "unregistered" : "overseas",
     gstin: "",
+    stateCode: "",
+    billingContact: false,
     currency: lead.currency ?? (country === "IN" ? "INR" : "USD"),
     legalName: lead.company ?? lead.name,
     displayName: lead.company ?? lead.name,
@@ -34,7 +40,9 @@ const GST_STATUS = [
   { value: "overseas", label: "Overseas" },
 ] as const;
 
-type Errors = Partial<Record<"country" | "gstin" | "legalName" | "displayName", string | undefined>>;
+type Errors = Partial<
+  Record<"country" | "gstin" | "stateCode" | "legalName" | "displayName", string | undefined>
+>;
 
 export function ConvertDialog(props: {
   open: boolean;
@@ -79,6 +87,7 @@ export function ConvertDialog(props: {
       if (!f.gstin.trim()) errs.gstin = "Enter the GSTIN.";
       else if (!g.ok) errs.gstin = `${g.error}.`;
     }
+    if (f.gstStatus !== "overseas" && !f.stateCode) errs.stateCode = "Choose the client's state.";
     setErrors(errs);
     const first = Object.keys(errs)[0];
     if (first) {
@@ -93,6 +102,8 @@ export function ConvertDialog(props: {
         country: f.country,
         gstStatus: f.gstStatus,
         ...(registered ? { gstin: f.gstin.replace(/\s/g, "").toUpperCase() } : {}),
+        ...(f.gstStatus !== "overseas" && f.stateCode ? { stateCode: f.stateCode } : {}),
+        billingContact: f.billingContact,
         currency: f.currency,
         legalName: f.legalName.trim(),
         displayName: f.displayName.trim(),
@@ -109,6 +120,9 @@ export function ConvertDialog(props: {
       ) {
         setErrors({ gstin: `${err.message.replace(/\.$/, "")}.` });
         document.getElementById("cv-gstin")?.focus();
+      } else if (err instanceof RequestError && err.code.startsWith("state_")) {
+        setErrors({ stateCode: `${err.message.replace(/\.$/, "")}.` });
+        document.getElementById("cv-stateCode")?.focus();
       } else if (err instanceof RequestError && err.code === "already_converted") {
         setDone(true);
         setFailure(`${err.message}.`);
@@ -197,6 +211,7 @@ export function ConvertDialog(props: {
                             : f.gstStatus
                           : "overseas",
                       currency: country === "IN" ? "INR" : "USD",
+                      ...(country === "IN" ? {} : { gstin: "", stateCode: "" }),
                     });
                     setErrors((x) => ({ ...x, country: undefined }));
                   }}
@@ -220,7 +235,7 @@ export function ConvertDialog(props: {
                       value={s.value}
                       checked={f.gstStatus === s.value}
                       onChange={() => {
-                        set({ gstStatus: s.value });
+                        set({ gstStatus: s.value, ...(s.value === "overseas" ? { stateCode: "" } : {}) });
                         setErrors((x) => ({ ...x, country: undefined, gstin: undefined }));
                       }}
                     />
@@ -260,12 +275,45 @@ export function ConvertDialog(props: {
                     value={f.gstin}
                     onChange={(e) => {
                       const v = e.target.value.toUpperCase();
-                      set({ gstin: v });
+                      set(withGstin(f, v));
                       setErrors((x) => ({ ...x, gstin: undefined }));
                       setChecked(v.replace(/\s/g, "").length >= 15);
                     }}
                     onBlur={() => setChecked(true)}
                   />
+                )}
+              </FormField>
+            )}
+            {f.gstStatus !== "overseas" && (
+              <FormField
+                id="cv-stateCode"
+                label="State and code"
+                error={errors.stateCode}
+                status={
+                  gst?.ok && f.stateCode && f.stateCode !== gst.stateCode ? (
+                    <span className="field-warning">
+                      <AlertTriangle size={16} />
+                      {stateWarning(gst.state)}
+                    </span>
+                  ) : undefined
+                }
+              >
+                {(a) => (
+                  <select
+                    {...a}
+                    value={f.stateCode}
+                    onChange={(e) => {
+                      set({ stateCode: e.target.value });
+                      setErrors((x) => ({ ...x, stateCode: undefined }));
+                    }}
+                  >
+                    <option value="">Choose a state</option>
+                    {selectableStates().map((s) => (
+                      <option key={s.code} value={s.code}>
+                        {s.name} ({s.code})
+                      </option>
+                    ))}
+                  </select>
                 )}
               </FormField>
             )}
@@ -286,6 +334,14 @@ export function ConvertDialog(props: {
                 ))}
               </div>
             </fieldset>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={f.billingContact}
+                onChange={(e) => set({ billingContact: e.target.checked })}
+              />
+              The contact is the billing contact
+            </label>
           </div>
           <div className="dialog__actions">
             <button type="button" className="btn btn--secondary" onClick={props.onClose} disabled={busy}>

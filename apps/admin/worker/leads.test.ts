@@ -7,7 +7,13 @@ import { describe, expect, it } from "vitest";
 import { bodyOf, call, countOf, one, rows, sessionFor } from "./test-helpers.ts";
 
 type Body = Record<string, unknown>;
-const GOOD: Body = { type: "business", country: "IN", gstStatus: "unregistered", currency: "INR" };
+const GOOD: Body = {
+  type: "business",
+  country: "IN",
+  gstStatus: "unregistered",
+  stateCode: "19",
+  currency: "INR",
+};
 const GSTIN14 = "19AAACT2727Q1Z";
 const VALID_GSTIN = GSTIN14 + gstinCheckChar(GSTIN14);
 const WRONG_GSTIN = GSTIN14 + (gstinCheckChar(GSTIN14) === "0" ? "1" : "0");
@@ -161,7 +167,7 @@ describe("POST /leads/:id/convert [ADM-LEAD-04]", () => {
 
   it("takes the next free client code and ignores the sample clients' codes; the SQL format equals clientCode()", async () => {
     await env.DB.prepare(
-      "INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, currency) VALUES ('sample-a', 'SAMPLE-A', 'A', 'A', 'business', 'IN', 'unregistered', 'INR')",
+      "INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, state_code, currency) VALUES ('sample-a', 'SAMPLE-A', 'A', 'A', 'business', 'IN', 'unregistered', '19', 'INR')",
     ).run();
     const s = await sessionFor("owner");
     const before = (await one<{ n: number }>(
@@ -357,7 +363,14 @@ describe("conversion: consent, country and the draft link (analyst early check)"
     expect(await countOf("clients")).toBe(clients);
     const ok = await convert(
       lead.id,
-      { ...GOOD, type: "business", gstStatus: "overseas", country: "US", currency: "USD" },
+      {
+        ...GOOD,
+        type: "business",
+        gstStatus: "overseas",
+        country: "US",
+        currency: "USD",
+        stateCode: undefined,
+      },
       s.cookie,
     );
     expect(ok.res.status).toBe(201);
@@ -398,11 +411,97 @@ describe("conversion: consent, country and the draft link (analyst early check)"
   });
 });
 
+// M3.3 carry-ins: the state code (owner Q1, 2026-10-25) and the billing contact flag. VERIFY WITH CA/LEGAL.
+let panSeq = 0;
+describe("conversion: state code and billing contact (M3.3 carry-ins)", () => {
+  const refused = async (body: Body, want: string) => {
+    const s = await sessionFor("sales");
+    const lead = await addLead();
+    const { res } = await convert(lead.id, body, s.cookie);
+    expect(res.status, JSON.stringify(body)).toBe(400);
+    expect(((await bodyOf(res)) as { error: { code: string } }).error.code).toBe(want);
+    expect(await one("SELECT client_id FROM leads WHERE id = ?", lead.id)).toEqual({ client_id: null });
+  };
+
+  it("an unregistered Indian client needs a state code; an overseas one must not have one", async () => {
+    await refused({ ...GOOD, stateCode: undefined }, "state_required");
+    await refused({ ...GOOD, stateCode: "00" }, "state_invalid");
+    await refused({ ...GOOD, stateCode: "ZZ" }, "bad_request");
+    await refused({ ...GOOD, stateCode: "7" }, "bad_request");
+    await refused(
+      { ...GOOD, gstStatus: "overseas", country: "US", currency: "USD", stateCode: "19" },
+      "state_not_allowed",
+    );
+    await refused({ ...GOOD, gstin: VALID_GSTIN }, "gstin_not_allowed");
+    const s = await sessionFor("sales");
+    const lead = await addLead();
+    const ok = await convert(lead.id, { ...GOOD, stateCode: "29" }, s.cookie);
+    expect(ok.res.status).toBe(201);
+    const { clientId } = (await ok.res.json()) as { clientId: string };
+    expect(await one("SELECT state_code, gst_status FROM clients WHERE id = ?", clientId)).toEqual({
+      state_code: "29",
+      gst_status: "unregistered",
+    });
+  });
+
+  it("a registered client takes the state from the GSTIN; another chosen state is kept and comes back as a warning", async () => {
+    const s = await sessionFor("owner");
+    const registered = { ...GOOD, gstStatus: "registered", gstin: VALID_GSTIN, stateCode: undefined };
+    const lead = await addLead();
+    // The GSTIN may already be used by an earlier test: use a different PAN each time.
+    const first14 = `19AAACT${String(3000 + ++panSeq).padStart(4, "0")}Q1Z`;
+    const gstin = first14 + gstinCheckChar(first14);
+    const ok = await convert(lead.id, { ...registered, gstin }, s.cookie);
+    expect(ok.res.status).toBe(201);
+    const body = (await ok.res.json()) as { clientId: string; warnings: unknown[] };
+    expect(body.warnings).toEqual([]);
+    expect(await one("SELECT state_code FROM clients WHERE id = ?", body.clientId)).toEqual({
+      state_code: "19",
+    });
+
+    const second = await addLead();
+    const other14 = `19AAACT${String(3000 + ++panSeq).padStart(4, "0")}Q1Z`;
+    const warned = await convert(
+      second.id,
+      { ...registered, gstin: other14 + gstinCheckChar(other14), stateCode: "27" },
+      s.cookie,
+    );
+    expect(warned.res.status).toBe(201);
+    const w = (await warned.res.json()) as { clientId: string; warnings: { code: string }[] };
+    expect(w.warnings.map((x) => x.code)).toEqual(["gstin_state_mismatch"]);
+    expect(await one("SELECT state_code FROM clients WHERE id = ?", w.clientId)).toEqual({
+      state_code: "27",
+    });
+  });
+
+  it("the billing contact flag sets is_billing, and can_see_finance goes with it", async () => {
+    const s = await sessionFor("staff");
+    const make = async (extra: Body) => {
+      const lead = await addLead();
+      const { res } = await convert(lead.id, { ...GOOD, ...extra }, s.cookie);
+      expect(res.status).toBe(201);
+      const { contactId } = (await res.json()) as { contactId: string };
+      return one("SELECT is_primary, is_billing, can_see_finance FROM contacts WHERE id = ?", contactId);
+    };
+    expect(await make({ billingContact: true })).toEqual({
+      is_primary: 1,
+      is_billing: 1,
+      can_see_finance: 1,
+    });
+    expect(await make({ billingContact: false })).toEqual({
+      is_primary: 1,
+      is_billing: 0,
+      can_see_finance: 0,
+    });
+    expect(await make({})).toEqual({ is_primary: 1, is_billing: 0, can_see_finance: 0 });
+  });
+});
+
 // Last in the file: it adds a five-digit code, which changes what "the next code" means for the tests above.
 describe("client codes keep working after C9999", () => {
   it("continues with C10000 and C10001; codes that are not C plus digits are ignored", async () => {
     await env.DB.prepare(
-      "INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, currency) VALUES ('c-9999', 'C9999', 'N', 'N', 'business', 'IN', 'unregistered', 'INR'), ('c-junk', 'C99AB', 'N', 'N', 'business', 'IN', 'unregistered', 'INR'), ('c-junk2', 'C10000X', 'N', 'N', 'business', 'IN', 'unregistered', 'INR')",
+      "INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, state_code, currency) VALUES ('c-9999', 'C9999', 'N', 'N', 'business', 'IN', 'unregistered', '19', 'INR'), ('c-junk', 'C99AB', 'N', 'N', 'business', 'IN', 'unregistered', '19', 'INR'), ('c-junk2', 'C10000X', 'N', 'N', 'business', 'IN', 'unregistered', '19', 'INR')",
     ).run();
     // the highest real code in the table is at least C9999, whatever the earlier tests made
     const s = await sessionFor("owner");

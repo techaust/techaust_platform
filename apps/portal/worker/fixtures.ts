@@ -56,7 +56,7 @@ async function org(code: string, name: string): Promise<FxOrg> {
   const db = env.DB;
   await db
     .prepare(
-      "INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, currency) VALUES (?1, ?2, ?3, ?4, 'business', 'IN', 'unregistered', 'INR')",
+      "INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, state_code, currency) VALUES (?1, ?2, ?3, ?4, 'business', 'IN', 'unregistered', '19', 'INR')",
     )
     .bind(id, code, `${name} Pvt Ltd`, name)
     .run();

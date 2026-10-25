@@ -27,6 +27,8 @@ The live site is the old Worker **`techaust-web`**. **Never deploy to, rename or
 
 Deploys happen automatically when a PR is merged to `main` (`.github/workflows/deploy-staging.yml`): first `wrangler d1 migrations apply DB --remote --env staging` and the seed, then the four Workers.
 
+**Legal hold (M3.3; no screen or route until M7.4, VERIFY WITH CA/LEGAL):** a client, a contact or a lead is held by setting its `legal_hold` column to 1 in the staging database, for example `wrangler d1 execute DB --remote --env staging --command "UPDATE contacts SET legal_hold = 1 WHERE id = '<contact id>'"` (the owner or the lead runs it; erase and anonymise then answer 409 `legal_hold` until it is set back to 0).
+
 ## Production
 Nothing is created until Phase 7 (L3), with owner approval per resource.
 

@@ -47,6 +47,15 @@ export const ACTION_LABELS: Record<string, string> = {
   "portal.link_minted": "made a portal sign-in link",
   "doc_token.use": "opened a document link",
   "audit.export": "exported the audit log",
+  // M3.3 clients and contacts (all written on the client, with the contact's id in the summary).
+  "client.create": "added a client",
+  "client.update": "changed a client's details",
+  "client.billing_update": "changed a client's tax and billing",
+  "contact.create": "added a contact",
+  "contact.update": "changed a contact",
+  "contact.export": "exported a contact's data",
+  "contact.erase": "erased a contact",
+  "contact.anonymise": "anonymised a contact",
 };
 
 /** Groups for the action filter (the API filters by one exact action). */
@@ -56,6 +65,8 @@ export const ACTION_GROUPS: { label: string; prefix: string }[] = [
   { label: "Users and invites", prefix: "user." },
   { label: "Settings", prefix: "settings." },
   { label: "Notifications", prefix: "notification." },
+  { label: "Clients", prefix: "client." },
+  { label: "Contacts", prefix: "contact." },
   { label: "Client portal", prefix: "portal." },
   { label: "Audit log", prefix: "audit." },
 ];
@@ -69,6 +80,7 @@ export const ENTITY_LABELS: Record<string, string> = {
   staff_invite: "Invites",
   staff_session: "Staff sessions",
   notification: "Notifications",
+  client: "Clients",
   contact: "Contacts",
   client_session: "Client portal sessions",
   document: "Documents",

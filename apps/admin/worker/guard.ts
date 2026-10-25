@@ -78,6 +78,21 @@ export const ROUTES: readonly RouteDef[] = [
   R("GET", "/leads/:id/reply-templates", "leads.read"),
   R("POST", "/leads/:id/reply", "leads.write", { audit: "lead.reply" }),
   R("POST", "/leads/:id/convert", "clients.write", { audit: "lead.convert" }),
+  // Clients and contacts (M3.3, ADM-CLI-01..05). Billing fields are `clients.finance.write`; a contact is erased or anonymised only
+  // by the owner with a fresh step-up (the audit action is `contact.anonymise` when the mode is anonymise).
+  R("GET", "/clients", "clients.read"),
+  R("POST", "/clients", "clients.write", { audit: "client.create" }),
+  R("GET", "/clients/:id", "clients.read"),
+  R("PATCH", "/clients/:id", "clients.write", { audit: "client.update" }),
+  R("PATCH", "/clients/:id/billing", "clients.finance.write", { audit: "client.billing_update" }),
+  R("GET", "/clients/:id/finance", "clients.finance.read"),
+  R("GET", "/clients/:id/statement", "clients.finance.read"),
+  R("GET", "/clients/:id/activity", "clients.read"),
+  R("GET", "/clients/:id/contacts", "clients.read"),
+  R("POST", "/clients/:id/contacts", "clients.write", { audit: "contact.create" }),
+  R("PATCH", "/contacts/:id", "clients.write", { audit: "contact.update" }),
+  R("POST", "/contacts/:id/export", "clients.dataExport", { audit: "contact.export" }),
+  R("POST", "/contacts/:id/erase", "clients.dataErase", { audit: "contact.erase" }),
   // The bell, the global search and the audit viewer (M3.1, ADM-G-09, ADM-G-05, ADM-AUD-02).
   R("GET", "/notifications", "notifications.own"),
   R("POST", "/notifications/read-all", "notifications.own", { audit: "notification.read_all" }),

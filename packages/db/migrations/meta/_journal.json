@@ -127,6 +127,48 @@
       "when": 1792871732755,
       "tag": "0017_drop_unused_lead_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1792878837356,
+      "tag": "0018_clients_contacts_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1792878849115,
+      "tag": "0019_client_triggers",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1792880999472,
+      "tag": "0020_clients_filter_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1792885562653,
+      "tag": "0021_leads_contact_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "6",
+      "when": 1792885580003,
+      "tag": "0022_leads_contact_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1792885581439,
+      "tag": "0023_client_type_lock",
+      "breakpoints": true
     }
   ]
 }

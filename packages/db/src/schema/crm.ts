@@ -77,6 +77,8 @@ export const leads = sqliteTable(
     duplicateOf: text("duplicate_of").references((): AnySQLiteColumn => leads.id, { onDelete: "set null" }),
     /** M3.2: the draft proposal made when the lead was converted. A lazy reference: documents imports this file. */
     proposalId: text("proposal_id").references((): AnySQLiteColumn => documents.id, { onDelete: "set null" }),
+    /** M3.3 review: the contact this lead became on conversion, so erase and anonymise still find the lead after the contact's email changes. Added with ALTER TABLE only (`leads` is referenced). */
+    contactId: text("contact_id").references((): AnySQLiteColumn => contacts.id, { onDelete: "set null" }),
     lastActivityAt: integer("last_activity_at"),
     deleteAfter: integer("delete_after"),
     legalHold: flag("legal_hold"),
@@ -85,6 +87,7 @@ export const leads = sqliteTable(
   },
   (t) => [
     uniqueIndex("leads_ref").on(t.ref),
+    index("leads_contact").on(t.contactId),
     index("leads_owner_next_action").on(t.ownerId, t.nextActionAt),
     index("leads_email").on(t.contactEmail),
     index("leads_client").on(t.clientId),
@@ -157,6 +160,12 @@ export const clients = sqliteTable(
   (t) => [
     uniqueIndex("clients_code").on(t.code),
     index("clients_display_name").on(t.displayName),
+    // M3.3: the list (newest first) and the name prefix search (no case).
+    index("clients_created").on(t.createdAt, t.id),
+    index("clients_name_nocase").on(sql`${t.displayName} collate nocase`),
+    // M3.3 review: the list filters by GST status or currency, newest first, on a keyset.
+    index("clients_gst_status_created").on(t.gstStatus, t.createdAt, t.id),
+    index("clients_currency_created").on(t.currency, t.createdAt, t.id),
     uniqueIndex("clients_gstin").on(t.gstin).where(sql`${t.gstin} is not null`),
     check("clients_type", oneOf(t.type, CLIENT_TYPES)),
     check("clients_gst_status", oneOf(t.gstStatus, GST_STATUSES)),
@@ -185,12 +194,16 @@ export const contacts = sqliteTable(
     marketingConsent: text("marketing_consent", { mode: "json" }).$type<MarketingConsent>(),
     bouncedAt: integer("bounced_at"),
     anonymisedAt: integer("anonymised_at"),
+    /** M3.3: a held contact is never erased or anonymised (added with ALTER TABLE: `acceptances` references contacts). */
+    legalHold: flag("legal_hold"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
     uniqueIndex("contacts_client_email").on(t.clientId, t.email),
     index("contacts_email").on(t.email),
+    // M3.3: one primary contact per client (the API unsets the old one first, in the same batch).
+    uniqueIndex("contacts_one_primary").on(t.clientId).where(sql`${t.isPrimary} = 1`),
     check("contacts_email_lower", sql`${t.email} = lower(${t.email})`),
   ],
 );
