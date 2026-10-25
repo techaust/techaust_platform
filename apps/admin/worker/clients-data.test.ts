@@ -2,6 +2,7 @@
 // data-subject export (step-up, paged, scoped to one client) and erase / anonymise (owner, step-up, legal hold, issued documents).
 import { env } from "cloudflare:workers";
 import { ANONYMISED_CLIENT, ANONYMISED_CONTACT, anonymisedEmail } from "@techaust/core/clients";
+import { gstinCheckChar } from "@techaust/core/gstin";
 import { uuidv7 } from "@techaust/core/ids";
 import { describe, expect, it } from "vitest";
 import { EXPORT_PARTS } from "./clients.ts";
@@ -611,6 +612,37 @@ describe("POST /contacts/:id/erase: erase and anonymise [ADM-CLI-05; owner answe
     expect(await one("SELECT display_name, notes FROM clients WHERE id = ?", biz)).toEqual({
       display_name: "Plain Business",
       notes: "keep",
+    });
+  });
+
+  it("a registered individual client loses its GSTIN (it holds the PAN) and becomes unregistered with its last contact; a business keeps its GSTIN (owner, 2026-10-25)", async () => {
+    const o = await owner();
+    const gstin = (n: number) => {
+      const first14 = `19ABCPK${String(7000 + n).padStart(4, "0")}A1Z`;
+      return first14 + gstinCheckChar(first14);
+    };
+    for (const [n, mode] of [
+      [1, "erase"],
+      [2, "anonymise"],
+    ] as const) {
+      const ind = await mkClient({ type: "individual", gst_status: "registered", gstin: gstin(n) });
+      const last = await mkContact(ind);
+      expect((await erase(o.cookie, last.id, { mode })).status).toBe(200);
+      expect(
+        await one("SELECT gstin, gst_status, state_code, legal_name FROM clients WHERE id = ?", ind),
+      ).toEqual({
+        gstin: null,
+        gst_status: "unregistered",
+        state_code: "19",
+        legal_name: ANONYMISED_CLIENT,
+      });
+    }
+    const biz = await mkClient({ gst_status: "registered", gstin: gstin(3) });
+    const only = await mkContact(biz);
+    expect((await erase(o.cookie, only.id, { mode: "anonymise" })).status).toBe(200);
+    expect(await one("SELECT gstin, gst_status FROM clients WHERE id = ?", biz)).toEqual({
+      gstin: gstin(3),
+      gst_status: "registered",
     });
   });
 
