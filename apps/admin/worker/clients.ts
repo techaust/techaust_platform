@@ -394,6 +394,8 @@ const exportRequest = z.strictObject({
       "email_log",
       "audit_log",
       "access_log",
+      "notes",
+      "files",
     ]),
   ),
   after: z.optional(z.string().check(z.maxLength(400))),
@@ -564,6 +566,11 @@ export const clients = new Hono<AppEnv>()
       contactsNext: list.length > 100 && last ? encodeCursor({ k: last.email, id: last.id }) : null,
       // Contacts that are not anonymised (the list above keeps the tombstones).
       liveContactCount: (live?.results[0] as { n: number } | undefined)?.n ?? 0,
+      // An individual whose personal details were removed: the screens show it read-only (M3.4 review; see anonymised.ts).
+      anonymised:
+        row.type === "individual" &&
+        row.display_name === ANONYMISED_CLIENT &&
+        ((live?.results[0] as { n: number } | undefined)?.n ?? 0) === 0,
       sourceLead: (lead?.results[0] as { id: string; ref: string } | undefined) ?? null,
       // The lock is a finance fact: only a role that reads finance is told.
       ...(canFinance(role)
@@ -912,7 +919,20 @@ export const EXPORT_PARTS: Record<string, { sql: (cur: boolean) => string; time?
       `SELECT id, at, realm, actor_id, method, route, status, ip, user_agent FROM access_log WHERE actor_id = ?1${cur ? " AND (at, id) > (?4, ?5)" : ""} ORDER BY at, id LIMIT 51`,
     time: true,
   },
+  // The client's notes and file records, only where the erase would delete them: the contact is an individual client's last live
+  // contact (`LAST_LIVE_INDIVIDUAL`; the manifest lists these two parts only then, and the SQL repeats the condition). Metadata only:
+  // never the file bytes or the R2 key. Whether the file contents belong in an export is VERIFY WITH CA/LEGAL.
+  notes: {
+    sql: (cur) =>
+      `SELECT n.id, n.body_md AS body, n.visibility, (SELECT code FROM projects WHERE id = n.project_id) AS project_code, n.created_at FROM notes n WHERE n.client_id = ?3 AND ${LAST_LIVE_INDIVIDUAL("n.client_id")}${cur ? " AND n.id > ?5" : ""} ORDER BY n.id LIMIT 51`,
+  },
+  files: {
+    sql: (cur) =>
+      `SELECT f.id, f.filename, f.mime, f.size, f.sha256, f.shared, (SELECT code FROM projects WHERE id = f.project_id) AS project_code, f.created_at FROM files f WHERE f.client_id = ?3 AND ${LAST_LIVE_INDIVIDUAL("f.client_id")}${cur ? " AND f.id > ?5" : ""} ORDER BY f.id LIMIT 51`,
+  },
 };
+/** The export parts that exist only for an individual client's last live contact. */
+const LAST_CONTACT_PARTS = ["notes", "files"];
 
 /** The statements that anonymise (or delete) a person's leads: the lead this contact was made from (`leads.contact_id`, which survives an email change), or by the contact's current email at this client or at none. */
 const MATCHED_LEADS =
@@ -1031,10 +1051,10 @@ export const contacts = new Hono<AppEnv>()
     const db = c.env.DB;
     const contact = await db
       .prepare(
-        "SELECT c.*, cl.type AS client_type FROM contacts c JOIN clients cl ON cl.id = c.client_id WHERE c.id = ?1",
+        "SELECT c.*, cl.type AS client_type, (cl.type = 'individual' AND NOT EXISTS (SELECT 1 FROM contacts o WHERE o.client_id = c.client_id AND o.id <> c.id AND o.anonymised_at IS NULL)) AS last_live FROM contacts c JOIN clients cl ON cl.id = c.client_id WHERE c.id = ?1",
       )
       .bind(id)
-      .first<ContactRow & { client_type: string }>();
+      .first<ContactRow & { client_type: string; last_live: number }>();
     if (!contact) return err(c, NOT_FOUND, 404);
     if (contact.anonymised_at !== null) return err(c, ANONYMISED, 409);
     const base = [id, contact.email, contact.client_id];
@@ -1052,20 +1072,23 @@ export const contacts = new Hono<AppEnv>()
           .bind(contact.client_id),
         db.prepare("SELECT * FROM email_suppressions WHERE email = ?1").bind(contact.email),
       ]);
-      const { client_type: _kind, ...plain } = contact;
+      const { client_type: _kind, last_live: _last, ...plain } = contact;
       out = {
         contact: plain,
         client: client?.results[0] ?? null,
         suppression: supp?.results[0] ?? null,
-        // The parts to ask for next, in order.
-        manifest: Object.keys(EXPORT_PARTS),
+        // The parts to ask for next, in order (notes and files only for an individual client's last live contact).
+        manifest: Object.keys(EXPORT_PARTS).filter(
+          (p) => contact.last_live === 1 || !LAST_CONTACT_PARTS.includes(p),
+        ),
       };
       rows = 1;
     } else {
       const part = EXPORT_PARTS[f.part];
       const cur = f.after === undefined ? null : decodeCursor(f.after);
       if (f.after !== undefined && !cur) return err(c, BAD_REQUEST, 400);
-      if (!part) return err(c, BAD_REQUEST, 400);
+      if (!part || (LAST_CONTACT_PARTS.includes(f.part) && contact.last_live !== 1))
+        return err(c, BAD_REQUEST, 400);
       // Id-ordered parts compare the id (?5); time-ordered ones the pair (?4, ?5). rowid parts carry the number as text.
       const sql = part.sql(cur !== null);
       const bind = cur
@@ -1160,6 +1183,19 @@ export const contacts = new Hono<AppEnv>()
             `DELETE FROM files WHERE ${LAST_LIVE_INDIVIDUAL("files.client_id")} AND ${g.sql(2)} RETURNING r2_key`,
           )
           .bind(id, ...g.params),
+        // 2c. its projects keep only their codes, and their milestones become "Milestone 1, 2, ..." in order (owner, 2026-10-25;
+        //     free-text names can name the person; amounts, dates and statuses stay; VERIFY WITH CA/LEGAL). Same conditions.
+        db
+          .prepare(
+            `UPDATE milestones SET title = 'Milestone ' || (SELECT count(*) FROM milestones m2 WHERE m2.project_id = milestones.project_id AND m2.position <= milestones.position), updated_at = max(?2, updated_at + 1)
+             WHERE project_id IN (SELECT id FROM projects WHERE ${LAST_LIVE_INDIVIDUAL("projects.client_id")}) AND ${g.sql(3)}`,
+          )
+          .bind(id, t, ...g.params),
+        db
+          .prepare(
+            `UPDATE projects SET name = code, updated_at = max(?2, updated_at + 1) WHERE ${LAST_LIVE_INDIVIDUAL("projects.client_id")} AND ${g.sql(3)}`,
+          )
+          .bind(id, t, ...g.params),
         // 3. an individual client's own record, when this is its last live contact (before the contact changes)
         db
           .prepare(

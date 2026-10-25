@@ -235,7 +235,7 @@ export const projects = sqliteTable(
     index("projects_owner").on(t.ownerId),
     // M3.4: lists, the filters, the name prefix search, and one project per source document (M4.5 "Start project" is idempotent).
     index("projects_created").on(t.createdAt, t.id),
-    index("projects_status_updated").on(t.status, t.updatedAt, t.id),
+    index("projects_status_created").on(t.status, t.createdAt, t.id),
     index("projects_name_nocase").on(sql`${t.name} collate nocase`),
     uniqueIndex("projects_source_document")
       .on(t.sourceDocumentId)

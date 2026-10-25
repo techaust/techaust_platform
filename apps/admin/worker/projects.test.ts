@@ -396,7 +396,7 @@ describe("milestones [ADM-PRJ-02]", () => {
     const status = (id: string, to: string) =>
       call(`/milestones/${id}/status`, { cookie: o.cookie, body: { to } });
     expect((await status(m.id, "ready_to_bill")).status).toBe(200);
-    expect(await code(await status(m.id, "ready_to_bill"))).toBe("invalid_transition");
+    expect(await code(await status(m.id, "ready_to_bill"))).toBe("milestone_invalid_transition");
     for (const to of ["invoiced", "paid"]) {
       const res = await status(m.id, to);
       expect(res.status).toBe(409);
@@ -405,8 +405,8 @@ describe("milestones [ADM-PRJ-02]", () => {
     expect((await status(m.id, "pending")).status).toBe(200);
     expect(await one("SELECT status FROM milestones WHERE id = ?", m.id)).toEqual({ status: "pending" });
     const inv = await mkMilestone(p.id, { status: "invoiced" });
-    expect(await code(await status(inv.id, "pending"))).toBe("invalid_transition");
-    expect(await code(await status(inv.id, "ready_to_bill"))).toBe("invalid_transition");
+    expect(await code(await status(inv.id, "pending"))).toBe("milestone_invalid_transition");
+    expect(await code(await status(inv.id, "ready_to_bill"))).toBe("milestone_invalid_transition");
     expect((await status("no-such", "pending")).status).toBe(404);
     expect((await status(m.id, "bogus")).status).toBe(400);
   });
@@ -754,6 +754,8 @@ describe("the lists run on indexes, never a scan of a growing table [docs/05 §5
       noScan(lines);
       expect(lines.join("\n"), JSON.stringify(f)).toMatch(/INDEX/);
     }
+    const byStatus = projectListSql({ status: "active" }, { k: 1, id: "x" }, "after", 25);
+    expect((await plan(byStatus.sql, ...byStatus.bind)).join("\n")).toMatch(/projects_status_created/);
     const { sql, bind } = projectListSql({ q: "ab" }, null, "after", 25);
     const text = (await plan(sql, ...bind)).join("\n");
     expect(text).toMatch(/projects_code/);

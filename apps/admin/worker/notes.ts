@@ -5,6 +5,7 @@
 import { uuidv7 } from "@techaust/core/ids";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
+import { clientLiveSql, refuseAnonymised } from "./anonymised.ts";
 import { type AppEnv, actor, BAD_REQUEST, type Ctx, err, FORBIDDEN, mutate, NOT_FOUND } from "./context.ts";
 import { body, idParam, limitOf, param, STALE_VERSION, text } from "./http.ts";
 import { type Direction, decodeCursor, keysetSql, pageOf } from "./keyset.ts";
@@ -93,8 +94,8 @@ export async function createNote(c: Ctx, s: Scope, f: z.infer<typeof createNoteB
   const vis = f.visibility ?? "internal";
   const from =
     s.kind === "project"
-      ? "SELECT ?1, p.client_id, p.id, ?3, ?4, ?5, ?6, ?6 FROM projects p WHERE p.id = ?2"
-      : "SELECT ?1, c.id, NULL, ?3, ?4, ?5, ?6, ?6 FROM clients c WHERE c.id = ?2";
+      ? `SELECT ?1, p.client_id, p.id, ?3, ?4, ?5, ?6, ?6 FROM projects p WHERE p.id = ?2 AND ${clientLiveSql("p.client_id")}`
+      : `SELECT ?1, c.id, NULL, ?3, ?4, ?5, ?6, ?6 FROM clients c WHERE c.id = ?2 AND ${clientLiveSql("c.id")}`;
   const done = await mutate(c, {
     main: c.env.DB.prepare(
       `INSERT INTO notes (id, client_id, project_id, visibility, body_md, author_id, created_at, updated_at) ${from}`,
@@ -105,7 +106,10 @@ export async function createNote(c: Ctx, s: Scope, f: z.infer<typeof createNoteB
     summary: { noteId: id, [s.kind === "project" ? "projectId" : "clientId"]: s.id, visibility: vis },
     status: 201,
   });
-  if (!done) return err(c, NOT_FOUND, 404);
+  if (!done) {
+    if (!(await scopeExists(c, s))) return err(c, NOT_FOUND, 404);
+    return refuseAnonymised(c);
+  }
   return c.json({ id, createdAt: t, updatedAt: t }, 201);
 }
 

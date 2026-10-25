@@ -364,7 +364,8 @@ export function moveItem<T>(list: readonly T[], from: number, to: number): T[] {
 /** 2.4 MB, 820 KB, 512 bytes: decimal units, as people read file sizes. */
 export function sizeText(bytes: number): string {
   if (bytes < 1000) return bytes === 1 ? "1 byte" : `${bytes} bytes`;
-  if (bytes < 1_000_000) return `${Math.round(bytes / 1000)} KB`;
+  const kb = Math.round(bytes / 1000);
+  if (kb < 1000) return `${kb} KB`; // rounded first, so 999,600 bytes is "1 MB", never "1000 KB"
   const mb = Math.round(bytes / 100_000) / 10;
   return `${mb} MB`;
 }

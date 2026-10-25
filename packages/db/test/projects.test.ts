@@ -133,7 +133,7 @@ describe("project indexes (0024)", () => {
     expect(await names("projects")).toEqual(
       expect.arrayContaining([
         "projects_created",
-        "projects_status_updated",
+        "projects_status_created",
         "projects_name_nocase",
         "projects_source_document",
       ]),

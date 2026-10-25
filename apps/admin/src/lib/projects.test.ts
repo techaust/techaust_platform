@@ -289,6 +289,8 @@ describe("files [ADM-PRJ-04]", () => {
   it("sizes and kinds in words", () => {
     expect(sizeText(1)).toBe("1 byte");
     expect(sizeText(820_000)).toBe("820 KB");
+    expect(sizeText(999_600)).toBe("1 MB");
+    expect(sizeText(999_400)).toBe("999 KB");
     expect(sizeText(2_240_000)).toBe("2.2 MB");
     expect(typeName("application/pdf")).toBe("PDF");
     expect(typeName("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")).toBe("Excel");

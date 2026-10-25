@@ -93,6 +93,7 @@ describe("sniffFileType [ADM-PRJ-04]", () => {
 describe("sanitiseFilename", () => {
   it("keeps an ordinary name", () => {
     expect(sanitiseFilename("Quote v2 (final).pdf")).toBe("Quote v2 (final).pdf");
+    expect(sanitiseFilename(". .pdf")).toBe("file.pdf");
     expect(sanitiseFilename("résumé ₹.txt")).toBe("résumé ₹.txt");
   });
 

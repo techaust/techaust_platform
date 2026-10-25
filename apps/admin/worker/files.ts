@@ -20,6 +20,7 @@ import {
 import { uuidv7 } from "@techaust/core/ids";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
+import { clientGone, clientGoneSql, clientLiveSql, refuseAnonymised } from "./anonymised.ts";
 import {
   type ApiError,
   type AppEnv,
@@ -164,13 +165,19 @@ export async function uploadFile(c: Ctx, s: Scope) {
   // 2. The target and its client.
   const target =
     s.kind === "project"
-      ? await c.env.DB.prepare("SELECT client_id FROM projects WHERE id = ?1")
+      ? await c.env.DB.prepare(
+          `SELECT p.client_id, ${clientGoneSql("p.client_id")} AS gone FROM projects p WHERE p.id = ?1`,
+        )
           .bind(s.id)
-          .first<{ client_id: string }>()
-      : await c.env.DB.prepare("SELECT id AS client_id FROM clients WHERE id = ?1")
+          .first<{ client_id: string; gone: number }>()
+      : await c.env.DB.prepare(
+          `SELECT c.id AS client_id, ${clientGoneSql("c.id")} AS gone FROM clients c WHERE c.id = ?1`,
+        )
           .bind(s.id)
-          .first<{ client_id: string }>();
+          .first<{ client_id: string; gone: number }>();
   if (!target) return err(c, NOT_FOUND, 404);
+  // Before the object is written (the insert below repeats the condition, for the race).
+  if (target.gone === 1) return refuseAnonymised(c);
   const ext = extOf(filename);
   if (!isAllowedExtension(ext)) return err(c, TYPE_NOT_ALLOWED, 415);
 
@@ -241,8 +248,8 @@ export async function uploadFile(c: Ctx, s: Scope) {
   const t = Date.now();
   const from =
     s.kind === "project"
-      ? "SELECT ?1, p.client_id, p.id, ?3, ?4, ?5, ?6, ?7, 0, ?8, ?9 FROM projects p WHERE p.id = ?2"
-      : "SELECT ?1, c.id, NULL, ?3, ?4, ?5, ?6, ?7, 0, ?8, ?9 FROM clients c WHERE c.id = ?2";
+      ? `SELECT ?1, p.client_id, p.id, ?3, ?4, ?5, ?6, ?7, 0, ?8, ?9 FROM projects p WHERE p.id = ?2 AND ${clientLiveSql("p.client_id")}`
+      : `SELECT ?1, c.id, NULL, ?3, ?4, ?5, ?6, ?7, 0, ?8, ?9 FROM clients c WHERE c.id = ?2 AND ${clientLiveSql("c.id")}`;
   let done: boolean;
   try {
     done = await mutate(c, {
@@ -267,7 +274,7 @@ export async function uploadFile(c: Ctx, s: Scope) {
   }
   if (!done) {
     await dropObject(c.env, key, "row not written");
-    return err(c, NOT_FOUND, 404);
+    return (await clientGone(c, target.client_id)) ? refuseAnonymised(c) : err(c, NOT_FOUND, 404);
   }
   return c.json({ id, filename, mime: sniffed.mime, size: len, sha256: sha, createdAt: t }, 201);
 }

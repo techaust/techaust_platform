@@ -14,6 +14,13 @@ import {
 } from "@techaust/core/projects";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
+import {
+  clientGone,
+  clientGoneSql,
+  clientLiveSql,
+  projectClientGone,
+  refuseAnonymised,
+} from "./anonymised.ts";
 import { type ApiError, type AppEnv, BAD_REQUEST, type Ctx, err, mutate, NOT_FOUND } from "./context.ts";
 import { type FileRow, fileListQuery, fileView, listFiles, uploadFile } from "./files.ts";
 import { body, idParam, isUnique, limitOf, param, query, refusedWith, STALE_VERSION, text } from "./http.ts";
@@ -23,6 +30,14 @@ import { createNote, createNoteBody, listNotes, type NoteRow, noteListQuery, not
 const INVALID_TRANSITION: ApiError = {
   code: "invalid_transition",
   message: "A project can't move to that status from where it is",
+};
+const MILESTONE_INVALID_TRANSITION: ApiError = {
+  code: "milestone_invalid_transition",
+  message: "A milestone can't move to that status from where it is",
+};
+const BUDGET_LOCKED: ApiError = {
+  code: "budget_locked",
+  message: "The budget can't change while a percentage milestone is invoiced or paid",
 };
 const ARRIVES_WITH_INVOICING: ApiError = {
   code: "arrives_with_invoicing",
@@ -277,6 +292,9 @@ const projectRow = (c: Ctx, id: string) =>
     .first<ProjectRow>();
 
 /** The code is taken inside the INSERT (the next number after the highest), so two creates cannot read the same one. */
+const PCT_LOCKED =
+  "EXISTS (SELECT 1 FROM milestones m WHERE m.project_id = ?1 AND m.pct_bp IS NOT NULL AND (m.status IN ('invoiced', 'paid') OR m.document_id IS NOT NULL))";
+
 const NEXT_CODE = "printf('PRJ-%04d', coalesce(max(cast(substr(code, 5) AS integer)), 0) + 1)";
 
 export const projects = new Hono<AppEnv>()
@@ -301,7 +319,7 @@ export const projects = new Hono<AppEnv>()
             .prepare(
               `INSERT INTO projects (id, code, client_id, name, status, start_date, target_date, owner_id, currency, budget_minor, created_at, updated_at)
                SELECT ?1, (SELECT ${NEXT_CODE} FROM projects), c.id, ?3, 'planned', ?4, ?5, ?6, c.currency, ?7, ?8, ?8
-               FROM clients c WHERE c.id = ?2 AND (?6 IS NULL OR EXISTS (SELECT 1 FROM staff_users WHERE id = ?6 AND status = 'active'))`,
+               FROM clients c WHERE c.id = ?2 AND ${clientLiveSql("c.id")} AND (?6 IS NULL OR EXISTS (SELECT 1 FROM staff_users WHERE id = ?6 AND status = 'active'))`,
             )
             .bind(
               id,
@@ -319,7 +337,7 @@ export const projects = new Hono<AppEnv>()
           summary: { projectId: id, clientId: f.clientId },
           status: 201,
         });
-        if (!done) return err(c, BAD_OWNER, 400);
+        if (!done) return (await clientGone(c, f.clientId)) ? refuseAnonymised(c) : err(c, BAD_OWNER, 400);
         break;
       } catch (e) {
         if (isUnique(e, "projects.code") && attempt < 2) continue;
@@ -336,7 +354,7 @@ export const projects = new Hono<AppEnv>()
   .get("/:id", param(idParam), async (c) => {
     const { id } = c.req.valid("param");
     const db = c.env.DB;
-    const [p, ms, ns, fs] = await db.batch<Record<string, unknown>>([
+    const [p, ms, ns, fs, gone] = await db.batch<Record<string, unknown>>([
       db
         .prepare(
           `SELECT ${PROJECT_COLS} FROM projects p JOIN clients c ON c.id = p.client_id WHERE p.id = ?1`,
@@ -359,12 +377,15 @@ export const projects = new Hono<AppEnv>()
            FROM files f WHERE f.project_id = ?1 ORDER BY f.created_at DESC, f.id DESC LIMIT 5`,
         )
         .bind(id),
+      db.prepare(`SELECT ${clientGoneSql("p.client_id")} AS gone FROM projects p WHERE p.id = ?1`).bind(id),
     ]);
     const row = p?.results[0] as ProjectRow | undefined;
     if (!row) return err(c, NOT_FOUND, 404);
     const milestones = (ms?.results ?? []) as MilestoneRow[];
     return c.json({
       project: projectView(row),
+      /** The client is an anonymised individual: the screens are read-only (client_anonymised). */
+      clientAnonymised: (gone?.results[0] as { gone: number } | undefined)?.gone === 1,
       milestones: milestones.map((m) => milestoneView(m, row.budget_minor)),
       milestoneTotals: milestoneTotals(
         row.budget_minor,
@@ -407,11 +428,13 @@ export const projects = new Hono<AppEnv>()
       ownerAt >= 0 && changes[ownerAt]?.[2] !== null
         ? ` AND EXISTS (SELECT 1 FROM staff_users WHERE id = ?${ownerAt + 4} AND status = 'active')`
         : "";
+    // A percentage milestone that is invoiced, paid or on a document has its amount fixed by the budget: it cannot move (M3.4 review).
+    const budgetCheck = changes.some(([name]) => name === "budgetMinor") ? ` AND NOT ${PCT_LOCKED}` : "";
     const t = Math.max(Date.now(), row.updated_at + 1);
     const done = await mutate(c, {
       main: db
         .prepare(
-          `UPDATE projects SET ${changes.map(([, col], i) => `${col} = ?${i + 4}`).join(", ")}, updated_at = ?3 WHERE id = ?1 AND updated_at = ?2${ownerCheck}`,
+          `UPDATE projects SET ${changes.map(([, col], i) => `${col} = ?${i + 4}`).join(", ")}, updated_at = ?3 WHERE id = ?1 AND updated_at = ?2 AND ${clientLiveSql("projects.client_id")}${ownerCheck}${budgetCheck}`,
         )
         .bind(id, f.expectedUpdatedAt, t, ...changes.map((ch) => ch[2])),
       action: "project.update",
@@ -422,7 +445,12 @@ export const projects = new Hono<AppEnv>()
     if (!done) {
       const again = await projectRow(c, id);
       if (!again) return err(c, NOT_FOUND, 404);
-      return again.updated_at !== f.expectedUpdatedAt ? err(c, STALE_VERSION, 409) : err(c, BAD_OWNER, 400);
+      if (again.updated_at !== f.expectedUpdatedAt) return err(c, STALE_VERSION, 409);
+      if (await projectClientGone(c, id)) return refuseAnonymised(c);
+      const locked = await db.prepare(`SELECT ${PCT_LOCKED} AS locked`).bind(id).first<{ locked: number }>();
+      if (locked?.locked === 1 && changes.some(([name]) => name === "budgetMinor"))
+        return err(c, BUDGET_LOCKED, 409);
+      return err(c, BAD_OWNER, 400);
     }
     return c.json({ ok: true, changed: true, updatedAt: t });
   })
@@ -430,15 +458,16 @@ export const projects = new Hono<AppEnv>()
   .post("/:id/status", param(idParam), body(statusBody), async (c) => {
     const { id } = c.req.valid("param");
     const { to } = c.req.valid("json");
-    const row = await c.env.DB.prepare("SELECT code, status FROM projects WHERE id = ?1")
+    const row = await c.env.DB.prepare("SELECT code, status, updated_at FROM projects WHERE id = ?1")
       .bind(id)
-      .first<{ code: string; status: ProjectStatus }>();
+      .first<{ code: string; status: ProjectStatus; updated_at: number }>();
     if (!row) return err(c, NOT_FOUND, 404);
     if (!canMoveProject(row.status, to)) return err(c, INVALID_TRANSITION, 409);
-    const t = Date.now();
+    // The version always moves, even inside the same millisecond as the last change.
+    const t = Math.max(Date.now(), row.updated_at + 1);
     const done = await mutate(c, {
       main: c.env.DB.prepare(
-        "UPDATE projects SET status = ?2, updated_at = ?3 WHERE id = ?1 AND status = ?4",
+        "UPDATE projects SET status = ?2, updated_at = max(?3, updated_at + 1) WHERE id = ?1 AND status = ?4",
       ).bind(id, to, t, row.status),
       action: "project.status",
       entityType: "project",
@@ -462,7 +491,7 @@ export const projects = new Hono<AppEnv>()
       main: c.env.DB.prepare(
         `INSERT INTO milestones (id, project_id, position, title, amount_minor, pct_bp, due_date, status, created_at, updated_at)
          SELECT ?1, p.id, coalesce((SELECT max(position) FROM milestones WHERE project_id = p.id), 0) + 1, ?3, ?4, ?5, ?6, 'pending', ?7, ?7
-         FROM projects p WHERE p.id = ?2 AND (SELECT count(*) FROM milestones WHERE project_id = p.id) < ${MAX_MILESTONES}`,
+         FROM projects p WHERE p.id = ?2 AND ${clientLiveSql("p.client_id")} AND (SELECT count(*) FROM milestones WHERE project_id = p.id) < ${MAX_MILESTONES}`,
       ).bind(mid, id, f.title, f.amountMinor ?? null, f.pctBp ?? null, f.dueDate ?? null, t),
       action: "milestone.create",
       entityType: "milestone",
@@ -472,7 +501,8 @@ export const projects = new Hono<AppEnv>()
     });
     if (done) return c.json({ id: mid, updatedAt: t }, 201);
     const exists = await c.env.DB.prepare("SELECT 1 AS x FROM projects WHERE id = ?1").bind(id).first();
-    return exists ? err(c, MILESTONE_LIMIT, 409) : err(c, NOT_FOUND, 404);
+    if (!exists) return err(c, NOT_FOUND, 404);
+    return (await projectClientGone(c, id)) ? refuseAnonymised(c) : err(c, MILESTONE_LIMIT, 409);
   })
 
   // The new order in one statement: every milestone of the project, once. The positions are unique per project, so the statement
@@ -482,8 +512,7 @@ export const projects = new Hono<AppEnv>()
     const { ids } = c.req.valid("json");
     if (new Set(ids).size !== ids.length) return err(c, ORDER_MISMATCH, 400);
     const list = JSON.stringify(ids);
-    const exact =
-      "(SELECT count(*) FROM milestones WHERE project_id = ?1) = json_array_length(?2) AND NOT EXISTS (SELECT 1 FROM milestones WHERE project_id = ?1 AND id NOT IN (SELECT value FROM json_each(?2)))";
+    const exact = `${clientLiveSql("(SELECT client_id FROM projects WHERE id = ?1)")} AND (SELECT count(*) FROM milestones WHERE project_id = ?1) = json_array_length(?2) AND NOT EXISTS (SELECT 1 FROM milestones WHERE project_id = ?1 AND id NOT IN (SELECT value FROM json_each(?2)))`;
     const t = Date.now();
     const done = await mutate(c, {
       main: [
@@ -499,7 +528,8 @@ export const projects = new Hono<AppEnv>()
       entityId: id,
       summary: { projectId: id, count: ids.length },
     });
-    return done ? c.json({ ok: true }) : err(c, ORDER_MISMATCH, 409);
+    if (done) return c.json({ ok: true });
+    return (await projectClientGone(c, id)) ? refuseAnonymised(c) : err(c, ORDER_MISMATCH, 409);
   })
 
   // ---- notes and files of a project ----
@@ -520,6 +550,18 @@ const milestoneRow = (c: Ctx, id: string) =>
   c.env.DB.prepare(`SELECT ${MILESTONE_COLS} FROM milestones WHERE id = ?1`).bind(id).first<MilestoneRow>();
 /** Open for change: pending or ready to bill, and not yet on a document. */
 const OPEN = "status IN ('pending', 'ready_to_bill') AND document_id IS NULL";
+/** The milestone's client is not an anonymised individual (M3.4 review, finding 4). */
+const MILESTONE_CLIENT_LIVE = clientLiveSql(
+  "(SELECT client_id FROM projects WHERE id = milestones.project_id)",
+);
+const milestoneClientGone = async (c: Ctx, id: string) =>
+  (
+    await c.env.DB.prepare(
+      `SELECT ${clientGoneSql("(SELECT client_id FROM projects WHERE id = m.project_id)")} AS gone FROM milestones m WHERE m.id = ?1`,
+    )
+      .bind(id)
+      .first<{ gone: number }>()
+  )?.gone === 1;
 
 export const milestones = new Hono<AppEnv>()
   .patch("/:id", param(idParam), body(patchMilestone), async (c) => {
@@ -565,7 +607,7 @@ export const milestones = new Hono<AppEnv>()
     try {
       done = await mutate(c, {
         main: c.env.DB.prepare(
-          `UPDATE milestones SET ${sets.map(([col], i) => `${col} = ?${i + 4}`).join(", ")}, updated_at = ?3 WHERE id = ?1 AND updated_at = ?2 AND ${OPEN}`,
+          `UPDATE milestones SET ${sets.map(([col], i) => `${col} = ?${i + 4}`).join(", ")}, updated_at = ?3 WHERE id = ?1 AND updated_at = ?2 AND ${OPEN} AND ${MILESTONE_CLIENT_LIVE}`,
         ).bind(id, f.expectedUpdatedAt, t, ...sets.map((s) => s[1])),
         action: "milestone.update",
         entityType: "milestone",
@@ -579,9 +621,8 @@ export const milestones = new Hono<AppEnv>()
     if (!done) {
       const again = await milestoneRow(c, id);
       if (!again) return err(c, NOT_FOUND, 404);
-      return again.updated_at !== f.expectedUpdatedAt
-        ? err(c, STALE_VERSION, 409)
-        : err(c, MILESTONE_LOCKED, 409);
+      if (again.updated_at !== f.expectedUpdatedAt) return err(c, STALE_VERSION, 409);
+      return (await milestoneClientGone(c, id)) ? refuseAnonymised(c) : err(c, MILESTONE_LOCKED, 409);
     }
     return c.json({ ok: true, changed: true, updatedAt: t });
   })
@@ -593,18 +634,21 @@ export const milestones = new Hono<AppEnv>()
     const row = await milestoneRow(c, id);
     if (!row) return err(c, NOT_FOUND, 404);
     if (to === "invoiced" || to === "paid") return err(c, ARRIVES_WITH_INVOICING, 409);
-    if (!canMoveMilestone(row.status, to)) return err(c, INVALID_TRANSITION, 409);
+    if (!canMoveMilestone(row.status, to)) return err(c, MILESTONE_INVALID_TRANSITION, 409);
     const t = Math.max(Date.now(), row.updated_at + 1);
     const done = await mutate(c, {
       main: c.env.DB.prepare(
-        "UPDATE milestones SET status = ?2, updated_at = ?3 WHERE id = ?1 AND status = ?4 AND document_id IS NULL",
+        `UPDATE milestones SET status = ?2, updated_at = ?3 WHERE id = ?1 AND status = ?4 AND document_id IS NULL AND ${MILESTONE_CLIENT_LIVE}`,
       ).bind(id, to, t, row.status),
       action: "milestone.status",
       entityType: "milestone",
       entityId: id,
       summary: { milestoneId: id, projectId: row.project_id, from: row.status, to },
     });
-    return done ? c.json({ ok: true, status: to, updatedAt: t }) : err(c, INVALID_TRANSITION, 409);
+    if (done) return c.json({ ok: true, status: to, updatedAt: t });
+    return (await milestoneClientGone(c, id))
+      ? refuseAnonymised(c)
+      : err(c, MILESTONE_INVALID_TRANSITION, 409);
   })
 
   // Only a pending milestone that is on no document can go.

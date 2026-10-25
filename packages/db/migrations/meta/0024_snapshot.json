@@ -2170,9 +2170,9 @@
           "columns": ["created_at", "id"],
           "isUnique": false
         },
-        "projects_status_updated": {
-          "name": "projects_status_updated",
-          "columns": ["status", "updated_at", "id"],
+        "projects_status_created": {
+          "name": "projects_status_created",
+          "columns": ["status", "created_at", "id"],
           "isUnique": false
         },
         "projects_name_nocase": {
