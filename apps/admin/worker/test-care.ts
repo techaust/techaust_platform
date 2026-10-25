@@ -11,9 +11,6 @@ import { mkProject } from "./test-projects.ts";
 /** Today in IST, as the API reads it. */
 export const today = (now = Date.now()) => toIsoDate(istDate(now));
 
-let tick = 1_700_000_000_000;
-const next = () => ++tick;
-
 /** A member with a session that stays valid whatever a test does to the clock. */
 export async function longSession(role: Role, opts: { name?: string } = {}): Promise<TestSession> {
   const s = await sessionFor(role, opts);
@@ -95,7 +92,7 @@ export async function mkLog(
   over: Record<string, unknown> = {},
 ) {
   const id = uuidv7();
-  const t = next();
+  const t = Date.now() - 1000; // recent: an old `created_at` would be past the author lock
   await insert("time_logs", {
     id,
     user_id: userId,
