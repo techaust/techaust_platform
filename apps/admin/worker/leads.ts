@@ -43,9 +43,18 @@ import {
   mutate,
   NOT_FOUND,
 } from "./context.ts";
+import { buildNewDraft, newDraftStatements } from "./document-draft.ts";
 import { body, idParam, isUnique, optText, param, query, STALE_VERSION, text } from "./http.ts";
 import { type Direction, decodeCursor, keysetSql, PREFIX_END, pageOf } from "./keyset.ts";
 import { queueEmail } from "./mail.ts";
+import {
+  ITEM_COLS,
+  type ItemRow,
+  NEWEST_TERMS,
+  readSettings,
+  SETTINGS_READ,
+  todayIst,
+} from "./quote-model.ts";
 
 // ---- errors, validators ---------------------------------------------------------------------------------------------
 
@@ -879,6 +888,43 @@ export const leads = new Hono<AppEnv>()
     const scopeBody = lead.message ? lead.message.slice(0, 2000) : null;
     const unconverted = "EXISTS (SELECT 1 FROM leads WHERE id = ?13 AND client_id IS NULL)";
 
+    // The draft proposal is the full draft of M4.3 (ADM-LEAD-04): its version group, the template sections of the service, the service's
+    // lines and schedule, the newest terms. It is built by the same builder as the create route, before the batch, from the catalogue and
+    // the settings; the batch only writes it. A lead with no known service gets the three sections every proposal has (and its message).
+    const code = lead.service_code && lead.service_code !== NOT_SURE ? lead.service_code : null;
+    const [itemR, settingsR, termsR, templateR] = await db.batch([
+      db.prepare(`SELECT ${ITEM_COLS} FROM catalogue_items WHERE code = ?1`).bind(code ?? ""),
+      db.prepare(SETTINGS_READ),
+      db.prepare(NEWEST_TERMS),
+      db
+        .prepare(
+          "SELECT body FROM templates WHERE kind = 'proposal' AND category = (SELECT category FROM catalogue_items WHERE code = ?1) ORDER BY version DESC LIMIT 1",
+        )
+        .bind(code ?? ""),
+    ]);
+    const item = (itemR?.results[0] as ItemRow | undefined) ?? null;
+    const built = await buildNewDraft({
+      id: proposalId,
+      type: "proposal",
+      client: {
+        id: clientId,
+        displayName,
+        currency: f.currency,
+        tax: { gstStatus: f.gstStatus, country: f.country, gstin, stateCode },
+      },
+      contact: { id: contactId, name: lead.contact_name },
+      title,
+      // An inactive service is not offered again; the lead still gets its sections.
+      services: item && item.active === 1 ? [{ item }] : [],
+      template: (templateR?.results[0] as { body: string } | undefined)?.body ?? null,
+      settings: readSettings((settingsR?.results ?? []) as { key: string; value: string; version: number }[]),
+      newestTermsId: (termsR?.results[0] as { id: string } | undefined)?.id ?? null,
+      today: todayIst(t),
+      lenientLines: true,
+      leadMessage: scopeBody,
+    });
+    if (!built.ok) return err(c, built.error, built.status);
+
     // One batch: the client (next free code), its primary contact, the draft proposal (no number: numbers come only at issue),
     // the service as a section of the draft, then the lead's own update LAST (the audit row follows only if that changed a row).
     // Every statement depends on the one before it, so a lead converted in the meantime changes nothing at all.
@@ -912,18 +958,22 @@ export const leads = new Hono<AppEnv>()
           marketing,
           f.billingContact ? 1 : 0,
         ),
-      db
-        .prepare(
-          `INSERT INTO documents (id, type, status, client_id, currency, created_by)
-           SELECT ?1, 'proposal', 'draft', ?2, ?3, ?4 WHERE EXISTS (SELECT 1 FROM clients WHERE id = ?2)`,
-        )
-        .bind(proposalId, clientId, f.currency, u.id),
-      db
-        .prepare(
-          `INSERT INTO document_sections (id, document_id, kind, position, title, body_md)
-           SELECT ?1, ?2, 'scope', 1, ?3, ?4 WHERE EXISTS (SELECT 1 FROM documents WHERE id = ?2) AND (?3 IS NOT NULL OR ?4 IS NOT NULL)`,
-        )
-        .bind(uuidv7(), proposalId, title, scopeBody),
+      ...(() => {
+        const draft = newDraftStatements(
+          db,
+          built.state,
+          built.computation,
+          { groupId: proposalId, version: 1, createdBy: u.id, now: t },
+          { sql: (at) => `EXISTS (SELECT 1 FROM clients WHERE id = ?${at})`, params: [clientId] },
+        );
+        return [
+          draft.main,
+          ...draft.children({
+            sql: (at) => `EXISTS (SELECT 1 FROM documents WHERE id = ?${at})`,
+            params: [proposalId],
+          }),
+        ];
+      })(),
       db
         .prepare(
           `UPDATE leads SET client_id = ?2, proposal_id = ?3, contact_id = (SELECT id FROM contacts WHERE id = ?5), ${touchLeadSql("?4")}, updated_at = ?4

@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { mkClient } from "./test-clients.ts";
 import { call, sessionFor } from "./test-helpers.ts";
 import { mkFile, mkMilestone, mkNote, mkProject, pdfOfSize, sha256Hex, upload } from "./test-projects.ts";
+import { getDoc, json, mkDraft, mkTerms, patchDoc, sendDoc } from "./test-quotes.ts";
 
 const time = async (n: number, run: () => Promise<Response>) => {
   const ms: number[] = [];
@@ -21,6 +22,20 @@ const time = async (n: number, run: () => Promise<Response>) => {
   return { median: ms[Math.floor(n / 2)] as number, worst: ms.at(-1) as number };
 };
 const report: string[] = [];
+// M4.3: a proposal of 100 lines and 30,000 characters of sections, saved, read and sent.
+const BIG_LINES = Array.from({ length: 100 }, (_, i) => ({
+  description: `Line ${i} ${"d".repeat(110)}`,
+  detail: "x".repeat(200),
+  qtyMilli: 1000,
+  unit: "fixed",
+  rateMinor: 1_000 + i,
+  sac: "998314",
+}));
+const BIG_SECTIONS = ["estimate", "terms", "acceptance", "summary", "scope", "team"].map((kind) => ({
+  kind,
+  title: kind,
+  bodyMd: "t".repeat(4_990),
+}));
 const show = (name: string, r: { median: number; worst: number }) =>
   report.push(`${name}: median ${r.median.toFixed(1)}, worst ${r.worst.toFixed(1)}`);
 
@@ -58,5 +73,74 @@ describe("wall-time proxy for CPU [docs/05 §10, NFR p99 ≤ 7 ms]", () => {
     expect(page.median).toBeLessThan(500);
     expect(env.FILES).toBeDefined();
     expect(report).toHaveLength(6); // to read the numbers, compare report.join(" | ") with "" and read the failure
+  }, 180_000);
+});
+
+describe("wall-time proxy for CPU of the M4.3 routes: a 100-line proposal with 30,000 characters of sections [docs/05 §10]", () => {
+  it("save (PATCH), read (GET) and send of a cap-sized document; and the cold first request", async () => {
+    await mkTerms();
+    const o = await sessionFor("owner", { stepUp: true });
+    const ms = async (run: () => Promise<Response>, status = 200) => {
+      const t = performance.now();
+      const res = await run();
+      await res.arrayBuffer();
+      const took = performance.now() - t;
+      expect(res.status).toBe(status);
+      return took;
+    };
+    const stat = (xs: number[]) => {
+      const s = [...xs].sort((a, b) => a - b);
+      return { median: s[Math.floor(s.length / 2)] as number, worst: s.at(-1) as number };
+    };
+    const made = await mkDraft(o);
+    let view = await getDoc(o, made.id);
+    const saves: number[] = [];
+    const gets: number[] = [];
+    for (let i = 0; i < 8; i++) {
+      saves.push(
+        await ms(async () => {
+          const res = await patchDoc(o, made.id, {
+            expectedUpdatedAt: view.updatedAt,
+            fields: { title: `Cap-sized ${i}` },
+            lines: BIG_LINES,
+            sections: BIG_SECTIONS,
+          });
+          view = await res.clone().json();
+          return res;
+        }),
+      );
+      gets.push(await ms(() => call(`/documents/${made.id}`, { cookie: o.cookie })));
+    }
+    const sends: number[] = [];
+    for (let i = 0; i < 4; i++) {
+      const d = await mkDraft(o);
+      const v = await getDoc(o, d.id);
+      const saved = await patchDoc(o, d.id, {
+        expectedUpdatedAt: v.updatedAt,
+        lines: BIG_LINES,
+        sections: BIG_SECTIONS,
+      });
+      const sv = await json(saved);
+      sends.push(await ms(() => sendDoc(o, d.id, sv.updatedAt)));
+    }
+    show("PATCH 100 lines + 30,000 characters of sections", stat(saves));
+    show("GET the same document", stat(gets));
+    show("POST send of the same", stat(sends));
+    // The floor of this setup: the cheapest guarded read and a one-call list, for comparison.
+    const floor: number[] = [];
+    const list: number[] = [];
+    for (let i = 0; i < 8; i++) {
+      floor.push(await ms(() => call("/auth/me", { cookie: o.cookie })));
+      list.push(await ms(() => call("/documents?limit=25", { cookie: o.cookie })));
+    }
+    show("floor: GET /auth/me", stat(floor));
+    show("GET /documents (25 rows)", stat(list));
+    // A loose ceiling only (a slow PC and wall time, not CPU); the real gate is the staging cpuTimeMs reading.
+    expect(stat(saves).median).toBeLessThan(500);
+    // Local wall time on this PC (median, ms; M4.3, workerd with local D1), noisy from run to run: PATCH 30 to 44, GET 15 to 25, send 24 to 37; the
+    // floor GET /auth/me 7 and a one-call list 10 to 12 (the same session before the early-check fixes: 34 to 38, 17 to 19, 22 to 26). Wall time
+    // includes the local D1 and the test harness and is an UPPER BOUND of CPU. The CPU of the pure part (parse, zod, engine, hashes, serialising)
+    // is read by `node apps/admin/bench/quote-cpu.ts`; the staging cpuTimeMs reading is the gate (docs/05 §10).
+    expect(report.slice(-5)).toHaveLength(5); // to read the numbers, compare report.slice(-5).join(" | ") with "" and read the failure
   }, 180_000);
 });

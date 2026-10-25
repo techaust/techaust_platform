@@ -33,9 +33,10 @@ const frozenDoc = (clientId: string) =>
 describe("clients_type_locked (0023) [ADM-CLI-01]", () => {
   it("the type changes freely until an issued document exists, then it is locked at the database", async () => {
     const c = await insertClient("C-M33-TYP1");
+    const draft = uuidv7();
     await run(
-      "INSERT INTO documents (id, type, client_id, currency) VALUES (?, 'proposal', ?, 'INR')",
-      uuidv7(),
+      "INSERT INTO documents (id, type, client_id, currency, version_group_id) VALUES (?1, 'proposal', ?2, 'INR', ?1)",
+      draft,
       c,
     );
     await run("UPDATE clients SET type = 'individual' WHERE id = ?", c);

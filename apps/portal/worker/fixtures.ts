@@ -80,7 +80,7 @@ async function org(code: string, name: string): Promise<FxOrg> {
     const n = ++docNo;
     await db
       .prepare(
-        "INSERT INTO documents (id, type, status, client_id, currency, series, fy, number, number_display, frozen_at, voided_at, void_reason, subtotal_minor, taxable_minor, total_minor, balance_minor) VALUES (?1, ?2, ?3, ?4, 'INR', ?5, '2627', ?6, ?7, ?8, ?9, ?10, 100000, 100000, 118000, 118000)",
+        "INSERT INTO documents (id, type, status, client_id, currency, series, fy, number, number_display, frozen_at, voided_at, void_reason, subtotal_minor, taxable_minor, total_minor, balance_minor, version_group_id) VALUES (?1, ?2, ?3, ?4, 'INR', ?5, '2627', ?6, ?7, ?8, ?9, ?10, 100000, 100000, 118000, 118000, ?11)",
       )
       .bind(
         did,
@@ -93,6 +93,8 @@ async function org(code: string, name: string): Promise<FxOrg> {
         o.frozen ? Date.now() - DAY : null,
         o.void ? Date.now() - DAY : null,
         o.void ? "Test" : null,
+        // M4.3: a proposal or estimate is its own version group (the database refuses one without).
+        type === "proposal" || type === "estimate" ? did : null,
       )
       .run();
     return did;

@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import { defaultFormat, financialYear, formatDocumentNumber, sqlPrintfPattern, uuidv7 } from "@techaust/core";
 import { describe, expect, it } from "vitest";
 import {
+  documentTriggerStatements,
   frozenDocumentColumns,
   ISSUABLE_STATUSES,
   issueGuardStatements,
@@ -311,13 +312,17 @@ describe("gap-free numbering (docs/05 §5.4, ADM-INV-03)", () => {
     expect(await first("SELECT 1 AS x FROM doc_counters WHERE fy = '2098'")).toBeNull();
   });
 
-  it("the installed issue_guard_check and issue_result_check are exactly what issueGuardStatements() generates", async () => {
+  it("the installed issue guard is what issueGuardStatements() generates, and issue_result_check is the recreated one of documentTriggerStatements() (M4.3)", async () => {
     const installed = await all<{ name: string; sql: string }>(
       "SELECT name, sql FROM sqlite_master WHERE name IN ('issue_guard_check', 'issue_result', 'issue_result_check')",
     );
     const bySuffix = (name: string) => installed.find((r) => r.name === name)?.sql;
-    // sqlite_master stores the statement as written, without the trailing semicolon.
-    const written = issueGuardStatements().map((s) => s.replace(/;$/, ""));
+    // sqlite_master stores the statement as written, without the trailing semicolon. Migration 0007 wrote the first
+    // issue_result_check; 0032 dropped it and created the one that also knows proposal and estimate versions.
+    const written = [
+      ...issueGuardStatements().filter((s) => !/issue_result_check/.test(s)),
+      ...documentTriggerStatements().filter((s) => /^CREATE TRIGGER `issue_result_check`/.test(s)),
+    ].map((s) => s.replace(/;$/, ""));
     for (const statement of written.filter((s) => /^CREATE /.test(s))) {
       const name = /(?:TRIGGER|VIEW) `([a-z_]+)`/.exec(statement)?.[1] ?? "";
       expect(bySuffix(name), name).toBe(statement);

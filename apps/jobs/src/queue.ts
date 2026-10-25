@@ -2,8 +2,10 @@
 // `-email-dlq`). Each message is acknowledged on success and retried when its consumer throws or asks for a retry;
 // after 5 tries the queue moves it to the dead-letter queue (wrangler.jsonc).
 import { isPurgeMessage, isPurgeScanMessage } from "@techaust/core";
+import { isExpireKind, isExpireMessage } from "@techaust/core/expiry";
 import { isStatsKind, isStatsMessage } from "@techaust/core/stats";
 import { CLAIM_TIMEOUT_MS, processDeadLetter, processEmail } from "./email.ts";
+import { logExpireDeadLetter, processExpire, skipExpire } from "./expire.ts";
 import { processLead } from "./leads.ts";
 import { logEvent, noteInvocation } from "./log.ts";
 import { enqueueDue, purgeLead } from "./purge.ts";
@@ -36,6 +38,10 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
         // A statistics message that ran out of tries: the next night records its date again, so no alert and no retry.
         logStatsDeadLetter(queue, message.body);
         message.ack();
+      } else if (isDlq && isExpireKind(message.body)) {
+        // An expiry message that ran out of tries: the next daily run picks the same offers up again, so no alert and no retry.
+        logExpireDeadLetter(queue);
+        message.ack();
       } else if (isDlq) {
         if (await processDeadLetter(env, queue, message.body)) message.ack();
         else message.retry({ delaySeconds: dlqRetryDelay(message.attempts) });
@@ -49,6 +55,11 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
         // Before the lead fall-through, so a statistics body (valid or not) can never become a lead.
         if (isStatsMessage(message.body)) await processStats(env, message.body);
         else skipStats(message.body);
+        message.ack();
+      } else if (queue.endsWith("-leads") && isExpireKind(message.body)) {
+        // After the statistics, before the lead fall-through, so an expiry body (valid or not) can never become a lead.
+        if (isExpireMessage(message.body)) await processExpire(env, message.body);
+        else skipExpire();
         message.ack();
       } else if (queue.endsWith("-leads")) {
         await processLead(env, message.body);

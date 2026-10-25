@@ -350,12 +350,17 @@ export const carePlans = sqliteTable(
     cancelledAt: integer("cancelled_at"),
     /** UNUSED in M3.5: M5.4 stores the period start (an ISO date) it last billed. */
     lastBilledPeriod: text("last_billed_period"),
+    /** M4.3: the accepted estimate this plan was made from (set once: trigger). Added with ALTER TABLE only: `care_plans` is referenced. */
+    sourceDocumentId: text("source_document_id").references((): AnySQLiteColumn => documents.id),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
     index("care_plans_client").on(t.clientId),
     index("care_plans_status_billing_day").on(t.status, t.billingDay),
+    uniqueIndex("care_plans_source_document")
+      .on(t.sourceDocumentId)
+      .where(sql`${t.sourceDocumentId} is not null`),
     // M3.5: the list (newest first, optionally by status) and the dashboard's "active plans" read.
     index("care_plans_created").on(t.createdAt, t.id),
     index("care_plans_status_created").on(t.status, t.createdAt, t.id),

@@ -294,3 +294,69 @@ export const termsEffectiveFrom = (today: string, plan: PlanDates): string =>
 /** A status change takes effect today (IST), or on the start date if that is later. */
 export const statusEffectiveOn = (today: string, plan: PlanDates): string =>
   today < plan.startDate ? plan.startDate : today;
+
+// ---- a care plan from an accepted estimate (M4.3 item 8; ADM-EST-02) ------------------------------------------------------
+
+/** The catalogue services a care plan is made from: S16 Care Plans (three tiers as default lines), S17 AI Ops, S18 Dev Subscription. */
+export const CARE_SERVICE_CODES = { care: "S16", aiOps: "S17", dev: "S18" } as const;
+/** The S16 default lines (their names in the catalogue, lower case) and the tier each one is. */
+const CARE_LINE_TIERS: ReadonlyMap<string, CareTier> = new Map([
+  ["essential", "essential"],
+  ["growth", "growth"],
+  ["scale", "scale"],
+]);
+
+/** One line of an estimate as far as the mapping needs it. `catalogueLine` is the server-set key, never the editable description. */
+export type EstimateCareLine = {
+  /** The catalogue code of the line's service (S1 to S18), or null for a custom line. */
+  readonly code: string | null;
+  /** The name of the catalogue default line the line was made from (set by the server), or null. */
+  readonly catalogueLine: string | null;
+  readonly qtyMilli: number;
+  readonly unit: string;
+  /** The line's taxable amount: after its own discount and its share of the document discount. */
+  readonly taxableMinor: number;
+};
+export type CareFromEstimate = {
+  readonly tier: CareTier;
+  /** The care line's taxable amount: the plan's monthly price. */
+  readonly priceMinor: number;
+  /** The AI Ops line's taxable amount, or null when the estimate has none. */
+  readonly aiOpsMinor: number | null;
+};
+
+/**
+ * What care plan an estimate describes, or null when it describes none (the API answers 409 `not_a_care_estimate`):
+ * exactly one care line (an S16 line made from the Essential, Growth or Scale default line, or an S18 line) and at most one S17 line,
+ * each for exactly one month. Anything else (a custom line, a second care line, another service, a different quantity or unit, an
+ * S16 line with no default line behind it) is not a care estimate. The tier comes from the key the server set when it made the
+ * line, never from the description, which anyone can edit.
+ */
+export function careFromEstimate(lines: readonly EstimateCareLine[]): CareFromEstimate | null {
+  let care: { tier: CareTier; priceMinor: number } | null = null;
+  let aiOps: number | null = null;
+  for (const l of lines) {
+    if (
+      l.unit !== "month" ||
+      l.qtyMilli !== 1000 ||
+      !Number.isSafeInteger(l.taxableMinor) ||
+      l.taxableMinor < 0
+    )
+      return null;
+    if (l.code === CARE_SERVICE_CODES.aiOps) {
+      if (aiOps !== null) return null;
+      aiOps = l.taxableMinor;
+    } else if (l.code === CARE_SERVICE_CODES.care || l.code === CARE_SERVICE_CODES.dev) {
+      if (care !== null) return null;
+      const tier: CareTier | undefined =
+        l.code === CARE_SERVICE_CODES.dev
+          ? "dev_subscription"
+          : l.catalogueLine === null
+            ? undefined
+            : CARE_LINE_TIERS.get(l.catalogueLine.trim().toLowerCase());
+      if (tier === undefined) return null;
+      care = { tier, priceMinor: l.taxableMinor };
+    } else return null;
+  }
+  return care === null ? null : { ...care, aiOpsMinor: aiOps };
+}

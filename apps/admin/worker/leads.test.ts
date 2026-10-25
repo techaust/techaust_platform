@@ -307,7 +307,12 @@ describe("POST /leads/:id/convert [ADM-LEAD-04]", () => {
       legal_name: "Asha Rao",
       display_name: "Asha Rao",
     });
-    expect(await countOf("document_sections", "document_id = ?", proposalId)).toBe(0); // nothing to carry over
+    // M4.3: nothing to carry over from the lead, but every draft has the three sections a proposal always has.
+    expect(
+      (
+        await rows("SELECT kind FROM document_sections WHERE document_id = ? ORDER BY position", proposalId)
+      ).map((r) => r.kind),
+    ).toEqual(["estimate", "terms", "acceptance"]);
     const named = await addLead();
     const r2 = await convert(
       named.id,
@@ -379,7 +384,7 @@ describe("conversion: consent, country and the draft link (analyst early check)"
       },
       s.cookie,
     );
-    expect(ok.res.status).toBe(201);
+    expect(ok.res.status, JSON.stringify(await ok.res.clone().json())).toBe(201);
     expect(
       await one(
         "SELECT country, gst_status, currency FROM clients ORDER BY created_at DESC, rowid DESC LIMIT 1",
