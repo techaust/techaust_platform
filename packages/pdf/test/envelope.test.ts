@@ -1,9 +1,18 @@
 // The R2 envelope: deterministic bytes, a round trip, and each kind of tampering detected.
+
+import { snapshotSha256 } from "@techaust/core/documents";
 import { describe, expect, it } from "vitest";
-import { buildEnvelope, draftOf, parseEnvelope, serializeEnvelope, verifyEnvelope } from "../src/envelope.ts";
+import {
+  buildEnvelope,
+  draftOf,
+  parseEnvelope,
+  serializeEnvelope,
+  snapshotInputOf,
+  verifyEnvelope,
+} from "../src/envelope.ts";
 import { canonicalJson, sha256Hex } from "../src/hash.ts";
 import type { Envelope } from "../src/types.ts";
-import { buildFixture, FIXTURE_NAMES, testContentHash } from "./fixtures/index.ts";
+import { buildFixture, FIXTURE_NAMES } from "./fixtures/index.ts";
 
 // biome-ignore lint/suspicious/noExplicitAny: a test mutates arbitrary parts of parsed JSON
 type Loose = any;
@@ -55,7 +64,7 @@ describe("serialisation", () => {
       const { envelope } = await buildFixture(name);
       const parsed = parseEnvelope(serializeEnvelope(envelope));
       expect(parsed).toEqual(buildEnvelope(envelope));
-      expect(await verifyEnvelope(parsed as Envelope, testContentHash)).toEqual({ ok: true });
+      expect(await verifyEnvelope(parsed as Envelope)).toEqual({ ok: true });
     }
   });
 
@@ -98,7 +107,7 @@ describe("parseEnvelope", () => {
 });
 
 describe("verifyEnvelope detects tampering", () => {
-  const verify = (e: Envelope) => verifyEnvelope(e, testContentHash);
+  const verify = (e: Envelope) => verifyEnvelope(e);
 
   it("passes the untouched fixture", async () => {
     expect(await verify((await buildFixture("long-inter-inr")).envelope)).toEqual({ ok: true });
@@ -159,7 +168,7 @@ describe("verifyEnvelope detects tampering", () => {
     const e = clone((await buildFixture("short-intra-inr")).envelope);
     e.snapshot.computedJson = "not json";
     e.snapshot.header.computedSha256 = await sha256Hex("not json");
-    e.snapshotSha256 = await sha256Hex(canonicalJson({ v: 2, header: e.snapshot.header }));
+    e.snapshotSha256 = await snapshotSha256(snapshotInputOf(e));
     expect(await verify(e)).toEqual({ ok: false, code: "computed_json" });
   });
 

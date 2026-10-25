@@ -4,6 +4,7 @@
 // Nothing is sent, stored or logged; the sample values are made up.
 import { describeUserAgent, WARM_SAMPLES, warmConsumerMessages, warmLabels } from "@techaust/core";
 import { renderEmail } from "@techaust/email";
+import { warmPdf } from "@techaust/pdf";
 import { alertData } from "./leads.ts";
 
 /** Returns the parses and renders that succeeded (5 + 10), so a test notices a warm-up that silently stopped working. */
@@ -86,5 +87,7 @@ export function warmConsumers(): number {
   } catch {
     // never stop a Worker from starting
   }
+  // M4.4: one sample document through the view, Markdown and HTML code (the render message's CPU, JOB-PDF-01). Returns 0 on failure.
+  warmPdf();
   return parsed + rendered;
 }

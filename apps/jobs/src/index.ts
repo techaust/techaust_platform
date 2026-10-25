@@ -3,6 +3,7 @@ import { warmSesSigning } from "@techaust/email";
 import { Hono } from "hono";
 import { secureHeaders } from "hono/secure-headers";
 import { noteInvocation } from "./log.ts";
+import { enqueueSweep } from "./pdf.ts";
 import { enqueueDue, PURGE_CRON } from "./purge.ts";
 import { handleQueue } from "./queue.ts";
 import { enqueueStats } from "./stats.ts";
@@ -31,6 +32,8 @@ export default {
     if (controller.cron !== PURGE_CRON) return;
     const done = await Promise.allSettled([
       enqueueDue(env, controller.scheduledTime),
+      // M4.4: ONE sweep message on the PDF queue; the consumer picks the sent documents that still have no PDF (<= 20 a run).
+      enqueueSweep(env, controller.scheduledTime),
       enqueueStats(env, controller.scheduledTime, [expireMessage(controller.scheduledTime)]),
     ]);
     const failed = done.find((d) => d.status === "rejected");

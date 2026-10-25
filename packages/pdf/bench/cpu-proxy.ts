@@ -4,7 +4,7 @@
 import { parseEnvelope, serializeEnvelope, verifyEnvelope } from "../src/envelope.ts";
 import { renderDocumentHtml } from "../src/render.ts";
 import { toPdfView } from "../src/view.ts";
-import { buildFixture, testContentHash } from "../test/fixtures/index.ts";
+import { buildFixture } from "../test/fixtures/index.ts";
 
 // Cap size: 100 lines (the engine's maximum), 16 sections of 1,800 characters (about the 30,000-character total), 12 KB of terms.
 const { envelope } = await buildFixture("long-inter-inr", {
@@ -30,14 +30,14 @@ const timed = async (name: string, run: () => unknown | Promise<unknown>, n = 30
 const results = [
   await timed("parse (JSON.parse of the envelope)", once),
   await timed("verify (3 hashes + content hash stand-in)", async () => {
-    const r = await verifyEnvelope(once(), testContentHash);
+    const r = await verifyEnvelope(once());
     if (!r.ok) throw new Error(r.code);
   }),
   await timed("view + Markdown + HTML", () => renderDocumentHtml(toPdfView(once()))),
   await timed("render message total (parse + view + HTML)", () => renderDocumentHtml(toPdfView(once()))),
   await timed("snapshot message total (parse + verify + serialise)", async () => {
     const e = once();
-    await verifyEnvelope(e, testContentHash);
+    await verifyEnvelope(e);
     return serializeEnvelope(e);
   }),
 ];

@@ -15,6 +15,7 @@
     "@techaust/core": "workspace:*",
     "@techaust/db": "workspace:*",
     "@techaust/email": "workspace:*",
+    "@techaust/pdf": "workspace:*",
     "hono": "4.13.13"
   },
   "devDependencies": {

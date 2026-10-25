@@ -27,7 +27,13 @@
     "EMAIL_ASSET_BASE": "http://localhost:4321/brand/",
     // Lead retention clean-up (M3.2): "dry_run" only logs the lead references it would delete; "live" deletes. Dry run
     // everywhere until the owner says otherwise; production has no value (and no cron) until Phase 7.
-    "LEAD_PURGE_MODE": "dry_run"
+    "LEAD_PURGE_MODE": "dry_run",
+    // PDFs (M4.4). PDF_RENDERER "stub" (local only; refused anywhere else) returns a fixed one-page PDF, because the Browser Run binding
+    // does not work locally. PDF_MIN_SPACING_MS: the Free plan allows one Quick Action request every 10 s. PORTAL_URL: where M4.5's
+    // client links point.
+    "PDF_RENDERER": "stub",
+    "PDF_MIN_SPACING_MS": "10000",
+    "PORTAL_URL": "http://localhost:5174/"
   },
   // Daily 22:00 UTC (03:30 IST): enqueues the leads due for deletion (JOB-CRON-01) and one message per nightly statistic for the IST day that
   // just ended (M3.5, stats_daily); it enqueues and reads nothing else. Not inherited.
@@ -43,6 +49,9 @@
       "migrations_dir": "../../packages/db/migrations"
     }
   ],
+  // The sent documents' envelopes and PDFs (M4.4): fixed keys docs/<type>/<fy>/<number>-v<version>.{json,pdf}, written once and never
+  // overwritten (If-None-Match). The admin Worker binds the same bucket to stream a PDF to staff. Production has no bucket until Phase 7.
+  "r2_buckets": [{ "binding": "DOCS", "bucket_name": "techaust-local-docs" }],
   // Queues (docs/05 §11): one unit of work per message, 5 tries, then the dead-letter queue. max_batch_size is 1 (the
   // brief said 5): the Free plan's 10 ms CPU limit applies per invocation, so a batch of five messages could pass it. The web Worker produces to
   // the leads queue; this Worker consumes it and produces to the email queue. The dead-letter consumers have no further
@@ -52,9 +61,20 @@
     "producers": [
       { "binding": "EMAIL_QUEUE", "queue": "techaust-local-email" },
       // The clean-up enqueues onto the leads queue this Worker also consumes (M3.2; no new queue).
-      { "binding": "LEADS_QUEUE", "queue": "techaust-local-leads" }
+      { "binding": "LEADS_QUEUE", "queue": "techaust-local-leads" },
+      // The PDF queue (M4.4): snapshot, render and sweep messages. Browser Run allows one request every 10 s on the Free plan, so
+      // the consumer runs one message at a time and waits inside the message (src/pacer.ts).
+      { "binding": "PDF_QUEUE", "queue": "techaust-local-pdf" }
     ],
     "consumers": [
+      {
+        "queue": "techaust-local-pdf",
+        "max_batch_size": 1,
+        "max_concurrency": 1,
+        "max_retries": 5,
+        "dead_letter_queue": "techaust-local-pdf-dlq"
+      },
+      { "queue": "techaust-local-pdf-dlq", "max_batch_size": 1, "max_retries": 5 },
       {
         "queue": "techaust-local-leads",
         "max_batch_size": 1,
@@ -91,8 +111,15 @@
         "SES_CONFIGURATION_SET": "techaust-transactional",
         "ADMIN_URL": "https://techaust-platform-admin-staging.techaust-technologies-153.workers.dev/",
         "EMAIL_ASSET_BASE": "https://techaust-platform-web-staging.techaust-technologies-153.workers.dev/brand/",
-        "LEAD_PURGE_MODE": "dry_run"
+        "LEAD_PURGE_MODE": "dry_run",
+        "PDF_RENDERER": "browser",
+        "PDF_MIN_SPACING_MS": "10000",
+        "PORTAL_URL": "https://techaust-platform-portal-staging.techaust-technologies-153.workers.dev/"
       },
+      // Browser Run (PDF rendering, M4.4): `env.BROWSER.quickAction("pdf", ...)`. It needs no API token, but it is not inherited and
+      // does not work locally, so only staging has it. The owner switches Browser Run on before the M4.4 merge (run file, H2).
+      "browser": { "binding": "BROWSER" },
+      "r2_buckets": [{ "binding": "DOCS", "bucket_name": "techaust-staging-docs" }],
       "triggers": { "crons": ["0 22 * * *"] },
       "secrets": { "required": ["SES_ACCESS_KEY_ID", "SES_SECRET_ACCESS_KEY"] },
       "d1_databases": [
@@ -106,9 +133,18 @@
       "queues": {
         "producers": [
           { "binding": "EMAIL_QUEUE", "queue": "techaust-staging-email" },
-          { "binding": "LEADS_QUEUE", "queue": "techaust-staging-leads" }
+          { "binding": "LEADS_QUEUE", "queue": "techaust-staging-leads" },
+          { "binding": "PDF_QUEUE", "queue": "techaust-staging-pdf" }
         ],
         "consumers": [
+          {
+            "queue": "techaust-staging-pdf",
+            "max_batch_size": 1,
+            "max_concurrency": 1,
+            "max_retries": 5,
+            "dead_letter_queue": "techaust-staging-pdf-dlq"
+          },
+          { "queue": "techaust-staging-pdf-dlq", "max_batch_size": 1, "max_retries": 5 },
           {
             "queue": "techaust-staging-leads",
             "max_batch_size": 1,

@@ -1,0 +1,1 @@
+CREATE INDEX `documents_pdf_pending` ON `documents` (`frozen_at`) WHERE "documents"."frozen_at" is not null and "documents"."pdf_sha256" is null and "documents"."type" in ('proposal', 'estimate');

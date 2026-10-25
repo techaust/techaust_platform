@@ -227,6 +227,9 @@ importers:
       '@techaust/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@techaust/pdf':
+        specifier: workspace:*
+        version: link:../../packages/pdf
       '@types/react':
         specifier: 19.3.0
         version: 19.3.0
@@ -260,6 +263,9 @@ importers:
       '@techaust/email':
         specifier: workspace:*
         version: link:../../packages/email
+      '@techaust/pdf':
+        specifier: workspace:*
+        version: link:../../packages/pdf
       hono:
         specifier: 4.13.13
         version: 4.13.13
@@ -524,6 +530,9 @@ importers:
       '@techaust/core':
         specifier: workspace:*
         version: link:../core
+      '@techaust/db':
+        specifier: workspace:*
+        version: link:../db
     devDependencies:
       '@cantoo/pdf-lib':
         specifier: 2.11.1

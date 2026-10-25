@@ -78,7 +78,8 @@ export type EnvLine = {
   catalogueLine: string | null;
 };
 
-export type EnvSection = { kind: string; title: string | null; bodyMd: string; hidden: boolean };
+/** `bodyMd` can be null (an empty section): it is hashed as stored. */
+export type EnvSection = { kind: string; title: string | null; bodyMd: string | null; hidden: boolean };
 
 export type EnvStep = {
   label: string;

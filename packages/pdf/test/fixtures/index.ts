@@ -1,6 +1,7 @@
 // Document fixtures for the PDF tests: envelopes built through core's REAL tax engine (computeDocument, computeSchedule), so every
 // figure is what the engine produces. SAMPLE DATA ONLY (the repo is public): "Sample ..." names, @example.test addresses.
 
+import { contentHash, snapshotSha256 } from "@techaust/core/documents";
 import { SETTINGS_DEFAULTS } from "@techaust/core/settings";
 import {
   type ComputedDocument,
@@ -9,8 +10,8 @@ import {
   type LineInput,
   type TaxContext,
 } from "@techaust/core/tax";
-import { type ContentHasher, type HashDraft, serializeEnvelope } from "../../src/envelope.ts";
-import { canonicalJson, sha256Hex } from "../../src/hash.ts";
+import { draftOf, serializeEnvelope, snapshotInputOf } from "../../src/envelope.ts";
+import { sha256Hex } from "../../src/hash.ts";
 import type {
   Envelope,
   EnvLine,
@@ -19,13 +20,6 @@ import type {
   RecipientSnap,
   SnapshotHeader,
 } from "../../src/types.ts";
-
-/**
- * Stands in for M4.3's `contentHash` (core documents.ts), which is not on this branch yet: a SHA-256 over the draft and the computed
- * result. The jobs consumer passes the real one; the envelope code only calls "a hasher".
- */
-export const testContentHash: ContentHasher = (draft: HashDraft, computed: unknown) =>
-  sha256Hex(JSON.stringify({ draft, computed }));
 
 // SAMPLE: not TecHaust's GSTIN (a made-up number whose check character is valid).
 export const SAMPLE_SUPPLIER_GSTIN = "19ABCDE1234F1ZX";
@@ -451,23 +445,22 @@ export async function buildFixture(
     schedule: steps,
     terms: { id: "trm_sample_1", version: 3, sha256: termsSha, bodyMd: termsBody },
   };
-  const draft: HashDraft = {
+  // The real M4.3 functions (the send route's own): the fixtures are sealed exactly as a send seals a document.
+  const draftEnvelope: Envelope = {
+    v: 1,
+    documentId: "",
     type: spec.type,
-    clientId: header.document.clientId,
-    contactId: spec.recipient.contactId ?? null,
-    title: header.document.title,
-    currency: spec.currency,
-    validityDays: 15,
-    termsVersionId: "trm_sample_1",
-    discountKind: header.document.discountKind,
-    discountValue: header.document.discountValue,
-    exportMode: header.document.exportMode,
-    lines,
-    sections: spec.sections,
-    schedule: steps,
+    version: spec.version,
+    number: 0,
+    numberDisplay: "",
+    series: "",
+    fy: "",
+    sentAt: 0,
+    snapshotSha256: "",
+    snapshot: snapshotBase,
   };
-  header.document.contentSha256 = await testContentHash(draft, JSON.parse(computedJson));
-  const snapshotSha256 = await sha256Hex(canonicalJson({ v: 2, header }));
+  header.document.contentSha256 = await contentHash(draftOf(draftEnvelope), computed);
+  const snapshotHash = await snapshotSha256(snapshotInputOf(draftEnvelope));
   const prefix = spec.type === "proposal" ? "PRP" : "EST";
   const envelope: Envelope = {
     v: 1,
@@ -479,7 +472,7 @@ export async function buildFixture(
     series: spec.type,
     fy: "2026-27",
     sentAt: Date.UTC(2026, 9, 26, 6, 0, 0),
-    snapshotSha256,
+    snapshotSha256: snapshotHash,
     snapshot: snapshotBase,
   };
   return { name, envelope, computed };

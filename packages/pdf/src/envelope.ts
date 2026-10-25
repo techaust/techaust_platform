@@ -1,31 +1,14 @@
 // The R2 envelope: the frozen copy a PDF is rendered from (lead decision L4). Written with `JSON.stringify` in a fixed key order, so the
 // same document always gives the same bytes. Verification recomputes every hash it can from the envelope itself:
-//   - snapshotSha256 = sha256(canonicalJson({v: 2, header}))        (M4.3 `documentSnapshot` format v2)
+//   - snapshotSha256 = core `snapshotSha256` of the header's parts (M4.3, the very function the send route sealed it with)
 //   - header.computedSha256 = sha256(computedJson)
 //   - header.terms.sha256 = sha256(terms.bodyMd), and the header terms equal the snapshot terms
-//   - header.document.contentSha256 = the content hash of lines, sections, schedule and the computed result, through the hasher the
-//     CALLER passes: the jobs consumer passes M4.3's `contentHash` (core `documents.ts`), the very function the send route uses.
-import { canonicalJson, sha256Hex } from "./hash.ts";
+//   - header.document.contentSha256 = core `contentHash` of lines, sections, schedule and the computed result (the send route's own).
+import { contentHash, type DraftContent, type SnapshotInput, snapshotSha256 } from "@techaust/core/documents";
+import { SCHEDULE_TRIGGERS } from "@techaust/core/schedule-text";
+import type { ComputedDocument } from "@techaust/core/tax";
+import { sha256Hex } from "./hash.ts";
 import type { Envelope, EnvelopeSnapshot, RecipientSnap, SnapshotHeader } from "./types.ts";
-
-/** The draft shape M4.3's `contentHash(draft, computed)` takes (core `DraftContent`), rebuilt from an envelope. */
-export type HashDraft = {
-  type: "proposal" | "estimate";
-  clientId: string;
-  contactId: string | null;
-  title: string | null;
-  currency: string;
-  validityDays: number | null;
-  termsVersionId: string | null;
-  discountKind: string | null;
-  discountValue: number | null;
-  exportMode: string | null;
-  lines: EnvelopeSnapshot["lines"];
-  sections: { kind: string; title: string | null; bodyMd: string; hidden: boolean }[];
-  schedule: EnvelopeSnapshot["schedule"];
-};
-
-export type ContentHasher = (draft: HashDraft, computed: unknown) => Promise<string>;
 
 export type VerifyCode =
   | "version"
@@ -37,32 +20,20 @@ export type VerifyCode =
   | "content_hash";
 export type VerifyResult = { ok: true } | { ok: false; code: VerifyCode };
 
-const addr = (a: RecipientSnap["address"]) =>
-  a === undefined
-    ? undefined
-    : {
-        line1: a.line1,
-        ...(a.line2 === undefined ? {} : { line2: a.line2 }),
-        city: a.city,
-        ...(a.state === undefined ? {} : { state: a.state }),
-        ...(a.stateCode === undefined ? {} : { stateCode: a.stateCode }),
-        ...(a.postalCode === undefined ? {} : { postalCode: a.postalCode }),
-        country: a.country,
-      };
+/** A copy with its keys in sorted order and no undefined values: fixed bytes for any object the send route froze (unknown keys are kept, so the hash still matches). */
+function sorted<T extends object>(o: T): T {
+  return Object.fromEntries(
+    Object.entries(o)
+      .filter(([, v]) => v !== undefined)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([k, v]) => [
+        k,
+        typeof v === "object" && v !== null && !Array.isArray(v) ? sorted(v as object) : v,
+      ]),
+  ) as T;
+}
 
-const recipient = (r: RecipientSnap): RecipientSnap => ({
-  legalName: r.legalName,
-  ...(r.displayName === undefined ? {} : { displayName: r.displayName }),
-  ...(r.gstin === undefined ? {} : { gstin: r.gstin }),
-  ...(r.stateCode === undefined ? {} : { stateCode: r.stateCode }),
-  ...(r.address === undefined ? {} : { address: addr(r.address) as NonNullable<RecipientSnap["address"]> }),
-  ...(r.email === undefined ? {} : { email: r.email }),
-  country: r.country,
-  ...(r.contactId === undefined ? {} : { contactId: r.contactId }),
-  ...(r.contactName === undefined ? {} : { contactName: r.contactName }),
-  ...(r.clientType === undefined ? {} : { clientType: r.clientType }),
-  ...(r.gstStatus === undefined ? {} : { gstStatus: r.gstStatus }),
-});
+const recipient = (r: RecipientSnap): RecipientSnap => sorted(r);
 
 function header(h: SnapshotHeader): SnapshotHeader {
   const d = h.document;
@@ -178,8 +149,11 @@ export function parseEnvelope(text: string): Envelope | null {
   return v as unknown as Envelope;
 }
 
-/** The draft a content hash is computed over, from an envelope. */
-export function draftOf(e: Envelope): HashDraft {
+const triggerOf = (v: string): DraftContent["schedule"][number]["trigger"] =>
+  SCHEDULE_TRIGGERS.find((t) => t === v) ?? "on_accept";
+
+/** The draft a content hash is computed over, from an envelope (the same mapping as `draftContentOfBundle`). */
+export function draftOf(e: Envelope): DraftContent {
   const h = e.snapshot.header;
   return {
     type: h.document.type,
@@ -194,12 +168,26 @@ export function draftOf(e: Envelope): HashDraft {
     exportMode: h.document.exportMode,
     lines: e.snapshot.lines,
     sections: e.snapshot.sections,
-    schedule: e.snapshot.schedule,
+    schedule: e.snapshot.schedule.map((x) => ({ ...x, trigger: triggerOf(x.trigger) })),
   };
 }
 
+/** The input of the seal, rebuilt from the envelope's header. */
+export const snapshotInputOf = (e: Envelope): SnapshotInput => {
+  const h = e.snapshot.header;
+  return {
+    document: h.document,
+    supply: h.supply,
+    recipient: h.recipient,
+    issuer: h.issuer,
+    terms: h.terms,
+    instalmentAmounts: h.instalmentAmounts,
+    computedSha256: h.computedSha256,
+  };
+};
+
 /** Recomputes every hash of the envelope. A render never starts from an envelope that fails. */
-export async function verifyEnvelope(e: Envelope, contentHash: ContentHasher): Promise<VerifyResult> {
+export async function verifyEnvelope(e: Envelope): Promise<VerifyResult> {
   const s = e.snapshot;
   const h = s.header;
   if (e.v !== 1 || s.v !== 2) return { ok: false, code: "version" };
@@ -212,14 +200,14 @@ export async function verifyEnvelope(e: Envelope, contentHash: ContentHasher): P
   ) {
     return { ok: false, code: "mismatch" };
   }
-  if ((await sha256Hex(canonicalJson({ v: 2, header: h }))) !== e.snapshotSha256) {
+  if ((await snapshotSha256(snapshotInputOf(e))) !== e.snapshotSha256) {
     return { ok: false, code: "snapshot_hash" };
   }
   if ((await sha256Hex(s.computedJson)) !== h.computedSha256) return { ok: false, code: "computed_hash" };
   if ((await sha256Hex(s.terms.bodyMd)) !== s.terms.sha256) return { ok: false, code: "terms_hash" };
-  let computed: unknown;
+  let computed: ComputedDocument;
   try {
-    computed = JSON.parse(s.computedJson);
+    computed = JSON.parse(s.computedJson) as ComputedDocument;
   } catch {
     return { ok: false, code: "computed_json" };
   }

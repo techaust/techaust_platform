@@ -1,8 +1,9 @@
 // The envelope as a pre-formatted view: every value a template prints is already a string. No arithmetic happens here (a scanner test
 // bans the operators on money): amounts come from the frozen `computed` text, formatted by core. An empty supplier field is left out.
 // VERIFY WITH CA/LEGAL: the supplier lines, the place-of-supply label, the tax preview rows and the estimate notice wording.
-import { formatMoney, isCurrency, type Money, money, negate, percentFromBp } from "@techaust/core";
+import { formatMoney, isCurrency, type Money, money, negate } from "@techaust/core/money";
 import { placeOfSupplyLabel } from "@techaust/core/pdf-jobs";
+import { percentFromBp } from "@techaust/core/schedule-text";
 import type { ComputedDocument } from "@techaust/core/tax";
 import { countryName, formatMicros, formatQty, shortIsoDate } from "./format.ts";
 import type {
@@ -148,7 +149,7 @@ export function toPdfView(envelope: Envelope, cfg: ViewConfig = DEFAULT_VIEW_CON
     .map((x) => ({
       kind: x.kind,
       title: nonEmpty(x.title) ? x.title : (SECTION_TITLES[x.kind] ?? "Section"),
-      bodyMd: x.bodyMd,
+      bodyMd: x.bodyMd ?? "",
     }));
 
   const company = header.issuer.company;

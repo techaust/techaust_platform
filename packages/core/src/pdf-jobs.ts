@@ -86,3 +86,18 @@ const DAY_MS = 86_400_000;
 export function nextUtcMidnight(nowMs: number): number {
   return (Math.floor(nowMs / DAY_MS) + 1) * DAY_MS;
 }
+
+/** The UTC date ("2026-10-26") of an instant: the day Browser Run's quota counts. */
+export const utcDateOf = (nowMs: number): string => new Date(nowMs).toISOString().slice(0, 10);
+
+/**
+ * The FY label of an FY token ("2627" -> "2026-27"). `documents.fy` holds the token (it is part of the number); the R2 keys and the
+ * envelope use the label. Null for anything that is not two consecutive years.
+ */
+export function fyLabelOfToken(token: string): string | null {
+  if (!/^\d{4}$/.test(token)) return null;
+  const a = Number(token.slice(0, 2));
+  const b = Number(token.slice(2));
+  if ((a + 1) % 100 !== b) return null;
+  return `${2000 + a}-${token.slice(2)}`;
+}
