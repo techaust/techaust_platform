@@ -388,6 +388,7 @@ const exportRequest = z.strictObject({
       "acceptances",
       "decisions",
       "document_sends",
+      "offer_links",
       "documents",
       "email_log",
       "audit_log",
@@ -1118,7 +1119,13 @@ export const contacts = new Hono<AppEnv>()
       // Id-ordered parts compare the id (?5); time-ordered ones the pair (?4, ?5). rowid parts carry the number as text.
       const sql = part.sql(cur !== null);
       const bind = cur
-        ? [...base, cur.k, f.part === "sessions" || f.part === "magic_links" || f.part === "offer_links" ? Number(cur.id) : cur.id]
+        ? [
+            ...base,
+            cur.k,
+            f.part === "sessions" || f.part === "magic_links" || f.part === "offer_links"
+              ? Number(cur.id)
+              : cur.id,
+          ]
         : base;
       // Bind exactly as many values as the statement has parameters (D1 refuses extra ones).
       const params = Math.max(...[...sql.matchAll(/\?(\d+)/g)].map((m) => Number(m[1])));

@@ -37,7 +37,14 @@ export function proposalEventStatements(
       .prepare(
         `UPDATE leads SET stage = ?1, lost_reason = ${lostReason === null ? "NULL" : `?${reasonAt}`}, updated_at = ?2, ${touchLeadSql("?2")} WHERE proposal_id = ?3 AND stage IN (${from})${g ? ` AND ${g.sql(guardAt)}` : ""}`,
       )
-      .bind(rule.to, t, groupId, ...rule.from, ...(g?.params ?? []), ...(lostReason === null ? [] : [lostReason])),
+      .bind(
+        rule.to,
+        t,
+        groupId,
+        ...rule.from,
+        ...(g?.params ?? []),
+        ...(lostReason === null ? [] : [lostReason]),
+      ),
     db
       .prepare(
         `INSERT INTO lead_activities (id, lead_id, kind, body, actor_id, created_at)

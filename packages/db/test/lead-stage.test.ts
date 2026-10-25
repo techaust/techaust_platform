@@ -51,7 +51,10 @@ describe("proposalEventStatements", () => {
     for (const from of LEAD_STAGES)
       it(`${event} on a lead at ${from} gives what the pure rule says`, async () => {
         const { id, docId } = await leadWithProposal(from);
-        await env.DB.batch(proposalEventStatements(env.DB, docId, event, 1_800_000_000_000));
+        const reason = PROPOSAL_EVENT_RULES[event].to === "lost" ? "price" : null;
+        await env.DB.batch(
+          proposalEventStatements(env.DB, docId, event, 1_800_000_000_000, undefined, reason),
+        );
         const expected = stageAfterProposalEvent(from, event) ?? from;
         expect(await first("SELECT stage FROM leads WHERE id = ?", id)).toEqual({ stage: expected });
         const rows = await env.DB.prepare(
@@ -91,6 +94,54 @@ describe("proposalEventStatements", () => {
     // A later version's send finds the lead already moved: nothing more is written.
     await env.DB.batch(proposalEventStatements(env.DB, docId, "proposal_sent", 1_800_000_001_000, holds));
     expect(await first("SELECT count(*) AS n FROM lead_activities WHERE lead_id = ?", id)).toEqual({ n: 1 });
+  });
+
+  // M4.5 (owner, 2026-10-26): a client's decline moves the lead from proposal_sent to lost, with the mapped reason.
+  it("proposal_declined: proposal_sent becomes lost with the reason, a note on the timeline, and the retention clock restarts", async () => {
+    const { id, docId } = await leadWithProposal("proposal_sent");
+    await env.DB.batch(
+      proposalEventStatements(env.DB, docId, "proposal_declined", 1_800_000_000_000, undefined, "competitor"),
+    );
+    expect(await first("SELECT stage, lost_reason FROM leads WHERE id = ?", id)).toEqual({
+      stage: "lost",
+      lost_reason: "competitor",
+    });
+    const rows = await env.DB.prepare("SELECT body FROM lead_activities WHERE lead_id = ?")
+      .bind(id)
+      .all<{ body: string }>();
+    expect(rows.results.map((r) => r.body)).toEqual(["Stage set to lost (proposal declined)"]);
+  });
+
+  it("proposal_declined leaves a won lead, an already lost lead (its own reason) and a lead that never got the proposal alone", async () => {
+    for (const stage of ["won", "lost", "new", "qualified"] as const) {
+      const { id, docId } = await leadWithProposal(stage);
+      await env.DB.batch(
+        proposalEventStatements(env.DB, docId, "proposal_declined", 1_800_000_000_000, undefined, "other"),
+      );
+      expect(await first("SELECT stage, lost_reason FROM leads WHERE id = ?", id)).toEqual({
+        stage,
+        lost_reason: stage === "lost" ? "price" : null,
+      });
+      expect(await first("SELECT count(*) AS n FROM lead_activities WHERE lead_id = ?", id)).toEqual({
+        n: 0,
+      });
+    }
+  });
+
+  it("proposal_declined with a guard that does not hold changes nothing; a lost reason goes only with a move to lost", async () => {
+    const { id, docId } = await leadWithProposal("proposal_sent");
+    const nothing = {
+      sql: (at: number) => `EXISTS (SELECT 1 FROM audit_log WHERE id = ?${at})`,
+      params: ["no-such-audit-row"],
+    };
+    await env.DB.batch(
+      proposalEventStatements(env.DB, docId, "proposal_declined", 1_800_000_000_000, nothing, "price"),
+    );
+    expect(await first("SELECT stage FROM leads WHERE id = ?", id)).toEqual({ stage: "proposal_sent" });
+    expect(() => proposalEventStatements(env.DB, docId, "proposal_declined")).toThrow(/lost reason/);
+    expect(() => proposalEventStatements(env.DB, docId, "proposal_sent", 1, undefined, "price")).toThrow(
+      /lost reason/,
+    );
   });
 
   it("a document that is not linked to a lead changes nothing", async () => {

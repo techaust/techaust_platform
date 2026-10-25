@@ -32,7 +32,6 @@ import {
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { insertClientStmt, taxError, taxWarnings } from "./clients.ts";
-import { decisionOf, LEAD_DECISION_SQL } from "./document-offer.ts";
 import {
   type ApiError,
   type AppEnv,
@@ -45,6 +44,7 @@ import {
   NOT_FOUND,
 } from "./context.ts";
 import { buildNewDraft, newDraftStatements } from "./document-draft.ts";
+import { decisionOf, LEAD_DECISION_SQL } from "./document-offer.ts";
 import { body, idParam, isUnique, optText, param, query, STALE_VERSION, text } from "./http.ts";
 import { type Direction, decodeCursor, keysetSql, PREFIX_END, pageOf } from "./keyset.ts";
 import { queueEmail } from "./mail.ts";

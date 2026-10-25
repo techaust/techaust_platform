@@ -5,9 +5,12 @@ import {
   isPurgeMessage,
   isPurgeScanMessage,
   type LeadStage,
+  LOST_REASON_OF_DECLINE,
+  LOST_REASONS,
   normaliseEmail,
   stageAfterProposalEvent,
 } from "../src/lead-lifecycle.ts";
+import { DECLINE_REASONS } from "../src/offers.ts";
 
 describe("lead life cycle", () => {
   it("deleteAfter adds calendar months in UTC (default 12)", () => {
@@ -37,6 +40,19 @@ describe("lead life cycle", () => {
       null,
       null,
     ]);
+  });
+
+  it("a client's decline moves only a lead waiting on the proposal to lost, and every decline reason maps to a lost reason", () => {
+    const all: LeadStage[] = ["new", "qualified", "proposal_sent", "won", "lost"];
+    expect(all.map((s) => stageAfterProposalEvent(s, "proposal_declined"))).toEqual([
+      null,
+      null,
+      "lost",
+      null,
+      null,
+    ]);
+    expect(Object.keys(LOST_REASON_OF_DECLINE).sort()).toEqual([...DECLINE_REASONS].sort());
+    for (const reason of DECLINE_REASONS) expect(LOST_REASONS).toContain(LOST_REASON_OF_DECLINE[reason]);
   });
 
   it("recognises the purge messages", () => {
