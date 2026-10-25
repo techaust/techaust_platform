@@ -1,4 +1,4 @@
-// M3.5 schema (0026, 0027) [ADM-CARE-01, ADM-CARE-03, ADM-TIME-01..03]: the history tables, the time-log triggers, the mirror guards,
+// M3.5 schema (0028, 0029) [ADM-CARE-01, ADM-CARE-03, ADM-TIME-01..03]: the history tables, the time-log triggers, the mirror guards,
 // the SQL twin of the billing period, and the shared loader with its plans.
 import { env } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core";
@@ -111,7 +111,7 @@ const log = (
     ...(extra ? [extra] : []),
   );
 
-describe("the M3.5 tables (0026)", () => {
+describe("the M3.5 tables (0028)", () => {
   it("terms are checked: 15-minute steps, no negatives, a real date, a known tier and rule", async () => {
     const by = await mkStaff();
     const { id } = await mkPlan(by);
@@ -206,7 +206,7 @@ describe("the M3.5 tables (0026)", () => {
         "time_logs_project_date",
       ]),
     );
-    // dropped by 0028: time_logs_care_usage starts with the same two columns (early check L5)
+    // dropped by 0030: time_logs_care_usage starts with the same two columns (early check L5)
     expect(await names("time_logs")).not.toContain("time_logs_care_plan_date");
     expect(await names("care_plans")).toEqual(
       expect.arrayContaining(["care_plans_created", "care_plans_status_created"]),
@@ -217,7 +217,7 @@ describe("the M3.5 tables (0026)", () => {
   });
 });
 
-describe("time-log triggers (0027)", () => {
+describe("time-log triggers (0029)", () => {
   it("an entry has exactly one target, on insert and on update", async () => {
     const u = await mkStaff();
     const p = await mkProject();
@@ -363,7 +363,7 @@ describe("time-log triggers (0027)", () => {
   });
 });
 
-describe("care plan guards (0027)", () => {
+describe("care plan guards (0029)", () => {
   it("terms and status history are append-only", async () => {
     const by = await mkStaff();
     const { id } = await mkPlan(by);

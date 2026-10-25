@@ -1,6 +1,6 @@
 // Time logs (M3.5, ADM-TIME-01..03). Every route is a row of ROUTES (guard.ts); every change is ONE batch through `mutate`, audit row
 // first, with every condition of the write in the WHERE of that row: the 24-hour day, the target being open, the care plan being
-// active on the work date, the author's 7-day lock and the version. The triggers of migration 0027 are the backstop.
+// active on the work date, the author's 7-day lock and the version. The triggers of migration 0029 are the backstop.
 //
 // Rules (docs/runs/m3.5-care-time.md, lead decisions): time is refused when the plan is not active on the work date (entries dated
 // before a pause are still accepted), before the plan starts, on a cancelled project and for an anonymised individual's projects and
