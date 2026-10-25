@@ -2,7 +2,7 @@
 // check-portal-bundle.mjs). Bytes are not what costs metered CPU: a Worker's startup (compile + top-level evaluation) runs
 // before the request, and the Free plan's 10 ms meters the request path. So the guard checks three things:
 //   - a byte ceiling (well under the 3 MB compressed Worker limit),
-//   - a startup budget: the median of compile + top-level evaluation in a fresh `node:vm` context (a local proxy, not workerd),
+//   - a startup budget: the fastest of compile + top-level evaluation in a fresh `node:vm` context (a local proxy, not workerd),
 //   - forbidden modules: classic zod (~150 KB), and PDF code that belongs only in the jobs Worker.
 // The real gate stays the staging cold reading per milestone (docs/runbooks/cpu-baseline.md). Pure helpers are exported for
 // packages/core/test/worker-budget.test.ts; `node scripts/worker-budget.mjs <app>` runs the check after `vite build`.
@@ -37,7 +37,11 @@ export const BUDGETS = {
   },
 };
 
-/** Median compile + top-level evaluation time (ms) of a bundle in fresh `vm` contexts. */
+/**
+ * The fastest compile + top-level evaluation time (ms) of a bundle over fresh `vm` contexts. The fastest run is the code's own cost;
+ * slower runs measure how busy the machine is (a loaded PC read 98 ms for a bundle whose idle runs read 65), so the median made
+ * the guard flaky (lead, 2026-10-25).
+ */
 export function measureStartup(code, runs = 7) {
   const src = code.replace(/export\s*\{[^}]*\};?\s*$/, "");
   const times = [];
@@ -68,8 +72,7 @@ export function measureStartup(code, runs = 7) {
     new vm.Script(`${src}\n//${i}-${start}`, { filename: `budget-${i}.js` }).runInContext(context);
     times.push(Number(process.hrtime.bigint() - start) / 1e6);
   }
-  times.sort((a, b) => a - b);
-  return times[Math.floor(times.length / 2)];
+  return Math.min(...times);
 }
 
 /** Problems with a measured bundle against its budget (empty when it passes). */
@@ -79,7 +82,7 @@ export function checkBundle({ size, text, startupMs }, budget) {
     problems.push(`the Worker bundle is ${size} bytes; the limit is ${budget.maxBytes}`);
   if (startupMs > budget.maxStartupMs)
     problems.push(
-      `startup is ${startupMs.toFixed(1)} ms (median, local); the limit is ${budget.maxStartupMs} ms`,
+      `startup is ${startupMs.toFixed(1)} ms (fastest of 7, local); the limit is ${budget.maxStartupMs} ms`,
     );
   for (const f of budget.forbidden) {
     const m = f.re.exec(text);
@@ -113,6 +116,6 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     process.exit(1);
   }
   console.log(
-    `${app} bundle ok: ${size} bytes (limit ${budget.maxBytes}), startup ${startupMs.toFixed(1)} ms median (limit ${budget.maxStartupMs}), no forbidden modules`,
+    `${app} bundle ok: ${size} bytes (limit ${budget.maxBytes}), startup ${startupMs.toFixed(1)} ms fastest of 7 (limit ${budget.maxStartupMs}), no forbidden modules`,
   );
 }
