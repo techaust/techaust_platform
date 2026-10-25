@@ -184,9 +184,5 @@ describe("the proposal events in the activity feed", () => {
     expect(await actions("accountant")).not.toContain("document.send");
     expect(await actions("staff")).not.toContain("document.convert");
     expect(await actions("sales")).not.toContain("document.convert");
-    // keep the table and the file referenced (a fixture check that the document exists)
-    expect(
-      await env.DB.prepare("SELECT 1 AS x FROM documents WHERE id = ?").bind(made.id).first(),
-    ).not.toBeNull();
   });
 });

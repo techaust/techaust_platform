@@ -89,7 +89,14 @@ export async function sendBatch(q: Quote, over: SendOver = {}) {
     validUntil: "2026-11-09",
     recipient: { legalName: "Example Traders", country: "IN" },
     issuer: {
-      company: { tradeName: "TecHaust", legalName: null, address: null, gstin: null, stateCode: "19" },
+      company: {
+        tradeName: "TecHaust",
+        legalName: null,
+        address: null,
+        gstin: null,
+        stateCode: "19",
+        logo: "logo-primary-color.svg",
+      },
       sender: { staffId: "staff-1", name: "Rupak", email: "contact@example.com" },
     },
     computedJson: "{}",

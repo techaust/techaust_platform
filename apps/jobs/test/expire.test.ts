@@ -4,7 +4,7 @@
 // served by an index. VERIFY WITH CA/LEGAL: what an expired offer means.
 import { env as realEnv } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core";
-import { EXPIRE_PAGE, expireMessage, isExpireMessage } from "@techaust/core/expiry";
+import { EXPIRE_PAGE, type ExpireMessage, expireMessage, isExpireMessage } from "@techaust/core/expiry";
 import { beforeEach, describe, expect, it } from "vitest";
 import { AUDIT_SQL, EXPIRE_SQL, PICK_SQL, processExpire } from "../src/expire.ts";
 import worker from "../src/index.ts";
@@ -264,7 +264,7 @@ describe("pages of fifty", () => {
     const first = await run();
     expect(first).toEqual({ picked: EXPIRE_PAGE, expired: EXPIRE_PAGE, continued: true });
     expect(calls).toHaveLength(1);
-    const next = calls[0]?.bodies[0] as { kind: string; asOf: string; after: string };
+    const next = calls[0]?.bodies[0] as ExpireMessage;
     expect(next).toMatchObject({ kind: "documents.expire", asOf: AS_OF });
     expect(isExpireMessage(next)).toBe(true);
     expect(
