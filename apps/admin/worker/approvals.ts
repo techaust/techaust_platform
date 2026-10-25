@@ -4,6 +4,7 @@
 // The 10 % guard is rule A (owner O-Q1, O-Q2): only catalogue lines count, against the catalogue price when the service was added.
 // Notifications are in-app only in M4.3 (the bell); the two 07 §8 emails come with M4.5. The bell wording here is interim: copy 07-O decides it.
 import { guardFigures } from "@techaust/core/documents";
+import { uuidv7 } from "@techaust/core/ids";
 import { decide } from "@techaust/core/permissions";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
@@ -90,7 +91,7 @@ export const approvalRequests = new Hono<AppEnv>().post(
     const figures = guardFigures(row.reference_minor ?? 0, row.taxable_minor);
     if (!figures.needsApproval) return err(c, APPROVAL_NOT_NEEDED, 409);
 
-    const approvalId = crypto.randomUUID();
+    const approvalId = uuidv7();
     const now = Date.now();
     let done: boolean;
     try {
