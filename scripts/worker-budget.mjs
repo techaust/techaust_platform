@@ -26,13 +26,13 @@ export const BUDGETS = {
   admin: {
     file: "apps/admin/dist/techaust_platform_admin/index.js",
     maxBytes: Math.floor((M0_RAW_BYTES * 3) / 2), // 150 % of M0: room for M3.4–M4.5 (projected ~315–345 KB)
-    maxStartupMs: 200,
+    maxStartupMs: 100,
     forbidden: [CLASSIC_ZOD, PDF_LIB, PUPPETEER, PDF_FONTS],
   },
   portal: {
     file: "apps/portal/dist/techaust_platform_portal/index.js",
     maxBytes: 120_000, // M4.5 adds ~20–25 KB to today's ~58 KB
-    maxStartupMs: 200,
+    maxStartupMs: 100,
     forbidden: [CLASSIC_ZOD, PDF_LIB, PUPPETEER, PDF_FONTS],
   },
 };
