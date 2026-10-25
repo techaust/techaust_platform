@@ -461,7 +461,8 @@ export const leads = new Hono<AppEnv>()
       serviceName =
         (
           await db
-            .prepare("SELECT name FROM catalogue_items WHERE code = ?1")
+            // A retired service (inactive) cannot start a new lead; the write below checks it again.
+            .prepare("SELECT name FROM catalogue_items WHERE code = ?1 AND active = 1")
             .bind(service)
             .first<{ name: string }>()
         )?.name ?? null;
@@ -488,7 +489,8 @@ export const leads = new Hono<AppEnv>()
                  contact_country, owner_id, next_action_at, next_action_note, duplicate_of, last_activity_at, delete_after)
                SELECT ?1, ?2, 'manual', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
                  (SELECT id FROM leads WHERE contact_email = ?6 AND created_at >= ?14 AND created_at <= ?13 ORDER BY created_at DESC LIMIT 1),
-                 ?13, ${deleteAfterSql("?13")}`,
+                 ?13, ${deleteAfterSql("?13")}
+               WHERE ?3 IS NULL OR ?3 = ?15 OR EXISTS (SELECT 1 FROM catalogue_items WHERE code = ?3 AND active = 1)`,
             )
             .bind(
               id,
@@ -505,6 +507,7 @@ export const leads = new Hono<AppEnv>()
               norm(f.nextActionNote),
               t,
               t - LEAD_DUPLICATE_WINDOW_MS,
+              NOT_SURE,
             ),
           action: "lead.create",
           entityType: "lead",

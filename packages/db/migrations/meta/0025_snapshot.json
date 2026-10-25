@@ -334,11 +334,6 @@
           "name": "site_snapshots_published",
           "columns": ["created_at"],
           "isUnique": false
-        },
-        "site_snapshots_sha256": {
-          "name": "site_snapshots_sha256",
-          "columns": ["sha256"],
-          "isUnique": false
         }
       },
       "foreignKeys": {

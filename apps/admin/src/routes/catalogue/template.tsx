@@ -3,6 +3,7 @@
 // the allowed placeholders as chips that insert at the caret, and a placeholder that doesn't exist is named in place, under its
 // section, with the 07-L line (on leaving the field and on saving; the API refuses it too, `unknown_placeholder`).
 import { formatIstDateTime } from "@techaust/core";
+import { TEMPLATE_BODY_TOTAL, TEMPLATE_SECTION_MAX } from "@techaust/core/catalogue";
 import { type FormEvent, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { catalogueApi, errorText, RequestError, type TemplateMeta, type TemplatePage } from "../../api.ts";
@@ -20,6 +21,7 @@ import {
   insertPlaceholder,
   PENDING,
   PLACEHOLDERS,
+  saveFailureText,
   TOASTS,
   templateTitle,
   unknownIn,
@@ -36,7 +38,8 @@ export function Component() {
 }
 
 export const versionLine = (t: Pick<TemplateMeta, "version" | "savedByName" | "createdAt">) =>
-  COPY.versionLine(t.version, t.savedByName ?? PENDING.seededBy, formatIstDateTime(t.createdAt));
+  // A seeded version has no person: the line then leaves out "saved by" (07-L, added after the review).
+  COPY.versionLine(t.version, t.savedByName, formatIstDateTime(t.createdAt));
 
 function TemplateScreen({ id }: { id: string }) {
   const page = useLoad(() => catalogueApi.template(id), id);
@@ -155,7 +158,7 @@ function TemplateView({ data }: { data: TemplatePage }) {
                   ) : (
                     <Link to={`/catalogue/templates/${v.id}`}>Version {v.version}</Link>
                   )}
-                  <span className="tpl-versions__who">{v.savedByName ?? PENDING.seededBy}</span>
+                  {v.savedByName && <span className="tpl-versions__who">{v.savedByName}</span>}
                   <When ms={v.createdAt} inline />
                 </li>
               ))}
@@ -194,6 +197,8 @@ function TemplateEditor(props: {
     if (!s.heading.trim()) out[`tpl-s${i}-heading`] = PENDING.emptySections;
     const bad = unknownIn(`${s.heading}\n${s.body}`);
     if (bad.length) out[`tpl-s${i}-body`] = bad.map((p) => ERRORS.unknown_placeholder(p)).join(" ");
+    // The server's cap for one section (the field also stops typing at it; a paste is cut by the browser).
+    else if (s.body.length > TEMPLATE_SECTION_MAX) out[`tpl-s${i}-body`] = COPY.tooLong;
     return out;
   };
   const edit = (i: number, patch: Partial<Section>) =>
@@ -225,6 +230,11 @@ function TemplateEditor(props: {
       setSubmits((n) => n + 1);
       return;
     }
+    // The server's cap for all the sections together.
+    if (props.sections.reduce((a, s) => a + s.body.length, 0) > TEMPLATE_BODY_TOTAL) {
+      setFailure(COPY.tooLong);
+      return;
+    }
     setBusy(true);
     setFailure(null);
     try {
@@ -250,8 +260,7 @@ function TemplateEditor(props: {
       } else if (err instanceof RequestError && err.code === "template_category")
         setFailure(ERRORS.template_category);
       else if (err instanceof RequestError && err.code === "conflict") setFailure(ERRORS.conflict);
-      else if (err instanceof RequestError && err.code === "invalid") setFailure(PENDING.tooLong);
-      else setFailure(errorText(err));
+      else setFailure(saveFailureText(err, errorText));
     } finally {
       setBusy(false);
     }
@@ -321,7 +330,7 @@ function TemplateEditor(props: {
                   <textarea
                     id={bid}
                     rows={Math.min(10, Math.max(3, s.body.split("\n").length + 1))}
-                    maxLength={2000}
+                    maxLength={TEMPLATE_SECTION_MAX}
                     value={s.body}
                     aria-invalid={bodyError ? true : undefined}
                     aria-describedby={bodyError ? `${bid}-error` : "tpl-ph-hint"}

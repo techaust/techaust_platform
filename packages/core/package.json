@@ -23,6 +23,7 @@
     "./permissions": "./src/permissions.ts",
     "./reply-templates": "./src/reply-templates.ts",
     "./settings": "./src/schemas/settings.ts",
+    "./site-references": "./src/site-references.ts",
     "./tax": "./src/tax/index.ts",
     "./terms": "./src/terms.ts",
     "./text": "./src/text.ts",

@@ -23,6 +23,7 @@ import {
   unknownPlaceholders,
 } from "@techaust/core/catalogue";
 import { uuidv7 } from "@techaust/core/ids";
+import { type SiteGap, siteGaps } from "@techaust/core/site-references";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import {
@@ -64,6 +65,20 @@ const SNAPSHOT_INVALID: ApiError = {
   code: "snapshot_invalid",
   message: "The catalogue cannot be published yet. Fix the items listed",
 };
+
+/** A gap as the API names it: the service code and what is missing, never a value. */
+const needOf = (g: SiteGap) =>
+  g.kind === "service"
+    ? { code: g.code, missing: "service" as const }
+    : g.kind === "price"
+      ? { code: g.code, missing: "price" as const, currency: g.currency }
+      : {
+          code: g.code,
+          missing: "line" as const,
+          line: g.word,
+          currency: g.currency,
+          ambiguous: g.ambiguous,
+        };
 
 // ---- rows and views ----------------------------------------------------------------------------------------------------
 
@@ -269,6 +284,20 @@ export const catalogue = new Hono<AppEnv>()
         {
           error: { code: SNAPSHOT_INVALID.code, message: SNAPSHOT_INVALID.message },
           paths: parsed.paths.slice(0, 20),
+          request_id: c.var.rid,
+        },
+        422,
+      );
+    // The website's build throws on a price it prints that is missing, and so would every later staging deploy. So a snapshot
+    // that lacks something the pages use (core's SITE_REFERENCES) is refused here, not stored (review finding 2). The paths are
+    // codes (`items.S7`, `items.S11.lines.setup`), never values; `needs` says the same in a form the screen can word.
+    const gaps = siteGaps(parsed.data.items);
+    if (gaps.length)
+      return c.json(
+        {
+          error: { code: SNAPSHOT_INVALID.code, message: SNAPSHOT_INVALID.message },
+          paths: gaps.map((g) => g.path),
+          needs: gaps.map(needOf),
           request_id: c.var.rid,
         },
         422,

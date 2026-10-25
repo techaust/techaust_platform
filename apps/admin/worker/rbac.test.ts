@@ -6,7 +6,7 @@ import { ACTIONS, decide, ROLES, SETTINGS_DEFAULTS, uuidv7 } from "@techaust/cor
 import { describe, expect, it } from "vitest";
 import { ROUTES } from "./guard.ts";
 import app, { createApp } from "./index.ts";
-import { entryBody, mkItem, putPaymentTerms, retireAll } from "./test-catalogue.ts";
+import { entryBody, mkItem, putPaymentTerms, siteItems } from "./test-catalogue.ts";
 import {
   accept,
   bodyOf,
@@ -540,8 +540,8 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
     "POST /api/v1/catalogue/publish": async () => {
       const s = await owner();
       await putPaymentTerms();
-      await retireAll();
-      await mkItem();
+      // The services the website needs (publishing refuses a snapshot without them).
+      await siteItems();
       return run(s, "/catalogue/publish", { method: "POST" });
     },
     "POST /api/v1/templates": async () => {

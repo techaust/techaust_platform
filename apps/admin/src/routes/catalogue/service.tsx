@@ -3,6 +3,7 @@
 // Retire or Make active again behind the 07-L confirmations. The edit follows the M3.2 drafts pattern: what the owner has
 // typed lives above every reload of the page, only the changed fields are sent with the `updatedAt` they were loaded with, a
 // reload that clashes with a draft drops only that field and says so, and a 409 `stale_version` shows the stale notice.
+import { isSiteReferenced } from "@techaust/core/site-references";
 import { type FormEvent, type ReactNode, useState } from "react";
 import { useParams } from "react-router";
 import {
@@ -37,6 +38,7 @@ import {
   milliToQty,
   PENDING,
   rebaseEntry,
+  saveFailureText,
   TOASTS,
   UNIT_LABELS,
 } from "../../lib/catalogue.ts";
@@ -152,7 +154,7 @@ function ServiceView(props: {
       else if (err instanceof RequestError && field) {
         setErrors({ [field]: ERRORS[err.code as keyof typeof ERRORS] as string });
         setSubmits((n) => n + 1);
-      } else setFailure(errorText(err));
+      } else setFailure(saveFailureText(err, errorText));
     } finally {
       setBusy(false);
     }
@@ -246,6 +248,7 @@ function ServiceView(props: {
         }}
       >
         <p>{rest.join("? ")}</p>
+        {item.active && isSiteReferenced(item.code) && <Notice tone="info">{COPY.siteUsesService}</Notice>}
       </ConfirmDialog>
     </>
   );

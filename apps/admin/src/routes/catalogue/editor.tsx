@@ -3,12 +3,13 @@
 // pattern) and stored in minor units; shares in per cent become basis points; quantities become milli-units (lib/catalogue.ts,
 // never floats). Default lines and the schedule are editable lists; the schedule's total, its bar and the website's sentence
 // follow every keystroke. Markdown fields show a live preview drawn from the core AST (components/markdown.tsx), never HTML.
+import { isSiteReferenced } from "@techaust/core/site-references";
 import { type ReactNode, useEffect, useState } from "react";
 import type { CatalogueUnit } from "../../api.ts";
 import { FormField, NumberUnit, Switch } from "../../components/form.tsx";
 import { Lock, Plus, X } from "../../components/icons.tsx";
 import { Markdown } from "../../components/markdown.tsx";
-import { FieldError } from "../../components/ui.tsx";
+import { FieldError, Notice } from "../../components/ui.tsx";
 import {
   CATEGORIES,
   CATEGORY_LABELS,
@@ -227,7 +228,9 @@ export function EntryMain({ form: f, set, error, mode }: EditorProps) {
 }
 
 /** The side column of the form: the website address and the show-on-website switch. */
-export function EntrySide({ form: f, set, error }: EditorProps) {
+export function EntrySide({ form: f, set, error, mode }: EditorProps) {
+  // The website shows this service and the switch is off: the next publish would be refused (07-L, added after the review).
+  const usedBySite = mode === "edit" && !f.showOnSite && isSiteReferenced(f.code);
   return (
     <section className="lead-panel" aria-labelledby="ce-site-h">
       <h2 id="ce-site-h" className="lead-panel__title">
@@ -264,9 +267,14 @@ export function EntrySide({ form: f, set, error }: EditorProps) {
           checked={f.showOnSite}
           onChange={(showOnSite) => set({ showOnSite })}
           labelledBy="ce-onSite-label"
-          describedBy="ce-onSite-desc"
+          describedBy={usedBySite ? "ce-onSite-desc ce-onSite-warn" : "ce-onSite-desc"}
         />
       </div>
+      {usedBySite && (
+        <Notice tone="info" id="ce-onSite-warn">
+          {COPY.siteUsesService}
+        </Notice>
+      )}
     </section>
   );
 }

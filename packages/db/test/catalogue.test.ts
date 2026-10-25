@@ -1,5 +1,5 @@
 // The catalogue tables (M4.1, migrations 0024 and 0025): append-only templates, snapshots and price history, items never deleted,
-// one snapshot row per SHA, the seed's templates and its snapshot, and that the seed never reverts an edit.
+// an older snapshot may be stored again as a new row (no unique SHA), the seed's templates and its snapshot, and that the seed never reverts an edit.
 import { env } from "cloudflare:workers";
 import { catalogueSnapshot, SETTINGS_DEFAULTS } from "@techaust/core";
 import {

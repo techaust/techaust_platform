@@ -2,16 +2,18 @@
 // the price history in words, the publish paths mapped to services, the template placeholders, and the copy markers.
 import { createEntry, patchEntry } from "@techaust/core/catalogue";
 import { describe, expect, it } from "vitest";
-import type { CatalogueEntry } from "../api.ts";
+import type { CatalogueEntry, SiteNeedAnswer } from "../api.ts";
 import {
   blankForm,
   buildEntry,
   COPY,
   changedKeys,
+  ERRORS,
   entryPatch,
   formOf,
   historyText,
   insertPlaceholder,
+  isTooLong,
   maxItemIndex,
   milliToQty,
   PENDING,
@@ -19,6 +21,7 @@ import {
   publishProblems,
   qtyToMilli,
   rebaseEntry,
+  saveFailureText,
   scheduleTotal,
   splitPlaceholders,
   templateTitle,
@@ -220,6 +223,64 @@ describe("publish answers [ADM-CAT-05]", () => {
     ]);
     expect(maxItemIndex(["items.7.unit", "items.2", "paymentTerms"])).toBe(7);
     expect(maxItemIndex(["paymentTerms.dueDays"])).toBe(-1);
+  });
+
+  it("lists what the website needs by code first, one line each, and does not read a code path as an index", () => {
+    const needs: SiteNeedAnswer[] = [
+      { code: "S7", missing: "service" },
+      { code: "S5", missing: "price", currency: "inr" },
+      { code: "S11", missing: "line", line: "setup", currency: null, ambiguous: false },
+      { code: "S16", missing: "line", line: "growth", currency: "inr", ambiguous: false },
+      { code: "S11", missing: "line", line: "monthly", currency: null, ambiguous: true },
+    ];
+    const paths = [
+      "items.S7",
+      "items.S5.priceInrMinor",
+      "items.S11.lines.setup",
+      "items.S16.lines.growth",
+      "items.S11.lines.monthly",
+    ];
+    const p = publishProblems(paths, [], needs);
+    expect(p.map((x) => x.kind)).toEqual(["site", "site", "site", "site", "site"]);
+    expect(p.map((x) => (x.kind === "site" ? x.code : null))).toEqual(["S7", "S5", "S11", "S16", "S11"]);
+    // None of the code paths became a "items" problem or an index.
+    expect(maxItemIndex(paths)).toBe(-1);
+    const whats = p.map((x) => (x.kind === "site" ? x.what : ""));
+    expect(whats[0]).toContain("this service");
+    expect(whats[1]).toContain("rupees");
+    expect(whats[2]).toContain('"setup"');
+    expect(whats[3]).toContain("rupees");
+    expect(whats[4]).toContain("only one");
+    expect(ERRORS.siteNeeds("S7", "this service")).toBe("The website needs S7: this service.");
+  });
+
+  it("an index problem and a website need come out together, the needs first", () => {
+    const p = publishProblems(
+      ["items.0.unit", "items.S7"],
+      [{ id: "a", code: "S1", name: "One" }],
+      [{ code: "S7", missing: "service" }],
+    );
+    expect(p.map((x) => x.kind)).toEqual(["site", "service"]);
+  });
+});
+
+describe("a save that is too long, and the version line [review findings 4, 5, 7]", () => {
+  it("a 413 is the 07-L too-long line; anything else keeps the caller's words", () => {
+    expect(isTooLong({ status: 413 })).toBe(true);
+    expect(isTooLong({ status: 400 })).toBe(false);
+    expect(isTooLong(new Error("x"))).toBe(false);
+    expect(isTooLong(null)).toBe(false);
+    expect(saveFailureText({ status: 413 }, () => "other")).toBe(
+      "This is too long. Shorten the longest texts and save again.",
+    );
+    expect(saveFailureText({ status: 500 }, () => "other")).toBe("other");
+  });
+
+  it("a version with no person reads 'Version {n}, saved on {date}'", () => {
+    expect(COPY.versionLine(2, "Asha", "25 Oct 2026")).toBe("Version 2, saved by Asha on 25 Oct 2026");
+    expect(COPY.versionLine(1, null, "25 Oct 2026")).toBe("Version 1, saved on 25 Oct 2026");
+    expect(COPY.versionLine(1, null, "25 Oct 2026")).not.toContain("saved by");
+    expect(JSON.stringify(PENDING)).not.toContain("the seed");
   });
 });
 

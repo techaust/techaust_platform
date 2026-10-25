@@ -25,6 +25,7 @@ import type {
   CatalogueUnit,
   CreateEntry,
   PatchEntry,
+  SiteNeedAnswer,
   TemplateKind,
   TemplateMeta,
 } from "../api.ts";
@@ -106,7 +107,8 @@ export const COPY = {
     "The starting wording for proposals and estimates in each category, plus the care plan and terms blocks. Saving creates a new version; documents keep the version they were made with.",
   placeholdersHint:
     "Use placeholders such as {{client.name}} or {{service.deliverables}}. They're filled in when a proposal is made.",
-  versionLine: (n: number, person: string, date: string) => `Version ${n}, saved by ${person} on ${date}`,
+  versionLine: (n: number, person: string | null, date: string) =>
+    person === null ? `Version ${n}, saved on ${date}` : `Version ${n}, saved by ${person} on ${date}`,
   templatesEmpty: "No templates for this category yet.",
   publishIntro:
     "Publishing sends the current prices of every active service marked for the website to the staging website. The staging website picks them up within 30 minutes. The live website changes only with the next approved deploy.",
@@ -118,6 +120,11 @@ export const COPY = {
   publishedHeading: "Published price lists",
   publishedRow: (person: string, date: string) => `Published by ${person} on ${date}`,
   publishedEmpty: "Nothing published yet. The website uses the starting prices until you publish.",
+  /** Added after the review (07-L): shown when retiring a service, or taking it off the website, that the website uses. */
+  siteUsesService:
+    "The website shows this service. Retiring it, or taking it off the website, stops the next publish until the website no longer needs it.",
+  /** A save that is longer than the server reads (413). */
+  tooLong: "This is too long. Shorten the longest texts and save again.",
 } as const;
 
 /** 07-L errors by API code. */
@@ -129,6 +136,8 @@ export const ERRORS = {
     "This template's category doesn't fit its kind. Proposal and estimate templates need a category; the care plan and terms blocks don't.",
   snapshot_invalid: "The prices can't be published yet. Fix the services listed below.",
   conflict: "Someone else saved at the same moment. Reload and try again.",
+  /** `snapshot_invalid` for a service the website needs (added after the review, 07-L). */
+  siteNeeds: (code: string, what: string) => `The website needs ${code}: ${what}.`,
 } as const;
 
 export const TOASTS = {
@@ -167,12 +176,22 @@ export const PENDING = {
   enterStep: (n: number) => pending(`Name step ${n}.`),
   enterPct: (n: number) => pending(`Enter a percentage for step ${n}.`),
   oneStep: pending("Keep at least one step."),
-  tooLong: pending("This is too long. Shorten it and save again."),
   emptySections: pending("A section needs a heading."),
   otherFix: pending("Something outside the services can't be published. Check the payment terms."),
   noneOnSite: pending("No active service is marked for the website, or two share a code."),
   latestVersion: (n: number) => pending(`This is an older version. Version ${n} is the newest.`),
-  seededBy: pending("the seed"),
+  // What the website lacks, after "The website needs {code}:" (07-L has the sentence, not these words).
+  needService: pending("this service, active and on the website"),
+  needPrice: (currency: "inr" | "usd") =>
+    pending(`a from price in ${currency === "inr" ? "rupees" : "US dollars"}`),
+  needLine: (word: string, currency: "inr" | "usd" | null, ambiguous: boolean) =>
+    pending(
+      ambiguous
+        ? `only one default line that starts with "${word}"`
+        : currency === null
+          ? `a default line that starts with "${word}"`
+          : `a rate in ${currency === "inr" ? "rupees" : "US dollars"} on the default line that starts with "${word}"`,
+    ),
 } as const;
 
 // ---- money and numbers ---------------------------------------------------------------------------------------------------
@@ -493,6 +512,17 @@ export function fieldOfCode(code: string): string | null {
   return null;
 }
 
+/**
+ * True when the server refused a save for its size: 413 (the body is over what it reads; the API answers `bad_request` for it, as
+ * for any other malformed body, so the status is what tells them apart).
+ */
+export const isTooLong = (e: unknown): boolean =>
+  typeof e === "object" && e !== null && (e as { status?: unknown }).status === 413;
+
+/** The service pages' own message for a failed save: the 07-L "too long" line for a 413, else the caller's words. */
+export const saveFailureText = (e: unknown, otherwise: (e: unknown) => string): string =>
+  isTooLong(e) ? COPY.tooLong : otherwise(e);
+
 // ---- price history ---------------------------------------------------------------------------------------------------------
 
 const LINE_FIELD = /^line:(.*):rate_(inr|usd)_minor$/;
@@ -547,22 +577,36 @@ export type PublishProblem =
       fields: string[];
     }
   | { kind: "terms" }
-  | { kind: "items" };
+  | { kind: "items" }
+  /** The website needs this service and the snapshot lacks it (or a price or default line of it): `what` is the missing piece. */
+  | { kind: "site"; code: string; what: string };
+
+/** What the website lacks, in words (after "The website needs S7:"). */
+export function siteNeedText(n: SiteNeedAnswer): string {
+  if (n.missing === "service") return PENDING.needService;
+  if (n.missing === "price") return PENDING.needPrice(n.currency);
+  return PENDING.needLine(n.line, n.currency, n.ambiguous);
+}
 
 /**
  * 422 `snapshot_invalid` answers with paths like "items.3.unit" (never values). The snapshot holds the active services marked
  * for the website in code order, which is the order of GET /catalogue?active=1&onSite=1, so `onSite` (that list) turns an index
- * into the service to fix. Paths outside the items are the payment terms (Settings) or the item list itself.
+ * into the service to fix. Paths outside the items are the payment terms (Settings) or the item list itself. A service the
+ * website needs but the snapshot lacks has a path by CODE ("items.S7", "items.S11.lines.setup"): those come with `needs`, which
+ * says what is missing, and are listed first, one line each.
  */
 export function publishProblems(
   paths: readonly string[],
   onSite: readonly Pick<CatalogueListItem, "id" | "code" | "name">[],
+  needs: readonly SiteNeedAnswer[] = [],
 ): PublishProblem[] {
   const services = new Map<number, Set<string>>();
   let terms = false;
   let items = false;
   for (const p of paths) {
     const parts = p.split(".");
+    // A path by code is a website need: `needs` carries it.
+    if (parts[0] === "items" && /^S\d+$/.test(parts[1] ?? "")) continue;
     if (parts[0] === "paymentTerms") terms = true;
     else if (parts[0] === "items" && parts[1] !== undefined && /^\d+$/.test(parts[1])) {
       const i = Number(parts[1]);
@@ -572,9 +616,19 @@ export function publishProblems(
       services.set(i, set);
     } else items = true;
   }
-  const out: PublishProblem[] = [...services.entries()]
-    .sort(([a], [b]) => a - b)
-    .map(([index, fields]) => ({ kind: "service", item: onSite[index] ?? null, index, fields: [...fields] }));
+  const out: PublishProblem[] = needs.map((n) => ({ kind: "site", code: n.code, what: siteNeedText(n) }));
+  out.push(
+    ...[...services.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(
+        ([index, fields]): PublishProblem => ({
+          kind: "service",
+          item: onSite[index] ?? null,
+          index,
+          fields: [...fields],
+        }),
+      ),
+  );
   if (terms) out.push({ kind: "terms" });
   if (items) out.push({ kind: "items" });
   return out;

@@ -106,9 +106,7 @@ export const siteSnapshots = sqliteTable(
     publishedBy: text("published_by").references(() => staffUsers.id),
     publishedAt: createdAt(),
   },
-  (t) => [
-    index("site_snapshots_published").on(t.publishedAt),
-    // One row per distinct snapshot: publishing the same data twice adds nothing (M4.1).
-    index("site_snapshots_sha256").on(t.sha256),
-  ],
+  // No index on `sha256`: nothing filters by it. Publishing compares the SHA with the NEWEST row only (an older list may be published
+  // again as a new row, so the website can go back to it), and that row is read through `site_snapshots_published`.
+  (t) => [index("site_snapshots_published").on(t.publishedAt)],
 );

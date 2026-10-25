@@ -473,6 +473,8 @@ type ApiErrorBody = {
   fields?: FieldIssue[];
   /** 422 `snapshot_invalid` (POST /catalogue/publish): the failing paths of the snapshot, never values. */
   paths?: string[];
+  /** 422 `snapshot_invalid`: what the website needs that the snapshot lacks. */
+  needs?: SiteNeedAnswer[];
 };
 
 export class RequestError extends Error {
@@ -485,6 +487,8 @@ export class RequestError extends Error {
     readonly fields: FieldIssue[] = [],
     /** 422 `snapshot_invalid`: the snapshot paths that failed ("items.3.unit"). */
     readonly paths: string[] = [],
+    /** 422 `snapshot_invalid`: what the website needs that the snapshot lacks. */
+    readonly needs: SiteNeedAnswer[] = [],
   ) {
     super(message);
   }
@@ -560,6 +564,7 @@ async function send<T>(path: string, { method, body, signedIn = true }: Options)
     data.request_id ?? null,
     Array.isArray(data.fields) ? data.fields : [],
     Array.isArray(data.paths) ? data.paths.filter((p) => typeof p === "string") : [],
+    Array.isArray(data.needs) ? data.needs : [],
   );
   if (signedIn && res.status === 401 && e.code === "unauthenticated") unauthenticatedHandler?.();
   throw error;
@@ -786,6 +791,12 @@ export type TemplateKind = (typeof TEMPLATE_KIND_VALUES)[number];
 export type EntryLine = NonNullable<CreateEntry["defaultLines"]>[number];
 export type EntryStep = CreateEntry["schedule"][number];
 export type { CreateEntry, PatchEntry, TemplateBody };
+
+/** 422 `snapshot_invalid`: what the website needs that the snapshot lacks (codes and field words only, never values). */
+export type SiteNeedAnswer =
+  | { code: string; missing: "service" }
+  | { code: string; missing: "price"; currency: "inr" | "usd" }
+  | { code: string; missing: "line"; line: string; currency: "inr" | "usd" | null; ambiguous: boolean };
 
 /** A row of GET /catalogue. Prices are minor units (null: not offered in that currency). */
 export type CatalogueListItem = {

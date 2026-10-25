@@ -2,7 +2,9 @@
 // answer in place: published, unchanged, published again (the same prices as an earlier list), or `snapshot_invalid` with the
 // services to fix. The API answers that with snapshot paths only ("items.3.unit", never values); the snapshot holds the active
 // services marked for the website in code order, which is the order of GET /catalogue?active=1&onSite=1, so the screen reads
-// that list to name each service. Below: the last 20 published price lists (every role reads them).
+// that list to name each service. What the website itself needs (a service it shows, its price or default line) comes as `needs`
+// by code, one line each, with a link to the services list at that code. Below: the last 20 published price lists (every role
+// reads them). "Publish prices" is shown by the `catalogue.publish` action, not `catalogue.write`.
 import { formatIstDateTime } from "@techaust/core";
 import { useRef, useState } from "react";
 import { Link } from "react-router";
@@ -19,7 +21,7 @@ import {
   type PublishProblem,
   publishProblems,
 } from "../../lib/catalogue.ts";
-import { useCanWrite } from "./parts.tsx";
+import { useCanPublish } from "./parts.tsx";
 
 type Answer =
   | { kind: "published" | "unchanged" | "republished" }
@@ -39,7 +41,7 @@ async function onSiteItems(upTo: number) {
 }
 
 export function PublishTab() {
-  const canPublish = useCanWrite();
+  const canPublish = useCanPublish();
   const history = useLoad(() => catalogueApi.snapshots(), "snapshots");
   const [busy, setBusy] = useState(false);
   const [answer, setAnswer] = useState<Answer | null>(null);
@@ -60,8 +62,10 @@ export function PublishTab() {
       history.reload(true);
     } catch (e) {
       if (e instanceof RequestError && e.code === "snapshot_invalid") {
-        const items = await onSiteItems(maxItemIndex(e.paths)).catch(() => []);
-        next = { kind: "invalid", problems: publishProblems(e.paths, items) };
+        // Only index paths ("items.3.unit") need the list of services to name them; a need by code ("items.S7") names itself.
+        const upTo = maxItemIndex(e.paths);
+        const items = upTo < 0 ? [] : await onSiteItems(upTo).catch(() => []);
+        next = { kind: "invalid", problems: publishProblems(e.paths, items, e.needs) };
       } else next = { kind: "failed", text: errorText(e) };
     } finally {
       setBusy(false);
@@ -135,7 +139,15 @@ function AnswerNotice({ answer }: { answer: Answer }) {
       <p>{ERRORS.snapshot_invalid}</p>
       <ul className="pub-fix">
         {answer.problems.map((p, i) =>
-          p.kind === "service" ? (
+          p.kind === "site" ? (
+            // biome-ignore lint/suspicious/noArrayIndexKey: the problems in their order
+            <li key={i}>
+              <Link to={`/catalogue?q=${encodeURIComponent(p.code)}`}>
+                <span className="docno">{p.code}</span>
+              </Link>{" "}
+              {ERRORS.siteNeeds(p.code, p.what)}
+            </li>
+          ) : p.kind === "service" ? (
             // biome-ignore lint/suspicious/noArrayIndexKey: the problems in their order
             <li key={i}>
               {p.item ? (

@@ -91,7 +91,10 @@ export function createApp() {
     }),
   );
   app.use(csrf);
-  app.use(bodyLimit({ maxSize: 16 * 1024, onError: (c) => err(c as Ctx, BAD_REQUEST, 413) }));
+  const jsonLimit = bodyLimit({ maxSize: 16 * 1024, onError: (c) => err(c as Ctx, BAD_REQUEST, 413) });
+  // A route marked `body: "large"` (the catalogue and template saves) reads up to 32 KB; every other route stays at 16 KB.
+  const largeLimit = bodyLimit({ maxSize: 32 * 1024, onError: (c) => err(c as Ctx, BAD_REQUEST, 413) });
+  app.use((c, next) => (c.var.route?.body === "large" ? largeLimit(c, next) : jsonLimit(c, next)));
   app.use(guard);
 
   app.get("/v1/health", (c) => c.json({ ok: true, service: "admin", env: c.env.ENVIRONMENT }));

@@ -137,6 +137,28 @@ describe("POST /leads: a lead entered by hand [ADM-LEAD-01]", () => {
     ];
     for (const b of bad) expect((await send("/leads", "POST", b, s.cookie)).status).toBe(400);
   });
+
+  it("refuses a retired service code and writes nothing; once it is active again the lead is made (review finding 6)", async () => {
+    const s = await sessionFor("owner");
+    const retired = await mkItem({ active: 0 });
+    const before = await countOf("leads");
+    const body = { name: "Retired Ask", email: "retired-ask@example.com", serviceCode: retired.code };
+    const refused = await send("/leads", "POST", body, s.cookie);
+    expect(refused.status).toBe(400);
+    expect(await countOf("leads")).toBe(before);
+    await env.DB.prepare("UPDATE catalogue_items SET active = 1 WHERE code = ?1").bind(retired.code).run();
+    const made = await send("/leads", "POST", body, s.cookie);
+    expect(made.status).toBe(201);
+    expect(await countOf("leads")).toBe(before + 1);
+    // 'not-sure' needs no catalogue row and is still accepted.
+    const notSure = await send(
+      "/leads",
+      "POST",
+      { name: "Not Sure", email: "not-sure-ask@example.com", serviceCode: "not-sure" },
+      s.cookie,
+    );
+    expect(notSure.status).toBe(201);
+  });
 });
 
 describe("the service name comes from the catalogue (M4.1)", () => {

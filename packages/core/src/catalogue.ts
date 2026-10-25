@@ -301,8 +301,14 @@ export async function sha256Hex(s: string): Promise<string> {
 
 // ---- templates (ADM-CAT-03) -------------------------------------------------------------------------------------------------
 
-/** The admin API reads a request body of at most 16 KB, so a template body stays well under it (a longer proposal needs its own limit). */
-const BODY_TOTAL = 12_000;
+/**
+ * The caps of a template body, shared with the editor so it checks them before it sends. The text of all sections together is
+ * 12,000 characters, which the admin API reads (its limit for this route is 32 KB, so a few multi-byte characters such as the
+ * rupee sign fit; the plain 16 KB limit would not).
+ */
+export const TEMPLATE_BODY_TOTAL = 12_000;
+export const TEMPLATE_SECTION_MAX = 2_000;
+export const TEMPLATE_SECTIONS_MAX = 14;
 
 export const TEMPLATE_KIND_VALUES = ["proposal", "estimate", "care_block", "terms_block"] as const;
 
@@ -356,13 +362,13 @@ export const templateBody = z.strictObject({
       z.strictObject({
         key: z.string().check(z.regex(/^[a-z0-9_]{1,40}$/)),
         heading: shortText(120),
-        body: z.string().check(z.maxLength(2000)),
+        body: z.string().check(z.maxLength(TEMPLATE_SECTION_MAX)),
       }),
     )
     .check(
       z.minLength(1),
-      z.maxLength(14),
-      z.refine((s) => s.reduce((a, x) => a + x.body.length, 0) <= BODY_TOTAL, {
+      z.maxLength(TEMPLATE_SECTIONS_MAX),
+      z.refine((s) => s.reduce((a, x) => a + x.body.length, 0) <= TEMPLATE_BODY_TOTAL, {
         error: "The template is too long",
       }),
     ),

@@ -16,6 +16,7 @@ import {
   ERRORS,
   type FieldErrors,
   fieldOfCode,
+  saveFailureText,
   TOASTS,
 } from "../../lib/catalogue.ts";
 import { EntryMain, EntrySide } from "./editor.tsx";
@@ -70,7 +71,7 @@ function NewService() {
       if (err instanceof RequestError && field) {
         setErrors({ [field]: ERRORS[err.code as keyof typeof ERRORS] as string });
         setSubmits((n) => n + 1);
-      } else setFailure(errorText(err));
+      } else setFailure(saveFailureText(err, errorText));
     } finally {
       setBusy(false);
     }

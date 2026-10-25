@@ -4,10 +4,11 @@ import { env } from "cloudflare:workers";
 import { catalogueSnapshot } from "@techaust/core";
 import { canonicalJson, sha256Hex } from "@techaust/core/catalogue";
 import { SETTINGS_DEFAULTS } from "@techaust/core/settings";
+import { SITE_REFERENCES } from "@techaust/core/site-references";
 import { beforeAll, describe, expect, it } from "vitest";
 import { CATALOGUE_SEARCH_SQL } from "./catalogue.ts";
 import { CATALOGUE_SQL } from "./search.ts";
-import { entryBody, mkItem, putPaymentTerms, retireAll, UPFRONT } from "./test-catalogue.ts";
+import { entryBody, mkItem, putPaymentTerms, retireAll, siteItems, UPFRONT } from "./test-catalogue.ts";
 import { beforeBatch } from "./test-clients.ts";
 import { bodyOf, call, countOf, one, rows, sessionFor } from "./test-helpers.ts";
 
@@ -213,9 +214,12 @@ describe("every filter uses an index (no table scan of a growing table)", () => 
     expect(await plan("SELECT id FROM site_snapshots ORDER BY created_at DESC, id DESC LIMIT 20")).toContain(
       "site_snapshots_published",
     );
-    expect(await plan("SELECT 1 FROM site_snapshots WHERE sha256 = ?1", "x")).toContain(
-      "site_snapshots_sha256",
-    );
+    // The "unchanged" check reads the newest row through the same index; no query filters by SHA, so there is no index on it.
+    expect(
+      await plan("SELECT sha256 FROM site_snapshots ORDER BY created_at DESC, id DESC LIMIT 1"),
+    ).toContain("site_snapshots_published");
+    const idx = await rows<{ name: string }>("SELECT name FROM pragma_index_list('site_snapshots')");
+    expect(idx.map((i) => i.name)).not.toContain("site_snapshots_sha256");
   });
 });
 
@@ -480,8 +484,13 @@ describe("publish [ADM-CAT-05, WEB-G-07]", () => {
       "SELECT id, sha256, json, published_by FROM site_snapshots ORDER BY created_at DESC, id DESC LIMIT 1",
     );
 
+  // Changed on purpose (review finding 2): publishing now needs the services the website uses (SITE_REFERENCES), so each test that
+  // publishes successfully starts from `siteItems()` and finds its own item among them.
+  const SITE_CODES = SITE_REFERENCES.map((n) => n.code);
+  const itemOf = (snap: J, c: string): J => (snap.items as J[]).find((i) => i.code === c) as J;
+
   it("stores a snapshot with public fields only, its SHA is the SHA of its text, and both schemas accept it", async () => {
-    await retireAll();
+    await siteItems();
     const o = await owner();
     const item = await mkItem({
       name: "Published service",
@@ -502,16 +511,15 @@ describe("publish [ADM-CAT-05, WEB-G-07]", () => {
     expect(await sha256Hex(stored?.json ?? "")).toBe(out.sha256);
     expect(stored?.published_by).toBe(o.id);
     const snap = JSON.parse(stored?.json ?? "{}");
-    expect(snap.items).toHaveLength(1);
-    expect(snap.items[0]).toMatchObject({
-      code: item.code,
-      name: "Published service",
-      priceInrMinor: 100_000,
-    });
-    expect(snap.items[0].defaultLines).toEqual([
+    expect(snap.items).toHaveLength(SITE_CODES.length + 1);
+    const mine = itemOf(snap, item.code);
+    expect(mine).toMatchObject({ code: item.code, name: "Published service", priceInrMinor: 100_000 });
+    expect(mine.defaultLines).toEqual([
       { description: "Setup", unit: "fixed", qtyMilli: 1_000, rateInrMinor: 12_345, rateUsdMinor: 678 },
     ]);
     expect(stored?.json).toBe(canonicalJson(snap));
+    // The forbidden words are looked for in the test item's own part (the website's fixtures hold numbers of their own).
+    const mineText = JSON.stringify(mine);
     for (const word of [
       "998313",
       "1800",
@@ -523,19 +531,23 @@ describe("publish [ADM-CAT-05, WEB-G-07]", () => {
       "exclusions",
       item.id,
     ]) {
-      expect(stored?.json, word).not.toContain(word);
+      expect(mineText, word).not.toContain(word);
     }
+    expect(stored?.json).not.toContain("SECRET");
     expect(catalogueSnapshot.safeParse(snap).success).toBe(true);
     const audit = await one<{ action: string; summary: string }>(
       "SELECT action, summary FROM audit_log WHERE entity_id = ?",
       out.id,
     );
     expect(audit?.action).toBe("catalogue.publish");
-    expect(JSON.parse(audit?.summary ?? "{}")).toMatchObject({ sha256: out.sha256, items: 1 });
+    expect(JSON.parse(audit?.summary ?? "{}")).toMatchObject({
+      sha256: out.sha256,
+      items: SITE_CODES.length + 1,
+    });
   });
 
   it("publishing the same data twice stores one row and answers unchanged", async () => {
-    await retireAll();
+    await siteItems();
     const o = await owner();
     await mkItem();
     const first = await publish(o.cookie);
@@ -550,14 +562,14 @@ describe("publish [ADM-CAT-05, WEB-G-07]", () => {
   });
 
   it("leaves out inactive and off-site items, and a price change makes a new snapshot with the new price", async () => {
-    await retireAll();
+    await siteItems();
     const o = await owner();
     const live = await mkItem();
     const hidden = await mkItem({ show_on_site: 0 });
     const retired = await mkItem({ active: 0 });
     const a = await json(await publish(o.cookie));
     const codes = (JSON.parse((await newest())?.json ?? "{}").items as J[]).map((i) => i.code);
-    expect(codes).toEqual([live.code]);
+    expect(codes).toEqual([...SITE_CODES, live.code]);
     expect(codes).not.toContain(hidden.code);
     expect(codes).not.toContain(retired.code);
     const edit = await call(`/catalogue/${live.id}`, {
@@ -569,7 +581,7 @@ describe("publish [ADM-CAT-05, WEB-G-07]", () => {
     const b = await json(await publish(o.cookie));
     expect(b.sha256).not.toBe(a.sha256);
     expect(b.unchanged).toBe(false);
-    expect(JSON.parse((await newest())?.json ?? "{}").items[0].priceInrMinor).toBe(200_000);
+    expect(itemOf(JSON.parse((await newest())?.json ?? "{}"), live.code).priceInrMinor).toBe(200_000);
     // Going back to the old prices gives the old SHA; it isn't the newest, so it is stored again and becomes the newest.
     const backEdit = await call(`/catalogue/${live.id}`, {
       method: "PATCH",
@@ -581,7 +593,7 @@ describe("publish [ADM-CAT-05, WEB-G-07]", () => {
     expect(back.status).toBe(201);
     expect((await json(back)).sha256).toBe(a.sha256);
     expect((await newest())?.sha256).toBe(a.sha256);
-    expect(JSON.parse((await newest())?.json ?? "{}").items[0].priceInrMinor).toBe(100_000);
+    expect(itemOf(JSON.parse((await newest())?.json ?? "{}"), live.code).priceInrMinor).toBe(100_000);
     // Publishing the same again is unchanged.
     expect(await json(await publish(o.cookie))).toMatchObject({ sha256: a.sha256, unchanged: true });
   });
@@ -604,7 +616,7 @@ describe("publish [ADM-CAT-05, WEB-G-07]", () => {
     await retireAll();
     const o = await owner();
     expect((await publish(o.cookie)).status).toBe(422);
-    await mkItem();
+    await siteItems();
     await env.DB.prepare("DELETE FROM settings WHERE key = 'payment_terms'").run();
     expect((await publish(o.cookie)).status).toBe(422);
     await putPaymentTerms({ ...SETTINGS_DEFAULTS.payment_terms, dueDays: 7 });
@@ -627,9 +639,9 @@ describe("publish [ADM-CAT-05, WEB-G-07]", () => {
   });
 
   it("the default lines of S11-style items reach the snapshot (care-plan prices)", async () => {
-    await retireAll();
+    await siteItems();
     const o = await owner();
-    await mkItem({
+    const care = await mkItem({
       unit: "month",
       default_lines: JSON.stringify([
         {
@@ -643,7 +655,249 @@ describe("publish [ADM-CAT-05, WEB-G-07]", () => {
       schedule: JSON.stringify([{ label: "Monthly in advance", pctBp: 10_000, trigger: "monthly" }]),
     });
     expect((await publish(o.cookie)).status).toBe(201);
-    expect(JSON.parse((await newest())?.json ?? "{}").items[0].defaultLines[0].rateInrMinor).toBe(999_900);
+    expect(itemOf(JSON.parse((await newest())?.json ?? "{}"), care.code).defaultLines[0].rateInrMinor).toBe(
+      999_900,
+    );
     expect(UPFRONT).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+describe("publish refuses a snapshot the website cannot be built from [ADM-CAT-05; review finding 2]", () => {
+  beforeAll(async () => {
+    await putPaymentTerms();
+  });
+  const publish = (cookie: string) => call("/catalogue/publish", { method: "POST", cookie });
+  const patch = (id: string, cookie: string, body: unknown) =>
+    call(`/catalogue/${id}`, { method: "PATCH", body, cookie });
+  const refused = async (cookie: string) => {
+    const before = await countOf("site_snapshots");
+    const res = await publish(cookie);
+    expect(res.status, await res.clone().text()).toBe(422);
+    const out = await json(res);
+    expect(out.error.code).toBe("snapshot_invalid");
+    // Nothing is stored, and the answer carries codes and field names, never a value.
+    expect(await countOf("site_snapshots")).toBe(before);
+    return out;
+  };
+
+  it("the services the website needs publish fine (the control for the cases below)", async () => {
+    await siteItems();
+    const o = await owner();
+    const res = await publish(o.cookie);
+    expect(res.status, await res.clone().text()).toBe(201);
+  });
+
+  it("a retired service the website uses stops the publish and names it by code", async () => {
+    const site = await siteItems();
+    const o = await owner();
+    const s7 = site.get("S7");
+    expect(
+      (await call(`/catalogue/${s7?.id}/active`, { body: { active: false }, cookie: o.cookie })).status,
+    ).toBe(200);
+    const out = await refused(o.cookie);
+    expect(out.paths).toEqual(["items.S7"]);
+    expect(out.needs).toEqual([{ code: "S7", missing: "service" }]);
+    // Bringing it back lets the publish through.
+    await call(`/catalogue/${s7?.id}/active`, { body: { active: true }, cookie: o.cookie });
+    expect((await publish(o.cookie)).status).toBe(201);
+  });
+
+  it("clearing a service's rupee price stops the publish (its USD price may stay empty)", async () => {
+    const site = await siteItems();
+    const o = await owner();
+    const s5 = site.get("S5");
+    const edit = await patch(s5?.id ?? "", o.cookie, {
+      expectedUpdatedAt: s5?.updatedAt,
+      priceInrMinor: null,
+    });
+    expect(edit.status).toBe(200);
+    const out = await refused(o.cookie);
+    expect(out.paths).toEqual(["items.S5.priceInrMinor"]);
+    expect(out.needs).toEqual([{ code: "S5", missing: "price", currency: "inr" }]);
+    expect(JSON.stringify(out)).not.toContain("5000000");
+  });
+
+  it("taking a service off the website stops the publish", async () => {
+    const site = await siteItems();
+    const o = await owner();
+    const s9 = site.get("S9");
+    const edit = await patch(s9?.id ?? "", o.cookie, { expectedUpdatedAt: s9?.updatedAt, showOnSite: false });
+    expect(edit.status).toBe(200);
+    const out = await refused(o.cookie);
+    expect(out.paths).toEqual(["items.S9"]);
+    expect(out.needs).toEqual([{ code: "S9", missing: "service" }]);
+  });
+
+  it("renaming a default line the website reads by its first word stops the publish", async () => {
+    const site = await siteItems();
+    const o = await owner();
+    const s11 = site.get("S11");
+    const line = (description: string) => ({
+      description,
+      unit: "fixed",
+      qtyMilli: 1_000,
+      rateInrMinor: 50_000,
+      rateUsdMinor: null,
+    });
+    const edit = await patch(s11?.id ?? "", o.cookie, {
+      expectedUpdatedAt: s11?.updatedAt,
+      defaultLines: [line("Initial fee"), line("Monthly thing")],
+    });
+    expect(edit.status).toBe(200);
+    const out = await refused(o.cookie);
+    expect(out.paths).toEqual(["items.S11.lines.setup"]);
+    expect(out.needs).toEqual([
+      { code: "S11", missing: "line", line: "setup", currency: null, ambiguous: false },
+    ]);
+  });
+
+  it("clearing the rupee rate of a care-plan tier, and two lines starting with the same word, stop it too", async () => {
+    const site = await siteItems();
+    const o = await owner();
+    const s16 = site.get("S16");
+    const line = (description: string, rate: number | null) => ({
+      description,
+      unit: "fixed",
+      qtyMilli: 1_000,
+      rateInrMinor: rate,
+      rateUsdMinor: null,
+    });
+    const cleared = await patch(s16?.id ?? "", o.cookie, {
+      expectedUpdatedAt: s16?.updatedAt,
+      defaultLines: [line("Essential thing", 1_000), line("Growth thing", null), line("Scale thing", 1_000)],
+    });
+    expect(cleared.status).toBe(200);
+    const a = await refused(o.cookie);
+    expect(a.paths).toEqual(["items.S16.lines.growth"]);
+    expect(a.needs).toEqual([
+      { code: "S16", missing: "line", line: "growth", currency: "inr", ambiguous: false },
+    ]);
+    const twice = await patch(s16?.id ?? "", o.cookie, {
+      expectedUpdatedAt: (await json(cleared)).updatedAt,
+      defaultLines: [
+        line("Essential thing", 1_000),
+        line("Essential extra", 1_000),
+        line("Growth thing", 1_000),
+        line("Scale thing", 1_000),
+      ],
+    });
+    expect(twice.status).toBe(200);
+    const b = await refused(o.cookie);
+    expect(b.needs).toEqual([
+      { code: "S16", missing: "line", line: "essential", currency: null, ambiguous: true },
+    ]);
+  });
+
+  it("lists every gap, not only the first", async () => {
+    const site = await siteItems();
+    const o = await owner();
+    await call(`/catalogue/${site.get("S1")?.id}/active`, { body: { active: false }, cookie: o.cookie });
+    await call(`/catalogue/${site.get("S2")?.id}/active`, { body: { active: false }, cookie: o.cookie });
+    const out = await refused(o.cookie);
+    expect(out.paths).toEqual(["items.S1", "items.S2"]);
+  });
+
+  it("a service the website does not use can be retired or hidden without stopping the publish", async () => {
+    const site = await siteItems();
+    const o = await owner();
+    const extra = await mkItem();
+    expect((await publish(o.cookie)).status).toBe(201);
+    await call(`/catalogue/${extra.id}/active`, { body: { active: false }, cookie: o.cookie });
+    // The snapshot lost the extra item, so it is a new list, and it publishes.
+    const again = await publish(o.cookie);
+    expect(again.status).toBe(201);
+    expect((await json(again)).items).toBe(site.size);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+describe("the body limit of the catalogue saves [review finding 4]", () => {
+  const long = (n: number, tag: string) => `${tag}`.repeat(Math.ceil(n / tag.length)).slice(0, n);
+  /** A service that passes every field cap: four 2,500-character texts and thirty 200-character lines. */
+  const fullEntry = () =>
+    entryBody({
+      longMd: long(2500, "Long text. "),
+      deliverablesMd: long(2500, "Deliverable. "),
+      assumptionsMd: long(2500, "Assumption. "),
+      exclusionsMd: long(2500, "Exclusion. "),
+      defaultLines: Array.from({ length: 30 }, (_, i) => ({
+        description: `Line ${i} ${long(180, "x")}`,
+        unit: "fixed",
+        qtyMilli: 1_000,
+        rateInrMinor: 100_000,
+        rateUsdMinor: 1_200,
+      })),
+    });
+
+  it("a valid service of about 19 KB is saved (it would not fit the 16 KB limit of other routes)", async () => {
+    const o = await owner();
+    const body = fullEntry();
+    const size = JSON.stringify(body).length;
+    expect(size).toBeGreaterThan(17 * 1024);
+    expect(size).toBeLessThan(32 * 1024);
+    const res = await call("/catalogue", { body, cookie: o.cookie });
+    expect(res.status, await res.clone().text()).toBe(201);
+    const { id } = await json(res);
+    // The same on an edit.
+    const row = await one<{ updated_at: number }>("SELECT updated_at FROM catalogue_items WHERE id = ?", id);
+    const edit = await call(`/catalogue/${id}`, {
+      method: "PATCH",
+      body: {
+        expectedUpdatedAt: row?.updated_at,
+        deliverablesMd: long(2400, "Changed. "),
+        defaultLines: (body.defaultLines as J[]).map((l) => ({ ...l, rateInrMinor: 200_000 })),
+      },
+      cookie: o.cookie,
+    });
+    expect(edit.status, await edit.clone().text()).toBe(200);
+  });
+
+  it("over 32 KB answers 413 on a create and on an edit, and nothing is written", async () => {
+    const o = await owner();
+    const item = await mkItem();
+    const before = await countOf("catalogue_items");
+    const create = await call("/catalogue", {
+      body: entryBody({ short: "x".repeat(33 * 1024) }),
+      cookie: o.cookie,
+    });
+    expect(create.status).toBe(413);
+    expect(await code(create)).toBe("bad_request");
+    const edit = await call(`/catalogue/${item.id}`, {
+      method: "PATCH",
+      body: { expectedUpdatedAt: item.updatedAt, name: "x".repeat(33 * 1024) },
+      cookie: o.cookie,
+    });
+    expect(edit.status).toBe(413);
+    expect(await countOf("catalogue_items")).toBe(before);
+  });
+
+  it("a template save also reads up to 32 KB (12,000 characters with multi-byte ones pass 16 KB)", async () => {
+    const o = await owner();
+    const body = {
+      kind: "estimate",
+      category: "advise",
+      body: {
+        sections: [
+          { key: "scope", heading: "Scope", body: "₹".repeat(1_900) },
+          { key: "price", heading: "Price", body: "₹".repeat(1_900) },
+          { key: "terms", heading: "Terms", body: "₹".repeat(1_900) },
+        ],
+      },
+    };
+    expect(new TextEncoder().encode(JSON.stringify(body)).length).toBeGreaterThan(16 * 1024);
+    const res = await call("/templates", { body, cookie: o.cookie });
+    expect(res.status, await res.clone().text()).toBe(201);
+  });
+
+  it("every other route keeps the 16 KB limit", async () => {
+    const o = await owner();
+    for (const [path, method] of [
+      ["/leads", "POST"],
+      ["/clients", "POST"],
+    ] as const) {
+      const res = await call(path, { method, body: { name: "x".repeat(17 * 1024) }, cookie: o.cookie });
+      expect(res.status, path).toBe(413);
+    }
   });
 });

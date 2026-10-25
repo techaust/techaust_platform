@@ -32,9 +32,14 @@ export function CatalogueGate({ children }: { children: ReactNode }) {
   return allowed(user.role, "catalogue.read") ? children : <NoAccess what="The catalogue" />;
 }
 
-/** Only the owner adds, edits, retires and publishes (catalogue.write, catalogue.publish). */
+/** Only the owner adds, edits and retires (catalogue.write). */
 export function useCanWrite() {
   return allowed(useUser().role, "catalogue.write");
+}
+
+/** Only the owner publishes prices to the website (catalogue.publish, a separate action from catalogue.write). */
+export function useCanPublish() {
+  return allowed(useUser().role, "catalogue.publish");
 }
 
 /** Retired, and not on the website: icon and text, never colour alone. Active and on the website are the quiet default. */
