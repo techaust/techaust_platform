@@ -280,7 +280,7 @@ describe("a save that is too long, and the version line [review findings 4, 5, 7
     expect(COPY.versionLine(2, "Asha", "25 Oct 2026")).toBe("Version 2, saved by Asha on 25 Oct 2026");
     expect(COPY.versionLine(1, null, "25 Oct 2026")).toBe("Version 1, saved on 25 Oct 2026");
     expect(COPY.versionLine(1, null, "25 Oct 2026")).not.toContain("saved by");
-    expect(JSON.stringify(PENDING)).not.toContain("the seed");
+    expect(PENDING).not.toHaveProperty("seededBy");
   });
 });
 

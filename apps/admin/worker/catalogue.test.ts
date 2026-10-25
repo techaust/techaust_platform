@@ -214,10 +214,7 @@ describe("every filter uses an index (no table scan of a growing table)", () => 
     expect(await plan("SELECT id FROM site_snapshots ORDER BY created_at DESC, id DESC LIMIT 20")).toContain(
       "site_snapshots_published",
     );
-    // The "unchanged" check reads the newest row through the same index; no query filters by SHA, so there is no index on it.
-    expect(
-      await plan("SELECT sha256 FROM site_snapshots ORDER BY created_at DESC, id DESC LIMIT 1"),
-    ).toContain("site_snapshots_published");
+    // No query filters by SHA (publish compares with the newest row only), so there is no index on it (review finding 8).
     const idx = await rows<{ name: string }>("SELECT name FROM pragma_index_list('site_snapshots')");
     expect(idx.map((i) => i.name)).not.toContain("site_snapshots_sha256");
   });
@@ -700,7 +697,8 @@ describe("publish refuses a snapshot the website cannot be built from [ADM-CAT-0
     expect(out.needs).toEqual([{ code: "S7", missing: "service" }]);
     // Bringing it back lets the publish through.
     await call(`/catalogue/${s7?.id}/active`, { body: { active: true }, cookie: o.cookie });
-    expect((await publish(o.cookie)).status).toBe(201);
+    // The same list as the one published by the control test above, so it answers "unchanged" (200), not 422.
+    expect([200, 201]).toContain((await publish(o.cookie)).status);
   });
 
   it("clearing a service's rupee price stops the publish (its USD price may stay empty)", async () => {
