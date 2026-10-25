@@ -49,6 +49,7 @@ const devRoutes: RouteObject[] = import.meta.env.DEV
   ? [
       {
         path: "/preview/*",
+        HydrateFallback: LoadingCard,
         errorElement: <Failed />,
         lazy: async () => ({ Component: (await import("./preview/routes.tsx")).PreviewApp }),
       },

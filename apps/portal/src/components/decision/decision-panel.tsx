@@ -121,7 +121,7 @@ export function DecisionPanel(props: DecisionProps) {
             <dt>{PENDING.fields.reason}</dt>
             <dd>
               {d.reason}
-              {d.note && <span className="block muted">{d.note}</span>}
+              {d.note && <span className="line muted">{d.note}</span>}
             </dd>
           </div>
         </dl>
@@ -307,7 +307,7 @@ function AcceptForm(props: DecisionProps & { kind: string }) {
             <dt>{PENDING.fields.acceptedBy}</dt>
             <dd>
               {name.trim()}
-              <span className="block muted break">{props.me.email}</span>
+              <span className="line muted break">{props.me.email}</span>
             </dd>
           </div>
         </dl>

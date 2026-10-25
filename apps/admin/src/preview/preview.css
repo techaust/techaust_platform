@@ -1,0 +1,206 @@
+/* PREVIEW ONLY: the M4.5 send dialog and start-project preview (dev server, never built). Tokens only. The send dialog's
+   layout moves into the real stylesheet when M4.5 is built. */
+
+.pv-bar {
+  background: var(--color-surface-alt);
+  border-bottom: 2px dashed var(--color-warning);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.pv-bar p {
+  margin: 0;
+  padding: var(--space-1) var(--gutter);
+}
+
+.pv-bar strong {
+  color: var(--color-warning);
+}
+
+.pv-bar a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+}
+
+.ph {
+  display: inline-block;
+  padding: 0 var(--space-1);
+  border: 1px dashed currentColor;
+  border-radius: var(--radius-sm);
+  color: var(--color-warning);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  font-weight: 600;
+  vertical-align: 0.15em;
+  white-space: nowrap;
+}
+
+.pv-cards {
+  display: grid;
+  gap: var(--space-6);
+  max-width: 48rem;
+}
+
+.pv-card {
+  padding: var(--space-6);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.pv-card h2 {
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-h4);
+  line-height: var(--text-h4--line-height);
+}
+
+.pv-facts {
+  display: grid;
+  margin: 0 0 var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
+.pv-facts > div {
+  display: grid;
+  grid-template-columns: minmax(7rem, 11rem) minmax(0, 1fr);
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.pv-facts dt {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.pv-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.pv-done {
+  margin: 0;
+}
+
+/* The send dialog: the choices on the left, the message as it will go on the right (stacked on narrow screens). */
+.sendd {
+  display: grid;
+  gap: var(--space-6);
+}
+
+@media (min-width: 56rem) {
+  .sendd {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+    gap: var(--space-8);
+  }
+
+  .sendd__actions {
+    grid-column: 1 / -1;
+  }
+}
+
+.sendd__to legend,
+.sendd__label {
+  margin: 0 0 var(--space-1);
+  font-weight: 600;
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
+}
+
+.sendd__to .hint {
+  margin-bottom: var(--space-2);
+}
+
+.sendd__contact {
+  align-items: flex-start;
+  margin: 0;
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.sendd__contact input {
+  margin-top: 0.15rem;
+}
+
+.sendd__name {
+  display: block;
+  font-weight: 600;
+}
+
+.sendd__meta {
+  display: block;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.sendd__attach {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
+.sendd__preview {
+  padding: var(--space-5);
+  background: var(--color-surface-alt);
+  border-radius: var(--radius-md);
+}
+
+.sendd__head {
+  display: grid;
+  gap: var(--space-1);
+  margin: var(--space-3) 0;
+  font-size: var(--text-sm);
+}
+
+.sendd__head > div {
+  display: grid;
+  grid-template-columns: 4.5rem minmax(0, 1fr);
+  gap: var(--space-2);
+}
+
+.sendd__head dt {
+  color: var(--color-text-muted);
+}
+
+.sendd__head dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.sendd__body {
+  margin-bottom: var(--space-3);
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-top: 2px solid var(--color-accent-decor);
+  border-radius: var(--radius-sm);
+}
+
+.sendd__body p {
+  margin: 0 0 var(--space-3);
+}
+
+.sendd__body p:last-child {
+  margin-bottom: 0;
+}
+
+.sendd__facts {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The email's button, drawn (not a control: the message is a preview). */
+.sendd__btn {
+  display: inline-block;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-btn-primary-bg);
+  color: var(--color-btn-primary-fg);
+  font-weight: 600;
+}

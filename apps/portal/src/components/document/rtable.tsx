@@ -11,8 +11,10 @@ export type Column<R> = {
   num?: boolean | undefined;
   /** The column that heads each card on phones (one per table). */
   lead?: boolean | undefined;
-  /** Left out of the phone card (shown inside the lead cell instead). */
+  /** Left out of the phone card (another column's card value carries it). */
   hideOnCard?: boolean | undefined;
+  /** What the phone card shows, when it differs from the table cell (e.g. "2 months" for Qty and Unit). */
+  cardCell?: ((row: R) => ReactNode) | undefined;
 };
 
 export function RTable<R>(props: {
@@ -91,7 +93,7 @@ export function RTable<R>(props: {
                   .map((c) => (
                     <div key={c.key} className={c.num ? "num" : undefined}>
                       <dt>{c.label}</dt>
-                      <dd>{c.cell(r)}</dd>
+                      <dd>{(c.cardCell ?? c.cell)(r)}</dd>
                     </div>
                   ))}
               </dl>

@@ -147,7 +147,7 @@ body:has(.pshell)::before {
   }
 }
 
-@container (max-width: 21rem) {
+@container (max-width: 26rem) {
   .pbar__product {
     display: none;
   }
@@ -524,7 +524,7 @@ body:has(.pshell)::before {
   white-space: nowrap;
 }
 
-.block {
+.line {
   display: block;
 }
 
@@ -1181,7 +1181,7 @@ body:has(.pshell)::before {
 
 .facts {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
   gap: var(--space-4) var(--space-6);
   margin: 0;
 }
@@ -1201,6 +1201,14 @@ body:has(.pshell)::before {
 
 .cover__facts > div:last-child {
   grid-column: span 2;
+}
+
+/* The contact's address is a full-size target (44 px), not a 17 px line. */
+.cover__facts a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+  margin-block-end: calc(-1 * var(--space-3));
 }
 
 @container sheet (max-width: 24rem) {

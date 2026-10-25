@@ -4,7 +4,14 @@ import "@techaust/ui/tokens.css";
 import "./app.css";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { createBrowserRouter, Navigate, Outlet, RouterProvider, useLocation } from "react-router";
+import {
+  createBrowserRouter,
+  Navigate,
+  Outlet,
+  type RouteObject,
+  RouterProvider,
+  useLocation,
+} from "react-router";
 import { StepUpDialog } from "./components/step-up-dialog.tsx";
 import { Card } from "./components/ui.tsx";
 import { applyStoredTheme } from "./lib/theme.ts";
@@ -58,7 +65,20 @@ function Failed() {
 const shell = () => import("./routes/shell.tsx");
 const settings = () => import("./routes/settings.tsx");
 
+// Dev only: the M4.5 send-dialog preview with sample data (dropped from every build with its import).
+const devRoutes: RouteObject[] = import.meta.env.DEV
+  ? [
+      {
+        path: "/preview/send",
+        HydrateFallback: Loading,
+        errorElement: <Failed />,
+        lazy: async () => ({ Component: (await import("./preview/send.tsx")).SendPreview }),
+      },
+    ]
+  : [];
+
 const router = createBrowserRouter([
+  ...devRoutes,
   {
     path: "/",
     HydrateFallback: Loading,

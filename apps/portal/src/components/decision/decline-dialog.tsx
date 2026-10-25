@@ -153,7 +153,7 @@ export function DeclineDialog(props: {
                 <dt>{PENDING.fields.reason}</dt>
                 <dd>
                   {reason}
-                  {note.trim() && <span className="block muted">{note.trim()}</span>}
+                  {note.trim() && <span className="line muted">{note.trim()}</span>}
                 </dd>
               </div>
             </dl>

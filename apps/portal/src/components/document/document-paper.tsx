@@ -103,8 +103,14 @@ export function DocumentPaper(props: {
         </span>
       ),
     },
-    { key: "qty", label: W.qty, num: true, cell: (r) => r.text.qty },
-    { key: "unit", label: W.unit, cell: (r) => r.text.unit },
+    {
+      key: "qty",
+      label: W.qty,
+      num: true,
+      cell: (r) => r.text.qty,
+      cardCell: (r) => `${r.text.qty} ${r.text.unit}`,
+    },
+    { key: "unit", label: W.unit, cell: (r) => r.text.unit, hideOnCard: true },
     { key: "rate", label: W.rate, num: true, cell: (r) => m(r.text.rateMinor) },
     {
       key: "disc",
@@ -281,7 +287,7 @@ export function DocumentPaper(props: {
                 <span key="p">
                   <strong>{doc.client.name}</strong>
                   {doc.client.addressLines.map((l) => (
-                    <span key={l} className="block">
+                    <span key={l} className="line">
                       {l}
                     </span>
                   ))}

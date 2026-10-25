@@ -38,7 +38,7 @@ function Aside(props: { doc: DocumentView; onDownload: () => void }) {
               {WORDS.doc.validUntil} <strong className="nowrap">{formatDate(doc.validUntil)}</strong>
             </>
           )}
-          <span className="block">
+          <span className="line">
             {WORDS.doc.version} {doc.version}
           </span>
         </p>
