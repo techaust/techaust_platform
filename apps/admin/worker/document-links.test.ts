@@ -301,7 +301,7 @@ describe("GET /documents/:id/certificate [ADM-PROP-08]", () => {
       .run();
     const pending = await callA(`/documents/${ctx.made.id}/certificate`, { cookie: ctx.s.cookie });
     expect([pending.status, await codeOf(pending)]).toEqual([409, "certificate_pending"]);
-    await env.DOCS?.put?.(key, "%PDF-1.4 certificate");
+    await (env as Env & { DOCS?: R2Bucket }).DOCS?.put(key, "%PDF-1.4 certificate");
     await env.DB.prepare(
       "INSERT INTO acceptance_certificates (acceptance_id, r2_key, sha256, rendered_at) VALUES (?1, ?2, 's', 1)",
     )

@@ -215,7 +215,8 @@ export const documentStart = new Hono<AppEnv>().post(
                   inst.split.lines.map((l, i) => {
                     const cl = k.lines[i];
                     const many = inst.split.lines.length > 1;
-                    const rate = `${percentFromBp(l.gstRateBp)}%`;
+                    const rateBp = cl?.gstRateBp ?? l.gstRateBp ?? 0;
+                    const rate = `${percentFromBp(rateBp)}%`;
                     return {
                       id: uuidv7(),
                       position: i + 1,
@@ -232,7 +233,7 @@ export const documentStart = new Hono<AppEnv>().post(
                       discount_kind: null,
                       discount_value: null,
                       taxable_minor: cl?.taxableMinor ?? 0,
-                      gst_rate_bp: cl?.gstRateBp ?? l.gstRateBp,
+                      gst_rate_bp: rateBp,
                       cgst_minor: cl?.cgstMinor ?? 0,
                       sgst_minor: cl?.sgstMinor ?? 0,
                       igst_minor: cl?.igstMinor ?? 0,

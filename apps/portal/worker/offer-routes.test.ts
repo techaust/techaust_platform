@@ -43,9 +43,9 @@ const accept = (
   id: string,
   cookie: string,
   body: unknown = { typedName: "Asha  Rao", agree: true },
-  e = env,
+  e: Env = env,
 ) => call(`/offers/${id}/accept`, { body, cookie }, e);
-const decline = (id: string, cookie: string, body: unknown = { reason: "price" }, e = env) =>
+const decline = (id: string, cookie: string, body: unknown = { reason: "price" }, e: Env = env) =>
   call(`/offers/${id}/decline`, { body, cookie }, e);
 const view = (id: string, cookie: string) => call(`/offers/${id}`, { cookie });
 const codeOf = async (res: Response) => ((await bodyOf(res)).error as { code: string }).code;
@@ -776,7 +776,7 @@ describe("races: the SQL decides, exactly one wins", () => {
 
 describe("hygiene", () => {
   it("no portal SQL names a staff table, and no offer file reads a client or contact id from the request", async () => {
-    const files = import.meta.glob(["./offer-*.ts", "./offers.ts"], {
+    const files = import.meta.glob("./offer*.ts", {
       query: "?raw",
       import: "default",
       eager: true,
