@@ -2,7 +2,13 @@
 // root: it is only needed where documents are computed, and its `TaxWarning` would clash with `clients.ts`'s.
 // Pure and deterministic; every function returns a `TaxResult` and never throws. VERIFY WITH CA/LEGAL: every rule is a
 // researched default (docs/08-research-appendix/A-gst-invoicing.md), and the settings feed it as an input.
-export { type CreditedLine, type CreditedSoFar, type CreditRequest, creditNote } from "./credit.ts";
+export {
+  type CreditedInr,
+  type CreditedLine,
+  type CreditedSoFar,
+  type CreditRequest,
+  creditNote,
+} from "./credit.ts";
 export { computeDocument, type DocumentInput } from "./document.ts";
 export {
   groupsOf,
