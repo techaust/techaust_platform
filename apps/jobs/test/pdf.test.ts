@@ -5,9 +5,11 @@ import { nextUtcMidnight, type PdfMessage, pdfKeys } from "@techaust/core/pdf-jo
 import { parseEnvelope, verifyEnvelope } from "@techaust/pdf";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { stubPdf } from "../src/browser.ts";
+import worker from "../src/index.ts";
 import type { Clock } from "../src/pacer.ts";
 import {
   BROWSER_ALERT_MS,
+  enqueueSweep,
   processPdf,
   processPdfDeadLetter,
   processRender,
@@ -16,6 +18,7 @@ import {
   SWEEP_GRACE_MS,
   SWEEP_SQL,
 } from "../src/pdf.ts";
+import { PURGE_CRON } from "../src/purge.ts";
 import { handleQueue } from "../src/queue.ts";
 import { type Seeded, seedSent } from "./pdf-seed.ts";
 
@@ -447,6 +450,38 @@ describe("the sweep", () => {
 });
 
 // ---------------------------------------------------------------------------------------------------------------------
+describe("the cron", () => {
+  it("enqueues ONE pdf.sweep for its own cron and reads no D1 for it", async () => {
+    const dead = new Proxy({}, { get: () => () => Promise.reject(new Error("D1 must not be read")) });
+    const { env, queue } = makeEnv({}, fakeQueue(), {});
+    await enqueueSweep({ ...env, DB: dead } as unknown as Env, T0);
+    expect(queue.sent).toEqual([{ body: { v: 1, kind: "pdf.sweep", asOf: T0 } }]);
+  });
+
+  it("the scheduled handler sends the sweep with the daily run and nothing for another cron", async () => {
+    const q = fakeQueue();
+    const base = makeEnv({}, q).env as unknown as Record<string, unknown>;
+    const env = {
+      ...base,
+      LEADS_QUEUE: { sendBatch: async () => undefined },
+      EMAIL_QUEUE: { sendBatch: async () => undefined },
+      LEAD_PURGE_MODE: "dry_run",
+    } as unknown as Env;
+    await worker.scheduled?.(
+      { cron: "5 4 * * *", scheduledTime: T0 } as ScheduledController,
+      env,
+      {} as ExecutionContext,
+    );
+    expect(q.sent).toEqual([]);
+    await worker.scheduled?.(
+      { cron: PURGE_CRON, scheduledTime: T0 } as ScheduledController,
+      env,
+      {} as ExecutionContext,
+    );
+    expect(q.sent).toEqual([{ body: { v: 1, kind: "pdf.sweep", asOf: T0 } }]);
+  });
+});
+
 describe("the queues", () => {
   const batchOf = (queue: string, body: unknown) => {
     const calls = { ack: 0, retry: 0, delay: undefined as number | undefined };
