@@ -701,6 +701,20 @@ describe("reading time [ADM-TIME-02]", () => {
     expect((await call("/time/targets", { cookie: a.cookie })).status).toBe(403);
   });
 
+  it("the people list holds only roles that log time: the owner sees owner, staff and sales, never the accountant", async () => {
+    const o = await sessionFor("owner", { name: "Olive Lister" });
+    const acc = await sessionFor("accountant", { name: "Acacia Books" });
+    const st = await sessionFor("staff", { name: "Stan Staff" });
+    const sa = await sessionFor("sales", { name: "Sol Sales" });
+    for (const viewer of [o, acc]) {
+      const ids = (await json(await call("/time/people", { cookie: viewer.cookie }))).people.map(
+        (p: { id: string }) => p.id,
+      );
+      expect(ids).toEqual(expect.arrayContaining([o.id, st.id, sa.id]));
+      expect(ids).not.toContain(acc.id);
+    }
+  });
+
   it("pages newest day first without a repeat or a gap; the range is 366 days at most; the default is the last 30 days", async () => {
     const s = await sessionFor("staff");
     const p = await mkOpenProject();

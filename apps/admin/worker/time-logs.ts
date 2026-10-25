@@ -436,8 +436,9 @@ export const timeLogs = new Hono<AppEnv>()
     const me = actor(c);
     const wide = can(me.role, "time.readAll") || can(me.role, "time.writeAny");
     if (!wide) return c.json({ people: [{ id: me.id, name: me.name }] });
+    // Only roles that log time: the accountant reads the timesheet but never logs, so is not offered as a person.
     const { results } = await c.env.DB.prepare(
-      "SELECT id, name FROM staff_users WHERE status = 'active' ORDER BY name COLLATE NOCASE, id LIMIT 100",
+      "SELECT id, name FROM staff_users WHERE status = 'active' AND role IN ('owner', 'staff', 'sales') ORDER BY name COLLATE NOCASE, id LIMIT 100",
     ).all<{ id: string; name: string }>();
     return c.json({ people: results });
   })
