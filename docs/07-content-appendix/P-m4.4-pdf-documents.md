@@ -47,7 +47,7 @@ As 07-O §1 and 06 §7.4: "Summary" · "Your goals" · "Scope" · "Deliverables"
 | Code or event | Copy |
 |---|---|
 | `pdf_pending` | "The PDF is still being made. Try again in a minute." |
-| `pdf_ready` | "The PDF is already made." |
+| `pdf_done` | "The PDF is already made." |
 | Signature, wrong type or size | "Use a PNG or JPEG image up to 256 KB." |
 | Bell, the PDF failed | "The PDF for {number} v{version} could not be made. Open it to try again." |
 | Bell, the PDF allowance is half used | "Half of today's PDF allowance is used." |
