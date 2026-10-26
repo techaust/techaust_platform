@@ -27,7 +27,17 @@ export const MAX_LOADED_PLANS = 100;
  * every plan in pages of 50 (a continuation message carries the last plan id on). `on` (an IST date) picks the plans that were active
  * ON THAT DATE by their status history instead of today's mirror column, so a plan paused after the date still counts for it.
  */
-export type PlanSource = { ids: readonly string[] } | { active: number; after?: string; on?: string };
+export type PlanSource =
+  | { ids: readonly string[] }
+  | { active: number; after?: string; on?: string }
+  /**
+   * Exactly the `byBurn` (at most) started active plans that have used the largest share of their included hours in the period that contains `today`
+   * (the dashboard when more plans are active than it can load; M4.3 review, found in M3.5). The share is worked out in SQL from the
+   * terms in force and the billable minutes of the period: it ignores rolled-over hours, which can only LOWER a plan's true burn, so every
+   * plan that is near or at its hours is among the first loaded (a plan with no included hours and any billable time ranks first). The
+   * exact burn and flag of the loaded plans is still `carePeriodUsage`'s.
+   */
+  | { byBurn: number; today: string };
 
 /**
  * The usage window: the minutes logged up to `to` (an IST date, normally today) and back to the start of the period `periodsBack`
@@ -95,6 +105,19 @@ function idsSql(source: PlanSource): { sql: string; bound: number; bind: unknown
     if (source.ids.length > MAX_LOADED_PLANS)
       throw new RangeError(`At most ${MAX_LOADED_PLANS} plans at a time`);
     return { sql: "SELECT value FROM json_each(?1)", bound: 1, bind: [JSON.stringify(source.ids)] };
+  }
+  if ("byBurn" in source) {
+    const n = Math.trunc(source.byBurn);
+    if (!Number.isInteger(n) || n < 1 || n > MAX_LOADED_PLANS)
+      throw new RangeError(`Plans by burn: 1 to ${MAX_LOADED_PLANS}`);
+    const cur = periodStartSql("?1", "p.billing_day");
+    const included = `(SELECT r.included_minutes FROM care_plan_terms r WHERE r.care_plan_id = p.id AND r.effective_from <= ${cur} ORDER BY r.effective_from DESC, r.created_at DESC, r.id DESC LIMIT 1)`;
+    const used = `(SELECT coalesce(sum(t.minutes), 0) FROM time_logs t WHERE t.care_plan_id = p.id AND t.billable = 1 AND t.work_date >= ${cur} AND t.work_date <= ?1)`;
+    return {
+      sql: `SELECT id FROM (SELECT id, CASE WHEN coalesce(inc, 0) = 0 THEN CASE WHEN u > 0 THEN 1000000000 ELSE -1 END ELSE u * 10000 / inc END AS k FROM (SELECT p.id AS id, ${used} AS u, ${included} AS inc FROM care_plans p WHERE p.status = 'active' AND p.start_date <= ?1 LIMIT -1) ORDER BY k DESC, id LIMIT ${n})`,
+      bound: 1,
+      bind: [source.today],
+    };
   }
   const n = Math.trunc(source.active);
   if (!Number.isInteger(n) || n < 1 || n > MAX_LOADED_PLANS)

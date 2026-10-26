@@ -12,7 +12,32 @@ export type ApprovalState = "none" | "pending" | "approved" | "rejected" | "expi
 export type DiscountKind = "fixed" | "percent";
 export type Discount = { kind: DiscountKind; value: number };
 export type Issue = { code: string; path: readonly (string | number)[] };
-export type Blocker = { code: string; names?: string[]; codes?: string[]; issues?: Issue[] };
+export type Blocker = {
+  code: string;
+  names?: string[];
+  codes?: string[];
+  issues?: Issue[];
+  /** `section_empty` (review fix): the visible optional sections with no text, by key (a section's id or kind). */
+  sections?: string[];
+  keys?: string[];
+};
+
+/** What a sent version was addressed to, as frozen at send (review fix 1; the db's `RecipientSnapshot`). */
+export type RecipientView = {
+  legalName: string;
+  displayName?: string;
+  gstin?: string;
+  stateCode?: string;
+  email?: string;
+  country: string;
+  contactId?: string;
+  contactName?: string;
+};
+/** Who sent it, as frozen at send (the db's `IssuerSnapshot`). */
+export type IssuerView = {
+  company: { tradeName: string; legalName: string | null; gstin: string | null; stateCode: string };
+  sender: { staffId: string; name: string; email: string };
+};
 
 export type Totals = {
   subtotalMinor: number;
@@ -162,6 +187,11 @@ export type DocumentView = {
   unresolved: string[];
   canSend: boolean;
   needsResave: boolean;
+  /** A frozen version: the recipient and issuer as frozen (drafts read the live client and contact). */
+  recipient?: RecipientView | null;
+  issuer?: IssuerView | null;
+  /** An accepted estimate that was converted: what it became. */
+  convertedTo?: { kind: "invoice" | "care_plan"; id: string } | null;
 };
 
 /** What a PATCH answers: only what the server decided (figures, ids, guard, approval, blockers), never the text it was sent. */
@@ -251,6 +281,8 @@ export type ListRow = {
   customLines: number;
   customTaxableMinor: number;
   approval: ApprovalState;
+  /** A v2+ draft: the group's number (review fix 13), when the API sends it apart from `number`. */
+  numberDisplay?: string | null;
 };
 export type ListQuery = {
   type?: QuoteType | undefined;

@@ -85,7 +85,8 @@ export function sendStatements(db: D1Database, a: SendArgs): SendStatements {
          snapshot_sha256 = ?12, issued_by = ?13, updated_at = ?6
        WHERE id = ?1 AND status = 'draft' AND frozen_at IS NULL AND updated_at = ?14 AND content_sha256 = ?15
          AND (SELECT version FROM settings WHERE key = 'numbering') IS ?16
-         AND NOT EXISTS (SELECT 1 FROM documents x WHERE x.version_group_id = ?4 AND x.status = 'accepted')${approval}
+         AND NOT EXISTS (SELECT 1 FROM documents x WHERE x.version_group_id = ?4 AND x.status IN ('accepted', 'converted'))
+         AND NOT EXISTS (SELECT 1 FROM clients z WHERE z.id = documents.client_id AND z.anonymised_at IS NOT NULL)${approval}
        RETURNING number_display, valid_until`,
     )
     .bind(

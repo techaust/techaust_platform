@@ -455,6 +455,36 @@ describe("PATCH and DELETE /time/:id [ADM-TIME-03]", () => {
     ).toBe(true);
   });
 
+  it("an entry dated more than 7 days back is the owner's for ANY change: minutes, note, billable, target (M3.5 review)", async () => {
+    const author = await longSession("staff");
+    const owner = await longSession("owner");
+    const p = await mkOpenProject();
+    const q = await mkOpenProject();
+    // made by the owner for the author (an old date), so it is recent as a row (inside the 7-day author lock) but old as a work date
+    const old = await mkLog(author.id, back(8), 60, { project: p.id });
+    const edge = await mkLog(author.id, back(7), 60, { project: p.id });
+    for (const change of [{ minutes: 75 }, { note: "late edit" }, { billable: false }, { projectId: q.id }]) {
+      const res = await patch(author.cookie, old.id, { expectedUpdatedAt: old.updatedAt, ...change });
+      expect(res.status, JSON.stringify(change)).toBe(403);
+      expect(await code(res)).toBe("owner_only_date");
+    }
+    expect(
+      await one("SELECT minutes, note, billable, project_id FROM time_logs WHERE id = ?", old.id),
+    ).toEqual({
+      minutes: 60,
+      note: null,
+      billable: 1,
+      project_id: p.id,
+    });
+    // exactly seven days back is still the author's
+    const ok = await patch(author.cookie, edge.id, { expectedUpdatedAt: edge.updatedAt, minutes: 90 });
+    expect(ok.status, await ok.clone().text()).toBe(200);
+    // the owner may change the old one
+    const byOwner = await patch(owner.cookie, old.id, { expectedUpdatedAt: old.updatedAt, minutes: 75 });
+    expect(byOwner.status, await byOwner.clone().text()).toBe(200);
+    expect(await one("SELECT minutes FROM time_logs WHERE id = ?", old.id)).toEqual({ minutes: 75 });
+  });
+
   it("moving an entry: the date rules apply, the new day must have room, and it can switch target", async () => {
     const s = await sessionFor("staff");
     const p = await mkOpenProject();

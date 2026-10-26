@@ -3,12 +3,13 @@
 // autosave: `buildPatch` (the parts that changed, in the API's units) and `applySave` (the server's figures and ids onto the screen, never
 // replacing what the person is typing). Pure, so the copy and the rules are tested without a browser.
 //
-// Copy: 07-O (docs/07-content-appendix/O-m4.3-proposal-screens.md) is a DRAFT pending the owner's word-for-word approval. A sentence the
-// screens need and 07-O lacks is a PLACEHOLDER (`pending()`, a visible "[Placeholder]" tag), sits in `DOC_PENDING`, and is listed in the
-// designer report. Labels (buttons, columns, field names) come from 07-O, the PRD and the existing screens.
+// Copy: 07-O (docs/07-content-appendix/O-m4.3-proposal-screens.md) is a DRAFT pending the owner's word-for-word approval. The sentences
+// the screens added after 07-O §3–§8 are 07-O §9 (`DOC_PENDING`: the lead accepted them as drafts, so they no longer carry a tag) and
+// §10 (the review fixes). Labels (buttons, columns, field names) come from 07-O, the PRD and the existing screens.
 //
 // Money: amounts are the server's minor units, formatted through core (`moneyText`); typed amounts are parsed through core
 // (`moneyFrom`). Nothing here adds, multiplies or rounds money.
+import { type CareFromEstimate, careFromEstimate, type EstimateCareLine } from "@techaust/core/care";
 import { formatDate, istDate, parseIsoDate } from "@techaust/core/dates";
 import { REQUIRED_SECTIONS, UNRESOLVED_RE } from "@techaust/core/documents";
 import { STATE_CODES } from "@techaust/core/gstin";
@@ -38,9 +39,10 @@ import type {
   SummaryRow,
   Supply,
   Totals,
+  ViewLine,
 } from "./documents-api.ts";
 import { sentence } from "./format.ts";
-import { moneyText, pending } from "./projects.ts";
+import { moneyText } from "./projects.ts";
 import { bpToPercent, intIn, moneyFrom, moneyInput, percentToBp } from "./settings-form.ts";
 
 export { moneyText };
@@ -89,6 +91,7 @@ export const DOC_COPY = {
   customLine: "Custom line: not from the catalogue",
   // §4
   overTen: "More than 10 % off catalogue prices needs the owner's approval before sending.",
+  overTenOwner: "More than 10 % off catalogue prices. As the owner, you can send it without approval.",
   requestTitle: "Ask the owner to approve",
   reason: "Reason",
   sendRequest: "Send request",
@@ -171,7 +174,7 @@ export const invoiceTitle = (number: string, version: number) =>
   `Create an invoice draft from ${number} v${version}?`;
 export const careTitle = (number: string, version: number) =>
   `Create a care plan from ${number} v${version}?`;
-export const careDone = (code: string) => `Care plan ${code} created.`;
+export const careDone = (client: string, tier: string) => `Care plan for ${client} (${tier}) created.`;
 
 export const DOC_TOASTS = {
   created: "Draft created.",
@@ -185,47 +188,68 @@ export const DOC_TOASTS = {
 
 // 07-O §7's audit labels live with the others in lib/audit.ts (ACTION_LABELS).
 
-// ---- placeholders (not in 07-O; each listed in the designer report) --------------------------------------------------------
+// ---- 07-O §9: the designer's drafts, accepted by the lead as wording (PENDING the owner's word-for-word approval) ----------
 
 export const DOC_PENDING = {
-  enterQty: pending("Enter a quantity like 1 or 2.5."),
-  enterPercent: pending("Enter a percentage like 10 or 12.5."),
-  enterDescription: pending("Enter a description."),
-  enterLabel: pending("Enter a name for this instalment."),
-  enterSac: pending("Enter the six-digit SAC code."),
-  enterValidity: pending("Enter a number of days from 1 to 90."),
+  enterQty: "Enter a quantity like 1 or 2.5.",
+  enterPercent: "Enter a percentage like 10 or 12.5.",
+  enterDescription: "Enter a description.",
+  enterLabel: "Enter a name for this instalment.",
+  enterSac: "Enter the six-digit SAC code.",
+  enterValidity: "Enter a number of days from 1 to 90.",
   /** No title yet: what a version is called in a title or a list until it has one. */
-  untitled: pending("Untitled"),
-  sectionKind: pending("Section"),
-  noLines: pending("No lines yet. Add a line from the catalogue or a custom line."),
-  addCatalogueLine: pending("Add from the catalogue"),
-  addCustomLine: pending("Add a custom line"),
-  addStep: pending("Add an instalment"),
-  addSection: pending("Add a section"),
-  chooseService: pending("Choose a service"),
-  chooseLead: pending("Search by the start of a lead reference or email"),
-  leadNoClient: pending("Convert this lead to a client first."),
-  pickServices: pending("Choose at least one service."),
-  pickClient: pending("Choose a client."),
-  pickLead: pending("Choose a lead."),
+  untitled: "Untitled",
+  sectionKind: "Section",
+  noLines: "No lines yet. Add a line from the catalogue or a custom line.",
+  addCatalogueLine: "Add from the catalogue",
+  addCustomLine: "Add a custom line",
+  addStep: "Add an instalment",
+  addSection: "Add a section",
+  chooseService: "Choose a service",
+  chooseLead: "Search by the start of a lead reference or email",
+  leadNoClient: "Convert this lead to a client first.",
+  pickServices: "Choose at least one service.",
+  pickClient: "Choose a client.",
+  pickLead: "Choose a lead.",
   /** The heading of a sent version's actions panel (a new version, the conversions). */
-  nextHeading: pending("Next steps"),
-  showMoreRequests: pending("Show more requests"),
+  nextHeading: "Next steps",
+  showMoreRequests: "Show more requests",
   /** When the API cannot name the person (a removed member). */
-  theOwner: pending("the owner"),
-  noOpenApprovals: pending("No requests match these filters."),
-  linesLoadFailed: pending("Couldn't load this service's lines. Close the dialog and try again."),
-  listNoMatchTitle: pending("No proposals or estimates match these filters"),
-  searchNumber: pending("Search by number"),
-  searchNoMatch: pending("No proposal or estimate has a number starting with that."),
-  customLinesCount: (n: number) => pending(n === 1 ? "1 custom line" : `${n} custom lines`),
-  customLinesHint: pending("Custom lines are not counted in the discount guard."),
-  readOnlyDraft: pending("Your role can read this draft but not change it."),
-  openCarePlan: pending("Open the care plan"),
-  newerDraftExists: pending("A newer version of this document exists."),
-  openLatest: pending("Open the newest version"),
+  theOwner: "the owner",
+  noOpenApprovals: "No requests match these filters.",
+  linesLoadFailed: "Couldn't load this service's lines. Close the dialog and try again.",
+  /** 07-O §9 ends it with a full stop; as an empty state's heading it goes without (the M3.4 pattern). */
+  listNoMatchTitle: "No proposals or estimates match these filters",
+  searchNumber: "Search by number",
+  searchNoMatch: "No proposal or estimate has a number starting with that.",
+  customLinesCount: (n: number) => (n === 1 ? "1 custom line" : `${n} custom lines`),
+  customLinesHint: "Custom lines are not counted in the discount guard.",
+  readOnlyDraft: "Your role can read this draft but not change it.",
+  openCarePlan: "Open the care plan",
+  newerDraftExists: "A newer version of this document exists.",
+  openLatest: "Open the newest version",
 } as const;
 
+// ---- 07-O §10 (added after the review; PENDING the owner) -------------------------------------------------------------------
+
+/** The care plan dialog's included-hours hint: Essential has a default; the other tiers are agreed per client. */
+export const CARE_HOURS_HINT = {
+  essential: "Leave empty to use the plan's 2 hours.",
+  required: "Required: this plan's hours are agreed per client.",
+} as const;
+/** ADM-G-04 for the care plan: what the estimate makes (the server's figures, formatted only). */
+export const careSummary = (tier: string, client: string, price: string) =>
+  `${tier} care plan for ${client}: ${price} a month before GST`;
+export const careAiOps = (aiOps: string) => `plus ${aiOps} a month for AI Ops`;
+export const CONVERTED_TO_INVOICE = "Converted to an invoice draft.";
+export const convertedToCare = (client: string, tier: string) =>
+  `Converted to care plan for ${client} (${tier}).`;
+export const OPEN_IT = "Open it";
+export const sectionTitleName = (section: string) => `Title of ${section}`;
+/** `section_empty`, around its list of sections (each one a link to the section). */
+export const SECTION_EMPTY_AROUND = ["Write these sections or hide them before sending: ", "."] as const;
+export const sectionEmptyLine = (list: string) =>
+  `${SECTION_EMPTY_AROUND[0]}${list}${SECTION_EMPTY_AROUND[1]}`;
 // ---- labels ------------------------------------------------------------------------------------------------------------------
 
 export const TYPE_LABELS: Record<QuoteType, string> = { proposal: "Proposal", estimate: "Estimate" };
@@ -397,6 +421,8 @@ export const DOC_ERRORS = {
   monthly_line_in_proposal: "Monthly lines belong in a care-plan estimate, not a proposal.",
   lead_has_proposal: "This lead already has a proposal.",
   lead_client_mismatch: "This lead belongs to a different client.",
+  // 07-O §10
+  approval_rejected: "The owner rejected this version. Change it before asking again.",
 } as const;
 const errorFor = (code: string): string | undefined =>
   Object.hasOwn(DOC_ERRORS, code) ? (DOC_ERRORS as Record<string, string>)[code] : undefined;
@@ -424,7 +450,9 @@ export const mappedError = (e: unknown): unknown =>
   e instanceof RequestError ? new RequestError(e.status, e.code, docErrorText(e), e.requestId) : e;
 
 /** What stops a draft being sent, in 07-O's words (the server's list, in its order). */
-export function blockerText(b: Blocker): string {
+export function blockerText(b: Blocker, sections: readonly SectionDraft[] = []): string {
+  if (b.code === "section_empty")
+    return sectionEmptyLine(emptySectionsOf(b, sections).map(sectionName).join(", "));
   return errorFor(b.code) ?? b.code;
 }
 
@@ -985,6 +1013,55 @@ export function approvalLine(a: ApprovalInfo, someone: string): string | null {
   if (a.state === "rejected") return rejectedBy(a.decidedByName ?? someone, a.note ?? "");
   return null;
 }
+
+/** A section that `section_empty` names: shown, optional (not estimate, terms or acceptance) and with no text. */
+export const isEmptyOptional = (s: SectionDraft) =>
+  !s.hidden && !isRequiredSection(s.kind) && s.bodyMd.trim() === "";
+
+/**
+ * The sections a `section_empty` blocker is about, in the editor's order. The server names them by key (a section's id, or its kind);
+ * without keys (or none that match), the editor's own empty visible optional sections are the list.
+ */
+export function emptySectionsOf(b: Blocker, sections: readonly SectionDraft[]): SectionDraft[] {
+  const keys = b.sections ?? b.keys ?? b.names ?? b.codes ?? [];
+  const out: SectionDraft[] = [];
+  for (const k of keys) {
+    const hit =
+      sections.find((s) => s.id === k && !out.includes(s)) ??
+      sections.find((s) => s.kind === k && !out.includes(s) && isEmptyOptional(s)) ??
+      sections.find((s) => s.kind === k && !out.includes(s));
+    if (hit) out.push(hit);
+  }
+  const list = out.length > 0 ? out : sections.filter(isEmptyOptional);
+  return sections.filter((s) => list.includes(s));
+}
+
+/**
+ * The care plan an accepted estimate describes, for the dialog's ADM-G-04 summary: core's own mapping (`careFromEstimate`, the one the
+ * convert route uses) over the version's lines as the server worked them out, with each line's service code from the catalogue. No sum is
+ * made here; null when the lines describe no care plan or a code is unknown.
+ */
+export function careOfLines(
+  lines: readonly ViewLine[],
+  codeOf: (catalogueItemId: string) => string | undefined,
+): CareFromEstimate | null {
+  const mapped: EstimateCareLine[] = [];
+  for (const l of lines) {
+    if (l.taxableMinor === null) return null;
+    mapped.push({
+      code: l.catalogueItemId ? (codeOf(l.catalogueItemId) ?? null) : null,
+      catalogueLine: l.catalogueLine,
+      qtyMilli: l.qtyMilli,
+      unit: l.unit,
+      taxableMinor: l.taxableMinor,
+    });
+  }
+  return careFromEstimate(mapped);
+}
+
+/** A section's name on the screen: its own title, else its kind's name. */
+export const sectionName = (s: { title: string | null; kind: string }) =>
+  s.title?.trim() || sectionLabel(s.kind);
 
 /** An instant as its IST day ("05 Nov 2026"). */
 export const formatIstDay = (ms: number): string => formatDate(istDate(ms));

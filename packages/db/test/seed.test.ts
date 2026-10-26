@@ -1,11 +1,17 @@
 import { env } from "cloudflare:workers";
 import { SETTINGS_DEFAULTS } from "@techaust/core";
+import { sha256Hex } from "@techaust/core/hash";
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { createDb } from "../src/client.ts";
 import { catalogueItems, settings } from "../src/schema/index.ts";
 import { CATALOGUE } from "../src/seed/catalogue.ts";
 import { literal, seedSql, seedStatements } from "../src/seed/index.ts";
+import {
+  PROPOSAL_TERMS_V1,
+  PROPOSAL_TERMS_V1_OWNER_CONFIRMS,
+  PROPOSAL_TERMS_V1_SHA256,
+} from "../src/seed/terms.ts";
 import { all, first, run } from "./helpers.ts";
 
 const seed = () => env.DB.batch(seedStatements().map((s) => env.DB.prepare(s)));
@@ -121,6 +127,36 @@ describe("seed [ADM-CAT-01]", () => {
       s2?.slug,
     );
     expect(await first("SELECT code FROM catalogue_items WHERE code = 'S1-OLD'")).toEqual({ code: "S1-OLD" });
+  });
+
+  it("loads the first proposal terms (07-O section 2): version 1, the hash of its text, insert-only, never over a later version [ADM-SET-08]", async () => {
+    await seed();
+    await seed();
+    const v1 = await first<{ id: string; body_md: string; sha256: string }>(
+      "SELECT id, body_md, sha256 FROM terms_versions WHERE kind = 'proposal' AND version = 1",
+    );
+    expect(v1?.body_md).toBe(PROPOSAL_TERMS_V1);
+    expect(v1?.sha256).toBe(await sha256Hex(PROPOSAL_TERMS_V1));
+    expect(PROPOSAL_TERMS_V1_SHA256).toBe(await sha256Hex(PROPOSAL_TERMS_V1));
+    expect(await first("SELECT count(*) AS n FROM terms_versions WHERE kind = 'proposal'")).toEqual({ n: 1 });
+    // six numbered terms, no placeholders, the warranty line is the one the owner still has to confirm
+    expect(PROPOSAL_TERMS_V1.split("\n\n")).toHaveLength(6);
+    expect(PROPOSAL_TERMS_V1).not.toMatch(/\{\{/);
+    expect(PROPOSAL_TERMS_V1).toContain(
+      "4. **Warranty.** Defects in what we delivered are fixed free for 30 days after launch.",
+    );
+    expect(PROPOSAL_TERMS_V1_OWNER_CONFIRMS).toBe("warranty");
+    // the owner writes version 2; the seed leaves it, and does not add anything
+    await run(
+      "INSERT INTO terms_versions (id, kind, version, body_md, sha256) VALUES ('owner-terms-2', 'proposal', 2, 'Owner text', 'h2')",
+    );
+    await seed();
+    expect(
+      await all("SELECT version, body_md FROM terms_versions WHERE kind = 'proposal' ORDER BY version"),
+    ).toEqual([
+      { version: 1, body_md: PROPOSAL_TERMS_V1 },
+      { version: 2, body_md: "Owner text" },
+    ]);
   });
 
   it("produces SQL for wrangler d1 execute, with safe literals", () => {

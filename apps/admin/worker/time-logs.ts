@@ -528,6 +528,14 @@ export const timeLogs = new Hono<AppEnv>()
     const now = Date.now();
     const locked = authorLocked(row.created_at, now);
     if (locked && !canAny) return err(c, TIME_LOCKED, 403);
+    // An entry dated more than 7 days back is the owner's to change, whatever is being changed (minutes, note, target...): the date rule
+    // is not only about moving an entry to an old date (M3.5 review, found with M4.3). The row's version guards this read.
+    if (
+      !canAny &&
+      entryDateCheck({ today: istToday(now), workDate: row.work_date, canWriteAny: false }) ===
+        "owner_only_date"
+    )
+      return err(c, OWNER_ONLY_DATE, 403);
 
     // The target: sending one of the two switches to it (the other is cleared); sending both or a null for the only one is an error.
     let projectId = row.project_id;

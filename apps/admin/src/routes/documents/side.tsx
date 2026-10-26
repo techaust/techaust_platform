@@ -11,10 +11,14 @@ import {
   blockerText,
   DOC_COPY,
   DOC_PENDING,
+  emptySectionsOf,
   formatIstDay,
   guardLine,
   type SaveStatus,
+  SECTION_EMPTY_AROUND,
+  type SectionDraft,
   STATUS_LABELS,
+  sectionName,
   versionLine,
 } from "../../lib/documents.ts";
 import type { ApprovalInfo, Blocker, Guard, QuoteType, VersionRow } from "../../lib/documents-api.ts";
@@ -23,7 +27,7 @@ import { docHref } from "./parts.tsx";
 const OWNER_MARK_BP = 1000;
 
 /** The guard rule and its sentence. Nothing to show when no line comes from the catalogue. */
-export function GuardRule({ guard }: { guard: Guard | null }) {
+export function GuardRule({ guard, owner }: { guard: Guard | null; owner: boolean }) {
   if (!guard || guard.referenceMinor === 0) return null;
   // The scale runs to 20 %, or a little past the discount when it is larger, so the 10 % mark always sits inside it.
   const scale = Math.max(2 * OWNER_MARK_BP, guard.discountBp + 500);
@@ -38,7 +42,9 @@ export function GuardRule({ guard }: { guard: Guard | null }) {
         <span className="guard__fill" style={{ width: `${fill}%` }} />
         <span className="guard__mark" style={{ left: `${mark}%` }} />
       </span>
-      {guard.needsApproval && <p className="guard__over">{DOC_COPY.overTen}</p>}
+      {guard.needsApproval && (
+        <p className="guard__over">{owner ? DOC_COPY.overTenOwner : DOC_COPY.overTen}</p>
+      )}
       {guard.customLines.length > 0 && (
         <p className="hint guard__custom">
           {DOC_PENDING.customLinesCount(guard.customLines.length)}. {DOC_PENDING.customLinesHint}
@@ -61,6 +67,9 @@ export function SendPanel(props: {
   canSendRole: boolean;
   onSend: () => void;
   onRequest: () => void;
+  /** The draft's sections, for `section_empty`'s list; each name opens its section. */
+  sections: SectionDraft[];
+  onOpenSection: (uid: string) => void;
 }) {
   const needs = !!props.guard?.needsApproval && props.role !== "owner";
   const approved = props.approval.state === "approved";
@@ -96,12 +105,16 @@ export function SendPanel(props: {
           {props.blockers.map((b) => (
             <li key={b.code} className="blockers__item">
               <Alert size={16} />
-              <span>{blockerText(b)}</span>
+              {b.code === "section_empty" ? (
+                <SectionEmpty sections={emptySectionsOf(b, props.sections)} onOpen={props.onOpenSection} />
+              ) : (
+                <span>{blockerText(b)}</span>
+              )}
             </li>
           ))}
         </ul>
       ) : null}
-      <GuardRule guard={props.guard} />
+      <GuardRule guard={props.guard} owner={props.role === "owner"} />
       {line && (
         <p className="approval-line" data-state={props.approval.state}>
           {props.approval.state === "pending" ? (
@@ -134,6 +147,31 @@ export function SendPanel(props: {
       </div>
       {props.canSendRole && <p className="hint send-panel__note">{DOC_COPY.untilPortal}</p>}
     </section>
+  );
+}
+
+/** 07-O §10 `section_empty`: the sentence with each section's name as a link that opens the section's text. */
+function SectionEmpty(props: { sections: SectionDraft[]; onOpen: (uid: string) => void }) {
+  return (
+    <span>
+      {SECTION_EMPTY_AROUND[0]}
+      {props.sections.map((s, i) => (
+        <span key={s.uid}>
+          <a
+            href={`#sec-${s.uid}-toggle`}
+            className="blockers__link"
+            onClick={(e) => {
+              e.preventDefault();
+              props.onOpen(s.uid);
+            }}
+          >
+            {sectionName(s)}
+          </a>
+          {i < props.sections.length - 1 ? ", " : ""}
+        </span>
+      ))}
+      {SECTION_EMPTY_AROUND[1]}
+    </span>
   );
 }
 

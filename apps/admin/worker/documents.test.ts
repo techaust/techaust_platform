@@ -971,11 +971,17 @@ describe("discarding and revising [ADM-PROP-05]", () => {
     });
     const id = (await json(res)).id as string;
     const v = await discount(o, id, "fixed", 5_000_000);
-    await call(`/documents/${id}/approval-request`, {
-      cookie: o.cookie,
-      body: { expectedUpdatedAt: v.updatedAt },
-    });
+    const asked = await json(
+      await call(`/documents/${id}/approval-request`, {
+        cookie: o.cookie,
+        body: { expectedUpdatedAt: v.updatedAt },
+      }),
+    );
     expect(await countOf("approvals", "document_id = ?", id)).toBe(1);
+    // the owners' bell rows for the request (M4.3 review 10)
+    expect(
+      await countOf("notifications", "entity_type = 'approval' AND entity_id = ?", asked.id),
+    ).toBeGreaterThan(0);
     const stale = await call(`/documents/${id}?expectedUpdatedAt=1`, { method: "DELETE", cookie: o.cookie });
     expect(stale.status).toBe(409);
     expect(await countOf("documents", "id = ?", id)).toBe(1);
@@ -988,6 +994,7 @@ describe("discarding and revising [ADM-PROP-05]", () => {
     expect(gone.status, await gone.clone().text()).toBe(200);
     expect(await countOf("documents", "id = ?", id)).toBe(0);
     expect(await countOf("approvals", "document_id = ?", id)).toBe(0);
+    expect(await countOf("notifications", "entity_type = 'approval' AND entity_id = ?", asked.id)).toBe(0);
     expect(await countOf("document_lines", "document_id = ?", id)).toBe(0);
     expect(await one("SELECT proposal_id FROM leads WHERE id = ?", lead)).toEqual({ proposal_id: null });
     expect(

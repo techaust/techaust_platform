@@ -4,12 +4,18 @@
 // estimate an invoice draft or a care plan) and the versions.
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
+import { catalogueApi } from "../../api.ts";
 import { PageHeader } from "../../components/display.tsx";
-import { Calendar as CalendarIcon, FileText, Receipt } from "../../components/icons.tsx";
+import { Calendar as CalendarIcon, CheckCircle, FileText, Receipt } from "../../components/icons.tsx";
+import { useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { Notice } from "../../components/ui.tsx";
 import { allowed } from "../../lib/access.ts";
+import { TIER_LABELS } from "../../lib/care.ts";
 import {
+  CONVERTED_TO_INVOICE,
+  careOfLines,
+  convertedToCare,
   DOC_COPY,
   DOC_PENDING,
   DOC_TOASTS,
@@ -17,18 +23,31 @@ import {
   formatIstDay,
   isRequiredSection,
   moneyText,
+  OPEN_IT,
   STATUS_LABELS,
   sectionLabel,
   TYPE_LABELS,
   termsLine,
   titleOf,
 } from "../../lib/documents.ts";
-import { type DocumentView, documentsApi } from "../../lib/documents-api.ts";
+import { type DocumentView, documentsApi, type ViewLine } from "../../lib/documents-api.ts";
+import { COPY as PROJECT_COPY } from "../../lib/projects.ts";
 import { useUser } from "../../session.tsx";
 import { CareDialog, InvoiceDialog, ReviseDialog } from "./dialogs.tsx";
 import { LinesTable, ScheduleTable, SectionBody, TaxPreview } from "./money.tsx";
 import { crumbsFor, DocPill, docHref } from "./parts.tsx";
 import { VersionsPanel } from "./side.tsx";
+
+/** The care plan the lines describe (null while loading, when not asked, or when they describe none). One catalogue page: 18 services. */
+function useCareOf(lines: ViewLine[] | null) {
+  const codes = useLoad(
+    () => (lines ? catalogueApi.list({ limit: "50" }) : Promise.resolve(null)),
+    lines ? "care" : "",
+  );
+  if (!lines || codes.state !== "ready" || !codes.data) return null;
+  const byId = new Map(codes.data.items.map((i) => [i.id, i.code]));
+  return careOfLines(lines, (id) => byId.get(id));
+}
 
 export function ReadView({ view, reload }: { view: DocumentView; reload: () => void }) {
   const user = useUser();
@@ -49,12 +68,25 @@ export function ReadView({ view, reload }: { view: DocumentView; reload: () => v
     !newer &&
     v.version === latestSent &&
     !v.client.anonymised;
-  const canInvoice = v.type === "estimate" && v.status === "accepted" && allowed(user.role, "invoices.draft");
-  const canCare = v.type === "estimate" && v.status === "accepted" && allowed(user.role, "carePlans.write");
+  // A converted estimate offers neither conversion again (review fix 9); it says what it became instead.
+  const converted = v.convertedTo ?? null;
+  const convertible = v.type === "estimate" && v.status === "accepted" && !converted;
+  const canInvoice = convertible && allowed(user.role, "invoices.draft");
+  const canCare = convertible && allowed(user.role, "carePlans.write");
   const hasMonthly = v.lines.some((l) => l.unit === "month");
   const number = v.number ?? titleOf(v.title);
   const sections = v.sections.filter((s) => !s.hidden);
   const hasEstimate = sections.some((s) => s.kind === "estimate");
+  // A sent version reads who it was addressed to as frozen at send (review fix 1); a draft reads the live client and contact.
+  const recipient = v.frozen ? v.recipient : null;
+  const forName = recipient ? recipient.displayName || recipient.legalName : v.client.name;
+  const forContact = recipient ? (recipient.contactName ?? null) : (v.contact?.name ?? null);
+  // The care plan this estimate describes (for the dialog's summary and the "Converted to" line): core's mapping over the frozen lines,
+  // with each line's service code from the catalogue. Loaded only where it is shown.
+  const needsCare =
+    v.type === "estimate" && v.status === "accepted" && (canCare || converted?.kind === "care_plan");
+  const care = useCareOf(needsCare ? v.lines : null);
+  const tierName = care ? TIER_LABELS[care.tier] : null;
 
   const estimateBlock = (
     <div className="doc-sheet__estimate">
@@ -112,7 +144,7 @@ export function ReadView({ view, reload }: { view: DocumentView; reload: () => v
 
       <div className="doc-page doc-page--read">
         <div className="doc-page__send">
-          {(canRevise || canInvoice || canCare || newer) && (
+          {(canRevise || canInvoice || canCare || newer || converted) && (
             <section className="lead-panel send-panel" aria-labelledby="next-h">
               <h2 id="next-h" className="lead-panel__title">
                 {DOC_PENDING.nextHeading}
@@ -123,6 +155,25 @@ export function ReadView({ view, reload }: { view: DocumentView; reload: () => v
                   <span>
                     {DOC_PENDING.newerDraftExists}{" "}
                     <Link to={docHref({ id: newer.id, type: v.type })}>{DOC_PENDING.openLatest}</Link>
+                  </span>
+                </p>
+              )}
+              {converted && (
+                <p className="next-line next-line--done">
+                  <CheckCircle size={16} />
+                  <span>
+                    {converted.kind === "invoice" ? (
+                      <>
+                        {CONVERTED_TO_INVOICE} {PROJECT_COPY.createInvoice}
+                      </>
+                    ) : (
+                      <>
+                        {tierName
+                          ? convertedToCare(v.client.name, tierName)
+                          : convertedToCare(v.client.name, "").replace(" ()", "")}{" "}
+                        <Link to={`/care-plans/${encodeURIComponent(converted.id)}`}>{OPEN_IT}</Link>
+                      </>
+                    )}
                   </span>
                 </p>
               )}
@@ -174,9 +225,14 @@ export function ReadView({ view, reload }: { view: DocumentView; reload: () => v
                 {titleOf(v.title)}
               </h2>
               <p className="doc-sheet__for">
-                {v.client.name}
-                {v.contact && <span>, {v.contact.name}</span>}
+                {forName}
+                {forContact && <span>, {forContact}</span>}
               </p>
+              {v.issuer && (
+                <p className="doc-sheet__from">
+                  {v.issuer.company.tradeName}, {v.issuer.sender.name}
+                </p>
+              )}
             </header>
             {sections.map((s) => (
               <section key={s.id} className="doc-sheet__section" aria-labelledby={`rs-${s.id}`}>
@@ -229,7 +285,9 @@ export function ReadView({ view, reload }: { view: DocumentView; reload: () => v
         id={v.id}
         number={number}
         version={v.version}
-        clientCode={v.client.code}
+        client={v.client.name}
+        currency={v.currency}
+        care={care}
         onDone={reload}
         onClose={() => setDialog(null)}
       />
