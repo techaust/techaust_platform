@@ -244,3 +244,18 @@ Branch `fix/batch-review-ui-design` (from `origin/fix/batch-review-ui` at 2bde20
 3. The portal document paper prints the PDF view's short dates ("10 Nov 26"); if the lead wants four-digit years there too, that is `packages/pdf/src/format.ts` (it would change the PDF as well).
 
 **Open questions:** none beyond confirming the four labels above.
+
+## Lead triage of the builder and designer reports (2026-10-26)
+- **Merged:** builder (1171f71, fast-forward) and designer (2cdaa7c) into `fix/batch-review-ui`; the run file kept both reports. Designer screenshots copied to the main checkout's `.logs/shots/batch-review-fixes-after/`.
+- **Labels without a 07 line, accepted by the lead** (labels, not sentences): "Choose a date" (screen reader), "DD/MM/YYYY", "Contacts" (M8 link), "Open it" (DOC38, reused), and the bar figures.
+- **"Email on documents":** the default and the staging value are `contact@techaust.com`, not hello@ as 07-Q Q11 said; the PDFs print the Settings value. Told to the owner.
+- **Kept:** the two `/me` 401s on signed-out screens (React StrictMode in dev only).
+- **Builder round 2** (below): the dashboard document number, the staff preview's terms text (M11), the portal's on-screen dates (M10 on the document view).
+- **Not verified yet:** the PDFs and the real portal offer pages (need Browser Run: checked on staging after the merge); the Log time dialog at 768 after Date moved; NVDA; the portal through axe. The re-check covers what it can locally.
+
+## Brief: builder round 2 (lead, 2026-10-26)
+Branch `fix/batch-review-ui-builder2` from `origin/fix/batch-review-ui`. Sonnet 5.5, medium. Skills: `cloudflare:workers-best-practices`, `code-review` on your own diff.
+1. **Dashboard:** `apps/admin/worker/dashboard.ts` `ACTIVITY_SQL` gets the document number for `entity_type = 'document'` (a `LEFT JOIN documents` on the id, `d.number` in the `coalesce`), keeping the one batch and the row cap. Test.
+2. **M11:** the staff document read returns the pinned terms version's frozen `bodyMd` (only roles that can read the document; no new route, no owner-only data). Then render it in the admin read view under the terms line with `components/markdown.tsx` (one small screen change in `apps/admin/src/routes/documents/read.tsx` is yours). Tests.
+3. **M10 on the portal document view:** on screen, dates use the four-digit year ("10 Nov 2026"); the PDF keeps its approved short form. Add a long option to `packages/pdf/src/format.ts` (or a view field) used by the portal view only, and use it in `apps/portal/src`. Tests.
+Run the tests of every package you touch, `pnpm check`, and the admin and portal build budget lines. Commit, push your branch, append "Builder report: round 2" to this file, and report.
