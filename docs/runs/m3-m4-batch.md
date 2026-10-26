@@ -1,6 +1,6 @@
 # M3.4 to M4.5 batch
 
-Status: open: step 1 (M4.2 builder running; M3.4 builder next)
+Status: all seven on staging (2026-10-26); awaiting the owner's batch review
 
 ## Owner's answers (2026-10-25)
 - Review all seven at the end; each milestone still has its own review, re-check and PR to staging (one-time exception to hard rule 2; docs/13).
@@ -63,3 +63,8 @@ Each milestone: its own task branch and run file (`docs/runs/m3.4-projects.md` �
   - the owner's lift of the usage gates ends at the Mon 26 Oct 15:30 IST reset; the normal docs/14 §5 gates apply after it.
 - **Usage at the stop:** weekly about 96 %.
 - **Agent runs this session** (`node tools/model-audit.mjs 2026-10-25`, from 18:10 UTC): every run was within the plan. Each run file's integration notes name its agents; the four "general-purpose, no skills" rows are the `code-review` skill's own read-only helpers (the allowed exception, docs/14 §9).
+
+## Handover (2026-10-26, end of day)
+- **All seven are on staging:** M4.2 #80, M3.4 #81, M4.1 #82, M3.5 #84, M4.3 #89, M4.4 #90, M4.5 #91. Each had its own review, fixes and re-check.
+- **Usage:** every agent run on 2026-10-26 was within the plan (`node tools/model-audit.mjs 2026-10-26`); the gate is now the 5-hour window only (docs/14 §5).
+- **Next:** the owner's batch review of all seven (M4.5 staging steps given during it); then stop, because M5 waits for the owner. The admin Worker split comes before M5.1.

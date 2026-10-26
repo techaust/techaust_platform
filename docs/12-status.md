@@ -1,6 +1,6 @@
 # 12: Status
 
-_Replaced (never appended) at the end of every session. Last updated: **2026-10-26, 06:10** (IST)._
+_Replaced (never appended) at the end of every session. Last updated: **2026-10-26, 16:30** (IST)._
 
 ## Done
 - **Phases 1–5:** approved 2026-10-06 ([09-roadmap.md](09-roadmap.md)).
@@ -25,47 +25,40 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
 - **Staging readings 2026-10-25:** every admin call in the owner's session ≤ 7 ms (clients list 7, client page 4, sign-in 3–5); the first lead clean-up dry run: 0 due, 2 ms. Convert, export and erase were not used on staging yet.
 - **M3.3 owner answers** ([PR #78](https://github.com/techaust/techaust_platform/pull/78)): an anonymised individual's GSTIN is cleared (VERIFY WITH CA/LEGAL), the Attach PDF hint, a VERIFY WITH CA/LEGAL note in the data-tool dialogs.
 - **Batch M3.4 → M4.5 started 2026-10-25** on the owner's word (one review at the end; [batch run file](runs/m3-m4-batch.md)). Groundwork: the worker budget guard (byte ceiling, startup ≤ 200 ms fastest of 7, forbidden modules) and the batch record ([PR #79](https://github.com/techaust/techaust_platform/pull/79)).
-- **On staging, awaiting the owner's batch review** (not yet approved):
-  - **M4.2 Tax engine** ([PR #80](https://github.com/techaust/techaust_platform/pull/80); [run file](runs/m4.2-tax-engine.md)): `@techaust/core/tax`, pure; analyst check CHANGE → fixed → review APPROVE → re-check APPROVE.
-  - **M3.4 Projects, milestones, notes and file vault** ([PR #81](https://github.com/techaust/techaust_platform/pull/81); [run file](runs/m3.4-projects.md)): R2 `techaust-staging-files` bound; migrations 0024–0025; review and two re-checks APPROVE.
-  - **M4.1 Catalogue and publish to website** ([PR #82](https://github.com/techaust/techaust_platform/pull/82); [run file](runs/m4.1-catalogue.md)): publish refuses a snapshot the site can't build; `publish-catalogue.yml` every 30 min; migrations 0026–0027; review SEND BACK → fixed → re-check APPROVE.
-  - **M3.5 Care plans, time logs, dashboard v1** ([PR #84](https://github.com/techaust/techaust_platform/pull/84), merged 2026-10-25; run file `docs/runs/m3.5-care-time.md`): migrations 0028–0030; review SEND BACK → fixed → re-check APPROVE (6 lows: 5 fixed by the lead, 1 kept).
+- **On staging, awaiting the owner's batch review** (not yet approved; each had its own review, fixes and re-check):
+  - **M4.2 Tax engine** ([PR #80](https://github.com/techaust/techaust_platform/pull/80); [run file](runs/m4.2-tax-engine.md)).
+  - **M3.4 Projects, milestones, notes and file vault** ([PR #81](https://github.com/techaust/techaust_platform/pull/81); [run file](runs/m3.4-projects.md)).
+  - **M4.1 Catalogue and publish to website** ([PR #82](https://github.com/techaust/techaust_platform/pull/82); [run file](runs/m4.1-catalogue.md)).
+  - **M3.5 Care plans, time logs, dashboard v1** ([PR #84](https://github.com/techaust/techaust_platform/pull/84); [run file](runs/m3.5-care-time.md)).
+  - **M4.3 Proposals and estimates, approvals, versions** ([PR #89](https://github.com/techaust/techaust_platform/pull/89), merged 2026-10-26; [run file](runs/m4.3-proposals.md)): migrations 0031–0032; review SEND BACK, then fixes and two re-checks APPROVE.
+  - **M4.4 PDF engine, proposal and estimate PDFs, signature** ([PR #90](https://github.com/techaust/techaust_platform/pull/90), merged 2026-10-26; [run file](runs/m4.4-pdf.md)): Browser Run on the staging jobs Worker (owner's H2), migration 0033; review, fixes, re-check APPROVE. No PDF work for an anonymised client.
+  - **M4.5 Send, portal accept and decline, certificate, emails** ([PR #91](https://github.com/techaust/techaust_platform/pull/91), merged and deployed 2026-10-26; [run file](runs/m4.5-send-accept.md)): the Send dialog, the portal's proposals with accept and decline, the emailed link at `/o`, the acceptance certificate and five emails; staging portal bound to the docs bucket and PDF queue (owner's H3). Review SEND BACK (1 high, 4 medium, 7 low), fixes, re-check APPROVE.
 - **M4.5 portal preview approved by the owner** (2026-10-25).
+- **Team plan (2026-10-26):** the account moved to Claude Team; the budget gate counts only the 5-hour window, with no new agent at 80 % or more ([PR #86](https://github.com/techaust/techaust_platform/pull/86), [#88](https://github.com/techaust/techaust_platform/pull/88); docs/14 §5). The approved plugins were reinstalled and declared in `.claude/settings.json`; Supabase, Upstash and the AWS MCP (wrong AWS account) are off for this project ([PR #87](https://github.com/techaust/techaust_platform/pull/87); docs/10).
 
-- **Team plan (2026-10-26):** the account moved to Claude Team; the budget gate now counts only the 5-hour window, with no new agent at 80 % or more ([PR #86](https://github.com/techaust/techaust_platform/pull/86) and today's end-of-day PR; docs/14 §5). The approved plugins Playwright, Context7, frontend-design and GitHub were reinstalled and declared in `.claude/settings.json`; Supabase, Upstash and the AWS MCP (wrong AWS account) are off for this project only ([PR #87](https://github.com/techaust/techaust_platform/pull/87); docs/10).
-
-## In progress (stopped on the owner's word, 2026-10-26 ≈ 06:05 IST; nothing merged to main since #84 except docs)
-Three task lines, each holding the one before. Every brief, report and handover is in its run file on that branch.
-- **M4.3 Proposals and estimates** (Tier A).
-  - **Where:** `feat/m4.3-builder` at 1278fc1; run file `docs/runs/m4.3-proposals.md` ("Lead handover (2026-10-26, end of day)").
-  - **Done today:** the re-check's candidates verified: 1–8 real and fixed with tests (old-dated time-entry DELETE owner-only; "Anonymised client" in the frozen view, per your answer; mid-period care hours; dashboard counts past 100 plans and the burn ranking computed once; the care "Converted to…" line; `section_empty` field; blank display names); 5 not a bug; 9 a copy question. `pnpm check` passed.
-  - **Not run yet:** the full `pnpm test`, the worker budget, one test file after its last edit.
-- **M4.4 PDF engine** (Tier B).
-  - **Where:** `feat/m4.4-screens` at 36a97c1 (holds `feat/m4.4-pdf` and M4.3 up to f81851c); run file `docs/runs/m4.4-pdf.md`.
-  - **Done today:** the proposal and estimate PDF layouts finished and checked (pdf tests 114/114, visual suite 30/30 twice, every page looked at in colour and grayscale); the PDF prints the portal host from `PORTAL_URL`.
-  - **Left:** the admin PDF panel and the signature control (an untested client layer exists), their screenshots, axe and all checks; the jobs `viewOf` tests were not run.
-- **M4.5 Send and accept** (Tier B): unchanged since the 05:40 handover; `feat/m4.5-send-accept` at 5477c99, run file `docs/runs/m4.5-send-accept.md`.
+## In progress
+- Nothing. The whole M3.4 to M4.5 batch is on staging; no agent is running and no task branch is open.
 
 ## Next (when work resumes)
-1. **M4.3:** the lead runs the full `pnpm test` and the worker budget; then a full re-check (code and visual); then the PR to main (auto-merge, Auto-fix), staging.
-2. **M4.4:** merge the latest M4.3 in; the designer finishes the admin PDF panel and signature control; review and fixes; **owner: H2** (Browser Run on the staging jobs Worker); the PR after M4.3 merges.
-3. **M4.5:** the designer to the approved preview; review and fixes; **owner: H3**; the PR after M4.4 merges.
-4. **Owner's final review of all seven** (M3.4, M3.5, M4.1–M4.5) with the copy 07-K to 07-P word for word. **Then stop: M5 waits for the owner.**
-5. **Staging readings** (`cpuTimeMs`) for the proposal save, send and GET, the PDF render, the portal view and accept, an email with a PDF.
-6. **Before M5.1:** the admin Worker split (service binding).
+1. **The owner's batch review of all seven** (M3.4, M3.5, M4.1 to M4.5) on staging. The lead gives the click-by-click staging steps for M4.5 (send, portal accept and decline, certificate, emails) **during** the review (owner, 2026-10-26). Before the M4.3 to M4.5 test, the services tested need deliverables, assumptions and exclusions in Catalogue (the owner fills them, or the lead seeds them from the 07 service pages).
+2. **Copy approval word for word:** 07-K to 07-P and every `[Placeholder]` line on the M4.3 to M4.5 screens, emails and certificate.
+3. **Then stop: M5 waits for the owner.**
+4. **Staging readings** (`cpuTimeMs`) for the proposal save, send and GET, the PDF render, the portal view and accept, an email with a PDF, the certificate.
+5. **Before M5.1:** the admin Worker split (service binding); the admin Worker is at 414,109 of 415,878 bytes.
 
-**Usage now:** 5-hour window 9 %. **Gate (owner, 2026-10-26):** only the 5-hour window counts; at 80 % or more no new agent starts. Three agents at once until M4.5 is done, one browser agent at a time.
-
+**Usage now:** 5-hour window about 16 %. **Gate (owner, 2026-10-26):** only the 5-hour window counts; at 80 % or more no new agent starts. The three-agent exception has ended with M4.5: two agents at once, one browser agent.
 
 ## Waits on the owner
-- **At the batch review, new today:** the search placeholder for roles with documents but not leads or clients; "Removed client" (live name) against "Anonymised client" (frozen view); the no-tier "Converted to a care plan" line (07-O §10); the two 07-P lines marked PENDING; wording for the signature "larger than 2400 by 1200 pixels" error.
+- **At the batch review** (each item is in its run file's last triage):
+  - **M4.3/M4.4:** the search placeholder for roles with documents but not leads or clients; "Removed client" against "Anonymised client"; the no-tier "Converted to a care plan" line (07-O §10); the two 07-P lines marked PENDING; the signature-size error wording; the estimate's "proposal terms" wording and empty "Acceptance" heading; a 07-P line for integrity failures; the INR note's GST rate; "Email on documents".
+  - **Anonymised clients (VERIFY WITH CA/LEGAL):** drafts of a client anonymised later; names changed between draft and send; client-written lead text; serving the existing PDF; signature retention.
+  - **M4.5:** every `[Placeholder]` line (portal errors, confirmation button, certificate labels, admin delivery states and dialogs, the certificate-failed bell); "Viewed" means "link opened" (a mail scanner can open the link); the Attach-PDF hint when a client's setting is On; a contact changed on a draft after creation keeps the first name in the Acceptance text.
+  - **VERIFY WITH CA/LEGAL (M4.5):** accepting from an emailed link and the evidence recorded; IP, browser, country and total on a certificate any client contact can download; the first-instalment invoice type and place of supply; keeping the decline note.
 - **When TecHaust's AWS is needed (Phase 7):** sign the AWS MCP in to the TecHaust account (the lead gives steps), then it is turned back on for this project.
 - **At the batch's end:**
   - review M3.4, M3.5 and M4.1–M4.5 on staging;
   - approve the drafted copy word for word: [07-K](07-content-appendix/K-m3.4-project-screens.md), [07-L](07-content-appendix/L-m4.1-catalogue-screens.md), [07-M](07-content-appendix/M-m3.5-care-time-screens.md), and 07-N, 07-O, 07-P (on the task branches until those merge);
   - confirm the 30-day warranty line in the proposal terms.
-- **Before M4.4 and M4.5 merge:** H2 and H3 (the lead gives click-by-click steps).
-- **For the staging test of proposals:** the seeded catalogue has no deliverables, assumptions or exclusions. Fill them in Catalogue for the services you test, or the lead seeds them from the 07 service pages.
 - **When convenient:** the real company details and both bank accounts in staging Settings; the first cost report's "no change".
 - **For the website:**
   - a **new headshot** (iPhone guide given 2026-10-23; no photo is used until then)
@@ -84,6 +77,8 @@ Three task lines, each holding the one before. Every brief, report and handover 
 - **Model menu:** keep **Opus 5.5, medium** for every conversation.
 
 ## Open follow-ups
+- **M4.5 (2026-10-26, [run file](runs/m4.5-send-accept.md)):** refill `{{client.contact}}` when a draft's contact changes; one shared list of the 07-N §3 decline reasons in `@techaust/core` (now in admin, portal and jobs); an optional "record Viewed only after a real interaction"; not verified: real mail clients, the certificate on Browser Run (Bengali and Hindi names may fall back to a system font), NVDA, the date-field focus ring in Firefox and Safari.
+- **M4.4 (run file):** fold the anonymised check into `mutate`'s condition; one shared "client gone" SQL helper.
 - **2026-10-26 (run files):** a rule for the PDF of an anonymised client (VERIFY WITH CA/LEGAL); the data export returns the raw recipient JSON to the person it names (flag for CA/LEGAL); an underscore inside a word becomes italics in core's Markdown; the seeded estimate templates repeat the estimate notice; a CI job for the pdf visual suite so `linux/` baselines exist (workflow change, owner's yes); a `useTemplate` lint info in `apps/web/src/lib/catalogue.ts`.
 - **Batch 2026-10-26 (run files):**
   - **admin Worker headroom:** the service-binding split before M5.1;
