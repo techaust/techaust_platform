@@ -898,7 +898,7 @@ describe("Settings > Email: test send [ADM-SET-07]", () => {
       expect(r.subject, template).toMatch(/^Test: /);
       expect(r.text, template).toContain("It uses sample data");
     }
-  });
+  }, 20_000); // It loads the email package on first use; under a full parallel run that alone can pass 5 s.
 
   it("an unknown template is 400; five a member an hour is the limit (429)", async () => {
     const o = await sessionFor("owner", { stepUp: true });

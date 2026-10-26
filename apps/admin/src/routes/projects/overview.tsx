@@ -2,7 +2,7 @@
 // owner and staff, sending only what changed and the `updatedAt` it was loaded with; a 409 shows the shared stale notice), the
 // milestones timeline with the total against the budget, the five newest notes and files, and the figures that arrive with later
 // modules (billed vs paid with invoicing, hours with time logs), which say so in the 07-K words instead of showing a zero.
-import { type Dispatch, type FormEvent, useState } from "react";
+import { type Dispatch, type FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router";
 import { api, fileDownloadHref, type ProjectPage, RequestError } from "../../api.ts";
 import { DateField, useUnreadDates } from "../../components/date-field.tsx";
@@ -45,6 +45,8 @@ export function Overview(props: {
   reload: Reload;
   onStale: () => void;
   onTab: (k: TabKey) => void;
+  /** Reports whether a Details date field holds text that is not a date, so the page's unsaved-changes guard counts it. */
+  onUnreadDates?: (any: boolean) => void;
 }) {
   const user = useUser();
   const canWrite = allowed(user.role, "projects.write") && !props.data.clientAnonymised;
@@ -130,6 +132,11 @@ function Details(props: Parameters<typeof Overview>[0] & { canWrite: boolean }) 
   const setF = (value: DetailsForm | null) => props.draft({ type: "details", value, base: stored });
   const [errors, setErrors] = useState<DetailsErrors>({});
   const dates = useUnreadDates<"startDate" | "targetDate">();
+  const { onUnreadDates } = props;
+  useEffect(() => {
+    onUnreadDates?.(dates.any);
+    return () => onUnreadDates?.(false);
+  }, [onUnreadDates, dates.any]);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const people = useLoad(() => (props.canWrite ? api.leadAssignees() : Promise.resolve(null)), "");

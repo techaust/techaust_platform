@@ -191,7 +191,6 @@ type RenderRow = {
   fy: string | null;
   number: number | null;
   number_display: string | null;
-  title: string | null;
   version: number;
   snapshot_r2_key: string | null;
   snapshot_sha256: string | null;
@@ -199,7 +198,7 @@ type RenderRow = {
   client_gone: number;
 };
 
-export const RENDER_ROW_SQL = `SELECT id, type, frozen_at, fy, number, number_display, title, version, snapshot_r2_key, snapshot_sha256, pdf_sha256,
+export const RENDER_ROW_SQL = `SELECT id, type, frozen_at, fy, number, number_display, version, snapshot_r2_key, snapshot_sha256, pdf_sha256,
   EXISTS (SELECT 1 FROM clients c WHERE c.id = documents.client_id AND c.anonymised_at IS NOT NULL) AS client_gone
   FROM documents WHERE id = ?1`;
 

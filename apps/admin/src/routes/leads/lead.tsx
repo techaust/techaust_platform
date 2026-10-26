@@ -168,6 +168,12 @@ function LeadView({
   const [emailError, setEmailError] = useState<string | null>(null);
   const [nextDateError, setNextDateError] = useState<string | null>(null);
   const dates = useUnreadDates<"date">();
+  // A stale reload sets the edits aside, so unreadable date text and its error line go with them.
+  const reloadStale = () => {
+    dates.reset();
+    setNextDateError(null);
+    reload("stale");
+  };
   const note = drafts.note;
   const setNote = (text: string) => draft({ type: "note", text });
   const [lost, setLost] = useState(false);
@@ -292,13 +298,13 @@ function LeadView({
       />
       {stale &&
         (saveStale ? (
-          <StaleNotice title="Someone else changed this lead." onReload={() => reload("stale")} />
+          <StaleNotice title="Someone else changed this lead." onReload={reloadStale} />
         ) : (
           // A reload found someone else's change to a field a draft held (owner's wording, 2026-10-25).
           <StaleNotice
             title="Someone else changed this lead while you were editing it."
             body="Your unsaved changes to those fields were set aside so theirs aren't overwritten; anything you had already saved is kept, and so is your note. Reload to see the latest, then make your change again."
-            onReload={() => reload("stale")}
+            onReload={reloadStale}
           />
         ))}
       {lead.scheduledForDeletion && lead.deleteAfter !== null && (

@@ -478,3 +478,14 @@ No Worker code changed, so the admin budget line is unchanged. No placeholder te
 - A client change on the new care plan clears the last submit's lines, because every field below it is drawn afresh.
 
 **Open questions:** none.
+
+## Re-check of rounds 3 and 4 (reviewer Opus 5.5 medium, 2026-10-26): APPROVE
+N1 to N4 and L1, L3 to L7 fixed (N1, N3, N4 and L7 seen on screen; 11 screenshots in the main checkout's `.logs/shots/batch-review-fixes-recheck3/`). `pnpm check` and full `pnpm test` exit 0; admin 415,296 of 415,878 bytes. L2 only half done (`packages/payments/src/index.js` still tracked). New lows: (1) the project Details unsaved-changes guard misses unreadable date text (`routes/projects/project.tsx:117`); (2) `RENDER_ROW_SQL` still reads the unused `title` (`apps/jobs/src/pdf.ts:194`, `:202`); (3) a stale reload on the lead page keeps unreadable Next action text (`routes/leads/lead.tsx:120`).
+
+## Integration notes (lead, 2026-10-26)
+- **Merged into `fix/batch-review-ui`:** builder rounds 1 to 4 (fast-forward) and designer rounds 1 to 3 (merge commits; the run file kept every section).
+- **Lead fixes for the last re-check:** L2 (`git rm packages/payments/src/index.js`); low 1 (`Details` reports unreadable dates up through `onUnreadDates`, cleared on unmount, and the page guard ORs it into `dirty`); low 2 (`title` dropped from `RENDER_ROW_SQL` and `RenderRow`); low 3 (a stale reload resets the unread dates and the Next action error).
+- **Checks:** `pnpm check` exit 0; full `pnpm test` all green except one timeout in `worker/settings.test.ts` "every template has sample data that renders" (5 s, a first-use import of the email package under the full parallel run); the file alone passes 45/45. The lead gave that test 20 s (as `clients-review.test.ts` does) and it passes.
+- **Usage:** reviewer UI check opus/high; code-finder haiku/low; builder sonnet/medium ×4 (rounds 1 to 4); designer opus/medium ×3; reviewer opus/high (review) and opus/medium ×2 (re-checks); skill helpers (general-purpose) on allowed models. 5-h window 19 → 69 % before its reset, then 2 → about 15 %. `node tools/model-audit.mjs`: all runs within the plan.
+- **After merge (lead, owner-approved):** run the six service-name UPDATEs from "Builder report" on staging, then publish the catalogue. Check on staging: the PDFs (proposal, estimate, certificate), the real portal offer page, migration 0036, CPU readings.
+- **Follow-ups:** the admin Worker has 582 bytes left: the Worker split comes first before M5.1; NVDA and the native calendar popup not verified; proposal terms v1 "GST at 18 %" for the CA (VERIFY WITH CA/LEGAL); anonymising deletes document bells (VERIFY WITH CA/LEGAL).

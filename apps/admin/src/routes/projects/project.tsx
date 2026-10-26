@@ -114,7 +114,8 @@ function ProjectView(props: {
   const [saveStale, setSaveStale] = useState(false);
   const [moveFailure, setMoveFailure] = useState<string | null>(null);
   const d = props.drafts.details;
-  const dirty = d !== null && JSON.stringify(d.value) !== JSON.stringify(d.base);
+  const [unreadDates, setUnreadDates] = useState(false);
+  const dirty = unreadDates || (d !== null && JSON.stringify(d.value) !== JSON.stringify(d.base));
   const scope = { kind: "project", id: project.id } as const;
 
   return (
@@ -164,6 +165,7 @@ function ProjectView(props: {
             reload={props.reload}
             onStale={() => setSaveStale(true)}
             onTab={select}
+            onUnreadDates={setUnreadDates}
           />
         ) : tab === "milestones" ? (
           <Milestones data={props.data} reload={props.reload} />
