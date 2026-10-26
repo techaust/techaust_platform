@@ -2,7 +2,6 @@
 import { describe, expect, it } from "vitest";
 import {
   BASE_PDF_OPTIONS,
-  type BrowserBinding,
   MAX_PDF_BYTES,
   type RenderEnv,
   renderPaced,
@@ -17,8 +16,10 @@ const pdfBytes = (extra = "") => new TextEncoder().encode(`%PDF-1.7\n${extra}%%E
 const pdfResponse = (bytes: Uint8Array = pdfBytes(), headers: Record<string, string> = {}) =>
   new Response(bytes, { status: 200, headers: { "content-type": "application/pdf", ...headers } });
 
-function envWith(quickAction: BrowserBinding["quickAction"]): RenderEnv {
-  return { BROWSER: { quickAction }, ENVIRONMENT: "staging" };
+type PdfCall = (action: "pdf", options: Record<string, unknown>) => Promise<Response>;
+function envWith(quickAction: PdfCall): RenderEnv {
+  // A test double for the one overload the renderer uses (the generated binding type lists every Browser Run action).
+  return { BROWSER: { quickAction } as unknown as Pick<BrowserRun, "quickAction">, ENVIRONMENT: "staging" };
 }
 
 describe("renderPdf request", () => {

@@ -44,13 +44,21 @@ export const BROWSER_ALERT_MS = BROWSER_DAILY_MS / 2;
 export const SWEEP_LIMIT = 20;
 /** A document is swept only once it is older than this (the send route's own enqueue gets the first chance). */
 export const SWEEP_GRACE_MS = 600_000;
-/** The queue holds a delayed message for 24 hours at most. */
-const MAX_DELAY_S = 86_400;
+/** The queue keeps a message for 24 hours; a delay stays an hour under that, so the delayed copy is never lost to retention. */
+const MAX_DELAY_S = 82_800;
 /** After the daily quota resets at 00:00 UTC, wait this long before trying again. */
 const QUOTA_MARGIN_MS = 120_000;
 
 const hex = (b: ArrayBuffer) =>
   Array.from(new Uint8Array(b), (x) => x.toString(16).padStart(2, "0")).join("");
+/** The bell lines of 07-P §4 (word for word). */
+export const BELL_COPY = {
+  failed: (number: string, version: number) =>
+    `The PDF for ${number} v${version} could not be made. Open it to try again.`,
+  half: "Half of today's PDF allowance is used.",
+  quota: "Today's PDF allowance is used up. Waiting PDFs are made tomorrow.",
+} as const;
+
 export const sha256Bytes = async (bytes: Uint8Array): Promise<string> =>
   hex(await crypto.subtle.digest("SHA-256", bytes));
 
@@ -71,7 +79,7 @@ const bell = (
 /** The half-of-the-day bell, written only once the day's total has reached the threshold (`?1` date, `?2` threshold). */
 export const HALF_BELL_SQL = `INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
   SELECT 'n_' || lower(hex(randomblob(16))), u.id, 'pdf.browser_half', 'system', ?1,
-    'Half of today''s PDF rendering time is used', '/'
+    'Half of today''s PDF allowance is used.', '/'
   FROM staff_users u WHERE u.status = 'active' AND u.role = 'owner'
     AND (SELECT value FROM stats_daily WHERE date = ?1 AND metric = 'pdf.browser_ms' AND dimension = '') >= ?2`;
 
@@ -116,21 +124,15 @@ export async function processSnapshot(env: Env, msg: PdfSnapshotMessage): Promis
   if (!bundle) return skip("not_found");
   const d = bundle.document;
   if (d.pdf_sha256 !== null) return skip("done");
+  // An erased client takes nothing new: no envelope, no PDF, no bell (the standing rule for anonymised clients; VERIFY WITH CA/LEGAL).
+  if (await clientIsGone(env, d.client_id)) return skip("client_gone");
+  const failedTitle = BELL_COPY.failed(d.number_display ?? "this document", d.version);
   const made = await envelopeOfBundle(bundle);
   if (!made.ok) {
     if (made.code === "unsupported_type" || made.code === "not_sent") return skip(made.code);
     // The rows do not reproduce what the send route sealed: nothing is written, the owners are told, and a retry cannot help.
     logEvent("pdf.refused", { stage: "snapshot", code: made.code });
-    await env.DB.batch([
-      bell(
-        env,
-        "pdf.failed",
-        "document",
-        d.id,
-        "A sent document failed its integrity check, so no PDF was made",
-        `/proposals/${d.id}`,
-      ),
-    ]);
+    await env.DB.batch([bell(env, "pdf.failed", "document", d.id, failedTitle, `/proposals/${d.id}`)]);
     return "refused";
   }
   const e = made.envelope;
@@ -140,16 +142,7 @@ export async function processSnapshot(env: Env, msg: PdfSnapshotMessage): Promis
   if (!put.created && (await put.existing.text()) !== text) {
     // A different envelope already holds the key: never overwritten, never rendered from; a person looks.
     logEvent("pdf.refused", { stage: "snapshot", code: "key_conflict" });
-    await env.DB.batch([
-      bell(
-        env,
-        "pdf.failed",
-        "document",
-        d.id,
-        "A stored document copy differs from the sent version, so no PDF was made",
-        `/proposals/${d.id}`,
-      ),
-    ]);
+    await env.DB.batch([bell(env, "pdf.failed", "document", d.id, failedTitle, `/proposals/${d.id}`)]);
     return "refused";
   }
   await env.DB.prepare("UPDATE documents SET snapshot_r2_key = ?2 WHERE id = ?1 AND snapshot_r2_key IS NULL")
@@ -158,6 +151,11 @@ export async function processSnapshot(env: Env, msg: PdfSnapshotMessage): Promis
   await env.PDF_QUEUE.send({ v: 1, kind: "pdf.render", documentId: d.id, hop: 0 } satisfies PdfRenderMessage);
   logEvent("pdf.snapshot", { reason: msg.reason, created: put.created });
   return "queued";
+}
+
+const GONE_SQL = "SELECT 1 AS gone FROM clients WHERE id = ?1 AND anonymised_at IS NOT NULL";
+async function clientIsGone(env: Env, clientId: string): Promise<boolean> {
+  return (await env.DB.prepare(GONE_SQL).bind(clientId).first()) !== null;
 }
 
 function skip(why: string): SnapshotOutcome {
@@ -173,6 +171,7 @@ type RenderRow = {
   frozen_at: number | null;
   fy: string | null;
   number: number | null;
+  number_display: string | null;
   version: number;
   snapshot_r2_key: string | null;
   snapshot_sha256: string | null;
@@ -180,7 +179,7 @@ type RenderRow = {
 };
 
 export const RENDER_ROW_SQL =
-  "SELECT id, type, frozen_at, fy, number, version, snapshot_r2_key, snapshot_sha256, pdf_sha256 FROM documents WHERE id = ?1";
+  "SELECT id, type, frozen_at, fy, number, number_display, version, snapshot_r2_key, snapshot_sha256, pdf_sha256 FROM documents WHERE id = ?1";
 
 /** The view of an envelope as this Worker prints it: the acceptance box names the host of `PORTAL_URL` (07-P §1). */
 export const viewOf = (env: Pick<Env, "PORTAL_URL">, envelope: Envelope): PdfView =>
@@ -265,7 +264,7 @@ export async function processRender(
         "pdf.failed",
         "document",
         row.id,
-        "A stored document copy failed its integrity check, so no PDF was made",
+        BELL_COPY.failed(row.number_display ?? "this document", row.version),
         `/proposals/${row.id}`,
       ),
     ]);
@@ -294,12 +293,7 @@ export async function processRender(
   }
 
   const view = viewOf(env, envelope);
-  const result = await renderPaced(
-    env as unknown as RenderEnv,
-    renderDocumentHtml(view),
-    pdfOptionsFor(view),
-    clock,
-  );
+  const result = await renderPaced(env, renderDocumentHtml(view), pdfOptionsFor(view), clock);
   if (!result.ok) return failed(env, msg, result, now);
 
   const stored = await putOnce(env.DOCS, keys.pdf, result.bytes, "application/pdf");
@@ -333,14 +327,7 @@ async function failed(
       // Counted, and the bell rings once a day (unique per owner, kind and date).
       await env.DB.batch([
         stat(env, dayOf(now), "pdf.quota_hits", 1, now),
-        bell(
-          env,
-          "pdf.quota",
-          "system",
-          dayOf(now),
-          "Today's PDF rendering time is used up; PDFs continue after midnight UTC",
-          "/",
-        ),
+        bell(env, "pdf.quota", "system", dayOf(now), BELL_COPY.quota, "/"),
       ]);
     }
     await env.PDF_QUEUE.send({ ...msg, hop: msg.hop + 1 } satisfies PdfRenderMessage, {
@@ -358,6 +345,7 @@ async function failed(
 /** The sweep's pick (`?1` the newest `frozen_at` it may take). Exported so a test can EXPLAIN it: it must use `documents_pdf_pending`. */
 export const SWEEP_SQL = `SELECT id FROM documents INDEXED BY documents_pdf_pending
   WHERE frozen_at IS NOT NULL AND pdf_sha256 IS NULL AND type IN ('proposal', 'estimate') AND frozen_at <= ?1
+    AND NOT EXISTS (SELECT 1 FROM clients z WHERE z.id = documents.client_id AND z.anonymised_at IS NOT NULL)
   ORDER BY frozen_at LIMIT ${SWEEP_LIMIT}`;
 
 /** Handles one `pdf.sweep` message: enqueues a snapshot for each sent document that still has no PDF (at most 20 per run). */
@@ -405,13 +393,16 @@ export async function processPdf(
  */
 export async function processPdfDeadLetter(env: Env, body: unknown): Promise<void> {
   if (isPdfMessage(body) && (body.kind === "pdf.snapshot" || body.kind === "pdf.render")) {
+    const row = await env.DB.prepare("SELECT number_display, version FROM documents WHERE id = ?1")
+      .bind(body.documentId)
+      .first<{ number_display: string | null; version: number }>();
     await env.DB.batch([
       bell(
         env,
         "pdf.failed",
         "document",
         body.documentId,
-        "A document's PDF could not be made; it will be tried again tonight",
+        BELL_COPY.failed(row?.number_display ?? "this document", row?.version ?? 1),
         `/proposals/${body.documentId}`,
       ),
     ]);

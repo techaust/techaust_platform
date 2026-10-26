@@ -24,6 +24,10 @@ import { handleQueue } from "../src/queue.ts";
 import { type Seeded, seedSent } from "./pdf-seed.ts";
 
 const T0 = Date.UTC(2026, 9, 26, 6, 0, 0);
+/** The 07-P §4 line "the PDF failed", word for word, for a first version. */
+const failedBell = (s: Seeded) =>
+  `The PDF for ${s.numberDisplay} v1 could not be made. Open it to try again.`;
+const GONE = "UPDATE clients SET anonymised_at = 1 WHERE id = ?";
 
 type Sent = { body: PdfMessage; delaySeconds?: number };
 const fakeQueue = () => {
@@ -167,8 +171,8 @@ describe("the snapshot step", () => {
     );
     expect(await (await realEnv.DOCS.get(keysOf(s).snapshot))?.text()).toBe("something else");
     expect(queue.sent).toEqual([]);
-    expect(await all("SELECT kind FROM notifications WHERE entity_id = ?", s.id)).toEqual([
-      { kind: "pdf.failed" },
+    expect(await all("SELECT kind, title FROM notifications WHERE entity_id = ?", s.id)).toEqual([
+      { kind: "pdf.failed", title: failedBell(s) },
     ]);
   });
 
@@ -183,6 +187,18 @@ describe("the snapshot step", () => {
     expect((await all("SELECT user_id FROM notifications WHERE kind = 'pdf.failed'")).length).toBeGreaterThan(
       0,
     );
+  });
+
+  it("skips a document whose client is anonymised: no envelope, no queue message, no bell", async () => {
+    const s = await seedSent();
+    await realEnv.DB.prepare(GONE).bind(s.clientId).run();
+    const { env, queue } = makeEnv({});
+    expect(
+      await processSnapshot(env, { v: 1, kind: "pdf.snapshot", documentId: s.id, reason: "retry" }),
+    ).toBe("skipped");
+    expect(await realEnv.DOCS.head(keysOf(s).snapshot)).toBeNull();
+    expect(queue.sent).toEqual([]);
+    expect(await all("SELECT 1 FROM notifications WHERE entity_id = ?", s.id)).toHaveLength(0);
   });
 
   it("skips a missing document, a draft and one that already has its PDF", async () => {
@@ -322,8 +338,16 @@ describe("the render step", () => {
     expect(
       (await one<{ value: number }>("SELECT value FROM stats_daily WHERE metric = 'pdf.quota_hits'"))?.value,
     ).toBe(2);
-    const bells = await all<{ kind: string; entity_id: string }>("SELECT kind, entity_id FROM notifications");
-    expect(bells).toEqual([{ kind: "pdf.quota", entity_id: "2026-10-26" }]);
+    const bells = await all<{ kind: string; entity_id: string; title: string }>(
+      "SELECT kind, entity_id, title FROM notifications",
+    );
+    expect(bells).toEqual([
+      {
+        kind: "pdf.quota",
+        entity_id: "2026-10-26",
+        title: "Today's PDF allowance is used up. Waiting PDFs are made tomorrow.",
+      },
+    ]);
   });
 
   it("a quota wait never passes the queue's 24-hour delay limit", async () => {
@@ -335,7 +359,8 @@ describe("the render step", () => {
     );
     const { env, queue } = makeEnv(b.binding);
     await processRender(env, render(s.id), Date.UTC(2026, 9, 26, 0, 0, 1), f.clock);
-    expect(queue.sent[0]?.delaySeconds).toBe(86_400);
+    // 23 h: an hour under the queue's 24 h retention (midnight is 23 h 59 m away here, so the cap applies).
+    expect(queue.sent[0]?.delaySeconds).toBe(82_800);
   });
 
   it("gives up pacing at the hop cap (the queue's own retries and the dead-letter queue take over)", async () => {
@@ -381,8 +406,8 @@ describe("the render step", () => {
     const { env } = makeEnv(b.binding);
     expect(await processRender(env, render(s.id), T0, f.clock)).toBe("refused");
     expect(b.calls).toHaveLength(0);
-    expect(await all("SELECT kind FROM notifications WHERE entity_id = ?", s.id)).toEqual([
-      { kind: "pdf.failed" },
+    expect(await all("SELECT kind, title FROM notifications WHERE entity_id = ?", s.id)).toEqual([
+      { kind: "pdf.failed", title: failedBell(s) },
     ]);
   });
 
@@ -409,8 +434,8 @@ describe("the render step", () => {
     await processRender(env, render(a.id), T0, f.clock);
     expect(await all("SELECT 1 FROM notifications WHERE kind = 'pdf.browser_half'")).toHaveLength(0);
     await processRender(env, render(b2.id), T0, f.clock);
-    expect(await all("SELECT entity_id FROM notifications WHERE kind = 'pdf.browser_half'")).toEqual([
-      { entity_id: "2026-10-26" },
+    expect(await all("SELECT entity_id, title FROM notifications WHERE kind = 'pdf.browser_half'")).toEqual([
+      { entity_id: "2026-10-26", title: "Half of today's PDF allowance is used." },
     ]);
     await processRender(env, render(c.id), T0, f.clock);
     expect(await all("SELECT 1 FROM notifications WHERE kind = 'pdf.browser_half'")).toHaveLength(1);
@@ -448,6 +473,15 @@ describe("the sweep", () => {
     // oldest first: the first 20 of the 23, in order
     expect(sweepIds).toEqual(ids.slice(0, 20));
     expect(sent.every((b) => (b as { reason: string }).reason === "sweep")).toBe(true);
+  });
+
+  it("leaves out a document of an anonymised client", async () => {
+    const s = await seedSent({ now: Date.now() - 3_600_000 });
+    await realEnv.DB.prepare(GONE).bind(s.clientId).run();
+    const queue = fakeQueue();
+    const { env } = makeEnv({}, queue);
+    await processSweep(env, { v: 1, kind: "pdf.sweep", asOf: Date.now() });
+    expect(queue.sent.map((x) => (x.body as { documentId?: string }).documentId)).not.toContain(s.id);
   });
 
   it("leaves out a document that has its PDF", async () => {
@@ -658,5 +692,19 @@ describe("log hygiene", () => {
     ]) {
       expect(text).not.toContain(forbidden);
     }
+  });
+});
+
+describe("the dead-letter bell [07-P §4]", () => {
+  it("uses the 'PDF failed' line with the number and version read by id, for a render and a snapshot", async () => {
+    const s = await seedSent();
+    const { env } = makeEnv({});
+    await processPdfDeadLetter(env, { v: 1, kind: "pdf.render", documentId: s.id, hop: 1 });
+    await processPdfDeadLetter(env, { v: 1, kind: "pdf.snapshot", documentId: s.id, reason: "send" });
+    const titles = await all<{ title: string }>(
+      "SELECT DISTINCT title FROM notifications WHERE entity_id = ? AND kind = 'pdf.failed'",
+      s.id,
+    );
+    expect(titles).toEqual([{ title: failedBell(s) }]);
   });
 });
