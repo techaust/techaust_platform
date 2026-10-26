@@ -2,11 +2,20 @@
 // parsing (day first, DD/MM/YYYY, whatever the browser's locale; ISO in and out).
 import { describe, expect, it } from "vitest";
 import { NOT_SET } from "./catalogue.ts";
-import { dateEcho, isoToTyped, typedToIso } from "./date-field.ts";
+import {
+  DATE_INVALID,
+  dateEcho,
+  dateError,
+  fieldValue,
+  INVALID_DATE,
+  isoToTyped,
+  settledValue,
+  typedToIso,
+} from "./date-field.ts";
 import { convertedToCare, DOC_PENDING, termsLine } from "./documents.ts";
 import { OFFER_COPY } from "./offers.ts";
 import { SIGNATURE_COPY } from "./pdf.ts";
-import { COPY, PENDING } from "./projects.ts";
+import { COPY, detailsErrors, milestoneFormOf, milestoneInput, PENDING } from "./projects.ts";
 import { TIME_PENDING } from "./time.ts";
 
 describe("07-Q, word for word", () => {
@@ -58,5 +67,55 @@ describe("the date field", () => {
     expect(isoToTyped("")).toBe("");
     expect(dateEcho("2026-10-26")).toBe("26 Oct 2026");
     expect(dateEcho("")).toBe("");
+  });
+});
+
+// Review of the fixes, finding 1: a date that can't be read is never saved as "Not set".
+describe("the date field's invalid state", () => {
+  it("gives its form INVALID_DATE (never \"\") for text that isn't a real date, and the owner's line for it", () => {
+    expect(DATE_INVALID).toBe("Enter the date as DD/MM/YYYY, for example 26/10/2026.");
+    expect(fieldValue("31/02/2026")).toBe(INVALID_DATE);
+    expect(fieldValue("26/10/26")).toBe(INVALID_DATE); // a two-digit year
+    expect(fieldValue("26/10")).toBe(INVALID_DATE);
+    expect(fieldValue("   ")).toBe("");
+    expect(fieldValue("")).toBe("");
+    expect(fieldValue("26/10/2026")).toBe("2026-10-26");
+    expect(dateError(INVALID_DATE)).toBe(DATE_INVALID);
+    expect(dateError("")).toBeNull();
+    expect(dateError("2026-10-26")).toBeNull();
+    expect(typedToIso(INVALID_DATE)).toBeNull();
+  });
+
+  it("blocks an optional date's save: project details and a milestone", () => {
+    const f = { name: "Sample project (sample)", ownerId: "", startDate: "", targetDate: "", budget: "" };
+    expect(detailsErrors({ ...f, startDate: fieldValue("31/02/2026") }, "INR")).toEqual({
+      startDate: DATE_INVALID,
+    });
+    expect(detailsErrors({ ...f, targetDate: fieldValue("26/10/26") }, "INR")).toEqual({
+      targetDate: DATE_INVALID,
+    });
+    // Empty is fine for an optional date; the order rule still runs on two real dates.
+    expect(detailsErrors(f, "INR")).toEqual({});
+    expect(detailsErrors({ ...f, startDate: "2026-10-26", targetDate: "2026-10-01" }, "INR").targetDate).toBe(
+      PENDING.datesOrder,
+    );
+    const m = {
+      ...milestoneFormOf(null, "INR"),
+      title: "Sample milestone (sample)",
+      kind: "pct" as const,
+      pct: "50",
+    };
+    expect(milestoneInput({ ...m, dueDate: fieldValue("31/02/2026") }, "INR")).toEqual({
+      ok: false,
+      errors: { dueDate: DATE_INVALID },
+    });
+    expect(milestoneInput({ ...m, dueDate: "" }, "INR")).toMatchObject({ ok: true, body: { dueDate: null } });
+  });
+
+  it("an autosaving field keeps its last valid value until the text is a full date or empty", () => {
+    expect(settledValue("31/02/2026")).toBeNull();
+    expect(settledValue("2/1")).toBeNull();
+    expect(settledValue("2/1/2026")).toBe("2026-01-02");
+    expect(settledValue("")).toBe("");
   });
 });

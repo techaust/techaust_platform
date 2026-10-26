@@ -46,6 +46,7 @@ import { useToast } from "../../components/toast.tsx";
 import { Notice } from "../../components/ui.tsx";
 import { UnsavedChangesGuard } from "../../components/unsaved.tsx";
 import { allowed } from "../../lib/access.ts";
+import { dateError } from "../../lib/date-field.ts";
 import { relative } from "../../lib/format.ts";
 import {
   type Change,
@@ -165,6 +166,7 @@ function LeadView({
   const [busy, setBusy] = useState<"follow" | "contact" | null>(null);
   const [error, setError] = useState<{ where: "follow" | "contact"; text: string } | null>(null);
   const [emailError, setEmailError] = useState<string | null>(null);
+  const [nextDateError, setNextDateError] = useState<string | null>(null);
   const note = drafts.note;
   const setNote = (text: string) => draft({ type: "note", text });
   const [lost, setLost] = useState(false);
@@ -197,6 +199,12 @@ function LeadView({
 
   function saveFollow(e: FormEvent) {
     e.preventDefault();
+    const dateErr = dateError(follow.date);
+    setNextDateError(dateErr);
+    if (dateErr) {
+      document.getElementById("lead-next")?.focus();
+      return;
+    }
     // Only what differs from the draft's base is sent (re-check R1).
     save("follow", followPatch({ base: followBase, value: follow }));
   }
@@ -332,6 +340,7 @@ function LeadView({
                   id="lead-next"
                   label="Next action"
                   optional
+                  error={nextDateError}
                   status={
                     lead.nextActionOverdue && !followDirty ? (
                       <StatusPill tone="danger" icon="clock">

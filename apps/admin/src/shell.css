@@ -1292,6 +1292,31 @@ body:has(.shell) {
   min-width: 0;
 }
 
+/* The audit log's five filters wrap instead of squeezing: a select needs about 9rem, a date field 11.5rem (its
+   "DD/MM/YYYY" hint plus the 44 px calendar button), so on a narrow row "To" (then "From") moves down and the row
+   fills again. One row at 1280 with the menu open; full-width selects on phones. A date's read-back or error line makes
+   its field taller, so fields keep their own height, tops aligned. */
+.filters.filters--audit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.filters--audit > .field {
+  flex: 1 1 9rem;
+}
+
+.filters--audit > .filters__field-date {
+  flex: 1 1 11.5rem;
+  min-width: min(11.5rem, 100%);
+}
+
+@media (max-width: 47.99rem) {
+  .filters--audit > .field:not(.filters__field-date) {
+    flex-basis: 100%;
+  }
+}
+
 /* Date inputs carry an intrinsic minimum width (the browser's picker chrome): let them shrink to their grid cell, so
    two side by side fit a 375 px screen (review M4). */
 .filters input[type="date"] {
@@ -1308,18 +1333,6 @@ body:has(.shell) {
 
 .filters__toggle {
   display: none;
-}
-
-@media (max-width: 47.99rem) {
-  .filters--audit {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    column-gap: var(--space-3);
-  }
-
-  .filters--audit > .field:nth-child(-n + 3),
-  .filters--audit > .filters__foot {
-    grid-column: 1 / -1;
-  }
 }
 
 /* Phones: the search stays; the chip groups fold behind a "Filters" button, so the list comes first. */
@@ -1363,21 +1376,7 @@ body:has(.shell) {
 }
 
 @media (min-width: 64rem) {
-  .filters--audit {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-  }
-
   .filters__foot {
-    grid-column: 1 / -1;
-  }
-}
-
-@media (min-width: 48rem) and (max-width: 63.99rem) {
-  .filters--audit {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .filters--audit .filters__foot {
     grid-column: 1 / -1;
   }
 }
@@ -1450,6 +1449,11 @@ body:has(.shell) {
   justify-content: space-between;
   gap: var(--space-2);
   margin-block: calc(-1 * var(--space-2));
+}
+
+/* In the audit log's wrapping row (above), the result line takes a row of its own. */
+.filters--audit > .filters__foot {
+  flex: 1 1 100%;
 }
 
 .filters__result {

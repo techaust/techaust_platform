@@ -21,6 +21,7 @@ import type {
 import { RequestError } from "../api.ts";
 import type { PillTone } from "../components/display.tsx";
 import { type Draft, rebase } from "../routes/leads/drafts.ts";
+import { dateError } from "./date-field.ts";
 import { sentence } from "./format.ts";
 import { bpToPercent, moneyFrom, moneyInput, percentToBp } from "./settings-form.ts";
 
@@ -274,7 +275,12 @@ export type DetailsErrors = Partial<Record<keyof DetailsForm, string>>;
 export function detailsErrors(f: DetailsForm, currency: Currency): DetailsErrors {
   const e: DetailsErrors = {};
   if (!f.name.trim()) e.name = PENDING.enterName;
-  if (f.startDate && f.targetDate && f.targetDate < f.startDate) e.targetDate = PENDING.datesOrder;
+  const start = dateError(f.startDate);
+  const target = dateError(f.targetDate);
+  if (start) e.startDate = start;
+  if (target) e.targetDate = target;
+  else if (!start && f.startDate && f.targetDate && f.targetDate < f.startDate)
+    e.targetDate = PENDING.datesOrder;
   if (f.budget.trim()) {
     const m = moneyFrom(f.budget, currency);
     if (!m.ok) e.budget = m.error;
@@ -317,7 +323,7 @@ export const milestoneFormOf = (m: MilestoneView | null, currency: Currency): Mi
   dueDate: m?.dueDate ?? "",
 });
 
-export type MilestoneErrors = Partial<Record<"title" | "amount" | "pct", string>>;
+export type MilestoneErrors = Partial<Record<"title" | "amount" | "pct" | "dueDate", string>>;
 
 /** The form as the API's body, or the errors to show (an amount or a percentage, exactly one). */
 export function milestoneInput(
@@ -337,6 +343,8 @@ export function milestoneInput(
     if (bp === null) errors.pct = PENDING.enterPercent;
     else pctBp = bp;
   }
+  const due = dateError(f.dueDate);
+  if (due) errors.dueDate = due;
   if (Object.keys(errors).length) return { ok: false, errors };
   return {
     ok: true,

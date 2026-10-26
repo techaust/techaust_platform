@@ -334,3 +334,43 @@ Skills: `cloudflare:workers-best-practices` (no new async work, no module state,
 - **11:** `BELL_COPY.integrity(label)` is the owner's line; `documentLabel(number, title)` gives number, else title, else "Untitled"; used at all three refusals (snapshot rows, key conflict, render-time envelope check; the render row now selects `title`). Tests updated, plus a unit test for the label and the exact text. The 07-Q Q9 row has the owner's wording.
 Commands (all through `tools/heavy.sh`): `pnpm install --frozen-lockfile --offline` (links were missing); `pnpm typecheck` exit 0; `pnpm check` exit 0; tests: admin 68 files 2,128 tests, jobs 15 files 259, pdf all pass (coverage gate ok), db 13 files 206, all exit 0; `pnpm --filter @techaust/admin build`: **admin bundle 415,159 of 415,878 bytes** (round 2: 414,797, so +362; startup 45.7 ms, no forbidden modules).
 Not verified: the whole-repository `pnpm lint` (left for the lead's final run; biome was run on every changed file), the admin and portal SPA tests (the designer's files), PDFs rendered in a real browser. The admin budget has only 719 bytes of room left. A DRAFT's staff read no longer shows the terms text under the Terms section (only the "version n" line), as briefed; if the designer's draft preview needs the text, say so.
+
+## Designer report: review fixes (designer, Opus 5.5 medium, 2026-10-26)
+Branch `fix/batch-review-ui-design2` from `origin/fix/batch-review-ui`. Only `apps/admin/src/**` and `apps/portal/src/**` changed (plus this report).
+
+**Skills:** `frontend-design:frontend-design` loaded first; it kept the fix to one way of drawing an invalid date (the shared FieldError under the control, and the form's error summary linking to it), with nothing added. No other skill in docs/14 §9 fits a screen-only fix (`dataviz`: no chart touched; `code-review`: no review asked of this step, the reviewer re-checks).
+
+**Findings fixed**
+- **1 (high):** `lib/date-field.ts` adds `INVALID_DATE` (what the field gives its form while the text is not empty and not a real date, never `""`), `fieldValue`, `dateError` (the owner's line, word for word: "Enter the date as DD/MM/YYYY, for example 26/10/2026.") and `settledValue`. `components/date-field.tsx`: in a form the field reports `INVALID_DATE`, and the person's text stays (it is no longer reset to empty). With `keepLastValid` (the payment schedule's autosaving target date and the audit log's From/To filters) the last valid value stays until the text is a full date or empty; the field then shows the line itself after blur, with `aria-invalid` and `aria-describedby`. The "26 Oct 2026" read-back is hidden while the text isn't that date. The hidden native input gets only ISO values. Saves are blocked, with the line in the error summary and under the field, in required and optional forms alike: project new and details (`detailsErrors`), milestone (`milestoneInput`, new `dueDate` error; the field id is now `ms-dueDate` so focus lands on it), new care plan (`planInput`), convert to care plan (`dialogs.tsx`), time entry (`entryInput`), new lead, the lead's next action, and the time CSV export (From and To are now `FormField`s with their own errors). A cleared required date still shows its own "enter a date" line.
+- **2 (medium):** week buttons: each label is one span ("Previous week", "Next week"), so the gap isn't doubled.
+- **10 (low):** portal `offer.tsx`: `validUntil: view.validUntil` (already the long date); the redundant conversion, its stale comment and the `dateText` import are gone.
+- **12 (low):** each calendar button is `aria-labelledby` itself ("Choose a date") and `<id>-label`. `FormField` labels now have the id `<id>-label`, and the hand-written labels (project details, time entry, audit, schedule) have it too. Read as, for example, "Choose a date Start date (optional)".
+- Also: `.filters--audit { align-items: start }`, so a date filter's error line no longer stretches the selects beside it (seen at 1280).
+
+**Files:** `apps/admin/src/lib/{date-field,projects,care,time}.ts`, `apps/admin/src/lib/{batch-review,care-time}.test.ts`, `apps/admin/src/components/{date-field,form}.tsx`, `apps/admin/src/routes/{audit,time}.tsx`, `routes/time/{export,entry-dialog}.tsx`, `routes/projects/{overview,milestones}.tsx`, `routes/leads/{new,lead}.tsx`, `routes/documents/{dialogs,schedule}.tsx`, `apps/admin/src/shell.css`, `apps/portal/src/routes/offer.tsx`.
+
+**Tests:** new tests cover a bad date (31/02/2026), a two-digit year, a partial date, an empty optional date (saved as null), a cleared required date (keeps its own line), the order rule on two real dates, the autosave's `settledValue`, and the owner's line word for word, through `detailsErrors`, `milestoneInput`, `planInput` and `entryInput`. The admin has no DOM test setup, so the component's behaviour (text kept, its own error after blur) was checked in the browser.
+
+**Screenshots** in `D:\BUSINESS\1. PARENT PROJECT\TECHAUST TECHNOLOGIES\WEBSITE\techaust_platform\.claude\worktrees\agent-a002a4cfe2f726924\.logs\shots\batch-review-fixes-design2\`:
+- `project-new-invalid-date-1280-light.png`: New project after submit with 31/02/2026: the summary "Fix 2 things before saving" with the owner's line, the red field and its line under Start date, and Target date with its read-back.
+- `project-new-invalid-date-375-dark.png`: the same at 375 in dark, with no sideways scroll (scrollWidth 360).
+- `audit-filter-invalid-date-1280-dark.png`: audit From typed as 31/02/2026 and left: the line under it, the list still filtered from 01/10/2026 (URL `?from=2026-10-01`), and the selects at their own height.
+- `time-week-buttons-768-dark.png`: "Previous week", "This week" and "Next week" with single spaces.
+- `time-export-invalid-date-768-dark.png`: the CSV export with From 26/10/26 after Download: the line under From, and nothing downloaded.
+
+**Commands:**
+- `pnpm exec biome check --write <changed files>`: fixed formatting. One existing warning remains in portal `offer.tsx:89` (an unused suppression on code I didn't touch).
+- `vitest run src/lib/batch-review.test.ts src/lib/care-time.test.ts`: 35 passed.
+- `bash tools/heavy.sh --log design2-typecheck`: admin and portal typecheck, exit 0.
+- `bash tools/heavy.sh --log design2-test`: admin 2,127 and portal 578 tests passed.
+- `bash tools/heavy.sh --log design2-check pnpm check`: exit 0 (this includes the whole-repository lint).
+- Local setup: `pnpm dev:secrets`, `db:migrate:local`, `db:seed:local`, `pnpm invite --email owner.sample@example.test --role owner`, and the admin dev server (now stopped).
+- axe (WCAG 2.2 A/AA; a temporary copy in `public/`, since deleted) on the project form with an invalid date: 0 violations, light and dark.
+- Keyboard: the text field, then the calendar button, with a visible focus ring; the error summary takes focus on submit. Console: no errors.
+
+**Not verified:** the payment schedule's autosave in the browser (I made no draft proposal locally; it takes the same `keepLastValid` path as the audit filter, which was checked); the native calendar popup; NVDA reading the new names. No placeholder text was added.
+
+**Lead's follow-up, done:** the audit log's To field cut its placeholder to "DD/MM/YYY" at 1280. The filter row now wraps (flex: about 9rem per select, at least 11.5rem per date field, which is "DD/MM/YYYY" plus the 44 px button; the hint itself is unchanged), so no cell gets too narrow. It is one row at 1280 (input text area 116 to 119 px, against 106 px for the hint, with or without a scrollbar), selects on the first row and From and To on the second at 1024 and 768, and full width on phones.
+Checked at 1280, 1024, 768 and 375 in light and dark, plus the time export dialog (186 px at 375; no other screen has date filters). Screenshots `audit-filters-{1280,1280-light,1024-light,768-light,768-dark,375-light,375-dark}.png` and `time-export-375-dark.png` are in the same folder. Admin tests: 2,127 passed. `pnpm check`: exit 0.
+
+**Open questions:** none.

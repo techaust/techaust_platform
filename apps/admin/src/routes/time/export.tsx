@@ -5,10 +5,14 @@ import { useRef, useState } from "react";
 import { api, type TimeEntry } from "../../api.ts";
 import { DateField } from "../../components/date-field.tsx";
 import { Modal } from "../../components/dialog.tsx";
+import { FormField } from "../../components/form.tsx";
 import { Download } from "../../components/icons.tsx";
 import { FieldError, Notice } from "../../components/ui.tsx";
 import { careErrorText } from "../../lib/care.ts";
+import { dateError } from "../../lib/date-field.ts";
 import { exportRangeOk, TIME_PENDING, timeCsv } from "../../lib/time.ts";
+
+const NO_DATE_ERRORS = { from: null, to: null };
 
 export function ExportButton(props: {
   from: string;
@@ -19,6 +23,7 @@ export function ExportButton(props: {
   const [from, setFrom] = useState(props.from);
   const [to, setTo] = useState(props.to);
   const [rangeError, setRangeError] = useState<string | null>(null);
+  const [dateErrors, setDateErrors] = useState<{ from: string | null; to: string | null }>(NO_DATE_ERRORS);
   const [failure, setFailure] = useState<string | null>(null);
   const [loaded, setLoaded] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
@@ -28,12 +33,20 @@ export function ExportButton(props: {
     setFrom(props.from);
     setTo(props.to);
     setRangeError(null);
+    setDateErrors(NO_DATE_ERRORS);
     setFailure(null);
     setLoaded(null);
     setOpen(true);
   }
 
   async function download() {
+    const bad = { from: dateError(from), to: dateError(to) };
+    setDateErrors(bad);
+    if (bad.from || bad.to) {
+      setRangeError(null);
+      document.getElementById(bad.from ? "csv-from" : "csv-to")?.focus();
+      return;
+    }
     if (!exportRangeOk(from, to)) {
       setRangeError(TIME_PENDING.exportRange);
       document.getElementById("csv-from")?.focus();
@@ -79,20 +92,24 @@ export function ExportButton(props: {
       <Modal open={open} title="Export time as CSV" onClose={() => setOpen(false)} busy={busy}>
         <div className="dialog__body">
           <div className="form-grid">
-            <div className="field">
-              <label htmlFor="csv-from">From</label>
-              <DateField
-                id="csv-from"
-                value={from}
-                aria-invalid={rangeError ? true : undefined}
-                aria-describedby={rangeError ? "csv-range-error" : undefined}
-                onChange={(v) => setFrom(v)}
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="csv-to">To</label>
-              <DateField id="csv-to" value={to} onChange={(v) => setTo(v)} />
-            </div>
+            <FormField id="csv-from" label="From" error={dateErrors.from}>
+              {(a) => (
+                <DateField
+                  {...a}
+                  value={from}
+                  aria-invalid={a["aria-invalid"] ?? (rangeError ? true : undefined)}
+                  aria-describedby={
+                    [a["aria-describedby"], rangeError ? "csv-range-error" : null]
+                      .filter(Boolean)
+                      .join(" ") || undefined
+                  }
+                  onChange={(v) => setFrom(v)}
+                />
+              )}
+            </FormField>
+            <FormField id="csv-to" label="To" error={dateErrors.to}>
+              {(a) => <DateField {...a} value={to} onChange={(v) => setTo(v)} />}
+            </FormField>
           </div>
           {rangeError && <FieldError id="csv-range-error">{rangeError}</FieldError>}
           <p className="hint" role="status">

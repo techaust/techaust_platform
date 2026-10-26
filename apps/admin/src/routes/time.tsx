@@ -194,7 +194,9 @@ function TimeScreen() {
               onClick={() => set({ week: previousWeek(week) })}
             >
               <ChevronLeft size={20} />
-              Previous<span className="week-nav__word"> week</span>
+              <span>
+                Previous<span className="week-nav__word"> week</span>
+              </span>
             </button>
             <button
               type="button"
@@ -210,7 +212,9 @@ function TimeScreen() {
               disabled={week >= weekOf(today).start}
               onClick={() => set({ week: nextWeek(week) })}
             >
-              Next<span className="week-nav__word"> week</span>
+              <span>
+                Next<span className="week-nav__word"> week</span>
+              </span>
               <ChevronRight size={20} />
             </button>
           </div>

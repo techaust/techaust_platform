@@ -31,6 +31,7 @@ import type {
 } from "../api.ts";
 import { RequestError } from "../api.ts";
 import type { PillTone } from "../components/display.tsx";
+import { dateError } from "./date-field.ts";
 import { sentence } from "./format.ts";
 import { moneyText } from "./projects.ts";
 import { intIn, moneyFrom, moneyInput } from "./settings-form.ts";
@@ -295,7 +296,7 @@ export function planInput(
   if (ai && !ai.ok) errors.aiOpsPrice = ai.error;
   const rate = f.overageRate.trim() ? moneyFrom(f.overageRate, currency) : null;
   if (rate && !rate.ok) errors.overageRate = rate.error;
-  if (!parseIsoDate(f.startDate)) errors.startDate = CARE_PENDING.enterStartDate;
+  if (!parseIsoDate(f.startDate)) errors.startDate = dateError(f.startDate) ?? CARE_PENDING.enterStartDate;
   const day = intIn(f.billingDay, 1, MAX_BILLING_DAY);
   if (day === null) errors.billingDay = CARE_PENDING.enterBillingDay;
   if (Object.keys(errors).length || !price?.ok || included === null || day === null)

@@ -34,7 +34,7 @@ export function FormField(props: {
       {/* Head (label and hint) and body (control, status, error): in a two-column .form-grid the heads of one row share a
           height, so the controls beside each other line up whatever the hints (shell.css). */}
       <div className="field__head">
-        <label htmlFor={props.id}>
+        <label htmlFor={props.id} id={`${props.id}-label`}>
           {props.label}
           {props.optional && <span className="field__optional"> (optional)</span>}
         </label>
