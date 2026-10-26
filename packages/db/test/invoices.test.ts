@@ -2,9 +2,10 @@
 // invoice issue batch as statements. VERIFY WITH CA/LEGAL for the rules. The admin Worker tests prove the same through the routes.
 import { env } from "cloudflare:workers";
 import { defaultFormat, sqlPrintfPattern, uuidv7 } from "@techaust/core";
-import { canMoveInvoiceStatus, INVOICE_FLOW_TYPES } from "@techaust/core/invoices";
+import { canMoveInvoiceStatus, INVOICE_FLOW_TYPES, INVOICE_SERIES_OF } from "@techaust/core/invoices";
 import { describe, expect, it } from "vitest";
 import { invoiceIssueStatements } from "../src/issue.ts";
+import { SERIES_OF } from "../src/schema/index.ts";
 import { all, first, rejects, run } from "./helpers.ts";
 
 const STATUSES = [
@@ -466,6 +467,12 @@ describe("a milestone's document is an invoice of the milestone's client [milest
       ),
       /milestones_document_scope/,
     );
+  });
+});
+
+describe("the series of each invoice-flow type", () => {
+  it("core INVOICE_SERIES_OF is the schema's SERIES_OF for those types", () => {
+    for (const t of INVOICE_FLOW_TYPES) expect(INVOICE_SERIES_OF[t], t).toBe(SERIES_OF[t]);
   });
 });
 

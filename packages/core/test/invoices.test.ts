@@ -8,8 +8,11 @@ import {
   dueDateOf,
   INVOICE_FLOW_TYPES,
   INVOICE_ISSUABLE_TYPES,
+  INVOICE_SERIES_OF,
   INVOICE_STATUS_FLOW,
   type IssueFacts,
+  invoiceSnapshot,
+  invoiceSnapshotSha256,
   issueBlockers,
   issueDateOf,
   issueFyOf,
@@ -365,5 +368,67 @@ describe("Table 13: documents issued [08-A §4]", () => {
         },
       ),
     );
+  });
+});
+
+describe("the series of each invoice-flow type", () => {
+  it("every type has one, and an invoice and an export invoice are two series", () => {
+    expect(Object.keys(INVOICE_SERIES_OF).sort()).toEqual([...INVOICE_FLOW_TYPES].sort());
+    expect(INVOICE_SERIES_OF.tax_invoice).toBe("invoice");
+    expect(INVOICE_SERIES_OF.export_invoice).toBe("export");
+  });
+});
+
+describe("the sealed snapshot of an issued invoice [LD4]", () => {
+  const input = {
+    document: {
+      type: "tax_invoice",
+      clientId: "c1",
+      currency: "INR",
+      issueDate: "2026-10-28",
+      dueDate: "2026-11-04",
+      contentSha256: "a".repeat(64),
+      termsRef: null,
+      exportMode: null,
+    },
+    supply: { type: "intra", placeOfSupplyCode: "19", supplierStateCode: "19" },
+    recipient: { legalName: "Client" },
+    issuer: { company: { tradeName: "T" }, signature: null },
+    computedSha256: "b".repeat(64),
+  };
+
+  it("is {v: 3, kind: invoice, header}, and the number is not in it", () => {
+    expect(invoiceSnapshot(input)).toEqual({ v: 3, kind: "invoice", header: input });
+    expect(JSON.stringify(invoiceSnapshot(input))).not.toContain("number");
+  });
+
+  it("hashes deterministically (key order does not matter), and any change moves the hash", async () => {
+    const h = await invoiceSnapshotSha256(input);
+    expect(h).toMatch(/^[0-9a-f]{64}$/);
+    const reordered = {
+      computedSha256: input.computedSha256,
+      issuer: input.issuer,
+      recipient: input.recipient,
+      supply: input.supply,
+      document: { ...input.document },
+    };
+    expect(await invoiceSnapshotSha256(reordered)).toBe(h);
+    for (const changed of [
+      { ...input, document: { ...input.document, dueDate: "2026-11-05" } },
+      {
+        ...input,
+        document: { ...input.document, termsRef: { id: "t", version: 1, sha256: "c".repeat(64) } },
+      },
+      { ...input, recipient: { legalName: "Other" } },
+      {
+        ...input,
+        issuer: {
+          company: { tradeName: "T" },
+          signature: { key: "k", sha256: "d".repeat(64), mime: "image/png" },
+        },
+      },
+      { ...input, computedSha256: "e".repeat(64) },
+    ])
+      expect(await invoiceSnapshotSha256(changed)).not.toBe(h);
   });
 });

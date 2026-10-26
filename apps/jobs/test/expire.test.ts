@@ -112,9 +112,10 @@ beforeEach(async () => {
     logs.push(a.map(String).join(" "));
   };
   client ||= await mkClient();
-  // Sent documents cannot be deleted (frozen): move the leftovers of an earlier test out of the way instead.
+  // Sent documents cannot be deleted (frozen): move the leftovers of an earlier test out of the way instead. Only proposals and estimates:
+  // M5.1 gave an invoice its own status flow (documents_invoice_status_flow), which has no `sent` to `revised`.
   await realEnv.DB.prepare(
-    "UPDATE documents SET status = 'revised' WHERE status IN ('sent', 'viewed')",
+    "UPDATE documents SET status = 'revised' WHERE status IN ('sent', 'viewed') AND type IN ('proposal', 'estimate')",
   ).run();
   seen = new Set(
     (await all<{ id: string }>("SELECT id FROM audit_log WHERE action = 'document.expire'")).map((r) => r.id),
