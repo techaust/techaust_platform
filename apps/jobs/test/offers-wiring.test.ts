@@ -600,12 +600,23 @@ describe("the queues route the M4.5 messages before the generic paths", () => {
     expect(d.calls.ack).toBe(1);
     expect(email.sent).toEqual([]);
     await processPdfDeadLetter(env, { v: 1, kind: "pdf.certificate", acceptanceId: "acc-1", hop: 0 });
-    expect(
-      await all(
-        "SELECT kind, entity_type FROM notifications WHERE user_id = ? AND entity_id = 'acc-1'",
+    const bells = () =>
+      all(
+        "SELECT kind, entity_type, title FROM notifications WHERE user_id = ? AND entity_id LIKE 'acc-1:%'",
         owner,
-      ),
-    ).toEqual([{ kind: "pdf.failed", entity_type: "acceptance" }]);
+      );
+    expect(await bells()).toEqual([
+      { kind: "pdf.failed", entity_type: "acceptance", title: expect.stringContaining("[Placeholder]") },
+    ]);
+    // the same day again rings nothing new; a failure on a later day rings again
+    await processPdfDeadLetter(env, { v: 1, kind: "pdf.certificate", acceptanceId: "acc-1", hop: 0 });
+    expect(await bells()).toHaveLength(1);
+    await processPdfDeadLetter(
+      env,
+      { v: 1, kind: "pdf.certificate", acceptanceId: "acc-1", hop: 0 },
+      Date.now() + 2 * 86_400_000,
+    );
+    expect(await bells()).toHaveLength(2);
     await processPdfDeadLetter(env, { v: 1, kind: "offer.sweep", asOf: T0 });
     expect(logs.join("\n")).toContain("pdf.dead_letter");
   });

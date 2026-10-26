@@ -116,7 +116,7 @@ export const ATTACHMENT_KEY =
  */
 export const ATTACHMENT_MAX_BYTES = 1024 * 1024;
 
-/** The browser link of an offer: the token is in the URL FRAGMENT (never sent to a server, never in a log) and is used after a click. */
+/** The browser link of an offer: the token is in the URL FRAGMENT (never sent to a server, never in a log); the page reads it, strips it from the address bar and opens the offer at once (owner-approved preview: no Continue click). */
 export const offerLinkUrl = (portalBase: string, token: string): string =>
   `${portalBase.replace(/\/+$/, "")}/o#t=${token}`;
 

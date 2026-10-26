@@ -489,16 +489,19 @@ export async function processPdf(
  * A PDF message that ran out of tries: the owners are told (once per document and kind), and the next daily sweep picks the document up
  * again. A sweep that ran out of tries is only logged: tomorrow's cron enqueues another.
  */
-export async function processPdfDeadLetter(env: Env, body: unknown): Promise<void> {
+export async function processPdfDeadLetter(env: Env, body: unknown, now = Date.now()): Promise<void> {
   if (isPdfMessage(body) && body.kind === "pdf.certificate") {
     // The acceptance is safe (its evidence row is written); only the certificate file is missing. The owners are told, the sweep tries again.
+    // The bell is unique per (user, kind, entity), so the entity carries the day: a failure on a later day (the sweep's retry) rings again,
+    // a redelivery on the same day does not.
     await env.DB.batch([
       bell(
         env,
         "pdf.failed",
         "acceptance",
-        body.acceptanceId,
-        "An acceptance certificate could not be made; it will be tried again tonight",
+        `${body.acceptanceId}:${new Date(now).toISOString().slice(0, 10)}`,
+        // [Placeholder] no line for this bell in 07-N or 07-P yet: the owner approves the words with the batch.
+        "[Placeholder] An acceptance certificate could not be made; it will be tried again tonight",
         "/",
       ),
     ]);
