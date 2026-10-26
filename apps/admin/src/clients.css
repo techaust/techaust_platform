@@ -55,7 +55,7 @@
   }
 }
 
-@media (min-width: 48.01rem) and (max-width: 79.99rem) {
+@media (min-width: 48rem) and (max-width: 79.99rem) {
   .clients-table .dtable {
     overflow-x: auto;
   }

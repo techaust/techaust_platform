@@ -110,7 +110,7 @@
   white-space: nowrap;
 }
 
-@media (min-width: 48.01rem) and (max-width: 79.99rem) {
+@media (min-width: 48rem) and (max-width: 79.99rem) {
   .care-table .dtable__table {
     min-width: 50rem;
   }

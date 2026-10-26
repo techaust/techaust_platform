@@ -1110,7 +1110,7 @@
   text-align: start;
 }
 
-@media (min-width: 48.01rem) and (max-width: 79.99rem) {
+@media (min-width: 48rem) and (max-width: 79.99rem) {
   .docs-table .dtable__table,
   .approvals-table .dtable__table {
     min-width: 48rem;
@@ -1118,7 +1118,7 @@
 }
 
 /* The lists keep inside their box at every width: a little narrower names, and a sideways scroll as the last resort. */
-@media (min-width: 48.01rem) {
+@media (min-width: 48rem) {
   .docs-table .dtable,
   .approvals-table .dtable {
     overflow-x: auto;

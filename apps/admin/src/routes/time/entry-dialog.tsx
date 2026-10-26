@@ -172,7 +172,9 @@ function EntryFormBody(
             <span className="muted">Person</span> {props.entry.userName ?? "A former staff member"}
           </p>
         )}
-        <div className="form-grid">
+        {/* Date over Time spent: the two have different shapes (one control, then hours and minutes with their own labels), so
+            side by side they could never line up (batch review M3). */}
+        <div className="entry-form__when">
           <div className="field">
             <label htmlFor={`${P}-workDate`}>Date</label>
             <DateField
