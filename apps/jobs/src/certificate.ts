@@ -5,13 +5,9 @@
 // The certificate shows the IP address, the user agent and the country because they ARE the evidence (docs/08 L-11). VERIFY WITH CA/LEGAL: showing
 // them on a document the client downloads, and the Browser Run processing of the name, address and IP (processor terms, location).
 import { formatIstDateTime, formatMoney, money } from "@techaust/core";
-import type { CertificateView as PdfCertificateView } from "@techaust/pdf";
+import type { CertificateView } from "@techaust/pdf";
 
-/**
- * What the certificate prints. `total` (07-N §5 "Total": the frozen total, formatted) is not in the layout's own type yet: the designer
- * adds it there and prints it under "Number and version"; until then the layout ignores it.
- */
-export type CertificateView = PdfCertificateView & { total: string };
+export type { CertificateView };
 
 export type CertificateRow = {
   number_display: string | null;
