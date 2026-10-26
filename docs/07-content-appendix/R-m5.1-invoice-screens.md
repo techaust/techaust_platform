@@ -93,7 +93,7 @@ _Drafted by the lead on 2026-10-27 from approved facts:
 - PDF states: "PDF being prepared…" · "Download PDF" · "The PDF couldn't be made. Try again." (button "Try again")
 - Void button (Owner): "Void invoice"
 - Void dialog title: "Void invoice {number}"
-- Void body: "Voiding cancels this invoice. It keeps its number, which is reported as cancelled in your GST return. You can only void an invoice that hasn't been emailed, paid or corrected by a credit or debit note; after that, use a credit note." (VERIFY WITH CA/LEGAL)
+- Void body: "Voiding cancels this invoice. It keeps its number, which is reported as cancelled in your GST return. You can only void an invoice in the month it was issued, before it has been emailed, paid or corrected by a credit or debit note; after that, use a credit note." (VERIFY WITH CA/LEGAL)
 - Reason label: "Reason (required, kept with the invoice)"
 - Buttons: "Void invoice" · "Cancel"
 - Void badge line: "Voided {date} by {name}: {reason}"
@@ -119,6 +119,8 @@ _Drafted by the lead on 2026-10-27 from approved facts:
 | step_up_required | (existing 07-H line) |
 | void_not_allowed | "This invoice can't be voided: it has been emailed, paid or corrected. Use a credit note instead." |
 | already_void | "This invoice is already void." |
+| return_period_closed | "This invoice's GST return period has ended, so it can't be voided. Use a credit note instead." (VERIFY WITH CA/LEGAL) |
+| contact_changed | "The contact's details changed a moment ago. Try again." |
 | on_issued_document | (existing 07-J line) |
 | milestone_has_invoice | "This milestone already has an invoice." |
 | milestone_not_ready | "Only a milestone that's Ready to bill can be invoiced." |
