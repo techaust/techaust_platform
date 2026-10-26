@@ -4,8 +4,7 @@
 // fingerprints in full). Grayscale-safe: nothing is said by colour; the rule and hairlines read as black and grey. The total's rupee sign
 // comes from the embedded Archivo's own U+20B9 face (the same `TECHAUST_PDF_FONT_DATA` the documents use), so it never falls back.
 //
-// Words: 07-N §5 (PENDING the owner's approval) and 07-P §1 ("Prepared for", the footer line); a label 07-N doesn't have yet carries a
-// visible "[Placeholder]" (listed in the M4.5 designer report).
+// Words: 07-N §5 and 07-P §1 ("Prepared for", the footer line), with the labels 07-N lacked as approved in 07-Q (CERT lines).
 //
 // The contract the tests rely on:
 //   data-testid="typed-name"  the name the person typed
@@ -45,9 +44,7 @@ export type CertificateView = {
   termsSha256: string;
 };
 
-const PH = "[Placeholder] ";
-
-/** 07-N §5, word for word; `PH` marks the labels 07-N doesn't have yet. */
+/** 07-N §5, word for word, plus the labels of 07-Q. */
 export const CERTIFICATE_COPY = {
   title: "Acceptance certificate",
   statement: "This certificate records an electronic acceptance through the TecHaust client portal.",
@@ -61,15 +58,15 @@ export const CERTIFICATE_COPY = {
   utc: "Date and time (UTC)",
   ip: "IP address",
   browser: "Browser",
-  country: `${PH}Country`,
-  how: `${PH}How it was accepted`,
-  viaLink: `${PH}From the emailed link`,
-  viaSession: `${PH}Signed in to the client portal`,
-  evidence: `${PH}Evidence`,
+  country: "Country",
+  how: "How it was accepted",
+  viaLink: "From the emailed link",
+  viaSession: "Signed in to the client portal",
+  evidence: "Evidence",
   pdfSha: "Document fingerprint (SHA-256 of the accepted PDF)",
-  snapshotSha: `${PH}Fingerprint of the sent copy (SHA-256)`,
-  termsVersion: `${PH}Terms version`,
-  termsSha: `${PH}Terms fingerprint (SHA-256)`,
+  snapshotSha: "Fingerprint of the sent copy (SHA-256)",
+  termsVersion: "Terms version",
+  termsSha: "Terms fingerprint (SHA-256)",
 } as const;
 
 const C = CERTIFICATE_COPY;

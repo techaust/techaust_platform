@@ -139,6 +139,7 @@ export const documentSave = new Hono<AppEnv>().patch("/:id", param(idParam), bod
   const settings = readSettings(ctx.settingsRows);
   let state = stateOfBundle(ctx.bundle);
   let contact = ctx.contact;
+  const contactBefore = ctx.contact;
 
   // fields
   const fl = f.fields;
@@ -199,6 +200,19 @@ export const documentSave = new Hono<AppEnv>().patch("/:id", param(idParam), bod
         400,
       );
     state = { ...state, sections };
+  }
+  // The Acceptance text names the draft's contact; when the contact changes in this save and the text was not sent, the name follows (Q14).
+  // A sent version keeps its snapshot: only a draft reaches here.
+  if (!f.sections && fl?.contactId !== undefined && (contact?.id ?? null) !== (contactBefore?.id ?? null)) {
+    const from = contactBefore?.name ? contactBefore.name : "{{client.contact}}";
+    const to = contact?.name ? contact.name : "{{client.contact}}";
+    if (from !== to)
+      state = {
+        ...state,
+        sections: state.sections.map((x) =>
+          x.kind === "acceptance" && x.bodyMd ? { ...x, bodyMd: x.bodyMd.split(from).join(to) } : x,
+        ),
+      };
   }
   // schedule
   if (f.schedule) state = { ...state, schedule: resolveSteps(f.schedule, state.schedule) };

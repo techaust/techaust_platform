@@ -24,6 +24,9 @@ export const DEFAULT_VIEW_CONFIG: ViewConfig = {
   portalLink: "portal.techaust.com",
 };
 
+/** The page footer line (07-P PDF14, 07-Q Q11): the address is Settings "Email on documents". */
+export const footerLine = (email: string): string => `TecHaust Technologies · techaust.com · ${email}`;
+
 const DASH = "–";
 /** "18 %": the house style puts a space before the sign; a no-break space keeps the two together on the page. */
 const pct = (bp: number): string => `${percentFromBp(bp)} %`;
@@ -158,6 +161,8 @@ export function toPdfView(envelope: Envelope, cfg: ViewConfig = DEFAULT_VIEW_CON
     }));
 
   const company = header.issuer.company;
+  // Settings "Email on documents" as frozen at send (07-Q Q11); a version sent before that field existed prints the default.
+  const emailOnDocuments = nonEmpty(company.email) ? company.email : cfg.contactEmail;
   const recipient = recipientOf(header.recipient);
   // 07-P §1: "Proprietor: {legal name}" · the address · "GSTIN {gstin} · State {state} ({code})" · the sender address. A field still
   // empty in Settings is left out (the state is never empty: it has a default).
@@ -173,7 +178,7 @@ export function toPdfView(envelope: Envelope, cfg: ViewConfig = DEFAULT_VIEW_CON
       : null,
     company.address,
     registration,
-    cfg.contactEmail,
+    emailOnDocuments,
   ].filter(nonEmpty);
 
   return {
@@ -209,7 +214,8 @@ export function toPdfView(envelope: Envelope, cfg: ViewConfig = DEFAULT_VIEW_CON
     integrity: `Document ID ${envelope.documentId} · Content fingerprint ${envelope.snapshotSha256.slice(0, 12)}`,
     portalLink: cfg.portalLink ?? "portal.techaust.com",
     footer: {
-      sender: cfg.contactEmail,
+      sender: emailOnDocuments,
+      brand: footerLine(emailOnDocuments),
       contact: `${header.issuer.sender.name}, ${header.issuer.sender.email}`,
     },
   };

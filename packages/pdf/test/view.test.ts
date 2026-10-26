@@ -115,6 +115,17 @@ describe("toPdfView", () => {
     ]);
   });
 
+  it("prints Settings 'Email on documents' in the supplier block and the footer; an older version falls back to the default (07-Q Q11)", async () => {
+    const { envelope } = await buildFixture("short-intra-inr");
+    const withEmail = structuredClone(envelope);
+    withEmail.snapshot.header.issuer.company.email = "accounts@example.test";
+    const v = toPdfView(withEmail);
+    expect(v.footer.sender).toBe("accounts@example.test");
+    expect(v.footer.brand).toBe("TecHaust Technologies · techaust.com · accounts@example.test");
+    expect(v.supplier.lines.at(-1)).toBe("accounts@example.test");
+    expect(toPdfView(envelope).footer.brand).toBe("TecHaust Technologies · techaust.com · hello@techaust.com");
+  });
+
   it("builds the recipient block", async () => {
     const v = toPdfView((await buildFixture("short-intra-inr")).envelope);
     expect(v.recipient.name).toBe("Sample Client");

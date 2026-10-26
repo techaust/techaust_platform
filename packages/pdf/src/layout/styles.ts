@@ -28,7 +28,7 @@ export function pageCss(view: PdfView): string {
   const number = `${view.numberDisplay} v${view.version}`;
   return `@page {
   @bottom-left {
-    content: ${cssString(C.footer.brand)};
+    content: ${cssString(view.footer.brand)};
     padding-left: 6mm;
     background: url("${SYMBOL_URI}") no-repeat left center / 3.6mm 3.6mm;
     font-family: var(--font-sans);

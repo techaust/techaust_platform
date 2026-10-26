@@ -25,6 +25,8 @@ import { type Seeded, seedSent } from "./pdf-seed.ts";
 
 const T0 = Date.UTC(2026, 9, 26, 6, 0, 0);
 /** The 07-P §4 line "the PDF failed", word for word, for a first version. */
+const INTEGRITY_BELL =
+  "A PDF didn't match its saved copy, so it wasn't sent. Make the PDF again from the document.";
 const failedBell = (s: Seeded) =>
   `The PDF for ${s.numberDisplay} v1 could not be made. Open it to try again.`;
 const GONE = "UPDATE clients SET anonymised_at = 1 WHERE id = ?";
@@ -172,7 +174,7 @@ describe("the snapshot step", () => {
     expect(await (await realEnv.DOCS.get(keysOf(s).snapshot))?.text()).toBe("something else");
     expect(queue.sent).toEqual([]);
     expect(await all("SELECT kind, title FROM notifications WHERE entity_id = ?", s.id)).toEqual([
-      { kind: "pdf.failed", title: failedBell(s) },
+      { kind: "pdf.failed", title: INTEGRITY_BELL },
     ]);
   });
 
@@ -419,7 +421,7 @@ describe("the render step", () => {
     expect(await processRender(env, render(s.id), T0, f.clock)).toBe("refused");
     expect(b.calls).toHaveLength(0);
     expect(await all("SELECT kind, title FROM notifications WHERE entity_id = ?", s.id)).toEqual([
-      { kind: "pdf.failed", title: failedBell(s) },
+      { kind: "pdf.failed", title: INTEGRITY_BELL },
     ]);
   });
 

@@ -36,7 +36,7 @@ const NOT_RESENDABLE: ApiError = {
 };
 const CERTIFICATE_PENDING: ApiError = {
   code: "certificate_pending",
-  message: "The certificate is still being prepared",
+  message: "The certificate is still being made. Try again in a minute.",
 };
 
 /** 50 is only a size bound for the schema; the real limit (5) has its own error code. */
