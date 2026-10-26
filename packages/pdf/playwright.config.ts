@@ -2,7 +2,7 @@
 // template and the fonts, not Browser Run (which is a different Chromium build; the staging sample PDF is looked at by eye).
 // Run: bash tools/heavy.sh --log pdf-visual pnpm --filter @techaust/pdf test:visual
 // Baselines are per platform: `visual/__snapshots__/<platform>/`. Only the Linux ones are committed (made by CI, lead decision L8);
-// `win32/` is git-ignored. The skeleton layout has no baselines yet: the designer makes the real ones.
+// `win32/` is git-ignored.
 import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({

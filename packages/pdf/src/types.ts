@@ -155,6 +155,8 @@ export type PdfView = {
   title: string;
   numberDisplay: string;
   versionLabel: string;
+  /** The bare version number ("2"), for "No. {number} v{version}" and the footer. */
+  version: string;
   statusText: string;
   notice: string | null;
   issueDate: string;

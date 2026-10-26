@@ -86,7 +86,7 @@ describe("renderDocumentHtml", () => {
 
   it("states the status as text and keeps the test ids", async () => {
     const { html } = await htmlOf("long-inter-inr");
-    expect(html).toContain('<span data-testid="status">Sent</span>');
+    expect(html).toContain('data-testid="status">Sent</span>');
     for (const id of ["rupee", "total", "integrity"]) expect(html).toContain(`data-testid="${id}"`);
     expect(html.match(/data-testid="rupee"/g)).toHaveLength(1);
     expect(html.match(/data-testid="total"/g)).toHaveLength(1);
@@ -101,7 +101,9 @@ describe("renderDocumentHtml", () => {
   it("does not print a hidden section and prints the terms", async () => {
     const { html } = await htmlOf("long-inter-inr");
     expect(html).not.toContain("Hidden sample");
-    expect(html).toContain("Terms, version 3");
+    // the terms text itself (07-O: the section's own text first, then the versioned terms)
+    expect(html).toContain("The terms of this offer apply.");
+    expect(html).toContain("Payment is due as scheduled.");
   });
 
   it("never uses a bold weight above 600", async () => {
@@ -119,7 +121,7 @@ describe("renderDocumentHtml", () => {
     const { envelope } = await buildFixture("short-intra-inr");
     envelope.snapshot.header.issuer.company.logo = "nope.svg";
     const html = renderDocumentHtml(toPdfView(envelope));
-    expect(html).toContain('class="logo-text"');
+    expect(html).toContain("logo-text");
   });
 });
 

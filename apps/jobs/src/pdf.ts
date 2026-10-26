@@ -22,13 +22,16 @@ import {
 } from "@techaust/core/pdf-jobs";
 import { bundleOf, loadStatements, type TermsRow } from "@techaust/db/documents";
 import {
+  type Envelope,
   envelopeOfBundle,
+  type PdfView,
   parseEnvelope,
   pdfOptionsFor,
   renderDocumentHtml,
   serializeEnvelope,
   toPdfView,
   verifyEnvelope,
+  viewConfigFor,
 } from "@techaust/pdf";
 import { type RenderEnv, renderPaced } from "./browser.ts";
 import { logEvent } from "./log.ts";
@@ -179,6 +182,10 @@ type RenderRow = {
 export const RENDER_ROW_SQL =
   "SELECT id, type, frozen_at, fy, number, version, snapshot_r2_key, snapshot_sha256, pdf_sha256 FROM documents WHERE id = ?1";
 
+/** The view of an envelope as this Worker prints it: the acceptance box names the host of `PORTAL_URL` (07-P §1). */
+export const viewOf = (env: Pick<Env, "PORTAL_URL">, envelope: Envelope): PdfView =>
+  toPdfView(envelope, viewConfigFor(env.PORTAL_URL));
+
 export type RenderOutcome = "rendered" | "adopted" | "delayed" | "skipped" | "refused" | "resnapshot";
 
 /** What the rest of the system learns when a PDF is stored. Empty in M4.4; M4.5 hangs the client email and the certificate here. */
@@ -286,7 +293,7 @@ export async function processRender(
     return "adopted";
   }
 
-  const view = toPdfView(envelope);
+  const view = viewOf(env, envelope);
   const result = await renderPaced(
     env as unknown as RenderEnv,
     renderDocumentHtml(view),

@@ -105,8 +105,7 @@ export function toPdfView(envelope: Envelope, cfg: ViewConfig = DEFAULT_VIEW_CON
   const lines: ViewLine[] = s.lines.map((l, i) => {
     const c = computed.lines[i] as ComputedDocument["lines"][number];
     let discount: string | null = null;
-    if (l.discountKind === "percent" && l.discountValue !== null)
-      discount = pct(l.discountValue);
+    if (l.discountKind === "percent" && l.discountValue !== null) discount = pct(l.discountValue);
     else if (l.discountKind === "fixed" && l.discountValue !== null) discount = m(l.discountValue);
     return {
       n: String(i + 1),
@@ -183,6 +182,7 @@ export function toPdfView(envelope: Envelope, cfg: ViewConfig = DEFAULT_VIEW_CON
     title: `${docLabel} ${envelope.numberDisplay} v${envelope.version} ${DASH} ${recipient.name}`,
     numberDisplay: envelope.numberDisplay,
     versionLabel: `Version ${envelope.version}`,
+    version: String(envelope.version),
     statusText: "Sent",
     notice: envelope.type === "estimate" ? "This is an estimate, not a tax invoice." : null,
     issueDate: shortIsoDate(header.document.issueDate),
@@ -201,7 +201,11 @@ export function toPdfView(envelope: Envelope, cfg: ViewConfig = DEFAULT_VIEW_CON
     inrNote,
     schedule,
     sections,
-    terms: { title: `Terms, version ${s.terms.version}`, version: String(s.terms.version), bodyMd: s.terms.bodyMd },
+    terms: {
+      title: `Terms, version ${s.terms.version}`,
+      version: String(s.terms.version),
+      bodyMd: s.terms.bodyMd,
+    },
     integrity: `Document ID ${envelope.documentId} · Content fingerprint ${envelope.snapshotSha256.slice(0, 12)}`,
     portalLink: cfg.portalLink ?? "portal.techaust.com",
     footer: {

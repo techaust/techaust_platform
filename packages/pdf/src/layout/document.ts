@@ -21,6 +21,15 @@ const RUPEE = "₹";
 
 const p = (cls: string, text: string) => `<p class="${cls}">${esc(text)}</p>`;
 
+/** A block line whose parts are joined by " · " (e.g. "GSTIN … · State …") wraps only between the parts; other lines wrap freely. */
+const partsLine = (cls: string, text: string) =>
+  !text.includes(" · ")
+    ? p(cls, text)
+    : `<p class="${cls}">${text
+        .split(" · ")
+        .map((part) => `<span class="keep">${esc(part)}</span>`)
+        .join(" · ")}</p>`;
+
 function logoHtml(view: PdfView): string {
   const svg = (PDF_LOGOS as Record<string, string | undefined>)[view.logo];
   return svg
@@ -47,51 +56,61 @@ const isInr = (view: PdfView) => view.currency === "INR";
 
 // ---- header ---------------------------------------------------------------------------------------------------------------
 
-function masthead(view: PdfView, withTitle: boolean): string {
+/** The logo, the kind of document and the verdigris rule. `tag` is "h1" where the kind is the page's main heading, else "p". */
+function masthead(view: PdfView, withTitle: boolean, tag: "h1" | "p" = "h1"): string {
   return `<header class="masthead">${logoHtml(view)}${
-    withTitle ? `<h1 class="masthead__title">${esc(view.docLabel)}</h1>` : ""
+    withTitle ? `<${tag} class="masthead__title">${esc(view.docLabel)}</${tag}>` : ""
   }</header>`;
 }
 
 function parties(view: PdfView): string {
   const from = `<div class="party"><p class="label">${C.blocks.from}</p>${p("party__name", view.supplier.name)}${view.supplier.lines
-    .map((l) => p("party__line", l))
+    .map((l) => partsLine("party__line", l))
     .join("")}</div>`;
   const to = `<div class="party"><p class="label">${C.blocks.preparedFor}</p>${p("party__name", view.recipient.name)}${view.recipient.lines
-    .map((l) => p("party__line", l))
+    .map((l) => partsLine("party__line", l))
     .join("")}${p("party__line", C.placeOfSupply(view.placeOfSupply))}${
     view.recipient.attention ? p("party__line party__attention", view.recipient.attention) : ""
   }</div>`;
   const fact = (term: string, value: string) => `<div><dt>${esc(term)}</dt><dd>${esc(value)}</dd></div>`;
   const doc = `<div class="party party--doc"><p class="label">${C.blocks.document} <span class="status" data-testid="status">${esc(
     view.statusText,
-  )}</span></p><dl class="facts">${fact(C.document.number, `${view.numberDisplay} v${versionOf(view)}`)}${fact(
+  )}</span></p><dl class="facts">${fact(C.document.number, `${view.numberDisplay} v${view.version}`)}${fact(
     C.document.date,
     view.issueDate,
   )}${fact(C.document.validUntil, view.validUntil)}${fact(C.document.currency, view.currency)}</dl></div>`;
   return `<section class="parties" aria-label="${esc(view.docLabel)}">${from}${to}${doc}</section>`;
 }
 
-/** "2" from the view's "Version 2" (the view keeps the label; the document block prints "v2"). */
-const versionOf = (view: PdfView) => view.versionLabel.replace(/^\D+/, "");
-
 // ---- the money --------------------------------------------------------------------------------------------------------------
 
 function itemsTable(view: PdfView): string {
+  // The discount column is printed only when a line has a discount (an empty column would only take width from the description).
+  const withDiscount = view.lines.some((l) => l.discount !== null);
   const rows = view.lines
     .map(
       (l) =>
-        `<tr><td class="c-n">${esc(l.n)}</td><td class="c-desc"><span class="desc">${esc(l.description)}</span>${
+        `<tr><td class="c-n num">${esc(l.n)}</td><td class="c-desc"><span class="desc">${esc(l.description)}</span>${
           l.detail ? `<span class="sub">${esc(l.detail)}</span>` : ""
-        }${l.sac ? `<span class="sub">${C.lines.sac} ${esc(l.sac)}</span>` : ""}</td><td class="num">${esc(l.qty)}</td><td class="c-unit">${esc(
+        }${l.sac ? `<span class="sub">${C.lines.sac} ${esc(l.sac)}</span>` : ""}</td><td class="num">${esc(l.qty)}</td><td>${esc(
           l.unit,
-        )}</td><td class="num">${esc(l.rate)}</td><td class="num">${l.discount ? esc(l.discount) : ""}</td><td class="num">${esc(
+        )}</td><td class="num">${esc(l.rate)}</td>${withDiscount ? `<td class="num">${l.discount ? esc(l.discount) : ""}</td>` : ""}<td class="num">${esc(
           l.taxable,
         )}</td><td class="num">${esc(l.gstRate)}</td></tr>`,
     )
     .join("");
   const L = C.lines;
-  return `<table class="grid items"><thead><tr><th scope="col" class="c-n">${L.n}</th><th scope="col" class="c-desc">${L.description}</th><th scope="col" class="num">${L.qty}</th><th scope="col" class="c-unit">${L.unit}</th><th scope="col" class="num">${L.rate}</th><th scope="col" class="num">${L.discount}</th><th scope="col" class="num">${L.taxable}</th><th scope="col" class="num c-gst">${L.gst}</th></tr></thead><tbody>${rows}</tbody></table>`;
+  const head = [
+    `<th scope="col" class="c-n">${L.n}</th>`,
+    `<th scope="col" class="c-desc">${L.description}</th>`,
+    `<th scope="col" class="num c-qty">${L.qty}</th>`,
+    `<th scope="col" class="c-unit">${L.unit}</th>`,
+    `<th scope="col" class="num c-rate">${L.rate}</th>`,
+    withDiscount ? `<th scope="col" class="num c-disc">${L.discount}</th>` : "",
+    `<th scope="col" class="num c-taxable">${L.taxable}</th>`,
+    `<th scope="col" class="num c-gst">${L.gst}</th>`,
+  ].join("");
+  return `<table class="grid items"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 function totalsBlock(view: PdfView): string {
@@ -119,17 +138,19 @@ function summaryTable(view: PdfView): string {
   const intra = keys.has("cgst");
   const S = C.summary;
   const head = intra
-    ? `<th scope="col" class="num">${S.cgst}</th><th scope="col" class="num">${S.sgst}</th>`
-    : `<th scope="col" class="num">${S.igst}</th>`;
+    ? `<th scope="col" class="num c-amt">${S.cgst}</th><th scope="col" class="num c-amt">${S.sgst}</th>`
+    : `<th scope="col" class="num c-amt">${S.igst}</th>`;
   const rows = view.summary
     .map(
       (r) =>
         `<tr><td>${r.sac ? esc(r.sac) : ""}</td><td class="num">${esc(r.rate)}</td><td class="num">${esc(r.taxable)}</td>${
-          intra ? `<td class="num">${esc(r.cgst)}</td><td class="num">${esc(r.sgst)}</td>` : `<td class="num">${esc(r.igst)}</td>`
+          intra
+            ? `<td class="num">${esc(r.cgst)}</td><td class="num">${esc(r.sgst)}</td>`
+            : `<td class="num">${esc(r.igst)}</td>`
         }</tr>`,
     )
     .join("");
-  return `<div class="block"><h3>${S.heading}</h3><table class="grid summary"><thead><tr><th scope="col">${C.lines.sac}</th><th scope="col" class="num">${C.lines.gst}</th><th scope="col" class="num">${S.taxable}</th>${head}</tr></thead><tbody>${rows}</tbody></table></div>`;
+  return `<div class="block"><h3>${S.heading}</h3><table class="grid summary"><thead><tr><th scope="col" class="c-sac">${C.lines.sac}</th><th scope="col" class="num c-rate">${C.lines.gst}</th><th scope="col" class="num c-amt">${S.taxable}</th>${head}</tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 /** The payment schedule. Without a timeline table in the document, what each instalment brings and its date ride along here. */
@@ -144,7 +165,7 @@ function scheduleTable(view: PdfView, withDetail: boolean): string {
         }</td><td class="num">${esc(s.share)}</td><td class="num">${esc(s.amount)}</td></tr>`,
     )
     .join("");
-  return `<div class="block"><h3>${S.heading}</h3><table class="grid schedule"><thead><tr><th scope="col">${S.instalment}</th><th scope="col">${S.when}</th><th scope="col" class="num">${S.share}</th><th scope="col" class="num">${S.amount}</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  return `<div class="block"><h3>${S.heading}</h3><table class="grid schedule"><thead><tr><th scope="col">${S.instalment}</th><th scope="col">${S.when}</th><th scope="col" class="num c-share">${S.share}</th><th scope="col" class="num c-amount">${S.amount}</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 function timelineTable(steps: readonly ViewStep[]): string {
@@ -158,7 +179,7 @@ function timelineTable(steps: readonly ViewStep[]): string {
         )}</td></tr>`,
     )
     .join("");
-  return `<table class="grid timeline"><thead><tr><th scope="col">${T.milestone}</th><th scope="col">${T.whatYouGet}</th><th scope="col">${T.targetDate}</th><th scope="col" class="num">${T.payment}</th></tr></thead><tbody>${rows}</tbody></table>`;
+  return `<table class="grid timeline"><thead><tr><th scope="col">${T.milestone}</th><th scope="col">${T.whatYouGet}</th><th scope="col" class="c-date">${T.targetDate}</th><th scope="col" class="num c-pay">${T.payment}</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 function moneyBlock(view: PdfView, hasTimeline: boolean): string {
@@ -166,15 +187,20 @@ function moneyBlock(view: PdfView, hasTimeline: boolean): string {
 }
 
 function acceptanceBox(view: PdfView): string {
-  return `<div class="accept"><div class="accept__inner"><p class="accept__online">${esc(C.acceptance.online)} <strong>${esc(
+  return `<div class="accept"><div class="accept__inner"><p class="accept__online">${esc(C.acceptance.online)} <span class="accept__link">${esc(
     view.portalLink,
-  )}</strong></p>${p("accept__record", C.acceptance.record)}</div></div>`;
+  )}</span></p>${p("accept__record", C.acceptance.record)}</div></div>`;
 }
 
 // ---- sections ---------------------------------------------------------------------------------------------------------------
 
 /** A section: the heading kept with its first block (in the rail and the text columns), then the rest of the text, then `extra`. */
-function sectionHtml(kind: string, title: string, bodyMd: string, extra: { body?: string; wide?: string }): string {
+function sectionHtml(
+  kind: string,
+  title: string,
+  bodyMd: string,
+  extra: { body?: string; wide?: string },
+): string {
   const [first = "", ...rest] = markdownBlocks(bodyMd);
   return `<section class="sec sec--${esc(kind)}"><div class="sec__head"><h2>${esc(title)}</h2><div class="sec__first">${first}</div></div>${
     rest.length ? `<div class="sec__text">${rest.join("")}</div>` : ""
@@ -206,7 +232,8 @@ function sectionsHtml(view: PdfView, sections: readonly ViewSection[]): string {
   // The three parts every document carries, even if a section went missing.
   if (!kinds.has("estimate"))
     out.push(sectionHtml("estimate", C.headings.investment, "", { wide: moneyBlock(view, hasTimeline) }));
-  if (!kinds.has("terms")) out.push(sectionHtml("terms", C.headings.terms, "", { body: termsExtra(view, "") }));
+  if (!kinds.has("terms"))
+    out.push(sectionHtml("terms", C.headings.terms, "", { body: termsExtra(view, "") }));
   if (!kinds.has("acceptance"))
     out.push(sectionHtml("acceptance", C.headings.acceptance, "", { body: acceptanceBox(view) }));
   return out.join("\n");
@@ -215,13 +242,18 @@ function sectionsHtml(view: PdfView, sections: readonly ViewSection[]): string {
 // ---- the two documents --------------------------------------------------------------------------------------------------------
 
 function coverHtml(view: PdfView, cover: ViewSection | undefined): string {
+  // The masthead carries the kind ("Proposal"), as on the inner pages; the page itself belongs to the document's own title.
   const title = view.documentTitle ?? view.docLabel;
-  const kind = view.documentTitle ? p("cover__kind", view.docLabel) : "";
   const lede = cover ? markdownBlocks(cover.bodyMd).join("") : "";
-  const meta = [view.issueDate, view.versionLabel, `${C.document.validUntil} ${view.validUntil}`, view.numberDisplay]
+  const meta = [
+    view.issueDate,
+    view.versionLabel,
+    `${C.document.validUntil} ${view.validUntil}`,
+    view.numberDisplay,
+  ]
     .map((m) => `<li>${esc(m)}</li>`)
     .join("");
-  return `<section class="cover" aria-label="${esc(view.docLabel)}">${masthead(view, false)}<div class="cover__main">${kind}<h1 class="cover__title">${esc(
+  return `<section class="cover" aria-label="${esc(view.docLabel)}">${masthead(view, true, "p")}<div class="cover__main"><h1 class="cover__title">${esc(
     title,
   )}</h1>${lede ? `<div class="cover__lede">${lede}</div>` : ""}</div><div class="cover__facts"><p class="cover__for"><span class="cover__for-label">${
     C.cover.preparedFor
@@ -235,11 +267,12 @@ function integrityHtml(view: PdfView): string {
   return `<p class="integrity" data-testid="integrity">${esc(view.integrity)}</p>`;
 }
 
-/** The body of a proposal: cover, the shared header, the sections. */
+/** The body of a proposal: the cover page, then the shared header (logo, title, rule, the three blocks), then the sections. */
 function proposalBody(view: PdfView): string {
   const cover = view.sections.find((s) => s.kind === "cover");
   const rest = view.sections.filter((s) => s.kind !== "cover");
   return `<div class="doc doc--proposal">${coverHtml(view, cover)}
+${masthead(view, true, "p")}
 ${parties(view)}
 ${sectionsHtml(view, rest)}
 ${integrityHtml(view)}</div>`;

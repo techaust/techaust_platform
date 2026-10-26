@@ -29,8 +29,19 @@ export const PDF_COPY = {
     igst: "IGST",
   },
   words: (words: string) => `Amount in words: ${words}`,
-  schedule: { heading: "Payment schedule", instalment: "Instalment", when: "When", share: "Share", amount: "Amount" },
-  timeline: { milestone: "Milestone", whatYouGet: "What you get", targetDate: "Target date", payment: "Payment" },
+  schedule: {
+    heading: "Payment schedule",
+    instalment: "Instalment",
+    when: "When",
+    share: "Share",
+    amount: "Amount",
+  },
+  timeline: {
+    milestone: "Milestone",
+    whatYouGet: "What you get",
+    targetDate: "Target date",
+    payment: "Payment",
+  },
   /** VERIFY WITH CA/LEGAL (07-P §1; 07 §2.4). */
   usdNote: "International projects are invoiced from India in USD as an export of services.",
   /** VERIFY WITH CA (07-P §1; 07 §2.4). */

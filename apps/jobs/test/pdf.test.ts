@@ -17,6 +17,7 @@ import {
   processSweep,
   SWEEP_GRACE_MS,
   SWEEP_SQL,
+  viewOf,
 } from "../src/pdf.ts";
 import { PURGE_CRON } from "../src/purge.ts";
 import { handleQueue } from "../src/queue.ts";
@@ -228,6 +229,8 @@ describe("the render step", () => {
     const html = String(call.options.html);
     expect(html).toContain("Content-Security-Policy");
     expect(html).toContain(s.numberDisplay);
+    // without PORTAL_URL the acceptance box names the production portal
+    expect(html).toContain('<span class="accept__link">portal.techaust.com</span>');
     const row = await one<{ pdf_r2_key: string; pdf_sha256: string }>(
       "SELECT pdf_r2_key, pdf_sha256 FROM documents WHERE id = ?",
       s.id,
@@ -246,6 +249,28 @@ describe("the render step", () => {
       { metric: "pdf.browser_ms", value: 2500, date: "2026-10-26" },
       { metric: "pdf.renders", value: 1, date: "2026-10-26" },
     ]);
+  });
+
+  it("prints the host of PORTAL_URL in the acceptance box (no scheme, no trailing slash)", async () => {
+    const s = await readyDoc();
+    const f = fakeClock();
+    const b = fakeBrowser(f.clock, () => pdfResponse());
+    const { env } = makeEnv(b.binding, fakeQueue(), {
+      PORTAL_URL: "https://techaust-platform-portal-staging.techaust-technologies-153.workers.dev/",
+    });
+    expect(await processRender(env, render(s.id), T0, f.clock)).toBe("rendered");
+    const html = String((b.calls[0] as Call).options.html);
+    expect(html).toContain(
+      '<span class="accept__link">techaust-platform-portal-staging.techaust-technologies-153.workers.dev</span>',
+    );
+    expect(html).not.toContain("https://techaust-platform-portal-staging");
+    // the local value from wrangler.jsonc, through the same helper
+    expect(
+      viewOf(
+        realEnv,
+        parseEnvelope(await ((await realEnv.DOCS.get(keysOf(s).snapshot)) as R2ObjectBody).text()),
+      ).portalLink,
+    ).toBe("localhost:5174");
   });
 
   it("never renders twice: a second message finds the PDF done, and an orphaned PDF in R2 is adopted", async () => {
