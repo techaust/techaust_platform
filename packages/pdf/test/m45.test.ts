@@ -124,6 +124,15 @@ describe("the acceptance certificate page", () => {
     expect(renderCertificateHtml(view)).toMatch(/unicode-range: U\+20B9;/);
   });
 
+  it("the page footer prints the frozen Email on documents; an older version prints the default (07-Q Q11)", () => {
+    expect(renderCertificateHtml({ ...view, emailOnDocuments: "accounts@example.test" })).toContain(
+      "TecHaust Technologies · techaust.com · accounts@example.test",
+    );
+    expect(renderCertificateHtml(view)).toContain(
+      "TecHaust Technologies · techaust.com · hello@techaust.com",
+    );
+  });
+
   it("a session acceptance says so; a missing value prints as the dash the view gives it", () => {
     expect(certificateBody({ ...view, via: "session" })).toContain("Signed in to the client portal");
     expect(certificateBody({ ...view, ip: "–" })).toContain("–");

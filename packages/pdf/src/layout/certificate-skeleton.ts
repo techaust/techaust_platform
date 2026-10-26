@@ -14,6 +14,7 @@
 // country are printed because they ARE the evidence (docs/08 L-11).
 import { esc } from "../escape.ts";
 import { PDF_LOGOS, PDF_SYMBOL } from "../generated/assets.ts";
+import { footerLine } from "../view.ts";
 import { PDF_COPY } from "./copy.ts";
 import { cssString } from "./styles.ts";
 
@@ -42,6 +43,8 @@ export type CertificateView = {
   snapshotSha256: string;
   termsVersion: string;
   termsSha256: string;
+  /** The frozen Settings "Email on documents" of the sent document; absent on older versions (the footer then prints the default). */
+  emailOnDocuments?: string;
 };
 
 /** 07-N §5, word for word, plus the labels of 07-Q. */
@@ -72,14 +75,15 @@ export const CERTIFICATE_COPY = {
 const C = CERTIFICATE_COPY;
 const SYMBOL_URI = `data:image/svg+xml,${encodeURIComponent(PDF_SYMBOL)}`;
 
-export const CERTIFICATE_CSS = `
+/** The certificate's stylesheet; `footer` is the page footer line (07-Q Q11: the frozen "Email on documents", through `footerLine`). */
+export const certificateCss = (footer: string): string => `
 html { font-kerning: normal; text-rendering: optimizeLegibility; }
 body { margin: 0; font-weight: 400; overflow-wrap: break-word; }
 p { margin: 0; }
 h1, h2 { margin: 0; }
 @page {
   @bottom-left {
-    content: ${cssString(PDF_COPY.footer.brand)};
+    content: ${cssString(footer)};
     padding-left: 6mm;
     background: url("${SYMBOL_URI}") no-repeat left center / 3.6mm 3.6mm;
     font-family: var(--font-sans);
@@ -122,6 +126,12 @@ td { font-variant-numeric: tabular-nums lining-nums; }
 .cert__who th { width: 50.8mm; }
 .mono { font-family: var(--font-mono); font-size: var(--print-small); word-break: break-all; line-height: 1.5; }
 `;
+
+/** The footer line of a certificate: the frozen address when there is one, else the default. */
+export const certificateFooter = (v: CertificateView): string =>
+  v.emailOnDocuments ? footerLine(v.emailOnDocuments) : PDF_COPY.footer.brand;
+
+export const CERTIFICATE_CSS = certificateCss(PDF_COPY.footer.brand);
 
 const row = (label: string, value: string, cls = ""): string =>
   `<tr><th scope="row">${esc(label)}</th><td${cls ? ` class="${cls}"` : ""}>${esc(value)}</td></tr>`;

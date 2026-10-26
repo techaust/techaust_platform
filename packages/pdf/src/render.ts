@@ -2,7 +2,12 @@
 // JavaScript off, and the CSP meta below would refuse anything external even if it were present.
 import { esc } from "./escape.ts";
 import { PDF_PRINT_CSS, TECHAUST_PDF_FONT_DATA } from "./generated/assets.ts";
-import { CERTIFICATE_CSS, type CertificateView, certificateBody } from "./layout/certificate-skeleton.ts";
+import {
+  type CertificateView,
+  certificateBody,
+  certificateCss,
+  certificateFooter,
+} from "./layout/certificate-skeleton.ts";
 import { documentBody } from "./layout/document.ts";
 import { pageCss, TEMPLATE_CSS } from "./layout/styles.ts";
 import type { PdfView } from "./types.ts";
@@ -42,7 +47,7 @@ export function renderCertificateHtml(view: CertificateView): string {
 <style>
 ${TECHAUST_PDF_FONT_DATA}
 ${PDF_PRINT_CSS}
-${CERTIFICATE_CSS}
+${certificateCss(certificateFooter(view))}
 </style>
 </head>
 <body>

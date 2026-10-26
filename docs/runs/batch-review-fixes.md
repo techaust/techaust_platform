@@ -167,3 +167,10 @@ No trigger on `catalogue_items` blocks an UPDATE of `name` (only delete is refus
 **Open questions**
 - **Certificate footer:** the acceptance certificate still prints the fixed `hello@techaust.com` (Q11 names the proposal and estimate PDF footer). To follow Settings it would need the sent document's frozen `issuer.company.email` passed to the certificate view in the jobs Worker (small change). Do you want it, or keep the certificate fixed?
 - **Settings default:** the Settings default for "Email on documents" may differ from `hello@techaust.com` (the code-review helper read it as contact@); the PDF footer now prints whatever Settings holds at send, so check the value on staging before the next send.
+
+### Builder report: certificate footer (builder, Sonnet 5.5 medium, 2026-10-26)
+The acceptance certificate's page footer now prints the document's frozen "Email on documents", like the proposal and estimate PDFs, and falls back to hello@techaust.com for versions sent before it was frozen.
+- `apps/jobs/src/certificate.ts`: `CERTIFICATE_READ` also reads `issuer.company.email` (`issuer_email`, JSON-guarded); `buildCertificateView` sets `emailOnDocuments` only when present.
+- `packages/pdf/src/layout/certificate-skeleton.ts`: `CertificateView.emailOnDocuments?`, `certificateCss(footer)` (the old `CERTIFICATE_CSS` stays as the default), `certificateFooter(view)` using `footerLine`; `render.ts` builds the stylesheet from it.
+- Tests: `packages/pdf/test/m45.test.ts` (footer with and without the address), `apps/jobs/test/offers.test.ts` (read from the issuer; absent on an older issuer; `world` takes `issuerEmail`).
+- Results: pdf 125 passed, jobs 258 passed, `pnpm check` exit 0. No admin code changed, so the admin budget line stands at 414,514 bytes. Q9 and the Settings value are kept as decided.
