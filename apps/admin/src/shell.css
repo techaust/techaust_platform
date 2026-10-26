@@ -1292,6 +1292,11 @@ body:has(.shell) {
   min-width: 0;
 }
 
+/* A date filter's read-back or error line makes its cell taller: the other fields keep their own height, tops aligned. */
+.filters--audit {
+  align-items: start;
+}
+
 /* Date inputs carry an intrinsic minimum width (the browser's picker chrome): let them shrink to their grid cell, so
    two side by side fit a 375 px screen (review M4). */
 .filters input[type="date"] {
