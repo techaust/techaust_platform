@@ -1074,12 +1074,15 @@ body:has(.shell) {
   color: var(--color-link-hover);
 }
 
+/* At least as tall as a button, so a title sits at the same height whether or not the page has an action (the catalogue's
+   tabs, one with an action and two without, no longer move their h1). */
 .page-header__row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3) var(--space-6);
+  min-height: var(--target-min);
 }
 
 .page-header__title {
@@ -1110,7 +1113,6 @@ body:has(.shell) {
 @media (min-width: 48rem) {
   .page-header__row {
     flex-wrap: nowrap;
-    align-items: flex-start;
   }
 
   .page-header__title {

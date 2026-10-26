@@ -1179,6 +1179,7 @@ input[readonly] {
   margin-bottom: calc(-1 * var(--space-6));
   padding: var(--space-4) var(--space-6) var(--space-6);
   background: var(--color-surface-raised);
+  box-shadow: 0 -1px 0 var(--color-border);
 }
 
 @media (max-width: 29.99rem) {
