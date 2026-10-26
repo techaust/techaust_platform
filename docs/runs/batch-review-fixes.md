@@ -1,4 +1,4 @@
-Status: open
+Status: merged (PR #93, 2026-10-26); approved by the owner on staging 2026-10-26
 Tier: B (send logic and the anonymised-client name change; the screens are C)
 Usage: reviewer claude-opus-5-5/high (UI/UX check; skills frontend-design, dataviz): 5-h 19 → 39 %; code-finder claude-haiku-5-5/low (placeholder sweep; no skill fits a read-only search)
 

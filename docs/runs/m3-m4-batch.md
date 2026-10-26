@@ -1,6 +1,6 @@
 # M3.4 to M4.5 batch
 
-Status: all seven on staging (2026-10-26); awaiting the owner's batch review
+Status: approved by the owner on staging (2026-10-26) with the batch review fixes (PR #93)
 
 ## Owner's answers (2026-10-25)
 - Review all seven at the end; each milestone still has its own review, re-check and PR to staging (one-time exception to hard rule 2; docs/13).
