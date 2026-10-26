@@ -242,8 +242,9 @@ export const careSummary = (tier: string, client: string, price: string) =>
   `${tier} care plan for ${client}: ${price} a month before GST`;
 export const careAiOps = (aiOps: string) => `plus ${aiOps} a month for AI Ops`;
 export const CONVERTED_TO_INVOICE = "Converted to an invoice draft.";
-export const convertedToCare = (client: string, tier: string) =>
-  `Converted to care plan for ${client} (${tier}).`;
+/** With the tier when it is known (the estimate's lines name it); without it while the lines are still loading. */
+export const convertedToCare = (client: string, tier: string | null) =>
+  tier ? `Converted to care plan for ${client} (${tier}).` : `Converted to care plan for ${client}.`;
 export const OPEN_IT = "Open it";
 export const sectionTitleName = (section: string) => `Title of ${section}`;
 /** `section_empty`, around its list of sections (each one a link to the section). */

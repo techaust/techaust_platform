@@ -27,6 +27,7 @@ import { fromIst, parseIsoDate } from "@techaust/core/dates";
 import { uuidv7 } from "@techaust/core/ids";
 import { normaliseEmail } from "@techaust/core/lead-lifecycle";
 import { decide, type Role } from "@techaust/core/permissions";
+import { nameOrLegal } from "@techaust/core/text";
 import {
   CONTACT_ON_ISSUED_DOCUMENT_SQL,
   deleteContactAccess,
@@ -473,7 +474,7 @@ export const clients = new Hono<AppEnv>()
             insertClientStmt(db, {
               id,
               legalName: f.legalName,
-              displayName: f.displayName ?? f.legalName,
+              displayName: nameOrLegal(f.displayName, f.legalName),
               type: f.type,
               country: f.country,
               gstStatus: f.gstStatus,

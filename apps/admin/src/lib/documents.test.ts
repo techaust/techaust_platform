@@ -293,6 +293,9 @@ describe("07-O copy, word for word (draft pending the owner)", () => {
     expect(convertedToCare("Sample Client A (sample)", "Scale")).toBe(
       "Converted to care plan for Sample Client A (sample) (Scale).",
     );
+    expect(convertedToCare("Sample Client A (sample)", null)).toBe(
+      "Converted to care plan for Sample Client A (sample).",
+    );
     expect(OPEN_IT).toBe("Open it");
     expect(sectionTitleName("Summary")).toBe("Title of Summary");
     expect(sectionEmptyLine("Summary, Team")).toBe(

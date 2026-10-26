@@ -174,3 +174,5 @@ The designer's drafts, accepted as wording to approve:
 | `approval_rejected` | "The owner rejected this version. Change it before asking again." |
 | Converted estimate | "Converted to an invoice draft." / "Converted to care plan for {client} ({tier})." · link "Open it" |
 | Section title field (accessible name) | "Title of {section}" |
+| Sent version of an anonymised client or contact (**the owner's answer, 2026-10-26; VERIFY WITH CA/LEGAL**) | "Anonymised client" in place of the name, with no email, GSTIN or address; the same words for a contact whose details were removed. Only the staff view changes: the frozen copy is kept as evidence. |
+| Converted to a care plan before the tier is known (the lines are still loading) | "Converted to care plan for {client}." |

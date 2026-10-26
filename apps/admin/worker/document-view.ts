@@ -4,7 +4,9 @@
 import type { CalendarDate } from "@techaust/core/dates";
 import { approvalState, catalogueGuard, type GuardLine } from "@techaust/core/documents";
 import type { ComputedDocument } from "@techaust/core/tax";
+import { nameOrLegal } from "@techaust/core/text";
 import type { DocumentBundle, TermsRef } from "@techaust/db/documents";
+import type { RecipientSnapshot } from "@techaust/db/issue";
 import {
   type Blocker,
   type ClientRow,
@@ -18,6 +20,33 @@ import {
   taxInputOf,
 } from "./quote-model.ts";
 
+/**
+ * What the staff view shows in place of the name of a client or contact whose personal details were removed (owner, 2026-10-26;
+ * VERIFY WITH CA/LEGAL). Only the VIEW changes: the frozen snapshot in the database stays as it was sent, as evidence of the offer.
+ */
+export const ANONYMISED_LABEL = "Anonymised client";
+
+/**
+ * A sent version's recipient block as the staff view shows it. When the client was anonymised, every personal field (names, email, GSTIN,
+ * address) is replaced; when only the contact was, the contact's name and email are (the business named on the offer is not personal).
+ * What is not personal stays: the country, the client type, the GST status, the state, and the contact's id.
+ */
+export function viewRecipient(r: RecipientSnapshot, clientGone: boolean, contactGone: boolean) {
+  if (!clientGone && !contactGone) return r;
+  const hasContact = r.contactId !== undefined || r.contactName !== undefined || r.email !== undefined;
+  const contact = hasContact ? { email: null, contactName: ANONYMISED_LABEL } : {};
+  if (!clientGone) return { ...r, ...contact, anonymised: true };
+  return {
+    ...r,
+    legalName: ANONYMISED_LABEL,
+    displayName: ANONYMISED_LABEL,
+    gstin: null,
+    address: null,
+    ...contact,
+    anonymised: true,
+  };
+}
+
 export type ContactFacts = { id: string; name: string; email: string; anonymised_at: number | null };
 
 const guardLines = (s: DocState): GuardLine[] =>
@@ -26,6 +55,10 @@ const guardLines = (s: DocState): GuardLine[] =>
     catalogueRateMinor: l.catalogueRateMinor,
     qtyMilli: l.qtyMilli,
   }));
+
+/** The name a sent version was addressed to: the display name, else the legal name (an empty or blank display name counts as missing). */
+export const nameOfRecipient = (r: { displayName?: string | null; legalName: string }): string =>
+  nameOrLegal(r.displayName, r.legalName);
 
 /** The totals block shared by the full view and the save answer. */
 const totalsOf = (computed: ComputedDocument | null) =>
@@ -103,15 +136,22 @@ export async function documentView(i: ViewInput) {
   const lineAt = (i2: number) => computed?.lines[i2];
   // A sent version shows who it was addressed to AS SENT (the frozen `recipient` and `issuer`), never today's client record (M4.3 review 1).
   // A draft shows the live client and contact. The ids and the code are the same either way.
-  const recipient = frozen ? d.recipient : null;
+  // When the client, or the contact the offer was addressed to, was anonymised, the view shows "Anonymised client" and no name, email,
+  // GSTIN or address; the stored snapshot is never touched (owner, 2026-10-26; VERIFY WITH CA/LEGAL).
+  const snapshot = frozen ? d.recipient : null;
+  const snapshotContactGone =
+    snapshot !== null &&
+    (snapshot.contactId !== undefined || snapshot.contactName !== undefined) &&
+    (contact === null || contact.anonymised_at !== null);
+  const recipient = snapshot ? viewRecipient(snapshot, clientGone, snapshotContactGone) : null;
   const issuer = frozen ? d.issuer : null;
   const frozenContact =
-    recipient?.contactName !== undefined
+    recipient && recipient.contactName !== undefined
       ? {
           id: recipient.contactId ?? contact?.id ?? null,
           name: recipient.contactName,
           email: recipient.email ?? null,
-          anonymised: contactGone,
+          anonymised: clientGone || snapshotContactGone,
         }
       : null;
   return {
@@ -134,7 +174,7 @@ export async function documentView(i: ViewInput) {
     client: {
       id: client.id,
       code: client.code,
-      name: recipient ? (recipient.displayName ?? recipient.legalName) : client.display_name,
+      name: clientGone ? ANONYMISED_LABEL : recipient ? nameOfRecipient(recipient) : client.display_name,
       type: recipient?.clientType ?? client.type,
       gstStatus: recipient?.gstStatus ?? client.gst_status,
       stateCode: recipient ? (recipient.stateCode ?? null) : client.state_code,

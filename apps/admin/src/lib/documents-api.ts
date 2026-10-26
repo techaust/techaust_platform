@@ -25,13 +25,17 @@ export type Blocker = {
 /** What a sent version was addressed to, as frozen at send (review fix 1; the db's `RecipientSnapshot`). */
 export type RecipientView = {
   legalName: string;
-  displayName?: string;
-  gstin?: string;
+  displayName?: string | null;
+  gstin?: string | null;
   stateCode?: string;
-  email?: string;
+  email?: string | null;
   country: string;
   contactId?: string;
-  contactName?: string;
+  contactName?: string | null;
+  /** The client's address block as frozen (null once anonymised); the staff screens do not print it. */
+  address?: unknown;
+  /** True when the client, or the contact the offer was addressed to, was anonymised: the names, email, GSTIN and address are replaced (owner, 2026-10-26). */
+  anonymised?: boolean;
 };
 /** Who sent it, as frozen at send (the db's `IssuerSnapshot`). */
 export type IssuerView = {
