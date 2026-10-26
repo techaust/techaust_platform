@@ -12,6 +12,7 @@ import { Modal } from "../../components/dialog.tsx";
 import { FormField } from "../../components/form.tsx";
 import { Notice } from "../../components/ui.tsx";
 import { CARE_COPY, CARE_PENDING, type DurationForm, durationMinutes, TIER_LABELS } from "../../lib/care.ts";
+import { dateError } from "../../lib/date-field.ts";
 import {
   CARE_HOURS_HINT,
   careAiOps,
@@ -253,7 +254,8 @@ function CareForm(props: {
 
   async function submit() {
     const e: typeof errors = {};
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) e.startDate = CARE_PENDING.enterStartDate;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate))
+      e.startDate = dateError(startDate) ?? CARE_PENDING.enterStartDate;
     const day = intIn(billingDay, 1, 28);
     if (day === null) e.billingDay = CARE_PENDING.enterBillingDay;
     const minutes =

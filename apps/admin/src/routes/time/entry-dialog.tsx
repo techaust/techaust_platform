@@ -176,7 +176,9 @@ function EntryFormBody(
             side by side they could never line up (batch review M3). */}
         <div className="entry-form__when">
           <div className="field">
-            <label htmlFor={`${P}-workDate`}>Date</label>
+            <label htmlFor={`${P}-workDate`} id={`${P}-workDate-label`}>
+              Date
+            </label>
             <DateField
               {...a11y("workDate")}
               value={f.workDate}

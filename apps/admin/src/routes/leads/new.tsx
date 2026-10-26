@@ -12,6 +12,7 @@ import { useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { Notice } from "../../components/ui.tsx";
 import { UnsavedChangesGuard } from "../../components/unsaved.tsx";
+import { dateError } from "../../lib/date-field.ts";
 import { countryOptions, dateToMs, SERVICE_OPTIONS } from "../../lib/leads.ts";
 import { CRUMBS, LeadsGate } from "./parts.tsx";
 
@@ -62,6 +63,8 @@ function NewLead() {
     if (!f.name.trim()) errs.push({ id: "nl-name", text: "Enter the contact's name." });
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email.trim()))
       errs.push({ id: "nl-email", text: "Enter an email address, like name@example.com." });
+    const dateErr = dateError(f.date);
+    if (dateErr) errs.push({ id: "nl-date", text: dateErr });
     setErrors(errs);
     setSubmits((n) => n + 1);
     if (errs.length) return;
@@ -208,7 +211,7 @@ function NewLead() {
                 </select>
               )}
             </FormField>
-            <FormField id="nl-date" label="Next action" optional>
+            <FormField id="nl-date" label="Next action" optional error={errorOf("nl-date")}>
               {(a) => <DateField {...a} value={f.date} onChange={(v) => set({ date: v })} />}
             </FormField>
           </div>

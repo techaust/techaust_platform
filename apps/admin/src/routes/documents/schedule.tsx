@@ -272,12 +272,14 @@ const StepRow = memo(function StepRow(p: {
           />
         </div>
         <div className="qledger__cell">
-          <label className="qledger__label" htmlFor={id("date")}>
+          <label className="qledger__label" htmlFor={id("date")} id={`${id("date")}-label`}>
             {hidden}
             {DOC_COPY.targetDate}
           </label>
+          {/* It saves as it changes: while the text isn't a date the last valid one stays (review of the fixes, finding 1). */}
           <DateField
             id={id("date")}
+            keepLastValid
             value={s.targetDate}
             onChange={(v) => p.onEdit(s.uid, { targetDate: v })}
           />

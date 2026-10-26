@@ -8,6 +8,7 @@ import { authorLocked, DAY_CAP, entryDateCheck, LOCK_DAYS, TIME_STEP, weekOf } f
 import type { CareTier, NewTimeInput, TimeEntry, TimeWeekGroup } from "../api.ts";
 import { csvCell } from "./audit.ts";
 import { CODE_COPY, dayText, TIER_LABELS } from "./care.ts";
+import { dateError } from "./date-field.ts";
 import { intIn } from "./settings-form.ts";
 
 // ---- 07-M copy, word for word (approved, 07-Q) -----------------------------------------------------------------
@@ -178,7 +179,7 @@ export function entryInput(
   ctx: { today: string; canWriteAny: boolean; me: string; originalDate?: string | undefined },
 ): { ok: true; body: NewTimeInput } | { ok: false; errors: EntryErrors } {
   const errors: EntryErrors = {};
-  if (!parseIsoDate(f.workDate)) errors.workDate = TIME_PENDING.enterDate;
+  if (!parseIsoDate(f.workDate)) errors.workDate = dateError(f.workDate) ?? TIME_PENDING.enterDate;
   else if (f.workDate !== ctx.originalDate) {
     const check = entryDateCheck({ today: ctx.today, workDate: f.workDate, canWriteAny: ctx.canWriteAny });
     if (check === "future") errors.workDate = CODE_COPY.future_date as string;

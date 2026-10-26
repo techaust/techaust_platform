@@ -234,7 +234,7 @@ function Details(props: Parameters<typeof Overview>[0] & { canWrite: boolean }) 
               {err("budget")}
             </div>
             <div className="field">
-              <label htmlFor="pd-startDate">
+              <label htmlFor="pd-startDate" id="pd-startDate-label">
                 Start date<span className="field__optional"> (optional)</span>
               </label>
               <DateField
@@ -245,7 +245,7 @@ function Details(props: Parameters<typeof Overview>[0] & { canWrite: boolean }) 
               {err("startDate")}
             </div>
             <div className="field">
-              <label htmlFor="pd-targetDate">
+              <label htmlFor="pd-targetDate" id="pd-targetDate-label">
                 Target date<span className="field__optional"> (optional)</span>
               </label>
               <DateField

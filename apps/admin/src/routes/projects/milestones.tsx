@@ -499,7 +499,7 @@ function MilestoneDialog(props: {
               )}
             </FormField>
           )}
-          <FormField id="ms-due" label="Due date" optional>
+          <FormField id="ms-dueDate" label="Due date" optional error={errors.dueDate}>
             {(a) => <DateField {...a} value={f.dueDate} onChange={(v) => set({ dueDate: v })} />}
           </FormField>
         </div>

@@ -47,6 +47,7 @@ import {
   showingFirst,
   TILE_TITLES,
 } from "./dashboard.ts";
+import { DATE_INVALID, fieldValue } from "./date-field.ts";
 import { PLACEHOLDER_TAG } from "./projects.ts";
 import {
   CSV_COLUMNS,
@@ -378,6 +379,10 @@ describe("the new plan form", () => {
       expect(bad.errors.billingDay).toBe(CARE_PENDING.enterBillingDay);
       expect(bad.errors.startDate).toBe(CARE_PENDING.enterStartDate);
     }
+    // Review of the fixes, finding 1: text that isn't a date is never taken as "no date".
+    const unread = planInput({ ...f, startDate: fieldValue("31/02/2026") }, "c1", "INR");
+    expect(unread.ok).toBe(false);
+    if (!unread.ok) expect(unread.errors.startDate).toBe(DATE_INVALID);
   });
 });
 
@@ -439,6 +444,14 @@ describe("the time entry", () => {
     expect(at("2026-10-01", true).ok).toBe(true);
     expect(earliestDate("2026-10-25", false)).toBe("2026-10-18");
     expect(earliestDate("2026-10-25", true)).toBeUndefined();
+  });
+
+  it("a date that can't be read gets the owner's line; a cleared one still says to enter it (review of the fixes, finding 1)", () => {
+    const at = (typed: string) => entryInput({ ...base, target, workDate: fieldValue(typed) }, ctx);
+    expect(at("31/02/2026")).toMatchObject({ ok: false, errors: { workDate: DATE_INVALID } });
+    expect(at("25/10/26")).toMatchObject({ ok: false, errors: { workDate: DATE_INVALID } });
+    expect(at("")).toMatchObject({ ok: false, errors: { workDate: TIME_PENDING.enterDate } });
+    expect(at("25/10/2026").ok).toBe(true);
   });
 
   it("editing: the date rule applies only when the date was changed (a 7-day edit window keeps its old date) [review fix 2]", () => {

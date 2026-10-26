@@ -221,12 +221,28 @@ function AuditLog() {
           </select>
         </div>
         <div className="field">
-          <label htmlFor="au-from">From</label>
-          <DateField id="au-from" value={f.from} max={f.to || undefined} onChange={(v) => set("from", v)} />
+          <label htmlFor="au-from" id="au-from-label">
+            From
+          </label>
+          <DateField
+            id="au-from"
+            keepLastValid
+            value={f.from}
+            max={f.to || undefined}
+            onChange={(v) => set("from", v)}
+          />
         </div>
         <div className="field">
-          <label htmlFor="au-to">To</label>
-          <DateField id="au-to" value={f.to} min={f.from || undefined} onChange={(v) => set("to", v)} />
+          <label htmlFor="au-to" id="au-to-label">
+            To
+          </label>
+          <DateField
+            id="au-to"
+            keepLastValid
+            value={f.to}
+            min={f.from || undefined}
+            onChange={(v) => set("to", v)}
+          />
         </div>
         <div className="filters__foot">
           <p className="filters__result" role="status">
