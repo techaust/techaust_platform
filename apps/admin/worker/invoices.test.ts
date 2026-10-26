@@ -566,7 +566,7 @@ describe("the route table", () => {
       "POST /api/v1/invoices/:id/issue-request invoices.draft approval.request",
       "POST /api/v1/invoices/:id/void invoices.void invoice.void",
       "GET /api/v1/invoices/:id/pdf invoices.read -",
-      "POST /api/v1/invoices/:id/pdf/retry invoices.issue invoice.pdf_retry",
+      "POST /api/v1/invoices/:id/pdf/retry invoices.draft invoice.pdf_retry",
       "GET /api/v1/clients/:id/invoices invoices.read -",
     ]);
     expect(ROUTES.find((r) => r.path === "/api/v1/invoices/:id" && r.method === "PATCH")?.body).toBe(
