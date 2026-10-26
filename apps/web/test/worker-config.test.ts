@@ -108,3 +108,90 @@ describe("preview-URL guard (audit M1)", () => {
     });
   });
 });
+
+describe("admin API Worker config guard (M5.0)", () => {
+  const read = (p: string) =>
+    guard.parseJsonc(readFileSync(new URL(`../../admin/${p}`, import.meta.url), "utf8"));
+  const api = read("wrangler.api.jsonc");
+  const front = read("wrangler.jsonc");
+  const clone = () => structuredClone(api);
+
+  it("the real configs pass", () => {
+    expect(guard.apiConfigProblems(api, front)).toEqual([]);
+    expect(guard.frontServiceProblems(front, api)).toEqual([]);
+    expect(guard.missingPreviewOff(api)).toEqual([]);
+  });
+
+  it("fails workers_dev true", () => {
+    const c = clone();
+    c.env.staging.workers_dev = true;
+    expect(guard.apiConfigProblems(c, front)).toEqual(["env.staging: workers_dev must be false"]);
+  });
+
+  it.each(["routes", "route", "assets", "previews", "secrets"])("fails a %s entry", (key) => {
+    const c = clone();
+    c[key] = key === "routes" ? [{ pattern: "x.example/*", zone_name: "example" }] : {};
+    expect(guard.apiConfigProblems(c, front)).toEqual([
+      `(top level): ${key} is not allowed on the API Worker`,
+    ]);
+  });
+
+  it("fails preview_urls true", () => {
+    const c = clone();
+    c.preview_urls = true;
+    expect(guard.apiConfigProblems(c, front)).toEqual(["(top level): preview_urls must be false"]);
+  });
+
+  it("fails a bucket or database that differs from the front's", () => {
+    const c = clone();
+    c.env.staging.r2_buckets[0].bucket_name = "other";
+    c.env.staging.d1_databases[0].database_id = "other";
+    expect(guard.apiConfigProblems(c, front)).toEqual([
+      "env.staging: d1_databases differ from the front's",
+      "env.staging: r2_buckets differ from the front's",
+    ]);
+  });
+
+  it("fails a queue that differs from the front's", () => {
+    const c = clone();
+    c.env.staging.queues.producers[0].queue = "other";
+    expect(guard.apiConfigProblems(c, front)).toEqual(["env.staging: queues differ from the front's"]);
+  });
+
+  it("fails a name equal to the front's", () => {
+    const c = clone();
+    c.env.staging.name = front.env.staging.name;
+    expect(guard.apiConfigProblems(c, front)).toEqual(["env.staging: name must differ from the front's"]);
+  });
+
+  it("fails a var that differs from the front's", () => {
+    const c = clone();
+    c.env.staging.vars.PAYMENTS_LIVE_ALLOWED = "true";
+    expect(guard.apiConfigProblems(c, front)).toEqual([
+      "env.staging: var PAYMENTS_LIVE_ALLOWED differs from the front's",
+    ]);
+  });
+
+  it("fails a compatibility date or flags that differ from the front's", () => {
+    const c = clone();
+    c.compatibility_date = "2026-01-01";
+    c.compatibility_flags = [];
+    expect(guard.apiConfigProblems(c, front)).toEqual([
+      "(top level): compatibility_date differs from the front's",
+      "(top level): compatibility_flags differ from the front's",
+    ]);
+  });
+
+  it("fails a front without the staging service binding, or pointing at the wrong Worker", () => {
+    const f = structuredClone(front);
+    f.env.staging.services = undefined;
+    expect(guard.frontServiceProblems(f, api)).toEqual([
+      "env.staging: the ADMIN_API service binding is missing",
+    ]);
+    const g = structuredClone(front);
+    g.env.staging.services[0].service = "techaust-platform-admin-api";
+    expect(guard.frontServiceProblems(g, api)).toEqual([
+      "env.staging: ADMIN_API points at techaust-platform-admin-api, expected techaust-platform-admin-api-staging",
+    ]);
+  });
+});

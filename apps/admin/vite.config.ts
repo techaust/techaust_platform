@@ -12,6 +12,16 @@ import { siteKeyForApp } from "../../scripts/turnstile-site-key.mjs";
 // empty key fails here.
 export default defineConfig({
   define: { __TURNSTILE_SITE_KEY__: JSON.stringify(siteKeyForApp(new URL("./", import.meta.url))) },
-  plugins: [react(), cloudflare({ persistState: { path: "../../.wrangler/state" } })],
-  environments: { techaust_platform_admin: { build: { minify: true } } },
+  // M5.0: the API Worker runs next to the front in dev and is built with it (`auxiliaryWorkers`); the front reaches it through ADMIN_API.
+  plugins: [
+    react(),
+    cloudflare({
+      persistState: { path: "../../.wrangler/state" },
+      auxiliaryWorkers: [{ configPath: "./wrangler.api.jsonc" }],
+    }),
+  ],
+  environments: {
+    techaust_platform_admin: { build: { minify: true } },
+    techaust_platform_admin_api: { build: { minify: true } },
+  },
 });

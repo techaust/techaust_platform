@@ -4,6 +4,8 @@
 
 **Status:** re-measured 2026-10-21 after the tuning (PR #24): totp, salt and me pass; login p99 6 ms vs 5 (one request over the line). **Owner accepted M1.4 as passed with this exception** (2026-10-21); cold starts move to M1.5. See Results. Setup: [access-staging.md](access-staging.md) (all three parts done 2026-10-17).
 
+**Two admin Workers (M5.0, docs/13 2026-10-27):** sign-in, account and staff routes stay in `techaust-platform-admin-staging`, so this benchmark is unchanged. Every other admin route is forwarded to `techaust-platform-admin-api-staging` through a service binding. For a forwarded request, read `cpuTimeMs` in **both** Workers' logs, joined by the request id (`rid` = `cf-ray`: the front's `ev:"fwd"` line and the API's `ev:"req"` line), and gate on the **sum**: front + API ≤ 7 ms p99, none over 10 (the Cloudflare docs don't say whether a bound Worker gets its own 10 ms).
+
 ## What is measured
 The staff login routes of the staging admin Worker (`techaust-platform-admin-staging`), as designed in [05 §6.1](../05-architecture.md):
 

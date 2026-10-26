@@ -25,6 +25,8 @@ export type RouteDef = {
   log?: boolean | "refusals";
   /** "upload": a raw binary body (the file vault): CSRF accepts `application/octet-stream` and the 16 KB body limit does not apply. "large": a JSON body of up to 32 KB (the catalogue's service and template saves can be longer than 16 KB). "document": a JSON body of up to 96 KB (a proposal save: 100 lines and 30,000 characters of sections). Absent: JSON, 16 KB. */
   body?: "upload" | "large" | "document";
+  /** "front": answered by the front Worker (sign-in, account, staff). Absent: answered by the API Worker behind the ADMIN_API binding (M5.0). */
+  on?: "front";
 };
 
 export type Actor = {

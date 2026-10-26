@@ -5,7 +5,7 @@
 import { answeringRow } from "@techaust/auth";
 import { describe, expect, it } from "vitest";
 import { ROUTES, routeFor } from "./guard.ts";
-import { createApp } from "./index.ts";
+import { createApp } from "./test-app.ts";
 
 const app = createApp();
 const fill = (path: string) => path.replace(/:\w+/g, "sample-1");

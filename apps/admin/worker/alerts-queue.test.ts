@@ -4,7 +4,7 @@
 import { env } from "cloudflare:workers";
 import { currentStep, totpCode } from "@techaust/auth";
 import { describe, expect, it, vi } from "vitest";
-import app from "./index.ts";
+import app from "./test-app.ts";
 import {
   call,
   captureQueue,

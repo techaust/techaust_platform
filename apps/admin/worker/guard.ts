@@ -16,7 +16,12 @@ import {
   UNAUTHENTICATED,
 } from "./context.ts";
 
-type Opts = { audit?: string; log?: boolean | "refusals"; body?: "upload" | "large" | "document" };
+type Opts = {
+  audit?: string;
+  log?: boolean | "refusals";
+  body?: "upload" | "large" | "document";
+  on?: "front";
+};
 const R = (
   method: RouteDef["method"],
   path: string,
@@ -24,34 +29,37 @@ const R = (
   opts: Opts = {},
 ): RouteDef => ({ method, path: `/api/v1${path}`, access, ...opts });
 
+/** A row the front Worker answers itself (sign-in and staff management hold the secrets; M5.0). */
+const F = (...a: Parameters<typeof R>): RouteDef => R(a[0], a[1], a[2], { ...a[3], on: "front" });
+
 export const ROUTES: readonly RouteDef[] = [
-  R("GET", "/health", "public", { log: false }),
+  F("GET", "/health", "public", { log: false }),
   // Sign-in: public, every one checks its own credentials. /salt and /invite/start are lookups, not attempts.
-  R("POST", "/auth/salt", "public", { log: "refusals" }),
-  R("POST", "/auth/login", "public"),
-  R("POST", "/auth/totp", "public"),
-  R("POST", "/auth/recovery", "public"),
-  R("POST", "/auth/logout", "public", { audit: "auth.logout" }),
-  R("POST", "/auth/invite/start", "public", { log: "refusals" }),
-  R("POST", "/auth/invite/finish", "public"),
-  R("POST", "/auth/invite/totp", "public"),
+  F("POST", "/auth/salt", "public", { log: "refusals" }),
+  F("POST", "/auth/login", "public"),
+  F("POST", "/auth/totp", "public"),
+  F("POST", "/auth/recovery", "public"),
+  F("POST", "/auth/logout", "public", { audit: "auth.logout" }),
+  F("POST", "/auth/invite/start", "public", { log: "refusals" }),
+  F("POST", "/auth/invite/finish", "public"),
+  F("POST", "/auth/invite/totp", "public"),
   // The signed-in member's own account.
-  R("GET", "/auth/me", "account.own"),
-  R("POST", "/auth/step-up", "account.own", { audit: "auth.step_up" }),
-  R("GET", "/auth/sessions", "account.own"),
-  R("DELETE", "/auth/sessions/:id", "account.own", { audit: "auth.session_revoke" }),
-  R("POST", "/auth/sessions/revoke-all", "account.own", { audit: "auth.session_revoke_all" }),
-  R("POST", "/auth/recovery/regenerate", "account.recoveryCodes", { audit: "auth.recovery_regenerate" }),
+  F("GET", "/auth/me", "account.own"),
+  F("POST", "/auth/step-up", "account.own", { audit: "auth.step_up" }),
+  F("GET", "/auth/sessions", "account.own"),
+  F("DELETE", "/auth/sessions/:id", "account.own", { audit: "auth.session_revoke" }),
+  F("POST", "/auth/sessions/revoke-all", "account.own", { audit: "auth.session_revoke_all" }),
+  F("POST", "/auth/recovery/regenerate", "account.recoveryCodes", { audit: "auth.recovery_regenerate" }),
   // Staff and invites (owner).
-  R("GET", "/users", "users.read"),
-  R("GET", "/users/invites", "users.read"),
-  R("POST", "/users/invites", "users.manage", { audit: "user.invite" }),
-  R("POST", "/users/invites/:tokenHash/revoke", "users.manage", { audit: "user.invite_revoke" }),
-  R("POST", "/users/sessions/revoke-all", "users.manage", { audit: "user.sessions_revoke_all" }),
-  R("PATCH", "/users/:id", "users.manage", { audit: "user.role_change" }),
-  R("POST", "/users/:id/deactivate", "users.manage", { audit: "user.deactivate" }),
-  R("POST", "/users/:id/reset-2fa", "users.manage", { audit: "user.reset_2fa" }),
-  R("POST", "/users/:id/reactivate", "users.manage", { audit: "user.reactivate" }),
+  F("GET", "/users", "users.read"),
+  F("GET", "/users/invites", "users.read"),
+  F("POST", "/users/invites", "users.manage", { audit: "user.invite" }),
+  F("POST", "/users/invites/:tokenHash/revoke", "users.manage", { audit: "user.invite_revoke" }),
+  F("POST", "/users/sessions/revoke-all", "users.manage", { audit: "user.sessions_revoke_all" }),
+  F("PATCH", "/users/:id", "users.manage", { audit: "user.role_change" }),
+  F("POST", "/users/:id/deactivate", "users.manage", { audit: "user.deactivate" }),
+  F("POST", "/users/:id/reset-2fa", "users.manage", { audit: "user.reset_2fa" }),
+  F("POST", "/users/:id/reactivate", "users.manage", { audit: "user.reactivate" }),
   // Settings (M3.1, ADM-SET-01..10). The generic groups name their audit action by group (`settings.<group>.update`); bank
   // details and gateways have their own rows because they need a fresh step-up (the matrix: bank.manage, gateways.manage).
   R("GET", "/settings", "settings.read"),

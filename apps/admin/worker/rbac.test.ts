@@ -5,7 +5,7 @@ import { currentStep, ipKey, tokenHash, totpCode } from "@techaust/auth";
 import { ACTIONS, decide, ROLES, SETTINGS_DEFAULTS, uuidv7 } from "@techaust/core";
 import { describe, expect, it } from "vitest";
 import { ROUTES } from "./guard.ts";
-import app, { createApp } from "./index.ts";
+import app, { createApp } from "./test-app.ts";
 import { mkLog, mkOpenProject, mkPlan, today } from "./test-care.ts";
 import { entryBody, mkItem, putPaymentTerms, siteItems } from "./test-catalogue.ts";
 import { mkContact } from "./test-clients.ts";

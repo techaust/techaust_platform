@@ -20,14 +20,29 @@ const PDF_LIB = { name: "pdf-lib (PDFs are rendered in the jobs Worker)", re: /P
 const PUPPETEER = { name: "@cloudflare/puppeteer (jobs Worker only)", re: /@cloudflare\/puppeteer/ };
 const PDF_FONTS = { name: "PDF font data (jobs Worker only)", re: /TECHAUST_PDF_FONT_DATA/ };
 
-const M0_RAW_BYTES = 277_252;
+// The API Worker never holds sign-in code or a sign-in secret: these names appear only in auth.ts, account.ts and users.ts (the
+// front Worker). Property names survive minification, so a secret read from a package is caught here too.
+const SIGN_IN_TABLES = {
+  name: "sign-in code or secrets (the front Worker only)",
+  re: /auth_attempts|totp_secret_enc|pw_hmac|PASSWORD_PEPPER|SALT_PEPPER|TOTP_ENC_KEY|SESSION_HMAC_KEY|TURNSTILE_SECRET/,
+};
 
 export const BUDGETS = {
+  // M5.0 (docs/13, 2026-10-27): the admin Worker is split in two. The front serves the SPA, sign-in, the member's account and staff
+  // management and forwards every other route; measured 2026-10-27 at about 97 KB (esbuild), ceiling 150,000. The API Worker answers
+  // the other routes (about 384 KB); its ceiling 800,000 leaves room for M5 to M7. A third Worker is planned when it passes 650,000
+  // bytes or its cold reading passes 7 ms.
   admin: {
     file: "apps/admin/dist/techaust_platform_admin/index.js",
-    maxBytes: Math.floor((M0_RAW_BYTES * 3) / 2), // 150 % of M0: room for M3.4–M4.5 (projected ~315–345 KB)
+    maxBytes: 150_000,
     maxStartupMs: 200,
     forbidden: [CLASSIC_ZOD, PDF_LIB, PUPPETEER, PDF_FONTS],
+  },
+  adminApi: {
+    file: "apps/admin/dist/techaust_platform_admin_api/index.js",
+    maxBytes: 800_000,
+    maxStartupMs: 200,
+    forbidden: [CLASSIC_ZOD, PDF_LIB, PUPPETEER, PDF_FONTS, SIGN_IN_TABLES],
   },
   portal: {
     file: "apps/portal/dist/techaust_platform_portal/index.js",

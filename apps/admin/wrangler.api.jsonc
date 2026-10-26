@@ -1,0 +1,83 @@
+{
+  // The admin API Worker (M5.0, docs/13 2026-10-27): every route of the admin API except sign-in, the member's own account and staff
+  // management, which the front Worker (wrangler.jsonc) answers. It has NO public URL at any level (no workers.dev, no routes, no
+  // preview URLs): it is reachable only through the front's `ADMIN_API` service binding, and it re-authenticates every request from the
+  // session cookie the front forwards untouched. It holds no secrets and no sign-in code. Bindings use the front's names and ids in
+  // each scope; CI guard: scripts/check-worker-config.mjs. Production has vars only until Phase 7 (owner approval).
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "techaust-platform-admin-api",
+  "main": "worker/api.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "observability": { "enabled": true, "redact_query_string": true },
+  "vars": {
+    "ENVIRONMENT": "local",
+    "PAYMENTS_LIVE_ALLOWED": "false",
+    "LEAD_PURGE_MODE": "dry_run"
+  },
+  "queues": {
+    "producers": [
+      { "binding": "EMAIL_QUEUE", "queue": "techaust-local-email" },
+      { "binding": "PDF_QUEUE", "queue": "techaust-local-pdf" }
+    ]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "techaust-local",
+      "database_id": "local",
+      "migrations_dir": "../../packages/db/migrations"
+    }
+  ],
+  "r2_buckets": [
+    { "binding": "FILES", "bucket_name": "techaust-local-files" },
+    { "binding": "DOCS", "bucket_name": "techaust-local-docs" }
+  ],
+  "env": {
+    "staging": {
+      "name": "techaust-platform-admin-api-staging",
+      "workers_dev": false,
+      "preview_urls": false,
+      "vars": {
+        "ENVIRONMENT": "staging",
+        "PAYMENTS_LIVE_ALLOWED": "false",
+        "LEAD_PURGE_MODE": "dry_run"
+      },
+      "queues": {
+        "producers": [
+          { "binding": "EMAIL_QUEUE", "queue": "techaust-staging-email" },
+          { "binding": "PDF_QUEUE", "queue": "techaust-staging-pdf" }
+        ]
+      },
+      "r2_buckets": [
+        { "binding": "FILES", "bucket_name": "techaust-staging-files" },
+        { "binding": "DOCS", "bucket_name": "techaust-staging-docs" }
+      ],
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "techaust-staging",
+          "database_id": "879c63dd-fedd-4710-9b13-21d8804879a9",
+          "migrations_dir": "../../packages/db/migrations"
+        }
+      ]
+    },
+    "production": {
+      "name": "techaust-platform-admin-api",
+      "workers_dev": false,
+      "preview_urls": false,
+      "vars": {
+        "ENVIRONMENT": "production",
+        "PAYMENTS_LIVE_ALLOWED": "false"
+      },
+      // As the front: NO invocation logs in production from day one. Console logs stay on.
+      "observability": {
+        "enabled": true,
+        "redact_query_string": true,
+        "logs": { "enabled": true, "invocation_logs": false }
+      }
+    }
+  }
+}
