@@ -1255,7 +1255,8 @@ export const signatureApi = {
 };
 
 /** The image for the settings preview: a same-origin GET with the session cookie; `v` changes with the image, so no stale copy shows. */
-export const signatureSrc = (sha256: string) => `/api/v1/settings/signature?v=${encodeURIComponent(sha256.slice(0, 12))}`;
+export const signatureSrc = (sha256: string) =>
+  `/api/v1/settings/signature?v=${encodeURIComponent(sha256.slice(0, 12))}`;
 
 /** The PDF of a sent proposal or estimate (M4.4): a plain same-origin GET with the session cookie (an attachment, never shown inline). */
 export const documentPdfHref = (id: string) => `/api/v1/documents/${encodeURIComponent(id)}/pdf`;

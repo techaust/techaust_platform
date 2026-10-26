@@ -16,5 +16,6 @@ export function portalHost(url: string | undefined): string | null {
 
 /** The view config for a Worker's `PORTAL_URL` var (the jobs Worker's local and staging values differ from production's). */
 export function viewConfigFor(portalUrl: string | undefined): ViewConfig {
-  return { ...DEFAULT_VIEW_CONFIG, portalLink: portalHost(portalUrl) ?? DEFAULT_VIEW_CONFIG.portalLink };
+  const host = portalHost(portalUrl);
+  return host === null ? { ...DEFAULT_VIEW_CONFIG } : { ...DEFAULT_VIEW_CONFIG, portalLink: host };
 }

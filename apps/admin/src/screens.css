@@ -434,3 +434,77 @@ body:has(.savebar) .toasts {
   outline-offset: 4px;
   border-radius: var(--radius-sm);
 }
+
+/* ---------- The signature image (Settings, Company; M4.4) ----------
+   Shown the way it prints: on white paper in every theme, sitting on the signatory's line, with the line's caption under it. Without an
+   image the empty line stays, the place a signature goes. It saves on its own, so it sits after the company form, not inside it. */
+.signature {
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--color-border);
+}
+
+.signature__title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-h4);
+  font-weight: 600;
+  line-height: var(--text-h4--line-height);
+}
+
+.signature__hint {
+  margin: 0 0 var(--space-4);
+}
+
+.signature__body {
+  display: grid;
+  gap: var(--space-4);
+  align-items: end;
+}
+
+@media (min-width: 48rem) {
+  .signature__body {
+    grid-template-columns: minmax(0, 22rem) auto;
+    justify-content: start;
+    gap: var(--space-6);
+  }
+}
+
+.signature__paper {
+  margin: 0;
+  padding: var(--space-4) var(--space-5) var(--space-3);
+  background: var(--color-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.signature__ink {
+  display: grid;
+  align-items: end;
+  justify-items: start;
+  height: 5rem;
+  padding-bottom: var(--space-1);
+}
+
+.signature__img {
+  display: block;
+  max-width: 100%;
+  max-height: 4.75rem;
+  object-fit: contain;
+}
+
+.signature__line {
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-ink-400);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  color: var(--color-ink-400);
+}
+
+.signature__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.signature__alert .field-error {
+  margin-top: var(--space-3);
+}

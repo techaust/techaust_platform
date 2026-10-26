@@ -265,12 +265,9 @@ describe("the render step", () => {
     );
     expect(html).not.toContain("https://techaust-platform-portal-staging");
     // the local value from wrangler.jsonc, through the same helper
-    expect(
-      viewOf(
-        realEnv,
-        parseEnvelope(await ((await realEnv.DOCS.get(keysOf(s).snapshot)) as R2ObjectBody).text()),
-      ).portalLink,
-    ).toBe("localhost:5174");
+    const stored = parseEnvelope(await ((await realEnv.DOCS.get(keysOf(s).snapshot)) as R2ObjectBody).text());
+    expect(stored).not.toBeNull();
+    expect(viewOf(realEnv, stored as NonNullable<typeof stored>).portalLink).toBe("localhost:5174");
   });
 
   it("never renders twice: a second message finds the PDF done, and an orphaned PDF in R2 is adopted", async () => {

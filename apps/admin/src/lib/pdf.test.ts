@@ -6,9 +6,11 @@ import {
   PDF_COPY,
   PDF_SLOW_AFTER_MS,
   pdfPhase,
+  pdfRetryText,
   SIGNATURE_ACCEPT,
   SIGNATURE_COPY,
   SIGNATURE_MAX,
+  signatureErrorIsWrongFile,
   signatureFileOk,
 } from "./pdf.ts";
 
@@ -40,6 +42,20 @@ describe("the signature file", () => {
     expect(signatureFileOk({ type: "image/webp", size: 100 })).toBe(false);
     expect(signatureFileOk({ type: "image/png", size: 0 })).toBe(false);
     expect(signatureFileOk({ type: "image/png", size: SIGNATURE_MAX + 1 })).toBe(false);
+  });
+});
+
+describe("the API's refusals in 07-P's words", () => {
+  it("says a wrong type or size as 07-P does; other answers keep the server's sentence", () => {
+    expect(signatureErrorIsWrongFile("file_too_large")).toBe(true);
+    expect(signatureErrorIsWrongFile("type_not_allowed")).toBe(true);
+    expect(signatureErrorIsWrongFile("image_too_big")).toBe(false);
+    expect(signatureErrorIsWrongFile("stale_version")).toBe(false);
+  });
+  it("words the retry's known refusals", () => {
+    expect(pdfRetryText("pdf_done")).toBe(PDF_COPY.done);
+    expect(pdfRetryText("pdf_pending")).toBe(PDF_COPY.pending);
+    expect(pdfRetryText("not_found")).toBeNull();
   });
 });
 
