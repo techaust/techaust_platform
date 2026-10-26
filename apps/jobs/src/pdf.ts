@@ -76,10 +76,9 @@ const bell = (
   link: string,
 ): D1PreparedStatement => env.DB.prepare(BELL_SQL).bind(kind, entityType, entityId, title, link);
 
-/** The half-of-the-day bell, written only once the day's total has reached the threshold (`?1` date, `?2` threshold). */
+/** The half-of-the-day bell, written only once the day's total has reached the threshold (`?1` date, `?2` threshold, `?3` title). */
 export const HALF_BELL_SQL = `INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
-  SELECT 'n_' || lower(hex(randomblob(16))), u.id, 'pdf.browser_half', 'system', ?1,
-    'Half of today''s PDF allowance is used.', '/'
+  SELECT 'n_' || lower(hex(randomblob(16))), u.id, 'pdf.browser_half', 'system', ?1, ?3, '/'
   FROM staff_users u WHERE u.status = 'active' AND u.role = 'owner'
     AND (SELECT value FROM stats_daily WHERE date = ?1 AND metric = 'pdf.browser_ms' AND dimension = '') >= ?2`;
 
@@ -176,10 +175,12 @@ type RenderRow = {
   snapshot_r2_key: string | null;
   snapshot_sha256: string | null;
   pdf_sha256: string | null;
+  client_gone: number;
 };
 
-export const RENDER_ROW_SQL =
-  "SELECT id, type, frozen_at, fy, number, number_display, version, snapshot_r2_key, snapshot_sha256, pdf_sha256 FROM documents WHERE id = ?1";
+export const RENDER_ROW_SQL = `SELECT id, type, frozen_at, fy, number, number_display, version, snapshot_r2_key, snapshot_sha256, pdf_sha256,
+  EXISTS (SELECT 1 FROM clients c WHERE c.id = documents.client_id AND c.anonymised_at IS NOT NULL) AS client_gone
+  FROM documents WHERE id = ?1`;
 
 /** The view of an envelope as this Worker prints it: the acceptance box names the host of `PORTAL_URL` (07-P §1). */
 export const viewOf = (env: Pick<Env, "PORTAL_URL">, envelope: Envelope): PdfView =>
@@ -214,7 +215,7 @@ async function settle(
     statements.push(
       stat(env, date, "pdf.renders", usage.renders, now),
       stat(env, date, "pdf.browser_ms", usage.browserMs, now),
-      env.DB.prepare(HALF_BELL_SQL).bind(date, BROWSER_ALERT_MS),
+      env.DB.prepare(HALF_BELL_SQL).bind(date, BROWSER_ALERT_MS, BELL_COPY.half),
     );
   }
   await env.DB.batch(statements);
@@ -235,6 +236,11 @@ export async function processRender(
   }
   if (row.pdf_sha256 !== null) {
     logEvent("pdf.render_skipped", { why: "done" });
+    return "skipped";
+  }
+  // Anonymised while the render waited (a quota or rate delay): no PDF, no `onRendered` (the standing rule; VERIFY WITH CA/LEGAL).
+  if (row.client_gone) {
+    logEvent("pdf.render_skipped", { why: "client_gone" });
     return "skipped";
   }
   if (row.snapshot_r2_key === null) {
@@ -393,9 +399,18 @@ export async function processPdf(
  */
 export async function processPdfDeadLetter(env: Env, body: unknown): Promise<void> {
   if (isPdfMessage(body) && (body.kind === "pdf.snapshot" || body.kind === "pdf.render")) {
-    const row = await env.DB.prepare("SELECT number_display, version FROM documents WHERE id = ?1")
+    const row = await env.DB.prepare(
+      `SELECT number_display, version,
+        EXISTS (SELECT 1 FROM clients c WHERE c.id = documents.client_id AND c.anonymised_at IS NOT NULL) AS client_gone
+        FROM documents WHERE id = ?1`,
+    )
       .bind(body.documentId)
-      .first<{ number_display: string | null; version: number }>();
+      .first<{ number_display: string | null; version: number; client_gone: number }>();
+    // No bell for an anonymised client: nothing is left to try again.
+    if (row?.client_gone) {
+      logEvent("pdf.dead_letter", { kind: body.kind, skipped: "client_gone" });
+      return;
+    }
     await env.DB.batch([
       bell(
         env,

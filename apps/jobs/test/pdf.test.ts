@@ -232,6 +232,18 @@ describe("the render step", () => {
     return s;
   }
 
+  it("skips a render whose client was anonymised while it waited: no browser call, no PDF, no row change", async () => {
+    const s = await readyDoc();
+    await realEnv.DB.prepare(GONE).bind(s.clientId).run();
+    const f = fakeClock();
+    const b = fakeBrowser(f.clock, () => pdfResponse(2500));
+    const { env } = makeEnv(b.binding);
+    expect(await processRender(env, render(s.id), T0, f.clock)).toBe("skipped");
+    expect(b.calls).toHaveLength(0);
+    expect(await realEnv.DOCS.head(keysOf(s).pdf)).toBeNull();
+    expect(await one("SELECT 1 FROM documents WHERE id = ? AND pdf_sha256 IS NULL", s.id)).not.toBeNull();
+  });
+
   it("renders from the R2 envelope, stores the PDF once, sets the row and counts it", async () => {
     const s = await readyDoc();
     const f = fakeClock();
@@ -706,5 +718,13 @@ describe("the dead-letter bell [07-P §4]", () => {
       s.id,
     );
     expect(titles).toEqual([{ title: failedBell(s) }]);
+  });
+
+  it("rings no bell for a document whose client is anonymised", async () => {
+    const s = await seedSent();
+    await realEnv.DB.prepare(GONE).bind(s.clientId).run();
+    const { env } = makeEnv({});
+    await processPdfDeadLetter(env, { v: 1, kind: "pdf.render", documentId: s.id, hop: 1 });
+    expect(await all("SELECT 1 FROM notifications WHERE entity_id = ?", s.id)).toHaveLength(0);
   });
 });

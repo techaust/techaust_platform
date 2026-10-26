@@ -152,7 +152,7 @@ export function ReadView({ view, reload }: { view: DocumentView; reload: () => v
               id={v.id}
               sentAt={v.sentAt}
               initial={v.pdf}
-              canRetry={allowed(user.role, "proposals.send")}
+              canRetry={allowed(user.role, "proposals.send") && !v.client.anonymised}
             />
           )}
           {(canRevise || canInvoice || canCare || newer || converted) && (
