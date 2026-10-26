@@ -14,6 +14,7 @@ import {
   CheckCircle,
   Clock,
   FileCheck,
+  FolderKanban,
   Info,
   RefreshCw,
   Send,
@@ -49,6 +50,7 @@ import {
   invoiceEditor,
   issuedToast,
   requestLine,
+  splitAtPlace,
   typeLabel,
 } from "../../lib/invoices.ts";
 import { type InvoiceView, invoicesApi } from "../../lib/invoices-api.ts";
@@ -350,11 +352,11 @@ export function InvoiceEditor({ view, reload }: { view: InvoiceView; reload: () 
             </div>
           )}
           {v.milestone && (
-            <p className="inv-origin">
-              <Link to={`/projects/${encodeURIComponent(v.milestone.projectId)}`}>
-                {fromMilestone(v.milestone.title, projectName ?? INV_PLACEHOLDER)}
-              </Link>
-            </p>
+            <MilestoneOrigin
+              milestone={v.milestone.title}
+              project={projectName ?? INV_PLACEHOLDER}
+              href={`/projects/${encodeURIComponent(v.milestone.projectId)}`}
+            />
           )}
 
           <section className="lead-panel doc-details" aria-labelledby="inv-details-h">
@@ -538,4 +540,26 @@ function useProjectName(projectId: string | null, canRead: boolean): string | nu
     `${projectId ?? ""}:${canRead}`,
   );
   return p.state === "ready" && p.data ? p.data.project.name : null;
+}
+
+/** 07-R "Created from the milestone …": one quiet line, the project's name the link back to it. */
+function MilestoneOrigin(props: { milestone: string; project: string; href: string }) {
+  const line = fromMilestone(props.milestone, props.project);
+  const parts = splitAtPlace(line, props.project);
+  return (
+    <p className="inv-origin">
+      <FolderKanban size={16} />
+      <span>
+        {parts ? (
+          <>
+            {parts[0]}
+            <Link to={props.href}>{parts[1]}</Link>
+            {parts[2]}
+          </>
+        ) : (
+          <Link to={props.href}>{line}</Link>
+        )}
+      </span>
+    </p>
+  );
 }

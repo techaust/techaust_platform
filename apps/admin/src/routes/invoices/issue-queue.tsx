@@ -238,7 +238,7 @@ function IssueDecision(props: {
   return (
     <>
       <div className="dialog__body decision">
-        <p className="confirm-figure">
+        <p className="inv-request-line">
           {requestRow(requester, r.document.clientName, moneyText(r.totalMinor, r.document.currency))}
         </p>
         <p>{INV_COPY.approveNote}</p>

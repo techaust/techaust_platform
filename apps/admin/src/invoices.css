@@ -98,6 +98,10 @@
   font-size: var(--text-sm);
 }
 
+.inv-table time {
+  white-space: nowrap;
+}
+
 .inv-status {
   display: inline-flex;
   flex-wrap: wrap;
@@ -162,8 +166,17 @@
 
 /* Where the draft came from: one quiet line above the editor. */
 .inv-origin {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-2);
+  align-items: start;
   margin: 0;
+  color: var(--color-text-muted);
   font-size: var(--text-sm);
+}
+
+.inv-origin .icon {
+  margin-top: 0.125rem;
 }
 
 .inv-origin a {
@@ -280,6 +293,12 @@
 
 .inv-issue__blocked .blockers {
   margin-bottom: 0;
+}
+
+/* The owner's decision on an issue request: who asked, for whom and the total, as one plain sentence. */
+.inv-request-line {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---------- A milestone's invoice (the project ledger) ---------- */
