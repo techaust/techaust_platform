@@ -145,7 +145,6 @@ export function SendPanel(props: {
           </button>
         )}
       </div>
-      {props.canSendRole && <p className="hint send-panel__note">{DOC_COPY.untilPortal}</p>}
     </section>
   );
 }

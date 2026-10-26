@@ -890,3 +890,27 @@ mark.gap {
   justify-content: flex-end;
   gap: var(--space-2);
 }
+
+/* M4.5 (ADM-PROP-10): the client's decision under the proposal link. */
+.lead-decision {
+  display: grid;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+
+.lead-decision__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.lead-decision__when,
+.lead-decision__why {
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.lead-decision__when {
+  color: var(--color-text-muted);
+}

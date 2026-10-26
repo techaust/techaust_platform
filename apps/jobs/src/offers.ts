@@ -213,10 +213,10 @@ export async function processOfferDecided(env: OfferEnv, body: unknown): Promise
     return "ignored";
   }
   const { senderId } = issuerOf(doc.issuer);
-  const label = `${doc.title ?? "Untitled"} (version ${doc.version})`.slice(0, 150);
-  // [Placeholder, 07-N] the bell titles. One row per person (the sender and each active owner); `(user, kind, entity)` is unique.
-  const title =
-    decision === "accepted" ? `[Placeholder] Accepted: ${label}` : `[Placeholder] Declined: ${label}`;
+  const label = `${doc.title ?? "Untitled"} v${doc.version}`.slice(0, 150);
+  // 07-N §6 (PENDING the owner's approval): the bell titles. One row per person (the sender and each active owner); `(user, kind,
+  // entity)` is unique.
+  const title = decision === "accepted" ? `Accepted: ${label}` : `Declined: ${label}`;
   await env.DB.prepare(
     `INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
      SELECT 'n_' || lower(hex(randomblob(16))), u.id, ?1, 'document', ?2, ?3, ?4 FROM staff_users u

@@ -37,13 +37,15 @@ import {
   validFor,
 } from "../../lib/documents.ts";
 import { type DocumentView, documentsApi } from "../../lib/documents-api.ts";
+import { OFFER_COPY } from "../../lib/offers.ts";
 import { useUser } from "../../session.tsx";
-import { DiscardDialog, RequestDialog, SendDialog } from "./dialogs.tsx";
+import { DiscardDialog, RequestDialog } from "./dialogs.tsx";
 import { LinesPanel } from "./lines.tsx";
 import { TaxPreview } from "./money.tsx";
 import { crumbsFor, DocPill } from "./parts.tsx";
 import { SchedulePanel } from "./schedule.tsx";
 import { SectionsPanel } from "./sections.tsx";
+import { SendDialog } from "./send-dialog.tsx";
 import { SendPanel, VersionsPanel } from "./side.tsx";
 
 /** 07-O's stale_version sentence, its first sentence as the notice's title and the rest as its body. */
@@ -471,19 +473,24 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
 
       <SendDialog
         open={dialog === "send"}
+        mode="send"
+        type={view.type}
+        number={view.number ?? null}
         title={title}
         version={view.version}
         totalMinor={f.totals?.totalMinor ?? null}
         currency={s.currency}
-        client={view.client.name}
+        clientId={view.client.id}
+        clientName={view.client.name}
+        validUntil={null}
         onClose={() => setDialog(null)}
-        onConfirm={async () => {
+        onSend={async (contactIds, attachPdf) => {
           const at = await flush();
           if (at === null)
             throw new RequestError(409, "stale_version", ref.current.error ?? DOC_ERRORS.stale_version);
-          const r = await documentsApi.send(view.id, at);
+          const r = await documentsApi.send(view.id, at, contactIds, attachPdf);
           setDialog(null);
-          toast("success", sentAs(r.number ?? "", r.version));
+          toast("success", `${sentAs(r.number ?? "", r.version)} ${OFFER_COPY.sentTo(contactIds.length)}`);
           reload();
         }}
       />

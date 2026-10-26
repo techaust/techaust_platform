@@ -6,7 +6,7 @@
 // `stale_version`, or a reload that brings someone else's change to a field a draft holds, shows the shared "changed
 // by someone else" notice, keeps nothing half-saved and offers the latest. Leaving with unsaved edits asks first
 // (ADM-G-04).
-import { formatDate, istDate } from "@techaust/core/dates";
+import { formatDate, formatIstDateTime, istDate } from "@techaust/core/dates";
 import {
   budgetBandLabel,
   countryName,
@@ -56,6 +56,7 @@ import {
   SOURCE_LABELS,
   STAGE_LABELS,
 } from "../../lib/leads.ts";
+import { REASON_LABEL, reasonText } from "../../lib/offer-words.ts";
 import { useUser } from "../../session.tsx";
 import { ConvertDialog } from "./convert.tsx";
 import {
@@ -589,6 +590,33 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+/**
+ * The client's decision on the proposal (M4.5, ADM-PROP-10): accepted, or declined with the client's reason in the client's words
+ * (07-N §3) and their note. A decline also moved the lead to Lost (owner, 2026-10-26); staff can move it back.
+ */
+function DecisionLine({ decision: d }: { decision: NonNullable<LeadPageData["decision"]> }) {
+  const accepted = d.status === "accepted" || d.status === "converted";
+  return (
+    <span className="lead-decision">
+      <span className="lead-decision__head">
+        <StatusPill tone={accepted ? "success" : "muted"} icon={accepted ? "check" : "ban"}>
+          {accepted ? "Accepted" : "Declined"}
+        </StatusPill>
+        <span className="lead-decision__when">
+          {formatIstDateTime(d.at)}
+          {d.contactName ? `, ${d.contactName}` : ""}
+        </span>
+      </span>
+      {!accepted && d.reason && (
+        <span className="lead-decision__why">
+          {REASON_LABEL}: {reasonText(d.reason)}
+          {d.note && <span className="line muted">{d.note}</span>}
+        </span>
+      )}
+    </span>
+  );
+}
+
 /** Client and draft proposal once converted; the same email within 30 days (linked, never merged: FRM-04). */
 function Linked({ data }: { data: LeadPageData }) {
   const earlier = data.duplicates.filter((d) => d.relation === "earlier");
@@ -620,6 +648,7 @@ function Linked({ data }: { data: LeadPageData }) {
               <Link to={`/proposals/${data.proposal.id}`}>
                 {data.proposal.status === "draft" ? "Draft proposal" : "Proposal"}
               </Link>
+              {data.decision && <DecisionLine decision={data.decision} />}
             </span>
           </li>
         )}

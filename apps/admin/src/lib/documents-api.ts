@@ -5,6 +5,7 @@
 import type { ScheduleTrigger } from "@techaust/core";
 import type { Currency } from "../api.ts";
 import { qs, request } from "../api.ts";
+import type { OfferSection, StartResult } from "./offers.ts";
 
 export type QuoteType = "proposal" | "estimate";
 export type QuoteStatus = "draft" | "sent" | "viewed" | "accepted" | "rejected" | "expired" | "revised";
@@ -141,7 +142,10 @@ export type VersionRow = {
 };
 
 /** GET /documents/:id (a draft worked out today; a sent version read back from what was frozen). */
-export type DocumentView = {
+/** A version as GET /documents/:id answers it: the M4.3 view, and for a sent offer what happened to it (M4.5). */
+export type DocumentView = DocumentViewBase & OfferSection;
+
+export type DocumentViewBase = {
   id: string;
   type: QuoteType;
   status: QuoteStatus;
@@ -372,6 +376,9 @@ export type CareConverted = {
 
 const enc = encodeURIComponent;
 
+/** The acceptance certificate of an accepted offer: a same-origin download (the API answers an attachment). */
+export const certificateHref = (id: string) => `/api/v1/documents/${enc(id)}/certificate`;
+
 export const documentsApi = {
   list: (q: ListQuery = {}) => request<{ documents: ListRow[]; next: string | null }>(`/documents${qs(q)}`),
   clientList: (clientId: string, after?: string) =>
@@ -394,8 +401,32 @@ export const documentsApi = {
       `/documents/${enc(id)}/revise`,
       { body: {} },
     ),
-  send: (id: string, expectedUpdatedAt: number) =>
-    request<SentResult>(`/documents/${enc(id)}/send`, { body: { expectedUpdatedAt } }),
+  /**
+   * Sends a draft (M4.3) to chosen contacts (M4.5, ADM-PROP-07): 1 to 5 contacts with portal access. `attachPdf` left out uses the
+   * client's own setting (the server reads it).
+   */
+  send: (id: string, expectedUpdatedAt: number, contactIds: string[], attachPdf?: boolean) =>
+    request<SentResult>(`/documents/${enc(id)}/send`, {
+      body:
+        attachPdf === undefined
+          ? { expectedUpdatedAt, contactIds }
+          : { expectedUpdatedAt, contactIds, attachPdf },
+    }),
+  /** The latest sent version to more contacts, or again (M4.5): new links; the email waits for the PDF. */
+  resend: (id: string, contactIds: string[], attachPdf?: boolean) =>
+    request<{ ok: true; sends: number; waitingForPdf: boolean }>(`/documents/${enc(id)}/resend`, {
+      body: attachPdf === undefined ? { contactIds } : { contactIds, attachPdf },
+    }),
+  /** Every live link of the offer stops working; sends still waiting are cancelled (M4.5). */
+  revokeLinks: (id: string) =>
+    request<{ ok: true; revoked: number; cancelled: number }>(`/documents/${enc(id)}/links/revoke`, {
+      body: {},
+    }),
+  /** An accepted proposal becomes a project with milestones and a first-instalment draft (M4.5, ADM-PROP-09). Idempotent. */
+  startProject: (id: string, expectedUpdatedAt?: number) =>
+    request<StartResult>(`/documents/${enc(id)}/start-project`, {
+      body: expectedUpdatedAt === undefined ? {} : { expectedUpdatedAt },
+    }),
   requestApproval: (id: string, expectedUpdatedAt: number, reason?: string) =>
     request<{ id: string; status: "pending"; discountBp: number }>(`/documents/${enc(id)}/approval-request`, {
       body: reason ? { expectedUpdatedAt, reason } : { expectedUpdatedAt },

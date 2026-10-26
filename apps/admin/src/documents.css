@@ -1481,6 +1481,219 @@ a.pdf-panel__action:hover {
   }
 }
 
+/* ---------- M4.5: the send dialog (the owner-approved preview's layout) ---------- */
+
+/* The choices on the left, the message as it will go on the right (stacked on narrow screens). */
+.sendd {
+  display: grid;
+  gap: var(--space-6);
+}
+
+@media (min-width: 56rem) {
+  .sendd {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+    gap: var(--space-8);
+  }
+
+  .sendd__actions {
+    grid-column: 1 / -1;
+  }
+}
+
+.sendd__intro {
+  margin: 0 0 var(--space-5);
+}
+
+.sendd__to legend,
+.sendd__label {
+  margin: 0 0 var(--space-1);
+  font-weight: 600;
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
+}
+
+.sendd__to .hint {
+  margin-bottom: var(--space-2);
+}
+
+.sendd__contact {
+  align-items: flex-start;
+  margin: 0;
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.sendd .sendd__contact input {
+  margin-top: 0.15rem;
+}
+
+.sendd__contact.is-off {
+  cursor: default;
+}
+
+.sendd__name {
+  display: block;
+  font-weight: 600;
+}
+
+.sendd__meta {
+  display: block;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.sendd__bad {
+  display: block;
+  color: var(--color-danger);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+.sendd__attach {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
+.sendd__preview {
+  align-self: start;
+  padding: var(--space-5);
+  background: var(--color-surface-alt);
+  border-radius: var(--radius-md);
+}
+
+.sendd__head {
+  display: grid;
+  gap: var(--space-1);
+  margin: var(--space-3) 0;
+  font-size: var(--text-sm);
+}
+
+.sendd__head > div {
+  display: grid;
+  grid-template-columns: 4.5rem minmax(0, 1fr);
+  gap: var(--space-2);
+}
+
+.sendd__head dt {
+  color: var(--color-text-muted);
+}
+
+.sendd__head dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The email itself: white paper with the verdigris rule of the real layout. */
+.sendd__body {
+  margin-bottom: var(--space-3);
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-top: 2px solid var(--color-accent-decor);
+  border-radius: var(--radius-sm);
+}
+
+.sendd__body p {
+  margin: 0 0 var(--space-3);
+}
+
+.sendd__body p:last-child {
+  margin-bottom: 0;
+}
+
+.sendd__facts {
+  display: grid;
+  margin: 0 0 var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--text-sm);
+}
+
+.sendd__facts > div {
+  display: grid;
+  grid-template-columns: 6.5rem minmax(0, 1fr);
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.sendd__facts dt {
+  color: var(--color-text-muted);
+}
+
+.sendd__facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The email's button, drawn (not a control: the message is a preview). */
+.sendd__btn {
+  display: inline-block;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-btn-primary-bg);
+  color: var(--color-btn-primary-fg);
+  font-weight: 600;
+}
+
+/* ---------- M4.5: what happened to a sent offer (beside the document) ---------- */
+
+.offer-panel__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.offer-panel--accepted {
+  border-inline-start: 3px solid var(--color-success);
+}
+
+.offer-facts {
+  margin-bottom: var(--space-4);
+}
+
+.offer-facts > div {
+  grid-template-columns: 7.5rem minmax(0, 1fr);
+}
+
+.deliv {
+  display: grid;
+  margin: 0 0 var(--space-4);
+  padding: 0;
+  list-style: none;
+}
+
+.deliv__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.deliv__who {
+  display: grid;
+  min-width: 0;
+}
+
+.deliv__name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.deliv__meta {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
 /* Last: the open section's chevron (the most specific .icon rule of the file). */
 .section-row__toggle[aria-expanded="true"] .icon {
   transform: rotate(180deg);

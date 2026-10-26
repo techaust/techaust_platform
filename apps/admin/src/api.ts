@@ -245,6 +245,14 @@ export type LeadPage = {
   lead: LeadDetail;
   client: { id: string; code: string | null; name: string | null } | null;
   proposal: { id: string; status: string | null } | null;
+  /** M4.5 (ADM-PROP-10): the client's decision on the lead's proposal, when there is one. */
+  decision?: {
+    status: string;
+    at: number;
+    reason: string | null;
+    note: string | null;
+    contactName: string | null;
+  } | null;
   duplicates: {
     id: string;
     ref: string;
@@ -833,6 +841,10 @@ type ApiErrorBody = {
   paths?: string[];
   /** 422 `snapshot_invalid`: what the website needs that the snapshot lacks. */
   needs?: SiteNeedAnswer[];
+  /** M4.5: 409 `recipient_invalid`. */
+  contactIds?: unknown;
+  /** M4.5: 409 `instalment_failed`. */
+  missing?: unknown;
 };
 
 export class RequestError extends Error {
@@ -847,6 +859,8 @@ export class RequestError extends Error {
     readonly paths: string[] = [],
     /** 422 `snapshot_invalid`: what the website needs that the snapshot lacks. */
     readonly needs: SiteNeedAnswer[] = [],
+    /** M4.5: 409 `recipient_invalid` names the contacts (`contactIds`); 409 `instalment_failed` the empty client fields (`missing`). */
+    readonly extra: { contactIds?: string[]; missing?: string[] } = {},
   ) {
     super(message);
   }
@@ -937,10 +951,16 @@ async function send<T>(path: string, { method, body, raw, signedIn = true }: Opt
             typeof (n as { missing?: unknown }).missing === "string",
         )
       : [],
+    {
+      ...(Array.isArray(data.contactIds) ? { contactIds: strings(data.contactIds) } : {}),
+      ...(Array.isArray(data.missing) ? { missing: strings(data.missing) } : {}),
+    },
   );
   if (signedIn && res.status === 401 && e.code === "unauthenticated") unauthenticatedHandler?.();
   throw error;
 }
+
+const strings = (xs: unknown[]): string[] => xs.filter((x): x is string => typeof x === "string");
 
 /** One request; if it needs a fresh step-up, ask for it and send the same request once more. */
 export async function request<T>(path: string, options: Options = {}): Promise<T> {

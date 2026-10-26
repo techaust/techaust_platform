@@ -111,8 +111,6 @@ export const DOC_COPY = {
   // §5
   sendIntro: "Sending gives this version its number and freezes it. Changes afterwards make a new version.",
   send: "Send",
-  untilPortal:
-    "Emailing proposals arrives with the client portal update. For now, sending numbers and freezes the version only.",
   versionsHeading: "Versions",
   reviseTitle: "Make a new version?",
   reviseButton: "Make new version",
@@ -163,7 +161,6 @@ export const decisionLine = (bp: number, total: string) =>
 export const bellRequest = (title: string, version: number) => `Approval needed: ${title} v${version}`;
 export const bellDecided = (approved: boolean, title: string, version: number) =>
   `${approved ? "Approved" : "Rejected"}: ${title} v${version}`;
-export const sendTitle = (title: string, version: number) => `Send ${title} v${version}?`;
 export const sendLine = (total: string, client: string) => `${total} to ${client}`;
 export const sentAs = (number: string, version: number) => `Sent as ${number} v${version}.`;
 export const versionLine = (n: number, status: string, date: string | null) =>
