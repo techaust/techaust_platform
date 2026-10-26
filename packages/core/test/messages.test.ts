@@ -4,10 +4,15 @@ import { stripCrLf } from "../src/header.ts";
 import { uuidv7 } from "../src/ids.ts";
 import { generateLeadRef, LEAD_REF } from "../src/lead-ref.ts";
 import {
+  approvalNotifyMessage,
   EMAIL_TEMPLATES,
   emailMessage,
   formMeta,
+  isOfferExpansionKind,
   leadMessage,
+  offerAcceptedMessage,
+  offerDecidedMessage,
+  offerSendMessage,
   staffAlertMessage,
 } from "../src/schemas/messages.ts";
 
@@ -109,6 +114,12 @@ describe("M2.4b messages [POR-01, ADM-AUTH-09, ADM-MAIL-01]", () => {
       "staff.lockout_owner",
       "staff.invite",
       "lead.reply",
+      "offer.sent",
+      "offer.accepted.client",
+      "offer.accepted.staff",
+      "offer.declined.staff",
+      "approval.requested",
+      "approval.decided",
     ]);
     for (const template of EMAIL_TEMPLATES)
       expect(
@@ -172,5 +183,79 @@ describe("form meta [FRM-05, FRM-06]", () => {
     expect(formMeta.safeParse({ noticeVersion: "0.1", referrerHost: "a b" }).success).toBe(false);
     expect(formMeta.safeParse({ noticeVersion: "0.1", utm: { source: "a\r\nb" } }).success).toBe(false);
     expect(formMeta.safeParse({ noticeVersion: "0.1", utm: { source: "newsletter" } }).success).toBe(true);
+  });
+});
+
+describe("M4.5 messages [ADM-PROP-07, ADM-PROP-08]", () => {
+  const base = {
+    template: "offer.sent",
+    to: "a@example.com",
+    data: {},
+    entity: { type: "document_send", id: "1" },
+  };
+  it("an email may carry an attachment key, only inside the allow-list", () => {
+    const key = "docs/proposal/2026-27/0001-v1.pdf";
+    expect(emailMessage.safeParse({ ...base, attachment: { key, filename: "P-0001-v1.pdf" } }).success).toBe(
+      true,
+    );
+    expect(emailMessage.safeParse(base).success).toBe(true);
+    for (const bad of [
+      "docs/tax_invoice/2026-27/0001-v1.pdf",
+      "docs/proposal/2026-27/0001-v1.json",
+      "../docs/proposal/2026-27/0001-v1.pdf",
+      "docs/proposal/2026-27/../../x.pdf",
+    ]) {
+      expect(
+        emailMessage.safeParse({ ...base, attachment: { key: bad, filename: "a.pdf" } }).success,
+        bad,
+      ).toBe(false);
+    }
+  });
+  it("the file name is a safe .pdf name", () => {
+    const key = "docs/estimate/2026-27/0001-v1.pdf";
+    for (const bad of ["../a.pdf", "a.exe", "a/b.pdf", "", ".pdf", `a${String.fromCharCode(13, 10)}.pdf`]) {
+      expect(emailMessage.safeParse({ ...base, attachment: { key, filename: bad } }).success, bad).toBe(
+        false,
+      );
+    }
+  });
+  it("the expansion messages carry ids only and refuse anything else", () => {
+    const id = uuidv7();
+    expect(offerSendMessage.parse({ kind: "offer.send", sendId: id, to: "x@example.com" })).toEqual({
+      kind: "offer.send",
+      sendId: id,
+    });
+    expect(
+      offerDecidedMessage.safeParse({ kind: "offer.decided", documentId: id, decision: "declined" }).success,
+    ).toBe(true);
+    expect(
+      offerDecidedMessage.safeParse({ kind: "offer.decided", documentId: id, decision: "maybe" }).success,
+    ).toBe(false);
+    expect(offerAcceptedMessage.safeParse({ kind: "offer.accepted", acceptanceId: "nope" }).success).toBe(
+      false,
+    );
+    expect(
+      approvalNotifyMessage.safeParse({ kind: "approval.notify", approvalId: id, event: "decided" }).success,
+    ).toBe(true);
+    expect(
+      approvalNotifyMessage.safeParse({ kind: "approval.notify", approvalId: id, event: "x" }).success,
+    ).toBe(false);
+  });
+  it("isOfferExpansionKind sees the family even when the body is malformed (it is never sent as an email)", () => {
+    for (const kind of ["offer.send", "offer.decided", "offer.accepted", "approval.notify"]) {
+      expect(isOfferExpansionKind({ kind })).toBe(true);
+    }
+    for (const body of [
+      null,
+      "offer.send",
+      7,
+      {},
+      { kind: 3 },
+      { kind: "staff.alert" },
+      { kind: "offer.sweep" },
+      { template: "offer.sent" },
+    ]) {
+      expect(isOfferExpansionKind(body), JSON.stringify(body)).toBe(false);
+    }
   });
 });

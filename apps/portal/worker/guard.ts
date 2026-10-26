@@ -30,6 +30,19 @@ export const ROUTES: readonly RouteDef[] = [
   R("POST", "/auth/sessions/revoke-all", "session", { audit: "portal.sessions_revoke_all" }),
   // A document link (POR-06): the token is in the body, never in the path or query.
   R("POST", "/t/document", "public", { audit: "doc_token.use" }),
+  // Proposals and estimates (M4.5, POR-04, POR-05): the signed-in contact's offers. Each query is scoped to the session's organisation.
+  R("GET", "/offers", "session"),
+  R("GET", "/offers/:id", "session"),
+  R("GET", "/offers/:id/pdf", "session"),
+  R("GET", "/offers/:id/certificate", "session"),
+  R("POST", "/offers/:id/accept", "session", { audit: "document.accept" }),
+  R("POST", "/offers/:id/decline", "session", { audit: "document.decline" }),
+  // An emailed offer link (M4.5, POR-06): the token is in the body; every one checks its own proof and counts a failure.
+  R("POST", "/t/offer", "public", { audit: "offer_link.use" }),
+  R("POST", "/t/offer/pdf", "public"),
+  R("POST", "/t/offer/certificate", "public"),
+  R("POST", "/t/offer/accept", "public", { audit: "document.accept" }),
+  R("POST", "/t/offer/decline", "public", { audit: "document.decline" }),
 ];
 
 /** The table row for a request, by method and the matched Hono pattern (`routePath`); undefined = not declared. */

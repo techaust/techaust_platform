@@ -337,8 +337,8 @@ export const NOT_YOU = {
 const notYouFor = (role: string | undefined) => (role === "owner" ? NOT_YOU.owner : NOT_YOU.member);
 
 /** One paragraph of an email: plain text and HTML (already escaped), so both versions say the same words. */
-type Para = { text: string; html: string };
-const para = (text: string, html = e(text)): Para => ({ text, html });
+export type Para = { text: string; html: string };
+export const para = (text: string, html = e(text)): Para => ({ text, html });
 /** A sentence with the time in it: the time bold (and kept on one line) in HTML. */
 const withTime = (before: string, time: string, after: string): Para => ({
   text: `${before}${time}${after}`,
@@ -397,7 +397,7 @@ export function portalMagicLink(d: MagicLinkData, opts: LayoutOptions): Rendered
 }
 
 /** A staff security email: the subject as its heading, the paragraphs, then optional extras in order. */
-function securityEmail(
+export function securityEmail(
   subject: string,
   opts: LayoutOptions,
   parts: {
@@ -406,24 +406,33 @@ function securityEmail(
     after?: Para[];
     notYou?: string;
     action?: { label: string; url: string };
+    /** The button straight after the facts, before the `after` paragraphs (07 §8 offer emails: "[Review and accept]. Questions? …"). */
+    actionFirst?: boolean;
   },
 ): Rendered {
   const after = parts.after ?? [];
+  const first = parts.actionFirst === true;
+  const actionHtml = parts.action ? button(parts.action.label, parts.action.url) : "";
+  const actionText = parts.action ? `${parts.action.label}: ${parts.action.url}` : "";
   const html = layout(
     subject,
     heading(e(subject)) +
       parts.before.map((p) => bodyP(p.html)).join("") +
       (parts.facts ? factTable(parts.facts.rows) : "") +
-      after.map((p) => bodyP(p.html)).join("") +
-      (parts.action ? button(parts.action.label, parts.action.url) : "") +
+      (first ? actionHtml : "") +
+      after
+        .map((p, i) => bodyP(p.html, i === after.length - 1 && first ? "padding-bottom:0;" : ""))
+        .join("") +
+      (first ? "" : actionHtml) +
       (parts.notYou ? notYouBlock(parts.notYou) : ""),
     opts,
   );
   const text = textOf([
     ...parts.before.map((p) => p.text),
     parts.facts?.text ?? "",
+    first ? actionText : "",
     ...after.map((p) => p.text),
-    parts.action ? `${parts.action.label}: ${parts.action.url}` : "",
+    first ? "" : actionText,
     parts.notYou ?? "",
   ]);
   return { subject, html, text };

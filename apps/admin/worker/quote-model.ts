@@ -147,7 +147,7 @@ export const taxContext = (s: QuoteSettings): TaxContext => ({
 // ---- rows ---------------------------------------------------------------------------------------------------------------------
 
 export const CLIENT_COLS =
-  "id, code, legal_name, display_name, type, country, gst_status, gstin, state_code, billing_address, currency, anonymised_at";
+  "id, code, legal_name, display_name, type, country, gst_status, gstin, state_code, billing_address, currency, attach_pdf, anonymised_at";
 export const CLIENT_READ = `SELECT ${CLIENT_COLS} FROM clients WHERE id = ?1`;
 export type ClientRow = {
   id: string;
@@ -161,6 +161,7 @@ export type ClientRow = {
   state_code: string | null;
   billing_address: string | null;
   currency: "INR" | "USD";
+  attach_pdf: number;
   anonymised_at: number | null;
 };
 export const taxInputOf = (c: ClientRow): TaxInput => ({

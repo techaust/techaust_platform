@@ -20,6 +20,7 @@ import {
   mkService,
   mkTerms,
   patchDoc,
+  sendBodyOf,
   sendDoc,
 } from "./test-quotes.ts";
 
@@ -447,7 +448,7 @@ describe("numbering and versions [ADM-PROP-05, ADM-INV-03; V5, V6, V7, V8, V9]",
     });
     const res = await call(
       `/documents/${id}/send`,
-      { cookie: o.cookie, body: { expectedUpdatedAt: v.updatedAt } },
+      { cookie: o.cookie, body: await sendBodyOf(id, v.updatedAt) },
       e,
     );
     expect(res.status).toBe(409);
@@ -473,7 +474,7 @@ describe("numbering and versions [ADM-PROP-05, ADM-INV-03; V5, V6, V7, V8, V9]",
     try {
       const res = await call(
         `/documents/${made.id}/send`,
-        { cookie: o.cookie, body: { expectedUpdatedAt: v.updatedAt } },
+        { cookie: o.cookie, body: await sendBodyOf(made.id, v.updatedAt) },
         e,
       );
       expect(res.status).toBe(409);

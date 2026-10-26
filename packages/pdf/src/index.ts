@@ -7,6 +7,7 @@ export * from "./config.ts";
 export * from "./envelope.ts";
 export * from "./escape.ts";
 export * from "./hash.ts";
+export type { CertificateView } from "./layout/certificate-skeleton.ts";
 export * from "./markdown-html.ts";
 export * from "./options.ts";
 export * from "./render.ts";

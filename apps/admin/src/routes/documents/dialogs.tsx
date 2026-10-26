@@ -1,6 +1,6 @@
-// The confirmations of a proposal or estimate (M4.3): send (ADM-G-04: the amount and the client, and the honest "until M4.5" line), ask
-// the owner to approve, make a new version, discard a draft, and the two conversions of an accepted estimate (an invoice draft, or a
-// care plan with its start date and billing day). Each says what happens before it happens; each result links to what was made.
+// The confirmations of a proposal or estimate (M4.3): ask the owner to approve, make a new version, discard a draft, and the two
+// conversions of an accepted estimate (an invoice draft, or a care plan with its start date and billing day). Each says what happens
+// before it happens; each result links to what was made. Sending is its own dialog since M4.5 (send-dialog.tsx).
 import "../../care.css";
 import type { CareFromEstimate, CareTier } from "@techaust/core/care";
 import { useState } from "react";
@@ -26,50 +26,11 @@ import {
   moneyText,
   reviseBody,
   sendLine,
-  sendTitle,
 } from "../../lib/documents.ts";
 import { type CareConverted, documentsApi } from "../../lib/documents-api.ts";
 import { COPY as PROJECT_COPY } from "../../lib/projects.ts";
 import { intIn } from "../../lib/settings-form.ts";
 import { DurationFields } from "../care/terms-fields.tsx";
-
-/** ADM-G-04: what is sent, for how much, to whom; then the honest line about email until M4.5. */
-export function SendDialog(props: {
-  open: boolean;
-  title: string;
-  version: number;
-  totalMinor: number | null;
-  currency: Currency;
-  client: string;
-  onConfirm: () => Promise<void>;
-  onClose: () => void;
-}) {
-  return (
-    <ConfirmDialog
-      open={props.open}
-      title={sendTitle(props.title, props.version)}
-      confirmLabel={DOC_COPY.send}
-      busyLabel="Sending…"
-      onConfirm={async () => {
-        try {
-          await props.onConfirm();
-        } catch (e) {
-          throw mappedError(e);
-        }
-        return undefined;
-      }}
-      onClose={props.onClose}
-    >
-      {props.totalMinor !== null && (
-        <p className="confirm-figure">
-          <span className="tnum">{sendLine(moneyText(props.totalMinor, props.currency), props.client)}</span>
-        </p>
-      )}
-      <p>{DOC_COPY.sendIntro}</p>
-      <Notice tone="info">{DOC_COPY.untilPortal}</Notice>
-    </ConfirmDialog>
-  );
-}
 
 /** "Ask the owner to approve": a reason for the owner, and the rule that the approval covers this version's exact content only. */
 export function RequestDialog(props: {

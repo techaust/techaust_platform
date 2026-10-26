@@ -17,6 +17,7 @@ const MONEY_FILES = [
   "src/documents.ts",
   "src/schedule-text.ts",
   "src/projects.ts",
+  "src/offers.ts",
   "src/care.ts",
   "src/time.ts",
   "src/tax/credit.ts",

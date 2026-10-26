@@ -3,6 +3,8 @@
 // stops typing, through PATCH with only the parts that changed; the answer's figures (totals, each line's tax, the instalments, the
 // discount guard, the approval, what still stops a send) are put beside what was typed without touching the text. Someone else's save
 // shows the "saved at the same moment" notice and stops saving until the latest is loaded.
+import { istDate } from "@techaust/core/dates";
+import { validUntil } from "@techaust/core/documents";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { api, RequestError } from "../../api.ts";
@@ -20,6 +22,7 @@ import {
   DOC_ERRORS,
   DOC_PENDING,
   DOC_TOASTS,
+  dayText,
   docErrorText,
   type EditorAction,
   type EditorState,
@@ -37,13 +40,15 @@ import {
   validFor,
 } from "../../lib/documents.ts";
 import { type DocumentView, documentsApi } from "../../lib/documents-api.ts";
+import { OFFER_COPY } from "../../lib/offers.ts";
 import { useUser } from "../../session.tsx";
-import { DiscardDialog, RequestDialog, SendDialog } from "./dialogs.tsx";
+import { DiscardDialog, RequestDialog } from "./dialogs.tsx";
 import { LinesPanel } from "./lines.tsx";
 import { TaxPreview } from "./money.tsx";
 import { crumbsFor, DocPill } from "./parts.tsx";
 import { SchedulePanel } from "./schedule.tsx";
 import { SectionsPanel } from "./sections.tsx";
+import { SendDialog } from "./send-dialog.tsx";
 import { SendPanel, VersionsPanel } from "./side.tsx";
 
 /** 07-O's stale_version sentence, its first sentence as the notice's title and the rest as its body. */
@@ -51,6 +56,12 @@ const STALE = ((t: string) => {
   const i = t.indexOf(". ");
   return [t.slice(0, i + 1), t.slice(i + 2)] as const;
 })(DOC_ERRORS.stale_version);
+
+/** The last valid day if the draft were sent today (the send's own rule, core `validUntil`), for the email preview; null while the days are not valid. */
+function sendValidUntil(days: string): string | null {
+  const n = Number(days);
+  return Number.isInteger(n) && n >= 1 && n <= 90 ? dayText(validUntil(istDate(Date.now()), n)) : null;
+}
 
 /** How long after the last keystroke a draft saves itself (lead, review fix 2: fewer D1 writes); leaving a field saves at once. */
 const AUTOSAVE_MS = 3000;
@@ -471,19 +482,25 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
 
       <SendDialog
         open={dialog === "send"}
+        mode="send"
+        type={view.type}
+        number={view.number ?? null}
         title={title}
         version={view.version}
         totalMinor={f.totals?.totalMinor ?? null}
         currency={s.currency}
-        client={view.client.name}
+        clientId={view.client.id}
+        clientName={view.client.name}
+        attachPdfDefault={view.attachPdfDefault}
+        validUntil={sendValidUntil(s.fields.validityDays)}
         onClose={() => setDialog(null)}
-        onConfirm={async () => {
+        onSend={async (contactIds, attachPdf) => {
           const at = await flush();
           if (at === null)
             throw new RequestError(409, "stale_version", ref.current.error ?? DOC_ERRORS.stale_version);
-          const r = await documentsApi.send(view.id, at);
+          const r = await documentsApi.send(view.id, at, contactIds, attachPdf);
           setDialog(null);
-          toast("success", sentAs(r.number ?? "", r.version));
+          toast("success", `${sentAs(r.number ?? "", r.version)} ${OFFER_COPY.sentTo(contactIds.length)}`);
           reload();
         }}
       />

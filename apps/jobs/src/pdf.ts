@@ -6,14 +6,21 @@
 //                one call every 10 s), writes the PDF (once), sets `pdf_r2_key` and `pdf_sha256` (set-once after the freeze), counts it.
 //   sweep     -> the daily cron enqueues ONE `pdf.sweep`; it picks at most 20 sent documents without a PDF (`documents_pdf_pending`) and
 //                enqueues a `pdf.snapshot` for each. The cron itself reads nothing.
+// M4.5 adds to this queue: `pdf.certificate` (the acceptance certificate: the same paced render, the same error table, the same put-once
+// helper; then `offer.accepted` follows) and `offer.sweep` (the waiting offer emails and the missing certificates). After a document's PDF is
+// stored, or found already stored, `onRendered` queues the offer emails that were waiting for it (offers.ts).
 // Errors (the table of the brief): a rate limit sends a delayed copy and acknowledges (`hop` counts them, cap 30); the daily quota does the
 // same until the next UTC midnight + 120 s and rings the owners' bell once a day; a bad render, an upstream error or a non-PDF is thrown,
 // so the queue retries with backoff (5 tries) and then the dead-letter queue rings the bell. An envelope that fails verification is never
 // rendered: it rings the bell and is acknowledged (a retry cannot help). No personal data in a log line or a bell title: ids, numbers, kinds.
+
+import { todayIst } from "@techaust/core/offers";
 import {
   isPdfMessage,
   nextUtcMidnight,
+  type OfferSweepMessage,
   PDF_MAX_HOPS,
+  type PdfCertificateMessage,
   type PdfRenderMessage,
   type PdfSnapshotMessage,
   type PdfSweepMessage,
@@ -27,6 +34,7 @@ import {
   type PdfView,
   parseEnvelope,
   pdfOptionsFor,
+  renderCertificateHtml,
   renderDocumentHtml,
   serializeEnvelope,
   toPdfView,
@@ -34,7 +42,9 @@ import {
   viewConfigFor,
 } from "@techaust/pdf";
 import { type RenderEnv, renderPaced } from "./browser.ts";
+import { readCertificateView } from "./certificate.ts";
 import { logEvent } from "./log.ts";
+import { processOfferSweep, queueAcceptedConfirmation, queueWaitingSends } from "./offers.ts";
 import { type Clock, realClock } from "./pacer.ts";
 
 /** The Free plan's Browser Run time: 10 minutes a day. The bell rings once at half of it. */
@@ -188,10 +198,17 @@ export const viewOf = (env: Pick<Env, "PORTAL_URL">, envelope: Envelope): PdfVie
 
 export type RenderOutcome = "rendered" | "adopted" | "delayed" | "skipped" | "refused" | "resnapshot";
 
-/** What the rest of the system learns when a PDF is stored. Empty in M4.4; M4.5 hangs the client email and the certificate here. */
-export type RenderedEvent = { documentId: string; pdfSha256: string; pdfKey: string };
-export async function onRendered(_env: Env, _event: RenderedEvent): Promise<void> {
-  // Intentionally empty in M4.4 (the seam for M4.5).
+/**
+ * What the rest of the system learns when a PDF is stored (M4.5). A document's PDF queues the offer emails that were waiting for it; an
+ * acceptance certificate queues the confirmation emails. Both are idempotent, and both are called again when a redelivery finds the work
+ * already done, so an `onRendered` that failed once is completed by the retry.
+ */
+export type RenderedEvent =
+  | { kind: "document"; documentId: string }
+  | { kind: "certificate"; acceptanceId: string };
+export async function onRendered(env: Env, event: RenderedEvent): Promise<void> {
+  if (event.kind === "document") await queueWaitingSends(env, event.documentId);
+  else await queueAcceptedConfirmation(env, event.acceptanceId);
 }
 
 const dayOf = (now: number) => utcDateOf(now);
@@ -219,7 +236,7 @@ async function settle(
     );
   }
   await env.DB.batch(statements);
-  await onRendered(env, { documentId: row.id, pdfSha256, pdfKey });
+  await onRendered(env, { kind: "document", documentId: row.id });
 }
 
 /** Handles one `pdf.render` message. `clock` is the pacer's (a test passes a fake). */
@@ -235,6 +252,8 @@ export async function processRender(
     return "skipped";
   }
   if (row.pdf_sha256 !== null) {
+    // Done already. A redelivery whose first run stored the PDF but died before `onRendered` completes it here (idempotent).
+    await onRendered(env, { kind: "document", documentId: row.id });
     logEvent("pdf.render_skipped", { why: "done" });
     return "skipped";
   }
@@ -319,10 +338,10 @@ export async function processRender(
 /** A render that did not give a PDF: delay (rate, quota) or throw (anything a retry might fix). */
 async function failed(
   env: Env,
-  msg: PdfRenderMessage,
+  msg: PdfRenderMessage | PdfCertificateMessage,
   result: Exclude<Awaited<ReturnType<typeof renderPaced>>, { ok: true }>,
   now: number,
-): Promise<RenderOutcome> {
+): Promise<"delayed"> {
   if (result.kind === "rate" || result.kind === "quota") {
     if (msg.hop >= PDF_MAX_HOPS) throw new Error(`pdf: ${result.kind} limit, ${PDF_MAX_HOPS} hops used`);
     let delay: number;
@@ -336,14 +355,83 @@ async function failed(
         bell(env, "pdf.quota", "system", dayOf(now), BELL_COPY.quota, "/"),
       ]);
     }
-    await env.PDF_QUEUE.send({ ...msg, hop: msg.hop + 1 } satisfies PdfRenderMessage, {
-      delaySeconds: delay,
-    });
+    await env.PDF_QUEUE.send({ ...msg, hop: msg.hop + 1 }, { delaySeconds: delay });
     logEvent("pdf.delayed", { kind: result.kind, delay, hop: msg.hop + 1 });
     return "delayed";
   }
   logEvent("pdf.render_failed", { kind: result.kind });
   throw new Error(`pdf render failed: ${result.kind}`);
+}
+
+// ---- certificate ------------------------------------------------------------------------------------------------------------------
+
+export type CertificateOutcome = "rendered" | "adopted" | "delayed" | "skipped";
+
+/**
+ * Handles one `pdf.certificate` message (M4.5, ADM-PROP-08). The same paced render as a document (`renderPaced`, `failed`, `putOnce`), so a
+ * burst of acceptances and sends never makes more than one Browser Run call per 10 s. The certificate is rendered ONCE: a head before the
+ * render, `If-None-Match: *` on the put, `INSERT OR IGNORE` on the row (append-only). Then `onRendered` queues the confirmation emails.
+ * The data is the evidence row read in one query, never the live document.
+ */
+export async function processCertificate(
+  env: Env,
+  msg: PdfCertificateMessage,
+  now = Date.now(),
+  clock: Clock = realClock,
+): Promise<CertificateOutcome> {
+  const read = await readCertificateView(env.DB, msg.acceptanceId);
+  if (read === null) {
+    logEvent("pdf.certificate_skipped", { why: "no_acceptance" });
+    return "skipped";
+  }
+  if (read.rendered) {
+    await onRendered(env, { kind: "certificate", acceptanceId: msg.acceptanceId });
+    logEvent("pdf.certificate_skipped", { why: "done" });
+    return "skipped";
+  }
+  const insert = (sha: string, stats?: { browserMs: number }) => {
+    const date = dayOf(now);
+    const statements = [
+      env.DB.prepare(
+        "INSERT OR IGNORE INTO acceptance_certificates (acceptance_id, r2_key, sha256, rendered_at) VALUES (?1, ?2, ?3, ?4)",
+      ).bind(msg.acceptanceId, read.key, sha, now),
+    ];
+    if (stats) {
+      statements.push(
+        stat(env, date, "pdf.renders", 1, now),
+        stat(env, date, "pdf.browser_ms", stats.browserMs, now),
+        env.DB.prepare(HALF_BELL_SQL).bind(date, BROWSER_ALERT_MS, BELL_COPY.half),
+      );
+    }
+    return env.DB.batch(statements);
+  };
+
+  // A certificate stored by an earlier run whose row write was lost: the first one stays, an acceptance never gets two.
+  const already = await env.DOCS.get(read.key);
+  if (already !== null) {
+    await insert(await sha256Bytes(new Uint8Array(await already.arrayBuffer())));
+    await onRendered(env, { kind: "certificate", acceptanceId: msg.acceptanceId });
+    logEvent("pdf.certificate_adopted", {});
+    return "adopted";
+  }
+
+  const result = await renderPaced(
+    env as unknown as RenderEnv,
+    renderCertificateHtml(read.view),
+    pdfOptionsFor(),
+    clock,
+  );
+  if (!result.ok) return failed(env, msg, result, now);
+  const stored = await putOnce(env.DOCS, read.key, result.bytes, "application/pdf");
+  const bytes = stored.created ? result.bytes : new Uint8Array(await stored.existing.arrayBuffer());
+  await insert(await sha256Bytes(bytes), { browserMs: result.browserMs });
+  await onRendered(env, { kind: "certificate", acceptanceId: msg.acceptanceId });
+  logEvent("pdf.certificate_rendered", {
+    bytes: bytes.byteLength,
+    browserMs: result.browserMs,
+    hop: msg.hop,
+  });
+  return "rendered";
 }
 
 // ---- sweep -----------------------------------------------------------------------------------------------------------------------------
@@ -372,7 +460,11 @@ export async function processSweep(env: Env, msg: PdfSweepMessage): Promise<numb
 
 /** The cron's one job for PDFs: enqueue ONE sweep message. No D1 read. */
 export async function enqueueSweep(env: Env, scheduledTime: number): Promise<void> {
-  await env.PDF_QUEUE.send({ v: 1, kind: "pdf.sweep", asOf: scheduledTime } satisfies PdfSweepMessage);
+  // One `sendBatch` of two messages (still one queue operation): the PDF sweep (M4.4) and the offer sweep (M4.5).
+  await env.PDF_QUEUE.sendBatch([
+    { body: { v: 1, kind: "pdf.sweep", asOf: scheduledTime } satisfies PdfSweepMessage },
+    { body: { v: 1, kind: "offer.sweep", asOf: scheduledTime } satisfies OfferSweepMessage },
+  ]);
 }
 
 // ---- the queues ------------------------------------------------------------------------------------------------------------------------
@@ -390,6 +482,8 @@ export async function processPdf(
   }
   if (body.kind === "pdf.snapshot") await processSnapshot(env, body);
   else if (body.kind === "pdf.render") await processRender(env, body, now, clock);
+  else if (body.kind === "pdf.certificate") await processCertificate(env, body, now, clock);
+  else if (body.kind === "offer.sweep") await processOfferSweep(env, body);
   else await processSweep(env, body);
 }
 
@@ -397,8 +491,23 @@ export async function processPdf(
  * A PDF message that ran out of tries: the owners are told (once per document and kind), and the next daily sweep picks the document up
  * again. A sweep that ran out of tries is only logged: tomorrow's cron enqueues another.
  */
-export async function processPdfDeadLetter(env: Env, body: unknown): Promise<void> {
-  if (isPdfMessage(body) && (body.kind === "pdf.snapshot" || body.kind === "pdf.render")) {
+export async function processPdfDeadLetter(env: Env, body: unknown, now = Date.now()): Promise<void> {
+  if (isPdfMessage(body) && body.kind === "pdf.certificate") {
+    // The acceptance is safe (its evidence row is written); only the certificate file is missing. The owners are told, the sweep tries again.
+    // The bell is unique per (user, kind, entity), so the entity carries the IST day: a failure on a later day (the sweep's retry) rings again,
+    // a redelivery on the same day does not.
+    await env.DB.batch([
+      bell(
+        env,
+        "pdf.failed",
+        "acceptance",
+        `${body.acceptanceId}:${todayIst(now)}`,
+        // [Placeholder] no line for this bell in 07-N or 07-P yet: the owner approves the words with the batch.
+        "[Placeholder] An acceptance certificate could not be made; it will be tried again tonight",
+        "/",
+      ),
+    ]);
+  } else if (isPdfMessage(body) && (body.kind === "pdf.snapshot" || body.kind === "pdf.render")) {
     const row = await env.DB.prepare(
       `SELECT number_display, version,
         EXISTS (SELECT 1 FROM clients c WHERE c.id = documents.client_id AND c.anonymised_at IS NOT NULL) AS client_gone

@@ -14,6 +14,9 @@ import type { GuardSql } from "./log.ts";
  * `g` (M4.3): the caller's guard, usually `{ auditId }` of the request's audit row, appended to BOTH statements. A send that changed
  * nothing (a stale one, a refused one) writes no audit row, so it cannot move a lead either. Without it the statements run
  * unconditionally (the M3.2 shape).
+ *
+ * `lostReason` (M4.5): required when the event moves the lead to `lost` (a client's decline); it is the lead's `lost_reason`. Any other
+ * move clears it, as before.
  */
 export function proposalEventStatements(
   db: D1Database,
@@ -21,16 +24,27 @@ export function proposalEventStatements(
   event: ProposalEvent,
   t: number = Date.now(),
   g?: GuardSql,
+  lostReason: string | null = null,
 ): D1PreparedStatement[] {
   const rule = PROPOSAL_EVENT_RULES[event];
   const from = rule.from.map((_, i) => `?${i + 4}`).join(", ");
   const guardAt = rule.from.length + 4;
+  if ((rule.to === "lost") !== (lostReason !== null))
+    throw new Error("proposalEventStatements: a lost reason goes with, and only with, a move to lost");
+  const reasonAt = guardAt + (g?.params.length ?? 0);
   return [
     db
       .prepare(
-        `UPDATE leads SET stage = ?1, lost_reason = NULL, updated_at = ?2, ${touchLeadSql("?2")} WHERE proposal_id = ?3 AND stage IN (${from})${g ? ` AND ${g.sql(guardAt)}` : ""}`,
+        `UPDATE leads SET stage = ?1, lost_reason = ${lostReason === null ? "NULL" : `?${reasonAt}`}, updated_at = ?2, ${touchLeadSql("?2")} WHERE proposal_id = ?3 AND stage IN (${from})${g ? ` AND ${g.sql(guardAt)}` : ""}`,
       )
-      .bind(rule.to, t, groupId, ...rule.from, ...(g?.params ?? [])),
+      .bind(
+        rule.to,
+        t,
+        groupId,
+        ...rule.from,
+        ...(g?.params ?? []),
+        ...(lostReason === null ? [] : [lostReason]),
+      ),
     db
       .prepare(
         `INSERT INTO lead_activities (id, lead_id, kind, body, actor_id, created_at)
@@ -39,7 +53,11 @@ export function proposalEventStatements(
       .bind(
         uuidv7(),
         rule.to,
-        event === "proposal_sent" ? "proposal sent" : "proposal accepted",
+        event === "proposal_sent"
+          ? "proposal sent"
+          : event === "proposal_accepted"
+            ? "proposal accepted"
+            : "proposal declined",
         t,
         groupId,
         ...(g?.params ?? []),

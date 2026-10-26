@@ -1,7 +1,7 @@
 // The queue entry point: routes a batch to its consumer by queue name (`techaust-<env>-leads`, `-leads-dlq`, `-email`,
 // `-email-dlq`). Each message is acknowledged on success and retried when its consumer throws or asks for a retry;
 // after 5 tries the queue moves it to the dead-letter queue (wrangler.jsonc).
-import { isPurgeMessage, isPurgeScanMessage } from "@techaust/core";
+import { isOfferExpansionKind, isPurgeMessage, isPurgeScanMessage } from "@techaust/core";
 import { isExpireKind, isExpireMessage } from "@techaust/core/expiry";
 import { isPdfKind } from "@techaust/core/pdf-jobs";
 import { isStatsKind, isStatsMessage } from "@techaust/core/stats";
@@ -9,6 +9,7 @@ import { CLAIM_TIMEOUT_MS, processDeadLetter, processEmail } from "./email.ts";
 import { logExpireDeadLetter, processExpire, skipExpire } from "./expire.ts";
 import { processLead } from "./leads.ts";
 import { logEvent, noteInvocation } from "./log.ts";
+import { processOfferMessage } from "./offers.ts";
 import { processPdf, processPdfDeadLetter } from "./pdf.ts";
 import { enqueueDue, purgeLead } from "./purge.ts";
 import { processStaffAlert } from "./staff-alerts.ts";
@@ -44,6 +45,10 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
       } else if (isDlq && (isPurgeMessage(message.body) || isPurgeScanMessage(message.body))) {
         // A clean-up message that ran out of tries: the next daily run enqueues the lead again, so no alert and no retry.
         logEvent("lead.purge_dead_letter", { queue });
+        message.ack();
+      } else if (isDlq && isOfferExpansionKind(message.body) && message.body.kind === "offer.decided") {
+        // A bell that ran out of tries: the decision itself is stored and shows on the proposal page, so no alert and no retry.
+        logEvent("offer.decided_dead_letter", { queue });
         message.ack();
       } else if (isDlq && isStatsKind(message.body)) {
         // A statistics message that ran out of tries: the next night records its date again, so no alert and no retry.
@@ -83,8 +88,14 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
         // Expanded into ordinary emails; an alert that cannot be read or has no row is acknowledged (a retry cannot help).
         await processStaffAlert(env, message.body);
         message.ack();
+      } else if (queue.endsWith("-email") && isOfferExpansionKind(message.body)) {
+        // M4.5: expanded into ordinary emails and bells before the generic path, so a body of this family (valid or not) is never sent as an email.
+        // The PDF or the certificate is not stored yet: come back in a minute (it counts as a try; the sweep is the safety net).
+        const verdict = await processOfferMessage(env, message.body);
+        if (verdict === "retry") message.retry({ delaySeconds: 60 });
+        else message.ack();
       } else if (queue.endsWith("-email")) {
-        const result = await processEmail(env, message.body);
+        const result = await processEmail(env, message.body, undefined, undefined, message.attempts);
         if (result === "retry") message.retry({ delaySeconds: 30 });
         // Another claim holds the email: come back once that claim would have gone stale (it counts as a try, so a claim
         // that never clears still ends in the dead-letter queue and its alert).

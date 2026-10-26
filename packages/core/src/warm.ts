@@ -8,10 +8,14 @@
 import { budgetBandLabel, countryName } from "./form-labels.ts";
 import { contactForm, quoteForm } from "./schemas/forms.ts";
 import {
+  approvalNotifyMessage,
   emailMessage,
   formMeta,
   type LeadMessage,
   leadMessage,
+  offerAcceptedMessage,
+  offerDecidedMessage,
+  offerSendMessage,
   staffAlertMessage,
 } from "./schemas/messages.ts";
 
@@ -99,6 +103,21 @@ export function warmConsumerMessages(): number {
       ok(
         staffAlertMessage.safeParse({ kind: "staff.alert", auditId: "00000000-0000-7000-8000-000000000000" }),
       )
+    );
+  } catch {
+    return 0; // never stop a Worker from starting
+  }
+}
+
+/** The M4.5 expansion messages of the email queue (offer.send, offer.decided, offer.accepted, approval.notify): one made-up parse each. Returns 4. */
+export function warmOfferMessages(): number {
+  const id = "00000000-0000-7000-8000-000000000000";
+  try {
+    return (
+      ok(offerSendMessage.safeParse({ kind: "offer.send", sendId: id })) +
+      ok(offerDecidedMessage.safeParse({ kind: "offer.decided", documentId: id, decision: "accepted" })) +
+      ok(offerAcceptedMessage.safeParse({ kind: "offer.accepted", acceptanceId: id })) +
+      ok(approvalNotifyMessage.safeParse({ kind: "approval.notify", approvalId: id, event: "requested" }))
     );
   } catch {
     return 0; // never stop a Worker from starting

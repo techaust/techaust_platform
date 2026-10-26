@@ -2,7 +2,8 @@
 // `draft` while one is pending, and "pending approval" is shown from the approvals row (owner, 2026-10-07). An approval is for one version's
 // exact content (`content_sha256`): any save that changes the content expires it in the same batch, and an expired approval never revives.
 // The 10 % guard is rule A (owner O-Q1, O-Q2): only catalogue lines count, against the catalogue price when the service was added.
-// Notifications are in-app only in M4.3 (the bell); the two 07 §8 emails come with M4.5. The bell wording here is interim: copy 07-O decides it.
+// Notifications: the bell (written in the same batch) and, from M4.5, the two 07 §8 emails (`approval.notify` on the email queue, after the answer).
+// The bell wording here is interim: copy 07-O decides it.
 import { guardFigures } from "@techaust/core/documents";
 import { uuidv7 } from "@techaust/core/ids";
 import { decide } from "@techaust/core/permissions";
@@ -19,6 +20,7 @@ import {
   mutate,
   NOT_FOUND,
 } from "./context.ts";
+import { notifyApproval } from "./document-events.ts";
 import { body, idParam, isUnique, limitOf, param, query, STALE_VERSION, text } from "./http.ts";
 import { type Direction, decodeCursor, keysetSql, pageOf } from "./keyset.ts";
 import {
@@ -162,7 +164,10 @@ export const approvalRequests = new Hono<AppEnv>().post(
       if (isUnique(e, "approvals.document_id, approvals.kind")) return err(c, APPROVAL_PENDING, 409);
       throw e;
     }
-    if (done) return c.json({ id: approvalId, status: "pending", discountBp: figures.discountBp }, 201);
+    if (done) {
+      notifyApproval(c, approvalId, "requested");
+      return c.json({ id: approvalId, status: "pending", discountBp: figures.discountBp }, 201);
+    }
     const again = await db
       .prepare(
         `SELECT d.frozen_at, d.updated_at, ${APPROVED_NOW} AS approved, ${REJECTED_NOW} AS rejected FROM documents d WHERE d.id = ?1`,
@@ -333,7 +338,10 @@ export const approvals = new Hono<AppEnv>()
           ),
       ],
     });
-    if (done) return c.json({ ok: true, status: to });
+    if (done) {
+      notifyApproval(c, id, "decided");
+      return c.json({ ok: true, status: to });
+    }
     // Nothing changed: it was decided meanwhile, or the document changed (or was sent) after the request: then the request ends here.
     const again = await db
       .prepare("SELECT status FROM approvals WHERE id = ?1")

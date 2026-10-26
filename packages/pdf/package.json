@@ -5,7 +5,9 @@
   "type": "module",
   "description": "Document templates (HTML + print CSS), embedded fonts and the Browser Run render client.",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./view": "./src/view-entry.ts",
+    "./copy": "./src/layout/copy.ts"
   },
   "scripts": {
     "build:assets": "node scripts/build-assets.ts",

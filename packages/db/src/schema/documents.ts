@@ -339,9 +339,104 @@ export const acceptances = sqliteTable(
     pdfSha256: text("pdf_sha256").notNull(),
     termsVersionId: text("terms_version_id").references(() => termsVersions.id),
     certificateR2Key: text("certificate_r2_key"),
+    /** M4.5: how the contact accepted, `session` (signed in) or `link` (the emailed offer link). */
+    via: text("via"),
+    /** M4.5: SHA-256 of the offer link used (never the link itself); null for a session acceptance. */
+    offerLinkHash: text("offer_link_hash"),
+    /** M4.5: the document's snapshot hash at acceptance, copied by SQL. */
+    snapshotSha256: text("snapshot_sha256"),
   },
-  (t) => [uniqueIndex("acceptances_document").on(t.documentId), index("acceptances_contact").on(t.contactId)],
+  (t) => [
+    uniqueIndex("acceptances_document").on(t.documentId),
+    index("acceptances_contact").on(t.contactId),
+    // M4.5: the sweep finds acceptances older than 10 minutes with no certificate row.
+    index("acceptances_accepted_at").on(t.acceptedAt),
+  ],
 );
+
+export const DOCUMENT_SEND_KINDS = ["send", "resend"] as const;
+
+/**
+ * One row per recipient of a proposal or estimate send (M4.5, ADM-PROP-07). `queued_at` NULL means the email waits for
+ * the PDF. `contact_id` and `email` are cleared when the contact is erased or anonymised (a trigger allows only that).
+ */
+export const documentSends = sqliteTable(
+  "document_sends",
+  {
+    id: id(),
+    documentId: text("document_id")
+      .notNull()
+      .references(() => documents.id),
+    versionGroupId: text("version_group_id").notNull(),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => clients.id),
+    contactId: text("contact_id").references(() => contacts.id),
+    email: text("email"),
+    attachPdf: integer("attach_pdf").notNull(),
+    kind: text("kind", { enum: DOCUMENT_SEND_KINDS }).notNull(),
+    queuedAt: integer("queued_at"),
+    /** Set once when staff revoke the links: a waiting or queued send is then never emailed (M4.5 fix M1). */
+    cancelledAt: integer("cancelled_at"),
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => staffUsers.id),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("document_sends_document").on(t.documentId),
+    index("document_sends_contact").on(t.contactId),
+    index("document_sends_waiting").on(t.documentId).where(sql`${t.queuedAt} IS NULL`),
+  ],
+);
+
+/** The purposes of an offer link. Enforced by the `offer_links_purpose` trigger, not a CHECK (a new one is a trigger swap). */
+export const OFFER_LINK_PURPOSES = ["offer", "confirmation"] as const;
+
+/**
+ * Emailed links to one offer (all its versions), each bound to one contact (M4.5, POR-06, owner decision 2026-10-25).
+ * Only the SHA-256 of the token is stored. Only `revoked_at` may change, once (trigger).
+ */
+export const offerLinks = sqliteTable(
+  "offer_links",
+  {
+    tokenHash: text("token_hash").primaryKey(),
+    sendId: text("send_id").references(() => documentSends.id),
+    acceptanceId: text("acceptance_id").references(() => acceptances.id),
+    documentId: text("document_id")
+      .notNull()
+      .references(() => documents.id),
+    versionGroupId: text("version_group_id").notNull(),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => clients.id),
+    contactId: text("contact_id")
+      .notNull()
+      .references(() => contacts.id),
+    /** Lower-cased snapshot of the contact's address; a changed address kills the link. */
+    email: text("email").notNull(),
+    purpose: text("purpose").notNull(),
+    expiresAt: integer("expires_at").notNull(),
+    revokedAt: integer("revoked_at"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("offer_links_document").on(t.documentId),
+    index("offer_links_group").on(t.versionGroupId),
+    index("offer_links_contact").on(t.contactId),
+    index("offer_links_send").on(t.sendId),
+  ],
+);
+
+/** The rendered acceptance certificate (M4.5, ADM-PROP-08). Append-only; one per acceptance. */
+export const acceptanceCertificates = sqliteTable("acceptance_certificates", {
+  acceptanceId: text("acceptance_id")
+    .primaryKey()
+    .references(() => acceptances.id),
+  r2Key: text("r2_key").notNull(),
+  sha256: text("sha256").notNull(),
+  renderedAt: integer("rendered_at").notNull(),
+});
 
 export const APPROVAL_KINDS = ["discount", "issue", "payment_verify", "refund"] as const;
 export const APPROVAL_STATUSES = ["pending", "approved", "rejected", "expired"] as const;

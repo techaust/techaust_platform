@@ -18,6 +18,7 @@ import {
   mkService,
   mkTerms,
   patchDoc,
+  sendBodyOf,
   sendDoc,
 } from "./test-quotes.ts";
 
@@ -31,8 +32,8 @@ beforeAll(async () => {
 const create = (cookie: string, body: Record<string, unknown>) => call("/documents", { cookie, body });
 
 describe("start-up warm-up", () => {
-  it("every request schema of the new routes has a sample that parses (seven schemas)", () => {
-    expect(warmDocuments()).toBe(8);
+  it("every request schema of the new routes has a sample that parses (ten schemas)", () => {
+    expect(warmDocuments()).toBe(10);
   });
 });
 
@@ -443,7 +444,7 @@ async function sendOk(s: { cookie: string }, id: string) {
   const doc = await json(await call(`/documents/${id}`, { cookie: s.cookie }));
   const res = await call(`/documents/${id}/send`, {
     cookie: s.cookie,
-    body: { expectedUpdatedAt: doc.updatedAt },
+    body: await sendBodyOf(id, doc.updatedAt),
   });
   expect(res.status, await res.clone().text()).toBe(200);
   return json(res);

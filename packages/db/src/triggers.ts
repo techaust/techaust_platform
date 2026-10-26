@@ -5,7 +5,13 @@
 import { INVOICE_FAMILY_SQL, QUOTE_DOCUMENT_TYPES } from "@techaust/core/clients";
 import { getTableColumns } from "drizzle-orm";
 import { getTableConfig } from "drizzle-orm/sqlite-core";
-import { documentLines, documentSections, paymentSchedules } from "./schema/documents.ts";
+import {
+  acceptanceCertificates,
+  documentLines,
+  documentSections,
+  OFFER_LINK_PURPOSES,
+  paymentSchedules,
+} from "./schema/documents.ts";
 import {
   acceptances,
   accessLog,
@@ -434,6 +440,51 @@ export function documentTriggerStatements(): string[] {
   ];
 }
 
+/**
+ * Offer-link and send triggers (M4.5; new triggers only, no table is rebuilt):
+ *  1. an offer link has a known purpose (a trigger, not a CHECK: a new purpose is a trigger swap, not a rebuild);
+ *  2. an offer link never changes except its `revoked_at`, once, from NULL;
+ *  3. an acceptance certificate is append-only;
+ *  4. a send row changes only by `queued_at` (set once) and by clearing `contact_id` and `email` (erase and anonymise).
+ * Each abort message starts with its trigger's name, so the API can map it.
+ */
+export function offerTriggerStatements(): string[] {
+  const table = (t: Parameters<typeof getTableConfig>[0]) => getTableConfig(t).name;
+  const purposes = OFFER_LINK_PURPOSES.map((p) => `'${p}'`).join(", ");
+  const changed = (cols: string[]) => cols.map((c) => `NEW.\`${c}\` IS NOT OLD.\`${c}\``).join(" OR ");
+  const linkFixed = changed([
+    "token_hash",
+    "send_id",
+    "acceptance_id",
+    "document_id",
+    "version_group_id",
+    "client_id",
+    "contact_id",
+    "email",
+    "purpose",
+    "expires_at",
+    "created_at",
+  ]);
+  const sendFixed = changed([
+    "id",
+    "document_id",
+    "version_group_id",
+    "client_id",
+    "attach_pdf",
+    "kind",
+    "created_by",
+    "created_at",
+  ]);
+  const purposeMsg = abort("offer_links_purpose: an offer link is for an offer or a confirmation");
+  return [
+    `CREATE TRIGGER \`offer_links_purpose_insert\` BEFORE INSERT ON \`offer_links\` WHEN NEW.purpose NOT IN (${purposes}) BEGIN ${purposeMsg} END;`,
+    `CREATE TRIGGER \`offer_links_purpose_update\` BEFORE UPDATE OF purpose ON \`offer_links\` WHEN NEW.purpose NOT IN (${purposes}) BEGIN ${purposeMsg} END;`,
+    `CREATE TRIGGER \`offer_links_fixed\` BEFORE UPDATE ON \`offer_links\` WHEN ${linkFixed} OR (OLD.revoked_at IS NOT NULL AND NEW.revoked_at IS NOT OLD.revoked_at) BEGIN ${abort("offer_links_fixed: an offer link only gets revoked, once")} END;`,
+    ...appendOnly(table(acceptanceCertificates)),
+    `CREATE TRIGGER \`document_sends_fixed\` BEFORE UPDATE ON \`document_sends\` WHEN ${sendFixed} OR (OLD.queued_at IS NOT NULL AND NEW.queued_at IS NOT OLD.queued_at) OR (OLD.cancelled_at IS NOT NULL AND NEW.cancelled_at IS NOT OLD.cancelled_at) OR (NEW.contact_id IS NOT OLD.contact_id AND NEW.contact_id IS NOT NULL) OR (NEW.email IS NOT OLD.email AND NEW.email IS NOT NULL) BEGIN ${abort("document_sends_fixed: a send changes only when it is queued or cancelled, or when its contact is erased")} END;`,
+  ];
+}
+
 /** The trigger sets, by the name the migration is created with (`drizzle-kit generate --custom --name <set>`). */
 export const TRIGGER_SETS = {
   triggers: { what: "integrity triggers (docs/05 §5.3)", statements: triggerStatements },
@@ -467,6 +518,10 @@ export const TRIGGER_SETS = {
   document_triggers: {
     what: "proposal and estimate versions, status flow, approvals, the freeze trigger recreated and the issue post-condition for versions (M4.3)",
     statements: documentTriggerStatements,
+  },
+  offer_triggers: {
+    what: "offer links, send rows and acceptance certificates (M4.5)",
+    statements: offerTriggerStatements,
   },
 } as const;
 export type TriggerSet = keyof typeof TRIGGER_SETS;

@@ -45,6 +45,7 @@ import {
   NOT_FOUND,
 } from "./context.ts";
 import { buildNewDraft, newDraftStatements } from "./document-draft.ts";
+import { decisionOf, LEAD_DECISION_SQL } from "./document-offer.ts";
 import { body, idParam, isUnique, optText, param, query, STALE_VERSION, text } from "./http.ts";
 import { type Direction, decodeCursor, keysetSql, PREFIX_END, pageOf } from "./keyset.ts";
 import { queueEmail } from "./mail.ts";
@@ -554,7 +555,7 @@ export const leads = new Hono<AppEnv>()
     const { id } = c.req.valid("param");
     const db = c.env.DB;
     const order = keysetSql("a.created_at", "a.id", false, "after", 2);
-    const [lead, dups, activities] = await db.batch<DetailRow & ActivityRow & ListRow>([
+    const [lead, dups, activities, decisionR] = await db.batch<DetailRow & ActivityRow & ListRow>([
       db
         .prepare(
           `SELECT ${LIST_COLUMNS}, l.request_type, l.plan, l.budget_band, l.timeline, l.currency, l.message, l.tools, l.contact_phone, l.contact_country,
@@ -572,6 +573,8 @@ export const leads = new Hono<AppEnv>()
         )
         .bind(id),
       db.prepare(`${ACTIVITY_SQL} ORDER BY ${order.order} LIMIT 26`).bind(id),
+      // M4.5: how the client answered the proposal (accepted or declined), if they did.
+      db.prepare(LEAD_DECISION_SQL).bind(id),
     ]);
     const r = lead?.results[0] as DetailRow | undefined;
     if (!r) return err(c, NOT_FOUND, 404);
@@ -603,6 +606,8 @@ export const leads = new Hono<AppEnv>()
       },
       client: r.client_id ? { id: r.client_id, code: r.client_code, name: r.client_name } : null,
       proposal: r.proposal_id ? { id: r.proposal_id, status: r.proposal_status } : null,
+      /** Additive (M4.5): the client's answer to the proposal, or null. A decline also moves the lead to lost with the reason (stage automation). */
+      decision: decisionOf((decisionR?.results[0] ?? undefined) as Record<string, unknown> | undefined),
       duplicates: ((dups?.results ?? []) as unknown as Record<string, unknown>[]).map((d) => ({
         id: d.id,
         ref: d.ref,

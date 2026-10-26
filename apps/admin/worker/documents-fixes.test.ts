@@ -28,6 +28,7 @@ import {
   mkService,
   mkTerms,
   patchDoc,
+  sendBodyOf,
   sendDoc,
 } from "./test-quotes.ts";
 
@@ -192,7 +193,7 @@ describe("light reads [item 5]", () => {
       (
         await call(
           `/documents/${made.id}/send`,
-          { cookie: o.cookie, body: { expectedUpdatedAt: now.updatedAt } },
+          { cookie: o.cookie, body: await sendBodyOf(made.id, now.updatedAt) },
           sendEnv.env,
         )
       ).status,

@@ -97,6 +97,26 @@ const TENANT_CASES: Record<string, TenantCase> = {
   },
 };
 
+/**
+ * Guarded routes that name an organisation's row by an id and are proven in offer-routes.test.ts with the same `crossTenant` harness on
+ * their own fixtures (a proposal must be sent and rendered to be shown, which an invoice fixture is not). Here they only join the SQL-spy loop.
+ */
+const TENANT_ELSEWHERE: Record<string, { request: (id: string) => { path: string; init?: CallInit } }> = {
+  "GET /api/v1/offers": { request: () => ({ path: "/offers" }) },
+  "GET /api/v1/offers/:id": { request: (id) => ({ path: `/offers/${id}` }) },
+  "GET /api/v1/offers/:id/pdf": { request: (id) => ({ path: `/offers/${id}/pdf` }) },
+  "GET /api/v1/offers/:id/certificate": { request: (id) => ({ path: `/offers/${id}/certificate` }) },
+  "POST /api/v1/offers/:id/accept": {
+    request: (id) => ({
+      path: `/offers/${id}/accept`,
+      init: { body: { typedName: "Sample Person", agree: true } },
+    }),
+  },
+  "POST /api/v1/offers/:id/decline": {
+    request: (id) => ({ path: `/offers/${id}/decline`, init: { body: { reason: "price" } } }),
+  },
+};
+
 /** Guarded routes that touch no row of an organisation by a caller-named id, with the reason and a sample request. */
 const NO_CLIENT_ROWS: Record<
   string,
@@ -118,22 +138,28 @@ describe("every guarded route is classified for the cross-tenant and SQL-spy tes
   it("each guarded route is in exactly one of TENANT_CASES and NO_CLIENT_ROWS, and neither lists a route that is gone", () => {
     const keys = GUARDED.map(keyOf);
     for (const k of keys) {
-      const where = [k in TENANT_CASES, k in NO_CLIENT_ROWS].filter(Boolean).length;
+      const where = [k in TENANT_CASES, k in NO_CLIENT_ROWS, k in TENANT_ELSEWHERE].filter(Boolean).length;
       expect(
         where,
         `${k} must be in TENANT_CASES (crossTenant) or NO_CLIENT_ROWS (with a reason), not both, not neither`,
       ).toBe(1);
     }
-    for (const k of [...Object.keys(TENANT_CASES), ...Object.keys(NO_CLIENT_ROWS)])
+    for (const k of [
+      ...Object.keys(TENANT_CASES),
+      ...Object.keys(NO_CLIENT_ROWS),
+      ...Object.keys(TENANT_ELSEWHERE),
+    ])
       expect(keys, `${k} is classified but is not a guarded route`).toContain(k);
   });
 
-  it("the product table's guarded routes are exactly the two classified as NO_CLIENT_ROWS", () => {
+  it("the product table's guarded routes are the two classified as NO_CLIENT_ROWS and the offer routes", () => {
     expect(
       ROUTES.filter((r) => r.access !== "public")
         .map(keyOf)
         .sort(),
-    ).toEqual(["GET /api/v1/me", "POST /api/v1/auth/sessions/revoke-all"].sort());
+    ).toEqual(
+      ["GET /api/v1/me", "POST /api/v1/auth/sessions/revoke-all", ...Object.keys(TENANT_ELSEWHERE)].sort(),
+    );
   });
 });
 
@@ -184,7 +210,12 @@ describe("every statement of a signed-in request is bound to the session's organ
       const tables = await tablesWithClientId();
       const tenant = TENANT_CASES[key];
       const plain = NO_CLIENT_ROWS[key];
-      const asked = tenant ? tenant.request(f.a.docs.issued) : plain?.request(f);
+      const elsewhere = TENANT_ELSEWHERE[key];
+      const asked = tenant
+        ? tenant.request(f.a.docs.issued)
+        : elsewhere
+          ? elsewhere.request(f.a.docs.proposal)
+          : plain?.request(f);
       expect(
         asked,
         `${key} has no sample request: classify it in TENANT_CASES or NO_CLIENT_ROWS`,

@@ -1,4 +1,13 @@
 // @techaust/email: templates (HTML + text), header sanitising and the SES v2 client (docs/05 §11.1).
+
+import {
+  approvalDecided,
+  approvalRequested,
+  offerAcceptedClient,
+  offerAcceptedStaff,
+  offerDeclinedStaff,
+  offerSent,
+} from "./offers.ts";
 import {
   type LayoutOptions,
   leadAcknowledgement,
@@ -15,6 +24,7 @@ import {
 } from "./templates.ts";
 
 export * from "./headers.ts";
+export * from "./offers.ts";
 export * from "./templates.ts";
 export * from "./transport.ts";
 
@@ -31,6 +41,17 @@ export const SENDERS = {
 export const NO_REPLY_REPLY_TO = "contact@techaust.com";
 
 type Data = Record<string, string>;
+
+const acceptedData = (get: (k: string) => string) => ({
+  typed_name: get("typed_name"),
+  email: get("email"),
+  accepted_at_ist: get("accepted_at_ist"),
+  title: get("title"),
+  number: get("number"),
+  version: get("version"),
+  url: get("url"),
+  next_step: get("next_step"),
+});
 
 const who = (get: (k: string) => string) => ({ name: get("name"), first_name: get("first_name") });
 
@@ -158,6 +179,75 @@ function renderTemplate(
       };
     case "lead.reply":
       return { ...hello, ...leadReply({ subject: get("subject"), body: get("body") }, opts) };
+    case "offer.sent":
+      return {
+        ...hello,
+        ...offerSent(
+          {
+            first_name: get("first_name"),
+            kind: get("kind"),
+            title: get("title"),
+            number: get("number"),
+            version: get("version"),
+            valid_until: get("valid_until"),
+            total: get("total"),
+            url: get("url"),
+            attached: get("attached"),
+            sender_name: get("sender_name"),
+          },
+          opts,
+        ),
+      };
+    case "offer.accepted.client":
+      return { ...hello, ...offerAcceptedClient(acceptedData(get), opts) };
+    case "offer.accepted.staff":
+      return { ...hello, ...offerAcceptedStaff(acceptedData(get), opts) };
+    case "offer.declined.staff":
+      return {
+        ...hello,
+        ...offerDeclinedStaff(
+          {
+            name: get("name"),
+            number: get("number"),
+            version: get("version"),
+            title: get("title"),
+            reason: get("reason"),
+            note: get("note"),
+            url: get("url"),
+          },
+          opts,
+        ),
+      };
+    case "approval.requested":
+      return {
+        ...hello,
+        ...approvalRequested(
+          {
+            requester_name: get("requester_name"),
+            request_reason: get("request_reason"),
+            title: get("title"),
+            version: get("version"),
+            amount: get("amount"),
+            admin_url: get("admin_url"),
+          },
+          opts,
+        ),
+      };
+    case "approval.decided":
+      return {
+        ...hello,
+        ...approvalDecided(
+          {
+            decision: get("decision"),
+            approver_name: get("approver_name"),
+            title: get("title"),
+            version: get("version"),
+            decision_note: get("decision_note"),
+            admin_url: get("admin_url"),
+          },
+          opts,
+        ),
+      };
     default:
       throw new Error(`Unknown email template: ${template}`);
   }

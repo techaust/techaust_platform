@@ -13,5 +13,12 @@ export const EMAIL_TEMPLATES = [
   "staff.invite",
   // M3.2: a reply written on the lead page (ADM-LEAD-06; the starting texts are in 07-I)
   "lead.reply",
+  // M4.5: a proposal or estimate sent, its acceptance (to the client and to TecHaust) and the approval emails (07 §8)
+  "offer.sent",
+  "offer.accepted.client",
+  "offer.accepted.staff",
+  "offer.declined.staff",
+  "approval.requested",
+  "approval.decided",
 ] as const;
 export type EmailTemplate = (typeof EMAIL_TEMPLATES)[number];

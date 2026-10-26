@@ -82,8 +82,35 @@ export const getDoc = async (s: TestSession, id: string) =>
 export const patchDoc = (s: TestSession, id: string, body: unknown) =>
   call(`/documents/${id}`, { method: "PATCH", cookie: s.cookie, body });
 
-export const sendDoc = (s: TestSession, id: string, expectedUpdatedAt: number) =>
-  call(`/documents/${id}/send`, { cookie: s.cookie, body: { expectedUpdatedAt } });
+/**
+ * The recipients of a send (M4.5 needs 1 to 5): the document's client's primary contact, given portal access if it had none (a client
+ * without any contact gets one). Tests that are not about recipients use this so a send stays one call.
+ */
+export async function recipientsOf(documentId: string): Promise<string[]> {
+  const doc = await one<{ client_id: string }>("SELECT client_id FROM documents WHERE id = ?", documentId);
+  if (!doc) return [];
+  const existing = await one<{ id: string }>(
+    "SELECT id FROM contacts WHERE client_id = ? AND anonymised_at IS NULL ORDER BY is_primary DESC, id LIMIT 1",
+    doc.client_id,
+  );
+  const id = existing?.id ?? (await mkContact(doc.client_id, { is_primary: 0 })).id;
+  await env.DB.prepare("UPDATE contacts SET portal_access = 1 WHERE id = ?").bind(id).run();
+  return [id];
+}
+
+/** The JSON body of a send for `id`, with the default recipients. */
+export const sendBodyOf = async (
+  id: string,
+  expectedUpdatedAt: number,
+  extra: Record<string, unknown> = {},
+) => ({
+  expectedUpdatedAt,
+  contactIds: await recipientsOf(id),
+  ...extra,
+});
+
+export const sendDoc = async (s: TestSession, id: string, expectedUpdatedAt: number) =>
+  call(`/documents/${id}/send`, { cookie: s.cookie, body: await sendBodyOf(id, expectedUpdatedAt) });
 
 /** Set a document discount through a save; returns the saved document (read back whole: the save itself answers slim). */
 export async function discount(s: TestSession, id: string, kind: "fixed" | "percent", value: number) {

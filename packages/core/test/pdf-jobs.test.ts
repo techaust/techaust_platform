@@ -20,6 +20,27 @@ describe("isPdfMessage", () => {
     expect(isPdfMessage({ v: 1, kind: "pdf.sweep", asOf: 1_700_000_000_000 })).toBe(true);
   });
 
+  it("accepts the M4.5 kinds: the acceptance certificate and the offer sweep", () => {
+    expect(isPdfMessage({ v: 1, kind: "pdf.certificate", acceptanceId: "a1", hop: 0 })).toBe(true);
+    expect(isPdfMessage({ v: 1, kind: "pdf.certificate", acceptanceId: "a1", hop: PDF_MAX_HOPS })).toBe(true);
+    expect(isPdfMessage({ v: 1, kind: "offer.sweep", asOf: 1_700_000_000_000 })).toBe(true);
+  });
+
+  it.each([
+    { v: 1, kind: "pdf.certificate", acceptanceId: "", hop: 0 },
+    { v: 1, kind: "pdf.certificate", acceptanceId: "x".repeat(65), hop: 0 },
+    { v: 1, kind: "pdf.certificate", acceptanceId: 7, hop: 0 },
+    { v: 1, kind: "pdf.certificate", acceptanceId: "a", hop: PDF_MAX_HOPS + 1 },
+    { v: 1, kind: "pdf.certificate", acceptanceId: "a", hop: -1 },
+    { v: 1, kind: "pdf.certificate", acceptanceId: "a", hop: 0.5 },
+    { v: 1, kind: "pdf.certificate", documentId: "a", hop: 0 },
+    { v: 1, kind: "offer.sweep", asOf: "now" },
+    { v: 1, kind: "offer.sweep", asOf: -1 },
+    { v: 2, kind: "offer.sweep", asOf: 1 },
+  ])("refuses the M4.5 body %j", (body) => {
+    expect(isPdfMessage(body)).toBe(false);
+  });
+
   it.each([
     null,
     "pdf.sweep",
@@ -42,6 +63,9 @@ describe("isPdfMessage", () => {
 
   it("isPdfKind sees the family even when the body is malformed", () => {
     expect(isPdfKind({ kind: "pdf.render" })).toBe(true);
+    expect(isPdfKind({ kind: "pdf.certificate" })).toBe(true);
+    expect(isPdfKind({ kind: "offer.sweep" })).toBe(true); // rides the PDF queue, so a malformed one is never a lead
+    expect(isPdfKind({ kind: "offer.send" })).toBe(false); // an email-queue message
     expect(isPdfKind({ kind: "lead.purge" })).toBe(false);
     expect(isPdfKind(null)).toBe(false);
     expect(isPdfKind({ kind: 3 })).toBe(false);

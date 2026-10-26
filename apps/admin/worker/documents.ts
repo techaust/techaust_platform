@@ -28,6 +28,7 @@ import {
   NOT_FOUND,
 } from "./context.ts";
 import { buildNewDraft, type ClientFacts, newDraftStatements } from "./document-draft.ts";
+import { offerSection, offerStatements, startPlanOf } from "./document-offer.ts";
 import { documentView } from "./document-view.ts";
 import { body, idParam, isUnique, limitOf, param, query, refusedWith, STALE_VERSION, text } from "./http.ts";
 import { type Direction, decodeCursor, keysetSql, pageOf } from "./keyset.ts";
@@ -275,7 +276,7 @@ export const documents = new Hono<AppEnv>()
             .bind(f.contactId)
         : db
             .prepare(
-              "SELECT id, client_id, name, email, anonymised_at FROM contacts WHERE client_id = ?1 AND is_primary = 1 AND anonymised_at IS NULL LIMIT 1",
+              "SELECT id, client_id, name, email, anonymised_at FROM contacts WHERE client_id = ?1 AND anonymised_at IS NULL ORDER BY is_primary DESC, name, id LIMIT 1",
             )
             .bind(f.clientId),
       db.prepare(SETTINGS_READ),
@@ -391,12 +392,21 @@ export const documents = new Hono<AppEnv>()
   // ---- one document ----
   .get("/:id", param(idParam), async (c) => {
     const id = c.req.valid("param").id;
-    // What an accepted estimate became rides in the same D1 call (two indexed probes: documents_source and care_plans_source_document).
-    const ctx = await readContext(c, id, [c.env.DB.prepare(CONVERTED_TO_SQL).bind(id)]);
+    // The offer's history (who it went to, the acceptance, the certificate, a decline, the start-project numbers) and what an accepted
+    // estimate became (two indexed probes: documents_source and care_plans_source_document) ride in the same D1 call.
+    const ctx = await readContext(c, id, [
+      ...offerStatements(c.env.DB, id),
+      c.env.DB.prepare(CONVERTED_TO_SQL).bind(id),
+    ]);
     if (!ctx) return err(c, NOT_FOUND, 404);
     if (!(ctx.bundle.document.type === "proposal" || ctx.bundle.document.type === "estimate"))
       return err(c, NOT_FOUND, 404);
-    const conv = ctx.extra[0]?.results[0] as { kind: "invoice" | "care_plan"; id: string } | undefined;
+    const accepted = ctx.bundle.document.type === "proposal" && ctx.bundle.document.status === "accepted";
+    const offer = offerSection(ctx.extra.slice(0, 4), {
+      role: actor(c).role,
+      plan: accepted ? startPlanOf(ctx) : null,
+    });
+    const conv = ctx.extra[4]?.results[0] as { kind: "invoice" | "care_plan"; id: string } | undefined;
     const view = await documentView({
       bundle: ctx.bundle,
       client: ctx.client,
@@ -407,7 +417,8 @@ export const documents = new Hono<AppEnv>()
       today: todayIst(),
       convertedTo: conv ? { kind: conv.kind, id: conv.id } : null,
     });
-    return c.json(view);
+    // The send path applies the client's own setting when the body omits attachPdf; the dialog shows that same value even to a role that can't read the client.
+    return c.json({ ...view, ...offer, attachPdfDefault: ctx.client.attach_pdf === 1 });
   })
 
   // ---- discard a draft (ADM-PROP-05: only an unsent draft can go) ----

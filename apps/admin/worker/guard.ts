@@ -169,6 +169,11 @@ export const ROUTES: readonly RouteDef[] = [
   // The PDF of a sent version (M4.4, JOB-PDF-01): streamed through the session (an access-log row each); "again" is for a send-level role.
   R("GET", "/documents/:id/pdf", "proposals.read"),
   R("POST", "/documents/:id/pdf/retry", "proposals.send", { audit: "document.pdf_retry" }),
+  // Offers to the client (M4.5): send again, end every link, the acceptance certificate, and start the project of an accepted proposal.
+  R("POST", "/documents/:id/resend", "proposals.send", { audit: "document.resend" }),
+  R("POST", "/documents/:id/links/revoke", "proposals.send", { audit: "document.links_revoke" }),
+  R("GET", "/documents/:id/certificate", "proposals.read"),
+  R("POST", "/documents/:id/start-project", "projects.write", { audit: "project.create" }),
   R("POST", "/documents/:id/convert", "invoices.draft", { audit: "document.convert" }),
   R("GET", "/clients/:id/documents", "proposals.read"),
   // The owner's approval queue. Staff and Sales read only their own requests (the handler filters); only the owner decides.

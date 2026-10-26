@@ -2,6 +2,7 @@
 // again), or a draft for a role that may read but not change it. The page reads like the document: its sections in order, the estimate
 // section with the lines, the tax preview and the payment schedule. Beside it: what can happen next (a new version, or for an accepted
 // estimate an invoice draft or a care plan), the PDF of a sent version (M4.4) and the versions.
+import { istDate, toIsoDate } from "@techaust/core/dates";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { catalogueApi } from "../../api.ts";
@@ -32,13 +33,19 @@ import {
   titleOf,
 } from "../../lib/documents.ts";
 import { type DocumentView, documentsApi, type ViewLine } from "../../lib/documents-api.ts";
+import { canResend, OFFER_COPY } from "../../lib/offers.ts";
 import { COPY as PROJECT_COPY } from "../../lib/projects.ts";
 import { useUser } from "../../session.tsx";
 import { CareDialog, InvoiceDialog, ReviseDialog } from "./dialogs.tsx";
 import { LinesTable, ScheduleTable, SectionBody, TaxPreview } from "./money.tsx";
+import { AcceptancePanel, DeclinePanel, DeliveryPanel, StartProjectPanel } from "./offer-panels.tsx";
 import { crumbsFor, DocPill, docHref } from "./parts.tsx";
 import { PdfPanel } from "./pdf-panel.tsx";
+import { SendDialog } from "./send-dialog.tsx";
 import { VersionsPanel } from "./side.tsx";
+
+/** Today in IST as `YYYY-MM-DD` (what `valid_until` is compared with). */
+const todayIstText = () => toIsoDate(istDate(Date.now()));
 
 /** The care plan the lines describe (null while loading, when not asked, or when they describe none). One catalogue page: 18 services. */
 function useCareOf(lines: ViewLine[] | null) {
@@ -55,7 +62,7 @@ export function ReadView({ view, reload }: { view: DocumentView; reload: () => v
   const user = useUser();
   const toast = useToast();
   const navigate = useNavigate();
-  const [dialog, setDialog] = useState<"revise" | "invoice" | "care" | null>(null);
+  const [dialog, setDialog] = useState<"revise" | "invoice" | "care" | "resend" | null>(null);
   const v = view;
   const accepted = v.versions.some((x) => x.status === "accepted");
   const newer = v.versions.filter((x) => x.version > v.version).at(-1);
@@ -71,7 +78,8 @@ export function ReadView({ view, reload }: { view: DocumentView; reload: () => v
     v.version === latestSent &&
     !v.client.anonymised;
   // A converted estimate offers neither conversion again (review fix 9); it says what it became instead.
-  const converted = v.convertedTo ?? null;
+  // A proposal's first-instalment draft (M4.5 "Start project") is said by the start-project panel, not as a conversion.
+  const converted = v.type === "estimate" ? (v.convertedTo ?? null) : null;
   const convertible = v.type === "estimate" && v.status === "accepted" && !converted;
   const canInvoice = convertible && allowed(user.role, "invoices.draft");
   const canCare = convertible && allowed(user.role, "carePlans.write");
@@ -153,6 +161,33 @@ export function ReadView({ view, reload }: { view: DocumentView; reload: () => v
               sentAt={v.sentAt}
               initial={v.pdf}
               canRetry={allowed(user.role, "proposals.send") && !v.client.anonymised}
+            />
+          )}
+          {v.acceptance && (
+            <AcceptancePanel
+              docId={v.acceptance.documentId}
+              acceptance={v.acceptance}
+              certificate={v.certificate?.state ?? "pending"}
+            />
+          )}
+          {v.decision && v.decision.status === "rejected" && <DeclinePanel decision={v.decision} />}
+          {v.startProject && (
+            <StartProjectPanel
+              docId={v.id}
+              info={v.startProject}
+              currency={v.currency}
+              canStart={allowed(user.role, "projects.write") && !v.client.anonymised}
+              onStarted={reload}
+            />
+          )}
+          {v.delivery && v.delivery.length > 0 && (
+            <DeliveryPanel
+              docId={v.id}
+              rows={v.delivery}
+              canSend={allowed(user.role, "proposals.send") && !v.client.anonymised}
+              canResend={canResend(v, todayIstText(), v.version === latestSent && !newer)}
+              onResend={() => setDialog("resend")}
+              onRevoked={reload}
             />
           )}
           {(canRevise || canInvoice || canCare || newer || converted) && (
@@ -267,6 +302,27 @@ export function ReadView({ view, reload }: { view: DocumentView; reload: () => v
         </div>
       </div>
 
+      <SendDialog
+        open={dialog === "resend"}
+        mode="resend"
+        type={v.type}
+        number={v.number}
+        title={titleOf(v.title)}
+        version={v.version}
+        totalMinor={v.totals?.totalMinor ?? null}
+        currency={v.currency}
+        clientId={v.client.id}
+        clientName={v.client.name}
+        attachPdfDefault={v.attachPdfDefault}
+        validUntil={v.validUntil ? dayText(v.validUntil) : null}
+        onClose={() => setDialog(null)}
+        onSend={async (contactIds, attachPdf) => {
+          await documentsApi.resend(v.id, contactIds, attachPdf);
+          setDialog(null);
+          toast("success", OFFER_COPY.sentTo(contactIds.length));
+          reload();
+        }}
+      />
       <ReviseDialog
         open={dialog === "revise"}
         version={v.version}

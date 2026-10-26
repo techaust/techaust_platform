@@ -42,7 +42,6 @@ import {
   sectionEmptyLine,
   sectionTitleName,
   sendLine,
-  sendTitle,
   sentAs,
   shownStatus,
   termsLine,
@@ -141,6 +140,7 @@ const view = (over: Partial<DocumentView> = {}): DocumentView => ({
   unresolved: [],
   canSend: true,
   needsResave: false,
+  attachPdfDefault: false,
   ...over,
 });
 
@@ -218,16 +218,14 @@ describe("07-O copy, word for word (draft pending the owner)", () => {
     );
     expect(decisionTitle("Tally pilot", 2)).toBe("Approve Tally pilot v2?");
     expect(decisionLine(1500, "₹1,00,000.00")).toBe("15 % off catalogue prices, ₹1,00,000.00 total");
-    expect(sendTitle("Tally pilot", 1)).toBe("Send Tally pilot v1?");
     expect(sendLine("₹2,36,000.00", "Sample Client A (sample)")).toBe(
       "₹2,36,000.00 to Sample Client A (sample)",
     );
     expect(DOC_COPY.sendIntro).toBe(
       "Sending gives this version its number and freezes it. Changes afterwards make a new version.",
     );
-    expect(DOC_COPY.untilPortal).toBe(
-      "Emailing proposals arrives with the client portal update. For now, sending numbers and freezes the version only.",
-    );
+    // M4.5 sends the email: M4.3's interim "until the portal" line is gone (07-N replaces it).
+    expect("untilPortal" in DOC_COPY).toBe(false);
     expect(sentAs("TH/PRP/2627/0001", 2)).toBe("Sent as TH/PRP/2627/0001 v2.");
     expect(versionLine(1, "Revised", "26 Oct 2026")).toBe("v1, Revised, 26 Oct 2026");
     expect(reviseBody(1)).toBe(
@@ -252,7 +250,7 @@ describe("07-O copy, word for word (draft pending the owner)", () => {
       "Sent",
       "Viewed",
       "Accepted",
-      "Rejected",
+      "Declined",
       "Expired",
       "Revised",
     ]);

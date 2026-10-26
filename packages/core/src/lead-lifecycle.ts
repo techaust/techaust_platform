@@ -37,8 +37,19 @@ export const clientCode = (n: number): string => `C${String(n).padStart(4, "0")}
 export const PROPOSAL_EVENT_RULES = {
   proposal_sent: { to: "proposal_sent", from: ["new", "qualified"] },
   proposal_accepted: { to: "won", from: ["new", "qualified", "proposal_sent"] },
+  /** M4.5 (owner, 2026-10-26): a client's decline in the portal. Only a lead that is waiting on this proposal; never a won or lost one. */
+  proposal_declined: { to: "lost", from: ["proposal_sent"] },
 } as const satisfies Record<string, { to: LeadStage; from: readonly LeadStage[] }>;
 export type ProposalEvent = keyof typeof PROPOSAL_EVENT_RULES;
+
+/** The lead's lost reason for each decline reason a client can give (`DECLINE_REASONS` in offers.ts). */
+export const LOST_REASON_OF_DECLINE = {
+  price: "price",
+  timing: "timing",
+  other_option: "competitor",
+  not_needed: "scope_fit",
+  other: "other",
+} as const satisfies Record<string, LostReason>;
 
 /**
  * What a proposal event does to a lead's stage (M4.2 and M4.3 call this, or `proposalEventStatements` in `@techaust/db/lead-stage`

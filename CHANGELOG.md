@@ -2,6 +2,7 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-10-26 [#91](https://github.com/techaust/techaust_platform/pull/91) feat(offers): M4.5 send, portal accept and decline, certificate, emails [POR-03..06, ADM-PROP-07..10]
 - 2026-10-26 [#90](https://github.com/techaust/techaust_platform/pull/90) feat(pdf): M4.4 PDF engine, proposal and estimate PDFs, signature [ADM-PROP-05, JOB-PDF-01, ADM-SET-01]
 - 2026-10-26 [#89](https://github.com/techaust/techaust_platform/pull/89) feat(documents): M4.3 proposals and estimates, approvals, versions and send [ADM-PROP-01..07, ADM-EST-01, ADM-APR-01/02]
 - 2026-10-26 [#87](https://github.com/techaust/techaust_platform/pull/87) chore(tooling): Team plan plugins, project plugin settings, unused servers off

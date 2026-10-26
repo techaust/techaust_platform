@@ -58,6 +58,15 @@ a:hover {
   outline-offset: 2px;
 }
 
+/* A date field moves focus between its inner day, month and year parts (each Tab is a stop inside the one field). Chromium keeps
+   :focus-visible on the field; this rule keeps the ring on it in any engine that doesn't, the same as a text field shows it whenever it
+   has focus (review fix 5, the lead page's next-action date). */
+input[type="date"]:focus,
+input[type="date"]:focus-within {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
 /* Headings take focus only programmatically (a step change), to move the screen reader; no ring for those. */
 [tabindex="-1"]:focus {
   outline: none;

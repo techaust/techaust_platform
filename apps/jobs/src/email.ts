@@ -4,9 +4,19 @@
 //   (staging) allow-list checks -> render -> send.
 // `email_log.status`: queued -> sending -> sent | skipped | failed. A retryable SES answer puts the row back to
 // `queued` and the queue redelivers; a permanent one is `failed` and acknowledged.
-import { type EmailMessage, emailMessage, leadMessage, stableId, staffAlertMessage } from "@techaust/core";
 import {
+  type EmailMessage,
+  emailMessage,
+  isOfferExpansionKind,
+  leadMessage,
+  stableId,
+  staffAlertMessage,
+} from "@techaust/core";
+import { ATTACHMENT_MAX_BYTES } from "@techaust/core/offers";
+import {
+  type Attachment,
   dlqAlert,
+  hasNativeBase64,
   logTransport,
   type Rendered,
   renderEmail,
@@ -65,6 +75,8 @@ export async function processEmail(
   body: unknown,
   transport: Transport = transportFor(env),
   now = Date.now(),
+  /** The queue's delivery count (1 = first). A redelivery sends link-only: an attachment that costs too much CPU would fail every time. */
+  attempts = 1,
 ): Promise<EmailResult> {
   const parsed = emailMessage.safeParse(body);
   if (!parsed.success) {
@@ -106,13 +118,45 @@ export async function processEmail(
   }
 
   try {
-    return await sendClaimed(env, m, to, id, transport, now);
+    return await sendClaimed(env, m, to, id, transport, now, attempts);
   } catch (e) {
     // A database or network error before the email was handed to SES: give the claim back so the redelivery can send
     // at once (best effort; if this write fails too, the claim goes stale after 5 minutes and is taken again).
     await setStatus(env.DB, id, "queued", { error: "retry: error" }, now).catch(() => undefined);
     throw e;
   }
+}
+
+/**
+ * The PDF an email carries (M4.5, ADM-PROP-07), or undefined when it goes link-only: no `DOCS` binding, the object is missing, it is over
+ * the cap (the Free plan's 10 ms CPU: reading, base64 and signing the body all count), or this runtime has no native base64 (the fallback
+ * costs about 37 ms per MB), or this is a redelivery (`attempts` above 1: a first try that ran out of CPU would do so again, and the link is
+ * enough). Only keys on the allow-list reach here (the message schema). The reason is logged, never the key. One R2 read: the size comes with it.
+ */
+export async function attachmentFor(
+  env: Env,
+  a: { key: string; filename: string },
+  attempts = 1,
+): Promise<Attachment | undefined> {
+  const docs: R2Bucket | undefined = env.DOCS;
+  const skip = (why: string) => {
+    logEvent("email.attachment_skipped", { why });
+    return undefined;
+  };
+  if (!docs) return skip("no_binding");
+  if (attempts > 1) return skip("redelivery");
+  if (!hasNativeBase64()) return skip("no_native_base64");
+  const object = await docs.get(a.key);
+  if (!object) return skip("missing");
+  if (object.size > ATTACHMENT_MAX_BYTES) {
+    await object.body.cancel();
+    return skip("too_large");
+  }
+  return {
+    fileName: a.filename,
+    contentType: "application/pdf",
+    bytes: new Uint8Array(await object.arrayBuffer()),
+  };
 }
 
 async function sendClaimed(
@@ -122,6 +166,7 @@ async function sendClaimed(
   id: string,
   transport: Transport,
   now: number,
+  attempts: number,
 ): Promise<EmailResult> {
   // A sign-in link that ran out while it waited (queue delay, retries) is never sent: the person asks for a new one.
   if (m.template === "portal.magic_link") {
@@ -147,9 +192,18 @@ async function sendClaimed(
     return "skipped";
   }
 
+  // A stored PDF on the email (M4.5): read from DOCS, or the email goes link-only (and says so: `attached` becomes "0").
+  let data = m.data;
+  let attachments: Attachment[] | undefined;
+  if (m.attachment) {
+    const file = await attachmentFor(env, m.attachment, attempts);
+    if (file) attachments = [file];
+    else data = { ...m.data, attached: "0" };
+  }
+
   let rendered: ReturnType<typeof renderEmail>;
   try {
-    rendered = renderEmail(m.template, m.data, { assetBase: env.EMAIL_ASSET_BASE });
+    rendered = renderEmail(m.template, data, { assetBase: env.EMAIL_ASSET_BASE });
   } catch {
     await setStatus(env.DB, id, "failed", { error: "render failed" }, now);
     logEvent("email.failed", { template: m.template, why: "render" });
@@ -163,6 +217,7 @@ async function sendClaimed(
     subject: rendered.subject,
     html: rendered.html,
     text: rendered.text,
+    ...(attachments ? { attachments } : {}),
   });
   if (result.kind === "sent") {
     // The email has left. If the status write fails, the message must NOT be retried (that would send it again): the
@@ -219,6 +274,14 @@ export async function processDeadLetter(
     const email = emailMessage.safeParse(body);
     if (!email.success && staffAlertMessage.safeParse(body).success) {
       rendered = dlqAlert({ queue, admin_url: env.ADMIN_URL, template: "staff alert" }, opts);
+    } else if (!email.success && isOfferExpansionKind(body)) {
+      // M4.5: which step failed, never the ids, the names or the addresses.
+      const template = {
+        "offer.send": "offer email",
+        "offer.accepted": "acceptance confirmation",
+        "approval.notify": "approval notice",
+      }[body.kind as string];
+      rendered = dlqAlert({ queue, admin_url: env.ADMIN_URL, template: template ?? "offer message" }, opts);
     } else if (email.success) {
       ref = email.data.entity.type === "lead" ? email.data.entity.id : undefined;
       // The email's log row ends as failed, so it never reads as still pending (best effort).
