@@ -18,10 +18,11 @@ The live site is the old Worker **`techaust-web`**. **Never deploy to, rename or
 | Amazon SES (AWS, ap-south-1) | domain `techaust.com` (Easy DKIM, MAIL FROM `noreply.techaust.com`), configuration set `techaust-transactional`, verified recipient `admin@techaust.com`, IAM user `techaust-ses-sender-staging`; sandbox | Owner, 2026-10-23 ([ses-and-turnstile.md](ses-and-turnstile.md)); keys are jobs secrets | M2.4 |
 | Access app | the staging `*.workers.dev` hosts | **On since 2026-10-17** ([access-staging.md](access-staging.md)): one Access app per staging Worker, all traffic, the "Cloudflare account" policy (the owner is the only member), Preview URLs off, Zero Trust Free; after Part 2, a Service Auth policy for the benchmark token on the admin app only | M1.4 |
 | Workers | `techaust-platform-{web,admin,portal,jobs}-staging` | **Deployed 2026-10-06** (PR #1); health routes return 200 | — |
+| Worker (no URL) | `techaust-platform-admin-api-staging` | Created by the staging deploy with the M5.0 PR (owner's yes, 2026-10-27). No workers.dev URL, no routes, no Access app needed: only the admin Worker reaches it, through its `ADMIN_API` service binding. Same D1, buckets and queues as admin; no secrets. Deployed before the admin Worker by `deploy:staging` | M5.0 |
 
 **Staging URLs** (workers.dev subdomain `techaust-technologies-153`; noindex placeholders, no personal data; each answers 302 to the Cloudflare Access login, see [access-staging.md](access-staging.md)):
 - Web: https://techaust-platform-web-staging.techaust-technologies-153.workers.dev (`/api/geo`)
-- Admin: https://techaust-platform-admin-staging.techaust-technologies-153.workers.dev (`/api/v1/health`)
+- Admin: https://techaust-platform-admin-staging.techaust-technologies-153.workers.dev (`/api/v1/health`; the front Worker answers it alone, so also check that `GET /api/v1/dashboard` without a session is 401, not 502, which proves the API Worker answers through the binding)
 - Portal: https://techaust-platform-portal-staging.techaust-technologies-153.workers.dev (`/api/v1/health`)
 - Jobs: https://techaust-platform-jobs-staging.techaust-technologies-153.workers.dev (`/healthz`)
 

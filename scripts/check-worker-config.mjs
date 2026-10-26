@@ -59,6 +59,10 @@ const queueKeys = (c) => (c?.queues?.producers ?? []).map((b) => `${b.binding}:$
  */
 export function apiConfigProblems(api, front) {
   const problems = [];
+  if (api.compatibility_date !== front.compatibility_date)
+    problems.push("(top level): compatibility_date differs from the front's");
+  if (JSON.stringify(api.compatibility_flags ?? []) !== JSON.stringify(front.compatibility_flags ?? []))
+    problems.push("(top level): compatibility_flags differ from the front's");
   for (const [scope, c] of SCOPES(api)) {
     if (!c) {
       problems.push(`${scope}: missing`);
@@ -70,6 +74,11 @@ export function apiConfigProblems(api, front) {
       if (c[key] !== undefined) problems.push(`${scope}: ${key} is not allowed on the API Worker`);
     }
     const f = SCOPES(front).find(([n]) => n === scope)?.[1];
+    // A name equal to the front's would deploy the API bundle over the front and point the binding at itself.
+    if (!c.name || c.name === f?.name) problems.push(`${scope}: name must differ from the front's`);
+    for (const [k, v] of Object.entries(c.vars ?? {})) {
+      if (f?.vars?.[k] !== v) problems.push(`${scope}: var ${k} differs from the front's`);
+    }
     for (const [key, fn] of Object.entries(bindingKey)) {
       const a = (c[key] ?? []).map(fn).sort().join(",");
       const b = (f?.[key] ?? []).map(fn).sort().join(",");

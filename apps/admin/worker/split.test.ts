@@ -321,6 +321,8 @@ describe("a binding failure", () => {
     });
     const res = await run(front, req, withEnv(env, { ADMIN_API: throwing }));
     expect(res.status).toBe(502);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
     expect(await res.json()).toEqual({
       error: { code: "bad_gateway", message: "Something went wrong" },
       request_id: "ray-abc",
@@ -419,8 +421,7 @@ describe("no sign-in secret outside the front's sources", () => {
     ["./auth.ts", "./account.ts", "./users.ts"].includes(f) ||
     f.startsWith("./test-") ||
     f.endsWith(".test.ts") ||
-    f.endsWith(".d.ts") ||
-    f === "./email-fixtures.ts";
+    f.endsWith(".d.ts");
 
   it("only auth.ts, account.ts, users.ts and the test helpers name a secret", () => {
     const offenders = Object.entries(sources)

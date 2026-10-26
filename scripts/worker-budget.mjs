@@ -20,10 +20,11 @@ const PDF_LIB = { name: "pdf-lib (PDFs are rendered in the jobs Worker)", re: /P
 const PUPPETEER = { name: "@cloudflare/puppeteer (jobs Worker only)", re: /@cloudflare\/puppeteer/ };
 const PDF_FONTS = { name: "PDF font data (jobs Worker only)", re: /TECHAUST_PDF_FONT_DATA/ };
 
-// The API Worker never holds sign-in code: these names appear only in auth.ts, account.ts and users.ts (the front Worker).
+// The API Worker never holds sign-in code or a sign-in secret: these names appear only in auth.ts, account.ts and users.ts (the
+// front Worker). Property names survive minification, so a secret read from a package is caught here too.
 const SIGN_IN_TABLES = {
-  name: "sign-in code (the front Worker only)",
-  re: /auth_attempts|totp_secret_enc|pw_hmac/,
+  name: "sign-in code or secrets (the front Worker only)",
+  re: /auth_attempts|totp_secret_enc|pw_hmac|PASSWORD_PEPPER|SALT_PEPPER|TOTP_ENC_KEY|SESSION_HMAC_KEY|TURNSTILE_SECRET/,
 };
 
 export const BUDGETS = {

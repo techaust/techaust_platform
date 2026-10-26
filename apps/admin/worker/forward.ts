@@ -30,6 +30,9 @@ export function forwardRoutes(app: App, routes: readonly RouteDef[]) {
           }),
         );
         c.set("rid", rid);
+        // Built outside the middleware chain, so the headers every other /api answer carries are set here.
+        c.header("Cache-Control", "no-store");
+        c.header("X-Content-Type-Options", "nosniff");
         return err(c, BAD_GATEWAY, 502);
       }
       console.log(JSON.stringify({ ev: "fwd", r: row.path, s: res.status, rid, iso, n }));
