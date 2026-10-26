@@ -2,6 +2,7 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-10-26 [#89](https://github.com/techaust/techaust_platform/pull/89) feat(documents): M4.3 proposals and estimates, approvals, versions and send [ADM-PROP-01..07, ADM-EST-01, ADM-APR-01/02]
 - 2026-10-26 [#87](https://github.com/techaust/techaust_platform/pull/87) chore(tooling): Team plan plugins, project plugin settings, unused servers off
 - 2026-10-26 [#86](https://github.com/techaust/techaust_platform/pull/86) docs(usage): Team plan budget gate counts only the 5-hour window
 - 2026-10-26 [#85](https://github.com/techaust/techaust_platform/pull/85) docs: end of day 2026-10-26 (status, decisions, changelog, CLAUDE.md, 05/06/09/14, handovers)
