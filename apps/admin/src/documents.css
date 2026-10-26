@@ -372,6 +372,20 @@
 /* Instalments: the name and the amount, then share, when, what you get and the target date. */
 .qledger__work--step {
   grid-template-columns: 7rem minmax(9rem, 11rem) minmax(0, 1fr) minmax(9rem, 10rem);
+  align-items: start;
+}
+
+/* Each cell's label and control sit on rows shared across the row (subgrid): the labels line up at their foot, the controls at
+   their top, so the target date's read-back or its error line grows downwards and never pulls the other controls down (re-check
+   L7). */
+.qledger__work--step > .qledger__cell {
+  grid-row: span 2;
+  grid-template-rows: subgrid;
+  row-gap: var(--space-1);
+}
+
+.qledger__work--step > .qledger__cell > .qledger__label {
+  align-self: end;
 }
 
 .qledger__cell--pct .number-unit {

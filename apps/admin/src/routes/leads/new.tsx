@@ -5,7 +5,7 @@
 import { type FormEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { api, errorText, RequestError } from "../../api.ts";
-import { DateField } from "../../components/date-field.tsx";
+import { DateField, useUnreadDates } from "../../components/date-field.tsx";
 import { PageHeader } from "../../components/display.tsx";
 import { ErrorSummary, FormField, type SummaryError } from "../../components/form.tsx";
 import { useLoad } from "../../components/states.tsx";
@@ -44,12 +44,13 @@ function NewLead() {
   const toast = useToast();
   const people = useLoad(() => api.leadAssignees(), "");
   const [f, setF] = useState<Form>(EMPTY);
+  const dates = useUnreadDates<"date">();
   const [errors, setErrors] = useState<SummaryError[]>([]);
   const [submits, setSubmits] = useState(0);
   const [failure, setFailure] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState<string | null>(null);
-  const dirty = !saved && JSON.stringify(f) !== JSON.stringify(EMPTY);
+  const dirty = !saved && (dates.any || JSON.stringify(f) !== JSON.stringify(EMPTY));
   const set = (patch: Partial<Form>) => setF((x) => ({ ...x, ...patch }));
   const errorOf = (id: string) => errors.find((e) => e.id === id)?.text;
   // Open the new lead once the form no longer counts as unsaved (the leave-without-saving guard has seen it).
@@ -63,7 +64,7 @@ function NewLead() {
     if (!f.name.trim()) errs.push({ id: "nl-name", text: "Enter the contact's name." });
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email.trim()))
       errs.push({ id: "nl-email", text: "Enter an email address, like name@example.com." });
-    const dateErr = dateError(f.date);
+    const dateErr = dateError(dates.unread.date);
     if (dateErr) errs.push({ id: "nl-date", text: dateErr });
     setErrors(errs);
     setSubmits((n) => n + 1);
@@ -212,7 +213,9 @@ function NewLead() {
               )}
             </FormField>
             <FormField id="nl-date" label="Next action" optional error={errorOf("nl-date")}>
-              {(a) => <DateField {...a} value={f.date} onChange={(v) => set({ date: v })} />}
+              {(a) => (
+                <DateField {...a} {...dates.bind("date")} value={f.date} onChange={(v) => set({ date: v })} />
+              )}
             </FormField>
           </div>
           <FormField id="nl-note" label="Next action note" optional>

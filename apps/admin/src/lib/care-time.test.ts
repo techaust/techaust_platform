@@ -47,7 +47,7 @@ import {
   showingFirst,
   TILE_TITLES,
 } from "./dashboard.ts";
-import { DATE_INVALID, fieldValue } from "./date-field.ts";
+import { DATE_INVALID, isUnread, settledValue } from "./date-field.ts";
 import { PLACEHOLDER_TAG } from "./projects.ts";
 import {
   CSV_COLUMNS,
@@ -357,7 +357,7 @@ describe("the new plan form", () => {
       ...planFormFor("growth", defaults, { startDate: "2026-11-01", billingDay: "5" }),
       overageRate: "1,500",
     };
-    const r = planInput(f, "c1", "INR");
+    const r = planInput(f, "c1", "INR", {});
     expect(r).toEqual({
       ok: true,
       body: {
@@ -372,15 +372,15 @@ describe("the new plan form", () => {
         billingDay: 5,
       },
     });
-    const bad = planInput({ ...f, price: "", billingDay: "29", startDate: "" }, "c1", "INR");
+    const bad = planInput({ ...f, price: "", billingDay: "29", startDate: "" }, "c1", "INR", {});
     expect(bad.ok).toBe(false);
     if (!bad.ok) {
       expect(bad.errors.price).toBe(CARE_PENDING.enterPrice);
       expect(bad.errors.billingDay).toBe(CARE_PENDING.enterBillingDay);
       expect(bad.errors.startDate).toBe(CARE_PENDING.enterStartDate);
     }
-    // Review of the fixes, finding 1: text that isn't a date is never taken as "no date".
-    const unread = planInput({ ...f, startDate: fieldValue("31/02/2026") }, "c1", "INR");
+    // Review of the fixes, finding 1, and re-check L6: unread text blocks the save, whatever valid date the form still holds.
+    const unread = planInput(f, "c1", "INR", { startDate: true });
     expect(unread.ok).toBe(false);
     if (!unread.ok) expect(unread.errors.startDate).toBe(DATE_INVALID);
   });
@@ -417,7 +417,7 @@ describe("the terms change (owner)", () => {
 });
 
 describe("the time entry", () => {
-  const ctx = { today: "2026-10-25", canWriteAny: false, me: "u1" };
+  const ctx = { today: "2026-10-25", canWriteAny: false, me: "u1", unread: {} };
   const base = { ...entryFormOf(null, "2026-10-25", "u1"), hours: "1", minutes: "30" };
   const target = { kind: "project" as const, id: "p1", code: "PRJ-0001", label: "PRJ-0001" };
 
@@ -447,7 +447,12 @@ describe("the time entry", () => {
   });
 
   it("a date that can't be read gets the owner's line; a cleared one still says to enter it (review of the fixes, finding 1)", () => {
-    const at = (typed: string) => entryInput({ ...base, target, workDate: fieldValue(typed) }, ctx);
+    // As the form gets it from the field: the last valid date (here the default, today) and the report that the text is unread.
+    const at = (typed: string) =>
+      entryInput(
+        { ...base, target, workDate: settledValue(typed) ?? base.workDate },
+        { ...ctx, unread: isUnread(typed) ? { workDate: true } : {} },
+      );
     expect(at("31/02/2026")).toMatchObject({ ok: false, errors: { workDate: DATE_INVALID } });
     expect(at("25/10/26")).toMatchObject({ ok: false, errors: { workDate: DATE_INVALID } });
     expect(at("")).toMatchObject({ ok: false, errors: { workDate: TIME_PENDING.enterDate } });

@@ -5,7 +5,7 @@
 import { type Dispatch, type FormEvent, useState } from "react";
 import { Link } from "react-router";
 import { api, fileDownloadHref, type ProjectPage, RequestError } from "../../api.ts";
-import { DateField } from "../../components/date-field.tsx";
+import { DateField, useUnreadDates } from "../../components/date-field.tsx";
 import { When } from "../../components/display.tsx";
 import { AlertTriangle, Clock, Download, FileText, Pencil, Receipt } from "../../components/icons.tsx";
 import { Markdown } from "../../components/markdown.tsx";
@@ -129,6 +129,7 @@ function Details(props: Parameters<typeof Overview>[0] & { canWrite: boolean }) 
   const f = d?.value ?? stored;
   const setF = (value: DetailsForm | null) => props.draft({ type: "details", value, base: stored });
   const [errors, setErrors] = useState<DetailsErrors>({});
+  const dates = useUnreadDates<"startDate" | "targetDate">();
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const people = useLoad(() => (props.canWrite ? api.leadAssignees() : Promise.resolve(null)), "");
@@ -136,7 +137,7 @@ function Details(props: Parameters<typeof Overview>[0] & { canWrite: boolean }) 
   async function save(e: FormEvent) {
     e.preventDefault();
     if (!d) return;
-    const errs = detailsErrors(f, project.currency);
+    const errs = detailsErrors(f, project.currency, dates.unread);
     setErrors(errs);
     const first = Object.keys(errs)[0];
     if (first) {
@@ -152,6 +153,7 @@ function Details(props: Parameters<typeof Overview>[0] & { canWrite: boolean }) 
       });
       toast("success", r.changed ? TOASTS.projectSaved : "No change: that's already saved.");
       setF(null);
+      dates.reset();
       props.reload();
     } catch (err) {
       const field = err instanceof RequestError ? FIELD_OF[err.code] : undefined;
@@ -239,6 +241,7 @@ function Details(props: Parameters<typeof Overview>[0] & { canWrite: boolean }) 
               </label>
               <DateField
                 {...a11y("startDate")}
+                {...dates.bind("startDate")}
                 value={f.startDate}
                 onChange={(v) => setF({ ...f, startDate: v })}
               />
@@ -250,6 +253,7 @@ function Details(props: Parameters<typeof Overview>[0] & { canWrite: boolean }) 
               </label>
               <DateField
                 {...a11y("targetDate")}
+                {...dates.bind("targetDate")}
                 min={f.startDate || undefined}
                 value={f.targetDate}
                 onChange={(v) => setF({ ...f, targetDate: v })}
@@ -264,6 +268,7 @@ function Details(props: Parameters<typeof Overview>[0] & { canWrite: boolean }) 
               disabled={busy}
               onClick={() => {
                 setF(null);
+                dates.reset();
                 setErrors({});
                 setFailure(null);
               }}

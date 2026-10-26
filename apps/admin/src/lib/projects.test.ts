@@ -218,7 +218,7 @@ describe("the project details draft [ADM-PRJ-01]", () => {
 
   it("checks the name, the dates' order and the amount", () => {
     const f = { name: "", ownerId: "", startDate: "2026-12-01", targetDate: "2026-11-01", budget: "1.234" };
-    const e = detailsErrors(f, "INR");
+    const e = detailsErrors(f, "INR", {});
     expect(e.name?.includes(PLACEHOLDER_TAG)).toBe(false);
     expect(e.targetDate?.includes(PLACEHOLDER_TAG)).toBe(false);
     expect(e.budget).toBe("Use at most 2 decimal places.");
@@ -240,14 +240,14 @@ describe("the project details draft [ADM-PRJ-01]", () => {
 describe("the milestone form [ADM-PRJ-02]", () => {
   it("an amount or a percentage, exactly one", () => {
     const f = milestoneFormOf(null, "INR");
-    expect(milestoneInput({ ...f, title: "A", amount: "25,000" }, "INR")).toEqual({
+    expect(milestoneInput({ ...f, title: "A", amount: "25,000" }, "INR", {})).toEqual({
       ok: true,
       body: { title: "A", amountMinor: 2_500_000, dueDate: null },
     });
     expect(
-      milestoneInput({ ...f, title: "B", kind: "pct", pct: "12.5 %", dueDate: "2026-12-01" }, "INR"),
+      milestoneInput({ ...f, title: "B", kind: "pct", pct: "12.5 %", dueDate: "2026-12-01" }, "INR", {}),
     ).toEqual({ ok: true, body: { title: "B", pctBp: 1250, dueDate: "2026-12-01" } });
-    const bad = milestoneInput({ ...f, kind: "pct", pct: "101" }, "INR");
+    const bad = milestoneInput({ ...f, kind: "pct", pct: "101" }, "INR", {});
     expect(bad.ok).toBe(false);
     if (!bad.ok) expect(Object.keys(bad.errors).sort()).toEqual(["pct", "title"]);
   });

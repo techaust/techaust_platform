@@ -3,14 +3,19 @@
 import { describe, expect, it } from "vitest";
 import { NOT_SET } from "./catalogue.ts";
 import {
+  anyUnread,
   DATE_INVALID,
   dateEcho,
   dateError,
   fieldValue,
   INVALID_DATE,
   isoToTyped,
+  isUnread,
   settledValue,
+  syncedText,
   typedToIso,
+  type UnreadDates,
+  withUnread,
 } from "./date-field.ts";
 import { convertedToCare, DOC_PENDING, termsLine } from "./documents.ts";
 import { OFFER_COPY } from "./offers.ts";
@@ -70,52 +75,97 @@ describe("the date field", () => {
   });
 });
 
-// Review of the fixes, finding 1: a date that can't be read is never saved as "Not set".
+// Review of the fixes, finding 1, and the re-check (N1, N3, N4, L1, L6): a date that can't be read is never saved, as "Not set"
+// or as the last valid date. The field keeps its reading to itself and reports only "can't be read" (`onValidity`); every form
+// check takes that report as a required argument.
 describe("the date field's invalid state", () => {
-  it("gives its form INVALID_DATE (never \"\") for text that isn't a real date, and the owner's line for it", () => {
+  it("reads text that isn't a real date as unread, and gives the owner's line for it", () => {
     expect(DATE_INVALID).toBe("Enter the date as DD/MM/YYYY, for example 26/10/2026.");
     expect(fieldValue("31/02/2026")).toBe(INVALID_DATE);
-    expect(fieldValue("26/10/26")).toBe(INVALID_DATE); // a two-digit year
-    expect(fieldValue("26/10")).toBe(INVALID_DATE);
-    expect(fieldValue("   ")).toBe("");
-    expect(fieldValue("")).toBe("");
+    expect(isUnread("31/02/2026")).toBe(true);
+    expect(isUnread("26/10/26")).toBe(true); // a two-digit year
+    expect(isUnread("26/10")).toBe(true);
+    expect(isUnread("   ")).toBe(false);
+    expect(isUnread("")).toBe(false);
+    expect(isUnread("26/10/2026")).toBe(false);
     expect(fieldValue("26/10/2026")).toBe("2026-10-26");
-    expect(dateError(INVALID_DATE)).toBe(DATE_INVALID);
-    expect(dateError("")).toBeNull();
-    expect(dateError("2026-10-26")).toBeNull();
+    expect(dateError(true)).toBe(DATE_INVALID);
+    expect(dateError(false)).toBeNull();
+    expect(dateError(undefined)).toBeNull();
     expect(typedToIso(INVALID_DATE)).toBeNull();
   });
 
-  it("blocks an optional date's save: project details and a milestone", () => {
+  it("passes on only what can be read: ISO or cleared, never the unread text (L6)", () => {
+    expect(settledValue("31/02/2026")).toBeNull();
+    expect(settledValue("2/1")).toBeNull();
+    expect(settledValue("2/1/2026")).toBe("2026-01-02");
+    expect(settledValue("")).toBe("");
+  });
+
+  it("keeps a form's set of unread fields, unchanged when a report repeats", () => {
+    const none: UnreadDates<"startDate" | "targetDate"> = {};
+    const one = withUnread(none, "startDate", true);
+    expect(one).toEqual({ startDate: true });
+    expect(anyUnread(one)).toBe(true);
+    expect(withUnread(one, "startDate", true)).toBe(one);
+    expect(withUnread(none, "startDate", false)).toBe(none);
+    const back = withUnread(one, "startDate", false);
+    expect(back).toEqual({});
+    expect(anyUnread(back)).toBe(false);
+  });
+
+  it("blocks an optional date's save, even with a last valid date in the form: project details and a milestone", () => {
     const f = { name: "Sample project (sample)", ownerId: "", startDate: "", targetDate: "", budget: "" };
-    expect(detailsErrors({ ...f, startDate: fieldValue("31/02/2026") }, "INR")).toEqual({
-      startDate: DATE_INVALID,
-    });
-    expect(detailsErrors({ ...f, targetDate: fieldValue("26/10/26") }, "INR")).toEqual({
+    expect(detailsErrors(f, "INR", { startDate: true })).toEqual({ startDate: DATE_INVALID });
+    expect(detailsErrors({ ...f, targetDate: "2026-11-01" }, "INR", { targetDate: true })).toEqual({
       targetDate: DATE_INVALID,
     });
     // Empty is fine for an optional date; the order rule still runs on two real dates.
-    expect(detailsErrors(f, "INR")).toEqual({});
-    expect(detailsErrors({ ...f, startDate: "2026-10-26", targetDate: "2026-10-01" }, "INR").targetDate).toBe(
-      PENDING.datesOrder,
-    );
+    expect(detailsErrors(f, "INR", {})).toEqual({});
+    expect(
+      detailsErrors({ ...f, startDate: "2026-10-26", targetDate: "2026-10-01" }, "INR", {}).targetDate,
+    ).toBe(PENDING.datesOrder);
     const m = {
       ...milestoneFormOf(null, "INR"),
       title: "Sample milestone (sample)",
       kind: "pct" as const,
       pct: "50",
     };
-    expect(milestoneInput({ ...m, dueDate: fieldValue("31/02/2026") }, "INR")).toEqual({
+    expect(milestoneInput({ ...m, dueDate: "2026-12-01" }, "INR", { dueDate: true })).toEqual({
       ok: false,
       errors: { dueDate: DATE_INVALID },
     });
-    expect(milestoneInput({ ...m, dueDate: "" }, "INR")).toMatchObject({ ok: true, body: { dueDate: null } });
+    expect(milestoneInput({ ...m, dueDate: "" }, "INR", {})).toMatchObject({
+      ok: true,
+      body: { dueDate: null },
+    });
+  });
+});
+
+describe("the date field's text when its props change (re-check N1, N3, N4)", () => {
+  const at = (value: string, invalid = false) => ({ value, invalid });
+
+  it("shows a value set from outside in place of unread text (Clear filters, a reload)", () => {
+    expect(syncedText("31/02/2026", at("2026-10-01"), at(""))).toBe("");
+    expect(syncedText("31/11/2026", at("2026-11-15"), at("2026-11-20"))).toBe("20/11/2026");
+    expect(syncedText("31/02/2026", at("", true), at("2026-10-01", true))).toBe("01/10/2026");
   });
 
-  it("an autosaving field keeps its last valid value until the text is a full date or empty", () => {
-    expect(settledValue("31/02/2026")).toBeNull();
-    expect(settledValue("2/1")).toBeNull();
-    expect(settledValue("2/1/2026")).toBe("2026-01-02");
-    expect(settledValue("")).toBe("");
+  it("keeps the person's own text when the value is what it reads as", () => {
+    expect(syncedText("6/1/2026", at(""), at("2026-01-06"))).toBe("6/1/2026");
+    expect(syncedText("", at("2026-01-06"), at(""))).toBe("");
+    // Unread text the form has just marked stays (the person is typing).
+    expect(syncedText("31/02/2026", at(""), at("", true))).toBe("31/02/2026");
+  });
+
+  it("drops unread text when the form drops its mark (Discard, Cancel)", () => {
+    expect(syncedText("31/02/2026", at("", true), at(""))).toBe("");
+    expect(syncedText("31/02/2026", at("2026-10-20", true), at("2026-10-20"))).toBe("20/10/2026");
+    // The person fixed the text: the mark goes and the text stays.
+    expect(syncedText("26/10/2026", at("2026-10-26", true), at("2026-10-26"))).toBe("26/10/2026");
+  });
+
+  it("a field mounted again shows its value, which is always readable, so a stale mark is cleared", () => {
+    for (const v of ["", "2026-10-26"]) expect(isUnread(isoToTyped(v))).toBe(false);
   });
 });

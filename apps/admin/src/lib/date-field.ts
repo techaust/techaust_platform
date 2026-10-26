@@ -30,29 +30,69 @@ export function typedToIso(typed: string): string | null {
 export const DATE_INVALID = "Enter the date as DD/MM/YYYY, for example 26/10/2026.";
 
 /**
- * What the field gives its form while the text isn't empty and isn't a real date ("31/02/2026", "26/10/26"). Never ISO and never
- * "", so a form can't mistake it for "no date" and save "Not set": its check turns it into DATE_INVALID and blocks the save.
+ * The field's own reading of text that isn't empty and isn't a real date ("31/02/2026", "26/10/26"). It stays inside the field
+ * (re-check L6): a form is never given it, only told through `onValidity` that its date can't be read.
  */
 export const INVALID_DATE = "invalid-date";
 
-/** The field's value for what is typed: "" when empty, ISO when it's a real date, INVALID_DATE otherwise. */
+/** The field's reading of what is typed: "" when empty, ISO when it's a real date, INVALID_DATE otherwise. */
 export function fieldValue(typed: string): string {
   if (typed.trim() === "") return "";
   return typedToIso(typed) ?? INVALID_DATE;
 }
 
-/** A form's check for a date field: the owner's line when the text isn't a date, else null (required and ranges stay the form's). */
-export function dateError(value: string): string | null {
-  return value === INVALID_DATE ? DATE_INVALID : null;
+/** True while the text isn't empty and can't be read as a date: what the field reports through `onValidity`. */
+export function isUnread(typed: string): boolean {
+  return fieldValue(typed) === INVALID_DATE;
 }
 
 /**
- * For a field that saves as it changes (the payment schedule's target date) or filters a list: the value to pass on, or null to
- * keep the last valid one while the text isn't a date yet. Empty passes on as "" (cleared).
+ * The date fields of one form whose text can't be read (re-check L6): each field reports its own through `onValidity`, the form
+ * keeps them here and hands them to its check, which blocks the save. A required argument of every check, so no form forgets it.
+ */
+export type UnreadDates<K extends string> = Readonly<Partial<Record<K, true>>>;
+
+/** One field's report applied to the form's set; the same object when nothing changed, so a repeated report never re-renders. */
+export function withUnread<K extends string>(set: UnreadDates<K>, key: K, unread: boolean): UnreadDates<K> {
+  if ((set[key] === true) === unread) return set;
+  const next: Partial<Record<K, true>> = { ...set };
+  if (unread) next[key] = true;
+  else delete next[key];
+  return next;
+}
+
+/** True when any of the form's date fields can't be read: the form has a change the person must fix or discard. */
+export const anyUnread = <K extends string>(set: UnreadDates<K>): boolean => Object.keys(set).length > 0;
+
+/** A form's check for one date field: the owner's line while its text can't be read, else null (required and ranges stay the form's). */
+export function dateError(unread: boolean | undefined): string | null {
+  return unread ? DATE_INVALID : null;
+}
+
+/**
+ * What the field passes on for what is typed: ISO, or "" when cleared, or null (nothing passed on) while the text can't be read,
+ * so the form keeps the last valid value and a half-typed or impossible date is never sent as "no date".
  */
 export function settledValue(typed: string): string | null {
   const v = fieldValue(typed);
   return v === INVALID_DATE ? null : v;
+}
+
+/** What the field's props were at its last render: the value and whether its form holds it as unread. */
+export type FieldProps = { value: string; invalid: boolean };
+
+/**
+ * The text the field shows once its props change (re-check N1). The field passes on only what its text reads as, never a value
+ * while the text can't be read, so:
+ * - a new value its text doesn't read as was set from outside (a reset, a reload, Clear filters): the text shows that value, and a
+ *   stale unread text goes with its error;
+ * - the form dropping its unread mark (Discard, Cancel) while the text still can't be read: the text goes back to the value.
+ * Otherwise the person's own text stays.
+ */
+export function syncedText(text: string, prev: FieldProps, next: FieldProps): string {
+  if (next.value !== prev.value && fieldValue(text) !== next.value) return isoToTyped(next.value);
+  if (prev.invalid && !next.invalid && isUnread(text)) return isoToTyped(next.value);
+  return text;
 }
 
 /** The echo under the field, "26 Oct 2026", so a typed date is read back unambiguously; "" while it isn't a date. */
