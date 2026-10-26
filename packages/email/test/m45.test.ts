@@ -113,6 +113,9 @@ describe("declined email to TecHaust (07-N section 4)", () => {
     expect(renderEmail("offer.declined.staff", { ...data, note: "Next year" }, opts).text).toContain(
       "us. Note: Next year.",
     );
+    const ends = renderEmail("offer.declined.staff", { ...data, note: "Maybe next year?" }, opts).text;
+    expect(ends).toContain("Note: Maybe next year?");
+    expect(ends).not.toContain("year?.");
   });
   it("escapes the name and the note in the HTML", () => {
     const r = renderEmail("offer.declined.staff", { ...data, name: "<b>x</b>", note: "<i>y</i>" }, opts);

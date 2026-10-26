@@ -13,6 +13,8 @@
 // same until the next UTC midnight + 120 s and rings the owners' bell once a day; a bad render, an upstream error or a non-PDF is thrown,
 // so the queue retries with backoff (5 tries) and then the dead-letter queue rings the bell. An envelope that fails verification is never
 // rendered: it rings the bell and is acknowledged (a retry cannot help). No personal data in a log line or a bell title: ids, numbers, kinds.
+
+import { todayIst } from "@techaust/core/offers";
 import {
   isPdfMessage,
   nextUtcMidnight,
@@ -492,14 +494,14 @@ export async function processPdf(
 export async function processPdfDeadLetter(env: Env, body: unknown, now = Date.now()): Promise<void> {
   if (isPdfMessage(body) && body.kind === "pdf.certificate") {
     // The acceptance is safe (its evidence row is written); only the certificate file is missing. The owners are told, the sweep tries again.
-    // The bell is unique per (user, kind, entity), so the entity carries the day: a failure on a later day (the sweep's retry) rings again,
+    // The bell is unique per (user, kind, entity), so the entity carries the IST day: a failure on a later day (the sweep's retry) rings again,
     // a redelivery on the same day does not.
     await env.DB.batch([
       bell(
         env,
         "pdf.failed",
         "acceptance",
-        `${body.acceptanceId}:${new Date(now).toISOString().slice(0, 10)}`,
+        `${body.acceptanceId}:${todayIst(now)}`,
         // [Placeholder] no line for this bell in 07-N or 07-P yet: the owner approves the words with the batch.
         "[Placeholder] An acceptance certificate could not be made; it will be tried again tonight",
         "/",

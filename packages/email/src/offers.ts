@@ -118,10 +118,14 @@ export type OfferDeclinedData = {
   url: string;
 };
 
+/** A typed note as a sentence: the full stop is added only when the note does not already end in one. */
+const sentence = (text: string): string =>
+  /[.!?]$/.test(text.trimEnd()) ? text.trimEnd() : `${text.trimEnd()}.`;
+
 /** The decline to TecHaust (the sender and the active owners): 07 §8 style subject, 07-N §4 "Declined email, TecHaust side". */
 export function offerDeclinedStaff(d: OfferDeclinedData, opts: LayoutOptions): Rendered {
   const subject = headerValue(`Declined: ${d.title ?? ""} (${d.number} v${d.version})`);
-  const note = d.note ? ` Note: ${d.note}.` : "";
+  const note = d.note ? ` Note: ${sentence(d.note)}` : "";
   return securityEmail(subject, opts, {
     before: [para(`${d.name} declined ${d.number} v${d.version}. Reason: ${d.reason}.${note}`)],
     action: { label: "Open in admin", url: d.url },
@@ -166,6 +170,6 @@ export function approvalDecided(d: ApprovalDecidedData, opts: LayoutOptions): Re
   const before: Para[] = [
     para(`${d.approver_name} has ${d.decision} your request for ${d.title} v${d.version}.`),
   ];
-  if (d.decision_note) before.push(para(`Note: ${d.decision_note}.`));
+  if (d.decision_note) before.push(para(`Note: ${sentence(d.decision_note)}`));
   return securityEmail(subject, opts, { before, action: { label: "Open in admin", url: d.admin_url } });
 }
