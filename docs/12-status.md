@@ -1,6 +1,6 @@
 # 12: Status
 
-_Replaced (never appended) at the end of every session. Last updated: **2026-10-26, 23:15** (IST)._
+_Replaced (never appended) at the end of every session. Last updated: **2026-10-27, 00:00** (IST)._
 
 ## Done
 - **Phases 1–5:** approved 2026-10-06 ([09-roadmap.md](09-roadmap.md)).
@@ -44,10 +44,11 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
 2. **Staging readings** (`cpuTimeMs`) for the proposal save, send and GET, the PDF render, the portal view and accept, an email with a PDF, the certificate, after the owner's next staging use.
 3. Then M5.1 as in [09-roadmap.md](09-roadmap.md).
 
-**Gate (owner, 2026-10-26):** only the 5-hour window counts; at 80 % or more no new agent starts. Two agents at once, one browser agent.
+**Usage now:** 5-hour window 22 %. **Gate (owner, 2026-10-26):** only the 5-hour window counts; at 80 % or more no new agent starts. Two agents at once, one browser agent.
 
 ## Waits on the owner
 - **For the CA or lawyer (VERIFY WITH CA/LEGAL), collected at the batch review:** proposal terms v1 still says "GST at 18 % is added for Indian clients." (kept for now); anonymising a client deletes its document bells; drafts of a client anonymised later; names changed between draft and send; client-written lead text; serving the existing PDF; signature retention; accepting from an emailed link and the evidence recorded; IP, browser, country and total on a certificate any client contact can download; the first-instalment invoice type and place of supply; keeping the decline note.
+- **Catalogue › Publish on staging** (if not done yet), so the website shows the six service names with "and".
 - **Settings › Company › "Email on documents"** is `contact@techaust.com` (the default); new PDFs print it. Change it only if you want hello@.
 - **When TecHaust's AWS is needed (Phase 7):** sign the AWS MCP in to the TecHaust account (the lead gives steps), then it is turned back on for this project.
 - **When convenient:** the real company details and both bank accounts in staging Settings; the first cost report's "no change".
