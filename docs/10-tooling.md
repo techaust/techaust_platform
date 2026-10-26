@@ -134,3 +134,9 @@ Three npm packages, exact pins, dev-only in `apps/web`: they run on the develope
 | **@lhci/cli** | 0.15.1 | Lighthouse CI: mobile scores per template with thresholds (`apps/web/lighthouserc.json`, `pnpm --filter @techaust/web lhci`), reports to the filesystem only | Local and CI |
 
 **2026-10-26, Team plan:** the account moved from a personal plan to Claude Team. The plugins T2 (Context7), T3 (GitHub), T4 (Playwright) and T5 (frontend-design) were missing on the new account and were reinstalled with `claude plugin install <name>@claude-plugins-official` on the owner's word (docs/13). T1, T11 and the built-in skills were present. T12 (Sentry) is installed in Phase 7. The AWS skills are now named without the `aws-core:` prefix.
+
+**Project configuration (owner, 2026-10-26):**
+- `.claude/settings.json` declares the required plugins (`enabledPlugins`: cloudflare, playwright, context7, frontend-design, github) and the Cloudflare marketplace, so they're on for this project whatever the account settings say.
+- Turned off **for this project only** (`disabledMcpServers` in the user's `~/.claude.json` project entry; other projects unaffected): the Supabase and Upstash MCP servers (not used here) and the AWS MCP server, which is signed in to another business's AWS account. The AWS skills (T11) still work. Before Phase 7 needs TecHaust's AWS, the lead gives the owner steps to sign the AWS MCP in to the TecHaust account, then turns it back on.
+- Checked working on 2026-10-26: GitHub MCP (`techaust`), Cloudflare MCP (`admin@techaust.com`), Context7, Playwright.
+- Not used (catalogue search 2026-10-26): Security Guidance (hooks on every edit; overlaps `security-review`), the Design plugin (brings unrelated servers; axe runs in CI), community review plugins, the TypeScript language server (`pnpm typecheck` covers it; global install and memory).
