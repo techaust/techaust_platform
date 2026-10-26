@@ -81,6 +81,7 @@ _Drafted by the lead on 2026-10-27 from approved facts:
 - To the requester, approved: "Your invoice for {client name} was issued as {number}."
 - To the requester, rejected: "Your request to issue the invoice for {client name} was rejected."
 - Draft invoices have no number, so bells never use a title (docs/13 2026-10-26).
+- To every owner, a refused invoice PDF (`pdf.refused`): "The PDF of {number} didn't match its saved copy, so it wasn't made. A developer needs to look at it."
 
 ### Approval emails (staff, from no-reply@; same layout as the 07-O discount emails)
 - Request, subject: "Invoice issue requested for {client name}"
