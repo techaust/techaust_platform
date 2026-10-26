@@ -593,7 +593,7 @@ async function argsFor(f: Fixture, over: Record<string, unknown> = {}, fy = "999
     termsVersionId: null,
     expected: { updatedAt: 7_000, contentSha256: "h".repeat(64), ...v, clientUpdatedAt: f.clientUpdatedAt },
     authority: { kind: "owner", sessionId: f.sessionId },
-    bell: { title: "Issued", linkPrefix: "/invoices/" },
+    bell: { clientName: "Asha Traders", linkPrefix: "/invoices/" },
     ...over,
   } as Parameters<typeof invoiceIssueStatements>[1];
 }
@@ -782,7 +782,7 @@ describe("invoiceIssueStatements [ADM-INV-03, ADM-INV-07, LD5]", () => {
       user_id: requester,
       kind: "approval.decided",
       entity_id: live,
-      title: expect.stringMatching(/^Issued TH\/INV\/9998\/\d{4}$/),
+      title: expect.stringMatching(/^Your invoice for Asha Traders was issued as TH\/INV\/9998\/\d{4}\.$/),
       link: `/invoices/${f.docId}`,
     });
   });

@@ -80,9 +80,15 @@ export const APPROVAL_DECIDED: ApiError = {
 const ISSUE_REFUSED =
   /issue did not freeze|not an issuable draft|UNIQUE constraint failed: documents\.|documents_(invoice|parent|void)/;
 
-/** The bell's words are interim (07-R decides them); a draft has no number, so the client's code names it. */
-const bellRequestTitle = (clientCode: string) => `Approval needed: invoice for ${clientCode}`;
-const bellRejectedTitle = (clientCode: string) => `Rejected: invoice for ${clientCode}`;
+/**
+ * The bells' words are 07-R's (draft copy, pending the owner's approval; a draft has no number, so a bell never uses a title, docs/13 2026-10-26):
+ * to the owners "{requester} asked you to issue an invoice for {client name}."; to the requester "Your request to issue the invoice for {client name} was
+ * rejected." (the issued one is written inside the issue batch).
+ */
+const bellRequestTitle = (requester: string, clientName: string) =>
+  `${requester} asked you to issue an invoice for ${clientName}.`.slice(0, 300);
+const bellRejectedTitle = (clientName: string) =>
+  `Your request to issue the invoice for ${clientName} was rejected.`.slice(0, 300);
 
 export type IssueParams = {
   id: string;
@@ -136,7 +142,7 @@ export async function issueInvoice(c: Ctx, p: IssueParams): Promise<Response> {
     return c.json(
       {
         error: { code: ISSUE_BLOCKED.code, message: ISSUE_BLOCKED.message },
-        blockers: blockers.length > 0 ? blockers : [{ code: "tax_errors" }],
+        blockers: blockers.length > 0 ? blockers : [{ code: "computed_errors" }],
         request_id: c.var.rid,
       },
       409,
@@ -198,7 +204,7 @@ export async function issueInvoice(c: Ctx, p: IssueParams): Promise<Response> {
     authority: p.approval
       ? { kind: "approval", sessionId: u.sessionId, approvalId: p.approval.id }
       : { kind: "owner", sessionId: u.sessionId },
-    bell: { title: "Issued", linkPrefix: "/invoices/" },
+    bell: { clientName: ctx.client.display_name, linkPrefix: "/invoices/" },
   });
 
   // The number is taken inside the batch, so it comes back from the freeze UPDATE itself (RETURNING): no second read.
@@ -488,7 +494,12 @@ export const invoiceIssue = new Hono<AppEnv>()
                SELECT 'n_' || lower(hex(randomblob(16))), o.id, 'approval.requested', 'approval', ?1, ?2, ?3 FROM staff_users o
                WHERE o.status = 'active' AND o.role = 'owner' AND ${g.sql(4)}`,
             )
-            .bind(approvalId, bellRequestTitle(ctx.client.code), `/approvals/${approvalId}`, ...g.params),
+            .bind(
+              approvalId,
+              bellRequestTitle(u.name, ctx.client.display_name),
+              `/approvals/${approvalId}`,
+              ...g.params,
+            ),
         ],
       });
     } catch (e) {
@@ -523,9 +534,9 @@ export async function decideIssue(
   }
   const now = Date.now();
   const client = await db
-    .prepare("SELECT cl.code FROM documents d JOIN clients cl ON cl.id = d.client_id WHERE d.id = ?1")
+    .prepare("SELECT cl.display_name FROM documents d JOIN clients cl ON cl.id = d.client_id WHERE d.id = ?1")
     .bind(row.document_id)
-    .first<{ code: string }>();
+    .first<{ display_name: string }>();
   const done = await mutate(c, {
     main: db
       .prepare(
@@ -547,7 +558,7 @@ export async function decideIssue(
         )
         .bind(
           approvalId,
-          bellRejectedTitle(client?.code ?? ""),
+          bellRejectedTitle(client?.display_name ?? ""),
           `/invoices/${row.document_id}`,
           row.requested_by,
           ...g.params,

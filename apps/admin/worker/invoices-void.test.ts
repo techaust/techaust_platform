@@ -111,7 +111,8 @@ describe("void [Q1, Q2, LD7]", () => {
     const draft = await mkInvoice(o);
     const d = await voidInvoice(o, draft.id);
     expect(d.status).toBe(409);
-    expect(await codeOf(d)).toBe("not_issued");
+    expect(await codeOf(d)).toBe("void_not_allowed");
+    expect((await json(await voidInvoice(o, draft.id))).reasons).toEqual(["not_issued"]);
     expect(await invoiceRow(draft.id)).toMatchObject({ status: "draft", voided_at: null });
     expect(await auditCount("invoice.void", draft.id)).toBe(0);
   });
@@ -181,7 +182,7 @@ describe("void [Q1, Q2, LD7]", () => {
       const res = await voidInvoice(o, inv.id);
       expect(res.status, name).toBe(409);
       const body = await json(res);
-      expect(body.error.code, name).toBe(code);
+      expect(body.error.code, name).toBe("void_not_allowed");
       expect(body.reasons, name).toContain(code);
       expect(await invoiceRow(inv.id), name).toEqual(before);
       expect(await auditCount("invoice.void", inv.id), name).toBe(0);

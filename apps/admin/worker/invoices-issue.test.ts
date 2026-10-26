@@ -570,11 +570,11 @@ describe("refusals leave the counter, the audit log and the milestone unchanged 
       return body;
     };
 
-    it("supplier_legal_name_missing, supplier_address_missing, supplier_gstin_missing (the company settings)", async () => {
+    it("supplier_legal_name, supplier_address, supplier_gstin (the company settings)", async () => {
       for (const [code, over] of [
-        ["supplier_legal_name_missing", { legalName: null }],
-        ["supplier_address_missing", { address: null }],
-        ["supplier_gstin_missing", { gstin: null }],
+        ["supplier_legal_name", { legalName: null }],
+        ["supplier_address", { address: null }],
+        ["supplier_gstin", { gstin: null }],
       ] as const) {
         await putCompany(over);
         await blockedWith(code, async (o) => (await mkInvoice(o)).id);
@@ -582,12 +582,12 @@ describe("refusals leave the counter, the audit log and the milestone unchanged 
       await putCompany();
     });
 
-    it("recipient_legal_name_missing and recipient_address_missing (the client's record)", async () => {
-      await blockedWith("recipient_legal_name_missing", async (o) => {
+    it("recipient_legal_name and recipient_address (the client's record)", async () => {
+      await blockedWith("recipient_legal_name", async (o) => {
         const c = await mkInvoiceClient({ legal_name: " " });
         return (await mkInvoice(o, { clientId: c.clientId })).id;
       });
-      await blockedWith("recipient_address_missing", async (o) => {
+      await blockedWith("recipient_address", async (o) => {
         const c = await mkInvoiceClient({ billing_address: null });
         return (await mkInvoice(o, { clientId: c.clientId })).id;
       });
@@ -599,7 +599,7 @@ describe("refusals leave the counter, the audit log and the milestone unchanged 
         return (await json(await call("/invoices", { cookie: o.cookie, body: { clientId: c.clientId } })))
           .id as string;
       });
-      await blockedWith("tax_errors", async (o) => {
+      await blockedWith("computed_errors", async (o) => {
         const made = await mkInvoice(o);
         const doc = await getInvoice(o, made.id);
         await patchInvoice(o, made.id, {
@@ -611,7 +611,7 @@ describe("refusals leave the counter, the audit log and the milestone unchanged 
     });
 
     it("sac_missing (a custom line with no SAC) and total_zero (Q4: no zero-value invoice)", async () => {
-      const body = await blockedWith("sac_missing", async (o) => {
+      const body = await blockedWith("line_sac_missing", async (o) => {
         const made = await mkInvoice(o);
         const doc = await getInvoice(o, made.id);
         await patchInvoice(o, made.id, {
@@ -620,8 +620,8 @@ describe("refusals leave the counter, the audit log and the milestone unchanged 
         });
         return made.id;
       });
-      expect(body.blockers).toContainEqual({ code: "sac_missing", line: 1 });
-      await blockedWith("total_zero", async (o) => {
+      expect(body.blockers).toContainEqual({ code: "line_sac_missing", line: 1 });
+      await blockedWith("zero_total", async (o) => {
         const made = await mkInvoice(o);
         const doc = await getInvoice(o, made.id);
         await patchInvoice(o, made.id, {

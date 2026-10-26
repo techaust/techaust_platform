@@ -121,26 +121,26 @@ export function dueDateOf(issueDate: string, clientDays: number | null, settings
 // ---- what stops an issue (LD20; M5.2 makes it the configurable checklist) ---------------------------------------------------------------
 
 export const ISSUE_BLOCKER_CODES = [
-  "supplier_legal_name_missing",
-  "supplier_trade_name_missing",
-  "supplier_address_missing",
-  "supplier_gstin_missing",
-  "supplier_state_missing",
-  "recipient_legal_name_missing",
-  "recipient_address_missing",
-  "recipient_gstin_missing",
-  "recipient_state_missing",
+  "supplier_legal_name",
+  "supplier_trade_name",
+  "supplier_address",
+  "supplier_gstin",
+  "supplier_state",
+  "recipient_legal_name",
+  "recipient_address",
+  "recipient_gstin",
+  "recipient_state",
   "no_lines",
-  "sac_missing",
-  "description_missing",
-  "tax_errors",
-  "total_zero",
-  "reverse_charge_text_missing",
+  "line_sac_missing",
+  "line_description_missing",
+  "computed_errors",
+  "zero_total",
+  "reverse_charge_text",
   "currency_mismatch",
-  "type_not_for_client",
+  "type_not_allowed",
 ] as const;
 export type IssueBlockerCode = (typeof ISSUE_BLOCKER_CODES)[number];
-/** `line`: the 1-based position of the line the blocker is about (`sac_missing`, `description_missing`). */
+/** `line`: the 1-based position of the line the blocker is about (`line_sac_missing`, `line_description_missing`). */
 export type IssueBlocker = { readonly code: IssueBlockerCode; readonly line?: number };
 
 export type IssueFacts = {
@@ -182,27 +182,27 @@ export function issueBlockers(f: IssueFacts): IssueBlocker[] {
   const out: IssueBlocker[] = [];
   const add = (code: IssueBlockerCode, line?: number) =>
     out.push(line === undefined ? { code } : { code, line });
-  if (blank(f.supplier.legalName)) add("supplier_legal_name_missing");
-  if (blank(f.supplier.tradeName)) add("supplier_trade_name_missing");
-  if (blank(f.supplier.address)) add("supplier_address_missing");
-  if (blank(f.supplier.gstin)) add("supplier_gstin_missing");
-  if (blank(f.supplier.stateCode)) add("supplier_state_missing");
-  if (blank(f.recipient.legalName)) add("recipient_legal_name_missing");
-  if (blank(f.recipient.addressLine1)) add("recipient_address_missing");
-  if (f.recipient.gstStatus === "registered" && blank(f.recipient.gstin)) add("recipient_gstin_missing");
-  if (f.recipient.gstStatus !== "overseas" && blank(f.recipient.stateCode)) add("recipient_state_missing");
+  if (blank(f.supplier.legalName)) add("supplier_legal_name");
+  if (blank(f.supplier.tradeName)) add("supplier_trade_name");
+  if (blank(f.supplier.address)) add("supplier_address");
+  if (blank(f.supplier.gstin)) add("supplier_gstin");
+  if (blank(f.supplier.stateCode)) add("supplier_state");
+  if (blank(f.recipient.legalName)) add("recipient_legal_name");
+  if (blank(f.recipient.addressLine1)) add("recipient_address");
+  if (f.recipient.gstStatus === "registered" && blank(f.recipient.gstin)) add("recipient_gstin");
+  if (f.recipient.gstStatus !== "overseas" && blank(f.recipient.stateCode)) add("recipient_state");
   if (f.lines.length === 0) add("no_lines");
   f.lines.forEach((l, i) => {
-    if (blank(l.description)) add("description_missing", i + 1);
-    if (l.sac === null || !SAC.test(l.sac)) add("sac_missing", i + 1);
+    if (blank(l.description)) add("line_description_missing", i + 1);
+    if (l.sac === null || !SAC.test(l.sac)) add("line_sac_missing", i + 1);
   });
-  if (f.taxErrorCount > 0) add("tax_errors");
-  else if (f.totalMinor === null || f.totalMinor <= 0) add("total_zero");
-  if (blank(f.reverseChargeText)) add("reverse_charge_text_missing");
+  if (f.taxErrorCount > 0) add("computed_errors");
+  else if (f.totalMinor === null || f.totalMinor <= 0) add("zero_total");
+  if (blank(f.reverseChargeText)) add("reverse_charge_text");
   if (f.currency !== f.clientCurrency) add("currency_mismatch");
   const overseas = f.recipient.gstStatus === "overseas";
   if ((f.type === "tax_invoice" && overseas) || (f.type === "export_invoice" && !overseas))
-    add("type_not_for_client");
+    add("type_not_allowed");
   return out;
 }
 

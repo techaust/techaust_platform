@@ -257,7 +257,7 @@ describe("saving a draft [ADM-INV-04, ADM-APR-02]", () => {
       lines: [{ description: "Custom work", qtyMilli: 1000, unit: "fixed", rateMinor: 20_000 }],
     });
     expect(ok.status).toBe(200);
-    expect((await json(ok)).blockers).toEqual([{ code: "sac_missing", line: 1 }]);
+    expect((await json(ok)).blockers).toEqual([{ code: "line_sac_missing", line: 1 }]);
   });
 });
 
@@ -321,7 +321,7 @@ describe("a draft from a milestone [ADM-PRJ-02, LD13]", () => {
     // one line at the default rate and no SAC (a milestone without a source proposal): the issue is blocked on the SAC
     expect(view.lines).toHaveLength(1);
     expect(view.lines[0].sac).toBeNull();
-    expect(view.blockers.map((b: J) => b.code)).toContain("sac_missing");
+    expect(view.blockers.map((b: J) => b.code)).toContain("line_sac_missing");
     const again = await call("/invoices", {
       cookie: o.cookie,
       body: { clientId: c.clientId, fromMilestoneId: m.id },

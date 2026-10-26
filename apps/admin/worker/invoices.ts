@@ -19,6 +19,7 @@ import { type AppEnv, actor, BAD_REQUEST, type Ctx, err, mutate, NOT_FOUND } fro
 import { discountIn, lineIn } from "./document-save.ts";
 import { body, idParam, limitOf, param, query, refusedWith, STALE_VERSION } from "./http.ts";
 import {
+  ALREADY_VOID,
   BANK_READ,
   type BankRow,
   type ContactFacts,
@@ -40,7 +41,7 @@ import {
   readInvoiceSettings,
   taxContext,
   todayOf,
-  VOID_BLOCKED,
+  VOID_NOT_ALLOWED,
   withoutReference,
 } from "./invoice-model.ts";
 import {
@@ -778,7 +779,10 @@ export const invoices = new Hono<AppEnv>()
     if (reasons.length > 0)
       return c.json(
         {
-          error: { code: reasons[0] ?? VOID_BLOCKED.code, message: VOID_BLOCKED.message },
+          // 07-R: `already_void` for a void one, `void_not_allowed` for the rest; the exact reasons (codes) ride along.
+          error: reasons.includes("already_void")
+            ? { code: ALREADY_VOID.code, message: ALREADY_VOID.message }
+            : { code: VOID_NOT_ALLOWED.code, message: VOID_NOT_ALLOWED.message },
           reasons,
           request_id: c.var.rid,
         },
@@ -838,7 +842,7 @@ export const invoices = new Hono<AppEnv>()
         );
       return c.json(
         {
-          error: { code: VOID_BLOCKED.code, message: VOID_BLOCKED.message },
+          error: { code: VOID_NOT_ALLOWED.code, message: VOID_NOT_ALLOWED.message },
           reasons: [],
           request_id: c.var.rid,
         },

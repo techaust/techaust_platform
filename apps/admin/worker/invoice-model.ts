@@ -55,7 +55,8 @@ export const MILESTONE_HAS_INVOICE = e("milestone_has_invoice", "That milestone 
 export const MILESTONE_NOT_FOUND = e("milestone_not_found", "That milestone does not belong to this client");
 export const MILESTONE_NO_AMOUNT = e("milestone_no_amount", "That milestone has no amount yet");
 export const MILESTONE_EXCLUSIVE = e("milestone_exclusive", "Choose a milestone or services, not both");
-export const VOID_BLOCKED = e("void_blocked", "This invoice can't be voided");
+export const VOID_NOT_ALLOWED = e("void_not_allowed", "This invoice can't be voided");
+export const ALREADY_VOID = e("already_void", "This invoice is already void");
 export const INVOICE_APPROVAL_EXPIRED = e(
   "approval_expired",
   "The invoice changed after the request, so the request expired",

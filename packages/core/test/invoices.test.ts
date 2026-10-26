@@ -144,70 +144,58 @@ describe("what stops an issue [ADM-INV-07, LD20; Rule 46]", () => {
     [
       "supplier legal name",
       (f) => ({ ...f, supplier: { ...f.supplier, legalName: null } }),
-      "supplier_legal_name_missing",
+      "supplier_legal_name",
     ],
     [
       "supplier trade name",
       (f) => ({ ...f, supplier: { ...f.supplier, tradeName: " " } }),
-      "supplier_trade_name_missing",
+      "supplier_trade_name",
     ],
-    [
-      "supplier address",
-      (f) => ({ ...f, supplier: { ...f.supplier, address: null } }),
-      "supplier_address_missing",
-    ],
-    ["supplier GSTIN", (f) => ({ ...f, supplier: { ...f.supplier, gstin: null } }), "supplier_gstin_missing"],
-    [
-      "supplier state",
-      (f) => ({ ...f, supplier: { ...f.supplier, stateCode: null } }),
-      "supplier_state_missing",
-    ],
+    ["supplier address", (f) => ({ ...f, supplier: { ...f.supplier, address: null } }), "supplier_address"],
+    ["supplier GSTIN", (f) => ({ ...f, supplier: { ...f.supplier, gstin: null } }), "supplier_gstin"],
+    ["supplier state", (f) => ({ ...f, supplier: { ...f.supplier, stateCode: null } }), "supplier_state"],
     [
       "recipient legal name",
       (f) => ({ ...f, recipient: { ...f.recipient, legalName: "" } }),
-      "recipient_legal_name_missing",
+      "recipient_legal_name",
     ],
     [
       "recipient address",
       (f) => ({ ...f, recipient: { ...f.recipient, addressLine1: null } }),
-      "recipient_address_missing",
+      "recipient_address",
     ],
     [
       "recipient GSTIN when registered",
       (f) => ({ ...f, recipient: { ...f.recipient, gstin: null } }),
-      "recipient_gstin_missing",
+      "recipient_gstin",
     ],
-    [
-      "recipient state",
-      (f) => ({ ...f, recipient: { ...f.recipient, stateCode: null } }),
-      "recipient_state_missing",
-    ],
+    ["recipient state", (f) => ({ ...f, recipient: { ...f.recipient, stateCode: null } }), "recipient_state"],
     ["no lines", (f) => ({ ...f, lines: [] }), "no_lines"],
-    ["a line without a SAC", (f) => ({ ...f, lines: [{ sac: null, description: "x" }] }), "sac_missing"],
+    ["a line without a SAC", (f) => ({ ...f, lines: [{ sac: null, description: "x" }] }), "line_sac_missing"],
     [
       "a SAC that is not 6 digits",
       (f) => ({ ...f, lines: [{ sac: "9983", description: "x" }] }),
-      "sac_missing",
+      "line_sac_missing",
     ],
     [
       "a line without a description",
       (f) => ({ ...f, lines: [{ sac: "998314", description: "  " }] }),
-      "description_missing",
+      "line_description_missing",
     ],
-    ["a tax error", (f) => ({ ...f, taxErrorCount: 1, totalMinor: null }), "tax_errors"],
-    ["a zero total (Q4)", (f) => ({ ...f, totalMinor: 0 }), "total_zero"],
-    ["a total that did not compute", (f) => ({ ...f, totalMinor: null }), "total_zero"],
-    ["the reverse-charge statement", (f) => ({ ...f, reverseChargeText: "" }), "reverse_charge_text_missing"],
+    ["a tax error", (f) => ({ ...f, taxErrorCount: 1, totalMinor: null }), "computed_errors"],
+    ["a zero total (Q4)", (f) => ({ ...f, totalMinor: 0 }), "zero_total"],
+    ["a total that did not compute", (f) => ({ ...f, totalMinor: null }), "zero_total"],
+    ["the reverse-charge statement", (f) => ({ ...f, reverseChargeText: "" }), "reverse_charge_text"],
     ["another currency than the client's", (f) => ({ ...f, currency: "USD" }), "currency_mismatch"],
     [
       "a tax invoice for an overseas client",
       (f) => ({ ...f, recipient: { ...f.recipient, gstStatus: "overseas", gstin: null, stateCode: null } }),
-      "type_not_for_client",
+      "type_not_allowed",
     ],
     [
       "an export invoice for a client in India",
       (f) => ({ ...f, type: "export_invoice" }),
-      "type_not_for_client",
+      "type_not_allowed",
     ],
   ];
   it.each(cases)("%s blocks with its code", (_n, make, code) => {
@@ -233,13 +221,13 @@ describe("what stops an issue [ADM-INV-07, LD20; Rule 46]", () => {
       lines: [good.lines[0] as (typeof good.lines)[number], { sac: null, description: "" }],
     };
     expect(issueBlockers(f)).toEqual([
-      { code: "description_missing", line: 2 },
-      { code: "sac_missing", line: 2 },
+      { code: "line_description_missing", line: 2 },
+      { code: "line_sac_missing", line: 2 },
     ]);
   });
 
   it("a tax error is reported alone, not also as a zero total", () => {
-    expect(codes({ ...good, taxErrorCount: 2, totalMinor: null })).toEqual(["tax_errors"]);
+    expect(codes({ ...good, taxErrorCount: 2, totalMinor: null })).toEqual(["computed_errors"]);
   });
 
   it("is deterministic and total over any facts (no throw)", () => {

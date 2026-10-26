@@ -243,8 +243,8 @@ export type InvoiceIssueArgs = {
     clientUpdatedAt: number;
   };
   authority: IssueAuthority;
-  /** The words of the requester's bell when an issue request was pending (interim wording, 07-R decides): the title up to the number, and the link up to the id. */
-  bell: { title: string; linkPrefix: string };
+  /** The requester's bell when an issue request was waiting (07-R: "Your invoice for {client name} was issued as {number}."): the client's name, and the link up to the id. */
+  bell: { clientName: string; linkPrefix: string };
 };
 
 /** The issue instant's freeze test, for the statements that follow it: this very batch froze the document. */
@@ -340,12 +340,12 @@ export function invoiceIssueStatements(db: D1Database, a: InvoiceIssueArgs): Sen
         .prepare(
           `INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
            SELECT 'n_' || lower(hex(randomblob(16))), r.requested_by, 'approval.decided', 'approval', r.id,
-             ?4 || ' ' || (SELECT number_display FROM documents WHERE id = ?1), ?5 || ?1
+             'Your invoice for ' || ?4 || ' was issued as ' || (SELECT number_display FROM documents WHERE id = ?1) || '.', ?5 || ?1
            FROM approvals r JOIN staff_users u ON u.id = r.requested_by AND u.status = 'active'
            WHERE r.document_id = ?1 AND r.kind = 'issue' AND r.status = 'approved' AND r.decided_at = ?2 AND r.decided_by = ?3 AND r.requested_by <> ?3
              AND ${FROZEN_BY_THIS_BATCH}`,
         )
-        .bind(a.documentId, a.now, a.issuedBy, a.bell.title, a.bell.linkPrefix),
+        .bind(a.documentId, a.now, a.issuedBy, a.bell.clientName, a.bell.linkPrefix),
     ],
   };
 }
