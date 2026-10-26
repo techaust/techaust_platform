@@ -65,6 +65,24 @@ describe("permissions [ADM-G-02]", () => {
   });
 });
 
+describe("a draft's terms text [ADM-G-02]", () => {
+  it("a role that cannot draft reads the terms text of a draft; the editor's read carries none", async () => {
+    const o = await owner();
+    const made = await mkDraft(o);
+    const acc = await sessionFor("accountant");
+    const seen = await getDoc(acc, made.id);
+    expect(seen.status).toBe("draft");
+    expect(typeof seen.terms.bodyMd).toBe("string");
+    expect(seen.terms.bodyMd.length).toBeGreaterThan(0);
+    for (const role of ["staff", "sales"] as const) {
+      const ed = await getDoc(await sessionFor(role), made.id);
+      expect(ed.terms.version, role).toBe(seen.terms.version);
+      expect(ed.terms.bodyMd, role).toBeNull();
+    }
+    expect((await getDoc(o, made.id)).terms.bodyMd).toBeNull();
+  });
+});
+
 // ---------------------------------------------------------------------------------------------------------------
 describe("create [ADM-PROP-01]", () => {
   it("a draft of one service: server-built lines, the catalogue's SAC and rate, a schedule, terms pinned, the validity", async () => {

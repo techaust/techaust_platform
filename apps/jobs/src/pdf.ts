@@ -72,9 +72,8 @@ export const BELL_COPY = {
   quota: "Today's PDF allowance is used up. Waiting PDFs are made tomorrow.",
 } as const;
 
-/** What a bell calls a document: its number, else its title, else "Untitled" (a draft-era sent version always has a number; this is the safety net). */
-export const documentLabel = (number: string | null, title: string | null): string =>
-  number?.trim() || title?.trim() || "Untitled";
+/** What a bell calls a document: its number, else "Untitled" (a sent version always has a number; this is the safety net). Never the title: a staff-typed title can hold a client name, and a bell outlives an anonymised client (07-Q, lead 2026-10-26). */
+export const documentLabel = (number: string | null): string => number?.trim() || "Untitled";
 
 export const sha256Bytes = async (bytes: Uint8Array): Promise<string> =>
   hex(await crypto.subtle.digest("SHA-256", bytes));
@@ -139,7 +138,7 @@ export async function processSnapshot(env: Env, msg: PdfSnapshotMessage): Promis
   const bundle = bundleOf<TermsRow>(await env.DB.batch(loadStatements(env.DB, msg.documentId)));
   if (!bundle) return skip("not_found");
   const d = bundle.document;
-  const label = documentLabel(d.number_display, d.title);
+  const label = documentLabel(d.number_display);
   if (d.pdf_sha256 !== null) return skip("done");
   // An erased client takes nothing new: no envelope, no PDF, no bell (the standing rule for anonymised clients; VERIFY WITH CA/LEGAL).
   if (await clientIsGone(env, d.client_id)) return skip("client_gone");
@@ -301,7 +300,7 @@ export async function processRender(
         "pdf.failed",
         "document",
         row.id,
-        BELL_COPY.integrity(documentLabel(row.number_display, row.title)),
+        BELL_COPY.integrity(documentLabel(row.number_display)),
         `/proposals/${row.id}`,
       ),
     ]);

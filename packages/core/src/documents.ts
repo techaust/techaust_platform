@@ -344,6 +344,9 @@ export function validUntil(sentIstDate: CalendarDate, validityDays: number): str
 /** M4.1's placeholder pattern (`{{ name.part }}`), kept in step with `placeholdersOf` in catalogue.ts by a test. */
 export const UNRESOLVED_RE = /\{\{\s*([a-z_]+(?:\.[a-z_]+)*)\s*\}\}/g;
 
+/** The contact placeholder (`{{client.contact}}`, with or without spaces inside the braces): the same reading of a placeholder as `UNRESOLVED_RE`. */
+export const CONTACT_TOKEN_RE = /\{\{\s*client\.contact\s*\}\}/g;
+
 /** The distinct placeholder names still in these texts (a document with any cannot be sent). */
 export function unresolvedIn(texts: readonly (string | null | undefined)[]): string[] {
   const names = new Set<string>();

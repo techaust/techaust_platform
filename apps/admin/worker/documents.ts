@@ -7,6 +7,7 @@
 // was written, one read says why (`stale_version`, `frozen`, ...).
 import { approvalState, TITLE_MAX } from "@techaust/core/documents";
 import { uuidv7 } from "@techaust/core/ids";
+import { decide } from "@techaust/core/permissions";
 import {
   bundleOf,
   LOAD_STATEMENTS,
@@ -202,11 +203,11 @@ export async function readContext(
   c: Ctx,
   id: string,
   extra: D1PreparedStatement[] = [],
-  opts: { fullTerms?: boolean } = {},
+  opts: { terms?: "frozen" | "full" } = {},
 ) {
   const db = c.env.DB;
   const results = await db.batch([
-    ...loadStatements(db, id, { terms: opts.fullTerms ? "frozen" : "ref" }),
+    ...loadStatements(db, id, { terms: opts.terms ?? "ref" }),
     db
       .prepare(
         `SELECT ${CLIENT_COLS} FROM clients WHERE id = (SELECT client_id FROM documents WHERE id = ?1)`,
@@ -404,7 +405,9 @@ export const documents = new Hono<AppEnv>()
       c,
       id,
       [...offerStatements(c.env.DB, id), c.env.DB.prepare(CONVERTED_TO_SQL).bind(id)],
-      { fullTerms: true }, // the staff read of a SENT version shows the pinned terms text (M11); a draft's read carries none; every role that can read the document may see it
+      // A SENT version shows the pinned terms text to every role (M11). A draft carries none for the editor (it only names the version);
+      // a role that cannot draft has no editor, so its read view gets the text too (lead, 2026-10-26).
+      { terms: decide(actor(c).role, "proposals.draft") === "deny" ? "full" : "frozen" },
     );
     if (!ctx) return err(c, NOT_FOUND, 404);
     if (!(ctx.bundle.document.type === "proposal" || ctx.bundle.document.type === "estimate"))

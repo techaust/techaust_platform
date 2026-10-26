@@ -396,8 +396,18 @@ describe("a sent offer and the people it names [ADM-CLI-05, O-Q4; VERIFY WITH CA
       client_id: client.clientId,
       proposal_id: draft.id,
     });
+    // a bell about the sent version (a PDF that failed its check) and one about another client's document
+    const other = await mkDraft(o);
+    for (const docId of [sold.id, other.id])
+      await env.DB.prepare(
+        "INSERT INTO notifications (id, user_id, kind, entity_type, entity_id, title, link) VALUES (?1, ?2, 'pdf.failed', 'document', ?3, 'The PDF of X did not match.', '/proposals/x')",
+      )
+        .bind(`n_${docId}`, o.id, docId)
+        .run();
     const ok = await erase(o.cookie, client.contactId, "anonymise");
     expect(ok.status, await ok.clone().text()).toBe(200);
+    expect(await countOf("notifications", "entity_type = 'document' AND entity_id = ?", sold.id)).toBe(0);
+    expect(await countOf("notifications", "entity_type = 'document' AND entity_id = ?", other.id)).toBe(1);
     for (const id of [draft.id, revision.id, estimate.id])
       expect(await countOf("documents", "id = ?", id), id).toBe(0);
     expect(await countOf("approvals", "document_id = ?", draft.id)).toBe(0);

@@ -10,6 +10,7 @@
 // a computed value. The catalogue reference of a line is copied from the catalogue by the server and kept across saves.
 import { CATALOGUE_UNITS } from "@techaust/core/catalogue";
 import {
+  CONTACT_TOKEN_RE,
   checkSections,
   LINE_DETAIL_MAX,
   SCHEDULE_DETAIL_MAX,
@@ -18,6 +19,7 @@ import {
   VALIDITY_DAYS_MAX,
 } from "@techaust/core/documents";
 import { SCHEDULE_TRIGGERS } from "@techaust/core/schedule-text";
+import { wholeWordPattern } from "@techaust/core/text";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { clientGoneSql } from "./anonymised.ts";
@@ -110,15 +112,6 @@ export const patchBody = z.strictObject({
 });
 
 const TOKEN = "{{client.contact}}";
-/** The placeholder, with or without spaces inside the braces (the catalogue's own reading of a placeholder). */
-const TOKEN_RE = /\{\{\s*client\.contact\s*\}\}/g;
-
-/** The text as a whole-word pattern (never part of a longer word), every occurrence; combining marks (Indic vowel signs) belong to a word. */
-const wholeWord = (t: string) =>
-  new RegExp(
-    `(?<![\\p{L}\\p{N}\\p{M}])${t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\p{L}\\p{N}\\p{M}])`,
-    "gu",
-  );
 
 /** The Acceptance text with the old contact's name (or the placeholder, spaced or not) replaced by the new name (or the placeholder). */
 export function renameContact<S extends { kind: string; bodyMd: string | null }>(
@@ -127,7 +120,7 @@ export function renameContact<S extends { kind: string; bodyMd: string | null }>
   to: string | null,
 ): S[] {
   const target = to ?? TOKEN;
-  const pattern = from === null ? TOKEN_RE : wholeWord(from);
+  const pattern = from === null ? CONTACT_TOKEN_RE : wholeWordPattern([from]);
   return sections.map((x) =>
     x.kind === "acceptance" && x.bodyMd ? { ...x, bodyMd: x.bodyMd.replace(pattern, () => target) } : x,
   );

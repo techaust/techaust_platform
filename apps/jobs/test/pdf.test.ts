@@ -128,12 +128,11 @@ describe("R2 If-None-Match on this runtime", () => {
 });
 
 describe("the integrity bell's document name", () => {
-  it("is the number, else the title, else 'Untitled'", () => {
-    expect(documentLabel("TH/PRP/2627/0003", "Website")).toBe("TH/PRP/2627/0003");
-    expect(documentLabel(null, "Website")).toBe("Website");
-    expect(documentLabel("  ", " Website ")).toBe("Website");
-    expect(documentLabel(null, null)).toBe("Untitled");
-    expect(documentLabel("", "")).toBe("Untitled");
+  it('is the number, else "Untitled" (never the title)', () => {
+    expect(documentLabel("TH/PRP/2627/0003")).toBe("TH/PRP/2627/0003");
+    expect(documentLabel(null)).toBe("Untitled");
+    expect(documentLabel("  ")).toBe("Untitled");
+    expect(documentLabel("")).toBe("Untitled");
     expect(BELL_COPY.integrity("Untitled")).toBe(
       "The PDF of Untitled didn't match its saved copy, so it wasn't sent. A developer needs to look at it before it can be sent.",
     );

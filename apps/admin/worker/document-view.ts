@@ -5,7 +5,7 @@ import { ANONYMISED_CLIENT } from "@techaust/core/clients";
 import type { CalendarDate } from "@techaust/core/dates";
 import { approvalState, catalogueGuard, type GuardLine } from "@techaust/core/documents";
 import type { ComputedDocument } from "@techaust/core/tax";
-import { nameOrLegal } from "@techaust/core/text";
+import { nameOrLegal, wholeWordPattern } from "@techaust/core/text";
 import type { DocumentBundle, TermsRef, TermsView } from "@techaust/db/documents";
 import type { RecipientSnapshot } from "@techaust/db/issue";
 import {
@@ -59,8 +59,6 @@ export function redactionNames(r: RecipientSnapshot, clientGone: boolean, contac
   return [...new Set(values.map((v) => v?.trim() ?? "").filter((v) => v !== ""))];
 }
 
-const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
 /**
  * Builds the function that replaces every exact occurrence of the given names with `ANONYMISED_CLIENT`, in one pass, longest name first
  * (so a name that holds another is replaced whole, and the label is never searched again), only where it stands as a whole word: a
@@ -69,11 +67,7 @@ const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
  */
 export function redactor(names: string[]): (text: string | null) => string | null {
   if (names.length === 0) return (text) => text;
-  const alternation = [...names]
-    .sort((a, b) => b.length - a.length)
-    .map(escapeRegExp)
-    .join("|");
-  const re = new RegExp(`(?<![\\p{L}\\p{N}_])(?:${alternation})(?![\\p{L}\\p{N}_])`, "gu");
+  const re = wholeWordPattern(names);
   return (text: string | null) => (text === null ? null : text.replace(re, ANONYMISED_CLIENT));
 }
 
