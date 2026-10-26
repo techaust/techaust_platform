@@ -4,7 +4,25 @@ import { describe, expect, it } from "vitest";
 import { BUDGETS, checkBundle, measureStartup } from "../../../scripts/worker-budget.mjs";
 
 const admin = BUDGETS.admin;
+const adminApi = BUDGETS.adminApi;
 const ok = { size: 1000, text: "const a = 1;", startupMs: 5 };
+
+describe("admin front and API budgets (M5.0)", () => {
+  it("the front stays small and the API has room for M5 to M7", () => {
+    expect(admin.maxBytes).toBe(150_000);
+    expect(adminApi.maxBytes).toBe(800_000);
+    expect(adminApi.maxStartupMs).toBe(200);
+  });
+
+  it.each(["auth_attempts", "totp_secret_enc", "pw_hmac"])(
+    "fails sign-in code (%s) in the API bundle only",
+    (name) => {
+      const text = `db.prepare("${name}")`;
+      expect(checkBundle({ ...ok, text }, adminApi)[0]).toMatch(/sign-in code/);
+      expect(checkBundle({ ...ok, text }, admin)).toEqual([]);
+    },
+  );
+});
 
 describe("worker budget", () => {
   it("passes a small, clean bundle", () => {

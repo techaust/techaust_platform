@@ -41,6 +41,59 @@ export function missingPreviewOff(config) {
   return scopes.filter(([, c]) => c?.preview_urls !== false).map(([name]) => name);
 }
 
+const SCOPES = (config) => [
+  ["(top level)", config],
+  ["env.staging", config.env?.staging],
+  ["env.production", config.env?.production],
+];
+const bindingKey = {
+  d1_databases: (b) => `${b.binding}:${b.database_name}:${b.database_id}`,
+  r2_buckets: (b) => `${b.binding}:${b.bucket_name}`,
+};
+const queueKeys = (c) => (c?.queues?.producers ?? []).map((b) => `${b.binding}:${b.queue}`).sort();
+
+/**
+ * The admin API Worker's config (M5.0, docs/13 2026-10-27; apps/admin/wrangler.api.jsonc) against the front's: no public URL at any
+ * level (no workers.dev, no routes, no preview URLs), no assets, no previews block, no secrets, and the same D1, R2 and queue
+ * resources as the front in each scope. Empty = passes.
+ */
+export function apiConfigProblems(api, front) {
+  const problems = [];
+  for (const [scope, c] of SCOPES(api)) {
+    if (!c) {
+      problems.push(`${scope}: missing`);
+      continue;
+    }
+    if (c.workers_dev !== false) problems.push(`${scope}: workers_dev must be false`);
+    if (c.preview_urls !== false) problems.push(`${scope}: preview_urls must be false`);
+    for (const key of ["routes", "route", "assets", "previews", "secrets"]) {
+      if (c[key] !== undefined) problems.push(`${scope}: ${key} is not allowed on the API Worker`);
+    }
+    const f = SCOPES(front).find(([n]) => n === scope)?.[1];
+    for (const [key, fn] of Object.entries(bindingKey)) {
+      const a = (c[key] ?? []).map(fn).sort().join(",");
+      const b = (f?.[key] ?? []).map(fn).sort().join(",");
+      if (a !== b) problems.push(`${scope}: ${key} differ from the front's`);
+    }
+    if (queueKeys(c).join(",") !== queueKeys(f).join(","))
+      problems.push(`${scope}: queues differ from the front's`);
+  }
+  return problems;
+}
+
+/** The front must bind ADMIN_API in all three scopes, to the API config's Worker name for that scope. */
+export function frontServiceProblems(front, api) {
+  const problems = [];
+  for (const [scope, c] of SCOPES(front)) {
+    const want = SCOPES(api).find(([n]) => n === scope)?.[1]?.name;
+    const got = (c?.services ?? []).find((x) => x.binding === "ADMIN_API");
+    if (!got) problems.push(`${scope}: the ADMIN_API service binding is missing`);
+    else if (got.service !== want)
+      problems.push(`${scope}: ADMIN_API points at ${got.service}, expected ${want}`);
+  }
+  return problems;
+}
+
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
   let failed = false;
   for (const app of APPS) {
@@ -53,6 +106,22 @@ if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.m
       failed = true;
     }
   }
+  const read = (p) => parseJsonc(readFileSync(new URL(`../apps/${p}`, import.meta.url), "utf8"));
+  const api = read("admin/wrangler.api.jsonc");
+  const missingApi = missingPreviewOff(api);
+  if (missingApi.length > 0) {
+    console.error(
+      `apps/admin/wrangler.api.jsonc: "preview_urls": false is missing at ${missingApi.join(", ")}`,
+    );
+    failed = true;
+  }
+  const front = read("admin/wrangler.jsonc");
+  for (const p of [...apiConfigProblems(api, front), ...frontServiceProblems(front, api)]) {
+    console.error(`apps/admin: ${p}`);
+    failed = true;
+  }
   if (failed) process.exit(1);
-  console.log("worker config guard: ok (preview_urls is false everywhere)");
+  console.log(
+    "worker config guard: ok (preview_urls is false everywhere; the admin API Worker has no public URL)",
+  );
 }
