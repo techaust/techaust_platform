@@ -1297,6 +1297,7 @@ html:has(.mmenu[open]) {
 /* From, Prepared for, Document: the PDF's three blocks, side by side on a wide sheet. */
 .parties {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-6) var(--space-8);
   padding-top: var(--space-6);
   border-top: 1px solid var(--color-border);
@@ -1929,7 +1930,7 @@ textarea[aria-invalid="true"] {
 /* ---------- Lists: what a card adds, and the list's way on ---------- */
 
 .dcard__note {
-  margin: 0;
+  margin: 0 0 var(--space-2);
   color: var(--color-text-muted);
   font-size: var(--text-sm);
   line-height: var(--text-sm--line-height);

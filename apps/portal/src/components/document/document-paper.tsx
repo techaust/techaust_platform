@@ -7,7 +7,7 @@
 import { PDF_COPY as C } from "@techaust/pdf/copy";
 import logoColor from "@techaust/ui/brand/logo-primary-color.svg?url";
 import logoDark from "@techaust/ui/brand/logo-primary-dark.svg?url";
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import type { PdfView } from "../../api.ts";
 import { N, WORDS } from "../../copy-documents.ts";
 import { Download } from "../icons.tsx";
@@ -55,13 +55,14 @@ function contactParts(line: string): { name: string; email: string | null } {
 /** A line such as "GSTIN … · State …" wraps only between its parts (as on the PDF). */
 function PartsLine({ text, className }: { text: string; className?: string }) {
   const parts = text.split(" · ");
+  if (parts.length < 2) return <p className={className}>{text}</p>;
   return (
     <p className={className}>
       {parts.map((p, i) => (
-        <span key={p} className="keep">
-          {p}
+        <Fragment key={p}>
+          <span className="keep">{p}</span>
           {i < parts.length - 1 ? " · " : ""}
-        </span>
+        </Fragment>
       ))}
     </p>
   );
