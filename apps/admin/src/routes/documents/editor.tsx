@@ -3,6 +3,8 @@
 // stops typing, through PATCH with only the parts that changed; the answer's figures (totals, each line's tax, the instalments, the
 // discount guard, the approval, what still stops a send) are put beside what was typed without touching the text. Someone else's save
 // shows the "saved at the same moment" notice and stops saving until the latest is loaded.
+import { istDate } from "@techaust/core/dates";
+import { validUntil } from "@techaust/core/documents";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { api, RequestError } from "../../api.ts";
@@ -20,6 +22,7 @@ import {
   DOC_ERRORS,
   DOC_PENDING,
   DOC_TOASTS,
+  dayText,
   docErrorText,
   type EditorAction,
   type EditorState,
@@ -53,6 +56,12 @@ const STALE = ((t: string) => {
   const i = t.indexOf(". ");
   return [t.slice(0, i + 1), t.slice(i + 2)] as const;
 })(DOC_ERRORS.stale_version);
+
+/** The last valid day if the draft were sent today (the send's own rule, core `validUntil`), for the email preview; null while the days are not valid. */
+function sendValidUntil(days: string): string | null {
+  const n = Number(days);
+  return Number.isInteger(n) && n >= 1 && n <= 90 ? dayText(validUntil(istDate(Date.now()), n)) : null;
+}
 
 /** How long after the last keystroke a draft saves itself (lead, review fix 2: fewer D1 writes); leaving a field saves at once. */
 const AUTOSAVE_MS = 3000;
@@ -482,7 +491,7 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
         currency={s.currency}
         clientId={view.client.id}
         clientName={view.client.name}
-        validUntil={null}
+        validUntil={sendValidUntil(s.fields.validityDays)}
         onClose={() => setDialog(null)}
         onSend={async (contactIds, attachPdf) => {
           const at = await flush();

@@ -78,7 +78,8 @@ export function ReadView({ view, reload }: { view: DocumentView; reload: () => v
     v.version === latestSent &&
     !v.client.anonymised;
   // A converted estimate offers neither conversion again (review fix 9); it says what it became instead.
-  const converted = v.convertedTo ?? null;
+  // A proposal's first-instalment draft (M4.5 "Start project") is said by the start-project panel, not as a conversion.
+  const converted = v.type === "estimate" ? (v.convertedTo ?? null) : null;
   const convertible = v.type === "estimate" && v.status === "accepted" && !converted;
   const canInvoice = convertible && allowed(user.role, "invoices.draft");
   const canCare = convertible && allowed(user.role, "carePlans.write");

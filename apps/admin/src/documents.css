@@ -1531,6 +1531,16 @@ a.pdf-panel__action:hover {
   cursor: default;
 }
 
+/* A contact without portal access can't be chosen: its box reads as unavailable in both themes, and the name steps back. */
+.sendd .sendd__contact.is-off input {
+  opacity: 0.4;
+}
+
+.sendd__contact.is-off .sendd__name {
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
 .sendd__name {
   display: block;
   font-weight: 600;

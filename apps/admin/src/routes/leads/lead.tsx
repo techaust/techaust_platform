@@ -610,7 +610,7 @@ function DecisionLine({ decision: d }: { decision: NonNullable<LeadPageData["dec
       {!accepted && d.reason && (
         <span className="lead-decision__why">
           {REASON_LABEL}: {reasonText(d.reason)}
-          {d.note && <span className="line muted">{d.note}</span>}
+          {d.note && <span className="offer-sub muted">{d.note}</span>}
         </span>
       )}
     </span>

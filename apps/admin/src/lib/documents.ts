@@ -281,7 +281,8 @@ export const STATUS_LABELS: Record<QuoteStatus | "pending_approval", string> = {
   sent: "Sent",
   viewed: "Viewed",
   accepted: "Accepted",
-  rejected: "Rejected",
+  // The client's word since M4.5 (owner's approval of the preview, 2026-10-25: docs/06 §5.5 "Rejected" becomes "Declined").
+  rejected: "Declined",
   expired: "Expired",
   revised: "Revised",
 };

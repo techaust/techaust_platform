@@ -57,7 +57,7 @@ export function AcceptancePanel(props: {
       <span key="by">
         {a.typedName}
         {a.contactName && a.contactName !== a.typedName && (
-          <span className="line muted">{a.contactName}</span>
+          <span className="offer-sub muted">{a.contactName}</span>
         )}
       </span>,
     ],
@@ -119,7 +119,7 @@ export function DeclinePanel(props: { decision: Decision }) {
       OFFER_COPY.reason,
       <span key="why">
         {reasonText(d.reason)}
-        {d.note && <span className="line muted">{d.note}</span>}
+        {d.note && <span className="offer-sub muted">{d.note}</span>}
       </span>,
     ]);
   return (
@@ -209,7 +209,7 @@ export function StartProjectPanel(props: {
                     OFFER_PENDING.firstInstalment,
                     <>
                       {OFFER_PENDING.instalmentType[first.type] ?? first.type}
-                      <span className="line tnum">
+                      <span className="offer-sub tnum">
                         {moneyText(first.amountMinor, props.currency)}, {bpToPercent(first.pctBp)} %
                       </span>
                     </>,

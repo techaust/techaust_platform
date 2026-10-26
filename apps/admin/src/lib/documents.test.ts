@@ -249,7 +249,7 @@ describe("07-O copy, word for word (draft pending the owner)", () => {
       "Sent",
       "Viewed",
       "Accepted",
-      "Rejected",
+      "Declined",
       "Expired",
       "Revised",
     ]);
