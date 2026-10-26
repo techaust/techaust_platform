@@ -141,7 +141,8 @@ export type Notification = {
   createdAt: number;
 };
 export type SearchGroupData = {
-  type: "user" | "lead" | "client" | "contact" | "project" | "catalogue" | "document";
+  /** `invoice` (M5.1): issued invoice numbers, only for roles with `invoices.read` (the API leaves the group out otherwise). */
+  type: "user" | "lead" | "client" | "contact" | "project" | "catalogue" | "document" | "invoice";
   label: string;
   items: { id: string; title: string; subtitle: string; link: string }[];
 };

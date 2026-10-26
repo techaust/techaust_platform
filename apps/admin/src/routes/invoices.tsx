@@ -130,7 +130,7 @@ function InvoiceList() {
       {list.state === "failed" ? (
         <LoadFailed error={list.error} onRetry={() => list.reload()} />
       ) : (
-        <div className="clients-table inv-table">
+        <div className="clients-table docs-table inv-table">
           <DataTable
             caption={INV_COPY.title}
             columns={invoiceColumns(true)}

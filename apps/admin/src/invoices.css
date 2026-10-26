@@ -16,9 +16,10 @@
   min-width: 0;
 }
 
-.inv-number .docno {
-  overflow-wrap: anywhere;
-  white-space: normal;
+/* A number is never broken: "TH/INV/2627/000" over "2" reads as another number. The words of a draft's slot stay together too. */
+.inv-number .docno,
+.inv-number--empty > span:last-child {
+  white-space: nowrap;
 }
 
 .inv-number--empty {

@@ -56,7 +56,7 @@ export function ClientInvoices({ clientId, readOnly }: { clientId: string; readO
         </h2>
         {canDraft && rows.length > 0 && newButton(false)}
       </div>
-      <div className="clients-table inv-table">
+      <div className="clients-table docs-table inv-table">
         <DataTable
           caption={`${INV_COPY.clientTab} of this client`}
           columns={invoiceColumns(false)}
