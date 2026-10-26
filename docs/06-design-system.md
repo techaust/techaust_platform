@@ -335,6 +335,9 @@ Built on **Radix UI primitives** (Dialog, Popover, DropdownMenu, Tabs, Tooltip, 
   - each step is a `<fieldset>` with a `<legend>`
   - focus moves to the step heading on step change
   - Back never loses data
+- **Fields side by side (2026-10-26):** a field has a head (label and hint) and a body (control and error); in a two-column row the heads share their height, so the controls always line up. Cells align at the start, so an error line grows downwards without moving its neighbour.
+- **Dates in admin (2026-10-26):** one shared `DateField`, typed as DD/MM/YYYY with the date echoed under it ("26 Oct 2026") and a 44 px token-coloured calendar button named with its field's label. A date it can't read shows "Enter the date as DD/MM/YYYY, for example 26/10/2026." and blocks the save; autosaving fields and filters keep their last valid value. Never a bare native date input.
+- **Empty states (2026-10-26):** a list's empty state spans the list's full width with the same gap as the table, and the "0 … on this page" count is hidden.
 - **Radio cards** (service picker, budget bands): native radio inputs inside labels, so the whole card is clickable and arrow keys work.
 
 ### 5.5 Document status colours (apps, portal, PDFs)

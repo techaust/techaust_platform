@@ -1,6 +1,6 @@
 # M3.4 to M4.5 batch
 
-Status: all seven on staging (2026-10-26); awaiting the owner's batch review
+Status: approved by the owner on staging (2026-10-26) with the batch review fixes (PR #93)
 
 ## Owner's answers (2026-10-25)
 - Review all seven at the end; each milestone still has its own review, re-check and PR to staging (one-time exception to hard rule 2; docs/13).
@@ -68,3 +68,6 @@ Each milestone: its own task branch and run file (`docs/runs/m3.4-projects.md` โ
 - **All seven are on staging:** M4.2 #80, M3.4 #81, M4.1 #82, M3.5 #84, M4.3 #89, M4.4 #90, M4.5 #91. Each had its own review, fixes and re-check.
 - **Usage:** every agent run on 2026-10-26 was within the plan (`node tools/model-audit.mjs 2026-10-26`); the gate is now the 5-hour window only (docs/14 ยง5).
 - **Next:** the owner's batch review of all seven (M4.5 staging steps given during it); then stop, because M5 waits for the owner. The admin Worker split comes before M5.1.
+
+## Handover (2026-10-26, batch closed)
+All seven approved by the owner on staging on 2026-10-26 with the review fixes ([run file](batch-review-fixes.md), PR #93). This batch is closed; M5 is next, starting with the admin Worker split.
