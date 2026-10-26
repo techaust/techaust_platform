@@ -1,6 +1,6 @@
 Status: merged (PR #93, 2026-10-26); approved by the owner on staging 2026-10-26
 Tier: B (send logic and the anonymised-client name change; the screens are C)
-Usage: reviewer claude-opus-5-5/high (UI/UX check; skills frontend-design, dataviz): 5-h 19 → 39 %; code-finder claude-haiku-5-5/low (placeholder sweep; no skill fits a read-only search)
+Usage (from `node tools/model-audit.mjs`): reviewer claude-opus-5-5/high ×2 (UI/UX check; review of the fixes), reviewer claude-opus-5-5/medium ×2 (re-checks); code-finder claude-haiku-5-5/low; builder claude-sonnet-5-5/medium ×4 (round 2 loaded only workers-best-practices, not code-review: covered by the review); designer claude-opus-5-5/medium ×3; skill helpers general-purpose on allowed models (sonnet low/medium, opus medium/high). 5-h window 19 → 69 % before the 20:30 reset, then 2 → about 25 %. All runs within the plan.
 
 # Batch review fixes (UI/UX sweep and copy, after the owner's M3.4 to M4.5 test)
 
@@ -489,3 +489,7 @@ N1 to N4 and L1, L3 to L7 fixed (N1, N3, N4 and L7 seen on screen; 11 screenshot
 - **Usage:** reviewer UI check opus/high; code-finder haiku/low; builder sonnet/medium ×4 (rounds 1 to 4); designer opus/medium ×3; reviewer opus/high (review) and opus/medium ×2 (re-checks); skill helpers (general-purpose) on allowed models. 5-h window 19 → 69 % before its reset, then 2 → about 15 %. `node tools/model-audit.mjs`: all runs within the plan.
 - **After merge (lead, owner-approved):** run the six service-name UPDATEs from "Builder report" on staging, then publish the catalogue. Check on staging: the PDFs (proposal, estimate, certificate), the real portal offer page, migration 0036, CPU readings.
 - **Follow-ups:** the admin Worker has 582 bytes left: the Worker split comes first before M5.1; NVDA and the native calendar popup not verified; proposal terms v1 "GST at 18 %" for the CA (VERIFY WITH CA/LEGAL); anonymising deletes document bells (VERIFY WITH CA/LEGAL).
+
+## Handover (2026-10-26, end of day)
+- **Where it stands:** merged (PR #93) and deployed to staging; migration 0036 applied (no "Removed client" left); the six service names use "and" on staging; **approved by the owner on staging**. The owner was asked to click Catalogue › Publish so the website picks up the names (not confirmed).
+- **Next step:** none in this task. M5 starts with the admin Worker split (plan first).
