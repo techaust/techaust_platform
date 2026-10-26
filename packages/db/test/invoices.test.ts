@@ -354,6 +354,17 @@ describe("parent_id: a frozen document of the same client in an allowed pair [do
       ),
       /documents_parent_check/,
     );
+    // a VOID parent is never a parent (a void invoice is corrected by nothing: it was cancelled)
+    const voided = await frozenDoc(a, "tax_invoice", "void");
+    await rejects(
+      run(
+        "INSERT INTO documents (id, type, client_id, currency, parent_id) VALUES (?, 'credit_note', ?, 'INR', ?)",
+        uuidv7(),
+        a,
+        voided,
+      ),
+      /documents_parent_check/,
+    );
     // a credit note of a proforma, a proforma with a parent, an invoice of an invoice
     const pro = await frozenDoc(a, "proforma");
     for (const [type, parent] of [
@@ -585,13 +596,20 @@ async function argsFor(f: Fixture, over: Record<string, unknown> = {}, fy = "999
       },
       bank: { inr: null },
       signature: null,
+      reverseChargeText: "Tax payable on reverse charge: No",
       sender: { staffId: f.staffId, name: "N", email: "billing@example.com" },
     },
     computedJson: "{}",
     snapshotSha256: "s".repeat(64),
     issuedBy: f.ownerId,
     termsVersionId: null,
-    expected: { updatedAt: 7_000, contentSha256: "h".repeat(64), ...v, clientUpdatedAt: f.clientUpdatedAt },
+    expected: {
+      updatedAt: 7_000,
+      contentSha256: "h".repeat(64),
+      ...v,
+      clientUpdatedAt: f.clientUpdatedAt,
+      contact: null,
+    },
     authority: { kind: "owner", sessionId: f.sessionId },
     bell: { clientName: "Asha Traders", linkPrefix: "/invoices/" },
     ...over,
@@ -694,6 +712,49 @@ describe("invoiceIssueStatements [ADM-INV-03, ADM-INV-07, LD5]", () => {
     await rejects(runIssue(await argsFor(f)), /issue did not freeze/);
   });
 
+  it("the contact named on the invoice: edited or anonymised since the read refuses it; unchanged goes through; none needs no check", async () => {
+    const before = await counter();
+    const mkContact = async (f: Fixture) => {
+      const id = uuidv7();
+      await run(
+        "INSERT INTO contacts (id, client_id, name, email, updated_at) VALUES (?1, ?2, 'Asha', ?3, 3000)",
+        id,
+        f.clientId,
+        `${id}@example.test`,
+      );
+      return id;
+    };
+    for (const [name, change] of [
+      ["edited", (id: string) => run("UPDATE contacts SET updated_at = 3001 WHERE id = ?", id)],
+      [
+        "anonymised",
+        (id: string) => run("UPDATE contacts SET anonymised_at = 5, updated_at = 3001 WHERE id = ?", id),
+      ],
+      [
+        "anonymised without a new stamp",
+        (id: string) => run("UPDATE contacts SET anonymised_at = 5 WHERE id = ?", id),
+      ],
+      [
+        "gone to another client",
+        async (id: string) => run("UPDATE contacts SET client_id = ? WHERE id = ?", await india(), id),
+      ],
+    ] as const) {
+      const f = await fixture();
+      const contactId = await mkContact(f);
+      await change(contactId);
+      const a = await argsFor(f);
+      a.expected.contact = { id: contactId, updatedAt: 3000 };
+      await rejects(runIssue(a), /issue did not freeze/);
+      expect(await counter(), name).toBe(before);
+    }
+    const ok = await fixture();
+    const live = await mkContact(ok);
+    const a = await argsFor(ok);
+    a.expected.contact = { id: live, updatedAt: 3000 };
+    await runIssue(a);
+    expect(await counter()).toBe((before ?? 1) + 1);
+  });
+
   it("the series is full: the counter at the highest number refuses and does not move", async () => {
     const f = await fixture();
     await run("INSERT INTO doc_counters (series, fy, next_no) VALUES ('invoice', '9997', 10000)");
@@ -718,6 +779,26 @@ describe("invoiceIssueStatements [ADM-INV-03, ADM-INV-07, LD5]", () => {
         async () => {
           const f = await fixture();
           await run("UPDATE staff_sessions SET revoked_at = 1 WHERE id = ?", f.sessionId);
+          return f;
+        },
+      ],
+      [
+        "idle-expired",
+        async () => {
+          const f = await fixture();
+          await run(
+            "UPDATE staff_sessions SET idle_expires_at = ? WHERE id = ?",
+            Date.now() - 1,
+            f.sessionId,
+          );
+          return f;
+        },
+      ],
+      [
+        "absolutely expired",
+        async () => {
+          const f = await fixture();
+          await run("UPDATE staff_sessions SET abs_expires_at = ? WHERE id = ?", Date.now() - 1, f.sessionId);
           return f;
         },
       ],
@@ -840,7 +921,7 @@ describe("invoiceIssueStatements [ADM-INV-03, ADM-INV-07, LD5]", () => {
     });
   });
 
-  it("a milestone that is still pending (the first instalment of Start project) is invoiced too, and its delivery time is set then", async () => {
+  it("a milestone that is still pending (the first instalment of Start project) is invoiced too, and its delivery time stays unset: the work is not delivered (LD12)", async () => {
     const f = await fixture();
     const projectId = uuidv7();
     await run(
@@ -860,7 +941,7 @@ describe("invoiceIssueStatements [ADM-INV-03, ADM-INV-07, LD5]", () => {
     await runIssue(a);
     expect(await first("SELECT status, delivered_at FROM milestones WHERE id = ?", m)).toEqual({
       status: "invoiced",
-      delivered_at: a.now,
+      delivered_at: null,
     });
   });
 });

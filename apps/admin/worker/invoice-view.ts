@@ -48,7 +48,7 @@ export const ISSUE_APPROVALS_OF_SQL =
 
 /** The milestone this invoice was made from (at most one), with what the compute and the links need. */
 export const MILESTONE_OF_SQL =
-  "SELECT m.id, m.title, m.project_id, m.amount_minor, m.pct_bp, m.status, m.document_id, m.delivered_at, p.client_id, p.budget_minor, p.source_document_id, (SELECT s.computed FROM documents s WHERE s.id = p.source_document_id) AS source_computed FROM milestones m JOIN projects p ON p.id = m.project_id WHERE m.document_id = ?1";
+  "SELECT m.id, m.title, m.project_id, m.amount_minor, m.pct_bp, m.status, m.document_id, m.delivered_at, p.client_id, p.budget_minor, p.source_document_id FROM milestones m JOIN projects p ON p.id = m.project_id WHERE m.document_id = ?1";
 
 export type InvoiceViewInput = {
   bundle: DocumentBundle<TermsRef>;
@@ -138,6 +138,8 @@ export function invoiceView(i: InvoiceViewInput) {
     creditedMinor: d.credited_minor,
     hasIssuedChild: i.hasIssuedChild,
     emailed: i.emailed,
+    issueDate: d.issue_date,
+    today: todayIso,
   });
   const clientDays = client.payment_terms_days;
   const dueDays = clientDays ?? settings.paymentTerms.dueDays;

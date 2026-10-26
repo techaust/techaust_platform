@@ -3,13 +3,14 @@
 // Table 13 summary of what was issued.
 import { env } from "cloudflare:workers";
 import { documentsIssuedSummary } from "@techaust/core/invoices";
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ISSUED_DOCUMENTS_SQL } from "./invoice-model.ts";
 import { insert } from "./test-clients.ts";
 import { call, countOf, one, rows, sessionFor } from "./test-helpers.ts";
 import {
   auditCount,
   codeOf,
+  farSession,
   getInvoice,
   invoiceCounter,
   invoiceRow,
@@ -31,6 +32,7 @@ beforeAll(async () => {
   await putCompany();
   await putBank();
 });
+afterEach(() => vi.useRealTimers());
 
 async function issued(o: Awaited<ReturnType<typeof owner>>, opts: { clientId?: string } = {}) {
   const made = await mkInvoice(o, opts);
@@ -271,6 +273,60 @@ describe("void [Q1, Q2, LD7]", () => {
       body: { clientId: c.clientId, fromMilestoneId: m.id },
     });
     expect(again.status).toBe(201);
+  });
+});
+
+describe("a void only inside the IST calendar month of issue [Q23, VERIFY WITH CA/LEGAL: the GST return period]", () => {
+  it("the last millisecond of the month still voids; the next millisecond is 409 return_period_closed and nothing is written", async () => {
+    const o = await farSession();
+    const c = await mkInvoiceClient();
+    // 31 October 2026, 10:00 UTC = 15:30 IST: the month of issue is October
+    vi.useFakeTimers({ toFake: ["Date"], now: Date.UTC(2026, 9, 31, 10, 0, 0, 0) });
+    const a = await issued(o, { clientId: c.clientId });
+    const b = await issued(o, { clientId: c.clientId });
+    const lastMs = Date.UTC(2026, 9, 31, 18, 29, 59, 999); // 23:59:59.999 IST
+    vi.setSystemTime(lastMs);
+    const ok = await voidInvoice(o, a.id);
+    expect(ok.status, await ok.clone().text()).toBe(200);
+    vi.setSystemTime(lastMs + 1); // 1 November, 00:00:00.000 IST
+    const rowBefore = await invoiceRow(b.id);
+    const audits = await auditCount("invoice.void");
+    const res = await voidInvoice(o, b.id);
+    expect(res.status).toBe(409);
+    const body = await json(res);
+    expect(body.error.code).toBe("return_period_closed");
+    expect(body.error.message).toBe(
+      "This invoice's GST return period has ended, so it can't be voided. Use a credit note instead.",
+    );
+    expect(body.reasons).toEqual(["return_period_closed"]);
+    expect(await invoiceRow(b.id)).toEqual(rowBefore);
+    expect(await auditCount("invoice.void")).toBe(audits);
+    // the view says the same, before anyone tries
+    const view = await getInvoice(o, b.id);
+    expect(view.void.blockers).toEqual(["return_period_closed"]);
+  });
+});
+
+describe("a void gives the milestone back as it was [LD12, early check required 2]", () => {
+  it("an advance invoice on a PENDING milestone: issuing leaves delivered_at unset, the void sends it back to pending (not ready to bill)", async () => {
+    const o = await owner();
+    const c = await mkInvoiceClient();
+    const m = await mkReadyMilestone(c.clientId, 118_000, { status: "pending", delivered_at: null });
+    const made = await mkInvoice(o, { clientId: c.clientId });
+    await env.DB.prepare("UPDATE milestones SET document_id = ? WHERE id = ?").bind(made.id, m.id).run();
+    const res = await issueInvoice(o, made.id);
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(await one("SELECT status, delivered_at, document_id FROM milestones WHERE id = ?", m.id)).toEqual({
+      status: "invoiced",
+      delivered_at: null,
+      document_id: made.id,
+    });
+    expect((await voidInvoice(o, made.id)).status).toBe(200);
+    expect(await one("SELECT status, delivered_at, document_id FROM milestones WHERE id = ?", m.id)).toEqual({
+      status: "pending",
+      delivered_at: null,
+      document_id: null,
+    });
   });
 });
 

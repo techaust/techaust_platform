@@ -10,7 +10,7 @@
 import { ANONYMISED_CLIENT } from "@techaust/core/clients";
 import { approvalState } from "@techaust/core/documents";
 import { uuidv7 } from "@techaust/core/ids";
-import { INVOICE_FLOW_TYPES, isInvoiceFlowType, voidBlockers } from "@techaust/core/invoices";
+import { INVOICE_FLOW_TYPES, isInvoiceFlowType, issueDateOf, voidBlockers } from "@techaust/core/invoices";
 import { bundleOf, LOAD_STATEMENTS, loadStatements, type TermsRef } from "@techaust/db/documents";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
@@ -38,6 +38,7 @@ import {
   milestoneAmountOf,
   milestoneDraft,
   NEWEST_INVOICE_TERMS,
+  RETURN_PERIOD_CLOSED,
   readInvoiceSettings,
   taxContext,
   todayOf,
@@ -234,7 +235,7 @@ export async function readInvoice(c: Ctx, id: string, extra: D1PreparedStatement
       .bind(id),
     db
       .prepare(
-        "SELECT id, name, email, anonymised_at FROM contacts WHERE id = (SELECT contact_id FROM documents WHERE id = ?1)",
+        "SELECT id, name, email, anonymised_at, updated_at FROM contacts WHERE id = (SELECT contact_id FROM documents WHERE id = ?1)",
       )
       .bind(id),
     db.prepare(INVOICE_SETTINGS_READ),
@@ -324,6 +325,7 @@ type ContactRow = {
   name: string;
   email: string;
   anonymised_at: number | null;
+  updated_at: number;
 };
 
 export const invoices = new Hono<AppEnv>()
@@ -341,11 +343,13 @@ export const invoices = new Hono<AppEnv>()
       db.prepare(CLIENT_READ).bind(f.clientId),
       f.contactId
         ? db
-            .prepare("SELECT id, client_id, name, email, anonymised_at FROM contacts WHERE id = ?1")
+            .prepare(
+              "SELECT id, client_id, name, email, anonymised_at, updated_at FROM contacts WHERE id = ?1",
+            )
             .bind(f.contactId)
         : db
             .prepare(
-              "SELECT id, client_id, name, email, anonymised_at FROM contacts WHERE client_id = ?1 AND anonymised_at IS NULL ORDER BY is_billing DESC, is_primary DESC, name, id LIMIT 1",
+              "SELECT id, client_id, name, email, anonymised_at, updated_at FROM contacts WHERE client_id = ?1 AND anonymised_at IS NULL ORDER BY is_billing DESC, is_primary DESC, name, id LIMIT 1",
             )
             .bind(f.clientId),
       db.prepare(INVOICE_SETTINGS_READ),
@@ -563,7 +567,9 @@ export const invoices = new Hono<AppEnv>()
       db.prepare(ITEMS_BY_ID).bind(JSON.stringify(newItems)),
       contactId
         ? db
-            .prepare("SELECT id, client_id, name, email, anonymised_at FROM contacts WHERE id = ?1")
+            .prepare(
+              "SELECT id, client_id, name, email, anonymised_at, updated_at FROM contacts WHERE id = ?1",
+            )
             .bind(contactId)
         : db.prepare("SELECT NULL WHERE 0"),
     ]);
@@ -760,7 +766,7 @@ export const invoices = new Hono<AppEnv>()
     return again.frozen_at !== null ? err(c, FROZEN, 409) : err(c, STALE_VERSION, 409);
   })
 
-  // ---- void (Q1, Q2, LD7; VERIFY WITH CA/LEGAL): the owner, with a fresh code, before it was emailed and with no payment or credit; the number stays ----
+  // ---- void (Q1, Q2, Q23, LD7; VERIFY WITH CA/LEGAL): the owner, with a fresh code, before it was emailed, within the month of issue, and with no payment or credit; the number stays ----
   .post("/:id/void", param(idParam), body(voidBody), async (c) => {
     const { id } = c.req.valid("param");
     const f = c.req.valid("json");
@@ -769,12 +775,16 @@ export const invoices = new Hono<AppEnv>()
     const ctx = await readInvoice(c, id);
     if (!ctx) return err(c, NOT_FOUND, 404);
     const d = ctx.bundle.document;
+    const t = Math.max(Date.now(), d.updated_at + 1);
+    const today = issueDateOf(t);
     const reasons = voidBlockers({
       status: d.status,
       paidMinor: d.paid_minor,
       creditedMinor: d.credited_minor,
       hasIssuedChild: ctx.hasIssuedChild,
       emailed: ctx.emailed,
+      issueDate: d.issue_date,
+      today,
     });
     if (reasons.length > 0)
       return c.json(
@@ -782,7 +792,9 @@ export const invoices = new Hono<AppEnv>()
           // 07-R: `already_void` for a void one, `void_not_allowed` for the rest; the exact reasons (codes) ride along.
           error: reasons.includes("already_void")
             ? { code: ALREADY_VOID.code, message: ALREADY_VOID.message }
-            : { code: VOID_NOT_ALLOWED.code, message: VOID_NOT_ALLOWED.message },
+            : reasons.includes("return_period_closed")
+              ? { code: RETURN_PERIOD_CLOSED.code, message: RETURN_PERIOD_CLOSED.message }
+              : { code: VOID_NOT_ALLOWED.code, message: VOID_NOT_ALLOWED.message },
           reasons,
           request_id: c.var.rid,
         },
@@ -791,8 +803,7 @@ export const invoices = new Hono<AppEnv>()
     if (d.updated_at !== f.expectedUpdatedAt) return err(c, STALE_VERSION, 409);
     // An anonymised client takes nothing new (the standing rule, VERIFY WITH CA/LEGAL): a void is a write on its document.
     if (ctx.client.anonymised_at !== null) return err(c, CLIENT_GONE, 409);
-    const t = Math.max(Date.now(), d.updated_at + 1);
-    // Every rule is in the statement: issued, nothing paid or credited, no issued child, never emailed, and the owner's session with a live step-up.
+    // Every rule is in the statement: issued, nothing paid or credited, no issued child, never emailed, still inside the IST month of issue (Q23), and the owner's session with a live step-up.
     const done = await mutate(c, {
       main: db
         .prepare(
@@ -801,9 +812,10 @@ export const invoices = new Hono<AppEnv>()
              AND paid_minor = 0 AND credited_minor = 0 AND NOT ${clientGoneSql("client_id")}
              AND NOT EXISTS (SELECT 1 FROM documents x WHERE x.parent_id = documents.id AND x.frozen_at IS NOT NULL)
              AND NOT EXISTS (SELECT 1 FROM document_sends s WHERE s.document_id = documents.id)
-             AND EXISTS (SELECT 1 FROM staff_sessions s JOIN staff_users o ON o.id = s.user_id WHERE s.id = ?5 AND s.revoked_at IS NULL AND s.step_up_until > ?3 AND o.role = 'owner' AND o.status = 'active')`,
+             AND substr(issue_date, 1, 7) = ?6
+             AND EXISTS (SELECT 1 FROM staff_sessions s JOIN staff_users o ON o.id = s.user_id WHERE s.id = ?5 AND s.revoked_at IS NULL AND s.idle_expires_at > ?3 AND s.abs_expires_at > ?3 AND s.step_up_until > ?3 AND o.role = 'owner' AND o.status = 'active')`,
         )
-        .bind(id, f.expectedUpdatedAt, t, f.reason, u.sessionId),
+        .bind(id, f.expectedUpdatedAt, t, f.reason, u.sessionId, today.slice(0, 7)),
       action: "invoice.void",
       entityType: "document",
       entityId: id,
@@ -815,11 +827,11 @@ export const invoices = new Hono<AppEnv>()
         totalMinor: d.total_minor,
         reasonLength: f.reason.length,
       },
-      // The milestone this invoice was made from goes back to ready to bill, free for a new invoice (the delivery time is kept).
+      // The milestone this invoice was made from is free for a new invoice again: back to ready to bill when the work was delivered (the delivery time is kept), back to pending when it never was (an advance invoice on a pending milestone, LD12).
       side: (g) => [
         db
           .prepare(
-            `UPDATE milestones SET status = 'ready_to_bill', document_id = NULL, updated_at = ?2 WHERE document_id = ?1 AND ${g.sql(3)}`,
+            `UPDATE milestones SET status = CASE WHEN delivered_at IS NULL THEN 'pending' ELSE 'ready_to_bill' END, document_id = NULL, updated_at = ?2 WHERE document_id = ?1 AND ${g.sql(3)}`,
           )
           .bind(id, t, ...g.params),
       ],

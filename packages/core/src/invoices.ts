@@ -215,6 +215,7 @@ export const VOID_BLOCKER_CODES = [
   "has_credit",
   "has_child_document",
   "already_emailed",
+  "return_period_closed",
 ] as const;
 export type VoidBlockerCode = (typeof VOID_BLOCKER_CODES)[number];
 
@@ -225,11 +226,16 @@ export type VoidFacts = {
   readonly hasIssuedChild: boolean;
   /** The invoice was emailed to the client (a `document_sends` row exists; M5.4 writes them). */
   readonly emailed: boolean;
+  /** The invoice's issue date (IST day) and today's IST day: Q23 lets a void happen only inside the calendar month of issue. */
+  readonly issueDate: string | null;
+  readonly today: string;
 };
 
 /**
  * Q1 (VERIFY WITH CA/LEGAL, 08-A §4): an issued invoice can be voided only while it has not been emailed to the client and has no payment and no
- * credit or debit note; after that, a credit note is the correction. The number stays and the record stays (Rule 56(8)). Codes only.
+ * credit or debit note; after that, a credit note is the correction. Q23: and only within the IST calendar month of issue (the GST return period of
+ * an invoice is the month of its date), after which a credit note is the correction too. The number stays and the record stays (Rule 56(8)). Codes only.
+ * VERIFY WITH CA/LEGAL (the batch page offers both forms of the Q23 rule).
  */
 export function voidBlockers(f: VoidFacts): VoidBlockerCode[] {
   if (f.status === "void") return ["already_void"];
@@ -239,6 +245,8 @@ export function voidBlockers(f: VoidFacts): VoidBlockerCode[] {
   if (f.creditedMinor > 0) out.push("has_credit");
   if (f.hasIssuedChild) out.push("has_child_document");
   if (f.emailed) out.push("already_emailed");
+  if (f.issueDate !== null && f.issueDate.slice(0, 7) !== f.today.slice(0, 7))
+    out.push("return_period_closed");
   return out;
 }
 

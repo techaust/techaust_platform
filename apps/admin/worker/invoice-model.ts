@@ -42,6 +42,8 @@ export const ALREADY_ISSUED = e("already_issued", "This invoice was already issu
 export const ISSUE_BLOCKED = e("issue_blocked", "This invoice can't be issued yet");
 export const SETTINGS_CHANGED = e("settings_changed", "A setting changed while this was issued. Try again");
 export const CLIENT_CHANGED = e("client_changed", "The client changed while this was issued. Try again");
+/** The contact named on the invoice was edited or anonymised while it was issued (copy: `[Placeholder]` until the owner approves 07-R's line). */
+export const CONTACT_CHANGED = e("contact_changed", "[Placeholder]");
 export const SERIES_FULL = e("series_full", "This numbering series has no numbers left this year");
 export const ISSUE_APPROVAL_REQUIRED = e(
   "approval_required",
@@ -57,6 +59,11 @@ export const MILESTONE_NO_AMOUNT = e("milestone_no_amount", "That milestone has 
 export const MILESTONE_EXCLUSIVE = e("milestone_exclusive", "Choose a milestone or services, not both");
 export const VOID_NOT_ALLOWED = e("void_not_allowed", "This invoice can't be voided");
 export const ALREADY_VOID = e("already_void", "This invoice is already void");
+/** Q23 (VERIFY WITH CA/LEGAL): the lead's line, 07-R's wording pending the owner's approval. */
+export const RETURN_PERIOD_CLOSED = e(
+  "return_period_closed",
+  "This invoice's GST return period has ended, so it can't be voided. Use a credit note instead.",
+);
 export const INVOICE_APPROVAL_EXPIRED = e(
   "approval_expired",
   "The invoice changed after the request, so the request expired",
@@ -136,7 +143,13 @@ export function inrBankOf(rows: readonly BankRow[]): InvoiceBankBlock | null {
 
 // ---- the frozen blocks ---------------------------------------------------------------------------------------------------------------------
 
-export type ContactFacts = { id: string; name: string; email: string; anonymised_at: number | null };
+export type ContactFacts = {
+  id: string;
+  name: string;
+  email: string;
+  anonymised_at: number | null;
+  updated_at: number;
+};
 
 /** Everything an invoice says about the recipient, frozen with it (a later change of the client's record never changes an issued invoice). */
 export function recipientOf(client: ClientRow, contact: ContactFacts | null): RecipientSnapshot {
@@ -177,6 +190,7 @@ export function issuerOf(
     },
     bank: { inr: inrBankOf(bank) },
     signature: sig ? { key: sig.key, sha256: sig.sha256, mime: sig.mime } : null,
+    reverseChargeText: s.tax.reverseChargeText,
     sender: { staffId: who.id, name: who.name, email: s.email.senders.billing },
   };
 }
@@ -370,7 +384,8 @@ export type MilestoneFacts = {
   client_id: string;
   budget_minor: number | null;
   source_document_id: string | null;
-  source_computed: string | null;
+  /** The source proposal's result: read only when a draft is made from the milestone (the read of a draft leaves it out). */
+  source_computed?: string | null;
 };
 
 /** The milestone's amount, tax included: a fixed amount, else its share of the project's budget (half up). Null when it has neither. */

@@ -254,7 +254,15 @@ describe("what stops an issue [ADM-INV-07, LD20; Rule 46]", () => {
 });
 
 describe("void [Q1, LD7]", () => {
-  const base = { status: "issued", paidMinor: 0, creditedMinor: 0, hasIssuedChild: false, emailed: false };
+  const base = {
+    status: "issued",
+    paidMinor: 0,
+    creditedMinor: 0,
+    hasIssuedChild: false,
+    emailed: false,
+    issueDate: "2026-10-05",
+    today: "2026-10-31",
+  };
   it("an unsent, unpaid, uncredited issued invoice can be voided", () => {
     expect(voidBlockers(base)).toEqual([]);
   });
@@ -266,6 +274,21 @@ describe("void [Q1, LD7]", () => {
     expect(voidBlockers({ ...base, hasIssuedChild: true })).toEqual(["has_child_document"]);
     expect(voidBlockers({ ...base, emailed: true })).toEqual(["already_emailed"]);
     expect(voidBlockers({ ...base, status: "paid", paidMinor: 5 })).toEqual(["not_issued", "has_payment"]);
+  });
+  it("Q23: only inside the IST calendar month of issue (the 1st and the last day both count; the next day does not)", () => {
+    expect(voidBlockers({ ...base, issueDate: "2026-10-01", today: "2026-10-31" })).toEqual([]);
+    expect(voidBlockers({ ...base, issueDate: "2026-10-31", today: "2026-10-31" })).toEqual([]);
+    expect(voidBlockers({ ...base, issueDate: "2026-10-31", today: "2026-11-01" })).toEqual([
+      "return_period_closed",
+    ]);
+    // the same month number a year later is another period
+    expect(voidBlockers({ ...base, issueDate: "2026-10-05", today: "2027-10-05" })).toEqual([
+      "return_period_closed",
+    ]);
+    // an invoice without an issue date has no period to compare
+    expect(voidBlockers({ ...base, issueDate: null })).toEqual([]);
+    // a void invoice is only ever "already_void"
+    expect(voidBlockers({ ...base, status: "void", today: "2027-01-01" })).toEqual(["already_void"]);
   });
 });
 

@@ -45,6 +45,7 @@ import {
   ALREADY_ISSUED,
   bankStampOf,
   CLIENT_CHANGED,
+  CONTACT_CHANGED,
   computeInvoice,
   INVOICE_APPROVAL_EXPIRED,
   ISSUE_APPROVAL_REQUIRED,
@@ -182,6 +183,10 @@ export async function issueInvoice(c: Ctx, p: IssueParams): Promise<Response> {
     paymentTermsVersion: ctx.settings.versions.paymentTerms,
     bankStamp: bankStampOf(ctx.bank),
     clientUpdatedAt: ctx.client.updated_at,
+    // The contact frozen into the recipient (none when it was anonymised): edited or anonymised before the batch refuses the issue.
+    contact: recipient.contactId
+      ? { id: recipient.contactId, updatedAt: ctx.contact?.updated_at ?? 0 }
+      : null,
   };
   const batch = invoiceIssueStatements(db, {
     documentId: d.id,
@@ -264,6 +269,18 @@ export async function issueInvoice(c: Ctx, p: IssueParams): Promise<Response> {
     });
   } catch (e) {
     if (!refusedWith(e, ISSUE_REFUSED)) throw e;
+    // A duplicate number should be impossible (the counter and the guard prevent it): when the unique key fires, it is an integrity event for the owner to see, never a quiet stale_version (ids only).
+    if (refusedWith(e, /UNIQUE constraint failed: documents\./))
+      console.error(
+        JSON.stringify({
+          level: "error",
+          message: "invoice issue refused by a unique key",
+          documentId: d.id,
+          series,
+          fy,
+          rid: c.var.rid,
+        }),
+      );
   }
   if (!done)
     return explain(c, d.id, {
@@ -304,6 +321,7 @@ type Expectations = {
     paymentTermsVersion: number | null;
     bankStamp: number | null;
     clientUpdatedAt: number;
+    contact: { id: string; updatedAt: number } | null;
   };
   approvalId: string | null;
 };
@@ -322,10 +340,11 @@ async function explain(c: Ctx, id: string, x: Expectations) {
        (SELECT s.step_up_until FROM staff_sessions s WHERE s.id = ?4 AND s.revoked_at IS NULL) AS step_up_until,
        (SELECT o.role FROM staff_sessions s JOIN staff_users o ON o.id = s.user_id WHERE s.id = ?4 AND o.status = 'active') AS role,
        (SELECT a.status FROM approvals a WHERE a.id = ?5) AS approval_status,
-       (SELECT a.content_sha256 FROM approvals a WHERE a.id = ?5) AS approval_sha
+       (SELECT a.content_sha256 FROM approvals a WHERE a.id = ?5) AS approval_sha,
+       (SELECT k.updated_at FROM contacts k WHERE k.id = ?6 AND k.anonymised_at IS NULL) AS contact_updated_at
      FROM documents d JOIN clients cl ON cl.id = d.client_id WHERE d.id = ?1`,
   )
-    .bind(id, x.series, x.fy, u.sessionId, x.approvalId)
+    .bind(id, x.series, x.fy, u.sessionId, x.approvalId, x.expected.contact?.id ?? null)
     .first<{
       type: string;
       status: string;
@@ -345,6 +364,7 @@ async function explain(c: Ctx, id: string, x: Expectations) {
       role: string | null;
       approval_status: string | null;
       approval_sha: string | null;
+      contact_updated_at: number | null;
     }>();
   if (!row) return err(c, NOT_FOUND, 404);
   if (row.frozen_at !== null || row.status !== "draft")
@@ -368,6 +388,8 @@ async function explain(c: Ctx, id: string, x: Expectations) {
   )
     return err(c, SETTINGS_CHANGED, 409);
   if (row.client_updated_at !== x.expected.clientUpdatedAt) return err(c, CLIENT_CHANGED, 409);
+  if (x.expected.contact && row.contact_updated_at !== x.expected.contact.updatedAt)
+    return err(c, CONTACT_CHANGED, 409);
   if ((row.next_no ?? 1) > x.maxNumber) return err(c, SERIES_FULL, 409);
   if (row.role !== "owner") return err(c, FORBIDDEN, 403);
   if (row.step_up_until === null || row.step_up_until <= Date.now()) return err(c, STEP_UP_REQUIRED, 403);
