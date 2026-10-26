@@ -443,25 +443,34 @@ Both run: Origin check → body ≤ 16 KB → rate limit → honeypot / minimum 
 
 ## 8. PDF pipeline
 
+Updated 2026-10-26 with the M4.4 decisions (L1–L12, docs/13). Two queue messages per document, so each stays well under 10 ms CPU:
+
 ```text
-admin: issue/send/accept ──▶ D1 batch (freeze snapshot) ──▶ PDF_QUEUE.send({documentId})
+admin: send (one D1 batch freezes the version) ──▶ waitUntil(PDF_QUEUE.send({v:1, kind:"pdf.snapshot", documentId}))
 jobs consumer (max_batch_size 1, max_concurrency 1):
-  1. load snapshot JSON from R2 (frozen) + settings snapshot embedded in it
-  2. html = packages/pdf.render(type, snapshot)        // pure string templates, < 3 ms
-  3. res = env.BROWSER.quickAction("pdf", { html, pdfOptions: { format: "a4",
-           printBackground: true, displayHeaderFooter: true, footerTemplate, margin } })
-     · on 429 / quota: msg.retry({ delaySeconds: 15 → backoff }) ; after 5 tries → DLQ + alert
-  4. bytes = await res.arrayBuffer(); sha = SHA-256(bytes)   // native digest, cheap
-  5. R2.put(`docs/<type>/<fy>/<number>.pdf`, bytes, { sha256 })
-  6. UPDATE documents SET pdf_r2_key, pdf_sha256 WHERE id = ? AND pdf_sha256 IS NULL
-  7. enqueue EMAIL_QUEUE if this render was for a send
+  pdf.snapshot
+    1. load the frozen rows in one D1 batch; verify content hash v2, snapshot header hash, computed hash, terms hash
+    2. build the envelope {number, series, fy, sentAt, snapshotSha256, snapshot} (ordered JSON.stringify)
+    3. R2 put docs/<type>/<fy>/<number padded>-v<version>.json  (If-None-Match: *; never overwritten)
+    4. UPDATE documents SET snapshot_r2_key ... WHERE snapshot_r2_key IS NULL; send pdf.render
+  pdf.render
+    1. if pdf_sha256 is set: done; if the PDF object already exists: adopt its checksum, no second render
+    2. html = packages/pdf renderDocumentHtml(toPdfView(envelope))      // pure, no arithmetic
+    3. env.BROWSER.quickAction("pdf", {html, pdfOptions, setJavaScriptEnabled: false, cacheTTL: 0})
+       · pacing inside the consumer: calls at least 10 s apart (Free plan: 1 Quick Action per 10 s)
+       · 429 rate: a delayed copy (Retry-After); 429 daily quota: a copy delayed to the next UTC midnight + 120 s
+       · 422 / 5xx / not a PDF: retry with backoff; after 5 tries the DLQ bells the owner
+    4. R2 put the PDF (sha256 checked, If-None-Match: *); UPDATE pdf_r2_key, pdf_sha256 WHERE pdf_sha256 IS NULL
+    5. onRendered(): M4.5 sends the offer emails and the acceptance confirmation from here
+cron (enqueue only): pdf.sweep picks ≤ 20 frozen documents without a PDF (partial index documents_pdf_pending)
 ```
 
-- **Fonts:** subset WOFF2 files (Latin + ₹) are base64-encoded **at build time** into a generated TS module (`packages/pdf/fonts.generated.ts`), so there's no runtime encoding. A ₹ glyph check runs in CI.
+- **Binding:** `browser` exists only in the staging (later production) environment; locally a stub renderer is used and refused outside `ENVIRONMENT=local`. `.quickAction()` doesn't run locally or in workerd tests.
+- **Fonts:** subset WOFF2 files (Latin + ₹) are base64-encoded **at build time** into a generated TS module (`packages/pdf/src/generated/assets.ts`, `TECHAUST_PDF_FONT_DATA`; admin and portal are forbidden from importing it by `scripts/worker-budget.mjs`), so there's no runtime encoding. A ₹ glyph check runs in CI.
 - **Templates:** `DocumentLayout` + a body per type ([06 §7](06-design-system.md)); all numbers pre-computed by `core`.
 - **Visual regression:** CI renders the fixtures with local Playwright Chromium (not Browser Run) and diffs against the approved PNGs.
 - **Quota:** the expected render time is 1–3 s per document. 10 min/day therefore allows roughly 200–600 renders/day; we expect fewer than 20. Usage (`X-Browser-Ms-Used`) is logged in `stats_daily` and alerts at 50 %.
-- **Fallback:** receipts can be produced with `@cantoo/pdf-lib` (pre-subset TTF) if Browser Run is exhausted; other documents wait in the queue.
+- **Fallback:** a receipt fallback with `@cantoo/pdf-lib` moves to M6 (owner, 2026-10-25); until then documents wait in the queue for the next day's allowance.
 - **Accepted proposals:** an "acceptance certificate" page (name, email, timestamp IST/UTC, IP, user agent, the SHA-256 of the accepted PDF) is rendered as a separate PDF and linked from the acceptance record (evidence pack, [08-B §15](08-research-appendix/B-dpdp-legal.md)).
 
 ---
