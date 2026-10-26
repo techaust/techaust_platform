@@ -1,10 +1,9 @@
+// The admin front Worker entry (M5.0): the SPA assets (served by the platform), the rows marked `on: "front"` (health, sign-in, the
+// member's own account, staff management) and a forwarder to the API Worker for every other row (docs/13, 2026-10-27).
 import { createApp } from "./app.ts";
-import { mountApi } from "./routes-api.ts";
+import { forwardRoutes } from "./forward.ts";
+import { ROUTES } from "./guard.ts";
 import { mountFront } from "./routes-front.ts";
 
-// Layer 1 of M5.0: still one Worker (both route sets); layer 2 turns this into the front entry.
-const app = createApp((a) => {
-  mountFront(a);
-  mountApi(a);
-});
+const app = createApp(mountFront, (a) => forwardRoutes(a, ROUTES));
 export default app satisfies ExportedHandler<Env>;
