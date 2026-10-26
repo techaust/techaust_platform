@@ -2,6 +2,7 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-10-26 [#87](https://github.com/techaust/techaust_platform/pull/87) chore(tooling): Team plan plugins, project plugin settings, unused servers off
 - 2026-10-26 [#86](https://github.com/techaust/techaust_platform/pull/86) docs(usage): Team plan budget gate counts only the 5-hour window
 - 2026-10-26 [#85](https://github.com/techaust/techaust_platform/pull/85) docs: end of day 2026-10-26 (status, decisions, changelog, CLAUDE.md, 05/06/09/14, handovers)
 - 2026-10-26 [#84](https://github.com/techaust/techaust_platform/pull/84) feat(care): M3.5 care plans, time logs and dashboard v1 [ADM-CARE-01, ADM-CARE-03, ADM-TIME-01..03, ADM-DASH-01]
