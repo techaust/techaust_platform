@@ -80,17 +80,154 @@ describe("the Acceptance text follows the draft's contact [Q14]", () => {
   });
 });
 
-describe("round 2: the pinned terms text on the read, and the dashboard's document number [ADM-PROP-05, ADM-DASH-01]", () => {
-  it("the read returns the pinned version's frozen text to every role that can read it; the save answer stays slim", async () => {
+describe("round 3: the contact rename [Q14]", () => {
+  /** Sets the Acceptance text of a draft, then changes the contact in a second save. */
+  async function acceptanceAfter(text: string, nextName: string | null) {
     const o = await owner();
     const made = await mkDraft(o);
+    const next = nextName === null ? null : await mkContact(made.clientId, { name: nextName });
+    const v = await getDoc(o, made.id);
+    const set = await json(
+      await patchDoc(o, made.id, {
+        expectedUpdatedAt: v.updatedAt,
+        sections: sectionsOf(v, (s) => (s.kind === "acceptance" ? { ...s, bodyMd: text } : s)),
+      }),
+    );
+    const res = await patchDoc(o, made.id, {
+      expectedUpdatedAt: set.updatedAt,
+      fields: { contactId: next ? next.id : null },
+    });
+    return { o, made, res, doc: await getDoc(o, made.id) };
+  }
+  const acceptance = (d: J) => d.sections.find((s: J) => s.kind === "acceptance")?.bodyMd;
+
+  it("clearing the contact puts {{client.contact}} back and blocks the send", async () => {
+    const { o, made, res, doc } = await acceptanceAfter("Prepared for Asha Rao.", null);
+    expect(res.status).toBe(200);
+    expect(acceptance(doc)).toBe("Prepared for {{client.contact}}.");
+    expect(doc.unresolved).toContain("client.contact");
+    expect(doc.canSend).toBe(false);
+    expect((await sendDoc(o, made.id, doc.updatedAt)).status).toBeGreaterThanOrEqual(400);
+  });
+
+  it("a placeholder with spaces inside the braces is replaced by the new name too", async () => {
+    const o = await owner();
+    const made = await mkDraft(o);
+    const v = await getDoc(o, made.id);
+    // Clear the contact first (the text then holds the unspaced token), then write the spaced form and set a contact.
+    const cleared = await json(
+      await patchDoc(o, made.id, { expectedUpdatedAt: v.updatedAt, fields: { contactId: null } }),
+    );
+    const withSpaces = await json(
+      await patchDoc(o, made.id, {
+        expectedUpdatedAt: cleared.updatedAt,
+        sections: sectionsOf(v, (s) =>
+          s.kind === "acceptance" ? { ...s, bodyMd: "For {{ client.contact }} and {{client.contact}}." } : s,
+        ),
+      }),
+    );
+    const second = await mkContact(made.clientId, { name: "Bina Das" });
+    expect(
+      (
+        await patchDoc(o, made.id, {
+          expectedUpdatedAt: withSpaces.updatedAt,
+          fields: { contactId: second.id },
+        })
+      ).status,
+    ).toBe(200);
+    expect(acceptance(await getDoc(o, made.id))).toBe("For Bina Das and Bina Das.");
+  });
+
+  it("a Bengali name is renamed as a whole word, and a longer word that starts with it is left alone", async () => {
+    const o = await owner();
+    const made = await mkDraft(o);
+    const first = await mkContact(made.clientId, { name: "অনিন্দিতা" });
+    const second = await mkContact(made.clientId, { name: "Bina Das" });
+    const v = await getDoc(o, made.id);
+    const a = await json(
+      await patchDoc(o, made.id, { expectedUpdatedAt: v.updatedAt, fields: { contactId: first.id } }),
+    );
+    const b = await json(
+      await patchDoc(o, made.id, {
+        expectedUpdatedAt: a.updatedAt,
+        sections: sectionsOf(v, (s) =>
+          s.kind === "acceptance" ? { ...s, bodyMd: "অনিন্দিতা এবং অনিন্দিতার বাড়ি" } : s,
+        ),
+      }),
+    );
+    expect(
+      (await patchDoc(o, made.id, { expectedUpdatedAt: b.updatedAt, fields: { contactId: second.id } }))
+        .status,
+    ).toBe(200);
+    expect(acceptance(await getDoc(o, made.id))).toBe("Bina Das এবং অনিন্দিতার বাড়ি");
+  });
+
+  it("a Hindi name ending in a vowel sign is not matched inside a longer word", async () => {
+    const o = await owner();
+    const made = await mkDraft(o);
+    const first = await mkContact(made.clientId, { name: "सीता" });
+    const second = await mkContact(made.clientId, { name: "Bina Das" });
+    const v = await getDoc(o, made.id);
+    const a = await json(
+      await patchDoc(o, made.id, { expectedUpdatedAt: v.updatedAt, fields: { contactId: first.id } }),
+    );
+    const b = await json(
+      await patchDoc(o, made.id, {
+        expectedUpdatedAt: a.updatedAt,
+        sections: sectionsOf(v, (s) => (s.kind === "acceptance" ? { ...s, bodyMd: "सीता और सीताजी" } : s)),
+      }),
+    );
+    expect(
+      (await patchDoc(o, made.id, { expectedUpdatedAt: b.updatedAt, fields: { contactId: second.id } }))
+        .status,
+    ).toBe(200);
+    expect(acceptance(await getDoc(o, made.id))).toBe("Bina Das और सीताजी");
+  });
+
+  it("a longer name that pushes the text over the limit is a 400 on the save, and nothing changes", async () => {
+    const o = await owner();
+    const made = await mkDraft(o);
+    const first = await mkContact(made.clientId, { name: "Al" });
+    const second = await mkContact(made.clientId, { name: "B".repeat(200) });
+    const v = await getDoc(o, made.id);
+    const a = await json(
+      await patchDoc(o, made.id, { expectedUpdatedAt: v.updatedAt, fields: { contactId: first.id } }),
+    );
+    // 1,990 mentions of the 2-character name are 5,969 characters (under the 6,000 limit); 200-character names would be far over it.
+    const text = "Al ".repeat(1_990).trim();
+    const filled = await patchDoc(o, made.id, {
+      expectedUpdatedAt: a.updatedAt,
+      sections: sectionsOf(v, (s) => (s.kind === "acceptance" ? { ...s, bodyMd: text } : s)),
+    });
+    expect(filled.status).toBe(200);
+    const cur = await getDoc(o, made.id);
+    const res = await patchDoc(o, made.id, {
+      expectedUpdatedAt: cur.updatedAt,
+      fields: { contactId: second.id },
+    });
+    expect(res.status).toBe(400);
+    const after = await getDoc(o, made.id);
+    expect(after.contact.id).toBe(first.id);
+    expect(acceptance(after)).toBe(text);
+  });
+});
+
+describe("round 2: the pinned terms text on the read, and the dashboard's document number [ADM-PROP-05, ADM-DASH-01]", () => {
+  it("the read of a SENT version returns the pinned frozen text to every role that can read it; a draft's read and the save answer carry none", async () => {
+    const o = await owner();
+    const made = await mkDraft(o);
+    const draft = await getDoc(o, made.id);
+    expect(draft.terms).toMatchObject({ id: expect.any(String), version: expect.any(Number), bodyMd: null });
+    expect((await sendDoc(o, made.id, draft.updatedAt)).status).toBe(200);
     const doc = await getDoc(o, made.id);
     expect(doc.terms).toMatchObject({ id: expect.any(String), version: expect.any(Number) });
     expect(doc.terms.bodyMd).toBe(`Terms version ${doc.terms.version}`);
     const sales = await sessionFor("sales");
     const asSales = await getDoc(sales, made.id);
     expect(asSales.terms?.bodyMd).toBe(doc.terms.bodyMd);
-    const saved = await json(await patchDoc(o, made.id, { expectedUpdatedAt: doc.updatedAt, fields: {} }));
+    const again = await mkDraft(o);
+    const fresh = await getDoc(o, again.id);
+    const saved = await json(await patchDoc(o, again.id, { expectedUpdatedAt: fresh.updatedAt, fields: {} }));
     expect(saved.terms?.bodyMd).toBeUndefined();
   });
 

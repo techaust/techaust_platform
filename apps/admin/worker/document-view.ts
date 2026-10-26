@@ -1,11 +1,12 @@
 // The JSON of one proposal or estimate for the editor (M4.3): the same shape for GET, and for what a save answers. A draft is worked out
 // again from its parts (so the person always sees today's tax); a sent version is read back from what was frozen (`computed`).
 // The screens (M4.3 designer) read this; M4.4 and M4.5 read the database through `loadDocument`, not this.
+import { ANONYMISED_CLIENT } from "@techaust/core/clients";
 import type { CalendarDate } from "@techaust/core/dates";
 import { approvalState, catalogueGuard, type GuardLine } from "@techaust/core/documents";
 import type { ComputedDocument } from "@techaust/core/tax";
 import { nameOrLegal } from "@techaust/core/text";
-import type { DocumentBundle, TermsRef } from "@techaust/db/documents";
+import type { DocumentBundle, TermsRef, TermsView } from "@techaust/db/documents";
 import type { RecipientSnapshot } from "@techaust/db/issue";
 import {
   type Blocker,
@@ -20,11 +21,8 @@ import {
   taxInputOf,
 } from "./quote-model.ts";
 
-/**
- * What the staff view shows in place of the name of a client or contact whose personal details were removed (owner, 2026-10-26;
- * VERIFY WITH CA/LEGAL). Only the VIEW changes: the frozen snapshot in the database stays as it was sent, as evidence of the offer.
- */
-export const ANONYMISED_LABEL = "Anonymised client";
+// What the staff view shows in place of the name of a client or contact whose personal details were removed is core's ANONYMISED_CLIENT
+// (owner, 2026-10-26; VERIFY WITH CA/LEGAL). Only the VIEW changes: the frozen snapshot in the database stays as it was sent, as evidence.
 
 /**
  * A sent version's recipient block as the staff view shows it. When the client was anonymised, every personal field (names, email, GSTIN,
@@ -35,12 +33,12 @@ export function viewRecipient(r: RecipientSnapshot, clientGone: boolean, contact
   if (!clientGone && !contactGone) return r;
   // A contact is on the snapshot only if it names one (an email alone never adds a contact line to the view).
   const hasContact = r.contactId !== undefined || r.contactName !== undefined;
-  const contact = hasContact ? { email: null, contactName: ANONYMISED_LABEL } : { email: null };
+  const contact = hasContact ? { email: null, contactName: ANONYMISED_CLIENT } : { email: null };
   if (!clientGone) return { ...r, ...contact, anonymised: true };
   return {
     ...r,
-    legalName: ANONYMISED_LABEL,
-    displayName: ANONYMISED_LABEL,
+    legalName: ANONYMISED_CLIENT,
+    displayName: ANONYMISED_CLIENT,
     gstin: null,
     address: null,
     ...contact,
@@ -64,7 +62,7 @@ export function redactionNames(r: RecipientSnapshot, clientGone: boolean, contac
 const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /**
- * Builds the function that replaces every exact occurrence of the given names with `ANONYMISED_LABEL`, in one pass, longest name first
+ * Builds the function that replaces every exact occurrence of the given names with `ANONYMISED_CLIENT`, in one pass, longest name first
  * (so a name that holds another is replaced whole, and the label is never searched again), only where it stands as a whole word: a
  * client named "Ram" leaves "Ramp-up" alone. VIEW ONLY: the stored text is not touched.
  * Staff-typed free text that only mentions a person in other words is not redacted (owner, 2026-10-26, VERIFY WITH CA/LEGAL).
@@ -76,7 +74,7 @@ export function redactor(names: string[]): (text: string | null) => string | nul
     .map(escapeRegExp)
     .join("|");
   const re = new RegExp(`(?<![\\p{L}\\p{N}_])(?:${alternation})(?![\\p{L}\\p{N}_])`, "gu");
-  return (text: string | null) => (text === null ? null : text.replace(re, ANONYMISED_LABEL));
+  return (text: string | null) => (text === null ? null : text.replace(re, ANONYMISED_CLIENT));
 }
 
 export type ContactFacts = { id: string; name: string; email: string; anonymised_at: number | null };
@@ -151,7 +149,7 @@ export const pdfOf = (d: { frozen_at: number | null; pdf_sha256: string | null }
 });
 
 export type ViewInput = {
-  bundle: DocumentBundle<TermsRef>;
+  bundle: DocumentBundle<TermsView>;
   client: ClientRow;
   contact: ContactFacts | null;
   newestTermsId: string | null;
@@ -226,7 +224,7 @@ export async function documentView(i: ViewInput) {
     client: {
       id: client.id,
       code: client.code,
-      name: clientGone ? ANONYMISED_LABEL : recipient ? nameOfRecipient(recipient) : client.display_name,
+      name: clientGone ? ANONYMISED_CLIENT : recipient ? nameOfRecipient(recipient) : client.display_name,
       type: recipient?.clientType ?? client.type,
       gstStatus: recipient?.gstStatus ?? client.gst_status,
       stateCode: recipient ? (recipient.stateCode ?? null) : client.state_code,
@@ -332,8 +330,8 @@ export async function documentView(i: ViewInput) {
           id: bundle.terms.id,
           version: bundle.terms.version,
           sha256: bundle.terms.sha256,
-          // the frozen text of the pinned version, when the read loaded it (the staff read view does)
-          bodyMd: "body_md" in bundle.terms ? String(bundle.terms.body_md) : null,
+          // the frozen text of the pinned version, when the read loaded it (the staff read of a sent version does); a NULL gives no text
+          bodyMd: bundle.terms.body_md ?? null,
         }
       : null,
     termsOutdated:

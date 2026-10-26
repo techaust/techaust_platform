@@ -8,7 +8,9 @@ import { stubPdf } from "../src/browser.ts";
 import worker from "../src/index.ts";
 import type { Clock } from "../src/pacer.ts";
 import {
+  BELL_COPY,
   BROWSER_ALERT_MS,
+  documentLabel,
   enqueueSweep,
   processPdf,
   processPdfDeadLetter,
@@ -24,9 +26,9 @@ import { handleQueue } from "../src/queue.ts";
 import { type Seeded, seedSent } from "./pdf-seed.ts";
 
 const T0 = Date.UTC(2026, 9, 26, 6, 0, 0);
-/** The 07-P §4 line "the PDF failed", word for word, for a first version. */
-const INTEGRITY_BELL =
-  "A PDF didn't match its saved copy, so it wasn't sent. Make the PDF again from the document.";
+/** The owner's integrity line (07-Q Q9, 2026-10-26), word for word, with the document's number. */
+const integrityBell = (s: Seeded) =>
+  `The PDF of ${s.numberDisplay} didn't match its saved copy, so it wasn't sent. A developer needs to look at it before it can be sent.`;
 const failedBell = (s: Seeded) =>
   `The PDF for ${s.numberDisplay} v1 could not be made. Open it to try again.`;
 const GONE = "UPDATE clients SET anonymised_at = 1 WHERE id = ?";
@@ -125,6 +127,19 @@ describe("R2 If-None-Match on this runtime", () => {
   });
 });
 
+describe("the integrity bell's document name", () => {
+  it("is the number, else the title, else 'Untitled'", () => {
+    expect(documentLabel("TH/PRP/2627/0003", "Website")).toBe("TH/PRP/2627/0003");
+    expect(documentLabel(null, "Website")).toBe("Website");
+    expect(documentLabel("  ", " Website ")).toBe("Website");
+    expect(documentLabel(null, null)).toBe("Untitled");
+    expect(documentLabel("", "")).toBe("Untitled");
+    expect(BELL_COPY.integrity("Untitled")).toBe(
+      "The PDF of Untitled didn't match its saved copy, so it wasn't sent. A developer needs to look at it before it can be sent.",
+    );
+  });
+});
+
 // ---------------------------------------------------------------------------------------------------------------------
 describe("the snapshot step", () => {
   it("writes a verified envelope once, sets snapshot_r2_key and queues the render", async () => {
@@ -174,7 +189,7 @@ describe("the snapshot step", () => {
     expect(await (await realEnv.DOCS.get(keysOf(s).snapshot))?.text()).toBe("something else");
     expect(queue.sent).toEqual([]);
     expect(await all("SELECT kind, title FROM notifications WHERE entity_id = ?", s.id)).toEqual([
-      { kind: "pdf.failed", title: INTEGRITY_BELL },
+      { kind: "pdf.failed", title: integrityBell(s) },
     ]);
   });
 
@@ -421,7 +436,7 @@ describe("the render step", () => {
     expect(await processRender(env, render(s.id), T0, f.clock)).toBe("refused");
     expect(b.calls).toHaveLength(0);
     expect(await all("SELECT kind, title FROM notifications WHERE entity_id = ?", s.id)).toEqual([
-      { kind: "pdf.failed", title: INTEGRITY_BELL },
+      { kind: "pdf.failed", title: integrityBell(s) },
     ]);
   });
 

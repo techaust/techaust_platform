@@ -13,8 +13,8 @@
 // Every value goes through `esc`; nothing is loaded from outside (the page's CSP refuses it anyway). The IP address, the user agent and the
 // country are printed because they ARE the evidence (docs/08 L-11).
 import { esc } from "../escape.ts";
+import { footerLine } from "../footer.ts";
 import { PDF_LOGOS, PDF_SYMBOL } from "../generated/assets.ts";
-import { footerLine } from "../view.ts";
 import { PDF_COPY } from "./copy.ts";
 import { cssString } from "./styles.ts";
 
@@ -130,8 +130,6 @@ td { font-variant-numeric: tabular-nums lining-nums; }
 /** The footer line of a certificate: the frozen address when there is one, else the default. */
 export const certificateFooter = (v: CertificateView): string =>
   v.emailOnDocuments ? footerLine(v.emailOnDocuments) : PDF_COPY.footer.brand;
-
-export const CERTIFICATE_CSS = certificateCss(PDF_COPY.footer.brand);
 
 const row = (label: string, value: string, cls = ""): string =>
   `<tr><th scope="row">${esc(label)}</th><td${cls ? ` class="${cls}"` : ""}>${esc(value)}</td></tr>`;

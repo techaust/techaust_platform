@@ -5,6 +5,7 @@ import { formatMoney, isCurrency, type Money, money, negate } from "@techaust/co
 import { placeOfSupplyLabel } from "@techaust/core/pdf-jobs";
 import { percentFromBp } from "@techaust/core/schedule-text";
 import type { ComputedDocument } from "@techaust/core/tax";
+import { DEFAULT_CONTACT_EMAIL, footerLine } from "./footer.ts";
 import { countryName, formatMicros, formatQty, longIsoDate, shortIsoDate } from "./format.ts";
 import type {
   Address,
@@ -20,12 +21,11 @@ import type {
 } from "./types.ts";
 
 export const DEFAULT_VIEW_CONFIG: ViewConfig = {
-  contactEmail: "hello@techaust.com",
+  contactEmail: DEFAULT_CONTACT_EMAIL,
   portalLink: "portal.techaust.com",
 };
 
-/** The page footer line (07-P PDF14, 07-Q Q11): the address is Settings "Email on documents". */
-export const footerLine = (email: string): string => `TecHaust Technologies · techaust.com · ${email}`;
+export { footerLine };
 
 const DASH = "–";
 /** "18 %": the house style puts a space before the sign; a no-break space keeps the two together on the page. */

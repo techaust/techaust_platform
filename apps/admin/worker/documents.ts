@@ -13,6 +13,7 @@ import {
   loadDocument,
   loadStatements,
   type TermsRef,
+  type TermsView,
 } from "@techaust/db/documents";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
@@ -205,7 +206,7 @@ export async function readContext(
 ) {
   const db = c.env.DB;
   const results = await db.batch([
-    ...loadStatements(db, id, { terms: opts.fullTerms ? "full" : "ref" }),
+    ...loadStatements(db, id, { terms: opts.fullTerms ? "frozen" : "ref" }),
     db
       .prepare(
         `SELECT ${CLIENT_COLS} FROM clients WHERE id = (SELECT client_id FROM documents WHERE id = ?1)`,
@@ -220,7 +221,7 @@ export async function readContext(
     db.prepare(SETTINGS_READ),
     ...extra,
   ]);
-  const bundle = bundleOf<TermsRef>(results.slice(0, LOAD_STATEMENTS));
+  const bundle = bundleOf<TermsView>(results.slice(0, LOAD_STATEMENTS));
   if (!bundle) return null;
   const [clientR, contactR, termsR, settingsR] = results.slice(LOAD_STATEMENTS);
   const client = clientR?.results[0] as ClientRow | undefined;
@@ -403,7 +404,7 @@ export const documents = new Hono<AppEnv>()
       c,
       id,
       [...offerStatements(c.env.DB, id), c.env.DB.prepare(CONVERTED_TO_SQL).bind(id)],
-      { fullTerms: true }, // the staff read shows the pinned terms text (M11); every role that can read the document may see it
+      { fullTerms: true }, // the staff read of a SENT version shows the pinned terms text (M11); a draft's read carries none; every role that can read the document may see it
     );
     if (!ctx) return err(c, NOT_FOUND, 404);
     if (!(ctx.bundle.document.type === "proposal" || ctx.bundle.document.type === "estimate"))

@@ -109,9 +109,29 @@ export const patchBody = z.strictObject({
   schedule: z.optional(z.array(stepIn).check(z.maxLength(24))),
 });
 
-/** The text as a whole-word pattern (never part of a longer word), every occurrence. */
+const TOKEN = "{{client.contact}}";
+/** The placeholder, with or without spaces inside the braces (the catalogue's own reading of a placeholder). */
+const TOKEN_RE = /\{\{\s*client\.contact\s*\}\}/g;
+
+/** The text as a whole-word pattern (never part of a longer word), every occurrence; combining marks (Indic vowel signs) belong to a word. */
 const wholeWord = (t: string) =>
-  new RegExp(`(?<![\\p{L}\\p{N}])${t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\p{L}\\p{N}])`, "gu");
+  new RegExp(
+    `(?<![\\p{L}\\p{N}\\p{M}])${t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\p{L}\\p{N}\\p{M}])`,
+    "gu",
+  );
+
+/** The Acceptance text with the old contact's name (or the placeholder, spaced or not) replaced by the new name (or the placeholder). */
+export function renameContact<S extends { kind: string; bodyMd: string | null }>(
+  sections: S[],
+  from: string | null,
+  to: string | null,
+): S[] {
+  const target = to ?? TOKEN;
+  const pattern = from === null ? TOKEN_RE : wholeWord(from);
+  return sections.map((x) =>
+    x.kind === "acceptance" && x.bodyMd ? { ...x, bodyMd: x.bodyMd.replace(pattern, () => target) } : x,
+  );
+}
 
 export const documentSave = new Hono<AppEnv>().patch("/:id", param(idParam), body(patchBody), async (c) => {
   const { id } = c.req.valid("param");
@@ -191,8 +211,17 @@ export const documentSave = new Hono<AppEnv>().patch("/:id", param(idParam), bod
     state = { ...state, lines: made.lines };
   }
   // sections
-  if (f.sections) {
-    const sections = resolveSections(f.sections, state.sections);
+  // The Acceptance text names the draft's contact; when the contact changes in this save the name follows (Q14), whether or not the sections were sent too (a stale text
+  // still holding the old name is renamed; a text that already has the new name has nothing to rename). Whole words only. The rename runs BEFORE the
+  // limits are checked, so a longer name that pushes a text over the limit is a 400 on this save. Clearing the contact puts `{{client.contact}}` back,
+  // which blocks the send until a contact is set again. A sent version keeps its snapshot: only a draft reaches here.
+  const renames =
+    fl?.contactId !== undefined &&
+    (contact?.id ?? null) !== (contactBefore?.id ?? null) &&
+    (contactBefore?.name || TOKEN) !== (contact?.name || TOKEN);
+  if (f.sections || renames) {
+    let sections = f.sections ? resolveSections(f.sections, state.sections) : state.sections;
+    if (renames) sections = renameContact(sections, contactBefore?.name || null, contact?.name || null);
     const issues = checkSections(sections);
     if (issues.length > 0)
       return c.json(
@@ -204,22 +233,6 @@ export const documentSave = new Hono<AppEnv>().patch("/:id", param(idParam), bod
         400,
       );
     state = { ...state, sections };
-  }
-  // The Acceptance text names the draft's contact; when the contact changes in this save the name follows (Q14), whether or not the sections were sent too (a stale text
-  // still holding the old name is renamed; a text that already has the new name has nothing to rename). Whole words only.
-  // A sent version keeps its snapshot: only a draft reaches here.
-  if (fl?.contactId !== undefined && (contact?.id ?? null) !== (contactBefore?.id ?? null)) {
-    const from = contactBefore?.name ? contactBefore.name : "{{client.contact}}";
-    const to = contact?.name ? contact.name : "{{client.contact}}";
-    if (from !== to)
-      state = {
-        ...state,
-        sections: state.sections.map((x) =>
-          x.kind === "acceptance" && x.bodyMd
-            ? { ...x, bodyMd: x.bodyMd.replace(wholeWord(from), () => to) }
-            : x,
-        ),
-      };
   }
   // schedule
   if (f.schedule) state = { ...state, schedule: resolveSteps(f.schedule, state.schedule) };

@@ -65,11 +65,16 @@ const hex = (b: ArrayBuffer) =>
 export const BELL_COPY = {
   failed: (number: string, version: number) =>
     `The PDF for ${number} v${version} could not be made. Open it to try again.`,
-  /** A PDF that failed its integrity check (07-Q Q9): it was not sent. */
-  integrity: "A PDF didn't match its saved copy, so it wasn't sent. Make the PDF again from the document.",
+  /** A PDF that failed its integrity check (07-Q Q9, owner 2026-10-26): it was not sent; the same check would fail again, so a person looks. */
+  integrity: (label: string) =>
+    `The PDF of ${label} didn't match its saved copy, so it wasn't sent. A developer needs to look at it before it can be sent.`,
   half: "Half of today's PDF allowance is used.",
   quota: "Today's PDF allowance is used up. Waiting PDFs are made tomorrow.",
 } as const;
+
+/** What a bell calls a document: its number, else its title, else "Untitled" (a draft-era sent version always has a number; this is the safety net). */
+export const documentLabel = (number: string | null, title: string | null): string =>
+  number?.trim() || title?.trim() || "Untitled";
 
 export const sha256Bytes = async (bytes: Uint8Array): Promise<string> =>
   hex(await crypto.subtle.digest("SHA-256", bytes));
@@ -134,6 +139,7 @@ export async function processSnapshot(env: Env, msg: PdfSnapshotMessage): Promis
   const bundle = bundleOf<TermsRow>(await env.DB.batch(loadStatements(env.DB, msg.documentId)));
   if (!bundle) return skip("not_found");
   const d = bundle.document;
+  const label = documentLabel(d.number_display, d.title);
   if (d.pdf_sha256 !== null) return skip("done");
   // An erased client takes nothing new: no envelope, no PDF, no bell (the standing rule for anonymised clients; VERIFY WITH CA/LEGAL).
   if (await clientIsGone(env, d.client_id)) return skip("client_gone");
@@ -143,7 +149,7 @@ export async function processSnapshot(env: Env, msg: PdfSnapshotMessage): Promis
     // The rows do not reproduce what the send route sealed: nothing is written, the owners are told, and a retry cannot help.
     logEvent("pdf.refused", { stage: "snapshot", code: made.code });
     await env.DB.batch([
-      bell(env, "pdf.failed", "document", d.id, BELL_COPY.integrity, `/proposals/${d.id}`),
+      bell(env, "pdf.failed", "document", d.id, BELL_COPY.integrity(label), `/proposals/${d.id}`),
     ]);
     return "refused";
   }
@@ -155,7 +161,7 @@ export async function processSnapshot(env: Env, msg: PdfSnapshotMessage): Promis
     // A different envelope already holds the key: never overwritten, never rendered from; a person looks.
     logEvent("pdf.refused", { stage: "snapshot", code: "key_conflict" });
     await env.DB.batch([
-      bell(env, "pdf.failed", "document", d.id, BELL_COPY.integrity, `/proposals/${d.id}`),
+      bell(env, "pdf.failed", "document", d.id, BELL_COPY.integrity(label), `/proposals/${d.id}`),
     ]);
     return "refused";
   }
@@ -186,6 +192,7 @@ type RenderRow = {
   fy: string | null;
   number: number | null;
   number_display: string | null;
+  title: string | null;
   version: number;
   snapshot_r2_key: string | null;
   snapshot_sha256: string | null;
@@ -193,7 +200,7 @@ type RenderRow = {
   client_gone: number;
 };
 
-export const RENDER_ROW_SQL = `SELECT id, type, frozen_at, fy, number, number_display, version, snapshot_r2_key, snapshot_sha256, pdf_sha256,
+export const RENDER_ROW_SQL = `SELECT id, type, frozen_at, fy, number, number_display, title, version, snapshot_r2_key, snapshot_sha256, pdf_sha256,
   EXISTS (SELECT 1 FROM clients c WHERE c.id = documents.client_id AND c.anonymised_at IS NOT NULL) AS client_gone
   FROM documents WHERE id = ?1`;
 
@@ -289,7 +296,14 @@ export async function processRender(
   if (!envelope || !verdict.ok) {
     logEvent("pdf.refused", { stage: "render", code: verdict.ok ? "unknown" : verdict.code });
     await env.DB.batch([
-      bell(env, "pdf.failed", "document", row.id, BELL_COPY.integrity, `/proposals/${row.id}`),
+      bell(
+        env,
+        "pdf.failed",
+        "document",
+        row.id,
+        BELL_COPY.integrity(documentLabel(row.number_display, row.title)),
+        `/proposals/${row.id}`,
+      ),
     ]);
     return "refused";
   }
