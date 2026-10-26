@@ -12,11 +12,18 @@ import { PREFIX_END } from "./keyset.ts";
 
 const searchQuery = z.object({ q: z.string().check(z.maxLength(100)) });
 const PER_TYPE = 5;
+const INVOICE_TYPE_LABELS: Readonly<Record<string, string>> = {
+  tax_invoice: "Tax invoice",
+  export_invoice: "Export invoice",
+  proforma: "Proforma invoice",
+  credit_note: "Credit note",
+  debit_note: "Debit note",
+};
 const MIN_CHARS = 2;
 
 type Item = { id: string; title: string; subtitle: string; link: string };
 type Group = {
-  type: "user" | "lead" | "client" | "contact" | "project" | "catalogue" | "document";
+  type: "user" | "lead" | "client" | "contact" | "project" | "catalogue" | "document" | "invoice";
   label: string;
   items: Item[];
 };
@@ -47,9 +54,14 @@ export const CATALOGUE_SQL = `SELECT id, code, name FROM (
  * Proposals and estimates by the start of the number (M4.3, ADM-G-05): an index range on `documents_number_display` (number first). A
  * later version shares its first version's number, so only the latest version of each is listed. Only these two types: a role that may
  * search proposals (Sales) must not find invoice numbers once M5 issues them (the unary plus keeps the type test from steering the planner
- * to the type index instead of the number range). Invoices join in M5, with their own permission.
+ * to the type index instead of the number range). Invoices have their own group and permission (`invoices.read`, below).
  */
 export const DOCUMENTS_SQL = `SELECT d.id, d.number_display, d.type, d.version, d.title FROM documents d WHERE +d.type IN ('proposal', 'estimate') AND d.number_display >= ?1 AND d.number_display < ?2 AND NOT EXISTS (SELECT 1 FROM documents n WHERE n.version_group_id = d.version_group_id AND n.version > d.version) ORDER BY d.number_display LIMIT ${PER_TYPE}`;
+/**
+ * Invoice-family documents by the start of the number (M5.1 B4): the same index range on `documents_number_display`, only for a role with `invoices.read`
+ * (Sales never sees an invoice number; the owner, Staff and the accountant do). A draft has no number, so only issued (and void) documents are found.
+ */
+export const INVOICES_SQL = `SELECT d.id, d.number_display, d.type, d.status FROM documents d WHERE +d.type IN ('tax_invoice', 'export_invoice', 'proforma', 'credit_note', 'debit_note') AND d.number_display >= ?1 AND d.number_display < ?2 ORDER BY d.number_display LIMIT ${PER_TYPE}`;
 export const USERS_SQL = `SELECT id, name, email, role FROM staff_users WHERE (email >= ?1 AND email < ?2) OR name LIKE ?3 ESCAPE '\\' ORDER BY name LIMIT ${PER_TYPE}`;
 
 export const search = new Hono<AppEnv>().get("/", query(searchQuery), async (c) => {
@@ -91,6 +103,11 @@ export const search = new Hono<AppEnv>().get("/", query(searchQuery), async (c) 
     stmts.push(db.prepare(DOCUMENTS_SQL).bind(number, `${number}${PREFIX_END}`));
     kinds.push("document");
   }
+  if (decide(role, "invoices.read") !== "deny") {
+    const number = q.toUpperCase();
+    stmts.push(db.prepare(INVOICES_SQL).bind(number, `${number}${PREFIX_END}`));
+    kinds.push("invoice");
+  }
   if (decide(role, "users.read") !== "deny") {
     stmts.push(db.prepare(USERS_SQL).bind(lower, `${lower}${PREFIX_END}`, `${escapeLike(q)}%`));
     kinds.push("user");
@@ -118,6 +135,17 @@ export const search = new Hono<AppEnv>().get("/", query(searchQuery), async (c) 
           title: `${r.number_display} ${r.title ?? ""}`.trim(),
           subtitle: `${r.type === "proposal" ? "Proposal" : "Estimate"}, version ${r.version}`,
           link: `/documents/${r.id}`,
+        })),
+      };
+    if (type === "invoice")
+      return {
+        type,
+        label: "Invoices",
+        items: rows.map((r) => ({
+          id: r.id as string,
+          title: r.number_display as string,
+          subtitle: `${INVOICE_TYPE_LABELS[r.type as string] ?? "Invoice"}, ${r.status}`,
+          link: `/invoices/${r.id}`,
         })),
       };
     if (type === "catalogue")
