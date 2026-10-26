@@ -18,6 +18,7 @@ import {
   mkService,
   mkTerms,
   patchDoc,
+  sendBodyOf,
   sendDoc,
 } from "./test-quotes.ts";
 
@@ -262,11 +263,12 @@ describe("the send is written only for a live client (review 11)", () => {
     const o = await owner();
     const made = await mkDraft(o);
     const view = await getDoc(o, made.id);
+    const body = await sendBodyOf(made.id, view.updatedAt);
     const before = await counter();
     const snapshot = JSON.stringify(await rows("SELECT * FROM documents WHERE id = ?", made.id));
     const res = await call(
       `/documents/${made.id}/send`,
-      { cookie: o.cookie, body: { expectedUpdatedAt: view.updatedAt } },
+      { cookie: o.cookie, body },
       beforeSendBatch(async () => {
         await env.DB.prepare("UPDATE clients SET anonymised_at = ? WHERE id = ?")
           .bind(Date.now(), made.clientId)

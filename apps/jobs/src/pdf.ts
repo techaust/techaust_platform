@@ -398,7 +398,7 @@ export async function processCertificate(
       statements.push(
         stat(env, date, "pdf.renders", 1, now),
         stat(env, date, "pdf.browser_ms", stats.browserMs, now),
-        env.DB.prepare(HALF_BELL_SQL).bind(date, BROWSER_ALERT_MS),
+        env.DB.prepare(HALF_BELL_SQL).bind(date, BROWSER_ALERT_MS, BELL_COPY.half),
       );
     }
     return env.DB.batch(statements);
