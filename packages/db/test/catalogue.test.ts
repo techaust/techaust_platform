@@ -75,7 +75,7 @@ describe("the seed (ADM-CAT-01, ADM-CAT-03)", () => {
     await seed();
     await run("UPDATE catalogue_items SET name = 'Renamed', price_inr_minor = 1234500 WHERE code = 'S2'");
     await run(
-      "INSERT INTO templates (id, kind, category, version, body) VALUES ('v2', 'proposal', 'advise', 2, '{}')",
+      "INSERT INTO templates (id, kind, category, version, body) VALUES ('v3', 'proposal', 'advise', 3, '{}')",
     );
     await seed();
     await seed();
@@ -86,22 +86,74 @@ describe("the seed (ADM-CAT-01, ADM-CAT-03)", () => {
     const versions = await all<{ version: number }>(
       "SELECT version FROM templates WHERE kind = 'proposal' AND category = 'advise' ORDER BY version",
     );
-    expect(versions.map((v) => v.version)).toEqual([1, 2]);
+    expect(versions.map((v) => v.version)).toEqual([1, 2, 3]);
   });
 
-  it("seeds one template per kind and category, and each renders with test data and leaves nothing unresolved", async () => {
+  it("seeds versions 1 and 2 of one template per kind and category, and each renders with test data and leaves nothing unresolved", async () => {
     await seed();
     const rows = await all<{ kind: string; category: string | null; version: number; body: string }>(
-      "SELECT kind, category, version, body FROM templates WHERE version = 1 ORDER BY kind, category",
+      "SELECT kind, category, version, body FROM templates WHERE version IN (1, 2) ORDER BY kind, category, version",
     );
     expect(rows).toHaveLength(SEED_TEMPLATES.length);
-    expect(new Set(rows.map((r) => `${r.kind}:${r.category}`)).size).toBe(rows.length);
+    expect(new Set(rows.map((r) => `${r.kind}:${r.category}:${r.version}`)).size).toBe(rows.length);
     const data = Object.fromEntries(TEMPLATE_PLACEHOLDERS.map((p) => [p, `<${p}>`]));
     for (const r of rows) {
       const body = templateBody.parse(JSON.parse(r.body));
-      expect(unknownPlaceholders(body), `${r.kind}/${r.category}`).toEqual([]);
-      expect(renderTemplateBody(body, data).unresolved, `${r.kind}/${r.category}`).toEqual([]);
+      expect(unknownPlaceholders(body), `${r.kind}/${r.category}/${r.version}`).toEqual([]);
+      expect(renderTemplateBody(body, data).unresolved, `${r.kind}/${r.category}/${r.version}`).toEqual([]);
     }
+  });
+
+  it("version 2 keeps every section key and carries the 07-O wording (M4.3 review fix 7)", async () => {
+    await seed();
+    type T = { kind: string; category: string | null; version: number; body: string };
+    const rows = await all<T>(
+      "SELECT kind, category, version, body FROM templates WHERE version IN (1, 2) ORDER BY kind, category, version",
+    );
+    const keys = (r: T) => (JSON.parse(r.body) as { sections: { key: string }[] }).sections.map((s) => s.key);
+    for (const v2 of rows.filter((r) => r.version === 2)) {
+      const v1 = rows.find((r) => r.version === 1 && r.kind === v2.kind && r.category === v2.category);
+      expect(keys(v2), `${v2.kind}/${v2.category}`).toEqual(keys(v1 as T));
+    }
+    const section = (kind: string, category: string | null, key: string) =>
+      (
+        JSON.parse(
+          rows.find((r) => r.version === 2 && r.kind === kind && r.category === category)?.body ?? "{}",
+        ) as {
+          sections: { key: string; heading: string; body: string }[];
+        }
+      ).sections.find((s) => s.key === key);
+    // the first line of the Summary differs by category
+    expect(section("proposal", "advise", "summary")?.body).toBe(
+      "{{client.name}} asked us for {{service.name}}. This proposal sets out what we'll look at, what you'll receive and what it costs.",
+    );
+    expect(section("proposal", "run", "summary")?.body).toBe(
+      "This proposal covers {{service.name}} for {{client.name}}: the support we'll provide each month and the monthly price.",
+    );
+    expect(section("proposal", "build", "cover")?.body).toBe(
+      "{{client.name}}\n{{service.name}}\nProposal from {{company.name}}",
+    );
+    expect(section("proposal", "connect", "estimate")?.body).toBe("Payment schedule: {{service.schedule}}");
+    expect(section("proposal", "automate", "acceptance")?.body).toContain(
+      'tick "I have read and agree to the terms". This proposal is valid for {{proposal.validity_days}} days from the date it\'s sent.',
+    );
+    // written per proposal, and the terms sentence is filled by the screen: all empty here
+    for (const key of ["problem_goals", "timeline", "team", "terms"])
+      expect(section("proposal", "build", key)?.body, key).toBe("");
+    // the estimate's second section is Validity (the key is unchanged)
+    expect(section("estimate", "build", "schedule")).toMatchObject({
+      heading: "Validity",
+      body: "This estimate is valid for {{proposal.validity_days}} days from the date it's sent.",
+    });
+    expect(section("estimate", "advise", "estimate")?.body).toContain(
+      "This is an estimate, not a tax invoice.",
+    );
+    expect(section("care_block", null, "care_plan")?.body).toMatch(
+      /^Care plans are paid monthly in advance\./,
+    );
+    expect(section("terms_block", null, "terms")?.body).toBe(
+      "These terms are part of the proposal from {{company.name}}.",
+    );
   });
 
   it("builds a snapshot from the seeded rows that both schemas accept, with the section headings only in templates", async () => {

@@ -218,6 +218,20 @@
       "when": 1792943136181,
       "tag": "0030_drop_time_logs_care_plan_date",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "6",
+      "when": 1792956258128,
+      "tag": "0031_documents_quotes",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "6",
+      "when": 1792956281675,
+      "tag": "0032_document_triggers",
+      "breakpoints": true
     }
   ]
 }

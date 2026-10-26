@@ -14,6 +14,8 @@ export const FINANCE_AUDIT_ACTIONS = [
   "settings.bank.update",
   "settings.gateways.update",
   "document.issue",
+  // M4.3: an accepted estimate becomes an invoice draft or a care plan (the money side of an offer).
+  "document.convert",
   "document.void",
   "payment.record",
   "payment.verify",

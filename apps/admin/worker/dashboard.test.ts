@@ -66,9 +66,8 @@ describe("GET /dashboard: tiles by role [ADM-DASH-01]", () => {
     expect((await call("/dashboard")).status).toBe(401);
   });
 
-  it("the stubs say what they wait for", async () => {
+  it("the finance stub says what it waits for (the pipeline value is live since M4.3: dashboard-pipeline.test.ts)", async () => {
     const o = await dash((await sessionFor("owner")).cookie);
-    expect(o.tiles.pipelineValue).toEqual({ available: false, arrivesWith: "proposals" });
     expect(o.tiles.finance.available).toBe(false);
     expect(Object.keys(o.tiles.finance.arrivesWith)).toEqual([
       "invoicedAndCollected",
@@ -118,6 +117,8 @@ describe("the activity lists", () => {
     const known = new Set([
       "contact.anonymise",
       "lead.purge",
+      "document.expire", // written by the jobs Worker (M4.3)
+      "approval.expire", // written by the decide route when it finds the content changed (M4.3)
       ...FINANCE_AUDIT_ACTIONS.filter((a) => /^(document|payment|refund|export)\./.test(a)),
     ]);
     for (const role of ROLES)

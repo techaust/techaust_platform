@@ -307,7 +307,12 @@ describe("POST /leads/:id/convert [ADM-LEAD-04]", () => {
       legal_name: "Asha Rao",
       display_name: "Asha Rao",
     });
-    expect(await countOf("document_sections", "document_id = ?", proposalId)).toBe(0); // nothing to carry over
+    // M4.3: nothing to carry over from the lead, but every draft has the three sections a proposal always has.
+    expect(
+      (
+        await rows("SELECT kind FROM document_sections WHERE document_id = ? ORDER BY position", proposalId)
+      ).map((r) => r.kind),
+    ).toEqual(["estimate", "terms", "acceptance"]);
     const named = await addLead();
     const r2 = await convert(
       named.id,
@@ -318,6 +323,30 @@ describe("POST /leads/:id/convert [ADM-LEAD-04]", () => {
     expect(await one("SELECT legal_name, display_name FROM clients WHERE id = ?", c2)).toEqual({
       legal_name: "Rao Traders Pvt Ltd",
       display_name: "Rao",
+    });
+  });
+});
+
+describe("conversion: a blank company counts as missing (M4.3 re-check 2)", () => {
+  it("falls back to the person's name when the company is empty or only spaces, and trims a real one", async () => {
+    const s = await sessionFor("owner");
+    for (const company of ["", "   "]) {
+      const lead = await addLead({ contact_company: company });
+      const r = await convert(lead.id, GOOD, s.cookie);
+      expect(r.res.status).toBe(201);
+      const { clientId } = (await r.res.json()) as { clientId: string };
+      expect(await one("SELECT legal_name, display_name FROM clients WHERE id = ?", clientId)).toEqual({
+        legal_name: "Asha Rao",
+        display_name: "Asha Rao",
+      });
+    }
+    const padded = await addLead({ contact_company: "  Rao Traders  " });
+    const { clientId } = (await (await convert(padded.id, GOOD, s.cookie)).res.json()) as {
+      clientId: string;
+    };
+    expect(await one("SELECT legal_name, display_name FROM clients WHERE id = ?", clientId)).toEqual({
+      legal_name: "Rao Traders",
+      display_name: "Rao Traders",
     });
   });
 });
@@ -379,7 +408,7 @@ describe("conversion: consent, country and the draft link (analyst early check)"
       },
       s.cookie,
     );
-    expect(ok.res.status).toBe(201);
+    expect(ok.res.status, JSON.stringify(await ok.res.clone().json())).toBe(201);
     expect(
       await one(
         "SELECT country, gst_status, currency FROM clients ORDER BY created_at DESC, rowid DESC LIMIT 1",

@@ -7,6 +7,7 @@ import { fromIst } from "@techaust/core/dates";
 import { uuidv7 } from "@techaust/core/ids";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { LEADS_SQL, USERS_SQL } from "./search.ts";
+import { mkClient } from "./test-clients.ts";
 import { bodyOf, call, captureQueue, countOf, one, rows, sessionFor, tokenOfLink } from "./test-helpers.ts";
 
 // biome-ignore lint/suspicious/noExplicitAny: response bodies in tests are read loosely
@@ -406,13 +407,21 @@ describe("global search [ADM-G-05]", () => {
     await lead("L-ROLE1", "Role Lead", "role.lead@example.test");
     const sales = await sessionFor("sales");
     const res = await find(sales.cookie, "L-ROLE");
-    // M3.4 projects and M4.1 catalogue: Sales reads both.
-    expect(res.groups.map((g: J) => g.type)).toEqual(["lead", "client", "contact", "project", "catalogue"]);
+    // M3.4 projects, M4.1 catalogue and M4.3 proposals and estimates: Sales reads all three.
+    expect(res.groups.map((g: J) => g.type)).toEqual([
+      "lead",
+      "client",
+      "contact",
+      "project",
+      "catalogue",
+      "document",
+    ]);
     const accountant = await sessionFor("accountant");
     expect((await find(accountant.cookie, "L-ROLE")).groups.map((g: J) => g.type)).toEqual([
       "client",
       "contact",
       "catalogue",
+      "document",
     ]);
     const o = await owner();
     expect((await find(o.cookie, "L-ROLE")).groups.map((g: J) => g.type)).toEqual([
@@ -421,8 +430,34 @@ describe("global search [ADM-G-05]", () => {
       "contact",
       "project",
       "catalogue",
+      "document",
       "user",
     ]);
+  });
+
+  it("finds proposals and estimates by the start of the number, the latest version only, for every role (M4.3)", async () => {
+    const clientId = await mkClient();
+    const mk = async (id: string, display: string, version: number, group: string) => {
+      await env.DB.prepare(
+        "INSERT INTO documents (id, type, client_id, currency, version_group_id, version, series, fy, number, number_display, frozen_at, status, title) VALUES (?1, 'proposal', ?2, 'INR', ?3, ?4, 'proposal', '2627', 7, ?5, 1, 'sent', 'A proposal')",
+      )
+        .bind(id, clientId, group, version, display)
+        .run();
+    };
+    await mk("srch-v1", "TH/PRP/2627/0777", 1, "srch-v1");
+    await mk("srch-v2", "TH/PRP/2627/0777", 2, "srch-v1");
+    for (const role of ["owner", "staff", "sales", "accountant"] as const) {
+      const s = await sessionFor(role);
+      const items = group(await find(s.cookie, "th/prp/2627/07"), "document").items;
+      expect(items, role).toEqual([
+        {
+          id: "srch-v2",
+          title: "TH/PRP/2627/0777 A proposal",
+          subtitle: "Proposal, version 2",
+          link: "/documents/srch-v2",
+        },
+      ]);
+    }
   });
 
   it("finds catalogue items by the start of the code or the name, for every role (M4.1)", async () => {

@@ -8,12 +8,13 @@ import type { GuardSql } from "./log.ts";
  * A condition on `contacts c JOIN clients cl`: this person appears on something the law makes us keep, so they cannot be ERASED
  * (they can still be anonymised). True when:
  * - they accepted a proposal (an acceptance names the contact and is append-only evidence), or
- * - a frozen (issued) document of their client names their email as the recipient, or
+ * - a frozen (issued) document of their client names their email as the recipient, or names them (M4.3: a sent proposal or estimate
+ *   is addressed to a contact, `recipient.contactId`, whatever the email now is), or
  * - the client is an individual and has any frozen document (the document is that person's, whatever the snapshot's email says).
- * Kept up to date by M4.2 (documents sent), M5 (invoices): every new way a document can name a person is added here.
+ * Kept up to date by M4.3 (proposals and estimates sent), M5 (invoices): every new way a document can name a person is added here.
  */
 export const CONTACT_ON_ISSUED_DOCUMENT_SQL =
-  "(EXISTS (SELECT 1 FROM acceptances a WHERE a.contact_id = c.id) OR EXISTS (SELECT 1 FROM documents d WHERE d.client_id = c.client_id AND d.frozen_at IS NOT NULL AND (cl.type = 'individual' OR lower(json_extract(d.recipient, '$.email')) = c.email)))";
+  "(EXISTS (SELECT 1 FROM acceptances a WHERE a.contact_id = c.id) OR EXISTS (SELECT 1 FROM documents d WHERE d.client_id = c.client_id AND d.frozen_at IS NOT NULL AND (cl.type = 'individual' OR lower(json_extract(d.recipient, '$.email')) = c.email OR json_extract(d.recipient, '$.contactId') = c.id)))";
 
 /**
  * Portal access off, or a changed email: every live session of the contact is revoked and every unused sign-in link deleted.

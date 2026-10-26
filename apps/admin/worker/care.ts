@@ -69,16 +69,16 @@ const MAX_INCLUDED_MINUTES = 120_000;
 
 const money = z.int().check(z.gte(0), z.lte(MAX_MINOR));
 /** An hourly overage rate: capped so `overageAmount` stays a safe integer for any hours a plan can log. */
-const rate = z.int().check(z.gte(0), z.lte(MAX_OVERAGE_RATE_MINOR));
-const included = z.int().check(
+export const rate = z.int().check(z.gte(0), z.lte(MAX_OVERAGE_RATE_MINOR));
+export const included = z.int().check(
   z.gte(0),
   z.lte(MAX_INCLUDED_MINUTES),
   z.refine((m) => m % CARE_STEP_MINUTES === 0),
 );
 const tier = z.enum(CARE_TIERS);
-const rollover = z.enum(ROLLOVER_RULES);
+export const rollover = z.enum(ROLLOVER_RULES);
 /** A plan starts between 2000 and 2100 (a typing slip, not a plan). */
-const startDate = isoDate.check(z.refine((s) => s >= "2000-01-01" && s <= "2100-12-31"));
+export const startDate = isoDate.check(z.refine((s) => s >= "2000-01-01" && s <= "2100-12-31"));
 
 const createBody = z.strictObject({
   clientId: z.string().check(z.minLength(1), z.maxLength(64)),
@@ -297,6 +297,85 @@ const DEFAULT_ROLLOVER: Record<CareTier, "none" | "one_month"> = {
   custom: "none",
 };
 
+// ---- creating a plan: the three statements, shared with the estimate convert (M4.3, document-convert.ts) -----------------------
+
+export type NewPlan = {
+  id: string;
+  clientId: string;
+  tier: CareTier;
+  priceMinor: number;
+  includedMinutes: number;
+  aiOpsMinor?: number | null | undefined;
+  overageRateMinor?: number | null | undefined;
+  rollover: "none" | "one_month";
+  startDate: string;
+  billingDay: number;
+  createdAt: number;
+  userId: string;
+};
+
+/**
+ * The plan row, its first terms row and its first status row, in this order; the last one decides (it only writes if the plan row is
+ * there). With `source` the plan comes from an accepted estimate of the same client and currency: the plan row is written only while
+ * that estimate is still accepted and has no invoice draft (`source_step` 1), and records it in `source_document_id` (unique, so an
+ * estimate makes one plan).
+ */
+export function newPlanStatements(
+  db: D1Database,
+  p: NewPlan,
+  source?: { documentId: string },
+): D1PreparedStatement[] {
+  const base = [
+    p.id,
+    p.clientId,
+    p.tier,
+    p.priceMinor,
+    p.includedMinutes,
+    p.aiOpsMinor ?? null,
+    p.startDate,
+    p.billingDay,
+    p.rollover,
+    p.overageRateMinor ?? null,
+    p.createdAt,
+  ];
+  const plan = source
+    ? db
+        .prepare(
+          `INSERT INTO care_plans (id, client_id, tier, currency, price_minor, included_minutes, ai_ops_minor, start_date, billing_day, status, rollover, overage_rate_minor, created_at, updated_at, source_document_id)
+           SELECT ?1, c.id, ?3, c.currency, ?4, ?5, ?6, ?7, ?8, 'active', ?9, ?10, ?11, ?11, ?12 FROM clients c
+           WHERE c.id = ?2 AND ${clientLiveSql("c.id")}
+             AND EXISTS (SELECT 1 FROM documents s WHERE s.id = ?12 AND s.type = 'estimate' AND s.status = 'accepted' AND s.client_id = c.id AND s.currency = c.currency)
+             AND NOT EXISTS (SELECT 1 FROM documents i WHERE i.source_document_id = ?12 AND i.source_step = 1)`,
+        )
+        .bind(...base, source.documentId)
+    : db
+        .prepare(
+          `INSERT INTO care_plans (id, client_id, tier, currency, price_minor, included_minutes, ai_ops_minor, start_date, billing_day, status, rollover, overage_rate_minor, created_at, updated_at)
+           SELECT ?1, c.id, ?3, c.currency, ?4, ?5, ?6, ?7, ?8, 'active', ?9, ?10, ?11, ?11 FROM clients c WHERE c.id = ?2 AND ${clientLiveSql("c.id")}`,
+        )
+        .bind(...base);
+  return [
+    plan,
+    db
+      .prepare(
+        `INSERT INTO care_plan_terms (id, care_plan_id, effective_from, tier, price_minor, included_minutes, ai_ops_minor, overage_rate_minor, rollover, created_by, created_at)
+         SELECT ?1, p.id, p.start_date, p.tier, p.price_minor, p.included_minutes, p.ai_ops_minor, p.overage_rate_minor, p.rollover, ?3, p.created_at FROM care_plans p WHERE p.id = ?2`,
+      )
+      .bind(uuidv7(), p.id, p.userId),
+    db
+      .prepare(
+        `INSERT INTO care_plan_status_log (id, care_plan_id, status, effective_on, created_by, created_at)
+         SELECT ?1, p.id, 'active', p.start_date, ?3, p.created_at FROM care_plans p WHERE p.id = ?2`,
+      )
+      .bind(uuidv7(), p.id, p.userId),
+  ];
+}
+
+/** Included minutes by tier when a request leaves them out: only Essential has one (the others are the owner's to choose). */
+export const defaultIncludedMinutes = (tier: CareTier): number | null => DEFAULT_INCLUDED[tier];
+/** Rollover by tier when a request leaves it out (the same prefill as the new-plan form). */
+export const defaultRollover = (tier: CareTier): "none" | "one_month" => DEFAULT_ROLLOVER[tier];
+
 // ---- routes -------------------------------------------------------------------------------------------------------------------
 
 export const carePlans = new Hono<AppEnv>()
@@ -361,39 +440,7 @@ export const carePlans = new Hono<AppEnv>()
     const id = uuidv7();
     const t = Date.now();
     const done = await mutate(c, {
-      // Three statements in this order; the last one decides (it only writes if the plan row is there).
-      main: [
-        db
-          .prepare(
-            `INSERT INTO care_plans (id, client_id, tier, currency, price_minor, included_minutes, ai_ops_minor, start_date, billing_day, status, rollover, overage_rate_minor, created_at, updated_at)
-             SELECT ?1, c.id, ?3, c.currency, ?4, ?5, ?6, ?7, ?8, 'active', ?9, ?10, ?11, ?11 FROM clients c WHERE c.id = ?2 AND ${clientLiveSql("c.id")}`,
-          )
-          .bind(
-            id,
-            f.clientId,
-            f.tier,
-            f.priceMinor,
-            f.includedMinutes,
-            f.aiOpsMinor ?? null,
-            f.startDate,
-            f.billingDay,
-            f.rollover,
-            f.overageRateMinor ?? null,
-            t,
-          ),
-        db
-          .prepare(
-            `INSERT INTO care_plan_terms (id, care_plan_id, effective_from, tier, price_minor, included_minutes, ai_ops_minor, overage_rate_minor, rollover, created_by, created_at)
-             SELECT ?1, p.id, p.start_date, p.tier, p.price_minor, p.included_minutes, p.ai_ops_minor, p.overage_rate_minor, p.rollover, ?3, p.created_at FROM care_plans p WHERE p.id = ?2`,
-          )
-          .bind(uuidv7(), id, me.id),
-        db
-          .prepare(
-            `INSERT INTO care_plan_status_log (id, care_plan_id, status, effective_on, created_by, created_at)
-             SELECT ?1, p.id, 'active', p.start_date, ?3, p.created_at FROM care_plans p WHERE p.id = ?2`,
-          )
-          .bind(uuidv7(), id, me.id),
-      ],
+      main: newPlanStatements(db, { id, ...f, createdAt: t, userId: me.id }),
       action: "care_plan.create",
       entityType: "care_plan",
       entityId: id,

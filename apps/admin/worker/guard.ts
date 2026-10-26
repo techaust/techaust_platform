@@ -16,7 +16,7 @@ import {
   UNAUTHENTICATED,
 } from "./context.ts";
 
-type Opts = { audit?: string; log?: boolean | "refusals"; body?: "upload" | "large" };
+type Opts = { audit?: string; log?: boolean | "refusals"; body?: "upload" | "large" | "document" };
 const R = (
   method: RouteDef["method"],
   path: string,
@@ -151,6 +151,22 @@ export const ROUTES: readonly RouteDef[] = [
   R("GET", "/templates/:id", "catalogue.read"),
   // A template body is up to 12,000 characters, which passes 16 KB once it holds a few multi-byte characters (the rupee sign).
   R("POST", "/templates", "catalogue.write", { audit: "template.version", body: "large" }),
+  // Proposals, estimates and approvals (M4.3, ADM-PROP-01..07, ADM-EST-01/02, ADM-APR-01/02). One code path for both types. Sending is
+  // `proposals.send`: Staff and Sales pass the guard and the handler decides by the discount (403 `approval_required`). A save is up to
+  // 96 KB (`body: "document"`). Converting an accepted estimate makes an invoice draft (`invoices.draft`).
+  R("GET", "/documents", "proposals.read"),
+  R("POST", "/documents", "proposals.draft", { audit: "document.create" }),
+  R("GET", "/documents/:id", "proposals.read"),
+  R("PATCH", "/documents/:id", "proposals.draft", { audit: "document.update", body: "document" }),
+  R("DELETE", "/documents/:id", "proposals.draft", { audit: "document.delete" }),
+  R("POST", "/documents/:id/revise", "proposals.draft", { audit: "document.revise" }),
+  R("POST", "/documents/:id/approval-request", "proposals.draft", { audit: "approval.request" }),
+  R("POST", "/documents/:id/send", "proposals.send", { audit: "document.send" }),
+  R("POST", "/documents/:id/convert", "invoices.draft", { audit: "document.convert" }),
+  R("GET", "/clients/:id/documents", "proposals.read"),
+  // The owner's approval queue. Staff and Sales read only their own requests (the handler filters); only the owner decides.
+  R("GET", "/approvals", "approvals.readOwn"),
+  R("POST", "/approvals/:id/decide", "approvals.decide", { audit: "approval.decide" }),
   // The bell, the global search and the audit viewer (M3.1, ADM-G-09, ADM-G-05, ADM-AUD-02).
   R("GET", "/notifications", "notifications.own"),
   R("POST", "/notifications/read-all", "notifications.own", { audit: "notification.read_all" }),

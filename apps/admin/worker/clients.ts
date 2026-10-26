@@ -27,6 +27,7 @@ import { fromIst, parseIsoDate } from "@techaust/core/dates";
 import { uuidv7 } from "@techaust/core/ids";
 import { normaliseEmail } from "@techaust/core/lead-lifecycle";
 import { decide, type Role } from "@techaust/core/permissions";
+import { nameOrLegal } from "@techaust/core/text";
 import {
   CONTACT_ON_ISSUED_DOCUMENT_SQL,
   deleteContactAccess,
@@ -473,7 +474,7 @@ export const clients = new Hono<AppEnv>()
             insertClientStmt(db, {
               id,
               legalName: f.legalName,
-              displayName: f.displayName ?? f.legalName,
+              displayName: nameOrLegal(f.displayName, f.legalName),
               type: f.type,
               country: f.country,
               gstStatus: f.gstStatus,
@@ -902,7 +903,7 @@ export const EXPORT_PARTS: Record<string, { sql: (cur: boolean) => string; time?
   },
   documents: {
     sql: (cur) =>
-      `SELECT id, type, status, number_display, issue_date, total_minor, currency, recipient, frozen_at FROM documents WHERE client_id = ?3 AND frozen_at IS NOT NULL AND ((SELECT type FROM clients WHERE id = ?3) = 'individual' OR lower(json_extract(recipient, '$.email')) = ?2)${cur ? " AND id > ?5" : ""} ORDER BY id LIMIT 51`,
+      `SELECT id, type, status, number_display, issue_date, total_minor, currency, recipient, frozen_at FROM documents WHERE client_id = ?3 AND frozen_at IS NOT NULL AND ((SELECT type FROM clients WHERE id = ?3) = 'individual' OR lower(json_extract(recipient, '$.email')) = ?2 OR json_extract(recipient, '$.contactId') = ?1)${cur ? " AND id > ?5" : ""} ORDER BY id LIMIT 51`,
   },
   email_log: {
     sql: (cur) =>
@@ -1210,6 +1211,26 @@ export const contacts = new Hono<AppEnv>()
             `UPDATE projects SET name = code, updated_at = max(?2, updated_at + 1) WHERE ${LAST_LIVE_INDIVIDUAL("projects.client_id")} AND ${g.sql(3)}`,
           )
           .bind(id, t, ...g.params),
+        // 2d. an individual's never-sent proposal and estimate drafts go with its last live contact (owner O-Q4, 2026-10-25; VERIFY WITH
+        //     CA/LEGAL). A sent version keeps its frozen copy (it is evidence of the offer and blocks the erase of the person it names).
+        //     The approvals of those drafts go first (they reference the document); a lead's link to a deleted draft is cleared by the
+        //     foreign key. Same conditions as step 3, in the same batch, before the contact changes.
+        //     The bell rows about those approvals go too, before the approvals do (their titles hold the draft's title).
+        db
+          .prepare(
+            `DELETE FROM notifications WHERE entity_type = 'approval' AND entity_id IN (SELECT a.id FROM approvals a WHERE a.document_id IN (SELECT id FROM documents WHERE type IN ('proposal', 'estimate') AND frozen_at IS NULL AND ${LAST_LIVE_INDIVIDUAL("documents.client_id")})) AND ${g.sql(2)}`,
+          )
+          .bind(id, ...g.params),
+        db
+          .prepare(
+            `DELETE FROM approvals WHERE document_id IN (SELECT id FROM documents WHERE type IN ('proposal', 'estimate') AND frozen_at IS NULL AND ${LAST_LIVE_INDIVIDUAL("documents.client_id")}) AND ${g.sql(2)}`,
+          )
+          .bind(id, ...g.params),
+        db
+          .prepare(
+            `DELETE FROM documents WHERE type IN ('proposal', 'estimate') AND frozen_at IS NULL AND ${LAST_LIVE_INDIVIDUAL("documents.client_id")} AND ${g.sql(2)}`,
+          )
+          .bind(id, ...g.params),
         // 3. an individual client's own record, when this is its last live contact (before the contact changes)
         db
           .prepare(
@@ -1228,7 +1249,18 @@ export const contacts = new Hono<AppEnv>()
                AND NOT EXISTS (SELECT 1 FROM contacts o WHERE o.client_id = clients.id AND o.id <> ?1 AND o.anonymised_at IS NULL) AND ${g.sql(2)}`,
           )
           .bind(id, ...g.params),
-        // 4. the contact itself
+        // 4. the contact itself. A business client's drafts may still be addressed to a contact that is being deleted: they lose the
+        //    addressee first (a draft's `contact_id` references the contact); a sent document names its contact, so this contact
+        //    could not be erased at all.
+        ...(erase
+          ? [
+              db
+                .prepare(
+                  `UPDATE documents SET contact_id = NULL, content_sha256 = NULL WHERE contact_id = ?1 AND frozen_at IS NULL AND ${g.sql(2)}`,
+                )
+                .bind(id, ...g.params),
+            ]
+          : []),
         erase
           ? db.prepare(`DELETE FROM contacts WHERE id = ?1 AND ${g.sql(2)}`).bind(id, ...g.params)
           : db

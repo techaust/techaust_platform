@@ -6,9 +6,10 @@
 import { SETTINGS_DEFAULTS, SETTINGS_SCHEMAS, type SeededSettingKey, stableId } from "@techaust/core";
 import { CATALOGUE } from "./catalogue.ts";
 import { SEED_TEMPLATES } from "./templates.ts";
+import { PROPOSAL_TERMS_V1, PROPOSAL_TERMS_V1_SHA256 } from "./terms.ts";
 
 /** Bump when the seed's content changes (recorded nowhere else; it documents intent in reviews). */
-export const SEED_VERSION = 1;
+export const SEED_VERSION = 2;
 
 type Value = string | number | boolean | null | object;
 
@@ -55,17 +56,27 @@ export function seedStatements(): string[] {
       active: true,
     }),
   );
-  // Version 1 of each template; later versions are written by the admin and never touched here.
+  // Versions 1 and 2 of each template (2 carries the 07-O wording); later versions are written by the admin and never touched here.
   const templates = SEED_TEMPLATES.map((t) =>
     insert("templates", {
-      id: stableId(`template:${t.kind}:${t.category ?? "none"}:1`),
+      id: stableId(`template:${t.kind}:${t.category ?? "none"}:${t.version}`),
       category: t.category,
       kind: t.kind,
-      version: 1,
+      version: t.version,
       body: t.body,
     }),
   );
-  return [...settings, ...catalogue, ...templates];
+  // The first proposal terms (07-O section 2). A terms row the owner already saved as version 1 makes this a no-op.
+  const terms = [
+    insert("terms_versions", {
+      id: stableId("terms:proposal:1"),
+      kind: "proposal",
+      version: 1,
+      body_md: PROPOSAL_TERMS_V1,
+      sha256: PROPOSAL_TERMS_V1_SHA256,
+    }),
+  ];
+  return [...settings, ...catalogue, ...templates, ...terms];
 }
 
 export const seedSql = () =>
