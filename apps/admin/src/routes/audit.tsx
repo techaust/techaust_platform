@@ -220,7 +220,7 @@ function AuditLog() {
             })}
           </select>
         </div>
-        <div className="field">
+        <div className="field filters__field-date">
           <label htmlFor="au-from" id="au-from-label">
             From
           </label>
@@ -232,7 +232,7 @@ function AuditLog() {
             onChange={(v) => set("from", v)}
           />
         </div>
-        <div className="field">
+        <div className="field filters__field-date">
           <label htmlFor="au-to" id="au-to-label">
             To
           </label>

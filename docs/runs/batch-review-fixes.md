@@ -358,6 +358,7 @@ Branch `fix/batch-review-ui-design2` from `origin/fix/batch-review-ui`. Only `ap
 
 **Not verified:** the payment schedule's autosave in the browser (I made no draft proposal locally; it takes the same `keepLastValid` path as the audit filter, which was checked); the native calendar popup; NVDA reading the new names. No placeholder text was added.
 
-**Seen, not changed:** at 1280 the audit log's To field cuts its placeholder to "DD/MM/YYY" (the five-column filter cell is about 160 px wide). This was already there. A shorter placeholder or a four-column row would fix it; that is the lead's call.
+**Lead's follow-up, done:** the audit log's To field cut its placeholder to "DD/MM/YYY" at 1280. The filter row now wraps (flex: about 9rem per select, at least 11.5rem per date field, which is "DD/MM/YYYY" plus the 44 px button; the hint itself is unchanged), so no cell gets too narrow. It is one row at 1280 (input text area 116 to 119 px, against 106 px for the hint, with or without a scrollbar), selects on the first row and From and To on the second at 1024 and 768, and full width on phones.
+Checked at 1280, 1024, 768 and 375 in light and dark, plus the time export dialog (186 px at 375; no other screen has date filters). Screenshots `audit-filters-{1280,1280-light,1024-light,768-light,768-dark,375-light,375-dark}.png` and `time-export-375-dark.png` are in the same folder. Admin tests: 2,127 passed. `pnpm check`: exit 0.
 
 **Open questions:** none.
