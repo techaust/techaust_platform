@@ -279,3 +279,46 @@ Branch `fix/batch-review-ui-builder2` from `origin/fix/batch-review-ui`.
 ## Brief: review of the fixes (lead, 2026-10-26)
 Round 2 merged (f9d3a7c). Note: the round 2 builder did not load `code-review` (model-audit shows only `cloudflare:workers-best-practices`); the review covers its diff. Admin Worker 414,797 of 415,878 bytes.
 Review `git diff origin/main...origin/fix/batch-review-ui` (code and visual, high). Check that every finding in "Review: full UI/UX check" and the owner's two findings is fixed, that 07-Q is in word for word with no "[Placeholder]" left, and the builder's changes (H3 send logic, migration 0036, the frozen issuer email, Q14, the dashboard join, the terms body on GET, the portal long dates). Visual: the screens the check named, 1280/768/375, light and dark, the in-app theme against the OS theme, axe on admin and portal, keyboard; the Log time dialog at 768 (not verified by the designer). Local only; the allowed setup commands are those in the first brief. Screenshots under `.logs/shots/batch-review-fixes-recheck/`.
+
+## Review of the fixes (reviewer Opus 5.5 high, 2026-10-26): SEND BACK (1 high, 1 medium, 10 low)
+Skills: code-review (its helper ran on an allowed model), security-review (no finding at 8/10 or above: terms text behind the route's permission, migration 0036 gated and rebuild-free, the frozen email validated and escaped, hidden sections never reach the portal, the Q14 contact scoped to the client, the dashboard join shows numbers only to roles that see document activity), frontend-design, dataviz. `pnpm check` and full `pnpm test` exit 0; admin bundle 414,797 of 415,878 bytes. Every earlier finding and both owner findings were confirmed fixed (on screen or by code), 07-Q is in, no "[Placeholder]" is left, axe 0 on 15 admin screens and the portal home and offer preview. 20 screenshots in the main checkout's `.logs/shots/batch-review-fixes-recheck/`.
+1. **High:** `DateField` drops a date it can't read (`components/date-field.tsx:63-66`, `lib/date-field.ts:23`): "31/02/2026" saves as "Not set" with no message and no `aria-invalid` (WCAG 3.3.1, data lost); the autosaving schedule target date saves `""` while a date is being retyped.
+2. **Medium:** the week buttons read "Previous  week" from 768 px (`routes/time.tsx:197`, `:213`).
+3. **Low:** clearing a draft's contact puts `{{client.contact}}` back (`worker/document-save.ts:212-213`): accepted, pin it with a test.
+4. **Low:** the Q14 rename runs after `checkSections` (`document-save.ts:211`), so a longer name can pass `SECTION_BODY_MAX` without a 400.
+5. **Low:** the rename knows only the unspaced `{{client.contact}}`, and its word boundary ignores `\p{M}` (Indic vowel signs) (`document-save.ts:113`).
+6. **Low:** the GET loads the full terms text for drafts too (`worker/documents.ts:406`).
+7. **Low:** `"body_md" in bundle.terms` and `String()` (`worker/document-view.ts:336`): NULL becomes "null".
+8. **Low:** `ANONYMISED_LABEL` duplicates core's `ANONYMISED_CLIENT` (`document-view.ts:27`).
+9. **Low:** `CERTIFICATE_CSS` unused, the default footer address in two places, the layout imports from `view.ts` (`packages/pdf/src/layout/certificate-skeleton.ts:134`).
+10. **Low:** a redundant long-date conversion with a stale comment (`apps/portal/src/routes/offer.tsx:127`).
+11. **Low:** the integrity bells don't name the document, and "Make the PDF again" re-runs a refusal that fails the same way (`apps/jobs/src/pdf.ts:69`, `:142`, `:292`).
+12. **Low:** every calendar button is named "Choose a date" (`date-field.tsx:80`).
+Notes: proposal terms v1 still says "GST at 18 % is added for Indian clients." (VERIFY WITH CA/LEGAL); not verified: PDFs, the real portal offer page, NVDA, the approval detail, the staging SQL, the native calendar popup.
+
+## Lead triage of the review (2026-10-26)
+All twelve are fixed in this task (3 by a test). Owner's answers (2026-10-26):
+- **Date error (finding 1):** "Enter the date as DD/MM/YYYY, for example 26/10/2026."
+- **Integrity bell (finding 11):** "The PDF of {number} didn't match its saved copy, so it wasn't sent. A developer needs to look at it before it can be sent." (replaces the 07-Q Q9 line; when a document has no number yet, its title stands in, falling back to "Untitled").
+- **Terms v1 GST line:** kept for now; on the CA list (VERIFY WITH CA/LEGAL). A change later is a new version in Settings › Document terms.
+Fix split: designer (findings 1, 2, 10, 12; screens) and builder (3 to 9 and 11; Workers and packages), in parallel on separate files, then a re-check at medium.
+
+## Fix brief: designer (lead, 2026-10-26)
+Branch `fix/batch-review-ui-design2` from `origin/fix/batch-review-ui`. Opus 5.5, medium. Skills: `frontend-design:frontend-design`. Your files: `apps/admin/src/**`, `apps/portal/src/**`.
+- **Finding 1:** when the text is not empty and not a real date, the field reports an invalid state to its form (not `""`): `aria-invalid`, the owner's error line linked by `aria-describedby`, and the save blocked in required and optional forms alike; the autosaving schedule keeps the last valid value until the text is a full date or empty. Tests for every path (bad date, two-digit year, empty optional, cleared required, autosave).
+- **Finding 2:** one span per label so the gap isn't doubled.
+- **Finding 10:** drop the redundant conversion and the stale comment.
+- **Finding 12:** each calendar button is named with its field label too (`aria-labelledby` the button and the label).
+Checks: the admin and portal tests, `pnpm check`, screenshots of the invalid date (1280 light, 375 dark) and the week buttons at 768 under `.logs/shots/batch-review-fixes-design2/`, axe on the project form with an invalid date. Append "Designer report: review fixes".
+
+## Fix brief: builder (lead, 2026-10-26)
+Branch `fix/batch-review-ui-builder3` from `origin/fix/batch-review-ui`. Sonnet 5.5, medium. Skills: `cloudflare:workers-best-practices`, and `code-review` on your diff (load it; the last round skipped it). Your files: the Workers, `packages/*`.
+- **3:** a test that pins it (clearing the contact puts `{{client.contact}}` back and blocks send).
+- **4:** run the rename before `checkSections`, so a too-long result is a 400 on the save. Test.
+- **5:** match the spaced form too, and treat `\p{M}` as part of a word. Tests with a Bengali or Hindi name.
+- **6:** load the terms text only for frozen (sent) versions.
+- **7:** type the bundle by terms mode; a NULL gives no text, never "null".
+- **8:** import `ANONYMISED_CLIENT` from core.
+- **9:** remove `CERTIFICATE_CSS` if unused, keep the default address in one place, and fix the import direction.
+- **11:** the owner's line above for every integrity refusal, with the number (or the title, or "Untitled"). Tests.
+Checks: the tests of every package you touch, `pnpm check`, the admin budget line (don't grow it past the ceiling). Append "Builder report: round 3".
