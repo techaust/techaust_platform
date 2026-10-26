@@ -135,7 +135,7 @@ Every run, the lead's and every agent's, loads **every skill that fits its task*
 | CPU budgets, cold starts, benchmarks (builder, analyst, lead) | `cloudflare:workers-profiling` |
 | Website performance, headers, caching, Lighthouse, SEO (M2.x) | `cloudflare:web-perf` |
 | Cloudflare platform features: Access, Workers Logs, Rate Limiting, WAF, Turnstile, Browser Run, R2, Queues (any role) | `cloudflare:cloudflare`; Turnstile also `cloudflare:turnstile-spin` |
-| SES email, IAM users and policies (M2.4, M7.2) | `aws-core:aws-messaging-and-streaming` (routes to SES), `aws-core:aws-iam` |
+| SES email, IAM users and policies (M2.4, M7.2) | `aws-messaging-and-streaming` (routes to SES), `aws-iam` (named `aws-core:…` before the Team plan) |
 | Every review (reviewer) | `code-review` (as the review recipe, findings verified by the reviewer); also `security-review` for Tier A, auth, payments, webhooks and anything public-facing |
 | Starting and ending a day (lead) | `start-session`, `end-session` |
 | A page or report for the owner to view or share (lead) | `artifact-design` |
