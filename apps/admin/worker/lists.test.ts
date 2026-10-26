@@ -407,7 +407,7 @@ describe("global search [ADM-G-05]", () => {
     await lead("L-ROLE1", "Role Lead", "role.lead@example.test");
     const sales = await sessionFor("sales");
     const res = await find(sales.cookie, "L-ROLE");
-    // M3.4 projects, M4.1 catalogue and M4.3 proposals and estimates: Sales reads all three.
+    // M3.4 projects, M4.1 catalogue and M4.3 proposals and estimates: Sales reads all three. M5.1 invoices: not Sales (`invoices.read`), the accountant and the owner yes.
     expect(res.groups.map((g: J) => g.type)).toEqual([
       "lead",
       "client",
@@ -422,6 +422,7 @@ describe("global search [ADM-G-05]", () => {
       "contact",
       "catalogue",
       "document",
+      "invoice",
     ]);
     const o = await owner();
     expect((await find(o.cookie, "L-ROLE")).groups.map((g: J) => g.type)).toEqual([
@@ -431,6 +432,7 @@ describe("global search [ADM-G-05]", () => {
       "project",
       "catalogue",
       "document",
+      "invoice",
       "user",
     ]);
   });
