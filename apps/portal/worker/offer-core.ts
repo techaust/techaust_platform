@@ -236,6 +236,8 @@ export async function loadOffer(
           ),
         ]
       : [];
+  // The first open answers with the status as it is after this view ("Viewed", not "Sent"); an offer that reads as expired stays expired.
+  if (viewWrites.length > 0 && status === "sent") body.document = { ...(body.document as object), status: "viewed" };
   return { body, viewWrites };
 }
 
@@ -292,7 +294,7 @@ export async function certificateDownload(c: Ctx, p: Principal, docId: string): 
 export type AcceptRecord = { typedName: string; email: string; acceptedAt: number; fingerprint: string };
 export type DecisionResult =
   | { ok: true; record: AcceptRecord }
-  | { ok: true; declined: { reason: string; at: number } }
+  | { ok: true; declined: { reason: string; at: number; by: string | null } }
   | { ok: false; refusal: Refusal };
 
 /** The shared request facts of an evidence row; the user agent is already clipped by the middleware. */
@@ -331,7 +333,7 @@ export async function acceptOffer(
   typedName: string,
 ): Promise<DecisionResult> {
   const db = c.env.DB;
-  const pre = await bound(db, PRE_SQL, [p.clientId, docId, p.group]).first<{
+  const pre = await bound(db, PRE_SQL, [p.clientId, docId, p.group, p.contactId]).first<{
     version_group_id: string;
     version: number;
   }>();
@@ -416,7 +418,10 @@ export async function declineOffer(
   note: string | null,
 ): Promise<DecisionResult> {
   const db = c.env.DB;
-  const pre = await bound(db, PRE_SQL, [p.clientId, docId, p.group]).first<{ version_group_id: string }>();
+  const pre = await bound(db, PRE_SQL, [p.clientId, docId, p.group, p.contactId]).first<{
+    version_group_id: string;
+    contact_name: string | null;
+  }>();
   if (!pre) return { ok: false, refusal: { code: "not_found", status: 404 } };
   const t = Date.now();
   const today = todayIst(t);
@@ -460,7 +465,7 @@ export async function declineOffer(
   ]);
   if ((results[0]?.meta.changes ?? 0) > 0) {
     await sendQueued(c, "EMAIL_QUEUE", { kind: "offer.decided", documentId: docId, decision: "declined" });
-    return { ok: true, declined: { reason, at: t } };
+    return { ok: true, declined: { reason, at: t, by: pre.contact_name } };
   }
   const why = refusalOf(await reread(c, p, docId), p.contactId, today);
   // A decline that finds an acceptance says so; an accepted offer is never "replayed" as a decline.

@@ -58,8 +58,8 @@ export const CERT_KEY_SQL = `SELECT c.r2_key, d.number_display, d.version FROM a
 export const HAS_ACCEPTANCE_SQL =
   "SELECT 1 AS yes FROM acceptances a JOIN documents d ON d.id = a.document_id WHERE d.client_id = ?1 AND a.document_id = ?2 AND (?3 IS NULL OR d.version_group_id = ?3)";
 
-/** ?2 document id, ?3 the link's group (null on a session): the offer's group and version, before a decision (the lead rule needs the group). */
-export const PRE_SQL = `SELECT d.version_group_id, d.version FROM documents d WHERE d.id = ?2 AND d.client_id = ?1 AND (?3 IS NULL OR d.version_group_id = ?3) AND d.type IN ${QUOTES} AND d.frozen_at IS NOT NULL`;
+/** ?2 document id, ?3 the link's group (null on a session), ?4 the contact (the name a decline shows): the offer's group and version, before a decision (the lead rule needs the group). */
+export const PRE_SQL = `SELECT d.version_group_id, d.version, (SELECT c.name FROM contacts c WHERE c.id = ?4 AND c.client_id = ?1) AS contact_name FROM documents d WHERE d.id = ?2 AND d.client_id = ?1 AND (?3 IS NULL OR d.version_group_id = ?3) AND d.type IN ${QUOTES} AND d.frozen_at IS NOT NULL`;
 
 /**
  * The first view: sent becomes viewed, once. ?1 client, ?2 document, ?3 now, ?4 today (IST). An offer past its last valid day reads as expired

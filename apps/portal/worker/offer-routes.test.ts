@@ -228,7 +228,7 @@ describe("GET /offers/:id: the projected view, view tracking, superseded [POR-05
     expect(body.document).toMatchObject({
       id: o.id,
       kind: "proposal",
-      status: "sent",
+      status: "viewed", // the first open reports the status after its own view
       version: 1,
       numberDisplay: o.numberDisplay,
     });
@@ -241,7 +241,10 @@ describe("GET /offers/:id: the projected view, view tracking, superseded [POR-05
     const f = await fixtures();
     const o = await mkOffer(f.a);
     const cookie = await sign(f.a.finance);
-    expect((await view(o.id, cookie)).status).toBe(200);
+    const first = await view(o.id, cookie);
+    expect(first.status).toBe(200);
+    // the first answer already says Viewed, not Sent
+    expect(((await first.json()) as { document: { status: string } }).document.status).toBe("viewed");
     const doc = await one<{ status: string; viewed_at: number }>(
       "SELECT status, viewed_at FROM documents WHERE id = ?",
       o.id,
@@ -651,6 +654,8 @@ describe("POST /offers/:id/decline [ADM-PROP-10]", () => {
     const q = queues();
     const res = await decline(o.id, cookie, { reason: "price", note: "  Over budget for us  " }, q.env);
     expect(res.status).toBe(200);
+    // the answer carries the name the page shows under "Declined by"
+    expect(((await res.json()) as { declined: { by: string } }).declined.by).toBe(f.a.finance.name);
     const doc = await one<Record<string, unknown>>(
       "SELECT status, decision_reason, decision_note, decided_contact_id, decided_at FROM documents WHERE id = ?",
       o.id,
