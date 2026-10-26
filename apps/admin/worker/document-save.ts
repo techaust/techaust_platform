@@ -56,7 +56,7 @@ import {
 } from "./quote-model.ts";
 
 const idText = z.string().check(z.minLength(1), z.maxLength(64));
-const discountIn = z.strictObject({
+export const discountIn = z.strictObject({
   kind: z.enum(["fixed", "percent"]),
   value: z.int().check(z.gte(0), z.lte(9_007_199_254_740_991)),
 });
@@ -71,7 +71,7 @@ const fieldsIn = z.strictObject({
   refreshTerms: z.optional(z.literal(true)),
 });
 
-const lineIn = z.strictObject({
+export const lineIn = z.strictObject({
   id: z.optional(idText),
   catalogueItemId: z.optional(z.nullable(idText)),
   defaultLine: z.optional(text(200)),

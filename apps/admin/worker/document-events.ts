@@ -33,6 +33,15 @@ export function afterSend(c: Ctx, event: SendEvent): void {
 }
 
 /**
+ * M5.1: after an invoice is issued and its batch is committed, the PDF is requested the same way (`pdf.snapshot` through `waitUntil`; the reason is
+ * "send", the label a message already validates, so the queue consumer needs no change to accept it). A queue that cannot be reached never fails
+ * the issue: the daily sweep and the "make the PDF again" route pick the document up.
+ */
+export function afterIssue(c: Ctx, event: { documentId: string }): void {
+  c.executionCtx.waitUntil(enqueuePdf(c.env, event.documentId, "send"));
+}
+
+/**
  * The two approval emails of 07 §8 (M4.5, ADM-APR-01): the owners are told of a request, the requester of the decision. ONE message with the
  * approval's id only (no address, name or reason leaves this Worker); the jobs Worker reads the rows and queues the emails. After the answer,
  * through `waitUntil`: a queue that fails is logged and never fails the request (the bell, written in the same batch, still rings).

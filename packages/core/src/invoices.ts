@@ -7,6 +7,8 @@
 //   - the blockers: what stops an issue (the minimal statutory list of LD20; M5.2 makes it the configurable checklist),
 //   - the void rule of Q1, the due date, the IST day and FY of an issue, and the Table 13 summary of the documents issued.
 import { addDays, fyOf, istDate, parseIsoDate, toIsoDate } from "./dates.ts";
+import { canonicalJson, sha256Hex } from "./hash.ts";
+import type { Series } from "./numbering.ts";
 
 // ---- types -------------------------------------------------------------------------------------------------------------------------
 
@@ -27,6 +29,15 @@ export const INVOICE_ISSUABLE_TYPES = ["tax_invoice"] as const;
 export type InvoiceIssuableType = (typeof INVOICE_ISSUABLE_TYPES)[number];
 export const isInvoiceIssuableType = (v: unknown): v is InvoiceIssuableType =>
   (INVOICE_ISSUABLE_TYPES as readonly unknown[]).includes(v);
+
+/** The numbering series of each invoice-flow type (the twin of db `SERIES_OF`, which a db test compares). */
+export const INVOICE_SERIES_OF: Readonly<Record<InvoiceFlowType, Series>> = {
+  proforma: "proforma",
+  tax_invoice: "invoice",
+  export_invoice: "export",
+  credit_note: "creditNote",
+  debit_note: "debitNote",
+};
 
 /** The statuses of an issued document that the ledger (M5.3, M6) moves between. */
 export const LEDGER_STATUSES = [
@@ -287,3 +298,41 @@ export function documentsIssuedSummary(rows: readonly IssuedRow[]): IssuedSummar
     a.series < b.series ? -1 : a.series > b.series ? 1 : a.fy < b.fy ? -1 : a.fy > b.fy ? 1 : 0,
   );
 }
+
+// ---- the frozen snapshot of an issued invoice (LD4; M5.1) -------------------------------------------------------------------------------------
+
+export type InvoiceSnapshotInput = {
+  readonly document: {
+    readonly type: string;
+    readonly clientId: string;
+    readonly currency: string;
+    readonly issueDate: string;
+    readonly dueDate: string;
+    /** The content hash of the draft: it covers the lines, the totals and the supply. */
+    readonly contentSha256: string;
+    /** The invoice footer notes the document was pinned to (the newest `invoice` terms at issue), or null when there were none. */
+    readonly termsRef: { readonly id: string; readonly version: number; readonly sha256: string } | null;
+    readonly exportMode: string | null;
+  };
+  readonly supply: {
+    readonly type: string;
+    readonly placeOfSupplyCode: string;
+    readonly supplierStateCode: string;
+  };
+  readonly recipient: unknown;
+  /** The supplier block: the company, the bank block, the signature REFERENCE and the sender (db `InvoiceIssuerSnapshot`). */
+  readonly issuer: unknown;
+  /** The SHA-256 of the exact `computed` JSON text stored in `documents.computed`. */
+  readonly computedSha256: string;
+};
+
+/**
+ * The sealed form of an issued invoice: `{v: 3, kind: "invoice", header}`. The NUMBER, series, FY and the instant of issue are not in it: they
+ * are taken inside the issue batch, after this is hashed; the write-once envelope in R2 pairs them with it (as M4.4's does for a proposal, LD4).
+ * `snapshot_sha256 = sha256Hex(canonicalJson(invoiceSnapshot(i)))`.
+ */
+export const invoiceSnapshot = (i: InvoiceSnapshotInput) => ({ v: 3, kind: "invoice", header: i });
+
+/** The hex SHA-256 stored as `documents.snapshot_sha256` of an issued invoice. */
+export const invoiceSnapshotSha256 = (i: InvoiceSnapshotInput): Promise<string> =>
+  sha256Hex(canonicalJson(invoiceSnapshot(i)));

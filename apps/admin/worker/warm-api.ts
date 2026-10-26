@@ -9,6 +9,8 @@ import { warmCatalogue } from "@techaust/core/catalogue";
 import { warmSettings } from "@techaust/core/settings";
 import { warmCare } from "./care.ts";
 import { warmDocuments } from "./document-warm.ts";
+import { warmInvoices } from "./invoice-warm.ts";
 import { warmTime } from "./time-logs.ts";
 
-export const apiWarm: number = warmSettings() + warmCatalogue() + warmCare() + warmDocuments() + warmTime();
+export const apiWarm: number =
+  warmSettings() + warmCatalogue() + warmCare() + warmDocuments() + warmInvoices() + warmTime();

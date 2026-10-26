@@ -656,7 +656,9 @@ export const milestones = new Hono<AppEnv>()
     const t = Math.max(Date.now(), row.updated_at + 1);
     const done = await mutate(c, {
       main: c.env.DB.prepare(
-        `UPDATE milestones SET status = ?2, updated_at = ?3 WHERE id = ?1 AND status = ?4 AND document_id IS NULL AND ${MILESTONE_CLIENT_LIVE}`,
+        // M5.1 (LD12): the move to Ready to bill is when the work was delivered (the date of supply the 30-day invoice rule and the 25-day alert count
+        // from); it is kept when the milestone is invoiced, and kept if it goes back to pending and returns.
+        `UPDATE milestones SET status = ?2, updated_at = ?3${to === "ready_to_bill" ? ", delivered_at = coalesce(delivered_at, ?3)" : ""} WHERE id = ?1 AND status = ?4 AND document_id IS NULL AND ${MILESTONE_CLIENT_LIVE}`,
       ).bind(id, to, t, row.status),
       action: "milestone.status",
       entityType: "milestone",

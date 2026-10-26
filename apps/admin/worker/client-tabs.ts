@@ -7,6 +7,7 @@ import type { AppEnv } from "./context.ts";
 import { listDocuments } from "./documents.ts";
 import { fileListQuery, listFiles, uploadFile } from "./files.ts";
 import { body, idParam, param, query } from "./http.ts";
+import { INVOICE_LIST_STATUSES, listInvoices } from "./invoices.ts";
 import { createNote, createNoteBody, listNotes, noteListQuery } from "./notes.ts";
 import { listClientProjects } from "./projects.ts";
 
@@ -22,7 +23,18 @@ const documentsQuery = z.object({
   after: z.optional(z.string().check(z.maxLength(400))),
 });
 
+const invoicesQuery = z.object({
+  type: z.optional(z.enum(["proforma", "tax_invoice", "export_invoice", "credit_note", "debit_note"])),
+  status: z.optional(z.enum(INVOICE_LIST_STATUSES)),
+  limit: z.optional(z.enum(["25", "50"])),
+  after: z.optional(z.string().check(z.maxLength(400))),
+});
+
 export const clientTabs = new Hono<AppEnv>()
+  // The client page's "Invoices" tab (M5.1): every invoice-flow document of this client, newest first (Sales has no access: `invoices.read`).
+  .get("/:id/invoices", param(idParam), query(invoicesQuery), (c) =>
+    listInvoices(c, { ...c.req.valid("query"), clientId: c.req.valid("param").id }),
+  )
   // The client page's "Proposals and estimates" tab (M4.3): the latest version of each document of this client.
   .get("/:id/documents", param(idParam), query(documentsQuery), (c) =>
     listDocuments(c, { ...c.req.valid("query"), clientId: c.req.valid("param").id }),

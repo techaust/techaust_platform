@@ -11,10 +11,15 @@
 // `issue_result` must NOT carry the audit guard: a guarded insert would write nothing when the freeze matched no row, the batch would
 // succeed, and a number would have been burned. Unguarded, a stale or refused send aborts as a whole (counter, lead, audit: nothing).
 // A later version (version > 1) of a proposal or estimate takes no number: it copies series, FY, number and display from version 1.
-import type { InvoiceIssuerSnapshot, IssuerSnapshot, RecipientSnapshot } from "./schema/documents.ts";
+import type {
+  InvoiceBankBlock,
+  InvoiceIssuerSnapshot,
+  IssuerSnapshot,
+  RecipientSnapshot,
+} from "./schema/documents.ts";
 
 /** The two frozen blocks of a sent document, for a caller that builds them (type only: nothing of the schema reaches a Worker bundle). */
-export type { InvoiceIssuerSnapshot, IssuerSnapshot, RecipientSnapshot };
+export type { InvoiceBankBlock, InvoiceIssuerSnapshot, IssuerSnapshot, RecipientSnapshot };
 
 export type SendArgs = {
   documentId: string;
