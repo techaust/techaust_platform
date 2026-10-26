@@ -148,6 +148,7 @@ Lead's check: the plan keeps the Free plan (cron count unchanged: `30 * * * *` r
 20. **Alerts for unbilled work and 25-day proformas.** (Recommended) A bell to every owner and one email per item, sent once.
 21. **Staging test data (your action).** (Recommended) You type the real company profile (legal name, GSTIN, address) and clearly labelled sample bank details ("SAMPLE BANK") in staging Settings before the batch review. Alternative: real bank details. (A made-up GSTIN with a valid check character could belong to a real business, so none is invented.)
 22. **LUT reminder** (ADM-INV-18). (Recommended) From 1 March, a bell and one email a week until the next FY's ARN is saved.
+23. **Void after the GST return is filed** (VERIFY WITH CA/LEGAL; from the M5.5a analyst). Q1's void rule allows a void before the client is emailed, but a void dated in a later period could disagree with a GSTR-1 already filed. (Recommended) Also refuse a void once the invoice's return period has ended (the 11th of the next month for monthly filers), so a correction after that is always a credit note. Alternative: keep Q1 as it is.
 
 Not asked, because docs/13 or docs/04 §0 already decide them:
 - the numbering format;
