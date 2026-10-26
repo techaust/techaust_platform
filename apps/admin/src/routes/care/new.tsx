@@ -85,7 +85,10 @@ function NewCarePlan() {
   const [seenDefaults, setSeenDefaults] = useState<CareDefaults | null>(null);
   if (d && d !== seenDefaults) {
     setSeenDefaults(d);
-    // A new client: keep what was typed for the billing, refill the terms in the new currency.
+    // A new client: keep what was typed for the billing, refill the terms in the new currency. The fields are drawn afresh (the
+    // start date shows its last valid value), so the last submit's lines no longer describe them (re-check N4).
+    setErrors([]);
+    setFieldErrors({});
     setF((x) =>
       planFormFor(x?.tier ?? "essential", d, {
         startDate: x?.startDate ?? today(),

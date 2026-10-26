@@ -388,6 +388,11 @@
   align-self: end;
 }
 
+/* Controls keep their own 44 px height; only the date's cell grows. */
+.qledger__work--step > .qledger__cell > :not(.qledger__label) {
+  align-self: start;
+}
+
 .qledger__cell--pct .number-unit {
   display: flex;
 }
@@ -458,6 +463,13 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .qledger__work--step {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Tablet landscape and portrait with the rail: four cells left "What you get" about 4 rem wide, so they go two by two. */
+@media (min-width: 48rem) and (max-width: 63.99rem) {
   .qledger__work--step {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
