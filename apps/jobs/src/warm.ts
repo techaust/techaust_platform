@@ -10,7 +10,7 @@ import {
   warmOfferMessages,
 } from "@techaust/core";
 import { renderEmail } from "@techaust/email";
-import { renderCertificateHtml, warmPdf } from "@techaust/pdf";
+import { renderCertificateHtml, warmInvoicePdf, warmPdf } from "@techaust/pdf";
 import { buildCertificateView } from "./certificate.ts";
 import { alertData } from "./leads.ts";
 
@@ -111,6 +111,8 @@ export function warmConsumers(): number {
   }
   // M4.4: one sample document through the view, Markdown and HTML code (the render message's CPU, JOB-PDF-01). Returns 0 on failure.
   warmPdf();
+  // M5.1: one made-up invoice through the invoice view and the plain skeleton (the same render message, an invoice's code path).
+  warmInvoicePdf();
   // M4.5: the four expansion messages of the email queue, and one made-up acceptance certificate through the view and the HTML.
   warmOfferMessages();
   try {

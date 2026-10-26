@@ -336,8 +336,8 @@ describe("toInvoiceView", () => {
   it("builds the title, the dates, the words, the reverse-charge line as frozen, the copy label and the integrity line", async () => {
     const { envelope, computed } = await buildInvoiceFixture("intra");
     const v = toInvoiceView(envelope, DEFAULT_VIEW_CONFIG);
-    expect(v.title).toBe("Tax invoice TH/INV/2627/0012 – Sample Client");
-    expect(v.docLabel).toBe("Tax invoice");
+    expect(v.title).toBe("Tax Invoice TH/INV/2627/0012 – Sample Client");
+    expect(v.docLabel).toBe("Tax Invoice");
     expect(v.numberDisplay).toBe("TH/INV/2627/0012");
     expect(v.issueDate).toBe("28 Oct 26");
     expect(v.dueDate).toBe("04 Nov 26");
@@ -503,7 +503,7 @@ describe("the plain invoice skeleton prints every Rule 46 field [B3]", () => {
   it("an unregistered recipient prints no GSTIN line", async () => {
     const h = body(await html("discount"));
     expect(h).toContain("State: West Bengal (19)");
-    const billTo = h.slice(h.indexOf("Bill to"), h.indexOf('class="party party--doc"'));
+    const billTo = h.slice(h.indexOf("Billed to"), h.indexOf('class="party party--doc"'));
     expect(billTo).toContain("Sample Unregistered Person");
     expect(billTo).not.toContain("GSTIN");
   });
@@ -524,7 +524,7 @@ describe("the plain invoice skeleton prints every Rule 46 field [B3]", () => {
     const h = body(await html("bare"));
     expect(h).not.toContain("Account number");
     expect(h).not.toContain("Notes, version");
-    expect(h).toContain("Payment");
+    expect(h).toContain("How to pay");
   });
 
   it("the page is self-contained: the CSP, no script, no external URL; the footer and page numbers are in the page rules", async () => {
@@ -533,7 +533,7 @@ describe("the plain invoice skeleton prints every Rule 46 field [B3]", () => {
     expect(full).not.toMatch(/<script|<link|@import|(?:src|href)=["']?https?:|url\(["']?https?:/i);
     expect(full).toContain("@bottom-left");
     expect(full).toContain("TH/INV/2627/0012");
-    expect(full).toContain("<title>Tax invoice TH/INV/2627/0012 – Sample Client</title>");
+    expect(full).toContain("<title>Tax Invoice TH/INV/2627/0012 – Sample Client</title>");
   });
 
   it("escapes what a person typed: a script in a description or a name never reaches the page as markup", async () => {

@@ -23,7 +23,7 @@ const DASH = "–";
 
 /** The label of each invoice-family type (the wording is the designer's from 07-R; this is the skeleton's). */
 const DOC_LABELS: Readonly<Record<string, string>> = {
-  tax_invoice: "Tax invoice",
+  tax_invoice: "Tax Invoice",
   export_invoice: "Invoice",
   proforma: "Proforma invoice",
   credit_note: "Credit note",

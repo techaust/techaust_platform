@@ -22,13 +22,13 @@ import type { InvoiceView, InvoiceViewLine } from "../invoice-types.ts";
 import { markdownBlocks } from "../markdown-html.ts";
 import { cssString } from "./styles.ts";
 
-/** The skeleton's own words (07-R replaces them in phase 2). */
+/** The skeleton's words: 07-R §6 where it has a line (PENDING the owner's word-for-word approval), the rest plain. The designer takes them over in phase 2. */
 export const INVOICE_COPY = {
   from: "From",
-  billTo: "Bill to",
+  billTo: "Billed to",
   document: "Document",
-  number: "Invoice no.",
-  date: "Date",
+  number: "Invoice number",
+  date: "Invoice date",
   dueDate: "Due date",
   currency: "Currency",
   gstin: "GSTIN",
@@ -53,7 +53,7 @@ export const INVOICE_COPY = {
   },
   summary: { heading: "Tax summary", sac: "SAC", taxable: "Taxable value" },
   words: (words: string) => `Amount in words: ${words}`,
-  payment: { heading: "Payment", dueDate: "Due date" },
+  payment: { heading: "How to pay", dueDate: "Due date" },
   signatory: "Authorised signatory",
   forSupplier: (name: string) => `For ${name}`,
   page: { word: "Page", of: "of" },
