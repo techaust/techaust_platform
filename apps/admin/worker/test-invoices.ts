@@ -4,6 +4,7 @@
 import { env } from "cloudflare:workers";
 import { gstinCheckChar } from "@techaust/core";
 import { uuidv7 } from "@techaust/core/ids";
+import { issueFyOf } from "@techaust/core/invoices";
 import { SETTINGS_DEFAULTS } from "@techaust/core/settings";
 import { insert, mkClient, mkContact } from "./test-clients.ts";
 import { call, one, sessionFor, type TestSession } from "./test-helpers.ts";
@@ -174,16 +175,12 @@ export const invoiceRow = (id: string) =>
     id,
   );
 
-/** The invoice counter's next number for the FY (null: no row yet). */
-export const invoiceCounter = async (fy?: string) =>
-  (
-    await one<{ next_no: number }>(
-      fy
-        ? "SELECT next_no FROM doc_counters WHERE series = 'invoice' AND fy = ?"
-        : "SELECT next_no FROM doc_counters WHERE series = 'invoice' ORDER BY fy DESC LIMIT 1",
-      ...(fy ? [fy] : []),
-    )
-  )?.next_no ?? null;
+const REAL_FY = issueFyOf(Date.now()); // taken at load, before any test moves the clock
+
+/** The invoice counter's next number for the FY (the real one by default; null: no row yet). */
+export const invoiceCounter = async (fy: string = REAL_FY) =>
+  (await one<{ next_no: number }>("SELECT next_no FROM doc_counters WHERE series = 'invoice' AND fy = ?", fy))
+    ?.next_no ?? null;
 
 /** A milestone that is ready to bill, with its project (the client's), amount tax included. */
 export async function mkReadyMilestone(

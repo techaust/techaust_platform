@@ -30,6 +30,7 @@ import {
   tokenOfLink,
   userId,
 } from "./test-helpers.ts";
+import { issueBodyOf, issueInvoice, mkInvoice, mkInvoiceClient, putCompany } from "./test-invoices.ts";
 import { mkFile, mkMilestone, mkNote, mkProject, PDF_BYTES, upload } from "./test-projects.ts";
 import { discount, mkDraft, mkQuoteClient, mkService, mkTerms, sendBodyOf, sendDoc } from "./test-quotes.ts";
 
@@ -879,6 +880,58 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
       const s = await sessionFor("staff");
       const id = await bell(s.id);
       return run(s, `/notifications/${id}/read`, { method: "POST" });
+    },
+    // Invoices (M5.1): one scenario per audited invoice route.
+    "POST /api/v1/invoices": async () => {
+      const s = await owner();
+      const c = await mkInvoiceClient();
+      return run(s, "/invoices", { body: { clientId: c.clientId } });
+    },
+    "PATCH /api/v1/invoices/:id": async () => {
+      const s = await owner();
+      const made = await mkInvoice(s);
+      return run(s, `/invoices/${made.id}`, {
+        method: "PATCH",
+        body: { expectedUpdatedAt: made.updatedAt, fields: { discount: { kind: "fixed", value: 100 } } },
+      });
+    },
+    "DELETE /api/v1/invoices/:id": async () => {
+      const s = await owner();
+      const made = await mkInvoice(s);
+      return run(s, `/invoices/${made.id}?expectedUpdatedAt=${made.updatedAt}`, { method: "DELETE" });
+    },
+    "POST /api/v1/invoices/:id/issue": async () => {
+      const s = await owner();
+      await putCompany();
+      const made = await mkInvoice(s);
+      return run(s, `/invoices/${made.id}/issue`, { method: "POST", body: await issueBodyOf(made.id) });
+    },
+    "POST /api/v1/invoices/:id/issue-request": async () => {
+      const s = await sessionFor("staff");
+      await putCompany();
+      const made = await mkInvoice(s);
+      return run(s, `/invoices/${made.id}/issue-request`, {
+        method: "POST",
+        body: { expectedUpdatedAt: made.updatedAt },
+      });
+    },
+    "POST /api/v1/invoices/:id/void": async () => {
+      const s = await owner();
+      await putCompany();
+      const made = await mkInvoice(s);
+      expect((await issueInvoice(s, made.id)).status).toBe(200);
+      const row = await one<{ updated_at: number }>("SELECT updated_at FROM documents WHERE id = ?", made.id);
+      return run(s, `/invoices/${made.id}/void`, {
+        method: "POST",
+        body: { expectedUpdatedAt: row?.updated_at, reason: "Issued in error" },
+      });
+    },
+    "POST /api/v1/invoices/:id/pdf/retry": async () => {
+      const s = await owner();
+      await putCompany();
+      const made = await mkInvoice(s);
+      expect((await issueInvoice(s, made.id)).status).toBe(200);
+      return run(s, `/invoices/${made.id}/pdf/retry`, { method: "POST", body: {} });
     },
   };
 

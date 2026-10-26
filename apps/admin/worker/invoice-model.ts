@@ -180,6 +180,13 @@ export function issuerOf(
   };
 }
 
+/**
+ * Every number taken in one series (`?1`), void or not, in number order: the input of core `documentsIssuedSummary` (GSTR-1 Table 13; M5.5 adds the
+ * return period and pages it). A voided document keeps its number and counts as cancelled.
+ */
+export const ISSUED_DOCUMENTS_SQL =
+  "SELECT series, fy, number, number_display, status FROM documents WHERE series = ?1 AND frozen_at IS NOT NULL AND number IS NOT NULL ORDER BY fy, number";
+
 // ---- the state of a draft ---------------------------------------------------------------------------------------------------------------------
 
 export type InvoiceState = {
