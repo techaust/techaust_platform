@@ -298,10 +298,13 @@ export const timeLogs = new Hono<AppEnv>()
         carePlanTier: r.care_tier,
         createdAt: r.created_at,
         updatedAt: r.updated_at,
-        /** Whether the viewer may change it now: the owner always; the author for 7 days. */
+        /** Whether the viewer may change it now: the owner always; the author for 7 days, unless the entry is dated more than 7 days back. */
         canEdit:
           can(me.role, "time.writeOwn") &&
-          (canAny || (r.user_id === me.id && !authorLocked(r.created_at, now))),
+          (canAny ||
+            (r.user_id === me.id &&
+              !authorLocked(r.created_at, now) &&
+              entryDateCheck({ today, workDate: r.work_date, canWriteAny: false }) !== "owner_only_date")),
       })),
       next: page.next,
       prev: page.prev,
@@ -653,6 +656,13 @@ export const timeLogs = new Hono<AppEnv>()
     const now = Date.now();
     const locked = authorLocked(row.created_at, now);
     if (locked && !canAny) return err(c, TIME_LOCKED, 403);
+    // The same date rule as PATCH: an entry dated more than 7 days back is the owner's to remove (M4.3 re-check).
+    if (
+      !canAny &&
+      entryDateCheck({ today: istToday(now), workDate: row.work_date, canWriteAny: false }) ===
+        "owner_only_date"
+    )
+      return err(c, OWNER_ONLY_DATE, 403);
     const lockOverride = locked && canAny;
     const done = await mutate(c, {
       action: "time.delete",
