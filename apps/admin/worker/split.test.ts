@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 // The admin Worker split (M5.0, docs/13 2026-10-27): a front Worker (SPA, sign-in, account, staff) that forwards every other ROUTES row
 // over the ADMIN_API binding, and an API Worker that answers them. Proves: every row has one owner; the front forwards untouched and
 // touches nothing else; the same statuses and error codes come back through the front as from the combined app; the API app refuses
