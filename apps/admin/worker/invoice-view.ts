@@ -20,6 +20,7 @@ import { type ContactFacts, pdfOf, viewRecipient } from "./document-view.ts";
 import {
   type InvoiceComputation,
   type InvoiceSettings,
+  type InvoiceState,
   invoiceStateOf,
   issueFactsOf,
   type MilestoneFacts,
@@ -55,8 +56,8 @@ export type InvoiceViewInput = {
   contact: ContactFacts | null;
   settings: InvoiceSettings;
   role: Role;
-  /** A draft's worked-out state and computation (a frozen invoice has none: it is read back). */
-  prepared: { computation: InvoiceComputation } | null;
+  /** A draft's worked-out computation, and the state it was worked out from when a save just changed it (a frozen invoice has none: it is read back). */
+  prepared: { computation: InvoiceComputation; state?: InvoiceState } | null;
   approvals: readonly IssueApprovalRow[];
   milestone: MilestoneFacts | null;
   /** A `document_sends` row exists (the Q1 void rule), and an issued document names this one as its parent. */
@@ -113,7 +114,7 @@ export function invoiceView(i: InvoiceViewInput) {
   const { bundle, client, contact, settings } = i;
   const d = bundle.document;
   const frozen = d.frozen_at !== null;
-  const state = invoiceStateOf(bundle);
+  const state = i.prepared?.state ?? invoiceStateOf(bundle);
   const computation = i.prepared?.computation ?? null;
   const computed: ComputedDocument | null = frozen ? d.computed : (computation?.computed ?? null);
   const clientGone = client.anonymised_at !== null;

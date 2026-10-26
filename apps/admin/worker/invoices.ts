@@ -698,7 +698,7 @@ export const invoices = new Hono<AppEnv>()
         contact,
         settings: ctx.settings,
         role: actor(c).role,
-        prepared: { computation },
+        prepared: { computation, state },
         approvals: ctx.approvals.map((a) =>
           hashChanged &&
           (a.status === "pending" || a.status === "approved") &&

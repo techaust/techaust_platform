@@ -8,7 +8,7 @@ import { ROUTES } from "./guard.ts";
 import { noteListSql } from "./notes.ts";
 import { projectListSql } from "./projects.ts";
 import { PROJECTS_SQL } from "./search.ts";
-import { mkClient } from "./test-clients.ts";
+import { mkClient, mkDoc } from "./test-clients.ts";
 import { bodyOf, call, countOf, one, rows, sessionFor } from "./test-helpers.ts";
 import { mkFile, mkMilestone, mkNote, mkProject } from "./test-projects.ts";
 
@@ -344,7 +344,8 @@ describe("milestones [ADM-PRJ-02]", () => {
 
   it("edits a line: an amount and a percentage replace each other, a stale version is refused, an invoiced or paid line is locked", async () => {
     const o = await owner();
-    const p = await mkProject(await mkClient());
+    const clientId = await mkClient();
+    const p = await mkProject(clientId);
     const m = await mkMilestone(p.id, { position: 1, amount_minor: 500 });
     const patch = (id: string, body: Record<string, unknown>) =>
       call(`/milestones/${id}`, { method: "PATCH", cookie: o.cookie, body });
@@ -380,7 +381,9 @@ describe("milestones [ADM-PRJ-02]", () => {
     expect(await json(await patch(m.id, { expectedUpdatedAt: t2, title: "Quarter" }))).toMatchObject({
       changed: false,
     });
-    for (const locked of [{ status: "invoiced" }, { status: "paid" }, { document_id: "doc-1" }]) {
+    // M5.1 (milestones_document_scope): a milestone's document is a real invoice of the milestone's own client.
+    const onDocument = await mkDoc(clientId, "proforma");
+    for (const locked of [{ status: "invoiced" }, { status: "paid" }, { document_id: onDocument }]) {
       const l = await mkMilestone(p.id, locked);
       const res = await patch(l.id, { expectedUpdatedAt: l.updatedAt, title: "Nope" });
       expect(res.status, JSON.stringify(locked)).toBe(409);
@@ -413,12 +416,15 @@ describe("milestones [ADM-PRJ-02]", () => {
 
   it("deletes only a pending line that is on no document", async () => {
     const o = await owner();
-    const p = await mkProject(await mkClient());
+    const clientId = await mkClient();
+    const p = await mkProject(clientId);
     const del = (id: string) => call(`/milestones/${id}`, { method: "DELETE", cookie: o.cookie });
     const ok = await mkMilestone(p.id);
     expect((await del(ok.id)).status).toBe(200);
     expect(await countOf("milestones", "id = ?", ok.id)).toBe(0);
-    for (const locked of [{ status: "ready_to_bill" }, { status: "invoiced" }, { document_id: "doc-9" }]) {
+    // M5.1 (milestones_document_scope): the document is a real invoice of the milestone's client.
+    const onDocument = await mkDoc(clientId, "proforma");
+    for (const locked of [{ status: "ready_to_bill" }, { status: "invoiced" }, { document_id: onDocument }]) {
       const m = await mkMilestone(p.id, locked);
       const res = await del(m.id);
       expect(res.status, JSON.stringify(locked)).toBe(409);
