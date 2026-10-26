@@ -109,6 +109,10 @@ export const patchBody = z.strictObject({
   schedule: z.optional(z.array(stepIn).check(z.maxLength(24))),
 });
 
+/** The text as a whole-word pattern (never part of a longer word), every occurrence. */
+const wholeWord = (t: string) =>
+  new RegExp(`(?<![\\p{L}\\p{N}])${t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\p{L}\\p{N}])`, "gu");
+
 export const documentSave = new Hono<AppEnv>().patch("/:id", param(idParam), body(patchBody), async (c) => {
   const { id } = c.req.valid("param");
   const f = c.req.valid("json");
@@ -201,16 +205,19 @@ export const documentSave = new Hono<AppEnv>().patch("/:id", param(idParam), bod
       );
     state = { ...state, sections };
   }
-  // The Acceptance text names the draft's contact; when the contact changes in this save and the text was not sent, the name follows (Q14).
+  // The Acceptance text names the draft's contact; when the contact changes in this save the name follows (Q14), whether or not the sections were sent too (a stale text
+  // still holding the old name is renamed; a text that already has the new name has nothing to rename). Whole words only.
   // A sent version keeps its snapshot: only a draft reaches here.
-  if (!f.sections && fl?.contactId !== undefined && (contact?.id ?? null) !== (contactBefore?.id ?? null)) {
+  if (fl?.contactId !== undefined && (contact?.id ?? null) !== (contactBefore?.id ?? null)) {
     const from = contactBefore?.name ? contactBefore.name : "{{client.contact}}";
     const to = contact?.name ? contact.name : "{{client.contact}}";
     if (from !== to)
       state = {
         ...state,
         sections: state.sections.map((x) =>
-          x.kind === "acceptance" && x.bodyMd ? { ...x, bodyMd: x.bodyMd.split(from).join(to) } : x,
+          x.kind === "acceptance" && x.bodyMd
+            ? { ...x, bodyMd: x.bodyMd.replace(wholeWord(from), () => to) }
+            : x,
         ),
       };
   }

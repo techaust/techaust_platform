@@ -62,7 +62,9 @@ describe("the Acceptance text follows the draft's contact [Q14]", () => {
       await patchDoc(o, made.id, {
         expectedUpdatedAt: v.updatedAt,
         sections: sectionsOf(v, (s) =>
-          s.kind === "acceptance" ? { ...s, bodyMd: "Prepared for Asha Rao. Asha Rao is named once." } : s,
+          s.kind === "acceptance"
+            ? { ...s, bodyMd: "Prepared for Asha Rao. Asha Rao is named twice, Asha Raos once." }
+            : s,
         ),
       }),
     );
@@ -73,7 +75,7 @@ describe("the Acceptance text follows the draft's contact [Q14]", () => {
     expect(res.status).toBe(200);
     const doc = await getDoc(o, made.id);
     const text = (k: string) => doc.sections.find((s: J) => s.kind === k)?.bodyMd;
-    expect(text("acceptance")).toBe("Prepared for Bina Das. Bina Das is named once.");
+    expect(text("acceptance")).toBe("Prepared for Bina Das. Bina Das is named twice, Asha Raos once.");
     expect(doc.contact.id).toBe(second.id);
   });
 });

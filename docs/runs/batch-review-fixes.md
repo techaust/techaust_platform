@@ -127,3 +127,43 @@ Branch `fix/batch-review-ui-design` from `origin/fix/batch-review-ui`, in your o
 3. **Then check what the reviewer couldn't:** the users invite dialog, the client data-tool dialogs, the leads board, the approval detail (make a local staff requester), the admin email previews, and the proposal, estimate and certificate PDFs through the pdf package's local visual suite or sample (no hosted service). Fix what you find in your files, and list anything in the builder's.
 
 **Checks:** every screen the review names, at 1280, 768 and 375, light and dark, and with the in-app theme set against the OS theme; axe 0 violations; keyboard; before and after screenshots under `.logs/shots/batch-review-fixes-after/` (absolute paths, sample data only). `pnpm check` and the admin and portal tests pass; the whole-repo lint once at the end; the admin and portal build budget lines. Commit at least every 20 minutes; stop every dev server; append your report to this file under "Designer report".
+
+## Builder report (builder, Sonnet 5.5 medium, 2026-10-26)
+Branch `fix/batch-review-ui-builder` (3 builder commits plus the review fix below, from `origin/fix/batch-review-ui`). Skills: `cloudflare:workers-best-practices` (no new bindings, no buffering; the Q14 rename runs inside the existing save batch, no extra reads), `cloudflare:wrangler` (checked: the migration is a plain data UPDATE, nothing touches a hosted service), `code-review` on my own diff (see "Review of my own diff").
+
+**Done (brief item, then where)**
+1. **H3:** `apps/admin/worker/quote-model.ts` `blockersOf`: the unresolved-placeholder scan skips hidden sections. No twin exists in `packages/core` (`unresolvedIn` only scans what it is given). The PDF view already filters hidden sections (`packages/pdf/src/view.ts`); the snapshot keeps the hidden flag, as before. Test `apps/admin/worker/documents-batch-fixes.test.ts` (visible blocks and is named; hidden does not block and the send succeeds).
+2. **Q2:** `packages/core/src/clients.ts` `ANONYMISED_CLIENT` = "Anonymised client" (the erase path writes it to `legal_name` and `display_name`). Migration `packages/db/migrations/0036_anonymised_client_name.sql` (custom, data UPDATE only, no table rebuilt) renames `display_name` and, where it equalled the old label, `legal_name`, only where `anonymised_at IS NOT NULL AND display_name = 'Removed client'`. No trigger on `clients` watches those columns (triggers: currency, type, gst_status/state_code), so nothing blocks it; verified by running the migration's own SQL in `packages/db/test/anonymised-name.test.ts` (an anonymised client is renamed; a non-anonymised "Removed client" and another name are left alone). Frozen snapshots untouched. Tests keyed on the old text: the core test only.
+3. **PDF copy:** Q10 `inrNote` "Prices exclude GST."; Q7 `termsLine` "...version {version} of our terms."; Q11 `IssuerSnap.company.email` (optional) frozen at send from Settings "Email on documents" (`document-send.ts`, `packages/db/src/schema/documents.ts`), copied by the envelope builder only when present (so older sealed envelopes still verify and are unchanged), and `toPdfView` prints it in the supplier block and builds `view.footer.brand` through `footerLine()` (no arithmetic); older versions fall back to `hello@techaust.com`. Certificate `PH` tag removed with the labels as approved. The 07-Q Q5 USD to INR note is unchanged.
+4. **Bells and email:** "Open in the portal" without the tag; certificate dead-letter bell per C2; every integrity refusal (snapshot rows that don't reproduce the seal, key conflict, render-time envelope check) rings the new Q9 line (`BELL_COPY.integrity`); the generic "could not be made" line stays for dead letters.
+5. **API sentences:** C4, C5, C6 as written.
+6. **Q14:** `document-save.ts`: when `contactId` changes on a draft, the previous contact's name (or the literal `{{client.contact}}` token when there was none) is replaced, as a whole word, with the new contact's name in `acceptance` sections, also when sections are sent in the same save; sent versions are frozen and never reach this. Test included (a longer word containing the name is untouched).
+7. **Service names:** `packages/db/src/seed/catalogue.ts` S2, S5, S6, S8, S10, S15 now say "and". No test keyed on the seed names (the admin tests use their own fixtures).
+
+**Staging SQL for the service names (lead runs after the merge; only rows still carrying the old text)**
+```sql
+UPDATE catalogue_items SET name = 'App Rescue and Production-Readiness Audit' WHERE code = 'S2' AND name = 'App Rescue & Production-Readiness Audit';
+UPDATE catalogue_items SET name = 'Custom Web Apps and Business Portals' WHERE code = 'S5' AND name = 'Custom Web Apps & Business Portals';
+UPDATE catalogue_items SET name = 'MVP and SaaS Product Development' WHERE code = 'S6' AND name = 'MVP & SaaS Product Development';
+UPDATE catalogue_items SET name = 'UI/UX and Design Systems' WHERE code = 'S8' AND name = 'UI/UX & Design Systems';
+UPDATE catalogue_items SET name = 'Workflow Automation and AI Agents' WHERE code = 'S10' AND name = 'Workflow Automation & AI Agents';
+UPDATE catalogue_items SET name = 'Payments and Billing Modules' WHERE code = 'S15' AND name = 'Payments & Billing Modules';
+```
+No trigger on `catalogue_items` blocks an UPDATE of `name` (only delete is refused). Migration 0036 is applied by the normal staging deploy. Publish the catalogue again afterwards so the website snapshot picks the names up.
+
+**Commands and results (all through `tools/heavy.sh`)**
+- `pnpm --filter @techaust/core test`: 1027 passed, coverage 98.7 %. `@techaust/db test`: 206 passed. `@techaust/pdf test`: 124 passed (coverage 97.9 % statements). `@techaust/email test`: 78 passed. `@techaust/jobs test`: 257 passed. `@techaust/admin test`: 2116 passed.
+- `pnpm check` (lint over the whole repo, typecheck, guards, migration guard "37 migrations"): exit 0. Pre-existing warnings only. `pnpm test` in full: exit 0.
+- `pnpm --filter @techaust/admin build`: **admin bundle ok: 414514 bytes (limit 415878), startup 49.5 ms** (was 414,109, +405 bytes).
+- The one test outside my files that changed: `apps/jobs/test/{pdf,offers-wiring}.test.ts` (bell lines) and `packages/pdf/test/{layout,view}.test.ts`. I touched nothing in `apps/admin/src` or `apps/portal/src`.
+
+**Review of my own diff (code-review, low).** Fixed: the Q14 rename was a plain substring replace and skipped when sections were sent too (now whole-word and applies to both). Kept, with reasons: the Q9 line is the owner's approved wording for every integrity refusal and carries no number by design; the INR note lost its rate by the owner's approval (VERIFY WITH CA/LEGAL stays); migration gating on `display_name` is exact because the erase path always set both names together.
+
+**Not verified**
+- The PDFs rendered through Browser Run and the Playwright visual suite (`test:visual`, needs a browser; the package keeps no stored baselines) were not run; the footer and Q7/Q10 lines are covered by the layout and view tests only.
+- Migration 0036 was run against test data only, not a copy of staging data.
+- The portal's own tests were not run separately (only through `pnpm test`, which passed).
+
+**Open questions**
+- **Certificate footer:** the acceptance certificate still prints the fixed `hello@techaust.com` (Q11 names the proposal and estimate PDF footer). To follow Settings it would need the sent document's frozen `issuer.company.email` passed to the certificate view in the jobs Worker (small change). Do you want it, or keep the certificate fixed?
+- **Settings default:** the Settings default for "Email on documents" may differ from `hello@techaust.com` (the code-review helper read it as contact@); the PDF footer now prints whatever Settings holds at send, so check the value on staging before the next send.
