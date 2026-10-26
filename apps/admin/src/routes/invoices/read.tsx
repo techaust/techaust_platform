@@ -5,7 +5,7 @@ import type { Role } from "@techaust/core/permissions";
 import { useState } from "react";
 import { Link } from "react-router";
 import { PageHeader } from "../../components/display.tsx";
-import { Ban, Lock } from "../../components/icons.tsx";
+import { Ban, FolderKanban, Lock } from "../../components/icons.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { allowed } from "../../lib/access.ts";
 import { dayText, formatIstDay } from "../../lib/documents.ts";
@@ -158,7 +158,16 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
         <div className="doc-page__main">
           {v.milestone && (
             <p className="inv-origin">
-              <Link to={`/projects/${encodeURIComponent(v.milestone.projectId)}`}>{v.milestone.title}</Link>
+              <FolderKanban size={16} />
+              <span>
+                {allowed(role, "projects.read") ? (
+                  <Link to={`/projects/${encodeURIComponent(v.milestone.projectId)}`}>
+                    {v.milestone.title}
+                  </Link>
+                ) : (
+                  v.milestone.title
+                )}
+              </span>
             </p>
           )}
           <section className="lead-panel doc-sheet inv-sheet" aria-labelledby="inv-sheet-h">

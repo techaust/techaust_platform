@@ -294,7 +294,7 @@ export function InvoiceEditor({ view, reload }: { view: InvoiceView; reload: () 
                   type="button"
                   className="btn btn--primary btn--block"
                   onClick={() => setDialog("issue")}
-                  disabled={blocked || s.saving}
+                  disabled={blocked || s.saving || !v.typeIssuable}
                 >
                   <FileCheck size={20} />
                   {INV_COPY.issue}
@@ -305,7 +305,7 @@ export function InvoiceEditor({ view, reload }: { view: InvoiceView; reload: () 
                   type="button"
                   className="btn btn--primary btn--block"
                   onClick={() => setDialog("request")}
-                  disabled={blocked || s.saving}
+                  disabled={blocked || s.saving || !v.typeIssuable}
                 >
                   <Send size={20} />
                   {INV_COPY.requestIssue}
