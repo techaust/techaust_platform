@@ -24,6 +24,7 @@ import {
   isRequiredSection,
   moneyText,
   OPEN_IT,
+  recipientLine,
   STATUS_LABELS,
   sectionLabel,
   TYPE_LABELS,
@@ -77,10 +78,10 @@ export function ReadView({ view, reload }: { view: DocumentView; reload: () => v
   const number = v.number ?? titleOf(v.title);
   const sections = v.sections.filter((s) => !s.hidden);
   const hasEstimate = sections.some((s) => s.kind === "estimate");
-  // A sent version reads who it was addressed to as frozen at send (review fix 1); a draft reads the live client and contact.
-  const recipient = v.frozen ? v.recipient : null;
-  const forName = recipient ? recipient.displayName || recipient.legalName : v.client.name;
-  const forContact = recipient ? (recipient.contactName ?? null) : (v.contact?.name ?? null);
+  // A sent version reads who it was addressed to as frozen at send (review fix 1); a draft reads the live client and contact. The server
+  // already shows "Anonymised client" and no contact name or email once the client or the contact was anonymised: a client that was
+  // anonymised reads as that one name (no contact part); a contact that was anonymised alone leaves the client's name alone.
+  const { name: forName, contact: forContact } = recipientLine(v);
   // The care plan this estimate describes (for the dialog's summary and the "Converted to" line): core's mapping over the frozen lines,
   // with each line's service code from the catalogue. Loaded only where it is shown.
   const needsCare =
@@ -168,9 +169,7 @@ export function ReadView({ view, reload }: { view: DocumentView; reload: () => v
                       </>
                     ) : (
                       <>
-                        {tierName
-                          ? convertedToCare(v.client.name, tierName)
-                          : convertedToCare(v.client.name, "").replace(" ()", "")}{" "}
+                        {convertedToCare(v.client.name, tierName)}{" "}
                         <Link to={`/care-plans/${encodeURIComponent(converted.id)}`}>{OPEN_IT}</Link>
                       </>
                     )}

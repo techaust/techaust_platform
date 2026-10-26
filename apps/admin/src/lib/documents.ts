@@ -242,14 +242,29 @@ export const careSummary = (tier: string, client: string, price: string) =>
   `${tier} care plan for ${client}: ${price} a month before GST`;
 export const careAiOps = (aiOps: string) => `plus ${aiOps} a month for AI Ops`;
 export const CONVERTED_TO_INVOICE = "Converted to an invoice draft.";
-export const convertedToCare = (client: string, tier: string) =>
-  `Converted to care plan for ${client} (${tier}).`;
+/** With the tier when it is known (the estimate's lines name it); without it while the lines are still loading. */
+export const convertedToCare = (client: string, tier: string | null) =>
+  tier ? `Converted to care plan for ${client} (${tier}).` : `Converted to care plan for ${client}.`;
 export const OPEN_IT = "Open it";
 export const sectionTitleName = (section: string) => `Title of ${section}`;
 /** `section_empty`, around its list of sections (each one a link to the section). */
 export const SECTION_EMPTY_AROUND = ["Write these sections or hide them before sending: ", "."] as const;
 export const sectionEmptyLine = (list: string) =>
   `${SECTION_EMPTY_AROUND[0]}${list}${SECTION_EMPTY_AROUND[1]}`;
+/**
+ * Who a document is for, as the read page shows it (M4.3 re-check 2, owner's rule of 2026-10-26). The server already put "Anonymised
+ * client" in place of every personal name, so this only decides how many parts to print: a client that was anonymised reads as that
+ * one name, with no contact part; a contact that was anonymised alone leaves the client's name alone; otherwise the name and the contact.
+ * The name is the server's `client.name` (the frozen recipient's name for a sent version, by the one `nameOrLegal` rule).
+ */
+export const recipientLine = (v: {
+  client: { name: string; anonymised: boolean };
+  contact: { name: string; anonymised: boolean } | null;
+}): { name: string; contact: string | null } => {
+  const name = v.client.name;
+  const contact = v.client.anonymised || !v.contact || v.contact.anonymised ? null : v.contact.name;
+  return { name, contact };
+};
 // ---- labels ------------------------------------------------------------------------------------------------------------------
 
 export const TYPE_LABELS: Record<QuoteType, string> = { proposal: "Proposal", estimate: "Estimate" };
@@ -1019,11 +1034,12 @@ export const isEmptyOptional = (s: SectionDraft) =>
   !s.hidden && !isRequiredSection(s.kind) && s.bodyMd.trim() === "";
 
 /**
- * The sections a `section_empty` blocker is about, in the editor's order. The server names them by key (a section's id, or its kind);
- * without keys (or none that match), the editor's own empty visible optional sections are the list.
+ * The sections a `section_empty` blocker is about, in the editor's order. The server names them twice, by `sections` (ids) and `kinds`
+ * (same order); a name may be an id or a kind. Without names (or none that match), the editor's own empty visible optional sections are
+ * the list.
  */
 export function emptySectionsOf(b: Blocker, sections: readonly SectionDraft[]): SectionDraft[] {
-  const keys = b.sections ?? b.keys ?? b.names ?? b.codes ?? [];
+  const keys = b.sections ?? b.kinds ?? [];
   const out: SectionDraft[] = [];
   for (const k of keys) {
     const hit =

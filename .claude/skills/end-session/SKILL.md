@@ -25,5 +25,5 @@ description: Close the day on the TecHaust rebuild and leave the record current.
    - what was verified, and how
    - what waits on them
    - the next step (the lead is always Opus 5.5 at medium, [docs/14](../../../docs/14-models-and-usage.md) §3), and anything the model audit flagged
-   - the usage now (weekly and 5-hour %)
+   - the usage now (5-hour %)
    - the PR link, and that this session can be archived (not deleted) once that PR has merged

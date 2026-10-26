@@ -29,6 +29,7 @@ import {
   REPLY_TEMPLATES,
   replyTemplateById,
 } from "@techaust/core/reply-templates";
+import { nameOrLegal } from "@techaust/core/text";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { insertClientStmt, taxError, taxWarnings } from "./clients.ts";
@@ -874,8 +875,10 @@ export const leads = new Hono<AppEnv>()
     const clientId = uuidv7();
     const contactId = uuidv7();
     const proposalId = uuidv7();
-    const legalName = f.legalName ?? lead.contact_company ?? lead.contact_name;
-    const displayName = f.displayName ?? lead.contact_company ?? lead.contact_name;
+    // The company, or the person's name when the company is missing, empty or only spaces (the shared rule, M4.3 re-check 2).
+    const fromLead = nameOrLegal(lead.contact_company, lead.contact_name);
+    const legalName = f.legalName ?? fromLead;
+    const displayName = f.displayName ?? fromLead;
     // Marketing consent travels only while it still stands (not withdrawn).
     const consent = lead.consent
       ? (JSON.parse(lead.consent) as { marketing?: boolean; at?: number; withdrawnAt?: number | null })

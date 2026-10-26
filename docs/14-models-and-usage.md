@@ -2,7 +2,7 @@
 
 Which Claude model and effort level each task runs on, how the project is held to those models, the budget gate the lead checks before starting any agent, and how usage is measured. First approved on 2026-10-08; **replaced on 2026-10-12** by the owner's plan: only Opus 5.5, Sonnet 5.5 and Haiku 5.5, with Opus designing and building every screen ([13-decisions.md](13-decisions.md)).
 
-The plan is **Claude Max** (5x, per the owner): one weekly allowance shared by every model, reset each **Monday at 10:00 UTC (15:30 IST)**, plus a 5-hour window.
+The plan is **Claude Team** (from 2026-10-26, owner): a 5-hour window, and a weekly limit only for Fable, which the project never uses. There is no weekly allowance for Opus, Sonnet or Haiku. (Until 2026-10-26 the plan was Claude Max 5x, with one weekly allowance shared by every model.)
 
 ## 1. Principles
 - **Three models only:** Opus 5.5, Sonnet 5.5 and Haiku 5.5. The project settings and a hook enforce it (§6).
@@ -74,18 +74,13 @@ A subagent can't start another subagent, so builders and designers read their ow
 - **`main` taken early:** if `main` has moved since the task branched, the lead merges it into the task before the review, not after. If the task's migrations change a table, trigger, constraint or foreign key, the analyst plans that merge first. **Analyst gate for migrations:** the analyst also confirms that no migration rebuilds (drops, or copies through `__new_…`) a table other tables reference; `scripts/check-migrations.mjs` fails CI for any such migration after 0006, and the only way past it is the analyst's written check plus an entry (with the reason) in `scripts/migration-rebuild-allowlist.json`.
 
 ## 5. The budget gate
-Before starting any agent, the lead reads the usage (the `get_usage` session tool: "Weekly · all models" and "5-hour limit").
-
-**The pace** = 14 % × days since the last reset (fractional). Example: Thursday 14:45 IST is about 2.97 days after Monday 15:30 IST, so the pace is about 42 %.
+Before starting any agent, the lead reads the usage (the `get_usage` session tool: "5-hour limit"). On the Team plan only the 5-hour window gates the work (owner, 2026-10-26); there is no weekly pace. If a weekly limit for the models we use ever appears in the reading, the lead tells the owner before relying on this table.
 
 | Reading | What runs |
 |---|---|
-| Weekly at or under the pace, and the 5-hour window at or under 50 % | Up to two agents at once (the 8 GB RAM limit), never two browser users |
-| Weekly over the pace | One agent at a time |
-| Weekly at 85 % or more | No new build or design; only finishing, reviewing and merging what is in flight |
-| The 5-hour window over 50 % | No new builder or designer; a review, an analyst or a running agent may continue |
-| The 5-hour window at 75 % or more | Nothing new starts until it resets |
-| The usage can't be read | Treat it as "over the pace" and say so |
+| The 5-hour window under 80 % | Up to two agents at once (the 8 GB RAM limit), never two browser users (owner exception 2026-10-26: three until the M3.4–M4.5 batch ends; docs/13) |
+| The 5-hour window at 80 % or more | No new agent of any kind starts until it resets; running agents may finish (owner, 2026-10-26; replaces the 50 % and 75 % steps) |
+| The usage can't be read | One agent at a time, and say so |
 
 The gate changes **how much runs at once, never the model or the effort.**
 
@@ -123,11 +118,11 @@ Each lock covers the others' gaps. All were tested on 2026-10-12 on Claude Code 
 - **No progress check-ins** while agents run.
 
 ## 8. Measuring
-- Each agent run records its model, effort and the weekly and 5-hour percentages at its start and end in the run file's `Usage:` line. The model and effort are copied from `node tools/model-audit.mjs`, not from what was intended.
+- Each agent run records its model, effort and the 5-hour percentage at its start and end in the run file's `Usage:` line. The model and effort are copied from `node tools/model-audit.mjs`, not from what was intended.
 - **Every evening** the end-of-day routine runs `node tools/model-audit.mjs` for the day. Anything flagged goes to the owner in the day's summary.
 - In the first full week (from Monday 12 Oct 2026) only one agent runs at a time, so each reading belongs to one run.
 - **Quality guard:** if a Tier B or C task gets a critical finding, or is sent back twice, that tier's builder or designer fix effort goes up one step for the next task, at most to high. The lead records it as a [13-decisions.md](13-decisions.md) row and tells the owner.
-- **The cost report:** after the first Tier A build, the first designer task and the first two Tier B reviews, the lead reports the cost of each kind of run against the pace. Effort levels change only with the owner's approval, and never downwards for Tier A work, screens or reviews. Reports: [2026-10-23](14-models-and-usage-appendix/cost-report-2026-10-23.md) (no change recommended; next after M3.1).
+- **The cost report:** after the first Tier A build, the first designer task and the first two Tier B reviews, the lead reports the cost of each kind of run (against the 5-hour window since the Team plan). Effort levels change only with the owner's approval, and never downwards for Tier A work, screens or reviews. Reports: [2026-10-23](14-models-and-usage-appendix/cost-report-2026-10-23.md) (no change recommended; next after M3.1).
 
 ## 9. Skills (mandatory, owner rule 2026-10-22)
 Every run, the lead's and every agent's, loads **every skill that fits its task** before it starts work, and its report lists them. The owner never has to ask. `node tools/model-audit.mjs` lists the skills each run loaded and flags a builder, designer, analyst or reviewer run that loaded none; the lead checks it before every review and records the skills in the run file's `Usage:` line. A skill that doesn't apply is skipped and the report says why; a skill that can't run inside an agent is reported, not silently dropped.
@@ -139,7 +134,7 @@ Every run, the lead's and every agent's, loads **every skill that fits its task*
 | CPU budgets, cold starts, benchmarks (builder, analyst, lead) | `cloudflare:workers-profiling` |
 | Website performance, headers, caching, Lighthouse, SEO (M2.x) | `cloudflare:web-perf` |
 | Cloudflare platform features: Access, Workers Logs, Rate Limiting, WAF, Turnstile, Browser Run, R2, Queues (any role) | `cloudflare:cloudflare`; Turnstile also `cloudflare:turnstile-spin` |
-| SES email, IAM users and policies (M2.4, M7.2) | `aws-core:aws-messaging-and-streaming` (routes to SES), `aws-core:aws-iam` |
+| SES email, IAM users and policies (M2.4, M7.2) | `aws-messaging-and-streaming` (routes to SES), `aws-iam` (named `aws-core:…` before the Team plan) |
 | Every review (reviewer) | `code-review` (as the review recipe, findings verified by the reviewer); also `security-review` for Tier A, auth, payments, webhooks and anything public-facing |
 | Starting and ending a day (lead) | `start-session`, `end-session` |
 | A page or report for the owner to view or share (lead) | `artifact-design` |

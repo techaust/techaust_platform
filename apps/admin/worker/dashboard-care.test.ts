@@ -96,7 +96,7 @@ describe("the care tile with more than 100 active plans", () => {
     const s = await longSession("owner");
     await tile(s.cookie, withDb(db));
     const burn = seen.filter((q) => q.includes("1000000000"));
-    expect(burn).toHaveLength(4); // the four statements of the loader, each with the ranked id list
+    expect(burn).toHaveLength(1); // the ranking is worked out once (M4.3 re-check); the loader then reads the 100 ids it picked
     for (const q of [...burn, CARE_TOTALS_SQL]) {
       const plan = (
         await env.DB.prepare(`EXPLAIN QUERY PLAN ${q}`)

@@ -45,3 +45,21 @@ Each milestone: its own task branch and run file (`docs/runs/m3.4-projects.md` �
   - usage gates are lifted until Mon 26 Oct 15:30 IST, then the normal docs/14 §5 gates apply again;
   - at most two agents at once, and never two browser agents (8 GB RAM; free memory dipped to about 200–400 MB with a browser and tests running).
 - **Usage today (`node tools/model-audit.mjs 2026-10-25`):** every run was within the plan. Weekly usage reached 83 % at the end of the day.
+
+## Handover (2026-10-26, ≈ 05:40 IST; stopped on the owner's word)
+- **On staging:** M4.2 (#80), M3.4 (#81), M4.1 (#82), **M3.5 (#84)**.
+- **The task lines** (each holds the one before; full briefs, reports and triages in their run files):
+  - **M4.3** `feat/m4.3-builder` @ 75dc44f: review APPROVE; all findings fixed and merged.
+    - The code-only re-check stopped before verifying anything. Its helper's 10 unverified candidates are in the M4.3 run file handover.
+    - **Next:** verify them, then fix, then a full re-check (code and visual), then the PR.
+  - **M4.4** `feat/m4.4-pdf` (phases 1 and 2 accepted) and `feat/m4.4-screens` @ a920da9 (designer about half done, untested).
+    - **Next:** merge the latest M4.3 line, resume the designer, then the review, then H2, then the PR after M4.3.
+  - **M4.5** `feat/m4.5-send-accept` @ 5477c99: stages A and B built; early-check fixes accepted.
+    - **Next:** the designer to the approved preview, then the review, then H3, then the PR after M4.4.
+- **Migrations reserved in order:** M4.3 0031/0032, M4.4 0033, M4.5 0034/0035. Each later branch regenerates after merging the one before.
+- **Owner rules:**
+  - stop after M4.5; M5 waits for the owner;
+  - three agents at once until M4.5, one browser agent at a time;
+  - the owner's lift of the usage gates ends at the Mon 26 Oct 15:30 IST reset; the normal docs/14 §5 gates apply after it.
+- **Usage at the stop:** weekly about 96 %.
+- **Agent runs this session** (`node tools/model-audit.mjs 2026-10-25`, from 18:10 UTC): every run was within the plan. Each run file's integration notes name its agents; the four "general-purpose, no skills" rows are the `code-review` skill's own read-only helpers (the allowed exception, docs/14 §9).

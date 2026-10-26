@@ -11,8 +11,28 @@
     "PreToolUse": [
       {
         "matcher": "Agent|Bash",
-        "hooks": [{ "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/tools/model-guard.mjs\"" }]
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/tools/model-guard.mjs\""
+          }
+        ]
       }
     ]
+  },
+  "enabledPlugins": {
+    "cloudflare@cloudflare": true,
+    "playwright@claude-plugins-official": true,
+    "context7@claude-plugins-official": true,
+    "frontend-design@claude-plugins-official": true,
+    "github@claude-plugins-official": true
+  },
+  "extraKnownMarketplaces": {
+    "cloudflare": {
+      "source": {
+        "source": "github",
+        "repo": "cloudflare/skills"
+      }
+    }
   }
 }

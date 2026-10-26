@@ -36,6 +36,7 @@ import {
   OPEN_IT,
   placeholdersIn,
   placeOfSupplyLabel,
+  recipientLine,
   reviseBody,
   STATUS_LABELS,
   sectionEmptyLine,
@@ -293,6 +294,9 @@ describe("07-O copy, word for word (draft pending the owner)", () => {
     expect(convertedToCare("Sample Client A (sample)", "Scale")).toBe(
       "Converted to care plan for Sample Client A (sample) (Scale).",
     );
+    expect(convertedToCare("Sample Client A (sample)", null)).toBe(
+      "Converted to care plan for Sample Client A (sample).",
+    );
     expect(OPEN_IT).toBe("Open it");
     expect(sectionTitleName("Summary")).toBe("Title of Summary");
     expect(sectionEmptyLine("Summary, Team")).toBe(
@@ -350,6 +354,10 @@ describe("errors by API code (07-O §6)", () => {
     // By kind and by id, in the editor's order.
     expect(
       emptySectionsOf({ code: "section_empty", sections: ["d", "summary"] }, list).map((s) => s.id),
+    ).toEqual(["b", "d"]);
+    // The server's `kinds` alone (the name the Worker sends) work the same.
+    expect(
+      emptySectionsOf({ code: "section_empty", kinds: ["summary", "custom"] }, list).map((s) => s.id),
     ).toEqual(["b", "d"]);
     // No keys: shown, optional and empty only (not the hidden team, not the required terms).
     expect(emptySectionsOf({ code: "section_empty" }, list).map((s) => s.id)).toEqual(["b", "d"]);
@@ -549,5 +557,30 @@ describe("small rules", () => {
         "x",
       ),
     ).toBe("Approved by Sample Owner (fake) on 26 Oct 2026");
+  });
+});
+
+describe("recipientLine: who a document is for (M4.3 re-check 2, owner's rule)", () => {
+  const client = { name: "Acme Ltd", anonymised: false };
+  const contact = { name: "Asha Rao", anonymised: false };
+  it("a live client and contact: the name and the contact", () => {
+    expect(recipientLine({ client, contact })).toEqual({ name: "Acme Ltd", contact: "Asha Rao" });
+  });
+  it("a client with no contact: the name alone", () => {
+    expect(recipientLine({ client, contact: null })).toEqual({ name: "Acme Ltd", contact: null });
+  });
+  it("the client anonymised: the label once, no contact part", () => {
+    const gone = { name: "Anonymised client", anonymised: true };
+    expect(recipientLine({ client: gone, contact: { name: "Anonymised client", anonymised: true } })).toEqual(
+      { name: "Anonymised client", contact: null },
+    );
+    // even if the contact were not flagged
+    expect(recipientLine({ client: gone, contact })).toEqual({ name: "Anonymised client", contact: null });
+  });
+  it("only the contact anonymised: the client's name alone, no contact part", () => {
+    expect(recipientLine({ client, contact: { name: "Anonymised client", anonymised: true } })).toEqual({
+      name: "Acme Ltd",
+      contact: null,
+    });
   });
 });
