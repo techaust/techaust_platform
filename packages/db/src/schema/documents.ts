@@ -100,6 +100,27 @@ export type IssuerSnapshot = {
   sender: { staffId: string; name: string; email: string };
 };
 
+/** The bank details of the INR account as an issued invoice prints them (frozen with it; M5.2 adds the USD/SWIFT block). */
+export type InvoiceBankBlock = {
+  accountName: string;
+  accountNo: string;
+  ifsc: string | null;
+  bankName: string;
+  branch: string | null;
+};
+
+/**
+ * The frozen supplier block of an issued invoice (M5.1, LD4, LD11): the proposal block plus the principal place of business and the phone, the
+ * bank block, and the signature as a REFERENCE (key, SHA-256, mime of the content-addressed object in DOCS; the jobs Worker reads and verifies
+ * the bytes). The sender is the Settings "billing" address and the staff member who issued it.
+ */
+export type InvoiceIssuerSnapshot = {
+  company: IssuerSnapshot["company"] & { phone?: string; principalPlace?: string };
+  bank: { inr: InvoiceBankBlock | null };
+  signature: { key: string; sha256: string; mime: string } | null;
+  sender: IssuerSnapshot["sender"];
+};
+
 export const documents = sqliteTable(
   "documents",
   {
@@ -217,12 +238,13 @@ export const documents = sqliteTable(
       .on(t.sourceDocumentId, t.sourceStep)
       .where(sql`${t.sourceDocumentId} is not null`),
     index("documents_contact").on(t.contactId),
-    // M4.4: the PDF sweep reads only sent proposals and estimates that have no PDF yet (a small set), oldest first; the type is in the
-    // predicate so a frozen invoice (M5) that has no PDF yet never keeps the sweep busy.
+    // M4.4: the PDF sweep reads only frozen documents that have no PDF yet (a small set), oldest first. M5.1 (LD9) widens the predicate to
+    // the invoice family (receipts and vouchers have no PDF of their own yet); the type stays in it so a frozen row of any other type
+    // never keeps the sweep busy.
     index("documents_pdf_pending")
       .on(t.frozenAt)
       .where(
-        sql`${t.frozenAt} is not null and ${t.pdfSha256} is null and ${t.type} in ('proposal', 'estimate')`,
+        sql`${t.frozenAt} is not null and ${t.pdfSha256} is null and ${t.type} in ('proposal', 'estimate', 'tax_invoice', 'export_invoice', 'proforma', 'credit_note', 'debit_note')`,
       ),
     check("documents_type", oneOf(t.type, DOCUMENT_TYPES)),
     check("documents_status", oneOf(t.status, DOCUMENT_STATUSES)),
@@ -469,6 +491,8 @@ export const approvals = sqliteTable(
     index("approvals_requested_by").on(t.requestedBy, t.status),
     // M4.3: the owner's queue, newest first, with no status filter (`approvals_status` serves a filter by status).
     index("approvals_created").on(t.createdAt, t.id),
+    // M5.1: the queue filtered by kind (the discount requests and the issue requests are two lists), newest first.
+    index("approvals_kind_created").on(t.kind, t.createdAt, t.id),
     // M4.3: one pending request per document and kind (a second request for the same version is a 409).
     uniqueIndex("approvals_document_pending").on(t.documentId, t.kind).where(sql`${t.status} = 'pending'`),
     check("approvals_kind", oneOf(t.kind, APPROVAL_KINDS)),

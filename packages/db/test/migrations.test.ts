@@ -56,6 +56,8 @@ describe("migrations apply cleanly to a fresh D1", () => {
       "0034_offers.sql",
       "0035_offer_triggers.sql",
       "0036_anonymised_client_name.sql",
+      "0037_invoice_indexes.sql",
+      "0038_invoice_triggers.sql",
     ]);
   });
 

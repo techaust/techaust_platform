@@ -448,7 +448,7 @@ export async function processCertificate(
 
 /** The sweep's pick (`?1` the newest `frozen_at` it may take). Exported so a test can EXPLAIN it: it must use `documents_pdf_pending`. */
 export const SWEEP_SQL = `SELECT id FROM documents INDEXED BY documents_pdf_pending
-  WHERE frozen_at IS NOT NULL AND pdf_sha256 IS NULL AND type IN ('proposal', 'estimate') AND frozen_at <= ?1
+  WHERE frozen_at IS NOT NULL AND pdf_sha256 IS NULL AND type IN ('proposal', 'estimate', 'tax_invoice', 'export_invoice', 'proforma', 'credit_note', 'debit_note') AND frozen_at <= ?1
     AND NOT EXISTS (SELECT 1 FROM clients z WHERE z.id = documents.client_id AND z.anonymised_at IS NOT NULL)
   ORDER BY frozen_at LIMIT ${SWEEP_LIMIT}`;
 

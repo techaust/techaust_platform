@@ -115,7 +115,14 @@ describe("clients_currency_locked [ADM-CLI-01]", () => {
   });
 
   it.each(INVOICE_FAMILY)("a %s of any status locks the currency", async (type) => {
-    const c = await insertClient(`C-M33-${type}`.slice(0, 15));
+    // M5.1 (documents_invoice_type_client): an export invoice needs an overseas client, so that one type gets one.
+    const overseas = type === "export_invoice";
+    const made = newClient({
+      code: `C-M33-${type}`.slice(0, 15),
+      ...(overseas ? { country: "US", gst_status: "overseas", state_code: null } : {}),
+    });
+    await made.insert();
+    const c = made.id;
     await addDoc(c, type, { status: "draft" });
     await rejects(run("UPDATE clients SET currency = 'USD' WHERE id = ?", c), /currency is locked/);
     // Writing the same currency, or another field, is fine.

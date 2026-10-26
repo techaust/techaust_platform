@@ -260,6 +260,20 @@
       "when": 1793019191017,
       "tag": "0036_anonymised_client_name",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "6",
+      "when": 1793049974447,
+      "tag": "0037_invoice_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "6",
+      "when": 1793050032396,
+      "tag": "0038_invoice_triggers",
+      "breakpoints": true
     }
   ]
 }
