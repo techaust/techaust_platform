@@ -124,6 +124,11 @@
   border-top: 1px solid var(--color-border);
 }
 
+.inv-issue-panel .lead-panel__head + .inv-due {
+  padding-top: 0;
+  border-top: 0;
+}
+
 .inv-issue-panel .inv-due dt {
   color: var(--color-text-muted);
   font-size: var(--text-sm);
@@ -150,6 +155,11 @@
   overflow-wrap: anywhere;
 }
 
+/* "Settings › Company" stays on one line: a place name broken at its arrow reads as two places. */
+.inv-blockers .inv-blockers__place {
+  white-space: nowrap;
+}
+
 /* Where the draft came from: one quiet line above the editor. */
 .inv-origin {
   margin: 0;
@@ -169,6 +179,12 @@
 
 .inv-lock p {
   margin: 0;
+}
+
+.inv-lock p.inv-lock__why {
+  margin-top: var(--space-2);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
 }
 
 .inv-lock p.inv-lock__void {
@@ -203,9 +219,31 @@
   background: var(--color-accent-decor);
 }
 
+/* The totals sit under the amounts, on the right, as on the printed invoice (wide screens; a phone keeps the full width). */
+@media (min-width: 48rem) {
+  .inv-sheet .tax-preview {
+    max-width: 30rem;
+    margin-inline-start: auto;
+  }
+}
+
 .inv-sheet__type {
   color: var(--color-text-muted);
   font-size: var(--text-sm);
+}
+
+/* An issued invoice between tablet and wide desktop: the side panels (the PDF) sit in a row above the invoice, not in a narrow column. */
+@media (min-width: 64rem) and (max-width: 89.99rem) {
+  .inv-page.doc-page--read {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "send"
+      "main";
+  }
+
+  .inv-page .doc-page__send {
+    grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
+  }
 }
 
 /* ---------- The issue dialog ---------- */

@@ -9,7 +9,7 @@ import { INV_COPY } from "../../lib/invoices.ts";
 import { invoicesApi } from "../../lib/invoices-api.ts";
 import { useUser } from "../../session.tsx";
 import { InvoiceEditor } from "./editor.tsx";
-import { INVOICES_CRUMB, InvoicesGate } from "./parts.tsx";
+import { InvoicesGate } from "./parts.tsx";
 import { InvoiceRead } from "./read.tsx";
 
 export function Component() {
@@ -28,7 +28,7 @@ function InvoiceScreen({ id }: { id: string }) {
     if (page.error instanceof RequestError && page.error.status === 404) return <NotFound />;
     return (
       <>
-        <PageHeader title={INV_COPY.title} crumbs={INVOICES_CRUMB} />
+        <PageHeader title={INV_COPY.title} />
         <LoadFailed error={page.error} onRetry={() => page.reload()} />
       </>
     );
@@ -43,7 +43,7 @@ function InvoiceScreen({ id }: { id: string }) {
 function InvoiceSkeleton() {
   return (
     <>
-      <PageHeader title={INV_COPY.title} crumbs={INVOICES_CRUMB} />
+      <PageHeader title={INV_COPY.title} />
       <p className="visually-hidden" role="status">
         Loading…
       </p>

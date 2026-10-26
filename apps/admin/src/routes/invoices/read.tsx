@@ -66,6 +66,18 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
         crumbs={INVOICES_CRUMB}
         status={<InvoiceBadge badge={badge} />}
         lede={v.frozen ? undefined : INV_COPY.draftLede}
+        more={
+          v.frozen && ownerVoids && !isVoid && v.void.canVoid
+            ? [
+                {
+                  label: INV_COPY.voidButton,
+                  icon: <Ban size={16} />,
+                  tone: "danger",
+                  onSelect: () => setVoiding(true),
+                },
+              ]
+            : undefined
+        }
       />
       <dl className="client-strip doc-strip inv-strip">
         {!v.frozen && (
@@ -123,6 +135,7 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
               </p>
             )}
             <p>{frozenBanner(v.issueDate ? (dayText(v.issueDate) ?? v.issueDate) : "", issuedBy(v))}</p>
+            {voidWhy && <p className="inv-lock__why">{voidWhy}</p>}
           </div>
         </div>
       )}
@@ -139,29 +152,6 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
               words={PDF_WORDS}
               source={PDF_SOURCE}
             />
-          )}
-          {v.frozen && ownerVoids && !isVoid && (
-            <section className="lead-panel send-panel" aria-labelledby="inv-void-h">
-              <h2 id="inv-void-h" className="lead-panel__title">
-                {INV_COPY.voidButton}
-              </h2>
-              {voidWhy && (
-                <p className="approval-line" data-state="expired">
-                  <Ban size={16} />
-                  <span>{voidWhy}</span>
-                </p>
-              )}
-              <div className="send-panel__actions">
-                <button
-                  type="button"
-                  className="btn btn--danger btn--block"
-                  onClick={() => setVoiding(true)}
-                  disabled={!v.void.canVoid}
-                >
-                  {INV_COPY.voidButton}
-                </button>
-              </div>
-            </section>
           )}
         </div>
 

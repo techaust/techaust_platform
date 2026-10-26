@@ -15,6 +15,7 @@ import {
   blockerTarget,
   INV_COPY,
   INV_ERRORS,
+  INV_PLACEHOLDER,
   invErrorText,
   invMapped,
   issueBody,
@@ -49,7 +50,7 @@ export function BlockerList(props: {
           body = parts ? (
             <>
               {parts[0]}
-              <Link className="blockers__link" to={t.to}>
+              <Link className="blockers__link inv-blockers__place" to={t.to}>
                 {parts[1]}
               </Link>
               {parts[2]}
@@ -287,7 +288,8 @@ export function VoidDialog(props: {
     const r = reason.trim();
     const noReason = r === "";
     const noCode = needsCode && code.length !== 6;
-    setReasonError(noReason ? INV_COPY.voidReason : null);
+    // 07-R has no line for an empty reason: a marked placeholder until it does.
+    setReasonError(noReason ? INV_PLACEHOLDER : null);
     setCodeError(noCode ? CODE_MISSING : null);
     if (noReason || noCode) {
       document.getElementById(noReason ? "void-reason" : "void-code")?.focus();
