@@ -3,6 +3,7 @@
 // from the client's setting as the document read resolves it (`attachPdfDefault`, so a role that can't read the client sees it too), and the message as it will go (07 §8 with 07-N §4). The first send also says what sending does (07-O §5)
 // and for how much to whom. The owner-approved preview's layout: the choices on the left, the message on the right (stacked when narrow).
 import { type FormEvent, useEffect, useId, useState } from "react";
+import { Link } from "react-router";
 import { api, type ContactView, type Currency, RequestError } from "../../api.ts";
 import { Modal } from "../../components/dialog.tsx";
 import { Switch } from "../../components/form.tsx";
@@ -79,6 +80,8 @@ export function SendDialog(props: {
   }, [open, clientId, attachPdfDefault]);
 
   const choices = loaded.state === "ready" ? recipientChoices(loaded.contacts).choices : [];
+  // Nobody can receive it (no live contact with portal access): Send is off and the dialog says where to turn access on.
+  const noneCan = loaded.state === "ready" && !choices.some((c) => c.portalAccess);
   const firstPicked = choices.find((c) => picked.has(c.id));
   const firstName = firstPicked ? (firstPicked.name.trim().split(/\s+/)[0] ?? "") : "";
 
@@ -133,6 +136,17 @@ export function SendDialog(props: {
             </p>
           )}
           {loaded.state === "failed" && <Notice tone="error">{offerErrorText(loaded.error)}</Notice>}
+          {noneCan && (
+            <Notice tone="info">
+              {OFFER_COPY.noneWithPortal}{" "}
+              <Link
+                to={`/clients/${encodeURIComponent(props.clientId)}?tab=contacts`}
+                onClick={props.onClose}
+              >
+                {OFFER_COPY.contactsTab}
+              </Link>
+            </Notice>
+          )}
           {loaded.state === "ready" && (
             <>
               <fieldset
@@ -183,7 +197,7 @@ export function SendDialog(props: {
                     {OFFER_COPY.attach}
                   </p>
                   <p className="hint" id={`${attachId}-hint`}>
-                    {OFFER_COPY.attachHint}
+                    {attachPdfDefault ? OFFER_COPY.attachHintOn : OFFER_COPY.attachHint}
                   </p>
                 </div>
                 <Switch
@@ -247,7 +261,7 @@ export function SendDialog(props: {
           <button
             type="submit"
             className="btn btn--primary"
-            disabled={busy || loaded.state !== "ready"}
+            disabled={busy || loaded.state !== "ready" || noneCan}
             aria-busy={busy || undefined}
           >
             <Send size={20} />

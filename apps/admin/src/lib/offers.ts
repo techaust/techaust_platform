@@ -1,8 +1,8 @@
 // What the M4.5 staff screens add to a proposal or estimate (ADM-PROP-07..10): sending to chosen contacts, the delivery of each email,
 // the acceptance record and its certificate, a decline's reason, "Start project", sending again and revoking the links. The shapes are
 // the API's (apps/admin/worker/document-offer.ts `OfferSection`, document-links.ts, document-start.ts); the words are 07-N §3, §6 and §7
-// (PENDING the owner's word-for-word approval) and, where 07-N has no line yet, `OFFER_PENDING` (shown with a "[Placeholder]" tag and
-// listed in the designer report). Pure, so the copy and the rules are tested without a browser. Money is formatted only, never worked out.
+// (approved with 07-Q) and, where 07-N had no line, `OFFER_PENDING` (its 07-Q words, no tag).
+// Pure, so the copy and the rules are tested without a browser. Money is formatted only, never worked out.
 import { RequestError } from "../api.ts";
 import { docErrorText } from "./documents.ts";
 import { REASON_LABEL, reasonText } from "./offer-words.ts";
@@ -84,7 +84,7 @@ export type StartResult = {
 /** The most contacts one send may name (MAX_RECIPIENTS in apps/admin/worker/document-links.ts). */
 export const MAX_RECIPIENTS = 5;
 
-// ---- 07-N, word for word (PENDING the owner) -----------------------------------------------------------------------------------
+// ---- 07-N, word for word (approved, 07-Q) -----------------------------------------------------------------------------------
 
 export const OFFER_COPY = {
   // §6 Send dialog.
@@ -93,8 +93,15 @@ export const OFFER_COPY = {
   sendToHint: "Contacts with portal access. Each gets their own link.",
   attach: "Attach the PDF",
   attachHint: "Off by default: the email links to the portal.",
+  /** 07-Q Q13: the hint when the client's own setting starts the switch On. */
+  attachHintOn: "On for this client: the PDF goes with the email.",
   message: "The message",
   noPortal: "Has no portal access yet",
+  /** The owner's words (batch review M8): no contact can receive it, so Send is off; the line links to the client's Contacts tab. */
+  noneWithPortal: "No contact of this client has portal access yet. Turn it on for a contact first.",
+  contactsTab: "Contacts",
+  /** 07-Q Q12: under the delivery list. */
+  viewedHint: "Viewed means the link was opened. Email security scanners can open links too.",
   chooseOne: "Choose at least one contact.",
   sending: "Sending…",
   sentTo: (n: number) => (n === 1 ? "Sent to 1 contact." : `Sent to ${n} contacts.`),
@@ -172,7 +179,7 @@ export const OFFER_ERRORS: Record<string, string> = {
   instalment_sac_merged: "The first instalment combines more than 10 service codes; check it before issuing.",
 };
 
-// ---- lines 07-N doesn't have yet: a visible "[Placeholder]" tag (the admin's ``), each listed in the designer report ----
+// ---- lines 07-N lacked, approved word for word in 07-Q (2026-10-26) -------------------------------------------------------
 
 export const OFFER_PENDING = {
   deliveryHeading: "Emails",

@@ -55,10 +55,6 @@ export function errorText(e: unknown): string {
   return COPY.server;
 }
 
-/** Whether `errorText` gave a line 07-N doesn't have yet (shown with its "[Placeholder]" tag). */
-export const isPendingText = (text: string) =>
-  text === PENDING.nameTooLong || text === PENDING.nameInvalid || text.startsWith("Too many attempts from");
-
 /** Hands a downloaded PDF to the browser as a file, under the server's name. */
 export function saveDownload(d: Download, fallbackName: string) {
   const url = URL.createObjectURL(d.blob);

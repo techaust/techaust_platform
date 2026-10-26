@@ -2,10 +2,9 @@
 // word, the error sentences by API code, the project details draft (the M3.2 drafts pattern), the milestone form, file sizes
 // and the client-side upload checks. Pure, so the copy and the rules are tested without a browser.
 //
-// Copy: 07-K (docs/07-content-appendix/K-m3.4-project-screens.md) is a DRAFT pending the owner's word-for-word approval. A
-// sentence the screens need and 07-K lacks is a PLACEHOLDER: it carries a visible "[Placeholder]" tag (``), sits in
-// `PENDING` below, and is listed in the designer report. Labels (buttons, columns, field names) come from the PRD and the
-// existing screens.
+// Copy: 07-K (docs/07-content-appendix/K-m3.4-project-screens.md) is approved by the owner (with 07-Q, 2026-10-26). A
+// sentence the screens need that 07-K lacked sits in `PENDING` below, in its 07-Q words (no tag). Labels (buttons, columns, field
+// names) come from the PRD and the existing screens.
 import { formatMoney, money } from "@techaust/core";
 import { isAllowedExtension, MAX_UPLOAD_BYTES } from "@techaust/core/file-types";
 import { canMoveProject, PROJECT_TRANSITIONS } from "@techaust/core/projects";
@@ -77,7 +76,7 @@ export const projectMoves = (from: ProjectStatus): readonly ProjectStatus[] => P
 export const needsConfirm = (to: ProjectStatus) => to === "completed" || to === "cancelled";
 export { canMoveProject };
 
-// ---- 07-K copy, word for word (draft, pending the owner) -----------------------------------------------------------------
+// ---- 07-K copy, word for word (approved, 07-Q) -----------------------------------------------------------------
 
 export const COPY = {
   // 07-K's empty line in two parts: its first sentence is the empty state's heading (no full stop), the second the body.
@@ -128,7 +127,7 @@ export const TOASTS = {
   fileDeleted: "File deleted.",
 } as const;
 
-// ---- placeholders (not in 07-K; each listed in the designer report) --------------------------------------------------------
+// ---- lines 07-K lacked, approved word for word in 07-Q (2026-10-26) --------------------------------------------------
 
 export const PLACEHOLDER_TAG = "[Placeholder]";
 
@@ -158,7 +157,7 @@ export const PENDING = {
   budgetLocked: "The budget can't change while a percentage milestone is invoiced or paid.",
   milestoneInvalidTransition: (from: MilestoneStatus, to: MilestoneStatus) =>
     `A milestone can't move from ${MILESTONE_STATUS_LABELS[from]} to ${MILESTONE_STATUS_LABELS[to]}.`,
-  /** API codes with no 07-K sentence: the server's own words, marked. */
+  /** API codes with no 07-K sentence: the server's own words. */
   serverWords: (message: string) => sentence(message),
 } as const;
 
@@ -179,7 +178,7 @@ const ERRORS: Record<string, string> = {
   arrives_with_invoicing: "Invoiced and Paid are set by invoicing, which arrives later.",
   order_mismatch: "The milestones changed while you were reordering. Reload and try again.",
 };
-/** M3.4 codes 07-K has no sentence for yet: the server's words, marked as placeholders. */
+/** M3.4 codes 07-K has no sentence for yet: the server's words (07-Q PRJ24). */
 const UNWORDED = new Set([
   "milestone_invalid_transition",
   "dates_order",
@@ -192,7 +191,7 @@ const UNWORDED = new Set([
 export const invalidTransition = (from: ProjectStatus, to: ProjectStatus) =>
   `A project can't move from ${PROJECT_STATUS_LABELS[from]} to ${PROJECT_STATUS_LABELS[to]}.`;
 
-/** The sentence for a failed M3.4 request: 07-K by code, a marked placeholder for an unworded code, else the usual text. */
+/** The sentence for a failed M3.4 request: 07-K by code, the server's words for an unworded code, else the usual text. */
 export function projectErrorText(
   e: unknown,
   move?: { from: ProjectStatus; to: ProjectStatus },

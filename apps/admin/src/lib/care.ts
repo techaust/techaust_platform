@@ -2,10 +2,10 @@
 // 07-M copy word for word, the error sentences by API code, hours as people read them, the hours bar, the new-plan and terms
 // forms. Pure, so the copy and the rules are tested without a browser.
 //
-// Copy: 07-M (docs/07-content-appendix/M-m3.5-care-time-screens.md) is a DRAFT pending the owner's word-for-word approval. A
-// sentence the screens need and 07-M lacks is a PLACEHOLDER: it carries a visible "[Placeholder]" tag (`` from the M3.4
-// words), sits in `CARE_PENDING` below, and is listed in the designer report. Labels (buttons, columns, field names) come from the
-// PRD and the existing screens. Amounts are formatted only through @techaust/core; the screens never add money up themselves.
+// Copy: 07-M (docs/07-content-appendix/M-m3.5-care-time-screens.md) is approved by the owner (with 07-Q, 2026-10-26). A
+// sentence the screens need that 07-M lacked sits in `CARE_PENDING` below, in its 07-Q words (no tag). Labels (buttons, columns,
+// field names) come from the PRD and the existing screens. Amounts are formatted only through @techaust/core; the screens
+// never add money up themselves.
 
 import {
   CARE_STATUSES,
@@ -64,7 +64,7 @@ export const CARE_PILLS: Record<CareStatus, Pill> = {
   cancelled: { tone: "muted", icon: "ban" },
 };
 
-// ---- 07-M copy, word for word (draft, pending the owner) -----------------------------------------------------------------
+// ---- 07-M copy, word for word (approved, 07-Q) -----------------------------------------------------------------
 
 export const CARE_COPY = {
   // 07-M's empty line in two parts (the M3.4 pattern): the first sentence is the empty state's heading, the second its body.
@@ -120,7 +120,7 @@ export const CARE_TOASTS = {
 export const statusToast = (to: CareStatus) =>
   to === "paused" ? CARE_TOASTS.paused : to === "active" ? CARE_TOASTS.resumed : CARE_TOASTS.cancelled;
 
-// ---- placeholders (not in 07-M; each listed in the designer report) --------------------------------------------------------
+// ---- lines 07-M lacked, approved word for word in 07-Q (2026-10-26) --------------------------------------------------
 
 export const CARE_PENDING = {
   stalePlan: "Someone else changed this care plan.",
@@ -130,7 +130,7 @@ export const CARE_PENDING = {
   enterHours: "Enter whole hours, then choose the minutes.",
   noTermsChange: "Change at least one of the terms first.",
   clientFilterClear: "Show care plans of all clients",
-  /** API codes with no 07-M sentence: the server's own words, marked. */
+  /** API codes with no 07-M sentence: the server's own words. */
   serverWords: (message: string) => sentence(message),
 } as const;
 
@@ -150,7 +150,7 @@ export const CODE_COPY: Record<string, string> = {
   bad_user: "Choose an active member of staff.",
 };
 
-/** The sentence for a failed M3.5 request: 07-M by code, the transition line, else the server's words marked as a placeholder. */
+/** The sentence for a failed M3.5 request: 07-M by code, the transition line, else the server's words (07-Q CARE8). */
 export function careErrorText(e: unknown, move?: { from: CareStatus; to: CareStatus }): string {
   if (!(e instanceof RequestError)) return "Couldn't reach the server. Check your connection and try again.";
   if (e.code === "invalid_transition" && move) return invalidCareTransition(move.from, move.to);

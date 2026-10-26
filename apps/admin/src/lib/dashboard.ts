@@ -1,6 +1,6 @@
 // The words of the dashboard (M3.5, ADM-DASH-01): the tile titles, the "arrives with" lines, the empty lines and the recent
-// activity in words. 07-M word for word (a draft pending the owner); the activity names that no approved copy words yet are
-// marked placeholders, listed in the designer report. Pure, so the words are tested without a browser.
+// activity in words. 07-M word for word (approved with 07-Q); the activity names 07-M lacked take
+// their 07-Q words. Pure, so the words are tested without a browser.
 import { ACTION_LABELS } from "./audit.ts";
 
 export const TILE_TITLES = {
@@ -36,7 +36,7 @@ export const pipelineLine = (n: number, total: string) =>
 
 export const showingFirst = (n: number) => `Showing the first ${n}.`;
 
-/** Activity names that no approved copy words yet: shown with the placeholder tag until 07 has them. */
+/** Activity names the audit labels lack, in their 07-Q words (Dashboard activity, DASH1 to DASH15). */
 export const ACTIVITY_PENDING: Record<string, string> = {
   "lead.create": "added a lead",
   "lead.update": "changed a lead",
@@ -55,7 +55,7 @@ export const ACTIVITY_PENDING: Record<string, string> = {
   "approval.expire": "marked an approval as expired",
 };
 
-/** An action in words: the audit log's approved label, a marked placeholder, or its own name. */
+/** An action in words: the audit log's approved label, its 07-Q words, or its own name. */
 export function activityText(action: string): string {
   if (Object.hasOwn(ACTION_LABELS, action)) return ACTION_LABELS[action] as string;
   if (Object.hasOwn(ACTIVITY_PENDING, action)) return ACTIVITY_PENDING[action] as string;

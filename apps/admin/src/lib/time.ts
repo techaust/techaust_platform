@@ -1,8 +1,8 @@
 // The words and the pure rules of the M3.5 time screens (ADM-TIME-01..03): 07-M copy word for word, the week (Monday to Sunday,
 // IST dates), the timesheet grid built from the API's groups, the entry form (15-minute steps, at most 24 hours), the lock state
 // and the CSV export, built in the browser from GET /time pages, with every cell defused against spreadsheet formulas.
-// Pure, so the copy and the rules are tested without a browser. Copy rules as in lib/care.ts (07-M is a draft; placeholders are
-// tagged and listed).
+// Pure, so the copy and the rules are tested without a browser. Copy rules as in lib/care.ts (07-M and 07-Q approved; no
+// placeholder tags).
 import { addDays, parseIsoDate, toIsoDate } from "@techaust/core/dates";
 import { authorLocked, DAY_CAP, entryDateCheck, LOCK_DAYS, TIME_STEP, weekOf } from "@techaust/core/time";
 import type { CareTier, NewTimeInput, TimeEntry, TimeWeekGroup } from "../api.ts";
@@ -10,7 +10,7 @@ import { csvCell } from "./audit.ts";
 import { CODE_COPY, dayText, TIER_LABELS } from "./care.ts";
 import { intIn } from "./settings-form.ts";
 
-// ---- 07-M copy, word for word (draft, pending the owner) -----------------------------------------------------------------
+// ---- 07-M copy, word for word (approved, 07-Q) -----------------------------------------------------------------
 
 export const TIME_COPY = {
   total: "Total",
@@ -35,7 +35,7 @@ export const TIME_TOASTS = {
 /** 07-M CSV columns, in order. */
 export const CSV_COLUMNS = ["Date", "Person", "Project or care plan", "Minutes", "Billable", "Note"] as const;
 
-// ---- placeholders (not in 07-M; each listed in the designer report) --------------------------------------------------------
+// ---- lines 07-M lacked, approved word for word in 07-Q (2026-10-26) --------------------------------------------------
 
 export const TIME_PENDING = {
   staleEntry: "Someone else changed this time entry.",

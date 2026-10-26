@@ -27,6 +27,7 @@ import {
   type LeadStage,
   RequestError,
 } from "../../api.ts";
+import { DateField } from "../../components/date-field.tsx";
 import { EmptyState, PageHeader, Skeleton, StatusPill, When } from "../../components/display.tsx";
 import { FormField } from "../../components/form.tsx";
 import {
@@ -340,11 +341,10 @@ function LeadView({
                   }
                 >
                   {(a) => (
-                    <input
+                    <DateField
                       {...a}
-                      type="date"
                       value={follow.date}
-                      onChange={(e) => setFollow({ ...follow, date: e.target.value })}
+                      onChange={(v) => setFollow({ ...follow, date: v })}
                     />
                   )}
                 </FormField>

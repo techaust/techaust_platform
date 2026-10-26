@@ -5,6 +5,7 @@
 import { type Dispatch, type FormEvent, useState } from "react";
 import { Link } from "react-router";
 import { api, fileDownloadHref, type ProjectPage, RequestError } from "../../api.ts";
+import { DateField } from "../../components/date-field.tsx";
 import { When } from "../../components/display.tsx";
 import { AlertTriangle, Clock, Download, FileText, Pencil, Receipt } from "../../components/icons.tsx";
 import { Markdown } from "../../components/markdown.tsx";
@@ -236,11 +237,10 @@ function Details(props: Parameters<typeof Overview>[0] & { canWrite: boolean }) 
               <label htmlFor="pd-startDate">
                 Start date<span className="field__optional"> (optional)</span>
               </label>
-              <input
+              <DateField
                 {...a11y("startDate")}
-                type="date"
                 value={f.startDate}
-                onChange={(e) => setF({ ...f, startDate: e.target.value })}
+                onChange={(v) => setF({ ...f, startDate: v })}
               />
               {err("startDate")}
             </div>
@@ -248,12 +248,11 @@ function Details(props: Parameters<typeof Overview>[0] & { canWrite: boolean }) 
               <label htmlFor="pd-targetDate">
                 Target date<span className="field__optional"> (optional)</span>
               </label>
-              <input
+              <DateField
                 {...a11y("targetDate")}
-                type="date"
                 min={f.startDate || undefined}
                 value={f.targetDate}
-                onChange={(e) => setF({ ...f, targetDate: e.target.value })}
+                onChange={(v) => setF({ ...f, targetDate: v })}
               />
               {err("targetDate")}
             </div>

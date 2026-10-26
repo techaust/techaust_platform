@@ -49,7 +49,7 @@ describe("the API's refusals in 07-P's words", () => {
   it("says a wrong type or size as 07-P does; other answers keep the server's sentence", () => {
     expect(signatureErrorIsWrongFile("file_too_large")).toBe(true);
     expect(signatureErrorIsWrongFile("type_not_allowed")).toBe(true);
-    expect(signatureErrorIsWrongFile("image_too_big")).toBe(false);
+    expect(signatureErrorIsWrongFile("image_too_big")).toBe(true);
     expect(signatureErrorIsWrongFile("stale_version")).toBe(false);
   });
   it("words the retry's known refusals", () => {
@@ -86,7 +86,7 @@ describe("the wording (07-P §3, §4)", () => {
       replace: "Replace",
       remove: "Remove",
       removeQuestion: "Remove the signature? Invoices issued already keep theirs.",
-      wrongFile: "Use a PNG or JPEG image up to 256 KB.",
+      wrongFile: "Use a PNG or JPEG image up to 256 KB and 2400 by 1200 pixels.",
     });
   });
 });

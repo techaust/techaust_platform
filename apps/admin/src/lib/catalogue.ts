@@ -1,8 +1,8 @@
 // Pure helpers of the catalogue screens (M4.1, ADM-CAT-01..05): the labels, the 07-L copy, the form of an entry and its
 // conversions (money in minor units through @techaust/core, percentages in basis points, quantities in milli-units, never
 // floats), what an edit sends (only the fields the person changed), the price history in words, the publish answer mapped to
-// the services to fix, and the template placeholders. Copy comes word for word from 07-L (a draft pending the owner); any
-// sentence 07-L lacks is in `PENDING`, marked as a placeholder, and listed in the designer report. Labels (buttons, columns,
+// the services to fix, and the template placeholders. Copy comes word for word from 07-L (approved with 07-Q); any
+// sentence 07-L lacked is in `PENDING`, in its 07-Q words (no tag). Labels (buttons, columns,
 // field names) come from the PRD (ADM-CAT-02) and the existing screens.
 import {
   type Currency,
@@ -152,7 +152,7 @@ export const TOASTS = {
 /** Reused from 07-K (the M3.4 notes use the same Markdown subset). */
 export const FORMATTING_HINT = "You can use **bold**, *italic*, lists and links.";
 
-// ---- placeholders (not in 07-L; each listed in the designer report) --------------------------------------------------------
+// ---- lines 07-L lacked, approved word for word in 07-Q (2026-10-26) --------------------------------------------------
 
 export const PLACEHOLDER_TAG = "[Placeholder]";
 

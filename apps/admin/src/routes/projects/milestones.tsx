@@ -9,6 +9,7 @@
 import { type FormEvent, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from "react";
 import { api, type MilestoneView, type ProjectPage, RequestError } from "../../api.ts";
 import { ConfirmDialog } from "../../components/confirm-dialog.tsx";
+import { DateField } from "../../components/date-field.tsx";
 import { Modal } from "../../components/dialog.tsx";
 import { FormField } from "../../components/form.tsx";
 import { AlertTriangle, Grip, Plus, Receipt } from "../../components/icons.tsx";
@@ -499,14 +500,7 @@ function MilestoneDialog(props: {
             </FormField>
           )}
           <FormField id="ms-due" label="Due date" optional>
-            {(a) => (
-              <input
-                {...a}
-                type="date"
-                value={f.dueDate}
-                onChange={(e) => set({ dueDate: e.target.value })}
-              />
-            )}
+            {(a) => <DateField {...a} value={f.dueDate} onChange={(v) => set({ dueDate: v })} />}
           </FormField>
         </div>
         <div className="dialog__actions">

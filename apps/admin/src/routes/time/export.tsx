@@ -3,6 +3,7 @@
 // every cell that starts with = + - or @ is defused so a spreadsheet never runs it as a formula). Nothing is built on the server.
 import { useRef, useState } from "react";
 import { api, type TimeEntry } from "../../api.ts";
+import { DateField } from "../../components/date-field.tsx";
 import { Modal } from "../../components/dialog.tsx";
 import { Download } from "../../components/icons.tsx";
 import { FieldError, Notice } from "../../components/ui.tsx";
@@ -80,18 +81,17 @@ export function ExportButton(props: {
           <div className="form-grid">
             <div className="field">
               <label htmlFor="csv-from">From</label>
-              <input
+              <DateField
                 id="csv-from"
-                type="date"
                 value={from}
                 aria-invalid={rangeError ? true : undefined}
                 aria-describedby={rangeError ? "csv-range-error" : undefined}
-                onChange={(e) => setFrom(e.target.value)}
+                onChange={(v) => setFrom(v)}
               />
             </div>
             <div className="field">
               <label htmlFor="csv-to">To</label>
-              <input id="csv-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+              <DateField id="csv-to" value={to} onChange={(v) => setTo(v)} />
             </div>
           </div>
           {rangeError && <FieldError id="csv-range-error">{rangeError}</FieldError>}

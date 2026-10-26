@@ -982,6 +982,20 @@
   max-width: var(--container-prose, 42rem);
 }
 
+/* The cover's lines, stacked as the PDF stacks them; the first (the client) leads. */
+.doc-cover {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.doc-cover__line > :last-child {
+  margin-bottom: 0;
+}
+
+.doc-cover__line:first-child {
+  font-weight: 600;
+}
+
 .doc-sheet__estimate {
   display: grid;
   gap: var(--space-5);

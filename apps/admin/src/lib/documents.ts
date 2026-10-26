@@ -3,7 +3,7 @@
 // autosave: `buildPatch` (the parts that changed, in the API's units) and `applySave` (the server's figures and ids onto the screen, never
 // replacing what the person is typing). Pure, so the copy and the rules are tested without a browser.
 //
-// Copy: 07-O (docs/07-content-appendix/O-m4.3-proposal-screens.md) is a DRAFT pending the owner's word-for-word approval. The sentences
+// Copy: 07-O (docs/07-content-appendix/O-m4.3-proposal-screens.md) is approved by the owner (with 07-Q, 2026-10-26). The sentences
 // the screens added after 07-O §3–§8 are 07-O §9 (`DOC_PENDING`: the lead accepted them as drafts, so they no longer carry a tag) and
 // §10 (the review fixes). Labels (buttons, columns, field names) come from 07-O, the PRD and the existing screens.
 //
@@ -47,7 +47,7 @@ import { bpToPercent, intIn, moneyFrom, moneyInput, percentToBp } from "./settin
 
 export { moneyText };
 
-// ---- 07-O copy, word for word (draft, pending the owner) ---------------------------------------------------------------------
+// ---- 07-O copy, word for word (approved, 07-Q) ---------------------------------------------------------------------
 
 export const DOC_COPY = {
   listHeading: "Proposals and estimates",
@@ -185,7 +185,7 @@ export const DOC_TOASTS = {
 
 // 07-O §7's audit labels live with the others in lib/audit.ts (ACTION_LABELS).
 
-// ---- 07-O §9: the designer's drafts, accepted by the lead as wording (PENDING the owner's word-for-word approval) ----------
+// ---- 07-O §9: the designer's drafts, accepted by the lead as wording (approved with 07-Q) ----------
 
 export const DOC_PENDING = {
   enterQty: "Enter a quantity like 1 or 2.5.",

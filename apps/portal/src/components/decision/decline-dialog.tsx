@@ -4,7 +4,6 @@
 import { type FormEvent, useId, useRef, useState } from "react";
 import { N, WORDS } from "../../copy-documents.ts";
 import { Modal } from "../dialog.tsx";
-import { ErrorLine } from "../pending.tsx";
 import { FieldError, Notice } from "../ui.tsx";
 
 export type DeclineReason = keyof typeof N.reasons;
@@ -156,11 +155,7 @@ export function DeclineDialog(props: {
             </dl>
             <p>{N.declineConfirmBody}</p>
           </div>
-          {error && (
-            <Notice tone="error">
-              <ErrorLine text={error} />
-            </Notice>
-          )}
+          {error && <Notice tone="error">{error}</Notice>}
           <div className="dialog__actions">
             <button
               type="button"

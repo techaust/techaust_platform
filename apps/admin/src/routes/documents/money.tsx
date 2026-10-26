@@ -199,8 +199,22 @@ export function ScheduleTable(props: { steps: ViewStep[]; currency: Currency }) 
 }
 
 /** A section's body as the document shows it (the notes Markdown subset), or the "write it or hide it" line when it is empty. */
-export function SectionBody({ bodyMd }: { bodyMd: string | null }) {
+export function SectionBody({ bodyMd, cover }: { bodyMd: string | null; cover?: boolean }) {
   if (!bodyMd || bodyMd.trim() === "") return <p className="muted">{DOC_COPY.writtenPerProposal}</p>;
+  // The cover is a stack of lines (client, service, …) as the PDF sets it, one per line; Markdown would join them into one sentence.
+  if (cover)
+    return (
+      <div className="doc-md doc-cover">
+        {bodyMd
+          .split("\n")
+          .map((l) => l.trim())
+          .filter(Boolean)
+          .map((l, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: fixed lines of a frozen text, never reordered
+            <Markdown key={i} source={l} className="doc-cover__line" />
+          ))}
+      </div>
+    );
   return <Markdown source={bodyMd} className="doc-md" />;
 }
 

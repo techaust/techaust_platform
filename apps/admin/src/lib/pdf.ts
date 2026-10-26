@@ -1,5 +1,5 @@
 // The PDF of a sent proposal or estimate and the signature image, as staff see them (M4.4): the wording, word for word from 07-P §3
-// and §4 (PENDING the owner's word-for-word approval), and the pure rules the screens follow. No I/O here.
+// and §4 (approved with 07-Q), and the pure rules the screens follow. No I/O here.
 import { SIGNATURE_MAX_BYTES, SIGNATURE_MIMES } from "@techaust/core/settings";
 
 export const PDF_COPY = {
@@ -24,7 +24,7 @@ export const SIGNATURE_COPY = {
   replace: "Replace",
   remove: "Remove",
   removeQuestion: "Remove the signature? Invoices issued already keep theirs.",
-  wrongFile: "Use a PNG or JPEG image up to 256 KB.",
+  wrongFile: "Use a PNG or JPEG image up to 256 KB and 2400 by 1200 pixels.",
 } as const;
 
 /** After this long without a PDF the screen says so and offers "Try again" (07-P §3: "after 5 minutes"). */
@@ -50,8 +50,8 @@ const SIGNATURE_TYPES = new Set<string>(SIGNATURE_MIMES);
 export const signatureFileOk = (file: { type: string; size: number }): boolean =>
   SIGNATURE_TYPES.has(file.type) && file.size > 0 && file.size <= SIGNATURE_MAX;
 
-/** The upload's refusals that 07-P words as "wrong type or size"; any other answer keeps the server's own sentence. */
-const WRONG_FILE_CODES = new Set(["file_too_large", "type_not_allowed"]);
+/** The upload's refusals that 07-Q Q6 words as one line (type, bytes or pixels); any other answer keeps the server's own sentence. */
+const WRONG_FILE_CODES = new Set(["file_too_large", "type_not_allowed", "image_too_big"]);
 export const signatureErrorIsWrongFile = (code: string): boolean => WRONG_FILE_CODES.has(code);
 
 /** The answer to a "Try again" refused with a known code, in 07-P's words; null keeps the server's own sentence. */

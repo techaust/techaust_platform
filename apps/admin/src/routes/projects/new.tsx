@@ -5,6 +5,7 @@
 import { type FormEvent, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { api, type ClientView, errorText, RequestError } from "../../api.ts";
+import { DateField } from "../../components/date-field.tsx";
 import { PageHeader } from "../../components/display.tsx";
 import { ErrorSummary, FormField, type SummaryError } from "../../components/form.tsx";
 import { Lock, Search } from "../../components/icons.tsx";
@@ -199,14 +200,7 @@ function NewProject() {
               )}
             </FormField>
             <FormField id={`${NP}-startDate`} label="Start date" optional error={errorOf(`${NP}-startDate`)}>
-              {(a) => (
-                <input
-                  {...a}
-                  type="date"
-                  value={f.startDate}
-                  onChange={(e) => set({ startDate: e.target.value })}
-                />
-              )}
+              {(a) => <DateField {...a} value={f.startDate} onChange={(v) => set({ startDate: v })} />}
             </FormField>
             <FormField
               id={`${NP}-targetDate`}
@@ -215,12 +209,11 @@ function NewProject() {
               error={errorOf(`${NP}-targetDate`)}
             >
               {(a) => (
-                <input
+                <DateField
                   {...a}
-                  type="date"
                   value={f.targetDate}
                   min={f.startDate || undefined}
-                  onChange={(e) => set({ targetDate: e.target.value })}
+                  onChange={(v) => set({ targetDate: v })}
                 />
               )}
             </FormField>

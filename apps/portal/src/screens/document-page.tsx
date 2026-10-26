@@ -8,7 +8,6 @@ import type { PdfView } from "../api.ts";
 import { DecisionPanel, type DecisionProps } from "../components/decision/decision-panel.tsx";
 import { DocumentPaper, sheetSections } from "../components/document/document-paper.tsx";
 import { Alert, ArrowLeft, ArrowRight, Clock, Download, Info } from "../components/icons.tsx";
-import { ErrorLine } from "../components/pending.tsx";
 import { StatusPill } from "../components/status-pill.tsx";
 import { N, WORDS } from "../copy-documents.ts";
 import { formatIstDateTime, kindWord } from "../lib/offers.ts";
@@ -142,9 +141,7 @@ export function DocumentPage(
               {props.problem && (
                 <div className="notice notice--warning decide__problem" role="alert">
                   <Alert size={20} />
-                  <div>
-                    <ErrorLine text={props.problem} />
-                  </div>
+                  <div>{props.problem}</div>
                 </div>
               )}
               <DecisionPanel {...props} />
