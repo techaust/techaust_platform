@@ -88,6 +88,24 @@ export const SchedulePanel = memo(function SchedulePanel(props: {
           {gap > 0 && <span className="sched-bar__gap" style={{ flexGrow: gap }} />}
         </div>
       )}
+      {props.steps.length > 0 && (
+        // The bar's labels: each segment carries its instalment's number (the list below numbers them the same) where it is wide
+        // enough to hold it. Hidden like the bar: the list says every share.
+        <span className="bar-scale sched-scale" aria-hidden="true">
+          {segs.map((bp, i) => {
+            const before = segs.slice(0, i).reduce((n, x) => n + x, 0);
+            return bp >= 800 ? (
+              <span
+                key={props.steps[i]?.uid}
+                className="bar-scale__at"
+                style={{ left: `${(before + bp / 2) / 100}%` }}
+              >
+                {i + 1}
+              </span>
+            ) : null;
+          })}
+        </span>
+      )}
       <ol className="qledger qledger--steps">
         {props.steps.map((s, i) => (
           <StepRow

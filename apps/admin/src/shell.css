@@ -1105,6 +1105,24 @@ body:has(.shell) {
   gap: var(--space-2);
 }
 
+/* From a tablet up the actions always sit at the right of the title, as on every page; a long title wraps instead of pushing
+   them under it. */
+@media (min-width: 48rem) {
+  .page-header__row {
+    flex-wrap: nowrap;
+    align-items: flex-start;
+  }
+
+  .page-header__title {
+    flex: 1 1 auto;
+  }
+
+  .page-header__actions {
+    flex: none;
+    flex-wrap: nowrap;
+  }
+}
+
 .page-header__lede {
   max-width: var(--container-lede);
   margin: var(--space-2) 0 0;
@@ -1228,6 +1246,11 @@ body:has(.shell) {
 }
 
 /* ---------- Times ---------- */
+
+/* A date inside a sentence (KeepDates): its day, month and year stay on one line. */
+.when--keep {
+  white-space: nowrap;
+}
 
 .when {
   display: grid;
@@ -2727,4 +2750,38 @@ table.diff__table td.diff__arrow {
   color: var(--color-text-muted);
   font-size: var(--text-caption);
   font-weight: 500;
+}
+
+/* ---------- Bar scales ----------
+   The few labels a thin bar needs to be read (the hours bar's 80 % mark, the discount meter's 0, 10 % and end, the schedule's 0 and
+   100 %): caption size, muted ink, never the series colour. Each label is centred on its point; the first and last sit inside the
+   bar's ends. Always aria-hidden: the words beside every bar carry the figures. */
+.bar-scale {
+  position: relative;
+  display: block;
+  height: calc(var(--text-caption) * var(--text-caption--line-height));
+  color: var(--color-text-muted);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.bar-scale__at {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+}
+
+.bar-scale__start {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.bar-scale__end {
+  position: absolute;
+  top: 0;
+  right: 0;
 }

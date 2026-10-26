@@ -56,10 +56,10 @@ export const CARE_STATUS_LABELS: Record<CareStatus, string> = {
 /** docs/04 ADM-CARE-01: none / 1 month. */
 export const ROLLOVER_LABELS: Record<RolloverRule, string> = { none: "None", one_month: "1 month" };
 
-type Pill = { tone: PillTone; icon: "send" | "clock" | "ban" | "flag" | "check" | "lock" };
+type Pill = { tone: PillTone; icon: "send" | "clock" | "ban" | "flag" | "check" | "lock" | "progress" };
 /** Icon + text + colour (docs/06 §5.5), never colour alone. */
 export const CARE_PILLS: Record<CareStatus, Pill> = {
-  active: { tone: "info", icon: "send" },
+  active: { tone: "info", icon: "progress" },
   paused: { tone: "warning", icon: "clock" },
   cancelled: { tone: "muted", icon: "ban" },
 };

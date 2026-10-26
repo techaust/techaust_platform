@@ -53,12 +53,12 @@ export const VISIBILITY_LABELS: Record<NoteVisibility, string> = {
 
 type Pill = {
   tone: PillTone;
-  icon: "pencil" | "check" | "clock" | "send" | "ban" | "lock" | "inbox" | "flag";
+  icon: "pencil" | "check" | "clock" | "send" | "ban" | "lock" | "inbox" | "flag" | "calendar" | "progress";
 };
 /** Icon + text + colour (docs/06 §5.5), never colour alone. */
 export const PROJECT_PILLS: Record<ProjectStatus, Pill> = {
-  planned: { tone: "neutral", icon: "pencil" },
-  active: { tone: "info", icon: "send" },
+  planned: { tone: "neutral", icon: "calendar" },
+  active: { tone: "info", icon: "progress" },
   on_hold: { tone: "warning", icon: "clock" },
   completed: { tone: "success", icon: "check" },
   cancelled: { tone: "muted", icon: "ban" },

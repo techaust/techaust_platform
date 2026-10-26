@@ -1166,16 +1166,31 @@ input[readonly] {
   margin-bottom: var(--space-5);
 }
 
+/* The actions stay at the dialog's bottom edge while a long dialog scrolls (one scroll, its buttons always in reach). */
 .dialog__actions {
+  position: sticky;
+  bottom: calc(-1 * var(--space-6));
+  z-index: 1;
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--space-2);
+  margin-inline: calc(-1 * var(--space-6));
+  margin-bottom: calc(-1 * var(--space-6));
+  padding: var(--space-4) var(--space-6) var(--space-6);
+  background: var(--color-surface-raised);
 }
 
 @media (max-width: 29.99rem) {
   .dialog {
     padding: var(--space-5);
+  }
+
+  .dialog__actions {
+    bottom: calc(-1 * var(--space-5));
+    margin-inline: calc(-1 * var(--space-5));
+    margin-bottom: calc(-1 * var(--space-5));
+    padding: var(--space-4) var(--space-5) var(--space-5);
   }
 
   .dialog__actions .btn {

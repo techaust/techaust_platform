@@ -22,6 +22,7 @@ import {
   versionLine,
 } from "../../lib/documents.ts";
 import type { ApprovalInfo, Blocker, Guard, QuoteType, VersionRow } from "../../lib/documents-api.ts";
+import { bpToPercent } from "../../lib/settings-form.ts";
 import { docHref } from "./parts.tsx";
 
 const OWNER_MARK_BP = 1000;
@@ -41,6 +42,14 @@ export function GuardRule({ guard, owner }: { guard: Guard | null; owner: boolea
       <span className="guard__track" aria-hidden="true">
         <span className="guard__fill" style={{ width: `${fill}%` }} />
         <span className="guard__mark" style={{ left: `${mark}%` }} />
+      </span>
+      {/* The meter's scale: 0, the owner's 10 % mark and the end (hidden like the bar; the line above says the figure). */}
+      <span className="bar-scale" aria-hidden="true">
+        <span className="bar-scale__start">0 %</span>
+        <span className="bar-scale__at" style={{ left: `${mark}%` }}>
+          {bpToPercent(OWNER_MARK_BP)} %
+        </span>
+        <span className="bar-scale__end">{bpToPercent(scale)} %</span>
       </span>
       {guard.needsApproval && (
         <p className="guard__over">{owner ? DOC_COPY.overTenOwner : DOC_COPY.overTen}</p>

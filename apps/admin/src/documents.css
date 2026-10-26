@@ -134,15 +134,16 @@
   line-height: var(--text-h4--line-height);
 }
 
+/* Send to over Validity, one under the other: the contact's name and email get the whole width (a select can't wrap its text),
+   and no control is stretched to its neighbour's height (batch review M3). */
 .doc-details__row {
   display: grid;
-  gap: 0 var(--space-5);
+  gap: var(--space-4);
+  align-items: start;
 }
 
-@media (min-width: 40rem) {
-  .doc-details__row {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
+.doc-details__row select {
+  max-width: 36rem;
 }
 
 .doc-details__row .field {
@@ -548,6 +549,10 @@
 /* ---------- The payment schedule ---------- */
 
 .doc-schedule .sched-bar {
+  margin-bottom: var(--space-1);
+}
+
+.doc-schedule .sched-scale {
   margin-bottom: var(--space-4);
 }
 
@@ -1210,10 +1215,8 @@
 .svc-pick__list {
   display: grid;
   gap: 0;
-  max-height: 22rem;
   margin: 0;
   padding: 0;
-  overflow-y: auto;
   list-style: none;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);

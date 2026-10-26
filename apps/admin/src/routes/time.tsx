@@ -15,7 +15,7 @@ import { LoadFailed, NoAccess, StaleNotice, useLoad } from "../components/states
 import { useToast } from "../components/toast.tsx";
 import { Notice } from "../components/ui.tsx";
 import { allowed } from "../lib/access.ts";
-import { careErrorText, clockText, dayText, hoursText } from "../lib/care.ts";
+import { careErrorText, dayText, hoursText } from "../lib/care.ts";
 import {
   dayHead,
   lockState,
@@ -194,7 +194,7 @@ function TimeScreen() {
               onClick={() => set({ week: previousWeek(week) })}
             >
               <ChevronLeft size={20} />
-              Previous week
+              Previous<span className="week-nav__word"> week</span>
             </button>
             <button
               type="button"
@@ -210,7 +210,7 @@ function TimeScreen() {
               disabled={week >= weekOf(today).start}
               onClick={() => set({ week: nextWeek(week) })}
             >
-              Next week
+              Next<span className="week-nav__word"> week</span>
               <ChevronRight size={20} />
             </button>
           </div>
@@ -404,10 +404,8 @@ function Timesheet({ data, today, showPeople }: { data: TimeWeek; today: string;
                       data-empty={!m || undefined}
                     >
                       {m ? (
-                        <>
-                          <span aria-hidden="true">{clockText(m)}</span>
-                          <span className="visually-hidden">{hoursText(m)}</span>
-                        </>
+                        // The same "1 h 30 min" as the totals beside it (batch review: one way to write a duration).
+                        hoursText(m)
                       ) : (
                         <span className="sheet__none">
                           <span aria-hidden="true">–</span>
