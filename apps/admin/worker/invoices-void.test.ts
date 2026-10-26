@@ -188,6 +188,18 @@ describe("void [Q1, Q2, LD7]", () => {
     }
   });
 
+  it("an anonymised client takes nothing new: the void is 409 client_anonymised and nothing is written", async () => {
+    const o = await owner();
+    const inv = await issued(o);
+    await env.DB.prepare("UPDATE clients SET anonymised_at = 3 WHERE id = ?").bind(inv.clientId).run();
+    const before = await invoiceRow(inv.id);
+    const res = await voidInvoice(o, inv.id);
+    expect(res.status).toBe(409);
+    expect(await codeOf(res)).toBe("client_anonymised");
+    expect(await invoiceRow(inv.id)).toEqual(before);
+    expect(await auditCount("invoice.void", inv.id)).toBe(0);
+  });
+
   it("only the owner, with a fresh code: Staff, Sales and the accountant are 403; the owner without a step-up is 403 step_up_required", async () => {
     const o = await owner();
     const inv = await issued(o);

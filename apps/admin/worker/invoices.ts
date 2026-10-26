@@ -11,7 +11,6 @@ import { ANONYMISED_CLIENT } from "@techaust/core/clients";
 import { approvalState } from "@techaust/core/documents";
 import { uuidv7 } from "@techaust/core/ids";
 import { INVOICE_FLOW_TYPES, isInvoiceFlowType, voidBlockers } from "@techaust/core/invoices";
-import { decide } from "@techaust/core/permissions";
 import { bundleOf, LOAD_STATEMENTS, loadStatements, type TermsRef } from "@techaust/db/documents";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
@@ -38,7 +37,6 @@ import {
   milestoneAmountOf,
   milestoneDraft,
   NEWEST_INVOICE_TERMS,
-  NOT_AN_INVOICE,
   readInvoiceSettings,
   taxContext,
   todayOf,
@@ -787,6 +785,8 @@ export const invoices = new Hono<AppEnv>()
         409,
       );
     if (d.updated_at !== f.expectedUpdatedAt) return err(c, STALE_VERSION, 409);
+    // An anonymised client takes nothing new (the standing rule, VERIFY WITH CA/LEGAL): a void is a write on its document.
+    if (ctx.client.anonymised_at !== null) return err(c, CLIENT_GONE, 409);
     const t = Math.max(Date.now(), d.updated_at + 1);
     // Every rule is in the statement: issued, nothing paid or credited, no issued child, never emailed, and the owner's session with a live step-up.
     const done = await mutate(c, {
@@ -794,7 +794,7 @@ export const invoices = new Hono<AppEnv>()
         .prepare(
           `UPDATE documents SET status = 'void', voided_at = ?3, void_reason = ?4, updated_at = ?3
            WHERE id = ?1 AND updated_at = ?2 AND status = 'issued' AND frozen_at IS NOT NULL AND type IN (${INVOICE_TYPES_SQL})
-             AND paid_minor = 0 AND credited_minor = 0
+             AND paid_minor = 0 AND credited_minor = 0 AND NOT ${clientGoneSql("client_id")}
              AND NOT EXISTS (SELECT 1 FROM documents x WHERE x.parent_id = documents.id AND x.frozen_at IS NOT NULL)
              AND NOT EXISTS (SELECT 1 FROM document_sends s WHERE s.document_id = documents.id)
              AND EXISTS (SELECT 1 FROM staff_sessions s JOIN staff_users o ON o.id = s.user_id WHERE s.id = ?5 AND s.revoked_at IS NULL AND s.step_up_until > ?3 AND o.role = 'owner' AND o.status = 'active')`,
@@ -823,12 +823,13 @@ export const invoices = new Hono<AppEnv>()
     if (!done) {
       const again = await db
         .prepare(
-          "SELECT status, updated_at, (SELECT step_up_until FROM staff_sessions WHERE id = ?2) AS step_up FROM documents WHERE id = ?1",
+          `SELECT status, updated_at, ${clientGoneSql("client_id")} AS gone, (SELECT step_up_until FROM staff_sessions WHERE id = ?2) AS step_up FROM documents WHERE id = ?1`,
         )
         .bind(id, u.sessionId)
-        .first<{ status: string; updated_at: number; step_up: number | null }>();
+        .first<{ status: string; updated_at: number; gone: number; step_up: number | null }>();
       if (!again) return err(c, NOT_FOUND, 404);
       if (again.updated_at !== f.expectedUpdatedAt) return err(c, STALE_VERSION, 409);
+      if (again.gone === 1) return err(c, CLIENT_GONE, 409);
       if (again.step_up === null || again.step_up <= t)
         return err(
           c,
@@ -846,5 +847,3 @@ export const invoices = new Hono<AppEnv>()
     }
     return c.json({ ok: true, status: "void", number: d.number_display, voidedAt: t, updatedAt: t });
   });
-
-export { decide, NOT_AN_INVOICE };

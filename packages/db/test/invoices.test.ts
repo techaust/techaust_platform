@@ -839,4 +839,28 @@ describe("invoiceIssueStatements [ADM-INV-03, ADM-INV-07, LD5]", () => {
       document_id: f.docId,
     });
   });
+
+  it("a milestone that is still pending (the first instalment of Start project) is invoiced too, and its delivery time is set then", async () => {
+    const f = await fixture();
+    const projectId = uuidv7();
+    await run(
+      "INSERT INTO projects (id, code, client_id, name, status, currency) VALUES (?, ?, ?, 'P', 'planned', 'INR')",
+      projectId,
+      `PRJ-T${++seq}`,
+      f.clientId,
+    );
+    const m = uuidv7();
+    await run(
+      "INSERT INTO milestones (id, project_id, position, title, amount_minor, status, document_id) VALUES (?, ?, 1, 'M', 118000, 'pending', ?)",
+      m,
+      projectId,
+      f.docId,
+    );
+    const a = await argsFor(f);
+    await runIssue(a);
+    expect(await first("SELECT status, delivered_at FROM milestones WHERE id = ?", m)).toEqual({
+      status: "invoiced",
+      delivered_at: a.now,
+    });
+  });
 });

@@ -11,9 +11,9 @@ import {
   codeOf,
   getInvoice,
   invoiceRow,
+  issueInvoice,
   type J,
   json,
-  mkInterClient,
   mkInvoice,
   mkInvoiceClient,
   mkOverseasClient,
@@ -344,6 +344,52 @@ describe("a draft from a milestone [ADM-PRJ-02, LD13]", () => {
     });
     expect(ok.status, await ok.clone().text()).toBe(200);
     expect((await json(ok)).totals.totalMinor).toBe(11_800_00);
+  });
+
+  it("a project that came from a proposal splits the milestone over the proposal's (SAC, rate) groups, in proportion, and the invoice can be issued at once", async () => {
+    const o = await owner();
+    const c = await mkInvoiceClient();
+    const proposalId = uuidv7();
+    const row = (sac: string, taxable: number) => ({
+      sac,
+      gstRateBp: 1800,
+      effectiveRateBp: 1800,
+      taxableMinor: taxable,
+      cgstMinor: (taxable * 9) / 100,
+      sgstMinor: (taxable * 9) / 100,
+      igstMinor: 0,
+    });
+    await insert("documents", {
+      id: proposalId,
+      type: "proposal",
+      client_id: c.clientId,
+      currency: "INR",
+      version_group_id: proposalId,
+      computed: JSON.stringify({ summary: [row("998314", 600_000), row("998313", 400_000)] }),
+    });
+    const m = await mkReadyMilestone(c.clientId, 11_800_00);
+    await env.DB.prepare("UPDATE projects SET source_document_id = ?1 WHERE id = ?2")
+      .bind(proposalId, m.projectId)
+      .run();
+    const res = await call("/invoices", {
+      cookie: o.cookie,
+      body: { clientId: c.clientId, fromMilestoneId: m.id },
+    });
+    expect(res.status, await res.clone().text()).toBe(201);
+    const made = await json(res);
+    const view = await getInvoice(o, made.id);
+    // 60 % and 40 % of Rs 11,800 tax included: taxable 6,000 and 4,000 at 18 %
+    expect(view.lines.map((l: J) => [l.sac, l.rateMinor, l.qtyMilli])).toEqual([
+      ["998314", 600_000, 1000],
+      ["998313", 400_000, 1000],
+    ]);
+    expect(view.lines[0].description).toBe("Design (SAC 998314, 18%)");
+    expect(view.totals.totalMinor).toBe(11_800_00);
+    expect(view.blockers).toEqual([]);
+    expect(view.issue.canIssue).toBe(true);
+    const issued = await issueInvoice(o, made.id);
+    expect(issued.status, await issued.clone().text()).toBe(200);
+    expect(await one("SELECT status FROM milestones WHERE id = ?", m.id)).toEqual({ status: "invoiced" });
   });
 
   it("the milestone must be ready to bill, of this client, with an amount; deleting the draft frees it", async () => {

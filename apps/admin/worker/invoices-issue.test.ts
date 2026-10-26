@@ -5,7 +5,7 @@ import { env } from "cloudflare:workers";
 import { issueFyOf } from "@techaust/core/invoices";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ROUTES } from "./guard.ts";
-import { insert, mkDoc } from "./test-clients.ts";
+import { mkDoc } from "./test-clients.ts";
 import { call, countOf, one, rows, sessionFor, withEnv } from "./test-helpers.ts";
 import {
   auditCount,
@@ -186,6 +186,39 @@ describe("who may issue [ADM-INV-03, ADM-AUTH-08, ADM-APR-01]", () => {
     const ok = await issueInvoice(stepped, made.id);
     expect(ok.status, await ok.clone().text()).toBe(200);
     expect(await invoiceRow(made.id)).toMatchObject({ status: "issued", issued_by: stepped.id });
+  });
+
+  it("the step-up is checked INSIDE the statement: one that ends between the read and the batch is 403 and writes nothing", async () => {
+    const o = await owner();
+    const made = await mkInvoice(o);
+    const before = await snapshot(made.id);
+    const res = await call(
+      `/invoices/${made.id}/issue`,
+      { cookie: o.cookie, body: await issueBodyOf(made.id) },
+      beforeBatchHolding("issue_guard", async () => {
+        await env.DB.prepare("UPDATE staff_sessions SET step_up_until = ?2 WHERE id = ?1")
+          .bind(o.sessionId, Date.now() - 1)
+          .run();
+      }),
+    );
+    expect(res.status, await res.clone().text()).toBe(403);
+    expect(await codeOf(res)).toBe("step_up_required");
+    expect(await snapshot(made.id)).toEqual(before);
+    // a revoked session is the same: nothing is written
+    const fresh = await owner();
+    const again = await mkInvoice(fresh);
+    const b2 = await snapshot(again.id);
+    const r2 = await call(
+      `/invoices/${again.id}/issue`,
+      { cookie: fresh.cookie, body: await issueBodyOf(again.id) },
+      beforeBatchHolding("issue_guard", async () => {
+        await env.DB.prepare("UPDATE staff_sessions SET revoked_at = ?2 WHERE id = ?1")
+          .bind(fresh.sessionId, Date.now())
+          .run();
+      }),
+    );
+    expect(r2.status).toBeGreaterThanOrEqual(400);
+    expect(await snapshot(again.id)).toEqual(b2);
   });
 
   it("Staff is 403 approval_required; Sales and the accountant are 403; nothing is written", async () => {

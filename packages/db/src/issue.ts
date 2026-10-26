@@ -320,11 +320,11 @@ export function invoiceIssueStatements(db: D1Database, a: InvoiceIssueArgs): Sen
     main: [guardStatement(db, a.documentId), ...counterStatements(db, a.series, a.fy), freeze],
     postAudit: [
       issueResultStatement(db, a.documentId, a.series, a.fy),
-      // The milestone this invoice was made from is now invoiced; `delivered_at` was set when it became ready to bill (LD12) and is kept.
+      // The milestone this invoice was made from is now invoiced (one made by "Start project" (M4.5) is still pending when its first-instalment draft is issued, so both count); `delivered_at` was set when it became ready to bill (LD12) and is kept.
       db
         .prepare(
           `UPDATE milestones SET status = 'invoiced', delivered_at = coalesce(delivered_at, ?2), updated_at = ?2
-           WHERE document_id = ?1 AND status = 'ready_to_bill' AND ${FROZEN_BY_THIS_BATCH}`,
+           WHERE document_id = ?1 AND status IN ('pending', 'ready_to_bill') AND ${FROZEN_BY_THIS_BATCH}`,
         )
         .bind(a.documentId, a.now),
       // An issue request that was waiting for exactly this content is approved: by the approver in the approval path, by the owner who issued directly.
