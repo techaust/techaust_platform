@@ -502,13 +502,16 @@ export function offerTriggerStatements(): string[] {
 export function invoiceTriggerStatements(): string[] {
   const q = (xs: readonly string[]) => xs.map((x) => `'${x}'`).join(", ");
   // 1. The moves, grouped by (from, types, unsettled) so each group is one clause.
-  const groups = new Map<
-    string,
-    { from: string; tos: string[]; types?: readonly string[]; unsettled: boolean }
-  >();
+  type FlowGroup = { from: string; tos: string[]; types: readonly string[] | undefined; unsettled: boolean };
+  const groups = new Map<string, FlowGroup>();
   for (const m of INVOICE_STATUS_FLOW) {
     const key = `${m.from}|${m.types?.join(",") ?? ""}|${m.unsettled === true}`;
-    const g = groups.get(key) ?? { from: m.from, tos: [], types: m.types, unsettled: m.unsettled === true };
+    const g: FlowGroup = groups.get(key) ?? {
+      from: m.from,
+      tos: [],
+      types: m.types,
+      unsettled: m.unsettled === true,
+    };
     g.tos.push(m.to);
     groups.set(key, g);
   }
