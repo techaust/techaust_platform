@@ -417,7 +417,8 @@ export const documents = new Hono<AppEnv>()
       today: todayIst(),
       convertedTo: conv ? { kind: conv.kind, id: conv.id } : null,
     });
-    return c.json({ ...view, ...offer });
+    // The send path applies the client's own setting when the body omits attachPdf; the dialog shows that same value even to a role that can't read the client.
+    return c.json({ ...view, ...offer, attachPdfDefault: ctx.client.attach_pdf === 1 });
   })
 
   // ---- discard a draft (ADM-PROP-05: only an unsent draft can go) ----
