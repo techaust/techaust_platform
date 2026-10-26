@@ -125,7 +125,7 @@ describe("viewRecipient", () => {
     displayName: "A",
     gstin: "19AAAAA0000A1Z5",
     stateCode: "19",
-    address: { line1: "1 Road" },
+    address: { line1: "1 Road", city: "Balurghat", country: "IN" },
     email: "a@example.test",
     country: "IN",
     contactId: "c1",
