@@ -239,7 +239,8 @@ export type DraftScheduleStep = {
 
 /** Everything a person edits in a draft, in order. Ids (the document's, a line's, a section's) are not part of it. */
 export type DraftContent = {
-  readonly type: QuoteType;
+  /** A proposal or estimate, or (M5.1, `invoice-model.ts`) an invoice-family type: the hash writes it as given. */
+  readonly type: string;
   readonly clientId: string;
   readonly contactId: string | null;
   readonly title: string | null;

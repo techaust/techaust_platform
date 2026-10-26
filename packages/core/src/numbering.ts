@@ -67,6 +67,17 @@ export function validateFormat(format: NumberingFormat): FormatCheck {
     return { ok: false, error: 'Use only capital letters A–Z, digits 0–9, "/" and "-"' };
   }
   if (parts.middle === "") return { ok: false, error: "Put a separator between {FY} and {N}" };
+  // LD18 (VERIFY WITH CA/LEGAL, 08-A §4): the e-invoice schema wants the number to start with a letter or 1-9, never 0, "/" or "-".
+  // The number starts with the text before the first token; with none, the FY token (always 1-9 for a real FY) or the counter,
+  // which starts with a padding zero whenever the padding is more than one digit.
+  const first = parts.before[0];
+  if (
+    first !== undefined
+      ? first === "/" || first === "-" || first === "0"
+      : !parts.fyFirst && format.padding > 1
+  ) {
+    return { ok: false, error: 'The number must not start with 0, "/" or "-"' };
+  }
   const maxLength = literals.length + 4 + format.padding;
   if (maxLength > MAX_NUMBER_LENGTH) {
     return {

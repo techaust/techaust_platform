@@ -89,6 +89,8 @@ const MATRIX = {
   "invoices.read": { owner: "allow", staff: "allow", accountant: "allow" },
   "invoices.draft": { owner: "allow", staff: "allow" },
   "invoices.issue": { owner: "step-up", staff: "approval" },
+  // M5.1 (Q2, VERIFY WITH CA/LEGAL): only the Owner voids an issued invoice, with a fresh code; Staff cannot request a void.
+  "invoices.void": { owner: "step-up" },
   // Manual payments (Staff entries wait for the Owner's verification)
   "payments.read": { owner: "allow", staff: "allow", accountant: "allow" },
   "payments.record": { owner: "allow", staff: "approval" },

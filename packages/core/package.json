@@ -21,6 +21,7 @@
     "./gstin": "./src/gstin.ts",
     "./form-labels": "./src/form-labels.ts",
     "./ids": "./src/ids.ts",
+    "./invoices": "./src/invoices.ts",
     "./lead-ref": "./src/lead-ref.ts",
     "./schedule-text": "./src/schedule-text.ts",
     "./lead-lifecycle": "./src/lead-lifecycle.ts",
