@@ -270,6 +270,27 @@ describe("POST /documents/:id/pdf/retry", () => {
   });
 });
 
+describe("the PDF retry and an anonymised client", () => {
+  it("is refused with 409 client_anonymised and writes nothing (no audit row, no queue message)", async () => {
+    const { s, made } = await sentDoc();
+    const clientId = (
+      await one<{ client_id: string }>("SELECT client_id FROM documents WHERE id = ?", made.id)
+    )?.client_id;
+    await env.DB.prepare("UPDATE clients SET anonymised_at = 1 WHERE id = ?").bind(clientId).run();
+    const q = pdfQueue();
+    const res = await call(`/documents/${made.id}/pdf/retry`, { cookie: s.cookie, body: {} }, q.env);
+    expect(res.status).toBe(409);
+    expect((await json(res)).error.code).toBe("client_anonymised");
+    expect(q.sent).toEqual([]);
+    expect(
+      await one(
+        "SELECT 1 AS x FROM audit_log WHERE action = 'document.pdf_retry' AND entity_id = ?",
+        made.id,
+      ),
+    ).toBeNull();
+  });
+});
+
 describe("the document view carries the PDF state", () => {
   it("none for a draft, pending once sent, ready with a fingerprint after", async () => {
     const s = await owner();

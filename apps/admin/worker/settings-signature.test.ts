@@ -19,7 +19,44 @@ function png(width = 400, height = 120, pad = 0): Uint8Array {
   for (let i = 33; i < b.length; i++) b[i] = i % 251;
   return b;
 }
-const jpeg = (pad = 0) => new Uint8Array([0xff, 0xd8, 0xff, 0xe0, ...new Array(pad).fill(7)]);
+/** A JPEG header (SOI, a JFIF segment, SOF0 with the size) and `pad` filler bytes; not a decodable image, which the sniffer never needs. */
+const jpeg = (pad = 0, width = 100, height = 50) =>
+  new Uint8Array([
+    0xff,
+    0xd8,
+    0xff,
+    0xe0,
+    0,
+    16,
+    0x4a,
+    0x46,
+    0x49,
+    0x46,
+    0,
+    1,
+    1,
+    0,
+    0,
+    1,
+    0,
+    1,
+    0,
+    0,
+    0xff,
+    0xc0,
+    0,
+    11,
+    8,
+    height >> 8,
+    height & 255,
+    width >> 8,
+    width & 255,
+    1,
+    1,
+    0x11,
+    0,
+    ...new Array(pad).fill(7),
+  ]);
 
 const company = async (s: { cookie: string }) =>
   json(await call("/settings/groups/company", { cookie: s.cookie }));
@@ -35,7 +72,24 @@ describe("sniffSignature", () => {
       width: 400,
       height: 120,
     });
-    expect(sniffSignature(jpeg())).toMatchObject({ ok: true, mime: "image/jpeg", ext: "jpg", width: null });
+    expect(sniffSignature(jpeg())).toMatchObject({
+      ok: true,
+      mime: "image/jpeg",
+      ext: "jpg",
+      width: 100,
+      height: 50,
+    });
+  });
+  it("refuses a JPEG over 2400 by 1200 pixels (a small file with a huge size in its header), one with no frame header, and a zero size", () => {
+    expect(sniffSignature(jpeg(0, 2401, 100))).toEqual({ ok: false, reason: "pixels" });
+    expect(sniffSignature(jpeg(0, 100, 1201))).toEqual({ ok: false, reason: "pixels" });
+    expect(sniffSignature(jpeg(0, 65535, 65535))).toEqual({ ok: false, reason: "pixels" });
+    expect(sniffSignature(jpeg(0, 0, 10))).toEqual({ ok: false, reason: "pixels" });
+    expect(sniffSignature(jpeg(0, 2400, 1200))).toMatchObject({ ok: true, width: 2400, height: 1200 });
+    expect(sniffSignature(new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 7, 7, 7, 7]))).toEqual({
+      ok: false,
+      reason: "type",
+    });
   });
   it("refuses everything else: SVG, GIF, PDF, text, a PNG with a bad chunk, a zero or oversize PNG", () => {
     const enc = (s: string) => new TextEncoder().encode(s);
@@ -84,14 +138,14 @@ describe("PUT /settings/signature", () => {
     expect(new Uint8Array(await img.arrayBuffer())).toEqual(bytes);
   });
 
-  it("a replacement gets a new key, removes the old object and says replaced", async () => {
+  it("a replacement gets a new key, keeps the old object and says replaced", async () => {
     const s = await owner();
     const first = (await json(await put(s, png(300, 100, 10)))).signature;
     const second = (await json(await put(s, jpeg(80)))).signature;
     expect(second.key).not.toBe(first.key);
     expect(second.mime).toBe("image/jpeg");
     expect(await env.DOCS.head(second.key)).not.toBeNull();
-    expect(await env.DOCS.head(first.key)).toBeNull();
+    expect(await env.DOCS.head(first.key)).not.toBeNull();
     const audit = await one<{ summary: string }>(
       "SELECT summary FROM audit_log WHERE action = 'settings.signature.update' ORDER BY rowid DESC LIMIT 1",
     );
@@ -103,6 +157,9 @@ describe("PUT /settings/signature", () => {
     const before = (await rows("SELECT key FROM settings")).length;
     expect((await put(s, new TextEncoder().encode("<svg onload=alert(1)></svg>"))).status).toBe(415);
     expect((await put(s, png(5000, 100))).status).toBe(415);
+    const huge = await put(s, jpeg(0, 9000, 9000));
+    expect(huge.status).toBe(415);
+    expect((await json(huge)).error.code).toBe("image_too_big");
     expect((await put(s, png(100, 100, 256 * 1024))).status).toBe(413);
     expect(
       (await call("/settings/signature", { cookie: s.cookie, method: "PUT", raw: new Uint8Array(0) })).status,
@@ -125,13 +182,13 @@ describe("PUT /settings/signature", () => {
 });
 
 describe("DELETE /settings/signature", () => {
-  it("clears the reference, removes the object, audits it, and a second delete is 404", async () => {
+  it("clears the reference, keeps the object, audits it, and a second delete is 404", async () => {
     const s = await owner();
     const ref = (await json(await put(s, png(200, 80, 20)))).signature;
     const res = await call("/settings/signature", { cookie: s.cookie, method: "DELETE" });
     expect(res.status).toBe(200);
     expect((await company(s)).value.signature).toBeNull();
-    expect(await env.DOCS.head(ref.key)).toBeNull();
+    expect(await env.DOCS.head(ref.key)).not.toBeNull();
     expect((await call("/settings/signature", { cookie: s.cookie })).status).toBe(404);
     expect(
       await one("SELECT 1 AS x FROM audit_log WHERE action = 'settings.signature.delete'"),

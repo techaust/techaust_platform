@@ -1462,7 +1462,8 @@ a.pdf-panel__action:hover {
 
 @media (prefers-reduced-motion: no-preference) {
   .pdf-panel[data-phase="making"] .pdf-glyph > span {
-    animation: pdf-glyph-line 1.6s var(--ease-standard) infinite alternate;
+    /* Three there-and-back cycles (six runs of an alternating animation), then still: no pulsing for minutes (WCAG 2.2.2). */
+    animation: pdf-glyph-line 1.6s var(--ease-standard) 6 alternate;
   }
 
   .pdf-panel[data-phase="making"] .pdf-glyph > span:nth-child(3) {
