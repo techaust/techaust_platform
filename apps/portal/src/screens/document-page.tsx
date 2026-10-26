@@ -84,6 +84,10 @@ export function DocumentPage(
     /** The list to go back to; null on the link view (no list there). */
     backHref: string | null;
     onDownloadPdf: () => void;
+    /** The sheet's own "Download PDF" (beside the validity line): its failure is said in the acceptance block. */
+    onDownloadPdfInSheet: () => void;
+    /** A failed download from the acceptance block, said under it. */
+    sheetAlert: ReactNode;
     /** A newer version replaced the one asked for: the version now shown (the latest). */
     replacedBy: number | null;
     /** Extra notices above the document (the link view's sign-in offer). */
@@ -131,7 +135,7 @@ export function DocumentPage(
         <Aside view={props.view} d={props} onDownload={props.onDownloadPdf} />
         <DocumentPaper
           view={props.view}
-          onDownload={props.onDownloadPdf}
+          onDownload={props.onDownloadPdfInSheet}
           downloading={props.downloading === "pdf"}
           decision={
             <>
@@ -144,6 +148,7 @@ export function DocumentPage(
                 </div>
               )}
               <DecisionPanel {...props} />
+              {props.sheetAlert && <div className="decide__alert">{props.sheetAlert}</div>}
             </>
           }
         />

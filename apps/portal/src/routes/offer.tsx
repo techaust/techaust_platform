@@ -64,7 +64,7 @@ export function OfferScreen(props: {
   const [state, setState] = useState<State>({ phase: "loading" });
   const [acceptedHere, setAcceptedHere] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  const [alert, setAlert] = useState<string | null>(null);
+  const [alert, setAlert] = useState<{ at: "top" | "sheet"; text: string } | null>(null);
   const [downloading, setDownloading] = useState<"pdf" | "accepted" | "certificate" | null>(null);
   const alive = useRef(true);
 
@@ -185,7 +185,8 @@ export function OfferScreen(props: {
     }
   }
 
-  async function download(what: "pdf" | "accepted" | "certificate") {
+  /** A download; a failure is said next to the button that asked (the summary at the top, or the acceptance block). */
+  async function download(what: "pdf" | "accepted" | "certificate", at: "top" | "sheet") {
     if (downloading) return;
     setDownloading(what);
     setAlert(null);
@@ -193,7 +194,10 @@ export function OfferScreen(props: {
       const d = what === "certificate" ? await source.certificate(doc.id) : await source.pdf(doc.id);
       saveDownload(d, pdfName(doc.numberDisplay, doc.version, what === "certificate" ? "-certificate" : ""));
     } catch (e) {
-      setAlert(e instanceof RequestError && e.code === "pdf_pending" ? N.pdfPreparing : errorText(e));
+      setAlert({
+        at,
+        text: e instanceof RequestError && e.code === "pdf_pending" ? N.pdfPreparing : errorText(e),
+      });
     } finally {
       setDownloading(null);
     }
@@ -208,15 +212,17 @@ export function OfferScreen(props: {
       notices={
         <>
           {props.notices}
-          {alert && <AlertLine text={alert} />}
+          {alert?.at === "top" && <AlertLine text={alert.text} />}
         </>
       }
       problem={problem}
+      sheetAlert={alert?.at === "sheet" ? <AlertLine text={alert.text} /> : null}
       downloading={downloading}
       onAccept={onAccept}
       onDecline={onDecline}
-      onDownload={(what) => download(what)}
-      onDownloadPdf={() => download("pdf")}
+      onDownload={(what) => download(what, "sheet")}
+      onDownloadPdf={() => download("pdf", "top")}
+      onDownloadPdfInSheet={() => download("pdf", "sheet")}
     />
   );
 }

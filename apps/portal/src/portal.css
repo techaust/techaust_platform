@@ -1956,6 +1956,10 @@ textarea[aria-invalid="true"] {
   margin-bottom: var(--space-5);
 }
 
+.decide__alert {
+  margin-top: var(--space-4);
+}
+
 .dsec--decision .validity {
   margin: 0 0 var(--space-6);
 }
