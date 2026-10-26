@@ -3,7 +3,7 @@
 // verdigris button with the plain address under it, light and dark), each with its plain-text twin.
 // Words: 07 §8 (subjects and core sentences, "Review and accept" per docs/13), 07-O (approval emails name the document by title and
 // version) and 07-N §4 (the fact labels, the PDF note, `next_step` and the TecHaust-side body; PENDING the owner's approval). A line that
-// 07-N doesn't have is a visible "[Placeholder]". Every variable is escaped before it reaches HTML.
+// 07-N doesn't have is in 07-Q (approved 2026-10-26). Every variable is escaped before it reaches HTML.
 import { headerValue } from "./headers.ts";
 import { type LayoutOptions, type Para, para, type Rendered, securityEmail } from "./templates.ts";
 
@@ -90,7 +90,7 @@ export function offerAcceptedClient(d: OfferAcceptedData, opts: LayoutOptions): 
       ),
     ],
     // 07-N has no label for this button yet (the link opens the accepted version, with both downloads).
-    action: { label: "[Placeholder] Open in the portal", url: d.url },
+    action: { label: "Open in the portal", url: d.url },
     after: [para(`Next: ${step(d.next_step)}.`)],
     actionFirst: true,
   });

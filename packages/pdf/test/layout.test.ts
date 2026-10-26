@@ -126,7 +126,7 @@ describe("the money (07-P §1)", () => {
     for (const label of ["Sub-total", "Discount", "Taxable value", "CGST", "SGST", "Round-off", "Total"])
       expect(totals).toContain(`<th scope="row">${label}</th>`);
     expect(totals).toContain("Amount in words: Rupees");
-    expect(totals).toContain("Prices exclude GST (18 %).");
+    expect(totals).toContain("Prices exclude GST.");
     expect(totals).not.toContain("International projects");
   });
 
@@ -164,7 +164,7 @@ describe("terms, acceptance and the integrity line", () => {
     const e = await envOf("short-intra-inr");
     for (const s of e.snapshot.sections) if (s.kind === "terms") s.bodyMd = "";
     const html = documentBody(toPdfView(e));
-    expect(html).toContain(`The terms below are version ${e.snapshot.terms.version} of our proposal terms.`);
+    expect(html).toContain(`The terms below are version ${e.snapshot.terms.version} of our terms.`);
     expect(html).toContain("Payment is due as scheduled.");
   });
 

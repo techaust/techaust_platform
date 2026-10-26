@@ -65,9 +65,15 @@ const hex = (b: ArrayBuffer) =>
 export const BELL_COPY = {
   failed: (number: string, version: number) =>
     `The PDF for ${number} v${version} could not be made. Open it to try again.`,
+  /** A PDF that failed its integrity check (07-Q Q9, owner 2026-10-26): it was not sent; the same check would fail again, so a person looks. */
+  integrity: (label: string) =>
+    `The PDF of ${label} didn't match its saved copy, so it wasn't sent. A developer needs to look at it before it can be sent.`,
   half: "Half of today's PDF allowance is used.",
   quota: "Today's PDF allowance is used up. Waiting PDFs are made tomorrow.",
 } as const;
+
+/** What a bell calls a document: its number, else "Untitled" (a sent version always has a number; this is the safety net). Never the title: a staff-typed title can hold a client name, and a bell outlives an anonymised client (07-Q, lead 2026-10-26). */
+export const documentLabel = (number: string | null): string => number?.trim() || "Untitled";
 
 export const sha256Bytes = async (bytes: Uint8Array): Promise<string> =>
   hex(await crypto.subtle.digest("SHA-256", bytes));
@@ -132,16 +138,18 @@ export async function processSnapshot(env: Env, msg: PdfSnapshotMessage): Promis
   const bundle = bundleOf<TermsRow>(await env.DB.batch(loadStatements(env.DB, msg.documentId)));
   if (!bundle) return skip("not_found");
   const d = bundle.document;
+  const label = documentLabel(d.number_display);
   if (d.pdf_sha256 !== null) return skip("done");
   // An erased client takes nothing new: no envelope, no PDF, no bell (the standing rule for anonymised clients; VERIFY WITH CA/LEGAL).
   if (await clientIsGone(env, d.client_id)) return skip("client_gone");
-  const failedTitle = BELL_COPY.failed(d.number_display ?? "this document", d.version);
   const made = await envelopeOfBundle(bundle);
   if (!made.ok) {
     if (made.code === "unsupported_type" || made.code === "not_sent") return skip(made.code);
     // The rows do not reproduce what the send route sealed: nothing is written, the owners are told, and a retry cannot help.
     logEvent("pdf.refused", { stage: "snapshot", code: made.code });
-    await env.DB.batch([bell(env, "pdf.failed", "document", d.id, failedTitle, `/proposals/${d.id}`)]);
+    await env.DB.batch([
+      bell(env, "pdf.failed", "document", d.id, BELL_COPY.integrity(label), `/proposals/${d.id}`),
+    ]);
     return "refused";
   }
   const e = made.envelope;
@@ -151,7 +159,9 @@ export async function processSnapshot(env: Env, msg: PdfSnapshotMessage): Promis
   if (!put.created && (await put.existing.text()) !== text) {
     // A different envelope already holds the key: never overwritten, never rendered from; a person looks.
     logEvent("pdf.refused", { stage: "snapshot", code: "key_conflict" });
-    await env.DB.batch([bell(env, "pdf.failed", "document", d.id, failedTitle, `/proposals/${d.id}`)]);
+    await env.DB.batch([
+      bell(env, "pdf.failed", "document", d.id, BELL_COPY.integrity(label), `/proposals/${d.id}`),
+    ]);
     return "refused";
   }
   await env.DB.prepare("UPDATE documents SET snapshot_r2_key = ?2 WHERE id = ?1 AND snapshot_r2_key IS NULL")
@@ -289,7 +299,7 @@ export async function processRender(
         "pdf.failed",
         "document",
         row.id,
-        BELL_COPY.failed(row.number_display ?? "this document", row.version),
+        BELL_COPY.integrity(documentLabel(row.number_display)),
         `/proposals/${row.id}`,
       ),
     ]);
@@ -502,8 +512,7 @@ export async function processPdfDeadLetter(env: Env, body: unknown, now = Date.n
         "pdf.failed",
         "acceptance",
         `${body.acceptanceId}:${todayIst(now)}`,
-        // [Placeholder] no line for this bell in 07-N or 07-P yet: the owner approves the words with the batch.
-        "[Placeholder] An acceptance certificate could not be made; it will be tried again tonight",
+        "An acceptance certificate couldn't be made. We'll try again tonight.",
         "/",
       ),
     ]);

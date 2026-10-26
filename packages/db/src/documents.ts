@@ -123,6 +123,8 @@ export type VersionRow = {
 };
 /** A terms version without its text: what an admin route needs (the pin, shown as id, version and hash). */
 export type TermsRef = { id: string; kind: string; version: number; sha256: string };
+/** A terms version whose text may be absent: NULL for a draft's read, the frozen text for a sent version's (the staff read view). */
+export type TermsView = TermsRef & { body_md?: string | null };
 /** A terms version with its text (the PDF and the portal render it, M4.4 and M4.5). */
 export type TermsRow = TermsRef & { body_md: string };
 export type ApprovalRow = {
@@ -173,6 +175,9 @@ export const LOAD_DOCUMENT_SQL = {
   /** The same row without the (up to 20 KB) text: the admin routes never need it. */
   termsRef:
     "SELECT id, kind, version, sha256 FROM terms_versions WHERE id = (SELECT terms_version_id FROM documents WHERE id = ?1)",
+  /** The text only for a frozen (sent) version: a draft's read never carries the (up to 20 KB) text. */
+  termsFrozen:
+    "SELECT id, kind, version, CASE WHEN (SELECT frozen_at FROM documents WHERE id = ?1) IS NOT NULL THEN body_md END AS body_md, sha256 FROM terms_versions WHERE id = (SELECT terms_version_id FROM documents WHERE id = ?1)",
   approvals:
     "SELECT a.id, a.kind, a.status, a.content_sha256, a.requested_by, a.decided_by, a.decided_at, a.reason, a.note, a.created_at, (SELECT u.name FROM staff_users u WHERE u.id = a.requested_by) AS requested_by_name, (SELECT u.name FROM staff_users u WHERE u.id = a.decided_by) AS decided_by_name FROM approvals a WHERE a.document_id = ?1 AND a.kind = 'discount' ORDER BY a.created_at DESC, a.id DESC LIMIT 5",
 } as const;
@@ -189,12 +194,13 @@ export const LOAD_STATEMENTS = 7;
 
 /**
  * The statements of `loadDocument`, for a caller that wants them in a batch of its own (one D1 call costs CPU on the Free plan).
- * `terms: "ref"` reads the terms row without its text (read the bundle with `bundleOf<TermsRef>`).
+ * `terms: "ref"` reads the terms row without its text (read the bundle with `bundleOf<TermsRef>`); `"frozen"` reads the text only when the
+ * document is a frozen (sent) version, else `body_md` is NULL (read it with `bundleOf<TermsView>`).
  */
 export function loadStatements(
   db: D1Database,
   id: string,
-  opts: { terms?: "full" | "ref" } = {},
+  opts: { terms?: "full" | "ref" | "frozen" } = {},
 ): D1PreparedStatement[] {
   const q = LOAD_DOCUMENT_SQL;
   return [
@@ -203,7 +209,9 @@ export function loadStatements(
     db.prepare(q.sections).bind(id),
     db.prepare(q.schedule).bind(id),
     db.prepare(q.versions).bind(id),
-    db.prepare(opts.terms === "ref" ? q.termsRef : q.terms).bind(id),
+    db
+      .prepare(opts.terms === "ref" ? q.termsRef : opts.terms === "frozen" ? q.termsFrozen : q.terms)
+      .bind(id),
     db.prepare(q.approvals).bind(id),
   ];
 }

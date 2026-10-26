@@ -4,8 +4,7 @@
 // fingerprints in full). Grayscale-safe: nothing is said by colour; the rule and hairlines read as black and grey. The total's rupee sign
 // comes from the embedded Archivo's own U+20B9 face (the same `TECHAUST_PDF_FONT_DATA` the documents use), so it never falls back.
 //
-// Words: 07-N §5 (PENDING the owner's approval) and 07-P §1 ("Prepared for", the footer line); a label 07-N doesn't have yet carries a
-// visible "[Placeholder]" (listed in the M4.5 designer report).
+// Words: 07-N §5 and 07-P §1 ("Prepared for", the footer line), with the labels 07-N lacked as approved in 07-Q (CERT lines).
 //
 // The contract the tests rely on:
 //   data-testid="typed-name"  the name the person typed
@@ -14,6 +13,7 @@
 // Every value goes through `esc`; nothing is loaded from outside (the page's CSP refuses it anyway). The IP address, the user agent and the
 // country are printed because they ARE the evidence (docs/08 L-11).
 import { esc } from "../escape.ts";
+import { footerLine } from "../footer.ts";
 import { PDF_LOGOS, PDF_SYMBOL } from "../generated/assets.ts";
 import { PDF_COPY } from "./copy.ts";
 import { cssString } from "./styles.ts";
@@ -43,11 +43,11 @@ export type CertificateView = {
   snapshotSha256: string;
   termsVersion: string;
   termsSha256: string;
+  /** The frozen Settings "Email on documents" of the sent document; absent on older versions (the footer then prints the default). */
+  emailOnDocuments?: string;
 };
 
-const PH = "[Placeholder] ";
-
-/** 07-N §5, word for word; `PH` marks the labels 07-N doesn't have yet. */
+/** 07-N §5, word for word, plus the labels of 07-Q. */
 export const CERTIFICATE_COPY = {
   title: "Acceptance certificate",
   statement: "This certificate records an electronic acceptance through the TecHaust client portal.",
@@ -61,28 +61,29 @@ export const CERTIFICATE_COPY = {
   utc: "Date and time (UTC)",
   ip: "IP address",
   browser: "Browser",
-  country: `${PH}Country`,
-  how: `${PH}How it was accepted`,
-  viaLink: `${PH}From the emailed link`,
-  viaSession: `${PH}Signed in to the client portal`,
-  evidence: `${PH}Evidence`,
+  country: "Country",
+  how: "How it was accepted",
+  viaLink: "From the emailed link",
+  viaSession: "Signed in to the client portal",
+  evidence: "Evidence",
   pdfSha: "Document fingerprint (SHA-256 of the accepted PDF)",
-  snapshotSha: `${PH}Fingerprint of the sent copy (SHA-256)`,
-  termsVersion: `${PH}Terms version`,
-  termsSha: `${PH}Terms fingerprint (SHA-256)`,
+  snapshotSha: "Fingerprint of the sent copy (SHA-256)",
+  termsVersion: "Terms version",
+  termsSha: "Terms fingerprint (SHA-256)",
 } as const;
 
 const C = CERTIFICATE_COPY;
 const SYMBOL_URI = `data:image/svg+xml,${encodeURIComponent(PDF_SYMBOL)}`;
 
-export const CERTIFICATE_CSS = `
+/** The certificate's stylesheet; `footer` is the page footer line (07-Q Q11: the frozen "Email on documents", through `footerLine`). */
+export const certificateCss = (footer: string): string => `
 html { font-kerning: normal; text-rendering: optimizeLegibility; }
 body { margin: 0; font-weight: 400; overflow-wrap: break-word; }
 p { margin: 0; }
 h1, h2 { margin: 0; }
 @page {
   @bottom-left {
-    content: ${cssString(PDF_COPY.footer.brand)};
+    content: ${cssString(footer)};
     padding-left: 6mm;
     background: url("${SYMBOL_URI}") no-repeat left center / 3.6mm 3.6mm;
     font-family: var(--font-sans);
@@ -125,6 +126,10 @@ td { font-variant-numeric: tabular-nums lining-nums; }
 .cert__who th { width: 50.8mm; }
 .mono { font-family: var(--font-mono); font-size: var(--print-small); word-break: break-all; line-height: 1.5; }
 `;
+
+/** The footer line of a certificate: the frozen address when there is one, else the default. */
+export const certificateFooter = (v: CertificateView): string =>
+  v.emailOnDocuments ? footerLine(v.emailOnDocuments) : PDF_COPY.footer.brand;
 
 const row = (label: string, value: string, cls = ""): string =>
   `<tr><th scope="row">${esc(label)}</th><td${cls ? ` class="${cls}"` : ""}>${esc(value)}</td></tr>`;

@@ -7,13 +7,27 @@ import { Link } from "react-router";
 import { digitsOnly } from "../lib/format.ts";
 import { Alert, ArrowLeft, Check, Copy, Info } from "./icons.tsx";
 
-/** The primary lockup, in its on-dark version when the OS is in dark mode (docs/06 §1). */
+/** The primary lockup, in its on-dark version when the page is dark (docs/06 §1). The page's theme is `data-theme` (the
+ * in-app choice, else the OS), so both versions are in the page and CSS shows one (app.css, like the top bar's mark); a
+ * `<picture>` media query would follow the OS only and show ink on a dark page. */
 export function Logo() {
   return (
-    <picture>
-      <source srcSet={logoDark} media="(prefers-color-scheme: dark)" />
-      <img src={logoColor} alt="TecHaust Technologies" className="logo" width="285" height="40" />
-    </picture>
+    <span className="logo-pair">
+      <img
+        src={logoColor}
+        alt="TecHaust Technologies"
+        className="logo logo--on-light"
+        width="285"
+        height="40"
+      />
+      <img
+        src={logoDark}
+        alt="TecHaust Technologies"
+        className="logo logo--on-dark"
+        width="285"
+        height="40"
+      />
+    </span>
   );
 }
 

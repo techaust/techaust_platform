@@ -117,6 +117,7 @@ async function world(
     portal?: boolean;
     pdfKey?: string;
     recipient?: string;
+    issuerEmail?: string;
   } = {},
 ) {
   const owner = await staff("owner", { name: "Rupak" });
@@ -148,6 +149,7 @@ async function world(
       gstin: null,
       stateCode: "19",
       logo: "x",
+      ...(o.issuerEmail ? { email: o.issuerEmail } : {}),
     },
     sender: { staffId: sender.id, name: sender.name, email: sender.email },
   });
@@ -1027,6 +1029,17 @@ describe("the confirmation link is for the address that accepted (M2) [ADM-PROP-
     expect(client?.data.url).not.toContain("#t=");
     expect(await all("SELECT 1 FROM offer_links WHERE acceptance_id = ?", a)).toEqual([]);
     expect(queued.filter((m) => m.template === "offer.accepted.staff").length).toBeGreaterThan(0);
+  });
+});
+
+describe("the certificate footer address is the one frozen in the offer (Q11) [ADM-PROP-08]", () => {
+  it("is read from the document's issuer; an older issuer without it gives none (the footer then prints the default)", async () => {
+    const w = await world({});
+    const a = await accepted(w, { certificate: false });
+    expect((await readCertificateView(db, a))?.view.emailOnDocuments).toBeUndefined();
+    const w2 = await world({ issuerEmail: "accounts@example.test" });
+    const b = await accepted(w2, { certificate: false });
+    expect((await readCertificateView(db, b))?.view.emailOnDocuments).toBe("accounts@example.test");
   });
 });
 

@@ -253,6 +253,13 @@
       "when": 1792967880041,
       "tag": "0035_offer_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "6",
+      "when": 1793019191017,
+      "tag": "0036_anonymised_client_name",
+      "breakpoints": true
     }
   ]
 }

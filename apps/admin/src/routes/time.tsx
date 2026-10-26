@@ -9,13 +9,13 @@ import { useSearchParams } from "react-router";
 import { api, RequestError, type TimeEntry, type TimeWeek } from "../api.ts";
 import { ConfirmDialog } from "../components/confirm-dialog.tsx";
 import { type Column, DataTable } from "../components/data-table.tsx";
-import { EmptyState, PageHeader, Skeleton, StatusPill } from "../components/display.tsx";
+import { PageHeader, Skeleton, StatusPill } from "../components/display.tsx";
 import { ChevronLeft, ChevronRight, Clock, Lock, Pencil, Plus, Trash } from "../components/icons.tsx";
 import { LoadFailed, NoAccess, StaleNotice, useLoad } from "../components/states.tsx";
 import { useToast } from "../components/toast.tsx";
 import { Notice } from "../components/ui.tsx";
 import { allowed } from "../lib/access.ts";
-import { careErrorText, clockText, dayText, hoursText } from "../lib/care.ts";
+import { careErrorText, dayText, hoursText } from "../lib/care.ts";
 import {
   dayHead,
   lockState,
@@ -194,7 +194,9 @@ function TimeScreen() {
               onClick={() => set({ week: previousWeek(week) })}
             >
               <ChevronLeft size={20} />
-              Previous week
+              <span>
+                Previous<span className="week-nav__word"> week</span>
+              </span>
             </button>
             <button
               type="button"
@@ -210,7 +212,9 @@ function TimeScreen() {
               disabled={week >= weekOf(today).start}
               onClick={() => set({ week: nextWeek(week) })}
             >
-              Next week
+              <span>
+                Next<span className="week-nav__word"> week</span>
+              </span>
               <ChevronRight size={20} />
             </button>
           </div>
@@ -232,16 +236,18 @@ function TimeScreen() {
         )}
       </section>
 
-      <Entries
-        key={`${week}|${person}|${target ?? ""}|${entriesKey}`}
-        from={week}
-        to={weekOf(week).end}
-        filters={filters}
-        viewer={viewer}
-        showPeople={readAll && !person}
-        onEdit={(entry) => setEditing({ entry, override: lockState(entry, viewer) === "override" })}
-        onDelete={setDeleting}
-      />
+      {!(sheet.state === "ready" && sheet.data.totalMinutes === 0) && (
+        <Entries
+          key={`${week}|${person}|${target ?? ""}|${entriesKey}`}
+          from={week}
+          to={weekOf(week).end}
+          filters={filters}
+          viewer={viewer}
+          showPeople={readAll && !person}
+          onEdit={(entry) => setEditing({ entry, override: lockState(entry, viewer) === "override" })}
+          onDelete={setDeleting}
+        />
+      )}
 
       <EntryDialog
         open={editing !== null}
@@ -337,11 +343,13 @@ function Timesheet({ data, today, showPeople }: { data: TimeWeek; today: string;
   const rows = sheetRows(data.groups);
   const totals = new Map(data.dayTotals.map((d) => [d.workDate, d]));
   const billable = data.dayTotals.reduce((n, d) => n + d.billableMinutes, 0);
+  // An empty week is one quiet line inside the week's panel (never a card in a card); the Entries panel is left out then.
   if (data.totalMinutes === 0)
     return (
-      <EmptyState icon={<Clock />} title={TIME_COPY.emptyWeek.replace(/\.$/, "")} headingLevel={3}>
-        {null}
-      </EmptyState>
+      <p className="panel-empty week-empty">
+        <Clock size={20} />
+        <span>{TIME_COPY.emptyWeek}</span>
+      </p>
     );
   return (
     <>
@@ -400,10 +408,8 @@ function Timesheet({ data, today, showPeople }: { data: TimeWeek; today: string;
                       data-empty={!m || undefined}
                     >
                       {m ? (
-                        <>
-                          <span aria-hidden="true">{clockText(m)}</span>
-                          <span className="visually-hidden">{hoursText(m)}</span>
-                        </>
+                        // The same "1 h 30 min" as the totals beside it (batch review: one way to write a duration).
+                        hoursText(m)
                       ) : (
                         <span className="sheet__none">
                           <span aria-hidden="true">–</span>

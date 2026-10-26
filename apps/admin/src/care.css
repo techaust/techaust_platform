@@ -32,7 +32,8 @@
   display: block;
   height: 0.5rem;
   overflow: hidden;
-  background: var(--color-fill-subtle);
+  /* A recessive track that still reads on the surface in both themes (fill-subtle is the surface's own tone in dark). */
+  background: color-mix(in srgb, var(--color-border-control) 40%, var(--color-surface));
   border-radius: var(--radius-sm);
 }
 
@@ -109,7 +110,7 @@
   white-space: nowrap;
 }
 
-@media (min-width: 48.01rem) and (max-width: 79.99rem) {
+@media (min-width: 48rem) and (max-width: 79.99rem) {
   .care-table .dtable__table {
     min-width: 50rem;
   }
@@ -404,6 +405,28 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
+}
+
+/* A phone: the three buttons share one row; "week" after Previous and Next is kept for screen readers only. */
+@media (max-width: 29.99rem) {
+  .week-nav__buttons {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .week-nav__buttons .btn {
+    padding-inline: var(--space-2);
+  }
+
+  .week-nav__word {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
 }
 
 .week-totals {
@@ -906,12 +929,10 @@
   list-style: none;
 }
 
+/* Every row reads the same: what happened, then when, on its own line (never beside a short line and under a long one). */
 .activity-item {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-1) var(--space-4);
+  display: grid;
+  gap: var(--space-1);
   padding: var(--space-2) 0;
   border-top: 1px solid var(--color-border);
 }

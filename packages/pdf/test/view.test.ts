@@ -1,7 +1,7 @@
 // toPdfView: pre-formatted strings, no arithmetic, empty supplier fields left out.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { countryName, formatMicros, formatQty, shortIsoDate } from "../src/format.ts";
+import { countryName, formatMicros, formatQty, longIsoDate, shortIsoDate } from "../src/format.ts";
 import { DEFAULT_VIEW_CONFIG, toPdfView } from "../src/view.ts";
 import { buildFixture, FIXTURE_NAMES, SAMPLE_SUPPLIER_GSTIN } from "./fixtures/index.ts";
 
@@ -115,6 +115,19 @@ describe("toPdfView", () => {
     ]);
   });
 
+  it("prints Settings 'Email on documents' in the supplier block and the footer; an older version falls back to the default (07-Q Q11)", async () => {
+    const { envelope } = await buildFixture("short-intra-inr");
+    const withEmail = structuredClone(envelope);
+    withEmail.snapshot.header.issuer.company.email = "accounts@example.test";
+    const v = toPdfView(withEmail);
+    expect(v.footer.sender).toBe("accounts@example.test");
+    expect(v.footer.brand).toBe("TecHaust Technologies · techaust.com · accounts@example.test");
+    expect(v.supplier.lines.at(-1)).toBe("accounts@example.test");
+    expect(toPdfView(envelope).footer.brand).toBe(
+      "TecHaust Technologies · techaust.com · hello@techaust.com",
+    );
+  });
+
   it("builds the recipient block", async () => {
     const v = toPdfView((await buildFixture("short-intra-inr")).envelope);
     expect(v.recipient.name).toBe("Sample Client");
@@ -171,6 +184,18 @@ describe("format helpers", () => {
   it("shortIsoDate keeps what it cannot read", () => {
     expect(shortIsoDate("2026-01-05")).toBe("05 Jan 26");
     expect(shortIsoDate("later")).toBe("later");
+  });
+  it("longIsoDate prints the four-digit year and keeps what it cannot read", () => {
+    expect(longIsoDate("2026-01-05")).toBe("05 Jan 2026");
+    expect(longIsoDate("later")).toBe("later");
+  });
+  it("toPdfView with longDates writes four-digit years in every date; the default stays short", async () => {
+    const { envelope } = await buildFixture("short-intra-inr");
+    const v = toPdfView(envelope, undefined, { longDates: true });
+    expect(v.issueDate).toBe("26 Oct 2026");
+    expect(v.validUntil).toBe("10 Nov 2026");
+    expect(v.validityNote).toBe("Valid until 10 Nov 2026");
+    expect(toPdfView(envelope).validUntil).toBe("10 Nov 26");
   });
   it("countryName names a country and keeps an unknown code", () => {
     expect(countryName("IN")).toBe("India");

@@ -53,7 +53,7 @@ export const CATALOGUE: readonly CatalogueSeed[] = [
   },
   {
     code: "S2",
-    name: "App Rescue & Production-Readiness Audit",
+    name: "App Rescue and Production-Readiness Audit",
     category: "advise",
     short:
       "A code, security and performance review of an app built quickly, with a risk-ranked fix list and an optional fixed-price hardening sprint.",
@@ -95,7 +95,7 @@ export const CATALOGUE: readonly CatalogueSeed[] = [
   },
   {
     code: "S5",
-    name: "Custom Web Apps & Business Portals",
+    name: "Custom Web Apps and Business Portals",
     category: "build",
     short:
       "Internal tools, client and dealer portals, and the Excel sheet your business secretly runs on, rebuilt as a proper web app.",
@@ -109,7 +109,7 @@ export const CATALOGUE: readonly CatalogueSeed[] = [
   },
   {
     code: "S6",
-    name: "MVP & SaaS Product Development",
+    name: "MVP and SaaS Product Development",
     category: "build",
     short:
       "A production-grade first version in 6–10 weeks, with staging from day one and the code handed over to you.",
@@ -136,7 +136,7 @@ export const CATALOGUE: readonly CatalogueSeed[] = [
   },
   {
     code: "S8",
-    name: "UI/UX & Design Systems",
+    name: "UI/UX and Design Systems",
     category: "build",
     short:
       "UX research, wireframes, UI design and design-system starters. Usually part of a build; available on its own.",
@@ -164,7 +164,7 @@ export const CATALOGUE: readonly CatalogueSeed[] = [
   },
   {
     code: "S10",
-    name: "Workflow Automation & AI Agents",
+    name: "Workflow Automation and AI Agents",
     category: "automate",
     short:
       "Hand off the repetitive steps between email, sheets, CRM and accounting, with monitoring so nothing fails silently.",
@@ -244,7 +244,7 @@ export const CATALOGUE: readonly CatalogueSeed[] = [
   },
   {
     code: "S15",
-    name: "Payments & Billing Modules",
+    name: "Payments and Billing Modules",
     category: "connect",
     short:
       "Razorpay, Cashfree or Stripe integration, UPI Autopay, subscriptions, payment links, webhooks and reconciliation.",

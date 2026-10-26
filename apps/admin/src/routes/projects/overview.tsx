@@ -2,8 +2,10 @@
 // owner and staff, sending only what changed and the `updatedAt` it was loaded with; a 409 shows the shared stale notice), the
 // milestones timeline with the total against the budget, the five newest notes and files, and the figures that arrive with later
 // modules (billed vs paid with invoicing, hours with time logs), which say so in the 07-K words instead of showing a zero.
-import { type Dispatch, type FormEvent, useState } from "react";
+import { type Dispatch, type FormEvent, useEffect, useState } from "react";
+import { Link } from "react-router";
 import { api, fileDownloadHref, type ProjectPage, RequestError } from "../../api.ts";
+import { DateField, useUnreadDates } from "../../components/date-field.tsx";
 import { When } from "../../components/display.tsx";
 import { AlertTriangle, Clock, Download, FileText, Pencil, Receipt } from "../../components/icons.tsx";
 import { Markdown } from "../../components/markdown.tsx";
@@ -12,6 +14,7 @@ import { useToast } from "../../components/toast.tsx";
 import { FieldError, Notice } from "../../components/ui.tsx";
 import { allowed } from "../../lib/access.ts";
 import { hoursLoggedLine } from "../../lib/care.ts";
+import { OPEN_IT } from "../../lib/documents.ts";
 import {
   COPY,
   type DetailsErrors,
@@ -42,6 +45,8 @@ export function Overview(props: {
   reload: Reload;
   onStale: () => void;
   onTab: (k: TabKey) => void;
+  /** Reports whether a Details date field holds text that is not a date, so the page's unsaved-changes guard counts it. */
+  onUnreadDates?: (any: boolean) => void;
 }) {
   const user = useUser();
   const canWrite = allowed(user.role, "projects.write") && !props.data.clientAnonymised;
@@ -91,10 +96,16 @@ export function Overview(props: {
           </h2>
           <dl className="facts figures">
             <Fact label="Proposal">
-              <span className="panel-empty">
-                <FileText size={20} />
-                <span>{COPY.linkedProposal}</span>
-              </span>
+              {props.data.project.sourceDocumentId ? (
+                <Link to={`/documents/${encodeURIComponent(props.data.project.sourceDocumentId)}`}>
+                  {OPEN_IT}
+                </Link>
+              ) : (
+                <span className="panel-empty">
+                  <FileText size={20} />
+                  <span>{COPY.linkedProposal}</span>
+                </span>
+              )}
             </Fact>
           </dl>
         </section>
@@ -120,6 +131,12 @@ function Details(props: Parameters<typeof Overview>[0] & { canWrite: boolean }) 
   const f = d?.value ?? stored;
   const setF = (value: DetailsForm | null) => props.draft({ type: "details", value, base: stored });
   const [errors, setErrors] = useState<DetailsErrors>({});
+  const dates = useUnreadDates<"startDate" | "targetDate">();
+  const { onUnreadDates } = props;
+  useEffect(() => {
+    onUnreadDates?.(dates.any);
+    return () => onUnreadDates?.(false);
+  }, [onUnreadDates, dates.any]);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const people = useLoad(() => (props.canWrite ? api.leadAssignees() : Promise.resolve(null)), "");
@@ -127,7 +144,7 @@ function Details(props: Parameters<typeof Overview>[0] & { canWrite: boolean }) 
   async function save(e: FormEvent) {
     e.preventDefault();
     if (!d) return;
-    const errs = detailsErrors(f, project.currency);
+    const errs = detailsErrors(f, project.currency, dates.unread);
     setErrors(errs);
     const first = Object.keys(errs)[0];
     if (first) {
@@ -143,6 +160,7 @@ function Details(props: Parameters<typeof Overview>[0] & { canWrite: boolean }) 
       });
       toast("success", r.changed ? TOASTS.projectSaved : "No change: that's already saved.");
       setF(null);
+      dates.reset();
       props.reload();
     } catch (err) {
       const field = err instanceof RequestError ? FIELD_OF[err.code] : undefined;
@@ -225,27 +243,27 @@ function Details(props: Parameters<typeof Overview>[0] & { canWrite: boolean }) 
               {err("budget")}
             </div>
             <div className="field">
-              <label htmlFor="pd-startDate">
+              <label htmlFor="pd-startDate" id="pd-startDate-label">
                 Start date<span className="field__optional"> (optional)</span>
               </label>
-              <input
+              <DateField
                 {...a11y("startDate")}
-                type="date"
+                {...dates.bind("startDate")}
                 value={f.startDate}
-                onChange={(e) => setF({ ...f, startDate: e.target.value })}
+                onChange={(v) => setF({ ...f, startDate: v })}
               />
               {err("startDate")}
             </div>
             <div className="field">
-              <label htmlFor="pd-targetDate">
+              <label htmlFor="pd-targetDate" id="pd-targetDate-label">
                 Target date<span className="field__optional"> (optional)</span>
               </label>
-              <input
+              <DateField
                 {...a11y("targetDate")}
-                type="date"
+                {...dates.bind("targetDate")}
                 min={f.startDate || undefined}
                 value={f.targetDate}
-                onChange={(e) => setF({ ...f, targetDate: e.target.value })}
+                onChange={(v) => setF({ ...f, targetDate: v })}
               />
               {err("targetDate")}
             </div>
@@ -257,6 +275,7 @@ function Details(props: Parameters<typeof Overview>[0] & { canWrite: boolean }) 
               disabled={busy}
               onClick={() => {
                 setF(null);
+                dates.reset();
                 setErrors({});
                 setFailure(null);
               }}

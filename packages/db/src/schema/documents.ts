@@ -94,6 +94,8 @@ export type IssuerSnapshot = {
     stateCode: string;
     /** The brand logo file the document is printed with (a `BRAND_LOGOS` name, the settings' `logoLight` at send); frozen with it so a later settings change never changes a sent offer (M4.4). */
     logo: string;
+    /** Settings "Email on documents" at send, printed in the PDF footer (07-Q Q11); absent on versions sent before it was frozen. */
+    email?: string;
   };
   sender: { staffId: string; name: string; email: string };
 };

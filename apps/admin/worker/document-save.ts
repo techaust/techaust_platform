@@ -10,6 +10,7 @@
 // a computed value. The catalogue reference of a line is copied from the catalogue by the server and kept across saves.
 import { CATALOGUE_UNITS } from "@techaust/core/catalogue";
 import {
+  CONTACT_TOKEN_RE,
   checkSections,
   LINE_DETAIL_MAX,
   SCHEDULE_DETAIL_MAX,
@@ -18,6 +19,7 @@ import {
   VALIDITY_DAYS_MAX,
 } from "@techaust/core/documents";
 import { SCHEDULE_TRIGGERS } from "@techaust/core/schedule-text";
+import { wholeWordPattern } from "@techaust/core/text";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { clientGoneSql } from "./anonymised.ts";
@@ -109,6 +111,21 @@ export const patchBody = z.strictObject({
   schedule: z.optional(z.array(stepIn).check(z.maxLength(24))),
 });
 
+const TOKEN = "{{client.contact}}";
+
+/** The Acceptance text with the old contact's name (or the placeholder, spaced or not) replaced by the new name (or the placeholder). */
+export function renameContact<S extends { kind: string; bodyMd: string | null }>(
+  sections: S[],
+  from: string | null,
+  to: string | null,
+): S[] {
+  const target = to ?? TOKEN;
+  const pattern = from === null ? CONTACT_TOKEN_RE : wholeWordPattern([from]);
+  return sections.map((x) =>
+    x.kind === "acceptance" && x.bodyMd ? { ...x, bodyMd: x.bodyMd.replace(pattern, () => target) } : x,
+  );
+}
+
 export const documentSave = new Hono<AppEnv>().patch("/:id", param(idParam), body(patchBody), async (c) => {
   const { id } = c.req.valid("param");
   const f = c.req.valid("json");
@@ -139,6 +156,7 @@ export const documentSave = new Hono<AppEnv>().patch("/:id", param(idParam), bod
   const settings = readSettings(ctx.settingsRows);
   let state = stateOfBundle(ctx.bundle);
   let contact = ctx.contact;
+  const contactBefore = ctx.contact;
 
   // fields
   const fl = f.fields;
@@ -186,8 +204,17 @@ export const documentSave = new Hono<AppEnv>().patch("/:id", param(idParam), bod
     state = { ...state, lines: made.lines };
   }
   // sections
-  if (f.sections) {
-    const sections = resolveSections(f.sections, state.sections);
+  // The Acceptance text names the draft's contact; when the contact changes in this save the name follows (Q14), whether or not the sections were sent too (a stale text
+  // still holding the old name is renamed; a text that already has the new name has nothing to rename). Whole words only. The rename runs BEFORE the
+  // limits are checked, so a longer name that pushes a text over the limit is a 400 on this save. Clearing the contact puts `{{client.contact}}` back,
+  // which blocks the send until a contact is set again. A sent version keeps its snapshot: only a draft reaches here.
+  const renames =
+    fl?.contactId !== undefined &&
+    (contact?.id ?? null) !== (contactBefore?.id ?? null) &&
+    (contactBefore?.name || TOKEN) !== (contact?.name || TOKEN);
+  if (f.sections || renames) {
+    let sections = f.sections ? resolveSections(f.sections, state.sections) : state.sections;
+    if (renames) sections = renameContact(sections, contactBefore?.name || null, contact?.name || null);
     const issues = checkSections(sections);
     if (issues.length > 0)
       return c.json(

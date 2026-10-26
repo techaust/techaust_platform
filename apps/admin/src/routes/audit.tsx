@@ -9,6 +9,7 @@ import { describeUserAgent } from "@techaust/core/user-agent";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { type AuditEntry, type AuditQuery, api, ensureStepUp, errorText } from "../api.ts";
+import { DateField } from "../components/date-field.tsx";
 import { EmptyState, PageHeader, Skeleton } from "../components/display.tsx";
 import { ArrowRight, Download, History } from "../components/icons.tsx";
 import { LoadFailed, NoAccess, useLoad } from "../components/states.tsx";
@@ -96,7 +97,12 @@ function AuditLog() {
       { replace: true },
     );
   const filtered = !!(f.actor || f.entity || f.action || f.from || f.to);
-  const clear = () => setParams({}, { replace: true });
+  // Clear filters also empties a date field whose text was never a date (its value was already empty, so nothing else would).
+  const [clears, setClears] = useState(0);
+  const clear = () => {
+    setParams({}, { replace: true });
+    setClears((n) => n + 1);
+  };
 
   const actions = everything
     ? Object.keys(ACTION_LABELS)
@@ -219,24 +225,30 @@ function AuditLog() {
             })}
           </select>
         </div>
-        <div className="field">
-          <label htmlFor="au-from">From</label>
-          <input
+        <div className="field filters__field-date">
+          <label htmlFor="au-from" id="au-from-label">
+            From
+          </label>
+          <DateField
+            key={`au-from-${clears}`}
             id="au-from"
-            type="date"
+            keepLastValid
             value={f.from}
             max={f.to || undefined}
-            onChange={(e) => set("from", e.target.value)}
+            onChange={(v) => set("from", v)}
           />
         </div>
-        <div className="field">
-          <label htmlFor="au-to">To</label>
-          <input
+        <div className="field filters__field-date">
+          <label htmlFor="au-to" id="au-to-label">
+            To
+          </label>
+          <DateField
+            key={`au-to-${clears}`}
             id="au-to"
-            type="date"
+            keepLastValid
             value={f.to}
             min={f.from || undefined}
-            onChange={(e) => set("to", e.target.value)}
+            onChange={(v) => set("to", v)}
           />
         </div>
         <div className="filters__foot">
@@ -244,7 +256,9 @@ function AuditLog() {
             {page.state === "loading"
               ? "Loading…"
               : page.state === "ready"
-                ? `${entries.length === 1 ? "1 entry" : `${entries.length} entries`} on this page, times in IST`
+                ? entries.length === 0
+                  ? ""
+                  : `${entries.length === 1 ? "1 entry" : `${entries.length} entries`} on this page, times in IST`
                 : ""}
           </p>
           {filtered && (

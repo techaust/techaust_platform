@@ -79,7 +79,7 @@ export const APPROVAL_EXISTS = e(
   "approval_exists",
   "This exact version is already approved. Send it, or change it first",
 );
-export const APPROVAL_PENDING = e("approval_pending", "An approval is already waiting for the owner");
+export const APPROVAL_PENDING = e("approval_pending", "An approval is already waiting for the owner.");
 export const APPROVAL_EXPIRED = e(
   "approval_expired",
   "The document changed after the request, so the approval expired",
@@ -958,7 +958,8 @@ export function sendBlockers(
   const names = unresolvedIn([
     s.title,
     ...s.lines.flatMap((l) => [l.description, l.detail]),
-    ...s.sections.flatMap((x) => [x.title, x.bodyMd]),
+    // A hidden section is never frozen, sent or printed, so its placeholders block nothing.
+    ...s.sections.filter((x) => !x.hidden).flatMap((x) => [x.title, x.bodyMd]),
     ...s.schedule.flatMap((x) => [x.label, x.detail]),
   ]);
   if (names.length > 0) out.push({ code: "unresolved_placeholders", names });

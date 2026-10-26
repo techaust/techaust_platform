@@ -71,6 +71,7 @@ function header(h: SnapshotHeader): SnapshotHeader {
         gstin: c.gstin,
         stateCode: c.stateCode,
         logo: c.logo,
+        ...(c.email ? { email: c.email } : {}),
       },
       sender: { staffId: h.issuer.sender.staffId, name: h.issuer.sender.name, email: h.issuer.sender.email },
     },

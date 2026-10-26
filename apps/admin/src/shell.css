@@ -1074,12 +1074,15 @@ body:has(.shell) {
   color: var(--color-link-hover);
 }
 
+/* At least as tall as a button, so a title sits at the same height whether or not the page has an action (the catalogue's
+   tabs, one with an action and two without, no longer move their h1). */
 .page-header__row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3) var(--space-6);
+  min-height: var(--target-min);
 }
 
 .page-header__title {
@@ -1103,6 +1106,23 @@ body:has(.shell) {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
+}
+
+/* From a tablet up the actions always sit at the right of the title, as on every page; a long title wraps instead of pushing
+   them under it. */
+@media (min-width: 48rem) {
+  .page-header__row {
+    flex-wrap: nowrap;
+  }
+
+  .page-header__title {
+    flex: 1 1 auto;
+  }
+
+  .page-header__actions {
+    flex: none;
+    flex-wrap: nowrap;
+  }
 }
 
 .page-header__lede {
@@ -1175,7 +1195,6 @@ body:has(.shell) {
   display: grid;
   justify-items: start;
   gap: var(--space-3);
-  max-width: 40rem;
   padding: var(--space-8);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -1230,6 +1249,11 @@ body:has(.shell) {
 
 /* ---------- Times ---------- */
 
+/* A date inside a sentence (KeepDates): its day, month and year stay on one line. */
+.when--keep {
+  white-space: nowrap;
+}
+
 .when {
   display: grid;
   font-size: var(--text-sm);
@@ -1268,6 +1292,31 @@ body:has(.shell) {
   min-width: 0;
 }
 
+/* The audit log's five filters wrap instead of squeezing: a select needs about 9rem, a date field 11.5rem (its
+   "DD/MM/YYYY" hint plus the 44 px calendar button), so on a narrow row "To" (then "From") moves down and the row
+   fills again. One row at 1280 with the menu open; full-width selects on phones. A date's read-back or error line makes
+   its field taller, so fields keep their own height, tops aligned. */
+.filters.filters--audit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.filters--audit > .field {
+  flex: 1 1 9rem;
+}
+
+.filters--audit > .filters__field-date {
+  flex: 1 1 11.5rem;
+  min-width: min(11.5rem, 100%);
+}
+
+@media (max-width: 47.99rem) {
+  .filters--audit > .field:not(.filters__field-date) {
+    flex-basis: 100%;
+  }
+}
+
 /* Date inputs carry an intrinsic minimum width (the browser's picker chrome): let them shrink to their grid cell, so
    two side by side fit a 375 px screen (review M4). */
 .filters input[type="date"] {
@@ -1284,18 +1333,6 @@ body:has(.shell) {
 
 .filters__toggle {
   display: none;
-}
-
-@media (max-width: 47.99rem) {
-  .filters--audit {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    column-gap: var(--space-3);
-  }
-
-  .filters--audit > .field:nth-child(-n + 3),
-  .filters--audit > .filters__foot {
-    grid-column: 1 / -1;
-  }
 }
 
 /* Phones: the search stays; the chip groups fold behind a "Filters" button, so the list comes first. */
@@ -1339,21 +1376,7 @@ body:has(.shell) {
 }
 
 @media (min-width: 64rem) {
-  .filters--audit {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-  }
-
   .filters__foot {
-    grid-column: 1 / -1;
-  }
-}
-
-@media (min-width: 48rem) and (max-width: 63.99rem) {
-  .filters--audit {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .filters--audit .filters__foot {
     grid-column: 1 / -1;
   }
 }
@@ -1428,6 +1451,11 @@ body:has(.shell) {
   margin-block: calc(-1 * var(--space-2));
 }
 
+/* In the audit log's wrapping row (above), the result line takes a row of its own. */
+.filters--audit > .filters__foot {
+  flex: 1 1 100%;
+}
+
 .filters__result {
   margin: 0;
   color: var(--color-text-muted);
@@ -1440,6 +1468,18 @@ body:has(.shell) {
 
 .dtable {
   margin-top: var(--space-4);
+}
+
+/* A tablet: a wide table scrolls sideways inside its own box, never the page (the users list overflowed at 768 px). The
+   lists with their own stylesheet (clients.css) do the same for theirs. */
+@media (min-width: 48rem) and (max-width: 79.99rem) {
+  .users-table .dtable {
+    overflow-x: auto;
+  }
+
+  .users-table .dtable__table thead th {
+    position: static;
+  }
 }
 
 .dtable__table {
@@ -2169,9 +2209,28 @@ input[readonly] {
   align-content: start;
 }
 
+/* FormField's two parts; each a small grid with the field's own gap, so a field reads the same as before the split. */
+.field__head,
+.field__body {
+  display: grid;
+  gap: var(--space-1);
+  align-content: start;
+  min-width: 0;
+}
+
 @media (min-width: 48rem) {
   .form-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* Fields side by side: each field spans two rows of the grid and shares them (subgrid), so the label-and-hint rows of
+     one line take the tallest head and every control starts at the same height. */
+  .form-grid > * {
+    grid-row: span 2;
+  }
+
+  .form-grid > .field:has(> .field__head) {
+    grid-template-rows: subgrid;
   }
 }
 
@@ -2709,4 +2768,38 @@ table.diff__table td.diff__arrow {
   color: var(--color-text-muted);
   font-size: var(--text-caption);
   font-weight: 500;
+}
+
+/* ---------- Bar scales ----------
+   The few labels a thin bar needs to be read (the hours bar's 80 % mark, the discount meter's 0, 10 % and end, the schedule's 0 and
+   100 %): caption size, muted ink, never the series colour. Each label is centred on its point; the first and last sit inside the
+   bar's ends. Always aria-hidden: the words beside every bar carry the figures. */
+.bar-scale {
+  position: relative;
+  display: block;
+  height: calc(var(--text-caption) * var(--text-caption--line-height));
+  color: var(--color-text-muted);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.bar-scale__at {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+}
+
+.bar-scale__start {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.bar-scale__end {
+  position: absolute;
+  top: 0;
+  right: 0;
 }

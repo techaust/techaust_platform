@@ -221,7 +221,7 @@ export function PaymentTerms() {
                 id="pt-cap"
                 label="Website liability cap"
                 labelFor="f-websiteLiabilityCapInrMinor"
-                description="The limit printed in the website's terms. A change reaches the site with the publish step (milestone M4.1)."
+                description="The limit printed in the website's terms. A change reaches the site with the publish step."
               >
                 <MoneyIn
                   a11y={ctl(

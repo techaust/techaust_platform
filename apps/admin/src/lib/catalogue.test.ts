@@ -200,9 +200,7 @@ describe("the price history in words [ADM-CAT-04]", () => {
         newMinor: 899_00,
         changedByName: null,
       }),
-    ).toBe(
-      `Growth, rate in US dollars changed from ${PLACEHOLDER_TAG} not set to $899 by A former staff member`,
-    );
+    ).toBe(`Growth, rate in US dollars changed from Not set to $899 by A former staff member`);
   });
 });
 
@@ -302,10 +300,10 @@ describe("templates [ADM-CAT-03]", () => {
 });
 
 describe("copy", () => {
-  it("every sentence 07-L lacks is marked as a placeholder", () => {
+  it("every sentence 07-L lacked has its 07-Q words, with no placeholder tag", () => {
     for (const v of Object.values(PENDING)) {
       const text = typeof v === "function" ? (v as (n: number) => string)(1) : v;
-      expect(text.startsWith(`${PLACEHOLDER_TAG} `)).toBe(true);
+      expect(text.includes(PLACEHOLDER_TAG)).toBe(false);
     }
   });
 

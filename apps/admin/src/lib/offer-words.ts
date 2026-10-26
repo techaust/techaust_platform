@@ -1,4 +1,4 @@
-// The client's decline reasons in the client's own words (07-N §3, PENDING the owner), for every staff screen that shows a decision (the
+// The client's decline reasons in the client's own words (07-N §3, approved with 07-Q), for every staff screen that shows a decision (the
 // document page and the lead page, ADM-PROP-10). Its own small module, so the lead page doesn't carry the documents library with it.
 
 /** The words of `DECLINE_REASONS` (@techaust/core/offers). */

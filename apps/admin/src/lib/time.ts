@@ -1,17 +1,17 @@
 // The words and the pure rules of the M3.5 time screens (ADM-TIME-01..03): 07-M copy word for word, the week (Monday to Sunday,
 // IST dates), the timesheet grid built from the API's groups, the entry form (15-minute steps, at most 24 hours), the lock state
 // and the CSV export, built in the browser from GET /time pages, with every cell defused against spreadsheet formulas.
-// Pure, so the copy and the rules are tested without a browser. Copy rules as in lib/care.ts (07-M is a draft; placeholders are
-// tagged and listed).
+// Pure, so the copy and the rules are tested without a browser. Copy rules as in lib/care.ts (07-M and 07-Q approved; no
+// placeholder tags).
 import { addDays, parseIsoDate, toIsoDate } from "@techaust/core/dates";
 import { authorLocked, DAY_CAP, entryDateCheck, LOCK_DAYS, TIME_STEP, weekOf } from "@techaust/core/time";
 import type { CareTier, NewTimeInput, TimeEntry, TimeWeekGroup } from "../api.ts";
 import { csvCell } from "./audit.ts";
 import { CODE_COPY, dayText, TIER_LABELS } from "./care.ts";
-import { pending } from "./projects.ts";
+import { dateError, type UnreadDates } from "./date-field.ts";
 import { intIn } from "./settings-form.ts";
 
-// ---- 07-M copy, word for word (draft, pending the owner) -----------------------------------------------------------------
+// ---- 07-M copy, word for word (approved, 07-Q) -----------------------------------------------------------------
 
 export const TIME_COPY = {
   total: "Total",
@@ -36,20 +36,18 @@ export const TIME_TOASTS = {
 /** 07-M CSV columns, in order. */
 export const CSV_COLUMNS = ["Date", "Person", "Project or care plan", "Minutes", "Billable", "Note"] as const;
 
-// ---- placeholders (not in 07-M; each listed in the designer report) --------------------------------------------------------
+// ---- lines 07-M lacked, approved word for word in 07-Q (2026-10-26) --------------------------------------------------
 
 export const TIME_PENDING = {
-  staleEntry: pending("Someone else changed this time entry."),
-  deleteConfirm: pending("Delete this time entry? This can't be undone."),
-  enterDate: pending("Enter the date."),
-  enterTime: pending("Enter the time spent, in steps of 15 minutes."),
-  noTargetMatch: pending("No project or care plan starts with that."),
-  targetsFound: (n: number) => pending(`${n} ${n === 1 ? "match" : "matches"} found`),
-  exportRange: pending("Choose dates no more than 366 days apart, the first before the second."),
-  noteTooLong: pending("Keep the note to 1,000 characters."),
-  truncated: pending(
-    "This week has more rows than the timesheet shows. Filter by person or target to see them all.",
-  ),
+  staleEntry: "Someone else changed this time entry.",
+  deleteConfirm: "Delete this time entry? This can't be undone.",
+  enterDate: "Enter the date.",
+  enterTime: "Enter the time spent, in steps of 15 minutes.",
+  noTargetMatch: "No project or care plan starts with that.",
+  targetsFound: (n: number) => `${n} ${n === 1 ? "match" : "matches"} found`,
+  exportRange: "Choose dates no more than 366 days apart, the first before the second.",
+  noteTooLong: "Keep the note to 1,000 characters or fewer.",
+  truncated: "This week has more rows than the timesheet shows. Filter by person or target to see them all.",
 } as const;
 
 // ---- the week ----------------------------------------------------------------------------------------------------------------
@@ -178,10 +176,19 @@ export function entryMinutes(f: Pick<EntryForm, "hours" | "minutes">): number | 
 export function entryInput(
   f: EntryForm,
   /** `originalDate`, when editing: the saved date. The date rule applies only if the date changed. */
-  ctx: { today: string; canWriteAny: boolean; me: string; originalDate?: string | undefined },
+  /** `unread`: the date field's report that its text can't be read (the owner's line, and no save). */
+  ctx: {
+    today: string;
+    canWriteAny: boolean;
+    me: string;
+    originalDate?: string | undefined;
+    unread: UnreadDates<"workDate">;
+  },
 ): { ok: true; body: NewTimeInput } | { ok: false; errors: EntryErrors } {
   const errors: EntryErrors = {};
-  if (!parseIsoDate(f.workDate)) errors.workDate = TIME_PENDING.enterDate;
+  const unreadDate = dateError(ctx.unread.workDate);
+  if (unreadDate) errors.workDate = unreadDate;
+  else if (!parseIsoDate(f.workDate)) errors.workDate = TIME_PENDING.enterDate;
   else if (f.workDate !== ctx.originalDate) {
     const check = entryDateCheck({ today: ctx.today, workDate: f.workDate, canWriteAny: ctx.canWriteAny });
     if (check === "future") errors.workDate = CODE_COPY.future_date as string;

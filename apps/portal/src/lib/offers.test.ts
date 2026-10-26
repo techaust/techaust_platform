@@ -4,15 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { fileNameOf, type OfferItem, offerLinkApi, offersApi, RequestError } from "../api.ts";
 import { COPY } from "../copy.ts";
 import { N, PENDING } from "../copy-documents.ts";
-import {
-  dateText,
-  errorText,
-  isPendingText,
-  pdfName,
-  splitOffers,
-  takeOfferToken,
-  titleOf,
-} from "./offers.ts";
+import { dateText, errorText, pdfName, splitOffers, takeOfferToken, titleOf } from "./offers.ts";
 
 const TOKEN = "S".repeat(43);
 
@@ -103,12 +95,13 @@ describe("errors in 07-N's words (§7)", () => {
     expect(errorText(new RequestError(0, "network", "network"))).toBe(COPY.network);
     expect(errorText(e(500, "server"))).toBe(COPY.server);
   });
-  it("the lines 07-N doesn't have are pending (shown with their tag)", () => {
-    const t = errorText(e(400, "name_too_long"));
-    expect(t).toBe(PENDING.nameTooLong);
-    expect(isPendingText(t)).toBe(true);
-    expect(isPendingText(errorText(e(429, "rate_limited", 120)))).toBe(true);
-    expect(isPendingText(N.errors.expired)).toBe(false);
+  it("the lines 07-N didn't have take the 07-Q words, with no placeholder tag", () => {
+    expect(errorText(e(400, "name_too_long"))).toBe("Shorten the name to 120 characters or fewer.");
+    expect(errorText(e(400, "name_invalid_characters"))).toBe(PENDING.nameInvalid);
+    const limited = errorText(e(429, "rate_limited", 120));
+    expect(limited.startsWith("Too many attempts from this network. Wait ")).toBe(true);
+    for (const t of [PENDING.nameTooLong, PENDING.nameInvalid, PENDING.showMore, limited])
+      expect(t.includes("[Placeholder]")).toBe(false);
   });
 });
 

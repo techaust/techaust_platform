@@ -55,7 +55,7 @@
   }
 }
 
-@media (min-width: 48.01rem) and (max-width: 79.99rem) {
+@media (min-width: 48rem) and (max-width: 79.99rem) {
   .clients-table .dtable {
     overflow-x: auto;
   }
@@ -104,8 +104,9 @@
 }
 
 .client-strip {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  /* Each fact as wide as its value needs (a client's name gets the room, a date or a code no more), never six equal columns. */
+  display: flex;
+  flex-wrap: wrap;
   margin: 0 0 var(--space-6);
   border-block: 1px solid var(--color-border);
 }
@@ -114,7 +115,8 @@
   display: grid;
   align-content: start;
   gap: var(--space-1);
-  min-width: 0;
+  flex: 1 1 auto;
+  min-width: 8rem;
   padding: var(--space-3) var(--space-4);
 }
 
@@ -158,6 +160,7 @@
 /* Phones: two cells to a row, hairlines between rows instead of between every cell. */
 @media (max-width: 47.99rem) {
   .client-strip {
+    display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 

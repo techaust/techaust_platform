@@ -129,7 +129,7 @@ async function pageOf(d: Doc): Promise<OfferPage> {
       },
     },
   };
-  const view = toPdfView(env);
+  const view = toPdfView(env, undefined, { longDates: true });
   return {
     document: {
       id: d.id,

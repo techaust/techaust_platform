@@ -5,6 +5,7 @@
 import { parseIsoDate } from "@techaust/core/dates";
 import { type FormEvent, useState } from "react";
 import { api, RequestError, type TimeEntry, type TimePatch } from "../../api.ts";
+import { DateField, useUnreadDates } from "../../components/date-field.tsx";
 import { Modal } from "../../components/dialog.tsx";
 import { FormField } from "../../components/form.tsx";
 import { Search } from "../../components/icons.tsx";
@@ -76,6 +77,7 @@ function EntryFormBody(
   const toast = useToast();
   const [f, setF] = useState<EntryForm>(() => entryFormOf(props.entry, props.today, props.me.id));
   const [errors, setErrors] = useState<EntryErrors & { userId?: string }>({});
+  const dates = useUnreadDates<"workDate">();
   const [failure, setFailure] = useState<string | null>(null);
   const { busy, setBusy } = props;
   const [picking, setPicking] = useState(f.target === null);
@@ -92,6 +94,7 @@ function EntryFormBody(
       canWriteAny: props.canWriteAny,
       me: props.me.id,
       originalDate: props.entry?.workDate,
+      unread: dates.unread,
     });
     if (!r.ok) {
       setErrors(r.errors);
@@ -171,16 +174,20 @@ function EntryFormBody(
             <span className="muted">Person</span> {props.entry.userName ?? "A former staff member"}
           </p>
         )}
-        <div className="form-grid">
+        {/* Date over Time spent: the two have different shapes (one control, then hours and minutes with their own labels), so
+            side by side they could never line up (batch review M3). */}
+        <div className="entry-form__when">
           <div className="field">
-            <label htmlFor={`${P}-workDate`}>Date</label>
-            <input
+            <label htmlFor={`${P}-workDate`} id={`${P}-workDate-label`}>
+              Date
+            </label>
+            <DateField
               {...a11y("workDate")}
-              type="date"
+              {...dates.bind("workDate")}
               value={f.workDate}
               max={props.today}
               min={earliestDate(props.today, props.canWriteAny)}
-              onChange={(e) => set({ workDate: e.target.value })}
+              onChange={(v) => set({ workDate: v })}
             />
             {err("workDate")}
           </div>

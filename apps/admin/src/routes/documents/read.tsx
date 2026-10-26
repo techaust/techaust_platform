@@ -8,6 +8,7 @@ import { Link, useNavigate } from "react-router";
 import { catalogueApi } from "../../api.ts";
 import { PageHeader } from "../../components/display.tsx";
 import { Calendar as CalendarIcon, CheckCircle, FileText, Receipt } from "../../components/icons.tsx";
+import { Markdown } from "../../components/markdown.tsx";
 import { useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { Notice } from "../../components/ui.tsx";
@@ -85,7 +86,11 @@ export function ReadView({ view, reload }: { view: DocumentView; reload: () => v
   const canCare = convertible && allowed(user.role, "carePlans.write");
   const hasMonthly = v.lines.some((l) => l.unit === "month");
   const number = v.number ?? titleOf(v.title);
-  const sections = v.sections.filter((s) => !s.hidden);
+  // 07-Q Q8: an Acceptance section with no text shows no heading until there is an acceptance or a decline to show.
+  const decided = Boolean(v.acceptance) || v.decision?.status === "rejected";
+  const sections = v.sections.filter(
+    (s) => !s.hidden && !(s.kind === "acceptance" && !s.bodyMd?.trim() && !decided),
+  );
   const hasEstimate = sections.some((s) => s.kind === "estimate");
   // A sent version reads who it was addressed to as frozen at send (review fix 1); a draft reads the live client and contact. The server
   // already shows "Anonymised client" and no contact name or email once the client or the contact was anonymised: a client that was
@@ -284,9 +289,14 @@ export function ReadView({ view, reload }: { view: DocumentView; reload: () => v
                   {s.title?.trim() || sectionLabel(s.kind)}
                 </h3>
                 {s.bodyMd?.trim() ? (
-                  <SectionBody bodyMd={s.bodyMd} />
+                  <SectionBody bodyMd={s.bodyMd} cover={s.kind === "cover"} />
                 ) : s.kind === "terms" && v.terms ? (
-                  <p>{termsLine(v.terms.version)}</p>
+                  <>
+                    <p>{termsLine(v.terms.version)}</p>
+                    {v.terms.bodyMd?.trim() ? (
+                      <Markdown source={v.terms.bodyMd} className="terms-md" />
+                    ) : null}
+                  </>
                 ) : !v.frozen && !isRequiredSection(s.kind) ? (
                   <SectionBody bodyMd={null} />
                 ) : null}

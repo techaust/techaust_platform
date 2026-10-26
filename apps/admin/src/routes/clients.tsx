@@ -144,7 +144,9 @@ function Clients() {
           loading
             ? "Loading…"
             : list.state === "ready"
-              ? `${rows.length === 1 ? "1 client" : `${rows.length} clients`} on this page${q.trim().length === 1 ? ". Search starts at 2 characters" : ""}`
+              ? rows.length === 0
+                ? ""
+                : `${rows.length === 1 ? "1 client" : `${rows.length} clients`} on this page${q.trim().length === 1 ? ". Search starts at 2 characters" : ""}`
               : ""
         }
       />

@@ -1239,6 +1239,13 @@ export const contacts = new Hono<AppEnv>()
         //     The approvals of those drafts go first (they reference the document); a lead's link to a deleted draft is cleared by the
         //     foreign key. Same conditions as step 3, in the same batch, before the contact changes.
         //     The bell rows about those approvals go too, before the approvals do (their titles hold the draft's title).
+        //     The bell rows about any of the client's documents (a PDF that failed its check) go too, sent versions included: a bell is
+        //     not a record, and it names the document. Same conditions; a business client's bells stay.
+        db
+          .prepare(
+            `DELETE FROM notifications WHERE entity_type = 'document' AND entity_id IN (SELECT id FROM documents WHERE ${LAST_LIVE_INDIVIDUAL("documents.client_id")}) AND ${g.sql(2)}`,
+          )
+          .bind(id, ...g.params),
         db
           .prepare(
             `DELETE FROM notifications WHERE entity_type = 'approval' AND entity_id IN (SELECT a.id FROM approvals a WHERE a.document_id IN (SELECT id FROM documents WHERE type IN ('proposal', 'estimate') AND frozen_at IS NULL AND ${LAST_LIVE_INDIVIDUAL("documents.client_id")})) AND ${g.sql(2)}`,

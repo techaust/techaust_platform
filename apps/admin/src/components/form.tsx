@@ -31,22 +31,28 @@ export function FormField(props: {
   if (props.error) a11y["aria-invalid"] = true;
   return (
     <div className={props.className ? `field ${props.className}` : "field"}>
-      <label htmlFor={props.id}>
-        {props.label}
-        {props.optional && <span className="field__optional"> (optional)</span>}
-      </label>
-      {props.hint && (
-        <p className="hint" id={`${props.id}-hint`}>
-          {props.hint}
-        </p>
-      )}
-      {props.children(a11y)}
-      {props.status && !props.error && (
-        <p className="field-status" id={`${props.id}-status`}>
-          {props.status}
-        </p>
-      )}
-      {props.error && <FieldError id={`${props.id}-error`}>{props.error}</FieldError>}
+      {/* Head (label and hint) and body (control, status, error): in a two-column .form-grid the heads of one row share a
+          height, so the controls beside each other line up whatever the hints (shell.css). */}
+      <div className="field__head">
+        <label htmlFor={props.id} id={`${props.id}-label`}>
+          {props.label}
+          {props.optional && <span className="field__optional"> (optional)</span>}
+        </label>
+        {props.hint && (
+          <p className="hint" id={`${props.id}-hint`}>
+            {props.hint}
+          </p>
+        )}
+      </div>
+      <div className="field__body">
+        {props.children(a11y)}
+        {props.status && !props.error && (
+          <p className="field-status" id={`${props.id}-status`}>
+            {props.status}
+          </p>
+        )}
+        {props.error && <FieldError id={`${props.id}-error`}>{props.error}</FieldError>}
+      </div>
     </div>
   );
 }

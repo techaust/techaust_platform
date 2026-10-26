@@ -153,6 +153,7 @@ export const documentSend = new Hono<AppEnv>().post(
         gstin: company.gstin,
         stateCode: company.stateCode,
         logo: company.logoLight,
+        ...(company.documentsEmail ? { email: company.documentsEmail } : {}),
       },
       sender: { staffId: u.id, name: u.name, email: u.email },
     };

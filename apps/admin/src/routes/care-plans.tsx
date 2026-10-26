@@ -157,7 +157,9 @@ function CarePlans() {
           loading
             ? "Loading…"
             : list.state === "ready"
-              ? `${rows.length === 1 ? "1 care plan" : `${rows.length} care plans`} on this page`
+              ? rows.length === 0
+                ? ""
+                : `${rows.length === 1 ? "1 care plan" : `${rows.length} care plans`} on this page`
               : ""
         }
       />

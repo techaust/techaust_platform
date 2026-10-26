@@ -53,7 +53,6 @@ async function runSearch(q: string): Promise<SearchGroup[]> {
  */
 /** 07-O §7: the box for a role that also finds proposals and estimates (kept here, not in lib/documents, so the main chunk stays small). */
 const SEARCH_BOX = {
-  placeholder: "Search leads, clients, projects, documents and people",
   intro: "Search by the start of a name, code or number.",
 } as const;
 
@@ -64,7 +63,20 @@ function searchCopy(
   canProjects = false,
   canDocuments = false,
 ) {
-  if (canDocuments && canLeads && canClients) return SEARCH_BOX;
+  const list = (xs: string[]) =>
+    xs.length < 2 ? (xs[0] ?? "") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`;
+  // 07-Q Q1: a role that finds documents gets the 07-O §7 box, built from what it may search in the same words (the owner
+  // reads it whole; the Accountant reads "Search clients and documents").
+  if (canDocuments) {
+    const words = [
+      canLeads && "leads",
+      canClients && "clients",
+      canProjects && "projects",
+      "documents",
+      canUsers && "people",
+    ].filter((k): k is string => typeof k === "string");
+    return { placeholder: `Search ${list(words)}`, intro: SEARCH_BOX.intro };
+  }
   const kinds = [
     canLeads && "leads",
     canClients && "clients",
@@ -78,8 +90,6 @@ function searchCopy(
     canProjects && "a project by its code or name",
     canUsers && "a staff member by name or email",
   ].filter((k): k is string => typeof k === "string");
-  const list = (xs: string[]) =>
-    xs.length < 2 ? (xs[0] ?? "") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`;
   const findList =
     finds.length < 2 ? (finds[0] ?? "") : `${finds.slice(0, -1).join("; ")}; or ${finds.at(-1)}`;
   return { placeholder: `Search ${list(kinds)}`, intro: `Find ${findList}.` };

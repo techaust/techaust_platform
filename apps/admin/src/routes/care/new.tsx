@@ -7,6 +7,7 @@ import { istDate, toIsoDate } from "@techaust/core/dates";
 import { type FormEvent, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { api, type CareDefaults, type ClientView, errorText, RequestError } from "../../api.ts";
+import { DateField, useUnreadDates } from "../../components/date-field.tsx";
 import { PageHeader } from "../../components/display.tsx";
 import { ErrorSummary, FormField, type SummaryError } from "../../components/form.tsx";
 import { Lock } from "../../components/icons.tsx";
@@ -55,6 +56,7 @@ function NewCarePlan() {
   const [picking, setPicking] = useState(!preset);
   const [f, setF] = useState<PlanForm | null>(null);
   const [touched, setTouched] = useState(false);
+  const dates = useUnreadDates<"startDate">();
   const [errors, setErrors] = useState<SummaryError[]>([]);
   const [fieldErrors, setFieldErrors] = useState<PlanErrors>({});
   const [submits, setSubmits] = useState(0);
@@ -83,7 +85,10 @@ function NewCarePlan() {
   const [seenDefaults, setSeenDefaults] = useState<CareDefaults | null>(null);
   if (d && d !== seenDefaults) {
     setSeenDefaults(d);
-    // A new client: keep what was typed for the billing, refill the terms in the new currency.
+    // A new client: keep what was typed for the billing, refill the terms in the new currency. The fields are drawn afresh (the
+    // start date shows its last valid value), so the last submit's lines no longer describe them (re-check N4).
+    setErrors([]);
+    setFieldErrors({});
     setF((x) =>
       planFormFor(x?.tier ?? "essential", d, {
         startDate: x?.startDate ?? today(),
@@ -93,7 +98,7 @@ function NewCarePlan() {
     );
   }
 
-  const dirty = !saved && (client !== null || touched);
+  const dirty = !saved && (client !== null || touched || dates.any);
   const errorOf = (id: string) => errors.find((e) => e.id === id)?.text;
   useEffect(() => {
     if (saved) navigate(`/care-plans/${saved}`, { replace: true });
@@ -110,7 +115,7 @@ function NewCarePlan() {
     if (!client) list.push({ id: `${P}-client-q`, text: PENDING.chooseClient });
     let body: ReturnType<typeof planInput> | null = null;
     if (client && f && d) {
-      body = planInput(f, client.id, d.currency);
+      body = planInput(f, client.id, d.currency, dates.unread);
       if (!body.ok) {
         setFieldErrors(body.errors);
         for (const [k, v] of Object.entries(body.errors)) if (v) list.push({ id: `${P}-${k}`, text: v });
@@ -222,11 +227,11 @@ function NewCarePlan() {
               <div className="form-grid">
                 <FormField id={`${P}-startDate`} label="Start date" error={errorOf(`${P}-startDate`)}>
                   {(a) => (
-                    <input
+                    <DateField
                       {...a}
-                      type="date"
+                      {...dates.bind("startDate")}
                       value={f.startDate}
-                      onChange={(e) => patch({ startDate: e.target.value })}
+                      onChange={(v) => patch({ startDate: v })}
                     />
                   )}
                 </FormField>

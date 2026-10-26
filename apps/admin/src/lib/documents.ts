@@ -3,7 +3,7 @@
 // autosave: `buildPatch` (the parts that changed, in the API's units) and `applySave` (the server's figures and ids onto the screen, never
 // replacing what the person is typing). Pure, so the copy and the rules are tested without a browser.
 //
-// Copy: 07-O (docs/07-content-appendix/O-m4.3-proposal-screens.md) is a DRAFT pending the owner's word-for-word approval. The sentences
+// Copy: 07-O (docs/07-content-appendix/O-m4.3-proposal-screens.md) is approved by the owner (with 07-Q, 2026-10-26). The sentences
 // the screens added after 07-O §3–§8 are 07-O §9 (`DOC_PENDING`: the lead accepted them as drafts, so they no longer carry a tag) and
 // §10 (the review fixes). Labels (buttons, columns, field names) come from 07-O, the PRD and the existing screens.
 //
@@ -47,7 +47,7 @@ import { bpToPercent, intIn, moneyFrom, moneyInput, percentToBp } from "./settin
 
 export { moneyText };
 
-// ---- 07-O copy, word for word (draft, pending the owner) ---------------------------------------------------------------------
+// ---- 07-O copy, word for word (approved, 07-Q) ---------------------------------------------------------------------
 
 export const DOC_COPY = {
   listHeading: "Proposals and estimates",
@@ -150,7 +150,7 @@ export const UNRESOLVED_AROUND = [
 ] as const;
 export const unresolvedLine = (list: string) => `${UNRESOLVED_AROUND[0]}${list}${UNRESOLVED_AROUND[1]}`;
 /** 07-O §1, the Terms section's line (the terms text itself is the versioned block). */
-export const termsLine = (n: number) => `The terms below are version ${n} of our proposal terms.`;
+export const termsLine = (n: number) => `The terms below are version ${n} of our terms.`;
 export const notSaved = (reason: string) => `Not saved: ${reason}`;
 export const guardLine = (bp: number) => `${bpToPercent(bp)} % off catalogue prices`;
 export const approvedBy = (person: string, date: string) => `Approved by ${person} on ${date}`;
@@ -185,7 +185,7 @@ export const DOC_TOASTS = {
 
 // 07-O §7's audit labels live with the others in lib/audit.ts (ACTION_LABELS).
 
-// ---- 07-O §9: the designer's drafts, accepted by the lead as wording (PENDING the owner's word-for-word approval) ----------
+// ---- 07-O §9: the designer's drafts, accepted by the lead as wording (approved with 07-Q) ----------
 
 export const DOC_PENDING = {
   enterQty: "Enter a quantity like 1 or 2.5.",
@@ -220,7 +220,7 @@ export const DOC_PENDING = {
   searchNumber: "Search by number",
   searchNoMatch: "No proposal or estimate has a number starting with that.",
   customLinesCount: (n: number) => (n === 1 ? "1 custom line" : `${n} custom lines`),
-  customLinesHint: "Custom lines are not counted in the discount guard.",
+  customLinesHint: "Custom lines don't count towards the discount limit.",
   readOnlyDraft: "Your role can read this draft but not change it.",
   openCarePlan: "Open the care plan",
   newerDraftExists: "A newer version of this document exists.",
@@ -241,7 +241,7 @@ export const careAiOps = (aiOps: string) => `plus ${aiOps} a month for AI Ops`;
 export const CONVERTED_TO_INVOICE = "Converted to an invoice draft.";
 /** With the tier when it is known (the estimate's lines name it); without it while the lines are still loading. */
 export const convertedToCare = (client: string, tier: string | null) =>
-  tier ? `Converted to care plan for ${client} (${tier}).` : `Converted to care plan for ${client}.`;
+  tier ? `Converted to a care plan for ${client} (${tier}).` : `Converted to a care plan for ${client}.`;
 export const OPEN_IT = "Open it";
 export const sectionTitleName = (section: string) => `Title of ${section}`;
 /** `section_empty`, around its list of sections (each one a link to the section). */
@@ -540,7 +540,8 @@ export type Figures = {
   needsResave: boolean;
   termsOutdated: boolean;
   newestTermsVersion: number | null;
-  terms: { id: string; version: number; sha256: string } | null;
+  /** `bodyMd` is the pinned version's frozen text, on the read only (a save answer leaves it out). */
+  terms: { id: string; version: number; sha256: string; bodyMd?: string | null } | null;
 };
 
 export type SaveStatus = "idle" | "saving" | "saved" | "error" | "stale" | "frozen";

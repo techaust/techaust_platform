@@ -30,7 +30,20 @@ describe("the offer page shows the PDF's own view [POR-05]", () => {
     const body = (await bodyOf(res)) as { view: unknown };
     const stored = parseEnvelope(text);
     expect(stored).not.toBeNull();
-    expect(body.view).toEqual(JSON.parse(JSON.stringify(toPdfView(stored as NonNullable<typeof stored>))));
+    expect(body.view).toEqual(
+      JSON.parse(
+        JSON.stringify(toPdfView(stored as NonNullable<typeof stored>, undefined, { longDates: true })),
+      ),
+    );
+  });
+
+  it("the page's dates carry the four-digit year (07-Q M10); the PDF's short form is the package default", async () => {
+    const f = await fixtures();
+    const { o } = await realOffer(f);
+    const res = await call(`/offers/${o.id}`, { cookie: await sign(f.a.finance) });
+    const { view } = (await bodyOf(res)) as { view: { issueDate: string; validUntil: string } };
+    expect(view.issueDate).toMatch(/^\d{2} [A-Z][a-z]{2} \d{4}$/);
+    expect(view.validUntil).toMatch(/^\d{2} [A-Z][a-z]{2} \d{4}$/);
   });
 
   it("a link opens the same view; the stored extras never reach the client (a key scan of the whole response)", async () => {

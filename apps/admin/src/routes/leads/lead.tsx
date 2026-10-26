@@ -27,6 +27,7 @@ import {
   type LeadStage,
   RequestError,
 } from "../../api.ts";
+import { DateField, useUnreadDates } from "../../components/date-field.tsx";
 import { EmptyState, PageHeader, Skeleton, StatusPill, When } from "../../components/display.tsx";
 import { FormField } from "../../components/form.tsx";
 import {
@@ -45,6 +46,7 @@ import { useToast } from "../../components/toast.tsx";
 import { Notice } from "../../components/ui.tsx";
 import { UnsavedChangesGuard } from "../../components/unsaved.tsx";
 import { allowed } from "../../lib/access.ts";
+import { dateError } from "../../lib/date-field.ts";
 import { relative } from "../../lib/format.ts";
 import {
   type Change,
@@ -164,13 +166,22 @@ function LeadView({
   const [busy, setBusy] = useState<"follow" | "contact" | null>(null);
   const [error, setError] = useState<{ where: "follow" | "contact"; text: string } | null>(null);
   const [emailError, setEmailError] = useState<string | null>(null);
+  const [nextDateError, setNextDateError] = useState<string | null>(null);
+  const dates = useUnreadDates<"date">();
+  // A stale reload sets the edits aside, so unreadable date text and its error line go with them.
+  const reloadStale = () => {
+    dates.reset();
+    setNextDateError(null);
+    reload("stale");
+  };
   const note = drafts.note;
   const setNote = (text: string) => draft({ type: "note", text });
   const [lost, setLost] = useState(false);
   const [replying, setReplying] = useState(false);
   const [converting, setConverting] = useState(false);
 
-  const followDirty = JSON.stringify(follow) !== JSON.stringify(followBase);
+  // Text in the Next action field that can't be read is a change too: Save shows the line, Discard takes it back.
+  const followDirty = dates.any || JSON.stringify(follow) !== JSON.stringify(followBase);
   const contactDirty = editing && JSON.stringify(contact) !== JSON.stringify(contactBase);
   const dirty = followDirty || contactDirty || note.trim() !== "";
 
@@ -184,7 +195,7 @@ function LeadView({
       const r = await api.updateLead(lead.id, { ...patch, expectedUpdatedAt: lead.updatedAt });
       toast("success", r.changed ? "Saved." : "No change: that's already saved.");
       if (where === "contact") setContact(null);
-      else setFollow(null);
+      else discardFollow();
       reload();
     } catch (e) {
       if (e instanceof RequestError && e.code === "stale_version") setStale(true);
@@ -194,8 +205,21 @@ function LeadView({
     }
   }
 
+  // Discard (and a save) drops the draft, an unread date and its line together (re-check N3).
+  function discardFollow() {
+    setFollow(null);
+    dates.reset();
+    setNextDateError(null);
+  }
+
   function saveFollow(e: FormEvent) {
     e.preventDefault();
+    const dateErr = dateError(dates.unread.date);
+    setNextDateError(dateErr);
+    if (dateErr) {
+      document.getElementById("lead-next")?.focus();
+      return;
+    }
     // Only what differs from the draft's base is sent (re-check R1).
     save("follow", followPatch({ base: followBase, value: follow }));
   }
@@ -274,13 +298,13 @@ function LeadView({
       />
       {stale &&
         (saveStale ? (
-          <StaleNotice title="Someone else changed this lead." onReload={() => reload("stale")} />
+          <StaleNotice title="Someone else changed this lead." onReload={reloadStale} />
         ) : (
           // A reload found someone else's change to a field a draft held (owner's wording, 2026-10-25).
           <StaleNotice
             title="Someone else changed this lead while you were editing it."
             body="Your unsaved changes to those fields were set aside so theirs aren't overwritten; anything you had already saved is kept, and so is your note. Reload to see the latest, then make your change again."
-            onReload={() => reload("stale")}
+            onReload={reloadStale}
           />
         ))}
       {lead.scheduledForDeletion && lead.deleteAfter !== null && (
@@ -331,6 +355,7 @@ function LeadView({
                   id="lead-next"
                   label="Next action"
                   optional
+                  error={nextDateError}
                   status={
                     lead.nextActionOverdue && !followDirty ? (
                       <StatusPill tone="danger" icon="clock">
@@ -340,11 +365,11 @@ function LeadView({
                   }
                 >
                   {(a) => (
-                    <input
+                    <DateField
                       {...a}
-                      type="date"
+                      {...dates.bind("date")}
                       value={follow.date}
-                      onChange={(e) => setFollow({ ...follow, date: e.target.value })}
+                      onChange={(v) => setFollow({ ...follow, date: v })}
                     />
                   )}
                 </FormField>
@@ -364,7 +389,7 @@ function LeadView({
                     <button
                       type="button"
                       className="btn btn--secondary"
-                      onClick={() => setFollow(null)}
+                      onClick={discardFollow}
                       disabled={busy === "follow"}
                     >
                       Discard

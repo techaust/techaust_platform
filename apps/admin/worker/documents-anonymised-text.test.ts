@@ -3,9 +3,10 @@
 // and that text is frozen at send. The staff view takes every exact occurrence of the frozen names and email out of the section texts, the
 // section titles and the document title; the stored rows and their hash stay as sent, byte for byte.
 import { env } from "cloudflare:workers";
+import { ANONYMISED_CLIENT } from "@techaust/core/clients";
 import { seedStatements } from "@techaust/db";
 import { beforeAll, describe, expect, it } from "vitest";
-import { ANONYMISED_LABEL, redactionNames, redactor, viewRecipient } from "./document-view.ts";
+import { redactionNames, redactor, viewRecipient } from "./document-view.ts";
 import { putPaymentTerms } from "./test-catalogue.ts";
 import { rows, sessionFor } from "./test-helpers.ts";
 import {
@@ -100,11 +101,11 @@ for (const type of ["proposal", "estimate"] as const) {
       const text = printed(view);
       for (const secret of [names.display, names.legal, contactName, contactEmail])
         expect(text, secret).not.toContain(secret);
-      expect(text).toContain(ANONYMISED_LABEL);
-      expect(view.title).toBe(`Website for ${ANONYMISED_LABEL} (${ANONYMISED_LABEL})`);
+      expect(text).toContain(ANONYMISED_CLIENT);
+      expect(view.title).toBe(`Website for ${ANONYMISED_CLIENT} (${ANONYMISED_CLIENT})`);
       if (type === "proposal") {
         const acceptance = view.sections.find((s: J) => s.kind === "acceptance");
-        expect(acceptance.bodyMd).toMatch(new RegExp(`^Prepared for ${ANONYMISED_LABEL}\\.`));
+        expect(acceptance.bodyMd).toMatch(new RegExp(`^Prepared for ${ANONYMISED_CLIENT}\\.`));
       }
       // the stored text, the hash and the sections are exactly as sent
       expect(JSON.stringify(await stored(made.id))).toBe(before);
@@ -129,7 +130,7 @@ for (const type of ["proposal", "estimate"] as const) {
       expect(view.title).toBe(`Website for ${names.display} (${names.legal})`);
       if (type === "proposal") {
         const acceptance = view.sections.find((s: J) => s.kind === "acceptance");
-        expect(acceptance.bodyMd).toMatch(new RegExp(`^Prepared for ${ANONYMISED_LABEL}\\.`));
+        expect(acceptance.bodyMd).toMatch(new RegExp(`^Prepared for ${ANONYMISED_CLIENT}\\.`));
       }
       expect(JSON.stringify(await stored(made.id))).toBe(before);
     });
@@ -182,23 +183,23 @@ describe("redactionNames and redactor", () => {
   it("replaces the longest name first, in one pass, treating the characters of a name as plain text", () => {
     const redact = redactor(redactionNames(r, true, true));
     expect(redact("Acme Studio Pvt Ltd and Acme Studio; Asha (Ops) Rao <a+b@acme.example.test>")).toBe(
-      `${ANONYMISED_LABEL} and ${ANONYMISED_LABEL}; ${ANONYMISED_LABEL} <${ANONYMISED_LABEL}>`,
+      `${ANONYMISED_CLIENT} and ${ANONYMISED_CLIENT}; ${ANONYMISED_CLIENT} <${ANONYMISED_CLIENT}>`,
     );
-    expect(redact("Asha (Ops) Rao. Asha Ops Rao")).toBe(`${ANONYMISED_LABEL}. Asha Ops Rao`);
+    expect(redact("Asha (Ops) Rao. Asha Ops Rao")).toBe(`${ANONYMISED_CLIENT}. Asha Ops Rao`);
     expect(redact(null)).toBeNull();
     expect(redactor([])("unchanged")).toBe("unchanged");
     // a name that is a part of the label is not searched for again in the replacement
-    expect(redactor(["client"])("the client")).toBe(`the ${ANONYMISED_LABEL}`);
+    expect(redactor(["client"])("the client")).toBe(`the ${ANONYMISED_CLIENT}`);
   });
   it("replaces a name only where it stands as a whole word", () => {
     expect(redactor(["Ram"])("Ramp-up for Ram, and Ram's plan")).toBe(
-      `Ramp-up for ${ANONYMISED_LABEL}, and ${ANONYMISED_LABEL}'s plan`,
+      `Ramp-up for ${ANONYMISED_CLIENT}, and ${ANONYMISED_CLIENT}'s plan`,
     );
-    expect(redactor(["Data"])("Data migration for DataCo")).toBe(`${ANONYMISED_LABEL} migration for DataCo`);
+    expect(redactor(["Data"])("Data migration for DataCo")).toBe(`${ANONYMISED_CLIENT} migration for DataCo`);
     expect(redactor(["Asha"])("Ashaworks, Asha_1, Asha2 and Asha.")).toBe(
-      `Ashaworks, Asha_1, Asha2 and ${ANONYMISED_LABEL}.`,
+      `Ashaworks, Asha_1, Asha2 and ${ANONYMISED_CLIENT}.`,
     );
-    expect(redactor(["Élodie"])("Élodie and Élodies")).toBe(`${ANONYMISED_LABEL} and Élodies`);
+    expect(redactor(["Élodie"])("Élodie and Élodies")).toBe(`${ANONYMISED_CLIENT} and Élodies`);
   });
 });
 

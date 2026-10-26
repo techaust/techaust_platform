@@ -32,6 +32,8 @@ export type CertificateRow = {
   certificate_r2_key: string | null;
   /** When the certificate row was written; null while there is none. */
   rendered_at: number | null;
+  /** The document's frozen Settings "Email on documents" (07-Q Q11); null or absent on versions sent before it was frozen. */
+  issuer_email?: string | null;
 };
 
 /**
@@ -39,7 +41,7 @@ export type CertificateRow = {
  * recipient block (what the offer itself says); the live client record is only the fallback for an old document without one.
  */
 export const CERTIFICATE_READ =
-  "SELECT d.number_display, d.version, d.type, d.title, d.total_minor, d.currency, coalesce(nullif(CASE WHEN json_valid(d.recipient) THEN json_extract(d.recipient, '$.legalName') END, ''), cl.legal_name) AS client_legal_name, a.typed_name, a.email, a.accepted_at, a.ip, a.user_agent, a.country, a.via, a.pdf_sha256, a.snapshot_sha256, t.version AS terms_version, t.sha256 AS terms_sha256, a.certificate_r2_key, ce.rendered_at FROM acceptances a JOIN documents d ON d.id = a.document_id JOIN clients cl ON cl.id = d.client_id LEFT JOIN terms_versions t ON t.id = a.terms_version_id LEFT JOIN acceptance_certificates ce ON ce.acceptance_id = a.id WHERE a.id = ?1";
+  "SELECT d.number_display, d.version, d.type, d.title, d.total_minor, d.currency, coalesce(nullif(CASE WHEN json_valid(d.recipient) THEN json_extract(d.recipient, '$.legalName') END, ''), cl.legal_name) AS client_legal_name, a.typed_name, a.email, a.accepted_at, a.ip, a.user_agent, a.country, a.via, a.pdf_sha256, a.snapshot_sha256, t.version AS terms_version, t.sha256 AS terms_sha256, a.certificate_r2_key, ce.rendered_at, CASE WHEN json_valid(d.issuer) THEN nullif(json_extract(d.issuer, '$.company.email'), '') END AS issuer_email FROM acceptances a JOIN documents d ON d.id = a.document_id JOIN clients cl ON cl.id = d.client_id LEFT JOIN terms_versions t ON t.id = a.terms_version_id LEFT JOIN acceptance_certificates ce ON ce.acceptance_id = a.id WHERE a.id = ?1";
 
 const DASH = "–";
 const orDash = (v: string | null | undefined) => (v && v.trim() !== "" ? v : DASH);
@@ -69,6 +71,7 @@ export function buildCertificateView(r: CertificateRow): CertificateView {
     snapshotSha256: orDash(r.snapshot_sha256),
     termsVersion: r.terms_version === null ? DASH : String(r.terms_version),
     termsSha256: orDash(r.terms_sha256),
+    ...(r.issuer_email ? { emailOnDocuments: r.issuer_email } : {}),
   };
 }
 

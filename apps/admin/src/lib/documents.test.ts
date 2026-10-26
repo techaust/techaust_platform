@@ -231,7 +231,7 @@ describe("07-O copy, word for word (draft pending the owner)", () => {
     expect(reviseBody(1)).toBe(
       "v1 stays acceptable until the new version is sent; then it shows as Revised.",
     );
-    expect(termsLine(4)).toBe("The terms below are version 4 of our proposal terms.");
+    expect(termsLine(4)).toBe("The terms below are version 4 of our terms.");
     expect(Object.values(DOC_TOASTS)).toEqual([
       "Draft created.",
       "Draft saved.",
@@ -290,10 +290,10 @@ describe("07-O copy, word for word (draft pending the owner)", () => {
     expect(careAiOps("₹5,000.00")).toBe("plus ₹5,000.00 a month for AI Ops");
     expect(CONVERTED_TO_INVOICE).toBe("Converted to an invoice draft.");
     expect(convertedToCare("Sample Client A (sample)", "Scale")).toBe(
-      "Converted to care plan for Sample Client A (sample) (Scale).",
+      "Converted to a care plan for Sample Client A (sample) (Scale).",
     );
     expect(convertedToCare("Sample Client A (sample)", null)).toBe(
-      "Converted to care plan for Sample Client A (sample).",
+      "Converted to a care plan for Sample Client A (sample).",
     );
     expect(OPEN_IT).toBe("Open it");
     expect(sectionTitleName("Summary")).toBe("Title of Summary");

@@ -7,10 +7,12 @@ import { useState } from "react";
 import { Link } from "react-router";
 import type { Currency } from "../../api.ts";
 import { ConfirmDialog } from "../../components/confirm-dialog.tsx";
+import { DateField, useUnreadDates } from "../../components/date-field.tsx";
 import { Modal } from "../../components/dialog.tsx";
 import { FormField } from "../../components/form.tsx";
 import { Notice } from "../../components/ui.tsx";
 import { CARE_COPY, CARE_PENDING, type DurationForm, durationMinutes, TIER_LABELS } from "../../lib/care.ts";
+import { dateError } from "../../lib/date-field.ts";
 import {
   CARE_HOURS_HINT,
   careAiOps,
@@ -218,6 +220,7 @@ function CareForm(props: {
   onClose: () => void;
 }) {
   const [startDate, setStartDate] = useState("");
+  const dates = useUnreadDates<"startDate">();
   const [billingDay, setBillingDay] = useState("1");
   const [included, setIncluded] = useState<DurationForm>({ hours: "", minutes: "0" });
   const [errors, setErrors] = useState<Partial<Record<"startDate" | "billingDay" | "included", string>>>({});
@@ -252,7 +255,9 @@ function CareForm(props: {
 
   async function submit() {
     const e: typeof errors = {};
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) e.startDate = CARE_PENDING.enterStartDate;
+    const unreadStart = dateError(dates.unread.startDate);
+    if (unreadStart) e.startDate = unreadStart;
+    else if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) e.startDate = CARE_PENDING.enterStartDate;
     const day = intIn(billingDay, 1, 28);
     if (day === null) e.billingDay = CARE_PENDING.enterBillingDay;
     const minutes =
@@ -303,7 +308,12 @@ function CareForm(props: {
         )}
         <FormField id="cv-start" label={DOC_COPY.startDate} error={errors.startDate}>
           {(a) => (
-            <input {...a} type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+            <DateField
+              {...a}
+              {...dates.bind("startDate")}
+              value={startDate}
+              onChange={(v) => setStartDate(v)}
+            />
           )}
         </FormField>
         <FormField

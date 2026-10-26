@@ -4,6 +4,22 @@
 export const escapeLike = (s: string): string =>
   s.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
 
+/** Escapes every character that means something in a regular expression, so the text matches as itself. */
+export const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * One pattern for every occurrence of any of these texts, longest first (a text that holds another is matched whole), only where it
+ * stands as a whole word: a letter, digit, underscore or combining mark (Indic vowel signs belong to a word) on either side is no
+ * boundary, so "Ram" never matches inside "Ramp-up". The one definition for the view redactor and the contact rename.
+ */
+export const wholeWordPattern = (texts: readonly string[]): RegExp => {
+  const alternation = [...texts]
+    .sort((a, b) => b.length - a.length)
+    .map(escapeRegExp)
+    .join("|");
+  return new RegExp(`(?<![\\p{L}\\p{N}\\p{M}_])(?:${alternation})(?![\\p{L}\\p{N}\\p{M}_])`, "gu");
+};
+
 /**
  * The name to show for a client (or a document's recipient): the display name, or the legal name when the display name is missing,
  * empty or only spaces. One rule for the API, the screens and the PDF (M4.3 re-check).

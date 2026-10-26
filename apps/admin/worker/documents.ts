@@ -7,12 +7,14 @@
 // was written, one read says why (`stale_version`, `frozen`, ...).
 import { approvalState, TITLE_MAX } from "@techaust/core/documents";
 import { uuidv7 } from "@techaust/core/ids";
+import { decide } from "@techaust/core/permissions";
 import {
   bundleOf,
   LOAD_STATEMENTS,
   loadDocument,
   loadStatements,
   type TermsRef,
+  type TermsView,
 } from "@techaust/db/documents";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
@@ -197,10 +199,15 @@ export const CONVERTED_TO_SQL = `SELECT 'invoice' AS kind, i.id FROM documents i
  * its client, its contact, the newest proposal terms and the settings. A route that needs more reads (the services a save adds, the
  * contact it sets) passes those statements in `extra`; their results come back after the others.
  */
-export async function readContext(c: Ctx, id: string, extra: D1PreparedStatement[] = []) {
+export async function readContext(
+  c: Ctx,
+  id: string,
+  extra: D1PreparedStatement[] = [],
+  opts: { terms?: "frozen" | "full" } = {},
+) {
   const db = c.env.DB;
   const results = await db.batch([
-    ...loadStatements(db, id, { terms: "ref" }),
+    ...loadStatements(db, id, { terms: opts.terms ?? "ref" }),
     db
       .prepare(
         `SELECT ${CLIENT_COLS} FROM clients WHERE id = (SELECT client_id FROM documents WHERE id = ?1)`,
@@ -215,7 +222,7 @@ export async function readContext(c: Ctx, id: string, extra: D1PreparedStatement
     db.prepare(SETTINGS_READ),
     ...extra,
   ]);
-  const bundle = bundleOf<TermsRef>(results.slice(0, LOAD_STATEMENTS));
+  const bundle = bundleOf<TermsView>(results.slice(0, LOAD_STATEMENTS));
   if (!bundle) return null;
   const [clientR, contactR, termsR, settingsR] = results.slice(LOAD_STATEMENTS);
   const client = clientR?.results[0] as ClientRow | undefined;
@@ -394,10 +401,14 @@ export const documents = new Hono<AppEnv>()
     const id = c.req.valid("param").id;
     // The offer's history (who it went to, the acceptance, the certificate, a decline, the start-project numbers) and what an accepted
     // estimate became (two indexed probes: documents_source and care_plans_source_document) ride in the same D1 call.
-    const ctx = await readContext(c, id, [
-      ...offerStatements(c.env.DB, id),
-      c.env.DB.prepare(CONVERTED_TO_SQL).bind(id),
-    ]);
+    const ctx = await readContext(
+      c,
+      id,
+      [...offerStatements(c.env.DB, id), c.env.DB.prepare(CONVERTED_TO_SQL).bind(id)],
+      // A SENT version shows the pinned terms text to every role (M11). A draft carries none for the editor (it only names the version);
+      // a role that cannot draft has no editor, so its read view gets the text too (lead, 2026-10-26).
+      { terms: decide(actor(c).role, "proposals.draft") === "deny" ? "full" : "frozen" },
+    );
     if (!ctx) return err(c, NOT_FOUND, 404);
     if (!(ctx.bundle.document.type === "proposal" || ctx.bundle.document.type === "estimate"))
       return err(c, NOT_FOUND, 404);

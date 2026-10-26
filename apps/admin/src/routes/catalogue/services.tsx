@@ -131,7 +131,9 @@ export function ServicesTab() {
           loading
             ? "Loading…"
             : list.state === "ready"
-              ? `${rows.length === 1 ? "1 service" : `${rows.length} services`} on this page`
+              ? rows.length === 0
+                ? ""
+                : `${rows.length === 1 ? "1 service" : `${rows.length} services`} on this page`
               : ""
         }
       />

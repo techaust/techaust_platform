@@ -512,21 +512,6 @@ html:has(.mmenu[open]) {
 
 /* ---------- Shared bits ---------- */
 
-.ph {
-  display: inline-block;
-  padding: 0 var(--space-1);
-  border: 1px dashed currentColor;
-  border-radius: var(--radius-sm);
-  color: var(--color-warning);
-  font-family: var(--font-sans);
-  font-stretch: 100%;
-  font-size: var(--text-caption);
-  line-height: var(--text-caption--line-height);
-  font-weight: 600;
-  vertical-align: 0.15em;
-  white-space: nowrap;
-}
-
 .line {
   display: block;
 }

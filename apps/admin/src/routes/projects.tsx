@@ -159,7 +159,9 @@ function Projects() {
           loading
             ? "Loading…"
             : list.state === "ready"
-              ? `${rows.length === 1 ? "1 project" : `${rows.length} projects`} on this page${q.trim().length === 1 ? ". Search starts at 2 characters" : ""}`
+              ? rows.length === 0
+                ? ""
+                : `${rows.length === 1 ? "1 project" : `${rows.length} projects`} on this page${q.trim().length === 1 ? ". Search starts at 2 characters" : ""}`
               : ""
         }
       />

@@ -187,7 +187,9 @@ function Approvals() {
         result={
           list.state === "loading"
             ? "Loading…"
-            : `${rows.length === 1 ? "1 request" : `${rows.length} requests`} on this page`
+            : rows.length === 0
+              ? ""
+              : `${rows.length === 1 ? "1 request" : `${rows.length} requests`} on this page`
         }
       />
       <p id="decided-line" className="decided-line" tabIndex={-1} role="status">

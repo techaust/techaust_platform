@@ -2,8 +2,9 @@
 // VERIFY WITH CA/LEGAL): the staff GET shows "Anonymised client" and no name, email, GSTIN or address, and the stored snapshot stays as it
 // was sent, byte for byte, as evidence of the offer.
 import { env } from "cloudflare:workers";
+import { ANONYMISED_CLIENT } from "@techaust/core/clients";
 import { beforeAll, describe, expect, it } from "vitest";
-import { ANONYMISED_LABEL, viewRecipient } from "./document-view.ts";
+import { viewRecipient } from "./document-view.ts";
 import { putPaymentTerms } from "./test-catalogue.ts";
 import { one, sessionFor } from "./test-helpers.ts";
 import { getDoc, json, mkDraft, mkTerms, sendDoc } from "./test-quotes.ts";
@@ -48,17 +49,17 @@ describe("the staff view of a sent version after anonymising", () => {
     expect(view.recipient).toMatchObject({
       legalName: business,
       contactId: made.contactId,
-      contactName: ANONYMISED_LABEL,
+      contactName: ANONYMISED_CLIENT,
       email: null,
       anonymised: true,
     });
     expect(view.contact).toEqual({
       id: made.contactId,
-      name: ANONYMISED_LABEL,
+      name: ANONYMISED_CLIENT,
       email: null,
       anonymised: true,
     });
-    expect(view.client.name).not.toBe(ANONYMISED_LABEL);
+    expect(view.client.name).not.toBe(ANONYMISED_CLIENT);
     const shown = JSON.stringify({ r: view.recipient, c: view.contact });
     expect(shown).not.toContain("Asha Rao");
     expect(shown).not.toContain(before.recipient.match(/"email":"([^"]+)"/)?.[1] as string);
@@ -76,18 +77,18 @@ describe("the staff view of a sent version after anonymising", () => {
       .run();
 
     const view = await getDoc(o, made.id);
-    expect(view.client).toMatchObject({ id: made.clientId, name: ANONYMISED_LABEL, anonymised: true });
+    expect(view.client).toMatchObject({ id: made.clientId, name: ANONYMISED_CLIENT, anonymised: true });
     expect(view.recipient).toMatchObject({
-      legalName: ANONYMISED_LABEL,
-      displayName: ANONYMISED_LABEL,
+      legalName: ANONYMISED_CLIENT,
+      displayName: ANONYMISED_CLIENT,
       gstin: null,
       address: null,
       email: null,
-      contactName: ANONYMISED_LABEL,
+      contactName: ANONYMISED_CLIENT,
       country: wasView.recipient.country,
       anonymised: true,
     });
-    expect(view.contact).toMatchObject({ name: ANONYMISED_LABEL, email: null, anonymised: true });
+    expect(view.contact).toMatchObject({ name: ANONYMISED_CLIENT, email: null, anonymised: true });
     const shown = JSON.stringify({ r: view.recipient, c: view.contact, cl: view.client });
     expect(shown).not.toContain(legal);
     expect(shown).not.toContain("Asha Rao");
@@ -143,6 +144,6 @@ describe("viewRecipient", () => {
     const { contactId: _i, contactName: _n, email: _e, ...noContact } = r;
     const v = viewRecipient(noContact, true, false);
     expect(v).not.toHaveProperty("contactName");
-    expect(v).toMatchObject({ legalName: ANONYMISED_LABEL, gstin: null, address: null, stateCode: "19" });
+    expect(v).toMatchObject({ legalName: ANONYMISED_CLIENT, gstin: null, address: null, stateCode: "19" });
   });
 });

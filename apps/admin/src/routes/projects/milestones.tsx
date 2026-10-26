@@ -9,6 +9,7 @@
 import { type FormEvent, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from "react";
 import { api, type MilestoneView, type ProjectPage, RequestError } from "../../api.ts";
 import { ConfirmDialog } from "../../components/confirm-dialog.tsx";
+import { DateField, useUnreadDates } from "../../components/date-field.tsx";
 import { Modal } from "../../components/dialog.tsx";
 import { FormField } from "../../components/form.tsx";
 import { AlertTriangle, Grip, Plus, Receipt } from "../../components/icons.tsx";
@@ -370,6 +371,7 @@ function MilestoneDialog(props: {
   const m = props.milestone === "new" ? null : props.milestone;
   const [f, setF] = useState<MilestoneForm>(() => milestoneFormOf(m, project.currency));
   const [errors, setErrors] = useState<MilestoneErrors>({});
+  const dates = useUnreadDates<"dueDate">();
   const [failure, setFailure] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -377,6 +379,7 @@ function MilestoneDialog(props: {
   if (props.milestone !== shown) {
     setShown(props.milestone);
     setF(milestoneFormOf(m, project.currency));
+    dates.reset();
     setErrors({});
     setFailure(null);
     setStale(false);
@@ -385,7 +388,7 @@ function MilestoneDialog(props: {
 
   async function save(e: FormEvent) {
     e.preventDefault();
-    const r = milestoneInput(f, project.currency);
+    const r = milestoneInput(f, project.currency, dates.unread);
     if (!r.ok) {
       setErrors(r.errors);
       const first = Object.keys(r.errors)[0];
@@ -498,13 +501,13 @@ function MilestoneDialog(props: {
               )}
             </FormField>
           )}
-          <FormField id="ms-due" label="Due date" optional>
+          <FormField id="ms-dueDate" label="Due date" optional error={errors.dueDate}>
             {(a) => (
-              <input
+              <DateField
                 {...a}
-                type="date"
+                {...dates.bind("dueDate")}
                 value={f.dueDate}
-                onChange={(e) => set({ dueDate: e.target.value })}
+                onChange={(v) => set({ dueDate: v })}
               />
             )}
           </FormField>

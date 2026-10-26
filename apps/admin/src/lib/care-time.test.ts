@@ -47,6 +47,7 @@ import {
   showingFirst,
   TILE_TITLES,
 } from "./dashboard.ts";
+import { DATE_INVALID, isUnread, settledValue } from "./date-field.ts";
 import { PLACEHOLDER_TAG } from "./projects.ts";
 import {
   CSV_COLUMNS,
@@ -259,7 +260,7 @@ describe("07-M copy, word for word (draft pending the owner)", () => {
     expect(invalidCareTransition("paused", "paused")).toBe("A care plan can't move from Paused to Paused.");
     // An unworded code shows the server's words, marked.
     expect(careErrorText(err("conflict", "The entry could not be saved. Reload and try again"))).toBe(
-      `${PLACEHOLDER_TAG} The entry could not be saved. Reload and try again.`,
+      `The entry could not be saved. Reload and try again.`,
     );
     expect(careErrorText(new Error("x"))).toBe(
       "Couldn't reach the server. Check your connection and try again.",
@@ -267,21 +268,22 @@ describe("07-M copy, word for word (draft pending the owner)", () => {
   });
 });
 
-describe("placeholders are marked", () => {
-  it("every sentence 07-M lacks carries the tag", () => {
+describe("07-Q lines carry no placeholder tag", () => {
+  it("every sentence 07-M lacked has its 07-Q words, with no tag", () => {
     const all = [
-      ...Object.values(CARE_PENDING).filter((v): v is string => typeof v === "string"),
+      ...(Object.values(CARE_PENDING).filter((v) => typeof v === "string") as string[]),
       CARE_PENDING.serverWords("x"),
-      ...Object.values(TIME_PENDING).filter((v): v is string => typeof v === "string"),
+      ...(Object.values(TIME_PENDING).filter((v) => typeof v === "string") as string[]),
       TIME_PENDING.targetsFound(2),
       ...Object.values(ACTIVITY_PENDING),
     ];
-    for (const s of all) expect(s.startsWith(PLACEHOLDER_TAG)).toBe(true);
+    for (const s of all) expect(s.includes(PLACEHOLDER_TAG)).toBe(false);
+    expect(TIME_PENDING.noteTooLong).toBe("Keep the note to 1,000 characters or fewer.");
   });
 
   it("activity in words: approved labels, then marked placeholders, then the name itself", () => {
     expect(activityText("project.create")).toBe("added a project");
-    expect(activityText("care_plan.terms")).toBe(`${PLACEHOLDER_TAG} changed a care plan's terms`);
+    expect(activityText("care_plan.terms")).toBe(`changed a care plan's terms`);
     expect(activityText("constructor")).toBe("constructor");
     expect(activityHref("care_plan", "cp 1")).toBe("/care-plans/cp%201");
     expect(activityHref("lead", "l1")).toBe("/leads/l1");
@@ -355,7 +357,7 @@ describe("the new plan form", () => {
       ...planFormFor("growth", defaults, { startDate: "2026-11-01", billingDay: "5" }),
       overageRate: "1,500",
     };
-    const r = planInput(f, "c1", "INR");
+    const r = planInput(f, "c1", "INR", {});
     expect(r).toEqual({
       ok: true,
       body: {
@@ -370,13 +372,17 @@ describe("the new plan form", () => {
         billingDay: 5,
       },
     });
-    const bad = planInput({ ...f, price: "", billingDay: "29", startDate: "" }, "c1", "INR");
+    const bad = planInput({ ...f, price: "", billingDay: "29", startDate: "" }, "c1", "INR", {});
     expect(bad.ok).toBe(false);
     if (!bad.ok) {
       expect(bad.errors.price).toBe(CARE_PENDING.enterPrice);
       expect(bad.errors.billingDay).toBe(CARE_PENDING.enterBillingDay);
       expect(bad.errors.startDate).toBe(CARE_PENDING.enterStartDate);
     }
+    // Review of the fixes, finding 1, and re-check L6: unread text blocks the save, whatever valid date the form still holds.
+    const unread = planInput(f, "c1", "INR", { startDate: true });
+    expect(unread.ok).toBe(false);
+    if (!unread.ok) expect(unread.errors.startDate).toBe(DATE_INVALID);
   });
 });
 
@@ -411,7 +417,7 @@ describe("the terms change (owner)", () => {
 });
 
 describe("the time entry", () => {
-  const ctx = { today: "2026-10-25", canWriteAny: false, me: "u1" };
+  const ctx = { today: "2026-10-25", canWriteAny: false, me: "u1", unread: {} };
   const base = { ...entryFormOf(null, "2026-10-25", "u1"), hours: "1", minutes: "30" };
   const target = { kind: "project" as const, id: "p1", code: "PRJ-0001", label: "PRJ-0001" };
 
@@ -438,6 +444,19 @@ describe("the time entry", () => {
     expect(at("2026-10-01", true).ok).toBe(true);
     expect(earliestDate("2026-10-25", false)).toBe("2026-10-18");
     expect(earliestDate("2026-10-25", true)).toBeUndefined();
+  });
+
+  it("a date that can't be read gets the owner's line; a cleared one still says to enter it (review of the fixes, finding 1)", () => {
+    // As the form gets it from the field: the last valid date (here the default, today) and the report that the text is unread.
+    const at = (typed: string) =>
+      entryInput(
+        { ...base, target, workDate: settledValue(typed) ?? base.workDate },
+        { ...ctx, unread: isUnread(typed) ? { workDate: true } : {} },
+      );
+    expect(at("31/02/2026")).toMatchObject({ ok: false, errors: { workDate: DATE_INVALID } });
+    expect(at("25/10/26")).toMatchObject({ ok: false, errors: { workDate: DATE_INVALID } });
+    expect(at("")).toMatchObject({ ok: false, errors: { workDate: TIME_PENDING.enterDate } });
+    expect(at("25/10/2026").ok).toBe(true);
   });
 
   it("editing: the date rule applies only when the date was changed (a 7-day edit window keeps its old date) [review fix 2]", () => {

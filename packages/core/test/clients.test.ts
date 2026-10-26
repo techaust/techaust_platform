@@ -143,7 +143,7 @@ describe("client constants", () => {
 
   it("anonymised names are the approved 07-J words and the address is unique, lower case and undeliverable", () => {
     expect(ANONYMISED_CONTACT).toBe("Removed contact");
-    expect(ANONYMISED_CLIENT).toBe("Removed client");
+    expect(ANONYMISED_CLIENT).toBe("Anonymised client");
     expect(anonymisedEmail("0192A-BC")).toBe("anonymised+0192a-bc@invalid");
     expect(anonymisedEmail("a")).not.toBe(anonymisedEmail("b"));
   });

@@ -19,6 +19,12 @@ export function shortIsoDate(iso: string): string {
   return d ? shortDate(d) : iso;
 }
 
+/** "2026-10-06" as "06 Oct 2026" (the portal's screen; the PDF keeps the short form); anything else is returned as it came. */
+export function longIsoDate(iso: string): string {
+  const d = parseIsoDate(iso);
+  return d ? `${pad2(d.day)} ${MONTHS[d.month - 1]} ${d.year}` : iso;
+}
+
 /** Milli-units as a decimal text: 1000 is "1", 1500 is "1.5", 250 is "0.25". */
 export function formatQty(qtyMilli: number): string {
   const s = String(Math.abs(qtyMilli)).padStart(4, "0");

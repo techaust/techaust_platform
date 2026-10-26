@@ -5,7 +5,8 @@ import { formatMoney, isCurrency, type Money, money, negate } from "@techaust/co
 import { placeOfSupplyLabel } from "@techaust/core/pdf-jobs";
 import { percentFromBp } from "@techaust/core/schedule-text";
 import type { ComputedDocument } from "@techaust/core/tax";
-import { countryName, formatMicros, formatQty, shortIsoDate } from "./format.ts";
+import { DEFAULT_CONTACT_EMAIL, footerLine } from "./footer.ts";
+import { countryName, formatMicros, formatQty, longIsoDate, shortIsoDate } from "./format.ts";
 import type {
   Address,
   Envelope,
@@ -20,9 +21,11 @@ import type {
 } from "./types.ts";
 
 export const DEFAULT_VIEW_CONFIG: ViewConfig = {
-  contactEmail: "hello@techaust.com",
+  contactEmail: DEFAULT_CONTACT_EMAIL,
   portalLink: "portal.techaust.com",
 };
+
+export { footerLine };
 
 const DASH = "–";
 /** "18 %": the house style puts a space before the sign; a no-break space keeps the two together on the page. */
@@ -91,7 +94,13 @@ function totalsOf(c: ComputedDocument, m: (n: number) => string): ViewTotalRow[]
 }
 
 /** Builds the view of a verified envelope. `cfg` carries the few things that are not in the envelope. */
-export function toPdfView(envelope: Envelope, cfg: ViewConfig = DEFAULT_VIEW_CONFIG): PdfView {
+export function toPdfView(
+  envelope: Envelope,
+  cfg: ViewConfig = DEFAULT_VIEW_CONFIG,
+  opts: { longDates?: boolean } = {},
+): PdfView {
+  // The PDF prints "06 Oct 26"; the portal's screen passes `longDates` for "06 Oct 2026" (07-Q M10).
+  const dateOf = opts.longDates ? longIsoDate : shortIsoDate;
   const { snapshot: s } = envelope;
   const header = s.header;
   const computed = JSON.parse(s.computedJson) as ComputedDocument;
@@ -146,7 +155,7 @@ export function toPdfView(envelope: Envelope, cfg: ViewConfig = DEFAULT_VIEW_CON
     share: pct(st.pctBp),
     amount: m(header.instalmentAmounts[i] ?? 0),
     detail: nonEmpty(st.detail) ? st.detail : null,
-    date: st.targetDate ? shortIsoDate(st.targetDate) : null,
+    date: st.targetDate ? dateOf(st.targetDate) : null,
   }));
 
   const sections: ViewSection[] = s.sections
@@ -158,6 +167,8 @@ export function toPdfView(envelope: Envelope, cfg: ViewConfig = DEFAULT_VIEW_CON
     }));
 
   const company = header.issuer.company;
+  // Settings "Email on documents" as frozen at send (07-Q Q11); a version sent before that field existed prints the default.
+  const emailOnDocuments = nonEmpty(company.email) ? company.email : cfg.contactEmail;
   const recipient = recipientOf(header.recipient);
   // 07-P §1: "Proprietor: {legal name}" · the address · "GSTIN {gstin} · State {state} ({code})" · the sender address. A field still
   // empty in Settings is left out (the state is never empty: it has a default).
@@ -173,7 +184,7 @@ export function toPdfView(envelope: Envelope, cfg: ViewConfig = DEFAULT_VIEW_CON
       : null,
     company.address,
     registration,
-    cfg.contactEmail,
+    emailOnDocuments,
   ].filter(nonEmpty);
 
   return {
@@ -185,9 +196,9 @@ export function toPdfView(envelope: Envelope, cfg: ViewConfig = DEFAULT_VIEW_CON
     version: String(envelope.version),
     statusText: "Sent",
     notice: envelope.type === "estimate" ? "This is an estimate, not a tax invoice." : null,
-    issueDate: shortIsoDate(header.document.issueDate),
-    validUntil: shortIsoDate(header.document.validUntil),
-    validityNote: `Valid until ${shortIsoDate(header.document.validUntil)}`,
+    issueDate: dateOf(header.document.issueDate),
+    validUntil: dateOf(header.document.validUntil),
+    validityNote: `Valid until ${dateOf(header.document.validUntil)}`,
     logo: company.logo,
     supplier: { name: company.tradeName, lines: supplierLines },
     recipient,
@@ -209,7 +220,8 @@ export function toPdfView(envelope: Envelope, cfg: ViewConfig = DEFAULT_VIEW_CON
     integrity: `Document ID ${envelope.documentId} · Content fingerprint ${envelope.snapshotSha256.slice(0, 12)}`,
     portalLink: cfg.portalLink ?? "portal.techaust.com",
     footer: {
-      sender: cfg.contactEmail,
+      sender: emailOnDocuments,
+      brand: footerLine(emailOnDocuments),
       contact: `${header.issuer.sender.name}, ${header.issuer.sender.email}`,
     },
   };

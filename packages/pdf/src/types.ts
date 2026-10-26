@@ -35,6 +35,8 @@ export type IssuerSnap = {
     stateCode: string;
     /** The BRAND_LOGOS file name used at send (M4.3 fix, frozen with the issuer). */
     logo: string;
+    /** Settings "Email on documents" at send; absent on versions sent before the batch fixes (the footer then prints the default). */
+    email?: string;
   };
   sender: { staffId: string; name: string; email: string };
 };
@@ -175,12 +177,13 @@ export type PdfView = {
   inrNote: string | null;
   schedule: ViewStep[];
   sections: ViewSection[];
-  /** `version` is the bare number ("3"), for 07-O's "The terms below are version {n} of our proposal terms." */
+  /** `version` is the bare number ("3"), for 07-O's "The terms below are version {n} of our terms." */
   terms: { title: string; version: string; bodyMd: string };
   integrity: string;
   /** Where the client accepts (07-P acceptance box), printed as text. */
   portalLink: string;
-  footer: { sender: string; contact: string };
+  /** `brand` is the printed footer line, with the address of Settings "Email on documents". */
+  footer: { sender: string; contact: string; brand: string };
 };
 
 export type ViewConfig = {

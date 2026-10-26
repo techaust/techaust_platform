@@ -745,7 +745,7 @@ describe("loadDocument reads everything in one call [M4.4, M4.5 read through it]
 
   it("every statement reads through an index (EXPLAIN QUERY PLAN has no table scan)", async () => {
     for (const [name, sql] of Object.entries(LOAD_DOCUMENT_SQL)) {
-      const plan = await all<{ detail: string }>(`EXPLAIN QUERY PLAN ${sql}`.replace("?1", "'x'"));
+      const plan = await all<{ detail: string }>(`EXPLAIN QUERY PLAN ${sql}`.replaceAll("?1", "'x'"));
       const scans = plan.filter((p) =>
         /^SCAN (documents|document_lines|document_sections|payment_schedules|approvals|terms_versions)\b/.test(
           p.detail,

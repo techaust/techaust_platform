@@ -8,6 +8,7 @@ import { relative } from "../lib/format.ts";
 import {
   Archive,
   Ban,
+  Calendar,
   CheckCircle,
   ChevronRight,
   Clock,
@@ -16,6 +17,7 @@ import {
   Inbox,
   Lock,
   Pencil,
+  RefreshCw,
   Send,
 } from "./icons.tsx";
 import { MenuButton, type MenuItem } from "./popover.tsx";
@@ -93,6 +95,8 @@ const PILL_ICON = {
   flag: Flag,
   eye: Eye,
   archive: Archive,
+  calendar: Calendar,
+  progress: RefreshCw,
 } as const;
 
 /** Icon + text + colour, never colour alone (docs/06 §5.5). */
@@ -141,6 +145,25 @@ export function When({ ms, now, inline }: { ms: number | null; now?: number; inl
       <time dateTime={new Date(ms).toISOString()}>{abs}</time>
       <span className="when__rel">{relative(ms, now)}</span>
     </span>
+  );
+}
+
+/** A sentence whose dates ("26 Oct 2026") never break across two lines; the words around them wrap as usual. */
+export function KeepDates({ text }: { text: string }) {
+  const parts = text.split(/(\d{1,2} [A-Z][a-z]{2} \d{4})/);
+  return (
+    <>
+      {parts.map((p, i) =>
+        i % 2 === 1 ? (
+          // biome-ignore lint/suspicious/noArrayIndexKey: the parts of one fixed sentence, never reordered
+          <span key={i} className="when--keep">
+            {p}
+          </span>
+        ) : (
+          p
+        ),
+      )}
+    </>
   );
 }
 
