@@ -157,6 +157,34 @@ code {
   max-width: 100%;
 }
 
+/* The lockup follows the page's theme (data-theme), not the OS: only one of the pair is displayed, so only one is read. */
+.logo-pair {
+  display: block;
+  max-width: 100%;
+}
+
+.logo--on-dark {
+  display: none;
+}
+
+:root[data-theme="dark"] .logo--on-light {
+  display: none;
+}
+
+:root[data-theme="dark"] .logo--on-dark {
+  display: block;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .logo--on-light {
+    display: none;
+  }
+
+  :root:not([data-theme="light"]) .logo--on-dark {
+    display: block;
+  }
+}
+
 .back {
   display: inline-flex;
   align-items: center;
@@ -283,6 +311,80 @@ input[readonly] {
   text-transform: uppercase;
 }
 
+/* ---------- The date field (components/date-field.tsx) ----------
+   Typed DD/MM/YYYY, a calendar button joined to its right edge (tokens in both themes), the date read back underneath. */
+.datefield {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.datefield__row {
+  position: relative;
+  display: flex;
+  max-width: 16rem;
+}
+
+.datefield__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border-start-end-radius: 0;
+  border-end-end-radius: 0;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.datefield__pick {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--target-min);
+  min-height: var(--target-min);
+  padding: 0;
+  border: 1px solid var(--color-border-control);
+  border-inline-start: 0;
+  border-start-end-radius: var(--radius-sm);
+  border-end-end-radius: var(--radius-sm);
+  background: var(--color-surface-alt);
+  color: var(--color-text-accent);
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.datefield__pick:hover:not(:disabled) {
+  background: var(--color-fill-subtle);
+  color: var(--color-text);
+}
+
+.datefield__pick:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+/* The browser's calendar, opened by the button: present (showPicker needs a rendered input) but never seen or reached. */
+.datefield__native {
+  position: absolute;
+  inset-inline-end: 0;
+  bottom: 0;
+  width: var(--target-min);
+  height: 1px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.datefield__echo {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  font-variant-numeric: tabular-nums;
+}
+
 .input-wrap {
   position: relative;
 }
@@ -367,6 +469,7 @@ input[readonly] {
   font-weight: 560;
   line-height: 1.2;
   text-align: center;
+  text-decoration: none;
   border: 1px solid transparent;
   border-radius: var(--radius-md);
   cursor: pointer;
@@ -387,6 +490,7 @@ input[readonly] {
 
 .btn--primary:hover:not(:disabled) {
   background: var(--color-btn-primary-hover);
+  color: var(--color-btn-primary-fg);
 }
 
 .btn--secondary {
@@ -397,6 +501,7 @@ input[readonly] {
 
 .btn--secondary:hover:not(:disabled) {
   background: var(--color-surface-alt);
+  color: var(--color-btn-secondary-fg);
   border-color: var(--color-text-muted);
 }
 
@@ -1061,16 +1166,32 @@ input[readonly] {
   margin-bottom: var(--space-5);
 }
 
+/* The actions stay at the dialog's bottom edge while a long dialog scrolls (one scroll, its buttons always in reach). */
 .dialog__actions {
+  position: sticky;
+  bottom: calc(-1 * var(--space-6));
+  z-index: 1;
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--space-2);
+  margin-inline: calc(-1 * var(--space-6));
+  margin-bottom: calc(-1 * var(--space-6));
+  padding: var(--space-4) var(--space-6) var(--space-6);
+  background: var(--color-surface-raised);
+  box-shadow: 0 -1px 0 var(--color-border);
 }
 
 @media (max-width: 29.99rem) {
   .dialog {
     padding: var(--space-5);
+  }
+
+  .dialog__actions {
+    bottom: calc(-1 * var(--space-5));
+    margin-inline: calc(-1 * var(--space-5));
+    margin-bottom: calc(-1 * var(--space-5));
+    padding: var(--space-4) var(--space-5) var(--space-5);
   }
 
   .dialog__actions .btn {

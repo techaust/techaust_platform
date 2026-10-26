@@ -98,7 +98,9 @@ function ProjectView(props: {
   const [params, setParams] = useSearchParams();
   const asked = params.get("tab");
   const tab: TabKey = TABS.some((t) => t.key === asked) ? (asked as TabKey) : "overview";
-  const select = (k: TabKey) =>
+  const select = (k: TabKey) => {
+    // Notes and files are changed in their own tabs: back on the Overview, its "recent" lists are read again (batch review M6).
+    if (k === "overview" && (tab === "notes" || tab === "files")) props.reload();
     setParams(
       (p) => {
         const n = new URLSearchParams(p);
@@ -108,6 +110,7 @@ function ProjectView(props: {
       },
       { replace: true },
     );
+  };
   const [saveStale, setSaveStale] = useState(false);
   const [moveFailure, setMoveFailure] = useState<string | null>(null);
   const d = props.drafts.details;

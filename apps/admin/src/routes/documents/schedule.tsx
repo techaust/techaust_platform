@@ -3,6 +3,7 @@
 // total exactly. The M4.1 schedule bar draws the shares, so a gap or an overshoot is visible before the server says so.
 import { type Dispatch, memo, useCallback, useState } from "react";
 import type { Currency } from "../../api.ts";
+import { DateField } from "../../components/date-field.tsx";
 import { ArrowDown, ArrowUp, Plus, Trash } from "../../components/icons.tsx";
 import { MenuButton } from "../../components/popover.tsx";
 import { FieldError } from "../../components/ui.tsx";
@@ -86,6 +87,24 @@ export const SchedulePanel = memo(function SchedulePanel(props: {
           ))}
           {gap > 0 && <span className="sched-bar__gap" style={{ flexGrow: gap }} />}
         </div>
+      )}
+      {props.steps.length > 0 && (
+        // The bar's labels: each segment carries its instalment's number (the list below numbers them the same) where it is wide
+        // enough to hold it. Hidden like the bar: the list says every share.
+        <span className="bar-scale sched-scale" aria-hidden="true">
+          {segs.map((bp, i) => {
+            const before = segs.slice(0, i).reduce((n, x) => n + x, 0);
+            return bp >= 800 ? (
+              <span
+                key={props.steps[i]?.uid}
+                className="bar-scale__at"
+                style={{ left: `${(before + bp / 2) / 100}%` }}
+              >
+                {i + 1}
+              </span>
+            ) : null;
+          })}
+        </span>
       )}
       <ol className="qledger qledger--steps">
         {props.steps.map((s, i) => (
@@ -257,11 +276,10 @@ const StepRow = memo(function StepRow(p: {
             {hidden}
             {DOC_COPY.targetDate}
           </label>
-          <input
+          <DateField
             id={id("date")}
-            type="date"
             value={s.targetDate}
-            onChange={(e) => p.onEdit(s.uid, { targetDate: e.target.value })}
+            onChange={(v) => p.onEdit(s.uid, { targetDate: v })}
           />
         </div>
       </div>

@@ -7,6 +7,7 @@ import { istDate, toIsoDate } from "@techaust/core/dates";
 import { type FormEvent, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { api, type CareDefaults, type ClientView, errorText, RequestError } from "../../api.ts";
+import { DateField } from "../../components/date-field.tsx";
 import { PageHeader } from "../../components/display.tsx";
 import { ErrorSummary, FormField, type SummaryError } from "../../components/form.tsx";
 import { Lock } from "../../components/icons.tsx";
@@ -221,14 +222,7 @@ function NewCarePlan() {
               <legend>Billing</legend>
               <div className="form-grid">
                 <FormField id={`${P}-startDate`} label="Start date" error={errorOf(`${P}-startDate`)}>
-                  {(a) => (
-                    <input
-                      {...a}
-                      type="date"
-                      value={f.startDate}
-                      onChange={(e) => patch({ startDate: e.target.value })}
-                    />
-                  )}
+                  {(a) => <DateField {...a} value={f.startDate} onChange={(v) => patch({ startDate: v })} />}
                 </FormField>
                 <FormField
                   id={`${P}-billingDay`}

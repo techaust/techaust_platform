@@ -2,10 +2,9 @@
 // word, the error sentences by API code, the project details draft (the M3.2 drafts pattern), the milestone form, file sizes
 // and the client-side upload checks. Pure, so the copy and the rules are tested without a browser.
 //
-// Copy: 07-K (docs/07-content-appendix/K-m3.4-project-screens.md) is a DRAFT pending the owner's word-for-word approval. A
-// sentence the screens need and 07-K lacks is a PLACEHOLDER: it carries a visible "[Placeholder]" tag (`pending()`), sits in
-// `PENDING` below, and is listed in the designer report. Labels (buttons, columns, field names) come from the PRD and the
-// existing screens.
+// Copy: 07-K (docs/07-content-appendix/K-m3.4-project-screens.md) is approved by the owner (with 07-Q, 2026-10-26). A
+// sentence the screens need that 07-K lacked sits in `PENDING` below, in its 07-Q words (no tag). Labels (buttons, columns, field
+// names) come from the PRD and the existing screens.
 import { formatMoney, money } from "@techaust/core";
 import { isAllowedExtension, MAX_UPLOAD_BYTES } from "@techaust/core/file-types";
 import { canMoveProject, PROJECT_TRANSITIONS } from "@techaust/core/projects";
@@ -54,12 +53,12 @@ export const VISIBILITY_LABELS: Record<NoteVisibility, string> = {
 
 type Pill = {
   tone: PillTone;
-  icon: "pencil" | "check" | "clock" | "send" | "ban" | "lock" | "inbox" | "flag";
+  icon: "pencil" | "check" | "clock" | "send" | "ban" | "lock" | "inbox" | "flag" | "calendar" | "progress";
 };
 /** Icon + text + colour (docs/06 §5.5), never colour alone. */
 export const PROJECT_PILLS: Record<ProjectStatus, Pill> = {
-  planned: { tone: "neutral", icon: "pencil" },
-  active: { tone: "info", icon: "send" },
+  planned: { tone: "neutral", icon: "calendar" },
+  active: { tone: "info", icon: "progress" },
   on_hold: { tone: "warning", icon: "clock" },
   completed: { tone: "success", icon: "check" },
   cancelled: { tone: "muted", icon: "ban" },
@@ -77,7 +76,7 @@ export const projectMoves = (from: ProjectStatus): readonly ProjectStatus[] => P
 export const needsConfirm = (to: ProjectStatus) => to === "completed" || to === "cancelled";
 export { canMoveProject };
 
-// ---- 07-K copy, word for word (draft, pending the owner) -----------------------------------------------------------------
+// ---- 07-K copy, word for word (approved, 07-Q) -----------------------------------------------------------------
 
 export const COPY = {
   // 07-K's empty line in two parts: its first sentence is the empty state's heading (no full stop), the second the body.
@@ -87,7 +86,7 @@ export const COPY = {
   clientProjectsEmptyTitle: "No projects for this client yet",
   projectsNoMatch: "Try fewer filters, or search for the start of a project code or name.",
   clientFilesEmpty: "No files for this client yet.",
-  linkedProposal: "The linked proposal arrives with proposals.",
+  linkedProposal: "No proposal is linked to this project.",
   billedVsPaid: "Billed and paid figures arrive with invoicing.",
   hoursLogged: "Hours logged arrive with time logs.",
   createInvoice: "Invoices arrive with invoicing.",
@@ -128,44 +127,38 @@ export const TOASTS = {
   fileDeleted: "File deleted.",
 } as const;
 
-// ---- placeholders (not in 07-K; each listed in the designer report) --------------------------------------------------------
+// ---- lines 07-K lacked, approved word for word in 07-Q (2026-10-26) --------------------------------------------------
 
 export const PLACEHOLDER_TAG = "[Placeholder]";
-/** A sentence 07-K doesn't have yet, marked so nobody mistakes it for approved copy. */
-export const pending = (text: string) => `${PLACEHOLDER_TAG} ${text}`;
 
 export const PENDING = {
-  milestonesEmpty: pending("No milestones yet."),
-  notesEmpty: pending("No notes yet."),
-  filesEmpty: pending("No files yet."),
-  clientNotesEmpty: pending("No notes for this client yet."),
-  milestoneDeleted: pending("Milestone deleted."),
-  noteDeleted: pending("Note deleted."),
-  statusChanged: (status: string) => pending(`Project marked as ${status}.`),
-  staleProject: pending("Someone else changed this project."),
-  staleProjectDraft: pending("Someone else changed this project while you were editing it."),
-  staleMilestone: pending("Someone else changed this milestone."),
-  staleNote: pending("Someone else changed this note."),
-  noClientMatch: pending("No client's code or name starts with that."),
-  chooseClient: pending("Choose the client."),
-  clientFilterHint: pending("Start of a code or name"),
-  clientFilterClear: pending("Show projects of all clients"),
-  clientsFound: (n: number) => pending(`${n} ${n === 1 ? "client" : "clients"} found`),
-  enterName: pending("Enter the project name."),
-  enterTitle: pending("Enter the milestone title."),
-  enterPercent: pending("Enter a percentage from 0 to 100, with at most 2 decimals."),
-  enterNote: pending("Write the note first."),
-  datesOrder: pending("The target date can't be before the start date."),
-  clientAnonymised: pending(
-    "This client's personal details were removed, so nothing new can be added to it.",
-  ),
-  budgetLocked: pending("The budget can't change while a percentage milestone is invoiced or paid."),
+  milestonesEmpty: "No milestones yet.",
+  notesEmpty: "No notes yet.",
+  filesEmpty: "No files yet.",
+  clientNotesEmpty: "No notes for this client yet.",
+  milestoneDeleted: "Milestone deleted.",
+  noteDeleted: "Note deleted.",
+  statusChanged: (status: string) => `Project marked as ${status}.`,
+  staleProject: "Someone else changed this project.",
+  staleProjectDraft: "Someone else changed this project while you were editing it.",
+  staleMilestone: "Someone else changed this milestone.",
+  staleNote: "Someone else changed this note.",
+  noClientMatch: "No client's code or name starts with that.",
+  chooseClient: "Choose the client.",
+  clientFilterHint: "Client code or name",
+  clientFilterClear: "Show projects of all clients",
+  clientsFound: (n: number) => `${n} ${n === 1 ? "client" : "clients"} found`,
+  enterName: "Enter the project name.",
+  enterTitle: "Enter the milestone title.",
+  enterPercent: "Enter a percentage from 0 to 100, with at most 2 decimals.",
+  enterNote: "Write the note first.",
+  datesOrder: "The target date can't be before the start date.",
+  clientAnonymised: "This client's personal details were removed, so nothing new can be added to it.",
+  budgetLocked: "The budget can't change while a percentage milestone is invoiced or paid.",
   milestoneInvalidTransition: (from: MilestoneStatus, to: MilestoneStatus) =>
-    pending(
-      `A milestone can't move from ${MILESTONE_STATUS_LABELS[from]} to ${MILESTONE_STATUS_LABELS[to]}.`,
-    ),
-  /** API codes with no 07-K sentence: the server's own words, marked. */
-  serverWords: (message: string) => pending(sentence(message)),
+    `A milestone can't move from ${MILESTONE_STATUS_LABELS[from]} to ${MILESTONE_STATUS_LABELS[to]}.`,
+  /** API codes with no 07-K sentence: the server's own words. */
+  serverWords: (message: string) => sentence(message),
 } as const;
 
 // ---- errors by API code ------------------------------------------------------------------------------------------------------
@@ -185,7 +178,7 @@ const ERRORS: Record<string, string> = {
   arrives_with_invoicing: "Invoiced and Paid are set by invoicing, which arrives later.",
   order_mismatch: "The milestones changed while you were reordering. Reload and try again.",
 };
-/** M3.4 codes 07-K has no sentence for yet: the server's words, marked as placeholders. */
+/** M3.4 codes 07-K has no sentence for yet: the server's words (07-Q PRJ24). */
 const UNWORDED = new Set([
   "milestone_invalid_transition",
   "dates_order",
@@ -198,7 +191,7 @@ const UNWORDED = new Set([
 export const invalidTransition = (from: ProjectStatus, to: ProjectStatus) =>
   `A project can't move from ${PROJECT_STATUS_LABELS[from]} to ${PROJECT_STATUS_LABELS[to]}.`;
 
-/** The sentence for a failed M3.4 request: 07-K by code, a marked placeholder for an unworded code, else the usual text. */
+/** The sentence for a failed M3.4 request: 07-K by code, the server's words for an unworded code, else the usual text. */
 export function projectErrorText(
   e: unknown,
   move?: { from: ProjectStatus; to: ProjectStatus },

@@ -1,9 +1,9 @@
 // Every word the M4.5 portal screens show (the shell, home, proposals and estimates, accept and decline), in three groups:
 // - WORDS: taken from an approved source, named on each line (the M4.5 brief, docs/04, docs/06, docs/07 or the M1.6 copy.ts);
-// - N: docs/07-content-appendix/N-m4.5-portal-offers.md word for word. 07-N is PENDING the owner's word-for-word approval (batch
-//   rule), so these lines may still change; they are shown as written, without a tag;
-// - PENDING: lines 07-N doesn't have. Sentences carry a visible "[Placeholder]" tag (components/pending.tsx); every one is listed in
-//   the M4.5 designer report for the lead to add to 07-N.
+// - N: docs/07-content-appendix/N-m4.5-portal-offers.md word for word (approved by the owner with 07-Q, 2026-10-26);
+//   shown as written;
+// - PENDING: lines 07-N didn't have, approved word for word in 07-Q (POR1 to POR4), shown without a tag (the name keeps the
+//   history of where they came from).
 // English (India/UK spelling), "and" never "&", no banned phrases (07 §1.3). Acceptance and evidence wording: VERIFY WITH CA/LEGAL.
 import type { OfferKind, OfferStatus } from "./api.ts";
 import { COPY } from "./copy.ts";
@@ -163,8 +163,7 @@ export const N = {
 } as const;
 
 /**
- * Lines 07-N doesn't have yet. Each is shown with a visible "[Placeholder]" tag (sentences) or untagged (short labels), and
- * listed in the designer report for 07-N.
+ * Lines 07-N didn't have, approved word for word in 07-Q §3 (Portal, POR1 to POR4).
  */
 export const PENDING = {
   // A typed name the server refuses for a reason the form can't catch first (07-N has "Type your full name." for an empty one).

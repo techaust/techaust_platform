@@ -75,17 +75,15 @@ describe("07-N word for word", () => {
 describe("lines 07-N doesn't have carry a visible tag", () => {
   it("delivery states, actions and the missing-field sentence", () => {
     for (const s of ["sending", "delivered", "bounced", "complained", "skipped", "not_sent"] as const)
-      expect(deliveryLabel(s).startsWith(PLACEHOLDER_TAG)).toBe(true);
-    expect(OFFER_PENDING.sendAgain.startsWith(PLACEHOLDER_TAG)).toBe(true);
-    expect(OFFER_PENDING.revoke.startsWith(PLACEHOLDER_TAG)).toBe(true);
-    expect(missingText(["country", "gstin"])).toBe(
-      `${PLACEHOLDER_TAG} Fill in the client's country and GSTIN first.`,
-    );
+      expect(deliveryLabel(s).includes(PLACEHOLDER_TAG)).toBe(false);
+    expect(OFFER_PENDING.sendAgain.includes(PLACEHOLDER_TAG)).toBe(false);
+    expect(OFFER_PENDING.revoke.includes(PLACEHOLDER_TAG)).toBe(false);
+    expect(missingText(["country", "gstin"])).toBe(`Fill in the client's country and GSTIN first.`);
     expect(
       offerErrorText(
         new RequestError(409, "instalment_failed", "x", null, [], [], [], { missing: ["state_code"] }),
       ),
-    ).toBe(`${PLACEHOLDER_TAG} Fill in the client's state first.`);
+    ).toBe(`Fill in the client's state first.`);
   });
 });
 

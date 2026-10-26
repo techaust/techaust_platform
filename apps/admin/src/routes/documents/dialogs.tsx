@@ -7,6 +7,7 @@ import { useState } from "react";
 import { Link } from "react-router";
 import type { Currency } from "../../api.ts";
 import { ConfirmDialog } from "../../components/confirm-dialog.tsx";
+import { DateField } from "../../components/date-field.tsx";
 import { Modal } from "../../components/dialog.tsx";
 import { FormField } from "../../components/form.tsx";
 import { Notice } from "../../components/ui.tsx";
@@ -302,9 +303,7 @@ function CareForm(props: {
           </p>
         )}
         <FormField id="cv-start" label={DOC_COPY.startDate} error={errors.startDate}>
-          {(a) => (
-            <input {...a} type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-          )}
+          {(a) => <DateField {...a} value={startDate} onChange={(v) => setStartDate(v)} />}
         </FormField>
         <FormField
           id="cv-day"

@@ -14,11 +14,10 @@ import {
 import type { DecisionModel } from "../components/decision/decision-panel.tsx";
 import type { DeclineReason } from "../components/decision/decline-dialog.tsx";
 import { Alert } from "../components/icons.tsx";
-import { ErrorLine } from "../components/pending.tsx";
 import { PageTitle } from "../components/shell/portal-shell.tsx";
 import { COPY } from "../copy.ts";
 import { N } from "../copy-documents.ts";
-import { errorText, pdfName, saveDownload } from "../lib/offers.ts";
+import { dateText, errorText, pdfName, saveDownload } from "../lib/offers.ts";
 import { DocumentPage } from "../screens/document-page.tsx";
 import { NotFoundScreen, ScreenSkeleton } from "../screens/home.tsx";
 
@@ -124,7 +123,8 @@ export function OfferScreen(props: {
     version: doc.version,
     total,
     status: page.acceptance ? "accepted" : doc.status,
-    validUntil: view.validUntil,
+    // On screen a date has its four-digit year, like every other date here (batch review M10); the paper keeps the PDF's own.
+    validUntil: doc.validUntil ? dateText(doc.validUntil) : view.validUntil,
     acceptance: page.acceptance
       ? {
           typedName: page.acceptance.typedName,
@@ -228,9 +228,7 @@ function AlertLine({ text }: { text: string }) {
   return (
     <div className="notice notice--error" role="alert">
       <Alert size={20} />
-      <div>
-        <ErrorLine text={text} />
-      </div>
+      <div>{text}</div>
     </div>
   );
 }
@@ -244,9 +242,7 @@ function ProblemScreen(props: { title: string; text: string; onRetry: () => void
           {props.title}
         </PageTitle>
       </header>
-      <p>
-        <ErrorLine text={props.text} />
-      </p>
+      <p>{props.text}</p>
       <button type="button" className="btn btn--secondary" onClick={props.onRetry}>
         {COPY.reload}
       </button>

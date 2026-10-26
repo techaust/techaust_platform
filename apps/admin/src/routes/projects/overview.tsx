@@ -3,7 +3,9 @@
 // milestones timeline with the total against the budget, the five newest notes and files, and the figures that arrive with later
 // modules (billed vs paid with invoicing, hours with time logs), which say so in the 07-K words instead of showing a zero.
 import { type Dispatch, type FormEvent, useState } from "react";
+import { Link } from "react-router";
 import { api, fileDownloadHref, type ProjectPage, RequestError } from "../../api.ts";
+import { DateField } from "../../components/date-field.tsx";
 import { When } from "../../components/display.tsx";
 import { AlertTriangle, Clock, Download, FileText, Pencil, Receipt } from "../../components/icons.tsx";
 import { Markdown } from "../../components/markdown.tsx";
@@ -12,6 +14,7 @@ import { useToast } from "../../components/toast.tsx";
 import { FieldError, Notice } from "../../components/ui.tsx";
 import { allowed } from "../../lib/access.ts";
 import { hoursLoggedLine } from "../../lib/care.ts";
+import { OPEN_IT } from "../../lib/documents.ts";
 import {
   COPY,
   type DetailsErrors,
@@ -91,10 +94,16 @@ export function Overview(props: {
           </h2>
           <dl className="facts figures">
             <Fact label="Proposal">
-              <span className="panel-empty">
-                <FileText size={20} />
-                <span>{COPY.linkedProposal}</span>
-              </span>
+              {props.data.project.sourceDocumentId ? (
+                <Link to={`/documents/${encodeURIComponent(props.data.project.sourceDocumentId)}`}>
+                  {OPEN_IT}
+                </Link>
+              ) : (
+                <span className="panel-empty">
+                  <FileText size={20} />
+                  <span>{COPY.linkedProposal}</span>
+                </span>
+              )}
             </Fact>
           </dl>
         </section>
@@ -228,11 +237,10 @@ function Details(props: Parameters<typeof Overview>[0] & { canWrite: boolean }) 
               <label htmlFor="pd-startDate">
                 Start date<span className="field__optional"> (optional)</span>
               </label>
-              <input
+              <DateField
                 {...a11y("startDate")}
-                type="date"
                 value={f.startDate}
-                onChange={(e) => setF({ ...f, startDate: e.target.value })}
+                onChange={(v) => setF({ ...f, startDate: v })}
               />
               {err("startDate")}
             </div>
@@ -240,12 +248,11 @@ function Details(props: Parameters<typeof Overview>[0] & { canWrite: boolean }) 
               <label htmlFor="pd-targetDate">
                 Target date<span className="field__optional"> (optional)</span>
               </label>
-              <input
+              <DateField
                 {...a11y("targetDate")}
-                type="date"
                 min={f.startDate || undefined}
                 value={f.targetDate}
-                onChange={(e) => setF({ ...f, targetDate: e.target.value })}
+                onChange={(v) => setF({ ...f, targetDate: v })}
               />
               {err("targetDate")}
             </div>

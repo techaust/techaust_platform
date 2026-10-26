@@ -85,7 +85,7 @@ describe("07-K copy, word for word [ADM-PRJ-01..05]", () => {
     );
     expect(`${COPY.clientProjectsEmptyTitle}.`).toBe("No projects for this client yet.");
     expect(COPY.clientFilesEmpty).toBe("No files for this client yet.");
-    expect(COPY.linkedProposal).toBe("The linked proposal arrives with proposals.");
+    expect(COPY.linkedProposal).toBe("No proposal is linked to this project.");
     expect(COPY.billedVsPaid).toBe("Billed and paid figures arrive with invoicing.");
     expect(COPY.hoursLogged).toBe("Hours logged arrive with time logs.");
     expect(COPY.createInvoice).toBe("Invoices arrive with invoicing.");
@@ -126,10 +126,10 @@ describe("07-K copy, word for word [ADM-PRJ-01..05]", () => {
     ]);
   });
 
-  it("every sentence 07-K lacks is marked as a placeholder", () => {
+  it("every sentence 07-K lacked has its 07-Q words, with no placeholder tag", () => {
     for (const v of Object.values(PENDING)) {
       const text = typeof v === "function" ? (v as (...a: string[]) => string)("pending", "paid") : v;
-      expect(text.startsWith(`${PLACEHOLDER_TAG} `)).toBe(true);
+      expect(text.includes(PLACEHOLDER_TAG)).toBe(false);
     }
   });
 
@@ -156,12 +156,12 @@ describe("errors by API code", () => {
       expect(projectErrorText(e(c))).toBe("The upload didn't arrive complete. Try again.");
     expect(
       projectErrorText(e("milestone_invalid_transition"), undefined, { from: "invoiced", to: "pending" }),
-    ).toBe("[Placeholder] A milestone can't move from Invoiced to Pending.");
+    ).toBe("A milestone can't move from Invoiced to Pending.");
     expect(projectErrorText(e("client_anonymised"))).toBe(
-      "[Placeholder] This client's personal details were removed, so nothing new can be added to it.",
+      "This client's personal details were removed, so nothing new can be added to it.",
     );
     expect(projectErrorText(e("budget_locked"))).toBe(
-      "[Placeholder] The budget can't change while a percentage milestone is invoiced or paid.",
+      "The budget can't change while a percentage milestone is invoiced or paid.",
     );
     expect(projectErrorText(e("milestone_limit"))).toBe("A project can have up to 100 milestones.");
     expect(projectErrorText(e("milestone_locked"))).toBe(
@@ -180,7 +180,7 @@ describe("errors by API code", () => {
 
   it("an unworded M3.4 code is the server's words, marked; others are the server's words", () => {
     expect(projectErrorText(e("dates_order", "The target date can't be before the start date"))).toBe(
-      "[Placeholder] The target date can't be before the start date.",
+      "The target date can't be before the start date.",
     );
     expect(projectErrorText(e("stale_version", "Someone else saved first"))).toBe(
       "Someone else saved first.",
@@ -219,8 +219,8 @@ describe("the project details draft [ADM-PRJ-01]", () => {
   it("checks the name, the dates' order and the amount", () => {
     const f = { name: "", ownerId: "", startDate: "2026-12-01", targetDate: "2026-11-01", budget: "1.234" };
     const e = detailsErrors(f, "INR");
-    expect(e.name?.startsWith(PLACEHOLDER_TAG)).toBe(true);
-    expect(e.targetDate?.startsWith(PLACEHOLDER_TAG)).toBe(true);
+    expect(e.name?.includes(PLACEHOLDER_TAG)).toBe(false);
+    expect(e.targetDate?.includes(PLACEHOLDER_TAG)).toBe(false);
     expect(e.budget).toBe("Use at most 2 decimal places.");
   });
 

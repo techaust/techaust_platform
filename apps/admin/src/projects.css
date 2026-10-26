@@ -18,7 +18,7 @@
   font-weight: 400;
 }
 
-@media (min-width: 48.01rem) and (max-width: 79.99rem) {
+@media (min-width: 48rem) and (max-width: 79.99rem) {
   .projects-table .dtable__table {
     min-width: 46rem;
   }
@@ -26,16 +26,20 @@
 
 /* ---------- The client filter on the list ---------- */
 
+/* Beside the chips on every list (Projects, Care plans, Proposals and Estimates): wide enough for its whole hint at every
+   width, and never wider than a code-or-name needs. */
 .client-filter {
   display: grid;
   gap: var(--space-2);
   align-content: start;
+  flex: 1 1 22rem;
+  min-width: 0;
+  max-width: 26rem;
 }
 
 .client-filter__search {
   display: grid;
   gap: var(--space-2);
-  max-width: 24rem;
 }
 
 .client-filter__chosen {

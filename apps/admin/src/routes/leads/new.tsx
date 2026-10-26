@@ -5,6 +5,7 @@
 import { type FormEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { api, errorText, RequestError } from "../../api.ts";
+import { DateField } from "../../components/date-field.tsx";
 import { PageHeader } from "../../components/display.tsx";
 import { ErrorSummary, FormField, type SummaryError } from "../../components/form.tsx";
 import { useLoad } from "../../components/states.tsx";
@@ -208,9 +209,7 @@ function NewLead() {
               )}
             </FormField>
             <FormField id="nl-date" label="Next action" optional>
-              {(a) => (
-                <input {...a} type="date" value={f.date} onChange={(e) => set({ date: e.target.value })} />
-              )}
+              {(a) => <DateField {...a} value={f.date} onChange={(v) => set({ date: v })} />}
             </FormField>
           </div>
           <FormField id="nl-note" label="Next action note" optional>

@@ -11,6 +11,7 @@ import { Modal } from "../../components/dialog.tsx";
 import { EmptyState, When } from "../../components/display.tsx";
 import { FormField, VerifyNote } from "../../components/form.tsx";
 import { FileText, History, Pencil, Plus } from "../../components/icons.tsx";
+import { Markdown } from "../../components/markdown.tsx";
 import { LoadFailed, useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { Notice, SkeletonRows } from "../../components/ui.tsx";
@@ -88,7 +89,7 @@ export function DocumentTerms() {
                     {b.block === "refund_link" ? (
                       <p className="break">{b.current.bodyMd}</p>
                     ) : (
-                      <p className="prewrap">{b.current.bodyMd}</p>
+                      <Markdown source={b.current.bodyMd} className="terms-md" />
                     )}
                   </div>
                 )}
@@ -247,7 +248,11 @@ function HistoryDialog({ block, onClose }: { block: TermsBlock; onClose: () => v
                   <p className="versions__meta">
                     Saved <When ms={v.createdAt} inline />, {usedText(v)}.
                   </p>
-                  <p className={block.block === "refund_link" ? "break" : "prewrap"}>{v.bodyMd}</p>
+                  {block.block === "refund_link" ? (
+                    <p className="break">{v.bodyMd}</p>
+                  ) : (
+                    <Markdown source={v.bodyMd} className="terms-md" />
+                  )}
                 </li>
               ))}
             </ol>

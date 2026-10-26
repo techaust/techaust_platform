@@ -5,6 +5,7 @@
 import { parseIsoDate } from "@techaust/core/dates";
 import { type FormEvent, useState } from "react";
 import { api, RequestError, type TimeEntry, type TimePatch } from "../../api.ts";
+import { DateField } from "../../components/date-field.tsx";
 import { Modal } from "../../components/dialog.tsx";
 import { FormField } from "../../components/form.tsx";
 import { Search } from "../../components/icons.tsx";
@@ -171,16 +172,17 @@ function EntryFormBody(
             <span className="muted">Person</span> {props.entry.userName ?? "A former staff member"}
           </p>
         )}
-        <div className="form-grid">
+        {/* Date over Time spent: the two have different shapes (one control, then hours and minutes with their own labels), so
+            side by side they could never line up (batch review M3). */}
+        <div className="entry-form__when">
           <div className="field">
             <label htmlFor={`${P}-workDate`}>Date</label>
-            <input
+            <DateField
               {...a11y("workDate")}
-              type="date"
               value={f.workDate}
               max={props.today}
               min={earliestDate(props.today, props.canWriteAny)}
-              onChange={(e) => set({ workDate: e.target.value })}
+              onChange={(v) => set({ workDate: v })}
             />
             {err("workDate")}
           </div>

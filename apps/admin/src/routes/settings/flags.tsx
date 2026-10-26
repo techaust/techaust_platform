@@ -57,9 +57,7 @@ export function FeatureFlags() {
       {({ form: f, set, error }) => (
         <>
           <h2 className="settings-sub">Website</h2>
-          <p className="hint">
-            Website switches reach the site the next time it's published (milestone M4.1).
-          </p>
+          <p className="hint">Website switches reach the site the next time it's published.</p>
           <div className="settings-rows">
             <SettingRow
               id="ff-s3"

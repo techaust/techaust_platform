@@ -9,6 +9,7 @@ import { describeUserAgent } from "@techaust/core/user-agent";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { type AuditEntry, type AuditQuery, api, ensureStepUp, errorText } from "../api.ts";
+import { DateField } from "../components/date-field.tsx";
 import { EmptyState, PageHeader, Skeleton } from "../components/display.tsx";
 import { ArrowRight, Download, History } from "../components/icons.tsx";
 import { LoadFailed, NoAccess, useLoad } from "../components/states.tsx";
@@ -221,30 +222,20 @@ function AuditLog() {
         </div>
         <div className="field">
           <label htmlFor="au-from">From</label>
-          <input
-            id="au-from"
-            type="date"
-            value={f.from}
-            max={f.to || undefined}
-            onChange={(e) => set("from", e.target.value)}
-          />
+          <DateField id="au-from" value={f.from} max={f.to || undefined} onChange={(v) => set("from", v)} />
         </div>
         <div className="field">
           <label htmlFor="au-to">To</label>
-          <input
-            id="au-to"
-            type="date"
-            value={f.to}
-            min={f.from || undefined}
-            onChange={(e) => set("to", e.target.value)}
-          />
+          <DateField id="au-to" value={f.to} min={f.from || undefined} onChange={(v) => set("to", v)} />
         </div>
         <div className="filters__foot">
           <p className="filters__result" role="status">
             {page.state === "loading"
               ? "Loading…"
               : page.state === "ready"
-                ? `${entries.length === 1 ? "1 entry" : `${entries.length} entries`} on this page, times in IST`
+                ? entries.length === 0
+                  ? ""
+                  : `${entries.length === 1 ? "1 entry" : `${entries.length} entries`} on this page, times in IST`
                 : ""}
           </p>
           {filtered && (

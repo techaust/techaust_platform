@@ -143,7 +143,9 @@ function DocumentList() {
             : loading
               ? "Loading…"
               : list.state === "ready"
-                ? `${rows.length === 1 ? "1 document" : `${rows.length} documents`} on this page`
+                ? rows.length === 0
+                  ? ""
+                  : `${rows.length === 1 ? "1 document" : `${rows.length} documents`} on this page`
                 : ""
         }
       />

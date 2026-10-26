@@ -266,6 +266,7 @@ export function DeliveryPanel(props: {
           );
         })}
       </ul>
+      <p className="hint deliv__hint">{OFFER_COPY.viewedHint}</p>
       {props.canSend && (
         <div className="send-panel__actions">
           {props.canResend && (

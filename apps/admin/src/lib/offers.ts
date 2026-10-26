@@ -1,12 +1,11 @@
 // What the M4.5 staff screens add to a proposal or estimate (ADM-PROP-07..10): sending to chosen contacts, the delivery of each email,
 // the acceptance record and its certificate, a decline's reason, "Start project", sending again and revoking the links. The shapes are
 // the API's (apps/admin/worker/document-offer.ts `OfferSection`, document-links.ts, document-start.ts); the words are 07-N §3, §6 and §7
-// (PENDING the owner's word-for-word approval) and, where 07-N has no line yet, `OFFER_PENDING` (shown with a "[Placeholder]" tag and
-// listed in the designer report). Pure, so the copy and the rules are tested without a browser. Money is formatted only, never worked out.
+// (approved with 07-Q) and, where 07-N had no line, `OFFER_PENDING` (its 07-Q words, no tag).
+// Pure, so the copy and the rules are tested without a browser. Money is formatted only, never worked out.
 import { RequestError } from "../api.ts";
 import { docErrorText } from "./documents.ts";
 import { REASON_LABEL, reasonText } from "./offer-words.ts";
-import { pending } from "./projects.ts";
 
 // ---- the API's shapes ----------------------------------------------------------------------------------------------------------
 
@@ -85,7 +84,7 @@ export type StartResult = {
 /** The most contacts one send may name (MAX_RECIPIENTS in apps/admin/worker/document-links.ts). */
 export const MAX_RECIPIENTS = 5;
 
-// ---- 07-N, word for word (PENDING the owner) -----------------------------------------------------------------------------------
+// ---- 07-N, word for word (approved, 07-Q) -----------------------------------------------------------------------------------
 
 export const OFFER_COPY = {
   // §6 Send dialog.
@@ -94,8 +93,15 @@ export const OFFER_COPY = {
   sendToHint: "Contacts with portal access. Each gets their own link.",
   attach: "Attach the PDF",
   attachHint: "Off by default: the email links to the portal.",
+  /** 07-Q Q13: the hint when the client's own setting starts the switch On. */
+  attachHintOn: "On for this client: the PDF goes with the email.",
   message: "The message",
   noPortal: "Has no portal access yet",
+  /** The owner's words (batch review M8): no contact can receive it, so Send is off; the line links to the client's Contacts tab. */
+  noneWithPortal: "No contact of this client has portal access yet. Turn it on for a contact first.",
+  contactsTab: "Contacts",
+  /** 07-Q Q12: under the delivery list. */
+  viewedHint: "Viewed means the link was opened. Email security scanners can open links too.",
   chooseOne: "Choose at least one contact.",
   sending: "Sending…",
   sentTo: (n: number) => (n === 1 ? "Sent to 1 contact." : `Sent to ${n} contacts.`),
@@ -173,49 +179,46 @@ export const OFFER_ERRORS: Record<string, string> = {
   instalment_sac_merged: "The first instalment combines more than 10 service codes; check it before issuing.",
 };
 
-// ---- lines 07-N doesn't have yet: a visible "[Placeholder]" tag (the admin's `pending()`), each listed in the designer report ----
+// ---- lines 07-N lacked, approved word for word in 07-Q (2026-10-26) -------------------------------------------------------
 
 export const OFFER_PENDING = {
-  deliveryHeading: pending("Emails"),
+  deliveryHeading: "Emails",
   /** The delivery states 07-N §6 leaves out. */
   delivery: {
-    sending: pending("Sending"),
-    delivered: pending("Delivered"),
-    bounced: pending("Bounced"),
-    complained: pending("Marked as spam"),
-    skipped: pending("Not sent"),
-    not_sent: pending("Not sent"),
+    sending: "Sending",
+    delivered: "Delivered",
+    bounced: "Bounced",
+    complained: "Marked as spam",
+    skipped: "Not sent",
+    not_sent: "Not sent",
   } as Partial<Record<DeliveryState, string>>,
-  resent: pending("Sent again"),
-  withPdf: pending("PDF attached"),
-  sendAgain: pending("Send again"),
-  revoke: pending("Revoke links"),
-  revokeTitle: pending("Revoke the links?"),
-  revokeBody: pending(
+  resent: "Sent again",
+  withPdf: "PDF attached",
+  sendAgain: "Send again",
+  revoke: "Revoke links",
+  revokeTitle: "Revoke the links?",
+  revokeBody:
     "Every link we emailed for this offer stops working at once, and emails still waiting to go are not sent. The client can still sign in to the portal.",
-  ),
   revoking: "Revoking…",
   revoked: (links: number, cancelled: number) =>
-    pending(
-      `${links === 1 ? "1 link" : `${links} links`} revoked, ${cancelled === 1 ? "1 waiting email" : `${cancelled} waiting emails`} stopped.`,
-    ),
-  via: pending("Accepted through"),
-  viaLink: pending("The emailed link"),
-  viaSession: pending("The portal, signed in"),
-  country: pending("Country"),
-  certificatePending: pending("The certificate is being made."),
-  declinedHeading: pending("Declined"),
-  milestones: pending("Milestones"),
-  firstInstalment: pending("First instalment"),
+    `${links === 1 ? "1 link" : `${links} links`} revoked, ${cancelled === 1 ? "1 waiting email" : `${cancelled} waiting emails`} stopped.`,
+  via: "Accepted through",
+  viaLink: "The emailed link",
+  viaSession: "The portal, signed in",
+  country: "Country",
+  certificatePending: "The certificate is being made.",
+  declinedHeading: "Declined",
+  milestones: "Milestones",
+  firstInstalment: "First instalment",
   instalmentType: {
-    proforma: pending("Proforma invoice (draft)"),
-    tax_invoice: pending("Tax invoice (draft)"),
-    export_invoice: pending("Export invoice (draft)"),
+    proforma: "Proforma invoice (draft)",
+    tax_invoice: "Tax invoice (draft)",
+    export_invoice: "Export invoice (draft)",
   } as Record<string, string>,
-  openProject: pending("Open the project"),
-  missingFields: (fields: string) => pending(`Fill in the client's ${fields} first.`),
-  notResendable: pending("Only the latest sent version, still open, can be sent again."),
-  instalmentFailed: pending("The first instalment can't be worked out from this client's details."),
+  openProject: "Open the project",
+  missingFields: (fields: string) => `Fill in the client's ${fields} first.`,
+  notResendable: "Only the latest sent version, still open, can be sent again.",
+  instalmentFailed: "The first instalment can't be worked out from this client's details.",
 } as const;
 
 /** The word for a delivery state. */

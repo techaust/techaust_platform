@@ -110,6 +110,9 @@ const router = createBrowserRouter([
           { path: "catalogue/:id", lazy: () => import("./routes/catalogue/service.tsx") },
           // The M1.5 address of the staff screen.
           { path: "users", element: <Navigate to="/settings/users" replace /> },
+          // Signing in happens on whatever address was opened; one opened at a sign-in address lands on the dashboard after it.
+          { path: "login", element: <Navigate to="/" replace /> },
+          { path: "sign-in", element: <Navigate to="/" replace /> },
           { path: ":section/*", lazy: async () => ({ Component: (await shell()).Section }) },
         ],
       },

@@ -78,6 +78,14 @@ export function HoursBar({
         <span className="hours__fill" style={{ width: `${bar.pct}%` }} />
         {usage.available > 0 && <span className="hours__tick" />}
       </span>
+      {/* The large bar names its mark: where "Near the limit" begins. A picture of the figures above, so hidden like the bar. */}
+      {size === "lg" && usage.available > 0 && (
+        <span className="bar-scale" aria-hidden="true">
+          <span className="bar-scale__at" style={{ left: "80%" }}>
+            80 %
+          </span>
+        </span>
+      )}
     </div>
   );
 }

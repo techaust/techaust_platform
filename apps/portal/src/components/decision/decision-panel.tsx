@@ -9,7 +9,6 @@ import { N, WORDS } from "../../copy-documents.ts";
 import { formatIstDateTime, kindWord } from "../../lib/offers.ts";
 import { ConfirmDialog } from "../dialog.tsx";
 import { Alert, CheckCircle, Clock, Download, Lock, XCircle } from "../icons.tsx";
-import { ErrorLine } from "../pending.tsx";
 import { FieldError } from "../ui.tsx";
 import { DeclineDialog, type DeclineReason } from "./decline-dialog.tsx";
 
@@ -317,7 +316,6 @@ function AcceptForm(props: DecisionProps & { kind: string }) {
           setConfirming(false);
         }}
         onClose={() => setConfirming(false)}
-        renderError={(text) => <ErrorLine text={text} />}
       >
         <p>{N.confirmLead}</p>
         <dl className="facts facts--confirm">

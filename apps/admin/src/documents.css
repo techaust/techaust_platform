@@ -134,15 +134,16 @@
   line-height: var(--text-h4--line-height);
 }
 
+/* Send to over Validity, one under the other: the contact's name and email get the whole width (a select can't wrap its text),
+   and no control is stretched to its neighbour's height (batch review M3). */
 .doc-details__row {
   display: grid;
-  gap: 0 var(--space-5);
+  gap: var(--space-4);
+  align-items: start;
 }
 
-@media (min-width: 40rem) {
-  .doc-details__row {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
+.doc-details__row select {
+  max-width: 36rem;
 }
 
 .doc-details__row .field {
@@ -548,6 +549,10 @@
 /* ---------- The payment schedule ---------- */
 
 .doc-schedule .sched-bar {
+  margin-bottom: var(--space-1);
+}
+
+.doc-schedule .sched-scale {
   margin-bottom: var(--space-4);
 }
 
@@ -870,17 +875,6 @@
   display: none;
 }
 
-/* The client filter beside the chips: wide enough for its whole hint at every width. */
-.filters--docs .client-filter {
-  flex: 1 1 22rem;
-  min-width: 0;
-  max-width: 26rem;
-}
-
-.filters--docs .client-filter__search {
-  max-width: none;
-}
-
 /* ---------- Versions ---------- */
 
 .versions__list {
@@ -993,6 +987,20 @@
   max-width: var(--container-prose, 42rem);
 }
 
+/* The cover's lines, stacked as the PDF stacks them; the first (the client) leads. */
+.doc-cover {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.doc-cover__line > :last-child {
+  margin-bottom: 0;
+}
+
+.doc-cover__line:first-child {
+  font-weight: 600;
+}
+
 .doc-sheet__estimate {
   display: grid;
   gap: var(--space-5);
@@ -1102,7 +1110,7 @@
   text-align: start;
 }
 
-@media (min-width: 48.01rem) and (max-width: 79.99rem) {
+@media (min-width: 48rem) and (max-width: 79.99rem) {
   .docs-table .dtable__table,
   .approvals-table .dtable__table {
     min-width: 48rem;
@@ -1110,7 +1118,7 @@
 }
 
 /* The lists keep inside their box at every width: a little narrower names, and a sideways scroll as the last resort. */
-@media (min-width: 48.01rem) {
+@media (min-width: 48rem) {
   .docs-table .dtable,
   .approvals-table .dtable {
     overflow-x: auto;
@@ -1207,10 +1215,8 @@
 .svc-pick__list {
   display: grid;
   gap: 0;
-  max-height: 22rem;
   margin: 0;
   padding: 0;
-  overflow-y: auto;
   list-style: none;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);

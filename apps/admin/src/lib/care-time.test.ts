@@ -259,7 +259,7 @@ describe("07-M copy, word for word (draft pending the owner)", () => {
     expect(invalidCareTransition("paused", "paused")).toBe("A care plan can't move from Paused to Paused.");
     // An unworded code shows the server's words, marked.
     expect(careErrorText(err("conflict", "The entry could not be saved. Reload and try again"))).toBe(
-      `${PLACEHOLDER_TAG} The entry could not be saved. Reload and try again.`,
+      `The entry could not be saved. Reload and try again.`,
     );
     expect(careErrorText(new Error("x"))).toBe(
       "Couldn't reach the server. Check your connection and try again.",
@@ -267,21 +267,22 @@ describe("07-M copy, word for word (draft pending the owner)", () => {
   });
 });
 
-describe("placeholders are marked", () => {
-  it("every sentence 07-M lacks carries the tag", () => {
+describe("07-Q lines carry no placeholder tag", () => {
+  it("every sentence 07-M lacked has its 07-Q words, with no tag", () => {
     const all = [
-      ...Object.values(CARE_PENDING).filter((v): v is string => typeof v === "string"),
+      ...(Object.values(CARE_PENDING).filter((v) => typeof v === "string") as string[]),
       CARE_PENDING.serverWords("x"),
-      ...Object.values(TIME_PENDING).filter((v): v is string => typeof v === "string"),
+      ...(Object.values(TIME_PENDING).filter((v) => typeof v === "string") as string[]),
       TIME_PENDING.targetsFound(2),
       ...Object.values(ACTIVITY_PENDING),
     ];
-    for (const s of all) expect(s.startsWith(PLACEHOLDER_TAG)).toBe(true);
+    for (const s of all) expect(s.includes(PLACEHOLDER_TAG)).toBe(false);
+    expect(TIME_PENDING.noteTooLong).toBe("Keep the note to 1,000 characters or fewer.");
   });
 
   it("activity in words: approved labels, then marked placeholders, then the name itself", () => {
     expect(activityText("project.create")).toBe("added a project");
-    expect(activityText("care_plan.terms")).toBe(`${PLACEHOLDER_TAG} changed a care plan's terms`);
+    expect(activityText("care_plan.terms")).toBe(`changed a care plan's terms`);
     expect(activityText("constructor")).toBe("constructor");
     expect(activityHref("care_plan", "cp 1")).toBe("/care-plans/cp%201");
     expect(activityHref("lead", "l1")).toBe("/leads/l1");

@@ -3,13 +3,14 @@
 // against included plus carried over, as words and a calm bar, the overage and its amount before GST, or the no-rate line), the
 // last 12 periods, the terms in force and any booked for the next period, and the status history. A status change takes effect
 // today (or on the start date); new terms from the next billing period (owner's Q1). The server decides every rule again.
+import { istDate, toIsoDate } from "@techaust/core/dates";
 import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
 import { api, type CarePlanPage, type CareStatus, type CareUsage, RequestError } from "../../api.ts";
 import { ConfirmDialog } from "../../components/confirm-dialog.tsx";
 import { type Column, DataTable } from "../../components/data-table.tsx";
 import { Modal } from "../../components/dialog.tsx";
-import { PageHeader, Skeleton, When } from "../../components/display.tsx";
+import { KeepDates, PageHeader, Skeleton, When } from "../../components/display.tsx";
 import { ChevronDown, Pencil, Receipt } from "../../components/icons.tsx";
 import { MenuButton } from "../../components/popover.tsx";
 import { LoadFailed, NotFound, StaleNotice, useLoad } from "../../components/states.tsx";
@@ -388,7 +389,8 @@ function StatusPanel({ data }: { data: CarePlanPage }) {
               <span className="visually-hidden">From </span>
               <Day iso={s.effectiveOn} />
             </span>
-            <When ms={s.createdAt} inline />
+            {/* When it was recorded, only when that isn't the day it took effect (one date, not the same one twice). */}
+            {toIsoDate(istDate(s.createdAt)) !== s.effectiveOn && <When ms={s.createdAt} inline />}
           </li>
         ))}
       </ol>
@@ -469,7 +471,7 @@ function StatusMoves(props: {
           return undefined;
         }}
       >
-        <p>{asking ? sentenceFor(asking) : ""}</p>
+        <p>{asking ? <KeepDates text={sentenceFor(asking)} /> : ""}</p>
         {asking && (
           <p className="confirm-move">
             <CarePill status={plan.status} />

@@ -257,9 +257,11 @@ function Users() {
           loading
             ? "Loading…"
             : list.state === "ready"
-              ? rows.length === 1
-                ? "1 person on this page"
-                : `${rows.length} people on this page`
+              ? rows.length === 0
+                ? ""
+                : rows.length === 1
+                  ? "1 person on this page"
+                  : `${rows.length} people on this page`
               : ""
         }
       />
@@ -267,50 +269,52 @@ function Users() {
       {list.state === "failed" ? (
         <LoadFailed error={list.error} onRetry={() => list.reload()} />
       ) : (
-        <DataTable
-          caption="Users"
-          columns={columns}
-          rows={rows}
-          rowKey={(r) => r.key}
-          sort={sort}
-          onSort={(k) =>
-            set({
-              sort: k === "created" ? "created" : null,
-              dir: sortKey === k && dir === "asc" ? "desc" : null,
-            })
-          }
-          loading={loading}
-          skeletonRows={6}
-          actions={actionsFor}
-          empty={
-            <EmptyState
-              icon={<Search />}
-              title={filtered ? "No one matches these filters" : "No users yet"}
-              action={
-                filtered ? (
-                  <button
-                    type="button"
-                    className="btn btn--secondary"
-                    onClick={() => set({ q: null, role: null, status: null })}
-                  >
-                    Clear filters
-                  </button>
-                ) : (
-                  <button type="button" className="btn btn--primary" onClick={() => setInviting(true)}>
-                    <UserPlus />
-                    Invite someone
-                  </button>
-                )
-              }
-            >
-              <p>
-                {filtered
-                  ? "Try fewer filters, or search for the start of a name or an email address."
-                  : "Invite the people who work with you. Each one picks a password and sets up an authenticator app."}
-              </p>
-            </EmptyState>
-          }
-        />
+        <div className="clients-table users-table">
+          <DataTable
+            caption="Users"
+            columns={columns}
+            rows={rows}
+            rowKey={(r) => r.key}
+            sort={sort}
+            onSort={(k) =>
+              set({
+                sort: k === "created" ? "created" : null,
+                dir: sortKey === k && dir === "asc" ? "desc" : null,
+              })
+            }
+            loading={loading}
+            skeletonRows={6}
+            actions={actionsFor}
+            empty={
+              <EmptyState
+                icon={<Search />}
+                title={filtered ? "No one matches these filters" : "No users yet"}
+                action={
+                  filtered ? (
+                    <button
+                      type="button"
+                      className="btn btn--secondary"
+                      onClick={() => set({ q: null, role: null, status: null })}
+                    >
+                      Clear filters
+                    </button>
+                  ) : (
+                    <button type="button" className="btn btn--primary" onClick={() => setInviting(true)}>
+                      <UserPlus />
+                      Invite someone
+                    </button>
+                  )
+                }
+              >
+                <p>
+                  {filtered
+                    ? "Try fewer filters, or search for the start of a name or an email address."
+                    : "Invite the people who work with you. Each one picks a password and sets up an authenticator app."}
+                </p>
+              </EmptyState>
+            }
+          />
+        </div>
       )}
 
       {list.state === "ready" && rows.length > 0 && (
@@ -655,11 +659,12 @@ function InviteDialog(props: { open: boolean; onClose: () => void; onDone: () =>
             </FormField>
             <fieldset className="radios" aria-describedby={legend}>
               <legend>Role</legend>
+              {/* The hint under its label, as every field has it (it sat against the next field's label). */}
+              <p className="hint" id={legend}>
+                You can change their role later.
+              </p>
               <RoleRadios name="invite-role" value={role} onChange={setRole} />
             </fieldset>
-            <p className="hint" id={legend}>
-              You can change their role later.
-            </p>
             {needCode && (
               <CodeField
                 id="invite-code"
