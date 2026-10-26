@@ -684,6 +684,44 @@ describe("refusals leave the counter, the audit log and the milestone unchanged 
     expect(await auditCount("invoice.issue", made.id)).toBe(0);
   });
 
+  it("a duplicate number (impossible by design) is logged as an integrity error with ids only, writes nothing, and answers 409 stale_version", async () => {
+    // A year of its own (2093-94, token 9394): the number the counter will hand out is already held by another frozen document.
+    const o = await farSession();
+    vi.useFakeTimers({ toFake: ["Date"], now: Date.UTC(2093, 5, 1, 6, 0, 0, 0) });
+    const made = await mkInvoice(o);
+    vi.setSystemTime(Date.UTC(2093, 5, 1, 6, 5, 0, 0));
+    await env.DB.prepare(
+      "INSERT INTO doc_counters (series, fy, next_no) VALUES ('invoice', '9394', 5)",
+    ).run();
+    await env.DB.prepare(
+      "INSERT INTO documents (id, type, status, client_id, currency, frozen_at, series, fy, number, number_display) SELECT 'dup-holder', 'tax_invoice', 'issued', client_id, currency, 1, 'invoice', '9394', 5, 'TH/INV/9394/0005' FROM documents WHERE id = ?",
+    )
+      .bind(made.id)
+      .run();
+    const logged: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((m: unknown) => void logged.push(String(m)));
+    try {
+      const before = await invoiceRow(made.id);
+      const res = await issueInvoice(o, made.id);
+      expect(res.status, await res.clone().text()).toBe(409);
+      expect(await codeOf(res)).toBe("stale_version");
+      expect(await invoiceRow(made.id)).toEqual(before);
+      expect(await invoiceCounter("9394")).toBe(5);
+      expect(await auditCount("invoice.issue", made.id)).toBe(0);
+      const line = logged.find((l) => l.includes("unique key"));
+      expect(line).toBeDefined();
+      expect(JSON.parse(line ?? "{}")).toMatchObject({
+        level: "error",
+        documentId: made.id,
+        series: "invoice",
+        fy: "9394",
+      });
+      expect(line).not.toMatch(/Asha|example\.test/);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("is atomic: a failing side statement writes nothing (500), and the next issue gets the very next number", async () => {
     const o = await owner();
     const c = await mkInvoiceClient();
