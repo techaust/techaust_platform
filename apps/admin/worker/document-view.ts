@@ -33,8 +33,9 @@ export const ANONYMISED_LABEL = "Anonymised client";
  */
 export function viewRecipient(r: RecipientSnapshot, clientGone: boolean, contactGone: boolean) {
   if (!clientGone && !contactGone) return r;
-  const hasContact = r.contactId !== undefined || r.contactName !== undefined || r.email !== undefined;
-  const contact = hasContact ? { email: null, contactName: ANONYMISED_LABEL } : {};
+  // A contact is on the snapshot only if it names one (an email alone never adds a contact line to the view).
+  const hasContact = r.contactId !== undefined || r.contactName !== undefined;
+  const contact = hasContact ? { email: null, contactName: ANONYMISED_LABEL } : { email: null };
   if (!clientGone) return { ...r, ...contact, anonymised: true };
   return {
     ...r,
@@ -45,6 +46,38 @@ export function viewRecipient(r: RecipientSnapshot, clientGone: boolean, contact
     ...contact,
     anonymised: true,
   };
+}
+
+/**
+ * The personal values of a frozen recipient that the view must also take out of the document's own text (owner, 2026-10-26;
+ * VERIFY WITH CA/LEGAL): the templates write the client name and the contact into the sections at draft time (`{{client.name}}`,
+ * `{{client.contact}}`), and that text is frozen at send. Client gone: the legal name, display name, contact name and email. Only
+ * the contact gone: the contact's name and email (the business named on the offer is not personal). Blank values are skipped.
+ */
+export function redactionNames(r: RecipientSnapshot, clientGone: boolean, contactGone: boolean): string[] {
+  const values: (string | null | undefined)[] = [];
+  if (clientGone) values.push(r.legalName, r.displayName);
+  if (clientGone || contactGone) values.push(r.contactName, r.email);
+  return [...new Set(values.map((v) => v?.trim() ?? "").filter((v) => v !== ""))];
+}
+
+const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * Builds the function that replaces every exact occurrence of the given names with `ANONYMISED_LABEL`, in one pass, longest name first
+ * (so a name that holds another is replaced whole, and the label is never searched again). VIEW ONLY: the stored text is not touched.
+ * Staff-typed free text that only mentions a person in other words cannot be caught by exact matching (owner question, VERIFY WITH CA/LEGAL).
+ */
+export function redactor(names: string[]): (text: string | null) => string | null {
+  if (names.length === 0) return (text) => text;
+  const re = new RegExp(
+    [...names]
+      .sort((a, b) => b.length - a.length)
+      .map(escapeRegExp)
+      .join("|"),
+    "g",
+  );
+  return (text: string | null) => (text === null ? null : text.replace(re, ANONYMISED_LABEL));
 }
 
 export type ContactFacts = { id: string; name: string; email: string; anonymised_at: number | null };
@@ -145,6 +178,11 @@ export async function documentView(i: ViewInput) {
     (contact === null || contact.anonymised_at !== null);
   const recipient = snapshot ? viewRecipient(snapshot, clientGone, snapshotContactGone) : null;
   const issuer = frozen ? d.issuer : null;
+  // The same values taken out of the frozen text (section texts and titles, and the document title).
+  const redact =
+    snapshot && (clientGone || snapshotContactGone)
+      ? redactor(redactionNames(snapshot, clientGone, snapshotContactGone))
+      : (text: string | null) => text;
   const frozenContact =
     recipient && recipient.contactName !== undefined
       ? {
@@ -161,7 +199,7 @@ export async function documentView(i: ViewInput) {
     version: d.version,
     versionGroupId: d.version_group_id,
     number: d.number_display,
-    title: d.title,
+    title: redact(d.title),
     currency: d.currency,
     validityDays: d.validity_days,
     validUntil: d.valid_until,
@@ -225,8 +263,8 @@ export async function documentView(i: ViewInput) {
       position: n + 1,
       kind: s.kind,
       hidden: s.hidden,
-      title: s.title,
-      bodyMd: s.bodyMd,
+      title: redact(s.title),
+      bodyMd: redact(s.bodyMd),
     })),
     schedule: state.schedule.map((s, n) => ({
       id: s.id,

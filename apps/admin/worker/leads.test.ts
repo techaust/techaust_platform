@@ -327,6 +327,30 @@ describe("POST /leads/:id/convert [ADM-LEAD-04]", () => {
   });
 });
 
+describe("conversion: a blank company counts as missing (M4.3 re-check 2)", () => {
+  it("falls back to the person's name when the company is empty or only spaces, and trims a real one", async () => {
+    const s = await sessionFor("owner");
+    for (const company of ["", "   "]) {
+      const lead = await addLead({ contact_company: company });
+      const r = await convert(lead.id, GOOD, s.cookie);
+      expect(r.res.status).toBe(201);
+      const { clientId } = (await r.res.json()) as { clientId: string };
+      expect(await one("SELECT legal_name, display_name FROM clients WHERE id = ?", clientId)).toEqual({
+        legal_name: "Asha Rao",
+        display_name: "Asha Rao",
+      });
+    }
+    const padded = await addLead({ contact_company: "  Rao Traders  " });
+    const { clientId } = (await (await convert(padded.id, GOOD, s.cookie)).res.json()) as {
+      clientId: string;
+    };
+    expect(await one("SELECT legal_name, display_name FROM clients WHERE id = ?", clientId)).toEqual({
+      legal_name: "Rao Traders",
+      display_name: "Rao Traders",
+    });
+  });
+});
+
 describe("conversion: consent, country and the draft link (analyst early check)", () => {
   it("carries marketing consent to the contact only while it stands (not withdrawn)", async () => {
     const s = await sessionFor("owner");
