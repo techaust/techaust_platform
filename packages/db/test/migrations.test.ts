@@ -55,6 +55,7 @@ describe("migrations apply cleanly to a fresh D1", () => {
       "0033_documents_pdf_pending.sql",
       "0034_offers.sql",
       "0035_offer_triggers.sql",
+      "0036_anonymised_client_name.sql",
     ]);
   });
 

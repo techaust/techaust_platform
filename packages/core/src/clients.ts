@@ -63,7 +63,7 @@ export const INVOICE_FAMILY_SQL = INVOICE_FAMILY.map((t) => `'${t}'`).join(", ")
 
 /** The names shown on records whose person was anonymised (07-J, approved). */
 export const ANONYMISED_CONTACT = "Removed contact";
-export const ANONYMISED_CLIENT = "Removed client";
+export const ANONYMISED_CLIENT = "Anonymised client";
 /** The placeholder address of an anonymised contact: unique per contact, never deliverable (`.invalid`), lower case. */
 export const anonymisedEmail = (contactId: string): string => `anonymised+${contactId.toLowerCase()}@invalid`;
 
