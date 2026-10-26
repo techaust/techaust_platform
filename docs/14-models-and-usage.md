@@ -78,9 +78,8 @@ Before starting any agent, the lead reads the usage (the `get_usage` session too
 
 | Reading | What runs |
 |---|---|
-| The 5-hour window at or under 50 % | Up to two agents at once (the 8 GB RAM limit), never two browser users (owner exception 2026-10-26: three until the M3.4–M4.5 batch ends; docs/13) |
-| The 5-hour window over 50 % | No new builder or designer; a review, an analyst or a running agent may continue |
-| The 5-hour window at 75 % or more | Nothing new starts until it resets |
+| The 5-hour window under 80 % | Up to two agents at once (the 8 GB RAM limit), never two browser users (owner exception 2026-10-26: three until the M3.4–M4.5 batch ends; docs/13) |
+| The 5-hour window at 80 % or more | No new agent of any kind starts until it resets; running agents may finish (owner, 2026-10-26; replaces the 50 % and 75 % steps) |
 | The usage can't be read | One agent at a time, and say so |
 
 The gate changes **how much runs at once, never the model or the effort.**

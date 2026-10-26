@@ -1,6 +1,6 @@
 # 12: Status
 
-_Replaced (never appended) at the end of every session. Last updated: **2026-10-26, 05:40** (IST)._
+_Replaced (never appended) at the end of every session. Last updated: **2026-10-26, 06:10** (IST)._
 
 ## Done
 - **Phases 1–5:** approved 2026-10-06 ([09-roadmap.md](09-roadmap.md)).
@@ -32,41 +32,34 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
   - **M3.5 Care plans, time logs, dashboard v1** ([PR #84](https://github.com/techaust/techaust_platform/pull/84), merged 2026-10-25; run file `docs/runs/m3.5-care-time.md`): migrations 0028–0030; review SEND BACK → fixed → re-check APPROVE (6 lows: 5 fixed by the lead, 1 kept).
 - **M4.5 portal preview approved by the owner** (2026-10-25).
 
-## In progress (stopped on the owner's word, 2026-10-26 ≈ 05:30 IST; nothing merged since #84)
-Three task lines, each holding the one before. Every brief, report and triage is in its run file on that branch.
+- **Team plan (2026-10-26):** the account moved to Claude Team; the budget gate now counts only the 5-hour window, with no new agent at 80 % or more ([PR #86](https://github.com/techaust/techaust_platform/pull/86) and today's end-of-day PR; docs/14 §5). The approved plugins Playwright, Context7, frontend-design and GitHub were reinstalled and declared in `.claude/settings.json`; Supabase, Upstash and the AWS MCP (wrong AWS account) are off for this project only ([PR #87](https://github.com/techaust/techaust_platform/pull/87); docs/10).
+
+## In progress (stopped on the owner's word, 2026-10-26 ≈ 06:05 IST; nothing merged to main since #84 except docs)
+Three task lines, each holding the one before. Every brief, report and handover is in its run file on that branch.
 - **M4.3 Proposals and estimates** (Tier A).
-  - **Where:** branch `feat/m4.3-builder` at 75dc44f; run file `docs/runs/m4.3-proposals.md`; copy 07-O.
-  - **Done:** built; early check CHANGE, then fixed; integration with M3.5 (migrations **0031/0032**); items 8–10; screens; review **APPROVE** (8 medium, 6 low); every finding fixed (API and screens); the lead's full run green except one known M3.2 flake.
-  - **Stopped:** the code-only re-check stopped before verifying anything. Its helper's 10 **unverified** candidates are in the run file's handover: two possibly high (DELETE of an old-dated time entry; snapshot names still shown after anonymising, VERIFY WITH CA/LEGAL) and five medium.
-  - **Next:** check those candidates, then fix, then a full re-check (code and visual), then the PR to main.
+  - **Where:** `feat/m4.3-builder` at 1278fc1; run file `docs/runs/m4.3-proposals.md` ("Lead handover (2026-10-26, end of day)").
+  - **Done today:** the re-check's candidates verified: 1–8 real and fixed with tests (old-dated time-entry DELETE owner-only; "Anonymised client" in the frozen view, per your answer; mid-period care hours; dashboard counts past 100 plans and the burn ranking computed once; the care "Converted to…" line; `section_empty` field; blank display names); 5 not a bug; 9 a copy question. `pnpm check` passed.
+  - **Not run yet:** the full `pnpm test`, the worker budget, one test file after its last edit.
 - **M4.4 PDF engine** (Tier B).
-  - **Where:** branch `feat/m4.4-pdf` (holds M4.3 up to the designer's screens, without the review fixes); run file `docs/runs/m4.4-pdf.md`; copy 07-P.
-  - **Done:** phase 1 and phase 2 built and accepted (Browser Run quick action, 10-second pacing, write-once R2 envelope and PDF, the sweep and dead-letter bell, the admin download and retry, the signature upload, migration **0033**).
-  - **Stopped:** the designer is about half done on `feat/m4.4-screens` (a920da9). The layout and copy files are written but untested and not wired into `render.ts`. Still to do: the template CSS, wiring, tests, the visual suite, and the admin PDF button and signature control. Its handover is in the run file.
-  - **Next:** finish the designer's work, then the review, then H2, then the PR after M4.3 merges.
-- **M4.5 Send and accept** (Tier B).
-  - **Where:** branch `feat/m4.5-send-accept` at 5477c99 (holds the approved preview and the M4.4 line); run file `docs/runs/m4.5-send-accept.md`; copy 07-N.
-  - **Done:** stages A and B built (migrations **0034/0035**; offer links, sends after the PDF, accept and decline, the certificate, start project); early check CHANGE; all 16 findings fixed and accepted.
-  - **Next:** the designer to the approved preview (the Send dialog with the recipient picker, the portal screens), then the review, then H3, then the PR after M4.4 merges.
+  - **Where:** `feat/m4.4-screens` at 36a97c1 (holds `feat/m4.4-pdf` and M4.3 up to f81851c); run file `docs/runs/m4.4-pdf.md`.
+  - **Done today:** the proposal and estimate PDF layouts finished and checked (pdf tests 114/114, visual suite 30/30 twice, every page looked at in colour and grayscale); the PDF prints the portal host from `PORTAL_URL`.
+  - **Left:** the admin PDF panel and the signature control (an untested client layer exists), their screenshots, axe and all checks; the jobs `viewOf` tests were not run.
+- **M4.5 Send and accept** (Tier B): unchanged since the 05:40 handover; `feat/m4.5-send-accept` at 5477c99, run file `docs/runs/m4.5-send-accept.md`.
 
 ## Next (when work resumes)
-1. **M4.3:** verify the re-check's 10 candidates, then fix, then a full re-check (code and visual), then the PR. Auto-merge and Auto-fix on, then staging.
-2. **M4.4:**
-   - merge the latest M4.3 line into `feat/m4.4-pdf`, then into `feat/m4.4-screens`;
-   - resume the designer from its handover, then review and fixes;
-   - **owner: H2**, Browser Run on the staging jobs Worker (the bucket and both PDF queues already exist; checked read-only 2026-10-26);
-   - the PR after M4.3 merges.
-3. **M4.5:**
-   - the designer, then review and fixes;
-   - **owner: H3**, the staging portal gains the `techaust-staging-docs` R2 binding and the PDF queue producer;
-   - the PR after M4.4 merges.
-4. **Owner's final review of all seven,** including the copy word for word: 07-K, 07-L, 07-M, 07-N, 07-O, 07-P. **Then stop: M5 waits for the owner.**
-5. **Staging readings:** `cpuTimeMs` for a cap-sized proposal save, send and GET, the PDF render and snapshot, the portal view and accept, and an email with a PDF attached.
-6. **Before M5.1:** the admin Worker split (service binding, docs/13 2026-10-25). Admin is at 407,979 / 415,878 bytes with startup 99.6 ms.
+1. **M4.3:** the lead runs the full `pnpm test` and the worker budget; then a full re-check (code and visual); then the PR to main (auto-merge, Auto-fix), staging.
+2. **M4.4:** merge the latest M4.3 in; the designer finishes the admin PDF panel and signature control; review and fixes; **owner: H2** (Browser Run on the staging jobs Worker); the PR after M4.3 merges.
+3. **M4.5:** the designer to the approved preview; review and fixes; **owner: H3**; the PR after M4.4 merges.
+4. **Owner's final review of all seven** (M3.4, M3.5, M4.1–M4.5) with the copy 07-K to 07-P word for word. **Then stop: M5 waits for the owner.**
+5. **Staging readings** (`cpuTimeMs`) for the proposal save, send and GET, the PDF render, the portal view and accept, an email with a PDF.
+6. **Before M5.1:** the admin Worker split (service binding).
 
-**Usage at the stop:** weekly about 96 %, 5-hour low. Weekly reset **Mon 26 Oct, 15:30 IST**. After the reset the normal gates of docs/14 §5 apply again (the owner's lift ends then), along with three agents at once until M4.5 is done.
+**Usage now:** 5-hour window 9 %. **Gate (owner, 2026-10-26):** only the 5-hour window counts; at 80 % or more no new agent starts. Three agents at once until M4.5 is done, one browser agent at a time.
+
 
 ## Waits on the owner
+- **At the batch review, new today:** the search placeholder for roles with documents but not leads or clients; "Removed client" (live name) against "Anonymised client" (frozen view); the no-tier "Converted to a care plan" line (07-O §10); the two 07-P lines marked PENDING; wording for the signature "larger than 2400 by 1200 pixels" error.
+- **When TecHaust's AWS is needed (Phase 7):** sign the AWS MCP in to the TecHaust account (the lead gives steps), then it is turned back on for this project.
 - **At the batch's end:**
   - review M3.4, M3.5 and M4.1–M4.5 on staging;
   - approve the drafted copy word for word: [07-K](07-content-appendix/K-m3.4-project-screens.md), [07-L](07-content-appendix/L-m4.1-catalogue-screens.md), [07-M](07-content-appendix/M-m3.5-care-time-screens.md), and 07-N, 07-O, 07-P (on the task branches until those merge);
@@ -91,6 +84,7 @@ Three task lines, each holding the one before. Every brief, report and triage is
 - **Model menu:** keep **Opus 5.5, medium** for every conversation.
 
 ## Open follow-ups
+- **2026-10-26 (run files):** a rule for the PDF of an anonymised client (VERIFY WITH CA/LEGAL); the data export returns the raw recipient JSON to the person it names (flag for CA/LEGAL); an underscore inside a word becomes italics in core's Markdown; the seeded estimate templates repeat the estimate notice; a CI job for the pdf visual suite so `linux/` baselines exist (workflow change, owner's yes); a `useTemplate` lint info in `apps/web/src/lib/catalogue.ts`.
 - **Batch 2026-10-26 (run files):**
   - **admin Worker headroom:** the service-binding split before M5.1;
   - **M5.2:**
