@@ -691,7 +691,8 @@ export const isDirty = (s: EditorState) => dirtyParts(s).length > 0;
 
 export type LineErrors = Partial<Record<"description" | "qty" | "rate" | "disc" | "sac" | "gstRate", string>>;
 
-const parseDiscount = (
+/** A typed discount in the API's units (basis points or minor units), or the sentence that says what is wrong. */
+export const parseDiscount = (
   kind: DiscountKind,
   text: string,
   currency: Currency,
@@ -746,7 +747,8 @@ export function fieldErrors(f: FieldsDraft, currency: Currency): FieldErrorsOf {
 
 const nul = (s: string) => (s.trim() === "" ? null : s.trim());
 
-function lineIn(l: LineDraft, currency: Currency): LineIn {
+/** One line as the API takes it (the invoice editor sends the same shape). */
+export function lineIn(l: LineDraft, currency: Currency): LineIn {
   const out: LineIn = {
     description: l.description.trim(),
     detail: nul(l.detail),

@@ -104,10 +104,6 @@ export const NAV: NavItem[] = [
     path: "/invoices",
     icon: <Receipt />,
     group: 2,
-    arrives: {
-      milestone: "M5.1–M5.5",
-      what: "Tax and export invoices, proformas, credit and debit notes, with gap-free numbers.",
-    },
   },
   {
     key: "payments",

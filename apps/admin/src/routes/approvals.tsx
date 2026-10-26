@@ -1,4 +1,4 @@
-// Approvals (M4.3, ADM-APR-01, -02): the owner's queue of discount requests (more than 10 % off the catalogue prices), newest first, with
+// Approvals (M4.3, ADM-APR-01, -02; M5.1 adds the issue requests, kept in their own tab): the owner's queue of discount requests (more than 10 % off the catalogue prices), newest first, with
 // the decision dialog; Staff and Sales see the requests they made and how each was decided. A request is for one version's exact content:
 // a change to the draft after it expires the request, and the queue shows it as expired. `/approvals/:id` (the bell's link) opens that
 // request's dialog for the owner. The custom lines the guard ignores are listed in the dialog, so the owner sees the whole offer (O-Q1).
@@ -11,6 +11,7 @@ import { EmptyState, PageHeader, When } from "../components/display.tsx";
 import { FormField } from "../components/form.tsx";
 import { Ban, CheckCircle, ClipboardCheck, Search } from "../components/icons.tsx";
 import { LoadFailed, NoAccess, useLoad } from "../components/states.tsx";
+import { Tabs } from "../components/tabs.tsx";
 import { useToast } from "../components/toast.tsx";
 import { Notice } from "../components/ui.tsx";
 import { allowed } from "../lib/access.ts";
@@ -29,14 +30,128 @@ import {
   titleOf,
 } from "../lib/documents.ts";
 import { type ApprovalRow, type ApprovalState, documentsApi } from "../lib/documents-api.ts";
+import { INV_COPY } from "../lib/invoices.ts";
+import { invoicesApi } from "../lib/invoices-api.ts";
 import { useUser } from "../session.tsx";
 import { ApprovalPill, docHref } from "./documents/parts.tsx";
+import { IssueQueue } from "./invoices/issue-queue.tsx";
 
 export function Component() {
   const user = useUser();
   if (!allowed(user.role, "approvals.readOwn") && !allowed(user.role, "approvals.decide"))
     return <NoAccess what={DOC_COPY.approvalsHeading} />;
   return <Approvals />;
+}
+
+type QueueKind = "discount" | "issue";
+
+/** The page: the heading, the kind of request (discounts; and, for the roles that read invoices, issue requests, M5.1), the status filter. */
+function Approvals() {
+  const user = useUser();
+  const navigate = useNavigate();
+  const { id: linked } = useParams();
+  const owner = allowed(user.role, "approvals.decide");
+  const invoices = allowed(user.role, "invoices.read");
+  const [params, setParams] = useSearchParams();
+  const kindP = params.get("kind");
+  const kind: QueueKind = invoices && kindP === "issue" ? "issue" : "discount";
+  // The owner starts on what waits for them; a bell link shows every state, so the request is on the page whatever happened to it.
+  const stateP = params.get("state");
+  const state = stateP === "all" ? null : isState(stateP) ? stateP : owner && !linked ? "pending" : null;
+  // A bell's link names a request, not its kind: an issue request found in the issue queue switches to it.
+  const probe = useLoad(
+    () => (linked && invoices && kindP === null ? invoicesApi.issueApprovals({}) : Promise.resolve(null)),
+    `${linked ?? ""}:${kindP ?? ""}`,
+  );
+  useEffect(() => {
+    if (probe.state === "ready" && probe.data?.approvals.some((a) => a.id === linked))
+      setParams(
+        (p) => {
+          const n = new URLSearchParams(p);
+          n.set("kind", "issue");
+          return n;
+        },
+        { replace: true },
+      );
+  }, [probe.state, probe.data, linked, setParams]);
+  const onLinkedDone = () => {
+    if (linked)
+      navigate({ pathname: "/approvals", search: kind === "issue" ? "?kind=issue" : "" }, { replace: true });
+  };
+
+  const filters = (
+    <FilterBar
+      className="filters--clients filters--care"
+      groups={[
+        {
+          key: "state",
+          label: "Status",
+          selected: state ? [state] : [],
+          options: APPROVAL_FILTERS.map((s) => ({
+            value: s,
+            label: APPROVAL_LABELS[s as Exclude<ApprovalState, "none">],
+          })),
+        },
+      ]}
+      onToggle={(_, value) =>
+        setParams(
+          (p) => {
+            const n = new URLSearchParams(p);
+            n.set("state", state === value ? "all" : value);
+            return n;
+          },
+          { replace: true },
+        )
+      }
+      onClear={() =>
+        setParams(new URLSearchParams(kind === "issue" ? { state: "all", kind } : { state: "all" }), {
+          replace: true,
+        })
+      }
+      result=""
+    />
+  );
+  const queue =
+    kind === "issue" ? (
+      <IssueQueue owner={owner} state={state} linked={linked} onLinkedDone={onLinkedDone} />
+    ) : (
+      <DiscountQueue owner={owner} state={state} linked={linked} onLinkedDone={onLinkedDone} />
+    );
+
+  return (
+    <>
+      <PageHeader title={DOC_COPY.approvalsHeading} />
+      {invoices ? (
+        <Tabs
+          label={DOC_COPY.approvalsHeading}
+          tabs={[
+            { key: "discount", label: DOC_COPY.colDiscount },
+            { key: "issue", label: INV_COPY.kindIssue },
+          ]}
+          selected={kind}
+          onSelect={(k) =>
+            setParams(
+              (p) => {
+                const n = new URLSearchParams(p);
+                if (k === "issue") n.set("kind", "issue");
+                else n.delete("kind");
+                return n;
+              },
+              { replace: true },
+            )
+          }
+        >
+          {filters}
+          {queue}
+        </Tabs>
+      ) : (
+        <>
+          {filters}
+          {queue}
+        </>
+      )}
+    </>
+  );
 }
 
 /** A row's Decide button in the layout on screen (the table and the cards both draw it; one of them is hidden). */
@@ -48,16 +163,15 @@ const visibleDecide = (id: string): HTMLElement | null =>
 const isState = (v: string | null): v is Exclude<ApprovalState, "none"> =>
   APPROVAL_FILTERS.includes(v as ApprovalState);
 
-function Approvals() {
-  const user = useUser();
+/** The discount requests (M4.3): more than 10 % off the catalogue prices. */
+function DiscountQueue(props: {
+  owner: boolean;
+  state: Exclude<ApprovalState, "none"> | null;
+  linked: string | undefined;
+  onLinkedDone: () => void;
+}) {
   const toast = useToast();
-  const navigate = useNavigate();
-  const { id: linked } = useParams();
-  const owner = allowed(user.role, "approvals.decide");
-  const [params, setParams] = useSearchParams();
-  // The owner starts on what waits for them; a bell link shows every state, so the request is on the page whatever happened to it.
-  const stateP = params.get("state");
-  const state = stateP === "all" ? null : isState(stateP) ? stateP : owner && !linked ? "pending" : null;
+  const { owner, state, linked } = props;
   const [deciding, setDeciding] = useState<ApprovalRow | null>(null);
   const [after, setAfter] = useState<string | null>(null);
   const [more, setMore] = useState<ApprovalRow[]>([]);
@@ -159,39 +273,6 @@ function Approvals() {
 
   return (
     <>
-      <PageHeader title={DOC_COPY.approvalsHeading} />
-      <FilterBar
-        className="filters--clients filters--care"
-        groups={[
-          {
-            key: "state",
-            label: "Status",
-            selected: state ? [state] : [],
-            options: APPROVAL_FILTERS.map((s) => ({
-              value: s,
-              label: APPROVAL_LABELS[s as Exclude<ApprovalState, "none">],
-            })),
-          },
-        ]}
-        onToggle={(_, value) =>
-          setParams(
-            (p) => {
-              const n = new URLSearchParams(p);
-              n.set("state", state === value ? "all" : value);
-              return n;
-            },
-            { replace: true },
-          )
-        }
-        onClear={() => setParams(new URLSearchParams({ state: "all" }), { replace: true })}
-        result={
-          list.state === "loading"
-            ? "Loading…"
-            : rows.length === 0
-              ? ""
-              : `${rows.length === 1 ? "1 request" : `${rows.length} requests`} on this page`
-        }
-      />
       <p id="decided-line" className="decided-line" tabIndex={-1} role="status">
         {result && (
           <>
@@ -258,7 +339,7 @@ function Approvals() {
         row={deciding}
         onClose={() => {
           setDeciding(null);
-          if (linked) navigate("/approvals", { replace: true });
+          props.onLinkedDone();
         }}
         onDecided={(approved) => {
           const r = deciding;
@@ -270,7 +351,7 @@ function Approvals() {
               text: bellDecided(approved, titleOf(r.document.title), r.document.version),
             });
           setDeciding(null);
-          if (linked) navigate("/approvals", { replace: true });
+          props.onLinkedDone();
           list.reload(true);
         }}
       />

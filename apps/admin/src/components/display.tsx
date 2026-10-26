@@ -6,6 +6,7 @@ import { type ReactNode, useEffect, useRef } from "react";
 import { Link, useLocation } from "react-router";
 import { relative } from "../lib/format.ts";
 import {
+  AlertTriangle,
   Archive,
   Ban,
   Calendar,
@@ -13,12 +14,14 @@ import {
   ChevronRight,
   Clock,
   Eye,
+  FileCheck,
   Flag,
   Inbox,
   Lock,
   Pencil,
   RefreshCw,
   Send,
+  XCircle,
 } from "./icons.tsx";
 import { MenuButton, type MenuItem } from "./popover.tsx";
 
@@ -97,6 +100,9 @@ const PILL_ICON = {
   archive: Archive,
   calendar: Calendar,
   progress: RefreshCw,
+  fileCheck: FileCheck,
+  alert: AlertTriangle,
+  xCircle: XCircle,
 } as const;
 
 /** Icon + text + colour, never colour alone (docs/06 §5.5). */

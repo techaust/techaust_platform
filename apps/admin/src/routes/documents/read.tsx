@@ -34,8 +34,9 @@ import {
   titleOf,
 } from "../../lib/documents.ts";
 import { type DocumentView, documentsApi, type ViewLine } from "../../lib/documents-api.ts";
+import { convertedToInvoice } from "../../lib/invoices.ts";
+import { invoicesApi } from "../../lib/invoices-api.ts";
 import { canResend, OFFER_COPY } from "../../lib/offers.ts";
-import { COPY as PROJECT_COPY } from "../../lib/projects.ts";
 import { useUser } from "../../session.tsx";
 import { CareDialog, InvoiceDialog, ReviseDialog } from "./dialogs.tsx";
 import { LinesTable, ScheduleTable, SectionBody, TaxPreview } from "./money.tsx";
@@ -83,6 +84,11 @@ export function ReadView({ view, reload }: { view: DocumentView; reload: () => v
   const converted = v.type === "estimate" ? (v.convertedTo ?? null) : null;
   const convertible = v.type === "estimate" && v.status === "accepted" && !converted;
   const canInvoice = convertible && allowed(user.role, "invoices.draft");
+  // M5.1 (docs/13 2026-10-26): "Converted to invoice {number or "a draft"}." with a link, for the roles that open invoices; Sales keeps DOC37.
+  const canOpenInvoice = allowed(user.role, "invoices.read");
+  const invoiceNumber = useInvoiceNumber(
+    converted?.kind === "invoice" && canOpenInvoice ? converted.id : null,
+  );
   const canCare = convertible && allowed(user.role, "carePlans.write");
   const hasMonthly = v.lines.some((l) => l.unit === "month");
   const number = v.number ?? titleOf(v.title);
@@ -214,9 +220,14 @@ export function ReadView({ view, reload }: { view: DocumentView; reload: () => v
                   <CheckCircle size={16} />
                   <span>
                     {converted.kind === "invoice" ? (
-                      <>
-                        {CONVERTED_TO_INVOICE} {PROJECT_COPY.createInvoice}
-                      </>
+                      canOpenInvoice ? (
+                        <>
+                          {convertedToInvoice(invoiceNumber)}{" "}
+                          <Link to={`/invoices/${encodeURIComponent(converted.id)}`}>{OPEN_IT}</Link>
+                        </>
+                      ) : (
+                        CONVERTED_TO_INVOICE
+                      )
                     ) : (
                       <>
                         {convertedToCare(v.client.name, tierName)}{" "}
@@ -368,4 +379,10 @@ export function ReadView({ view, reload }: { view: DocumentView; reload: () => v
       />
     </>
   );
+}
+
+/** The number of the invoice an estimate became (null while it is a draft, or not loaded yet). */
+function useInvoiceNumber(id: string | null): string | null {
+  const r = useLoad(() => (id ? invoicesApi.get(id) : Promise.resolve(null)), id ?? "");
+  return r.state === "ready" && r.data ? r.data.number : null;
 }

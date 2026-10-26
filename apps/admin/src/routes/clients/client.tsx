@@ -3,7 +3,7 @@
 // - Overview, Contacts and Activity for every role that reads clients;
 // - Projects and Files (M3.4) for every role that reads projects (not the Accountant: the API denies them too);
 // - Proposals and estimates and Care plans as the M3.1 "coming soon" state, with their milestone;
-// - Invoices and payments and Statement only for roles with clients.finance.read (never Sales: the API denies them too),
+// - Invoices (M5.1) and Statement only for roles with clients.finance.read (never Sales: the API denies them too),
 //   with the 07-J lines until invoicing exists.
 // What a person has typed and not saved (the details and billing drafts) lives above every reload, as on the lead page.
 import { fyOf, istDate, toIsoDate } from "@techaust/core/dates";
@@ -12,7 +12,7 @@ import { type ReactNode, useReducer, useState } from "react";
 import { useParams, useSearchParams } from "react-router";
 import { api, type ClientPage, RequestError } from "../../api.ts";
 import { EmptyState, PageHeader, Skeleton, StatusPill } from "../../components/display.tsx";
-import { FileText, Lock, Receipt } from "../../components/icons.tsx";
+import { FileText, Lock } from "../../components/icons.tsx";
 import { LoadFailed, NotFound, StaleNotice, useLoad } from "../../components/states.tsx";
 import { type TabItem, Tabs } from "../../components/tabs.tsx";
 import { Notice } from "../../components/ui.tsx";
@@ -31,11 +31,12 @@ import { COPY, PENDING } from "../../lib/projects.ts";
 import { useUser } from "../../session.tsx";
 import { ClientCarePlans } from "../care/client-tab.tsx";
 import { ClientDocuments } from "../documents/client-tab.tsx";
+import { ClientInvoices } from "../invoices/client-tab.tsx";
 import { ClientProjects } from "../projects/client-tabs.tsx";
 import { FilesPanel } from "../projects/files.tsx";
 import { Activity } from "./activity.tsx";
 import { Contacts } from "./contacts.tsx";
-import { INVOICES_LINE, Overview } from "./overview.tsx";
+import { Overview } from "./overview.tsx";
 import { ClientsGate, CRUMBS } from "./parts.tsx";
 
 export function Component() {
@@ -67,7 +68,7 @@ function tabsFor(finance: boolean, projects: boolean): TabItem<TabKey>[] {
     { key: "proposals", label: "Proposals and estimates" },
     ...(finance
       ? ([
-          { key: "invoices", label: "Invoices and payments" },
+          { key: "invoices", label: "Invoices" },
           { key: "statement", label: "Statement" },
         ] as TabItem<TabKey>[])
       : []),
@@ -193,7 +194,7 @@ function ClientView(props: {
         ) : tab === "activity" ? (
           <Activity clientId={client.id} contacts={props.data.contacts} />
         ) : tab === "invoices" ? (
-          <InvoicesTab id={client.id} />
+          <ClientInvoices clientId={client.id} readOnly={props.data.anonymised} />
         ) : tab === "statement" ? (
           <StatementTab id={client.id} />
         ) : tab === "care-plans" ? (
@@ -253,17 +254,6 @@ function IdentityStrip({ data, finance }: { data: ClientPage; finance: boolean }
         </div>
       ))}
     </dl>
-  );
-}
-
-/** Invoices and payments (finance roles): GET /finance answers `{available:false}` until invoicing (M5/M6). */
-function InvoicesTab({ id }: { id: string }) {
-  const fin = useLoad(() => api.clientFinance(id), id);
-  if (fin.state === "failed") return <LoadFailed error={fin.error} onRetry={() => fin.reload()} />;
-  return (
-    <EmptyState icon={<Receipt />} title="Invoices and payments">
-      <p>{INVOICES_LINE}</p>
-    </EmptyState>
   );
 }
 

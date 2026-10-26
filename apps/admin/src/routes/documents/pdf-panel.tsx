@@ -8,12 +8,28 @@ import { documentPdfHref, errorText, RequestError } from "../../api.ts";
 import { Download, RotateCcw } from "../../components/icons.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { documentsApi, type PdfState } from "../../lib/documents-api.ts";
-import { PDF_COPY, PDF_POLL_MS, type PdfPhase, pdfPhase, pdfRetryText } from "../../lib/pdf.ts";
+import { PDF_COPY, PDF_POLL_MS, pdfPhase, pdfRetryText } from "../../lib/pdf.ts";
 
-const HEADING: Record<Exclude<PdfPhase, "none">, string> = {
+/** The panel's words: 07-P's for proposals and estimates; an invoice passes 07-R's. */
+export type PdfWords = { ready: string; making: string; slow: string; download: string; tryAgain: string };
+const OFFER_WORDS: PdfWords = {
   ready: PDF_COPY.ready,
   making: PDF_COPY.making,
   slow: PDF_COPY.slow,
+  download: PDF_COPY.download,
+  tryAgain: PDF_COPY.tryAgain,
+};
+
+/** Where the panel reads, retries and downloads: the documents API unless an invoice passes its own (M5.1). */
+export type PdfSource = {
+  load: (id: string) => Promise<{ pdf?: PdfState | null | undefined }>;
+  retry: (id: string) => Promise<unknown>;
+  href: (id: string) => string;
+};
+const DOCUMENT_SOURCE: PdfSource = {
+  load: (id) => documentsApi.get(id),
+  retry: (id) => documentsApi.retryPdf(id),
+  href: documentPdfHref,
 };
 
 export function PdfPanel(props: {
@@ -23,7 +39,11 @@ export function PdfPanel(props: {
   initial: PdfState;
   /** "Try again" needs the right to send (`proposals.send`); everyone who can read the document can download its PDF. */
   canRetry: boolean;
+  words?: PdfWords | undefined;
+  source?: PdfSource | undefined;
 }) {
+  const words = props.words ?? OFFER_WORDS;
+  const source = props.source ?? DOCUMENT_SOURCE;
   const toast = useToast();
   const [pdf, setPdf] = useState<PdfState>(props.initial);
   const [since, setSince] = useState<number | null>(props.sentAt);
@@ -40,7 +60,7 @@ export function PdfPanel(props: {
     const timer = window.setInterval(async () => {
       setNow(Date.now());
       try {
-        const v = await documentsApi.get(props.id);
+        const v = await source.load(props.id);
         if (alive && v.pdf) setPdf(v.pdf);
       } catch {
         // A failed ask changes nothing: the next one, or "Try again", tells.
@@ -50,7 +70,7 @@ export function PdfPanel(props: {
       alive = false;
       window.clearInterval(timer);
     };
-  }, [phase, props.id]);
+  }, [phase, props.id, source]);
 
   // After "Try again" the button is gone: the heading takes the focus, so the new state is read next.
   useEffect(() => {
@@ -66,7 +86,7 @@ export function PdfPanel(props: {
     if (busy) return;
     setBusy(true);
     try {
-      await documentsApi.retryPdf(props.id);
+      await source.retry(props.id);
       const t = Date.now();
       setPdf((p) => ({ ...p, state: "pending" }));
       setSince(t);
@@ -78,7 +98,7 @@ export function PdfPanel(props: {
       if (code === "pdf_done") {
         // Made in the meantime: show it as ready.
         try {
-          const v = await documentsApi.get(props.id);
+          const v = await source.load(props.id);
           if (v.pdf) {
             setPdf(v.pdf);
             moved.current = true;
@@ -98,7 +118,7 @@ export function PdfPanel(props: {
       <PageGlyph />
       <div className="pdf-panel__text" aria-live="polite">
         <h2 id="pdf-h" ref={heading} tabIndex={-1} className="pdf-panel__title">
-          {HEADING[phase]}
+          {words[phase]}
         </h2>
         {phase === "ready" && pdf.fingerprint && (
           <p className="pdf-panel__meta">
@@ -107,13 +127,9 @@ export function PdfPanel(props: {
         )}
       </div>
       {phase === "ready" && (
-        <a
-          className="btn btn--secondary btn--block pdf-panel__action"
-          href={documentPdfHref(props.id)}
-          download
-        >
+        <a className="btn btn--secondary btn--block pdf-panel__action" href={source.href(props.id)} download>
           <Download size={20} />
-          {PDF_COPY.download}
+          {words.download}
         </a>
       )}
       {phase === "slow" && props.canRetry && (
@@ -125,7 +141,7 @@ export function PdfPanel(props: {
           aria-busy={busy || undefined}
         >
           <RotateCcw size={20} />
-          {PDF_COPY.tryAgain}
+          {words.tryAgain}
         </button>
       )}
     </section>
