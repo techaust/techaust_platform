@@ -13,5 +13,5 @@ export function Ph({ children }: { children: string }) {
 
 /** An error line from `errorText`: tagged when it is one of the pending lines. */
 export function ErrorLine({ text }: { text: string }) {
-  return isPendingText(text) ? <Ph>{text}</Ph> : <>{text}</>;
+  return isPendingText(text) ? <Ph>{text}</Ph> : text;
 }
