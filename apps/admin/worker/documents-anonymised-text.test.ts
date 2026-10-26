@@ -169,9 +169,10 @@ describe("redactionNames and redactor", () => {
     ]);
     expect(redactionNames(r, false, true)).toEqual(["Asha (Ops) Rao", "a+b@acme.example.test"]);
     expect(redactionNames(r, false, false)).toEqual([]);
-    expect(
-      redactionNames({ ...r, displayName: "   ", contactName: undefined, email: undefined }, true, false),
-    ).toEqual(["Acme Studio Pvt Ltd"]);
+    const { contactName: _n, email: _e, ...noContact } = r;
+    expect(redactionNames({ ...noContact, displayName: "   " }, true, false)).toEqual([
+      "Acme Studio Pvt Ltd",
+    ]);
     expect(redactionNames({ ...r, displayName: "Acme Studio Pvt Ltd" }, true, false)).toEqual([
       "Acme Studio Pvt Ltd",
       "Asha (Ops) Rao",
