@@ -95,6 +95,21 @@ describe("the staff view of a sent version after anonymising", () => {
     expect(JSON.parse(before.recipient).legalName).toBe(legal);
   });
 
+  it("a blank display name at send counts as missing: the view names the legal name (candidate 9)", async () => {
+    const o = await owner();
+    const made = await mkDraft(o);
+    await env.DB.prepare(
+      "UPDATE clients SET display_name = '   ', legal_name = 'Legal Name Pvt Ltd' WHERE id = ?",
+    )
+      .bind(made.clientId)
+      .run();
+    const res = await sendDoc(o, made.id, (await getDoc(o, made.id)).updatedAt);
+    expect(res.status, await res.clone().text()).toBe(200);
+    const view = await getDoc(o, made.id);
+    expect(JSON.parse((await stored(made.id)).recipient).displayName).toBe("   ");
+    expect(view.client.name).toBe("Legal Name Pvt Ltd");
+  });
+
   it("a live client and contact are shown exactly as sent", async () => {
     const { o, made } = await sentDoc();
     const stored1 = JSON.parse((await stored(made.id)).recipient);

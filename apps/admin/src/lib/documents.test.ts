@@ -354,6 +354,10 @@ describe("errors by API code (07-O §6)", () => {
     expect(
       emptySectionsOf({ code: "section_empty", sections: ["d", "summary"] }, list).map((s) => s.id),
     ).toEqual(["b", "d"]);
+    // The server's `kinds` alone (the name the Worker sends) work the same.
+    expect(
+      emptySectionsOf({ code: "section_empty", kinds: ["summary", "custom"] }, list).map((s) => s.id),
+    ).toEqual(["b", "d"]);
     // No keys: shown, optional and empty only (not the hidden team, not the required terms).
     expect(emptySectionsOf({ code: "section_empty" }, list).map((s) => s.id)).toEqual(["b", "d"]);
     expect(blockerText({ code: "section_empty", sections: ["summary"] }, list)).toBe(

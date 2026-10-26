@@ -1020,11 +1020,12 @@ export const isEmptyOptional = (s: SectionDraft) =>
   !s.hidden && !isRequiredSection(s.kind) && s.bodyMd.trim() === "";
 
 /**
- * The sections a `section_empty` blocker is about, in the editor's order. The server names them by key (a section's id, or its kind);
- * without keys (or none that match), the editor's own empty visible optional sections are the list.
+ * The sections a `section_empty` blocker is about, in the editor's order. The server names them twice, by `sections` (ids) and `kinds`
+ * (same order); a name may be an id or a kind. Without names (or none that match), the editor's own empty visible optional sections are
+ * the list.
  */
 export function emptySectionsOf(b: Blocker, sections: readonly SectionDraft[]): SectionDraft[] {
-  const keys = b.sections ?? b.keys ?? b.names ?? b.codes ?? [];
+  const keys = b.sections ?? b.kinds ?? [];
   const out: SectionDraft[] = [];
   for (const k of keys) {
     const hit =

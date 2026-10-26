@@ -17,9 +17,9 @@ export type Blocker = {
   names?: string[];
   codes?: string[];
   issues?: Issue[];
-  /** `section_empty` (review fix): the visible optional sections with no text, by key (a section's id or kind). */
+  /** `section_empty`: the visible optional sections with no text, as ids in order; `kinds` is the same list by kind (the names the Worker sends). */
   sections?: string[];
-  keys?: string[];
+  kinds?: string[];
 };
 
 /** What a sent version was addressed to, as frozen at send (review fix 1; the db's `RecipientSnapshot`). */
