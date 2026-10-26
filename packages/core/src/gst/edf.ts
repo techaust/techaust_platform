@@ -4,7 +4,12 @@
 // conversation, not the bank's form. All payment rails are included (Q16). Export credit notes are not included (VERIFY).
 import { addDays, type CalendarDate, isValidDate } from "../dates.ts";
 import { lastDayOfMonth } from "./period.ts";
-import { DEFAULT_REALISATION_RULES, type RealisationRules, realisationDates } from "./realisation.ts";
+import {
+  DEFAULT_REALISATION_RULES,
+  dueDatesOf,
+  type RealisationRules,
+  rulesAreValid,
+} from "./realisation.ts";
 import {
   type Currency,
   compareDates,
@@ -12,6 +17,7 @@ import {
   fail,
   type GstIssue,
   type GstResult,
+  type GstWarning,
   guard,
   isIntBetween,
   isNonNegInt,
@@ -73,8 +79,10 @@ export function edfRows(
     const m = edfMonth(year, month);
     if (!m.ok) return m;
     const rules = options.rules ?? DEFAULT_REALISATION_RULES;
+    if (!rulesAreValid(rules)) return fail([issue("rules_invalid", "rules")]);
     const descriptions = options.sacDescriptions ?? {};
     const errors: GstIssue[] = [];
+    const warnings: GstWarning[] = [];
     const rows: EdfRow[] = [];
     for (const row of register) {
       if (row.kind !== "export_invoice" || row.voided) continue;
@@ -97,11 +105,9 @@ export function edfRows(
         errors.push({ code: "amount_invalid", path: at });
         continue;
       }
-      const dates = realisationDates({ invoiceDate: row.issueDate, currency: row.currency }, rules);
-      if (!dates.ok) {
-        errors.push(...dates.errors.map((e) => ({ code: e.code, path: [row.id, ...e.path] })));
-        continue;
-      }
+      const dates = dueDatesOf({ invoiceDate: row.issueDate, currency: row.currency }, rules);
+      if (compareDates(row.issueDate, rules.rulesFrom) < 0)
+        warnings.push({ code: "before_fema_2026", path: at });
       const sacs = [...new Set(row.rates.map((r) => r.sac).filter((s): s is string => s !== null))].sort(
         compareText,
       );
@@ -121,12 +127,12 @@ export function edfRows(
           .map((s) => (Object.hasOwn(descriptions, s) ? (descriptions[s] as string) : ""))
           .join("; "),
         purposeCode: row.purposeCode,
-        femaDue: dates.value.femaDue,
+        femaDue: dates.femaDue,
         edfDue: m.value.due,
       });
     }
     if (errors.length > 0) return fail(errors);
     rows.sort((a, b) => compareDates(a.issueDate, b.issueDate) || compareText(a.number, b.number));
-    return ok(rows);
+    return ok(rows, warnings);
   });
 }

@@ -1,0 +1,6 @@
+GSTIN/UIN of Recipient,Receiver Name,Invoice Number,Invoice date,Invoice Value,Place Of Supply,Reverse Charge,Applicable % of Tax Rate,Invoice Type,E-Commerce GSTIN,Rate,Taxable Value,Cess Amount
+19ABCDE1234F1ZX,Test Client One,TH/INV/2627/0001,05-Oct-2026,11800.00,19-West Bengal,N,,Regular B2B,,18,10000.00,
+27ABCDE1234F1Z0,Test Client Two,TH/INV/2627/0002,12-Oct-2026,80000.00,27-Maharashtra,N,,Regular B2B,,5,20000.00,
+27ABCDE1234F1Z0,Test Client Two,TH/INV/2627/0002,12-Oct-2026,80000.00,27-Maharashtra,N,,Regular B2B,,18,50000.00,
+19ABCDE1234F1ZX,"'=HYPERLINK(""x"",""y"")",TH/INV/2627/0007,04-Dec-2026,4200.00,19-West Bengal,N,,Regular B2B,,5,4000.00,
+29ABCDE1234F1ZW,"'-Acme, Ltd",TH/INV/2627/0008,05-Dec-2026,7080.00,29-Karnataka,N,,Regular B2B,,18,6000.00,

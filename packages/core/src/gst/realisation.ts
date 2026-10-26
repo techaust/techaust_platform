@@ -53,7 +53,7 @@ export type RealisationSettings = {
   readonly escalateExtraDays: number;
 };
 
-const rulesAreValid = (r: RealisationRules): boolean =>
+export const rulesAreValid = (r: RealisationRules): boolean =>
   isIntBetween(r.femaMonthsForeign, 1, 1200) &&
   isIntBetween(r.femaMonthsInr, 1, 1200) &&
   isIntBetween(r.gstMonths, 1, 1200) &&
@@ -104,7 +104,8 @@ const issuesOf = (
   return out;
 };
 
-function datesOf(input: RealisationInput, rules: RealisationRules): RealisationDates {
+/** The due dates, with the input and the rules already checked (a caller that has not checked them uses `realisationDates`). */
+export function dueDatesOf(input: RealisationInput, rules: RealisationRules): RealisationDates {
   const femaMonths = input.currency === "INR" ? rules.femaMonthsInr : rules.femaMonthsForeign;
   const femaDue = input.extension?.femaDue ?? addMonthsClamped(input.invoiceDate, femaMonths);
   const gstBase = addMonthsClamped(input.invoiceDate, rules.gstMonths);
@@ -122,7 +123,7 @@ export function realisationDates(
     if (found.length > 0) return fail(found);
     const warnings: GstWarning[] = [];
     if (compareDates(input.invoiceDate, rules.rulesFrom) < 0) warnings.push(warn("before_fema_2026"));
-    return ok(datesOf(input, rules), warnings);
+    return ok(dueDatesOf(input, rules), warnings);
   });
 }
 
@@ -156,7 +157,7 @@ export function realisationStatus(
     if (found.length > 0) return fail(found);
     const warnings: GstWarning[] = [];
     if (compareDates(input.invoiceDate, rules.rulesFrom) < 0) warnings.push(warn("before_fema_2026"));
-    const dates = datesOf(input, rules);
+    const dates = dueDatesOf(input, rules);
     return ok(
       { ...dates, stage: stageOf(dates, input.outstandingMinor, today, rules.approachingDays) },
       warnings,

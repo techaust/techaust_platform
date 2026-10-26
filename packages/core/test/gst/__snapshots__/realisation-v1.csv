@@ -1,0 +1,4 @@
+Invoice number,Invoice date,Client,Currency,Outstanding,FEMA due,GST due,Stage
+EXP-c,31-May-2026,Client c,USD,250.50,28-Feb-2027,15-Jun-2027,gst_overdue
+EXP-a,03-Nov-2026,Client a,USD,1000.00,03-Aug-2027,18-Nov-2027,fema_overdue
+EXP-b,15-Dec-2026,"'-Overseas, Co",INR,0.00,15-Dec-2027,30-Dec-2027,realised

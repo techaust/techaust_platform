@@ -1,0 +1,4 @@
+Export Type,Invoice Number,Invoice date,Invoice Value,Port Code,Shipping Bill Number,Shipping Bill Date,Rate,Taxable Value,Cess Amount
+WOPAY,TH/EXP/2627/0001,03-Nov-2026,83500.00,,,,0,83500.00,
+WPAY,TH/EXP/2627/0002,08-Nov-2026,49560.00,,,,18,42000.00,
+WOPAY,TH/EXP/2627/0003,20-Nov-2026,30000.00,,,,0,30000.00,

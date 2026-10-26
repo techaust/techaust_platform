@@ -1,5 +1,5 @@
-// Return periods and calendar-month arithmetic (M5.5a; ADM-REP-04). Integer maths only, IST calendar dates, no Date
-// object (so no time zone and no `Date.now()`). VERIFY WITH CA/LEGAL: a quarter is the QRMP quarter of the financial year.
+// Return periods and calendar-month arithmetic (M5.5a; ADM-REP-04). Integer maths only, IST calendar dates, no
+// calendar object (so no time zone and no clock). VERIFY WITH CA/LEGAL: a quarter is the QRMP quarter of the financial year.
 import type { CalendarDate } from "../dates.ts";
 import { compareDates, fail, type GstPeriod, type GstResult, isIntBetween, issue, ok } from "./types.ts";
 
