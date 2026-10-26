@@ -3,8 +3,8 @@
 import { esc } from "./escape.ts";
 import { PDF_PRINT_CSS, TECHAUST_PDF_FONT_DATA } from "./generated/assets.ts";
 import { CERTIFICATE_CSS, type CertificateView, certificateBody } from "./layout/certificate-skeleton.ts";
-import { skeletonBody } from "./layout/skeleton.ts";
-import { TEMPLATE_CSS } from "./layout/styles.ts";
+import { documentBody } from "./layout/document.ts";
+import { pageCss, TEMPLATE_CSS } from "./layout/styles.ts";
 import type { PdfView } from "./types.ts";
 
 export const DOCUMENT_CSP = "default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'";
@@ -21,10 +21,11 @@ export function renderDocumentHtml(view: PdfView): string {
 ${TECHAUST_PDF_FONT_DATA}
 ${PDF_PRINT_CSS}
 ${TEMPLATE_CSS}
+${pageCss(view)}
 </style>
 </head>
 <body>
-${skeletonBody(view)}
+${documentBody(view)}
 </body>
 </html>
 `;

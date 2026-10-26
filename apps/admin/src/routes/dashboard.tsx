@@ -11,8 +11,15 @@ import { PageHeader, Skeleton, When } from "../components/display.tsx";
 import { FileText, Receipt, Wallet } from "../components/icons.tsx";
 import { LoadFailed, useLoad } from "../components/states.tsx";
 import { allowed } from "../lib/access.ts";
-import { CARE_COPY, dayText, hoursText } from "../lib/care.ts";
-import { activityHref, activityText, DASH_COPY, showingFirst, TILE_TITLES } from "../lib/dashboard.ts";
+import { CARE_COPY, dayText, hoursText, moneyText } from "../lib/care.ts";
+import {
+  activityHref,
+  activityText,
+  DASH_COPY,
+  PIPELINE_AROUND,
+  showingFirst,
+  TILE_TITLES,
+} from "../lib/dashboard.ts";
 import { STAGE_LABELS, STAGES } from "../lib/leads.ts";
 import { useUser } from "../session.tsx";
 import { FlagPill, HoursBar, tierText } from "./care/parts.tsx";
@@ -59,14 +66,7 @@ function Tiles({ data }: { data: DashboardData }) {
       {(t.milestones || t.pipelineValue || t.finance) && (
         <div className="dash__side">
           {t.milestones && <MilestonesTile tile={t.milestones} today={data.today} />}
-          {t.pipelineValue && (
-            <Tile id="pipeline" title={TILE_TITLES.pipelineValue} quiet>
-              <p className="panel-empty">
-                <FileText size={20} />
-                <span>{DASH_COPY.pipelineArrives}</span>
-              </p>
-            </Tile>
-          )}
+          {t.pipelineValue && <PipelineTile tile={t.pipelineValue} />}
           {t.finance && (
             <Tile id="finance" title={TILE_TITLES.finance} quiet>
               <p className="panel-empty">
@@ -122,6 +122,48 @@ function Figure({ value, label }: { value: ReactNode; label: string }) {
       <span className="figure__value tnum">{value}</span>
       <span className="figure__label">{label}</span>
     </p>
+  );
+}
+
+// ---- pipeline (owner, Sales; M4.3) ----------------------------------------------------------------------------------------------
+
+/**
+ * The offers out and still acceptable (sent or viewed, valid today or later), before GST, one line per currency: rupees and dollars are
+ * never added together. A stat tile, not a chart: the count and the amount are the whole message (07-O §7).
+ */
+function PipelineTile({ tile }: { tile: NonNullable<DashboardTiles["pipelineValue"]> }) {
+  const rows = tile.byCurrency;
+  return (
+    <Tile
+      id="pipeline"
+      title={TILE_TITLES.pipelineValue}
+      quiet={rows.length === 0}
+      className="tile--pipeline"
+      link={rows.length > 0 ? { to: "/proposals?type=all&status=sent", text: "Open proposals" } : undefined}
+    >
+      {rows.length === 0 ? (
+        <p className="panel-empty">
+          <FileText size={20} />
+          <span>{DASH_COPY.pipelineEmpty}</span>
+        </p>
+      ) : (
+        <ul className="pipeline">
+          {rows.map((r) => {
+            const total = moneyText(r.taxableMinor, r.currency);
+            return (
+              <li key={r.currency} className="pipeline__row">
+                <span className="pipeline__cur docno">{r.currency}</span>
+                <span className="pipeline__line">
+                  {PIPELINE_AROUND[0](r.count)}
+                  <span className="pipeline__total tnum">{total}</span>
+                  {PIPELINE_AROUND[1]}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Tile>
   );
 }
 

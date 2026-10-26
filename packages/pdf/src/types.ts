@@ -155,6 +155,8 @@ export type PdfView = {
   title: string;
   numberDisplay: string;
   versionLabel: string;
+  /** The bare version number ("2"), for "No. {number} v{version}" and the footer. */
+  version: string;
   statusText: string;
   notice: string | null;
   issueDate: string;
@@ -173,12 +175,17 @@ export type PdfView = {
   inrNote: string | null;
   schedule: ViewStep[];
   sections: ViewSection[];
-  terms: { title: string; bodyMd: string };
+  /** `version` is the bare number ("3"), for 07-O's "The terms below are version {n} of our proposal terms." */
+  terms: { title: string; version: string; bodyMd: string };
   integrity: string;
+  /** Where the client accepts (07-P acceptance box), printed as text. */
+  portalLink: string;
   footer: { sender: string; contact: string };
 };
 
 export type ViewConfig = {
   /** The address shown in the footer as the sender (decision: hello@). */
   contactEmail: string;
+  /** The client portal's address as printed in the acceptance box (default "portal.techaust.com", docs/06 §7.4). */
+  portalLink?: string;
 };

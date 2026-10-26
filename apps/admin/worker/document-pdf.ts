@@ -5,9 +5,11 @@
 import { contentDisposition } from "@techaust/core/file-types";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
+import { clientGoneSql } from "./anonymised.ts";
 import { type ApiError, type AppEnv, type Ctx, err, mutate, NOT_FOUND } from "./context.ts";
 import { enqueuePdf } from "./document-events.ts";
 import { body, idParam, param } from "./http.ts";
+import { CLIENT_GONE } from "./quote-model.ts";
 
 export const PDF_PENDING: ApiError = { code: "pdf_pending", message: "The PDF is not ready yet" };
 export const PDF_DONE: ApiError = { code: "pdf_done", message: "This document already has its PDF" };
@@ -21,10 +23,10 @@ type PdfRow = {
   frozen_at: number | null;
   pdf_r2_key: string | null;
   pdf_sha256: string | null;
+  gone: number;
 };
 
-const PDF_ROW =
-  "SELECT id, type, status, version, number_display, frozen_at, pdf_r2_key, pdf_sha256 FROM documents WHERE id = ?1 AND type IN ('proposal', 'estimate')";
+const PDF_ROW = `SELECT id, type, status, version, number_display, frozen_at, pdf_r2_key, pdf_sha256, ${clientGoneSql("client_id")} AS gone FROM documents WHERE id = ?1 AND type IN ('proposal', 'estimate')`;
 
 /** `TH-PRP-2627-0003-v2.pdf`: the number with its slashes changed, so a browser keeps the name. */
 export const pdfFilename = (numberDisplay: string, version: number): string =>
@@ -66,6 +68,8 @@ export const documentPdf = new Hono<AppEnv>()
     const row = await c.env.DB.prepare(PDF_ROW).bind(id).first<PdfRow>();
     if (notSent(row) || !row) return err(c, NOT_FOUND, 404);
     if (row.pdf_sha256 !== null) return err(c, PDF_DONE, 409);
+    // An erased client takes nothing new (the standing rule): no audit row, no message. The download above is unchanged (owner question).
+    if (row.gone === 1) return err(c, CLIENT_GONE, 409);
     const done = await mutate(c, {
       action: "document.pdf_retry",
       entityType: "document",

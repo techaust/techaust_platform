@@ -9,12 +9,8 @@ export const MAX_PDF_BYTES = 10 * 1024 * 1024;
 export const DEFAULT_RETRY_AFTER_S = 10;
 export const STUB_TEXT = "Local stub: not a rendered document";
 
-/** The part of the binding used here (the generated Env types it once the binding is configured in phase 2). */
-export type BrowserBinding = {
-  quickAction(action: "pdf", options: Record<string, unknown>): Promise<Response>;
-};
 export type RenderEnv = {
-  BROWSER?: BrowserBinding | undefined;
+  BROWSER?: Pick<BrowserRun, "quickAction"> | undefined;
   PDF_RENDERER?: string | undefined;
   ENVIRONMENT?: string | undefined;
   PDF_MIN_SPACING_MS?: string | undefined;

@@ -1,6 +1,7 @@
 // renderDocumentHtml: escaping, no network references, the CSP, the title, status as text, the test ids the visual suite uses.
 import { describe, expect, it } from "vitest";
 import { esc } from "../src/escape.ts";
+import { PDF_LOGOS } from "../src/generated/assets.ts";
 import { markdownToHtml } from "../src/markdown-html.ts";
 import { pdfOptionsFor } from "../src/options.ts";
 import { DOCUMENT_CSP, renderDocumentHtml } from "../src/render.ts";
@@ -86,7 +87,7 @@ describe("renderDocumentHtml", () => {
 
   it("states the status as text and keeps the test ids", async () => {
     const { html } = await htmlOf("long-inter-inr");
-    expect(html).toContain('<span data-testid="status">Sent</span>');
+    expect(html).toContain('data-testid="status">Sent</span>');
     for (const id of ["rupee", "total", "integrity"]) expect(html).toContain(`data-testid="${id}"`);
     expect(html.match(/data-testid="rupee"/g)).toHaveLength(1);
     expect(html.match(/data-testid="total"/g)).toHaveLength(1);
@@ -101,7 +102,9 @@ describe("renderDocumentHtml", () => {
   it("does not print a hidden section and prints the terms", async () => {
     const { html } = await htmlOf("long-inter-inr");
     expect(html).not.toContain("Hidden sample");
-    expect(html).toContain("Terms, version 3");
+    // the terms text itself (07-O: the section's own text first, then the versioned terms)
+    expect(html).toContain("The terms of this offer apply.");
+    expect(html).toContain("Payment is due as scheduled.");
   });
 
   it("never uses a bold weight above 600", async () => {
@@ -115,11 +118,12 @@ describe("renderDocumentHtml", () => {
     expect(a.html).toBe(b.html);
   });
 
-  it("falls back to the trade name when the logo file is unknown", async () => {
+  it("falls back to the primary SVG logo when the logo file is unknown (never the trade name in text)", async () => {
     const { envelope } = await buildFixture("short-intra-inr");
     envelope.snapshot.header.issuer.company.logo = "nope.svg";
     const html = renderDocumentHtml(toPdfView(envelope));
-    expect(html).toContain('class="logo-text"');
+    expect(html).not.toContain("logo-text");
+    expect(html).toContain(`<div class="masthead__logo">${PDF_LOGOS["logo-primary-color.svg"]}</div>`);
   });
 });
 

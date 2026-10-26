@@ -89,6 +89,7 @@ type ListRow = {
   status: string;
   title: string | null;
   number_display: string | null;
+  group_number: string | null;
   client_id: string;
   client_code: string;
   client_name: string;
@@ -108,7 +109,7 @@ type ListRow = {
 
 /** The latest version of each group only: no newer version exists (probed through `documents_version`). */
 export const LIST_SQL = (filters: { status: boolean; client: boolean; cursor: boolean }) =>
-  `SELECT d.id, d.type, d.version, d.status, d.title, d.number_display, d.client_id, cl.code AS client_code, cl.display_name AS client_name, d.currency, d.taxable_minor, d.total_minor, d.valid_until, d.content_sha256, d.frozen_at, d.created_at, d.updated_at,
+  `SELECT d.id, d.type, d.version, d.status, d.title, d.number_display, (SELECT v.number_display FROM documents v WHERE v.version_group_id = d.version_group_id AND v.version = 1) AS group_number, d.client_id, cl.code AS client_code, cl.display_name AS client_name, d.currency, d.taxable_minor, d.total_minor, d.valid_until, d.content_sha256, d.frozen_at, d.created_at, d.updated_at,
      (SELECT a.status FROM approvals a WHERE a.document_id = d.id AND a.kind = 'discount' ORDER BY a.created_at DESC, a.id DESC LIMIT 1) AS approval_status,
      (SELECT a.content_sha256 FROM approvals a WHERE a.document_id = d.id AND a.kind = 'discount' ORDER BY a.created_at DESC, a.id DESC LIMIT 1) AS approval_sha,
      (SELECT count(*) FROM document_lines l WHERE l.document_id = d.id AND l.catalogue_item_id IS NULL) AS custom_lines,
@@ -125,6 +126,8 @@ export const listRow = (r: ListRow) => ({
   status: r.status,
   title: r.title,
   number: r.number_display,
+  // The number the document group was given at its first send: a version 2 draft has none of its own, so the list shows this one with "v2 draft".
+  numberDisplay: r.number_display ?? r.group_number,
   clientId: r.client_id,
   clientCode: r.client_code,
   clientName: r.client_name,
@@ -182,6 +185,10 @@ export async function listDocuments(
   const page = pageOf(merged, limit, dir, cur !== null, (r) => ({ k: r.created_at, id: r.id }));
   return c.json({ documents: page.items.map(listRow), next: page.next });
 }
+
+/** The invoice draft or care plan an accepted estimate was converted into (at most one: the conversions exclude each other). */
+export const CONVERTED_TO_SQL = `SELECT 'invoice' AS kind, i.id FROM documents i WHERE i.source_document_id = ?1 AND i.source_step = 1
+  UNION ALL SELECT 'care_plan', p.id FROM care_plans p WHERE p.source_document_id = ?1 LIMIT 1`;
 
 // ---- reading one -------------------------------------------------------------------------------------------------------------------------
 
@@ -385,23 +392,30 @@ export const documents = new Hono<AppEnv>()
   // ---- one document ----
   .get("/:id", param(idParam), async (c) => {
     const id = c.req.valid("param").id;
-    // The offer's history (who it went to, the acceptance, the certificate, a decline, the start-project numbers) rides in the same D1 call.
-    const ctx = await readContext(c, id, offerStatements(c.env.DB, id));
+    // The offer's history (who it went to, the acceptance, the certificate, a decline, the start-project numbers) and what an accepted
+    // estimate became (two indexed probes: documents_source and care_plans_source_document) ride in the same D1 call.
+    const ctx = await readContext(c, id, [
+      ...offerStatements(c.env.DB, id),
+      c.env.DB.prepare(CONVERTED_TO_SQL).bind(id),
+    ]);
     if (!ctx) return err(c, NOT_FOUND, 404);
     if (!(ctx.bundle.document.type === "proposal" || ctx.bundle.document.type === "estimate"))
       return err(c, NOT_FOUND, 404);
     const accepted = ctx.bundle.document.type === "proposal" && ctx.bundle.document.status === "accepted";
-    const offer = offerSection(ctx.extra, {
+    const offer = offerSection(ctx.extra.slice(0, 4), {
       role: actor(c).role,
       plan: accepted ? startPlanOf(ctx) : null,
     });
+    const conv = ctx.extra[4]?.results[0] as { kind: "invoice" | "care_plan"; id: string } | undefined;
     const view = await documentView({
       bundle: ctx.bundle,
       client: ctx.client,
       contact: ctx.contact,
       newestTermsId: ctx.newestTermsId,
+      newestTermsVersion: ctx.newestTerms?.version ?? null,
       settings: readSettings(ctx.settingsRows),
       today: todayIst(),
+      convertedTo: conv ? { kind: conv.kind, id: conv.id } : null,
     });
     return c.json({ ...view, ...offer });
   })
@@ -438,6 +452,12 @@ export const documents = new Hono<AppEnv>()
         main: [
           db
             .prepare(`UPDATE leads SET proposal_id = NULL WHERE proposal_id = ?1 AND ${live}`)
+            .bind(id, expected),
+          // The bell rows of the approvals go with them (they would point at requests that no longer exist), before the approvals do.
+          db
+            .prepare(
+              `DELETE FROM notifications WHERE entity_type = 'approval' AND entity_id IN (SELECT id FROM approvals WHERE document_id = ?1) AND ${live}`,
+            )
             .bind(id, expected),
           db.prepare(`DELETE FROM approvals WHERE document_id = ?1 AND ${live}`).bind(id, expected),
           db
@@ -477,7 +497,8 @@ export const documents = new Hono<AppEnv>()
       ...ctx.bundle.versions.filter((v) => v.frozen_at !== null).map((v) => v.version),
     );
     if (d.version !== latestSent) return err(c, NOT_LATEST, 409);
-    if (ctx.bundle.versions.some((v) => v.status === "accepted")) return err(c, ALREADY_ACCEPTED, 409);
+    if (ctx.bundle.versions.some((v) => v.status === "accepted" || v.status === "converted"))
+      return err(c, ALREADY_ACCEPTED, 409);
     if (ctx.bundle.versions.some((v) => v.frozen_at === null)) return err(c, DRAFT_EXISTS, 409);
     if (ctx.client.anonymised_at !== null) return err(c, CLIENT_GONE, 409);
     const settings = readSettings(ctx.settingsRows);
@@ -497,7 +518,7 @@ export const documents = new Hono<AppEnv>()
     const version = d.version + 1;
     const conditions = {
       sql: (at: number) =>
-        `EXISTS (SELECT 1 FROM documents s WHERE s.id = ?${at} AND s.frozen_at IS NOT NULL AND NOT EXISTS (SELECT 1 FROM documents n WHERE n.version_group_id = ?${at + 1} AND (n.version > s.version OR n.status = 'accepted'))) AND NOT ${clientGoneSql(`?${at + 2}`)}`,
+        `EXISTS (SELECT 1 FROM documents s WHERE s.id = ?${at} AND s.frozen_at IS NOT NULL AND NOT EXISTS (SELECT 1 FROM documents n WHERE n.version_group_id = ?${at + 1} AND (n.version > s.version OR n.status IN ('accepted', 'converted')))) AND NOT ${clientGoneSql(`?${at + 2}`)}`,
       params: [id, groupId, ctx.client.id],
     };
     const draft = newDraftStatements(
@@ -529,7 +550,8 @@ export const documents = new Hono<AppEnv>()
     if (!done) {
       const now2 = await loadDocument(db, id);
       const versions = now2?.versions ?? [];
-      if (versions.some((v) => v.status === "accepted")) return err(c, ALREADY_ACCEPTED, 409);
+      if (versions.some((v) => v.status === "accepted" || v.status === "converted"))
+        return err(c, ALREADY_ACCEPTED, 409);
       if (versions.some((v) => v.version > d.version))
         return versions.some((v) => v.frozen_at === null && v.version > d.version)
           ? err(c, DRAFT_EXISTS, 409)

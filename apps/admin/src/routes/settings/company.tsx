@@ -1,7 +1,7 @@
 // Company profile (ADM-SET-01): names, the GSTIN with its live check and the PAN taken from it, the state (fixed by a
 // valid GSTIN), the address and contact printed on documents, and the two logos, picked from the generated brand files
-// (lead decision: no uploads until file storage, M3.4). Changes apply to new documents only (VERIFY WITH CA for the GST
-// fields).
+// (lead decision L7 of M4.4: never uploaded). After the form, the signature image (M4.4), which is uploaded and saves on its own.
+// Changes apply to new documents only (VERIFY WITH CA for the GST fields).
 import { STATE_CODES, type StateCode, selectableStates, validateGstin } from "@techaust/core";
 import { BRAND_LOGOS, type Settings } from "@techaust/core/settings";
 import primaryBlack from "@techaust/ui/brand/logo-primary-black.svg?url";
@@ -19,6 +19,7 @@ import { StatusPill } from "../../components/display.tsx";
 import { FormField } from "../../components/form.tsx";
 import { type FieldErrors, fieldId, looksLikeEmail, orNull } from "../../lib/settings-form.ts";
 import { type Built, GroupForm, type GroupSpec } from "./kit.tsx";
+import { SignatureControl } from "./signature.tsx";
 
 type Logo = (typeof BRAND_LOGOS)[number];
 
@@ -109,7 +110,11 @@ const spec: GroupSpec<"company", Form> = {
 
 export function CompanyProfile() {
   return (
-    <GroupForm spec={spec} readOnly={false}>
+    <GroupForm
+      spec={spec}
+      readOnly={false}
+      after={({ doc, adopt }) => <SignatureControl initial={doc.value.signature ?? null} adopt={adopt} />}
+    >
       {({ form: f, set, error }) => <Fields f={f} set={set} error={error} />}
     </GroupForm>
   );
@@ -312,10 +317,7 @@ function Fields({
 
       <fieldset className="form-section">
         <legend>Logos</legend>
-        <p className="hint">
-          Picked from the brand files, so documents always carry the real logo. A signature image arrives with
-          file uploads (milestone M3.4).
-        </p>
+        <p className="hint">Picked from the brand files, so documents always carry the real logo.</p>
         <div className="logo-tiles">
           <LogoPick
             id={ID.logoLight}

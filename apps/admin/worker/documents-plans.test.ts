@@ -179,7 +179,7 @@ describe("the cost of a typical save on D1's free plan (rows written; reported, 
     return { res, rows, statements, calls };
   }
 
-  it("a title-only save, a one-line save and a 100-line save", async () => {
+  it("on a 100-line draft: a title-only save, a one-line edit, a one-section edit and an appended line cost a few rows [review fix 2]", async () => {
     const o = await sessionFor("owner", { stepUp: true });
     const made = await mkDraft(o);
     let doc = await getDoc(o, made.id);
@@ -192,29 +192,61 @@ describe("the cost of a typical save on D1's free plan (rows written; reported, 
           e,
         ),
       );
-      expect(r.res.status, name).toBe(200);
-      doc = await json(r.res);
-      report.push(`${name}: ${r.rows} rows written, ${r.statements} statements in ${r.calls} batch(es)`);
+      expect(r.res.status, `${name} ${r.res.status === 200 ? "" : await r.res.clone().text()}`).toBe(200);
+      const saved = await json(r.res);
+      doc = { ...(await getDoc(o, made.id)), updatedAt: saved.updatedAt };
+      report.push(`${name}: ${r.rows} rows, ${r.statements} statements in ${r.calls} batch(es)`);
       return r.rows;
     };
+    const hundred = Array.from({ length: 99 }, (_, i) => ({
+      description: `Line ${i}`,
+      qtyMilli: 1000,
+      unit: "fixed",
+      rateMinor: 100 + i,
+    }));
+    const first = await one("99 lines from one", { lines: hundred });
+    const lines = () =>
+      doc.lines.map((l: J) => ({
+        id: l.id,
+        description: l.description,
+        qtyMilli: l.qtyMilli,
+        unit: l.unit,
+        rateMinor: l.rateMinor,
+      }));
     const title = await one("title only", { fields: { title: "Only the title" } });
-    const lines1 = await one("one line", {
-      lines: [{ description: "One", qtyMilli: 1000, unit: "fixed", rateMinor: 100 }],
+    const edited = lines();
+    edited[41] = { ...edited[41], description: "Line 41, edited" };
+    const oneLine = await one("one line edited", { lines: edited });
+    const sections = doc.sections.map((x: J) => ({
+      id: x.id,
+      kind: x.kind,
+      title: x.title,
+      bodyMd: x.kind === "terms" ? x.bodyMd : "A changed section text.",
+      hidden: x.hidden,
+    }));
+    const oneSection = await one("one section edited", { sections });
+    const appended = await one("one line appended", {
+      lines: [...lines(), { description: "Added at the end", qtyMilli: 1000, unit: "fixed", rateMinor: 5 }],
     });
-    const lines100 = await one("100 lines", {
-      lines: Array.from({ length: 100 }, (_, i) => ({
-        description: `Line ${i}`,
-        qtyMilli: 1000,
-        unit: "fixed",
-        rateMinor: 100 + i,
-      })),
+    // The structural worst cases: a line removed from the middle and one inserted at the top move the positions of the rows behind it,
+    // and the unique (document, position) index needs those rows parked first (two writes each). Not cheaper than the old whole-part rewrite (about 3 rows a line); held under 500 here.
+    const withoutMiddle = lines();
+    withoutMiddle.splice(50, 1);
+    const removedMiddle = await one("one line removed from the middle", { lines: withoutMiddle });
+    const insertedTop = await one("one line inserted at the top", {
+      lines: [{ description: "First", qtyMilli: 1000, unit: "fixed", rateMinor: 5 }, ...lines()],
     });
-    // To read the figures, compare report.join(" | ") with "" and read the failure. On the local D1 (staging may count differently):
-    // title only 12 rows, one line 20 rows, 100 lines 317 rows, in 17 to 21 statements and 4 calls.
-    expect(report).toHaveLength(3);
-    // A save that sends only the title does not rewrite the lines.
-    expect(title).toBeLessThan(lines1 * 3);
-    expect(lines100).toBeGreaterThan(lines1);
-    expect(lines100).toBeLessThan(1_500);
+    // The local D1 counts the audit row (6 with its indexes) and the access row (3) of every mutation, and the document's own row (1):
+    // that fixed 10 is the title-only figure. What the diff adds on a 100-line draft is the rows that changed:
+    // measured here: 99 lines from one 309, title only 10, one line edited 11, one section edited 12, one line appended 13.
+    expect(report).toHaveLength(7);
+    expect(removedMiddle).toBeLessThan(500);
+    expect(insertedTop).toBeLessThan(500);
+    expect(first).toBeLessThan(1_500);
+    expect(title).toBeLessThanOrEqual(11);
+    expect(oneLine - title).toBeLessThanOrEqual(2);
+    expect(oneSection - title).toBeLessThanOrEqual(3);
+    expect(appended - title).toBeLessThanOrEqual(4);
+    // measured with a failing expect on report.join(" | "): removed from the middle 206 rows, inserted at the top 407 (100 lines).
   });
 });

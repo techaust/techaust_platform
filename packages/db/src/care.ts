@@ -7,6 +7,8 @@
 // `care_plans`. Free plan: a plan list is capped at 100 (`json_each(?)`, not 100 bound parameters), and every statement is
 // served by an index (EXPLAIN is tested).
 import {
+  CARE_NEAR_BP,
+  CARE_REACHED_BP,
   type CarePeriodUsage,
   type CareStatus,
   type CareTier,
@@ -120,6 +122,39 @@ function idsSql(source: PlanSource): { sql: string; bound: number; bind: unknown
     sql: `SELECT id FROM (SELECT id FROM care_plans WHERE status = 'active'${keyset} ORDER BY created_at, id LIMIT ${n + 1})`,
     bound: after === undefined ? 0 : 1,
     bind: after === undefined ? [] : [after],
+  };
+}
+
+/** A started active plan's rank by burn: `k` is basis points of its hours used (a plan with no hours and any billable time ranks first). */
+export type BurnRankRow = { id: string; k: number; near_or_reached: number; reached: number };
+
+/**
+ * The dashboard's pick when more plans are active than it can load (M4.3 review, found in M3.5): ONE statement, worked out once, that gives
+ * the `n` started active plans that have used the largest share of their included hours in the period that contains `today`, each with its
+ * `k`, and on every row the number of ALL started active plans at or past the near threshold and at or past the reached one (a window
+ * over the whole set, so no plan is missed by the cap). The caller then loads exactly those ids with the ordinary `ids` source: the ranking
+ * is never repeated inside the loader's four statements (M4.3 re-check).
+ *
+ * `k` is worked out in SQL from the terms in force and the billable minutes of the period. It ignores rolled-over hours, which can only
+ * LOWER a plan's true burn, so every plan that is truly near or at its hours has `k` at or past the threshold; the counts here are therefore
+ * exact for plans that do not roll hours over and an upper bound for those that do. The exact burn and flag of the loaded plans is still
+ * `carePeriodUsage`'s.
+ */
+export function burnRankQuery(n: number, today: string): CareQuery {
+  const cap = Math.trunc(n);
+  if (!Number.isInteger(cap) || cap < 1 || cap > MAX_LOADED_PLANS)
+    throw new RangeError(`Plans by burn: 1 to ${MAX_LOADED_PLANS}`);
+  const cur = periodStartSql("?1", "p.billing_day");
+  // The terms in force at the start of the plan's CURRENT period, as `carePeriodUsage` reads them (`termsOn(terms, period.start)`): the
+  // first, partial period starts on the plan's start date, not on the natural billing-day start before it, so a plan that began
+  // mid-period still gets the terms it began with, and with them the full hours (M3.5 owner answer, Q4; M4.3 re-check).
+  const included = `(SELECT r.included_minutes FROM care_plan_terms r WHERE r.care_plan_id = p.id AND r.effective_from <= max(${cur}, p.start_date) ORDER BY r.effective_from DESC, r.created_at DESC, r.id DESC LIMIT 1)`;
+  const used = `(SELECT coalesce(sum(t.minutes), 0) FROM time_logs t WHERE t.care_plan_id = p.id AND t.billable = 1 AND t.work_date >= ${cur} AND t.work_date <= ?1)`;
+  const k =
+    "CASE WHEN coalesce(inc, 0) = 0 THEN CASE WHEN u > 0 THEN 1000000000 ELSE -1 END ELSE u * 10000 / inc END";
+  return {
+    sql: `SELECT id, k, near_or_reached, reached FROM (SELECT id, k, sum(k >= ${CARE_NEAR_BP}) OVER () AS near_or_reached, sum(k >= ${CARE_REACHED_BP}) OVER () AS reached FROM (SELECT id, ${k} AS k FROM (SELECT p.id AS id, ${used} AS u, ${included} AS inc FROM care_plans p WHERE p.status = 'active' AND p.start_date <= ?1 LIMIT -1))) ORDER BY k DESC, id LIMIT ${cap}`,
+    bind: [today],
   };
 }
 

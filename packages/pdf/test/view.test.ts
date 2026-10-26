@@ -38,8 +38,10 @@ describe("toPdfView", () => {
     expect(v.statusText).toBe("Sent");
     expect(v.issueDate).toBe("26 Oct 26");
     expect(v.validUntil).toBe("10 Nov 26");
+    expect(v.version).toBe("2");
+    expect(v.portalLink).toBe("portal.techaust.com");
     expect(v.integrity).toBe(
-      `Document ${envelope.documentId}, fingerprint ${envelope.snapshotSha256.slice(0, 12)}`,
+      `Document ID ${envelope.documentId} · Content fingerprint ${envelope.snapshotSha256.slice(0, 12)}`,
     );
     expect(v.footer.sender).toBe("hello@techaust.com");
     expect(v.notice).toBeNull();
@@ -55,7 +57,8 @@ describe("toPdfView", () => {
     expect(v.words).toBe(computed.words);
     expect(v.lines).toHaveLength(3);
     expect(v.lines[1]?.qty).toBe("1.5");
-    expect(v.lines[2]?.discount).toBe("10%");
+    // 07-P "18 %": a space before the sign, a no-break one so the two never part at a line end
+    expect(v.lines[2]?.discount).toBe("10\u00a0%");
   });
 
   it("shows CGST and SGST for a supply inside the state, IGST for another state", async () => {
@@ -88,7 +91,7 @@ describe("toPdfView", () => {
     const { envelope } = await buildFixture("long-inter-inr");
     const v = toPdfView(envelope);
     expect(v.schedule).toHaveLength(4);
-    expect(v.schedule[0]).toMatchObject({ when: "On acceptance", share: "25%" });
+    expect(v.schedule[0]).toMatchObject({ when: "On acceptance", share: "25\u00a0%" });
     expect(v.sections.some((s) => s.title === "Hidden sample")).toBe(false);
     expect(v.sections.find((s) => s.kind === "custom")?.title).toBe("Sample custom section");
     expect(v.sections.find((s) => s.kind === "cover")?.title).toBe("Cover");
@@ -100,13 +103,15 @@ describe("toPdfView", () => {
   it("leaves empty supplier fields out: never null or a placeholder", async () => {
     const bare = toPdfView((await buildFixture("short-intra-inr", { bareSupplier: true })).envelope);
     expect(bare.supplier.name).toBe("TecHaust Technologies");
-    expect(bare.supplier.lines).toEqual([]);
+    // only the state (it has a default) and the sender address remain
+    expect(bare.supplier.lines).toEqual(["State West Bengal (19)", "hello@techaust.com"]);
     expect(strings(bare).filter((s) => /null|undefined|NaN|Placeholder/.test(s))).toEqual([]);
     const full = toPdfView((await buildFixture("short-intra-inr")).envelope);
     expect(full.supplier.lines).toEqual([
-      "Sample Proprietor",
+      "Proprietor: Sample Proprietor",
       "1 Sample Supplier Road, Balurghat, West Bengal 733101",
-      `GSTIN ${SAMPLE_SUPPLIER_GSTIN}`,
+      `GSTIN ${SAMPLE_SUPPLIER_GSTIN} · State West Bengal (19)`,
+      "hello@techaust.com",
     ]);
   });
 

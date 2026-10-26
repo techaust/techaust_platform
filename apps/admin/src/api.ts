@@ -12,7 +12,7 @@ import type {
   TemplateBody,
 } from "@techaust/core/catalogue";
 import type { Role } from "@techaust/core/permissions";
-import type { Settings } from "@techaust/core/settings";
+import type { Settings, SignatureRef } from "@techaust/core/settings";
 import type { TermsBlockId } from "@techaust/core/terms";
 import type { HashRequest, HashResponse } from "./hash.worker.ts";
 
@@ -141,7 +141,7 @@ export type Notification = {
   createdAt: number;
 };
 export type SearchGroupData = {
-  type: "user" | "lead" | "client" | "contact" | "project" | "catalogue";
+  type: "user" | "lead" | "client" | "contact" | "project" | "catalogue" | "document";
   label: string;
   items: { id: string; title: string; subtitle: string; link: string }[];
 };
@@ -771,7 +771,8 @@ export type DashboardTiles = {
     newLast7Days: number;
     overdue: { count: number; oldest: { id: string; ref: string; contactName: string; dueAt: number }[] };
   };
-  pipelineValue?: { available: false; arrivesWith: string };
+  /** The offers out and still acceptable, before tax, by currency (M4.3, ADM-DASH-01). */
+  pipelineValue?: { asOf: string; byCurrency: { currency: Currency; count: number; taxableMinor: number }[] };
   finance?: { available: false; arrivesWith: Record<string, string> };
   projects?: { active: number; onHold: number };
   milestones?: {
@@ -894,18 +895,24 @@ export async function ensureStepUp(): Promise<boolean> {
 }
 
 type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
-type Options = { method?: Method; body?: unknown; signedIn?: boolean };
+/** `raw`: a binary body sent as it is (`application/octet-stream`; the signature image), instead of JSON. */
+type Options = { method?: Method; body?: unknown; raw?: Blob; signedIn?: boolean };
 
 const NETWORK = "Couldn't reach the server. Check your connection and try again.";
 
-async function send<T>(path: string, { method, body, signedIn = true }: Options): Promise<T> {
-  const m: Method = method ?? (body === undefined ? "GET" : "POST");
+async function send<T>(path: string, { method, body, raw, signedIn = true }: Options): Promise<T> {
+  const m: Method = method ?? (body === undefined && raw === undefined ? "GET" : "POST");
   let res: Response;
   try {
     res = await fetch(`/api/v1${path}`, {
       method: m,
-      headers: body === undefined ? {} : { "Content-Type": "application/json" },
-      body: body === undefined ? null : JSON.stringify(body),
+      headers:
+        raw !== undefined
+          ? { "Content-Type": "application/octet-stream" }
+          : body === undefined
+            ? {}
+            : { "Content-Type": "application/json" },
+      body: raw !== undefined ? raw : body === undefined ? null : JSON.stringify(body),
       credentials: "same-origin",
     });
   } catch {
@@ -1234,6 +1241,25 @@ export const api = {
     ),
   dashboard: () => request<Dashboard>("/dashboard"),
 };
+
+// ---- the signature image (M4.4, ADM-SET-01) ------------------------------------------------------------------------
+
+export const signatureApi = {
+  /** Uploads (or replaces) the image: the raw bytes, at most 256 KB. Answers the company settings' new version. */
+  put: (file: Blob) =>
+    request<{ ok: true; version: number; signature: SignatureRef }>("/settings/signature", {
+      method: "PUT",
+      raw: file,
+    }),
+  remove: () => request<{ ok: true; version: number }>("/settings/signature", { method: "DELETE" }),
+};
+
+/** The image for the settings preview: a same-origin GET with the session cookie; `v` changes with the image, so no stale copy shows. */
+export const signatureSrc = (sha256: string) =>
+  `/api/v1/settings/signature?v=${encodeURIComponent(sha256.slice(0, 12))}`;
+
+/** The PDF of a sent proposal or estimate (M4.4): a plain same-origin GET with the session cookie (an attachment, never shown inline). */
+export const documentPdfHref = (id: string) => `/api/v1/documents/${encodeURIComponent(id)}/pdf`;
 
 /** The address of a file's download: a plain same-origin GET with the session cookie (an attachment, never rendered). */
 export const fileDownloadHref = (id: string) => `/api/v1/files/${encodeURIComponent(id)}/download`;

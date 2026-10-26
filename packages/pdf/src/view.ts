@@ -19,20 +19,25 @@ import type {
   ViewTotalRow,
 } from "./types.ts";
 
-export const DEFAULT_VIEW_CONFIG: ViewConfig = { contactEmail: "hello@techaust.com" };
+export const DEFAULT_VIEW_CONFIG: ViewConfig = {
+  contactEmail: "hello@techaust.com",
+  portalLink: "portal.techaust.com",
+};
 
 const DASH = "–";
+/** "18 %": the house style puts a space before the sign; a no-break space keeps the two together on the page. */
+const pct = (bp: number): string => `${percentFromBp(bp)} %`;
 
 const SECTION_TITLES: Record<string, string> = {
   cover: "Cover",
   summary: "Summary",
-  problem_goals: "Problem and goals",
+  problem_goals: "Your goals",
   scope: "Scope",
   deliverables: "Deliverables",
   timeline: "Timeline",
   team: "Team",
   how_we_work: "How we work",
-  estimate: "Estimate",
+  estimate: "Investment",
   assumptions_exclusions: "Assumptions and exclusions",
   terms: "Terms",
   acceptance: "Acceptance",
@@ -41,6 +46,7 @@ const SECTION_TITLES: Record<string, string> = {
 
 const WHEN: Record<string, string> = {
   on_accept: "On acceptance",
+  milestone: "At a milestone",
   delivery: "On delivery",
   monthly: "Monthly in advance",
 };
@@ -64,7 +70,7 @@ function recipientOf(r: RecipientSnap): PdfView["recipient"] {
 }
 
 function totalsOf(c: ComputedDocument, m: (n: number) => string): ViewTotalRow[] {
-  const rows: ViewTotalRow[] = [{ key: "subtotal", label: "Subtotal", value: m(c.subtotalMinor) }];
+  const rows: ViewTotalRow[] = [{ key: "subtotal", label: "Sub-total", value: m(c.subtotalMinor) }];
   if (c.discountMinor !== 0) {
     rows.push({
       key: "discount",
@@ -79,8 +85,8 @@ function totalsOf(c: ComputedDocument, m: (n: number) => string): ViewTotalRow[]
   } else if (c.supply.type === "inter" || c.supply.type === "export_igst") {
     rows.push({ key: "igst", label: "IGST", value: m(c.igstMinor) });
   }
-  if (c.roundOffMinor !== 0) rows.push({ key: "round_off", label: "Round off", value: m(c.roundOffMinor) });
-  rows.push({ key: "total", label: `Total (${c.currency})`, value: m(c.totalMinor), strong: true });
+  if (c.roundOffMinor !== 0) rows.push({ key: "round_off", label: "Round-off", value: m(c.roundOffMinor) });
+  rows.push({ key: "total", label: "Total", value: m(c.totalMinor), strong: true });
   return rows;
 }
 
@@ -99,8 +105,7 @@ export function toPdfView(envelope: Envelope, cfg: ViewConfig = DEFAULT_VIEW_CON
   const lines: ViewLine[] = s.lines.map((l, i) => {
     const c = computed.lines[i] as ComputedDocument["lines"][number];
     let discount: string | null = null;
-    if (l.discountKind === "percent" && l.discountValue !== null)
-      discount = `${percentFromBp(l.discountValue)}%`;
+    if (l.discountKind === "percent" && l.discountValue !== null) discount = pct(l.discountValue);
     else if (l.discountKind === "fixed" && l.discountValue !== null) discount = m(l.discountValue);
     return {
       n: String(i + 1),
@@ -111,7 +116,7 @@ export function toPdfView(envelope: Envelope, cfg: ViewConfig = DEFAULT_VIEW_CON
       unit: l.unit,
       rate: m(l.rateMinor),
       discount,
-      gstRate: c.effectiveRateBp === 0 ? "Nil" : `${percentFromBp(c.effectiveRateBp)}%`,
+      gstRate: c.effectiveRateBp === 0 ? "Nil" : pct(c.effectiveRateBp),
       taxable: m(c.taxableMinor),
       total: m(c.lineTotalMinor),
     };
@@ -120,7 +125,7 @@ export function toPdfView(envelope: Envelope, cfg: ViewConfig = DEFAULT_VIEW_CON
   const anyTax = computed.cgstMinor !== 0 || computed.sgstMinor !== 0 || computed.igstMinor !== 0;
   const summary: ViewSummaryRow[] = anyTax
     ? computed.summary.map((r) => ({
-        rate: r.effectiveRateBp === 0 ? "Nil" : `${percentFromBp(r.effectiveRateBp)}%`,
+        rate: r.effectiveRateBp === 0 ? "Nil" : pct(r.effectiveRateBp),
         sac: nonEmpty(r.sac) ? r.sac : null,
         taxable: m(r.taxableMinor),
         cgst: m(r.cgstMinor),
@@ -138,7 +143,7 @@ export function toPdfView(envelope: Envelope, cfg: ViewConfig = DEFAULT_VIEW_CON
   const schedule: ViewStep[] = s.schedule.map((st, i) => ({
     label: st.label,
     when: WHEN[st.trigger] ?? st.label,
-    share: `${percentFromBp(st.pctBp)}%`,
+    share: pct(st.pctBp),
     amount: m(header.instalmentAmounts[i] ?? 0),
     detail: nonEmpty(st.detail) ? st.detail : null,
     date: st.targetDate ? shortIsoDate(st.targetDate) : null,
@@ -154,10 +159,21 @@ export function toPdfView(envelope: Envelope, cfg: ViewConfig = DEFAULT_VIEW_CON
 
   const company = header.issuer.company;
   const recipient = recipientOf(header.recipient);
-  const supplierLines = [
-    nonEmpty(company.legalName) && company.legalName !== company.tradeName ? company.legalName : null,
-    company.address,
+  // 07-P §1: "Proprietor: {legal name}" · the address · "GSTIN {gstin} · State {state} ({code})" · the sender address. A field still
+  // empty in Settings is left out (the state is never empty: it has a default).
+  const registration = [
     nonEmpty(company.gstin) ? `GSTIN ${company.gstin}` : null,
+    `State ${placeOfSupplyLabel(company.stateCode, "intra")}`,
+  ]
+    .filter(nonEmpty)
+    .join(" · ");
+  const supplierLines = [
+    nonEmpty(company.legalName) && company.legalName !== company.tradeName
+      ? `Proprietor: ${company.legalName}`
+      : null,
+    company.address,
+    registration,
+    cfg.contactEmail,
   ].filter(nonEmpty);
 
   return {
@@ -166,6 +182,7 @@ export function toPdfView(envelope: Envelope, cfg: ViewConfig = DEFAULT_VIEW_CON
     title: `${docLabel} ${envelope.numberDisplay} v${envelope.version} ${DASH} ${recipient.name}`,
     numberDisplay: envelope.numberDisplay,
     versionLabel: `Version ${envelope.version}`,
+    version: String(envelope.version),
     statusText: "Sent",
     notice: envelope.type === "estimate" ? "This is an estimate, not a tax invoice." : null,
     issueDate: shortIsoDate(header.document.issueDate),
@@ -184,8 +201,13 @@ export function toPdfView(envelope: Envelope, cfg: ViewConfig = DEFAULT_VIEW_CON
     inrNote,
     schedule,
     sections,
-    terms: { title: `Terms, version ${s.terms.version}`, bodyMd: s.terms.bodyMd },
-    integrity: `Document ${envelope.documentId}, fingerprint ${envelope.snapshotSha256.slice(0, 12)}`,
+    terms: {
+      title: `Terms, version ${s.terms.version}`,
+      version: String(s.terms.version),
+      bodyMd: s.terms.bodyMd,
+    },
+    integrity: `Document ID ${envelope.documentId} · Content fingerprint ${envelope.snapshotSha256.slice(0, 12)}`,
+    portalLink: cfg.portalLink ?? "portal.techaust.com",
     footer: {
       sender: cfg.contactEmail,
       contact: `${header.issuer.sender.name}, ${header.issuer.sender.email}`,

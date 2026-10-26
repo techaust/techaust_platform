@@ -6,7 +6,8 @@ import { pending } from "./projects.ts";
 
 export const TILE_TITLES = {
   leads: "Leads",
-  pipelineValue: "Pipeline value",
+  // 07-O §7 (M4.3) names the tile "Pipeline" now that it shows figures.
+  pipelineValue: "Pipeline",
   finance: "Invoiced and collected",
   projects: "Projects",
   milestones: "Milestones due in 14 days",
@@ -16,7 +17,8 @@ export const TILE_TITLES = {
 } as const;
 
 export const DASH_COPY = {
-  pipelineArrives: "Pipeline value arrives with proposals.",
+  /** 07-O §7 (M4.3). */
+  pipelineEmpty: "No open proposals.",
   financeArrives: "Invoiced and collected figures arrive with invoicing.",
   paymentsArrive: "Payments waiting for checks arrive with payments.",
   notStarted: "Not started",
@@ -27,6 +29,11 @@ export const DASH_COPY = {
   noTime: "No time logged this week.",
   noActivity: "No recent activity.",
 } as const;
+
+/** 07-O §7: "{n} open, {total} before GST", around its amount (the tile sets the amount in tabular figures). */
+export const PIPELINE_AROUND = [(n: number) => `${n} open, `, " before GST"] as const;
+export const pipelineLine = (n: number, total: string) =>
+  `${PIPELINE_AROUND[0](n)}${total}${PIPELINE_AROUND[1]}`;
 
 export const showingFirst = (n: number) => `Showing the first ${n}.`;
 
@@ -45,6 +52,8 @@ export const ACTIVITY_PENDING: Record<string, string> = {
   "time.create": pending("logged time"),
   "time.update": pending("changed a time entry"),
   "time.delete": pending("deleted a time entry"),
+  "document.expire": pending("marked a document as expired"),
+  "approval.expire": pending("marked an approval as expired"),
 };
 
 /** An action in words: the audit log's approved label, a marked placeholder, or its own name. */
@@ -54,7 +63,7 @@ export function activityText(action: string): string {
   return action;
 }
 
-/** Where an activity row leads, by its record type: the page of that lead, client, project or care plan; null otherwise. */
+/** Where an activity row leads, by its record type: the page of that lead, client, project, care plan, document or approval; null otherwise. */
 export function activityHref(entityType: string, entityId: string | null): string | null {
   if (!entityId) return null;
   const base: Record<string, string> = {
@@ -62,6 +71,8 @@ export function activityHref(entityType: string, entityId: string | null): strin
     client: "/clients/",
     project: "/projects/",
     care_plan: "/care-plans/",
+    document: "/documents/",
+    approval: "/approvals/",
   };
   const b = Object.hasOwn(base, entityType) ? base[entityType] : undefined;
   return b ? `${b}${encodeURIComponent(entityId)}` : null;

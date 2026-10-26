@@ -12,6 +12,7 @@ import { LoadFailed, StaleNotice, useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { FieldError, Notice } from "../../components/ui.tsx";
 import { UnsavedChangesGuard } from "../../components/unsaved.tsx";
+import { adoptVersion } from "../../lib/pdf.ts";
 import { type FieldErrors, fieldId, nearestField } from "../../lib/settings-form.ts";
 
 export type Built<K extends JsonGroup> =
@@ -29,6 +30,14 @@ export type GroupSpec<K extends JsonGroup, F> = {
   toForm: (value: Settings[K], meta: GroupMeta) => F;
   /** The form's own checks, in the order the fields appear; the value to save when there are none. */
   build: (form: F, doc: SettingsDoc<K>) => Built<K>;
+};
+
+/** What a control beside the form gets (the signature image on Company): it changes the same settings row on its own, so the form
+ * takes on the row's new version when that is the very next one (`adopt`, see `adoptVersion`); a later save then never reads as stale. */
+export type AfterCtx<K extends JsonGroup> = {
+  readOnly: boolean;
+  doc: SettingsDoc<K>;
+  adopt: (next: number) => void;
 };
 
 export type FormCtx<K extends JsonGroup, F> = {
@@ -59,6 +68,8 @@ export function GroupForm<K extends JsonGroup, F>(props: {
   /** A note under the verify box (e.g. what the group affects). */
   intro?: ReactNode;
   children: (ctx: FormCtx<K, F>) => ReactNode;
+  /** A control after the form that saves on its own (outside the form and its save bar). */
+  after?: (ctx: AfterCtx<K>) => ReactNode;
 }) {
   const { spec } = props;
   const loaded = useLoad(() => api.settingsGroup(spec.group), spec.group);
@@ -72,6 +83,7 @@ export function GroupForm<K extends JsonGroup, F>(props: {
       readOnly={props.readOnly}
       intro={props.intro}
       reload={() => loaded.reload(true)}
+      after={props.after}
     >
       {props.children}
     </GroupFormBody>
@@ -85,8 +97,11 @@ function GroupFormBody<K extends JsonGroup, F>(props: {
   intro?: ReactNode;
   reload: () => void;
   children: (ctx: FormCtx<K, F>) => ReactNode;
+  after?: ((ctx: AfterCtx<K>) => ReactNode) | undefined;
 }) {
   const { spec, doc, readOnly } = props;
+  // The version the next save sends: the one read, or the next one a control after the form saved (nobody else saved between).
+  const [version, setVersion] = useState(doc.version);
   const toast = useToast();
   const [initial] = useState(() => spec.toForm(doc.value, doc.meta));
   const [form, setForm] = useState<F>(initial);
@@ -123,7 +138,7 @@ function GroupFormBody<K extends JsonGroup, F>(props: {
     setErrors({});
     setBusy(true);
     try {
-      const r = await api.saveSettingsGroup(spec.group, doc.version, built.value, built.extra);
+      const r = await api.saveSettingsGroup(spec.group, version, built.value, built.extra);
       toast("success", r.changed ? spec.savedText : "No change: these settings were already saved.");
       props.reload();
     } catch (err) {
@@ -167,6 +182,7 @@ function GroupFormBody<K extends JsonGroup, F>(props: {
           {props.children({ form, set, error: (fid) => errors[fid], readOnly, doc })}
         </fieldset>
       </form>
+      {props.after?.({ readOnly, doc, adopt: (next) => setVersion((v) => adoptVersion(v, next)) })}
       <SaveBar
         dirty={dirty}
         busy={busy}

@@ -90,10 +90,6 @@ export const NAV: NavItem[] = [
     path: "/proposals",
     icon: <FileText />,
     group: 2,
-    arrives: {
-      milestone: "M4.3",
-      what: "Proposals with line items, payment schedules and versions, which clients accept online.",
-    },
   },
   {
     key: "estimates",
@@ -101,7 +97,6 @@ export const NAV: NavItem[] = [
     path: "/estimates",
     icon: <Calculator />,
     group: 2,
-    arrives: { milestone: "M4.3", what: "Estimates for smaller jobs, built like proposals." },
   },
   {
     key: "invoices",
@@ -139,10 +134,6 @@ export const NAV: NavItem[] = [
     path: "/approvals",
     icon: <ClipboardCheck />,
     group: 3,
-    arrives: {
-      milestone: "M4.3",
-      what: "Requests that need the owner, such as a proposal discount over 10 % or an invoice to issue.",
-    },
   },
   { key: "audit", label: "Audit log", path: "/audit", icon: <History />, group: 3 },
   { key: "settings", label: "Settings", path: "/settings", icon: <Settings />, group: 4 },

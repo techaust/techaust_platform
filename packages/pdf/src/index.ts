@@ -3,6 +3,7 @@
 export const PACKAGE_NAME = "@techaust/pdf" as const;
 
 export * from "./bundle.ts";
+export * from "./config.ts";
 export * from "./envelope.ts";
 export * from "./escape.ts";
 export * from "./hash.ts";

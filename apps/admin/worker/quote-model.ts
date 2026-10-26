@@ -12,6 +12,7 @@ import {
   type GuardLine,
   type GuardResult,
   type QuoteType,
+  REQUIRED_SECTIONS,
   type SectionDraft,
   unresolvedIn,
 } from "@techaust/core/documents";
@@ -84,6 +85,10 @@ export const APPROVAL_EXPIRED = e(
   "The document changed after the request, so the approval expired",
 );
 export const NUMBERING_CHANGED = e("numbering_changed", "The numbering settings changed. Try again");
+export const APPROVAL_REJECTED = e(
+  "approval_rejected",
+  "The owner rejected this version. Change it before asking again",
+);
 export const ALREADY_ACCEPTED = e("already_accepted", "A version of this document was already accepted");
 export const NOT_LATEST = e("not_latest", "Only the latest sent version can be revised");
 export const DRAFT_EXISTS = e("draft_exists", "A newer draft of this document already exists");
@@ -733,83 +738,148 @@ export const scheduleRows = (s: DocState, c: Computation) =>
     target_date: x.targetDate,
   }));
 
-const LINE_INSERT_COLUMNS =
-  "id, document_id, position, catalogue_item_id, description, detail, sac, qty_milli, unit, rate_minor, discount_kind, discount_value, taxable_minor, gst_rate_bp, cgst_minor, sgst_minor, igst_minor, line_total_minor, catalogue_rate_minor, catalogue_line";
-const LINE_KEYS = [
-  "id",
-  "position",
-  "catalogue_item_id",
-  "description",
-  "detail",
-  "sac",
-  "qty_milli",
-  "unit",
-  "rate_minor",
-  "discount_kind",
-  "discount_value",
-  "taxable_minor",
-  "gst_rate_bp",
-  "cgst_minor",
-  "sgst_minor",
-  "igst_minor",
-  "line_total_minor",
-  "catalogue_rate_minor",
-  "catalogue_line",
-];
+type ChildTable = "document_lines" | "document_sections" | "payment_schedules";
+
+const CHILD_COLUMNS: Record<ChildTable, readonly string[]> = {
+  document_lines: [
+    "id",
+    "position",
+    "catalogue_item_id",
+    "description",
+    "detail",
+    "sac",
+    "qty_milli",
+    "unit",
+    "rate_minor",
+    "discount_kind",
+    "discount_value",
+    "taxable_minor",
+    "gst_rate_bp",
+    "cgst_minor",
+    "sgst_minor",
+    "igst_minor",
+    "line_total_minor",
+    "catalogue_rate_minor",
+    "catalogue_line",
+  ],
+  document_sections: ["id", "position", "kind", "hidden", "title", "body_md"],
+  payment_schedules: [
+    "id",
+    "position",
+    "label",
+    "trigger",
+    "pct_bp",
+    "amount_minor",
+    "detail",
+    "target_date",
+  ],
+};
 
 type Guarded = { sql: (at: number) => string; params: readonly unknown[] };
+type ChildRow = Readonly<Record<string, unknown>>;
 
-/**
- * DELETE then INSERT of one kind of child rows, guarded (the request's audit row, or a condition of the batch). `json_each(?)` makes
- * the insert one statement with one bound value, whatever the number of rows (D1 allows 100 bound values per statement).
- */
-export function replaceChildren(
+/** `INSERT ... SELECT ... FROM json_each(?2)`: one statement and one bound value, whatever the number of rows (D1 allows 100 bound values). */
+function insertStatement(
   db: D1Database,
-  table: "document_lines" | "document_sections" | "payment_schedules",
+  table: ChildTable,
   documentId: string,
-  rows: readonly Record<string, unknown>[],
+  rows: readonly ChildRow[],
   g: Guarded,
-): D1PreparedStatement[] {
-  const columns =
-    table === "document_lines"
-      ? LINE_INSERT_COLUMNS
-      : table === "document_sections"
-        ? "id, document_id, position, kind, hidden, title, body_md"
-        : "id, document_id, position, label, trigger, pct_bp, amount_minor, detail, target_date";
-  const keys =
-    table === "document_lines"
-      ? LINE_KEYS
-      : table === "document_sections"
-        ? ["id", "position", "kind", "hidden", "title", "body_md"]
-        : ["id", "position", "label", "trigger", "pct_bp", "amount_minor", "detail", "target_date"];
-  const select = keys.map((k) =>
-    k === "id" ? "json_extract(value, '$.id')" : `json_extract(value, '$.${k}')`,
+): D1PreparedStatement {
+  const keys = CHILD_COLUMNS[table];
+  const exprs = ["document_id", ...keys].map((k) =>
+    k === "document_id" ? "?1" : `json_extract(value, '$.${k}')`,
   );
-  // `document_id` is the second column; position follows.
-  const cols = columns.split(", ");
-  const exprs = cols.map((c) => (c === "document_id" ? "?1" : select[keys.indexOf(c)]));
-  const del = db
-    .prepare(`DELETE FROM ${table} WHERE document_id = ?1 AND ${g.sql(2)}`)
-    .bind(documentId, ...g.params);
-  if (rows.length === 0) return [del];
-  const ins = db
+  return db
     .prepare(
-      `INSERT INTO ${table} (${columns}) SELECT ${exprs.join(", ")} FROM json_each(?2) WHERE ${g.sql(3)}`,
+      `INSERT INTO ${table} (document_id, ${keys.join(", ")}) SELECT ${exprs.join(", ")} FROM json_each(?2) WHERE ${g.sql(3)}`,
     )
     .bind(documentId, JSON.stringify(rows), ...g.params);
-  return [del, ins];
+}
+
+const sameValue = (a: unknown, b: unknown) => (a ?? null) === (b ?? null);
+
+/**
+ * Brings the stored child rows of a draft to `rows` by DIFF (M4.3 review fix 2): rows whose columns did not change cost nothing, so a
+ * one-line edit writes one line row and not the whole part. Rows are matched by id; the caller read `stored` in the same batch as the
+ * document's `updated_at`, and every statement is guarded (the request's audit row), so a racing save leaves them untouched.
+ *
+ * Order (the `(document_id, position)` indexes are unique and checked row by row):
+ * 1. DELETE the removed rows (frees their positions);
+ * 2. only when a moved row targets the old position of another moved row, park the rows whose old position is a target at the negative
+ *    of it (they are moved on in step 3; a swap or a block that shifts would otherwise collide);
+ * 3. UPDATE the changed rows, only the columns that changed in at least one of them (one `UPDATE ... FROM json_each`);
+ * 4. INSERT the new rows (their positions are free by now).
+ */
+export function diffChildren(
+  db: D1Database,
+  table: ChildTable,
+  documentId: string,
+  stored: readonly ChildRow[],
+  rows: readonly ChildRow[],
+  g: Guarded,
+): D1PreparedStatement[] {
+  const keys = CHILD_COLUMNS[table];
+  const was = new Map(stored.map((r) => [r.id as string, r]));
+  const now = new Set(rows.map((r) => r.id as string));
+  const removed = stored.filter((r) => !now.has(r.id as string)).map((r) => r.id as string);
+  const added = rows.filter((r) => !was.has(r.id as string));
+  const changed: { row: ChildRow; cols: string[] }[] = [];
+  for (const r of rows) {
+    const old = was.get(r.id as string);
+    if (!old) continue;
+    const cols = keys.filter((k) => k !== "id" && !sameValue(old[k], r[k]));
+    if (cols.length > 0) changed.push({ row: r, cols });
+  }
+  const out: D1PreparedStatement[] = [];
+  if (removed.length > 0)
+    out.push(
+      db
+        .prepare(
+          `DELETE FROM ${table} WHERE document_id = ?1 AND id IN (SELECT value FROM json_each(?2)) AND ${g.sql(3)}`,
+        )
+        .bind(documentId, JSON.stringify(removed), ...g.params),
+    );
+  const moved = changed.filter((x) => x.cols.includes("position"));
+  const targets = new Set(moved.map((x) => x.row.position as number));
+  const parked = moved.filter((x) => targets.has(was.get(x.row.id as string)?.position as number));
+  // A row only needs parking when its old position is a target of a move; a pure append or a replacement of a deleted row needs none.
+  if (parked.length > 0)
+    out.push(
+      db
+        .prepare(
+          `UPDATE ${table} SET position = -position WHERE document_id = ?1 AND id IN (SELECT value FROM json_each(?2)) AND ${g.sql(3)}`,
+        )
+        .bind(documentId, JSON.stringify(parked.map((x) => x.row.id)), ...g.params),
+    );
+  if (changed.length > 0) {
+    const cols = keys.filter((k) => changed.some((x) => x.cols.includes(k)));
+    const payload = changed.map((x) => {
+      const o: Record<string, unknown> = { id: x.row.id };
+      for (const k of cols) o[k] = x.row[k] ?? null;
+      return o;
+    });
+    out.push(
+      db
+        .prepare(
+          `UPDATE ${table} SET ${cols.map((k) => `${k} = json_extract(j.value, '$.${k}')`).join(", ")} FROM json_each(?2) AS j WHERE ${table}.document_id = ?1 AND ${table}.id = json_extract(j.value, '$.id') AND ${g.sql(3)}`,
+        )
+        .bind(documentId, JSON.stringify(payload), ...g.params),
+    );
+  }
+  if (added.length > 0) out.push(insertStatement(db, table, documentId, added, g));
+  return out;
 }
 
 /** Insert only (a new document has no rows to replace). */
 export function insertChildren(
   db: D1Database,
-  table: "document_lines" | "document_sections" | "payment_schedules",
+  table: ChildTable,
   documentId: string,
-  rows: readonly Record<string, unknown>[],
+  rows: readonly ChildRow[],
   g: Guarded,
 ): D1PreparedStatement[] {
-  const all = replaceChildren(db, table, documentId, rows, g);
-  return all.slice(1);
+  return rows.length === 0 ? [] : [insertStatement(db, table, documentId, rows, g)];
 }
 
 /** `INSERT INTO documents (cols) SELECT values WHERE <guard>`: the row is written only while the guard holds. Column names are code constants. */
@@ -857,6 +927,9 @@ export type Blocker = {
   codes?: string[];
   /** `tax_errors`: the engine's issues (codes and paths, never values). */
   issues?: readonly TaxIssue[];
+  /** `section_empty`: the visible optional sections with no text, in order: their ids, and their kinds (same order). */
+  sections?: string[];
+  kinds?: string[];
 };
 
 /** Everything that stops a draft being sent, as codes. Empty means it can be sent (the discount approval is a separate 403). */
@@ -874,6 +947,12 @@ export function sendBlockers(
   if (issues.length > 0) out.push({ code: "tax_errors", issues });
   const sectionIssues = checkSections(s.sections);
   if (sectionIssues.length > 0) out.push({ code: SECTIONS_INVALID.code, codes: sectionIssues });
+  // A visible optional section with no text would be frozen and sent as a bare heading: staff write it or hide it (M4.3 review 8).
+  const empty = s.sections.filter(
+    (x) => !x.hidden && !REQUIRED_SECTIONS.some((k) => k === x.kind) && (x.bodyMd ?? "").trim() === "",
+  );
+  if (empty.length > 0)
+    out.push({ code: "section_empty", sections: empty.map((x) => x.id), kinds: empty.map((x) => x.kind) });
   if (s.schedule.length === 0) out.push({ code: "schedule_missing" });
   const names = unresolvedIn([
     s.title,

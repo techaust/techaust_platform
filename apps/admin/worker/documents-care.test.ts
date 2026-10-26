@@ -230,6 +230,47 @@ describe("estimate -> care plan: the mapping", () => {
   });
 });
 
+describe("estimate -> care plan: defaults by tier and the result on the estimate (review 6, 9)", () => {
+  it("rollover left out follows the tier (Essential none; Growth and Scale one month, docs/07 4.14); a given rollover wins", async () => {
+    const answers: Record<string, string> = {};
+    for (const tier of ["Essential", "Growth", "Scale"]) {
+      const e = await estimate([care(tier)]);
+      const res = await call(`/documents/${e.id}/convert`, {
+        cookie: e.o.cookie,
+        body: { to: "care_plan", startDate: "2026-11-01", billingDay: 1, includedMinutes: 600 },
+      });
+      expect(res.status, await res.clone().text()).toBe(201);
+      const body = await json(res);
+      answers[tier] = body.rollover;
+      // the stored plan and its first terms row agree with the answer
+      expect(
+        (await one<{ rollover: string }>("SELECT rollover FROM care_plans WHERE id = ?", body.id))?.rollover,
+      ).toBe(body.rollover);
+      expect(
+        (
+          await one<{ rollover: string }>(
+            "SELECT rollover FROM care_plan_terms WHERE care_plan_id = ?",
+            body.id,
+          )
+        )?.rollover,
+      ).toBe(body.rollover);
+    }
+    expect(answers).toEqual({ Essential: "none", Growth: "one_month", Scale: "one_month" });
+    const g = await estimate([care("Growth")]);
+    const given = await toPlan(g.o.cookie, g.id, { rollover: "none" });
+    expect((await json(given)).rollover).toBe("none");
+  });
+
+  it("GET of the estimate names the care plan it became", async () => {
+    const e = await estimate([care("Growth")]);
+    expect((await getDoc(e.o, e.id)).convertedTo).toBeNull();
+    const res = await toPlan(e.o.cookie, e.id);
+    expect(res.status, await res.clone().text()).toBe(201);
+    const plan = await json(res);
+    expect((await getDoc(e.o, e.id)).convertedTo).toEqual({ kind: "care_plan", id: plan.id });
+  });
+});
+
 describe("estimate -> care plan: what is not a care estimate", () => {
   const refuse = async (id: string, o: { cookie: string }, status: number, code: string) => {
     const before = await plans();

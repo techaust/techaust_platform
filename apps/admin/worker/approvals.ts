@@ -28,6 +28,7 @@ import {
   APPROVAL_EXPIRED,
   APPROVAL_NOT_NEEDED,
   APPROVAL_PENDING,
+  APPROVAL_REJECTED,
   CLIENT_GONE,
   FROZEN,
   NOT_A_QUOTE,
@@ -43,9 +44,19 @@ const NOT_READY: ApiError = {
 const GUARD_SUMS = (doc: string) =>
   `${doc}.catalogue_reference_minor AS reference_minor, (SELECT coalesce(sum(l.taxable_minor), 0) FROM document_lines l WHERE l.document_id = ${doc}.id AND l.catalogue_item_id IS NOT NULL) AS taxable_minor`;
 
+/** The bell's words (07-O §4 and §8): the title and version, as a draft has no number before it is sent. */
+export const bellRequestTitle = (title: string | null, version: number) =>
+  `Approval needed: ${(title ?? "Untitled").slice(0, 120)} v${version}`;
+export const bellDecidedTitle = (to: "approved" | "rejected", title: string | null, version: number) =>
+  `${to === "approved" ? "Approved" : "Rejected"}: ${(title ?? "Untitled").slice(0, 120)} v${version}`;
+
 /** An approved discount approval exists for the draft's current content: asking again would only shadow it. */
 const APPROVED_NOW =
   "EXISTS (SELECT 1 FROM approvals a WHERE a.document_id = d.id AND a.kind = 'discount' AND a.status = 'approved' AND a.content_sha256 = d.content_sha256)";
+
+/** The owner already rejected THIS exact content: asking again for the same words would only waste the owner's time (M4.3 review 12). */
+const REJECTED_NOW =
+  "EXISTS (SELECT 1 FROM approvals a WHERE a.document_id = d.id AND a.kind = 'discount' AND a.status = 'rejected' AND a.content_sha256 = d.content_sha256)";
 
 export const requestBody = z.strictObject({
   expectedUpdatedAt: z.int(),
@@ -73,7 +84,7 @@ export const approvalRequests = new Hono<AppEnv>().post(
     const db = c.env.DB;
     const row = await db
       .prepare(
-        `SELECT d.type, d.status, d.frozen_at, d.updated_at, d.content_sha256, d.version, d.title, (d.computed IS NOT NULL) AS computes, ${clientGoneSql("d.client_id")} AS gone, ${APPROVED_NOW} AS approved, ${GUARD_SUMS("d")} FROM documents d WHERE d.id = ?1`,
+        `SELECT d.type, d.status, d.frozen_at, d.updated_at, d.content_sha256, d.version, d.title, (d.computed IS NOT NULL) AS computes, ${clientGoneSql("d.client_id")} AS gone, ${APPROVED_NOW} AS approved, ${REJECTED_NOW} AS rejected, ${GUARD_SUMS("d")} FROM documents d WHERE d.id = ?1`,
       )
       .bind(id)
       .first<{
@@ -87,6 +98,7 @@ export const approvalRequests = new Hono<AppEnv>().post(
         computes: number;
         gone: number;
         approved: number;
+        rejected: number;
         reference_minor: number | null;
         taxable_minor: number;
       }>();
@@ -99,6 +111,7 @@ export const approvalRequests = new Hono<AppEnv>().post(
     const figures = guardFigures(row.reference_minor ?? 0, row.taxable_minor);
     if (!figures.needsApproval) return err(c, APPROVAL_NOT_NEEDED, 409);
     if (row.approved === 1) return err(c, APPROVAL_EXISTS, 409);
+    if (row.rejected === 1) return err(c, APPROVAL_REJECTED, 409);
 
     const approvalId = uuidv7();
     const now = Date.now();
@@ -116,7 +129,7 @@ export const approvalRequests = new Hono<AppEnv>().post(
             .prepare(
               `INSERT INTO approvals (id, kind, document_id, requested_by, reason, content_sha256, status, created_at)
                SELECT ?3, 'discount', d.id, ?4, ?5, d.content_sha256, 'pending', ?6 FROM documents d
-               WHERE d.id = ?1 AND d.status = 'draft' AND d.frozen_at IS NULL AND d.updated_at = ?2 AND d.content_sha256 IS NOT NULL AND NOT ${clientGoneSql("d.client_id")} AND NOT ${APPROVED_NOW}`,
+               WHERE d.id = ?1 AND d.status = 'draft' AND d.frozen_at IS NULL AND d.updated_at = ?2 AND d.content_sha256 IS NOT NULL AND NOT ${clientGoneSql("d.client_id")} AND NOT ${APPROVED_NOW} AND NOT ${REJECTED_NOW}`,
             )
             .bind(id, f.expectedUpdatedAt, approvalId, u.id, f.reason ?? null, now),
         ],
@@ -141,7 +154,7 @@ export const approvalRequests = new Hono<AppEnv>().post(
             )
             .bind(
               approvalId,
-              `Approval needed: ${(row.title ?? "Untitled").slice(0, 120)} (version ${row.version})`,
+              bellRequestTitle(row.title, row.version),
               `/approvals/${approvalId}`,
               ...g.params,
             ),
@@ -157,13 +170,15 @@ export const approvalRequests = new Hono<AppEnv>().post(
     }
     const again = await db
       .prepare(
-        `SELECT d.frozen_at, d.updated_at, ${APPROVED_NOW} AS approved FROM documents d WHERE d.id = ?1`,
+        `SELECT d.frozen_at, d.updated_at, ${APPROVED_NOW} AS approved, ${REJECTED_NOW} AS rejected FROM documents d WHERE d.id = ?1`,
       )
       .bind(id)
-      .first<{ frozen_at: number | null; updated_at: number; approved: number }>();
+      .first<{ frozen_at: number | null; updated_at: number; approved: number; rejected: number }>();
     if (!again) return err(c, NOT_FOUND, 404);
     if (again.frozen_at !== null) return err(c, FROZEN, 409);
     if (again.updated_at === f.expectedUpdatedAt && again.approved === 1) return err(c, APPROVAL_EXISTS, 409);
+    if (again.updated_at === f.expectedUpdatedAt && again.rejected === 1)
+      return err(c, APPROVAL_REJECTED, 409);
     return err(c, STALE_VERSION, 409);
   },
 );
@@ -178,6 +193,7 @@ type ApprovalRow = {
   requested_by: string;
   requester_name: string | null;
   decided_by: string | null;
+  decider_name: string | null;
   content_sha256: string;
   document_id: string;
   type: string;
@@ -186,6 +202,7 @@ type ApprovalRow = {
   document_status: string;
   document_sha: string | null;
   currency: string;
+  total_minor: number;
   reference_minor: number | null;
   taxable_minor: number;
   custom_lines: number;
@@ -197,11 +214,11 @@ type ApprovalRow = {
 export const APPROVALS_SQL = (f: { status: boolean; own: boolean; cursor: boolean }) => {
   const ownAt = 1 + (f.status ? 1 : 0);
   const cursorAt = ownAt + (f.own ? 1 : 0);
-  return `SELECT a.id, a.status, a.created_at, a.decided_at, a.reason, a.note, a.requested_by, ru.name AS requester_name, a.decided_by, a.content_sha256,
-       d.id AS document_id, d.type, d.title, d.version, d.status AS document_status, d.content_sha256 AS document_sha, d.currency, ${GUARD_SUMS("d")},
+  return `SELECT a.id, a.status, a.created_at, a.decided_at, a.reason, a.note, a.requested_by, ru.name AS requester_name, a.decided_by, du.name AS decider_name, a.content_sha256,
+       d.id AS document_id, d.type, d.title, d.version, d.status AS document_status, d.content_sha256 AS document_sha, d.currency, d.total_minor, ${GUARD_SUMS("d")},
        (SELECT count(*) FROM document_lines l WHERE l.document_id = d.id AND l.catalogue_item_id IS NULL) AS custom_lines,
        cl.code AS client_code, cl.display_name AS client_name
-     FROM approvals a JOIN documents d ON d.id = a.document_id JOIN clients cl ON cl.id = d.client_id LEFT JOIN staff_users ru ON ru.id = a.requested_by
+     FROM approvals a JOIN documents d ON d.id = a.document_id JOIN clients cl ON cl.id = d.client_id LEFT JOIN staff_users ru ON ru.id = a.requested_by LEFT JOIN staff_users du ON du.id = a.decided_by
      WHERE a.kind = 'discount'${f.status ? " AND a.status = ?1" : ""}${f.own ? ` AND a.requested_by = ?${ownAt}` : ""}${f.cursor ? ` AND ${keysetSql("a.created_at", "a.id", false, "after", cursorAt).where}` : ""}
      ORDER BY a.created_at DESC, a.id DESC LIMIT`;
 };
@@ -223,6 +240,7 @@ const approvalView = (r: ApprovalRow) => {
     requestedBy: r.requested_by,
     requesterName: r.requester_name,
     decidedBy: r.decided_by,
+    deciderName: r.decider_name,
     document: {
       id: r.document_id,
       type: r.type,
@@ -237,6 +255,8 @@ const approvalView = (r: ApprovalRow) => {
     discountMinor: figures.discountMinor,
     referenceMinor: figures.referenceMinor,
     customLineCount: r.custom_lines,
+    // The draft's total as last saved (the owner's queue shows it, 07-O §4).
+    totalMinor: r.total_minor,
   };
 };
 
@@ -311,7 +331,7 @@ export const approvals = new Hono<AppEnv>()
           )
           .bind(
             id,
-            `Approval ${to}: ${(row.title ?? "Untitled").slice(0, 120)} (version ${row.version})`,
+            bellDecidedTitle(to, row.title, row.version),
             `/documents/${row.document_id}`,
             row.requested_by,
             ...g.params,

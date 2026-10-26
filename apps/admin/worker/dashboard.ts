@@ -1,9 +1,9 @@
-// The dashboard (M3.5, ADM-DASH-01, the CRM tiles): ONE `db.batch`, live figures from indexed reads (docs/05 section 1.2 rule 7: `stats_daily`
+// The dashboard (M3.5, ADM-DASH-01, the CRM tiles): ONE `db.batch` (a second only for the care tile, past 100 active plans), live figures from indexed reads (docs/05 section 1.2 rule 7: `stats_daily`
 // is the nightly history, not what this reads). `tilesFor(role)` decides which tiles are built; a tile the role may not see is ABSENT from
 // the answer (never an "unavailable" stub), and its statements are never run. The finance tile arrives with M5/M6, the usage tile with
 // M7.5; the pipeline-value tile is live since M4.3. The activity feed lists exact action names per role (core/dashboard.ts) and never carries the
 // audit summary, the IP address or the user agent.
-import { termsOn } from "@techaust/core/care";
+import { CARE_NEAR_BP, CARE_REACHED_BP, termsOn } from "@techaust/core/care";
 import {
   ACTIVITY_ACTIONS,
   ACTIVITY_DAYS,
@@ -16,7 +16,17 @@ import {
 import { addDays, istDate, parseIsoDate, toIsoDate } from "@techaust/core/dates";
 import { LEAD_STAGES } from "@techaust/core/lead-lifecycle";
 import { DAY_MS, weekOf } from "@techaust/core/time";
-import { assembleCare, careStatements, currentUsage } from "@techaust/db/care";
+import {
+  assembleCare,
+  type BurnRankRow,
+  burnRankQuery,
+  careStatements,
+  currentUsage,
+  type PlanRaw,
+  type StatusRaw,
+  type TermsRaw,
+  type UsageRaw,
+} from "@techaust/db/care";
 import { Hono } from "hono/tiny";
 import { LIST_PERIODS_BACK, usageWindow } from "./care.ts";
 import { type AppEnv, actor } from "./context.ts";
@@ -51,6 +61,10 @@ export const ACTIVITY_SQL = (ownOnly: boolean, byAction: boolean) =>
  */
 export const PIPELINE_SQL =
   "SELECT currency, count(*) AS n, coalesce(sum(taxable_minor), 0) AS taxable FROM documents INDEXED BY documents_status_valid_until WHERE status IN ('sent', 'viewed') AND valid_until >= ?1 AND +type IN ('proposal', 'estimate') GROUP BY currency ORDER BY currency";
+
+/** Active plans that have started and that have not (past 100 active plans, where the loaded ones are not all of them), by `care_plans_status_created`. */
+export const CARE_TOTALS_SQL =
+  "SELECT sum(start_date <= ?1) AS started, sum(start_date > ?1) AS pending FROM care_plans WHERE status = 'active'";
 
 export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
   const me = actor(c);
@@ -213,7 +227,7 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
     };
   }
   if (tiles.has("careBurn")) {
-    const { plans, truncated } = assembleCare(
+    const first = assembleCare(
       {
         plans: rows("care", 0),
         terms: rows("care", 1),
@@ -222,6 +236,47 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
       },
       CARE_PLAN_CAP,
     );
+    let plans = first.plans;
+    const truncated = first.truncated;
+    // More active plans than the tile loads (the 101st exists): the 100 OLDEST are not the ones to show. Two more calls, only past 100 active
+    // plans: ONE statement ranks the started plans by burn (`burnRankQuery`: the 100 highest, the totals of every plan at or past the near and
+    // reached thresholds, worked out once, not inside each of the loader's statements) and counts the started and not-yet-started plans
+    // (`CARE_TOTALS_SQL`); then the loader reads exactly those 100 by id. A plan over its hours is never missed because it is new.
+    let totals: { started: number; pending: number } | null = null;
+    // The plans past the loaded 100 that are near or at their hours by the ranking's own figure (it ignores rolled-over hours, so for a plan that
+    // carries hours in it is an upper bound; exact for the rest). Added to the exact flags of the loaded plans.
+    let beyond = { near: 0, reached: 0 };
+    if (truncated) {
+      const rank = burnRankQuery(CARE_PLAN_CAP, today);
+      const [r, t] = await db.batch<Record<string, unknown>>([
+        db.prepare(rank.sql).bind(...rank.bind),
+        db.prepare(CARE_TOTALS_SQL).bind(today),
+      ]);
+      const ranked = (r?.results ?? []) as BurnRankRow[];
+      const row = t?.results[0] as { started: number | null; pending: number | null } | undefined;
+      totals = { started: row?.started ?? 0, pending: row?.pending ?? 0 };
+      if (ranked.length > 0) {
+        const [a, b, s, u] = await db.batch(
+          careStatements(db, { ids: ranked.map((x) => x.id) }, usageWindow(today, LIST_PERIODS_BACK)),
+        );
+        plans = assembleCare(
+          {
+            plans: (a?.results ?? []) as PlanRaw[],
+            terms: (b?.results ?? []) as TermsRaw[],
+            status: (s?.results ?? []) as StatusRaw[],
+            usage: (u?.results ?? []) as UsageRaw[],
+          },
+          CARE_PLAN_CAP,
+        ).plans;
+        const first = ranked[0] as BurnRankRow;
+        const loadedReached = ranked.filter((x) => x.k >= CARE_REACHED_BP).length;
+        const loadedNear = ranked.filter((x) => x.k >= CARE_NEAR_BP && x.k < CARE_REACHED_BP).length;
+        beyond = {
+          reached: Math.max(0, first.reached - loadedReached),
+          near: Math.max(0, first.near_or_reached - first.reached - loadedNear),
+        };
+      } else plans = new Map();
+    }
     const burn = [...plans.values()].flatMap((d) => {
       const u = currentUsage(d, today);
       return u ? [{ d, u }] : [];
@@ -237,10 +292,10 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
     out.careBurn = {
       counts: {
         /** Plans with a current period; a plan whose start date hasn't come is counted apart (`notStarted`), never in the burn. */
-        active: burn.length,
-        notStarted: plans.size - burn.length,
-        near: burn.filter((b) => b.u.flag === "near").length,
-        reached: burn.filter((b) => b.u.flag === "reached").length,
+        active: totals ? totals.started : burn.length,
+        notStarted: totals ? totals.pending : plans.size - burn.length,
+        near: burn.filter((b) => b.u.flag === "near").length + beyond.near,
+        reached: burn.filter((b) => b.u.flag === "reached").length + beyond.reached,
       },
       truncated,
       rows: burn.slice(0, CARE_ROWS).map(({ d, u }) => ({

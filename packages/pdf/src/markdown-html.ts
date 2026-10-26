@@ -43,3 +43,6 @@ function block(b: Block): string {
 
 /** Markdown text to HTML. */
 export const markdownToHtml = (md: string): string => parseMarkdown(md).map(block).join("");
+
+/** Markdown text as one HTML string per block (the layout keeps a section's heading with its first block). */
+export const markdownBlocks = (md: string): string[] => parseMarkdown(md).map(block);

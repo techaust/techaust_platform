@@ -7,7 +7,7 @@ import type { Role } from "@techaust/core/permissions";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Outlet, useLocation, useParams } from "react-router";
 import { type Notification as ApiNotification, api, errorText } from "../api.ts";
-import { Building, FolderKanban, Inbox, Package, User, Users } from "../components/icons.tsx";
+import { Building, FileText, FolderKanban, Inbox, Package, User, Users } from "../components/icons.tsx";
 import { AppShell } from "../components/shell/app-shell.tsx";
 import { GlobalSearch, type SearchGroup } from "../components/shell/global-search.tsx";
 import { type NavItem, navFor, navItem } from "../components/shell/nav.tsx";
@@ -29,6 +29,7 @@ const SEARCH_ICONS = {
   contact: <User />,
   project: <FolderKanban />,
   catalogue: <Package />,
+  document: <FileText />,
 } as const;
 
 async function runSearch(q: string): Promise<SearchGroup[]> {
@@ -50,7 +51,20 @@ async function runSearch(q: string): Promise<SearchGroup[]> {
  * What the box can find for this role today (leads with leads.read; clients by code or name and contacts by email
  * with clients.read, M3.3; staff for the owner), or null for nothing.
  */
-function searchCopy(canLeads: boolean, canClients: boolean, canUsers: boolean, canProjects = false) {
+/** 07-O §7: the box for a role that also finds proposals and estimates (kept here, not in lib/documents, so the main chunk stays small). */
+const SEARCH_BOX = {
+  placeholder: "Search leads, clients, projects, documents and people",
+  intro: "Search by the start of a name, code or number.",
+} as const;
+
+function searchCopy(
+  canLeads: boolean,
+  canClients: boolean,
+  canUsers: boolean,
+  canProjects = false,
+  canDocuments = false,
+) {
+  if (canDocuments && canLeads && canClients) return SEARCH_BOX;
   const kinds = [
     canLeads && "leads",
     canClients && "clients",
@@ -148,6 +162,7 @@ export function Component() {
     allowed(user.role, "clients.read"),
     allowed(user.role, "users.read"),
     allowed(user.role, "projects.read"),
+    allowed(user.role, "proposals.read"),
   );
   const current = sectionOf(pathname);
 
