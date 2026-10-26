@@ -7,6 +7,7 @@ import { Link } from "react-router";
 import { stepUpActive } from "../../api.ts";
 import { ConfirmDialog } from "../../components/confirm-dialog.tsx";
 import { Modal } from "../../components/dialog.tsx";
+import { KeepDates } from "../../components/display.tsx";
 import { FormField } from "../../components/form.tsx";
 import { Alert } from "../../components/icons.tsx";
 import { CodeField, Notice } from "../../components/ui.tsx";
@@ -163,7 +164,9 @@ export function IssueDialog(props: {
     <Modal open={props.open} title={INV_COPY.issueTitle} onClose={close} busy={busy}>
       <div className="dialog__body inv-issue">
         <SeriesSlot preview={v.issue.preview} />
-        <p>{issueBody(p.text, p.example, props.issueDate)}</p>
+        <p>
+          <KeepDates text={issueBody(p.text, p.example, props.issueDate)} />
+        </p>
         {blocked && v.blockers.length > 0 && (
           <div className="inv-issue__blocked">
             <p className="inv-issue__fix">{INV_COPY.fixFirst}</p>

@@ -98,6 +98,24 @@
   font-size: var(--text-sm);
 }
 
+/* Phones: each invoice is a card. The client takes the card's width (a long name wraps), and a fact with nothing in it (a draft's dates and
+   balance) is left out, as the proposals list does. */
+.inv-table .dcard__facts > div:has(.client-name) {
+  grid-column: 1 / -1;
+}
+
+.inv-table .dcard__facts .client-name {
+  min-width: 0;
+}
+
+.inv-table .dcard__facts .person__name {
+  overflow-wrap: anywhere;
+}
+
+.inv-table .dcard__facts > div:has(> dd:empty) {
+  display: none;
+}
+
 .inv-table time {
   white-space: nowrap;
 }
