@@ -152,7 +152,9 @@ describe("the API client", () => {
   });
 
   it("a decline sends the note only when there is one", async () => {
-    const fetchFn = vi.fn().mockResolvedValue(json(200, { declined: { reason: "price", at: 1 } }));
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(json(200, { declined: { reason: "price", at: 1, by: "Sample Contact" } }));
     vi.stubGlobal("fetch", fetchFn);
     await offersApi.decline("doc-1", "price", null);
     expect(JSON.parse(String((fetchFn.mock.calls[0] as [string, RequestInit])[1].body))).toEqual({

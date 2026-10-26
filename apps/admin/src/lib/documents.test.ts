@@ -140,6 +140,7 @@ const view = (over: Partial<DocumentView> = {}): DocumentView => ({
   unresolved: [],
   canSend: true,
   needsResave: false,
+  attachPdfDefault: false,
   ...over,
 });
 

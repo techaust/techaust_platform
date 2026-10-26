@@ -491,6 +491,7 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
         currency={s.currency}
         clientId={view.client.id}
         clientName={view.client.name}
+        attachPdfDefault={view.attachPdfDefault}
         validUntil={sendValidUntil(s.fields.validityDays)}
         onClose={() => setDialog(null)}
         onSend={async (contactIds, attachPdf) => {

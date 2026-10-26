@@ -110,6 +110,8 @@ async function download(path: string, body: unknown, signedIn: boolean): Promise
 /** The statuses a client sees (`effectiveOfferStatus` in @techaust/core/offers). */
 export type OfferStatus = "sent" | "viewed" | "accepted" | "declined" | "expired" | "revised";
 export type OfferKind = "proposal" | "estimate";
+/** A decline's answer (session and link alike): `by` is the deciding contact's name (null if it can't be read). */
+export type DeclineAnswer = { declined: { reason: string; at: number; by: string | null } };
 
 /** One row of GET /offers: the latest rendered version of each offer. `total` is already formatted by the server. */
 export type OfferItem = {
@@ -169,7 +171,7 @@ export const offersApi = {
   accept: (id: string, typedName: string) =>
     send<AcceptRecord>(`/offers/${encodeURIComponent(id)}/accept`, { body: { typedName, agree: true } }),
   decline: (id: string, reason: string, note: string | null) =>
-    send<{ declined: { reason: string; at: number } }>(`/offers/${encodeURIComponent(id)}/decline`, {
+    send<DeclineAnswer>(`/offers/${encodeURIComponent(id)}/decline`, {
       body: note ? { reason, note } : { reason },
     }),
   pdf: (id: string) => download(`/offers/${encodeURIComponent(id)}/pdf`, undefined, true),
@@ -182,7 +184,7 @@ export const offerLinkApi = {
   accept: (token: string, documentId: string, typedName: string) =>
     send<AcceptRecord>("/t/offer/accept", { ...pub, body: { token, documentId, typedName, agree: true } }),
   decline: (token: string, documentId: string, reason: string, note: string | null) =>
-    send<{ declined: { reason: string; at: number } }>("/t/offer/decline", {
+    send<DeclineAnswer>("/t/offer/decline", {
       ...pub,
       body: note ? { token, documentId, reason, note } : { token, documentId, reason },
     }),

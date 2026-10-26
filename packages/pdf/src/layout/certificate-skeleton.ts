@@ -1,8 +1,8 @@
 // The acceptance certificate (M4.5, ADM-PROP-08; VERIFY WITH CA/LEGAL), one A4 page in the document system of docs/06 §7: the logo over
-// the verdigris rule, the title, the statement of what the page records, then three blocks: the document (what was accepted), who
-// accepted it and when (IST and UTC), and the evidence (the IP address, the browser, how the person reached it, and the fingerprints in
-// full). Grayscale-safe: nothing is said by colour; the rule and hairlines read as black and grey. No money is printed (the view carries
-// none), so there is no rupee sign to fall back.
+// the verdigris rule, the title, the statement of what the page records, then three blocks: the document (what was accepted, with its
+// frozen total), who accepted it and when (IST and UTC), and the evidence (the IP address, the browser, how the person reached it, and the
+// fingerprints in full). Grayscale-safe: nothing is said by colour; the rule and hairlines read as black and grey. The total's rupee sign
+// comes from the embedded Archivo's own U+20B9 face (the same `TECHAUST_PDF_FONT_DATA` the documents use), so it never falls back.
 //
 // Words: 07-N §5 (PENDING the owner's approval) and 07-P §1 ("Prepared for", the footer line); a label 07-N doesn't have yet carries a
 // visible "[Placeholder]" (listed in the M4.5 designer report).
@@ -23,6 +23,8 @@ export type CertificateView = {
   /** "TH/PRP/2627/0003" */
   number: string;
   version: string;
+  /** The frozen total, formatted by core `formatMoney` in the jobs Worker: "₹2,95,000.00" or "$1,200.00". */
+  total: string;
   /** "Proposal" or "Estimate" */
   kind: string;
   title: string;
@@ -51,6 +53,7 @@ export const CERTIFICATE_COPY = {
   statement: "This certificate records an electronic acceptance through the TecHaust client portal.",
   document: "Document",
   numberAndVersion: "Number and version",
+  total: "Total",
   preparedFor: PDF_COPY.blocks.preparedFor,
   acceptedBy: "Accepted by",
   email: "Email",
@@ -138,7 +141,7 @@ export function certificateBody(v: CertificateView): string {
 <p class="cert__label">${esc(C.document)}</p>
 <p class="cert__doc-title">${esc(v.kind)}: ${esc(v.title)}</p>
 <table>
-${row(C.numberAndVersion, `${v.number} v${v.version}`)}${row(C.preparedFor, v.clientLegalName)}
+${row(C.numberAndVersion, `${v.number} v${v.version}`)}${row(C.total, v.total)}${row(C.preparedFor, v.clientLegalName)}
 </table>
 </section>
 

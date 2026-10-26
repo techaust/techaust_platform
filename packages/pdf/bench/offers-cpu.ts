@@ -28,6 +28,7 @@ const timed = async (name: string, run: () => unknown | Promise<unknown>, n = 30
 const certificate = {
   number: "TH/PRP/2627/0003",
   version: "2",
+  total: "₹2,95,000.00",
   kind: "Proposal",
   title: "Website rebuild",
   clientLegalName: "Sample Traders Pvt Ltd",

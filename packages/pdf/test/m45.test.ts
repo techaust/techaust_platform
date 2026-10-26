@@ -73,6 +73,7 @@ describe("the acceptance certificate page", () => {
   const view: CertificateView = {
     number: "TH/PRP/2627/0003",
     version: "2",
+    total: "₹2,95,000.00",
     kind: "Proposal",
     title: "Website rebuild",
     clientLegalName: "Sample Traders Pvt Ltd",
@@ -111,6 +112,16 @@ describe("the acceptance certificate page", () => {
     expect(html).not.toMatch(/<script/i);
     expect(html).not.toMatch(/\b(?:src|href)=["']https?:/i);
     expect(html).not.toMatch(/@import|url\(\s*["']?https?:/i);
+  });
+
+  it("prints the frozen total under the number and version (07-N §5), with the rupee sign in the embedded font", () => {
+    const body = certificateBody(view);
+    const at = (s: string) => body.indexOf(s);
+    expect(body).toContain('<th scope="row">Total</th><td>₹2,95,000.00</td>');
+    expect(at("Number and version")).toBeLessThan(at(">Total<"));
+    expect(at(">Total<")).toBeLessThan(at("Prepared for"));
+    // The page embeds the same Archivo as the documents, including its own U+20B9 face, so the sign never falls back.
+    expect(renderCertificateHtml(view)).toMatch(/unicode-range: U\+20B9;/);
   });
 
   it("a session acceptance says so; a missing value prints as the dash the view gives it", () => {

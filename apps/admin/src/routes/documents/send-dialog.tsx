@@ -1,6 +1,6 @@
 // Send a proposal or estimate to chosen contacts (M4.5, ADM-PROP-07, ADM-G-04), and send the latest version again: the client's contacts
 // with portal access (billing contacts ticked; up to five; each gets their own email and link), the "Attach the PDF" switch that starts
-// from the client's setting, and the message as it will go (07 §8 with 07-N §4). The first send also says what sending does (07-O §5)
+// from the client's setting as the document read resolves it (`attachPdfDefault`, so a role that can't read the client sees it too), and the message as it will go (07 §8 with 07-N §4). The first send also says what sending does (07-O §5)
 // and for how much to whom. The owner-approved preview's layout: the choices on the left, the message on the right (stacked when narrow).
 import { type FormEvent, useEffect, useId, useState } from "react";
 import { api, type ContactView, type Currency, RequestError } from "../../api.ts";
@@ -16,13 +16,14 @@ import {
   OFFER_ERRORS,
   OFFER_PENDING,
   offerErrorText,
+  pdfNote,
   recipientChoices,
 } from "../../lib/offers.ts";
 
 type Loaded =
   | { state: "loading" }
   | { state: "failed"; error: unknown }
-  | { state: "ready"; contacts: ContactView[]; attachPdf: boolean | undefined };
+  | { state: "ready"; contacts: ContactView[] };
 
 export function SendDialog(props: {
   open: boolean;
@@ -37,45 +38,45 @@ export function SendDialog(props: {
   currency: Currency;
   clientId: string;
   clientName: string;
+  /** The client's "Attach PDF" setting as GET /documents/:id resolves it: the switch's starting position and the send path's default. */
+  attachPdfDefault: boolean;
   /** "10 Nov 2026" (the version's validity, as the email states it); null while a draft has none yet. */
   validUntil: string | null;
   /** Sends; throws a RequestError to show (its `contactIds` mark the contacts that can't receive it). */
-  onSend: (contactIds: string[], attachPdf: boolean | undefined) => Promise<void>;
+  onSend: (contactIds: string[], attachPdf: boolean) => Promise<void>;
   onClose: () => void;
 }) {
   const [loaded, setLoaded] = useState<Loaded>({ state: "loading" });
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [attach, setAttach] = useState(false);
-  const [attachTouched, setAttachTouched] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [invalid, setInvalid] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const groupId = useId();
   const attachId = useId();
-  const { open, clientId } = props;
+  const { open, clientId, attachPdfDefault } = props;
 
-  // The client's contacts and its "Attach PDF" setting, read when the dialog opens (the client page's own API).
+  // The client's contacts, read when the dialog opens (the client page's own API); the switch starts from the document's resolved default.
   useEffect(() => {
     if (!open) return;
     let alive = true;
     setLoaded({ state: "loading" });
     setError(null);
     setInvalid(new Set());
-    setAttachTouched(false);
+    setAttach(attachPdfDefault);
     api.client(clientId).then(
       (page) => {
         if (!alive) return;
         const { ticked } = recipientChoices(page.contacts);
         setPicked(new Set(ticked));
-        setAttach(page.client.attachPdf === true);
-        setLoaded({ state: "ready", contacts: page.contacts, attachPdf: page.client.attachPdf });
+        setLoaded({ state: "ready", contacts: page.contacts });
       },
       (e: unknown) => alive && setLoaded({ state: "failed", error: e }),
     );
     return () => {
       alive = false;
     };
-  }, [open, clientId]);
+  }, [open, clientId, attachPdfDefault]);
 
   const choices = loaded.state === "ready" ? recipientChoices(loaded.contacts).choices : [];
   const firstPicked = choices.find((c) => picked.has(c.id));
@@ -96,12 +97,10 @@ export function SendDialog(props: {
     setBusy(true);
     setError(null);
     try {
-      // The client's own setting is the server's default: the switch is sent only when the person changed it, or when the setting is
-      // known here (a role that can read the client's finance settings).
-      const send = attachTouched || loaded.attachPdf !== undefined ? attach : undefined;
+      // The switch is always sent, so the email that goes is the one the preview shows.
       await props.onSend(
         choices.filter((c) => picked.has(c.id)).map((c) => c.id),
-        send,
+        attach,
       );
     } catch (err) {
       if (err instanceof RequestError && err.code === "recipient_invalid" && err.extra.contactIds?.length)
@@ -190,10 +189,7 @@ export function SendDialog(props: {
                 <Switch
                   id={attachId}
                   checked={attach}
-                  onChange={(on) => {
-                    setAttach(on);
-                    setAttachTouched(true);
-                  }}
+                  onChange={setAttach}
                   labelledBy={`${attachId}-label`}
                   describedBy={`${attachId}-hint`}
                   disabled={busy}
@@ -239,7 +235,7 @@ export function SendDialog(props: {
             <p>
               <span className="sendd__btn">{EMAIL_PREVIEW.button}</span>
             </p>
-            <p>{attach ? EMAIL_PREVIEW.attached : EMAIL_PREVIEW.linked}</p>
+            <p>{pdfNote(attach)}</p>
             <p className="muted">{EMAIL_PREVIEW.questions}</p>
           </div>
           <p className="hint">{OFFER_COPY.deliveryNote}</p>

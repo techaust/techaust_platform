@@ -295,8 +295,9 @@ async function act(
       const reason = String(body.reason ?? "");
       const note = typeof body.note === "string" && body.note.trim() ? body.note.trim() : null;
       doc.status = "declined";
-      doc.decline = { reason, note, at: Date.now(), by };
-      return json(200, { declined: { reason, at: doc.decline.at } });
+      // The API names the deciding contact on a link too (review fix 8).
+      doc.decline = { reason, note, at: Date.now(), by: by ?? ME.contact.name };
+      return json(200, { declined: { reason, at: doc.decline.at, by: doc.decline.by } });
     }
   }
   return error(404, "not_found");

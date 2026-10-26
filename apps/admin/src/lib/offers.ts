@@ -145,6 +145,10 @@ export const EMAIL_PREVIEW = {
   questions: "Questions? Just reply to this email.",
 } as const;
 
+/** The preview's PDF line for the switch's position (the send dialog always sends the switch, so this is the line that goes). */
+export const pdfNote = (attached: boolean): string =>
+  attached ? EMAIL_PREVIEW.attached : EMAIL_PREVIEW.linked;
+
 /** 07-N §6: the four delivery words it has. */
 const DELIVERY_N: Partial<Record<DeliveryState, string>> = {
   waiting_pdf: "Waiting for the PDF",

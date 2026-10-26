@@ -5,6 +5,7 @@
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import {
   type AcceptRecord,
+  type DeclineAnswer,
   type Download,
   type OfferPage,
   type OfferSuperseded,
@@ -25,11 +26,7 @@ import { NotFoundScreen, ScreenSkeleton } from "../screens/home.tsx";
 export type OfferSource = {
   load: () => Promise<OfferPage | OfferSuperseded>;
   accept: (documentId: string, typedName: string) => Promise<AcceptRecord>;
-  decline: (
-    documentId: string,
-    reason: string,
-    note: string | null,
-  ) => Promise<{ declined: { reason: string; at: number } }>;
+  decline: (documentId: string, reason: string, note: string | null) => Promise<DeclineAnswer>;
   pdf: (documentId: string) => Promise<Download>;
   certificate: (documentId: string) => Promise<Download>;
 };
@@ -177,7 +174,7 @@ export function OfferScreen(props: {
       update({
         ...page,
         document: { ...doc, status: "declined" },
-        decline: { reason: r.declined.reason, note, at: r.declined.at, by: props.me?.name ?? null },
+        decline: { reason: r.declined.reason, note, at: r.declined.at, by: r.declined.by },
       });
     } catch (e) {
       if (e instanceof RequestError && FINAL.has(e.code)) return refused(e);

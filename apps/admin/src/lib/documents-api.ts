@@ -195,6 +195,8 @@ export type DocumentViewBase = {
   unresolved: string[];
   canSend: boolean;
   needsResave: boolean;
+  /** The client's "Attach PDF" setting (M4.5 review fix 2): what a send applies when it names none; readable by every role that can send. */
+  attachPdfDefault: boolean;
   /** A frozen version: the recipient and issuer as frozen (drafts read the live client and contact). */
   recipient?: RecipientView | null;
   issuer?: IssuerView | null;

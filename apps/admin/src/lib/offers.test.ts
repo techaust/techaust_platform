@@ -14,6 +14,7 @@ import {
   OFFER_ERRORS,
   OFFER_PENDING,
   offerErrorText,
+  pdfNote,
   recipientChoices,
   shortSha,
 } from "./offers.ts";
@@ -140,5 +141,17 @@ describe("the email preview is the email packages/email sends", () => {
         expect(sent.text).toContain(EMAIL_PREVIEW.questions);
       });
     }
+  }
+  // Review fix 2: the switch starts from the document read's `attachPdfDefault` (every sending role gets it, Sales included) and is
+  // always sent, so the preview's PDF line is the line of the email that goes, whatever the client's setting.
+  for (const attachPdfDefault of [false, true]) {
+    it(`the untouched switch (client setting ${attachPdfDefault ? "on" : "off"}) previews the line that is sent`, () => {
+      const sent = offerSent(
+        { ...base, kind: "proposal", attached: attachPdfDefault ? "1" : "0" },
+        { assetBase: "https://a.example.test/" },
+      );
+      expect(sent.text).toContain(pdfNote(attachPdfDefault));
+      expect(sent.text).not.toContain(pdfNote(!attachPdfDefault));
+    });
   }
 });

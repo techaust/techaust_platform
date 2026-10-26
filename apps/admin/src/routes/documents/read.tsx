@@ -313,6 +313,7 @@ export function ReadView({ view, reload }: { view: DocumentView; reload: () => v
         currency={v.currency}
         clientId={v.client.id}
         clientName={v.client.name}
+        attachPdfDefault={v.attachPdfDefault}
         validUntil={v.validUntil ? dayText(v.validUntil) : null}
         onClose={() => setDialog(null)}
         onSend={async (contactIds, attachPdf) => {
