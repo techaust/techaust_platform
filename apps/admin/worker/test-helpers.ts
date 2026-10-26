@@ -19,7 +19,7 @@ import type { Role } from "@techaust/core";
 import { uuidv7 } from "@techaust/core";
 import { afterEach, beforeEach, expect, vi } from "vitest";
 import type { RouteDef } from "./context.ts";
-import app from "./index.ts";
+import app from "./test-app.ts";
 
 export const ORIGIN = "https://admin.example";
 export const hash = () => b64url(randomBytes(32));
