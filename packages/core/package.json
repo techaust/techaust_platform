@@ -19,6 +19,7 @@
     "./hash": "./src/hash.ts",
     "./email-templates": "./src/email-templates.ts",
     "./gstin": "./src/gstin.ts",
+    "./gst": "./src/gst/index.ts",
     "./form-labels": "./src/form-labels.ts",
     "./ids": "./src/ids.ts",
     "./lead-ref": "./src/lead-ref.ts",
