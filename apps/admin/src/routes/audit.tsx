@@ -97,7 +97,12 @@ function AuditLog() {
       { replace: true },
     );
   const filtered = !!(f.actor || f.entity || f.action || f.from || f.to);
-  const clear = () => setParams({}, { replace: true });
+  // Clear filters also empties a date field whose text was never a date (its value was already empty, so nothing else would).
+  const [clears, setClears] = useState(0);
+  const clear = () => {
+    setParams({}, { replace: true });
+    setClears((n) => n + 1);
+  };
 
   const actions = everything
     ? Object.keys(ACTION_LABELS)
@@ -225,6 +230,7 @@ function AuditLog() {
             From
           </label>
           <DateField
+            key={`au-from-${clears}`}
             id="au-from"
             keepLastValid
             value={f.from}
@@ -237,6 +243,7 @@ function AuditLog() {
             To
           </label>
           <DateField
+            key={`au-to-${clears}`}
             id="au-to"
             keepLastValid
             value={f.to}

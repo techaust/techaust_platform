@@ -5,7 +5,7 @@
 import { parseIsoDate } from "@techaust/core/dates";
 import { type FormEvent, useState } from "react";
 import { api, RequestError, type TimeEntry, type TimePatch } from "../../api.ts";
-import { DateField } from "../../components/date-field.tsx";
+import { DateField, useUnreadDates } from "../../components/date-field.tsx";
 import { Modal } from "../../components/dialog.tsx";
 import { FormField } from "../../components/form.tsx";
 import { Search } from "../../components/icons.tsx";
@@ -77,6 +77,7 @@ function EntryFormBody(
   const toast = useToast();
   const [f, setF] = useState<EntryForm>(() => entryFormOf(props.entry, props.today, props.me.id));
   const [errors, setErrors] = useState<EntryErrors & { userId?: string }>({});
+  const dates = useUnreadDates<"workDate">();
   const [failure, setFailure] = useState<string | null>(null);
   const { busy, setBusy } = props;
   const [picking, setPicking] = useState(f.target === null);
@@ -93,6 +94,7 @@ function EntryFormBody(
       canWriteAny: props.canWriteAny,
       me: props.me.id,
       originalDate: props.entry?.workDate,
+      unread: dates.unread,
     });
     if (!r.ok) {
       setErrors(r.errors);
@@ -181,6 +183,7 @@ function EntryFormBody(
             </label>
             <DateField
               {...a11y("workDate")}
+              {...dates.bind("workDate")}
               value={f.workDate}
               max={props.today}
               min={earliestDate(props.today, props.canWriteAny)}

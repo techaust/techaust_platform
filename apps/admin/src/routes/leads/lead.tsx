@@ -27,7 +27,7 @@ import {
   type LeadStage,
   RequestError,
 } from "../../api.ts";
-import { DateField } from "../../components/date-field.tsx";
+import { DateField, useUnreadDates } from "../../components/date-field.tsx";
 import { EmptyState, PageHeader, Skeleton, StatusPill, When } from "../../components/display.tsx";
 import { FormField } from "../../components/form.tsx";
 import {
@@ -167,13 +167,15 @@ function LeadView({
   const [error, setError] = useState<{ where: "follow" | "contact"; text: string } | null>(null);
   const [emailError, setEmailError] = useState<string | null>(null);
   const [nextDateError, setNextDateError] = useState<string | null>(null);
+  const dates = useUnreadDates<"date">();
   const note = drafts.note;
   const setNote = (text: string) => draft({ type: "note", text });
   const [lost, setLost] = useState(false);
   const [replying, setReplying] = useState(false);
   const [converting, setConverting] = useState(false);
 
-  const followDirty = JSON.stringify(follow) !== JSON.stringify(followBase);
+  // Text in the Next action field that can't be read is a change too: Save shows the line, Discard takes it back.
+  const followDirty = dates.any || JSON.stringify(follow) !== JSON.stringify(followBase);
   const contactDirty = editing && JSON.stringify(contact) !== JSON.stringify(contactBase);
   const dirty = followDirty || contactDirty || note.trim() !== "";
 
@@ -187,7 +189,7 @@ function LeadView({
       const r = await api.updateLead(lead.id, { ...patch, expectedUpdatedAt: lead.updatedAt });
       toast("success", r.changed ? "Saved." : "No change: that's already saved.");
       if (where === "contact") setContact(null);
-      else setFollow(null);
+      else discardFollow();
       reload();
     } catch (e) {
       if (e instanceof RequestError && e.code === "stale_version") setStale(true);
@@ -197,9 +199,16 @@ function LeadView({
     }
   }
 
+  // Discard (and a save) drops the draft, an unread date and its line together (re-check N3).
+  function discardFollow() {
+    setFollow(null);
+    dates.reset();
+    setNextDateError(null);
+  }
+
   function saveFollow(e: FormEvent) {
     e.preventDefault();
-    const dateErr = dateError(follow.date);
+    const dateErr = dateError(dates.unread.date);
     setNextDateError(dateErr);
     if (dateErr) {
       document.getElementById("lead-next")?.focus();
@@ -352,6 +361,7 @@ function LeadView({
                   {(a) => (
                     <DateField
                       {...a}
+                      {...dates.bind("date")}
                       value={follow.date}
                       onChange={(v) => setFollow({ ...follow, date: v })}
                     />
@@ -373,7 +383,7 @@ function LeadView({
                     <button
                       type="button"
                       className="btn btn--secondary"
-                      onClick={() => setFollow(null)}
+                      onClick={discardFollow}
                       disabled={busy === "follow"}
                     >
                       Discard

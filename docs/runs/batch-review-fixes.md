@@ -407,4 +407,74 @@ Branch `fix/batch-review-ui-builder4` from `origin/fix/batch-review-ui`. Sonnet 
 
 **Not verified:** nothing in a browser (no screens touched); the portal and web packages were not re-tested (no change there). Worktree needed `pnpm install --frozen-lockfile --offline`.
 
+## Designer report: round 3 (designer, Opus 5.5 medium, 2026-10-26)
+Branch `fix/batch-review-ui-design3` from `origin/fix/batch-review-ui`. Only `apps/admin/src/**` changed (plus this report). Commits: `3ae9b71` (the date field contract: N1, N3, N4, L1, L6) and `a6baedc` (L7, and the care plan's stale lines on a client change).
+
+**Skills:** `frontend-design:frontend-design` loaded first. It kept the fix inside the existing field: no new visual element, only behaviour (what you see is what saves) and one layout correction (the schedule row's cells line up by label and by control). No other skill in docs/14 §9 fits a screen-only fix (`dataviz`: no chart; `code-review`: the reviewer re-checks this step).
+
+**L6 (the lead's onValidity/invalid decision):** the field never passes on unread text. `onChange` gets only ISO or "" (`settledValue` for every field). Its props are a union, so every caller has to pick one:
+- `keepLastValid` (the audit filters, the schedule's autosave): the last valid value stays, and the field shows the owner's line itself after blur;
+- `invalid` and `onValidity` (every form): the field reports whether its text is unread, and the form keeps that in `useUnreadDates()` (`bind(key)`, `unread`, `any`, `reset()`).
+
+Every form check takes the unread set as a **required** argument (`detailsErrors`, `milestoneInput`, `planInput`, `entryInput` via `ctx.unread`, plus the inline checks in convert to care plan, new lead, the lead's next action and the CSV export), so no form compiles without it. A form holding a last valid date while the text is unread is still blocked. `dateError(unread)` keeps the owner's line word for word, and `INVALID_DATE` no longer leaves the field.
+
+**Findings fixed**
+- **N1:** `syncedText` (pure, `lib/date-field.ts`), applied during render, replaces the text in two cases: a value set from outside that the text doesn't read as, and the form dropping its mark (Discard, Cancel). The deleted line's case is gone. The audit log's Clear filters also remounts the two date fields (a `key` from a clear count), so unread text goes even when the value was already empty.
+- **N3:** the lead's Discard and a successful save run `discardFollow()`, which drops the draft, the unread mark and the Next action line together. Unread text alone also counts as a change, so Save and Discard appear.
+- **N4:** a field that mounts shows its value, which is always readable, and reports it readable, so the form's stale mark clears:
+  - the lead page after a remount shows the draft's last valid date with its read-back, and Save sends that date;
+  - on the new care plan, a client change now also clears the last submit's lines, so no red line stays under a valid date.
+- **L1:** typing (or the calendar) resets `left`: the field's own line hides while the person retypes and returns on blur.
+- **L7:** the instalment row's work grid uses subgrid. Each cell spans a label row and a control row; labels sit at the foot of theirs, controls keep 44 px at the top of theirs. The target date's read-back or error now grows downwards and no longer pulls "What you get" down.
+- **Also seen at 768:** four cells left "What you get" about 4 rem wide, with a wrapped label. Between 48 and 64 rem the row now goes two by two, as it already did from 64 to 88 rem.
+
+**Files:**
+- `apps/admin/src/components/date-field.tsx`
+- `apps/admin/src/lib/{date-field,projects,care,time}.ts`
+- `apps/admin/src/lib/{batch-review,care-time,projects}.test.ts`
+- `apps/admin/src/routes/audit.tsx`, `routes/care/new.tsx`, `routes/documents/dialogs.tsx`, `routes/leads/{lead,new}.tsx`, `routes/projects/{new,overview,milestones}.tsx`, `routes/time/{entry-dialog,export}.tsx`
+- `apps/admin/src/documents.css`
+
+**Tests** (pure helpers; the admin has no DOM setup):
+- `isUnread`, `dateError(boolean)`, `settledValue` (nothing unread is passed on), `withUnread` (the same object when a report repeats) and `anyUnread`;
+- the checks block even with a last valid date in the form: `detailsErrors`, `milestoneInput`, `planInput`, and `entryInput` fed as the form feeds it (the last valid date plus the report);
+- `syncedText`: an outside value (Clear filters, a reload), the person's own text kept, a dropped mark (Discard) with unread text and with fixed text, and a remount reading its value as readable.
+
+**Screenshots** in `D:\BUSINESS\1. PARENT PROJECT\TECHAUST TECHNOLOGIES\WEBSITE\techaust_platform\.claude\worktrees\agent-a80569a85d1ca1122\.logs\shots\batch-review-fixes-design3\`:
+- `audit-invalid-before-clear-1280-{light,dark}.png`: From typed as 31/02/2026 and left, with its line; the list is still filtered from 01/10/2026.
+- `audit-after-clear-1280-{light,dark}.png`: after Clear filters both date fields are empty and the line has gone. Also checked by script: unread "26/10" with an empty From and a Record filter is emptied by Clear.
+- `lead-next-invalid-1280-{light,dark}.png`: Next action 31/02/2026 after Save, with the owner's line.
+- `lead-next-after-discard-1280-{light,dark}.png`: after Discard the field is empty and the line, Save and Discard have gone.
+- `lead-remount-1280-{light,dark}.png`: 20/11/2026 typed, then cut to "20/11/202", then the contact saved (the lead remounts). The box shows 20/11/2026 with "20 Nov 2026" and no error, and Save is offered for that date.
+- `care-new-invalid-1280-{light,dark}.png`: start date 31/11/2026 after submit, with its line.
+- `care-new-client-change-1280-{light,dark}.png`: after switching to client C0002 (sample), the start date shows 26/10/2026 with its read-back, and there is no line and no summary.
+- `schedule-row-error-1280-{light,dark}.png`: instalment 2 with target date 31/11/2026 and its line; "What you get" stays level with the date (same top, 44 px).
+- `schedule-row-error-1920-dark.png`: the four-cell row, with all four controls level (466 px) and 44 px.
+- `schedule-row-error-768-light.png`: two by two at 768 (new), with no sideways scroll (scrollWidth 753).
+- `schedule-row-error-375-dark.png`: one column, scrollWidth 360.
+
+**Commands:**
+- `pnpm exec biome check --write <changed files>`: formatting fixed in 3 files, then clean.
+- `vitest run src/lib/{batch-review,care-time,projects}.test.ts`: 59 passed.
+- `bash tools/heavy.sh --log design3-typecheck pnpm --filter @techaust/admin typecheck`: exit 0.
+- `bash tools/heavy.sh --log design3-test pnpm --filter @techaust/admin test`: 68 files, 2,137 tests passed.
+- `bash tools/heavy.sh --log design3-check pnpm check`: exit 0, including the whole-repository lint (982 files).
+- Local setup: `pnpm dev:secrets`, `db:migrate:local`, `db:seed:local` and `pnpm invite --email owner.sample@example.test --role owner`. Sample data:
+  - lead "Asha Rao (sample)";
+  - clients C0001 "Sample Traders (sample)" and C0002 "Second Sample Ltd (sample)", with `@example.test` contacts;
+  - draft proposal "Sample proposal (sample)".
+- The admin dev server is stopped and the browser is closed.
+- Keyboard: the date text, then "Choose a date Start date" with a visible 1.6 px ring, then the next field. Console: no errors.
+
+**Not verified:**
+- NVDA, and the native calendar popup.
+- A remount after a stale-version reload: it uses the same mount path as the contact-save remount, which was checked.
+- The milestone dialog and the time entry in the browser: their checks are unit-tested, and the new project form was checked in the browser (it blocks with the owner's line).
+
+No Worker code changed, so the admin budget line is unchanged. No placeholder text was added.
+
+**Designer decisions (inside the lead's L6 decision):**
+- After a remount, the field shows the last valid date rather than the lost unread text: that text can't be recovered, and what is shown is what saves.
+- A client change on the new care plan clears the last submit's lines, because every field below it is drawn afresh.
+
 **Open questions:** none.

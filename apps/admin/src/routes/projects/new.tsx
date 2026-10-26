@@ -5,7 +5,7 @@
 import { type FormEvent, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { api, type ClientView, errorText, RequestError } from "../../api.ts";
-import { DateField } from "../../components/date-field.tsx";
+import { DateField, useUnreadDates } from "../../components/date-field.tsx";
 import { PageHeader } from "../../components/display.tsx";
 import { ErrorSummary, FormField, type SummaryError } from "../../components/form.tsx";
 import { Lock, Search } from "../../components/icons.tsx";
@@ -45,6 +45,7 @@ function NewProject() {
   const [client, setClient] = useState<ClientView | null>(null);
   const [picking, setPicking] = useState(!preset);
   const [f, setF] = useState<DetailsForm>(EMPTY);
+  const dates = useUnreadDates<"startDate" | "targetDate">();
   const [errors, setErrors] = useState<SummaryError[]>([]);
   const [submits, setSubmits] = useState(0);
   const [failure, setFailure] = useState<string | null>(null);
@@ -65,7 +66,7 @@ function NewProject() {
   }
 
   const set = (patch: Partial<DetailsForm>) => setF((x) => ({ ...x, ...patch }));
-  const dirty = !saved && (client !== null || JSON.stringify(f) !== JSON.stringify(EMPTY));
+  const dirty = !saved && (client !== null || dates.any || JSON.stringify(f) !== JSON.stringify(EMPTY));
   const errorOf = (id: string) => errors.find((e) => e.id === id)?.text;
   // Opens the project once the form is no longer dirty (the unsaved-changes guard would ask otherwise).
   useEffect(() => {
@@ -76,7 +77,7 @@ function NewProject() {
     e.preventDefault();
     const list: SummaryError[] = [];
     if (!client) list.push({ id: `${NP}-client-q`, text: PENDING.chooseClient });
-    const errs = client ? detailsErrors(f, client.currency) : detailsErrors(f, "INR");
+    const errs = detailsErrors(f, client?.currency ?? "INR", dates.unread);
     for (const [k, v] of Object.entries(errs)) if (v) list.push({ id: `${NP}-${k}`, text: v });
     setErrors(list);
     setSubmits((n) => n + 1);
@@ -200,7 +201,14 @@ function NewProject() {
               )}
             </FormField>
             <FormField id={`${NP}-startDate`} label="Start date" optional error={errorOf(`${NP}-startDate`)}>
-              {(a) => <DateField {...a} value={f.startDate} onChange={(v) => set({ startDate: v })} />}
+              {(a) => (
+                <DateField
+                  {...a}
+                  {...dates.bind("startDate")}
+                  value={f.startDate}
+                  onChange={(v) => set({ startDate: v })}
+                />
+              )}
             </FormField>
             <FormField
               id={`${NP}-targetDate`}
@@ -211,6 +219,7 @@ function NewProject() {
               {(a) => (
                 <DateField
                   {...a}
+                  {...dates.bind("targetDate")}
                   value={f.targetDate}
                   min={f.startDate || undefined}
                   onChange={(v) => set({ targetDate: v })}

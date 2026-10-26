@@ -8,7 +8,7 @@ import { authorLocked, DAY_CAP, entryDateCheck, LOCK_DAYS, TIME_STEP, weekOf } f
 import type { CareTier, NewTimeInput, TimeEntry, TimeWeekGroup } from "../api.ts";
 import { csvCell } from "./audit.ts";
 import { CODE_COPY, dayText, TIER_LABELS } from "./care.ts";
-import { dateError } from "./date-field.ts";
+import { dateError, type UnreadDates } from "./date-field.ts";
 import { intIn } from "./settings-form.ts";
 
 // ---- 07-M copy, word for word (approved, 07-Q) -----------------------------------------------------------------
@@ -176,10 +176,19 @@ export function entryMinutes(f: Pick<EntryForm, "hours" | "minutes">): number | 
 export function entryInput(
   f: EntryForm,
   /** `originalDate`, when editing: the saved date. The date rule applies only if the date changed. */
-  ctx: { today: string; canWriteAny: boolean; me: string; originalDate?: string | undefined },
+  /** `unread`: the date field's report that its text can't be read (the owner's line, and no save). */
+  ctx: {
+    today: string;
+    canWriteAny: boolean;
+    me: string;
+    originalDate?: string | undefined;
+    unread: UnreadDates<"workDate">;
+  },
 ): { ok: true; body: NewTimeInput } | { ok: false; errors: EntryErrors } {
   const errors: EntryErrors = {};
-  if (!parseIsoDate(f.workDate)) errors.workDate = dateError(f.workDate) ?? TIME_PENDING.enterDate;
+  const unreadDate = dateError(ctx.unread.workDate);
+  if (unreadDate) errors.workDate = unreadDate;
+  else if (!parseIsoDate(f.workDate)) errors.workDate = TIME_PENDING.enterDate;
   else if (f.workDate !== ctx.originalDate) {
     const check = entryDateCheck({ today: ctx.today, workDate: f.workDate, canWriteAny: ctx.canWriteAny });
     if (check === "future") errors.workDate = CODE_COPY.future_date as string;

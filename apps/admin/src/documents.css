@@ -372,6 +372,25 @@
 /* Instalments: the name and the amount, then share, when, what you get and the target date. */
 .qledger__work--step {
   grid-template-columns: 7rem minmax(9rem, 11rem) minmax(0, 1fr) minmax(9rem, 10rem);
+  align-items: start;
+}
+
+/* Each cell's label and control sit on rows shared across the row (subgrid): the labels line up at their foot, the controls at
+   their top, so the target date's read-back or its error line grows downwards and never pulls the other controls down (re-check
+   L7). */
+.qledger__work--step > .qledger__cell {
+  grid-row: span 2;
+  grid-template-rows: subgrid;
+  row-gap: var(--space-1);
+}
+
+.qledger__work--step > .qledger__cell > .qledger__label {
+  align-self: end;
+}
+
+/* Controls keep their own 44 px height; only the date's cell grows. */
+.qledger__work--step > .qledger__cell > :not(.qledger__label) {
+  align-self: start;
 }
 
 .qledger__cell--pct .number-unit {
@@ -444,6 +463,13 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .qledger__work--step {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Tablet landscape and portrait with the rail: four cells left "What you get" about 4 rem wide, so they go two by two. */
+@media (min-width: 48rem) and (max-width: 63.99rem) {
   .qledger__work--step {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

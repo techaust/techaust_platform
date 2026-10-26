@@ -21,7 +21,7 @@ import type {
 import { RequestError } from "../api.ts";
 import type { PillTone } from "../components/display.tsx";
 import { type Draft, rebase } from "../routes/leads/drafts.ts";
-import { dateError } from "./date-field.ts";
+import { dateError, type UnreadDates } from "./date-field.ts";
 import { sentence } from "./format.ts";
 import { bpToPercent, moneyFrom, moneyInput, percentToBp } from "./settings-form.ts";
 
@@ -272,11 +272,16 @@ export function projectDrafts(s: ProjectDrafts, a: ProjectDraftAction): ProjectD
 export type DetailsErrors = Partial<Record<keyof DetailsForm, string>>;
 
 /** Checks on save (and on submit of a new project): the name, the dates' order and the budget. */
-export function detailsErrors(f: DetailsForm, currency: Currency): DetailsErrors {
+export function detailsErrors(
+  f: DetailsForm,
+  currency: Currency,
+  /** The date fields whose text can't be read (the DateField's report): the owner's line, and no save. */
+  unread: UnreadDates<"startDate" | "targetDate">,
+): DetailsErrors {
   const e: DetailsErrors = {};
   if (!f.name.trim()) e.name = PENDING.enterName;
-  const start = dateError(f.startDate);
-  const target = dateError(f.targetDate);
+  const start = dateError(unread.startDate);
+  const target = dateError(unread.targetDate);
   if (start) e.startDate = start;
   if (target) e.targetDate = target;
   else if (!start && f.startDate && f.targetDate && f.targetDate < f.startDate)
@@ -329,6 +334,8 @@ export type MilestoneErrors = Partial<Record<"title" | "amount" | "pct" | "dueDa
 export function milestoneInput(
   f: MilestoneForm,
   currency: Currency,
+  /** The due date's report that its text can't be read: the owner's line, and no save. */
+  unread: UnreadDates<"dueDate">,
 ): { ok: true; body: MilestoneInput } | { ok: false; errors: MilestoneErrors } {
   const errors: MilestoneErrors = {};
   if (!f.title.trim()) errors.title = PENDING.enterTitle;
@@ -343,7 +350,7 @@ export function milestoneInput(
     if (bp === null) errors.pct = PENDING.enterPercent;
     else pctBp = bp;
   }
-  const due = dateError(f.dueDate);
+  const due = dateError(unread.dueDate);
   if (due) errors.dueDate = due;
   if (Object.keys(errors).length) return { ok: false, errors };
   return {

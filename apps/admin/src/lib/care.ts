@@ -31,7 +31,7 @@ import type {
 } from "../api.ts";
 import { RequestError } from "../api.ts";
 import type { PillTone } from "../components/display.tsx";
-import { dateError } from "./date-field.ts";
+import { dateError, type UnreadDates } from "./date-field.ts";
 import { sentence } from "./format.ts";
 import { moneyText } from "./projects.ts";
 import { intIn, moneyFrom, moneyInput } from "./settings-form.ts";
@@ -285,6 +285,8 @@ export function planInput(
   f: PlanForm,
   clientId: string,
   currency: Currency,
+  /** The date fields whose text can't be read (the DateField's report): the owner's line, and no save. */
+  unread: UnreadDates<"startDate">,
 ): { ok: true; body: NewCarePlanInput } | { ok: false; errors: PlanErrors } {
   const errors: PlanErrors = {};
   const price = f.price.trim() ? moneyFrom(f.price, currency) : null;
@@ -296,7 +298,9 @@ export function planInput(
   if (ai && !ai.ok) errors.aiOpsPrice = ai.error;
   const rate = f.overageRate.trim() ? moneyFrom(f.overageRate, currency) : null;
   if (rate && !rate.ok) errors.overageRate = rate.error;
-  if (!parseIsoDate(f.startDate)) errors.startDate = dateError(f.startDate) ?? CARE_PENDING.enterStartDate;
+  const unreadStart = dateError(unread.startDate);
+  if (unreadStart) errors.startDate = unreadStart;
+  else if (!parseIsoDate(f.startDate)) errors.startDate = CARE_PENDING.enterStartDate;
   const day = intIn(f.billingDay, 1, MAX_BILLING_DAY);
   if (day === null) errors.billingDay = CARE_PENDING.enterBillingDay;
   if (Object.keys(errors).length || !price?.ok || included === null || day === null)
@@ -340,7 +344,7 @@ export function termsChange(
 ):
   | { ok: true; body: Omit<CareTermsInput, "expectedUpdatedAt">; changes: TermChange[] }
   | { ok: false; errors: PlanErrors } {
-  const r = planInput({ ...f, startDate: "2000-01-01", billingDay: "1" }, "", currency);
+  const r = planInput({ ...f, startDate: "2000-01-01", billingDay: "1" }, "", currency, {});
   if (!r.ok) return r;
   const b = r.body;
   const body: Omit<CareTermsInput, "expectedUpdatedAt"> = {};

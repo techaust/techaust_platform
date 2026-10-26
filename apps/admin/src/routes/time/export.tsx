@@ -3,7 +3,7 @@
 // every cell that starts with = + - or @ is defused so a spreadsheet never runs it as a formula). Nothing is built on the server.
 import { useRef, useState } from "react";
 import { api, type TimeEntry } from "../../api.ts";
-import { DateField } from "../../components/date-field.tsx";
+import { DateField, useUnreadDates } from "../../components/date-field.tsx";
 import { Modal } from "../../components/dialog.tsx";
 import { FormField } from "../../components/form.tsx";
 import { Download } from "../../components/icons.tsx";
@@ -23,6 +23,7 @@ export function ExportButton(props: {
   const [from, setFrom] = useState(props.from);
   const [to, setTo] = useState(props.to);
   const [rangeError, setRangeError] = useState<string | null>(null);
+  const dates = useUnreadDates<"from" | "to">();
   const [dateErrors, setDateErrors] = useState<{ from: string | null; to: string | null }>(NO_DATE_ERRORS);
   const [failure, setFailure] = useState<string | null>(null);
   const [loaded, setLoaded] = useState<number | null>(null);
@@ -34,13 +35,14 @@ export function ExportButton(props: {
     setTo(props.to);
     setRangeError(null);
     setDateErrors(NO_DATE_ERRORS);
+    dates.reset();
     setFailure(null);
     setLoaded(null);
     setOpen(true);
   }
 
   async function download() {
-    const bad = { from: dateError(from), to: dateError(to) };
+    const bad = { from: dateError(dates.unread.from), to: dateError(dates.unread.to) };
     setDateErrors(bad);
     if (bad.from || bad.to) {
       setRangeError(null);
@@ -96,6 +98,7 @@ export function ExportButton(props: {
               {(a) => (
                 <DateField
                   {...a}
+                  {...dates.bind("from")}
                   value={from}
                   aria-invalid={a["aria-invalid"] ?? (rangeError ? true : undefined)}
                   aria-describedby={
@@ -108,7 +111,7 @@ export function ExportButton(props: {
               )}
             </FormField>
             <FormField id="csv-to" label="To" error={dateErrors.to}>
-              {(a) => <DateField {...a} value={to} onChange={(v) => setTo(v)} />}
+              {(a) => <DateField {...a} {...dates.bind("to")} value={to} onChange={(v) => setTo(v)} />}
             </FormField>
           </div>
           {rangeError && <FieldError id="csv-range-error">{rangeError}</FieldError>}
