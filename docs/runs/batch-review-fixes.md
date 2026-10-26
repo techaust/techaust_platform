@@ -275,3 +275,7 @@ Branch `fix/batch-review-ui-builder2` from `origin/fix/batch-review-ui`.
 **Budget lines:** "admin bundle ok: 414797 bytes (limit 415878), startup 42.1 ms"; "portal bundle ok: 91174 bytes (limit 120000), startup 9.4 ms".
 **Not verified:** the admin screen with the terms text and the portal page on screen (no browser run); a separate whole-repo `pnpm lint` (`pnpm check` includes lint). A save in the editor does not refresh `terms.bodyMd`, which only the frozen read view uses.
 **Open questions:** none.
+
+## Brief: review of the fixes (lead, 2026-10-26)
+Round 2 merged (f9d3a7c). Note: the round 2 builder did not load `code-review` (model-audit shows only `cloudflare:workers-best-practices`); the review covers its diff. Admin Worker 414,797 of 415,878 bytes.
+Review `git diff origin/main...origin/fix/batch-review-ui` (code and visual, high). Check that every finding in "Review: full UI/UX check" and the owner's two findings is fixed, that 07-Q is in word for word with no "[Placeholder]" left, and the builder's changes (H3 send logic, migration 0036, the frozen issuer email, Q14, the dashboard join, the terms body on GET, the portal long dates). Visual: the screens the check named, 1280/768/375, light and dark, the in-app theme against the OS theme, axe on admin and portal, keyboard; the Log time dialog at 768 (not verified by the designer). Local only; the allowed setup commands are those in the first brief. Screenshots under `.logs/shots/batch-review-fixes-recheck/`.
