@@ -20,6 +20,7 @@ const client = (over: Partial<ClientRow> = {}): ClientRow => ({
   state_code: "19",
   billing_address: null,
   currency: "INR",
+  attach_pdf: 0,
   anonymised_at: null,
   ...over,
 });

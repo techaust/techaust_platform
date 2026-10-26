@@ -237,7 +237,8 @@ export async function loadOffer(
         ]
       : [];
   // The first open answers with the status as it is after this view ("Viewed", not "Sent"); an offer that reads as expired stays expired.
-  if (viewWrites.length > 0 && status === "sent") body.document = { ...(body.document as object), status: "viewed" };
+  if (viewWrites.length > 0 && status === "sent")
+    body.document = { ...(body.document as object), status: "viewed" };
   return { body, viewWrites };
 }
 

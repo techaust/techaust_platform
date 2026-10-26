@@ -104,7 +104,9 @@ describe("declined email to TecHaust (07-N section 4)", () => {
   it("subject and body word for word; the note sentence only when there is a note", () => {
     const r = renderEmail("offer.declined.staff", data, opts);
     expect(r.subject).toBe("Declined: Website rebuild (TH/PRP/2627/0001 v2)");
-    expect(r.text).toContain("Asha Rao declined TH/PRP/2627/0001 v2. Reason: The timing doesn't work for us.");
+    expect(r.text).toContain(
+      "Asha Rao declined TH/PRP/2627/0001 v2. Reason: The timing doesn't work for us.",
+    );
     expect(r.text).not.toContain("Note:");
     expect(r.text).toContain("Open in admin: https://admin.example.test/documents/1");
     expect(r.text).not.toContain("[Placeholder]");

@@ -25,6 +25,7 @@ import {
   offerSendMessage,
   parseIsoDate,
 } from "@techaust/core";
+import { guardFigures } from "@techaust/core/documents";
 import {
   ATTACHMENT_KEY,
   confirmationLinkExpiry,
@@ -33,7 +34,6 @@ import {
   offerLinkUrl,
   todayIst,
 } from "@techaust/core/offers";
-import { guardFigures } from "@techaust/core/documents";
 import type { OfferSweepMessage, PdfCertificateMessage } from "@techaust/core/pdf-jobs";
 import { logEvent } from "./log.ts";
 
@@ -247,7 +247,9 @@ export async function processOfferDecided(env: OfferEnv, body: unknown): Promise
   // 07-N §4 "Declined email, TecHaust side": to the sender and the active owners, once each (the email consumer claims
   // template + document + address, so a redelivery sends nothing twice).
   if (decision === "declined") {
-    const staff = ((await env.DB.prepare(STAFF_READ).bind(senderId).all()).results ?? []) as { email: string }[];
+    const staff = ((await env.DB.prepare(STAFF_READ).bind(senderId).all()).results ?? []) as {
+      email: string;
+    }[];
     if (staff.length > 0)
       await env.EMAIL_QUEUE.sendBatch(
         staff.map((s) => ({

@@ -434,7 +434,11 @@ describe("offer.decided: the bell [ADM-PROP-08, ADM-PROP-10]", () => {
     }
     queued = [];
     const acc = await world({ status: "accepted" });
-    await processOfferDecided(makeEnv(), { kind: "offer.decided", documentId: acc.doc, decision: "accepted" });
+    await processOfferDecided(makeEnv(), {
+      kind: "offer.decided",
+      documentId: acc.doc,
+      decision: "accepted",
+    });
     expect(queued).toEqual([]);
   });
   it("a sender who is also an owner gets one row, not two", async () => {

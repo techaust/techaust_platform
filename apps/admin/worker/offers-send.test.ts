@@ -199,6 +199,24 @@ describe("a send writes one row per recipient in its own batch, waiting for the 
     expect(await countOf("audit_log", "action = 'document.send' AND entity_id = ?", made.id)).toBe(1);
   });
 
+  it("a role that cannot read finance (Sales) is shown the same attach default the send applies [ADM-PROP-07]", async () => {
+    const sales = await sessionFor("sales");
+    const made = await mkDraft(sales);
+    const contact = await mkContact(made.clientId, { portal_access: 1 });
+    expect((await getDoc(sales, made.id)).attachPdfDefault).toBe(false);
+    await env.DB.prepare("UPDATE clients SET attach_pdf = 1 WHERE id = ?").bind(made.clientId).run();
+    const v = await getDoc(sales, made.id);
+    expect(v.attachPdfDefault).toBe(true);
+    const res = await send(sales.cookie, made.id, {
+      expectedUpdatedAt: v.updatedAt,
+      contactIds: [contact.id],
+    });
+    expect(res.status).toBe(200);
+    expect(
+      (await one<J>("SELECT attach_pdf FROM document_sends WHERE document_id = ?", made.id))?.attach_pdf,
+    ).toBe(1);
+  });
+
   it("attachPdf follows the client's setting unless the request says otherwise", async () => {
     const one1 = await draft();
     await env.DB.prepare("UPDATE clients SET attach_pdf = 1 WHERE id = ?").bind(one1.made.clientId).run();
@@ -657,9 +675,9 @@ describe("a draft created without a contactId names the client's contact", () =>
     const doc = await getDoc(s, id);
     expect(doc.unresolved ?? []).not.toContain("client.contact");
     expect(doc.sections.find((x: J) => x.kind === "acceptance")?.bodyMd).toContain("Asha First");
-    expect((await one<{ contact_id: string }>("SELECT contact_id FROM documents WHERE id = ?", id))?.contact_id).toBe(
-      first.id,
-    );
+    expect(
+      (await one<{ contact_id: string }>("SELECT contact_id FROM documents WHERE id = ?", id))?.contact_id,
+    ).toBe(first.id);
     const res = await send(s.cookie, id, { expectedUpdatedAt: doc.updatedAt, contactIds: [first.id] });
     expect(res.status).toBe(200);
   });

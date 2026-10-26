@@ -245,7 +245,9 @@ describe("accepting and declining from the link [ADM-PROP-08]", () => {
 
   it("declines from the link; a second decline and an accept afterwards are 409", async () => {
     const { offer, token, who } = await setup();
-    const declined = await call("/t/offer/decline", { body: { token, documentId: offer.id, reason: "timing" } });
+    const declined = await call("/t/offer/decline", {
+      body: { token, documentId: offer.id, reason: "timing" },
+    });
     expect(declined.status).toBe(200);
     // the answer names who declined (the page shows it without a reload; a link has no signed-in name)
     expect(((await declined.json()) as { declined: { by: string } }).declined.by).toBe(who.name);
