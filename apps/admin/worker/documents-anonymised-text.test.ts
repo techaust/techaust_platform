@@ -190,6 +190,16 @@ describe("redactionNames and redactor", () => {
     // a name that is a part of the label is not searched for again in the replacement
     expect(redactor(["client"])("the client")).toBe(`the ${ANONYMISED_LABEL}`);
   });
+  it("replaces a name only where it stands as a whole word", () => {
+    expect(redactor(["Ram"])("Ramp-up for Ram, and Ram's plan")).toBe(
+      `Ramp-up for ${ANONYMISED_LABEL}, and ${ANONYMISED_LABEL}'s plan`,
+    );
+    expect(redactor(["Data"])("Data migration for DataCo")).toBe(`${ANONYMISED_LABEL} migration for DataCo`);
+    expect(redactor(["Asha"])("Ashaworks, Asha_1, Asha2 and Asha.")).toBe(
+      `Ashaworks, Asha_1, Asha2 and ${ANONYMISED_LABEL}.`,
+    );
+    expect(redactor(["Élodie"])("Élodie and Élodies")).toBe(`${ANONYMISED_LABEL} and Élodies`);
+  });
 });
 
 describe("viewRecipient: an email alone is not a contact (finding 3)", () => {
@@ -201,10 +211,10 @@ describe("viewRecipient: an email alone is not a contact (finding 3)", () => {
       clientType: "business" as const,
       gstStatus: "unregistered" as const,
     };
+    // contact gone alone needs a contactId (`snapshotContactGone`), so with no contact only the client-gone cases are reachable
     for (const [clientGone, contactGone] of [
       [true, false],
       [true, true],
-      [false, true],
     ] as const) {
       const v = viewRecipient(emailOnly, clientGone, contactGone);
       expect(v).not.toHaveProperty("contactName");

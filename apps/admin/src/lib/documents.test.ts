@@ -569,33 +569,18 @@ describe("recipientLine: who a document is for (M4.3 re-check 2, owner's rule)",
   it("a client with no contact: the name alone", () => {
     expect(recipientLine({ client, contact: null })).toEqual({ name: "Acme Ltd", contact: null });
   });
-  it("a sent version names the display name, or the legal name when the display name is blank", () => {
-    expect(
-      recipientLine({ client, contact, recipient: { displayName: "Acme", legalName: "Acme Ltd" } }).name,
-    ).toBe("Acme");
-    expect(
-      recipientLine({ client, contact, recipient: { displayName: "  ", legalName: "Acme Ltd" } }).name,
-    ).toBe("Acme Ltd");
-  });
   it("the client anonymised: the label once, no contact part", () => {
     const gone = { name: "Anonymised client", anonymised: true };
-    expect(
-      recipientLine({
-        client: gone,
-        contact: { name: "Anonymised client", anonymised: true },
-        recipient: { displayName: "Anonymised client", legalName: "Anonymised client" },
-      }),
-    ).toEqual({ name: "Anonymised client", contact: null });
+    expect(recipientLine({ client: gone, contact: { name: "Anonymised client", anonymised: true } })).toEqual(
+      { name: "Anonymised client", contact: null },
+    );
     // even if the contact were not flagged
     expect(recipientLine({ client: gone, contact })).toEqual({ name: "Anonymised client", contact: null });
   });
   it("only the contact anonymised: the client's name alone, no contact part", () => {
-    expect(
-      recipientLine({
-        client,
-        contact: { name: "Anonymised client", anonymised: true },
-        recipient: { displayName: "Acme", legalName: "Acme Ltd" },
-      }),
-    ).toEqual({ name: "Acme", contact: null });
+    expect(recipientLine({ client, contact: { name: "Anonymised client", anonymised: true } })).toEqual({
+      name: "Acme Ltd",
+      contact: null,
+    });
   });
 });

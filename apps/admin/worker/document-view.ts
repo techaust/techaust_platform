@@ -65,18 +65,17 @@ const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /**
  * Builds the function that replaces every exact occurrence of the given names with `ANONYMISED_LABEL`, in one pass, longest name first
- * (so a name that holds another is replaced whole, and the label is never searched again). VIEW ONLY: the stored text is not touched.
- * Staff-typed free text that only mentions a person in other words cannot be caught by exact matching (owner question, VERIFY WITH CA/LEGAL).
+ * (so a name that holds another is replaced whole, and the label is never searched again), only where it stands as a whole word: a
+ * client named "Ram" leaves "Ramp-up" alone. VIEW ONLY: the stored text is not touched.
+ * Staff-typed free text that only mentions a person in other words is not redacted (owner, 2026-10-26, VERIFY WITH CA/LEGAL).
  */
 export function redactor(names: string[]): (text: string | null) => string | null {
   if (names.length === 0) return (text) => text;
-  const re = new RegExp(
-    [...names]
-      .sort((a, b) => b.length - a.length)
-      .map(escapeRegExp)
-      .join("|"),
-    "g",
-  );
+  const alternation = [...names]
+    .sort((a, b) => b.length - a.length)
+    .map(escapeRegExp)
+    .join("|");
+  const re = new RegExp(`(?<![\\p{L}\\p{N}_])(?:${alternation})(?![\\p{L}\\p{N}_])`, "gu");
   return (text: string | null) => (text === null ? null : text.replace(re, ANONYMISED_LABEL));
 }
 

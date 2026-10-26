@@ -14,7 +14,6 @@ import { formatDate, istDate, parseIsoDate } from "@techaust/core/dates";
 import { REQUIRED_SECTIONS, UNRESOLVED_RE } from "@techaust/core/documents";
 import { STATE_CODES } from "@techaust/core/gstin";
 import type { ScheduleTrigger } from "@techaust/core/schedule-text";
-import { nameOrLegal } from "@techaust/core/text";
 import type { Currency } from "../api.ts";
 import { RequestError } from "../api.ts";
 import type { PillTone } from "../components/display.tsx";
@@ -256,16 +255,13 @@ export const sectionEmptyLine = (list: string) =>
  * Who a document is for, as the read page shows it (M4.3 re-check 2, owner's rule of 2026-10-26). The server already put "Anonymised
  * client" in place of every personal name, so this only decides how many parts to print: a client that was anonymised reads as that
  * one name, with no contact part; a contact that was anonymised alone leaves the client's name alone; otherwise the name and the contact.
+ * The name is the server's `client.name` (the frozen recipient's name for a sent version, by the one `nameOrLegal` rule).
  */
 export const recipientLine = (v: {
   client: { name: string; anonymised: boolean };
   contact: { name: string; anonymised: boolean } | null;
-  recipient?: { displayName?: string | null; legalName: string } | null;
 }): { name: string; contact: string | null } => {
-  const name =
-    v.recipient && !v.client.anonymised
-      ? nameOrLegal(v.recipient.displayName, v.recipient.legalName)
-      : v.client.name;
+  const name = v.client.name;
   const contact = v.client.anonymised || !v.contact || v.contact.anonymised ? null : v.contact.name;
   return { name, contact };
 };
