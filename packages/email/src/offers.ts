@@ -1,7 +1,9 @@
-// M4.5 plain skeletons: the proposal and estimate emails and the two approval emails (ADM-PROP-07, ADM-PROP-08, ADM-APR-01, ADM-MAIL-01).
-// Words: 07 §8 (subjects and core sentences, "Review and accept" per docs/13) and 07-O (approval emails name the document by title and
-// version). Everything not in 07 §8 is a visible "[Placeholder]" until 07-N is approved; the designer finishes the layout to the
-// approved preview. Same layout helpers as the security emails; every variable is escaped before it reaches HTML.
+// M4.5: the proposal and estimate emails and the two approval emails (ADM-PROP-07, ADM-PROP-08, ADM-APR-01, ADM-MAIL-01), in the brand
+// layout of the M2.4 and M2.4b emails (the verdigris rule under the logo, the subject as the heading, label and value rows, the 48 px
+// verdigris button with the plain address under it, light and dark), each with its plain-text twin.
+// Words: 07 §8 (subjects and core sentences, "Review and accept" per docs/13), 07-O (approval emails name the document by title and
+// version) and 07-N §4 (the fact labels, the PDF note, `next_step` and the TecHaust-side body; PENDING the owner's approval). A line that
+// 07-N doesn't have is a visible "[Placeholder]". Every variable is escaped before it reaches HTML.
 import { headerValue } from "./headers.ts";
 import { type LayoutOptions, type Para, para, type Rendered, securityEmail } from "./templates.ts";
 
@@ -19,12 +21,19 @@ export type OfferSentData = {
   url: string;
   /** "1" when the PDF is attached. */
   attached: string;
+  /** Who sent it (kept in the data; 07 §8 has no sign-off line, so the email doesn't print it). */
   sender_name: string;
 };
 
 const isEstimate = (kind: string) => kind === "estimate";
 
-/** The proposal or estimate sent to a contact (from hello@): 07 §8 subject and core sentence. */
+/** 07-N §4: the PDF note, with or without the attachment. */
+export const PDF_NOTE = {
+  attached: "The PDF is attached.",
+  linked: "You can download the PDF from the same page.",
+} as const;
+
+/** The proposal or estimate sent to a contact (from hello@): 07 §8 subject and core sentence, 07-N §4 facts and PDF note. */
 export function offerSent(d: OfferSentData, opts: LayoutOptions): Rendered {
   const estimate = isEstimate(d.kind);
   const subject = headerValue(
@@ -34,27 +43,27 @@ export function offerSent(d: OfferSentData, opts: LayoutOptions): Rendered {
     ? "the line items, price and payment terms"
     : "scope, timeline, price and payment schedule";
   const lead = `Hi ${d.first_name}, your ${estimate ? "estimate" : "proposal"} is ready. It covers ${covers}, and it's valid until ${d.valid_until}.`;
-  const before: Para[] = [para(lead)];
-  const after: Para[] = [];
-  if (d.attached === "1") after.push(para("[Placeholder] The PDF is attached."));
-  after.push(para("Questions? Just reply to this email."));
-  if (d.sender_name) after.push(para(`[Placeholder] ${d.sender_name}`));
+  const rows: [string, string][] = [
+    ["Number", `${d.number} v${d.version}`],
+    ["Total", d.total],
+    ["Valid until", d.valid_until],
+  ];
   return securityEmail(subject, opts, {
-    before,
-    facts: {
-      rows: [
-        ["[Placeholder] Total", d.total],
-        ["[Placeholder] Valid until", d.valid_until],
-      ],
-      text: `[Placeholder] Total: ${d.total}\n[Placeholder] Valid until: ${d.valid_until}`,
-    },
-    after,
+    before: [para(lead)],
+    facts: { rows, text: rows.map(([k, v]) => `${k}: ${v}`).join("\n") },
     action: { label: "Review and accept", url: d.url },
+    after: [
+      para(d.attached === "1" ? PDF_NOTE.attached : PDF_NOTE.linked),
+      para("Questions? Just reply to this email."),
+    ],
+    actionFirst: true,
   });
 }
 
 export type OfferAcceptedData = {
   typed_name: string;
+  /** The address the acceptance was recorded with (07-N §4, TecHaust side). */
+  email?: string;
   accepted_at_ist: string;
   title: string;
   number: string;
@@ -69,6 +78,9 @@ export type OfferAcceptedData = {
 const acceptedSubject = (d: OfferAcceptedData) =>
   headerValue(`Accepted: ${d.title} (${d.number} v${d.version})`);
 
+/** The next step without a final full stop (07 §8 adds its own). */
+const step = (s: string) => s.trim().replace(/\.$/, "");
+
 /** The confirmation to the client (07 §8 "Proposal accepted"): sent once the certificate exists. */
 export function offerAcceptedClient(d: OfferAcceptedData, opts: LayoutOptions): Rendered {
   return securityEmail(acceptedSubject(d), opts, {
@@ -76,20 +88,19 @@ export function offerAcceptedClient(d: OfferAcceptedData, opts: LayoutOptions): 
       para(
         `Thank you, ${d.typed_name}. Your acceptance was recorded on ${d.accepted_at_ist}. Links to the accepted proposal and the acceptance certificate are below.`,
       ),
-      para(`Next: ${d.next_step}.`),
     ],
+    // 07-N has no label for this button yet (the link opens the accepted version, with both downloads).
     action: { label: "[Placeholder] Open in the portal", url: d.url },
+    after: [para(`Next: ${step(d.next_step)}.`)],
+    actionFirst: true,
   });
 }
 
-/** The same acceptance to TecHaust (the sender and the active owners): 07 §8 gives the subject; the body is a placeholder. */
+/** The same acceptance to TecHaust (the sender and the active owners): 07 §8 subject, 07-N §4 body. */
 export function offerAcceptedStaff(d: OfferAcceptedData, opts: LayoutOptions): Rendered {
+  const who = d.email ? `${d.typed_name} (${d.email})` : d.typed_name;
   return securityEmail(acceptedSubject(d), opts, {
-    before: [
-      para(
-        `[Placeholder] ${d.typed_name} accepted ${d.title} (${d.number} v${d.version}) on ${d.accepted_at_ist}.`,
-      ),
-    ],
+    before: [para(`${who} accepted ${d.number} v${d.version} on ${d.accepted_at_ist}.`)],
     action: { label: "Open in admin", url: d.url },
   });
 }
@@ -129,7 +140,9 @@ export type ApprovalDecidedData = {
 /** To the requester: 07 §8, by title and version; the note line only when there is a note. */
 export function approvalDecided(d: ApprovalDecidedData, opts: LayoutOptions): Rendered {
   const subject = headerValue(`${d.decision}: ${d.title} v${d.version}`);
-  const before = [para(`${d.approver_name} has ${d.decision} your request for ${d.title} v${d.version}.`)];
+  const before: Para[] = [
+    para(`${d.approver_name} has ${d.decision} your request for ${d.title} v${d.version}.`),
+  ];
   if (d.decision_note) before.push(para(`Note: ${d.decision_note}.`));
   return securityEmail(subject, opts, { before, action: { label: "Open in admin", url: d.admin_url } });
 }

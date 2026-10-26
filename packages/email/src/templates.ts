@@ -406,24 +406,33 @@ export function securityEmail(
     after?: Para[];
     notYou?: string;
     action?: { label: string; url: string };
+    /** The button straight after the facts, before the `after` paragraphs (07 §8 offer emails: "[Review and accept]. Questions? …"). */
+    actionFirst?: boolean;
   },
 ): Rendered {
   const after = parts.after ?? [];
+  const first = parts.actionFirst === true;
+  const actionHtml = parts.action ? button(parts.action.label, parts.action.url) : "";
+  const actionText = parts.action ? `${parts.action.label}: ${parts.action.url}` : "";
   const html = layout(
     subject,
     heading(e(subject)) +
       parts.before.map((p) => bodyP(p.html)).join("") +
       (parts.facts ? factTable(parts.facts.rows) : "") +
-      after.map((p) => bodyP(p.html)).join("") +
-      (parts.action ? button(parts.action.label, parts.action.url) : "") +
+      (first ? actionHtml : "") +
+      after
+        .map((p, i) => bodyP(p.html, i === after.length - 1 && first ? "padding-bottom:0;" : ""))
+        .join("") +
+      (first ? "" : actionHtml) +
       (parts.notYou ? notYouBlock(parts.notYou) : ""),
     opts,
   );
   const text = textOf([
     ...parts.before.map((p) => p.text),
     parts.facts?.text ?? "",
+    first ? actionText : "",
     ...after.map((p) => p.text),
-    parts.action ? `${parts.action.label}: ${parts.action.url}` : "",
+    first ? "" : actionText,
     parts.notYou ?? "",
   ]);
   return { subject, html, text };

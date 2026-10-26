@@ -1,21 +1,27 @@
-// Decline with a reason (ADM-PROP-10): step 1 picks a reason (a short list plus "Other", which then needs a few words),
-// step 2 confirms. The reason is required; the note is optional unless "Other" is picked. Focus moves to the step's title
-// on each step, and back to the Decline button if the dialog is cancelled.
+// Decline with a reason (ADM-PROP-10): step 1 picks a reason (four plus "Other", which then needs a few words), step 2 confirms. The
+// reason is required; the note is optional unless "Other" is picked. Focus moves to the step's title on each step, and back to the
+// Decline button if the dialog is cancelled. The codes are core's `DECLINE_REASONS`; the words are 07-N §3 (PENDING the owner's approval).
 import { type FormEvent, useId, useRef, useState } from "react";
-import { PENDING, WORDS } from "../../copy-documents.ts";
+import { N, WORDS } from "../../copy-documents.ts";
 import { Modal } from "../dialog.tsx";
-import { Ph } from "../pending.tsx";
+import { ErrorLine } from "../pending.tsx";
 import { FieldError, Notice } from "../ui.tsx";
+
+export type DeclineReason = keyof typeof N.reasons;
+/** In the order of `DECLINE_REASONS` (@techaust/core/offers). */
+const REASONS = Object.keys(N.reasons) as DeclineReason[];
+/** `DECLINE_NOTE_MAX` (@techaust/core/offers). */
+const NOTE_MAX = 500;
 
 export function DeclineDialog(props: {
   open: boolean;
   kind: string;
   onClose: () => void;
   /** Records the decline. Throws an Error whose message is shown, and the dialog stays open. */
-  onDecline: (reason: string, note: string | null) => Promise<void>;
+  onDecline: (reason: DeclineReason, note: string | null) => Promise<void>;
 }) {
   const [step, setStep] = useState<"reason" | "confirm">("reason");
-  const [reason, setReason] = useState<string | null>(null);
+  const [reason, setReason] = useState<DeclineReason | null>(null);
   const [note, setNote] = useState("");
   const [reasonError, setReasonError] = useState<string | null>(null);
   const [noteError, setNoteError] = useState<string | null>(null);
@@ -25,7 +31,7 @@ export function DeclineDialog(props: {
   const groupId = useId();
   const noteId = useId();
   const firstRadio = useRef<HTMLInputElement>(null);
-  const isOther = reason === WORDS.other;
+  const isOther = reason === "other";
 
   /** A step change: the new step's title takes focus once it has rendered (on opening, the dialog focuses as usual). */
   function goTo(next: "reason" | "confirm") {
@@ -49,8 +55,8 @@ export function DeclineDialog(props: {
 
   function next(e: FormEvent) {
     e.preventDefault();
-    const rErr = reason ? null : PENDING.reasonMissing;
-    const nErr = isOther && !note.trim() ? PENDING.otherMissing : null;
+    const rErr = reason ? null : N.reasonMissing;
+    const nErr = isOther && !note.trim() ? N.otherMissing : null;
     setReasonError(rErr);
     setNoteError(nErr);
     if (rErr) {
@@ -78,17 +84,10 @@ export function DeclineDialog(props: {
     }
   }
 
-  const options = [...PENDING.reasons, WORDS.other];
   return (
     <Modal
       open={props.open}
-      title={
-        step === "reason" ? (
-          <Ph>{PENDING.declineTitle}</Ph>
-        ) : (
-          <Ph>{PENDING.declineConfirmTitle(props.kind)}</Ph>
-        )
-      }
+      title={step === "reason" ? N.declineTitle : N.declineConfirmTitle(props.kind)}
       onClose={close}
       busy={busy}
       titleRef={titleRef}
@@ -100,32 +99,32 @@ export function DeclineDialog(props: {
             aria-describedby={reasonError ? `${groupId}-error` : undefined}
             aria-invalid={reasonError ? true : undefined}
           >
-            <legend>{PENDING.reasonLegend}</legend>
-            {options.map((o, i) => (
-              <label key={o} className="radio">
+            <legend>{N.fields.reason}</legend>
+            {REASONS.map((r, i) => (
+              <label key={r} className="radio">
                 <input
                   ref={i === 0 ? firstRadio : undefined}
                   type="radio"
                   name={groupId}
-                  value={o}
-                  checked={reason === o}
+                  value={r}
+                  checked={reason === r}
                   onChange={() => {
-                    setReason(o);
+                    setReason(r);
                     setReasonError(null);
                   }}
                 />
-                <span>{o}</span>
+                <span>{r === "other" ? WORDS.other : N.reasons[r]}</span>
               </label>
             ))}
             {reasonError && <FieldError id={`${groupId}-error`}>{reasonError}</FieldError>}
           </fieldset>
           <div className="field">
-            <label htmlFor={noteId}>{isOther ? PENDING.otherLabel : PENDING.noteLabel}</label>
+            <label htmlFor={noteId}>{isOther ? N.otherLabel : N.noteLabel}</label>
             <textarea
               id={noteId}
               value={note}
               rows={3}
-              maxLength={1000}
+              maxLength={NOTE_MAX}
               onChange={(e) => setNote(e.target.value)}
               onBlur={() => isOther && noteError && note.trim() && setNoteError(null)}
               aria-invalid={noteError ? true : undefined}
@@ -139,7 +138,7 @@ export function DeclineDialog(props: {
               {WORDS.cancel}
             </button>
             <button type="submit" className="btn btn--primary">
-              {PENDING.continue}
+              {N.continue}
             </button>
           </div>
         </form>
@@ -148,18 +147,20 @@ export function DeclineDialog(props: {
           <div className="dialog__body">
             <dl className="facts facts--confirm">
               <div>
-                <dt>{PENDING.fields.reason}</dt>
+                <dt>{N.fields.reason}</dt>
                 <dd>
-                  {reason}
+                  {reason === "other" ? WORDS.other : reason ? N.reasons[reason] : ""}
                   {note.trim() && <span className="line muted">{note.trim()}</span>}
                 </dd>
               </div>
             </dl>
-            <p>
-              <Ph>{PENDING.declineConfirmBody}</Ph>
-            </p>
+            <p>{N.declineConfirmBody}</p>
           </div>
-          {error && <Notice tone="error">{error}</Notice>}
+          {error && (
+            <Notice tone="error">
+              <ErrorLine text={error} />
+            </Notice>
+          )}
           <div className="dialog__actions">
             <button
               type="button"
@@ -167,7 +168,7 @@ export function DeclineDialog(props: {
               onClick={() => goTo("reason")}
               disabled={busy}
             >
-              {PENDING.back}
+              {N.back}
             </button>
             <button
               type="button"
@@ -176,7 +177,7 @@ export function DeclineDialog(props: {
               disabled={busy}
               aria-busy={busy || undefined}
             >
-              {busy ? PENDING.declining : PENDING.decline}
+              {busy ? N.declining : N.decline}
             </button>
           </div>
         </>

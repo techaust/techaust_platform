@@ -34,9 +34,16 @@ describe("offer.sent [ADM-PROP-07, ADM-MAIL-01]", () => {
     expect(r.subject).toBe("Estimate: Website rebuild (TH/PRP/2627/0001 v2)");
     expect(r.text).toContain("your estimate is ready. It covers the line items, price and payment terms,");
   });
-  it("mentions the PDF only when it is attached (as a visible placeholder until 07-N)", () => {
-    expect(renderEmail("offer.sent", sent, opts).text).toContain("[Placeholder] The PDF is attached.");
-    expect(renderEmail("offer.sent", { ...sent, attached: "0" }, opts).text).not.toContain("PDF is attached");
+  it("07-N section 4: the facts, then the button, then the PDF note (attached or on the same page)", () => {
+    const r = renderEmail("offer.sent", sent, opts);
+    expect(r.text).toContain("Number: TH/PRP/2627/0001 v2\nTotal: ₹1,00,000.00\nValid until: 30 Nov 2026");
+    expect(r.text).toContain("The PDF is attached.");
+    expect(r.text.indexOf("Review and accept:")).toBeLessThan(r.text.indexOf("The PDF is attached."));
+    expect(r.text.indexOf("The PDF is attached.")).toBeLessThan(r.text.indexOf("Questions?"));
+    const linked = renderEmail("offer.sent", { ...sent, attached: "0" }, opts).text;
+    expect(linked).not.toContain("PDF is attached");
+    expect(linked).toContain("You can download the PDF from the same page.");
+    expect(r.text).not.toContain("[Placeholder]");
   });
   it("escapes every value and cannot inject a header through the title", () => {
     const r = renderEmail("offer.sent", { ...sent, title: "<script>x</script>\r\nBcc: a@b.c" }, opts);
@@ -65,15 +72,22 @@ describe("acceptance emails", () => {
     expect(r.text).toContain(acc.url);
     expect(r.from).toEqual(SENDERS.hello);
   });
-  it("staff: the same subject and the admin link; the body is a placeholder", () => {
+  it("staff: the same subject, the 07-N section 4 body and the admin link", () => {
     const r = renderEmail(
       "offer.accepted.staff",
-      { ...acc, url: "https://admin.example.test/documents/1" },
+      { ...acc, email: "asha@example.test", url: "https://admin.example.test/documents/1" },
       opts,
     );
     expect(r.subject).toBe("Accepted: Website rebuild (TH/PRP/2627/0001 v2)");
-    expect(r.text).toContain("[Placeholder] Asha Rao accepted");
-    expect(r.text).toContain("https://admin.example.test/documents/1");
+    expect(r.text).toContain(
+      "Asha Rao (asha@example.test) accepted TH/PRP/2627/0001 v2 on 26 Oct 2026, 10:30 IST.",
+    );
+    expect(r.text).toContain("Open in admin: https://admin.example.test/documents/1");
+    expect(r.text).not.toContain("[Placeholder]");
+    // Without the address (an older message), the sentence still reads.
+    expect(renderEmail("offer.accepted.staff", acc, opts).text).toContain(
+      "Asha Rao accepted TH/PRP/2627/0001 v2 on",
+    );
   });
 });
 

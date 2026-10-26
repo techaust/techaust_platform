@@ -43,6 +43,7 @@ type Data = Record<string, string>;
 
 const acceptedData = (get: (k: string) => string) => ({
   typed_name: get("typed_name"),
+  email: get("email"),
   accepted_at_ist: get("accepted_at_ist"),
   title: get("title"),
   number: get("number"),

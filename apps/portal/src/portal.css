@@ -736,7 +736,6 @@ html:has(.mmenu[open]) {
 
 .dcard__facts dt,
 .facts dt,
-.headline__label,
 .docside__label {
   color: var(--color-text-muted);
   font-size: var(--text-sm);
@@ -1131,30 +1130,6 @@ html:has(.mmenu[open]) {
   padding-bottom: var(--space-8);
 }
 
-.cover__top {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2) var(--space-4);
-  padding-bottom: var(--space-4);
-  margin-bottom: var(--space-8);
-  border-bottom: 2px solid var(--color-accent-decor);
-}
-
-.cover__logo {
-  display: block;
-  height: 1.75rem;
-  width: auto;
-}
-
-.cover__kind {
-  margin: 0;
-  color: var(--color-text-muted);
-  font-size: var(--text-sm);
-  font-weight: 600;
-}
-
 .cover__title {
   font-family: var(--font-display);
   font-stretch: var(--font-display--stretch);
@@ -1200,7 +1175,7 @@ html:has(.mmenu[open]) {
   border-top: 1px solid var(--color-border);
 }
 
-.cover__facts > :where(div:last-child) {
+.cover__contact {
   grid-column: span 2;
 }
 
@@ -1213,7 +1188,7 @@ html:has(.mmenu[open]) {
 }
 
 @container sheet (max-width: 24rem) {
-  .cover__facts > :where(div:last-child) {
+  .cover__contact {
     grid-column: 1 / -1;
   }
 }
@@ -1246,10 +1221,6 @@ html:has(.mmenu[open]) {
   font-weight: 600;
 }
 
-.scope .dsub {
-  margin-top: 0;
-}
-
 .prose {
   max-width: var(--container-prose);
   font-size: var(--text-body-lg);
@@ -1273,87 +1244,181 @@ html:has(.mmenu[open]) {
   color: var(--color-text-accent);
 }
 
-.ticks,
-.dashes {
-  display: grid;
-  gap: var(--space-3);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.ticks li {
+/* The masthead: the logo and the kind of document over the verdigris rule (the PDF's header, docs/06 §7.1). */
+.mast {
   display: flex;
-  gap: var(--space-3);
-  align-items: flex-start;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  padding-bottom: var(--space-4);
+  margin-bottom: var(--space-8);
+  border-bottom: 2px solid var(--color-accent-decor);
 }
 
-.ticks .icon {
-  margin-top: 0.15em;
-  color: var(--color-text-accent);
+.mast__logo {
+  display: block;
+  height: 1.75rem;
+  width: auto;
 }
 
-.dashes li {
-  position: relative;
-  padding-inline-start: var(--space-8);
+.mast__kind {
+  margin: 0;
   color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
 }
 
-.dashes li::before {
-  content: "";
-  position: absolute;
-  inset-inline-start: 0.25rem;
-  inset-block-start: 0.8em;
-  width: 0.75rem;
-  border-top: 1.5px solid var(--color-border-control);
+.cover__lede {
+  max-width: var(--container-prose);
+  margin: 0 0 var(--space-6);
+  color: var(--color-text-muted);
+  font-size: var(--text-lede);
+  line-height: var(--text-lede--line-height);
 }
 
-.scope {
+.cover--estimate {
+  padding-bottom: var(--space-6);
+}
+
+.cover--estimate .cover__for {
+  margin-bottom: var(--space-5);
+}
+
+/* The estimate notice: said once, plainly, beside a verdigris edge. */
+.sheet-notice {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-inline-start: 3px solid var(--color-accent-decor);
+  background: var(--color-surface-alt);
+  font-weight: 500;
+}
+
+/* From, Prepared for, Document: the PDF's three blocks, side by side on a wide sheet. */
+.parties {
   display: grid;
-  gap: var(--space-8);
-}
-
-@container sheet (min-width: 36rem) {
-  .scope {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-.headline {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
-  gap: var(--space-4) var(--space-8);
-  margin-top: var(--space-6);
-  padding: var(--space-5) 0 0;
+  gap: var(--space-6) var(--space-8);
+  padding-top: var(--space-6);
   border-top: 1px solid var(--color-border);
 }
 
-.headline p {
+@container sheet (min-width: 40rem) {
+  .parties {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.pblock__label {
+  margin: 0 0 var(--space-2);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  font-weight: 600;
+}
+
+.pblock__name {
+  margin: 0 0 var(--space-1);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.pblock__line {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  overflow-wrap: anywhere;
+}
+
+.pblock__attn {
+  margin-top: var(--space-1);
+  color: var(--color-text);
+}
+
+/* A part of a "GSTIN … · State …" line stays whole; the line breaks between parts. */
+.keep {
+  white-space: nowrap;
+}
+
+.pfacts {
+  display: grid;
+  gap: var(--space-1);
   margin: 0;
 }
 
-.headline__value {
-  font-size: var(--text-price-lg);
-  line-height: var(--text-price-lg--line-height);
-  font-weight: var(--text-price-lg--font-weight);
-  font-variant-numeric: tabular-nums;
+.pfacts > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
 }
 
-.headline__value--text {
-  font-size: var(--text-h4);
-  line-height: var(--text-h4--line-height);
-  padding-top: var(--space-1);
+.pfacts dt {
+  color: var(--color-text-muted);
 }
 
-.party {
-  margin-bottom: var(--space-6);
-  padding: var(--space-4) var(--space-5);
+.pfacts dd {
+  margin: 0;
+  text-align: end;
+}
+
+/* A section's text (core Markdown as elements). */
+.md > :first-child {
+  margin-top: 0;
+}
+
+.md > :last-child {
+  margin-bottom: 0;
+}
+
+.md p {
+  margin: 0 0 var(--space-4);
+}
+
+.md ul,
+.md ol {
+  margin: 0 0 var(--space-4);
+  padding-inline-start: var(--space-5);
+}
+
+.md li + li {
+  margin-top: var(--space-2);
+}
+
+.md li::marker {
+  color: var(--color-text-accent);
+}
+
+.md pre {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-3) var(--space-4);
   background: var(--color-surface-alt);
   border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
-.party > div:first-child {
-  grid-column: 1 / -1;
+.md code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+.md a {
+  overflow-wrap: anywhere;
+}
+
+.dsec .md + * {
+  margin-top: var(--space-6);
+}
+
+/* The terms read at body size: they are long, and they are the reference, not the pitch. */
+.prose.terms {
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
 }
 
 /* ---------- Tables (a <table> on wide sheets, labelled cards on narrow ones) ---------- */
@@ -1551,11 +1616,6 @@ html:has(.mmenu[open]) {
   font-size: var(--text-sm);
   line-height: var(--text-sm--line-height);
   text-align: end;
-}
-
-.words__label {
-  display: block;
-  font-weight: 600;
 }
 
 .terms__version {
@@ -1864,4 +1924,83 @@ textarea:hover {
 textarea[aria-invalid="true"] {
   border-color: var(--color-danger);
   box-shadow: inset 0 0 0 1px var(--color-danger);
+}
+
+/* ---------- Lists: what a card adds, and the list's way on ---------- */
+
+.dcard__note {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.block__more {
+  margin: var(--space-4) 0 0;
+}
+
+.textlink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--target-min);
+  font-weight: 600;
+}
+
+.more {
+  margin-top: var(--space-6);
+}
+
+.decide__problem {
+  margin-bottom: var(--space-5);
+}
+
+.dsec--decision .validity {
+  margin: 0 0 var(--space-6);
+}
+
+/* The totals beside the amount in words and the notes. */
+.money__totals {
+  display: grid;
+  gap: var(--space-5);
+  margin: var(--space-6) 0 var(--space-2);
+}
+
+@container sheet (min-width: 40rem) {
+  .money__totals {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 22rem);
+    align-items: start;
+    gap: var(--space-10);
+  }
+
+  .money__notes {
+    order: -1;
+  }
+}
+
+.money__totals .totals {
+  width: 100%;
+  margin: 0;
+}
+
+.money__notes {
+  display: grid;
+  gap: var(--space-2);
+  align-content: start;
+}
+
+.money__notes .words {
+  max-width: var(--container-prose);
+  margin: 0;
+  color: var(--color-text);
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
+  text-align: start;
+}
+
+.money__note {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
 }

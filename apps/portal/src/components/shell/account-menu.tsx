@@ -4,7 +4,7 @@
 import logoDark from "@techaust/ui/brand/logo-primary-dark.svg?url";
 import { useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router";
-import { PENDING, WORDS } from "../../copy-documents.ts";
+import { N, WORDS } from "../../copy-documents.ts";
 
 import { ConfirmDialog } from "../dialog.tsx";
 import { ChevronDown, LogOut, Menu, X } from "../icons.tsx";
@@ -136,7 +136,7 @@ export function AccountMenu(props: AccountProps & { defaultOpen?: boolean | unde
         aria-controls={panelId}
         onClick={() => setOpen((v) => !v)}
       >
-        <span className="visually-hidden">{PENDING.account}: </span>
+        <span className="visually-hidden">{N.account}: </span>
         <span className="account__text">
           <span className="account__org">{props.org}</span>
           <span className="account__name">{props.contact.name}</span>
@@ -177,7 +177,7 @@ export function MobileMenu(
         onClick={() => setOpen(true)}
       >
         <Menu size={24} />
-        {PENDING.menu}
+        {N.menu}
       </button>
       <dialog
         ref={ref}
@@ -194,11 +194,11 @@ export function MobileMenu(
             <div className="mmenu__top">
               <img src={logoDark} alt="TecHaust Technologies" width="171" height="24" />
               <h2 id={titleId} className="visually-hidden">
-                {PENDING.menu}
+                {N.menu}
               </h2>
               <button type="button" className="mmenu__close" onClick={() => setOpen(false)}>
                 <X size={24} />
-                <span className="visually-hidden">{PENDING.closeMenu}</span>
+                <span className="visually-hidden">{N.closeMenu}</span>
               </button>
             </div>
             <nav aria-label="Portal">

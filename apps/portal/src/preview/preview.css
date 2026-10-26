@@ -1,109 +1,41 @@
-/* PREVIEW ONLY: the "Preview — sample data" bar above every preview screen, and the email page. Deliberately unlike the
-   product (a dashed warning edge), so a screenshot can never pass for the real portal. Tokens only. */
+/* PREVIEW ONLY: the sample screens' index and the email page (dev server, never built). Tokens only. */
 
-body:has(.pv) {
+body:has(.pv-email) {
   display: block;
   place-items: normal;
   padding: 0;
 }
 
-body:has(.pv)::before {
+body:has(.pv-email)::before {
   display: none;
 }
 
-.pv {
-  position: relative;
-  z-index: 30;
-  background: var(--color-surface-alt);
-  border-bottom: 2px dashed var(--color-warning);
-  font-size: var(--text-sm);
-  line-height: var(--text-sm--line-height);
+.pv-list {
+  display: grid;
+  gap: var(--space-1);
+  margin: var(--space-6) 0 0;
+  padding: 0;
+  list-style: none;
 }
 
-.pv__row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2) var(--space-4);
-  max-width: calc(var(--container-page) + 2 * var(--gutter));
-  margin-inline: auto;
-  padding: var(--space-1) var(--gutter);
-}
-
-.pv__label {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0 var(--space-3);
-  margin: 0;
-}
-
-.pv__label strong {
-  color: var(--color-warning);
-  font-weight: 600;
-}
-
-.pv__sub {
-  color: var(--color-text-muted);
-}
-
-.pv__screens {
-  position: relative;
-}
-
-.pv__screens summary {
+.pv-list a {
   display: inline-flex;
   align-items: center;
   min-height: var(--target-min);
-  padding: 0 var(--space-3);
-  font-weight: 600;
-  cursor: pointer;
 }
 
-.pv__screens ul {
-  position: absolute;
-  inset-inline-end: 0;
-  z-index: 40;
-  width: min(22rem, calc(100vw - 2rem));
-  max-height: 70dvh;
-  overflow-y: auto;
-  margin: 0;
-  padding: var(--space-2);
-  list-style: none;
-  background: var(--color-surface-raised);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--elevation-2);
+.pv-email__label {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-2) var(--space-3);
+  border: 2px dashed var(--color-warning);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
 }
 
-.pv__screens a {
-  display: flex;
+.pv-email__label a {
+  display: inline-flex;
   align-items: center;
   min-height: var(--target-min);
-  padding: 0 var(--space-3);
-  border-radius: var(--radius-sm);
-  text-decoration: none;
-}
-
-.pv__screens a:hover,
-.pv__screens a[aria-current="page"] {
-  background: var(--color-fill-subtle);
-}
-
-.pv__screens a[aria-current="page"] {
-  font-weight: 600;
-}
-
-.pv__said {
-  max-width: calc(var(--container-page) + 2 * var(--gutter));
-  margin: 0 auto;
-  padding: 0 var(--gutter);
-  color: var(--color-text);
-  font-weight: 600;
-}
-
-.pv__said:not(:empty) {
-  padding-block: 0 var(--space-2);
 }
 
 /* ---------- The email page ---------- */

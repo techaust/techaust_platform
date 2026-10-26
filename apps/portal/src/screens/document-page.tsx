@@ -1,45 +1,46 @@
-// The proposal or estimate page (POR-05): any notice about the version first (opened from an older version's link,
-// expired, opened from an email link), then the document beside a short summary that stays in view on wide screens
-// (status, total, validity, the next step, the PDF and the contents). On phones everything is one column: the summary,
-// then the document, then the acceptance block at its end.
-import { formatDate, formatIstDateTime } from "@techaust/core";
+// The proposal or estimate page (POR-05, POR-06): any notice about the version first (a newer one replaced the link's version, it
+// expired, a new version is on its way, it was opened from an email link), then the document beside a short summary that stays in
+// view on wide screens (status, total, validity, the next step, the PDF and the contents). On phones everything is one column: the
+// summary, then the document, then the acceptance block at its end.
 import type { ReactNode } from "react";
 import { Link } from "react-router";
+import type { PdfView } from "../api.ts";
 import { DecisionPanel, type DecisionProps } from "../components/decision/decision-panel.tsx";
-import { DocumentPaper, SECTIONS } from "../components/document/document-paper.tsx";
-import { Alert, ArrowLeft, ArrowRight, Download, Info } from "../components/icons.tsx";
-import { Ph } from "../components/pending.tsx";
+import { DocumentPaper, sheetSections } from "../components/document/document-paper.tsx";
+import { Alert, ArrowLeft, ArrowRight, Clock, Download, Info } from "../components/icons.tsx";
+import { ErrorLine } from "../components/pending.tsx";
 import { StatusPill } from "../components/status-pill.tsx";
-import { PENDING, WORDS } from "../copy-documents.ts";
-import { amount, type DocumentView } from "../lib/document-view.ts";
+import { N, WORDS } from "../copy-documents.ts";
+import { formatIstDateTime, kindWord } from "../lib/offers.ts";
 
-function Aside(props: { doc: DocumentView; onDownload: () => void }) {
-  const { doc } = props;
-  const open = doc.status === "sent" || doc.status === "viewed";
+function Aside(props: { view: PdfView; d: DecisionProps; onDownload: () => void }) {
+  const { view } = props;
+  const m = props.d.model;
+  const open = m.status === "sent" || m.status === "viewed";
   return (
     <aside className="docside" aria-labelledby="docside-h">
       <div className="docside__card">
         <div className="docside__top">
           <h2 id="docside-h" className="docside__kind">
-            {WORDS.kind[doc.kind]} {doc.number}
+            {WORDS.kind[m.kind]} <span className="nowrap">{m.numberDisplay}</span>
           </h2>
-          <StatusPill status={doc.status} />
+          <StatusPill status={m.status} />
         </div>
         <p className="docside__label">{WORDS.doc.total}</p>
-        <p className="docside__total">{amount(doc.computed.totalMinor, doc.currency)}</p>
+        <p className="docside__total">{m.total}</p>
         <p className="docside__when">
-          {doc.status === "accepted" && doc.acceptance ? (
+          {m.acceptance ? (
             <>
               {WORDS.status.accepted}{" "}
-              <strong className="nowrap">{formatIstDateTime(doc.acceptance.atMs)}</strong>
+              <strong className="nowrap">{formatIstDateTime(m.acceptance.acceptedAt)}</strong>
             </>
           ) : (
             <>
-              {WORDS.doc.validUntil} <strong className="nowrap">{formatDate(doc.validUntil)}</strong>
+              {WORDS.doc.validUntil} <strong className="nowrap">{m.validUntil}</strong>
             </>
           )}
           <span className="line">
-            {WORDS.doc.version} {doc.version}
+            {WORDS.doc.version} {m.version}
           </span>
         </p>
         <div className="docside__actions">
@@ -49,20 +50,26 @@ function Aside(props: { doc: DocumentView; onDownload: () => void }) {
               <ArrowRight size={20} />
             </a>
           )}
-          <button type="button" className="btn btn--secondary btn--block" onClick={props.onDownload}>
+          <button
+            type="button"
+            className="btn btn--secondary btn--block"
+            onClick={props.onDownload}
+            disabled={props.d.downloading === "pdf"}
+            aria-busy={props.d.downloading === "pdf" || undefined}
+          >
             <Download size={20} />
             {WORDS.downloadPdf}
           </button>
         </div>
       </div>
-      <nav className="toc" aria-label={PENDING.docNav}>
+      <nav className="toc" aria-label={N.docNav}>
         <p className="toc__title" aria-hidden="true">
-          {PENDING.contents}
+          {N.contents}
         </p>
         <ol>
-          {SECTIONS.map((s) => (
+          {sheetSections(view).map((s) => (
             <li key={s.id}>
-              <a href={`#${s.id}`}>{s.label}</a>
+              <a href={`#${s.id}`}>{s.title}</a>
             </li>
           ))}
         </ol>
@@ -73,47 +80,73 @@ function Aside(props: { doc: DocumentView; onDownload: () => void }) {
 
 export function DocumentPage(
   props: DecisionProps & {
-    /** The list to go back to; null on the token view (no list there). */
+    view: PdfView;
+    /** The list to go back to; null on the link view (no list there). */
     backHref: string | null;
     onDownloadPdf: () => void;
-    /** Extra notices above the document (the token view's sign-in offer). */
+    /** A newer version replaced the one asked for: the version now shown (the latest). */
+    replacedBy: number | null;
+    /** Extra notices above the document (the link view's sign-in offer). */
     notices?: ReactNode | undefined;
+    /** A refusal or download error to show at the top of the acceptance block (07-N §7). */
+    problem: string | null;
   },
 ) {
-  const { doc } = props;
-  const kind = WORDS.kind[doc.kind].toLowerCase();
+  const m = props.model;
+  const kind = kindWord(m.kind);
+  const hasNotices =
+    props.notices || props.replacedBy !== null || m.status === "expired" || m.status === "revised";
   return (
     <div className="docpage">
       {props.backHref && (
         <Link to={props.backHref} className="back">
           <ArrowLeft size={16} />
-          {PENDING.backToList}
+          {N.backToList}
         </Link>
       )}
-      {(props.notices || doc.replaced || doc.status === "expired") && (
+      {hasNotices && (
         <div className="docpage__notices">
           {props.notices}
-          {doc.replaced && (
+          {props.replacedBy !== null && (
             <div className="notice notice--info" role="note">
               <Info size={20} />
-              <div>
-                <Ph>{PENDING.replaced(doc.replaced.version, doc.version, formatDate(doc.replaced.on))}</Ph>
-              </div>
+              <div>{N.superseded(kind, props.replacedBy)}</div>
             </div>
           )}
-          {doc.status === "expired" && (
+          {m.status === "expired" && (
             <div className="notice notice--warning" role="note">
               <Alert size={20} />
-              <div>
-                <Ph>{PENDING.expired(kind, formatDate(doc.validUntil))}</Ph>
-              </div>
+              <div>{N.expired(kind, m.validUntil)}</div>
+            </div>
+          )}
+          {m.status === "revised" && (
+            <div className="notice notice--info" role="note">
+              <Clock size={20} />
+              <div>{N.preparing}</div>
             </div>
           )}
         </div>
       )}
       <div className="docpage__grid">
-        <Aside doc={doc} onDownload={props.onDownloadPdf} />
-        <DocumentPaper doc={doc} onDownload={props.onDownloadPdf} decision={<DecisionPanel {...props} />} />
+        <Aside view={props.view} d={props} onDownload={props.onDownloadPdf} />
+        <DocumentPaper
+          view={props.view}
+          onDownload={props.onDownloadPdf}
+          downloading={props.downloading === "pdf"}
+          decision={
+            <>
+              {props.problem && (
+                <div className="notice notice--warning decide__problem" role="alert">
+                  <Alert size={20} />
+                  <div>
+                    <ErrorLine text={props.problem} />
+                  </div>
+                </div>
+              )}
+              <DecisionPanel {...props} />
+            </>
+          }
+        />
       </div>
     </div>
   );

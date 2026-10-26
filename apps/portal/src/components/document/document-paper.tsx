@@ -1,374 +1,417 @@
-// The HTML view of a sent proposal or estimate (POR-05), section for section as the PDF (docs/06 §7.4): the cover, then
-// summary, goals, scope, deliverables, timeline, investment (lines, tax summary by SAC and rate, totals), the payment
-// schedule, assumptions, terms, the validity line and the acceptance block. Set as one sheet of "paper" on the page: a
-// verdigris rule along its top edge and the mark's 45° cut on its top-right corner. Every figure is the frozen
-// snapshot's, computed by the M4.2 engine on the server; this file only formats.
-
-import { formatDate, formatMoney, money, negate, percentFromBp } from "@techaust/core";
-import type { ComputedLine, ScheduleInstalment, SummaryRow } from "@techaust/core/tax";
+// The HTML view of a sent proposal or estimate (POR-05), drawn from the same `PdfView` that drew its PDF (packages/pdf `toPdfView`;
+// the portal API never sends anything else), so the page and the PDF match by construction: the cover (a proposal), the three blocks
+// (From, with TecHaust's GSTIN, proprietor and address as on the PDF; Prepared for; Document), then the sections in the document's own
+// order, with the money in the Investment section, the terms, and the acceptance block. Set as one sheet of "paper": a verdigris rule
+// under the masthead and the mark's 45° cut on its top-right corner. Every value arrives formatted; this file adds nothing up.
+// The fixed words are the PDF's (07-P §1, `@techaust/pdf/copy`) and 07-N §2.
+import { PDF_COPY as C } from "@techaust/pdf/copy";
 import logoColor from "@techaust/ui/brand/logo-primary-color.svg?url";
 import logoDark from "@techaust/ui/brand/logo-primary-dark.svg?url";
 import type { ReactNode } from "react";
-import { PENDING, WORDS } from "../../copy-documents.ts";
-import { amount, type DocumentView, type LineText, type Milestone } from "../../lib/document-view.ts";
-import { Check, Download } from "../icons.tsx";
+import type { PdfView } from "../../api.ts";
+import { N, WORDS } from "../../copy-documents.ts";
+import { Download } from "../icons.tsx";
 import { PageTitle } from "../shell/portal-shell.tsx";
+import { Markdown } from "./markdown.tsx";
 import { type Column, RTable } from "./rtable.tsx";
 
-const W = WORDS.doc;
+type Section = PdfView["sections"][number];
+type Line = PdfView["lines"][number];
+type Step = PdfView["schedule"][number];
+type SummaryRow = PdfView["summary"][number];
 
-/** The sections in order, for the contents list beside the document. */
-export const SECTIONS = [
-  { id: "summary", label: W.summary },
-  { id: "goals", label: W.goals },
-  { id: "scope", label: W.scope },
-  { id: "deliverables", label: W.deliverables },
-  { id: "timeline", label: W.timeline },
-  { id: "investment", label: W.investment },
-  { id: "schedule", label: W.schedule },
-  { id: "assumptions", label: W.assumptions },
-  { id: "terms", label: W.terms },
-  { id: "acceptance", label: W.acceptance },
-] as const;
+/** A section as the sheet shows it, with its anchor. */
+export type SheetSection = Section & { id: string };
 
-const pct = (bp: number) => `${percentFromBp(bp)} %`;
-
-// The trigger in words, as core's schedule-text says it on the website (on acceptance, at the ‹milestone›, on delivery).
-function triggerText(s: ScheduleInstalment): string {
-  switch (s.trigger) {
-    case "on_accept":
-      return "On acceptance";
-    case "delivery":
-      return "On delivery";
-    case "monthly":
-      return "Monthly in advance";
-    default:
-      return `At the ${s.label.charAt(0).toLowerCase()}${s.label.slice(1)}`;
-  }
+/**
+ * The sections after the cover, in order, each with an anchor; as on the PDF, the investment, terms and acceptance parts are added
+ * at the end when the document has no such section (07-P §2 headings).
+ */
+export function sheetSections(view: PdfView): SheetSection[] {
+  const body = view.sections.filter((s) => s.kind !== "cover");
+  const kinds = new Set(body.map((s) => s.kind));
+  const all: Section[] = [...body];
+  if (!kinds.has("estimate")) all.push({ kind: "estimate", title: C.headings.investment, bodyMd: "" });
+  if (!kinds.has("terms")) all.push({ kind: "terms", title: C.headings.terms, bodyMd: "" });
+  if (!kinds.has("acceptance")) all.push({ kind: "acceptance", title: C.headings.acceptance, bodyMd: "" });
+  const seen = new Map<string, number>();
+  return all.map((s) => {
+    const n = (seen.get(s.kind) ?? 0) + 1;
+    seen.set(s.kind, n);
+    // The acceptance block keeps the plain #acceptance (the "Review and accept" links point there), and terms #terms ("Read the terms").
+    const id =
+      n === 1 ? (s.kind === "acceptance" || s.kind === "terms" ? s.kind : `s-${s.kind}`) : `s-${s.kind}-${n}`;
+    return { ...s, id };
+  });
 }
 
-function Section(props: { id: string; title: string; children: ReactNode }) {
-  return (
-    <section className="dsec" id={props.id} aria-labelledby={`${props.id}-h`}>
-      <h2 id={`${props.id}-h`} className="dsec__title">
-        {props.title}
-      </h2>
-      {props.children}
-    </section>
-  );
+/** "Name, name@techaust.com" (the view's sender line) as a name and an address, when it has one. */
+function contactParts(line: string): { name: string; email: string | null } {
+  const at = line.lastIndexOf(", ");
+  const email = at > 0 ? line.slice(at + 2) : "";
+  return email.includes("@") ? { name: line.slice(0, at), email } : { name: line, email: null };
 }
 
-function Facts(props: { rows: [ReactNode, ReactNode][]; className?: string }) {
+/** A line such as "GSTIN … · State …" wraps only between its parts (as on the PDF). */
+function PartsLine({ text, className }: { text: string; className?: string }) {
+  const parts = text.split(" · ");
   return (
-    <dl className={`facts ${props.className ?? ""}`}>
-      {props.rows.map(([k, v], i) => (
-        <div key={String(i)}>
-          <dt>{k}</dt>
-          <dd>{v}</dd>
-        </div>
+    <p className={className}>
+      {parts.map((p, i) => (
+        <span key={p} className="keep">
+          {p}
+          {i < parts.length - 1 ? " · " : ""}
+        </span>
       ))}
-    </dl>
+    </p>
   );
 }
 
-export function DocumentPaper(props: {
-  doc: DocumentView;
-  /** The acceptance block's content (the decision panel, or a notice). */
-  decision: ReactNode;
-  onDownload: () => void;
-}) {
-  const { doc } = props;
-  const c = doc.computed;
-  const cur = doc.currency;
-  const m = (minor: number) => amount(minor, cur);
-  const intra = c.supply.type === "intra";
-  const lut = c.supply.type === "export_lut";
-  type Row = { text: LineText; line: ComputedLine };
-  const rows: Row[] = c.lines.map((line, i) => ({ line, text: doc.lines[i] as LineText }));
+function Masthead({ view }: { view: PdfView }) {
+  return (
+    <div className="mast">
+      <picture>
+        <source srcSet={logoDark} media="(prefers-color-scheme: dark)" />
+        <img src={logoColor} alt="TecHaust Technologies" className="mast__logo" width="200" height="28" />
+      </picture>
+      <p className="mast__kind">{view.docLabel}</p>
+    </div>
+  );
+}
 
-  const lineCols: Column<Row>[] = [
-    { key: "no", label: W.lineNo, cell: (r) => r.line.index + 1, hideOnCard: true },
+function Parties({ view }: { view: PdfView }) {
+  const facts: [string, string][] = [
+    [C.document.number, `${view.numberDisplay} v${view.version}`],
+    [C.document.date, view.issueDate],
+    [C.document.validUntil, view.validUntil],
+    [C.document.currency, view.currency],
+  ];
+  return (
+    <div className="parties">
+      <section className="pblock" aria-labelledby="pb-from">
+        <h2 className="pblock__label" id="pb-from">
+          {C.blocks.from}
+        </h2>
+        <p className="pblock__name">{view.supplier.name}</p>
+        {view.supplier.lines.map((l) => (
+          <PartsLine key={l} text={l} className="pblock__line" />
+        ))}
+      </section>
+      <section className="pblock" aria-labelledby="pb-for">
+        <h2 className="pblock__label" id="pb-for">
+          {C.blocks.preparedFor}
+        </h2>
+        <p className="pblock__name">{view.recipient.name}</p>
+        {view.recipient.lines.map((l) => (
+          <PartsLine key={l} text={l} className="pblock__line" />
+        ))}
+        <p className="pblock__line">{C.placeOfSupply(view.placeOfSupply)}</p>
+        {view.recipient.attention && <p className="pblock__line pblock__attn">{view.recipient.attention}</p>}
+      </section>
+      <section className="pblock pblock--doc" aria-labelledby="pb-doc">
+        <h2 className="pblock__label" id="pb-doc">
+          {C.blocks.document}
+        </h2>
+        <dl className="pfacts">
+          {facts.map(([k, v]) => (
+            <div key={k}>
+              <dt>{k}</dt>
+              <dd className="nowrap">{v}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+    </div>
+  );
+}
+
+function Cover({ view }: { view: PdfView }) {
+  const cover = view.sections.find((s) => s.kind === "cover");
+  const title = view.documentTitle ?? view.docLabel;
+  const contact = contactParts(view.footer.contact);
+  return (
+    <header className="cover">
+      <Masthead view={view} />
+      <PageTitle text={title} className="cover__title" id="doc-title">
+        {title}
+      </PageTitle>
+      {cover?.bodyMd.trim() && <Markdown source={cover.bodyMd} className="cover__lede" />}
+      <p className="cover__for">
+        {C.cover.preparedFor} <strong>{view.recipient.name}</strong>
+      </p>
+      <dl className="facts cover__facts">
+        <div>
+          <dt>{WORDS.doc.number}</dt>
+          <dd className="nowrap">{view.numberDisplay}</dd>
+        </div>
+        <div>
+          <dt>{WORDS.doc.version}</dt>
+          <dd>{view.version}</dd>
+        </div>
+        <div>
+          <dt>{N.date}</dt>
+          <dd className="nowrap">{view.issueDate}</dd>
+        </div>
+        <div>
+          <dt>{WORDS.doc.validUntil}</dt>
+          <dd className="nowrap">{view.validUntil}</dd>
+        </div>
+        <div className="cover__contact">
+          <dt>{N.contactAtTecHaust}</dt>
+          <dd>
+            {contact.name}
+            {contact.email && (
+              <>
+                <br />
+                <a href={`mailto:${contact.email}`}>{contact.email}</a>
+              </>
+            )}
+          </dd>
+        </div>
+      </dl>
+    </header>
+  );
+}
+
+/** An estimate has no cover: the masthead, its title and the notice open the sheet. */
+function EstimateHead({ view }: { view: PdfView }) {
+  const title = view.documentTitle ?? `${view.docLabel} ${view.numberDisplay}`;
+  return (
+    <header className="cover cover--estimate">
+      <Masthead view={view} />
+      <PageTitle text={title} className="cover__title" id="doc-title">
+        {title}
+      </PageTitle>
+      <p className="cover__for">
+        {C.cover.preparedFor} <strong>{view.recipient.name}</strong>
+      </p>
+      {view.notice && <p className="sheet-notice">{view.notice}</p>}
+    </header>
+  );
+}
+
+function LinesTable({ view }: { view: PdfView }) {
+  const L = C.lines;
+  const withDiscount = view.lines.some((l) => l.discount !== null);
+  const cols: Column<Line>[] = [
+    { key: "n", label: L.n, cell: (l) => l.n, hideOnCard: true },
     {
       key: "desc",
-      label: W.description,
+      label: L.description,
       lead: true,
-      cell: (r) => (
+      cell: (l) => (
         <span className="lcell">
-          <span className="lcell__desc">{r.text.description}</span>
-          {r.text.detail && <span className="lcell__detail">{r.text.detail}</span>}
-          {r.line.sac && (
+          <span className="lcell__desc">{l.description}</span>
+          {l.detail && <span className="lcell__detail">{l.detail}</span>}
+          {l.sac && (
             <span className="lcell__sac">
-              {W.sac} {r.line.sac}
+              {L.sac} {l.sac}
             </span>
           )}
         </span>
       ),
     },
-    {
-      key: "qty",
-      label: W.qty,
-      num: true,
-      cell: (r) => r.text.qty,
-      cardCell: (r) => `${r.text.qty} ${r.text.unit}`,
-    },
-    { key: "unit", label: W.unit, cell: (r) => r.text.unit, hideOnCard: true },
-    { key: "rate", label: W.rate, num: true, cell: (r) => m(r.text.rateMinor) },
-    {
-      key: "disc",
-      label: W.discount,
-      num: true,
-      cell: (r) => (r.line.discountMinor ? formatMoney(negate(money(r.line.discountMinor, cur))) : "–"),
-    },
-    { key: "taxable", label: W.taxable, num: true, cell: (r) => m(r.line.taxableMinor) },
-    {
-      key: "gst",
-      label: W.gstPct,
-      num: true,
-      cell: (r) => (lut ? W.zeroRated : pct(r.line.effectiveRateBp)),
-    },
-  ];
-
-  const sumCols: Column<SummaryRow>[] = [
-    { key: "sac", label: W.sac, lead: true, cell: (s) => s.sac ?? "–" },
-    { key: "rate", label: W.gstPct, num: true, cell: (s) => (lut ? W.zeroRated : pct(s.effectiveRateBp)) },
-    { key: "taxable", label: W.taxable, num: true, cell: (s) => m(s.taxableMinor) },
-    ...(intra
-      ? [
-          { key: "cgst", label: W.cgst, num: true, cell: (s: SummaryRow) => m(s.cgstMinor) },
-          { key: "sgst", label: W.sgst, num: true, cell: (s: SummaryRow) => m(s.sgstMinor) },
-        ]
-      : [{ key: "igst", label: W.igst, num: true, cell: (s: SummaryRow) => m(s.igstMinor) }]),
-  ];
-
-  const milestoneCols: Column<Milestone>[] = [
-    { key: "name", label: W.milestone, lead: true, cell: (r) => r.name },
-    { key: "what", label: W.whatYouGet, cell: (r) => r.what },
-    { key: "date", label: W.targetDate, cell: (r) => formatDate(r.target) },
-    { key: "pct", label: W.paymentPct, num: true, cell: (r) => pct(r.pctBp) },
-  ];
-
-  const scheduleCols: Column<ScheduleInstalment>[] = [
-    { key: "label", label: W.instalment, lead: true, cell: (s) => s.label },
-    { key: "when", label: W.trigger, cell: triggerText },
-    { key: "pct", label: W.pct, num: true, cell: (s) => pct(s.pctBp) },
-    { key: "amount", label: W.amount, num: true, cell: (s) => m(s.amountMinor) },
-  ];
-
-  const totals: { label: ReactNode; value: ReactNode; strong?: boolean }[] = [
-    { label: W.subtotal, value: m(c.subtotalMinor) },
-    ...(c.discountMinor
-      ? [{ label: W.discount, value: formatMoney(negate(money(c.discountMinor, cur))) }]
+    { key: "qty", label: L.qty, num: true, cell: (l) => l.qty, cardCell: (l) => `${l.qty} ${l.unit}` },
+    { key: "unit", label: L.unit, cell: (l) => l.unit, hideOnCard: true },
+    { key: "rate", label: L.rate, num: true, cell: (l) => l.rate },
+    ...(withDiscount
+      ? [{ key: "disc", label: L.discount, num: true, cell: (l: Line) => l.discount ?? "" } as Column<Line>]
       : []),
-    { label: W.taxable, value: m(c.taxableMinor) },
+    { key: "taxable", label: L.taxable, num: true, cell: (l) => l.taxable },
+    { key: "gst", label: L.gst, num: true, cell: (l) => l.gstRate },
+  ];
+  return (
+    <RTable
+      className="rtable--lines"
+      caption={WORDS.kind[view.type]}
+      columns={cols}
+      rows={view.lines}
+      rowKey={(l) => l.n}
+    />
+  );
+}
+
+function Totals({ view }: { view: PdfView }) {
+  return (
+    <div className="money__totals">
+      <dl className="totals">
+        {view.totals.map((t) => (
+          <div key={t.key} className={t.strong ? "is-strong" : undefined}>
+            <dt>{t.label}</dt>
+            <dd className="num">{t.value}</dd>
+          </div>
+        ))}
+      </dl>
+      <div className="money__notes">
+        <p className="words">{C.words(view.words)}</p>
+        <p className="money__note">{view.currency === "INR" ? C.inrNote : C.usdNote}</p>
+        {view.inrNote && <p className="money__note">{view.inrNote}</p>}
+      </div>
+    </div>
+  );
+}
+
+function SummaryTable({ view }: { view: PdfView }) {
+  if (view.summary.length === 0) return null;
+  const S = C.summary;
+  const intra = view.totals.some((t) => t.key === "cgst");
+  const cols: Column<SummaryRow>[] = [
+    { key: "sac", label: C.lines.sac, lead: true, cell: (r) => r.sac ?? "" },
+    { key: "rate", label: C.lines.gst, num: true, cell: (r) => r.rate },
+    { key: "taxable", label: S.taxable, num: true, cell: (r) => r.taxable },
     ...(intra
       ? [
-          { label: W.cgst, value: m(c.cgstMinor) },
-          { label: W.sgst, value: m(c.sgstMinor) },
+          { key: "cgst", label: S.cgst, num: true, cell: (r: SummaryRow) => r.cgst },
+          { key: "sgst", label: S.sgst, num: true, cell: (r: SummaryRow) => r.sgst },
         ]
-      : [{ label: lut ? `${W.igst}, ${W.zeroRated}` : W.igst, value: m(c.igstMinor) }]),
-    ...(c.roundOffMinor ? [{ label: W.roundOff, value: m(c.roundOffMinor) }] : []),
-    { label: W.total, value: m(c.totalMinor), strong: true },
+      : [{ key: "igst", label: S.igst, num: true, cell: (r: SummaryRow) => r.igst }]),
   ];
+  return (
+    <>
+      <h3 className="dsub">{S.heading}</h3>
+      <RTable
+        caption={S.heading}
+        columns={cols}
+        rows={view.summary}
+        rowKey={(r) => `${r.sac ?? ""}-${r.rate}`}
+      />
+    </>
+  );
+}
+
+function ScheduleTable({ view, withDetail }: { view: PdfView; withDetail: boolean }) {
+  if (view.schedule.length === 0) return null;
+  const S = C.schedule;
+  const cols: Column<Step>[] = [
+    {
+      key: "label",
+      label: S.instalment,
+      lead: true,
+      cell: (s) => (
+        <span className="lcell">
+          <span className="lcell__desc">{s.label}</span>
+          {withDetail && s.detail && <span className="lcell__detail">{s.detail}</span>}
+        </span>
+      ),
+    },
+    { key: "when", label: S.when, cell: (s) => (withDetail && s.date ? `${s.when} (${s.date})` : s.when) },
+    { key: "share", label: S.share, num: true, cell: (s) => s.share },
+    { key: "amount", label: S.amount, num: true, cell: (s) => s.amount },
+  ];
+  return (
+    <>
+      <h3 className="dsub">{S.heading}</h3>
+      <RTable
+        caption={S.heading}
+        columns={cols}
+        rows={view.schedule}
+        rowKey={(s) => `${s.label}-${s.share}`}
+      />
+    </>
+  );
+}
+
+function TimelineTable({ view }: { view: PdfView }) {
+  if (view.schedule.length === 0) return null;
+  const T = C.timeline;
+  const cols: Column<Step>[] = [
+    { key: "m", label: T.milestone, lead: true, cell: (s) => s.label },
+    { key: "what", label: T.whatYouGet, cell: (s) => s.detail ?? "" },
+    { key: "date", label: T.targetDate, cell: (s) => s.date ?? "" },
+    { key: "pay", label: T.payment, num: true, cell: (s) => s.share },
+  ];
+  return (
+    <RTable
+      caption={T.milestone}
+      columns={cols}
+      rows={view.schedule}
+      rowKey={(s) => `${s.label}-${s.share}`}
+    />
+  );
+}
+
+function SectionBlock(props: { s: SheetSection; className?: string; children?: ReactNode }) {
+  const { s } = props;
+  return (
+    <section
+      className={props.className ? `dsec ${props.className}` : "dsec"}
+      id={s.id}
+      aria-labelledby={`${s.id}-h`}
+    >
+      <h2 id={`${s.id}-h`} className="dsec__title">
+        {s.title}
+      </h2>
+      {s.bodyMd.trim() && <Markdown source={s.bodyMd} className="prose" />}
+      {props.children}
+    </section>
+  );
+}
+
+export function DocumentPaper(props: {
+  view: PdfView;
+  /** The acceptance block's content (the decision panel, a record, or a notice). */
+  decision: ReactNode;
+  onDownload: () => void;
+  downloading?: boolean | undefined;
+}) {
+  const { view } = props;
+  const sections = sheetSections(view);
+  const hasTimeline = sections.some((s) => s.kind === "timeline") && view.schedule.length > 0;
 
   return (
     <article className="paper" aria-labelledby="doc-title">
       <div className="paper__sheet">
-        <header className="cover">
-          <div className="cover__top">
-            <picture>
-              <source srcSet={logoDark} media="(prefers-color-scheme: dark)" />
-              <img
-                src={logoColor}
-                alt="TecHaust Technologies"
-                className="cover__logo"
-                width="200"
-                height="28"
-              />
-            </picture>
-            <p className="cover__kind">{WORDS.kind[doc.kind]}</p>
-          </div>
-          <PageTitle text={doc.title} className="cover__title" id="doc-title">
-            {doc.title}
-          </PageTitle>
-          <p className="cover__for">
-            {W.preparedFor} <strong>{doc.client.name}</strong>
-          </p>
-          <Facts
-            className="cover__facts"
-            rows={[
-              [
-                W.number,
-                <span key="n" className="nowrap">
-                  {doc.number}
-                </span>,
-              ],
-              [W.version, doc.version],
-              [PENDING.date, formatDate(doc.sentOn)],
-              [W.validUntil, formatDate(doc.validUntil)],
-              [
-                PENDING.contactAtTecHaust,
-                <span key="c">
-                  {doc.contact.name}
-                  <br />
-                  <a href={`mailto:${doc.contact.email}`}>{doc.contact.email}</a>
-                </span>,
-              ],
-            ]}
-          />
-        </header>
-
-        <Section id="summary" title={W.summary}>
-          <p className="prose">{doc.summary.outcome}</p>
-          <div className="headline">
-            <div>
-              <p className="headline__label">{W.total}</p>
-              <p className="headline__value">{m(c.totalMinor)}</p>
-            </div>
-            <div>
-              <p className="headline__label">{W.timeline}</p>
-              <p className="headline__value headline__value--text">{doc.summary.timeline}</p>
-            </div>
-          </div>
-        </Section>
-
-        <Section id="goals" title={W.goals}>
-          <p className="prose">{doc.goals.intro}</p>
-          <ul className="prose-list">
-            {doc.goals.points.map((p) => (
-              <li key={p}>{p}</li>
-            ))}
-          </ul>
-        </Section>
-
-        <Section id="scope" title={W.scope}>
-          <div className="scope">
-            <div>
-              <h3 className="dsub">{PENDING.inScope}</h3>
-              <ul className="ticks">
-                {doc.scope.inScope.map((p) => (
-                  <li key={p}>
-                    <Check size={20} />
-                    {p}
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div>
-              <h3 className="dsub">{PENDING.outOfScope}</h3>
-              <ul className="dashes">
-                {doc.scope.outOfScope.map((p) => (
-                  <li key={p}>{p}</li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </Section>
-
-        <Section id="deliverables" title={W.deliverables}>
-          <ul className="ticks">
-            {doc.deliverables.map((p) => (
-              <li key={p}>
-                <Check size={20} />
-                {p}
-              </li>
-            ))}
-          </ul>
-        </Section>
-
-        <Section id="timeline" title={W.timeline}>
-          <RTable caption={W.timeline} columns={milestoneCols} rows={doc.milestones} rowKey={(r) => r.name} />
-        </Section>
-
-        <Section id="investment" title={W.investment}>
-          <Facts
-            className="party"
-            rows={[
-              [
-                W.preparedFor,
-                <span key="p">
-                  <strong>{doc.client.name}</strong>
-                  {doc.client.addressLines.map((l) => (
-                    <span key={l} className="line">
-                      {l}
-                    </span>
-                  ))}
-                </span>,
-              ],
-              [W.gstin, doc.client.gstin ?? "–"],
-              [W.placeOfSupply, doc.client.placeOfSupply],
-            ]}
-          />
-          <RTable
-            className="rtable--lines"
-            caption={W.investment}
-            columns={lineCols}
-            rows={rows}
-            rowKey={(r) => String(r.line.index)}
-          />
-          <h3 className="dsub">{W.taxSummary}</h3>
-          <RTable
-            caption={W.taxSummary}
-            columns={sumCols}
-            rows={[...c.summary]}
-            rowKey={(s) => `${s.sac}-${s.gstRateBp}`}
-          />
-          <dl className="totals">
-            {totals.map((t, i) => (
-              <div key={String(i)} className={t.strong ? "is-strong" : undefined}>
-                <dt>{t.label}</dt>
-                <dd className="num">{t.value}</dd>
-              </div>
-            ))}
-          </dl>
-          <p className="words">
-            <span className="words__label">{PENDING.inWords}</span> {c.words}
-          </p>
-          {doc.kind === "estimate" && <p className="muted">{W.estimateNote}</p>}
-        </Section>
-
-        <Section id="schedule" title={W.schedule}>
-          <RTable caption={W.schedule} columns={scheduleCols} rows={doc.schedule} rowKey={(s) => s.label} />
-        </Section>
-
-        <Section id="assumptions" title={W.assumptions}>
-          <ul className="prose-list">
-            {doc.assumptions.map((p) => (
-              <li key={p}>{p}</li>
-            ))}
-          </ul>
-        </Section>
-
-        <Section id="terms" title={W.terms}>
-          <p className="muted terms__version">{doc.terms.version}</p>
-          {doc.terms.paragraphs.map((p) => (
-            <p key={p} className="prose">
-              {p}
-            </p>
-          ))}
-        </Section>
-
-        <div className="validity">
-          <p className="validity__line">
-            {W.validUntil} <strong className="nowrap">{formatDate(doc.validUntil)}</strong>
-          </p>
-          <button type="button" className="btn btn--secondary" onClick={props.onDownload}>
-            <Download size={20} />
-            {WORDS.downloadPdf}
-          </button>
-        </div>
-
-        <section className="dsec dsec--decision" id="acceptance" aria-labelledby="acceptance-h">
-          <h2 id="acceptance-h" className="dsec__title">
-            {W.acceptance}
-          </h2>
-          {props.decision}
-        </section>
-
+        {view.type === "proposal" ? <Cover view={view} /> : <EstimateHead view={view} />}
+        <Parties view={view} />
+        {sections.map((s) => {
+          switch (s.kind) {
+            case "timeline":
+              return (
+                <SectionBlock key={s.id} s={s}>
+                  <TimelineTable view={view} />
+                </SectionBlock>
+              );
+            case "estimate":
+              return (
+                <SectionBlock key={s.id} s={s} className="dsec--money">
+                  <LinesTable view={view} />
+                  <Totals view={view} />
+                  <SummaryTable view={view} />
+                  <ScheduleTable view={view} withDetail={!hasTimeline} />
+                </SectionBlock>
+              );
+            case "terms":
+              return (
+                <SectionBlock key={s.id} s={s}>
+                  {!s.bodyMd.trim() && <p className="terms__version">{C.termsLine(view.terms.version)}</p>}
+                  <Markdown source={view.terms.bodyMd} className="prose terms" />
+                </SectionBlock>
+              );
+            case "acceptance":
+              return (
+                <SectionBlock key={s.id} s={s} className="dsec--decision">
+                  <div className="validity">
+                    <p className="validity__line">{view.validityNote}</p>
+                    <button
+                      type="button"
+                      className="btn btn--secondary"
+                      onClick={props.onDownload}
+                      disabled={props.downloading}
+                      aria-busy={props.downloading || undefined}
+                    >
+                      <Download size={20} />
+                      {WORDS.downloadPdf}
+                    </button>
+                  </div>
+                  {props.decision}
+                </SectionBlock>
+              );
+            default:
+              return <SectionBlock key={s.id} s={s} />;
+          }
+        })}
         <footer className="paper__foot">
-          <p>
-            Document ID <span className="nowrap">{doc.documentId}</span> · Content fingerprint{" "}
-            <span className="nowrap">{doc.fingerprint}</span>
-          </p>
+          <p>{view.integrity}</p>
         </footer>
       </div>
     </article>

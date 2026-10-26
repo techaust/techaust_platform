@@ -282,12 +282,14 @@ export async function processOfferAccepted(
 
   const common = {
     typed_name: a.typed_name,
+    // The address the acceptance was recorded with (07-N §4: the TecHaust-side body names it).
+    email: a.email,
     accepted_at_ist: formatIstDateTime(a.accepted_at),
     title: a.title ?? "",
     number: a.number_display ?? "",
     version: String(a.version),
-    // [Placeholder, 07-N] what happens next.
-    next_step: "[Placeholder] we'll confirm the start date with you and send the first invoice",
+    // 07-N §4 (PENDING the owner's approval): what happens next.
+    next_step: "we'll confirm the start date with you and send the first invoice",
   };
   const entity = { type: "acceptance", id: acceptanceId };
   const messages: EmailMessage[] = [];

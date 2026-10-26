@@ -1,10 +1,12 @@
-// Every word the M4.5 portal screens show (the shell, home, proposals and estimates, accept and decline), in two groups:
-// - WORDS: taken from a source, which is named on each line (the M4.5 brief, docs/04, docs/06, docs/07 or the M1.6 copy.ts);
-// - PENDING: drafted for the preview and shown with a visible "[Placeholder]" tag (components/pending.tsx) until the lead's
-//   07-N is approved word for word by the owner. Nothing in PENDING is final; 07-N replaces it.
-// English (India/UK spelling), "and" never "&", no banned phrases (07 §1.3).
+// Every word the M4.5 portal screens show (the shell, home, proposals and estimates, accept and decline), in three groups:
+// - WORDS: taken from an approved source, named on each line (the M4.5 brief, docs/04, docs/06, docs/07 or the M1.6 copy.ts);
+// - N: docs/07-content-appendix/N-m4.5-portal-offers.md word for word. 07-N is PENDING the owner's word-for-word approval (batch
+//   rule), so these lines may still change; they are shown as written, without a tag;
+// - PENDING: lines 07-N doesn't have. Sentences carry a visible "[Placeholder]" tag (components/pending.tsx); every one is listed in
+//   the M4.5 designer report for the lead to add to 07-N.
+// English (India/UK spelling), "and" never "&", no banned phrases (07 §1.3). Acceptance and evidence wording: VERIFY WITH CA/LEGAL.
+import type { OfferKind, OfferStatus } from "./api.ts";
 import { COPY } from "./copy.ts";
-import type { DocKind, DocStatus } from "./lib/document-view.ts";
 
 export const WORDS = {
   // The brief (Screens 1): the navigation and the later sections' state.
@@ -37,7 +39,7 @@ export const WORDS = {
   downloadAccepted: "Download the accepted PDF",
   downloadCertificate: "Download the acceptance certificate",
   other: "Other",
-  // docs/07 §8: the proposal email's button, used for the same step in the portal.
+  // docs/07 §8: the proposal email's button, used for the same step in the portal (docs/13, 2026-10-25).
   reviewAndAccept: "Review and accept",
   // docs/06 §5.4 (owner decision 2026-10-24).
   allNeeded: "All fields are needed unless marked optional",
@@ -46,8 +48,8 @@ export const WORDS = {
   // docs/07-A §7 (the website terms, "Client portal"): what accepting means and what is recorded.
   binding:
     "Accepting a proposal in the portal (typing your name and clicking Accept) forms a binding agreement on the terms of that proposal, and we keep a record of it (name, email, time, IP address, browser and a fingerprint of the document).",
-  kind: { proposal: "Proposal", estimate: "Estimate" } satisfies Record<DocKind, string>,
-  // The brief (Screens 3): the six states a client sees.
+  kind: { proposal: "Proposal", estimate: "Estimate" } satisfies Record<OfferKind, string>,
+  // The brief (Screens 3): the six states a client sees ("Declined" is the client's word, docs/13 2026-10-25).
   status: {
     sent: "Sent",
     viewed: "Viewed",
@@ -55,71 +57,71 @@ export const WORDS = {
     declined: "Declined",
     expired: "Expired",
     revised: "Revised",
-  } satisfies Record<DocStatus, string>,
-  // docs/06 §7.4 (the proposal layout) and §7.3 (the tables).
+  } satisfies Record<OfferStatus, string>,
+  // docs/06 §7.3 to §7.4 (the layouts) and the PDF's own words (07-P §1, `@techaust/pdf/copy`) for the cover and the cards.
   doc: {
-    preparedFor: "Prepared for",
     version: "Version",
     validUntil: "Valid until",
-    summary: "Summary",
-    goals: "Your goals",
-    scope: "Scope",
-    deliverables: "Deliverables",
-    timeline: "Timeline",
-    investment: "Investment",
-    schedule: "Payment schedule",
-    assumptions: "Assumptions and exclusions",
-    terms: "Terms",
-    acceptance: "Acceptance",
-    milestone: "Milestone",
-    whatYouGet: "What you get",
-    targetDate: "Target date",
-    paymentPct: "Payment %",
-    lineNo: "#",
-    description: "Description",
-    qty: "Qty",
-    unit: "Unit",
-    rate: "Rate",
-    discount: "Discount",
-    taxable: "Taxable value",
-    gstPct: "GST %",
-    sac: "SAC",
-    taxSummary: "Tax summary by SAC and rate",
-    cgst: "CGST",
-    sgst: "SGST",
-    igst: "IGST",
-    subtotal: "Sub-total",
-    roundOff: "Round-off",
     total: "Total",
-    zeroRated: "Zero-rated (LUT)",
-    instalment: "Instalment",
-    trigger: "Trigger",
-    pct: "%",
-    amount: "Amount",
-    estimateNote: "This is an estimate, not a tax invoice.",
-    gstin: "GSTIN",
-    placeOfSupply: "Place of supply",
     number: "No.",
   },
 } as const;
 
-export const PENDING = {
-  // Labels derived from the brief's wording, not yet in 07.
-  fullName: "Full name",
-  decline: "Decline",
+/** 07-N, word for word (PENDING the owner's approval). `{…}` parts are filled here. */
+export const N = {
+  // §1 Portal home and lists.
   account: "Your account",
   menu: "Menu",
   closeMenu: "Close menu",
   back: "Back",
   continue: "Continue",
+  awaitingTitle: "Awaiting your decision",
+  emptyTitle: "Nothing is waiting for your decision.",
+  emptyBody: "When we send you a proposal or an estimate, it appears here. We email you each time too.",
+  decidedTitle: "Decided",
+  decidedEmpty: "Proposals and estimates you accept or decline are kept here.",
+  backToList: "All proposals and estimates",
+  alsoTitle: "Also in your portal",
+  soon: {
+    invoices: "Your invoices and payments will appear here.",
+    projects: "Your projects and their milestones will appear here.",
+    profile: "Your contact details will appear here.",
+  },
+
+  // §2 The proposal page.
   inScope: "In scope",
   outOfScope: "Out of scope",
   date: "Date",
   contactAtTecHaust: "Your contact at TecHaust",
   inWords: "Amount in words",
   contents: "Contents",
-  backToList: "All proposals and estimates",
   docNav: "Document sections",
+  preparing: "A new version is being prepared. We'll email you when it's ready.",
+  superseded: (kind: string, n: number | string) =>
+    `There's a newer version of this ${kind}. You're seeing version ${n}, the latest.`,
+  expired: (kind: string, on: string) =>
+    `This ${kind} expired on ${on}. Reply to our email or contact us if you'd still like to go ahead.`,
+  token:
+    "You opened this from an email link. You can review and accept it here, or sign in to see everything we've sent you.",
+  signIn: "Sign in",
+  pdfPreparing: "The PDF is being prepared. Check back in a minute.",
+
+  // §3 Accept and decline.
+  acceptIntro:
+    "To accept, type your full name and tick the box. We record your acceptance against this exact version.",
+  fullName: "Full name",
+  nameHint: "As it should appear on the acceptance record.",
+  nameMissing: "Type your full name.",
+  readTerms: "Read the terms",
+  agreeMissing: "Tick the box to confirm you agree to the terms.",
+  errorsTitle: "Check these before you accept:",
+  declineHint: "Not going ahead? You can decline instead and tell us why.",
+  decline: "Decline",
+  confirmTitle: (kind: string) => `Accept this ${kind}?`,
+  confirmLead: "Please check the details below.",
+  accepting: "Accepting…",
+  acceptedTitle: (kind: string) => `You accepted this ${kind}`,
+  acceptedByOtherTitle: (name: string, kind: string) => `${name} accepted this ${kind}`,
   fields: {
     acceptedBy: "Accepted by",
     email: "Email",
@@ -128,64 +130,49 @@ export const PENDING = {
     declinedBy: "Declined by",
     reason: "Reason",
   },
-
-  // Home and the list (POR-04, POR-05).
-  awaitingTitle: "Awaiting your decision",
-  emptyTitle: "Nothing is waiting for your decision",
-  emptyBody: "When we send you a proposal or an estimate, it appears here. We email you each time too.",
-  decidedTitle: "Decided",
-  decidedEmpty: "Proposals and estimates you accept or decline are kept here.",
-  alsoTitle: "Also in your portal",
-  soon: {
-    invoices: "Your invoices, receipts and payments will appear here in a later update of the portal.",
-    projects: "Your projects, milestones and shared files will appear here in a later update of the portal.",
-    profile: (org: string) =>
-      `Your contact details, and the other people at ${org} who use the portal, will appear here in a later update.`,
-  },
-
-  // The proposal view (POR-05).
-  replaced: (old: number, latest: number, on: string) =>
-    `The link you opened was for version ${old}. We sent version ${latest} on ${on}, and that's the one shown here.`,
-  expired: (kind: string, on: string) =>
-    `This ${kind} expired on ${on}, so it can no longer be accepted. To go ahead, reply to the email it came with and we'll send a new version.`,
-  token:
-    "You opened this document from an email link, so only this document is shown. Sign in to see all your proposals and invoices.",
-
-  // Accept (ADM-PROP-08).
-  acceptIntro: (kind: string) =>
-    `To accept this ${kind}, type your full name as it should appear on the record, and confirm that you agree to the terms.`,
-  nameHint: "As it should appear on the acceptance record.",
-  readTerms: "Read the terms",
-  nameMissing: "Type your full name.",
-  agreeMissing: "Tick the box to confirm you agree to the terms.",
-  errorsTitle: "Check these before you accept:",
-  declineHint: (kind: string) => `Not going ahead? Tell us why, and we can revise the ${kind}.`,
-  confirmTitle: (kind: string) => `Accept this ${kind}?`,
-  confirmLead: "Please check the details below.",
-  accepting: "Accepting…",
-  acceptedTitle: (kind: string) => `You accepted this ${kind}`,
-  acceptedByOtherTitle: (kind: string, name: string) => `${name} accepted this ${kind}`,
   locked: "This version is locked: it can't be changed or accepted again.",
   next: "What happens next: we'll confirm the start date with you and send the first invoice.",
-
-  // Decline (ADM-PROP-10).
   declineTitle: "Why are you declining?",
-  reasons: [
-    "The price is more than we planned",
-    "The timeline doesn't suit us",
-    "We're going ahead with another option",
-    "We no longer need this work",
-  ],
-  reasonLegend: "Reason",
-  noteLabel: "Anything else we should know (optional)",
+  /** The words of the decline codes (`DECLINE_REASONS` in @techaust/core/offers; "other" is WORDS.other). */
+  reasons: {
+    price: "The price doesn't fit our budget",
+    timing: "The timing doesn't work for us",
+    other_option: "We've chosen another option",
+    not_needed: "We've decided not to go ahead",
+    other: "Other",
+  },
   otherLabel: "Tell us the reason",
-  reasonMissing: "Choose a reason.",
   otherMissing: "Tell us the reason.",
+  reasonMissing: "Choose a reason.",
+  noteLabel: "Anything else we should know (optional)",
   declineConfirmTitle: (kind: string) => `Decline this ${kind}?`,
-  declineConfirmBody:
-    "We'll let the team know and keep your reason with the document. You can still ask us for a revised version.",
+  declineConfirmBody: "We'll let the team know. You can still contact us if anything changes.",
   declining: "Declining…",
   declinedTitle: (kind: string) => `You declined this ${kind}`,
-  declinedBody: (kind: string) =>
-    `Thank you for letting us know. If you'd like a revised ${kind}, reply to the email it came with.`,
+  declinedBody: "Thank you for telling us. We'll be in touch only if you ask us to.",
+
+  // §7 Errors, by the API's code.
+  errors: {
+    pdf_pending: "The PDF is still being made. Try again in a minute.",
+    certificate_pending: "The certificate is still being made. Try again in a minute.",
+    superseded: "There's a newer version. Open the latest one.",
+    expired: "This has expired and can't be accepted.",
+    already_accepted: "This has already been accepted.",
+    already_decided: "A decision has already been recorded.",
+  },
+} as const;
+
+/**
+ * Lines 07-N doesn't have yet. Each is shown with a visible "[Placeholder]" tag (sentences) or untagged (short labels), and
+ * listed in the designer report for 07-N.
+ */
+export const PENDING = {
+  // A typed name the server refuses for a reason the form can't catch first (07-N has "Type your full name." for an empty one).
+  nameTooLong: "Shorten the name to 120 characters or fewer.",
+  nameInvalid: "Take out any symbols or hidden characters, then type the name again.",
+  // A label for "the next page of the list" (more than 50 proposals and estimates).
+  showMore: "Show more",
+  // Too many failed link checks from one network (a 429 on the email link; copy.ts has only the sign-in wording).
+  linkRateLimited: (wait: string) =>
+    `Too many attempts from this network. Wait ${wait}, then open the link again.`,
 } as const;

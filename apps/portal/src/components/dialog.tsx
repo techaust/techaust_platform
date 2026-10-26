@@ -69,9 +69,13 @@ export function ConfirmDialog(props: {
   children: ReactNode;
   confirmLabel: string;
   busyLabel: string;
+  /** The way out without acting (default "Cancel"; the accept step says "Back", 07-N §3). */
+  cancelLabel?: string | undefined;
   /** Runs the action. Throws an Error whose message is shown, and the dialog stays open. */
   onConfirm: () => Promise<void>;
   onClose: () => void;
+  /** How an error line is shown (default: as text). */
+  renderError?: ((text: string) => ReactNode) | undefined;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const opener = useRef<Element | null>(null);
@@ -128,10 +132,10 @@ export function ConfirmDialog(props: {
           <div className="dialog__body" id={bodyId}>
             {props.children}
           </div>
-          {error && <Notice tone="error">{error}</Notice>}
+          {error && <Notice tone="error">{props.renderError ? props.renderError(error) : error}</Notice>}
           <div className="dialog__actions">
             <button type="button" className="btn btn--secondary" onClick={close} disabled={busy}>
-              {COPY.home.cancel}
+              {props.cancelLabel ?? COPY.home.cancel}
             </button>
             <button
               type="button"

@@ -1,87 +1,111 @@
-// The acceptance block (ADM-PROP-08, ADM-PROP-10, POR-05): on an open version, type your full name, tick "I have read
-// and agree to the terms" and press Accept; a confirmation step shows exactly what is being accepted; then the version is
-// locked and shows the record, with the two downloads. Or decline with a reason (decline-dialog.tsx). Expired versions
-// can't be accepted. After a decision focus moves to the result, so a screen-reader user hears what happened.
-import { formatDate, formatIstDateTime } from "@techaust/core";
+// The acceptance block (ADM-PROP-08, ADM-PROP-10, POR-05): on an open version, type your full name, tick "I have read and agree to the
+// terms" and press Accept; a confirmation step shows exactly what is being accepted; then the version is locked and shows the record,
+// with the accepted PDF and the acceptance certificate. Or decline with a reason (decline-dialog.tsx). An expired version, or one whose
+// newer version is still being prepared, can't be accepted. After a decision focus moves to the result, so a screen-reader user hears
+// what happened. Words: 07-N §3 (PENDING the owner's approval); the binding sentence 07-A §7. VERIFY WITH CA/LEGAL.
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
-import { PENDING, WORDS } from "../../copy-documents.ts";
-import { amount, type DocumentView } from "../../lib/document-view.ts";
+import type { OfferKind, OfferStatus } from "../../api.ts";
+import { N, WORDS } from "../../copy-documents.ts";
+import { formatIstDateTime, kindWord } from "../../lib/offers.ts";
 import { ConfirmDialog } from "../dialog.tsx";
-import { Alert, CheckCircle, Download, Lock, XCircle } from "../icons.tsx";
-import { Ph } from "../pending.tsx";
+import { Alert, CheckCircle, Clock, Download, Lock, XCircle } from "../icons.tsx";
+import { ErrorLine } from "../pending.tsx";
 import { FieldError } from "../ui.tsx";
-import { DeclineDialog } from "./decline-dialog.tsx";
+import { DeclineDialog, type DeclineReason } from "./decline-dialog.tsx";
+
+/** What the block shows and offers; everything comes from the API (the page builds it). */
+export type DecisionModel = {
+  kind: OfferKind;
+  title: string;
+  numberDisplay: string;
+  version: number;
+  /** The grand total, as formatted on the document. */
+  total: string;
+  status: OfferStatus;
+  /** "06 Oct 2026". */
+  validUntil: string;
+  acceptance: { typedName: string; email: string; acceptedAt: number; fingerprint: string } | null;
+  /** True when the person looking accepted it (signed in as that contact, or they just pressed Accept here). */
+  acceptedByMe: boolean;
+  decline: { reason: string | null; note: string | null; at: number | null; by: string | null } | null;
+  /** The email the record will carry, when known (signed in); the link view doesn't know it. */
+  myEmail: string | null;
+};
 
 export type DecisionProps = {
-  doc: DocumentView;
-  /** The signed-in contact (or, on the token view, the person the link was sent to). */
-  me: { name: string; email: string };
+  model: DecisionModel;
   /** Records the acceptance. Throws an Error whose message is shown in the confirmation step. */
   onAccept: (typedName: string) => Promise<void>;
   /** Records the decline. Throws an Error whose message is shown. */
-  onDecline: (reason: string, note: string | null) => Promise<void>;
+  onDecline: (reason: DeclineReason, note: string | null) => Promise<void>;
   onDownload: (what: "accepted" | "certificate") => void;
+  /** Which download is in flight, if any. */
+  downloading: "pdf" | "accepted" | "certificate" | null;
 };
 
-const OPEN = new Set(["sent", "viewed"]);
+const OPEN = new Set<OfferStatus>(["sent", "viewed"]);
+
+/** The first 12 hex characters of the PDF's SHA-256 (as the PDF's integrity line and the admin show it). */
+const short = (sha: string) => sha.slice(0, 12);
 
 export function DecisionPanel(props: DecisionProps) {
-  const { doc } = props;
-  const kind = WORDS.kind[doc.kind].toLowerCase();
+  const { model } = props;
+  const kind = kindWord(model.kind);
   const result = useRef<HTMLHeadingElement>(null);
-  const was = useRef(doc.status);
+  const was = useRef(model.status);
   // A decision made here: focus the result (after the dialog has closed and tried to return focus to its opener).
   useEffect(() => {
-    if (OPEN.has(was.current) && !OPEN.has(doc.status)) result.current?.focus();
-    was.current = doc.status;
-  }, [doc.status]);
+    if (OPEN.has(was.current) && !OPEN.has(model.status)) result.current?.focus();
+    was.current = model.status;
+  }, [model.status]);
 
-  if (doc.status === "accepted" && doc.acceptance) {
-    const a = doc.acceptance;
-    const mine = a.email === props.me.email;
+  if (model.acceptance) {
+    const a = model.acceptance;
     return (
       <div className="record record--accepted">
         <h3 className="record__title" ref={result} tabIndex={-1}>
           <CheckCircle size={24} />
           <span>
-            <Ph>{mine ? PENDING.acceptedTitle(kind) : PENDING.acceptedByOtherTitle(kind, a.name)}</Ph>
+            {model.acceptedByMe ? N.acceptedTitle(kind) : N.acceptedByOtherTitle(a.typedName, kind)}
           </span>
         </h3>
         <dl className="facts facts--record">
           <div>
-            <dt>{PENDING.fields.acceptedBy}</dt>
-            <dd>{a.name}</dd>
+            <dt>{N.fields.acceptedBy}</dt>
+            <dd>{a.typedName}</dd>
           </div>
           <div>
-            <dt>{PENDING.fields.email}</dt>
+            <dt>{N.fields.email}</dt>
             <dd className="break">{a.email}</dd>
           </div>
           <div>
-            <dt>{PENDING.fields.when}</dt>
-            <dd>{formatIstDateTime(a.atMs)}</dd>
+            <dt>{N.fields.when}</dt>
+            <dd>{formatIstDateTime(a.acceptedAt)}</dd>
           </div>
           <div>
             <dt>{WORDS.doc.version}</dt>
             <dd>
-              {doc.number}, {WORDS.doc.version.toLowerCase()} {doc.version}
+              {model.numberDisplay} v{model.version}
             </dd>
           </div>
           <div>
-            <dt>{PENDING.fields.fingerprint}</dt>
-            <dd className="nowrap">{a.fingerprint}</dd>
+            <dt>{N.fields.fingerprint}</dt>
+            <dd className="nowrap mono">{short(a.fingerprint)}</dd>
           </div>
         </dl>
         <p className="record__lock">
           <Lock size={20} />
-          <span>
-            <Ph>{PENDING.locked}</Ph>
-          </span>
+          <span>{N.locked}</span>
         </p>
-        <p>
-          <Ph>{PENDING.next}</Ph>
-        </p>
+        <p>{N.next}</p>
         <div className="record__actions">
-          <button type="button" className="btn btn--secondary" onClick={() => props.onDownload("accepted")}>
+          <button
+            type="button"
+            className="btn btn--secondary"
+            onClick={() => props.onDownload("accepted")}
+            disabled={props.downloading === "accepted"}
+            aria-busy={props.downloading === "accepted" || undefined}
+          >
             <Download size={20} />
             {WORDS.downloadAccepted}
           </button>
@@ -89,6 +113,8 @@ export function DecisionPanel(props: DecisionProps) {
             type="button"
             className="btn btn--secondary"
             onClick={() => props.onDownload("certificate")}
+            disabled={props.downloading === "certificate"}
+            aria-busy={props.downloading === "certificate" || undefined}
           >
             <Download size={20} />
             {WORDS.downloadCertificate}
@@ -98,47 +124,57 @@ export function DecisionPanel(props: DecisionProps) {
     );
   }
 
-  if (doc.status === "declined" && doc.decline) {
-    const d = doc.decline;
+  if (model.status === "declined") {
+    const d = model.decline;
+    const reason = d?.reason ? ((N.reasons as Record<string, string>)[d.reason] ?? d.reason) : null;
     return (
       <div className="record record--declined">
         <h3 className="record__title" ref={result} tabIndex={-1}>
           <XCircle size={24} />
-          <span>
-            <Ph>{PENDING.declinedTitle(kind)}</Ph>
-          </span>
+          <span>{N.declinedTitle(kind)}</span>
         </h3>
         <dl className="facts facts--record">
-          <div>
-            <dt>{PENDING.fields.declinedBy}</dt>
-            <dd>{d.name}</dd>
-          </div>
-          <div>
-            <dt>{PENDING.fields.when}</dt>
-            <dd>{formatIstDateTime(d.atMs)}</dd>
-          </div>
-          <div>
-            <dt>{PENDING.fields.reason}</dt>
-            <dd>
-              {d.reason}
-              {d.note && <span className="line muted">{d.note}</span>}
-            </dd>
-          </div>
+          {d?.by && (
+            <div>
+              <dt>{N.fields.declinedBy}</dt>
+              <dd>{d.by}</dd>
+            </div>
+          )}
+          {d?.at && (
+            <div>
+              <dt>{N.fields.when}</dt>
+              <dd>{formatIstDateTime(d.at)}</dd>
+            </div>
+          )}
+          {reason && (
+            <div>
+              <dt>{N.fields.reason}</dt>
+              <dd>
+                {reason}
+                {d?.note && <span className="line muted">{d.note}</span>}
+              </dd>
+            </div>
+          )}
         </dl>
-        <p>
-          <Ph>{PENDING.declinedBody(kind)}</Ph>
-        </p>
+        <p>{N.declinedBody}</p>
       </div>
     );
   }
 
-  if (doc.status === "expired") {
+  if (model.status === "expired") {
     return (
       <div className="notice notice--warning" role="note">
         <Alert size={20} />
-        <div>
-          <Ph>{PENDING.expired(kind, formatDate(doc.validUntil))}</Ph>
-        </div>
+        <div>{N.expired(kind, model.validUntil)}</div>
+      </div>
+    );
+  }
+
+  if (model.status === "revised") {
+    return (
+      <div className="notice notice--info" role="note">
+        <Clock size={20} />
+        <div>{N.preparing}</div>
       </div>
     );
   }
@@ -146,8 +182,10 @@ export function DecisionPanel(props: DecisionProps) {
   return <AcceptForm {...props} kind={kind} />;
 }
 
+const NAME_MAX = 120;
+
 function AcceptForm(props: DecisionProps & { kind: string }) {
-  const { doc, kind } = props;
+  const { model, kind } = props;
   const nameId = useId();
   const agreeId = useId();
   const [name, setName] = useState("");
@@ -161,8 +199,8 @@ function AcceptForm(props: DecisionProps & { kind: string }) {
 
   function check() {
     const e: { name?: string | undefined; agree?: string | undefined } = {};
-    if (!name.trim()) e.name = PENDING.nameMissing;
-    if (!agree) e.agree = PENDING.agreeMissing;
+    if (name.trim().length < 2) e.name = N.nameMissing;
+    if (!agree) e.agree = N.agreeMissing;
     return e;
   }
 
@@ -181,11 +219,10 @@ function AcceptForm(props: DecisionProps & { kind: string }) {
 
   const nameError = errors?.name;
   const agreeError = errors?.agree;
+  const typed = name.replace(/\s+/g, " ").trim();
   return (
     <div className="decide">
-      <p className="prose">
-        <Ph>{PENDING.acceptIntro(kind)}</Ph>
-      </p>
+      <p className="prose">{N.acceptIntro}</p>
       <form className="decide__form" noValidate onSubmit={submit}>
         <p className="hint decide__all">{WORDS.allNeeded}</p>
         {errors && (nameError || agreeError) && (
@@ -198,9 +235,7 @@ function AcceptForm(props: DecisionProps & { kind: string }) {
           >
             <p id={`${nameId}-sum`} className="error-summary__title">
               <Alert size={20} />
-              <span>
-                <Ph>{PENDING.errorsTitle}</Ph>
-              </span>
+              <span>{N.errorsTitle}</span>
             </p>
             <ul>
               {nameError && (
@@ -217,21 +252,21 @@ function AcceptForm(props: DecisionProps & { kind: string }) {
           </div>
         )}
         <div className="field">
-          <label htmlFor={nameId}>{PENDING.fullName}</label>
+          <label htmlFor={nameId}>{N.fullName}</label>
           <p className="hint" id={`${nameId}-hint`}>
-            <Ph>{PENDING.nameHint}</Ph>
+            {N.nameHint}
           </p>
           <input
             id={nameId}
             value={name}
             onChange={(e) => setName(e.target.value)}
             onBlur={() =>
-              errors && setErrors({ ...errors, name: name.trim() ? undefined : PENDING.nameMissing })
+              errors && setErrors({ ...errors, name: name.trim().length >= 2 ? undefined : N.nameMissing })
             }
             autoComplete="name"
             autoCapitalize="words"
             spellCheck={false}
-            maxLength={120}
+            maxLength={NAME_MAX}
             required
             aria-invalid={nameError ? true : undefined}
             aria-describedby={`${nameId}-hint${nameError ? ` ${nameId}-error` : ""}`}
@@ -245,8 +280,7 @@ function AcceptForm(props: DecisionProps & { kind: string }) {
             checked={agree}
             onChange={(e) => {
               setAgree(e.target.checked);
-              if (errors)
-                setErrors({ ...errors, agree: e.target.checked ? undefined : PENDING.agreeMissing });
+              if (errors) setErrors({ ...errors, agree: e.target.checked ? undefined : N.agreeMissing });
             }}
             required
             aria-invalid={agreeError ? true : undefined}
@@ -255,7 +289,7 @@ function AcceptForm(props: DecisionProps & { kind: string }) {
           <label htmlFor={agreeId}>{WORDS.agree}</label>
         </div>
         <p className="check__more">
-          <a href="#terms">{PENDING.readTerms}</a>
+          <a href="#terms">{N.readTerms}</a>
         </p>
         {agreeError && <FieldError id={`${agreeId}-error`}>{agreeError}</FieldError>}
         <div className="decide__actions">
@@ -266,48 +300,46 @@ function AcceptForm(props: DecisionProps & { kind: string }) {
         </div>
       </form>
       <div className="decide__decline">
-        <p className="hint">
-          <Ph>{PENDING.declineHint(kind)}</Ph>
-        </p>
+        <p className="hint">{N.declineHint}</p>
         <button type="button" className="btn btn--secondary" onClick={() => setDeclining(true)}>
-          {PENDING.decline}
+          {N.decline}
         </button>
       </div>
 
       <ConfirmDialog
         open={confirming}
-        title={<Ph>{PENDING.confirmTitle(kind)}</Ph>}
+        title={N.confirmTitle(kind)}
         confirmLabel={WORDS.accept}
-        busyLabel={PENDING.accepting}
+        busyLabel={N.accepting}
+        cancelLabel={N.back}
         onConfirm={async () => {
-          await props.onAccept(name.trim());
+          await props.onAccept(typed);
           setConfirming(false);
         }}
         onClose={() => setConfirming(false)}
+        renderError={(text) => <ErrorLine text={text} />}
       >
-        <p>
-          <Ph>{PENDING.confirmLead}</Ph>
-        </p>
+        <p>{N.confirmLead}</p>
         <dl className="facts facts--confirm">
           <div>
-            <dt>{WORDS.kind[doc.kind]}</dt>
-            <dd>{doc.title}</dd>
+            <dt>{WORDS.kind[model.kind]}</dt>
+            <dd>{model.title}</dd>
           </div>
           <div>
             <dt>{WORDS.doc.number}</dt>
             <dd>
-              {doc.number}, {WORDS.doc.version.toLowerCase()} {doc.version}
+              {model.numberDisplay} v{model.version}
             </dd>
           </div>
           <div>
             <dt>{WORDS.doc.total}</dt>
-            <dd className="num-strong">{amount(doc.computed.totalMinor, doc.currency)}</dd>
+            <dd className="num-strong">{model.total}</dd>
           </div>
           <div>
-            <dt>{PENDING.fields.acceptedBy}</dt>
+            <dt>{N.fields.acceptedBy}</dt>
             <dd>
-              {name.trim()}
-              <span className="line muted break">{props.me.email}</span>
+              {typed}
+              {model.myEmail && <span className="line muted break">{model.myEmail}</span>}
             </dd>
           </div>
         </dl>
