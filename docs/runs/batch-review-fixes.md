@@ -391,3 +391,20 @@ Branch `fix/batch-review-ui-design3` from `origin/fix/batch-review-ui`. Opus 5.5
 
 ## Fix brief: builder round 4 (lead, 2026-10-26)
 Branch `fix/batch-review-ui-builder4` from `origin/fix/batch-review-ui`. Sonnet 5.5, medium. Skills: `cloudflare:workers-best-practices`, `code-review` on your diff. Your files: Workers and `packages/*`. N2 (test: a read-only role reads a draft and gets the text; the editor's GET stays without it), L2 (delete both `.js` files; check nothing imports them), L3 and L4 (one shared helper for escaping, boundaries and the token pattern, built from core), L5 (label: number, else "Untitled"; anonymising deletes the client's document bells in the same batch; tests). `pnpm check`, the tests of every package you touch, the admin budget line (719 bytes left: if a change would cross the ceiling, stop and report). Append "Builder report: round 4".
+
+## Builder report: round 4 (builder, Sonnet 5.5 medium, 2026-10-26)
+**Skills:** `cloudflare:workers-best-practices` (checked: no module-level request state, no new `import()`, bindings only through the generated `Env`; the new SQL runs in the existing guarded batch). `code-review` (its forked run reviewed the branch's earlier docs diff, not these changes; I checked my own diff by hand: see below).
+
+**Findings fixed**
+- **N2:** `GET /documents/:id` (`worker/documents.ts`) reads the terms with the text for a role whose `decide(role, "proposals.draft")` is `deny` (the accountant), else as before (the text only for a sent version). `readContext` takes `{ terms: "frozen" | "full" }`. Test: accountant gets the text of a draft; staff, sales and owner (the editors) get `bodyMd: null` with the same version.
+- **L2:** deleted `packages/payments/src/index.js` and `packages/testing/src/index.js`; nothing imports them (grep over apps and packages; typecheck and tests pass).
+- **L3/L4:** `@techaust/core/text` has `escapeRegExp` and `wholeWordPattern(names)` (longest first, boundary `\p{L}\p{N}\p{M}_`); `@techaust/core/documents` has `CONTACT_TOKEN_RE`. `document-view.ts` (`redactor`) and `document-save.ts` (`renameContact`) use them; their local copies are gone. New `packages/core/test/text.test.ts` (escaping, "Ramp-up", an Indic combining mark, the token).
+- **L5:** `documentLabel(number)` in `apps/jobs/src/pdf.ts` is the number, else "Untitled", never the title (both call sites and the test updated). Anonymising an individual client's last live contact deletes the bell rows (`entity_type = 'document'`) of all that client's documents, sent versions included, in the same guarded batch (`worker/clients.ts`, before the approval-bell delete; same `LAST_LIVE_INDIVIDUAL` condition, so a business client's bells stay). Test in `documents-convert.test.ts`: the sent version's bell goes, another client's stays. VERIFY WITH CA/LEGAL (no rule change).
+
+**Files:** `apps/admin/worker/{documents,clients,document-view,document-save}.ts`, `apps/admin/worker/{documents,documents-convert}.test.ts`, `apps/jobs/src/pdf.ts`, `apps/jobs/test/pdf.test.ts`, `packages/core/src/{text,documents}.ts`, `packages/core/test/text.test.ts`, the two deleted `.js` files.
+
+**Commands:** biome on changed files: clean. `bash tools/heavy.sh --log r4-typecheck pnpm typecheck`: exit 0. `r4-test` (core 1,032, db 206, jobs 259, admin 2,133 tests): exit 0. `r4-check` (`pnpm check`, includes whole-repo lint): exit 0. `r4-build` (admin): bundle 415,296 of 415,878 bytes (582 left), startup 73.5 ms.
+
+**Not verified:** nothing in a browser (no screens touched); the portal and web packages were not re-tested (no change there). Worktree needed `pnpm install --frozen-lockfile --offline`.
+
+**Open questions:** none.
