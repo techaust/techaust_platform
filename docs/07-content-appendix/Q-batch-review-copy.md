@@ -357,3 +357,13 @@
 | CERT6 | Evidence | Heading |
 | CERT7 | Document fingerprint (SHA-256 of the accepted PDF) | Label |
 | CERT8 | Fingerprint of the sent copy (SHA-256) · Terms version · Terms fingerprint (SHA-256) | Labels |
+
+## 4. Added after the checks (owner, 2026-10-26)
+| No. | Line | Where |
+|---|---|---|
+| Q9 (replaced) | The PDF of {number} didn't match its saved copy, so it wasn't sent. A developer needs to look at it before it can be sent. | Staff bell; {number} falls back to the title, then "Untitled" |
+| ADD1 | No proposal is linked to this project. | Project page, Linked records |
+| ADD2 | No contact of this client has portal access yet. Turn it on for a contact first. | Send dialog, with a "Contacts" link |
+| ADD3 | Enter the date as DD/MM/YYYY, for example 26/10/2026. | Every date field, error |
+| ADD4 | Service names use "and", never "&" | Catalogue (S2, S5, S6, S8, S10, S15) |
+| ADD5 | "(milestone M4.1)" removed | Settings › Website switches and Payment terms hints |
