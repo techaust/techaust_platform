@@ -541,7 +541,7 @@ describe("the plain invoice skeleton prints every Rule 46 field [B3]", () => {
     const e = clone(envelope);
     (e.snapshot.lines[0] as { description: string }).description = '<script>alert("x")</script>';
     (e.snapshot.header.recipient as { legalName: string }).legalName = "A & B <b>Ltd</b>";
-    (e.snapshot.header.recipient as { displayName?: string }).displayName = undefined;
+    (e.snapshot.header.recipient as { displayName?: string }).displayName = "";
     const h = renderDocumentHtml(toInvoiceView(e, DEFAULT_VIEW_CONFIG));
     expect(h).not.toContain("<script>alert");
     expect(h).toContain("&lt;script&gt;");
