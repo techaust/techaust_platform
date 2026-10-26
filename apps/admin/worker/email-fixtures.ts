@@ -17,6 +17,7 @@ export const TEMPLATE_NAMES: Record<EmailTemplate, string> = {
   "offer.sent": "Proposal or estimate sent",
   "offer.accepted.client": "Acceptance confirmation (client)",
   "offer.accepted.staff": "Acceptance notice (team)",
+  "offer.declined.staff": "Decline notice (team)",
   "approval.requested": "Approval requested",
   "approval.decided": "Approval decided",
 };
@@ -95,6 +96,16 @@ export function sampleData(
         version: "1",
         url: `${SAMPLE}/offer`,
         next_step: "we'll confirm the start date with you",
+      };
+    case "offer.declined.staff":
+      return {
+        name: "Sample Person",
+        title: "Sample website rebuild",
+        number: "TH/PRP/2627/0001",
+        version: "1",
+        reason: "The timing doesn't work for us",
+        note: "",
+        url: `${SAMPLE}/offer`,
       };
     case "approval.requested":
       return {

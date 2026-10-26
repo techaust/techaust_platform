@@ -105,6 +105,29 @@ export function offerAcceptedStaff(d: OfferAcceptedData, opts: LayoutOptions): R
   });
 }
 
+export type OfferDeclinedData = {
+  /** The person who declined (their name as on their contact record). */
+  name: string;
+  number: string;
+  version: string;
+  title?: string;
+  /** The reason in 07-N §3's words. */
+  reason: string;
+  /** Optional; the sentence is left out when empty. */
+  note: string;
+  url: string;
+};
+
+/** The decline to TecHaust (the sender and the active owners): 07 §8 style subject, 07-N §4 "Declined email, TecHaust side". */
+export function offerDeclinedStaff(d: OfferDeclinedData, opts: LayoutOptions): Rendered {
+  const subject = headerValue(`Declined: ${d.title ?? ""} (${d.number} v${d.version})`);
+  const note = d.note ? ` Note: ${d.note}.` : "";
+  return securityEmail(subject, opts, {
+    before: [para(`${d.name} declined ${d.number} v${d.version}. Reason: ${d.reason}.${note}`)],
+    action: { label: "Open in admin", url: d.url },
+  });
+}
+
 export type ApprovalRequestedData = {
   requester_name: string;
   request_reason: string;

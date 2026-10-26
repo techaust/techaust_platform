@@ -4,16 +4,23 @@
 //
 // The certificate shows the IP address, the user agent and the country because they ARE the evidence (docs/08 L-11). VERIFY WITH CA/LEGAL: showing
 // them on a document the client downloads, and the Browser Run processing of the name, address and IP (processor terms, location).
-import { formatIstDateTime } from "@techaust/core";
-import type { CertificateView } from "@techaust/pdf";
+import { formatIstDateTime, formatMoney, money } from "@techaust/core";
+import type { CertificateView as PdfCertificateView } from "@techaust/pdf";
 
-export type { CertificateView };
+/**
+ * What the certificate prints. `total` (07-N §5 "Total": the frozen total, formatted) is not in the layout's own type yet: the designer
+ * adds it there and prints it under "Number and version"; until then the layout ignores it.
+ */
+export type CertificateView = PdfCertificateView & { total: string };
 
 export type CertificateRow = {
   number_display: string | null;
   version: number;
   type: string;
   title: string | null;
+  /** The frozen total (minor units) and currency of the document. */
+  total_minor: number;
+  currency: string;
   client_legal_name: string;
   typed_name: string;
   email: string;
@@ -36,7 +43,7 @@ export type CertificateRow = {
  * recipient block (what the offer itself says); the live client record is only the fallback for an old document without one.
  */
 export const CERTIFICATE_READ =
-  "SELECT d.number_display, d.version, d.type, d.title, coalesce(nullif(CASE WHEN json_valid(d.recipient) THEN json_extract(d.recipient, '$.legalName') END, ''), cl.legal_name) AS client_legal_name, a.typed_name, a.email, a.accepted_at, a.ip, a.user_agent, a.country, a.via, a.pdf_sha256, a.snapshot_sha256, t.version AS terms_version, t.sha256 AS terms_sha256, a.certificate_r2_key, ce.rendered_at FROM acceptances a JOIN documents d ON d.id = a.document_id JOIN clients cl ON cl.id = d.client_id LEFT JOIN terms_versions t ON t.id = a.terms_version_id LEFT JOIN acceptance_certificates ce ON ce.acceptance_id = a.id WHERE a.id = ?1";
+  "SELECT d.number_display, d.version, d.type, d.title, d.total_minor, d.currency, coalesce(nullif(CASE WHEN json_valid(d.recipient) THEN json_extract(d.recipient, '$.legalName') END, ''), cl.legal_name) AS client_legal_name, a.typed_name, a.email, a.accepted_at, a.ip, a.user_agent, a.country, a.via, a.pdf_sha256, a.snapshot_sha256, t.version AS terms_version, t.sha256 AS terms_sha256, a.certificate_r2_key, ce.rendered_at FROM acceptances a JOIN documents d ON d.id = a.document_id JOIN clients cl ON cl.id = d.client_id LEFT JOIN terms_versions t ON t.id = a.terms_version_id LEFT JOIN acceptance_certificates ce ON ce.acceptance_id = a.id WHERE a.id = ?1";
 
 const DASH = "–";
 const orDash = (v: string | null | undefined) => (v && v.trim() !== "" ? v : DASH);
@@ -52,6 +59,7 @@ export function buildCertificateView(r: CertificateRow): CertificateView {
     version: String(r.version),
     kind: r.type === "estimate" ? "Estimate" : "Proposal",
     title: orDash(r.title),
+    total: formatMoney(money(r.total_minor, r.currency === "USD" ? "USD" : "INR")),
     clientLegalName: r.client_legal_name,
     typedName: r.typed_name,
     email: r.email,

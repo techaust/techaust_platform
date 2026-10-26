@@ -399,6 +399,44 @@ describe("offer.decided: the bell [ADM-PROP-08, ADM-PROP-10]", () => {
       }),
     ).toBe("invalid");
   });
+  it("a decline also emails the sender and each active owner once, in 07-N's words; an accepted offer emails nobody here", async () => {
+    const w = await world({ status: "rejected" });
+    const second = await staff("owner");
+    await staff("owner", { status: "deactivated" });
+    await run(
+      "UPDATE documents SET decided_at = ?2, decided_contact_id = ?3, decision_reason = 'timing', decision_note = 'Next year' WHERE id = ?1",
+      w.doc,
+      NOW,
+      w.contact,
+    );
+    const msg = { kind: "offer.decided", documentId: w.doc, decision: "declined" };
+    expect(await processOfferDecided(makeEnv(), msg)).toBe("noted");
+    const owners = await all<{ email: string }>(
+      "SELECT email FROM staff_users WHERE role = 'owner' AND status = 'active'",
+    );
+    expect(queued.map((m) => m.to).sort()).toEqual([...owners.map((o) => o.email), w.sender.email].sort());
+    expect(queued.map((m) => m.to)).toContain(second.email);
+    expect(new Set(queued.map((m) => m.to)).size).toBe(queued.length);
+    for (const m of queued) {
+      expect(m).toMatchObject({
+        template: "offer.declined.staff",
+        entity: { type: "document", id: w.doc },
+        data: {
+          name: "Asha Rao",
+          title: "Website rebuild",
+          number: w.number,
+          version: "1",
+          reason: "The timing doesn't work for us",
+          note: "Next year",
+          url: `https://admin.example/documents/${w.doc}`,
+        },
+      });
+    }
+    queued = [];
+    const acc = await world({ status: "accepted" });
+    await processOfferDecided(makeEnv(), { kind: "offer.decided", documentId: acc.doc, decision: "accepted" });
+    expect(queued).toEqual([]);
+  });
   it("a sender who is also an owner gets one row, not two", async () => {
     const w = await world({ status: "accepted" });
     await run("UPDATE staff_users SET role = 'owner' WHERE id = ?", w.sender.id);
@@ -533,7 +571,22 @@ describe("offer.accepted: the confirmation, after the certificate [ADM-PROP-08]"
 
 // ---- approval.notify -------------------------------------------------------------------------------------------------------------
 
-async function approval(w: World, o: { status?: string; requesterStatus?: string } = {}) {
+/** A draft of the same client whose catalogue lines (reference 100,000.00) sum to 87,500.00 taxable: 12.5 % off. */
+async function discountedDraft(w: World) {
+  const id = uuidv7();
+  await run(
+    "INSERT INTO documents (id, type, status, client_id, currency, version_group_id, version, title, total_minor, subtotal_minor, taxable_minor, catalogue_reference_minor) VALUES (?1, 'proposal', 'draft', ?2, 'INR', ?1, 1, 'Website rebuild', 8750000, 8750000, 8750000, 10000000)",
+    id,
+    w.clientId,
+  );
+  await run(
+    "INSERT INTO document_lines (id, document_id, position, catalogue_item_id, description, qty_milli, unit, rate_minor, taxable_minor, line_total_minor, catalogue_rate_minor) VALUES (?1, ?2, 1, 'item', 'Work', 1000, 'fixed', 8750000, 8750000, 8750000, 10000000)",
+    uuidv7(),
+    id,
+  );
+  return id;
+}
+async function approval(w: World, o: { status?: string; requesterStatus?: string; doc?: string } = {}) {
   const id = uuidv7();
   const requester = o.requesterStatus
     ? await staff("staff", { status: o.requesterStatus, name: "Requester" })
@@ -541,7 +594,7 @@ async function approval(w: World, o: { status?: string; requesterStatus?: string
   await run(
     "INSERT INTO approvals (id, kind, document_id, requested_by, reason, content_sha256, status, decided_by, decided_at, note) VALUES (?1, 'discount', ?2, ?3, 'Long-term client', 'hash', ?4, ?5, ?6, ?7)",
     id,
-    w.doc,
+    o.doc ?? w.doc,
     requester.id,
     o.status ?? "pending",
     o.status && o.status !== "pending" ? w.owner.id : null,
@@ -555,7 +608,7 @@ describe("approval.notify: the M4.3 approval emails [ADM-APR-01, ADM-MAIL-01]", 
     const w = await world();
     const second = await staff("owner");
     await staff("owner", { status: "deactivated" });
-    const a = await approval(w);
+    const a = await approval(w, { doc: await discountedDraft(w) });
     expect(
       await processApprovalNotify(makeEnv(), {
         kind: "approval.notify",
@@ -574,10 +627,10 @@ describe("approval.notify: the M4.3 approval emails [ADM-APR-01, ADM-MAIL-01]", 
     });
     expect(queued[0]?.data).toMatchObject({
       requester_name: w.sender.name,
-      request_reason: "a discount",
+      request_reason: "12.5 % off catalogue prices",
       title: "Website rebuild",
       version: "1",
-      amount: "₹2,95,000.00",
+      amount: "₹87,500.00",
     });
     expect(queued[0]?.data.admin_url).toBe(`https://admin.example/approvals/${a.id}`);
   });
@@ -650,6 +703,8 @@ describe("the certificate view [ADM-PROP-08, docs/08 L-11]", () => {
     version: 2,
     type: "proposal",
     title: "Website rebuild",
+    total_minor: 29_500_000,
+    currency: "INR",
     client_legal_name: "Sample Traders Pvt Ltd",
     typed_name: "Asha <script>alert(1)</script> Rao",
     email: "asha@example.test",
@@ -671,6 +726,7 @@ describe("the certificate view [ADM-PROP-08, docs/08 L-11]", () => {
       number: "TH/PRP/2627/0003",
       version: "2",
       kind: "Proposal",
+      total: "₹2,95,000.00",
       acceptedAtIst: "26 Oct 2026, 10:30 IST",
       acceptedAtUtc: "2026-10-26 05:00:00 UTC",
       ip: "192.0.2.1",
@@ -716,6 +772,7 @@ describe("the certificate view [ADM-PROP-08, docs/08 L-11]", () => {
     expect(got?.view).toMatchObject({
       number: w.number,
       clientLegalName: "Sample Traders Pvt Ltd",
+      total: "₹2,95,000.00",
       typedName: "Asha <b>Rao</b>",
       ip: "192.0.2.1",
       pdfSha256: "pdfsha",

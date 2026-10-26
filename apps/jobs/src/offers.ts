@@ -33,6 +33,7 @@ import {
   offerLinkUrl,
   todayIst,
 } from "@techaust/core/offers";
+import { guardFigures } from "@techaust/core/documents";
 import type { OfferSweepMessage, PdfCertificateMessage } from "@techaust/core/pdf-jobs";
 import { logEvent } from "./log.ts";
 
@@ -44,6 +45,21 @@ export type OfferDecidedResult = "noted" | "missing" | "ignored" | "invalid";
 export type OfferAcceptedResult = "queued" | "missing" | "certificate_missing" | "none" | "invalid";
 export type ApprovalNotifyResult = "queued" | "missing" | "none" | "ignored" | "invalid";
 
+/** 07-N §3's words for a decline's reason codes (the portal and admin show the same). */
+const DECLINE_WORDS: Record<string, string> = {
+  price: "The price doesn't fit our budget",
+  timing: "The timing doesn't work for us",
+  other_option: "We've chosen another option",
+  not_needed: "We've decided not to go ahead",
+  other: "Other",
+};
+/** Basis points as a percentage ("12.5", "15"), as the admin shows them. */
+const percentText = (bp: number) => {
+  const frac = String(bp % 100)
+    .padStart(2, "0")
+    .replace(/0+$/, "");
+  return frac ? `${Math.trunc(bp / 100)}.${frac}` : String(Math.trunc(bp / 100));
+};
 const first = (name: string) => name.trim().split(/\s+/)[0] ?? name;
 const adminBase = (env: Env) => env.ADMIN_URL.replace(/\/+$/, "");
 const portalBase = (env: OfferEnv) => (env.PORTAL_URL ?? "").replace(/\/+$/, "");
@@ -193,7 +209,7 @@ export async function processOfferDecided(env: OfferEnv, body: unknown): Promise
   }
   const { documentId, decision } = parsed.data;
   const doc = (await env.DB.prepare(
-    "SELECT id, status, title, version, issuer FROM documents WHERE id = ?1 AND type IN ('proposal', 'estimate')",
+    "SELECT d.id, d.status, d.title, d.version, d.issuer, d.number_display, d.decision_reason, d.decision_note, c.name AS decided_name FROM documents d LEFT JOIN contacts c ON c.id = d.decided_contact_id WHERE d.id = ?1 AND d.type IN ('proposal', 'estimate')",
   )
     .bind(documentId)
     .first()) as {
@@ -202,6 +218,10 @@ export async function processOfferDecided(env: OfferEnv, body: unknown): Promise
     title: string | null;
     version: number;
     issuer: string | null;
+    number_display: string | null;
+    decision_reason: string | null;
+    decision_note: string | null;
+    decided_name: string | null;
   } | null;
   if (!doc) {
     logEvent("offer_decided.missing");
@@ -224,6 +244,30 @@ export async function processOfferDecided(env: OfferEnv, body: unknown): Promise
   )
     .bind(`offer.${decision}`, documentId, title, `/documents/${documentId}`, senderId)
     .run();
+  // 07-N §4 "Declined email, TecHaust side": to the sender and the active owners, once each (the email consumer claims
+  // template + document + address, so a redelivery sends nothing twice).
+  if (decision === "declined") {
+    const staff = ((await env.DB.prepare(STAFF_READ).bind(senderId).all()).results ?? []) as { email: string }[];
+    if (staff.length > 0)
+      await env.EMAIL_QUEUE.sendBatch(
+        staff.map((s) => ({
+          body: {
+            template: "offer.declined.staff",
+            to: s.email,
+            data: {
+              name: doc.decided_name ?? "",
+              title: doc.title ?? "",
+              number: doc.number_display ?? "",
+              version: String(doc.version),
+              reason: DECLINE_WORDS[doc.decision_reason ?? ""] ?? doc.decision_reason ?? "",
+              note: doc.decision_note ?? "",
+              url: `${adminBase(env)}/documents/${documentId}`,
+            },
+            entity: { type: "document", id: documentId },
+          } satisfies EmailMessage,
+        })),
+      );
+  }
   logEvent("offer_decided.noted", { decision });
   return "noted";
 }
@@ -333,7 +377,7 @@ export async function processOfferAccepted(
 // ---- approval.notify -----------------------------------------------------------------------------------------------------------
 
 const APPROVAL_READ =
-  "SELECT a.id, a.kind, a.status, a.reason, a.note, a.document_id, a.requested_by, d.title, d.version, d.total_minor, d.currency, ru.id AS requester_id, ru.email AS requester_email, ru.name AS requester_name, ru.status AS requester_status, du.name AS decider_name FROM approvals a JOIN documents d ON d.id = a.document_id LEFT JOIN staff_users ru ON ru.id = a.requested_by LEFT JOIN staff_users du ON du.id = a.decided_by WHERE a.id = ?1";
+  "SELECT a.id, a.kind, a.status, a.reason, a.note, a.document_id, a.requested_by, d.title, d.version, d.total_minor, d.currency, d.catalogue_reference_minor AS reference_minor, (SELECT coalesce(sum(l.taxable_minor), 0) FROM document_lines l WHERE l.document_id = d.id AND l.catalogue_item_id IS NOT NULL) AS taxable_minor, ru.id AS requester_id, ru.email AS requester_email, ru.name AS requester_name, ru.status AS requester_status, du.name AS decider_name FROM approvals a JOIN documents d ON d.id = a.document_id LEFT JOIN staff_users ru ON ru.id = a.requested_by LEFT JOIN staff_users du ON du.id = a.decided_by WHERE a.id = ?1";
 const OWNERS_READ =
   "SELECT id, email FROM staff_users WHERE role = 'owner' AND status = 'active' ORDER BY id";
 
@@ -360,6 +404,8 @@ export async function processApprovalNotify(env: OfferEnv, body: unknown): Promi
         version: number;
         total_minor: number;
         currency: string;
+        reference_minor: number | null;
+        taxable_minor: number;
         requester_email: string | null;
         requester_name: string | null;
         requester_status: string | null;
@@ -384,8 +430,11 @@ export async function processApprovalNotify(env: OfferEnv, body: unknown): Promi
         to: o.email,
         data: {
           requester_name: a.requester_name ?? "",
-          // [Placeholder, 07-N] the words for what is being approved.
-          request_reason: a.kind === "discount" ? "a discount" : a.kind,
+          // 07-O's guard line: "{n} % off catalogue prices" (the stored reference against the stored taxable values).
+          request_reason:
+            a.kind === "discount"
+              ? `${percentText(guardFigures(a.reference_minor ?? 0, a.taxable_minor).discountBp)} % off catalogue prices`
+              : a.kind,
           title,
           version: String(a.version),
           amount: formatMoney(money(a.total_minor, a.currency === "USD" ? "USD" : "INR")),

@@ -5,6 +5,7 @@ import {
   approvalRequested,
   offerAcceptedClient,
   offerAcceptedStaff,
+  offerDeclinedStaff,
   offerSent,
 } from "./offers.ts";
 import {
@@ -201,6 +202,22 @@ function renderTemplate(
       return { ...hello, ...offerAcceptedClient(acceptedData(get), opts) };
     case "offer.accepted.staff":
       return { ...hello, ...offerAcceptedStaff(acceptedData(get), opts) };
+    case "offer.declined.staff":
+      return {
+        ...hello,
+        ...offerDeclinedStaff(
+          {
+            name: get("name"),
+            number: get("number"),
+            version: get("version"),
+            title: get("title"),
+            reason: get("reason"),
+            note: get("note"),
+            url: get("url"),
+          },
+          opts,
+        ),
+      };
     case "approval.requested":
       return {
         ...hello,

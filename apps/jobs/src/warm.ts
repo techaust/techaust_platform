@@ -87,6 +87,21 @@ export function warmConsumers(): number {
       opts,
     );
     rendered++;
+    // M4.5: the decline notice to TecHaust (the only offer email the consumer renders that the other warm-ups don't cover)
+    renderEmail(
+      "offer.declined.staff",
+      {
+        name: "Warm Up",
+        title: "Warm",
+        number: "TH/PRP/2627/0001",
+        version: "1",
+        reason: "Other",
+        note: "Warm",
+        url: "https://warm-up.invalid/",
+      },
+      opts,
+    );
+    rendered++;
     // the user-agent reader the staff alerts use (compiles its patterns on first match)
     describeUserAgent(
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
@@ -105,6 +120,8 @@ export function warmConsumers(): number {
         version: 1,
         type: "proposal",
         title: "Warm-up",
+        total_minor: 29_500_000,
+        currency: "INR",
         client_legal_name: "Warm Client",
         typed_name: "Warm Person",
         email: "warm-up@example.invalid",

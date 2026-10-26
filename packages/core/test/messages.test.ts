@@ -117,6 +117,7 @@ describe("M2.4b messages [POR-01, ADM-AUTH-09, ADM-MAIL-01]", () => {
       "offer.sent",
       "offer.accepted.client",
       "offer.accepted.staff",
+      "offer.declined.staff",
       "approval.requested",
       "approval.decided",
     ]);

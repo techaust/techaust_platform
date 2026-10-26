@@ -91,6 +91,34 @@ describe("acceptance emails", () => {
   });
 });
 
+describe("declined email to TecHaust (07-N section 4)", () => {
+  const data = {
+    name: "Asha Rao",
+    title: "Website rebuild",
+    number: "TH/PRP/2627/0001",
+    version: "2",
+    reason: "The timing doesn't work for us",
+    note: "",
+    url: "https://admin.example.test/documents/1",
+  };
+  it("subject and body word for word; the note sentence only when there is a note", () => {
+    const r = renderEmail("offer.declined.staff", data, opts);
+    expect(r.subject).toBe("Declined: Website rebuild (TH/PRP/2627/0001 v2)");
+    expect(r.text).toContain("Asha Rao declined TH/PRP/2627/0001 v2. Reason: The timing doesn't work for us.");
+    expect(r.text).not.toContain("Note:");
+    expect(r.text).toContain("Open in admin: https://admin.example.test/documents/1");
+    expect(r.text).not.toContain("[Placeholder]");
+    expect(renderEmail("offer.declined.staff", { ...data, note: "Next year" }, opts).text).toContain(
+      "us. Note: Next year.",
+    );
+  });
+  it("escapes the name and the note in the HTML", () => {
+    const r = renderEmail("offer.declined.staff", { ...data, name: "<b>x</b>", note: "<i>y</i>" }, opts);
+    expect(r.html).not.toContain("<b>x</b>");
+    expect(r.html).not.toContain("<i>y</i>");
+  });
+});
+
 describe("approval emails (07 section 8, 07-O: title and version, not the number)", () => {
   it("requested", () => {
     const r = renderEmail(

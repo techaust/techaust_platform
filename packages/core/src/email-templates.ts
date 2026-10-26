@@ -17,6 +17,7 @@ export const EMAIL_TEMPLATES = [
   "offer.sent",
   "offer.accepted.client",
   "offer.accepted.staff",
+  "offer.declined.staff",
   "approval.requested",
   "approval.decided",
 ] as const;
