@@ -1,8 +1,8 @@
 // The GST and report core: `@techaust/core/gst` (M5.5a; ADM-REP-04, ADM-REP-07, ADM-INV-17). Pure, deterministic, never throws:
 // every function returns a `GstResult` (codes only). VERIFY WITH CA/LEGAL: every rule and every column is a researched default
 // or a working assumption (docs/08-research-appendix/A-gst-invoicing.md).
-// SPA ONLY: never import this from Worker code. It is for the admin SPA's reports (bytes: LD16), and the Worker budget guard
-// treats it as a forbidden module there.
+// SPA ONLY: never import this from Worker code. It is for the admin SPA's reports (bytes: LD16). The Worker budget guard does
+// not know this module yet: M5.5b adds the forbidden marker to `scripts/worker-budget.mjs`.
 export {
   type ClassifyInput,
   classifyInvoice,

@@ -2,7 +2,7 @@
 // the row contents. Error codes are in failures.test.ts.
 import { describe, expect, it } from "vitest";
 import { DEFAULT_REALISATION_RULES, edfCsv, edfMonth, edfRows } from "../../src/gst/index.ts";
-import { d, rate, row } from "./fixtures.ts";
+import { d, hasBareLineBreak, rate, row } from "./fixtures.ts";
 
 const month = (y: number, m: number) => {
   const r = edfMonth(y, m);
@@ -135,6 +135,7 @@ describe("edfCsv", () => {
     if (!rows.ok) throw new Error("rows");
     const csv = edfCsv(rows.value);
     if (!csv.ok) throw new Error("csv");
+    expect(hasBareLineBreak(csv.value)).toBe(false);
     await expect(csv.value).toMatchFileSnapshot("./__snapshots__/edf-v1-2026-11.csv");
     expect(csv.value.split("\r\n")[0]).toBe(
       "Invoice number,Invoice date,Client name,Client address,Country (ISO code),Currency,Invoice amount,Exchange rate,INR value,SAC,Service description,Purpose code,Amount realised,FEMA realisation due,EDF due",

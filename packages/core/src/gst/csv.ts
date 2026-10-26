@@ -7,11 +7,18 @@
 import type { CalendarDate } from "../dates.ts";
 import { formatAmount, formatCount, formatDate, formatMicros, formatRate } from "./format.ts";
 
-/** `text` is defused and quoted as needed, `raw` is a pre-formatted number or date, `blank` is an empty field. */
-export type Cell =
+declare const cellBrand: unique symbol;
+type CellShape =
   | { readonly kind: "text"; readonly value: string }
   | { readonly kind: "raw"; readonly value: string }
   | { readonly kind: "blank" };
+/**
+ * `text` is defused and quoted as needed, `raw` is a pre-formatted number or date, `blank` is an empty field. The type is
+ * branded (type level only): the only way to get a `Cell` is a `cell.*` constructor, so no caller can hand-build a `raw` cell
+ * around free text and skip `defuse`.
+ */
+export type Cell = CellShape & { readonly [cellBrand]: true };
+const make = (c: CellShape): Cell => c as Cell;
 
 const FORMULA_START = /^[=+\-@\t\r]/;
 
@@ -20,18 +27,18 @@ export const defuse = (text: string): string => (FORMULA_START.test(text) ? `'${
 
 export const cell = {
   /** Free text (names, addresses, numbers of documents): defused when written. */
-  text: (value: string): Cell => ({ kind: "text", value }),
+  text: (value: string): Cell => make({ kind: "text", value }),
   /** An amount in minor units as `-500.00`. A value that is not a safe integer throws a RangeError (a bug, not input). */
-  amount: (minor: number): Cell => ({ kind: "raw", value: formatAmount(minor) }),
+  amount: (minor: number): Cell => make({ kind: "raw", value: formatAmount(minor) }),
   /** A rate in basis points as `18`, `12.5`, `0.25`. */
-  rate: (bp: number): Cell => ({ kind: "raw", value: formatRate(bp) }),
+  rate: (bp: number): Cell => make({ kind: "raw", value: formatRate(bp) }),
   /** An exchange rate in micros as `83.500000`. */
-  micros: (micros: number): Cell => ({ kind: "raw", value: formatMicros(micros) }),
+  micros: (micros: number): Cell => make({ kind: "raw", value: formatMicros(micros) }),
   /** A whole count as plain digits. */
-  count: (n: number): Cell => ({ kind: "raw", value: formatCount(n) }),
+  count: (n: number): Cell => make({ kind: "raw", value: formatCount(n) }),
   /** A date as `dd-Mmm-yyyy` (UNVERIFIED). */
-  date: (date: CalendarDate): Cell => ({ kind: "raw", value: formatDate(date) }),
-  blank: (): Cell => ({ kind: "blank" }),
+  date: (date: CalendarDate): Cell => make({ kind: "raw", value: formatDate(date) }),
+  blank: (): Cell => make({ kind: "blank" }),
 };
 
 const NEEDS_QUOTES = /[",\r\n]/;
@@ -49,5 +56,5 @@ export type CsvOptions = { readonly bom?: boolean };
 /** The records, each ending in CRLF (the header is just the first record). */
 export function writeCsv(records: readonly (readonly Cell[])[], opts: CsvOptions = {}): string {
   const body = records.map((r) => `${r.map(field).join(",")}\r\n`).join("");
-  return opts.bom === true ? `﻿${body}` : body;
+  return opts.bom === true ? `\uFEFF${body}` : body;
 }

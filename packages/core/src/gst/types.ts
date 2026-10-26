@@ -1,6 +1,9 @@
 // Shared types and helpers of the GST and report core (M5.5a; ADM-REP-04, ADM-REP-07, ADM-INV-17). Pure: no I/O, no zod, no
-// floats, no module-level mutable state, deterministic. Every public function of `@techaust/core/gst` returns a `GstResult`
-// (codes only; M5.5b maps them to words) and none of them throws for any input of the declared types.
+// floats, no module-level mutable state, deterministic. The report builders of `@techaust/core/gst` (sections, docs, EDF,
+// realisation, classify and the CSV writers of `layouts.ts`) return a `GstResult` (codes only; M5.5b maps them to words) and
+// none of them throws for any input of the declared types. The calendar and formatting helpers (`lastDayOfMonth`,
+// `addMonthsClamped`, `format*`, `cell.*`) are exported too, are not wrapped, and throw a RangeError on a programming error
+// (a value outside their declared domain).
 // Every rule and every column here is a researched default: VERIFY WITH CA/LEGAL.
 import type { CalendarDate } from "../dates.ts";
 import type { StateCode } from "../gstin.ts";
@@ -93,6 +96,8 @@ export type GstErrorCode =
   | "gstin_missing"
   | "gstin_invalid"
   | "parent_missing"
+  | "parent_invalid"
+  | "supply_mismatch"
   | "sac_missing"
   | "rates_empty"
   | "rate_invalid"

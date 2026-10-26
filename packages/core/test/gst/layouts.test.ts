@@ -15,7 +15,7 @@ import {
   realisationRows,
 } from "../../src/gst/index.ts";
 import { STATE_CODES } from "../../src/gstin.ts";
-import { d, rate, row } from "./fixtures.ts";
+import { d, hasBareLineBreak, rate, row } from "./fixtures.ts";
 
 const pinned = () => ({
   gstr1: Object.fromEntries(
@@ -154,6 +154,7 @@ describe("the realisation report", () => {
     if (!rows.ok) throw new Error("rows");
     const csv = realisationCsv(rows.value);
     if (!csv.ok) throw new Error("csv");
+    expect(hasBareLineBreak(csv.value)).toBe(false);
     await expect(csv.value).toMatchFileSnapshot("./__snapshots__/realisation-v1.csv");
     expect(csv.value.split("\r\n")[0]).toBe(
       "Invoice number,Invoice date,Client,Currency,Outstanding,FEMA due,GST due,Stage",

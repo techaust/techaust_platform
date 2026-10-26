@@ -59,7 +59,7 @@ type Seed = {
   parentValue: number;
 };
 
-const seedArb: fc.Arbitrary<Seed> = fc.record({
+const rawSeedArb: fc.Arbitrary<Seed> = fc.record({
   kind: fc.constantFrom<GstDocKind>("tax_invoice", "export_invoice", "credit_note", "debit_note"),
   status: fc.constantFrom<RecipientStatus>("registered", "unregistered", "overseas"),
   intra: fc.boolean(),
@@ -106,6 +106,17 @@ function build(
     };
   });
 }
+
+const seedArb: fc.Arbitrary<Seed> = rawSeedArb.map((s) => ({
+  ...s,
+  // Consistent supply (the section depends on it): an export invoice is an export, a tax invoice never is; a note is either.
+  status:
+    s.kind === "export_invoice"
+      ? "overseas"
+      : s.kind === "tax_invoice" && s.status === "overseas"
+        ? "unregistered"
+        : s.status,
+}));
 
 const registerArb = fc.array(seedArb, { minLength: 1, maxLength: 24 }).chain((seeds) =>
   fc

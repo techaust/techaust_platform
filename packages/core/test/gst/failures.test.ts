@@ -134,7 +134,16 @@ describe("gstr1Sections: one test per error code", () => {
       only("pos_invalid"),
     );
     expect(
-      errors([row({ id: "x", supply: "export_lut", status: "overseas", gstin: null, pos: "19" })]),
+      errors([
+        row({
+          id: "x",
+          kind: "export_invoice",
+          supply: "export_lut",
+          status: "overseas",
+          gstin: null,
+          pos: "19",
+        }),
+      ]),
     ).toEqual(only("export_pos_mismatch"));
     expect(errors([row({ id: "x", pos: "96" })])).toEqual(only("export_pos_mismatch"));
     expect(errors([row({ id: "x", supply: "inter", pos: "96" })])).toEqual(only("export_pos_mismatch"));

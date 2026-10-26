@@ -328,3 +328,10 @@ export const GOLDEN_REGISTER: readonly RegisterRow[] = [
 
 /** The quarter of the golden fixture. */
 export const Q3 = { kind: "quarter", fyStartYear: 2026, quarter: 3 } as const;
+
+/**
+ * True when a CSV has a line break that is not CRLF outside quoted fields (a quoted field keeps its own inner breaks).
+ * Vitest normalises a CRLF file snapshot when the received text is LF, so the file snapshots alone do not prove CRLF.
+ */
+export const hasBareLineBreak = (csv: string): boolean =>
+  /(?<!\r)\n|\r(?!\n)/.test(csv.replace(/"(?:[^"]|"")*"/g, '""'));

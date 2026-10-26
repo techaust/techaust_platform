@@ -66,6 +66,8 @@ export type EdfRow = {
 export type EdfOptions = {
   readonly rules?: RealisationRules;
   readonly sacDescriptions?: Readonly<Record<string, string>>;
+  /** FEMA due dates extended by the bank, by document id: the same input as `realisationRows`, so the two reports agree. */
+  readonly extensions?: Readonly<Record<string, { readonly femaDue?: CalendarDate }>>;
 };
 
 /** Every non-voided export invoice dated in the month, oldest first. A USD invoice without an exchange rate is `fx_missing`. */
@@ -81,6 +83,7 @@ export function edfRows(
     const rules = options.rules ?? DEFAULT_REALISATION_RULES;
     if (!rulesAreValid(rules)) return fail([issue("rules_invalid", "rules")]);
     const descriptions = options.sacDescriptions ?? {};
+    const extensions = options.extensions ?? {};
     const errors: GstIssue[] = [];
     const warnings: GstWarning[] = [];
     const rows: EdfRow[] = [];
@@ -105,7 +108,12 @@ export function edfRows(
         errors.push({ code: "amount_invalid", path: at });
         continue;
       }
-      const dates = dueDatesOf({ invoiceDate: row.issueDate, currency: row.currency }, rules);
+      const extension = Object.hasOwn(extensions, row.id) ? extensions[row.id] : undefined;
+      if (extension?.femaDue !== undefined && !isValidDate(extension.femaDue)) {
+        errors.push({ code: "date_invalid", path: [row.id, "extension"] });
+        continue;
+      }
+      const dates = dueDatesOf({ invoiceDate: row.issueDate, currency: row.currency, extension }, rules);
       if (compareDates(row.issueDate, rules.rulesFrom) < 0)
         warnings.push({ code: "before_fema_2026", path: at });
       const sacs = [...new Set(row.rates.map((r) => r.sac).filter((s): s is string => s !== null))].sort(

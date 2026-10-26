@@ -4,6 +4,7 @@
 // note's own (positive) amounts with a note type, as the Offline Tool does, while b2cs and hsn rows are signed.
 import { type CalendarDate, isValidDate } from "../dates.ts";
 import { isStateCode, type StateCode } from "../gstin.ts";
+import { MAX_NUMBER_LENGTH } from "../numbering.ts";
 import { classifyInvoice, classifyNote, type NoteSection, type UrType } from "./classify.ts";
 import { gstPeriod, inPeriod, type PeriodRange } from "./period.ts";
 import {
@@ -23,15 +24,35 @@ import {
   issue,
   num,
   ok,
+  type RecipientStatus,
   type RegisterRate,
   type RegisterRow,
+  type SupplyType,
   signOf,
   uniqueIssues,
   warn,
 } from "./types.ts";
 
-/** The most characters of a document number the GST portal accepts (Rule 46(b)). */
-const MAX_NUMBER_LENGTH = 16;
+/** Rule 46(b) (VERIFY WITH CA/LEGAL): letters, digits, "/" and "-", starting with a letter or digit. Never triggers `defuse`. */
+const NUMBER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9/-]*$/;
+const isExportSupply = (s: SupplyType): boolean => s === "export_lut" || s === "export_igst";
+// Exhaustive by type: adding a supply type or a status to the engine's types fails the build here until it is listed.
+const SUPPLY_TYPE_SET: Readonly<Record<SupplyType, true>> = {
+  intra: true,
+  inter: true,
+  export_lut: true,
+  export_igst: true,
+};
+const RECIPIENT_STATUS_SET: Readonly<Record<RecipientStatus, true>> = {
+  registered: true,
+  unregistered: true,
+  overseas: true,
+};
+const isSupplyType = (v: unknown): v is SupplyType =>
+  typeof v === "string" && Object.hasOwn(SUPPLY_TYPE_SET, v);
+const isRecipientStatus = (v: unknown): v is RecipientStatus =>
+  typeof v === "string" && Object.hasOwn(RECIPIENT_STATUS_SET, v);
+const isPos = (v: unknown): boolean => v === "96" || (typeof v === "string" && isStateCode(v));
 
 export type ExportType = "WOPAY" | "WPAY";
 
@@ -165,10 +186,15 @@ const rateFieldsOk = (r: RegisterRate): boolean =>
   isNonNegInt(r.sgstMinor);
 
 /** The checks on one row that decides whether it can be reported (rule 7). */
-function rowIssues(row: RegisterRow): GstIssue[] {
+function rowIssues(row: RegisterRow, supplierStateCode: StateCode): GstIssue[] {
   const out: GstIssue[] = [];
   const add = (code: GstIssue["code"]) => out.push({ code, path: [row.id] });
-  if (typeof row.number !== "string" || row.number.length < 1 || row.number.length > MAX_NUMBER_LENGTH) {
+  // A number never starts with a character that `defuse` would change: what is filed is what was issued.
+  if (
+    typeof row.number !== "string" ||
+    row.number.length > MAX_NUMBER_LENGTH ||
+    !NUMBER_PATTERN.test(row.number)
+  ) {
     add("number_invalid");
   }
   const amountsOk =
@@ -186,16 +212,56 @@ function rowIssues(row: RegisterRow): GstIssue[] {
     }
     if (total !== BigInt(row.totalInrMinor)) add("totals_mismatch");
   }
-  const posOk = row.placeOfSupplyCode === "96" || isStateCode(row.placeOfSupplyCode);
+  const posOk = isPos(row.placeOfSupplyCode);
+  const exportSupply = isExportSupply(row.supplyType);
   if (!posOk) add("pos_invalid");
-  else if (
-    (row.supplyType === "export_lut" || row.supplyType === "export_igst") !==
-    (row.placeOfSupplyCode === "96")
+  else if (exportSupply !== (row.placeOfSupplyCode === "96")) add("export_pos_mismatch");
+
+  // Supply consistency (a lead decision, VERIFY WITH CA/LEGAL): everything that picks a section, a tax head or a report must
+  // tell the same story, or the return disagrees with itself at filing.
+  const isNote = row.kind === "credit_note" || row.kind === "debit_note";
+  let mismatch = false;
+  // an export invoice has an export supply, and a tax invoice does not
+  if (row.kind === "export_invoice" && !exportSupply) mismatch = true;
+  if (row.kind === "tax_invoice" && exportSupply) mismatch = true;
+  // an overseas recipient is exactly an export
+  if ((row.recipient.status === "overseas") !== exportSupply) mismatch = true;
+  // intra-state is the supplier's own state, inter-state any other (known) state
+  if (
+    posOk &&
+    !exportSupply &&
+    row.placeOfSupplyCode !== "96" &&
+    (row.supplyType === "intra") !== (row.placeOfSupplyCode === supplierStateCode)
   ) {
-    add("export_pos_mismatch");
+    mismatch = true;
   }
+  // the tax heads match the supply
+  if (amountsOk && !headsFit(row)) mismatch = true;
+  if (isNote && row.noteOf !== null) {
+    // a note shares its parent's supply type (a bad parent is parent_invalid)
+    if (isSupplyType(row.noteOf.supplyType) && row.noteOf.supplyType !== row.supplyType) mismatch = true;
+    if (!parentIsValid(row.noteOf)) out.push({ code: "parent_invalid", path: [row.id, "noteOf"] });
+  }
+  if (mismatch) add("supply_mismatch");
   return out;
 }
+
+/** Do the tax heads of every rate line fit the supply (intra: CGST = SGST, no IGST; inter or export with IGST: IGST only; LUT: none)? */
+function headsFit(row: RegisterRow): boolean {
+  return row.rates.every((r) => {
+    if (row.supplyType === "intra") return r.igstMinor === 0 && r.cgstMinor === r.sgstMinor;
+    if (row.supplyType === "export_lut") return r.igstMinor === 0 && r.cgstMinor === 0 && r.sgstMinor === 0;
+    return r.cgstMinor === 0 && r.sgstMinor === 0;
+  });
+}
+
+/** The fields of a note's parent block that the sections depend on: a non-negative safe integer, known values, a real date. */
+const parentIsValid = (p: NonNullable<RegisterRow["noteOf"]>): boolean =>
+  isNonNegInt(p.totalInrMinor) &&
+  isSupplyType(p.supplyType) &&
+  isRecipientStatus(p.recipientStatus) &&
+  isValidDate(p.issueDate) &&
+  isPos(p.placeOfSupplyCode);
 
 type Item = {
   readonly row: RegisterRow;
@@ -255,7 +321,10 @@ export function gstr1Sections(
       const at = [row.id];
       if (!GST_DOC_KINDS.includes(row.kind)) issues.push({ code: "kind_not_reportable", path: at });
       if (!isValidDate(row.issueDate)) issues.push({ code: "date_invalid", path: at });
-      const key = `${row.kind}|${row.number}`;
+      const key =
+        row.kind === "tax_invoice" || row.kind === "export_invoice"
+          ? `inv|${row.number}`
+          : `${row.kind}|${row.number}`;
       if (ids.has(row.id) || numbers.has(key)) issues.push({ code: "duplicate_row", path: at });
       ids.add(row.id);
       numbers.add(key);
@@ -265,9 +334,10 @@ export function gstr1Sections(
     const reported = register.filter((r) => !r.voided && inPeriod(r.issueDate, range.value));
     const items: Item[] = [];
     for (const row of reported) {
-      const found = rowIssues(row);
+      const found = rowIssues(row, params.supplierStateCode);
       const at = [row.id];
-      if (row.rates.some((r) => r.sac === null)) found.push({ code: "sac_missing", path: at });
+      if (row.rates.some((r) => r.sac === null || r.sac.trim() === ""))
+        found.push({ code: "sac_missing", path: at });
       let section: Item["section"] = "b2cs";
       let urType: UrType | null = null;
       if (row.kind === "tax_invoice" || row.kind === "export_invoice") {

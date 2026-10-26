@@ -1,6 +1,7 @@
 // The golden fixture of the GSTR-1 core [ADM-REP-04]: ~18 hand-built documents, the expected sections worked out BY HAND
 // (the arithmetic is in the comments), and every CSV pinned as a file snapshot (also the CA's sample to import into the
-// Offline Tool: the layouts are UNVERIFIED). Snapshot files keep CRLF: `__snapshots__/.gitattributes` says `-text`.
+// Offline Tool: the layouts are UNVERIFIED). Snapshot files keep CRLF (`__snapshots__/.gitattributes` says `-text`); the CRLF itself is asserted directly
+// (`hasBareLineBreak`), because Vitest ignores the difference when it compares a file snapshot.
 import { describe, expect, it } from "vitest";
 import {
   type DocsIssuedInput,
@@ -10,7 +11,7 @@ import {
   gstr1Csv,
   gstr1Sections,
 } from "../../src/gst/index.ts";
-import { GOLDEN_REGISTER, PARAMS, Q3 } from "./fixtures.ts";
+import { GOLDEN_REGISTER, hasBareLineBreak, PARAMS, Q3 } from "./fixtures.ts";
 
 const run = () => {
   const r = gstr1Sections(GOLDEN_REGISTER, Q3, PARAMS);
@@ -232,6 +233,7 @@ describe("golden fixture: file snapshots (the CA's sample)", () => {
       "docs.csv",
     ]);
     for (const f of r.value) {
+      expect(hasBareLineBreak(f.csv)).toBe(false);
       await expect(f.csv).toMatchFileSnapshot(`./__snapshots__/gstr1-v1-q3-${f.name}`);
     }
   });
