@@ -17,6 +17,7 @@ import {
   type J,
   json,
   mkDraft,
+  mkService,
   mkTerms,
 } from "./test-quotes.ts";
 
@@ -620,5 +621,57 @@ describe("a contact's offer links and send rows follow the contact [ADM-CLI-02, 
     );
     expect(none.items).toEqual([]);
     expect(s.id).toBeTruthy();
+  });
+});
+
+// ---- a draft made the way the New screen does: no contactId [ADM-PROP-01, ADM-PROP-07] -----------------------------------------------
+
+describe("a draft created without a contactId names the client's contact", () => {
+  const create = async (clientId: string) => {
+    const s = await owner();
+    // A template like the seeded one: its Acceptance section names the contact.
+    await insert("templates", {
+      id: uuidv7(),
+      kind: "proposal",
+      category: "run",
+      version: 7000,
+      body: JSON.stringify({
+        sections: [{ key: "acceptance", heading: "Acceptance", body: "Prepared for {{client.contact}}." }],
+      }),
+    }).catch(() => undefined);
+    const item = await mkService(100_000, { category: "run" });
+    const res = await call("/documents", {
+      cookie: s.cookie,
+      body: { type: "proposal", clientId, services: [{ catalogueItemId: item.id }] },
+    });
+    expect(res.status).toBe(201);
+    return { s, id: (await json(res)).id as string };
+  };
+
+  it("without a primary contact, the first live contact by name fills {{client.contact}} and the send goes through", async () => {
+    const clientId = await mkClient({ gst_status: "unregistered", state_code: "19" });
+    await mkContact(clientId, { name: "Zed Last", is_primary: 0, portal_access: 1 });
+    const first = await mkContact(clientId, { name: "Asha First", is_primary: 0, portal_access: 1 });
+    await mkContact(clientId, { name: "Aaron Gone", is_primary: 0, anonymised_at: Date.now() });
+    const { s, id } = await create(clientId);
+    const doc = await getDoc(s, id);
+    expect(doc.unresolved ?? []).not.toContain("client.contact");
+    expect(doc.sections.find((x: J) => x.kind === "acceptance")?.bodyMd).toContain("Asha First");
+    expect((await one<{ contact_id: string }>("SELECT contact_id FROM documents WHERE id = ?", id))?.contact_id).toBe(
+      first.id,
+    );
+    const res = await send(s.cookie, id, { expectedUpdatedAt: doc.updatedAt, contactIds: [first.id] });
+    expect(res.status).toBe(200);
+  });
+
+  it("a client with no live contact keeps the placeholder and the send is refused with unresolved_placeholders", async () => {
+    const clientId = await mkClient({ gst_status: "unregistered", state_code: "19" });
+    const { s, id } = await create(clientId);
+    const doc = await getDoc(s, id);
+    expect(doc.unresolved).toContain("client.contact");
+    const keep = await mkContact(clientId, { portal_access: 1 });
+    const res = await send(s.cookie, id, { expectedUpdatedAt: doc.updatedAt, contactIds: [keep.id] });
+    expect(res.status).toBe(409);
+    expect(await codeOf(res)).toBe("unresolved_placeholders");
   });
 });

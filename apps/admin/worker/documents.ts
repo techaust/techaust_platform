@@ -276,7 +276,7 @@ export const documents = new Hono<AppEnv>()
             .bind(f.contactId)
         : db
             .prepare(
-              "SELECT id, client_id, name, email, anonymised_at FROM contacts WHERE client_id = ?1 AND is_primary = 1 AND anonymised_at IS NULL LIMIT 1",
+              "SELECT id, client_id, name, email, anonymised_at FROM contacts WHERE client_id = ?1 AND anonymised_at IS NULL ORDER BY is_primary DESC, name, id LIMIT 1",
             )
             .bind(f.clientId),
       db.prepare(SETTINGS_READ),
