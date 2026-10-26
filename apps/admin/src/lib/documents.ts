@@ -540,7 +540,8 @@ export type Figures = {
   needsResave: boolean;
   termsOutdated: boolean;
   newestTermsVersion: number | null;
-  terms: { id: string; version: number; sha256: string } | null;
+  /** `bodyMd` is the pinned version's frozen text, on the read only (a save answer leaves it out). */
+  terms: { id: string; version: number; sha256: string; bodyMd?: string | null } | null;
 };
 
 export type SaveStatus = "idle" | "saving" | "saved" | "error" | "stale" | "frozen";

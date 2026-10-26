@@ -328,7 +328,13 @@ export async function documentView(i: ViewInput) {
       current: v.id === d.id,
     })),
     terms: bundle.terms
-      ? { id: bundle.terms.id, version: bundle.terms.version, sha256: bundle.terms.sha256 }
+      ? {
+          id: bundle.terms.id,
+          version: bundle.terms.version,
+          sha256: bundle.terms.sha256,
+          // the frozen text of the pinned version, when the read loaded it (the staff read view does)
+          bodyMd: "body_md" in bundle.terms ? String(bundle.terms.body_md) : null,
+        }
       : null,
     termsOutdated:
       !frozen &&

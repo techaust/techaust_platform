@@ -43,11 +43,12 @@ const CARE_ROWS = 20;
  */
 export const ACTIVITY_SQL = (ownOnly: boolean, byAction: boolean) =>
   `SELECT a.id, a.at, (SELECT name FROM staff_users WHERE id = a.actor_id) AS actor_name, a.action, a.entity_type, a.entity_id,
-          coalesce(l.ref, cl.code, pr.code, ccl.code) AS ref
+          coalesce(l.ref, cl.code, pr.code, ccl.code, d.number_display) AS ref
    FROM audit_log a INDEXED BY ${byAction ? "audit_log_action" : "audit_log_at"}
    LEFT JOIN leads l ON a.entity_type = 'lead' AND l.id = a.entity_id
    LEFT JOIN clients cl ON a.entity_type = 'client' AND cl.id = a.entity_id
    LEFT JOIN projects pr ON a.entity_type = 'project' AND pr.id = a.entity_id
+   LEFT JOIN documents d ON a.entity_type = 'document' AND d.id = a.entity_id
    LEFT JOIN care_plans cpl ON a.entity_type = 'care_plan' AND cpl.id = a.entity_id
    LEFT JOIN clients ccl ON ccl.id = cpl.client_id
    WHERE a.at >= ?1 AND a.action IN (SELECT value FROM json_each(?2))${ownOnly ? " AND (a.action NOT IN (SELECT value FROM json_each(?3)) OR a.actor_id = ?4)" : ""}

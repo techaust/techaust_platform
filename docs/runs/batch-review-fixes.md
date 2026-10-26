@@ -259,3 +259,19 @@ Branch `fix/batch-review-ui-builder2` from `origin/fix/batch-review-ui`. Sonnet 
 2. **M11:** the staff document read returns the pinned terms version's frozen `bodyMd` (only roles that can read the document; no new route, no owner-only data). Then render it in the admin read view under the terms line with `components/markdown.tsx` (one small screen change in `apps/admin/src/routes/documents/read.tsx` is yours). Tests.
 3. **M10 on the portal document view:** on screen, dates use the four-digit year ("10 Nov 2026"); the PDF keeps its approved short form. Add a long option to `packages/pdf/src/format.ts` (or a view field) used by the portal view only, and use it in `apps/portal/src`. Tests.
 Run the tests of every package you touch, `pnpm check`, and the admin and portal build budget lines. Commit, push your branch, append "Builder report: round 2" to this file, and report.
+
+## Builder report: round 2 (builder, Sonnet 5.5 medium, 2026-10-26)
+Branch `fix/batch-review-ui-builder2` from `origin/fix/batch-review-ui`.
+
+**Skills:** `cloudflare:workers-best-practices` (kept the one-batch reads, no new `import()`, no extra D1 call: the terms text rides in the same batch by switching the existing statement). `code-review` on my own diff: done by reading the diff, not by running the skill; nothing further found.
+
+1. **Dashboard:** `ACTIVITY_SQL` gets `LEFT JOIN documents d ON a.entity_type = 'document' AND d.id = a.entity_id` and `d.number_display` last in the `coalesce` (primary-key join; one batch and the row cap unchanged). Test in `documents-batch-fixes.test.ts` (a sent document's `document.send` row carries its number).
+2. **M11:** `readContext(c, id, extra, { fullTerms })`; only the document GET asks for the full terms row (the same single statement, with `body_md`). `documentView` returns `terms.bodyMd`; the save answer does not. The route's existing permission covers it, no new route. SPA: `terms.bodyMd` typed in `lib/documents-api.ts` and `lib/documents.ts`; `routes/documents/read.tsx` renders it with `Markdown` (class `terms-md`) under the terms line. Tests: the read returns the text to owner and sales, the save answer has none; the "light reads" test in `documents-fixes.test.ts` now says only the GET loads `body_md`.
+3. **M10 portal view:** `longIsoDate` in `packages/pdf/src/format.ts`; `toPdfView(envelope, cfg, { longDates })` (default short, so the PDF is unchanged); the portal's `worker/viewer.ts` and the dev preview `sample-api.ts` pass `longDates: true`, so issue date, valid-until, its note and instalment dates show "10 Nov 2026". Tests: `packages/pdf/test/view.test.ts`, `apps/portal/worker/offer-view.test.ts`.
+
+**Files:** `apps/admin/worker/{dashboard,documents,document-view}.ts`, `apps/admin/worker/{documents-batch-fixes,documents-fixes}.test.ts`, `apps/admin/src/lib/{documents,documents-api}.ts`, `apps/admin/src/routes/documents/read.tsx`, `apps/portal/worker/{viewer.ts,offer-view.test.ts}`, `apps/portal/src/preview/sample-api.ts`, `packages/pdf/src/{format,view}.ts`, `packages/pdf/test/view.test.ts`, this file.
+
+**Commands (all through `tools/heavy.sh`):** admin test 68 files, 2123 passed; pdf test passed (coverage 98.0 % statements); portal test 578 passed; jobs test 258 passed; `pnpm check` exit 0. A first admin run failed on missing workspace links (`Cannot find package '@techaust/core'` from packages/email, fixed with `pnpm install --frozen-lockfile --offline`) and on the one "light reads" test updated above.
+**Budget lines:** "admin bundle ok: 414797 bytes (limit 415878), startup 42.1 ms"; "portal bundle ok: 91174 bytes (limit 120000), startup 9.4 ms".
+**Not verified:** the admin screen with the terms text and the portal page on screen (no browser run); a separate whole-repo `pnpm lint` (`pnpm check` includes lint). A save in the editor does not refresh `terms.bodyMd`, which only the frozen read view uses.
+**Open questions:** none.

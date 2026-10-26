@@ -5,7 +5,7 @@ import { formatMoney, isCurrency, type Money, money, negate } from "@techaust/co
 import { placeOfSupplyLabel } from "@techaust/core/pdf-jobs";
 import { percentFromBp } from "@techaust/core/schedule-text";
 import type { ComputedDocument } from "@techaust/core/tax";
-import { countryName, formatMicros, formatQty, shortIsoDate } from "./format.ts";
+import { countryName, formatMicros, formatQty, longIsoDate, shortIsoDate } from "./format.ts";
 import type {
   Address,
   Envelope,
@@ -94,7 +94,13 @@ function totalsOf(c: ComputedDocument, m: (n: number) => string): ViewTotalRow[]
 }
 
 /** Builds the view of a verified envelope. `cfg` carries the few things that are not in the envelope. */
-export function toPdfView(envelope: Envelope, cfg: ViewConfig = DEFAULT_VIEW_CONFIG): PdfView {
+export function toPdfView(
+  envelope: Envelope,
+  cfg: ViewConfig = DEFAULT_VIEW_CONFIG,
+  opts: { longDates?: boolean } = {},
+): PdfView {
+  // The PDF prints "06 Oct 26"; the portal's screen passes `longDates` for "06 Oct 2026" (07-Q M10).
+  const dateOf = opts.longDates ? longIsoDate : shortIsoDate;
   const { snapshot: s } = envelope;
   const header = s.header;
   const computed = JSON.parse(s.computedJson) as ComputedDocument;
@@ -149,7 +155,7 @@ export function toPdfView(envelope: Envelope, cfg: ViewConfig = DEFAULT_VIEW_CON
     share: pct(st.pctBp),
     amount: m(header.instalmentAmounts[i] ?? 0),
     detail: nonEmpty(st.detail) ? st.detail : null,
-    date: st.targetDate ? shortIsoDate(st.targetDate) : null,
+    date: st.targetDate ? dateOf(st.targetDate) : null,
   }));
 
   const sections: ViewSection[] = s.sections
@@ -190,9 +196,9 @@ export function toPdfView(envelope: Envelope, cfg: ViewConfig = DEFAULT_VIEW_CON
     version: String(envelope.version),
     statusText: "Sent",
     notice: envelope.type === "estimate" ? "This is an estimate, not a tax invoice." : null,
-    issueDate: shortIsoDate(header.document.issueDate),
-    validUntil: shortIsoDate(header.document.validUntil),
-    validityNote: `Valid until ${shortIsoDate(header.document.validUntil)}`,
+    issueDate: dateOf(header.document.issueDate),
+    validUntil: dateOf(header.document.validUntil),
+    validityNote: `Valid until ${dateOf(header.document.validUntil)}`,
     logo: company.logo,
     supplier: { name: company.tradeName, lines: supplierLines },
     recipient,

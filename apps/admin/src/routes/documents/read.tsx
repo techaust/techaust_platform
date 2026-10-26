@@ -8,6 +8,7 @@ import { Link, useNavigate } from "react-router";
 import { catalogueApi } from "../../api.ts";
 import { PageHeader } from "../../components/display.tsx";
 import { Calendar as CalendarIcon, CheckCircle, FileText, Receipt } from "../../components/icons.tsx";
+import { Markdown } from "../../components/markdown.tsx";
 import { useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { Notice } from "../../components/ui.tsx";
@@ -290,7 +291,12 @@ export function ReadView({ view, reload }: { view: DocumentView; reload: () => v
                 {s.bodyMd?.trim() ? (
                   <SectionBody bodyMd={s.bodyMd} cover={s.kind === "cover"} />
                 ) : s.kind === "terms" && v.terms ? (
-                  <p>{termsLine(v.terms.version)}</p>
+                  <>
+                    <p>{termsLine(v.terms.version)}</p>
+                    {v.terms.bodyMd?.trim() ? (
+                      <Markdown source={v.terms.bodyMd} className="terms-md" />
+                    ) : null}
+                  </>
                 ) : !v.frozen && !isRequiredSection(s.kind) ? (
                   <SectionBody bodyMd={null} />
                 ) : null}

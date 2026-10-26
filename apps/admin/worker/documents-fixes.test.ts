@@ -167,7 +167,7 @@ describe("the save answers slim [item 4]", () => {
 
 // ---------------------------------------------------------------------------------------------------------------
 describe("light reads [item 5]", () => {
-  it("the document routes never read the text of the terms, and a draft's stored result is not read as a result", async () => {
+  it("only the document read loads the text of the terms (save and send never do), and a draft's stored result is not read as a result", async () => {
     const o = await owner();
     const made = await mkDraft(o);
     const doc = await getDoc(o, made.id);
@@ -205,7 +205,13 @@ describe("light reads [item 5]", () => {
     ] as const) {
       const terms = probe.seen.filter((q) => /FROM terms_versions/.test(q));
       expect(terms.length, name).toBeGreaterThan(0);
-      for (const q of terms) expect(q, name).not.toContain("body_md");
+      // The read (GET) shows the pinned terms text to staff (M11, batch review round 2); a save and a send never need it.
+      if (name === "get")
+        expect(
+          terms.some((q) => q.includes("body_md")),
+          name,
+        ).toBe(true);
+      else for (const q of terms) expect(q, name).not.toContain("body_md");
     }
   });
 });

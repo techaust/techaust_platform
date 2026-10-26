@@ -185,7 +185,8 @@ export type DocumentViewBase = {
   guard: Guard | null;
   approval: ApprovalInfo;
   versions: VersionRow[];
-  terms: { id: string; version: number; sha256: string } | null;
+  /** `bodyMd` is the pinned version's frozen text (the read loads it; a save answer leaves it out). */
+  terms: { id: string; version: number; sha256: string; bodyMd?: string | null } | null;
   termsOutdated: boolean;
   /** The newest proposal terms' version (for "Newer terms (version n) exist"). */
   newestTermsVersion?: number | null;

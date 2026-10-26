@@ -12,5 +12,5 @@ import type { OfferViewer } from "./offer-core.ts";
 export const defaultViewer: OfferViewer = (snapshotText) => {
   const envelope = parseEnvelope(snapshotText);
   if (envelope === null) throw new Error("offer snapshot is not readable");
-  return toPdfView(envelope);
+  return toPdfView(envelope, undefined, { longDates: true }); // four-digit years on screen (the PDF keeps the short form)
 };
