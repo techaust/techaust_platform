@@ -102,13 +102,13 @@ export function PdfPanel(props: {
         </h2>
         {phase === "ready" && pdf.fingerprint && (
           <p className="pdf-panel__meta">
-            <span className="docno">{PDF_COPY.fingerprint(pdf.fingerprint)}</span>
+            {PDF_COPY.fingerprintLabel} <span className="docno">{pdf.fingerprint}</span>
           </p>
         )}
       </div>
       {phase === "ready" && (
         <a
-          className="btn btn--primary btn--block pdf-panel__action"
+          className="btn btn--secondary btn--block pdf-panel__action"
           href={documentPdfHref(props.id)}
           download
         >

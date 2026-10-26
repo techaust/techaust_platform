@@ -9,6 +9,8 @@ export const PDF_COPY = {
   slow: "The PDF is taking longer than usual.",
   tryAgain: "Try again",
   retried: "We'll make the PDF again.",
+  /** "Fingerprint {first 12 characters}": the screen sets the word and the characters apart (the characters as a code). */
+  fingerprintLabel: "Fingerprint",
   fingerprint: (twelve: string) => `Fingerprint ${twelve}`,
   /** 07-P §4: answers of the API, said in the screen's words. */
   pending: "The PDF is still being made. Try again in a minute.",

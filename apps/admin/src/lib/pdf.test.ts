@@ -76,6 +76,7 @@ describe("the wording (07-P §3, §4)", () => {
     expect(PDF_COPY.tryAgain).toBe("Try again");
     expect(PDF_COPY.retried).toBe("We'll make the PDF again.");
     expect(PDF_COPY.fingerprint("0123456789ab")).toBe("Fingerprint 0123456789ab");
+    expect(`${PDF_COPY.fingerprintLabel} 0123456789ab`).toBe(PDF_COPY.fingerprint("0123456789ab"));
     expect(PDF_COPY.pending).toBe("The PDF is still being made. Try again in a minute.");
     expect(PDF_COPY.done).toBe("The PDF is already made.");
     expect(SIGNATURE_COPY).toEqual({
