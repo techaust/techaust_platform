@@ -118,6 +118,8 @@ export type InvoiceIssuerSnapshot = {
   company: IssuerSnapshot["company"] & { phone?: string; principalPlace?: string };
   bank: { inr: InvoiceBankBlock | null };
   signature: { key: string; sha256: string; mime: string } | null;
+  /** The Rule 46(p) statement printed on the invoice (Settings > Tax at issue), frozen and sealed so a later settings change never changes it (VERIFY WITH CA/LEGAL). */
+  reverseChargeText: string;
   sender: IssuerSnapshot["sender"];
 };
 

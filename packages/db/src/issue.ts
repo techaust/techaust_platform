@@ -241,6 +241,8 @@ export type InvoiceIssueArgs = {
     bankStamp: number | null;
     /** The client's `updated_at` at the read: a changed client refuses the issue. */
     clientUpdatedAt: number;
+    /** The contact named on the invoice (id and `updated_at` at the read), or null when it has none: a contact edited or anonymised since refuses the issue. */
+    contact: { id: string; updatedAt: number } | null;
   };
   authority: IssueAuthority;
   /** The requester's bell when an issue request was waiting (07-R: "Your invoice for {client name} was issued as {number}."): the client's name, and the link up to the id. */
@@ -264,14 +266,15 @@ export function invoiceIssueStatements(db: D1Database, a: InvoiceIssueArgs): Sen
   const nextNo = "(SELECT next_no - 1 FROM doc_counters WHERE series = ?2 AND fy = ?3)";
   const printfArgs = a.argOrder[0] === "fy" ? `?3, ${nextNo}` : `${nextNo}, ?3`;
   const owner =
-    "EXISTS (SELECT 1 FROM staff_sessions s JOIN staff_users u ON u.id = s.user_id WHERE s.id = ?24 AND s.revoked_at IS NULL AND s.step_up_until > ?5 AND u.role = 'owner' AND u.status = 'active')";
+    "EXISTS (SELECT 1 FROM staff_sessions s JOIN staff_users u ON u.id = s.user_id WHERE s.id = ?24 AND s.revoked_at IS NULL AND s.idle_expires_at > ?5 AND s.abs_expires_at > ?5 AND s.step_up_until > ?5 AND u.role = 'owner' AND u.status = 'active')";
   const approval =
     a.authority.kind === "approval"
-      ? " AND EXISTS (SELECT 1 FROM approvals ap WHERE ap.id = ?25 AND ap.document_id = documents.id AND ap.kind = 'issue' AND ap.status = 'pending' AND ap.content_sha256 = documents.content_sha256)"
+      ? " AND EXISTS (SELECT 1 FROM approvals ap WHERE ap.id = ?27 AND ap.document_id = documents.id AND ap.kind = 'issue' AND ap.status = 'pending' AND ap.content_sha256 = documents.content_sha256)"
       : "";
   // ?1 id, ?2 series, ?3 fy, ?4 pattern, ?5 now, ?6 issue date, ?7 due date, ?8 recipient, ?9 issuer, ?10 computed, ?11 snapshot sha, ?12 issued by,
   // ?13 terms version, ?14 expected updated_at, ?15 expected content sha, ?16 numbering, ?17 company, ?18 tax, ?19 payment terms versions, ?20 bank
-  // stamp, ?21 client updated_at, ?22 highest number, ?23 type, ?24 session, and for an approval ?25 the approval id.
+  // stamp, ?21 client updated_at, ?22 highest number, ?23 type, ?24 session, ?25 contact id, ?26 contact updated_at (both null: no contact), and for
+  // an approval ?27 the approval id.
   const freeze = db
     .prepare(
       `UPDATE documents SET series = ?2, fy = ?3, number = ${nextNo}, number_display = printf(?4, ${printfArgs}),
@@ -286,6 +289,7 @@ export function invoiceIssueStatements(db: D1Database, a: InvoiceIssueArgs): Sen
          AND (SELECT updated_at FROM clients WHERE id = documents.client_id) = ?21
          AND NOT EXISTS (SELECT 1 FROM clients z WHERE z.id = documents.client_id AND z.anonymised_at IS NOT NULL)
          AND ${nextNo} <= ?22
+         AND (?25 IS NULL OR EXISTS (SELECT 1 FROM contacts k WHERE k.id = ?25 AND k.client_id = documents.client_id AND k.anonymised_at IS NULL AND k.updated_at = ?26))
          AND ${owner}${approval}
        RETURNING number_display, number`,
     )
@@ -314,16 +318,19 @@ export function invoiceIssueStatements(db: D1Database, a: InvoiceIssueArgs): Sen
       a.maxNumber,
       a.type,
       a.authority.sessionId,
+      a.expected.contact?.id ?? null,
+      a.expected.contact?.updatedAt ?? null,
       ...(a.authority.kind === "approval" ? [a.authority.approvalId] : []),
     );
   return {
     main: [guardStatement(db, a.documentId), ...counterStatements(db, a.series, a.fy), freeze],
     postAudit: [
       issueResultStatement(db, a.documentId, a.series, a.fy),
-      // The milestone this invoice was made from is now invoiced (one made by "Start project" (M4.5) is still pending when its first-instalment draft is issued, so both count); `delivered_at` was set when it became ready to bill (LD12) and is kept.
+      // The milestone this invoice was made from is now invoiced (one made by "Start project" (M4.5) is still pending when its first-instalment draft is issued, so both count); `delivered_at` was set when it became ready to bill (LD12) and is kept: an advance invoice on a pending milestone leaves it unset (the work is not delivered).
       db
         .prepare(
-          `UPDATE milestones SET status = 'invoiced', delivered_at = coalesce(delivered_at, ?2), updated_at = ?2
+          `UPDATE milestones SET delivered_at = CASE WHEN status = 'ready_to_bill' THEN coalesce(delivered_at, ?2) ELSE delivered_at END,
+             status = 'invoiced', updated_at = ?2
            WHERE document_id = ?1 AND status IN ('pending', 'ready_to_bill') AND ${FROZEN_BY_THIS_BATCH}`,
         )
         .bind(a.documentId, a.now),

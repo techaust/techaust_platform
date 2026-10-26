@@ -1,4 +1,4 @@
-// The PDF of a sent proposal or estimate (M4.4, JOB-PDF-01). VERIFY WITH CA/LEGAL: the PDF is the evidence an acceptance is tied to (run file).
+// The PDF of a sent proposal or estimate (M4.4, JOB-PDF-01) and of an issued invoice (M5.1 stage B: the same three steps, `docs/<type>/<fy>/<nnnn>-v1.{json,pdf}`). VERIFY WITH CA/LEGAL: the PDF is the evidence an acceptance is tied to (run file).
 //   send route -> `pdf.snapshot` (admin `afterSend`, through waitUntil)
 //   snapshot  -> reads the sent rows in ONE batch, checks the seal with the send route's own functions (`envelopeOfBundle`), writes the
 //                R2 envelope (`docs/<type>/<fy>/<nnnn>-v<v>.json`, once, never overwritten), sets `snapshot_r2_key`, enqueues `pdf.render`.
@@ -9,11 +9,16 @@
 // M4.5 adds to this queue: `pdf.certificate` (the acceptance certificate: the same paced render, the same error table, the same put-once
 // helper; then `offer.accepted` follows) and `offer.sweep` (the waiting offer emails and the missing certificates). After a document's PDF is
 // stored, or found already stored, `onRendered` queues the offer emails that were waiting for it (offers.ts).
+// An issued invoice (B2) goes through the same steps with its own envelope (`invoiceEnvelopeOfBundle`: the issue route's own seal check; format 3) and its
+// own view; a voided invoice is rendered from its ISSUED snapshot, with no void stamp (LD7: nothing here reads `voided_at`). Its signature image is read from DOCS
+// by the key frozen in the envelope and embedded only when its SHA-256 is the frozen one; anything else is refused. A refused envelope or signature rings the
+// owners' bell once (kind `pdf.refused`), is acknowledged without a retry, and is left out of the sweep (a refusal never pins the daily sweep's 20 slots).
 // Errors (the table of the brief): a rate limit sends a delayed copy and acknowledges (`hop` counts them, cap 30); the daily quota does the
 // same until the next UTC midnight + 120 s and rings the owners' bell once a day; a bad render, an upstream error or a non-PDF is thrown,
 // so the queue retries with backoff (5 tries) and then the dead-letter queue rings the bell. An envelope that fails verification is never
 // rendered: it rings the bell and is acknowledged (a retry cannot help). No personal data in a log line or a bell title: ids, numbers, kinds.
 
+import { isInvoiceFlowType } from "@techaust/core/invoices";
 import { todayIst } from "@techaust/core/offers";
 import {
   isPdfMessage,
@@ -31,14 +36,21 @@ import { bundleOf, loadStatements, type TermsRow } from "@techaust/db/documents"
 import {
   type Envelope,
   envelopeOfBundle,
+  type InvoiceEnvelope,
+  invoiceEnvelopeOfBundle,
   type PdfView,
   parseEnvelope,
+  parseInvoiceEnvelope,
   pdfOptionsFor,
   renderCertificateHtml,
   renderDocumentHtml,
   serializeEnvelope,
+  serializeInvoiceEnvelope,
+  toInvoiceView,
   toPdfView,
   verifyEnvelope,
+  verifyInvoiceEnvelope,
+  verifySignatureBytes,
   viewConfigFor,
 } from "@techaust/pdf";
 import { type RenderEnv, renderPaced } from "./browser.ts";
@@ -65,6 +77,8 @@ const hex = (b: ArrayBuffer) =>
 export const BELL_COPY = {
   failed: (number: string, version: number) =>
     `The PDF for ${number} v${version} could not be made. Open it to try again.`,
+  /** An invoice has one version: the same line without "v1" (07-R §5 has "The PDF couldn't be made. Try again." for the screen; the bell keeps 07-P's shape). */
+  failedInvoice: (number: string) => `The PDF for ${number} could not be made. Open it to try again.`,
   /** A PDF that failed its integrity check (07-Q Q9, owner 2026-10-26): it was not sent; the same check would fail again, so a person looks. */
   integrity: (label: string) =>
     `The PDF of ${label} didn't match its saved copy, so it wasn't sent. A developer needs to look at it before it can be sent.`,
@@ -142,6 +156,7 @@ export async function processSnapshot(env: Env, msg: PdfSnapshotMessage): Promis
   if (d.pdf_sha256 !== null) return skip("done");
   // An erased client takes nothing new: no envelope, no PDF, no bell (the standing rule for anonymised clients; VERIFY WITH CA/LEGAL).
   if (await clientIsGone(env, d.client_id)) return skip("client_gone");
+  if (isInvoiceFlowType(d.type)) return snapshotInvoice(env, msg, bundle, label);
   const made = await envelopeOfBundle(bundle);
   if (!made.ok) {
     if (made.code === "unsupported_type" || made.code === "not_sent") return skip(made.code);
@@ -170,6 +185,152 @@ export async function processSnapshot(env: Env, msg: PdfSnapshotMessage): Promis
   await env.PDF_QUEUE.send({ v: 1, kind: "pdf.render", documentId: d.id, hop: 0 } satisfies PdfRenderMessage);
   logEvent("pdf.snapshot", { reason: msg.reason, created: put.created });
   return "queued";
+}
+
+// ---- the invoice family (B2) --------------------------------------------------------------------------------------------------------
+
+/** The bell of a refused invoice envelope or signature: its own kind (the sweep leaves a document with one alone), and the invoice's page. */
+const refusedBell = (env: Env, id: string, label: string): D1PreparedStatement =>
+  bell(env, "pdf.refused", "document", id, BELL_COPY.integrity(label), `/invoices/${id}`);
+
+/** `snapshot` for an issued invoice: the same steps as a proposal's, from the invoice envelope. */
+async function snapshotInvoice(
+  env: Env,
+  msg: PdfSnapshotMessage,
+  bundle: NonNullable<ReturnType<typeof bundleOf<TermsRow>>>,
+  label: string,
+): Promise<SnapshotOutcome> {
+  const d = bundle.document;
+  const made = await invoiceEnvelopeOfBundle(bundle);
+  if (!made.ok) {
+    if (made.code === "unsupported_type" || made.code === "not_issued") return skip(made.code);
+    // The rows do not reproduce what the issue sealed: nothing is written, the owners are told, and a retry cannot help.
+    logEvent("pdf.refused", { stage: "snapshot", code: made.code, family: "invoice" });
+    await env.DB.batch([refusedBell(env, d.id, label)]);
+    return "refused";
+  }
+  const e = made.envelope;
+  const keys = pdfKeys({ type: e.type, fy: e.fy, number: e.number, version: 1 });
+  const text = serializeInvoiceEnvelope(e);
+  const put = await putOnce(env.DOCS, keys.snapshot, text, "application/json");
+  if (!put.created && (await put.existing.text()) !== text) {
+    // A different envelope already holds the key: never overwritten, never rendered from; a person looks.
+    logEvent("pdf.refused", { stage: "snapshot", code: "key_conflict", family: "invoice" });
+    await env.DB.batch([refusedBell(env, d.id, label)]);
+    return "refused";
+  }
+  await env.DB.prepare("UPDATE documents SET snapshot_r2_key = ?2 WHERE id = ?1 AND snapshot_r2_key IS NULL")
+    .bind(d.id, keys.snapshot)
+    .run();
+  await env.PDF_QUEUE.send({ v: 1, kind: "pdf.render", documentId: d.id, hop: 0 } satisfies PdfRenderMessage);
+  logEvent("pdf.snapshot", { reason: msg.reason, created: put.created, family: "invoice" });
+  return "queued";
+}
+
+/** The largest signature image the Settings route accepts (core `SIGNATURE_MAX_BYTES`; a test keeps the two equal). */
+export const SIGNATURE_MAX_BYTES = 256 * 1024;
+/** Where the Settings route writes a signature: content-addressed, so a key of any other shape is never read. */
+const SIGNATURE_KEY = /^settings\/signature-[0-9a-f]{16}\.(png|jpg)$/;
+const SIGNATURE_MIMES = ["image/png", "image/jpeg"];
+
+function base64Of(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000)
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(binary);
+}
+
+/**
+ * The signature image of an invoice, verified: read from DOCS by the key frozen in the envelope, its size within the cap and its SHA-256 the frozen
+ * one. `null` is "this invoice has no signature"; `"refused"` is a signature that is frozen but cannot be shown as it was (the object is missing,
+ * another size, other bytes, an unexpected key or type): the invoice is not rendered without it (LD11; VERIFY WITH CA/LEGAL).
+ */
+async function verifiedSignature(
+  env: Env,
+  e: InvoiceEnvelope,
+): Promise<{ mime: string; base64: string } | null | "refused"> {
+  const ref = e.snapshot.header.issuer.signature;
+  if (ref === null) return null;
+  if (!SIGNATURE_KEY.test(ref.key) || !SIGNATURE_MIMES.includes(ref.mime)) return "refused";
+  const head = await env.DOCS.head(ref.key);
+  if (head === null || head.size < 1 || head.size > SIGNATURE_MAX_BYTES) return "refused";
+  const object = await env.DOCS.get(ref.key);
+  if (object === null) return "refused";
+  const bytes = new Uint8Array(await object.arrayBuffer());
+  if (bytes.byteLength > SIGNATURE_MAX_BYTES || !(await verifySignatureBytes(e, bytes))) return "refused";
+  return { mime: ref.mime, base64: base64Of(bytes) };
+}
+
+/** `render` for an issued invoice (the common steps are `processRender`'s). Returns the outcome; throws for anything a retry can fix. */
+async function renderInvoice(
+  env: Env,
+  msg: PdfRenderMessage,
+  row: RenderRow,
+  envelopeText: string,
+  now: number,
+  clock: Clock,
+): Promise<RenderOutcome> {
+  const envelope = parseInvoiceEnvelope(envelopeText);
+  const verdict =
+    envelope === null
+      ? ({ ok: false, code: "shape" } as const)
+      : envelope.documentId !== row.id || envelope.snapshotSha256 !== row.snapshot_sha256
+        ? ({ ok: false, code: "row_mismatch" } as const)
+        : await verifyInvoiceEnvelope(envelope);
+  const label = documentLabel(row.number_display);
+  if (!envelope || !verdict.ok) {
+    logEvent("pdf.refused", {
+      stage: "render",
+      code: verdict.ok ? "unknown" : verdict.code,
+      family: "invoice",
+    });
+    await env.DB.batch([refusedBell(env, row.id, label)]);
+    return "refused";
+  }
+  const keys = pdfKeys({ type: envelope.type, fy: envelope.fy, number: envelope.number, version: 1 });
+
+  // A PDF stored by an earlier run whose row update was lost: the first one stays, a document is never rendered twice.
+  const already = await env.DOCS.get(keys.pdf);
+  if (already !== null) {
+    await settle(
+      env,
+      row,
+      keys.pdf,
+      await sha256Bytes(new Uint8Array(await already.arrayBuffer())),
+      { renders: 0, browserMs: 0 },
+      now,
+    );
+    logEvent("pdf.adopted", { family: "invoice" });
+    return "adopted";
+  }
+
+  const signature = await verifiedSignature(env, envelope);
+  if (signature === "refused") {
+    logEvent("pdf.refused", { stage: "render", code: "signature", family: "invoice" });
+    await env.DB.batch([refusedBell(env, row.id, label)]);
+    return "refused";
+  }
+  const view = toInvoiceView(envelope, viewConfigFor(env.PORTAL_URL), { signature });
+  const result = await renderPaced(env, renderDocumentHtml(view), pdfOptionsFor(view), clock);
+  if (!result.ok) return failed(env, msg, result, now);
+
+  const stored = await putOnce(env.DOCS, keys.pdf, result.bytes, "application/pdf");
+  const bytes = stored.created ? result.bytes : new Uint8Array(await stored.existing.arrayBuffer());
+  await settle(
+    env,
+    row,
+    keys.pdf,
+    await sha256Bytes(bytes),
+    { renders: 1, browserMs: result.browserMs },
+    now,
+  );
+  logEvent("pdf.rendered", {
+    bytes: bytes.byteLength,
+    browserMs: result.browserMs,
+    hop: msg.hop,
+    family: "invoice",
+  });
+  return "rendered";
 }
 
 const GONE_SQL = "SELECT 1 AS gone FROM clients WHERE id = ?1 AND anonymised_at IS NOT NULL";
@@ -257,7 +418,8 @@ export async function processRender(
   clock: Clock = realClock,
 ): Promise<RenderOutcome> {
   const row = await env.DB.prepare(RENDER_ROW_SQL).bind(msg.documentId).first<RenderRow>();
-  if (!row || row.frozen_at === null || (row.type !== "proposal" && row.type !== "estimate")) {
+  const invoice = row !== null && isInvoiceFlowType(row.type);
+  if (!row || row.frozen_at === null || (row.type !== "proposal" && row.type !== "estimate" && !invoice)) {
     logEvent("pdf.render_skipped", { why: row ? "not_supported" : "not_found" });
     return "skipped";
   }
@@ -284,6 +446,7 @@ export async function processRender(
   }
   const envelopeObject = await env.DOCS.get(row.snapshot_r2_key);
   if (envelopeObject === null) throw new Error("the envelope object is missing");
+  if (invoice) return renderInvoice(env, msg, row, await envelopeObject.text(), now, clock);
   const envelope = parseEnvelope(await envelopeObject.text());
   const verdict =
     envelope === null
@@ -450,6 +613,7 @@ export async function processCertificate(
 export const SWEEP_SQL = `SELECT id FROM documents INDEXED BY documents_pdf_pending
   WHERE frozen_at IS NOT NULL AND pdf_sha256 IS NULL AND type IN ('proposal', 'estimate', 'tax_invoice', 'export_invoice', 'proforma', 'credit_note', 'debit_note') AND frozen_at <= ?1
     AND NOT EXISTS (SELECT 1 FROM clients z WHERE z.id = documents.client_id AND z.anonymised_at IS NOT NULL)
+    AND NOT EXISTS (SELECT 1 FROM notifications r WHERE r.entity_type = 'document' AND r.entity_id = documents.id AND r.kind = 'pdf.refused')
   ORDER BY frozen_at LIMIT ${SWEEP_LIMIT}`;
 
 /** Handles one `pdf.sweep` message: enqueues a snapshot for each sent document that still has no PDF (at most 20 per run). */
@@ -518,25 +682,29 @@ export async function processPdfDeadLetter(env: Env, body: unknown, now = Date.n
     ]);
   } else if (isPdfMessage(body) && (body.kind === "pdf.snapshot" || body.kind === "pdf.render")) {
     const row = await env.DB.prepare(
-      `SELECT number_display, version,
+      `SELECT type, number_display, version,
         EXISTS (SELECT 1 FROM clients c WHERE c.id = documents.client_id AND c.anonymised_at IS NOT NULL) AS client_gone
         FROM documents WHERE id = ?1`,
     )
       .bind(body.documentId)
-      .first<{ number_display: string | null; version: number; client_gone: number }>();
+      .first<{ type: string; number_display: string | null; version: number; client_gone: number }>();
     // No bell for an anonymised client: nothing is left to try again.
     if (row?.client_gone) {
       logEvent("pdf.dead_letter", { kind: body.kind, skipped: "client_gone" });
       return;
     }
+    // An invoice has one version and its own page: no "v1", and the link is the invoice's.
+    const invoice = row !== null && isInvoiceFlowType(row.type);
     await env.DB.batch([
       bell(
         env,
         "pdf.failed",
         "document",
         body.documentId,
-        BELL_COPY.failed(row?.number_display ?? "this document", row?.version ?? 1),
-        `/proposals/${body.documentId}`,
+        invoice
+          ? BELL_COPY.failedInvoice(row.number_display ?? "this invoice")
+          : BELL_COPY.failed(row?.number_display ?? "this document", row?.version ?? 1),
+        invoice ? `/invoices/${body.documentId}` : `/proposals/${body.documentId}`,
       ),
     ]);
   }

@@ -3,7 +3,6 @@
 // column needs a new migration that drops and recreates the trigger, and test/triggers.test.ts fails until
 // the installed trigger covers every content column.
 import { INVOICE_FAMILY_SQL, QUOTE_DOCUMENT_TYPES } from "@techaust/core/clients";
-import { INVOICE_FLOW_TYPES, INVOICE_STATUS_FLOW } from "@techaust/core/invoices";
 import { getTableColumns } from "drizzle-orm";
 import { getTableConfig } from "drizzle-orm/sqlite-core";
 import {
@@ -487,15 +486,61 @@ export function offerTriggerStatements(): string[] {
 }
 
 /**
+ * The invoice flow types and the status moves exactly as migration 0038 lists them (pinned, as `FROZEN_COLUMNS_0001` is). `invoiceTriggerStatements()`
+ * uses these, so the `invoice_triggers` set keeps generating 0038 byte for byte when core's `INVOICE_STATUS_FLOW` grows in M5.2 or M5.3; the move
+ * that follows goes into a NEW migration with its own pinned table. A db test compares the installed trigger with core's `canMoveInvoiceStatus`
+ * move by move, so a change in core that no migration follows fails there.
+ */
+export const INVOICE_FLOW_TYPES_0038 = [
+  "proforma",
+  "tax_invoice",
+  "export_invoice",
+  "credit_note",
+  "debit_note",
+] as const;
+export const INVOICE_STATUS_FLOW_0038: readonly {
+  readonly from: string;
+  readonly to: string;
+  readonly types?: readonly string[];
+  readonly unsettled?: true;
+}[] = [
+  { from: "draft", to: "issued" },
+  { from: "issued", to: "void", unsettled: true },
+  { from: "issued", to: "partially_paid" },
+  { from: "issued", to: "paid" },
+  { from: "issued", to: "partially_credited" },
+  { from: "issued", to: "credited" },
+  { from: "partially_paid", to: "issued" },
+  { from: "partially_paid", to: "paid" },
+  { from: "partially_paid", to: "partially_credited" },
+  { from: "partially_paid", to: "credited" },
+  { from: "paid", to: "issued" },
+  { from: "paid", to: "partially_paid" },
+  { from: "paid", to: "partially_credited" },
+  { from: "paid", to: "credited" },
+  { from: "partially_credited", to: "issued" },
+  { from: "partially_credited", to: "partially_paid" },
+  { from: "partially_credited", to: "paid" },
+  { from: "partially_credited", to: "credited" },
+  { from: "credited", to: "issued" },
+  { from: "credited", to: "partially_paid" },
+  { from: "credited", to: "paid" },
+  { from: "credited", to: "partially_credited" },
+  { from: "issued", to: "converted", types: ["proforma"] },
+  { from: "partially_paid", to: "converted", types: ["proforma"] },
+  { from: "paid", to: "converted", types: ["proforma"] },
+];
+
+/**
  * The invoice triggers (M5.1, ADM-INV-02, -03, -07, LD21; new triggers only, no table is rebuilt; every abort message starts with the trigger's
  * name so the API can map it). VERIFY WITH CA/LEGAL for the rules; the API checks the same rules in SQL conditions first, these hold
  * whatever writes to the tables:
- *   1. `documents_invoice_status_flow`: the moves of core `INVOICE_STATUS_FLOW` (the SQL is generated from that table, a db test compares
+ *   1. `documents_invoice_status_flow`: the moves of `INVOICE_STATUS_FLOW_0038` (the pinned copy of core's table; a db test compares
  *      every move with `canMoveInvoiceStatus`); `void` and `converted` are terminal; a void needs nothing paid or credited and no issued child;
  *   2. `documents_void_pairing`: a document that becomes void carries `voided_at` and `void_reason` and is frozen; no other status has `voided_at` (a void row is then fixed by the freeze trigger and the flow);
  *   3. an invoice-family document has its client's currency (M3.3 follow-up);
  *   4. `export_invoice` is for an overseas client, `tax_invoice` for a client in India (SEZ is not modelled);
- *   5. `parent_id` (a foreign key would need a rebuild of a referenced table) is null or names a FROZEN document of the SAME client in an
+ *   5. `parent_id` (a foreign key would need a rebuild of a referenced table) is null or names a FROZEN, not void, document of the SAME client in an
  *      allowed pair: credit or debit note -> tax or export invoice; tax or export invoice -> proforma; receipt -> any invoice-flow type (M6);
  *   6. a milestone's `document_id` names an invoice-family document of the milestone's own client.
  */
@@ -504,7 +549,7 @@ export function invoiceTriggerStatements(): string[] {
   // 1. The moves, grouped by (from, types, unsettled) so each group is one clause.
   type FlowGroup = { from: string; tos: string[]; types: readonly string[] | undefined; unsettled: boolean };
   const groups = new Map<string, FlowGroup>();
-  for (const m of INVOICE_STATUS_FLOW) {
+  for (const m of INVOICE_STATUS_FLOW_0038) {
     const key = `${m.from}|${m.types?.join(",") ?? ""}|${m.unsettled === true}`;
     const g: FlowGroup = groups.get(key) ?? {
       from: m.from,
@@ -526,8 +571,8 @@ export function invoiceTriggerStatements(): string[] {
   const badCurrency = `NEW.type IN (${INVOICE_FAMILY_SQL}) AND NEW.currency IS NOT (SELECT currency FROM clients WHERE id = NEW.client_id)`;
   const open = "OLD.frozen_at IS NULL AND ";
   const badType = `(NEW.type = 'export_invoice' AND ${clientStatus} IS NOT 'overseas') OR (NEW.type = 'tax_invoice' AND ${clientStatus} IS 'overseas')`;
-  const flow = q(INVOICE_FLOW_TYPES);
-  const badParent = `NEW.parent_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM documents p WHERE p.id = NEW.parent_id AND p.frozen_at IS NOT NULL AND p.client_id = NEW.client_id AND ((NEW.type IN ('credit_note', 'debit_note') AND p.type IN ('tax_invoice', 'export_invoice')) OR (NEW.type IN ('tax_invoice', 'export_invoice') AND p.type = 'proforma') OR (NEW.type = 'receipt' AND p.type IN (${flow}))))`;
+  const flow = q(INVOICE_FLOW_TYPES_0038);
+  const badParent = `NEW.parent_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM documents p WHERE p.id = NEW.parent_id AND p.frozen_at IS NOT NULL AND p.status <> 'void' AND p.client_id = NEW.client_id AND ((NEW.type IN ('credit_note', 'debit_note') AND p.type IN ('tax_invoice', 'export_invoice')) OR (NEW.type IN ('tax_invoice', 'export_invoice') AND p.type = 'proforma') OR (NEW.type = 'receipt' AND p.type IN (${flow}))))`;
   const badMilestone = `NEW.document_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.id = NEW.document_id AND d.type IN (${INVOICE_FAMILY_SQL}) AND d.client_id = (SELECT client_id FROM projects WHERE id = NEW.project_id))`;
   const named = (name: string, message: string) => abort(`${name}: ${message}`);
   const currencyMsg = named("documents_invoice_currency", "an invoice has the currency of its client");
@@ -537,7 +582,7 @@ export function invoiceTriggerStatements(): string[] {
   );
   const parentMsg = named(
     "documents_parent_check",
-    "the parent must be an issued document of the same client in an allowed pair",
+    "the parent must be an issued, not void, document of the same client in an allowed pair",
   );
   const milestoneMsg = named(
     "milestones_document_scope",

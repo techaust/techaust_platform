@@ -3,9 +3,10 @@
 // VERIFY WITH CA/LEGAL for every rule under test (Rule 46, Rule 47, Q3, Q4, Q6).
 import { env } from "cloudflare:workers";
 import { issueFyOf } from "@techaust/core/invoices";
+import { SETTINGS_DEFAULTS } from "@techaust/core/settings";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ROUTES } from "./guard.ts";
-import { mkDoc } from "./test-clients.ts";
+import { mkContact as mkContact2, mkDoc } from "./test-clients.ts";
 import { call, countOf, one, rows, sessionFor, withEnv } from "./test-helpers.ts";
 import {
   auditCount,
@@ -196,8 +197,9 @@ describe("who may issue [ADM-INV-03, ADM-AUTH-08, ADM-APR-01]", () => {
       `/invoices/${made.id}/issue`,
       { cookie: o.cookie, body: await issueBodyOf(made.id) },
       beforeBatchHolding("issue_guard", async () => {
+        // (long past, not "a millisecond ago": the route's instant is taken before this hook runs, so a 1 ms margin is a race under load)
         await env.DB.prepare("UPDATE staff_sessions SET step_up_until = ?2 WHERE id = ?1")
-          .bind(o.sessionId, Date.now() - 1)
+          .bind(o.sessionId, 1)
           .run();
       }),
     );
@@ -522,6 +524,37 @@ describe("refusals leave the counter, the audit log and the milestone unchanged 
     expect(await invoiceRow(late.id)).toMatchObject({ status: "draft", number: null });
   });
 
+  it("the contact named on the invoice edited, or anonymised, between the read and the batch: 409 contact_changed and nothing is written", async () => {
+    const o = await owner();
+    for (const change of [
+      (id: string) =>
+        env.DB.prepare(
+          "UPDATE contacts SET email = 'moved@example.test', updated_at = updated_at + 1 WHERE id = ?",
+        )
+          .bind(id)
+          .run(),
+      (id: string) =>
+        env.DB.prepare(
+          "UPDATE contacts SET name = 'Erased', anonymised_at = 5, updated_at = updated_at + 1 WHERE id = ?",
+        )
+          .bind(id)
+          .run(),
+    ]) {
+      const made = await mkInvoice(o);
+      const before = await snapshot(made.id);
+      const res = await call(
+        `/invoices/${made.id}/issue`,
+        { cookie: o.cookie, body: await issueBodyOf(made.id) },
+        beforeBatchHolding("issue_guard", async () => {
+          await change(made.contactId);
+        }),
+      );
+      expect(res.status, await res.clone().text()).toBe(409);
+      expect(await codeOf(res)).toBe("contact_changed");
+      expect(await snapshot(made.id)).toEqual(before);
+    }
+  });
+
   it("an export invoice or a proforma is 409 type_not_issuable until M5.2", async () => {
     const o = await owner();
     const overseas = await mkOverseasClient();
@@ -651,6 +684,44 @@ describe("refusals leave the counter, the audit log and the milestone unchanged 
     expect(await auditCount("invoice.issue", made.id)).toBe(0);
   });
 
+  it("a duplicate number (impossible by design) is logged as an integrity error with ids only, writes nothing, and answers 409 stale_version", async () => {
+    // A year of its own (2093-94, token 9394): the number the counter will hand out is already held by another frozen document.
+    const o = await farSession();
+    vi.useFakeTimers({ toFake: ["Date"], now: Date.UTC(2093, 5, 1, 6, 0, 0, 0) });
+    const made = await mkInvoice(o);
+    vi.setSystemTime(Date.UTC(2093, 5, 1, 6, 5, 0, 0));
+    await env.DB.prepare(
+      "INSERT INTO doc_counters (series, fy, next_no) VALUES ('invoice', '9394', 5)",
+    ).run();
+    await env.DB.prepare(
+      "INSERT INTO documents (id, type, status, client_id, currency, frozen_at, series, fy, number, number_display) SELECT 'dup-holder', 'tax_invoice', 'issued', client_id, currency, 1, 'invoice', '9394', 5, 'TH/INV/9394/0005' FROM documents WHERE id = ?",
+    )
+      .bind(made.id)
+      .run();
+    const logged: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((m: unknown) => void logged.push(String(m)));
+    try {
+      const before = await invoiceRow(made.id);
+      const res = await issueInvoice(o, made.id);
+      expect(res.status, await res.clone().text()).toBe(409);
+      expect(await codeOf(res)).toBe("stale_version");
+      expect(await invoiceRow(made.id)).toEqual(before);
+      expect(await invoiceCounter("9394")).toBe(5);
+      expect(await auditCount("invoice.issue", made.id)).toBe(0);
+      const line = logged.find((l) => l.includes("unique key"));
+      expect(line).toBeDefined();
+      expect(JSON.parse(line ?? "{}")).toMatchObject({
+        level: "error",
+        documentId: made.id,
+        series: "invoice",
+        fy: "9394",
+      });
+      expect(line).not.toMatch(/Asha|example\.test/);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("is atomic: a failing side statement writes nothing (500), and the next issue gets the very next number", async () => {
     const o = await owner();
     const c = await mkInvoiceClient();
@@ -771,6 +842,35 @@ describe("the freeze and the milestone [ADM-INV-07, ADM-PRJ-02]", () => {
     expect(await codeOf(erase)).toBe("on_issued_document");
   });
 
+  it("the reverse-charge statement (Rule 46(p)) is frozen in the issuer block and sealed: a later change of the setting does not change the issued invoice", async () => {
+    const o = await owner();
+    const made = await mkInvoice(o);
+    expect((await issueInvoice(o, made.id)).status).toBe(200);
+    const read = async (id: string) =>
+      (await one<{ issuer: string; snapshot_sha256: string }>(
+        "SELECT issuer, snapshot_sha256 FROM documents WHERE id = ?",
+        id,
+      )) as { issuer: string; snapshot_sha256: string };
+    const first = await read(made.id);
+    expect(JSON.parse(first.issuer).reverseChargeText).toBe("Tax payable on reverse charge: No");
+    // the setting changes afterwards (and a second invoice then freezes the new words); the first is untouched
+    const putTax = (reverseChargeText: string) =>
+      env.DB.prepare(
+        "INSERT INTO settings (key, value, version) VALUES ('tax', ?1, 1) ON CONFLICT(key) DO UPDATE SET value = excluded.value, version = version + 1",
+      )
+        .bind(JSON.stringify({ ...SETTINGS_DEFAULTS.tax, reverseChargeText }))
+        .run();
+    await putTax("Tax payable on reverse charge: Yes");
+    const second = await mkInvoice(o);
+    expect((await issueInvoice(o, second.id)).status).toBe(200);
+    expect(JSON.parse((await read(second.id)).issuer).reverseChargeText).toBe(
+      "Tax payable on reverse charge: Yes",
+    );
+    expect(await read(made.id)).toEqual(first);
+    // put the default back for the tests that follow
+    await putTax(SETTINGS_DEFAULTS.tax.reverseChargeText);
+  });
+
   it("issuing a milestone invoice makes the milestone invoiced and keeps its delivery time; the audit row has ids and totals, no description", async () => {
     const o = await owner();
     const c = await mkInvoiceClient();
@@ -888,5 +988,50 @@ describe("the route table covers issue", () => {
     expect(all).not.toContain("Asha");
     expect(all).not.toContain("Market Street");
     expect(all).not.toContain("example.test");
+  });
+});
+
+describe("the bells of an individual's invoices go with the person [DPDP; VERIFY WITH CA/LEGAL; early check required 3]", () => {
+  it("anonymising the last contact deletes the bells about a pending issue request and about an issued invoice; the approvals and the invoices stay", async () => {
+    const o = await owner();
+    const staff = await sessionFor("staff");
+    const c = await mkInvoiceClient({ type: "individual" });
+    // one request approved by the owner (the requester's "issued" bell), one still pending (the owners' "asked you" bell)
+    const issuedInv = await mkInvoice(staff, { clientId: c.clientId });
+    const req1 = (await json(await requestIssue(staff, issuedInv.id))).id as string;
+    expect((await decideApproval(o, req1, "approve")).status).toBe(200);
+    const pendingInv = await mkInvoice(staff, { clientId: c.clientId });
+    const req2 = (await json(await requestIssue(staff, pendingInv.id))).id as string;
+    const bells = () =>
+      countOf("notifications", "entity_type = 'approval' AND entity_id IN (?, ?)", req1, req2);
+    expect(await bells()).toBeGreaterThanOrEqual(2); // the requester's "issued" bell and one "asked you" bell per active owner
+    expect(await countOf("notifications", "entity_id = ? AND kind = 'approval.decided'", req1)).toBe(1);
+    const erase = await call(`/contacts/${c.contactId}/erase`, {
+      cookie: o.cookie,
+      body: { mode: "anonymise", reason: "requested" },
+    });
+    expect(erase.status, await erase.clone().text()).toBe(200);
+    expect(await bells()).toBe(0);
+    expect(await countOf("approvals", "id IN (?, ?)", req1, req2)).toBe(2);
+    expect(await invoiceRow(issuedInv.id)).toMatchObject({ status: "issued" });
+    expect(await invoiceRow(pendingInv.id)).toMatchObject({ status: "draft" });
+  });
+
+  it("a business client's bells stay", async () => {
+    const o = await owner();
+    const staff = await sessionFor("staff");
+    const c = await mkInvoiceClient();
+    const inv = await mkInvoice(staff, { clientId: c.clientId });
+    const req = (await json(await requestIssue(staff, inv.id))).id as string;
+    const second = await mkContact2(c.clientId);
+    expect(second).toBeTruthy();
+    const erase = await call(`/contacts/${c.contactId}/erase`, {
+      cookie: o.cookie,
+      body: { mode: "anonymise", reason: "requested" },
+    });
+    expect(erase.status, await erase.clone().text()).toBe(200);
+    expect(await countOf("notifications", "entity_type = 'approval' AND entity_id = ?", req)).toBeGreaterThan(
+      0,
+    );
   });
 });

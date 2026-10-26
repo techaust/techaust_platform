@@ -196,7 +196,7 @@ export const ROUTES: readonly RouteDef[] = [
   R("POST", "/invoices/:id/issue-request", "invoices.draft", { audit: "approval.request" }),
   R("POST", "/invoices/:id/void", "invoices.void", { audit: "invoice.void" }),
   R("GET", "/invoices/:id/pdf", "invoices.read"),
-  R("POST", "/invoices/:id/pdf/retry", "invoices.issue", { audit: "invoice.pdf_retry" }),
+  R("POST", "/invoices/:id/pdf/retry", "invoices.draft", { audit: "invoice.pdf_retry" }),
   R("GET", "/clients/:id/invoices", "invoices.read"),
   // The owner's approval queue. Staff and Sales read only their own requests (the handler filters); only the owner decides.
   R("GET", "/approvals", "approvals.readOwn"),

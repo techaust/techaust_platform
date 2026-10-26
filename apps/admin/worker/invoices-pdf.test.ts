@@ -119,12 +119,23 @@ describe("POST /invoices/:id/pdf/retry", () => {
     expect(await auditCount("invoice.pdf_retry", made.id)).toBe(0);
   });
 
-  it("Staff may ask again (the owner's step-up rule is the issue's, not the retry's): the request is allowed through the guard", async () => {
+  it("the retry is a draft-level action (invoices.draft): the owner needs no fresh code and Staff may ask; the accountant and Sales may not", async () => {
     const o = await owner();
     const made = await mkInvoice(o);
     expect((await issueInvoice(o, made.id)).status).toBe(200);
+    const noCode = await sessionFor("owner");
+    expect((await call(`/invoices/${made.id}/pdf/retry`, { cookie: noCode.cookie, body: {} })).status).toBe(
+      200,
+    );
     const staff = await sessionFor("staff");
     const res = await call(`/invoices/${made.id}/pdf/retry`, { cookie: staff.cookie, body: {} });
     expect(res.status, await res.clone().text()).toBe(200);
+    for (const role of ["accountant", "sales"] as const) {
+      const s = await sessionFor(role);
+      expect(
+        (await call(`/invoices/${made.id}/pdf/retry`, { cookie: s.cookie, body: {} })).status,
+        role,
+      ).toBe(403);
+    }
   });
 });
