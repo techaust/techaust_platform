@@ -3,7 +3,7 @@
 // the answer (never an "unavailable" stub), and its statements are never run. The finance tile arrives with M5/M6, the usage tile with
 // M7.5; the pipeline-value tile is live since M4.3. The activity feed lists exact action names per role (core/dashboard.ts) and never carries the
 // audit summary, the IP address or the user agent.
-import { termsOn } from "@techaust/core/care";
+import { CARE_NEAR_BP, CARE_REACHED_BP, termsOn } from "@techaust/core/care";
 import {
   ACTIVITY_ACTIONS,
   ACTIVITY_DAYS,
@@ -18,6 +18,8 @@ import { LEAD_STAGES } from "@techaust/core/lead-lifecycle";
 import { DAY_MS, weekOf } from "@techaust/core/time";
 import {
   assembleCare,
+  type BurnRankRow,
+  burnRankQuery,
   careStatements,
   currentUsage,
   type PlanRaw,
@@ -236,26 +238,44 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
     );
     let plans = first.plans;
     const truncated = first.truncated;
-    // More active plans than the tile loads (the 101st exists): the 100 OLDEST are not the ones to show. A second call loads the 100 started
-    // plans with the highest burn (picked in SQL, `PlanSource.byBurn`), so a plan over its hours is never missed because it is new, and
-    // counts the started and not-yet-started plans exactly. This costs one more D1 call, only past 100 active plans.
+    // More active plans than the tile loads (the 101st exists): the 100 OLDEST are not the ones to show. Two more calls, only past 100 active
+    // plans: ONE statement ranks the started plans by burn (`burnRankQuery`: the 100 highest, the totals of every plan at or past the near and
+    // reached thresholds, worked out once, not inside each of the loader's statements) and counts the started and not-yet-started plans
+    // (`CARE_TOTALS_SQL`); then the loader reads exactly those 100 by id. A plan over its hours is never missed because it is new.
     let totals: { started: number; pending: number } | null = null;
+    // The plans past the loaded 100 that are near or at their hours by the ranking's own figure (it ignores rolled-over hours, so for a plan that
+    // carries hours in it is an upper bound; exact for the rest). Added to the exact flags of the loaded plans.
+    let beyond = { near: 0, reached: 0 };
     if (truncated) {
-      const [a, b, s, u, t] = await db.batch([
-        ...careStatements(db, { byBurn: CARE_PLAN_CAP, today }, usageWindow(today, LIST_PERIODS_BACK)),
+      const rank = burnRankQuery(CARE_PLAN_CAP, today);
+      const [r, t] = await db.batch<Record<string, unknown>>([
+        db.prepare(rank.sql).bind(...rank.bind),
         db.prepare(CARE_TOTALS_SQL).bind(today),
       ]);
-      plans = assembleCare(
-        {
-          plans: (a?.results ?? []) as PlanRaw[],
-          terms: (b?.results ?? []) as TermsRaw[],
-          status: (s?.results ?? []) as StatusRaw[],
-          usage: (u?.results ?? []) as UsageRaw[],
-        },
-        CARE_PLAN_CAP,
-      ).plans;
+      const ranked = (r?.results ?? []) as BurnRankRow[];
       const row = t?.results[0] as { started: number | null; pending: number | null } | undefined;
       totals = { started: row?.started ?? 0, pending: row?.pending ?? 0 };
+      if (ranked.length > 0) {
+        const [a, b, s, u] = await db.batch(
+          careStatements(db, { ids: ranked.map((x) => x.id) }, usageWindow(today, LIST_PERIODS_BACK)),
+        );
+        plans = assembleCare(
+          {
+            plans: (a?.results ?? []) as PlanRaw[],
+            terms: (b?.results ?? []) as TermsRaw[],
+            status: (s?.results ?? []) as StatusRaw[],
+            usage: (u?.results ?? []) as UsageRaw[],
+          },
+          CARE_PLAN_CAP,
+        ).plans;
+        const first = ranked[0] as BurnRankRow;
+        const loadedReached = ranked.filter((x) => x.k >= CARE_REACHED_BP).length;
+        const loadedNear = ranked.filter((x) => x.k >= CARE_NEAR_BP && x.k < CARE_REACHED_BP).length;
+        beyond = {
+          reached: Math.max(0, first.reached - loadedReached),
+          near: Math.max(0, first.near_or_reached - first.reached - loadedNear),
+        };
+      } else plans = new Map();
     }
     const burn = [...plans.values()].flatMap((d) => {
       const u = currentUsage(d, today);
@@ -274,8 +294,8 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
         /** Plans with a current period; a plan whose start date hasn't come is counted apart (`notStarted`), never in the burn. */
         active: totals ? totals.started : burn.length,
         notStarted: totals ? totals.pending : plans.size - burn.length,
-        near: burn.filter((b) => b.u.flag === "near").length,
-        reached: burn.filter((b) => b.u.flag === "reached").length,
+        near: burn.filter((b) => b.u.flag === "near").length + beyond.near,
+        reached: burn.filter((b) => b.u.flag === "reached").length + beyond.reached,
       },
       truncated,
       rows: burn.slice(0, CARE_ROWS).map(({ d, u }) => ({

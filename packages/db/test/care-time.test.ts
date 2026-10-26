@@ -4,7 +4,14 @@ import { env } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core";
 import { periodOf, periodStartSql } from "@techaust/core/care";
 import { describe, expect, it } from "vitest";
-import { assembleCare, careQueries, careStatements, currentUsage, pastUsage } from "../src/care.ts";
+import {
+  assembleCare,
+  burnRankQuery,
+  careQueries,
+  careStatements,
+  currentUsage,
+  pastUsage,
+} from "../src/care.ts";
 import { all, first, insertClient, rejects, run } from "./helpers.ts";
 
 let n = 0;
@@ -589,7 +596,7 @@ describe("the shared loader", () => {
     expect((await pageOf("no-such-plan")).plans.size).toBe(0);
   });
 
-  it("the byBurn source loads the started active plans with the largest used share of the hours in force, and nothing else (M4.3 review)", async () => {
+  it("the burn ranking gives the started active plans with the largest used share of the hours in force, and the whole-set totals on every row (M4.3 re-check)", async () => {
     const by = await mkStaff();
     const today = "2030-06-15"; // period 1 June to 30 June (billing day 1); the plans of the other tests have no minutes then
     const mk = (o: PlanOpts) => mkPlan(by, { start: "2030-01-01", ...o });
@@ -598,8 +605,9 @@ describe("the shared loader", () => {
     const c = await mk({ included: 0 }); // no hours, any billable time: first
     const d = await mk({ included: 600 }); // the terms in force from 1 June give 60 minutes: 45 of 60 is 7,500 bp
     const e = await mk({ included: 600 }); // minutes only in the previous period: nothing this period
-    const f = await mk({ included: 600 }); // paused: never loaded
-    const g = await mk({ start: "2031-01-01", included: 600 }); // not started: never loaded
+    const f = await mk({ included: 600 }); // paused: never ranked
+    const g = await mk({ start: "2031-01-01", included: 600 }); // not started: never ranked
+    const h = await mk({ start: "2030-06-10", included: 600 }); // began MID-period: its first terms start on 10 June, after the natural 1 June
     await run(
       "INSERT INTO care_plan_terms (id, care_plan_id, effective_from, tier, price_minor, included_minutes, overage_rate_minor, rollover, created_by, created_at) VALUES (?, ?, '2030-06-01', 'growth', 2499900, 60, 150000, 'none', ?, ?)",
       uuidv7(),
@@ -614,50 +622,60 @@ describe("the shared loader", () => {
     await log(by, "2030-05-20", 600, { plan: e.id });
     await log(by, "2030-06-05", 600, { plan: f.id });
     await status(f.id, "paused", "2030-06-12", by);
-    const loaded = async (byBurn: number) => {
-      const res = await env.DB.batch(
-        careStatements(env.DB, { byBurn, today }, { to: today, periodsBack: 1 }),
-      );
-      return assembleCare(
-        {
-          plans: res[0]?.results as never,
-          terms: res[1]?.results as never,
-          status: res[2]?.results as never,
-          usage: res[3]?.results as never,
-        },
-        byBurn,
-      );
+    await log(by, "2030-06-12", 600, { plan: h.id }); // 600 of 600: reached (the FULL hours for the partial first period)
+    const ranked = async (n: number) => {
+      const q = burnRankQuery(n, today);
+      return all<{ id: string; k: number; near_or_reached: number; reached: number }>(q.sql, ...q.bind);
     };
-    // exactly the 4 with the largest share, whatever their creation order (the plan list itself is in creation order)
-    const four = await loaded(4);
-    expect([...four.plans.keys()].sort()).toEqual([a.id, b.id, c.id, d.id].sort());
-    expect(four.truncated).toBe(false);
-    // the usage and the terms came with them, and the exact burn is the pure function's
-    expect(currentUsage(four.plans.get(d.id) as never, today)).toMatchObject({ used: 45, available: 60 });
-    expect(currentUsage(four.plans.get(c.id) as never, today)).toMatchObject({ used: 15, flag: "reached" });
-    const two = await loaded(2);
-    expect([...two.plans.keys()].sort()).toEqual([b.id, c.id].sort());
-    // a wide net holds every started active plan with minutes this period but not the paused or not-started ones
-    const wide = [...(await loaded(100)).plans.keys()];
-    expect(wide).toEqual(expect.arrayContaining([a.id, b.id, c.id, d.id, e.id]));
-    expect(wide).not.toContain(f.id);
-    expect(wide).not.toContain(g.id);
+    // the plans of the earlier tests in this file have no minutes in June 2030 (k is 0 or -1), so the top of the ranking is these plans only
+    const top = await ranked(100);
+    const byId = new Map(top.map((r) => [r.id, r]));
+    expect(byId.get(c.id)?.k).toBe(1_000_000_000);
+    expect(byId.get(h.id)?.k).toBe(10_000); // before the fix: no terms row on or before 1 June gave NULL, and the plan ranked as 1,000,000,000
+    expect(byId.get(b.id)?.k).toBe(9_000);
+    expect(byId.get(d.id)?.k).toBe(7_500);
+    expect(byId.get(a.id)?.k).toBe(5_000);
+    expect(byId.get(e.id)?.k).toBe(0);
+    expect(byId.has(f.id)).toBe(false);
+    expect(byId.has(g.id)).toBe(false);
+    // order: the no-hours plan first, then 10,000, 9,000, 7,500, 5,000
+    expect(top.slice(0, 5).map((r) => r.id)).toEqual([c.id, h.id, b.id, d.id, a.id]);
+    // the totals over the WHOLE set are on every row: at or past 80 %: c, h, b (d is 75 %); at or past 100 %: c, h
+    expect(new Set(top.map((r) => `${r.near_or_reached}/${r.reached}`))).toEqual(new Set(["3/2"]));
+    // a cap cuts the rows, never the totals
+    const two = await ranked(2);
+    expect(two.map((r) => r.id)).toEqual([c.id, h.id]);
+    expect(two.every((r) => r.near_or_reached === 3 && r.reached === 2)).toBe(true);
+    // the loader reads exactly the ids picked, with their usage and terms, and the exact burn is the pure function's
+    const res = await env.DB.batch(
+      careStatements(env.DB, { ids: two.map((r) => r.id) }, { to: today, periodsBack: 1 }),
+    );
+    const loaded = assembleCare(
+      {
+        plans: res[0]?.results as never,
+        terms: res[1]?.results as never,
+        status: res[2]?.results as never,
+        usage: res[3]?.results as never,
+      },
+      2,
+    );
+    expect([...loaded.plans.keys()].sort()).toEqual([c.id, h.id].sort());
+    expect(currentUsage(loaded.plans.get(h.id) as never, today)).toMatchObject({
+      used: 600,
+      available: 600,
+      flag: "reached",
+    });
+    expect(currentUsage(loaded.plans.get(c.id) as never, today)).toMatchObject({ used: 15, flag: "reached" });
   });
 
-  it("the byBurn source is served by indexes (EXPLAIN QUERY PLAN)", async () => {
-    for (const q of careQueries({ byBurn: 100, today: "2030-06-15" }, { to: "2030-06-15", periodsBack: 1 })) {
-      const text = (await all<{ detail: string }>(`EXPLAIN QUERY PLAN ${q.sql}`, ...q.bind))
-        .map((p) => p.detail)
-        .join("\n");
-      expect(text, q.sql).not.toMatch(
-        /SCAN (care_plans|care_plan_terms|care_plan_status_log|time_logs|clients)\b/,
-      );
-      expect(text, q.sql).toMatch(/SEARCH/);
-    }
-    const [plans] = careQueries({ byBurn: 100, today: "2030-06-15" }, { to: "2030-06-15", periodsBack: 1 });
-    const text = (await all<{ detail: string }>(`EXPLAIN QUERY PLAN ${plans.sql}`, ...plans.bind))
+  it("the burn ranking is served by indexes (EXPLAIN QUERY PLAN)", async () => {
+    const q = burnRankQuery(100, "2030-06-15");
+    const text = (await all<{ detail: string }>(`EXPLAIN QUERY PLAN ${q.sql}`, ...q.bind))
       .map((p) => p.detail)
       .join("\n");
+    expect(text, q.sql).not.toMatch(
+      /SCAN (care_plans|care_plan_terms|care_plan_status_log|time_logs|clients)\b/,
+    );
     expect(text).toMatch(/SEARCH p USING (COVERING )?INDEX care_plans_status_/);
     expect(text).toMatch(/SEARCH r USING (COVERING )?INDEX care_plan_terms_plan/);
     expect(text).toMatch(/SEARCH t USING COVERING INDEX time_logs_care_usage/);
@@ -670,8 +688,8 @@ describe("the shared loader", () => {
     );
     expect(() => careQueries({ active: 0 }, w)).toThrow(RangeError);
     expect(() => careQueries({ active: 101 }, w)).toThrow(RangeError);
-    expect(() => careQueries({ byBurn: 0, today: "2030-06-15" }, w)).toThrow(RangeError);
-    expect(() => careQueries({ byBurn: 101, today: "2030-06-15" }, w)).toThrow(RangeError);
+    expect(() => burnRankQuery(0, "2030-06-15")).toThrow(RangeError);
+    expect(() => burnRankQuery(101, "2030-06-15")).toThrow(RangeError);
   });
 
   it("every statement is served by an index (EXPLAIN QUERY PLAN)", async () => {
