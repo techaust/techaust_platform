@@ -9,6 +9,13 @@ import {
   approvalLine,
   blockerText,
   buildPatch,
+  CARE_HOURS_HINT,
+  CONVERTED_TO_INVOICE,
+  careAiOps,
+  careDone,
+  careOfLines,
+  careSummary,
+  convertedToCare,
   DOC_COPY,
   DOC_ERRORS,
   DOC_PENDING,
@@ -17,6 +24,7 @@ import {
   decisionTitle,
   docErrorText,
   editor,
+  emptySectionsOf,
   guardLine,
   initEditor,
   isDirty,
@@ -25,10 +33,13 @@ import {
   mappedError,
   moved,
   newerTerms,
+  OPEN_IT,
   placeholdersIn,
   placeOfSupplyLabel,
   reviseBody,
   STATUS_LABELS,
+  sectionEmptyLine,
+  sectionTitleName,
   sendLine,
   sendTitle,
   sentAs,
@@ -37,7 +48,7 @@ import {
   unresolvedLine,
   versionLine,
 } from "./documents.ts";
-import type { DocumentView, SaveAnswer } from "./documents-api.ts";
+import type { DocumentView, SaveAnswer, ViewLine } from "./documents-api.ts";
 import { PLACEHOLDER_TAG } from "./projects.ts";
 
 const view = (over: Partial<DocumentView> = {}): DocumentView => ({
@@ -249,11 +260,47 @@ describe("07-O copy, word for word (draft pending the owner)", () => {
     expect(shownStatus("sent", "pending")).toBe("sent");
   });
 
-  it("every placeholder sentence carries the visible tag", () => {
+  it("07-O §9: the accepted drafts carry no placeholder tag any more", () => {
     for (const v of Object.values(DOC_PENDING)) {
       const text = typeof v === "function" ? (v as (x: never) => string)(2 as never) : v;
-      expect(text.startsWith(PLACEHOLDER_TAG)).toBe(true);
+      expect(text.includes(PLACEHOLDER_TAG)).toBe(false);
     }
+    expect(DOC_PENDING.noLines).toBe("No lines yet. Add a line from the catalogue or a custom line.");
+    expect(DOC_PENDING.customLinesCount(1)).toBe("1 custom line");
+    expect(DOC_PENDING.customLinesCount(3)).toBe("3 custom lines");
+    expect(DOC_PENDING.readOnlyDraft).toBe("Your role can read this draft but not change it.");
+  });
+
+  it("07-O §4 and §5 after the screens: the owner's over-10 % line, the care plan result", () => {
+    expect(DOC_COPY.overTenOwner).toBe(
+      "More than 10 % off catalogue prices. As the owner, you can send it without approval.",
+    );
+    expect(careDone("Sample Client A (sample)", "Growth")).toBe(
+      "Care plan for Sample Client A (sample) (Growth) created.",
+    );
+  });
+
+  it("07-O §10: the review fixes' sentences", () => {
+    expect(CARE_HOURS_HINT).toEqual({
+      essential: "Leave empty to use the plan's 2 hours.",
+      required: "Required: this plan's hours are agreed per client.",
+    });
+    expect(careSummary("Growth", "Sample Client A (sample)", "₹25,000.00")).toBe(
+      "Growth care plan for Sample Client A (sample): ₹25,000.00 a month before GST",
+    );
+    expect(careAiOps("₹5,000.00")).toBe("plus ₹5,000.00 a month for AI Ops");
+    expect(CONVERTED_TO_INVOICE).toBe("Converted to an invoice draft.");
+    expect(convertedToCare("Sample Client A (sample)", "Scale")).toBe(
+      "Converted to care plan for Sample Client A (sample) (Scale).",
+    );
+    expect(OPEN_IT).toBe("Open it");
+    expect(sectionTitleName("Summary")).toBe("Title of Summary");
+    expect(sectionEmptyLine("Summary, Team")).toBe(
+      "Write these sections or hide them before sending: Summary, Team.",
+    );
+    expect(DOC_ERRORS.approval_rejected).toBe(
+      "The owner rejected this version. Change it before asking again.",
+    );
   });
 });
 
@@ -283,6 +330,79 @@ describe("errors by API code (07-O §6)", () => {
     expect(blockerText({ code: "unresolved_placeholders", names: ["client.name"] })).toBe(
       "Some placeholders have no value yet.",
     );
+  });
+  it("section_empty names the sections: by the server's keys, else the editor's own empty visible optional ones", () => {
+    const sec = (id: string, kind: string, bodyMd = "", hidden = false, title = "") => ({
+      uid: `u-${id}`,
+      id,
+      kind,
+      title,
+      bodyMd,
+      hidden,
+    });
+    const list = [
+      sec("a", "cover", "Hello"),
+      sec("b", "summary"),
+      sec("c", "team", "", true),
+      sec("d", "custom", "", false, "Hosting"),
+      sec("e", "terms"),
+    ];
+    // By kind and by id, in the editor's order.
+    expect(
+      emptySectionsOf({ code: "section_empty", sections: ["d", "summary"] }, list).map((s) => s.id),
+    ).toEqual(["b", "d"]);
+    // No keys: shown, optional and empty only (not the hidden team, not the required terms).
+    expect(emptySectionsOf({ code: "section_empty" }, list).map((s) => s.id)).toEqual(["b", "d"]);
+    expect(blockerText({ code: "section_empty", sections: ["summary"] }, list)).toBe(
+      "Write these sections or hide them before sending: Summary.",
+    );
+    expect(blockerText({ code: "section_empty" }, list)).toBe(
+      "Write these sections or hide them before sending: Summary, Hosting.",
+    );
+  });
+});
+
+describe("the care plan an estimate describes (ADM-G-04 summary; core's mapping, no sums here)", () => {
+  const line = (over: Partial<ViewLine>): ViewLine => ({
+    id: "l",
+    position: 1,
+    catalogueItemId: "cat-s16",
+    catalogueRateMinor: 2_500_000,
+    catalogueLine: "Growth",
+    description: "Growth plan",
+    detail: null,
+    sac: "998313",
+    qtyMilli: 1000,
+    unit: "month",
+    rateMinor: 2_500_000,
+    discount: null,
+    gstRateBp: 1800,
+    taxableMinor: 2_500_000,
+    cgstMinor: 225_000,
+    sgstMinor: 225_000,
+    igstMinor: 0,
+    lineTotalMinor: 2_950_000,
+    ...over,
+  });
+  const codes: Record<string, string> = { "cat-s16": "S16", "cat-s17": "S17", "cat-s1": "S1" };
+  const codeOf = (id: string) => codes[id];
+  it("tier, price and AI Ops from the lines as the server worked them out", () => {
+    expect(
+      careOfLines(
+        [line({}), line({ catalogueItemId: "cat-s17", catalogueLine: null, taxableMinor: 500_000 })],
+        codeOf,
+      ),
+    ).toEqual({ tier: "growth", priceMinor: 2_500_000, aiOpsMinor: 500_000 });
+    expect(careOfLines([line({ catalogueLine: "Essential", taxableMinor: 1_000_000 })], codeOf)).toEqual({
+      tier: "essential",
+      priceMinor: 1_000_000,
+      aiOpsMinor: null,
+    });
+  });
+  it("null when the lines describe no care plan, or a code or figure is unknown", () => {
+    expect(careOfLines([line({ catalogueItemId: "cat-s1" })], codeOf)).toBeNull();
+    expect(careOfLines([line({ catalogueItemId: "cat-unknown" })], codeOf)).toBeNull();
+    expect(careOfLines([line({ taxableMinor: null })], codeOf)).toBeNull();
   });
 });
 

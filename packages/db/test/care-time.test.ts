@@ -589,6 +589,80 @@ describe("the shared loader", () => {
     expect((await pageOf("no-such-plan")).plans.size).toBe(0);
   });
 
+  it("the byBurn source loads the started active plans with the largest used share of the hours in force, and nothing else (M4.3 review)", async () => {
+    const by = await mkStaff();
+    const today = "2030-06-15"; // period 1 June to 30 June (billing day 1); the plans of the other tests have no minutes then
+    const mk = (o: PlanOpts) => mkPlan(by, { start: "2030-01-01", ...o });
+    const a = await mk({ included: 600 }); // 300 of 600: 5,000 bp
+    const b = await mk({ included: 600 }); // 540 of 600: 9,000 bp
+    const c = await mk({ included: 0 }); // no hours, any billable time: first
+    const d = await mk({ included: 600 }); // the terms in force from 1 June give 60 minutes: 45 of 60 is 7,500 bp
+    const e = await mk({ included: 600 }); // minutes only in the previous period: nothing this period
+    const f = await mk({ included: 600 }); // paused: never loaded
+    const g = await mk({ start: "2031-01-01", included: 600 }); // not started: never loaded
+    await run(
+      "INSERT INTO care_plan_terms (id, care_plan_id, effective_from, tier, price_minor, included_minutes, overage_rate_minor, rollover, created_by, created_at) VALUES (?, ?, '2030-06-01', 'growth', 2499900, 60, 150000, 'none', ?, ?)",
+      uuidv7(),
+      d.id,
+      by,
+      next(),
+    );
+    await log(by, "2030-06-10", 300, { plan: a.id });
+    await log(by, "2030-06-10", 540, { plan: b.id });
+    await log(by, "2030-06-10", 15, { plan: c.id });
+    await log(by, "2030-06-10", 45, { plan: d.id });
+    await log(by, "2030-05-20", 600, { plan: e.id });
+    await log(by, "2030-06-05", 600, { plan: f.id });
+    await status(f.id, "paused", "2030-06-12", by);
+    const loaded = async (byBurn: number) => {
+      const res = await env.DB.batch(
+        careStatements(env.DB, { byBurn, today }, { to: today, periodsBack: 1 }),
+      );
+      return assembleCare(
+        {
+          plans: res[0]?.results as never,
+          terms: res[1]?.results as never,
+          status: res[2]?.results as never,
+          usage: res[3]?.results as never,
+        },
+        byBurn,
+      );
+    };
+    // exactly the 4 with the largest share, whatever their creation order (the plan list itself is in creation order)
+    const four = await loaded(4);
+    expect([...four.plans.keys()].sort()).toEqual([a.id, b.id, c.id, d.id].sort());
+    expect(four.truncated).toBe(false);
+    // the usage and the terms came with them, and the exact burn is the pure function's
+    expect(currentUsage(four.plans.get(d.id) as never, today)).toMatchObject({ used: 45, available: 60 });
+    expect(currentUsage(four.plans.get(c.id) as never, today)).toMatchObject({ used: 15, flag: "reached" });
+    const two = await loaded(2);
+    expect([...two.plans.keys()].sort()).toEqual([b.id, c.id].sort());
+    // a wide net holds every started active plan with minutes this period but not the paused or not-started ones
+    const wide = [...(await loaded(100)).plans.keys()];
+    expect(wide).toEqual(expect.arrayContaining([a.id, b.id, c.id, d.id, e.id]));
+    expect(wide).not.toContain(f.id);
+    expect(wide).not.toContain(g.id);
+  });
+
+  it("the byBurn source is served by indexes (EXPLAIN QUERY PLAN)", async () => {
+    for (const q of careQueries({ byBurn: 100, today: "2030-06-15" }, { to: "2030-06-15", periodsBack: 1 })) {
+      const text = (await all<{ detail: string }>(`EXPLAIN QUERY PLAN ${q.sql}`, ...q.bind))
+        .map((p) => p.detail)
+        .join("\n");
+      expect(text, q.sql).not.toMatch(
+        /SCAN (care_plans|care_plan_terms|care_plan_status_log|time_logs|clients)\b/,
+      );
+      expect(text, q.sql).toMatch(/SEARCH/);
+    }
+    const [plans] = careQueries({ byBurn: 100, today: "2030-06-15" }, { to: "2030-06-15", periodsBack: 1 });
+    const text = (await all<{ detail: string }>(`EXPLAIN QUERY PLAN ${plans.sql}`, ...plans.bind))
+      .map((p) => p.detail)
+      .join("\n");
+    expect(text).toMatch(/SEARCH p USING (COVERING )?INDEX care_plans_status_/);
+    expect(text).toMatch(/SEARCH r USING (COVERING )?INDEX care_plan_terms_plan/);
+    expect(text).toMatch(/SEARCH t USING COVERING INDEX time_logs_care_usage/);
+  });
+
   it("refuses more than 100 plans and an odd cap", () => {
     const w = { to: "2026-01-31", periodsBack: 1 };
     expect(() => careQueries({ ids: Array.from({ length: 101 }, (_, i) => String(i)) }, w)).toThrow(
@@ -596,6 +670,8 @@ describe("the shared loader", () => {
     );
     expect(() => careQueries({ active: 0 }, w)).toThrow(RangeError);
     expect(() => careQueries({ active: 101 }, w)).toThrow(RangeError);
+    expect(() => careQueries({ byBurn: 0, today: "2030-06-15" }, w)).toThrow(RangeError);
+    expect(() => careQueries({ byBurn: 101, today: "2030-06-15" }, w)).toThrow(RangeError);
   });
 
   it("every statement is served by an index (EXPLAIN QUERY PLAN)", async () => {

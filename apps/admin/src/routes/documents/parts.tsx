@@ -68,10 +68,21 @@ export function ApprovalPill({ state }: { state: Exclude<ApprovalState, "none"> 
 
 /** The title (a link) with the number and version underneath; a draft that was never sent has no number yet. */
 export function DocName(props: {
-  doc: { id: string; type: QuoteType; title: string | null; number: string | null; version: number };
+  doc: {
+    id: string;
+    type: QuoteType;
+    title: string | null;
+    number: string | null;
+    version: number;
+    status?: QuoteStatus;
+    numberDisplay?: string | null | undefined;
+  };
   withType?: boolean;
 }) {
   const d = props.doc;
+  // A v2+ draft carries its group's number (review fix 13): "{number} v2 draft".
+  const number = d.number ?? d.numberDisplay ?? null;
+  const draftOfNumbered = d.status === "draft" && number !== null;
   return (
     <span className="person client-name doc-name">
       <Link className="person__name client-name__link" to={docHref(d)}>
@@ -79,15 +90,18 @@ export function DocName(props: {
       </Link>
       <span className="client-name__code doc-name__meta">
         {props.withType && <span>{TYPE_LABELS[d.type]}</span>}
-        {d.number && <span className="docno">{d.number}</span>}
-        <span className="docno">v{d.version}</span>
+        {number && <span className="docno">{number}</span>}
+        <span>
+          <span className="docno">v{d.version}</span>
+          {draftOfNumbered && " draft"}
+        </span>
       </span>
     </span>
   );
 }
 
 /** The columns of a list of documents (this screen and the client page's tab). */
-export function documentColumns(withClient: boolean): Column<ListRow>[] {
+export function documentColumns(withClient: boolean, rows: readonly ListRow[]): Column<ListRow>[] {
   return [
     {
       key: "doc",
@@ -128,13 +142,19 @@ export function documentColumns(withClient: boolean): Column<ListRow>[] {
         </span>
       ),
     },
-    {
-      key: "valid",
-      header: "Valid until",
-      cell: (r) => {
-        const d = dayText(r.validUntil);
-        return d ? <time dateTime={r.validUntil ?? undefined}>{d}</time> : null;
-      },
-    },
+    // A draft has no date until it is sent (review fix 13): the column is left out when no row on the page has one, and a card hides
+    // the empty fact (documents.css).
+    ...(rows.some((r) => r.validUntil)
+      ? [
+          {
+            key: "valid",
+            header: "Valid until",
+            cell: (r: ListRow) => {
+              const d = dayText(r.validUntil);
+              return d ? <time dateTime={r.validUntil ?? undefined}>{d}</time> : null;
+            },
+          },
+        ]
+      : []),
   ];
 }

@@ -275,8 +275,19 @@ describe("approvals: one request for one version's exact content [ADM-APR-01, -0
     });
     expect(await codeOf(await decide(o.cookie, approvalId, "approve"))).toBe("approval_decided");
     expect(await codeOf(await sendDoc(sales, made.id, v.updatedAt))).toBe("approval_required");
-    // a rejected one does not block a new request, even for the same content
-    const again = await request(sales.cookie, made.id, v.updatedAt);
+    // the same content cannot be asked for again (M4.3 review 12): 409 approval_rejected, nothing written
+    const same = await request(sales.cookie, made.id, v.updatedAt);
+    expect(same.status).toBe(409);
+    expect(await codeOf(same)).toBe("approval_rejected");
+    expect(await countOf("approvals", "document_id = ?", made.id)).toBe(1);
+    // after an edit it is new content, and a new request is fine
+    const edited = await json(
+      await patchDoc(sales, made.id, {
+        expectedUpdatedAt: v.updatedAt,
+        fields: { title: "Changed after the no" },
+      }),
+    );
+    const again = await request(sales.cookie, made.id, edited.updatedAt);
     expect(again.status, await again.clone().text()).toBe(201);
     // lists: the owner sees them all, each of Sales and Staff only their own
     const everyone = await json(await call("/approvals?limit=50", { cookie: o.cookie }));

@@ -52,8 +52,8 @@ const STALE = ((t: string) => {
   return [t.slice(0, i + 1), t.slice(i + 2)] as const;
 })(DOC_ERRORS.stale_version);
 
-/** How long after the last keystroke a draft saves itself. */
-const AUTOSAVE_MS = 1200;
+/** How long after the last keystroke a draft saves itself (lead, review fix 2: fewer D1 writes); leaving a field saves at once. */
+const AUTOSAVE_MS = 3000;
 
 export function DraftEditor({ view, reload }: { view: DocumentView; reload: () => void }) {
   const user = useUser();
@@ -134,6 +134,30 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
     const t = setTimeout(() => void save(), AUTOSAVE_MS);
     return () => clearTimeout(t);
   }, [s.rev, save]);
+  // Leaving a field saves at once (review fix 2): a focusout anywhere in the editing column. Nothing is sent when nothing changed.
+  const mainRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = mainRef.current;
+    if (!el || !canWrite) return;
+    const onLeave = (e: FocusEvent) => {
+      const t = e.target;
+      if (
+        !(t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement)
+      )
+        return;
+      const cur = ref.current;
+      if (!isDirty(cur) || cur.saving || cur.status === "stale" || cur.status === "frozen") return;
+      void save();
+    };
+    el.addEventListener("focusout", onLeave);
+    return () => el.removeEventListener("focusout", onLeave);
+  }, [canWrite, save]);
+  // `section_empty`'s links: open that section and put the cursor in its text.
+  const [openSection, setOpenSection] = useState<{ uid: string; n: number } | null>(null);
+  const onOpenSection = useCallback(
+    (u: string) => setOpenSection((o) => ({ uid: u, n: (o?.n ?? 0) + 1 })),
+    [],
+  );
 
   const contacts = useLoad(() => api.clientContacts(view.client.id), view.client.id);
   const f = s.figures;
@@ -143,7 +167,7 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
     s.status === "saving"
       ? DOC_COPY.saving
       : (s.status === "error" || s.status === "stale" || s.status === "frozen") && s.error
-        ? notSaved(s.error.replace(/^\[Placeholder\] /, ""))
+        ? notSaved(s.error)
         : s.status === "saved"
           ? DOC_COPY.saved
           : dirty
@@ -212,10 +236,12 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
             canSendRole={canSendRole}
             onSend={() => setDialog("send")}
             onRequest={() => setDialog("request")}
+            sections={s.sections}
+            onOpenSection={onOpenSection}
           />
         </div>
 
-        <div className="doc-page__main">
+        <div className="doc-page__main" ref={mainRef}>
           {s.status === "stale" && <StaleNotice title={STALE[0]} body={STALE[1]} onReload={reload} />}
           {s.status === "frozen" && (
             <div className="notice notice--info" role="status">
@@ -428,7 +454,12 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
             current={currentSteps}
           />
 
-          <SectionsPanel sections={s.sections} dispatch={dispatch} current={currentSections} />
+          <SectionsPanel
+            sections={s.sections}
+            dispatch={dispatch}
+            current={currentSections}
+            openRequest={openSection}
+          />
         </div>
 
         <div className="doc-page__versions">

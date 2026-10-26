@@ -59,7 +59,7 @@ export function ClientDocuments({ clientId, readOnly }: { clientId: string; read
       <div className="clients-table docs-table">
         <DataTable
           caption={`${DOC_COPY.clientTab} of this client`}
-          columns={documentColumns(false)}
+          columns={documentColumns(false, rows)}
           rows={rows}
           rowKey={(r) => r.id}
           loading={first.state === "loading"}

@@ -30,6 +30,7 @@ import {
   CONTACT_GONE,
   CONTACT_INVALID,
   computeQuote,
+  diffChildren,
   documentColumns,
   FROZEN,
   ITEMS_BY_ID,
@@ -39,7 +40,6 @@ import {
   NOT_A_QUOTE,
   QUOTE_TYPES_SQL,
   readSettings,
-  replaceChildren,
   resolveLines,
   resolveSections,
   resolveSteps,
@@ -205,42 +205,31 @@ export const documentSave = new Hono<AppEnv>().patch("/:id", param(idParam), bod
 
   const computation = await computeQuote(state, taxInputOf(ctx.client), taxContext(settings), todayIst());
   const t = Math.max(Date.now(), doc.updated_at + 1);
-  const columns = documentColumns(state, computation);
-  const keys = Object.keys(columns) as (keyof typeof columns)[];
   const hashChanged = computation.hash !== doc.content_sha256;
   const termsId = state.termsVersionId;
-  // Rows that follow from the maths are rewritten when the maths moved them, even if their part was not sent (a document discount
-  // changes every line's share; a changed total changes the instalments).
-  const stored = new Map(ctx.bundle.lines.map((l) => [l.id, l]));
-  const linesMoved =
-    computation.computed !== null &&
-    state.lines.some((l, i) => {
-      const s = stored.get(l.id);
-      const k = computation.computed?.lines[i];
-      return (
-        !s ||
-        !k ||
-        s.taxable_minor !== k.taxableMinor ||
-        s.cgst_minor !== k.cgstMinor ||
-        s.sgst_minor !== k.sgstMinor ||
-        s.igst_minor !== k.igstMinor ||
-        s.line_total_minor !== k.lineTotalMinor ||
-        s.gst_rate_bp !== k.gstRateBp
-      );
-    });
-  const scheduleMoved =
-    computation.instalments !== null &&
-    (computation.instalments.length !== ctx.bundle.schedule.length ||
-      computation.instalments.some((x, i) => x.amountMinor !== ctx.bundle.schedule[i]?.amount_minor));
+  // Only the columns that changed are written (a title-only save leaves the indexed columns alone). `computed` and `total_inr_minor` are
+  // not part of the row the loader reads for a draft; they follow the content hash, which covers them.
+  const all = documentColumns(state, computation);
+  const stored: Record<string, unknown> = doc;
+  const columns: Partial<typeof all> = {};
+  for (const k of Object.keys(all) as (keyof typeof all)[]) {
+    const changed = k in stored && k !== "computed" ? (stored[k] ?? null) !== (all[k] ?? null) : hashChanged;
+    if (changed) Object.assign(columns, { [k]: all[k] });
+  }
+  const keys = Object.keys(columns) as (keyof typeof columns)[];
+  // The child rows are brought to the new state by diff (M4.3 review fix 2). A part that was not sent still follows the maths: a document
+  // discount changes every line's share and a changed total changes the instalments, and those rows differ from what is stored.
+  const lineDiff = lineRows(state, computation);
+  const scheduleDiff = scheduleRows(state, computation);
 
   let done: boolean;
   try {
     done = await mutate(c, {
       main: db
         .prepare(
-          `UPDATE documents SET ${keys.map((k, i) => `${k} = ?${i + 4}`).join(", ")}, updated_at = ?3 WHERE id = ?1 AND updated_at = ?2 AND frozen_at IS NULL AND status = 'draft' AND type IN (${QUOTE_TYPES_SQL}) AND NOT ${clientGoneSql("client_id")}`,
+          `UPDATE documents SET ${keys.map((k, i) => `${k} = ?${i + 4}`).join(", ")}${keys.length ? ", " : ""}updated_at = ?3 WHERE id = ?1 AND updated_at = ?2 AND frozen_at IS NULL AND status = 'draft' AND type IN (${QUOTE_TYPES_SQL}) AND NOT ${clientGoneSql("client_id")}`,
         )
-        .bind(id, f.expectedUpdatedAt, t, ...keys.map((k) => columns[k])),
+        .bind(id, f.expectedUpdatedAt, t, ...keys.map((k) => columns[k] ?? null)),
       action: "document.update",
       entityType: "document",
       entityId: id,
@@ -257,13 +246,9 @@ export const documentSave = new Hono<AppEnv>().patch("/:id", param(idParam), bod
         contentSha: computation.hash.slice(0, 12),
       },
       side: (g) => [
-        ...(f.lines || linesMoved
-          ? replaceChildren(db, "document_lines", id, lineRows(state, computation), g)
-          : []),
-        ...(f.sections ? replaceChildren(db, "document_sections", id, sectionRows(state), g) : []),
-        ...(f.schedule || scheduleMoved
-          ? replaceChildren(db, "payment_schedules", id, scheduleRows(state, computation), g)
-          : []),
+        ...diffChildren(db, "document_lines", id, ctx.bundle.lines, lineDiff, g),
+        ...diffChildren(db, "document_sections", id, ctx.bundle.sections, sectionRows(state), g),
+        ...diffChildren(db, "payment_schedules", id, ctx.bundle.schedule, scheduleDiff, g),
         // An approval is for one exact content: any change expires it, in this batch, and it never revives.
         ...(hashChanged
           ? [
