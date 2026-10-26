@@ -1,12 +1,31 @@
-// What happens AFTER a version is sent and its database work is committed (M4.3 decision 8): a hook, empty today.
-// - M4.4 adds the PDF: it enqueues the render with `c.executionCtx.waitUntil(...)` and later sets `pdf_r2_key`, `pdf_sha256` and
-//   `snapshot_r2_key` once (they may be filled in once after the freeze).
+// What happens AFTER a version is sent and its database work is committed (M4.3 decision 8).
+// - M4.4: the PDF. The send route enqueues `pdf.snapshot` here (through `waitUntil`, after the batch); the jobs Worker writes the R2 envelope,
+//   renders the PDF and sets `snapshot_r2_key`, `pdf_r2_key` and `pdf_sha256` once (they may be filled in once after the freeze). A queue
+//   that cannot be reached never fails the send: the daily sweep and the "make the PDF again" route (document-pdf.ts) pick the document up.
 // - M4.5 adds the email to the chosen contacts through the SAME send route (no second send path).
-// Until then the screen says so honestly (copy 07-O). The send route calls this after the batch has committed, never before.
+// The send route calls this after the batch has committed, never before.
+import type { PdfSnapshotMessage, PdfSnapshotReason } from "@techaust/core/pdf-jobs";
 import type { Ctx } from "./context.ts";
 
 export type SendEvent = { documentId: string; groupId: string; version: number };
 
-export function afterSend(_c: Ctx, _event: SendEvent): void {
-  // Intentionally empty in M4.3.
+/** Puts one `pdf.snapshot` message on the PDF queue. Never throws: a failure is logged (ids only) and the sweep catches up. */
+export async function enqueuePdf(env: Env, documentId: string, reason: PdfSnapshotReason): Promise<boolean> {
+  try {
+    await env.PDF_QUEUE.send({ v: 1, kind: "pdf.snapshot", documentId, reason } satisfies PdfSnapshotMessage);
+    return true;
+  } catch (e) {
+    console.error(
+      JSON.stringify({
+        level: "error",
+        message: "pdf enqueue failed",
+        cause: e instanceof Error ? e.name : "unknown",
+      }),
+    );
+    return false;
+  }
+}
+
+export function afterSend(c: Ctx, event: SendEvent): void {
+  c.executionCtx.waitUntil(enqueuePdf(c.env, event.documentId, "send"));
 }

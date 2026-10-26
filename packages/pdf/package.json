@@ -8,11 +8,20 @@
     ".": "./src/index.ts"
   },
   "scripts": {
+    "build:assets": "node scripts/build-assets.ts",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --coverage --passWithNoTests",
+    "test:visual": "playwright test -c playwright.config.ts"
+  },
+  "dependencies": {
+    "@techaust/core": "workspace:*",
+    "@techaust/db": "workspace:*"
   },
   "devDependencies": {
+    "@cantoo/pdf-lib": "2.11.1",
+    "@playwright/test": "1.64.1",
     "@techaust/config": "workspace:*",
+    "@types/node": "24.19.1",
     "typescript": "6.0.3",
     "vitest": "4.1.11"
   }

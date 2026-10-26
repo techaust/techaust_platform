@@ -135,6 +135,21 @@ const approvalOf = (bundle: DocumentBundle<TermsRef>, contentSha256: string | nu
   };
 };
 
+/**
+ * The PDF of this version (M4.4): `none` for a draft, `pending` once sent until the jobs Worker has stored it, `ready` after. `sha256` is the
+ * SHA-256 of the file (acceptance evidence, M4.5); `fingerprint` is its first 12 hex characters, for the screen.
+ */
+export const pdfOf = (d: { frozen_at: number | null; pdf_sha256: string | null }) => ({
+  state:
+    d.frozen_at === null
+      ? ("none" as const)
+      : d.pdf_sha256 === null
+        ? ("pending" as const)
+        : ("ready" as const),
+  sha256: d.pdf_sha256,
+  fingerprint: d.pdf_sha256 === null ? null : d.pdf_sha256.slice(0, 12),
+});
+
 export type ViewInput = {
   bundle: DocumentBundle<TermsRef>;
   client: ClientRow;
@@ -299,6 +314,7 @@ export async function documentView(i: ViewInput) {
         }
       : null,
     approval: approvalOf(bundle, d.content_sha256),
+    pdf: pdfOf(d),
     /** For an accepted estimate that was converted: the invoice draft or care plan it became (the screen links to it and hides both conversions). */
     convertedTo: i.convertedTo ?? null,
     versions: bundle.versions.map((v) => ({

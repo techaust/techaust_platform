@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { api, onStepUpRequired, onUnauthenticated, RequestError } from "./api.ts";
+import {
+  api,
+  documentPdfHref,
+  onStepUpRequired,
+  onUnauthenticated,
+  RequestError,
+  signatureApi,
+  signatureSrc,
+} from "./api.ts";
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -104,5 +112,43 @@ describe("API client: step-up and expired sessions [ADM-AUTH-08, ADM-AUTH-05]", 
   it("a network failure reads as a plain connection message", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
     await expect(api.me()).rejects.toMatchObject({ code: "network", status: 0 });
+  });
+});
+
+describe("API client: the signature image and the PDF (M4.4) [ADM-SET-01, ADM-PROP-05]", () => {
+  it("uploads the signature as its raw bytes, and sends the same bytes again after a step-up", async () => {
+    const answer = { ok: true, version: 3, signature: { key: "settings/signature-x.png" } };
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(json(403, STEP_UP))
+      .mockResolvedValueOnce(json(200, answer));
+    vi.stubGlobal("fetch", fetchFn);
+    const off = onStepUpRequired(async () => true);
+    const file = new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], { type: "image/png" });
+    const r = await signatureApi.put(file);
+    off();
+    expect(r.version).toBe(3);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+    for (const [url, init] of fetchFn.mock.calls) {
+      expect(url).toBe("/api/v1/settings/signature");
+      expect(init.method).toBe("PUT");
+      expect(init.headers).toEqual({ "Content-Type": "application/octet-stream" });
+      expect(init.body).toBe(file);
+    }
+  });
+
+  it("removes the signature with a DELETE and no body", async () => {
+    const fetchFn = vi.fn().mockResolvedValueOnce(json(200, { ok: true, version: 4 }));
+    vi.stubGlobal("fetch", fetchFn);
+    await signatureApi.remove();
+    const [url, init] = fetchFn.mock.calls[0] ?? [];
+    expect(url).toBe("/api/v1/settings/signature");
+    expect(init.method).toBe("DELETE");
+    expect(init.body).toBeNull();
+  });
+
+  it("builds the PDF and signature addresses with the id and the hash escaped", () => {
+    expect(documentPdfHref("a/b")).toBe("/api/v1/documents/a%2Fb/pdf");
+    expect(signatureSrc("0123456789abcdef")).toBe("/api/v1/settings/signature?v=0123456789ab");
   });
 });

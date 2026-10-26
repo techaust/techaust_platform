@@ -1358,6 +1358,129 @@
   gap: var(--space-4);
 }
 
+/* ---------- The PDF of a sent version (M4.4) ----------
+   A small A4 sheet beside what the PDF's state is, then one action. The sheet repeats the PDF's own marks: the verdigris header rule
+   and the 45° cut (the system's one decorative device) on its top corner. Its outline is drawn by a 1 px inset layer clipped to the
+   same shape; the inner cut is c - 0.586 x 1 px, so the diagonal edge stays one hairline wide. */
+.pdf-panel {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-3) var(--space-4);
+}
+
+.pdf-panel__title {
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: 600;
+  line-height: var(--text-body--line-height);
+}
+
+.pdf-panel__title:focus {
+  outline: none;
+}
+
+.pdf-panel__title:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.pdf-panel__meta {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.pdf-panel__meta .docno {
+  overflow-wrap: anywhere;
+}
+
+.pdf-panel__action {
+  grid-column: 1 / -1;
+}
+
+/* The download is a link drawn as a secondary button (the page's primary action stays "what's next"): no underline, and the
+   link colours never replace the button's. */
+a.pdf-panel__action,
+a.pdf-panel__action:hover {
+  color: var(--color-btn-secondary-fg);
+  text-decoration: none;
+}
+
+.pdf-glyph {
+  --cut: 0.625rem;
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: 0.3125rem;
+  width: 2.75rem;
+  aspect-ratio: 1 / 1.414;
+  padding: 0.625rem 0.5rem;
+  background: var(--color-border-control);
+  clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, 0 100%);
+}
+
+.pdf-glyph::before {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  background: var(--color-surface);
+  clip-path: polygon(
+    0 0,
+    calc(100% - var(--cut) + 0.586px) 0,
+    100% calc(var(--cut) - 0.586px),
+    100% 100%,
+    0 100%
+  );
+}
+
+.pdf-glyph > span {
+  position: relative;
+  height: 2px;
+  background: var(--color-text-muted);
+}
+
+.pdf-glyph > .pdf-glyph__rule {
+  width: 70%;
+  margin-bottom: 0.1875rem;
+  background: var(--color-accent-decor);
+}
+
+.pdf-glyph > .pdf-glyph__line--short {
+  width: 55%;
+}
+
+/* Being made: the lines are not there yet. Taking longer: the sheet's edge turns to the warning colour (the heading says why). */
+.pdf-panel[data-phase="making"] .pdf-glyph > span,
+.pdf-panel[data-phase="slow"] .pdf-glyph > span {
+  background: var(--color-border);
+}
+
+.pdf-panel[data-phase="slow"] .pdf-glyph {
+  background: var(--color-warning);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .pdf-panel[data-phase="making"] .pdf-glyph > span {
+    /* Three there-and-back cycles (six runs of an alternating animation), then still: no pulsing for minutes (WCAG 2.2.2). */
+    animation: pdf-glyph-line 1.6s var(--ease-standard) 6 alternate;
+  }
+
+  .pdf-panel[data-phase="making"] .pdf-glyph > span:nth-child(3) {
+    animation-delay: 0.2s;
+  }
+
+  .pdf-panel[data-phase="making"] .pdf-glyph > span:nth-child(4) {
+    animation-delay: 0.4s;
+  }
+}
+
+@keyframes pdf-glyph-line {
+  to {
+    background: var(--color-text-muted);
+  }
+}
+
 /* Last: the open section's chevron (the most specific .icon rule of the file). */
 .section-row__toggle[aria-expanded="true"] .icon {
   transform: rotate(180deg);

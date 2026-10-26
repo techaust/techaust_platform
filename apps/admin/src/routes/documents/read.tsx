@@ -1,7 +1,7 @@
 // A proposal or estimate to read (M4.3, ADM-PROP-05, ADM-EST-02): a sent version exactly as it was frozen (`computed`, never worked out
 // again), or a draft for a role that may read but not change it. The page reads like the document: its sections in order, the estimate
 // section with the lines, the tax preview and the payment schedule. Beside it: what can happen next (a new version, or for an accepted
-// estimate an invoice draft or a care plan) and the versions.
+// estimate an invoice draft or a care plan), the PDF of a sent version (M4.4) and the versions.
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { catalogueApi } from "../../api.ts";
@@ -37,6 +37,7 @@ import { useUser } from "../../session.tsx";
 import { CareDialog, InvoiceDialog, ReviseDialog } from "./dialogs.tsx";
 import { LinesTable, ScheduleTable, SectionBody, TaxPreview } from "./money.tsx";
 import { crumbsFor, DocPill, docHref } from "./parts.tsx";
+import { PdfPanel } from "./pdf-panel.tsx";
 import { VersionsPanel } from "./side.tsx";
 
 /** The care plan the lines describe (null while loading, when not asked, or when they describe none). One catalogue page: 18 services. */
@@ -145,6 +146,15 @@ export function ReadView({ view, reload }: { view: DocumentView; reload: () => v
 
       <div className="doc-page doc-page--read">
         <div className="doc-page__send">
+          {v.frozen && v.pdf && v.pdf.state !== "none" && (
+            <PdfPanel
+              key={v.id}
+              id={v.id}
+              sentAt={v.sentAt}
+              initial={v.pdf}
+              canRetry={allowed(user.role, "proposals.send") && !v.client.anonymised}
+            />
+          )}
           {(canRevise || canInvoice || canCare || newer || converted) && (
             <section className="lead-panel send-panel" aria-labelledby="next-h">
               <h2 id="next-h" className="lead-panel__title">

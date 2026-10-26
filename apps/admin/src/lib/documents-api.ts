@@ -196,6 +196,15 @@ export type DocumentView = {
   issuer?: IssuerView | null;
   /** An accepted estimate that was converted: what it became. */
   convertedTo?: { kind: "invoice" | "care_plan"; id: string } | null;
+  /** The PDF of this version (M4.4): none for a draft, pending once sent until the jobs Worker has made it, then ready. */
+  pdf?: PdfState;
+};
+
+export type PdfState = {
+  state: "none" | "pending" | "ready";
+  sha256: string | null;
+  /** The first 12 hex characters of the PDF's SHA-256. */
+  fingerprint: string | null;
 };
 
 /** What a PATCH answers: only what the server decided (figures, ids, guard, approval, blockers), never the text it was sent. */
@@ -377,6 +386,9 @@ export const documentsApi = {
     request<{ ok: true }>(`/documents/${enc(id)}${qs({ expectedUpdatedAt: String(expectedUpdatedAt) })}`, {
       method: "DELETE",
     }),
+  /** Asks the jobs Worker to make the PDF again (409 `pdf_done` once it exists). */
+  retryPdf: (id: string) =>
+    request<{ ok: true; pdf: { state: "pending" } }>(`/documents/${enc(id)}/pdf/retry`, { body: {} }),
   revise: (id: string) =>
     request<{ id: string; versionGroupId: string; version: number; updatedAt: number }>(
       `/documents/${enc(id)}/revise`,

@@ -19,6 +19,7 @@ import { type AppEnv, accessEntry, BAD_REQUEST, type Ctx, err, FORBIDDEN, NOT_FO
 import { csrf } from "./csrf.ts";
 import { dashboard } from "./dashboard.ts";
 import { documentConvert } from "./document-convert.ts";
+import { documentPdf } from "./document-pdf.ts";
 import { documentSave } from "./document-save.ts";
 import { documentSend } from "./document-send.ts";
 import { documents } from "./documents.ts";
@@ -30,6 +31,7 @@ import { notifications } from "./notifications.ts";
 import { milestones, projects } from "./projects.ts";
 import { search } from "./search.ts";
 import { settings } from "./settings.ts";
+import { settingsSignature } from "./settings-signature.ts";
 import { timeLogs } from "./time-logs.ts";
 import { users } from "./users.ts";
 
@@ -127,6 +129,7 @@ export function createApp() {
   app.route("/v1/auth", account);
   app.route("/v1/users", users);
   app.route("/v1/settings", settings);
+  app.route("/v1/settings", settingsSignature);
   app.route("/v1/leads", leads);
   app.route("/v1/catalogue", catalogue);
   app.route("/v1/templates", templates);
@@ -138,6 +141,7 @@ export function createApp() {
   app.route("/v1/documents", approvalRequests);
   app.route("/v1/documents", documentSend);
   app.route("/v1/documents", documentConvert);
+  app.route("/v1/documents", documentPdf);
   app.route("/v1/approvals", approvals);
   app.route("/v1/projects", projects);
   app.route("/v1/milestones", milestones);

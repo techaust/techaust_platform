@@ -56,6 +56,26 @@ const stateCode = z.enum(Object.keys(STATE_CODES) as [StateCode, ...StateCode[]]
   error: "Choose a state",
 });
 
+/**
+ * ADM-SET-01 (M4.4): the authorised signatory's signature image, uploaded by the owner. The image lives in the `DOCS` bucket under a key
+ * made from its SHA-256, so a replacement never changes the file an earlier document used. Only the signature routes write this field
+ * (the generic company form can neither set nor clear it). A stored company row from before M4.4 has no such key and reads as null.
+ * It is printed only on invoices (from M5.2); VERIFY WITH CA/LEGAL that a signature image is wanted at all.
+ */
+export const SIGNATURE_MIMES = ["image/png", "image/jpeg"] as const;
+export const SIGNATURE_MAX_BYTES = 256 * 1024;
+export const signatureRef = z.strictObject({
+  key: z.string().check(z.minLength(1), z.maxLength(120)),
+  mime: z.enum(SIGNATURE_MIMES),
+  size: z.int().check(z.gte(1), z.lte(SIGNATURE_MAX_BYTES)),
+  sha256: z.string().check(z.regex(/^[0-9a-f]{64}$/)),
+  /** PNG only (read from the header); null for a JPEG. */
+  width: z.nullable(z.int()),
+  height: z.nullable(z.int()),
+  updatedAt: z.int(),
+});
+export type SignatureRef = z.infer<typeof signatureRef>;
+
 export const companySettings = z
   .strictObject({
     tradeName: text(1),
@@ -71,6 +91,8 @@ export const companySettings = z
     /** ADM-SET-01 (lead decision): the logos are chosen from the generated brand files, never uploaded (uploads wait for R2, M3.4). */
     logoLight: z.enum(BRAND_LOGOS),
     logoDark: z.enum(BRAND_LOGOS),
+    /** ADM-SET-01, M4.4: the signature image (optional; absent reads as null). Set and cleared only by `PUT/DELETE /settings/signature`. */
+    signature: z.optional(z.nullable(signatureRef)),
   })
   .check(
     z.refine((c) => c.gstin === null || c.gstin.startsWith(c.stateCode), {
@@ -293,6 +315,7 @@ export const SETTINGS_DEFAULTS: Settings = {
     principalPlace: null,
     logoLight: "logo-primary-color.svg",
     logoDark: "logo-primary-dark.svg",
+    signature: null,
   },
   tax: {
     defaultRateBp: 1_800,

@@ -21,6 +21,7 @@ let sent: unknown[] = [];
 const makeEnv = (mode: "live" | "dry_run" = "live") =>
   ({
     DB: realEnv.DB,
+    PDF_QUEUE: { send: async () => undefined }, // the cron also enqueues one PDF sweep (M4.4)
     ENVIRONMENT: "local",
     LEAD_PURGE_MODE: mode,
     LEAD_ALERT_TO: "owner@example.test",

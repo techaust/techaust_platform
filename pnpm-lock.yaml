@@ -227,6 +227,9 @@ importers:
       '@techaust/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@techaust/pdf':
+        specifier: workspace:*
+        version: link:../../packages/pdf
       '@types/react':
         specifier: 19.3.0
         version: 19.3.0
@@ -260,6 +263,9 @@ importers:
       '@techaust/email':
         specifier: workspace:*
         version: link:../../packages/email
+      '@techaust/pdf':
+        specifier: workspace:*
+        version: link:../../packages/pdf
       hono:
         specifier: 4.13.13
         version: 4.13.13
@@ -520,10 +526,26 @@ importers:
         version: 4.1.11(@types/node@24.19.1)(@vitest/coverage-v8@4.1.11)(vite@8.3.2(@types/node@24.19.1)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))
 
   packages/pdf:
+    dependencies:
+      '@techaust/core':
+        specifier: workspace:*
+        version: link:../core
+      '@techaust/db':
+        specifier: workspace:*
+        version: link:../db
     devDependencies:
+      '@cantoo/pdf-lib':
+        specifier: 2.11.1
+        version: 2.11.1(html-entities@2.6.0)
+      '@playwright/test':
+        specifier: 1.64.1
+        version: 1.64.1
       '@techaust/config':
         specifier: workspace:*
         version: link:../config
+      '@types/node':
+        specifier: 24.19.1
+        version: 24.19.1
       typescript:
         specifier: 6.0.3
         version: 6.0.3

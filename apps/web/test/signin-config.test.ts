@@ -51,10 +51,12 @@ describe.each(["admin", "portal"] as const)("%s wrangler.jsonc", (app) => {
   });
 
   it("produces to the email queue of each environment that has one (the jobs Worker consumes it)", () => {
-    expect(c.queues?.producers).toEqual([{ binding: "EMAIL_QUEUE", queue: "techaust-local-email" }]);
-    expect(c.env.staging.queues?.producers).toEqual([
-      { binding: "EMAIL_QUEUE", queue: "techaust-staging-email" },
-    ]);
+    // The admin Worker also produces to the PDF queue (M4.4), so the email producer is checked, not the whole list.
+    expect(c.queues?.producers).toContainEqual({ binding: "EMAIL_QUEUE", queue: "techaust-local-email" });
+    expect(c.env.staging.queues?.producers).toContainEqual({
+      binding: "EMAIL_QUEUE",
+      queue: "techaust-staging-email",
+    });
     const jobs = guard.parseJsonc(
       readFileSync(new URL("../../jobs/wrangler.jsonc", import.meta.url), "utf8"),
     ) as { queues: { consumers: { queue: string }[] }; env: { staging: { queues: typeof c.queues } } };

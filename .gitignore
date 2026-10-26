@@ -29,3 +29,8 @@ brand-incoming/
 .playwright-mcp/
 # the published catalogue snapshot (ADM-CAT-05, published in M4.1); the site builds from the seed without it
 apps/web/catalogue-snapshot.json
+
+# PDF visual suite (M4.4): only the Linux baselines are committed (made by CI)
+packages/pdf/visual/__snapshots__/win32/
+packages/pdf/visual/__snapshots__/darwin/
+packages/pdf/visual/test-results/

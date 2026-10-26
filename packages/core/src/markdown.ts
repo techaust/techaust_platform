@@ -1,7 +1,8 @@
 // A small Markdown subset for notes [ADM-PRJ-03]: paragraphs, **bold**, *italic*, lists, `inline code`, fenced code blocks and
 // links (http, https, mailto only). Images and raw HTML do not exist: they stay plain text. The result is an AST of plain data,
 // never HTML; the SPA renders it with ordinary elements (React escapes the text), so nothing here can inject markup.
-// NOT used inside a Worker (notes are stored as typed and parsed in the browser).
+// Notes are parsed in the browser. Since M4.4 the AST is also rendered to escaped HTML inside the jobs Worker (packages/pdf
+// markdown-html.ts) for the sections of proposals and estimates: there the input is a frozen, size-capped snapshot.
 
 export type Inline =
   | { t: "text"; text: string }

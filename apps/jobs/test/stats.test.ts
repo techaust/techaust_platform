@@ -30,6 +30,7 @@ const sentBodies = () => calls.flatMap((c) => c.bodies);
 const makeEnv = (over: Partial<Record<string, unknown>> = {}) =>
   ({
     DB: realEnv.DB,
+    PDF_QUEUE: { send: async () => undefined }, // the cron also enqueues one PDF sweep (M4.4)
     ENVIRONMENT: "local",
     LEAD_PURGE_MODE: "live",
     LEAD_ALERT_TO: "owner@example.test",
