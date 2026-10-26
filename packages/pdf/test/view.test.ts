@@ -123,7 +123,9 @@ describe("toPdfView", () => {
     expect(v.footer.sender).toBe("accounts@example.test");
     expect(v.footer.brand).toBe("TecHaust Technologies · techaust.com · accounts@example.test");
     expect(v.supplier.lines.at(-1)).toBe("accounts@example.test");
-    expect(toPdfView(envelope).footer.brand).toBe("TecHaust Technologies · techaust.com · hello@techaust.com");
+    expect(toPdfView(envelope).footer.brand).toBe(
+      "TecHaust Technologies · techaust.com · hello@techaust.com",
+    );
   });
 
   it("builds the recipient block", async () => {

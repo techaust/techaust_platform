@@ -142,7 +142,9 @@ export async function processSnapshot(env: Env, msg: PdfSnapshotMessage): Promis
     if (made.code === "unsupported_type" || made.code === "not_sent") return skip(made.code);
     // The rows do not reproduce what the send route sealed: nothing is written, the owners are told, and a retry cannot help.
     logEvent("pdf.refused", { stage: "snapshot", code: made.code });
-    await env.DB.batch([bell(env, "pdf.failed", "document", d.id, BELL_COPY.integrity, `/proposals/${d.id}`)]);
+    await env.DB.batch([
+      bell(env, "pdf.failed", "document", d.id, BELL_COPY.integrity, `/proposals/${d.id}`),
+    ]);
     return "refused";
   }
   const e = made.envelope;
@@ -152,7 +154,9 @@ export async function processSnapshot(env: Env, msg: PdfSnapshotMessage): Promis
   if (!put.created && (await put.existing.text()) !== text) {
     // A different envelope already holds the key: never overwritten, never rendered from; a person looks.
     logEvent("pdf.refused", { stage: "snapshot", code: "key_conflict" });
-    await env.DB.batch([bell(env, "pdf.failed", "document", d.id, BELL_COPY.integrity, `/proposals/${d.id}`)]);
+    await env.DB.batch([
+      bell(env, "pdf.failed", "document", d.id, BELL_COPY.integrity, `/proposals/${d.id}`),
+    ]);
     return "refused";
   }
   await env.DB.prepare("UPDATE documents SET snapshot_r2_key = ?2 WHERE id = ?1 AND snapshot_r2_key IS NULL")
@@ -285,14 +289,7 @@ export async function processRender(
   if (!envelope || !verdict.ok) {
     logEvent("pdf.refused", { stage: "render", code: verdict.ok ? "unknown" : verdict.code });
     await env.DB.batch([
-      bell(
-        env,
-        "pdf.failed",
-        "document",
-        row.id,
-        BELL_COPY.integrity,
-        `/proposals/${row.id}`,
-      ),
+      bell(env, "pdf.failed", "document", row.id, BELL_COPY.integrity, `/proposals/${row.id}`),
     ]);
     return "refused";
   }

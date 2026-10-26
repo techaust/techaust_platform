@@ -606,7 +606,11 @@ describe("the queues route the M4.5 messages before the generic paths", () => {
         owner,
       );
     expect(await bells()).toEqual([
-      { kind: "pdf.failed", entity_type: "acceptance", title: "An acceptance certificate couldn't be made. We'll try again tonight." },
+      {
+        kind: "pdf.failed",
+        entity_type: "acceptance",
+        title: "An acceptance certificate couldn't be made. We'll try again tonight.",
+      },
     ]);
     // the same day again rings nothing new; a failure on a later day rings again
     await processPdfDeadLetter(env, { v: 1, kind: "pdf.certificate", acceptanceId: "acc-1", hop: 0 });

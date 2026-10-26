@@ -11,7 +11,10 @@ import { enqueuePdf } from "./document-events.ts";
 import { body, idParam, param } from "./http.ts";
 import { CLIENT_GONE } from "./quote-model.ts";
 
-export const PDF_PENDING: ApiError = { code: "pdf_pending", message: "The PDF isn't ready yet. Try again in a minute." };
+export const PDF_PENDING: ApiError = {
+  code: "pdf_pending",
+  message: "The PDF isn't ready yet. Try again in a minute.",
+};
 export const PDF_DONE: ApiError = { code: "pdf_done", message: "This document already has its PDF" };
 
 type PdfRow = {

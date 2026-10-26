@@ -29,11 +29,9 @@ describe("a hidden section's placeholders block nothing [ADM-CAT-03, ADM-PROP-05
     const shown = await json(
       await patchDoc(o, made.id, {
         expectedUpdatedAt: v.updatedAt,
-        sections: sectionsOf(
-          v,
-          (s) => s,
-          [{ kind: "scope", title: "Scope", bodyMd: "Before {{service.exclusions}} after", hidden: false }],
-        ),
+        sections: sectionsOf(v, (s) => s, [
+          { kind: "scope", title: "Scope", bodyMd: "Before {{service.exclusions}} after", hidden: false },
+        ]),
       }),
     );
     const withIt = await getDoc(o, made.id);
