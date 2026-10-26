@@ -1,6 +1,7 @@
 // Optional parts of an envelope: every field that may be absent or present, through the envelope code, the view and the HTML.
 import { describe, expect, it } from "vitest";
 import { buildEnvelope, serializeEnvelope } from "../src/envelope.ts";
+import { PDF_LOGOS } from "../src/generated/assets.ts";
 import { renderDocumentHtml } from "../src/render.ts";
 import type { Envelope } from "../src/types.ts";
 import { toPdfView } from "../src/view.ts";
@@ -92,9 +93,11 @@ describe("a minimal recipient and sparse parts", () => {
     expect(copy.snapshot.header.recipient.address?.line2).toBeDefined();
   });
 
-  it("a view with no logo uses the trade name", async () => {
+  it("a view with no logo uses the primary SVG logo", async () => {
     const e = await base();
     e.snapshot.header.issuer.company.logo = "";
-    expect(renderDocumentHtml(toPdfView(e))).toContain("logo-text");
+    const html = renderDocumentHtml(toPdfView(e));
+    expect(html).not.toContain("logo-text");
+    expect(html).toContain(`<div class="masthead__logo">${PDF_LOGOS["logo-primary-color.svg"]}</div>`);
   });
 });

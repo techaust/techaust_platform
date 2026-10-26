@@ -30,11 +30,11 @@ const partsLine = (cls: string, text: string) =>
         .map((part) => `<span class="keep">${esc(part)}</span>`)
         .join(" · ")}</p>`;
 
+/** The frozen logo file; an empty or unknown name falls back to the primary logo. The trade name is never typeset in its place (brand rule). */
 function logoHtml(view: PdfView): string {
-  const svg = (PDF_LOGOS as Record<string, string | undefined>)[view.logo];
-  return svg
-    ? `<div class="masthead__logo">${svg}</div>`
-    : `<p class="masthead__logo logo-text">${esc(view.supplier.name)}</p>`;
+  const logos = PDF_LOGOS as Record<string, string | undefined>;
+  const svg = logos[view.logo] ?? logos["logo-primary-color.svg"] ?? "";
+  return `<div class="masthead__logo">${svg}</div>`;
 }
 
 /** A formatted amount with its currency sign in its own span (the visual suite asks the font of that glyph). */

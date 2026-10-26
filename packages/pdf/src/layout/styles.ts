@@ -92,7 +92,6 @@ h1, h2, h3 { margin: 0; }
 }
 .masthead__logo { width: var(--print-logo-width); flex: none; margin: 0; }
 .masthead__logo svg { display: block; width: 100%; height: auto; }
-.logo-text { font-family: var(--font-display); font-stretch: 116%; font-weight: 560; font-size: var(--print-totals); }
 .masthead__title {
   font-family: var(--font-display);
   font-stretch: 116%;

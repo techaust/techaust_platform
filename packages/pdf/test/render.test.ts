@@ -1,6 +1,7 @@
 // renderDocumentHtml: escaping, no network references, the CSP, the title, status as text, the test ids the visual suite uses.
 import { describe, expect, it } from "vitest";
 import { esc } from "../src/escape.ts";
+import { PDF_LOGOS } from "../src/generated/assets.ts";
 import { markdownToHtml } from "../src/markdown-html.ts";
 import { pdfOptionsFor } from "../src/options.ts";
 import { DOCUMENT_CSP, renderDocumentHtml } from "../src/render.ts";
@@ -117,11 +118,12 @@ describe("renderDocumentHtml", () => {
     expect(a.html).toBe(b.html);
   });
 
-  it("falls back to the trade name when the logo file is unknown", async () => {
+  it("falls back to the primary SVG logo when the logo file is unknown (never the trade name in text)", async () => {
     const { envelope } = await buildFixture("short-intra-inr");
     envelope.snapshot.header.issuer.company.logo = "nope.svg";
     const html = renderDocumentHtml(toPdfView(envelope));
-    expect(html).toContain("logo-text");
+    expect(html).not.toContain("logo-text");
+    expect(html).toContain(`<div class="masthead__logo">${PDF_LOGOS["logo-primary-color.svg"]}</div>`);
   });
 });
 
