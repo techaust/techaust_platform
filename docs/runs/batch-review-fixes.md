@@ -41,3 +41,22 @@ Catalogue `deliverables_md` filled for S1, S2, S4 to S7 and S10 to S14, and `ass
 The owner's two findings above are known. Confirm them and list every screen each one affects; don't stop at them.
 
 **Report:** most severe first. For each finding: severity, the screens affected, `file:line` of the likely cause (shared component or CSS) where you can find it, the problem and the fix you suggest. Group findings that share one cause. List every `[Placeholder]` line you saw on screen, with its screen (the lead drafts the copy). Screenshots go under `.logs/shots/batch-review-fixes/` in your worktree, with absolute filenames. End with **APPROVE** (nothing above low) or **SEND BACK**.
+
+## Copy (lead, 2026-10-26): approved by the owner ("approve all")
+The lead's page listed 16 open questions, 8 changed lines and every other placeholder line; the owner approved all of it word for word. The approved text is [07-Q](../07-content-appendix/Q-batch-review-copy.md).
+
+**Where each line lives** (code-finder sweep, Haiku, read-only; 381 lines; tests skipped):
+- **Projects:** `apps/admin/src/lib/projects.ts` `PENDING` (L138–167).
+- **Care plans:** `apps/admin/src/lib/care.ts` `CARE_PENDING` (L126–134).
+- **Time:** `apps/admin/src/lib/time.ts` `TIME_PENDING` (L42–52).
+- **Dashboard:** `apps/admin/src/lib/dashboard.ts` `ACTIVITY_PENDING` (L42–56).
+- **Catalogue:** `apps/admin/src/lib/catalogue.ts` `PENDING` (L162–182), `NOT_SET` (L533).
+- **Documents:** `apps/admin/src/lib/documents.ts` `DOC_PENDING` (L191–227), the 07-O §10 block (L234–250), `approval_rejected` (L438); `apps/admin/worker/quote-model.ts:82` `APPROVAL_PENDING`.
+- **PDF:** `packages/pdf/src/layout/copy.ts` `PDF_COPY`; `apps/admin/src/lib/pdf.ts` `PDF_COPY`, `SIGNATURE_COPY`; `apps/jobs/src/pdf.ts:506` (bell); `apps/admin/worker/document-pdf.ts:14` `PDF_PENDING`.
+- **Send and offers:** `apps/admin/src/lib/offers.ts` `OFFER_PENDING`, `OFFER_COPY`, `EMAIL_PREVIEW`, `DELIVERY_N`, `OFFER_ERRORS`; `apps/admin/src/lib/offer-words.ts`; `apps/jobs/src/offers.ts:239` (bells), `:338` (`next_step`).
+- **Portal:** `apps/portal/src/copy-documents.ts` `PENDING` (L171–177) and `N` (L71–161).
+- **Emails:** `packages/email/src/offers.ts` (L32–130).
+- **Certificate:** `packages/pdf/src/layout/certificate-skeleton.ts` `CERTIFICATE_COPY` (L52–72, `PH` tag L48); `apps/admin/worker/document-links.ts:39` `CERTIFICATE_PENDING`.
+- **Appendices** whose PENDING marks the approval clears: 07-N (whole file, certificate labels), 07-O (whole file, §9, §10), 07-P (whole file, "Sent", the INR line).
+
+**Approved decisions that need code, not only words** (07-Q §1): Q1 the search hint per role; Q2 "Anonymised client" replaces "Removed client" (core `ANONYMISED_CLIENT`; check stored `display_name` values and tests); Q8 hide an estimate's empty Acceptance heading; Q10 the INR note without a rate; Q11 the PDF footer prints Settings "Email on documents"; Q12 the "Viewed" hint; Q13 the switch hint by the client's setting; Q14 the Acceptance text follows the draft's current contact.
