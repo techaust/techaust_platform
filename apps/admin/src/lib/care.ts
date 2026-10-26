@@ -3,7 +3,7 @@
 // forms. Pure, so the copy and the rules are tested without a browser.
 //
 // Copy: 07-M (docs/07-content-appendix/M-m3.5-care-time-screens.md) is a DRAFT pending the owner's word-for-word approval. A
-// sentence the screens need and 07-M lacks is a PLACEHOLDER: it carries a visible "[Placeholder]" tag (`pending()` from the M3.4
+// sentence the screens need and 07-M lacks is a PLACEHOLDER: it carries a visible "[Placeholder]" tag (`` from the M3.4
 // words), sits in `CARE_PENDING` below, and is listed in the designer report. Labels (buttons, columns, field names) come from the
 // PRD and the existing screens. Amounts are formatted only through @techaust/core; the screens never add money up themselves.
 
@@ -32,7 +32,7 @@ import type {
 import { RequestError } from "../api.ts";
 import type { PillTone } from "../components/display.tsx";
 import { sentence } from "./format.ts";
-import { moneyText, pending } from "./projects.ts";
+import { moneyText } from "./projects.ts";
 import { intIn, moneyFrom, moneyInput } from "./settings-form.ts";
 
 // ---- labels ----------------------------------------------------------------------------------------------------------------
@@ -123,15 +123,15 @@ export const statusToast = (to: CareStatus) =>
 // ---- placeholders (not in 07-M; each listed in the designer report) --------------------------------------------------------
 
 export const CARE_PENDING = {
-  stalePlan: pending("Someone else changed this care plan."),
-  enterBillingDay: pending("Enter a day from 1 to 28."),
-  enterStartDate: pending("Enter the start date."),
-  enterPrice: pending("Enter the price per month."),
-  enterHours: pending("Enter whole hours, then choose the minutes."),
-  noTermsChange: pending("Change at least one of the terms first."),
-  clientFilterClear: pending("Show care plans of all clients"),
+  stalePlan: "Someone else changed this care plan.",
+  enterBillingDay: "Enter a day from 1 to 28.",
+  enterStartDate: "Enter the start date.",
+  enterPrice: "Enter the price per month.",
+  enterHours: "Enter whole hours, then choose the minutes.",
+  noTermsChange: "Change at least one of the terms first.",
+  clientFilterClear: "Show care plans of all clients",
   /** API codes with no 07-M sentence: the server's own words, marked. */
-  serverWords: (message: string) => pending(sentence(message)),
+  serverWords: (message: string) => sentence(message),
 } as const;
 
 // ---- errors by API code ------------------------------------------------------------------------------------------------------

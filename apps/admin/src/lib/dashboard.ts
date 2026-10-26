@@ -2,7 +2,6 @@
 // activity in words. 07-M word for word (a draft pending the owner); the activity names that no approved copy words yet are
 // marked placeholders, listed in the designer report. Pure, so the words are tested without a browser.
 import { ACTION_LABELS } from "./audit.ts";
-import { pending } from "./projects.ts";
 
 export const TILE_TITLES = {
   leads: "Leads",
@@ -39,21 +38,21 @@ export const showingFirst = (n: number) => `Showing the first ${n}.`;
 
 /** Activity names that no approved copy words yet: shown with the placeholder tag until 07 has them. */
 export const ACTIVITY_PENDING: Record<string, string> = {
-  "lead.create": pending("added a lead"),
-  "lead.update": pending("changed a lead"),
-  "lead.note": pending("added a note to a lead"),
-  "lead.stage": pending("moved a lead to another stage"),
-  "lead.reply": pending("replied to a lead"),
-  "lead.convert": pending("converted a lead into a client"),
-  "lead.purge": pending("deleted old leads"),
-  "care_plan.create": pending("added a care plan"),
-  "care_plan.terms": pending("changed a care plan's terms"),
-  "care_plan.status": pending("changed a care plan's status"),
-  "time.create": pending("logged time"),
-  "time.update": pending("changed a time entry"),
-  "time.delete": pending("deleted a time entry"),
-  "document.expire": pending("marked a document as expired"),
-  "approval.expire": pending("marked an approval as expired"),
+  "lead.create": "added a lead",
+  "lead.update": "changed a lead",
+  "lead.note": "added a note to a lead",
+  "lead.stage": "moved a lead to another stage",
+  "lead.reply": "replied to a lead",
+  "lead.convert": "converted a lead into a client",
+  "lead.purge": "deleted old leads",
+  "care_plan.create": "added a care plan",
+  "care_plan.terms": "changed a care plan's terms",
+  "care_plan.status": "changed a care plan's status",
+  "time.create": "logged time",
+  "time.update": "changed a time entry",
+  "time.delete": "deleted a time entry",
+  "document.expire": "marked a document as expired",
+  "approval.expire": "marked an approval as expired",
 };
 
 /** An action in words: the audit log's approved label, a marked placeholder, or its own name. */

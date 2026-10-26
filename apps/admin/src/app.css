@@ -157,6 +157,34 @@ code {
   max-width: 100%;
 }
 
+/* The lockup follows the page's theme (data-theme), not the OS: only one of the pair is displayed, so only one is read. */
+.logo-pair {
+  display: block;
+  max-width: 100%;
+}
+
+.logo--on-dark {
+  display: none;
+}
+
+:root[data-theme="dark"] .logo--on-light {
+  display: none;
+}
+
+:root[data-theme="dark"] .logo--on-dark {
+  display: block;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .logo--on-light {
+    display: none;
+  }
+
+  :root:not([data-theme="light"]) .logo--on-dark {
+    display: block;
+  }
+}
+
 .back {
   display: inline-flex;
   align-items: center;
@@ -367,6 +395,7 @@ input[readonly] {
   font-weight: 560;
   line-height: 1.2;
   text-align: center;
+  text-decoration: none;
   border: 1px solid transparent;
   border-radius: var(--radius-md);
   cursor: pointer;
@@ -387,6 +416,7 @@ input[readonly] {
 
 .btn--primary:hover:not(:disabled) {
   background: var(--color-btn-primary-hover);
+  color: var(--color-btn-primary-fg);
 }
 
 .btn--secondary {
@@ -397,6 +427,7 @@ input[readonly] {
 
 .btn--secondary:hover:not(:disabled) {
   background: var(--color-surface-alt);
+  color: var(--color-btn-secondary-fg);
   border-color: var(--color-text-muted);
 }
 

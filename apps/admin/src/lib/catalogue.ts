@@ -155,31 +155,29 @@ export const FORMATTING_HINT = "You can use **bold**, *italic*, lists and links.
 // ---- placeholders (not in 07-L; each listed in the designer report) --------------------------------------------------------
 
 export const PLACEHOLDER_TAG = "[Placeholder]";
-/** A sentence 07-L doesn't have yet, marked so nobody mistakes it for approved copy. */
-export const pending = (text: string) => `${PLACEHOLDER_TAG} ${text}`;
 
 export const PENDING = {
-  emptyTitle: pending("No services yet"),
-  emptyBody: pending("Add the first service, or load the seed catalogue."),
-  noMatchTitle: pending("No services match these filters"),
-  staleService: pending("Someone else changed this service."),
-  staleServiceDraft: pending("Someone else changed this service while you were editing it."),
-  enterCode: pending("Enter a code: S and up to four digits, for example S19."),
-  enterName: pending("Enter the service name."),
-  enterShort: pending("Enter a short description."),
-  enterSac: pending("Enter the six-digit SAC."),
-  enterGst: pending("Enter a rate from 0 to 100 %, with at most 2 decimals, or leave it empty."),
-  enterSlug: pending("Use lower-case letters, digits and single hyphens, for example cloud-migration."),
-  enterLine: (n: number) => pending(`Describe line ${n}.`),
-  sameLine: (n: number) => pending(`Line ${n} has the same description as another line.`),
-  enterQty: (n: number) => pending(`Enter the quantity of line ${n}: more than 0, with at most 3 decimals.`),
-  enterStep: (n: number) => pending(`Name step ${n}.`),
-  enterPct: (n: number) => pending(`Enter a percentage for step ${n}.`),
-  oneStep: pending("Keep at least one step."),
-  emptySections: pending("A section needs a heading."),
-  otherFix: pending("Something outside the services can't be published. Check the payment terms."),
-  noneOnSite: pending("No active service is marked for the website, or two share a code."),
-  latestVersion: (n: number) => pending(`This is an older version. Version ${n} is the newest.`),
+  emptyTitle: "No services yet",
+  emptyBody: "Add the first service, or load the seed catalogue.",
+  noMatchTitle: "No services match these filters",
+  staleService: "Someone else changed this service.",
+  staleServiceDraft: "Someone else changed this service while you were editing it.",
+  enterCode: "Enter a code: S and up to four digits, for example S19.",
+  enterName: "Enter the service name.",
+  enterShort: "Enter a short description.",
+  enterSac: "Enter the six-digit SAC.",
+  enterGst: "Enter a rate from 0 to 100 %, with at most 2 decimals, or leave it empty.",
+  enterSlug: "Use lower-case letters, digits and single hyphens, for example cloud-migration.",
+  enterLine: (n: number) => `Describe line ${n}.`,
+  sameLine: (n: number) => `Line ${n} has the same description as another line.`,
+  enterQty: (n: number) => `Enter the quantity of line ${n}: more than 0, with at most 3 decimals.`,
+  enterStep: (n: number) => `Name step ${n}.`,
+  enterPct: (n: number) => `Enter a percentage for step ${n}.`,
+  oneStep: "Keep at least one step.",
+  emptySections: "A section needs a heading.",
+  otherFix: "Something outside the services can't be published. Check the payment terms.",
+  noneOnSite: "No active service is marked for the website, or two share a code.",
+  latestVersion: (n: number) => `This is an older version. Version ${n} is the newest.`,
 } as const;
 
 // ---- money and numbers ---------------------------------------------------------------------------------------------------
@@ -530,7 +528,7 @@ export function historyField(field: string): { label: string; currency: Currency
   return { label: field, currency: "INR" };
 }
 
-export const NOT_SET = pending("not set");
+export const NOT_SET = "Not set";
 
 /** "From price in rupees changed from ₹50,000 to ₹60,000 by Asha" (07-L row). */
 export function historyText(

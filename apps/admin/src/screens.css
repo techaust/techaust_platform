@@ -308,9 +308,14 @@ body:has(.savebar) .toasts {
   overflow-wrap: anywhere;
 }
 
-.versioned__text .prewrap {
-  max-height: 14rem;
-  overflow: auto;
+/* The terms read as the documents print them (rendered Markdown), at full length: no inner scroll box. */
+.terms-md {
+  max-width: var(--container-lede);
+  overflow-wrap: anywhere;
+}
+
+.terms-md > :last-child {
+  margin-bottom: 0;
 }
 
 .versioned__edit {

@@ -45,7 +45,9 @@ export function DataTable<T>(props: {
   cardSub?: ((row: T) => ReactNode) | undefined;
 }) {
   const { columns, rows, loading } = props;
-  if (!loading && rows.length === 0 && props.empty) return <>{props.empty}</>;
+  // The empty state sits where the table would, with the table's spacing (never touching the filters above it).
+  if (!loading && rows.length === 0 && props.empty)
+    return <div className="dtable dtable--empty">{props.empty}</div>;
   const n = props.skeletonRows ?? 5;
   const title = columns.find((c) => c.card === "title") ?? columns[0];
   const facts = columns.filter((c) => c !== title && c.card !== "hidden");

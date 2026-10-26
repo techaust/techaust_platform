@@ -150,7 +150,7 @@ export const UNRESOLVED_AROUND = [
 ] as const;
 export const unresolvedLine = (list: string) => `${UNRESOLVED_AROUND[0]}${list}${UNRESOLVED_AROUND[1]}`;
 /** 07-O §1, the Terms section's line (the terms text itself is the versioned block). */
-export const termsLine = (n: number) => `The terms below are version ${n} of our proposal terms.`;
+export const termsLine = (n: number) => `The terms below are version ${n} of our terms.`;
 export const notSaved = (reason: string) => `Not saved: ${reason}`;
 export const guardLine = (bp: number) => `${bpToPercent(bp)} % off catalogue prices`;
 export const approvedBy = (person: string, date: string) => `Approved by ${person} on ${date}`;
@@ -220,7 +220,7 @@ export const DOC_PENDING = {
   searchNumber: "Search by number",
   searchNoMatch: "No proposal or estimate has a number starting with that.",
   customLinesCount: (n: number) => (n === 1 ? "1 custom line" : `${n} custom lines`),
-  customLinesHint: "Custom lines are not counted in the discount guard.",
+  customLinesHint: "Custom lines don't count towards the discount limit.",
   readOnlyDraft: "Your role can read this draft but not change it.",
   openCarePlan: "Open the care plan",
   newerDraftExists: "A newer version of this document exists.",
@@ -241,7 +241,7 @@ export const careAiOps = (aiOps: string) => `plus ${aiOps} a month for AI Ops`;
 export const CONVERTED_TO_INVOICE = "Converted to an invoice draft.";
 /** With the tier when it is known (the estimate's lines name it); without it while the lines are still loading. */
 export const convertedToCare = (client: string, tier: string | null) =>
-  tier ? `Converted to care plan for ${client} (${tier}).` : `Converted to care plan for ${client}.`;
+  tier ? `Converted to a care plan for ${client} (${tier}).` : `Converted to a care plan for ${client}.`;
 export const OPEN_IT = "Open it";
 export const sectionTitleName = (section: string) => `Title of ${section}`;
 /** `section_empty`, around its list of sections (each one a link to the section). */

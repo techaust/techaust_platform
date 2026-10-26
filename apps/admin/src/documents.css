@@ -870,17 +870,6 @@
   display: none;
 }
 
-/* The client filter beside the chips: wide enough for its whole hint at every width. */
-.filters--docs .client-filter {
-  flex: 1 1 22rem;
-  min-width: 0;
-  max-width: 26rem;
-}
-
-.filters--docs .client-filter__search {
-  max-width: none;
-}
-
 /* ---------- Versions ---------- */
 
 .versions__list {

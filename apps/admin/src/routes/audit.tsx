@@ -244,7 +244,9 @@ function AuditLog() {
             {page.state === "loading"
               ? "Loading…"
               : page.state === "ready"
-                ? `${entries.length === 1 ? "1 entry" : `${entries.length} entries`} on this page, times in IST`
+                ? entries.length === 0
+                  ? ""
+                  : `${entries.length === 1 ? "1 entry" : `${entries.length} entries`} on this page, times in IST`
                 : ""}
           </p>
           {filtered && (

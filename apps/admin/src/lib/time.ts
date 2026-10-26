@@ -8,7 +8,6 @@ import { authorLocked, DAY_CAP, entryDateCheck, LOCK_DAYS, TIME_STEP, weekOf } f
 import type { CareTier, NewTimeInput, TimeEntry, TimeWeekGroup } from "../api.ts";
 import { csvCell } from "./audit.ts";
 import { CODE_COPY, dayText, TIER_LABELS } from "./care.ts";
-import { pending } from "./projects.ts";
 import { intIn } from "./settings-form.ts";
 
 // ---- 07-M copy, word for word (draft, pending the owner) -----------------------------------------------------------------
@@ -39,17 +38,15 @@ export const CSV_COLUMNS = ["Date", "Person", "Project or care plan", "Minutes",
 // ---- placeholders (not in 07-M; each listed in the designer report) --------------------------------------------------------
 
 export const TIME_PENDING = {
-  staleEntry: pending("Someone else changed this time entry."),
-  deleteConfirm: pending("Delete this time entry? This can't be undone."),
-  enterDate: pending("Enter the date."),
-  enterTime: pending("Enter the time spent, in steps of 15 minutes."),
-  noTargetMatch: pending("No project or care plan starts with that."),
-  targetsFound: (n: number) => pending(`${n} ${n === 1 ? "match" : "matches"} found`),
-  exportRange: pending("Choose dates no more than 366 days apart, the first before the second."),
-  noteTooLong: pending("Keep the note to 1,000 characters."),
-  truncated: pending(
-    "This week has more rows than the timesheet shows. Filter by person or target to see them all.",
-  ),
+  staleEntry: "Someone else changed this time entry.",
+  deleteConfirm: "Delete this time entry? This can't be undone.",
+  enterDate: "Enter the date.",
+  enterTime: "Enter the time spent, in steps of 15 minutes.",
+  noTargetMatch: "No project or care plan starts with that.",
+  targetsFound: (n: number) => `${n} ${n === 1 ? "match" : "matches"} found`,
+  exportRange: "Choose dates no more than 366 days apart, the first before the second.",
+  noteTooLong: "Keep the note to 1,000 characters or fewer.",
+  truncated: "This week has more rows than the timesheet shows. Filter by person or target to see them all.",
 } as const;
 
 // ---- the week ----------------------------------------------------------------------------------------------------------------

@@ -6,7 +6,6 @@
 import { RequestError } from "../api.ts";
 import { docErrorText } from "./documents.ts";
 import { REASON_LABEL, reasonText } from "./offer-words.ts";
-import { pending } from "./projects.ts";
 
 // ---- the API's shapes ----------------------------------------------------------------------------------------------------------
 
@@ -173,49 +172,46 @@ export const OFFER_ERRORS: Record<string, string> = {
   instalment_sac_merged: "The first instalment combines more than 10 service codes; check it before issuing.",
 };
 
-// ---- lines 07-N doesn't have yet: a visible "[Placeholder]" tag (the admin's `pending()`), each listed in the designer report ----
+// ---- lines 07-N doesn't have yet: a visible "[Placeholder]" tag (the admin's ``), each listed in the designer report ----
 
 export const OFFER_PENDING = {
-  deliveryHeading: pending("Emails"),
+  deliveryHeading: "Emails",
   /** The delivery states 07-N §6 leaves out. */
   delivery: {
-    sending: pending("Sending"),
-    delivered: pending("Delivered"),
-    bounced: pending("Bounced"),
-    complained: pending("Marked as spam"),
-    skipped: pending("Not sent"),
-    not_sent: pending("Not sent"),
+    sending: "Sending",
+    delivered: "Delivered",
+    bounced: "Bounced",
+    complained: "Marked as spam",
+    skipped: "Not sent",
+    not_sent: "Not sent",
   } as Partial<Record<DeliveryState, string>>,
-  resent: pending("Sent again"),
-  withPdf: pending("PDF attached"),
-  sendAgain: pending("Send again"),
-  revoke: pending("Revoke links"),
-  revokeTitle: pending("Revoke the links?"),
-  revokeBody: pending(
+  resent: "Sent again",
+  withPdf: "PDF attached",
+  sendAgain: "Send again",
+  revoke: "Revoke links",
+  revokeTitle: "Revoke the links?",
+  revokeBody:
     "Every link we emailed for this offer stops working at once, and emails still waiting to go are not sent. The client can still sign in to the portal.",
-  ),
   revoking: "Revoking…",
   revoked: (links: number, cancelled: number) =>
-    pending(
-      `${links === 1 ? "1 link" : `${links} links`} revoked, ${cancelled === 1 ? "1 waiting email" : `${cancelled} waiting emails`} stopped.`,
-    ),
-  via: pending("Accepted through"),
-  viaLink: pending("The emailed link"),
-  viaSession: pending("The portal, signed in"),
-  country: pending("Country"),
-  certificatePending: pending("The certificate is being made."),
-  declinedHeading: pending("Declined"),
-  milestones: pending("Milestones"),
-  firstInstalment: pending("First instalment"),
+    `${links === 1 ? "1 link" : `${links} links`} revoked, ${cancelled === 1 ? "1 waiting email" : `${cancelled} waiting emails`} stopped.`,
+  via: "Accepted through",
+  viaLink: "The emailed link",
+  viaSession: "The portal, signed in",
+  country: "Country",
+  certificatePending: "The certificate is being made.",
+  declinedHeading: "Declined",
+  milestones: "Milestones",
+  firstInstalment: "First instalment",
   instalmentType: {
-    proforma: pending("Proforma invoice (draft)"),
-    tax_invoice: pending("Tax invoice (draft)"),
-    export_invoice: pending("Export invoice (draft)"),
+    proforma: "Proforma invoice (draft)",
+    tax_invoice: "Tax invoice (draft)",
+    export_invoice: "Export invoice (draft)",
   } as Record<string, string>,
-  openProject: pending("Open the project"),
-  missingFields: (fields: string) => pending(`Fill in the client's ${fields} first.`),
-  notResendable: pending("Only the latest sent version, still open, can be sent again."),
-  instalmentFailed: pending("The first instalment can't be worked out from this client's details."),
+  openProject: "Open the project",
+  missingFields: (fields: string) => `Fill in the client's ${fields} first.`,
+  notResendable: "Only the latest sent version, still open, can be sent again.",
+  instalmentFailed: "The first instalment can't be worked out from this client's details.",
 } as const;
 
 /** The word for a delivery state. */

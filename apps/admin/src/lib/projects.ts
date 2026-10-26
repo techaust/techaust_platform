@@ -3,7 +3,7 @@
 // and the client-side upload checks. Pure, so the copy and the rules are tested without a browser.
 //
 // Copy: 07-K (docs/07-content-appendix/K-m3.4-project-screens.md) is a DRAFT pending the owner's word-for-word approval. A
-// sentence the screens need and 07-K lacks is a PLACEHOLDER: it carries a visible "[Placeholder]" tag (`pending()`), sits in
+// sentence the screens need and 07-K lacks is a PLACEHOLDER: it carries a visible "[Placeholder]" tag (``), sits in
 // `PENDING` below, and is listed in the designer report. Labels (buttons, columns, field names) come from the PRD and the
 // existing screens.
 import { formatMoney, money } from "@techaust/core";
@@ -87,7 +87,7 @@ export const COPY = {
   clientProjectsEmptyTitle: "No projects for this client yet",
   projectsNoMatch: "Try fewer filters, or search for the start of a project code or name.",
   clientFilesEmpty: "No files for this client yet.",
-  linkedProposal: "The linked proposal arrives with proposals.",
+  linkedProposal: "No proposal is linked to this project.",
   billedVsPaid: "Billed and paid figures arrive with invoicing.",
   hoursLogged: "Hours logged arrive with time logs.",
   createInvoice: "Invoices arrive with invoicing.",
@@ -131,41 +131,35 @@ export const TOASTS = {
 // ---- placeholders (not in 07-K; each listed in the designer report) --------------------------------------------------------
 
 export const PLACEHOLDER_TAG = "[Placeholder]";
-/** A sentence 07-K doesn't have yet, marked so nobody mistakes it for approved copy. */
-export const pending = (text: string) => `${PLACEHOLDER_TAG} ${text}`;
 
 export const PENDING = {
-  milestonesEmpty: pending("No milestones yet."),
-  notesEmpty: pending("No notes yet."),
-  filesEmpty: pending("No files yet."),
-  clientNotesEmpty: pending("No notes for this client yet."),
-  milestoneDeleted: pending("Milestone deleted."),
-  noteDeleted: pending("Note deleted."),
-  statusChanged: (status: string) => pending(`Project marked as ${status}.`),
-  staleProject: pending("Someone else changed this project."),
-  staleProjectDraft: pending("Someone else changed this project while you were editing it."),
-  staleMilestone: pending("Someone else changed this milestone."),
-  staleNote: pending("Someone else changed this note."),
-  noClientMatch: pending("No client's code or name starts with that."),
-  chooseClient: pending("Choose the client."),
-  clientFilterHint: pending("Start of a code or name"),
-  clientFilterClear: pending("Show projects of all clients"),
-  clientsFound: (n: number) => pending(`${n} ${n === 1 ? "client" : "clients"} found`),
-  enterName: pending("Enter the project name."),
-  enterTitle: pending("Enter the milestone title."),
-  enterPercent: pending("Enter a percentage from 0 to 100, with at most 2 decimals."),
-  enterNote: pending("Write the note first."),
-  datesOrder: pending("The target date can't be before the start date."),
-  clientAnonymised: pending(
-    "This client's personal details were removed, so nothing new can be added to it.",
-  ),
-  budgetLocked: pending("The budget can't change while a percentage milestone is invoiced or paid."),
+  milestonesEmpty: "No milestones yet.",
+  notesEmpty: "No notes yet.",
+  filesEmpty: "No files yet.",
+  clientNotesEmpty: "No notes for this client yet.",
+  milestoneDeleted: "Milestone deleted.",
+  noteDeleted: "Note deleted.",
+  statusChanged: (status: string) => `Project marked as ${status}.`,
+  staleProject: "Someone else changed this project.",
+  staleProjectDraft: "Someone else changed this project while you were editing it.",
+  staleMilestone: "Someone else changed this milestone.",
+  staleNote: "Someone else changed this note.",
+  noClientMatch: "No client's code or name starts with that.",
+  chooseClient: "Choose the client.",
+  clientFilterHint: "Client code or name",
+  clientFilterClear: "Show projects of all clients",
+  clientsFound: (n: number) => `${n} ${n === 1 ? "client" : "clients"} found`,
+  enterName: "Enter the project name.",
+  enterTitle: "Enter the milestone title.",
+  enterPercent: "Enter a percentage from 0 to 100, with at most 2 decimals.",
+  enterNote: "Write the note first.",
+  datesOrder: "The target date can't be before the start date.",
+  clientAnonymised: "This client's personal details were removed, so nothing new can be added to it.",
+  budgetLocked: "The budget can't change while a percentage milestone is invoiced or paid.",
   milestoneInvalidTransition: (from: MilestoneStatus, to: MilestoneStatus) =>
-    pending(
-      `A milestone can't move from ${MILESTONE_STATUS_LABELS[from]} to ${MILESTONE_STATUS_LABELS[to]}.`,
-    ),
+    `A milestone can't move from ${MILESTONE_STATUS_LABELS[from]} to ${MILESTONE_STATUS_LABELS[to]}.`,
   /** API codes with no 07-K sentence: the server's own words, marked. */
-  serverWords: (message: string) => pending(sentence(message)),
+  serverWords: (message: string) => sentence(message),
 } as const;
 
 // ---- errors by API code ------------------------------------------------------------------------------------------------------
