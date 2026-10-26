@@ -29,7 +29,7 @@ export { footerLine };
 
 const DASH = "–";
 /** "18 %": the house style puts a space before the sign; a no-break space keeps the two together on the page. */
-const pct = (bp: number): string => `${percentFromBp(bp)} %`;
+export const pct = (bp: number): string => `${percentFromBp(bp)} %`;
 
 const SECTION_TITLES: Record<string, string> = {
   cover: "Cover",
@@ -54,9 +54,10 @@ const WHEN: Record<string, string> = {
   monthly: "Monthly in advance",
 };
 
-const nonEmpty = (s: string | null | undefined): s is string => typeof s === "string" && s.trim() !== "";
+export const nonEmpty = (s: string | null | undefined): s is string =>
+  typeof s === "string" && s.trim() !== "";
 
-function addressLines(a: Address | undefined): string[] {
+export function addressLines(a: Address | undefined): string[] {
   if (!a) return [];
   const place = [a.city, a.state, a.postalCode].filter(nonEmpty).join(", ");
   return [a.line1, a.line2, place, countryName(a.country)].filter(nonEmpty);
@@ -72,7 +73,7 @@ function recipientOf(r: RecipientSnap): PdfView["recipient"] {
   return { name, attention: nonEmpty(r.contactName) ? r.contactName : null, lines };
 }
 
-function totalsOf(c: ComputedDocument, m: (n: number) => string): ViewTotalRow[] {
+export function totalsOf(c: ComputedDocument, m: (n: number) => string): ViewTotalRow[] {
   const rows: ViewTotalRow[] = [{ key: "subtotal", label: "Sub-total", value: m(c.subtotalMinor) }];
   if (c.discountMinor !== 0) {
     rows.push({
