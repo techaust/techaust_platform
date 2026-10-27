@@ -20,6 +20,15 @@ export const TEMPLATE_NAMES: Record<EmailTemplate, string> = {
   "offer.declined.staff": "Decline notice (team)",
   "approval.requested": "Approval requested",
   "approval.decided": "Approval decided",
+  // M5.4 (names as the Settings list shows them; the words of the emails are 07-U's)
+  "invoice.sent": "Invoice sent",
+  "proforma.sent": "Proforma sent",
+  "credit_note.sent": "Credit note sent",
+  "debit_note.sent": "Debit note sent",
+  "reminder.sent": "Payment reminder",
+  "alert.unbilled": "Unbilled work alert (team)",
+  "alert.proforma_due": "Proforma for delivered work alert (team)",
+  "lut.reminder": "LUT reminder (team)",
 };
 
 const SAMPLE = "https://example.test/sample";
@@ -125,6 +134,50 @@ export function sampleData(
         decision_note: "Fine for this client",
         admin_url: SAMPLE,
       };
+    case "invoice.sent":
+    case "proforma.sent":
+    case "credit_note.sent":
+    case "debit_note.sent":
+    case "reminder.sent": {
+      const document = {
+        first_name,
+        number: "TH/INV/2627/0001",
+        issue_date: "5 Nov 2026",
+        due_date: "12 Nov 2026",
+        total: "₹23,600.00",
+        balance: "₹23,600.00",
+        url: `${SAMPLE}/invoice`,
+        attached: "1",
+        parent_number:
+          template === "credit_note.sent" || template === "debit_note.sent" ? "TH/INV/2627/0001" : "",
+        sender_name: who.name,
+      };
+      return template === "reminder.sent"
+        ? { ...document, offset_days: "3", when: "after", kind: "invoice" }
+        : document;
+    }
+    case "alert.unbilled":
+      return {
+        owner_first_name: first_name,
+        client_name: "Sample Company",
+        admin_url: SAMPLE,
+        milestone_title: "Sample milestone",
+        delivered_date: "1 Oct 2026",
+        days_since: "25",
+      };
+    case "alert.proforma_due":
+      return {
+        owner_first_name: first_name,
+        client_name: "Sample Company",
+        admin_url: SAMPLE,
+        milestone_title: "Sample milestone",
+        delivered_date: "1 Oct 2026",
+        days_since: "25",
+        proforma_number: "TH/PI/2627/0001",
+        balance: "₹23,600.00",
+      };
+    case "lut.reminder":
+      return { owner_first_name: first_name, fy_label: "2027-28", state: "due", admin_url: SAMPLE };
     case "lead.reply":
       return {
         subject: "Re: your enquiry (L-23456)",

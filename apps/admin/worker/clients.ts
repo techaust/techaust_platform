@@ -9,7 +9,7 @@
 // Finance boundary: `CLIENT_FINANCE_READ_FIELDS` (core) is hidden from a role without `clients.finance.read` (Sales): `clientView` drops
 // them. Every `CLIENT_BILLING_FIELDS` field is changed after creation only by `PATCH /clients/:id/billing` (`clients.finance.write`), and
 // `PATCH /clients/:id` refuses them with a 400. The tax identity (GST status, GSTIN, state, billing address, currency) is readable.
-import { emailAddress } from "@techaust/auth";
+import { emailAddress, stepUpActive } from "@techaust/auth";
 import { FINANCE_AUDIT_ACTIONS } from "@techaust/core/audit";
 import {
   ANONYMISED_CLIENT,
@@ -47,6 +47,7 @@ import {
   mutate,
   NOT_FOUND,
   requestInfo,
+  STEP_UP_REQUIRED,
 } from "./context.ts";
 import { dropObjects } from "./files.ts";
 import {
@@ -83,6 +84,11 @@ const ANONYMISED: ApiError = {
 const LEGAL_HOLD: ApiError = {
   code: "legal_hold",
   message: "A legal hold stops this. Release the hold first",
+};
+/** M5.4 (Q43, LD58): turning the automatic issue of the monthly care invoice ON lets the system issue invoices without the Owner, so only the Owner may, with a fresh code. */
+const OWNER_ONLY: ApiError = {
+  code: "owner_only",
+  message: "Only the Owner can turn on automatic issuing",
 };
 const ON_ISSUED_DOCUMENT: ApiError = {
   code: "on_issued_document",
@@ -392,6 +398,7 @@ const exportRequest = z.strictObject({
       "decisions",
       "document_sends",
       "offer_links",
+      "doc_access_tokens",
       "documents",
       "email_log",
       "audit_log",
@@ -697,15 +704,34 @@ export const clients = new Hono<AppEnv>()
     if (!changes.length) return c.json({ ok: true, changed: false, updatedAt: row.updated_at, warnings });
 
     const t = Date.now();
+    const u = actor(c);
+    // M5.4 (Q43, LD58): turning the automatic issue ON is the Owner's, with a fresh code, and names that Owner on the client (`care_auto_issue_by`); turning it OFF clears the name and Staff may.
+    const toggled = changes.find(([k]) => k === "careAutoIssue");
+    const turningOn = toggled !== undefined && toggled[1] === 1;
+    if (turningOn) {
+      const d = decide(u.role, "clients.careAutoIssue");
+      if (d === "deny") return err(c, OWNER_ONLY, 403);
+      if (d === "step-up" && !stepUpActive(u.stepUpUntil, t)) return err(c, STEP_UP_REQUIRED, 403);
+    }
     const currencyChanges = changes.some(([k]) => k === "currency");
+    const setCols = changes.map(([k]) => snake(k));
+    const setVals: (string | number | null)[] = changes.map((ch) => ch[1]);
+    if (toggled) {
+      setCols.push("care_auto_issue_by");
+      setVals.push(turningOn ? u.id : null);
+    }
+    // Turning on is also checked INSIDE the write: the session still has a live fresh code and its member is an active Owner (the trigger of 0044 backs it with the named member).
+    const authority = turningOn
+      ? ` AND EXISTS (SELECT 1 FROM staff_sessions s JOIN staff_users o ON o.id = s.user_id WHERE s.id = ?${setVals.length + 4} AND s.revoked_at IS NULL AND s.step_up_until > ?3 AND o.role = 'owner' AND o.status = 'active')`
+      : "";
     let done: boolean;
     try {
       done = await mutate(c, {
         main: db
           .prepare(
-            `UPDATE clients SET ${changes.map(([k], i) => `${snake(k)} = ?${i + 4}`).join(", ")}, updated_at = ?3 WHERE id = ?1 AND updated_at = ?2 AND anonymised_at IS NULL${currencyChanges ? ` AND ${NO_INVOICE_SQL}` : ""}`,
+            `UPDATE clients SET ${setCols.map((col, i) => `${col} = ?${i + 4}`).join(", ")}, updated_at = ?3 WHERE id = ?1 AND updated_at = ?2 AND anonymised_at IS NULL${currencyChanges ? ` AND ${NO_INVOICE_SQL}` : ""}${authority}`,
           )
-          .bind(id, f.expectedUpdatedAt, t, ...changes.map((ch) => ch[1])),
+          .bind(id, f.expectedUpdatedAt, t, ...setVals, ...(turningOn ? [u.sessionId] : [])),
         action: "client.billing_update",
         entityType: "client",
         entityId: id,
@@ -715,6 +741,7 @@ export const clients = new Hono<AppEnv>()
       if (isUnique(e, "clients.gstin")) return err(c, GSTIN_IN_USE, 409);
       // The trigger is the backstop for an invoice that appeared between the statement's check and its write.
       if (refusedWith(e, /currency is locked/)) return err(c, CURRENCY_LOCKED, 409);
+      if (refusedWith(e, /clients_care_auto_issue_by/)) return err(c, OWNER_ONLY, 403);
       throw e;
     }
     if (!done) {
@@ -724,6 +751,8 @@ export const clients = new Hono<AppEnv>()
         .first<{ updated_at: number; anonymised_at: number | null }>();
       if (!again) return err(c, NOT_FOUND, 404);
       if (again.anonymised_at !== null) return refuseAnonymised(c);
+      // Nothing else moved but the toggle was asked for: the fresh code ran out between the check and the write.
+      if (turningOn && again.updated_at === f.expectedUpdatedAt) return err(c, STEP_UP_REQUIRED, 403);
       return again.updated_at !== f.expectedUpdatedAt || !currencyChanges
         ? err(c, STALE_VERSION, 409)
         : err(c, CURRENCY_LOCKED, 409);
@@ -906,6 +935,11 @@ export const EXPORT_PARTS: Record<string, { sql: (cur: boolean) => string; time?
   offer_links: {
     sql: (cur) =>
       `SELECT rowid AS id, document_id, send_id, acceptance_id, purpose, expires_at, revoked_at, created_at FROM offer_links WHERE contact_id = ?1${cur ? " AND rowid > ?5" : ""} ORDER BY rowid LIMIT 51`,
+  },
+  // M5.4 (VERIFY WITH CA/LEGAL): the invoice links sent to this person (POR-06). Never the token hash; document, purpose, dates and the revoke only.
+  doc_access_tokens: {
+    sql: (cur) =>
+      `SELECT rowid AS id, document_id, send_id, purpose, expires_at, revoked_at, created_at FROM doc_access_tokens WHERE contact_id = ?1${cur ? " AND rowid > ?5" : ""} ORDER BY rowid LIMIT 51`,
   },
   acceptances: {
     sql: (cur) =>
@@ -1125,7 +1159,10 @@ export const contacts = new Hono<AppEnv>()
         ? [
             ...base,
             cur.k,
-            f.part === "sessions" || f.part === "magic_links" || f.part === "offer_links"
+            f.part === "sessions" ||
+            f.part === "magic_links" ||
+            f.part === "offer_links" ||
+            f.part === "doc_access_tokens"
               ? Number(cur.id)
               : cur.id,
           ]

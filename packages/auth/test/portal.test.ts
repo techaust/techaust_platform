@@ -209,12 +209,26 @@ describe("document tokens [POR-06]", () => {
       documentId: "doc-1",
       purpose: "view_pay",
       expiresAt: 99,
+      contactId: "contact-1",
+      clientId: "client-1",
+      email: "  Asha@Example.TEST ",
+      sendId: "send-1",
     });
     expect(stmt).toBe(calls[0]);
     expect(stmt.sql).toMatch(
-      /^INSERT INTO doc_access_tokens \(token_hash, document_id, purpose, expires_at\)/,
+      /^INSERT INTO doc_access_tokens \(token_hash, document_id, purpose, expires_at, contact_id, client_id, email, send_id\)/,
     );
-    expect(stmt.values).toEqual([createHash("sha256").update(token).digest("hex"), "doc-1", "view_pay", 99]);
+    // M5.4 (LD55): bound to the contact, the client, the lower-cased address and the send
+    expect(stmt.values).toEqual([
+      createHash("sha256").update(token).digest("hex"),
+      "doc-1",
+      "view_pay",
+      99,
+      "contact-1",
+      "client-1",
+      "asha@example.test",
+      "send-1",
+    ]);
     expect(JSON.stringify(stmt.values)).not.toContain(token);
     expect(DOC_TOKEN_PURPOSES).toEqual(["view_pay"]);
   });

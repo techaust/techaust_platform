@@ -27,10 +27,16 @@ import {
 import { all, first, insertDraftInvoice, run } from "./helpers.ts";
 
 const plan = async (
-  o: Parameters<typeof mkCarePlan>[2] & { last?: string | null; status?: "cancelled" } = {},
+  o: Omit<NonNullable<Parameters<typeof mkCarePlan>[2]>, "status"> & {
+    last?: string | null;
+    status?: "paused" | "cancelled";
+  } = {},
 ): Promise<PlanFixture> => {
   const owner = await mkMember();
-  const p = await mkCarePlan(await mkClientRow(), owner, o);
+  const p = await mkCarePlan(await mkClientRow(), owner, {
+    ...o,
+    status: o.status === "paused" ? "paused" : "active",
+  });
   if (o.last) await run("UPDATE care_plans SET last_billed_period = ?2 WHERE id = ?1", p.planId, o.last);
   if (o.status === "cancelled") {
     await run(

@@ -165,9 +165,9 @@ export async function mkCareDraft(
 export async function mkIssued(
   clientId: string,
   o: {
-    type?: string;
-    status?: string;
-    balance?: number;
+    type?: string | undefined;
+    status?: string | undefined;
+    balance?: number | undefined;
     voided?: boolean;
     frozenAt?: number;
     parentId?: string;

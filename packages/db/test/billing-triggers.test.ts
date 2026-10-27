@@ -265,7 +265,7 @@ describe("doc_access_tokens: an invoice link is bound to a contact, a client and
     const draft = await mkCareDraft(await mkCarePlan(w.clientId, w.owner));
     const otherSend = await mkSend(otherDoc, other, otherContact, { createdBy: w.owner });
     const base = { hash: "x", doc: w.doc, contact: w.contactId, client: w.clientId, email: "a@example.test" };
-    const bad: [string, Partial<typeof base> & { send?: string }][] = [
+    const bad: [string, { [K in keyof typeof base]?: string | null } & { send?: string }][] = [
       ["no contact", { contact: null }],
       ["no client", { client: null }],
       ["no address", { email: null }],

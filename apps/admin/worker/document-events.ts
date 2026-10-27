@@ -12,7 +12,11 @@ import type { Ctx } from "./context.ts";
 export type SendEvent = { documentId: string; groupId: string; version: number };
 
 /** Puts one `pdf.snapshot` message on the PDF queue. Never throws: a failure is logged (ids only) and the sweep catches up. */
-export async function enqueuePdf(env: Env, documentId: string, reason: PdfSnapshotReason): Promise<boolean> {
+export async function enqueuePdf(
+  env: Pick<Env, "PDF_QUEUE">,
+  documentId: string,
+  reason: PdfSnapshotReason,
+): Promise<boolean> {
   try {
     await env.PDF_QUEUE.send({ v: 1, kind: "pdf.snapshot", documentId, reason } satisfies PdfSnapshotMessage);
     return true;

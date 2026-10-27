@@ -189,6 +189,50 @@ export function careLines(input: {
   return { ok: true, lines, overage };
 }
 
+// ---- the contract of the admin API's `BillingJobs` entrypoint (LD57) ---------------------------------------------------------------------
+
+/** What `draftCarePlan` answers. `autoEligible` means the jobs Worker should send `care.issue`; `reasons` are why not (`AutoIssueReason`). */
+export type DraftCareResult = {
+  readonly result: "drafted" | "already_billed" | "not_due" | "skipped";
+  readonly documentId?: string;
+  readonly autoEligible: boolean;
+  readonly reasons: readonly string[];
+  /** Why a plan was skipped (a code: `plan_missing`, `client_anonymised`, `service_missing`, `no_terms`). */
+  readonly why?: string;
+};
+/** What `issueCareDraft` answers. */
+export type IssueCareResult = {
+  readonly result: "issued" | "refused" | "already_issued" | "not_found";
+  readonly number?: string;
+  readonly reasons: readonly string[];
+  readonly notEmailed?: boolean;
+};
+
+const DRAFT_RESULTS = ["drafted", "already_billed", "not_due", "skipped"] as const;
+const ISSUE_RESULTS = ["issued", "refused", "already_issued", "not_found"] as const;
+const isStrings = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === "string");
+
+/** A runtime check of what came back over the service binding (an RPC answer is not trusted by its type alone). */
+export function isDraftCareResult(v: unknown): v is DraftCareResult {
+  if (typeof v !== "object" || v === null) return false;
+  const r = v as Record<string, unknown>;
+  return (
+    (DRAFT_RESULTS as readonly unknown[]).includes(r.result) &&
+    typeof r.autoEligible === "boolean" &&
+    isStrings(r.reasons) &&
+    (r.documentId === undefined || typeof r.documentId === "string")
+  );
+}
+export function isIssueCareResult(v: unknown): v is IssueCareResult {
+  if (typeof v !== "object" || v === null) return false;
+  const r = v as Record<string, unknown>;
+  return (
+    (ISSUE_RESULTS as readonly unknown[]).includes(r.result) &&
+    isStrings(r.reasons) &&
+    (r.number === undefined || typeof r.number === "string")
+  );
+}
+
 // ---- may the system issue it too? ---------------------------------------------------------------------------------------------------------
 
 export const AUTO_ISSUE_REASONS = [

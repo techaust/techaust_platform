@@ -27,6 +27,7 @@ import { bundleOf, LOAD_STATEMENTS, loadStatements, type TermsRef } from "@techa
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { clientGoneSql } from "./anonymised.ts";
+import { blockerCodesOf, CARE_OF_SQL, type CareOf, careView } from "./care-billing.ts";
 import {
   type AppEnv,
   actor,
@@ -76,6 +77,14 @@ import {
   withoutReference,
 } from "./invoice-model.ts";
 import { noteFieldsIn, patchNoteDraft } from "./invoice-notes.ts";
+import {
+  LIVE_LINKS_SQL,
+  REMINDERS_OF_SQL,
+  type ReminderRow,
+  SENDS_OF_SQL,
+  type SendRow,
+  sendsView,
+} from "./invoice-send.ts";
 import {
   CHILDREN_OF_SQL,
   type ChildRow,
@@ -295,7 +304,11 @@ export async function listInvoices(
  * their versions), the active bank rows, the newest invoice footer notes, its `issue` approvals, its milestone, and whether it was emailed or has
  * an issued child. A route that needs more reads passes those statements in `extra`; their results come back after the others.
  */
-export async function readInvoice(c: Ctx, id: string, extra: D1PreparedStatement[] = []) {
+export async function readInvoice(
+  c: { env: { DB: D1Database } },
+  id: string,
+  extra: D1PreparedStatement[] = [],
+) {
   const db = c.env.DB;
   const results = await db.batch([
     ...loadStatements(db, id, { terms: "ref" }),
@@ -655,6 +668,11 @@ export const invoices = new Hono<AppEnv>()
     const ctx = await readInvoice(c, id, [
       db.prepare(NEWEST_EXPORT_DECLARATION),
       db.prepare(CHILDREN_OF_SQL).bind(id),
+      // M5.4: the sends, the live links, the reminders and the care record of the document (each one index lookup).
+      db.prepare(SENDS_OF_SQL).bind(id),
+      db.prepare(LIVE_LINKS_SQL).bind(id, Date.now()),
+      db.prepare(REMINDERS_OF_SQL).bind(id),
+      db.prepare(CARE_OF_SQL).bind(id),
     ]);
     if (!ctx) return err(c, NOT_FOUND, 404);
     const d = ctx.bundle.document;
@@ -719,6 +737,11 @@ export const invoices = new Hono<AppEnv>()
         targetOf(ctx.milestone),
       );
     }
+    // M5.4: a care draft shows whether the system will issue it, so it needs the codes that stop it (the checklist's blockers and the care ones).
+    const careBlockerCodes =
+      ctx.extra[5]?.results[0] && computation && d.frozen_at === null && !isNote
+        ? blockerCodesOf(invoiceStateOf(ctx.bundle), ctx.client, ctx.settings, computation, ctx.bank, now)
+        : [];
     return c.json(
       invoiceView({
         bundle: ctx.bundle,
@@ -739,6 +762,16 @@ export const invoices = new Hono<AppEnv>()
         children: (ctx.extra[1]?.results ?? []) as ChildRow[],
         voidedByName: ctx.voidedByName,
         now,
+        sendsPart: sendsView(
+          (ctx.extra[2]?.results ?? []) as SendRow[],
+          (ctx.extra[3]?.results[0] as { live: number } | undefined)?.live ?? 0,
+          (ctx.extra[4]?.results ?? []) as ReminderRow[],
+        ),
+        care: careView(ctx.extra[5]?.results[0] as CareOf | undefined, {
+          frozen: d.frozen_at !== null,
+          blockerCodes: careBlockerCodes,
+          currency: d.currency,
+        }),
       }),
     );
   })
@@ -987,6 +1020,15 @@ export const invoices = new Hono<AppEnv>()
           )
           .bind(id, expected),
         db.prepare(`DELETE FROM approvals WHERE document_id = ?1 AND ${live}`).bind(id, expected),
+        // M5.4 (LD59): a discarded care draft keeps the record of its period (so the job never makes it again); the record only forgets the document, once.
+        db
+          .prepare(`UPDATE care_invoices SET document_id = NULL WHERE document_id = ?1 AND ${live}`)
+          .bind(id, expected),
+        db
+          .prepare(
+            `DELETE FROM notifications WHERE entity_type = 'document' AND entity_id = ?1 AND kind LIKE 'care.%' AND ${live}`,
+          )
+          .bind(id, expected),
         db
           .prepare(
             `DELETE FROM documents WHERE id = ?1 AND updated_at = ?2 AND frozen_at IS NULL AND status = 'draft' AND type IN (${INVOICE_TYPES_SQL})`,
