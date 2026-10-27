@@ -81,6 +81,7 @@ _Drafted by the lead on 2026-10-27 from approved facts:
 - To the requester, approved: "Your invoice for {client name} was issued as {number}."
 - To the requester, rejected: "Your request to issue the invoice for {client name} was rejected."
 - Draft invoices have no number, so bells never use a title (docs/13 2026-10-26).
+- To every owner, when the signature image can't be used for an invoice PDF: "The signature image couldn't be used for the PDF of {number}, so the PDF wasn't made. Check the signature in Settings › Company."
 - To every owner, a refused invoice PDF (`pdf.refused`): "The PDF of {number} didn't match its saved copy, so it wasn't made. A developer needs to look at it."
 
 ### Approval emails (staff, from no-reply@; same layout as the 07-O discount emails)
@@ -99,7 +100,7 @@ _Drafted by the lead on 2026-10-27 from approved facts:
 - Empty reason error: "Enter a reason for voiding."
 - Buttons: "Void invoice" · "Cancel"
 - Void badge line: "Voided {date} by {name}: {reason}"
-- Milestone after void: "The milestone is back to Ready to bill."
+- Milestone after void: "The milestone is back to Ready to bill." or, for an advance milestone that was never delivered, "The milestone is back to Pending."
 - Milestone action: "Create invoice" · disabled hint when one exists: "This milestone already has invoice {number}." or, for a draft, "This milestone already has a draft invoice."
 - Estimate link (docs/13 2026-10-26): "Converted to invoice {number}." or, for a draft, "Converted to a draft invoice."
 
@@ -126,7 +127,7 @@ _Drafted by the lead on 2026-10-27 from approved facts:
 | contact_anonymised | "This draft's contact has been anonymised. Choose another contact, then save the draft." |
 | on_issued_document | (existing 07-J line) |
 | milestone_has_invoice | "This milestone already has an invoice." |
-| milestone_not_ready | "Only a milestone that's Ready to bill can be invoiced." |
+| milestone_not_ready | "Only a milestone that's Ready to bill, or the advance payment of a started project, can be invoiced." |
 
 ## 6. Tax invoice PDF: fixed words (client-facing; `packages/pdf` `layout/copy.ts`; VERIFY WITH CA/LEGAL)
 - Title: "Tax Invoice"

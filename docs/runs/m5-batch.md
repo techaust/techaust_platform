@@ -154,6 +154,7 @@ Lead's check: the plan keeps the Free plan (cron count unchanged: `30 * * * *` r
 26. **Clients with a UIN, TDS or NRTP registration** (VERIFY WITH CA/LEGAL; M5.2) (Recommended) None expected now; build it when such a client comes, as for SEZ. Alternative: research and build in M5.
 27. **A payment received in an earlier month** (VERIFY WITH CA/LEGAL, s.13(2); M5.2) (Recommended) Issue the tax invoice today with a warning that the GST belongs to the month the payment arrived. Alternative: block it.
 28. **A proforma's "Valid until" date** (copy; M5.2) (Recommended) The same as its due date (Net 7 or the client's terms). Alternative: the proposal validity (15 days).
+29. **Where the signature sits on the invoice PDF** (VERIFY WITH CA/LEGAL, Rule 46(q)). (Recommended, built) Under the total, before the tax summary and notes, so a short invoice fits on one page. Alternative: the signature last, at the foot of the invoice.
 
 Not asked, because docs/13 or docs/04 §0 already decide them:
 - the numbering format;
