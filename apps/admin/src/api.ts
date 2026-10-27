@@ -362,6 +362,8 @@ export type ClientView = {
   reminderPolicy?: ReminderPolicy | null;
   careAutoIssue?: boolean;
   attachPdf?: boolean;
+  /** M5.4: the owner who turned automatic care invoices on (null: nobody); `active` false means that owner is gone, so the switch is not in effect. */
+  careAutoIssueBy?: { id: string; name: string | null; active: boolean } | null;
 };
 export type MarketingConsent = { granted: boolean; at?: number; source?: string; withdrawnAt?: number };
 export type ContactView = {

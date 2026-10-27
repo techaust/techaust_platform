@@ -260,6 +260,59 @@ export type InvoiceView = {
   } | null;
 };
 
+// ---- M5.4 (apps/admin/worker/invoice-send.ts `sendsView`, `sendAction`; care-billing.ts `careView`); optional so an older API still loads -------------
+
+/** One email of the document (newest first): who it went to, how it was made (`auto`: the care job), and the last email status from the log. */
+export type InvoiceSendRow = {
+  id: string;
+  contactName: string | null;
+  email: string | null;
+  kind: "send" | "resend" | "auto" | string;
+  createdAt: number;
+  queuedAt: number | null;
+  cancelledAt: number | null;
+  emailStatus: string | null;
+};
+/** One payment reminder: its signed offset from the due date (−3 is before), when it is due (UTC ms, the window's opening hour IST), and what happened. */
+export type InvoiceReminderRow = {
+  offset: number;
+  dueAt: number;
+  sentAt: number | null;
+  skippedReason: string | null;
+};
+export type InvoiceM54 = {
+  sends?: InvoiceSendRow[];
+  links?: { live: number };
+  reminders?: { started: boolean; paused: boolean; rows: InvoiceReminderRow[] };
+  /** A care invoice: the plan and the period it bills; on a draft, whether the system will issue it and why not. */
+  care?: {
+    planId: string;
+    periodStart: string;
+    periodEnd: string;
+    overageMinutes: number | null;
+    auto: { eligible: boolean; reasons: string[] } | null;
+  } | null;
+};
+
+/** `actions.send` of the view (it rides beside M5.3's note actions): whether this member may email the document now, and why not. Absent from an older API. */
+export function sendActionOf(v: unknown): { allowed: boolean; reasons: string[] } | null {
+  const a = (v as { actions?: { send?: unknown } | null }).actions?.send as
+    | { allowed?: unknown; reasons?: unknown }
+    | undefined;
+  if (!a || typeof a.allowed !== "boolean") return null;
+  return { allowed: a.allowed, reasons: Array.isArray(a.reasons) ? (a.reasons as string[]) : [] };
+}
+
+/** POST /invoices/:id/send. `remindersPaused`: the links were revoked (or the reminders paused) before, and this send doesn't resume them. */
+export type SendResult = {
+  ok: true;
+  kind: "send" | "resend";
+  sends: number;
+  reminders: number;
+  waitingForPdf: boolean;
+  remindersPaused: boolean;
+};
+
 export type InvoicePatch = {
   expectedUpdatedAt: number;
   fields?: {
@@ -384,6 +437,19 @@ export const invoicesApi = {
     }>(`/invoices/${enc(id)}/void`, { body: { expectedUpdatedAt, reason } }),
   retryPdf: (id: string) =>
     request<{ ok: true; pdf: { state: "pending" } }>(`/invoices/${enc(id)}/pdf/retry`, { body: {} }),
+  /** M5.4: email an issued document to 1 to 5 contacts with portal access (Owner and Staff, Q42). */
+  send: (id: string, contactIds: string[], attachPdf: boolean) =>
+    request<SendResult>(`/invoices/${enc(id)}/send`, { body: { contactIds, attachPdf } }),
+  /** M5.4: cancels the emails still waiting, revokes every live link and pauses the reminders (LD60). */
+  revokeLinks: (id: string) =>
+    request<{ ok: true; revoked: number; cancelled: number; paused: number }>(
+      `/invoices/${enc(id)}/links/revoke`,
+      { body: {} },
+    ),
+  pauseReminders: (id: string) =>
+    request<{ ok: true; paused: number }>(`/invoices/${enc(id)}/reminders/pause`, { body: {} }),
+  resumeReminders: (id: string) =>
+    request<{ ok: true; resumed: number }>(`/invoices/${enc(id)}/reminders/resume`, { body: {} }),
   issueApprovals: (
     q: {
       status?: ApprovalState | undefined;

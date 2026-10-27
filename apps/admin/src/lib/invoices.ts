@@ -324,6 +324,10 @@ export function blockerLine(
       return `Line ${n} needs a 6-digit SAC code.`;
     case "line_description_missing":
       return `Line ${n} needs a description.`;
+    // M5.4 (early check finding 4): a line still carries "[Placeholder" text, so it can't go out on a legal invoice. 07-R has no line for it; 07-U §6's reason
+    // ("a line's wording isn't approved yet", PENDING the owner) after the "Line {n}" of the other line blockers, marked until 07-U is approved.
+    case "line_text_placeholder":
+      return `${INV_PLACEHOLDER} Line ${n}: a line's wording isn't approved yet.`;
     case "computed_errors":
       return "The totals couldn't be worked out. Check the lines and the discount.";
     case "zero_total":
@@ -397,6 +401,7 @@ export function blockerTarget(b: InvoiceBlocker, clientId: string): BlockerTarge
     case "line_sac_missing":
       return b.line ? { kind: "line", n: b.line, field: "sac" } : { kind: "lines" };
     case "line_description_missing":
+    case "line_text_placeholder":
       return b.line ? { kind: "line", n: b.line, field: "description" } : { kind: "lines" };
     case "no_lines":
     case "computed_errors":

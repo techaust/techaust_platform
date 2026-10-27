@@ -38,6 +38,7 @@ import {
   termsDays,
 } from "../../lib/clients.ts";
 import { sentence } from "../../lib/format.ts";
+import { CARE_COPY } from "../../lib/invoice-send.ts";
 import { useUser } from "../../session.tsx";
 import { NotesPanel } from "../projects/notes.tsx";
 import { AddressFields, type Tax, TaxFields, taxFieldErrors } from "./parts.tsx";
@@ -176,6 +177,8 @@ function Details(props: Parameters<typeof Overview>[0] & { canWrite: boolean }) 
       props.reload();
     } catch (err) {
       if (err instanceof RequestError && err.code === "stale_version") props.onStale();
+      // M5.4 (Q43): only an owner turns automatic care invoices on
+      else if (err instanceof RequestError && err.code === "owner_only") setFailure(CARE_COPY.ownerOnly);
       else if (err instanceof RequestError && fieldOfError(err.code) === "type") {
         setErrors({ "cd-type": sentence(err.message) });
         document.getElementById("cd-type")?.focus();
@@ -359,6 +362,7 @@ function reminderText(r: { enabled: boolean; offsetsDays?: number[] } | null | u
 
 function Billing(props: Parameters<typeof Overview>[0] & { canFinance: boolean; canBilling: boolean }) {
   const toast = useToast();
+  const user = useUser();
   const { client } = props.data;
   const locked = props.data.currencyLocked === true;
   const stored = billingOf(client);
@@ -563,12 +567,14 @@ function Billing(props: Parameters<typeof Overview>[0] & { canFinance: boolean; 
               )}
             </FormField>
           )}
+          {/* M5.4 (Q43, LD58): an owner turns it on (with a fresh code, asked by the step-up dialog on save); anyone who edits billing can turn it off. */}
           <SwitchRow
             id="cb-care"
-            label="Care plan auto-issue"
-            hint="Care plan invoices are issued and sent on the billing day instead of waiting as drafts."
+            label={CARE_COPY.toggle}
+            hint={CARE_COPY.toggleHint}
             checked={f.careAutoIssue === "on"}
             onChange={(on) => setF({ ...f, careAutoIssue: on ? "on" : "off" })}
+            disabled={user.role !== "owner" && stored.careAutoIssue !== "on"}
           />
           <SwitchRow
             id="cb-pdf"
@@ -636,7 +642,9 @@ function Billing(props: Parameters<typeof Overview>[0] & { canFinance: boolean; 
                       : `${client.paymentTermsDays} days after the invoice date`}
                 </Fact>
                 <Fact label="Reminders">{reminderText(client.reminderPolicy)}</Fact>
-                <Fact label="Care plan auto-issue">{client.careAutoIssue ? "On" : "Off"}</Fact>
+                <Fact label={CARE_COPY.toggle}>
+                  <CareAutoIssue client={client} />
+                </Fact>
                 <Fact label="Attach PDF">{client.attachPdf ? "On" : "Off"}</Fact>
               </dl>
             </>
@@ -647,12 +655,31 @@ function Billing(props: Parameters<typeof Overview>[0] & { canFinance: boolean; 
   );
 }
 
+/** M5.4: whether automatic care invoices are on, who turned them on, and "not in effect" once that owner is no longer active (LD58). */
+function CareAutoIssue({ client }: { client: ClientPage["client"] }) {
+  if (!client.careAutoIssue) return <>Off</>;
+  const by = client.careAutoIssueBy;
+  if (!by) return <>On</>;
+  return (
+    <span className="care-auto">
+      <span>{CARE_COPY.onBy(by.name ?? "")}</span>
+      {!by.active && (
+        <span className="care-auto__off">
+          <Lock size={16} />
+          {CARE_COPY.notInEffect}
+        </span>
+      )}
+    </span>
+  );
+}
+
 function SwitchRow(props: {
   id: string;
   label: string;
   hint?: string;
   checked: boolean;
   onChange: (on: boolean) => void;
+  disabled?: boolean;
 }) {
   return (
     <div className="switch-row">
@@ -672,6 +699,7 @@ function SwitchRow(props: {
         onChange={props.onChange}
         labelledBy={`${props.id}-label`}
         describedBy={props.hint ? `${props.id}-desc` : undefined}
+        disabled={props.disabled}
       />
     </div>
   );

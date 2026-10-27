@@ -25,7 +25,7 @@ import {
   voidBlockedText,
   voidedLine,
 } from "../../lib/invoices.ts";
-import { type InvoiceView, invoicePdfHref, invoicesApi } from "../../lib/invoices-api.ts";
+import { type InvoiceView, invoicePdfHref, invoicesApi, sendActionOf } from "../../lib/invoices-api.ts";
 import { NOTE_COPY, NOTE_ERRORS } from "../../lib/notes.ts";
 import type { InvoiceWithNotes, NoteKind } from "../../lib/notes-api.ts";
 import { PDF_COPY } from "../../lib/pdf.ts";
@@ -44,6 +44,14 @@ import {
   noteKindOfView,
 } from "./notes-parts.tsx";
 import { INVOICES_CRUMB, InvoiceBadge, MilestoneOrigin, NumberMark } from "./parts.tsx";
+import {
+  CareOrigin,
+  EmailsPanel,
+  InvoiceSendDialog,
+  RemindersPanel,
+  type SendableView,
+  sentToast,
+} from "./send-parts.tsx";
 import { AdvanceOrigin, ExportFacts, ProformaPanel, ServiceDateSetOnce } from "./types-parts.tsx";
 
 const PDF_WORDS: PdfWords = {
@@ -74,7 +82,13 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
   const toast = useToast();
   const [voiding, setVoiding] = useState(false);
   const [noting, setNoting] = useState<NoteKind | null>(null);
-  const v = view as InvoiceWithNotes;
+  // M5.4: the send dialog, and the "Resume reminders" offer after a send that left them paused (early check finding 5).
+  const [sending, setSending] = useState(false);
+  const [offerResume, setOfferResume] = useState(false);
+  const v = view as InvoiceWithNotes & SendableView;
+  const sendAction = sendActionOf(v);
+  const canSend = v.frozen && sendAction?.allowed === true;
+  const showMail = v.frozen && (canSend || (v.sends?.length ?? 0) > 0);
   const badge = badgeOf(v);
   const isVoid = v.status === "void";
   const isNote = isNoteView(v);
@@ -199,9 +213,34 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
               source={PDF_SOURCE}
             />
           )}
+          {showMail && (
+            <EmailsPanel
+              view={v}
+              canSend={canSend}
+              onEmail={() => setSending(true)}
+              onRevoked={() => {
+                setOfferResume(false);
+                reload();
+              }}
+            />
+          )}
         </div>
+        {v.frozen && !isVoid && (
+          <div className="doc-page__versions">
+            <RemindersPanel
+              view={v}
+              canAct={canSend}
+              offerResume={offerResume}
+              onChanged={() => {
+                setOfferResume(false);
+                reload();
+              }}
+            />
+          </div>
+        )}
 
         <div className="doc-page__main">
+          {v.care && <CareOrigin care={v.care} canOpenPlan={allowed(role, "carePlans.read")} />}
           <AdvanceOrigin view={v} />
           {v.frozen && v.type === "proforma" && <ProformaPanel view={v} onIssued={reload} />}
           {v.frozen && <ExportFacts view={v} />}
@@ -271,6 +310,19 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
         </div>
       </div>
 
+      {sending && (
+        <InvoiceSendDialog
+          open
+          view={v}
+          onClose={() => setSending(false)}
+          onSent={(r) => {
+            setSending(false);
+            setOfferResume(r.remindersPaused);
+            toast("success", sentToast(r));
+            reload();
+          }}
+        />
+      )}
       {noting && (
         <NoteDialog
           open
