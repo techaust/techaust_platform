@@ -722,7 +722,7 @@ export const clients = new Hono<AppEnv>()
     }
     // Turning on is also checked INSIDE the write: the session still has a live fresh code and its member is an active Owner (the trigger of 0044 backs it with the named member).
     const authority = turningOn
-      ? ` AND EXISTS (SELECT 1 FROM staff_sessions s JOIN staff_users o ON o.id = s.user_id WHERE s.id = ?${setVals.length + 4} AND s.revoked_at IS NULL AND s.step_up_until > ?3 AND o.role = 'owner' AND o.status = 'active')`
+      ? ` AND EXISTS (SELECT 1 FROM staff_sessions s JOIN staff_users o ON o.id = s.user_id WHERE s.id = ?${setVals.length + 4} AND s.revoked_at IS NULL AND s.idle_expires_at > ?3 AND s.abs_expires_at > ?3 AND s.step_up_until > ?3 AND o.role = 'owner' AND o.status = 'active')`
       : "";
     let done: boolean;
     try {

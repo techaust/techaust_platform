@@ -9,7 +9,7 @@ import { BillingJobs } from "./api.ts";
 import { draftCarePlan, issueCareDraft } from "./care-billing.ts";
 import { mkPlan } from "./test-care.ts";
 import { mkItem } from "./test-catalogue.ts";
-import { insert, mkClient, mkContact } from "./test-clients.ts";
+import { beforeBatch, insert, mkClient, mkContact } from "./test-clients.ts";
 import { call, one, rows, sessionFor, withEnv } from "./test-helpers.ts";
 import { COMPANY_GSTIN, farSession, json, putBank, putCompany } from "./test-invoices.ts";
 
@@ -773,6 +773,23 @@ describe("only an Owner with a fresh code turns the automatic issue on [LD58, Q4
     const res = await patch(owner, c.id, c.stamp, true);
     expect(res.status).toBe(403);
     expect(await state(c.id)).toEqual({ care_auto_issue: 0, care_auto_issue_by: null });
+  });
+
+  it("a session that is revoked, idle-expired or past its absolute end between the check and the write cannot turn it on (early check finding 7)", async () => {
+    for (const change of ["revoked_at = 1", "idle_expires_at = 1", "abs_expires_at = 1"]) {
+      const c = await client();
+      const owner = await sessionFor("owner", { stepUp: true });
+      const e = beforeBatch(async () => {
+        await env.DB.prepare(`UPDATE staff_sessions SET ${change} WHERE id = ?`).bind(owner.sessionId).run();
+      });
+      const res = await call(
+        `/clients/${c.id}/billing`,
+        { method: "PATCH", cookie: owner.cookie, body: { expectedUpdatedAt: c.stamp, careAutoIssue: true } },
+        e,
+      );
+      expect(res.status, change).toBe(403);
+      expect(await state(c.id), change).toEqual({ care_auto_issue: 0, care_auto_issue_by: null });
+    }
   });
 
   it("the audit row says what changed, never who is named beyond the actor", async () => {
