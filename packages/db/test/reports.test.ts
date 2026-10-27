@@ -297,7 +297,7 @@ async function sqlRatesOf(id: string, issueDate: string): Promise<Rates> {
 }
 
 describe("the SQL rates are a twin of core's registerRatesOf", () => {
-  const twin = async (spec: Spec, issueDate: string) => {
+  const twin = async (spec: Omit<Spec, "issueDate">, issueDate: string) => {
     const doc = await addDoc({ ...spec, issueDate });
     const core = registerRatesOf(doc.computed);
     if (!core.ok) throw new Error(JSON.stringify(core.errors));
@@ -403,16 +403,16 @@ describe("the SQL rates are a twin of core's registerRatesOf", () => {
         }),
       );
       const usd = next(2) === 1;
+      const day = `2027-04-${String(1 + (i % 28)).padStart(2, "0")}`;
       const spec: Spec = usd
-        ? { clientId: u, currency: "USD", fx: 1 + next(200_000_000), lines }
-        : { clientId: c, lines };
+        ? { clientId: u, currency: "USD", fx: 1 + next(200_000_000), lines, issueDate: day }
+        : { clientId: c, lines, issueDate: day };
       try {
         computeFor(spec);
       } catch {
         continue; // a combination the engine refuses is not a document
       }
-      const day = `2027-04-${String(1 + (i % 28)).padStart(2, "0")}`;
-      const doc = await addDoc({ ...spec, issueDate: day });
+      const doc = await addDoc(spec);
       const core = registerRatesOf(doc.computed);
       if (!core.ok) throw new Error(JSON.stringify(core.errors));
       expect(await sqlRatesOf(doc.id, day), JSON.stringify(spec)).toEqual(core.value);
