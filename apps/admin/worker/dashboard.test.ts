@@ -66,14 +66,12 @@ describe("GET /dashboard: tiles by role [ADM-DASH-01]", () => {
     expect((await call("/dashboard")).status).toBe(401);
   });
 
-  it("the finance stub says what it waits for (the pipeline value is live since M4.3: dashboard-pipeline.test.ts)", async () => {
+  it("the finance tile is live (M5.5b: dashboard-finance.test.ts); collected figures and payments to verify wait for payments (M6)", async () => {
     const o = await dash((await sessionFor("owner")).cookie);
-    expect(o.tiles.finance.available).toBe(false);
-    expect(Object.keys(o.tiles.finance.arrivesWith)).toEqual([
-      "invoicedAndCollected",
-      "overdueInvoices",
-      "paymentsToVerify",
-    ]);
+    expect(o.tiles.finance.invoiced).toBeDefined();
+    expect(o.tiles.finance.collected).toEqual({ available: false, arrivesWith: "payments" });
+    expect(o.tiles.finance.paymentsToVerify).toEqual({ available: false, arrivesWith: "payments" });
+    expect(o.tiles.finance.available).toBeUndefined();
   });
 
   it("no role sees the audit summary, the address or the user agent; Sales sees no finance, care or billing action", async () => {

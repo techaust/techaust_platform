@@ -9,9 +9,8 @@ import {
   EXPORT_NEXT_SQL,
   EXPORT_STAGE_COUNTS_SQL,
   INVOICED_SQL,
-  OUTSTANDING_SQL,
   OVERDUE_OLDEST_SQL,
-  OVERDUE_SQL,
+  OWED_SQL,
   PROFORMAS_AWAITING_SQL,
   REALISATION_BELLS_SQL,
   REALISATION_PAGE_SQL,
@@ -117,20 +116,24 @@ describe("EXPLAIN: every report statement uses an index", () => {
     expect(scansTable(p), p).toBe(false);
   });
 
-  it("the dashboard's invoiced figure reads `documents_issued_on`; outstanding, overdue and proformas read `documents_status_due`", async () => {
+  it("the dashboard's invoiced figure reads `documents_issued_on`; what clients owe and the oldest overdue read `documents_status_due`", async () => {
     const inv = await plan(INVOICED_SQL, "2026-04-01", "2027-03-31", "2026-10-01");
     expect(inv).toMatch(/USING INDEX documents_issued_on/);
     expect(scansTable(inv), inv).toBe(false);
     for (const [sql, binds] of [
-      [OUTSTANDING_SQL, []],
-      [OVERDUE_SQL, ["2026-10-30"]],
+      [OWED_SQL, ["2026-10-30"]],
       [OVERDUE_OLDEST_SQL, ["2026-10-30"]],
-      [PROFORMAS_AWAITING_SQL, []],
     ] as const) {
       const p = await plan(sql, ...binds);
       expect(p).toMatch(/USING INDEX documents_status_due/);
       expect(scansTable(p), p).toBe(false);
     }
+  });
+
+  it("the proformas awaiting payment read the type and status index, never the ledger of invoices", async () => {
+    const p = await plan(PROFORMAS_AWAITING_SQL);
+    expect(p).toMatch(/USING INDEX documents_type_status_created/);
+    expect(scansTable(p), p).toBe(false);
   });
 
   it("the bells lookup is a seek on the entity", async () => {

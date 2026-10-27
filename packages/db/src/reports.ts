@@ -265,25 +265,30 @@ export const INVOICED_SQL = `SELECT d.currency,
    WHERE ${ISSUED_GST} AND d.voided_at IS NULL AND d.issue_date >= ?1 AND d.issue_date <= ?2
    GROUP BY d.currency ORDER BY d.currency`;
 
-/** What clients owe: the open tax invoices, export invoices and debit notes with a balance, by currency (count and amount, tax included). */
-export const OUTSTANDING_SQL = `SELECT d.currency, count(*) AS n, sum(d.balance_minor) AS balance FROM documents d INDEXED BY documents_status_due
+/**
+ * What clients owe, and how much of it is overdue, by currency, in ONE read (`?1` today, IST): the open tax invoices, export invoices and debit notes with a balance
+ * (count and amount, tax included), and of those the ones past their due date. The due date is the last day to pay, so overdue is strictly before today.
+ */
+export const OWED_SQL = `SELECT d.currency, count(*) AS n, sum(d.balance_minor) AS balance,
+       sum(CASE WHEN d.due_date < ?1 THEN 1 ELSE 0 END) AS overdue_n, sum(CASE WHEN d.due_date < ?1 THEN d.balance_minor ELSE 0 END) AS overdue_balance
+   FROM documents d INDEXED BY documents_status_due
    WHERE d.status IN ${OPEN_STATUSES} AND d.type IN ${DEBIT_DOCS} AND d.balance_minor > 0 AND d.voided_at IS NULL
    GROUP BY d.currency ORDER BY d.currency`;
 
-/** Of those, the ones past their due date (`?1` today, IST): the date is the last day to pay, so overdue is strictly before today. */
-export const OVERDUE_SQL = `SELECT d.currency, count(*) AS n, sum(d.balance_minor) AS balance FROM documents d INDEXED BY documents_status_due
-   WHERE d.status IN ${OPEN_STATUSES} AND d.due_date < ?1 AND d.type IN ${DEBIT_DOCS} AND d.balance_minor > 0 AND d.voided_at IS NULL
-   GROUP BY d.currency ORDER BY d.currency`;
+/**
+ * The five oldest overdue ones (`?1` today). One ordered read of five rows per open status (the index is `(status, due_date)`, so a single read with the three
+ * statuses in a list would have to sort every overdue row), then the five oldest of those fifteen.
+ */
+const overdueOf = (status: string): string =>
+  `SELECT * FROM (SELECT d.id, d.number_display, d.due_date, d.currency, d.balance_minor, d.client_id FROM documents d INDEXED BY documents_status_due
+   WHERE d.status = '${status}' AND d.due_date < ?1 AND d.type IN ${DEBIT_DOCS} AND d.balance_minor > 0 AND d.voided_at IS NULL ORDER BY d.due_date, d.rowid LIMIT 5)`;
+export const OVERDUE_OLDEST_SQL = `SELECT o.id, o.number_display, o.due_date, o.currency, o.balance_minor, o.client_id, c.code AS client_code, c.display_name AS client_name
+   FROM (${overdueOf("issued")} UNION ALL ${overdueOf("partially_paid")} UNION ALL ${overdueOf("partially_credited")}) o JOIN clients c ON c.id = o.client_id
+   ORDER BY o.due_date, o.id LIMIT 5`;
 
-/** The five oldest overdue ones (`?1` today). */
-export const OVERDUE_OLDEST_SQL = `SELECT d.id, d.number_display, d.due_date, d.currency, d.balance_minor, d.client_id, c.code AS client_code, c.display_name AS client_name
-   FROM documents d INDEXED BY documents_status_due JOIN clients c ON c.id = d.client_id
-   WHERE d.status IN ${OPEN_STATUSES} AND d.due_date < ?1 AND d.type IN ${DEBIT_DOCS} AND d.balance_minor > 0 AND d.voided_at IS NULL
-   ORDER BY d.due_date, d.id LIMIT 5`;
-
-/** Proformas that wait for payment (issued, not converted, not void), by currency. */
-export const PROFORMAS_AWAITING_SQL = `SELECT d.currency, count(*) AS n, sum(d.balance_minor) AS balance FROM documents d INDEXED BY documents_status_due
-   WHERE d.status = 'issued' AND d.type = 'proforma' AND d.balance_minor > 0 AND d.voided_at IS NULL AND d.frozen_at IS NOT NULL
+/** Proformas that wait for payment (issued, not converted, not void), by currency: read through the type and status index, so a ledger of invoices is never scanned. */
+export const PROFORMAS_AWAITING_SQL = `SELECT d.currency, count(*) AS n, sum(d.balance_minor) AS balance FROM documents d INDEXED BY documents_type_status_created
+   WHERE d.type = 'proforma' AND d.status = 'issued' AND d.balance_minor > 0 AND d.voided_at IS NULL AND d.frozen_at IS NOT NULL
    GROUP BY d.currency ORDER BY d.currency`;
 
 /** The `tax` settings row, read in the same batch so the export statements below can be checked against it (`realisationParamsFromStoredTax`). */

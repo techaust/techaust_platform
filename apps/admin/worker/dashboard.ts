@@ -32,9 +32,8 @@ import {
   EXPORT_NEXT_SQL,
   EXPORT_STAGE_COUNTS_SQL,
   INVOICED_SQL,
-  OUTSTANDING_SQL,
   OVERDUE_OLDEST_SQL,
-  OVERDUE_SQL,
+  OWED_SQL,
   PROFORMAS_AWAITING_SQL,
   SETTINGS_TAX_SQL,
 } from "@techaust/db/reports";
@@ -132,8 +131,7 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
     add(
       "finance",
       db.prepare(INVOICED_SQL).bind(fyFrom, fyTo, monthFrom),
-      db.prepare(OUTSTANDING_SQL),
-      db.prepare(OVERDUE_SQL).bind(today),
+      db.prepare(OWED_SQL).bind(today),
       db.prepare(OVERDUE_OLDEST_SQL).bind(today),
       db.prepare(PROFORMAS_AWAITING_SQL),
       db.prepare(SETTINGS_TAX_SQL),
@@ -234,10 +232,15 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
     };
   }
   if (tiles.has("finance")) {
-    type Cur = { currency: string; n: number; balance: number };
+    type Owed = { currency: string; n: number; balance: number; overdue_n: number; overdue_balance: number };
+    const owed = rows<Owed>("finance", 1);
     const byCur = (name: string, at: number) =>
-      rows<Cur>(name, at).map((r) => ({ currency: r.currency, count: r.n, balanceMinor: r.balance }));
-    const stored = rows<{ value: string }>("finance", 5)[0]?.value;
+      rows<{ currency: string; n: number; balance: number }>(name, at).map((r) => ({
+        currency: r.currency,
+        count: r.n,
+        balanceMinor: r.balance,
+      }));
+    const stored = rows<{ value: string }>("finance", 4)[0]?.value;
     let taxJson: unknown = {};
     try {
       taxJson = stored === undefined ? {} : JSON.parse(stored);
@@ -246,7 +249,7 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
     }
     // The export statements read the tax row's own values in SQL; if the row is not valid (the no-zod reader says so) their figures are withheld, never guessed.
     const rulesOk = taxJson !== null && realisationParamsFromStoredTax(taxJson).ok;
-    const stageCount = new Map(rows<{ stage: string; n: number }>("finance", 6).map((r) => [r.stage, r.n]));
+    const stageCount = new Map(rows<{ stage: string; n: number }>("finance", 5).map((r) => [r.stage, r.n]));
     out.finance = {
       today,
       month: {
@@ -281,9 +284,11 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
           inrTaxableMinor: r.fy_inr_taxable,
         })),
       },
-      outstanding: byCur("finance", 1),
+      outstanding: owed.map((r) => ({ currency: r.currency, count: r.n, balanceMinor: r.balance })),
       overdue: {
-        byCurrency: byCur("finance", 2),
+        byCurrency: owed
+          .filter((r) => r.overdue_n > 0)
+          .map((r) => ({ currency: r.currency, count: r.overdue_n, balanceMinor: r.overdue_balance })),
         oldest: rows<{
           id: string;
           number_display: string;
@@ -292,7 +297,7 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
           balance_minor: number;
           client_code: string;
           client_name: string;
-        }>("finance", 3).map((r) => ({
+        }>("finance", 2).map((r) => ({
           id: r.id,
           number: r.number_display,
           clientCode: r.client_code,
@@ -306,7 +311,7 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
           ),
         })),
       },
-      proformasAwaiting: byCur("finance", 4),
+      proformasAwaiting: byCur("finance", 3),
       exports: rulesOk
         ? {
             counts: {
@@ -323,7 +328,7 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
               balance_minor: number;
               stage: string;
               due: string;
-            }>("finance", 7).map((r) => ({
+            }>("finance", 6).map((r) => ({
               id: r.id,
               number: r.number_display,
               clientCode: r.client_code,
