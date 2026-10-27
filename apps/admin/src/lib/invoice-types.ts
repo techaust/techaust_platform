@@ -218,7 +218,8 @@ export function checkLut(
   existing: readonly LutRow[],
 ): { ok: true; value: LutRow } | { ok: false; errors: Partial<Record<"fy" | "arn", string>> } {
   const errors: Partial<Record<"fy" | "arn", string>> = {};
-  if (!/^\d{4}$/.test(row.fy)) errors.fy = INV_PLACEHOLDER;
+  // The line the single-letter Tax screen used for a missing year (07-S has none of its own).
+  if (!/^\d{4}$/.test(row.fy)) errors.fy = "Pick the financial year the LUT covers.";
   else if (existing.some((l) => l.fy === row.fy)) errors.fy = INVT_COPY.lutDuplicate;
   const arn = cleanArn(row.arn);
   if (!/^[A-Z0-9]{1,30}$/.test(arn)) errors.arn = INVT_COPY.lutArnMissing;

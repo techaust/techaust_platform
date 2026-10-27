@@ -2288,6 +2288,11 @@ input[readonly] {
   margin: 0 0 var(--space-4);
 }
 
+.lut-list .settings-sub {
+  /* a link to "#luts" lands with the heading clear of the sticky top bar */
+  scroll-margin-top: var(--space-20);
+}
+
 .lut-list .settings-sub:focus {
   outline: none;
 }

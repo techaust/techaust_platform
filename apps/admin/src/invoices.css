@@ -212,6 +212,19 @@
   margin-bottom: 0;
 }
 
+.inv-proforma .lead-panel__head,
+.inv-fx .lead-panel__head {
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+/* On a phone the proforma's action takes the panel's width under its title. */
+@media (max-width: 47.99rem) {
+  .inv-proforma .lead-panel__head > .btn {
+    width: 100%;
+  }
+}
+
 .inv-route legend {
   margin-bottom: var(--space-2);
 }
@@ -241,6 +254,10 @@
 .inv-fx__meta {
   color: var(--color-text-muted);
   font-size: var(--text-sm);
+}
+
+.inv-fx__empty {
+  margin: 0;
 }
 
 .inv-fx__warn {
@@ -294,8 +311,19 @@
 }
 
 .inv-service .field {
-  flex: 1 1 16rem;
+  flex: 0 1 20rem;
   margin: 0;
+}
+
+/* The button sits level with the control, under the label's line (the date's echo below never moves it). */
+form.inv-service {
+  align-items: flex-start;
+}
+
+@media (min-width: 40rem) {
+  form.inv-service > .btn {
+    margin-top: var(--space-8);
+  }
 }
 
 /* Q8: the question an INR export asks before "Issue in INR". */
@@ -326,7 +354,7 @@
 }
 
 .inv-kind {
-  margin-top: var(--space-4);
+  margin: 0 0 var(--space-2);
 }
 
 /* ---------- The strip and the page ---------- */

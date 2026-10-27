@@ -102,20 +102,18 @@ export function ExportPanel(props: {
       {isExport && x.endorsement && (
         <StatutoryBand line={x.endorsement} sub={x.lut ? lutLine(x.lut.arn, fyLabel(x.lut.fy)) : null} />
       )}
-      <dl className="inv-facts">
-        {isExport && (
+      {isExport && (
+        <dl className="inv-facts">
           <div>
             <dt>{INVT_COPY.countryOfDestination}</dt>
             <dd>{x.countryName ?? x.countryCode}</dd>
           </div>
-        )}
-        {isExport && (
           <div>
             <dt>Place of supply</dt>
             <dd>Outside India (96)</dd>
           </div>
-        )}
-      </dl>
+        </dl>
+      )}
       {isExport && x.declaration.available && (
         <div className="setting inv-note">
           <div className="setting__text">
@@ -192,9 +190,17 @@ export function FxPanel(props: { view: InvoiceView; canWrite: boolean; busy: boo
           )}
         </>
       ) : props.canWrite ? (
-        <button type="button" className="btn btn--primary" onClick={props.onOpen} disabled={props.busy}>
-          {INVT_COPY.fxTitle}
-        </button>
+        // No rate yet: the blocker's own sentence is the way in (the heading already names the dialog it opens).
+        <p className="inv-fx__empty">
+          <button
+            type="button"
+            className="blockers__link inv-blockers__jump"
+            onClick={props.onOpen}
+            disabled={props.busy}
+          >
+            {blockerLine({ code: "fx_missing", date: fx.refDate }, "USD")}
+          </button>
+        </p>
       ) : (
         <p className="muted">{INV_PLACEHOLDER}</p>
       )}
@@ -364,12 +370,14 @@ export function ServiceDateSetOnce(props: { view: InvoiceView; canWrite: boolean
   if (v.serviceCompletedOn === undefined) return null;
   if (set)
     return (
-      <dl className="inv-facts inv-service">
-        <div>
-          <dt>{SERVICE_DATE_LABEL}</dt>
-          <dd>{day(set)}</dd>
-        </div>
-      </dl>
+      <div className="lead-panel">
+        <dl className="inv-facts inv-service">
+          <div>
+            <dt>{SERVICE_DATE_LABEL}</dt>
+            <dd>{day(set)}</dd>
+          </div>
+        </dl>
+      </div>
     );
   if (!props.canWrite || v.status === "void") return null;
 
@@ -394,7 +402,7 @@ export function ServiceDateSetOnce(props: { view: InvoiceView; canWrite: boolean
 
   return (
     <form
-      className="inv-service"
+      className="lead-panel inv-service"
       noValidate
       onSubmit={(e) => {
         e.preventDefault();
@@ -417,7 +425,8 @@ export function ServiceDateSetOnce(props: { view: InvoiceView; canWrite: boolean
 export function ExportFacts({ view }: { view: InvoiceView }) {
   const x = view.export;
   const fx = view.fx;
-  if (!x && !fx?.value) return null;
+  // A proforma for an overseas client carries its route but no endorsement and no rate: nothing to show here.
+  if (view.type !== "export_invoice" && !fx?.value) return null;
   return (
     <section className="lead-panel inv-export" aria-labelledby="inv-xf-h">
       <h2 id="inv-xf-h" className="visually-hidden">
@@ -513,22 +522,7 @@ export function ProformaPanel(props: { view: InvoiceView; onIssued: () => void }
           <span>{warn25Line(v.number as string)}</span>
         </p>
       )}
-      <dl className="inv-facts">
-        {p.validUntil && (
-          <div>
-            <dt>{INVT_COPY.validUntil}</dt>
-            <dd>{day(p.validUntil)}</dd>
-          </div>
-        )}
-        <div>
-          <dt>{INV_COPY.colTotal}</dt>
-          <dd className="tnum">{v.totals ? amount(v.totals.totalMinor, v.currency) : ""}</dd>
-        </div>
-        <div>
-          <dt>{INV_COPY.colBalance}</dt>
-          <dd className="tnum">{amount(p.balanceMinor, v.currency)}</dd>
-        </div>
-      </dl>
+      {/* Valid until, the total and the balance are in the strip above; this panel holds what only a proforma has. */}
       {p.children.length > 0 && (
         <ul className="inv-children">
           {p.children.map((c) => (
