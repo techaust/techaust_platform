@@ -2,6 +2,7 @@
 // GST error code, the periods, the urgency order and the stage pills, the statement's words, the tax form's round trip (early check H2), and the files
 // the screens make from register rows through the gst core (the sums are core's; these tests only check that the screens pass them on whole).
 import type { RegisterApiRow, ReportMeta } from "@techaust/core/gst";
+import { realisationParamsFromStoredTax } from "@techaust/core/invoices";
 import { SETTINGS_DEFAULTS } from "@techaust/core/settings";
 import { describe, expect, it } from "vitest";
 import { RequestError } from "../api.ts";
@@ -11,11 +12,13 @@ import {
   APPROVED_07V,
   byUrgency,
   FINANCE_COPY,
+  fileDownloadText,
   GST_COPY,
   GST_ERRORS,
   gstErrorText,
   issueLines,
   lastCompleteQuarter,
+  nearestScrollLeft,
   P,
   periodDates,
   periodFromValue,
@@ -24,6 +27,7 @@ import {
   periodOptions,
   periodValue,
   previousMonth,
+  REALISATION_COPY,
   rangeOk,
   STAGE_LABELS,
   STAGE_ORDER,
@@ -31,6 +35,7 @@ import {
   STATEMENT_COPY,
   sectionNameOf,
   statementCsvLabels,
+  statementDetailsText,
   statementErrorText,
   statementKindText,
   stateText,
@@ -48,7 +53,7 @@ import {
   wholePeriodOf,
   zipOf,
 } from "./reports-build.ts";
-import { buildTax, taxToForm } from "./tax-settings.ts";
+import { buildTax, REALISATION_ERRORS, taxToForm } from "./tax-settings.ts";
 
 const M = "[Placeholder] ";
 
@@ -80,6 +85,14 @@ describe("07-V is marked until the owner approves it", () => {
     expect(GST_COPY.done(7)).toBe(`${M}7 documents checked. No errors.`);
     expect(GST_COPY.errorsHeading(3)).toBe(`${M}3 problems to fix before these files can be made`);
     expect(GST_COPY.download("Exports")).toBe(`${M}Download Exports CSV`);
+    // review 6: singular forms and the two HSN rows (not in 07-V: the plain mark)
+    expect(GST_COPY.done(1)).toBe(`${M}1 document checked. No errors.`);
+    expect(GST_COPY.errorsHeading(1)).toBe(`${M}1 problem to fix before these files can be made`);
+    expect(fileDownloadText("hsn_b2b", "x")).toBe(`${M}Download HSN/SAC summary (B2B) CSV`);
+    expect(fileDownloadText("hsn_b2c", "x")).toBe(`${M}Download HSN/SAC summary (B2C) CSV`);
+    expect(fileDownloadText("docs", "x")).toBe(`${M}Download Documents issued (Table 13) CSV`);
+    expect(fileDownloadText("exp", "Exports")).toBe(`${M}Download Exports CSV`);
+    expect(REALISATION_COPY.emptyAll).toBe(`${M}No export invoices in this list.`);
     expect(GST_COPY.verify("gstr1-csv-v1")).toContain(
       "Made with layout gstr1-csv-v1 for the GSTR-1 offline tool.",
     );
@@ -239,6 +252,14 @@ describe("statement words", () => {
     expect(Object.keys(statementCsvLabels().kinds)).toHaveLength(5);
   });
 
+  it("the Details cell of a credit note names the invoice the API sent (review 2)", () => {
+    expect(statementDetailsText({ kind: "credit_note", againstNumber: "TH/INV/2627/0003" })).toBe(
+      `${M}Credit note against TH/INV/2627/0003`,
+    );
+    expect(statementDetailsText({ kind: "credit_note", againstNumber: null })).toBe(`${M}Credit note`);
+    expect(statementDetailsText({ kind: "debit_note" })).toBe(`${M}Debit note`);
+  });
+
   it("says each refusal in 07-V's words, and keeps the server's sentence for any other", () => {
     expect(statementErrorText(new RequestError(409, "statement_too_long", "x"))).toBe(
       `${M}This range has more than 200 entries. Pick a shorter range for the PDF.`,
@@ -273,6 +294,35 @@ describe("statement words", () => {
     expect(lines[1]).toContain(`${M}Opening balance`);
     expect(lines[2]).toContain("TH/INV/2627/0001");
     expect(lines[3]).toContain(`${M}Closing balance`);
+  });
+
+  it("names a credit note's invoice in the CSV; the plain mark when a note lacks it (review 2)", () => {
+    const entry = (againstNumber: string | null) => ({
+      id: "n1",
+      kind: "credit_note" as const,
+      date: "2026-06-03",
+      number: "TH/CN/2627/0001",
+      againstNumber,
+      amountMinor: -18_000_00,
+      debitMinor: 0,
+      creditMinor: 18_000_00,
+      balanceMinor: -18_000_00,
+    });
+    const csvOf = (againstNumber: string | null) =>
+      (
+        statementCsvText({
+          from: "2026-04-01",
+          to: "2026-10-28",
+          openingMinor: 0,
+          closingMinor: -18_000_00,
+          entries: [entry(againstNumber)],
+        }) as string
+      )
+        .trim()
+        .split(/\r?\n/)[2];
+    expect(csvOf("TH/INV/2627/0003")).toContain(`${M}Credit note against TH/INV/2627/0003`);
+    expect(csvOf(null)).toContain(`${M}Credit note`);
+    expect(csvOf(null)).not.toContain("against");
   });
 
   it("reads the file name the server gave the PDF", () => {
@@ -318,6 +368,36 @@ describe("Settings › Tax round trip (early check H2)", () => {
     const bad = buildTax({ ...taxToForm(stored), b2cl: "0", inrMonths: "121" }, { value: stored });
     expect("errors" in bad && bad.errors["f-b2clThresholdInrMinor"]).toBe(TAX_FIELDS_COPY.b2clError);
     expect("errors" in bad && bad.errors["f-realisation-inrMonths"]).toBe(TAX_FIELDS_COPY.inrMonthsError);
+  });
+
+  it("bounds the realisation periods as the reports read them, so a save never stops the reports (review 4)", () => {
+    const save = (over: Partial<ReturnType<typeof taxToForm>>) =>
+      buildTax({ ...taxToForm(stored), ...over }, { value: stored });
+    const top = save({
+      warnMonths: "1200",
+      escalateMonths: "1200",
+      escalateExtraDays: "36500",
+      inrMonths: "120",
+    });
+    expect("value" in top).toBe(true);
+    if ("value" in top) expect(realisationParamsFromStoredTax(top.value).ok).toBe(true);
+    const low = save({ warnMonths: "1", escalateMonths: "1", escalateExtraDays: "0", inrMonths: "1" });
+    expect("value" in low && realisationParamsFromStoredTax(low.value).ok).toBe(true);
+    const over = save({ warnMonths: "1201", escalateMonths: "1300", escalateExtraDays: "36501" });
+    expect("errors" in over && over.errors).toMatchObject({
+      "f-realisation-warnMonths": REALISATION_ERRORS.warnMonths,
+      "f-realisation-escalateMonths": REALISATION_ERRORS.escalateMonths,
+      "f-realisation-escalateExtraDays": REALISATION_ERRORS.escalateExtraDays,
+    });
+    const under = save({ warnMonths: "0", escalateMonths: "0", escalateExtraDays: "-1" });
+    expect("errors" in under && Object.keys(under.errors)).toEqual(
+      expect.arrayContaining([
+        "f-realisation-warnMonths",
+        "f-realisation-escalateMonths",
+        "f-realisation-escalateExtraDays",
+      ]),
+    );
+    expect(REALISATION_ERRORS.warnMonths).toBe(`${M}Enter the months before the warning, from 1 to 1,200.`);
   });
 });
 
@@ -445,5 +525,14 @@ describe("files from register rows (core does every sum)", () => {
     expect(r.rows[0]?.beforeFema).toBe(true);
     const edf = buildEdf([exp], meta, 2026, 1);
     expect(edf.ok && edf.rows.length).toBe(1);
+  });
+});
+
+describe("the report index on a narrow screen (review 7)", () => {
+  it("scrolls the row just enough to show the open report, and leaves it when it already shows", () => {
+    expect(nearestScrollLeft(0, 300, 100, 120)).toBe(0);
+    expect(nearestScrollLeft(0, 300, 420, 160)).toBe(280);
+    expect(nearestScrollLeft(280, 300, 10, 120)).toBe(10);
+    expect(nearestScrollLeft(50, 300, -5, 120)).toBe(0);
   });
 });

@@ -311,7 +311,7 @@ export function statementCsvText(input: {
   closingMinor: number;
   entries: readonly StatementEntry[];
 }): string | null {
-  const r = statementCsv({ ...input, labels: statementCsvLabels() });
+  const r = statementCsv({ ...input, labels: statementCsvLabels(input.entries) });
   return r.ok ? r.value : null;
 }
 

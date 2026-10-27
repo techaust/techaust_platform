@@ -12,6 +12,7 @@ import { Archive, Check, Download, FileText, XCircle } from "../../components/ic
 import { Notice } from "../../components/ui.tsx";
 import { moneyText } from "../../lib/documents.ts";
 import {
+  fileDownloadText,
   GST_COPY,
   iso,
   lastCompleteQuarter,
@@ -24,7 +25,6 @@ import {
   periodValue,
   reportErrorText,
   SALES_COPY,
-  SECTION_NAMES,
   sectionNameOf,
   stateText,
 } from "../../lib/reports.ts";
@@ -325,8 +325,7 @@ function GstResults({ result, period, threshold }: { result: Ok; period: PeriodC
           </button>
         }
       >
-        {/* One row per file: the whole row is the button (07-V's label), the file's own name beside it; the two HSN files share a label, the name
-            tells them apart (and is part of the button's name). */}
+        {/* One row per file: the whole row is the button (07-V's label), the file's own name beside it; the two HSN files carry B2B and B2C. */}
         <ul className="file-list">
           {result.files.map((f) => {
             const section =
@@ -340,9 +339,7 @@ function GstResults({ result, period, threshold }: { result: Ok; period: PeriodC
                   onClick={() => saveFile(csvBlob(f.csv), f.name)}
                 >
                   <Download size={20} />
-                  <span className="file-list__label">
-                    {GST_COPY.download(f.stem === "docs" ? SECTION_NAMES.docs : section)}
-                  </span>
+                  <span className="file-list__label">{fileDownloadText(f.stem, section)}</span>
                   <span className="docno file-list__file">{f.name}</span>
                 </button>
               </li>

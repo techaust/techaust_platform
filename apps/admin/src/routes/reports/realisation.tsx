@@ -92,7 +92,10 @@ export function RealisationReport() {
               rows={rows}
               rowKey={(r) => r.id}
               empty={
-                <EmptyState icon={<CheckCircle />} title={REALISATION_COPY.empty}>
+                <EmptyState
+                  icon={<CheckCircle />}
+                  title={showAll ? REALISATION_COPY.emptyAll : REALISATION_COPY.empty}
+                >
                   {null}
                 </EmptyState>
               }
@@ -132,9 +135,11 @@ export function RealisationReport() {
                   cell: (r) => {
                     const p = STAGE_PILLS[r.stage];
                     return (
-                      <StatusPill tone={p.tone} icon={p.icon} outline={p.outline}>
-                        {STAGE_LABELS[r.stage]}
-                      </StatusPill>
+                      <span className="real-stage">
+                        <StatusPill tone={p.tone} icon={p.icon} outline={p.outline}>
+                          {STAGE_LABELS[r.stage]}
+                        </StatusPill>
+                      </span>
                     );
                   },
                 },

@@ -62,8 +62,13 @@ export const GST_COPY = {
   make: V("Make files"),
   reading: (n: number) => V(`Reading issued documents: ${n} so far`),
   checking: (n: number) => V(`Checking ${n} documents`),
-  done: (n: number) => V(`${n} documents checked. No errors.`),
-  errorsHeading: (n: number) => V(`${n} problems to fix before these files can be made`),
+  /** 07-V has only the plural; the singular is not in 07-V (batch Q69), so it carries the plain mark. */
+  done: (n: number) =>
+    n === 1 ? P("1 document checked. No errors.") : V(`${n} documents checked. No errors.`),
+  errorsHeading: (n: number) =>
+    n === 1
+      ? P("1 problem to fix before these files can be made")
+      : V(`${n} problems to fix before these files can be made`),
   openDocument: V("Open document"),
   warningsHeading: V("Check before filing"),
   totalsHeading: V("Totals for the period"),
@@ -105,6 +110,9 @@ export const GST_COPY = {
   overall: P("Overall"),
   /** Not in 07-V: the heading of the file list. */
   filesHeading: P("Files"),
+  /** Not in 07-V (batch Q69): the two HSN/SAC files' rows, which 07-V names alike; the file name tells them apart. */
+  downloadHsnB2b: P("Download HSN/SAC summary (B2B) CSV"),
+  downloadHsnB2c: P("Download HSN/SAC summary (B2C) CSV"),
   /** Not in 07-V: a 3.2 table with no supplies to unregistered persons in other states. */
   table32Empty: P("None in this period."),
 } as const;
@@ -130,6 +138,13 @@ export function sectionNameOf(stem: string, threshold: string): string {
     return typeof v === "string" ? v : stem;
   }
   return stem;
+}
+
+/** The label of one file's download row: 07-V's "Download {section} CSV", the two HSN/SAC files told apart (not in 07-V, batch Q69). */
+export function fileDownloadText(stem: string, section: string): string {
+  if (stem === "hsn_b2b") return GST_COPY.downloadHsnB2b;
+  if (stem === "hsn_b2c") return GST_COPY.downloadHsnB2c;
+  return GST_COPY.download(stem === "docs" ? SECTION_NAMES.docs : section);
 }
 
 /** 07-V §2.1: one message per code (28), VERIFY WITH CA/LEGAL. */
@@ -440,6 +455,8 @@ export const REALISATION_COPY = {
     "If your bank or RBI extended a date, it can be recorded with the FIRA/FIRC uploads in the payments update.",
   ),
   empty: V("No export invoices are waiting for payment."),
+  /** Not in 07-V (batch Q69): the empty list with "Show realised" ticked (nothing open and nothing realised). */
+  emptyAll: P("No export invoices in this list."),
 } as const;
 
 /** 07-V §5 stage labels. */
@@ -554,15 +571,45 @@ export function statementKindText(kind: StatementKind, againstNumber?: string | 
   }
 }
 
-/** The CSV's words (core `statementCsv` takes them from the caller, LD83). */
-export const statementCsvLabels = () => ({
+/** The Details cell of one statement entry (the screen's words; the CSV's come from `statementCsvLabels`). */
+export const statementDetailsText = (e: { kind: StatementKind; againstNumber?: string | null }): string =>
+  statementKindText(e.kind, e.againstNumber);
+
+/** The CSV's credit-note words: 07-V's line with core's `{number}` slot, or the plain mark when a credit note in the file lacks its invoice number. */
+export function statementCsvCreditNoteLabel(
+  entries: readonly { kind: StatementKind; againstNumber?: string | null }[],
+) {
+  return entries.every((e) => e.kind !== "credit_note" || e.againstNumber)
+    ? V("Credit note against {number}")
+    : P("Credit note");
+}
+
+/**
+ * The scroll position that brings the open report's tab fully into view in the tab row (like `scrollIntoView({inline: "nearest"})`, but only the
+ * row moves, never the page). All values in CSS pixels, the link's left edge measured from the row's content start.
+ */
+export function nearestScrollLeft(
+  rowScrollLeft: number,
+  rowWidth: number,
+  linkLeft: number,
+  linkWidth: number,
+): number {
+  if (linkLeft < rowScrollLeft) return Math.max(0, linkLeft);
+  if (linkLeft + linkWidth > rowScrollLeft + rowWidth) return Math.max(0, linkLeft + linkWidth - rowWidth);
+  return rowScrollLeft;
+}
+
+/** The CSV's words (core `statementCsv` takes them from the caller, LD83; it fills `{number}` with each note's invoice number). */
+export const statementCsvLabels = (
+  entries: readonly { kind: StatementKind; againstNumber?: string | null }[] = [],
+) => ({
   opening: STATEMENT_COPY.openingWord,
   closing: STATEMENT_COPY.closingWord,
   kinds: {
     tax_invoice: statementKindText("tax_invoice"),
     export_invoice: statementKindText("export_invoice"),
     debit_note: statementKindText("debit_note"),
-    credit_note: statementKindText("credit_note"),
+    credit_note: statementCsvCreditNoteLabel(entries),
     receipt: statementKindText("receipt"),
   } satisfies Record<StatementKind, string>,
 });

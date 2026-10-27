@@ -59,6 +59,13 @@
   border-radius: var(--radius-sm);
 }
 
+/* A document number that links to its page (statement, EDF, realisation): a 44 px target like the Invoices list's, the number's line centred in it. */
+.report-doclink {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+}
+
 /* ---------- Controls: the period, the range, the month ---------- */
 
 .report-controls {
@@ -633,6 +640,13 @@
   font-weight: 400;
   line-height: var(--text-sm--line-height);
   white-space: normal;
+}
+
+/* A long stage ("GST refund date in 30 days") wraps inside a phone card's half-width cell instead of running past the card. */
+.dcards .real-stage .spill {
+  max-width: 100%;
+  white-space: normal;
+  border-radius: var(--radius-md);
 }
 
 /* ---------- The client's statement ---------- */
