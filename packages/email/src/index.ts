@@ -231,6 +231,9 @@ function renderTemplate(
               client_name: get("client_name"),
               amount: get("amount"),
               admin_url: get("admin_url"),
+              // M5.3: a credit or debit note names itself and its invoice (07-T §8); absent for an invoice
+              document_type: get("document_type"),
+              parent_number: get("parent_number"),
             },
             opts,
           ),
@@ -260,6 +263,7 @@ function renderTemplate(
               number: get("number"),
               decision_note: get("decision_note"),
               admin_url: get("admin_url"),
+              document_type: get("document_type"),
             },
             opts,
           ),
