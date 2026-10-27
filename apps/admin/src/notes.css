@@ -1,0 +1,433 @@
+/* M5.3 Credit and debit notes. Tokens only (@techaust/ui), on top of invoices.css and the M4.3 documents styles. One thing is drawn here: the
+   invoice's ARITHMETIC. On an issued invoice the notes section is a short ledger: each note on its own line (number, date, amount, status), then the
+   balance line closed by a double rule above it, as an accountant closes a column. Everything else (the deadline, the dialog, the note's facts) is
+   set in the panels, fields and bands the invoice screens already use. Loaded with the invoice screens only. */
+
+/* ---------- The notes section of an invoice ---------- */
+
+.notes-panel {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.notes-panel__head {
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-bottom: 0;
+}
+
+.notes-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+@media (max-width: 47.99rem) {
+  .notes-panel__actions,
+  .notes-panel__actions > .btn {
+    width: 100%;
+  }
+}
+
+.notes-panel__why {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+/* The deadline: a dated line, in the tone of how close it is (the colour is the bar and the icon; the words say it). */
+.notes-deadline {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: start;
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface-alt);
+  border-inline-start: 3px solid currentColor;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.notes-deadline--info {
+  color: var(--color-info);
+}
+
+.notes-deadline--warning {
+  color: var(--color-warning);
+}
+
+.notes-deadline--danger {
+  color: var(--color-danger);
+}
+
+.notes-deadline .icon {
+  margin-top: 0.125rem;
+}
+
+.notes-deadline p {
+  margin: 0;
+  max-width: 68ch;
+  color: var(--color-text);
+}
+
+.notes-deadline__main {
+  font-weight: 500;
+}
+
+.notes-deadline p.notes-deadline__more {
+  margin-top: var(--space-1);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+/* The ledger: one note per line. The number in the number face, the date, the amount on the right in tabular figures, the status. */
+.notes-ledger {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--color-border);
+}
+
+.notes-row {
+  display: grid;
+  grid-template-columns: minmax(0, 12rem) minmax(0, 1fr) auto minmax(7.5rem, auto);
+  gap: var(--space-1) var(--space-4);
+  align-items: center;
+  min-height: var(--target-min);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.notes-row__number {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+  color: var(--color-link);
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: var(--color-border-control);
+  text-underline-offset: 0.25em;
+}
+
+.notes-row__number:hover {
+  color: var(--color-link-hover);
+  text-decoration-color: currentColor;
+}
+
+.notes-row__number .docno {
+  white-space: nowrap;
+}
+
+.notes-row__date {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+.notes-row__total {
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+  white-space: nowrap;
+}
+
+.notes-row__status {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* An open draft: the empty slot of a number not yet given, and the sentence that leads to it. */
+.notes-row--draft {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.notes-row__draft {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.notes-row__draft a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+  color: var(--color-link);
+  text-underline-offset: 0.2em;
+}
+
+/* Phones: the number and the status on the first line, the date and the amount under them. */
+@media (max-width: 39.99rem) {
+  .notes-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .notes-row__number {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .notes-row__status {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .notes-row__date {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .notes-row__total {
+    grid-column: 2;
+    grid-row: 2;
+  }
+}
+
+/* The balance after the credit notes, under the double rule that closes the column. */
+.notes-balance {
+  margin: 0;
+  padding-top: var(--space-3);
+  border-top: 3px double var(--color-text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Right under the last note: its own rule gives way to the double one. */
+.notes-ledger + .notes-balance {
+  margin-top: calc(-1 * var(--space-4));
+}
+
+.notes-ledger:has(+ .notes-balance) > .notes-row:last-child {
+  border-bottom: 0;
+}
+
+.notes-refund {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+/* ---------- A note ---------- */
+
+.notes-facts {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.notes-facts p {
+  margin: 0;
+  max-width: 68ch;
+}
+
+.notes-facts__effect {
+  font-weight: 500;
+}
+
+.notes-facts__rate {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.notes-ims {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.notes-ims .lead-panel__title,
+.notes-ims__hint {
+  margin: 0;
+}
+
+.notes-ims__hint {
+  max-width: 68ch;
+}
+
+.notes-ims__form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-4);
+  align-items: flex-end;
+}
+
+.notes-ims__form .radios {
+  margin: 0;
+}
+
+.notes-ims__error {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.notes-ims__status {
+  margin: 0;
+}
+
+.notes-ims__value {
+  font-weight: 600;
+}
+
+.notes-ims__value--rejected {
+  color: var(--color-danger);
+}
+
+.notes-ims__value--accepted {
+  color: var(--color-success);
+}
+
+/* The totals of a note sit under its lines on the right, as the invoice's do (wide screens). */
+.notes-lines + .notes-totals {
+  margin-top: var(--space-4);
+}
+
+@media (min-width: 48rem) {
+  .inv-sheet .notes-totals,
+  .note-preview .notes-totals {
+    max-width: 30rem;
+    margin-inline-start: auto;
+  }
+}
+
+/* ---------- The note dialog ---------- */
+
+.note-dialog__body {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.note-dialog__body > * {
+  margin: 0;
+}
+
+.note-dialog__lede {
+  max-width: 64ch;
+}
+
+.note-modes {
+  display: grid;
+  gap: 0;
+}
+
+/* The lines of the invoice: each line's description on the left, the amount on the right with what is left under it. */
+.note-picker {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.note-picker__head {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+.note-picker__head span {
+  width: min(100%, 16rem);
+}
+
+.note-picker__lines {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--color-border);
+}
+
+.note-picker__line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) min(100%, 16rem);
+  gap: var(--space-2) var(--space-5);
+  align-items: start;
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.note-picker__desc {
+  display: grid;
+  grid-template-columns: 1.75rem minmax(0, 1fr);
+  gap: var(--space-2);
+  margin: 0;
+  padding-top: 0.625rem;
+  overflow-wrap: anywhere;
+}
+
+.note-picker__n {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: inherit;
+}
+
+.note-picker__field {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.note-picker__hint {
+  margin: 0;
+}
+
+/* A line with nothing left to credit: its words stay, quieter; its field is off. */
+.note-picker__line--done .note-picker__desc {
+  color: var(--color-text-muted);
+}
+
+@media (max-width: 39.99rem) {
+  .note-picker__head {
+    display: none;
+  }
+
+  .note-picker__line {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .note-picker__desc {
+    padding-top: 0;
+  }
+}
+
+.note-amount {
+  max-width: 22rem;
+}
+
+.note-reason {
+  max-width: 28rem;
+}
+
+.note-unfit .btn,
+.note-full {
+  margin: 0;
+}
+
+/* ---------- The second step: the note as it will be issued ---------- */
+
+.note-preview {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.note-preview .read-lines table {
+  min-width: 24rem;
+}
+
+.note-effect,
+.note-rate {
+  margin: 0;
+  max-width: 68ch;
+}
+
+.note-effect {
+  font-weight: 500;
+}
+
+.note-rate {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.note-final {
+  margin: 0;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+  font-weight: 600;
+}

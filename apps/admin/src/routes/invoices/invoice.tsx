@@ -9,6 +9,8 @@ import { INV_COPY } from "../../lib/invoices.ts";
 import { invoicesApi } from "../../lib/invoices-api.ts";
 import { useUser } from "../../session.tsx";
 import { InvoiceEditor } from "./editor.tsx";
+import { NoteDraft } from "./note-draft.tsx";
+import { isNoteView } from "./notes-parts.tsx";
 import { InvoicesGate } from "./parts.tsx";
 import { InvoiceRead } from "./read.tsx";
 
@@ -35,6 +37,9 @@ function InvoiceScreen({ id }: { id: string }) {
   }
   if (page.state === "loading") return <InvoiceSkeleton />;
   const v = page.data;
+  // M5.3: a credit or debit note's lines come from its invoice, so its draft has its own page (never the line editor).
+  if (!v.frozen && isNoteView(v) && allowed(user.role, "invoices.draft") && !v.client.anonymised)
+    return <NoteDraft key={v.updatedAt} view={v} role={user.role} reload={() => page.reload(true)} />;
   if (!v.frozen && allowed(user.role, "invoices.draft") && !v.client.anonymised)
     return <InvoiceEditor key={v.updatedAt} view={v} reload={() => page.reload(true)} />;
   return <InvoiceRead view={v} role={user.role} reload={() => page.reload(true)} />;

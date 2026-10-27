@@ -1,6 +1,7 @@
 // Tax settings (ADM-SET-03, VERIFY WITH CA): the default GST rate and per-line override, SAC codes per catalogue
 // category, the fixed rounding rules, exports under LUT (with the ARN for the year), advances, the USD rate source,
 // e-invoicing, the reverse-charge line, and the alert thresholds. The accountant reads them; the owner changes them.
+// M5.3: the day each year's annual return (GSTR-9) was filed, which closes credit notes for that year (./annual-returns.tsx).
 import { financialYear, fyOf } from "@techaust/core";
 import { INVOICE_CHECKLIST, issueDateOf, lutReminder } from "@techaust/core/invoices";
 import type { Settings } from "@techaust/core/settings";
@@ -22,6 +23,7 @@ import {
   lutMissingBanner,
   lutsByYear,
 } from "../../lib/invoice-types.ts";
+import { annualReturnError, annualReturnsOf } from "../../lib/notes.ts";
 import {
   bpToPercent,
   type FieldErrors,
@@ -30,6 +32,7 @@ import {
   moneyInput,
   percentToBp,
 } from "../../lib/settings-form.ts";
+import { AnnualReturns, annualReturnFieldId } from "./annual-returns.tsx";
 import { type Built, ctl, GroupForm, type GroupSpec, MoneyIn, RowError } from "./kit.tsx";
 
 type Tax = Settings["tax"];
@@ -72,6 +75,8 @@ type Form = {
   invoiceAlertDays: string;
   cnMonth: string;
   cnDay: string;
+  /** M5.3 (Q33): the day the annual return of each FY was filed, by FY token; "" is no return. */
+  annualReturns: Record<string, string>;
   b2c: string;
   warnMonths: string;
   escalateMonths: string;
@@ -99,6 +104,7 @@ const spec: GroupSpec<"tax", Form> = {
     invoiceAlertDays: String(v.invoiceAlertDays),
     cnMonth: String(v.creditNoteCutoff.month),
     cnDay: String(v.creditNoteCutoff.day),
+    annualReturns: Object.fromEntries((v.annualReturnsFiled ?? []).map((r) => [r.fy, r.filedOn])),
     b2c: moneyInput(v.b2cDetailsThresholdInrMinor, "INR"),
     warnMonths: String(v.realisation.warnMonths),
     escalateMonths: String(v.realisation.escalateMonths),
@@ -118,6 +124,11 @@ const spec: GroupSpec<"tax", Form> = {
     const cnMonth = intIn(f.cnMonth, 1, 12);
     const cnDay = intIn(f.cnDay, 1, 31);
     if (cnDay === null) e["f-creditNoteCutoff-day"] = "Enter the credit note cut-off day, from 1 to 31.";
+    const today = issueDateOf(Date.now());
+    for (const [fy, filedOn] of Object.entries(f.annualReturns)) {
+      const bad = annualReturnError(fy, filedOn, today);
+      if (bad) e[annualReturnFieldId(fy)] = bad;
+    }
     const b2c = moneyFrom(f.b2c, "INR");
     if (!b2c.ok) e["f-b2cDetailsThresholdInrMinor"] = `Unregistered buyer details from: ${b2c.error}`;
     const warn = intIn(f.warnMonths, 1);
@@ -162,6 +173,7 @@ const spec: GroupSpec<"tax", Form> = {
         reverseChargeText: f.reverseChargeText.trim(),
         invoiceAlertDays: alertDays,
         creditNoteCutoff: { month: cnMonth, day: cnDay },
+        annualReturnsFiled: annualReturnsOf(f.annualReturns),
         b2cDetailsThresholdInrMinor: b2c.minor,
         realisation: { warnMonths: warn, escalateMonths: esc, escalateExtraDays: extra },
         crossBorderWarnInrMinor: cross.minor,
@@ -610,6 +622,12 @@ export function TaxSettings({ readOnly }: { readOnly: boolean }) {
               </div>
               <RowError id="f-creditNoteCutoff-day" error={error("f-creditNoteCutoff-day")} />
             </SettingRow>
+            <AnnualReturns
+              value={f.annualReturns}
+              error={error}
+              readOnly={readOnly}
+              onChange={(fy, filedOn) => set({ annualReturns: { ...f.annualReturns, [fy]: filedOn } })}
+            />
             <SettingRow
               id="tax-b2c"
               label="Unregistered buyer details from"

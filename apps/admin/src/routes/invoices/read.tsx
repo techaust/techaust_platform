@@ -1,6 +1,8 @@
 // An issued invoice (M5.1, ADM-INV-02, -03, -07), and a draft for a role that only reads it: the number as the page's title (set in tabular
 // figures, struck through once void: it keeps its number), the locked banner, the PDF, the void action for the owner, and the lines and totals
 // as frozen. Nothing here can change the invoice except the void, which keeps the number and the record (Rule 56(8), VERIFY WITH CA/LEGAL).
+// M5.3: an issued tax or export invoice has its notes section (the deadline, its credit and debit notes, the balance after them, the actions that open the
+// note dialog); an issued note says what it is against and why, the client's IMS answer on a credit note, its lines against the invoice's and its totals.
 import type { Role } from "@techaust/core/permissions";
 import { useState } from "react";
 import { Link } from "react-router";
@@ -24,10 +26,23 @@ import {
   voidedLine,
 } from "../../lib/invoices.ts";
 import { type InvoiceView, invoicePdfHref, invoicesApi } from "../../lib/invoices-api.ts";
+import { NOTE_COPY, NOTE_ERRORS } from "../../lib/notes.ts";
+import type { InvoiceWithNotes, NoteKind } from "../../lib/notes-api.ts";
 import { PDF_COPY } from "../../lib/pdf.ts";
 import { LinesTable, TaxPreview } from "../documents/money.tsx";
 import { PdfPanel, type PdfSource, type PdfWords } from "../documents/pdf-panel.tsx";
 import { VoidDialog } from "./dialogs.tsx";
+import { NoteDialog } from "./note-dialog.tsx";
+import {
+  AgainstInvoice,
+  ImsPanel,
+  isNoteView,
+  NoteFacts,
+  NoteLinesTable,
+  NotesPanel,
+  NoteTotals,
+  noteKindOfView,
+} from "./notes-parts.tsx";
 import { INVOICES_CRUMB, InvoiceBadge, MilestoneOrigin, NumberMark } from "./parts.tsx";
 import { AdvanceOrigin, ExportFacts, ProformaPanel, ServiceDateSetOnce } from "./types-parts.tsx";
 
@@ -49,17 +64,29 @@ const PDF_SOURCE: PdfSource = {
 const asViewLines = (v: InvoiceView): ViewLine[] =>
   v.lines.map((l) => ({ ...l, catalogueRateMinor: null, catalogueLine: null }));
 
+/** "Issued {date} by {name}.": the first sentence of 07-R §4's locked banner (a note's banner goes on with 07-T's final statement). */
+const issuedLine = (date: string, name: string) => `Issued ${date} by ${name}.`;
+
 /** Who issued it: the staff member frozen into the issuer block (the approver, when an owner approved a request). */
 const issuedBy = (v: InvoiceView) => v.issuer?.sender?.name ?? INV_PLACEHOLDER;
 
 export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload: () => void; role: Role }) {
   const toast = useToast();
   const [voiding, setVoiding] = useState(false);
-  const v = view;
+  const [noting, setNoting] = useState<NoteKind | null>(null);
+  const v = view as InvoiceWithNotes;
   const badge = badgeOf(v);
   const isVoid = v.status === "void";
+  const isNote = isNoteView(v);
+  const kind = isNote ? noteKindOfView(v) : null;
   const ownerVoids = allowed(role, "invoices.void");
-  const voidWhy = ownerVoids && v.frozen && !isVoid ? voidBlockedText(v.void.blockers) : null;
+  // A note is never voided (07-T §8 `note_not_voidable`): the banner says how it is corrected instead.
+  const voidWhy =
+    ownerVoids && v.frozen && !isVoid
+      ? isNote
+        ? NOTE_ERRORS.note_not_voidable
+        : voidBlockedText(v.void.blockers)
+      : null;
   const title = v.number ?? draftTitle(v.client.name);
 
   return (
@@ -120,7 +147,9 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
             <dd className="tnum">{moneyText(v.totals.totalMinor, v.currency)}</dd>
           </div>
         )}
-        {v.frozen && !isVoid && (
+        {isNote && <AgainstInvoice view={v} />}
+        {/* a credit note owes nothing: it has no balance of its own (M5.3) */}
+        {v.frozen && !isVoid && kind !== "credit" && (
           <div className="client-strip__fact">
             <dt>{INV_COPY.colBalance}</dt>
             <dd className="tnum">{moneyText(v.balanceMinor, v.currency)}</dd>
@@ -141,7 +170,15 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
                 )}
               </p>
             )}
-            <p>{frozenBanner(v.issueDate ? (dayText(v.issueDate) ?? v.issueDate) : "", issuedBy(v))}</p>
+            {isNote ? (
+              // the first sentence of 07-R's line (who issued it, when), then 07-T §3's final statement in place of the invoice's correction advice
+              <p>
+                {issuedLine(v.issueDate ? (dayText(v.issueDate) ?? v.issueDate) : "", issuedBy(v))}{" "}
+                {NOTE_COPY.finalStatement}
+              </p>
+            ) : (
+              <p>{frozenBanner(v.issueDate ? (dayText(v.issueDate) ?? v.issueDate) : "", issuedBy(v))}</p>
+            )}
             {voidWhy && <p className="inv-lock__why">{voidWhy}</p>}
           </div>
         </div>
@@ -166,6 +203,9 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
           <AdvanceOrigin view={v} />
           {v.frozen && v.type === "proforma" && <ProformaPanel view={v} onIssued={reload} />}
           {v.frozen && <ExportFacts view={v} />}
+          {isNote && <NoteFacts view={v} />}
+          {isNote && <ImsPanel view={v} onSaved={reload} />}
+          {v.frozen && !isNote && <NotesPanel view={v} role={role} onIssue={setNoting} />}
           {v.frozen && (
             <ServiceDateSetOnce
               view={v}
@@ -207,12 +247,38 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
               <NumberMark number={v.number} void={isVoid} size="lead" />
               <span className="inv-sheet__type">{typeLabel(v.type)}</span>
             </div>
-            <LinesTable lines={asViewLines(v)} currency={v.currency} supply={v.supply} />
-            <TaxPreview totals={v.totals} supply={v.supply} currency={v.currency} frozen={v.frozen} />
+            {kind ? (
+              <>
+                <NoteLinesTable view={v} />
+                {v.totals && (
+                  <NoteTotals
+                    kind={kind}
+                    currency={v.currency}
+                    supplyType={v.supply?.type ?? null}
+                    totals={v.totals}
+                  />
+                )}
+              </>
+            ) : (
+              <>
+                <LinesTable lines={asViewLines(v)} currency={v.currency} supply={v.supply} />
+                <TaxPreview totals={v.totals} supply={v.supply} currency={v.currency} frozen={v.frozen} />
+              </>
+            )}
           </section>
         </div>
       </div>
 
+      {noting && (
+        <NoteDialog
+          open
+          kind={noting}
+          parent={v}
+          draftId={noting === "credit" ? (v.notes?.drafts.credit ?? null) : (v.notes?.drafts.debit ?? null)}
+          onClose={() => setNoting(null)}
+          onDone={reload}
+        />
+      )}
       {v.number && (
         <VoidDialog
           open={voiding}

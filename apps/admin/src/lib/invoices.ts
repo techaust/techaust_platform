@@ -181,8 +181,25 @@ export const typeLabel = (t: InvoiceType | string): string =>
  * The badges: 07-R's four, M5.2's "Converted" (07-S §6: a proforma a tax invoice was issued from) and "Paid" (docs/06 §5.5: the tax invoice issued for a
  * payment received is paid at issue). Overdue is worked out by the server (a balance past its due date), never stored.
  */
-export type Badge = "draft" | "issued" | "overdue" | "void" | "converted" | "paid";
-export const BADGES: readonly Badge[] = ["draft", "issued", "overdue", "void", "converted", "paid"];
+export type Badge =
+  | "draft"
+  | "issued"
+  | "overdue"
+  | "void"
+  | "converted"
+  | "paid"
+  | "partly_credited"
+  | "credited";
+export const BADGES: readonly Badge[] = [
+  "draft",
+  "issued",
+  "overdue",
+  "void",
+  "converted",
+  "paid",
+  "partly_credited",
+  "credited",
+];
 export const BADGE_LABELS: Record<Badge, string> = {
   draft: "Draft",
   issued: "Issued",
@@ -190,10 +207,14 @@ export const BADGE_LABELS: Record<Badge, string> = {
   void: "Void",
   converted: "Converted",
   paid: "Paid",
+  // 07-T §6
+  partly_credited: "Partly credited",
+  credited: "Credited",
 };
 type Pill = {
   tone: PillTone;
-  icon: "pencil" | "fileCheck" | "alert" | "xCircle" | "check" | "progress";
+  icon: "pencil" | "fileCheck" | "alert" | "xCircle" | "check" | "progress" | "undo";
+  outline?: boolean;
 };
 /**
  * docs/06 §5.5: Draft neutral (pencil), Issued info (file-check), Overdue danger (alert-triangle), Void muted with a struck label (x-circle), Paid
@@ -207,14 +228,20 @@ export const BADGE_PILLS: Record<Badge, Pill> = {
   void: { tone: "muted", icon: "xCircle" },
   converted: { tone: "success", icon: "progress" },
   paid: { tone: "success", icon: "check" },
+  // M5.3: a credit note turned part of the invoice back: still owed, so it reads as Partially paid does (docs/06 §5.5: warning, outline); turned all
+  // of it back: nothing is owed and nothing was paid, so it is muted, not struck (it is not void). Both carry the turning-back arrow.
+  partly_credited: { tone: "warning", icon: "undo", outline: true },
+  credited: { tone: "muted", icon: "undo" },
 };
 
-/** The badge of a row or a view. The credit states of M5.3 read as Issued until their badges exist. */
+/** The badge of a row or a view: a debt still owed past its due date reads Overdue before it reads Partly credited. */
 export function badgeOf(d: { status: InvoiceStatus | string; overdue: boolean }): Badge {
   if (d.status === "draft") return "draft";
   if (d.status === "void") return "void";
   if (d.status === "paid") return "paid";
+  if (d.status === "credited") return "credited";
   if (d.overdue) return "overdue";
+  if (d.status === "partially_credited") return "partly_credited";
   return d.status === "converted" ? "converted" : "issued";
 }
 

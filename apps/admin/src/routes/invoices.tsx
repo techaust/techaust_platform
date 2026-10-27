@@ -71,7 +71,8 @@ function InvoiceList() {
 
   const query = {
     type: type ?? undefined,
-    status: status ?? undefined,
+    // the badge "Partly credited" is the stored status `partially_credited` (M5.3); every other badge is its status
+    status: status === "partly_credited" ? ("partially_credited" as const) : (status ?? undefined),
     clientId: client || undefined,
     limit: size === 50 ? ("50" as const) : undefined,
     after: after ?? undefined,
