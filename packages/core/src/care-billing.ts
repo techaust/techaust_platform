@@ -10,6 +10,7 @@
 import {
   type CareStatus,
   type CareTier,
+  nextPeriodStart,
   overageQuantityMilli,
   type Period,
   type PlanDates,
@@ -78,6 +79,24 @@ export function careDue(
     }
   }
   return { due: true, period, missedEarlier };
+}
+
+/**
+ * The day the billing job next drafts this plan's invoice, as the job sees it (`careDue`): the start date before the plan starts; today when the current period is due and
+ * not yet billed (the next 06:00 IST scan picks it up); else the first day of the next period. null for a cancelled plan. Pure: the same inputs as `careDue`.
+ */
+export function nextBillingDayOf(
+  today: string,
+  plan: PlanDates,
+  status: CareStatus,
+  lastBilled: string | null,
+  statuses: readonly StatusRow[],
+): string | null {
+  if (status === "cancelled") return null;
+  const period = billingPeriodOf(today, plan);
+  if (!period) return plan.startDate;
+  const due = careDue(today, plan, lastBilled, statusOn(statuses, period.start)?.status ?? null, statuses);
+  return due.due ? today : nextPeriodStart(today, plan.billingDay);
 }
 
 // ---- the lines ----------------------------------------------------------------------------------------------------------------------------

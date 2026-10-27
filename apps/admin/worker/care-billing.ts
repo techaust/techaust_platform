@@ -45,6 +45,7 @@ import {
 } from "@techaust/db/care";
 import { headerExtrasJson, invoiceSealOf } from "@techaust/db/documents";
 import { invoiceIssueStatements, invoiceSendStatements } from "@techaust/db/issue";
+import { CARE_AUTHORITY_COLUMNS, type CareOf, careView } from "./care-authority.ts";
 import { enqueuePdf } from "./document-events.ts";
 import {
   BANK_READ,
@@ -514,26 +515,10 @@ export async function draftCarePlan(
 // ---- issueCareDraft -----------------------------------------------------------------------------------------------------------------------------
 
 /** The record of the period a draft belongs to and the facts of its authority. `?1` document id. */
-export const CARE_OF_SQL = `SELECT ci.care_plan_id, ci.period_start, ci.period_end, ci.terms_id, ci.overage_minutes, k.care_auto_issue AS toggle, k.care_auto_issue_by AS toggle_by, k.reminder_policy,
-    EXISTS (SELECT 1 FROM staff_users o WHERE o.id = k.care_auto_issue_by AND o.role = 'owner' AND o.status = 'active') AS toggle_by_owner,
-    EXISTS (SELECT 1 FROM care_plan_terms t JOIN staff_users u ON u.id = t.created_by WHERE t.id = ci.terms_id AND u.role = 'owner') AS terms_by_owner,
-    (SELECT count(*) FROM contacts c WHERE c.client_id = k.id AND c.is_billing = 1 AND c.portal_access = 1 AND c.anonymised_at IS NULL) AS recipients
+// `CARE_AUTHORITY_COLUMNS`, `CareOf` and `careView` live in care-authority.ts (care.ts reads them too and must not import this module: a cycle).
+export const CARE_OF_SQL = `SELECT ci.care_plan_id, ci.period_start, ci.period_end, ci.terms_id, ci.overage_minutes, ${CARE_AUTHORITY_COLUMNS}
   FROM care_invoices ci JOIN care_plans p ON p.id = ci.care_plan_id JOIN clients k ON k.id = p.client_id
   WHERE ci.document_id = ?1 AND EXISTS (SELECT 1 FROM documents x WHERE x.id = ci.document_id AND x.care_plan_id = ci.care_plan_id)`;
-
-export type CareOf = {
-  care_plan_id: string;
-  period_start: string;
-  period_end: string;
-  terms_id: string;
-  overage_minutes: number | null;
-  toggle: number;
-  toggle_by: string | null;
-  reminder_policy: string | null;
-  toggle_by_owner: number;
-  terms_by_owner: number;
-  recipients: number;
-};
 
 /**
  * Issues a care draft the billing job made, with no session. Refuses (an answer, with the owners' bell) when the draft is not eligible or the freeze refuses it; the draft is then left exactly as it
@@ -773,28 +758,5 @@ export async function issueCareDraft(env: CareEnv, args: { documentId: string })
   };
 }
 
-// ---- what the invoice view shows about a care invoice ------------------------------------------------------------------------------------------------------
-
-/** The care part of the invoice JSON: the plan and period it bills and, on a draft, whether the system will issue it and why not. null for any other invoice. */
-export function careView(
-  care: CareOf | undefined,
-  a: { frozen: boolean; blockerCodes: readonly string[]; currency: string },
-) {
-  if (!care) return null;
-  const e = autoIssueEligibility({
-    toggleOn: care.toggle === 1,
-    toggleByOwner: care.toggle_by_owner === 1,
-    termsByOwner: care.terms_by_owner === 1,
-    currency: a.currency,
-    overageMinutes: care.overage_minutes,
-    blockerCodes: a.blockerCodes,
-    recipients: care.recipients,
-  });
-  return {
-    planId: care.care_plan_id,
-    periodStart: care.period_start,
-    periodEnd: care.period_end,
-    overageMinutes: care.overage_minutes,
-    auto: a.frozen ? null : { eligible: e.ok, reasons: e.ok ? [] : [...e.reasons] },
-  };
-}
+// The invoice view and its callers import these from here.
+export { type CareOf, careView };

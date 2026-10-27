@@ -11,6 +11,7 @@ import {
   careDue,
   careLines,
   hasPlaceholder,
+  nextBillingDayOf,
 } from "../src/care-billing.ts";
 import { fromIst } from "../src/dates.ts";
 import { proformaWarnAt, unbilledCutoff } from "../src/export-invoice.ts";
@@ -26,6 +27,31 @@ const words = {
   aiOps: (p: { start: string }) => `AI ${p.start}`,
   overage: (p: { start: string }) => `Extra ${p.start}`,
 };
+
+describe("nextBillingDayOf: the day the job next drafts the plan", () => {
+  const active = [{ id: "a", effectiveOn: "2026-01-01", createdAt: 1, status: "active" as const }];
+  it("start date before the plan starts; today when the period is due; the next period's first day once billed; null when cancelled", () => {
+    expect(nextBillingDayOf("2026-11-04", plan(5, "2026-12-01"), "active", null, active)).toBe("2026-12-01");
+    expect(nextBillingDayOf("2026-11-06", plan(5, "2026-01-01"), "active", "2026-10-05", active)).toBe(
+      "2026-11-06",
+    );
+    expect(nextBillingDayOf("2026-11-06", plan(5, "2026-01-01"), "active", "2026-11-05", active)).toBe(
+      "2026-12-05",
+    );
+    expect(
+      nextBillingDayOf("2026-11-06", plan(5, "2026-01-01"), "cancelled", "2026-11-05", active),
+    ).toBeNull();
+  });
+  it("a plan that was paused on the period's first day is not due: the next period", () => {
+    const paused = [
+      { id: "a", effectiveOn: "2026-01-01", createdAt: 1, status: "active" as const },
+      { id: "b", effectiveOn: "2026-11-01", createdAt: 2, status: "paused" as const },
+    ];
+    expect(nextBillingDayOf("2026-11-06", plan(5, "2026-01-01"), "paused", "2026-10-05", paused)).toBe(
+      "2026-12-05",
+    );
+  });
+});
 
 describe("careDue: the plan's current period, once", () => {
   it("is the plan's period that contains today; none before the start", () => {
