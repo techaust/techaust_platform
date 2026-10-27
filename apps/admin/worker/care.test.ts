@@ -723,7 +723,7 @@ describe("GET /care-plans and /care-plans/:id [ADM-CARE-03]", () => {
     expect(page.periods.length).toBeLessThanOrEqual(12);
     expect(page.periods[0].period).toEqual(page.usage.period);
     expect(page.statusLog).toHaveLength(1);
-    expect(page.overage.addToInvoice).toEqual({ available: false, arrivesWith: "recurring_invoices" });
+    expect(page.overage.addToInvoice).toEqual({ available: true, via: "next_care_draft" });
     expect(page.clientAnonymised).toBe(false);
     expect(page.terms.pending).toBeNull();
   });

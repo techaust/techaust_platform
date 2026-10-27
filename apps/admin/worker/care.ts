@@ -493,7 +493,8 @@ export const carePlans = new Hono<AppEnv>()
       usage: currentUsage(d, today),
       periods: pastUsage(d, today, 12),
       clientAnonymised: (gone?.results[0] as { gone: number } | undefined)?.gone === 1,
-      overage: { addToInvoice: { available: false, arrivesWith: "recurring_invoices" } },
+      // M5.4: the overage goes on the next monthly draft; it is never issued automatically (review M3).
+      overage: { addToInvoice: { available: true, via: "next_care_draft" } },
       ...(money
         ? {
             billing: careBillingView(
