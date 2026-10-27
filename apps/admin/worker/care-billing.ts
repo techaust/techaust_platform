@@ -197,6 +197,47 @@ export function blockerCodesOf(
   return [...new Set(codes)];
 }
 
+/**
+ * The answer for a period that is already billed (early check, finding 2). A retried `care.bill` after a lost `care.issue` enqueue must not leave a system draft
+ * for ever: when the period's record names a draft the job made (no author, not frozen) the answer carries its id, and `autoEligible` says whether the Owner's
+ * choices still allow the system to issue it, so the jobs Worker sends `care.issue` again (idempotent: `issueCareDraft` answers `already_issued`).
+ */
+async function billedAnswer(db: D1Database, planId: string, periodStart: string): Promise<DraftCareResult> {
+  const plain: DraftCareResult = { result: "already_billed", autoEligible: false, reasons: [] };
+  const rec = await db
+    .prepare("SELECT document_id FROM care_invoices WHERE care_plan_id = ?1 AND period_start = ?2")
+    .bind(planId, periodStart)
+    .first<{ document_id: string | null }>();
+  if (!rec?.document_id) return plain;
+  const [docR, careR] = await db.batch([
+    db
+      .prepare("SELECT status, frozen_at, created_by, currency FROM documents WHERE id = ?1")
+      .bind(rec.document_id),
+    db.prepare(CARE_OF_SQL).bind(rec.document_id),
+  ]);
+  const d = docR?.results[0] as
+    | { status: string; frozen_at: number | null; created_by: string | null; currency: string }
+    | undefined;
+  const care = careR?.results[0] as CareOf | undefined;
+  if (!d || !care || d.status !== "draft" || d.frozen_at !== null || d.created_by !== null) return plain;
+  // The blockers are judged again by `issueCareDraft`; here only the Owner's choices decide whether it is worth sending `care.issue` again.
+  const e = autoIssueEligibility({
+    toggleOn: care.toggle === 1,
+    toggleByOwner: care.toggle_by_owner === 1,
+    termsByOwner: care.terms_by_owner === 1,
+    currency: d.currency,
+    overageMinutes: care.overage_minutes,
+    blockerCodes: [],
+    recipients: care.recipients,
+  });
+  return {
+    result: "already_billed",
+    documentId: rec.document_id,
+    autoEligible: e.ok,
+    reasons: e.ok ? [] : [...e.reasons],
+  };
+}
+
 // ---- draftCarePlan ------------------------------------------------------------------------------------------------------------------------------
 
 /**
@@ -263,11 +304,9 @@ export async function draftCarePlan(
     current ? (statusOn(data.statuses, current.start)?.status ?? null) : null,
   );
   if (!due.due)
-    return {
-      result: due.reason === "already_billed" ? "already_billed" : "not_due",
-      autoEligible: false,
-      reasons: [],
-    };
+    return due.reason === "already_billed" && current
+      ? billedAnswer(db, args.planId, current.start)
+      : { result: "not_due", autoEligible: false, reasons: [] };
   const period = due.period;
   const terms = termsOn(data.terms, period.start);
   if (!terms) return { result: "skipped", autoEligible: false, reasons: [], why: "no_terms" };
@@ -467,7 +506,7 @@ export async function draftCarePlan(
     // Nothing was written: another call took the period first, or the plan was paused or the client anonymised in between.
     const again = await db.prepare(PLAN_FACTS_SQL).bind(args.planId).first<PlanFacts>();
     return again && again.last_billed_period !== null && again.last_billed_period >= period.start
-      ? { result: "already_billed", autoEligible: false, reasons: [] }
+      ? billedAnswer(db, args.planId, period.start)
       : { result: "skipped", autoEligible: false, reasons: [], why: "changed" };
   }
   return { result: "drafted", documentId, autoEligible: eligibility.ok, reasons };
@@ -712,7 +751,20 @@ export async function issueCareDraft(env: CareEnv, args: { documentId: string })
     )
       throw e;
   }
-  if (!done) return refuse(["freeze_refused"]);
+  if (!done) {
+    // Another call issued it first (two overlapping `care.issue` messages): that is not a refusal, so no bell and no audit row (early check, finding 1).
+    const now2 = await db
+      .prepare("SELECT frozen_at, number_display FROM documents WHERE id = ?1")
+      .bind(d.id)
+      .first<{ frozen_at: number | null; number_display: string | null }>();
+    if (now2?.frozen_at != null)
+      return {
+        result: "already_issued",
+        reasons: [],
+        ...(now2.number_display ? { number: now2.number_display } : {}),
+      };
+    return refuse(["freeze_refused"]);
+  }
   await enqueuePdf(env, d.id, "send");
   return {
     result: "issued",

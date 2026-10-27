@@ -611,6 +611,78 @@ describe("issueCareDraft: the system issues only what the Owner authorised [LD58
   });
 });
 
+describe("early check findings 1 and 2: overlapping issues, and a lost care.issue message", () => {
+  it("two overlapping issues of one draft: one issues, the other answers already_issued; no refusal bell, one audit row", async () => {
+    const w = await world();
+    clock(at("2026-11-05"));
+    const d = await draft(w);
+    const q = pdfQueue();
+    const both = await Promise.all([
+      issueCareDraft(q.env, { documentId: d.documentId as string }),
+      issueCareDraft(q.env, { documentId: d.documentId as string }),
+    ]);
+    expect(both.map((r) => r.result).sort()).toEqual(["already_issued", "issued"]);
+    expect(
+      await rows(
+        "SELECT id FROM notifications WHERE kind = 'care.draft_ready' AND entity_id = ?",
+        d.documentId,
+      ),
+    ).toEqual([]);
+    expect(
+      await rows(
+        "SELECT id FROM audit_log WHERE entity_id = ? AND action IN ('care_invoice.auto_issue_refused', 'invoice.issue_auto')",
+        d.documentId,
+      ),
+    ).toHaveLength(1);
+    expect(
+      (
+        await one<{ n: number }>(
+          "SELECT count(*) AS n FROM document_sends WHERE document_id = ?",
+          d.documentId,
+        )
+      )?.n,
+    ).toBe(1);
+  });
+
+  it("a retried care.bill after a lost care.issue finds the draft: the answer names it and says it is eligible; once issued it is plain", async () => {
+    const w = await world();
+    clock(at("2026-11-05"));
+    const first = await draft(w);
+    const again = await draft(w);
+    expect(again).toEqual({
+      result: "already_billed",
+      documentId: first.documentId,
+      autoEligible: true,
+      reasons: [],
+    });
+    expect((await issueCareDraft(pdfQueue().env, { documentId: first.documentId as string })).result).toBe(
+      "issued",
+    );
+    expect(await draft(w)).toEqual({ result: "already_billed", autoEligible: false, reasons: [] });
+  });
+
+  it("a draft that is not eligible keeps saying why on the retry; a deleted draft is plain", async () => {
+    const w = await world({ termsBy: "staff" });
+    clock(at("2026-11-05"));
+    const first = await draft(w);
+    expect(await draft(w)).toEqual({
+      result: "already_billed",
+      documentId: first.documentId,
+      autoEligible: false,
+      reasons: ["terms_not_owner"],
+    });
+    const row = await one<{ updated_at: number }>(
+      "SELECT updated_at FROM documents WHERE id = ?",
+      first.documentId,
+    );
+    await call(`/invoices/${first.documentId}?expectedUpdatedAt=${row?.updated_at}`, {
+      method: "DELETE",
+      cookie: w.owner.cookie,
+    });
+    expect(await draft(w)).toEqual({ result: "already_billed", autoEligible: false, reasons: [] });
+  });
+});
+
 describe("only an Owner with a fresh code turns the automatic issue on [LD58, Q43]", () => {
   async function client() {
     const id = await mkClient({
