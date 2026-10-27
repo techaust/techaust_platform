@@ -51,6 +51,14 @@ import { invoiceHref } from "./parts.tsx";
 const CODE_MISSING = "Enter the 6-digit code from your authenticator app.";
 const todayIso = () => issueDateOf(Date.now());
 
+/** Focus a field once its error is drawn, and bring the whole field (the error under it too) clear of the dialog's sticky actions. */
+const focusField = (id: string) =>
+  requestAnimationFrame(() => {
+    const el = document.getElementById(id);
+    el?.focus({ preventScroll: true });
+    el?.closest(".field")?.scrollIntoView({ block: "nearest" });
+  });
+
 /** The export routes on a draft (07-S §8). */
 const ROUTE_LABELS = { lut: INVT_COPY.routeLut, igst_paid: INVT_COPY.routeIgst } as const;
 
@@ -633,7 +641,7 @@ function AdvanceBody(props: { view: InvoiceView; onClose: () => void; onIssued: 
     setCodeError(noCode ? CODE_MISSING : null);
     const first = advanceFocus(found);
     if (first || !c.ok || (f && !f.ok)) {
-      if (first) document.getElementById(first)?.focus();
+      if (first) focusField(first);
       return;
     }
     if (noCode) {
@@ -677,7 +685,7 @@ function AdvanceBody(props: { view: InvoiceView; onClose: () => void; onIssued: 
         const { rateDate, rest } = splitAdvanceRefusal(listed);
         if (rateDate) {
           setErrors({ fxDate: blockerLine(rateDate, v.currency, { maxAgeDays: v.fx?.maxAgeDays }) });
-          document.getElementById("adv-fx-date")?.focus();
+          focusField("adv-fx-date");
         }
         setRefused(rest);
         return;

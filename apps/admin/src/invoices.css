@@ -351,6 +351,11 @@ form.inv-service {
   width: min(100% - 2rem, 34rem);
 }
 
+/* A field that takes the focus for its error scrolls far enough that the error under it clears the sticky actions. */
+.inv-advance .field {
+  scroll-margin-bottom: var(--space-24);
+}
+
 .inv-advance .inv-facts {
   margin-bottom: var(--space-4);
 }
