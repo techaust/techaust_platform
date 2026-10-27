@@ -292,6 +292,7 @@ export const invoiceSend = new Hono<AppEnv>()
 
 /** The sends of a document, newest first, with the recipient's name and the last email status. `?1` document id. */
 export const SENDS_OF_SQL = `SELECT s.id, s.contact_id, (SELECT k.name FROM contacts k WHERE k.id = s.contact_id) AS contact_name, s.email, s.kind, s.created_at, s.queued_at, s.cancelled_at,
+    CASE WHEN s.kind = 'auto' THEN NULL ELSE (SELECT u.name FROM staff_users u WHERE u.id = s.created_by) END AS sent_by_name,
     (SELECT e.status FROM email_log e WHERE e.entity_type = 'document_send' AND e.entity_id = s.id ORDER BY e.created_at DESC LIMIT 1) AS email_status
   FROM document_sends s WHERE s.document_id = ?1 ORDER BY s.created_at DESC, s.id DESC LIMIT 50`;
 /** How many links of the document are live now: not revoked, not expired. `?1` document id, `?2` now. */
@@ -311,6 +312,8 @@ export type SendRow = {
   queued_at: number | null;
   cancelled_at: number | null;
   email_status: string | null;
+  /** The staff member who sent it (null for an automatic send, whose recorded author is the Owner who turned the switch on). */
+  sent_by_name: string | null;
 };
 export type ReminderRow = {
   offset_days: number;
@@ -331,6 +334,7 @@ export function sendsView(rows: readonly SendRow[], live: number, reminderRows_:
       queuedAt: r.queued_at,
       cancelledAt: r.cancelled_at,
       emailStatus: r.email_status,
+      sentByName: r.sent_by_name,
     })),
     links: { live },
     reminders: {

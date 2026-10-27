@@ -151,6 +151,8 @@ export function sampleData(
         parent_number:
           template === "credit_note.sent" || template === "debit_note.sent" ? "TH/INV/2627/0001" : "",
         sender_name: who.name,
+        reason: template === "credit_note.sent" || template === "debit_note.sent" ? "Price correction" : "",
+        parent_balance: template === "credit_note.sent" ? "₹10,000.00" : "",
       };
       return template === "reminder.sent"
         ? { ...document, offset_days: "3", when: "after", kind: "invoice" }

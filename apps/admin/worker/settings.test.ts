@@ -887,19 +887,7 @@ describe("Settings > Email: test send [ADM-SET-07]", () => {
     // The admin does not depend on the email package; the test reaches it by path to prove every sample renders.
     const { renderEmail } = await import("../../../packages/email/src/index.ts");
     const { EMAIL_TEMPLATES } = await import("@techaust/core/email-templates");
-    // M5.4: the eight invoice templates are named and queued with a data contract (core `INVOICE_EMAIL_DATA`) but the designer builds their layouts in phase 2: remove each from this list as it is built.
-    const NOT_BUILT_YET = new Set<string>([
-      "invoice.sent",
-      "proforma.sent",
-      "credit_note.sent",
-      "debit_note.sent",
-      "reminder.sent",
-      "alert.unbilled",
-      "alert.proforma_due",
-      "lut.reminder",
-    ]);
     for (const template of EMAIL_TEMPLATES) {
-      if (NOT_BUILT_YET.has(template)) continue;
       const o = await sessionFor("owner", { stepUp: true }); // a fresh member each time: five an hour is the limit
       const q = captureQueue();
       const body = { template };

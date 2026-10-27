@@ -310,11 +310,42 @@ describe("the view after a send [ADM-INV-15]", () => {
       "id",
       "kind",
       "queuedAt",
+      "sentByName",
     ]);
     expect(v.sends.find((r: { id: string }) => r.id === sendRow?.id).emailStatus).toBe("sent");
     expect(v.reminders.started).toBe(true);
     expect(v.reminders.rows).toHaveLength(5);
     expect(Object.keys(v.reminders.rows[0]).sort()).toEqual(["dueAt", "offset", "sentAt", "skippedReason"]);
+  });
+
+  it("each send names the staff member who made it; an automatic send names nobody (Q5)", async () => {
+    const s = await sessionFor("owner", { stepUp: true, name: "Rupak Sarkar" });
+    const { made, ids } = await issued(2);
+    // the invoice above belongs to its own session: send again as the named member
+    await send(s, made.id, { contactIds: ids });
+    const mine = (await sendsOf(made.id)).filter((r) => r.created_by === s.id);
+    expect(mine).toHaveLength(2);
+    // an automatic send is written by the Owner who turned the switch on, yet names nobody
+    const auto = uuidv7();
+    await insert("document_sends", {
+      id: auto,
+      document_id: made.id,
+      version_group_id: made.id,
+      client_id: made.clientId,
+      contact_id: ids[0],
+      email: "auto@example.test",
+      attach_pdf: 0,
+      kind: "auto",
+      created_by: s.id,
+      created_at: Date.now() + 1000,
+    });
+    const v = await getInvoice(s, made.id);
+    const byId = new Map<string, { sentByName: string | null }>(
+      v.sends.map((r: { id: string; sentByName: string | null }) => [r.id, r]),
+    );
+    expect(byId.get(auto)?.sentByName).toBeNull();
+    expect(byId.get(mine[0]?.id as string)?.sentByName).toBe("Rupak Sarkar");
+    expect(byId.get(mine[1]?.id as string)?.sentByName).toBe("Rupak Sarkar");
   });
 
   it("actions.send says why not: a draft, a void invoice, a role that cannot", async () => {
