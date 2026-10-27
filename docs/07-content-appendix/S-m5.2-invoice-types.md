@@ -101,3 +101,9 @@ _Drafted by the lead on 2026-10-27 from approved facts:
 | Advance dialog, zero amount | "Enter an amount above zero." |
 | FX dialog, empty "Other" note | "Describe where the rate comes from." |
 | Service completion, empty date | "Enter the date the service was completed." |
+| Advance dialog, empty "Date received" | "Enter the date the payment was received." |
+| Proforma draft title | "Draft proforma for {client name}" |
+| Issued proforma, locked banner | "Issued {date} by {name}. This proforma is locked. If it's wrong and nothing has been paid, void it and issue a new one." (VERIFY WITH CA/LEGAL) |
+| Proforma, issue dialog statement | "This proforma will get the next number in its series and can't be edited afterwards. It is not a tax invoice." |
+| Proforma, void not allowed | "This proforma can't be voided because a payment has been recorded against it." |
+| Advance, client's GST status changed since the proforma (`advance_supply_changed`) | "The client's GST details changed after this proforma was issued, so the tax on this payment can't be worked out from it. Check the client's details with your CA before recording the payment." (VERIFY WITH CA/LEGAL) |
