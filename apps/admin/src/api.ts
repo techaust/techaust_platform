@@ -913,6 +913,8 @@ export type StatementEntryView = {
   kind: "tax_invoice" | "export_invoice" | "debit_note" | "credit_note" | "receipt";
   date: string;
   number: string;
+  /** A credit note's invoice number (07-V §6 "Credit note against {number}"); null for every other kind. */
+  againstNumber?: string | null;
   amountMinor: number;
   debitMinor: number;
   creditMinor: number;

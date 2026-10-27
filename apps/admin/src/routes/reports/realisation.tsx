@@ -92,7 +92,10 @@ export function RealisationReport() {
               rows={rows}
               rowKey={(r) => r.id}
               empty={
-                <EmptyState icon={<CheckCircle />} title={REALISATION_COPY.empty}>
+                <EmptyState
+                  icon={<CheckCircle />}
+                  title={showAll ? REALISATION_COPY.emptyAll : REALISATION_COPY.empty}
+                >
                   {null}
                 </EmptyState>
               }

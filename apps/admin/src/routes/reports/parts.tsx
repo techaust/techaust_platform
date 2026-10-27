@@ -19,7 +19,7 @@ export function Amount({ minor, currency = "INR" }: { minor: number; currency?: 
 /** A document's number linking to its page. */
 export function DocLink({ doc }: { doc: DocRef }) {
   return (
-    <Link to={documentHref(doc.id)} className="docno">
+    <Link to={documentHref(doc.id)} className="docno report-doclink">
       {doc.number}
     </Link>
   );

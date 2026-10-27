@@ -59,6 +59,13 @@
   border-radius: var(--radius-sm);
 }
 
+/* A document number that links to its page (statement, EDF, realisation): a 44 px target like the Invoices list's, the number's line centred in it. */
+.report-doclink {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+}
+
 /* ---------- Controls: the period, the range, the month ---------- */
 
 .report-controls {

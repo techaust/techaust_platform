@@ -8,7 +8,7 @@ import type { SettingsDoc } from "../api.ts";
 import type { Built } from "../routes/settings/kit.tsx";
 import type { LutRow } from "./invoice-types.ts";
 import { annualReturnError, annualReturnsOf } from "./notes.ts";
-import { TAX_FIELDS_COPY } from "./reports.ts";
+import { P, TAX_FIELDS_COPY } from "./reports.ts";
 import { bpToPercent, type FieldErrors, intIn, moneyFrom, moneyInput, percentToBp } from "./settings-form.ts";
 
 export type Tax = Settings["tax"];
@@ -20,6 +20,15 @@ export const CATEGORIES: { key: Category; label: string }[] = [
   { key: "connect", label: "Connect" },
   { key: "run", label: "Run" },
 ];
+
+/** The reports' own bounds on the realisation periods (core `realisationRulesOf` and the stored-settings reader). */
+export const REALISATION_MAX_MONTHS = 1200;
+export const REALISATION_MAX_DAYS = 36_500;
+export const REALISATION_ERRORS = {
+  warnMonths: P("Enter the months before the warning, from 1 to 1,200."),
+  escalateMonths: P("Enter the months before escalating, from 1 to 1,200."),
+  escalateExtraDays: P("Enter the days before the final reminder, from 0 to 36,500."),
+} as const;
 
 /** The field id of an annual return's date (./routes/settings/annual-returns.tsx uses the same). */
 export const annualReturnFieldId = (fy: string) => `f-annualReturnsFiled-${fy}`;
@@ -108,15 +117,16 @@ export function buildTax(f: TaxForm, doc: Pick<SettingsDoc<"tax">, "value">, now
   const cross = moneyFrom(f.crossBorder, "INR");
   if (!cross.ok) e["f-crossBorderWarnInrMinor"] = `Cross-border payment warning: ${cross.error}`;
   if (!f.reverseChargeText.trim()) e["f-reverseChargeText"] = "Enter the reverse-charge line.";
-  const warn = intIn(f.warnMonths, 1);
-  if (warn === null) e["f-realisation-warnMonths"] = "Enter the months before the warning, 1 or more.";
+  // The realisation periods are bounded as the reports read them (core: 1 to 1,200 months, 0 to 36,500 days), so a saved value never stops the
+  // reports with `settings_invalid` (M5.5b review 4). The bounded words are not in 07 (batch Q69): the plain mark.
+  const warn = intIn(f.warnMonths, 1, REALISATION_MAX_MONTHS);
+  if (warn === null) e["f-realisation-warnMonths"] = REALISATION_ERRORS.warnMonths;
   const inrMonths = intIn(f.inrMonths, 1, 120);
   if (inrMonths === null) e["f-realisation-inrMonths"] = TAX_FIELDS_COPY.inrMonthsError;
-  const esc = intIn(f.escalateMonths, 1);
-  if (esc === null) e["f-realisation-escalateMonths"] = "Enter the months before escalating, 1 or more.";
-  const extra = intIn(f.escalateExtraDays, 0);
-  if (extra === null)
-    e["f-realisation-escalateExtraDays"] = "Enter the days before the final reminder, 0 or more.";
+  const esc = intIn(f.escalateMonths, 1, REALISATION_MAX_MONTHS);
+  if (esc === null) e["f-realisation-escalateMonths"] = REALISATION_ERRORS.escalateMonths;
+  const extra = intIn(f.escalateExtraDays, 0, REALISATION_MAX_DAYS);
+  if (extra === null) e["f-realisation-escalateExtraDays"] = REALISATION_ERRORS.escalateExtraDays;
   if (
     Object.keys(e).length ||
     rate === null ||

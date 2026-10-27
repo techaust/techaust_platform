@@ -20,8 +20,8 @@ import {
   STATEMENT_COPY,
   STATEMENT_POLL_MS,
   STATEMENT_WAIT_MS,
+  statementDetailsText,
   statementErrorText,
-  statementKindText,
 } from "../../lib/reports.ts";
 import { csvBlob, pollStatementPdf, saveFile } from "../../lib/reports-api.ts";
 import { Amount, RangeForm, WideList } from "../reports/parts.tsx";
@@ -285,12 +285,12 @@ export function StatementTab(props: {
                     r.kind === "receipt" ? (
                       <span className="docno">{r.number}</span>
                     ) : (
-                      <Link to={documentHref(r.id)} className="docno">
+                      <Link to={documentHref(r.id)} className="docno report-doclink">
                         {r.number}
                       </Link>
                     ),
                 },
-                { key: "details", header: C.details, cell: (r) => statementKindText(r.kind) },
+                { key: "details", header: C.details, cell: (r) => statementDetailsText(r) },
                 {
                   key: "debit",
                   header: C.debit,
