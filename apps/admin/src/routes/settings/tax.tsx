@@ -4,7 +4,6 @@
 // M5.3: the day each year's annual return (GSTR-9) was filed, which closes credit notes for that year (./annual-returns.tsx).
 import { financialYear, fyOf } from "@techaust/core";
 import { INVOICE_CHECKLIST, issueDateOf, lutReminder } from "@techaust/core/invoices";
-import type { Settings } from "@techaust/core/settings";
 import { useEffect, useState } from "react";
 import { useLocation } from "react-router";
 import { DataTable } from "../../components/data-table.tsx";
@@ -23,27 +22,11 @@ import {
   lutMissingBanner,
   lutsByYear,
 } from "../../lib/invoice-types.ts";
-import { annualReturnError, annualReturnsOf } from "../../lib/notes.ts";
-import {
-  bpToPercent,
-  type FieldErrors,
-  intIn,
-  moneyFrom,
-  moneyInput,
-  percentToBp,
-} from "../../lib/settings-form.ts";
-import { AnnualReturns, annualReturnFieldId } from "./annual-returns.tsx";
-import { type Built, ctl, GroupForm, type GroupSpec, MoneyIn, RowError } from "./kit.tsx";
+import { TAX_FIELDS_COPY } from "../../lib/reports.ts";
+import { buildTax, CATEGORIES, type TaxForm as Form, type Tax, taxToForm } from "../../lib/tax-settings.ts";
+import { AnnualReturns } from "./annual-returns.tsx";
+import { ctl, GroupForm, type GroupSpec, MoneyIn, RowError } from "./kit.tsx";
 
-type Tax = Settings["tax"];
-type Category = keyof Tax["sacByCategory"];
-const CATEGORIES: { key: Category; label: string }[] = [
-  { key: "advise", label: "Advise" },
-  { key: "build", label: "Build" },
-  { key: "automate", label: "Automate" },
-  { key: "connect", label: "Connect" },
-  { key: "run", label: "Run" },
-];
 const MONTHS = [
   "January",
   "February",
@@ -59,127 +42,14 @@ const MONTHS = [
   "December",
 ];
 
-type Form = {
-  rate: string;
-  allowLineOverride: boolean;
-  sac: Record<Category, string>;
-  exportMode: Tax["exportMode"];
-  /** M5.2 (ADM-INV-18): the letters of undertaking, one per financial year (replaces the single ARN field). */
-  luts: LutRow[];
-  /** M5.2 (ADM-INV-06, LD31): the one switchable line of the checklist. */
-  bankDetails: boolean;
-  advanceMode: Tax["advanceMode"];
-  fxSource: Tax["fxSource"];
-  eInvoicing: boolean;
-  reverseChargeText: string;
-  invoiceAlertDays: string;
-  cnMonth: string;
-  cnDay: string;
-  /** M5.3 (Q33): the day the annual return of each FY was filed, by FY token; "" is no return. */
-  annualReturns: Record<string, string>;
-  b2c: string;
-  warnMonths: string;
-  escalateMonths: string;
-  escalateExtraDays: string;
-  crossBorder: string;
-};
-
+// The form's model and payload (every stored value round-trips, M5.5b early check H2) live in lib/tax-settings.ts, where they are tested.
 const spec: GroupSpec<"tax", Form> = {
   group: "tax",
   what: "the tax settings",
   forDocuments: true,
   savedText: "Tax settings saved. They apply to new documents only.",
-  toForm: (v) => ({
-    rate: bpToPercent(v.defaultRateBp),
-    allowLineOverride: v.allowLineOverride,
-    sac: { ...v.sacByCategory },
-    exportMode: v.exportMode,
-    // The API folds the old single letter into the list on read (early check 3), so the list is the whole story.
-    luts: (v.luts ?? []).map((l) => ({ fy: l.fy, arn: l.arn, filedOn: l.filedOn ?? null })),
-    bankDetails: v.invoiceChecklist?.bankDetails ?? true,
-    advanceMode: v.advanceMode,
-    fxSource: v.fxSource,
-    eInvoicing: v.eInvoicing,
-    reverseChargeText: v.reverseChargeText,
-    invoiceAlertDays: String(v.invoiceAlertDays),
-    cnMonth: String(v.creditNoteCutoff.month),
-    cnDay: String(v.creditNoteCutoff.day),
-    annualReturns: Object.fromEntries((v.annualReturnsFiled ?? []).map((r) => [r.fy, r.filedOn])),
-    b2c: moneyInput(v.b2cDetailsThresholdInrMinor, "INR"),
-    warnMonths: String(v.realisation.warnMonths),
-    escalateMonths: String(v.realisation.escalateMonths),
-    escalateExtraDays: String(v.realisation.escalateExtraDays),
-    crossBorder: moneyInput(v.crossBorderWarnInrMinor, "INR"),
-  }),
-  build: (f, doc): Built<"tax"> => {
-    const e: FieldErrors = {};
-    const rate = percentToBp(f.rate);
-    if (rate === null)
-      e["f-defaultRateBp"] = "Enter the default GST rate: 0 to 100 %, with at most 2 decimals.";
-    for (const c of CATEGORIES)
-      if (!/^\d{6}$/.test(f.sac[c.key].trim()))
-        e[`f-sacByCategory-${c.key}`] = `The ${c.label} SAC has 6 digits.`;
-    const alertDays = intIn(f.invoiceAlertDays, 1, 30);
-    if (alertDays === null) e["f-invoiceAlertDays"] = "Enter the tax invoice reminder in days, from 1 to 30.";
-    const cnMonth = intIn(f.cnMonth, 1, 12);
-    const cnDay = intIn(f.cnDay, 1, 31);
-    if (cnDay === null) e["f-creditNoteCutoff-day"] = "Enter the credit note cut-off day, from 1 to 31.";
-    const today = issueDateOf(Date.now());
-    for (const [fy, filedOn] of Object.entries(f.annualReturns)) {
-      const bad = annualReturnError(fy, filedOn, today);
-      if (bad) e[annualReturnFieldId(fy)] = bad;
-    }
-    const b2c = moneyFrom(f.b2c, "INR");
-    if (!b2c.ok) e["f-b2cDetailsThresholdInrMinor"] = `Unregistered buyer details from: ${b2c.error}`;
-    const warn = intIn(f.warnMonths, 1);
-    if (warn === null) e["f-realisation-warnMonths"] = "Enter the months before the warning, 1 or more.";
-    const esc = intIn(f.escalateMonths, 1);
-    if (esc === null) e["f-realisation-escalateMonths"] = "Enter the months before escalating, 1 or more.";
-    const extra = intIn(f.escalateExtraDays, 0);
-    if (extra === null)
-      e["f-realisation-escalateExtraDays"] = "Enter the days before the final reminder, 0 or more.";
-    const cross = moneyFrom(f.crossBorder, "INR");
-    if (!cross.ok) e["f-crossBorderWarnInrMinor"] = `Cross-border payment warning: ${cross.error}`;
-    if (!f.reverseChargeText.trim()) e["f-reverseChargeText"] = "Enter the reverse-charge line.";
-    if (
-      Object.keys(e).length ||
-      rate === null ||
-      alertDays === null ||
-      cnMonth === null ||
-      cnDay === null ||
-      !b2c.ok ||
-      warn === null ||
-      esc === null ||
-      extra === null ||
-      !cross.ok
-    )
-      return { errors: e };
-    return {
-      value: {
-        ...doc.value,
-        defaultRateBp: rate,
-        allowLineOverride: f.allowLineOverride,
-        sacByCategory: Object.fromEntries(
-          CATEGORIES.map((c) => [c.key, f.sac[c.key].trim()]),
-        ) as Tax["sacByCategory"],
-        exportMode: f.exportMode,
-        // The deprecated single letter is never written again: the list is saved, the old key stays empty.
-        lut: { arn: null, fy: null },
-        luts: f.luts,
-        invoiceChecklist: { bankDetails: f.bankDetails, paymentLink: false },
-        advanceMode: f.advanceMode,
-        fxSource: f.fxSource,
-        eInvoicing: f.eInvoicing,
-        reverseChargeText: f.reverseChargeText.trim(),
-        invoiceAlertDays: alertDays,
-        creditNoteCutoff: { month: cnMonth, day: cnDay },
-        annualReturnsFiled: annualReturnsOf(f.annualReturns),
-        b2cDetailsThresholdInrMinor: b2c.minor,
-        realisation: { warnMonths: warn, escalateMonths: esc, escalateExtraDays: extra },
-        crossBorderWarnInrMinor: cross.minor,
-      },
-    };
-  },
+  toForm: (v) => taxToForm(v),
+  build: (f, doc) => buildTax(f, doc),
 };
 
 /** The LUT's year: this financial year, the next and the last (and whatever is stored, if older). */
@@ -647,6 +517,20 @@ export function TaxSettings({ readOnly }: { readOnly: boolean }) {
               <RowError id="f-b2cDetailsThresholdInrMinor" error={error("f-b2cDetailsThresholdInrMinor")} />
             </SettingRow>
             <SettingRow
+              id="tax-b2cl"
+              label={TAX_FIELDS_COPY.b2clLabel}
+              labelFor="f-b2clThresholdInrMinor"
+              description={TAX_FIELDS_COPY.b2clHint}
+            >
+              <MoneyIn
+                a11y={ctl("f-b2clThresholdInrMinor", error("f-b2clThresholdInrMinor"), "tax-b2cl-desc")}
+                currency="INR"
+                value={f.b2cl}
+                onChange={(b2cl) => set({ b2cl })}
+              />
+              <RowError id="f-b2clThresholdInrMinor" error={error("f-b2clThresholdInrMinor")} />
+            </SettingRow>
+            <SettingRow
               id="tax-xb"
               label="Cross-border payment warning"
               labelFor="f-crossBorderWarnInrMinor"
@@ -677,6 +561,20 @@ export function TaxSettings({ readOnly }: { readOnly: boolean }) {
                 unit="months"
               />
               <RowError id="f-realisation-warnMonths" error={error("f-realisation-warnMonths")} />
+            </SettingRow>
+            <SettingRow
+              id="tax-inr"
+              label={TAX_FIELDS_COPY.inrMonthsLabel}
+              labelFor="f-realisation-inrMonths"
+              description={TAX_FIELDS_COPY.inrMonthsHint}
+            >
+              <NumberUnit
+                a11y={ctl("f-realisation-inrMonths", error("f-realisation-inrMonths"), "tax-inr-desc")}
+                value={f.inrMonths}
+                onChange={(inrMonths) => set({ inrMonths })}
+                unit="months"
+              />
+              <RowError id="f-realisation-inrMonths" error={error("f-realisation-inrMonths")} />
             </SettingRow>
             <SettingRow id="tax-esc" label="Escalate after" labelFor="f-realisation-escalateMonths">
               <NumberUnit

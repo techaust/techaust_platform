@@ -182,6 +182,43 @@ export const NOTE_PDF_COPY = {
     `Exchange rate: 1 USD = ₹${rate} (the rate of invoice ${invoiceNumber})`,
 } as const;
 
+/**
+ * The fixed wording printed on a statement of account PDF (M5.5b; ADM-CLI-04, JOB-PDF-01), word for word from 07-V §6 and §6.1
+ * (docs/07-content-appendix/V-m5.5b-reports-statements.md). A client may receive it; PENDING the owner's word-for-word approval (unmarked, as every
+ * PDF's wording is: 07-P, 07-R). 07-V has no label for the client's block, so the block prints the client's name and address without one (nothing
+ * is invented; listed in the M5.5b run file).
+ */
+export const STATEMENT_PDF_COPY = {
+  title: "Statement of account",
+  from: "From",
+  period: (from: string, to: string) => `Period: ${from} to ${to}`,
+  currency: (currency: string) => `Currency: ${currency}`,
+  opening: "Opening balance",
+  closing: "Closing balance",
+  debits: "Total debits",
+  credits: "Total credits",
+  columns: {
+    date: "Date",
+    document: "Document",
+    details: "Details",
+    debit: "Debit",
+    credit: "Credit",
+    balance: "Balance",
+  },
+  kinds: {
+    tax_invoice: "Invoice",
+    export_invoice: "Export invoice",
+    debit_note: "Debit note",
+    /** 07-V §6 "Credit note against {number}": with the invoice's number when the view has it. */
+    credit_note: (againstNumber: string) => `Credit note against ${againstNumber}`,
+    receipt: "Payment received",
+  },
+  amountDue: (closing: string) => `Amount due: ${closing}`,
+  questions: (email: string) => `Questions about this statement? Write to ${email}.`,
+  generatedOn: (date: string) => `Generated on ${date}.`,
+  page: { word: "Page", of: "of" },
+} as const;
+
 /** The line under the title of a tax or export invoice issued for a payment received against a proforma (07-S §8, Q9; PENDING approval). */
 export const advanceLine = (proformaNumber: string, proformaDate: string, receivedOn: string) =>
   `Against proforma ${proformaNumber} of ${proformaDate}, payment received on ${receivedOn}.`;

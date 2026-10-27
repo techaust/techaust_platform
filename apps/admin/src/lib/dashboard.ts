@@ -2,6 +2,7 @@
 // activity in words. 07-M word for word (approved with 07-Q); the activity names 07-M lacked take
 // their 07-Q words. Pure, so the words are tested without a browser.
 import { ACTION_LABELS } from "./audit.ts";
+import { FINANCE_COPY } from "./reports.ts";
 
 export const TILE_TITLES = {
   leads: "Leads",
@@ -18,7 +19,8 @@ export const TILE_TITLES = {
 export const DASH_COPY = {
   /** 07-O §7 (M4.3). */
   pipelineEmpty: "No open proposals.",
-  financeArrives: "Invoiced and collected figures arrive with invoicing.",
+  /** M5.5b (07-V §7, replacing 07-J's line): invoiced figures are live; collected ones arrive with payments (M6). Marked until 07-V is approved. */
+  financeArrives: FINANCE_COPY.collectedArrives,
   paymentsArrive: "Payments waiting for checks arrive with payments.",
   notStarted: "Not started",
   system: "System",

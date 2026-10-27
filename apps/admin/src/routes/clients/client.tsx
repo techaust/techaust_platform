@@ -3,16 +3,15 @@
 // - Overview, Contacts and Activity for every role that reads clients;
 // - Projects and Files (M3.4) for every role that reads projects (not the Accountant: the API denies them too);
 // - Proposals and estimates and Care plans as the M3.1 "coming soon" state, with their milestone;
-// - Invoices (M5.1) and Statement only for roles with clients.finance.read (never Sales: the API denies them too),
-//   with the 07-J lines until invoicing exists.
+// - Invoices (M5.1) and Statement (M5.5b, ./statement.tsx) only for roles with clients.finance.read (never Sales: the API denies them
+//   too).
 // What a person has typed and not saved (the details and billing drafts) lives above every reload, as on the lead page.
-import { fyOf, istDate, toIsoDate } from "@techaust/core/dates";
 import { countryName } from "@techaust/core/form-labels";
 import { type ReactNode, useReducer, useState } from "react";
 import { useParams, useSearchParams } from "react-router";
 import { api, type ClientPage, RequestError } from "../../api.ts";
-import { EmptyState, PageHeader, Skeleton, StatusPill } from "../../components/display.tsx";
-import { FileText, Lock } from "../../components/icons.tsx";
+import { PageHeader, Skeleton, StatusPill } from "../../components/display.tsx";
+import { Lock } from "../../components/icons.tsx";
 import { LoadFailed, NotFound, StaleNotice, useLoad } from "../../components/states.tsx";
 import { type TabItem, Tabs } from "../../components/tabs.tsx";
 import { Notice } from "../../components/ui.tsx";
@@ -38,6 +37,7 @@ import { Activity } from "./activity.tsx";
 import { Contacts } from "./contacts.tsx";
 import { Overview } from "./overview.tsx";
 import { ClientsGate, CRUMBS } from "./parts.tsx";
+import { StatementTab } from "./statement.tsx";
 
 export function Component() {
   const { id = "" } = useParams();
@@ -196,7 +196,12 @@ function ClientView(props: {
         ) : tab === "invoices" ? (
           <ClientInvoices clientId={client.id} readOnly={props.data.anonymised} />
         ) : tab === "statement" ? (
-          <StatementTab id={client.id} />
+          <StatementTab
+            clientId={client.id}
+            clientCode={client.code}
+            currency={client.currency}
+            anonymised={props.data.anonymised}
+          />
         ) : tab === "care-plans" ? (
           <ClientCarePlans clientId={client.id} readOnly={props.data.anonymised} />
         ) : (
@@ -254,20 +259,6 @@ function IdentityStrip({ data, finance }: { data: ClientPage; finance: boolean }
         </div>
       ))}
     </dl>
-  );
-}
-
-/** The statement of account (ADM-CLI-04; finance roles): this financial year so far, `{available:false}` until M5. */
-function StatementTab({ id }: { id: string }) {
-  const now = Date.now();
-  const from = toIsoDate(istDate(fyOf(now).startMs));
-  const to = toIsoDate(istDate(now));
-  const st = useLoad(() => api.clientStatement(id, from, to), `${id}:${from}:${to}`);
-  if (st.state === "failed") return <LoadFailed error={st.error} onRetry={() => st.reload()} />;
-  return (
-    <EmptyState icon={<FileText />} title="Statement of account">
-      <p>Statements arrive with invoicing. There's nothing to show yet.</p>
-    </EmptyState>
   );
 }
 

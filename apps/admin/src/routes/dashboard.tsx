@@ -1,12 +1,12 @@
 // The dashboard (M3.5, ADM-DASH-01): the tiles GET /dashboard returns for this role, exactly as returned. A tile the role may not
 // see is absent from the answer and so from the page (Sales: the pipeline; the accountant: finance; staff: delivery and their own
-// time; the owner: all). Figures are live. The figures that arrive with later modules (pipeline value, invoiced and collected)
-// say so in the 07-M words instead of showing a zero. Care plan hours are a calm bar per plan with the 80 % and 100 % flags; recent
+// time; the owner: all). Figures are live, read once when the page opens (never polled). The finance tiles (M5.5b) run as a band
+// under the figure strip (./dashboard-finance.tsx); collected figures arrive with payments and say so instead of showing a zero. Care plan hours are a calm bar per plan with the 80 % and 100 % flags; recent
 // activity is in words, never the audit summary. Phone: one column of cards, in reading order.
 import "./care/parts.tsx";
 import type { ReactNode } from "react";
 import { Link } from "react-router";
-import { api, type Dashboard as DashboardData, type DashboardTiles } from "../api.ts";
+import { api, type Dashboard as DashboardData, type DashboardTiles, isFinanceTile } from "../api.ts";
 import { PageHeader, Skeleton, When } from "../components/display.tsx";
 import { FileText, Receipt, Wallet } from "../components/icons.tsx";
 import { LoadFailed, useLoad } from "../components/states.tsx";
@@ -23,6 +23,7 @@ import {
 import { STAGE_LABELS, STAGES } from "../lib/leads.ts";
 import { useUser } from "../session.tsx";
 import { FlagPill, HoursBar, tierText } from "./care/parts.tsx";
+import { FinanceTiles } from "./dashboard-finance.tsx";
 import { MilestonePill } from "./projects/parts.tsx";
 
 export function Dashboard() {
@@ -58,16 +59,17 @@ function Tiles({ data }: { data: DashboardData }) {
   return (
     <div className="dash">
       {kpis.length > 1 && strip}
+      {isFinanceTile(t.finance) && <FinanceTiles tile={t.finance} />}
       <div className="dash__main">
         {kpis.length === 1 && strip}
         {t.careBurn && <CareTile tile={t.careBurn} />}
         {t.activity && <ActivityTile tile={t.activity} />}
       </div>
-      {(t.milestones || t.pipelineValue || t.finance) && (
+      {(t.milestones || t.pipelineValue || (t.finance && !isFinanceTile(t.finance))) && (
         <div className="dash__side">
           {t.milestones && <MilestonesTile tile={t.milestones} today={data.today} />}
           {t.pipelineValue && <PipelineTile tile={t.pipelineValue} />}
-          {t.finance && (
+          {t.finance && !isFinanceTile(t.finance) && (
             <Tile id="finance" title={TILE_TITLES.finance} quiet>
               <p className="panel-empty">
                 <Receipt size={20} />

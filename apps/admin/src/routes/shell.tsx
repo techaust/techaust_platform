@@ -24,6 +24,7 @@ import { AccountMenu, NotificationBell } from "../components/shell/top-menus.tsx
 import { ComingSoon, NoAccess, NotFound } from "../components/states.tsx";
 import { ToastProvider } from "../components/toast.tsx";
 import { allowed, canSee, sectionOf } from "../lib/access.ts";
+import { reportBellHref } from "../lib/bell-links.ts";
 import { ROLE_LABELS } from "../lib/format.ts";
 import { useSession, useUser } from "../session.tsx";
 
@@ -214,7 +215,11 @@ export function Component() {
               title: n.title,
               at: n.createdAt,
               // M5.2: the LUT reminder (07-S §8 "File the LUT for FY … and save its ARN in Settings › Tax.") lands on the list of letters itself.
-              href: n.kind === "lut.reminder" && !n.link.includes("#") ? `${n.link}#luts` : n.link,
+              // M5.5b: an export stage lands on the realisation list with its invoice marked (lib/reports.ts).
+              href:
+                n.kind === "lut.reminder" && !n.link.includes("#")
+                  ? `${n.link}#luts`
+                  : reportBellHref(n.kind, n.link),
               unread: n.readAt === null,
             }))}
             unread={bell.unread}
