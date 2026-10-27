@@ -808,7 +808,8 @@ export type DashboardTiles = {
   };
   /** The offers out and still acceptable, before tax, by currency (M4.3, ADM-DASH-01). */
   pipelineValue?: { asOf: string; byCurrency: { currency: Currency; count: number; taxableMinor: number }[] };
-  finance?: { available: false; arrivesWith: Record<string, string> };
+  /** M5.5b (LD80): the finance tiles (Owner, Accountant). Before M5.5b the API sent `{available: false}`. */
+  finance?: FinanceTile | { available: false; arrivesWith?: unknown };
   projects?: { active: number; onHold: number };
   milestones?: {
     windowDays: number;
@@ -856,6 +857,76 @@ export type DashboardTiles = {
   };
 };
 export type Dashboard = { asOf: number; today: string; tiles: DashboardTiles };
+/** One currency's invoiced figures (credit notes negative, voided and proformas left out); `inrTaxableMinor` is null when a USD document lacks its INR view. */
+export type InvoicedByCurrency = {
+  currency: Currency;
+  documents: number;
+  taxableMinor: number;
+  totalMinor: number;
+  inrTaxableMinor: number | null;
+};
+export type OwedByCurrency = { currency: Currency; count: number; balanceMinor: number };
+/** The shape of apps/admin/worker/dashboard.ts `finance` (M5.5b, LD80). */
+export type FinanceTile = {
+  today: string;
+  month: { from: string; to: string };
+  fy: { label: string; from: string; to: string };
+  invoiced: { month: InvoicedByCurrency[]; fy: InvoicedByCurrency[] };
+  outstanding: OwedByCurrency[];
+  overdue: {
+    byCurrency: OwedByCurrency[];
+    oldest: {
+      id: string;
+      number: string;
+      clientCode: string;
+      clientName: string;
+      dueDate: string;
+      currency: Currency;
+      balanceMinor: number;
+      daysOverdue: number;
+    }[];
+  };
+  proformasAwaiting: OwedByCurrency[];
+  exports:
+    | {
+        counts: { femaApproaching: number; femaOverdue: number; gstApproaching: number; gstOverdue: number };
+        next: {
+          id: string;
+          number: string;
+          clientCode: string;
+          currency: Currency;
+          outstandingMinor: number;
+          stage: string;
+          dueDate: string;
+        }[];
+      }
+    | { available: false; reason: string };
+  collected: { available: false; arrivesWith: string };
+  paymentsToVerify: { available: false; arrivesWith: string };
+};
+export const isFinanceTile = (t: DashboardTiles["finance"]): t is FinanceTile =>
+  t !== undefined && "invoiced" in t;
+
+/** One line of a statement (M5.5b): core `StatementEntry`. */
+export type StatementEntryView = {
+  id: string;
+  kind: "tax_invoice" | "export_invoice" | "debit_note" | "credit_note" | "receipt";
+  date: string;
+  number: string;
+  amountMinor: number;
+  debitMinor: number;
+  creditMinor: number;
+  balanceMinor: number;
+};
+export type StatementPage = {
+  from: string;
+  to: string;
+  currency: Currency;
+  entries: StatementEntryView[];
+  balanceBeforeMinor: number;
+  range: { openingMinor: number; debitMinor: number; creditMinor: number; closingMinor: number };
+  next: string | null;
+};
 
 /** A field the server refused (400 `invalid`): its dotted path in the request body and our own message. */
 export type FieldIssue = { path: string; message: string };
@@ -1222,10 +1293,12 @@ export const api = {
     }),
   clientFinance: (id: string) =>
     request<{ available: boolean }>(`/clients/${encodeURIComponent(id)}/finance`),
-  clientStatement: (id: string, from: string, to: string) =>
-    request<{ available: boolean; from: string; to: string }>(
-      `/clients/${encodeURIComponent(id)}/statement${qs({ from, to })}`,
-    ),
+  /** M5.5b (ADM-CLI-04, LD78): one page (≤ 50 entries) of the statement of one currency; `after` is the previous page's `next`. */
+  clientStatement: (id: string, q: { from: string; to: string; currency?: Currency; after?: string }) =>
+    request<StatementPage>(`/clients/${encodeURIComponent(id)}/statement${qs(q)}`),
+  /** M5.5b (LD79): ask for the statement PDF; 202 `{id}`, then poll `statementPdfUrl`. */
+  clientStatementPdf: (id: string, body: { from: string; to: string; currency: Currency }) =>
+    request<{ id: string }>(`/clients/${encodeURIComponent(id)}/statement/pdf`, { body }),
   clientActivity: (id: string, after?: string) =>
     request<{ entries: ClientActivity[]; next: string | null }>(
       `/clients/${encodeURIComponent(id)}/activity${qs({ after })}`,

@@ -217,7 +217,8 @@ describe("07-M copy, word for word (draft pending the owner)", () => {
       "My time",
       "Recent activity",
     ]);
-    expect(DASH_COPY.financeArrives).toBe("Invoiced and collected figures arrive with invoicing.");
+    // M5.5b (on purpose): 07-V §7 replaces 07-J's line; marked until the owner approves 07-V.
+    expect(DASH_COPY.financeArrives).toBe("[Placeholder] Collected figures arrive with payments.");
     expect(DASH_COPY.paymentsArrive).toBe("Payments waiting for checks arrive with payments.");
     expect([DASH_COPY.notStarted, DASH_COPY.system]).toEqual(["Not started", "System"]);
     expect(showingFirst(20)).toBe("Showing the first 20.");
