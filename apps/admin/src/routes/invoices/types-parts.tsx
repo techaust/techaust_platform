@@ -698,7 +698,9 @@ function AdvanceBody(props: { view: InvoiceView; onClose: () => void; onIssued: 
       if (listed.length > 0) {
         const { rateDate, rest } = splitAdvanceRefusal(listed);
         if (rateDate) {
-          setErrors({ fxDate: blockerLine(rateDate, v.currency, { maxAgeDays: v.fx?.maxAgeDays }) });
+          setErrors({
+            fxDate: blockerLine(rateDate, v.currency, { maxAgeDays: v.fx?.maxAgeDays, advance: true }),
+          });
           focusField("adv-fx-date");
         }
         setRefused(rest);

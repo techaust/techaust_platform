@@ -133,7 +133,14 @@ export const fromMilestone = (milestone: string, project: string) =>
   `Created from the milestone "${milestone}" of ${project}. The total matches the milestone amount, GST included.`;
 export const issueBody = (seriesPreview: string, example: string, issueDate: string) =>
   `This invoice will get the next number in the series (${seriesPreview}, for example ${example}) and the date ${issueDate}. Once issued it can't be edited or deleted. Corrections are made with a credit note or a debit note.`;
-export const issuedToast = (number: string) => `Invoice ${number} issued.`;
+export const issuedToast = (number: string, type?: string) =>
+  type === "proforma" ? `Proforma ${number} issued.` : `Invoice ${number} issued.`;
+/** 07-S §8: a proforma's own draft lede and issue wording; every other type keeps 07-R's. */
+export const draftLedeFor = (type: string) =>
+  type === "proforma"
+    ? "Drafts can be edited. Issuing gives the next proforma number and locks it."
+    : INV_COPY.draftLede;
+export const issueLabelFor = (type: string) => (type === "proforma" ? "Issue proforma" : INV_COPY.issue);
 export const waitingLine = (date: string) => `Waiting for the owner to issue it (requested ${date}).`;
 export const requestRow = (requester: string, client: string, total: string) =>
   `${requester} asked to issue a draft invoice for ${client}: ${total}.`;
@@ -262,7 +269,7 @@ export function seriesPreview(p: { template: string; fy: string; padding: number
 export function blockerLine(
   b: InvoiceBlocker,
   currency: string,
-  ctx: { maxAgeDays?: number | undefined } = {},
+  ctx: { maxAgeDays?: number | undefined; advance?: boolean } = {},
 ): string {
   const n = b.line ?? 0;
   switch (b.code) {
@@ -315,7 +322,10 @@ export function blockerLine(
       return "Add the SWIFT details of a bank account in Settings › Bank for export invoices.";
     // 07-S §8
     case "fx_date_invalid":
-      return `The rate date must be the invoice date or up to ${ctx.maxAgeDays ?? INV_PLACEHOLDER} days before it.`;
+      // The advance judges the rate against the day the payment was received (07-S §8, M5.2 re-check M1).
+      return ctx.advance === true
+        ? `The rate date must be the date the payment was received or up to ${ctx.maxAgeDays ?? INV_PLACEHOLDER} days before it.`
+        : `The rate date must be the invoice date or up to ${ctx.maxAgeDays ?? INV_PLACEHOLDER} days before it.`;
     default:
       return INV_PLACEHOLDER;
   }
@@ -452,12 +462,12 @@ export const invMapped = (e: unknown): unknown =>
 export function voidBlockedText(codes: readonly string[], type?: string): string | null {
   if (codes.length === 0) return null;
   if (codes.includes("already_void")) return INV_ERRORS.already_void;
-  // A proforma has no credit note and no return period (LD28): what stops its void is a payment recorded against it (07-S §8). 07-S has no line yet
-  // for its other reason (an emailed proforma, once M5.4 records sends).
+  // A proforma has no credit note and no return period (LD28): what stops its void is a payment recorded against it, or (from M5.4) that it was
+  // emailed (07-S §8).
   if (type === "proforma")
     return codes.includes("has_payment") || codes.includes("has_child_document")
       ? INVT_COPY.proformaVoidBlocked
-      : INV_PLACEHOLDER;
+      : "This proforma has been emailed to the client, so it can't be voided.";
   if (codes.includes("return_period_closed")) return INV_ERRORS.return_period_closed;
   return INV_ERRORS.void_not_allowed;
 }

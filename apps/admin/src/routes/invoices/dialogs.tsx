@@ -21,6 +21,7 @@ import {
   invErrorText,
   invMapped,
   issueBody,
+  issueLabelFor,
   seriesPreview,
   splitAtPlace,
   voidTitle,
@@ -206,7 +207,7 @@ export function IssueDialog(props: {
   };
 
   return (
-    <Modal open={props.open} title={INV_COPY.issueTitle} onClose={close} busy={busy}>
+    <Modal open={props.open} title={issueLabelFor(v.type)} onClose={close} busy={busy}>
       <div className="dialog__body inv-issue">
         {preview && p ? (
           <>
@@ -242,7 +243,7 @@ export function IssueDialog(props: {
         {!v.typeIssuable && v.blockers.length === 0 && (
           <Notice tone="info">{INV_ERRORS.type_not_issuable}</Notice>
         )}
-        {inrAsked && (
+        {inrAsked && !blocked && (
           <div className="inv-inr-ask" role="status">
             <p>{INVT_COPY.inrConfirm}</p>
           </div>
@@ -270,7 +271,7 @@ export function IssueDialog(props: {
           disabled={busy || blocked}
           aria-busy={busy || undefined}
         >
-          {busy ? "Working…" : inrAsked ? INVT_COPY.issueInInr : INV_COPY.issue}
+          {busy ? "Working…" : inrAsked ? INVT_COPY.issueInInr : issueLabelFor(v.type)}
         </button>
       </div>
     </Modal>

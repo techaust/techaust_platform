@@ -36,6 +36,7 @@ import {
 import {
   buildInvoicePatch,
   discountError,
+  draftLedeFor,
   draftTitle,
   dueNote,
   INV_COPY,
@@ -48,6 +49,7 @@ import {
   invIsDirty,
   invoiceEditor,
   issuedToast,
+  issueLabelFor,
   requestLine,
   typeLabel,
 } from "../../lib/invoices.ts";
@@ -249,7 +251,7 @@ export function InvoiceEditor({ view, reload }: { view: InvoiceView; reload: () 
         title={draftTitle(v.client.name, v.type)}
         crumbs={INVOICES_CRUMB}
         status={<InvoiceBadge badge="draft" />}
-        lede={INV_COPY.draftLede}
+        lede={draftLedeFor(v.type)}
         more={
           canWrite
             ? [
@@ -296,7 +298,7 @@ export function InvoiceEditor({ view, reload }: { view: InvoiceView; reload: () 
           <section className="lead-panel send-panel inv-issue-panel" aria-labelledby="inv-issue-h">
             <div className="lead-panel__head">
               <h2 id="inv-issue-h" className="lead-panel__title">
-                {INV_COPY.issueTitle}
+                {issueLabelFor(v.type)}
               </h2>
               {saveLine && (
                 <p className="save-state" data-state={s.status} role="status">
@@ -347,7 +349,7 @@ export function InvoiceEditor({ view, reload }: { view: InvoiceView; reload: () 
                   disabled={blocked || s.saving || !v.typeIssuable}
                 >
                   <FileCheck size={20} />
-                  {INV_COPY.issue}
+                  {issueLabelFor(v.type)}
                 </button>
               )}
               {canWrite && asks && v.issue.approval.state !== "pending" && (
@@ -556,7 +558,7 @@ export function InvoiceEditor({ view, reload }: { view: InvoiceView; reload: () 
               inrConfirmed,
             );
             setDialog(null);
-            toast("success", issuedToast(r.number ?? ""));
+            toast("success", issuedToast(r.number ?? "", v.type));
             setExtraError(null);
             reload();
           } catch (e) {

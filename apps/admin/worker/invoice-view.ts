@@ -15,6 +15,7 @@ import {
   INVOICE_ISSUABLE_TYPES,
   INVOICE_SERIES_OF,
   type IssueBlocker,
+  isInvoiceFlowType,
   issueDateOf,
   issueFyOf,
   lutFor,
@@ -209,8 +210,7 @@ export function invoiceView(i: InvoiceViewInput) {
   const clientDays = client.payment_terms_days;
   const dueDays = clientDays ?? settings.paymentTerms.dueDays;
   // The series this TYPE is numbered in (a proforma, an export invoice and a tax invoice each have their own).
-  const previewSeries =
-    (INVOICE_SERIES_OF as Readonly<Record<string, Series | undefined>>)[d.type] ?? "invoice";
+  const previewSeries: Series = isInvoiceFlowType(d.type) ? INVOICE_SERIES_OF[d.type] : "invoice";
   const preview = settings.numbering[previewSeries];
   // The advance invoice for a payment on a proforma is decided from the client's CURRENT status, exactly as the advance route does (review 2, finding 6).
   const advanceType = client.gst_status === "overseas" ? "export_invoice" : "tax_invoice";
