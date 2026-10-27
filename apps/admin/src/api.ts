@@ -15,6 +15,7 @@ import type { Role } from "@techaust/core/permissions";
 import type { Settings, SignatureRef } from "@techaust/core/settings";
 import type { TermsBlockId } from "@techaust/core/terms";
 import type { HashRequest, HashResponse } from "./hash.worker.ts";
+import type { CarePlanBilling } from "./lib/invoice-send.ts";
 
 export type User = { name: string; email: string; role: Role };
 export type Me = { user: User; stepUpUntil: number | null };
@@ -678,6 +679,8 @@ export type CarePlanPage = {
   periods: CareUsage[];
   clientAnonymised: boolean;
   overage: { addToInvoice: { available: false; arrivesWith: string } };
+  /** M5.4: the plan's billing (finance roles only; absent for Sales). Shape: lib/invoice-send.ts `CarePlanBilling`. */
+  billing?: CarePlanBilling;
 };
 export type CarePlansQuery = {
   limit?: "25" | "50" | undefined;

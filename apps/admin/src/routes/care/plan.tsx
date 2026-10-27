@@ -3,6 +3,7 @@
 // against included plus carried over, as words and a calm bar, the overage and its amount before GST, or the no-rate line), the
 // last 12 periods, the terms in force and any booked for the next period, and the status history. A status change takes effect
 // today (or on the start date); new terms from the next billing period (owner's Q1). The server decides every rule again.
+import { planPeriodOf } from "@techaust/core/care";
 import { istDate, toIsoDate } from "@techaust/core/dates";
 import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
@@ -11,7 +12,7 @@ import { ConfirmDialog } from "../../components/confirm-dialog.tsx";
 import { type Column, DataTable } from "../../components/data-table.tsx";
 import { Modal } from "../../components/dialog.tsx";
 import { KeepDates, PageHeader, Skeleton, When } from "../../components/display.tsx";
-import { ChevronDown, Pencil, Receipt } from "../../components/icons.tsx";
+import { Alert, Check, ChevronDown, Info, Pencil, Receipt } from "../../components/icons.tsx";
 import { MenuButton } from "../../components/popover.tsx";
 import { LoadFailed, NotFound, StaleNotice, useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
@@ -44,8 +45,11 @@ import {
   termsDate,
   termsFormOf,
 } from "../../lib/care.ts";
+import { type CarePlanBilling, PLAN_BILLING_COPY, planAutoLines } from "../../lib/invoice-send.ts";
+import { badgeOf } from "../../lib/invoices.ts";
 import { useUser } from "../../session.tsx";
 import { Fact } from "../clients/overview.tsx";
+import { InvoiceBadge, invoiceHref, NumberMark } from "../invoices/parts.tsx";
 import { Day } from "../projects/parts.tsx";
 import { CARE_CRUMBS, CareGate, CarePill, FlagPill, HoursBar } from "./parts.tsx";
 import { TermsFields } from "./terms-fields.tsx";
@@ -132,6 +136,7 @@ function PlanView({ data, reload }: { data: CarePlanPage; reload: () => void }) 
       <div className="lead-page care-page">
         <div className="lead-page__main">
           <PeriodCard usage={data.usage} data={data} />
+          {data.billing && <BillingPanel billing={data.billing} data={data} />}
         </div>
         <aside className="lead-page__side" aria-label="Terms and history">
           <TermsPanel data={data} />
@@ -279,6 +284,82 @@ function PeriodCard({ usage: u, data }: { usage: CareUsage | null; data: CarePla
     </section>
   );
 }
+
+// ---- billing (M5.4, ADM-CARE-02, ADM-INV-12; finance roles only) --------------------------------------------------------------
+
+/**
+ * The plan's billing drawn as the invoice page draws its reminders: one rule, a node for the last period billed (filled; with its invoice and status) and
+ * one for the next billing day (a ring). Under it, for a draft not yet issued, 07-U §6's reasons (or the allowed line), and always the pointer to the
+ * draft's own page: `blockersChecked` is false, so this section never says the draft is ready to issue.
+ */
+function BillingPanel({ billing: b, data }: { billing: CarePlanBilling; data: CarePlanPage }) {
+  const last = b.lastBilledPeriod ? planPeriodOf(b.lastBilledPeriod, data.plan) : null;
+  const auto = planAutoLines(b.auto);
+  const draftId = b.draft?.status === "draft" ? b.draft.id : null;
+  return (
+    <section className="lead-panel care-billing" aria-labelledby="billing-h">
+      <h2 id="billing-h" className="lead-panel__title care-billing__title">
+        <Receipt size={20} />
+        {PLAN_BILLING_COPY.heading}
+      </h2>
+      <ol className="remind care-billing__steps">
+        <li className="remind__row" data-state={b.lastBilledPeriod ? "sent" : "skipped"}>
+          <span className="remind__node" aria-hidden="true">
+            {b.lastBilledPeriod && <Check size={16} />}
+          </span>
+          <span className="remind__day">{PLAN_BILLING_COPY.lastBilled}</span>
+          <span className="remind__state">
+            {last
+              ? periodText(last)
+              : b.lastBilledPeriod
+                ? billedPeriodStart(b.lastBilledPeriod)
+                : PLAN_BILLING_COPY.notBilled}
+          </span>
+          {b.lastBilledPeriod && (
+            <span className="care-billing__doc">
+              {b.draft ? (
+                <>
+                  <Link className="inv-name__link" to={invoiceHref(b.draft.id)}>
+                    <NumberMark number={b.draft.number} void={b.draft.status === "void"} />
+                  </Link>
+                  <InvoiceBadge badge={badgeOf({ status: b.draft.status, overdue: false })} />
+                </>
+              ) : (
+                <span className="muted">{PLAN_BILLING_COPY.noRecord}</span>
+              )}
+            </span>
+          )}
+        </li>
+        <li className="remind__row" data-state={b.nextBillingDay ? "due" : "skipped"} data-due>
+          <span className="remind__node" aria-hidden="true" />
+          <span className="remind__day">{PLAN_BILLING_COPY.nextDay}</span>
+          <span className="remind__state">
+            {b.nextBillingDay ? <Day iso={b.nextBillingDay} /> : PLAN_BILLING_COPY.noNextDay}
+          </span>
+        </li>
+      </ol>
+      {auto && (
+        <div className="care-billing__auto">
+          <p className="approval-line" data-state={auto.tone === "pending" ? "pending" : undefined}>
+            {auto.tone === "pending" ? <Alert size={16} /> : <Info size={16} />}
+            <span>{auto.text}</span>
+          </p>
+          <p className="care-billing__check">
+            <span>{auto.pointer}</span>{" "}
+            {draftId && (
+              <Link className="inv-name__link" to={invoiceHref(draftId)}>
+                {PLAN_BILLING_COPY.openDraft}
+              </Link>
+            )}
+          </p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** A last billed period that falls before the plan's start (never expected): its start date alone, never a guessed end. */
+const billedPeriodStart = (iso: string) => <Day iso={iso} />;
 
 // ---- the last 12 periods ---------------------------------------------------------------------------------------------------------
 

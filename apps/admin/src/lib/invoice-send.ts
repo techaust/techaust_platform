@@ -386,3 +386,48 @@ export const CARE_COPY = {
   /** The care plan the invoice bills (the admin's own section name). */
   carePlan: "Care plan",
 } as const;
+
+// ---- the care plan's billing section (GET /care-plans/:id `billing`; finance roles only) -------------------------------------------------------------
+
+/** `GET /care-plans/:id` → `billing` (apps/admin/worker/care-authority.ts `careBillingView`). Absent for a role without finance access (Sales). */
+export type CarePlanBilling = {
+  /** The START of the last period billed (ISO), or null when the plan was never billed. */
+  lastBilledPeriod: string | null;
+  /** The day the job next bills (ISO); null for a cancelled plan. */
+  nextBillingDay: string | null;
+  /** The record of the last billed period; null when there is none, or it was deleted. */
+  draft: { id: string; number: string | null; status: string } | null;
+  /** Only for a draft not yet issued. `blockersChecked` is always false: the draft's own checklist decides whether it can be issued. */
+  auto: { eligible: boolean; reasons: string[]; blockersChecked: false } | null;
+};
+
+/**
+ * The section's words. 07-U has no line for the plan page's billing section, so every one is a marked placeholder (the plain `INV_PLACEHOLDER` mark, not
+ * the 07-U switch: approving 07-U must not unmark them). Only the reasons line is 07-U §6's (`draftedBecause`).
+ */
+export const PLAN_BILLING_COPY = {
+  heading: `${INV_PLACEHOLDER} Billing`,
+  lastBilled: `${INV_PLACEHOLDER} Last billed period`,
+  notBilled: `${INV_PLACEHOLDER} Not billed yet`,
+  noRecord: `${INV_PLACEHOLDER} No invoice on record for this period`,
+  nextDay: `${INV_PLACEHOLDER} Next billing day`,
+  noNextDay: `${INV_PLACEHOLDER} None, the plan is cancelled`,
+  /** The Owner's choices allow it; this never says the draft is ready (`blockersChecked` is false). */
+  autoAllowed: `${INV_PLACEHOLDER} The owner's choices allow this draft to be issued automatically.`,
+  /** Where the missing fields are: the draft's own page (its checklist). */
+  checkDraft: `${INV_PLACEHOLDER} Any field still missing is listed on the draft's page.`,
+  openDraft: `${INV_PLACEHOLDER} Open the draft`,
+} as const;
+
+/** The auto-issue lines of the section: 07-U §6's reasons (not eligible) or the allowed line, then always the pointer to the draft's own checklist. */
+export function planAutoLines(
+  auto: CarePlanBilling["auto"],
+): { tone: "pending" | "info"; text: string; pointer: string } | null {
+  if (!auto) return null;
+  const because = auto.eligible ? null : draftedBecause(auto.reasons);
+  return {
+    tone: because ? "pending" : "info",
+    text: because ?? PLAN_BILLING_COPY.autoAllowed,
+    pointer: PLAN_BILLING_COPY.checkDraft,
+  };
+}

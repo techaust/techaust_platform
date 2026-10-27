@@ -8,6 +8,8 @@ import {
   documentWord,
   draftedBecause,
   hasReminders,
+  PLAN_BILLING_COPY,
+  planAutoLines,
   previewBody,
   previewFacts,
   previewSubject,
@@ -260,4 +262,34 @@ describe("the dialog's email preview says what the template says", () => {
       });
     }
   }
+});
+
+describe("the care plan's billing section [ADM-CARE-02, ADM-INV-12]", () => {
+  it("every label is a marked placeholder (07-U has none for this section)", () => {
+    for (const line of Object.values(PLAN_BILLING_COPY))
+      expect(line.startsWith(`${INV_PLACEHOLDER} `)).toBe(true);
+  });
+
+  it("no auto part without a draft not yet issued", () => {
+    expect(planAutoLines(null)).toBeNull();
+  });
+
+  it("not eligible: 07-U's reasons, and the pointer to the draft's own checklist", () => {
+    const l = planAutoLines({
+      eligible: false,
+      reasons: ["toggle_off", "overage_present"],
+      blockersChecked: false,
+    });
+    expect(l?.tone).toBe("pending");
+    expect(l?.text).toBe(draftedBecause(["toggle_off", "overage_present"]));
+    expect(l?.pointer).toBe(PLAN_BILLING_COPY.checkDraft);
+  });
+
+  it("eligible: never says the draft is ready (blockers are not checked here), and still points to the draft", () => {
+    const l = planAutoLines({ eligible: true, reasons: [], blockersChecked: false });
+    expect(l?.tone).toBe("info");
+    expect(l?.text).toBe(PLAN_BILLING_COPY.autoAllowed);
+    expect(l?.text).not.toMatch(/ready|will be issued/i);
+    expect(l?.pointer).toBe(PLAN_BILLING_COPY.checkDraft);
+  });
 });

@@ -1009,3 +1009,55 @@
   font-stretch: var(--font-display--stretch);
   font-weight: 560;
 }
+
+/* ---------- M5.4: the plan's billing, drawn with the invoice page's reminder schedule (invoices.css `.remind`) ---------- */
+
+.care-billing__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.care-billing__title .icon {
+  color: var(--color-text-muted);
+}
+
+/* The invoice of the last period billed sits under its period, beside the node's rule: the number (a 44 px link), then its status. */
+.care-billing__doc {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--space-3);
+}
+
+.care-billing__steps {
+  margin-bottom: var(--space-2);
+}
+
+.care-billing__auto {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+.care-billing__auto .approval-line {
+  margin-bottom: var(--space-1);
+}
+
+.care-billing__auto .approval-line:not([data-state]) .icon {
+  color: var(--color-text-muted);
+}
+
+/* The pointer to the draft's own checklist, indented to the line above's text. */
+.care-billing__check {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-2);
+  margin: 0;
+  /* the 16 px icon (space-4) and the line's gap */
+  padding-inline-start: calc(var(--space-4) + var(--space-2));
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
