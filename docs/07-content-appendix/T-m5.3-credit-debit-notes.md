@@ -84,7 +84,7 @@ _Drafted by the lead on 2026-10-27 from approved facts:
 | ims_not_pending | "The client's IMS response is already recorded." |
 | annual_return_future | "The filing date can't be in the future." |
 | credit_amount_unfit | "Because of rounding, the nearest amount this credit note can be is {closest}. Use that amount instead?" · button "Use {closest}" |
-| credit_shape_mismatch | "The credit note no longer matches its invoice. Delete the draft and start again." |
+| credit_shape_mismatch | "This credit note doesn't match its invoice any more. Start again from the invoice." |
 | Staff, notes | "Request issue" (as 07-R §3) · bell to the owner: "{requester} asked you to issue a {credit/debit} note for {client name}." · requester, approved: "Your {credit/debit} note for {client name} was issued as {number}." · rejected: "Your request to issue the {credit/debit} note for {client name} was rejected." |
 | Approval emails, notes | subject "{Credit/Debit} note issue requested for {client name}" · body "{requester} asked you to issue a draft {credit/debit} note for {client name}, total {total}, against invoice {invoice number}. Open the approvals queue to issue or reject it." · decided as 07-R §3 with "{credit/debit} note" |
 | Refund due line (invoice view) | "Refund due to the client: {amount}. Refunds are recorded with payments." |
