@@ -103,6 +103,41 @@ export function warmConsumers(): number {
       opts,
     );
     rendered++;
+    // M5.4: an invoice email, a payment reminder and an owners' alert, so the billing layouts are compiled before the first `invoice.send`,
+    // `reminder.send` or `alerts.daily` message (the keys are core's `INVOICE_EMAIL_DATA`; the values are made up).
+    const doc = {
+      first_name: "Warm",
+      number: "TH/INV/2627/0001",
+      issue_date: "5 Nov 2026",
+      due_date: "12 Nov 2026",
+      total: "₹23,600.00",
+      balance: "₹23,600.00",
+      url: "https://warm-up.invalid/i#t=x",
+      attached: "1",
+      parent_number: "",
+      sender_name: "Warm",
+    };
+    renderEmail("invoice.sent", doc, opts);
+    rendered++;
+    renderEmail(
+      "reminder.sent",
+      { ...doc, attached: "", offset_days: "3", when: "after", kind: "invoice" },
+      opts,
+    );
+    rendered++;
+    renderEmail(
+      "alert.unbilled",
+      {
+        owner_first_name: "Warm",
+        client_name: "Warm",
+        admin_url: "https://warm-up.invalid/",
+        milestone_title: "Warm",
+        delivered_date: "1 Oct 2026",
+        days_since: "25",
+      },
+      opts,
+    );
+    rendered++;
     // the user-agent reader the staff alerts use (compiles its patterns on first match)
     describeUserAgent(
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
