@@ -109,6 +109,42 @@ describe("golden CSVs", () => {
     expect(hasBareLineBreak(csv)).toBe(false);
     await expect(csv).toMatchFileSnapshot("./__snapshots__/statement-v1.csv");
   });
+
+  it("a {number} in a kind label is the invoice the credit note is against; labels without it are unchanged", () => {
+    const rows = [
+      {
+        id: "c1",
+        kind: "credit_note",
+        date: "2026-10-20",
+        number: "CN1",
+        amountMinor: 500,
+        againstNumber: "INV9",
+      },
+      { id: "i1", kind: "tax_invoice", date: "2026-10-21", number: "INV10", amountMinor: 900 },
+    ] as const;
+    const s = statementEntries(rows, 0);
+    if (!s.ok) throw new Error("statement");
+    const labels: StatementLabels = {
+      ...LABELS,
+      kinds: { ...LABELS.kinds, credit_note: "Credit note against {number}" },
+    };
+    const out = unwrap(
+      statementCsvRows({
+        from: "2026-10-01",
+        to: "2026-10-31",
+        openingMinor: 0,
+        closingMinor: s.closingMinor,
+        entries: s.entries,
+        labels,
+      }),
+    );
+    expect(out.map((r) => r.details)).toEqual([
+      "Opening (test label)",
+      "Credit note against INV9",
+      "Invoice (test label)",
+      "Closing (test label)",
+    ]);
+  });
 });
 
 describe("text is defused, numbers are not", () => {

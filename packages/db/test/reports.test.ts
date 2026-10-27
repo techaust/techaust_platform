@@ -6,6 +6,7 @@ import type { ComputedDocument, LineInput } from "@techaust/core/tax";
 import { describe, expect, it } from "vitest";
 import { goldenDocuments } from "../../core/test/tax/golden-cases.ts";
 import {
+  EDF_COUNT_SQL,
   EDF_MONTH_SQL,
   EXPORT_NEXT_SQL,
   EXPORT_STAGE_COUNTS_SQL,
@@ -22,6 +23,7 @@ import {
   realisationScanBinds,
   STATEMENT_BALANCE_BEFORE_SQL,
   STATEMENT_COUNT_SQL,
+  STATEMENT_ENTRIES_SQL,
   STATEMENT_LEDGER_SQL,
   STATEMENT_PAGE_SQL,
   STATEMENT_TOTALS_SQL,
@@ -90,7 +92,7 @@ describe("EXPLAIN: every report statement uses an index", () => {
       [
         REALISATION_SCAN_SQL(false),
         [
-          ...realisationScanBinds("2027-08-01", {
+          ...realisationScanBinds("2028-03-01", {
             femaMonthsForeign: 9,
             femaMonthsInr: 12,
             gstMonths: 12,
@@ -103,14 +105,14 @@ describe("EXPLAIN: every report statement uses an index", () => {
         REALISATION_SCAN_SQL(true),
         [
           ...realisationScanBinds(
-            "2027-08-01",
+            "2028-03-01",
             { femaMonthsForeign: 9, femaMonthsInr: 12, gstMonths: 12, gstExtraDays: 15, approachingDays: 30 },
             { d: "2026-10-05", id: "x" },
           ),
         ],
       ],
-      [EXPORT_STAGE_COUNTS_SQL, ["2027-08-01"]],
-      [EXPORT_NEXT_SQL, ["2027-08-01"]],
+      [EXPORT_STAGE_COUNTS_SQL, ["2028-03-01"]],
+      [EXPORT_NEXT_SQL, ["2028-03-01"]],
     ] as const) {
       const p = await plan(sql, ...binds);
       expect(p).toMatch(/USING INDEX documents_export_issued/);
@@ -128,12 +130,12 @@ describe("EXPLAIN: every report statement uses an index", () => {
     };
     const edf = await plan(EDF_MONTH_SQL(false), "2026-10-01", "2026-10-31");
     expect(edf).toMatch(/SEARCH d USING INDEX documents_export_issued \(issue_date>\? AND issue_date<\?\)/);
-    const scan = await plan(REALISATION_SCAN_SQL(false), ...realisationScanBinds("2027-08-01", rules));
+    const scan = await plan(REALISATION_SCAN_SQL(false), ...realisationScanBinds("2028-03-01", rules));
     expect(scan).toMatch(/SEARCH d USING INDEX documents_export_issued \(issue_date<\?\)/);
     for (const [sql, binds] of [
       [REALISATION_PAGE_SQL("open", false), []],
-      [EXPORT_STAGE_COUNTS_SQL, ["2027-08-01"]],
-      [EXPORT_NEXT_SQL, ["2027-08-01"]],
+      [EXPORT_STAGE_COUNTS_SQL, ["2028-03-01"]],
+      [EXPORT_NEXT_SQL, ["2028-03-01"]],
     ] as const) {
       expect(await plan(sql, ...binds)).toMatch(/SCAN d USING INDEX documents_export_issued/);
     }
@@ -548,6 +550,56 @@ describe("the SQL rates are a twin of core's registerRatesOf", () => {
       }
     }
     expect(refused).toBeLessThan(documents.length / 4);
+  });
+});
+
+describe("the statement lines carry the number of the invoice a credit note is against, and the PDF read is the same lines", () => {
+  it("parent only for a credit note; STATEMENT_ENTRIES_SQL(limit) gives the same order and stops at the limit", async () => {
+    const c = await mkReportClient("INR");
+    const inv = await addDoc({ clientId: c, issueDate: "2026-09-02", lines: [line(100_00)] });
+    const dn = await addDoc({
+      type: "debit_note",
+      clientId: c,
+      issueDate: "2026-09-03",
+      parentId: inv.id,
+      lines: [line(10_00)],
+    });
+    const cn = await addDoc({
+      type: "credit_note",
+      clientId: c,
+      issueDate: "2026-09-03",
+      parentId: inv.id,
+      lines: [line(20_00)],
+    });
+    const binds = statementPageBinds(c, "INR", "2026-09-01", "2026-09-30");
+    const page = await all<{ id: string; kind: string; parent: string | null }>(
+      STATEMENT_PAGE_SQL(false),
+      ...binds,
+    );
+    expect(page.map((r) => [r.id, r.kind, r.parent])).toEqual([
+      [inv.id, "tax_invoice", null],
+      [dn.id, "debit_note", null],
+      [cn.id, "credit_note", inv.number],
+    ]);
+    const all3 = await all<{ id: string; parent: string | null }>(STATEMENT_ENTRIES_SQL(201), ...binds);
+    expect(all3.map((r) => r.id)).toEqual(page.map((r) => r.id));
+    expect(all3.at(-1)?.parent).toBe(inv.number);
+    expect(await all(STATEMENT_ENTRIES_SQL(2), ...binds)).toHaveLength(2);
+    const p = await plan(STATEMENT_ENTRIES_SQL(201), ...binds);
+    expect(p).toMatch(/SEARCH d USING INDEX documents_client_issued/);
+    expect(scansTable(p), p).toBe(false);
+  });
+
+  it("the EDF count is the month's non-voided exports", async () => {
+    const u = await mkReportClient("USD");
+    await addDoc({ clientId: u, currency: "USD", issueDate: "2028-02-02" });
+    await addDoc({ clientId: u, currency: "USD", issueDate: "2028-02-29" });
+    await addDoc({ clientId: u, currency: "USD", issueDate: "2028-02-15", voided: true });
+    await addDoc({ clientId: u, currency: "USD", issueDate: "2028-03-01" });
+    await addDoc({ clientId: await mkReportClient("INR"), issueDate: "2028-02-10" });
+    const n = await first<{ n: number }>(EDF_COUNT_SQL, "2028-02-01", "2028-02-29");
+    expect(n?.n).toBe(2);
+    expect(await plan(EDF_COUNT_SQL, "2028-02-01", "2028-02-29")).toMatch(/documents_export_issued/);
   });
 });
 

@@ -38,7 +38,15 @@ export const statementQuery = z.object({
   after: z.optional(z.string().check(z.maxLength(400))),
 });
 
-type LineRow = { id: string; kind: string; date: string; number: string; amount: number; sk: string };
+type LineRow = {
+  id: string;
+  kind: string;
+  date: string;
+  number: string;
+  amount: number;
+  sk: string;
+  parent: string | null;
+};
 
 const asRow = (r: LineRow): StatementRow => ({
   id: r.id,
@@ -46,6 +54,7 @@ const asRow = (r: LineRow): StatementRow => ({
   date: r.date,
   number: r.number,
   amountMinor: r.amount,
+  againstNumber: r.parent,
 });
 
 export const statements = new Hono<AppEnv>().get(

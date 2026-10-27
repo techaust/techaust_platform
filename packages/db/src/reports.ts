@@ -125,7 +125,7 @@ export const REALISATION_PAGE_SQL = (show: "open" | "all", after: boolean): stri
 export const REALISATION_SCAN_SQL = (after: boolean): string => {
   const p: RealisationSql = SCAN_BINDS;
   return `SELECT d.id, d.number_display, d.issue_date, d.currency, d.supply_type, d.balance_minor, d.client_id, c.code AS client_code,
-       json_extract(d.recipient, '$.legalName') AS client_name,
+       json_extract(d.recipient, '$.legalName') AS client_name, c.anonymised_at AS client_anonymised,
        ${femaDueSql("d", p)} AS fema_due, ${gstDueSql("d", p)} AS gst_due, ${stageSql("d", p)} AS stage
    FROM documents d INDEXED BY documents_export_issued JOIN clients c ON c.id = d.client_id
    WHERE ${ISSUED_EXPORT} AND d.voided_at IS NULL AND d.balance_minor > 0
@@ -134,8 +134,11 @@ export const REALISATION_SCAN_SQL = (after: boolean): string => {
    ORDER BY d.issue_date, d.id LIMIT ${REPORT_PAGE_SIZE + 1}`;
 };
 
-/**
- * The bells already rung for a set of export invoices (`?1` a JSON array of ids) for the four stage kinds, by owner: the scan rings only what is missing. The
+/** How many exports the invoice month has for the EDF reminder (`?1` first day, `?2` last day): not voided, the same rows as `EDF_MONTH_SQL`. */
+export const EDF_COUNT_SQL = `SELECT count(*) AS n FROM documents d INDEXED BY documents_export_issued
+   WHERE ${ISSUED_EXPORT} AND d.voided_at IS NULL AND d.issue_date >= ?1 AND d.issue_date <= ?2`;
+
+/** The bells already rung for a set of export invoices (`?1` a JSON array of ids) for the four stage kinds, by owner: the scan rings only what is missing. The
  * entity type is in the filter so the lookup is a seek on `notifications_entity (entity_type, entity_id)`.
  */
 export const REALISATION_BELLS_SQL = `SELECT n.user_id, n.kind, n.entity_id FROM notifications n
@@ -151,13 +154,13 @@ const DEBIT_KINDS = "('tax_invoice', 'export_invoice', 'debit_note')";
  * paid). `ord` orders one day: 1 a debit document, 2 a credit note, 3 a receipt; `sk` is `date|ord`, the keyset key with `id`. Proformas are not here
  * (LD78: not a tax document; their payment shows through the tax invoice). `cond` is a SQL fragment over a date expression, e.g. `x BETWEEN ?3 AND ?4`.
  */
-const statementSource = (cond: (dateExpr: string) => string): string =>
+const statementSource = (cond: (dateExpr: string) => string, withParent = false): string =>
   `(SELECT d.id AS id, d.type AS kind, d.issue_date AS date, CASE d.type WHEN 'credit_note' THEN 2 ELSE 1 END AS ord, d.number_display AS number, d.total_minor AS amount,
-           d.issue_date || '|' || CASE d.type WHEN 'credit_note' THEN 2 ELSE 1 END AS sk
+           d.issue_date || '|' || CASE d.type WHEN 'credit_note' THEN 2 ELSE 1 END AS sk${withParent ? ", CASE d.type WHEN 'credit_note' THEN (SELECT p.number_display FROM documents p WHERE p.id = d.parent_id) END AS parent" : ""}
       FROM documents d INDEXED BY documents_client_issued
       WHERE d.frozen_at IS NOT NULL AND d.type IN ${GST_TYPES} AND d.client_id = ?1 AND d.currency = ?2 AND d.voided_at IS NULL AND d.status <> 'void' AND ${cond("d.issue_date")}
     UNION ALL
-    SELECT r.id, 'receipt', r.received_on, 3, inv.number_display, r.amount_minor, r.received_on || '|3'
+    SELECT r.id, 'receipt', r.received_on, 3, inv.number_display, r.amount_minor, r.received_on || '|3'${withParent ? ", NULL" : ""}
       FROM advance_receipts r INDEXED BY advance_receipts_client_received JOIN documents inv ON inv.id = r.invoice_id
       WHERE r.client_id = ?1 AND r.currency = ?2 AND ${cond("r.received_on")}) u`;
 
@@ -166,7 +169,7 @@ const statementSource = (cond: (dateExpr: string) => string): string =>
  * At most 51 rows, oldest first.
  */
 export const STATEMENT_PAGE_SQL = (after: boolean): string =>
-  `SELECT u.id, u.kind, u.date, u.number, u.amount, u.sk FROM ${statementSource((x) => `${x} >= ?3 AND ${x} <= ?4`)}
+  `SELECT u.id, u.kind, u.date, u.number, u.amount, u.sk, u.parent FROM ${statementSource((x) => `${x} >= ?3 AND ${x} <= ?4`, true)}
    ${after ? "WHERE (u.sk > ?5 OR (u.sk = ?5 AND u.id > ?6))" : ""}
    ORDER BY u.sk, u.id LIMIT ${REPORT_PAGE_SIZE + 1}`;
 
@@ -180,6 +183,14 @@ export const STATEMENT_BALANCE_BEFORE_SQL = (after: boolean): string =>
        FROM ${statementSource(() => "1 = 1")} WHERE (u.sk < ?5 OR (u.sk = ?5 AND u.id <= ?6))`
     : `SELECT coalesce(sum(CASE WHEN u.kind IN ${DEBIT_KINDS} THEN u.amount ELSE -u.amount END), 0) AS balance
        FROM ${statementSource((x) => `${x} < ?3`)}`;
+
+/**
+ * Every line of a range for the statement PDF (`?1` client, `?2` currency, `?3` and `?4` the range), oldest first, at most `limit` rows (the caller passes the PDF's
+ * maximum plus one, so a longer statement is told apart from one that exactly fits). The same lines, order and parent numbers as the pages.
+ */
+export const STATEMENT_ENTRIES_SQL = (limit: number): string =>
+  `SELECT u.id, u.kind, u.date, u.number, u.amount, u.sk, u.parent FROM ${statementSource((x) => `${x} >= ?3 AND ${x} <= ?4`, true)}
+   ORDER BY u.sk, u.id LIMIT ${Math.trunc(limit)}`;
 
 /** The range's debits, credits and number of lines (`?1` client, `?2` currency, `?3` and `?4` the range). */
 export const STATEMENT_TOTALS_SQL = `SELECT coalesce(sum(CASE WHEN u.kind IN ${DEBIT_KINDS} THEN u.amount END), 0) AS debit,

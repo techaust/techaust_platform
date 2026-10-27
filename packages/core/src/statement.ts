@@ -25,6 +25,8 @@ export type StatementRow = {
   /** The document's printed number (a receipt shows the number of the invoice it paid). */
   readonly number: string;
   readonly amountMinor: number;
+  /** A credit note: the number of the invoice it is against (07-V "Credit note against {number}"); null or absent for every other kind. */
+  readonly againstNumber?: string | null;
 };
 
 export type StatementEntry = StatementRow & {

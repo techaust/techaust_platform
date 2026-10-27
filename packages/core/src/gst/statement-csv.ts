@@ -81,7 +81,8 @@ export function statementCsvRows(input: StatementCsvInput): GstResult<readonly S
       rows.push({
         date: date as CalendarDate,
         document: e.number,
-        details: input.labels.kinds[e.kind],
+        // 07-V: "Credit note against {number}": the placeholder is filled with the invoice the note is against
+        details: input.labels.kinds[e.kind].replaceAll("{number}", e.againstNumber ?? ""),
         debitMinor: e.debitMinor === 0 ? null : e.debitMinor,
         creditMinor: e.creditMinor === 0 ? null : e.creditMinor,
         balanceMinor: e.balanceMinor,
