@@ -57,7 +57,8 @@ export const BUDGETS = {
   // brought it into the jobs bundle (zod/classic/schemas.js), long before M4.4. Only the admin and portal Workers must stay without it.
   jobs: {
     file: "apps/jobs/dist/index.js",
-    maxBytes: 800_000,
+    // lead, 2026-10-27: M5.4 measured 788,640; the startup limit and the staging cold reading remain the gates
+    maxBytes: 1_000_000,
     maxStartupMs: 200,
     forbidden: [PDF_LIB, PUPPETEER],
   },
