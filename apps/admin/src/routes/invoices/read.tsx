@@ -177,7 +177,9 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
                 {NOTE_COPY.finalStatement}
               </p>
             ) : (
-              <p>{frozenBanner(v.issueDate ? (dayText(v.issueDate) ?? v.issueDate) : "", issuedBy(v), v.type)}</p>
+              <p>
+                {frozenBanner(v.issueDate ? (dayText(v.issueDate) ?? v.issueDate) : "", issuedBy(v), v.type)}
+              </p>
             )}
             {voidWhy && <p className="inv-lock__why">{voidWhy}</p>}
           </div>

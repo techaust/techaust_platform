@@ -1011,7 +1011,9 @@ const strings = (xs: unknown[]): string[] => xs.filter((x): x is string => typeo
 
 /** The blockers of a 409 `issue_blocked`: the code, and the line, amount, year or date its sentence names (M5.2: `lut_missing` has `fy`,
  * `fx_missing` `date`; M5.3: a note's `remaining` and `date`). */
-const blockersOf = (xs: unknown[]): { code: string; line?: number; remaining?: number; fy?: string; date?: string }[] =>
+const blockersOf = (
+  xs: unknown[],
+): { code: string; line?: number; remaining?: number; fy?: string; date?: string }[] =>
   xs.flatMap((x) => {
     if (typeof x !== "object" || x === null || typeof (x as { code?: unknown }).code !== "string") return [];
     const b = x as { code: string; line?: unknown; remaining?: unknown; fy?: unknown; date?: unknown };
