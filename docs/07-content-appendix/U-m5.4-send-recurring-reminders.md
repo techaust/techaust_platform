@@ -8,7 +8,7 @@ _Drafted by the lead on 2026-10-27 from approved facts:
 
 **PENDING the owner's word-for-word approval** (batch rule). Sections 1–3 are client-facing. The rest is staff-facing. `{…}` is filled by the system. **Every tax and legal line is VERIFY WITH CA/LEGAL.** Anything still missing is `[Placeholder]`.
 
-**Rules used:** client emails come from billing@ with Reply-To contact@; the button is "View invoice" (Q13; "View and pay" from M6/M7.1); until M6 the only payment method is bank transfer; "and", never "&"; no threats, no urgency words._
+**Rules used:** client emails come from billing@ with Reply-To billing@ (LD65); the button is "View invoice" (Q13; "View and pay" from M6/M7.1); until M6 the only payment method is bank transfer; "and", never "&"; no threats, no urgency words._
 
 ## 1. Document emails (client-facing, from billing@)
 Each body has two forms: **attached** (the PDF is attached) and **link only** (no attachment: the client's setting, or the PDF is too large). Only the last sentence changes.
