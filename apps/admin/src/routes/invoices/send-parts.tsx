@@ -3,14 +3,25 @@
 // reminders as a schedule around the due date with pause and resume. On a care invoice: the plan and the period it bills, and on a draft why the system
 // didn't issue it by itself (ADM-CARE-02, Q43). Everything shown is the API's (GET /invoices/:id, GET /clients/:id); the words are 07-U's, marked until
 // the owner approves them (lib/invoice-send.ts).
-import { type FormEvent, useEffect, useId, useState } from "react";
+import { type FormEvent, type RefObject, useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router";
 import { api, type ContactView, RequestError } from "../../api.ts";
 import { ConfirmDialog } from "../../components/confirm-dialog.tsx";
 import { Modal } from "../../components/dialog.tsx";
 import { StatusPill } from "../../components/display.tsx";
 import { Switch } from "../../components/form.tsx";
-import { Alert, Check, Clock, LifeBuoy, Lock, Mail, Pause, Play, Send } from "../../components/icons.tsx";
+import {
+  Alert,
+  Check,
+  Clock,
+  FileText,
+  LifeBuoy,
+  Lock,
+  Mail,
+  Pause,
+  Play,
+  Send,
+} from "../../components/icons.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { FieldError, Notice } from "../../components/ui.tsx";
 import {
@@ -18,6 +29,7 @@ import {
   CARE_COPY,
   draftedBecause,
   hasReminders,
+  invoiceRecipientChoices,
   MAX_RECIPIENTS,
   periodText,
   previewBody,
@@ -29,6 +41,7 @@ import {
   reminderDayLabel,
   reminderState,
   reminderStateText,
+  remindersOf,
   SEND_COPY,
   sendErrorText,
   sendMapped,
@@ -38,7 +51,6 @@ import {
   sendWhen,
 } from "../../lib/invoice-send.ts";
 import { type InvoiceM54, type InvoiceView, invoicesApi, type SendResult } from "../../lib/invoices-api.ts";
-import { recipientChoices } from "../../lib/offers.ts";
 
 export type SendableView = InvoiceView &
   InvoiceM54 & {
@@ -79,7 +91,7 @@ export function InvoiceSendDialog(props: {
     api.client(clientId).then(
       (page) => {
         if (!alive) return;
-        const { ticked } = recipientChoices(page.contacts);
+        const { ticked } = invoiceRecipientChoices(page.contacts);
         const attachDefault = page.client.attachPdf === true;
         setPicked(new Set(ticked));
         setAttach(attachDefault);
@@ -92,8 +104,10 @@ export function InvoiceSendDialog(props: {
     };
   }, [open, clientId]);
 
-  const choices = loaded.state === "ready" ? recipientChoices(loaded.contacts).choices : [];
-  const noneCan = loaded.state === "ready" && !choices.some((c) => c.portalAccess);
+  const choices = loaded.state === "ready" ? invoiceRecipientChoices(loaded.contacts).choices : [];
+  const noneCan = loaded.state === "ready" && !choices.some((c) => c.block === null);
+  // H1: some have portal access but none can see finance: say what to turn on (not "no portal access").
+  const noneWithFinance = noneCan && choices.some((c) => c.block === "no_finance");
   const firstPicked = choices.find((c) => picked.has(c.id));
   const firstName = firstPicked ? (firstPicked.name.trim().split(/\s+/)[0] ?? "") : "";
   const facts = previewFacts({
@@ -153,7 +167,7 @@ export function InvoiceSendDialog(props: {
           {loaded.state === "failed" && <Notice tone="error">{sendErrorText(loaded.error, v.type)}</Notice>}
           {noneCan && (
             <Notice tone="info">
-              {SEND_COPY.noneWithPortal}{" "}
+              {noneWithFinance ? SEND_COPY.noneWithFinance : SEND_COPY.noneWithPortal}{" "}
               <Link to={`/clients/${encodeURIComponent(clientId)}?tab=contacts`} onClick={props.onClose}>
                 {SEND_COPY.contactsTab}
               </Link>
@@ -173,15 +187,19 @@ export function InvoiceSendDialog(props: {
                   const bad = invalid.has(c.id);
                   // At most five: once five are ticked, the others wait (the server refuses a sixth).
                   const full = picked.size >= MAX_RECIPIENTS && !picked.has(c.id);
+                  const why = `${groupId}-why-${i}`;
+                  const described = [c.block ? why : "", bad ? `${groupId}-bad-${i}` : ""]
+                    .filter(Boolean)
+                    .join(" ");
                   return (
-                    <label key={c.id} className={`check sendd__contact${c.portalAccess ? "" : " is-off"}`}>
+                    <label key={c.id} className={`check sendd__contact${c.block ? " is-off" : ""}`}>
                       <input
                         id={`${groupId}-${i}`}
                         type="checkbox"
                         checked={picked.has(c.id)}
-                        disabled={!c.portalAccess || busy || full}
+                        disabled={c.block !== null || busy || full}
                         aria-invalid={bad || undefined}
-                        aria-describedby={bad ? `${groupId}-bad-${i}` : undefined}
+                        aria-describedby={described || undefined}
                         onChange={(e) => {
                           const next = new Set(picked);
                           if (e.target.checked) next.add(c.id);
@@ -193,7 +211,11 @@ export function InvoiceSendDialog(props: {
                       <span>
                         <span className="sendd__name">{c.name}</span>
                         <span className="sendd__meta">{c.email}</span>
-                        {!c.portalAccess && <span className="sendd__meta">{SEND_COPY.noPortal}</span>}
+                        {c.block && (
+                          <span className="sendd__meta sendd__why" id={why}>
+                            {c.block === "no_portal" ? SEND_COPY.noPortal : SEND_COPY.noFinance}
+                          </span>
+                        )}
                         {bad && (
                           <span className="sendd__bad" id={`${groupId}-bad-${i}`}>
                             {sendErrorText(new RequestError(409, "recipient_invalid", ""), v.type)}
@@ -271,6 +293,26 @@ export function InvoiceSendDialog(props: {
 
 const PILL_ICON = { clock: "clock", send: "send", check: "check", ban: "ban" } as const;
 
+/**
+ * H2 (WCAG 2.4.3): an action that swaps or removes the control that had focus (Pause becomes Resume, Revoke goes) moves focus to what replaced it, or
+ * to the panel's heading, once the page has the new view. `focusNext` is called before the reload; the pick runs when `view` changes.
+ */
+function useFocusAfterReload(view: unknown) {
+  const pending = useRef<(() => HTMLElement | null) | null>(null);
+  useEffect(() => {
+    const pick = pending.current;
+    if (!pick || view === undefined) return;
+    pending.current = null;
+    pick()?.focus();
+  }, [view]);
+  return (pick: () => HTMLElement | null) => {
+    pending.current = pick;
+  };
+}
+
+/** The connected element, else null (a control the new view no longer draws). */
+const connected = <E extends HTMLElement>(el: E | null): E | null => (el?.isConnected ? el : null);
+
 /** The emails of the document (newest first) with "Email to client" (first time) or "Email again", and "Revoke links". */
 export function EmailsPanel(props: {
   view: SendableView;
@@ -280,19 +322,27 @@ export function EmailsPanel(props: {
   showLock: boolean;
   onEmail: () => void;
   onRevoked: () => void;
+  /** The "Email to client" / "Email again" button, so the page can give it focus back when the send dialog closes (H2). */
+  emailRef?: RefObject<HTMLButtonElement | null> | undefined;
 }) {
   const { view: v } = props;
   const toast = useToast();
   const [revoking, setRevoking] = useState(false);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const revokeRef = useRef<HTMLButtonElement>(null);
+  const focusNext = useFocusAfterReload(v);
   const rows = v.sends ?? [];
   const live = v.links?.live ?? 0;
   const waiting = rows.some((r) => r.cancelledAt === null && r.queuedAt === null);
+  // L1: a row not queued yet waits for the PDF; one queued but not sent yet is "Queued".
+  const queued = rows.some((r) => r.cancelledAt === null && r.queuedAt !== null && sendState(r) === "queued");
+  const pauses = hasReminders(v.type);
   // The void lock line (Q1): an emailed tax, export or proforma invoice can't be voided any more. A note is never voided anyway.
   const lockable = v.type === "tax_invoice" || v.type === "export_invoice" || v.type === "proforma";
   const emailed = rows.some((r) => r.cancelledAt === null);
   return (
     <section className="lead-panel inv-mail" aria-labelledby="inv-mail-h">
-      <h2 id="inv-mail-h" className="lead-panel__title inv-mail__title">
+      <h2 id="inv-mail-h" className="lead-panel__title inv-mail__title" ref={headingRef} tabIndex={-1}>
         <Mail size={20} />
         {SEND_COPY.emailsHeading}
       </h2>
@@ -344,6 +394,12 @@ export function EmailsPanel(props: {
       )}
       {waiting && (
         <p className="approval-line" data-state="pending">
+          <FileText size={16} />
+          <span>{SEND_COPY.waitingForPdf}</span>
+        </p>
+      )}
+      {!waiting && queued && (
+        <p className="approval-line" data-state="pending">
           <Clock size={16} />
           <span>{SEND_COPY.queued}</span>
         </p>
@@ -358,6 +414,7 @@ export function EmailsPanel(props: {
         <div className="send-panel__actions">
           <button
             type="button"
+            ref={props.emailRef}
             className={`btn ${rows.length === 0 ? "btn--primary" : "btn--secondary"} btn--block`}
             onClick={props.onEmail}
           >
@@ -365,7 +422,12 @@ export function EmailsPanel(props: {
             {rows.length === 0 ? SEND_COPY.emailToClient : SEND_COPY.emailAgain}
           </button>
           {(live > 0 || waiting) && (
-            <button type="button" className="btn btn--text btn--block" onClick={() => setRevoking(true)}>
+            <button
+              type="button"
+              ref={revokeRef}
+              className="btn btn--text btn--block"
+              onClick={() => setRevoking(true)}
+            >
               {SEND_COPY.revoke}
             </button>
           )}
@@ -382,6 +444,8 @@ export function EmailsPanel(props: {
             await invoicesApi.revokeLinks(v.id);
             setRevoking(false);
             toast("success", SEND_COPY.revoked);
+            // "Revoke links" goes once no link is live: focus to the panel's heading (the button, if a send still waits).
+            focusNext(() => connected(revokeRef.current) ?? headingRef.current);
             props.onRevoked();
             return undefined;
           } catch (e) {
@@ -390,6 +454,7 @@ export function EmailsPanel(props: {
         }}
       >
         <p>{SEND_COPY.revokeBody(v.type)}</p>
+        {pauses && <p>{SEND_COPY.revokePauses}</p>}
       </ConfirmDialog>
     </section>
   );
@@ -406,13 +471,19 @@ export function RemindersPanel(props: {
   onChanged: () => void;
 }) {
   const { view: v } = props;
+  const toast = useToast();
   const [busy, setBusy] = useState<"pause" | "resume" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const pauseRef = useRef<HTMLButtonElement>(null);
+  const resumeRef = useRef<HTMLButtonElement>(null);
+  const focusNext = useFocusAfterReload(v);
   if (!hasReminders(v.type)) return null;
-  const r = v.reminders ?? { started: false, paused: false, rows: [] };
+  const now = Date.now();
+  // M2: a reminder whose day passed while paused is "missed while paused", and the banner shows only while a paused one is still ahead.
+  const r = remindersOf(v.reminders, now);
   const rows: ReminderRowView[] = r.rows;
-  const acts = reminderActions(rows, Date.now());
-  const pausedNow = rows.some((x) => x.skippedReason === "paused");
+  const acts = reminderActions(rows, now);
 
   async function act(kind: "pause" | "resume") {
     setBusy(kind);
@@ -420,6 +491,10 @@ export function RemindersPanel(props: {
     try {
       if (kind === "pause") await invoicesApi.pauseReminders(v.id);
       else await invoicesApi.resumeReminders(v.id);
+      toast("success", kind === "pause" ? REMINDER_COPY.pausedDone : REMINDER_COPY.resumedDone);
+      // H2: Pause becomes Resume and the other way round; with neither left, the panel's heading.
+      const other = kind === "pause" ? resumeRef : pauseRef;
+      focusNext(() => connected(other.current) ?? headingRef.current);
       props.onChanged();
     } catch (e) {
       setError(sendErrorText(e, v.type));
@@ -430,7 +505,7 @@ export function RemindersPanel(props: {
 
   return (
     <section className="lead-panel inv-remind" aria-labelledby="inv-remind-h">
-      <h2 id="inv-remind-h" className="lead-panel__title inv-mail__title">
+      <h2 id="inv-remind-h" className="lead-panel__title inv-mail__title" ref={headingRef} tabIndex={-1}>
         <Clock size={20} />
         {REMINDER_COPY.heading}
       </h2>
@@ -438,7 +513,7 @@ export function RemindersPanel(props: {
         <p className="muted inv-remind__empty">{REMINDER_COPY.notStarted(v.type)}</p>
       ) : (
         <>
-          {(pausedNow || props.offerResume) && (
+          {(r.paused || (props.offerResume && acts.canResume)) && (
             <p className="approval-line" data-state="pending" role={props.offerResume ? "status" : undefined}>
               <Pause size={16} />
               <span>{REMINDER_COPY.paused}</span>
@@ -464,7 +539,9 @@ export function RemindersPanel(props: {
               );
             })}
           </ol>
-          <p className="hint inv-remind__window">{REMINDER_COPY.window}</p>
+          {r.window && (
+            <p className="hint inv-remind__window">{REMINDER_COPY.window(r.window.from, r.window.to)}</p>
+          )}
         </>
       )}
       {error && (
@@ -478,6 +555,7 @@ export function RemindersPanel(props: {
           {acts.canResume && (
             <button
               type="button"
+              ref={resumeRef}
               className={`btn ${props.offerResume ? "btn--primary" : "btn--secondary"} btn--block`}
               onClick={() => act("resume")}
               disabled={busy !== null}
@@ -490,6 +568,7 @@ export function RemindersPanel(props: {
           {acts.canPause && (
             <button
               type="button"
+              ref={pauseRef}
               className="btn btn--secondary btn--block"
               onClick={() => act("pause")}
               disabled={busy !== null}
@@ -534,4 +613,5 @@ export function CareOrigin(props: { care: NonNullable<InvoiceM54["care"]>; canOp
 }
 
 /** The words of a finished send, for the toast: queued while the PDF is made, else sent to n contacts. */
-export const sentToast = (r: SendResult) => (r.waitingForPdf ? SEND_COPY.queued : SEND_COPY.sent(r.sends));
+export const sentToast = (r: SendResult) =>
+  r.waitingForPdf ? SEND_COPY.waitingForPdf : SEND_COPY.sent(r.sends);

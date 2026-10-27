@@ -278,7 +278,11 @@ function PeriodCard({ usage: u, data }: { usage: CareUsage | null; data: CarePla
         <p className="hint">{CARE_COPY.beforeGst}</p>
         <p className="panel-empty">
           <Receipt size={20} />
-          <span>{CARE_COPY.addToInvoice}</span>
+          <span>
+            {data.overage?.addToInvoice?.available === true
+              ? CARE_COPY.addToNextDraft
+              : CARE_COPY.addToInvoice}
+          </span>
         </p>
       </div>
     </section>

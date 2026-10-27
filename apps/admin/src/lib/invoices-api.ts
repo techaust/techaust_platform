@@ -285,7 +285,16 @@ export type InvoiceReminderRow = {
 export type InvoiceM54 = {
   sends?: InvoiceSendRow[];
   links?: { live: number };
-  reminders?: { started: boolean; paused: boolean; rows: InvoiceReminderRow[] };
+  /**
+   * `paused`: a paused reminder is still ahead (a paused one whose day passed comes as `skippedReason: "missed_while_paused"`); `window`: the hours
+   * reminders go out, IST, from Settings > Payment terms (absent from an older API).
+   */
+  reminders?: {
+    started: boolean;
+    paused: boolean;
+    rows: InvoiceReminderRow[];
+    window?: { from: string; to: string } | null;
+  };
   /** A care invoice: the plan and the period it bills; on a draft, whether the system will issue it and why not. */
   care?: {
     planId: string;
@@ -305,7 +314,10 @@ export function sendActionOf(v: unknown): { allowed: boolean; reasons: string[] 
   return { allowed: a.allowed, reasons: Array.isArray(a.reasons) ? (a.reasons as string[]) : [] };
 }
 
-/** POST /invoices/:id/send. `remindersPaused`: the links were revoked (or the reminders paused) before, and this send doesn't resume them. */
+/**
+ * POST /invoices/:id/send. `remindersPaused`: the links were revoked (or the reminders paused) before, a paused reminder is still ahead, and this send
+ * doesn't resume them (the view's `reminders.paused` rule).
+ */
 export type SendResult = {
   ok: true;
   kind: "send" | "resend";

@@ -61,8 +61,11 @@ export const INV = {
     "This link no longer works. Sign in to your client portal to see your invoices, or ask us for a new link at contact@techaust.com.",
   ),
   pdfNotReady: U("The PDF is still being prepared. Try again in a minute."),
-  /** The emailed link's offer to sign in: 07-U has no line for it (the M4.5 one speaks of accepting), so it is the bare placeholder until the owner gives one. */
-  signInHint: PLACEHOLDER,
+  /**
+   * The emailed link's offer to sign in: 07-U has no line for it (the M4.5 one speaks of accepting). Review L7: a proposed line instead of the bare
+   * mark, marked (the plain mark: approving 07-U alone doesn't unmark it) until the owner approves its words.
+   */
+  signInHint: `${PLACEHOLDER} Sign in to your client portal to see all your invoices and payment requests in one place.`,
   // Approved portal words.
   downloadPdf: WORDS.downloadPdf,
   showMore: PENDING.showMore,

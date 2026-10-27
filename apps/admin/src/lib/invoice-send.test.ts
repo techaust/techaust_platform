@@ -8,16 +8,19 @@ import {
   documentWord,
   draftedBecause,
   hasReminders,
+  invoiceRecipientChoices,
   PLAN_BILLING_COPY,
   planAutoLines,
   previewBody,
   previewFacts,
   previewSubject,
   REMINDER_COPY,
+  type ReminderRowView,
   reminderActions,
   reminderDayLabel,
   reminderState,
   reminderStateText,
+  remindersOf,
   SEND_COPY,
   sendErrorText,
   sendState,
@@ -41,7 +44,7 @@ describe("07-U is marked until the owner approves it", () => {
       SEND_COPY.revoke,
       SEND_COPY.queued,
       REMINDER_COPY.heading,
-      REMINDER_COPY.window,
+      REMINDER_COPY.window("09:00", "19:00"),
       CARE_COPY.toggle,
       CARE_COPY.ownerOnly,
     ])
@@ -165,6 +168,106 @@ describe("reminders [ADM-INV-13, Q47, Q48, Q50]", () => {
     expect(sendErrorText(e("send_refused"), "tax_invoice")).toBe(
       `${M}This can't be sent right now. Reload the page and try again.`,
     );
+  });
+});
+
+describe("review round: who can receive a finance document [POR-03, H1]", () => {
+  const c = (id: string, o: Partial<Parameters<typeof invoiceRecipientChoices>[0][number]> = {}) => ({
+    id,
+    portalAccess: true,
+    canSeeFinance: true as boolean | undefined,
+    isBilling: false,
+    anonymisedAt: null as number | null,
+    isPrimary: false,
+    ...o,
+  });
+  it("a contact with portal access but no finance can't be chosen, says why, and isn't ticked", () => {
+    const r = invoiceRecipientChoices([
+      c("nofin", { isBilling: true, canSeeFinance: false }),
+      c("bill", { isBilling: true }),
+      c("noportal", { portalAccess: false, isBilling: true }),
+      c("gone", { anonymisedAt: 1 }),
+    ]);
+    expect(r.choices.map((x) => [x.id, x.block])).toEqual([
+      ["bill", null],
+      ["nofin", "no_finance"],
+      ["noportal", "no_portal"],
+    ]);
+    expect(r.ticked).toEqual(["bill"]);
+  });
+  it("the primary contact when no billing contact can receive it; nobody when the primary can't see finance", () => {
+    expect(
+      invoiceRecipientChoices([
+        c("p", { isPrimary: true }),
+        c("b", { isBilling: true, canSeeFinance: false }),
+      ]).ticked,
+    ).toEqual(["p"]);
+    expect(invoiceRecipientChoices([c("p", { isPrimary: true, canSeeFinance: false })]).ticked).toEqual([]);
+  });
+  it("an older API without canSeeFinance reads as allowed (the server still checks)", () => {
+    expect(invoiceRecipientChoices([c("a", { canSeeFinance: undefined, isBilling: true })]).ticked).toEqual([
+      "a",
+    ]);
+  });
+  it("the new lines are marked and the toggle hint names Owner and Staff", () => {
+    for (const line of [
+      SEND_COPY.sendToHint,
+      SEND_COPY.noFinance,
+      SEND_COPY.noneWithFinance,
+      SEND_COPY.revokePauses,
+      SEND_COPY.waitingForPdf,
+    ])
+      expect(line.startsWith(M)).toBe(true);
+    expect(CARE_COPY.toggleHint).toContain("an owner or a staff member can turn it off");
+    expect(CARE_COPY.toggleHint).not.toContain("anyone");
+  });
+});
+
+describe("review round: reminders paused, missed and the window [M2, L2]", () => {
+  const now = Date.UTC(2026, 10, 10, 6, 0);
+  const row = (offset: number, dueAt: number, skippedReason: string | null) => ({
+    offset,
+    dueAt,
+    sentAt: null,
+    skippedReason,
+  });
+  it("a paused reminder whose day passed reads as missed while paused; the banner only while one is ahead", () => {
+    const r = remindersOf(
+      { started: true, paused: true, rows: [row(-3, now - 1, "paused"), row(0, now + 1, "paused")] },
+      now,
+    );
+    expect(r.rows.map((x) => x.skippedReason)).toEqual(["missed_while_paused", "paused"]);
+    expect(r.paused).toBe(true);
+    // After Resume: the passed one stays missed, the banner goes (also from an older API that still says paused).
+    const after = remindersOf(
+      { started: true, paused: true, rows: [row(-3, now - 1, "paused"), row(0, now + 1, null)] },
+      now,
+    );
+    expect(after.paused).toBe(false);
+    expect(reminderStateText(after.rows[0] as ReminderRowView)).toBe(
+      `${M}Skipped: missed while reminders were paused`,
+    );
+    expect(reminderState(after.rows[0] as ReminderRowView)).toBe("skipped");
+    // The new API's own word reads the same.
+    expect(
+      remindersOf({ started: true, paused: false, rows: [row(-3, now - 1, "missed_while_paused")] }, now)
+        .rows[0]?.skippedReason,
+    ).toBe("missed_while_paused");
+  });
+  it("the window comes from the view, and is left out when an older API doesn't send it", () => {
+    expect(
+      remindersOf({ started: true, paused: false, rows: [], window: { from: "10:00", to: "18:30" } }, now)
+        .window,
+    ).toEqual({ from: "10:00", to: "18:30" });
+    expect(remindersOf({ started: true, paused: false, rows: [] }, now).window).toBeNull();
+    expect(REMINDER_COPY.window("10:00", "18:30")).toBe(`${M}Reminders go out between 10:00 and 18:30 IST.`);
+    expect(remindersOf(undefined, now)).toEqual({ started: false, paused: false, rows: [], window: null });
+  });
+  it("a send not queued yet waits for the PDF [L1]", () => {
+    expect(sendState({ cancelledAt: null, emailStatus: null, queuedAt: null })).toBe("waiting");
+    expect(sendState({ cancelledAt: null, emailStatus: null, queuedAt: 5 })).toBe("queued");
+    expect(sendState({ cancelledAt: 1, emailStatus: null, queuedAt: null })).toBe("cancelled");
+    expect(sendStateLabel("waiting")).toBe(`${M}Waiting for the PDF`);
   });
 });
 
