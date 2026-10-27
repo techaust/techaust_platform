@@ -4,6 +4,7 @@
 import { env as realEnv } from "cloudflare:workers";
 import { type PdfMessage, pdfKeys } from "@techaust/core/pdf-jobs";
 import { SIGNATURE_MAX_BYTES as CORE_SIGNATURE_MAX_BYTES } from "@techaust/core/settings";
+import { toBase64 } from "@techaust/email";
 import { parseInvoiceEnvelope, serializeInvoiceEnvelope, verifyInvoiceEnvelope } from "@techaust/pdf";
 import { beforeEach, describe, expect, it } from "vitest";
 import { stubPdf } from "../src/browser.ts";
@@ -24,7 +25,7 @@ import { hexOf, PNG_BYTES, type SeededInvoice, seedIssuedInvoice } from "./pdf-i
 const T0 = Date.UTC(2026, 9, 28, 6, 0, 0);
 const GONE = "UPDATE clients SET anonymised_at = 1 WHERE id = ?";
 const integrityBell = (s: SeededInvoice) =>
-  `The PDF of ${s.numberDisplay} didn't match its saved copy, so it wasn't sent. A developer needs to look at it before it can be sent.`;
+  `The PDF of ${s.numberDisplay} didn't match its saved copy, so it wasn't made. A developer needs to look at it.`; // 07-R §3 (review 11), not 07-P's proposal line
 
 type Sent = { body: PdfMessage; delaySeconds?: number };
 const fakeQueue = () => {
@@ -283,6 +284,41 @@ describe("the invoice render step", () => {
     const html = String((b.calls[0] as Call).options.html);
     expect(html).toContain('<img data-testid="signature"');
     expect(html).toContain(`data:image/png;base64,${btoa(String.fromCharCode(...PNG_BYTES))}`);
+  });
+
+  it("reads the signature with ONE R2 get (no head first) and embeds it through the shared base64 [review 12]", async () => {
+    const s = await ready({ signature: {} });
+    const clock = fakeClock();
+    const b = fakeBrowser(clock);
+    const { env } = makeEnv(b.binding);
+    const reads: string[] = [];
+    const docs = new Proxy(realEnv.DOCS, {
+      get: (target, prop) => {
+        const v = Reflect.get(target, prop) as unknown;
+        if (typeof v !== "function") return v;
+        return (...a: unknown[]) => {
+          if ((prop === "head" || prop === "get") && String(a[0]).startsWith("settings/signature-"))
+            reads.push(`${String(prop)}:${String(a[0])}`);
+          return (v as (...x: unknown[]) => unknown).apply(target, a);
+        };
+      },
+    });
+    expect(await processRender({ ...env, DOCS: docs } as Env, renderMsg(s.id), T0, clock)).toBe("rendered");
+    expect(reads).toHaveLength(1);
+    expect(reads[0]).toMatch(/^get:settings\/signature-[0-9a-f]{16}\.png$/);
+    expect(String((b.calls[0] as Call).options.html)).toContain(
+      `data:image/png;base64,${toBase64(PNG_BYTES)}`,
+    );
+  });
+
+  it("an oversized signature object is refused from its size alone, before its body is read", async () => {
+    const s = await ready({ signature: {} });
+    const clock = fakeClock();
+    const b = fakeBrowser(clock);
+    const { env } = makeEnv(b.binding);
+    await realEnv.DOCS.put(s.signatureKey as string, new Uint8Array(SIGNATURE_MAX_BYTES + 1));
+    expect(await processRender(env, renderMsg(s.id), T0, clock)).toBe("refused");
+    expect(b.calls).toHaveLength(0);
   });
 
   it.each([

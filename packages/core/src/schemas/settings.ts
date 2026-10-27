@@ -8,7 +8,15 @@
 import * as z from "zod/mini";
 import { EMAIL_TEMPLATES } from "../email-templates.ts";
 import { STATE_CODES, type StateCode, validateGstin } from "../gstin.ts";
-import { DEFAULT_PADDING, SERIES, type Series, validateFormat } from "../numbering.ts";
+import {
+  DEFAULT_PADDING,
+  type FormatCheck,
+  type NumberingFormat,
+  SERIES,
+  type Series,
+  validateFormat,
+  validateStoredFormat,
+} from "../numbering.ts";
 
 /**
  * The brand logo files a document may use (ADM-SET-01), file names under `packages/ui/brand`. A fixed list: the PDF and the
@@ -145,16 +153,20 @@ export const taxSettings = z.object({
   crossBorderWarnInrMinor: minor,
 });
 
-const numberingFormat = z.object({ template: z.string(), padding: z.int() }).check(
-  z.refine((f) => validateFormat(f).ok, {
-    error: (i) => `Invalid numbering format ${JSON.stringify(i.input)}`,
-  }),
-);
+const numberingFormatOf = (check: (f: NumberingFormat) => FormatCheck) =>
+  z.object({ template: z.string(), padding: z.int() }).check(
+    z.refine((f) => check(f).ok, {
+      error: (i) => `Invalid numbering format ${JSON.stringify(i.input)}`,
+    }),
+  );
 
-export const numberingSettings = z.record(
-  z.enum(Object.keys(SERIES) as [Series, ...Series[]]),
-  numberingFormat,
-);
+const SERIES_KEYS = Object.keys(SERIES) as [Series, ...Series[]];
+
+/** The numbering settings as they are SAVED: every format passes `validateFormat` (LD18's first-character rule included). */
+export const numberingSettings = z.record(z.enum(SERIES_KEYS), numberingFormatOf(validateFormat));
+
+/** The numbering settings as they are READ: the rules that held before M5.1, so an older stored row never turns a route into a 500 (the owner fixes it on the next save). */
+export const storedNumberingSettings = z.record(z.enum(SERIES_KEYS), numberingFormatOf(validateStoredFormat));
 
 const scheduleStep = z.object({ label: text(1), pctBp: bp });
 
@@ -257,6 +269,8 @@ export const SETTINGS_SCHEMAS = {
   gateways: gatewaySettings,
   email: emailSettings,
 } as const;
+/** What a stored row is read with: the same schemas, except that numbering takes a format valid before M5.1 (see `storedNumberingSettings`). */
+const READ_SCHEMAS = { ...SETTINGS_SCHEMAS, numbering: storedNumberingSettings } as const;
 export type SeededSettingKey = keyof typeof SETTINGS_SCHEMAS;
 export type Settings = { [K in SeededSettingKey]: z.infer<(typeof SETTINGS_SCHEMAS)[K]> };
 
@@ -281,9 +295,7 @@ export type SettingsGroup = (typeof SETTINGS_GROUPS)[number];
  * Throws if the merged value is invalid (a corrupted row), which the caller turns into a 500, never a silent default.
  */
 export function resolveSetting<K extends SeededSettingKey>(key: K, stored: unknown): Settings[K] {
-  return SETTINGS_SCHEMAS[key].parse(
-    mergeDefaults(SETTINGS_DEFAULTS[key], stored ?? undefined),
-  ) as Settings[K];
+  return READ_SCHEMAS[key].parse(mergeDefaults(SETTINGS_DEFAULTS[key], stored ?? undefined)) as Settings[K];
 }
 
 const isPlain = (v: unknown): v is Record<string, unknown> =>

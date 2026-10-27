@@ -992,7 +992,7 @@ describe("the route table covers issue", () => {
 });
 
 describe("the bells of an individual's invoices go with the person [DPDP; VERIFY WITH CA/LEGAL; early check required 3]", () => {
-  it("anonymising the last contact deletes the bells about a pending issue request and about an issued invoice; the approvals and the invoices stay", async () => {
+  it("anonymising the last contact deletes the bells about a pending issue request and about an issued invoice; the issued invoice and its approval stay, the draft and its request go", async () => {
     const o = await owner();
     const staff = await sessionFor("staff");
     const c = await mkInvoiceClient({ type: "individual" });
@@ -1012,9 +1012,11 @@ describe("the bells of an individual's invoices go with the person [DPDP; VERIFY
     });
     expect(erase.status, await erase.clone().text()).toBe(200);
     expect(await bells()).toBe(0);
-    expect(await countOf("approvals", "id IN (?, ?)", req1, req2)).toBe(2);
+    // the issued invoice and its approval stay; the unissued draft goes with the person, and so does the request asked for it (review 9)
+    expect(await countOf("approvals", "id = ?", req1)).toBe(1);
+    expect(await countOf("approvals", "id = ?", req2)).toBe(0);
     expect(await invoiceRow(issuedInv.id)).toMatchObject({ status: "issued" });
-    expect(await invoiceRow(pendingInv.id)).toMatchObject({ status: "draft" });
+    expect(await invoiceRow(pendingInv.id)).toBeNull();
   });
 
   it("a business client's bells stay", async () => {

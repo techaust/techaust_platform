@@ -15,7 +15,16 @@ import { bundleOf, LOAD_STATEMENTS, loadStatements, type TermsRef } from "@techa
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { clientGoneSql } from "./anonymised.ts";
-import { type AppEnv, actor, BAD_REQUEST, type Ctx, err, mutate, NOT_FOUND } from "./context.ts";
+import {
+  type AppEnv,
+  actor,
+  BAD_REQUEST,
+  type Ctx,
+  err,
+  mutate,
+  NOT_FOUND,
+  UNAUTHENTICATED,
+} from "./context.ts";
 import { discountIn, lineIn } from "./document-save.ts";
 import { body, idParam, limitOf, param, query, refusedWith, STALE_VERSION } from "./http.ts";
 import {
@@ -191,7 +200,7 @@ export async function listInvoices(
   const cur = q.after === undefined ? null : decodeCursor(q.after);
   if (q.after !== undefined && (!cur || typeof cur.k !== "number")) return err(c, BAD_REQUEST, 400);
   const now = Date.now();
-  const todayIso = todayIsoOf(now);
+  const todayIso = issueDateOf(now);
   const types = q.type ? [q.type] : INVOICE_FLOW_TYPES;
   const mode = q.status === undefined ? null : q.status === "overdue" ? "overdue" : "plain";
   const filters = { status: mode, client: q.clientId !== undefined, cursor: cur !== null } as const;
@@ -211,11 +220,6 @@ export async function listInvoices(
   const page = pageOf(merged, limit, dir, cur !== null, (r) => ({ k: r.created_at, id: r.id }));
   return c.json({ invoices: page.items.map((r) => listRow(r, todayIso)), next: page.next });
 }
-
-const todayIsoOf = (now: number) => {
-  const d = todayOf(now);
-  return `${String(d.year).padStart(4, "0")}-${String(d.month).padStart(2, "0")}-${String(d.day).padStart(2, "0")}`;
-};
 
 // ---- reading one -----------------------------------------------------------------------------------------------------------------------------
 
@@ -245,7 +249,7 @@ export async function readInvoice(c: Ctx, id: string, extra: D1PreparedStatement
     db.prepare(MILESTONE_OF_SQL).bind(id),
     db
       .prepare(
-        "SELECT EXISTS (SELECT 1 FROM document_sends s WHERE s.document_id = ?1) AS emailed, EXISTS (SELECT 1 FROM documents x WHERE x.parent_id = ?1 AND x.frozen_at IS NOT NULL) AS child",
+        "SELECT EXISTS (SELECT 1 FROM document_sends s WHERE s.document_id = ?1) AS emailed, EXISTS (SELECT 1 FROM documents x WHERE x.parent_id = ?1 AND x.frozen_at IS NOT NULL) AS child, CASE WHEN (SELECT status FROM documents WHERE id = ?1) = 'void' THEN (SELECT u.name FROM audit_log a JOIN staff_users u ON u.id = a.actor_id WHERE a.entity_type = 'document' AND a.entity_id = ?1 AND a.action = 'invoice.void' ORDER BY a.at DESC LIMIT 1) END AS voided_by_name",
       )
       .bind(id),
     ...extra,
@@ -256,7 +260,11 @@ export async function readInvoice(c: Ctx, id: string, extra: D1PreparedStatement
     results.slice(LOAD_STATEMENTS);
   const client = clientR?.results[0] as ClientRow | undefined;
   if (!client) return null;
-  const facts = (factsR?.results[0] ?? { emailed: 0, child: 0 }) as { emailed: number; child: number };
+  const facts = (factsR?.results[0] ?? { emailed: 0, child: 0, voided_by_name: null }) as {
+    emailed: number;
+    child: number;
+    voided_by_name: string | null;
+  };
   return {
     bundle,
     client,
@@ -271,6 +279,8 @@ export async function readInvoice(c: Ctx, id: string, extra: D1PreparedStatement
     milestone: (milestoneR?.results[0] as MilestoneFacts | undefined) ?? null,
     emailed: facts.emailed === 1,
     hasIssuedChild: facts.child === 1,
+    /** The name of the member who voided it (from the `invoice.void` audit row; null when it is not void). */
+    voidedByName: facts.voided_by_name,
     extra: results.slice(LOAD_STATEMENTS + 8),
   };
 }
@@ -316,8 +326,19 @@ export const voidBody = z.strictObject({
 
 const deleteQuery = z.object({ expectedUpdatedAt: z.string().check(z.regex(/^\d{1,16}$/)) });
 
+/**
+ * A milestone an invoice may be drafted from: one that is ready to bill, or the FIRST milestone of a project started from an accepted proposal while it is
+ * still pending (the advance, the first instalment: voiding that invoice sends the milestone back to `pending`, and it must be billable again, review 5).
+ * The SQL twin (`MILESTONE_BILLABLE_SQL`, for a statement on `milestones` alone) is what the insert guard repeats.
+ */
+const milestoneBillable = (m: Pick<MilestoneFacts, "status" | "position" | "source_document_id">) =>
+  m.status === "ready_to_bill" ||
+  (m.status === "pending" && m.position === 1 && m.source_document_id !== null);
+const MILESTONE_BILLABLE_SQL =
+  "(status = 'ready_to_bill' OR (status = 'pending' AND position = 1 AND EXISTS (SELECT 1 FROM projects pr WHERE pr.id = milestones.project_id AND pr.source_document_id IS NOT NULL)))";
+
 const MILESTONE_COLS =
-  "m.id, m.title, m.project_id, m.amount_minor, m.pct_bp, m.status, m.document_id, m.delivered_at, p.client_id, p.budget_minor, p.source_document_id, (SELECT s.computed FROM documents s WHERE s.id = p.source_document_id) AS source_computed";
+  "m.id, m.title, m.project_id, m.position, m.amount_minor, m.pct_bp, m.status, m.document_id, m.delivered_at, p.client_id, p.budget_minor, p.source_document_id, (SELECT s.computed FROM documents s WHERE s.id = p.source_document_id) AS source_computed";
 
 type ContactRow = {
   id: string;
@@ -386,7 +407,7 @@ export const invoices = new Hono<AppEnv>()
       milestone = (milestoneR?.results[0] as MilestoneFacts | undefined) ?? null;
       if (!milestone || milestone.client_id !== client.id) return err(c, MILESTONE_NOT_FOUND, 404);
       if (milestone.document_id !== null) return err(c, MILESTONE_HAS_INVOICE, 409);
-      if (milestone.status !== "ready_to_bill") return err(c, MILESTONE_NOT_READY, 409);
+      if (!milestoneBillable(milestone)) return err(c, MILESTONE_NOT_READY, 409);
       const amount = milestoneAmountOf(milestone);
       if (amount === null || amount <= 0) return err(c, MILESTONE_NO_AMOUNT, 409);
       const made = milestoneDraft({
@@ -447,7 +468,7 @@ export const invoices = new Hono<AppEnv>()
       );
     const guard = {
       sql: (at: number) =>
-        `NOT ${clientGoneSql(`?${at}`)}${milestone ? ` AND EXISTS (SELECT 1 FROM milestones WHERE id = ?${at + 1} AND status = 'ready_to_bill' AND document_id IS NULL AND project_id = ?${at + 2})` : ""}`,
+        `NOT ${clientGoneSql(`?${at}`)}${milestone ? ` AND EXISTS (SELECT 1 FROM milestones WHERE id = ?${at + 1} AND ${MILESTONE_BILLABLE_SQL} AND document_id IS NULL AND project_id = ?${at + 2})` : ""}`,
       params: milestone ? [client.id, milestone.id, milestone.project_id] : [client.id],
     };
     const done = await mutate(c, {
@@ -486,7 +507,7 @@ export const invoices = new Hono<AppEnv>()
           ? [
               db
                 .prepare(
-                  `UPDATE milestones SET document_id = ?1, updated_at = ?3 WHERE id = ?2 AND status = 'ready_to_bill' AND document_id IS NULL AND ${g.sql(4)}`,
+                  `UPDATE milestones SET document_id = ?1, updated_at = ?3 WHERE id = ?2 AND ${MILESTONE_BILLABLE_SQL} AND document_id IS NULL AND ${g.sql(4)}`,
                 )
                 .bind(id, milestone.id, now, ...g.params),
             ]
@@ -502,7 +523,7 @@ export const invoices = new Hono<AppEnv>()
           .bind(milestone.id)
           .first<MilestoneFacts>();
         if (again && again.document_id !== null) return err(c, MILESTONE_HAS_INVOICE, 409);
-        if (again && again.status !== "ready_to_bill") return err(c, MILESTONE_NOT_READY, 409);
+        if (again && !milestoneBillable(again)) return err(c, MILESTONE_NOT_READY, 409);
       }
       return err(c, CLIENT_GONE, 409);
     }
@@ -547,6 +568,7 @@ export const invoices = new Hono<AppEnv>()
         milestone: ctx.milestone,
         emailed: ctx.emailed,
         hasIssuedChild: ctx.hasIssuedChild,
+        voidedByName: ctx.voidedByName,
         now,
       }),
     );
@@ -839,11 +861,19 @@ export const invoices = new Hono<AppEnv>()
     if (!done) {
       const again = await db
         .prepare(
-          `SELECT status, updated_at, ${clientGoneSql("client_id")} AS gone, (SELECT step_up_until FROM staff_sessions WHERE id = ?2) AS step_up FROM documents WHERE id = ?1`,
+          `SELECT status, updated_at, ${clientGoneSql("client_id")} AS gone, (SELECT step_up_until FROM staff_sessions WHERE id = ?2 AND revoked_at IS NULL) AS step_up, (SELECT idle_expires_at > ?3 AND abs_expires_at > ?3 FROM staff_sessions WHERE id = ?2 AND revoked_at IS NULL) AS session_live FROM documents WHERE id = ?1`,
         )
-        .bind(id, u.sessionId)
-        .first<{ status: string; updated_at: number; gone: number; step_up: number | null }>();
+        .bind(id, u.sessionId, t)
+        .first<{
+          status: string;
+          updated_at: number;
+          gone: number;
+          step_up: number | null;
+          session_live: number | null;
+        }>();
       if (!again) return err(c, NOT_FOUND, 404);
+      // A session that ended between the read and the write is a sign-in, not a reload (review 13).
+      if (again.session_live !== 1) return err(c, UNAUTHENTICATED, 401);
       if (again.updated_at !== f.expectedUpdatedAt) return err(c, STALE_VERSION, 409);
       if (again.gone === 1) return err(c, CLIENT_GONE, 409);
       if (again.step_up === null || again.step_up <= t)

@@ -69,10 +69,13 @@ export const decideBody = z.strictObject({
   decision: z.enum(["approve", "reject"]),
   note: z.optional(text(500)),
 });
+const idText = z.string().check(z.minLength(1), z.maxLength(64));
 const listQuery = z.object({
   /** M5.1: the list of one kind (default `discount`: what the queue showed before invoices). */
   kind: z.optional(z.enum(["discount", "issue"])),
   status: z.optional(z.enum(["pending", "approved", "rejected", "expired"])),
+  /** M5.1: one request by id (a bell's link can point at an older request than the first page holds); Staff still see only their own. */
+  id: z.optional(idText),
   limit: z.optional(z.enum(["25", "50"])),
   after: z.optional(z.string().check(z.maxLength(400))),
 });
@@ -216,15 +219,16 @@ type ApprovalRow = {
 };
 
 /** The queue, newest first. The owner sees everything; Staff and Sales see only the requests they made. */
-export const APPROVALS_SQL = (f: { status: boolean; own: boolean; cursor: boolean }) => {
+export const APPROVALS_SQL = (f: { status: boolean; own: boolean; cursor: boolean; id?: boolean }) => {
   const ownAt = 1 + (f.status ? 1 : 0);
   const cursorAt = ownAt + (f.own ? 1 : 0);
+  const idAt = cursorAt + (f.cursor ? 2 : 0);
   return `SELECT a.id, a.status, a.created_at, a.decided_at, a.reason, a.note, a.requested_by, ru.name AS requester_name, a.decided_by, du.name AS decider_name, a.content_sha256,
        d.id AS document_id, d.type, d.title, d.version, d.status AS document_status, d.content_sha256 AS document_sha, d.currency, d.total_minor, ${GUARD_SUMS("d")},
        (SELECT count(*) FROM document_lines l WHERE l.document_id = d.id AND l.catalogue_item_id IS NULL) AS custom_lines,
        cl.code AS client_code, cl.display_name AS client_name
      FROM approvals a JOIN documents d ON d.id = a.document_id JOIN clients cl ON cl.id = d.client_id LEFT JOIN staff_users ru ON ru.id = a.requested_by LEFT JOIN staff_users du ON du.id = a.decided_by
-     WHERE a.kind = 'discount'${f.status ? " AND a.status = ?1" : ""}${f.own ? ` AND a.requested_by = ?${ownAt}` : ""}${f.cursor ? ` AND ${keysetSql("a.created_at", "a.id", false, "after", cursorAt).where}` : ""}
+     WHERE a.kind = 'discount'${f.status ? " AND a.status = ?1" : ""}${f.own ? ` AND a.requested_by = ?${ownAt}` : ""}${f.cursor ? ` AND ${keysetSql("a.created_at", "a.id", false, "after", cursorAt).where}` : ""}${f.id ? ` AND a.id = ?${idAt}` : ""}
      ORDER BY a.created_at DESC, a.id DESC LIMIT`;
 };
 
@@ -253,14 +257,15 @@ type IssueApprovalListRow = {
 };
 
 /** The queue of issue requests (M5.1, ADM-APR-01): the same keyset and filters as the discount queue, over the invoices. */
-export const ISSUE_APPROVALS_SQL = (f: { status: boolean; own: boolean; cursor: boolean }) => {
+export const ISSUE_APPROVALS_SQL = (f: { status: boolean; own: boolean; cursor: boolean; id?: boolean }) => {
   const ownAt = 1 + (f.status ? 1 : 0);
   const cursorAt = ownAt + (f.own ? 1 : 0);
+  const idAt = cursorAt + (f.cursor ? 2 : 0);
   return `SELECT a.id, a.status, a.created_at, a.decided_at, a.reason, a.note, a.requested_by, ru.name AS requester_name, a.decided_by, du.name AS decider_name, a.content_sha256,
        d.id AS document_id, d.type, d.status AS document_status, d.content_sha256 AS document_sha, d.currency, d.total_minor, d.number_display,
        cl.code AS client_code, cl.display_name AS client_name, (cl.anonymised_at IS NOT NULL) AS client_gone
      FROM approvals a JOIN documents d ON d.id = a.document_id JOIN clients cl ON cl.id = d.client_id LEFT JOIN staff_users ru ON ru.id = a.requested_by LEFT JOIN staff_users du ON du.id = a.decided_by
-     WHERE a.kind = 'issue'${f.status ? " AND a.status = ?1" : ""}${f.own ? ` AND a.requested_by = ?${ownAt}` : ""}${f.cursor ? ` AND ${keysetSql("a.created_at", "a.id", false, "after", cursorAt).where}` : ""}
+     WHERE a.kind = 'issue'${f.status ? " AND a.status = ?1" : ""}${f.own ? ` AND a.requested_by = ?${ownAt}` : ""}${f.cursor ? ` AND ${keysetSql("a.created_at", "a.id", false, "after", cursorAt).where}` : ""}${f.id ? ` AND a.id = ?${idAt}` : ""}
      ORDER BY a.created_at DESC, a.id DESC LIMIT`;
 };
 
@@ -342,12 +347,13 @@ export const approvals = new Hono<AppEnv>()
     if (q.after !== undefined && (!cur || typeof cur.k !== "number")) return err(c, BAD_REQUEST, 400);
     const own = decide(u.role, "approvals.decide") === "deny";
     if (q.kind === "issue") {
-      const issueSql = `${ISSUE_APPROVALS_SQL({ status: q.status !== undefined, own, cursor: cur !== null })} ${limit + 1}`;
+      const issueSql = `${ISSUE_APPROVALS_SQL({ status: q.status !== undefined, own, cursor: cur !== null, id: q.id !== undefined })} ${limit + 1}`;
       const found = await c.env.DB.prepare(issueSql)
         .bind(
           ...(q.status !== undefined ? [q.status] : []),
           ...(own ? [u.id] : []),
           ...(cur ? [cur.k, cur.id] : []),
+          ...(q.id !== undefined ? [q.id] : []),
         )
         .all<IssueApprovalListRow>();
       const issuePage = pageOf(found.results, limit, dir, cur !== null, (r) => ({
@@ -356,12 +362,13 @@ export const approvals = new Hono<AppEnv>()
       }));
       return c.json({ approvals: issuePage.items.map(issueApprovalView), next: issuePage.next });
     }
-    const sql = `${APPROVALS_SQL({ status: q.status !== undefined, own, cursor: cur !== null })} ${limit + 1}`;
+    const sql = `${APPROVALS_SQL({ status: q.status !== undefined, own, cursor: cur !== null, id: q.id !== undefined })} ${limit + 1}`;
     const { results } = await c.env.DB.prepare(sql)
       .bind(
         ...(q.status !== undefined ? [q.status] : []),
         ...(own ? [u.id] : []),
         ...(cur ? [cur.k, cur.id] : []),
+        ...(q.id !== undefined ? [q.id] : []),
       )
       .all<ApprovalRow>();
     const page = pageOf(results, limit, dir, cur !== null, (r) => ({ k: r.created_at, id: r.id }));
