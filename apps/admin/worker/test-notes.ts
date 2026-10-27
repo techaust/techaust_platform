@@ -33,7 +33,12 @@ export type Issued = {
  */
 export async function mkIssuedInvoice(
   o: TestSession,
-  opts: { prices?: number[]; client?: () => Promise<{ clientId: string; contactId: string }> } = {},
+  opts: {
+    prices?: number[];
+    client?: () => Promise<{ clientId: string; contactId: string }>;
+    /** Extra draft fields to save before the issue (an export route: `{ exportMode: "igst_paid" }`). */
+    fields?: Record<string, unknown>;
+  } = {},
 ): Promise<Issued> {
   const client = await (opts.client ?? mkInvoiceClient)();
   const items = [];
@@ -44,17 +49,24 @@ export async function mkIssuedInvoice(
   });
   if (res.status !== 201) throw new Error(`could not make an invoice: ${res.status} ${await res.text()}`);
   const made = await json(res);
-  if (opts.client === mkOverseasClient) {
+  const overseas = opts.client === mkOverseasClient;
+  if (overseas || opts.fields) {
     const doc = await json(await call(`/invoices/${made.id}`, { cookie: o.cookie }));
-    const fx = await call(`/invoices/${made.id}`, {
+    const saved = await call(`/invoices/${made.id}`, {
       method: "PATCH",
       cookie: o.cookie,
       body: {
         expectedUpdatedAt: doc.updatedAt,
-        fields: { fx: { rate: "83.1234", date: new Date().toISOString().slice(0, 10), source: "FBIL" } },
+        fields: {
+          ...(overseas
+            ? { fx: { rate: "83.1234", date: new Date().toISOString().slice(0, 10), source: "FBIL" } }
+            : {}),
+          ...(opts.fields ?? {}),
+        },
       },
     });
-    if (fx.status !== 200) throw new Error(`could not set the rate: ${fx.status} ${await fx.text()}`);
+    if (saved.status !== 200)
+      throw new Error(`could not save the draft: ${saved.status} ${await saved.text()}`);
   }
   const issued = await issueInvoice(o, made.id);
   if (issued.status !== 200)

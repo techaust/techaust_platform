@@ -260,6 +260,9 @@ async function createNote(c: Ctx, kind: NoteKind, parentId: string, f: CreateBod
             )
             .bind(parentId),
     ]);
+  // A draft invoice has no snapshot to read yet: it is not an issued invoice (409), not a missing one (404). Any other type is not an invoice a note can be against.
+  const raw = parentR?.results[0] as { type: string; frozen_at: number | null } | undefined;
+  if (raw && isNoteParentType(raw.type) && raw.frozen_at === null) return err(c, PARENT_NOT_ISSUED, 409);
   const p = parentCtxOf([parentR, linesR, creditedR, totalsR, countsR, draftsR] as D1Result[]);
   const client = clientR?.results[0] as ClientRow | undefined;
   if (!p || !client || !isNoteParentType(p.row.type)) return err(c, NOT_FOUND, 404);

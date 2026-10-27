@@ -428,8 +428,12 @@ const issueRequestedEmail = (
     kind: "issue",
     requester_name: a.requester_name ?? "",
     client_name: a.client_name,
-    request_reason: noteWords(a) ? `${noteWords(a)?.marked}issuing a ${noteWords(a)?.documentType}` : "issuing an invoice",
-    title: noteWords(a) ? `${noteWords(a)?.marked}${noteWords(a)?.documentType} for ${a.client_name}` : `Invoice for ${a.client_name}`,
+    request_reason: noteWords(a)
+      ? `${noteWords(a)?.marked}issuing a ${noteWords(a)?.documentType}`
+      : "issuing an invoice",
+    title: noteWords(a)
+      ? `${noteWords(a)?.marked}${noteWords(a)?.documentType} for ${a.client_name}`
+      : `Invoice for ${a.client_name}`,
     ...(noteWords(a) ? { document_type: noteWords(a)?.documentType ?? "" } : {}),
     version: "1",
     amount: formatMoney(money(a.total_minor, a.currency === "USD" ? "USD" : "INR")),
@@ -453,7 +457,9 @@ const issueDecidedEmail = (
     client_name: a.client_name,
     // The number exists only once the invoice was issued (an approved request); a rejected one has none.
     number: a.status === "approved" ? (a.number_display ?? "") : "",
-    title: noteWords(a) ? `${noteWords(a)?.marked}${noteWords(a)?.documentType} for ${a.client_name}` : `Invoice for ${a.client_name}`,
+    title: noteWords(a)
+      ? `${noteWords(a)?.marked}${noteWords(a)?.documentType} for ${a.client_name}`
+      : `Invoice for ${a.client_name}`,
     ...(noteWords(a) ? { document_type: noteWords(a)?.documentType ?? "" } : {}),
     version: "1",
     decision_note: a.note ?? "",
