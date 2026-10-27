@@ -31,7 +31,7 @@ Each body has two forms: **attached** (the PDF is attached) and **link only** (n
 - **Footer** (all): 07 §8's footer.
 
 ## 2. Payment reminders (client-facing, from billing@; 07 §8 cores; Q47, Q48, Q50)
-Sent only for a document that was emailed (Q50), only 09:00–19:00 IST (Q48), and never once it is paid, credited in full or void. Each body ends: "If you've already paid, thank you, and please ignore this." The button is the document's own ("View invoice", "View payment request", "View debit note"). The link-only and attached forms of §1 apply.
+Sent only for a document that was emailed (Q50), only 09:00–19:00 IST (Q48), and never once it is paid, credited in full or void. Each body ends: "If you've already paid, thank you, and please ignore this." The button is the document's own ("View invoice", "View payment request", "View debit note"). Reminders never attach the PDF; the body ends with §1's link-only closing sentence before the "already paid" line.
 
 | Day | Subject (invoice) | Body (invoice) |
 |---|---|---|
