@@ -90,6 +90,13 @@ const TENANT_CASES: Record<string, TenantCase> = {
     request: (id) => ({ path: `/test/documents/${id}` }),
     hidden: (f) => [f.a.docs.draft, f.a.docs.pending, f.a.docs.void],
   },
+  // M5.4 (Q49, POR-06): the signed-in invoice detail (finance only). Its PDF is proven in invoices.test.ts with the other routes of the file.
+  "GET /api/v1/invoices/:id": {
+    name: "GET /invoices/:id",
+    request: (id) => ({ path: `/invoices/${id}` }),
+    finance: true,
+    hidden: (f) => [f.a.docs.draft, f.a.docs.pending, f.a.docs.void],
+  },
   "GET /api/v1/test/finance/documents/:id": {
     name: "GET /test/finance/documents/:id",
     request: (id) => ({ path: `/test/finance/documents/${id}` }),
@@ -103,6 +110,7 @@ const TENANT_CASES: Record<string, TenantCase> = {
  */
 const TENANT_ELSEWHERE: Record<string, { request: (id: string) => { path: string; init?: CallInit } }> = {
   "GET /api/v1/offers": { request: () => ({ path: "/offers" }) },
+  "GET /api/v1/invoices/:id/pdf": { request: (id) => ({ path: `/invoices/${id}/pdf` }) },
   "GET /api/v1/offers/:id": { request: (id) => ({ path: `/offers/${id}` }) },
   "GET /api/v1/offers/:id/pdf": { request: (id) => ({ path: `/offers/${id}/pdf` }) },
   "GET /api/v1/offers/:id/certificate": { request: (id) => ({ path: `/offers/${id}/certificate` }) },
@@ -123,6 +131,10 @@ const NO_CLIENT_ROWS: Record<
   { why: string; request: (f: Fixtures) => { path: string; init?: CallInit } }
 > = {
   "GET /api/v1/me": { why: "answers from the guard's own read", request: () => ({ path: "/me" }) },
+  "GET /api/v1/invoices": {
+    why: "the list of the session's own organisation: no id from the caller",
+    request: () => ({ path: "/invoices" }),
+  },
   "POST /api/v1/auth/sessions/revoke-all": {
     why: "revokes the session's own contact's sessions; no id from the caller",
     request: () => ({ path: "/auth/sessions/revoke-all", init: { method: "POST" } }),
@@ -158,7 +170,13 @@ describe("every guarded route is classified for the cross-tenant and SQL-spy tes
         .map(keyOf)
         .sort(),
     ).toEqual(
-      ["GET /api/v1/me", "POST /api/v1/auth/sessions/revoke-all", ...Object.keys(TENANT_ELSEWHERE)].sort(),
+      [
+        "GET /api/v1/me",
+        "POST /api/v1/auth/sessions/revoke-all",
+        "GET /api/v1/invoices",
+        "GET /api/v1/invoices/:id",
+        ...Object.keys(TENANT_ELSEWHERE),
+      ].sort(),
     );
   });
 });
