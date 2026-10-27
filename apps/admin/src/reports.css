@@ -403,25 +403,25 @@
 }
 
 /* The closing figure of a list: a thin rule above, the double rule below. */
-.ledger__total th,
-.ledger__total td {
+.ledger .ledger__total th,
+.ledger .ledger__total td {
   border-top: 1px solid var(--color-text);
   border-bottom: 3px double var(--color-text);
   font-weight: 600;
 }
 
-.ledger__group th {
+.ledger .ledger__group th {
   padding-top: var(--space-4);
   font-weight: 600;
   border-bottom-color: var(--color-border);
 }
 
-.ledger__sub th {
+.ledger .ledger__sub th {
   padding-inline-start: var(--space-6);
   font-weight: 400;
 }
 
-.ledger--3b tbody th {
+.ledger.ledger--3b tbody th {
   max-width: 24rem;
 }
 
