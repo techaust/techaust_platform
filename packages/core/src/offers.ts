@@ -123,6 +123,14 @@ export const ATTACHMENT_MAX_BYTES = 1024 * 1024;
 export const offerLinkUrl = (portalBase: string, token: string): string =>
   `${portalBase.replace(/\/+$/, "")}/o#t=${token}`;
 
+/** An invoice link lives this many days from the moment it is minted (each email mints its own, LD63). "Paid + 30 days" is M6's (it needs `paid_at`). */
+export const INVOICE_LINK_DAYS = 180;
+export const invoiceLinkExpiry = (mintedAt: number): number => mintedAt + INVOICE_LINK_DAYS * DAY_MS;
+
+/** The browser link of an invoice, proforma or note: the token is in the URL FRAGMENT, like an offer link's; the portal page reads it and opens the document at once. */
+export const invoiceLinkUrl = (portalBase: string, token: string): string =>
+  `${portalBase.replace(/\/+$/, "")}/i#t=${token}`;
+
 const toBase64Url = (bytes: Uint8Array): string => {
   let s = "";
   for (const b of bytes) s += String.fromCharCode(b);

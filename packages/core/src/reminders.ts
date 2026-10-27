@@ -161,3 +161,47 @@ export function skipReasonOf(f: ReminderFacts, nowMs: number): ReminderSkipReaso
 /** A skip reason the consumer writes to the row (final). `sent`, `not_due` and `paused` are states, not reasons to give a row up. */
 export const isFinalSkip = (reason: string | null): reason is string =>
   reason !== null && reason !== "sent" && reason !== "not_due" && reason !== "paused";
+
+// ---- the window as the jobs Worker reads it (no zod there) ------------------------------------------------------------------------------------
+
+/** The window the settings default to (09:00 to 19:00 IST). */
+export const DEFAULT_REMINDER_WINDOW: ReminderWindow = { fromHour: 9, toHour: 19 };
+
+/**
+ * The reminder window of a stored `payment_terms` settings value, read WITHOUT zod (the jobs Worker must not bring the settings schema in, and a row that fails the
+ * schema must never stop the sends): anything that is not a whole-hour window with `0 <= from < to <= 24` is the default window.
+ */
+export function reminderWindowFromStored(json: unknown): ReminderWindow {
+  const terms =
+    json !== null && typeof json === "object" && !Array.isArray(json)
+      ? (json as Record<string, unknown>)
+      : {};
+  const w = terms.reminderWindowIst;
+  if (w === null || typeof w !== "object") return DEFAULT_REMINDER_WINDOW;
+  const { fromHour, toHour } = w as Record<string, unknown>;
+  if (
+    typeof fromHour !== "number" ||
+    typeof toHour !== "number" ||
+    !Number.isInteger(fromHour) ||
+    !Number.isInteger(toHour) ||
+    fromHour < 0 ||
+    toHour > 24 ||
+    fromHour >= toHour
+  )
+    return DEFAULT_REMINDER_WINDOW;
+  return { fromHour, toHour };
+}
+
+/** The most a Queues message can be delayed (`delaySeconds`, Cloudflare Queues: 0 to 86,400, 24 hours). */
+export const QUEUE_MAX_DELAY_SECONDS = 86_400;
+
+/**
+ * Seconds to wait from `nowMs` until the window opens (1 up to the Queues maximum), the delay a message that must not go out of hours is sent again with; 0 inside the
+ * window. The longest wait (19:00 to 09:00) is 14 hours, well under the maximum, so one hop is enough for any window.
+ */
+export function windowDelaySeconds(nowMs: number, window: ReminderWindow): number {
+  if (inWindow(nowMs, window)) return 0;
+  const roundedUpMs = nextWindowStart(nowMs, window) - nowMs + 999; // whole seconds, rounded up (an integer sum: no float rounding call)
+  const wait = Math.trunc(roundedUpMs / 1000);
+  return Math.min(QUEUE_MAX_DELAY_SECONDS, Math.max(1, wait));
+}

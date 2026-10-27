@@ -193,8 +193,8 @@ export type EmailQueueMessage =
 const id64 = z.string().min(1).max(64);
 const cursor = z.object({ at: z.int().nonnegative(), id: id64 });
 
-/** `care.scan`: the next page (50) of active plans whose current period is not billed; `after` is the last plan id of the previous page (keyset). */
-export const careScanMessage = z.object({ kind: z.literal("care.scan"), after: id64.nullable() });
+/** `care.scan`: the next page (50) of active plans whose current period is not billed; `after` is the last row's `(created_at, id)` of the previous page (keyset, as `CARE_DUE_SQL` reads it). */
+export const careScanMessage = z.object({ kind: z.literal("care.scan"), after: cursor.nullable() });
 /** `care.bill`: draft one plan's invoice for its current period (the admin API's `draftCarePlan`). */
 export const careBillMessage = z.object({ kind: z.literal("care.bill"), planId: id64 });
 /** `care.issue`: issue one care draft automatically (the admin API's `issueCareDraft`). */

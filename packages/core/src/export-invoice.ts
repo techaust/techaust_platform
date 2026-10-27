@@ -141,6 +141,15 @@ export function exportModeFromStoredTax(json: unknown): ExportRoute {
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   v !== null && typeof v === "object" && !Array.isArray(v);
 
+/**
+ * `invoiceAlertDays` of a stored `tax` settings value (G-5), read WITHOUT zod: a whole number from 1 to 30, else the default 25 (the jobs Worker's daily alerts must not
+ * stop because a row fails the schema).
+ */
+export function alertDaysFromStoredTax(json: unknown): number {
+  const days = isRecord(json) ? json.invoiceAlertDays : undefined;
+  return typeof days === "number" && Number.isInteger(days) && days >= 1 && days <= 30 ? days : 25;
+}
+
 // ---- the daily LUT check (B3: the bell of ADM-INV-18, Q22, LD27) ---------------------------------------------------------------------------
 
 export const LUT_CHECK_KIND = "lut.check";

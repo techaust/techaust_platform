@@ -67,9 +67,11 @@ describe("billing messages (leads queue)", () => {
       kind: "care.scan",
       after: null,
     });
-    expect(careScanMessage.parse({ kind: "care.scan", after: "plan-1", today: "2026-11-05" })).toEqual({
+    expect(
+      careScanMessage.parse({ kind: "care.scan", after: { at: 7, id: "plan-1" }, today: "2026-11-05" }),
+    ).toEqual({
       kind: "care.scan",
-      after: "plan-1",
+      after: { at: 7, id: "plan-1" },
     });
     expect(careBillMessage.parse({ kind: "care.bill", planId: id, amount: 5 })).toEqual({
       kind: "care.bill",
@@ -96,7 +98,8 @@ describe("billing messages (leads queue)", () => {
     for (const bad of [
       { kind: "care.scan" },
       { kind: "care.scan", after: 4 },
-      { kind: "care.scan", after: "" },
+      { kind: "care.scan", after: "plan-1" },
+      { kind: "care.scan", after: { at: -1, id: "p" } },
       { kind: "care.bill", planId: "x".repeat(65) },
       { kind: "care.issue" },
     ])
