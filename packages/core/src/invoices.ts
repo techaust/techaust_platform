@@ -1,14 +1,20 @@
-// Invoice rules, pure (M5.1; ADM-INV-01..04, -07, ADM-APR-01/02). No I/O, no zod, no floats. Error and blocker codes only: the words are the
-// screens'. EVERY RULE HERE IS A RESEARCHED DEFAULT: VERIFY WITH CA/LEGAL (Rule 46, Rule 47, Rule 48, GSTR-1 Table 13, 08-A §3 and §4).
+// Invoice rules, pure (M5.1; ADM-INV-01..04, -07, ADM-APR-01/02; M5.2: ADM-INV-06, -08, -10, -18). No I/O, no zod, no floats. Error and blocker codes
+// only: the words are the screens'. EVERY RULE HERE IS A RESEARCHED DEFAULT: VERIFY WITH CA/LEGAL (Rule 46, Rule 47, Rule 48, GSTR-1 Table 13, 08-A §3 and §4).
 //
-//   - which types can be issued now (only the domestic tax invoice; export and proforma wait for M5.2, credit and debit notes for M5.3),
-//   - the status flow (the twin of the `documents_invoice_status_flow` trigger, which is GENERATED from this table, and a db test proves
-//     both agree move by move),
-//   - the blockers: what stops an issue (the minimal statutory list of LD20; M5.2 makes it the configurable checklist),
+//   - which types can be issued now (the tax invoice, the export invoice and the proforma; credit and debit notes wait for M5.3),
+//   - the status flow (the twin of the `documents_invoice_status_flow` trigger, which is GENERATED from a pinned copy of this table, and a db
+//     test proves both agree move by move),
+//   - the blockers: what stops an issue (the statutory list of LD20, as the configurable checklist of ADM-INV-06: `INVOICE_CHECKLIST`),
 //   - the void rule of Q1, the due date, the IST day and FY of an issue, and the Table 13 summary of the documents issued.
+// The export endorsement, the LUT helpers, the proforma notice and the exchange-rate helpers (`export-invoice.ts`, `fx.ts`) are exported from here.
 import { addDays, fyOf, istDate, parseIsoDate, toIsoDate } from "./dates.ts";
+import { type ExportRoute, type Lut, lutFor } from "./export-invoice.ts";
+import { fxDateOk } from "./fx.ts";
 import { canonicalJson, sha256Hex } from "./hash.ts";
 import type { Series } from "./numbering.ts";
+
+export * from "./export-invoice.ts";
+export * from "./fx.ts";
 
 // ---- types -------------------------------------------------------------------------------------------------------------------------
 
@@ -24,8 +30,8 @@ export type InvoiceFlowType = (typeof INVOICE_FLOW_TYPES)[number];
 export const isInvoiceFlowType = (v: unknown): v is InvoiceFlowType =>
   (INVOICE_FLOW_TYPES as readonly unknown[]).includes(v);
 
-/** LD2: M5.1 issues the domestic tax invoice only. Export and proforma answer `type_not_issuable` until M5.2, credit and debit notes until M5.3. */
-export const INVOICE_ISSUABLE_TYPES = ["tax_invoice"] as const;
+/** LD2, M5.2: the tax invoice, the export invoice and the proforma issue; credit and debit notes answer `type_not_issuable` until M5.3. */
+export const INVOICE_ISSUABLE_TYPES = ["tax_invoice", "export_invoice", "proforma"] as const;
 export type InvoiceIssuableType = (typeof INVOICE_ISSUABLE_TYPES)[number];
 export const isInvoiceIssuableType = (v: unknown): v is InvoiceIssuableType =>
   (INVOICE_ISSUABLE_TYPES as readonly unknown[]).includes(v);
@@ -138,10 +144,149 @@ export const ISSUE_BLOCKER_CODES = [
   "reverse_charge_text",
   "currency_mismatch",
   "type_not_allowed",
+  // M5.2
+  "country_missing",
+  "fx_missing",
+  "fx_date_invalid",
+  "lut_missing",
+  "unregistered_high_value",
+  "bank_missing",
+  "swift_missing",
 ] as const;
 export type IssueBlockerCode = (typeof ISSUE_BLOCKER_CODES)[number];
-/** `line`: the 1-based position of the line the blocker is about (`line_sac_missing`, `line_description_missing`). */
-export type IssueBlocker = { readonly code: IssueBlockerCode; readonly line?: number };
+/**
+ * `line`: the 1-based position of the line the blocker is about (`line_sac_missing`, `line_description_missing`). `fy`: the FY token a missing LUT is
+ * about (`lut_missing`). `date`: the ISO date the rate is for (`fx_missing`) or that it was judged against (`fx_date_invalid`).
+ */
+export type IssueBlocker = {
+  readonly code: IssueBlockerCode;
+  readonly line?: number;
+  readonly fy?: string;
+  readonly date?: string;
+};
+
+// ---- the mandatory-field checklist (ADM-INV-06, Q10; Rule 46; VERIFY WITH CA/LEGAL) --------------------------------------------------------
+
+/** The document types the checklist is about (the tax invoice, the export invoice and the proforma). */
+export type ChecklistType = "tax_invoice" | "export_invoice" | "proforma";
+
+/** What the Owner may switch (Settings > Tax, stored in the `tax` row, LD31): only these two keys; the locked items are never stored. */
+export type ChecklistSettings = { readonly bankDetails: boolean; readonly paymentLink: false };
+export const DEFAULT_CHECKLIST: ChecklistSettings = { bankDetails: true, paymentLink: false };
+
+export type ChecklistItem = {
+  readonly id: string;
+  /** Required by law (or a layout fact): it cannot be switched off. */
+  readonly locked: boolean;
+  /** False while the thing it asks for does not exist (a payment link until online payment arrives, M6). */
+  readonly available: boolean;
+  readonly appliesTo: readonly ChecklistType[];
+  /** The blockers this item owns: with the item off, they are not raised. A layout fact owns none. */
+  readonly blockers: readonly IssueBlockerCode[];
+};
+
+const ALL_TYPES: readonly ChecklistType[] = ["tax_invoice", "export_invoice", "proforma"];
+
+/**
+ * The 18 lines of 07-S §3, in their order. Five are layout facts the PDF always prints (no data check); "ORIGINAL FOR RECIPIENT" does not apply to
+ * a proforma; the export items apply to the export invoice; the bank item is the one switch, and the payment link is not available yet.
+ */
+export const INVOICE_CHECKLIST: readonly ChecklistItem[] = [
+  {
+    id: "companyNames",
+    locked: true,
+    available: true,
+    appliesTo: ALL_TYPES,
+    blockers: ["supplier_legal_name", "supplier_trade_name"],
+  },
+  {
+    id: "companyAddressGstin",
+    locked: true,
+    available: true,
+    appliesTo: ALL_TYPES,
+    blockers: ["supplier_address", "supplier_gstin", "supplier_state"],
+  },
+  { id: "invoiceNumberDate", locked: true, available: true, appliesTo: ALL_TYPES, blockers: [] },
+  {
+    id: "clientNameAddress",
+    locked: true,
+    available: true,
+    appliesTo: ALL_TYPES,
+    blockers: ["recipient_legal_name", "recipient_address"],
+  },
+  { id: "clientGstin", locked: true, available: true, appliesTo: ALL_TYPES, blockers: ["recipient_gstin"] },
+  { id: "placeOfSupply", locked: true, available: true, appliesTo: ALL_TYPES, blockers: ["recipient_state"] },
+  {
+    id: "lineDetails",
+    locked: true,
+    available: true,
+    appliesTo: ALL_TYPES,
+    blockers: ["no_lines", "line_description_missing", "line_sac_missing"],
+  },
+  { id: "discountTaxable", locked: true, available: true, appliesTo: ALL_TYPES, blockers: [] },
+  {
+    id: "taxPerType",
+    locked: true,
+    available: true,
+    appliesTo: ALL_TYPES,
+    blockers: ["computed_errors", "zero_total"],
+  },
+  { id: "totalsWords", locked: true, available: true, appliesTo: ALL_TYPES, blockers: [] },
+  {
+    id: "reverseCharge",
+    locked: true,
+    available: true,
+    appliesTo: ALL_TYPES,
+    blockers: ["reverse_charge_text"],
+  },
+  { id: "signatory", locked: true, available: true, appliesTo: ALL_TYPES, blockers: [] },
+  {
+    id: "originalForRecipient",
+    locked: true,
+    available: true,
+    appliesTo: ["tax_invoice", "export_invoice"],
+    blockers: [],
+  },
+  {
+    id: "exportDeclaration",
+    locked: true,
+    available: true,
+    appliesTo: ["export_invoice"],
+    blockers: ["lut_missing"],
+  },
+  {
+    id: "countryOfDestination",
+    locked: true,
+    available: true,
+    appliesTo: ["export_invoice"],
+    blockers: ["country_missing"],
+  },
+  {
+    id: "bankDetails",
+    locked: false,
+    available: true,
+    appliesTo: ALL_TYPES,
+    blockers: ["bank_missing", "swift_missing"],
+  },
+  { id: "paymentLink", locked: false, available: false, appliesTo: ALL_TYPES, blockers: [] },
+  {
+    id: "unregisteredHighValue",
+    locked: true,
+    available: true,
+    appliesTo: ["tax_invoice"],
+    blockers: ["unregistered_high_value"],
+  },
+];
+
+/** The keys the Owner may store (an item that is neither locked nor unavailable). */
+export const CHECKLIST_SWITCHABLE = ["bankDetails"] as const;
+
+/** Whether a checklist item is on for these settings: locked items always, `bankDetails` as stored, `paymentLink` never (not available). */
+export function checklistItemOn(item: ChecklistItem, s: ChecklistSettings): boolean {
+  if (item.id === "bankDetails") return s.bankDetails;
+  if (item.id === "paymentLink") return false;
+  return true;
+}
 
 export type IssueFacts = {
   readonly type: string;
@@ -161,27 +306,65 @@ export type IssueFacts = {
     readonly gstStatus: "registered" | "unregistered" | "overseas";
     readonly gstin: string | null;
     readonly stateCode: string | null;
+    /** M5.2: the country's English name (frozen from `Intl.DisplayNames` at issue, LD32); null when it cannot be named (an overseas client then has no country). */
+    readonly countryName: string | null;
   };
   readonly lines: readonly { readonly sac: string | null; readonly description: string }[];
   /** How many errors the tax engine gave (0 = it computed). */
   readonly taxErrorCount: number;
   /** The computed total in minor units; null when the document does not compute. */
   readonly totalMinor: number | null;
+  /** The computed total in INR minor units: the total itself for an INR document, the INR view of a USD one (null when there is none). */
+  readonly totalInrMinor: number | null;
   readonly reverseChargeText: string | null;
+  /** M5.2: the rate typed on the draft (null: none) and the day it is judged against (the issue day; for an advance invoice the day the money arrived). */
+  readonly fx: {
+    readonly value: { readonly rateMicros: number; readonly date: string; readonly source: string } | null;
+    readonly refDate: string;
+    readonly maxAgeDays: number;
+  };
+  /** M5.2: for an export invoice, its route, the FY it is issued in (the IST issue day) and the saved letters; null for every other type. */
+  readonly export: {
+    readonly mode: ExportRoute;
+    readonly issueFy: string;
+    readonly luts: readonly Lut[];
+  } | null;
+  /** M5.2: an active INR bank account and an active USD (SWIFT) account exist. */
+  readonly bank: { readonly inr: boolean; readonly swift: boolean };
+  /** M5.2: this is the tax invoice made for money already received (Q9): it is paid, so it has no bank block to check. */
+  readonly advance: boolean;
+  /** `tax.b2cDetailsThresholdInrMinor` (Q25: compared with the total including GST). */
+  readonly b2cThresholdInrMinor: number;
 };
 
 const blank = (v: string | null | undefined): boolean => v === null || v === undefined || v.trim() === "";
 const SAC = /^\d{6}$/;
 
+/** The checklist item that owns each blocker (a blocker no item owns is never switched off). */
+const OWNER_OF: ReadonlyMap<IssueBlockerCode, ChecklistItem> = new Map(
+  INVOICE_CHECKLIST.flatMap((item) => item.blockers.map((code) => [code, item] as const)),
+);
+
 /**
- * Everything that stops a draft from being issued, as codes (empty = it can be issued). The minimal statutory list of Rule 46 (VERIFY WITH
- * CA/LEGAL): the supplier's identity, the recipient's, a line with a description and a 6-digit SAC each, a computed total above zero (Q4),
- * the reverse-charge statement, the client's currency, and a type the client can have. Order is stable: supplier, recipient, lines, totals.
+ * Everything that stops a draft from being issued, as codes (empty = it can be issued): the statutory list of Rule 46 (VERIFY WITH CA/LEGAL) as the
+ * checklist of ADM-INV-06. Order is stable: supplier, recipient, lines, totals, the type, then the M5.2 items (country, exchange rate, LUT, the
+ * ₹50,000 rule, bank). A blocker whose checklist item does not apply to the type, or is switched off (`bankDetails` only), is not raised;
+ * blockers no item owns (the exchange rate, the currency, the type) always apply to the types they are about. A proforma has no exchange rate, no
+ * LUT and no `type_not_allowed`; the advance invoice skips the bank items.
  */
-export function issueBlockers(f: IssueFacts): IssueBlocker[] {
+export function issueBlockers(
+  f: IssueFacts,
+  checklist: ChecklistSettings = DEFAULT_CHECKLIST,
+): IssueBlocker[] {
   const out: IssueBlocker[] = [];
-  const add = (code: IssueBlockerCode, line?: number) =>
-    out.push(line === undefined ? { code } : { code, line });
+  const add = (code: IssueBlockerCode, extra: Partial<Omit<IssueBlocker, "code">> = {}) => {
+    const item = OWNER_OF.get(code);
+    if (item) {
+      if (!(item.appliesTo as readonly string[]).includes(f.type)) return;
+      if (!checklistItemOn(item, checklist)) return;
+    }
+    out.push({ code, ...extra });
+  };
   if (blank(f.supplier.legalName)) add("supplier_legal_name");
   if (blank(f.supplier.tradeName)) add("supplier_trade_name");
   if (blank(f.supplier.address)) add("supplier_address");
@@ -193,8 +376,8 @@ export function issueBlockers(f: IssueFacts): IssueBlocker[] {
   if (f.recipient.gstStatus !== "overseas" && blank(f.recipient.stateCode)) add("recipient_state");
   if (f.lines.length === 0) add("no_lines");
   f.lines.forEach((l, i) => {
-    if (blank(l.description)) add("line_description_missing", i + 1);
-    if (l.sac === null || !SAC.test(l.sac)) add("line_sac_missing", i + 1);
+    if (blank(l.description)) add("line_description_missing", { line: i + 1 });
+    if (l.sac === null || !SAC.test(l.sac)) add("line_sac_missing", { line: i + 1 });
   });
   if (f.taxErrorCount > 0) add("computed_errors");
   else if (f.totalMinor === null || f.totalMinor <= 0) add("zero_total");
@@ -203,6 +386,32 @@ export function issueBlockers(f: IssueFacts): IssueBlocker[] {
   const overseas = f.recipient.gstStatus === "overseas";
   if ((f.type === "tax_invoice" && overseas) || (f.type === "export_invoice" && !overseas))
     add("type_not_allowed");
+
+  // M5.2. The country of an export (Rule 46(o)), named once at issue.
+  if (f.type === "export_invoice" && blank(f.recipient.countryName)) add("country_missing");
+  // The exchange rate of a USD tax or export invoice (Rule 34(2); Q7, Q24): typed, and of a day close enough to the one it is judged against.
+  if (f.currency === "USD" && (f.type === "tax_invoice" || f.type === "export_invoice")) {
+    if (f.fx.value === null) add("fx_missing", { date: f.fx.refDate });
+    else if (!fxDateOk(f.fx.value.date, f.fx.refDate, f.fx.maxAgeDays))
+      add("fx_date_invalid", { date: f.fx.refDate });
+  }
+  // The letter of undertaking of the FY of ISSUE (a draft saved on 31 March and issued on 1 April needs the new year's), on the LUT route only.
+  if (f.type === "export_invoice" && f.export !== null && f.export.mode === "lut") {
+    if (lutFor(f.export.issueFy, f.export.luts) === null) add("lut_missing", { fy: f.export.issueFy });
+  }
+  // Rule 46(e), Q25: an unregistered recipient at or above the threshold needs name, address and state (the total includes GST).
+  if (
+    f.recipient.gstStatus === "unregistered" &&
+    f.totalInrMinor !== null &&
+    f.totalInrMinor >= f.b2cThresholdInrMinor &&
+    (blank(f.recipient.legalName) || blank(f.recipient.addressLine1) || blank(f.recipient.stateCode))
+  )
+    add("unregistered_high_value");
+  // The bank block the invoice prints: an INR account for an INR document, a SWIFT account for a USD one (the advance invoice is paid: none).
+  if (!f.advance) {
+    if (f.currency === "INR" && !f.bank.inr) add("bank_missing");
+    if (f.currency === "USD" && !f.bank.swift) add("swift_missing");
+  }
   return out;
 }
 
@@ -229,13 +438,15 @@ export type VoidFacts = {
   /** The invoice's issue date (IST day) and today's IST day: Q23 lets a void happen only inside the calendar month of issue. */
   readonly issueDate: string | null;
   readonly today: string;
+  /** M5.2 (LD28): a proforma is not a tax document, so the month rule of Q23 does not apply to it (VERIFY WITH CA/LEGAL). Absent: any other type. */
+  readonly type?: string;
 };
 
 /**
  * Q1 (VERIFY WITH CA/LEGAL, 08-A §4): an issued invoice can be voided only while it has not been emailed to the client and has no payment and no
  * credit or debit note; after that, a credit note is the correction. Q23: and only within the IST calendar month of issue (the GST return period of
- * an invoice is the month of its date), after which a credit note is the correction too. The number stays and the record stays (Rule 56(8)). Codes only.
- * VERIFY WITH CA/LEGAL (the batch page offers both forms of the Q23 rule).
+ * an invoice is the month of its date), after which a credit note is the correction too; a proforma has no return period (LD28). The number stays and
+ * the record stays (Rule 56(8)). Codes only. VERIFY WITH CA/LEGAL (the batch page offers both forms of the Q23 rule).
  */
 export function voidBlockers(f: VoidFacts): VoidBlockerCode[] {
   if (f.status === "void") return ["already_void"];
@@ -245,7 +456,7 @@ export function voidBlockers(f: VoidFacts): VoidBlockerCode[] {
   if (f.creditedMinor > 0) out.push("has_credit");
   if (f.hasIssuedChild) out.push("has_child_document");
   if (f.emailed) out.push("already_emailed");
-  if (f.issueDate !== null && f.issueDate.slice(0, 7) !== f.today.slice(0, 7))
+  if (f.type !== "proforma" && f.issueDate !== null && f.issueDate.slice(0, 7) !== f.today.slice(0, 7))
     out.push("return_period_closed");
   return out;
 }
@@ -332,6 +543,35 @@ export type InvoiceSnapshotInput = {
   readonly issuer: unknown;
   /** The SHA-256 of the exact `computed` JSON text stored in `documents.computed`. */
   readonly computedSha256: string;
+  /**
+   * M5.2 (LD25): the new header keys. Each appears ONLY on the types that need it, so a tax invoice sealed by M5.1 hashes to the same value as before
+   * (the key is absent, not null) and a parser accepts their absence.
+   *   export:   an export invoice: the route, the endorsement as frozen, the LUT (LUT route), the country, and the optional declaration block pinned;
+   *   fx:       every USD tax or export invoice (not a proforma): the rate the INR values were worked out at;
+   *   proforma: a proforma: the notice it carries;
+   *   advance:  the tax invoice made for money received (Q9): the proforma it settles and the receipt row.
+   */
+  readonly export?: {
+    readonly mode: ExportRoute;
+    readonly endorsement: string;
+    readonly lut: { readonly fy: string; readonly arn: string } | null;
+    readonly countryCode: string;
+    readonly countryName: string;
+    readonly declarationRef: {
+      readonly id: string;
+      readonly version: number;
+      readonly sha256: string;
+    } | null;
+  };
+  readonly fx?: { readonly rateMicros: number; readonly date: string; readonly source: string };
+  readonly proforma?: { readonly notice: string };
+  readonly advance?: {
+    readonly proformaId: string;
+    readonly proformaNumber: string;
+    readonly proformaIssueDate: string;
+    readonly receivedOn: string;
+    readonly receiptId: string;
+  };
 };
 
 /**

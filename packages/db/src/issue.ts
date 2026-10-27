@@ -14,12 +14,13 @@
 import type {
   InvoiceBankBlock,
   InvoiceIssuerSnapshot,
+  InvoiceSwiftBlock,
   IssuerSnapshot,
   RecipientSnapshot,
 } from "./schema/documents.ts";
 
 /** The two frozen blocks of a sent document, for a caller that builds them (type only: nothing of the schema reaches a Worker bundle). */
-export type { InvoiceBankBlock, InvoiceIssuerSnapshot, IssuerSnapshot, RecipientSnapshot };
+export type { InvoiceBankBlock, InvoiceIssuerSnapshot, InvoiceSwiftBlock, IssuerSnapshot, RecipientSnapshot };
 
 export type SendArgs = {
   documentId: string;
@@ -229,6 +230,8 @@ export type InvoiceIssueArgs = {
   issuedBy: string;
   /** The newest `invoice` terms version (the footer notes) at the read; none is allowed. */
   termsVersionId: string | null;
+  /** M5.2 (LD23): the newest `export_declaration` block pinned to an export invoice that asked for it; null for everything else. Frozen with the document. */
+  exportDeclarationId?: string | null;
   expected: {
     updatedAt: number;
     contentSha256: string;
@@ -253,33 +256,34 @@ export type InvoiceIssueArgs = {
 const FROZEN_BY_THIS_BATCH =
   "EXISTS (SELECT 1 FROM documents n WHERE n.id = ?1 AND n.status = 'issued' AND n.frozen_at = ?2)";
 
+/** What every invoice freeze needs, whoever the authority is (the owner, an approval, or the owner's advance action). */
+type FreezeBase = Omit<InvoiceIssueArgs, "authority" | "bell">;
+
 /**
- * The invoice issue batch, in the same two parts as `sendStatements` around the request's audit row:
- *   main      = [ guard, counter row, counter take, the FREEZE UPDATE ... RETURNING number_display, number ]
- *   postAudit = [ issue_result UNGUARDED, the milestone to 'invoiced', the pending `issue` approval to 'approved', the requester's bell ]
- * Every condition is in the freeze statement's WHERE (a read only explains a refusal), so a stale save, a changed setting, a changed client,
- * a full series, or an authority that is gone writes NOTHING: `issue_result` aborts the batch, the counter rolls back with it. The number is
- * outside the seal (it is assigned here); `balance_minor` starts at the total (LD17: M5 writes no payments). Exactly as many values as the
- * highest placeholder are bound (D1 refuses more).
+ * The freeze UPDATE every invoice issue ends with, with every condition in its WHERE (LD5; a read only explains a refusal):
+ *   ?1 id, ?2 series, ?3 fy, ?4 pattern, ?5 now, ?6 issue date, ?7 due date, ?8 recipient, ?9 issuer, ?10 computed, ?11 snapshot sha, ?12 issued by,
+ *   ?13 terms version, ?14 expected updated_at, ?15 expected content sha, ?16 numbering, ?17 company, ?18 tax, ?19 payment terms versions, ?20 bank stamp,
+ *   ?21 client updated_at, ?22 highest number, ?23 type, ?24 session, ?25 contact id, ?26 contact updated_at (both null: no contact), ?27 the export
+ *   declaration block (M5.2), and from ?28 whatever `tail` binds (the approval, or the advance action's amount, proforma and its stamp).
+ * A proforma's `valid_until` is its due date (M5.2, LD28, Q28): the freeze writes it, so the column is sealed with the rest. Exactly as many values as
+ * the highest placeholder are bound (D1 refuses more).
  */
-export function invoiceIssueStatements(db: D1Database, a: InvoiceIssueArgs): SendStatements {
+function freezeStatement(
+  db: D1Database,
+  a: FreezeBase,
+  sessionId: string,
+  tail: { where: string; binds: readonly unknown[] },
+): D1PreparedStatement {
   const nextNo = "(SELECT next_no - 1 FROM doc_counters WHERE series = ?2 AND fy = ?3)";
   const printfArgs = a.argOrder[0] === "fy" ? `?3, ${nextNo}` : `${nextNo}, ?3`;
   const owner =
     "EXISTS (SELECT 1 FROM staff_sessions s JOIN staff_users u ON u.id = s.user_id WHERE s.id = ?24 AND s.revoked_at IS NULL AND s.idle_expires_at > ?5 AND s.abs_expires_at > ?5 AND s.step_up_until > ?5 AND u.role = 'owner' AND u.status = 'active')";
-  const approval =
-    a.authority.kind === "approval"
-      ? " AND EXISTS (SELECT 1 FROM approvals ap WHERE ap.id = ?27 AND ap.document_id = documents.id AND ap.kind = 'issue' AND ap.status = 'pending' AND ap.content_sha256 = documents.content_sha256)"
-      : "";
-  // ?1 id, ?2 series, ?3 fy, ?4 pattern, ?5 now, ?6 issue date, ?7 due date, ?8 recipient, ?9 issuer, ?10 computed, ?11 snapshot sha, ?12 issued by,
-  // ?13 terms version, ?14 expected updated_at, ?15 expected content sha, ?16 numbering, ?17 company, ?18 tax, ?19 payment terms versions, ?20 bank
-  // stamp, ?21 client updated_at, ?22 highest number, ?23 type, ?24 session, ?25 contact id, ?26 contact updated_at (both null: no contact), and for
-  // an approval ?27 the approval id.
-  const freeze = db
+  return db
     .prepare(
       `UPDATE documents SET series = ?2, fy = ?3, number = ${nextNo}, number_display = printf(?4, ${printfArgs}),
          status = 'issued', frozen_at = ?5, issue_date = ?6, due_date = ?7, recipient = ?8, issuer = ?9, computed = ?10,
-         snapshot_sha256 = ?11, issued_by = ?12, terms_version_id = ?13, balance_minor = total_minor, updated_at = ?5
+         snapshot_sha256 = ?11, issued_by = ?12, terms_version_id = ?13, balance_minor = total_minor, updated_at = ?5,
+         valid_until = CASE WHEN ?23 = 'proforma' THEN ?7 ELSE valid_until END, export_declaration_id = ?27
        WHERE id = ?1 AND type = ?23 AND status = 'draft' AND frozen_at IS NULL AND updated_at = ?14 AND content_sha256 = ?15
          AND (SELECT version FROM settings WHERE key = 'numbering') IS ?16
          AND (SELECT version FROM settings WHERE key = 'company') IS ?17
@@ -290,7 +294,7 @@ export function invoiceIssueStatements(db: D1Database, a: InvoiceIssueArgs): Sen
          AND NOT EXISTS (SELECT 1 FROM clients z WHERE z.id = documents.client_id AND z.anonymised_at IS NOT NULL)
          AND ${nextNo} <= ?22
          AND (?25 IS NULL OR EXISTS (SELECT 1 FROM contacts k WHERE k.id = ?25 AND k.client_id = documents.client_id AND k.anonymised_at IS NULL AND k.updated_at = ?26))
-         AND ${owner}${approval}
+         AND ${owner}${tail.where}
        RETURNING number_display, number`,
     )
     .bind(
@@ -317,23 +321,49 @@ export function invoiceIssueStatements(db: D1Database, a: InvoiceIssueArgs): Sen
       a.expected.clientUpdatedAt,
       a.maxNumber,
       a.type,
-      a.authority.sessionId,
+      sessionId,
       a.expected.contact?.id ?? null,
       a.expected.contact?.updatedAt ?? null,
-      ...(a.authority.kind === "approval" ? [a.authority.approvalId] : []),
+      a.exportDeclarationId ?? null,
+      ...tail.binds,
     );
+}
+
+/**
+ * The invoice issue batch, in the same two parts as `sendStatements` around the request's audit row:
+ *   main      = [ guard, counter row, counter take, the FREEZE UPDATE ... RETURNING number_display, number ]
+ *   postAudit = [ issue_result UNGUARDED, the milestone to 'invoiced' (not for a proforma, M5.2), the pending `issue` approval to 'approved', the requester's bell ]
+ * Every condition is in the freeze statement's WHERE (a read only explains a refusal), so a stale save, a changed setting, a changed client,
+ * a full series, or an authority that is gone writes NOTHING: `issue_result` aborts the batch, the counter rolls back with it. The number is
+ * outside the seal (it is assigned here); `balance_minor` starts at the total (LD17: M5 writes no payments here). A PROFORMA does not move its milestone
+ * (finding 2): the work is not invoiced until a tax invoice exists, so the unbilled milestone stays visible to the 25-day warning.
+ */
+export function invoiceIssueStatements(db: D1Database, a: InvoiceIssueArgs): SendStatements {
+  const approval =
+    a.authority.kind === "approval"
+      ? {
+          where:
+            " AND EXISTS (SELECT 1 FROM approvals ap WHERE ap.id = ?28 AND ap.document_id = documents.id AND ap.kind = 'issue' AND ap.status = 'pending' AND ap.content_sha256 = documents.content_sha256)",
+          binds: [a.authority.approvalId] as const,
+        }
+      : { where: "", binds: [] as const };
+  const freeze = freezeStatement(db, a, a.authority.sessionId, approval);
   return {
     main: [guardStatement(db, a.documentId), ...counterStatements(db, a.series, a.fy), freeze],
     postAudit: [
       issueResultStatement(db, a.documentId, a.series, a.fy),
-      // The milestone this invoice was made from is now invoiced (one made by "Start project" (M4.5) is still pending when its first-instalment draft is issued, so both count); `delivered_at` was set when it became ready to bill (LD12) and is kept: an advance invoice on a pending milestone leaves it unset (the work is not delivered).
-      db
-        .prepare(
-          `UPDATE milestones SET delivered_at = CASE WHEN status = 'ready_to_bill' THEN coalesce(delivered_at, ?2) ELSE delivered_at END,
+      // The milestone this invoice was made from is now invoiced (one made by "Start project" (M4.5) is still pending when its first-instalment draft is issued, so both count); `delivered_at` was set when it became ready to bill (LD12) and is kept: an advance invoice on a pending milestone leaves it unset (the work is not delivered). A proforma leaves its milestone alone.
+      ...(a.type === "proforma"
+        ? []
+        : [
+            db
+              .prepare(
+                `UPDATE milestones SET delivered_at = CASE WHEN status = 'ready_to_bill' THEN coalesce(delivered_at, ?2) ELSE delivered_at END,
              status = 'invoiced', updated_at = ?2
            WHERE document_id = ?1 AND status IN ('pending', 'ready_to_bill') AND ${FROZEN_BY_THIS_BATCH}`,
-        )
-        .bind(a.documentId, a.now),
+              )
+              .bind(a.documentId, a.now),
+          ]),
       // An issue request that was waiting for exactly this content is approved: by the approver in the approval path, by the owner who issued directly.
       db
         .prepare(
@@ -356,3 +386,205 @@ export function invoiceIssueStatements(db: D1Database, a: InvoiceIssueArgs): Sen
     ],
   };
 }
+
+// ---- the tax invoice for money received against a proforma (M5.2, Q9, LD22, G-6; VERIFY WITH CA/LEGAL) --------------------------------------
+
+/** One line of the new invoice: the proforma's own split of the amount received (`splitInclusive` over its groups), already worked out by the caller. */
+export type AdvanceLine = {
+  id: string;
+  position: number;
+  description: string;
+  detail: string | null;
+  sac: string;
+  qtyMilli: number;
+  unit: string;
+  rateMinor: number;
+  taxableMinor: number;
+  gstRateBp: number;
+  cgstMinor: number;
+  sgstMinor: number;
+  igstMinor: number;
+  lineTotalMinor: number;
+};
+
+export type AdvanceIssueArgs = Omit<InvoiceIssueArgs, "authority" | "bell" | "expected" | "type"> & {
+  /** The new invoice's type: an export invoice for an overseas client, else a tax invoice. */
+  type: "tax_invoice" | "export_invoice";
+  /** The proforma the money was received against, and the `updated_at` it was read at (a changed proforma refuses the batch). */
+  proformaId: string;
+  expectedProformaUpdatedAt: number;
+  /** Owner only: the session whose live step-up the freeze checks. */
+  sessionId: string;
+  amountMinor: number;
+  /** ISO date the money arrived, and `normaliseReference` of its bank or gateway reference (the idempotency key with the proforma). */
+  receivedOn: string;
+  referenceNorm: string;
+  /** The `advance_receipts` row's id (also sealed in the invoice header). */
+  receiptId: string;
+  /** The hash of the new invoice's draft content (the row is inserted with it, and the freeze checks it). */
+  contentSha256: string;
+  expected: Omit<InvoiceIssueArgs["expected"], "updatedAt" | "contentSha256">;
+  /** The draft the batch inserts before it freezes it: the columns a save writes, and the lines. */
+  draft: {
+    clientId: string;
+    projectId: string | null;
+    contactId: string | null;
+    currency: string;
+    exportMode: string | null;
+    fx: { rateMicros: number; date: string; source: string } | null;
+    subtotalMinor: number;
+    discountMinor: number;
+    taxableMinor: number;
+    cgstMinor: number;
+    sgstMinor: number;
+    igstMinor: number;
+    roundOffMinor: number;
+    totalMinor: number;
+    totalInrMinor: number | null;
+    supplyType: string;
+    placeOfSupplyCode: string;
+    lines: readonly AdvanceLine[];
+  };
+};
+
+/**
+ * The advance batch (the only place M5 writes a paid amount, LD22): in ONE batch, INSERT the new invoice as a draft (its parent is the proforma) with
+ * its lines, then the same guard, counter and FREEZE as any invoice issue (every M5.1 condition) plus what only this action needs, in the freeze's
+ * WHERE: the amount equals the invoice's total, and the proforma is still the frozen proforma read (`updated_at`), issued or converted, with a
+ * balance of at least the amount. After the audit row: `issue_result` UNGUARDED (a refusal rolls the whole batch back, the inserted draft and the
+ * counter with it), the `advance_receipts` row (a repeated reference aborts the batch on its unique key), the proforma moved to `converted` with its
+ * paid and balance updated, the proforma's milestone to `invoiced` once its balance is 0 (delivered_at kept, LD12), and the new invoice to `paid`
+ * with balance 0. Authority: the Owner's session with a live step-up, checked inside the freeze statement.
+ */
+export function advanceIssueStatements(db: D1Database, a: AdvanceIssueArgs): SendStatements {
+  const d = a.draft;
+  const insert = db
+    .prepare(
+      `INSERT INTO documents (id, type, status, client_id, project_id, parent_id, contact_id, currency, supply_type, place_of_supply_code, export_mode,
+         fx_rate_micros, fx_date, fx_source, subtotal_minor, discount_minor, taxable_minor, cgst_minor, sgst_minor, igst_minor, round_off_minor,
+         total_minor, total_inr_minor, content_sha256, created_by, created_at, updated_at)
+       VALUES (?1, ?2, 'draft', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?25)`,
+    )
+    .bind(
+      a.documentId,
+      a.type,
+      d.clientId,
+      d.projectId,
+      a.proformaId,
+      d.contactId,
+      d.currency,
+      d.supplyType,
+      d.placeOfSupplyCode,
+      d.exportMode,
+      d.fx?.rateMicros ?? null,
+      d.fx?.date ?? null,
+      d.fx?.source ?? null,
+      d.subtotalMinor,
+      d.discountMinor,
+      d.taxableMinor,
+      d.cgstMinor,
+      d.sgstMinor,
+      d.igstMinor,
+      d.roundOffMinor,
+      d.totalMinor,
+      d.totalInrMinor,
+      a.contentSha256,
+      a.issuedBy,
+      a.now,
+    );
+  const lines = d.lines.map((l) =>
+    db
+      .prepare(
+        `INSERT INTO document_lines (id, document_id, position, description, detail, sac, qty_milli, unit, rate_minor, taxable_minor, gst_rate_bp,
+           cgst_minor, sgst_minor, igst_minor, line_total_minor)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)`,
+      )
+      .bind(
+        l.id,
+        a.documentId,
+        l.position,
+        l.description,
+        l.detail,
+        l.sac,
+        l.qtyMilli,
+        l.unit,
+        l.rateMinor,
+        l.taxableMinor,
+        l.gstRateBp,
+        l.cgstMinor,
+        l.sgstMinor,
+        l.igstMinor,
+        l.lineTotalMinor,
+      ),
+  );
+  const base: FreezeBase = {
+    ...a,
+    expected: { ...a.expected, updatedAt: a.now, contentSha256: a.contentSha256 },
+  };
+  const freeze = freezeStatement(db, base, a.sessionId, {
+    where: ` AND total_minor = ?28
+         AND EXISTS (SELECT 1 FROM documents p WHERE p.id = ?29 AND p.type = 'proforma' AND p.frozen_at IS NOT NULL AND p.status IN ('issued', 'converted') AND p.updated_at = ?30 AND p.balance_minor >= ?28)`,
+    binds: [a.amountMinor, a.proformaId, a.expectedProformaUpdatedAt],
+  });
+  return {
+    main: [
+      insert,
+      ...lines,
+      guardStatement(db, a.documentId),
+      ...counterStatements(db, a.series, a.fy),
+      freeze,
+    ],
+    postAudit: [
+      issueResultStatement(db, a.documentId, a.series, a.fy),
+      // The evidence: one row per payment reference of the proforma (the unique key makes a repeated reference abort the whole batch).
+      db
+        .prepare(
+          `INSERT INTO advance_receipts (id, proforma_id, invoice_id, client_id, currency, amount_minor, received_on, reference_norm, created_by, created_at)
+           SELECT ?3, ?2, d.id, d.client_id, d.currency, ?4, ?5, ?6, ?7, ?8 FROM documents d WHERE d.id = ?1 AND d.status = 'issued' AND d.frozen_at = ?8`,
+        )
+        .bind(
+          a.documentId,
+          a.proformaId,
+          a.receiptId,
+          a.amountMinor,
+          a.receivedOn,
+          a.referenceNorm,
+          a.issuedBy,
+          a.now,
+        ),
+      // The proforma is converted (terminal) with the payment on it; it stays `converted` while a balance is left (further payments are allowed).
+      db
+        .prepare(
+          `UPDATE documents SET status = 'converted', paid_minor = paid_minor + ?3, balance_minor = balance_minor - ?3, updated_at = ?4
+           WHERE id = ?2 AND type = 'proforma' AND EXISTS (SELECT 1 FROM documents n WHERE n.id = ?1 AND n.status = 'issued' AND n.frozen_at = ?4)`,
+        )
+        .bind(a.documentId, a.proformaId, a.amountMinor, a.now),
+      // The work is invoiced only when the proforma is settled: the milestone moves once its balance is 0 (after the update above).
+      db
+        .prepare(
+          `UPDATE milestones SET delivered_at = CASE WHEN status = 'ready_to_bill' THEN coalesce(delivered_at, ?3) ELSE delivered_at END,
+             status = 'invoiced', updated_at = ?3
+           WHERE document_id = ?2 AND status IN ('pending', 'ready_to_bill')
+             AND (SELECT balance_minor FROM documents WHERE id = ?2) = 0
+             AND EXISTS (SELECT 1 FROM documents n WHERE n.id = ?1 AND n.status = 'issued' AND n.frozen_at = ?3)`,
+        )
+        .bind(a.documentId, a.proformaId, a.now),
+      // The new invoice is paid: nothing is left to chase.
+      db
+        .prepare(
+          `UPDATE documents SET status = 'paid', paid_minor = total_minor, balance_minor = 0 WHERE id = ?1 AND status = 'issued' AND frozen_at = ?2`,
+        )
+        .bind(a.documentId, a.now),
+    ],
+  };
+}
+
+/**
+ * M5.4's reader (ADM-INV-10, Rule 47): milestones whose work was DELIVERED and whose proforma still has a balance, oldest delivery first, keyset by
+ * `(delivered_at, id)`, at most 50 rows. `?1` the cutoff (delivered at or before it), `?2` and `?3` the last row's `delivered_at` and `id` (the first
+ * page binds -1 and ''). No new index here: M5.4 adds it (0043-0044).
+ */
+export const PROFORMA_TAX_INVOICE_DUE_SQL = `SELECT m.id AS milestone_id, m.delivered_at, m.title, m.project_id, d.id AS proforma_id, d.number_display, d.client_id, d.currency, d.balance_minor
+   FROM milestones m JOIN documents d ON d.id = m.document_id AND d.type = 'proforma' AND d.frozen_at IS NOT NULL AND d.status <> 'void' AND d.balance_minor > 0
+   WHERE m.delivered_at IS NOT NULL AND m.delivered_at <= ?1 AND (m.delivered_at > ?2 OR (m.delivered_at = ?2 AND m.id > ?3))
+   ORDER BY m.delivered_at, m.id LIMIT 50`;

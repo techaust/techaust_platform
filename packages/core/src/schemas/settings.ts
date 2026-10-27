@@ -6,6 +6,7 @@
 // Written with `zod/mini` (M3.1): the admin Worker validates these on every Settings save, and its bundle guard
 // (scripts/worker-budget.mjs) keeps classic zod (~150 KB) out. The behaviour is the same as the classic version.
 import * as z from "zod/mini";
+import { parseIsoDate } from "../dates.ts";
 import { EMAIL_TEMPLATES } from "../email-templates.ts";
 import { STATE_CODES, type StateCode, validateGstin } from "../gstin.ts";
 import { DEFAULT_PADDING, SERIES, type Series, validateFormat } from "../numbering.ts";
@@ -101,6 +102,43 @@ export const companySettings = z
     }),
   );
 
+/** An ISO calendar date as a date input gives it ("2026-03-28"); a real date. */
+const isoDate = z.string().check(
+  z.regex(/^\d{4}-\d{2}-\d{2}$/),
+  z.refine((v) => parseIsoDate(v) !== null, { error: "Enter a real date" }),
+);
+
+/**
+ * ADM-SET-03, ADM-INV-18 (M5.2): one letter of undertaking per financial year. `fy` is the token ("2627": two consecutive years), `arn` the number from
+ * the GST portal (spaces dropped, upper case; its format is NOT VERIFIED, so only a safe 1 to 30 characters of letters and digits is checked),
+ * `filedOn` the day it was filed (optional). VERIFY WITH CA/LEGAL.
+ */
+export const lutEntry = z.strictObject({
+  fy: z.string().check(
+    z.regex(/^\d{4}$/, { error: "Pick a financial year" }),
+    z.refine((v) => (Number(v.slice(0, 2)) + 1) % 100 === Number(v.slice(2)), {
+      error: "A financial year runs between two consecutive years",
+    }),
+  ),
+  arn: z.pipe(
+    z.string({ error: "Enter the ARN from the GST portal." }),
+    z.pipe(
+      z.transform((v) => v.replace(/\s+/g, "").toUpperCase()),
+      z.string().check(z.regex(/^[A-Z0-9]{1,30}$/, { error: "Enter the ARN from the GST portal." })),
+    ),
+  ),
+  filedOn: z.nullable(isoDate),
+});
+
+/**
+ * LD31: only the switchable lines of the mandatory-field checklist (ADM-INV-06) are stored in the `tax` row; the locked ones are a constant in
+ * `@techaust/core/invoices` and naming one here is refused (a strict object). The payment link stays off until online payment exists (M6): `true` is refused.
+ */
+export const invoiceChecklistSettings = z.strictObject({
+  bankDetails: z.boolean(),
+  paymentLink: z.literal(false),
+});
+
 export const taxSettings = z.object({
   /** G-1: 18 % on all services (CGST 9 + SGST 9, or IGST 18). */
   defaultRateBp: bp,
@@ -118,10 +156,38 @@ export const taxSettings = z.object({
   }),
   /** G-8: exports under LUT (0 % IGST) by default; needs a saved ARN for the FY. */
   exportMode: z.enum(["lut", "igst_paid"]),
-  lut: z.object({
-    arn: z.nullable(z.string()),
-    fy: z.nullable(z.string().check(z.regex(/^\d{4}$/))),
-  }),
+  /**
+   * DEPRECATED (M5.2): the one letter of M3. Stored rows keep it and the current screen still saves it; `lutsOf` reads it as a list entry when its FY is
+   * not in `luts`. New code writes `luts`. An input without it reads as empty.
+   */
+  lut: z.prefault(
+    z.object({
+      arn: z.nullable(z.string()),
+      fy: z.nullable(z.string().check(z.regex(/^\d{4}$/))),
+    }),
+    { arn: null, fy: null },
+  ),
+  /** G-8, ADM-INV-18 (M5.2): the letters of undertaking, at most one per FY, at most 20. */
+  luts: z.array(lutEntry).check(
+    z.maxLength(20),
+    z.check((ctx) => {
+      const seen = new Set<string>();
+      ctx.value.forEach((l, i) => {
+        if (seen.has(l.fy))
+          ctx.issues.push({
+            code: "custom",
+            message: "This year already has an LUT.",
+            input: ctx.value,
+            path: [i, "fy"],
+          });
+        seen.add(l.fy);
+      });
+    }),
+  ),
+  /** ADM-INV-06, Q10 (M5.2, LD31): the switchable lines of the mandatory-field checklist. */
+  invoiceChecklist: invoiceChecklistSettings,
+  /** Q24 (M5.2; VERIFY WITH CA/LEGAL, Rule 34(2)): how many days before the invoice date the exchange rate's own date may be (0 = the same day only). */
+  fxMaxAgeDays: intBetween(0, 7),
   /** G-6: Proforma → automatic Tax Invoice on payment; alternatives selectable. */
   advanceMode: z.enum(["proforma", "invoice_upfront", "receipt_voucher"]),
   /** G-9: FBIL/RBI reference rate on the invoice date. */
@@ -330,6 +396,9 @@ export const SETTINGS_DEFAULTS: Settings = {
     rounding: { lineTax: "half_up", totalInr: "nearest_rupee", totalUsd: "none" },
     exportMode: "lut",
     lut: { arn: null, fy: null },
+    luts: [],
+    invoiceChecklist: { bankDetails: true, paymentLink: false },
+    fxMaxAgeDays: 4,
     advanceMode: "proforma",
     fxSource: "FBIL/RBI",
     eInvoicing: false,

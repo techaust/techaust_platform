@@ -16,7 +16,7 @@ import { SCHEDULE_TRIGGERS } from "./catalogue.ts";
 import { CURRENCY_CODES, createdAt, currency, flag, id, oneOf, updatedAt } from "./common.ts";
 import { type Address, carePlans, clients, contacts, milestones, projects } from "./crm.ts";
 import { staffUsers } from "./identity.ts";
-import { termsVersions } from "./settings.ts";
+import { termsBlocks, termsVersions } from "./settings.ts";
 
 export const DOCUMENT_TYPES = [
   "proposal",
@@ -82,6 +82,8 @@ export type RecipientSnapshot = {
   contactName?: string;
   clientType?: "business" | "individual";
   gstStatus?: "registered" | "unregistered" | "overseas";
+  /** M5.2 (LD36): the client's service address when it has one: Rule 46(o), the export invoice's "address of delivery" (VERIFY WITH CA/LEGAL). */
+  deliveryAddress?: Address;
 };
 
 /** The frozen supplier and sender block of a sent proposal or estimate (docs/06 §7: every value comes from the snapshot). */
@@ -109,6 +111,18 @@ export type InvoiceBankBlock = {
   branch: string | null;
 };
 
+/** The USD account of a USD invoice's SWIFT block (M5.2, LD30), frozen with the invoice. `purposeCode` is the RBI purpose code (VERIFY WITH CA/LEGAL). */
+export type InvoiceSwiftBlock = {
+  accountName: string;
+  accountNo: string;
+  swift: string;
+  bankName: string;
+  branch: string | null;
+  bankAddress: string | null;
+  intermediary: string | null;
+  purposeCode: string | null;
+};
+
 /**
  * The frozen supplier block of an issued invoice (M5.1, LD4, LD11): the proposal block plus the principal place of business and the phone, the
  * bank block, and the signature as a REFERENCE (key, SHA-256, mime of the content-addressed object in DOCS; the jobs Worker reads and verifies
@@ -116,7 +130,8 @@ export type InvoiceBankBlock = {
  */
 export type InvoiceIssuerSnapshot = {
   company: IssuerSnapshot["company"] & { phone?: string; principalPlace?: string };
-  bank: { inr: InvoiceBankBlock | null };
+  /** `swift` (M5.2) exists only on a USD document that has one: an M5.1 snapshot has no such key and still parses. */
+  bank: { inr: InvoiceBankBlock | null; swift?: InvoiceSwiftBlock | null };
   signature: { key: string; sha256: string; mime: string } | null;
   /** The Rule 46(p) statement printed on the invoice (Settings > Tax at issue), frozen and sealed so a later settings change never changes it (VERIFY WITH CA/LEGAL). */
   reverseChargeText: string;
@@ -202,6 +217,10 @@ export const documents = sqliteTable(
     voidedAt: integer("voided_at"),
     voidReason: text("void_reason"),
     realisationDueAt: integer("realisation_due_at"),
+    /** M5.2 (LD29): the day the service was completed (ISO date; a tax or export invoice; set once after the freeze, not sealed, not printed). */
+    serviceCompletedOn: text("service_completed_on"),
+    /** M5.2 (LD23): the optional extra export note (an `export_declaration` block) pinned at issue; frozen. */
+    exportDeclarationId: text("export_declaration_id").references(() => termsBlocks.id),
     // IRP e-invoicing (ADM-INV-14): empty at launch.
     irn: text("irn"),
     ackNo: text("ack_no"),
@@ -260,6 +279,44 @@ export const documents = sqliteTable(
     check("documents_number_length", sql`${t.numberDisplay} is null or length(${t.numberDisplay}) <= 16`),
     check("documents_void_reason", sql`(${t.voidedAt} is null) = (${t.voidReason} is null)`),
     check("documents_version", sql`${t.version} >= 1`),
+  ],
+);
+
+/**
+ * Tax invoices made from a proforma for money received (M5.2, LD22, Q9, G-6; VERIFY WITH CA/LEGAL): one row per `advance-invoice` action,
+ * append-only (trigger). `(proforma_id, reference_norm)` is the idempotency key: the same payment reference twice is refused; M6 takes these
+ * rows into `payments`. The reference text itself is never stored, only its normal form.
+ */
+export const advanceReceipts = sqliteTable(
+  "advance_receipts",
+  {
+    id: id(),
+    proformaId: text("proforma_id")
+      .notNull()
+      .references(() => documents.id),
+    invoiceId: text("invoice_id")
+      .notNull()
+      .unique()
+      .references(() => documents.id),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => clients.id),
+    currency: currency(),
+    amountMinor: integer("amount_minor").notNull(),
+    /** ISO date the money arrived. */
+    receivedOn: text("received_on").notNull(),
+    /** `normaliseReference` of the bank or gateway reference (upper case, no spaces). */
+    referenceNorm: text("reference_norm").notNull(),
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => staffUsers.id),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("advance_receipts_proforma_reference").on(t.proformaId, t.referenceNorm),
+    index("advance_receipts_client").on(t.clientId, t.createdAt),
+    check("advance_receipts_currency", oneOf(t.currency, CURRENCY_CODES)),
+    check("advance_receipts_amount", sql`${t.amountMinor} > 0`),
   ],
 );
 

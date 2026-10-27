@@ -38,10 +38,15 @@ export type SupplyOptions = {
   readonly placeOfSupplyOverride?: PlaceOfSupplyOverride | null | undefined;
 };
 
-/** The letters of undertaking the settings hold today: `tax.lut` is one entry, so a list of 0 or 1 (M5.2 makes it a list). */
+/**
+ * The letters of undertaking the settings hold: the `luts` list (M5.2) and, when set, the one legacy `tax.lut` of M3 unless its FY is already listed
+ * (a stored row must keep working and a saved letter must never vanish).
+ */
 export function lutsOf(tax: TaxContext["tax"]): { fy: string; arn: string }[] {
+  const out = tax.luts.map(({ fy, arn }) => ({ fy, arn }));
   const { arn, fy } = tax.lut;
-  return arn && fy ? [{ fy, arn }] : [];
+  if (arn && fy && !out.some((l) => l.fy === fy)) out.push({ fy, arn });
+  return out;
 }
 
 const OVERRIDE_REASON_MAX = 500;

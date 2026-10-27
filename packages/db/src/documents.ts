@@ -36,6 +36,12 @@ export type DocumentRow = {
   balance_minor: number;
   voided_at: number | null;
   void_reason: string | null;
+  /** M5.2: the exchange rate of a USD invoice (INR micros per USD), its date and its source as printed; the day the service was completed; the pinned export-declaration block. */
+  fx_rate_micros: number | null;
+  fx_date: string | null;
+  fx_source: string | null;
+  service_completed_on: string | null;
+  export_declaration_id: string | null;
   valid_until: string | null;
   supply_type: string | null;
   place_of_supply_code: string | null;
@@ -166,7 +172,7 @@ export type DocumentBundle<T extends TermsRef = TermsRow> = {
 };
 
 const DOCUMENT_COLUMNS =
-  "id, type, status, client_id, version_group_id, version, series, fy, number, number_display, currency, issue_date, due_date, parent_id, paid_minor, credited_minor, balance_minor, voided_at, void_reason, valid_until, supply_type, place_of_supply_code, subtotal_minor, discount_minor, taxable_minor, cgst_minor, sgst_minor, igst_minor, round_off_minor, total_minor, terms_version_id, snapshot_r2_key, snapshot_sha256, pdf_r2_key, pdf_sha256, frozen_at, issued_by, title, contact_id, validity_days, discount_kind, discount_value, export_mode, content_sha256, catalogue_reference_minor, source_document_id, source_step, sent_at, viewed_at, decided_at, decision_reason, decision_note, decided_contact_id, created_by, created_at, updated_at, recipient, issuer, computed";
+  "id, type, status, client_id, version_group_id, version, series, fy, number, number_display, currency, issue_date, due_date, parent_id, paid_minor, credited_minor, balance_minor, voided_at, void_reason, fx_rate_micros, fx_date, fx_source, service_completed_on, export_declaration_id, valid_until, supply_type, place_of_supply_code, subtotal_minor, discount_minor, taxable_minor, cgst_minor, sgst_minor, igst_minor, round_off_minor, total_minor, terms_version_id, snapshot_r2_key, snapshot_sha256, pdf_r2_key, pdf_sha256, frozen_at, issued_by, title, contact_id, validity_days, discount_kind, discount_value, export_mode, content_sha256, catalogue_reference_minor, source_document_id, source_step, sent_at, viewed_at, decided_at, decision_reason, decision_note, decided_contact_id, created_by, created_at, updated_at, recipient, issuer, computed";
 
 /** The statements of `loadDocument`, exported so a test can EXPLAIN each one. */
 export const LOAD_DOCUMENT_SQL = {
@@ -399,6 +405,17 @@ export type InvoiceSealParts = {
   readonly computed: ComputedDocument;
   readonly recipient: RecipientSnapshot;
   readonly issuer: InvoiceIssuerSnapshot;
+} & InvoiceHeaderExtras;
+
+/**
+ * The header keys M5.2 added (LD25), each present ONLY on the types that need it: `export` (an export invoice), `fx` (every USD tax or export
+ * invoice), `proforma` (a proforma), `advance` (the invoice made for money received). Absent is not null: an M5.1 seal has none and keeps its hash.
+ */
+export type InvoiceHeaderExtras = {
+  readonly export?: InvoiceSnapshotInput["export"];
+  readonly fx?: InvoiceSnapshotInput["fx"];
+  readonly proforma?: InvoiceSnapshotInput["proforma"];
+  readonly advance?: InvoiceSnapshotInput["advance"];
 };
 
 export type InvoiceSeal = {
@@ -420,6 +437,11 @@ export async function invoiceSealOf(p: InvoiceSealParts): Promise<InvoiceSeal> {
     recipient: p.recipient,
     issuer: p.issuer,
     computedSha256,
+    // Each extra only when given (a key with the value `undefined` must not reach the canonical text).
+    ...(p.export ? { export: p.export } : {}),
+    ...(p.fx ? { fx: p.fx } : {}),
+    ...(p.proforma ? { proforma: p.proforma } : {}),
+    ...(p.advance ? { advance: p.advance } : {}),
   };
   return { computedJson, computedSha256, input, snapshotSha256: await invoiceSnapshotSha256(input) };
 }
@@ -458,6 +480,11 @@ export function invoiceDraftOfBundle(b: DocumentBundle<TermsRef>): DraftContent 
     })),
     sections: [],
     schedule: [],
+    // M5.2: the rate typed on the draft, hashed with it (a document without one has no `fx` key in its hash).
+    fx:
+      d.fx_rate_micros !== null && d.fx_date !== null && d.fx_source !== null
+        ? { rateMicros: d.fx_rate_micros, date: d.fx_date, source: d.fx_source }
+        : null,
   };
 }
 
@@ -466,8 +493,15 @@ export function invoiceContentHashOfBundle(b: DocumentBundle<TermsRef>): Promise
   return b.document.computed ? contentHash(invoiceDraftOfBundle(b), b.document.computed) : null;
 }
 
-/** The seal parts of a loaded ISSUED invoice, from its frozen columns; null when it is not frozen or lacks a frozen block. */
-export function invoiceSealPartsOfBundle(b: DocumentBundle<TermsRef>): InvoiceSealParts | null {
+/**
+ * The seal parts of a loaded ISSUED invoice, from its frozen columns; null when it is not frozen or lacks a frozen block. The M5.2 header keys that
+ * the columns cannot give (the endorsement, the LUT, the country name, the notice, the advance reference) come from the verifier's `extras`: the write-once
+ * envelope's header (stage B). The exchange rate is read from the row's own `fx_*` columns.
+ */
+export function invoiceSealPartsOfBundle(
+  b: DocumentBundle<TermsRef>,
+  extras: InvoiceHeaderExtras = {},
+): InvoiceSealParts | null {
   const d = b.document;
   if (d.frozen_at === null) return null;
   const { computed, recipient, issuer } = d;
@@ -487,12 +521,21 @@ export function invoiceSealPartsOfBundle(b: DocumentBundle<TermsRef>): InvoiceSe
     computed,
     recipient,
     issuer: issuer as InvoiceIssuerSnapshot,
+    ...(extras.export ? { export: extras.export } : {}),
+    ...(extras.proforma ? { proforma: extras.proforma } : {}),
+    ...(extras.advance ? { advance: extras.advance } : {}),
+    ...(d.fx_rate_micros !== null && d.fx_date !== null && d.fx_source !== null && d.type !== "proforma"
+      ? { fx: { rateMicros: d.fx_rate_micros, date: d.fx_date, source: d.fx_source } }
+      : {}),
   };
 }
 
 /** Checks a loaded issued invoice against the hashes it was sealed with. Null when the bundle is not an issued invoice. */
-export async function verifyInvoiceSealed(b: DocumentBundle<TermsRef>): Promise<SealCheck | null> {
-  const parts = invoiceSealPartsOfBundle(b);
+export async function verifyInvoiceSealed(
+  b: DocumentBundle<TermsRef>,
+  extras: InvoiceHeaderExtras = {},
+): Promise<SealCheck | null> {
+  const parts = invoiceSealPartsOfBundle(b, extras);
   const content = invoiceContentHashOfBundle(b);
   if (!parts || !content) return null;
   const seal = await invoiceSealOf(parts);

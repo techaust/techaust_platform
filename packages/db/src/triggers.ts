@@ -53,9 +53,21 @@ export const SET_ONCE_0001 = [
 
 /**
  * Columns that may be filled in once after freezing, today. M4.3 adds the portal's reads and the client's decision (M4.5 writes
- * them): each can be set once, then never changed.
+ * them): each can be set once, then never changed. M5.2 adds `service_completed_on` (LD29: set once, through `invoices.draft`).
+ * Migration 0032 holds the list as it was before: `SET_ONCE_0032`.
  */
 export const SET_ONCE_AFTER_FREEZE = [
+  ...SET_ONCE_0001,
+  "viewed_at",
+  "decided_at",
+  "decision_reason",
+  "decision_note",
+  "decided_contact_id",
+  "service_completed_on",
+] as const;
+
+/** The set-once list exactly as migration 0032 installed it (pinned, LD35: a later column must not move the bytes of 0032). */
+export const SET_ONCE_0032 = [
   ...SET_ONCE_0001,
   "viewed_at",
   "decided_at",
@@ -114,6 +126,65 @@ export const FROZEN_COLUMNS_0001 = [
   "snapshot_sha256",
   "frozen_at",
   "issued_by",
+  "realisation_due_at",
+  "created_by",
+  "created_at",
+] as const;
+
+/**
+ * The documents columns frozen by migration 0032, exactly as that file lists them (pinned, LD35). M5.2 adds `export_declaration_id` and
+ * `service_completed_on` to the table: `documentTriggerStatements()` uses this list so 0032 still regenerates byte for byte, and the
+ * live list goes into the trigger that migration 0040 recreates.
+ */
+export const FROZEN_COLUMNS_0032 = [
+  "id",
+  "type",
+  "client_id",
+  "project_id",
+  "care_plan_id",
+  "parent_id",
+  "version_group_id",
+  "version",
+  "series",
+  "fy",
+  "number",
+  "number_display",
+  "currency",
+  "issue_date",
+  "due_date",
+  "valid_until",
+  "supply_type",
+  "place_of_supply_code",
+  "recipient",
+  "fx_rate_micros",
+  "fx_date",
+  "fx_source",
+  "subtotal_minor",
+  "discount_minor",
+  "taxable_minor",
+  "cgst_minor",
+  "sgst_minor",
+  "igst_minor",
+  "round_off_minor",
+  "total_minor",
+  "total_inr_minor",
+  "terms_version_id",
+  "snapshot_sha256",
+  "frozen_at",
+  "issued_by",
+  "title",
+  "contact_id",
+  "validity_days",
+  "discount_kind",
+  "discount_value",
+  "export_mode",
+  "content_sha256",
+  "computed",
+  "catalogue_reference_minor",
+  "source_document_id",
+  "source_step",
+  "issuer",
+  "sent_at",
   "realisation_due_at",
   "created_by",
   "created_at",
@@ -416,7 +487,7 @@ export function documentTriggerStatements(): string[] {
     `UPDATE documents SET version_group_id = id WHERE type IN (${quotes}) AND version_group_id IS NULL AND frozen_at IS NULL;`,
     // 2. the freeze trigger over the live schema
     "DROP TRIGGER `documents_frozen_update`;",
-    frozenUpdateTrigger(frozenDocumentColumns(), SET_ONCE_AFTER_FREEZE),
+    frozenUpdateTrigger(FROZEN_COLUMNS_0032, SET_ONCE_0032),
     // 3. the issue post-condition
     "DROP TRIGGER `issue_result_check`;",
     `CREATE TRIGGER \`issue_result_check\` INSTEAD OF INSERT ON \`issue_result\` WHEN NOT EXISTS (SELECT 1 FROM documents d WHERE d.id = NEW.document_id AND d.status = CASE WHEN d.type IN (${quotes}) THEN 'sent' ELSE 'issued' END AND d.frozen_at IS NOT NULL AND d.series = NEW.series AND d.fy = NEW.fy AND d.number >= 1 AND d.number_display IS NOT NULL AND (((d.type NOT IN (${quotes}) OR d.version = 1) AND d.number = (SELECT c.next_no - 1 FROM doc_counters c WHERE c.series = NEW.series AND c.fy = NEW.fy)) OR (d.type IN (${quotes}) AND d.version > 1 AND EXISTS (SELECT 1 FROM documents v WHERE v.version_group_id = d.version_group_id AND v.version = 1 AND v.frozen_at IS NOT NULL AND ${sameAsFirst})))) BEGIN ${abort("issue did not freeze the document with the number just taken")} END;`,
@@ -602,6 +673,46 @@ export function invoiceTriggerStatements(): string[] {
   ];
 }
 
+/**
+ * The documents columns frozen and set-once as migration 0040 installs them (M5.2; pinned like 0032's, so that M5.3's `ims_status` column and its
+ * own migration cannot move the bytes of 0040). Today equal to the live lists; the coverage test in `triggers.test.ts` checks the INSTALLED trigger
+ * against the live schema, so a later column that no migration covers still fails there.
+ */
+export const FROZEN_COLUMNS_0040 = [
+  ...FROZEN_COLUMNS_0032.slice(0, FROZEN_COLUMNS_0032.indexOf("realisation_due_at") + 1),
+  "export_declaration_id",
+  ...FROZEN_COLUMNS_0032.slice(FROZEN_COLUMNS_0032.indexOf("realisation_due_at") + 1),
+] as const;
+export const SET_ONCE_0040 = [...SET_ONCE_0032, "service_completed_on"] as const;
+
+/**
+ * Invoice types (M5.2, ADM-INV-01, -06, -10, LD22, LD23, LD29, LD35; new triggers only, no table is rebuilt; every abort message starts with the
+ * trigger's name so the API can map it). VERIFY WITH CA/LEGAL for the rules; the API checks the same rules in SQL conditions first:
+ *   1. `documents_frozen_update` dropped and created again over the columns of 0040 (`export_declaration_id` is frozen; `service_completed_on`
+ *      is set once);
+ *   2. `documents_service_completed_date_insert` / `_update`: a service date is a real ISO date, and only a tax or export invoice has one;
+ *   3. `advance_receipts_no_update` / `_no_delete`: append-only;
+ *   4. `advance_receipts_scope_insert`: the proforma is a frozen proforma of the client; the invoice is a frozen tax or export invoice of the same
+ *      client and currency whose parent is that proforma; `received_on` is a real date.
+ */
+export function invoiceTypeTriggerStatements(): string[] {
+  const named = (name: string, message: string) => abort(`${name}: ${message}`);
+  const dateBad =
+    "NEW.service_completed_on IS NOT NULL AND (date(NEW.service_completed_on) IS NOT NEW.service_completed_on OR NEW.type NOT IN ('tax_invoice', 'export_invoice'))";
+  const dateMsg = "a service date is a real date, and only a tax or export invoice has one";
+  const scopeBad =
+    "NOT EXISTS (SELECT 1 FROM documents p WHERE p.id = NEW.proforma_id AND p.type = 'proforma' AND p.frozen_at IS NOT NULL AND p.client_id = NEW.client_id) OR NOT EXISTS (SELECT 1 FROM documents i WHERE i.id = NEW.invoice_id AND i.type IN ('tax_invoice', 'export_invoice') AND i.frozen_at IS NOT NULL AND i.parent_id = NEW.proforma_id AND i.client_id = NEW.client_id AND i.currency = NEW.currency) OR date(NEW.received_on) IS NOT NEW.received_on";
+  return [
+    "DROP TRIGGER `documents_frozen_update`;",
+    frozenUpdateTrigger(FROZEN_COLUMNS_0040, SET_ONCE_0040),
+    `CREATE TRIGGER \`documents_service_completed_date_insert\` BEFORE INSERT ON \`documents\` WHEN ${dateBad} BEGIN ${named("documents_service_completed_date_insert", dateMsg)} END;`,
+    `CREATE TRIGGER \`documents_service_completed_date_update\` BEFORE UPDATE OF service_completed_on ON \`documents\` WHEN ${dateBad} BEGIN ${named("documents_service_completed_date_update", dateMsg)} END;`,
+    `CREATE TRIGGER \`advance_receipts_no_update\` BEFORE UPDATE ON \`advance_receipts\` BEGIN ${named("advance_receipts_no_update", "advance_receipts is append-only")} END;`,
+    `CREATE TRIGGER \`advance_receipts_no_delete\` BEFORE DELETE ON \`advance_receipts\` BEGIN ${named("advance_receipts_no_delete", "advance_receipts is append-only")} END;`,
+    `CREATE TRIGGER \`advance_receipts_scope_insert\` BEFORE INSERT ON \`advance_receipts\` WHEN ${scopeBad} BEGIN ${named("advance_receipts_scope_insert", "an advance receipt links a frozen proforma to the tax or export invoice made from it (same client and currency) on a real date")} END;`,
+  ];
+}
+
 /** The trigger sets, by the name the migration is created with (`drizzle-kit generate --custom --name <set>`). */
 export const TRIGGER_SETS = {
   triggers: { what: "integrity triggers (docs/05 §5.3)", statements: triggerStatements },
@@ -643,6 +754,10 @@ export const TRIGGER_SETS = {
   invoice_triggers: {
     what: "invoice status flow, void pairing, currency, type and parent checks, milestone scope (M5.1)",
     statements: invoiceTriggerStatements,
+  },
+  invoice_type_triggers: {
+    what: "freeze trigger recreated for M5.2's columns, service date check, advance receipts append-only and scope (M5.2)",
+    statements: invoiceTypeTriggerStatements,
   },
 } as const;
 export type TriggerSet = keyof typeof TRIGGER_SETS;
