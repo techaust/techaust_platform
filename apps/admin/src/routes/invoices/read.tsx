@@ -4,7 +4,7 @@
 // M5.3: an issued tax or export invoice has its notes section (the deadline, its credit and debit notes, the balance after them, the actions that open the
 // note dialog); an issued note says what it is against and why, the client's IMS answer on a credit note, its lines against the invoice's and its totals.
 import type { Role } from "@techaust/core/permissions";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { PageHeader } from "../../components/display.tsx";
 import { Ban, FolderKanban, Lock } from "../../components/icons.tsx";
@@ -85,6 +85,19 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
   // M5.4: the send dialog, and the "Resume reminders" offer after a send that left them paused (early check finding 5).
   const [sending, setSending] = useState(false);
   const [offerResume, setOfferResume] = useState(false);
+  // H2: the send dialog is unmounted, not closed, so it can't hand focus back itself: once it is gone, focus returns to "Email to client" (the same
+  // button, which then reads "Email again" when the reload lands), or to the Emails heading if the button isn't drawn.
+  const emailRef = useRef<HTMLButtonElement>(null);
+  const wasSending = useRef(false);
+  useEffect(() => {
+    if (sending) {
+      wasSending.current = true;
+      return;
+    }
+    if (!wasSending.current) return;
+    wasSending.current = false;
+    (emailRef.current ?? document.getElementById("inv-mail-h"))?.focus();
+  }, [sending]);
   const v = view as InvoiceWithNotes & SendableView;
   const sendAction = sendActionOf(v);
   const canSend = v.frozen && sendAction?.allowed === true;
@@ -219,6 +232,7 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
               canSend={canSend}
               showLock={voidWhy === null}
               onEmail={() => setSending(true)}
+              emailRef={emailRef}
               onRevoked={() => {
                 setOfferResume(false);
                 reload();

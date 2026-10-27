@@ -26,6 +26,9 @@ export const U = (line: string): string => (APPROVED_07U ? line : `${INV_PLACEHO
 
 export { MAX_RECIPIENTS };
 
+/** A line neither 07-U nor any approved appendix has (the review round, 2026-10-27): the plain mark, so approving 07-U alone doesn't unmark it. */
+const P = (line: string): string => `${INV_PLACEHOLDER} ${line}`;
+
 // ---- the document's word ({document} in 07-U) ----------------------------------------------------------------------------------------------------
 
 /** 07-U §1: what a document is called in a sentence ("invoice", "payment request", "credit note", "debit note"); an export invoice is an invoice. */
@@ -53,15 +56,26 @@ export const SEND_COPY = {
   emailAgain: U("Email again"),
   dialogTitle: (type: InvoiceType | string, number: string) => U(`Email ${documentWord(type)} ${number}`),
   sendTo: U(`Send to (up to ${MAX_RECIPIENTS})`),
-  sendToHint: U("Only contacts with portal access can receive documents."),
+  /** H1: finance documents go only to contacts with portal access who can see finance (POR-03); 07-U's line names portal access only. */
+  sendToHint: P(
+    'Only contacts with portal access and "Can see finance" turned on can receive invoices and notes.',
+  ),
   noneWithPortal: U(
     "No contact of this client has portal access. Turn it on for a contact on the client's page, then send.",
   ),
+  /** H1: some contacts have portal access, none of them can see finance. */
+  noneWithFinance: P(
+    'No contact of this client with portal access can see finance. Turn on "Can see finance" for a contact on the client\'s page, then send.',
+  ),
+  /** H1: the reason under a contact who has portal access but can't see finance. */
+  noFinance: P('"Can see finance" is off for this contact'),
   attach: U("Attach the PDF"),
   attachHint: U("Without it, the email has a link to the document only."),
   send: U("Send"),
   sent: (n: number) => U(n === 1 ? `Sent to ${n} contact.` : `Sent to ${n} contacts.`),
   queued: U("Queued. It will be emailed in a moment."),
+  /** L1: the send waits for the PDF to be made (the send rows' `queuedAt` is still empty). */
+  waitingForPdf: P("Waiting for the PDF. The email goes as soon as it's made."),
   locked: (type: InvoiceType | string) =>
     U(
       `Emailed, so this ${documentWord(type)} can no longer be voided. Corrections are made with a credit note or a debit note.`,
@@ -78,6 +92,8 @@ export const SEND_COPY = {
     U(
       `The links in the emails sent so far stop working. Contacts can still see the ${documentWord(type)} in the client portal.`,
     ),
+  /** L7: revoking pauses the reminders too (only for a document that has them). */
+  revokePauses: P("Payment reminders are paused too. You can resume them on this page."),
   revoked: U("Links revoked."),
   // Approved (07-N/07-Q, the M4.5 send dialog): no mark.
   noPortal: OFFER_COPY.noPortal,
@@ -91,10 +107,18 @@ export const SEND_COPY = {
   message: OFFER_COPY.message,
 } as const;
 
-/** The email statuses of 07-U §4 by the send row and its email log status (bounced and complained read as failed; skipped as cancelled). */
-export type SendState = "queued" | "sent" | "delivered" | "failed" | "cancelled";
-export function sendState(s: { cancelledAt: number | null; emailStatus: string | null }): SendState {
+/**
+ * The email statuses of 07-U §4 by the send row and its email log status (bounced and complained read as failed; skipped as cancelled), and L1's
+ * "waiting": the row isn't queued yet because the PDF is still being made (`queuedAt` null; a caller without the key reads as queued).
+ */
+export type SendState = "waiting" | "queued" | "sent" | "delivered" | "failed" | "cancelled";
+export function sendState(s: {
+  cancelledAt: number | null;
+  emailStatus: string | null;
+  queuedAt?: number | null | undefined;
+}): SendState {
   if (s.cancelledAt !== null) return "cancelled";
+  if (s.queuedAt === null && s.emailStatus === null) return "waiting";
   switch (s.emailStatus) {
     case "sent":
       return "sent";
@@ -111,6 +135,7 @@ export function sendState(s: { cancelledAt: number | null; emailStatus: string |
   }
 }
 const SEND_STATE_WORDS: Record<SendState, string> = {
+  waiting: P("Waiting for the PDF"),
   queued: U("Queued"),
   sent: U("Sent"),
   delivered: U("Delivered"),
@@ -124,6 +149,7 @@ export function sendStateLook(s: SendState): {
   icon: "clock" | "send" | "check" | "ban";
 } {
   switch (s) {
+    case "waiting":
     case "queued":
       return { tone: "neutral", icon: "clock" };
     case "sent":
@@ -149,7 +175,11 @@ export const REMINDER_COPY = {
   pause: U("Pause reminders"),
   resume: U("Resume reminders"),
   paused: U("Reminders are paused. Nothing is sent until you resume them."),
-  window: U("Reminders go out between 09:00 and 19:00 IST."),
+  /** L2: the hours come from the view (`reminders.window`, Settings > Payment terms): 07-U's line with them filled in. */
+  window: (from: string, to: string) => U(`Reminders go out between ${from} and ${to} IST.`),
+  /** H2: the toast (the page's status region) after Pause and Resume. */
+  pausedDone: P("Reminders paused."),
+  resumedDone: P("Reminders resumed."),
 } as const;
 
 /** 07-U §5 schedule row: "3 days before the due date", "On the due date", "7 days after the due date" (the offset is signed: −3 is before). */
@@ -167,6 +197,8 @@ const SKIP_WORDS: Record<string, string> = {
   paused: "paused",
   no_recipient: "no contact with portal access",
 };
+/** M2: a reminder whose day passed while the reminders were paused (the server's `missed_while_paused`): not 07-U's, so the plain mark. */
+const MISSED_WHILE_PAUSED = P("Skipped: missed while reminders were paused");
 
 export type ReminderRowView = {
   offset: number;
@@ -174,6 +206,30 @@ export type ReminderRowView = {
   sentAt: number | null;
   skippedReason: string | null;
 };
+
+/** `reminders` of the view: `paused` is true only while a paused reminder is still ahead (M2); `window` from Settings (L2; absent from an older API). */
+export type RemindersView = {
+  started: boolean;
+  paused: boolean;
+  rows: ReminderRowView[];
+  window?: { from: string; to: string } | null | undefined;
+};
+
+/**
+ * The view's reminders as the panel shows them. An older API leaves a reminder whose day passed while paused as plain `paused` and sets `paused` while
+ * any row is: such a row reads here as `missed_while_paused` (as the new API sends it), and `paused` holds only while a paused reminder is ahead.
+ */
+export function remindersOf(r: RemindersView | undefined, now: number) {
+  const rows: ReminderRowView[] = (r?.rows ?? []).map((x) =>
+    x.sentAt === null && x.skippedReason === "paused" && x.dueAt <= now
+      ? { ...x, skippedReason: "missed_while_paused" }
+      : x,
+  );
+  const ahead = rows.some((x) => x.sentAt === null && x.skippedReason === "paused");
+  const w = r?.window;
+  const window = w && typeof w.from === "string" && typeof w.to === "string" ? w : null;
+  return { started: r?.started === true, paused: r?.paused === true && ahead, rows, window };
+}
 export type ReminderState = "sent" | "due" | "paused" | "skipped";
 export const reminderState = (r: ReminderRowView): ReminderState =>
   r.sentAt !== null ? "sent" : r.skippedReason === "paused" ? "paused" : r.skippedReason ? "skipped" : "due";
@@ -181,6 +237,7 @@ export const reminderState = (r: ReminderRowView): ReminderState =>
 /** 07-U §5 states: "Sent {date}", "Due {date}", "Skipped: {reason}". */
 export function reminderStateText(r: ReminderRowView): string {
   if (r.sentAt !== null) return U(`Sent ${formatIstDay(r.sentAt)}`);
+  if (r.skippedReason === "missed_while_paused") return MISSED_WHILE_PAUSED;
   if (r.skippedReason) {
     const why = SKIP_WORDS[r.skippedReason];
     return why ? U(`Skipped: ${why}`) : `${U("Skipped:")} ${INV_PLACEHOLDER}`;
@@ -197,6 +254,50 @@ export function reminderActions(rows: readonly ReminderRowView[], now: number) {
 }
 
 // ---- 07-U §5 errors --------------------------------------------------------------------------------------------------------------------------------
+
+// ---- H1: who can receive a finance document ---------------------------------------------------------------------------------------------------------
+
+/** Why a contact can't be chosen in the send dialog: no portal access, or portal access without "Can see finance" (POR-03). */
+export type RecipientBlock = "no_portal" | "no_finance" | null;
+
+/**
+ * The contacts the invoice send dialog offers: live ones; first those who can receive it (portal access and "Can see finance"), then the others with
+ * why not. Billing contacts who can receive it are ticked to start with, else the primary contact, at most `MAX_RECIPIENTS`. An older API without
+ * `canSeeFinance` on a contact reads as allowed (the server is the check: it refuses with `recipient_invalid`).
+ */
+export function invoiceRecipientChoices<
+  C extends {
+    id: string;
+    portalAccess: boolean;
+    canSeeFinance?: boolean | undefined;
+    isBilling: boolean;
+    anonymisedAt: number | null;
+    isPrimary: boolean;
+  },
+>(contacts: readonly C[]): { choices: (C & { block: RecipientBlock })[]; ticked: string[] } {
+  const live = contacts
+    .filter((c) => c.anonymisedAt === null)
+    .map((c) => {
+      const block: RecipientBlock = !c.portalAccess
+        ? "no_portal"
+        : c.canSeeFinance === false
+          ? "no_finance"
+          : null;
+      return { ...c, block };
+    });
+  const can = live.filter((c) => c.block === null);
+  let ticked = can.filter((c) => c.isBilling).map((c) => c.id);
+  // No billing contact who can receive it: the primary contact, when they can, is the natural first choice.
+  if (ticked.length === 0) ticked = can.filter((c) => c.isPrimary).map((c) => c.id);
+  return {
+    choices: [
+      ...can,
+      ...live.filter((c) => c.block === "no_finance"),
+      ...live.filter((c) => c.block === "no_portal"),
+    ],
+    ticked: ticked.slice(0, MAX_RECIPIENTS),
+  };
+}
 
 export function sendErrors(type: InvoiceType | string): Record<string, string> {
   const doc = documentWord(type);
@@ -372,8 +473,9 @@ export const periodText = (start: string, end: string) =>
 
 export const CARE_COPY = {
   toggle: U("Issue care invoices automatically"),
-  toggleHint: U(
-    "On the billing day, the invoice is issued and emailed to the client's billing contacts with portal access. Only an owner can turn this on; anyone can turn it off.",
+  /** L7: Sales can't turn it off (no billing permission), so the hint names Owner and Staff; 07-U's line said "anyone", so this one is the plain mark. */
+  toggleHint: P(
+    "On the billing day, the invoice is issued and emailed to the client's billing contacts who have portal access and can see finance. Only an owner can turn this on; an owner or a staff member can turn it off.",
   ),
   /** 07-U §6 "On, turned on by {name} on {date}"; the date part only when the audit log still says when (`careAutoIssueBy.at`), never guessed. */
   onBy: (name: string, at?: number | null) =>

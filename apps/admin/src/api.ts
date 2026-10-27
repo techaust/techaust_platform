@@ -678,7 +678,12 @@ export type CarePlanPage = {
   /** Newest first, at most 12. */
   periods: CareUsage[];
   clientAnonymised: boolean;
-  overage: { addToInvoice: { available: false; arrivesWith: string } };
+  /** M5.4: overage goes on the next monthly care draft (never issued automatically); an older API still says it arrives later. */
+  overage: {
+    addToInvoice:
+      | { available: true; via: "next_care_draft" | string }
+      | { available: false; arrivesWith: string };
+  };
   /** M5.4: the plan's billing (finance roles only; absent for Sales). Shape: lib/invoice-send.ts `CarePlanBilling`. */
   billing?: CarePlanBilling;
 };
