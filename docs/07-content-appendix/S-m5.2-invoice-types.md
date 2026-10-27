@@ -111,3 +111,4 @@ _Drafted by the lead on 2026-10-27 from approved facts:
 | Proforma, issue heading, dialog title and button | "Issue proforma" |
 | Proforma, issued toast | "Proforma {number} issued." |
 | Proforma, void refused because it was emailed | "This proforma has been emailed to the client, so it can't be voided." (VERIFY WITH CA/LEGAL) |
+| fx_date_invalid on the advance (tax invoice for payment received) | "The rate date must be the date the payment was received or up to {days} days before it." (VERIFY WITH CA/LEGAL) |

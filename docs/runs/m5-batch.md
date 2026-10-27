@@ -166,6 +166,7 @@ Lead's check: the plan keeps the Free plan (cron count unchanged: `30 * * * *` r
 38. **A client rejects a credit note in IMS** (VERIFY WITH CA/LEGAL; M5.3) (Recommended, built) The invoice stays credited; the rejection is recorded on the credit note for your CA, who decides whether to reverse it with a debit note. Alternative: a rejection automatically restores the invoice's amount due.
 39. **A debit note on an LUT export issued in a later financial year** (VERIFY WITH CA/LEGAL; M5.3) (Recommended, built) It keeps the invoice's export route and prints the invoice's LUT. Alternative: it needs the LUT of its own year.
 40. **The tax invoice for a payment when the client's GST status changed after the proforma** (VERIFY WITH CA/LEGAL; M5.2) (Recommended, built) Refused, with a message to check the client's details with your CA. Alternative: follow the client's current status.
+41. **The tax invoice for a payment when the client's state changed after the proforma** (VERIFY WITH CA/LEGAL; M5.2) (Recommended, built) It follows the client's current state (CGST + SGST or IGST worked out now, when the tax invoice is issued). Alternative: keep the proforma's place of supply and refuse when it differs.
 
 Not asked, because docs/13 or docs/04 §0 already decide them:
 - the numbering format;
