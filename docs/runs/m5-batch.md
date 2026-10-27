@@ -149,6 +149,11 @@ Lead's check: the plan keeps the Free plan (cron count unchanged: `30 * * * *` r
 21. **Staging test data (your action).** (Recommended) You type the real company profile (legal name, GSTIN, address) and clearly labelled sample bank details ("SAMPLE BANK") in staging Settings before the batch review. Alternative: real bank details. (A made-up GSTIN with a valid check character could belong to a real business, so none is invented.)
 22. **LUT reminder** (ADM-INV-18). (Recommended) From 1 March, a bell and one email a week until the next FY's ARN is saved.
 23. **Void after the GST return is filed** (VERIFY WITH CA/LEGAL; from the M5.5a analyst). Q1's void rule allows a void before the client is emailed, but a void dated in a later period could disagree with a GSTR-1 already filed. (Recommended, built in M5.1 after the early check) A void only within the IST calendar month of issue; after that, a correction is always a credit note. This is the safe form: GSTR-1 can be filed early, and under QRMP the period is a quarter, and it needs no setting. Alternative: a void until the return period's due day (the 11th of the next month for monthly filers, the 13th under QRMP), which needs a "GSTR-1 due day" setting. Or keep Q1 as it is.
+24. **How old may the exchange-rate date be?** (VERIFY WITH CA/LEGAL, Rule 34(2); M5.2) (Recommended) The issue date or up to 4 days earlier, to cover weekends and bank holidays, as a setting. Alternatives: the exact date only; up to 7 days.
+25. **The ₹50,000 rule for unregistered clients** (VERIFY WITH CA/LEGAL, Rule 46(e); M5.2) (Recommended) Compare the invoice total including GST (the stricter reading). Alternative: the taxable value.
+26. **Clients with a UIN, TDS or NRTP registration** (VERIFY WITH CA/LEGAL; M5.2) (Recommended) None expected now; build it when such a client comes, as for SEZ. Alternative: research and build in M5.
+27. **A payment received in an earlier month** (VERIFY WITH CA/LEGAL, s.13(2); M5.2) (Recommended) Issue the tax invoice today with a warning that the GST belongs to the month the payment arrived. Alternative: block it.
+28. **A proforma's "Valid until" date** (copy; M5.2) (Recommended) The same as its due date (Net 7 or the client's terms). Alternative: the proposal validity (15 days).
 
 Not asked, because docs/13 or docs/04 §0 already decide them:
 - the numbering format;

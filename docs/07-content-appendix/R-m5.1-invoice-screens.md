@@ -96,11 +96,12 @@ _Drafted by the lead on 2026-10-27 from approved facts:
 - Void dialog title: "Void invoice {number}"
 - Void body: "Voiding cancels this invoice. It keeps its number, which is reported as cancelled in your GST return. You can only void an invoice in the month it was issued, before it has been emailed, paid or corrected by a credit or debit note; after that, use a credit note." (VERIFY WITH CA/LEGAL)
 - Reason label: "Reason (required, kept with the invoice)"
+- Empty reason error: "Enter a reason for voiding."
 - Buttons: "Void invoice" · "Cancel"
 - Void badge line: "Voided {date} by {name}: {reason}"
 - Milestone after void: "The milestone is back to Ready to bill."
-- Milestone action: "Create invoice" · disabled hint when one exists: "This milestone already has invoice {number or "a draft"}."
-- Estimate link (docs/13 2026-10-26): "Converted to invoice {number or "a draft"}."
+- Milestone action: "Create invoice" · disabled hint when one exists: "This milestone already has invoice {number}." or, for a draft, "This milestone already has a draft invoice."
+- Estimate link (docs/13 2026-10-26): "Converted to invoice {number}." or, for a draft, "Converted to a draft invoice."
 
 ## 5. Error messages (API codes)
 | Code | Message |
@@ -122,6 +123,7 @@ _Drafted by the lead on 2026-10-27 from approved facts:
 | already_void | "This invoice is already void." |
 | return_period_closed | "This invoice's GST return period has ended, so it can't be voided. Use a credit note instead." (VERIFY WITH CA/LEGAL) |
 | contact_changed | "The contact's details changed a moment ago. Try again." |
+| contact_anonymised | "This draft's contact has been anonymised. Choose another contact, then save the draft." |
 | on_issued_document | (existing 07-J line) |
 | milestone_has_invoice | "This milestone already has an invoice." |
 | milestone_not_ready | "Only a milestone that's Ready to bill can be invoiced." |
