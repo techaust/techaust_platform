@@ -798,11 +798,23 @@ describe("only an Owner with a fresh code turns the automatic issue on [LD58, Q4
     await patch(owner, c.id, c.stamp, true);
     const asOwner = (await json(await call(`/clients/${c.id}`, { cookie: owner.cookie }))).client;
     expect(asOwner.careAutoIssue).toBe(true);
-    expect(asOwner.careAutoIssueBy).toEqual({ id: owner.id, name: "Rupak Sarkar", active: true });
+    expect(asOwner.careAutoIssueBy).toEqual({
+      id: owner.id,
+      name: "Rupak Sarkar",
+      active: true,
+      at: expect.any(Number),
+    });
+    // `at` is the audit row's time (Q4): within the last minute here
+    expect(Date.now() - asOwner.careAutoIssueBy.at).toBeLessThan(60_000);
     const list = (await json(await call("/clients?limit=50", { cookie: owner.cookie }))).clients.find(
       (x: { id: string }) => x.id === c.id,
     );
-    expect(list.careAutoIssueBy).toEqual({ id: owner.id, name: "Rupak Sarkar", active: true });
+    expect(list.careAutoIssueBy).toEqual({
+      id: owner.id,
+      name: "Rupak Sarkar",
+      active: true,
+      at: asOwner.careAutoIssueBy.at,
+    });
     const sales = await sessionFor("sales");
     const asSales = (await json(await call(`/clients/${c.id}`, { cookie: sales.cookie }))).client;
     expect("careAutoIssueBy" in asSales).toBe(false);
@@ -811,7 +823,12 @@ describe("only an Owner with a fresh code turns the automatic issue on [LD58, Q4
     const other = await sessionFor("owner", { stepUp: true });
     await env.DB.prepare("UPDATE staff_users SET status = 'deactivated' WHERE id = ?").bind(owner.id).run();
     const after = (await json(await call(`/clients/${c.id}`, { cookie: other.cookie }))).client;
-    expect(after.careAutoIssueBy).toEqual({ id: owner.id, name: "Rupak Sarkar", active: false });
+    expect(after.careAutoIssueBy).toEqual({
+      id: owner.id,
+      name: "Rupak Sarkar",
+      active: false,
+      at: asOwner.careAutoIssueBy.at,
+    });
   });
 
   it("the audit row says what changed, never who is named beyond the actor", async () => {
@@ -824,6 +841,59 @@ describe("only an Owner with a fresh code turns the automatic issue on [LD58, Q4
     );
     expect(a?.actor_id).toBe(owner.id);
     expect(JSON.parse(a?.summary ?? "{}").changed).toContain("careAutoIssue");
+  });
+});
+
+describe("GET /care-plans/:id billing [M5.4 API gaps, Q3]", () => {
+  const plan = async (planId: string, role: "owner" | "sales" | "accountant" = "owner") =>
+    json(await call(`/care-plans/${planId}`, { cookie: (await sessionFor(role)).cookie }));
+
+  it("a plan never billed: no last period, the start date is the next billing day, no draft, no auto", async () => {
+    const w = await world({ start: "2099-01-10" });
+    const v = await plan(w.planId);
+    expect(v.billing).toEqual({
+      lastBilledPeriod: null,
+      nextBillingDay: "2099-01-10",
+      draft: null,
+      auto: null,
+    });
+  });
+
+  it("after the job drafted the period: the last period, the next period's first day, the draft and the Owner's choices (blockers not judged); issued, the draft has a number and no auto", async () => {
+    const w = await world();
+    clock(at("2026-11-05"));
+    expect((await draft(w)).result).toBe("drafted");
+    const [d] = await docsOf(w.planId);
+    const v = await plan(w.planId);
+    expect(v.billing).toEqual({
+      lastBilledPeriod: "2026-11-05",
+      nextBillingDay: "2026-12-05",
+      draft: { id: d?.id, number: null, status: "draft" },
+      auto: { eligible: true, reasons: [], blockersChecked: false },
+    });
+    const issued = await issueCareDraft(env, { documentId: d?.id as string });
+    expect(issued.result).toBe("issued");
+    const after = (await plan(w.planId)).billing;
+    expect(after.draft).toMatchObject({ id: d?.id, status: "issued" });
+    expect(after.draft.number).toBeTruthy();
+    expect(after.auto).toBeNull();
+  });
+
+  it("with the switch off the reasons say so (the same decision as the invoice's own page)", async () => {
+    const w = await world({ toggle: false });
+    clock(at("2026-11-05"));
+    await draft(w);
+    const v = await plan(w.planId);
+    expect(v.billing.auto).toEqual({ eligible: false, reasons: ["toggle_off"], blockersChecked: false });
+  });
+
+  it("the plan view carries billing only for a role that reads money: not Sales", async () => {
+    const w = await world();
+    clock(at("2026-11-05"));
+    await draft(w);
+    expect("billing" in (await plan(w.planId, "sales"))).toBe(false);
+    expect("billing" in (await plan(w.planId, "owner"))).toBe(true);
+    expect("billing" in (await plan(w.planId, "accountant"))).toBe(true);
   });
 });
 
