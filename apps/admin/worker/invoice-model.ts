@@ -770,7 +770,10 @@ export const EXPORT_DECLARATION_CHANGED = e(
   "The export note in Settings › Terms changed since this draft was saved. Save the draft again.",
 );
 /** The newest export note's text does not match its stored SHA-256: nothing is sealed from it (07-S has no line yet). */
-export const EXPORT_DECLARATION_TAMPERED = e("export_declaration_tampered", "[Placeholder]");
+export const EXPORT_DECLARATION_TAMPERED = e(
+  "export_declaration_tampered",
+  "The export note in Settings › Terms doesn't match its saved copy, so the invoice wasn't issued. A developer needs to look at it.",
+);
 export const NOT_A_PROFORMA = e("not_a_proforma", "That is not a proforma");
 export const PROFORMA_NOT_ISSUED = e("proforma_not_issued", "Only an issued proforma can be converted.");
 export const ADVANCE_REFERENCE_USED = e(
