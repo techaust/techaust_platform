@@ -1,5 +1,6 @@
 // @techaust/email: templates (HTML + text), header sanitising and the SES v2 client (docs/05 §11.1).
 
+import { staffApprovalIssueDecided, staffApprovalIssueRequested } from "./invoices.ts";
 import {
   approvalDecided,
   approvalRequested,
@@ -24,6 +25,7 @@ import {
 } from "./templates.ts";
 
 export * from "./headers.ts";
+export * from "./invoices.ts";
 export * from "./offers.ts";
 export * from "./templates.ts";
 export * from "./transport.ts";
@@ -242,6 +244,33 @@ function renderTemplate(
             approver_name: get("approver_name"),
             title: get("title"),
             version: get("version"),
+            decision_note: get("decision_note"),
+            admin_url: get("admin_url"),
+          },
+          opts,
+        ),
+      };
+    case "approval.issue.requested":
+      return {
+        ...noReply,
+        ...staffApprovalIssueRequested(
+          {
+            requester_name: get("requester_name"),
+            client_name: get("client_name"),
+            total: get("total"),
+            admin_url: get("admin_url"),
+          },
+          opts,
+        ),
+      };
+    case "approval.issue.decided":
+      return {
+        ...noReply,
+        ...staffApprovalIssueDecided(
+          {
+            decision: get("decision"),
+            client_name: get("client_name"),
+            number: get("number"),
             decision_note: get("decision_note"),
             admin_url: get("admin_url"),
           },
