@@ -104,6 +104,14 @@ const CLIENT_BASE_COLS =
 const careByCols = (a: string) =>
   `(SELECT u.name FROM staff_users u WHERE u.id = ${a}care_auto_issue_by) AS care_auto_issue_by_name, (SELECT u.role = 'owner' AND u.status = 'active' FROM staff_users u WHERE u.id = ${a}care_auto_issue_by) AS care_auto_issue_by_active`;
 export const CLIENT_COLS = `${CLIENT_BASE_COLS}, ${careByCols("")}`;
+/**
+ * When the automatic issue was turned on: the time of the newest audit row `client.billing_update` that changed `careAutoIssue` (the clients row keeps no time of its own). Looked up only for a client
+ * with the toggle on, on the `audit_log_entity` index. Only the views that print it carry the column (`CLIENT_VIEW_COLS`, the list).
+ */
+// `a` is the clients table's name or alias with its dot (never empty: audit_log has an `id` too).
+const careAtCol = (a: string) =>
+  `(CASE WHEN ${a}care_auto_issue_by IS NULL THEN NULL ELSE (SELECT l.at FROM audit_log l WHERE l.entity_type = 'client' AND l.entity_id = ${a}id AND l.action = 'client.billing_update' AND EXISTS (SELECT 1 FROM json_each(l.summary, '$.changed') j WHERE j.value = 'careAutoIssue') ORDER BY l.at DESC LIMIT 1) END) AS care_auto_issue_at`;
+export const CLIENT_VIEW_COLS = `${CLIENT_COLS}, ${careAtCol("clients.")}`;
 const CONTACT_COLS =
   "id, client_id, name, email, phone, title, is_primary, is_billing, portal_access, can_see_finance, marketing_consent, bounced_at, anonymised_at, legal_hold, created_at, updated_at";
 
@@ -126,6 +134,8 @@ export type ClientRow = {
   care_auto_issue_by: string | null;
   care_auto_issue_by_name: string | null;
   care_auto_issue_by_active: number | null;
+  /** Only in the rows of the views that print it (`CLIENT_VIEW_COLS`, the list). */
+  care_auto_issue_at?: number | null;
   attach_pdf: number;
   tags: string | null;
   notes: string | null;
@@ -198,6 +208,8 @@ export function clientView(r: ClientRow, role: Role) {
           id: r.care_auto_issue_by,
           name: r.care_auto_issue_by_name,
           active: r.care_auto_issue_by_active === 1,
+          // UTC ms the toggle was turned on (from the audit log); null when no row says so.
+          at: r.care_auto_issue_at ?? null,
         }
       : null,
   };
@@ -468,7 +480,7 @@ const listClients = async (c: Ctx, f: z.infer<typeof listQuery>) => {
     bind.push(cur.k, cur.id);
   }
   const { results } = await c.env.DB.prepare(
-    `SELECT ${CLIENT_BASE_COLS.replace(/(\w+)/g, "c.$1")}, ${careByCols("c.")} FROM clients c${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY ${order.order} LIMIT ${limit + 1}`,
+    `SELECT ${CLIENT_BASE_COLS.replace(/(\w+)/g, "c.$1")}, ${careByCols("c.")}, ${careAtCol("c.")} FROM clients c${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY ${order.order} LIMIT ${limit + 1}`,
   )
     .bind(...bind)
     .all<ClientRow>();
@@ -570,7 +582,7 @@ export const clients = new Hono<AppEnv>()
     const [client, contacts, live, lead, locked] = await db.batch<
       ClientRow & ContactRow & { ref: string; x: number; n: number }
     >([
-      db.prepare(`SELECT ${CLIENT_COLS} FROM clients WHERE id = ?1`).bind(id),
+      db.prepare(`SELECT ${CLIENT_VIEW_COLS} FROM clients WHERE id = ?1`).bind(id),
       db
         .prepare(`SELECT ${CONTACT_COLS} FROM contacts WHERE client_id = ?1 ORDER BY email, id LIMIT 101`)
         .bind(id),
