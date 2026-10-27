@@ -20,6 +20,7 @@ import {
   touchedBlock as touched,
 } from "../../lib/bank-form.ts";
 import { sentence } from "../../lib/format.ts";
+import { INVT_COPY } from "../../lib/invoice-types.ts";
 import { FormSkeleton, StaleNotice } from "./kit.tsx";
 
 type Forms = Record<BankKind, BlockForm>;
@@ -139,6 +140,7 @@ function BankBlock({ account, kind }: { account: BankAccount | undefined; kind: 
             <Fact k="Bank" v={account.bankName} />
             <Fact k="Bank address" v={account.bankAddress} />
             <Fact k="Intermediary bank" v={account.intermediary} />
+            {account.purposeCode !== undefined && <Fact k={INVT_COPY.purposeCode} v={account.purposeCode} />}
           </>
         )}
         <Fact k="Last changed" v={<When ms={account.updatedAt} inline />} />
@@ -333,15 +335,30 @@ function BankForm(props: {
                     />
                   )}
                 </FormField>
-                <FormField
-                  id={fid(k, "intermediary")}
-                  label="Intermediary bank"
-                  optional
-                  hint="Only if your bank routes USD through one."
-                  error={err(k, "intermediary")}
-                >
-                  {(x) => <input {...x} {...input(k, "intermediary")} />}
-                </FormField>
+                <div className="form-grid">
+                  <FormField
+                    id={fid(k, "intermediary")}
+                    label={INVT_COPY.intermediaryLabel}
+                    optional
+                    error={err(k, "intermediary")}
+                  >
+                    {(x) => <input {...x} {...input(k, "intermediary")} />}
+                  </FormField>
+                  <FormField
+                    id={fid(k, "purposeCode")}
+                    label={INVT_COPY.purposeCode}
+                    optional
+                    hint={INVT_COPY.purposeHint}
+                    error={err(k, "purposeCode")}
+                  >
+                    {(x) => (
+                      <input
+                        {...x}
+                        {...input(k, "purposeCode", { maxLength: 5, autoCapitalize: "characters" })}
+                      />
+                    )}
+                  </FormField>
+                </div>
               </>
             )}
           </fieldset>

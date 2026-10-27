@@ -14,6 +14,7 @@ import { useToast } from "../../components/toast.tsx";
 import { CodeField, Notice } from "../../components/ui.tsx";
 import { DOC_COPY, DOC_PENDING, DOC_TOASTS } from "../../lib/documents.ts";
 import type { ApprovalState } from "../../lib/documents-api.ts";
+import { INVT_COPY } from "../../lib/invoice-types.ts";
 import {
   INV_COPY,
   invErrorText,
@@ -234,6 +235,8 @@ function IssueDecision(props: {
   const [busy, setBusy] = useState<"approve" | "reject" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const needsCode = !stepUpActive();
+  // Q8 (07-S §4): an export invoice in INR is approved only with the explicit "Issue in INR"; the question is on the dialog before the button.
+  const inrExport = r.document.type === "export_invoice" && r.document.currency === "INR";
 
   async function decide(decision: "approve" | "reject") {
     if (decision === "approve" && needsCode && code.length !== 6) {
@@ -248,7 +251,7 @@ function IssueDecision(props: {
       const n = note.trim() || undefined;
       if (decision === "approve") {
         const done = await withCode(needsCode ? code : undefined, () =>
-          invoicesApi.decide(r.id, "approve", n),
+          invoicesApi.decide(r.id, "approve", n, inrExport),
         );
         props.onDecided(true, "number" in done ? done.number : null);
       } else {
@@ -280,6 +283,11 @@ function IssueDecision(props: {
             />
           )}
         </FormField>
+        {inrExport && (
+          <div className="inv-inr-ask">
+            <p>{INVT_COPY.inrConfirm}</p>
+          </div>
+        )}
       </div>
       {needsCode && (
         <CodeField
@@ -312,7 +320,7 @@ function IssueDecision(props: {
           disabled={busy !== null}
           aria-busy={busy === "approve" || undefined}
         >
-          {INV_COPY.approveButton}
+          {inrExport ? INVT_COPY.issueInInr : INV_COPY.approveButton}
         </button>
       </div>
     </>

@@ -213,7 +213,8 @@ export function Component() {
               id: n.id,
               title: n.title,
               at: n.createdAt,
-              href: n.link,
+              // M5.2: the LUT reminder (07-S §8 "File the LUT for FY … and save its ARN in Settings › Tax.") lands on the list of letters itself.
+              href: n.kind === "lut.reminder" && !n.link.includes("#") ? `${n.link}#luts` : n.link,
               unread: n.readAt === null,
             }))}
             unread={bell.unread}

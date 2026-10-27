@@ -153,7 +153,15 @@ describe("07-R copy", () => {
     expect(convertedToInvoice(null)).toBe("Converted to a draft invoice.");
     expect(convertedToInvoice("TH/INV/2627/0001")).toBe("Converted to invoice TH/INV/2627/0001.");
     expect(INV_COPY.voidReasonEmpty).toBe("Enter a reason for voiding.");
-    expect(BADGE_LABELS).toEqual({ draft: "Draft", issued: "Issued", overdue: "Overdue", void: "Void" });
+    // 07-R's four, then M5.2's Converted (07-S §6) and Paid (docs/06 §5.5)
+    expect(BADGE_LABELS).toEqual({
+      draft: "Draft",
+      issued: "Issued",
+      overdue: "Overdue",
+      void: "Void",
+      converted: "Converted",
+      paid: "Paid",
+    });
   });
 
   it("a milestone can be invoiced when Ready to bill, or as the pending advance, wherever it sits (re-check A)", () => {

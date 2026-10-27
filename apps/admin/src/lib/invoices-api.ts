@@ -59,8 +59,53 @@ export type InvoiceListQuery = {
   after?: string | undefined;
 };
 
-/** A blocker as the server sends it: a code, and for a line's blocker the line's 1-based position. */
-export type InvoiceBlocker = { code: IssueBlockerCode | string; line?: number };
+/**
+ * A blocker as the server sends it: a code, and for a line's blocker the line's 1-based position; M5.2: the FY token a missing LUT is for (`fy`), the
+ * ISO date a rate is for or was judged against (`date`).
+ */
+export type InvoiceBlocker = { code: IssueBlockerCode | string; line?: number; fy?: string; date?: string };
+
+/** M5.2: one line of the mandatory-field checklist (ADM-INV-06) as the view sends it; the words are 07-S §3's, by `id`. */
+export type ChecklistItemView = {
+  id: string;
+  locked: boolean;
+  available: boolean;
+  on: boolean;
+  applies: boolean;
+  blockers: string[];
+};
+
+/** M5.2: the reminder of ADM-INV-18 for today (IST): `due` in March while the next FY has no letter, `currentMissing` while the running FY has none. */
+export type LutStatus = {
+  currentFy: string;
+  currentFyLabel: string;
+  nextFy: string;
+  nextFyLabel: string;
+  due: boolean;
+  currentMissing: boolean;
+} | null;
+
+/** M5.2: the INR view the tax engine made of a USD document (minor units in INR). */
+export type InrView = {
+  rateMicros?: number;
+  taxableMinor: number;
+  cgstMinor?: number;
+  sgstMinor?: number;
+  igstMinor: number;
+  totalMinor: number;
+};
+
+/** M5.2: an issued tax or export invoice made from a proforma (Q9). */
+export type ProformaChild = {
+  id: string;
+  type: InvoiceType;
+  number: string | null;
+  status: InvoiceStatus;
+  totalMinor: number;
+  currency: Currency;
+  issueDate: string | null;
+  receivedOn: string | null;
+};
 
 export type InvoiceLine = {
   id: string;
@@ -158,16 +203,78 @@ export type InvoiceView = {
     status: string;
   } | null;
   terms: { id: string; version: number; sha256: string } | null;
+  // ---- M5.2 (apps/admin/worker/invoice-view.ts); optional so an older API still loads -------------------------------------------------------
+  /** The day the service was completed (set once on an issued tax or export invoice). */
+  serviceCompletedOn?: string | null;
+  /** The tax or export invoice issued for a payment received (Q9): the proforma it settles, as sealed. */
+  advance?: {
+    proformaId: string;
+    proformaNumber: string;
+    proformaIssueDate: string;
+    receivedOn: string;
+    receiptId: string;
+  } | null;
+  /** Q8: issuing needs the explicit "Issue in INR" (an export invoice in INR). */
+  needsInrConfirm?: boolean;
+  checklist?: {
+    settings: { bankDetails: boolean; paymentLink: false };
+    switchable: readonly string[];
+    items: ChecklistItemView[];
+  };
+  fx?: {
+    applies: boolean;
+    value: { rate: string; rateMicros: number; date: string; source: string } | null;
+    refDate: string;
+    maxAgeDays: number;
+    dateOk: boolean | null;
+    inr: InrView | null;
+  };
+  export?: {
+    mode: "lut" | "igst_paid";
+    draftMode: "lut" | "igst_paid" | null;
+    settingsMode: "lut" | "igst_paid";
+    endorsement: string | null;
+    lutRequired: boolean;
+    lut: { fy: string; arn: string } | null;
+    issueFy: string | null;
+    countryCode: string;
+    countryName: string | null;
+    declaration: { available: boolean; pinned: boolean; id: string | null; text: string | null };
+  } | null;
+  lutStatus?: LutStatus;
+  proforma?: {
+    notice: string | null;
+    validUntil: string | null;
+    paidMinor: number;
+    balanceMinor: number;
+    canAdvance: boolean;
+    children: ProformaChild[];
+    warnAt: number | null;
+    warnDate: string | null;
+  } | null;
 };
 
 export type InvoicePatch = {
   expectedUpdatedAt: number;
-  fields?: { contactId?: string | null; discount?: Discount | null };
+  fields?: {
+    contactId?: string | null;
+    discount?: Discount | null;
+    /** M5.2: the export route of an export draft (or of a proforma for an overseas client); null follows Settings. */
+    exportMode?: "lut" | "igst_paid" | null;
+    /** M5.2 (Q7): the exchange rate of a USD tax or export draft; null clears it. */
+    fx?: { rate: string; date: string; source: "FBIL" | "RBI" | "OTHER"; sourceNote?: string } | null;
+    /** M5.2: the day the service was completed (a tax or export draft). */
+    serviceCompletedOn?: string | null;
+    /** M5.2: add the newest extra export note (Settings › Terms) to an export draft. */
+    exportDeclaration?: boolean;
+  };
   lines?: LineIn[];
 };
 
 export type NewInvoiceInput = {
   clientId: string;
+  /** M5.2: `proforma` makes a proforma for any client (default: the type comes from the client). */
+  kind?: "invoice" | "proforma";
   contactId?: string;
   fromMilestoneId?: string;
   services?: { catalogueItemId: string; defaultLines?: string[] }[];
@@ -238,19 +345,37 @@ export const invoicesApi = {
     request<{ ok: true }>(`/invoices/${enc(id)}${qs({ expectedUpdatedAt: String(expectedUpdatedAt) })}`, {
       method: "DELETE",
     }),
-  issue: (id: string, expectedUpdatedAt: number, expectedContentSha256: string) =>
+  issue: (id: string, expectedUpdatedAt: number, expectedContentSha256: string, confirmInrExport = false) =>
     request<IssuedResult>(`/invoices/${enc(id)}/issue`, {
-      body: { expectedUpdatedAt, expectedContentSha256 },
+      body: {
+        expectedUpdatedAt,
+        expectedContentSha256,
+        ...(confirmInrExport ? { confirmInrExport: true } : {}),
+      },
     }),
+  /** M5.2 (Q9): the Owner records a payment received against an issued proforma; a tax or export invoice is issued for it, already paid. */
+  advance: (id: string, body: AdvanceInput) =>
+    request<AdvanceResult>(`/invoices/${enc(id)}/advance-invoice`, { body }),
+  /** M5.2 (LD29): the day the service was completed, set once on an issued tax or export invoice. */
+  serviceCompleted: (id: string, expectedUpdatedAt: number, date: string) =>
+    request<{ ok: true; serviceCompletedOn: string; updatedAt: number }>(
+      `/invoices/${enc(id)}/service-completed`,
+      { body: { expectedUpdatedAt, date } },
+    ),
   requestIssue: (id: string, expectedUpdatedAt: number) =>
     request<{ id: string; status: "pending" }>(`/invoices/${enc(id)}/issue-request`, {
       body: { expectedUpdatedAt },
     }),
   void: (id: string, expectedUpdatedAt: number, reason: string) =>
-    request<{ ok: true; status: "void"; number: string | null; voidedAt: number; updatedAt: number }>(
-      `/invoices/${enc(id)}/void`,
-      { body: { expectedUpdatedAt, reason } },
-    ),
+    request<{
+      ok: true;
+      status: "void";
+      number: string | null;
+      voidedAt: number;
+      updatedAt: number;
+      /** The milestone the invoice was made from, with the status the void left it in (M5.1 L3); null when there was none. */
+      milestone?: { id: string; status: string } | null;
+    }>(`/invoices/${enc(id)}/void`, { body: { expectedUpdatedAt, reason } }),
   retryPdf: (id: string) =>
     request<{ ok: true; pdf: { state: "pending" } }>(`/invoices/${enc(id)}/pdf/retry`, { body: {} }),
   issueApprovals: (
@@ -267,8 +392,35 @@ export const invoicesApi = {
       `/approvals${qs({ kind: "issue", ...q })}`,
     ),
   /** Approve = issue (the approver's fresh code first); reject leaves the draft as it was. */
-  decide: (id: string, decision: "approve" | "reject", note?: string) =>
+  decide: (id: string, decision: "approve" | "reject", note?: string, confirmInrExport = false) =>
     request<IssuedResult | { ok: true; status: "rejected" }>(`/approvals/${enc(id)}/decide`, {
-      body: note ? { decision, note } : { decision },
+      body: {
+        decision,
+        ...(note ? { note } : {}),
+        ...(confirmInrExport && decision === "approve" ? { confirmInrExport: true } : {}),
+      },
     }),
+};
+
+/** POST /invoices/:id/advance-invoice (Q9). */
+export type AdvanceInput = {
+  expectedProformaUpdatedAt: number;
+  amountMinor: number;
+  receivedOn: string;
+  reference: string;
+  fx?: { rate: string; date: string; source: "FBIL" | "RBI" | "OTHER"; sourceNote?: string };
+  confirmInrExport?: true;
+};
+export type AdvanceResult = {
+  ok: true;
+  id: string;
+  type: InvoiceType;
+  number: string;
+  issueDate: string;
+  fy: string;
+  fyLabel: string;
+  status: "paid";
+  receiptId: string;
+  warnings: string[];
+  proforma: { id: string; status: InvoiceStatus; paidMinor: number; balanceMinor: number };
 };

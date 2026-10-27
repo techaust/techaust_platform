@@ -78,6 +78,15 @@ export type SeriesState = {
 };
 export type GroupMeta = {
   verify?: string;
+  /** M5.2 (Settings › Tax): today's LUT reminder, worked out by the server from the saved letters. */
+  lutStatus?: {
+    currentFy: string;
+    currentFyLabel: string;
+    nextFy: string;
+    nextFyLabel: string;
+    due: boolean;
+    currentMissing: boolean;
+  } | null;
   notes?: string;
   pan?: string | null;
   logos?: readonly string[];
@@ -107,6 +116,8 @@ export type BankAccount = {
   branch: string | null;
   bankAddress: string | null;
   intermediary: string | null;
+  /** M5.2 (LD30): the RBI purpose code of the USD account (P and four digits); absent from an older API. */
+  purposeCode?: string | null;
   updatedAt: number | null;
 };
 export type BankInput = {
@@ -119,6 +130,8 @@ export type BankInput = {
   branch?: string | null;
   bankAddress?: string | null;
   intermediary?: string | null;
+  /** M5.2: the USD account's purpose code; null clears it. */
+  purposeCode?: string | null;
   /** The `updatedAt` from GET /settings/bank (null for a first save); a different one on the server is a 409. */
   expectedUpdatedAt: number | null;
 };
