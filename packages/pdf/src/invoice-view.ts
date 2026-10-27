@@ -182,6 +182,7 @@ export function toInvoiceView(
               id: exp.declarationRef.id,
               version: exp.declarationRef.version,
               sha256: exp.declarationRef.sha256,
+              text: exp.declarationText ?? "",
             }
           : null,
       }
@@ -225,7 +226,7 @@ export function toInvoiceView(
     numberDisplay: envelope.numberDisplay,
     issueDate: shortIsoDate(header.document.issueDate),
     dueDate: shortIsoDate(header.document.dueDate),
-    copyLabel: ORIGINAL_FOR_RECIPIENT,
+    copyLabel: envelope.type === "proforma" ? null : ORIGINAL_FOR_RECIPIENT,
     logo: company.logo,
     supplier: { name: company.tradeName, lines: supplierLines },
     recipient: {

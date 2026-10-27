@@ -9,15 +9,16 @@
 import { type LutCheckMessage, lutBellFor, lutsFromStoredTax } from "@techaust/core/invoices";
 import { logEvent } from "./log.ts";
 
-/** The bell the owners see. 07-S §5 (pending the owner's word): "File next year's LUT (FY {next fy}) before 1 April, then save its ARN here." */
+/** The bell the owners see: 07-S §8 (pending the owner's word). */
 export const LUT_BELL_COPY = {
-  next_fy_due: (fyLabel: string) =>
-    `File next year's LUT (FY ${fyLabel}) before 1 April, then save its ARN here.`,
-  /** No line is drafted for "the FY that is running has no letter": a gap, never invented. */
-  current_missing: (_fyLabel: string) => "[Placeholder]",
+  next_fy_due: (fyLabel: string) => `File the LUT for FY ${fyLabel} and save its ARN in Settings › Tax.`,
+  current_missing: (fyLabel: string) =>
+    `There's no LUT for FY ${fyLabel}. Export invoices without IGST are blocked until you save its ARN.`,
 } as const;
 
-export const TAX_ROW_SQL = "SELECT value FROM settings WHERE key = 'tax'";
+/** ONE read: the stored `tax` row and whether an active (not anonymised) overseas client exists. No overseas client, no bell (lead, 2026-10-27). */
+export const TAX_ROW_SQL = `SELECT (SELECT value FROM settings WHERE key = 'tax') AS value,
+  EXISTS (SELECT 1 FROM clients WHERE gst_status = 'overseas' AND anonymised_at IS NULL) AS overseas`;
 
 /** One bell per active owner; `?1` kind, `?2` entity, `?3` title, `?4` link. The unique index `(user_id, kind, entity_id)` makes a rerun a no-op. */
 export const LUT_BELL_SQL = `INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
@@ -27,10 +28,14 @@ export type LutCheckResult = { bell: "none" | "next_fy_due" | "current_missing";
 
 /** Handles one `lut.check` message (a valid one: the queue routes the rest to `skipLutCheck`). */
 export async function processLutCheck(env: Env, msg: LutCheckMessage): Promise<LutCheckResult> {
-  const row = await env.DB.prepare(TAX_ROW_SQL).first<{ value: string }>();
+  const row = await env.DB.prepare(TAX_ROW_SQL).first<{ value: string | null; overseas: number }>();
+  if (!row?.overseas) {
+    logEvent("lut.check", { asOf: msg.asOf, bell: "none", overseas: false });
+    return { bell: "none", owners: 0 };
+  }
   let stored: unknown = null;
   try {
-    stored = row ? JSON.parse(row.value) : null;
+    stored = row.value ? JSON.parse(row.value) : null;
   } catch {
     stored = null; // an unreadable row is "no letters": the owners are told, which is the safe side
   }

@@ -1,12 +1,14 @@
 // M5.2 stage B1 and the first line of B2 (LD25, LD33, LD37; VERIFY WITH CA/LEGAL): the invoice envelope and its view carry the optional header keys of an export
 // invoice, a proforma and the invoice made for money received; an M5.1 envelope with none of them still parses and verifies; the statutory lines are
 // held here as LITERALS (not imported from core) so a change of the constants fails a test until a person has looked at it.
+import { invoiceSnapshotSha256 } from "@techaust/core/invoices";
 import { describe, expect, it } from "vitest";
 import { esc } from "../src/escape.ts";
 import { invoiceEnvelopeOfBundle } from "../src/invoice-bundle.ts";
 import {
   buildInvoiceEnvelope,
   invoiceDraftOf,
+  invoiceSnapshotInputOf,
   parseInvoiceEnvelope,
   serializeInvoiceEnvelope,
   verifyInvoiceEnvelope,
@@ -17,6 +19,7 @@ import { toInvoiceView } from "../src/invoice-view.ts";
 import { DEFAULT_VIEW_CONFIG } from "../src/view.ts";
 import {
   buildInvoiceFixture,
+  EXPORT_NOTE_TEXT,
   invoiceBundleOf,
   LITERAL_ENDORSEMENT,
   LITERAL_PROFORMA_NOTICE,
@@ -87,6 +90,43 @@ describe("the envelope of the M5.2 types [LD25, LD37]", () => {
     expect((await buildInvoiceFixture("proforma")).envelope.snapshot.header.proforma).toEqual({
       notice: LITERAL_PROFORMA_NOTICE,
     });
+  });
+
+  it("the extra export note: its frozen text is in the envelope and the view; changed text or a missing text is refused", async () => {
+    const e = (await buildInvoiceFixture("export_note")).envelope;
+    expect(e.snapshot.header.export?.declarationText).toBe(EXPORT_NOTE_TEXT);
+    expect(view(e).export?.declaration).toEqual({
+      id: "note-1",
+      version: 1,
+      sha256: e.snapshot.header.export?.declarationRef?.sha256,
+      text: EXPORT_NOTE_TEXT,
+    });
+    // the text moves after sealing: the seal catches it
+    const forged = clone(e);
+    (forged.snapshot.header.export as { declarationText: string }).declarationText = "A different note.";
+    expect(await verifyInvoiceEnvelope(forged)).toEqual({ ok: false, code: "snapshot_hash" });
+    // the seal is rebuilt around the new text: the note's own SHA-256 still catches it
+    const resealed = clone(forged);
+    resealed.snapshotSha256 = await invoiceSnapshotSha256(invoiceSnapshotInputOf(resealed));
+    expect(await verifyInvoiceEnvelope(resealed)).toEqual({ ok: false, code: "terms_hash" });
+    // a ref with no text, or a text with no ref, is not an envelope
+    const noText = JSON.parse(serializeInvoiceEnvelope(e)) as {
+      snapshot: { header: { export: Record<string, unknown> } };
+    };
+    delete noText.snapshot.header.export.declarationText;
+    expect(parseInvoiceEnvelope(JSON.stringify(noText))).toBeNull();
+    const orphan = JSON.parse(
+      serializeInvoiceEnvelope((await buildInvoiceFixture("export_lut")).envelope),
+    ) as {
+      snapshot: { header: { export: Record<string, unknown> } };
+    };
+    orphan.snapshot.header.export.declarationText = "x";
+    expect(parseInvoiceEnvelope(JSON.stringify(orphan))).toBeNull();
+  });
+
+  it("the copy mark: ORIGINAL FOR RECIPIENT on an export invoice, null on a proforma", async () => {
+    expect(view((await buildInvoiceFixture("export_lut")).envelope).copyLabel).toBe("ORIGINAL FOR RECIPIENT");
+    expect(view((await buildInvoiceFixture("proforma")).envelope).copyLabel).toBeNull();
   });
 
   it("every sealed part is covered by the hash: one changed character of the endorsement, the ARN, the country, the notice, the rate or the advance reference fails verification", async () => {

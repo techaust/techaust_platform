@@ -62,6 +62,8 @@ type Spec = {
   type?: "tax_invoice" | "export_invoice" | "proforma";
   export?: "lut" | "igst_paid";
   advance?: boolean;
+  /** An export invoice that carries the optional extra export note (its text is frozen into the header). */
+  note?: boolean;
 };
 
 export const TYPED_FIXTURE_NAMES = [
@@ -70,6 +72,7 @@ export const TYPED_FIXTURE_NAMES = [
   "proforma",
   "advance",
   "advance_export",
+  "export_note",
 ] as const;
 export type TypedFixtureName = (typeof TYPED_FIXTURE_NAMES)[number];
 
@@ -204,6 +207,13 @@ const TYPED_SPECS: Record<TypedFixtureName, Spec> = {
     advance: true,
     lines: [{ description: "Sample line", qtyMilli: 1000, unit: "item", rateMinor: 100_000 }],
   },
+  export_note: {
+    recipient: overseas,
+    type: "export_invoice",
+    export: "lut",
+    note: true,
+    lines: [lineOf(1)],
+  },
   advance_export: {
     recipient: overseas,
     type: "export_invoice",
@@ -212,6 +222,9 @@ const TYPED_SPECS: Record<TypedFixtureName, Spec> = {
     lines: [lineOf(1)],
   },
 };
+
+/** The sample extra export note. */
+export const EXPORT_NOTE_TEXT = "Sample extra export note.";
 
 const FX = { rateMicros: 83_123_400, date: "2026-10-27", source: "FBIL reference rate" } as const;
 
@@ -375,7 +388,10 @@ export async function buildInvoiceFixture(
             lut: route === "lut" ? { fy: "2627", arn: SAMPLE_ARN } : null,
             countryCode: "US",
             countryName: "United States",
-            declarationRef: null,
+            declarationRef: spec.note
+              ? { id: "note-1", version: 1, sha256: await sha256Hex(EXPORT_NOTE_TEXT) }
+              : null,
+            ...(spec.note ? { declarationText: EXPORT_NOTE_TEXT } : {}),
           },
         }
       : {}),

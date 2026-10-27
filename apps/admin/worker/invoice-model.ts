@@ -111,9 +111,9 @@ export const NEWEST_INVOICE_TERMS =
 /** The active bank accounts (at most one per kind). M5.2: the SWIFT block's columns and the purpose code come with them. */
 export const BANK_READ =
   "SELECT kind, account_name, account_no, ifsc, swift, bank_name, branch, bank_address, intermediary, purpose_code, updated_at FROM bank_accounts WHERE active = 1";
-/** The newest optional export-declaration note (LD23): a pin, no text. */
+/** The newest optional export-declaration note (LD23): its pin and its text (the text is frozen into `header_extras` at issue). */
 export const NEWEST_EXPORT_DECLARATION =
-  "SELECT id, kind, version, sha256 FROM terms_blocks WHERE kind = 'export_declaration' ORDER BY version DESC LIMIT 1";
+  "SELECT id, kind, version, sha256, body_md FROM terms_blocks WHERE kind = 'export_declaration' ORDER BY version DESC LIMIT 1";
 
 export type BankRow = {
   kind: string;
@@ -747,6 +747,8 @@ export const ALREADY_SET = e("already_set", "[Placeholder]");
 export const INVOICE_VOID = e("invoice_void", "[Placeholder]");
 /** The extra export note the draft pinned is no longer the newest one: the person must look at the new text and choose again (07-S has no line yet). */
 export const EXPORT_DECLARATION_CHANGED = e("export_declaration_changed", "[Placeholder]");
+/** The newest export note's text does not match its stored SHA-256: nothing is sealed from it (07-S has no line yet). */
+export const EXPORT_DECLARATION_TAMPERED = e("export_declaration_tampered", "[Placeholder]");
 export const NOT_A_PROFORMA = e("not_a_proforma", "That is not a proforma");
 export const PROFORMA_NOT_ISSUED = e("proforma_not_issued", "Only an issued proforma can be converted.");
 export const ADVANCE_REFERENCE_USED = e(
@@ -777,7 +779,7 @@ export function headerExtrasOf(a: {
   issueFy: string;
   /** The route of an export invoice: the draft's own, else the settings'. */
   mode: ExportRoute;
-  declaration: TermsRef | null;
+  declaration: (TermsRef & { body_md?: string }) | null;
   advance?: NonNullable<InvoiceHeaderExtras["advance"]> | null;
 }): InvoiceHeaderExtras {
   const { state } = a;
@@ -798,6 +800,7 @@ export function headerExtrasOf(a: {
       declarationRef: a.declaration
         ? { id: a.declaration.id, version: a.declaration.version, sha256: a.declaration.sha256 }
         : null,
+      ...(a.declaration?.body_md !== undefined ? { declarationText: a.declaration.body_md } : {}),
     };
   }
   if ((state.type === "tax_invoice" || state.type === "export_invoice") && state.fx)

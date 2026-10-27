@@ -95,7 +95,7 @@ function parties(view: InvoiceView): string {
   }</div>`;
   const fact = (term: string, value: string) => `<div><dt>${esc(term)}</dt><dd>${esc(value)}</dd></div>`;
   const doc = `<div class="party party--doc"><p class="label">${C.document}</p><p class="label" data-testid="copy-label">${esc(
-    view.copyLabel,
+    view.copyLabel ?? "",
   )}</p><dl class="facts">${fact(C.number, view.numberDisplay)}${fact(C.date, view.issueDate)}${fact(C.dueDate, view.dueDate)}${fact(
     C.currency,
     view.currency,

@@ -2,6 +2,7 @@
 // mandatory-field checklist and every blocker a route can reach; the exchange rate; the letters of undertaking and the FY of issue; the INR export
 // confirmation; the sealed header (the endorsement and the notice are literals here); the service date; the purpose code; the view the screens read.
 import { env } from "cloudflare:workers";
+import { sha256Hex } from "@techaust/core/catalogue";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkDoc } from "./test-clients.ts";
 import { call, one, sessionFor } from "./test-helpers.ts";
@@ -996,10 +997,12 @@ describe("the address of delivery and the optional export note [LD36, LD23, Rule
     expect(await codeOf(none)).toBe("export_declaration_missing");
     const v1 = "00000000-0000-7000-8000-0000000000d1";
     const v2 = "00000000-0000-7000-8000-0000000000d2";
+    const sha1 = await sha256Hex("Old note");
+    const sha2 = await sha256Hex("New note");
     await env.DB.prepare(
       "INSERT INTO terms_blocks (id, kind, version, body_md, sha256) VALUES (?1, 'export_declaration', 1, 'Old note', ?2)",
     )
-      .bind(v1, "1".repeat(64))
+      .bind(v1, sha1)
       .run();
     expect((await patchFields(o, made.id, { exportDeclaration: true })).status).toBe(200);
     expect(await typesRow(made.id)).toMatchObject({ export_declaration_id: v1 });
@@ -1008,7 +1011,7 @@ describe("the address of delivery and the optional export note [LD36, LD23, Rule
     await env.DB.prepare(
       "INSERT INTO terms_blocks (id, kind, version, body_md, sha256) VALUES (?1, 'export_declaration', 2, 'New note', ?2)",
     )
-      .bind(v2, "2".repeat(64))
+      .bind(v2, sha2)
       .run();
     const counter = await invoiceCounter();
     const changed = await issueInvoice(o, made.id);
@@ -1025,14 +1028,46 @@ describe("the address of delivery and the optional export note [LD36, LD23, Rule
     expect(await typesRow(made.id)).toMatchObject({ export_declaration_id: v2 });
     const header = {
       ...headerOfLut().export,
-      declarationRef: { id: v2, version: 2, sha256: "2".repeat(64) },
+      declarationRef: { id: v2, version: 2, sha256: sha2 },
+      declarationText: "New note",
     };
+    expect(await sealCheck(made.id, { export: header })).toEqual({ content: true, snapshot: true });
+    // the frozen view carries the text, and a newer note afterwards a newer note afterwards changes neither the view nor the seal
+    expect((await getInvoice(o, made.id)).export.declaration).toMatchObject({
+      pinned: true,
+      text: "New note",
+    });
+    await env.DB.prepare(
+      "INSERT INTO terms_blocks (id, kind, version, body_md, sha256) VALUES ('00000000-0000-7000-8000-0000000000d4', 'export_declaration', 20, 'Newer note', ?1)",
+    )
+      .bind(await sha256Hex("Newer note"))
+      .run();
+    expect((await getInvoice(o, made.id)).export.declaration.text).toBe("New note");
     expect(await sealCheck(made.id, { export: header })).toEqual({ content: true, snapshot: true });
     // never on a domestic or INR draft
     const tax = await mkInvoice(o);
     const r = await patchFields(o, tax.id, { exportDeclaration: true });
     expect(r.status).toBe(400);
     expect(await codeOf(r)).toBe("export_declaration_not_applicable");
+  });
+
+  it("a note whose text does not match its stored SHA-256 is refused at issue and nothing is written", async () => {
+    const o = await owner();
+    const made = await readyExport(o);
+    const v = "00000000-0000-7000-8000-0000000000d5";
+    await env.DB.prepare(
+      "INSERT INTO terms_blocks (id, kind, version, body_md, sha256) VALUES (?1, 'export_declaration', 30, 'Tampered text', ?2)",
+    )
+      .bind(v, await sha256Hex("The text that was approved"))
+      .run();
+    expect((await patchFields(o, made.id, { exportDeclaration: true })).status).toBe(200);
+    const counter = await invoiceCounter();
+    const res = await issueInvoice(o, made.id);
+    expect(res.status).toBe(409);
+    expect(await codeOf(res)).toBe("export_declaration_tampered");
+    expect(await typesRow(made.id)).toMatchObject({ status: "draft" });
+    expect(await invoiceCounter()).toBe(counter);
+    expect(await auditCount("invoice.issue", made.id)).toBe(0);
   });
 
   it("changing the extra note ends a waiting issue request even though the content hash does not move", async () => {

@@ -8,6 +8,7 @@
 // same batch, an Owner who issues directly closes the request as approved, and approving one issues the invoice in the same batch (Q6), with the
 // approver's code checked here (`step_up_required`) and again inside the freeze statement.
 import { stepUpActive } from "@techaust/auth";
+import { sha256Hex } from "@techaust/core/catalogue";
 import { fyOf } from "@techaust/core/dates";
 import { uuidv7 } from "@techaust/core/ids";
 import {
@@ -52,6 +53,7 @@ import {
   computeInvoice,
   EXPORT_CURRENCY_CONFIRM,
   EXPORT_DECLARATION_CHANGED,
+  EXPORT_DECLARATION_TAMPERED,
   headerExtrasOf,
   INVOICE_APPROVAL_EXPIRED,
   ISSUE_APPROVAL_REQUIRED,
@@ -193,11 +195,15 @@ export async function issueInvoice(c: Ctx, p: IssueParams): Promise<Response> {
   const issuer = issuerOf(ctx.settings, ctx.bank, { id: u.id, name: u.name }, d.currency);
   const terms = ctx.newestTerms;
   // LD23: the optional extra export note, pinned at issue: the NEWEST block, when the draft asked for one.
-  const newestDeclaration = (ctx.extra[0]?.results[0] as TermsRef | undefined) ?? null;
+  const newestDeclaration =
+    (ctx.extra[0]?.results[0] as (TermsRef & { body_md: string }) | undefined) ?? null;
   const declaration = state.exportDeclarationId !== null ? newestDeclaration : null;
   // The note the draft pinned (what the requester and the approver saw) must still be the newest: a newer text is refused, never silently swapped in.
   if (state.exportDeclarationId !== null && declaration?.id !== state.exportDeclarationId)
     return err(c, EXPORT_DECLARATION_CHANGED, 409);
+  // The text that gets frozen must be the text its SHA-256 was taken from.
+  if (declaration && (await sha256Hex(declaration.body_md ?? "")) !== declaration.sha256)
+    return err(c, EXPORT_DECLARATION_TAMPERED, 409);
   const mode: ExportRoute =
     state.exportMode === "lut" || state.exportMode === "igst_paid"
       ? state.exportMode

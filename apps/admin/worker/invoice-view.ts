@@ -386,6 +386,8 @@ export function invoiceView(i: InvoiceViewInput) {
               available: i.declaration !== null,
               pinned: state.exportDeclarationId !== null,
               id: state.exportDeclarationId,
+              // the note's text as frozen with the invoice (null on a draft or when none was pinned)
+              text: frozen ? (sealed.export?.declarationText ?? null) : null,
             },
           }
         : null,

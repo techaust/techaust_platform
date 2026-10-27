@@ -94,7 +94,11 @@ function validExport(v: unknown): boolean {
   if (!isStr(v.countryCode) || !isStr(v.countryName)) return false;
   if (v.lut !== null && !(isObj(v.lut) && isStr(v.lut.fy) && isStr(v.lut.arn))) return false;
   const d = v.declarationRef;
-  return d === null || (isObj(d) && isStr(d.id) && typeof d.version === "number" && isStr(d.sha256));
+  if (d === null) return v.declarationText === undefined;
+  // a pinned note travels with its frozen text
+  return (
+    isObj(d) && isStr(d.id) && typeof d.version === "number" && isStr(d.sha256) && isStr(v.declarationText)
+  );
 }
 
 function validFx(v: unknown): boolean {
@@ -217,6 +221,10 @@ export async function verifyInvoiceEnvelope(e: InvoiceEnvelope): Promise<Invoice
   }
   if ((await sha256Hex(s.computedJson)) !== h.computedSha256) return { ok: false, code: "computed_hash" };
   if (s.terms && (await sha256Hex(s.terms.bodyMd)) !== s.terms.sha256)
+    return { ok: false, code: "terms_hash" };
+  // the frozen extra export note must be the text its SHA-256 was taken from
+  const note = h.export?.declarationRef;
+  if (note && (await sha256Hex(h.export?.declarationText ?? "")) !== note.sha256)
     return { ok: false, code: "terms_hash" };
   let computed: ComputedDocument;
   try {

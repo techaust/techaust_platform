@@ -62,6 +62,11 @@ beforeEach(async () => {
     realEnv.DB.prepare("DELETE FROM notifications"),
     realEnv.DB.prepare("DELETE FROM settings WHERE key = 'tax'"),
     realEnv.DB.prepare("DELETE FROM staff_users WHERE id LIKE 'lut-%'"),
+    realEnv.DB.prepare("DELETE FROM clients WHERE id LIKE 'lut-%'"),
+    // an active overseas client: the bell rings only while one exists (lead, 2026-10-27)
+    realEnv.DB.prepare(
+      "INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, state_code, currency) VALUES ('lut-client', 'LUT-1', 'Overseas Co', 'Overseas', 'business', 'US', 'overseas', NULL, 'USD')",
+    ),
     realEnv.DB.prepare(
       "INSERT INTO staff_users (id, email, name, role, status) VALUES ('lut-owner-1', 'lut1@example.test', 'Owner One', 'owner', 'active'), ('lut-owner-2', 'lut2@example.test', 'Owner Two', 'owner', 'active'), ('lut-owner-off', 'lut3@example.test', 'Owner Gone', 'owner', 'deactivated'), ('lut-staff', 'lut4@example.test', 'Staff', 'staff', 'active')",
     ),
@@ -118,7 +123,7 @@ describe("when a bell rings", () => {
         kind: "lut.reminder",
         entity_type: "settings",
         entity_id: "lut:2728:2027-03-08",
-        title: "File next year's LUT (FY 2027-28) before 1 April, then save its ARN here.",
+        title: "File the LUT for FY 2027-28 and save its ARN in Settings › Tax.",
         link: "/settings/tax",
       },
       {
@@ -126,7 +131,7 @@ describe("when a bell rings", () => {
         kind: "lut.reminder",
         entity_type: "settings",
         entity_id: "lut:2728:2027-03-08",
-        title: "File next year's LUT (FY 2027-28) before 1 April, then save its ARN here.",
+        title: "File the LUT for FY 2027-28 and save its ARN in Settings › Tax.",
         link: "/settings/tax",
       },
     ]);
@@ -164,19 +169,43 @@ describe("when a bell rings", () => {
     expect(await bells()).toHaveLength(0);
   });
 
-  it("from 1 April while the running FY has no letter: the 'missing' bell (07-S has no line yet: [Placeholder]), one a week", async () => {
+  it("from 1 April while the running FY has no letter: the 'missing' bell (07-S §8 line), one a week", async () => {
     await putTax({ luts: [{ fy: "2627", arn: ARN, filedOn: null }] });
     const r = await check("2027-04-07"); // a Wednesday; its Monday is 5 April
     expect(r).toEqual({ bell: "current_missing", owners: 2 });
     expect((await bells()).map((b) => [b.entity_id, b.title])).toEqual([
-      ["lut:2728:2027-04-05", "[Placeholder]"],
-      ["lut:2728:2027-04-05", "[Placeholder]"],
+      [
+        "lut:2728:2027-04-05",
+        "There's no LUT for FY 2027-28. Export invoices without IGST are blocked until you save its ARN.",
+      ],
+      [
+        "lut:2728:2027-04-05",
+        "There's no LUT for FY 2027-28. Export invoices without IGST are blocked until you save its ARN.",
+      ],
     ]);
-    expect(LUT_BELL_COPY.current_missing("2027-28")).toBe("[Placeholder]");
+    expect(LUT_BELL_COPY.current_missing("2027-28")).toContain("There's no LUT for FY 2027-28.");
     expect(await check("2027-04-09")).toMatchObject({ owners: 0 });
     // the owner saves the letter: the bells stop
     await putTax({ luts: [{ fy: "2728", arn: ARN, filedOn: null }] });
     expect(await check("2027-04-14")).toEqual({ bell: "none", owners: 0 });
+  });
+
+  it("no bell of either kind without an active overseas client (none at all, or only an anonymised or an Indian one)", async () => {
+    await putTax({ luts: [{ fy: "2627", arn: ARN, filedOn: null }] });
+    const del = () => realEnv.DB.prepare("DELETE FROM clients WHERE id = 'lut-client'").run();
+    await del();
+    expect(await check("2027-03-10")).toEqual({ bell: "none", owners: 0 }); // next-year kind
+    expect(await check("2027-04-07")).toEqual({ bell: "none", owners: 0 }); // running-FY kind
+    await realEnv.DB.prepare(
+      "INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, state_code, currency, anonymised_at) VALUES ('lut-client', 'LUT-1', 'Gone', 'Gone', 'business', 'US', 'overseas', NULL, 'USD', 5000)",
+    ).run();
+    expect(await check("2027-03-10")).toEqual({ bell: "none", owners: 0 });
+    await del();
+    await realEnv.DB.prepare(
+      "INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, state_code, currency) VALUES ('lut-client', 'LUT-1', 'Home', 'Home', 'business', 'IN', 'unregistered', '19', 'INR')",
+    ).run();
+    expect(await check("2027-03-10")).toEqual({ bell: "none", owners: 0 });
+    expect(await bells()).toHaveLength(0);
   });
 
   it("no settings row at all, or an unreadable one, is 'no letters' (the owners are told, nothing throws)", async () => {

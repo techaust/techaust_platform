@@ -562,6 +562,8 @@ export type InvoiceSnapshotInput = {
       readonly version: number;
       readonly sha256: string;
     } | null;
+    /** The pinned note's text, frozen at issue (absent when no note is pinned); its SHA-256 is `declarationRef.sha256`. */
+    readonly declarationText?: string;
   };
   readonly fx?: { readonly rateMicros: number; readonly date: string; readonly source: string };
   readonly proforma?: { readonly notice: string };

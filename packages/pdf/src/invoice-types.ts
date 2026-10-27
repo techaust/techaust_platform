@@ -144,7 +144,8 @@ export type InvoiceViewExport = {
   placeOfSupply: string;
   /** The client's service address when it had one (Rule 46(o)), as address lines; null otherwise. */
   deliveryAddress: string[] | null;
-  declaration: { id: string; version: number; sha256: string } | null;
+  /** The optional extra export note: its reference and its frozen text (printed after the endorsement). */
+  declaration: { id: string; version: number; sha256: string; text: string } | null;
 };
 
 /** M5.2: the INR value block of a USD invoice (07-S §1): the rate as typed (four decimals), its source and date, the INR taxable value and, on the IGST route only, the IGST. */
@@ -179,7 +180,8 @@ export type InvoiceView = {
   issueDate: string;
   dueDate: string;
   /** "ORIGINAL FOR RECIPIENT" (Rule 48). */
-  copyLabel: string;
+  /** "ORIGINAL FOR RECIPIENT" on a tax or export invoice; null on a proforma (it prints no copy mark). */
+  copyLabel: string | null;
   logo: string;
   supplier: { name: string; lines: string[] };
   /** The recipient block: name, address, GSTIN when registered, the State name and code. */
