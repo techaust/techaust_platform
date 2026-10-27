@@ -662,7 +662,7 @@ function CareAutoIssue({ client }: { client: ClientPage["client"] }) {
   if (!by) return <>On</>;
   return (
     <span className="care-auto">
-      <span>{CARE_COPY.onBy(by.name ?? "")}</span>
+      <span>{CARE_COPY.onBy(by.name ?? "", by.at)}</span>
       {!by.active && (
         <span className="care-auto__off">
           <Lock size={16} />

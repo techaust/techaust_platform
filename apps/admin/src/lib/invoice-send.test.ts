@@ -182,6 +182,11 @@ describe("care invoices [ADM-CARE-02, Q43]", () => {
 
   it("the switch's words", () => {
     expect(CARE_COPY.onBy("Sample Owner")).toBe(`${M}On, turned on by Sample Owner`);
+    expect(CARE_COPY.onBy("Sample Owner", null)).toBe(`${M}On, turned on by Sample Owner`);
+    // 2026-11-04 20:00 UTC is 05 Nov 2026 in IST: the date is the day in India
+    expect(CARE_COPY.onBy("Sample Owner", Date.UTC(2026, 10, 4, 20, 0))).toBe(
+      `${M}On, turned on by Sample Owner on 05 Nov 2026`,
+    );
     expect(CARE_COPY.notInEffect).toBe(`${INV_PLACEHOLDER} Not in effect`);
   });
 });

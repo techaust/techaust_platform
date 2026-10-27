@@ -375,8 +375,11 @@ export const CARE_COPY = {
   toggleHint: U(
     "On the billing day, the invoice is issued and emailed to the client's billing contacts with portal access. Only an owner can turn this on; anyone can turn it off.",
   ),
-  /** 07-U has "On, turned on by {name} on {date}"; the client view carries no date yet, so the date part waits (the designer's report). */
-  onBy: (name: string) => U(`On, turned on by ${name}`),
+  /** 07-U §6 "On, turned on by {name} on {date}"; the date part only when the audit log still says when (`careAutoIssueBy.at`), never guessed. */
+  onBy: (name: string, at?: number | null) =>
+    U(
+      typeof at === "number" ? `On, turned on by ${name} on ${formatIstDay(at)}` : `On, turned on by ${name}`,
+    ),
   ownerOnly: U("Only an owner can turn on automatic issuing."),
   /** The brief: "not in effect" when the owner who turned it on is no longer active. 07-U has no line yet. */
   notInEffect: `${INV_PLACEHOLDER} Not in effect`,

@@ -363,7 +363,8 @@ export type ClientView = {
   careAutoIssue?: boolean;
   attachPdf?: boolean;
   /** M5.4: the owner who turned automatic care invoices on (null: nobody); `active` false means that owner is gone, so the switch is not in effect. */
-  careAutoIssueBy?: { id: string; name: string | null; active: boolean } | null;
+  /** `at`: when it was turned on (UTC ms, from the audit log); null when no audit row says so. */
+  careAutoIssueBy?: { id: string; name: string | null; active: boolean; at?: number | null } | null;
 };
 export type MarketingConsent = { granted: boolean; at?: number; source?: string; withdrawnAt?: number };
 export type ContactView = {
