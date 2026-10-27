@@ -47,6 +47,17 @@ describe("LD54: the invoice a note corrects, as one text node", () => {
     expect(missingStatutoryLine(envelope, split)).toBe("parent_number");
   });
 
+  it("a note whose header has no `noteOf` is refused by its type (the number is not looked for only when the header has one)", async () => {
+    const { envelope, html } = await built("credit_lines");
+    const bare = clone(envelope);
+    delete (bare.snapshot.header as { noteOf?: unknown }).noteOf;
+    expect(missingStatutoryLine(bare, html)).toBe("parent_number");
+    // a tax invoice is not asked for one
+    const plain = clone(envelope);
+    (plain as { type: string }).type = "tax_invoice";
+    expect(missingStatutoryLine(plain, html)).toBeNull();
+  });
+
   it("another invoice's number in the page is refused (the sealed number is what is checked)", async () => {
     const { envelope, html } = await built("debit");
     const other = clone(envelope);

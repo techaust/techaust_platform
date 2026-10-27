@@ -11,6 +11,7 @@
 // `issue_result` must NOT carry the audit guard: a guarded insert would write nothing when the freeze matched no row, the batch would
 // succeed, and a number would have been burned. Unguarded, a stale or refused send aborts as a whole (counter, lead, audit: nothing).
 // A later version (version > 1) of a proposal or estimate takes no number: it copies series, FY, number and display from version 1.
+import { NOTE_PARENT_LIVE_STATUSES } from "@techaust/core/invoices";
 import type {
   InvoiceBankBlock,
   InvoiceIssuerSnapshot,
@@ -284,7 +285,7 @@ export type NoteIssueArgs = {
 export const NOTES_MAX_SQL = 20;
 
 /** The parent statuses a note can be issued against: not void, not fully credited (core `ledgerStatusOf`'s other values). */
-const NOTE_PARENT_LIVE = "('issued', 'partially_paid', 'paid', 'partially_credited')";
+const NOTE_PARENT_LIVE = `(${NOTE_PARENT_LIVE_STATUSES.map((s) => `'${s}'`).join(", ")})`;
 
 /**
  * M5.3 (LD40): what the frozen, not void credit notes of an invoice took per original line (`?1` = the invoice's id), summed by SQL over each note's stored

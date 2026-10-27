@@ -14,6 +14,7 @@ import {
   creditNoteDeadline,
   DEBIT_REASONS,
   debitNoteInput,
+  isLiveParentStatus,
   isNoteType,
   NOTES_MAX,
   type NoteBlocker,
@@ -71,14 +72,19 @@ export const CREDIT_DEADLINE_PASSED = e(
   "credit_deadline_passed",
   "The deadline for a credit note on this invoice has passed.",
 );
-export const CREDIT_EXCEEDS_REMAINING = e(
-  "credit_exceeds_remaining",
-  "That's more than can still be credited on this invoice.",
-);
-export const LINE_CREDIT_EXCEEDS = e(
-  "line_credit_exceeds",
-  "That's more than can still be credited on that line.",
-);
+/** 07-T §7: "That's more than can still be credited on this invoice ({remaining})." */
+export const creditExceedsRemaining = (remainingMinor: number, currency: "INR" | "USD"): ApiError =>
+  e(
+    "credit_exceeds_remaining",
+    `That's more than can still be credited on this invoice (${formatMoney(money(remainingMinor, currency))}).`,
+  );
+/** 07-T §7: "Line {n} can only be credited up to {remaining}." (`n` counts from 1, as the invoice prints it). */
+export const lineCreditExceeds = (n: number, remainingMinor: number, currency: "INR" | "USD"): ApiError =>
+  e(
+    "line_credit_exceeds",
+    `Line ${n} can only be credited up to ${formatMoney(money(remainingMinor, currency))}.`,
+  );
+const currencyOf = (p: ParentCtx): "INR" | "USD" => (p.computed.currency === "USD" ? "USD" : "INR");
 export const NOTHING_TO_CREDIT = e("nothing_to_credit", "Choose at least one line or an amount above zero.");
 export const NOTE_REASON_REQUIRED = e("note_reason_required", "Enter a reason.");
 /** 07-T §8: "There's already a draft {credit/debit} note for this invoice. Open it to continue." */
@@ -279,8 +285,7 @@ export function parentFacts(p: ParentCtx): NoteParentFacts {
 
 /** The invoice types a note can be against, and the statuses they can be in. */
 export const isNoteParentType = (t: string) => t === "tax_invoice" || t === "export_invoice";
-export const isLiveParentStatus = (s: string) =>
-  s === "issued" || s === "partially_paid" || s === "paid" || s === "partially_credited";
+export { isLiveParentStatus };
 
 /** What is left of the invoice: the total, and the taxable value per computed line (by position in `computed.lines`). */
 export function leftOf(p: ParentCtx): { totalLeft: number; taxableLeft: number[] } | null {
@@ -342,13 +347,17 @@ export function resolveCredit(
     doc.lines.map((l) => ({ line: l.index, taxableMinor: l.taxableMinor }));
   if (ask.mode === "full") {
     const r = creditNote(p.computed, p.credited, { kind: "full" }, taxCtx);
-    if (!r.ok) return refuse(mapCreditErrors(r.errors, left));
+    if (!r.ok) return refuse(mapCreditErrors(r.errors, left, currencyOf(p)));
     return { ok: true, request: { mode: "full", takes: taxableOf(r.value) }, computed: r.value };
   }
   if (ask.mode === "amount") {
     const gross = ask.grossMinor ?? 0;
     if (gross > left.totalLeft)
-      return refuse({ status: 409, error: CREDIT_EXCEEDS_REMAINING, extra: { remaining: left.totalLeft } });
+      return refuse({
+        status: 409,
+        error: creditExceedsRemaining(left.totalLeft, currencyOf(p)),
+        extra: { remaining: left.totalLeft },
+      });
     const r = creditForGross(p.computed, p.credited, gross, taxCtx);
     if (r.ok)
       return {
@@ -374,7 +383,7 @@ export function resolveCredit(
             extra: { closestMinor: null, remaining: left.totalLeft },
           })
         : refuse({ status: 400, error: NOTHING_TO_CREDIT });
-    return refuse(mapCreditErrors(r.errors, left));
+    return refuse(mapCreditErrors(r.errors, left, currencyOf(p)));
   }
   const takes = [...(ask.lines ?? [])].sort((a, b) => a.line - b.line);
   if (takes.length === 0) return refuse({ status: 400, error: NOTHING_TO_CREDIT });
@@ -386,16 +395,28 @@ export function resolveCredit(
     seen.add(t.line);
     const room = left.taxableLeft[at] ?? 0;
     if (t.taxableMinor > room)
-      return refuse({ status: 409, error: LINE_CREDIT_EXCEEDS, extra: { line: t.line, remaining: room } });
+      return refuse({
+        status: 409,
+        error: lineCreditExceeds(t.line + 1, room, currencyOf(p)),
+        extra: { line: t.line, remaining: room },
+      });
   }
   const r = creditNote(p.computed, p.credited, { kind: "lines", lines: takes }, taxCtx);
-  if (!r.ok) return refuse(mapCreditErrors(r.errors, left));
+  if (!r.ok) return refuse(mapCreditErrors(r.errors, left, currencyOf(p)));
   return { ok: true, request: { mode: "lines", takes }, computed: r.value };
 }
 
-function mapCreditErrors(errors: readonly TaxIssue[], left: { totalLeft: number }): NoteRefusal {
+function mapCreditErrors(
+  errors: readonly TaxIssue[],
+  left: { totalLeft: number },
+  currency: "INR" | "USD",
+): NoteRefusal {
   if (errors.some((x) => x.code === "exceeds_creditable"))
-    return { status: 409, error: CREDIT_EXCEEDS_REMAINING, extra: { remaining: left.totalLeft } };
+    return {
+      status: 409,
+      error: creditExceedsRemaining(left.totalLeft, currency),
+      extra: { remaining: left.totalLeft },
+    };
   if (errors.some((x) => x.code === "credit_empty")) return { status: 400, error: NOTHING_TO_CREDIT };
   if (errors.some((x) => x.code === "credit_shape_mismatch"))
     return { status: 409, error: CREDIT_DATA_DAMAGED };
@@ -442,7 +463,7 @@ export function recomputeNote(
     return { computed: null, errors: [], refusal: { status: 409, error: CREDIT_DATA_DAMAGED } };
   const r = creditNote(p.computed, p.credited, { kind: "lines", lines: takes }, taxCtx);
   if (r.ok) return { computed: r.value, errors: [], refusal: null };
-  return { computed: null, errors: [...r.errors], refusal: mapCreditErrors(r.errors, left) };
+  return { computed: null, errors: [...r.errors], refusal: mapCreditErrors(r.errors, left, currencyOf(p)) };
 }
 
 /** What a refusal of the request says to the blockers: nothing chosen, or more than is left (on a line, or on the invoice). */
@@ -476,10 +497,12 @@ export function blockersOfNote(a: {
   settings: InvoiceSettings;
   bank: readonly BankRow[];
   issueDate: string;
+  /** The credit deadline when the caller has worked it out already (`null`: a debit note has none); left out, it is worked out here. */
+  deadline?: CreditDeadline | null;
 }): NoteBlocker[] {
   const asked = refusalFacts(a.re.refusal);
   const known = asked.empty || asked.exceeds !== null;
-  const dl = a.kind === "credit" ? deadlineOf(a.p, a.settings) : null;
+  const dl = a.deadline !== undefined ? a.deadline : a.kind === "credit" ? deadlineOf(a.p, a.settings) : null;
   return noteBlockers(
     {
       kind: a.kind,

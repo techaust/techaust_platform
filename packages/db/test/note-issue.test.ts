@@ -7,6 +7,7 @@ import {
   creditedSumOf,
   IMS_STATUSES,
   ledgerStatusOf,
+  NOTE_PARENT_LIVE_STATUSES,
   NOTES_MAX,
 } from "@techaust/core/invoices";
 import type { ComputedDocument } from "@techaust/core/tax";
@@ -64,6 +65,12 @@ describe("migrations 0041 and 0042 [LD46, LD39]", () => {
       const name = /CREATE TRIGGER `(\w+)`/.exec(s)?.[1];
       expect(s).toContain(`RAISE(ABORT, '${name}:`);
     }
+  });
+
+  it("the live-parent status list of the core is the one in the 0042 trigger and in the generator and the issue guard SQL", () => {
+    const list = `p.status IN (${NOTE_PARENT_LIVE_STATUSES.map((s) => `'${s}'`).join(", ")})`;
+    expect(sqlOf("0042_note_triggers.sql")).toContain(list);
+    expect(noteTriggerStatements().join("\n")).toContain(list);
   });
 
   it("ims_status is mutable after the freeze (it is in MUTABLE_AFTER_FREEZE) and the table has no CHECK on it", async () => {

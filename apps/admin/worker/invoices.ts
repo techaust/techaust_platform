@@ -651,25 +651,31 @@ export const invoices = new Hono<AppEnv>()
   .get("/:id", param(idParam), async (c) => {
     const id = c.req.valid("param").id;
     const db = c.env.DB;
-    // The newest extra export note, the documents made from it (a proforma's tax invoices), and who voided it: only what the screen needs. M5.3: the reads of an invoice's
-    // notes (4) and of a note's invoice (6) ride the same D1 batch (one call, whatever the type is): each is keyed by this id and matches nothing for the other types.
+    // The newest extra export note, the documents made from it (a proforma's tax invoices), and who voided it: only what the screen needs.
     const ctx = await readInvoice(c, id, [
       db.prepare(NEWEST_EXPORT_DECLARATION),
       db.prepare(CHILDREN_OF_SQL).bind(id),
-      ...NOTES_VIEW_READS.map((sql) => db.prepare(sql).bind(id)),
-      ...parentStatements(db, NOTE_PARENT_READS, id),
     ]);
     if (!ctx) return err(c, NOT_FOUND, 404);
     const d = ctx.bundle.document;
     const now = Date.now();
     const role = actor(c).role;
     // M5.3: a note's draft is worked out from its invoice (never as an invoice of the client); an issued tax or export invoice carries its notes. One more read, only for those types.
+    // M5.3: only a note (its invoice's reads) or an issued tax or export invoice (its notes' reads) needs the note statements: one more batch for those, none for a draft,
+    // a proforma or any other type.
+    const isNote = isNoteType(d.type);
+    const isParent = !isNote && isNoteParentType(d.type) && d.frozen_at !== null;
+    const noteExtra: D1Result[] = isNote
+      ? await db.batch(parentStatements(db, NOTE_PARENT_READS, id))
+      : isParent
+        ? await db.batch(NOTES_VIEW_READS.map((sql) => db.prepare(sql).bind(id)))
+        : [];
     let notesPart: InvoiceNotesView | null = null;
     let notePart: NoteViewPart | null = null;
     let noteBlockers: ReturnType<typeof blockersOfNote> | undefined;
     let computation: Awaited<ReturnType<typeof computeInvoice>> | null = null;
-    if (isNoteType(d.type)) {
-      const p = parentCtxOf(ctx.extra.slice(2 + NOTES_VIEW_READS.length));
+    if (isNote) {
+      const p = parentCtxOf(noteExtra);
       const stored = storedNoteOf(d);
       notePart = noteView({ bundle: ctx.bundle, role, stored, parent: p });
       if (d.frozen_at === null && p && stored) {
@@ -696,15 +702,14 @@ export const invoices = new Hono<AppEnv>()
           issueDate: issueDateOf(now),
         });
       }
-    } else if (isNoteParentType(d.type) && d.frozen_at !== null) {
-      const results = ctx.extra.slice(2, 2 + NOTES_VIEW_READS.length);
+    } else if (isParent) {
       notesPart = invoiceNotesView({
         bundle: ctx.bundle,
         role,
         settings: ctx.settings,
         clientGone: ctx.client.anonymised_at !== null,
         todayIso: issueDateOf(now),
-        results,
+        results: noteExtra,
       });
     } else if (d.frozen_at === null) {
       computation = await computeInvoice(

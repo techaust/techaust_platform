@@ -147,6 +147,7 @@ export async function prepareNoteIssue(
     settings: i.settings,
     bank: i.bank,
     issueDate,
+    deadline: dl,
   });
   if (blockers.length > 0 || !re.computed)
     return c.json(

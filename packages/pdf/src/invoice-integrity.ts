@@ -26,7 +26,8 @@ export function missingStatutoryLine(envelope: InvoiceEnvelope, html: string): M
   if (envelope.type === "proforma") {
     return h.proforma && hasTextNode(html, h.proforma.notice) ? null : "notice";
   }
-  // a credit or debit note: the number of its invoice, as sealed
-  if (h.noteOf) return hasTextNode(html, h.noteOf.parent.number) ? null : "parent_number";
+  // a credit or debit note: the number of its invoice, as sealed. Keyed on the envelope's type, so a note whose sealed header lost its `noteOf` is refused, not waved through.
+  if (envelope.type === "credit_note" || envelope.type === "debit_note")
+    return h.noteOf && hasTextNode(html, h.noteOf.parent.number) ? null : "parent_number";
   return null;
 }

@@ -76,6 +76,16 @@ describe("the 07-T §8 lines are the API's words, word for word", () => {
       "note_not_voidable",
       "Credit and debit notes can't be voided. Correct a credit note with a debit note, or a debit note with a credit note.",
     ],
+    [
+      model.creditExceedsRemaining(4_720_000, "INR"),
+      "credit_exceeds_remaining",
+      "That's more than can still be credited on this invoice (₹47,200.00).",
+    ],
+    [
+      model.lineCreditExceeds(3, 50_000, "INR"),
+      "line_credit_exceeds",
+      "Line 3 can only be credited up to ₹500.00.",
+    ],
     [model.IMS_NOT_PENDING, "ims_not_pending", "The client's IMS response is already recorded."],
     [model.ANNUAL_RETURN_FUTURE, "annual_return_future", "The filing date can't be in the future."],
     [
@@ -154,6 +164,19 @@ describe("the 07-T §8 lines are the API's words, word for word", () => {
     expect(body.error.code).toBe("note_draft_exists");
     expect(rivalId).not.toBe("");
     expect(body.draftId).toBe(rivalId);
+  });
+
+  it("the exceeds refusals say the amount in the invoice's money, as 07-T §7 words them", async () => {
+    const o = await owner();
+    const inv = await mkIssuedInvoice(o, { prices: [100_000] });
+    const line = await draftCredit(o, inv.id, { mode: "lines", lines: [{ line: 0, taxableMinor: 100_001 }] });
+    expect(line.status).toBe(409);
+    expect((await json(line)).error.message).toBe("Line 1 can only be credited up to ₹1,000.00.");
+    const amount = await draftCredit(o, inv.id, { mode: "amount", grossMinor: 5_000_000 });
+    expect(amount.status).toBe(409);
+    expect((await json(amount)).error.message).toMatch(
+      /^That's more than can still be credited on this invoice \(₹[\d,]+\.\d\d\)\.$/,
+    );
   });
 
   it("an amount above zero but below one rounding unit is credit_amount_unfit with no closest figure, not 'nothing to credit'", async () => {

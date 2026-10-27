@@ -178,6 +178,14 @@ export const takesTuples = (takes: readonly NoteTake[]): [number, number][] =>
 
 // ---- the note blockers (LD50; Rule 53(1A); VERIFY WITH CA/LEGAL) -----------------------------------------------------------------------------
 
+/**
+ * The statuses of an invoice a note can be issued against (not a draft, not void, not credited in full). The one list: the note blockers, the admin's refusals, the issue guard's SQL
+ * (`@techaust/db/issue`) and, pinned by a db test, the text of the 0042 trigger `documents_note_issue_check`.
+ */
+export const NOTE_PARENT_LIVE_STATUSES = ["issued", "partially_paid", "paid", "partially_credited"] as const;
+export const isLiveParentStatus = (status: string): boolean =>
+  (NOTE_PARENT_LIVE_STATUSES as readonly string[]).includes(status);
+
 export const NOTE_BLOCKER_CODES = [
   "supplier_legal_name",
   "supplier_address",
@@ -250,7 +258,7 @@ export function noteBlockers(f: NoteFacts, checklist: Pick<ChecklistSettings, "b
   if (blank(f.supplier.address)) out.push({ code: "supplier_address" });
   if (blank(f.supplier.gstin)) out.push({ code: "supplier_gstin" });
   if (blank(f.supplier.stateCode)) out.push({ code: "supplier_state" });
-  const live = ["issued", "partially_paid", "paid", "partially_credited"].includes(f.parent.status);
+  const live = isLiveParentStatus(f.parent.status);
   if (f.parent.status === "void") out.push({ code: "parent_void" });
   else if (f.parent.status === "credited") {
     if (f.kind === "credit") out.push({ code: "parent_fully_credited" });

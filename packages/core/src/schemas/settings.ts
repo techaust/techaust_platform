@@ -141,12 +141,23 @@ export const lutEntry = z.strictObject({
  * refused from that day (s.34(2): "or the date of furnishing the annual return, whichever is earlier"). `fy` is the token ("2627", the lutEntry rule), `filedOn` an
  * ISO date on or after 1 April after that FY ends. A day after today is refused by the route (`annual_return_future`), never here: this schema has no clock.
  */
-export const annualReturnEntry = z.strictObject({ fy: lutEntry.shape.fy, filedOn: isoDate }).check(
-  z.refine((v) => !/^\d{4}$/.test(v.fy) || v.filedOn >= `${2000 + Number(v.fy.slice(2))}-04-01`, {
-    error: "The return is filed after the financial year ends",
-    path: ["filedOn"],
-  }),
-);
+export const annualReturnEntry = z
+  .strictObject({
+    // 07-T §8: "Enter the financial year." (the token is two consecutive years, "2627")
+    fy: z.string().check(
+      z.regex(/^\d{4}$/, { error: "Enter the financial year." }),
+      z.refine((v) => (Number(v.slice(0, 2)) + 1) % 100 === Number(v.slice(2)), {
+        error: "Enter the financial year.",
+      }),
+    ),
+    filedOn: isoDate,
+  })
+  .check(
+    z.refine((v) => !/^\d{4}$/.test(v.fy) || v.filedOn >= `${2000 + Number(v.fy.slice(2))}-04-01`, {
+      error: "The filing date must be after the end of that financial year.",
+      path: ["filedOn"],
+    }),
+  );
 
 /**
  * LD31: only the switchable lines of the mandatory-field checklist (ADM-INV-06) are stored in the `tax` row; the locked ones are a constant in
@@ -227,7 +238,7 @@ export const taxSettings = z.object({
           if (seen.has(r.fy))
             ctx.issues.push({
               code: "custom",
-              message: "This year already has a filed return.",
+              message: "This year already has a filing date.",
               input: ctx.value,
               path: [i, "fy"],
             });

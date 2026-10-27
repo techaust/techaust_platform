@@ -1009,3 +1009,26 @@ describe("the annual returns filed (Settings > Tax) [G-11, Q33]", () => {
     expect(tax(many.slice(0, 20)).success).toBe(true);
   });
 });
+
+describe("the annual returns errors are 07-T §8's words", () => {
+  const messages = (v: unknown) => {
+    const r = annualReturnEntry.safeParse(v);
+    return r.success ? [] : r.error.issues.map((i) => i.message);
+  };
+  it("a missing or odd year, a date before the year ends", () => {
+    expect(messages({ fy: "", filedOn: "2027-05-01" })).toContain("Enter the financial year.");
+    expect(messages({ fy: "2628", filedOn: "2027-05-01" })).toContain("Enter the financial year.");
+    expect(messages({ fy: "2627", filedOn: "2027-03-31" })).toEqual([
+      "The filing date must be after the end of that financial year.",
+    ]);
+  });
+  it("a second filing for one year", () => {
+    const r = taxSettings.shape.annualReturnsFiled.safeParse([
+      { fy: "2627", filedOn: "2027-05-01" },
+      { fy: "2627", filedOn: "2027-06-01" },
+    ]);
+    expect(r.success ? [] : r.error.issues.map((i) => i.message)).toContain(
+      "This year already has a filing date.",
+    );
+  });
+});

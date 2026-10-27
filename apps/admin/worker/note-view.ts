@@ -14,7 +14,7 @@ import {
 } from "@techaust/core/invoices";
 import { decide, type Role } from "@techaust/core/permissions";
 import { type DocumentBundle, headerExtrasOfRow, type TermsRef } from "@techaust/db/documents";
-import { CREDITED_SO_FAR_SQL, CREDITED_TOTALS_SQL, NOTE_COUNTS_SQL } from "@techaust/db/issue";
+import { CREDITED_SO_FAR_SQL, CREDITED_TOTALS_SQL } from "@techaust/db/issue";
 import type { InvoiceSettings } from "./invoice-model.ts";
 import { isLiveParentStatus, isNoteParentType, type ParentCtx } from "./note-model.ts";
 
@@ -22,7 +22,6 @@ import { isLiveParentStatus, isNoteParentType, type ParentCtx } from "./note-mod
 export const NOTES_VIEW_READS = [
   CREDITED_SO_FAR_SQL,
   CREDITED_TOTALS_SQL,
-  NOTE_COUNTS_SQL,
   "SELECT n.id, n.type, n.number_display, n.issue_date, n.total_minor, n.status, n.ims_status, n.frozen_at FROM documents n WHERE n.parent_id = ?1 AND n.type IN ('credit_note', 'debit_note') ORDER BY n.created_at, n.id LIMIT 50",
 ] as const;
 
@@ -61,7 +60,7 @@ export function invoiceNotesView(a: {
   results: readonly D1Result[];
 }) {
   const d = a.bundle.document;
-  const [creditedR, totalsR, , notesR] = a.results;
+  const [creditedR, totalsR, notesR] = a.results;
   const computed = d.computed;
   if (!computed || d.frozen_at === null || !isNoteParentType(d.type)) return null;
   const rows = (notesR?.results ?? []) as NoteListRow[];

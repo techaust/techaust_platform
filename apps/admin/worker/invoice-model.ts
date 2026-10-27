@@ -316,6 +316,7 @@ export type InvoiceState = {
 export function invoiceStateOf(b: DocumentBundle<TermsRef>): InvoiceState {
   const q = stateOfBundle(b);
   const d = b.document;
+  const note = noteContentOf(d);
   return {
     id: q.id,
     type: d.type,
@@ -329,7 +330,7 @@ export function invoiceStateOf(b: DocumentBundle<TermsRef>): InvoiceState {
     serviceCompletedOn: d.service_completed_on ?? null,
     exportDeclarationId: d.export_declaration_id ?? null,
     lines: q.lines,
-    ...(noteContentOf(d) ? { note: noteContentOf(d) } : {}),
+    ...(note ? { note } : {}),
   };
 }
 
