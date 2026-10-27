@@ -792,6 +792,28 @@ describe("only an Owner with a fresh code turns the automatic issue on [LD58, Q4
     }
   });
 
+  it("the client page names who turned it on, and says when that Owner is no longer active; Sales sees none of it (triage, question 3)", async () => {
+    const c = await client();
+    const owner = await sessionFor("owner", { stepUp: true, name: "Rupak Sarkar" });
+    await patch(owner, c.id, c.stamp, true);
+    const asOwner = (await json(await call(`/clients/${c.id}`, { cookie: owner.cookie }))).client;
+    expect(asOwner.careAutoIssue).toBe(true);
+    expect(asOwner.careAutoIssueBy).toEqual({ id: owner.id, name: "Rupak Sarkar", active: true });
+    const list = (await json(await call("/clients?limit=50", { cookie: owner.cookie }))).clients.find(
+      (x: { id: string }) => x.id === c.id,
+    );
+    expect(list.careAutoIssueBy).toEqual({ id: owner.id, name: "Rupak Sarkar", active: true });
+    const sales = await sessionFor("sales");
+    const asSales = (await json(await call(`/clients/${c.id}`, { cookie: sales.cookie }))).client;
+    expect("careAutoIssueBy" in asSales).toBe(false);
+    expect("careAutoIssue" in asSales).toBe(false);
+    // the Owner is deactivated (another Owner exists, so the last-owner rule allows it): the name stays, the flag turns false
+    const other = await sessionFor("owner", { stepUp: true });
+    await env.DB.prepare("UPDATE staff_users SET status = 'deactivated' WHERE id = ?").bind(owner.id).run();
+    const after = (await json(await call(`/clients/${c.id}`, { cookie: other.cookie }))).client;
+    expect(after.careAutoIssueBy).toEqual({ id: owner.id, name: "Rupak Sarkar", active: false });
+  });
+
   it("the audit row says what changed, never who is named beyond the actor", async () => {
     const c = await client();
     const owner = await sessionFor("owner", { stepUp: true });

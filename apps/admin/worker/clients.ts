@@ -98,8 +98,12 @@ const NOT_AVAILABLE: ApiError = { code: "conflict", message: "Nothing was change
 
 // ---- rows and views ---------------------------------------------------------------------------------------------------
 
-export const CLIENT_COLS =
-  "id, code, legal_name, display_name, type, country, gst_status, gstin, state_code, billing_address, service_address, currency, payment_terms_days, reminder_policy, care_auto_issue, attach_pdf, tags, notes, legal_hold, anonymised_at, created_at, updated_at";
+const CLIENT_BASE_COLS =
+  "id, code, legal_name, display_name, type, country, gst_status, gstin, state_code, billing_address, service_address, currency, payment_terms_days, reminder_policy, care_auto_issue, care_auto_issue_by, attach_pdf, tags, notes, legal_hold, anonymised_at, created_at, updated_at";
+/** M5.4 (Q43, triage): who turned the automatic issue on, by name and whether that member is still an active Owner (the toggle is "not in effect" when not). `a` is the clients table's alias, with its dot. */
+const careByCols = (a: string) =>
+  `(SELECT u.name FROM staff_users u WHERE u.id = ${a}care_auto_issue_by) AS care_auto_issue_by_name, (SELECT u.role = 'owner' AND u.status = 'active' FROM staff_users u WHERE u.id = ${a}care_auto_issue_by) AS care_auto_issue_by_active`;
+export const CLIENT_COLS = `${CLIENT_BASE_COLS}, ${careByCols("")}`;
 const CONTACT_COLS =
   "id, client_id, name, email, phone, title, is_primary, is_billing, portal_access, can_see_finance, marketing_consent, bounced_at, anonymised_at, legal_hold, created_at, updated_at";
 
@@ -119,6 +123,9 @@ export type ClientRow = {
   payment_terms_days: number | null;
   reminder_policy: string | null;
   care_auto_issue: number;
+  care_auto_issue_by: string | null;
+  care_auto_issue_by_name: string | null;
+  care_auto_issue_by_active: number | null;
   attach_pdf: number;
   tags: string | null;
   notes: string | null;
@@ -182,7 +189,18 @@ export function clientView(r: ClientRow, role: Role) {
     careAutoIssue: Boolean(r.care_auto_issue),
     attachPdf: Boolean(r.attach_pdf),
   };
-  return { ...view, ...finance };
+  return {
+    ...view,
+    ...finance,
+    // M5.4: the Owner who turned the automatic issue on (null: nobody), and whether that member is still an active Owner; if not, the toggle is not in effect.
+    careAutoIssueBy: r.care_auto_issue_by
+      ? {
+          id: r.care_auto_issue_by,
+          name: r.care_auto_issue_by_name,
+          active: r.care_auto_issue_by_active === 1,
+        }
+      : null,
+  };
 }
 
 export const contactView = (r: ContactRow) => ({
@@ -450,7 +468,7 @@ const listClients = async (c: Ctx, f: z.infer<typeof listQuery>) => {
     bind.push(cur.k, cur.id);
   }
   const { results } = await c.env.DB.prepare(
-    `SELECT ${CLIENT_COLS.replace(/(\w+)/g, "c.$1")} FROM clients c${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY ${order.order} LIMIT ${limit + 1}`,
+    `SELECT ${CLIENT_BASE_COLS.replace(/(\w+)/g, "c.$1")}, ${careByCols("c.")} FROM clients c${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY ${order.order} LIMIT ${limit + 1}`,
   )
     .bind(...bind)
     .all<ClientRow>();
