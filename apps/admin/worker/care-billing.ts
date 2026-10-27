@@ -300,6 +300,7 @@ export async function draftCarePlan(
     planDates,
     facts.last_billed_period,
     current ? (statusOn(data.statuses, current.start)?.status ?? null) : null,
+    data.statuses,
   );
   if (!due.due)
     return due.reason === "already_billed" && current

@@ -15,6 +15,8 @@ import {
   type PlanDates,
   planPeriodOf,
   previousPeriod,
+  type StatusRow,
+  statusOn,
   type TermsRow,
 } from "./care.ts";
 import { formatDate, parseIsoDate } from "./dates.ts";
@@ -56,6 +58,8 @@ export function careDue(
   plan: PlanDates,
   lastBilled: string | null,
   statusAtPeriodStart: CareStatus | null,
+  /** The plan's status history: when given, a skipped period counts as missed only if the plan was ACTIVE on its first day (a plan paused over it is owed nothing for it; early check finding 6). */
+  statuses?: readonly StatusRow[],
 ): CareDue {
   const period = billingPeriodOf(today, plan);
   if (!period) return { due: false, reason: "not_started" };
@@ -63,9 +67,15 @@ export function careDue(
   if (statusAtPeriodStart !== "active") return { due: false, reason: "not_active" };
   let missedEarlier = false;
   if (lastBilled !== null) {
-    const before = previousPeriod(period, plan.billingDay);
-    const prev = planPeriodOf(before.end, plan);
-    missedEarlier = prev !== null && lastBilled < prev.start;
+    // Walk back over the periods after the last one billed, nearest first (at most 24).
+    let p = planPeriodOf(previousPeriod(period, plan.billingDay).end, plan);
+    for (let i = 0; p !== null && p.start > lastBilled && i < 24; i++) {
+      if (statuses === undefined || statusOn(statuses, p.start)?.status === "active") {
+        missedEarlier = true;
+        break;
+      }
+      p = planPeriodOf(previousPeriod(p, plan.billingDay).end, plan);
+    }
   }
   return { due: true, period, missedEarlier };
 }

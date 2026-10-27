@@ -85,6 +85,38 @@ describe("careDue: the plan's current period, once", () => {
       reason: "not_active",
     });
   });
+  it("with the status history, a period the plan was paused over is not 'missed' (early check finding 6); one it was active over is", () => {
+    const row = (id: string, effectiveOn: string, status: "active" | "paused" | "cancelled") => ({
+      id,
+      effectiveOn,
+      createdAt: 1,
+      status,
+    });
+    const p = plan(5, "2026-01-01");
+    // active, paused 2026-10-01 to 2026-11-30, active again from 2026-12-01 (the paused periods start 10-05 and 11-05)
+    const history = [
+      row("a", "2026-01-01", "active"),
+      row("b", "2026-10-01", "paused"),
+      row("c", "2026-12-01", "active"),
+    ];
+    // last billed 09-05; periods 10-05 and 11-05 were skipped, both paused: nothing is missed
+    expect(careDue("2026-12-05", p, "2026-09-05", "active", history)).toMatchObject({
+      due: true,
+      missedEarlier: false,
+    });
+    // the same gap with no history given keeps the plain rule
+    expect(careDue("2026-12-05", p, "2026-09-05", "active")).toMatchObject({ missedEarlier: true });
+    // last billed 08-05: the period 09-05 was active and skipped: missed
+    expect(careDue("2026-12-05", p, "2026-08-05", "active", history)).toMatchObject({ missedEarlier: true });
+    // always active: the plain gap
+    expect(
+      careDue("2026-12-05", p, "2026-10-05", "active", [row("a", "2026-01-01", "active")]),
+    ).toMatchObject({
+      missedEarlier: true,
+    });
+    expect(careDue("2026-12-05", p, "2026-11-05", "active", history)).toMatchObject({ missedEarlier: false });
+  });
+
   it("a gap of a whole period is reported, never billed (Q51): the current period is still the one", () => {
     const d = careDue("2026-12-05", plan(5, "2026-01-01"), "2026-10-05", "active");
     expect(d).toMatchObject({ due: true, period: { start: "2026-12-05" }, missedEarlier: true });
