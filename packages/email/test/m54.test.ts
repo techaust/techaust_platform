@@ -27,6 +27,8 @@ const doc = {
   attached: "1",
   parent_number: "",
   sender_name: "Sample Owner",
+  reason: "",
+  parent_balance: "",
 };
 
 /** The words of the HTML body, tags and entities out, spaces collapsed (to compare with the text twin). */
@@ -93,23 +95,57 @@ describe("invoice.sent and the other document emails [ADM-INV-15, POR-06]", () =
     );
   });
 
-  it("a credit note: the 07-T §2 subject; the sentences whose data the queue does not carry are left out, never guessed", () => {
+  it("a credit note: the 07-T §2 subject, the reason and the invoice's new balance (07-U §1)", () => {
     const r = renderEmail(
       "credit_note.sent",
-      { ...doc, number: "TH/CN/2627/0001", due_date: "", balance: "", parent_number: "TH/INV/2627/0007" },
+      {
+        ...doc,
+        number: "TH/CN/2627/0001",
+        due_date: "",
+        balance: "",
+        parent_number: "TH/INV/2627/0007",
+        reason: "Price correction: rate typed wrong",
+        parent_balance: "₹11,800.00",
+      },
       opts,
     );
     expect(r.subject).toBe("Credit note TH/CN/2627/0001 for invoice TH/INV/2627/0007");
     expect(r.text).toContain(
       `${M}Hi Asha, we've issued credit note TH/CN/2627/0001 for ₹23,600.00 against invoice TH/INV/2627/0007.`,
     );
-    expect(r.text).not.toContain("Reason:");
-    expect(r.text).not.toContain("The amount due on the invoice is now");
+    expect(r.text).toContain(`${M}Reason: Price correction: rate typed wrong.`);
+    expect(r.text).toContain(`${M}The amount due on the invoice is now ₹11,800.00.`);
+    expect(r.html).toContain("Reason: Price correction: rate typed wrong.");
     expect(r.text).toContain(`${M}View credit note: `);
     expect(r.text).toContain(`${M}The credit note is attached as a PDF`);
+    // the order of 07-U §1: opening, reason, new balance, closing
+    const at = (t: string) => r.text.indexOf(t);
+    expect(at("we've issued")).toBeLessThan(at("Reason:"));
+    expect(at("Reason:")).toBeLessThan(at("The amount due"));
+    expect(at("The amount due")).toBeLessThan(at("The credit note is attached"));
   });
 
-  it("a debit note: its own amount and due date (Q63), not the invoice's balance", () => {
+  it("a credit note queued without the two values (an older message): those sentences are left out, never guessed", () => {
+    const r = renderEmail(
+      "credit_note.sent",
+      { ...doc, number: "TH/CN/2627/0001", balance: "", parent_number: "TH/INV/2627/0007" },
+      opts,
+    );
+    expect(r.text).not.toContain("Reason:");
+    expect(r.text).not.toContain("The amount due on the invoice is now");
+  });
+
+  it("a reason that ends with its own full stop is not doubled", () => {
+    const r = renderEmail(
+      "credit_note.sent",
+      { ...doc, parent_number: "TH/INV/2627/0007", reason: "Discount agreed on the call." },
+      opts,
+    );
+    expect(r.text).toMatch(/Reason: Discount agreed on the call\.$/m);
+    expect(r.text).not.toContain("call..");
+  });
+
+  it("a debit note: the reason, then its own amount and due date (Q63), not the invoice's balance", () => {
     const r = renderEmail(
       "debit_note.sent",
       {
@@ -118,6 +154,7 @@ describe("invoice.sent and the other document emails [ADM-INV-15, POR-06]", () =
         total: "₹1,180.00",
         parent_number: "TH/INV/2627/0007",
         attached: "",
+        reason: "Price correction",
       },
       opts,
     );
@@ -125,7 +162,9 @@ describe("invoice.sent and the other document emails [ADM-INV-15, POR-06]", () =
     expect(r.text).toContain(
       `${M}Hi Asha, we've issued debit note TH/DN/2627/0001 for ₹1,180.00 against invoice TH/INV/2627/0007, because the invoice amount needed correcting upwards.`,
     );
+    expect(r.text).toContain(`${M}Reason: Price correction.`);
     expect(r.text).toContain(`${M}Please pay ₹1,180.00 by 12 Nov 2026.`);
+    expect(r.text.indexOf("Reason:")).toBeLessThan(r.text.indexOf("Please pay"));
     expect(r.text).not.toContain("The amount due on the invoice is now");
     expect(r.text).toContain(`${M}View debit note: `);
   });
@@ -311,6 +350,8 @@ describe("every M5.4 template, with exactly the data the jobs Worker queues", ()
     delivered_date: "1 Oct 2026",
     days_since: "25",
     proforma_number: "TH/PRO/2627/0002",
+    reason: "Price correction",
+    parent_balance: "₹11,800.00",
     fy_label: "2027-28",
     state: "next_fy_due",
   };

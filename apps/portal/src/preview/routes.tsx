@@ -259,6 +259,8 @@ const DOC = {
   url: "https://portal.techaust.com/i#t=SAMPLE-LINK",
   parent_number: "",
   sender_name: "Sample Sender",
+  reason: "",
+  parent_balance: "",
 };
 const OWNER = {
   owner_first_name: "Rupak",
@@ -302,6 +304,8 @@ function BillingEmailPreview() {
         due_date: "",
         balance: "",
         parent_number: "TH/INV/2627/0003",
+        reason: "Discount after sale: launch offer agreed on the call (sample)",
+        parent_balance: "₹11,800.00",
         attached: a,
       }),
     },
@@ -315,6 +319,7 @@ function BillingEmailPreview() {
         total: "₹1,180.00",
         balance: "₹1,180.00",
         parent_number: "TH/INV/2627/0004",
+        reason: "Price correction: hosting rate typed wrong (sample)",
         attached: a,
       }),
     },

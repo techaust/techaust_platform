@@ -8,9 +8,9 @@
 // are not 07-U's, so they carry no mark); the "running year has no letter" form is 07-U §8's. Tax and legal sentences: VERIFY WITH CA/LEGAL.
 //
 // The data is exactly `INVOICE_EMAIL_DATA` (@techaust/core/invoices): every value a string, money and dates already formatted by the jobs Worker
-// (nothing is added up or worked out here), flags "1" or "". Two 07-U sentences need data the queue does not carry, so they are left out rather than
-// guessed (the designer's report names them): the credit and debit notes' "Reason: {reason}." and the credit note's "The amount due on the invoice is now
-// {balance}." (`balance` is empty on a credit note).
+// (nothing is added up or worked out here), flags "1" or "". The notes' "Reason: {reason}." uses `reason` (core `noteReasonWords`) and the credit note's
+// "The amount due on the invoice is now {balance}." uses `parent_balance` (the parent invoice's balance after the note); each sentence is left out when
+// its value is empty (an older queued message), never guessed.
 //
 // Presentation only, never new words: the document's number and the amounts are bold in HTML (kept on one line); every variable is escaped.
 import { escapeHtml, headerValue } from "./headers.ts";
@@ -56,6 +56,10 @@ export type DocumentEmailData = {
   attached: string;
   parent_number: string;
   sender_name: string;
+  /** A note's frozen reason in words (empty on other documents). */
+  reason: string;
+  /** A credit note: the parent invoice's balance after the note (empty otherwise). */
+  parent_balance: string;
 };
 
 /** What a document is called in a sentence, and its button (07-U §1). */
@@ -77,6 +81,19 @@ export function closingSentence(kind: DocumentKind, attached: boolean): string {
 /** "Hi {first name}, " (a missing first name reads "Hi, ", as the M5.1 emails do). */
 const hi = (first: string) => (first.trim() ? `Hi ${first.trim()}, ` : "Hi, ");
 const isAttached = (v: string) => v === "1";
+
+/** "Reason: {reason}." (07-U §1): a typed reason may end with its own full stop, so none is doubled. Empty when there is no reason. */
+export function reasonSentence(reason: string): string {
+  const r = reason.trim();
+  if (!r) return "";
+  return /[.!?]$/.test(r) ? `Reason: ${r}` : `Reason: ${r}.`;
+}
+
+/** A note's paragraphs after the opening: "Reason: {reason}." on its own (a typed reason can be long), then the amount sentence; either may be absent. */
+function noteFollowUp(reason: string, then: Piece[]): Piece[][] {
+  const r = reasonSentence(reason);
+  return [...(r ? [[r]] : []), ...(then.length ? [then] : [])];
+}
 
 /** The subject and opening sentences of each document email (07-U §1; 07-T §2's subjects for the notes). */
 function documentBody(kind: DocumentKind, d: DocumentEmailData): { subject: string; body: Piece[][] } {
@@ -109,7 +126,7 @@ function documentBody(kind: DocumentKind, d: DocumentEmailData): { subject: stri
         ],
       };
     case "credit_note":
-      // 07-T §2's subject. "Reason: {reason}." and "The amount due on the invoice is now {balance}." need data the queue does not carry (left out).
+      // 07-T §2's subject; 07-U §1's body. "Reason: …" and "The amount due on the invoice is now …" each stand only when their value was queued.
       return {
         subject: `Credit note ${d.number} for invoice ${d.parent_number}`,
         body: [
@@ -122,7 +139,12 @@ function documentBody(kind: DocumentKind, d: DocumentEmailData): { subject: stri
             B(d.parent_number),
             ".",
           ],
-          ...(d.balance.trim() ? [["The amount due on the invoice is now ", B(d.balance), "."]] : []),
+          ...noteFollowUp(
+            d.reason,
+            d.parent_balance.trim()
+              ? ["The amount due on the invoice is now ", B(d.parent_balance.trim()), "."]
+              : [],
+          ),
         ],
       };
     case "debit_note":
@@ -138,7 +160,7 @@ function documentBody(kind: DocumentKind, d: DocumentEmailData): { subject: stri
             B(d.parent_number),
             ", because the invoice amount needed correcting upwards.",
           ],
-          ["Please pay ", B(d.total), ` by ${d.due_date}.`],
+          ...noteFollowUp(d.reason, ["Please pay ", B(d.total), ` by ${d.due_date}.`]),
         ],
       };
   }

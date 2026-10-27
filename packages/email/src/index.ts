@@ -63,6 +63,8 @@ const documentData = (get: (k: string) => string): DocumentEmailData => ({
   attached: get("attached"),
   parent_number: get("parent_number"),
   sender_name: get("sender_name"),
+  reason: get("reason"),
+  parent_balance: get("parent_balance"),
 });
 
 /** M5.4: the template key of each client document email and the document it names. */

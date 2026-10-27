@@ -9,6 +9,7 @@
 // The email preview repeats the words of the real templates (packages/email/src/billing.ts, which the admin does not bundle); a test renders the real
 // template and compares, so the two can't drift. Money is formatted through core (`moneyText`); nothing here adds up or works out an amount or a date.
 import { formatIstDateTime } from "@techaust/core/dates";
+import { noteReasonWords } from "@techaust/core/invoice-email";
 import type { Currency } from "../api.ts";
 import { RequestError } from "../api.ts";
 import type { PillTone } from "../components/display.tsx";
@@ -234,6 +235,10 @@ export type PreviewFacts = {
   dueDate: string;
   total: string;
   parentNumber: string;
+  /** A note's reason in the words the email prints (core `noteReasonWords`, as the jobs Worker fills `reason`); "" when there is none. */
+  reason: string;
+  /** A credit note: the invoice's balance after the note, as the email prints it; "" otherwise. */
+  parentBalance: string;
 };
 
 export function previewFacts(v: {
@@ -244,6 +249,8 @@ export function previewFacts(v: {
   totalMinor: number | null;
   currency: Currency;
   parentNumber?: string | null | undefined;
+  reason?: { code: string; text: string } | null | undefined;
+  parentBalanceMinor?: number | null | undefined;
 }): PreviewFacts {
   return {
     type: v.type,
@@ -252,6 +259,11 @@ export function previewFacts(v: {
     dueDate: dayText(v.dueDate) ?? "…",
     total: v.totalMinor === null ? "…" : moneyText(v.totalMinor, v.currency),
     parentNumber: v.parentNumber ?? "…",
+    reason: v.reason ? noteReasonWords(v.reason.code, v.reason.text) : "",
+    parentBalance:
+      v.parentBalanceMinor === null || v.parentBalanceMinor === undefined
+        ? ""
+        : moneyText(v.parentBalanceMinor, v.currency),
   };
 }
 
@@ -267,6 +279,13 @@ export function previewSubject(f: PreviewFacts): string {
     default:
       return `Invoice ${f.number} from TecHaust Technologies: ${f.total} due ${f.dueDate}`;
   }
+}
+
+/** 07-U §1 "Reason: {reason}." (the template's `reasonSentence`: a reason ending in its own full stop is not doubled); nothing when there is no reason. */
+function reasonLine(reason: string): string[] {
+  const r = reason.trim();
+  if (!r) return [];
+  return [/[.!?]$/.test(r) ? `Reason: ${r}` : `Reason: ${r}.`];
 }
 
 /** The body's paragraphs (07-U §1, marked), the button and the closing sentence, for one first name. */
@@ -287,11 +306,14 @@ export function previewBody(
     case "credit_note":
       paragraphs = [
         `${hi}we've issued credit note ${f.number} for ${f.total} against invoice ${f.parentNumber}.`,
+        ...reasonLine(f.reason),
+        ...(f.parentBalance ? [`The amount due on the invoice is now ${f.parentBalance}.`] : []),
       ];
       break;
     case "debit_note":
       paragraphs = [
         `${hi}we've issued debit note ${f.number} for ${f.total} against invoice ${f.parentNumber}, because the invoice amount needed correcting upwards.`,
+        ...reasonLine(f.reason),
         `Please pay ${f.total} by ${f.dueDate}.`,
       ];
       break;

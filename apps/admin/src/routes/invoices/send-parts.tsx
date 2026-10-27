@@ -40,7 +40,11 @@ import {
 import { type InvoiceM54, type InvoiceView, invoicesApi, type SendResult } from "../../lib/invoices-api.ts";
 import { recipientChoices } from "../../lib/offers.ts";
 
-export type SendableView = InvoiceView & InvoiceM54 & { parentLink?: { number: string | null } | null };
+export type SendableView = InvoiceView &
+  InvoiceM54 & {
+    parentLink?: { number: string | null; balanceMinor?: number | null } | null;
+    noteOf?: { reason?: { code: string; text: string } | null } | null;
+  };
 
 type Loaded =
   | { state: "loading" }
@@ -100,6 +104,8 @@ export function InvoiceSendDialog(props: {
     totalMinor: v.totals?.totalMinor ?? null,
     currency: v.currency,
     parentNumber: v.parentLink?.number ?? null,
+    reason: v.noteOf?.reason ?? null,
+    parentBalanceMinor: v.type === "credit_note" ? (v.parentLink?.balanceMinor ?? null) : null,
   });
   const body = previewBody(facts, firstName || "…", attach);
 

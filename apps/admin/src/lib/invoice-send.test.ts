@@ -217,7 +217,14 @@ describe("the dialog's email preview says what the template says", () => {
     for (const attached of [true, false]) {
       it(`${template}, ${attached ? "attached" : "link only"}`, async () => {
         const { renderEmail } = await import("../../../../packages/email/src/index.ts");
-        const f = previewFacts({ ...view, type, parentNumber: parent });
+        const note = type === "credit_note" || type === "debit_note";
+        const f = previewFacts({
+          ...view,
+          type,
+          parentNumber: parent,
+          reason: note ? { code: "price_correction", text: "rate typed wrong" } : null,
+          parentBalanceMinor: type === "credit_note" ? 1_180_000 : null,
+        });
         const body = previewBody(f, "Asha", attached);
         const r = renderEmail(
           template,
@@ -232,11 +239,16 @@ describe("the dialog's email preview says what the template says", () => {
             attached: attached ? "1" : "",
             parent_number: parent ?? "",
             sender_name: "Sample",
+            reason: f.reason,
+            parent_balance: f.parentBalance,
           },
           { assetBase: "https://assets.example.test/brand/" },
         );
         expect(previewSubject(f)).toBe(r.subject);
         for (const p of body.paragraphs) expect(r.text).toContain(p);
+        if (note) expect(body.paragraphs.join(" ")).toContain("Reason: Price correction: rate typed wrong.");
+        if (type === "credit_note")
+          expect(body.paragraphs.join(" ")).toContain("The amount due on the invoice is now ₹11,800.00.");
         expect(r.text).toContain(`${body.button}: https://portal.example.test/i#t=SAMPLE`);
         expect(r.text).toContain(body.closing);
         expect(`${r.from.name} <${r.from.address}>`).toBe("TecHaust Technologies <billing@techaust.com>");
