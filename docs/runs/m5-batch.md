@@ -162,6 +162,7 @@ Lead's check: the plan keeps the Free plan (cron count unchanged: `30 * * * *` r
 34. **Notes for an anonymised client** (VERIFY WITH CA/LEGAL, DPDP and GST; M5.3) (Recommended) Not allowed; issue any credit note before anonymising. Alternative: allowed from the invoice's frozen details, with no PDF and no email.
 35. **Debit-note reasons** (VERIFY WITH CA/LEGAL; M5.3; changes 07-T §3) (Recommended) "Price correction" and "Other" only: new agreed work gets a new tax invoice, and a tax rate charged too low is fixed with a full credit note and a new invoice. Alternative: keep 07-T's four reasons and build tax-only debit notes later.
 36. **Who records the client's IMS response** (M5.3) (Recommended) The Owner only; Staff and the accountant see it. Alternative: the Owner and Staff.
+37. **A tax invoice for a payment received after the LUT lapsed** (VERIFY WITH CA/LEGAL; M5.2) (Recommended, built) It keeps its proforma's export route (LUT, 0 % IGST), as the proforma told the client. Alternative: a lapsed LUT forces IGST, with a warning on screen before issuing.
 
 Not asked, because docs/13 or docs/04 §0 already decide them:
 - the numbering format;
