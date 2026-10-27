@@ -122,6 +122,10 @@ const wb: RecipientSnapshot = {
   gstStatus: "registered",
 } as RecipientSnapshot;
 
+/** The two sample recipients, for the note fixtures (an Indian GST-registered client in West Bengal, an overseas one). */
+export const WB_RECIPIENT = wb;
+export const OVERSEAS_RECIPIENT = overseas;
+
 const SPECS: Record<InvoiceFixtureName, Spec> = {
   intra: {
     recipient: wb,
@@ -452,6 +456,7 @@ export function invoiceBundleOf(source: InvoiceEnvelope): DocumentBundle<TermsRo
       ...(h.export ? { export: h.export } : {}),
       ...(h.proforma ? { proforma: h.proforma } : {}),
       ...(h.advance ? { advance: h.advance } : {}),
+      ...(h.noteOf ? { noteOf: h.noteOf } : {}),
     }),
     fx_rate_micros: h.fx?.rateMicros ?? null,
     fx_date: h.fx?.date ?? null,

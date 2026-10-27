@@ -5,9 +5,10 @@
 //   - header.computedSha256 = sha256(computedJson)
 //   - header.document.termsRef and the footer notes agree, and sha256(notes) = termsRef.sha256
 //   - header.document.contentSha256 = core `contentHash` of the lines, the discount and the computed result (the issue route's own)
+//   - (M5.3) a credit or debit note carries `header.noteOf` (and no other type does), its kind is its type's, it takes one line per take, and a credit note has no due date
 // A signature image is checked separately (`verifySignatureBytes`): the envelope holds only its key, SHA-256 and mime (LD11).
 import { contentHash, type DraftContent } from "@techaust/core/documents";
-import { invoiceSnapshotSha256 } from "@techaust/core/invoices";
+import { invoiceSnapshotSha256, isNoteType, noteKindOf, noteOfFromStored } from "@techaust/core/invoices";
 import type { ComputedDocument } from "@techaust/core/tax";
 import { sha256Hex } from "./hash.ts";
 import type { InvoiceEnvelope, InvoiceHeader, InvoiceIssuerSnap } from "./invoice-types.ts";
@@ -154,6 +155,9 @@ export function parseInvoiceEnvelope(text: string): InvoiceEnvelope | null {
   if (h.fx !== undefined && !validFx(h.fx)) return null;
   if (h.proforma !== undefined && !(isObj(h.proforma) && typeof h.proforma.notice === "string")) return null;
   if (h.advance !== undefined && !validAdvance(h.advance)) return null;
+  // M5.3: a note's request, read back without zod (a wrong shape is not an envelope); a due date is a string or null.
+  if (h.noteOf !== undefined && noteOfFromStored(h.noteOf) === null) return null;
+  if (h.document.dueDate !== null && typeof h.document.dueDate !== "string") return null;
   if (i.bank.swift !== undefined && i.bank.swift !== null && !isObj(i.bank.swift)) return null;
   if (isObj(h.recipient) && h.recipient.deliveryAddress !== undefined && !isObj(h.recipient.deliveryAddress))
     return null;
@@ -179,6 +183,20 @@ export function invoiceDraftOf(e: InvoiceEnvelope): DraftContent {
     schedule: [],
     // M5.2 (LD24): the rate typed on the draft is part of its content hash (no key at all when there was none: an M5.1 hash is unchanged).
     ...(h.fx ? { fx: { rateMicros: h.fx.rateMicros, date: h.fx.date, source: h.fx.source } } : {}),
+    // M5.3 (LD39): a note's request is part of its content hash, exactly as db `noteContentOf` reads it from `header_extras`.
+    ...(h.noteOf
+      ? {
+          note: {
+            parentId: h.noteOf.parent.id,
+            kind: h.noteOf.kind,
+            reasonCode: h.noteOf.reason.code,
+            reasonText: h.noteOf.reason.text,
+            mode: h.noteOf.request.mode,
+            grossMinor: h.noteOf.request.grossMinor ?? null,
+            takes: h.noteOf.request.takes,
+          },
+        }
+      : {}),
   };
 }
 
@@ -195,8 +213,17 @@ export const invoiceSnapshotInputOf = (e: InvoiceEnvelope) => {
     ...(h.fx ? { fx: h.fx } : {}),
     ...(h.proforma ? { proforma: h.proforma } : {}),
     ...(h.advance ? { advance: h.advance } : {}),
+    ...(h.noteOf ? { noteOf: h.noteOf } : {}),
   };
 };
+
+/** M5.3: `noteOf` only on a note, of the type's own kind, with one take per line; false for anything else. */
+function noteShapeOk(e: InvoiceEnvelope): boolean {
+  const n = e.snapshot.header.noteOf;
+  if (!isNoteType(e.type)) return n === undefined;
+  if (n === undefined) return false;
+  return n.kind === noteKindOf(e.type) && n.request.takes.length === e.snapshot.lines.length;
+}
 
 /** Recomputes every hash of the envelope. A render never starts from an envelope that fails. */
 export async function verifyInvoiceEnvelope(e: InvoiceEnvelope): Promise<InvoiceVerifyResult> {
@@ -209,6 +236,9 @@ export async function verifyInvoiceEnvelope(e: InvoiceEnvelope): Promise<Invoice
     // M5.2: an export invoice without its endorsement block, or a proforma without its notice, is not an envelope to print from (LD33's first line of defence)
     (e.type === "export_invoice" && !h.export) ||
     (e.type === "proforma" && !h.proforma) ||
+    // M5.3: a note has its request and no other type does; the request's kind and its lines are the note's own; a credit note has no due date, every other type has one
+    !noteShapeOk(e) ||
+    (h.document.dueDate === null) !== (e.type === "credit_note") ||
     (ref === null) !== (s.terms === null) ||
     (ref !== null &&
       s.terms !== null &&

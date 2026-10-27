@@ -44,7 +44,8 @@ export type InvoiceHeader = {
     clientId: string;
     currency: string;
     issueDate: string;
-    dueDate: string;
+    /** Null on a credit note (nothing is owed on it, M5.3); a string on every other invoice-family document. */
+    dueDate: string | null;
     contentSha256: string;
     termsRef: { id: string; version: number; sha256: string } | null;
     exportMode: string | null;
@@ -56,18 +57,21 @@ export type InvoiceHeader = {
   /**
    * M5.2 (LD25): the optional keys, each present ONLY on the types that need it (an M5.1 envelope has none and still parses and verifies):
    * `export` (an export invoice: the endorsement as frozen, the LUT, the country), `fx` (a USD tax or export invoice), `proforma` (the notice),
-   * `advance` (the invoice made for money received). They mirror core's `InvoiceSnapshotInput`; the issue batch froze them in `documents.header_extras`.
+   * `advance` (the invoice made for money received), and (M5.3) `noteOf`: a credit or debit note's request, reason and the facts of its invoice (required on a note,
+   * refused on any other type). They mirror core's `InvoiceSnapshotInput`; the issue batch froze them in `documents.header_extras`.
    */
   export?: InvoiceHeaderExport;
   fx?: InvoiceHeaderFx;
   proforma?: InvoiceHeaderProforma;
   advance?: InvoiceHeaderAdvance;
+  noteOf?: InvoiceHeaderNoteOf;
 };
 
 export type InvoiceHeaderExport = NonNullable<InvoiceSnapshotInput["export"]>;
 export type InvoiceHeaderFx = NonNullable<InvoiceSnapshotInput["fx"]>;
 export type InvoiceHeaderProforma = NonNullable<InvoiceSnapshotInput["proforma"]>;
 export type InvoiceHeaderAdvance = NonNullable<InvoiceSnapshotInput["advance"]>;
+export type InvoiceHeaderNoteOf = NonNullable<InvoiceSnapshotInput["noteOf"]>;
 
 export type InvoiceEnvelopeSnapshot = {
   /** The sealed header: `snapshotSha256` is the hash of `{v: 3, kind: "invoice", header}`. */
@@ -103,6 +107,8 @@ export type InvoiceEnvelope = {
 
 export type InvoiceViewLine = {
   n: string;
+  /** M5.3: on a note's line, the invoice line it is against, numbered as the invoice numbers it (1-based, 07-T §8 "Against line {n}"); absent on every other type. */
+  againstLine?: number;
   description: string;
   detail: string | null;
   sac: string | null;
@@ -170,6 +176,27 @@ export type InvoiceViewSwift = {
   purposeCode: string | null;
 };
 
+/**
+ * M5.3: a credit or debit note's own facts, every value as frozen in the sealed `noteOf` (the words around them are the designer's, 07-T §1). `parent.number` is the
+ * number of the invoice the note is against: the page must print it as ONE text node (LD54; `missingStatutoryLine` refuses a page that does not).
+ */
+export type InvoiceViewNote = {
+  kind: "credit" | "debit";
+  /** "Credit Note" or "Debit Note" (07-T §1; the same as `docLabel`). */
+  title: string;
+  parent: { number: string; date: string; type: string };
+  /** The reason as typed by a person: `code`, the label of the code (07-T §3) and the text typed with it (empty when none; required for `other`). Rule 53(1A) wants the nature printed. */
+  reason: { code: string; label: string; text: string };
+  /** Which total label to print: "Total credited" or "Total added" (07-T §1). */
+  totalLabel: "credited" | "added";
+  /** The effect line's data: "This credit note reduces the amount due on invoice {parentNumber} by {total}." (a debit note: increases). */
+  effect: { direction: "reduces" | "increases"; parentNumber: string; total: string };
+  /** A USD note: the rate of its invoice and that invoice's number ("Exchange rate: 1 USD = ₹{rate} (the rate of invoice {parentNumber})"); null for INR. */
+  fx: { rate: string; parentNumber: string } | null;
+  /** The invoice's export route and its LUT letter (an export credit note prints them, VERIFY WITH CA/LEGAL); null for a domestic note. */
+  route: { mode: "lut" | "igst_paid"; lut: { fy: string; fyLabel: string; arn: string } | null } | null;
+};
+
 export type InvoiceView = {
   kind: "invoice";
   /** The document type of the envelope (`tax_invoice` in M5.1). */
@@ -178,6 +205,7 @@ export type InvoiceView = {
   title: string;
   numberDisplay: string;
   issueDate: string;
+  /** The due date as printed; EMPTY on a credit note (it has none: the layout leaves the row out). */
   dueDate: string;
   /** "ORIGINAL FOR RECIPIENT" (Rule 48). */
   /** "ORIGINAL FOR RECIPIENT" on a tax or export invoice; null on a proforma (it prints no copy mark). */
@@ -215,6 +243,8 @@ export type InvoiceView = {
   proforma: { notice: string; validUntil: string } | null;
   /** M5.2: the invoice made for money received against a proforma: the proforma's number and date, and the day the money arrived; null otherwise. */
   advance: { proformaNumber: string; proformaDate: string; receivedOn: string } | null;
+  /** M5.3: a credit or debit note's facts; null on every other type. */
+  note: InvoiceViewNote | null;
   /** The footer notes pinned at issue (Markdown), or null. */
   notes: { title: string; version: string; bodyMd: string } | null;
   /** The signature image as a data URI once its bytes were verified; null otherwise (the line "Authorised signatory" is printed either way). */
