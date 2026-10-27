@@ -16,7 +16,9 @@ import {
   ScreenSkeleton,
   SoonScreen,
 } from "../screens/home.tsx";
+import { InvoicesTile } from "../screens/invoices.tsx";
 import { useMe, useSession } from "../session.tsx";
+import { useInvoices } from "./invoices.tsx";
 import { Unreachable } from "./not-found.tsx";
 import { OfferScreen, type OfferSource } from "./offer.tsx";
 import { SignIn } from "./sign-in.tsx";
@@ -127,6 +129,8 @@ function LoadProblem(props: { error: unknown; onRetry: () => void; children?: Re
 export function HomeRoute() {
   const me = useMe();
   const o = useOffers();
+  // M5.4: the invoices tile, for a contact who can see finance (the API answers 404 otherwise)
+  const inv = useInvoices(me.canSeeFinance);
   if (o.error && !o.items) return <LoadProblem error={o.error} onRetry={o.retry} />;
   if (!o.items) return <ScreenSkeleton label={COPY.loading} />;
   const { awaiting, decided } = splitOffers(o.items);
@@ -138,6 +142,11 @@ export function HomeRoute() {
       hasDecided={decided.length > 0 || o.next !== null}
       hrefOf={(d) => offerHref(d.id)}
       listHref={HREF.documents}
+      invoicesTile={
+        me.canSeeFinance ? (
+          <InvoicesTile items={inv.items} problem={inv.items ? null : inv.problem} />
+        ) : undefined
+      }
     />
   );
 }
@@ -194,7 +203,7 @@ export function ProposalRoute() {
   );
 }
 
-export function SoonRoute({ section }: { section: "invoices" | "projects" | "profile" }) {
+export function SoonRoute({ section }: { section: "projects" | "profile" }) {
   return <SoonScreen section={section} />;
 }
 

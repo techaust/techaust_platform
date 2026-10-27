@@ -132,6 +132,8 @@ export function HomeScreen(props: {
   hasDecided: boolean;
   hrefOf: (d: OfferItem) => string;
   listHref: string;
+  /** M5.4: the invoices tile (a contact who can see finance); otherwise the section stays "coming soon". */
+  invoicesTile?: ReactNode;
 }) {
   return (
     <div className="screen">
@@ -162,12 +164,14 @@ export function HomeScreen(props: {
           {N.alsoTitle}
         </h2>
         <div className="soons">
-          <ComingSoon
-            level={3}
-            title={WORDS.nav.invoices}
-            icon={<Receipt size={24} />}
-            body={N.soon.invoices}
-          />
+          {props.invoicesTile ?? (
+            <ComingSoon
+              level={3}
+              title={WORDS.nav.invoices}
+              icon={<Receipt size={24} />}
+              body={N.soon.invoices}
+            />
+          )}
           <ComingSoon
             level={3}
             title={WORDS.nav.projects}

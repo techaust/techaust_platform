@@ -1994,3 +1994,287 @@ textarea[aria-invalid="true"] {
   font-size: var(--text-sm);
   line-height: var(--text-sm--line-height);
 }
+
+/* ---------- M5.4: invoices, payment requests and notes (POR-06) ---------- */
+
+/* The tables of these screens switch to cards by their own width (the RTable rule). */
+.inv-sheet {
+  container: sheet / inline-size;
+}
+
+.spill--warning {
+  --tone: var(--color-warning);
+}
+
+.inv-table__link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.rcard__lead .inv-table__link {
+  min-height: 2.75rem;
+}
+
+/* One document: the number is the heading, set in tabular figures (it is a reference people copy). */
+.inv-doc__head {
+  display: grid;
+  gap: var(--space-2);
+  margin-bottom: var(--space-6);
+}
+
+.inv-doc__number {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.inv-doc__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+}
+
+.inv-doc__against {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.inv-doc > .notice {
+  margin-bottom: var(--space-6);
+}
+
+/* The slip: the page's one large figure is what is still owed. Flat, with the mark's cut on its top corner and a verdigris edge (the brand's
+   geometry, docs/06 §2); the dates read as a line above the figures. */
+.inv-slip {
+  display: grid;
+  gap: var(--space-5);
+  padding: var(--space-6);
+  border-inline-start: 3px solid var(--color-accent-decor);
+  background: var(--color-fill-subtle);
+  clip-path: polygon(0 0, calc(100% - 1.25rem) 0, 100% 1.25rem, 100% 100%, 0 100%);
+}
+
+.inv-slip__dates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-6);
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  font-variant-numeric: tabular-nums;
+}
+
+.inv-slip__late {
+  color: var(--color-warning);
+  font-weight: 600;
+}
+
+.inv-slip__figures {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-4) var(--space-12);
+  margin: 0;
+}
+
+.inv-slip .inv-slip__figures dt {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  font-weight: 500;
+}
+
+.inv-slip .inv-slip__figures dd {
+  margin: 0;
+  font-size: var(--text-h4);
+  line-height: var(--text-h4--line-height);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.inv-slip .inv-slip__balance dd {
+  font-family: var(--font-display);
+  font-stretch: var(--font-display--stretch);
+  font-size: var(--text-display-2);
+  line-height: var(--text-display-2--line-height);
+  font-weight: var(--text-display-2--font-weight);
+  overflow-wrap: anywhere;
+}
+
+.inv-slip__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-4);
+}
+
+.inv-slip__note {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+@media (min-width: 48rem) {
+  .inv-slip {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    padding: var(--space-8);
+  }
+
+  .inv-slip__dates {
+    grid-column: 1 / -1;
+  }
+
+  .inv-slip__actions {
+    justify-content: flex-end;
+  }
+}
+
+.inv-doc .block {
+  margin-top: var(--space-12);
+}
+
+.inv-pay {
+  max-width: var(--container-prose);
+}
+
+.inv-pay .block__title .icon {
+  color: var(--color-text-accent);
+}
+
+.inv-pay__ref {
+  margin: 0 0 var(--space-5);
+}
+
+.inv-pay__lead {
+  margin: 0 0 var(--space-3);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.inv-pay__bank {
+  display: grid;
+  gap: 0;
+  margin: 0 0 var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+.inv-pay__bank > div {
+  display: grid;
+  grid-template-columns: minmax(8rem, 12rem) minmax(0, 1fr);
+  gap: var(--space-4);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.inv-pay .inv-pay__bank dt {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-body--line-height);
+}
+
+.inv-pay .inv-pay__bank dd {
+  margin: 0;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 29.99rem) {
+  .inv-pay__bank > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+}
+
+.inv-lines tbody th,
+.inv-lines td {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Home: the invoices tile in "Also in your portal" (the coming-soon card's shape, with the open documents listed). */
+.inv-tile {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.inv-tile__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.inv-tile p {
+  margin: 0;
+}
+
+.inv-tile__link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2.75rem;
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.inv-tile__link:hover {
+  color: var(--color-link-hover);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.inv-tile__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--color-border);
+}
+
+.inv-tile__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-1) var(--space-4);
+  align-items: center;
+  min-height: 2.75rem;
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.inv-tile__row:hover {
+  background: var(--color-surface-alt);
+}
+
+.inv-tile__num {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.inv-tile__bal {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+
+.inv-tile__due {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  grid-column: 1 / -1;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}

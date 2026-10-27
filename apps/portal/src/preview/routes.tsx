@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, Route, Routes } from "react-router";
 import { renderEmail } from "../../../../packages/email/src/index.ts";
 import { SAMPLE_TOKENS } from "./sample-api.ts";
+import { SAMPLE_INVOICE_TOKENS } from "./sample-invoices.ts";
 
 /** Any base works: EmailFrame swaps the logo URLs for the dev server's own. */
 const BASE = "/preview-assets/";
@@ -34,7 +35,22 @@ const SCREENS: [string, string][] = [
   [`/o?sample=on#t=${SAMPLE_TOKENS.superseded}`, "Email link to an older version"],
   [`/o?sample=on#t=${SAMPLE_TOKENS.accepted}`, "Email link after acceptance (confirmation)"],
   [`/o?sample=on#t=${SAMPLE_TOKENS.unknown}`, "Email link that has ended (404)"],
-  ["/invoices?sample=on", "Invoices (coming soon)"],
+  ["/invoices?sample=on", "M5.4 Invoices (list)"],
+  ["/invoices?sample=empty", "M5.4 Invoices, none yet"],
+  ["/invoices/inv-due?sample=on", "M5.4 Invoice, due"],
+  ["/invoices/inv-overdue?sample=on", "M5.4 Invoice, overdue, part paid, with a discount (IGST)"],
+  ["/invoices/pro-due?sample=on", "M5.4 Payment request (proforma), PDF not ready"],
+  ["/invoices/dn-due?sample=on", "M5.4 Debit note"],
+  ["/invoices/cn-1?sample=on", "M5.4 Credit note"],
+  ["/invoices/inv-paid?sample=on", "M5.4 Invoice, paid"],
+  ["/invoices/exp-usd?sample=on", "M5.4 Export invoice in USD (SWIFT)"],
+  ["/invoices/inv-long?sample=on", "M5.4 Invoice with 12 lines"],
+  ["/invoices/another-client?sample=on", "M5.4 Another client's invoice (404)"],
+  [`/i?sample=on#t=${SAMPLE_INVOICE_TOKENS.invoice}`, "M5.4 Email link: an invoice without signing in"],
+  [`/i?sample=on#t=${SAMPLE_INVOICE_TOKENS.proforma}`, "M5.4 Email link: a payment request, PDF not ready"],
+  [`/i?sample=on#t=${SAMPLE_INVOICE_TOKENS.credit}`, "M5.4 Email link: a credit note"],
+  [`/i?sample=on#t=${SAMPLE_INVOICE_TOKENS.ended}`, "M5.4 Email link that no longer works"],
+  ["/preview/email-billing", "M5.4 The billing emails"],
   ["/projects?sample=on", "Projects (coming soon)"],
   ["/profile?sample=on", "Profile (coming soon)"],
   ["/preview/email", "The five emails"],
@@ -232,12 +248,166 @@ function EmailPreview() {
   );
 }
 
+// M5.4: every billing email (07-U, marked until approved), in the shapes the jobs Worker sends (core `INVOICE_EMAIL_DATA`). Sample values only.
+const DOC = {
+  first_name: "Asha",
+  number: "TH/INV/2627/0007",
+  issue_date: "5 Nov 2026",
+  due_date: "12 Nov 2026",
+  total: "₹23,600.00",
+  balance: "₹23,600.00",
+  url: "https://portal.techaust.com/i#t=SAMPLE-LINK",
+  parent_number: "",
+  sender_name: "Sample Sender",
+};
+const OWNER = {
+  owner_first_name: "Rupak",
+  client_name: "Kestrel Distributors (sample)",
+  admin_url: "https://admin.techaust.com/projects/sample",
+  milestone_title: "Phase 1 delivery (sample)",
+  delivered_date: "1 Oct 2026",
+  days_since: "25",
+};
+const STAGES: [string, string, string][] = [
+  ["before", "3", "3 days before"],
+  ["on", "0", "on the due date"],
+  ["after", "3", "3 days after"],
+  ["after", "7", "7 days after"],
+  ["after", "14", "14 days after"],
+];
+
+function BillingEmailPreview() {
+  const [attached, setAttached] = useState(true);
+  useEffect(() => {
+    document.title = "Billing emails – preview";
+  }, []);
+  const a = attached ? "1" : "";
+  const client = "Asha Iyer <asha.iyer@kestrel.example.test>";
+  const r = (t: string, d: Record<string, string>) => renderEmail(t, d, { assetBase: BASE });
+  const mails: { key: string; label: string; to: string; r: ReturnType<typeof renderEmail> }[] = [
+    { key: "inv", label: "Invoice", to: client, r: r("invoice.sent", { ...DOC, attached: a }) },
+    {
+      key: "pro",
+      label: "Payment request (proforma)",
+      to: client,
+      r: r("proforma.sent", { ...DOC, number: "TH/PRO/2627/0002", attached: a }),
+    },
+    {
+      key: "cn",
+      label: "Credit note",
+      to: client,
+      r: r("credit_note.sent", {
+        ...DOC,
+        number: "TH/CN/2627/0001",
+        due_date: "",
+        balance: "",
+        parent_number: "TH/INV/2627/0003",
+        attached: a,
+      }),
+    },
+    {
+      key: "dn",
+      label: "Debit note",
+      to: client,
+      r: r("debit_note.sent", {
+        ...DOC,
+        number: "TH/DN/2627/0001",
+        total: "₹1,180.00",
+        balance: "₹1,180.00",
+        parent_number: "TH/INV/2627/0004",
+        attached: a,
+      }),
+    },
+    ...(["invoice", "proforma", "debit_note"] as const).flatMap((kind) =>
+      STAGES.map(([when, n, label]) => ({
+        key: `rem-${kind}-${when}-${n}`,
+        label: `Reminder, ${kind.replace("_", " ")}, ${label}`,
+        to: client,
+        r: r("reminder.sent", { ...DOC, attached: "", kind, when, offset_days: n }),
+      })),
+    ),
+    {
+      key: "unbilled",
+      label: "Unbilled work (to owners)",
+      to: "owner@example.test",
+      r: r("alert.unbilled", OWNER),
+    },
+    {
+      key: "proforma-due",
+      label: "Proforma unpaid after delivery (to owners)",
+      to: "owner@example.test",
+      r: r("alert.proforma_due", { ...OWNER, proforma_number: "TH/PRO/2627/0002", balance: "₹11,800.00" }),
+    },
+    {
+      key: "lut-due",
+      label: "LUT reminder, next year due (to owners)",
+      to: "owner@example.test",
+      r: r("lut.reminder", {
+        owner_first_name: "Rupak",
+        fy_label: "2027-28",
+        state: "next_fy_due",
+        admin_url: "https://admin.techaust.com/settings/tax",
+      }),
+    },
+    {
+      key: "lut-missing",
+      label: "LUT reminder, this year missing (to owners)",
+      to: "owner@example.test",
+      r: r("lut.reminder", {
+        owner_first_name: "Rupak",
+        fy_label: "2026-27",
+        state: "current_missing",
+        admin_url: "https://admin.techaust.com/settings/tax",
+      }),
+    },
+  ];
+  return (
+    <main className="pv-email" id="main">
+      <p className="pv-email__label">
+        <strong>Preview — sample data.</strong> <Link to="/preview">All sample screens</Link>
+      </p>
+      <h1 className="pv-email__h1">Billing emails (M5.4)</h1>
+      <label className="pv-email__toggle">
+        <input type="checkbox" checked={attached} onChange={(e) => setAttached(e.target.checked)} />
+        <span>The PDF is attached (document emails; reminders never attach it)</span>
+      </label>
+      {mails.map(({ key, label, to, r: m }) => (
+        <section key={key} id={key} className="pv-email__one" aria-labelledby={`${key}-h`}>
+          <h2 id={`${key}-h`}>{label}</h2>
+          <dl className="pv-email__head">
+            <div>
+              <dt>From</dt>
+              <dd>
+                {m.from.name} &lt;{m.from.address}&gt;, reply to {m.replyTo}
+              </dd>
+            </div>
+            <div>
+              <dt>To</dt>
+              <dd>{to}</dd>
+            </div>
+            <div>
+              <dt>Subject</dt>
+              <dd>{m.subject}</dd>
+            </div>
+          </dl>
+          <EmailFrame key={`${key}-${attached}`} title={`${label}: HTML version`} html={m.html} />
+          <details className="pv-email__text" open>
+            <summary>Plain-text version</summary>
+            <pre>{m.text}</pre>
+          </details>
+        </section>
+      ))}
+    </main>
+  );
+}
+
 /** Everything under /preview/* (a descendant route tree: main.tsx loads this module lazily, in dev only). */
 export function PreviewApp() {
   return (
     <Routes>
       <Route index element={<Index />} />
       <Route path="email" element={<EmailPreview />} />
+      <Route path="email-billing" element={<BillingEmailPreview />} />
       <Route path="*" element={<Index />} />
     </Routes>
   );
