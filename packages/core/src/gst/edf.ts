@@ -5,8 +5,8 @@
 import { addDays, type CalendarDate, isValidDate } from "../dates.ts";
 import { lastDayOfMonth } from "./period.ts";
 import {
+  checkedDueDates,
   DEFAULT_REALISATION_RULES,
-  dueDatesOf,
   type RealisationRules,
   rulesAreValid,
 } from "./realisation.ts";
@@ -109,13 +109,17 @@ export function edfRows(
         continue;
       }
       const extension = Object.hasOwn(extensions, row.id) ? extensions[row.id] : undefined;
-      if (extension?.femaDue !== undefined && !isValidDate(extension.femaDue)) {
-        errors.push({ code: "date_invalid", path: [row.id, "extension"] });
+      // the shared input check and `before_fema_2026` warning of the realisation report
+      const dates = checkedDueDates(
+        { invoiceDate: row.issueDate, currency: row.currency, supplyType: row.supplyType, extension },
+        rules,
+        at,
+      );
+      if (!dates.ok) {
+        errors.push(...dates.errors);
         continue;
       }
-      const dates = dueDatesOf({ invoiceDate: row.issueDate, currency: row.currency, extension }, rules);
-      if (compareDates(row.issueDate, rules.rulesFrom) < 0)
-        warnings.push({ code: "before_fema_2026", path: at });
+      warnings.push(...dates.warnings);
       const sacs = [...new Set(row.rates.map((r) => r.sac).filter((s): s is string => s !== null))].sort(
         compareText,
       );
@@ -135,7 +139,7 @@ export function edfRows(
           .map((s) => (Object.hasOwn(descriptions, s) ? (descriptions[s] as string) : ""))
           .join("; "),
         purposeCode: row.purposeCode,
-        femaDue: dates.femaDue,
+        femaDue: dates.value.femaDue,
         edfDue: m.value.due,
       });
     }

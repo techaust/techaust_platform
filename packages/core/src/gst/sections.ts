@@ -33,8 +33,14 @@ import {
   warn,
 } from "./types.ts";
 
-/** Rule 46(b) (VERIFY WITH CA/LEGAL): letters, digits, "/" and "-", starting with a letter or digit. Never triggers `defuse`. */
-const NUMBER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9/-]*$/;
+/**
+ * Rule 46(b) (VERIFY WITH CA/LEGAL): capital letters, digits, "/" and "-", starting with a letter or digit: exactly the characters
+ * of M5.1's numbering validator (`LITERAL`), so a number is never changed by `defuse` and a duplicate is never a matter of case.
+ */
+const NUMBER_PATTERN = /^[A-Z0-9][A-Z0-9/-]*$/;
+/** A SAC for services has exactly six digits (08-A §2; VERIFY WITH CA/LEGAL). */
+const SAC_PATTERN = /^\d{6}$/;
+const sacText = (sac: string | null): string => (sac === null ? "" : sac.trim());
 const isExportSupply = (s: SupplyType): boolean => s === "export_lut" || s === "export_igst";
 // Exhaustive by type: adding a supply type or a status to the engine's types fails the build here until it is listed.
 const SUPPLY_TYPE_SET: Readonly<Record<SupplyType, true>> = {
@@ -52,6 +58,7 @@ const isSupplyType = (v: unknown): v is SupplyType =>
   typeof v === "string" && Object.hasOwn(SUPPLY_TYPE_SET, v);
 const isRecipientStatus = (v: unknown): v is RecipientStatus =>
   typeof v === "string" && Object.hasOwn(RECIPIENT_STATUS_SET, v);
+const isSupplyStateCode = (v: unknown): boolean => typeof v === "string" && isStateCode(v);
 const isPos = (v: unknown): boolean => v === "96" || (typeof v === "string" && isStateCode(v));
 
 export type ExportType = "WOPAY" | "WPAY";
@@ -220,12 +227,14 @@ function rowIssues(row: RegisterRow, supplierStateCode: StateCode): GstIssue[] {
   // Supply consistency (a lead decision, VERIFY WITH CA/LEGAL): everything that picks a section, a tax head or a report must
   // tell the same story, or the return disagrees with itself at filing.
   const isNote = row.kind === "credit_note" || row.kind === "debit_note";
-  let mismatch = false;
+  // Each rule has its own path suffix, so a screen can say which one failed.
+  const mismatch = (part: "kind" | "recipient" | "pos" | "heads" | "noteOf") =>
+    out.push({ code: "supply_mismatch", path: [row.id, part] });
   // an export invoice has an export supply, and a tax invoice does not
-  if (row.kind === "export_invoice" && !exportSupply) mismatch = true;
-  if (row.kind === "tax_invoice" && exportSupply) mismatch = true;
+  if (row.kind === "export_invoice" && !exportSupply) mismatch("kind");
+  if (row.kind === "tax_invoice" && exportSupply) mismatch("kind");
   // an overseas recipient is exactly an export
-  if ((row.recipient.status === "overseas") !== exportSupply) mismatch = true;
+  if ((row.recipient.status === "overseas") !== exportSupply) mismatch("recipient");
   // intra-state is the supplier's own state, inter-state any other (known) state
   if (
     posOk &&
@@ -233,16 +242,22 @@ function rowIssues(row: RegisterRow, supplierStateCode: StateCode): GstIssue[] {
     row.placeOfSupplyCode !== "96" &&
     (row.supplyType === "intra") !== (row.placeOfSupplyCode === supplierStateCode)
   ) {
-    mismatch = true;
+    mismatch("pos");
   }
   // the tax heads match the supply
-  if (amountsOk && !headsFit(row)) mismatch = true;
+  if (amountsOk && !headsFit(row)) mismatch("heads");
   if (isNote && row.noteOf !== null) {
-    // a note shares its parent's supply type (a bad parent is parent_invalid)
-    if (isSupplyType(row.noteOf.supplyType) && row.noteOf.supplyType !== row.supplyType) mismatch = true;
-    if (!parentIsValid(row.noteOf)) out.push({ code: "parent_invalid", path: [row.id, "noteOf"] });
+    // a note shares its parent's supply type, place of supply and recipient status (a bad parent is parent_invalid)
+    const p = row.noteOf;
+    if (
+      (isSupplyType(p.supplyType) && p.supplyType !== row.supplyType) ||
+      (posOk && isPos(p.placeOfSupplyCode) && p.placeOfSupplyCode !== row.placeOfSupplyCode) ||
+      (isRecipientStatus(p.recipientStatus) && p.recipientStatus !== row.recipient.status)
+    ) {
+      mismatch("noteOf");
+    }
+    if (!parentIsValid(p)) out.push({ code: "parent_invalid", path: [row.id, "noteOf"] });
   }
-  if (mismatch) add("supply_mismatch");
   return out;
 }
 
@@ -311,6 +326,9 @@ export function gstr1Sections(
     if (!isNonNegInt(params.b2clThresholdInrMinor)) {
       issues.push(issue("threshold_invalid", "params", "b2clThresholdInrMinor"));
     }
+    if (!isSupplyStateCode(params.supplierStateCode)) {
+      issues.push(issue("params_invalid", "params", "supplierStateCode"));
+    }
     if (!range.ok || issues.length > 0) return fail(uniqueIssues(issues));
     const threshold = params.b2clThresholdInrMinor;
 
@@ -336,8 +354,9 @@ export function gstr1Sections(
     for (const row of reported) {
       const found = rowIssues(row, params.supplierStateCode);
       const at = [row.id];
-      if (row.rates.some((r) => r.sac === null || r.sac.trim() === ""))
-        found.push({ code: "sac_missing", path: at });
+      if (row.rates.some((r) => sacText(r.sac) === "")) found.push({ code: "sac_missing", path: at });
+      if (row.rates.some((r) => sacText(r.sac) !== "" && !SAC_PATTERN.test(sacText(r.sac))))
+        found.push({ code: "sac_invalid", path: at });
       let section: Item["section"] = "b2cs";
       let urType: UrType | null = null;
       if (row.kind === "tax_invoice" || row.kind === "export_invoice") {
@@ -450,10 +469,11 @@ function buildTables(
     // HSN: B2B invoices and CDNR notes in one table, everything else in the other.
     const hsnTable = section === "b2b" || section === "cdnr" ? "hsnB2b" : "hsnB2c";
     for (const r of row.rates) {
-      const key = `${r.sac as string}|${r.rateBp}`;
+      const sac = sacText(r.sac);
+      const key = `${sac}|${r.rateBp}`;
       let entry = hsnMaps[hsnTable].get(key);
       if (entry === undefined) {
-        entry = { sac: r.sac as string, rateBp: r.rateBp, sum: zero() };
+        entry = { sac, rateBp: r.rateBp, sum: zero() };
         hsnMaps[hsnTable].set(key, entry);
       }
       accumulate(entry.sum, r, sign);

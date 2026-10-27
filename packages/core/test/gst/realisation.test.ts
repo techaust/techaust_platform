@@ -21,7 +21,7 @@ const dates = (
   extension?: { femaDue?: CalendarDate },
   rules = DEFAULT_REALISATION_RULES,
 ) => {
-  const r = realisationDates({ invoiceDate, currency, extension }, rules);
+  const r = realisationDates({ invoiceDate, currency, supplyType: "export_lut", extension }, rules);
   if (!r.ok) throw new Error(JSON.stringify(r.errors));
   return r;
 };
@@ -32,7 +32,10 @@ const stage = (
   outstandingMinor = 100,
   extension?: { femaDue?: CalendarDate },
 ) => {
-  const r = realisationStatus({ invoiceDate, currency, outstandingMinor, extension }, today);
+  const r = realisationStatus(
+    { invoiceDate, currency, supplyType: "export_lut", outstandingMinor, extension },
+    today,
+  );
   if (!r.ok) throw new Error(JSON.stringify(r.errors));
   return r.value.stage;
 };
@@ -158,7 +161,7 @@ describe("the stage, day by day (USD invoice of 3 November 2026: FEMA due 3 Aug 
   });
   it("realisationStatus returns the dates with the stage and passes the warning on", () => {
     const r = realisationStatus(
-      { invoiceDate: d(2026, 9, 1), currency: "USD", outstandingMinor: 1 },
+      { invoiceDate: d(2026, 9, 1), currency: "USD", supplyType: "export_lut", outstandingMinor: 1 },
       d(2027, 1, 1),
     );
     expect(r).toEqual({
@@ -230,7 +233,7 @@ describe("properties", () => {
           for (let i = 0; i < 900; i += 3) {
             day = addDays(invoice, i);
             const r = realisationStatus(
-              { invoiceDate: invoice, currency, outstandingMinor: outstanding },
+              { invoiceDate: invoice, currency, supplyType: "export_lut", outstandingMinor: outstanding },
               day,
               rules,
             );
@@ -238,7 +241,7 @@ describe("properties", () => {
             expect(RANK[r.value.stage]).toBeGreaterThanOrEqual(last);
             last = RANK[r.value.stage];
             const done = realisationStatus(
-              { invoiceDate: invoice, currency, outstandingMinor: 0 },
+              { invoiceDate: invoice, currency, supplyType: "export_lut", outstandingMinor: 0 },
               day,
               rules,
             );

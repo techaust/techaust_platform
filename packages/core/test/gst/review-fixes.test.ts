@@ -33,15 +33,15 @@ describe("supply_mismatch: kind, supply type, recipient status, place of supply 
       gstin: null,
       rates: [rate("998314", 1800, 1000, "inter")],
     });
-    expect(errors([r])).toEqual(only("supply_mismatch"));
+    expect(errors([r])).toEqual(only("supply_mismatch", "x", "kind"));
   });
 
   it("a tax invoice must not have an export supply", () => {
     expect(errors([row({ id: "x", kind: "tax_invoice", supply: "export_lut" })])).toEqual(
-      only("supply_mismatch"),
+      only("supply_mismatch", "x", "kind"),
     );
     expect(errors([row({ id: "x", kind: "tax_invoice", supply: "export_igst", pos: "96" })])).toEqual(
-      only("supply_mismatch"),
+      only("supply_mismatch", "x", "kind"),
     );
   });
 
@@ -58,19 +58,23 @@ describe("supply_mismatch: kind, supply type, recipient status, place of supply 
   });
 
   it("an overseas recipient is exactly an export", () => {
-    expect(errors([row({ id: "x", status: "overseas", gstin: null })])).toEqual(only("supply_mismatch"));
+    expect(errors([row({ id: "x", status: "overseas", gstin: null })])).toEqual(
+      only("supply_mismatch", "x", "recipient"),
+    );
     expect(
       errors([row({ id: "x", kind: "export_invoice", supply: "export_lut", status: "registered" })]),
-    ).toEqual(only("supply_mismatch"));
+    ).toEqual(only("supply_mismatch", "x", "recipient"));
   });
 
   it("intra-state is the supplier's own state, inter-state any other state", () => {
     // an intra row with POS 29 (supplier 19), CGST + SGST
-    expect(errors([row({ id: "x", supply: "intra", pos: "29" })])).toEqual(only("supply_mismatch"));
+    expect(errors([row({ id: "x", supply: "intra", pos: "29" })])).toEqual(
+      only("supply_mismatch", "x", "pos"),
+    );
     // an inter row with the supplier's own state
     expect(
       errors([row({ id: "x", supply: "inter", pos: "19", rates: [rate("998314", 1800, 1000, "inter")] })]),
-    ).toEqual(only("supply_mismatch"));
+    ).toEqual(only("supply_mismatch", "x", "pos"));
     expect(
       gstr1Sections(
         [row({ id: "x", supply: "inter", pos: "29", rates: [rate("998314", 1800, 1000, "inter")] })],
@@ -101,22 +105,31 @@ describe("supply_mismatch: kind, supply type, recipient status, place of supply 
       ["inter with SGST", row({ id: "x", supply: "inter", pos: "27", rates: [{ ...inter, sgstMinor: 5 }] })],
       [
         "export with IGST and CGST",
-        row({ id: "x", supply: "export_igst", rates: [{ ...inter, cgstMinor: 5 }] }),
+        row({ id: "x", kind: "export_invoice", supply: "export_igst", rates: [{ ...inter, cgstMinor: 5 }] }),
       ],
-      ["a LUT export with IGST", row({ id: "x", supply: "export_lut", rates: [{ ...lut, igstMinor: 5 }] })],
-      ["a LUT export with CGST", row({ id: "x", supply: "export_lut", rates: [{ ...lut, cgstMinor: 5 }] })],
-      ["a LUT export with SGST", row({ id: "x", supply: "export_lut", rates: [{ ...lut, sgstMinor: 5 }] })],
+      [
+        "a LUT export with IGST",
+        row({ id: "x", kind: "export_invoice", supply: "export_lut", rates: [{ ...lut, igstMinor: 5 }] }),
+      ],
+      [
+        "a LUT export with CGST",
+        row({ id: "x", kind: "export_invoice", supply: "export_lut", rates: [{ ...lut, cgstMinor: 5 }] }),
+      ],
+      [
+        "a LUT export with SGST",
+        row({ id: "x", kind: "export_invoice", supply: "export_lut", rates: [{ ...lut, sgstMinor: 5 }] }),
+      ],
     ];
     for (const [label, r] of cases) {
-      expect(errors([r]), label).toEqual(only("supply_mismatch"));
+      expect(errors([r]), label).toEqual(only("supply_mismatch", "x", "heads"));
     }
     // a second rate line that breaks the rule is found too
     expect(errors([row({ id: "x", rates: [base, { ...base, sac: "998313", igstMinor: 1 }] })])).toEqual(
-      only("supply_mismatch"),
+      only("supply_mismatch", "x", "heads"),
     );
   });
 
-  it("a note shares its parent's supply type", () => {
+  it("a note shares its parent's supply type, place of supply and recipient status", () => {
     const parent = row({
       id: "p",
       number: "P1",
@@ -126,7 +139,30 @@ describe("supply_mismatch: kind, supply type, recipient status, place of supply 
       rates: [rate("998314", 1800, 1000, "inter")],
     });
     const note = row({ id: "x", kind: "credit_note", gstin: GSTIN_27, noteOf: parentOf(parent) });
-    expect(errors([note])).toEqual(only("supply_mismatch"));
+    expect(errors([note])).toEqual(only("supply_mismatch", "x", "noteOf"));
+    // the same supply type but another place of supply: refused
+    const otherState = row({
+      id: "x",
+      kind: "credit_note",
+      supply: "inter",
+      pos: "29",
+      gstin: GSTIN_27,
+      noteOf: parentOf(parent),
+      rates: [rate("998314", 1800, 500, "inter")],
+    });
+    expect(errors([otherState])).toEqual(only("supply_mismatch", "x", "noteOf"));
+    // another recipient status than the parent's
+    const otherStatus = row({
+      id: "x",
+      kind: "credit_note",
+      supply: "inter",
+      pos: "27",
+      status: "unregistered",
+      gstin: GSTIN_27,
+      noteOf: parentOf(parent),
+      rates: [rate("998314", 1800, 500, "inter")],
+    });
+    expect(errors([otherStatus])).toEqual(only("supply_mismatch", "x", "noteOf"));
     // the same supply type is fine
     const same = row({
       id: "x",
@@ -174,9 +210,11 @@ describe("supply_mismatch: kind, supply type, recipient status, place of supply 
   });
 });
 
-describe("number_invalid: letters, digits, slash and hyphen, starting with a letter or digit, at most 16", () => {
+describe("number_invalid: capital letters, digits, slash and hyphen, starting with a letter or digit, at most 16", () => {
   it("refuses what `defuse` or the portal would change", () => {
     for (const bad of [
+      "a1",
+      "A1a",
       "-2627/0001",
       "=A1",
       "+A1",
@@ -197,7 +235,7 @@ describe("number_invalid: letters, digits, slash and hyphen, starting with a let
   });
 
   it("accepts the usual forms", () => {
-    for (const good of ["A", "a1", "TH/INV/2627/0001", "A-1/2", "0001", "9".repeat(16)]) {
+    for (const good of ["A", "TH/INV/2627/0001", "A-1/2", "0001", "9".repeat(16)]) {
       expect(gstr1Sections([row({ id: "x", number: good })], Q3, PARAMS).ok, good).toBe(true);
     }
   });

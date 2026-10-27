@@ -21,6 +21,7 @@ import {
   issue,
   ok,
   type RegisterRow,
+  type SupplyType,
   warn,
 } from "./types.ts";
 
@@ -77,6 +78,11 @@ export function realisationRulesOf(settings: RealisationSettings): GstResult<Rea
 export type RealisationInput = {
   readonly invoiceDate: CalendarDate;
   readonly currency: Currency;
+  /**
+   * Rule 96A (the GST escalation) applies to an export under LUT only (08-A :350; Q53, VERIFY WITH CA/LEGAL): an export with
+   * IGST paid moves through the FEMA stages alone. `gstDue` is still worked out for every export (it is in the CSV).
+   */
+  readonly supplyType: SupplyType;
   /** The FEMA due date as extended by the bank or RBI, if any: it replaces the computed one. */
   readonly extension?: { readonly femaDue?: CalendarDate } | undefined;
 };
@@ -113,18 +119,28 @@ export function dueDatesOf(input: RealisationInput, rules: RealisationRules): Re
   return { femaDue, gstDue: addDays(later, rules.gstExtraDays) };
 }
 
+/**
+ * The one input check and the one `before_fema_2026` warning of every report (the realisation report, the EDF and the dates):
+ * the due dates of one export invoice, every path starting at `path`. Not wrapped by `guard`: its callers are.
+ */
+export function checkedDueDates(
+  input: RealisationInput,
+  rules: RealisationRules,
+  path: readonly (string | number)[],
+): GstResult<RealisationDates> {
+  const found = issuesOf(input, rules, [...path]);
+  if (found.length > 0) return fail(found);
+  const warnings: GstWarning[] = [];
+  if (compareDates(input.invoiceDate, rules.rulesFrom) < 0) warnings.push(warn("before_fema_2026", ...path));
+  return ok(dueDatesOf(input, rules), warnings);
+}
+
 /** The FEMA and GST due dates (last allowed days) of one export invoice. */
 export function realisationDates(
   input: RealisationInput,
   rules: RealisationRules = DEFAULT_REALISATION_RULES,
 ): GstResult<RealisationDates> {
-  return guard(() => {
-    const found = issuesOf(input, rules, []);
-    if (found.length > 0) return fail(found);
-    const warnings: GstWarning[] = [];
-    if (compareDates(input.invoiceDate, rules.rulesFrom) < 0) warnings.push(warn("before_fema_2026"));
-    return ok(dueDatesOf(input, rules), warnings);
-  });
+  return guard(() => checkedDueDates(input, rules, []));
 }
 
 /** The stage on `today`, first match wins: realised, GST overdue, GST approaching, FEMA overdue, FEMA approaching, ok. */
@@ -133,10 +149,14 @@ export function stageOf(
   outstandingMinor: number,
   today: CalendarDate,
   approachingDays: number,
+  /** False for an export with IGST paid (Q53): the GST stages are skipped. */
+  gstApplies = true,
 ): RealisationStage {
   if (outstandingMinor <= 0) return "realised";
-  if (compareDates(today, dates.gstDue) > 0) return "gst_overdue";
-  if (compareDates(today, addDays(dates.gstDue, -approachingDays)) >= 0) return "gst_approaching";
+  if (gstApplies && compareDates(today, dates.gstDue) > 0) return "gst_overdue";
+  if (gstApplies && compareDates(today, addDays(dates.gstDue, -approachingDays)) >= 0) {
+    return "gst_approaching";
+  }
   if (compareDates(today, dates.femaDue) > 0) return "fema_overdue";
   if (compareDates(today, addDays(dates.femaDue, -approachingDays)) >= 0) return "fema_approaching";
   return "ok";
@@ -151,16 +171,18 @@ export function realisationStatus(
   rules: RealisationRules = DEFAULT_REALISATION_RULES,
 ): GstResult<RealisationStatus> {
   return guard(() => {
-    const found = issuesOf(input, rules, []);
+    const dates = checkedDueDates(input, rules, []);
+    const found: GstIssue[] = dates.ok ? [] : [...dates.errors];
     if (!isValidDate(today)) found.push(issue("date_invalid", "today"));
     if (!isInt(input.outstandingMinor)) found.push(issue("amount_invalid", "outstandingMinor"));
-    if (found.length > 0) return fail(found);
-    const warnings: GstWarning[] = [];
-    if (compareDates(input.invoiceDate, rules.rulesFrom) < 0) warnings.push(warn("before_fema_2026"));
-    const dates = dueDatesOf(input, rules);
+    if (!dates.ok || found.length > 0) return fail(found);
+    const gstApplies = input.supplyType === "export_lut";
     return ok(
-      { ...dates, stage: stageOf(dates, input.outstandingMinor, today, rules.approachingDays) },
-      warnings,
+      {
+        ...dates.value,
+        stage: stageOf(dates.value, input.outstandingMinor, today, rules.approachingDays, gstApplies),
+      },
+      dates.warnings,
     );
   });
 }
@@ -201,6 +223,7 @@ export function realisationRows(
         {
           invoiceDate: row.issueDate,
           currency: row.currency,
+          supplyType: row.supplyType,
           extension,
           outstandingMinor: row.outstandingMinor,
         },

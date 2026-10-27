@@ -196,7 +196,7 @@ describe("gstr1Sections: one test per error code", () => {
 
   it("amount_out_of_range: a sum beyond the safe-integer range", () => {
     const big = (id: string) =>
-      row({ id, number: id, rates: [rate("998314", 0, 5_000_000_000_000_000, "intra")] });
+      row({ id, number: id.toUpperCase(), rates: [rate("998314", 0, 5_000_000_000_000_000, "intra")] });
     expect(gstr1Sections([big("a"), big("b")], Q3, PARAMS)).toEqual({
       ok: false,
       errors: [{ code: "amount_out_of_range", path: [] }],
@@ -261,7 +261,7 @@ describe("a bad row fails the whole result", () => {
   });
 });
 
-describe("hsn_description_missing is one warning per SAC, and prototype names are not descriptions", () => {
+describe("hsn_description_missing is one warning per SAC, (a SAC is six digits, so a prototype name cannot reach the table)", () => {
   it("warns once", () => {
     const a = row({
       id: "a",
@@ -273,12 +273,12 @@ describe("hsn_description_missing is one warning per SAC, and prototype names ar
       number: "B",
       status: "unregistered",
       gstin: null,
-      rates: [rate("999999", 1800, 1000, "intra"), rate("constructor", 1800, 1000, "intra")],
+      rates: [rate("999999", 1800, 1000, "intra"), rate("998399", 1800, 1000, "intra")],
     });
     const r = gstr1Sections([a, b], Q3, PARAMS);
     expect(r.ok && r.warnings).toEqual([
       { code: "hsn_description_missing", path: ["hsn", "999999"] },
-      { code: "hsn_description_missing", path: ["hsn", "constructor"] },
+      { code: "hsn_description_missing", path: ["hsn", "998399"] },
     ]);
   });
 });
@@ -374,13 +374,15 @@ describe("realisation and EDF error codes", () => {
       approachingDays: 30,
       rulesFrom: d(2026, 10, 1),
     };
-    expect(realisationDates({ invoiceDate: d(2026, 11, 3), currency: "USD" }, rules)).toEqual({
+    expect(
+      realisationDates({ invoiceDate: d(2026, 11, 3), currency: "USD", supplyType: "export_lut" }, rules),
+    ).toEqual({
       ok: false,
       errors: [{ code: "rules_invalid", path: ["rules"] }],
     });
     expect(
       realisationStatus(
-        { invoiceDate: d(2026, 11, 3), currency: "USD", outstandingMinor: 1 },
+        { invoiceDate: d(2026, 11, 3), currency: "USD", supplyType: "export_lut", outstandingMinor: 1 },
         d(2027, 1, 1),
         rules,
       ),
@@ -403,7 +405,9 @@ describe("realisation and EDF error codes", () => {
   });
 
   it("date_invalid for the invoice date, the extension and today; amount_invalid for the outstanding amount", () => {
-    expect(realisationDates({ invoiceDate: d(2026, 13, 1), currency: "USD" })).toEqual({
+    expect(
+      realisationDates({ invoiceDate: d(2026, 13, 1), currency: "USD", supplyType: "export_lut" }),
+    ).toEqual({
       ok: false,
       errors: [{ code: "date_invalid", path: [] }],
     });
@@ -411,13 +415,19 @@ describe("realisation and EDF error codes", () => {
       realisationDates({
         invoiceDate: d(2026, 11, 1),
         currency: "USD",
+        supplyType: "export_lut",
         extension: { femaDue: d(2027, 2, 30) },
       }),
     ).toEqual({
       ok: false,
       errors: [{ code: "date_invalid", path: ["extension"] }],
     });
-    const base = { invoiceDate: d(2026, 11, 1), currency: "USD" as const, outstandingMinor: 1 };
+    const base = {
+      invoiceDate: d(2026, 11, 1),
+      currency: "USD" as const,
+      supplyType: "export_lut" as const,
+      outstandingMinor: 1,
+    };
     expect(realisationStatus(base, d(2027, 13, 1))).toEqual({
       ok: false,
       errors: [{ code: "date_invalid", path: ["today"] }],
@@ -599,8 +609,11 @@ describe("no public function throws for any input of the declared types", () => 
             }),
             edfRows(register, date.year, date.month),
             realisationRows(register, date),
-            realisationStatus({ invoiceDate: date, currency: "USD", outstandingMinor: threshold }, date),
-            realisationDates({ invoiceDate: date, currency: "INR" }),
+            realisationStatus(
+              { invoiceDate: date, currency: "USD", supplyType: "export_lut", outstandingMinor: threshold },
+              date,
+            ),
+            realisationDates({ invoiceDate: date, currency: "INR", supplyType: "export_lut" }),
             gstPeriod(period as unknown as GstPeriod),
             edfMonth(date.year, date.month),
             realisationRulesOf({

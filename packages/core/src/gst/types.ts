@@ -99,6 +99,8 @@ export type GstErrorCode =
   | "parent_invalid"
   | "supply_mismatch"
   | "sac_missing"
+  | "sac_invalid"
+  | "params_invalid"
   | "rates_empty"
   | "rate_invalid"
   | "amount_invalid"
