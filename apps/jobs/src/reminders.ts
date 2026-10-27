@@ -25,7 +25,7 @@ import {
   SUPERSEDE_SQL,
 } from "@techaust/db/billing";
 import { emailLogId } from "./email.ts";
-import { type DocFacts, documentData, reminderKind, reminderWhen } from "./invoice-mail.ts";
+import { type DocFacts, documentData, NOTE_FACTS_SQL, reminderKind, reminderWhen } from "./invoice-mail.ts";
 import { logEvent } from "./log.ts";
 
 export type ReminderScanResult = { listed: number; continued: boolean; outsideWindow: boolean };
@@ -85,7 +85,7 @@ export async function processReminderScan(
 
 /** ONE read batch by the reminder's id: the window's settings row, the reminder with its document, and up to 5 live recipients. `?1` reminder id. */
 const REMINDER_READ = `SELECT r.id, r.document_id, r.offset_days, r.sent_at, r.skipped_reason, d.client_id, d.type, d.number_display, d.issue_date, d.due_date, d.total_minor, d.balance_minor, d.currency, d.issuer,
-    (SELECT p.number_display FROM documents p WHERE p.id = d.parent_id) AS parent_number
+    (SELECT p.number_display FROM documents p WHERE p.id = d.parent_id) AS parent_number, ${NOTE_FACTS_SQL}
   FROM reminders r JOIN documents d ON d.id = r.document_id WHERE r.id = ?1`;
 const RECIPIENTS_READ = `SELECT c.id, c.name, lower(c.email) AS email
   FROM reminders r JOIN documents d ON d.id = r.document_id

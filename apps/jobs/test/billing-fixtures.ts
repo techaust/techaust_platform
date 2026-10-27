@@ -185,6 +185,8 @@ export type DocOver = {
   voided?: boolean;
   parentId?: string;
   pdfKey?: string;
+  /** The sealed `header_extras` JSON text (a note carries `{noteOf:{reason}}`). */
+  headerExtras?: string;
 };
 
 /** An issued (frozen) document of the invoice family, with its stored PDF unless `rendered: false`. */
@@ -227,8 +229,8 @@ export async function mkDoc(
   });
   await run(
     `INSERT INTO documents (id, type, status, client_id, currency, version_group_id, version, series, fy, number, number_display, frozen_at, issue_date, due_date, subtotal_minor, taxable_minor, total_minor, balance_minor,
-       content_sha256, pdf_r2_key, pdf_sha256, snapshot_sha256, issuer, parent_id, voided_at, void_reason, updated_at)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?1, 1, ?6, '2627', ?7, ?8, 1000, ?9, ?10, 100000, 100000, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, 7000)`,
+       content_sha256, pdf_r2_key, pdf_sha256, snapshot_sha256, issuer, parent_id, voided_at, void_reason, header_extras, updated_at)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?1, 1, ?6, '2627', ?7, ?8, 1000, ?9, ?10, 100000, 100000, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, 7000)`,
     id,
     type,
     status,
@@ -249,6 +251,7 @@ export async function mkDoc(
     o.parentId ?? null,
     status === "void" || o.voided ? 5 : null,
     status === "void" || o.voided ? "x" : null,
+    o.headerExtras ?? null,
   );
   return {
     id,

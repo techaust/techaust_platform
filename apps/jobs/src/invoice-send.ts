@@ -12,7 +12,7 @@
 import { type EmailMessage, invoiceSendMessage } from "@techaust/core";
 import { isInvoiceFlowType, reminderWindowFromStored, windowDelaySeconds } from "@techaust/core/invoices";
 import { ATTACHMENT_KEY, invoiceLinkExpiry, invoiceLinkUrl, mintOfferToken } from "@techaust/core/offers";
-import { type DocFacts, documentData, pdfFileName, SEND_TEMPLATE } from "./invoice-mail.ts";
+import { type DocFacts, documentData, NOTE_FACTS_SQL, pdfFileName, SEND_TEMPLATE } from "./invoice-mail.ts";
 import { logEvent } from "./log.ts";
 
 export type InvoiceSendResult = "queued" | "missing" | "refused" | "pdf_missing" | "invalid" | "delayed";
@@ -21,7 +21,9 @@ const portalBase = (env: Env) => (env.PORTAL_URL ?? "").replace(/\/+$/, "");
 
 /** ONE read batch: the send, its document and live contact, and the settings row the window comes from. `?1` the send id. */
 const SEND_READ =
-  "SELECT s.id, s.document_id, s.client_id, s.contact_id, s.attach_pdf, s.kind, s.cancelled_at, d.type, d.status, d.number_display, d.issue_date, d.due_date, d.total_minor, d.balance_minor, d.currency, d.issuer, d.pdf_sha256, d.pdf_r2_key, d.frozen_at IS NOT NULL AS frozen, d.voided_at IS NOT NULL AS voided, (SELECT p.number_display FROM documents p WHERE p.id = d.parent_id) AS parent_number, (cl.anonymised_at IS NOT NULL) AS client_gone, c.id AS live_contact, c.name AS contact_name, lower(c.email) AS contact_email FROM document_sends s JOIN documents d ON d.id = s.document_id JOIN clients cl ON cl.id = s.client_id LEFT JOIN contacts c ON c.id = s.contact_id AND c.client_id = s.client_id AND c.portal_access = 1 AND c.anonymised_at IS NULL WHERE s.id = ?1";
+  "SELECT s.id, s.document_id, s.client_id, s.contact_id, s.attach_pdf, s.kind, s.cancelled_at, d.type, d.status, d.number_display, d.issue_date, d.due_date, d.total_minor, d.balance_minor, d.currency, d.issuer, d.pdf_sha256, d.pdf_r2_key, d.frozen_at IS NOT NULL AS frozen, d.voided_at IS NOT NULL AS voided, (SELECT p.number_display FROM documents p WHERE p.id = d.parent_id) AS parent_number, " +
+  NOTE_FACTS_SQL +
+  ", (cl.anonymised_at IS NOT NULL) AS client_gone, c.id AS live_contact, c.name AS contact_name, lower(c.email) AS contact_email FROM document_sends s JOIN documents d ON d.id = s.document_id JOIN clients cl ON cl.id = s.client_id LEFT JOIN contacts c ON c.id = s.contact_id AND c.client_id = s.client_id AND c.portal_access = 1 AND c.anonymised_at IS NULL WHERE s.id = ?1";
 const TERMS_READ = "SELECT value FROM settings WHERE key = 'payment_terms'";
 
 type SendRow = DocFacts & {

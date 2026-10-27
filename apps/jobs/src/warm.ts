@@ -116,6 +116,8 @@ export function warmConsumers(): number {
       attached: "1",
       parent_number: "",
       sender_name: "Warm",
+      reason: "",
+      parent_balance: "",
     };
     renderEmail("invoice.sent", doc, opts);
     rendered++;

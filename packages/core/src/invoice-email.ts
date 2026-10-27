@@ -23,7 +23,28 @@ const DOCUMENT_KEYS = [
   "parent_number",
   /** The sender's name (the company's trade name for an automatic send). */
   "sender_name",
+  /** A credit or debit note only (empty on every other type): the frozen reason, in words (`noteReasonWords`). */
+  "reason",
+  /** A credit note only (empty otherwise): the parent invoice's balance after the note, formatted with the currency. */
+  "parent_balance",
 ] as const;
+
+/** 07-T §3: the label of each reason a person can pick. */
+const NOTE_REASON_LABELS: Readonly<Record<string, string>> = {
+  price_correction: "Price correction",
+  service_not_delivered: "Service not delivered",
+  service_deficient: "Service deficient",
+  discount_after_sale: "Discount after sale",
+  other: "Other",
+};
+
+/** A frozen note reason in words: the typed text alone for "other", else the code's label, followed by ": " and the text when one was typed. A code nobody knows is printed as it is. */
+export function noteReasonWords(code: string, text: string): string {
+  const t = text.trim();
+  const label = NOTE_REASON_LABELS[code] ?? code;
+  if (code === "other") return t || label;
+  return t ? `${label}: ${t}` : label;
+}
 
 const ALERT_KEYS = ["owner_first_name", "client_name", "admin_url"] as const;
 

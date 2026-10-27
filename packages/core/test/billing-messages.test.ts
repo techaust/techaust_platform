@@ -1,6 +1,6 @@
 // The M5.4 queue messages [JOB-Q-01, LD56, LD57]: ids and cursors only, a body of the family is never taken for a lead or an ordinary email.
 import { describe, expect, it } from "vitest";
-import { INVOICE_EMAIL_DATA, isInvoiceEmailTemplate } from "../src/invoice-email.ts";
+import { INVOICE_EMAIL_DATA, isInvoiceEmailTemplate, noteReasonWords } from "../src/invoice-email.ts";
 import {
   alertsDailyMessage,
   BILLING_KINDS,
@@ -165,6 +165,23 @@ describe("the M5.4 email templates", () => {
     expect(INVOICE_EMAIL_DATA["reminder.sent"]).toEqual(
       expect.arrayContaining(["offset_days", "when", "kind", "url", "number"]),
     );
+  });
+  it("the note keys: `reason` and `parent_balance` are in every document email; noteReasonWords prints label then text, 'other' its text alone, an unknown code as it is", () => {
+    for (const t of [
+      "invoice.sent",
+      "proforma.sent",
+      "credit_note.sent",
+      "debit_note.sent",
+      "reminder.sent",
+    ] as const) {
+      expect(INVOICE_EMAIL_DATA[t]).toContain("reason");
+      expect(INVOICE_EMAIL_DATA[t]).toContain("parent_balance");
+    }
+    expect(noteReasonWords("price_correction", "")).toBe("Price correction");
+    expect(noteReasonWords("service_deficient", " Late ")).toBe("Service deficient: Late");
+    expect(noteReasonWords("other", "Goodwill")).toBe("Goodwill");
+    expect(noteReasonWords("other", " ")).toBe("Other");
+    expect(noteReasonWords("mystery", "")).toBe("mystery");
   });
   it("an invoice email with a PDF attached passes the message schema (the key is an invoice key)", () => {
     expect(

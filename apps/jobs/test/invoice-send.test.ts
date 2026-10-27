@@ -166,6 +166,40 @@ describe("a send by a person: the personal link and the email [ADM-INV-15, POR-0
     }
   });
 
+  it("a note's email carries its frozen reason in words; only a credit note carries the parent's balance after it; every other type has both empty (07-U §1)", async () => {
+    const owner = await staff("owner");
+    const clientId = await mkClient();
+    const contact = await mkContact(clientId);
+    const parent = await mkDoc(clientId, contact, { type: "tax_invoice", balance: 50_000 });
+    const extras = (code: string, text: string) =>
+      JSON.stringify({ noteOf: { kind: "credit", reason: { code, text } } });
+    const cases = [
+      {
+        type: "credit_note",
+        extras: extras("service_deficient", "Late delivery"),
+        reason: "Service deficient: Late delivery",
+        bal: true,
+      },
+      { type: "credit_note", extras: extras("other", "Goodwill"), reason: "Goodwill", bal: true },
+      { type: "debit_note", extras: extras("price_correction", ""), reason: "Price correction", bal: false },
+      { type: "tax_invoice", extras: undefined, reason: "", bal: false },
+    ] as const;
+    for (const c of cases) {
+      fakes.email.length = 0;
+      const doc = await mkDoc(clientId, contact, {
+        type: c.type,
+        ...(c.type === "tax_invoice" ? {} : { parentId: parent.id }),
+        ...(c.extras ? { headerExtras: c.extras } : {}),
+      });
+      const send = await mkSend(doc, clientId, contact, { createdBy: owner.id });
+      await processInvoiceSend(makeEnv(), { kind: "invoice.send", sendId: send }, NOW);
+      const [m] = queuedEmails();
+      expect(m?.data.reason, c.reason).toBe(c.reason);
+      if (c.bal) expect(m?.data.parent_balance).toMatch(/500\.00/);
+      else expect(m?.data.parent_balance).toBe("");
+    }
+  });
+
   it("attaches the PDF only when the row says so and the stored key is on the allow-list; otherwise link only, `attached` empty", async () => {
     const yes = await world({ attach: true });
     await processInvoiceSend(makeEnv(), msg(yes), NOW);

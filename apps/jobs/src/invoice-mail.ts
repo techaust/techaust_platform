@@ -2,6 +2,7 @@
 // `@techaust/core/invoice-email`, the designer's templates read them). Pure of I/O: rows in, strings out. No address, no name and no amount is ever logged here. Every value is a string,
 // money and dates already formatted for a person.
 import { formatDate, formatMoney, money, parseIsoDate } from "@techaust/core";
+import { noteReasonWords } from "@techaust/core/invoice-email";
 import type { InvoiceFlowType } from "@techaust/core/invoices";
 
 /** The template of the first email about a document, by its type (tax and export invoices share one). */
@@ -24,7 +25,15 @@ export type DocFacts = {
   currency: string;
   issuer: string | null;
   parent_number: string | null;
+  /** A note's frozen reason (`header_extras.noteOf.reason`) and its parent invoice's balance now, read in the same SQL as the rest (null for other types). */
+  reason_code?: string | null;
+  reason_text?: string | null;
+  parent_balance_minor?: number | null;
 };
+
+/** The SQL columns that fill `DocFacts`' note fields (the document is `d`). Shared by `invoice.send` and `reminder.send`. */
+export const NOTE_FACTS_SQL =
+  "json_extract(d.header_extras, '$.noteOf.reason.code') AS reason_code, json_extract(d.header_extras, '$.noteOf.reason.text') AS reason_text, (SELECT p.balance_minor FROM documents p WHERE p.id = d.parent_id) AS parent_balance_minor";
 
 const dateText = (iso: string | null): string => {
   const d = iso ? parseIsoDate(iso) : null;
@@ -71,6 +80,14 @@ export function documentData(
     attached: who.attached ? "1" : "",
     parent_number: doc.parent_number ?? "",
     sender_name: senderNameOf(doc.issuer),
+    reason:
+      (doc.type === "credit_note" || doc.type === "debit_note") && doc.reason_code
+        ? noteReasonWords(doc.reason_code, doc.reason_text ?? "")
+        : "",
+    parent_balance:
+      credit && typeof doc.parent_balance_minor === "number"
+        ? moneyText(doc.parent_balance_minor, doc.currency)
+        : "",
   };
 }
 
