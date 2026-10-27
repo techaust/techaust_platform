@@ -642,6 +642,13 @@
   white-space: normal;
 }
 
+/* A long stage ("GST refund date in 30 days") wraps inside a phone card's half-width cell instead of running past the card. */
+.dcards .real-stage .spill {
+  max-width: 100%;
+  white-space: normal;
+  border-radius: var(--radius-md);
+}
+
 /* ---------- The client's statement ---------- */
 
 .statement {
