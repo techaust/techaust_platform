@@ -1031,8 +1031,18 @@
   gap: 0 var(--space-3);
 }
 
+.care-billing__doc .muted {
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
 .care-billing__steps {
   margin-bottom: var(--space-2);
+}
+
+/* The rule runs from the first node's centre to the last one's (each row: space-2 padding, a 1.5rem node, two lines of text). */
+.care-billing__steps::before {
+  inset-block: var(--space-5) calc(var(--space-8) + var(--space-1));
 }
 
 .care-billing__auto {

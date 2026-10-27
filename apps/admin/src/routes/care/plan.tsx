@@ -330,7 +330,11 @@ function BillingPanel({ billing: b, data }: { billing: CarePlanBilling; data: Ca
             </span>
           )}
         </li>
-        <li className="remind__row" data-state={b.nextBillingDay ? "due" : "skipped"} data-due>
+        <li
+          className="remind__row"
+          data-state={b.nextBillingDay ? "due" : "skipped"}
+          data-due={b.nextBillingDay ? true : undefined}
+        >
           <span className="remind__node" aria-hidden="true" />
           <span className="remind__day">{PLAN_BILLING_COPY.nextDay}</span>
           <span className="remind__state">
