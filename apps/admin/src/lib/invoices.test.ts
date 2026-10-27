@@ -22,6 +22,7 @@ import {
   invErrorText,
   invoiceEditor,
   issueBody,
+  milestoneBillable,
   milestoneHasInvoice,
   requestRow,
   seriesPreview,
@@ -152,6 +153,16 @@ describe("07-R copy", () => {
     expect(convertedToInvoice("TH/INV/2627/0001")).toBe("Converted to invoice TH/INV/2627/0001.");
     expect(INV_COPY.voidReasonEmpty).toBe("Enter a reason for voiding.");
     expect(BADGE_LABELS).toEqual({ draft: "Draft", issued: "Issued", overdue: "Overdue", void: "Void" });
+  });
+
+  it("a milestone can be invoiced when Ready to bill, or as the pending first milestone of a project from a proposal (review 5)", () => {
+    const m = { status: "ready_to_bill", position: 3, documentId: null };
+    expect(milestoneBillable(m, false)).toBe(true);
+    expect(milestoneBillable({ ...m, documentId: "d1" }, true)).toBe(false);
+    expect(milestoneBillable({ status: "pending", position: 1, documentId: null }, true)).toBe(true);
+    expect(milestoneBillable({ status: "pending", position: 1, documentId: null }, false)).toBe(false);
+    expect(milestoneBillable({ status: "pending", position: 2, documentId: null }, true)).toBe(false);
+    expect(milestoneBillable({ status: "invoiced", position: 1, documentId: null }, true)).toBe(false);
   });
 
   it("splits the empty line into a title and a body", () => {

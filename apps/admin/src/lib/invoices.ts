@@ -132,6 +132,18 @@ export const milestoneHasInvoice = (number: string | null) =>
 export const convertedToInvoice = (number: string | null) =>
   number === null ? "Converted to a draft invoice." : `Converted to invoice ${number}.`;
 
+/**
+ * May a draft invoice be made from this milestone (the server's rule, `milestoneBillable` in worker/invoices.ts)? One that is Ready to bill, or the
+ * FIRST milestone of a project started from an accepted proposal while it is still pending: the advance, billable again after its invoice is voided.
+ */
+export function milestoneBillable(
+  m: { status: string; position: number; documentId: string | null },
+  fromProposal: boolean,
+): boolean {
+  if (m.documentId !== null) return false;
+  return m.status === "ready_to_bill" || (m.status === "pending" && m.position === 1 && fromProposal);
+}
+
 // ---- types and badges --------------------------------------------------------------------------------------------------------------------------
 
 const SERIES_OF_TYPE: Record<InvoiceType, Series> = {
