@@ -1299,11 +1299,11 @@ export const contacts = new Hono<AppEnv>()
         //    `contact_id` references the contact, and an erase deletes it), and the saved hash with it, so the draft is saved again with another
         //    contact before it is sent or issued. An ANONYMISED contact does the same (M5.1 review 1: an invoice frozen with a contact the
         //    draft's hash did not name could never get its PDF). A sent document names its contact, so that contact could not be erased at all.
-        //    A waiting issue or discount request on such a draft expires first (it names the hash that is cleared next, and an expired request
+        //    A waiting or approved issue or discount request on such a draft expires first (it names the hash that is cleared next, and an expired request
         //    never revives), and the draft's `updated_at` moves so a stale save is a 409 (M5.1 re-check, low 2).
         db
           .prepare(
-            `UPDATE approvals SET status = 'expired' WHERE status = 'pending' AND kind IN ('issue', 'discount') AND document_id IN (SELECT id FROM documents WHERE contact_id = ?1 AND frozen_at IS NULL) AND ${g.sql(2)}`,
+            `UPDATE approvals SET status = 'expired' WHERE status IN ('pending', 'approved') AND kind IN ('issue', 'discount') AND document_id IN (SELECT id FROM documents WHERE contact_id = ?1 AND frozen_at IS NULL) AND ${g.sql(2)}`,
           )
           .bind(id, ...g.params),
         db
