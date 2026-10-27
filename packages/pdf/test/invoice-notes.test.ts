@@ -92,7 +92,7 @@ describe("the envelope of a note [LD39]", () => {
     expect(await verifyInvoiceEnvelope(await reseal(noDueOnDebit))).toEqual({ ok: false, code: "mismatch" });
     // a take for every line, no more and no fewer
     const fewer = clone((await buildNoteFixture("credit_lines")).envelope);
-    fewer.snapshot.header.noteOf?.request.takes.pop();
+    (fewer.snapshot.header.noteOf?.request.takes as unknown[] | undefined)?.pop();
     expect(await verifyInvoiceEnvelope(await reseal(fewer))).toEqual({ ok: false, code: "mismatch" });
   });
 
