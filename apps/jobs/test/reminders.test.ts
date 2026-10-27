@@ -201,11 +201,13 @@ describe("reminder.send: the email, the links and the log id", () => {
   });
 
   it("only contacts of a non-cancelled send who still have portal access and are not anonymised", async () => {
-    const w = await world({ contacts: 4 });
-    const [a, b, c] = w.contacts;
+    const w = await world({ contacts: 5 });
+    const [a, b, c, , e] = w.contacts;
     await run("UPDATE contacts SET portal_access = 0 WHERE id = ?1", a?.id);
     await run("UPDATE contacts SET portal_access = 0, anonymised_at = 9 WHERE id = ?1", b?.id);
     await run("UPDATE document_sends SET cancelled_at = 7 WHERE contact_id = ?1", c?.id);
+    // POR-03: a contact who may not see finance gets no reminder and no link.
+    await run("UPDATE contacts SET can_see_finance = 0 WHERE id = ?1", e?.id);
     await send(w.rows.get(0) as string, dueAtOf(0));
     expect(queued().map((m) => m.to)).toEqual([w.contacts[3]?.email.toLowerCase()]);
   });

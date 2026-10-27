@@ -155,19 +155,20 @@ export async function mkClient(
 
 export async function mkContact(
   clientId: string,
-  o: { portal?: boolean; email?: string; name?: string; anonymised?: boolean } = {},
+  o: { portal?: boolean; email?: string; name?: string; anonymised?: boolean; finance?: boolean } = {},
 ) {
   const id = uuidv7();
   const n = next();
   const email = o.email ?? `asha${n}@example.test`;
   await run(
-    "INSERT INTO contacts (id, client_id, name, email, portal_access, anonymised_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+    "INSERT INTO contacts (id, client_id, name, email, portal_access, anonymised_at, can_see_finance) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
     id,
     clientId,
     o.name ?? "Asha Rao",
     email,
     o.portal === false ? 0 : 1,
     o.anonymised ? 5 : null,
+    o.finance === false ? 0 : 1,
   );
   return { id, email, name: o.name ?? "Asha Rao" };
 }

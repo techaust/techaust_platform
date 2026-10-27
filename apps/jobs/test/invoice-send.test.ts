@@ -315,9 +315,11 @@ describe("refusals: acknowledged, nothing minted, nothing queued, the row marked
   });
 
   it("a contact who lost portal access, was anonymised or was erased", async () => {
-    for (const how of ["access", "anonymised", "erased"] as const) {
+    for (const how of ["access", "finance", "anonymised", "erased"] as const) {
       const w = await world();
       if (how === "access") await run("UPDATE contacts SET portal_access = 0 WHERE id = ?1", w.contact.id);
+      // POR-03: a contact who may not see finance is no recipient (the portal would 404 their link). VERIFY WITH CA/LEGAL (DPDP).
+      if (how === "finance") await run("UPDATE contacts SET can_see_finance = 0 WHERE id = ?1", w.contact.id);
       if (how === "anonymised")
         await run("UPDATE contacts SET portal_access = 0, anonymised_at = 9 WHERE id = ?1", w.contact.id);
       if (how === "erased")

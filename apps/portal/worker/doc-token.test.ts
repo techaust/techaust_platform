@@ -146,7 +146,7 @@ describe("a valid link opens exactly one document [POR-06]", () => {
     const contactId = uuidv7();
     const email = `u${seq}@example.test`;
     await env.DB.prepare(
-      "INSERT INTO contacts (id, client_id, name, email, portal_access) VALUES (?1, ?2, 'U', ?3, 1)",
+      "INSERT INTO contacts (id, client_id, name, email, portal_access, can_see_finance) VALUES (?1, ?2, 'U', ?3, 1, 1)",
     )
       .bind(contactId, clientId, email)
       .run();
@@ -284,6 +284,11 @@ describe("a link is bound to its contact [POR-06, LD55]", () => {
         void (await env.DB.prepare("UPDATE contacts SET portal_access = 0 WHERE id = ?").bind(c.id).run()),
     ],
     [
+      "finance access turned off (POR-03)",
+      async (_f, c) =>
+        void (await env.DB.prepare("UPDATE contacts SET can_see_finance = 0 WHERE id = ?").bind(c.id).run()),
+    ],
+    [
       "the address changed",
       async (_f, c) =>
         void (await env.DB.prepare("UPDATE contacts SET email = ? WHERE id = ?")
@@ -321,7 +326,7 @@ describe("a link is bound to its contact [POR-06, LD55]", () => {
         const contactId = uuidv7();
         const email = `z${seq}@example.test`;
         await env.DB.prepare(
-          "INSERT INTO contacts (id, client_id, name, email, portal_access) VALUES (?1, ?2, 'Z', ?3, 1)",
+          "INSERT INTO contacts (id, client_id, name, email, portal_access, can_see_finance) VALUES (?1, ?2, 'Z', ?3, 1, 1)",
         )
           .bind(contactId, clientId, email)
           .run();

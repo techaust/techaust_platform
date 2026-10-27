@@ -49,16 +49,17 @@ export async function mkClientRow(
 
 export async function mkContact(
   clientId: string,
-  over: { portal?: boolean; email?: string; anonymised?: boolean } = {},
+  over: { portal?: boolean; email?: string; anonymised?: boolean; finance?: boolean } = {},
 ): Promise<string> {
   const id = uuidv7();
   await run(
-    "INSERT INTO contacts (id, client_id, name, email, portal_access, anonymised_at) VALUES (?1, ?2, 'Asha', ?3, ?4, ?5)",
+    "INSERT INTO contacts (id, client_id, name, email, portal_access, anonymised_at, can_see_finance) VALUES (?1, ?2, 'Asha', ?3, ?4, ?5, ?6)",
     id,
     clientId,
     over.email ?? `${id}@example.test`,
     over.portal === false ? 0 : 1,
     over.anonymised ? 5 : null,
+    over.finance === false ? 0 : 1,
   );
   return id;
 }

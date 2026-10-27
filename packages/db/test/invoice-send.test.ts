@@ -111,7 +111,8 @@ describe("all or none", () => {
     const off = await mkContact(w.clientId, { portal: false });
     const anon = await mkContact(w.clientId, { anonymised: true });
     const other = await mkContact(await mkClientRow());
-    for (const bad of [off, anon, other, "nope"]) {
+    const noFinance = await mkContact(w.clientId, { finance: false }); // POR-03
+    for (const bad of [off, anon, noFinance, other, "nope"]) {
       await run1({ ...args(w), rows: [...args(w).rows, { id: uuidv7(), contactId: bad }] });
     }
     expect(await sends(w.doc)).toEqual([]);

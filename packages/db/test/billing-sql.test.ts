@@ -249,7 +249,7 @@ describe("REMINDER_DUE_SQL and the claim [ADM-INV-13, LD60]", () => {
       balance?: number;
       policy?: string | null;
       anonymised?: boolean;
-      recipient?: "yes" | "none" | "cancelled" | "portal_off" | "anonymised";
+      recipient?: "yes" | "none" | "cancelled" | "portal_off" | "anonymised" | "no_finance";
     } = {},
   ) {
     const clientId = await mkClientRow({ policy: o.policy ?? null });
@@ -266,6 +266,7 @@ describe("REMINDER_DUE_SQL and the claim [ADM-INV-13, LD60]", () => {
     if (r !== "none") {
       const contact = await mkContact(clientId, {
         portal: r !== "portal_off",
+        finance: r !== "no_finance",
         anonymised: r === "anonymised",
       });
       await mkSend(documentId, clientId, contact, { createdBy: owner, cancelled: r === "cancelled" });
@@ -295,6 +296,14 @@ describe("REMINDER_DUE_SQL and the claim [ADM-INV-13, LD60]", () => {
       .map((r) => r.detail)
       .join(" | ");
     expect(plan1).toMatch(/reminders_pending/);
+  });
+
+  it("a recipient who may not see finance is no recipient: the claim changes nothing [POR-03, review H1]", async () => {
+    const d = await doc({ recipient: "no_finance" });
+    const id = await mkReminder(d.documentId, 3, 1_000);
+    expect(await claim(id, 2_000)).toBe(0);
+    const f = await first<{ has_recipient: number }>(REMINDER_FACTS_SQL, id, 2_000);
+    expect(f?.has_recipient).toBe(0);
   });
 
   it("a live reminder is claimed once: the redelivery changes nothing", async () => {
