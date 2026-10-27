@@ -90,7 +90,7 @@ export const CARE_COPY = {
   addToInvoice: "Adding overage to the next invoice arrives with recurring invoices.",
   /** M5.4 (`via: "next_care_draft"`): no approved line yet, so a marked placeholder (review M3). */
   addToNextDraft:
-    "[Placeholder] Overage goes on the next monthly care invoice as a draft line, for you to check before it's issued. It is never issued automatically.",
+    "[Placeholder] Overage goes on the next monthly care invoice for you to check: an invoice with overage is never issued automatically.",
   /** The client tab's line is the empty state's heading (the M3.4 pattern), without its full stop. */
   clientTabEmptyTitle: "No care plans for this client yet",
   clientAnonymised: "This client's personal details were removed, so nothing new can be added to it.",
