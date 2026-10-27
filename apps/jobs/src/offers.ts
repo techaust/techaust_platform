@@ -37,6 +37,7 @@ import {
   todayIst,
 } from "@techaust/core/offers";
 import type { OfferSweepMessage, PdfCertificateMessage } from "@techaust/core/pdf-jobs";
+import { portalBase } from "./billing-shared.ts";
 import { logEvent } from "./log.ts";
 
 /** The jobs Env (PORTAL_URL arrived with M4.4 phase 2). */
@@ -64,7 +65,6 @@ const percentText = (bp: number) => {
 };
 const first = (name: string) => name.trim().split(/\s+/)[0] ?? name;
 const adminBase = (env: Env) => env.ADMIN_URL.replace(/\/+$/, "");
-const portalBase = (env: OfferEnv) => (env.PORTAL_URL ?? "").replace(/\/+$/, "");
 const fileName = (numberDisplay: string, version: number) =>
   `${numberDisplay.replace(/[^A-Za-z0-9.-]+/g, "-").replace(/^-+|-+$/g, "") || "document"}-v${version}.pdf`;
 const dateText = (iso: string | null) => {

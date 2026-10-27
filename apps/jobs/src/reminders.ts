@@ -24,6 +24,7 @@ import {
   REMINDER_SKIP_SQL,
   SUPERSEDE_SQL,
 } from "@techaust/db/billing";
+import { portalBase, storedValue, TERMS_READ } from "./billing-shared.ts";
 import { emailLogId } from "./email.ts";
 import { type DocFacts, documentData, NOTE_FACTS_SQL, reminderKind, reminderWhen } from "./invoice-mail.ts";
 import { logEvent } from "./log.ts";
@@ -38,17 +39,6 @@ export type ReminderSendResult =
   | "skipped"
   | "refused"
   | "no_recipient";
-
-const TERMS_READ = "SELECT value FROM settings WHERE key = 'payment_terms'";
-const storedValue = (rows: unknown): unknown => {
-  try {
-    const value = (rows as { results: { value: string }[] } | undefined)?.results[0]?.value;
-    return value ? JSON.parse(value) : null;
-  } catch {
-    return null;
-  }
-};
-const portalBase = (env: Env) => (env.PORTAL_URL ?? "").replace(/\/+$/, "");
 
 // ---- reminder.scan -------------------------------------------------------------------------------------------------------------
 

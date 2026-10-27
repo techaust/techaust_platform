@@ -11,7 +11,7 @@
 // `issue_result` must NOT carry the audit guard: a guarded insert would write nothing when the freeze matched no row, the batch would
 // succeed, and a number would have been burned. Unguarded, a stale or refused send aborts as a whole (counter, lead, audit: nothing).
 // A later version (version > 1) of a proposal or estimate takes no number: it copies series, FY, number and display from version 1.
-import { NOTE_PARENT_LIVE_STATUSES } from "@techaust/core/invoices";
+import { INVOICE_FLOW_TYPES, NOTE_PARENT_LIVE_STATUSES, REMINDER_TYPES } from "@techaust/core/invoices";
 import type {
   InvoiceBankBlock,
   InvoiceIssuerSnapshot,
@@ -819,8 +819,10 @@ export type InvoiceSendArgs = {
 };
 
 /** The types a send can be about, and the statuses it cannot (a draft is not frozen; a void document is never sent). Credit and debit notes are sent too (LD15). */
-const SENDABLE_TYPES = "('tax_invoice', 'export_invoice', 'proforma', 'credit_note', 'debit_note')";
-const REMINDED_TYPES = "('tax_invoice', 'export_invoice', 'proforma', 'debit_note')";
+const inList = (xs: readonly string[]) => `(${xs.map((x) => `'${x}'`).join(", ")})`;
+/** One source in core (review L6): every invoice-family type is sent, and core `REMINDER_TYPES` are chased. */
+const SENDABLE_TYPES = inList(INVOICE_FLOW_TYPES);
+const REMINDED_TYPES = inList(REMINDER_TYPES);
 
 /**
  * The statements of a send, for the caller's own `db.batch()` (after its audit row, with the same guard, or in the care issue's batch after the freeze): the

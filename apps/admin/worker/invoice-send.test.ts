@@ -527,8 +527,9 @@ describe("pausing and resuming the reminders [ADM-INV-13, LD60]", () => {
     await call(`/invoices/${made.id}/reminders/pause`, { cookie: s.cookie, body: {} });
     const due = (await one<{ due_date: string }>("SELECT due_date FROM documents WHERE id = ?", made.id))
       ?.due_date as string;
-    const rowsOf = (v: { reminders: { rows: { offset: number; skippedReason: string }[] } }) =>
-      v.reminders.rows.map((r) => [r.offset, r.skippedReason]);
+    type Rem = { offset: number; skippedReason: string };
+    const rowsOf = (v: unknown) =>
+      (v as { reminders: { rows: Rem[] } }).reminders.rows.map((r) => [r.offset, r.skippedReason]);
     vi.useFakeTimers({ toFake: ["Date"] });
     try {
       vi.setSystemTime(Date.parse(`${due}T06:30:00Z`)); // offset 0 has passed (09:00 IST); offset 1 is ahead

@@ -48,22 +48,20 @@ import {
 } from "@techaust/db/care";
 import { headerExtrasJson, invoiceSealOf } from "@techaust/db/documents";
 import { invoiceIssueStatements, invoiceSendStatements } from "@techaust/db/issue";
-import { CARE_AUTHORITY_COLUMNS, type CareOf, careView } from "./care-authority.ts";
+import { type CareOf, careView } from "./care-authority.ts";
+import { blockerCodesOf, CARE_OF_SQL } from "./care-blockers.ts";
 import { enqueuePdf } from "./document-events.ts";
 import {
   BANK_READ,
   type BankRow,
   bankStampOf,
-  blockersOf,
   computeInvoice,
   headerExtrasOf,
   INVOICE_SETTINGS_READ,
-  type InvoiceSettings,
   type InvoiceState,
   invoiceColumns,
   invoiceStateOf,
   issuerOf,
-  needsInrConfirm,
   readInvoiceSettings,
   recipientOf,
   taxContext,
@@ -189,27 +187,6 @@ const recipientsOf = (contacts: readonly ContactRow[]) =>
         k.is_billing === 1 && k.portal_access === 1 && k.can_see_finance === 1 && k.anonymised_at === null,
     )
     .slice(0, 5);
-
-/** The codes that stop the system issuing a draft by itself: the checklist's blockers, an INR export invoice (the Owner's yes), and a line that still has placeholder text. */
-export function blockerCodesOf(
-  state: InvoiceState,
-  client: ClientRow,
-  settings: InvoiceSettings,
-  computation: Awaited<ReturnType<typeof computeInvoice>>,
-  bank: readonly BankRow[],
-  now: number,
-): string[] {
-  const issueDate = issueDateOf(now);
-  const codes: string[] = blockersOf(state, client, settings, computation, {
-    bank,
-    issueDate,
-    fy: issueFyOf(now),
-    fxRefDate: issueDate,
-  }).map((b) => b.code);
-  if (!computation.computed) codes.push("computed_errors");
-  if (needsInrConfirm(state.type, state.currency)) codes.push("export_inr_confirm");
-  return [...new Set(codes)];
-}
 
 /**
  * The answer for a period that is already billed (early check, finding 2). A retried `care.bill` after a lost `care.issue` enqueue must not leave a system draft
@@ -531,12 +508,6 @@ export async function draftCarePlan(
 }
 
 // ---- issueCareDraft -----------------------------------------------------------------------------------------------------------------------------
-
-/** The record of the period a draft belongs to and the facts of its authority. `?1` document id. */
-// `CARE_AUTHORITY_COLUMNS`, `CareOf` and `careView` live in care-authority.ts (care.ts reads them too and must not import this module: a cycle).
-export const CARE_OF_SQL = `SELECT ci.care_plan_id, ci.period_start, ci.period_end, ci.terms_id, ci.overage_minutes, ${CARE_AUTHORITY_COLUMNS}
-  FROM care_invoices ci JOIN care_plans p ON p.id = ci.care_plan_id JOIN clients k ON k.id = p.client_id
-  WHERE ci.document_id = ?1 AND EXISTS (SELECT 1 FROM documents x WHERE x.id = ci.document_id AND x.care_plan_id = ci.care_plan_id)`;
 
 /**
  * Issues a care draft the billing job made, with no session. Refuses (an answer, with the owners' bell) when the draft is not eligible or the freeze refuses it; the draft is then left exactly as it
