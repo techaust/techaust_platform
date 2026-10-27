@@ -47,6 +47,8 @@ describe("the list [POR-06]", () => {
     const newer = await mk(f.a.id, { issueDate: "2026-11-20" });
     const credited = await mk(f.a.id, { status: "partially_credited", issueDate: "2026-11-10" });
     const theirs = await mk(f.b.id);
+    // a voided document is hidden by its voided_at, whatever its status says (review L4)
+    const voidedIssued = await mk(f.a.id, { status: "issued", void: true });
     const res = await call("/invoices", { cookie: s.cookie });
     expect(res.status).toBe(200);
     const body = (await bodyOf(res)) as {
@@ -59,6 +61,7 @@ describe("the list [POR-06]", () => {
     expect(ids.indexOf(newer)).toBeLessThan(ids.indexOf(credited));
     expect(ids.indexOf(credited)).toBeLessThan(ids.indexOf(older));
     expect(ids).not.toContain(theirs);
+    expect(ids).not.toContain(voidedIssued);
     for (const hidden of [f.a.docs.draft, f.a.docs.pending, f.a.docs.void, f.a.docs.proposal])
       expect(ids).not.toContain(hidden);
     expect(body.invoices[0]).toMatchObject({ total: "₹1,180.00", balance: "₹1,180.00" });

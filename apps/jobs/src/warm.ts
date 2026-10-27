@@ -140,6 +140,41 @@ export function warmConsumers(): number {
       opts,
     );
     rendered++;
+    // The other invoice-family templates (proforma, credit note, debit note), the proforma-due alert and the LUT reminder, so none of them compiles in its first message (review L3).
+    for (const template of ["proforma.sent", "credit_note.sent", "debit_note.sent"] as const) {
+      renderEmail(
+        template,
+        { ...doc, parent_number: "TH/INV/2627/0001", reason: "Warm", parent_balance: "₹0.00" },
+        opts,
+      );
+      rendered++;
+    }
+    renderEmail(
+      "alert.proforma_due",
+      {
+        owner_first_name: "Warm",
+        client_name: "Warm",
+        admin_url: "https://warm-up.invalid/",
+        milestone_title: "Warm",
+        delivered_date: "1 Oct 2026",
+        days_since: "25",
+        proforma_number: "TH/PRO/2627/0001",
+        balance: "₹23,600.00",
+      },
+      opts,
+    );
+    rendered++;
+    renderEmail(
+      "lut.reminder",
+      {
+        owner_first_name: "Warm",
+        fy_label: "2026-27",
+        state: "missing",
+        admin_url: "https://warm-up.invalid/",
+      },
+      opts,
+    );
+    rendered++;
     // the user-agent reader the staff alerts use (compiles its patterns on first match)
     describeUserAgent(
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",

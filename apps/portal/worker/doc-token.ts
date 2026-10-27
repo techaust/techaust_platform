@@ -3,7 +3,7 @@
 //
 // Since M5.4 a link is BOUND to one contact (like an offer link): the read joins the LIVE contact (portal access on, not anonymised, the same address as when the link was made), the document must belong to
 // the client the link was made for, and the client must not be anonymised. Turning access off, changing the address, anonymising the person or the client, revoking the link, voiding the invoice or the link
-// expiring ends it at once. What opens: an invoice, proforma, credit note or debit note in a status of `OPEN_STATUSES` (never a draft, a pending approval or a void one). Every other outcome is the
+// expiring ends it at once. What opens: an invoice, proforma, credit note or debit note in a status of `CLIENT_INVOICE_STATUSES` (invoice-summary.ts) (never a draft, a pending approval or a void one). Every other outcome is the
 // same 404, and counts toward the address's `p:fail:` counter like a failed sign-in link; a blocked address gets a 429 and writes nothing.
 //
 // Under the owner's Q1 = A a document-link use is a sign-in event: a valid use writes one `doc_token.use` audit row (actor type `contact`, the contact the link is bound to; the entity is the document), an
@@ -47,25 +47,6 @@ import { json } from "./validate.ts";
 
 /** Document types a link may open: the whole invoice family (LD62; a receipt is M6). */
 export const VIEW_PAY_TYPES = CLIENT_INVOICE_TYPES;
-/**
- * A link opens a document only in one of these statuses: an ALLOW-LIST, so a status added to the schema later is closed until someone decides it may be shown (a test compares this with the schema's own
- * list). Every status of a quote, a draft, a pending approval and a void document is closed (LD62: M5.4 confirms the exact members).
- */
-export const OPEN_STATUSES = [
-  "sent",
-  "viewed",
-  "accepted",
-  "rejected",
-  "expired",
-  "revised",
-  "issued",
-  "partially_paid",
-  "paid",
-  "partially_credited",
-  "credited",
-  "converted",
-] as const;
-
 /**
  * ?1 token hash, ?2 now. The token, the document of the SAME client, the live contact it is bound to and the client, in one read (primary-key lookups; tests EXPLAIN it). The columns after the summary's
  * are the principal (who the link is for).

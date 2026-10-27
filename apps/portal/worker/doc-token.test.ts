@@ -5,7 +5,7 @@ import { docTokenStmt, newDocToken, PORTAL_FAIL_LIMIT, portalFailKey, tokenHash 
 import { uuidv7 } from "@techaust/core";
 import { schema } from "@techaust/db";
 import { describe, expect, it } from "vitest";
-import { DOC_READ, OPEN_STATUSES, VIEW_PAY_TYPES } from "./doc-token.ts";
+import { DOC_READ, VIEW_PAY_TYPES } from "./doc-token.ts";
 import { type FxContact, fixtures } from "./fixtures.ts";
 import { ROUTES } from "./guard.ts";
 import { CLIENT_INVOICE_STATUSES } from "./invoice-summary.ts";
@@ -443,8 +443,9 @@ describe("everything else is the same 404 [POR-06]", () => {
       "expired",
       "revised",
     ];
-    expect([...OPEN_STATUSES].sort()).toEqual(
-      [...schema.DOCUMENT_STATUSES].filter((s) => !["draft", "pending_approval", "void"].includes(s)).sort(),
+    // the allow-list the SQL really uses: every schema status except the closed ones and the quote statuses
+    expect([...CLIENT_INVOICE_STATUSES].sort()).toEqual(
+      [...schema.DOCUMENT_STATUSES].filter((s) => !CLOSED_QUOTES.includes(s)).sort(),
     );
     expect(DOC_READ).toContain("d.status IN (");
     expect(DOC_READ).not.toContain("NOT IN");

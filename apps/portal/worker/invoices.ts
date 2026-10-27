@@ -24,7 +24,7 @@ const AFTER = /^\d{4}-\d{2}-\d{2}:[A-Za-z0-9-]{1,64}$/;
 /** ?1 client, ?2 and ?3 the last row's issue date and id (null on the first page), ?4 the page size plus one. Newest first. */
 export const LIST_SQL = `SELECT d.id, d.type, d.status, d.number_display, d.issue_date, d.due_date, d.currency, d.total_minor, d.balance_minor
    FROM documents d
-   WHERE d.client_id = ?1 AND d.frozen_at IS NOT NULL AND d.status IN (${STATUSES_SQL}) AND d.type IN (${TYPES_SQL})
+   WHERE d.client_id = ?1 AND d.frozen_at IS NOT NULL AND d.voided_at IS NULL AND d.status IN (${STATUSES_SQL}) AND d.type IN (${TYPES_SQL})
      AND (?2 IS NULL OR d.issue_date < ?2 OR (d.issue_date = ?2 AND d.id < ?3))
    ORDER BY d.issue_date DESC, d.id DESC LIMIT ?4`;
 
