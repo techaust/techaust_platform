@@ -134,10 +134,27 @@ export type NoteFixture = {
 };
 
 /** One sealed credit or debit note envelope, made the way the issue route and the snapshot step make it. */
-export async function buildNoteFixture(name: NoteFixtureName): Promise<NoteFixture> {
+export async function buildNoteFixture(
+  name: NoteFixtureName,
+  opts: {
+    documentId?: string;
+    clientId?: string;
+    parentId?: string;
+    number?: number;
+    parentNumber?: string;
+  } = {},
+): Promise<NoteFixture> {
   const spec = SPECS[name];
   const usd = spec.usd !== undefined;
-  const recipient: RecipientSnapshot = usd ? OVERSEAS_RECIPIENT : WB_RECIPIENT;
+  // (no contact: the rows a test inserts then need no contact row)
+  const {
+    contactId: _id,
+    contactName: _name,
+    ...recipient
+  } = (usd ? OVERSEAS_RECIPIENT : WB_RECIPIENT) as RecipientSnapshot & {
+    contactId?: string;
+    contactName?: string;
+  };
   const ctx: TaxContext = {
     tax: SETTINGS_DEFAULTS.tax,
     supplierStateCode: "19",
@@ -215,10 +232,10 @@ export async function buildNoteFixture(name: NoteFixtureName): Promise<NoteFixtu
   const noteOf = noteOfFromStored({
     kind: spec.kind,
     parent: {
-      id: "doc_parent_sample",
+      id: opts.parentId ?? "doc_parent_sample",
       type: usd ? "export_invoice" : "tax_invoice",
       fy: "2627",
-      number: PARENT_NUMBER,
+      number: opts.parentNumber ?? PARENT_NUMBER,
       issueDate: PARENT_DATE,
       supplyType: parentComputed.supply.type,
       recipientStatus: recipient.gstStatus ?? "registered",
@@ -238,8 +255,8 @@ export async function buildNoteFixture(name: NoteFixtureName): Promise<NoteFixtu
   const type = spec.kind === "credit" ? "credit_note" : "debit_note";
   const draft: DraftContent = {
     type,
-    clientId: "cli_sample_1",
-    contactId: recipient.contactId ?? null,
+    clientId: opts.clientId ?? "cli_sample_1",
+    contactId: null,
     title: null,
     currency: usd ? "USD" : "INR",
     validityDays: null,
@@ -308,7 +325,7 @@ export async function buildNoteFixture(name: NoteFixtureName): Promise<NoteFixtu
   const seal = await invoiceSealOf({
     document: {
       type,
-      clientId: "cli_sample_1",
+      clientId: opts.clientId ?? "cli_sample_1",
       currency: usd ? "USD" : "INR",
       issueDate: "2026-10-28",
       dueDate: spec.kind === "credit" ? null : "2026-11-04",
@@ -323,10 +340,10 @@ export async function buildNoteFixture(name: NoteFixtureName): Promise<NoteFixtu
     noteOf,
   });
   const envelope = buildInvoiceEnvelope({
-    documentId: `doc_note_${name}`,
+    documentId: opts.documentId ?? `doc_note_${name}`,
     type,
-    number: 1,
-    numberDisplay: spec.kind === "credit" ? "TH/CN/2627/0001" : "TH/DN/2627/0001",
+    number: opts.number ?? 1,
+    numberDisplay: `TH/${spec.kind === "credit" ? "CN" : "DN"}/2627/${String(opts.number ?? 1).padStart(4, "0")}`,
     series: spec.kind === "credit" ? "creditNote" : "debitNote",
     fy: "2026-27",
     issuedAt: 1_793_000_000_000,
