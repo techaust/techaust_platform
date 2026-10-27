@@ -15,6 +15,8 @@ export function Modal(props: {
   titleRef?: Ref<HTMLHeadingElement> | undefined;
   /** A wider dialog for a form with a preview beside it (the lead reply). */
   wide?: boolean | undefined;
+  /** A screen's own modifier (its width), e.g. `dialog--advance`. */
+  className?: string | undefined;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const opener = useRef<Element | null>(null);
@@ -36,7 +38,7 @@ export function Modal(props: {
   return (
     <dialog
       ref={ref}
-      className={`dialog${props.tone === "danger" ? " dialog--danger" : ""}${props.wide ? " dialog--wide" : ""}`}
+      className={`dialog${props.tone === "danger" ? " dialog--danger" : ""}${props.wide ? " dialog--wide" : ""}${props.className ? ` ${props.className}` : ""}`}
       aria-labelledby={titleId}
       onCancel={(e) => {
         e.preventDefault();

@@ -345,6 +345,12 @@ form.inv-service {
   min-height: 4rem;
 }
 
+/* Its action is the longest button of the admin ("Issue tax invoice for payment received"): the dialog is a little wider than the default, so the
+   button and Cancel stay on one line even once the body scrolls and its scrollbar takes width (review 2, 7). Phones stack them as every dialog does. */
+.dialog--advance {
+  width: min(100% - 2rem, 34rem);
+}
+
 .inv-advance .inv-facts {
   margin-bottom: var(--space-4);
 }

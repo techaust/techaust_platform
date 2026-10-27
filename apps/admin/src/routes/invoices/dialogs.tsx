@@ -152,7 +152,8 @@ export function IssueDialog(props: {
   onClose: () => void;
   /** Saves what was typed (and the out-of-date figures); resolves with the view to issue, or null when it couldn't. */
   prepare: () => Promise<InvoiceView | null>;
-  issue: (v: InvoiceView) => Promise<void>;
+  /** `inrConfirmed`: the Owner answered the dialog's INR question with "Issue in INR" (Q8); false when it was not asked. */
+  issue: (v: InvoiceView, inrConfirmed: boolean) => Promise<void>;
   onLine: (n: number, field: "description" | "sac") => void;
   onLines: () => void;
   /** M5.2: a rate blocker closes the dialog and opens the rate's. */
@@ -197,7 +198,12 @@ export function IssueDialog(props: {
       const ready = await props.prepare();
       if (!ready) return;
       if (ready.blockers.length > 0) return; // the dialog now lists them
-      await withCode(needsCode ? code : undefined, () => props.issue(ready));
+      // The saved draft turned out to need the INR question the dialog hasn't asked yet: ask it now, issue on the next press.
+      if (ready.needsInrConfirm === true && !inrAsked) {
+        setInrAsked(true);
+        return;
+      }
+      await withCode(needsCode ? code : undefined, () => props.issue(ready, inrAsked));
       setCode("");
     } catch (e) {
       setError(invErrorText(e));
@@ -218,7 +224,12 @@ export function IssueDialog(props: {
           <>
             <SeriesSlot preview={preview} />
             <p>
-              <KeepDates text={issueBody(p.text, p.example, props.issueDate)} />
+              {/* A proforma is not a tax invoice and is corrected by a void, so 07-R's credit-note sentence is not its own (07-S §8). */}
+              {v.type === "proforma" ? (
+                INVT_COPY.proformaIssueStatement
+              ) : (
+                <KeepDates text={issueBody(p.text, p.example, props.issueDate)} />
+              )}
             </p>
           </>
         ) : (
@@ -243,7 +254,7 @@ export function IssueDialog(props: {
         {!v.typeIssuable && v.blockers.length === 0 && (
           <Notice tone="info">{INV_ERRORS.type_not_issuable}</Notice>
         )}
-        {inrStep && inrAsked && (
+        {inrAsked && (
           <div className="inv-inr-ask" role="status">
             <p>{INVT_COPY.inrConfirm}</p>
           </div>
@@ -271,7 +282,7 @@ export function IssueDialog(props: {
           disabled={busy || blocked}
           aria-busy={busy || undefined}
         >
-          {busy ? "Working…" : inrStep && inrAsked ? INVT_COPY.issueInInr : INV_COPY.issue}
+          {busy ? "Working…" : inrAsked ? INVT_COPY.issueInInr : INV_COPY.issue}
         </button>
       </div>
     </Modal>

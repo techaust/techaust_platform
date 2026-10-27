@@ -10,7 +10,7 @@ import { issueDateOf } from "@techaust/core/invoices";
 import { TERMS_BLOCKS } from "@techaust/core/terms";
 import { useState } from "react";
 import { Link } from "react-router";
-import { stepUpActive } from "../../api.ts";
+import { RequestError, stepUpActive } from "../../api.ts";
 import { DateField, useUnreadDates } from "../../components/date-field.tsx";
 import { Modal } from "../../components/dialog.tsx";
 import { FormField, Switch } from "../../components/form.tsx";
@@ -19,6 +19,8 @@ import { useToast } from "../../components/toast.tsx";
 import { CodeField, Notice } from "../../components/ui.tsx";
 import { dateError } from "../../lib/date-field.ts";
 import {
+  type AdvanceErrors,
+  advanceFocus,
   advanceLine,
   amount,
   arrivedEarlierMonth,
@@ -36,18 +38,21 @@ import {
   INV_PLACEHOLDER,
   INVT_COPY,
   lutLine,
+  rateDateFollows,
+  splitAdvanceRefusal,
   warn25Line,
 } from "../../lib/invoice-types.ts";
 import { blockerLine, INV_COPY, invErrorText, issuedToast, typeLabel } from "../../lib/invoices.ts";
-import { type InvoiceView, invoicesApi } from "../../lib/invoices-api.ts";
+import { type InvoiceBlocker, type InvoiceView, invoicesApi } from "../../lib/invoices-api.ts";
 import { withCode } from "../../lib/step-up.ts";
+import { BlockerList } from "./dialogs.tsx";
 import { invoiceHref } from "./parts.tsx";
 
 const CODE_MISSING = "Enter the 6-digit code from your authenticator app.";
 const todayIso = () => issueDateOf(Date.now());
 
-/** The export routes, named as Settings › Tax names them (the same two choices, for this invoice). */
-const ROUTE_LABELS = { lut: "Under LUT (0 % IGST)", igst_paid: "IGST paid" } as const;
+/** The export routes on a draft (07-S §8). */
+const ROUTE_LABELS = { lut: INVT_COPY.routeLut, igst_paid: INVT_COPY.routeIgst } as const;
 
 /** The statutory line in its band (07-S §1, §2): the words exactly as they print, with the LUT line or the extra note under them. */
 export function StatutoryBand(props: { line: string; sub?: string | null; note?: string | null }) {
@@ -82,8 +87,7 @@ export function ExportPanel(props: {
         {typeLabel(props.view.type)}
       </h2>
       <fieldset className="radios inv-route" disabled={!props.canWrite || props.busy}>
-        {/* 07-S has no label for this choice on a draft. */}
-        <legend>{INV_PLACEHOLDER}</legend>
+        <legend>{INVT_COPY.routeLegend}</legend>
         <div className="segmented">
           {(["lut", "igst_paid"] as const).map((m) => (
             <label key={m} className="segmented__opt">
@@ -261,8 +265,7 @@ export function FxFields(props: {
         )}
       </FormField>
       {f.source === "OTHER" && (
-        // 07-S has the option "Other (describe)" but no label for the description itself.
-        <FormField id={`${P}-note`} label={INV_PLACEHOLDER} error={props.errors.note}>
+        <FormField id={`${P}-note`} label={INVT_COPY.fxNoteLabel} error={props.errors.note}>
           {(a) => (
             <input
               {...a}
@@ -311,7 +314,7 @@ function FxDialogBody(props: {
     setErrors(found);
     if (!c.ok || dateErr) {
       const first = found.rate ? "fxd-rate" : found.date ? "fxd-date" : "fxd-note";
-      document.getElementById(first)?.focus();
+      if (first) document.getElementById(first)?.focus();
       return;
     }
     setBusy(true);
@@ -384,7 +387,7 @@ export function ServiceDateSetOnce(props: { view: InvoiceView; canWrite: boolean
   async function save() {
     const unread = dateError(dates.unread.date);
     if (unread || !date) {
-      setError(unread ?? INV_PLACEHOLDER);
+      setError(unread ?? INVT_COPY.serviceDateMissing);
       document.getElementById("inv-service")?.focus();
       return;
     }
@@ -574,23 +577,33 @@ export function AdvanceDialog(props: {
   onIssued: () => void;
 }) {
   return (
-    <Modal open={props.open} title={INVT_COPY.advanceAction} onClose={props.onClose}>
+    <Modal
+      open={props.open}
+      title={INVT_COPY.advanceAction}
+      onClose={props.onClose}
+      className="dialog--advance"
+    >
       {props.open && <AdvanceBody {...props} />}
     </Modal>
   );
 }
 
-type AdvErrors = Partial<Record<"amount" | "reference" | "date" | "rate" | "note", string>>;
+type AdvErrors = AdvanceErrors;
 
 function AdvanceBody(props: { view: InvoiceView; onClose: () => void; onIssued: () => void }) {
   const v = props.view;
   const p = v.proforma;
   const today = todayIso();
   const usd = v.currency === "USD";
-  const inrExport = v.client.gstStatus === "overseas" && v.currency === "INR";
+  // Q8: the server's own answer when it sends one (review 2, 6); else the client on screen (an older API).
+  const inrExport = p?.needsInrConfirm ?? (v.client.gstStatus === "overseas" && v.currency === "INR");
   const [form, setForm] = useState({ amount: "", date: today, reference: "" });
   const [fx, setFx] = useState<FxForm>(() => fxFormOf(null, today));
+  // The rate is for the day the money came (Q9): its date follows "Date received" until the Owner picks one of its own (review 2, 1).
+  const [fxDateOwn, setFxDateOwn] = useState(false);
   const [confirmInr, setConfirmInr] = useState(false);
+  // What the server refused with: its blocker lines (409 `issue_blocked`), drawn as the issue dialog draws them.
+  const [refused, setRefused] = useState<InvoiceBlocker[]>([]);
   const [code, setCode] = useState("");
   const [codeError, setCodeError] = useState<string | null>(null);
   const [errors, setErrors] = useState<AdvErrors>({});
@@ -605,27 +618,22 @@ function AdvanceBody(props: { view: InvoiceView; onClose: () => void; onIssued: 
 
   async function issue() {
     const c = checkAdvance(form, v.currency, p?.balanceMinor ?? 0);
-    const dErr = dateError(dates.unread.date) ?? (form.date ? undefined : INV_PLACEHOLDER);
+    const dErr = dateError(dates.unread.date) ?? (form.date ? undefined : INVT_COPY.dateReceivedMissing);
     const f = usd ? checkFx(fx) : null;
     const fxDateErr = usd ? (dateError(fxDates.unread.date) ?? undefined) : undefined;
     const found: AdvErrors = {
       ...(c.ok ? {} : c.errors),
       ...(dErr ? { date: dErr } : {}),
       ...(f && !f.ok ? f.errors : {}),
-      ...(fxDateErr ? { date: fxDateErr } : {}),
+      ...(fxDateErr ? { fxDate: fxDateErr } : {}),
     };
     setErrors(found);
+    setRefused([]);
     const noCode = needsCode && code.length !== 6;
     setCodeError(noCode ? CODE_MISSING : null);
-    if (!c.ok || dErr || (f && !f.ok) || fxDateErr) {
-      const first = found.amount
-        ? "adv-amount"
-        : found.date
-          ? "adv-date"
-          : found.reference
-            ? "adv-ref"
-            : "adv-fx-rate";
-      document.getElementById(first)?.focus();
+    const first = advanceFocus(found);
+    if (first || !c.ok || (f && !f.ok)) {
+      if (first) document.getElementById(first)?.focus();
       return;
     }
     if (noCode) {
@@ -646,7 +654,7 @@ function AdvanceBody(props: { view: InvoiceView; onClose: () => void; onIssued: 
           receivedOn: form.date,
           reference: form.reference.trim(),
           ...(f?.ok ? { fx: f.value } : {}),
-          ...(inrExport ? { confirmInrExport: true as const } : {}),
+          ...(confirmInr ? { confirmInrExport: true as const } : {}),
         }),
       );
       // Q27: a payment from an earlier month is a warning, said with the result.
@@ -658,10 +666,32 @@ function AdvanceBody(props: { view: InvoiceView; onClose: () => void; onIssued: 
       );
       props.onIssued();
     } catch (e) {
+      // The server asks for the INR yes the screen didn't know it needed (the client changed): ask it here, issue on the next press.
+      if (e instanceof RequestError && e.code === "export_currency_confirm" && !confirmInr) {
+        setConfirmInr(true);
+        return;
+      }
+      // The server's blockers (the rate's date against the day the money came, among others): their own lines, the rate's under its field.
+      const listed = e instanceof RequestError && e.code === "issue_blocked" ? (e.extra.blockers ?? []) : [];
+      if (listed.length > 0) {
+        const { rateDate, rest } = splitAdvanceRefusal(listed);
+        if (rateDate) {
+          setErrors({ fxDate: blockerLine(rateDate, v.currency, { maxAgeDays: v.fx?.maxAgeDays }) });
+          document.getElementById("adv-fx-date")?.focus();
+        }
+        setRefused(rest);
+        return;
+      }
       setFailure(invErrorText(e));
     } finally {
       setBusy(false);
     }
+  }
+
+  /** "Date received" changed: the rate's date goes with it unless the Owner set its own. */
+  function setReceived(date: string) {
+    setForm({ ...form, date });
+    setFx(rateDateFollows(fx, fxDateOwn, date));
   }
 
   return (
@@ -703,7 +733,7 @@ function AdvanceBody(props: { view: InvoiceView; onClose: () => void; onIssued: 
                 value={form.date}
                 min={v.issueDate ?? undefined}
                 max={today}
-                onChange={(date) => setForm({ ...form, date })}
+                onChange={setReceived}
               />
             )}
           </FormField>
@@ -733,15 +763,30 @@ function AdvanceBody(props: { view: InvoiceView; onClose: () => void; onIssued: 
             <FxFields
               prefix="adv-fx"
               form={fx}
-              onChange={setFx}
+              onChange={(next) => {
+                if (next.date !== fx.date) setFxDateOwn(true);
+                setFx(next);
+              }}
               errors={{
                 ...(errors.rate ? { rate: errors.rate } : {}),
+                ...(errors.fxDate ? { date: errors.fxDate } : {}),
                 ...(errors.note ? { note: errors.note } : {}),
               }}
               dates={fxDates}
               max={form.date || today}
             />
           </fieldset>
+        )}
+        {refused.length > 0 && (
+          <div className="inv-issue__blocked" role="alert">
+            <p className="inv-issue__fix">{INV_COPY.fixFirst}</p>
+            <BlockerList
+              blockers={refused}
+              clientId={v.client.id}
+              currency={v.currency}
+              maxAgeDays={v.fx?.maxAgeDays}
+            />
+          </div>
         )}
         {confirmInr && <Notice tone="info">{INVT_COPY.inrConfirm}</Notice>}
       </div>

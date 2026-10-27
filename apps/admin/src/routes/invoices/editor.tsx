@@ -246,7 +246,7 @@ export function InvoiceEditor({ view, reload }: { view: InvoiceView; reload: () 
   return (
     <>
       <PageHeader
-        title={draftTitle(v.client.name)}
+        title={draftTitle(v.client.name, v.type)}
         crumbs={INVOICES_CRUMB}
         status={<InvoiceBadge badge="draft" />}
         lede={INV_COPY.draftLede}
@@ -546,14 +546,14 @@ export function InvoiceEditor({ view, reload }: { view: InvoiceView; reload: () 
         onLine={focusLine}
         onLines={focusLines}
         onFx={() => setDialog("fx")}
-        issue={async (ready) => {
+        issue={async (ready, inrConfirmed) => {
           try {
-            // Q8: the dialog asked "Issue it in INR anyway?" before it got here, so an INR export goes with the explicit yes.
+            // Q8: the yes is the one the dialog asked for ("Issue in INR"), never inferred from the view.
             const r = await invoicesApi.issue(
               ready.id,
               ready.updatedAt,
               ready.contentSha256 ?? "",
-              ready.needsInrConfirm === true,
+              inrConfirmed,
             );
             setDialog(null);
             toast("success", issuedToast(r.number ?? ""));

@@ -12,6 +12,7 @@ import {
   blockerTarget,
   buildInvoicePatch,
   convertedToInvoice,
+  draftTitle,
   dueNote,
   fromMilestone,
   frozenBanner,
@@ -289,6 +290,22 @@ describe("errors", () => {
       INV_ERRORS.return_period_closed,
     );
     expect(voidBlockedText(["has_payment"])).toBe(INV_ERRORS.void_not_allowed);
+  });
+
+  it("a proforma has its own title, locked banner and void line (07-S §8), never the credit-note advice", () => {
+    expect(draftTitle("Client A", "proforma")).toBe("Draft proforma for Client A");
+    expect(draftTitle("Client A", "export_invoice")).toBe("Draft invoice for Client A");
+    expect(frozenBanner("27 Oct 2026", "Asha", "proforma")).not.toContain("credit note");
+    expect(voidBlockedText(["has_child_document"], "proforma")).toBe(
+      "This proforma can't be voided because a payment has been recorded against it.",
+    );
+    expect(voidBlockedText(["has_payment"], "proforma")).toBe(
+      "This proforma can't be voided because a payment has been recorded against it.",
+    );
+    expect(voidBlockedText(["already_void"], "proforma")).toBe(INV_ERRORS.already_void);
+    expect(blockerLine({ code: "type_not_allowed" }, "INR")).toBe(
+      "This client is outside India, so this needs an export invoice.",
+    );
   });
 });
 

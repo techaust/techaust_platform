@@ -884,7 +884,7 @@ export class RequestError extends Error {
       contactIds?: string[];
       missing?: string[];
       number?: string;
-      blockers?: { code: string; line?: number }[];
+      blockers?: { code: string; line?: number; fy?: string; date?: string }[];
     } = {},
   ) {
     super(message);
@@ -989,11 +989,19 @@ async function send<T>(path: string, { method, body, raw, signedIn = true }: Opt
 
 const strings = (xs: unknown[]): string[] => xs.filter((x): x is string => typeof x === "string");
 
-const blockersOf = (xs: unknown[]): { code: string; line?: number }[] =>
+/** The blockers of a 409 `issue_blocked`: the code, and the line, year or date its sentence names (M5.2: `lut_missing` has `fy`, `fx_missing` `date`). */
+const blockersOf = (xs: unknown[]): { code: string; line?: number; fy?: string; date?: string }[] =>
   xs.flatMap((x) => {
     if (typeof x !== "object" || x === null || typeof (x as { code?: unknown }).code !== "string") return [];
-    const b = x as { code: string; line?: unknown };
-    return [typeof b.line === "number" ? { code: b.code, line: b.line } : { code: b.code }];
+    const b = x as { code: string; line?: unknown; fy?: unknown; date?: unknown };
+    return [
+      {
+        code: b.code,
+        ...(typeof b.line === "number" ? { line: b.line } : {}),
+        ...(typeof b.fy === "string" ? { fy: b.fy } : {}),
+        ...(typeof b.date === "string" ? { date: b.date } : {}),
+      },
+    ];
   });
 
 /** One request; if it needs a fresh step-up, ask for it and send the same request once more. */

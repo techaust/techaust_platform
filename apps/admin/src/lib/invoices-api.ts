@@ -251,6 +251,9 @@ export type InvoiceView = {
     children: ProformaChild[];
     warnAt: number | null;
     warnDate: string | null;
+    /** Review 2 (6): the server's own answer to "does recording a payment here need the explicit Issue in INR?" (the client's current status, as the
+     * advance route judges it). Absent from an older API: the dialog then decides from the client on screen. */
+    needsInrConfirm?: boolean;
   } | null;
 };
 

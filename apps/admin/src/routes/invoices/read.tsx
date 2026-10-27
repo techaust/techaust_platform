@@ -59,8 +59,8 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
   const badge = badgeOf(v);
   const isVoid = v.status === "void";
   const ownerVoids = allowed(role, "invoices.void");
-  const voidWhy = ownerVoids && v.frozen && !isVoid ? voidBlockedText(v.void.blockers) : null;
-  const title = v.number ?? draftTitle(v.client.name);
+  const voidWhy = ownerVoids && v.frozen && !isVoid ? voidBlockedText(v.void.blockers, v.type) : null;
+  const title = v.number ?? draftTitle(v.client.name, v.type);
 
   return (
     <>
@@ -141,7 +141,9 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
                 )}
               </p>
             )}
-            <p>{frozenBanner(v.issueDate ? (dayText(v.issueDate) ?? v.issueDate) : "", issuedBy(v))}</p>
+            <p>
+              {frozenBanner(v.issueDate ? (dayText(v.issueDate) ?? v.issueDate) : "", issuedBy(v), v.type)}
+            </p>
             {voidWhy && <p className="inv-lock__why">{voidWhy}</p>}
           </div>
         </div>
