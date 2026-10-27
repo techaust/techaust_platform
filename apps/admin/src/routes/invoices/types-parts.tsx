@@ -513,6 +513,8 @@ export function ProformaPanel(props: { view: InvoiceView; onIssued: () => void }
   const [open, setOpen] = useState(false);
   if (!p) return null;
   const late = p.warnAt !== null && Date.now() >= p.warnAt && v.number;
+  // The client's GST details changed after the proforma (review 2, 6): the server would refuse, so the action is shown disabled with the reason.
+  const supplyChanged = p.advanceSupplyChanged === true;
   return (
     <section className="lead-panel inv-proforma" aria-labelledby="inv-pf-h">
       <div className="lead-panel__head">
@@ -520,12 +522,24 @@ export function ProformaPanel(props: { view: InvoiceView; onIssued: () => void }
           {typeLabel("proforma")}
         </h2>
         {p.canAdvance && (
-          <button type="button" className="btn btn--primary" onClick={() => setOpen(true)}>
+          <button
+            type="button"
+            className="btn btn--primary"
+            onClick={() => setOpen(true)}
+            disabled={supplyChanged}
+            aria-describedby={supplyChanged ? "inv-pf-supply" : undefined}
+          >
             <Receipt size={20} />
             {INVT_COPY.advanceAction}
           </button>
         )}
       </div>
+      {p.canAdvance && supplyChanged && (
+        <p className="approval-line" data-state="pending" id="inv-pf-supply">
+          <Alert size={16} />
+          <span>{INVT_COPY.advanceSupplyChanged}</span>
+        </p>
+      )}
       {p.notice && <StatutoryBand line={p.notice} />}
       {late && (
         <p className="approval-line" data-state="expired">
@@ -559,7 +573,7 @@ export function ProformaPanel(props: { view: InvoiceView; onIssued: () => void }
           ))}
         </ul>
       )}
-      {p.canAdvance && (
+      {p.canAdvance && !supplyChanged && (
         <AdvanceDialog
           open={open}
           view={v}
@@ -604,7 +618,7 @@ function AdvanceBody(props: { view: InvoiceView; onClose: () => void; onIssued: 
   const today = todayIso();
   const usd = v.currency === "USD";
   // Q8: the server's own answer when it sends one (review 2, 6); else the client on screen (an older API).
-  const inrExport = p?.needsInrConfirm ?? (v.client.gstStatus === "overseas" && v.currency === "INR");
+  const inrExport = p?.advanceNeedsInrConfirm ?? (v.client.gstStatus === "overseas" && v.currency === "INR");
   const [form, setForm] = useState({ amount: "", date: today, reference: "" });
   const [fx, setFx] = useState<FxForm>(() => fxFormOf(null, today));
   // The rate is for the day the money came (Q9): its date follows "Date received" until the Owner picks one of its own (review 2, 1).

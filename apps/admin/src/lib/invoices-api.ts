@@ -253,7 +253,10 @@ export type InvoiceView = {
     warnDate: string | null;
     /** Review 2 (6): the server's own answer to "does recording a payment here need the explicit Issue in INR?" (the client's current status, as the
      * advance route judges it). Absent from an older API: the dialog then decides from the client on screen. */
-    needsInrConfirm?: boolean;
+    advanceNeedsInrConfirm?: boolean;
+    /** Review 2 (6): the client's GST status no longer matches the supply the proforma was sealed with, so the advance route refuses
+     * (`advance_supply_changed`); the screen says so and offers no action. */
+    advanceSupplyChanged?: boolean;
   } | null;
 };
 

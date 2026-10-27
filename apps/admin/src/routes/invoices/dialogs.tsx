@@ -5,13 +5,12 @@
 import { INVOICE_SERIES_OF, isInvoiceFlowType } from "@techaust/core/invoices";
 import { useState } from "react";
 import { Link } from "react-router";
-import { api, stepUpActive } from "../../api.ts";
+import { stepUpActive } from "../../api.ts";
 import { ConfirmDialog } from "../../components/confirm-dialog.tsx";
 import { Modal } from "../../components/dialog.tsx";
 import { KeepDates } from "../../components/display.tsx";
 import { FormField } from "../../components/form.tsx";
 import { Alert } from "../../components/icons.tsx";
-import { useLoad } from "../../components/states.tsx";
 import { CodeField, Notice } from "../../components/ui.tsx";
 import { INVT_COPY } from "../../lib/invoice-types.ts";
 import {
@@ -109,23 +108,12 @@ export function BlockerList(props: {
 type Preview = InvoiceView["issue"]["preview"];
 
 /**
- * The series a draft of this TYPE is numbered in. The view's preview is always the tax invoice series (`invoice-view.ts` sends `series: "invoice"`), so
- * for an export invoice or a proforma the screen reads that series' own format from Settings › Numbering (the Owner, who issues, may read it). Until
- * it is read, or if it can't be, null: the dialog then shows no series rather than the wrong one.
+ * The series a draft of this type is numbered in: the view's own preview (review 2: `issue.preview` is the type's series). A view whose preview is
+ * another type's series (an older API) shows no series rather than the wrong one.
  */
-function usePreview(v: InvoiceView, open: boolean): Preview | null {
+function usePreview(v: InvoiceView): Preview | null {
   const series = isInvoiceFlowType(v.type) ? INVOICE_SERIES_OF[v.type] : null;
-  const own = series === v.issue.preview.series;
-  const numbering = useLoad(
-    () => (open && !own && series ? api.settingsGroup("numbering") : Promise.resolve(null)),
-    `${open}:${own}:${series ?? ""}`,
-  );
-  if (own) return v.issue.preview;
-  if (!series || numbering.state !== "ready" || !numbering.data) return null;
-  const f = (numbering.data.value as Record<string, { template: string; padding: number } | undefined>)[
-    series
-  ];
-  return f ? { series, fy: v.issue.preview.fy, template: f.template, padding: f.padding } : null;
+  return series === v.issue.preview.series ? v.issue.preview : null;
 }
 
 /** The series with the slot its number takes at issue: "TH/INV/2627/" then an empty box. Decoration for the sentence that says it. */
@@ -168,7 +156,7 @@ export function IssueDialog(props: {
   const [inrAsked, setInrAsked] = useState(false);
   const needsCode = !stepUpActive();
   const blocked = v.blockers.length > 0 || !v.typeIssuable;
-  const preview = usePreview(v, props.open);
+  const preview = usePreview(v);
   const p = preview ? seriesPreview(preview) : null;
   const inrStep = v.needsInrConfirm === true && !blocked;
 
