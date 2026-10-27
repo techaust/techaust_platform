@@ -9,6 +9,14 @@
 //   long-names   a very long client name, address and contact, long descriptions and a long supplier address
 //   bare         `bank.inr = null` and `signature = null`, an unregistered individual, a supplier without legal name, address or GSTIN
 //   signed       a signature image (a drawn sample) above "Authorised signatory"
+// M5.2 (07-S §1, §2, §8; the statutory lines held as LITERALS here, never imported from core):
+//   export-lut      an export invoice in USD under LUT: the endorsement, the LUT line, a delivery address, the INR block, SWIFT with an intermediary
+//                   bank and a purpose code, a signature
+//   export-igst     an export invoice in USD with IGST paid, to a client in Côte d’Ivoire (a curly apostrophe and accents in the country, an "&" in
+//                   the name): the IGST endorsement, the IGST in INR, the extra export note after the endorsement, SWIFT without the optional parts
+//   proforma        a proforma (INR, intra-state): its notice under the title, "Proforma number", "Valid until", no copy mark
+//   advance         a tax invoice issued for a payment received against a proforma: the "Against proforma" line, no balance due, no "How to pay"
+//   advance-export  the same as an export invoice under LUT
 import { deflateSync } from "node:zlib";
 import { contentHash, type DraftContent } from "@techaust/core/documents";
 import { SETTINGS_DEFAULTS } from "@techaust/core/settings";
@@ -28,6 +36,11 @@ export const INVOICE_LAYOUT_FIXTURES = [
   "long-names",
   "bare",
   "signed",
+  "export-lut",
+  "export-igst",
+  "proforma",
+  "advance",
+  "advance-export",
 ] as const;
 export type InvoiceLayoutFixture = (typeof INVOICE_LAYOUT_FIXTURES)[number];
 
@@ -52,7 +65,33 @@ type Spec = {
   bank?: boolean;
   signed?: boolean;
   terms?: boolean;
+  /** M5.2: the type (default a tax invoice); an export under the given route (an overseas USD client with a rate and SWIFT); paid for a payment received. */
+  type?: "tax_invoice" | "export_invoice" | "proforma";
+  route?: "lut" | "igst_paid";
+  advance?: boolean;
+  note?: boolean;
+  country?: { code: string; name: string };
 };
+
+/** The statutory lines as LITERALS (07-S §1, §2), so a change of core's constants fails a test until a person has looked at it. */
+export const LAYOUT_ENDORSEMENT = {
+  lut: "SUPPLY MEANT FOR EXPORT/SUPPLY TO SEZ UNIT OR SEZ DEVELOPER FOR AUTHORISED OPERATIONS UNDER BOND OR LETTER OF UNDERTAKING WITHOUT PAYMENT OF INTEGRATED TAX",
+  igst_paid:
+    "SUPPLY MEANT FOR EXPORT/SUPPLY TO SEZ UNIT OR SEZ DEVELOPER FOR AUTHORISED OPERATIONS ON PAYMENT OF INTEGRATED TAX",
+} as const;
+export const LAYOUT_PROFORMA_NOTICE =
+  "This is not a tax invoice. A tax invoice will be issued when payment is received.";
+export const LAYOUT_ARN = "AD1910260000017";
+export const LAYOUT_EXPORT_NOTE =
+  "Sample extra export note: the services were delivered online from India to the recipient abroad.";
+export const LAYOUT_ADVANCE = {
+  proformaId: "doc_proforma_layout",
+  proformaNumber: "TH/PI/2627/0004",
+  proformaIssueDate: "2026-10-20",
+  receivedOn: "2026-10-27",
+  receiptId: "rcp_layout_1",
+} as const;
+const LAYOUT_FX = { rateMicros: 84_215_600, date: "2026-10-27", source: "FBIL reference rate" } as const;
 
 const wb = {
   legalName: "Sample Client Private Limited",
@@ -90,6 +129,66 @@ const mh = {
   },
   contactName: "Sample Buyer",
 } as RecipientSnapshot;
+
+const us = {
+  legalName: "Sample Overseas Software Inc.",
+  displayName: "Sample Overseas",
+  country: "US",
+  address: {
+    line1: "100 Sample Avenue, Suite 4",
+    city: "Austin",
+    state: "TX",
+    postalCode: "73301",
+    country: "US",
+  },
+  deliveryAddress: {
+    line1: "9 Sample Delivery Street",
+    city: "Boston",
+    state: "MA",
+    postalCode: "02110",
+    country: "US",
+  },
+  email: "client@example.test",
+  contactId: "con_sample_us",
+  contactName: "Sample Overseas Contact",
+  clientType: "business",
+  gstStatus: "overseas",
+} as RecipientSnapshot;
+
+const ci = {
+  legalName: "Sample Abidjan Services & Trading SARL",
+  displayName: "Sample Abidjan",
+  country: "CI",
+  address: {
+    line1: "12 Rue d’Exemple, Plateau",
+    city: "Abidjan",
+    postalCode: "01 BP 0000",
+    country: "CI",
+  },
+  email: "client@example.test",
+  contactId: "con_sample_ci",
+  contactName: "Sample Côte Contact",
+  clientType: "business",
+  gstStatus: "overseas",
+} as RecipientSnapshot;
+
+const usdLines: LineSpec[] = [
+  {
+    description: "Sample platform engineering, October",
+    detail: "Sample sprint 3 of 4",
+    sac: "998314",
+    qtyMilli: 10_000,
+    unit: "days",
+    rateMinor: 45_000,
+  },
+  {
+    description: "Sample code review and hand-over",
+    sac: "998313",
+    qtyMilli: 1000,
+    unit: "fixed",
+    rateMinor: 120_000,
+  },
+];
 
 const manyLines = (n: number): LineSpec[] =>
   Array.from({ length: n }, (_, i) => ({
@@ -235,6 +334,66 @@ const SPECS: Record<InvoiceLayoutFixture, Spec> = {
     signed: true,
     lines: [{ description: "Sample line", qtyMilli: 1000, unit: "item", rateMinor: 100_000 }],
   },
+  "export-lut": {
+    recipient: us,
+    type: "export_invoice",
+    route: "lut",
+    bank: true,
+    signed: true,
+    country: { code: "US", name: "United States" },
+    lines: usdLines,
+  },
+  "export-igst": {
+    recipient: ci,
+    type: "export_invoice",
+    route: "igst_paid",
+    bank: true,
+    note: true,
+    country: { code: "CI", name: "Côte d’Ivoire" },
+    lines: [usdLines[0] as LineSpec],
+  },
+  proforma: {
+    recipient: wb,
+    type: "proforma",
+    bank: true,
+    lines: [
+      {
+        description: "Sample advance: 40 % of proposal TH/PRP/2627/0003",
+        detail: "Sample first instalment, before the work starts",
+        qtyMilli: 1000,
+        unit: "fixed",
+        rateMinor: 4_000_000,
+      },
+    ],
+  },
+  advance: {
+    recipient: wb,
+    advance: true,
+    lines: [
+      {
+        description: "Payment received against proforma TH/PI/2627/0004",
+        qtyMilli: 1000,
+        unit: "fixed",
+        rateMinor: 3_389_831,
+      },
+    ],
+  },
+  "advance-export": {
+    recipient: us,
+    type: "export_invoice",
+    route: "lut",
+    bank: true,
+    advance: true,
+    country: { code: "US", name: "United States" },
+    lines: [
+      {
+        description: "Payment received against proforma TH/PI/2627/0004",
+        qtyMilli: 1000,
+        unit: "fixed",
+        rateMinor: 150_000,
+      },
+    ],
+  },
 };
 
 // ---- a drawn sample signature (a made-up stroke, not anyone's signature) ------------------------------------------------------------
@@ -344,9 +503,14 @@ export type InvoiceLayoutBuilt = {
   signature: VerifiedSignature | null;
 };
 
-/** One sealed tax invoice envelope for a layout fixture, made the way the issue route and the snapshot step make it. */
+/** One sealed invoice envelope (tax, export or proforma) for a layout fixture, made the way the issue route and the snapshot step make it. */
 export async function buildInvoiceLayoutFixture(name: InvoiceLayoutFixture): Promise<InvoiceLayoutBuilt> {
   const spec = SPECS[name];
+  const type = spec.type ?? "tax_invoice";
+  const route = type === "export_invoice" ? (spec.route ?? "lut") : null;
+  const isExport = type === "export_invoice";
+  const currency = isExport ? "USD" : "INR";
+  const fx = isExport ? LAYOUT_FX : null;
   const discountOf = (l: LineSpec) =>
     l.discount?.kind === "percent"
       ? { kind: "percent" as const, bp: l.discount.bp }
@@ -361,7 +525,7 @@ export async function buildInvoiceLayoutFixture(name: InvoiceLayoutFixture): Pro
   }));
   const result = computeDocument(
     {
-      currency: "INR",
+      currency,
       documentDate: { year: 2026, month: 10, day: 28 },
       recipient: {
         gstStatus: spec.recipient.gstStatus ?? "registered",
@@ -369,12 +533,18 @@ export async function buildInvoiceLayoutFixture(name: InvoiceLayoutFixture): Pro
         ...(spec.recipient.gstin ? { gstin: spec.recipient.gstin } : {}),
         ...(spec.recipient.stateCode ? { stateCode: spec.recipient.stateCode } : {}),
       },
+      ...(route ? { exportMode: route } : {}),
+      ...(fx ? { fx: { rateMicros: fx.rateMicros } } : {}),
       lines: lineInputs,
       ...(spec.documentDiscountBp
         ? { documentDiscount: { kind: "percent" as const, bp: spec.documentDiscountBp } }
         : {}),
     },
-    { tax: SETTINGS_DEFAULTS.tax, supplierStateCode: "19", luts: [] },
+    {
+      tax: SETTINGS_DEFAULTS.tax,
+      supplierStateCode: "19",
+      luts: route === "lut" ? [{ fy: "2627", arn: LAYOUT_ARN }] : [],
+    },
   );
   if (!result.ok) throw new Error(`invoice layout fixture ${name}: ${JSON.stringify(result.errors)}`);
   const computed = result.value;
@@ -393,16 +563,17 @@ export async function buildInvoiceLayoutFixture(name: InvoiceLayoutFixture): Pro
     catalogueLine: null,
   }));
   const draft: DraftContent = {
-    type: "tax_invoice",
+    type,
     clientId: "cli_sample_1",
     contactId: spec.recipient.contactId ?? null,
     title: null,
-    currency: "INR",
+    currency,
     validityDays: null,
     termsVersionId: null,
     discountKind: spec.documentDiscountBp ? "percent" : null,
     discountValue: spec.documentDiscountBp ?? null,
-    exportMode: null,
+    exportMode: route,
+    ...(fx ? { fx: { ...fx } } : {}),
     lines,
     sections: [],
     schedule: [],
@@ -413,17 +584,44 @@ export async function buildInvoiceLayoutFixture(name: InvoiceLayoutFixture): Pro
   const termsSha = await sha256Hex(termsBody);
   const issuer: InvoiceIssuerSnapshot = {
     company: companyOf(spec.supplier),
-    bank: {
-      inr: spec.bank
-        ? {
-            accountName: "Sample Proprietor",
-            accountNo: "SAMPLE0001234567",
-            ifsc: "SAMP0000001",
-            bankName: "Sample Bank",
-            branch: "Sample Branch, Balurghat",
-          }
-        : null,
-    },
+    bank: isExport
+      ? {
+          inr: null,
+          swift: spec.bank
+            ? spec.note
+              ? {
+                  accountName: "Sample Proprietor",
+                  accountNo: "SAMPLEUSD000123",
+                  swift: "SAMPINBB",
+                  bankName: "Sample Bank",
+                  branch: null,
+                  bankAddress: null,
+                  intermediary: null,
+                  purposeCode: null,
+                }
+              : {
+                  accountName: "Sample Proprietor",
+                  accountNo: "SAMPLEUSD000123",
+                  swift: "SAMPINBBXXX",
+                  bankName: "Sample Bank",
+                  branch: "Sample Branch, Kolkata",
+                  bankAddress: "3 Sample Bank Street, Kolkata 700001, India",
+                  intermediary: "Sample Intermediary Bank, New York (SAMPUS33)",
+                  purposeCode: "P0802",
+                }
+            : null,
+        }
+      : {
+          inr: spec.bank
+            ? {
+                accountName: "Sample Proprietor",
+                accountNo: "SAMPLE0001234567",
+                ifsc: "SAMP0000001",
+                bankName: "Sample Bank",
+                branch: "Sample Branch, Balurghat",
+              }
+            : null,
+        },
     signature: spec.signed
       ? {
           key: "settings/signature-0123456789abcdef.png",
@@ -435,27 +633,47 @@ export async function buildInvoiceLayoutFixture(name: InvoiceLayoutFixture): Pro
     sender: { staffId: "stf_sample_1", name: "Sample Proprietor", email: "sender@example.test" },
   } as InvoiceIssuerSnapshot;
   const termsRef = spec.terms ? { id: "trm_sample_1", version: 2, sha256: termsSha } : null;
+  const country = spec.country ?? { code: "US", name: "United States" };
   const seal = await invoiceSealOf({
     document: {
-      type: "tax_invoice",
+      type,
       clientId: "cli_sample_1",
-      currency: "INR",
+      currency,
       issueDate: "2026-10-28",
-      dueDate: "2026-11-04",
+      dueDate: spec.advance ? "2026-10-28" : "2026-11-04",
       contentSha256: contentSha,
       termsRef,
-      exportMode: null,
+      exportMode: route,
     },
     computed,
     recipient: spec.recipient,
     issuer,
+    ...(isExport && route
+      ? {
+          export: {
+            mode: route,
+            endorsement: LAYOUT_ENDORSEMENT[route],
+            lut: route === "lut" ? { fy: "2627", arn: LAYOUT_ARN } : null,
+            countryCode: country.code,
+            countryName: country.name,
+            declarationRef: spec.note
+              ? { id: "trm_export_note", version: 1, sha256: await sha256Hex(LAYOUT_EXPORT_NOTE) }
+              : null,
+            ...(spec.note ? { declarationText: LAYOUT_EXPORT_NOTE } : {}),
+          },
+        }
+      : {}),
+    ...(fx ? { fx: { ...fx } } : {}),
+    ...(type === "proforma" ? { proforma: { notice: LAYOUT_PROFORMA_NOTICE } } : {}),
+    ...(spec.advance ? { advance: { ...LAYOUT_ADVANCE } } : {}),
   });
+  const prefix = isExport ? "EXP" : type === "proforma" ? "PI" : "INV";
   const envelope = buildInvoiceEnvelope({
     documentId: `doc_invoice_layout_${name}`,
-    type: "tax_invoice",
+    type,
     number: 12,
-    numberDisplay: "TH/INV/2627/0012",
-    series: "invoice",
+    numberDisplay: `TH/${prefix}/2627/0012`,
+    series: isExport ? "export" : type === "proforma" ? "proforma" : "invoice",
     fy: "2026-27",
     issuedAt: 1_793_000_000_000,
     snapshotSha256: seal.snapshotSha256,
