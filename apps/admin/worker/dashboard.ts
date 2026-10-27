@@ -13,7 +13,8 @@ import {
   type TileKey,
   tilesFor,
 } from "@techaust/core/dashboard";
-import { addDays, istDate, parseIsoDate, toIsoDate } from "@techaust/core/dates";
+import { addDays, daysBetween, fyOfDate, istDate, parseIsoDate, toIsoDate } from "@techaust/core/dates";
+import { realisationParamsFromStoredTax } from "@techaust/core/invoices";
 import { LEAD_STAGES } from "@techaust/core/lead-lifecycle";
 import { DAY_MS, weekOf } from "@techaust/core/time";
 import {
@@ -27,9 +28,31 @@ import {
   type TermsRaw,
   type UsageRaw,
 } from "@techaust/db/care";
+import {
+  EXPORT_NEXT_SQL,
+  EXPORT_STAGE_COUNTS_SQL,
+  INVOICED_SQL,
+  OUTSTANDING_SQL,
+  OVERDUE_OLDEST_SQL,
+  OVERDUE_SQL,
+  PROFORMAS_AWAITING_SQL,
+  SETTINGS_TAX_SQL,
+} from "@techaust/db/reports";
 import { Hono } from "hono/tiny";
 import { LIST_PERIODS_BACK, usageWindow } from "./care.ts";
 import { type AppEnv, actor } from "./context.ts";
+
+type InvoicedRow = {
+  currency: string;
+  fy_documents: number;
+  fy_taxable: number;
+  fy_total: number;
+  fy_inr_taxable: number | null;
+  month_documents: number;
+  month_taxable: number;
+  month_total: number;
+  month_inr_taxable: number | null;
+};
 
 const OPEN_STAGES = LEAD_STAGES.filter((s) => s !== "won" && s !== "lost");
 const STAGE_LIST = OPEN_STAGES.map((s) => `'${s}'`).join(", ");
@@ -99,6 +122,25 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
     );
   }
   if (tiles.has("pipelineValue")) add("pipeline", db.prepare(PIPELINE_SQL).bind(today));
+  // M5.5b (LD80): the finance tile is live, in this same batch: invoiced (this financial year and this month), what clients owe and what is overdue, the proformas
+  // that wait for payment, and the export invoices nearing a deadline. "Collected" and "payments to verify" arrive with payments (M6).
+  const fy = fyOfDate(todayDate);
+  const fyFrom = `${fy.startYear}-04-01`;
+  const fyTo = `${fy.startYear + 1}-03-31`;
+  const monthFrom = `${today.slice(0, 7)}-01`;
+  if (tiles.has("finance")) {
+    add(
+      "finance",
+      db.prepare(INVOICED_SQL).bind(fyFrom, fyTo, monthFrom),
+      db.prepare(OUTSTANDING_SQL),
+      db.prepare(OVERDUE_SQL).bind(today),
+      db.prepare(OVERDUE_OLDEST_SQL).bind(today),
+      db.prepare(PROFORMAS_AWAITING_SQL),
+      db.prepare(SETTINGS_TAX_SQL),
+      db.prepare(EXPORT_STAGE_COUNTS_SQL).bind(today),
+      db.prepare(EXPORT_NEXT_SQL).bind(today),
+    );
+  }
   if (tiles.has("projects")) {
     add(
       "projects",
@@ -191,15 +233,111 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
       })),
     };
   }
-  if (tiles.has("finance"))
+  if (tiles.has("finance")) {
+    type Cur = { currency: string; n: number; balance: number };
+    const byCur = (name: string, at: number) =>
+      rows<Cur>(name, at).map((r) => ({ currency: r.currency, count: r.n, balanceMinor: r.balance }));
+    const stored = rows<{ value: string }>("finance", 5)[0]?.value;
+    let taxJson: unknown = {};
+    try {
+      taxJson = stored === undefined ? {} : JSON.parse(stored);
+    } catch {
+      taxJson = null;
+    }
+    // The export statements read the tax row's own values in SQL; if the row is not valid (the no-zod reader says so) their figures are withheld, never guessed.
+    const rulesOk = taxJson !== null && realisationParamsFromStoredTax(taxJson).ok;
+    const stageCount = new Map(rows<{ stage: string; n: number }>("finance", 6).map((r) => [r.stage, r.n]));
     out.finance = {
-      available: false,
-      arrivesWith: {
-        invoicedAndCollected: "invoicing",
-        overdueInvoices: "invoicing",
-        paymentsToVerify: "payments",
+      today,
+      month: {
+        from: monthFrom,
+        to: toIsoDate(
+          addDays(
+            {
+              year: todayDate.month === 12 ? todayDate.year + 1 : todayDate.year,
+              month: todayDate.month === 12 ? 1 : todayDate.month + 1,
+              day: 1,
+            },
+            -1,
+          ),
+        ),
       },
+      fy: { label: fy.label, from: fyFrom, to: fyTo },
+      invoiced: {
+        month: rows<InvoicedRow>("finance", 0)
+          .filter((r) => r.month_documents > 0)
+          .map((r) => ({
+            currency: r.currency,
+            documents: r.month_documents,
+            taxableMinor: r.month_taxable,
+            totalMinor: r.month_total,
+            inrTaxableMinor: r.month_inr_taxable,
+          })),
+        fy: rows<InvoicedRow>("finance", 0).map((r) => ({
+          currency: r.currency,
+          documents: r.fy_documents,
+          taxableMinor: r.fy_taxable,
+          totalMinor: r.fy_total,
+          inrTaxableMinor: r.fy_inr_taxable,
+        })),
+      },
+      outstanding: byCur("finance", 1),
+      overdue: {
+        byCurrency: byCur("finance", 2),
+        oldest: rows<{
+          id: string;
+          number_display: string;
+          due_date: string;
+          currency: string;
+          balance_minor: number;
+          client_code: string;
+          client_name: string;
+        }>("finance", 3).map((r) => ({
+          id: r.id,
+          number: r.number_display,
+          clientCode: r.client_code,
+          clientName: r.client_name,
+          dueDate: r.due_date,
+          currency: r.currency,
+          balanceMinor: r.balance_minor,
+          daysOverdue: daysBetween(
+            parseIsoDate(r.due_date) as NonNullable<ReturnType<typeof parseIsoDate>>,
+            todayDate,
+          ),
+        })),
+      },
+      proformasAwaiting: byCur("finance", 4),
+      exports: rulesOk
+        ? {
+            counts: {
+              femaApproaching: stageCount.get("fema_approaching") ?? 0,
+              femaOverdue: stageCount.get("fema_overdue") ?? 0,
+              gstApproaching: stageCount.get("gst_approaching") ?? 0,
+              gstOverdue: stageCount.get("gst_overdue") ?? 0,
+            },
+            next: rows<{
+              id: string;
+              number_display: string;
+              client_code: string;
+              currency: string;
+              balance_minor: number;
+              stage: string;
+              due: string;
+            }>("finance", 7).map((r) => ({
+              id: r.id,
+              number: r.number_display,
+              clientCode: r.client_code,
+              currency: r.currency,
+              outstandingMinor: r.balance_minor,
+              stage: r.stage,
+              dueDate: r.due,
+            })),
+          }
+        : { available: false, reason: "settings_invalid" },
+      collected: { available: false, arrivesWith: "payments" },
+      paymentsToVerify: { available: false, arrivesWith: "payments" },
     };
+  }
   if (tiles.has("projects")) {
     const by = Object.fromEntries(
       rows<{ status: string; n: number }>("projects").map((r) => [r.status, r.n]),
