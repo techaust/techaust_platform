@@ -9,6 +9,7 @@
 // reference already used; the amount against the balance; the date; the type; the lines (the inclusive split); the rate; the INR export confirmation;
 // the blockers (no bank items: the invoice is paid); the seal; the batch; the PDF through `waitUntil`.
 
+import { sha256Hex } from "@techaust/core/catalogue";
 import { fyOf } from "@techaust/core/dates";
 import { uuidv7 } from "@techaust/core/ids";
 import {
@@ -53,15 +54,18 @@ import {
   CONTACT_CHANGED,
   computeInvoice,
   EXPORT_CURRENCY_CONFIRM,
+  EXPORT_DECLARATION_TAMPERED,
   FX_NOT_APPLICABLE,
   headerExtrasOf,
   type InvoiceState,
   ISSUE_BLOCKED,
   invoiceColumns,
   issuerOf,
+  NEWEST_EXPORT_DECLARATION,
   NOT_A_PROFORMA,
   needsInrConfirm,
   PROFORMA_NOT_ISSUED,
+  proformaRouteOf,
   recipientOf,
   SERIES_FULL,
   SETTINGS_CHANGED,
@@ -107,6 +111,8 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
           "SELECT i.number_display FROM advance_receipts r JOIN documents i ON i.id = r.invoice_id WHERE r.proforma_id = ?1 AND r.reference_norm = ?2",
         )
         .bind(id, norm ?? ""),
+      // Decision 10: an export invoice for money received pins the newest extra export note, as any export invoice does.
+      db.prepare(NEWEST_EXPORT_DECLARATION),
     ]);
     // (2) 404 unless a proforma
     if (!ctx) return err(c, NOT_FOUND, 404);
@@ -148,13 +154,17 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
     const proformaComputed = d.computed;
     if (!proformaComputed || !d.number_display || !d.issue_date) return err(c, PROFORMA_NOT_ISSUED, 409);
     const today = todayOf(now);
+    // Review 1: the route is the PROFORMA's (its own pick, else the one its computation used), never the live Settings of the day the money arrives.
+    const route =
+      ctx.client.gst_status === "overseas" ? proformaRouteOf(d.export_mode, proformaComputed) : null;
     const made = advanceDraft({
       amountMinor: f.amountMinor,
       currency,
       client: ctx.client,
       settings: ctx.settings,
       proformaComputed,
-      exportMode: d.export_mode,
+      proformaNumber: d.number_display,
+      exportMode: route,
       fx,
       today,
     });
@@ -176,7 +186,7 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
       currency,
       discountKind: null,
       discountValue: null,
-      exportMode: d.export_mode,
+      exportMode: route,
       fx,
       serviceCompletedOn: null,
       exportDeclarationId: null,
@@ -228,8 +238,12 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
     const recipient = recipientOf(ctx.client, ctx.contact);
     const issuer = issuerOf(ctx.settings, ctx.bank, { id: u.id, name: u.name }, currency);
     const terms = ctx.newestTerms as TermsRef | null;
-    const mode: ExportRoute =
-      d.export_mode === "lut" || d.export_mode === "igst_paid" ? d.export_mode : ctx.settings.tax.exportMode;
+    const mode: ExportRoute = route ?? ctx.settings.tax.exportMode;
+    // Decision 10: the newest extra export note, when one exists, is pinned with its text; its text must be the text its SHA-256 was taken from.
+    const newest = (ctx.extra[1]?.results[0] as (TermsRef & { body_md: string }) | undefined) ?? null;
+    const declaration = type === "export_invoice" ? newest : null;
+    if (declaration && (await sha256Hex(declaration.body_md ?? "")) !== declaration.sha256)
+      return err(c, EXPORT_DECLARATION_TAMPERED, 409);
     const receiptId = uuidv7();
     const dueDate = issueDate; // paid on receipt: due the day it is issued
     // LD37: sealed here and frozen in `header_extras` by the same batch (the receipt id is known before the batch).
@@ -239,7 +253,7 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
       client: ctx.client,
       issueFy: fy,
       mode,
-      declaration: null,
+      declaration,
       advance: {
         proformaId: d.id,
         proformaNumber: d.number_display,
@@ -257,7 +271,7 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
         dueDate,
         contentSha256: computation.hash,
         termsRef: terms ? { id: terms.id, version: terms.version, sha256: terms.sha256 } : null,
-        exportMode: d.export_mode,
+        exportMode: route,
       },
       computed,
       recipient,
@@ -293,6 +307,7 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
       snapshotSha256: seal.snapshotSha256,
       issuedBy: u.id,
       termsVersionId: terms?.id ?? null,
+      exportDeclarationId: declaration?.id ?? null,
       headerExtras: headerExtrasJson(extras),
       proformaId: d.id,
       expectedProformaUpdatedAt: d.updated_at,
@@ -308,7 +323,7 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
         projectId: ctx.milestone?.project_id ?? null,
         contactId: state.contactId,
         currency,
-        exportMode: d.export_mode,
+        exportMode: route,
         fx,
         subtotalMinor: col.subtotal_minor,
         discountMinor: col.discount_minor,

@@ -1,7 +1,7 @@
 // The daily LUT check (M5.2 B3, ADM-INV-18, Q22, LD27; VERIFY WITH CA/LEGAL: whether and when a letter of undertaking is needed is the CA's call).
 //   cron (daily 22:00 UTC = 03:30 IST) -> `enqueueStats` adds ONE `lut.check` message (the IST date of the run) to its existing LEADS_QUEUE `sendBatch`
 //     (no new cron, no new queue, no D1 read in the cron).
-//   consumer -> `processLutCheck`: ONE read (the stored `tax` settings row), the letters read WITHOUT zod (`lutsFromStoredTax`; the jobs Worker must not
+//   consumer -> `processLutCheck`: ONE read (the stored `tax` settings row; no bell on the IGST route), the letters read WITHOUT zod (`lutsFromStoredTax`; the jobs Worker must not
 //     bring zod in), `lutBellFor` decides. When a bell is due: ONE `INSERT OR IGNORE ... SELECT` over the active owners, kind `lut.reminder`, entity
 //     `lut:<FY>:<Monday of the IST week>`; the unique index (user, kind, entity) keeps it to one a week per owner, whatever the redelivery or rerun. It writes
 //     nothing else, and the weekly EMAIL is M5.4's (LD27).
@@ -24,6 +24,8 @@ export const TAX_ROW_SQL = `SELECT (SELECT value FROM settings WHERE key = 'tax'
 export const LUT_BELL_SQL = `INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
   SELECT 'n_' || lower(hex(randomblob(16))), u.id, ?1, 'settings', ?2, ?3, ?4 FROM staff_users u WHERE u.role = 'owner' AND u.status = 'active'`;
 
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
+
 export type LutCheckResult = { bell: "none" | "next_fy_due" | "current_missing"; owners: number };
 
 /** Handles one `lut.check` message (a valid one: the queue routes the rest to `skipLutCheck`). */
@@ -38,6 +40,11 @@ export async function processLutCheck(env: Env, msg: LutCheckMessage): Promise<L
     stored = row.value ? JSON.parse(row.value) : null;
   } catch {
     stored = null; // an unreadable row is "no letters": the owners are told, which is the safe side
+  }
+  // The IGST route needs no letter, so a bell all year would be noise (the Settings attention row fires on the LUT route only). Read without zod.
+  if (isRecord(stored) && stored.exportMode === "igst_paid") {
+    logEvent("lut.check", { asOf: msg.asOf, bell: "none", route: "igst_paid" });
+    return { bell: "none", owners: 0 };
   }
   const bell = lutBellFor(msg.asOf, lutsFromStoredTax(stored));
   if (!bell) {

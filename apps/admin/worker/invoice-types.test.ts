@@ -1251,3 +1251,15 @@ describe("the service date of a void invoice [early check, optional]", () => {
     expect(await typesRow(made.id)).toMatchObject({ service_completed_on: null });
   });
 });
+
+describe("the SWIFT blocker and the frozen SWIFT block judge the same thing [review 9]", () => {
+  it("a USD account with an empty SWIFT code is swift_missing, as the frozen block would be null", async () => {
+    const o = await owner();
+    const usd = await readyExport(o);
+    await putSwiftBank({ swift: "" });
+    expect((await blockersOf(await issueInvoice(o, usd.id))).map((b) => b.code)).toEqual(["swift_missing"]);
+    await putSwiftBank();
+    expect((await issueInvoice(o, usd.id)).status).toBe(200);
+    expect((await frozenBlocks(usd.id)).issuer.bank.swift).toMatchObject({ swift: "SAMPINBBXXX" });
+  });
+});

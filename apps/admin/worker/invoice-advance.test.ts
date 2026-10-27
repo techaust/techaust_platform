@@ -1,14 +1,19 @@
 // The tax invoice for money received against a proforma [Q9, LD22, G-6, ADM-INV-10; VERIFY WITH CA/LEGAL]: the Owner's `POST /invoices/:id/advance-invoice`.
 // The proforma converts, the invoice is made paid with the next number of its series, one receipt row is the evidence, a repeated reference is the same
 // invoice, and every refusal leaves the counters, the proforma, the receipts and the audit log exactly as they were.
+
 import { env } from "cloudflare:workers";
+import { sha256Hex } from "@techaust/core/catalogue";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { advanceLineDescription } from "./invoice-model.ts";
 import { call, one, rows, sessionFor } from "./test-helpers.ts";
 import {
   currentFy,
+  ENDORSEMENT,
   frozenBlocks,
   LUT_ARN,
   lutOf,
+  mkExportDraft,
   mkProforma,
   putSwiftBank,
   putTax,
@@ -344,7 +349,9 @@ describe("the action [Q9, LD22]", () => {
         })
       ).status,
     ).toBe(200);
-    expect((await issueInvoice(o, made.id)).status).toBe(200);
+    const issuedPf = await issueInvoice(o, made.id);
+    expect(issuedPf.status).toBe(200);
+    const proformaNumber = (await json(issuedPf)).number as string;
     const res = await advance(o, made.id, { amountMinor: 118_000 });
     expect(res.status, await res.clone().text()).toBe(201);
     const b = await json(res);
@@ -354,7 +361,9 @@ describe("the action [Q9, LD22]", () => {
     );
     expect(lines.map((l) => l.sac).sort()).toEqual(["998313", "998314"]);
     expect(lines.reduce((s, l) => s + l.line_total_minor, 0)).toBe(118_000);
-    expect(lines.every((l) => l.description === "[Placeholder]")).toBe(true);
+    expect(lines.every((l) => l.description === `Payment received against proforma ${proformaNumber}`)).toBe(
+      true,
+    );
     // the quarter and three quarters of the money, by the weights of the proforma's groups
     const byRate = Object.fromEntries(lines.map((l) => [l.sac, l.line_total_minor]));
     expect(byRate["998313"]).toBe(29_500);
@@ -733,5 +742,209 @@ describe("what a converted proforma and its invoice cannot do [Q1, LD22]", () =>
     const paid = await issuedProforma(o);
     expect((await advance(o, paid.id, { amountMinor: 10_000 })).status).toBe(201);
     expect((await voidInvoice(o, paid.id)).status).toBe(409);
+  });
+});
+
+// ---- the proforma decides the route and the words (code review of M5.2) ----------------------------------------------------------------------------
+
+describe("the invoice for money received keeps the PROFORMA's export route [review 1; VERIFY WITH CA/LEGAL]", () => {
+  const usd = (over: Record<string, unknown> = {}) => ({
+    fx: { rate: "83.1234", date: todayIso(), source: "FBIL" },
+    ...over,
+  });
+  const taxOf = (id: string) =>
+    one<{ igst_minor: number; taxable_minor: number; total_minor: number; export_mode: string | null }>(
+      "SELECT igst_minor, taxable_minor, total_minor, export_mode FROM documents WHERE id = ?",
+      id,
+    );
+
+  it("a proforma issued under the LUT setting stays zero-rated under LUT when Settings moves to IGST before the money arrives", async () => {
+    const o = await owner();
+    await putTax({ luts: [lutOf(currentFy())], exportMode: "lut" });
+    const pf = await issuedProforma(o, { overseas: true, price: 1_000_000 });
+    // the proforma never picked a route: it is the engine's route of the issue day that must carry over
+    expect((await typesRow(pf.id))?.export_mode).toBeNull();
+    await putTax({ luts: [lutOf(currentFy())], exportMode: "igst_paid" });
+    const res = await advance(o, pf.id, usd({ amountMinor: 100_000 }));
+    expect(res.status, await res.clone().text()).toBe(201);
+    const b = await json(res);
+    expect(await taxOf(b.id)).toEqual({
+      igst_minor: 0,
+      taxable_minor: 100_000,
+      total_minor: 100_000,
+      export_mode: "lut",
+    });
+    const check = await sealCheck(b.id, {
+      export: {
+        mode: "lut",
+        endorsement: ENDORSEMENT.lut,
+        lut: { fy: currentFy(), arn: LUT_ARN },
+        countryCode: "US",
+        countryName: "United States",
+        declarationRef: null,
+      },
+      advance: {
+        proformaId: pf.id,
+        proformaNumber: pf.number,
+        proformaIssueDate: todayIso(),
+        receivedOn: todayIso(),
+        receiptId: b.receiptId,
+      },
+    });
+    expect(check).toEqual({ content: true, snapshot: true });
+  });
+
+  it("a proforma issued under IGST stays IGST when Settings moves to LUT, and needs no LUT letter", async () => {
+    const o = await owner();
+    await putTax({ luts: [], exportMode: "igst_paid" });
+    const pf = await issuedProforma(o, { overseas: true, price: 1_000_000 });
+    expect((await typesRow(pf.id))?.export_mode).toBeNull();
+    await putTax({ luts: [], exportMode: "lut" });
+    const res = await advance(o, pf.id, usd({ amountMinor: 100_000 }));
+    expect(res.status, await res.clone().text()).toBe(201);
+    const b = await json(res);
+    const row = await taxOf(b.id);
+    expect(row?.export_mode).toBe("igst_paid");
+    expect(row?.igst_minor).toBeGreaterThan(0);
+    expect(row?.total_minor).toBe(100_000);
+    const check = await sealCheck(b.id, {
+      export: {
+        mode: "igst_paid",
+        endorsement: ENDORSEMENT.igst_paid,
+        lut: null,
+        countryCode: "US",
+        countryName: "United States",
+        declarationRef: null,
+      },
+      advance: {
+        proformaId: pf.id,
+        proformaNumber: pf.number,
+        proformaIssueDate: todayIso(),
+        receivedOn: todayIso(),
+        receiptId: b.receiptId,
+      },
+    });
+    expect(check).toEqual({ content: true, snapshot: true });
+    await putTax({ luts: [lutOf(currentFy())] });
+  });
+
+  it("a domestic proforma has no route and the invoice carries none, whatever Settings says", async () => {
+    const o = await owner();
+    await putTax({ luts: [lutOf(currentFy())], exportMode: "igst_paid" });
+    const pf = await issuedProforma(o);
+    const res = await advance(o, pf.id, { amountMinor: 59_000 });
+    expect(res.status, await res.clone().text()).toBe(201);
+    expect((await taxOf((await json(res)).id))?.export_mode).toBeNull();
+    await putTax({ luts: [lutOf(currentFy())] });
+  });
+});
+
+describe("the rate date of a frozen invoice made for money received [review 6]", () => {
+  it("is judged against the day the money arrived, not the issue day: a valid sealed USD invoice never reads as out of date", async () => {
+    const o = await farSession();
+    vi.useFakeTimers({ toFake: ["Date"], now: Date.UTC(2030, 5, 10, 6, 0, 0) });
+    await putTax({ luts: [lutOf(currentFy())] });
+    const pf = await issuedProforma(o, { overseas: true, price: 1_000_000 });
+    // the money arrived on 30 June, the invoice is made on 5 July (more days after the rate than `fxMaxAgeDays`)
+    vi.setSystemTime(Date.UTC(2030, 6, 5, 6, 0, 0));
+    await renew(o);
+    const res = await advance(o, pf.id, {
+      amountMinor: 100_000,
+      receivedOn: "2030-06-30",
+      fx: { rate: "83.1234", date: "2030-06-28", source: "FBIL" },
+    });
+    expect(res.status, await res.clone().text()).toBe(201);
+    const view = await getInvoice(o, (await json(res)).id);
+    expect(view.fx).toMatchObject({ applies: true, refDate: "2030-06-30", dateOk: true });
+    // a draft is still judged against today
+    const draft = await mkExportDraft(o);
+    expect((await getInvoice(o, draft.id)).fx.refDate).toBe("2030-07-05");
+  });
+});
+
+describe("the words of the invoice for money received [review 2, decision 10; 07-S §8]", () => {
+  it("every frozen line reads 'Payment received against proforma {number}'", async () => {
+    const o = await owner();
+    const pf = await issuedProforma(o);
+    const res = await advance(o, pf.id, { amountMinor: 59_000 });
+    expect(res.status, await res.clone().text()).toBe(201);
+    const lines = await rows(
+      "SELECT description FROM document_lines WHERE document_id = ? ORDER BY position",
+      (await json(res)).id,
+    );
+    expect(lines.length).toBeGreaterThan(0);
+    for (const l of lines) expect(l.description).toBe(`Payment received against proforma ${pf.number}`);
+    expect(advanceLineDescription("TH/PI/2026/0001")).toBe(
+      "Payment received against proforma TH/PI/2026/0001",
+    );
+  });
+
+  it("an export invoice for money received pins the newest extra export note with its frozen text; a tax invoice never carries one", async () => {
+    const o = await owner();
+    const pfExport = await issuedProforma(o, { overseas: true, price: 1_000_000 });
+    const pfTax = await issuedProforma(o);
+    const id = "00000000-0000-7000-8000-0000000000e1";
+    const text = "Payment to be made in USD by wire transfer only.";
+    const sha = await sha256Hex(text);
+    await env.DB.prepare(
+      "INSERT INTO terms_blocks (id, kind, version, body_md, sha256) VALUES (?1, 'export_declaration', 200, ?2, ?3)",
+    )
+      .bind(id, text, sha)
+      .run();
+    const res = await advance(o, pfExport.id, {
+      amountMinor: 100_000,
+      fx: { rate: "83.1234", date: todayIso(), source: "FBIL" },
+    });
+    expect(res.status, await res.clone().text()).toBe(201);
+    const b = await json(res);
+    expect(await typesRow(b.id)).toMatchObject({ export_declaration_id: id });
+    const check = await sealCheck(b.id, {
+      export: {
+        mode: "lut",
+        endorsement: ENDORSEMENT.lut,
+        lut: { fy: currentFy(), arn: LUT_ARN },
+        countryCode: "US",
+        countryName: "United States",
+        declarationRef: { id, version: 200, sha256: sha },
+        declarationText: text,
+      },
+      advance: {
+        proformaId: pfExport.id,
+        proformaNumber: pfExport.number,
+        proformaIssueDate: todayIso(),
+        receivedOn: todayIso(),
+        receiptId: b.receiptId,
+      },
+    });
+    expect(check).toEqual({ content: true, snapshot: true });
+    // the text is frozen: a newer note afterwards changes nothing
+    await env.DB.prepare(
+      "INSERT INTO terms_blocks (id, kind, version, body_md, sha256) VALUES ('00000000-0000-7000-8000-0000000000e2', 'export_declaration', 201, 'Later', ?1)",
+    )
+      .bind(await sha256Hex("Later"))
+      .run();
+    expect((await sealCheck(b.id))?.snapshot).toBe(true);
+    // a tax invoice has no export part, so no note
+    const tax = await advance(o, pfTax.id, { amountMinor: 59_000 });
+    expect(tax.status, await tax.clone().text()).toBe(201);
+    expect((await typesRow((await json(tax)).id))?.export_declaration_id).toBeNull();
+  });
+
+  it("a note whose text no longer matches its SHA-256 is refused with export_declaration_tampered, and nothing is written", async () => {
+    const o = await owner();
+    const pf = await issuedProforma(o, { overseas: true, price: 1_000_000 });
+    await env.DB.prepare(
+      "INSERT INTO terms_blocks (id, kind, version, body_md, sha256) VALUES ('00000000-0000-7000-8000-0000000000e3', 'export_declaration', 300, 'Tampered text', ?1)",
+    )
+      .bind(await sha256Hex("The text that was approved"))
+      .run();
+    const before = await snapshot(pf.id);
+    const res = await advance(o, pf.id, {
+      amountMinor: 100_000,
+      fx: { rate: "83.1234", date: todayIso(), source: "FBIL" },
+    });
+    expect(res.status).toBe(409);
+    expect(await codeOf(res)).toBe("export_declaration_tampered");
+    expect(await snapshot(pf.id)).toEqual(before);
   });
 });

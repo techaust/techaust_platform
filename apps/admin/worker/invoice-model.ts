@@ -573,11 +573,31 @@ export function milestoneDraft(input: {
 
 // ---- the invoice for money received against a proforma (M5.2, Q9, LD22) -----------------------------------------------------------------------
 
+/** 07-S §8: the description of every line of the invoice made for money received (Rule 46 needs a description of the service). */
+export const advanceLineDescription = (proformaNumber: string) =>
+  `Payment received against proforma ${proformaNumber}`;
+
+/**
+ * The export route of the document made for money received against a proforma (review 1): the proforma's own pick; when it had none, the route the
+ * engine computed it under (`export_lut` gives `lut`, `export_igst` gives `igst_paid`), NEVER the live Settings, which may have moved since the
+ * proforma was issued (the proforma said 0 % under LUT; the invoice for the money must not turn into an IGST split because the setting changed).
+ * A proforma that was not an export has no route (null). VERIFY WITH CA/LEGAL: whether a lapsed LUT should force IGST on the tax invoice.
+ */
+export function proformaRouteOf(
+  exportMode: string | null,
+  computed: Pick<ComputedDocument, "supply"> | null,
+): ExportRoute | null {
+  if (exportMode === "lut" || exportMode === "igst_paid") return exportMode;
+  if (computed?.supply.type === "export_lut") return "lut";
+  if (computed?.supply.type === "export_igst") return "igst_paid";
+  return null;
+}
+
 /**
  * The lines of the tax invoice made for an amount received: the amount (tax included) is split over the (SAC, rate) groups of the PROFORMA's own tax
  * summary by the inclusive split (the SAME engine as a milestone, LD13), under the client's CURRENT supply and the proforma's export route. More than
- * the engine's cap of groups merge by rate. An INR amount with paise is refused by the engine (`gross_not_whole_unit`, LD28). The description is
- * `[Placeholder]`: 07-S has no line for it yet.
+ * the engine's cap of groups merge by rate. An INR amount with paise is refused by the engine (`gross_not_whole_unit`, LD28). The description is the
+ * 07-S §8 line with the proforma's number.
  */
 export function advanceDraft(input: {
   amountMinor: number;
@@ -585,6 +605,8 @@ export function advanceDraft(input: {
   client: ClientRow;
   settings: InvoiceSettings;
   proformaComputed: ComputedDocument;
+  /** The proforma's number: the line says what the payment was for (07-S §8). */
+  proformaNumber: string;
   exportMode: string | null;
   fx: FxState | null;
   today: CalendarDate;
@@ -620,7 +642,7 @@ export function advanceDraft(input: {
       catalogueItemId: null,
       catalogueRateMinor: null,
       catalogueLine: null,
-      description: "[Placeholder]",
+      description: advanceLineDescription(input.proformaNumber),
       detail: null,
       sac: l.sac,
       qtyMilli: l.qtyMilli,
@@ -695,7 +717,7 @@ export function issueFactsOf(
     export: state.type === "export_invoice" ? { mode, issueFy: x.fy, luts: lutsOf(settings.tax) } : null,
     bank: {
       inr: x.bank.some((r) => r.kind === "INR"),
-      swift: x.bank.some((r) => r.kind === "USD_SWIFT" && r.swift !== null),
+      swift: swiftBankOf(x.bank) !== null,
     },
     advance: x.advance === true,
     b2cThresholdInrMinor: settings.tax.b2cDetailsThresholdInrMinor,
@@ -721,33 +743,32 @@ export const EXPORT_CURRENCY_CONFIRM = e(
   "export_currency_confirm",
   "Confirm that this export invoice should be in INR.",
 );
-export const FX_NOT_APPLICABLE = e(
-  "fx_not_applicable",
-  "An exchange rate belongs to a USD tax or export invoice",
-);
-export const EXPORT_MODE_NOT_APPLICABLE = e(
-  "export_mode_not_applicable",
-  "An export route belongs to an export invoice or a proforma for an overseas client",
-);
-export const SERVICE_DATE_NOT_APPLICABLE = e(
-  "service_date_not_applicable",
-  "A service date belongs to a tax invoice or an export invoice",
-);
-export const EXPORT_DECLARATION_NOT_APPLICABLE = e(
-  "export_declaration_not_applicable",
-  "The extra export note belongs to an export invoice",
-);
+export const FX_NOT_APPLICABLE = e("fx_not_applicable", "An exchange rate is only needed for USD invoices.");
+/** 07-S §8 gives these three codes one shared line. */
+const NOT_APPLICABLE_LINE = "This doesn't apply to this type of invoice.";
+export const EXPORT_MODE_NOT_APPLICABLE = e("export_mode_not_applicable", NOT_APPLICABLE_LINE);
+export const SERVICE_DATE_NOT_APPLICABLE = e("service_date_not_applicable", NOT_APPLICABLE_LINE);
+export const EXPORT_DECLARATION_NOT_APPLICABLE = e("export_declaration_not_applicable", NOT_APPLICABLE_LINE);
 export const EXPORT_DECLARATION_MISSING = e(
   "export_declaration_missing",
-  "There is no extra export note in Settings to add",
+  "The export note in Settings › Terms was removed. Choose again.",
 );
-export const SERVICE_DATE_FUTURE = e("service_date_future", "The service can't be completed in the future");
-/** 07-S §7 would carry the words; `[Placeholder]` marks a line the copy has not drafted yet (docs/07-S "Copy gaps"). */
-export const ALREADY_SET = e("already_set", "[Placeholder]");
-/** The service date of a void invoice (07-S has no line yet). */
-export const INVOICE_VOID = e("invoice_void", "[Placeholder]");
-/** The extra export note the draft pinned is no longer the newest one: the person must look at the new text and choose again (07-S has no line yet). */
-export const EXPORT_DECLARATION_CHANGED = e("export_declaration_changed", "[Placeholder]");
+export const SERVICE_DATE_FUTURE = e(
+  "service_date_future",
+  "The service completion date can't be in the future.",
+);
+/** The words are 07-S §8; `[Placeholder]` marks a line the copy has not drafted yet. */
+export const ALREADY_SET = e(
+  "already_set",
+  "The service completion date is already set and can't be changed.",
+);
+/** The service date of a void invoice. */
+export const INVOICE_VOID = e("invoice_void", "This invoice is void.");
+/** The extra export note the draft pinned is no longer the newest one: the person must look at the new text and choose again. */
+export const EXPORT_DECLARATION_CHANGED = e(
+  "export_declaration_changed",
+  "The export note in Settings › Terms changed since this draft was saved. Save the draft again.",
+);
 /** The newest export note's text does not match its stored SHA-256: nothing is sealed from it (07-S has no line yet). */
 export const EXPORT_DECLARATION_TAMPERED = e("export_declaration_tampered", "[Placeholder]");
 export const NOT_A_PROFORMA = e("not_a_proforma", "That is not a proforma");
@@ -760,7 +781,10 @@ export const ADVANCE_EXCEEDS_BALANCE = e(
   "advance_exceeds_balance",
   "The amount can't be more than the proforma's balance.",
 );
-export const ADVANCE_DATE_INVALID = e("advance_date_invalid", "[Placeholder]");
+export const ADVANCE_DATE_INVALID = e(
+  "advance_date_invalid",
+  "The date received can't be before the proforma's date or in the future.",
+);
 export const ADVANCE_REFERENCE_INVALID = e(
   "advance_reference_invalid",
   "Enter the payment reference: letters, digits, / and -, up to 60 characters",

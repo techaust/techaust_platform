@@ -208,6 +208,17 @@ describe("when a bell rings", () => {
     expect(await bells()).toHaveLength(0);
   });
 
+  it("no bell of either kind on the IGST route (no letter is needed); back on the LUT route, or with no route stored, the bells ring [review 7]", async () => {
+    await putTax({ luts: [], exportMode: "igst_paid" });
+    expect(await check("2027-03-10")).toEqual({ bell: "none", owners: 0 }); // next-year kind
+    expect(await check("2027-04-07")).toEqual({ bell: "none", owners: 0 }); // running-FY kind
+    expect(await bells()).toHaveLength(0);
+    await putTax({ luts: [], exportMode: "lut" });
+    expect(await check("2027-04-14")).toMatchObject({ bell: "current_missing", owners: 2 });
+    await putTax({ luts: [] }); // a stored row with no route is the LUT route (the default)
+    expect(await check("2027-04-21")).toMatchObject({ bell: "current_missing", owners: 2 });
+  });
+
   it("no settings row at all, or an unreadable one, is 'no letters' (the owners are told, nothing throws)", async () => {
     expect(await check("2027-04-07")).toMatchObject({ bell: "current_missing", owners: 2 });
     await putTax("{not json");

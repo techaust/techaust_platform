@@ -188,6 +188,9 @@ export function invoiceView(i: InvoiceViewInput) {
           ? state.exportMode
           : settings.tax.exportMode;
   const luts = lutsOf(settings.tax);
+  // The day the rate is judged against: a draft, today; a frozen invoice, the day it was judged on at issue (the day the money arrived for the invoice
+  // made for a payment received, Q9; else its issue date), never today (review 6).
+  const fxRefDate = frozen ? (sealed.advance?.receivedOn ?? d.issue_date ?? todayIso) : todayIso;
   const countryCode = sealed.export?.countryCode ?? (recipient ? recipient.country : client.country);
   const approval = approvalOf(i.approvals, d.content_sha256);
   const voidReasons = voidBlockers({
@@ -357,11 +360,9 @@ export function invoiceView(i: InvoiceViewInput) {
             source: state.fx.source,
           }
         : null,
-      refDate: todayIso,
+      refDate: fxRefDate,
       maxAgeDays: settings.tax.fxMaxAgeDays,
-      dateOk: state.fx
-        ? fxDateOk(state.fx.date, frozen ? (d.issue_date ?? todayIso) : todayIso, settings.tax.fxMaxAgeDays)
-        : null,
+      dateOk: state.fx ? fxDateOk(state.fx.date, fxRefDate, settings.tax.fxMaxAgeDays) : null,
       inr: computed?.inr ?? null,
     },
     /** An export invoice, or a proforma for an overseas client (its route decides the advance invoice's): the route, its endorsement (an export invoice only), the LUT of the FY. */
