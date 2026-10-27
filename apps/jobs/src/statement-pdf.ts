@@ -31,14 +31,20 @@ import { type RenderEnv, renderPaced } from "./browser.ts";
 import { logEvent } from "./log.ts";
 import { type Clock, realClock } from "./pacer.ts";
 import { BROWSER_ALERT_MS, dayOf, failed, HALF_BELL_SQL, putOnce, STAT_ADD_SQL, sha256Bytes } from "./pdf.ts";
+import { PLACEHOLDER_07V } from "./reports.ts";
 
 /** The address a statement's footer sends questions to when Settings has none (07-V §6.1: a fixed word, the billing address of docs/13 2026-10-07). */
 export const DEFAULT_BILLING_EMAIL = "billing@techaust.com";
 
+/** 07-V §9, word for word with the client's CODE as `{client}`; marked until the owner approves 07-V (as M5.4's 07-U bells are). */
 export const STATEMENT_BELL_COPY = {
-  ready: (client: string) => `Statement PDF for ${client} is ready`,
-  failed: (client: string) => `Statement PDF for ${client} couldn't be made`,
+  ready: (client: string) => `${PLACEHOLDER_07V}Statement PDF for ${client} is ready`,
+  failed: (client: string) => `${PLACEHOLDER_07V}Statement PDF for ${client} couldn't be made`,
 } as const;
+
+/** Where a statement bell leads: the client's Statement tab, on that PDF. */
+export const statementLink = (clientId: string, statementId: string): string =>
+  `/clients/${clientId}?tab=statement&pdf=${statementId}`;
 
 export const STATEMENT_ROW_SQL = `SELECT s.id, s.client_id, s.currency, s.from_date, s.to_date, s.issuer, s.requested_by, s.pdf_r2_key, s.failed_at,
          c.code AS client_code, c.legal_name, c.gstin AS client_gstin, c.billing_address, c.anonymised_at
@@ -134,7 +140,7 @@ async function fail(
             "statement.failed",
             row.id,
             STATEMENT_BELL_COPY.failed(row.client_code),
-            `/clients/${row.client_id}`,
+            statementLink(row.client_id, row.id),
             row.requested_by,
           ),
         ]
@@ -209,6 +215,7 @@ export async function processStatementPdf(
   const view = statementView({
     company,
     client: {
+      code: row.client_code,
       legalName: row.legal_name,
       address: address && typeof address === "object" ? (address as Record<string, string>) : null,
       gstin: row.client_gstin,
@@ -251,7 +258,7 @@ export async function processStatementPdf(
         "statement.ready",
         row.id,
         STATEMENT_BELL_COPY.ready(row.client_code),
-        `/clients/${row.client_id}`,
+        statementLink(row.client_id, row.id),
         row.requested_by,
       ),
       ...(usage

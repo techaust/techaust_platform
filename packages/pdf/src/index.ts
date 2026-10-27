@@ -17,5 +17,6 @@ export * from "./markdown-html.ts";
 export * from "./options.ts";
 export * from "./render.ts";
 export * from "./sample.ts";
+export * from "./statement-view.ts";
 export * from "./types.ts";
 export * from "./view.ts";

@@ -61,13 +61,18 @@ const dateText = (iso: string): string => {
   return d ? formatDate(d) : iso;
 };
 
-/** 07-V §9 (the lead's draft, pending the owner): the bell of each stage. The number only, never a name. */
+/** The mark on a bell title whose words are 07-V's and not yet approved by the owner (as M5.4's 07-U bells are marked `[Placeholder, 07-U]`); it goes when the owner approves 07-V. */
+export const PLACEHOLDER_07V = "[Placeholder, 07-V] ";
+
+/** 07-V §9, word for word (the lead's draft, pending the owner): the bell of each stage. The number only, never a name. */
 export const REALISATION_BELL_TITLE: Record<AlertStage, (number: string, date: string) => string> = {
-  fema_approaching: (n, d) => `${n}: FEMA date in 30 days (${d})`,
-  fema_overdue: (n, d) => `${n}: past the FEMA date (${d})`,
-  gst_approaching: (n, d) => `${n}: GST refund date in 30 days (${d})`,
-  gst_overdue: (n, d) => `${n}: past the GST date (${d})`,
+  fema_approaching: (n, d) => `${PLACEHOLDER_07V}${n}: FEMA date in 30 days (${d})`,
+  fema_overdue: (n, d) => `${PLACEHOLDER_07V}${n}: past the FEMA date (${d})`,
+  gst_approaching: (n, d) => `${PLACEHOLDER_07V}${n}: GST refund date in 30 days (${d})`,
+  gst_overdue: (n, d) => `${PLACEHOLDER_07V}${n}: past the GST date (${d})`,
 };
+/** Where a realisation bell and email lead: the export realisation report, on that invoice. */
+export const realisationLink = (documentId: string): string => `/reports/realisation?doc=${documentId}`;
 /** The due date a stage is about: the FEMA date for the FEMA stages, the GST date for the GST ones. */
 const dueOf = (r: Pick<ScanRow, "stage" | "fema_due" | "gst_due">): string =>
   r.stage === "gst_approaching" || r.stage === "gst_overdue" ? r.gst_due : r.fema_due;
@@ -140,7 +145,7 @@ export async function processRealisationScan(env: Env, body: unknown, now = Date
             currency: r.currency,
             outstanding: moneyText(r.balance_minor, r.currency),
             due_date: due,
-            link: `${adminBase(env)}/invoices/${r.id}`,
+            link: `${adminBase(env)}${realisationLink(r.id)}`,
           },
           entity: { type: "document", id: `${r.id}:${r.stage}` },
         });
@@ -149,7 +154,7 @@ export async function processRealisationScan(env: Env, body: unknown, now = Date
           k: kind,
           d: r.id,
           t: REALISATION_BELL_TITLE[r.stage](r.number_display, due),
-          l: `/invoices/${r.id}`,
+          l: realisationLink(r.id),
         });
       }
     }
@@ -247,7 +252,7 @@ export async function processEdfReminder(env: Env, body: unknown): Promise<EdfRe
   await env.DB.prepare(EDF_BELLS_INSERT)
     .bind(
       entity,
-      `EDF list for ${monthLabel} is due by ${due}`,
+      `${PLACEHOLDER_07V}EDF list for ${monthLabel} is due by ${due}`,
       `/reports/edf?month=${year}-${mm}`,
       JSON.stringify(ownerRows.map((o) => ({ u: o.id }))),
     )

@@ -158,9 +158,9 @@ describe("the statement PDF: read, view, content hash, render, store once", () =
     expect(html).toContain(inv.numberDisplay);
     expect(html).toContain(`Credit note against ${inv.numberDisplay}`);
     expect(html).toContain(cn.numberDisplay);
-    expect(html).toContain("Period: 01 Oct 2026 to 31 Oct 2026");
+    expect(html).toContain("Period: 01 Oct 26 to 31 Oct 26");
     expect(html).toContain(`Write to ${DEFAULT_BILLING_EMAIL}.`);
-    expect(html).toContain("Generated on 02 Nov 2026.");
+    expect(html).toContain("Generated on 02 Nov 26.");
     // 1,180.00 invoice (118,000 paise) less the 118.00 credit note: amount due ₹1,062.00
     expect(html).toContain("Amount due: ₹1,062.00");
 
@@ -178,7 +178,7 @@ describe("the statement PDF: read, view, content hash, render, store once", () =
     expect(bell).toMatchObject({
       user_id: owner.id,
       title: STATEMENT_BELL_COPY.ready(code),
-      link: `/clients/${clientId}`,
+      link: `/clients/${clientId}?tab=statement&pdf=${row.id}`,
       entity_type: "statement",
     });
     expect(bell?.title).not.toContain("Sample Traders");

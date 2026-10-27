@@ -379,6 +379,15 @@ describe("a client's statement", () => {
       adv.number,
       adv.number,
     ]);
+    // 07-V §6 "Credit note against {number}": only the credit note carries the invoice it is against
+    expect(b.entries.map((e: J) => e.againstNumber ?? null)).toEqual([
+      null,
+      null,
+      inv1.number,
+      null,
+      null,
+      null,
+    ]);
     const debits =
       inv1.computed.totalMinor + inv2.computed.totalMinor + dn.computed.totalMinor + adv.computed.totalMinor;
     const credits = cn.computed.totalMinor + adv.computed.totalMinor;

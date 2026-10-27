@@ -7,7 +7,12 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { ALERTS_HOUR_IST, EDF_REMINDER_DAYS_IST, enqueueHourly, hourlyMessages } from "../src/billing.ts";
 import worker from "../src/index.ts";
 import { handleQueue } from "../src/queue.ts";
-import { processEdfReminder, processRealisationScan, REALISATION_BELL_TITLE } from "../src/reports.ts";
+import {
+  PLACEHOLDER_07V,
+  processEdfReminder,
+  processRealisationScan,
+  REALISATION_BELL_TITLE,
+} from "../src/reports.ts";
 import { chunksOf, SEND_BATCH_MAX_BYTES, SEND_BATCH_MAX_MESSAGES, sendChunked } from "../src/send-batch.ts";
 import {
   all,
@@ -208,7 +213,7 @@ describe("realisation.scan: each stage rings once", () => {
     expect(new Set(bells.map((b) => b.user_id))).toEqual(new Set([o1.id, o2.id]));
     for (const b of bells) {
       expect(b.entity_type).toBe("document");
-      expect(b.link).toBe(`/invoices/${ex.id}`);
+      expect(b.link).toBe(`/reports/realisation?doc=${ex.id}`);
       expect(b.title).toContain(ex.numberDisplay);
     }
   });
@@ -239,16 +244,20 @@ describe("realisation.scan: each stage rings once", () => {
         currency: "USD",
         outstanding: "$12,345.00",
         due_date: "03 Aug 2027",
-        link: `https://admin.example/invoices/${ex.id}`,
+        link: `https://admin.example/reports/realisation?doc=${ex.id}`,
       },
     });
     const [bell] = await bellsOf(ex.id);
-    expect(bell?.title).toBe(`${ex.numberDisplay}: FEMA date in 30 days (03 Aug 2027)`);
+    expect(bell?.title).toBe(`${PLACEHOLDER_07V}${ex.numberDisplay}: FEMA date in 30 days (03 Aug 2027)`);
     expect(REALISATION_BELL_TITLE.gst_overdue("N1", "18 Nov 2027")).toBe(
-      "N1: past the GST date (18 Nov 2027)",
+      `${PLACEHOLDER_07V}N1: past the GST date (18 Nov 2027)`,
     );
-    expect(REALISATION_BELL_TITLE.gst_approaching("N1", "d")).toBe("N1: GST refund date in 30 days (d)");
-    expect(REALISATION_BELL_TITLE.fema_overdue("N1", "d")).toBe("N1: past the FEMA date (d)");
+    expect(REALISATION_BELL_TITLE.gst_approaching("N1", "d")).toBe(
+      `${PLACEHOLDER_07V}N1: GST refund date in 30 days (d)`,
+    );
+    expect(REALISATION_BELL_TITLE.fema_overdue("N1", "d")).toBe(
+      `${PLACEHOLDER_07V}N1: past the FEMA date (d)`,
+    );
   });
 
   it("a GST date shows in the email of a GST stage", async () => {
@@ -527,7 +536,7 @@ describe("edf.reminder [Q55]", () => {
     const bells = await edfBells("edf:2026-10");
     expect(bells.map((x) => x.user_id).sort()).toEqual([a.id, b.id].sort());
     expect(bells[0]).toMatchObject({
-      title: "EDF list for October 2026 is due by 30 Nov 2026",
+      title: `${PLACEHOLDER_07V}EDF list for October 2026 is due by 30 Nov 2026`,
       link: "/reports/edf?month=2026-10",
       entity_type: "report",
     });
