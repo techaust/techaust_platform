@@ -6,6 +6,7 @@
 // Everything the freeze needs is also checked here first (`autoIssueEligibility`) so the owners are told WHY a draft stays a draft; the SQL is what decides.
 import {
   carePeriodUsage,
+  type Period,
   type PlanDates,
   planPeriodOf,
   previousPeriod,
@@ -21,7 +22,9 @@ import {
   careDue,
   careLines,
   type DraftCareResult,
+  firstMissedPeriod,
   type IssueCareResult,
+  periodWords,
 } from "@techaust/core/care-billing";
 import { istDate, toIsoDate } from "@techaust/core/dates";
 import { uuidv7 } from "@techaust/core/ids";
@@ -85,13 +88,21 @@ export type CareEnv = Pick<Env, "DB" | "PDF_QUEUE">;
 const PLACEHOLDER = "[Placeholder, 07-U] ";
 /** The owners' bell titles (a bell never carries a number or a name beyond the client's, docs/13 2026-10-26; the issued one names its number, as every issue bell does). */
 const bellTitle = {
-  draftReady: (client: string) => `${PLACEHOLDER}The monthly care invoice for ${client} is ready to check.`,
-  issued: (client: string) => `${PLACEHOLDER}The monthly care invoice for ${client} was issued as `,
-  missedPeriod: (client: string) =>
-    `${PLACEHOLDER}A billing period of ${client}'s care plan was missed. Check its invoices.`,
+  // 07-U §7: "Care invoice draft for {client} ({period}) is ready to check." and, when the exchange rate is what is missing, its own line.
+  draftReady: (client: string, period: Period, reasons: readonly string[] = []) =>
+    reasons.includes("usd_needs_fx")
+      ? `${PLACEHOLDER}Care invoice draft for ${client} needs the exchange rate before it can be issued.`
+      : `${PLACEHOLDER}Care invoice draft for ${client} (${periodWords(period)}) is ready to check.`,
+  // "Care invoice {number} for {client} was issued and emailed." (the number is put between the two parts by SQL, so it is right in the batch that issued the invoice)
+  issuedHead: `${PLACEHOLDER}Care invoice `,
+  issuedTail: (client: string, notEmailed: boolean) =>
+    notEmailed
+      ? ` for ${client} was issued, but no billing contact has portal access, so it wasn't emailed.`
+      : ` for ${client} was issued and emailed.`,
+  // "{client}'s care plan has an unbilled period ({period}). Invoice it by hand." (Q51)
+  missedPeriod: (client: string, period: Period) =>
+    `${PLACEHOLDER}${client}'s care plan has an unbilled period (${periodWords(period)}). Invoice it by hand.`,
 };
-const ISSUED_SUFFIX = ".";
-const ISSUED_NOT_EMAILED_SUFFIX = ", but nobody could be emailed.";
 
 type Guard = { sql: (at: number) => string; params: readonly unknown[] };
 
@@ -125,8 +136,8 @@ function issuedBell(
     )
     .bind(
       documentId,
-      bellTitle.issued(client),
-      notEmailed ? ISSUED_NOT_EMAILED_SUFFIX : ISSUED_SUFFIX,
+      bellTitle.issuedHead,
+      bellTitle.issuedTail(client, notEmailed),
       `/invoices/${documentId}`,
       ...g.params,
     );
@@ -475,7 +486,7 @@ export async function draftCarePlan(
                 kind: "care.draft_ready",
                 entityType: "document",
                 entityId: documentId,
-                title: bellTitle.draftReady(client.display_name),
+                title: bellTitle.draftReady(client.display_name, period, reasons),
                 link: `/invoices/${documentId}`,
               },
               g,
@@ -490,7 +501,10 @@ export async function draftCarePlan(
                 kind: "care.missed_period",
                 entityType: "care_plan",
                 entityId: `${args.planId}:${period.start}`,
-                title: bellTitle.missedPeriod(client.display_name),
+                title: bellTitle.missedPeriod(
+                  client.display_name,
+                  firstMissedPeriod(planDates, facts.last_billed_period, period, data.statuses) ?? period,
+                ),
                 link: `/care-plans/${args.planId}`,
               },
               g,
@@ -559,7 +573,11 @@ export async function issueCareDraft(env: CareEnv, args: { documentId: string })
             kind: "care.draft_ready",
             entityType: "document",
             entityId: d.id,
-            title: bellTitle.draftReady(ctx.client.display_name),
+            title: bellTitle.draftReady(
+              ctx.client.display_name,
+              { start: care.period_start, end: care.period_end },
+              reasons,
+            ),
             link: `/invoices/${d.id}`,
           },
           g,

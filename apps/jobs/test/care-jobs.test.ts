@@ -212,6 +212,26 @@ describe("a care message that ran out of tries", () => {
     );
   });
 
+  it("a failed care.bill names the client and the period in 07-U §7's words; a plan that cannot be read gets the plain line", async () => {
+    await run("DELETE FROM notifications WHERE kind = 'care.billing_failed'");
+    await staff("owner");
+    const id = await plan();
+    const client = await one<{ display_name: string }>(
+      "SELECT k.display_name FROM care_plans p JOIN clients k ON k.id = p.client_id WHERE p.id = ?1",
+      id,
+    );
+    await processCareDeadLetter(makeEnv(), { kind: "care.bill", planId: id }, NOW);
+    const rows = (await bells("care.billing_failed")).filter((r) => r.entity_id.startsWith(id));
+    expect(rows[0]?.title).toBe(
+      `[Placeholder, 07-U] The care invoice for ${client?.display_name} (05 Nov 2026 to 04 Dec 2026) couldn't be drafted. Open the care plan to see why.`,
+    );
+    await processCareDeadLetter(makeEnv(), { kind: "care.bill", planId: "no-such-plan" }, NOW);
+    const plain = (await bells("care.billing_failed")).find((r) => r.entity_id.startsWith("no-such-plan"));
+    expect(plain?.title).toBe(
+      "[Placeholder, 07-U] A care invoice couldn't be drafted. Open the care plan to see why.",
+    );
+  });
+
   it("a care.issue dead letter links the draft; the scans and the alerts only log (the next run lists the same work), through the leads dead-letter queue", async () => {
     await run("DELETE FROM notifications WHERE kind = 'care.billing_failed'");
     const owner = await staff("owner");

@@ -6,6 +6,8 @@
 //                 the enqueue is repeated, and it is idempotent. A failed enqueue throws, so the queue retries this message (early check finding 2);
 //   care.issue -> the admin API's `issueCareDraft` (authority `care_auto`: it issues only when every Owner-set rule still holds; otherwise the draft stays and the owners are told).
 // Drafting and issuing are two messages on purpose (one unit of work each, 10 ms CPU). Neither takes a clock, a period or an amount from the message: ids and cursors only.
+import { planPeriodOf } from "@techaust/core/care";
+import { periodWords } from "@techaust/core/care-billing";
 import { todayIst } from "@techaust/core/offers";
 import { CARE_DUE_SQL } from "@techaust/db/billing";
 import { billingJobs } from "./billing-rpc.ts";
@@ -87,9 +89,23 @@ export async function processCareDeadLetter(
     body.kind === "care.bill"
       ? ["care_plan", body.planId, `/care-plans/${body.planId}`]
       : ["document", body.documentId, `/invoices/${body.documentId}`];
+  // 07-U §7 "Care invoice failed": the client and the period. A plan that cannot be read keeps a plain line; the issue failure has no 07-U line yet (a marked placeholder).
+  const plan =
+    body.kind === "care.bill"
+      ? await env.DB.prepare(
+          "SELECT p.start_date, p.billing_day, k.display_name FROM care_plans p JOIN clients k ON k.id = p.client_id WHERE p.id = ?1",
+        )
+          .bind(body.planId)
+          .first<{ start_date: string; billing_day: number; display_name: string }>()
+      : null;
+  const period = plan
+    ? planPeriodOf(day, { startDate: plan.start_date, billingDay: plan.billing_day })
+    : null;
   const title =
     body.kind === "care.bill"
-      ? `${PLACEHOLDER}A care plan's invoice could not be drafted. Check the care plan.`
+      ? plan && period
+        ? `${PLACEHOLDER}The care invoice for ${plan.display_name} (${periodWords(period)}) couldn't be drafted. Open the care plan to see why.`
+        : `${PLACEHOLDER}A care invoice couldn't be drafted. Open the care plan to see why.`
       : `${PLACEHOLDER}A care invoice draft could not be issued by itself. Check the draft.`;
   await env.DB.prepare(FAILED_BELL_SQL).bind(entityType, `${id}:${day}`, title, link).run();
   logEvent("care.dead_letter", { kind: body.kind });

@@ -298,6 +298,44 @@ describe("draftCarePlan: one draft per plan and period [ADM-CARE-02, LD59]", () 
         w.owner.id,
       ),
     ).toEqual([{ kind: "care.missed_period" }]);
+    // 07-U §7 (Q51): the client and the OLDEST unbilled period, in a marked placeholder
+    const client = await one<{ display_name: string }>(
+      "SELECT display_name FROM clients WHERE id = ?",
+      w.clientId,
+    );
+    expect(
+      (
+        await one<{ title: string }>(
+          "SELECT title FROM notifications WHERE kind = 'care.missed_period' AND entity_id = ? AND user_id = ?",
+          `${w.planId}:2026-11-05`,
+          w.owner.id,
+        )
+      )?.title,
+    ).toBe(
+      `[Placeholder, 07-U] ${client?.display_name}'s care plan has an unbilled period (05 Oct 2026 to 04 Nov 2026). Invoice it by hand.`,
+    );
+  });
+
+  it("a USD plan's draft rings the owners with 07-U §7's 'needs the exchange rate' line instead of 'ready to check'", async () => {
+    const w = await world({ usd: true });
+    clock(at("2026-11-05"));
+    const r = await draft(w);
+    expect(r.reasons).toContain("usd_needs_fx");
+    const client = await one<{ display_name: string }>(
+      "SELECT display_name FROM clients WHERE id = ?",
+      w.clientId,
+    );
+    expect(
+      (
+        await one<{ title: string }>(
+          "SELECT title FROM notifications WHERE kind = 'care.draft_ready' AND entity_id = ? AND user_id = ?",
+          r.documentId,
+          w.owner.id,
+        )
+      )?.title,
+    ).toBe(
+      `[Placeholder, 07-U] Care invoice draft for ${client?.display_name} needs the exchange rate before it can be issued.`,
+    );
   });
 
   it("the previous period's overage is a line in hours at its rate, and the draft is never issued by itself", async () => {
@@ -338,6 +376,21 @@ describe("draftCarePlan: one draft per plan and period [ADM-CARE-02, LD59]", () 
         w.owner.id,
       ),
     ).toEqual([{ kind: "care.draft_ready" }]);
+    const client = await one<{ display_name: string }>(
+      "SELECT display_name FROM clients WHERE id = ?",
+      w.clientId,
+    );
+    expect(
+      (
+        await one<{ title: string }>(
+          "SELECT title FROM notifications WHERE kind = 'care.draft_ready' AND entity_id = ? AND user_id = ?",
+          r.documentId,
+          w.owner.id,
+        )
+      )?.title,
+    ).toBe(
+      `[Placeholder, 07-U] Care invoice draft for ${client?.display_name} (05 Nov 2026 to 04 Dec 2026) is ready to check.`,
+    );
   });
 });
 
@@ -400,7 +453,11 @@ describe("issueCareDraft: the system issues only what the Owner authorised [LD58
       d.documentId,
       w.owner.id,
     );
-    expect(bell?.title).toContain(r.number as string);
+    expect(bell?.title).toMatch(
+      new RegExp(
+        `^\\[Placeholder, 07-U\\] Care invoice ${(r.number as string).replace(/[/]/g, "\\/")} for .+ was issued and emailed\\.$`,
+      ),
+    );
     expect(q.sent).toEqual([{ v: 1, kind: "pdf.snapshot", documentId: d.documentId, reason: "send" }]);
     // a second call finds it issued and writes nothing
     expect(await issueCareDraft(q.env, { documentId: d.documentId as string })).toMatchObject({
@@ -426,7 +483,7 @@ describe("issueCareDraft: the system issues only what the Owner authorised [LD58
           d.documentId,
         )
       )?.title,
-    ).toContain("nobody could be emailed");
+    ).toMatch(/was issued, but no billing contact has portal access, so it wasn't emailed\.$/);
   });
 
   const refusals: [string, (w: World, documentId: string) => Promise<void>, string[]][] = [

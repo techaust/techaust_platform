@@ -99,6 +99,33 @@ export function nextBillingDayOf(
   return due.due ? today : nextPeriodStart(today, plan.billingDay);
 }
 
+/**
+ * The OLDEST billing period after `lastBilled` and before `current` that the plan was active on and that was never billed (what `careDue` flags as `missedEarlier`), or null. The Owner's bell
+ * names it. Looks back at most 24 periods, like `careDue`.
+ */
+export function firstMissedPeriod(
+  plan: PlanDates,
+  lastBilled: string | null,
+  current: Period,
+  statuses: readonly StatusRow[],
+): Period | null {
+  if (lastBilled === null) return null;
+  let found: Period | null = null;
+  let p = planPeriodOf(previousPeriod(current, plan.billingDay).end, plan);
+  for (let i = 0; p !== null && p.start > lastBilled && i < 24; i++) {
+    if (statusOn(statuses, p.start)?.status === "active") found = p;
+    p = planPeriodOf(previousPeriod(p, plan.billingDay).end, plan);
+  }
+  return found;
+}
+
+/** A billing period as a person reads it: "5 Nov 2026 to 4 Dec 2026" (07-U §7 prints it in the bells). */
+export function periodWords(p: Period): string {
+  const a = parseIsoDate(p.start);
+  const b = parseIsoDate(p.end);
+  return a && b ? `${formatDate(a)} to ${formatDate(b)}` : `${p.start} to ${p.end}`;
+}
+
 // ---- the lines ----------------------------------------------------------------------------------------------------------------------------
 
 /**

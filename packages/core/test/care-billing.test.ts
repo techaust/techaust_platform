@@ -10,8 +10,10 @@ import {
   type CareCatalogue,
   careDue,
   careLines,
+  firstMissedPeriod,
   hasPlaceholder,
   nextBillingDayOf,
+  periodWords,
 } from "../src/care-billing.ts";
 import { fromIst } from "../src/dates.ts";
 import { proformaWarnAt, unbilledCutoff } from "../src/export-invoice.ts";
@@ -50,6 +52,33 @@ describe("nextBillingDayOf: the day the job next drafts the plan", () => {
     expect(nextBillingDayOf("2026-11-06", plan(5, "2026-01-01"), "paused", "2026-10-05", paused)).toBe(
       "2026-12-05",
     );
+  });
+});
+
+describe("firstMissedPeriod and periodWords (the bells' {period})", () => {
+  const active = [{ id: "a", effectiveOn: "2026-01-01", createdAt: 1, status: "active" as const }];
+  const current = { start: "2026-11-05", end: "2026-12-04" };
+  it("is the OLDEST active period after the last one billed; null when none or never billed", () => {
+    expect(firstMissedPeriod(plan(5, "2026-01-01"), "2026-08-05", current, active)).toEqual({
+      start: "2026-09-05",
+      end: "2026-10-04",
+    });
+    expect(firstMissedPeriod(plan(5, "2026-01-01"), "2026-10-05", current, active)).toBeNull();
+    expect(firstMissedPeriod(plan(5, "2026-01-01"), null, current, active)).toBeNull();
+  });
+  it("a period the plan was paused on its first day is not missed", () => {
+    const paused = [
+      ...active,
+      { id: "b", effectiveOn: "2026-09-01", createdAt: 2, status: "paused" as const },
+      { id: "c", effectiveOn: "2026-10-01", createdAt: 3, status: "active" as const },
+    ];
+    expect(firstMissedPeriod(plan(5, "2026-08-05"), "2026-08-05", current, paused)).toEqual({
+      start: "2026-10-05",
+      end: "2026-11-04",
+    });
+  });
+  it("periodWords prints both ends in the house date format", () => {
+    expect(periodWords(current)).toBe("05 Nov 2026 to 04 Dec 2026");
   });
 });
 

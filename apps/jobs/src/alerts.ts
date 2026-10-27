@@ -105,6 +105,7 @@ export async function processAlertsDaily(
   const proforma = startProforma ? ((pages.shift()?.results ?? []) as Row[]) : [];
 
   const nowDate = istDate(now);
+  const daysSince = (r: Row) => String(daysBetween(istDate(r.delivered_at), nowDate));
   const emails: EmailMessage[] = [];
   const itemBells = (rows: Row[], kind: string, linkOf: (r: Row) => string, title: (r: Row) => string) => {
     const fresh = rows.filter((r) => r.bells === 0);
@@ -118,16 +119,18 @@ export async function processAlertsDaily(
     unbilled,
     "milestone.unbilled",
     (r) => `/projects/${r.project_id}`,
-    (r) => `${PLACEHOLDER}Work delivered for ${r.client_name} has no invoice yet.`,
+    // 07-U §7 (Q20): the milestone, the client and the days.
+    (r) =>
+      `${PLACEHOLDER}${r.title} for ${r.client_name} was delivered ${daysSince(r)} days ago and isn't invoiced yet.`,
   );
   const proformaBells = itemBells(
     proforma,
     "proforma.tax_invoice_due",
     (r) => `/invoices/${r.proforma_id}`,
+    // 07-U §7 (ADM-INV-10; VERIFY WITH CA/LEGAL for the 30 days).
     (r) =>
-      `${PLACEHOLDER}A proforma for ${r.client_name} is still unpaid and the work is delivered: the tax invoice is due.`,
+      `${PLACEHOLDER}Payment request ${r.number_display ?? ""} for ${r.client_name} is still unpaid ${daysSince(r)} days after ${r.title} was delivered. A tax invoice is due within 30 days of delivery.`,
   );
-  const daysSince = (r: Row) => String(daysBetween(istDate(r.delivered_at), nowDate));
   for (const o of ownerRows) {
     for (const r of unbilledBells.fresh)
       emails.push({
