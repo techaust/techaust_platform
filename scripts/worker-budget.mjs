@@ -70,7 +70,18 @@ export const BUDGETS = {
  */
 export function measureStartup(code, runs = 7) {
   // The export list ends the code; a trailing license comment (the jobs bundle has one) may follow it.
-  const src = code.replace(/\bexport\s*\{[^}]*\};?[ ]*$/m, "");
+  // M5.4: the admin API Worker exports the named entrypoint `BillingJobs` (a `WorkerEntrypoint` subclass), so its bundle starts with
+  // `import{WorkerEntrypoint as e}from"cloudflare:workers"`. The probe has no such module: the import becomes a stand-in class of the same name (its own cost is the platform's, not the code's).
+  const src = code
+    .replace(/\bexport\s*\{[^}]*\};?[ ]*$/m, "")
+    .replace(/\bimport\s*\{([^}]*)\}\s*from\s*["']cloudflare:workers["'];?/g, (_m, names) => {
+      const bound = names
+        .split(",")
+        .map((n) => n.trim())
+        .filter(Boolean)
+        .map((n) => (n.split(/\s+as\s+/)[1] ?? n).trim());
+      return `var ${bound.map((b) => `${b} = class {}`).join(", ")};`;
+    });
   const times = [];
   for (let i = 0; i < runs; i++) {
     const context = vm.createContext({

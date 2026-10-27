@@ -58,6 +58,19 @@ describe("worker budget", () => {
     expect(ms).toBeLessThan(10);
   });
 
+  it("measures a bundle that imports WorkerEntrypoint from cloudflare:workers and subclasses it (the admin API since M5.4)", () => {
+    const ms = measureStartup(
+      'import{WorkerEntrypoint as e}from"cloudflare:workers";class t extends e{ping(){return 1}}var n=new Map;export{t as BillingJobs,n as default};',
+      2,
+    );
+    expect(ms).toBeGreaterThanOrEqual(0);
+    const spaced = measureStartup(
+      'import { WorkerEntrypoint } from "cloudflare:workers";\nclass A extends WorkerEntrypoint {}\nexport { A };',
+      2,
+    );
+    expect(spaced).toBeGreaterThanOrEqual(0);
+  });
+
   it("measures a bundle whose export list is followed by a license comment (the jobs bundle)", () => {
     const ms = measureStartup(
       "const t = 1;\nexport {\n  t as default\n};\n/*! Bundled license information:\n  (** @license MIT *)\n*/\n//# sourceMappingURL=index.js.map",
