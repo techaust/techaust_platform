@@ -2,6 +2,10 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-10-27 [#97](https://github.com/techaust/techaust_platform/pull/97) feat(invoices): M5.2 export invoices, proformas, advances, checklist, FX and LUT [ADM-INV-06, -08, -10, -18]
+- 2026-10-27 [#96](https://github.com/techaust/techaust_platform/pull/96) feat(invoices): M5.1 issue pipeline and numbering, tax invoice PDF [ADM-INV-01..04, -07, ADM-APR-01/02]
+- 2026-10-27 [#95](https://github.com/techaust/techaust_platform/pull/95) feat(admin): M5.0 admin Worker split behind a service binding [ADM-G-02]
+- 2026-10-26 [#94](https://github.com/techaust/techaust_platform/pull/94) docs: end of day 2026-10-26 (batch approved, CLAUDE.md, 06, 07, status, decisions, run files)
 - 2026-10-26 [#93](https://github.com/techaust/techaust_platform/pull/93) fix(batch-review): UI/UX sweep, approved copy, date field, send unblock [M3.4-M4.5]
 - 2026-10-26 [#92](https://github.com/techaust/techaust_platform/pull/92) docs: end of day 2026-10-26 (batch on staging, status, decisions, run-file handovers, code map)
 - 2026-10-26 [#91](https://github.com/techaust/techaust_platform/pull/91) feat(offers): M4.5 send, portal accept and decline, certificate, emails [POR-03..06, ADM-PROP-07..10]
