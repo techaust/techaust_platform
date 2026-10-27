@@ -24,7 +24,7 @@ export const CARE_DUE_SQL = `SELECT p.id, p.client_id, p.created_at FROM care_pl
  * is a live proforma belongs to `PROFORMA_TAX_INVOICE_DUE_SQL` instead (the two sets are disjoint). Index: `milestones_unbilled`.
  */
 export const UNBILLED_SQL = `SELECT m.id AS milestone_id, m.delivered_at, m.title, m.project_id, p.client_id, c.display_name AS client_name
-   FROM milestones m JOIN projects p ON p.id = m.project_id JOIN clients c ON c.id = p.client_id
+   FROM milestones m INDEXED BY milestones_unbilled JOIN projects p ON p.id = m.project_id JOIN clients c ON c.id = p.client_id
    WHERE m.status = 'ready_to_bill' AND m.delivered_at IS NOT NULL AND m.delivered_at <= ?1 AND (m.delivered_at > ?2 OR (m.delivered_at = ?2 AND m.id > ?3))
      AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.id = m.document_id AND d.frozen_at IS NOT NULL AND d.status <> 'void')
    ORDER BY m.delivered_at, m.id LIMIT 50`;
@@ -33,7 +33,7 @@ export const UNBILLED_SQL = `SELECT m.id AS milestone_id, m.delivered_at, m.titl
  * The reminders that are due and still waiting (ADM-INV-13), oldest first, at most 50: `?1` now (UTC ms), `?2` and `?3` the last row's `due_at` and `id` (the first
  * page binds -1 and ''). Index: `reminders_pending` (rows that were sent or given up are not in it, so they are never read again).
  */
-export const REMINDER_DUE_SQL = `SELECT id, document_id, offset_days, due_at FROM reminders
+export const REMINDER_DUE_SQL = `SELECT id, document_id, offset_days, due_at FROM reminders INDEXED BY reminders_pending
    WHERE sent_at IS NULL AND skipped_reason IS NULL AND due_at <= ?1 AND (due_at > ?2 OR (due_at = ?2 AND id > ?3))
    ORDER BY due_at, id LIMIT 50`;
 

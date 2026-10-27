@@ -164,15 +164,22 @@ export async function mkCareDraft(
 /** An issued (frozen) invoice-family document of a client, with its balance. */
 export async function mkIssued(
   clientId: string,
-  o: { type?: string; status?: string; balance?: number; voided?: boolean; frozenAt?: number } = {},
+  o: {
+    type?: string;
+    status?: string;
+    balance?: number;
+    voided?: boolean;
+    frozenAt?: number;
+    parentId?: string;
+  } = {},
 ): Promise<string> {
   const id = uuidv7();
   const n = next();
   const status = o.status ?? "issued";
   const type = o.type ?? "tax_invoice";
   await run(
-    `INSERT INTO documents (id, type, status, client_id, currency, series, fy, number, number_display, frozen_at, issue_date, due_date, subtotal_minor, taxable_minor, total_minor, balance_minor, content_sha256, updated_at, voided_at, void_reason)
-     VALUES (?1, ?2, ?3, ?4, 'INR', 'inv-b', '9999', ?5, ?6, ?7, '2026-10-28', '2026-11-04', 100000, 100000, 118000, ?8, ?9, 7000, ?10, ?11)`,
+    `INSERT INTO documents (id, type, status, client_id, currency, series, fy, number, number_display, frozen_at, issue_date, due_date, subtotal_minor, taxable_minor, total_minor, balance_minor, content_sha256, updated_at, voided_at, void_reason, parent_id)
+     VALUES (?1, ?2, ?3, ?4, 'INR', 'inv-b', '9999', ?5, ?6, ?7, '2026-10-28', '2026-11-04', 100000, 100000, 118000, ?8, ?9, 7000, ?10, ?11, ?12)`,
     id,
     type,
     status,
@@ -184,6 +191,7 @@ export async function mkIssued(
     "h".repeat(64),
     status === "void" || o.voided ? 5 : null,
     status === "void" || o.voided ? "x" : null,
+    o.parentId ?? null,
   );
   return id;
 }

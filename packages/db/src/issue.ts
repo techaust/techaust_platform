@@ -794,7 +794,7 @@ export function noteDraftStatements(db: D1Database, a: NoteDraftArgs): D1Prepare
  * page binds -1 and ''). Served by `milestones_unbilled` (0043). Disjoint from `UNBILLED_SQL` (billing.ts): that one lists milestones with NO live frozen document.
  */
 export const PROFORMA_TAX_INVOICE_DUE_SQL = `SELECT m.id AS milestone_id, m.delivered_at, m.title, m.project_id, d.id AS proforma_id, d.number_display, d.client_id, d.currency, d.balance_minor
-   FROM milestones m JOIN documents d ON d.id = m.document_id AND d.type = 'proforma' AND d.frozen_at IS NOT NULL AND d.status <> 'void' AND d.balance_minor > 0
+   FROM milestones m INDEXED BY milestones_unbilled JOIN documents d ON d.id = m.document_id AND d.type = 'proforma' AND d.frozen_at IS NOT NULL AND d.status <> 'void' AND d.balance_minor > 0
    WHERE m.status = 'ready_to_bill' AND m.delivered_at IS NOT NULL AND m.delivered_at <= ?1 AND (m.delivered_at > ?2 OR (m.delivered_at = ?2 AND m.id > ?3))
    ORDER BY m.delivered_at, m.id LIMIT 50`;
 
