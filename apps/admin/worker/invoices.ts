@@ -766,6 +766,8 @@ export const invoices = new Hono<AppEnv>()
           (ctx.extra[2]?.results ?? []) as SendRow[],
           (ctx.extra[3]?.results[0] as { live: number } | undefined)?.live ?? 0,
           (ctx.extra[4]?.results ?? []) as ReminderRow[],
+          now,
+          ctx.settings.paymentTerms.reminderWindowIst,
         ),
         care: careView(ctx.extra[5]?.results[0] as CareOf | undefined, {
           frozen: d.frozen_at !== null,

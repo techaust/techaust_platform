@@ -289,7 +289,12 @@ describe("the view after a send [ADM-INV-15]", () => {
     const { s, made, ids } = await issued(2);
     const before = await getInvoice(s, made.id);
     expect(before.sends).toEqual([]);
-    expect(before.reminders).toEqual({ started: false, paused: false, rows: [] });
+    expect(before.reminders).toEqual({
+      started: false,
+      paused: false,
+      window: { from: "09:00", to: "19:00" },
+      rows: [],
+    });
     expect(before.links).toEqual({ live: 0 });
     expect(before.actions.send).toEqual({ allowed: true, reasons: [] });
     await send(s, made.id, { contactIds: ids });
@@ -506,6 +511,44 @@ describe("pausing and resuming the reminders [ADM-INV-13, LD60]", () => {
       [7, null],
       [14, null],
     ]);
+  });
+
+  it("the view: paused only while a paused row is still ahead; a paused row whose day passed shows missed_while_paused; the window comes from the settings [review M2, L2]", async () => {
+    const s = await farSession();
+    await putCompany();
+    await putBank();
+    const made = await mkInvoice(s);
+    expect((await issueInvoice(s, made.id)).status).toBe(200);
+    await env.DB.prepare("UPDATE clients SET reminder_policy = ? WHERE id = ?")
+      .bind(JSON.stringify({ offsetsDays: [0, 1] }), made.clientId)
+      .run();
+    const to = await mkContact(made.clientId, { portal_access: 1, can_see_finance: 1 });
+    await send(s, made.id, { contactIds: [to.id] });
+    await call(`/invoices/${made.id}/reminders/pause`, { cookie: s.cookie, body: {} });
+    const due = (await one<{ due_date: string }>("SELECT due_date FROM documents WHERE id = ?", made.id))
+      ?.due_date as string;
+    const rowsOf = (v: { reminders: { rows: { offset: number; skippedReason: string }[] } }) =>
+      v.reminders.rows.map((r) => [r.offset, r.skippedReason]);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(Date.parse(`${due}T06:30:00Z`)); // offset 0 has passed (09:00 IST); offset 1 is ahead
+      const mid = await getInvoice(s, made.id);
+      expect(mid.reminders.paused).toBe(true);
+      expect(mid.reminders.window).toEqual({ from: "09:00", to: "19:00" });
+      expect(rowsOf(mid)).toEqual([
+        [0, "missed_while_paused"],
+        [1, "paused"],
+      ]);
+      vi.setSystemTime(Date.parse(`${due}T06:30:00Z`) + 2 * 86_400_000); // every day has passed
+      const late = await getInvoice(await farSession(), made.id); // a session made at this clock
+      expect(late.reminders.paused).toBe(false);
+      expect(rowsOf(late)).toEqual([
+        [0, "missed_while_paused"],
+        [1, "missed_while_paused"],
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("a row already sent or given up is left alone by pause and resume", async () => {

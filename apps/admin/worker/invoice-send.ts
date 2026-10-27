@@ -40,13 +40,13 @@ export const sendBody = z.strictObject({
   attachPdf: z.optional(z.boolean()),
 });
 
-/** What the send, the revoke and the reminder routes read about the document, its client and its history, in one batch. `?1` document id. */
+/** What the send, the revoke and the reminder routes read about the document, its client and its history, in one batch. `?1` document id, `?2` now (a paused row whose day has passed is not "paused" any more: it can never be resumed, review M2). */
 const DOC_READ = `SELECT d.id, d.type, d.status, d.client_id, d.frozen_at, d.due_date, d.pdf_sha256, d.balance_minor, d.currency,
     cl.attach_pdf, cl.anonymised_at, cl.reminder_policy,
     (SELECT count(*) FROM document_sends s WHERE s.document_id = d.id) AS sends,
     (SELECT count(*) FROM reminders r WHERE r.document_id = d.id) AS reminders,
     (SELECT count(*) FROM reminders r WHERE r.document_id = d.id AND r.sent_at IS NULL AND r.skipped_reason IS NULL) AS reminders_waiting,
-    (SELECT count(*) FROM reminders r WHERE r.document_id = d.id AND r.sent_at IS NULL AND r.skipped_reason = 'paused') AS reminders_paused
+    (SELECT count(*) FROM reminders r WHERE r.document_id = d.id AND r.sent_at IS NULL AND r.skipped_reason = 'paused' AND r.due_at > ?2) AS reminders_paused
   FROM documents d JOIN clients cl ON cl.id = d.client_id WHERE d.id = ?1 AND d.type IN (${INVOICE_TYPES_SQL})`;
 const PAYMENT_TERMS_READ = "SELECT value FROM settings WHERE key = 'payment_terms'";
 
@@ -105,7 +105,7 @@ export function queueInvoiceSends(c: Ctx, sendIds: readonly string[]): void {
 
 async function readDoc(c: Ctx, id: string): Promise<{ doc: DocRow; terms: string | null } | null> {
   const [docR, termsR] = await c.env.DB.batch([
-    c.env.DB.prepare(DOC_READ).bind(id),
+    c.env.DB.prepare(DOC_READ).bind(id, Date.now()),
     c.env.DB.prepare(PAYMENT_TERMS_READ),
   ]);
   const doc = docR?.results[0] as DocRow | undefined;
@@ -323,7 +323,16 @@ export type ReminderRow = {
 };
 
 /** The sends part of the invoice JSON. */
-export function sendsView(rows: readonly SendRow[], live: number, reminderRows_: readonly ReminderRow[]) {
+export function sendsView(
+  rows: readonly SendRow[],
+  live: number,
+  reminderRows_: readonly ReminderRow[],
+  now: number,
+  window: { fromHour: number; toHour: number },
+) {
+  // A paused row whose day passed is never sent late (LD60) and never comes back: it is shown as missed, and it does not keep the "paused" banner (review M2).
+  const missed = (r: ReminderRow) => r.skipped_reason === "paused" && r.due_at <= now;
+  const hhmm = (h: number) => `${String(h).padStart(2, "0")}:00`;
   return {
     sends: rows.map((r) => ({
       id: r.id,
@@ -339,12 +348,13 @@ export function sendsView(rows: readonly SendRow[], live: number, reminderRows_:
     links: { live },
     reminders: {
       started: reminderRows_.length > 0,
-      paused: reminderRows_.some((r) => r.skipped_reason === "paused"),
+      paused: reminderRows_.some((r) => r.skipped_reason === "paused" && r.due_at > now),
+      window: { from: hhmm(window.fromHour), to: hhmm(window.toHour) },
       rows: reminderRows_.map((r) => ({
         offset: r.offset_days,
         dueAt: r.due_at,
         sentAt: r.sent_at,
-        skippedReason: r.skipped_reason,
+        skippedReason: missed(r) ? "missed_while_paused" : r.skipped_reason,
       })),
     },
   };
