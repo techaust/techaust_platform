@@ -7,10 +7,11 @@ import {
   isOfferExpansionKind,
   isPurgeMessage,
   isPurgeScanMessage,
+  isReportKind,
 } from "@techaust/core";
 import { isExpireKind, isExpireMessage } from "@techaust/core/expiry";
 import { isLutCheckKind, isLutCheckMessage } from "@techaust/core/invoices";
-import { isPdfKind } from "@techaust/core/pdf-jobs";
+import { isPdfKind, isPdfMessage } from "@techaust/core/pdf-jobs";
 import { isStatsKind, isStatsMessage } from "@techaust/core/stats";
 import { processBilling, processBillingDeadLetter } from "./billing.ts";
 import { CLAIM_TIMEOUT_MS, processDeadLetter, processEmail } from "./email.ts";
@@ -21,9 +22,11 @@ import { logEvent, noteInvocation } from "./log.ts";
 import { logLutCheckDeadLetter, processLutCheck, skipLutCheck } from "./lut-check.ts";
 import { processOfferMessage } from "./offers.ts";
 import { processPdf, processPdfDeadLetter } from "./pdf.ts";
-import { enqueueDue, purgeLead } from "./purge.ts";
+import { enqueueDue, processStatementPurge, purgeLead } from "./purge.ts";
 import { processReminderSend } from "./reminders.ts";
+import { processEdfReminder, processRealisationScan } from "./reports.ts";
 import { processStaffAlert } from "./staff-alerts.ts";
+import { processStatementDeadLetter, processStatementPdf } from "./statement-pdf.ts";
 import { logStatsDeadLetter, processStats, skipStats } from "./stats.ts";
 
 /** A staff alert (`{ kind: "staff.alert", auditId }`) shares the email queue with ordinary emails (M2.4b). */
@@ -47,7 +50,18 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
     try {
       if (isPdfDlq) {
         // The PDF family has its own dead-letter queue: a bell for the owners, then done (the daily sweep tries the document again).
-        await processPdfDeadLetter(env, message.body);
+        // A statement PDF that ran out of tries marks its row failed and rings the person who asked, once (M5.5b).
+        if (isPdfMessage(message.body) && message.body.kind === "pdf.statement")
+          await processStatementDeadLetter(env, message.body);
+        else await processPdfDeadLetter(env, message.body);
+        message.ack();
+      } else if (
+        queue.endsWith("-pdf") &&
+        isPdfMessage(message.body) &&
+        message.body.kind === "pdf.statement"
+      ) {
+        // The statement of account (M5.5b, LD79): read, view, content hash, adopt or render, store once. Before the other PDF kinds (statement-pdf.ts imports pdf.ts, so pdf.ts cannot route it).
+        await processStatementPdf(env, message.body);
         message.ack();
       } else if (queue.endsWith("-pdf")) {
         // Snapshot, render and sweep (M4.4). A body of the family this version cannot use is logged and acknowledged inside.
@@ -72,6 +86,10 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
       } else if (isDlq && isLutCheckKind(message.body)) {
         // A LUT check that ran out of tries: tomorrow's run checks again, so no alert and no retry.
         logLutCheckDeadLetter(queue);
+        message.ack();
+      } else if (isDlq && isReportKind(message.body)) {
+        // M5.5b: a realisation scan, an EDF reminder or a statement purge that ran out of tries is only logged: the next daily run lists the same work again (the bells and the email log make a repeat harmless).
+        logEvent("report.dead_letter", { queue, kind: message.body.kind });
         message.ack();
       } else if (isDlq && isBillingKind(message.body)) {
         // M5.4: a care bill or issue that ran out of tries rings the owners' bell (once per plan per IST day); the scans and the daily alerts are listed again by the next run.
@@ -104,6 +122,12 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
       } else if (queue.endsWith("-leads") && isBillingKind(message.body)) {
         // M5.4 (care scan and bill and issue, the owners' alerts, the reminder scan): before the lead fall-through, so a body of this family (valid or not) can never become a lead.
         await processBilling(env, message.body);
+        message.ack();
+      } else if (queue.endsWith("-leads") && isReportKind(message.body)) {
+        // M5.5b (the realisation scan and the EDF reminder from the 09:00 IST tick, the statement purge from the daily one): before the lead fall-through, so a body of this family (valid or not) can never become a lead.
+        if (message.body.kind === "realisation.scan") await processRealisationScan(env, message.body);
+        else if (message.body.kind === "edf.reminder") await processEdfReminder(env, message.body);
+        else await processStatementPurge(env, message.body);
         message.ack();
       } else if (queue.endsWith("-leads") && isPdfKind(message.body)) {
         // A PDF body belongs on the PDF queue; here it is logged and dropped, so it can never become a lead.

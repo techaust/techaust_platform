@@ -28,6 +28,7 @@ import {
   type PdfCertificateMessage,
   type PdfRenderMessage,
   type PdfSnapshotMessage,
+  type PdfStatementMessage,
   type PdfSweepMessage,
   pdfKeys,
   utcDateOf,
@@ -125,7 +126,7 @@ export const HALF_BELL_SQL = `INSERT OR IGNORE INTO notifications (id, user_id, 
 export const STAT_ADD_SQL = `INSERT INTO stats_daily (date, metric, dimension, value, updated_at) VALUES (?1, ?2, '', ?3, ?4)
   ON CONFLICT(date, metric, dimension) DO UPDATE SET value = value + excluded.value, updated_at = excluded.updated_at`;
 
-const stat = (env: Env, date: string, metric: string, amount: number, now: number) =>
+export const stat = (env: Env, date: string, metric: string, amount: number, now: number) =>
   env.DB.prepare(STAT_ADD_SQL).bind(date, metric, amount, now);
 
 // ---- R2: write once -------------------------------------------------------------------------------------------------------------------
@@ -134,7 +135,7 @@ const stat = (env: Env, date: string, metric: string, amount: number, now: numbe
  * Writes an object that must never be replaced. A `head` first (a cheap miss), then a put that fails if the key exists (`If-None-Match: *`,
  * R2 `onlyIf`). `existing` hands back the object that was already there.
  */
-async function putOnce(
+export async function putOnce(
   bucket: R2Bucket,
   key: string,
   body: string | Uint8Array,
@@ -406,7 +407,7 @@ export async function onRendered(env: Env, event: RenderedEvent): Promise<void> 
   else await queueAcceptedConfirmation(env, event.acceptanceId);
 }
 
-const dayOf = (now: number) => utcDateOf(now);
+export const dayOf = (now: number) => utcDateOf(now);
 
 /** Saves a stored PDF on the row once, and counts the render in the statistics when the browser did the work. */
 async function settle(
@@ -537,9 +538,9 @@ export async function processRender(
 }
 
 /** A render that did not give a PDF: delay (rate, quota) or throw (anything a retry might fix). */
-async function failed(
+export async function failed(
   env: Env,
-  msg: PdfRenderMessage | PdfCertificateMessage,
+  msg: PdfRenderMessage | PdfCertificateMessage | PdfStatementMessage,
   result: Exclude<Awaited<ReturnType<typeof renderPaced>>, { ok: true }>,
   now: number,
 ): Promise<"delayed"> {
@@ -686,8 +687,8 @@ export async function processPdf(
   else if (body.kind === "pdf.render") await processRender(env, body, now, clock);
   else if (body.kind === "pdf.certificate") await processCertificate(env, body, now, clock);
   else if (body.kind === "offer.sweep") await processOfferSweep(env, body);
-  // M5.5b: the statement PDF consumer is stage B (the brief's B1); until it lands the message is acknowledged and the row stays pending, so the queue never fills up.
-  else if (body.kind === "pdf.statement") logEvent("pdf.statement_not_built");
+  // M5.5b: a statement PDF is routed by `handleQueue` to `statement-pdf.ts` before it reaches here (that file imports this one); a message that does arrive is acknowledged and logged.
+  else if (body.kind === "pdf.statement") logEvent("pdf.statement_misrouted");
   else await processSweep(env, body);
 }
 

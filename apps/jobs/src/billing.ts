@@ -6,8 +6,10 @@ import {
   careBillMessage,
   careIssueMessage,
   careScanMessage,
+  type ReportMessage,
   reminderScanMessage,
 } from "@techaust/core";
+import { istDate } from "@techaust/core/dates";
 import { istHourOf } from "@techaust/core/invoices";
 import { processAlertsDaily } from "./alerts.ts";
 import { processCareBill, processCareDeadLetter, processCareIssue, processCareScan } from "./care-billing.ts";
@@ -20,9 +22,27 @@ export const HOURLY_CRON = "30 * * * *";
 export const CARE_SCAN_HOUR_IST = 6;
 export const ALERTS_HOUR_IST = 9;
 
-/** What the hourly cron queues for a tick: the reminder scan every hour, the care scan at 06:00 IST and the owners' alerts at 09:00 IST. Pure. */
-export function hourlyMessages(scheduledTime: number): BillingMessage[] {
+/** IST days of the month on which the EDF reminder is queued for the previous month (the 5th, and the 6th and 7th to catch a missed tick; the owners' bell makes a repeat a no-op; LD76, Q55). */
+export const EDF_REMINDER_DAYS_IST = [5, 6, 7] as const;
+
+/**
+ * What the hourly cron queues for a tick: the reminder scan every hour, the care scan at 06:00 IST, and at 09:00 IST the owners' alerts, the export realisation scan (M5.5b, LD76) and, on IST days 5 to 7, the
+ * EDF reminder for the PREVIOUS month (January's tick names December of the year before). Pure: no D1 read, nothing but the scheduled time.
+ */
+export function hourlyMessages(scheduledTime: number): (BillingMessage | ReportMessage)[] {
   const hour = istHourOf(scheduledTime);
+  const today = istDate(scheduledTime);
+  const edf: ReportMessage[] =
+    hour === ALERTS_HOUR_IST && (EDF_REMINDER_DAYS_IST as readonly number[]).includes(today.day)
+      ? [
+          {
+            v: 1,
+            kind: "edf.reminder",
+            year: today.month === 1 ? today.year - 1 : today.year,
+            month: today.month === 1 ? 12 : today.month - 1,
+          },
+        ]
+      : [];
   return [
     ...(hour === CARE_SCAN_HOUR_IST ? [{ kind: "care.scan", after: null } satisfies BillingMessage] : []),
     ...(hour === ALERTS_HOUR_IST
@@ -35,6 +55,8 @@ export function hourlyMessages(scheduledTime: number): BillingMessage[] {
           } satisfies BillingMessage,
         ]
       : []),
+    ...(hour === ALERTS_HOUR_IST ? [{ v: 1, kind: "realisation.scan" } satisfies ReportMessage] : []),
+    ...edf,
     { kind: "reminder.scan", after: null },
   ];
 }

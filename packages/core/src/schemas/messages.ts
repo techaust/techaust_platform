@@ -246,10 +246,21 @@ export const edfReminderMessage = z.object({
   year: z.int().min(2000).max(9999),
   month: z.int().min(1).max(12),
 });
+/**
+ * `statement.purge`: the daily clean-up of the statement PDF cache (Q57; `statement_pdfs` is a cache, not a record): rows older than 30 days and the rows of anonymised clients, with
+ * their R2 objects, at most 50 a message. `asOf` is the cron's scheduled time (UTC ms); `after` is the last row's id of the previous page (keyset on the primary key).
+ */
+export const statementPurgeMessage = z.object({
+  v: z.literal(1),
+  kind: z.literal("statement.purge"),
+  asOf: z.int().min(0),
+  after: id64.optional(),
+});
 export type RealisationScanMessage = z.infer<typeof realisationScanMessage>;
 export type EdfReminderMessage = z.infer<typeof edfReminderMessage>;
-export type ReportMessage = RealisationScanMessage | EdfReminderMessage;
-export const REPORT_KINDS = ["realisation.scan", "edf.reminder"] as const;
+export type StatementPurgeMessage = z.infer<typeof statementPurgeMessage>;
+export type ReportMessage = RealisationScanMessage | EdfReminderMessage | StatementPurgeMessage;
+export const REPORT_KINDS = ["realisation.scan", "edf.reminder", "statement.purge"] as const;
 /** True for a body of the M5.5b report family (valid or not), so a malformed one can never become a lead. */
 export const isReportKind = (body: unknown): body is { kind: ReportMessage["kind"] } =>
   typeof body === "object" &&

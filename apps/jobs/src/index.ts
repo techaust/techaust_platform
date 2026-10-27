@@ -5,7 +5,7 @@ import { secureHeaders } from "hono/secure-headers";
 import { enqueueHourly, HOURLY_CRON } from "./billing.ts";
 import { noteInvocation } from "./log.ts";
 import { enqueueSweep } from "./pdf.ts";
-import { enqueueDue, PURGE_CRON } from "./purge.ts";
+import { enqueueDue, enqueueStatementPurge, PURGE_CRON } from "./purge.ts";
 import { handleQueue } from "./queue.ts";
 import { enqueueStats } from "./stats.ts";
 import { warmConsumers } from "./warm.ts";
@@ -26,9 +26,9 @@ app.notFound((c) => c.json({ error: { code: "not_found", message: "Not found" } 
 export default {
   fetch: app.fetch,
   // Cron dispatcher: only enqueues work (docs/05 §11.3), and reads nothing from D1.
-  //   `0 22 * * *` (03:30 IST, daily): the lead clean-up (M3.2), the PDF sweep (M4.4), the nightly statistics (M3.5) and the expiry of sent proposals and estimates (M4.3; one message in the
-  //     statistics batch). The daily LUT check moved to the 09:00 IST alerts in M5.4 (LD61).
-  //   `30 * * * *` (the top of every IST hour, M5.4, LD61): ONE `sendBatch` with the reminder scan every hour, the care-plan scan at 06:00 IST and the owners' alerts at 09:00 IST.
+  //   `0 22 * * *` (03:30 IST, daily): the lead clean-up (M3.2), the PDF sweep (M4.4), the nightly statistics (M3.5), the expiry of sent proposals and estimates (M4.3; one message in the
+  //     statistics batch) and the statement PDF clean-up (M5.5b). The daily LUT check moved to the 09:00 IST alerts in M5.4 (LD61).
+  //   `30 * * * *` (the top of every IST hour, M5.4, LD61): ONE `sendBatch` with the reminder scan every hour, the care-plan scan at 06:00 IST, and at 09:00 IST the owners' alerts, the export realisation scan and (IST days 5 to 7) the EDF reminder (M5.5b).
   // One failing does not stop the others; the run still fails so the failure is seen.
   async scheduled(controller, env, _ctx) {
     noteInvocation();
@@ -42,6 +42,8 @@ export default {
       // M4.4: ONE sweep message on the PDF queue; the consumer picks the sent documents that still have no PDF (<= 20 a run).
       enqueueSweep(env, controller.scheduledTime),
       enqueueStats(env, controller.scheduledTime, [expireMessage(controller.scheduledTime)]),
+      // M5.5b: ONE message to clean the statement PDF cache (30 days, and anonymised clients); nothing read here.
+      enqueueStatementPurge(env, controller.scheduledTime),
     ]);
     const failed = done.find((d) => d.status === "rejected");
     if (failed?.status === "rejected") throw failed.reason;

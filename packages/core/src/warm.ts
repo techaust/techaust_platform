@@ -26,6 +26,7 @@ import {
   reminderScanMessage,
   reminderSendMessage,
   staffAlertMessage,
+  statementPurgeMessage,
 } from "./schemas/messages.ts";
 
 export { warmSettings } from "./schemas/settings.ts";
@@ -158,14 +159,16 @@ export function warmBillingMessages(): number {
   }
 }
 
-/** The M5.5b report messages of the leads queue, one made-up parse each (a continuation page for the scan). Returns 2. */
+/** The M5.5b report messages of the leads queue, one made-up parse each (a continuation page for the scan). Returns 3. */
 export function warmReportMessages(): number {
   const id = "00000000-0000-7000-8000-000000000000";
   try {
     return (
       ok(
         realisationScanMessage.safeParse({ v: 1, kind: "realisation.scan", after: { d: "2026-10-01", id } }),
-      ) + ok(edfReminderMessage.safeParse({ v: 1, kind: "edf.reminder", year: 2026, month: 10 }))
+      ) +
+      ok(edfReminderMessage.safeParse({ v: 1, kind: "edf.reminder", year: 2026, month: 10 })) +
+      ok(statementPurgeMessage.safeParse({ v: 1, kind: "statement.purge", asOf: 1, after: id }))
     );
   } catch {
     return 0; // never stop a Worker from starting
