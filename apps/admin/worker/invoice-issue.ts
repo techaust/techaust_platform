@@ -12,13 +12,16 @@ import { sha256Hex } from "@techaust/core/catalogue";
 import { fyOf } from "@techaust/core/dates";
 import { uuidv7 } from "@techaust/core/ids";
 import {
+  balanceOf,
   dueDateOf,
   type ExportRoute,
   INVOICE_SERIES_OF,
   type InvoiceFlowType,
   isInvoiceIssuableType,
+  isNoteType,
   issueDateOf,
   issueFyOf,
+  ledgerStatusOf,
 } from "@techaust/core/invoices";
 import { maxNumber, sqlPrintfPattern } from "@techaust/core/numbering";
 import { decide } from "@techaust/core/permissions";
@@ -56,6 +59,7 @@ import {
   EXPORT_DECLARATION_TAMPERED,
   headerExtrasOf,
   INVOICE_APPROVAL_EXPIRED,
+  type InvoiceComputation,
   ISSUE_APPROVAL_REQUIRED,
   ISSUE_BLOCKED,
   ISSUE_DIRECTLY,
@@ -71,6 +75,8 @@ import {
   todayOf,
 } from "./invoice-model.ts";
 import { readInvoice, targetOf } from "./invoices.ts";
+import { explainNote, type NotePrepared, prepareNoteIssue } from "./note-issue.ts";
+import { NOTE_PARENT_READS, PARENT_STATEMENTS, parentStatements } from "./note-model.ts";
 import { APPROVAL_PENDING, CLIENT_GONE, CONTENT_CHANGED, NUMBERING_CHANGED } from "./quote-model.ts";
 
 const hex64 = z.string().check(z.regex(/^[0-9a-f]{64}$/));
@@ -94,17 +100,25 @@ export const APPROVAL_DECIDED: ApiError = {
 
 /** What a refused issue batch looks like when it comes back as an error: the guard, the post-condition, or a unique key. */
 const ISSUE_REFUSED =
-  /issue did not freeze|not an issuable draft|UNIQUE constraint failed: documents\.|documents_(invoice|parent|void)/;
+  /issue did not freeze|not an issuable draft|UNIQUE constraint failed: documents\.|documents_(invoice|parent|void|note|credit_note|ims|ledger)/;
+
+/** The document's word in a bell (M5.3: the same sentences, the word bound per type); the notes' variants are `[Placeholder]` until 07-T has them (§8). */
+const docWord = (type: string) =>
+  type === "credit_note" ? "credit note" : type === "debit_note" ? "debit note" : "invoice";
+const noteMark = (type: string) => (isNoteType(type) ? "[Placeholder] " : "");
 
 /**
  * The bells' words are 07-R's (draft copy, pending the owner's approval; a draft has no number, so a bell never uses a title, docs/13 2026-10-26):
  * to the owners "{requester} asked you to issue an invoice for {client name}."; to the requester "Your request to issue the invoice for {client name} was
  * rejected." (the issued one is written inside the issue batch).
  */
-const bellRequestTitle = (requester: string, clientName: string) =>
-  `${requester} asked you to issue an invoice for ${clientName}.`.slice(0, 300);
-const bellRejectedTitle = (clientName: string) =>
-  `Your request to issue the invoice for ${clientName} was rejected.`.slice(0, 300);
+const bellRequestTitle = (requester: string, clientName: string, type = "tax_invoice") =>
+  `${noteMark(type)}${requester} asked you to issue ${type === "credit_note" || type === "debit_note" ? "a" : "an"} ${docWord(type)} for ${clientName}.`.slice(
+    0,
+    300,
+  );
+const bellRejectedTitle = (clientName: string, type = "tax_invoice") =>
+  `${noteMark(type)}Your request to issue the ${docWord(type)} for ${clientName} was rejected.`.slice(0, 300);
 
 /**
  * A draft that names a contact must freeze exactly that contact: the hash of the draft (`content_sha256`) takes the contact id from `documents.contact_id`,
@@ -132,7 +146,11 @@ export type IssueParams = {
 export async function issueInvoice(c: Ctx, p: IssueParams): Promise<Response> {
   const u = actor(c);
   const db = c.env.DB;
-  const ctx = await readInvoice(c, p.id, [db.prepare(NEWEST_EXPORT_DECLARATION)]);
+  // M5.3: the six reads about the invoice a note is against ride along (they match nothing for any other type).
+  const ctx = await readInvoice(c, p.id, [
+    db.prepare(NEWEST_EXPORT_DECLARATION),
+    ...parentStatements(db, NOTE_PARENT_READS, p.id),
+  ]);
   if (!ctx) return err(c, NOT_FOUND, 404);
   const d = ctx.bundle.document;
   if (!isInvoiceIssuableType(d.type)) return err(c, TYPE_NOT_ISSUABLE, 409);
@@ -155,26 +173,51 @@ export async function issueInvoice(c: Ctx, p: IssueParams): Promise<Response> {
   // One instant for everything: the invoice date, the FY (the LUT of THIS year is the one that is needed), and the day the rate is judged against.
   const issueDate = issueDateOf(now);
   const fy = issueFyOf(now);
-  const state = invoiceStateOf(ctx.bundle);
-  const computation = await computeInvoice(
-    state,
-    ctx.client,
-    taxContext(ctx.settings),
-    todayOf(now),
-    targetOf(ctx.milestone),
-  );
+  // M5.3: a credit or debit note is worked out from its invoice and its stored request (`prepareNoteIssue`: the hash, the note blockers, the frozen recipient, issuer, terms and
+  // dates of a note); every other type is worked out as before.
+  const prepared = isNoteType(d.type)
+    ? await prepareNoteIssue(
+        c,
+        {
+          bundle: ctx.bundle,
+          client: ctx.client,
+          contact: ctx.contact,
+          settings: ctx.settings,
+          bank: ctx.bank,
+          newestTerms: ctx.newestTerms,
+          parent: ctx.extra.slice(1, 1 + PARENT_STATEMENTS),
+        },
+        now,
+        p.expected ? p.expected.contentSha256 : null,
+        { id: u.id, name: u.name },
+      )
+    : null;
+  if (prepared instanceof Response) return prepared;
+  const note: NotePrepared | null = prepared;
+  const state = note ? note.state : invoiceStateOf(ctx.bundle);
+  const computation = note
+    ? note.computation
+    : await computeInvoice(
+        state,
+        ctx.client,
+        taxContext(ctx.settings),
+        todayOf(now),
+        targetOf(ctx.milestone),
+      );
   // The stored hash is what the person saw and what an approval is tied to: an issue of anything else is refused.
   if (computation.hash !== d.content_sha256 || (p.expected && p.expected.contentSha256 !== d.content_sha256))
     return err(c, CONTENT_CHANGED, 409);
   // Q8: an export invoice in INR needs the issuer's explicit confirmation (the owner's own, or the approver's).
   const inrExport = needsInrConfirm(d.type, d.currency);
   if (inrExport && p.confirmInrExport !== true) return err(c, EXPORT_CURRENCY_CONFIRM, 409);
-  const blockers = blockersOf(state, ctx.client, ctx.settings, computation, {
-    bank: ctx.bank,
-    issueDate,
-    fy,
-    fxRefDate: issueDate,
-  });
+  const blockers = note
+    ? note.blockers
+    : blockersOf(state, ctx.client, ctx.settings, computation, {
+        bank: ctx.bank,
+        issueDate,
+        fy,
+        fxRefDate: issueDate,
+      });
   const computed = computation.computed;
   if (blockers.length > 0 || !computed)
     return c.json(
@@ -190,11 +233,15 @@ export async function issueInvoice(c: Ctx, p: IssueParams): Promise<Response> {
   const series = INVOICE_SERIES_OF[type];
   const format = ctx.settings.numbering[series];
   const numbering = sqlPrintfPattern(format);
-  const dueDate = dueDateOf(issueDate, ctx.client.payment_terms_days, ctx.settings.paymentTerms.dueDays);
-  const recipient = recipientOf(ctx.client, ctx.contact);
-  const issuer = issuerOf(ctx.settings, ctx.bank, { id: u.id, name: u.name }, d.currency);
-  const terms = ctx.newestTerms;
-  // LD23: the optional extra export note, pinned at issue: the NEWEST block, when the draft asked for one.
+  const dueDate = note
+    ? note.dueDate
+    : dueDateOf(issueDate, ctx.client.payment_terms_days, ctx.settings.paymentTerms.dueDays);
+  const recipient = note ? note.recipient : recipientOf(ctx.client, ctx.contact);
+  const issuer = note
+    ? note.issuer
+    : issuerOf(ctx.settings, ctx.bank, { id: u.id, name: u.name }, d.currency);
+  const terms = note ? note.terms : ctx.newestTerms;
+  // LD23: the optional extra export note, pinned at issue: the NEWEST block, when the draft asked for one (never on a note).
   const newestDeclaration =
     (ctx.extra[0]?.results[0] as (TermsRef & { body_md: string }) | undefined) ?? null;
   const declaration = state.exportDeclarationId !== null ? newestDeclaration : null;
@@ -209,14 +256,16 @@ export async function issueInvoice(c: Ctx, p: IssueParams): Promise<Response> {
       ? state.exportMode
       : ctx.settings.tax.exportMode;
   // LD37: the keys the other columns cannot give are worked out ONCE here, sealed, and frozen in `header_extras` by the same batch.
-  const extras = headerExtrasOf({
-    state,
-    settings: ctx.settings,
-    client: ctx.client,
-    issueFy: fy,
-    mode,
-    declaration,
-  });
+  const extras = note
+    ? note.extras
+    : headerExtrasOf({
+        state,
+        settings: ctx.settings,
+        client: ctx.client,
+        issueFy: fy,
+        mode,
+        declaration,
+      });
   const seal = await invoiceSealOf({
     document: {
       type: d.type,
@@ -266,11 +315,17 @@ export async function issueInvoice(c: Ctx, p: IssueParams): Promise<Response> {
     termsVersionId: terms?.id ?? null,
     exportDeclarationId: declaration?.id ?? null,
     headerExtras: headerExtrasJson(extras),
+    // M5.3: a note's parent, its deadline and its IMS status are bound into the freeze (`NoteIssueArgs`).
+    ...(note ? { note: note.noteArgs, imsStatus: note.imsStatus } : {}),
     expected,
     authority: p.approval
       ? { kind: "approval", sessionId: u.sessionId, approvalId: p.approval.id }
       : { kind: "owner", sessionId: u.sessionId },
-    bell: { clientName: ctx.client.display_name, linkPrefix: "/invoices/" },
+    bell: {
+      clientName: ctx.client.display_name,
+      linkPrefix: "/invoices/",
+      ...(note ? { subject: docWord(d.type), prefix: noteMark(d.type) } : {}),
+    },
   });
 
   // The number is taken inside the batch, so it comes back from the freeze UPDATE itself (RETURNING): no second read.
@@ -285,6 +340,15 @@ export async function issueInvoice(c: Ctx, p: IssueParams): Promise<Response> {
     approvalId: p.approval?.id ?? null,
     // Q8: the Owner (or the approver) confirmed an export invoice in INR.
     ...(inrExport ? { inrExportConfirmed: true } : {}),
+    // M5.3: a note's invoice, the reason's code and the way it was asked: ids, numbers and codes only, never the reason's words.
+    ...(note
+      ? {
+          parentId: note.p.row.id,
+          parentNumber: note.p.row.number_display,
+          reasonCode: note.noteOf.reason.code,
+          mode: note.noteOf.request.mode,
+        }
+      : {}),
   };
   let done = false;
   try {
@@ -354,6 +418,18 @@ export async function issueInvoice(c: Ctx, p: IssueParams): Promise<Response> {
       expected,
       approvalId: p.approval?.id ?? null,
       now,
+      ...(note
+        ? {
+            note: {
+              kind: note.noteArgs.kind,
+              parentId: note.noteArgs.parentId,
+              expectedParentUpdatedAt: note.noteArgs.expectedParentUpdatedAt,
+              expectedParentCredited: note.noteArgs.expectedParentCredited,
+              deadline: note.noteArgs.deadline,
+              issueDate,
+            },
+          }
+        : {}),
     });
 
   afterIssue(c, { documentId: d.id });
@@ -380,6 +456,28 @@ export async function issueInvoice(c: Ctx, p: IssueParams): Promise<Response> {
     status: "issued",
     updatedAt: now,
     ...(p.approval ? { approvalId: p.approval.id } : {}),
+    // M5.3: the invoice as the batch left it (a credit note moved its ledger; a debit note moved nothing).
+    ...(note
+      ? {
+          parent: (() => {
+            const r = note.p.row;
+            const credited =
+              note.noteArgs.kind === "credit" ? r.credited_minor + computed.totalMinor : r.credited_minor;
+            return {
+              id: r.id,
+              status:
+                note.noteArgs.kind === "credit"
+                  ? ledgerStatusOf(r.total_minor, r.paid_minor, credited)
+                  : r.status,
+              creditedMinor: credited,
+              balanceMinor:
+                note.noteArgs.kind === "credit"
+                  ? balanceOf(r.total_minor, r.paid_minor, credited)
+                  : r.balance_minor,
+            };
+          })(),
+        }
+      : {}),
   });
 }
 
@@ -402,6 +500,15 @@ type Expectations = {
   approvalId: string | null;
   /** The batch's own clock: the reread judges the session and the step-up at the same moment the batch did. */
   now: number;
+  /** M5.3: a note's parent and deadline, for the note rules (`explainNote`). */
+  note?: {
+    kind: "credit" | "debit";
+    parentId: string;
+    expectedParentUpdatedAt: number;
+    expectedParentCredited: number;
+    deadline: { lastDay: string; filedOn: string | null } | null;
+    issueDate: string;
+  };
 };
 
 /** The batch refused and wrote nothing (no number, no audit row, no milestone move): one read says why, in the order a person can act on it. */
@@ -473,6 +580,11 @@ async function explain(c: Ctx, id: string, x: Expectations) {
   if (row.client_updated_at !== x.expected.clientUpdatedAt) return err(c, CLIENT_CHANGED, 409);
   if (x.expected.contact && row.contact_updated_at !== x.expected.contact.updatedAt)
     return err(c, CONTACT_CHANGED, 409);
+  // M5.3: the note rules (the invoice went void or moved, the deadline, the limit of 20): read once, after the checks every document has.
+  if (x.note) {
+    const r = await explainNote(c, { kind: x.note.kind, parentId: x.note.parentId }, x.note);
+    if (r) return r;
+  }
   if ((row.next_no ?? 1) > x.maxNumber) return err(c, SERIES_FULL, 409);
   if (row.role !== "owner") return err(c, FORBIDDEN, 403);
   if (row.step_up_until === null || row.step_up_until <= x.now) return err(c, STEP_UP_REQUIRED, 403);
@@ -526,7 +638,7 @@ export const invoiceIssue = new Hono<AppEnv>()
     const decision = decide(u.role, "invoices.issue");
     if (decision === "step-up" || decision === "allow") return err(c, ISSUE_DIRECTLY, 409);
     if (decision === "deny") return err(c, FORBIDDEN, 403);
-    const ctx = await readInvoice(c, id);
+    const ctx = await readInvoice(c, id, parentStatements(db, NOTE_PARENT_READS, id));
     if (!ctx) return err(c, NOT_FOUND, 404);
     const d = ctx.bundle.document;
     if (!isInvoiceIssuableType(d.type)) return err(c, TYPE_NOT_ISSUABLE, 409);
@@ -542,32 +654,59 @@ export const invoiceIssue = new Hono<AppEnv>()
     if (d.updated_at !== f.expectedUpdatedAt) return err(c, STALE_VERSION, 409);
     if (ctx.client.anonymised_at !== null) return err(c, CLIENT_GONE, 409);
     if (contactGone(d.contact_id, ctx.contact)) return err(c, CONTACT_ANONYMISED, 409);
-    const state = invoiceStateOf(ctx.bundle);
-    const computation = await computeInvoice(
-      state,
-      ctx.client,
-      taxContext(ctx.settings),
-      todayOf(),
-      targetOf(ctx.milestone),
-    );
-    if (computation.hash !== d.content_sha256 || d.content_sha256 === null)
-      return err(c, CONTENT_CHANGED, 409);
     const asked = Date.now();
-    const blockers = blockersOf(state, ctx.client, ctx.settings, computation, {
-      bank: ctx.bank,
-      issueDate: issueDateOf(asked),
-      fy: issueFyOf(asked),
-      fxRefDate: issueDateOf(asked),
-    });
-    if (blockers.length > 0 || !computation.computed)
-      return c.json(
+    // M5.3: a note is worked out from its invoice and its stored request (the same function as its issue, so a request is only ever made for what could be issued now).
+    let computed: NonNullable<InvoiceComputation["computed"]>;
+    let contentSha: string;
+    if (isNoteType(d.type)) {
+      const n = await prepareNoteIssue(
+        c,
         {
-          error: { code: ISSUE_BLOCKED.code, message: ISSUE_BLOCKED.message },
-          blockers,
-          request_id: c.var.rid,
+          bundle: ctx.bundle,
+          client: ctx.client,
+          contact: ctx.contact,
+          settings: ctx.settings,
+          bank: ctx.bank,
+          newestTerms: ctx.newestTerms,
+          parent: ctx.extra.slice(0, PARENT_STATEMENTS),
         },
-        409,
+        asked,
+        null,
+        { id: u.id, name: u.name },
       );
+      if (n instanceof Response) return n;
+      if (!n.computation.computed) return err(c, CONTENT_CHANGED, 409);
+      computed = n.computation.computed;
+      contentSha = n.computation.hash;
+    } else {
+      const state = invoiceStateOf(ctx.bundle);
+      const computation = await computeInvoice(
+        state,
+        ctx.client,
+        taxContext(ctx.settings),
+        todayOf(),
+        targetOf(ctx.milestone),
+      );
+      if (computation.hash !== d.content_sha256 || d.content_sha256 === null)
+        return err(c, CONTENT_CHANGED, 409);
+      const blockers = blockersOf(state, ctx.client, ctx.settings, computation, {
+        bank: ctx.bank,
+        issueDate: issueDateOf(asked),
+        fy: issueFyOf(asked),
+        fxRefDate: issueDateOf(asked),
+      });
+      if (blockers.length > 0 || !computation.computed)
+        return c.json(
+          {
+            error: { code: ISSUE_BLOCKED.code, message: ISSUE_BLOCKED.message },
+            blockers,
+            request_id: c.var.rid,
+          },
+          409,
+        );
+      computed = computation.computed;
+      contentSha = computation.hash;
+    }
     const approvalId = uuidv7();
     const now = Date.now();
     let done: boolean;
@@ -595,8 +734,8 @@ export const invoiceIssue = new Hono<AppEnv>()
           approvalId,
           documentId: id,
           kind: "issue",
-          totalMinor: computation.computed.totalMinor,
-          contentSha: computation.hash.slice(0, 12),
+          totalMinor: computed.totalMinor,
+          contentSha: contentSha.slice(0, 12),
         },
         status: 201,
         // The bell of every active owner: one row each; the unique (member, kind, entity) keeps a redelivery from adding twice.
@@ -609,7 +748,7 @@ export const invoiceIssue = new Hono<AppEnv>()
             )
             .bind(
               approvalId,
-              bellRequestTitle(u.name, ctx.client.display_name),
+              bellRequestTitle(u.name, ctx.client.display_name, d.type),
               // `?kind=issue` opens the Issue tab on that request (the discount queue's link has none), and the list takes `id=` so an older request still opens.
               `/approvals/${approvalId}?kind=issue`,
               ...g.params,
@@ -651,9 +790,11 @@ export async function decideIssue(
   }
   const now = Date.now();
   const client = await db
-    .prepare("SELECT cl.display_name FROM documents d JOIN clients cl ON cl.id = d.client_id WHERE d.id = ?1")
+    .prepare(
+      "SELECT cl.display_name, d.type FROM documents d JOIN clients cl ON cl.id = d.client_id WHERE d.id = ?1",
+    )
     .bind(row.document_id)
-    .first<{ display_name: string }>();
+    .first<{ display_name: string; type: string }>();
   const done = await mutate(c, {
     main: db
       .prepare(
@@ -675,7 +816,7 @@ export async function decideIssue(
         )
         .bind(
           approvalId,
-          bellRejectedTitle(client?.display_name ?? ""),
+          bellRejectedTitle(client?.display_name ?? "", client?.type),
           `/invoices/${row.document_id}`,
           row.requested_by,
           ...g.params,

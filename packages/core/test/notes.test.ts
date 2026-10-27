@@ -232,7 +232,6 @@ describe("noteBlockers [LD50, Rule 53(1A)]", () => {
   it("the request: nothing chosen, more than is left on the invoice or on a line", () => {
     expect(codes(okFacts({ request: { empty: true, exceeds: null }, totalMinor: null }))).toEqual([
       "nothing_to_credit",
-      "zero_total",
     ]);
     const over = noteBlockers(
       okFacts({ request: { empty: false, exceeds: { line: null, remaining: 77 } } }),

@@ -394,7 +394,21 @@ type IssueApprovalFacts = {
   decider_name: string | null;
   number_display: string | null;
   client_name: string;
+  /** `documents.type` of the document (read by `APPROVAL_READ`): a credit or debit note carries its words in the emails (M5.3). */
+  document_type?: string;
 };
+
+/**
+ * M5.3: the document's words in an issue email. An invoice is exactly what it was (no new key, the same strings); a credit or debit note adds `document_type` and names itself,
+ * the wording marked `[Placeholder]` until 07-T has the lines (the templates' variants are the designer's, `@techaust/email`).
+ */
+const noteWords = (a: IssueApprovalFacts) =>
+  a.document_type === "credit_note" || a.document_type === "debit_note"
+    ? {
+        documentType: a.document_type === "credit_note" ? "credit note" : "debit note",
+        marked: "[Placeholder] ",
+      }
+    : null;
 
 /**
  * The two emails of an invoice issue request (07-R §3; the same layout as the 07-O discount emails). They go out under the existing template keys with
@@ -414,8 +428,9 @@ const issueRequestedEmail = (
     kind: "issue",
     requester_name: a.requester_name ?? "",
     client_name: a.client_name,
-    request_reason: "issuing an invoice",
-    title: `Invoice for ${a.client_name}`,
+    request_reason: noteWords(a) ? `${noteWords(a)?.marked}issuing a ${noteWords(a)?.documentType}` : "issuing an invoice",
+    title: noteWords(a) ? `${noteWords(a)?.marked}${noteWords(a)?.documentType} for ${a.client_name}` : `Invoice for ${a.client_name}`,
+    ...(noteWords(a) ? { document_type: noteWords(a)?.documentType ?? "" } : {}),
     version: "1",
     amount: formatMoney(money(a.total_minor, a.currency === "USD" ? "USD" : "INR")),
     admin_url: `${adminBase(env)}/approvals/${approvalId}?kind=issue`,
@@ -438,7 +453,8 @@ const issueDecidedEmail = (
     client_name: a.client_name,
     // The number exists only once the invoice was issued (an approved request); a rejected one has none.
     number: a.status === "approved" ? (a.number_display ?? "") : "",
-    title: `Invoice for ${a.client_name}`,
+    title: noteWords(a) ? `${noteWords(a)?.marked}${noteWords(a)?.documentType} for ${a.client_name}` : `Invoice for ${a.client_name}`,
+    ...(noteWords(a) ? { document_type: noteWords(a)?.documentType ?? "" } : {}),
     version: "1",
     decision_note: a.note ?? "",
     admin_url: `${adminBase(env)}/invoices/${a.document_id}`,

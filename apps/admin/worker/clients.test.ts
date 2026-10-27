@@ -260,7 +260,8 @@ describe("billing, the GST identity and the currency lock [ADM-CLI-01]", () => {
 
   it("the database refuses a raw currency change once an invoice exists (the trigger behind the API)", async () => {
     const id = await mkClient();
-    await mkDoc(id, "credit_note");
+    // M5.3 (documents_note_parent_required): a credit note needs a parent, so the document that locks the currency here is an invoice (the credit-note and debit-note cases are packages/db/test/clients.test.ts).
+    await mkDoc(id, "tax_invoice");
     await expect(
       env.DB.prepare("UPDATE clients SET currency = 'USD' WHERE id = ?").bind(id).run(),
     ).rejects.toThrow(/currency is locked/);

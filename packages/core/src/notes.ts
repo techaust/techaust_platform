@@ -270,7 +270,9 @@ export function noteBlockers(f: NoteFacts, checklist: Pick<ChecklistSettings, "b
   if (blank(f.reason.code) || (f.reason.code === "other" && blank(f.reason.text)))
     out.push({ code: "note_reason_required" });
   if (f.taxErrorCount > 0) out.push({ code: "computed_errors" });
-  else if (f.totalMinor === null || f.totalMinor <= 0) out.push({ code: "zero_total" });
+  // (An empty or too-big request has its own code above; a zero total then adds nothing.)
+  else if ((f.totalMinor === null || f.totalMinor <= 0) && !f.request.empty && f.request.exceeds === null)
+    out.push({ code: "zero_total" });
   if (blank(f.reverseChargeText)) out.push({ code: "reverse_charge_text" });
   if (f.kind === "debit" && checklist.bankDetails) {
     if (f.currency === "INR" && !f.bank.inr) out.push({ code: "bank_missing" });

@@ -1,0 +1,602 @@
+// Credit and debit notes: the model the routes share (M5.3; ADM-INV-11, ADM-INV-01; LD38..LD54; VERIFY WITH CA/LEGAL for every rule): what is read about the invoice a
+// note is against, how a request becomes takes and a computed document, the draft's state and hash, the deadline, and the error lines. No route is here
+// (`invoice-notes.ts` makes the draft and answers the IMS route; `invoice-issue.ts` issues through `prepareNoteIssue`), and nothing here trusts a draft: every
+// figure is worked out again from the frozen invoice, the credit notes issued so far (summed by SQL) and the stored takes.
+import { type CalendarDate, istDate } from "@techaust/core/dates";
+import { contentHash } from "@techaust/core/documents";
+import { uuidv7 } from "@techaust/core/ids";
+import {
+  CREDIT_REASONS,
+  type CreditDeadline,
+  creditAllowed,
+  creditedSoFarOf,
+  creditForGross,
+  creditNoteDeadline,
+  DEBIT_REASONS,
+  debitNoteInput,
+  isNoteType,
+  type NoteBlocker,
+  type NoteKind,
+  type NoteOf,
+  type NoteParentFacts,
+  type NoteRequest,
+  type NoteTake,
+  type NoteType,
+  noteBlockers,
+  noteKindOf,
+} from "@techaust/core/invoices";
+import {
+  type ComputedDocument,
+  type CreditedSoFar,
+  computeDocument,
+  creditNote,
+  type TaxContext,
+  type TaxIssue,
+} from "@techaust/core/tax";
+import {
+  headerExtrasJson,
+  headerExtrasOfRow,
+  type InvoiceHeaderExtras,
+  noteContentOf,
+} from "@techaust/db/documents";
+import type { RecipientSnapshot } from "@techaust/db/issue";
+import { CREDITED_SO_FAR_SQL, CREDITED_TOTALS_SQL, NOTE_COUNTS_SQL } from "@techaust/db/issue";
+import type { ApiError } from "./context.ts";
+import {
+  type BankRow,
+  type InvoiceComputation,
+  type InvoiceSettings,
+  type InvoiceState,
+  invoiceDraftOf,
+} from "./invoice-model.ts";
+import type { ClientRow, LineState } from "./quote-model.ts";
+
+// ---- errors (07-T §7 where it has the line; `[Placeholder]` where it does not: the copy gaps of the run file) ---------------------------------------
+
+const e = (code: string, message: string): ApiError => ({ code, message });
+export const PARENT_NOT_ISSUED = e(
+  "parent_not_issued",
+  "Notes can only be issued against an issued invoice.",
+);
+export const PARENT_VOID = e("parent_void", "This invoice is void, so no note can be issued against it.");
+export const PARENT_FULLY_CREDITED = e(
+  "parent_fully_credited",
+  "[Placeholder] This invoice is already credited in full.",
+);
+export const CREDIT_DEADLINE_PASSED = e(
+  "credit_deadline_passed",
+  "The deadline for a credit note on this invoice has passed.",
+);
+export const CREDIT_EXCEEDS_REMAINING = e(
+  "credit_exceeds_remaining",
+  "That's more than can still be credited on this invoice.",
+);
+export const LINE_CREDIT_EXCEEDS = e(
+  "line_credit_exceeds",
+  "That's more than can still be credited on that line.",
+);
+export const NOTHING_TO_CREDIT = e("nothing_to_credit", "Choose at least one line or an amount above zero.");
+export const NOTE_REASON_REQUIRED = e("note_reason_required", "Enter a reason.");
+export const NOTE_DRAFT_EXISTS = e(
+  "note_draft_exists",
+  "[Placeholder] This invoice already has an open draft of this kind.",
+);
+export const NOTES_LIMIT = e(
+  "notes_limit",
+  "[Placeholder] This invoice already has the most notes of this kind.",
+);
+export const PARENT_CHANGED = e(
+  "parent_changed",
+  "[Placeholder] The invoice changed while this was issued. Try again.",
+);
+export const NOTE_LINES_DERIVED = e(
+  "note_lines_derived",
+  "[Placeholder] The lines of a note come from the invoice; change the request instead.",
+);
+export const NOTE_NOT_VOIDABLE = e(
+  "note_not_voidable",
+  "[Placeholder] A credit or debit note can't be voided. Issue another note to correct it.",
+);
+export const IMS_NOT_PENDING = e("ims_not_pending", "[Placeholder] This credit note was already answered.");
+export const IMS_NOT_APPLICABLE = e(
+  "ims_not_applicable",
+  "IMS status only applies to credit notes for GST-registered clients.",
+);
+export const CREDIT_AMOUNT_UNFIT = e(
+  "credit_amount_unfit",
+  "[Placeholder] That exact amount can't be credited. The closest amount below it is shown.",
+);
+export const CREDIT_DATA_DAMAGED = e(
+  "credit_shape_mismatch",
+  "[Placeholder] The credit notes stored for this invoice do not add up. A developer needs to look at it.",
+);
+export const ANNUAL_RETURN_FUTURE = e(
+  "annual_return_future",
+  "[Placeholder] The day a return was filed can't be in the future.",
+);
+
+// ---- what is read about the invoice a note is against -------------------------------------------------------------------------------------------
+
+const NOTES_SQL = "'credit_note', 'debit_note'";
+const PARENT_COLS =
+  "id, type, status, client_id, project_id, currency, fy, number_display, issue_date, supply_type, place_of_supply_code, export_mode, fx_rate_micros, fx_date, fx_source, total_minor, total_inr_minor, paid_minor, credited_minor, balance_minor, updated_at, service_completed_on, header_extras, frozen_at, computed, recipient";
+const PARENT_LINE_COLS = "position, description, detail, sac, unit, gst_rate_bp";
+
+export type ParentRow = {
+  id: string;
+  type: string;
+  status: string;
+  client_id: string;
+  project_id: string | null;
+  currency: string;
+  fy: string | null;
+  number_display: string | null;
+  issue_date: string | null;
+  supply_type: string | null;
+  place_of_supply_code: string | null;
+  export_mode: string | null;
+  fx_rate_micros: number | null;
+  fx_date: string | null;
+  fx_source: string | null;
+  total_minor: number;
+  total_inr_minor: number | null;
+  paid_minor: number;
+  credited_minor: number;
+  balance_minor: number;
+  updated_at: number;
+  service_completed_on: string | null;
+  header_extras: string | null;
+  frozen_at: number | null;
+  computed: string | null;
+  recipient: string | null;
+};
+export type ParentLine = {
+  position: number;
+  description: string;
+  detail: string | null;
+  sac: string | null;
+  unit: string;
+  gst_rate_bp: number;
+};
+
+/** Keyed by the PARENT's id (`?1`): the invoice a draft is made for. */
+export const PARENT_READS = {
+  parent: `SELECT ${PARENT_COLS} FROM documents WHERE id = ?1`,
+  lines: `SELECT ${PARENT_LINE_COLS} FROM document_lines WHERE document_id = ?1 ORDER BY position`,
+  creditedLines: CREDITED_SO_FAR_SQL,
+  creditedTotals: CREDITED_TOTALS_SQL,
+  counts: NOTE_COUNTS_SQL,
+  drafts: `SELECT id, type FROM documents WHERE parent_id = ?1 AND frozen_at IS NULL AND type IN (${NOTES_SQL})`,
+  client: "SELECT id FROM clients WHERE id = (SELECT client_id FROM documents WHERE id = ?1)",
+} as const;
+
+const OF_NOTE = `(SELECT parent_id FROM documents WHERE id = ?1 AND type IN (${NOTES_SQL}))`;
+/** The same reads, keyed by the NOTE's id (`?1`): the issue and a save read the parent of a draft they were handed. Nothing matches for any other type. */
+export const NOTE_PARENT_READS = {
+  parent: `SELECT ${PARENT_COLS} FROM documents WHERE id = ${OF_NOTE}`,
+  lines: `SELECT ${PARENT_LINE_COLS} FROM document_lines WHERE document_id = ${OF_NOTE} ORDER BY position`,
+  creditedLines: CREDITED_SO_FAR_SQL.replaceAll("c.parent_id = ?1", `c.parent_id = ${OF_NOTE}`),
+  creditedTotals: CREDITED_TOTALS_SQL.replaceAll("c.parent_id = ?1", `c.parent_id = ${OF_NOTE}`),
+  counts: NOTE_COUNTS_SQL.replaceAll("c.parent_id = ?1", `c.parent_id = ${OF_NOTE}`),
+  drafts: `SELECT id, type FROM documents WHERE parent_id = ${OF_NOTE} AND frozen_at IS NULL AND type IN (${NOTES_SQL})`,
+} as const;
+
+/** The statements of `reads`, in the order `parentCtxOf` takes their results. `id` is bound once to each. */
+export function parentStatements(
+  db: D1Database,
+  reads: typeof PARENT_READS | typeof NOTE_PARENT_READS,
+  id: string,
+): D1PreparedStatement[] {
+  return [
+    reads.parent,
+    reads.lines,
+    reads.creditedLines,
+    reads.creditedTotals,
+    reads.counts,
+    reads.drafts,
+  ].map((sql) => db.prepare(sql).bind(id));
+}
+export const PARENT_STATEMENTS = 6;
+
+export type ParentCtx = {
+  row: ParentRow;
+  computed: ComputedDocument;
+  recipient: RecipientSnapshot;
+  /** The GST status frozen in the invoice's recipient (every invoice writes it; a snapshot without it is damaged and gives no context). */
+  recipientStatus: "registered" | "unregistered" | "overseas";
+  extras: InvoiceHeaderExtras;
+  lines: ParentLine[];
+  /** What the issued credit notes took (null: the stored figures are damaged). */
+  credited: CreditedSoFar | null;
+  issued: { credit: number; debit: number };
+  drafts: { credit: string | null; debit: string | null };
+};
+
+const safeParse = <T>(text: string | null): T | null => {
+  if (text === null) return null;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return null;
+  }
+};
+
+/** The parent context from the results of `parentStatements` (null: there is no such invoice, or it is not a frozen document of the invoice family). */
+export function parentCtxOf(results: readonly D1Result[]): ParentCtx | null {
+  const [parentR, linesR, creditedR, totalsR, countsR, draftsR] = results;
+  const row = parentR?.results[0] as ParentRow | undefined;
+  if (!row) return null;
+  const computed = safeParse<ComputedDocument>(row.computed);
+  const recipient = safeParse<RecipientSnapshot>(row.recipient);
+  if (!computed || !recipient?.gstStatus) return null;
+  const totals = (totalsR?.results[0] ?? { total: 0, totalInr: 0, count: 0 }) as {
+    total: number;
+    totalInr: number;
+    count: number;
+  };
+  const counts = (countsR?.results ?? []) as { type: string; count: number }[];
+  const drafts = (draftsR?.results ?? []) as { id: string; type: string }[];
+  return {
+    row,
+    computed,
+    recipient,
+    recipientStatus: recipient.gstStatus,
+    extras: headerExtrasOfRow(row),
+    lines: (linesR?.results ?? []) as ParentLine[],
+    credited: creditedSoFarOf(computed, (creditedR?.results ?? []) as never, totals),
+    issued: {
+      credit: counts.find((c) => c.type === "credit_note")?.count ?? 0,
+      debit: counts.find((c) => c.type === "debit_note")?.count ?? 0,
+    },
+    drafts: {
+      credit: drafts.find((d) => d.type === "credit_note")?.id ?? null,
+      debit: drafts.find((d) => d.type === "debit_note")?.id ?? null,
+    },
+  };
+}
+
+/** The facts of the invoice a note freezes (LD53, M5.5's `NoteParent` plus id, type, fy and the total). */
+export function parentFacts(p: ParentCtx): NoteParentFacts {
+  const lut = p.extras.export?.lut;
+  return {
+    id: p.row.id,
+    type: p.row.type === "export_invoice" ? "export_invoice" : "tax_invoice",
+    fy: p.row.fy ?? "",
+    number: p.row.number_display ?? "",
+    issueDate: p.row.issue_date ?? "",
+    supplyType: p.computed.supply.type,
+    recipientStatus: p.recipientStatus,
+    placeOfSupplyCode: p.computed.supply.placeOfSupplyCode,
+    totalMinor: p.computed.totalMinor,
+    totalInrMinor:
+      p.computed.currency === "INR" ? p.computed.totalMinor : (p.computed.inr?.totalMinor ?? null),
+    ...(lut ? { lut: { fy: lut.fy, arn: lut.arn } } : {}),
+  };
+}
+
+/** The invoice types a note can be against, and the statuses they can be in. */
+export const isNoteParentType = (t: string) => t === "tax_invoice" || t === "export_invoice";
+export const isLiveParentStatus = (s: string) =>
+  s === "issued" || s === "partially_paid" || s === "paid" || s === "partially_credited";
+
+/** What is left of the invoice: the total, and the taxable value per computed line (by position in `computed.lines`). */
+export function leftOf(p: ParentCtx): { totalLeft: number; taxableLeft: number[] } | null {
+  if (!p.credited) return null;
+  const credited = p.credited;
+  return {
+    totalLeft: p.computed.totalMinor - credited.creditedTotalMinor,
+    taxableLeft: p.computed.lines.map((l, i) => l.taxableMinor - (credited.lines[i]?.taxableMinor ?? 0)),
+  };
+}
+
+/** The deadline of a credit note on this invoice (Q32, Q33; VERIFY WITH CA/LEGAL). */
+export function deadlineOf(p: ParentCtx, settings: InvoiceSettings): CreditDeadline {
+  return creditNoteDeadline(
+    {
+      parentFy: p.row.fy ?? "",
+      parentIssueDate: p.row.issue_date ?? "",
+      advanceReceivedOn: p.extras.advance?.receivedOn ?? null,
+      serviceCompletedOn: p.row.service_completed_on,
+    },
+    settings.tax.creditNoteCutoff,
+    settings.tax.annualReturnsFiled,
+  );
+}
+
+export { creditAllowed };
+
+// ---- turning a request into takes and a computed document ------------------------------------------------------------------------------------
+
+/** A failed request: the status, the body's error and the extra keys (`remaining`, `line`, `issues`, `closestMinor`). */
+export type NoteRefusal = { status: 400 | 409; error: ApiError; extra?: Record<string, unknown> };
+
+export type NoteAsk = {
+  mode: "lines" | "amount" | "full";
+  lines?: readonly NoteTake[] | undefined;
+  grossMinor?: number | undefined;
+};
+
+const issuesOf = (errors: readonly TaxIssue[]): NoteRefusal => ({
+  status: 409,
+  error: { code: "tax_errors", message: "This note doesn't compute for this invoice" },
+  extra: { issues: errors },
+});
+
+/**
+ * The takes and the computed document of a credit note request (`full`: everything left; `amount`: the largest note whose total is at most the amount typed, GST
+ * included, LD44; `lines`: as given, taxable values before GST). More than is left is `credit_exceeds_remaining` with what is left (the invoice's total, or a line's
+ * taxable value: `line_credit_exceeds`), nothing chosen is `nothing_to_credit`.
+ */
+export function resolveCredit(
+  p: ParentCtx,
+  ask: NoteAsk,
+  taxCtx: TaxContext,
+): { ok: true; request: NoteRequest; computed: ComputedDocument } | { ok: false; refusal: NoteRefusal } {
+  const left = leftOf(p);
+  if (!left || !p.credited) return { ok: false, refusal: { status: 409, error: CREDIT_DATA_DAMAGED } };
+  const refuse = (refusal: NoteRefusal) => ({ ok: false as const, refusal });
+  const taxableOf = (doc: ComputedDocument): NoteTake[] =>
+    doc.lines.map((l) => ({ line: l.index, taxableMinor: l.taxableMinor }));
+  if (ask.mode === "full") {
+    const r = creditNote(p.computed, p.credited, { kind: "full" }, taxCtx);
+    if (!r.ok) return refuse(mapCreditErrors(r.errors, left));
+    return { ok: true, request: { mode: "full", takes: taxableOf(r.value) }, computed: r.value };
+  }
+  if (ask.mode === "amount") {
+    const gross = ask.grossMinor ?? 0;
+    if (gross > left.totalLeft)
+      return refuse({ status: 409, error: CREDIT_EXCEEDS_REMAINING, extra: { remaining: left.totalLeft } });
+    const r = creditForGross(p.computed, p.credited, gross, taxCtx);
+    if (r.ok)
+      return {
+        ok: true,
+        request: { mode: "amount", grossMinor: gross, takes: [...r.takes] },
+        computed: r.document,
+      };
+    if (r.reason === "bound")
+      return refuse({
+        status: 409,
+        error: CREDIT_AMOUNT_UNFIT,
+        extra: { closestMinor: r.closest?.document.totalMinor ?? null, remaining: left.totalLeft },
+      });
+    if (r.reason === "empty") return refuse({ status: 400, error: NOTHING_TO_CREDIT });
+    return refuse(mapCreditErrors(r.errors, left));
+  }
+  const takes = [...(ask.lines ?? [])].sort((a, b) => a.line - b.line);
+  if (takes.length === 0) return refuse({ status: 400, error: NOTHING_TO_CREDIT });
+  const seen = new Set<number>();
+  for (const t of takes) {
+    const at = p.computed.lines.findIndex((l) => l.index === t.line);
+    if (at < 0 || seen.has(t.line) || !Number.isSafeInteger(t.taxableMinor) || t.taxableMinor <= 0)
+      return refuse({ status: 400, error: { code: "bad_request", message: "Check the form and try again" } });
+    seen.add(t.line);
+    const room = left.taxableLeft[at] ?? 0;
+    if (t.taxableMinor > room)
+      return refuse({ status: 409, error: LINE_CREDIT_EXCEEDS, extra: { line: t.line, remaining: room } });
+  }
+  const r = creditNote(p.computed, p.credited, { kind: "lines", lines: takes }, taxCtx);
+  if (!r.ok) return refuse(mapCreditErrors(r.errors, left));
+  return { ok: true, request: { mode: "lines", takes }, computed: r.value };
+}
+
+function mapCreditErrors(errors: readonly TaxIssue[], left: { totalLeft: number }): NoteRefusal {
+  if (errors.some((x) => x.code === "exceeds_creditable"))
+    return { status: 409, error: CREDIT_EXCEEDS_REMAINING, extra: { remaining: left.totalLeft } };
+  if (errors.some((x) => x.code === "credit_empty")) return { status: 400, error: NOTHING_TO_CREDIT };
+  if (errors.some((x) => x.code === "credit_shape_mismatch"))
+    return { status: 409, error: CREDIT_DATA_DAMAGED };
+  return issuesOf(errors);
+}
+
+/** The computed document of a debit note: the shared engine at the parent's supply, route and rate, with `trustRates` set by `debitNoteInput` from the stored parent only. */
+export function resolveDebit(
+  p: ParentCtx,
+  takes: readonly NoteTake[],
+  taxCtx: TaxContext,
+  today: CalendarDate,
+): { ok: true; request: NoteRequest; computed: ComputedDocument } | { ok: false; refusal: NoteRefusal } {
+  const sorted = [...takes].sort((a, b) => a.line - b.line);
+  const input = debitNoteInput({ computed: p.computed, recipientStatus: p.recipientStatus }, sorted, today);
+  if (!input.ok)
+    return {
+      ok: false,
+      refusal: input.errors.some((x) => x.code === "credit_empty")
+        ? { status: 400, error: NOTHING_TO_CREDIT }
+        : { status: 400, error: { code: "bad_request", message: "Check the form and try again" } },
+    };
+  const r = computeDocument(input.input, taxCtx);
+  if (!r.ok) return { ok: false, refusal: issuesOf(r.errors) };
+  return { ok: true, request: { mode: "lines", takes: sorted }, computed: r.value };
+}
+
+/** The same computed document worked out again from STORED takes (the issue, a save): a credit note as a `lines` request over what was issued since, a debit note as a debit. */
+export function recomputeNote(
+  kind: NoteKind,
+  p: ParentCtx,
+  takes: readonly NoteTake[],
+  taxCtx: TaxContext,
+  today: CalendarDate,
+): { computed: ComputedDocument | null; errors: TaxIssue[]; refusal: NoteRefusal | null } {
+  if (kind === "debit") {
+    const r = resolveDebit(p, takes, taxCtx, today);
+    return r.ok
+      ? { computed: r.computed, errors: [], refusal: null }
+      : { computed: null, errors: [], refusal: r.refusal };
+  }
+  const left = leftOf(p);
+  if (!left || !p.credited)
+    return { computed: null, errors: [], refusal: { status: 409, error: CREDIT_DATA_DAMAGED } };
+  const r = creditNote(p.computed, p.credited, { kind: "lines", lines: takes }, taxCtx);
+  if (r.ok) return { computed: r.value, errors: [], refusal: null };
+  return { computed: null, errors: [...r.errors], refusal: mapCreditErrors(r.errors, left) };
+}
+
+/** What a refusal of the request says to the blockers: nothing chosen, or more than is left (on a line, or on the invoice). */
+export function refusalFacts(r: NoteRefusal | null): {
+  empty: boolean;
+  exceeds: { line: number | null; remaining: number } | null;
+} {
+  if (!r) return { empty: false, exceeds: null };
+  if (r.error.code === "nothing_to_credit") return { empty: true, exceeds: null };
+  const remaining = typeof r.extra?.remaining === "number" ? r.extra.remaining : 0;
+  if (r.error.code === "line_credit_exceeds")
+    return {
+      empty: false,
+      exceeds: { line: typeof r.extra?.line === "number" ? r.extra.line : 0, remaining },
+    };
+  if (r.error.code === "credit_exceeds_remaining")
+    return { empty: false, exceeds: { line: null, remaining } };
+  return { empty: false, exceeds: null };
+}
+
+/**
+ * Every blocker of a note draft under the Owner's checklist (the issue, the issue request and the view all ask this one question). `re` is what `recomputeNote` gave: a refusal
+ * that is not an empty or too-big request (the engine's errors, damaged credit figures) is a `computed_errors`.
+ */
+export function blockersOfNote(a: {
+  kind: NoteKind;
+  currency: string;
+  p: ParentCtx;
+  stored: NoteOf;
+  re: { computed: ComputedDocument | null; refusal: NoteRefusal | null };
+  settings: InvoiceSettings;
+  bank: readonly BankRow[];
+  issueDate: string;
+}): NoteBlocker[] {
+  const asked = refusalFacts(a.re.refusal);
+  const known = asked.empty || asked.exceeds !== null;
+  const dl = a.kind === "credit" ? deadlineOf(a.p, a.settings) : null;
+  return noteBlockers(
+    {
+      kind: a.kind,
+      currency: a.currency,
+      supplier: {
+        legalName: a.settings.company.legalName,
+        address: a.settings.company.address,
+        gstin: a.settings.company.gstin,
+        stateCode: a.settings.company.stateCode,
+      },
+      parent: {
+        status: a.p.row.status,
+        totalMinor: a.p.row.total_minor,
+        creditedMinor: a.p.row.credited_minor,
+      },
+      issuedOfKind: a.kind === "credit" ? a.p.issued.credit : a.p.issued.debit,
+      reason: a.stored.reason,
+      request: asked,
+      taxErrorCount: a.re.computed || known ? 0 : 1,
+      totalMinor: a.re.computed?.totalMinor ?? null,
+      reverseChargeText: a.settings.tax.reverseChargeText,
+      deadline: dl ? { lastDay: dl.lastDay, passed: !creditAllowed(a.issueDate, dl) } : null,
+      bank: {
+        inr: a.bank.some((r) => r.kind === "INR"),
+        swift: a.bank.some((r) => r.kind === "USD_SWIFT" && !!r.swift),
+      },
+    },
+    a.settings.tax.invoiceChecklist,
+  );
+}
+
+// ---- the draft's state and hash -----------------------------------------------------------------------------------------------------------------
+
+export type NoteReasonIn = { code: string; text: string };
+
+/** The reasons a kind accepts (the route's schema is built from the same lists). */
+export const reasonsOf = (kind: NoteKind): readonly string[] =>
+  kind === "credit" ? CREDIT_REASONS : DEBIT_REASONS;
+
+/** The `noteOf` a draft stores in `header_extras` and the freeze seals. */
+export const noteOfOf = (
+  kind: NoteKind,
+  p: ParentCtx,
+  reason: NoteReasonIn,
+  request: NoteRequest,
+): NoteOf => ({
+  kind,
+  parent: parentFacts(p),
+  reason: { code: reason.code, text: reason.text },
+  request,
+});
+
+/** The lines of a note: one per take, with the invoice line's description, SAC, unit and rate, quantity one, the taxable value taken as the rate. */
+export function noteLines(p: ParentCtx, takes: readonly NoteTake[]): LineState[] {
+  return takes.map((t) => {
+    const at = p.computed.lines.findIndex((l) => l.index === t.line);
+    const own = p.lines[at];
+    return {
+      id: uuidv7(),
+      catalogueItemId: null,
+      catalogueRateMinor: null,
+      catalogueLine: null,
+      description: own?.description ?? "",
+      detail: null,
+      sac: own?.sac ?? p.computed.lines[at]?.sac ?? null,
+      qtyMilli: 1000,
+      unit: own?.unit ?? "fixed",
+      rateMinor: t.taxableMinor,
+      discountKind: null,
+      discountValue: null,
+      gstRateBp: p.computed.lines[at]?.gstRateBp ?? own?.gst_rate_bp ?? 0,
+    };
+  });
+}
+
+/** The exchange rate of the invoice, as the note carries it (copied: a note never has a rate of its own). */
+export const fxOfParent = (p: ParentCtx) =>
+  p.row.fx_rate_micros !== null && p.row.fx_date !== null && p.row.fx_source !== null
+    ? { rateMicros: p.row.fx_rate_micros, date: p.row.fx_date, source: p.row.fx_source }
+    : null;
+
+/** The state of a note draft: the client, the contact, the parent's currency, route and rate, the lines and the request. */
+export function noteState(a: {
+  id: string;
+  kind: NoteKind;
+  p: ParentCtx;
+  client: Pick<ClientRow, "id" | "currency">;
+  contactId: string | null;
+  note: NoteOf;
+  lines: LineState[];
+}): InvoiceState {
+  return {
+    id: a.id,
+    type: a.kind === "credit" ? "credit_note" : "debit_note",
+    clientId: a.client.id,
+    contactId: a.contactId,
+    currency: a.p.computed.currency === "USD" ? "USD" : "INR",
+    discountKind: null,
+    discountValue: null,
+    exportMode: a.p.row.export_mode,
+    fx: fxOfParent(a.p),
+    serviceCompletedOn: null,
+    exportDeclarationId: null,
+    lines: a.lines,
+    note: {
+      parentId: a.p.row.id,
+      kind: a.note.kind,
+      reasonCode: a.note.reason.code,
+      reasonText: a.note.reason.text,
+      mode: a.note.request.mode,
+      takes: a.note.request.takes,
+    },
+  };
+}
+
+/** The computation of a note draft in the shape every invoice route takes (`InvoiceComputation`): the draft, the document, the errors and the content hash. */
+export async function noteComputation(
+  state: InvoiceState,
+  computed: ComputedDocument | null,
+  errors: TaxIssue[] = [],
+): Promise<InvoiceComputation> {
+  const draft = invoiceDraftOf(state);
+  return { draft, computed, errors, warnings: [], hash: await contentHash(draft, computed) };
+}
+
+/** `header_extras` of a draft: exactly `{noteOf}` (the same text the freeze writes). */
+export const noteHeaderExtras = (n: NoteOf): string | null => headerExtrasJson({ noteOf: n });
+
+/** The stored request of a note row, or null when its `header_extras` is not a readable `noteOf`. */
+export const storedNoteOf = (d: { type: string; header_extras: string | null }): NoteOf | null =>
+  isNoteType(d.type) ? (headerExtrasOfRow(d).noteOf ?? null) : null;
+
+export type { NoteType };
+export { isNoteType, istDate, noteContentOf, noteKindOf };

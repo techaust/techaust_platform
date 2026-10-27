@@ -13,11 +13,15 @@ import {
   fxDateOk,
   INVOICE_CHECKLIST,
   INVOICE_ISSUABLE_TYPES,
+  INVOICE_SERIES_OF,
+  type InvoiceFlowType,
   type IssueBlocker,
+  isNoteType,
   issueDateOf,
   issueFyOf,
   lutFor,
   lutReminder,
+  type NoteBlocker,
   PROFORMA_NOTICE,
   proformaWarnAt,
   proformaWarnDate,
@@ -38,6 +42,7 @@ import {
   type MilestoneFacts,
   needsInrConfirm,
 } from "./invoice-model.ts";
+import type { InvoiceNotesView, NoteViewPart } from "./note-view.ts";
 import type { ClientRow } from "./quote-model.ts";
 
 export type IssueApprovalRow = {
@@ -98,6 +103,10 @@ export type InvoiceViewInput = {
   /** Who voided it (the `invoice.void` audit row's actor); null for an invoice that is not void. */
   voidedByName?: string | null;
   now: number;
+  /** M5.3: the notes of an issued tax or export invoice, and what a credit or debit note adds (`note-view.ts`); the blockers of a note draft are the NOTE blockers. */
+  notesPart?: InvoiceNotesView | null;
+  notePart?: NoteViewPart | null;
+  noteBlockers?: readonly NoteBlocker[];
 };
 
 const totalsOf = (c: ComputedDocument | null) =>
@@ -162,8 +171,10 @@ export function invoiceView(i: InvoiceViewInput) {
   const typeIssuable = (INVOICE_ISSUABLE_TYPES as readonly string[]).includes(d.type);
   const todayIso = issueDateOf(i.now);
   const issueFy = issueFyOf(i.now);
-  const blockers: IssueBlocker[] =
-    !frozen && computation
+  const isNote = isNoteType(d.type);
+  const blockers: readonly (IssueBlocker | NoteBlocker)[] = i.noteBlockers
+    ? i.noteBlockers
+    : !frozen && computation && !isNote
       ? blockersOf(state, client, settings, computation, {
           bank: i.bank,
           issueDate: todayIso,
@@ -205,7 +216,9 @@ export function invoiceView(i: InvoiceViewInput) {
   });
   const clientDays = client.payment_terms_days;
   const dueDays = clientDays ?? settings.paymentTerms.dueDays;
-  const preview = settings.numbering.invoice;
+  // The series a draft is numbered in: a note has its own (`TH/CN/`, `TH/DN/`); every other type keeps the invoice's preview as before.
+  const noteSeries = isNote ? INVOICE_SERIES_OF[d.type as InvoiceFlowType] : null;
+  const preview = noteSeries ? settings.numbering[noteSeries] : settings.numbering.invoice;
   return {
     id: d.id,
     type: d.type,
@@ -218,7 +231,13 @@ export function invoiceView(i: InvoiceViewInput) {
     dueDate: d.due_date,
     // A draft shows the due date it WOULD get today; the editor shows it read-only as "Net N" (it is never typed).
     dueDays,
-    dueDatePreview: frozen ? d.due_date : dueDateOf(todayIso, clientDays, settings.paymentTerms.dueDays),
+    // A credit note has no due date (nothing is owed on it).
+    dueDatePreview:
+      d.type === "credit_note"
+        ? null
+        : frozen
+          ? d.due_date
+          : dueDateOf(todayIso, clientDays, settings.paymentTerms.dueDays),
     createdAt: d.created_at,
     updatedAt: d.updated_at,
     frozenAt: d.frozen_at,
@@ -299,7 +318,7 @@ export function invoiceView(i: InvoiceViewInput) {
       approval,
       /** The series a draft would be numbered in today (the dialog prints "TH/INV/2627/…"; the number itself is taken at issue). */
       preview: {
-        series: "invoice",
+        series: noteSeries ?? "invoice",
         fy: issueFyOf(i.now),
         template: preview.template,
         padding: preview.padding,
@@ -311,8 +330,9 @@ export function invoiceView(i: InvoiceViewInput) {
       voidedByName: d.voided_at === null ? null : (i.voidedByName ?? null),
       reason: d.void_reason,
       /** Only the owner voids; the codes say why not (empty: it can be voided now). */
-      canVoid: decide(i.role, "invoices.void") !== "deny" && voidReasons.length === 0,
-      blockers: voidReasons,
+      // A note is never voided (Q31; `note_not_voidable`).
+      canVoid: decide(i.role, "invoices.void") !== "deny" && voidReasons.length === 0 && !isNote,
+      blockers: isNote ? (["note_not_voidable"] as string[]) : voidReasons,
     },
     pdf: pdfOf(d),
     milestone: i.milestone
@@ -430,6 +450,17 @@ export function invoiceView(i: InvoiceViewInput) {
     terms: bundle.terms
       ? { id: bundle.terms.id, version: bundle.terms.version, sha256: bundle.terms.sha256 }
       : null,
+    // ---- M5.3 ------------------------------------------------------------------------------------------------------------------------------
+    /** An issued tax or export invoice: its issued notes by kind and its open drafts, what can still be credited (per line, GST excluded and included), the credit deadline, the refund due and the actions (null on any other document). */
+    notes: i.notesPart?.notes ?? null,
+    creditable: i.notesPart?.creditable ?? null,
+    creditDeadline: i.notesPart?.creditDeadline ?? null,
+    refundDueMinor: i.notesPart?.refundDueMinor ?? null,
+    actions: i.notesPart?.actions ?? null,
+    /** A credit or debit note: its request as stored (sealed once issued), the IMS status (a credit note) and the invoice it is against (null on any other document). */
+    noteOf: i.notePart?.noteOf ?? null,
+    ims: i.notePart?.ims ?? null,
+    parentLink: i.notePart?.parentLink ?? null,
   };
 }
 

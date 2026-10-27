@@ -32,6 +32,7 @@ import {
   type DocumentBundle,
   fxOfRow,
   type InvoiceHeaderExtras,
+  noteContentOf,
   type TermsRef,
 } from "@techaust/db/documents";
 import type {
@@ -307,6 +308,8 @@ export type InvoiceState = {
   /** M5.2 (LD23): the `export_declaration` block the draft asked to pin (the newest at the time; issue pins the newest then); null: none. */
   exportDeclarationId: string | null;
   lines: LineState[];
+  /** M5.3 (LD39): a credit or debit note's request (hashed with the draft); absent on every other invoice. */
+  note?: DraftContent["note"];
 };
 
 /** The invoice's state from the rows `loadStatements` read (its lines are the quote model's lines). */
@@ -326,6 +329,7 @@ export function invoiceStateOf(b: DocumentBundle<TermsRef>): InvoiceState {
     serviceCompletedOn: d.service_completed_on ?? null,
     exportDeclarationId: d.export_declaration_id ?? null,
     lines: q.lines,
+    ...(noteContentOf(d) ? { note: noteContentOf(d) } : {}),
   };
 }
 
@@ -362,6 +366,8 @@ export const invoiceDraftOf = (s: InvoiceState): DraftContent => ({
   sections: [],
   schedule: [],
   fx: s.fx,
+  // M5.3: a note's request is part of its content hash (absent on every other invoice: its hash does not move).
+  ...(s.note ? { note: s.note } : {}),
 });
 
 // ---- computing a draft ---------------------------------------------------------------------------------------------------------------------
