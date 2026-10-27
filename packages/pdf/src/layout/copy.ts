@@ -59,3 +59,62 @@ export const PDF_COPY = {
   /** 07-P §2: headings of the parts the layout adds when a document has no such section (the sections carry their own titles). */
   headings: { investment: "Investment", terms: "Terms", acceptance: "Acceptance" },
 } as const;
+
+/**
+ * The fixed wording printed on a tax invoice PDF, word for word from 07-R §6 (docs/07-content-appendix/R-m5.1-invoice-screens.md).
+ * Client-facing; PENDING the owner's word-for-word approval; every tax line is VERIFY WITH CA/LEGAL. The reverse-charge statement is NOT here:
+ * the invoice prints the text frozen with it at issue (Rule 46(p)), never a constant. 07-R's footer default notes are a placeholder, so no
+ * notes are printed unless the owner set some (nothing is invented).
+ */
+export const INVOICE_PDF_COPY = {
+  title: "Tax Invoice",
+  copyMark: "ORIGINAL FOR RECIPIENT",
+  header: {
+    number: "Invoice number",
+    date: "Invoice date",
+    dueDate: "Due date",
+    placeOfSupply: "Place of supply",
+    stateCode: "State code",
+  },
+  parties: {
+    from: "From",
+    billedTo: "Billed to",
+    gstin: "GSTIN",
+    pan: "PAN",
+    address: "Address",
+    state: "State",
+  },
+  lines: {
+    n: "#",
+    description: "Description",
+    sac: "SAC",
+    qty: "Qty",
+    rate: "Rate",
+    discount: "Discount",
+    taxable: "Taxable value",
+  },
+  summary: {
+    heading: "Tax summary",
+    sac: "SAC",
+    taxable: "Taxable value",
+    cgst: "CGST",
+    sgst: "SGST",
+    igst: "IGST",
+    rate: "Rate",
+    amount: "Amount",
+  },
+  words: (words: string) => `Amount in words: ${words}`,
+  balanceDue: "Balance due",
+  payment: {
+    heading: "How to pay",
+    bank: "Bank transfer (NEFT, RTGS or IMPS) to:",
+    accountName: "Account name",
+    accountNumber: "Account number",
+    ifsc: "IFSC",
+    bankAndBranch: "Bank and branch",
+    reference: (number: string) => `Please quote ${number} as the payment reference.`,
+    portal: (address: string) => `Or pay in the client portal: ${address}`,
+  },
+  signature: { for: (legalName: string) => `For ${legalName}`, signatory: "Authorised signatory" },
+  page: { word: "Page", of: "of" },
+} as const;

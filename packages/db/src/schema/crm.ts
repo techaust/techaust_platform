@@ -266,6 +266,8 @@ export const milestones = sqliteTable(
     status: text("status", { enum: MILESTONE_STATUSES }).notNull().default("pending"),
     deliveredAt: integer("delivered_at"),
     documentId: text("document_id"),
+    /** 1 for the advance: the first instalment that Start project made from an accepted proposal (M5.1 re-check A). Billable while pending. */
+    isAdvance: integer("is_advance").notNull().default(0),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

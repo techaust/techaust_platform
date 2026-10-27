@@ -7,6 +7,7 @@
 //
 // Money: amounts are the server's minor units, formatted through core (`moneyText`); typed amounts are parsed through core. Nothing here adds,
 // multiplies or rounds money. The due date and the number are the server's; the screen never works them out.
+import { milestoneBillableRule } from "@techaust/core/invoices";
 import { SERIES, type Series } from "@techaust/core/numbering";
 import type { Currency } from "../api.ts";
 import { RequestError } from "../api.ts";
@@ -100,10 +101,23 @@ export const INV_COPY = {
   voidBody:
     "Voiding cancels this invoice. It keeps its number, which is reported as cancelled in your GST return. You can only void an invoice in the month it was issued, before it has been emailed, paid or corrected by a credit or debit note; after that, use a credit note.",
   voidReason: "Reason (required, kept with the invoice)",
+  voidReasonEmpty: "Enter a reason for voiding.",
   voidConfirm: "Void invoice",
-  milestoneBack: "The milestone is back to Ready to bill.",
+  milestoneBackReady: "The milestone is back to Ready to bill.",
+  milestoneBackPending: "The milestone is back to Pending.",
   createInvoice: "Create invoice",
 } as const;
+
+/**
+ * 07-R §4 "Milestone after void", picked by the status the void left the milestone in (the server's rule: back to pending when the work was
+ * never delivered, an advance invoice; else back to ready to bill). Any other status (or none read) gets no line rather than a wrong one.
+ */
+export const milestoneBackLine = (status: string | null | undefined): string | null =>
+  status === "pending"
+    ? INV_COPY.milestoneBackPending
+    : status === "ready_to_bill"
+      ? INV_COPY.milestoneBackReady
+      : null;
 
 export const draftTitle = (client: string) => `Draft invoice for ${client}`;
 export const dueNote = (date: string, days: number) =>
@@ -122,11 +136,27 @@ export const frozenBanner = (date: string, name: string) =>
 export const voidTitle = (number: string) => `Void invoice ${number}`;
 export const voidedLine = (date: string, name: string, reason: string) =>
   `Voided ${date} by ${name}: ${reason}`;
-/** 07-R: "This milestone already has invoice {number or "a draft"}." */
+/** 07-R §4: "This milestone already has invoice {number}." or, for a draft, "This milestone already has a draft invoice." */
 export const milestoneHasInvoice = (number: string | null) =>
-  `This milestone already has invoice ${number ?? "a draft"}.`;
-/** 07-R (docs/13 2026-10-26): "Converted to invoice {number or "a draft"}." */
-export const convertedToInvoice = (number: string | null) => `Converted to invoice ${number ?? "a draft"}.`;
+  number === null
+    ? "This milestone already has a draft invoice."
+    : `This milestone already has invoice ${number}.`;
+/** 07-R §4 (docs/13 2026-10-26): "Converted to invoice {number}." or, for a draft, "Converted to a draft invoice." */
+export const convertedToInvoice = (number: string | null) =>
+  number === null ? "Converted to a draft invoice." : `Converted to invoice ${number}.`;
+
+/**
+ * May a draft invoice be made from this milestone? The server's rule, shared from core (`milestoneBillableRule`): Ready to bill, or the pending
+ * advance (marked when Start project made it, so a reorder never moves it), billable again after its invoice is voided.
+ */
+export function milestoneBillable(m: {
+  status: string;
+  isAdvance: boolean;
+  documentId: string | null;
+}): boolean {
+  if (m.documentId !== null) return false;
+  return milestoneBillableRule(m);
+}
 
 // ---- types and badges --------------------------------------------------------------------------------------------------------------------------
 
@@ -242,10 +272,10 @@ export function blockerLine(b: InvoiceBlocker, currency: string): string {
   }
 }
 
-/** Where a blocker is fixed: a settings page, the client, a line of this draft (by position), or the lines panel; null when nothing can. */
+/** Where a blocker is fixed: a settings page, the client, a field of one line of this draft (by position), or the lines panel; null when nothing can. */
 export type BlockerTarget =
   | { kind: "page"; to: string; place?: string }
-  | { kind: "line"; n: number }
+  | { kind: "line"; n: number; field: "description" | "sac" }
   | { kind: "lines" }
   | null;
 
@@ -267,8 +297,9 @@ export function blockerTarget(b: InvoiceBlocker, clientId: string): BlockerTarge
     case "currency_mismatch":
       return { kind: "page", to: client };
     case "line_sac_missing":
+      return b.line ? { kind: "line", n: b.line, field: "sac" } : { kind: "lines" };
     case "line_description_missing":
-      return b.line ? { kind: "line", n: b.line } : { kind: "lines" };
+      return b.line ? { kind: "line", n: b.line, field: "description" } : { kind: "lines" };
     case "no_lines":
     case "computed_errors":
     case "zero_total":
@@ -310,8 +341,11 @@ export const INV_ERRORS = {
   return_period_closed:
     "This invoice's GST return period has ended, so it can't be voided. Use a credit note instead.",
   contact_changed: "The contact's details changed a moment ago. Try again.",
+  contact_anonymised:
+    "This draft's contact has been anonymised. Choose another contact, then save the draft.",
   milestone_has_invoice: "This milestone already has an invoice.",
-  milestone_not_ready: "Only a milestone that's Ready to bill can be invoiced.",
+  milestone_not_ready:
+    "Only a milestone that's Ready to bill, or the advance payment of a started project, can be invoiced.",
 } as const;
 
 /** "This invoice was already issued as {number}." (07-R §5 `already_issued`; the number rides on the 409). */

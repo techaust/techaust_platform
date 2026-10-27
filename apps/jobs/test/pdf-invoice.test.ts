@@ -27,6 +27,9 @@ const GONE = "UPDATE clients SET anonymised_at = 1 WHERE id = ?";
 const integrityBell = (s: SeededInvoice) =>
   `The PDF of ${s.numberDisplay} didn't match its saved copy, so it wasn't made. A developer needs to look at it.`; // 07-R §3 (review 11), not 07-P's proposal line
 
+const signatureBell = (s: SeededInvoice) =>
+  `The signature image couldn't be used for the PDF of ${s.numberDisplay}, so the PDF wasn't made. Check the signature in Settings › Company.`; // 07-R §3
+
 type Sent = { body: PdfMessage; delaySeconds?: number };
 const fakeQueue = () => {
   const sent: Sent[] = [];
@@ -69,7 +72,7 @@ function fakeClock(start = T0) {
   return clock;
 }
 
-function makeEnv(browser: unknown, queue = fakeQueue()) {
+function makeEnv(browser: unknown, queue = fakeQueue(), extra: Record<string, string> = {}) {
   const env = {
     DB: realEnv.DB,
     DOCS: realEnv.DOCS,
@@ -78,6 +81,7 @@ function makeEnv(browser: unknown, queue = fakeQueue()) {
     PDF_MIN_SPACING_MS: "0",
     BROWSER: browser,
     PDF_QUEUE: queue,
+    ...extra,
   } as unknown as Env;
   return { env, queue };
 }
@@ -238,13 +242,19 @@ describe("the invoice render step", () => {
       "ORIGINAL FOR RECIPIENT",
       "Tax payable on reverse charge: No",
       "Authorised signatory",
-      "SAC 998314",
-      "Place of supply: West Bengal (19)",
+      "For Sample Proprietor",
+      ">Balance due<",
+      // the tax invoice layout (packages/pdf layout/invoice.ts): the SAC in its own column, the place of supply and its code as header facts
+      '<td class="c-sac">998314</td>',
+      "<dt>Place of supply</dt><dd>West Bengal</dd>",
+      "<dt>State code</dt><dd>19</dd>",
       "SAMPLE BANK",
       "Notes, version",
     ])
       expect(html, must).toContain(must);
     expect(html).not.toContain('<img data-testid="signature"');
+    // no PORTAL_URL in this env: the "pay in the client portal" line is left out
+    expect(html).not.toContain("Or pay in the client portal");
     const row = await one<{ pdf_r2_key: string; pdf_sha256: string }>(
       "SELECT pdf_r2_key, pdf_sha256 FROM documents WHERE id = ?",
       s.id,
@@ -260,6 +270,17 @@ describe("the invoice render step", () => {
       { metric: "pdf.browser_ms", value: 1500 },
       { metric: "pdf.renders", value: 1 },
     ]);
+  });
+
+  it("prints the generic portal address (the host of PORTAL_URL) on the invoice", async () => {
+    const s = await ready({ terms: true, bank: true });
+    const clock = fakeClock();
+    const b = fakeBrowser(clock);
+    const { env } = makeEnv(b.binding, fakeQueue(), { PORTAL_URL: "https://portal.example.test/" });
+    expect(await processRender(env, renderMsg(s.id), T0, clock)).toBe("rendered");
+    expect(String((b.calls[0] as Call).options.html)).toContain(
+      'Or pay in the client portal: <span class="accept__link">portal.example.test</span>',
+    );
   });
 
   it("never renders twice: a second message finds the PDF done, and an orphaned PDF in R2 is adopted", async () => {
@@ -338,12 +359,14 @@ describe("the invoice render step", () => {
       expect(queue.sent).toEqual([]);
       expect(await realEnv.DOCS.head(keysOf(s).pdf)).toBeNull();
       expect(await one("SELECT 1 FROM documents WHERE id = ? AND pdf_sha256 IS NULL", s.id)).not.toBeNull();
-      const bells = await all<{ kind: string; title: string }>(
-        "SELECT kind, title FROM notifications WHERE entity_id = ?",
+      const bells = await all<{ kind: string; title: string; link: string }>(
+        "SELECT kind, title, link FROM notifications WHERE entity_id = ?",
         s.id,
       );
       expect(bells.length).toBeGreaterThan(0);
-      for (const bell of bells) expect(bell).toEqual({ kind: "pdf.refused", title: integrityBell(s) });
+      // its own line (07-R §3): the signature, not "didn't match its saved copy", and a link to where it is fixed
+      for (const bell of bells)
+        expect(bell).toEqual({ kind: "pdf.refused", title: signatureBell(s), link: "/settings/company" });
     },
   );
 

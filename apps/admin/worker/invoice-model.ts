@@ -486,8 +486,9 @@ export type MilestoneFacts = {
   id: string;
   title: string;
   project_id: string;
-  /** 1 for the first milestone (read when a draft is made from the milestone). */
   position?: number;
+  /** 1 for the advance (read when a draft is made from the milestone). */
+  is_advance?: number;
   amount_minor: number | null;
   pct_bp: number | null;
   status: string;

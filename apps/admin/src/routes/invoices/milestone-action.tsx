@@ -1,4 +1,5 @@
-// A milestone's invoice (M5.1, ADM-PRJ-02, ADM-INV-01): "Create invoice" on a milestone that is Ready to bill makes a draft from it (the inclusive
+// A milestone's invoice (M5.1, ADM-PRJ-02, ADM-INV-01): "Create invoice" on a milestone that is Ready to bill (or the pending first milestone of a
+// project started from an accepted proposal, the advance) makes a draft from it (the inclusive
 // split of the milestone amount, worked out by the server) and opens it; a milestone that already has one says so, with its number or "a draft",
 // and links to it. The numbers come from one read of the client's invoices (`useInvoiceNumbers`), never one read per milestone.
 import "../../invoices.css";
@@ -9,7 +10,7 @@ import { FileText, Receipt } from "../../components/icons.tsx";
 import { useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { DOC_TOASTS } from "../../lib/documents.ts";
-import { INV_COPY, invErrorText, milestoneHasInvoice } from "../../lib/invoices.ts";
+import { INV_COPY, invErrorText, milestoneBillable, milestoneHasInvoice } from "../../lib/invoices.ts";
 import { invoicesApi } from "../../lib/invoices-api.ts";
 
 const invoiceHref = (id: string) => `/invoices/${encodeURIComponent(id)}`;
@@ -56,7 +57,7 @@ export function MilestoneInvoice(props: {
       </span>
     );
   }
-  if (m.status !== "ready_to_bill" || !props.canCreate) return null;
+  if (!milestoneBillable(m) || !props.canCreate) return null;
 
   async function create() {
     setBusy(true);

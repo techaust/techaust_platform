@@ -22,6 +22,8 @@ import {
   invErrorText,
   invoiceEditor,
   issueBody,
+  milestoneBackLine,
+  milestoneBillable,
   milestoneHasInvoice,
   requestRow,
   seriesPreview,
@@ -144,12 +146,33 @@ describe("07-R copy", () => {
       "Issued 27 Oct 2026 by Asha. This invoice is locked: corrections are made with a credit note or a debit note.",
     );
     expect(voidTitle("TH/INV/2627/0001")).toBe("Void invoice TH/INV/2627/0001");
-    expect(milestoneHasInvoice(null)).toBe("This milestone already has invoice a draft.");
+    expect(milestoneHasInvoice(null)).toBe("This milestone already has a draft invoice.");
     expect(milestoneHasInvoice("TH/INV/2627/0001")).toBe(
       "This milestone already has invoice TH/INV/2627/0001.",
     );
-    expect(convertedToInvoice(null)).toBe("Converted to invoice a draft.");
+    expect(convertedToInvoice(null)).toBe("Converted to a draft invoice.");
+    expect(convertedToInvoice("TH/INV/2627/0001")).toBe("Converted to invoice TH/INV/2627/0001.");
+    expect(INV_COPY.voidReasonEmpty).toBe("Enter a reason for voiding.");
     expect(BADGE_LABELS).toEqual({ draft: "Draft", issued: "Issued", overdue: "Overdue", void: "Void" });
+  });
+
+  it("a milestone can be invoiced when Ready to bill, or as the pending advance, wherever it sits (re-check A)", () => {
+    const m = { status: "ready_to_bill", isAdvance: false, documentId: null };
+    expect(milestoneBillable(m)).toBe(true);
+    expect(milestoneBillable({ ...m, documentId: "d1" })).toBe(false);
+    expect(milestoneBillable({ status: "pending", isAdvance: true, documentId: null })).toBe(true);
+    expect(milestoneBillable({ status: "pending", isAdvance: false, documentId: null })).toBe(false);
+    expect(milestoneBillable({ status: "invoiced", isAdvance: true, documentId: null })).toBe(false);
+  });
+
+  it("after a void, the milestone line follows the status it went back to (07-R §4, re-check B), and milestone_not_ready is 07-R §5", () => {
+    expect(milestoneBackLine("pending")).toBe("The milestone is back to Pending.");
+    expect(milestoneBackLine("ready_to_bill")).toBe("The milestone is back to Ready to bill.");
+    expect(milestoneBackLine("invoiced")).toBeNull();
+    expect(milestoneBackLine(null)).toBeNull();
+    expect(INV_ERRORS.milestone_not_ready).toBe(
+      "Only a milestone that's Ready to bill, or the advance payment of a started project, can be invoiced.",
+    );
   });
 
   it("splits the empty line into a title and a body", () => {
@@ -202,7 +225,15 @@ describe("blockers", () => {
     expect(blockerTarget({ code: "line_description_missing", line: 2 }, "c1")).toEqual({
       kind: "line",
       n: 2,
+      field: "description",
     });
+    // review finding 15: the SAC blocker goes to the line's SAC field, not its description
+    expect(blockerTarget({ code: "line_sac_missing", line: 3 }, "c1")).toEqual({
+      kind: "line",
+      n: 3,
+      field: "sac",
+    });
+    expect(blockerTarget({ code: "line_sac_missing" }, "c1")).toEqual({ kind: "lines" });
     expect(blockerTarget({ code: "no_lines" }, "c1")).toEqual({ kind: "lines" });
     expect(blockerTarget({ code: "type_not_allowed" }, "c1")).toBeNull();
     expect(splitAtPlace("Add the GSTIN in Settings › Company.", "Settings › Company")).toEqual([

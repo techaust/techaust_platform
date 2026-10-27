@@ -353,6 +353,7 @@ export async function issueInvoice(c: Ctx, p: IssueParams): Promise<Response> {
       maxNumber: maxNumber(format),
       expected,
       approvalId: p.approval?.id ?? null,
+      now,
     });
 
   afterIssue(c, { documentId: d.id });
@@ -389,6 +390,8 @@ type Expectations = {
     contact: { id: string; updatedAt: number } | null;
   };
   approvalId: string | null;
+  /** The batch's own clock: the reread judges the session and the step-up at the same moment the batch did. */
+  now: number;
 };
 
 /** The batch refused and wrote nothing (no number, no audit row, no milestone move): one read says why, in the order a person can act on it. */
@@ -410,7 +413,7 @@ async function explain(c: Ctx, id: string, x: Expectations) {
        (SELECT k.updated_at FROM contacts k WHERE k.id = ?6 AND k.anonymised_at IS NULL) AS contact_updated_at
      FROM documents d JOIN clients cl ON cl.id = d.client_id WHERE d.id = ?1`,
   )
-    .bind(id, x.series, x.fy, u.sessionId, x.approvalId, x.expected.contact?.id ?? null, Date.now())
+    .bind(id, x.series, x.fy, u.sessionId, x.approvalId, x.expected.contact?.id ?? null, x.now)
     .first<{
       type: string;
       status: string;
@@ -462,7 +465,7 @@ async function explain(c: Ctx, id: string, x: Expectations) {
     return err(c, CONTACT_CHANGED, 409);
   if ((row.next_no ?? 1) > x.maxNumber) return err(c, SERIES_FULL, 409);
   if (row.role !== "owner") return err(c, FORBIDDEN, 403);
-  if (row.step_up_until === null || row.step_up_until <= Date.now()) return err(c, STEP_UP_REQUIRED, 403);
+  if (row.step_up_until === null || row.step_up_until <= x.now) return err(c, STEP_UP_REQUIRED, 403);
   if (x.approvalId !== null) {
     if (row.approval_status === "expired" || row.approval_sha !== row.content_sha256)
       return err(c, INVOICE_APPROVAL_EXPIRED, 409);

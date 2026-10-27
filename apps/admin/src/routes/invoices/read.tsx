@@ -4,6 +4,7 @@
 import type { Role } from "@techaust/core/permissions";
 import { useState } from "react";
 import { Link } from "react-router";
+import { api } from "../../api.ts";
 import { PageHeader } from "../../components/display.tsx";
 import { Ban, FolderKanban, Lock } from "../../components/icons.tsx";
 import { useToast } from "../../components/toast.tsx";
@@ -16,6 +17,7 @@ import {
   frozenBanner,
   INV_COPY,
   INV_PLACEHOLDER,
+  milestoneBackLine,
   moneyText,
   typeLabel,
   voidBlockedText,
@@ -26,7 +28,7 @@ import { PDF_COPY } from "../../lib/pdf.ts";
 import { LinesTable, TaxPreview } from "../documents/money.tsx";
 import { PdfPanel, type PdfSource, type PdfWords } from "../documents/pdf-panel.tsx";
 import { VoidDialog } from "./dialogs.tsx";
-import { INVOICES_CRUMB, InvoiceBadge, NumberMark } from "./parts.tsx";
+import { INVOICES_CRUMB, InvoiceBadge, MilestoneOrigin, NumberMark } from "./parts.tsx";
 
 const PDF_WORDS: PdfWords = {
   // 07-R has no heading for a ready PDF: the approved 07-P one stands in (it says the same thing).
@@ -131,7 +133,11 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
           <div>
             {isVoid && v.void.voidedAt !== null && (
               <p className="inv-lock__void">
-                {voidedLine(formatIstDay(v.void.voidedAt), INV_PLACEHOLDER, v.void.reason ?? "")}
+                {voidedLine(
+                  formatIstDay(v.void.voidedAt),
+                  v.void.voidedByName || INV_PLACEHOLDER,
+                  v.void.reason ?? "",
+                )}
               </p>
             )}
             <p>{frozenBanner(v.issueDate ? (dayText(v.issueDate) ?? v.issueDate) : "", issuedBy(v))}</p>
@@ -156,19 +162,31 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
         </div>
 
         <div className="doc-page__main">
-          {v.milestone && (
-            <p className="inv-origin">
-              <FolderKanban size={16} />
-              <span>
-                {allowed(role, "projects.read") ? (
-                  <Link to={`/projects/${encodeURIComponent(v.milestone.projectId)}`}>
-                    {v.milestone.title}
-                  </Link>
-                ) : (
-                  v.milestone.title
-                )}
-              </span>
-            </p>
+          {v.milestone?.projectName ? (
+            <MilestoneOrigin
+              milestone={v.milestone.title}
+              project={v.milestone.projectName}
+              href={
+                allowed(role, "projects.read")
+                  ? `/projects/${encodeURIComponent(v.milestone.projectId)}`
+                  : null
+              }
+            />
+          ) : (
+            v.milestone && (
+              <p className="inv-origin">
+                <FolderKanban size={16} />
+                <span>
+                  {allowed(role, "projects.read") ? (
+                    <Link to={`/projects/${encodeURIComponent(v.milestone.projectId)}`}>
+                      {v.milestone.title}
+                    </Link>
+                  ) : (
+                    v.milestone.title
+                  )}
+                </span>
+              </p>
+            )
           )}
           <section className="lead-panel doc-sheet inv-sheet" aria-labelledby="inv-sheet-h">
             <h2 id="inv-sheet-h" className="visually-hidden">
@@ -192,8 +210,17 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
           onVoid={async (reason) => {
             await invoicesApi.void(v.id, v.updatedAt, reason);
             setVoiding(false);
-            if (v.milestone) toast("success", INV_COPY.milestoneBack);
             reload();
+            // The void unlinks the milestone, so the reloaded invoice no longer names it: read its new status from the project once.
+            const m = v.milestone;
+            if (m) {
+              const status = await api
+                .project(m.projectId)
+                .then((p) => p.milestones.find((x) => x.id === m.id)?.status ?? null)
+                .catch(() => null);
+              const line = milestoneBackLine(status);
+              if (line) toast("success", line);
+            }
           }}
         />
       )}

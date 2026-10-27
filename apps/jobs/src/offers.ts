@@ -401,8 +401,6 @@ type IssueApprovalFacts = {
  * `kind: "issue"` and the facts the issue wording needs (`client_name`, `number`), so no template key is added to the settings' list. The words of
  * 07-R §3 are the designer's template (`staffApprovalIssueRequested` / `staffApprovalIssueDecided` in `@techaust/email`): its `approval.requested` and
  * `approval.decided` cases take this branch when `data.kind === "issue"`.
- * TODO(lead, at the merge with the designer's branch): until that branch is in, an issue email renders with the discount wording, naming the
- * invoice by `title` ("Invoice for {client name}"). The fields below are final; only the renderer changes.
  */
 const issueRequestedEmail = (
   env: OfferEnv,

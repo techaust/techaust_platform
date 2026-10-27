@@ -44,6 +44,7 @@ import {
   parseEnvelope,
   parseInvoiceEnvelope,
   pdfOptionsFor,
+  portalHost,
   renderCertificateHtml,
   renderDocumentHtml,
   serializeEnvelope,
@@ -87,6 +88,9 @@ export const BELL_COPY = {
   /** An invoice PDF refused at the snapshot or the render (`pdf.refused`): 07-R §3's own line (the PDF was "made", not "sent": an invoice is emailed by a person later). */
   invoiceRefused: (label: string) =>
     `The PDF of ${label} didn't match its saved copy, so it wasn't made. A developer needs to look at it.`,
+  /** An invoice whose frozen signature image can't be used (missing, other bytes, oversized): 07-R §3. The fix is in Settings, not a developer. */
+  invoiceSignature: (label: string) =>
+    `The signature image couldn't be used for the PDF of ${label}, so the PDF wasn't made. Check the signature in Settings › Company.`,
   half: "Half of today's PDF allowance is used.",
   quota: "Today's PDF allowance is used up. Waiting PDFs are made tomorrow.",
 } as const;
@@ -305,10 +309,17 @@ async function renderInvoice(
   const signature = await verifiedSignature(env, envelope);
   if (signature === "refused") {
     logEvent("pdf.refused", { stage: "render", code: "signature", family: "invoice" });
-    await env.DB.batch([refusedBell(env, row.id, label)]);
+    // Same kind (the sweep leaves it alone), but its own line and the place to fix it (07-R §3).
+    await env.DB.batch([
+      bell(env, "pdf.refused", "document", row.id, BELL_COPY.invoiceSignature(label), "/settings/company"),
+    ]);
     return "refused";
   }
-  const view = toInvoiceView(envelope, viewConfigFor(env.PORTAL_URL), { signature });
+  // the generic portal address (the host of PORTAL_URL), never a personal link; unset leaves the "pay in the portal" line out
+  const view = toInvoiceView(envelope, viewConfigFor(env.PORTAL_URL), {
+    signature,
+    portalLink: portalHost(env.PORTAL_URL),
+  });
   const html = htmlOf(view);
   // LD33 (M5.2): an export invoice prints its frozen endorsement and a proforma its frozen notice, byte for byte, or nothing is rendered (the owners'
   // bell rings once, the message is acknowledged without a retry: a retry would print the same page).

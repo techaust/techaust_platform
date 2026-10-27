@@ -513,6 +513,8 @@ export type MilestoneView = {
   status: MilestoneStatus;
   deliveredAt: number | null;
   documentId: string | null;
+  /** The advance (Start project's first instalment): billable while pending, wherever it sits in the order. */
+  isAdvance: boolean;
   createdAt: number;
   updatedAt: number;
 };

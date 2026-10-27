@@ -442,7 +442,13 @@ export const documentsApi = {
   toCarePlan: (id: string, body: CareConvertInput) =>
     request<CareConverted>(`/documents/${enc(id)}/convert`, { body: { to: "care_plan", ...body } }),
   approvals: (
-    q: { status?: ApprovalState | undefined; limit?: "25" | "50"; after?: string | undefined } = {},
+    q: {
+      status?: ApprovalState | undefined;
+      limit?: "25" | "50";
+      after?: string | undefined;
+      /** One request by id (a bell's link may name one older than the first page). */
+      id?: string | undefined;
+    } = {},
   ) => request<{ approvals: ApprovalRow[]; next: string | null }>(`/approvals${qs(q)}`),
   decide: (id: string, decision: "approve" | "reject", note?: string) =>
     request<{ ok: true; status: "approved" | "rejected" }>(`/approvals/${enc(id)}/decide`, {

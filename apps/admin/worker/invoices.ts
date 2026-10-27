@@ -16,6 +16,8 @@ import {
   INVOICE_FLOW_TYPES,
   isInvoiceFlowType,
   issueDateOf,
+  MILESTONE_BILLABLE_SQL,
+  milestoneBillableRule,
   parseFxRate,
   voidBlockers,
 } from "@techaust/core/invoices";
@@ -381,18 +383,14 @@ export const voidBody = z.strictObject({
 const deleteQuery = z.object({ expectedUpdatedAt: z.string().check(z.regex(/^\d{1,16}$/)) });
 
 /**
- * A milestone an invoice may be drafted from: one that is ready to bill, or the FIRST milestone of a project started from an accepted proposal while it is
- * still pending (the advance, the first instalment: voiding that invoice sends the milestone back to `pending`, and it must be billable again, review 5).
- * The SQL twin (`MILESTONE_BILLABLE_SQL`, for a statement on `milestones` alone) is what the insert guard repeats.
+ * A milestone an invoice may be drafted from: the one rule is `milestoneBillableRule` in core (Ready to bill, or the pending ADVANCE marked by
+ * Start project, re-check A). Its SQL twin `MILESTONE_BILLABLE_SQL` is what the insert guard repeats.
  */
-const milestoneBillable = (m: Pick<MilestoneFacts, "status" | "position" | "source_document_id">) =>
-  m.status === "ready_to_bill" ||
-  (m.status === "pending" && m.position === 1 && m.source_document_id !== null);
-const MILESTONE_BILLABLE_SQL =
-  "(status = 'ready_to_bill' OR (status = 'pending' AND position = 1 AND EXISTS (SELECT 1 FROM projects pr WHERE pr.id = milestones.project_id AND pr.source_document_id IS NOT NULL)))";
+const milestoneBillable = (m: Pick<MilestoneFacts, "status" | "is_advance">) =>
+  milestoneBillableRule({ status: m.status, isAdvance: m.is_advance === 1 });
 
 const MILESTONE_COLS =
-  "m.id, m.title, m.project_id, m.position, m.amount_minor, m.pct_bp, m.status, m.document_id, m.delivered_at, p.client_id, p.budget_minor, p.source_document_id, (SELECT s.computed FROM documents s WHERE s.id = p.source_document_id) AS source_computed";
+  "m.id, m.title, m.project_id, m.position, m.is_advance, m.amount_minor, m.pct_bp, m.status, m.document_id, m.delivered_at, p.client_id, p.budget_minor, p.source_document_id, (SELECT s.computed FROM documents s WHERE s.id = p.source_document_id) AS source_computed";
 
 type ContactRow = {
   id: string;

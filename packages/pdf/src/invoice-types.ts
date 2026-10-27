@@ -183,7 +183,8 @@ export type InvoiceView = {
   /** "ORIGINAL FOR RECIPIENT" on a tax or export invoice; null on a proforma (it prints no copy mark). */
   copyLabel: string | null;
   logo: string;
-  supplier: { name: string; lines: string[] };
+  /** `legalName` is the frozen company legal name (Rule 46: "For {legal name}"). */
+  supplier: { name: string; legalName: string | null; lines: string[] };
   /** The recipient block: name, address, GSTIN when registered, the State name and code. */
   recipient: {
     name: string;
@@ -218,6 +219,10 @@ export type InvoiceView = {
   notes: { title: string; version: string; bodyMd: string } | null;
   /** The signature image as a data URI once its bytes were verified; null otherwise (the line "Authorised signatory" is printed either way). */
   signature: { dataUri: string } | null;
+  /** The balance due, printed under the total; at issue it equals the total (LD17). */
+  balanceDue: string;
+  /** The generic client portal address ("Or pay in the client portal"), or null when none is configured (the line is left out). Never a personal link. */
+  portalLink: string | null;
   integrity: string;
   footer: { sender: string; contact: string; brand: string };
 };

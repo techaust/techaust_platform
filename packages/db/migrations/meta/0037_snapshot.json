@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "57b042c4-4f71-4e17-9422-3cbd63c69062",
+  "id": "4a639358-29e3-4d07-a0e6-03549e8bfccb",
   "prevId": "d258da42-6a05-4bf9-a7dd-6a3c62f94522",
   "tables": {
     "catalogue_items": {
@@ -2219,6 +2219,14 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
+        },
+        "is_advance": {
+          "name": "is_advance",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
         },
         "created_at": {
           "name": "created_at",

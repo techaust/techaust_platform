@@ -83,7 +83,7 @@ describe("POST /documents/:id/start-project: what is made [ADM-PRJ-01]", () => {
       budget_minor: 295_000, // the proposal's total, tax included
     });
     const ms = await rows<J>(
-      "SELECT position, title, amount_minor, pct_bp, due_date, status, document_id FROM milestones WHERE project_id = ? ORDER BY position",
+      "SELECT position, title, amount_minor, pct_bp, due_date, status, document_id, is_advance FROM milestones WHERE project_id = ? ORDER BY position",
       out.projectId,
     );
     expect(ms).toEqual([
@@ -96,6 +96,7 @@ describe("POST /documents/:id/start-project: what is made [ADM-PRJ-01]", () => {
         due_date: "2026-12-01",
         status: "pending",
         document_id: out.draftId,
+        is_advance: 1,
       },
       {
         position: 2,
@@ -105,6 +106,7 @@ describe("POST /documents/:id/start-project: what is made [ADM-PRJ-01]", () => {
         due_date: null,
         status: "pending",
         document_id: null,
+        is_advance: 0,
       },
     ]);
     expect(ms.reduce((a, m) => a + (m.amount_minor as number), 0)).toBe(295_000);
@@ -217,6 +219,15 @@ describe("POST /documents/:id/start-project: what is made [ADM-PRJ-01]", () => {
       { amount_minor: 147_500, document_id: null },
       { amount_minor: 147_500, document_id: null },
     ]);
+    // no first instalment, so no advance: nothing is billable while pending
+    expect(
+      (
+        await one<{ n: number }>(
+          "SELECT count(*) AS n FROM milestones WHERE project_id = ? AND is_advance = 1",
+          out.projectId,
+        )
+      )?.n,
+    ).toBe(0);
   });
 
   it("a project code that is taken between the read and the write is retried with the next number", async () => {

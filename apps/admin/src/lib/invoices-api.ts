@@ -142,12 +142,21 @@ export type InvoiceView = {
   };
   void: {
     voidedAt: number | null;
+    /** Who voided it, by name (from the audit row); absent from an API older than the M5.1 review fixes. */
+    voidedByName?: string | null;
     reason: string | null;
     canVoid: boolean;
     blockers: (VoidBlockerCode | string)[];
   };
   pdf: { state: "none" | "pending" | "ready"; sha256: string | null; fingerprint: string | null };
-  milestone: { id: string; title: string; projectId: string; status: string } | null;
+  milestone: {
+    id: string;
+    title: string;
+    projectId: string;
+    /** The project's name (sent to every role that reads the invoice); absent from an API older than the M5.1 review fixes. */
+    projectName?: string | null;
+    status: string;
+  } | null;
   terms: { id: string; version: number; sha256: string } | null;
 };
 
@@ -244,7 +253,16 @@ export const invoicesApi = {
     ),
   retryPdf: (id: string) =>
     request<{ ok: true; pdf: { state: "pending" } }>(`/invoices/${enc(id)}/pdf/retry`, { body: {} }),
-  issueApprovals: (q: { status?: ApprovalState | undefined; after?: string | undefined } = {}) =>
+  issueApprovals: (
+    q: {
+      status?: ApprovalState | undefined;
+      after?: string | undefined;
+      /** One request by id (a bell's link may name one older than the first page). */
+      id?: string | undefined;
+      /** The page size (the API's 25 by default); the approvals tabs count the first 50 of each queue. */
+      limit?: "25" | "50" | undefined;
+    } = {},
+  ) =>
     request<{ approvals: IssueApprovalRow[]; next: string | null }>(
       `/approvals${qs({ kind: "issue", ...q })}`,
     ),

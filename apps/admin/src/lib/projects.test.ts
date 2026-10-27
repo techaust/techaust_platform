@@ -70,6 +70,7 @@ const milestone = (over: Partial<MilestoneView> = {}): MilestoneView => ({
   status: "pending",
   deliveredAt: null,
   documentId: null,
+  isAdvance: false,
   createdAt: 1,
   updatedAt: 5,
   ...over,
@@ -86,9 +87,7 @@ describe("07-K copy, word for word [ADM-PRJ-01..05]", () => {
     expect(`${COPY.clientProjectsEmptyTitle}.`).toBe("No projects for this client yet.");
     expect(COPY.clientFilesEmpty).toBe("No files for this client yet.");
     expect(COPY.linkedProposal).toBe("No proposal is linked to this project.");
-    expect(COPY.billedVsPaid).toBe("Billed and paid figures arrive with invoicing.");
     expect(COPY.hoursLogged).toBe("Hours logged arrive with time logs.");
-    expect(COPY.createInvoice).toBe("Invoices arrive with invoicing.");
     expect(completeConfirm("PRJ X")).toBe("Mark PRJ X as completed? You can't reopen a completed project.");
     expect(cancelConfirm("PRJ X")).toBe("Cancel PRJ X? You can't reopen a cancelled project.");
     expect(milestoneDeleteConfirm("Design")).toBe("Delete the milestone Design? This can't be undone.");
