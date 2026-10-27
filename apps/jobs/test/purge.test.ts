@@ -153,7 +153,12 @@ describe("enqueueDue: the cron only enqueues [JOB-CRON-01]", () => {
     expect(kinds.filter((k) => k === "lead.purge")).toHaveLength(1);
     expect(
       kinds.filter(
-        (k) => k !== "lead.purge" && k !== "stats.metric" && k !== "documents.expire" && k !== "lut.check",
+        (k) =>
+          k !== "lead.purge" &&
+          k !== "stats.metric" &&
+          k !== "documents.expire" &&
+          k !== "lut.check" &&
+          k !== "statement.purge", // M5.5b: the statement PDF cache clean-up rides the same daily tick (changed on purpose)
       ),
     ).toHaveLength(0);
     expect(await count("leads")).toBe(1);

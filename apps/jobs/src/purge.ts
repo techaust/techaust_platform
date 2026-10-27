@@ -124,7 +124,7 @@ export const STATEMENT_PURGE_KEYS_SQL = `SELECT DISTINCT p.pdf_r2_key AS k FROM 
 
 /** The cron's one job for statements: enqueue ONE purge message. No D1 read. */
 export async function enqueueStatementPurge(env: Env, scheduledTime: number): Promise<void> {
-  await env.LEADS_QUEUE.send({ v: 1, kind: "statement.purge", asOf: scheduledTime });
+  await env.LEADS_QUEUE.sendBatch([{ body: { v: 1, kind: "statement.purge", asOf: scheduledTime } }]);
 }
 
 export type StatementPurgeResult =
