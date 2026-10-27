@@ -359,6 +359,16 @@ export async function issueInvoice(c: Ctx, p: IssueParams): Promise<Response> {
   afterIssue(c, { documentId: d.id });
   // The owner approved the request by issuing: the requester's email (07-R §3, "Issued as {number}"), after the answer like the PDF.
   if (p.approval) notifyApproval(c, p.approval.id, "decided");
+  // The Owner issued directly while a request for exactly this content was waiting: the batch closed it as approved (by the Owner), so the requester
+  // is told too (the same "Issued as {number}" email), unless the Owner is the one who asked.
+  else
+    for (const waiting of ctx.approvals)
+      if (
+        waiting.status === "pending" &&
+        waiting.content_sha256 === d.content_sha256 &&
+        waiting.requested_by !== u.id
+      )
+        notifyApproval(c, waiting.id, "decided");
   return c.json({
     ok: true,
     id: d.id,

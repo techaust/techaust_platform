@@ -67,7 +67,7 @@ export function splitPlaceOfSupply(label: string): { name: string; code: string 
 function masthead(view: InvoiceView): string {
   return `<header class="masthead">${logoHtml(view)}<div class="inv-heading"><h1 class="masthead__title">${C.title}</h1>${p(
     "inv-copy",
-    view.copyLabel,
+    view.copyLabel ?? "",
     ' data-testid="copy-label"',
   )}</div></header>`;
 }

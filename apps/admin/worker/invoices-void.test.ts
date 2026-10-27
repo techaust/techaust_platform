@@ -321,12 +321,30 @@ describe("a void gives the milestone back as it was [LD12, early check required 
       delivered_at: null,
       document_id: made.id,
     });
-    expect((await voidInvoice(o, made.id)).status).toBe(200);
+    const voided = await voidInvoice(o, made.id);
+    expect(voided.status).toBe(200);
+    // the response says where the milestone went, for the toast (07-R §4)
+    expect((await json(voided)).milestone).toEqual({ id: m.id, status: "pending" });
     expect(await one("SELECT status, delivered_at, document_id FROM milestones WHERE id = ?", m.id)).toEqual({
       status: "pending",
       delivered_at: null,
       document_id: null,
     });
+  });
+
+  it("a delivered milestone's void says ready_to_bill; an invoice with no milestone says null [M5.1 L3]", async () => {
+    const o = await owner();
+    const c = await mkInvoiceClient();
+    const m = await mkReadyMilestone(c.clientId, 118_000, { delivered_at: 555 });
+    const made = await mkInvoice(o, { clientId: c.clientId });
+    await env.DB.prepare("UPDATE milestones SET document_id = ? WHERE id = ?").bind(made.id, m.id).run();
+    expect((await issueInvoice(o, made.id)).status).toBe(200);
+    expect((await json(await voidInvoice(o, made.id))).milestone).toEqual({
+      id: m.id,
+      status: "ready_to_bill",
+    });
+    const plain = await issued(o, { clientId: c.clientId });
+    expect((await json(await voidInvoice(o, plain.id))).milestone).toBeNull();
   });
 });
 

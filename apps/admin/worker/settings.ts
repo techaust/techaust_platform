@@ -18,7 +18,7 @@ import { EMAIL_TEMPLATES, type EmailTemplate } from "@techaust/core/email-templa
 import { uuidv7 } from "@techaust/core/ids";
 import { issueDateOf, lutFor, lutReminder, PURPOSE_CODE } from "@techaust/core/invoices";
 import { deleteAfterSql, LEAD_DELETABLE_SQL, LEAD_PURGE_NOTICE_DAYS } from "@techaust/core/lead-lifecycle";
-import { canSetNextNumber, maxNumber, SERIES, type Series } from "@techaust/core/numbering";
+import { canSetNextNumber, maxNumber, SERIES, type Series, validateFormat } from "@techaust/core/numbering";
 import { type Action, decide } from "@techaust/core/permissions";
 import {
   BRAND_LOGOS,
@@ -32,6 +32,7 @@ import {
   SETTINGS_SCHEMAS,
   type SeededSettingKey,
   type Settings,
+  storedNumberingSettings,
 } from "@techaust/core/settings";
 import { lutsOf } from "@techaust/core/tax";
 import {
@@ -149,6 +150,8 @@ type Opts<K extends SeededSettingKey> = {
   extra?: Extra;
   /** A condition (SQL over numbered params from ?6) that must hold in the write itself; if the write is refused, `refused` says why. */
   guardFor?: (before: Settings[K], after: Settings[K]) => Guard | undefined;
+  /** The schema the value is parsed with, instead of the group's save schema (numbering: lenient on a stored format; `rule` then holds the changed ones to the strict rules). */
+  schema?: (typeof SETTINGS_SCHEMAS)[K];
   /** The same, decided from the before and after values (retention re-dates the leads only when the leads figure changed). */
   extraFor?: (before: Settings[K], after: Settings[K]) => Extra | undefined;
 };
@@ -163,7 +166,7 @@ async function save<K extends SeededSettingKey>(
   version: number,
   opts: Opts<K> = {},
 ) {
-  const parsed = SETTINGS_SCHEMAS[key].safeParse(value);
+  const parsed = (opts.schema ?? SETTINGS_SCHEMAS[key]).safeParse(value);
   if (!parsed.success) return invalid(c, parsed.error.issues);
   const after = parsed.data as Settings[K];
   const row = await loadRow(c.env.DB, key);
@@ -678,7 +681,17 @@ async function saveNumbering(c: Ctx, raw: unknown) {
   const asked = Object.entries(nextNumbers) as [Series, number][];
   const effective = asked.filter(([s, n]) => n !== nextOf(s));
   return save(c, "numbering", value, version, {
+    // Every series is READ with the rules that held when it was stored; only a series this save CHANGES is held to the strict rules of today (LD18's first
+    // character), so a stored pre-M5.1 format that breaks them never blocks a save of another series (M5.1 item). A series in use cannot change anyway.
+    schema: storedNumberingSettings,
     rule: (before, after) => {
+      const refusedFormats = (Object.keys(after) as Series[])
+        .filter((s) => JSON.stringify(after[s]) !== JSON.stringify(before[s]))
+        .flatMap((s) => {
+          const check = validateFormat(after[s]);
+          return check.ok ? [] : [{ path: [s], message: check.error }];
+        });
+      if (refusedFormats.length) return invalid(c, refusedFormats);
       // A series with an issued document this financial year is locked: its format AND its next number (any change, up or
       // down; a raised number leaves a gap in the series). Before the first issue both stay editable.
       const formatChanged = (Object.keys(after) as Series[]).filter(

@@ -1063,5 +1063,20 @@ export const invoices = new Hono<AppEnv>()
         409,
       );
     }
-    return c.json({ ok: true, status: "void", number: d.number_display, voidedAt: t, updatedAt: t });
+    // The milestone's new status for the toast ("back to Pending" or "back to Ready to bill"): read after the write, by the id the invoice was made
+    // from (the void cleared the link). Null when the invoice had no milestone.
+    const freed = ctx.milestone
+      ? await db
+          .prepare("SELECT id, status FROM milestones WHERE id = ?1")
+          .bind(ctx.milestone.id)
+          .first<{ id: string; status: string }>()
+      : null;
+    return c.json({
+      ok: true,
+      status: "void",
+      number: d.number_display,
+      voidedAt: t,
+      updatedAt: t,
+      milestone: freed ? { id: freed.id, status: freed.status } : null,
+    });
   });
