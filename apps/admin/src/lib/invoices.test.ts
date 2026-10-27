@@ -12,6 +12,8 @@ import {
   blockerTarget,
   buildInvoicePatch,
   convertedToInvoice,
+  draftLedeFor,
+  draftTitle,
   dueNote,
   fromMilestone,
   frozenBanner,
@@ -22,6 +24,8 @@ import {
   invErrorText,
   invoiceEditor,
   issueBody,
+  issuedToast,
+  issueLabelFor,
   milestoneBackLine,
   milestoneBillable,
   milestoneHasInvoice,
@@ -292,6 +296,22 @@ describe("errors", () => {
     );
     expect(voidBlockedText(["has_payment"])).toBe(INV_ERRORS.void_not_allowed);
   });
+
+  it("a proforma has its own title, locked banner and void line (07-S §8), never the credit-note advice", () => {
+    expect(draftTitle("Client A", "proforma")).toBe("Draft proforma for Client A");
+    expect(draftTitle("Client A", "export_invoice")).toBe("Draft invoice for Client A");
+    expect(frozenBanner("27 Oct 2026", "Asha", "proforma")).not.toContain("credit note");
+    expect(voidBlockedText(["has_child_document"], "proforma")).toBe(
+      "This proforma can't be voided because a payment has been recorded against it.",
+    );
+    expect(voidBlockedText(["has_payment"], "proforma")).toBe(
+      "This proforma can't be voided because a payment has been recorded against it.",
+    );
+    expect(voidBlockedText(["already_void"], "proforma")).toBe(INV_ERRORS.already_void);
+    expect(blockerLine({ code: "type_not_allowed" }, "INR")).toBe(
+      "This client is outside India, so this needs an export invoice.",
+    );
+  });
 });
 
 describe("autosave", () => {
@@ -345,5 +365,33 @@ describe("autosave", () => {
     expect(after.lines.map((l) => l.id)).toEqual(["l1", "l2"]);
     expect(after.status).toBe("idle");
     expect(after.fields.disc).toBe("5");
+  });
+});
+
+describe("M5.2 re-check: proforma wording and the advance rate date (07-S §8)", () => {
+  it("a proforma has its own lede, issue label and toast; an invoice keeps 07-R's", () => {
+    expect(draftLedeFor("proforma")).toBe(
+      "Drafts can be edited. Issuing gives the next proforma number and locks it.",
+    );
+    expect(draftLedeFor("tax_invoice")).toBe(INV_COPY.draftLede);
+    expect(issueLabelFor("proforma")).toBe("Issue proforma");
+    expect(issueLabelFor("export_invoice")).toBe(INV_COPY.issue);
+    expect(issuedToast("TH/PI/2627/0001", "proforma")).toBe("Proforma TH/PI/2627/0001 issued.");
+    expect(issuedToast("TH/INV/2627/0001")).toBe("Invoice TH/INV/2627/0001 issued.");
+  });
+
+  it("the advance's rate-date line names the day the payment was received", () => {
+    expect(blockerLine({ code: "fx_date_invalid" }, "USD", { maxAgeDays: 4, advance: true })).toBe(
+      "The rate date must be the date the payment was received or up to 4 days before it.",
+    );
+    expect(blockerLine({ code: "fx_date_invalid" }, "USD", { maxAgeDays: 4 })).toBe(
+      "The rate date must be the invoice date or up to 4 days before it.",
+    );
+  });
+
+  it("a proforma's void refused for a reason other than a payment says it was emailed", () => {
+    expect(voidBlockedText(["emailed"], "proforma")).toBe(
+      "This proforma has been emailed to the client, so it can't be voided.",
+    );
   });
 });

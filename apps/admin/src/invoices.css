@@ -340,9 +340,20 @@ form.inv-service {
   font-weight: 500;
 }
 
-/* The series of a type other than the tax invoice, while Settings › Numbering is read: the slot alone. */
+/* A view whose preview is another type's series (an older API): the slot alone, never the wrong series. */
 .inv-series--loading {
   min-height: 4rem;
+}
+
+/* Its action is the longest button of the admin ("Issue tax invoice for payment received"): the dialog is a little wider than the default, so the
+   button and Cancel stay on one line even once the body scrolls and its scrollbar takes width (review 2, 7). Phones stack them as every dialog does. */
+.dialog--advance {
+  width: min(100% - 2rem, 34rem);
+}
+
+/* A field that takes the focus for its error scrolls far enough that the error under it clears the sticky actions. */
+.inv-advance .field {
+  scroll-margin-bottom: var(--space-24);
 }
 
 .inv-advance .inv-facts {

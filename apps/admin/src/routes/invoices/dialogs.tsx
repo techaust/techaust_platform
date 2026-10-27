@@ -5,13 +5,12 @@
 import { INVOICE_SERIES_OF, isInvoiceFlowType } from "@techaust/core/invoices";
 import { useState } from "react";
 import { Link } from "react-router";
-import { api, stepUpActive } from "../../api.ts";
+import { stepUpActive } from "../../api.ts";
 import { ConfirmDialog } from "../../components/confirm-dialog.tsx";
 import { Modal } from "../../components/dialog.tsx";
 import { KeepDates } from "../../components/display.tsx";
 import { FormField } from "../../components/form.tsx";
 import { Alert } from "../../components/icons.tsx";
-import { useLoad } from "../../components/states.tsx";
 import { CodeField, Notice } from "../../components/ui.tsx";
 import { INVT_COPY } from "../../lib/invoice-types.ts";
 import {
@@ -22,6 +21,7 @@ import {
   invErrorText,
   invMapped,
   issueBody,
+  issueLabelFor,
   seriesPreview,
   splitAtPlace,
   voidTitle,
@@ -109,23 +109,12 @@ export function BlockerList(props: {
 type Preview = InvoiceView["issue"]["preview"];
 
 /**
- * The series a draft of this TYPE is numbered in. The view's preview is always the tax invoice series (`invoice-view.ts` sends `series: "invoice"`), so
- * for an export invoice or a proforma the screen reads that series' own format from Settings › Numbering (the Owner, who issues, may read it). Until
- * it is read, or if it can't be, null: the dialog then shows no series rather than the wrong one.
+ * The series a draft of this type is numbered in: the view's own preview (review 2: `issue.preview` is the type's series). A view whose preview is
+ * another type's series (an older API) shows no series rather than the wrong one.
  */
-function usePreview(v: InvoiceView, open: boolean): Preview | null {
+function usePreview(v: InvoiceView): Preview | null {
   const series = isInvoiceFlowType(v.type) ? INVOICE_SERIES_OF[v.type] : null;
-  const own = series === v.issue.preview.series;
-  const numbering = useLoad(
-    () => (open && !own && series ? api.settingsGroup("numbering") : Promise.resolve(null)),
-    `${open}:${own}:${series ?? ""}`,
-  );
-  if (own) return v.issue.preview;
-  if (!series || numbering.state !== "ready" || !numbering.data) return null;
-  const f = (numbering.data.value as Record<string, { template: string; padding: number } | undefined>)[
-    series
-  ];
-  return f ? { series, fy: v.issue.preview.fy, template: f.template, padding: f.padding } : null;
+  return series === v.issue.preview.series ? v.issue.preview : null;
 }
 
 /** The series with the slot its number takes at issue: "TH/INV/2627/" then an empty box. Decoration for the sentence that says it. */
@@ -152,7 +141,8 @@ export function IssueDialog(props: {
   onClose: () => void;
   /** Saves what was typed (and the out-of-date figures); resolves with the view to issue, or null when it couldn't. */
   prepare: () => Promise<InvoiceView | null>;
-  issue: (v: InvoiceView) => Promise<void>;
+  /** `inrConfirmed`: the Owner answered the dialog's INR question with "Issue in INR" (Q8); false when it was not asked. */
+  issue: (v: InvoiceView, inrConfirmed: boolean) => Promise<void>;
   onLine: (n: number, field: "description" | "sac") => void;
   onLines: () => void;
   /** M5.2: a rate blocker closes the dialog and opens the rate's. */
@@ -167,7 +157,7 @@ export function IssueDialog(props: {
   const [inrAsked, setInrAsked] = useState(false);
   const needsCode = !stepUpActive();
   const blocked = v.blockers.length > 0 || !v.typeIssuable;
-  const preview = usePreview(v, props.open);
+  const preview = usePreview(v);
   const p = preview ? seriesPreview(preview) : null;
   const inrStep = v.needsInrConfirm === true && !blocked;
 
@@ -197,7 +187,12 @@ export function IssueDialog(props: {
       const ready = await props.prepare();
       if (!ready) return;
       if (ready.blockers.length > 0) return; // the dialog now lists them
-      await withCode(needsCode ? code : undefined, () => props.issue(ready));
+      // The saved draft turned out to need the INR question the dialog hasn't asked yet: ask it now, issue on the next press.
+      if (ready.needsInrConfirm === true && !inrAsked) {
+        setInrAsked(true);
+        return;
+      }
+      await withCode(needsCode ? code : undefined, () => props.issue(ready, inrAsked));
       setCode("");
     } catch (e) {
       setError(invErrorText(e));
@@ -212,13 +207,18 @@ export function IssueDialog(props: {
   };
 
   return (
-    <Modal open={props.open} title={INV_COPY.issueTitle} onClose={close} busy={busy}>
+    <Modal open={props.open} title={issueLabelFor(v.type)} onClose={close} busy={busy}>
       <div className="dialog__body inv-issue">
         {preview && p ? (
           <>
             <SeriesSlot preview={preview} />
             <p>
-              <KeepDates text={issueBody(p.text, p.example, props.issueDate)} />
+              {/* A proforma is not a tax invoice and is corrected by a void, so 07-R's credit-note sentence is not its own (07-S §8). */}
+              {v.type === "proforma" ? (
+                INVT_COPY.proformaIssueStatement
+              ) : (
+                <KeepDates text={issueBody(p.text, p.example, props.issueDate)} />
+              )}
             </p>
           </>
         ) : (
@@ -243,7 +243,7 @@ export function IssueDialog(props: {
         {!v.typeIssuable && v.blockers.length === 0 && (
           <Notice tone="info">{INV_ERRORS.type_not_issuable}</Notice>
         )}
-        {inrStep && inrAsked && (
+        {inrAsked && !blocked && (
           <div className="inv-inr-ask" role="status">
             <p>{INVT_COPY.inrConfirm}</p>
           </div>
@@ -271,7 +271,7 @@ export function IssueDialog(props: {
           disabled={busy || blocked}
           aria-busy={busy || undefined}
         >
-          {busy ? "Working…" : inrStep && inrAsked ? INVT_COPY.issueInInr : INV_COPY.issue}
+          {busy ? "Working…" : inrAsked ? INVT_COPY.issueInInr : issueLabelFor(v.type)}
         </button>
       </div>
     </Modal>

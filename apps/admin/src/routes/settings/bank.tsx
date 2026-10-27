@@ -335,15 +335,16 @@ function BankForm(props: {
                     />
                   )}
                 </FormField>
+                {/* Its label already says it may be empty (07-S §8), so no "(optional)" after it; on its own row, so the purpose code's
+                    hint doesn't push the two inputs out of line (review 2, 12). */}
+                <FormField
+                  id={fid(k, "intermediary")}
+                  label={INVT_COPY.intermediaryLabel}
+                  error={err(k, "intermediary")}
+                >
+                  {(x) => <input {...x} {...input(k, "intermediary")} />}
+                </FormField>
                 <div className="form-grid">
-                  <FormField
-                    id={fid(k, "intermediary")}
-                    label={INVT_COPY.intermediaryLabel}
-                    optional
-                    error={err(k, "intermediary")}
-                  >
-                    {(x) => <input {...x} {...input(k, "intermediary")} />}
-                  </FormField>
                   <FormField
                     id={fid(k, "purposeCode")}
                     label={INVT_COPY.purposeCode}

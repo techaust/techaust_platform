@@ -27,7 +27,13 @@ import {
 } from "./documents.ts";
 import type { ApprovalInfo, Discount, DiscountKind, LineFigures } from "./documents-api.ts";
 import { sentence as sentenceOf } from "./format.ts";
-import { fyLabel, INV_PLACEHOLDER } from "./invoice-types.ts";
+import {
+  fyLabel,
+  INV_PLACEHOLDER,
+  INVT_COPY,
+  proformaDraftTitle,
+  proformaLockedLine,
+} from "./invoice-types.ts";
 import type {
   InvoiceBlocker,
   InvoiceLine,
@@ -118,20 +124,32 @@ export const milestoneBackLine = (status: string | null | undefined): string | n
       ? INV_COPY.milestoneBackReady
       : null;
 
-export const draftTitle = (client: string) => `Draft invoice for ${client}`;
+/** 07-R "Draft invoice for {client}"; a proforma has its own (07-S §8). */
+export const draftTitle = (client: string, type?: string) =>
+  type === "proforma" ? proformaDraftTitle(client) : `Draft invoice for ${client}`;
 export const dueNote = (date: string, days: number) =>
   `Due ${date}: ${days} days after the issue date (the client's terms, or Net 7).`;
 export const fromMilestone = (milestone: string, project: string) =>
   `Created from the milestone "${milestone}" of ${project}. The total matches the milestone amount, GST included.`;
 export const issueBody = (seriesPreview: string, example: string, issueDate: string) =>
   `This invoice will get the next number in the series (${seriesPreview}, for example ${example}) and the date ${issueDate}. Once issued it can't be edited or deleted. Corrections are made with a credit note or a debit note.`;
-export const issuedToast = (number: string) => `Invoice ${number} issued.`;
+export const issuedToast = (number: string, type?: string) =>
+  type === "proforma" ? `Proforma ${number} issued.` : `Invoice ${number} issued.`;
+/** 07-S §8: a proforma's own draft lede and issue wording; every other type keeps 07-R's. */
+export const draftLedeFor = (type: string) =>
+  type === "proforma"
+    ? "Drafts can be edited. Issuing gives the next proforma number and locks it."
+    : INV_COPY.draftLede;
+export const issueLabelFor = (type: string) => (type === "proforma" ? "Issue proforma" : INV_COPY.issue);
 export const waitingLine = (date: string) => `Waiting for the owner to issue it (requested ${date}).`;
 export const requestRow = (requester: string, client: string, total: string) =>
   `${requester} asked to issue a draft invoice for ${client}: ${total}.`;
 export const rejectReasonLabel = (requester: string) => `Reason (optional, shown to ${requester})`;
-export const frozenBanner = (date: string, name: string) =>
-  `Issued ${date} by ${name}. This invoice is locked: corrections are made with a credit note or a debit note.`;
+/** 07-R's locked banner; a proforma is corrected by voiding it, not by a note (07-S §8). */
+export const frozenBanner = (date: string, name: string, type?: string) =>
+  type === "proforma"
+    ? proformaLockedLine(date, name)
+    : `Issued ${date} by ${name}. This invoice is locked: corrections are made with a credit note or a debit note.`;
 export const voidTitle = (number: string) => `Void invoice ${number}`;
 export const voidedLine = (date: string, name: string, reason: string) =>
   `Voided ${date} by ${name}: ${reason}`;
@@ -278,7 +296,7 @@ export function seriesPreview(p: { template: string; fy: string; padding: number
 export function blockerLine(
   b: InvoiceBlocker,
   currency: string,
-  ctx: { maxAgeDays?: number | undefined } = {},
+  ctx: { maxAgeDays?: number | undefined; advance?: boolean } = {},
 ): string {
   const n = b.line ?? 0;
   switch (b.code) {
@@ -315,7 +333,7 @@ export function blockerLine(
     case "currency_mismatch":
       return `The invoice currency must be the client's currency (${currency}).`;
     case "type_not_allowed":
-      return "This client is outside India, so this needs an export invoice. Export invoices arrive in the next update.";
+      return "This client is outside India, so this needs an export invoice.";
     // 07-S §3
     case "country_missing":
       return "Add the client's country.";
@@ -331,7 +349,10 @@ export function blockerLine(
       return "Add the SWIFT details of a bank account in Settings › Bank for export invoices.";
     // 07-S §8
     case "fx_date_invalid":
-      return `The rate date must be the invoice date or up to ${ctx.maxAgeDays ?? INV_PLACEHOLDER} days before it.`;
+      // The advance judges the rate against the day the payment was received (07-S §8, M5.2 re-check M1).
+      return ctx.advance === true
+        ? `The rate date must be the date the payment was received or up to ${ctx.maxAgeDays ?? INV_PLACEHOLDER} days before it.`
+        : `The rate date must be the invoice date or up to ${ctx.maxAgeDays ?? INV_PLACEHOLDER} days before it.`;
     default:
       return INV_PLACEHOLDER;
   }
@@ -442,6 +463,8 @@ export const INV_ERRORS = {
     "The export note in Settings › Terms doesn't match its saved copy, so the invoice wasn't issued. A developer needs to look at it.",
   invoice_void: "This invoice is void.",
   fx_not_applicable: "An exchange rate is only needed for USD invoices.",
+  advance_supply_changed:
+    "The client's GST details changed after this proforma was issued, so the tax on this payment can't be worked out from it. Check the client's details with your CA before recording the payment.",
 } as const;
 
 /** "This invoice was already issued as {number}." (07-R §5 `already_issued`; the number rides on the 409). */
@@ -463,9 +486,15 @@ export const invMapped = (e: unknown): unknown =>
   e instanceof RequestError ? new RequestError(e.status, e.code, invErrorText(e), e.requestId) : e;
 
 /** What stops a void, as one sentence (07-R §5): void already, the return period over, or the rest (emailed, paid, corrected). */
-export function voidBlockedText(codes: readonly string[]): string | null {
+export function voidBlockedText(codes: readonly string[], type?: string): string | null {
   if (codes.length === 0) return null;
   if (codes.includes("already_void")) return INV_ERRORS.already_void;
+  // A proforma has no credit note and no return period (LD28): what stops its void is a payment recorded against it, or (from M5.4) that it was
+  // emailed (07-S §8).
+  if (type === "proforma")
+    return codes.includes("has_payment") || codes.includes("has_child_document")
+      ? INVT_COPY.proformaVoidBlocked
+      : "This proforma has been emailed to the client, so it can't be voided.";
   if (codes.includes("return_period_closed")) return INV_ERRORS.return_period_closed;
   return INV_ERRORS.void_not_allowed;
 }

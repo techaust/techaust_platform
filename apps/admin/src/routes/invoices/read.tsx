@@ -85,9 +85,9 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
     ownerVoids && v.frozen && !isVoid
       ? isNote
         ? NOTE_ERRORS.note_not_voidable
-        : voidBlockedText(v.void.blockers)
+        : voidBlockedText(v.void.blockers, v.type)
       : null;
-  const title = v.number ?? draftTitle(v.client.name);
+  const title = v.number ?? draftTitle(v.client.name, v.type);
 
   return (
     <>
@@ -177,7 +177,7 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
                 {NOTE_COPY.finalStatement}
               </p>
             ) : (
-              <p>{frozenBanner(v.issueDate ? (dayText(v.issueDate) ?? v.issueDate) : "", issuedBy(v))}</p>
+              <p>{frozenBanner(v.issueDate ? (dayText(v.issueDate) ?? v.issueDate) : "", issuedBy(v), v.type)}</p>
             )}
             {voidWhy && <p className="inv-lock__why">{voidWhy}</p>}
           </div>

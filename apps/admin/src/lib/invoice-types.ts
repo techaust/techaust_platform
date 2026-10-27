@@ -71,7 +71,27 @@ export const INVT_COPY = {
     "Optional. Printed on export invoices after the legal export statement, which is always printed.",
   previousPeriod:
     "This payment arrived in an earlier month. The GST on it belongs to that month's return: check with your CA.",
+  routeLegend: "How is GST handled on this export?",
+  routeLut: "Under LUT, without IGST",
+  routeIgst: "With IGST paid",
+  fxNoteLabel: "Describe the source",
+  fxNoteMissing: "Describe where the rate comes from.",
+  referenceMissing: "Enter the payment reference.",
+  amountZero: "Enter an amount above zero.",
+  serviceDateMissing: "Enter the date the service was completed.",
+  dateReceivedMissing: "Enter the date the payment was received.",
+  proformaIssueStatement:
+    "This proforma will get the next number in its series and can't be edited afterwards. It is not a tax invoice.",
+  proformaVoidBlocked: "This proforma can't be voided because a payment has been recorded against it.",
+  advanceSupplyChanged:
+    "The client's GST details changed after this proforma was issued, so the tax on this payment can't be worked out from it. Check the client's details with your CA before recording the payment.",
 } as const;
+
+/** 07-S §8: the proforma draft's title. */
+export const proformaDraftTitle = (clientName: string) => `Draft proforma for ${clientName}`;
+/** 07-S §8: the issued proforma's locked banner. */
+export const proformaLockedLine = (date: string, name: string) =>
+  `Issued ${date} by ${name}. This proforma is locked. If it's wrong and nothing has been paid, void it and issue a new one.`;
 
 /** 07-S §4 "Source" options, by the API's codes. */
 export const FX_SOURCE_LABELS: Record<FxSourceCode, string> = {
@@ -166,8 +186,7 @@ export function checkFx(
 ): { ok: true; value: FxValue } | { ok: false; errors: Partial<Record<"rate" | "note", string>> } {
   const errors: Partial<Record<"rate" | "note", string>> = {};
   if (parseFxRate(f.rate.trim()) === null) errors.rate = INVT_COPY.fxError;
-  // 07-S has no line for an "Other" source left empty.
-  if (f.source === "OTHER" && f.note.trim() === "") errors.note = INV_PLACEHOLDER;
+  if (f.source === "OTHER" && f.note.trim() === "") errors.note = INVT_COPY.fxNoteMissing;
   if (errors.rate || errors.note) return { ok: false, errors };
   return {
     ok: true,
@@ -196,13 +215,50 @@ export function checkAdvance(
   const m = moneyFrom(f.amount, currency);
   let amountMinor = 0;
   if (!m.ok) errors.amount = m.error;
-  else if (m.minor <= 0) errors.amount = INV_PLACEHOLDER;
+  else if (m.minor <= 0) errors.amount = INVT_COPY.amountZero;
   else if (m.minor > balanceMinor) errors.amount = INVT_COPY.exceedsBalance;
   else amountMinor = m.minor;
-  // 07-S has no line for an empty reference.
-  if (f.reference.trim() === "") errors.reference = INV_PLACEHOLDER;
+  if (f.reference.trim() === "") errors.reference = INVT_COPY.referenceMissing;
   if (errors.amount || errors.reference) return { ok: false, errors };
   return { ok: true, amountMinor };
+}
+
+/** The advance dialog's fields that can carry an error, one key each (review 2, 2: the rate date has its own, never "Date received"'s). */
+export type AdvanceErrors = Partial<
+  Record<"amount" | "date" | "reference" | "rate" | "fxDate" | "note", string>
+>;
+
+/** The fields in the order the dialog draws them, with their element ids. */
+export const ADVANCE_FIELDS = [
+  ["amount", "adv-amount"],
+  ["date", "adv-date"],
+  ["reference", "adv-ref"],
+  ["rate", "adv-fx-rate"],
+  ["fxDate", "adv-fx-date"],
+  ["note", "adv-fx-note"],
+] as const;
+
+/** The id of the first field (in drawn order) with an error, for the focus; null when there is none. */
+export function advanceFocus(errors: AdvanceErrors): string | null {
+  return ADVANCE_FIELDS.find(([k]) => errors[k])?.[1] ?? null;
+}
+
+/**
+ * "Date received" changed (review 2, 1): the rate is the one for the day the money came (Q9), so its date follows until the Owner picks its own
+ * (`own`); an empty "Date received" leaves the rate's date as it is.
+ */
+export function rateDateFollows(fx: FxForm, own: boolean, received: string): FxForm {
+  return own || received === "" ? fx : { ...fx, date: received };
+}
+
+/** A refused advance (409 `issue_blocked`): the rate's date blocker goes under its field; the rest are listed in their own lines. */
+export function splitAdvanceRefusal<B extends { code: string }>(
+  blockers: readonly B[],
+): { rateDate: B | null; rest: B[] } {
+  return {
+    rateDate: blockers.find((b) => b.code === "fx_date_invalid") ?? null,
+    rest: blockers.filter((b) => b.code !== "fx_date_invalid"),
+  };
 }
 
 // ---- the letters of undertaking (ADM-INV-18) ---------------------------------------------------------------------------------------------------------

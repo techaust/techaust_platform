@@ -5,6 +5,8 @@ import { INVOICE_CHECKLIST } from "@techaust/core/invoices";
 import { describe, expect, it } from "vitest";
 import { RequestError } from "../api.ts";
 import {
+  ADVANCE_FIELDS,
+  advanceFocus,
   advanceLine,
   arrivedEarlierMonth,
   CHECKLIST_LABELS,
@@ -25,6 +27,10 @@ import {
   lutLine,
   lutMissingBanner,
   lutsByYear,
+  proformaDraftTitle,
+  proformaLockedLine,
+  rateDateFollows,
+  splitAdvanceRefusal,
   warn25Line,
 } from "./invoice-types.ts";
 import { BADGE_LABELS, badgeOf, blockerLine, blockerTarget, invErrorText } from "./invoices.ts";
@@ -186,7 +192,7 @@ describe("the exchange rate as typed (Q7, core's parse)", () => {
   it("'Other' needs its description; the stored label maps back to its code", () => {
     expect(checkFx({ rate: "83", date: "2026-10-27", source: "OTHER", note: " " })).toEqual({
       ok: false,
-      errors: { note: INV_PLACEHOLDER },
+      errors: { note: "Describe where the rate comes from." },
     });
     expect(checkFx({ rate: "83", date: "2026-10-27", source: "OTHER", note: " Sample bank rate " })).toEqual({
       ok: true,
@@ -226,7 +232,61 @@ describe("the payment received against a proforma (Q9)", () => {
     });
     const r = checkAdvance({ amount: "", date: "2026-10-27", reference: "" }, "USD", 100);
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.errors.reference).toBe(INV_PLACEHOLDER);
+    if (!r.ok) expect(r.errors.reference).toBe("Enter the payment reference.");
+    const zero = checkAdvance({ amount: "0", date: "2026-10-27", reference: "UTR1" }, "INR", 100);
+    expect(zero).toEqual({ ok: false, errors: { amount: "Enter an amount above zero." } });
+  });
+
+  it("the rate's date follows 'Date received' until the Owner picks its own (review 2, 1)", () => {
+    const fx = { rate: "84.2", date: "2026-10-27", source: "FBIL" as const, note: "" };
+    expect(rateDateFollows(fx, false, "2026-10-20")).toEqual({ ...fx, date: "2026-10-20" });
+    expect(rateDateFollows(fx, true, "2026-10-20")).toBe(fx);
+    expect(rateDateFollows(fx, false, "")).toBe(fx);
+  });
+
+  it("each error has its own field and the focus goes to the first drawn (review 2, 2)", () => {
+    // The rate's date error is under the rate's date, never under "Date received".
+    expect(advanceFocus({ fxDate: "x" })).toBe("adv-fx-date");
+    expect(advanceFocus({ fxDate: "x", date: "y" })).toBe("adv-date");
+    expect(advanceFocus({ note: "x", rate: "y" })).toBe("adv-fx-rate");
+    expect(advanceFocus({ reference: "x", rate: "y" })).toBe("adv-ref");
+    expect(advanceFocus({})).toBeNull();
+    expect(ADVANCE_FIELDS.map(([, id]) => id)).toEqual([
+      "adv-amount",
+      "adv-date",
+      "adv-ref",
+      "adv-fx-rate",
+      "adv-fx-date",
+      "adv-fx-note",
+    ]);
+  });
+
+  it("a refused advance puts the rate's date blocker under its field and lists the rest", () => {
+    const r = splitAdvanceRefusal([{ code: "fx_date_invalid" }, { code: "country_missing" }]);
+    expect(r.rateDate).toEqual({ code: "fx_date_invalid" });
+    expect(r.rest).toEqual([{ code: "country_missing" }]);
+    expect(splitAdvanceRefusal([{ code: "lut_missing", fy: "2627" }])).toEqual({
+      rateDate: null,
+      rest: [{ code: "lut_missing", fy: "2627" }],
+    });
+    expect(blockerLine({ code: "fx_date_invalid" }, "USD", { maxAgeDays: 7 })).toBe(
+      "The rate date must be the invoice date or up to 7 days before it.",
+    );
+  });
+
+  it("07-S §8 lines of the advance and the proforma, word for word", () => {
+    expect(INVT_COPY.dateReceivedMissing).toBe("Enter the date the payment was received.");
+    expect(INVT_COPY.serviceDateMissing).toBe("Enter the date the service was completed.");
+    expect(INVT_COPY.fxNoteLabel).toBe("Describe the source");
+    expect(INVT_COPY.routeLegend).toBe("How is GST handled on this export?");
+    expect([INVT_COPY.routeLut, INVT_COPY.routeIgst]).toEqual(["Under LUT, without IGST", "With IGST paid"]);
+    expect(proformaDraftTitle("Sample Client (fake)")).toBe("Draft proforma for Sample Client (fake)");
+    expect(proformaLockedLine("27 Oct 2026", "Asha (fake)")).toBe(
+      "Issued 27 Oct 2026 by Asha (fake). This proforma is locked. If it's wrong and nothing has been paid, void it and issue a new one.",
+    );
+    expect(invErrorText(new RequestError(409, "advance_supply_changed", "x"))).toBe(
+      "The client's GST details changed after this proforma was issued, so the tax on this payment can't be worked out from it. Check the client's details with your CA before recording the payment.",
+    );
   });
 
   it("an earlier month only warns (Q27)", () => {

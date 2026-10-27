@@ -36,6 +36,7 @@ import {
 import {
   buildInvoicePatch,
   discountError,
+  draftLedeFor,
   draftTitle,
   dueNote,
   INV_COPY,
@@ -48,6 +49,7 @@ import {
   invIsDirty,
   invoiceEditor,
   issuedToast,
+  issueLabelFor,
   requestLine,
   typeLabel,
 } from "../../lib/invoices.ts";
@@ -246,10 +248,10 @@ export function InvoiceEditor({ view, reload }: { view: InvoiceView; reload: () 
   return (
     <>
       <PageHeader
-        title={draftTitle(v.client.name)}
+        title={draftTitle(v.client.name, v.type)}
         crumbs={INVOICES_CRUMB}
         status={<InvoiceBadge badge="draft" />}
-        lede={INV_COPY.draftLede}
+        lede={draftLedeFor(v.type)}
         more={
           canWrite
             ? [
@@ -296,7 +298,7 @@ export function InvoiceEditor({ view, reload }: { view: InvoiceView; reload: () 
           <section className="lead-panel send-panel inv-issue-panel" aria-labelledby="inv-issue-h">
             <div className="lead-panel__head">
               <h2 id="inv-issue-h" className="lead-panel__title">
-                {INV_COPY.issueTitle}
+                {issueLabelFor(v.type)}
               </h2>
               {saveLine && (
                 <p className="save-state" data-state={s.status} role="status">
@@ -347,7 +349,7 @@ export function InvoiceEditor({ view, reload }: { view: InvoiceView; reload: () 
                   disabled={blocked || s.saving || !v.typeIssuable}
                 >
                   <FileCheck size={20} />
-                  {INV_COPY.issue}
+                  {issueLabelFor(v.type)}
                 </button>
               )}
               {canWrite && asks && v.issue.approval.state !== "pending" && (
@@ -546,17 +548,17 @@ export function InvoiceEditor({ view, reload }: { view: InvoiceView; reload: () 
         onLine={focusLine}
         onLines={focusLines}
         onFx={() => setDialog("fx")}
-        issue={async (ready) => {
+        issue={async (ready, inrConfirmed) => {
           try {
-            // Q8: the dialog asked "Issue it in INR anyway?" before it got here, so an INR export goes with the explicit yes.
+            // Q8: the yes is the one the dialog asked for ("Issue in INR"), never inferred from the view.
             const r = await invoicesApi.issue(
               ready.id,
               ready.updatedAt,
               ready.contentSha256 ?? "",
-              ready.needsInrConfirm === true,
+              inrConfirmed,
             );
             setDialog(null);
-            toast("success", issuedToast(r.number ?? ""));
+            toast("success", issuedToast(r.number ?? "", v.type));
             setExtraError(null);
             reload();
           } catch (e) {
