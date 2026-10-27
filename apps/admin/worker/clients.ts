@@ -1307,6 +1307,12 @@ export const contacts = new Hono<AppEnv>()
             `UPDATE approvals SET reason = NULL, note = NULL WHERE kind = 'issue' AND document_id IN (SELECT id FROM documents WHERE frozen_at IS NOT NULL AND ${LAST_LIVE_INDIVIDUAL("documents.client_id")}) AND ${g.sql(2)}`,
           )
           .bind(id, ...g.params),
+        // M5.4 (early check, finding 11): a care draft that goes keeps the record of its period (the job must never bill it again) but forgets the document, once.
+        db
+          .prepare(
+            `UPDATE care_invoices SET document_id = NULL WHERE document_id IN (SELECT id FROM documents WHERE type IN (${INVOICE_TYPES_SQL}) AND frozen_at IS NULL AND ${LAST_LIVE_INDIVIDUAL("documents.client_id")}) AND ${g.sql(2)}`,
+          )
+          .bind(id, ...g.params),
         db
           .prepare(
             `DELETE FROM approvals WHERE document_id IN (SELECT id FROM documents WHERE type IN ('proposal', 'estimate', ${INVOICE_TYPES_SQL}) AND frozen_at IS NULL AND ${LAST_LIVE_INDIVIDUAL("documents.client_id")}) AND ${g.sql(2)}`,

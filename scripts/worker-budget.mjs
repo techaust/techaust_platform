@@ -75,11 +75,20 @@ export function measureStartup(code, runs = 7) {
   const src = code
     .replace(/\bexport\s*\{[^}]*\};?[ ]*$/m, "")
     .replace(/\bimport\s*\{([^}]*)\}\s*from\s*["']cloudflare:workers["'];?/g, (_m, names) => {
+      // Only `WorkerEntrypoint` may be stood in for (early check, finding 10): a bundle that starts importing anything else from the runtime (`env`, `DurableObject`,
+      // `waitUntil`...) would run in the probe with a class where it needs a value and measure something else, so it fails the probe instead.
       const bound = names
         .split(",")
         .map((n) => n.trim())
         .filter(Boolean)
-        .map((n) => (n.split(/\s+as\s+/)[1] ?? n).trim());
+        .map((n) => {
+          const [orig, alias] = n.split(/\s+as\s+/).map((x) => x.trim());
+          if (orig !== "WorkerEntrypoint")
+            throw new Error(
+              `the startup probe only stands in for WorkerEntrypoint; the bundle imports ${orig} from cloudflare:workers`,
+            );
+          return alias ?? orig;
+        });
       return `var ${bound.map((b) => `${b} = class {}`).join(", ")};`;
     });
   const times = [];

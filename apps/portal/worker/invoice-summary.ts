@@ -83,22 +83,56 @@ type Bank = {
   branch: string | null;
 };
 
-/** The INR bank block as frozen into the issuer (null when none was saved, or the text is not JSON). Only the keys the page prints are returned. */
-function bankOf(issuer: string | null): Bank | null {
-  if (!issuer) return null;
+type SwiftBank = {
+  accountName: string;
+  accountNo: string;
+  swift: string;
+  bankName: string;
+  branch: string | null;
+  bankAddress: string | null;
+  intermediary: string | null;
+  purposeCode: string | null;
+};
+/** The bank block a document prints: the INR account on an INR document, the SWIFT account on a USD one (early check finding 8). */
+export type BankView = { inr: Bank | null } | { swift: SwiftBank | null };
+
+/** The bank block as frozen into the issuer (null parts when none was saved, or the text is not JSON). Only the keys the page prints are returned. */
+function bankOf(issuer: string | null, currency: string): BankView {
+  const none: BankView = currency === "USD" ? { swift: null } : { inr: null };
+  if (!issuer) return none;
   try {
-    const b = (JSON.parse(issuer) as { bank?: { inr?: Bank | null } }).bank?.inr;
-    return b
-      ? {
-          accountName: b.accountName,
-          accountNo: b.accountNo,
-          ifsc: b.ifsc ?? null,
-          bankName: b.bankName,
-          branch: b.branch ?? null,
-        }
-      : null;
+    const bank = (JSON.parse(issuer) as { bank?: { inr?: Bank | null; swift?: SwiftBank | null } }).bank;
+    if (currency === "USD") {
+      const s = bank?.swift;
+      return {
+        swift: s
+          ? {
+              accountName: s.accountName,
+              accountNo: s.accountNo,
+              swift: s.swift,
+              bankName: s.bankName,
+              branch: s.branch ?? null,
+              bankAddress: s.bankAddress ?? null,
+              intermediary: s.intermediary ?? null,
+              purposeCode: s.purposeCode ?? null,
+            }
+          : null,
+      };
+    }
+    const b = bank?.inr;
+    return {
+      inr: b
+        ? {
+            accountName: b.accountName,
+            accountNo: b.accountNo,
+            ifsc: b.ifsc ?? null,
+            bankName: b.bankName,
+            branch: b.branch ?? null,
+          }
+        : null,
+    };
   } catch {
-    return null;
+    return none;
   }
 }
 
@@ -180,7 +214,7 @@ export function summaryOf(r: SummaryRow, lines: readonly LineRow[]) {
       igstMinor: l.igst_minor,
       lineTotalMinor: l.line_total_minor,
     })),
-    bank: r.type === "credit_note" ? null : bankOf(r.issuer),
+    bank: r.type === "credit_note" ? null : bankOf(r.issuer, r.currency),
     pdfReady: r.pdf_r2_key !== null,
   };
 }

@@ -122,7 +122,7 @@ describe("a valid link opens exactly one document [POR-06]", () => {
       total: "₹1,180.00",
       balance: "₹1,180.00",
       pdfReady: false,
-      bank: { accountNo: "123", ifsc: "BANK0001" },
+      bank: { inr: { accountNo: "123", ifsc: "BANK0001" } },
     });
     expect(
       (body.document.lines as { description: string; qtyMilli: number; lineTotalMinor: number }[])[0],
@@ -134,6 +134,62 @@ describe("a valid link opens exactly one document [POR-06]", () => {
     const text = JSON.stringify(body);
     for (const secret of [f.a.id, f.a.name, f.a.finance.email, "recipient", "content_sha256", "pdf_r2_key"])
       expect(text).not.toContain(secret);
+  });
+
+  it("a USD invoice shows the SWIFT account, never the INR one (early check finding 8)", async () => {
+    const clientId = uuidv7();
+    await env.DB.prepare(
+      "INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, currency) VALUES (?1, ?2, 'U', 'U', 'business', 'US', 'overseas', 'USD')",
+    )
+      .bind(clientId, `CL-U${++seq}`)
+      .run();
+    const contactId = uuidv7();
+    const email = `u${seq}@example.test`;
+    await env.DB.prepare(
+      "INSERT INTO contacts (id, client_id, name, email, portal_access) VALUES (?1, ?2, 'U', ?3, 1)",
+    )
+      .bind(contactId, clientId, email)
+      .run();
+    const id = uuidv7();
+    await env.DB.prepare(
+      "INSERT INTO documents (id, type, status, client_id, currency, total_minor, balance_minor) VALUES (?1, 'export_invoice', 'draft', ?2, 'USD', 1000, 0)",
+    )
+      .bind(id, clientId)
+      .run();
+    const issuer = JSON.stringify({
+      bank: {
+        inr: {
+          accountName: "TecHaust",
+          accountNo: "INR123",
+          ifsc: "BANK0001",
+          bankName: "Bank",
+          branch: null,
+        },
+        swift: {
+          accountName: "TecHaust",
+          accountNo: "USD456",
+          swift: "SAMPUS33",
+          bankName: "US Bank",
+          branch: null,
+          bankAddress: "1 Main St",
+          intermediary: null,
+          purposeCode: "P0802",
+        },
+      },
+    });
+    await env.DB.prepare(
+      "UPDATE documents SET status = 'issued', series = 'exp-t', fy = '2627', number = 31, number_display = 'TH/EXP/2627/0031', frozen_at = 1000, issue_date = '2026-11-05', balance_minor = 1000, issuer = ?2 WHERE id = ?1",
+    )
+      .bind(id, issuer)
+      .run();
+    const res = await use(await link({ id: contactId, clientId, email, name: "U", finance: false }, id));
+    expect(res.status).toBe(200);
+    const body = JSON.stringify(await res.json());
+    expect(body).toContain('"swift":{');
+    expect(body).toContain("SAMPUS33");
+    expect(body).toContain("USD456");
+    expect(body).not.toContain("INR123");
+    expect(body).not.toContain("BANK0001");
   });
 
   it("each organisation's link opens its own document and no other", async () => {

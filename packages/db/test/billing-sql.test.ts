@@ -50,6 +50,23 @@ const plan = async (
   return p;
 };
 
+describe("every INDEXED BY in an exported SQL text names an index that exists (early check finding 9)", () => {
+  it("scans the SQL constants of billing.ts and issue.ts", async () => {
+    const billing = await import("../src/billing.ts");
+    const issue = await import("../src/issue.ts");
+    const texts = [...Object.values(billing), ...Object.values(issue)].filter(
+      (v): v is string => typeof v === "string",
+    );
+    const used = new Set<string>();
+    for (const t of texts) for (const m of t.matchAll(/INDEXED BY\s+(\w+)/g)) used.add(m[1] as string);
+    expect([...used].sort()).toEqual(["milestones_unbilled", "reminders_pending"]);
+    const have = new Set(
+      (await all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'index'")).map((r) => r.name),
+    );
+    for (const name of used) expect(have.has(name), name).toBe(true);
+  });
+});
+
 describe("CARE_DUE_SQL [ADM-CARE-02]", () => {
   /** Every page (the job continues past 50 with a message), as ids. */
   const due = async (today: string) => {

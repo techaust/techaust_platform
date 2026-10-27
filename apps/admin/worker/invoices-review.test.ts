@@ -5,6 +5,7 @@ import { SETTINGS_DEFAULTS } from "@techaust/core";
 import { bundleOf, loadStatements, type TermsRow } from "@techaust/db/documents";
 import { invoiceEnvelopeOfBundle, verifyInvoiceEnvelope } from "@techaust/pdf";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { mkPlan } from "./test-care.ts";
 import { mkContact, mkDoc } from "./test-clients.ts";
 import { call, captureQueue, countOf, one, rows, sessionFor } from "./test-helpers.ts";
 import {
@@ -528,6 +529,33 @@ describe("review 9: erasing an individual also deletes their unissued invoice dr
       status: "approved",
       reason: null,
       note: null,
+    });
+  });
+
+  it("a care draft that goes with the person keeps the record of its period, with no document, so the job never bills it again (M5.4, early check finding 11)", async () => {
+    const o = await owner();
+    const c = await mkInvoiceClient({ type: "individual" });
+    const plan = await mkPlan(o.id, { clientId: c.clientId });
+    const termsId = (
+      await one<{ id: string }>("SELECT id FROM care_plan_terms WHERE care_plan_id = ?", plan.id)
+    )?.id;
+    const draft = await mkInvoice(o, { clientId: c.clientId });
+    await env.DB.prepare("UPDATE documents SET care_plan_id = ? WHERE id = ?").bind(plan.id, draft.id).run();
+    await env.DB.prepare(
+      "INSERT INTO care_invoices (care_plan_id, period_start, period_end, terms_id, document_id) VALUES (?1, '2026-11-01', '2026-11-30', ?2, ?3)",
+    )
+      .bind(plan.id, termsId, draft.id)
+      .run();
+    await env.DB.prepare("UPDATE care_plans SET last_billed_period = '2026-11-01' WHERE id = ?")
+      .bind(plan.id)
+      .run();
+    expect((await anonymise(o, c.contactId)).status).toBe(200);
+    expect(await countOf("documents", "id = ?", draft.id)).toBe(0);
+    expect(
+      await one("SELECT period_start, document_id FROM care_invoices WHERE care_plan_id = ?", plan.id),
+    ).toEqual({
+      period_start: "2026-11-01",
+      document_id: null,
     });
   });
 
