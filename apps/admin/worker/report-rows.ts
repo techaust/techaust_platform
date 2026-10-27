@@ -48,10 +48,19 @@ export function addressLine(a: unknown): string | null {
   return parts.length === 0 ? null : parts.join(", ");
 }
 
-/** The rates JSON of a row: `[]` for no text, anything not an array is kept as it is (core refuses it). */
+/**
+ * The rates JSON of a row, sorted here by SAC (none first, code-unit order) and then rate, the order of core's `registerRatesOf` (L2: the SQL's own order is not
+ * relied on). Text that is not a JSON array gives no rates at all, and core refuses a row without rates (`rates_empty`): nothing is made up.
+ */
 function ratesOf(text: string | null): readonly RegisterRate[] {
   const v = parseJson(text);
-  return Array.isArray(v) ? (v as RegisterRate[]) : [];
+  if (!Array.isArray(v)) return [];
+  const key = (r: RegisterRate): string => (typeof r?.sac === "string" ? r.sac : "");
+  return [...(v as RegisterRate[])].sort((a, b) => {
+    const x = key(a);
+    const y = key(b);
+    return x < y ? -1 : x > y ? 1 : a.rateBp - b.rateBp;
+  });
 }
 
 /**
@@ -96,6 +105,8 @@ export function registerRowOf(r: RegisterSqlRow): RegisterApiRow {
     recipient: {
       status: r.r_status as RegisterApiRow["recipient"]["status"],
       gstin: r.r_gstin,
+      // The frozen snapshot's legal name (`clients.legal_name` is NOT NULL, so every snapshot has it; SQL falls back to the same snapshot's display name). A snapshot
+      // with neither is blank here, never a name taken from somewhere else (L3).
       name: r.r_name ?? "",
       address: addressLine(parseJson(r.r_address)),
       stateCode: r.r_state as RegisterApiRow["recipient"]["stateCode"],

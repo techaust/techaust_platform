@@ -64,6 +64,40 @@ describe("the rules", () => {
     const s = realisationRulesOf({ warnMonths: 9, escalateMonths: 12, escalateExtraDays: 15 });
     expect(s.ok && s.value).toEqual(DEFAULT_REALISATION_RULES);
   });
+  it("inrMonths is the FEMA period of an INR invoice (H1): 18 reaches the dates, a missing one is 12", () => {
+    const base = { warnMonths: 9, escalateMonths: 12, escalateExtraDays: 15 };
+    const r = realisationRulesOf({ ...base, inrMonths: 18 });
+    expect(r.ok && r.value.femaMonthsInr).toBe(18);
+    // an INR export of 2026-11-03: FEMA 18 months = 2028-05-03, GST = the later of 12 months and FEMA, + 15 days
+    const dated = realisationDates(
+      { invoiceDate: d(2026, 11, 3), currency: "INR", supplyType: "export_lut" },
+      r.ok ? r.value : undefined,
+    );
+    expect(dated.ok && dated.value).toEqual({ femaDue: d(2028, 5, 3), gstDue: d(2028, 5, 18) });
+    // USD does not use it
+    const usd = realisationDates(
+      { invoiceDate: d(2026, 11, 3), currency: "USD", supplyType: "export_lut" },
+      r.ok ? r.value : undefined,
+    );
+    expect(usd.ok && usd.value.femaDue).toEqual(d(2027, 8, 3));
+    const missing = realisationRulesOf(base);
+    expect(missing.ok && missing.value.femaMonthsInr).toBe(12);
+    const undef = realisationRulesOf({ ...base, inrMonths: undefined });
+    expect(undef.ok && undef.value.femaMonthsInr).toBe(12);
+  });
+  it("inrMonths outside 1 to 1200 or not whole is rules_invalid (the twin of the Workers' reader)", () => {
+    for (const bad of [0, 1201, 9.5, -1, Number.NaN]) {
+      expect(
+        realisationRulesOf({ warnMonths: 9, escalateMonths: 12, escalateExtraDays: 15, inrMonths: bad }),
+        String(bad),
+      ).toEqual({ ok: false, errors: [{ code: "rules_invalid", path: ["rules"] }] });
+    }
+    for (const good of [1, 18, 1200]) {
+      expect(
+        realisationRulesOf({ warnMonths: 9, escalateMonths: 12, escalateExtraDays: 15, inrMonths: good }).ok,
+      ).toBe(true);
+    }
+  });
 });
 
 describe("the due dates (last allowed day)", () => {

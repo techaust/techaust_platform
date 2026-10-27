@@ -53,6 +53,7 @@ describe("no Worker or package source imports the gst core's values", () => {
     join(ROOT, "apps", "web", "src", "worker.ts"),
     ...["db", "email", "pdf", "auth"].map((p) => join(ROOT, "packages", p, "src")),
   ];
+  const gstDir = join(ROOT, "packages", "core", "src", "gst");
   const files = dirs.flatMap((d) => {
     try {
       return statSync(d).isDirectory() ? sources(d) : [d];
@@ -60,6 +61,9 @@ describe("no Worker or package source imports the gst core's values", () => {
       return []; // an app without a worker folder
     }
   });
+  // L1: the Worker-safe files of core itself (`invoices.ts`, `export-invoice.ts`, `statement.ts`, `dashboard.ts`, ...) are bundled into the Workers too: every file of
+  // `packages/core/src` outside `src/gst/` is held to the same rule
+  const coreFiles = sources(join(ROOT, "packages", "core", "src")).filter((f) => !f.startsWith(`${gstDir}`));
 
   it("looks at the Worker sources of the admin API, the portal, the jobs Worker, the web Worker and four packages", () => {
     const rels = files.map((f) => relative(ROOT, f).replaceAll("\\", "/"));
@@ -75,8 +79,16 @@ describe("no Worker or package source imports the gst core's values", () => {
     }
   });
 
+  it("also looks at core's own Worker-safe sources outside src/gst (L1)", () => {
+    const rels = coreFiles.map((f) => relative(ROOT, f).replaceAll("\\", "/"));
+    expect(rels).toContain("packages/core/src/invoices.ts");
+    expect(rels).toContain("packages/core/src/statement.ts");
+    expect(rels).toContain("packages/core/src/export-invoice.ts");
+    expect(rels.some((r) => r.startsWith("packages/core/src/gst/"))).toBe(false);
+  });
+
   it("has no value import of @techaust/core/gst", () => {
-    const bad = files.flatMap((f) =>
+    const bad = [...files, ...coreFiles].flatMap((f) =>
       valueImportsOfGst(readFileSync(f, "utf8")).map((i) => `${relative(ROOT, f)}: ${i}`),
     );
     expect(bad).toEqual([]);

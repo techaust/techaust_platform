@@ -28,7 +28,7 @@ const inrSum = (field: string): string => {
 
 /**
  * The rates of document `d`, as a JSON array text (`rates`): per (SAC, effective rate) the INR taxable value and the three tax heads, SAC then rate. The
- * twin of `registerRatesOf(computed)`. A USD line without an `inr` view gives NULL amounts in its group, which the row mapper hands to core as an invalid
+ * twin of `registerRatesOf(computed)` in content (its order is NOT relied on: the consumer sorts, L2). A USD line without an `inr` view gives NULL amounts in its group, which the row mapper hands to core as an invalid
  * amount (never a zero).
  */
 export const RATES_SQL = `(SELECT json_group_array(json_object('sac', g.sac, 'rateBp', g.rate, 'taxableMinor', g.taxable, 'igstMinor', g.igst, 'cgstMinor', g.cgst, 'sgstMinor', g.sgst))
@@ -45,7 +45,7 @@ export const REGISTER_COLUMNS = `d.id, d.type, d.series, d.fy, d.number AS seq, 
        coalesce(d.total_inr_minor, CASE d.currency WHEN 'INR' THEN d.total_minor END) AS total_inr_minor,
        CASE d.currency WHEN 'INR' THEN d.round_off_minor ELSE json_extract(d.computed, '$.inr.roundOffMinor') END AS round_off_inr_minor,
        d.fx_rate_micros, d.supply_type, d.place_of_supply_code, d.balance_minor, d.voided_at, d.client_id, c.code AS client_code,
-       json_extract(d.recipient, '$.legalName') AS r_name, json_extract(d.recipient, '$.gstStatus') AS r_status, json_extract(d.recipient, '$.gstin') AS r_gstin,
+       coalesce(json_extract(d.recipient, '$.legalName'), json_extract(d.recipient, '$.displayName')) AS r_name, json_extract(d.recipient, '$.gstStatus') AS r_status, json_extract(d.recipient, '$.gstin') AS r_gstin,
        json_extract(d.recipient, '$.stateCode') AS r_state, json_extract(d.recipient, '$.country') AS r_country, json_extract(d.recipient, '$.address') AS r_address,
        json_extract(d.header_extras, '$.noteOf') AS note_of, json_extract(d.issuer, '$.bank.swift.purposeCode') AS purpose_code,
        ${RATES_SQL} AS rates`;
@@ -128,9 +128,12 @@ export const REALISATION_SCAN_SQL = (after: boolean): string => {
    ORDER BY d.issue_date, d.id LIMIT 51`;
 };
 
-/** The bells already rung for a set of export invoices (`?1` a JSON array of ids) for the four stage kinds, by owner: the scan rings only what is missing. */
+/**
+ * The bells already rung for a set of export invoices (`?1` a JSON array of ids) for the four stage kinds, by owner: the scan rings only what is missing. The
+ * entity type is in the filter so the lookup is a seek on `notifications_entity (entity_type, entity_id)`.
+ */
 export const REALISATION_BELLS_SQL = `SELECT n.user_id, n.kind, n.entity_id FROM notifications n
-   WHERE n.entity_id IN (SELECT value FROM json_each(?1)) AND n.kind IN ('export.fema_approaching', 'export.fema_overdue', 'export.gst_approaching', 'export.gst_overdue')`;
+   WHERE n.entity_type = 'document' AND n.entity_id IN (SELECT value FROM json_each(?1)) AND n.kind IN ('export.fema_approaching', 'export.fema_overdue', 'export.gst_approaching', 'export.gst_overdue')`;
 
 // ---- the statement of account (LD78) ----------------------------------------------------------------------------------------------------------------
 
@@ -181,8 +184,8 @@ export const STATEMENT_TOTALS_SQL = `SELECT coalesce(sum(CASE WHEN u.kind IN ${D
 export const STATEMENT_COUNT_SQL = `SELECT count(*) AS n FROM ${statementSource((x) => `${x} >= ?3 AND ${x} <= ?4`)}`;
 
 /** Σ `balance_minor` of the client's open debit documents in a currency: what a statement made today must close at (`?1` client, `?2` currency). */
-export const STATEMENT_LEDGER_SQL = `SELECT coalesce(sum(d.balance_minor), 0) AS balance FROM documents d
-   WHERE d.client_id = ?1 AND d.currency = ?2 AND d.frozen_at IS NOT NULL AND d.type IN ${DEBIT_KINDS} AND d.voided_at IS NULL AND d.status <> 'void' AND d.balance_minor > 0`;
+export const STATEMENT_LEDGER_SQL = `SELECT coalesce(sum(d.balance_minor), 0) AS balance FROM documents d INDEXED BY documents_client_issued
+   WHERE d.client_id = ?1 AND d.currency = ?2 AND ${ISSUED_GST} AND d.type IN ${DEBIT_KINDS} AND d.voided_at IS NULL AND d.status <> 'void' AND d.balance_minor > 0`;
 
 /**
  * The values to bind for each statement above, in the order of its `?n`. A numbered parameter that is not written in the SQL still counts toward the

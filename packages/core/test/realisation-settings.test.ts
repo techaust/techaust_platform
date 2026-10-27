@@ -137,6 +137,12 @@ describe("realisationParamsFromStoredTax (the Workers' reader)", () => {
       { warnMonths: 1201, escalateMonths: 12, escalateExtraDays: 15 },
       { warnMonths: 9, escalateMonths: 12, escalateExtraDays: 36_501 },
       { warnMonths: 9.5, escalateMonths: 12, escalateExtraDays: 15 },
+      // H1: the INR period is part of the twin
+      { warnMonths: 9, inrMonths: 18, escalateMonths: 12, escalateExtraDays: 15 },
+      { warnMonths: 9, inrMonths: 1200, escalateMonths: 12, escalateExtraDays: 15 },
+      { warnMonths: 9, inrMonths: 0, escalateMonths: 12, escalateExtraDays: 15 },
+      { warnMonths: 9, inrMonths: 1201, escalateMonths: 12, escalateExtraDays: 15 },
+      { warnMonths: 9, inrMonths: 9.5, escalateMonths: 12, escalateExtraDays: 15 },
     ];
     for (const realisation of table) {
       const core = realisationRulesOf(realisation);

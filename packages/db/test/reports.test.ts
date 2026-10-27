@@ -42,8 +42,14 @@ const plan = async (sql: string, ...binds: unknown[]): Promise<string> => {
   const rows = await all<{ detail: string }>(`EXPLAIN QUERY PLAN ${sql}`, ...binds);
   return rows.map((r) => r.detail).join("\n");
 };
-/** A table scan of `documents` or `advance_receipts` (a SEARCH is fine; the bare word SCAN on these tables is not). */
-const scansTable = (p: string): boolean => /SCAN (documents|advance_receipts)\b/.test(p);
+/**
+ * A table scan (a SEARCH is fine; the bare word SCAN is not): the table names and every alias the statements use (`d` documents, `r` receipts, `inv` the
+ * invoice behind a receipt, `c` clients, `n` notifications), so an aliased scan cannot slip through (M4). A walk of a partial index (`SCAN d USING INDEX x`) is
+ * not a table scan: the realisation list and the two dashboard export statements walk the export index by design (it holds exports only, and the list is
+ * ordered by it and ends at 51 rows); each of those is asserted by name below.
+ */
+const scansTable = (p: string): boolean =>
+  /SCAN (documents|advance_receipts|d|r|inv|c|n)\b(?! USING)/.test(p);
 
 describe("EXPLAIN: every report statement uses an index", () => {
   it("the register page, with and without a cursor, reads `documents_issued_on`", async () => {
@@ -94,6 +100,27 @@ describe("EXPLAIN: every report statement uses an index", () => {
     }
   });
 
+  it("the EDF month and the alert scan SEARCH the export index on the date range; the list and the dashboard walk it in order (M4)", async () => {
+    const rules = {
+      femaMonthsForeign: 9,
+      femaMonthsInr: 12,
+      gstMonths: 12,
+      gstExtraDays: 15,
+      approachingDays: 30,
+    };
+    const edf = await plan(EDF_MONTH_SQL(false), "2026-10-01", "2026-10-31");
+    expect(edf).toMatch(/SEARCH d USING INDEX documents_export_issued \(issue_date>\? AND issue_date<\?\)/);
+    const scan = await plan(REALISATION_SCAN_SQL(false), ...realisationScanBinds("2027-08-01", rules));
+    expect(scan).toMatch(/SEARCH d USING INDEX documents_export_issued \(issue_date<\?\)/);
+    for (const [sql, binds] of [
+      [REALISATION_PAGE_SQL("open", false), []],
+      [EXPORT_STAGE_COUNTS_SQL, ["2027-08-01"]],
+      [EXPORT_NEXT_SQL, ["2027-08-01"]],
+    ] as const) {
+      expect(await plan(sql, ...binds)).toMatch(/SCAN d USING INDEX documents_export_issued/);
+    }
+  });
+
   it("the statement reads `documents_client_issued` and `advance_receipts_client_received`", async () => {
     const cursor = { sk: "2026-10-05|1", id: "x" };
     for (const [sql, binds] of [
@@ -136,9 +163,42 @@ describe("EXPLAIN: every report statement uses an index", () => {
     expect(scansTable(p), p).toBe(false);
   });
 
-  it("the bells lookup is a seek on the entity", async () => {
+  it("the bells lookup is a seek on the entity (M3)", async () => {
     const p = await plan(REALISATION_BELLS_SQL, "[]");
-    expect(p).not.toMatch(/SCAN notifications/);
+    expect(p).toMatch(/SEARCH n USING INDEX notifications_entity \(entity_type=\? AND entity_id=\?\)/);
+    expect(scansTable(p), p).toBe(false);
+  });
+
+  it("the scan regex sees an aliased scan (M4): a statement that scans `d` fails it", async () => {
+    const bad = await plan("SELECT count(*) FROM documents d WHERE d.currency = 'INR'");
+    expect(bad).toMatch(/SCAN d\b/);
+    expect(scansTable(bad)).toBe(true);
+    expect(scansTable("SEARCH d USING INDEX documents_issued_on (issue_date>? AND issue_date<?)")).toBe(
+      false,
+    );
+  });
+
+  it("the range plans are SEARCHes on the range, not only mentions of the index (M4)", async () => {
+    const reg = await plan(REGISTER_PAGE_SQL(false), "2026-04-01", "2027-03-31");
+    expect(reg).toMatch(/SEARCH d USING INDEX documents_issued_on \(issue_date>\? AND issue_date<\?\)/);
+    const cursor = { sk: "2026-10-05|1", id: "x" };
+    const st = await plan(
+      STATEMENT_PAGE_SQL(false),
+      ...statementPageBinds("c", "INR", "2026-04-01", "2027-03-31"),
+    );
+    expect(st).toMatch(
+      /SEARCH d USING INDEX documents_client_issued \(client_id=\? AND issue_date>\? AND issue_date<\?\)/,
+    );
+    expect(st).toMatch(
+      /SEARCH r USING (COVERING )?INDEX advance_receipts_client_received \(client_id=\? AND received_on>\? AND received_on<\?\)/,
+    );
+    const before = await plan(
+      STATEMENT_BALANCE_BEFORE_SQL(true),
+      ...statementBalanceBeforeBinds("c", "INR", "2026-04-01", cursor),
+    );
+    expect(before).toMatch(/SEARCH d USING INDEX documents_client_issued \(client_id=\?\)/);
+    const ledger = await plan(STATEMENT_LEDGER_SQL, "c", "INR");
+    expect(ledger).toMatch(/SEARCH d USING INDEX documents_client_issued \(client_id=\?\)/);
   });
 });
 
@@ -277,6 +337,30 @@ describe("the register page", () => {
     expect(JSON.parse(note.note_of as string)).toEqual(noteOf);
     expect(rows.find((r) => r.id === ex.id)?.purpose_code).toBe("P0802");
     expect(rows.find((r) => r.id === parent.id)?.note_of).toBeNull();
+  });
+
+  it("the recipient name is the snapshot's legal name; a snapshot without one gives its own display name, and with neither, NULL (L3)", async () => {
+    const c = await mkReportClient("INR");
+    const both = await addDoc({
+      clientId: c,
+      issueDate: "2027-03-02",
+      recipientSnapshot: { legalName: "Legal Ltd", displayName: "Display", gstStatus: "registered" },
+    });
+    const display = await addDoc({
+      clientId: c,
+      issueDate: "2027-03-02",
+      recipientSnapshot: { displayName: "Display", gstStatus: "registered" },
+    });
+    const none = await addDoc({
+      clientId: c,
+      issueDate: "2027-03-02",
+      recipientSnapshot: { gstStatus: "registered" },
+    });
+    const rows = await all<RegisterSqlRow>(REGISTER_PAGE_SQL(false), "2027-03-02", "2027-03-02");
+    const name = (id: string) => rows.find((r) => r.id === id)?.r_name;
+    expect(name(both.id)).toBe("Legal Ltd");
+    expect(name(display.id)).toBe("Display");
+    expect(name(none.id)).toBeNull();
   });
 });
 

@@ -28,7 +28,7 @@ import {
 export type RealisationRules = {
   /** FEMA months for an invoice in a foreign currency. */
   readonly femaMonthsForeign: number;
-  /** FEMA months for an invoice in INR (until M5.5b adds the setting, the default applies). */
+  /** FEMA months for an invoice in INR (`tax.realisation.inrMonths`). */
   readonly femaMonthsInr: number;
   readonly gstMonths: number;
   readonly gstExtraDays: number;
@@ -50,6 +50,8 @@ export const DEFAULT_REALISATION_RULES: RealisationRules = Object.freeze({
 /** The settings (`tax.realisation`) that map onto the rules. */
 export type RealisationSettings = {
   readonly warnMonths: number;
+  /** FEMA months for an invoice in INR (`tax.realisation.inrMonths`); missing is the default, 12 (an older caller). */
+  readonly inrMonths?: number | undefined;
   readonly escalateMonths: number;
   readonly escalateExtraDays: number;
 };
@@ -68,6 +70,7 @@ export function realisationRulesOf(settings: RealisationSettings): GstResult<Rea
     const rules: RealisationRules = {
       ...DEFAULT_REALISATION_RULES,
       femaMonthsForeign: settings.warnMonths,
+      femaMonthsInr: settings.inrMonths ?? DEFAULT_REALISATION_RULES.femaMonthsInr,
       gstMonths: settings.escalateMonths,
       gstExtraDays: settings.escalateExtraDays,
     };

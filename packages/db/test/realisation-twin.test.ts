@@ -7,6 +7,7 @@ import {
   DEFAULT_REALISATION_RULES,
   type RealisationRules,
   realisationDates,
+  realisationRulesOf,
   realisationStatus,
 } from "@techaust/core/gst";
 import { describe, expect, it } from "vitest";
@@ -145,8 +146,11 @@ describe("the stage, on the days around every due and approaching date", () => {
           const dates = realisationDates({ invoiceDate: date(issue), currency, supplyType }, rules);
           if (!dates.ok) throw new Error("dates");
           for (const anchor of [dates.value.femaDue, dates.value.gstDue]) {
-            for (const o of OFFSETS)
-              cases.push({ d: issue, t: iso(addDays(anchor, o)), bal: o === 0 ? 0 : 1_000 });
+            // M1: every offset, the due day itself included, with an open balance
+            for (const o of OFFSETS) cases.push({ d: issue, t: iso(addDays(anchor, o)), bal: 1_000 });
+            // realised: a balance of 0 or below is "realised" on any day, the due day and the day after included
+            cases.push({ d: issue, t: iso(anchor), bal: 0 });
+            cases.push({ d: issue, t: iso(addDays(anchor, 1)), bal: -1 });
           }
         }
         expect(cases.length).toBeGreaterThan(2_000);
@@ -170,6 +174,8 @@ describe("the stage, on the days around every due and approaching date", () => {
               rules,
             );
             if (!core.ok) throw new Error(JSON.stringify(core.errors));
+            if (c.bal <= 0 && r.stage !== "realised") throw new Error(`balance ${c.bal} is not realised`);
+            if (c.bal > 0 && r.stage === "realised") throw new Error(`balance ${c.bal} is realised`);
             if (core.value.stage !== r.stage) {
               throw new Error(
                 `${currency} ${supplyType} issued ${c.d} on ${c.t} (balance ${c.bal}): SQL ${r.stage}, core ${core.value.stage}`,
@@ -197,6 +203,23 @@ describe("the settings expressions the dashboard uses", () => {
       fema: iso((core.ok && core.value.femaDue) as CalendarDate),
       gst: iso((core.ok && core.value.gstDue) as CalendarDate),
     });
+    // H1: an INR export of 2026-11-03 with 18 months: core (rules made from the SETTINGS) and the SQL give the same FEMA due date
+    const settingsRules = realisationRulesOf({
+      warnMonths: 6,
+      inrMonths: 18,
+      escalateMonths: 24,
+      escalateExtraDays: 0,
+    });
+    if (!settingsRules.ok) throw new Error("rules");
+    const inrCore = realisationDates(
+      { invoiceDate: date("2026-11-03"), currency: "INR", supplyType: "export_lut" },
+      settingsRules.value,
+    );
+    const inrSql = await all<{ fema: string }>(
+      `SELECT ${femaDueSql("t", p)} AS fema FROM (SELECT '2026-11-03' AS issue_date, 'INR' AS currency, '2027-01-01' AS today) t`,
+    );
+    expect(inrSql[0]?.fema).toBe("2028-05-03");
+    expect(inrSql[0]?.fema).toBe(iso((inrCore.ok && inrCore.value.femaDue) as CalendarDate));
     // a row without the realisation keys: the defaults (9 months for USD, 12 for INR)
     await putTax({});
     const d = await all<{ fema: string; femaInr: string }>(
