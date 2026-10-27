@@ -65,6 +65,8 @@ export const PARENT_FULLY_CREDITED = e(
   "parent_fully_credited",
   "This invoice has already been credited in full.",
 );
+/** A debit note on an invoice that is credited in full (the 07-T line is the owner's to give: `[Placeholder]` until then). */
+export const DEBIT_PARENT_FULLY_CREDITED = e("debit_parent_fully_credited", "[Placeholder]");
 export const CREDIT_DEADLINE_PASSED = e(
   "credit_deadline_passed",
   "The deadline for a credit note on this invoice has passed.",

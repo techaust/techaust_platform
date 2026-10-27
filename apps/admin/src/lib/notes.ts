@@ -189,6 +189,7 @@ export const NOTE_ERRORS = {
   nothing_to_credit: "Choose at least one line or an amount above zero.",
   ims_not_applicable: "IMS status only applies to credit notes for GST-registered clients.",
   parent_fully_credited: "This invoice has already been credited in full.",
+  debit_parent_fully_credited: "[Placeholder]",
   parent_changed:
     "Another credit or debit note was issued on this invoice a moment ago. Open it again to see what's left.",
   note_lines_derived: "A note's lines come from its invoice and can't be edited directly.",
@@ -255,6 +256,7 @@ export function noteBlockerLine(b: NoteBlockerIn, kind: NoteKind, currency: Curr
     case "parent_not_issued":
     case "parent_void":
     case "parent_fully_credited":
+    case "debit_parent_fully_credited":
     case "nothing_to_credit":
     case "credit_deadline_passed":
     case "note_reason_required":

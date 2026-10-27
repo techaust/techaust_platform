@@ -184,8 +184,8 @@ describe("errors and blockers (07-T §7, §8)", () => {
     );
   });
 
-  it("a line for every note blocker code (none left as a placeholder)", () => {
-    for (const code of NOTE_BLOCKER_CODES)
+  it("a line for every note blocker code (none left as a placeholder, but the debit note's fully-credited line, which is the owner's to give)", () => {
+    for (const code of NOTE_BLOCKER_CODES.filter((c) => c !== "debit_parent_fully_credited"))
       expect(
         noteBlockerLine({ code, line: 0, remaining: 100, date: "2027-11-30" }, "credit", "INR"),
       ).not.toBe(INV_PLACEHOLDER);

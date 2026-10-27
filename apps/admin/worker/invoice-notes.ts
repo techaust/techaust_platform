@@ -54,6 +54,7 @@ import {
   noteOfOf,
   noteState,
   notesLimit,
+  DEBIT_PARENT_FULLY_CREDITED,
   PARENT_FULLY_CREDITED,
   PARENT_NOT_ISSUED,
   PARENT_READS,
@@ -166,8 +167,8 @@ function parentRefusal(kind: NoteKind, p: ParentCtx, client: ClientRow): NoteRef
   const r = p.row;
   if (r.frozen_at === null || r.status === "draft") return { status: 409, error: PARENT_NOT_ISSUED };
   if (r.status === "void") return { status: 409, error: PARENT_VOID };
-  if (kind === "credit" && (r.status === "credited" || r.credited_minor >= r.total_minor))
-    return { status: 409, error: PARENT_FULLY_CREDITED };
+  if (r.status === "credited" || r.credited_minor >= r.total_minor)
+    return { status: 409, error: kind === "credit" ? PARENT_FULLY_CREDITED : DEBIT_PARENT_FULLY_CREDITED };
   if (!isLiveParentStatus(r.status)) return { status: 409, error: PARENT_NOT_ISSUED };
   if (client.anonymised_at !== null) return { status: 409, error: CLIENT_GONE };
   return null;
@@ -222,7 +223,11 @@ async function explainCreate(
   if (!isLiveParentStatus(row.status))
     return err(
       c,
-      kind === "credit" && row.status === "credited" ? PARENT_FULLY_CREDITED : PARENT_NOT_ISSUED,
+      row.status === "credited"
+        ? kind === "credit"
+          ? PARENT_FULLY_CREDITED
+          : DEBIT_PARENT_FULLY_CREDITED
+        : PARENT_NOT_ISSUED,
       409,
     );
   if (row.gone === 1) return err(c, CLIENT_GONE, 409);

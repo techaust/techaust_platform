@@ -209,6 +209,11 @@ describe("a credit note: draft, issue, ledger [ADM-INV-11, LD38, LD41]", () => {
     });
     expect((await draftCredit(o, inv.id, { mode: "full" })).status).toBe(409);
     expect(await codeOf(await draftCredit(o, inv.id, { mode: "full" }))).toBe("parent_fully_credited");
+    // a debit note on it has its own code (its wording is the owner's: a placeholder until then)
+    const debit = await draftDebit(o, inv.id, { lines: [{ line: 0, taxableMinor: 100 }] });
+    expect(debit.status).toBe(409);
+    expect(await codeOf(debit)).toBe("debit_parent_fully_credited");
+    expect((await getInvoice(o, inv.id)).actions.debit.reasons).toContain("debit_parent_fully_credited");
   });
 });
 

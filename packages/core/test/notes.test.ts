@@ -208,7 +208,7 @@ describe("noteBlockers [LD50, Rule 53(1A)]", () => {
     expect(
       codes(okFacts({ parent: { status: "partially_credited", totalMinor: 100, creditedMinor: 100 } })),
     ).toEqual(["parent_fully_credited"]);
-    // a debit note on a fully credited invoice is not "fully credited": the invoice is not live for it
+    // a debit note on a fully credited invoice has its own code (the credit note's wording would be wrong for it)
     expect(
       codes(
         okFacts({
@@ -217,7 +217,16 @@ describe("noteBlockers [LD50, Rule 53(1A)]", () => {
           parent: { status: "credited", totalMinor: 100, creditedMinor: 100 },
         }),
       ),
-    ).toEqual(["parent_not_issued"]);
+    ).toEqual(["debit_parent_fully_credited"]);
+    expect(
+      codes(
+        okFacts({
+          kind: "debit",
+          deadline: null,
+          parent: { status: "partially_credited", totalMinor: 100, creditedMinor: 100 },
+        }),
+      ),
+    ).toEqual(["debit_parent_fully_credited"]);
     expect(
       codes(
         okFacts({

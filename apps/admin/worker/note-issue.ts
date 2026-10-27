@@ -38,6 +38,7 @@ import {
   noteState,
   notesLimit,
   PARENT_CHANGED,
+  DEBIT_PARENT_FULLY_CREDITED,
   PARENT_FULLY_CREDITED,
   PARENT_NOT_ISSUED,
   PARENT_STATEMENTS,
@@ -211,7 +212,11 @@ export async function explainNote(
   if (!isLiveParentStatus(row.status))
     return err(
       c,
-      d.kind === "credit" && row.status === "credited" ? PARENT_FULLY_CREDITED : PARENT_NOT_ISSUED,
+      row.status === "credited"
+        ? d.kind === "credit"
+          ? PARENT_FULLY_CREDITED
+          : DEBIT_PARENT_FULLY_CREDITED
+        : PARENT_NOT_ISSUED,
       409,
     );
   if (

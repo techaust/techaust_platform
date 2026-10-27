@@ -109,8 +109,15 @@ export function invoiceNotesView(a: {
     if (decide(a.role, "invoices.draft") === "deny") out.push("forbidden");
     if (d.status === "void") out.push("parent_void");
     else if (!isLiveParentStatus(d.status))
-      out.push(kind === "credit" && d.status === "credited" ? "parent_fully_credited" : "parent_not_issued");
-    else if (kind === "credit" && totalLeft !== null && totalLeft <= 0) out.push("parent_fully_credited");
+      out.push(
+        d.status === "credited"
+          ? kind === "credit"
+            ? "parent_fully_credited"
+            : "debit_parent_fully_credited"
+          : "parent_not_issued",
+      );
+    else if (totalLeft !== null && totalLeft <= 0)
+      out.push(kind === "credit" ? "parent_fully_credited" : "debit_parent_fully_credited");
     if (a.clientGone) out.push("client_anonymised");
     if (draftOf(type) !== null) out.push("note_draft_exists");
     if (count(type) >= NOTES_MAX) out.push("notes_limit");

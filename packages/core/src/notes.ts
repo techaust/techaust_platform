@@ -186,6 +186,7 @@ export const NOTE_BLOCKER_CODES = [
   "parent_not_issued",
   "parent_void",
   "parent_fully_credited",
+  "debit_parent_fully_credited",
   "nothing_to_credit",
   "credit_exceeds_remaining",
   "line_credit_exceeds",
@@ -253,10 +254,10 @@ export function noteBlockers(f: NoteFacts, checklist: Pick<ChecklistSettings, "b
   if (f.parent.status === "void") out.push({ code: "parent_void" });
   else if (f.parent.status === "credited") {
     if (f.kind === "credit") out.push({ code: "parent_fully_credited" });
-    else out.push({ code: "parent_not_issued" });
+    else out.push({ code: "debit_parent_fully_credited" });
   } else if (!live) out.push({ code: "parent_not_issued" });
-  if (f.kind === "credit" && live && f.parent.creditedMinor >= f.parent.totalMinor)
-    out.push({ code: "parent_fully_credited" });
+  if (live && f.parent.creditedMinor >= f.parent.totalMinor)
+    out.push({ code: f.kind === "credit" ? "parent_fully_credited" : "debit_parent_fully_credited" });
   if (f.request.empty) out.push({ code: "nothing_to_credit" });
   if (f.request.exceeds) {
     const e = f.request.exceeds;
