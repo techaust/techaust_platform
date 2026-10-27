@@ -95,3 +95,9 @@ _Drafted by the lead on 2026-10-27 from approved facts:
 | LUT banner when the current year has none | "There's no LUT for FY {fy}. Export invoices without IGST are blocked until you save its ARN." |
 | `lut.reminder` bell | "File the LUT for FY {next fy} and save its ARN in Settings › Tax." |
 | export_declaration_tampered | "The export note in Settings › Terms doesn't match its saved copy, so the invoice wasn't issued. A developer needs to look at it." |
+| Draft: export route legend | "How is GST handled on this export?" · options "Under LUT, without IGST" · "With IGST paid" (VERIFY WITH CA/LEGAL) |
+| FX dialog, "Other" source note label | "Describe the source" |
+| Advance dialog, empty reference | "Enter the payment reference." |
+| Advance dialog, zero amount | "Enter an amount above zero." |
+| FX dialog, empty "Other" note | "Describe where the rate comes from." |
+| Service completion, empty date | "Enter the date the service was completed." |
