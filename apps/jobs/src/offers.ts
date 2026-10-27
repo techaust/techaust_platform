@@ -17,6 +17,7 @@ import {
   formatDate,
   formatIstDateTime,
   formatMoney,
+  type InvoiceSendMessage,
   money,
   type OfferAcceptedMessage,
   type OfferSendMessage,
@@ -26,6 +27,7 @@ import {
   parseIsoDate,
 } from "@techaust/core";
 import { guardFigures } from "@techaust/core/documents";
+import { INVOICE_FLOW_TYPES, isInvoiceFlowType } from "@techaust/core/invoices";
 import {
   ATTACHMENT_KEY,
   confirmationLinkExpiry,
@@ -133,6 +135,12 @@ export async function processOfferSend(
   if (!row) {
     logEvent("offer_send.missing");
     return "missing";
+  }
+  // LD56: a send of an invoice, proforma, credit note or debit note is `invoice.send`'s. The refusal below would mark it cancelled for good (an invoice is never "open"), so a
+  // row of the other family is left alone: nothing is written and nothing is queued.
+  if (isInvoiceFlowType(row.type)) {
+    logEvent("offer_send.wrong_family");
+    return "invalid";
   }
   // Refused (acknowledged): links were revoked, the person lost access or was removed, or the offer is not open any more. The row is marked
   // cancelled, so the offer page shows "not sent" instead of "queued" forever (a send that was already cancelled stays as it is).
@@ -600,8 +608,15 @@ export async function processOfferMessage(
 
 // ---- after a PDF is stored (called by pdf.ts `onRendered`) ------------------------------------------------------------------
 
+/** LD56: the expansion message of one send row, by the document's type: an invoice, proforma, credit note or debit note is `invoice.send`; a proposal or estimate is `offer.send`. */
+export const sendMessageFor = (
+  documentType: string,
+  sendId: string,
+): OfferSendMessage | InvoiceSendMessage =>
+  isInvoiceFlowType(documentType) ? { kind: "invoice.send", sendId } : { kind: "offer.send", sendId };
+
 /**
- * The offer's PDF now exists: queue `offer.send` for every recipient still waiting (`queued_at IS NULL`), then stamp them. Idempotent: a
+ * The document's PDF now exists: queue `offer.send` (a proposal or estimate) or `invoice.send` (an invoice, proforma or note, LD56) for every recipient still waiting (`queued_at IS NULL`), then stamp them. Idempotent: a
  * second call finds nothing, and a call that died between the two steps queues the same rows again (the email is claimed once by `email_log`).
  * A document that was never sent to anyone (an estimate staff only download) has no rows and costs one read.
  */
@@ -611,13 +626,16 @@ export async function queueWaitingSends(
   now = Date.now(),
 ): Promise<number> {
   const { results } = await env.DB.prepare(
-    "SELECT id FROM document_sends WHERE document_id = ?1 AND queued_at IS NULL AND cancelled_at IS NULL AND contact_id IS NOT NULL ORDER BY id LIMIT 20",
+    "SELECT s.id, d.type FROM document_sends s JOIN documents d ON d.id = s.document_id WHERE s.document_id = ?1 AND s.queued_at IS NULL AND s.cancelled_at IS NULL AND s.contact_id IS NOT NULL ORDER BY s.id LIMIT 20",
   )
     .bind(documentId)
-    .all<{ id: string }>();
+    .all<{ id: string; type: string }>();
   if (results.length === 0) return 0;
+  // LD56: the message follows the document's family. One document has one type, so the rows of one call all go the same way.
   await env.EMAIL_QUEUE.sendBatch(
-    results.map((r) => ({ body: { kind: "offer.send", sendId: r.id } satisfies OfferSendMessage })),
+    results.map((r) => ({
+      body: sendMessageFor(r.type, r.id),
+    })),
   );
   await env.DB.prepare(
     "UPDATE document_sends SET queued_at = ?2 WHERE document_id = ?1 AND queued_at IS NULL AND id IN (SELECT value FROM json_each(?3))",
@@ -644,7 +662,16 @@ export const OFFER_SWEEP_LIMIT = 20;
 /** ?1 oldest created_at taken, ?2 today (IST). Forced onto the partial index `document_sends_waiting`: EXPLAIN-tested. */
 export const WAITING_SENDS_SQL = `SELECT s.id FROM document_sends s INDEXED BY document_sends_waiting JOIN documents d ON d.id = s.document_id
   WHERE s.queued_at IS NULL AND s.cancelled_at IS NULL AND s.contact_id IS NOT NULL AND s.created_at >= ?1 AND d.pdf_sha256 IS NOT NULL
-    AND d.status IN ('sent', 'viewed') AND d.valid_until >= ?2
+    AND d.type IN ('proposal', 'estimate') AND d.status IN ('sent', 'viewed') AND d.valid_until >= ?2
+  ORDER BY s.created_at LIMIT ${OFFER_SWEEP_LIMIT}`;
+
+/**
+ * LD56: the same read for the invoice family (an issued, not void, document of an invoice type whose PDF is stored); `?1` oldest created_at taken. Same partial index. A send
+ * whose document was voided or never got a PDF is not listed (a void invoice is never emailed; the render step queues the send when the PDF exists).
+ */
+export const WAITING_INVOICE_SENDS_SQL = `SELECT s.id FROM document_sends s INDEXED BY document_sends_waiting JOIN documents d ON d.id = s.document_id
+  WHERE s.queued_at IS NULL AND s.cancelled_at IS NULL AND s.contact_id IS NOT NULL AND s.created_at >= ?1 AND d.pdf_sha256 IS NOT NULL
+    AND d.type IN (${INVOICE_FLOW_TYPES.map((t) => `'${t}'`).join(", ")}) AND d.frozen_at IS NOT NULL AND d.status <> 'void' AND d.voided_at IS NULL
   ORDER BY s.created_at LIMIT ${OFFER_SWEEP_LIMIT}`;
 
 /** ?1 newest accepted_at taken, ?2 oldest. Forced onto `acceptances_accepted_at`: EXPLAIN-tested. */
@@ -661,16 +688,21 @@ export async function processOfferSweep(
   env: OfferEnv,
   msg: OfferSweepMessage,
 ): Promise<{ sends: number; certificates: number }> {
-  const [sends, certs] = await env.DB.batch([
+  const [sends, certs, invoiceSends] = await env.DB.batch([
     env.DB.prepare(WAITING_SENDS_SQL).bind(msg.asOf - OFFER_SWEEP_LOOKBACK_MS, todayIst(msg.asOf)),
     env.DB.prepare(UNCERTIFIED_SQL).bind(msg.asOf - OFFER_SWEEP_GRACE_MS, msg.asOf - OFFER_SWEEP_LOOKBACK_MS),
+    env.DB.prepare(WAITING_INVOICE_SENDS_SQL).bind(msg.asOf - OFFER_SWEEP_LOOKBACK_MS),
   ]);
-  const sendIds = (sends?.results ?? []) as { id: string }[];
+  const offerIds = (sends?.results ?? []) as { id: string }[];
+  const invoiceIds = (invoiceSends?.results ?? []) as { id: string }[];
   const certIds = (certs?.results ?? []) as { id: string }[];
-  if (sendIds.length > 0)
-    await env.EMAIL_QUEUE.sendBatch(
-      sendIds.map((r) => ({ body: { kind: "offer.send", sendId: r.id } satisfies OfferSendMessage })),
-    );
+  // At most 20 + 20 messages in one `sendBatch` (LD56: each row's message follows its document's family; the two reads never overlap).
+  const sendMessages = [
+    ...offerIds.map((r) => ({ body: { kind: "offer.send", sendId: r.id } satisfies OfferSendMessage })),
+    ...invoiceIds.map((r) => ({ body: { kind: "invoice.send", sendId: r.id } satisfies InvoiceSendMessage })),
+  ];
+  const sendIds = [...offerIds, ...invoiceIds];
+  if (sendMessages.length > 0) await env.EMAIL_QUEUE.sendBatch(sendMessages);
   if (certIds.length > 0)
     await env.PDF_QUEUE.sendBatch(
       certIds.map((r) => ({
