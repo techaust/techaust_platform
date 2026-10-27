@@ -201,6 +201,9 @@ describe("the invoice issued for a payment received (07-S §8, Q9)", () => {
     expect(h).toContain('<h1 class="masthead__title">Tax Invoice</h1>');
     expect(h).toContain("ORIGINAL FOR RECIPIENT");
     expect(h).not.toContain("Balance due");
+    // review 2 (builder question 2): paid at issue, so the view itself says nothing is due, never the total
+    expect(view.balanceDue).toMatch(/^\D*0\.00$/);
+    expect(view.balanceDue).not.toBe(view.totals.find((t) => t.key === "total")?.value);
     expect(h).not.toContain("How to pay");
     expect(h).not.toContain("payment reference");
     expect(h).toContain('data-testid="signatory"');

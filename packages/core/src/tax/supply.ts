@@ -6,6 +6,7 @@
 // - the other place-of-supply rules (s.12(3) to (14)) are treated as not applying; a person may override with a reason.
 import { clientTaxCheck, type TaxInput } from "../clients.ts";
 import { fyOfDate, isValidDate } from "../dates.ts";
+import { legacyLutFate } from "../export-invoice.ts";
 import { EXPORT_PLACE_OF_SUPPLY, isStateCode, type StateCode, selectableStates } from "../gstin.ts";
 import type { Currency } from "../money.ts";
 import {
@@ -44,8 +45,8 @@ export type SupplyOptions = {
  */
 export function lutsOf(tax: TaxContext["tax"]): { fy: string; arn: string }[] {
   const out = tax.luts.map(({ fy, arn }) => ({ fy, arn }));
-  const { arn, fy } = tax.lut;
-  if (arn && fy && !out.some((l) => l.fy === fy)) out.push({ fy, arn });
+  const fate = legacyLutFate(tax); // the one rule for the old key (review 2, finding 9)
+  if (fate.fate === "folded") out.push({ fy: fate.entry.fy, arn: fate.entry.arn });
   return out;
 }
 

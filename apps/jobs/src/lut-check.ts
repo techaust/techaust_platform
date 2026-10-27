@@ -6,7 +6,12 @@
 //     `lut:<FY>:<Monday of the IST week>`; the unique index (user, kind, entity) keeps it to one a week per owner, whatever the redelivery or rerun. It writes
 //     nothing else, and the weekly EMAIL is M5.4's (LD27).
 //   The title is 07-S §5's banner line; the line for "the running FY has no letter" is not drafted yet, so it is `[Placeholder]` (docs/07-S "Copy gaps").
-import { type LutCheckMessage, lutBellFor, lutsFromStoredTax } from "@techaust/core/invoices";
+import {
+  exportModeFromStoredTax,
+  type LutCheckMessage,
+  lutBellFor,
+  lutsFromStoredTax,
+} from "@techaust/core/invoices";
 import { logEvent } from "./log.ts";
 
 /** The bell the owners see: 07-S §8 (pending the owner's word). */
@@ -24,8 +29,6 @@ export const TAX_ROW_SQL = `SELECT (SELECT value FROM settings WHERE key = 'tax'
 export const LUT_BELL_SQL = `INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
   SELECT 'n_' || lower(hex(randomblob(16))), u.id, ?1, 'settings', ?2, ?3, ?4 FROM staff_users u WHERE u.role = 'owner' AND u.status = 'active'`;
 
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
-
 export type LutCheckResult = { bell: "none" | "next_fy_due" | "current_missing"; owners: number };
 
 /** Handles one `lut.check` message (a valid one: the queue routes the rest to `skipLutCheck`). */
@@ -42,7 +45,7 @@ export async function processLutCheck(env: Env, msg: LutCheckMessage): Promise<L
     stored = null; // an unreadable row is "no letters": the owners are told, which is the safe side
   }
   // The IGST route needs no letter, so a bell all year would be noise (the Settings attention row fires on the LUT route only). Read without zod.
-  if (isRecord(stored) && stored.exportMode === "igst_paid") {
+  if (exportModeFromStoredTax(stored) === "igst_paid") {
     logEvent("lut.check", { asOf: msg.asOf, bell: "none", route: "igst_paid" });
     return { bell: "none", owners: 0 };
   }
