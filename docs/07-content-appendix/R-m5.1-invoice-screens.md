@@ -51,7 +51,7 @@ _Drafted by the lead on 2026-10-27 from approved facts:
 | zero_total | "An invoice can't be issued for ₹0 or $0." (VERIFY WITH CA/LEGAL) |
 | reverse_charge_text | "Set the reverse-charge line in Settings › Tax." |
 | currency_mismatch | "The invoice currency must be the client's currency ({currency})." |
-| type_not_allowed | "This client is outside India, so this needs an export invoice. Export invoices arrive in the next update." |
+| type_not_allowed | "This client is outside India, so this needs an export invoice." |
 
 ## 3. Issue, request and approval
 ### Issue dialog (Owner)
