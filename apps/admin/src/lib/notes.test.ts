@@ -152,7 +152,7 @@ describe("the deadline banner (07-T §4; VERIFY WITH CA/LEGAL)", () => {
 });
 
 describe("errors and blockers (07-T §7, §8)", () => {
-  const err = (code: string, extra: ConstructorParameters<typeof RequestError>[6] = {}) =>
+  const err = (code: string, extra: ConstructorParameters<typeof RequestError>[7] = {}) =>
     new RequestError(409, code, "server words", null, [], [], [], extra);
 
   it("by code, with the figures the 409 carries", () => {
