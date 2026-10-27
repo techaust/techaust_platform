@@ -221,17 +221,39 @@ describe("a debit note's save and the preview (optional items)", () => {
     const view = await getInvoice(o, inv.id);
     for (const l of view.creditable.lines) expect(l.position).toBe(l.line + 1);
   });
+
+  it("a debit note's preview names the invoice's line in `line` and `againstLine`, not its own index", async () => {
+    const o = await owner();
+    const inv = await mkIssuedInvoice(o, { prices: [100_000, 50_000, 20_000] });
+    const res = await draftDebit(o, inv.id, { lines: [{ line: 2, taxableMinor: 500 }] });
+    expect(res.status, await res.clone().text()).toBe(201);
+    const b = await json(res);
+    expect(b.preview.lines.map((l: J) => [l.againstLine, l.line])).toEqual([[3, 2]]);
+  });
 });
 
-describe("the finance audit list holds every invoice action (the lead's answer to stop 1)", () => {
-  it("every invoice audit name of a route is in FINANCE_AUDIT_ACTIONS", () => {
-    const invoiceActions = new Set(ROUTES.map((r) => r.audit).filter((a) => a?.startsWith("invoice.")));
-    expect(invoiceActions.size).toBeGreaterThanOrEqual(10);
-    for (const a of invoiceActions)
-      expect(FINANCE_AUDIT_ACTIONS as readonly (string | undefined)[]).toContain(a);
+describe("the finance audit list holds the money invoice actions only (the lead's answer, 2026-10-27)", () => {
+  it("is exactly issue, void, advance issue and the IMS answer; the rest are ordinary work", () => {
+    const list = FINANCE_AUDIT_ACTIONS as readonly string[];
+    expect(list.filter((a) => a.startsWith("invoice.")).sort()).toEqual([
+      "invoice.advance_issue",
+      "invoice.ims_status",
+      "invoice.issue",
+      "invoice.void",
+    ]);
+    for (const a of ["create", "update", "delete", "note_create", "service_completed", "pdf_retry"])
+      expect(list).not.toContain(`invoice.${a}`);
+    // the routes still audit those ordinary actions
+    const names = new Set(ROUTES.map((r) => r.audit));
+    for (const a of ["invoice.create", "invoice.note_create"]) expect(names.has(a)).toBe(true);
   });
 
-  it("the accountant's audit view shows a note draft, a note's issue and an IMS answer", async () => {
+  it("Staff's and Sales's client activity hides only the list's actions; an invoice draft's name is not among them", () => {
+    expect((FINANCE_AUDIT_ACTIONS as readonly string[]).includes("invoice.create")).toBe(false);
+    expect((FINANCE_AUDIT_ACTIONS as readonly string[]).includes("invoice.issue")).toBe(true);
+  });
+
+  it("the accountant's audit view shows a note's issue and an IMS answer, and no longer the draft", async () => {
     const o = await owner();
     const accountant = await sessionFor("accountant");
     const inv = await mkIssuedInvoice(o, { prices: [100_000], client: mkRegisteredClient });
@@ -245,7 +267,7 @@ describe("the finance audit list holds every invoice action (the lead's answer t
         (await json(await call(`/audit?action=${action}&entity=${entity}`, { cookie: accountant.cookie })))
           .entries as J[]
       ).filter((e) => e.entityId === cn.id);
-    expect((await seen("invoice.note_create", "document")).length).toBeGreaterThanOrEqual(1);
+    expect((await seen("invoice.note_create", "document")).length).toBe(0);
     expect((await seen("invoice.issue", "document")).length).toBeGreaterThanOrEqual(1);
     expect((await seen("invoice.ims_status", "document")).length).toBe(1);
     // never the words of the reason, wherever it was typed

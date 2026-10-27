@@ -592,10 +592,8 @@ function NotePreview(props: { kind: NoteKind; parent: InvoiceWithNotes; saved: N
             </tr>
           </thead>
           <tbody>
-            {pv.lines.map((l, i) => {
-              // The invoice line of the note's line i is the request's take i (the stored request, sorted by line, one take per note line). The
-              // preview's own `line` is the invoice's index on a credit note but the note's own on a debit note, so the take is what is read.
-              const at = saved.request.takes[i]?.line ?? l.line;
+            {pv.lines.map((l) => {
+              const at = l.line;
               return (
                 <tr key={at}>
                   <th scope="row">

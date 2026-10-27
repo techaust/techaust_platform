@@ -174,7 +174,10 @@ function parentRefusal(kind: NoteKind, p: ParentCtx, client: ClientRow): NoteRef
 }
 
 /** The preview a create or a save answers: the totals and the lines of the computed note, and the takes it stores. */
-const previewOf = (c: NonNullable<Awaited<ReturnType<typeof noteComputation>>["computed"]>) => ({
+const previewOf = (
+  c: NonNullable<Awaited<ReturnType<typeof noteComputation>>["computed"]>,
+  takes: readonly { line: number }[],
+) => ({
   totals: {
     subtotalMinor: c.subtotalMinor,
     taxableMinor: c.taxableMinor,
@@ -187,10 +190,10 @@ const previewOf = (c: NonNullable<Awaited<ReturnType<typeof noteComputation>>["c
     words: c.words,
   },
   supply: c.supply,
-  lines: c.lines.map((l) => ({
+  lines: c.lines.map((l, i) => ({
     /** The invoice line this takes from, as it is numbered on the invoice (1-based, "Against line {n}", 07-T §8); `line` is the same line's key in a request (0-based). */
-    againstLine: l.index + 1,
-    line: l.index,
+    againstLine: (takes[i]?.line ?? l.index) + 1,
+    line: takes[i]?.line ?? l.index,
     taxableMinor: l.taxableMinor,
     cgstMinor: l.cgstMinor,
     sgstMinor: l.sgstMinor,
@@ -372,7 +375,7 @@ async function createNote(c: Ctx, kind: NoteKind, parentId: string, f: CreateBod
       contentSha256: computation.hash,
       totalMinor: resolved.computed.totalMinor,
       request: resolved.request,
-      preview: previewOf(resolved.computed),
+      preview: previewOf(resolved.computed, resolved.request.takes),
     },
     201,
   );
@@ -564,7 +567,7 @@ export async function patchNoteDraft(
     contentSha256: computation.hash,
     totalMinor: computed.totalMinor,
     request,
-    preview: previewOf(computed),
+    preview: previewOf(computed, request.takes),
   });
 }
 
