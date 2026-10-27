@@ -107,3 +107,8 @@ _Drafted by the lead on 2026-10-27 from approved facts:
 | Proforma, issue dialog statement | "This proforma will get the next number in its series and can't be edited afterwards. It is not a tax invoice." |
 | Proforma, void not allowed | "This proforma can't be voided because a payment has been recorded against it." |
 | Advance, client's GST status changed since the proforma (`advance_supply_changed`) | "The client's GST details changed after this proforma was issued, so the tax on this payment can't be worked out from it. Check the client's details with your CA before recording the payment." (VERIFY WITH CA/LEGAL) |
+| Proforma draft, under the title | "Drafts can be edited. Issuing gives the next proforma number and locks it." |
+| Proforma, issue heading, dialog title and button | "Issue proforma" |
+| Proforma, issued toast | "Proforma {number} issued." |
+| Proforma, void refused because it was emailed | "This proforma has been emailed to the client, so it can't be voided." (VERIFY WITH CA/LEGAL) |
+| fx_date_invalid on the advance (tax invoice for payment received) | "The rate date must be the date the payment was received or up to {days} days before it." (VERIFY WITH CA/LEGAL) |
