@@ -221,6 +221,20 @@ function renderTemplate(
         ),
       };
     case "approval.requested":
+      // M5.1: an invoice issue request rides on the same key with `kind: "issue"` (07-R §3 words, from no-reply@).
+      if (get("kind") === "issue")
+        return {
+          ...noReply,
+          ...staffApprovalIssueRequested(
+            {
+              requester_name: get("requester_name"),
+              client_name: get("client_name"),
+              amount: get("amount"),
+              admin_url: get("admin_url"),
+            },
+            opts,
+          ),
+        };
       return {
         ...hello,
         ...approvalRequested(
@@ -236,6 +250,20 @@ function renderTemplate(
         ),
       };
     case "approval.decided":
+      if (get("kind") === "issue")
+        return {
+          ...noReply,
+          ...staffApprovalIssueDecided(
+            {
+              decision: get("decision"),
+              client_name: get("client_name"),
+              number: get("number"),
+              decision_note: get("decision_note"),
+              admin_url: get("admin_url"),
+            },
+            opts,
+          ),
+        };
       return {
         ...hello,
         ...approvalDecided(
@@ -244,33 +272,6 @@ function renderTemplate(
             approver_name: get("approver_name"),
             title: get("title"),
             version: get("version"),
-            decision_note: get("decision_note"),
-            admin_url: get("admin_url"),
-          },
-          opts,
-        ),
-      };
-    case "approval.issue.requested":
-      return {
-        ...noReply,
-        ...staffApprovalIssueRequested(
-          {
-            requester_name: get("requester_name"),
-            client_name: get("client_name"),
-            total: get("total"),
-            admin_url: get("admin_url"),
-          },
-          opts,
-        ),
-      };
-    case "approval.issue.decided":
-      return {
-        ...noReply,
-        ...staffApprovalIssueDecided(
-          {
-            decision: get("decision"),
-            client_name: get("client_name"),
-            number: get("number"),
             decision_note: get("decision_note"),
             admin_url: get("admin_url"),
           },

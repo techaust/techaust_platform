@@ -2,15 +2,16 @@
 // emails (./offers.ts `approvalRequested` / `approvalDecided`: the subject as the heading, the sentence, "Open in admin"), each with its
 // plain-text twin. Words: 07-R §3 "Approval emails" (PENDING the owner's word-for-word approval). A draft invoice has no number, so the
 // request names the client and the total; the decision names the number it was issued as. Sent from no-reply@ (07-R §3). Every variable is
-// escaped before it reaches HTML (`securityEmail`).
+// escaped before it reaches HTML (`securityEmail`). The jobs Worker queues them under the discount emails' keys with `kind: "issue"` in the data
+// (`approval.requested`, `approval.decided`), so the Settings list of templates is unchanged; `renderEmail` picks these for that kind.
 import { headerValue } from "./headers.ts";
 import { type LayoutOptions, type Para, para, type Rendered, securityEmail } from "./templates.ts";
 
 export type IssueRequestedData = {
   requester_name: string;
   client_name: string;
-  /** The draft's total, formatted by the sender with core's `formatMoney` (never added up here). */
-  total: string;
+  /** The draft's total, formatted by the sender with core's `formatMoney` (never added up here); named as in the discount email. */
+  amount: string;
   /** The approvals queue (or the request) in admin. */
   admin_url: string;
 };
@@ -21,7 +22,7 @@ export function staffApprovalIssueRequested(d: IssueRequestedData, opts: LayoutO
   return securityEmail(subject, opts, {
     before: [
       para(
-        `${d.requester_name} asked you to issue a draft invoice for ${d.client_name}, total ${d.total}. Open the approvals queue to issue or reject it.`,
+        `${d.requester_name} asked you to issue a draft invoice for ${d.client_name}, total ${d.amount}. Open the approvals queue to issue or reject it.`,
       ),
     ],
     action: { label: "Open in admin", url: d.admin_url },
@@ -29,7 +30,7 @@ export function staffApprovalIssueRequested(d: IssueRequestedData, opts: LayoutO
 }
 
 export type IssueDecidedData = {
-  /** "approved" (the invoice was issued) or "rejected". */
+  /** "Approved" (the invoice was issued) or "Rejected", as the discount email's `decision`; the case does not matter. */
   decision: string;
   client_name: string;
   /** The number it was issued as (approved only). */
@@ -46,7 +47,7 @@ const sentence = (text: string): string =>
 
 /** To the requester: 07-R §3 "Decided"; the reason line only when the owner gave one. */
 export function staffApprovalIssueDecided(d: IssueDecidedData, opts: LayoutOptions): Rendered {
-  const issued = d.decision === "approved";
+  const issued = d.decision.toLowerCase() === "approved";
   const subject = headerValue(
     `Your invoice for ${d.client_name}: ${issued ? `Issued as ${d.number}` : "Rejected"}`,
   );
