@@ -35,6 +35,8 @@ export function IssueQueue(props: {
   state: Exclude<ApprovalState, "none"> | null;
   /** The bell's request: its dialog opens for the owner (read by its id when it is older than the first page). */
   linked: string | undefined;
+  /** The bell's request as the page already read it (looking it up by id to pick the tab): used instead of a second read. */
+  linkedFirst?: { approvals: IssueApprovalRow[]; next: string | null } | null | undefined;
   onLinkedDone: () => void;
   /** A request was decided (the page's counts change). */
   onDecided?: () => void;
@@ -48,7 +50,12 @@ export function IssueQueue(props: {
   const list = useLoad(() => invoicesApi.issueApprovals({ status: props.state ?? undefined }), key);
   // A bell's request older than the first page (M5.1 review finding 8): read by its id and shown first.
   const linkedRow = useLoad(
-    () => (props.linked ? invoicesApi.issueApprovals({ id: props.linked }) : Promise.resolve(null)),
+    () =>
+      props.linkedFirst !== undefined
+        ? Promise.resolve(props.linkedFirst)
+        : props.linked
+          ? invoicesApi.issueApprovals({ id: props.linked })
+          : Promise.resolve(null),
     props.linked ?? "",
   );
   const extra =

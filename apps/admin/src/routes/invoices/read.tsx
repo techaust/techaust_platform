@@ -4,6 +4,7 @@
 import type { Role } from "@techaust/core/permissions";
 import { useState } from "react";
 import { Link } from "react-router";
+import { api } from "../../api.ts";
 import { PageHeader } from "../../components/display.tsx";
 import { Ban, FolderKanban, Lock } from "../../components/icons.tsx";
 import { useToast } from "../../components/toast.tsx";
@@ -16,6 +17,7 @@ import {
   frozenBanner,
   INV_COPY,
   INV_PLACEHOLDER,
+  milestoneBackLine,
   moneyText,
   typeLabel,
   voidBlockedText,
@@ -26,8 +28,7 @@ import { PDF_COPY } from "../../lib/pdf.ts";
 import { LinesTable, TaxPreview } from "../documents/money.tsx";
 import { PdfPanel, type PdfSource, type PdfWords } from "../documents/pdf-panel.tsx";
 import { VoidDialog } from "./dialogs.tsx";
-import { MilestoneOrigin } from "./editor.tsx";
-import { INVOICES_CRUMB, InvoiceBadge, NumberMark } from "./parts.tsx";
+import { INVOICES_CRUMB, InvoiceBadge, MilestoneOrigin, NumberMark } from "./parts.tsx";
 
 const PDF_WORDS: PdfWords = {
   // 07-R has no heading for a ready PDF: the approved 07-P one stands in (it says the same thing).
@@ -209,8 +210,17 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
           onVoid={async (reason) => {
             await invoicesApi.void(v.id, v.updatedAt, reason);
             setVoiding(false);
-            if (v.milestone) toast("success", INV_COPY.milestoneBack);
             reload();
+            // The void unlinks the milestone, so the reloaded invoice no longer names it: read its new status from the project once.
+            const m = v.milestone;
+            if (m) {
+              const status = await api
+                .project(m.projectId)
+                .then((p) => p.milestones.find((x) => x.id === m.id)?.status ?? null)
+                .catch(() => null);
+              const line = milestoneBackLine(status);
+              if (line) toast("success", line);
+            }
           }}
         />
       )}

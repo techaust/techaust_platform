@@ -88,9 +88,7 @@ export const COPY = {
   projectsNoMatch: "Try fewer filters, or search for the start of a project code or name.",
   clientFilesEmpty: "No files for this client yet.",
   linkedProposal: "No proposal is linked to this project.",
-  billedVsPaid: "Billed and paid figures arrive with invoicing.",
   hoursLogged: "Hours logged arrive with time logs.",
-  createInvoice: "Invoices arrive with invoicing.",
   sharingExplainer:
     "Shared notes appear in the client portal for everyone at this client who has portal access.",
   noteDelete: "Delete this note? This can't be undone.",

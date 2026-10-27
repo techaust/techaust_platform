@@ -22,6 +22,7 @@ import {
   invErrorText,
   invoiceEditor,
   issueBody,
+  milestoneBackLine,
   milestoneBillable,
   milestoneHasInvoice,
   requestRow,
@@ -162,6 +163,16 @@ describe("07-R copy", () => {
     expect(milestoneBillable({ status: "pending", isAdvance: true, documentId: null })).toBe(true);
     expect(milestoneBillable({ status: "pending", isAdvance: false, documentId: null })).toBe(false);
     expect(milestoneBillable({ status: "invoiced", isAdvance: true, documentId: null })).toBe(false);
+  });
+
+  it("after a void, the milestone line follows the status it went back to (07-R §4, re-check B), and milestone_not_ready is 07-R §5", () => {
+    expect(milestoneBackLine("pending")).toBe("The milestone is back to Pending.");
+    expect(milestoneBackLine("ready_to_bill")).toBe("The milestone is back to Ready to bill.");
+    expect(milestoneBackLine("invoiced")).toBeNull();
+    expect(milestoneBackLine(null)).toBeNull();
+    expect(INV_ERRORS.milestone_not_ready).toBe(
+      "Only a milestone that's Ready to bill, or the advance payment of a started project, can be invoiced.",
+    );
   });
 
   it("splits the empty line into a title and a body", () => {

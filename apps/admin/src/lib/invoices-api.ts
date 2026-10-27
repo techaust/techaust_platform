@@ -259,6 +259,8 @@ export const invoicesApi = {
       after?: string | undefined;
       /** One request by id (a bell's link may name one older than the first page). */
       id?: string | undefined;
+      /** The page size (the API's 25 by default); the approvals tabs count the first 50 of each queue. */
+      limit?: "25" | "50" | undefined;
     } = {},
   ) =>
     request<{ approvals: IssueApprovalRow[]; next: string | null }>(

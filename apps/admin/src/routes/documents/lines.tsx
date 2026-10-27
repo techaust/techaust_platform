@@ -45,6 +45,8 @@ export const LinesPanel = memo(function LinesPanel(props: {
   current: () => LineDraft[];
   /** Open one line's details with the cursor in its SAC field (an invoice's "Line {n} needs a 6-digit SAC code." blocker); `at` makes a repeat click count. */
   showSac?: { uid: string; at: number } | null | undefined;
+  /** An invoice: every line needs a SAC to issue (the `line_sac_missing` blocker), so the field isn't marked "(optional)". */
+  sacRequired?: boolean | undefined;
 }) {
   const { dispatch, current } = props;
   const [picking, setPicking] = useState(false);
@@ -184,6 +186,7 @@ export const LinesPanel = memo(function LinesPanel(props: {
         line={editing}
         n={editing ? props.lines.indexOf(editing) + 1 : 0}
         focusSac={focusSac}
+        sacRequired={props.sacRequired}
         onClose={() => {
           const u = details;
           setDetails(null);
@@ -535,6 +538,7 @@ function LineDetails(props: {
   n: number;
   /** Put the cursor in the SAC field once open (a custom line; a catalogue line has no SAC to type). */
   focusSac?: boolean;
+  sacRequired?: boolean | undefined;
   onClose: () => void;
   onSave: (patch: Partial<LineDraft>) => void;
 }) {
@@ -548,6 +552,7 @@ function LineDetails(props: {
 function LineDetailsForm(props: {
   line: LineDraft;
   focusSac?: boolean | undefined;
+  sacRequired?: boolean | undefined;
   onClose: () => void;
   onSave: (patch: Partial<LineDraft>) => void;
 }) {
@@ -604,7 +609,7 @@ function LineDetailsForm(props: {
             <FormField
               id="ld-sac"
               label="SAC"
-              optional
+              optional={!props.sacRequired}
               hint={CAT_COPY.sacHint}
               error={tried ? errors.sac : undefined}
             >

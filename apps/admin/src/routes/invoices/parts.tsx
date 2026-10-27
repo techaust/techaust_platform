@@ -1,12 +1,13 @@
 // Pieces the invoice screens share (M5.1): the access gate, the badge, the number (the one drawn element: an issued number set solid, a draft's
-// empty slot), the list columns and an invoice's address. Styles: the M3.2 panels, the M3.3 strip and tables, the M4.3 documents styles, and
-// invoices.css, loaded with these screens only.
+// empty slot), the list columns, an invoice's address and the "Created from the milestone" line. Styles: the M3.2 panels, the M3.3 strip and
+// tables, the M4.3 documents styles, and invoices.css, loaded with these screens only.
 import "../documents/parts.tsx";
 import "../../invoices.css";
 import type { ReactNode } from "react";
 import { Link } from "react-router";
 import type { Column } from "../../components/data-table.tsx";
 import { StatusPill } from "../../components/display.tsx";
+import { FolderKanban } from "../../components/icons.tsx";
 import { NoAccess } from "../../components/states.tsx";
 import { allowed } from "../../lib/access.ts";
 import {
@@ -15,8 +16,10 @@ import {
   type Badge,
   badgeOf,
   dateCell,
+  fromMilestone,
   INV_COPY,
   moneyText,
+  splitAtPlace,
   typeLabel,
 } from "../../lib/invoices.ts";
 import type { InvoiceListRow } from "../../lib/invoices-api.ts";
@@ -140,4 +143,28 @@ export function invoiceColumns(withClient: boolean): Column<InvoiceListRow>[] {
       ),
     },
   ];
+}
+
+/** 07-R "Created from the milestone …": one quiet line, the project's name the link back to it (plain text for a role that can't open projects). */
+export function MilestoneOrigin(props: { milestone: string; project: string; href: string | null }) {
+  const line = fromMilestone(props.milestone, props.project);
+  const parts = splitAtPlace(line, props.project);
+  return (
+    <p className="inv-origin">
+      <FolderKanban size={16} />
+      <span>
+        {props.href === null ? (
+          line
+        ) : parts ? (
+          <>
+            {parts[0]}
+            <Link to={props.href}>{parts[1]}</Link>
+            {parts[2]}
+          </>
+        ) : (
+          <Link to={props.href}>{line}</Link>
+        )}
+      </span>
+    </p>
+  );
 }

@@ -33,8 +33,6 @@ export function MilestoneInvoice(props: {
   canCreate: boolean;
   /** May they open invoices (`invoices.read`)? Sales sees the line without the link. */
   canOpen: boolean;
-  /** The project was started from an accepted proposal: its first milestone (the advance) can be invoiced while pending. */
-  fromProposal: boolean;
   numbers: Map<string, string | null>;
 }) {
   const m = props.milestone;

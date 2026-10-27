@@ -57,7 +57,7 @@ function Approvals() {
   const invoices = allowed(user.role, "invoices.read");
   const [params, setParams] = useSearchParams();
   const kindP = params.get("kind");
-  const kind: QueueKind = invoices && kindP === "issue" ? "issue" : "discount";
+  const urlKind: QueueKind = invoices && kindP === "issue" ? "issue" : "discount";
   // The owner starts on what waits for them; a bell link shows every state, so the request is on the page whatever happened to it.
   const stateP = params.get("state");
   const state = stateP === "all" ? null : isState(stateP) ? stateP : owner && !linked ? "pending" : null;
@@ -70,13 +70,18 @@ function Approvals() {
         : Promise.resolve(null),
     `${linked ?? ""}:${kindP ?? ""}`,
   );
+  // Until the lookup answers, neither queue loads (no discount lookup for an issue request); found, the issue queue opens at once and
+  // takes the request already read (one read of it, re-check low 4).
+  const probing = !!linked && invoices && kindP === null && probe.state === "loading";
+  const probeFound = probe.state === "ready" && !!probe.data?.approvals.some((a) => a.id === linked);
+  const kind: QueueKind = probeFound ? "issue" : urlKind;
   // How many requests wait in each queue (the first page of each; "50+" past it), for the tabs.
   const counts = useLoad(
     () =>
       invoices
         ? Promise.all([
             documentsApi.approvals({ status: "pending", limit: "50" }),
-            invoicesApi.issueApprovals({ status: "pending" }),
+            invoicesApi.issueApprovals({ status: "pending", limit: "50" }),
           ])
         : Promise.resolve(null),
     String(invoices),
@@ -99,8 +104,8 @@ function Approvals() {
     [setParams],
   );
   useEffect(() => {
-    if (probe.state === "ready" && probe.data?.approvals.some((a) => a.id === linked)) switchTo("issue");
-  }, [probe.state, probe.data, linked, switchTo]);
+    if (probeFound) switchTo("issue");
+  }, [probeFound, switchTo]);
   // Opened without a kind or a linked request: the queue that has requests waiting, when only the issue queue has some.
   const opened = useRef(false);
   useEffect(() => {
@@ -145,24 +150,26 @@ function Approvals() {
       result=""
     />
   );
-  const queue =
-    kind === "issue" ? (
-      <IssueQueue
-        owner={owner}
-        state={state}
-        linked={linked}
-        onLinkedDone={onLinkedDone}
-        onDecided={() => counts.reload(true)}
-      />
-    ) : (
-      <DiscountQueue
-        owner={owner}
-        state={state}
-        linked={linked}
-        onLinkedDone={onLinkedDone}
-        onDecided={() => counts.reload(true)}
-      />
-    );
+  const queue = probing ? (
+    <div aria-busy="true" />
+  ) : kind === "issue" ? (
+    <IssueQueue
+      owner={owner}
+      state={state}
+      linked={linked}
+      linkedFirst={probeFound ? probe.data : undefined}
+      onLinkedDone={onLinkedDone}
+      onDecided={() => counts.reload(true)}
+    />
+  ) : (
+    <DiscountQueue
+      owner={owner}
+      state={state}
+      linked={linked}
+      onLinkedDone={onLinkedDone}
+      onDecided={() => counts.reload(true)}
+    />
+  );
 
   return (
     <>

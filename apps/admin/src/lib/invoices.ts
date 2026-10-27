@@ -103,9 +103,21 @@ export const INV_COPY = {
   voidReason: "Reason (required, kept with the invoice)",
   voidReasonEmpty: "Enter a reason for voiding.",
   voidConfirm: "Void invoice",
-  milestoneBack: "The milestone is back to Ready to bill.",
+  milestoneBackReady: "The milestone is back to Ready to bill.",
+  milestoneBackPending: "The milestone is back to Pending.",
   createInvoice: "Create invoice",
 } as const;
+
+/**
+ * 07-R §4 "Milestone after void", picked by the status the void left the milestone in (the server's rule: back to pending when the work was
+ * never delivered, an advance invoice; else back to ready to bill). Any other status (or none read) gets no line rather than a wrong one.
+ */
+export const milestoneBackLine = (status: string | null | undefined): string | null =>
+  status === "pending"
+    ? INV_COPY.milestoneBackPending
+    : status === "ready_to_bill"
+      ? INV_COPY.milestoneBackReady
+      : null;
 
 export const draftTitle = (client: string) => `Draft invoice for ${client}`;
 export const dueNote = (date: string, days: number) =>
@@ -332,7 +344,8 @@ export const INV_ERRORS = {
   contact_anonymised:
     "This draft's contact has been anonymised. Choose another contact, then save the draft.",
   milestone_has_invoice: "This milestone already has an invoice.",
-  milestone_not_ready: "Only a milestone that's Ready to bill can be invoiced.",
+  milestone_not_ready:
+    "Only a milestone that's Ready to bill, or the advance payment of a started project, can be invoiced.",
 } as const;
 
 /** "This invoice was already issued as {number}." (07-R §5 `already_issued`; the number rides on the 409). */

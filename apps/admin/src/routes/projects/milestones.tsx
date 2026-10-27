@@ -256,7 +256,6 @@ export function Milestones({ data, reload }: { data: ProjectPage; reload: Reload
                     clientId={project.clientId}
                     canCreate={canInvoice}
                     canOpen={canOpenInvoices}
-                    fromProposal={project.sourceDocumentId !== null}
                     numbers={numbers}
                   />
                 </div>
