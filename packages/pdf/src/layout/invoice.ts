@@ -28,14 +28,17 @@ const RUPEE = "₹";
 
 const p = (cls: string, text: string, attrs = "") => `<p class="${cls}"${attrs}>${esc(text)}</p>`;
 
-/** A block line whose parts are joined by " · " wraps only between the parts (as the proposal layout does). */
+/**
+ * A block line whose parts are joined by " · " (e.g. "GSTIN … · State …") breaks only between the parts, and the separator is dropped there: the
+ * party column is narrow, so a wrapped line would leave " ·" dangling at its end (re-check). Each part stays whole on its own line.
+ */
 const partsLine = (cls: string, text: string) =>
   !text.includes(" · ")
     ? p(cls, text)
     : `<p class="${cls}">${text
         .split(" · ")
         .map((part) => `<span class="keep">${esc(part)}</span>`)
-        .join(" · ")}</p>`;
+        .join("<br>")}</p>`;
 
 function logoHtml(view: InvoiceView): string {
   const logos = PDF_LOGOS as Record<string, string | undefined>;

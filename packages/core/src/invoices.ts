@@ -356,5 +356,4 @@ export const milestoneBillableRule = (m: { status: string; isAdvance: boolean })
   m.status === "ready_to_bill" || (m.status === "pending" && m.isAdvance);
 
 /** The SQL twin of `milestoneBillableRule`, for a statement on `milestones` alone. */
-export const MILESTONE_BILLABLE_SQL =
-  "(status = 'ready_to_bill' OR (status = 'pending' AND is_advance = 1))";
+export const MILESTONE_BILLABLE_SQL = "(status = 'ready_to_bill' OR (status = 'pending' AND is_advance = 1))";

@@ -221,8 +221,12 @@ describe("POST /documents/:id/start-project: what is made [ADM-PRJ-01]", () => {
     ]);
     // no first instalment, so no advance: nothing is billable while pending
     expect(
-      (await one<{ n: number }>("SELECT count(*) AS n FROM milestones WHERE project_id = ? AND is_advance = 1", out.projectId))
-        ?.n,
+      (
+        await one<{ n: number }>(
+          "SELECT count(*) AS n FROM milestones WHERE project_id = ? AND is_advance = 1",
+          out.projectId,
+        )
+      )?.n,
     ).toBe(0);
   });
 

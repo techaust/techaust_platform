@@ -137,7 +137,11 @@ export const convertedToInvoice = (number: string | null) =>
  * May a draft invoice be made from this milestone? The server's rule, shared from core (`milestoneBillableRule`): Ready to bill, or the pending
  * advance (marked when Start project made it, so a reorder never moves it), billable again after its invoice is voided.
  */
-export function milestoneBillable(m: { status: string; isAdvance: boolean; documentId: string | null }): boolean {
+export function milestoneBillable(m: {
+  status: string;
+  isAdvance: boolean;
+  documentId: string | null;
+}): boolean {
   if (m.documentId !== null) return false;
   return milestoneBillableRule(m);
 }

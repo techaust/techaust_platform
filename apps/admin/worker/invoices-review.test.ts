@@ -127,6 +127,29 @@ describe("review 1: a draft's contact that was anonymised can never be frozen in
     expect(await envelopeCheck(made.id)).toEqual({ made: "ok", verdict: { ok: true } });
   });
 
+  it("re-check low 2: anonymising the contact expires the draft's waiting issue request and moves updated_at, so a stale save is 409", async () => {
+    const o = await owner();
+    const staff = await sessionFor("staff");
+    const made = await mkInvoice(o);
+    const req = await requestIssue(staff, made.id);
+    expect(req.status, await req.clone().text()).toBe(201);
+    const before = await getInvoice(o, made.id);
+    expect(await countOf("approvals", "document_id = ? AND status = 'pending'", made.id)).toBe(1);
+    expect((await anonymise(o, made.contactId)).status).toBe(200);
+    expect(await countOf("approvals", "document_id = ? AND status = 'pending'", made.id)).toBe(0);
+    expect(await one("SELECT status FROM approvals WHERE document_id = ?", made.id)).toEqual({
+      status: "expired",
+    });
+    const after = await getInvoice(o, made.id);
+    expect(after.updatedAt).toBeGreaterThan(before.updatedAt);
+    const stale = await patchInvoice(o, made.id, {
+      expectedUpdatedAt: before.updatedAt,
+      fields: { contactId: null },
+    });
+    expect(stale.status).toBe(409);
+    expect(await codeOf(stale)).toBe("stale_version");
+  });
+
   it("an issue with no contact at all also round-trips: the issue, the envelope, the verification", async () => {
     const o = await owner();
     const made = await mkInvoice(o);
@@ -305,7 +328,12 @@ describe("review 5: the first instalment can be billed again after its invoice w
     expect(gone.status).toBe(200);
     // the second may move to position 1 by a reorder of the remaining list: still not the advance
     expect(
-      (await call(`/projects/${project.id}/milestones/order`, { cookie: o.cookie, body: { ids: [second.id] } })).status,
+      (
+        await call(`/projects/${project.id}/milestones/order`, {
+          cookie: o.cookie,
+          body: { ids: [second.id] },
+        })
+      ).status,
     ).toBe(200);
     expect(await codeOf(await create(o, c.clientId, second.id))).toBe("milestone_not_ready");
   });
@@ -582,6 +610,25 @@ describe("review 13: a session that ended between the read and the batch is a si
       expect(await codeOf(res), change).toBe("unauthenticated");
       expect(await state(made.id)).toEqual(before);
     }
+  });
+
+  it("re-check low 1: the reread judges the session at the batch's own clock, not a later Date.now()", async () => {
+    const o = await owner();
+    const made = await mkInvoice(o);
+    // A draft stamped ahead of the wall clock makes the batch's `now` (updated_at + 1) later than Date.now(); the session ends in between.
+    const ahead = Date.now() + 3_600_000;
+    await env.DB.prepare("UPDATE documents SET updated_at = ?2 WHERE id = ?1").bind(made.id, ahead).run();
+    await env.DB.prepare("UPDATE staff_sessions SET idle_expires_at = ?2 WHERE id = ?1")
+      .bind(o.sessionId, Date.now() + 600_000)
+      .run();
+    const before = await state(made.id);
+    const res = await call(`/invoices/${made.id}/issue`, {
+      cookie: o.cookie,
+      body: await issueBodyOf(made.id),
+    });
+    expect(res.status, await res.clone().text()).toBe(401);
+    expect(await codeOf(res)).toBe("unauthenticated");
+    expect(await state(made.id)).toEqual(before);
   });
 
   it("void: the same, and a live session that only lost its step-up still gets step_up_required", async () => {

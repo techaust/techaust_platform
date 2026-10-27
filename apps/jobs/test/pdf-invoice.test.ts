@@ -27,6 +27,9 @@ const GONE = "UPDATE clients SET anonymised_at = 1 WHERE id = ?";
 const integrityBell = (s: SeededInvoice) =>
   `The PDF of ${s.numberDisplay} didn't match its saved copy, so it wasn't made. A developer needs to look at it.`; // 07-R §3 (review 11), not 07-P's proposal line
 
+const signatureBell = (s: SeededInvoice) =>
+  `The signature image couldn't be used for the PDF of ${s.numberDisplay}, so the PDF wasn't made. Check the signature in Settings › Company.`; // 07-R §3
+
 type Sent = { body: PdfMessage; delaySeconds?: number };
 const fakeQueue = () => {
   const sent: Sent[] = [];
@@ -356,12 +359,14 @@ describe("the invoice render step", () => {
       expect(queue.sent).toEqual([]);
       expect(await realEnv.DOCS.head(keysOf(s).pdf)).toBeNull();
       expect(await one("SELECT 1 FROM documents WHERE id = ? AND pdf_sha256 IS NULL", s.id)).not.toBeNull();
-      const bells = await all<{ kind: string; title: string }>(
-        "SELECT kind, title FROM notifications WHERE entity_id = ?",
+      const bells = await all<{ kind: string; title: string; link: string }>(
+        "SELECT kind, title, link FROM notifications WHERE entity_id = ?",
         s.id,
       );
       expect(bells.length).toBeGreaterThan(0);
-      for (const bell of bells) expect(bell).toEqual({ kind: "pdf.refused", title: integrityBell(s) });
+      // its own line (07-R §3): the signature, not "didn't match its saved copy", and a link to where it is fixed
+      for (const bell of bells)
+        expect(bell).toEqual({ kind: "pdf.refused", title: signatureBell(s), link: "/settings/company" });
     },
   );
 

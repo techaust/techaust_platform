@@ -100,6 +100,15 @@ describe("the tax invoice layout prints every Rule 46 field the view carries", (
     expect(h).toContain(`<h1 class="masthead__title">${INVOICE_PDF_COPY.title}</h1>`);
   });
 
+  it("a registration line of parts never leaves a separator dangling: each part is whole on its own line, with no ' · ' between them (re-check)", async () => {
+    const h = body(await htmlOf("intra"));
+    expect(h).toContain(
+      '<span class="keep">GSTIN 19ABCDE1234F1ZX</span><br><span class="keep">State West Bengal (19)</span>',
+    );
+    expect(h).not.toContain("</span> · <span");
+    expect(h).not.toMatch(/ · <\/p>/);
+  });
+
   it("an inter-state invoice prints IGST 18 % under its own head and neither CGST nor SGST; no line discount means no discount column", async () => {
     const h = body(await htmlOf("inter"));
     expect(h).toContain('<th scope="colgroup" colspan="2" class="inv-head">IGST</th>');
