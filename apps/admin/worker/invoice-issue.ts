@@ -38,14 +38,16 @@ import {
   NOT_FOUND,
   requestInfo,
   STEP_UP_REQUIRED,
+  UNAUTHENTICATED,
 } from "./context.ts";
-import { afterIssue } from "./document-events.ts";
+import { afterIssue, notifyApproval } from "./document-events.ts";
 import { body, idParam, isUnique, param, refusedWith, STALE_VERSION } from "./http.ts";
 import {
   ALREADY_ISSUED,
   bankStampOf,
   blockersOf,
   CLIENT_CHANGED,
+  CONTACT_ANONYMISED,
   CONTACT_CHANGED,
   computeInvoice,
   EXPORT_CURRENCY_CONFIRM,
@@ -101,6 +103,14 @@ const bellRequestTitle = (requester: string, clientName: string) =>
 const bellRejectedTitle = (clientName: string) =>
   `Your request to issue the invoice for ${clientName} was rejected.`.slice(0, 300);
 
+/**
+ * A draft that names a contact must freeze exactly that contact: the hash of the draft (`content_sha256`) takes the contact id from `documents.contact_id`,
+ * the envelope's recomputation takes it from the frozen recipient, so an anonymised or missing contact would make the PDF refuse for good (review 1).
+ * One rule for both ways in: the id on the draft and the id `recipientOf` will freeze must be the same.
+ */
+const contactGone = (draftContactId: string | null, contact: { anonymised_at: number | null } | null) =>
+  draftContactId !== null && (contact === null || contact.anonymised_at !== null);
+
 export type IssueParams = {
   id: string;
   /** The person's own expectations (the owner's route); an approval has none: it is tied to the content hash it was asked for. */
@@ -134,6 +144,7 @@ export async function issueInvoice(c: Ctx, p: IssueParams): Promise<Response> {
     );
   if (p.expected && d.updated_at !== p.expected.updatedAt) return err(c, STALE_VERSION, 409);
   if (ctx.client.anonymised_at !== null) return err(c, CLIENT_GONE, 409);
+  if (contactGone(d.contact_id, ctx.contact)) return err(c, CONTACT_ANONYMISED, 409);
   if (p.approval && p.approval.contentSha256 !== d.content_sha256)
     return expireApproval(c, p.approval.id, d.id);
 
@@ -325,6 +336,8 @@ export async function issueInvoice(c: Ctx, p: IssueParams): Promise<Response> {
     });
 
   afterIssue(c, { documentId: d.id });
+  // The owner approved the request by issuing: the requester's email (07-R §3, "Issued as {number}"), after the answer like the PDF.
+  if (p.approval) notifyApproval(c, p.approval.id, "decided");
   return c.json({
     ok: true,
     id: d.id,
@@ -370,13 +383,14 @@ async function explain(c: Ctx, id: string, x: Expectations) {
        (SELECT max(updated_at) FROM bank_accounts WHERE active = 1) AS bank_stamp,
        (SELECT next_no FROM doc_counters WHERE series = ?2 AND fy = ?3) AS next_no,
        (SELECT s.step_up_until FROM staff_sessions s WHERE s.id = ?4 AND s.revoked_at IS NULL) AS step_up_until,
+       (SELECT s.idle_expires_at > ?7 AND s.abs_expires_at > ?7 FROM staff_sessions s WHERE s.id = ?4 AND s.revoked_at IS NULL) AS session_live,
        (SELECT o.role FROM staff_sessions s JOIN staff_users o ON o.id = s.user_id WHERE s.id = ?4 AND o.status = 'active') AS role,
        (SELECT a.status FROM approvals a WHERE a.id = ?5) AS approval_status,
        (SELECT a.content_sha256 FROM approvals a WHERE a.id = ?5) AS approval_sha,
        (SELECT k.updated_at FROM contacts k WHERE k.id = ?6 AND k.anonymised_at IS NULL) AS contact_updated_at
      FROM documents d JOIN clients cl ON cl.id = d.client_id WHERE d.id = ?1`,
   )
-    .bind(id, x.series, x.fy, u.sessionId, x.approvalId, x.expected.contact?.id ?? null)
+    .bind(id, x.series, x.fy, u.sessionId, x.approvalId, x.expected.contact?.id ?? null, Date.now())
     .first<{
       type: string;
       status: string;
@@ -393,12 +407,16 @@ async function explain(c: Ctx, id: string, x: Expectations) {
       bank_stamp: number | null;
       next_no: number | null;
       step_up_until: number | null;
+      session_live: number | null;
       role: string | null;
       approval_status: string | null;
       approval_sha: string | null;
       contact_updated_at: number | null;
     }>();
   if (!row) return err(c, NOT_FOUND, 404);
+  // A session that ended (idle, absolute limit, or revoked) between the read and the batch: the freeze refused it, and the answer is to sign in again,
+  // never "reload" (review 13). The guard has already let this request in, so it ended in the milliseconds in between.
+  if (row.session_live !== 1) return err(c, UNAUTHENTICATED, 401);
   if (row.frozen_at !== null || row.status !== "draft")
     return c.json(
       {
@@ -490,6 +508,7 @@ export const invoiceIssue = new Hono<AppEnv>()
       );
     if (d.updated_at !== f.expectedUpdatedAt) return err(c, STALE_VERSION, 409);
     if (ctx.client.anonymised_at !== null) return err(c, CLIENT_GONE, 409);
+    if (contactGone(d.contact_id, ctx.contact)) return err(c, CONTACT_ANONYMISED, 409);
     const state = invoiceStateOf(ctx.bundle);
     const computation = await computeInvoice(
       state,
@@ -558,7 +577,8 @@ export const invoiceIssue = new Hono<AppEnv>()
             .bind(
               approvalId,
               bellRequestTitle(u.name, ctx.client.display_name),
-              `/approvals/${approvalId}`,
+              // `?kind=issue` opens the Issue tab on that request (the discount queue's link has none), and the list takes `id=` so an older request still opens.
+              `/approvals/${approvalId}?kind=issue`,
               ...g.params,
             ),
         ],
@@ -568,6 +588,8 @@ export const invoiceIssue = new Hono<AppEnv>()
       throw e;
     }
     if (!done) return err(c, STALE_VERSION, 409);
+    // The owners' email (07-R §3), after the answer: a queue that fails is logged and never fails the request (the bell was written in the batch).
+    notifyApproval(c, approvalId, "requested");
     return c.json({ id: approvalId, status: "pending" }, 201);
   });
 
@@ -627,7 +649,10 @@ export async function decideIssue(
         ),
     ],
   });
-  if (done) return c.json({ ok: true, status: "rejected" });
+  if (done) {
+    notifyApproval(c, approvalId, "decided");
+    return c.json({ ok: true, status: "rejected" });
+  }
   const again = await db
     .prepare("SELECT status FROM approvals WHERE id = ?1")
     .bind(approvalId)

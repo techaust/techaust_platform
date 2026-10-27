@@ -379,9 +379,74 @@ export async function processOfferAccepted(
 // ---- approval.notify -----------------------------------------------------------------------------------------------------------
 
 const APPROVAL_READ =
-  "SELECT a.id, a.kind, a.status, a.reason, a.note, a.document_id, a.requested_by, d.title, d.version, d.total_minor, d.currency, d.catalogue_reference_minor AS reference_minor, (SELECT coalesce(sum(l.taxable_minor), 0) FROM document_lines l WHERE l.document_id = d.id AND l.catalogue_item_id IS NOT NULL) AS taxable_minor, ru.id AS requester_id, ru.email AS requester_email, ru.name AS requester_name, ru.status AS requester_status, du.name AS decider_name FROM approvals a JOIN documents d ON d.id = a.document_id LEFT JOIN staff_users ru ON ru.id = a.requested_by LEFT JOIN staff_users du ON du.id = a.decided_by WHERE a.id = ?1";
+  "SELECT a.id, a.kind, a.status, a.reason, a.note, a.document_id, a.requested_by, d.title, d.version, d.total_minor, d.currency, d.catalogue_reference_minor AS reference_minor, (SELECT coalesce(sum(l.taxable_minor), 0) FROM document_lines l WHERE l.document_id = d.id AND l.catalogue_item_id IS NOT NULL) AS taxable_minor, ru.id AS requester_id, ru.email AS requester_email, ru.name AS requester_name, ru.status AS requester_status, du.name AS decider_name, d.type AS document_type, d.number_display, cl.display_name AS client_name, (cl.anonymised_at IS NOT NULL) AS client_gone FROM approvals a JOIN documents d ON d.id = a.document_id JOIN clients cl ON cl.id = d.client_id LEFT JOIN staff_users ru ON ru.id = a.requested_by LEFT JOIN staff_users du ON du.id = a.decided_by WHERE a.id = ?1";
 const OWNERS_READ =
   "SELECT id, email FROM staff_users WHERE role = 'owner' AND status = 'active' ORDER BY id";
+
+type IssueApprovalFacts = {
+  status: string;
+  reason: string | null;
+  note: string | null;
+  document_id: string;
+  total_minor: number;
+  currency: string;
+  requester_name: string | null;
+  decider_name: string | null;
+  number_display: string | null;
+  client_name: string;
+};
+
+/**
+ * The two emails of an invoice issue request (07-R §3; the same layout as the 07-O discount emails). They go out under the existing template keys with
+ * `kind: "issue"` and the facts the issue wording needs (`client_name`, `number`), so no template key is added to the settings' list. The words of
+ * 07-R §3 are the designer's template (`staffApprovalIssueRequested` / `staffApprovalIssueDecided` in `@techaust/email`): its `approval.requested` and
+ * `approval.decided` cases take this branch when `data.kind === "issue"`.
+ * TODO(lead, at the merge with the designer's branch): until that branch is in, an issue email renders with the discount wording, naming the
+ * invoice by `title` ("Invoice for {client name}"). The fields below are final; only the renderer changes.
+ */
+const issueRequestedEmail = (
+  env: OfferEnv,
+  a: IssueApprovalFacts,
+  to: string,
+  approvalId: string,
+): EmailMessage => ({
+  template: "approval.requested",
+  to,
+  data: {
+    kind: "issue",
+    requester_name: a.requester_name ?? "",
+    client_name: a.client_name,
+    request_reason: "issuing an invoice",
+    title: `Invoice for ${a.client_name}`,
+    version: "1",
+    amount: formatMoney(money(a.total_minor, a.currency === "USD" ? "USD" : "INR")),
+    admin_url: `${adminBase(env)}/approvals/${approvalId}?kind=issue`,
+  },
+  entity: { type: "approval", id: approvalId },
+});
+
+const issueDecidedEmail = (
+  env: OfferEnv,
+  a: IssueApprovalFacts,
+  to: string,
+  approvalId: string,
+): EmailMessage => ({
+  template: "approval.decided",
+  to,
+  data: {
+    kind: "issue",
+    decision: a.status === "approved" ? "Approved" : "Rejected",
+    approver_name: a.decider_name ?? "",
+    client_name: a.client_name,
+    // The number exists only once the invoice was issued (an approved request); a rejected one has none.
+    number: a.status === "approved" ? (a.number_display ?? "") : "",
+    title: `Invoice for ${a.client_name}`,
+    version: "1",
+    decision_note: a.note ?? "",
+    admin_url: `${adminBase(env)}/invoices/${a.document_id}`,
+  },
+  entity: { type: "approval", id: approvalId },
+});
 
 export async function processApprovalNotify(env: OfferEnv, body: unknown): Promise<ApprovalNotifyResult> {
   const parsed = approvalNotifyMessage.safeParse(body);
@@ -412,6 +477,9 @@ export async function processApprovalNotify(env: OfferEnv, body: unknown): Promi
         requester_name: string | null;
         requester_status: string | null;
         decider_name: string | null;
+        number_display: string | null;
+        client_name: string;
+        client_gone: number;
       }
     | undefined;
   if (!a) {
@@ -426,30 +494,38 @@ export async function processApprovalNotify(env: OfferEnv, body: unknown): Promi
       logEvent("approval_notify.ignored", { event });
       return "ignored";
     }
+    // An issue request (M5.1, 07-R §3) is about an invoice for a client, not a titled version. An anonymised client is never named in an email.
     for (const o of (owners?.results ?? []) as { email: string }[])
-      messages.push({
-        template: "approval.requested",
-        to: o.email,
-        data: {
-          requester_name: a.requester_name ?? "",
-          // 07-O's guard line: "{n} % off catalogue prices" (the stored reference against the stored taxable values).
-          request_reason:
-            a.kind === "discount"
-              ? `${percentText(guardFigures(a.reference_minor ?? 0, a.taxable_minor).discountBp)} % off catalogue prices`
-              : a.kind,
-          title,
-          version: String(a.version),
-          amount: formatMoney(money(a.total_minor, a.currency === "USD" ? "USD" : "INR")),
-          admin_url: `${adminBase(env)}/approvals/${approvalId}`,
-        },
-        entity,
-      });
+      if (a.kind === "issue") {
+        if (a.client_gone === 1) continue;
+        messages.push(issueRequestedEmail(env, a, o.email, approvalId));
+      } else
+        messages.push({
+          template: "approval.requested",
+          to: o.email,
+          data: {
+            requester_name: a.requester_name ?? "",
+            // 07-O's guard line: "{n} % off catalogue prices" (the stored reference against the stored taxable values).
+            request_reason:
+              a.kind === "discount"
+                ? `${percentText(guardFigures(a.reference_minor ?? 0, a.taxable_minor).discountBp)} % off catalogue prices`
+                : a.kind,
+            title,
+            version: String(a.version),
+            amount: formatMoney(money(a.total_minor, a.currency === "USD" ? "USD" : "INR")),
+            admin_url: `${adminBase(env)}/approvals/${approvalId}`,
+          },
+          entity,
+        });
   } else {
     if (a.status !== "approved" && a.status !== "rejected") {
       logEvent("approval_notify.ignored", { event });
       return "ignored";
     }
-    if (a.requester_email && a.requester_status === "active")
+    if (a.kind === "issue") {
+      if (a.client_gone !== 1 && a.requester_email && a.requester_status === "active")
+        messages.push(issueDecidedEmail(env, a, a.requester_email, approvalId));
+    } else if (a.requester_email && a.requester_status === "active")
       messages.push({
         template: "approval.decided",
         to: a.requester_email,

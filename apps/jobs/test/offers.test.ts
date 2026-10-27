@@ -701,6 +701,150 @@ describe("approval.notify: the M4.3 approval emails [ADM-APR-01, ADM-MAIL-01]", 
   });
 });
 
+// ---- approval.notify for an invoice issue request (M5.1, 07-R §3; review 10) -------------------------------------------------------
+
+/** An invoice draft of the world's client (total 1,180.00), and an `issue` approval for it asked by the world's sender. */
+async function issueRequest(
+  w: World,
+  o: { status?: string; invoiceStatus?: string; number?: string | null; note?: string | null } = {},
+) {
+  const doc = uuidv7();
+  const issued = o.invoiceStatus === "issued";
+  await run(
+    "INSERT INTO documents (id, type, status, client_id, currency, total_minor, number_display) VALUES (?1, 'tax_invoice', 'draft', ?2, 'INR', 118000, ?3)",
+    doc,
+    w.clientId,
+    // the number exists only once the invoice was issued (this row stands in for it: the notice reads the column, nothing here is frozen)
+    issued ? (o.number ?? "TH/INV/2627/0007") : null,
+  );
+  const id = uuidv7();
+  const decided = o.status === "approved" || o.status === "rejected";
+  await run(
+    "INSERT INTO approvals (id, kind, document_id, requested_by, reason, content_sha256, status, decided_by, decided_at, note) VALUES (?1, 'issue', ?2, ?3, 'Mrs Rao asked', 'hash', ?4, ?5, ?6, ?7)",
+    id,
+    doc,
+    w.sender.id,
+    o.status ?? "pending",
+    decided ? w.owner.id : null,
+    decided ? NOW : null,
+    o.note ?? null,
+  );
+  return { id, doc };
+}
+
+describe("approval.notify for an issue request [ADM-APR-01, ADM-MAIL-01; 07-R §3]", () => {
+  it("requested goes to every active owner, once each, naming the client and the total; the link opens the request in the Issue tab", async () => {
+    const w = await world();
+    const second = await staff("owner");
+    const a = await issueRequest(w);
+    expect(
+      await processApprovalNotify(makeEnv(), {
+        kind: "approval.notify",
+        approvalId: a.id,
+        event: "requested",
+      }),
+    ).toBe("queued");
+    const owners = await all<{ email: string }>(
+      "SELECT email FROM staff_users WHERE role = 'owner' AND status = 'active'",
+    );
+    expect(queued.map((m) => m.to).sort()).toEqual(owners.map((o) => o.email).sort());
+    expect(owners.map((o) => o.email)).toContain(second.email);
+    expect(queued[0]).toMatchObject({
+      template: "approval.requested",
+      entity: { type: "approval", id: a.id },
+    });
+    expect(queued[0]?.data).toMatchObject({
+      kind: "issue",
+      requester_name: w.sender.name,
+      client_name: "Sample Traders",
+      amount: "₹1,180.00",
+      admin_url: `https://admin.example/approvals/${a.id}?kind=issue`,
+    });
+    // nothing a person typed travels: no reason, no contact name
+    expect(JSON.stringify(queued)).not.toMatch(/Mrs Rao|Asha/);
+  });
+
+  it("decided goes to the requester only: approved says the number it was issued as, rejected says none and carries the note", async () => {
+    const w = await world();
+    const approved = await issueRequest(w, {
+      status: "approved",
+      invoiceStatus: "issued",
+      number: "TH/INV/2627/0007",
+    });
+    expect(
+      await processApprovalNotify(makeEnv(), {
+        kind: "approval.notify",
+        approvalId: approved.id,
+        event: "decided",
+      }),
+    ).toBe("queued");
+    expect(queued).toHaveLength(1);
+    expect(queued[0]).toMatchObject({ template: "approval.decided", to: w.sender.email });
+    expect(queued[0]?.data).toMatchObject({
+      kind: "issue",
+      decision: "Approved",
+      approver_name: w.owner.name,
+      client_name: "Sample Traders",
+      number: "TH/INV/2627/0007",
+      admin_url: `https://admin.example/invoices/${approved.doc}`,
+    });
+    queued = [];
+    const rejected = await issueRequest(w, { status: "rejected", note: "Wait for the PO" });
+    expect(
+      await processApprovalNotify(makeEnv(), {
+        kind: "approval.notify",
+        approvalId: rejected.id,
+        event: "decided",
+      }),
+    ).toBe("queued");
+    expect(queued[0]?.data).toMatchObject({
+      decision: "Rejected",
+      number: "",
+      decision_note: "Wait for the PO",
+    });
+  });
+
+  it("an anonymised client is never named in an email; an event that does not match the state sends nothing", async () => {
+    const w = await world();
+    const a = await issueRequest(w);
+    await run("UPDATE clients SET anonymised_at = ?2 WHERE id = ?1", w.clientId, NOW);
+    expect(
+      await processApprovalNotify(makeEnv(), {
+        kind: "approval.notify",
+        approvalId: a.id,
+        event: "requested",
+      }),
+    ).toBe("none");
+    const done = await issueRequest(w, { status: "approved", invoiceStatus: "issued" });
+    expect(
+      await processApprovalNotify(makeEnv(), {
+        kind: "approval.notify",
+        approvalId: done.id,
+        event: "decided",
+      }),
+    ).toBe("none");
+    expect(
+      await processApprovalNotify(makeEnv(), {
+        kind: "approval.notify",
+        approvalId: done.id,
+        event: "requested",
+      }),
+    ).toBe("ignored");
+    expect(queued).toEqual([]);
+  });
+
+  it("the email consumer sends each once (a redelivery is a duplicate)", async () => {
+    const w = await world();
+    const a = await issueRequest(w);
+    const e = makeEnv();
+    await processApprovalNotify(e, { kind: "approval.notify", approvalId: a.id, event: "requested" });
+    const r = recorder();
+    for (const m of queued) await processEmail(e, m, r.transport, NOW);
+    for (const m of queued) expect(await processEmail(e, m, r.transport, NOW + 5)).toBe("duplicate");
+    expect(r.sent.length).toBe(queued.length);
+  });
+});
+
 // ---- the certificate data --------------------------------------------------------------------------------------------------------
 
 describe("the certificate view [ADM-PROP-08, docs/08 L-11]", () => {

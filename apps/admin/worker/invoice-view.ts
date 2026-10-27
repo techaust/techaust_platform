@@ -78,10 +78,6 @@ export type ChildRow = {
   received_minor: number | null;
 };
 
-/** Who voided it (the screen's "Voided by {name}"): read only for a void document; an indexed lookup in the audit log. */
-export const VOID_ACTOR_SQL =
-  "SELECT u.name AS name FROM audit_log a JOIN staff_users u ON u.id = a.actor_id WHERE a.entity_type = 'document' AND a.entity_id = ?1 AND a.action = 'invoice.void' AND EXISTS (SELECT 1 FROM documents d WHERE d.id = ?1 AND d.status = 'void') ORDER BY a.at DESC LIMIT 1";
-
 export type InvoiceViewInput = {
   bundle: DocumentBundle<TermsRef>;
   client: ClientRow;
@@ -95,11 +91,12 @@ export type InvoiceViewInput = {
   /** A `document_sends` row exists (the Q1 void rule), and an issued document names this one as its parent. */
   emailed: boolean;
   hasIssuedChild: boolean;
-  /** M5.2: the active bank rows (the blockers), the newest extra export note, the documents made from this one, and who voided it. */
+  /** M5.2: the active bank rows (the blockers), the newest extra export note and the documents made from this one. */
   bank: readonly BankRow[];
   declaration: TermsRef | null;
   children: readonly ChildRow[];
-  voidedByName: string | null;
+  /** Who voided it (the `invoice.void` audit row's actor); null for an invoice that is not void. */
+  voidedByName?: string | null;
   now: number;
 };
 
@@ -305,7 +302,8 @@ export function invoiceView(i: InvoiceViewInput) {
     },
     void: {
       voidedAt: d.voided_at,
-      voidedByName: i.voidedByName,
+      /** The member who voided it, by name (read from the audit row: there is no column). */
+      voidedByName: d.voided_at === null ? null : (i.voidedByName ?? null),
       reason: d.void_reason,
       /** Only the owner voids; the codes say why not (empty: it can be voided now). */
       canVoid: decide(i.role, "invoices.void") !== "deny" && voidReasons.length === 0,
@@ -317,7 +315,7 @@ export function invoiceView(i: InvoiceViewInput) {
           id: i.milestone.id,
           title: i.milestone.title,
           projectId: i.milestone.project_id,
-          // M5.2 (from the M5.1 designer): the project's name, for a role that cannot open the project list.
+          /** The project's name (the name only, so a role without `projects.read` can still say which project). */
           projectName: i.milestone.project_name ?? null,
           status: i.milestone.status,
         }
