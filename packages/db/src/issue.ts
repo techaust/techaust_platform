@@ -11,6 +11,7 @@
 // `issue_result` must NOT carry the audit guard: a guarded insert would write nothing when the freeze matched no row, the batch would
 // succeed, and a number would have been burned. Unguarded, a stale or refused send aborts as a whole (counter, lead, audit: nothing).
 // A later version (version > 1) of a proposal or estimate takes no number: it copies series, FY, number and display from version 1.
+import { NOTE_PARENT_LIVE_STATUSES } from "@techaust/core/invoices";
 import type {
   InvoiceBankBlock,
   InvoiceIssuerSnapshot,
@@ -220,9 +221,9 @@ export type InvoiceIssueArgs = {
   maxNumber: number;
   /** The issue instant (UTC ms): `frozen_at`, `updated_at`, and the instant the step-up is judged at. */
   now: number;
-  /** ISO dates: the IST day of the issue, and the due date. */
+  /** ISO dates: the IST day of the issue, and the due date (M5.3: null for a credit note: nothing is owed on it, so nothing can be overdue). */
   issueDate: string;
-  dueDate: string;
+  dueDate: string | null;
   recipient: RecipientSnapshot;
   issuer: InvoiceIssuerSnapshot;
   computedJson: string;
@@ -238,6 +239,14 @@ export type InvoiceIssueArgs = {
    * is rebuilt from live settings after issue.
    */
   headerExtras?: string | null;
+  /**
+   * M5.3 (LD40, LD41, LD46): present exactly when `type` is a credit or debit note. The freeze then also holds, in its WHERE: the parent is still the frozen, live
+   * invoice that was read (`updated_at` and `credited_minor` unchanged), a credit note fits inside what is left of it and is dated inside the deadline, and at
+   * most 20 notes of this kind are issued; a credit note moves the parent's ledger in the same batch (recomputed from the notes, never incremented).
+   */
+  note?: NoteIssueArgs;
+  /** M5.3 (LD46): the IMS status a credit note is issued with (`pending` for a GST-registered client, else `not_applicable`); null for every other document. */
+  imsStatus?: "pending" | "not_applicable" | null;
   expected: {
     updatedAt: number;
     contentSha256: string;
@@ -254,9 +263,50 @@ export type InvoiceIssueArgs = {
     contact: { id: string; updatedAt: number } | null;
   };
   authority: IssueAuthority;
-  /** The requester's bell when an issue request was waiting (07-R: "Your invoice for {client name} was issued as {number}."): the client's name, and the link up to the id. */
-  bell: { clientName: string; linkPrefix: string };
+  /**
+   * The requester's bell when an issue request was waiting (07-R: "Your invoice for {client name} was issued as {number}."): the client's name, and the link up to
+   * the id. M5.3: `subject` is the document's word ("invoice" by default, "credit note" or "debit note") and `prefix` (empty now: 07-T §8 has every line) is kept for a wording that is not approved yet.
+   */
+  bell: { clientName: string; linkPrefix: string; subject?: string; prefix?: string };
 };
+
+/** What a note's freeze needs beyond an invoice's (M5.3). */
+export type NoteIssueArgs = {
+  kind: "credit" | "debit";
+  parentId: string;
+  /** The parent's `updated_at` and `credited_minor` at the read: another note issued since refuses this one (`parent_changed`). */
+  expectedParentUpdatedAt: number;
+  expectedParentCredited: number;
+  /** A credit note only (G-11, Q33): the last day it may be dated, and the day the annual return was filed (null: not filed). A debit note has no deadline. */
+  deadline: { lastDay: string; filedOn: string | null } | null;
+};
+
+/** At most this many issued notes of a kind per invoice (core `NOTES_MAX`: a test compares the two; core is not imported here to keep the Worker bundle small). */
+export const NOTES_MAX_SQL = 20;
+
+/** The parent statuses a note can be issued against: not void, not fully credited (core `ledgerStatusOf`'s other values). */
+const NOTE_PARENT_LIVE = `(${NOTE_PARENT_LIVE_STATUSES.map((s) => `'${s}'`).join(", ")})`;
+
+/**
+ * M5.3 (LD40): what the frozen, not void credit notes of an invoice took per original line (`?1` = the invoice's id), summed by SQL over each note's stored
+ * `computed.lines` (their `index` is the original line's): the taxable value and each tax head, and the INR view's (zero on an INR invoice). A second statement
+ * (`CREDITED_TOTALS_SQL`) gives the totals. A test proves both equal the same sums worked out in JS (core `creditedSumOf`).
+ */
+export const CREDITED_SO_FAR_SQL = `SELECT CAST(json_extract(l.value, '$.index') AS INTEGER) AS idx,
+       coalesce(sum(json_extract(l.value, '$.taxableMinor')), 0) AS taxable, coalesce(sum(json_extract(l.value, '$.cgstMinor')), 0) AS cgst,
+       coalesce(sum(json_extract(l.value, '$.sgstMinor')), 0) AS sgst, coalesce(sum(json_extract(l.value, '$.igstMinor')), 0) AS igst,
+       coalesce(sum(json_extract(l.value, '$.inr.taxableMinor')), 0) AS inrTaxable, coalesce(sum(json_extract(l.value, '$.inr.cgstMinor')), 0) AS inrCgst,
+       coalesce(sum(json_extract(l.value, '$.inr.sgstMinor')), 0) AS inrSgst, coalesce(sum(json_extract(l.value, '$.inr.igstMinor')), 0) AS inrIgst
+     FROM documents c, json_each(c.computed, '$.lines') l
+     WHERE c.parent_id = ?1 AND c.type = 'credit_note' AND c.frozen_at IS NOT NULL AND c.status <> 'void'
+     GROUP BY idx ORDER BY idx`;
+
+/** The totals of the same notes: the sum of their totals, the sum of their INR totals (USD invoices), and how many there are. */
+export const CREDITED_TOTALS_SQL = `SELECT coalesce(sum(c.total_minor), 0) AS total, coalesce(sum(c.total_inr_minor), 0) AS totalInr, count(*) AS count
+     FROM documents c WHERE c.parent_id = ?1 AND c.type = 'credit_note' AND c.frozen_at IS NOT NULL AND c.status <> 'void'`;
+
+/** How many notes of each kind are frozen on an invoice (`?1`): the limit of LD51 and the list's counts. */
+export const NOTE_COUNTS_SQL = `SELECT c.type, count(*) AS count FROM documents c WHERE c.parent_id = ?1 AND c.type IN ('credit_note', 'debit_note') AND c.frozen_at IS NOT NULL GROUP BY c.type`;
 
 /** The issue instant's freeze test, for the statements that follow it: this very batch froze the document. */
 const FROZEN_BY_THIS_BATCH =
@@ -270,9 +320,11 @@ type FreezeBase = Omit<InvoiceIssueArgs, "authority" | "bell">;
  *   ?1 id, ?2 series, ?3 fy, ?4 pattern, ?5 now, ?6 issue date, ?7 due date, ?8 recipient, ?9 issuer, ?10 computed, ?11 snapshot sha, ?12 issued by,
  *   ?13 terms version, ?14 expected updated_at, ?15 expected content sha, ?16 numbering, ?17 company, ?18 tax, ?19 payment terms versions, ?20 bank stamp,
  *   ?21 client updated_at, ?22 highest number, ?23 type, ?24 session, ?25 contact id, ?26 contact updated_at (both null: no contact), ?27 the export
- *   declaration block (M5.2), ?28 the header extras JSON (M5.2, LD37), and from ?29 whatever `tail` binds (the approval, or the advance action's amount, proforma and its stamp).
- * A proforma's `valid_until` is its due date (M5.2, LD28, Q28): the freeze writes it, so the column is sealed with the rest. Exactly as many values as
- * the highest placeholder are bound (D1 refuses more).
+ *   declaration block (M5.2), ?28 the header extras JSON (M5.2, LD37), ?29 the IMS status of a credit note (M5.3, LD46; null for everything else), and from ?30
+ *   whatever `tail` binds (the approval, a note's parent and deadline, or the advance action's amount, proforma and its stamp).
+ * A proforma's `valid_until` is its due date (M5.2, LD28, Q28): the freeze writes it, so the column is sealed with the rest. A CREDIT note starts with a balance of
+ * 0 (M5.3, LD41: nothing is owed on it, so M5.4 never chases it); every other document starts with its total. Exactly as many values as the highest
+ * placeholder are bound (D1 refuses more).
  */
 function freezeStatement(
   db: D1Database,
@@ -288,8 +340,8 @@ function freezeStatement(
     .prepare(
       `UPDATE documents SET series = ?2, fy = ?3, number = ${nextNo}, number_display = printf(?4, ${printfArgs}),
          status = 'issued', frozen_at = ?5, issue_date = ?6, due_date = ?7, recipient = ?8, issuer = ?9, computed = ?10,
-         snapshot_sha256 = ?11, issued_by = ?12, terms_version_id = ?13, balance_minor = total_minor, updated_at = ?5,
-         valid_until = CASE WHEN ?23 = 'proforma' THEN ?7 ELSE valid_until END, export_declaration_id = ?27, header_extras = ?28
+         snapshot_sha256 = ?11, issued_by = ?12, terms_version_id = ?13, balance_minor = CASE WHEN ?23 = 'credit_note' THEN 0 ELSE total_minor END, updated_at = ?5,
+         valid_until = CASE WHEN ?23 = 'proforma' THEN ?7 ELSE valid_until END, export_declaration_id = ?27, header_extras = ?28, ims_status = ?29
        WHERE id = ?1 AND type = ?23 AND status = 'draft' AND frozen_at IS NULL AND updated_at = ?14 AND content_sha256 = ?15
          AND (SELECT version FROM settings WHERE key = 'numbering') IS ?16
          AND (SELECT version FROM settings WHERE key = 'company') IS ?17
@@ -332,8 +384,32 @@ function freezeStatement(
       a.expected.contact?.updatedAt ?? null,
       a.exportDeclarationId ?? null,
       a.headerExtras ?? null,
+      a.imsStatus ?? null,
       ...tail.binds,
     );
+}
+
+/**
+ * The part of a note's freeze WHERE that is about its parent (M5.3, LD40): `first` is the number of the first placeholder the tail binds (the parent's id, its
+ * `updated_at`, its `credited_minor`, the last day a credit note may be dated, the day the annual return was filed). The invoice is still the frozen, live
+ * tax or export invoice that was read, of this client and currency; a credit note fits inside what is left of it (the total only: the trigger of 0042 holds
+ * each tax head) and is dated (`?6`, the issue day) on or before the last day and strictly before the day the return was filed; and fewer than 20 notes of
+ * this kind are issued on it. Everything is in the statement, so a refusal writes nothing.
+ */
+function noteIssueTail(n: NoteIssueArgs, first: number): { where: string; binds: readonly unknown[] } {
+  const p = `?${first}`;
+  const at = (k: number) => `?${first + k}`;
+  return {
+    where: ` AND EXISTS (SELECT 1 FROM documents p WHERE p.id = documents.parent_id AND p.id = ${p} AND p.type IN ('tax_invoice', 'export_invoice') AND p.frozen_at IS NOT NULL AND p.status IN ${NOTE_PARENT_LIVE} AND p.client_id = documents.client_id AND p.currency = documents.currency AND p.updated_at = ${at(1)} AND p.credited_minor = ${at(2)} AND (documents.type = 'debit_note' OR (documents.total_minor <= p.total_minor - p.credited_minor AND ?6 <= ${at(3)} AND (${at(4)} IS NULL OR ?6 < ${at(4)}))))
+         AND (SELECT count(*) FROM documents c WHERE c.parent_id = ${p} AND c.type = documents.type AND c.frozen_at IS NOT NULL) < ${NOTES_MAX_SQL}`,
+    binds: [
+      n.parentId,
+      n.expectedParentUpdatedAt,
+      n.expectedParentCredited,
+      n.deadline?.lastDay ?? null,
+      n.deadline?.filedOn ?? null,
+    ],
+  };
 }
 
 /**
@@ -350,17 +426,25 @@ export function invoiceIssueStatements(db: D1Database, a: InvoiceIssueArgs): Sen
     a.authority.kind === "approval"
       ? {
           where:
-            " AND EXISTS (SELECT 1 FROM approvals ap WHERE ap.id = ?29 AND ap.document_id = documents.id AND ap.kind = 'issue' AND ap.status = 'pending' AND ap.content_sha256 = documents.content_sha256)",
+            " AND EXISTS (SELECT 1 FROM approvals ap WHERE ap.id = ?30 AND ap.document_id = documents.id AND ap.kind = 'issue' AND ap.status = 'pending' AND ap.content_sha256 = documents.content_sha256)",
           binds: [a.authority.approvalId] as const,
         }
       : { where: "", binds: [] as const };
-  const freeze = freezeStatement(db, a, a.authority.sessionId, approval);
+  // A note's parent tail follows the approval's (its placeholders start where the approval's end).
+  const noteTail = a.note
+    ? noteIssueTail(a.note, 30 + approval.binds.length)
+    : { where: "", binds: [] as const };
+  const freeze = freezeStatement(db, a, a.authority.sessionId, {
+    where: approval.where + noteTail.where,
+    binds: [...approval.binds, ...noteTail.binds],
+  });
+  const isNote = a.type === "credit_note" || a.type === "debit_note";
   return {
     main: [guardStatement(db, a.documentId), ...counterStatements(db, a.series, a.fy), freeze],
     postAudit: [
       issueResultStatement(db, a.documentId, a.series, a.fy),
-      // The milestone this invoice was made from is now invoiced (one made by "Start project" (M4.5) is still pending when its first-instalment draft is issued, so both count); `delivered_at` was set when it became ready to bill (LD12) and is kept: an advance invoice on a pending milestone leaves it unset (the work is not delivered). A proforma leaves its milestone alone.
-      ...(a.type === "proforma"
+      // The milestone this invoice was made from is now invoiced (one made by "Start project" (M4.5) is still pending when its first-instalment draft is issued, so both count); `delivered_at` was set when it became ready to bill (LD12) and is kept: an advance invoice on a pending milestone leaves it unset (the work is not delivered). A proforma leaves its milestone alone, and so does a note (LD41: the invoice's milestone stays `invoiced`).
+      ...(a.type === "proforma" || isNote
         ? []
         : [
             db
@@ -384,12 +468,41 @@ export function invoiceIssueStatements(db: D1Database, a: InvoiceIssueArgs): Sen
         .prepare(
           `INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
            SELECT 'n_' || lower(hex(randomblob(16))), r.requested_by, 'approval.decided', 'approval', r.id,
-             'Your invoice for ' || ?4 || ' was issued as ' || (SELECT number_display FROM documents WHERE id = ?1) || '.', ?5 || ?1
+             ?7 || 'Your ' || ?6 || ' for ' || ?4 || ' was issued as ' || (SELECT number_display FROM documents WHERE id = ?1) || '.', ?5 || ?1
            FROM approvals r JOIN staff_users u ON u.id = r.requested_by AND u.status = 'active'
            WHERE r.document_id = ?1 AND r.kind = 'issue' AND r.status = 'approved' AND r.decided_at = ?2 AND r.decided_by = ?3 AND r.requested_by <> ?3
              AND ${FROZEN_BY_THIS_BATCH}`,
         )
-        .bind(a.documentId, a.now, a.issuedBy, a.bell.clientName, a.bell.linkPrefix),
+        .bind(
+          a.documentId,
+          a.now,
+          a.issuedBy,
+          a.bell.clientName,
+          a.bell.linkPrefix,
+          a.bell.subject ?? "invoice",
+          a.bell.prefix ?? "",
+        ),
+      // M5.3 (LD41): a CREDIT note reduces what its invoice is owed, in this same batch and only for the document this very batch froze. The credited total is
+      // RECOMPUTED from the issued, not void credit notes (never incremented: a replay or a concurrent note cannot double count), then the balance and the status
+      // follow from it (core `ledgerStatusOf` is the twin of the CASE; a refund due is derived, M6). The invoice's `updated_at` always MOVES (`max(now, old + 1)`): two
+      // notes in one millisecond must not leave the stamp a stale draft read. A debit note moves nothing on its invoice (LD42).
+      ...(a.note && a.note.kind === "credit"
+        ? [
+            db
+              .prepare(
+                `UPDATE documents SET credited_minor = (SELECT coalesce(sum(c.total_minor), 0) FROM documents c WHERE c.parent_id = ?3 AND c.type = 'credit_note' AND c.frozen_at IS NOT NULL AND c.status <> 'void'), updated_at = max(?2, updated_at + 1)
+                 WHERE id = ?3 AND ${FROZEN_BY_THIS_BATCH}`,
+              )
+              .bind(a.documentId, a.now, a.note.parentId),
+            db
+              .prepare(
+                `UPDATE documents SET balance_minor = max(0, total_minor - paid_minor - credited_minor),
+                   status = CASE WHEN credited_minor >= total_minor THEN 'credited' WHEN paid_minor > 0 AND total_minor - paid_minor - credited_minor <= 0 THEN 'paid' WHEN paid_minor > 0 THEN 'partially_paid' WHEN credited_minor > 0 THEN 'partially_credited' ELSE 'issued' END
+                 WHERE id = ?3 AND ${FROZEN_BY_THIS_BATCH}`,
+              )
+              .bind(a.documentId, a.now, a.note.parentId),
+          ]
+        : []),
     ],
   };
 }
@@ -529,8 +642,8 @@ export function advanceIssueStatements(db: D1Database, a: AdvanceIssueArgs): Sen
     expected: { ...a.expected, updatedAt: a.now, contentSha256: a.contentSha256 },
   };
   const freeze = freezeStatement(db, base, a.sessionId, {
-    where: ` AND total_minor = ?29
-         AND EXISTS (SELECT 1 FROM documents p WHERE p.id = ?30 AND p.type = 'proforma' AND p.frozen_at IS NOT NULL AND p.status IN ('issued', 'converted') AND p.updated_at = ?31 AND p.balance_minor >= ?29 AND p.client_id = documents.client_id AND p.currency = documents.currency)`,
+    where: ` AND total_minor = ?30
+         AND EXISTS (SELECT 1 FROM documents p WHERE p.id = ?31 AND p.type = 'proforma' AND p.frozen_at IS NOT NULL AND p.status IN ('issued', 'converted') AND p.updated_at = ?32 AND p.balance_minor >= ?30 AND p.client_id = documents.client_id AND p.currency = documents.currency)`,
     binds: [a.amountMinor, a.proformaId, a.expectedProformaUpdatedAt],
   });
   return {
@@ -584,6 +697,55 @@ export function advanceIssueStatements(db: D1Database, a: AdvanceIssueArgs): Sen
         .bind(a.documentId, a.now),
     ],
   };
+}
+
+// ---- a credit or debit note draft (M5.3, LD38; M6 reuses it for "refund → credit note draft") -------------------------------------------------------------
+
+export type NoteDraftArgs = {
+  /** The `documents` columns of the new draft (id, type, status `draft`, client, parent, project, contact, currency, supply, totals, `computed`, `content_sha256`, `header_extras`, who and when). */
+  columns: Readonly<Record<string, unknown>>;
+  kind: "credit" | "debit";
+  parentId: string;
+  clientId: string;
+  /** The parent's `updated_at` and `credited_minor` at the read: another note issued since refuses the draft. */
+  expectedParentUpdatedAt: number;
+  expectedParentCredited: number;
+  /** The IST day of the draft and, for a credit note, the deadline it is judged against (a draft past the deadline is refused too, LD45). */
+  today: string;
+  deadline: { lastDay: string; filedOn: string | null } | null;
+};
+
+/**
+ * The guarded INSERT of a note draft (one statement; the caller adds the lines and the audit row, and every later statement is guarded on that audit row). The
+ * row is written only while the invoice is still the frozen, live tax or export invoice that was read (`updated_at` and `credited_minor` unchanged), of this
+ * client, in this currency, the client is not an anonymised individual, fewer than 20 notes of this kind are issued, and a credit note's day is inside the
+ * deadline. A second open draft of this kind on the invoice is the partial unique index `documents_open_note` (the insert then throws).
+ */
+export function noteDraftStatements(db: D1Database, a: NoteDraftArgs): D1PreparedStatement[] {
+  const keys = Object.keys(a.columns);
+  const n = keys.length;
+  const at = (k: number) => `?${n + k}`;
+  const type = a.kind === "credit" ? "credit_note" : "debit_note";
+  const guard = `EXISTS (SELECT 1 FROM documents p WHERE p.id = ${at(1)} AND p.type IN ('tax_invoice', 'export_invoice') AND p.frozen_at IS NOT NULL AND p.status IN ${NOTE_PARENT_LIVE} AND p.client_id = ${at(2)} AND p.updated_at = ${at(3)} AND p.credited_minor = ${at(4)} AND p.currency = ${at(5)})
+       AND NOT EXISTS (SELECT 1 FROM clients z WHERE z.id = ${at(2)} AND z.anonymised_at IS NOT NULL)
+       AND (SELECT count(*) FROM documents c WHERE c.parent_id = ${at(1)} AND c.type = '${type}' AND c.frozen_at IS NOT NULL) < ${NOTES_MAX_SQL}
+       AND (${a.kind === "debit" ? "1" : `${at(6)} <= ${at(7)} AND (${at(8)} IS NULL OR ${at(6)} < ${at(8)})`})`;
+  return [
+    db
+      .prepare(
+        `INSERT INTO documents (${keys.join(", ")}) SELECT ${keys.map((_, i) => `?${i + 1}`).join(", ")} WHERE ${guard}`,
+      )
+      .bind(
+        ...Object.values(a.columns),
+        a.parentId,
+        a.clientId,
+        a.expectedParentUpdatedAt,
+        a.expectedParentCredited,
+        a.columns.currency,
+        // Exactly as many values as the highest placeholder (D1 refuses more): a debit note has no deadline placeholders.
+        ...(a.kind === "debit" ? [] : [a.today, a.deadline?.lastDay ?? null, a.deadline?.filedOn ?? null]),
+      ),
+  ];
 }
 
 /**

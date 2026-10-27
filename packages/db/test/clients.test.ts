@@ -123,7 +123,20 @@ describe("clients_currency_locked [ADM-CLI-01]", () => {
     });
     await made.insert();
     const c = made.id;
-    await addDoc(c, type, { status: "draft" });
+    // M5.3 (documents_note_parent_required): a credit or debit note names its invoice, so those two types get a frozen invoice of the client as their parent.
+    // That invoice locks the currency by itself, so for these two types this test now only proves that the note does not break the lock.
+    const parent =
+      type === "credit_note" || type === "debit_note"
+        ? await addDoc(c, "tax_invoice", {
+            status: "issued",
+            frozen_at: 1,
+            series: "inv-t",
+            fy: "9999",
+            number: 9100 + INVOICE_FAMILY.indexOf(type),
+            number_display: `T/${9100 + INVOICE_FAMILY.indexOf(type)}`,
+          })
+        : undefined;
+    await addDoc(c, type, { status: "draft", ...(parent ? { parent_id: parent } : {}) });
     await rejects(run("UPDATE clients SET currency = 'USD' WHERE id = ?", c), /currency is locked/);
     // Writing the same currency, or another field, is fine.
     await run("UPDATE clients SET currency = 'INR', notes = 'x' WHERE id = ?", c);

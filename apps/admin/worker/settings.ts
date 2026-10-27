@@ -57,6 +57,7 @@ import {
 import { sampleData, TEMPLATE_NAMES } from "./email-fixtures.ts";
 import { param } from "./http.ts";
 import { queueEmail } from "./mail.ts";
+import { ANNUAL_RETURN_FUTURE } from "./note-model.ts";
 
 /** The notice before a lead is deleted: a re-dated lead is never due sooner than this (VERIFY WITH CA/LEGAL). */
 const LEAD_NOTICE_MS = LEAD_PURGE_NOTICE_DAYS * 86_400_000;
@@ -446,6 +447,22 @@ export const settings = new Hono<AppEnv>()
     // M5.2 (early check 3): a saved `tax` row never keeps the deprecated single `lut`: it is folded into `luts` (unless that FY is listed) and cleared.
     if (group === "tax") {
       const parsed = SETTINGS_SCHEMAS.tax.safeParse(env.data.value);
+      // M5.3 (G-11, Q33): the day an annual return was filed cannot be in the future (a filing that has not happened would close credit notes today).
+      if (parsed.success) {
+        const today = issueDateOf(Date.now());
+        const future = parsed.data.annualReturnsFiled.findIndex((r) => r.filedOn > today);
+        if (future >= 0)
+          return c.json(
+            {
+              error: { code: ANNUAL_RETURN_FUTURE.code, message: ANNUAL_RETURN_FUTURE.message },
+              fields: [
+                { path: `annualReturnsFiled.${future}.filedOn`, message: ANNUAL_RETURN_FUTURE.message },
+              ],
+              request_id: c.var.rid,
+            },
+            400,
+          );
+      }
       if (parsed.success) {
         // A legacy letter the fold drops (its FY is already listed, or the list would refuse it) is dropped WITH a note in the log (the case and the FY,
         // never the ARN), so the save never fails on a field the person cannot see and the drop is never silent (review 8).

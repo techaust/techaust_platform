@@ -10,7 +10,7 @@ import {
   snapshotSha256,
 } from "@techaust/core/documents";
 import { sha256Hex } from "@techaust/core/hash";
-import { type InvoiceSnapshotInput, invoiceSnapshotSha256 } from "@techaust/core/invoices";
+import { type InvoiceSnapshotInput, invoiceSnapshotSha256, noteOfFromStored } from "@techaust/core/invoices";
 import { SCHEDULE_TRIGGERS } from "@techaust/core/schedule-text";
 import type { ComputedDocument } from "@techaust/core/tax";
 import type { InvoiceIssuerSnapshot, IssuerSnapshot, RecipientSnapshot } from "./schema/documents.ts";
@@ -44,6 +44,8 @@ export type DocumentRow = {
   export_declaration_id: string | null;
   /** M5.2 (LD37): the JSON text of the sealed header keys the other columns cannot give (`{export?, proforma?, advance?}`), frozen at issue; null when none (read it with `headerExtrasOfRow`). */
   header_extras: string | null;
+  /** M5.3: a credit note's IMS status (`pending`, `accepted`, `rejected`, `not_applicable`); null on every other document and on a draft. */
+  ims_status?: string | null;
   valid_until: string | null;
   supply_type: string | null;
   place_of_supply_code: string | null;
@@ -174,7 +176,7 @@ export type DocumentBundle<T extends TermsRef = TermsRow> = {
 };
 
 const DOCUMENT_COLUMNS =
-  "id, type, status, client_id, version_group_id, version, series, fy, number, number_display, currency, issue_date, due_date, parent_id, paid_minor, credited_minor, balance_minor, voided_at, void_reason, fx_rate_micros, fx_date, fx_source, service_completed_on, export_declaration_id, header_extras, valid_until, supply_type, place_of_supply_code, subtotal_minor, discount_minor, taxable_minor, cgst_minor, sgst_minor, igst_minor, round_off_minor, total_minor, terms_version_id, snapshot_r2_key, snapshot_sha256, pdf_r2_key, pdf_sha256, frozen_at, issued_by, title, contact_id, validity_days, discount_kind, discount_value, export_mode, content_sha256, catalogue_reference_minor, source_document_id, source_step, sent_at, viewed_at, decided_at, decision_reason, decision_note, decided_contact_id, created_by, created_at, updated_at, recipient, issuer, computed";
+  "id, type, status, client_id, version_group_id, version, series, fy, number, number_display, currency, issue_date, due_date, parent_id, paid_minor, credited_minor, balance_minor, voided_at, void_reason, fx_rate_micros, fx_date, fx_source, service_completed_on, export_declaration_id, header_extras, ims_status, valid_until, supply_type, place_of_supply_code, subtotal_minor, discount_minor, taxable_minor, cgst_minor, sgst_minor, igst_minor, round_off_minor, total_minor, terms_version_id, snapshot_r2_key, snapshot_sha256, pdf_r2_key, pdf_sha256, frozen_at, issued_by, title, contact_id, validity_days, discount_kind, discount_value, export_mode, content_sha256, catalogue_reference_minor, source_document_id, source_step, sent_at, viewed_at, decided_at, decision_reason, decision_note, decided_contact_id, created_by, created_at, updated_at, recipient, issuer, computed";
 
 /** The statements of `loadDocument`, exported so a test can EXPLAIN each one. */
 export const LOAD_DOCUMENT_SQL = {
@@ -418,6 +420,8 @@ export type InvoiceHeaderExtras = {
   readonly fx?: InvoiceSnapshotInput["fx"];
   readonly proforma?: InvoiceSnapshotInput["proforma"];
   readonly advance?: InvoiceSnapshotInput["advance"];
+  /** M5.3 (LD39): a credit or debit note's request, reason and parent facts, only on a note. */
+  readonly noteOf?: InvoiceSnapshotInput["noteOf"];
 };
 
 export type InvoiceSeal = {
@@ -444,6 +448,8 @@ export async function invoiceSealOf(p: InvoiceSealParts): Promise<InvoiceSeal> {
     ...(p.fx ? { fx: p.fx } : {}),
     ...(p.proforma ? { proforma: p.proforma } : {}),
     ...(p.advance ? { advance: p.advance } : {}),
+    // M5.3: only on a note (a key that is absent keeps every earlier seal byte for byte).
+    ...(p.noteOf ? { noteOf: p.noteOf } : {}),
   };
   return { computedJson, computedSha256, input, snapshotSha256: await invoiceSnapshotSha256(input) };
 }
@@ -484,7 +490,26 @@ export function invoiceDraftOfBundle(b: DocumentBundle<TermsRef>): DraftContent 
     schedule: [],
     // M5.2: the rate typed on the draft, hashed with it (a document without one has no `fx` key in its hash).
     fx: fxOfRow(d),
+    // M5.3: a note's request, read from its `header_extras` (a draft's draft form, an issued note's frozen one: the same object); none on any other type.
+    note: noteContentOf(d),
   };
+}
+
+/** The part of a note's `noteOf` the content hash covers (null for any document that is not a note, or whose `noteOf` is unreadable). */
+export function noteContentOf(d: Pick<DocumentRow, "type" | "header_extras">): DraftContent["note"] {
+  if (d.type !== "credit_note" && d.type !== "debit_note") return null;
+  const n = headerExtrasOfRow(d).noteOf;
+  return n
+    ? {
+        parentId: n.parent.id,
+        kind: n.kind,
+        reasonCode: n.reason.code,
+        reasonText: n.reason.text,
+        mode: n.request.mode,
+        grossMinor: n.request.grossMinor ?? null,
+        takes: n.request.takes,
+      }
+    : null;
 }
 
 /**
@@ -508,12 +533,13 @@ export function invoiceContentHashOfBundle(b: DocumentBundle<TermsRef>): Promise
 
 /** What the freeze writes to `documents.header_extras`: the JSON of exactly the keys given, or null when there are none (an M5.1 tax invoice). */
 export function headerExtrasJson(
-  x: Pick<InvoiceHeaderExtras, "export" | "proforma" | "advance">,
+  x: Pick<InvoiceHeaderExtras, "export" | "proforma" | "advance" | "noteOf">,
 ): string | null {
-  const out: Pick<InvoiceHeaderExtras, "export" | "proforma" | "advance"> = {
+  const out: Pick<InvoiceHeaderExtras, "export" | "proforma" | "advance" | "noteOf"> = {
     ...(x.export ? { export: x.export } : {}),
     ...(x.proforma ? { proforma: x.proforma } : {}),
     ...(x.advance ? { advance: x.advance } : {}),
+    ...(x.noteOf ? { noteOf: x.noteOf } : {}),
   };
   return Object.keys(out).length === 0 ? null : JSON.stringify(out);
 }
@@ -537,7 +563,14 @@ export function headerExtrasOfRow(d: Pick<DocumentRow, "header_extras">): Invoic
     ...(o.export ? { export: o.export as NonNullable<InvoiceHeaderExtras["export"]> } : {}),
     ...(o.proforma ? { proforma: o.proforma as NonNullable<InvoiceHeaderExtras["proforma"]> } : {}),
     ...(o.advance ? { advance: o.advance as NonNullable<InvoiceHeaderExtras["advance"]> } : {}),
+    // M5.3: read back through the zod-free reader (a malformed `noteOf` gives none, so a seal check fails: the right answer for damaged data).
+    ...(o.noteOf ? noteOfPart(o.noteOf) : {}),
   };
+}
+
+function noteOfPart(v: unknown): Pick<InvoiceHeaderExtras, "noteOf"> {
+  const n = noteOfFromStored(v);
+  return n ? { noteOf: n } : {};
 }
 
 /**
@@ -550,7 +583,9 @@ export function invoiceSealPartsOfBundle(b: DocumentBundle<TermsRef>): InvoiceSe
   const extras = headerExtrasOfRow(d);
   if (d.frozen_at === null) return null;
   const { computed, recipient, issuer } = d;
-  if (!computed || !recipient || !issuer || !d.issue_date || !d.due_date || !d.content_sha256) return null;
+  // A credit note has no due date (M5.3: nothing is owed on it); every other invoice-family document has one.
+  if (!computed || !recipient || !issuer || !d.issue_date || !d.content_sha256) return null;
+  if (!d.due_date && d.type !== "credit_note") return null;
   const t = b.terms;
   return {
     document: {
@@ -558,7 +593,7 @@ export function invoiceSealPartsOfBundle(b: DocumentBundle<TermsRef>): InvoiceSe
       clientId: d.client_id,
       currency: d.currency,
       issueDate: d.issue_date,
-      dueDate: d.due_date,
+      dueDate: d.due_date ?? null,
       contentSha256: d.content_sha256,
       termsRef: t ? { id: t.id, version: t.version, sha256: t.sha256 } : null,
       exportMode: d.export_mode,
@@ -569,6 +604,7 @@ export function invoiceSealPartsOfBundle(b: DocumentBundle<TermsRef>): InvoiceSe
     ...(extras.export ? { export: extras.export } : {}),
     ...(extras.proforma ? { proforma: extras.proforma } : {}),
     ...(extras.advance ? { advance: extras.advance } : {}),
+    ...(extras.noteOf ? { noteOf: extras.noteOf } : {}),
     ...(fxOfRow(d) && d.type !== "proforma"
       ? { fx: fxOfRow(d) as NonNullable<ReturnType<typeof fxOfRow>> }
       : {}),

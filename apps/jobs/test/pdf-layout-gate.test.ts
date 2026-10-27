@@ -7,6 +7,7 @@ import { type PdfMessage, pdfKeys } from "@techaust/core/pdf-jobs";
 import { DEFAULT_VIEW_CONFIG, missingStatutoryLine, renderDocumentHtml, toInvoiceView } from "@techaust/pdf";
 import { beforeEach, describe, expect, it } from "vitest";
 import { buildInvoiceFixture } from "../../../packages/pdf/test/fixtures/invoice.ts";
+import { buildNoteFixture, PARENT_NUMBER } from "../../../packages/pdf/test/fixtures/notes.ts";
 import { stubPdf } from "../src/browser.ts";
 import type { Clock } from "../src/pacer.ts";
 import { processRender, processSnapshot } from "../src/pdf.ts";
@@ -16,6 +17,7 @@ import {
   type SeededInvoice,
   seedIssuedInvoice,
 } from "./pdf-invoice-seed.ts";
+import { seedIssuedNote } from "./pdf-note-seed.ts";
 
 const T0 = Date.UTC(2026, 9, 28, 6, 0, 0);
 const fakeClock = (): Clock => {
@@ -109,4 +111,62 @@ describe("LD33 for the invoice issued for a payment received (Q9)", () => {
       if (envelope.snapshot.header.advance) expect(html).toContain("Against proforma TH/PI/2627/0003");
     },
   );
+});
+
+// ---- M5.3 (LD54): a credit or debit note must name the invoice it is against, as one text node of its own ----------------------------------------------------
+// The gate is `missingStatutoryLine`, the same check the render step calls. The REAL layout (`renderDocumentHtml`, nothing replaced) does not print the number of the invoice
+// yet: that is the M5.3 designer's (07-T §1: "Against invoice {invoice number}"), so until it does, a note's render is refused by this very gate (the owners' bell rings, nothing
+// reaches Browser Run) and the last case shows what the page must carry. When the layout prints the number as a node of its own, flip `LAYOUT_PRINTS_PARENT` to `true`: every
+// note then renders with the real layout, and the other cases of this block stay as they are.
+// Flipped by the M5.3 designer: layout/invoice.ts prints the number in `<dd data-testid="parent-number">` of its own.
+const LAYOUT_PRINTS_PARENT = true;
+
+describe("LD54 with the real layout: the invoice's number on a note's page", () => {
+  const names = ["credit_lines", "credit_usd_lut", "debit", "debit_usd_lut"] as const;
+  it.each(names)("%s: the gate and the real layout agree", async (name) => {
+    const { envelope } = await buildNoteFixture(name);
+    const html = renderDocumentHtml(toInvoiceView(envelope, DEFAULT_VIEW_CONFIG));
+    expect(missingStatutoryLine(envelope, html)).toBe(LAYOUT_PRINTS_PARENT ? null : "parent_number");
+    if (LAYOUT_PRINTS_PARENT) expect(html).toContain(`>${PARENT_NUMBER}<`);
+  });
+
+  it("through the render step with the real `renderDocumentHtml`: a note is refused, or rendered once the layout prints the number", async () => {
+    const s = await seedIssuedNote("credit_lines");
+    expect(
+      await processSnapshot(envWith({}), { v: 1, kind: "pdf.snapshot", documentId: s.id, reason: "send" }),
+    ).toBe("queued");
+    const b = browser();
+    // no `htmlOf`: the default, the real layout
+    const outcome = await processRender(
+      envWith(b.binding),
+      { v: 1, kind: "pdf.render", documentId: s.id, hop: 0 },
+      T0,
+      fakeClock(),
+    );
+    expect(outcome).toBe(LAYOUT_PRINTS_PARENT ? "rendered" : "refused");
+    expect(b.calls).toHaveLength(LAYOUT_PRINTS_PARENT ? 1 : 0);
+    const bells = await realEnv.DB.prepare(
+      "SELECT kind FROM notifications WHERE entity_id = ?1 AND kind = 'pdf.refused'",
+    )
+      .bind(s.id)
+      .all();
+    // (one bell per active owner: this file's seeds make more than one)
+    expect(bells.results.length > 0).toBe(!LAYOUT_PRINTS_PARENT);
+  });
+
+  it("what the designer must write: the real page plus the invoice's number as a node of its own renders", async () => {
+    const s = await seedIssuedNote("debit");
+    await processSnapshot(envWith({}), { v: 1, kind: "pdf.snapshot", documentId: s.id, reason: "send" });
+    const b = browser();
+    const outcome = await processRender(
+      envWith(b.binding),
+      { v: 1, kind: "pdf.render", documentId: s.id, hop: 0 },
+      T0,
+      fakeClock(),
+      (view) => renderDocumentHtml(view).replace("</body>", `<p>${s.parentNumber}</p></body>`),
+    );
+    expect(outcome).toBe("rendered");
+    expect(b.calls).toHaveLength(1);
+    expect(b.calls[0]).toContain(`>${s.parentNumber}<`);
+  });
 });

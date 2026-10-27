@@ -298,10 +298,11 @@ describe("the page around the layout", () => {
     expect(pdfOptionsFor(view)).toMatchObject({ format: "a4", tagged: true });
   });
 
-  it("a credit or debit note keeps the plain skeleton until M5.3 styles it (M5.2 moved the export invoice and the proforma to the layout)", async () => {
+  // Changed on purpose (M5.3): the credit and debit notes moved to the layout too, so the skeleton is left for a type the layout does not know.
+  it("a type the layout does not know keeps the plain skeleton (M5.2 moved the export invoice and the proforma, M5.3 the notes)", async () => {
     const view = {
       ...(await viewOf("intra")),
-      type: "credit_note",
+      type: "sample_unknown_type",
       docLabel: "Credit note",
     } as InvoiceView;
     const h = body(renderDocumentHtml(view));
@@ -317,7 +318,7 @@ describe("the page around the layout", () => {
   it.each(["inter", "bare", "signed"] as const)(
     "the skeleton still prints %s whole (heads by supply type, no invented bank, the signature)",
     async (name) => {
-      const view = { ...(await viewOf(name)), type: "debit_note" } as InvoiceView;
+      const view = { ...(await viewOf(name)), type: "sample_unknown_type" } as InvoiceView;
       const h = body(renderDocumentHtml(view));
       expect(h).toContain('<div class="doc doc--invoice">');
       expect(h).toContain('data-testid="signatory"');

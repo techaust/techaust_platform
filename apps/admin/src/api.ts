@@ -864,6 +864,12 @@ type ApiErrorBody = {
   /** M5.1: 409 `already_issued` (the number it was issued as) and 409 `issue_blocked` (the blockers). */
   number?: unknown;
   blockers?: unknown;
+  /** M5.3: the note refusals' figures (`remaining`, `line`, `closestMinor`), the open draft (`draftId`), the last day (`date`). */
+  remaining?: unknown;
+  line?: unknown;
+  closestMinor?: unknown;
+  draftId?: unknown;
+  date?: unknown;
 };
 
 export class RequestError extends Error {
@@ -884,7 +890,14 @@ export class RequestError extends Error {
       contactIds?: string[];
       missing?: string[];
       number?: string;
-      blockers?: { code: string; line?: number; fy?: string; date?: string }[];
+      blockers?: { code: string; line?: number; remaining?: number; fy?: string; date?: string }[];
+      /** M5.3: what can still be credited (`credit_exceeds_remaining`, `line_credit_exceeds` with its `line`, 0-based), the nearest amount a credit
+       * note can be (`credit_amount_unfit`), the open draft (`note_draft_exists`) and the last day (`credit_deadline_passed`). */
+      remaining?: number;
+      line?: number;
+      closestMinor?: number | null;
+      draftId?: string;
+      date?: string;
     } = {},
   ) {
     super(message);
@@ -981,6 +994,13 @@ async function send<T>(path: string, { method, body, raw, signedIn = true }: Opt
       ...(Array.isArray(data.missing) ? { missing: strings(data.missing) } : {}),
       ...(typeof data.number === "string" ? { number: data.number } : {}),
       ...(Array.isArray(data.blockers) ? { blockers: blockersOf(data.blockers) } : {}),
+      ...(typeof data.remaining === "number" ? { remaining: data.remaining } : {}),
+      ...(typeof data.line === "number" ? { line: data.line } : {}),
+      ...(typeof data.closestMinor === "number" || data.closestMinor === null
+        ? { closestMinor: data.closestMinor as number | null }
+        : {}),
+      ...(typeof data.draftId === "string" ? { draftId: data.draftId } : {}),
+      ...(typeof data.date === "string" ? { date: data.date } : {}),
     },
   );
   if (signedIn && res.status === 401 && e.code === "unauthenticated") unauthenticatedHandler?.();
@@ -989,15 +1009,19 @@ async function send<T>(path: string, { method, body, raw, signedIn = true }: Opt
 
 const strings = (xs: unknown[]): string[] => xs.filter((x): x is string => typeof x === "string");
 
-/** The blockers of a 409 `issue_blocked`: the code, and the line, year or date its sentence names (M5.2: `lut_missing` has `fy`, `fx_missing` `date`). */
-const blockersOf = (xs: unknown[]): { code: string; line?: number; fy?: string; date?: string }[] =>
+/** The blockers of a 409 `issue_blocked`: the code, and the line, amount, year or date its sentence names (M5.2: `lut_missing` has `fy`,
+ * `fx_missing` `date`; M5.3: a note's `remaining` and `date`). */
+const blockersOf = (
+  xs: unknown[],
+): { code: string; line?: number; remaining?: number; fy?: string; date?: string }[] =>
   xs.flatMap((x) => {
     if (typeof x !== "object" || x === null || typeof (x as { code?: unknown }).code !== "string") return [];
-    const b = x as { code: string; line?: unknown; fy?: unknown; date?: unknown };
+    const b = x as { code: string; line?: unknown; remaining?: unknown; fy?: unknown; date?: unknown };
     return [
       {
         code: b.code,
         ...(typeof b.line === "number" ? { line: b.line } : {}),
+        ...(typeof b.remaining === "number" ? { remaining: b.remaining } : {}),
         ...(typeof b.fy === "string" ? { fy: b.fy } : {}),
         ...(typeof b.date === "string" ? { date: b.date } : {}),
       },

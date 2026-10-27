@@ -32,6 +32,7 @@ import {
 } from "./test-helpers.ts";
 import { mkProforma, todayIso } from "./test-invoice-types.ts";
 import { issueBodyOf, issueInvoice, mkInvoice, mkInvoiceClient, putCompany } from "./test-invoices.ts";
+import { issueCredit, mkIssuedInvoice, mkRegisteredClient, stampOf } from "./test-notes.ts";
 import { mkFile, mkMilestone, mkNote, mkProject, PDF_BYTES, upload } from "./test-projects.ts";
 import { discount, mkDraft, mkQuoteClient, mkService, mkTerms, sendBodyOf, sendDoc } from "./test-quotes.ts";
 
@@ -953,6 +954,44 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
           receivedOn: todayIso(),
           reference: "RBAC-UTR-1",
         },
+      });
+    },
+    // M5.3 (added on purpose): the two note drafts and the IMS answer.
+    "POST /api/v1/invoices/:id/credit-note": async () => {
+      const s = await owner();
+      await putCompany();
+      const inv = await mkIssuedInvoice(s, { prices: [100_000] });
+      return run(s, `/invoices/${inv.id}/credit-note`, {
+        method: "POST",
+        body: {
+          expectedParentUpdatedAt: (await stampOf(inv.id)).updated_at,
+          mode: "full",
+          reasonCode: "price_correction",
+        },
+      });
+    },
+    "POST /api/v1/invoices/:id/debit-note": async () => {
+      const s = await owner();
+      await putCompany();
+      const inv = await mkIssuedInvoice(s, { prices: [100_000] });
+      return run(s, `/invoices/${inv.id}/debit-note`, {
+        method: "POST",
+        body: {
+          expectedParentUpdatedAt: (await stampOf(inv.id)).updated_at,
+          lines: [{ line: 0, taxableMinor: 1_000 }],
+          reasonCode: "price_correction",
+        },
+      });
+    },
+    "POST /api/v1/invoices/:id/ims-status": async () => {
+      const s = await owner();
+      await putCompany();
+      const inv = await mkIssuedInvoice(s, { prices: [100_000], client: mkRegisteredClient });
+      const cn = await issueCredit(s, inv.id, { mode: "full" });
+      const row = await one<{ updated_at: number }>("SELECT updated_at FROM documents WHERE id = ?", cn.id);
+      return run(s, `/invoices/${cn.id}/ims-status`, {
+        method: "POST",
+        body: { expectedUpdatedAt: row?.updated_at, status: "accepted" },
       });
     },
     "POST /api/v1/invoices/:id/pdf/retry": async () => {

@@ -23,9 +23,15 @@ import {
 } from "../src/invoices.ts";
 
 describe("which types can be issued [ADM-INV-01, LD2]", () => {
-  // M5.2: export invoices and proformas became issuable (credit and debit notes wait for M5.3).
-  it("the tax invoice, the export invoice and the proforma", () => {
-    expect(INVOICE_ISSUABLE_TYPES).toEqual(["tax_invoice", "export_invoice", "proforma"]);
+  // M5.2: export invoices and proformas became issuable; M5.3: credit and debit notes too (on purpose: the old list stopped at the proforma).
+  it("the tax invoice, the export invoice, the proforma, the credit note and the debit note", () => {
+    expect(INVOICE_ISSUABLE_TYPES).toEqual([
+      "tax_invoice",
+      "export_invoice",
+      "proforma",
+      "credit_note",
+      "debit_note",
+    ]);
   });
 });
 

@@ -395,7 +395,11 @@ describe("version rules [documents_version_insert, documents_version_fixed]", ()
       );
     await insert("single-inv-1", "tax_invoice", 1);
     await rejects(insert("single-inv-2", "tax_invoice", 2), /documents_version_single/);
-    await rejects(insert("single-cn-3", "credit_note", 3), /documents_version_single/);
+    // M5.3: a credit note without a parent is refused by `documents_note_parent_required_insert` too (either trigger may fire first); both name their rule.
+    await rejects(
+      insert("single-cn-3", "credit_note", 3),
+      /documents_version_single|documents_note_parent_required/,
+    );
     await rejects(
       run("UPDATE documents SET version = 2 WHERE id = 'single-inv-1'"),
       /documents_version_single/,

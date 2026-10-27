@@ -16,6 +16,7 @@ import type {
   InvoiceViewExport,
   InvoiceViewInr,
   InvoiceViewLine,
+  InvoiceViewNote,
   InvoiceViewSummaryRow,
   InvoiceViewSwift,
   VerifiedSignature,
@@ -31,8 +32,18 @@ const DOC_LABELS: Readonly<Record<string, string>> = {
   // 07-S §1 and §2 (pending the owner's approval): "Export Invoice", "Proforma Invoice".
   export_invoice: "Export Invoice",
   proforma: "Proforma Invoice",
-  credit_note: "Credit note",
-  debit_note: "Debit note",
+  // 07-T §1 (pending the owner's approval): the titles of the notes.
+  credit_note: "Credit Note",
+  debit_note: "Debit Note",
+};
+
+/** 07-T §3: the label of each reason a person can pick (the code is what is frozen; `other` is then described in words). Q35: a debit note has two. */
+const REASON_LABELS: Readonly<Record<string, string>> = {
+  price_correction: "Price correction",
+  service_not_delivered: "Service not delivered",
+  service_deficient: "Service deficient",
+  discount_after_sale: "Discount after sale",
+  other: "Other",
 };
 
 /** 07-S §1: the place of supply line of an export invoice (code 96: outside India). */
@@ -96,13 +107,17 @@ export function toInvoiceView(
   const intra = computed.supply.type === "intra";
   const docLabel = DOC_LABELS[envelope.type] ?? "Invoice";
 
+  // M5.3: a note's request, as sealed (the verifier has already proved there is one take per line)
+  const noteOf = header.noteOf;
   const lines: InvoiceViewLine[] = s.lines.map((l, i) => {
     const c = computed.lines[i] as ComputedDocument["lines"][number];
     let discount: string | null = null;
     if (l.discountKind === "percent" && l.discountValue !== null) discount = pct(l.discountValue);
     else if (l.discountKind === "fixed" && l.discountValue !== null) discount = m(l.discountValue);
+    const take = noteOf?.request.takes[i];
     return {
       n: String(i + 1),
+      ...(take ? { againstLine: take.line + 1 } : {}),
       description: l.description,
       detail: nonEmpty(l.detail) ? l.detail : null,
       sac: nonEmpty(l.sac) ? l.sac : null,
@@ -212,6 +227,52 @@ export function toInvoiceView(
       }
     : null;
 
+  // M5.3: a credit or debit note's facts, from the sealed `noteOf` only. The invoice's route and LUT travel with it (the note copies them at issue; VERIFY WITH CA/LEGAL).
+  const noteView: InvoiceViewNote | null = noteOf
+    ? {
+        kind: noteOf.kind,
+        title: docLabel,
+        parent: {
+          number: noteOf.parent.number,
+          date: shortIsoDate(noteOf.parent.issueDate),
+          type: noteOf.parent.type,
+        },
+        reason: {
+          code: noteOf.reason.code,
+          label: REASON_LABELS[noteOf.reason.code] ?? noteOf.reason.code,
+          text: noteOf.reason.text,
+        },
+        totalLabel: noteOf.kind === "credit" ? "credited" : "added",
+        effect: {
+          direction: noteOf.kind === "credit" ? "reduces" : "increases",
+          parentNumber: noteOf.parent.number,
+          total: m(computed.totalMinor),
+        },
+        fx: header.fx
+          ? { rate: formatFxRate(header.fx.rateMicros), parentNumber: noteOf.parent.number }
+          : null,
+        route:
+          header.document.exportMode === "lut" || header.document.exportMode === "igst_paid"
+            ? {
+                mode: header.document.exportMode,
+                lut: noteOf.parent.lut
+                  ? {
+                      fy: noteOf.parent.lut.fy,
+                      fyLabel: fyLabelOfToken(noteOf.parent.lut.fy) ?? noteOf.parent.lut.fy,
+                      arn: noteOf.parent.lut.arn,
+                    }
+                  : null,
+              }
+            : null,
+      }
+    : null;
+  // The total's label says which way it goes (07-T §1: "Total credited" / "Total added").
+  const totals = totalsOf(computed, m).map((row) =>
+    noteView && row.key === "total"
+      ? { ...row, label: noteView.totalLabel === "credited" ? "Total credited" : "Total added" }
+      : row,
+  );
+
   const sig = opts.signature ?? null;
   const signature =
     sig && SIGNATURE_MIMES.includes(sig.mime) && /^[A-Za-z0-9+/]+={0,2}$/.test(sig.base64)
@@ -225,7 +286,7 @@ export function toInvoiceView(
     title: `${docLabel} ${envelope.numberDisplay} ${DASH} ${name}`,
     numberDisplay: envelope.numberDisplay,
     issueDate: shortIsoDate(header.document.issueDate),
-    dueDate: shortIsoDate(header.document.dueDate),
+    dueDate: header.document.dueDate === null ? "" : shortIsoDate(header.document.dueDate),
     copyLabel: envelope.type === "proforma" ? null : ORIGINAL_FOR_RECIPIENT,
     logo: company.logo,
     supplier: {
@@ -244,7 +305,7 @@ export function toInvoiceView(
     supplyType: computed.supply.type,
     currency: cur,
     lines,
-    totals: totalsOf(computed, m),
+    totals,
     summary,
     words: computed.words,
     reverseCharge: header.issuer.reverseChargeText,
@@ -253,7 +314,10 @@ export function toInvoiceView(
     inr,
     swift,
     proforma: header.proforma
-      ? { notice: header.proforma.notice, validUntil: shortIsoDate(header.document.dueDate) }
+      ? {
+          notice: header.proforma.notice,
+          validUntil: header.document.dueDate === null ? "" : shortIsoDate(header.document.dueDate),
+        }
       : null,
     advance: header.advance
       ? {
@@ -262,6 +326,7 @@ export function toInvoiceView(
           receivedOn: shortIsoDate(header.advance.receivedOn),
         }
       : null,
+    note: noteView,
     notes: s.terms
       ? {
           title: `Notes, version ${s.terms.version}`,
@@ -271,7 +336,8 @@ export function toInvoiceView(
       : null,
     signature,
     // at issue nothing has been paid, so the balance is the total (LD17); an invoice made for money received is paid at issue: nothing is due (the layout leaves the row out)
-    balanceDue: m(header.advance ? 0 : computed.totalMinor),
+    // (a credit note owes nothing either: its balance is 0, M5.3; a debit note is its own payable and owes its total)
+    balanceDue: m(header.advance || noteOf?.kind === "credit" ? 0 : computed.totalMinor),
     portalLink: nonEmpty(opts.portalLink) ? opts.portalLink : null,
     integrity: `Document ID ${envelope.documentId} · Content fingerprint ${envelope.snapshotSha256.slice(0, 12)}`,
     footer: {

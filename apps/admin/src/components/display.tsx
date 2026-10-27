@@ -20,6 +20,7 @@ import {
   Lock,
   Pencil,
   RefreshCw,
+  RotateCcw,
   Send,
   XCircle,
 } from "./icons.tsx";
@@ -103,6 +104,8 @@ const PILL_ICON = {
   fileCheck: FileCheck,
   alert: AlertTriangle,
   xCircle: XCircle,
+  /** M5.3: a credit note turned part or all of an invoice back (Partly credited, Credited). */
+  undo: RotateCcw,
 } as const;
 
 /** Icon + text + colour, never colour alone (docs/06 §5.5). */

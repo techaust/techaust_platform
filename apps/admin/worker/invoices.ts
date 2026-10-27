@@ -15,9 +15,11 @@ import {
   fxSourceLabel,
   INVOICE_FLOW_TYPES,
   isInvoiceFlowType,
+  isNoteType,
   issueDateOf,
   MILESTONE_BILLABLE_SQL,
   milestoneBillableRule,
+  noteKindOf,
   parseFxRate,
   voidBlockers,
 } from "@techaust/core/invoices";
@@ -73,6 +75,7 @@ import {
   VOID_NOT_ALLOWED,
   withoutReference,
 } from "./invoice-model.ts";
+import { noteFieldsIn, patchNoteDraft } from "./invoice-notes.ts";
 import {
   CHILDREN_OF_SQL,
   type ChildRow,
@@ -83,6 +86,27 @@ import {
   MILESTONE_OF_SQL,
 } from "./invoice-view.ts";
 import { type Direction, decodeCursor, keysetSql, pageOf } from "./keyset.ts";
+import {
+  blockersOfNote,
+  isNoteParentType,
+  NOTE_NOT_VOIDABLE,
+  NOTE_PARENT_READS,
+  noteComputation,
+  noteLines,
+  noteOfOf,
+  noteState,
+  parentCtxOf,
+  parentStatements,
+  recomputeNote,
+  storedNoteOf,
+} from "./note-model.ts";
+import {
+  type InvoiceNotesView,
+  invoiceNotesView,
+  NOTES_VIEW_READS,
+  type NoteViewPart,
+  noteView,
+} from "./note-view.ts";
 import {
   CLIENT_COLS,
   CLIENT_GONE,
@@ -127,6 +151,8 @@ export const listQuery = z.object({
   type: z.optional(z.enum(INVOICE_FLOW_TYPES)),
   status: z.optional(z.enum(INVOICE_LIST_STATUSES)),
   clientId: z.optional(idText),
+  /** M5.3 (Q14): `ims=pending` lists the credit notes whose client has not answered in the GST portal yet (a credit note filter: it needs no `type`). */
+  ims: z.optional(z.literal("pending")),
   limit: z.optional(z.enum(["25", "50"])),
   after: z.optional(z.string().check(z.maxLength(400))),
 });
@@ -148,6 +174,8 @@ type ListRow = {
   content_sha256: string | null;
   frozen_at: number | null;
   pdf_sha256: string | null;
+  /** M5.3: a credit note's IMS status (null on every other document). */
+  ims_status: string | null;
   created_at: number;
   updated_at: number;
   approval_status: string | null;
@@ -159,8 +187,11 @@ export const INVOICE_LIST_SQL = (f: {
   status: "plain" | "overdue" | null;
   client: boolean;
   cursor: boolean;
+  /** M5.3: only credit notes still waiting for the client's IMS answer (the `documents_note_ims` index). */
+  ims?: boolean;
 }) => {
   let at = 1;
+  const ims = f.ims ? " AND d.ims_status = 'pending'" : "";
   const status = f.status === "plain" ? ` AND d.status = ?${++at}` : "";
   const overdue =
     f.status === "overdue"
@@ -168,11 +199,11 @@ export const INVOICE_LIST_SQL = (f: {
       : "";
   const client = f.client ? ` AND d.client_id = ?${++at}` : "";
   const cursor = f.cursor ? ` AND ${keysetSql("d.created_at", "d.id", false, "after", at + 1).where}` : "";
-  return `SELECT d.id, d.type, d.status, d.number_display, d.client_id, cl.code AS client_code, cl.display_name AS client_name, (cl.anonymised_at IS NOT NULL) AS client_gone, d.currency, d.total_minor, d.balance_minor, d.issue_date, d.due_date, d.content_sha256, d.frozen_at, d.pdf_sha256, d.created_at, d.updated_at,
+  return `SELECT d.id, d.type, d.status, d.number_display, d.client_id, cl.code AS client_code, cl.display_name AS client_name, (cl.anonymised_at IS NOT NULL) AS client_gone, d.currency, d.total_minor, d.balance_minor, d.issue_date, d.due_date, d.content_sha256, d.frozen_at, d.pdf_sha256, d.ims_status, d.created_at, d.updated_at,
      (SELECT a.status FROM approvals a WHERE a.document_id = d.id AND a.kind = 'issue' ORDER BY a.created_at DESC, a.id DESC LIMIT 1) AS approval_status,
      (SELECT a.content_sha256 FROM approvals a WHERE a.document_id = d.id AND a.kind = 'issue' ORDER BY a.created_at DESC, a.id DESC LIMIT 1) AS approval_sha
    FROM documents d JOIN clients cl ON cl.id = d.client_id
-   WHERE d.type = ?1${status}${overdue}${client}${cursor}
+   WHERE d.type = ?1${ims}${status}${overdue}${client}${cursor}
    ORDER BY d.created_at DESC, d.id DESC LIMIT`;
 };
 
@@ -191,6 +222,7 @@ const listRow = (r: ListRow, todayIso: string) => ({
   dueDate: r.due_date,
   overdue: isOverdue(r, todayIso),
   pdf: r.frozen_at === null ? "none" : r.pdf_sha256 === null ? "pending" : "ready",
+  imsStatus: r.ims_status,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
   // A waiting issue request is shown from the approvals row, never stored as a status; one for another content has expired.
@@ -212,6 +244,7 @@ export async function listInvoices(
     type?: string | undefined;
     status?: string | undefined;
     clientId?: string | undefined;
+    ims?: string | undefined;
     limit?: string | undefined;
     after?: string | undefined;
   },
@@ -222,9 +255,21 @@ export async function listInvoices(
   if (q.after !== undefined && (!cur || typeof cur.k !== "number")) return err(c, BAD_REQUEST, 400);
   const now = Date.now();
   const todayIso = issueDateOf(now);
-  const types = q.type ? [q.type] : INVOICE_FLOW_TYPES;
+  // `ims=pending` is about credit notes only.
+  const types = q.ims
+    ? q.type && q.type !== "credit_note"
+      ? []
+      : ["credit_note"]
+    : q.type
+      ? [q.type]
+      : INVOICE_FLOW_TYPES;
   const mode = q.status === undefined ? null : q.status === "overdue" ? "overdue" : "plain";
-  const filters = { status: mode, client: q.clientId !== undefined, cursor: cur !== null } as const;
+  const filters = {
+    status: mode,
+    client: q.clientId !== undefined,
+    cursor: cur !== null,
+    ims: q.ims !== undefined,
+  } as const;
   const stmts = types.map((t) =>
     c.env.DB.prepare(`${INVOICE_LIST_SQL(filters)} ${limit + 1}`).bind(
       t,
@@ -233,6 +278,7 @@ export async function listInvoices(
       ...(cur ? [cur.k, cur.id] : []),
     ),
   );
+  if (stmts.length === 0) return c.json({ invoices: [], next: null });
   const results = await c.env.DB.batch<ListRow>(stmts);
   const merged = results
     .flatMap((r) => r.results)
@@ -365,6 +411,8 @@ export const patchBody = z.strictObject({
       serviceCompletedOn: z.optional(z.nullable(isoDate)),
       /** M5.2 (LD23): add the newest extra export note (an export draft). */
       exportDeclaration: z.optional(z.boolean()),
+      /** M5.3 (LD38): a credit or debit note draft's request and reason (its lines are derived, never typed). */
+      note: z.optional(noteFieldsIn),
     }),
   ),
   lines: z.optional(z.array(lineIn).check(z.maxLength(100))),
@@ -611,24 +659,77 @@ export const invoices = new Hono<AppEnv>()
     if (!ctx) return err(c, NOT_FOUND, 404);
     const d = ctx.bundle.document;
     const now = Date.now();
-    const computation =
-      d.frozen_at === null
-        ? await computeInvoice(
-            invoiceStateOf(ctx.bundle),
-            ctx.client,
-            taxContext(ctx.settings),
-            todayOf(now),
-            targetOf(ctx.milestone),
-          )
-        : null;
+    const role = actor(c).role;
+    // M5.3: only a note (its invoice's reads) or an issued tax or export invoice (its notes' reads) needs the note statements: one more batch for those, none for a draft,
+    // a proforma or any other type.
+    const isNote = isNoteType(d.type);
+    const isParent = !isNote && isNoteParentType(d.type) && d.frozen_at !== null;
+    const noteExtra: D1Result[] = isNote
+      ? await db.batch(parentStatements(db, NOTE_PARENT_READS, id))
+      : isParent
+        ? await db.batch(NOTES_VIEW_READS.map((sql) => db.prepare(sql).bind(id)))
+        : [];
+    let notesPart: InvoiceNotesView | null = null;
+    let notePart: NoteViewPart | null = null;
+    let noteBlockers: ReturnType<typeof blockersOfNote> | undefined;
+    let computation: Awaited<ReturnType<typeof computeInvoice>> | null = null;
+    if (isNote) {
+      const p = parentCtxOf(noteExtra);
+      const stored = storedNoteOf(d);
+      notePart = noteView({ bundle: ctx.bundle, role, stored, parent: p });
+      if (d.frozen_at === null && p && stored) {
+        const kind = noteKindOf(d.type as "credit_note" | "debit_note");
+        const re = recomputeNote(kind, p, stored.request.takes, taxContext(ctx.settings), todayOf(now));
+        const state = noteState({
+          id,
+          kind,
+          p,
+          client: ctx.client,
+          contactId: d.contact_id,
+          note: noteOfOf(kind, p, stored.reason, stored.request),
+          lines: noteLines(p, stored.request.takes),
+        });
+        computation = await noteComputation(state, re.computed, re.errors);
+        noteBlockers = blockersOfNote({
+          kind,
+          currency: d.currency,
+          p,
+          stored,
+          re,
+          settings: ctx.settings,
+          bank: ctx.bank,
+          issueDate: issueDateOf(now),
+        });
+      }
+    } else if (isParent) {
+      notesPart = invoiceNotesView({
+        bundle: ctx.bundle,
+        role,
+        settings: ctx.settings,
+        clientGone: ctx.client.anonymised_at !== null,
+        todayIso: issueDateOf(now),
+        results: noteExtra,
+      });
+    } else if (d.frozen_at === null) {
+      computation = await computeInvoice(
+        invoiceStateOf(ctx.bundle),
+        ctx.client,
+        taxContext(ctx.settings),
+        todayOf(now),
+        targetOf(ctx.milestone),
+      );
+    }
     return c.json(
       invoiceView({
         bundle: ctx.bundle,
         client: ctx.client,
         contact: ctx.contact,
         settings: ctx.settings,
-        role: actor(c).role,
+        role,
         prepared: computation ? { computation } : null,
+        notesPart,
+        notePart,
+        ...(noteBlockers ? { noteBlockers } : {}),
         approvals: ctx.approvals,
         milestone: ctx.milestone,
         emailed: ctx.emailed,
@@ -669,6 +770,9 @@ export const invoices = new Hono<AppEnv>()
     if (doc.frozen_at !== null) return err(c, FROZEN, 409);
     if (doc.updated_at !== f.expectedUpdatedAt) return err(c, STALE_VERSION, 409);
     if (ctx.client.anonymised_at !== null) return err(c, CLIENT_GONE, 409);
+    // M5.3: a note draft has its own save (its request, its reason, its contact; the lines come from the request), and no other draft has a note request.
+    if (isNoteType(doc.type)) return patchNoteDraft(c, ctx, f);
+    if (f.fields?.note !== undefined) return err(c, BAD_REQUEST, 400);
 
     let state = invoiceStateOf(ctx.bundle);
     let contact: ContactFacts | null = ctx.contact;
@@ -968,6 +1072,8 @@ export const invoices = new Hono<AppEnv>()
     const ctx = await readInvoice(c, id);
     if (!ctx) return err(c, NOT_FOUND, 404);
     const d = ctx.bundle.document;
+    // M5.3 (Q31, LD47; VERIFY WITH CA/LEGAL): a credit or debit note is never voided; a wrong one is corrected by another note.
+    if (isNoteType(d.type)) return err(c, NOTE_NOT_VOIDABLE, 409);
     const t = Math.max(Date.now(), d.updated_at + 1);
     const today = issueDateOf(t);
     const reasons = voidBlockers({
@@ -1028,6 +1134,23 @@ export const invoices = new Hono<AppEnv>()
             `UPDATE milestones SET status = CASE WHEN status <> 'invoiced' THEN status WHEN delivered_at IS NULL THEN 'pending' ELSE 'ready_to_bill' END, document_id = NULL, updated_at = ?2 WHERE document_id = ?1 AND ${g.sql(3)}`,
           )
           .bind(id, t, ...g.params),
+        // M5.3 (LD47): the open note drafts of a voided invoice go with it (a note can only be issued against a live invoice), with their issue requests and the bells about them:
+        // each guarded on this void (the audit row), in the order the foreign keys need.
+        db
+          .prepare(
+            `DELETE FROM notifications WHERE entity_type = 'approval' AND entity_id IN (SELECT a.id FROM approvals a JOIN documents n ON n.id = a.document_id WHERE n.parent_id = ?1 AND n.type IN ('credit_note', 'debit_note') AND n.frozen_at IS NULL) AND ${g.sql(2)}`,
+          )
+          .bind(id, ...g.params),
+        db
+          .prepare(
+            `DELETE FROM approvals WHERE document_id IN (SELECT n.id FROM documents n WHERE n.parent_id = ?1 AND n.type IN ('credit_note', 'debit_note') AND n.frozen_at IS NULL) AND ${g.sql(2)}`,
+          )
+          .bind(id, ...g.params),
+        db
+          .prepare(
+            `DELETE FROM documents WHERE parent_id = ?1 AND type IN ('credit_note', 'debit_note') AND frozen_at IS NULL AND ${g.sql(2)}`,
+          )
+          .bind(id, ...g.params),
       ],
     });
     if (!done) {

@@ -1,6 +1,8 @@
 // Issue requests in the approvals queue (M5.1, ADM-APR-01/02, Q6): Staff ask the owner to issue a draft invoice; the owner issues it from here
 // (approve = issue, with a fresh code and the next number) or rejects it with an optional reason shown to the requester. A request is for one
 // content: a change to the draft afterwards expires it, and the queue shows it as expired. Staff see their own requests and how each went.
+// M5.3: a credit or debit note's request is decided here too, in 07-T §8's words (the owner's bell as the request, the note's own issue button and toast).
+import "../../notes.css";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { stepUpActive } from "../../api.ts";
@@ -25,11 +27,17 @@ import {
   typeLabel,
 } from "../../lib/invoices.ts";
 import { type IssueApprovalRow, invoicesApi } from "../../lib/invoices-api.ts";
+import { issueLabel, NOTE_COPY, noteIssuedToast, noteRequestRow } from "../../lib/notes.ts";
+import type { NoteKind } from "../../lib/notes-api.ts";
 import { withCode } from "../../lib/step-up.ts";
 import { ApprovalPill } from "../documents/parts.tsx";
 import { invoiceHref, NumberMark } from "./parts.tsx";
 
 const CODE_MISSING = "Enter the 6-digit code from your authenticator app.";
+
+/** The kind of a note's request (null: an invoice's). */
+const noteKindOf = (r: IssueApprovalRow): NoteKind | null =>
+  r.document.type === "credit_note" ? "credit" : r.document.type === "debit_note" ? "debit" : null;
 
 export function IssueQueue(props: {
   owner: boolean;
@@ -191,7 +199,9 @@ export function IssueQueue(props: {
       )}
       <Modal
         open={!!deciding}
-        title={INV_COPY.kindIssue}
+        title={
+          deciding && noteKindOf(deciding) ? issueLabel(noteKindOf(deciding) as NoteKind) : INV_COPY.kindIssue
+        }
         onClose={() => {
           setDeciding(null);
           props.onLinkedDone();
@@ -205,7 +215,12 @@ export function IssueQueue(props: {
               props.onLinkedDone();
             }}
             onDecided={(approved, number) => {
-              const text = approved ? issuedToast(number ?? "") : DOC_TOASTS.rejected;
+              const k = noteKindOf(deciding);
+              const text = approved
+                ? k
+                  ? noteIssuedToast(k, number ?? "")
+                  : issuedToast(number ?? "")
+                : DOC_TOASTS.rejected;
               toast("success", text);
               setResult({ approved, text });
               setDeciding(null);
@@ -237,6 +252,7 @@ function IssueDecision(props: {
   const needsCode = !stepUpActive();
   // Q8 (07-S §4): an export invoice in INR is approved only with the explicit "Issue in INR"; the question is on the dialog before the button.
   const inrExport = r.document.type === "export_invoice" && r.document.currency === "INR";
+  const kind = noteKindOf(r);
 
   async function decide(decision: "approve" | "reject") {
     if (decision === "approve" && needsCode && code.length !== 6) {
@@ -269,9 +285,19 @@ function IssueDecision(props: {
     <>
       <div className="dialog__body decision">
         <p className="inv-request-line">
-          {requestRow(requester, r.document.clientName, moneyText(r.totalMinor, r.document.currency))}
+          {kind
+            ? noteRequestRow(requester, kind, r.document.clientName)
+            : requestRow(requester, r.document.clientName, moneyText(r.totalMinor, r.document.currency))}
         </p>
-        <p>{INV_COPY.approveNote}</p>
+        {kind && (
+          <dl className="inv-facts note-decide__total">
+            <div>
+              <dt>{DOC_COPY.colTotal}</dt>
+              <dd className="tnum">{moneyText(r.totalMinor, r.document.currency)}</dd>
+            </div>
+          </dl>
+        )}
+        <p>{kind ? NOTE_COPY.finalStatement : INV_COPY.approveNote}</p>
         <FormField id="issue-decide-note" label={rejectReasonLabel(requester)}>
           {(a) => (
             <textarea
@@ -320,7 +346,7 @@ function IssueDecision(props: {
           disabled={busy !== null}
           aria-busy={busy === "approve" || undefined}
         >
-          {inrExport ? INVT_COPY.issueInInr : INV_COPY.approveButton}
+          {inrExport ? INVT_COPY.issueInInr : kind ? issueLabel(kind) : INV_COPY.approveButton}
         </button>
       </div>
     </>

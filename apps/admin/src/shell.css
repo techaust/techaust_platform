@@ -2902,3 +2902,21 @@ table.diff__table td.diff__arrow {
   top: 0;
   right: 0;
 }
+
+/* Settings › Tax (M5.3): the day each year's annual return was filed, one date per financial year, in the control column. */
+.annual-returns__years {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.annual-returns__year {
+  margin: 0;
+}
+
+.annual-returns__year > label {
+  font-variant-numeric: tabular-nums;
+}

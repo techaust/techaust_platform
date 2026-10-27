@@ -39,6 +39,8 @@ export const MUTABLE_AFTER_FREEZE = [
   "ack_date",
   "signed_qr",
   "einv_status",
+  // M5.3 (LD46): the client's IMS response to a credit note; the triggers of 0042 allow only the moves of `canSetImsStatus`.
+  "ims_status",
   "updated_at",
 ] as const;
 
@@ -714,6 +716,63 @@ export function invoiceTypeTriggerStatements(): string[] {
   ];
 }
 
+/**
+ * Credit and debit notes (M5.3, ADM-INV-11, LD38..LD51; new triggers only, no table is rebuilt, `ims_status` has no CHECK; every abort message starts with
+ * the trigger's name so the API can map it). VERIFY WITH CA/LEGAL for the rules; the API and the freeze statement check the same rules in SQL conditions
+ * first, these hold whatever writes to the tables:
+ *   1. `documents_note_parent_required_insert` / `_update`: a credit or debit note has a parent;
+ *   2. `documents_note_issue_check`: at the freeze, the parent is a frozen tax or export invoice of the same client and currency that is still live
+ *      (issued, part paid, paid or part credited: not void, not fully credited) and the note has the parent's supply, place of supply, rate and route (a
+ *      parent that was voided after the draft was made refuses it: `documents_parent_check_*` only looks when the parent link changes);
+ *   3. `documents_credit_note_cap`: at the freeze, a credit note's total, taxable value, each tax head and (a USD invoice) INR total are each at most the
+ *      parent's minus the other issued, not void credit notes of that parent;
+ *   4. `documents_ledger_bounds`: `credited_minor` is between 0 and the total, and `balance_minor` is never negative;
+ *   5. `documents_note_no_void`: a credit or debit note is never voided (Q31: a wrong note is corrected by another note);
+ *   6. `documents_ims_status_insert` / `_update`: `ims_status` starts empty; only a credit note gets one, set once at the freeze (`pending`, or
+ *      `not_applicable`), and a `pending` one moves once to `accepted` or `rejected` (core `canSetImsStatus` is the twin);
+ *   7. `documents_credit_note_ims_required`: a credit note cannot freeze with an empty IMS status (the freeze sets it; the update trigger above only
+ *      looks when `ims_status` changes, so an empty one would pass unseen).
+ */
+export function noteTriggerStatements(): string[] {
+  const named = (name: string, message: string) => abort(`${name}: ${message}`);
+  const notes = "('credit_note', 'debit_note')";
+  const issuing = `OLD.status = 'draft' AND NEW.status = 'issued' AND NEW.type IN ${notes}`;
+  const needsParent = `NEW.type IN ${notes} AND NEW.parent_id IS NULL`;
+  const badParent =
+    "NOT EXISTS (SELECT 1 FROM documents p WHERE p.id = NEW.parent_id AND p.type IN ('tax_invoice', 'export_invoice') AND p.frozen_at IS NOT NULL AND p.status IN ('issued', 'partially_paid', 'paid', 'partially_credited') AND p.client_id = NEW.client_id AND p.currency = NEW.currency AND p.supply_type IS NEW.supply_type AND p.place_of_supply_code IS NEW.place_of_supply_code AND p.fx_rate_micros IS NEW.fx_rate_micros AND p.export_mode IS NEW.export_mode)";
+  const heads = [
+    "total_minor",
+    "taxable_minor",
+    "cgst_minor",
+    "sgst_minor",
+    "igst_minor",
+    "total_inr_minor",
+  ] as const;
+  const sums = heads.map((h) => `coalesce(sum(c.${h}), 0) AS ${h}`).join(", ");
+  const over = heads.map((h) => `NEW.${h} > p.${h} - s.${h}`).join(" OR ");
+  const overCap = `EXISTS (SELECT 1 FROM documents p, (SELECT ${sums} FROM documents c WHERE c.parent_id = NEW.parent_id AND c.type = 'credit_note' AND c.frozen_at IS NOT NULL AND c.status <> 'void' AND c.id <> NEW.id) s WHERE p.id = NEW.parent_id AND (${over}))`;
+  const ledgerBad = "NEW.credited_minor < 0 OR NEW.credited_minor > NEW.total_minor OR NEW.balance_minor < 0";
+  // Three-valued logic: `OLD.ims_status = 'pending'` is NULL when it was empty, and a NULL WHEN does not fire; so `IS` for every comparison with a nullable column and `coalesce` around the whole move.
+  const imsMove =
+    "(OLD.ims_status IS NULL AND NEW.ims_status IN ('pending', 'not_applicable') AND OLD.type = 'credit_note' AND OLD.frozen_at IS NULL AND NEW.frozen_at IS NOT NULL) OR (OLD.ims_status IS 'pending' AND NEW.ims_status IN ('accepted', 'rejected') AND OLD.type = 'credit_note' AND OLD.frozen_at IS NOT NULL)";
+  const imsBad = `NEW.ims_status IS NOT OLD.ims_status AND NOT coalesce(${imsMove}, 0)`;
+  const imsRequiredMsg = "a credit note is issued with its IMS status set (pending or not applicable)";
+  const parentMsg = "a credit or debit note names its invoice";
+  const imsMsg =
+    "the IMS status is set once at the issue of a credit note, and a pending one is answered once";
+  return [
+    `CREATE TRIGGER \`documents_note_parent_required_insert\` BEFORE INSERT ON \`documents\` WHEN ${needsParent} BEGIN ${named("documents_note_parent_required_insert", parentMsg)} END;`,
+    `CREATE TRIGGER \`documents_note_parent_required_update\` BEFORE UPDATE OF parent_id, type ON \`documents\` WHEN ${needsParent} BEGIN ${named("documents_note_parent_required_update", parentMsg)} END;`,
+    `CREATE TRIGGER \`documents_note_issue_check\` BEFORE UPDATE OF status ON \`documents\` WHEN ${issuing} AND ${badParent} BEGIN ${named("documents_note_issue_check", "the invoice of a note must be an issued, live invoice of the same client and currency, with the same supply, rate and route")} END;`,
+    `CREATE TRIGGER \`documents_credit_note_cap\` BEFORE UPDATE OF status ON \`documents\` WHEN ${issuing} AND NEW.type = 'credit_note' AND ${overCap} BEGIN ${named("documents_credit_note_cap", "the credit notes of an invoice cannot add up to more than the invoice, in total or in any tax head")} END;`,
+    `CREATE TRIGGER \`documents_ledger_bounds\` BEFORE UPDATE OF credited_minor, balance_minor ON \`documents\` WHEN ${ledgerBad} BEGIN ${named("documents_ledger_bounds", "credited is between zero and the total, and the balance is never negative")} END;`,
+    `CREATE TRIGGER \`documents_note_no_void\` BEFORE UPDATE OF status ON \`documents\` WHEN NEW.status = 'void' AND OLD.type IN ${notes} BEGIN ${named("documents_note_no_void", "a credit or debit note is never voided")} END;`,
+    `CREATE TRIGGER \`documents_ims_status_insert\` BEFORE INSERT ON \`documents\` WHEN NEW.ims_status IS NOT NULL BEGIN ${named("documents_ims_status_insert", imsMsg)} END;`,
+    `CREATE TRIGGER \`documents_ims_status_update\` BEFORE UPDATE OF ims_status ON \`documents\` WHEN ${imsBad} BEGIN ${named("documents_ims_status_update", imsMsg)} END;`,
+    `CREATE TRIGGER \`documents_credit_note_ims_required\` BEFORE UPDATE OF status ON \`documents\` WHEN ${issuing} AND NEW.type = 'credit_note' AND NEW.ims_status IS NULL BEGIN ${named("documents_credit_note_ims_required", imsRequiredMsg)} END;`,
+  ];
+}
+
 /** The trigger sets, by the name the migration is created with (`drizzle-kit generate --custom --name <set>`). */
 export const TRIGGER_SETS = {
   triggers: { what: "integrity triggers (docs/05 §5.3)", statements: triggerStatements },
@@ -759,6 +818,10 @@ export const TRIGGER_SETS = {
   invoice_type_triggers: {
     what: "freeze trigger recreated for M5.2's columns, service date check, advance receipts append-only and scope (M5.2)",
     statements: invoiceTypeTriggerStatements,
+  },
+  note_triggers: {
+    what: "credit and debit notes: parent required, issue check, credit cap, ledger bounds, no void, IMS status and its presence at the freeze (M5.3)",
+    statements: noteTriggerStatements,
   },
 } as const;
 export type TriggerSet = keyof typeof TRIGGER_SETS;

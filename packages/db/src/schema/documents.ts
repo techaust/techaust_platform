@@ -227,6 +227,12 @@ export const documents = sqliteTable(
      * tax invoice). The frozen view, the PDF and the seal's verifier read it; nothing is rebuilt from live settings after issue.
      */
     headerExtras: text("header_extras"),
+    /**
+     * M5.3 (LD46, Q14; VERIFY WITH CA/LEGAL): the client's response to a credit note in the GST portal's Invoice Management System: NULL (not a credit note, or
+     * not frozen yet), `pending`, `accepted`, `rejected` or `not_applicable`. NO schema CHECK (a table CHECK would make drizzle-kit rebuild `documents`, which
+     * other tables reference): the values are enforced by the triggers of migration 0042. Mutable after the freeze, through `POST /invoices/:id/ims-status` only.
+     */
+    imsStatus: text("ims_status"),
     // IRP e-invoicing (ADM-INV-14): empty at launch.
     irn: text("irn"),
     ackNo: text("ack_no"),
@@ -265,6 +271,14 @@ export const documents = sqliteTable(
       .on(t.sourceDocumentId, t.sourceStep)
       .where(sql`${t.sourceDocumentId} is not null`),
     index("documents_contact").on(t.contactId),
+    // M5.3 (LD38): one open (unfrozen) note draft per parent and type. A draft discarded, issued or deleted with its parent frees the slot.
+    uniqueIndex("documents_open_note")
+      .on(t.parentId, t.type)
+      .where(sql`${t.frozenAt} is null and ${t.type} in ('credit_note', 'debit_note')`),
+    // M5.3 (LD46): the IMS list ("credit notes whose client has not answered"), newest first.
+    index("documents_note_ims")
+      .on(t.type, t.imsStatus, t.createdAt, t.id)
+      .where(sql`${t.type} = 'credit_note'`),
     // M4.4: the PDF sweep reads only frozen documents that have no PDF yet (a small set), oldest first. M5.1 (LD9) widens the predicate to
     // the invoice family (receipts and vouchers have no PDF of their own yet); the type stays in it so a frozen row of any other type
     // never keeps the sweep busy.

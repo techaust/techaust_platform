@@ -137,6 +137,30 @@ export const lutEntry = z.strictObject({
 });
 
 /**
+ * G-11, Q33 (M5.3; VERIFY WITH CA/LEGAL): the day the annual return (GSTR-9) of a financial year was filed. Once it is, credit notes for that year's supplies are
+ * refused from that day (s.34(2): "or the date of furnishing the annual return, whichever is earlier"). `fy` is the token ("2627", the lutEntry rule), `filedOn` an
+ * ISO date on or after 1 April after that FY ends. A day after today is refused by the route (`annual_return_future`), never here: this schema has no clock.
+ */
+export const annualReturnEntry = z
+  .strictObject({
+    // 07-T §8: "Enter the financial year." (the token is two consecutive years, "2627")
+    fy: z.string().check(
+      z.regex(/^\d{4}$/, { error: "Enter the financial year." }),
+      // only a four-digit token is checked here, so a malformed one gets the message once
+      z.refine((v) => !/^\d{4}$/.test(v) || (Number(v.slice(0, 2)) + 1) % 100 === Number(v.slice(2)), {
+        error: "Enter the financial year.",
+      }),
+    ),
+    filedOn: isoDate,
+  })
+  .check(
+    z.refine((v) => !/^\d{4}$/.test(v.fy) || v.filedOn >= `${2000 + Number(v.fy.slice(2))}-04-01`, {
+      error: "The filing date must be after the end of that financial year.",
+      path: ["filedOn"],
+    }),
+  );
+
+/**
  * LD31: only the switchable lines of the mandatory-field checklist (ADM-INV-06) are stored in the `tax` row; the locked ones are a constant in
  * `@techaust/core/invoices` and naming one here is refused (a strict object). The payment link stays off until online payment exists (M6): `true` is refused.
  */
@@ -205,6 +229,26 @@ export const taxSettings = z.object({
   invoiceAlertDays: intBetween(1, 30),
   /** G-11: credit notes are blocked after this date following the FY of supply (or the annual return). */
   creditNoteCutoff: z.object({ month: intBetween(1, 12), day: intBetween(1, 31) }),
+  /** G-11, Q33 (M5.3): the annual returns filed, at most one per FY, at most 20; a stored row without it reads as empty. */
+  annualReturnsFiled: z.prefault(
+    z.array(annualReturnEntry).check(
+      z.maxLength(20),
+      z.check((ctx) => {
+        const seen = new Set<string>();
+        ctx.value.forEach((r, i) => {
+          if (seen.has(r.fy))
+            ctx.issues.push({
+              code: "custom",
+              message: "This year already has a filing date.",
+              input: ctx.value,
+              path: [i, "fy"],
+            });
+          seen.add(r.fy);
+        });
+      }),
+    ),
+    [],
+  ),
   /** ADM-INV-06: unregistered recipients at or above this value need name, address and state. */
   b2cDetailsThresholdInrMinor: minor,
   /** G-12: export realisation warnings (FEMA). */
@@ -432,6 +476,7 @@ export const SETTINGS_DEFAULTS: Settings = {
     reverseChargeText: "Tax payable on reverse charge: No",
     invoiceAlertDays: 25,
     creditNoteCutoff: { month: 11, day: 30 },
+    annualReturnsFiled: [],
     b2cDetailsThresholdInrMinor: 50_000_00,
     realisation: { warnMonths: 9, escalateMonths: 12, escalateExtraDays: 15 },
     crossBorderWarnInrMinor: 25_00_000_00,

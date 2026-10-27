@@ -804,6 +804,83 @@ describe("approval.notify for an issue request [ADM-APR-01, ADM-MAIL-01; 07-R §
     });
   });
 
+  it("a credit or debit note names itself and its invoice in both emails (M5.3: the document type and `parent_number`, 07-T §8); an invoice's email carries neither key", async () => {
+    const w = await world();
+    for (const [type, word] of [
+      ["credit_note", "credit note"],
+      ["debit_note", "debit note"],
+    ] as const) {
+      const parent = uuidv7();
+      await run(
+        "INSERT INTO documents (id, type, status, client_id, currency, total_minor, number_display, series, fy, number, frozen_at) VALUES (?1, 'tax_invoice', 'issued', ?2, 'INR', 118000, ?3, 'invoice', '9998', ?4, 1000)",
+        parent,
+        w.clientId,
+        `TH/INV/9998/${word.length}`,
+        word.length + 700,
+      );
+      const doc = uuidv7();
+      await run(
+        "INSERT INTO documents (id, type, status, client_id, parent_id, currency, total_minor, number_display) VALUES (?1, ?2, 'draft', ?3, ?4, 'INR', 11800, NULL)",
+        doc,
+        type,
+        w.clientId,
+        parent,
+      );
+      const id = uuidv7();
+      await run(
+        "INSERT INTO approvals (id, kind, document_id, requested_by, reason, content_sha256, status) VALUES (?1, 'issue', ?2, ?3, 'x', 'hash', 'pending')",
+        id,
+        doc,
+        w.sender.id,
+      );
+      queued = [];
+      expect(
+        await processApprovalNotify(makeEnv(), {
+          kind: "approval.notify",
+          approvalId: id,
+          event: "requested",
+        }),
+      ).toBe("queued");
+      expect(queued[0]?.data).toMatchObject({
+        kind: "issue",
+        document_type: word,
+        title: `${word} for Sample Traders`,
+        request_reason: `issuing a ${word}`,
+        parent_number: `TH/INV/9998/${word.length}`,
+      });
+      await run(
+        "UPDATE approvals SET status = 'rejected', decided_by = ?2, decided_at = ?3 WHERE id = ?1",
+        id,
+        w.owner.id,
+        NOW,
+      );
+      queued = [];
+      expect(
+        await processApprovalNotify(makeEnv(), { kind: "approval.notify", approvalId: id, event: "decided" }),
+      ).toBe("queued");
+      expect(queued[0]?.data).toMatchObject({
+        kind: "issue",
+        document_type: word,
+        decision: "Rejected",
+        parent_number: `TH/INV/9998/${word.length}`,
+      });
+    }
+    // an invoice's emails are what they were: no document_type key
+    queued = [];
+    const inv = await issueRequest(w);
+    await processApprovalNotify(makeEnv(), {
+      kind: "approval.notify",
+      approvalId: inv.id,
+      event: "requested",
+    });
+    expect(queued[0]?.data).not.toHaveProperty("document_type");
+    expect(queued[0]?.data).not.toHaveProperty("parent_number");
+    expect(queued[0]?.data).toMatchObject({
+      title: "Invoice for Sample Traders",
+      request_reason: "issuing an invoice",
+    });
+  });
+
   it("an anonymised client is never named in an email; an event that does not match the state sends nothing", async () => {
     const w = await world();
     const a = await issueRequest(w);

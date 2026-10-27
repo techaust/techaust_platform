@@ -198,6 +198,11 @@ export const ROUTES: readonly RouteDef[] = [
   // M5.2: the day the service was completed (set once), and the tax invoice for money received against a proforma (Q9: Owner only, with a fresh code).
   R("POST", "/invoices/:id/service-completed", "invoices.draft", { audit: "invoice.service_completed" }),
   R("POST", "/invoices/:id/advance-invoice", "invoices.advance", { audit: "invoice.advance_issue" }),
+  // M5.3 (ADM-INV-11): the draft of a credit or debit note against an issued invoice (a Staff member drafts and asks, the Owner issues: the same issue, request and approve
+  // routes as an invoice), and the client's IMS answer on a credit note (Q36: the Owner, no fresh code: it changes no money).
+  R("POST", "/invoices/:id/credit-note", "invoices.draft", { audit: "invoice.note_create" }),
+  R("POST", "/invoices/:id/debit-note", "invoices.draft", { audit: "invoice.note_create" }),
+  R("POST", "/invoices/:id/ims-status", "invoices.ims", { audit: "invoice.ims_status" }),
   R("GET", "/invoices/:id/pdf", "invoices.read"),
   R("POST", "/invoices/:id/pdf/retry", "invoices.draft", { audit: "invoice.pdf_retry" }),
   R("GET", "/clients/:id/invoices", "invoices.read"),

@@ -39,7 +39,7 @@ export function InvoicesGate({ children }: { children: ReactNode }) {
 export function InvoiceBadge({ badge }: { badge: Badge }) {
   const p = BADGE_PILLS[badge];
   return (
-    <StatusPill tone={p.tone} icon={p.icon}>
+    <StatusPill tone={p.tone} icon={p.icon} outline={p.outline}>
       {badge === "void" ? <span className="inv-void-label">{BADGE_LABELS.void}</span> : BADGE_LABELS[badge]}
     </StatusPill>
   );

@@ -567,6 +567,10 @@ describe("the route table", () => {
       "POST /api/v1/invoices/:id/void invoices.void invoice.void",
       "POST /api/v1/invoices/:id/service-completed invoices.draft invoice.service_completed",
       "POST /api/v1/invoices/:id/advance-invoice invoices.advance invoice.advance_issue",
+      // M5.3 (added on purpose): the note drafts and the IMS answer
+      "POST /api/v1/invoices/:id/credit-note invoices.draft invoice.note_create",
+      "POST /api/v1/invoices/:id/debit-note invoices.draft invoice.note_create",
+      "POST /api/v1/invoices/:id/ims-status invoices.ims invoice.ims_status",
       "GET /api/v1/invoices/:id/pdf invoices.read -",
       "POST /api/v1/invoices/:id/pdf/retry invoices.draft invoice.pdf_retry",
       "GET /api/v1/clients/:id/invoices invoices.read -",

@@ -275,9 +275,9 @@ describe("who may issue [ADM-INV-03, ADM-AUTH-08, ADM-APR-01]", () => {
     const blocked = await requestIssue(staff, empty);
     expect(blocked.status).toBe(409);
     expect(await codeOf(blocked)).toBe("issue_blocked");
-    // M5.2: export invoices and proformas issue now; a credit note still answers type_not_issuable until M5.3 (changed on purpose).
-    const cn = await mkDoc(c.clientId, "credit_note");
-    expect(await codeOf(await requestIssue(staff, cn))).toBe("type_not_issuable");
+    // M5.3: a quote is not an invoice at all (a credit note used to answer type_not_issuable here; notes issue and request through invoice-notes.test.ts, changed on purpose).
+    const quote = await mkDoc(c.clientId, "proposal");
+    expect((await requestIssue(staff, quote)).status).toBe(404);
     const made = await mkInvoice(staff);
     const stale = await call(`/invoices/${made.id}/issue-request`, {
       cookie: staff.cookie,
@@ -546,19 +546,10 @@ describe("refusals leave the counter, the audit log and the milestone unchanged 
     }
   });
 
-  // M5.2 (changed on purpose): export invoices and proformas issue now (their own tests are in invoice-types*.test.ts); credit and debit notes wait for M5.3.
-  it("a credit note or a debit note is 409 type_not_issuable until M5.3", async () => {
+  // M5.3 (changed on purpose): credit and debit notes issue now (invoice-notes.test.ts); only a quote is still not an invoice at all.
+  it("a quote is not an invoice at all (404)", async () => {
     const o = await owner();
     const c = await mkInvoiceClient();
-    const cn = await mkDoc(c.clientId, "credit_note");
-    const dn = await mkDoc(c.clientId, "debit_note");
-    for (const id of [cn, dn]) {
-      const before = await snapshot(id);
-      const res = await issueInvoice(o, id, { expectedUpdatedAt: 1, expectedContentSha256: "a".repeat(64) });
-      expect(res.status).toBe(409);
-      expect(await codeOf(res)).toBe("type_not_issuable");
-      expect(await snapshot(id)).toEqual(before);
-    }
     // a quote is not an invoice at all
     const quote = await mkDoc(c.clientId, "proposal");
     expect(

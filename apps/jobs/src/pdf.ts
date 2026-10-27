@@ -322,10 +322,16 @@ async function renderInvoice(
   });
   const html = htmlOf(view);
   // LD33 (M5.2): an export invoice prints its frozen endorsement and a proforma its frozen notice, byte for byte, or nothing is rendered (the owners'
-  // bell rings once, the message is acknowledged without a retry: a retry would print the same page).
+  // bell rings once, the message is acknowledged without a retry: a retry would print the same page). LD54 (M5.3): a credit or debit note names the invoice it
+  // is against (the frozen number as one text node of its own), or nothing is rendered the same way (Rule 53(1A); VERIFY WITH CA/LEGAL).
   const missing = missingStatutoryLine(envelope, html);
   if (missing !== null) {
-    logEvent("pdf.refused", { stage: "render", code: `statutory_${missing}`, family: "invoice" });
+    logEvent("pdf.refused", {
+      stage: "render",
+      code: `statutory_${missing}`,
+      family: "invoice",
+      type: envelope.type,
+    });
     await env.DB.batch([refusedBell(env, row.id, label)]);
     return "refused";
   }

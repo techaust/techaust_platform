@@ -1,4 +1,4 @@
-// The plain invoice skeleton (M5.1 stage B3; since M5.2 only for credit and debit notes: the tax invoice, the export invoice and the proforma have ./invoice.ts): every Rule 46 field of a tax invoice printed in a readable order, in the classes the proposal layout
+// The plain invoice skeleton (M5.1 stage B3; since M5.3 only for a type ./invoice.ts does not know: every invoice-family type has the designed layout): every Rule 46 field of a tax invoice printed in a readable order, in the classes the proposal layout
 // already styles (so the page is usable now), and nothing designed. The designer builds the real tax invoice layout on this in phase 2
 // (`layout/invoice.ts`, docs/06 §7.3, wording from 07-R); until then the words below are the skeleton's own and PENDING that approval, and every
 // rule printed is VERIFY WITH CA/LEGAL.
@@ -203,8 +203,8 @@ function notesBlock(view: InvoiceView): string {
   return `<div class="block"><h3>${esc(view.notes.title)}</h3><div class="terms">${markdownBlocks(view.notes.bodyMd).join("")}</div></div>`;
 }
 
-/** The body of an invoice (inside `<body>`): a tax invoice, an export invoice or a proforma in the designed layout (./invoice.ts); a credit or
- * debit note in this skeleton until M5.3 styles it. */
+/** The body of an invoice (inside `<body>`): every invoice-family type in the designed layout (./invoice.ts: tax and export invoices, proformas,
+ * credit and debit notes); a type it does not know in this skeleton. */
 export function invoiceBody(view: InvoiceView): string {
   return DESIGNED_INVOICE_TYPES.includes(view.type) ? taxInvoiceBody(view) : skeletonBody(view);
 }

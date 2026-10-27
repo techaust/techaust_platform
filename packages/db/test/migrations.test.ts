@@ -60,6 +60,8 @@ describe("migrations apply cleanly to a fresh D1", () => {
       "0038_invoice_triggers.sql",
       "0039_invoice_types.sql",
       "0040_invoice_type_triggers.sql",
+      "0041_note_ims.sql",
+      "0042_note_triggers.sql",
     ]);
   });
 

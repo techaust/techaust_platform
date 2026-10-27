@@ -4,7 +4,6 @@
 import { env } from "cloudflare:workers";
 import { sha256Hex } from "@techaust/core/catalogue";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mkDoc } from "./test-clients.ts";
 import { call, one, sessionFor } from "./test-helpers.ts";
 import {
   currentFy,
@@ -1092,16 +1091,7 @@ describe("the address of delivery and the optional export note [LD36, LD23, Rule
 // ---- types and roles ------------------------------------------------------------------------------------------------------------------------------
 
 describe("what stays closed", () => {
-  it("a credit note and a debit note are still type_not_issuable (M5.3)", async () => {
-    const o = await owner();
-    const c = await mkInvoiceClient();
-    for (const type of ["credit_note", "debit_note"]) {
-      const id = await mkDoc(c.clientId, type);
-      const res = await issueInvoice(o, id, { expectedUpdatedAt: 1, expectedContentSha256: "a".repeat(64) });
-      expect(res.status).toBe(409);
-      expect(await codeOf(res)).toBe("type_not_issuable");
-    }
-  });
+  // M5.3 (removed on purpose): a credit note and a debit note were `type_not_issuable` until now; they issue through invoice-notes.test.ts's routes, and a note row cannot exist without its invoice.
 
   it("Staff may draft a proforma and ask to issue it; only the Owner issues", async () => {
     const staff = await sessionFor("staff", { stepUp: true });
