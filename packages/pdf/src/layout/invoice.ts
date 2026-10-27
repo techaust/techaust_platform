@@ -228,7 +228,7 @@ function signatory(view: InvoiceView): string {
   const legal = extras(view).supplier.legalName;
   const name = legal && legal.trim() !== "" ? legal : view.supplier.name;
   const image = view.signature
-    ? `<img class="inv-sign__img" data-testid="signature" alt="" src="${esc(view.signature.dataUri)}">`
+    ? `<img data-testid="signature" class="inv-sign__img" alt="" src="${esc(view.signature.dataUri)}">`
     : `<div class="inv-sign__space"></div>`;
   return `<div class="inv-sign">${p("inv-sign__for", S.for(name))}${image}${p("inv-sign__role", S.signatory, ' data-testid="signatory"')}</div>`;
 }

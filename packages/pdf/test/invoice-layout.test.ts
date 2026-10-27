@@ -146,7 +146,7 @@ describe("the tax invoice layout prints every Rule 46 field the view carries", (
     const sig = sampleSignatureOf("signed");
     expect(sig).not.toBeNull();
     expect(withSig).toContain(
-      '<img class="inv-sign__img" data-testid="signature" alt="" src="data:image/png;base64,',
+      '<img data-testid="signature" class="inv-sign__img" alt="" src="data:image/png;base64,',
     );
     expect(withSig).toContain(sig?.base64.slice(0, 40));
     const without = body(await htmlOf("signed", false));

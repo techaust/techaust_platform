@@ -238,8 +238,10 @@ describe("the invoice render step", () => {
       "ORIGINAL FOR RECIPIENT",
       "Tax payable on reverse charge: No",
       "Authorised signatory",
-      "SAC 998314",
-      "Place of supply: West Bengal (19)",
+      // the tax invoice layout (packages/pdf layout/invoice.ts): the SAC in its own column, the place of supply and its code as header facts
+      '<td class="c-sac">998314</td>',
+      "<dt>Place of supply</dt><dd>West Bengal</dd>",
+      "<dt>State code</dt><dd>19</dd>",
       "SAMPLE BANK",
       "Notes, version",
     ])
