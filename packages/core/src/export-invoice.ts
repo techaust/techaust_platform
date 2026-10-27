@@ -1,6 +1,15 @@
 // What an export invoice and a proforma need beyond a domestic tax invoice (M5.2; ADM-INV-10, ADM-INV-18, G-6, G-8, U-1, 08-A §8), pure: no I/O, no zod,
 // no floats. Exported through `@techaust/core/invoices`. EVERY RULE AND EVERY WORD HERE IS A RESEARCHED DEFAULT: VERIFY WITH CA/LEGAL.
-import { addDays, financialYear, fromIst, fyOfDate, istDate, parseIsoDate, toIsoDate } from "./dates.ts";
+import {
+  addDays,
+  daysBetween,
+  financialYear,
+  fromIst,
+  fyOfDate,
+  istDate,
+  parseIsoDate,
+  toIsoDate,
+} from "./dates.ts";
 
 /**
  * The Rule 46 export endorsement, one line per route, in capitals as the rule gives it (07-S §1; word for word from 08-A §8 :344-348). Frozen and
@@ -108,7 +117,7 @@ export function isLutCheckMessage(body: unknown): body is LutCheckMessage {
 export function weekMondayOf(iso: string): string | null {
   const d = parseIsoDate(iso);
   if (!d) return null;
-  const days = Math.floor(Date.UTC(d.year, d.month - 1, d.day) / 86_400_000);
+  const days = daysBetween({ year: 1970, month: 1, day: 1 }, d); // whole days since 1970-01-01
   const sinceMonday = (days + 3) % 7; // 1 January 1970 was a Thursday
   return toIsoDate(addDays(d, -sinceMonday));
 }

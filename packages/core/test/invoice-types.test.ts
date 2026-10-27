@@ -19,7 +19,12 @@ import {
   type IssueBlockerCode,
   type IssueFacts,
   invoiceSnapshotSha256,
+  isLutCheckKind,
+  isLutCheckMessage,
   issueBlockers,
+  LUT_CHECK_KIND,
+  lutBellFor,
+  lutCheckMessage,
   lutFor,
   lutReminder,
   lutsFromStoredTax,
@@ -30,6 +35,7 @@ import {
   proformaWarnAt,
   proformaWarnDate,
   voidBlockers,
+  weekMondayOf,
 } from "../src/invoices.ts";
 import {
   foldLegacyLut,
@@ -224,6 +230,66 @@ describe("lutsFromStoredTax: the reader without zod [finding 7]", () => {
       lut: { arn: "OLD", fy: "2526" },
     });
     expect(lutsFromStoredTax(tax)).toEqual(lutsOf(tax));
+  });
+});
+
+describe("the daily LUT check: the message, the week and the bell [B3, ADM-INV-18, Q22, LD27]", () => {
+  const luts = (...fys: string[]) => fys.map((fy) => ({ fy, arn: `ARN${fy}` }));
+
+  it("the message carries the IST date of the run, and only a real one is a message", () => {
+    // 22:00 UTC on 9 March is 03:30 IST on 10 March
+    expect(lutCheckMessage(Date.UTC(2027, 2, 9, 22, 0))).toEqual({ kind: "lut.check", asOf: "2027-03-10" });
+    expect(LUT_CHECK_KIND).toBe("lut.check");
+    expect(isLutCheckMessage({ kind: "lut.check", asOf: "2027-03-10" })).toBe(true);
+    for (const bad of [
+      null,
+      undefined,
+      3,
+      "x",
+      [],
+      {},
+      { kind: "lut.check" },
+      { kind: "lut.check", asOf: 5 },
+      { kind: "lut.check", asOf: "2027-02-30" },
+      { kind: "other", asOf: "2027-03-10" },
+    ])
+      expect(isLutCheckMessage(bad), JSON.stringify(bad)).toBe(false);
+    expect(isLutCheckKind({ kind: "lut.check", asOf: "junk" })).toBe(true);
+    expect(isLutCheckKind({ kind: "other" })).toBe(false);
+    expect(isLutCheckKind(null)).toBe(false);
+  });
+
+  it("weekMondayOf: Monday to Sunday, across a month and a year; a bad date has none", () => {
+    expect(weekMondayOf("2027-03-08")).toBe("2027-03-08"); // a Monday
+    expect(weekMondayOf("2027-03-10")).toBe("2027-03-08");
+    expect(weekMondayOf("2027-03-14")).toBe("2027-03-08"); // the Sunday
+    expect(weekMondayOf("2027-03-15")).toBe("2027-03-15");
+    expect(weekMondayOf("2027-04-01")).toBe("2027-03-29");
+    expect(weekMondayOf("2027-01-01")).toBe("2026-12-28");
+    expect(weekMondayOf("2027-02-30")).toBeNull();
+    expect(weekMondayOf("junk")).toBeNull();
+  });
+
+  it("lutBellFor: March with no letter for the next FY rings 'next year'; April with none for the running FY rings 'missing'; otherwise nothing", () => {
+    expect(lutBellFor("2027-03-10", luts("2627"))).toEqual({
+      kind: "next_fy_due",
+      fy: "2728",
+      fyLabel: "2027-28",
+      entity: "lut:2728:2027-03-08",
+    });
+    expect(lutBellFor("2027-04-07", luts("2627"))).toEqual({
+      kind: "current_missing",
+      fy: "2728",
+      fyLabel: "2027-28",
+      entity: "lut:2728:2027-04-05",
+    });
+    expect(lutBellFor("2027-03-10", luts("2627", "2728"))).toBeNull();
+    expect(lutBellFor("2027-09-01", luts("2728"))).toBeNull();
+    // in March with no letter at all the 'next year' bell wins (one bell a week)
+    expect(lutBellFor("2027-03-10", [])?.kind).toBe("next_fy_due");
+    // a letter without an ARN does not count
+    expect(lutBellFor("2027-09-01", [{ fy: "2728", arn: " " }])?.kind).toBe("current_missing");
+    expect(lutBellFor("junk", [])).toBeNull();
   });
 });
 
