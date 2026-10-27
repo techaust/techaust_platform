@@ -11,10 +11,12 @@ import { addDays, fyOf, istDate, parseIsoDate, toIsoDate } from "./dates.ts";
 import { type ExportRoute, type Lut, lutFor } from "./export-invoice.ts";
 import { fxDateOk } from "./fx.ts";
 import { canonicalJson, sha256Hex } from "./hash.ts";
+import type { NoteOf } from "./notes.ts";
 import type { Series } from "./numbering.ts";
 
 export * from "./export-invoice.ts";
 export * from "./fx.ts";
+export * from "./notes.ts";
 
 // ---- types -------------------------------------------------------------------------------------------------------------------------
 
@@ -30,8 +32,14 @@ export type InvoiceFlowType = (typeof INVOICE_FLOW_TYPES)[number];
 export const isInvoiceFlowType = (v: unknown): v is InvoiceFlowType =>
   (INVOICE_FLOW_TYPES as readonly unknown[]).includes(v);
 
-/** LD2, M5.2: the tax invoice, the export invoice and the proforma issue; credit and debit notes answer `type_not_issuable` until M5.3. */
-export const INVOICE_ISSUABLE_TYPES = ["tax_invoice", "export_invoice", "proforma"] as const;
+/** The types that issue (M5.3: the credit note and the debit note join the tax invoice, the export invoice and the proforma). */
+export const INVOICE_ISSUABLE_TYPES = [
+  "tax_invoice",
+  "export_invoice",
+  "proforma",
+  "credit_note",
+  "debit_note",
+] as const;
 export type InvoiceIssuableType = (typeof INVOICE_ISSUABLE_TYPES)[number];
 export const isInvoiceIssuableType = (v: unknown): v is InvoiceIssuableType =>
   (INVOICE_ISSUABLE_TYPES as readonly unknown[]).includes(v);
@@ -73,7 +81,8 @@ export type InvoiceMove = {
  */
 export const INVOICE_STATUS_FLOW: readonly InvoiceMove[] = [
   { from: "draft", to: "issued" },
-  { from: "issued", to: "void", unsettled: true },
+  // M5.3 (Q31, LD47): a credit or debit note is never voided; a wrong one is corrected by another note. Trigger `documents_note_no_void` (0042) is its twin.
+  { from: "issued", to: "void", unsettled: true, types: ["proforma", "tax_invoice", "export_invoice"] },
   ...LEDGER_STATUSES.flatMap((from) =>
     LEDGER_STATUSES.filter((to) => to !== from).map((to): InvoiceMove => ({ from, to })),
   ),
@@ -526,7 +535,8 @@ export type InvoiceSnapshotInput = {
     readonly clientId: string;
     readonly currency: string;
     readonly issueDate: string;
-    readonly dueDate: string;
+    /** M5.3: a credit note has no due date (nothing is owed on it): null. */
+    readonly dueDate: string | null;
     /** The content hash of the draft: it covers the lines, the totals and the supply. */
     readonly contentSha256: string;
     /** The invoice footer notes the document was pinned to (the newest `invoice` terms at issue), or null when there were none. */
@@ -574,6 +584,11 @@ export type InvoiceSnapshotInput = {
     readonly receivedOn: string;
     readonly receiptId: string;
   };
+  /**
+   * M5.3 (LD39): a credit or debit note's request, its reason and the facts of the invoice it is against, as frozen with it (`header_extras.noteOf`). Present
+   * ONLY on a note, so every invoice sealed before M5.3 keeps its hash.
+   */
+  readonly noteOf?: NoteOf;
 };
 
 /**

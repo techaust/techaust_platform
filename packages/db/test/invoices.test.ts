@@ -85,10 +85,19 @@ const frozenDoc = (clientId: string, type: string, status = "issued") =>
 describe("the status flow trigger agrees with core canMoveInvoiceStatus, move by move [documents_invoice_status_flow]", () => {
   it.each([...INVOICE_FLOW_TYPES])("%s", async (type) => {
     const client = type === "export_invoice" ? await overseas() : await india();
+    // M5.3: a credit or debit note has a parent (documents_note_parent_required), and a note never goes void (documents_note_no_void, 0042; core's table says the same).
+    // (A fresh parent each time: one open draft per parent and type, `documents_open_note`.)
+    const isNote = type === "credit_note" || type === "debit_note";
     for (const from of STATUSES) {
       for (const to of STATUSES) {
         if (from === to) continue;
-        const id = await frozenDoc(client, type, from);
+        const id = isNote
+          ? await mkDoc(client, type, {
+              status: from,
+              parent_id: await frozenDoc(client, "tax_invoice"),
+              ...(from === "void" ? { voided_at: 5, void_reason: "x" } : {}),
+            })
+          : await frozenDoc(client, type, from);
         const sql = `UPDATE documents SET status = ?1${to === "void" ? ", voided_at = 9, void_reason = 'r'" : ""} WHERE id = ?2`;
         let allowed = true;
         try {
@@ -97,7 +106,7 @@ describe("the status flow trigger agrees with core canMoveInvoiceStatus, move by
           allowed = false;
           // every refusal names a trigger: the flow, or (from a void row) the void pairing
           expect(String(e) + String((e as Error).cause), `${type} ${from} to ${to}`).toMatch(
-            /documents_invoice_status_flow|documents_void_pairing|issued document is frozen/,
+            /documents_invoice_status_flow|documents_void_pairing|issued document is frozen|documents_note_no_void/,
           );
         }
         expect(allowed, `${type}: ${from} to ${to}`).toBe(canMoveInvoiceStatus(type, from, to));
@@ -396,14 +405,14 @@ describe("parent_id: a frozen document of the same client in an allowed pair [do
       run("UPDATE documents SET parent_id = ? WHERE id = ?", other, cn),
       /documents_parent_check/,
     );
+    // M5.3 (documents_note_parent_required_update): a credit note's parent can no longer be cleared (it was allowed before 0042)
     await rejects(
       run("UPDATE documents SET parent_id = NULL WHERE id = ?", cn),
-      /documents_parent_check|CHECK/,
-    ).catch(() => undefined);
-    // set to null is fine (no parent); to another frozen invoice of the same client is fine
+      /documents_note_parent_required_update/,
+    );
+    // to another frozen invoice of the same client is fine
     const inv2 = await frozenDoc(a, "tax_invoice");
     await run("UPDATE documents SET parent_id = ? WHERE id = ?", inv2, cn);
-    await run("UPDATE documents SET parent_id = NULL WHERE id = ?", cn);
     const frozenCn = await mkDoc(a, "credit_note", {
       parent_id: inv,
       status: "issued",

@@ -93,6 +93,9 @@ const MATRIX = {
   "invoices.void": { owner: "step-up" },
   // M5.2 (LD22, Q9): the tax invoice made for money received against a proforma: the Owner only, with a fresh code. A new docs/04 §9 row.
   "invoices.advance": { owner: "step-up" },
+  // M5.3 (Q36, LD46; VERIFY WITH CA/LEGAL): recording the client's answer to a credit note in the GST portal's IMS: the Owner only (no fresh code: it changes no money).
+  // A new docs/04 §9 row.
+  "invoices.ims": { owner: "allow" },
   // Manual payments (Staff entries wait for the Owner's verification)
   "payments.read": { owner: "allow", staff: "allow", accountant: "allow" },
   "payments.record": { owner: "allow", staff: "approval" },

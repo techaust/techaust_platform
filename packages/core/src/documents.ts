@@ -258,6 +258,21 @@ export type DraftContent = {
    * on every other document: the hash then has no `fx` key, so every proposal, estimate and M5.1 invoice keeps its hash.
    */
   readonly fx?: { readonly rateMicros: number; readonly date: string; readonly source: string } | null;
+  /**
+   * M5.3 (LD39): a credit or debit note's request (the invoice it is against, the kind, the reason, the way it was asked and the takes). Absent (or null) on every
+   * other document: the hash then has no `note` key, so every proposal, estimate and earlier invoice keeps its hash.
+   */
+  readonly note?:
+    | {
+        readonly parentId: string;
+        readonly kind: string;
+        readonly reasonCode: string;
+        readonly reasonText: string;
+        readonly mode: string;
+        readonly takes: readonly { readonly line: number; readonly taxableMinor: number }[];
+      }
+    | null
+    | undefined;
 };
 
 /**
@@ -305,6 +320,19 @@ export function contentHashInput(draft: DraftContent, computed: ComputedDocument
       l.catalogueRateMinor,
       l.catalogueLine,
     ]),
+    // M5.3: written only for a note, between `lines` and `schedule` (keys stay in sorted order); takes are [line, taxable] tuples.
+    ...(draft.note
+      ? {
+          note: [
+            draft.note.parentId,
+            draft.note.kind,
+            draft.note.reasonCode,
+            draft.note.reasonText,
+            draft.note.mode,
+            draft.note.takes.map((t) => [t.line, t.taxableMinor]),
+          ],
+        }
+      : {}),
     schedule: draft.schedule.map((s) => [s.label, s.trigger, s.pctBp, s.detail, s.targetDate]),
     sections: draft.sections.map((s) => [s.kind, s.title, s.bodyMd, s.hidden]),
     supply: computed

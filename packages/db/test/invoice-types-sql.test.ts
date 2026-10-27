@@ -186,8 +186,8 @@ describe("the statements bind exactly the placeholders they use [M5.2]", () => {
     const freeze = (s.main as unknown as Rec[]).at(-1);
     // amount, proforma and its stamp are the last three values of the freeze
     expect(freeze?.values.slice(-3)).toEqual([1180, "p1", 5]);
-    expect(freeze?.sql).toContain("total_minor = ?29");
-    expect(freeze?.sql).toContain("p.balance_minor >= ?29");
+    expect(freeze?.sql).toContain("total_minor = ?30"); // M5.3: the tail starts at ?30 (?29 is the IMS status)
+    expect(freeze?.sql).toContain("p.balance_minor >= ?30");
     // LD37: the header extras are ?28; the proforma must be the invoice's own client's, in its currency (early check 4)
     expect(freeze?.sql).toContain("header_extras = ?28");
     expect(freeze?.sql).toContain("p.client_id = documents.client_id AND p.currency = documents.currency");
