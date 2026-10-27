@@ -4,6 +4,7 @@ import { contactForm } from "../src/schemas/forms.ts";
 import { leadMessage } from "../src/schemas/messages.ts";
 import {
   WARM_SAMPLES,
+  warmBillingMessages,
   warmConsumerMessages,
   warmLabels,
   warmOfferMessages,
@@ -24,6 +25,7 @@ describe("start-up warm-up", () => {
     expect(warmWebForms()).toBe(3);
     expect(warmConsumerMessages()).toBe(5);
     expect(warmOfferMessages()).toBe(4); // offer.send, offer.decided, offer.accepted, approval.notify (M4.5)
+    expect(warmBillingMessages()).toBe(7); // invoice.send, reminder.send, care.scan, care.bill, care.issue, alerts.daily, reminder.scan (M5.4)
     expect(warmSettings()).toBe(8); // one per settings schema: a new schema adds a sample here
     expect(() => warmLabels()).not.toThrow();
     expect(leadMessage.safeParse(WARM_SAMPLES.quoteLead).success).toBe(true);

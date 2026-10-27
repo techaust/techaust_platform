@@ -15,6 +15,7 @@ import {
   processOfferSweep,
   queueWaitingSends,
   UNCERTIFIED_SQL,
+  WAITING_INVOICE_SENDS_SQL,
   WAITING_SENDS_SQL,
 } from "../src/offers.ts";
 import type { Clock } from "../src/pacer.ts";
@@ -266,6 +267,7 @@ describe("offer.sweep [ADM-PROP-07, ADM-PROP-08]", () => {
       (await all<{ detail: string }>(`EXPLAIN QUERY PLAN ${sql}`, ...p)).map((r) => r.detail).join("\n");
     expect(await plan(WAITING_SENDS_SQL, 0, today)).toContain("document_sends_waiting");
     expect(await plan(UNCERTIFIED_SQL, 0, 0)).toContain("acceptances_accepted_at");
+    expect(await plan(WAITING_INVOICE_SENDS_SQL, 0)).toContain("document_sends_waiting"); // LD56
   });
 
   it("picks a waiting row whose document has its PDF and is open, and queues offer.send for it", async () => {

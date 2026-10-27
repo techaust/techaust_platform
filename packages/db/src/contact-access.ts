@@ -42,6 +42,12 @@ export function revokeContactAccess(
         `UPDATE offer_links SET revoked_at = ?2 WHERE contact_id = ?1 AND revoked_at IS NULL AND ${g.sql(3)}`,
       )
       .bind(contactId, t, ...g.params),
+    // M5.4 (POR-06): the contact's invoice links end too (the portal read also joins the live contact, so this is the record of it).
+    db
+      .prepare(
+        `UPDATE doc_access_tokens SET revoked_at = ?2 WHERE contact_id = ?1 AND revoked_at IS NULL AND ${g.sql(3)}`,
+      )
+      .bind(contactId, t, ...g.params),
   ];
 }
 
@@ -59,6 +65,10 @@ export function deleteContactAccess(db: D1Database, contactId: string, g: GuardS
       .prepare(`DELETE FROM magic_link_tokens WHERE contact_id = ?1 AND ${g.sql(2)}`)
       .bind(contactId, ...g.params),
     db.prepare(`DELETE FROM offer_links WHERE contact_id = ?1 AND ${g.sql(2)}`).bind(contactId, ...g.params),
+    // M5.4: and their invoice links (each holds the person's address).
+    db
+      .prepare(`DELETE FROM doc_access_tokens WHERE contact_id = ?1 AND ${g.sql(2)}`)
+      .bind(contactId, ...g.params),
     db
       .prepare(
         `UPDATE document_sends SET contact_id = NULL, email = NULL WHERE contact_id = ?1 AND ${g.sql(2)}`,

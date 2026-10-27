@@ -12,6 +12,7 @@ import { type AppEnv, accessEntry, BAD_REQUEST, type Ctx, err, NOT_FOUND, type R
 import { csrf } from "./csrf.ts";
 import { docToken } from "./doc-token.ts";
 import { guard, ROUTES, tableOf } from "./guard.ts";
+import { invoices } from "./invoices.ts";
 import { me } from "./me.ts";
 import type { OfferViewer } from "./offer-core.ts";
 import { offerLinks } from "./offer-token.ts";
@@ -110,6 +111,7 @@ export function createApp(deps: Deps = {}) {
   app.route("/v1/auth", authRoutes);
   app.route("/v1/me", me);
   app.route("/v1/offers", offers);
+  app.route("/v1/invoices", invoices);
   app.route("/v1/t", docToken);
   app.route("/v1/t/offer", offerLinks);
   for (const t of deps.testRoutes ?? []) {

@@ -31,6 +31,7 @@ import type { Series } from "@techaust/core/numbering";
 import { decide, type Role } from "@techaust/core/permissions";
 import { type ComputedDocument, lutsOf } from "@techaust/core/tax";
 import { type DocumentBundle, headerExtrasOfRow, type TermsRef } from "@techaust/db/documents";
+import type { careView } from "./care-billing.ts";
 import { type ContactFacts, pdfOf, viewRecipient } from "./document-view.ts";
 import {
   type BankRow,
@@ -44,6 +45,7 @@ import {
   needsInrConfirm,
   proformaSupplyChanged,
 } from "./invoice-model.ts";
+import { sendAction, type sendsView } from "./invoice-send.ts";
 import type { InvoiceNotesView, NoteViewPart } from "./note-view.ts";
 import type { ClientRow } from "./quote-model.ts";
 
@@ -109,6 +111,9 @@ export type InvoiceViewInput = {
   notesPart?: InvoiceNotesView | null;
   notePart?: NoteViewPart | null;
   noteBlockers?: readonly NoteBlocker[];
+  /** M5.4: the sends, live links and reminders of an issued document (`sendsView`), and the care part of a care invoice (`careView`). */
+  sendsPart?: ReturnType<typeof sendsView> | null;
+  care?: ReturnType<typeof careView> | null;
 };
 
 const totalsOf = (c: ComputedDocument | null) =>
@@ -466,7 +471,24 @@ export function invoiceView(i: InvoiceViewInput) {
     creditable: i.notesPart?.creditable ?? null,
     creditDeadline: i.notesPart?.creditDeadline ?? null,
     refundDueMinor: i.notesPart?.refundDueMinor ?? null,
-    actions: i.notesPart?.actions ?? null,
+    // M5.4: `send` joins the note actions (`credit`, `debit`) on an issued tax or export invoice, and is the only action of every other document.
+    actions: {
+      ...(i.notesPart?.actions ?? {}),
+      send: sendAction({
+        role: i.role,
+        frozen,
+        status: d.status,
+        clientGone,
+        allowedRole: decide(i.role, "invoices.send") !== "deny",
+      }),
+    },
+    // ---- M5.4 ------------------------------------------------------------------------------------------------------------------------------
+    /** The emails sent for this document (newest first, with the last email status), how many links are live, and its reminders. Empty for a draft. */
+    sends: i.sendsPart?.sends ?? [],
+    links: i.sendsPart?.links ?? { live: 0 },
+    reminders: i.sendsPart?.reminders ?? { started: false, paused: false, rows: [] },
+    /** A care invoice: the plan and period it bills, and (on a draft) whether the system will issue it and why not. null for any other document. */
+    care: i.care ?? null,
     /** A credit or debit note: its request as stored (sealed once issued), the IMS status (a credit note) and the invoice it is against (null on any other document). */
     noteOf: i.notePart?.noteOf ?? null,
     ims: i.notePart?.ims ?? null,

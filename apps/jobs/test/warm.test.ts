@@ -5,8 +5,8 @@ import { warmConsumers } from "../src/warm.ts";
 // The consumers' start-up warm-up (CPU tuning) runs inside workerd: every sample parses and every template renders.
 // (The SES warm-up's start-up rules are tested in packages/email.)
 describe("jobs start-up warm-up", () => {
-  it("parses 5 samples (two leads, a lead email, a sign-in link email, a staff alert) and renders 10 emails (the three 2FA changes and the member line included)", () => {
-    expect(warmConsumers()).toBe(19);
+  it("parses 5 samples (two leads, a lead email, a sign-in link email, a staff alert) and renders 10 emails (the three 2FA changes and the member line included), plus the three M5.4 billing emails and the five other billing templates (review L3)", () => {
+    expect(warmConsumers()).toBe(27);
   });
 
   it("works under workerd's start-up rules and prints nothing (M2.4b: the five new templates and the staff alert are included)", () => {
@@ -26,7 +26,7 @@ describe("jobs start-up warm-up", () => {
     g.fetch = refuse;
     g.setTimeout = refuse;
     try {
-      expect(warmConsumers()).toBe(19);
+      expect(warmConsumers()).toBe(27);
       expect(log).not.toHaveBeenCalled();
       expect(error).not.toHaveBeenCalled();
     } finally {

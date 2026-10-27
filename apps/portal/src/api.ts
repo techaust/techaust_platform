@@ -195,6 +195,112 @@ export const offerLinkApi = {
 
 const pub = { signedIn: false } as const;
 
+// ---- Invoices, payment requests and notes (M5.4; apps/portal/worker/invoices.ts, doc-token.ts, invoice-summary.ts) -----------------------------
+
+/** The documents a client can open (never a draft or a void one): the server's allow-list. */
+export type InvoiceType = "proforma" | "tax_invoice" | "export_invoice" | "credit_note" | "debit_note";
+
+/** One row of GET /invoices (newest issued first). `total` and `balance` are formatted by the server through core; the minor units are for sorting only. */
+export type InvoiceItem = {
+  id: string;
+  type: InvoiceType | string;
+  status: string;
+  numberDisplay: string | null;
+  /** `YYYY-MM-DD` (IST). */
+  issueDate: string | null;
+  dueDate: string | null;
+  currency: string;
+  totalMinor: number;
+  balanceMinor: number;
+  total: string;
+  balance: string;
+};
+
+type Bank = {
+  accountName: string;
+  accountNo: string;
+  ifsc: string | null;
+  bankName: string;
+  branch: string | null;
+};
+type SwiftBank = {
+  accountName: string;
+  accountNo: string;
+  swift: string;
+  bankName: string;
+  branch: string | null;
+  bankAddress: string | null;
+  intermediary: string | null;
+  purposeCode: string | null;
+};
+export type InvoiceBank = { inr: Bank | null } | { swift: SwiftBank | null };
+
+export type InvoiceLine = {
+  position: number;
+  description: string;
+  detail: string | null;
+  sac: string | null;
+  qtyMilli: number;
+  unit: string;
+  rateMinor: number;
+  taxableMinor: number;
+  gstRateBp: number;
+  cgstMinor: number;
+  sgstMinor: number;
+  igstMinor: number;
+  lineTotalMinor: number;
+};
+
+/** One document's summary, read from its frozen row (LD62): the same answer for the emailed link and the signed-in page. No payment fields (M6, M7.1). */
+export type InvoiceSummary = {
+  id: string;
+  type: InvoiceType | string;
+  status: string;
+  numberDisplay: string | null;
+  issueDate: string | null;
+  dueDate: string | null;
+  currency: string;
+  /** A credit or debit note: the invoice it is against. */
+  parentNumber: string | null;
+  totals: {
+    subtotalMinor: number;
+    discountMinor: number;
+    taxableMinor: number;
+    cgstMinor: number;
+    sgstMinor: number;
+    igstMinor: number;
+    roundOffMinor: number;
+    totalMinor: number;
+    totalInrMinor: number | null;
+  };
+  paidMinor: number;
+  creditedMinor: number;
+  balanceMinor: number;
+  total: string;
+  balance: string;
+  lines: InvoiceLine[];
+  /** The bank block printed on the document (none on a credit note). */
+  bank: InvoiceBank | null;
+  /** The PDF exists (its download answers 409 `pdf_pending` until it does). */
+  pdfReady: boolean;
+};
+
+export const invoicesApi = {
+  list: (after?: string) =>
+    send<{ invoices: InvoiceItem[]; next: string | null }>(
+      `/invoices${after ? `?after=${encodeURIComponent(after)}` : ""}`,
+      {},
+    ),
+  get: (id: string) => send<{ document: InvoiceSummary }>(`/invoices/${encodeURIComponent(id)}`, {}),
+  pdf: (id: string) => download(`/invoices/${encodeURIComponent(id)}/pdf`, undefined, true),
+};
+
+/** The same through an invoice link (`/i#t=…`, POR-06): the token in the body only. A bad, revoked or ended link is a plain 404. */
+export const invoiceLinkApi = {
+  open: (token: string) => send<{ document: InvoiceSummary }>("/t/document", { ...pub, body: { token } }),
+  pdf: (token: string) => download("/t/document/pdf", { token }, false),
+};
+
 export const api = {
   /**
    * Ask for a sign-in link with the Turnstile token of this attempt (M2.4b). Always `{ ok: true }` (known or unknown email

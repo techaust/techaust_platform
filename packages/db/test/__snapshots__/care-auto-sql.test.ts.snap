@@ -1,0 +1,372 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`the Owner's and the approval's issue SQL did not move [LD58] > a credit note (the note tail follows the approval tail) 1`] = `
+[
+  {
+    "sql": "UPDATE documents SET series = ?2, fy = ?3, number = (SELECT next_no - 1 FROM doc_counters WHERE series = ?2 AND fy = ?3), number_display = printf(?4, ?3, (SELECT next_no - 1 FROM doc_counters WHERE series = ?2 AND fy = ?3)),
+         status = 'issued', frozen_at = ?5, issue_date = ?6, due_date = ?7, recipient = ?8, issuer = ?9, computed = ?10,
+         snapshot_sha256 = ?11, issued_by = ?12, terms_version_id = ?13, balance_minor = CASE WHEN ?23 = 'credit_note' THEN 0 ELSE total_minor END, updated_at = ?5,
+         valid_until = CASE WHEN ?23 = 'proforma' THEN ?7 ELSE valid_until END, export_declaration_id = ?27, header_extras = ?28, ims_status = ?29
+       WHERE id = ?1 AND type = ?23 AND status = 'draft' AND frozen_at IS NULL AND updated_at = ?14 AND content_sha256 = ?15
+         AND (SELECT version FROM settings WHERE key = 'numbering') IS ?16
+         AND (SELECT version FROM settings WHERE key = 'company') IS ?17
+         AND (SELECT version FROM settings WHERE key = 'tax') IS ?18
+         AND (SELECT version FROM settings WHERE key = 'payment_terms') IS ?19
+         AND (SELECT max(updated_at) FROM bank_accounts WHERE active = 1) IS ?20
+         AND (SELECT updated_at FROM clients WHERE id = documents.client_id) = ?21
+         AND NOT EXISTS (SELECT 1 FROM clients z WHERE z.id = documents.client_id AND z.anonymised_at IS NOT NULL)
+         AND (SELECT next_no - 1 FROM doc_counters WHERE series = ?2 AND fy = ?3) <= ?22
+         AND (?25 IS NULL OR EXISTS (SELECT 1 FROM contacts k WHERE k.id = ?25 AND k.client_id = documents.client_id AND k.anonymised_at IS NULL AND k.updated_at = ?26))
+         AND EXISTS (SELECT 1 FROM staff_sessions s JOIN staff_users u ON u.id = s.user_id WHERE s.id = ?24 AND s.revoked_at IS NULL AND s.idle_expires_at > ?5 AND s.abs_expires_at > ?5 AND s.step_up_until > ?5 AND u.role = 'owner' AND u.status = 'active') AND EXISTS (SELECT 1 FROM documents p WHERE p.id = documents.parent_id AND p.id = ?30 AND p.type IN ('tax_invoice', 'export_invoice') AND p.frozen_at IS NOT NULL AND p.status IN ('issued', 'partially_paid', 'paid', 'partially_credited') AND p.client_id = documents.client_id AND p.currency = documents.currency AND p.updated_at = ?31 AND p.credited_minor = ?32 AND (documents.type = 'debit_note' OR (documents.total_minor <= p.total_minor - p.credited_minor AND ?6 <= ?33 AND (?34 IS NULL OR ?6 < ?34))))
+         AND (SELECT count(*) FROM documents c WHERE c.parent_id = ?30 AND c.type = documents.type AND c.frozen_at IS NOT NULL) < 20
+       RETURNING number_display, number",
+    "values": [
+      "d1",
+      "invoice",
+      "2627",
+      "TH/INV/%s/%04d",
+      1700000000000,
+      "2026-10-28",
+      "2026-11-04",
+      "{"legalName":"L","country":"IN"}",
+      "{"company":{"tradeName":"T","legalName":"L","address":"A","gstin":null,"stateCode":"19","logo":"logo-primary-color.svg"},"bank":{"inr":null},"signature":null,"reverseChargeText":"Tax payable on reverse charge: No","sender":{"staffId":"s1","name":"N","email":"billing@example.com"}}",
+      "{}",
+      "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+      "u1",
+      null,
+      7000,
+      "hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh",
+      1,
+      1,
+      1,
+      1,
+      5,
+      5000,
+      9999,
+      "credit_note",
+      "s1",
+      "k1",
+      9,
+      null,
+      null,
+      "pending",
+      "p1",
+      3,
+      0,
+      "2027-11-30",
+      null,
+    ],
+  },
+  {
+    "sql": "INSERT INTO issue_guard (document_id) VALUES (?1)",
+    "values": [
+      "d1",
+    ],
+  },
+  {
+    "sql": "INSERT INTO doc_counters (series, fy, next_no) VALUES (?1, ?2, 1) ON CONFLICT DO NOTHING",
+    "values": [
+      "invoice",
+      "2627",
+    ],
+  },
+  {
+    "sql": "UPDATE doc_counters SET next_no = next_no + 1 WHERE series = ?1 AND fy = ?2",
+    "values": [
+      "invoice",
+      "2627",
+    ],
+  },
+  {
+    "sql": "INSERT INTO issue_result (document_id, series, fy) SELECT ?1, ?2, ?3",
+    "values": [
+      "d1",
+      "invoice",
+      "2627",
+    ],
+  },
+  {
+    "sql": "UPDATE approvals SET status = 'approved', decided_by = ?3, decided_at = ?2
+           WHERE document_id = ?1 AND kind = 'issue' AND status = 'pending' AND content_sha256 = (SELECT content_sha256 FROM documents WHERE id = ?1)
+             AND EXISTS (SELECT 1 FROM documents n WHERE n.id = ?1 AND n.status = 'issued' AND n.frozen_at = ?2)",
+    "values": [
+      "d1",
+      1700000000000,
+      "u1",
+    ],
+  },
+  {
+    "sql": "INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
+           SELECT 'n_' || lower(hex(randomblob(16))), r.requested_by, 'approval.decided', 'approval', r.id,
+             ?7 || 'Your ' || ?6 || ' for ' || ?4 || ' was issued as ' || (SELECT number_display FROM documents WHERE id = ?1) || '.', ?5 || ?1
+           FROM approvals r JOIN staff_users u ON u.id = r.requested_by AND u.status = 'active'
+           WHERE r.document_id = ?1 AND r.kind = 'issue' AND r.status = 'approved' AND r.decided_at = ?2 AND r.decided_by = ?3 AND r.requested_by <> ?3
+             AND EXISTS (SELECT 1 FROM documents n WHERE n.id = ?1 AND n.status = 'issued' AND n.frozen_at = ?2)",
+    "values": [
+      "d1",
+      1700000000000,
+      "u1",
+      "C",
+      "/invoices/",
+      "invoice",
+      "",
+    ],
+  },
+  {
+    "sql": "UPDATE documents SET credited_minor = (SELECT coalesce(sum(c.total_minor), 0) FROM documents c WHERE c.parent_id = ?3 AND c.type = 'credit_note' AND c.frozen_at IS NOT NULL AND c.status <> 'void'), updated_at = max(?2, updated_at + 1)
+                 WHERE id = ?3 AND EXISTS (SELECT 1 FROM documents n WHERE n.id = ?1 AND n.status = 'issued' AND n.frozen_at = ?2)",
+    "values": [
+      "d1",
+      1700000000000,
+      "p1",
+    ],
+  },
+  {
+    "sql": "UPDATE documents SET balance_minor = max(0, total_minor - paid_minor - credited_minor),
+                   status = CASE WHEN credited_minor >= total_minor THEN 'credited' WHEN paid_minor > 0 AND total_minor - paid_minor - credited_minor <= 0 THEN 'paid' WHEN paid_minor > 0 THEN 'partially_paid' WHEN credited_minor > 0 THEN 'partially_credited' ELSE 'issued' END
+                 WHERE id = ?3 AND EXISTS (SELECT 1 FROM documents n WHERE n.id = ?1 AND n.status = 'issued' AND n.frozen_at = ?2)",
+    "values": [
+      "d1",
+      1700000000000,
+      "p1",
+    ],
+  },
+]
+`;
+
+exports[`the Owner's and the approval's issue SQL did not move [LD58] > approval 1`] = `
+[
+  {
+    "sql": "UPDATE documents SET series = ?2, fy = ?3, number = (SELECT next_no - 1 FROM doc_counters WHERE series = ?2 AND fy = ?3), number_display = printf(?4, ?3, (SELECT next_no - 1 FROM doc_counters WHERE series = ?2 AND fy = ?3)),
+         status = 'issued', frozen_at = ?5, issue_date = ?6, due_date = ?7, recipient = ?8, issuer = ?9, computed = ?10,
+         snapshot_sha256 = ?11, issued_by = ?12, terms_version_id = ?13, balance_minor = CASE WHEN ?23 = 'credit_note' THEN 0 ELSE total_minor END, updated_at = ?5,
+         valid_until = CASE WHEN ?23 = 'proforma' THEN ?7 ELSE valid_until END, export_declaration_id = ?27, header_extras = ?28, ims_status = ?29
+       WHERE id = ?1 AND type = ?23 AND status = 'draft' AND frozen_at IS NULL AND updated_at = ?14 AND content_sha256 = ?15
+         AND (SELECT version FROM settings WHERE key = 'numbering') IS ?16
+         AND (SELECT version FROM settings WHERE key = 'company') IS ?17
+         AND (SELECT version FROM settings WHERE key = 'tax') IS ?18
+         AND (SELECT version FROM settings WHERE key = 'payment_terms') IS ?19
+         AND (SELECT max(updated_at) FROM bank_accounts WHERE active = 1) IS ?20
+         AND (SELECT updated_at FROM clients WHERE id = documents.client_id) = ?21
+         AND NOT EXISTS (SELECT 1 FROM clients z WHERE z.id = documents.client_id AND z.anonymised_at IS NOT NULL)
+         AND (SELECT next_no - 1 FROM doc_counters WHERE series = ?2 AND fy = ?3) <= ?22
+         AND (?25 IS NULL OR EXISTS (SELECT 1 FROM contacts k WHERE k.id = ?25 AND k.client_id = documents.client_id AND k.anonymised_at IS NULL AND k.updated_at = ?26))
+         AND EXISTS (SELECT 1 FROM staff_sessions s JOIN staff_users u ON u.id = s.user_id WHERE s.id = ?24 AND s.revoked_at IS NULL AND s.idle_expires_at > ?5 AND s.abs_expires_at > ?5 AND s.step_up_until > ?5 AND u.role = 'owner' AND u.status = 'active') AND EXISTS (SELECT 1 FROM approvals ap WHERE ap.id = ?30 AND ap.document_id = documents.id AND ap.kind = 'issue' AND ap.status = 'pending' AND ap.content_sha256 = documents.content_sha256)
+       RETURNING number_display, number",
+    "values": [
+      "d1",
+      "invoice",
+      "2627",
+      "TH/INV/%s/%04d",
+      1700000000000,
+      "2026-10-28",
+      "2026-11-04",
+      "{"legalName":"L","country":"IN"}",
+      "{"company":{"tradeName":"T","legalName":"L","address":"A","gstin":null,"stateCode":"19","logo":"logo-primary-color.svg"},"bank":{"inr":null},"signature":null,"reverseChargeText":"Tax payable on reverse charge: No","sender":{"staffId":"s1","name":"N","email":"billing@example.com"}}",
+      "{}",
+      "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+      "u1",
+      null,
+      7000,
+      "hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh",
+      1,
+      1,
+      1,
+      1,
+      5,
+      5000,
+      9999,
+      "tax_invoice",
+      "s1",
+      "k1",
+      9,
+      null,
+      null,
+      null,
+      "ap1",
+    ],
+  },
+  {
+    "sql": "INSERT INTO issue_guard (document_id) VALUES (?1)",
+    "values": [
+      "d1",
+    ],
+  },
+  {
+    "sql": "INSERT INTO doc_counters (series, fy, next_no) VALUES (?1, ?2, 1) ON CONFLICT DO NOTHING",
+    "values": [
+      "invoice",
+      "2627",
+    ],
+  },
+  {
+    "sql": "UPDATE doc_counters SET next_no = next_no + 1 WHERE series = ?1 AND fy = ?2",
+    "values": [
+      "invoice",
+      "2627",
+    ],
+  },
+  {
+    "sql": "INSERT INTO issue_result (document_id, series, fy) SELECT ?1, ?2, ?3",
+    "values": [
+      "d1",
+      "invoice",
+      "2627",
+    ],
+  },
+  {
+    "sql": "UPDATE milestones SET delivered_at = CASE WHEN status = 'ready_to_bill' THEN coalesce(delivered_at, ?2) ELSE delivered_at END,
+             status = 'invoiced', updated_at = ?2
+           WHERE document_id = ?1 AND status IN ('pending', 'ready_to_bill') AND EXISTS (SELECT 1 FROM documents n WHERE n.id = ?1 AND n.status = 'issued' AND n.frozen_at = ?2)",
+    "values": [
+      "d1",
+      1700000000000,
+    ],
+  },
+  {
+    "sql": "UPDATE approvals SET status = 'approved', decided_by = ?3, decided_at = ?2
+           WHERE document_id = ?1 AND kind = 'issue' AND status = 'pending' AND content_sha256 = (SELECT content_sha256 FROM documents WHERE id = ?1)
+             AND EXISTS (SELECT 1 FROM documents n WHERE n.id = ?1 AND n.status = 'issued' AND n.frozen_at = ?2)",
+    "values": [
+      "d1",
+      1700000000000,
+      "u1",
+    ],
+  },
+  {
+    "sql": "INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
+           SELECT 'n_' || lower(hex(randomblob(16))), r.requested_by, 'approval.decided', 'approval', r.id,
+             ?7 || 'Your ' || ?6 || ' for ' || ?4 || ' was issued as ' || (SELECT number_display FROM documents WHERE id = ?1) || '.', ?5 || ?1
+           FROM approvals r JOIN staff_users u ON u.id = r.requested_by AND u.status = 'active'
+           WHERE r.document_id = ?1 AND r.kind = 'issue' AND r.status = 'approved' AND r.decided_at = ?2 AND r.decided_by = ?3 AND r.requested_by <> ?3
+             AND EXISTS (SELECT 1 FROM documents n WHERE n.id = ?1 AND n.status = 'issued' AND n.frozen_at = ?2)",
+    "values": [
+      "d1",
+      1700000000000,
+      "u1",
+      "C",
+      "/invoices/",
+      "invoice",
+      "",
+    ],
+  },
+]
+`;
+
+exports[`the Owner's and the approval's issue SQL did not move [LD58] > owner 1`] = `
+[
+  {
+    "sql": "UPDATE documents SET series = ?2, fy = ?3, number = (SELECT next_no - 1 FROM doc_counters WHERE series = ?2 AND fy = ?3), number_display = printf(?4, ?3, (SELECT next_no - 1 FROM doc_counters WHERE series = ?2 AND fy = ?3)),
+         status = 'issued', frozen_at = ?5, issue_date = ?6, due_date = ?7, recipient = ?8, issuer = ?9, computed = ?10,
+         snapshot_sha256 = ?11, issued_by = ?12, terms_version_id = ?13, balance_minor = CASE WHEN ?23 = 'credit_note' THEN 0 ELSE total_minor END, updated_at = ?5,
+         valid_until = CASE WHEN ?23 = 'proforma' THEN ?7 ELSE valid_until END, export_declaration_id = ?27, header_extras = ?28, ims_status = ?29
+       WHERE id = ?1 AND type = ?23 AND status = 'draft' AND frozen_at IS NULL AND updated_at = ?14 AND content_sha256 = ?15
+         AND (SELECT version FROM settings WHERE key = 'numbering') IS ?16
+         AND (SELECT version FROM settings WHERE key = 'company') IS ?17
+         AND (SELECT version FROM settings WHERE key = 'tax') IS ?18
+         AND (SELECT version FROM settings WHERE key = 'payment_terms') IS ?19
+         AND (SELECT max(updated_at) FROM bank_accounts WHERE active = 1) IS ?20
+         AND (SELECT updated_at FROM clients WHERE id = documents.client_id) = ?21
+         AND NOT EXISTS (SELECT 1 FROM clients z WHERE z.id = documents.client_id AND z.anonymised_at IS NOT NULL)
+         AND (SELECT next_no - 1 FROM doc_counters WHERE series = ?2 AND fy = ?3) <= ?22
+         AND (?25 IS NULL OR EXISTS (SELECT 1 FROM contacts k WHERE k.id = ?25 AND k.client_id = documents.client_id AND k.anonymised_at IS NULL AND k.updated_at = ?26))
+         AND EXISTS (SELECT 1 FROM staff_sessions s JOIN staff_users u ON u.id = s.user_id WHERE s.id = ?24 AND s.revoked_at IS NULL AND s.idle_expires_at > ?5 AND s.abs_expires_at > ?5 AND s.step_up_until > ?5 AND u.role = 'owner' AND u.status = 'active')
+       RETURNING number_display, number",
+    "values": [
+      "d1",
+      "invoice",
+      "2627",
+      "TH/INV/%s/%04d",
+      1700000000000,
+      "2026-10-28",
+      "2026-11-04",
+      "{"legalName":"L","country":"IN"}",
+      "{"company":{"tradeName":"T","legalName":"L","address":"A","gstin":null,"stateCode":"19","logo":"logo-primary-color.svg"},"bank":{"inr":null},"signature":null,"reverseChargeText":"Tax payable on reverse charge: No","sender":{"staffId":"s1","name":"N","email":"billing@example.com"}}",
+      "{}",
+      "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+      "u1",
+      null,
+      7000,
+      "hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh",
+      1,
+      1,
+      1,
+      1,
+      5,
+      5000,
+      9999,
+      "tax_invoice",
+      "s1",
+      "k1",
+      9,
+      null,
+      null,
+      null,
+    ],
+  },
+  {
+    "sql": "INSERT INTO issue_guard (document_id) VALUES (?1)",
+    "values": [
+      "d1",
+    ],
+  },
+  {
+    "sql": "INSERT INTO doc_counters (series, fy, next_no) VALUES (?1, ?2, 1) ON CONFLICT DO NOTHING",
+    "values": [
+      "invoice",
+      "2627",
+    ],
+  },
+  {
+    "sql": "UPDATE doc_counters SET next_no = next_no + 1 WHERE series = ?1 AND fy = ?2",
+    "values": [
+      "invoice",
+      "2627",
+    ],
+  },
+  {
+    "sql": "INSERT INTO issue_result (document_id, series, fy) SELECT ?1, ?2, ?3",
+    "values": [
+      "d1",
+      "invoice",
+      "2627",
+    ],
+  },
+  {
+    "sql": "UPDATE milestones SET delivered_at = CASE WHEN status = 'ready_to_bill' THEN coalesce(delivered_at, ?2) ELSE delivered_at END,
+             status = 'invoiced', updated_at = ?2
+           WHERE document_id = ?1 AND status IN ('pending', 'ready_to_bill') AND EXISTS (SELECT 1 FROM documents n WHERE n.id = ?1 AND n.status = 'issued' AND n.frozen_at = ?2)",
+    "values": [
+      "d1",
+      1700000000000,
+    ],
+  },
+  {
+    "sql": "UPDATE approvals SET status = 'approved', decided_by = ?3, decided_at = ?2
+           WHERE document_id = ?1 AND kind = 'issue' AND status = 'pending' AND content_sha256 = (SELECT content_sha256 FROM documents WHERE id = ?1)
+             AND EXISTS (SELECT 1 FROM documents n WHERE n.id = ?1 AND n.status = 'issued' AND n.frozen_at = ?2)",
+    "values": [
+      "d1",
+      1700000000000,
+      "u1",
+    ],
+  },
+  {
+    "sql": "INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
+           SELECT 'n_' || lower(hex(randomblob(16))), r.requested_by, 'approval.decided', 'approval', r.id,
+             ?7 || 'Your ' || ?6 || ' for ' || ?4 || ' was issued as ' || (SELECT number_display FROM documents WHERE id = ?1) || '.', ?5 || ?1
+           FROM approvals r JOIN staff_users u ON u.id = r.requested_by AND u.status = 'active'
+           WHERE r.document_id = ?1 AND r.kind = 'issue' AND r.status = 'approved' AND r.decided_at = ?2 AND r.decided_by = ?3 AND r.requested_by <> ?3
+             AND EXISTS (SELECT 1 FROM documents n WHERE n.id = ?1 AND n.status = 'issued' AND n.frozen_at = ?2)",
+    "values": [
+      "d1",
+      1700000000000,
+      "u1",
+      "C",
+      "/invoices/",
+      "invoice",
+      "",
+    ],
+  },
+]
+`;

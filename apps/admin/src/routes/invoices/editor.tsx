@@ -59,6 +59,7 @@ import { LinesPanel } from "../documents/lines.tsx";
 import { TaxPreview } from "../documents/money.tsx";
 import { BlockerList, DeleteDraftDialog, IssueDialog, RequestIssueDialog } from "./dialogs.tsx";
 import { INVOICES_CRUMB, InvoiceBadge, MilestoneOrigin, NumberMark } from "./parts.tsx";
+import { CareOrigin, type SendableView } from "./send-parts.tsx";
 import { ExportPanel, FxDialog, FxPanel, SERVICE_DATE_LABEL, StatutoryBand } from "./types-parts.tsx";
 
 /** 07-R's stale_version sentence: its first sentence as the notice's title, the rest as its body. */
@@ -415,6 +416,13 @@ export function InvoiceEditor({ view, reload }: { view: InvoiceView; reload: () 
             />
           )}
 
+          {/* M5.4: a care draft names its plan and period, and why the system left it as a draft (07-U §6) */}
+          {(v as SendableView).care && (
+            <CareOrigin
+              care={(v as SendableView).care as NonNullable<SendableView["care"]>}
+              canOpenPlan={allowed(user.role, "carePlans.read")}
+            />
+          )}
           {v.proforma?.notice && <StatutoryBand line={v.proforma.notice} />}
           {extraError && <Notice tone="error">{extraError}</Notice>}
 

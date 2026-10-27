@@ -105,9 +105,12 @@ export function certificateKey(i: { type: string; fy: string; number: number; ve
   return pdfKeys(i).pdf.replace(/\.pdf$/, "-certificate.pdf");
 }
 
-/** The attachment allow-list of the email consumer: only a sent proposal or estimate PDF (or its certificate). */
+/**
+ * The attachment allow-list of the email consumer: a sent proposal or estimate PDF (or its certificate), and (M5.4) an issued invoice-family PDF, exactly as `pdfKeys` writes
+ * them: the number is padded to AT LEAST four digits (`padStart(4)`), so 10,000 and above has five or more (up to nine); an invoice's version is always 1 and it has no certificate.
+ */
 export const ATTACHMENT_KEY =
-  /^docs\/(proposal|estimate)\/[0-9]{4}-[0-9]{2}\/[0-9]{4}-v[0-9]{1,3}(-certificate)?\.pdf$/;
+  /^docs\/(?:(?:proposal|estimate)\/[0-9]{4}-[0-9]{2}\/[0-9]{4,9}-v[0-9]{1,3}(?:-certificate)?|(?:tax_invoice|export_invoice|proforma|credit_note|debit_note)\/[0-9]{4}-[0-9]{2}\/[0-9]{4,9}-v1)\.pdf$/;
 /**
  * The largest attachment the email consumer will read. The brief said 5 MB; the Free plan's 10 ms CPU says less: the body is base64'd (native
  * in workerd, about 37 ms per MB without it), put in a JSON string and SHA-256'd by the SigV4 signer. Not measured in workerd (its clock does
@@ -119,6 +122,14 @@ export const ATTACHMENT_MAX_BYTES = 1024 * 1024;
 /** The browser link of an offer: the token is in the URL FRAGMENT (never sent to a server, never in a log); the page reads it, strips it from the address bar and opens the offer at once (owner-approved preview: no Continue click). */
 export const offerLinkUrl = (portalBase: string, token: string): string =>
   `${portalBase.replace(/\/+$/, "")}/o#t=${token}`;
+
+/** An invoice link lives this many days from the moment it is minted (each email mints its own, LD63). "Paid + 30 days" is M6's (it needs `paid_at`). */
+export const INVOICE_LINK_DAYS = 180;
+export const invoiceLinkExpiry = (mintedAt: number): number => mintedAt + INVOICE_LINK_DAYS * DAY_MS;
+
+/** The browser link of an invoice, proforma or note: the token is in the URL FRAGMENT, like an offer link's; the portal page reads it and opens the document at once. */
+export const invoiceLinkUrl = (portalBase: string, token: string): string =>
+  `${portalBase.replace(/\/+$/, "")}/i#t=${token}`;
 
 const toBase64Url = (bytes: Uint8Array): string => {
   let s = "";

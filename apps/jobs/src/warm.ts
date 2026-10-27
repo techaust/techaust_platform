@@ -5,6 +5,7 @@
 import {
   describeUserAgent,
   WARM_SAMPLES,
+  warmBillingMessages,
   warmConsumerMessages,
   warmLabels,
   warmOfferMessages,
@@ -102,6 +103,78 @@ export function warmConsumers(): number {
       opts,
     );
     rendered++;
+    // M5.4: an invoice email, a payment reminder and an owners' alert, so the billing layouts are compiled before the first `invoice.send`,
+    // `reminder.send` or `alerts.daily` message (the keys are core's `INVOICE_EMAIL_DATA`; the values are made up).
+    const doc = {
+      first_name: "Warm",
+      number: "TH/INV/2627/0001",
+      issue_date: "5 Nov 2026",
+      due_date: "12 Nov 2026",
+      total: "₹23,600.00",
+      balance: "₹23,600.00",
+      url: "https://warm-up.invalid/i#t=x",
+      attached: "1",
+      parent_number: "",
+      sender_name: "Warm",
+      reason: "",
+      parent_balance: "",
+    };
+    renderEmail("invoice.sent", doc, opts);
+    rendered++;
+    renderEmail(
+      "reminder.sent",
+      { ...doc, attached: "", offset_days: "3", when: "after", kind: "invoice" },
+      opts,
+    );
+    rendered++;
+    renderEmail(
+      "alert.unbilled",
+      {
+        owner_first_name: "Warm",
+        client_name: "Warm",
+        admin_url: "https://warm-up.invalid/",
+        milestone_title: "Warm",
+        delivered_date: "1 Oct 2026",
+        days_since: "25",
+      },
+      opts,
+    );
+    rendered++;
+    // The other invoice-family templates (proforma, credit note, debit note), the proforma-due alert and the LUT reminder, so none of them compiles in its first message (review L3).
+    for (const template of ["proforma.sent", "credit_note.sent", "debit_note.sent"] as const) {
+      renderEmail(
+        template,
+        { ...doc, parent_number: "TH/INV/2627/0001", reason: "Warm", parent_balance: "₹0.00" },
+        opts,
+      );
+      rendered++;
+    }
+    renderEmail(
+      "alert.proforma_due",
+      {
+        owner_first_name: "Warm",
+        client_name: "Warm",
+        admin_url: "https://warm-up.invalid/",
+        milestone_title: "Warm",
+        delivered_date: "1 Oct 2026",
+        days_since: "25",
+        proforma_number: "TH/PRO/2627/0001",
+        balance: "₹23,600.00",
+      },
+      opts,
+    );
+    rendered++;
+    renderEmail(
+      "lut.reminder",
+      {
+        owner_first_name: "Warm",
+        fy_label: "2026-27",
+        state: "missing",
+        admin_url: "https://warm-up.invalid/",
+      },
+      opts,
+    );
+    rendered++;
     // the user-agent reader the staff alerts use (compiles its patterns on first match)
     describeUserAgent(
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
@@ -115,6 +188,8 @@ export function warmConsumers(): number {
   warmInvoicePdf();
   // M4.5: the four expansion messages of the email queue, and one made-up acceptance certificate through the view and the HTML.
   warmOfferMessages();
+  // M5.4: the invoice send, reminder, care, alert and reminder-scan messages (schemas built at start-up, not in the first message).
+  warmBillingMessages();
   try {
     renderCertificateHtml(
       buildCertificateView({

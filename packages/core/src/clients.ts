@@ -34,6 +34,8 @@ export const CLIENT_FINANCE_READ_FIELDS = [
   "careAutoIssue",
   "attachPdf",
   "currencyLocked",
+  // M5.4: who turned the automatic issue of the care invoice on, and whether that Owner is still active
+  "careAutoIssueBy",
 ] as const;
 
 /** The 409 text when a client's type is locked by an issued (frozen) document. */

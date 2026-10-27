@@ -502,3 +502,17 @@
   font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
 }
+
+/* M5.4: automatic care invoices, who turned them on, and "not in effect" once that owner is gone (icon and words, never colour alone). */
+.care-auto {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.care-auto__off {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--color-warning);
+  font-size: var(--text-sm);
+}

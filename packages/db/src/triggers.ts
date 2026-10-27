@@ -773,6 +773,52 @@ export function noteTriggerStatements(): string[] {
   ];
 }
 
+/**
+ * Recurring care invoices, invoice links and reminders (M5.4, ADM-CARE-02, ADM-INV-13, POR-06, LD55, LD58..LD60; new triggers only: no table is rebuilt,
+ * `0043_billing.sql` only added columns, a table and indexes; every abort message starts with the trigger's name so the API can map it). VERIFY WITH CA/LEGAL
+ * for the rules; the statements that write these tables hold the same rules in their WHERE, these hold whatever writes to them:
+ *   0. a one-off backfill, before any trigger exists: a toggle that was on before M5.4 has no Owner behind it (LD58: "existing toggles count as off"), so it is
+ *      switched off, and the rule of 6 then holds for every row;
+ *   1. `care_plans_billed_forward`: the billed period only moves forward, and is a date;
+ *   2. `care_plan_terms_after_billed`: new terms cannot take effect on or before a period already billed;
+ *   3. `care_invoices_no_update` / `care_invoices_no_delete`: the billed-period record is append-only, except that a discarded draft's `document_id` is set to NULL once;
+ *   4. `doc_access_tokens_bound_insert`: an invoice link is bound to a contact, a client and an address (lower case), names a frozen document of that client,
+ *      the contact belongs to that client, and a send it names is a send of that document to that contact;
+ *   5. `doc_access_tokens_fixed`: only `revoked_at` may change, once;
+ *   6. `clients_care_auto_issue_by_insert` / `_update`: the toggle on means an active Owner is named as who turned it on; off means nobody is named;
+ *   7. `reminders_fixed`: a reminder's document, offset and due time never change; it is sent once (the only move back is a give-back of the same claim while
+ *      no email is recorded); its skip reason moves only between empty and `paused`, or from empty to a final value once.
+ */
+export function billingTriggerStatements(): string[] {
+  const named = (name: string, message: string) => abort(`${name}: ${message}`);
+  const changed = (cols: string[]) => cols.map((c) => `NEW.\`${c}\` IS NOT OLD.\`${c}\``).join(" OR ");
+  const billedBad =
+    "NEW.last_billed_period IS NOT OLD.last_billed_period AND (NEW.last_billed_period IS NULL OR date(NEW.last_billed_period) IS NOT NEW.last_billed_period OR (OLD.last_billed_period IS NOT NULL AND NEW.last_billed_period <= OLD.last_billed_period))";
+  const termsBad =
+    "NEW.effective_from <= (SELECT last_billed_period FROM care_plans WHERE id = NEW.care_plan_id)";
+  const invoiceFixed = `${changed(["care_plan_id", "period_start", "period_end", "terms_id", "overage_period_start", "overage_minutes", "created_at"])} OR (NEW.document_id IS NOT OLD.document_id AND NOT (OLD.document_id IS NOT NULL AND NEW.document_id IS NULL))`;
+  const tokenBad =
+    "NEW.contact_id IS NULL OR NEW.client_id IS NULL OR NEW.email IS NULL OR NEW.email <> lower(NEW.email) OR NOT EXISTS (SELECT 1 FROM documents d WHERE d.id = NEW.document_id AND d.client_id = NEW.client_id AND d.frozen_at IS NOT NULL) OR NOT EXISTS (SELECT 1 FROM contacts c WHERE c.id = NEW.contact_id AND c.client_id = NEW.client_id) OR (NEW.send_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM document_sends s WHERE s.id = NEW.send_id AND s.document_id = NEW.document_id AND s.contact_id = NEW.contact_id))";
+  const tokenFixed = `${changed(["token_hash", "document_id", "purpose", "expires_at", "created_at", "contact_id", "client_id", "email", "send_id"])} OR (OLD.revoked_at IS NOT NULL AND NEW.revoked_at IS NOT OLD.revoked_at)`;
+  const autoBad =
+    "(NEW.care_auto_issue = 1 AND NOT EXISTS (SELECT 1 FROM staff_users o WHERE o.id = NEW.care_auto_issue_by AND o.role = 'owner' AND o.status = 'active')) OR (NEW.care_auto_issue IS NOT 1 AND NEW.care_auto_issue_by IS NOT NULL)";
+  const autoMsg = "the auto-issue toggle on names an active Owner, and off names nobody";
+  const reminderBad = `${changed(["document_id", "offset_days", "due_at"])} OR (OLD.sent_at IS NOT NULL AND NEW.sent_at IS NOT OLD.sent_at AND NOT (NEW.sent_at IS NULL AND OLD.email_log_id IS NULL)) OR (OLD.email_log_id IS NOT NULL AND NEW.email_log_id IS NOT OLD.email_log_id) OR (NEW.skipped_reason IS NOT OLD.skipped_reason AND NOT ((OLD.skipped_reason IS NULL AND NEW.skipped_reason IS NOT NULL) OR (OLD.skipped_reason IS 'paused' AND NEW.skipped_reason IS NULL)))`;
+  return [
+    // 0. the backfill (before the clients triggers exist)
+    "UPDATE clients SET care_auto_issue = 0 WHERE care_auto_issue = 1 AND care_auto_issue_by IS NULL;",
+    `CREATE TRIGGER \`care_plans_billed_forward\` BEFORE UPDATE OF last_billed_period ON \`care_plans\` WHEN ${billedBad} BEGIN ${named("care_plans_billed_forward", "the billed period only moves forward, and is a date")} END;`,
+    `CREATE TRIGGER \`care_plan_terms_after_billed\` BEFORE INSERT ON \`care_plan_terms\` WHEN ${termsBad} BEGIN ${named("care_plan_terms_after_billed", "new terms cannot start on or before a period that was already billed")} END;`,
+    `CREATE TRIGGER \`care_invoices_no_update\` BEFORE UPDATE ON \`care_invoices\` WHEN ${invoiceFixed} BEGIN ${named("care_invoices_no_update", "a billed period is never changed; the document of a discarded draft is cleared once")} END;`,
+    `CREATE TRIGGER \`care_invoices_no_delete\` BEFORE DELETE ON \`care_invoices\` BEGIN ${named("care_invoices_no_delete", "a billed period is never deleted")} END;`,
+    `CREATE TRIGGER \`doc_access_tokens_bound_insert\` BEFORE INSERT ON \`doc_access_tokens\` WHEN ${tokenBad} BEGIN ${named("doc_access_tokens_bound_insert", "an invoice link belongs to one contact of the client of a frozen document, with the address in lower case")} END;`,
+    `CREATE TRIGGER \`doc_access_tokens_fixed\` BEFORE UPDATE ON \`doc_access_tokens\` WHEN ${tokenFixed} BEGIN ${named("doc_access_tokens_fixed", "an invoice link only gets revoked, once")} END;`,
+    `CREATE TRIGGER \`clients_care_auto_issue_by_insert\` BEFORE INSERT ON \`clients\` WHEN ${autoBad} BEGIN ${named("clients_care_auto_issue_by_insert", autoMsg)} END;`,
+    `CREATE TRIGGER \`clients_care_auto_issue_by_update\` BEFORE UPDATE OF care_auto_issue, care_auto_issue_by ON \`clients\` WHEN ${autoBad} BEGIN ${named("clients_care_auto_issue_by_update", autoMsg)} END;`,
+    `CREATE TRIGGER \`reminders_fixed\` BEFORE UPDATE ON \`reminders\` WHEN ${reminderBad} BEGIN ${named("reminders_fixed", "a reminder keeps its document, offset and due time, is sent once, and is paused or skipped only by the allowed moves")} END;`,
+  ];
+}
+
 /** The trigger sets, by the name the migration is created with (`drizzle-kit generate --custom --name <set>`). */
 export const TRIGGER_SETS = {
   triggers: { what: "integrity triggers (docs/05 §5.3)", statements: triggerStatements },
@@ -822,6 +868,10 @@ export const TRIGGER_SETS = {
   note_triggers: {
     what: "credit and debit notes: parent required, issue check, credit cap, ledger bounds, no void, IMS status and its presence at the freeze (M5.3)",
     statements: noteTriggerStatements,
+  },
+  billing_triggers: {
+    what: "care billing forward-only, terms after a billed period, billed-period record, bound invoice links, the auto-issue owner and reminder moves (M5.4)",
+    statements: billingTriggerStatements,
   },
 } as const;
 export type TriggerSet = keyof typeof TRIGGER_SETS;

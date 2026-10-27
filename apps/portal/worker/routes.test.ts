@@ -61,6 +61,7 @@ describe("every guarded route needs a session [POR-02, POR-03]", () => {
         "POST /api/v1/auth/magic/verify",
         "POST /api/v1/auth/logout",
         "POST /api/v1/t/document",
+        "POST /api/v1/t/document/pdf",
         "POST /api/v1/t/offer",
         "POST /api/v1/t/offer/pdf",
         "POST /api/v1/t/offer/certificate",
@@ -70,7 +71,7 @@ describe("every guarded route needs a session [POR-02, POR-03]", () => {
     );
   });
 
-  it("the guarded routes are /me, sign-out-of-all-devices and the offers; no route uses finance yet", () => {
+  it("the guarded routes are /me, sign-out-of-all-devices, the offers and (M5.4) the invoices, which are the only finance routes", () => {
     expect(pairs(GUARDED)).toEqual(
       [
         "GET /api/v1/me",
@@ -81,9 +82,14 @@ describe("every guarded route needs a session [POR-02, POR-03]", () => {
         "GET /api/v1/offers/:id/certificate",
         "POST /api/v1/offers/:id/accept",
         "POST /api/v1/offers/:id/decline",
+        "GET /api/v1/invoices",
+        "GET /api/v1/invoices/:id",
+        "GET /api/v1/invoices/:id/pdf",
       ].sort(),
     );
-    expect(ROUTES.filter((r) => r.access === "finance")).toEqual([]);
+    expect(pairs(ROUTES.filter((r) => r.access === "finance"))).toEqual(
+      ["GET /api/v1/invoices", "GET /api/v1/invoices/:id", "GET /api/v1/invoices/:id/pdf"].sort(),
+    );
   });
 });
 

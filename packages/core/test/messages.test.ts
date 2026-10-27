@@ -120,6 +120,14 @@ describe("M2.4b messages [POR-01, ADM-AUTH-09, ADM-MAIL-01]", () => {
       "offer.declined.staff",
       "approval.requested",
       "approval.decided",
+      "invoice.sent",
+      "proforma.sent",
+      "credit_note.sent",
+      "debit_note.sent",
+      "reminder.sent",
+      "alert.unbilled",
+      "alert.proforma_due",
+      "lut.reminder",
     ]);
     for (const template of EMAIL_TEMPLATES)
       expect(
@@ -200,7 +208,7 @@ describe("M4.5 messages [ADM-PROP-07, ADM-PROP-08]", () => {
     );
     expect(emailMessage.safeParse(base).success).toBe(true);
     for (const bad of [
-      "docs/tax_invoice/2026-27/0001-v1.pdf",
+      "docs/receipt/2026-27/0001-v1.pdf", // M5.4: the invoice family is allowed, a receipt (M6) is not yet
       "docs/proposal/2026-27/0001-v1.json",
       "../docs/proposal/2026-27/0001-v1.pdf",
       "docs/proposal/2026-27/../../x.pdf",

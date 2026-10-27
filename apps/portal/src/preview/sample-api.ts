@@ -9,6 +9,7 @@
 import { type Envelope, toPdfView } from "@techaust/pdf/view";
 import { buildFixture, type FixtureName } from "../../../../packages/pdf/test/fixtures/index.ts";
 import type { OfferItem, OfferPage, OfferStatus } from "../api.ts";
+import { answerInvoices } from "./sample-invoices.ts";
 
 const KEY = "ta.sample-api";
 const ME = {
@@ -228,6 +229,9 @@ async function answer(
     if (body.documentId !== found.doc.id) return error(404, "not_found");
     return act(found.doc, t[1], body, null);
   }
+  // M5.4: invoices, payment requests and notes (signed in and by link)
+  const inv = answerInvoices(path, method, body, empty, { json, error, pdf });
+  if (inv) return inv;
   return error(404, "not_found");
 }
 

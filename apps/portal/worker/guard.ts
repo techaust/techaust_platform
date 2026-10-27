@@ -30,6 +30,11 @@ export const ROUTES: readonly RouteDef[] = [
   R("POST", "/auth/sessions/revoke-all", "session", { audit: "portal.sessions_revoke_all" }),
   // A document link (POR-06): the token is in the body, never in the path or query.
   R("POST", "/t/document", "public", { audit: "doc_token.use" }),
+  R("POST", "/t/document/pdf", "public"),
+  // Invoices, proformas, credit and debit notes (M5.4, POR-06, Q49): the signed-in contact's, finance-only (anyone else gets the plain 404). Each query is scoped to the session's organisation.
+  R("GET", "/invoices", "finance"),
+  R("GET", "/invoices/:id", "finance"),
+  R("GET", "/invoices/:id/pdf", "finance"),
   // Proposals and estimates (M4.5, POR-04, POR-05): the signed-in contact's offers. Each query is scoped to the session's organisation.
   R("GET", "/offers", "session"),
   R("GET", "/offers/:id", "session"),

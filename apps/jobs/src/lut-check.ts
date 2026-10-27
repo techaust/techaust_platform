@@ -1,5 +1,7 @@
 // The daily LUT check (M5.2 B3, ADM-INV-18, Q22, LD27; VERIFY WITH CA/LEGAL: whether and when a letter of undertaking is needed is the CA's call).
-//   cron (daily 22:00 UTC = 03:30 IST) -> `enqueueStats` adds ONE `lut.check` message (the IST date of the run) to its existing LEADS_QUEUE `sendBatch`
+//   M5.4 (LD61): the daily check now runs inside the 09:00 IST `alerts.daily` message (`alerts.ts`: `decideLut`, the weekly EMAIL, then `ringLutBell`); the 22:00 UTC cron no longer adds a
+//     `lut.check` message. The kind stays routable (and `processLutCheck` unchanged in what it writes) for a message queued before that deploy.
+//   (M5.2, kept for the record) cron (daily 22:00 UTC = 03:30 IST) -> `enqueueStats` added ONE `lut.check` message (the IST date of the run) to its existing LEADS_QUEUE `sendBatch`
 //     (no new cron, no new queue, no D1 read in the cron).
 //   consumer -> `processLutCheck`: ONE read (the stored `tax` settings row; no bell on the IGST route), the letters read WITHOUT zod (`lutsFromStoredTax`; the jobs Worker must not
 //     bring zod in), `lutBellFor` decides. When a bell is due: ONE `INSERT OR IGNORE ... SELECT` over the active owners, kind `lut.reminder`, entity
@@ -31,12 +33,22 @@ export const LUT_BELL_SQL = `INSERT OR IGNORE INTO notifications (id, user_id, k
 
 export type LutCheckResult = { bell: "none" | "next_fy_due" | "current_missing"; owners: number };
 
-/** Handles one `lut.check` message (a valid one: the queue routes the rest to `skipLutCheck`). */
-export async function processLutCheck(env: Env, msg: LutCheckMessage): Promise<LutCheckResult> {
+/** What the check decided: which bell is due this week, for which FY, under which entity (the week's Monday is in it). */
+export type LutDecision = {
+  bell: "next_fy_due" | "current_missing";
+  fyLabel: string;
+  entity: string;
+};
+
+/**
+ * The read and the decision, writing nothing (M5.4 splits `processLutCheck` in two so that the weekly EMAIL can be queued BEFORE the bell is written: a run that died between the two is
+ * retried and still finds the bell missing). Null when nothing is due (no overseas client, the IGST route, or no reminder this week).
+ */
+export async function decideLut(env: Env, msg: LutCheckMessage): Promise<LutDecision | null> {
   const row = await env.DB.prepare(TAX_ROW_SQL).first<{ value: string | null; overseas: number }>();
   if (!row?.overseas) {
     logEvent("lut.check", { asOf: msg.asOf, bell: "none", overseas: false });
-    return { bell: "none", owners: 0 };
+    return null;
   }
   let stored: unknown = null;
   try {
@@ -47,19 +59,30 @@ export async function processLutCheck(env: Env, msg: LutCheckMessage): Promise<L
   // The IGST route needs no letter, so a bell all year would be noise (the Settings attention row fires on the LUT route only). Read without zod.
   if (exportModeFromStoredTax(stored) === "igst_paid") {
     logEvent("lut.check", { asOf: msg.asOf, bell: "none", route: "igst_paid" });
-    return { bell: "none", owners: 0 };
+    return null;
   }
   const bell = lutBellFor(msg.asOf, lutsFromStoredTax(stored));
   if (!bell) {
     logEvent("lut.check", { asOf: msg.asOf, bell: "none" });
-    return { bell: "none", owners: 0 };
+    return null;
   }
+  return { bell: bell.kind, fyLabel: bell.fyLabel, entity: bell.entity };
+}
+
+/** One write: the week's bell to every active owner (a rerun changes nothing). Returns how many owners got a new row. */
+export async function ringLutBell(env: Env, msg: LutCheckMessage, d: LutDecision): Promise<number> {
   const res = await env.DB.prepare(LUT_BELL_SQL)
-    .bind("lut.reminder", bell.entity, LUT_BELL_COPY[bell.kind](bell.fyLabel), "/settings/tax")
+    .bind("lut.reminder", d.entity, LUT_BELL_COPY[d.bell](d.fyLabel), "/settings/tax")
     .run();
-  const owners = res.meta.changes;
-  logEvent("lut.check", { asOf: msg.asOf, bell: bell.kind, owners });
-  return { bell: bell.kind, owners };
+  logEvent("lut.check", { asOf: msg.asOf, bell: d.bell, owners: res.meta.changes });
+  return res.meta.changes;
+}
+
+/** Handles one `lut.check` message (a valid one: the queue routes the rest to `skipLutCheck`). Since M5.4 the daily run does this inside `alerts.daily`; the kind stays routable for messages already queued. */
+export async function processLutCheck(env: Env, msg: LutCheckMessage): Promise<LutCheckResult> {
+  const d = await decideLut(env, msg);
+  if (!d) return { bell: "none", owners: 0 };
+  return { bell: d.bell, owners: await ringLutBell(env, msg, d) };
 }
 
 /** A `lut.check` body this version cannot use (a bad date): acknowledged and logged, never a lead. */

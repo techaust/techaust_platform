@@ -156,9 +156,20 @@ export const docAccessTokens = sqliteTable(
     expiresAt: integer("expires_at").notNull(),
     revokedAt: integer("revoked_at"),
     createdAt: createdAt(),
+    /**
+     * M5.4 (LD55, POR-06): the link is bound to one contact, like an offer link. Added with ALTER TABLE; the rules (a contact of that client, a frozen
+     * document of that client, the address, `send_id` naming a send of the same document) are the triggers of 0044 (`identity.ts` cannot import the
+     * CRM schema, so no foreign key is declared here). `send_id` is null for a reminder's link.
+     */
+    contactId: text("contact_id"),
+    clientId: text("client_id"),
+    /** Lower-cased snapshot of the contact's address at minting; a changed address ends the link. */
+    email: text("email"),
+    sendId: text("send_id"),
   },
   (t) => [
     index("doc_access_tokens_document").on(t.documentId),
+    index("doc_access_tokens_contact").on(t.contactId),
     check("doc_access_tokens_purpose", oneOf(t.purpose, DOC_TOKEN_PURPOSES)),
   ],
 );

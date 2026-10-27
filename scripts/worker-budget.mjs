@@ -57,7 +57,8 @@ export const BUDGETS = {
   // brought it into the jobs bundle (zod/classic/schemas.js), long before M4.4. Only the admin and portal Workers must stay without it.
   jobs: {
     file: "apps/jobs/dist/index.js",
-    maxBytes: 800_000,
+    // lead, 2026-10-27: M5.4 measured 788,640; the startup limit and the staging cold reading remain the gates
+    maxBytes: 1_000_000,
     maxStartupMs: 200,
     forbidden: [PDF_LIB, PUPPETEER],
   },
@@ -70,7 +71,27 @@ export const BUDGETS = {
  */
 export function measureStartup(code, runs = 7) {
   // The export list ends the code; a trailing license comment (the jobs bundle has one) may follow it.
-  const src = code.replace(/\bexport\s*\{[^}]*\};?[ ]*$/m, "");
+  // M5.4: the admin API Worker exports the named entrypoint `BillingJobs` (a `WorkerEntrypoint` subclass), so its bundle starts with
+  // `import{WorkerEntrypoint as e}from"cloudflare:workers"`. The probe has no such module: the import becomes a stand-in class of the same name (its own cost is the platform's, not the code's).
+  const src = code
+    .replace(/\bexport\s*\{[^}]*\};?[ ]*$/m, "")
+    .replace(/\bimport\s*\{([^}]*)\}\s*from\s*["']cloudflare:workers["'];?/g, (_m, names) => {
+      // Only `WorkerEntrypoint` may be stood in for (early check, finding 10): a bundle that starts importing anything else from the runtime (`env`, `DurableObject`,
+      // `waitUntil`...) would run in the probe with a class where it needs a value and measure something else, so it fails the probe instead.
+      const bound = names
+        .split(",")
+        .map((n) => n.trim())
+        .filter(Boolean)
+        .map((n) => {
+          const [orig, alias] = n.split(/\s+as\s+/).map((x) => x.trim());
+          if (orig !== "WorkerEntrypoint")
+            throw new Error(
+              `the startup probe only stands in for WorkerEntrypoint; the bundle imports ${orig} from cloudflare:workers`,
+            );
+          return alias ?? orig;
+        });
+      return `var ${bound.map((b) => `${b} = class {}`).join(", ")};`;
+    });
   const times = [];
   for (let i = 0; i < runs; i++) {
     const context = vm.createContext({

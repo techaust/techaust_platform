@@ -235,7 +235,7 @@ describe("access rows: every signed-in request and every sign-in event, nothing 
       ["magic-unknown", 200, null],
       ["verify-ok", 200, who.id],
       ["verify-bad", 401, null],
-      ["doc-ok", 200, null],
+      ["doc-ok", 200, f.a.finance.id],
       ["doc-bad", 404, null],
       ["logout", 204, who.id],
     ];

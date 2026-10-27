@@ -20,5 +20,16 @@ export const EMAIL_TEMPLATES = [
   "offer.declined.staff",
   "approval.requested",
   "approval.decided",
+  // M5.4: an invoice, proforma, credit note or debit note sent to the client (ADM-INV-15), the payment reminder (ADM-INV-13; one template, the offset and
+  // the kind are in its data) and the owners' alerts: unbilled work (ADM-INV-19), a proforma for delivered work still unpaid (ADM-INV-10), the LUT letter (ADM-INV-18).
+  // The words are 07-U's (the designer builds the templates; the data keys are `INVOICE_EMAIL_DATA` in invoice-email.ts).
+  "invoice.sent",
+  "proforma.sent",
+  "credit_note.sent",
+  "debit_note.sent",
+  "reminder.sent",
+  "alert.unbilled",
+  "alert.proforma_due",
+  "lut.reminder",
 ] as const;
 export type EmailTemplate = (typeof EMAIL_TEMPLATES)[number];

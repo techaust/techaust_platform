@@ -8,14 +8,21 @@
 import { budgetBandLabel, countryName } from "./form-labels.ts";
 import { contactForm, quoteForm } from "./schemas/forms.ts";
 import {
+  alertsDailyMessage,
   approvalNotifyMessage,
+  careBillMessage,
+  careIssueMessage,
+  careScanMessage,
   emailMessage,
   formMeta,
+  invoiceSendMessage,
   type LeadMessage,
   leadMessage,
   offerAcceptedMessage,
   offerDecidedMessage,
   offerSendMessage,
+  reminderScanMessage,
+  reminderSendMessage,
   staffAlertMessage,
 } from "./schemas/messages.ts";
 
@@ -118,6 +125,31 @@ export function warmOfferMessages(): number {
       ok(offerDecidedMessage.safeParse({ kind: "offer.decided", documentId: id, decision: "accepted" })) +
       ok(offerAcceptedMessage.safeParse({ kind: "offer.accepted", acceptanceId: id })) +
       ok(approvalNotifyMessage.safeParse({ kind: "approval.notify", approvalId: id, event: "requested" }))
+    );
+  } catch {
+    return 0; // never stop a Worker from starting
+  }
+}
+
+/** The M5.4 messages: the two invoice ones of the email queue and the five billing ones of the leads queue, one made-up parse each. Returns 7. */
+export function warmBillingMessages(): number {
+  const id = "00000000-0000-7000-8000-000000000000";
+  try {
+    return (
+      ok(invoiceSendMessage.safeParse({ kind: "invoice.send", sendId: id })) +
+      ok(reminderSendMessage.safeParse({ kind: "reminder.send", reminderId: id })) +
+      ok(careScanMessage.safeParse({ kind: "care.scan", after: null })) +
+      ok(careBillMessage.safeParse({ kind: "care.bill", planId: id })) +
+      ok(careIssueMessage.safeParse({ kind: "care.issue", documentId: id })) +
+      ok(
+        alertsDailyMessage.safeParse({
+          kind: "alerts.daily",
+          first: true,
+          unbilledAfter: null,
+          proformaAfter: { at: 1, id },
+        }),
+      ) +
+      ok(reminderScanMessage.safeParse({ kind: "reminder.scan", after: null }))
     );
   } catch {
     return 0; // never stop a Worker from starting

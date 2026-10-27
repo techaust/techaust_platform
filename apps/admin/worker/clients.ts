@@ -9,7 +9,7 @@
 // Finance boundary: `CLIENT_FINANCE_READ_FIELDS` (core) is hidden from a role without `clients.finance.read` (Sales): `clientView` drops
 // them. Every `CLIENT_BILLING_FIELDS` field is changed after creation only by `PATCH /clients/:id/billing` (`clients.finance.write`), and
 // `PATCH /clients/:id` refuses them with a 400. The tax identity (GST status, GSTIN, state, billing address, currency) is readable.
-import { emailAddress } from "@techaust/auth";
+import { emailAddress, stepUpActive } from "@techaust/auth";
 import { FINANCE_AUDIT_ACTIONS } from "@techaust/core/audit";
 import {
   ANONYMISED_CLIENT,
@@ -47,6 +47,7 @@ import {
   mutate,
   NOT_FOUND,
   requestInfo,
+  STEP_UP_REQUIRED,
 } from "./context.ts";
 import { dropObjects } from "./files.ts";
 import {
@@ -84,6 +85,11 @@ const LEGAL_HOLD: ApiError = {
   code: "legal_hold",
   message: "A legal hold stops this. Release the hold first",
 };
+/** M5.4 (Q43, LD58): turning the automatic issue of the monthly care invoice ON lets the system issue invoices without the Owner, so only the Owner may, with a fresh code. */
+const OWNER_ONLY: ApiError = {
+  code: "owner_only",
+  message: "Only the Owner can turn on automatic issuing",
+};
 const ON_ISSUED_DOCUMENT: ApiError = {
   code: "on_issued_document",
   message: "This person is on an issued document, so they can't be erased. Anonymise them instead",
@@ -92,8 +98,20 @@ const NOT_AVAILABLE: ApiError = { code: "conflict", message: "Nothing was change
 
 // ---- rows and views ---------------------------------------------------------------------------------------------------
 
-export const CLIENT_COLS =
-  "id, code, legal_name, display_name, type, country, gst_status, gstin, state_code, billing_address, service_address, currency, payment_terms_days, reminder_policy, care_auto_issue, attach_pdf, tags, notes, legal_hold, anonymised_at, created_at, updated_at";
+const CLIENT_BASE_COLS =
+  "id, code, legal_name, display_name, type, country, gst_status, gstin, state_code, billing_address, service_address, currency, payment_terms_days, reminder_policy, care_auto_issue, care_auto_issue_by, attach_pdf, tags, notes, legal_hold, anonymised_at, created_at, updated_at";
+/** M5.4 (Q43, triage): who turned the automatic issue on, by name and whether that member is still an active Owner (the toggle is "not in effect" when not). `a` is the clients table's alias, with its dot. */
+const careByCols = (a: string) =>
+  `(SELECT u.name FROM staff_users u WHERE u.id = ${a}care_auto_issue_by) AS care_auto_issue_by_name, (SELECT u.role = 'owner' AND u.status = 'active' FROM staff_users u WHERE u.id = ${a}care_auto_issue_by) AS care_auto_issue_by_active`;
+export const CLIENT_COLS = `${CLIENT_BASE_COLS}, ${careByCols("")}`;
+/**
+ * When the automatic issue was turned on: the time of the newest audit row `client.billing_update` that changed `careAutoIssue` (the clients row keeps no time of its own). Looked up only for a client
+ * with the toggle on, on the `audit_log_entity` index. Only the views that print it carry the column (`CLIENT_VIEW_COLS`, the list).
+ */
+// `a` is the clients table's name or alias with its dot (never empty: audit_log has an `id` too).
+const careAtCol = (a: string) =>
+  `(CASE WHEN ${a}care_auto_issue_by IS NULL THEN NULL ELSE (SELECT l.at FROM audit_log l WHERE l.entity_type = 'client' AND l.entity_id = ${a}id AND l.action = 'client.billing_update' AND EXISTS (SELECT 1 FROM json_each(l.summary, '$.changed') j WHERE j.value = 'careAutoIssue') ORDER BY l.at DESC LIMIT 1) END) AS care_auto_issue_at`;
+export const CLIENT_VIEW_COLS = `${CLIENT_COLS}, ${careAtCol("clients.")}`;
 const CONTACT_COLS =
   "id, client_id, name, email, phone, title, is_primary, is_billing, portal_access, can_see_finance, marketing_consent, bounced_at, anonymised_at, legal_hold, created_at, updated_at";
 
@@ -113,6 +131,11 @@ export type ClientRow = {
   payment_terms_days: number | null;
   reminder_policy: string | null;
   care_auto_issue: number;
+  care_auto_issue_by: string | null;
+  care_auto_issue_by_name: string | null;
+  care_auto_issue_by_active: number | null;
+  /** Only in the rows of the views that print it (`CLIENT_VIEW_COLS`, the list). */
+  care_auto_issue_at?: number | null;
   attach_pdf: number;
   tags: string | null;
   notes: string | null;
@@ -176,7 +199,20 @@ export function clientView(r: ClientRow, role: Role) {
     careAutoIssue: Boolean(r.care_auto_issue),
     attachPdf: Boolean(r.attach_pdf),
   };
-  return { ...view, ...finance };
+  return {
+    ...view,
+    ...finance,
+    // M5.4: the Owner who turned the automatic issue on (null: nobody), and whether that member is still an active Owner; if not, the toggle is not in effect.
+    careAutoIssueBy: r.care_auto_issue_by
+      ? {
+          id: r.care_auto_issue_by,
+          name: r.care_auto_issue_by_name,
+          active: r.care_auto_issue_by_active === 1,
+          // UTC ms the toggle was turned on (from the audit log); null when no row says so.
+          at: r.care_auto_issue_at ?? null,
+        }
+      : null,
+  };
 }
 
 export const contactView = (r: ContactRow) => ({
@@ -392,6 +428,7 @@ const exportRequest = z.strictObject({
       "decisions",
       "document_sends",
       "offer_links",
+      "doc_access_tokens",
       "documents",
       "email_log",
       "audit_log",
@@ -443,7 +480,7 @@ const listClients = async (c: Ctx, f: z.infer<typeof listQuery>) => {
     bind.push(cur.k, cur.id);
   }
   const { results } = await c.env.DB.prepare(
-    `SELECT ${CLIENT_COLS.replace(/(\w+)/g, "c.$1")} FROM clients c${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY ${order.order} LIMIT ${limit + 1}`,
+    `SELECT ${CLIENT_BASE_COLS.replace(/(\w+)/g, "c.$1")}, ${careByCols("c.")}, ${careAtCol("c.")} FROM clients c${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY ${order.order} LIMIT ${limit + 1}`,
   )
     .bind(...bind)
     .all<ClientRow>();
@@ -545,7 +582,7 @@ export const clients = new Hono<AppEnv>()
     const [client, contacts, live, lead, locked] = await db.batch<
       ClientRow & ContactRow & { ref: string; x: number; n: number }
     >([
-      db.prepare(`SELECT ${CLIENT_COLS} FROM clients WHERE id = ?1`).bind(id),
+      db.prepare(`SELECT ${CLIENT_VIEW_COLS} FROM clients WHERE id = ?1`).bind(id),
       db
         .prepare(`SELECT ${CONTACT_COLS} FROM contacts WHERE client_id = ?1 ORDER BY email, id LIMIT 101`)
         .bind(id),
@@ -697,15 +734,34 @@ export const clients = new Hono<AppEnv>()
     if (!changes.length) return c.json({ ok: true, changed: false, updatedAt: row.updated_at, warnings });
 
     const t = Date.now();
+    const u = actor(c);
+    // M5.4 (Q43, LD58): turning the automatic issue ON is the Owner's, with a fresh code, and names that Owner on the client (`care_auto_issue_by`); turning it OFF clears the name and Staff may.
+    const toggled = changes.find(([k]) => k === "careAutoIssue");
+    const turningOn = toggled !== undefined && toggled[1] === 1;
+    if (turningOn) {
+      const d = decide(u.role, "clients.careAutoIssue");
+      if (d === "deny") return err(c, OWNER_ONLY, 403);
+      if (d === "step-up" && !stepUpActive(u.stepUpUntil, t)) return err(c, STEP_UP_REQUIRED, 403);
+    }
     const currencyChanges = changes.some(([k]) => k === "currency");
+    const setCols = changes.map(([k]) => snake(k));
+    const setVals: (string | number | null)[] = changes.map((ch) => ch[1]);
+    if (toggled) {
+      setCols.push("care_auto_issue_by");
+      setVals.push(turningOn ? u.id : null);
+    }
+    // Turning on is also checked INSIDE the write: the session still has a live fresh code and its member is an active Owner (the trigger of 0044 backs it with the named member).
+    const authority = turningOn
+      ? ` AND EXISTS (SELECT 1 FROM staff_sessions s JOIN staff_users o ON o.id = s.user_id WHERE s.id = ?${setVals.length + 4} AND s.revoked_at IS NULL AND s.idle_expires_at > ?3 AND s.abs_expires_at > ?3 AND s.step_up_until > ?3 AND o.role = 'owner' AND o.status = 'active')`
+      : "";
     let done: boolean;
     try {
       done = await mutate(c, {
         main: db
           .prepare(
-            `UPDATE clients SET ${changes.map(([k], i) => `${snake(k)} = ?${i + 4}`).join(", ")}, updated_at = ?3 WHERE id = ?1 AND updated_at = ?2 AND anonymised_at IS NULL${currencyChanges ? ` AND ${NO_INVOICE_SQL}` : ""}`,
+            `UPDATE clients SET ${setCols.map((col, i) => `${col} = ?${i + 4}`).join(", ")}, updated_at = ?3 WHERE id = ?1 AND updated_at = ?2 AND anonymised_at IS NULL${currencyChanges ? ` AND ${NO_INVOICE_SQL}` : ""}${authority}`,
           )
-          .bind(id, f.expectedUpdatedAt, t, ...changes.map((ch) => ch[1])),
+          .bind(id, f.expectedUpdatedAt, t, ...setVals, ...(turningOn ? [u.sessionId] : [])),
         action: "client.billing_update",
         entityType: "client",
         entityId: id,
@@ -715,6 +771,7 @@ export const clients = new Hono<AppEnv>()
       if (isUnique(e, "clients.gstin")) return err(c, GSTIN_IN_USE, 409);
       // The trigger is the backstop for an invoice that appeared between the statement's check and its write.
       if (refusedWith(e, /currency is locked/)) return err(c, CURRENCY_LOCKED, 409);
+      if (refusedWith(e, /clients_care_auto_issue_by/)) return err(c, OWNER_ONLY, 403);
       throw e;
     }
     if (!done) {
@@ -724,6 +781,8 @@ export const clients = new Hono<AppEnv>()
         .first<{ updated_at: number; anonymised_at: number | null }>();
       if (!again) return err(c, NOT_FOUND, 404);
       if (again.anonymised_at !== null) return refuseAnonymised(c);
+      // Nothing else moved but the toggle was asked for: the fresh code ran out between the check and the write.
+      if (turningOn && again.updated_at === f.expectedUpdatedAt) return err(c, STEP_UP_REQUIRED, 403);
       return again.updated_at !== f.expectedUpdatedAt || !currencyChanges
         ? err(c, STALE_VERSION, 409)
         : err(c, CURRENCY_LOCKED, 409);
@@ -906,6 +965,11 @@ export const EXPORT_PARTS: Record<string, { sql: (cur: boolean) => string; time?
   offer_links: {
     sql: (cur) =>
       `SELECT rowid AS id, document_id, send_id, acceptance_id, purpose, expires_at, revoked_at, created_at FROM offer_links WHERE contact_id = ?1${cur ? " AND rowid > ?5" : ""} ORDER BY rowid LIMIT 51`,
+  },
+  // M5.4 (VERIFY WITH CA/LEGAL): the invoice links sent to this person (POR-06). Never the token hash; document, purpose, dates and the revoke only.
+  doc_access_tokens: {
+    sql: (cur) =>
+      `SELECT rowid AS id, document_id, send_id, purpose, expires_at, revoked_at, created_at FROM doc_access_tokens WHERE contact_id = ?1${cur ? " AND rowid > ?5" : ""} ORDER BY rowid LIMIT 51`,
   },
   acceptances: {
     sql: (cur) =>
@@ -1125,7 +1189,10 @@ export const contacts = new Hono<AppEnv>()
         ? [
             ...base,
             cur.k,
-            f.part === "sessions" || f.part === "magic_links" || f.part === "offer_links"
+            f.part === "sessions" ||
+            f.part === "magic_links" ||
+            f.part === "offer_links" ||
+            f.part === "doc_access_tokens"
               ? Number(cur.id)
               : cur.id,
           ]
@@ -1268,6 +1335,12 @@ export const contacts = new Hono<AppEnv>()
         db
           .prepare(
             `UPDATE approvals SET reason = NULL, note = NULL WHERE kind = 'issue' AND document_id IN (SELECT id FROM documents WHERE frozen_at IS NOT NULL AND ${LAST_LIVE_INDIVIDUAL("documents.client_id")}) AND ${g.sql(2)}`,
+          )
+          .bind(id, ...g.params),
+        // M5.4 (early check, finding 11): a care draft that goes keeps the record of its period (the job must never bill it again) but forgets the document, once.
+        db
+          .prepare(
+            `UPDATE care_invoices SET document_id = NULL WHERE document_id IN (SELECT id FROM documents WHERE type IN (${INVOICE_TYPES_SQL}) AND frozen_at IS NULL AND ${LAST_LIVE_INDIVIDUAL("documents.client_id")}) AND ${g.sql(2)}`,
           )
           .bind(id, ...g.params),
         db

@@ -510,6 +510,8 @@ form.inv-service {
 
   .inv-page .doc-page__send {
     grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
+    /* M5.4: each panel keeps its own height (the PDF, the emails and the reminders differ) */
+    align-items: start;
   }
 }
 
@@ -581,5 +583,182 @@ form.inv-service {
 
 .inv-ms__error {
   flex-basis: 100%;
+  margin: 0;
+}
+
+/* ---------- M5.4: the emails of an issued document, its reminders, a care invoice's origin ---------- */
+
+.inv-mail__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.inv-mail__title .icon {
+  color: var(--color-text-muted);
+}
+
+.inv-mail__list {
+  margin-bottom: var(--space-3);
+  container-type: inline-size;
+}
+
+/* One email: who (and the address), how it was made, when, then the status; from 20rem the status sits at the end of the first line. */
+.inv-mail__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-1) var(--space-3);
+  width: 100%;
+  margin: 0;
+}
+
+.inv-mail .inv-mail__row dd {
+  display: grid;
+  justify-items: start;
+  margin: 0;
+}
+
+@container (min-width: 20rem) {
+  .inv-mail__row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: 0;
+  }
+
+  .inv-mail__row > div {
+    grid-column: 1;
+  }
+
+  .inv-mail__row > .inv-mail__state {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: start;
+  }
+}
+
+/* "Sent by {name}": the column's label read inline with the name, as one line of the email's meta. */
+.inv-mail__by {
+  display: block;
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+/* One run of text, so a long name wraps word by word beside the status rather than dropping to its own line. */
+.inv-mail .inv-mail__by dt,
+.inv-mail .inv-mail__by dd {
+  display: inline;
+}
+
+.inv-mail .inv-mail__by dt {
+  margin-inline-end: 0.3em;
+}
+
+.inv-mail__lock {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-2);
+  align-items: start;
+  margin: 0 0 var(--space-4);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.inv-mail__lock .icon {
+  margin-top: 0.125rem;
+}
+
+/* The preview's subject: a long number or amount wraps rather than widening the dialog. */
+.inv-subject {
+  overflow-wrap: anywhere;
+}
+
+.inv-remind__empty {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+/* The reminders as a schedule: one rule down the left, a node per reminder (filled once sent, a ring while due, a bar while paused, dashed once
+   skipped), the due date's own row in the heavier weight. The state is always in the words; the node only repeats it. */
+.remind {
+  position: relative;
+  display: grid;
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  list-style: none;
+}
+
+.remind::before {
+  position: absolute;
+  inset-block: var(--space-4);
+  inset-inline-start: 0.75rem;
+  width: 1px;
+  background: var(--color-border);
+  content: "";
+}
+
+.remind__row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1.5rem minmax(0, 1fr);
+  gap: 0 var(--space-3);
+  padding: var(--space-2) 0;
+}
+
+.remind__node {
+  grid-row: 1 / span 2;
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 1px solid var(--color-border-control);
+  border-radius: 50%;
+  background: var(--color-surface);
+  color: var(--color-btn-primary-fg);
+}
+
+.remind__row[data-state="sent"] .remind__node {
+  border-color: var(--color-btn-primary-bg);
+  background: var(--color-btn-primary-bg);
+}
+
+.remind__row[data-state="due"] .remind__node {
+  border: 2px solid var(--color-text-accent);
+}
+
+.remind__row[data-state="paused"] .remind__node {
+  border-color: var(--color-warning);
+  color: var(--color-warning);
+}
+
+.remind__row[data-state="skipped"] .remind__node {
+  border-style: dashed;
+}
+
+.remind__day {
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.remind__row[data-due] .remind__day {
+  font-weight: 600;
+}
+
+.remind__state {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  font-variant-numeric: tabular-nums;
+}
+
+.remind__row[data-state="skipped"] .remind__day {
+  color: var(--color-text-muted);
+}
+
+.inv-remind__window {
+  margin: 0 0 var(--space-4);
+}
+
+.inv-care-why {
   margin: 0;
 }

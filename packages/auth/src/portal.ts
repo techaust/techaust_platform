@@ -118,17 +118,37 @@ type Preparer<S> = { prepare(sql: string): { bind(...values: unknown[]): S } };
 
 /**
  * A document token and the statement that stores it (only its SHA-256), for the caller's own `db.batch()`: the send
- * flows of M5/M6 mint one when they email a proforma or invoice. Nothing is run here.
+ * flows (M5.4: the invoice email and each reminder) mint one per recipient when they email a proforma, invoice or note. Nothing is run here.
+ * The `doc_access_tokens_bound_insert` trigger (0044) refuses a row that is not bound, whose document is not a frozen one of that client,
+ * or whose contact is not that client's.
  */
 export async function docTokenStmt<S>(
   db: Preparer<S>,
-  o: { documentId: string; purpose: DocTokenPurpose; expiresAt: number },
+  o: {
+    documentId: string;
+    purpose: DocTokenPurpose;
+    expiresAt: number;
+    /** M5.4 (LD55): the link is bound to one contact, the client, the address as it was at minting (lower-cased here) and the send it came from (null: a reminder's link). */
+    contactId: string;
+    clientId: string;
+    email: string;
+    sendId: string | null;
+  },
 ): Promise<{ token: string; stmt: S }> {
   const token = newDocToken();
   const stmt = db
     .prepare(
-      "INSERT INTO doc_access_tokens (token_hash, document_id, purpose, expires_at) VALUES (?1, ?2, ?3, ?4)",
+      "INSERT INTO doc_access_tokens (token_hash, document_id, purpose, expires_at, contact_id, client_id, email, send_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
     )
-    .bind(await tokenHash(token), o.documentId, o.purpose, o.expiresAt);
+    .bind(
+      await tokenHash(token),
+      o.documentId,
+      o.purpose,
+      o.expiresAt,
+      o.contactId,
+      o.clientId,
+      o.email.trim().toLowerCase(),
+      o.sendId,
+    );
   return { token, stmt };
 }

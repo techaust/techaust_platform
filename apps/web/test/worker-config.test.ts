@@ -195,3 +195,40 @@ describe("admin API Worker config guard (M5.0)", () => {
     ]);
   });
 });
+
+describe("jobs Worker config guard (M5.4, LD57, LD61)", () => {
+  const read = (p: string) => guard.parseJsonc(readFileSync(new URL(`../../${p}`, import.meta.url), "utf8"));
+  const api = read("admin/wrangler.api.jsonc");
+  const jobs = read("jobs/wrangler.jsonc");
+
+  it("the real config passes: both crons and the BillingJobs binding at the top level and in staging, neither in production", () => {
+    expect(guard.JOBS_CRONS).toEqual(["0 22 * * *", "30 * * * *"]);
+    expect(guard.jobsConfigProblems(jobs, api)).toEqual([]);
+    expect(jobs.env.production.triggers).toBeUndefined();
+    expect(jobs.env.production.services).toBeUndefined();
+  });
+
+  it("fails a missing hourly cron, a missing or mispointed binding or entrypoint, and anything in production", () => {
+    const a = structuredClone(jobs);
+    a.env.staging.triggers.crons = ["0 22 * * *"];
+    expect(guard.jobsConfigProblems(a, api)).toEqual([
+      'env.staging: crons must be exactly ["0 22 * * *","30 * * * *"]',
+    ]);
+    const b = structuredClone(jobs);
+    b.env.staging.services = undefined;
+    b.services[0].service = "techaust-platform-admin-api-staging";
+    b.services[0].entrypoint = "default";
+    expect(guard.jobsConfigProblems(b, api)).toEqual([
+      "(top level): ADMIN_JOBS points at techaust-platform-admin-api-staging, expected techaust-platform-admin-api",
+      "(top level): ADMIN_JOBS must name the entrypoint BillingJobs",
+      "env.staging: the ADMIN_JOBS service binding is missing",
+    ]);
+    const c = structuredClone(jobs);
+    c.env.production.triggers = { crons: ["30 * * * *"] };
+    c.env.production.services = structuredClone(jobs.services);
+    expect(guard.jobsConfigProblems(c, api)).toEqual([
+      "env.production: no cron triggers until Phase 7",
+      "env.production: no ADMIN_JOBS service binding until Phase 7",
+    ]);
+  });
+});

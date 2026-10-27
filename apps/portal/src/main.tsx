@@ -10,9 +10,11 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { createBrowserRouter, type RouteObject, RouterProvider } from "react-router";
 import { LoadingCard } from "./components/ui.tsx";
+import { captureInvoiceToken, INVOICE_LINK_PATH } from "./lib/invoices.ts";
 import { CALLBACK_PATH, captureLinkToken } from "./lib/link.ts";
 import { captureOfferToken, OFFER_LINK_PATH } from "./lib/offers.ts";
 import { Callback } from "./routes/callback.tsx";
+import { InvoiceLinkRoute, InvoiceRoute, InvoicesRoute } from "./routes/invoices.tsx";
 import { Failed, NotFound } from "./routes/not-found.tsx";
 import { OfferLinkRoute } from "./routes/offer-link.tsx";
 import {
@@ -29,10 +31,17 @@ import { SessionProvider } from "./session.tsx";
 // from the address bar and history (lib/link.ts, LD3); the same for an offer link's token (lib/offers.ts).
 captureLinkToken();
 captureOfferToken();
+// M5.4: an invoice link's token (`/i#t=…`), the same way.
+captureInvoiceToken();
 // A new link opened in a tab already on the callback path changes only the fragment, so the page doesn't reload:
 // reload it, which takes and strips the new token above. The same for a second offer link opened in the same tab.
 window.addEventListener("hashchange", () => {
-  if ((location.pathname === CALLBACK_PATH || location.pathname === OFFER_LINK_PATH) && location.hash)
+  if (
+    (location.pathname === CALLBACK_PATH ||
+      location.pathname === OFFER_LINK_PATH ||
+      location.pathname === INVOICE_LINK_PATH) &&
+    location.hash
+  )
     location.reload();
 });
 
@@ -63,6 +72,7 @@ const router = createBrowserRouter([
   ...devRoutes,
   { path: CALLBACK_PATH, element: <Callback />, errorElement: <Failed /> },
   { path: OFFER_LINK_PATH, element: <OfferLinkRoute />, errorElement: <Failed /> },
+  { path: INVOICE_LINK_PATH, element: <InvoiceLinkRoute />, errorElement: <Failed /> },
   {
     path: "/",
     HydrateFallback: LoadingCard,
@@ -76,7 +86,8 @@ const router = createBrowserRouter([
       { index: true, element: <HomeRoute /> },
       { path: "proposals", element: <ProposalsRoute /> },
       { path: "proposals/:id", element: <ProposalRoute /> },
-      { path: "invoices", element: <SoonRoute section="invoices" /> },
+      { path: "invoices", element: <InvoicesRoute /> },
+      { path: "invoices/:id", element: <InvoiceRoute /> },
       { path: "projects", element: <SoonRoute section="projects" /> },
       { path: "profile", element: <SoonRoute section="profile" /> },
       { path: "*", element: <MissingRoute /> },

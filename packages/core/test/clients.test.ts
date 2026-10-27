@@ -118,12 +118,12 @@ describe("clientTaxCheck [ADM-CLI-01, owner Q1 2026-10-25]", () => {
 });
 
 describe("client constants", () => {
-  it("the billing and finance-read lists are unique; only currencyLocked of the read list is not a billing field", () => {
+  it("the billing and finance-read lists are unique; only currencyLocked and careAutoIssueBy of the read list are not billing fields", () => {
     expect(new Set(CLIENT_BILLING_FIELDS).size).toBe(CLIENT_BILLING_FIELDS.length);
     expect(new Set(CLIENT_FINANCE_READ_FIELDS).size).toBe(CLIENT_FINANCE_READ_FIELDS.length);
     expect(
       CLIENT_FINANCE_READ_FIELDS.filter((k) => !(CLIENT_BILLING_FIELDS as readonly string[]).includes(k)),
-    ).toEqual(["currencyLocked"]);
+    ).toEqual(["currencyLocked", "careAutoIssueBy"]);
     // The tax identity is not on the hidden list: the PRD hides the finance tabs, not who the client is for tax.
     for (const k of ["gstStatus", "gstin", "stateCode", "billingAddress", "currency", "country"])
       expect(CLIENT_FINANCE_READ_FIELDS as readonly string[]).not.toContain(k);

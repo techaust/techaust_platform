@@ -457,7 +457,8 @@ export const acceptances = sqliteTable(
   ],
 );
 
-export const DOCUMENT_SEND_KINDS = ["send", "resend"] as const;
+/** M5.4 (LD55): `auto` is the send the care-plan auto-issue makes (an invoice; `created_by` is the authorising owner). No CHECK on the column: it is a TS enum. */
+export const DOCUMENT_SEND_KINDS = ["send", "resend", "auto"] as const;
 
 /**
  * One row per recipient of a proposal or estimate send (M4.5, ADM-PROP-07). `queued_at` NULL means the email waits for
@@ -596,5 +597,9 @@ export const reminders = sqliteTable(
   (t) => [
     uniqueIndex("reminders_document_offset").on(t.documentId, t.offsetDays),
     index("reminders_due").on(t.sentAt, t.dueAt),
+    // M5.4 (ADM-INV-13, LD60): the scan reads only the rows still waiting (`reminders_due` would rescan skipped rows for ever).
+    index("reminders_pending")
+      .on(t.dueAt, t.id)
+      .where(sql`${t.sentAt} is null and ${t.skippedReason} is null`),
   ],
 );

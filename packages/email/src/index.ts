@@ -1,5 +1,14 @@
 // @techaust/email: templates (HTML + text), header sanitising and the SES v2 client (docs/05 §11.1).
 
+import {
+  alertProformaDue,
+  alertUnbilled,
+  type DocumentEmailData,
+  type DocumentKind,
+  documentSent,
+  lutReminder,
+  reminderSent,
+} from "./billing.ts";
 import { staffApprovalIssueDecided, staffApprovalIssueRequested } from "./invoices.ts";
 import {
   approvalDecided,
@@ -24,6 +33,7 @@ import {
   withTestNotice,
 } from "./templates.ts";
 
+export * from "./billing.ts";
 export * from "./headers.ts";
 export * from "./invoices.ts";
 export * from "./offers.ts";
@@ -37,7 +47,33 @@ export * from "./transport.ts";
 export const SENDERS = {
   hello: { name: "TecHaust Technologies", address: "hello@techaust.com" },
   noReply: { name: "TecHaust Technologies", address: "no-reply@techaust.com" },
+  /** M5.4 (LD65, docs/13 2026-10-07): invoices, proformas, notes and payment reminders; replies go back to billing@. */
+  billing: { name: "TecHaust Technologies", address: "billing@techaust.com" },
 } as const;
+
+/** The data of a client document email, exactly the keys of `INVOICE_EMAIL_DATA` (@techaust/core/invoices). */
+const documentData = (get: (k: string) => string): DocumentEmailData => ({
+  first_name: get("first_name"),
+  number: get("number"),
+  issue_date: get("issue_date"),
+  due_date: get("due_date"),
+  total: get("total"),
+  balance: get("balance"),
+  url: get("url"),
+  attached: get("attached"),
+  parent_number: get("parent_number"),
+  sender_name: get("sender_name"),
+  reason: get("reason"),
+  parent_balance: get("parent_balance"),
+});
+
+/** M5.4: the template key of each client document email and the document it names. */
+const DOCUMENT_TEMPLATES: Record<string, DocumentKind> = {
+  "invoice.sent": "invoice",
+  "proforma.sent": "proforma",
+  "credit_note.sent": "credit_note",
+  "debit_note.sent": "debit_note",
+};
 
 /** Where a reply to a `no-reply@` email goes (owner, 2026-10-23). */
 export const NO_REPLY_REPLY_TO = "contact@techaust.com";
@@ -82,8 +118,64 @@ function renderTemplate(
 ): Rendered & { from: { name: string; address: string }; replyTo: string } {
   const hello = { from: SENDERS.hello, replyTo: SENDERS.hello.address };
   const noReply = { from: SENDERS.noReply, replyTo: NO_REPLY_REPLY_TO };
+  const billing = { from: SENDERS.billing, replyTo: SENDERS.billing.address };
   const get = (k: string) => data[k] ?? "";
+  const documentKind = DOCUMENT_TEMPLATES[template];
+  if (documentKind) return { ...billing, ...documentSent(documentKind, documentData(get), opts) };
   switch (template) {
+    case "reminder.sent":
+      return {
+        ...billing,
+        ...reminderSent(
+          { ...documentData(get), offset_days: get("offset_days"), when: get("when"), kind: get("kind") },
+          opts,
+        ),
+      };
+    case "alert.unbilled":
+      return {
+        ...noReply,
+        ...alertUnbilled(
+          {
+            owner_first_name: get("owner_first_name"),
+            client_name: get("client_name"),
+            admin_url: get("admin_url"),
+            milestone_title: get("milestone_title"),
+            delivered_date: get("delivered_date"),
+            days_since: get("days_since"),
+          },
+          opts,
+        ),
+      };
+    case "alert.proforma_due":
+      return {
+        ...noReply,
+        ...alertProformaDue(
+          {
+            owner_first_name: get("owner_first_name"),
+            client_name: get("client_name"),
+            admin_url: get("admin_url"),
+            milestone_title: get("milestone_title"),
+            delivered_date: get("delivered_date"),
+            days_since: get("days_since"),
+            proforma_number: get("proforma_number"),
+            balance: get("balance"),
+          },
+          opts,
+        ),
+      };
+    case "lut.reminder":
+      return {
+        ...noReply,
+        ...lutReminder(
+          {
+            owner_first_name: get("owner_first_name"),
+            fy_label: get("fy_label"),
+            state: get("state"),
+            admin_url: get("admin_url"),
+          },
+          opts,
+        ),
+      };
     case "lead.acknowledgement":
       return {
         ...hello,

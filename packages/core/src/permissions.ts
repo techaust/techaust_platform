@@ -96,6 +96,12 @@ const MATRIX = {
   // M5.3 (Q36, LD46; VERIFY WITH CA/LEGAL): recording the client's answer to a credit note in the GST portal's IMS: the Owner only (no fresh code: it changes no money).
   // A new docs/04 §9 row.
   "invoices.ims": { owner: "allow" },
+  // M5.4 (Q42, ADM-INV-15, ADM-INV-13; VERIFY WITH CA/LEGAL): sending an issued invoice to the client, sending it again, revoking its links and pausing its reminders: Owner and Staff
+  // (the Owner already issued it; sending moves no money). A new docs/04 §9 row.
+  "invoices.send": { owner: "allow", staff: "allow" },
+  // M5.4 (Q43, LD58; VERIFY WITH CA/LEGAL): turning on the automatic issue of a client's monthly care invoice lets the system issue invoices WITHOUT the Owner each month, so only the Owner
+  // may, with a fresh code (turning it off is `clients.finance.write`: Staff may). A new docs/04 §9 row.
+  "clients.careAutoIssue": { owner: "step-up" },
   // Manual payments (Staff entries wait for the Owner's verification)
   "payments.read": { owner: "allow", staff: "allow", accountant: "allow" },
   "payments.record": { owner: "allow", staff: "approval" },

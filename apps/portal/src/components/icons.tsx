@@ -134,6 +134,14 @@ export const Receipt = (p: P) => (
   </Icon>
 );
 
+/** M5.4: how to pay (the bank block of an invoice). The admin's icon. */
+export const Landmark = (p: P) => (
+  <Icon {...p}>
+    <path d="M3 22h18M6 18v-7M10 18v-7M14 18v-7M18 18v-7" />
+    <path d="M12 2 20 7H4z" />
+  </Icon>
+);
+
 export const FolderKanban = (p: P) => (
   <Icon {...p}>
     <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />

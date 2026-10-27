@@ -26,7 +26,7 @@ import {
 } from "@techaust/core/care";
 import { istDate, toIsoDate } from "@techaust/core/dates";
 import { uuidv7 } from "@techaust/core/ids";
-import { can } from "@techaust/core/permissions";
+import { can, decide } from "@techaust/core/permissions";
 import {
   assembleCare,
   type CarePlanData,
@@ -39,6 +39,7 @@ import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { clientGoneSql, clientLiveSql, refuseAnonymised } from "./anonymised.ts";
 import { auditFirstRow } from "./audit-row.ts";
+import { CARE_BILLING_READ_SQL, type CareBillingRow, careBillingView } from "./care-authority.ts";
 import {
   type ApiError,
   type AppEnv,
@@ -465,9 +466,12 @@ export const carePlans = new Hono<AppEnv>()
     const { id } = c.req.valid("param");
     const db = c.env.DB;
     const today = istToday();
-    const [plans, terms, status, usage, gone] = await db.batch<Record<string, unknown>>([
+    // The billing read is added only for a role that reads money (Sales never): one more statement in the same batch.
+    const money = decide(actor(c).role, "clients.finance.read") !== "deny";
+    const [plans, terms, status, usage, gone, billing] = await db.batch<Record<string, unknown>>([
       ...careStatements(db, { ids: [id] }, usageWindow(today, DETAIL_PERIODS_BACK)),
       db.prepare(`SELECT ${clientGoneSql("p.client_id")} AS gone FROM care_plans p WHERE p.id = ?1`).bind(id),
+      ...(money ? [db.prepare(CARE_BILLING_READ_SQL).bind(id)] : []),
     ]);
     const { plans: loaded } = assembleCare({
       plans: (plans?.results ?? []) as never,
@@ -489,7 +493,18 @@ export const carePlans = new Hono<AppEnv>()
       usage: currentUsage(d, today),
       periods: pastUsage(d, today, 12),
       clientAnonymised: (gone?.results[0] as { gone: number } | undefined)?.gone === 1,
-      overage: { addToInvoice: { available: false, arrivesWith: "recurring_invoices" } },
+      // M5.4: the overage goes on the next monthly draft; it is never issued automatically (review M3).
+      overage: { addToInvoice: { available: true, via: "next_care_draft" } },
+      ...(money
+        ? {
+            billing: careBillingView(
+              billing?.results[0] as CareBillingRow | undefined,
+              { startDate: d.plan.start_date, billingDay: d.plan.billing_day, status: d.plan.status },
+              d.statuses,
+              today,
+            ),
+          }
+        : {}),
     });
   })
 

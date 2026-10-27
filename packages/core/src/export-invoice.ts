@@ -141,6 +141,15 @@ export function exportModeFromStoredTax(json: unknown): ExportRoute {
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   v !== null && typeof v === "object" && !Array.isArray(v);
 
+/**
+ * `invoiceAlertDays` of a stored `tax` settings value (G-5), read WITHOUT zod: a whole number from 1 to 30, else the default 25 (the jobs Worker's daily alerts must not
+ * stop because a row fails the schema).
+ */
+export function alertDaysFromStoredTax(json: unknown): number {
+  const days = isRecord(json) ? json.invoiceAlertDays : undefined;
+  return typeof days === "number" && Number.isInteger(days) && days >= 1 && days <= 30 ? days : 25;
+}
+
 // ---- the daily LUT check (B3: the bell of ADM-INV-18, Q22, LD27) ---------------------------------------------------------------------------
 
 export const LUT_CHECK_KIND = "lut.check";
@@ -219,6 +228,14 @@ export const PURPOSE_CODE = /^P\d{4}$/;
 export function proformaWarnAt(deliveredAtMs: number, alertDays: number): number {
   return fromIst(addDays(istDate(deliveredAtMs), alertDays));
 }
+
+/**
+ * The cutoff the unbilled-work and proforma-due readers bind (ADM-INV-19, ADM-INV-10; M5.4): a milestone delivered AT OR BEFORE this instant has reached
+ * its warning (`proformaWarnAt(delivered, alertDays) <= nowMs`). It is the last millisecond before the start of the IST day `alertDays - 1` days before
+ * today, so the day the warning opens is the 25th IST day after delivery: 23:59:59.999 the day before it is still quiet and 00:00 IST is not.
+ */
+export const unbilledCutoff = (nowMs: number, alertDays: number): number =>
+  fromIst(addDays(istDate(nowMs), 1 - alertDays)) - 1;
 
 /** The ISO form of `proformaWarnAt`'s day (for a screen). */
 export const proformaWarnDate = (deliveredAtMs: number, alertDays: number): string =>

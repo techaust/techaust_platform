@@ -390,6 +390,20 @@ export const RotateCcw = (p: P) => (
   </Icon>
 );
 
+/** M5.4: pause and resume the payment reminders. */
+export const Pause = (p: P) => (
+  <Icon {...p}>
+    <rect x="6" y="5" width="4" height="14" rx="1" />
+    <rect x="14" y="5" width="4" height="14" rx="1" />
+  </Icon>
+);
+
+export const Play = (p: P) => (
+  <Icon {...p}>
+    <path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5Z" />
+  </Icon>
+);
+
 export const Send = (p: P) => (
   <Icon {...p}>
     <path d="m22 2-7 20-4-9-9-4Z" />

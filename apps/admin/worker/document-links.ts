@@ -49,6 +49,12 @@ export const resendBody = z.strictObject({
 export const VALID_RECIPIENTS_SQL =
   "SELECT c.id, c.name, lower(c.email) AS email, c.is_billing FROM contacts c WHERE c.client_id = ?1 AND c.portal_access = 1 AND c.anonymised_at IS NULL AND c.id IN (SELECT value FROM json_each(?2))";
 
+/** The same rule for an invoice-family document: the contact must also be allowed to see finance (POR-03; the portal refuses the rest). */
+export const VALID_INVOICE_RECIPIENTS_SQL = VALID_RECIPIENTS_SQL.replace(
+  "c.portal_access = 1 AND",
+  "c.portal_access = 1 AND c.can_see_finance = 1 AND",
+);
+
 export type RecipientCheck =
   | { ok: true; ids: string[] }
   | { ok: false; error: ApiError; status: 400 | 409; invalid?: string[] };
@@ -73,8 +79,9 @@ export async function invalidRecipients(
   db: D1Database,
   clientId: string,
   ids: readonly string[],
+  sql: string = VALID_RECIPIENTS_SQL,
 ): Promise<string[]> {
-  const ok = await db.prepare(VALID_RECIPIENTS_SQL).bind(clientId, JSON.stringify(ids)).all<{ id: string }>();
+  const ok = await db.prepare(sql).bind(clientId, JSON.stringify(ids)).all<{ id: string }>();
   const good = new Set(ok.results.map((r) => r.id));
   return ids.filter((id) => !good.has(id));
 }

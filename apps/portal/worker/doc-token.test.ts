@@ -1,33 +1,195 @@
-// POST /api/v1/t/document: a single-document link [POR-06, NFR-9]. The token is in the body only, resolves exactly one
-// document, and the answer is that document's header and nothing else.
+// POST /api/v1/t/document and /t/document/pdf: a single-document link, bound to one contact [POR-06, NFR-9, LD55, LD62, M5.4]. The token is in the body only, resolves exactly one
+// document of the contact's own organisation, and the answer is that document's summary (frozen row and frozen lines) and nothing else. Failure paths first.
 import { env } from "cloudflare:workers";
 import { docTokenStmt, newDocToken, PORTAL_FAIL_LIMIT, portalFailKey, tokenHash } from "@techaust/auth";
+import { uuidv7 } from "@techaust/core";
 import { schema } from "@techaust/db";
 import { describe, expect, it } from "vitest";
-import { DOC_READ, OPEN_STATUSES, VIEW_PAY_TYPES } from "./doc-token.ts";
-import { fixtures } from "./fixtures.ts";
+import { DOC_READ, VIEW_PAY_TYPES } from "./doc-token.ts";
+import { type FxContact, fixtures } from "./fixtures.ts";
 import { ROUTES } from "./guard.ts";
-import { attemptsRow, bodyOf, call, counting, countOf, rows, writes } from "./test-helpers.ts";
+import { CLIENT_INVOICE_STATUSES } from "./invoice-summary.ts";
+import { attemptsRow, bodyOf, call, counting, countOf, one, rows, writes } from "./test-helpers.ts";
 
 const NOT_FOUND = { error: { code: "not_found", message: "Not found" } };
 const use = (token: string, init: { ip?: string | null; headers?: Record<string, string> } = {}) =>
   call("/t/document", { body: { token }, ...init });
+const usePdf = (token: string, init: { ip?: string | null; headers?: Record<string, string> } = {}) =>
+  call("/t/document/pdf", { body: { token }, ...init });
+
+let seq = 0;
+/** A frozen document of an organisation with two lines (the lines go in while it is still a draft, as the issue does). */
+async function frozenDoc(
+  orgId: string,
+  type: string,
+  o: { status?: string; parentId?: string; pdfKey?: string; balance?: number } = {},
+) {
+  const id = uuidv7();
+  const n = ++seq + 900;
+  await env.DB.prepare(
+    "INSERT INTO documents (id, type, status, client_id, currency, subtotal_minor, taxable_minor, cgst_minor, sgst_minor, total_minor, balance_minor, parent_id) VALUES (?1, ?2, 'draft', ?3, 'INR', 100000, 100000, 9000, 9000, 118000, 0, ?4)",
+  )
+    .bind(id, type, orgId, o.parentId ?? null)
+    .run();
+  await env.DB.batch([
+    env.DB.prepare(
+      "INSERT INTO document_lines (id, document_id, position, description, qty_milli, unit, rate_minor, taxable_minor, gst_rate_bp, cgst_minor, sgst_minor, line_total_minor, sac) VALUES (?1, ?2, 1, 'Care plan, Growth', 1000, 'month', 100000, 100000, 1800, 9000, 9000, 118000, '998313')",
+    ).bind(uuidv7(), id),
+  ]);
+  await env.DB.prepare(
+    "UPDATE documents SET status = ?2, series = 'inv-t', fy = '2627', number = ?3, number_display = ?4, frozen_at = 1000, issue_date = '2026-11-05', due_date = ?5, balance_minor = ?6, pdf_r2_key = ?7, issuer = ?8 WHERE id = ?1",
+  )
+    .bind(
+      id,
+      o.status ?? "issued",
+      n,
+      `TH/T/${n}`,
+      type === "credit_note" ? null : "2026-11-12",
+      o.balance ?? 118000,
+      o.pdfKey ?? null,
+      JSON.stringify({
+        bank: {
+          inr: {
+            accountName: "TecHaust",
+            accountNo: "123",
+            ifsc: "BANK0001",
+            bankName: "Bank",
+            branch: null,
+          },
+        },
+      }),
+    )
+    .run();
+  return id;
+}
+
+async function link(
+  contact: FxContact,
+  documentId: string,
+  o: { expiresIn?: number; sendId?: string | null } = {},
+) {
+  const { token, stmt } = await docTokenStmt(env.DB, {
+    documentId,
+    purpose: "view_pay",
+    expiresAt: Date.now() + (o.expiresIn ?? 86_400_000),
+    contactId: contact.id,
+    clientId: contact.clientId,
+    email: contact.email,
+    sendId: o.sendId ?? null,
+  });
+  await stmt.run();
+  return token;
+}
 
 describe("a valid link opens exactly one document [POR-06]", () => {
-  it("200 with only the document header (id, type, number_display, status); 2 D1 calls", async () => {
+  it("200 with the summary of the frozen row and its lines; 2 D1 calls; nothing of the client or another document", async () => {
     const f = await fixtures();
-    const { res, calls } = await counting("/t/document", { body: { token: f.tokens.aIssued } });
+    const doc = await frozenDoc(f.a.id, "tax_invoice");
+    const token = await link(f.a.finance, doc);
+    const { res, calls } = await counting("/t/document", { body: { token } });
     expect(res.status).toBe(200);
     expect(calls).toBe(2);
     const body = (await bodyOf(res)) as { document: Record<string, unknown> };
     expect(Object.keys(body)).toEqual(["document"]);
-    expect(Object.keys(body.document).sort()).toEqual(["id", "number_display", "status", "type"]);
-    expect(body.document).toMatchObject({ id: f.a.docs.issued, type: "tax_invoice", status: "issued" });
-    expect(String(body.document.number_display)).toMatch(/^TH\/INV\/2627\/\d{4}$/);
-    // nothing else of the document, or of its client, leaks
+    expect(Object.keys(body.document).sort()).toEqual(
+      [
+        "balance",
+        "balanceMinor",
+        "bank",
+        "creditedMinor",
+        "currency",
+        "dueDate",
+        "id",
+        "issueDate",
+        "lines",
+        "numberDisplay",
+        "paidMinor",
+        "parentNumber",
+        "pdfReady",
+        "status",
+        "total",
+        "totals",
+        "type",
+      ].sort(),
+    );
+    expect(body.document).toMatchObject({
+      id: doc,
+      type: "tax_invoice",
+      status: "issued",
+      currency: "INR",
+      issueDate: "2026-11-05",
+      dueDate: "2026-11-12",
+      total: "₹1,180.00",
+      balance: "₹1,180.00",
+      pdfReady: false,
+      bank: { inr: { accountNo: "123", ifsc: "BANK0001" } },
+    });
+    expect(
+      (body.document.lines as { description: string; qtyMilli: number; lineTotalMinor: number }[])[0],
+    ).toMatchObject({
+      description: "Care plan, Growth",
+      qtyMilli: 1000,
+      lineTotalMinor: 118000,
+    });
     const text = JSON.stringify(body);
-    for (const secret of [f.a.id, f.a.name, "total_minor", "balance", "recipient"])
+    for (const secret of [f.a.id, f.a.name, f.a.finance.email, "recipient", "content_sha256", "pdf_r2_key"])
       expect(text).not.toContain(secret);
+  });
+
+  it("a USD invoice shows the SWIFT account, never the INR one (early check finding 8)", async () => {
+    const clientId = uuidv7();
+    await env.DB.prepare(
+      "INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, currency) VALUES (?1, ?2, 'U', 'U', 'business', 'US', 'overseas', 'USD')",
+    )
+      .bind(clientId, `CL-U${++seq}`)
+      .run();
+    const contactId = uuidv7();
+    const email = `u${seq}@example.test`;
+    await env.DB.prepare(
+      "INSERT INTO contacts (id, client_id, name, email, portal_access, can_see_finance) VALUES (?1, ?2, 'U', ?3, 1, 1)",
+    )
+      .bind(contactId, clientId, email)
+      .run();
+    const id = uuidv7();
+    await env.DB.prepare(
+      "INSERT INTO documents (id, type, status, client_id, currency, total_minor, balance_minor) VALUES (?1, 'export_invoice', 'draft', ?2, 'USD', 1000, 0)",
+    )
+      .bind(id, clientId)
+      .run();
+    const issuer = JSON.stringify({
+      bank: {
+        inr: {
+          accountName: "TecHaust",
+          accountNo: "INR123",
+          ifsc: "BANK0001",
+          bankName: "Bank",
+          branch: null,
+        },
+        swift: {
+          accountName: "TecHaust",
+          accountNo: "USD456",
+          swift: "SAMPUS33",
+          bankName: "US Bank",
+          branch: null,
+          bankAddress: "1 Main St",
+          intermediary: null,
+          purposeCode: "P0802",
+        },
+      },
+    });
+    await env.DB.prepare(
+      "UPDATE documents SET status = 'issued', series = 'exp-t', fy = '2627', number = 31, number_display = 'TH/EXP/2627/0031', frozen_at = 1000, issue_date = '2026-11-05', balance_minor = 1000, issuer = ?2 WHERE id = ?1",
+    )
+      .bind(id, issuer)
+      .run();
+    const res = await use(await link({ id: contactId, clientId, email, name: "U", finance: false }, id));
+    expect(res.status).toBe(200);
+    const body = JSON.stringify(await res.json());
+    expect(body).toContain('"swift":{');
+    expect(body).toContain("SAMPUS33");
+    expect(body).toContain("USD456");
+    expect(body).not.toContain("INR123");
+    expect(body).not.toContain("BANK0001");
   });
 
   it("each organisation's link opens its own document and no other", async () => {
@@ -38,20 +200,62 @@ describe("a valid link opens exactly one document [POR-06]", () => {
     expect(b.document.id).toBe(f.b.docs.issued);
   });
 
-  it("a proforma opens too (the allowed types are proforma, tax_invoice and export_invoice)", async () => {
+  it("every type of the invoice family opens: proforma, tax invoice, export invoice, credit note (no due date, no bank) and debit note (its own due date)", async () => {
     const f = await fixtures();
-    expect(VIEW_PAY_TYPES).toEqual(["proforma", "tax_invoice", "export_invoice"]);
-    const res = await use(f.tokens.aProforma);
-    expect(res.status).toBe(200);
-    expect(((await res.json()) as { document: { type: string } }).document.type).toBe("proforma");
+    expect(VIEW_PAY_TYPES).toEqual([
+      "proforma",
+      "tax_invoice",
+      "export_invoice",
+      "credit_note",
+      "debit_note",
+    ]);
+    expect(
+      ((await (await use(f.tokens.aProforma)).json()) as { document: { type: string } }).document.type,
+    ).toBe("proforma");
+    const parent = f.a.docs.issued;
+    const dn = await frozenDoc(f.a.id, "debit_note", { parentId: parent });
+    const dnRes = await use(await link(f.a.finance, dn));
+    expect(dnRes.status).toBe(200);
+    const d = (
+      (await dnRes.json()) as {
+        document: { type: string; dueDate: string | null; parentNumber: string | null };
+      }
+    ).document;
+    expect(d).toMatchObject({ type: "debit_note", dueDate: "2026-11-12" });
+    expect(d.parentNumber).toMatch(/^TH\/INV\/2627\//);
+    // a credit note is inserted frozen (its issue batch sets the IMS status; lines are refused on a frozen row, so it has none here)
+    const cn = uuidv7();
+    await env.DB.prepare(
+      "INSERT INTO documents (id, type, status, client_id, currency, parent_id, frozen_at, series, fy, number, number_display, issue_date, total_minor, balance_minor, issuer) VALUES (?1, 'credit_note', 'issued', ?2, 'INR', ?3, 1000, 'cn-t', '2627', 77, 'TH/CN/2627/0077', '2026-11-06', 5000, 0, ?4)",
+    )
+      .bind(
+        cn,
+        f.a.id,
+        parent,
+        JSON.stringify({
+          bank: { inr: { accountName: "T", accountNo: "1", ifsc: null, bankName: "B", branch: null } },
+        }),
+      )
+      .run();
+    const cnRes = await use(await link(f.a.finance, cn));
+    expect(cnRes.status).toBe(200);
+    expect(((await cnRes.json()) as { document: Record<string, unknown> }).document).toMatchObject({
+      type: "credit_note",
+      dueDate: null,
+      balanceMinor: 0,
+      bank: null,
+    });
   });
 
   it("is declared public, a POST, with no token in the path or query of any route", () => {
-    const row = ROUTES.find((r) => r.path === "/api/v1/t/document");
-    expect(row).toMatchObject({ method: "POST", access: "public" });
+    for (const path of ["/api/v1/t/document", "/api/v1/t/document/pdf"])
+      expect(ROUTES.find((r) => r.path === path)).toMatchObject({ method: "POST", access: "public" });
     for (const r of ROUTES) {
-      // the only path parameter is an offer's own id (the session's offers); a token is never in a path
-      expect(r.path.replace("/offers/:id", "/offers"), r.path).not.toMatch(/:|\?|token/i);
+      // the only path parameters are ids of the session's own offers and invoices; a token is never in a path
+      expect(
+        r.path.replace("/offers/:id", "/offers").replace("/invoices/:id", "/invoices"),
+        r.path,
+      ).not.toMatch(/:|\?|token/i);
     }
   });
 
@@ -72,22 +276,121 @@ describe("a valid link opens exactly one document [POR-06]", () => {
   });
 });
 
+describe("a link is bound to its contact [POR-06, LD55]", () => {
+  const closes: [string, (f: Awaited<ReturnType<typeof fixtures>>, c: FxContact) => Promise<void>][] = [
+    [
+      "portal access turned off",
+      async (_f, c) =>
+        void (await env.DB.prepare("UPDATE contacts SET portal_access = 0 WHERE id = ?").bind(c.id).run()),
+    ],
+    [
+      "finance access turned off (POR-03)",
+      async (_f, c) =>
+        void (await env.DB.prepare("UPDATE contacts SET can_see_finance = 0 WHERE id = ?").bind(c.id).run()),
+    ],
+    [
+      "the address changed",
+      async (_f, c) =>
+        void (await env.DB.prepare("UPDATE contacts SET email = ? WHERE id = ?")
+          .bind(`moved-${c.id}@example.test`, c.id)
+          .run()),
+    ],
+    [
+      "the contact anonymised",
+      async (_f, c) =>
+        void (await env.DB.prepare("UPDATE contacts SET anonymised_at = ? WHERE id = ?")
+          .bind(Date.now(), c.id)
+          .run()),
+    ],
+    [
+      "the client anonymised",
+      async (_f, c) =>
+        void (await env.DB.prepare(
+          "UPDATE clients SET anonymised_at = ? WHERE id = (SELECT client_id FROM contacts WHERE id = ?)",
+        )
+          .bind(Date.now(), c.id)
+          .run()),
+    ],
+  ];
+  for (const [name, close] of closes)
+    it(`${name}: the same 404 as an unknown link, counted`, async () => {
+      const f = await fixtures();
+      const org = await (async () => {
+        // a fresh organisation, so closing it does not disturb the shared fixtures
+        const clientId = uuidv7();
+        await env.DB.prepare(
+          "INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, state_code, currency) VALUES (?1, ?2, 'L', 'D', 'business', 'IN', 'unregistered', '19', 'INR')",
+        )
+          .bind(clientId, `CL-Z${++seq}`)
+          .run();
+        const contactId = uuidv7();
+        const email = `z${seq}@example.test`;
+        await env.DB.prepare(
+          "INSERT INTO contacts (id, client_id, name, email, portal_access, can_see_finance) VALUES (?1, ?2, 'Z', ?3, 1, 1)",
+        )
+          .bind(contactId, clientId, email)
+          .run();
+        return {
+          clientId,
+          contact: { id: contactId, clientId, email, name: "Z", finance: false } as FxContact,
+        };
+      })();
+      void f;
+      const token = await link(org.contact, await frozenDoc(org.clientId, "tax_invoice"));
+      expect((await use(token)).status).toBe(200);
+      await close(f, org.contact);
+      const ip = `192.0.2.${100 + seq}`;
+      const { res, calls } = await counting("/t/document", { body: { token }, ip });
+      expect(res.status).toBe(404);
+      expect(await bodyOf(res)).toEqual(NOT_FOUND);
+      expect(calls).toBe(2);
+      expect((await attemptsRow(await portalFailKey(env.PORTAL_KEY_PEPPER, ip)))?.failures).toBe(1);
+      expect((await usePdf(token)).status).toBe(404);
+    });
+
+  it("a link names ONE document: it never opens another invoice of the same organisation", async () => {
+    const f = await fixtures();
+    const one_ = await frozenDoc(f.a.id, "tax_invoice");
+    const other = await frozenDoc(f.a.id, "tax_invoice");
+    const res = await use(await link(f.a.finance, one_));
+    expect(((await res.json()) as { document: { id: string } }).document.id).toBe(one_);
+    expect(one_).not.toBe(other);
+  });
+
+  it("the database refuses a link that is not bound, or for a draft, another client's document or another client's contact (the trigger of 0044)", async () => {
+    const f = await fixtures();
+    await expect(
+      env.DB.prepare(
+        "INSERT INTO doc_access_tokens (token_hash, document_id, purpose, expires_at) VALUES ('h-unbound', ?1, 'view_pay', 9999999999999)",
+      )
+        .bind(f.a.docs.issued)
+        .run(),
+    ).rejects.toThrow(/doc_access_tokens_bound_insert/);
+    await expect(link(f.a.finance, f.a.docs.draft)).rejects.toThrow(/doc_access_tokens_bound_insert/);
+    await expect(link(f.a.finance, f.a.docs.pending)).rejects.toThrow(/doc_access_tokens_bound_insert/);
+    await expect(link(f.a.finance, f.b.docs.issued)).rejects.toThrow(/doc_access_tokens_bound_insert/);
+    await expect(link(f.b.finance, f.a.docs.issued)).rejects.toThrow(/doc_access_tokens_bound_insert/);
+  });
+});
+
 describe("tokens are random and stored hashed [POR-06]", () => {
   it("newDocToken: 32 random bytes; docTokenStmt stores SHA-256 and resolves exactly one document", async () => {
     const f = await fixtures();
     const t = newDocToken();
     expect(t).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    const { token, stmt } = await docTokenStmt(env.DB, {
-      documentId: f.a.docs.proforma,
-      purpose: "view_pay",
-      expiresAt: Date.now() + 60_000,
-    });
-    await stmt.run();
-    const stored = await rows<{ token_hash: string; document_id: string }>(
-      "SELECT token_hash, document_id FROM doc_access_tokens WHERE token_hash = ?",
+    const token = await link(f.a.finance, f.a.docs.proforma);
+    const stored = await rows<{ token_hash: string; document_id: string; contact_id: string; email: string }>(
+      "SELECT token_hash, document_id, contact_id, email FROM doc_access_tokens WHERE token_hash = ?",
       await tokenHash(token),
     );
-    expect(stored).toEqual([{ token_hash: await tokenHash(token), document_id: f.a.docs.proforma }]);
+    expect(stored).toEqual([
+      {
+        token_hash: await tokenHash(token),
+        document_id: f.a.docs.proforma,
+        contact_id: f.a.finance.id,
+        email: f.a.finance.email,
+      },
+    ]);
     expect(JSON.stringify(await rows("SELECT * FROM doc_access_tokens"))).not.toContain(token);
     const res = await use(token);
     expect(((await res.json()) as { document: { id: string } }).document.id).toBe(f.a.docs.proforma);
@@ -97,9 +400,9 @@ describe("tokens are random and stored hashed [POR-06]", () => {
     const f = await fixtures();
     await expect(
       env.DB.prepare(
-        "INSERT INTO doc_access_tokens (token_hash, document_id, purpose, expires_at) VALUES ('h-other', ?1, 'pay_only', 9999999999999)",
+        "INSERT INTO doc_access_tokens (token_hash, document_id, purpose, expires_at, contact_id, client_id, email) VALUES ('h-other', ?1, 'pay_only', 9999999999999, ?2, ?3, ?4)",
       )
-        .bind(f.a.docs.issued)
+        .bind(f.a.docs.issued, f.a.finance.id, f.a.id, f.a.finance.email)
         .run(),
     ).rejects.toThrow(/doc_access_tokens_purpose|CHECK/);
     expect(DOC_READ).toContain("t.purpose = 'view_pay'");
@@ -107,13 +410,11 @@ describe("tokens are random and stored hashed [POR-06]", () => {
 });
 
 describe("everything else is the same 404 [POR-06]", () => {
-  it("revoked, expired, draft, pending approval, void, wrong type, unknown and malformed: identical status and body, 2 calls", async () => {
+  it("revoked, expired, void, wrong type (a proposal), unknown and malformed: identical status and body, 2 calls", async () => {
     const f = await fixtures();
     const cases: [string, string][] = [
       ["revoked", f.tokens.aIssuedRevoked],
       ["expired", f.tokens.aIssuedExpired],
-      ["draft", f.tokens.aDraft],
-      ["pending approval", f.tokens.aPending],
       ["void", f.tokens.aVoid],
       ["wrong type (a proposal)", f.tokens.aProposal],
       ["unknown", "A".repeat(43)],
@@ -131,48 +432,78 @@ describe("everything else is the same 404 [POR-06]", () => {
 
   it("the status rule is an allow-list: every schema status is either open or closed, and each opens or not accordingly", async () => {
     const f = await fixtures();
-    const CLOSED = ["draft", "pending_approval", "void"];
-    expect([...OPEN_STATUSES, ...CLOSED].sort()).toEqual([...schema.DOCUMENT_STATUSES].sort());
+    const CLOSED_QUOTES = [
+      "draft",
+      "pending_approval",
+      "void",
+      "sent",
+      "viewed",
+      "accepted",
+      "rejected",
+      "expired",
+      "revised",
+    ];
+    // the allow-list the SQL really uses: every schema status except the closed ones and the quote statuses
+    expect([...CLIENT_INVOICE_STATUSES].sort()).toEqual(
+      [...schema.DOCUMENT_STATUSES].filter((s) => !CLOSED_QUOTES.includes(s)).sort(),
+    );
     expect(DOC_READ).toContain("d.status IN (");
     expect(DOC_READ).not.toContain("NOT IN");
     for (const status of schema.DOCUMENT_STATUSES) {
-      const did = crypto.randomUUID();
+      const did = uuidv7();
+      // inserted frozen, as a link needs (a draft cannot get one); the quote statuses are never open for an invoice-family document
       await env.DB.prepare(
-        "INSERT INTO documents (id, type, status, client_id, currency) VALUES (?1, 'proforma', ?2, ?3, 'INR')",
+        "INSERT INTO documents (id, type, status, client_id, currency, frozen_at, series, fy, number, number_display, voided_at, void_reason) VALUES (?1, 'proforma', ?2, ?3, 'INR', 1000, 'p', '2627', ?4, ?5, ?6, ?7)",
       )
-        .bind(did, status, f.a.id)
+        .bind(
+          did,
+          status,
+          f.a.id,
+          ++seq + 5000,
+          `TH/S/${seq}`,
+          status === "void" ? 5 : null,
+          status === "void" ? "x" : null,
+        )
         .run();
-      const { token, stmt } = await docTokenStmt(env.DB, {
-        documentId: did,
-        purpose: "view_pay",
-        expiresAt: Date.now() + 60_000,
-      });
-      await stmt.run();
-      expect((await use(token)).status, status).toBe(CLOSED.includes(status) ? 404 : 200);
+      const token = await link(f.a.finance, did);
+      const open = (CLIENT_INVOICE_STATUSES as readonly string[]).includes(status);
+      expect((await use(token)).status, status).toBe(open ? 200 : 404);
     }
+    expect(CLOSED_QUOTES.length).toBeGreaterThan(0);
   });
 
   it("a voided document stops opening even if it was open when the link was made", async () => {
     const f = await fixtures();
-    // M5.1 (documents_invoice_status_flow, documents_void_pairing): only an ISSUED invoice can be voided, so this is the fixture's issued one.
-    const { token, stmt } = await docTokenStmt(env.DB, {
-      documentId: f.b.docs.issued,
-      purpose: "view_pay",
-      expiresAt: Date.now() + 60_000,
-    });
-    await stmt.run();
+    const doc = await frozenDoc(f.b.id, "tax_invoice");
+    const token = await link(f.b.finance, doc);
     expect((await use(token)).status).toBe(200);
     await env.DB.prepare(
       "UPDATE documents SET status = 'void', voided_at = ?1, void_reason = 'test' WHERE id = ?2",
     )
-      .bind(Date.now(), f.b.docs.issued)
+      .bind(Date.now(), doc)
       .run();
     expect((await use(token)).status).toBe(404);
   });
 });
 
-describe("audit and access rows [NFR-9, Q1 = A]", () => {
-  it("every valid use writes exactly one doc_token.use row (actor type contact, actor NULL, the document) and one access row", async () => {
+describe("the first view and the audit rows [NFR-9, Q1 = A]", () => {
+  it("viewed_at is set once, by the first use", async () => {
+    const f = await fixtures();
+    const doc = await frozenDoc(f.a.id, "tax_invoice");
+    const token = await link(f.a.finance, doc);
+    expect(
+      (await one<{ v: number | null }>("SELECT viewed_at AS v FROM documents WHERE id = ?", doc))?.v,
+    ).toBeNull();
+    await use(token);
+    const first = (await one<{ v: number }>("SELECT viewed_at AS v FROM documents WHERE id = ?", doc))?.v;
+    expect(first).toBeGreaterThan(0);
+    await use(token);
+    expect((await one<{ v: number }>("SELECT viewed_at AS v FROM documents WHERE id = ?", doc))?.v).toBe(
+      first,
+    );
+  });
+
+  it("every valid use writes exactly one doc_token.use row (actor type contact, the contact the link is bound to, the document) and one access row", async () => {
     const f = await fixtures();
     await call("/t/document", {
       body: { token: f.tokens.aIssued },
@@ -187,7 +518,7 @@ describe("audit and access rows [NFR-9, Q1 = A]", () => {
     ).toEqual([
       {
         actor_type: "contact",
-        actor_id: null,
+        actor_id: f.a.finance.id,
         role: null,
         action: "doc_token.use",
         entity_type: "document",
@@ -199,7 +530,7 @@ describe("audit and access rows [NFR-9, Q1 = A]", () => {
     expect(await countOf("audit_log", "request_id = 'ray-doc-2' AND action = 'doc_token.use'")).toBe(1);
     expect(
       await rows("SELECT realm, actor_id, route, status FROM access_log WHERE request_id = 'ray-doc-1'"),
-    ).toEqual([{ realm: "portal", actor_id: null, route: "/api/v1/t/document", status: 200 }]);
+    ).toEqual([{ realm: "portal", actor_id: f.a.finance.id, route: "/api/v1/t/document", status: 200 }]);
   });
 
   it("a failed check writes its counter and an access row (404) and NO audit row", async () => {
@@ -215,6 +546,65 @@ describe("audit and access rows [NFR-9, Q1 = A]", () => {
     expect(
       await rows("SELECT actor_id, route, status FROM access_log WHERE request_id = 'ray-doc-bad'"),
     ).toEqual([{ actor_id: null, route: "/api/v1/t/document", status: 404 }]);
+    expect((await attemptsRow(await portalFailKey(env.PORTAL_KEY_PEPPER, ip)))?.failures).toBe(1);
+  });
+});
+
+describe("the wall clock of the summary (local; the staging reading is the gate)", () => {
+  it("a 100-line invoice is one read of the frozen row and its lines, summarised without the envelope", async () => {
+    const f = await fixtures();
+    const id = uuidv7();
+    await env.DB.prepare(
+      "INSERT INTO documents (id, type, status, client_id, currency, subtotal_minor, taxable_minor, total_minor, balance_minor) VALUES (?1, 'tax_invoice', 'draft', ?2, 'INR', 100000, 100000, 118000, 0)",
+    )
+      .bind(id, f.a.id)
+      .run();
+    await env.DB.batch(
+      Array.from({ length: 100 }, (_, i) =>
+        env.DB.prepare(
+          "INSERT INTO document_lines (id, document_id, position, description, qty_milli, unit, rate_minor, taxable_minor, gst_rate_bp, cgst_minor, sgst_minor, line_total_minor, sac) VALUES (?1, ?2, ?3, ?4, 1000, 'fixed', 1000, 1000, 1800, 90, 90, 1180, '998313')",
+        ).bind(uuidv7(), id, i + 1, `Line ${i + 1} of a long invoice`),
+      ),
+    );
+    await env.DB.prepare(
+      "UPDATE documents SET status = 'issued', series = 'inv-t', fy = '2627', number = 4242, number_display = 'TH/T/4242', frozen_at = 1000, issue_date = '2026-11-05', due_date = '2026-11-12', balance_minor = 118000 WHERE id = ?1",
+    )
+      .bind(id)
+      .run();
+    const token = await link(f.a.finance, id);
+    const t0 = performance.now();
+    const res = await use(token);
+    const ms = Math.round((performance.now() - t0) * 10) / 10;
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { document: { lines: unknown[] } }).document.lines).toHaveLength(100);
+    expect(ms).toBeLessThan(2_000);
+    console.info(`[M5.4 wall clock ms] portal summary of 100 lines: ${ms}`);
+  });
+});
+
+describe("the PDF behind the link [POR-06, M4.5 headers]", () => {
+  it("409 pdf_pending until it exists; then the bytes as an attachment, never rendered, never cached, never sniffed", async () => {
+    const f = await fixtures();
+    const none = await frozenDoc(f.a.id, "tax_invoice");
+    const pending = await usePdf(await link(f.a.finance, none));
+    expect(pending.status).toBe(409);
+    expect(((await bodyOf(pending)).error as { code: string }).code).toBe("pdf_pending");
+    const key = `docs/tax_invoice/2026-27/${9000 + ++seq}-v1.pdf`;
+    await env.DOCS.put(key, "%PDF-1.4 test");
+    const doc = await frozenDoc(f.a.id, "tax_invoice", { pdfKey: key });
+    const res = await usePdf(await link(f.a.finance, doc));
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("%PDF-1.4 test");
+    expect(res.headers.get("Content-Type")).toBe("application/pdf");
+    expect(res.headers.get("Content-Disposition")).toMatch(/^attachment; filename="TH-T-\d+-v1\.pdf"$/);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    expect(res.headers.get("Content-Security-Policy")).toBe("sandbox");
+  });
+  it("a bad link is the same 404 and counts", async () => {
+    const ip = "192.0.2.83";
+    const res = await call("/t/document/pdf", { body: { token: "z".repeat(43) }, ip });
+    expect(res.status).toBe(404);
     expect((await attemptsRow(await portalFailKey(env.PORTAL_KEY_PEPPER, ip)))?.failures).toBe(1);
   });
 });

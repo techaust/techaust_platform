@@ -15,6 +15,7 @@ import type { Role } from "@techaust/core/permissions";
 import type { Settings, SignatureRef } from "@techaust/core/settings";
 import type { TermsBlockId } from "@techaust/core/terms";
 import type { HashRequest, HashResponse } from "./hash.worker.ts";
+import type { CarePlanBilling } from "./lib/invoice-send.ts";
 
 export type User = { name: string; email: string; role: Role };
 export type Me = { user: User; stepUpUntil: number | null };
@@ -362,6 +363,9 @@ export type ClientView = {
   reminderPolicy?: ReminderPolicy | null;
   careAutoIssue?: boolean;
   attachPdf?: boolean;
+  /** M5.4: the owner who turned automatic care invoices on (null: nobody); `active` false means that owner is gone, so the switch is not in effect. */
+  /** `at`: when it was turned on (UTC ms, from the audit log); null when no audit row says so. */
+  careAutoIssueBy?: { id: string; name: string | null; active: boolean; at?: number | null } | null;
 };
 export type MarketingConsent = { granted: boolean; at?: number; source?: string; withdrawnAt?: number };
 export type ContactView = {
@@ -674,7 +678,14 @@ export type CarePlanPage = {
   /** Newest first, at most 12. */
   periods: CareUsage[];
   clientAnonymised: boolean;
-  overage: { addToInvoice: { available: false; arrivesWith: string } };
+  /** M5.4: overage goes on the next monthly care draft (never issued automatically); an older API still says it arrives later. */
+  overage: {
+    addToInvoice:
+      | { available: true; via: "next_care_draft" | string }
+      | { available: false; arrivesWith: string };
+  };
+  /** M5.4: the plan's billing (finance roles only; absent for Sales). Shape: lib/invoice-send.ts `CarePlanBilling`. */
+  billing?: CarePlanBilling;
 };
 export type CarePlansQuery = {
   limit?: "25" | "50" | undefined;

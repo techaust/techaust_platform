@@ -33,8 +33,6 @@ export type Fixtures = {
     aIssued: string;
     aIssuedRevoked: string;
     aIssuedExpired: string;
-    aDraft: string;
-    aPending: string;
     aVoid: string;
     aProposal: string;
     aProforma: string;
@@ -112,16 +110,25 @@ async function org(code: string, name: string): Promise<FxOrg> {
       pending: await doc("tax_invoice", "pending_approval"),
       void: await doc("tax_invoice", "void", { frozen: true, void: true }),
       proposal: await doc("proposal", "sent"),
-      proforma: await doc("proforma", "sent"),
+      proforma: await doc("proforma", "issued", { frozen: true }),
     },
   };
 }
 
-async function token(documentId: string, o: { expiresIn?: number; revoked?: boolean } = {}) {
+/** A link bound to a contact (M5.4): the organisation's finance contact unless another is given. */
+async function token(
+  documentId: string,
+  contact: FxContact,
+  o: { expiresIn?: number; revoked?: boolean } = {},
+) {
   const { token: t, stmt } = await docTokenStmt(env.DB, {
     documentId,
     purpose: "view_pay",
     expiresAt: Date.now() + (o.expiresIn ?? 30 * DAY),
+    contactId: contact.id,
+    clientId: contact.clientId,
+    email: contact.email,
+    sendId: null,
   });
   await stmt.run();
   if (o.revoked)
@@ -160,20 +167,25 @@ async function build(): Promise<Fixtures> {
   };
   const revoked = await extra(a);
   const expired = await extra(a);
+  // a frozen proposal of A (a link cannot be made for an unfrozen document): the "wrong type" case of the document link
+  const frozenProposal = uuidv7();
+  await env.DB.prepare(
+    "INSERT INTO documents (id, type, status, client_id, currency, frozen_at, series, fy, number, number_display, version_group_id) VALUES (?1, 'proposal', 'sent', ?2, 'INR', ?3, 'proposal', '2627', ?4, 'TH/PRP/2627/0099', ?1)",
+  )
+    .bind(frozenProposal, a.id, Date.now() - DAY, ++docNo)
+    .run();
   return {
     a,
     b,
     shared: { email, a: sharedA, b: sharedB },
     tokens: {
-      aIssued: await token(a.docs.issued),
-      aIssuedRevoked: await token(revoked, { revoked: true }),
-      aIssuedExpired: await token(expired, { expiresIn: -1000 }),
-      aDraft: await token(a.docs.draft),
-      aPending: await token(a.docs.pending),
-      aVoid: await token(a.docs.void),
-      aProposal: await token(a.docs.proposal),
-      aProforma: await token(a.docs.proforma),
-      bIssued: await token(b.docs.issued),
+      aIssued: await token(a.docs.issued, a.finance),
+      aIssuedRevoked: await token(revoked, a.finance, { revoked: true }),
+      aIssuedExpired: await token(expired, a.finance, { expiresIn: -1000 }),
+      aVoid: await token(a.docs.void, a.finance),
+      aProposal: await token(frozenProposal, a.finance),
+      aProforma: await token(a.docs.proforma, a.finance),
+      bIssued: await token(b.docs.issued, b.finance),
     },
   };
 }

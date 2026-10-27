@@ -205,6 +205,11 @@ export const ROUTES: readonly RouteDef[] = [
   R("POST", "/invoices/:id/ims-status", "invoices.ims", { audit: "invoice.ims_status" }),
   R("GET", "/invoices/:id/pdf", "invoices.read"),
   R("POST", "/invoices/:id/pdf/retry", "invoices.draft", { audit: "invoice.pdf_retry" }),
+  // M5.4 (ADM-INV-15, ADM-INV-13, POR-06): send an issued invoice (Owner and Staff, Q42), revoke its links, pause or resume its reminders.
+  R("POST", "/invoices/:id/send", "invoices.send", { audit: "invoice.send" }),
+  R("POST", "/invoices/:id/links/revoke", "invoices.send", { audit: "invoice.links_revoke" }),
+  R("POST", "/invoices/:id/reminders/pause", "invoices.send", { audit: "invoice.reminders_pause" }),
+  R("POST", "/invoices/:id/reminders/resume", "invoices.send", { audit: "invoice.reminders_resume" }),
   R("GET", "/clients/:id/invoices", "invoices.read"),
   // The owner's approval queue. Staff and Sales read only their own requests (the handler filters); only the owner decides.
   R("GET", "/approvals", "approvals.readOwn"),

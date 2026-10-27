@@ -224,10 +224,10 @@ describe("the date and the cron [item 6]", () => {
     const purge = calls.find((c) => c.bodies.some((b) => (b as { kind?: string }).kind === "lead.purge"));
     const stats = calls.find((c) => c.bodies.some((b) => (b as { kind?: string }).kind === "stats.metric"));
     expect(purge?.bodies).toEqual([{ kind: "lead.purge", leadId: "due-1" }]);
-    // one message per metric plus the daily expiry message (M4.3) and the daily LUT check (M5.2), in the one batch
-    expect(stats?.bodies).toHaveLength(STATS_METRICS.length + 2);
+    // one message per metric plus the daily expiry message (M4.3), in the one batch (the LUT check moved to the 09:00 IST alerts in M5.4, LD61)
+    expect(stats?.bodies).toHaveLength(STATS_METRICS.length + 1);
     expect(stats?.bodies.filter((b) => (b as { kind?: string }).kind === "documents.expire")).toHaveLength(1);
-    expect(stats?.bodies.filter((b) => (b as { kind?: string }).kind === "lut.check")).toHaveLength(1);
+    expect(stats?.bodies.filter((b) => (b as { kind?: string }).kind === "lut.check")).toHaveLength(0);
     expect(await one<{ n: number }>("SELECT count(*) AS n FROM stats_daily")).toEqual({ n: 0 }); // the cron wrote nothing
   });
 
