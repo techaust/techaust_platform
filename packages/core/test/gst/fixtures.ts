@@ -6,6 +6,7 @@ import type {
   Gstr1Params,
   NoteParent,
   RecipientStatus,
+  RegisterApiRow,
   RegisterRate,
   RegisterRow,
   StateCode,
@@ -328,6 +329,31 @@ export const GOLDEN_REGISTER: readonly RegisterRow[] = [
 
 /** The quarter of the golden fixture. */
 export const Q3 = { kind: "quarter", fyStartYear: 2026, quarter: 3 } as const;
+
+const SERIES_OF = {
+  tax_invoice: "invoice",
+  export_invoice: "export",
+  credit_note: "creditNote",
+  debit_note: "debitNote",
+} as const;
+
+/** A register row as the register API gives it: the series, FY and counter of its number, the client's id and code. */
+export function toApi(r: RegisterRow, seq: number, clientCode = "C-0001"): RegisterApiRow {
+  return {
+    ...r,
+    series: SERIES_OF[r.kind],
+    fy: "2627",
+    seq,
+    clientId: `client-${clientCode}`,
+    clientCode,
+  };
+}
+
+/** The golden fixture as API rows (the counter is the trailing digits of the number, or the row's position). */
+export const GOLDEN_API_REGISTER: readonly RegisterApiRow[] = GOLDEN_REGISTER.map((r, i) => {
+  const digits = /(\d+)$/.exec(r.number);
+  return toApi(r, digits ? Number(digits[1]) : i + 1);
+});
 
 /**
  * True when a CSV has a line break that is not CRLF outside quoted fields (a quoted field keeps its own inner breaks).

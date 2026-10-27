@@ -173,5 +173,69 @@
         "Stage"
       ]
     }
+  },
+  "salesRegister": {
+    "sales-register-v1": {
+      "stem": "sales_register",
+      "headers": [
+        "Date",
+        "Number",
+        "Type",
+        "Client",
+        "GSTIN",
+        "Place of supply",
+        "Supply type",
+        "Currency",
+        "Document total",
+        "Exchange rate",
+        "INR total",
+        "SAC",
+        "Rate",
+        "Taxable",
+        "IGST",
+        "CGST",
+        "SGST",
+        "Status"
+      ]
+    }
+  },
+  "outputTax": {
+    "output-tax-v1": {
+      "stem": "output_tax",
+      "headers": [
+        "Supply",
+        "Rate",
+        "Taxable",
+        "IGST",
+        "CGST",
+        "SGST"
+      ]
+    }
+  },
+  "gstr3bSummary": {
+    "gstr3b-summary-v1": {
+      "stem": "gstr3b_summary",
+      "headers": [
+        "Table",
+        "Place of supply",
+        "Taxable value",
+        "Integrated tax",
+        "Central tax",
+        "State/UT tax"
+      ]
+    }
+  },
+  "statement": {
+    "statement-v1": {
+      "stem": "statement",
+      "headers": [
+        "Date",
+        "Document",
+        "Details",
+        "Debit",
+        "Credit",
+        "Balance"
+      ]
+    }
   }
 }

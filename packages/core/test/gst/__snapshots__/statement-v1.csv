@@ -1,0 +1,8 @@
+Date,Document,Details,Debit,Credit,Balance
+01-Oct-2026,,Opening (test label),,,-500.00
+05-Oct-2026,TH/INV/2627/0001,Invoice (test label),11800.00,,11300.00
+09-Oct-2026,TH/EXP/2627/0001,Export invoice (test label),1000.00,,12300.00
+12-Oct-2026,TH/CN/2627/0001,Credit note (test label),,1180.00,11120.00
+12-Oct-2026,TH/INV/2627/0002,Payment received (test label),,59.00,11061.00
+20-Oct-2026,TH/DN/2627/0001,Debit note (test label),118.00,,11179.00
+31-Oct-2026,,Closing (test label),,,11179.00

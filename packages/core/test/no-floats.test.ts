@@ -21,6 +21,7 @@ const MONEY_FILES = [
   "src/gst/realisation.ts",
   // M5.5b: the reports and the statement
   "src/gst/registers.ts",
+  "src/gst/sac.ts",
   "src/gst/statement-csv.ts",
   "src/gst/summary.ts",
   "src/statement.ts",

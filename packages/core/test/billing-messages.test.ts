@@ -155,9 +155,11 @@ describe("the M5.4 email templates", () => {
         "alert.unbilled",
         "credit_note.sent",
         "debit_note.sent",
+        "edf.reminder",
         "invoice.sent",
         "lut.reminder",
         "proforma.sent",
+        "realisation.alert",
         "reminder.sent",
       ].sort(),
     );

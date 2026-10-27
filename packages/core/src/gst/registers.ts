@@ -96,9 +96,6 @@ function checked(
   return ok({ reported, voided: inRange.filter((r) => r.voided) });
 }
 
-const byDateThenNumber = (a: RegisterRow, b: RegisterRow): number =>
-  compareDates(a.issueDate, b.issueDate) || compareText(a.number, b.number);
-
 /** The sales register of a range: one row per (document, rate), voided documents as one cancelled row of zeros. */
 export function salesRegisterRows(
   register: readonly RegisterApiRow[],
@@ -123,7 +120,9 @@ export function salesRegisterRows(
     });
     for (const r of c.value.reported as readonly RegisterApiRow[]) {
       const s = (v: number): number => (r.kind === "credit_note" && v !== 0 ? -v : v);
-      const rates = [...r.rates].sort((a, b) => compareText(a.sac ?? "", b.sac ?? "") || a.rateBp - b.rateBp);
+      const rates = [...r.rates].sort(
+        (a, b) => compareText(String(a.sac), String(b.sac)) || a.rateBp - b.rateBp,
+      );
       for (const rate of rates) {
         rows.push({
           ...base(r),
@@ -179,7 +178,7 @@ export function outputTaxRows(
     if (!c.ok) return c;
     type Acc = { taxable: bigint; igst: bigint; cgst: bigint; sgst: bigint };
     const map = new Map<string, { bucket: OutputTaxBucket; rateBp: number; sum: Acc }>();
-    for (const r of [...c.value.reported].sort(byDateThenNumber)) {
+    for (const r of c.value.reported) {
       const sign = signOf(r.kind);
       const bucket = bucketOf(r.supplyType);
       for (const rate of r.rates) {

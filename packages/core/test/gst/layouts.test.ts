@@ -9,10 +9,14 @@ import {
   EDF_LAYOUTS,
   type FileLayout,
   GSTR1_LAYOUTS,
+  GSTR3B_LAYOUTS,
   gstr1Csv,
+  OUTPUT_TAX_LAYOUTS,
   REALISATION_LAYOUTS,
   realisationCsv,
   realisationRows,
+  SALES_REGISTER_LAYOUTS,
+  STATEMENT_LAYOUTS,
 } from "../../src/gst/index.ts";
 import { STATE_CODES } from "../../src/gstin.ts";
 import { d, hasBareLineBreak, rate, row } from "./fixtures.ts";
@@ -42,6 +46,31 @@ const pinned = () => ({
   ),
   realisation: Object.fromEntries(
     Object.entries(REALISATION_LAYOUTS).map(([v, f]) => [
+      v,
+      { stem: f.stem, headers: f.columns.map((c) => c.header) },
+    ]),
+  ),
+  // M5.5b (LD83): added after the three above, so their pinned text does not move
+  salesRegister: Object.fromEntries(
+    Object.entries(SALES_REGISTER_LAYOUTS).map(([v, f]) => [
+      v,
+      { stem: f.stem, headers: f.columns.map((c) => c.header) },
+    ]),
+  ),
+  outputTax: Object.fromEntries(
+    Object.entries(OUTPUT_TAX_LAYOUTS).map(([v, f]) => [
+      v,
+      { stem: f.stem, headers: f.columns.map((c) => c.header) },
+    ]),
+  ),
+  gstr3bSummary: Object.fromEntries(
+    Object.entries(GSTR3B_LAYOUTS).map(([v, f]) => [
+      v,
+      { stem: f.stem, headers: f.columns.map((c) => c.header) },
+    ]),
+  ),
+  statement: Object.fromEntries(
+    Object.entries(STATEMENT_LAYOUTS).map(([v, f]) => [
       v,
       { stem: f.stem, headers: f.columns.map((c) => c.header) },
     ]),
