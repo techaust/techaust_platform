@@ -253,7 +253,7 @@ Not asked, because docs/13 or docs/04 §0 already decide them:
 - That the Offline Tool's CSV column sets match today's tool version.
 - That FBIL offers a fetchable rate source.
 
-## Handover (2026-10-27, ~13:30 IST)
+## Handover (2026-10-27, end of day)
 - **M5.0** admin Worker split: merged (PR #95), on staging; owner's 6-step staging check and CPU readings still pending.
 - **M5.1** invoices: merged (PR #96), on staging (the first deploy run failed on a transient Cloudflare API "malformed response"; a re-run deployed all five Workers). Run file complete.
 - **M5.2** export/proforma/advance: merged (PR #97, 2026-10-27 07:19 UTC); staging deploy succeeded (0039–0040 applied). M5.3 merges `main` before its PR (the squash makes "ours" right if M5.3 already holds M5.2's final tree: verify with `git diff --quiet <m5.2 head> origin/main`).
