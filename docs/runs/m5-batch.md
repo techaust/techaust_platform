@@ -256,7 +256,7 @@ Not asked, because docs/13 or docs/04 §0 already decide them:
 ## Handover (2026-10-27, ~13:30 IST)
 - **M5.0** admin Worker split: merged (PR #95), on staging; owner's 6-step staging check and CPU readings still pending.
 - **M5.1** invoices: merged (PR #96), on staging (the first deploy run failed on a transient Cloudflare API "malformed response"; a re-run deployed all five Workers). Run file complete.
-- **M5.2** export/proforma/advance: PR #97 open with auto-merge and Auto-fix (all reviews APPROVE; `pnpm check` + `pnpm test` green). After it merges: check the staging deploy (re-run once if the Cloudflare API flakes), then M5.3 merges `main` (0041–0042 unapplied; regenerate only if the chain moved).
+- **M5.2** export/proforma/advance: merged (PR #97, 2026-10-27 07:19 UTC); staging deploy succeeded (0039–0040 applied). M5.3 merges `main` before its PR (the squash makes "ours" right if M5.3 already holds M5.2's final tree: verify with `git diff --quiet <m5.2 head> origin/main`).
 - **M5.3** credit/debit notes: stages A and B done on `feat/m5.3-builder` (6fa73fa); the **designer** is building the note screens and PDFs on `feat/m5.3-screens` (LD54: print the parent number; flip `LAYOUT_PRINTS_PARENT`). Next: review (code + visual, Opus high) → fixes (incl. the lead's `FINANCE_AUDIT_ACTIONS` answer) → re-check → PR.
 - **M5.4** send/recurring/reminders: brief written (`docs/runs/m5.4-send-recurring-reminders.md`, LD55–LD70, Q42–Q51). Builder starts from M5.3's final branch after M5.3's review fixes. Cron count checked (1 today → 2 of 5). Copy 07-U still to draft (list in the run file).
 - **M5.5a** GST core: done and reviewed, parked on `feat/m5.5a-gst-core` (17eff2b); M5.5b's builder first fixes the re-check lows 2–7 listed there.
