@@ -28,7 +28,12 @@ import {
   type TaxContext,
   type TaxIssue,
 } from "@techaust/core/tax";
-import type { DocumentBundle, InvoiceHeaderExtras, TermsRef } from "@techaust/db/documents";
+import {
+  type DocumentBundle,
+  fxOfRow,
+  type InvoiceHeaderExtras,
+  type TermsRef,
+} from "@techaust/db/documents";
 import type {
   InvoiceBankBlock,
   InvoiceIssuerSnapshot,
@@ -312,12 +317,9 @@ export function invoiceStateOf(b: DocumentBundle<TermsRef>): InvoiceState {
     discountKind: q.discountKind,
     discountValue: q.discountValue,
     exportMode: q.exportMode,
-    fx:
-      d.fx_rate_micros !== null && d.fx_date !== null && d.fx_source !== null
-        ? { rateMicros: d.fx_rate_micros, date: d.fx_date, source: d.fx_source }
-        : null,
-    serviceCompletedOn: d.service_completed_on,
-    exportDeclarationId: d.export_declaration_id,
+    fx: fxOfRow(d),
+    serviceCompletedOn: d.service_completed_on ?? null,
+    exportDeclarationId: d.export_declaration_id ?? null,
     lines: q.lines,
   };
 }

@@ -16,6 +16,7 @@ import { insert } from "./test-clients.ts";
 import { call, one, type TestSession } from "./test-helpers.ts";
 import {
   getInvoice,
+  type J,
   json,
   mkInvoice,
   mkInvoiceClient,

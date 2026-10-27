@@ -481,11 +481,22 @@ export function invoiceDraftOfBundle(b: DocumentBundle<TermsRef>): DraftContent 
     sections: [],
     schedule: [],
     // M5.2: the rate typed on the draft, hashed with it (a document without one has no `fx` key in its hash).
-    fx:
-      d.fx_rate_micros !== null && d.fx_date !== null && d.fx_source !== null
-        ? { rateMicros: d.fx_rate_micros, date: d.fx_date, source: d.fx_source }
-        : null,
+    fx: fxOfRow(d),
   };
+}
+
+/**
+ * The exchange rate stored on a row (`fx_*` columns), or null. A row read before M5.2, or built by a test without the columns, has none of them:
+ * absent is the same as null (the hash then has no `fx` key and an M5.1 seal stays byte-identical).
+ */
+export function fxOfRow(
+  d: Pick<DocumentRow, "fx_rate_micros" | "fx_date" | "fx_source">,
+): { rateMicros: number; date: string; source: string } | null {
+  return typeof d.fx_rate_micros === "number" &&
+    typeof d.fx_date === "string" &&
+    typeof d.fx_source === "string"
+    ? { rateMicros: d.fx_rate_micros, date: d.fx_date, source: d.fx_source }
+    : null;
 }
 
 /** The content hash of a loaded ISSUED invoice, worked out again from its rows and its stored `computed` (compare with `content_sha256`). */
@@ -524,8 +535,8 @@ export function invoiceSealPartsOfBundle(
     ...(extras.export ? { export: extras.export } : {}),
     ...(extras.proforma ? { proforma: extras.proforma } : {}),
     ...(extras.advance ? { advance: extras.advance } : {}),
-    ...(d.fx_rate_micros !== null && d.fx_date !== null && d.fx_source !== null && d.type !== "proforma"
-      ? { fx: { rateMicros: d.fx_rate_micros, date: d.fx_date, source: d.fx_source } }
+    ...(fxOfRow(d) && d.type !== "proforma"
+      ? { fx: fxOfRow(d) as NonNullable<ReturnType<typeof fxOfRow>> }
       : {}),
   };
 }
