@@ -4,7 +4,19 @@ import type { TaxInput } from "../../src/clients.ts";
 import type { StateCode } from "../../src/gstin.ts";
 import { SETTINGS_DEFAULTS, type Settings } from "../../src/schemas/settings.ts";
 import type { LineInput, Supply, TaxContext, TaxResult } from "../../src/tax/index.ts";
-import { computeDocument, type DocumentInput } from "../../src/tax/index.ts";
+import { type ComputedDocument, computeDocument, type DocumentInput } from "../../src/tax/index.ts";
+
+/**
+ * A recorder for the documents the golden cases compute (M5.5b): the database tests store them as issued documents to prove that the SQL rates are a twin of
+ * `registerRatesOf` on the engine's own hand-checked cases. `null` when nobody is recording, so the golden table itself is unchanged.
+ */
+export const recorder: { docs: ComputedDocument[] | null } = { docs: null };
+/** The engine's `computeDocument`, noting every successful document on the recorder. */
+export const computeRecorded: typeof computeDocument = (input, ctx) => {
+  const r = computeDocument(input, ctx);
+  if (r.ok) recorder.docs?.push(r.value);
+  return r;
+};
 
 /** 25 October 2026: in FY 2026-27 (token "2627"). */
 export const DATE = { year: 2026, month: 10, day: 25 } as const;
@@ -88,7 +100,7 @@ export const inrDoc = (
   lines: LineInput[],
   extra: Partial<DocumentInput> = {},
   ctx: TaxContext = DEFAULTS,
-) => computeDocument({ currency: "INR", documentDate: DATE, recipient, lines, ...extra }, ctx);
+) => computeRecorded({ currency: "INR", documentDate: DATE, recipient, lines, ...extra }, ctx);
 
 /** The value of a successful result, or a thrown error naming the codes (so a failing golden case says why). */
 export function good<T>(result: TaxResult<T>): T {

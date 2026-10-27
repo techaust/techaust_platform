@@ -220,7 +220,11 @@ describe("the date and the cron [item 6]", () => {
       makeEnv(),
       {} as ExecutionContext,
     );
-    expect(calls).toHaveLength(2); // the purge page and the stats batch (either may finish first)
+    // the purge page, the stats batch and (M5.5b, changed on purpose) the statement cache clean-up message (any may finish first)
+    expect(calls).toHaveLength(3);
+    expect(
+      calls.filter((c) => c.bodies.some((b) => (b as { kind?: string }).kind === "statement.purge")),
+    ).toHaveLength(1);
     const purge = calls.find((c) => c.bodies.some((b) => (b as { kind?: string }).kind === "lead.purge"));
     const stats = calls.find((c) => c.bodies.some((b) => (b as { kind?: string }).kind === "stats.metric"));
     expect(purge?.bodies).toEqual([{ kind: "lead.purge", leadId: "due-1" }]);

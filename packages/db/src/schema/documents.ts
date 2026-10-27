@@ -279,6 +279,22 @@ export const documents = sqliteTable(
     index("documents_note_ims")
       .on(t.type, t.imsStatus, t.createdAt, t.id)
       .where(sql`${t.type} = 'credit_note'`),
+    // M5.5b (LD81): the reports read the issued documents of the four GST kinds by issue date (the register, GSTR-1, Table 13), the issued
+    // exports (the EDF and the realisation list), and one client's issued documents by date (the statement). Partial, so a draft or a proposal never
+    // enters them; each is proved by an EXPLAIN test (`packages/db/test/reports.test.ts`).
+    index("documents_issued_on")
+      .on(t.issueDate, t.id)
+      .where(
+        sql`${t.frozenAt} is not null and ${t.type} in ('tax_invoice', 'export_invoice', 'credit_note', 'debit_note')`,
+      ),
+    index("documents_export_issued")
+      .on(t.issueDate, t.id)
+      .where(sql`${t.frozenAt} is not null and ${t.type} = 'export_invoice'`),
+    index("documents_client_issued")
+      .on(t.clientId, t.issueDate, t.id)
+      .where(
+        sql`${t.frozenAt} is not null and ${t.type} in ('tax_invoice', 'export_invoice', 'credit_note', 'debit_note')`,
+      ),
     // M4.4: the PDF sweep reads only frozen documents that have no PDF yet (a small set), oldest first. M5.1 (LD9) widens the predicate to
     // the invoice family (receipts and vouchers have no PDF of their own yet); the type stays in it so a frozen row of any other type
     // never keeps the sweep busy.
@@ -335,8 +351,55 @@ export const advanceReceipts = sqliteTable(
   (t) => [
     uniqueIndex("advance_receipts_proforma_reference").on(t.proformaId, t.referenceNorm),
     index("advance_receipts_client").on(t.clientId, t.createdAt),
+    // M5.5b (LD81): the statement reads a client's receipts by the day the money arrived.
+    index("advance_receipts_client_received").on(t.clientId, t.receivedOn, t.id),
     check("advance_receipts_currency", oneOf(t.currency, CURRENCY_CODES)),
     check("advance_receipts_amount", sql`${t.amountMinor} > 0`),
+  ],
+);
+
+/** What a statement PDF prints about the supplier: the company block as it was when the PDF was requested (no bank, no sender). */
+export type StatementIssuer = { company: IssuerSnapshot["company"] };
+
+/**
+ * The PDF of one client's statement of account for one currency and range (M5.5b, LD79, JOB-PDF-01, Q19, Q57): a CACHE, not a record. A row is made by
+ * the admin API (`POST /clients/:id/statement/pdf`), rendered by the jobs Worker (`pdf.statement`), and deleted with its R2 object after 30 days or when the
+ * client is anonymised. No triggers on purpose: nothing here is a document or a ledger. The R2 key is `statements/<client id>/<view_sha256>.pdf`, so identical
+ * data reuses one object. `issuer` is the company block at the time of the request; the statement's numbers are read when it is rendered.
+ */
+export const statementPdfs = sqliteTable(
+  "statement_pdfs",
+  {
+    id: id(),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => clients.id),
+    currency: currency(),
+    /** The range, ISO dates (IST), inclusive. */
+    fromDate: text("from_date").notNull(),
+    toDate: text("to_date").notNull(),
+    issuer: text("issuer", { mode: "json" }).$type<StatementIssuer>().notNull(),
+    requestedBy: text("requested_by")
+      .notNull()
+      .references(() => staffUsers.id),
+    createdAt: createdAt(),
+    /** SHA-256 of the canonical statement view without its generation date; set by the consumer. */
+    viewSha256: text("view_sha256"),
+    pdfR2Key: text("pdf_r2_key"),
+    pdfSha256: text("pdf_sha256"),
+    renderedAt: integer("rendered_at"),
+    failedAt: integer("failed_at"),
+    /** `queue`, `client_anonymised`, `statement_too_long`, `render` ...: a code, never text. */
+    failCode: text("fail_code"),
+  },
+  (t) => [
+    index("statement_pdfs_client").on(t.clientId, t.createdAt, t.id),
+    index("statement_pdfs_created").on(t.createdAt),
+    check("statement_pdfs_currency", oneOf(t.currency, CURRENCY_CODES)),
+    check(
+      "statement_pdfs_range",
+      sql`date(${t.fromDate}) is ${t.fromDate} and date(${t.toDate}) is ${t.toDate} and ${t.fromDate} <= ${t.toDate}`,
+    ),
   ],
 );
 

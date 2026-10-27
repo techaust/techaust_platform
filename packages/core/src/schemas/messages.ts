@@ -229,6 +229,44 @@ export const BILLING_KINDS = [
   "alerts.daily",
   "reminder.scan",
 ] as const;
+// ---- M5.5b report messages on the `leads` queue (one unit of work each; the 09:00 IST tick only enqueues, no D1 read in the cron; LD76) ----
+/**
+ * `realisation.scan`: the export realisation alerts (ADM-REP-07, Q54). `after` is the last row's `(issue_date, id)` of the previous page of 50 (keyset, as
+ * `REALISATION_SCAN_SQL` reads it); the first message of a day has none.
+ */
+export const realisationScanMessage = z.object({
+  v: z.literal(1),
+  kind: z.literal("realisation.scan"),
+  after: z.object({ d: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), id: id64 }).optional(),
+});
+/** `edf.reminder`: the monthly Export Declaration Form reminder for the invoice month `year`-`month` (Q55); sent on IST days 5 to 7, once per owner per month. */
+export const edfReminderMessage = z.object({
+  v: z.literal(1),
+  kind: z.literal("edf.reminder"),
+  year: z.int().min(2000).max(9999),
+  month: z.int().min(1).max(12),
+});
+/**
+ * `statement.purge`: the daily clean-up of the statement PDF cache (Q57; `statement_pdfs` is a cache, not a record): rows older than 30 days and the rows of anonymised clients, with
+ * their R2 objects, at most 50 a message. `asOf` is the cron's scheduled time (UTC ms); `after` is the last row's id of the previous page (keyset on the primary key).
+ */
+export const statementPurgeMessage = z.object({
+  v: z.literal(1),
+  kind: z.literal("statement.purge"),
+  asOf: z.int().min(0),
+  after: id64.optional(),
+});
+export type RealisationScanMessage = z.infer<typeof realisationScanMessage>;
+export type EdfReminderMessage = z.infer<typeof edfReminderMessage>;
+export type StatementPurgeMessage = z.infer<typeof statementPurgeMessage>;
+export type ReportMessage = RealisationScanMessage | EdfReminderMessage | StatementPurgeMessage;
+export const REPORT_KINDS = ["realisation.scan", "edf.reminder", "statement.purge"] as const;
+/** True for a body of the M5.5b report family (valid or not), so a malformed one can never become a lead. */
+export const isReportKind = (body: unknown): body is { kind: ReportMessage["kind"] } =>
+  typeof body === "object" &&
+  body !== null &&
+  REPORT_KINDS.includes((body as { kind: ReportMessage["kind"] }).kind);
+
 /** True for a body of the M5.4 billing family (valid or not), so a malformed one can never become a lead. */
 export const isBillingKind = (body: unknown): body is { kind: BillingMessage["kind"] } =>
   typeof body === "object" &&

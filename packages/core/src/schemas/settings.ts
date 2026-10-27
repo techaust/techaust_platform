@@ -253,10 +253,17 @@ export const taxSettings = z.object({
   b2cDetailsThresholdInrMinor: minor,
   /** G-12: export realisation warnings (FEMA). */
   realisation: z.object({
-    warnMonths: intBetween(1),
-    escalateMonths: intBetween(1),
-    escalateExtraDays: intBetween(0),
+    warnMonths: intBetween(1, 1200),
+    /** Q15 (M5.5b; VERIFY WITH CA/LEGAL, FEMA 2026): months to realise an export invoice in INR; a stored row without it reads 12. */
+    inrMonths: z.prefault(intBetween(1, 120), 12),
+    escalateMonths: intBetween(1, 1200),
+    escalateExtraDays: intBetween(0, 36_500),
   }),
+  /**
+   * Q18 (M5.5b; VERIFY WITH CA/LEGAL, Notification 12/2024): an inter-state invoice to an unregistered client above this INR amount
+   * (strictly more) is reported as B2CL in GSTR-1; at or below it, as B2CS. A stored row without it reads Rs 1,00,000.00; zero is refused.
+   */
+  b2clThresholdInrMinor: z.prefault(intBetween(1), 1_00_000_00),
   /** G-18: warn above this amount per cross-border gateway transaction. */
   crossBorderWarnInrMinor: minor,
 });
@@ -478,7 +485,8 @@ export const SETTINGS_DEFAULTS: Settings = {
     creditNoteCutoff: { month: 11, day: 30 },
     annualReturnsFiled: [],
     b2cDetailsThresholdInrMinor: 50_000_00,
-    realisation: { warnMonths: 9, escalateMonths: 12, escalateExtraDays: 15 },
+    realisation: { warnMonths: 9, inrMonths: 12, escalateMonths: 12, escalateExtraDays: 15 },
+    b2clThresholdInrMinor: 1_00_000_00,
     crossBorderWarnInrMinor: 25_00_000_00,
   },
   numbering: Object.fromEntries(

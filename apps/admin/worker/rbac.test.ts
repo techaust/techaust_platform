@@ -30,11 +30,12 @@ import {
   tokenOfLink,
   userId,
 } from "./test-helpers.ts";
-import { mkProforma, todayIso } from "./test-invoice-types.ts";
+import { mkProforma, putTax, todayIso } from "./test-invoice-types.ts";
 import { issueBodyOf, issueInvoice, mkInvoice, mkInvoiceClient, putCompany } from "./test-invoices.ts";
 import { issueCredit, mkIssuedInvoice, mkRegisteredClient, stampOf } from "./test-notes.ts";
 import { mkFile, mkMilestone, mkNote, mkProject, PDF_BYTES, upload } from "./test-projects.ts";
 import { discount, mkDraft, mkQuoteClient, mkService, mkTerms, sendBodyOf, sendDoc } from "./test-quotes.ts";
+import { addDoc, mkReportClient } from "./test-reports.ts";
 
 const newEmail = () => `rbac-${Math.random().toString(36).slice(2, 10)}@example.com`;
 const PUBLIC = ROUTES.filter((r) => r.access === "public");
@@ -1038,6 +1039,20 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
         (await call(`/invoices/${made.id}/send`, { cookie: s.cookie, body: { contactIds: [to.id] } })).status,
       ).toBe(200);
       return run(s, `/invoices/${made.id}/reminders/resume`, { method: "POST", body: {} });
+    },
+    // M5.5b (added on purpose): a register page (one audit row per page) and a request for a statement PDF.
+    "GET /api/v1/reports/registers": async () => {
+      const s = await owner();
+      await putCompany();
+      await putTax();
+      return run(s, "/reports/registers?from=2026-10-01&to=2026-10-31", {});
+    },
+    "POST /api/v1/clients/:id/statement/pdf": async () => {
+      const s = await owner();
+      await putCompany();
+      const clientId = await mkReportClient();
+      await addDoc({ clientId, issueDate: "2026-10-05" });
+      return run(s, `/clients/${clientId}/statement/pdf`, { body: { from: "2026-10-01", to: "2026-10-31" } });
     },
   };
 

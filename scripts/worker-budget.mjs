@@ -20,6 +20,13 @@ const PDF_LIB = { name: "pdf-lib (PDFs are rendered in the jobs Worker)", re: /P
 const PUPPETEER = { name: "@cloudflare/puppeteer (jobs Worker only)", re: /@cloudflare\/puppeteer/ };
 const PDF_FONTS = { name: "PDF font data (jobs Worker only)", re: /TECHAUST_PDF_FONT_DATA/ };
 
+// The GST and report core is for the admin SPA only (M5.5a, M5.5b, LD16): its layout ids and column names are string constants that survive minification, so a bundle that
+// contains it has imported it. The Workers get the same figures from SQL (`@techaust/db/reports`) and the no-zod readers in `@techaust/core/invoices`.
+const GST_CORE = {
+  name: "@techaust/core/gst (SPA only, LD16)",
+  re: /gstr1-csv-v\d|GSTIN\/UIN of Recipient|sales-register-v\d/,
+};
+
 // The API Worker never holds sign-in code or a sign-in secret: these names appear only in auth.ts, account.ts and users.ts (the
 // front Worker). Property names survive minification, so a secret read from a package is caught here too.
 const SIGN_IN_TABLES = {
@@ -36,19 +43,19 @@ export const BUDGETS = {
     file: "apps/admin/dist/techaust_platform_admin/index.js",
     maxBytes: 150_000,
     maxStartupMs: 200,
-    forbidden: [CLASSIC_ZOD, PDF_LIB, PUPPETEER, PDF_FONTS],
+    forbidden: [CLASSIC_ZOD, PDF_LIB, PUPPETEER, PDF_FONTS, GST_CORE],
   },
   adminApi: {
     file: "apps/admin/dist/techaust_platform_admin_api/index.js",
     maxBytes: 800_000,
     maxStartupMs: 200,
-    forbidden: [CLASSIC_ZOD, PDF_LIB, PUPPETEER, PDF_FONTS, SIGN_IN_TABLES],
+    forbidden: [CLASSIC_ZOD, PDF_LIB, PUPPETEER, PDF_FONTS, SIGN_IN_TABLES, GST_CORE],
   },
   portal: {
     file: "apps/portal/dist/techaust_platform_portal/index.js",
     maxBytes: 120_000, // M4.5 adds ~20–25 KB to today's ~58 KB
     maxStartupMs: 200,
-    forbidden: [CLASSIC_ZOD, PDF_LIB, PUPPETEER, PDF_FONTS],
+    forbidden: [CLASSIC_ZOD, PDF_LIB, PUPPETEER, PDF_FONTS, GST_CORE],
   },
   // M4.4: the jobs Worker is the one that renders PDFs, so it carries the inline fonts (TECHAUST_PDF_FONT_DATA is allowed here and only
   // here). Measured 2026-10-26 after the PDF consumers: 572,455 bytes (the base64 fonts are most of the growth), startup 43 ms in the
@@ -60,7 +67,7 @@ export const BUDGETS = {
     // lead, 2026-10-27: M5.4 measured 788,640; the startup limit and the staging cold reading remain the gates
     maxBytes: 1_000_000,
     maxStartupMs: 200,
-    forbidden: [PDF_LIB, PUPPETEER],
+    forbidden: [PDF_LIB, PUPPETEER, GST_CORE],
   },
 };
 

@@ -92,6 +92,25 @@ describe("worker budget", () => {
   });
 });
 
+describe("the GST core is SPA only (M5.5b, LD16)", () => {
+  it.each(["gstr1-csv-v1", "GSTIN/UIN of Recipient", "sales-register-v1"])(
+    "fails a bundle that contains %s, in every Worker",
+    (marker) => {
+      const text = `const x = { "${marker}": 1 };`;
+      for (const budget of [BUDGETS.admin, BUDGETS.adminApi, BUDGETS.portal, BUDGETS.jobs]) {
+        expect(checkBundle({ ...ok, text }, budget)[0], marker).toMatch(/@techaust\/core\/gst/);
+      }
+    },
+  );
+
+  it("does not fire on the Workers' own SQL and readers", () => {
+    const text = "SELECT d.id FROM documents d; const reader = realisationParamsFromStoredTax;";
+    for (const budget of [BUDGETS.admin, BUDGETS.adminApi, BUDGETS.portal, BUDGETS.jobs]) {
+      expect(checkBundle({ ...ok, text }, budget)).toEqual([]);
+    }
+  });
+});
+
 describe("the jobs budget (M4.4)", () => {
   const jobs = BUDGETS.jobs;
 

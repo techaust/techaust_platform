@@ -1,0 +1,3 @@
+# The CSV snapshots keep their CRLF bytes: git must not turn that into LF. (Vitest itself ignores the difference when it
+# compares, so the tests also assert CRLF directly: hasBareLineBreak in test/gst/fixtures.ts.)
+*.csv -text

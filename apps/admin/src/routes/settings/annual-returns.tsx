@@ -5,10 +5,11 @@
 import { issueDateOf } from "@techaust/core/invoices";
 import { DateField } from "../../components/date-field.tsx";
 import { annualReturnYears, firstFilingDay, NOTE_COPY } from "../../lib/notes.ts";
+// The field id of a year's date (the form's error keys and the error summary's links): kept with the tax form's model.
+import { annualReturnFieldId } from "../../lib/tax-settings.ts";
 import { RowError } from "./kit.tsx";
 
-/** The field id of a year's date (the form's error keys and the error summary's links). */
-export const annualReturnFieldId = (fy: string) => `f-annualReturnsFiled-${fy}`;
+export { annualReturnFieldId };
 
 export function AnnualReturns(props: {
   /** The date typed per FY token ("2526" → "2026-06-30"); "" is no return. */

@@ -1,0 +1,722 @@
+/* M5.5b Reports and the statement of account. Tokens only (@techaust/ui). Loaded with the reports chunk and the client page's statement tab, never on
+   sign-in. One device is drawn here and nothing else: the accountant's DOUBLE RULE. A figure that closes a list (the period's overall, a statement's
+   closing balance) stands on a thin rule above and a double rule below, as a ledger's total does; every other row is a hairline. The section index
+   under the title borrows the rail's 45° cut for the report that is open. Figures are tabular, right-aligned and never broken. */
+
+/* ---------- The section index (four reports) ---------- */
+
+.report-nav {
+  margin: calc(-1 * var(--space-2)) 0 var(--space-6);
+  border-bottom: 1px solid var(--color-border);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+
+.report-nav ul {
+  display: flex;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.report-nav__link {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+  padding: var(--space-2) var(--space-3);
+  color: var(--color-text-muted);
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.report-nav__link:hover {
+  color: var(--color-text);
+}
+
+.report-nav__link[aria-current="page"] {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+/* The open report: a verdigris bar on the index's rule, its right end cut at 45° like the rail's current item. */
+.report-nav__link[aria-current="page"]::after {
+  content: "";
+  position: absolute;
+  inset-inline: var(--space-3) var(--space-3);
+  bottom: 0;
+  height: 4px;
+  background: var(--color-accent-decor);
+  clip-path: polygon(0 0, calc(100% - 4px) 0, 100% 100%, 0 100%);
+}
+
+.report-nav__link:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+  border-radius: var(--radius-sm);
+}
+
+/* A document number that links to its page (statement, EDF, realisation): a 44 px target like the Invoices list's, the number's line centred in it. */
+.report-doclink {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+}
+
+/* ---------- Controls: the period, the range, the month ---------- */
+
+.report-controls {
+  display: grid;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+.report-controls > * {
+  min-width: 0;
+}
+
+.report-controls--row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-4);
+}
+
+.report-controls--row .field {
+  margin: 0;
+}
+
+.report-controls__action {
+  margin-inline-start: auto;
+}
+
+.report-month select {
+  min-width: 14rem;
+}
+
+.period-picker {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.period-picker__legend {
+  margin-bottom: var(--space-2);
+  padding: 0;
+}
+
+.period-picker__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.period-picker__select {
+  width: auto;
+  min-width: 15rem;
+  max-width: 100%;
+}
+
+.period-picker .hint {
+  margin: var(--space-2) 0 0;
+}
+
+/* Month or quarter: two radios drawn as one control; the chosen one is ink on the page (inverse), never a colour alone. */
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.segmented__opt {
+  position: relative;
+  display: inline-flex;
+  font-weight: 500;
+}
+
+.segmented__opt + .segmented__opt {
+  border-inline-start: 1px solid var(--color-border-control);
+}
+
+.segmented__opt input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  min-height: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.segmented__opt span {
+  display: inline-flex;
+  align-items: center;
+  min-height: calc(var(--target-min) - 2px);
+  padding: 0 var(--space-3);
+}
+
+.segmented__opt input:checked + span {
+  background: var(--color-text);
+  color: var(--color-bg);
+}
+
+.segmented__opt:has(input:focus-visible) {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+  z-index: 1;
+}
+
+.segmented__opt:has(input:disabled) {
+  opacity: 0.7;
+}
+
+/* From, To, (Currency) and the button, in one row from md; the button sits on the fields' baseline. */
+.range-form__fields {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0 var(--space-4);
+  align-items: start;
+}
+
+.range-form__fields .field {
+  margin-bottom: var(--space-3);
+}
+
+.range-form__go {
+  display: flex;
+  align-items: flex-end;
+  margin-bottom: var(--space-3);
+}
+
+@media (min-width: 768px) {
+  .range-form__fields {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .range-form__fields > .field {
+    flex: 0 1 15rem;
+  }
+
+  /* The button lines up with the controls, below the labels (one label line and the field's gap). */
+  .range-form__go {
+    padding-top: calc(var(--text-body) * var(--text-body--line-height) + var(--space-1));
+  }
+}
+
+.check-row {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--target-min);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.check-row input {
+  width: 1.25rem;
+  height: 1.25rem;
+  min-height: 0;
+  margin: 0;
+  accent-color: var(--color-btn-primary-bg);
+}
+
+/* ---------- Progress, done, problems, warnings ---------- */
+
+.report-results {
+  display: grid;
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+.report-results:empty {
+  display: none;
+}
+
+/* The read's line: text only (docs/06 §4.4: no loops; the count moves as pages arrive), after a short cut verdigris rule. */
+.report-progress {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: 32rem;
+  margin: 0;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.report-progress::before {
+  content: "";
+  flex: none;
+  width: var(--space-6);
+  height: 3px;
+  background: var(--color-accent-decor);
+  clip-path: polygon(0 0, calc(100% - 3px) 0, 100% 100%, 0 100%);
+}
+
+.report-done {
+  width: fit-content;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
+  font-weight: 600;
+}
+
+.report-done .icon {
+  color: var(--color-success);
+}
+
+.report-done:focus-visible,
+.report-problems__h:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 4px;
+}
+
+.report-problems {
+  padding: var(--space-4) var(--space-5);
+  border-inline-start: 3px solid var(--color-danger);
+  background: var(--color-surface);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+}
+
+.report-problems__h {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-h4);
+  line-height: var(--text-h4--line-height);
+}
+
+.report-problems__h .icon {
+  flex: none;
+  color: var(--color-danger);
+}
+
+.report-problems__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: problem;
+}
+
+.report-problems__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0 var(--space-4);
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.report-problems__text {
+  flex: 1 1 20rem;
+  margin: 0;
+  max-width: var(--container-prose);
+}
+
+.report-problems__open {
+  flex: none;
+  min-height: var(--target-min);
+}
+
+.report-sub {
+  margin: 0;
+  font-size: var(--text-h4);
+  line-height: var(--text-h4--line-height);
+  font-weight: 600;
+}
+
+.report-warnings__list {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.report-warnings__list li {
+  display: flex;
+  gap: var(--space-2);
+  max-width: var(--container-prose);
+}
+
+.report-warnings__list .icon {
+  flex: none;
+  margin-top: 0.2em;
+  color: var(--color-info);
+}
+
+/* ---------- Blocks and the ledger ---------- */
+
+.report-grid {
+  display: grid;
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+.report-block {
+  min-width: 0;
+}
+
+.report-block__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+/* A wide ledger scrolls inside its own box on a narrow screen; the page never scrolls sideways. */
+.ledger-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+  scrollbar-width: thin;
+}
+
+.ledger-scroll:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.ledger {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  background: var(--color-surface);
+}
+
+.ledger th,
+.ledger td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  text-align: start;
+  vertical-align: baseline;
+}
+
+.ledger thead th {
+  color: var(--color-text-muted);
+  font-weight: 600;
+  border-bottom-color: var(--color-text);
+  white-space: nowrap;
+}
+
+.ledger tbody th {
+  font-weight: 500;
+}
+
+.ledger .num {
+  text-align: end;
+  white-space: nowrap;
+}
+
+/* The closing figure of a list: a thin rule above, the double rule below. */
+.ledger .ledger__total th,
+.ledger .ledger__total td {
+  border-top: 1px solid var(--color-text);
+  border-bottom: 3px double var(--color-text);
+  font-weight: 600;
+}
+
+.ledger .ledger__group th {
+  padding-top: var(--space-4);
+  font-weight: 600;
+  border-bottom-color: var(--color-border);
+}
+
+.ledger .ledger__sub th {
+  padding-inline-start: var(--space-6);
+  font-weight: 400;
+}
+
+.ledger.ledger--3b tbody th {
+  max-width: 24rem;
+}
+
+/* A section with no documents in the period reads quieter (its zeros are still there). */
+.ledger tbody tr[data-empty] td,
+.ledger tbody tr[data-empty] th {
+  color: var(--color-text-muted);
+}
+
+/* A wide list (DataTable) scrolls inside its own box; its headers wrap, and they don't stick (a sticky header can't live in a scrolling box). */
+.wide-list {
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.wide-list:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.wide-list .dtable .dtable__table th,
+.wide-list .dtable .dtable__table td {
+  padding-inline: var(--space-3);
+}
+
+.wide-list .dtable .dtable__table thead th {
+  position: static;
+  white-space: normal;
+  padding-block: var(--space-2);
+  vertical-align: bottom;
+}
+
+.amount,
+.tnum {
+  font-variant-numeric: tabular-nums lining-nums;
+  white-space: nowrap;
+}
+
+.ledger-check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+  font-weight: 500;
+}
+
+.ledger-check .icon {
+  flex: none;
+  color: var(--color-success);
+}
+
+.ledger-check--bad {
+  color: var(--color-danger);
+}
+
+.ledger-check--bad .icon {
+  color: var(--color-danger);
+}
+
+/* ---------- Files ---------- */
+
+.file-list {
+  margin: 0 0 var(--space-5);
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--color-border);
+}
+
+/* A file is one row and the row is its button: the download icon, 07-V's label, and the file's own name at the end, quiet. */
+.file-list li + li {
+  border-top: 1px solid var(--color-border);
+}
+
+.file-list__btn {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  width: 100%;
+  min-height: var(--target-min);
+  padding: var(--space-2);
+  border: 0;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.file-list__label {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.file-list__btn .icon {
+  flex: none;
+  color: var(--color-text-accent);
+}
+
+.file-list__btn:hover:not(:disabled) {
+  background: var(--color-surface-alt);
+}
+
+.file-list__btn:hover:not(:disabled) .file-list__label {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.file-list__btn:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+}
+
+.file-list__btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.file-list__file {
+  flex: none;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+/* On a phone the file's name goes under its label, in the label's column. */
+@media (max-width: 479px) {
+  .file-list__btn {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .file-list__file {
+    grid-column: 2;
+  }
+
+  .period-picker__select,
+  .segmented {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .segmented__opt {
+    flex: 1 1 0;
+  }
+
+  .segmented__opt span {
+    flex: 1;
+    justify-content: center;
+    text-align: center;
+  }
+}
+
+.report-grid[hidden],
+.report-block[hidden] {
+  display: none;
+}
+
+.report-empty-line {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.report-downloads {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.report-notes {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.report-note {
+  max-width: var(--container-prose);
+  margin: 0;
+}
+
+/* ---------- Realisation ---------- */
+
+.real-invoice {
+  display: inline-grid;
+  gap: var(--space-1);
+  padding-inline-start: var(--space-2);
+  border-inline-start: 3px solid transparent;
+}
+
+.real-invoice[data-marked] {
+  border-inline-start-color: var(--color-accent-decor);
+}
+
+.real-invoice__note {
+  max-width: 22rem;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-weight: 400;
+  line-height: var(--text-sm--line-height);
+  white-space: normal;
+}
+
+/* A long stage ("GST refund date in 30 days") wraps inside a phone card's half-width cell instead of running past the card. */
+.dcards .real-stage .spill {
+  max-width: 100%;
+  white-space: normal;
+  border-radius: var(--radius-md);
+}
+
+/* ---------- The client's statement ---------- */
+
+.statement {
+  display: grid;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.statement-controls .field select {
+  min-width: 8rem;
+}
+
+/* Opening and closing: the two balances the statement is about, read across the top; the closing one stands on the double rule. */
+.statement-balances {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.statement-balances > div {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.statement-balances dt {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+.statement-balances dd {
+  margin: 0;
+  font-size: var(--text-h4);
+  line-height: var(--text-h4--line-height);
+  font-weight: 600;
+}
+
+.statement-balances .statement-balances__closing dd {
+  justify-self: start;
+  padding-bottom: 2px;
+  border-bottom: 3px double var(--color-text);
+}
+
+@media (min-width: 768px) {
+  .statement-balances {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.statement-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.statement-actions__status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-muted);
+}
+
+.statement-more {
+  justify-self: start;
+}

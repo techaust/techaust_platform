@@ -1,0 +1,20 @@
+Date,Number,Type,Client,GSTIN,Place of supply,Supply type,Currency,Document total,Exchange rate,Total in INR,SAC,Rate,Taxable value,IGST,CGST,SGST,Status
+05-Oct-2026,TH/INV/2627/0001,Tax invoice,Test Client One,19ABCDE1234F1ZX,19-West Bengal,intra,INR,11800.00,,11800.00,998314,18,10000.00,0.00,900.00,900.00,Issued
+12-Oct-2026,TH/INV/2627/0002,Tax invoice,Test Client Two,27ABCDE1234F1Z0,27-Maharashtra,inter,INR,80000.00,,80000.00,998313,5,20000.00,1000.00,0.00,0.00,Issued
+12-Oct-2026,TH/INV/2627/0002,Tax invoice,Test Client Two,27ABCDE1234F1Z0,27-Maharashtra,inter,INR,80000.00,,80000.00,998314,18,50000.00,9000.00,0.00,0.00,Issued
+15-Oct-2026,TH/INV/2627/0003,Tax invoice,Test Person Three,,19-West Bengal,intra,INR,236000.00,,236000.00,998314,18,200000.00,0.00,18000.00,18000.00,Issued
+18-Oct-2026,TH/INV/2627/0004,Tax invoice,Test Person Four,,29-Karnataka,inter,INR,100000.00,,100000.00,998314,18,84745.76,15254.24,0.00,0.00,Issued
+19-Oct-2026,TH/INV/2627/0005,Tax invoice,Test Person Five,,29-Karnataka,inter,INR,100000.01,,100000.01,998314,18,84745.76,15254.24,0.00,0.00,Issued
+03-Nov-2026,TH/EXP/2627/0001,Export invoice,Test Overseas One,,96-Other Countries,export_lut,USD,1000.00,83.500000,83500.00,998314,0,83500.00,0.00,0.00,0.00,Issued
+08-Nov-2026,TH/EXP/2627/0002,Export invoice,Test Overseas Two,,96-Other Countries,export_igst,USD,590.00,84.000000,49560.00,998313,18,42000.00,7560.00,0.00,0.00,Issued
+10-Nov-2026,TH/CN/2627/0001,Credit note,Test Client One,19ABCDE1234F1ZX,19-West Bengal,intra,INR,-2360.00,,-2360.00,998314,18,-2000.00,0.00,-180.00,-180.00,Issued
+11-Nov-2026,TH/CN/2627/0002,Credit note,Test Person Five,,29-Karnataka,inter,INR,-9999.99,,-9999.99,998314,18,-8474.57,-1525.42,0.00,0.00,Issued
+12-Nov-2026,TH/DN/2627/0001,Debit note,Test Person Three,,19-West Bengal,intra,INR,11800.00,,11800.00,998314,18,10000.00,0.00,900.00,900.00,Issued
+14-Nov-2026,TH/INV/2627/0006,Tax invoice,Test Client inv06,19ABCDE1234F1ZX,19-West Bengal,intra,INR,0.00,,0.00,,,0.00,0.00,0.00,0.00,Cancelled
+20-Nov-2026,TH/EXP/2627/0003,Export invoice,Test Overseas Three,,96-Other Countries,export_lut,INR,30000.00,,30000.00,998314,0,30000.00,0.00,0.00,0.00,Issued
+25-Nov-2026,TH/CN/2627/0003,Credit note,Test Overseas One,,96-Other Countries,export_lut,USD,-100.00,83.500000,-8350.00,998314,0,-8350.00,0.00,0.00,0.00,Issued
+02-Dec-2026,TH/CN/2627/0004,Credit note,Test Person Seven,,27-Maharashtra,inter,INR,-5900.00,,-5900.00,998314,18,-5000.00,-900.00,0.00,0.00,Issued
+04-Dec-2026,TH/INV/2627/0007,Tax invoice,"'=HYPERLINK(""x"",""y"")",19ABCDE1234F1ZX,19-West Bengal,intra,INR,4200.00,,4200.00,998315,5,4000.00,0.00,100.00,100.00,Issued
+05-Dec-2026,TH/INV/2627/0008,Tax invoice,"'-Acme, Ltd",29ABCDE1234F1ZW,29-Karnataka,inter,INR,7080.00,,7080.00,998314,18,6000.00,1080.00,0.00,0.00,Issued
+06-Dec-2026,TH/INV/2627/0009,Tax invoice,"Line One
+Line Two",,19-West Bengal,intra,INR,3540.00,,3540.00,998314,18,3000.00,0.00,270.00,270.00,Issued

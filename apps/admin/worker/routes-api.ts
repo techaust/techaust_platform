@@ -24,9 +24,12 @@ import { leads } from "./leads.ts";
 import { notes } from "./notes.ts";
 import { notifications } from "./notifications.ts";
 import { milestones, projects } from "./projects.ts";
+import { reports } from "./reports.ts";
 import { search } from "./search.ts";
 import { settings } from "./settings.ts";
 import { settingsSignature } from "./settings-signature.ts";
+import { statementPdf } from "./statement-pdf.ts";
+import { statements } from "./statements.ts";
 import { timeLogs } from "./time-logs.ts";
 import "./warm-api.ts"; // start-up warm-up of the settings, catalogue, care, document and time schemas
 
@@ -38,6 +41,10 @@ export function mountApi(app: App) {
   app.route("/v1/templates", templates);
   app.route("/v1/clients", clients);
   app.route("/v1/clients", clientTabs);
+  // M5.5b: a client's statement and its PDF, and the reports (self-contained modules, LD85)
+  app.route("/v1/clients", statements);
+  app.route("/v1/clients", statementPdf);
+  app.route("/v1/reports", reports);
   // Proposals and estimates (M4.3): one router per concern, all under /documents. Static paths come before `/:id` where they exist.
   app.route("/v1/documents", documents);
   app.route("/v1/documents", documentSave);

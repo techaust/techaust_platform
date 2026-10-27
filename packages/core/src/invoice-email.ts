@@ -72,6 +72,19 @@ export const INVOICE_EMAIL_DATA = {
     "balance",
   ],
   "lut.reminder": ["owner_first_name", "fy_label", "state", "admin_url"],
+  /** M5.5b: `month_label` is the invoice month in words, `count` the number of export invoices (text), `due_date` the EDF due date, `link` the admin page. */
+  "edf.reminder": ["owner_first_name", "month_label", "count", "due_date", "link"],
+  /** M5.5b: `stage` is `fema_approaching`, `fema_overdue`, `gst_approaching` or `gst_overdue`; `outstanding` and `due_date` are formatted as the invoice shows them. */
+  "realisation.alert": [
+    "owner_first_name",
+    "stage",
+    "number",
+    "client",
+    "currency",
+    "outstanding",
+    "due_date",
+    "link",
+  ],
 } as const satisfies Partial<Record<EmailTemplate, readonly string[]>>;
 
 export type InvoiceEmailTemplate = keyof typeof INVOICE_EMAIL_DATA;

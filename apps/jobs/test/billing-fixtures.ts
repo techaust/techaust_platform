@@ -188,6 +188,10 @@ export type DocOver = {
   pdfKey?: string;
   /** The sealed `header_extras` JSON text (a note carries `{noteOf:{reason}}`). */
   headerExtras?: string;
+  /** M5.5b: the supply type, the place of supply and the frozen recipient snapshot (JSON text), written at insert (an issued row is frozen). */
+  supplyType?: string;
+  placeOfSupply?: string;
+  recipient?: string;
 };
 
 /** An issued (frozen) document of the invoice family, with its stored PDF unless `rendered: false`. */
@@ -230,8 +234,8 @@ export async function mkDoc(
   });
   await run(
     `INSERT INTO documents (id, type, status, client_id, currency, version_group_id, version, series, fy, number, number_display, frozen_at, issue_date, due_date, subtotal_minor, taxable_minor, total_minor, balance_minor,
-       content_sha256, pdf_r2_key, pdf_sha256, snapshot_sha256, issuer, parent_id, voided_at, void_reason, header_extras, updated_at)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?1, 1, ?6, '2627', ?7, ?8, 1000, ?9, ?10, 100000, 100000, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, 7000)`,
+       content_sha256, pdf_r2_key, pdf_sha256, snapshot_sha256, issuer, parent_id, voided_at, void_reason, header_extras, updated_at, supply_type, place_of_supply_code, recipient)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?1, 1, ?6, '2627', ?7, ?8, 1000, ?9, ?10, 100000, 100000, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, 7000, ?22, ?23, ?24)`,
     id,
     type,
     status,
@@ -253,6 +257,9 @@ export async function mkDoc(
     status === "void" || o.voided ? 5 : null,
     status === "void" || o.voided ? "x" : null,
     o.headerExtras ?? null,
+    o.supplyType ?? null,
+    o.placeOfSupply ?? null,
+    o.recipient ?? null,
   );
   return {
     id,

@@ -38,7 +38,8 @@ describe("the hourly cron `30 * * * *` [LD61]", () => {
       const kinds = hourlyMessages(istTick("2026-11-10", h)).map((m) => m.kind);
       const expected = [
         ...(h === 6 ? ["care.scan"] : []),
-        ...(h === 9 ? ["alerts.daily"] : []),
+        // M5.5b (LD76, changed on purpose): the realisation scan rides the 09:00 IST tick (the EDF reminder only on days 5 to 7: reports-b.test.ts)
+        ...(h === 9 ? ["alerts.daily", "realisation.scan"] : []),
         "reminder.scan",
       ];
       expect(kinds, `hour ${h}`).toEqual(expected);
@@ -70,6 +71,7 @@ describe("the hourly cron `30 * * * *` [LD61]", () => {
     await run(HOURLY_CRON, istTick("2026-11-10", 9));
     expect(fakes.leads.map((s) => (s.body as { kind: string }).kind)).toEqual([
       "alerts.daily",
+      "realisation.scan", // M5.5b, changed on purpose
       "reminder.scan",
     ]);
     fakes.leads.length = 0;

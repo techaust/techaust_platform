@@ -99,6 +99,9 @@ export const ROUTES: readonly RouteDef[] = [
   R("PATCH", "/clients/:id/billing", "clients.finance.write", { audit: "client.billing_update" }),
   R("GET", "/clients/:id/finance", "clients.finance.read"),
   R("GET", "/clients/:id/statement", "clients.finance.read"),
+  // M5.5b (LD79): the statement as a PDF made on request (a cache row, then the jobs Worker) and streamed back. Anyone who sees the finance tab (Q59).
+  R("POST", "/clients/:id/statement/pdf", "clients.finance.read", { audit: "client.statement_pdf" }),
+  R("GET", "/clients/:id/statement/pdf/:sid", "clients.finance.read"),
   R("GET", "/clients/:id/activity", "clients.read"),
   R("GET", "/clients/:id/contacts", "clients.read"),
   R("POST", "/clients/:id/contacts", "clients.write", { audit: "contact.create" }),
@@ -149,6 +152,11 @@ export const ROUTES: readonly RouteDef[] = [
   R("PATCH", "/time/:id", "time.writeOwn", { audit: "time.update" }),
   R("DELETE", "/time/:id", "time.writeOwn", { audit: "time.delete" }),
   R("GET", "/dashboard", "dashboard.read"),
+  // Reports (M5.5b, LD71, LD74): the register page of the GST and CA exports (a fresh step-up on every page: `exports.gst`; one audit row per page), the EDF month and the
+  // export realisation list (Owner and Accountant, `reports.finance`, Q56).
+  R("GET", "/reports/registers", "exports.gst", { audit: "report.export" }),
+  R("GET", "/reports/edf", "reports.finance"),
+  R("GET", "/reports/realisation", "reports.finance"),
   // Catalogue, templates and publishing (M4.1, ADM-CAT-01..05). Static paths (`snapshots`, `publish`) are declared before `:id`.
   R("GET", "/catalogue", "catalogue.read"),
   R("GET", "/catalogue/snapshots", "catalogue.read"),

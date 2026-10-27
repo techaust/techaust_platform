@@ -128,6 +128,8 @@ describe("M2.4b messages [POR-01, ADM-AUTH-09, ADM-MAIL-01]", () => {
       "alert.unbilled",
       "alert.proforma_due",
       "lut.reminder",
+      "edf.reminder",
+      "realisation.alert",
     ]);
     for (const template of EMAIL_TEMPLATES)
       expect(

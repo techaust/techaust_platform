@@ -20,11 +20,15 @@ export type PdfCertificateMessage = { v: 1; kind: "pdf.certificate"; acceptanceI
 /** M4.5, from the daily cron: the consumer picks the send rows still waiting for their PDF and the acceptances without a certificate (<= 20 each). */
 export type OfferSweepMessage = { v: 1; kind: "offer.sweep"; asOf: number };
 
+/** M5.5b (LD79): the PDF of one `statement_pdfs` row (`hop` counts pacing re-sends like `pdf.render`'s). Ids only: the consumer reads the row. */
+export type PdfStatementMessage = { v: 1; kind: "pdf.statement"; statementId: string; hop: number };
+
 export type PdfMessage =
   | PdfSnapshotMessage
   | PdfRenderMessage
   | PdfSweepMessage
   | PdfCertificateMessage
+  | PdfStatementMessage
   | OfferSweepMessage;
 
 export const PDF_MAX_HOPS = 30;
@@ -42,6 +46,14 @@ export function isPdfMessage(body: unknown): body is PdfMessage {
     case "pdf.render":
       return (
         isId(body.documentId) &&
+        typeof body.hop === "number" &&
+        Number.isInteger(body.hop) &&
+        body.hop >= 0 &&
+        body.hop <= PDF_MAX_HOPS
+      );
+    case "pdf.statement":
+      return (
+        isId(body.statementId) &&
         typeof body.hop === "number" &&
         Number.isInteger(body.hop) &&
         body.hop >= 0 &&

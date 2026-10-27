@@ -665,15 +665,19 @@ describe("clients: create, edit, the page, the list, the search [ADM-CLI-01, ADM
     expect((await call("/clients/nope/activity", { cookie: o.cookie })).status).toBe(404);
   });
 
-  it("the statement and the finance tab say they are not available yet; the dates are checked", async () => {
+  it("the statement (M5.5b) is an empty one for a client with no documents, the finance tab is not available yet (M6); the dates are checked", async () => {
     const o = await owner();
     const id = await mkClient();
     expect(
       await json(await call(`/clients/${id}/statement?from=2026-04-01&to=2027-03-31`, { cookie: o.cookie })),
     ).toEqual({
-      available: false,
       from: "2026-04-01",
       to: "2027-03-31",
+      currency: "INR",
+      entries: [],
+      balanceBeforeMinor: 0,
+      range: { openingMinor: 0, debitMinor: 0, creditMinor: 0, closingMinor: 0 },
+      next: null,
     });
     for (const q of [
       "",

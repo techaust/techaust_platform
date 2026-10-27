@@ -7,7 +7,6 @@ import { expect } from "vitest";
 import {
   type ComputedDocument,
   type CreditedSoFar,
-  computeDocument,
   computeSchedule,
   creditNote,
   type DocumentInput,
@@ -16,7 +15,9 @@ import {
   splitInclusive,
   type TaxContext,
 } from "../../src/tax/index.ts";
+// every direct call below goes through the recorder-aware `computeDocument` of the fixtures (same function, same results)
 import {
+  computeRecorded as computeDocument,
   DATE,
   DATE_OLD_FY,
   DEFAULTS,
@@ -36,6 +37,7 @@ import {
   RATE_500,
   REG_MH,
   REG_WB,
+  recorder,
   registered,
   SUPPLIER_27,
   unregistered,
@@ -1419,3 +1421,26 @@ export const GOLDEN: readonly GoldenCase[] = [
     },
   },
 ];
+
+/**
+ * Every ok document the golden table computes (INR and USD, every supply, discounts, several rates), by running each case once with the recorder on. The
+ * database tests store these as issued documents (M5.5b). Identical documents appear once.
+ */
+export function goldenDocuments(): ComputedDocument[] {
+  const seen = new Set<string>();
+  const out: ComputedDocument[] = [];
+  recorder.docs = [];
+  try {
+    for (const g of GOLDEN) g.check();
+    for (const d of recorder.docs) {
+      const key = JSON.stringify(d);
+      if (!seen.has(key)) {
+        seen.add(key);
+        out.push(d);
+      }
+    }
+  } finally {
+    recorder.docs = null;
+  }
+  return out;
+}

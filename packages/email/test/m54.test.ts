@@ -354,6 +354,16 @@ describe("every M5.4 template, with exactly the data the jobs Worker queues", ()
     parent_balance: "₹11,800.00",
     fy_label: "2027-28",
     state: "next_fy_due",
+    // M5.5b (added on purpose, the two stubs of LD88): the keys of `edf.reminder` and `realisation.alert`
+    month_label: "October 2026",
+    count: "3",
+    due_date: "30 Nov 2026",
+    link: "https://admin.example.test/reports/edf",
+    stage: "fema_approaching",
+    number: "TH/EXP/2627/0001",
+    client: "Sample client",
+    currency: "USD",
+    outstanding: "$1,000.00",
   };
 
   for (const [template, keys] of Object.entries(INVOICE_EMAIL_DATA)) {

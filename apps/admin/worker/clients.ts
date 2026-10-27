@@ -23,7 +23,6 @@ import {
   type TaxCheck,
   type TaxInput,
 } from "@techaust/core/clients";
-import { fromIst, parseIsoDate } from "@techaust/core/dates";
 import { uuidv7 } from "@techaust/core/ids";
 import { normaliseEmail } from "@techaust/core/lead-lifecycle";
 import { decide, type Role } from "@techaust/core/permissions";
@@ -413,10 +412,6 @@ const pageQuery = z.object({
   limit: z.optional(z.enum(["25", "50"])),
   after: z.optional(z.string().check(z.maxLength(400))),
 });
-const statementQuery = z.object({
-  from: z.string().check(z.regex(/^\d{4}-\d{2}-\d{2}$/)),
-  to: z.string().check(z.regex(/^\d{4}-\d{2}-\d{2}$/)),
-});
 const exportRequest = z.strictObject({
   part: z.optional(
     z.enum([
@@ -790,18 +785,10 @@ export const clients = new Hono<AppEnv>()
     return c.json({ ok: true, changed: true, updatedAt: t, warnings });
   })
 
-  // ---- the finance tabs and the statement arrive with invoicing (M5/M6); the boundary is in place now ----
+  // ---- the finance tab arrives with payments (M6); the statement is in statements.ts (M5.5b) ----
   .get("/:id/finance", param(idParam), async (c) =>
     (await clientExists(c, c.req.valid("param").id)) ? c.json({ available: false }) : err(c, NOT_FOUND, 404),
   )
-  .get("/:id/statement", param(idParam), query(statementQuery), async (c) => {
-    const { from, to } = c.req.valid("query");
-    const a = parseIsoDate(from);
-    const b = parseIsoDate(to);
-    if (!a || !b || fromIst(b) < fromIst(a)) return err(c, BAD_REQUEST, 400);
-    if (!(await clientExists(c, c.req.valid("param").id))) return err(c, NOT_FOUND, 404);
-    return c.json({ available: false, from, to });
-  })
 
   // ---- activity: the audit rows about the client and its contacts, newest first; finance actions only for a finance role ----
   .get("/:id/activity", param(idParam), query(pageQuery), async (c) => {

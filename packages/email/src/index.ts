@@ -18,6 +18,7 @@ import {
   offerDeclinedStaff,
   offerSent,
 } from "./offers.ts";
+import { edfReminder, realisationAlert } from "./reports.ts";
 import {
   type LayoutOptions,
   leadAcknowledgement,
@@ -37,6 +38,7 @@ export * from "./billing.ts";
 export * from "./headers.ts";
 export * from "./invoices.ts";
 export * from "./offers.ts";
+export * from "./reports.ts";
 export * from "./templates.ts";
 export * from "./transport.ts";
 
@@ -172,6 +174,37 @@ function renderTemplate(
             fy_label: get("fy_label"),
             state: get("state"),
             admin_url: get("admin_url"),
+          },
+          opts,
+        ),
+      };
+    case "edf.reminder":
+      return {
+        ...noReply,
+        ...edfReminder(
+          {
+            owner_first_name: get("owner_first_name"),
+            month_label: get("month_label"),
+            count: get("count"),
+            due_date: get("due_date"),
+            link: get("link"),
+          },
+          opts,
+        ),
+      };
+    case "realisation.alert":
+      return {
+        ...noReply,
+        ...realisationAlert(
+          {
+            owner_first_name: get("owner_first_name"),
+            stage: get("stage"),
+            number: get("number"),
+            client: get("client"),
+            currency: get("currency"),
+            outstanding: get("outstanding"),
+            due_date: get("due_date"),
+            link: get("link"),
           },
           opts,
         ),

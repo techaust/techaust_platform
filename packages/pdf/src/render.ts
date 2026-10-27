@@ -2,6 +2,7 @@
 // JavaScript off, and the CSP meta below would refuse anything external even if it were present.
 import { esc } from "./escape.ts";
 import { PDF_PRINT_CSS, TECHAUST_PDF_FONT_DATA } from "./generated/assets.ts";
+import { canonicalJson, sha256Hex } from "./hash.ts";
 import type { InvoiceView } from "./invoice-types.ts";
 import {
   type CertificateView,
@@ -12,6 +13,7 @@ import {
 import { documentBody } from "./layout/document.ts";
 import { INVOICE_SKELETON_CSS, invoiceBody, invoicePageCss } from "./layout/invoice-skeleton.ts";
 import { pageCss, TEMPLATE_CSS } from "./layout/styles.ts";
+import { STATEMENT_LAYOUT_ID, type StatementView } from "./statement-view.ts";
 import type { PdfView } from "./types.ts";
 
 export const DOCUMENT_CSP = "default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'";
@@ -85,3 +87,14 @@ ${certificateBody(view)}
 </html>
 `;
 }
+
+/**
+ * The content hash of a statement (`statement_pdfs.view_sha256`, and the R2 key `statements/<clientId>/<hash>.pdf`): the SHA-256 of the canonical JSON of the view
+ * INCLUDING `generatedOn` (the IST day, as the page prints it), so the same data made on the same day is the same object and a request on a later day renders afresh with its own "Generated on" date (review round, finding 5; LD79). The layout id (`STATEMENT_LAYOUT_ID`) is inside the hash: a new layout is a new object.
+ */
+export async function statementViewSha256(view: StatementView): Promise<string> {
+  return sha256Hex(canonicalJson({ layout: STATEMENT_LAYOUT_ID, ...view }));
+}
+
+/** The whole HTML document of a statement of account: the designer's layout (`layout/statement.ts`). */
+export { renderStatementHtml } from "./layout/statement.ts";
