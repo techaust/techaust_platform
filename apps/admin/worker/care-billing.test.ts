@@ -10,7 +10,7 @@ import { draftCarePlan, issueCareDraft } from "./care-billing.ts";
 import { mkPlan } from "./test-care.ts";
 import { mkItem } from "./test-catalogue.ts";
 import { beforeBatch, insert, mkClient, mkContact } from "./test-clients.ts";
-import { call, one, rows, sessionFor, withEnv } from "./test-helpers.ts";
+import { call, one, rows, sessionFor, withDb, withEnv } from "./test-helpers.ts";
 import { COMPANY_GSTIN, farSession, json, putBank, putCompany } from "./test-invoices.ts";
 
 /** The words of the lines as 07-U will have them (the default is a marked placeholder that the automatic issue refuses). */
@@ -824,6 +824,106 @@ describe("only an Owner with a fresh code turns the automatic issue on [LD58, Q4
     );
     expect(a?.actor_id).toBe(owner.id);
     expect(JSON.parse(a?.summary ?? "{}").changed).toContain("careAutoIssue");
+  });
+});
+
+/** An env whose DB records every bound statement (sql and values), so a test can compare what two code paths hand to D1. */
+function recording() {
+  const seen: { sql: string; values: unknown[] }[] = [];
+  const real = new WeakMap<object, D1PreparedStatement>();
+  const db = {
+    prepare: (sql: string) => {
+      const stmt = env.DB.prepare(sql);
+      const proxy = new Proxy(stmt, {
+        get(t, p) {
+          if (p === "bind")
+            return (...values: unknown[]) => {
+              seen.push({ sql, values });
+              return t.bind(...values);
+            };
+          const v = Reflect.get(t, p);
+          return typeof v === "function" ? v.bind(t) : v;
+        },
+      });
+      real.set(proxy, stmt);
+      return proxy;
+    },
+    batch: (stmts: D1PreparedStatement[]) => env.DB.batch(stmts.map((s) => real.get(s) ?? s)),
+  } as unknown as D1Database;
+  return { env: withDb(db), seen };
+}
+
+describe("parity: the automatic issue hands D1 what the Owner's own issue would (decision 1: no shared prepare function)", () => {
+  it("the freeze statement of the care path and of the owner route differ only in the authority, the sender, the issuer and the seal that follow from it", async () => {
+    const w = await world();
+    clock(at("2026-11-05"));
+    const d = await draft(w);
+    const id = d.documentId as string;
+    // an identical draft made by the Owner: the same rows under a new id, with an author and no plan
+    const copy = uuidv7();
+    const cols = (await rows<{ name: string }>("SELECT name FROM pragma_table_info('documents')")).map(
+      (r) => r.name,
+    );
+    const pick = (c: string) =>
+      c === "id" ? "?2" : c === "care_plan_id" ? "NULL" : c === "created_by" ? "?3" : c;
+    await env.DB.prepare(
+      `INSERT INTO documents (${cols.join(", ")}) SELECT ${cols.map(pick).join(", ")} FROM documents WHERE id = ?1`,
+    )
+      .bind(id, copy, w.owner.id)
+      .run();
+    await env.DB.prepare(
+      `INSERT INTO document_lines (id, document_id, position, catalogue_item_id, description, detail, sac, qty_milli, unit, rate_minor, discount_kind, discount_value, taxable_minor, gst_rate_bp, cgst_minor, sgst_minor, igst_minor, line_total_minor)
+       SELECT lower(hex(randomblob(16))), ?2, position, catalogue_item_id, description, detail, sac, qty_milli, unit, rate_minor, discount_kind, discount_value, taxable_minor, gst_rate_bp, cgst_minor, sgst_minor, igst_minor, line_total_minor FROM document_lines WHERE document_id = ?1`,
+    )
+      .bind(id, copy)
+      .run();
+    const careRec = recording();
+    expect(
+      (await issueCareDraft({ ...careRec.env, PDF_QUEUE: pdfQueue().env.PDF_QUEUE }, { documentId: id }))
+        .result,
+    ).toBe("issued");
+    const ownerRec = recording();
+    const body = await one<{ updated_at: number; content_sha256: string }>(
+      "SELECT updated_at, content_sha256 FROM documents WHERE id = ?",
+      copy,
+    );
+    const res = await call(
+      `/invoices/${copy}/issue`,
+      {
+        cookie: w.owner.cookie,
+        body: { expectedUpdatedAt: body?.updated_at, expectedContentSha256: body?.content_sha256 },
+      },
+      ownerRec.env,
+    );
+    expect(res.status, await res.clone().text()).toBe(200);
+    const freeze = (rec: ReturnType<typeof recording>) =>
+      rec.seen.find((s) => s.sql.startsWith("UPDATE documents SET series")) as {
+        sql: string;
+        values: unknown[];
+      };
+    const a = freeze(careRec).values;
+    const b = freeze(ownerRec).values;
+    // 1 id, 11 seal, 12 issued by, 24 authority (the session or the plan) and from 30 the authority's own tail differ by design; 9 is compared without the sender
+    const skip = new Set([0, 8, 10, 11, 23]);
+    for (let i = 0; i < 29; i++) if (!skip.has(i)) expect(a[i], `?${i + 1}`).toEqual(b[i]);
+    const noSender = (v: unknown) => {
+      const { sender, ...rest } = JSON.parse(v as string);
+      return { rest, sender };
+    };
+    expect(noSender(a[8]).rest).toEqual(noSender(b[8]).rest);
+    expect(noSender(a[8]).sender).toMatchObject({ staffId: "system" });
+    expect(noSender(b[8]).sender).toMatchObject({ staffId: w.owner.id });
+    expect(a[11]).toBeNull();
+    expect(b[11]).toBe(w.owner.id);
+    expect(a[23]).toBe(w.planId);
+    expect(b[23]).toBe(w.owner.sessionId);
+    // the two documents ended the same way
+    const end = (docId: string) =>
+      one(
+        "SELECT status, balance_minor, total_minor, issue_date, due_date, computed, recipient FROM documents WHERE id = ?",
+        docId,
+      );
+    expect(await end(id)).toEqual(await end(copy));
   });
 });
 
