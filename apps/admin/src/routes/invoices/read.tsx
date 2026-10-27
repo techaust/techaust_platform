@@ -4,13 +4,13 @@
 import type { Role } from "@techaust/core/permissions";
 import { useState } from "react";
 import { Link } from "react-router";
-import { api } from "../../api.ts";
 import { PageHeader } from "../../components/display.tsx";
 import { Ban, FolderKanban, Lock } from "../../components/icons.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { allowed } from "../../lib/access.ts";
 import { dayText, formatIstDay } from "../../lib/documents.ts";
 import type { ViewLine } from "../../lib/documents-api.ts";
+import { INVT_COPY } from "../../lib/invoice-types.ts";
 import {
   badgeOf,
   draftTitle,
@@ -29,6 +29,7 @@ import { LinesTable, TaxPreview } from "../documents/money.tsx";
 import { PdfPanel, type PdfSource, type PdfWords } from "../documents/pdf-panel.tsx";
 import { VoidDialog } from "./dialogs.tsx";
 import { INVOICES_CRUMB, InvoiceBadge, MilestoneOrigin, NumberMark } from "./parts.tsx";
+import { AdvanceOrigin, ExportFacts, ProformaPanel, ServiceDateSetOnce } from "./types-parts.tsx";
 
 const PDF_WORDS: PdfWords = {
   // 07-R has no heading for a ready PDF: the approved 07-P one stands in (it says the same thing).
@@ -58,8 +59,8 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
   const badge = badgeOf(v);
   const isVoid = v.status === "void";
   const ownerVoids = allowed(role, "invoices.void");
-  const voidWhy = ownerVoids && v.frozen && !isVoid ? voidBlockedText(v.void.blockers) : null;
-  const title = v.number ?? draftTitle(v.client.name);
+  const voidWhy = ownerVoids && v.frozen && !isVoid ? voidBlockedText(v.void.blockers, v.type) : null;
+  const title = v.number ?? draftTitle(v.client.name, v.type);
 
   return (
     <>
@@ -109,7 +110,7 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
         )}
         {v.dueDate && (
           <div className="client-strip__fact">
-            <dt>{INV_COPY.colDue}</dt>
+            <dt>{v.type === "proforma" ? INVT_COPY.validUntil : INV_COPY.colDue}</dt>
             <dd className={v.overdue && !isVoid ? "inv-due--late" : undefined}>{dayText(v.dueDate)}</dd>
           </div>
         )}
@@ -140,7 +141,9 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
                 )}
               </p>
             )}
-            <p>{frozenBanner(v.issueDate ? (dayText(v.issueDate) ?? v.issueDate) : "", issuedBy(v))}</p>
+            <p>
+              {frozenBanner(v.issueDate ? (dayText(v.issueDate) ?? v.issueDate) : "", issuedBy(v), v.type)}
+            </p>
             {voidWhy && <p className="inv-lock__why">{voidWhy}</p>}
           </div>
         </div>
@@ -162,6 +165,16 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
         </div>
 
         <div className="doc-page__main">
+          <AdvanceOrigin view={v} />
+          {v.frozen && v.type === "proforma" && <ProformaPanel view={v} onIssued={reload} />}
+          {v.frozen && <ExportFacts view={v} />}
+          {v.frozen && (
+            <ServiceDateSetOnce
+              view={v}
+              canWrite={allowed(role, "invoices.draft") && !v.client.anonymised}
+              onSaved={reload}
+            />
+          )}
           {v.milestone?.projectName ? (
             <MilestoneOrigin
               milestone={v.milestone.title}
@@ -208,19 +221,12 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
           number={v.number}
           onClose={() => setVoiding(false)}
           onVoid={async (reason) => {
-            await invoicesApi.void(v.id, v.updatedAt, reason);
+            const r = await invoicesApi.void(v.id, v.updatedAt, reason);
             setVoiding(false);
             reload();
-            // The void unlinks the milestone, so the reloaded invoice no longer names it: read its new status from the project once.
-            const m = v.milestone;
-            if (m) {
-              const status = await api
-                .project(m.projectId)
-                .then((p) => p.milestones.find((x) => x.id === m.id)?.status ?? null)
-                .catch(() => null);
-              const line = milestoneBackLine(status);
-              if (line) toast("success", line);
-            }
+            // The void answers with the milestone's new status (M5.1 L3): the toast says where it went, with no extra read.
+            const line = milestoneBackLine(r.milestone?.status ?? null);
+            if (line) toast("success", line);
           }}
         />
       )}

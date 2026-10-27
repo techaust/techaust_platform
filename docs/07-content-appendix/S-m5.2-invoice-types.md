@@ -94,3 +94,21 @@ _Drafted by the lead on 2026-10-27 from approved facts:
 | Settings › Terms, extra export note hint | "Optional. Printed on export invoices after the legal export statement, which is always printed." |
 | LUT banner when the current year has none | "There's no LUT for FY {fy}. Export invoices without IGST are blocked until you save its ARN." |
 | `lut.reminder` bell | "File the LUT for FY {next fy} and save its ARN in Settings › Tax." |
+| export_declaration_tampered | "The export note in Settings › Terms doesn't match its saved copy, so the invoice wasn't issued. A developer needs to look at it." |
+| Draft: export route legend | "How is GST handled on this export?" · options "Under LUT, without IGST" · "With IGST paid" (VERIFY WITH CA/LEGAL) |
+| FX dialog, "Other" source note label | "Describe the source" |
+| Advance dialog, empty reference | "Enter the payment reference." |
+| Advance dialog, zero amount | "Enter an amount above zero." |
+| FX dialog, empty "Other" note | "Describe where the rate comes from." |
+| Service completion, empty date | "Enter the date the service was completed." |
+| Advance dialog, empty "Date received" | "Enter the date the payment was received." |
+| Proforma draft title | "Draft proforma for {client name}" |
+| Issued proforma, locked banner | "Issued {date} by {name}. This proforma is locked. If it's wrong and nothing has been paid, void it and issue a new one." (VERIFY WITH CA/LEGAL) |
+| Proforma, issue dialog statement | "This proforma will get the next number in its series and can't be edited afterwards. It is not a tax invoice." |
+| Proforma, void not allowed | "This proforma can't be voided because a payment has been recorded against it." |
+| Advance, client's GST status changed since the proforma (`advance_supply_changed`) | "The client's GST details changed after this proforma was issued, so the tax on this payment can't be worked out from it. Check the client's details with your CA before recording the payment." (VERIFY WITH CA/LEGAL) |
+| Proforma draft, under the title | "Drafts can be edited. Issuing gives the next proforma number and locks it." |
+| Proforma, issue heading, dialog title and button | "Issue proforma" |
+| Proforma, issued toast | "Proforma {number} issued." |
+| Proforma, void refused because it was emailed | "This proforma has been emailed to the client, so it can't be voided." (VERIFY WITH CA/LEGAL) |
+| fx_date_invalid on the advance (tax invoice for payment received) | "The rate date must be the date the payment was received or up to {days} days before it." (VERIFY WITH CA/LEGAL) |

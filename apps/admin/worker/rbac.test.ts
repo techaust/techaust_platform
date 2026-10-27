@@ -30,6 +30,7 @@ import {
   tokenOfLink,
   userId,
 } from "./test-helpers.ts";
+import { mkProforma, todayIso } from "./test-invoice-types.ts";
 import { issueBodyOf, issueInvoice, mkInvoice, mkInvoiceClient, putCompany } from "./test-invoices.ts";
 import { mkFile, mkMilestone, mkNote, mkProject, PDF_BYTES, upload } from "./test-projects.ts";
 import { discount, mkDraft, mkQuoteClient, mkService, mkTerms, sendBodyOf, sendDoc } from "./test-quotes.ts";
@@ -924,6 +925,34 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
       return run(s, `/invoices/${made.id}/void`, {
         method: "POST",
         body: { expectedUpdatedAt: row?.updated_at, reason: "Issued in error" },
+      });
+    },
+    // M5.2 (added on purpose): the two new audited routes.
+    "POST /api/v1/invoices/:id/service-completed": async () => {
+      const s = await owner();
+      await putCompany();
+      const made = await mkInvoice(s);
+      expect((await issueInvoice(s, made.id)).status).toBe(200);
+      const row = await one<{ updated_at: number }>("SELECT updated_at FROM documents WHERE id = ?", made.id);
+      return run(s, `/invoices/${made.id}/service-completed`, {
+        method: "POST",
+        body: { expectedUpdatedAt: row?.updated_at, date: todayIso() },
+      });
+    },
+    "POST /api/v1/invoices/:id/advance-invoice": async () => {
+      const s = await owner();
+      await putCompany();
+      const pf = await mkProforma(s);
+      expect((await issueInvoice(s, pf.id)).status).toBe(200);
+      const row = await one<{ updated_at: number }>("SELECT updated_at FROM documents WHERE id = ?", pf.id);
+      return run(s, `/invoices/${pf.id}/advance-invoice`, {
+        method: "POST",
+        body: {
+          expectedProformaUpdatedAt: row?.updated_at,
+          amountMinor: 59_000,
+          receivedOn: todayIso(),
+          reference: "RBAC-UTR-1",
+        },
       });
     },
     "POST /api/v1/invoices/:id/pdf/retry": async () => {

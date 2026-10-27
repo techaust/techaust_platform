@@ -8,20 +8,21 @@
 // same batch, an Owner who issues directly closes the request as approved, and approving one issues the invoice in the same batch (Q6), with the
 // approver's code checked here (`step_up_required`) and again inside the freeze statement.
 import { stepUpActive } from "@techaust/auth";
+import { sha256Hex } from "@techaust/core/catalogue";
 import { fyOf } from "@techaust/core/dates";
 import { uuidv7 } from "@techaust/core/ids";
 import {
   dueDateOf,
+  type ExportRoute,
   INVOICE_SERIES_OF,
   type InvoiceFlowType,
   isInvoiceIssuableType,
-  issueBlockers,
   issueDateOf,
   issueFyOf,
 } from "@techaust/core/invoices";
 import { maxNumber, sqlPrintfPattern } from "@techaust/core/numbering";
 import { decide } from "@techaust/core/permissions";
-import { invoiceSealOf } from "@techaust/db/documents";
+import { headerExtrasJson, invoiceSealOf, type TermsRef } from "@techaust/db/documents";
 import { invoiceIssueStatements } from "@techaust/db/issue";
 import { auditStmt } from "@techaust/db/log";
 import { Hono } from "hono/tiny";
@@ -45,17 +46,23 @@ import { body, idParam, isUnique, param, refusedWith, STALE_VERSION } from "./ht
 import {
   ALREADY_ISSUED,
   bankStampOf,
+  blockersOf,
   CLIENT_CHANGED,
   CONTACT_ANONYMISED,
   CONTACT_CHANGED,
   computeInvoice,
+  EXPORT_CURRENCY_CONFIRM,
+  EXPORT_DECLARATION_CHANGED,
+  EXPORT_DECLARATION_TAMPERED,
+  headerExtrasOf,
   INVOICE_APPROVAL_EXPIRED,
   ISSUE_APPROVAL_REQUIRED,
   ISSUE_BLOCKED,
   ISSUE_DIRECTLY,
   invoiceStateOf,
-  issueFactsOf,
   issuerOf,
+  NEWEST_EXPORT_DECLARATION,
+  needsInrConfirm,
   recipientOf,
   SERIES_FULL,
   SETTINGS_CHANGED,
@@ -68,7 +75,13 @@ import { APPROVAL_PENDING, CLIENT_GONE, CONTENT_CHANGED, NUMBERING_CHANGED } fro
 
 const hex64 = z.string().check(z.regex(/^[0-9a-f]{64}$/));
 
-export const issueBody = z.strictObject({ expectedUpdatedAt: z.int(), expectedContentSha256: hex64 });
+/** `confirmInrExport` (Q8, VERIFY WITH CA/LEGAL): the Owner's explicit yes to an export invoice in INR; only `true` is accepted, absent means no. */
+export const confirmInrExport = z.optional(z.literal(true));
+export const issueBody = z.strictObject({
+  expectedUpdatedAt: z.int(),
+  expectedContentSha256: hex64,
+  confirmInrExport,
+});
 export const issueRequestBody = z.strictObject({
   expectedUpdatedAt: z.int(),
   reason: z.optional(z.string().check(z.trim(), z.minLength(1), z.maxLength(500))),
@@ -107,6 +120,8 @@ export type IssueParams = {
   expected: { updatedAt: number; contentSha256: string } | null;
   /** The approval being approved (the approve route), or null for an owner who issues directly. */
   approval: { id: string; contentSha256: string; note: string | null } | null;
+  /** Q8: the issuer confirmed an INR export invoice (the owner's body, or the approver's). */
+  confirmInrExport?: boolean;
 };
 
 /**
@@ -117,7 +132,7 @@ export type IssueParams = {
 export async function issueInvoice(c: Ctx, p: IssueParams): Promise<Response> {
   const u = actor(c);
   const db = c.env.DB;
-  const ctx = await readInvoice(c, p.id);
+  const ctx = await readInvoice(c, p.id, [db.prepare(NEWEST_EXPORT_DECLARATION)]);
   if (!ctx) return err(c, NOT_FOUND, 404);
   const d = ctx.bundle.document;
   if (!isInvoiceIssuableType(d.type)) return err(c, TYPE_NOT_ISSUABLE, 409);
@@ -137,6 +152,9 @@ export async function issueInvoice(c: Ctx, p: IssueParams): Promise<Response> {
     return expireApproval(c, p.approval.id, d.id);
 
   const now = Math.max(Date.now(), d.updated_at + 1);
+  // One instant for everything: the invoice date, the FY (the LUT of THIS year is the one that is needed), and the day the rate is judged against.
+  const issueDate = issueDateOf(now);
+  const fy = issueFyOf(now);
   const state = invoiceStateOf(ctx.bundle);
   const computation = await computeInvoice(
     state,
@@ -148,7 +166,15 @@ export async function issueInvoice(c: Ctx, p: IssueParams): Promise<Response> {
   // The stored hash is what the person saw and what an approval is tied to: an issue of anything else is refused.
   if (computation.hash !== d.content_sha256 || (p.expected && p.expected.contentSha256 !== d.content_sha256))
     return err(c, CONTENT_CHANGED, 409);
-  const blockers = issueBlockers(issueFactsOf(state, ctx.client, ctx.settings, computation));
+  // Q8: an export invoice in INR needs the issuer's explicit confirmation (the owner's own, or the approver's).
+  const inrExport = needsInrConfirm(d.type, d.currency);
+  if (inrExport && p.confirmInrExport !== true) return err(c, EXPORT_CURRENCY_CONFIRM, 409);
+  const blockers = blockersOf(state, ctx.client, ctx.settings, computation, {
+    bank: ctx.bank,
+    issueDate,
+    fy,
+    fxRefDate: issueDate,
+  });
   const computed = computation.computed;
   if (blockers.length > 0 || !computed)
     return c.json(
@@ -164,12 +190,33 @@ export async function issueInvoice(c: Ctx, p: IssueParams): Promise<Response> {
   const series = INVOICE_SERIES_OF[type];
   const format = ctx.settings.numbering[series];
   const numbering = sqlPrintfPattern(format);
-  const issueDate = issueDateOf(now);
-  const fy = issueFyOf(now);
   const dueDate = dueDateOf(issueDate, ctx.client.payment_terms_days, ctx.settings.paymentTerms.dueDays);
   const recipient = recipientOf(ctx.client, ctx.contact);
-  const issuer = issuerOf(ctx.settings, ctx.bank, { id: u.id, name: u.name });
+  const issuer = issuerOf(ctx.settings, ctx.bank, { id: u.id, name: u.name }, d.currency);
   const terms = ctx.newestTerms;
+  // LD23: the optional extra export note, pinned at issue: the NEWEST block, when the draft asked for one.
+  const newestDeclaration =
+    (ctx.extra[0]?.results[0] as (TermsRef & { body_md: string }) | undefined) ?? null;
+  const declaration = state.exportDeclarationId !== null ? newestDeclaration : null;
+  // The note the draft pinned (what the requester and the approver saw) must still be the newest: a newer text is refused, never silently swapped in.
+  if (state.exportDeclarationId !== null && declaration?.id !== state.exportDeclarationId)
+    return err(c, EXPORT_DECLARATION_CHANGED, 409);
+  // The text that gets frozen must be the text its SHA-256 was taken from.
+  if (declaration && (await sha256Hex(declaration.body_md ?? "")) !== declaration.sha256)
+    return err(c, EXPORT_DECLARATION_TAMPERED, 409);
+  const mode: ExportRoute =
+    state.exportMode === "lut" || state.exportMode === "igst_paid"
+      ? state.exportMode
+      : ctx.settings.tax.exportMode;
+  // LD37: the keys the other columns cannot give are worked out ONCE here, sealed, and frozen in `header_extras` by the same batch.
+  const extras = headerExtrasOf({
+    state,
+    settings: ctx.settings,
+    client: ctx.client,
+    issueFy: fy,
+    mode,
+    declaration,
+  });
   const seal = await invoiceSealOf({
     document: {
       type: d.type,
@@ -184,6 +231,7 @@ export async function issueInvoice(c: Ctx, p: IssueParams): Promise<Response> {
     computed,
     recipient,
     issuer,
+    ...extras,
   });
   const expected = {
     updatedAt: d.updated_at,
@@ -216,6 +264,8 @@ export async function issueInvoice(c: Ctx, p: IssueParams): Promise<Response> {
     snapshotSha256: seal.snapshotSha256,
     issuedBy: u.id,
     termsVersionId: terms?.id ?? null,
+    exportDeclarationId: declaration?.id ?? null,
+    headerExtras: headerExtrasJson(extras),
     expected,
     authority: p.approval
       ? { kind: "approval", sessionId: u.sessionId, approvalId: p.approval.id }
@@ -233,6 +283,8 @@ export async function issueInvoice(c: Ctx, p: IssueParams): Promise<Response> {
     currency: d.currency,
     contentSha: computation.hash.slice(0, 12),
     approvalId: p.approval?.id ?? null,
+    // Q8: the Owner (or the approver) confirmed an export invoice in INR.
+    ...(inrExport ? { inrExportConfirmed: true } : {}),
   };
   let done = false;
   try {
@@ -307,6 +359,16 @@ export async function issueInvoice(c: Ctx, p: IssueParams): Promise<Response> {
   afterIssue(c, { documentId: d.id });
   // The owner approved the request by issuing: the requester's email (07-R §3, "Issued as {number}"), after the answer like the PDF.
   if (p.approval) notifyApproval(c, p.approval.id, "decided");
+  // The Owner issued directly while a request for exactly this content was waiting: the batch closed it as approved (by the Owner), so the requester
+  // is told too (the same "Issued as {number}" email), unless the Owner is the one who asked.
+  else
+    for (const waiting of ctx.approvals)
+      if (
+        waiting.status === "pending" &&
+        waiting.content_sha256 === d.content_sha256 &&
+        waiting.requested_by !== u.id
+      )
+        notifyApproval(c, waiting.id, "decided");
   return c.json({
     ok: true,
     id: d.id,
@@ -451,6 +513,7 @@ export const invoiceIssue = new Hono<AppEnv>()
       id,
       expected: { updatedAt: f.expectedUpdatedAt, contentSha256: f.expectedContentSha256 },
       approval: null,
+      confirmInrExport: f.confirmInrExport === true,
     });
   })
 
@@ -489,7 +552,13 @@ export const invoiceIssue = new Hono<AppEnv>()
     );
     if (computation.hash !== d.content_sha256 || d.content_sha256 === null)
       return err(c, CONTENT_CHANGED, 409);
-    const blockers = issueBlockers(issueFactsOf(state, ctx.client, ctx.settings, computation));
+    const asked = Date.now();
+    const blockers = blockersOf(state, ctx.client, ctx.settings, computation, {
+      bank: ctx.bank,
+      issueDate: issueDateOf(asked),
+      fy: issueFyOf(asked),
+      fxRefDate: issueDateOf(asked),
+    });
     if (blockers.length > 0 || !computation.computed)
       return c.json(
         {
@@ -566,7 +635,7 @@ export const invoiceIssue = new Hono<AppEnv>()
 export async function decideIssue(
   c: Ctx,
   approvalId: string,
-  f: { decision: "approve" | "reject"; note?: string | undefined },
+  f: { decision: "approve" | "reject"; note?: string | undefined; confirmInrExport?: boolean | undefined },
   row: { document_id: string; requested_by: string; content_sha256: string },
 ): Promise<Response> {
   const u = actor(c);
@@ -577,6 +646,7 @@ export async function decideIssue(
       id: row.document_id,
       expected: null,
       approval: { id: approvalId, contentSha256: row.content_sha256, note: f.note ?? null },
+      confirmInrExport: f.confirmInrExport === true,
     });
   }
   const now = Date.now();

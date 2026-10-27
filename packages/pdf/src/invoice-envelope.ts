@@ -86,6 +86,36 @@ export const serializeInvoiceEnvelope = (e: InvoiceEnvelope): string =>
 const isObj = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 
+const isStr = (v: unknown): v is string => typeof v === "string";
+
+function validExport(v: unknown): boolean {
+  if (!isObj(v)) return false;
+  if ((v.mode !== "lut" && v.mode !== "igst_paid") || !isStr(v.endorsement)) return false;
+  if (!isStr(v.countryCode) || !isStr(v.countryName)) return false;
+  if (v.lut !== null && !(isObj(v.lut) && isStr(v.lut.fy) && isStr(v.lut.arn))) return false;
+  const d = v.declarationRef;
+  if (d === null) return v.declarationText === undefined;
+  // a pinned note travels with its frozen text
+  return (
+    isObj(d) && isStr(d.id) && typeof d.version === "number" && isStr(d.sha256) && isStr(v.declarationText)
+  );
+}
+
+function validFx(v: unknown): boolean {
+  return isObj(v) && typeof v.rateMicros === "number" && isStr(v.date) && isStr(v.source);
+}
+
+function validAdvance(v: unknown): boolean {
+  return (
+    isObj(v) &&
+    isStr(v.proformaId) &&
+    isStr(v.proformaNumber) &&
+    isStr(v.proformaIssueDate) &&
+    isStr(v.receivedOn) &&
+    isStr(v.receiptId)
+  );
+}
+
 /** Parses stored text; null unless it has the invoice envelope's shape (format 3, `kind: "invoice"`, and its parts). */
 export function parseInvoiceEnvelope(text: string): InvoiceEnvelope | null {
   let v: unknown;
@@ -119,6 +149,14 @@ export function parseInvoiceEnvelope(text: string): InvoiceEnvelope | null {
   if (!isObj(i.company) || !isObj(i.bank) || !isObj(i.sender) || typeof i.reverseChargeText !== "string")
     return null;
   if (i.signature !== null && !isObj(i.signature)) return null;
+  // M5.2: the optional header keys are absent on an M5.1 envelope; when present they must have their shape (a wrong shape is not an envelope).
+  if (h.export !== undefined && !validExport(h.export)) return null;
+  if (h.fx !== undefined && !validFx(h.fx)) return null;
+  if (h.proforma !== undefined && !(isObj(h.proforma) && typeof h.proforma.notice === "string")) return null;
+  if (h.advance !== undefined && !validAdvance(h.advance)) return null;
+  if (i.bank.swift !== undefined && i.bank.swift !== null && !isObj(i.bank.swift)) return null;
+  if (isObj(h.recipient) && h.recipient.deliveryAddress !== undefined && !isObj(h.recipient.deliveryAddress))
+    return null;
   return v as unknown as InvoiceEnvelope;
 }
 
@@ -139,10 +177,12 @@ export function invoiceDraftOf(e: InvoiceEnvelope): DraftContent {
     lines: e.snapshot.lines,
     sections: [],
     schedule: [],
+    // M5.2 (LD24): the rate typed on the draft is part of its content hash (no key at all when there was none: an M5.1 hash is unchanged).
+    ...(h.fx ? { fx: { rateMicros: h.fx.rateMicros, date: h.fx.date, source: h.fx.source } } : {}),
   };
 }
 
-/** The input of the seal, rebuilt from the envelope's header (an object made of its sealed parts only). */
+/** The input of the seal, rebuilt from the envelope's header (an object made of its sealed parts only; the M5.2 keys only when the header has them, LD25). */
 export const invoiceSnapshotInputOf = (e: InvoiceEnvelope) => {
   const h = e.snapshot.header;
   return {
@@ -151,6 +191,10 @@ export const invoiceSnapshotInputOf = (e: InvoiceEnvelope) => {
     recipient: h.recipient,
     issuer: h.issuer as InvoiceIssuerSnap,
     computedSha256: h.computedSha256,
+    ...(h.export ? { export: h.export } : {}),
+    ...(h.fx ? { fx: h.fx } : {}),
+    ...(h.proforma ? { proforma: h.proforma } : {}),
+    ...(h.advance ? { advance: h.advance } : {}),
   };
 };
 
@@ -162,6 +206,9 @@ export async function verifyInvoiceEnvelope(e: InvoiceEnvelope): Promise<Invoice
   const ref = h.document.termsRef;
   if (
     e.type !== h.document.type ||
+    // M5.2: an export invoice without its endorsement block, or a proforma without its notice, is not an envelope to print from (LD33's first line of defence)
+    (e.type === "export_invoice" && !h.export) ||
+    (e.type === "proforma" && !h.proforma) ||
     (ref === null) !== (s.terms === null) ||
     (ref !== null &&
       s.terms !== null &&
@@ -174,6 +221,10 @@ export async function verifyInvoiceEnvelope(e: InvoiceEnvelope): Promise<Invoice
   }
   if ((await sha256Hex(s.computedJson)) !== h.computedSha256) return { ok: false, code: "computed_hash" };
   if (s.terms && (await sha256Hex(s.terms.bodyMd)) !== s.terms.sha256)
+    return { ok: false, code: "terms_hash" };
+  // the frozen extra export note must be the text its SHA-256 was taken from
+  const note = h.export?.declarationRef;
+  if (note && (await sha256Hex(h.export?.declarationText ?? "")) !== note.sha256)
     return { ok: false, code: "terms_hash" };
   let computed: ComputedDocument;
   try {

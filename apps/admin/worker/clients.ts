@@ -46,6 +46,7 @@ import {
   err,
   mutate,
   NOT_FOUND,
+  requestInfo,
 } from "./context.ts";
 import { dropObjects } from "./files.ts";
 import {
@@ -1164,6 +1165,8 @@ export const contacts = new Hono<AppEnv>()
     const t = Date.now();
     const erase = mode === "erase";
     const fileKeys: string[] = [];
+    const user = actor(c);
+    const who = requestInfo(c);
     const done = await mutate(c, {
       action: erase ? "contact.erase" : "contact.anonymise",
       entityType: "client",
@@ -1301,6 +1304,16 @@ export const contacts = new Hono<AppEnv>()
         //    draft's hash did not name could never get its PDF). A sent document names its contact, so that contact could not be erased at all.
         //    A waiting or approved issue or discount request on such a draft expires first (it names the hash that is cleared next, and an expired request
         //    never revives), and the draft's `updated_at` moves so a stale save is a 409 (M5.1 re-check, low 2).
+        //    One `approval.expire` audit row per request it expires (ids and the cause only), written BEFORE the update that changes the status (M5.1 L2).
+        db
+          .prepare(
+            `INSERT INTO audit_log (id, actor_type, actor_id, role, action, entity_type, entity_id, summary, ip, user_agent, request_id)
+             SELECT lower(hex(randomblob(16))), 'staff', ?3, ?4, 'approval.expire', 'approval', a.id,
+               json_object('approvalId', a.id, 'documentId', a.document_id, 'cause', 'contact_anonymised'), ?5, ?6, ?7
+             FROM approvals a WHERE a.status IN ('pending', 'approved') AND a.kind IN ('issue', 'discount')
+               AND a.document_id IN (SELECT id FROM documents WHERE contact_id = ?1 AND frozen_at IS NULL) AND ${g.sql(2)}`,
+          )
+          .bind(id, ...g.params, user.id, user.role, who.ip, who.ua, who.requestId),
         db
           .prepare(
             `UPDATE approvals SET status = 'expired' WHERE status IN ('pending', 'approved') AND kind IN ('issue', 'discount') AND document_id IN (SELECT id FROM documents WHERE contact_id = ?1 AND frozen_at IS NULL) AND ${g.sql(2)}`,

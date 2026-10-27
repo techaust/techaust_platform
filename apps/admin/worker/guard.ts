@@ -195,6 +195,9 @@ export const ROUTES: readonly RouteDef[] = [
   R("POST", "/invoices/:id/issue", "invoices.issue", { audit: "invoice.issue" }),
   R("POST", "/invoices/:id/issue-request", "invoices.draft", { audit: "approval.request" }),
   R("POST", "/invoices/:id/void", "invoices.void", { audit: "invoice.void" }),
+  // M5.2: the day the service was completed (set once), and the tax invoice for money received against a proforma (Q9: Owner only, with a fresh code).
+  R("POST", "/invoices/:id/service-completed", "invoices.draft", { audit: "invoice.service_completed" }),
+  R("POST", "/invoices/:id/advance-invoice", "invoices.advance", { audit: "invoice.advance_issue" }),
   R("GET", "/invoices/:id/pdf", "invoices.read"),
   R("POST", "/invoices/:id/pdf/retry", "invoices.draft", { audit: "invoice.pdf_retry" }),
   R("GET", "/clients/:id/invoices", "invoices.read"),

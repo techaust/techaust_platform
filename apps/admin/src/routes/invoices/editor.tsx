@@ -7,6 +7,7 @@ import { issueDateOf } from "@techaust/core/invoices";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { api, RequestError } from "../../api.ts";
+import { DateField } from "../../components/date-field.tsx";
 import { PageHeader } from "../../components/display.tsx";
 import { FormField } from "../../components/form.tsx";
 import {
@@ -35,6 +36,7 @@ import {
 import {
   buildInvoicePatch,
   discountError,
+  draftLedeFor,
   draftTitle,
   dueNote,
   INV_COPY,
@@ -47,15 +49,17 @@ import {
   invIsDirty,
   invoiceEditor,
   issuedToast,
+  issueLabelFor,
   requestLine,
   typeLabel,
 } from "../../lib/invoices.ts";
-import { type InvoiceView, invoicesApi } from "../../lib/invoices-api.ts";
+import { type InvoicePatch, type InvoiceView, invoicesApi } from "../../lib/invoices-api.ts";
 import { useUser } from "../../session.tsx";
 import { LinesPanel } from "../documents/lines.tsx";
 import { TaxPreview } from "../documents/money.tsx";
 import { BlockerList, DeleteDraftDialog, IssueDialog, RequestIssueDialog } from "./dialogs.tsx";
 import { INVOICES_CRUMB, InvoiceBadge, MilestoneOrigin, NumberMark } from "./parts.tsx";
+import { ExportPanel, FxDialog, FxPanel, SERVICE_DATE_LABEL, StatutoryBand } from "./types-parts.tsx";
 
 /** 07-R's stale_version sentence: its first sentence as the notice's title, the rest as its body. */
 const STALE = ((t: string) => {
@@ -85,7 +89,7 @@ export function InvoiceEditor({ view, reload }: { view: InvoiceView; reload: () 
   );
   const currentLines = useCallback(() => ref.current.lines, []);
   const inflight = useRef<Promise<unknown> | null>(null);
-  const [dialog, setDialog] = useState<"issue" | "request" | "delete" | null>(null);
+  const [dialog, setDialog] = useState<"issue" | "request" | "delete" | "fx" | null>(null);
   const canWrite = allowed(user.role, "invoices.draft") && !view.client.anonymised;
   const v = s.view;
   const decision = v.issue.decision;
@@ -133,6 +137,44 @@ export function InvoiceEditor({ view, reload }: { view: InvoiceView; reload: () 
     const cur = ref.current;
     return cur.status === "stale" || cur.status === "frozen" || invIsDirty(cur) ? null : cur.view;
   }, [save]);
+
+  /**
+   * M5.2: a field that is not typed into the line editor (the export route, the rate, the service date, the export note) saves at once: what was
+   * typed is saved first, then this one PATCH; its answer replaces the view (the figures, the blockers) and typing stays.
+   */
+  const [extraError, setExtraError] = useState<string | null>(null);
+  const saveExtra = useCallback(
+    async (fields: NonNullable<InvoicePatch["fields"]>) => {
+      setExtraError(null);
+      const ready = await prepare();
+      if (!ready) throw new RequestError(409, "stale_version", INV_ERRORS.stale_version);
+      dispatch({ type: "saving" });
+      try {
+        const answer = await invoicesApi.save(ready.id, { expectedUpdatedAt: ref.current.updatedAt, fields });
+        dispatch({ type: "saved", answer, sent: { parts: [], rev: { ...ref.current.rev }, uids: null } });
+      } catch (e) {
+        const code = e instanceof RequestError ? e.code : "";
+        dispatch({
+          type: "failed",
+          status: code === "stale_version" ? "stale" : "error",
+          error: invErrorText(e),
+        });
+        throw e;
+      }
+    },
+    [prepare, dispatch],
+  );
+  /** The same, for a control that shows its own failure next to it (the route, the note, the service date). */
+  const saveExtraHere = useCallback(
+    async (fields: NonNullable<InvoicePatch["fields"]>) => {
+      try {
+        await saveExtra(fields);
+      } catch (e) {
+        setExtraError(invErrorText(e));
+      }
+    },
+    [saveExtra],
+  );
 
   // Autosave a moment after the last change; a refused input waits for the next change; a stale draft stops saving.
   useEffect(() => {
@@ -206,10 +248,10 @@ export function InvoiceEditor({ view, reload }: { view: InvoiceView; reload: () 
   return (
     <>
       <PageHeader
-        title={draftTitle(v.client.name)}
+        title={draftTitle(v.client.name, v.type)}
         crumbs={INVOICES_CRUMB}
         status={<InvoiceBadge badge="draft" />}
-        lede={INV_COPY.draftLede}
+        lede={draftLedeFor(v.type)}
         more={
           canWrite
             ? [
@@ -256,7 +298,7 @@ export function InvoiceEditor({ view, reload }: { view: InvoiceView; reload: () 
           <section className="lead-panel send-panel inv-issue-panel" aria-labelledby="inv-issue-h">
             <div className="lead-panel__head">
               <h2 id="inv-issue-h" className="lead-panel__title">
-                {INV_COPY.issueTitle}
+                {issueLabelFor(v.type)}
               </h2>
               {saveLine && (
                 <p className="save-state" data-state={s.status} role="status">
@@ -273,8 +315,10 @@ export function InvoiceEditor({ view, reload }: { view: InvoiceView; reload: () 
               blockers={v.blockers}
               clientId={v.client.id}
               currency={v.client.currency}
+              maxAgeDays={v.fx?.maxAgeDays}
               onLine={focusLine}
               onLines={focusLines}
+              onFx={canWrite ? () => setDialog("fx") : undefined}
             />
             {!v.typeIssuable && v.blockers.length === 0 && (
               <p className="approval-line" data-state="expired">
@@ -305,7 +349,7 @@ export function InvoiceEditor({ view, reload }: { view: InvoiceView; reload: () 
                   disabled={blocked || s.saving || !v.typeIssuable}
                 >
                   <FileCheck size={20} />
-                  {INV_COPY.issue}
+                  {issueLabelFor(v.type)}
                 </button>
               )}
               {canWrite && asks && v.issue.approval.state !== "pending" && (
@@ -371,6 +415,9 @@ export function InvoiceEditor({ view, reload }: { view: InvoiceView; reload: () 
             />
           )}
 
+          {v.proforma?.notice && <StatutoryBand line={v.proforma.notice} />}
+          {extraError && <Notice tone="error">{extraError}</Notice>}
+
           <section className="lead-panel doc-details" aria-labelledby="inv-details-h">
             <h2 id="inv-details-h" className="visually-hidden">
               {INV_COPY.contact}
@@ -400,8 +447,25 @@ export function InvoiceEditor({ view, reload }: { view: InvoiceView; reload: () 
                   </select>
                 )}
               </FormField>
+              {(v.type === "tax_invoice" || v.type === "export_invoice") &&
+                v.serviceCompletedOn !== undefined && (
+                  <FormField id="inv-service-draft" label={SERVICE_DATE_LABEL} optional>
+                    {(a) => (
+                      <DateField
+                        {...a}
+                        keepLastValid
+                        value={v.serviceCompletedOn ?? ""}
+                        max={todayIso()}
+                        disabled={!canWrite || s.saving}
+                        onChange={(iso) => void saveExtraHere({ serviceCompletedOn: iso || null })}
+                      />
+                    )}
+                  </FormField>
+                )}
             </div>
           </section>
+
+          <ExportPanel view={v} canWrite={canWrite} busy={s.saving} saveFields={saveExtraHere} />
 
           <LinesPanel
             lines={s.lines}
@@ -461,8 +525,17 @@ export function InvoiceEditor({ view, reload }: { view: InvoiceView; reload: () 
               <TaxPreview totals={v.totals} supply={v.supply} currency={s.currency} busy={s.saving} />
             </div>
           </section>
+
+          <FxPanel view={v} canWrite={canWrite} busy={s.saving} onOpen={() => setDialog("fx")} />
         </div>
       </div>
+
+      <FxDialog
+        open={dialog === "fx"}
+        view={v}
+        onClose={() => setDialog(null)}
+        onSave={(fx) => saveExtra({ fx })}
+      />
 
       <UnsavedChangesGuard dirty={canWrite && (dirty || s.saving)} what="this draft" />
 
@@ -474,11 +547,19 @@ export function InvoiceEditor({ view, reload }: { view: InvoiceView; reload: () 
         prepare={prepare}
         onLine={focusLine}
         onLines={focusLines}
-        issue={async (ready) => {
+        onFx={() => setDialog("fx")}
+        issue={async (ready, inrConfirmed) => {
           try {
-            const r = await invoicesApi.issue(ready.id, ready.updatedAt, ready.contentSha256 ?? "");
+            // Q8: the yes is the one the dialog asked for ("Issue in INR"), never inferred from the view.
+            const r = await invoicesApi.issue(
+              ready.id,
+              ready.updatedAt,
+              ready.contentSha256 ?? "",
+              inrConfirmed,
+            );
             setDialog(null);
-            toast("success", issuedToast(r.number ?? ""));
+            toast("success", issuedToast(r.number ?? "", v.type));
+            setExtraError(null);
             reload();
           } catch (e) {
             // Blocked or changed under the owner: the panel and the dialog show the server's newest view.

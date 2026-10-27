@@ -23,7 +23,9 @@ const HELP: Record<TermsBlockId, string> = {
   standard_terms: "The general terms every proposal and invoice refers to.",
   proposal_terms: "Printed on proposals and estimates, and accepted with them.",
   invoice_footer: "The notes at the foot of every invoice.",
-  export_declaration: "The declaration printed on export invoices under LUT.",
+  // 07-S §8 (M5.2): the block is an optional extra note; the legal export statement is fixed and always printed.
+  export_declaration:
+    "Optional. Printed on export invoices after the legal export statement, which is always printed.",
   refund_link: "The address of the refund policy, linked from documents.",
 };
 

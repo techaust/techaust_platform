@@ -7,6 +7,7 @@ import { type ComputedDocument, computeDocument, type LineInput } from "@techaus
 import {
   type DocumentBundle,
   type DocumentRow,
+  headerExtrasJson,
   invoiceSealOf,
   type LineRow,
   type TermsRow,
@@ -33,6 +34,23 @@ const hexOf = async (bytes: Uint8Array) =>
     b.toString(16).padStart(2, "0"),
   ).join("");
 
+/** M5.2 fixtures: the statutory lines are held as LITERALS here (not imported from core), so a change of the constants fails a test until a person has looked at it. */
+export const LITERAL_ENDORSEMENT = {
+  lut: "SUPPLY MEANT FOR EXPORT/SUPPLY TO SEZ UNIT OR SEZ DEVELOPER FOR AUTHORISED OPERATIONS UNDER BOND OR LETTER OF UNDERTAKING WITHOUT PAYMENT OF INTEGRATED TAX",
+  igst_paid:
+    "SUPPLY MEANT FOR EXPORT/SUPPLY TO SEZ UNIT OR SEZ DEVELOPER FOR AUTHORISED OPERATIONS ON PAYMENT OF INTEGRATED TAX",
+} as const;
+export const LITERAL_PROFORMA_NOTICE =
+  "This is not a tax invoice. A tax invoice will be issued when payment is received.";
+export const SAMPLE_ARN = "AD0000000000001";
+export const SAMPLE_ADVANCE = {
+  proformaId: "doc_proforma_sample",
+  proformaNumber: "TH/PI/2627/0003",
+  proformaIssueDate: "2026-10-20",
+  receivedOn: "2026-10-27",
+  receiptId: "rcp_sample_1",
+} as const;
+
 type Spec = {
   recipient: RecipientSnapshot;
   lines: { description: string; detail?: string; qtyMilli: number; unit: string; rateMinor: number }[];
@@ -40,7 +58,49 @@ type Spec = {
   bare?: boolean;
   signed?: boolean;
   terms?: boolean;
+  /** M5.2: the type (default a tax invoice), an export under the given route (an overseas USD client), a proforma, the invoice made for money received. */
+  type?: "tax_invoice" | "export_invoice" | "proforma";
+  export?: "lut" | "igst_paid";
+  advance?: boolean;
+  /** An export invoice that carries the optional extra export note (its text is frozen into the header). */
+  note?: boolean;
 };
+
+export const TYPED_FIXTURE_NAMES = [
+  "export_lut",
+  "export_igst",
+  "proforma",
+  "advance",
+  "advance_export",
+  "export_note",
+] as const;
+export type TypedFixtureName = (typeof TYPED_FIXTURE_NAMES)[number];
+
+const overseas: RecipientSnapshot = {
+  legalName: "Sample Overseas Inc.",
+  displayName: "Sample Overseas",
+  country: "US",
+  address: { line1: "1 Sample Avenue", city: "Springfield", state: "IL", postalCode: "62701", country: "US" },
+  deliveryAddress: {
+    line1: "9 Delivery Road",
+    city: "Chicago",
+    state: "IL",
+    postalCode: "60601",
+    country: "US",
+  },
+  email: "client@example.test",
+  contactId: "con_sample_2",
+  contactName: "Sample Overseas Contact",
+  clientType: "business",
+  gstStatus: "overseas",
+} as RecipientSnapshot;
+
+const lineOf = (n: number) => ({
+  description: `Sample overseas line ${n}`,
+  qtyMilli: 1000,
+  unit: "item",
+  rateMinor: 250_000 + n * 10_000,
+});
 
 const wb: RecipientSnapshot = {
   legalName: "Sample Client Private Limited",
@@ -127,15 +187,65 @@ const SPECS: Record<InvoiceFixtureName, Spec> = {
   },
 };
 
+/** The M5.2 specs (after `wb` and `overseas` exist). */
+const TYPED_SPECS: Record<TypedFixtureName, Spec> = {
+  export_lut: {
+    recipient: overseas,
+    type: "export_invoice",
+    export: "lut",
+    signed: true,
+    lines: [lineOf(1), lineOf(2)],
+  },
+  export_igst: { recipient: overseas, type: "export_invoice", export: "igst_paid", lines: [lineOf(1)] },
+  proforma: {
+    recipient: wb,
+    type: "proforma",
+    lines: [{ description: "Sample proforma line", qtyMilli: 1000, unit: "item", rateMinor: 300_000 }],
+  },
+  advance: {
+    recipient: wb,
+    advance: true,
+    lines: [{ description: "Sample line", qtyMilli: 1000, unit: "item", rateMinor: 100_000 }],
+  },
+  export_note: {
+    recipient: overseas,
+    type: "export_invoice",
+    export: "lut",
+    note: true,
+    lines: [lineOf(1)],
+  },
+  advance_export: {
+    recipient: overseas,
+    type: "export_invoice",
+    export: "lut",
+    advance: true,
+    lines: [lineOf(1)],
+  },
+};
+
+/** The sample extra export note. */
+export const EXPORT_NOTE_TEXT = "Sample extra export note.";
+
+const FX = { rateMicros: 83_123_400, date: "2026-10-27", source: "FBIL reference rate" } as const;
+
 export type InvoiceFixture = {
-  name: InvoiceFixtureName;
+  name: InvoiceFixtureName | TypedFixtureName;
   envelope: InvoiceEnvelope;
   computed: ComputedDocument;
 };
 
 /** One sealed invoice envelope, made the way the issue route and the snapshot step make it. */
-export async function buildInvoiceFixture(name: InvoiceFixtureName): Promise<InvoiceFixture> {
-  const spec = SPECS[name];
+export async function buildInvoiceFixture(
+  name: InvoiceFixtureName | TypedFixtureName,
+): Promise<InvoiceFixture> {
+  const spec = name in SPECS ? SPECS[name as InvoiceFixtureName] : TYPED_SPECS[name as TypedFixtureName];
+  const type = spec.type ?? "tax_invoice";
+  const route = spec.export ?? null;
+  const isExport = type === "export_invoice";
+  const currency = isExport ? "USD" : "INR";
+  const fx = isExport ? FX : null;
+  const series = type === "export_invoice" ? "export" : type === "proforma" ? "proforma" : "invoice";
+  const numberDisplay = `TH/${type === "export_invoice" ? "EXP" : type === "proforma" ? "PI" : "INV"}/2627/0012`;
   const lineInputs: LineInput[] = spec.lines.map((l) => ({
     sac: "998314",
     qtyMilli: l.qtyMilli,
@@ -143,7 +253,7 @@ export async function buildInvoiceFixture(name: InvoiceFixtureName): Promise<Inv
   }));
   const result = computeDocument(
     {
-      currency: "INR",
+      currency,
       documentDate: { year: 2026, month: 10, day: 28 },
       recipient: {
         gstStatus: spec.recipient.gstStatus ?? "registered",
@@ -151,12 +261,18 @@ export async function buildInvoiceFixture(name: InvoiceFixtureName): Promise<Inv
         ...(spec.recipient.gstin ? { gstin: spec.recipient.gstin } : {}),
         ...(spec.recipient.stateCode ? { stateCode: spec.recipient.stateCode } : {}),
       },
+      ...(route ? { exportMode: route } : {}),
+      ...(fx ? { fx: { rateMicros: fx.rateMicros } } : {}),
       lines: lineInputs,
       ...(spec.documentDiscountBp
         ? { documentDiscount: { kind: "percent" as const, bp: spec.documentDiscountBp } }
         : {}),
     },
-    { tax: SETTINGS_DEFAULTS.tax, supplierStateCode: "19", luts: [] },
+    {
+      tax: SETTINGS_DEFAULTS.tax,
+      supplierStateCode: "19",
+      luts: route === "lut" ? [{ fy: "2627", arn: SAMPLE_ARN }] : [],
+    },
   );
   if (!result.ok) throw new Error(`invoice fixture ${name}: ${JSON.stringify(result.errors)}`);
   const computed = result.value;
@@ -175,16 +291,17 @@ export async function buildInvoiceFixture(name: InvoiceFixtureName): Promise<Inv
     catalogueLine: null,
   }));
   const draft: DraftContent = {
-    type: "tax_invoice",
+    type,
     clientId: "cli_sample_1",
     contactId: spec.recipient.contactId ?? null,
     title: null,
-    currency: "INR",
+    currency,
     validityDays: null,
     termsVersionId: null,
     discountKind: spec.documentDiscountBp ? "percent" : null,
     discountValue: spec.documentDiscountBp ?? null,
-    exportMode: null,
+    exportMode: route,
+    ...(fx ? { fx: { ...fx } } : {}),
     lines,
     sections: [],
     schedule: [],
@@ -213,17 +330,31 @@ export async function buildInvoiceFixture(name: InvoiceFixtureName): Promise<Inv
           phone: "+91 90000 00000",
           principalPlace: "2 Sample Office Lane, Balurghat",
         },
-    bank: {
-      inr: spec.bare
-        ? null
-        : {
+    bank: isExport
+      ? {
+          inr: null,
+          swift: {
             accountName: "Sample Proprietor",
-            accountNo: "SAMPLE0001",
-            ifsc: "SAMP0000001",
+            accountNo: "SAMPLEUSD0001",
+            swift: "SAMPINBBXXX",
             bankName: "SAMPLE BANK",
             branch: "Sample branch",
+            bankAddress: "3 Sample Bank Street, Kolkata",
+            intermediary: "Sample Intermediary Bank, New York",
+            purposeCode: "P0802",
           },
-    },
+        }
+      : {
+          inr: spec.bare
+            ? null
+            : {
+                accountName: "Sample Proprietor",
+                accountNo: "SAMPLE0001",
+                ifsc: "SAMP0000001",
+                bankName: "SAMPLE BANK",
+                branch: "Sample branch",
+              },
+        },
     signature: spec.signed
       ? {
           key: "settings/signature-0123456789abcdef.png",
@@ -237,25 +368,43 @@ export async function buildInvoiceFixture(name: InvoiceFixtureName): Promise<Inv
   const termsRef = spec.terms ? { id: "trm_sample_1", version: 2, sha256: termsSha } : null;
   const seal = await invoiceSealOf({
     document: {
-      type: "tax_invoice",
+      type,
       clientId: "cli_sample_1",
-      currency: "INR",
+      currency,
       issueDate: "2026-10-28",
       dueDate: "2026-11-04",
       contentSha256: contentSha,
       termsRef,
-      exportMode: null,
+      exportMode: route,
     },
     computed,
     recipient: spec.recipient,
     issuer,
+    ...(isExport && route
+      ? {
+          export: {
+            mode: route,
+            endorsement: LITERAL_ENDORSEMENT[route],
+            lut: route === "lut" ? { fy: "2627", arn: SAMPLE_ARN } : null,
+            countryCode: "US",
+            countryName: "United States",
+            declarationRef: spec.note
+              ? { id: "note-1", version: 1, sha256: await sha256Hex(EXPORT_NOTE_TEXT) }
+              : null,
+            ...(spec.note ? { declarationText: EXPORT_NOTE_TEXT } : {}),
+          },
+        }
+      : {}),
+    ...(fx ? { fx: { ...fx } } : {}),
+    ...(type === "proforma" ? { proforma: { notice: LITERAL_PROFORMA_NOTICE } } : {}),
+    ...(spec.advance ? { advance: { ...SAMPLE_ADVANCE } } : {}),
   });
   const envelope = buildInvoiceEnvelope({
     documentId: `doc_invoice_${name}`,
-    type: "tax_invoice",
+    type,
     number: 12,
-    numberDisplay: "TH/INV/2627/0012",
-    series: "invoice",
+    numberDisplay,
+    series,
     fy: "2026-27",
     issuedAt: 1_793_000_000_000,
     snapshotSha256: seal.snapshotSha256,
@@ -298,6 +447,15 @@ export function invoiceBundleOf(source: InvoiceEnvelope): DocumentBundle<TermsRo
     discount_value: s.discountValue,
     export_mode: h.document.exportMode,
     content_sha256: h.document.contentSha256,
+    // M5.2 (LD37): the sealed keys the other columns cannot give, as the freeze writes them; the rate comes from its own columns.
+    header_extras: headerExtrasJson({
+      ...(h.export ? { export: h.export } : {}),
+      ...(h.proforma ? { proforma: h.proforma } : {}),
+      ...(h.advance ? { advance: h.advance } : {}),
+    }),
+    fx_rate_micros: h.fx?.rateMicros ?? null,
+    fx_date: h.fx?.date ?? null,
+    fx_source: h.fx?.source ?? null,
     recipient: h.recipient,
     issuer: h.issuer,
     computed: JSON.parse(s.computedJson),

@@ -91,6 +91,8 @@ const MATRIX = {
   "invoices.issue": { owner: "step-up", staff: "approval" },
   // M5.1 (Q2, VERIFY WITH CA/LEGAL): only the Owner voids an issued invoice, with a fresh code; Staff cannot request a void.
   "invoices.void": { owner: "step-up" },
+  // M5.2 (LD22, Q9): the tax invoice made for money received against a proforma: the Owner only, with a fresh code. A new docs/04 §9 row.
+  "invoices.advance": { owner: "step-up" },
   // Manual payments (Staff entries wait for the Owner's verification)
   "payments.read": { owner: "allow", staff: "allow", accountant: "allow" },
   "payments.record": { owner: "allow", staff: "approval" },

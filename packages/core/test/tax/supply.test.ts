@@ -27,8 +27,8 @@ describe("lutsOf: the one LUT of today's settings as a list", () => {
     expect(lutsOf({ ...tax, lut: { arn: null, fy: "2627" } })).toEqual([]);
   });
   it("has one entry once both are saved", () => {
-    expect(lutsOf({ ...tax, lut: { arn: "TEST-ARN-2627", fy: "2627" } })).toEqual([
-      { fy: "2627", arn: "TEST-ARN-2627" },
+    expect(lutsOf({ ...tax, lut: { arn: "TESTARN2627", fy: "2627" } })).toEqual([
+      { fy: "2627", arn: "TESTARN2627" },
     ]);
   });
 });

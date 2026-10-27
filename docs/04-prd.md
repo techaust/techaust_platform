@@ -471,6 +471,7 @@ Every service page uses one template, with sections in this order ([03 §3A.3](0
 | Service catalogue | ✅ (+ publish) | 👁 | 👁 | 👁 |
 | Proposals & estimates | ✅ | ✏️ · 📤 if discount ≤ 10 %, else ⏳ | ✏️ · 📤 if discount ≤ 10 %, else ⏳ | 👁 |
 | Invoices, proformas, credit notes | ✅ issue (step-up) | ✏️ drafts · issue ⏳ | — | 👁 |
+| Issue a tax invoice for a payment received against a proforma (M5.2; VERIFY WITH CA/LEGAL) | ✅ (step-up) | — | — | — |
 | Void an invoice (M5.1; same IST month, not emailed, no payment or note; VERIFY WITH CA/LEGAL) | ✅ (step-up) | — | — | — |
 | Record manual payment | ✅ (confirmed) | ✏️ → ⏳ pending verification | — | 👁 |
 | Refunds | ✅ (step-up) | — | — | 👁 |

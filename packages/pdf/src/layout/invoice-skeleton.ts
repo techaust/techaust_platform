@@ -1,4 +1,4 @@
-// The plain invoice skeleton (M5.1 stage B3; since phase 2 only for the invoice-family types other than the tax invoice, which has ./invoice.ts): every Rule 46 field of a tax invoice printed in a readable order, in the classes the proposal layout
+// The plain invoice skeleton (M5.1 stage B3; since M5.2 only for credit and debit notes: the tax invoice, the export invoice and the proforma have ./invoice.ts): every Rule 46 field of a tax invoice printed in a readable order, in the classes the proposal layout
 // already styles (so the page is usable now), and nothing designed. The designer builds the real tax invoice layout on this in phase 2
 // (`layout/invoice.ts`, docs/06 §7.3, wording from 07-R); until then the words below are the skeleton's own and PENDING that approval, and every
 // rule printed is VERIFY WITH CA/LEGAL.
@@ -20,7 +20,7 @@ import { esc } from "../escape.ts";
 import { PDF_LOGOS, PDF_SYMBOL } from "../generated/assets.ts";
 import type { InvoiceView, InvoiceViewLine } from "../invoice-types.ts";
 import { markdownBlocks } from "../markdown-html.ts";
-import { TAX_INVOICE_CSS, taxInvoiceBody } from "./invoice.ts";
+import { DESIGNED_INVOICE_TYPES, TAX_INVOICE_CSS, taxInvoiceBody } from "./invoice.ts";
 import { cssString } from "./styles.ts";
 
 /** The skeleton's words: 07-R §6 where it has a line (PENDING the owner's word-for-word approval), the rest plain. The designer takes them over in phase 2. */
@@ -95,9 +95,7 @@ function parties(view: InvoiceView): string {
     r.attention ? p("party__line party__attention", r.attention) : ""
   }</div>`;
   const fact = (term: string, value: string) => `<div><dt>${esc(term)}</dt><dd>${esc(value)}</dd></div>`;
-  const doc = `<div class="party party--doc"><p class="label">${C.document}</p><p class="label" data-testid="copy-label">${esc(
-    view.copyLabel,
-  )}</p><dl class="facts">${fact(C.number, view.numberDisplay)}${fact(C.date, view.issueDate)}${fact(C.dueDate, view.dueDate)}${fact(
+  const doc = `<div class="party party--doc"><p class="label">${C.document}</p>${view.copyLabel ? `<p class="label" data-testid="copy-label">${esc(view.copyLabel)}</p>` : ""}<dl class="facts">${fact(C.number, view.numberDisplay)}${fact(C.date, view.issueDate)}${fact(C.dueDate, view.dueDate)}${fact(
     C.currency,
     view.currency,
   )}</dl></div>`;
@@ -205,10 +203,10 @@ function notesBlock(view: InvoiceView): string {
   return `<div class="block"><h3>${esc(view.notes.title)}</h3><div class="terms">${markdownBlocks(view.notes.bodyMd).join("")}</div></div>`;
 }
 
-/** The body of an invoice (inside `<body>`): a tax invoice in its designed layout (./invoice.ts), any other invoice-family type in this skeleton
- * until M5.2 styles it. */
+/** The body of an invoice (inside `<body>`): a tax invoice, an export invoice or a proforma in the designed layout (./invoice.ts); a credit or
+ * debit note in this skeleton until M5.3 styles it. */
 export function invoiceBody(view: InvoiceView): string {
-  return view.type === "tax_invoice" ? taxInvoiceBody(view) : skeletonBody(view);
+  return DESIGNED_INVOICE_TYPES.includes(view.type) ? taxInvoiceBody(view) : skeletonBody(view);
 }
 
 function skeletonBody(view: InvoiceView): string {

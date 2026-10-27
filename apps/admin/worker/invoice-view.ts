@@ -5,25 +5,42 @@
 import { ANONYMISED_CLIENT } from "@techaust/core/clients";
 import { approvalState } from "@techaust/core/documents";
 import {
+  CHECKLIST_SWITCHABLE,
+  checklistItemOn,
   dueDateOf,
+  EXPORT_ENDORSEMENT,
+  formatFxRate,
+  fxDateOk,
+  INVOICE_CHECKLIST,
   INVOICE_ISSUABLE_TYPES,
+  INVOICE_SERIES_OF,
   type IssueBlocker,
-  issueBlockers,
+  isInvoiceFlowType,
   issueDateOf,
   issueFyOf,
+  lutFor,
+  lutReminder,
+  PROFORMA_NOTICE,
+  proformaWarnAt,
+  proformaWarnDate,
   voidBlockers,
 } from "@techaust/core/invoices";
+import type { Series } from "@techaust/core/numbering";
 import { decide, type Role } from "@techaust/core/permissions";
-import type { ComputedDocument } from "@techaust/core/tax";
-import type { DocumentBundle, TermsRef } from "@techaust/db/documents";
+import { type ComputedDocument, lutsOf } from "@techaust/core/tax";
+import { type DocumentBundle, headerExtrasOfRow, type TermsRef } from "@techaust/db/documents";
 import { type ContactFacts, pdfOf, viewRecipient } from "./document-view.ts";
 import {
+  type BankRow,
+  blockersOf,
+  countryNameOf,
   type InvoiceComputation,
   type InvoiceSettings,
   type InvoiceState,
   invoiceStateOf,
-  issueFactsOf,
   type MilestoneFacts,
+  needsInrConfirm,
+  proformaSupplyChanged,
 } from "./invoice-model.ts";
 import type { ClientRow } from "./quote-model.ts";
 
@@ -50,6 +67,21 @@ export const ISSUE_APPROVALS_OF_SQL =
 export const MILESTONE_OF_SQL =
   "SELECT m.id, m.title, m.project_id, m.amount_minor, m.pct_bp, m.status, m.document_id, m.delivered_at, p.client_id, p.budget_minor, p.source_document_id, p.name AS project_name FROM milestones m JOIN projects p ON p.id = m.project_id WHERE m.document_id = ?1";
 
+/** M5.2: the issued documents made from this one (a proforma's tax or export invoices), with the receipt row of each, oldest first. Index: `documents_parent`. */
+export const CHILDREN_OF_SQL =
+  "SELECT c.id, c.type, c.number_display, c.status, c.total_minor, c.currency, c.issue_date, r.received_on, r.amount_minor AS received_minor FROM documents c LEFT JOIN advance_receipts r ON r.invoice_id = c.id WHERE c.parent_id = ?1 AND (SELECT x.type FROM documents x WHERE x.id = ?1) = 'proforma' AND c.frozen_at IS NOT NULL ORDER BY c.created_at, c.id LIMIT 50";
+export type ChildRow = {
+  id: string;
+  type: string;
+  number_display: string | null;
+  status: string;
+  total_minor: number;
+  currency: string;
+  issue_date: string | null;
+  received_on: string | null;
+  received_minor: number | null;
+};
+
 export type InvoiceViewInput = {
   bundle: DocumentBundle<TermsRef>;
   client: ClientRow;
@@ -63,6 +95,10 @@ export type InvoiceViewInput = {
   /** A `document_sends` row exists (the Q1 void rule), and an issued document names this one as its parent. */
   emailed: boolean;
   hasIssuedChild: boolean;
+  /** M5.2: the active bank rows (the blockers), the newest extra export note and the documents made from this one. */
+  bank: readonly BankRow[];
+  declaration: TermsRef | null;
+  children: readonly ChildRow[];
   /** Who voided it (the `invoice.void` audit row's actor); null for an invoice that is not void. */
   voidedByName?: string | null;
   now: number;
@@ -128,11 +164,38 @@ export function invoiceView(i: InvoiceViewInput) {
   const recipient = snapshot ? viewRecipient(snapshot, clientGone, contactGone) : null;
   const lineAt = (n: number) => computed?.lines[n];
   const typeIssuable = (INVOICE_ISSUABLE_TYPES as readonly string[]).includes(d.type);
+  const todayIso = issueDateOf(i.now);
+  const issueFy = issueFyOf(i.now);
   const blockers: IssueBlocker[] =
-    !frozen && computation ? issueBlockers(issueFactsOf(state, client, settings, computation)) : [];
+    !frozen && computation
+      ? blockersOf(state, client, settings, computation, {
+          bank: i.bank,
+          issueDate: todayIso,
+          fy: issueFy,
+          fxRefDate: todayIso,
+        })
+      : [];
   const needsResave = !frozen && computation !== null && computation.hash !== d.content_sha256;
   const decision = decide(i.role, "invoices.issue");
-  const todayIso = issueDateOf(i.now);
+  const isProforma = d.type === "proforma";
+  const isExport = d.type === "export_invoice";
+  const fxApplies = d.currency === "USD" && (d.type === "tax_invoice" || d.type === "export_invoice");
+  // LD37: a frozen document shows what it was sealed with (the endorsement, the LUT letter, the country name, the notice), never live settings.
+  const sealed = frozen ? headerExtrasOfRow(d) : {};
+  // The route of an export document: what the engine worked out (a frozen one is read back), else the draft's own, else the settings'.
+  const mode =
+    computed?.supply.type === "export_lut"
+      ? "lut"
+      : computed?.supply.type === "export_igst"
+        ? "igst_paid"
+        : state.exportMode === "lut" || state.exportMode === "igst_paid"
+          ? state.exportMode
+          : settings.tax.exportMode;
+  const luts = lutsOf(settings.tax);
+  // The day the rate is judged against: a draft, today; a frozen invoice, the day it was judged on at issue (the day the money arrived for the invoice
+  // made for a payment received, Q9; else its issue date), never today (review 6).
+  const fxRefDate = frozen ? (sealed.advance?.receivedOn ?? d.issue_date ?? todayIso) : todayIso;
+  const countryCode = sealed.export?.countryCode ?? (recipient ? recipient.country : client.country);
   const approval = approvalOf(i.approvals, d.content_sha256);
   const voidReasons = voidBlockers({
     status: d.status,
@@ -142,10 +205,16 @@ export function invoiceView(i: InvoiceViewInput) {
     emailed: i.emailed,
     issueDate: d.issue_date,
     today: todayIso,
+    type: d.type,
   });
   const clientDays = client.payment_terms_days;
   const dueDays = clientDays ?? settings.paymentTerms.dueDays;
-  const preview = settings.numbering.invoice;
+  // The series this TYPE is numbered in (a proforma, an export invoice and a tax invoice each have their own).
+  const previewSeries: Series = isInvoiceFlowType(d.type) ? INVOICE_SERIES_OF[d.type] : "invoice";
+  const preview = settings.numbering[previewSeries];
+  // The advance invoice for a payment on a proforma is decided from the client's CURRENT status, exactly as the advance route does (review 2, finding 6).
+  const advanceType = client.gst_status === "overseas" ? "export_invoice" : "tax_invoice";
+  const advanceSupplyChanged = isProforma && proformaSupplyChanged(computed, client.gst_status);
   return {
     id: d.id,
     type: d.type,
@@ -239,7 +308,7 @@ export function invoiceView(i: InvoiceViewInput) {
       approval,
       /** The series a draft would be numbered in today (the dialog prints "TH/INV/2627/…"; the number itself is taken at issue). */
       preview: {
-        series: "invoice",
+        series: previewSeries,
         fy: issueFyOf(i.now),
         template: preview.template,
         padding: preview.padding,
@@ -263,6 +332,113 @@ export function invoiceView(i: InvoiceViewInput) {
           /** The project's name (the name only, so a role without `projects.read` can still say which project). */
           projectName: i.milestone.project_name ?? null,
           status: i.milestone.status,
+        }
+      : null,
+    // ---- M5.2 -------------------------------------------------------------------------------------------------------------------------------
+    /** The day the service was completed (LD29): set once on an issued tax or export invoice (`POST /invoices/:id/service-completed`). */
+    serviceCompletedOn: state.serviceCompletedOn,
+    /** The tax or export invoice made for money received (Q9): the proforma it settles and the receipt, as sealed; null on every other document. */
+    advance: sealed.advance ?? null,
+    /** Q8: the issue needs the issuer's explicit confirmation (an export invoice in INR). */
+    needsInrConfirm: needsInrConfirm(d.type, d.currency),
+    /**
+     * The mandatory-field checklist (ADM-INV-06): every line with whether it is on (locked lines always, the bank line as the Owner saved it), whether it is
+     * locked, whether it exists yet (the payment link does not), whether it applies to THIS document's type, and the blocker codes it owns. `blockers`
+     * above carry `fy` and `date` where a code needs them.
+     */
+    checklist: {
+      settings: settings.tax.invoiceChecklist,
+      switchable: CHECKLIST_SWITCHABLE,
+      items: INVOICE_CHECKLIST.map((it) => ({
+        id: it.id,
+        locked: it.locked,
+        available: it.available,
+        on: checklistItemOn(it, settings.tax.invoiceChecklist),
+        applies: (it.appliesTo as readonly string[]).includes(d.type),
+        blockers: it.blockers,
+      })),
+    },
+    /** The exchange rate (Q7, Q24): what is typed, whether the document needs one, the day it is judged against and the INR view the engine made of it. */
+    fx: {
+      applies: fxApplies,
+      value: state.fx
+        ? {
+            rate: formatFxRate(state.fx.rateMicros),
+            rateMicros: state.fx.rateMicros,
+            date: state.fx.date,
+            source: state.fx.source,
+          }
+        : null,
+      refDate: fxRefDate,
+      maxAgeDays: settings.tax.fxMaxAgeDays,
+      // a frozen invoice was judged at issue: no live window applies to it (review 2, finding 8)
+      dateOk: state.fx && !frozen ? fxDateOk(state.fx.date, fxRefDate, settings.tax.fxMaxAgeDays) : null,
+      inr: computed?.inr ?? null,
+    },
+    /** An export invoice, or a proforma for an overseas client (its route decides the advance invoice's): the route, its endorsement (an export invoice only), the LUT of the FY. */
+    export:
+      isExport || (isProforma && client.gst_status === "overseas")
+        ? {
+            mode,
+            draftMode: state.exportMode,
+            settingsMode: settings.tax.exportMode,
+            endorsement: isExport
+              ? frozen
+                ? (sealed.export?.endorsement ?? null)
+                : EXPORT_ENDORSEMENT[mode]
+              : null,
+            lutRequired: mode === "lut",
+            // A frozen document shows the letter it was sealed with (a proforma has none); a draft the letter of the FY it would be issued in.
+            lut: frozen ? (sealed.export?.lut ?? null) : mode === "lut" ? lutFor(issueFy, luts) : null,
+            issueFy: frozen ? d.fy : issueFy,
+            countryCode,
+            countryName: sealed.export?.countryName ?? (frozen ? null : countryNameOf(countryCode)),
+            declaration: {
+              available: i.declaration !== null,
+              pinned: state.exportDeclarationId !== null,
+              id: state.exportDeclarationId,
+              // the note's text as frozen with the invoice (null on a draft or when none was pinned)
+              text: frozen ? (sealed.export?.declarationText ?? null) : null,
+            },
+          }
+        : null,
+    /** The reminder of ADM-INV-18 for today (IST): `due` in March while the next FY has no letter, `currentMissing` while the running FY has none. */
+    lutStatus: lutReminder(todayIso, luts),
+    /** A proforma's own facts: the notice it carries, what is left, the tax invoices made from it, and the 25-day warning of delivered work (Rule 47). */
+    proforma: isProforma
+      ? {
+          notice: frozen ? (sealed.proforma?.notice ?? null) : PROFORMA_NOTICE,
+          validUntil: d.valid_until,
+          paidMinor: d.paid_minor,
+          balanceMinor: d.balance_minor,
+          /** The advance invoice needs the Owner's INR yes (Q8): the server's own answer, from the client's current status (the dialog never works it out). */
+          advanceNeedsInrConfirm: needsInrConfirm(advanceType, d.currency),
+          /** The client's GST status no longer matches the supply the proforma was sealed with: the advance route refuses (`advance_supply_changed`). */
+          advanceSupplyChanged,
+          /** The Owner may record a payment against it (an issued or part-paid proforma with a balance, not a void one). */
+          canAdvance:
+            frozen &&
+            (d.status === "issued" || d.status === "converted") &&
+            d.balance_minor > 0 &&
+            decide(i.role, "invoices.advance") !== "deny",
+          children: i.children.map((c) => ({
+            id: c.id,
+            type: c.type,
+            number: c.number_display,
+            status: c.status,
+            totalMinor: c.total_minor,
+            currency: c.currency,
+            issueDate: c.issue_date,
+            receivedOn: c.received_on,
+          })),
+          warnAt:
+            frozen && d.balance_minor > 0 && i.milestone?.delivered_at != null
+              ? proformaWarnAt(i.milestone.delivered_at, settings.tax.invoiceAlertDays)
+              : null,
+          warnDate:
+            frozen && d.balance_minor > 0 && i.milestone?.delivered_at != null
+              ? proformaWarnDate(i.milestone.delivered_at, settings.tax.invoiceAlertDays)
+              : null,
         }
       : null,
     terms: bundle.terms

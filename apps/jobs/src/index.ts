@@ -1,4 +1,5 @@
 import { expireMessage } from "@techaust/core/expiry";
+import { lutCheckMessage } from "@techaust/core/invoices";
 import { warmSesSigning } from "@techaust/email";
 import { Hono } from "hono";
 import { secureHeaders } from "hono/secure-headers";
@@ -34,7 +35,11 @@ export default {
       enqueueDue(env, controller.scheduledTime),
       // M4.4: ONE sweep message on the PDF queue; the consumer picks the sent documents that still have no PDF (<= 20 a run).
       enqueueSweep(env, controller.scheduledTime),
-      enqueueStats(env, controller.scheduledTime, [expireMessage(controller.scheduledTime)]),
+      enqueueStats(env, controller.scheduledTime, [
+        expireMessage(controller.scheduledTime),
+        // M5.2: the daily LUT check rides the same batch (one queue call; the consumer reads the tax row, the cron reads nothing).
+        lutCheckMessage(controller.scheduledTime),
+      ]),
     ]);
     const failed = done.find((d) => d.status === "rejected");
     if (failed?.status === "rejected") throw failed.reason;

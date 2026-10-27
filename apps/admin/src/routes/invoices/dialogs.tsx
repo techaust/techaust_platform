@@ -2,6 +2,7 @@
 // stops it and a fresh code), request issue (Staff), void (the owner, a required reason and a fresh code) and delete a draft. Each says what will
 // happen before the one button that does it; a refusal is said in 07-R's words and the dialog stays open. The number is never shown as if it
 // were known: the preview draws the series and an empty slot, because the number is taken only inside the issue batch.
+import { INVOICE_SERIES_OF, isInvoiceFlowType } from "@techaust/core/invoices";
 import { useState } from "react";
 import { Link } from "react-router";
 import { stepUpActive } from "../../api.ts";
@@ -11,6 +12,7 @@ import { KeepDates } from "../../components/display.tsx";
 import { FormField } from "../../components/form.tsx";
 import { Alert } from "../../components/icons.tsx";
 import { CodeField, Notice } from "../../components/ui.tsx";
+import { INVT_COPY } from "../../lib/invoice-types.ts";
 import {
   blockerLine,
   blockerTarget,
@@ -19,6 +21,7 @@ import {
   invErrorText,
   invMapped,
   issueBody,
+  issueLabelFor,
   seriesPreview,
   splitAtPlace,
   voidTitle,
@@ -37,12 +40,16 @@ export function BlockerList(props: {
   onLine?: ((n: number, field: "description" | "sac") => void) | undefined;
   /** A blocker about the lines as a whole. */
   onLines?: (() => void) | undefined;
+  /** M5.2: a blocker about the exchange rate (the editor opens its dialog). */
+  onFx?: (() => void) | undefined;
+  /** M5.2: the oldest a rate's date may be, in days (Settings › Tax), for its blocker's sentence. */
+  maxAgeDays?: number | undefined;
 }) {
   if (props.blockers.length === 0) return null;
   return (
     <ul className="blockers inv-blockers">
       {props.blockers.map((b, i) => {
-        const line = blockerLine(b, props.currency);
+        const line = blockerLine(b, props.currency, { maxAgeDays: props.maxAgeDays });
         const t = blockerTarget(b, props.clientId);
         let body: React.ReactNode = line;
         if (t?.kind === "page") {
@@ -79,6 +86,13 @@ export function BlockerList(props: {
               {line}
             </button>
           );
+        } else if (t?.kind === "fx" && props.onFx) {
+          const onFx = props.onFx;
+          body = (
+            <button type="button" className="blockers__link inv-blockers__jump" onClick={onFx}>
+              {line}
+            </button>
+          );
         }
         return (
           // biome-ignore lint/suspicious/noArrayIndexKey: a code can repeat for different lines; the list is redrawn whole
@@ -92,8 +106,19 @@ export function BlockerList(props: {
   );
 }
 
+type Preview = InvoiceView["issue"]["preview"];
+
+/**
+ * The series a draft of this type is numbered in: the view's own preview (review 2: `issue.preview` is the type's series). A view whose preview is
+ * another type's series (an older API) shows no series rather than the wrong one.
+ */
+function usePreview(v: InvoiceView): Preview | null {
+  const series = isInvoiceFlowType(v.type) ? INVOICE_SERIES_OF[v.type] : null;
+  return series === v.issue.preview.series ? v.issue.preview : null;
+}
+
 /** The series with the slot its number takes at issue: "TH/INV/2627/" then an empty box. Decoration for the sentence that says it. */
-function SeriesSlot({ preview }: { preview: InvoiceView["issue"]["preview"] }) {
+function SeriesSlot({ preview }: { preview: Preview }) {
   const p = seriesPreview(preview);
   return (
     <p className="inv-series" aria-hidden="true">
@@ -116,23 +141,31 @@ export function IssueDialog(props: {
   onClose: () => void;
   /** Saves what was typed (and the out-of-date figures); resolves with the view to issue, or null when it couldn't. */
   prepare: () => Promise<InvoiceView | null>;
-  issue: (v: InvoiceView) => Promise<void>;
+  /** `inrConfirmed`: the Owner answered the dialog's INR question with "Issue in INR" (Q8); false when it was not asked. */
+  issue: (v: InvoiceView, inrConfirmed: boolean) => Promise<void>;
   onLine: (n: number, field: "description" | "sac") => void;
   onLines: () => void;
+  /** M5.2: a rate blocker closes the dialog and opens the rate's. */
+  onFx?: (() => void) | undefined;
 }) {
   const v = props.view;
   const [code, setCode] = useState("");
   const [codeError, setCodeError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Q8 (07-S §4): an export invoice in INR asks once more before it is issued; the second press is "Issue in INR".
+  const [inrAsked, setInrAsked] = useState(false);
   const needsCode = !stepUpActive();
   const blocked = v.blockers.length > 0 || !v.typeIssuable;
-  const p = seriesPreview(v.issue.preview);
+  const preview = usePreview(v);
+  const p = preview ? seriesPreview(preview) : null;
+  const inrStep = v.needsInrConfirm === true && !blocked;
 
   function close() {
     setCode("");
     setCodeError(null);
     setError(null);
+    setInrAsked(false);
     props.onClose();
   }
 
@@ -142,6 +175,11 @@ export function IssueDialog(props: {
       document.getElementById("issue-code")?.focus();
       return;
     }
+    if (inrStep && !inrAsked) {
+      setCodeError(null);
+      setInrAsked(true);
+      return;
+    }
     setCodeError(null);
     setError(null);
     setBusy(true);
@@ -149,7 +187,12 @@ export function IssueDialog(props: {
       const ready = await props.prepare();
       if (!ready) return;
       if (ready.blockers.length > 0) return; // the dialog now lists them
-      await withCode(needsCode ? code : undefined, () => props.issue(ready));
+      // The saved draft turned out to need the INR question the dialog hasn't asked yet: ask it now, issue on the next press.
+      if (ready.needsInrConfirm === true && !inrAsked) {
+        setInrAsked(true);
+        return;
+      }
+      await withCode(needsCode ? code : undefined, () => props.issue(ready, inrAsked));
       setCode("");
     } catch (e) {
       setError(invErrorText(e));
@@ -164,12 +207,25 @@ export function IssueDialog(props: {
   };
 
   return (
-    <Modal open={props.open} title={INV_COPY.issueTitle} onClose={close} busy={busy}>
+    <Modal open={props.open} title={issueLabelFor(v.type)} onClose={close} busy={busy}>
       <div className="dialog__body inv-issue">
-        <SeriesSlot preview={v.issue.preview} />
-        <p>
-          <KeepDates text={issueBody(p.text, p.example, props.issueDate)} />
-        </p>
+        {preview && p ? (
+          <>
+            <SeriesSlot preview={preview} />
+            <p>
+              {/* A proforma is not a tax invoice and is corrected by a void, so 07-R's credit-note sentence is not its own (07-S §8). */}
+              {v.type === "proforma" ? (
+                INVT_COPY.proformaIssueStatement
+              ) : (
+                <KeepDates text={issueBody(p.text, p.example, props.issueDate)} />
+              )}
+            </p>
+          </>
+        ) : (
+          <p className="inv-series inv-series--loading" aria-hidden="true">
+            <span className="inv-slot inv-slot--lead" />
+          </p>
+        )}
         {blocked && v.blockers.length > 0 && (
           <div className="inv-issue__blocked">
             <p className="inv-issue__fix">{INV_COPY.fixFirst}</p>
@@ -177,13 +233,20 @@ export function IssueDialog(props: {
               blockers={v.blockers}
               clientId={v.client.id}
               currency={v.client.currency}
+              maxAgeDays={v.fx?.maxAgeDays}
               onLine={(n, field) => leave(() => props.onLine(n, field))()}
               onLines={leave(props.onLines)}
+              onFx={props.onFx ? leave(props.onFx) : undefined}
             />
           </div>
         )}
         {!v.typeIssuable && v.blockers.length === 0 && (
           <Notice tone="info">{INV_ERRORS.type_not_issuable}</Notice>
+        )}
+        {inrAsked && !blocked && (
+          <div className="inv-inr-ask" role="status">
+            <p>{INVT_COPY.inrConfirm}</p>
+          </div>
         )}
       </div>
       {needsCode && !blocked && (
@@ -208,7 +271,7 @@ export function IssueDialog(props: {
           disabled={busy || blocked}
           aria-busy={busy || undefined}
         >
-          {busy ? "Working…" : INV_COPY.issue}
+          {busy ? "Working…" : inrAsked ? INVT_COPY.issueInInr : issueLabelFor(v.type)}
         </button>
       </div>
     </Modal>
@@ -251,6 +314,7 @@ export function RequestIssueDialog(props: {
             blockers={v.blockers}
             clientId={v.client.id}
             currency={v.client.currency}
+            maxAgeDays={v.fx?.maxAgeDays}
             onLine={(n, field) => {
               props.onClose();
               requestAnimationFrame(() => props.onLine(n, field));

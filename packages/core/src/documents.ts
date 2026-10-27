@@ -253,6 +253,11 @@ export type DraftContent = {
   readonly lines: readonly DraftLine[];
   readonly sections: readonly SectionDraft[];
   readonly schedule: readonly DraftScheduleStep[];
+  /**
+   * M5.2 (LD24): the exchange rate typed on a USD invoice draft: INR micros per USD, the rate's date, and its source as printed. Absent (or null)
+   * on every other document: the hash then has no `fx` key, so every proposal, estimate and M5.1 invoice keeps its hash.
+   */
+  readonly fx?: { readonly rateMicros: number; readonly date: string; readonly source: string } | null;
 };
 
 /**
@@ -281,6 +286,8 @@ export function contentHashInput(draft: DraftContent, computed: ComputedDocument
       type: draft.type,
       validityDays: draft.validityDays,
     },
+    // M5.2: written only when the draft has a rate, between `document` and `lineTotals` (keys stay in sorted order).
+    ...(draft.fx ? { fx: [draft.fx.rateMicros, draft.fx.date, draft.fx.source] } : {}),
     lineTotals: computed
       ? computed.lines.map((l) => [l.taxableMinor, l.cgstMinor, l.sgstMinor, l.igstMinor, l.lineTotalMinor])
       : null,

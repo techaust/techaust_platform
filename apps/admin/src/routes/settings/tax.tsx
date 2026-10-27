@@ -2,9 +2,26 @@
 // category, the fixed rounding rules, exports under LUT (with the ARN for the year), advances, the USD rate source,
 // e-invoicing, the reverse-charge line, and the alert thresholds. The accountant reads them; the owner changes them.
 import { financialYear, fyOf } from "@techaust/core";
+import { INVOICE_CHECKLIST, issueDateOf, lutReminder } from "@techaust/core/invoices";
 import type { Settings } from "@techaust/core/settings";
-import { StatusPill } from "../../components/display.tsx";
-import { NumberUnit, SettingRow, Switch } from "../../components/form.tsx";
+import { useEffect, useState } from "react";
+import { useLocation } from "react-router";
+import { DataTable } from "../../components/data-table.tsx";
+import { DateField, useUnreadDates } from "../../components/date-field.tsx";
+import { FormField, NumberUnit, SettingRow, Switch } from "../../components/form.tsx";
+import { AlertTriangle, Lock, Plus, Trash } from "../../components/icons.tsx";
+import { dateError } from "../../lib/date-field.ts";
+import {
+  CHECKLIST_LABELS,
+  checkLut,
+  day,
+  fyLabel,
+  INVT_COPY,
+  type LutRow,
+  lutDueBanner,
+  lutMissingBanner,
+  lutsByYear,
+} from "../../lib/invoice-types.ts";
 import {
   bpToPercent,
   type FieldErrors,
@@ -44,8 +61,10 @@ type Form = {
   allowLineOverride: boolean;
   sac: Record<Category, string>;
   exportMode: Tax["exportMode"];
-  lutArn: string;
-  lutFy: string;
+  /** M5.2 (ADM-INV-18): the letters of undertaking, one per financial year (replaces the single ARN field). */
+  luts: LutRow[];
+  /** M5.2 (ADM-INV-06, LD31): the one switchable line of the checklist. */
+  bankDetails: boolean;
   advanceMode: Tax["advanceMode"];
   fxSource: Tax["fxSource"];
   eInvoicing: boolean;
@@ -70,8 +89,9 @@ const spec: GroupSpec<"tax", Form> = {
     allowLineOverride: v.allowLineOverride,
     sac: { ...v.sacByCategory },
     exportMode: v.exportMode,
-    lutArn: v.lut.arn ?? "",
-    lutFy: v.lut.fy ?? "",
+    // The API folds the old single letter into the list on read (early check 3), so the list is the whole story.
+    luts: (v.luts ?? []).map((l) => ({ fy: l.fy, arn: l.arn, filedOn: l.filedOn ?? null })),
+    bankDetails: v.invoiceChecklist?.bankDetails ?? true,
     advanceMode: v.advanceMode,
     fxSource: v.fxSource,
     eInvoicing: v.eInvoicing,
@@ -93,8 +113,6 @@ const spec: GroupSpec<"tax", Form> = {
     for (const c of CATEGORIES)
       if (!/^\d{6}$/.test(f.sac[c.key].trim()))
         e[`f-sacByCategory-${c.key}`] = `The ${c.label} SAC has 6 digits.`;
-    if (f.exportMode === "lut" && f.lutArn.trim() && !f.lutFy)
-      e["f-lut-fy"] = "Pick the financial year the LUT covers.";
     const alertDays = intIn(f.invoiceAlertDays, 1, 30);
     if (alertDays === null) e["f-invoiceAlertDays"] = "Enter the tax invoice reminder in days, from 1 to 30.";
     const cnMonth = intIn(f.cnMonth, 1, 12);
@@ -134,7 +152,10 @@ const spec: GroupSpec<"tax", Form> = {
           CATEGORIES.map((c) => [c.key, f.sac[c.key].trim()]),
         ) as Tax["sacByCategory"],
         exportMode: f.exportMode,
-        lut: { arn: f.lutArn.trim() || null, fy: f.lutFy || null },
+        // The deprecated single letter is never written again: the list is saved, the old key stays empty.
+        lut: { arn: null, fy: null },
+        luts: f.luts,
+        invoiceChecklist: { bankDetails: f.bankDetails, paymentLink: false },
         advanceMode: f.advanceMode,
         fxSource: f.fxSource,
         eInvoicing: f.eInvoicing,
@@ -160,10 +181,228 @@ function fyOptions(stored: string) {
   return list;
 }
 
+/**
+ * Letters of undertaking (07-S §5, ADM-INV-18): one per financial year, newest first; "Add LUT" opens the three fields under the list. The banners are
+ * worked out from the list as it stands on the screen (core's `lutReminder` for today, IST): from 1 March while next year has none, and while this year
+ * has none. They speak only when exports go under LUT. The list saves with the rest of the form.
+ */
+function LutList(props: {
+  luts: LutRow[];
+  exportMode: Tax["exportMode"];
+  readOnly: boolean;
+  onChange: (luts: LutRow[]) => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [row, setRow] = useState({ fy: "", arn: "", filedOn: "" });
+  const [errors, setErrors] = useState<Partial<Record<"fy" | "arn" | "filedOn", string>>>({});
+  const dates = useUnreadDates<"filedOn">();
+  const location = useLocation();
+  const status = lutReminder(issueDateOf(Date.now()), props.luts);
+  const lutRoute = props.exportMode === "lut";
+
+  // A bell or a blocker that links to "#luts" lands on the list.
+  useEffect(() => {
+    if (location.hash === "#luts") document.getElementById("luts")?.scrollIntoView({ block: "start" });
+  }, [location.hash]);
+
+  const taken = new Set(props.luts.map((l) => l.fy));
+  const years = fyOptions("").filter((fy) => !taken.has(fy.token));
+
+  function add() {
+    const c = checkLut(row, props.luts);
+    const unread = dateError(dates.unread.filedOn) ?? undefined;
+    const found = { ...(c.ok ? {} : c.errors), ...(unread ? { filedOn: unread } : {}) };
+    setErrors(found);
+    if (!c.ok || unread) {
+      document.getElementById(found.fy ? "lut-fy" : found.arn ? "lut-arn" : "lut-filed")?.focus();
+      return;
+    }
+    props.onChange([...props.luts, c.value]);
+    setRow({ fy: "", arn: "", filedOn: "" });
+    setAdding(false);
+    requestAnimationFrame(() => document.getElementById("lut-add")?.focus());
+  }
+
+  return (
+    <section className="lut-list" aria-labelledby="luts">
+      <h2 id="luts" className="settings-sub" tabIndex={-1}>
+        {INVT_COPY.lutSection}
+      </h2>
+      <p className="hint lut-list__intro">{INVT_COPY.lutIntro}</p>
+      {lutRoute && status?.due && (
+        <p className="lut-banner" role="status">
+          <AlertTriangle size={20} />
+          <span>{lutDueBanner(status.nextFyLabel)}</span>
+        </p>
+      )}
+      {lutRoute && status?.currentMissing && (
+        <p className="lut-banner" role="status">
+          <AlertTriangle size={20} />
+          <span>{lutMissingBanner(status.currentFyLabel)}</span>
+        </p>
+      )}
+      {props.luts.length > 0 && (
+        <DataTable
+          caption={INVT_COPY.lutSection}
+          rows={lutsByYear(props.luts)}
+          rowKey={(l) => l.fy}
+          columns={[
+            {
+              key: "fy",
+              header: INVT_COPY.lutFy,
+              card: "title",
+              cell: (l) => <span className="tnum">FY {fyLabel(l.fy)}</span>,
+            },
+            { key: "arn", header: INVT_COPY.lutArn, cell: (l) => <span className="docno">{l.arn}</span> },
+            { key: "filed", header: INVT_COPY.lutFiledOn, cell: (l) => (l.filedOn ? day(l.filedOn) : null) },
+          ]}
+          actions={
+            props.readOnly
+              ? undefined
+              : (l) => (
+                  // "Remove" is the word the other lists of the admin use; 07-S has no line for it.
+                  <button
+                    type="button"
+                    className="btn btn--text"
+                    onClick={() => props.onChange(props.luts.filter((x) => x.fy !== l.fy))}
+                  >
+                    <Trash size={16} />
+                    Remove<span className="visually-hidden"> the LUT for FY {fyLabel(l.fy)}</span>
+                  </button>
+                )
+          }
+        />
+      )}
+      {!props.readOnly &&
+        (adding ? (
+          <fieldset className="form-section lut-add">
+            <legend>{INVT_COPY.addLut}</legend>
+            <div className="form-grid lut-add__grid">
+              <FormField id="lut-fy" label={INVT_COPY.lutFy} error={errors.fy}>
+                {(a) => (
+                  <select {...a} value={row.fy} onChange={(e) => setRow({ ...row, fy: e.target.value })}>
+                    <option value="">{" "}</option>
+                    {years.map((fy) => (
+                      <option key={fy.token} value={fy.token}>
+                        FY {fy.label}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </FormField>
+              <FormField id="lut-arn" label={INVT_COPY.lutArn} error={errors.arn}>
+                {(a) => (
+                  <input
+                    {...a}
+                    autoComplete="off"
+                    spellCheck={false}
+                    maxLength={40}
+                    value={row.arn}
+                    onChange={(e) => setRow({ ...row, arn: e.target.value.toUpperCase() })}
+                  />
+                )}
+              </FormField>
+              <FormField id="lut-filed" label={INVT_COPY.lutFiledOn} optional error={errors.filedOn}>
+                {(a) => (
+                  <DateField
+                    {...a}
+                    {...dates.bind("filedOn")}
+                    value={row.filedOn}
+                    max={issueDateOf(Date.now())}
+                    onChange={(filedOn) => setRow({ ...row, filedOn })}
+                  />
+                )}
+              </FormField>
+            </div>
+            <div className="actions-row">
+              <button type="button" className="btn btn--primary" onClick={add}>
+                <Plus size={20} />
+                {INVT_COPY.addLut}
+              </button>
+              <button
+                type="button"
+                className="btn btn--secondary"
+                onClick={() => {
+                  setAdding(false);
+                  setErrors({});
+                  setRow({ fy: "", arn: "", filedOn: "" });
+                }}
+              >
+                {INVT_COPY.cancel}
+              </button>
+            </div>
+          </fieldset>
+        ) : (
+          <div className="actions-row">
+            <button
+              id="lut-add"
+              type="button"
+              className="btn btn--secondary"
+              onClick={() => {
+                setAdding(true);
+                requestAnimationFrame(() => document.getElementById("lut-fy")?.focus());
+              }}
+            >
+              <Plus size={20} />
+              {INVT_COPY.addLut}
+            </button>
+          </div>
+        ))}
+    </section>
+  );
+}
+
+/**
+ * "What every invoice must show" (07-S §3, ADM-INV-06): the 18 lines in core's order. A locked line carries the lock and is read as required by law
+ * (the sentence is said once, beside the lock that stands for it); "Bank details" is the one switch; the payment link is off until online payment.
+ */
+function Checklist(props: { bankDetails: boolean; readOnly: boolean; onChange: (on: boolean) => void }) {
+  return (
+    <section className="checklist" aria-labelledby="tax-checklist-h">
+      <h2 id="tax-checklist-h" className="settings-sub">
+        {INVT_COPY.checklistTitle}
+      </h2>
+      <p className="hint checklist__intro">{INVT_COPY.checklistIntro}</p>
+      <p className="checklist__key" id="checklist-locked">
+        <Lock size={16} />
+        <span>{INVT_COPY.checklistLocked}</span>
+      </p>
+      <ul className="checklist__items">
+        {INVOICE_CHECKLIST.map((item) => {
+          const label = CHECKLIST_LABELS[item.id] ?? item.id;
+          const labelId = `checklist-${item.id}`;
+          if (item.locked)
+            return (
+              <li key={item.id} className="checklist__item">
+                <Lock size={16} />
+                <span id={labelId}>
+                  {label}
+                  <span className="visually-hidden">. {INVT_COPY.checklistLocked}</span>
+                </span>
+              </li>
+            );
+          return (
+            <li key={item.id} className="checklist__item checklist__item--switch">
+              <span id={labelId}>{label}</span>
+              <Switch
+                id={`f-checklist-${item.id}`}
+                labelledBy={labelId}
+                checked={item.id === "bankDetails" ? props.bankDetails : false}
+                disabled={props.readOnly || !item.available}
+                onChange={(on) => item.id === "bankDetails" && props.onChange(on)}
+              />
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
 export function TaxSettings({ readOnly }: { readOnly: boolean }) {
   return (
     <GroupForm spec={spec} readOnly={readOnly}>
-      {({ form: f, set, error }) => (
+      {({ form: f, set, error, readOnly }) => (
         <>
           <h2 className="settings-sub">Rates and codes</h2>
           <div className="settings-rows">
@@ -249,45 +488,6 @@ export function TaxSettings({ readOnly }: { readOnly: boolean }) {
               </select>
             </SettingRow>
             <SettingRow
-              id="tax-arn"
-              label="LUT ARN"
-              labelFor="f-lut-arn"
-              optional
-              description="From the GST portal, after you file the LUT for the year."
-            >
-              <div className="stack-sm">
-                <input
-                  {...ctl("f-lut-arn", undefined, `tax-arn-desc${!f.lutArn ? " tax-arn-state" : ""}`)}
-                  value={f.lutArn}
-                  autoComplete="off"
-                  spellCheck={false}
-                  onChange={(e) => set({ lutArn: e.target.value.toUpperCase() })}
-                />
-                {!f.lutArn && f.exportMode === "lut" && (
-                  <span id="tax-arn-state">
-                    <StatusPill tone="warning" icon="clock">
-                      Missing: exports under LUT are blocked
-                    </StatusPill>
-                  </span>
-                )}
-              </div>
-            </SettingRow>
-            <SettingRow id="tax-lutfy" label="LUT financial year" labelFor="f-lut-fy" optional={!f.lutArn}>
-              <select
-                {...ctl("f-lut-fy", error("f-lut-fy"))}
-                value={f.lutFy}
-                onChange={(e) => set({ lutFy: e.target.value })}
-              >
-                <option value="">Not set</option>
-                {fyOptions(f.lutFy).map((fy) => (
-                  <option key={fy.token} value={fy.token}>
-                    FY {fy.label}
-                  </option>
-                ))}
-              </select>
-              <RowError id="f-lut-fy" error={error("f-lut-fy")} />
-            </SettingRow>
-            <SettingRow
               id="tax-adv"
               label="Advance payments"
               labelFor="f-advanceMode"
@@ -321,6 +521,19 @@ export function TaxSettings({ readOnly }: { readOnly: boolean }) {
               </select>
             </SettingRow>
           </div>
+
+          <LutList
+            luts={f.luts}
+            exportMode={f.exportMode}
+            readOnly={readOnly}
+            onChange={(luts) => set({ luts })}
+          />
+
+          <Checklist
+            bankDetails={f.bankDetails}
+            readOnly={readOnly}
+            onChange={(bankDetails) => set({ bankDetails })}
+          />
 
           <h2 className="settings-sub">Documents and alerts</h2>
           <div className="settings-rows">

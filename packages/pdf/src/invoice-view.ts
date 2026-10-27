@@ -3,8 +3,9 @@
 // intra-state supply prints half of the rate under CGST and half under SGST, anything else prints the whole rate under IGST (VERIFY WITH CA/LEGAL).
 // A missing bank block or signature leaves its part out; nothing is invented. A signature image is embedded only when the caller hands in bytes it
 // has already verified against the frozen SHA-256 (`verifySignatureBytes`).
+import { formatFxRate } from "@techaust/core/invoices";
 import { formatMoney, isCurrency, money } from "@techaust/core/money";
-import { placeOfSupplyLabel } from "@techaust/core/pdf-jobs";
+import { fyLabelOfToken, placeOfSupplyLabel } from "@techaust/core/pdf-jobs";
 import type { ComputedDocument } from "@techaust/core/tax";
 import { footerLine } from "./footer.ts";
 import { formatQty, shortIsoDate } from "./format.ts";
@@ -12,8 +13,11 @@ import type {
   InvoiceEnvelope,
   InvoiceView,
   InvoiceViewBank,
+  InvoiceViewExport,
+  InvoiceViewInr,
   InvoiceViewLine,
   InvoiceViewSummaryRow,
+  InvoiceViewSwift,
   VerifiedSignature,
 } from "./invoice-types.ts";
 import type { ViewConfig } from "./types.ts";
@@ -24,11 +28,15 @@ const DASH = "–";
 /** The label of each invoice-family type (the wording is the designer's from 07-R; this is the skeleton's). */
 const DOC_LABELS: Readonly<Record<string, string>> = {
   tax_invoice: "Tax Invoice",
-  export_invoice: "Invoice",
-  proforma: "Proforma invoice",
+  // 07-S §1 and §2 (pending the owner's approval): "Export Invoice", "Proforma Invoice".
+  export_invoice: "Export Invoice",
+  proforma: "Proforma Invoice",
   credit_note: "Credit note",
   debit_note: "Debit note",
 };
+
+/** 07-S §1: the place of supply line of an export invoice (code 96: outside India). */
+export const EXPORT_PLACE_OF_SUPPLY = "Outside India (96)";
 
 /** Rule 48(2): the copy a PDF is. */
 export const ORIGINAL_FOR_RECIPIENT = "ORIGINAL FOR RECIPIENT";
@@ -157,6 +165,53 @@ export function toInvoiceView(
       ]
     : null;
 
+  // ---- M5.2: only what the sealed header carries (nothing is rebuilt from live settings) ----
+  const exp = header.export;
+  const exportView: InvoiceViewExport | null = exp
+    ? {
+        mode: exp.mode,
+        endorsement: exp.endorsement,
+        lut: exp.lut
+          ? { fy: exp.lut.fy, fyLabel: fyLabelOfToken(exp.lut.fy) ?? exp.lut.fy, arn: exp.lut.arn }
+          : null,
+        countryName: exp.countryName,
+        placeOfSupply: EXPORT_PLACE_OF_SUPPLY,
+        deliveryAddress: r.deliveryAddress ? addressLines(r.deliveryAddress) : null,
+        declaration: exp.declarationRef
+          ? {
+              id: exp.declarationRef.id,
+              version: exp.declarationRef.version,
+              sha256: exp.declarationRef.sha256,
+              text: exp.declarationText ?? "",
+            }
+          : null,
+      }
+    : null;
+  const inr: InvoiceViewInr | null =
+    header.fx && computed.inr
+      ? {
+          rate: formatFxRate(header.fx.rateMicros),
+          source: header.fx.source,
+          date: shortIsoDate(header.fx.date),
+          taxable: formatMoney(money(computed.inr.taxableMinor, "INR")),
+          igst:
+            computed.supply.type === "export_igst" ? formatMoney(money(computed.inr.igstMinor, "INR")) : null,
+          total: formatMoney(money(computed.inr.totalMinor, "INR")),
+        }
+      : null;
+  const sw = header.issuer.bank.swift ?? null;
+  const swift: InvoiceViewSwift | null = sw
+    ? {
+        beneficiary: sw.accountName,
+        accountNo: sw.accountNo,
+        swift: sw.swift,
+        bank: [sw.bankName, sw.branch].filter(nonEmpty).join(", "),
+        bankAddress: nonEmpty(sw.bankAddress) ? sw.bankAddress : null,
+        intermediary: nonEmpty(sw.intermediary) ? sw.intermediary : null,
+        purposeCode: nonEmpty(sw.purposeCode) ? sw.purposeCode : null,
+      }
+    : null;
+
   const sig = opts.signature ?? null;
   const signature =
     sig && SIGNATURE_MIMES.includes(sig.mime) && /^[A-Za-z0-9+/]+={0,2}$/.test(sig.base64)
@@ -171,7 +226,7 @@ export function toInvoiceView(
     numberDisplay: envelope.numberDisplay,
     issueDate: shortIsoDate(header.document.issueDate),
     dueDate: shortIsoDate(header.document.dueDate),
-    copyLabel: ORIGINAL_FOR_RECIPIENT,
+    copyLabel: envelope.type === "proforma" ? null : ORIGINAL_FOR_RECIPIENT,
     logo: company.logo,
     supplier: {
       name: company.tradeName,
@@ -194,6 +249,19 @@ export function toInvoiceView(
     words: computed.words,
     reverseCharge: header.issuer.reverseChargeText,
     bank,
+    export: exportView,
+    inr,
+    swift,
+    proforma: header.proforma
+      ? { notice: header.proforma.notice, validUntil: shortIsoDate(header.document.dueDate) }
+      : null,
+    advance: header.advance
+      ? {
+          proformaNumber: header.advance.proformaNumber,
+          proformaDate: shortIsoDate(header.advance.proformaIssueDate),
+          receivedOn: shortIsoDate(header.advance.receivedOn),
+        }
+      : null,
     notes: s.terms
       ? {
           title: `Notes, version ${s.terms.version}`,
@@ -202,8 +270,8 @@ export function toInvoiceView(
         }
       : null,
     signature,
-    // at issue nothing has been paid, so the balance is the total (LD17)
-    balanceDue: m(computed.totalMinor),
+    // at issue nothing has been paid, so the balance is the total (LD17); an invoice made for money received is paid at issue: nothing is due (the layout leaves the row out)
+    balanceDue: m(header.advance ? 0 : computed.totalMinor),
     portalLink: nonEmpty(opts.portalLink) ? opts.portalLink : null,
     integrity: `Document ID ${envelope.documentId} · Content fingerprint ${envelope.snapshotSha256.slice(0, 12)}`,
     footer: {

@@ -16,19 +16,25 @@ import { ACCOUNT_NO, cleanAccountNo, IFSC, SWIFT } from "@techaust/core/bank";
 import { formatIstDateTime, fyOf } from "@techaust/core/dates";
 import { EMAIL_TEMPLATES, type EmailTemplate } from "@techaust/core/email-templates";
 import { uuidv7 } from "@techaust/core/ids";
+import { issueDateOf, lutFor, lutReminder, PURPOSE_CODE } from "@techaust/core/invoices";
 import { deleteAfterSql, LEAD_DELETABLE_SQL, LEAD_PURGE_NOTICE_DAYS } from "@techaust/core/lead-lifecycle";
-import { canSetNextNumber, maxNumber, SERIES, type Series } from "@techaust/core/numbering";
+import { canSetNextNumber, maxNumber, SERIES, type Series, validateFormat } from "@techaust/core/numbering";
 import { type Action, decide } from "@techaust/core/permissions";
 import {
   BRAND_LOGOS,
+  foldLegacyLut,
   GATEWAY_SECRETS,
   GATEWAYS,
+  legacyLutFate,
   panOf,
   resolveSetting,
+  SETTINGS_DEFAULTS,
   SETTINGS_SCHEMAS,
   type SeededSettingKey,
   type Settings,
+  storedNumberingSettings,
 } from "@techaust/core/settings";
+import { lutsOf } from "@techaust/core/tax";
 import {
   TERMS_BLOCK_IDS,
   TERMS_BLOCKS,
@@ -144,6 +150,8 @@ type Opts<K extends SeededSettingKey> = {
   extra?: Extra;
   /** A condition (SQL over numbered params from ?6) that must hold in the write itself; if the write is refused, `refused` says why. */
   guardFor?: (before: Settings[K], after: Settings[K]) => Guard | undefined;
+  /** The schema the value is parsed with, instead of the group's save schema (numbering: lenient on a stored format; `rule` then holds the changed ones to the strict rules). */
+  schema?: (typeof SETTINGS_SCHEMAS)[K];
   /** The same, decided from the before and after values (retention re-dates the leads only when the leads figure changed). */
   extraFor?: (before: Settings[K], after: Settings[K]) => Extra | undefined;
 };
@@ -158,7 +166,7 @@ async function save<K extends SeededSettingKey>(
   version: number,
   opts: Opts<K> = {},
 ) {
-  const parsed = SETTINGS_SCHEMAS[key].safeParse(value);
+  const parsed = (opts.schema ?? SETTINGS_SCHEMAS[key]).safeParse(value);
   if (!parsed.success) return invalid(c, parsed.error.issues);
   const after = parsed.data as Settings[K];
   const row = await loadRow(c.env.DB, key);
@@ -255,10 +263,11 @@ type BankRow = {
   branch: string | null;
   bank_address: string | null;
   intermediary: string | null;
+  purpose_code: string | null;
   updated_at: number;
 };
 const BANK_COLUMNS =
-  "id, kind, account_name, account_no, ifsc, swift, bank_name, branch, bank_address, intermediary, updated_at";
+  "id, kind, account_name, account_no, ifsc, swift, bank_name, branch, bank_address, intermediary, purpose_code, updated_at";
 const bankRows = async (db: D1Database) =>
   (
     await db
@@ -279,6 +288,8 @@ const bankView = (kind: "INR" | "USD_SWIFT", r: BankRow | undefined) => ({
   branch: r?.branch ?? null,
   bankAddress: r?.bank_address ?? null,
   intermediary: r?.intermediary ?? null,
+  /** M5.2 (LD30): the RBI purpose code printed on a USD invoice's SWIFT block. */
+  purposeCode: r?.purpose_code ?? null,
   updatedAt: r?.updated_at ?? null,
 });
 
@@ -301,6 +312,15 @@ async function groupMeta(c: Ctx, group: Generic | "gateways", value: unknown) {
         }),
       };
     }
+    case "tax":
+      // M5.2 (ADM-INV-18): the derived, unstored LUT reminder for today (IST): `due` in March while the next FY has no letter, `currentMissing` while the running FY has none.
+      return {
+        verify,
+        lutStatus: lutReminder(
+          issueDateOf(Date.now()),
+          lutsOf((value as Settings["tax"]) ?? SETTINGS_DEFAULTS.tax),
+        ),
+      };
     case "retention":
       return {
         verify,
@@ -356,7 +376,9 @@ export const settings = new Hono<AppEnv>()
     }
     if (can("settings.taxNumbering.read")) {
       const tax = get("tax");
-      row("tax", "tax", tax.exportMode === "lut" && !tax.lut.arn ? ["LUT ARN missing"] : []);
+      // The LUT of the FY that is running (the list of M5.2, and the legacy single letter): none saved means an export under LUT is blocked.
+      const noLut = lutFor(fyOf(Date.now()).token, lutsOf(tax)) === null;
+      row("tax", "tax", tax.exportMode === "lut" && noLut ? ["LUT ARN missing"] : []);
       row("numbering", "numbering");
     }
     if (can("settings.manage")) {
@@ -376,7 +398,9 @@ export const settings = new Hono<AppEnv>()
     const { group } = c.req.valid("param");
     if (decide(actor(c).role, READ_ACTION[group]) === "deny") return err(c, FORBIDDEN_GROUP, 403);
     const row = await loadRow(c.env.DB, group);
-    const value = resolveSetting(group, row?.value);
+    const resolved = resolveSetting(group, row?.value);
+    // The old single `lut` is shown as a list entry (and cleared), so a letter deleted from the list is never sent back by the old key.
+    const value = group === "tax" ? foldLegacyLut(resolved as Settings["tax"]) : resolved;
     return c.json({
       group,
       version: row?.version ?? 0,
@@ -418,6 +442,26 @@ export const settings = new Hono<AppEnv>()
       const value = env.data.value;
       if (typeof value === "object" && value !== null && !Array.isArray(value))
         return save(c, "company", { ...value, signature: keep }, env.data.version);
+    }
+    // M5.2 (early check 3): a saved `tax` row never keeps the deprecated single `lut`: it is folded into `luts` (unless that FY is listed) and cleared.
+    if (group === "tax") {
+      const parsed = SETTINGS_SCHEMAS.tax.safeParse(env.data.value);
+      if (parsed.success) {
+        // A legacy letter the fold drops (its FY is already listed, or the list would refuse it) is dropped WITH a note in the log (the case and the FY,
+        // never the ARN), so the save never fails on a field the person cannot see and the drop is never silent (review 8).
+        const fate = legacyLutFate(parsed.data);
+        if (fate.fate === "listed" || fate.fate === "invalid" || fate.fate === "full")
+          console.warn(
+            JSON.stringify({
+              level: "warn",
+              message: "legacy LUT dropped on a tax save",
+              case: fate.fate,
+              fy: parsed.data.lut.fy,
+              rid: c.var.rid,
+            }),
+          );
+      }
+      return save(c, "tax", parsed.success ? foldLegacyLut(parsed.data) : env.data.value, env.data.version);
     }
     return save(c, group, env.data.value, env.data.version);
   })
@@ -637,7 +681,17 @@ async function saveNumbering(c: Ctx, raw: unknown) {
   const asked = Object.entries(nextNumbers) as [Series, number][];
   const effective = asked.filter(([s, n]) => n !== nextOf(s));
   return save(c, "numbering", value, version, {
+    // Every series is READ with the rules that held when it was stored; only a series this save CHANGES is held to the strict rules of today (LD18's first
+    // character), so a stored pre-M5.1 format that breaks them never blocks a save of another series (M5.1 item). A series in use cannot change anyway.
+    schema: storedNumberingSettings,
     rule: (before, after) => {
+      const refusedFormats = (Object.keys(after) as Series[])
+        .filter((s) => JSON.stringify(after[s]) !== JSON.stringify(before[s]))
+        .flatMap((s) => {
+          const check = validateFormat(after[s]);
+          return check.ok ? [] : [{ path: [s], message: check.error }];
+        });
+      if (refusedFormats.length) return invalid(c, refusedFormats);
       // A series with an issued document this financial year is locked: its format AND its next number (any change, up or
       // down; a raised number leaves a gap in the series). Before the first issue both stay editable.
       const formatChanged = (Object.keys(after) as Series[]).filter(
@@ -719,6 +773,8 @@ const bankBody = z.object({
   branch: z.optional(z.nullable(z.string().check(z.maxLength(120)))),
   bankAddress: z.optional(z.nullable(z.string().check(z.maxLength(300)))),
   intermediary: z.optional(z.nullable(z.string().check(z.maxLength(300)))),
+  /** M5.2 (LD30, VERIFY WITH CA/LEGAL): the RBI purpose code (P and four digits) of the USD account; null or empty clears it. */
+  purposeCode: z.optional(z.nullable(z.string().check(z.maxLength(20)))),
   /** The `updatedAt` the form was loaded with (GET /settings/bank); null or missing for a first save. A different value is a 409. */
   expectedUpdatedAt: z.optional(z.nullable(z.int())),
 });
@@ -749,6 +805,11 @@ async function saveBank(c: Ctx, kind: "INR" | "USD_SWIFT") {
       bad.push({ path: ["swift"], message: "A SWIFT/BIC has 8 or 11 characters" });
     if (!norm(b.bankAddress)) bad.push({ path: ["bankAddress"], message: "Enter the bank's address" });
   }
+  const purposeCode = norm(b.purposeCode)?.toUpperCase() ?? null;
+  if (purposeCode !== null && kind !== "USD_SWIFT")
+    bad.push({ path: ["purposeCode"], message: "A purpose code belongs to the USD account" });
+  else if (purposeCode !== null && !PURPOSE_CODE.test(purposeCode))
+    bad.push({ path: ["purposeCode"], message: "A purpose code is P and four digits, like P0802" });
   const db = c.env.DB;
   const existing = (await bankRows(db)).find((r) => r.kind === kind);
   if (!existing && typed === null) bad.push({ path: ["accountNo"], message: "Enter the account number" });
@@ -768,6 +829,7 @@ async function saveBank(c: Ctx, kind: "INR" | "USD_SWIFT") {
     branch: norm(b.branch),
     bankAddress: norm(b.bankAddress),
     intermediary: norm(b.intermediary),
+    purposeCode: kind === "USD_SWIFT" ? purposeCode : null,
   };
   const before = existing
     ? {
@@ -779,6 +841,7 @@ async function saveBank(c: Ctx, kind: "INR" | "USD_SWIFT") {
         branch: existing.branch,
         bankAddress: existing.bank_address,
         intermediary: existing.intermediary,
+        purposeCode: existing.purpose_code,
       }
     : null;
   // The account number is masked on both sides of the diff ("[masked]"): the log never holds it.
@@ -791,7 +854,7 @@ async function saveBank(c: Ctx, kind: "INR" | "USD_SWIFT") {
   const main = existing
     ? db
         .prepare(
-          "UPDATE bank_accounts SET account_name = ?1, account_no = ?2, ifsc = ?3, swift = ?4, bank_name = ?5, branch = ?6, bank_address = ?7, intermediary = ?8, updated_at = ?9 WHERE id = ?10 AND active = 1 AND updated_at = ?11",
+          "UPDATE bank_accounts SET account_name = ?1, account_no = ?2, ifsc = ?3, swift = ?4, bank_name = ?5, branch = ?6, bank_address = ?7, intermediary = ?8, purpose_code = ?9, updated_at = ?10 WHERE id = ?11 AND active = 1 AND updated_at = ?12",
         )
         .bind(
           after.accountName,
@@ -802,13 +865,14 @@ async function saveBank(c: Ctx, kind: "INR" | "USD_SWIFT") {
           after.branch,
           after.bankAddress,
           after.intermediary,
+          after.purposeCode,
           t,
           id,
           b.expectedUpdatedAt,
         )
     : db
         .prepare(
-          "INSERT INTO bank_accounts (id, kind, account_name, account_no, ifsc, swift, bank_name, branch, bank_address, intermediary, active, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 1, ?11, ?11)",
+          "INSERT INTO bank_accounts (id, kind, account_name, account_no, ifsc, swift, bank_name, branch, bank_address, intermediary, purpose_code, active, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 1, ?12, ?12)",
         )
         .bind(
           id,
@@ -821,6 +885,7 @@ async function saveBank(c: Ctx, kind: "INR" | "USD_SWIFT") {
           after.branch,
           after.bankAddress,
           after.intermediary,
+          after.purposeCode,
           t,
         );
   let done: boolean;

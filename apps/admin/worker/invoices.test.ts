@@ -565,6 +565,8 @@ describe("the route table", () => {
       "POST /api/v1/invoices/:id/issue invoices.issue invoice.issue",
       "POST /api/v1/invoices/:id/issue-request invoices.draft approval.request",
       "POST /api/v1/invoices/:id/void invoices.void invoice.void",
+      "POST /api/v1/invoices/:id/service-completed invoices.draft invoice.service_completed",
+      "POST /api/v1/invoices/:id/advance-invoice invoices.advance invoice.advance_issue",
       "GET /api/v1/invoices/:id/pdf invoices.read -",
       "POST /api/v1/invoices/:id/pdf/retry invoices.draft invoice.pdf_retry",
       "GET /api/v1/clients/:id/invoices invoices.read -",

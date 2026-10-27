@@ -1,7 +1,17 @@
 import { type CalendarDate, istDate } from "@techaust/core/dates";
 import { contentHash, type DraftContent } from "@techaust/core/documents";
+import { isCountryCode } from "@techaust/core/form-labels";
 import { uuidv7 } from "@techaust/core/ids";
-import { INVOICE_FLOW_TYPES, type IssueFacts } from "@techaust/core/invoices";
+import {
+  EXPORT_ENDORSEMENT,
+  type ExportRoute,
+  INVOICE_FLOW_TYPES,
+  type IssueBlocker,
+  type IssueFacts,
+  issueBlockers,
+  lutFor,
+  PROFORMA_NOTICE,
+} from "@techaust/core/invoices";
 import { milestoneTotals } from "@techaust/core/projects";
 import { percentFromBp } from "@techaust/core/schedule-text";
 import { resolveSetting, type Settings } from "@techaust/core/settings";
@@ -12,13 +22,24 @@ import {
   groupsOf,
   type InclusiveGroup,
   type LineInput,
+  lutsOf,
   MAX_GROUPS,
   splitInclusive,
   type TaxContext,
   type TaxIssue,
 } from "@techaust/core/tax";
-import type { DocumentBundle, TermsRef } from "@techaust/db/documents";
-import type { InvoiceBankBlock, InvoiceIssuerSnapshot, RecipientSnapshot } from "@techaust/db/issue";
+import {
+  type DocumentBundle,
+  fxOfRow,
+  type InvoiceHeaderExtras,
+  type TermsRef,
+} from "@techaust/db/documents";
+import type {
+  InvoiceBankBlock,
+  InvoiceIssuerSnapshot,
+  InvoiceSwiftBlock,
+  RecipientSnapshot,
+} from "@techaust/db/issue";
 import type { ApiError } from "./context.ts";
 import {
   type ClientRow,
@@ -87,17 +108,24 @@ export const INVOICE_SETTINGS_READ =
 /** The newest invoice footer notes (a pin, no text); none is allowed (M5.1). */
 export const NEWEST_INVOICE_TERMS =
   "SELECT id, kind, version, sha256 FROM terms_versions WHERE kind = 'invoice' ORDER BY version DESC LIMIT 1";
-/** The active bank accounts (at most one per kind). */
+/** The active bank accounts (at most one per kind). M5.2: the SWIFT block's columns and the purpose code come with them. */
 export const BANK_READ =
-  "SELECT kind, account_name, account_no, ifsc, bank_name, branch, updated_at FROM bank_accounts WHERE active = 1";
+  "SELECT kind, account_name, account_no, ifsc, swift, bank_name, branch, bank_address, intermediary, purpose_code, updated_at FROM bank_accounts WHERE active = 1";
+/** The newest optional export-declaration note (LD23): its pin and its text (the text is frozen into `header_extras` at issue). */
+export const NEWEST_EXPORT_DECLARATION =
+  "SELECT id, kind, version, sha256, body_md FROM terms_blocks WHERE kind = 'export_declaration' ORDER BY version DESC LIMIT 1";
 
 export type BankRow = {
   kind: string;
   account_name: string;
   account_no: string;
   ifsc: string | null;
+  swift: string | null;
   bank_name: string;
   branch: string | null;
+  bank_address: string | null;
+  intermediary: string | null;
+  purpose_code: string | null;
   updated_at: number;
 };
 type SettingRow = { key: string; value: string; version: number };
@@ -132,7 +160,7 @@ export function readInvoiceSettings(rows: readonly SettingRow[]): InvoiceSetting
 export const bankStampOf = (rows: readonly BankRow[]): number | null =>
   rows.length === 0 ? null : Math.max(...rows.map((r) => r.updated_at));
 
-/** The INR block an invoice prints (the SWIFT block is M5.2's); null when no INR account is saved. */
+/** The INR block an invoice prints; null when no INR account is saved. */
 export function inrBankOf(rows: readonly BankRow[]): InvoiceBankBlock | null {
   const r = rows.find((x) => x.kind === "INR");
   return r
@@ -144,6 +172,51 @@ export function inrBankOf(rows: readonly BankRow[]): InvoiceBankBlock | null {
         branch: r.branch,
       }
     : null;
+}
+
+/**
+ * M5.2 (LD30): the SWIFT block of a USD invoice, with the RBI purpose code; null when no USD account is saved (or it has no SWIFT code, which
+ * Settings refuses to save). Frozen with the invoice.
+ */
+export function swiftBankOf(rows: readonly BankRow[]): InvoiceSwiftBlock | null {
+  const r = rows.find((x) => x.kind === "USD_SWIFT");
+  if (!r?.swift) return null;
+  return {
+    accountName: r.account_name,
+    accountNo: r.account_no,
+    swift: r.swift,
+    bankName: r.bank_name,
+    branch: r.branch,
+    bankAddress: r.bank_address,
+    intermediary: r.intermediary,
+    purposeCode: r.purpose_code,
+  };
+}
+
+// ---- the country of an export (LD32) -------------------------------------------------------------------------------------------------------------
+
+/**
+ * The ICU region names, made ONCE per isolate (a constructor per request would cost CPU on the Free plan). `Intl.DisplayNames` is probed in workerd by a
+ * test (NOT VERIFIED on staging); if the runtime lacked it, the constructor failure is swallowed so the Worker still starts, and every export then answers
+ * `country_missing` instead of printing a wrong name.
+ */
+const REGION_NAMES: Intl.DisplayNames | null = (() => {
+  try {
+    return new Intl.DisplayNames(["en-GB"], { type: "region" });
+  } catch {
+    return null;
+  }
+})();
+
+/** The English name of an ISO 3166-1 country (frozen at issue); null for anything that is not an assigned code or that ICU only answers with the code. */
+export function countryNameOf(code: string): string | null {
+  if (!REGION_NAMES || !isCountryCode(code)) return null;
+  try {
+    const name = REGION_NAMES.of(code);
+    return name && name !== code ? name : null;
+  } catch {
+    return null;
+  }
 }
 
 // ---- the frozen blocks ---------------------------------------------------------------------------------------------------------------------
@@ -167,17 +240,23 @@ export function recipientOf(client: ClientRow, contact: ContactFacts | null): Re
     ...(client.gstin ? { gstin: client.gstin } : {}),
     ...(client.state_code ? { stateCode: client.state_code } : {}),
     ...(client.billing_address ? { address: JSON.parse(client.billing_address) } : {}),
+    // M5.2 (LD36, Rule 46(o); VERIFY WITH CA/LEGAL): the address of delivery, when the client has a service address.
+    ...(client.service_address ? { deliveryAddress: JSON.parse(client.service_address) } : {}),
     ...(contact && contact.anonymised_at === null
       ? { email: contact.email, contactId: contact.id, contactName: contact.name }
       : {}),
   };
 }
 
-/** The supplier block: the company as saved, the INR bank block, the signature as a reference (LD11), and the sender (the billing address and who issued it). */
+/**
+ * The supplier block: the company as saved, the INR bank block (and, on a USD document, the SWIFT block, M5.2), the signature as a reference (LD11),
+ * and the sender (the billing address and who issued it). An INR document's block has no `swift` key, so it is the M5.1 block unchanged.
+ */
 export function issuerOf(
   s: InvoiceSettings,
   bank: readonly BankRow[],
   who: { id: string; name: string },
+  currency: string = "INR",
 ): InvoiceIssuerSnapshot {
   const c = s.company;
   const sig = c.signature;
@@ -193,7 +272,7 @@ export function issuerOf(
       ...(c.documentsPhone ? { phone: c.documentsPhone } : {}),
       ...(c.principalPlace ? { principalPlace: c.principalPlace } : {}),
     },
-    bank: { inr: inrBankOf(bank) },
+    bank: { inr: inrBankOf(bank), ...(currency === "USD" ? { swift: swiftBankOf(bank) } : {}) },
     signature: sig ? { key: sig.key, sha256: sig.sha256, mime: sig.mime } : null,
     reverseChargeText: s.tax.reverseChargeText,
     sender: { staffId: who.id, name: who.name, email: s.email.senders.billing },
@@ -209,6 +288,9 @@ export const ISSUED_DOCUMENTS_SQL =
 
 // ---- the state of a draft ---------------------------------------------------------------------------------------------------------------------
 
+/** M5.2: the exchange rate typed on a USD draft: INR micros per USD, the rate's own date, its source as it is printed (`fxSourceLabel`). */
+export type FxState = { rateMicros: number; date: string; source: string };
+
 export type InvoiceState = {
   id: string;
   type: string;
@@ -218,21 +300,31 @@ export type InvoiceState = {
   discountKind: "fixed" | "percent" | null;
   discountValue: number | null;
   exportMode: string | null;
+  /** M5.2 (LD24): part of the draft's content hash (a draft with no rate has no `fx` key in it). */
+  fx: FxState | null;
+  /** M5.2 (LD29): the day the service was completed: not hashed, not sealed, not printed. */
+  serviceCompletedOn: string | null;
+  /** M5.2 (LD23): the `export_declaration` block the draft asked to pin (the newest at the time; issue pins the newest then); null: none. */
+  exportDeclarationId: string | null;
   lines: LineState[];
 };
 
 /** The invoice's state from the rows `loadStatements` read (its lines are the quote model's lines). */
 export function invoiceStateOf(b: DocumentBundle<TermsRef>): InvoiceState {
   const q = stateOfBundle(b);
+  const d = b.document;
   return {
     id: q.id,
-    type: b.document.type,
+    type: d.type,
     clientId: q.clientId,
     contactId: q.contactId,
     currency: q.currency,
     discountKind: q.discountKind,
     discountValue: q.discountValue,
     exportMode: q.exportMode,
+    fx: fxOfRow(d),
+    serviceCompletedOn: d.service_completed_on ?? null,
+    exportDeclarationId: d.export_declaration_id ?? null,
     lines: q.lines,
   };
 }
@@ -269,6 +361,7 @@ export const invoiceDraftOf = (s: InvoiceState): DraftContent => ({
   })),
   sections: [],
   schedule: [],
+  fx: s.fx,
 });
 
 // ---- computing a draft ---------------------------------------------------------------------------------------------------------------------
@@ -316,13 +409,19 @@ export async function computeInvoice(
         documentDiscount,
         exportMode:
           state.exportMode === "lut" || state.exportMode === "igst_paid" ? state.exportMode : undefined,
+        fx: state.fx ? { rateMicros: state.fx.rateMicros } : null,
       },
       ctx,
     );
   } else {
+    // The route of an export (M5.2: the advance invoice keeps its proforma's); a draft made from a milestone has none, so it follows the settings as before.
     const supply = determineSupply(taxInputOf(client), ctx, {
       documentDate: today,
       currency: state.currency,
+      exportMode:
+        client.gst_status === "overseas" && (state.exportMode === "lut" || state.exportMode === "igst_paid")
+          ? state.exportMode
+          : undefined,
     });
     result = supply.ok
       ? computeDocument(
@@ -335,6 +434,7 @@ export async function computeInvoice(
             targetTotalMinor,
             lines,
             documentDiscount,
+            fx: state.fx ? { rateMicros: state.fx.rateMicros } : null,
           },
           ctx,
         )
@@ -359,6 +459,11 @@ export function invoiceColumns(s: InvoiceState, c: InvoiceComputation) {
     discount_kind: s.discountKind,
     discount_value: s.discountValue,
     export_mode: s.exportMode,
+    fx_rate_micros: s.fx?.rateMicros ?? null,
+    fx_date: s.fx?.date ?? null,
+    fx_source: s.fx?.source ?? null,
+    service_completed_on: s.serviceCompletedOn,
+    export_declaration_id: s.exportDeclarationId,
     subtotal_minor: k?.subtotalMinor ?? 0,
     discount_minor: k?.discountMinor ?? 0,
     taxable_minor: k?.taxableMinor ?? 0,
@@ -466,7 +571,104 @@ export function milestoneDraft(input: {
   return { ok: true, lines, amountMinor: input.amountMinor, computed: split.value.document };
 }
 
+// ---- the invoice for money received against a proforma (M5.2, Q9, LD22) -----------------------------------------------------------------------
+
+/** 07-S §8: the description of every line of the invoice made for money received (Rule 46 needs a description of the service). */
+export const advanceLineDescription = (proformaNumber: string) =>
+  `Payment received against proforma ${proformaNumber}`;
+
+/**
+ * The export route of the document made for money received against a proforma (review 1): the proforma's own pick; when it had none, the route the
+ * engine computed it under (`export_lut` gives `lut`, `export_igst` gives `igst_paid`), NEVER the live Settings, which may have moved since the
+ * proforma was issued (the proforma said 0 % under LUT; the invoice for the money must not turn into an IGST split because the setting changed).
+ * A proforma that was not an export has no route (null). VERIFY WITH CA/LEGAL: whether a lapsed LUT should force IGST on the tax invoice.
+ */
+export function proformaRouteOf(
+  exportMode: string | null,
+  computed: Pick<ComputedDocument, "supply"> | null,
+): ExportRoute | null {
+  if (exportMode === "lut" || exportMode === "igst_paid") return exportMode;
+  if (computed?.supply.type === "export_lut") return "lut";
+  if (computed?.supply.type === "export_igst") return "igst_paid";
+  return null;
+}
+
+/**
+ * The lines of the tax invoice made for an amount received: the amount (tax included) is split over the (SAC, rate) groups of the PROFORMA's own tax
+ * summary by the inclusive split (the SAME engine as a milestone, LD13), under the client's CURRENT supply and the proforma's export route. More than
+ * the engine's cap of groups merge by rate. An INR amount with paise is refused by the engine (`gross_not_whole_unit`, LD28). The description is the
+ * 07-S §8 line with the proforma's number.
+ */
+export function advanceDraft(input: {
+  amountMinor: number;
+  currency: "INR" | "USD";
+  client: ClientRow;
+  settings: InvoiceSettings;
+  proformaComputed: ComputedDocument;
+  /** The proforma's number: the line says what the payment was for (07-S §8). */
+  proformaNumber: string;
+  exportMode: string | null;
+  fx: FxState | null;
+  today: CalendarDate;
+}): MilestoneDraft {
+  const { client, settings, today } = input;
+  const ctx = taxContext(settings);
+  const supply = determineSupply(taxInputOf(client), ctx, {
+    documentDate: today,
+    currency: input.currency,
+    exportMode:
+      client.gst_status === "overseas" && (input.exportMode === "lut" || input.exportMode === "igst_paid")
+        ? input.exportMode
+        : undefined,
+  });
+  if (!supply.ok) return { ok: false, errors: supply.errors };
+  let groups: InclusiveGroup[] = groupsOf(input.proformaComputed.summary);
+  if (groups.length === 0) groups = [{ sac: null, gstRateBp: settings.tax.defaultRateBp, weightMinor: 1 }];
+  if (groups.length > MAX_GROUPS) groups = mergeByRate(groups).groups;
+  const split = splitInclusive(
+    input.amountMinor,
+    groups,
+    supply.value,
+    input.currency,
+    input.fx ? { rateMicros: input.fx.rateMicros } : null,
+    ctx,
+    { documentDate: today, recipientStatus: client.gst_status },
+  );
+  if (!split.ok) return { ok: false, errors: split.errors };
+  const lines: LineState[] = split.value.lines.map((l, i) => {
+    const cl = split.value.document.lines[i];
+    return {
+      id: uuidv7(),
+      catalogueItemId: null,
+      catalogueRateMinor: null,
+      catalogueLine: null,
+      description: advanceLineDescription(input.proformaNumber),
+      detail: null,
+      sac: l.sac,
+      qtyMilli: l.qtyMilli,
+      unit: "fixed",
+      rateMinor: l.rateMinor,
+      discountKind: null,
+      discountValue: null,
+      gstRateBp: cl?.gstRateBp ?? l.gstRateBp ?? 0,
+    };
+  });
+  return { ok: true, lines, amountMinor: input.amountMinor, computed: split.value.document };
+}
+
 // ---- what stops an issue ----------------------------------------------------------------------------------------------------------------------
+
+/** What the blockers need beyond the draft: the bank rows, the IST day of the issue and its FY, and the day the exchange rate is judged against. */
+export type IssueContext = {
+  bank: readonly BankRow[];
+  /** The IST day (ISO) of the issue and the FY token it falls in: the LUT of THIS year is the one that is needed. */
+  issueDate: string;
+  fy: string;
+  /** The issue day, or for the advance invoice the day the money arrived (Q9, LD24). */
+  fxRefDate: string;
+  /** The tax invoice for money already received: paid, so it has no bank block to check. */
+  advance?: boolean;
+};
 
 /** The facts `issueBlockers` (core) judges, from what the route has read. */
 export function issueFactsOf(
@@ -474,8 +676,15 @@ export function issueFactsOf(
   client: ClientRow,
   settings: InvoiceSettings,
   c: InvoiceComputation,
+  x: IssueContext,
 ): IssueFacts {
   const addr = client.billing_address ? (JSON.parse(client.billing_address) as { line1?: string }) : null;
+  const overseas = client.gst_status === "overseas";
+  const mode: ExportRoute =
+    state.exportMode === "lut" || state.exportMode === "igst_paid"
+      ? state.exportMode
+      : settings.tax.exportMode;
+  const computed = c.computed;
   return {
     type: state.type,
     currency: state.currency,
@@ -493,12 +702,157 @@ export function issueFactsOf(
       gstStatus: client.gst_status,
       gstin: client.gstin,
       stateCode: client.state_code,
+      countryName: overseas ? countryNameOf(client.country) : null,
     },
     lines: state.lines.map((l) => ({ sac: l.sac, description: l.description })),
     taxErrorCount: c.errors.length,
-    totalMinor: c.computed?.totalMinor ?? null,
+    totalMinor: computed?.totalMinor ?? null,
+    totalInrMinor: computed
+      ? computed.currency === "INR"
+        ? computed.totalMinor
+        : (computed.inr?.totalMinor ?? null)
+      : null,
     reverseChargeText: settings.tax.reverseChargeText,
+    fx: { value: state.fx, refDate: x.fxRefDate, maxAgeDays: settings.tax.fxMaxAgeDays },
+    export: state.type === "export_invoice" ? { mode, issueFy: x.fy, luts: lutsOf(settings.tax) } : null,
+    bank: {
+      inr: x.bank.some((r) => r.kind === "INR"),
+      swift: swiftBankOf(x.bank) !== null,
+    },
+    advance: x.advance === true,
+    b2cThresholdInrMinor: settings.tax.b2cDetailsThresholdInrMinor,
   };
+}
+
+/** Every blocker of a draft under the Owner's checklist (the issue, the issue request and the view all ask this one question). */
+export function blockersOf(
+  state: InvoiceState,
+  client: ClientRow,
+  settings: InvoiceSettings,
+  c: InvoiceComputation,
+  x: IssueContext,
+): IssueBlocker[] {
+  return issueBlockers(issueFactsOf(state, client, settings, c, x), settings.tax.invoiceChecklist);
+}
+
+/** An export invoice in INR needs the Owner's explicit confirmation (Q8; VERIFY WITH CA/LEGAL, s.2(6) IGST Act). */
+export const needsInrConfirm = (type: string, currency: string): boolean =>
+  type === "export_invoice" && currency === "INR";
+
+export const EXPORT_CURRENCY_CONFIRM = e(
+  "export_currency_confirm",
+  "Confirm that this export invoice should be in INR.",
+);
+export const FX_NOT_APPLICABLE = e("fx_not_applicable", "An exchange rate is only needed for USD invoices.");
+/** 07-S §8 gives these three codes one shared line. */
+const NOT_APPLICABLE_LINE = "This doesn't apply to this type of invoice.";
+export const EXPORT_MODE_NOT_APPLICABLE = e("export_mode_not_applicable", NOT_APPLICABLE_LINE);
+export const SERVICE_DATE_NOT_APPLICABLE = e("service_date_not_applicable", NOT_APPLICABLE_LINE);
+export const EXPORT_DECLARATION_NOT_APPLICABLE = e("export_declaration_not_applicable", NOT_APPLICABLE_LINE);
+export const EXPORT_DECLARATION_MISSING = e(
+  "export_declaration_missing",
+  "The export note in Settings › Terms was removed. Choose again.",
+);
+export const SERVICE_DATE_FUTURE = e(
+  "service_date_future",
+  "The service completion date can't be in the future.",
+);
+/** The words are 07-S §8. */
+export const ALREADY_SET = e(
+  "already_set",
+  "The service completion date is already set and can't be changed.",
+);
+/** The service date of a void invoice. */
+export const INVOICE_VOID = e("invoice_void", "This invoice is void.");
+/** The extra export note the draft pinned is no longer the newest one: the person must look at the new text and choose again. */
+export const EXPORT_DECLARATION_CHANGED = e(
+  "export_declaration_changed",
+  "The export note in Settings › Terms changed since this draft was saved. Save the draft again.",
+);
+/** The newest export note's text does not match its stored SHA-256: nothing is sealed from it (07-S has no line yet). */
+export const EXPORT_DECLARATION_TAMPERED = e(
+  "export_declaration_tampered",
+  "The export note in Settings › Terms doesn't match its saved copy, so the invoice wasn't issued. A developer needs to look at it.",
+);
+export const NOT_A_PROFORMA = e("not_a_proforma", "That is not a proforma");
+export const PROFORMA_NOT_ISSUED = e("proforma_not_issued", "Only an issued proforma can be converted.");
+export const ADVANCE_REFERENCE_USED = e(
+  "advance_reference_used",
+  "This payment reference was already used for this proforma.",
+);
+export const ADVANCE_EXCEEDS_BALANCE = e(
+  "advance_exceeds_balance",
+  "The amount can't be more than the proforma's balance.",
+);
+/**
+ * VERIFY WITH CA/LEGAL (which supply applies, batch Q37's neighbour): a proforma sealed for an overseas client (an export supply) and a client who is no longer
+ * overseas, or the reverse. The tax on the payment can't be worked out from the proforma, so the advance route refuses (07-S §8).
+ */
+export const proformaSupplyChanged = (
+  proformaComputed: { supply: { type: string } } | null,
+  clientGstStatus: string,
+): boolean => {
+  if (!proformaComputed) return false;
+  const wasExport =
+    proformaComputed.supply.type === "export_lut" || proformaComputed.supply.type === "export_igst";
+  return wasExport !== (clientGstStatus === "overseas");
+};
+export const ADVANCE_SUPPLY_CHANGED = e(
+  "advance_supply_changed",
+  "The client's GST details changed after this proforma was issued, so the tax on this payment can't be worked out from it. Check the client's details with your CA before recording the payment.",
+);
+export const ADVANCE_DATE_INVALID = e(
+  "advance_date_invalid",
+  "The date received can't be before the proforma's date or in the future.",
+);
+export const ADVANCE_REFERENCE_INVALID = e(
+  "advance_reference_invalid",
+  "Enter the payment reference: letters, digits, / and -, up to 60 characters",
+);
+
+// ---- the header keys of the seal (LD25) -----------------------------------------------------------------------------------------------------------
+
+/**
+ * The M5.2 keys of an invoice's sealed header, each only on the types that need it so an M5.1 seal stays byte-identical:
+ * `export` (an export invoice: the endorsement as it is NOW, the LUT of the issue FY on the LUT route, the country, the pinned note),
+ * `fx` (a USD tax or export invoice), `proforma` (the notice), `advance` (the tax invoice made for money received).
+ */
+export function headerExtrasOf(a: {
+  state: InvoiceState;
+  settings: InvoiceSettings;
+  client: ClientRow;
+  issueFy: string;
+  /** The route of an export invoice: the draft's own, else the settings'. */
+  mode: ExportRoute;
+  declaration: (TermsRef & { body_md?: string }) | null;
+  advance?: NonNullable<InvoiceHeaderExtras["advance"]> | null;
+}): InvoiceHeaderExtras {
+  const { state } = a;
+  const out: {
+    export?: InvoiceHeaderExtras["export"];
+    fx?: InvoiceHeaderExtras["fx"];
+    proforma?: InvoiceHeaderExtras["proforma"];
+    advance?: InvoiceHeaderExtras["advance"];
+  } = {};
+  if (state.type === "export_invoice") {
+    const lut = a.mode === "lut" ? lutFor(a.issueFy, lutsOf(a.settings.tax)) : null;
+    out.export = {
+      mode: a.mode,
+      endorsement: EXPORT_ENDORSEMENT[a.mode],
+      lut,
+      countryCode: a.client.country,
+      countryName: countryNameOf(a.client.country) ?? "",
+      declarationRef: a.declaration
+        ? { id: a.declaration.id, version: a.declaration.version, sha256: a.declaration.sha256 }
+        : null,
+      ...(a.declaration?.body_md !== undefined ? { declarationText: a.declaration.body_md } : {}),
+    };
+  }
+  if ((state.type === "tax_invoice" || state.type === "export_invoice") && state.fx)
+    out.fx = { rateMicros: state.fx.rateMicros, date: state.fx.date, source: state.fx.source };
+  if (state.type === "proforma") out.proforma = { notice: PROFORMA_NOTICE };
+  if (a.advance) out.advance = a.advance;
+  return out;
 }
 
 export { taxContext, taxInputOf };

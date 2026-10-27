@@ -36,6 +36,14 @@ export type DocumentRow = {
   balance_minor: number;
   voided_at: number | null;
   void_reason: string | null;
+  /** M5.2: the exchange rate of a USD invoice (INR micros per USD), its date and its source as printed; the day the service was completed; the pinned export-declaration block. */
+  fx_rate_micros: number | null;
+  fx_date: string | null;
+  fx_source: string | null;
+  service_completed_on: string | null;
+  export_declaration_id: string | null;
+  /** M5.2 (LD37): the JSON text of the sealed header keys the other columns cannot give (`{export?, proforma?, advance?}`), frozen at issue; null when none (read it with `headerExtrasOfRow`). */
+  header_extras: string | null;
   valid_until: string | null;
   supply_type: string | null;
   place_of_supply_code: string | null;
@@ -166,7 +174,7 @@ export type DocumentBundle<T extends TermsRef = TermsRow> = {
 };
 
 const DOCUMENT_COLUMNS =
-  "id, type, status, client_id, version_group_id, version, series, fy, number, number_display, currency, issue_date, due_date, parent_id, paid_minor, credited_minor, balance_minor, voided_at, void_reason, valid_until, supply_type, place_of_supply_code, subtotal_minor, discount_minor, taxable_minor, cgst_minor, sgst_minor, igst_minor, round_off_minor, total_minor, terms_version_id, snapshot_r2_key, snapshot_sha256, pdf_r2_key, pdf_sha256, frozen_at, issued_by, title, contact_id, validity_days, discount_kind, discount_value, export_mode, content_sha256, catalogue_reference_minor, source_document_id, source_step, sent_at, viewed_at, decided_at, decision_reason, decision_note, decided_contact_id, created_by, created_at, updated_at, recipient, issuer, computed";
+  "id, type, status, client_id, version_group_id, version, series, fy, number, number_display, currency, issue_date, due_date, parent_id, paid_minor, credited_minor, balance_minor, voided_at, void_reason, fx_rate_micros, fx_date, fx_source, service_completed_on, export_declaration_id, header_extras, valid_until, supply_type, place_of_supply_code, subtotal_minor, discount_minor, taxable_minor, cgst_minor, sgst_minor, igst_minor, round_off_minor, total_minor, terms_version_id, snapshot_r2_key, snapshot_sha256, pdf_r2_key, pdf_sha256, frozen_at, issued_by, title, contact_id, validity_days, discount_kind, discount_value, export_mode, content_sha256, catalogue_reference_minor, source_document_id, source_step, sent_at, viewed_at, decided_at, decision_reason, decision_note, decided_contact_id, created_by, created_at, updated_at, recipient, issuer, computed";
 
 /** The statements of `loadDocument`, exported so a test can EXPLAIN each one. */
 export const LOAD_DOCUMENT_SQL = {
@@ -399,6 +407,17 @@ export type InvoiceSealParts = {
   readonly computed: ComputedDocument;
   readonly recipient: RecipientSnapshot;
   readonly issuer: InvoiceIssuerSnapshot;
+} & InvoiceHeaderExtras;
+
+/**
+ * The header keys M5.2 added (LD25), each present ONLY on the types that need it: `export` (an export invoice), `fx` (every USD tax or export
+ * invoice), `proforma` (a proforma), `advance` (the invoice made for money received). Absent is not null: an M5.1 seal has none and keeps its hash.
+ */
+export type InvoiceHeaderExtras = {
+  readonly export?: InvoiceSnapshotInput["export"];
+  readonly fx?: InvoiceSnapshotInput["fx"];
+  readonly proforma?: InvoiceSnapshotInput["proforma"];
+  readonly advance?: InvoiceSnapshotInput["advance"];
 };
 
 export type InvoiceSeal = {
@@ -420,6 +439,11 @@ export async function invoiceSealOf(p: InvoiceSealParts): Promise<InvoiceSeal> {
     recipient: p.recipient,
     issuer: p.issuer,
     computedSha256,
+    // Each extra only when given (a key with the value `undefined` must not reach the canonical text).
+    ...(p.export ? { export: p.export } : {}),
+    ...(p.fx ? { fx: p.fx } : {}),
+    ...(p.proforma ? { proforma: p.proforma } : {}),
+    ...(p.advance ? { advance: p.advance } : {}),
   };
   return { computedJson, computedSha256, input, snapshotSha256: await invoiceSnapshotSha256(input) };
 }
@@ -458,7 +482,23 @@ export function invoiceDraftOfBundle(b: DocumentBundle<TermsRef>): DraftContent 
     })),
     sections: [],
     schedule: [],
+    // M5.2: the rate typed on the draft, hashed with it (a document without one has no `fx` key in its hash).
+    fx: fxOfRow(d),
   };
+}
+
+/**
+ * The exchange rate stored on a row (`fx_*` columns), or null. A row read before M5.2, or built by a test without the columns, has none of them:
+ * absent is the same as null (the hash then has no `fx` key and an M5.1 seal stays byte-identical).
+ */
+export function fxOfRow(
+  d: Pick<DocumentRow, "fx_rate_micros" | "fx_date" | "fx_source">,
+): { rateMicros: number; date: string; source: string } | null {
+  return typeof d.fx_rate_micros === "number" &&
+    typeof d.fx_date === "string" &&
+    typeof d.fx_source === "string"
+    ? { rateMicros: d.fx_rate_micros, date: d.fx_date, source: d.fx_source }
+    : null;
 }
 
 /** The content hash of a loaded ISSUED invoice, worked out again from its rows and its stored `computed` (compare with `content_sha256`). */
@@ -466,9 +506,48 @@ export function invoiceContentHashOfBundle(b: DocumentBundle<TermsRef>): Promise
   return b.document.computed ? contentHash(invoiceDraftOfBundle(b), b.document.computed) : null;
 }
 
-/** The seal parts of a loaded ISSUED invoice, from its frozen columns; null when it is not frozen or lacks a frozen block. */
+/** What the freeze writes to `documents.header_extras`: the JSON of exactly the keys given, or null when there are none (an M5.1 tax invoice). */
+export function headerExtrasJson(
+  x: Pick<InvoiceHeaderExtras, "export" | "proforma" | "advance">,
+): string | null {
+  const out: Pick<InvoiceHeaderExtras, "export" | "proforma" | "advance"> = {
+    ...(x.export ? { export: x.export } : {}),
+    ...(x.proforma ? { proforma: x.proforma } : {}),
+    ...(x.advance ? { advance: x.advance } : {}),
+  };
+  return Object.keys(out).length === 0 ? null : JSON.stringify(out);
+}
+
+/**
+ * The frozen header extras of a row (LD37): the `{export?, proforma?, advance?}` the seal was made with, read back from `header_extras`. Null or an
+ * unreadable text gives none (a seal check then fails, which is the right answer for damaged data). `fx` is never here: it comes from the `fx_*` columns.
+ */
+export function headerExtrasOfRow(d: Pick<DocumentRow, "header_extras">): InvoiceHeaderExtras {
+  const text = d.header_extras;
+  if (typeof text !== "string") return {};
+  let v: unknown;
+  try {
+    v = JSON.parse(text);
+  } catch {
+    return {};
+  }
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return {};
+  const o = v as Record<string, unknown>;
+  return {
+    ...(o.export ? { export: o.export as NonNullable<InvoiceHeaderExtras["export"]> } : {}),
+    ...(o.proforma ? { proforma: o.proforma as NonNullable<InvoiceHeaderExtras["proforma"]> } : {}),
+    ...(o.advance ? { advance: o.advance as NonNullable<InvoiceHeaderExtras["advance"]> } : {}),
+  };
+}
+
+/**
+ * The seal parts of a loaded ISSUED invoice, from its frozen columns; null when it is not frozen or lacks a frozen block. The M5.2 header keys that
+ * the other columns cannot give (the endorsement, the LUT letter, the country name, the notice, the advance reference) are read from the frozen
+ * `header_extras` (LD37: NULL gives none, so an M5.1 seal keeps its hash); the exchange rate is read from the row's own `fx_*` columns.
+ */
 export function invoiceSealPartsOfBundle(b: DocumentBundle<TermsRef>): InvoiceSealParts | null {
   const d = b.document;
+  const extras = headerExtrasOfRow(d);
   if (d.frozen_at === null) return null;
   const { computed, recipient, issuer } = d;
   if (!computed || !recipient || !issuer || !d.issue_date || !d.due_date || !d.content_sha256) return null;
@@ -487,6 +566,12 @@ export function invoiceSealPartsOfBundle(b: DocumentBundle<TermsRef>): InvoiceSe
     computed,
     recipient,
     issuer: issuer as InvoiceIssuerSnapshot,
+    ...(extras.export ? { export: extras.export } : {}),
+    ...(extras.proforma ? { proforma: extras.proforma } : {}),
+    ...(extras.advance ? { advance: extras.advance } : {}),
+    ...(fxOfRow(d) && d.type !== "proforma"
+      ? { fx: fxOfRow(d) as NonNullable<ReturnType<typeof fxOfRow>> }
+      : {}),
   };
 }
 

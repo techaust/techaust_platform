@@ -118,3 +118,44 @@ export const INVOICE_PDF_COPY = {
   signature: { for: (legalName: string) => `For ${legalName}`, signatory: "Authorised signatory" },
   page: { word: "Page", of: "of" },
 } as const;
+
+/**
+ * The fixed wording an export invoice adds, word for word from 07-S §1 (docs/07-content-appendix/S-m5.2-invoice-types.md). Client-facing; PENDING the
+ * owner's word-for-word approval; every tax line is VERIFY WITH CA/LEGAL. The endorsement itself is NOT here: the invoice prints the text frozen with
+ * it at issue (Rule 46; LD23, LD33), never a constant.
+ */
+export const EXPORT_PDF_COPY = {
+  title: "Export Invoice",
+  lut: (arn: string, fyLabel: string) => `LUT ARN: ${arn} (FY ${fyLabel})`,
+  countryOfDestination: "Country of destination",
+  addressOfDelivery: "Address of delivery",
+  placeOfSupply: "Place of supply",
+  inr: {
+    heading: "Value in INR",
+    rate: (rate: string, source: string, date: string) =>
+      `Exchange rate: 1 USD = ₹${rate} (${source}, ${date})`,
+    taxable: "Taxable value in INR",
+    igst: "IGST in INR",
+  },
+  payment: {
+    swift: "International wire (SWIFT) to:",
+    beneficiary: "Beneficiary",
+    accountNumber: "Account number",
+    swiftBic: "SWIFT/BIC",
+    bankAndBranch: "Bank and branch",
+    bankAddress: "Bank address",
+    /** Not in 07-S §1: borrowed from the Settings › Bank label (07-S §8 "Intermediary bank (if your bank uses one)"), its first two words. */
+    intermediary: "Intermediary bank",
+    purposeCode: (code: string) => `Purpose code: ${code}`,
+  },
+} as const;
+
+/** The fixed wording of a proforma (07-S §2; PENDING approval). The notice under the title is NOT here: the proforma prints the text frozen with it. */
+export const PROFORMA_PDF_COPY = {
+  title: "Proforma Invoice",
+  header: { number: "Proforma number", date: "Proforma date", validUntil: "Valid until" },
+} as const;
+
+/** The line under the title of a tax or export invoice issued for a payment received against a proforma (07-S §8, Q9; PENDING approval). */
+export const advanceLine = (proformaNumber: string, proformaDate: string, receivedOn: string) =>
+  `Against proforma ${proformaNumber} of ${proformaDate}, payment received on ${receivedOn}.`;

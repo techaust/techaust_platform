@@ -104,6 +104,7 @@ describe("src/tax: pure and deterministic", () => {
     const allowed = new Set([
       "../clients.ts",
       "../dates.ts",
+      "../export-invoice.ts",
       "../gstin.ts",
       "../money.ts",
       "../schedule-text.ts",

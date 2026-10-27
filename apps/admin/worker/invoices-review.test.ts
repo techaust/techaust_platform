@@ -6,7 +6,7 @@ import { bundleOf, loadStatements, type TermsRow } from "@techaust/db/documents"
 import { invoiceEnvelopeOfBundle, verifyInvoiceEnvelope } from "@techaust/pdf";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { mkContact, mkDoc } from "./test-clients.ts";
-import { call, captureQueue, countOf, one, sessionFor } from "./test-helpers.ts";
+import { call, captureQueue, countOf, one, rows, sessionFor } from "./test-helpers.ts";
 import {
   auditCount,
   codeOf,
@@ -140,6 +140,20 @@ describe("review 1: a draft's contact that was anonymised can never be frozen in
     expect(await one("SELECT status FROM approvals WHERE document_id = ?", made.id)).toEqual({
       status: "expired",
     });
+    // M5.1 L2: one `approval.expire` audit row per request expired, by the person who anonymised: ids and the cause, nothing else
+    const approvalId = (await one<{ id: string }>("SELECT id FROM approvals WHERE document_id = ?", made.id))
+      ?.id;
+    const audits = await rows<{ entity_id: string; actor_id: string; role: string; summary: string }>(
+      "SELECT entity_id, actor_id, role, summary FROM audit_log WHERE action = 'approval.expire' AND entity_id = ?",
+      approvalId,
+    );
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({ entity_id: approvalId, role: "owner" });
+    expect(JSON.parse(audits[0]?.summary ?? "{}")).toEqual({
+      approvalId,
+      documentId: made.id,
+      cause: "contact_anonymised",
+    });
     const after = await getInvoice(o, made.id);
     expect(after.updatedAt).toBeGreaterThan(before.updatedAt);
     const stale = await patchInvoice(o, made.id, {
@@ -175,7 +189,7 @@ describe("review 1: a draft's contact that was anonymised can never be frozen in
 });
 
 describe("review 4: the numbering first-character rule is for saving; a stored format still reads [LD18; VERIFY WITH CA/LEGAL]", () => {
-  it("a stored {N}/{FY} row (valid before M5.1) does not turn the invoice routes into a 500: the draft reads and issues, and the Settings page opens; saving that format is refused", async () => {
+  it("a stored {N}/{FY} row (valid before M5.1) does not turn the invoice routes into a 500: the draft reads and issues, and the Settings page opens; a save that CHANGES a series to such a format is refused, while the stored one never blocks another series", async () => {
     const o = await owner();
     const stored = { ...SETTINGS_DEFAULTS.numbering, invoice: { template: "{N}/{FY}", padding: 4 } };
     await env.DB.prepare("DELETE FROM settings WHERE key = 'numbering'").run();
@@ -190,13 +204,32 @@ describe("review 4: the numbering first-character rule is for saving; a stored f
       const res = await issueInvoice(o, made.id);
       expect(res.status, await res.clone().text()).toBe(200);
       expect((await json(res)).number).toMatch(/^\d{4}\/\d{4}$/);
-      // saving it is what the rule is for
+      // the rule is for what a save CHANGES: moving that series to another format that breaks it is refused, with the reason
       const refused = await call("/settings/groups/numbering", {
         method: "PUT",
         cookie: o.cookie,
-        body: { version: 1, value: stored },
+        body: { version: 1, value: { ...stored, estimate: { template: "-{N}/{FY}", padding: 4 } } },
       });
       expect(refused.status).toBe(400);
+      expect(JSON.stringify(await json(refused))).toContain('"path":"estimate"');
+      // ... but the stored format of ANOTHER series no longer blocks every numbering save: changing a valid series saves, the stored one is kept as it is
+      const saved = await call("/settings/groups/numbering", {
+        method: "PUT",
+        cookie: o.cookie,
+        body: { version: 1, value: { ...stored, estimate: { template: "TH/Q/{FY}/{N}", padding: 4 } } },
+      });
+      expect(saved.status, await saved.clone().text()).toBe(200);
+      const after = await json(await call("/settings/groups/numbering", { cookie: o.cookie }));
+      expect(after.value.invoice).toEqual({ template: "{N}/{FY}", padding: 4 });
+      expect(after.value.estimate).toEqual({ template: "TH/Q/{FY}/{N}", padding: 4 });
+      // saving the stored format unchanged is a no-op, not a refusal
+      const same = await call("/settings/groups/numbering", {
+        method: "PUT",
+        cookie: o.cookie,
+        body: { version: after.version, value: after.value },
+      });
+      expect(same.status, await same.clone().text()).toBe(200);
+      expect((await json(same)).changed).toBe(false);
     } finally {
       await env.DB.prepare("DELETE FROM settings WHERE key = 'numbering'").run();
     }
@@ -564,6 +597,42 @@ describe("review 10: the issue request and its decision are emailed (07-R §3)",
     });
     // the message holds no address, no name and no reason
     expect(JSON.stringify(q.sent)).not.toMatch(/@|Asha/);
+  });
+
+  it("the Owner issues directly while a Staff request waits: the request closes as approved and the requester gets the decided email; with no request waiting, none [M5.1 item]", async () => {
+    const o = await owner();
+    const staff = await sessionFor("staff");
+    const q = captureQueue();
+    const made = await mkInvoice(staff);
+    const req = await call(
+      `/invoices/${made.id}/issue-request`,
+      { cookie: staff.cookie, body: { expectedUpdatedAt: (await issueBodyOf(made.id)).expectedUpdatedAt } },
+      q.env,
+    );
+    expect(req.status, await req.clone().text()).toBe(201);
+    const approvalId = (await json(req)).id as string;
+    expect(issueMessages(q)).toHaveLength(1); // the "requested" one
+    const issued = await call(
+      `/invoices/${made.id}/issue`,
+      { cookie: o.cookie, body: await issueBodyOf(made.id) },
+      q.env,
+    );
+    expect(issued.status, await issued.clone().text()).toBe(200);
+    expect(await one("SELECT status FROM approvals WHERE id = ?", approvalId)).toEqual({
+      status: "approved",
+    });
+    expect(issueMessages(q).at(-1)).toEqual({ kind: "approval.notify", approvalId, event: "decided" });
+    expect(issueMessages(q)).toHaveLength(2);
+    // an issue with nothing waiting sends no approval email
+    const plain = await mkInvoice(o);
+    const q2 = captureQueue();
+    const direct = await call(
+      `/invoices/${plain.id}/issue`,
+      { cookie: o.cookie, body: await issueBodyOf(plain.id) },
+      q2.env,
+    );
+    expect(direct.status, await direct.clone().text()).toBe(200);
+    expect(issueMessages(q2)).toEqual([]);
   });
 
   it("a refused request (stale) queues nothing, and a queue that is down never fails the request", async () => {

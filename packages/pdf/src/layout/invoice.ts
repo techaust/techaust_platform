@@ -1,30 +1,41 @@
-// The tax invoice layout (M5.1 phase 2; docs/06 §7.1 to §7.3, §7.5; wording 07-R §6 in ./copy.ts). The same system as the proposal and estimate
-// layout (./document.ts, ./styles.ts): the 12-column A4 page, the shared header (logo, title, the verdigris rule, then three blocks), the money
-// across all twelve columns, ink on white. What is the invoice's own:
-//   - the title carries its Rule 48(2) copy mark ("ORIGINAL FOR RECIPIENT") under it, as 06 §7.2 draws it;
+// The invoice layout (M5.1 phase 2 for the tax invoice; M5.2 adds the export invoice, the proforma and the invoice issued for a payment received;
+// docs/06 §7.1 to §7.3, §7.5; wording 07-R §6 and 07-S §1, §2, §8 in ./copy.ts). The same system as the proposal and estimate layout (./document.ts,
+// ./styles.ts): the 12-column A4 page, the shared header (logo, title, the verdigris rule, then three blocks), the money across all twelve columns, ink
+// on white. What is the invoice's own:
+//   - the title carries its Rule 48(2) copy mark ("ORIGINAL FOR RECIPIENT") under it, as 06 §7.2 draws it (a proforma has none: it is no tax invoice);
 //   - the third header block is the invoice's identity: the number set larger than anything else in the header (an invoice is known by its
 //     number), then the dates and the place of supply with its State code;
+//   - the statutory line of an export invoice (the Rule 46 endorsement) and of a proforma (its notice) sits right under the title, across the page, in
+//     the one band the layout has: an ink bar on its left, the line in semibold. It is printed as ONE text node, exactly as frozen (LD33: the jobs
+//     Worker refuses a page without it); the LUT line and the extra export note follow it inside the band;
 //   - the tax summary prints each head with its own rate and amount (CGST and SGST for an intra-state supply, IGST otherwise);
 //   - "How to pay" sits beside the total, in the system's one call-to-action box (an ink outline with the mark's 45° cut, as the proposal's
-//     acceptance box), with the signatory under the total; the tax summary and the notes follow as the detail.
+//     acceptance box), with the signatory under the total; the tax summary and the notes follow as the detail. A USD invoice's INR values sit under
+//     its total (the eye reads the amount, then what it is in rupees), and its box holds the SWIFT details.
+//   - an invoice issued for a payment received is already paid: it says against which proforma and when the money arrived, and prints neither a
+//     balance due nor how to pay.
 //
-// Rule 46 (docs/08-research-appendix/A §3; VERIFY WITH CA/LEGAL), every field the view carries is printed:
+// Rule 46 (docs/08-research-appendix/A §3, §8; VERIFY WITH CA/LEGAL), every field the view carries is printed:
 //   (a) supplier name, address, GSTIN (and principal place)   (b) number   (c) date   (d) recipient name, address, GSTIN when registered
 //   (e) recipient State name and code   (g) SAC   (h) description   quantity and unit   (j) value and discount   (k) taxable value
-//   (l) rate and (m) amount per head (the tax summary)   (n) place of supply with its State   (p) the reverse-charge statement exactly as frozen
-//   (q) the signatory, with the signature image only when set and verified   Rule 48(2): the copy mark.   Also the due date, the amount in
-//   words, the INR bank block when the invoice froze one, and the notes pinned at issue.
+//   (l) rate and (m) amount per head (the tax summary)   (n) place of supply with its State   (o) the address of delivery when it differs
+//   (p) the reverse-charge statement exactly as frozen   (q) the signatory, with the signature image only when set and verified   Rule 48(2): the
+//   copy mark.   Exports: the endorsement as frozen, the LUT, the country of destination, the INR values with the rate, its date and source.
+//   Also the due date (a proforma's "Valid until"), the amount in words, the bank block the invoice froze, and the notes pinned at issue.
 //
 // No logic beyond formatting: every value is a pre-formatted string of the view. Every dynamic string goes through `esc`; Markdown through
 // `markdownBlocks`. Data-testids (the tests and the visual suite rely on them): `rupee`, `currency-symbol`, `total`, `integrity`,
-// `reverse-charge`, `copy-label`, `signature`, `signatory`.
+// `reverse-charge`, `copy-label`, `signature`, `signatory`, `endorsement`, `notice`, `lut`, `export-note`, `advance`, `inr`, `balance-due`.
 import { esc } from "../escape.ts";
 import { PDF_LOGOS } from "../generated/assets.ts";
-import type { InvoiceView, InvoiceViewBank } from "../invoice-types.ts";
+import type { InvoiceView, InvoiceViewBank, InvoiceViewSwift } from "../invoice-types.ts";
 import { markdownBlocks } from "../markdown-html.ts";
-import { INVOICE_PDF_COPY as C } from "./copy.ts";
+import { advanceLine, INVOICE_PDF_COPY as C, EXPORT_PDF_COPY as E, PROFORMA_PDF_COPY as P } from "./copy.ts";
 
 const RUPEE = "₹";
+
+/** The invoice-family types this layout prints (credit and debit notes keep the skeleton until M5.3 styles them). */
+export const DESIGNED_INVOICE_TYPES: readonly string[] = ["tax_invoice", "export_invoice", "proforma"];
 
 const p = (cls: string, text: string, attrs = "") => `<p class="${cls}"${attrs}>${esc(text)}</p>`;
 
@@ -55,6 +66,16 @@ function amountHtml(value: string, testid: string): string {
 }
 
 const intra = (view: InvoiceView) => view.supplyType === "intra";
+const isProforma = (view: InvoiceView) => view.type === "proforma";
+/** Paid at issue (the invoice for a payment received, Q9): nothing is left to pay. */
+const isPaid = (view: InvoiceView) => view.advance !== null;
+
+/** The document's title (07-R §6, 07-S §1, §2). */
+export function titleOf(view: InvoiceView): string {
+  if (view.type === "export_invoice") return E.title;
+  if (isProforma(view)) return P.title;
+  return C.title;
+}
 
 /** "West Bengal (19)" as its State name and code, for the two header facts; anything else stays whole, with no code. */
 export function splitPlaceOfSupply(label: string): { name: string; code: string | null } {
@@ -65,37 +86,101 @@ export function splitPlaceOfSupply(label: string): { name: string; code: string 
 // ---- header -------------------------------------------------------------------------------------------------------------------------
 
 function masthead(view: InvoiceView): string {
-  return `<header class="masthead">${logoHtml(view)}<div class="inv-heading"><h1 class="masthead__title">${C.title}</h1>${p(
-    "inv-copy",
-    view.copyLabel,
-    ' data-testid="copy-label"',
-  )}</div></header>`;
+  // The copy mark only when the view sets one (a proforma has none): no empty paragraph.
+  const copy = view.copyLabel ? p("inv-copy", view.copyLabel, ' data-testid="copy-label"') : "";
+  return `<header class="masthead">${logoHtml(view)}<div class="inv-heading"><h1 class="masthead__title">${esc(
+    titleOf(view),
+  )}</h1>${copy}</div></header>`;
+}
+
+/**
+ * The statutory band under the title: an export invoice's endorsement (then its LUT line and the extra export note), a proforma's notice. The
+ * endorsement and the notice are each ONE text node, the frozen text escaped and nothing else (LD33). Empty for a tax invoice.
+ */
+function statutoryBand(view: InvoiceView): string {
+  const x = view.export;
+  if (x) {
+    const lut = x.lut ? p("inv-band__sub", E.lut(x.lut.arn, x.lut.fyLabel), ' data-testid="lut"') : "";
+    const note =
+      x.declaration && x.declaration.text.trim() !== ""
+        ? `<div class="inv-band__note" data-testid="export-note">${markdownBlocks(x.declaration.text).join("")}</div>`
+        : "";
+    return `<section class="inv-band" aria-label="${esc(E.title)}">${p(
+      "inv-band__line",
+      x.endorsement,
+      ' data-testid="endorsement"',
+    )}${lut}${note}</section>`;
+  }
+  if (view.proforma)
+    return `<section class="inv-band" aria-label="${esc(P.title)}">${p(
+      "inv-band__line",
+      view.proforma.notice,
+      ' data-testid="notice"',
+    )}</section>`;
+  return "";
+}
+
+/** The invoice issued for a payment received: against which proforma, and when the money arrived (07-S §8). */
+function advanceHtml(view: InvoiceView): string {
+  const a = view.advance;
+  if (!a) return "";
+  return p(
+    "inv-advance",
+    advanceLine(a.proformaNumber, a.proformaDate, a.receivedOn),
+    ' data-testid="advance"',
+  );
 }
 
 const fact = (term: string, value: string, cls = "") =>
   `<div${cls ? ` class="${cls}"` : ""}><dt>${esc(term)}</dt><dd>${esc(value)}</dd></div>`;
 
 function parties(view: InvoiceView): string {
-  const P = C.parties;
-  const from = `<div class="party"><p class="label">${P.from}</p>${p("party__name", view.supplier.name)}${view.supplier.lines
+  const R = C.parties;
+  const from = `<div class="party"><p class="label">${R.from}</p>${p("party__name", view.supplier.name)}${view.supplier.lines
     .map((l) => partsLine("party__line", l))
     .join("")}</div>`;
 
   const r = view.recipient;
-  const ids = [r.gstin ? fact(P.gstin, r.gstin) : "", r.state ? fact(P.state, r.state) : ""].join("");
-  const to = `<div class="party"><p class="label">${P.billedTo}</p>${p("party__name", r.name)}${r.lines
+  const ids = [r.gstin ? fact(R.gstin, r.gstin) : "", r.state ? fact(R.state, r.state) : ""].join("");
+  const delivery = view.export?.deliveryAddress;
+  const deliveryHtml =
+    delivery && delivery.length > 0
+      ? `<div class="inv-delivery"><p class="label">${E.addressOfDelivery}</p>${delivery
+          .map((l) => p("party__line", l))
+          .join("")}</div>`
+      : "";
+  const to = `<div class="party"><p class="label">${R.billedTo}</p>${p("party__name", r.name)}${r.lines
     .map((l) => partsLine("party__line", l))
     .join(
       "",
-    )}${ids ? `<dl class="inv-ids">${ids}</dl>` : ""}${r.attention ? p("party__line party__attention", r.attention) : ""}</div>`;
+    )}${ids ? `<dl class="inv-ids">${ids}</dl>` : ""}${r.attention ? p("party__line party__attention", r.attention) : ""}${deliveryHtml}</div>`;
 
+  return `<section class="parties" aria-label="${esc(titleOf(view))}">${from}${to}${docBlock(view)}</section>`;
+}
+
+/** The third header block: the number first and largest, then the dates and where the supply is. */
+function docBlock(view: InvoiceView): string {
   const H = C.header;
-  const pos = splitPlaceOfSupply(view.placeOfSupply);
-  const doc = `<div class="party party--doc inv-doc"><p class="label">${H.number}</p><p class="inv-number">${esc(view.numberDisplay)}</p><dl class="facts inv-facts">${fact(
-    H.date,
-    view.issueDate,
-  )}${fact(H.dueDate, view.dueDate)}${fact(H.placeOfSupply, pos.name, "wrap")}${pos.code ? fact(H.stateCode, pos.code) : ""}</dl></div>`;
-  return `<section class="parties" aria-label="${esc(C.title)}">${from}${to}${doc}</section>`;
+  const pro = view.proforma;
+  const numberLabel = pro ? P.header.number : H.number;
+  const dates = pro
+    ? `${fact(P.header.date, view.issueDate)}${fact(P.header.validUntil, pro.validUntil)}`
+    : `${fact(H.date, view.issueDate)}${fact(H.dueDate, view.dueDate)}`;
+  let place: string;
+  if (view.export) {
+    // "Outside India (96)" stays whole (07-S §1), and the country of destination follows it.
+    place = `${fact(E.placeOfSupply, view.export.placeOfSupply, "wrap")}${fact(
+      E.countryOfDestination,
+      view.export.countryName,
+      "wrap",
+    )}`;
+  } else {
+    const pos = splitPlaceOfSupply(view.placeOfSupply);
+    place = `${fact(H.placeOfSupply, pos.name, "wrap")}${pos.code ? fact(H.stateCode, pos.code) : ""}`;
+  }
+  return `<div class="party party--doc inv-doc"><p class="label">${numberLabel}</p><p class="inv-number">${esc(
+    view.numberDisplay,
+  )}</p><dl class="facts inv-facts">${dates}${place}</dl></div>`;
 }
 
 // ---- the money ----------------------------------------------------------------------------------------------------------------------
@@ -138,13 +223,34 @@ function totalsBlock(view: InvoiceView): string {
         : `<tr><th scope="row">${esc(t.label)}</th><td class="num">${esc(t.value)}</td></tr>`,
     )
     .join("");
-  const due = `<tr class="due"><th scope="row">${esc(C.balanceDue)}</th><td class="num" data-testid="balance-due">${esc(view.balanceDue)}</td></tr>`;
+  // Paid at issue (Q9): no balance is due, so the row is left out rather than printing the total as owed.
+  const due = isPaid(view)
+    ? ""
+    : `<tr class="due"><th scope="row">${esc(C.balanceDue)}</th><td class="num" data-testid="balance-due">${esc(view.balanceDue)}</td></tr>`;
   // Beside the total: the amount in words, the reverse-charge statement as frozen, then how to pay it (the eye goes from the total to the box);
-  // under the total, level with the foot of the box, the signatory.
-  const notes = `${p("words", C.words(view.words))}${p("inv-rc", view.reverseCharge, ' data-testid="reverse-charge"')}${payBox(view)}`;
-  return `<div class="totals inv-totals"><div class="totals__notes">${notes}</div><div class="inv-side"><table class="totals__table">${rows}${due}</table>${signatory(
+  // under the total its INR values (a USD invoice), then, level with the foot of the box, the signatory.
+  const notes = `${p("words", C.words(view.words))}${p("inv-rc", view.reverseCharge, ' data-testid="reverse-charge"')}${
+    isPaid(view) ? "" : payBox(view)
+  }`;
+  return `<div class="totals inv-totals"><div class="totals__notes">${notes}</div><div class="inv-side"><table class="totals__table">${rows}${due}</table>${inrBlock(
     view,
-  )}</div></div>`;
+  )}${signatory(view)}</div></div>`;
+}
+
+/** The INR values of a USD invoice (07-S §1): the rate with its source and date, the taxable value and, on the IGST route only, the IGST. */
+function inrBlock(view: InvoiceView): string {
+  const i = view.inr;
+  if (!i) return "";
+  const rate = E.inr.rate(i.rate, i.source, i.date);
+  const at = rate.indexOf(RUPEE);
+  // The first rupee sign of the block in its own span, so the visual suite can ask its font on a USD invoice too.
+  const rateHtml = `${esc(rate.slice(0, at))}<span data-testid="rupee">${RUPEE}</span>${esc(rate.slice(at + 1))}`;
+  const row = (label: string, value: string) =>
+    `<tr><th scope="row">${esc(label)}</th><td class="num">${esc(value)}</td></tr>`;
+  return `<div class="inv-inr" data-testid="inr"><h3>${E.inr.heading}</h3><p class="inv-inr__rate">${rateHtml}</p><table class="totals__table inv-inr__table">${row(
+    E.inr.taxable,
+    i.taxable,
+  )}${i.igst !== null ? row(E.inr.igst, i.igst) : ""}</table></div>`;
 }
 
 function summaryTable(view: InvoiceView): string {
@@ -180,12 +286,12 @@ function summaryTable(view: InvoiceView): string {
 
 /** The frozen bank block under 07-R's labels: "Bank" and "Branch" print together as "Bank and branch"; a label 07-R has no word for stays as the view gave it. */
 export function bankRows(bank: InvoiceViewBank): { label: string; value: string }[] {
-  const P = C.payment;
+  const B = C.payment;
   const value = (label: string) => bank.find((b) => b.label === label)?.value ?? null;
   const rename: Record<string, string> = {
-    "Account name": P.accountName,
-    "Account number": P.accountNumber,
-    IFSC: P.ifsc,
+    "Account name": B.accountName,
+    "Account number": B.accountNumber,
+    IFSC: B.ifsc,
   };
   const out: { label: string; value: string }[] = [];
   let bankDone = false;
@@ -196,7 +302,7 @@ export function bankRows(bank: InvoiceViewBank): { label: string; value: string 
       const joined = [value("Bank"), value("Branch")]
         .filter((v): v is string => v !== null && v !== "")
         .join(", ");
-      if (joined) out.push({ label: P.bankAndBranch, value: joined });
+      if (joined) out.push({ label: B.bankAndBranch, value: joined });
       continue;
     }
     out.push({ label: rename[b.label] ?? b.label, value: b.value });
@@ -204,17 +310,34 @@ export function bankRows(bank: InvoiceViewBank): { label: string; value: string 
   return out;
 }
 
+/** The frozen SWIFT details under 07-S §1's labels, in the order a bank's wire form asks for them; an empty value is left out. */
+export function swiftRows(s: InvoiceViewSwift): { label: string; value: string }[] {
+  const W = E.payment;
+  return [
+    { label: W.beneficiary, value: s.beneficiary },
+    { label: W.accountNumber, value: s.accountNo },
+    { label: W.swiftBic, value: s.swift },
+    { label: W.bankAndBranch, value: s.bank },
+    { label: W.bankAddress, value: s.bankAddress ?? "" },
+    { label: W.intermediary, value: s.intermediary ?? "" },
+  ].filter((r) => r.value.trim() !== "");
+}
+
+const rowsDl = (rows: { label: string; value: string }[]) =>
+  `<dl class="inv-bank">${rows.map((b) => `<div><dt>${esc(b.label)}</dt><dd>${esc(b.value)}</dd></div>`).join("")}</dl>`;
+
 function payBox(view: InvoiceView): string {
-  const P = C.payment;
+  const B = C.payment;
   const portal = view.portalLink;
-  const bank = view.bank
-    ? `${p("inv-pay__intro", P.bank)}<dl class="inv-bank">${bankRows(view.bank)
-        .map((b) => `<div><dt>${esc(b.label)}</dt><dd>${esc(b.value)}</dd></div>`)
-        .join("")}</dl>`
-    : "";
-  return `<div class="accept inv-pay"><h3>${P.heading}</h3>${bank}${p("inv-pay__ref", P.reference(view.numberDisplay))}${
+  let bank = "";
+  if (view.swift) {
+    bank = `${p("inv-pay__intro", E.payment.swift)}${rowsDl(swiftRows(view.swift))}${
+      view.swift.purposeCode ? p("inv-pay__purpose", E.payment.purposeCode(view.swift.purposeCode)) : ""
+    }`;
+  } else if (view.bank) bank = `${p("inv-pay__intro", B.bank)}${rowsDl(bankRows(view.bank))}`;
+  return `<div class="accept inv-pay"><h3>${B.heading}</h3>${bank}${p("inv-pay__ref", B.reference(view.numberDisplay))}${
     portal
-      ? `<p class="inv-pay__portal">${esc(P.portal(""))}<span class="accept__link">${esc(portal)}</span></p>`
+      ? `<p class="inv-pay__portal">${esc(B.portal(""))}<span class="accept__link">${esc(portal)}</span></p>`
       : ""
   }</div>`;
 }
@@ -234,9 +357,14 @@ function notesBlock(view: InvoiceView): string {
   return `<div class="block inv-notes"><h3>${esc(view.notes.title)}</h3><div class="terms">${markdownBlocks(view.notes.bodyMd).join("")}</div></div>`;
 }
 
-/** The body of a tax invoice (inside `<body>`). */
+/** The modifier class of the document (the base class `doc--tax-invoice` carries the whole designed invoice system). */
+const modifierOf = (view: InvoiceView) =>
+  view.type === "export_invoice" ? " doc--export-invoice" : isProforma(view) ? " doc--proforma" : "";
+
+/** The body of a tax invoice, an export invoice or a proforma (inside `<body>`). */
 export function taxInvoiceBody(view: InvoiceView): string {
-  return `<div class="doc doc--invoice doc--tax-invoice">${masthead(view)}
+  return `<div class="doc doc--invoice doc--tax-invoice${modifierOf(view)}">${masthead(view)}
+${statutoryBand(view)}${advanceHtml(view)}
 ${parties(view)}
 <div class="money">${itemsTable(view)}${totalsBlock(view)}${summaryTable(view)}</div>
 ${notesBlock(view)}
@@ -244,8 +372,8 @@ ${notesBlock(view)}
 }
 
 /**
- * What the tax invoice adds to the shared template CSS (./styles.ts), all under `.doc--tax-invoice`. Sizes, colours and fonts are the print
- * tokens; the lengths are column widths and spacing on the 178 mm text width. Bold is 600 (the fonts stop there).
+ * What the invoice layout adds to the shared template CSS (./styles.ts), all under `.doc--tax-invoice` (the class every designed invoice carries).
+ * Sizes, colours and fonts are the print tokens; the lengths are column widths and spacing on the 178 mm text width. Bold is 600 (the fonts stop there).
  */
 export const TAX_INVOICE_CSS = `
 .doc--tax-invoice { font-size: var(--print-body); line-height: var(--print-body-leading); }
@@ -261,6 +389,31 @@ export const TAX_INVOICE_CSS = `
   color: var(--color-text);
 }
 
+/* the statutory band under the title (an export's endorsement, a proforma's notice): an ink bar, the line in semibold, the LUT and the note after it */
+.doc--tax-invoice .inv-band {
+  margin: 0 0 5mm;
+  padding: 0.6mm 0 0.6mm 3.4mm;
+  border-left: 0.8mm solid var(--color-text);
+  break-inside: avoid;
+}
+.doc--tax-invoice .inv-band__line {
+  margin: 0;
+  max-width: 150mm;
+  font-size: var(--print-table);
+  line-height: 1.4;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--color-text);
+  text-wrap: pretty;
+}
+.doc--tax-invoice .inv-band__sub { margin: 1.2mm 0 0; font-size: var(--print-table); line-height: 1.4; font-variant-numeric: tabular-nums lining-nums; }
+.doc--tax-invoice .inv-band__note { margin: 1.6mm 0 0; max-width: 150mm; font-size: var(--print-table); line-height: 1.4; color: var(--color-text-muted); }
+.doc--tax-invoice .inv-band__note p { margin: 0 0 1mm; }
+.doc--tax-invoice .inv-band__note p:last-child { margin-bottom: 0; }
+
+/* the invoice for a payment received: against which proforma, and when */
+.doc--tax-invoice .inv-advance { margin: 0 0 5mm; font-size: var(--print-table); line-height: 1.4; font-weight: 500; }
+
 /* the third header block: the number first and largest, then the facts */
 .doc--tax-invoice .inv-number {
   margin: 0 0 2.4mm;
@@ -273,11 +426,13 @@ export const TAX_INVOICE_CSS = `
 }
 .doc--tax-invoice .inv-facts .wrap dd { white-space: normal; overflow-wrap: anywhere; }
 
-/* the client's GSTIN and State, as label and value under the address */
+/* the client's GSTIN and State, as label and value under the address; the address of delivery under them */
 .doc--tax-invoice .inv-ids { margin: 1.6mm 0 0; display: grid; grid-template-columns: auto 1fr; column-gap: 2.4mm; row-gap: 0.4mm; }
 .doc--tax-invoice .inv-ids div { display: contents; }
 .doc--tax-invoice .inv-ids dt { color: var(--color-text-muted); }
 .doc--tax-invoice .inv-ids dd { margin: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums lining-nums; }
+.doc--tax-invoice .inv-delivery { margin-top: 2.4mm; }
+.doc--tax-invoice .inv-delivery .label { margin-bottom: 0.8mm; }
 
 .doc--tax-invoice .parties { padding-bottom: 4mm; }
 .doc--tax-invoice .money { margin-top: 4mm; }
@@ -304,6 +459,12 @@ export const TAX_INVOICE_CSS = `
 .doc--tax-invoice .inv-summary thead th.inv-head { color: var(--color-text); text-align: center; }
 .doc--tax-invoice .inv-summary thead tr + tr th { padding-top: 1mm; }
 
+/* a USD invoice's INR values, under its total: a thin rule, the heading, the rate line, then the figures */
+.doc--tax-invoice .inv-inr { margin-top: -4mm; padding-top: 2mm; border-top: 0.2mm solid var(--color-border); font-size: var(--print-table); line-height: 1.4; }
+.doc--tax-invoice .inv-inr h3 { font-size: var(--print-table); line-height: 1.4; font-weight: 600; margin: 0 0 0.6mm; }
+.doc--tax-invoice .inv-inr__rate { margin: 0 0 0.8mm; color: var(--color-text-muted); font-variant-numeric: tabular-nums lining-nums; text-wrap: balance; }
+.doc--tax-invoice .inv-inr__table { width: 100%; }
+
 /* paying: the call-to-action box under the words, beside the totals */
 .doc--tax-invoice .inv-pay { margin: 4mm 0 0; padding-right: 9mm; font-size: var(--print-table); line-height: 1.4; }
 .doc--tax-invoice .inv-pay h3 { font-size: var(--print-body); line-height: var(--print-body-leading); font-weight: 600; margin: 0 0 1.6mm; }
@@ -313,6 +474,7 @@ export const TAX_INVOICE_CSS = `
 .doc--tax-invoice .inv-bank div { display: contents; }
 .doc--tax-invoice .inv-bank dt { color: var(--color-text-muted); }
 .doc--tax-invoice .inv-bank dd { margin: 0; font-weight: 500; overflow-wrap: anywhere; font-variant-numeric: tabular-nums lining-nums; }
+.doc--tax-invoice .inv-pay__purpose { margin: -1mm 0 2.4mm; font-weight: 500; }
 .doc--tax-invoice .inv-pay__ref { margin: 0; font-weight: 600; }
 .doc--tax-invoice .inv-pay__portal { margin: 1mm 0 0; }
 

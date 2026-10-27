@@ -78,6 +78,15 @@ export type SeriesState = {
 };
 export type GroupMeta = {
   verify?: string;
+  /** M5.2 (Settings › Tax): today's LUT reminder, worked out by the server from the saved letters. */
+  lutStatus?: {
+    currentFy: string;
+    currentFyLabel: string;
+    nextFy: string;
+    nextFyLabel: string;
+    due: boolean;
+    currentMissing: boolean;
+  } | null;
   notes?: string;
   pan?: string | null;
   logos?: readonly string[];
@@ -107,6 +116,8 @@ export type BankAccount = {
   branch: string | null;
   bankAddress: string | null;
   intermediary: string | null;
+  /** M5.2 (LD30): the RBI purpose code of the USD account (P and four digits); absent from an older API. */
+  purposeCode?: string | null;
   updatedAt: number | null;
 };
 export type BankInput = {
@@ -119,6 +130,8 @@ export type BankInput = {
   branch?: string | null;
   bankAddress?: string | null;
   intermediary?: string | null;
+  /** M5.2: the USD account's purpose code; null clears it. */
+  purposeCode?: string | null;
   /** The `updatedAt` from GET /settings/bank (null for a first save); a different one on the server is a 409. */
   expectedUpdatedAt: number | null;
 };
@@ -871,7 +884,7 @@ export class RequestError extends Error {
       contactIds?: string[];
       missing?: string[];
       number?: string;
-      blockers?: { code: string; line?: number }[];
+      blockers?: { code: string; line?: number; fy?: string; date?: string }[];
     } = {},
   ) {
     super(message);
@@ -976,11 +989,19 @@ async function send<T>(path: string, { method, body, raw, signedIn = true }: Opt
 
 const strings = (xs: unknown[]): string[] => xs.filter((x): x is string => typeof x === "string");
 
-const blockersOf = (xs: unknown[]): { code: string; line?: number }[] =>
+/** The blockers of a 409 `issue_blocked`: the code, and the line, year or date its sentence names (M5.2: `lut_missing` has `fy`, `fx_missing` `date`). */
+const blockersOf = (xs: unknown[]): { code: string; line?: number; fy?: string; date?: string }[] =>
   xs.flatMap((x) => {
     if (typeof x !== "object" || x === null || typeof (x as { code?: unknown }).code !== "string") return [];
-    const b = x as { code: string; line?: unknown };
-    return [typeof b.line === "number" ? { code: b.code, line: b.line } : { code: b.code }];
+    const b = x as { code: string; line?: unknown; fy?: unknown; date?: unknown };
+    return [
+      {
+        code: b.code,
+        ...(typeof b.line === "number" ? { line: b.line } : {}),
+        ...(typeof b.fy === "string" ? { fy: b.fy } : {}),
+        ...(typeof b.date === "string" ? { date: b.date } : {}),
+      },
+    ];
   });
 
 /** One request; if it needs a fresh step-up, ask for it and send the same request once more. */

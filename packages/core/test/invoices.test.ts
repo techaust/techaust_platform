@@ -23,8 +23,9 @@ import {
 } from "../src/invoices.ts";
 
 describe("which types can be issued [ADM-INV-01, LD2]", () => {
-  it("only the domestic tax invoice", () => {
-    expect(INVOICE_ISSUABLE_TYPES).toEqual(["tax_invoice"]);
+  // M5.2: export invoices and proformas became issuable (credit and debit notes wait for M5.3).
+  it("the tax invoice, the export invoice and the proforma", () => {
+    expect(INVOICE_ISSUABLE_TYPES).toEqual(["tax_invoice", "export_invoice", "proforma"]);
   });
 });
 
@@ -130,11 +131,19 @@ describe("what stops an issue [ADM-INV-07, LD20; Rule 46]", () => {
       gstStatus: "registered",
       gstin: "27ABCDE1234F1Z5",
       stateCode: "27",
+      countryName: "India",
     },
     lines: [{ sac: "998314", description: "Website build" }],
     taxErrorCount: 0,
     totalMinor: 118_000,
+    // M5.2 facts: the fixture of a domestic INR tax invoice with everything in place.
+    totalInrMinor: 118_000,
     reverseChargeText: "No",
+    fx: { value: null, refDate: "2026-10-28", maxAgeDays: 4 },
+    export: null,
+    bank: { inr: true, swift: true },
+    advance: false,
+    b2cThresholdInrMinor: 5_000_000,
   };
   const codes = (f: IssueFacts) => issueBlockers(f).map((b) => b.code);
 
@@ -212,7 +221,14 @@ describe("what stops an issue [ADM-INV-07, LD20; Rule 46]", () => {
       codes({
         ...good,
         type: "export_invoice",
-        recipient: { ...good.recipient, gstStatus: "overseas", gstin: null, stateCode: null },
+        recipient: {
+          ...good.recipient,
+          gstStatus: "overseas",
+          gstin: null,
+          stateCode: null,
+          countryName: "Germany",
+        },
+        export: { mode: "igst_paid", issueFy: "2627", luts: [] },
       }),
     ).toEqual([]);
   });

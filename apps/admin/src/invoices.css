@@ -133,6 +133,241 @@
   font-weight: 500;
 }
 
+/* ---------- M5.2: export invoices, proformas, the exchange rate ----------
+   One thing is drawn: the STATUTORY LINE. An export invoice's endorsement and a proforma's notice print on the PDF in a band (an ink bar, the words
+   in semibold, exactly as frozen); the screens draw the same band with the same words, so the Owner reads what the client will read. The rest sits
+   in the panels and facts the invoice screens already use. */
+
+.inv-band {
+  margin: 0;
+  padding: var(--space-1) 0 var(--space-1) var(--space-4);
+  border-inline-start: 3px solid var(--color-text);
+}
+
+.inv-band__line {
+  margin: 0;
+  max-width: 62ch;
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+.inv-band__sub,
+.inv-band__note {
+  margin: var(--space-2) 0 0;
+  max-width: 62ch;
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.inv-band__sub {
+  font-variant-numeric: tabular-nums;
+}
+
+.inv-band__note {
+  color: var(--color-text-muted);
+}
+
+/* A label and its value, side by side where there is room (the export facts, the proforma's money, the INR values). */
+.inv-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  gap: var(--space-3) var(--space-5);
+  margin: 0;
+}
+
+.inv-facts > div {
+  display: grid;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.inv-facts dt {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.inv-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.inv-facts .inv-facts__wide {
+  grid-column: 1 / -1;
+}
+
+.inv-export,
+.inv-proforma,
+.inv-fx {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.inv-export > .lead-panel__title,
+.inv-proforma .lead-panel__head,
+.inv-fx .lead-panel__head {
+  margin-bottom: 0;
+}
+
+.inv-proforma .lead-panel__head,
+.inv-fx .lead-panel__head {
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+/* On a phone the proforma's action takes the panel's width under its title. */
+@media (max-width: 47.99rem) {
+  .inv-proforma .lead-panel__head > .btn {
+    width: 100%;
+  }
+}
+
+.inv-route legend {
+  margin-bottom: var(--space-2);
+}
+
+.inv-note {
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
+/* The rate, written as the equation it is: "1 USD = ₹83.1234", then its source and date. */
+.inv-fx__rate {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  align-items: baseline;
+  margin: 0;
+}
+
+.inv-fx__eq {
+  font-size: var(--text-h4);
+  line-height: var(--text-h4--line-height);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.inv-fx__meta {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.inv-fx__empty {
+  margin: 0;
+}
+
+.inv-fx__warn {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--color-danger);
+  font-size: var(--text-sm);
+}
+
+.inv-fx__warn .icon {
+  margin-top: 0.125rem;
+}
+
+/* The tax invoices issued from a proforma, one line each, oldest first. */
+.inv-children {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-4) 0 0;
+  border-top: 1px solid var(--color-border);
+  list-style: none;
+}
+
+.inv-children li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-2);
+  align-items: start;
+  font-variant-numeric: tabular-nums;
+}
+
+.inv-children .icon {
+  margin-top: 0.1875rem;
+  color: var(--color-text-muted);
+}
+
+.inv-children a {
+  color: var(--color-link);
+  text-underline-offset: 0.2em;
+}
+
+/* The service completion date of an issued invoice: the field and its button on one line where there is room. */
+.inv-service {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: flex-end;
+  margin: 0;
+}
+
+.inv-service .field {
+  flex: 0 1 20rem;
+  margin: 0;
+}
+
+/* The button sits level with the control, under the label's line (the date's echo below never moves it). */
+form.inv-service {
+  align-items: flex-start;
+}
+
+@media (min-width: 40rem) {
+  form.inv-service > .btn {
+    margin-top: var(--space-8);
+  }
+}
+
+/* Q8: the question an INR export asks before "Issue in INR". */
+.inv-inr-ask {
+  margin-top: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-inline-start: 3px solid var(--color-warning);
+  background: var(--color-surface-alt);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.inv-inr-ask p {
+  margin: 0;
+  font-weight: 500;
+}
+
+/* A view whose preview is another type's series (an older API): the slot alone, never the wrong series. */
+.inv-series--loading {
+  min-height: 4rem;
+}
+
+/* Its action is the longest button of the admin ("Issue tax invoice for payment received"): the dialog is a little wider than the default, so the
+   button and Cancel stay on one line even once the body scrolls and its scrollbar takes width (review 2, 7). Phones stack them as every dialog does. */
+.dialog--advance {
+  width: min(100% - 2rem, 34rem);
+}
+
+/* A field that takes the focus for its error scrolls far enough that the error under it clears the sticky actions. */
+.inv-advance .field {
+  scroll-margin-bottom: var(--space-24);
+}
+
+.inv-advance .inv-facts {
+  margin-bottom: var(--space-4);
+}
+
+.inv-advance__fx {
+  margin-top: var(--space-4);
+}
+
+.inv-kind {
+  margin: 0 0 var(--space-2);
+}
+
 /* ---------- The strip and the page ---------- */
 
 .inv-strip .inv-number--empty {
