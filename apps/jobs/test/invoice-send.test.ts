@@ -177,7 +177,7 @@ describe("a send by a person: the personal link and the email [ADM-INV-15, POR-0
       {
         type: "credit_note",
         extras: extras("service_deficient", "Late delivery"),
-        reason: "Service deficient: Late delivery",
+        reason: "Service deficient (Late delivery)",
         bal: true,
       },
       { type: "credit_note", extras: extras("other", "Goodwill"), reason: "Goodwill", bal: true },

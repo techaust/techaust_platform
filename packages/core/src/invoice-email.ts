@@ -38,12 +38,12 @@ const NOTE_REASON_LABELS: Readonly<Record<string, string>> = {
   other: "Other",
 };
 
-/** A frozen note reason in words: the typed text alone for "other", else the code's label, followed by ": " and the text when one was typed. A code nobody knows is printed as it is. */
+/** A frozen note reason in words: the typed text alone for "other", else the code's label, then the typed text in brackets when one was typed ("Price correction (rate typed wrong)", Q68). A code nobody knows is printed as it is. */
 export function noteReasonWords(code: string, text: string): string {
   const t = text.trim();
   const label = NOTE_REASON_LABELS[code] ?? code;
   if (code === "other") return t || label;
-  return t ? `${label}: ${t}` : label;
+  return t ? `${label} (${t})` : label;
 }
 
 const ALERT_KEYS = ["owner_first_name", "client_name", "admin_url"] as const;

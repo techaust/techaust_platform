@@ -166,7 +166,7 @@ describe("the M5.4 email templates", () => {
       expect.arrayContaining(["offset_days", "when", "kind", "url", "number"]),
     );
   });
-  it("the note keys: `reason` and `parent_balance` are in every document email; noteReasonWords prints label then text, 'other' its text alone, an unknown code as it is", () => {
+  it("the note keys: `reason` and `parent_balance` are in every document email; noteReasonWords prints the label then the text in brackets, 'other' its text alone, an unknown code as it is", () => {
     for (const t of [
       "invoice.sent",
       "proforma.sent",
@@ -178,7 +178,7 @@ describe("the M5.4 email templates", () => {
       expect(INVOICE_EMAIL_DATA[t]).toContain("parent_balance");
     }
     expect(noteReasonWords("price_correction", "")).toBe("Price correction");
-    expect(noteReasonWords("service_deficient", " Late ")).toBe("Service deficient: Late");
+    expect(noteReasonWords("service_deficient", " Late ")).toBe("Service deficient (Late)");
     expect(noteReasonWords("other", "Goodwill")).toBe("Goodwill");
     expect(noteReasonWords("other", " ")).toBe("Other");
     expect(noteReasonWords("mystery", "")).toBe("mystery");
