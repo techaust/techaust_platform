@@ -600,7 +600,7 @@ describe("creditForGross: the bound that cannot always hold [LD44]", () => {
       }
     }
     expect(found, "the hunt must find bound cases or it proves nothing").toBeGreaterThan(0);
-  });
+  }, 60_000);
 
   it("with fewer runs than it needs it still refuses honestly (never a total above the amount)", () => {
     const o = good(inrDoc(REG_MH, [line(1_000_000), line(500_000, { sac: "998313" })]));

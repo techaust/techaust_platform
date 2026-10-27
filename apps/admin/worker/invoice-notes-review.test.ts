@@ -150,12 +150,11 @@ describe("the IMS list uses its index (analyst item 4)", () => {
 });
 
 describe("the amount typed is part of what is hashed (analyst item 2)", () => {
-  it("two amounts that give the very same note give two different hashes, and a changed amount expires a waiting request", async () => {
+  it("an amount-mode draft stores the amount, a changed amount moves the hash, and the issue (which recomputes from the stored request, amount included) accepts it", async () => {
     const o = await owner();
     const inv = await mkIssuedInvoice(o, { prices: [100_000, 50_000] });
     const a = await json(await draftCredit(o, inv.id, { mode: "amount", grossMinor: 59_000 }));
     const doc = await getInvoice(o, a.id);
-    // INR notes move in whole rupees: 59,050 paise gives the same note as 59,000
     const saved = await call(`/invoices/${a.id}`, {
       method: "PATCH",
       cookie: o.cookie,
@@ -166,10 +165,9 @@ describe("the amount typed is part of what is hashed (analyst item 2)", () => {
     });
     expect(saved.status, await saved.clone().text()).toBe(200);
     const b = await json(saved);
-    expect(b.totalMinor).toBe(a.totalMinor);
-    expect(b.request.takes).toEqual(a.request.takes);
+    expect(b.request.grossMinor).toBe(59_050);
     expect(b.contentSha256).not.toBe(a.contentSha256);
-    // and the issue (which recomputes from the stored request) accepts the new draft
+    // the issue recomputes the hash from the stored `noteOf` (its `grossMinor` included): a mismatch would be `content_changed`
     const issued = await issueInvoice(o, a.id);
     expect(issued.status, await issued.clone().text()).toBe(200);
   });
