@@ -44,7 +44,9 @@ export const sendBody = z.strictObject({
 const DOC_READ = `SELECT d.id, d.type, d.status, d.client_id, d.frozen_at, d.due_date, d.pdf_sha256, d.balance_minor, d.currency,
     cl.attach_pdf, cl.anonymised_at, cl.reminder_policy,
     (SELECT count(*) FROM document_sends s WHERE s.document_id = d.id) AS sends,
-    (SELECT count(*) FROM reminders r WHERE r.document_id = d.id) AS reminders
+    (SELECT count(*) FROM reminders r WHERE r.document_id = d.id) AS reminders,
+    (SELECT count(*) FROM reminders r WHERE r.document_id = d.id AND r.sent_at IS NULL AND r.skipped_reason IS NULL) AS reminders_waiting,
+    (SELECT count(*) FROM reminders r WHERE r.document_id = d.id AND r.sent_at IS NULL AND r.skipped_reason = 'paused') AS reminders_paused
   FROM documents d JOIN clients cl ON cl.id = d.client_id WHERE d.id = ?1 AND d.type IN (${INVOICE_TYPES_SQL})`;
 const PAYMENT_TERMS_READ = "SELECT value FROM settings WHERE key = 'payment_terms'";
 
@@ -63,6 +65,8 @@ type DocRow = {
   reminder_policy: string | null;
   sends: number;
   reminders: number;
+  reminders_waiting: number;
+  reminders_paused: number;
 };
 
 function recipientRefusal(c: Ctx, e: ApiError, status: 400 | 409, contactIds?: readonly string[]) {
@@ -188,6 +192,8 @@ export const invoiceSend = new Hono<AppEnv>()
       sends: sendRows.length,
       reminders: rows.length,
       waitingForPdf: d.pdf_sha256 === null,
+      // Early check finding 5: links were revoked (or the reminders paused) and this send came after, so no reminder will go out until the staff resume them: the dialog offers "Resume reminders". Never resumed here.
+      remindersPaused: d.reminders_paused > 0 && d.reminders_waiting === 0,
     });
   })
 

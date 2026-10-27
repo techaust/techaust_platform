@@ -126,7 +126,14 @@ describe("the first send [ADM-INV-15, ADM-INV-13]", () => {
     const { s, made, ids } = await issued(2);
     const res = await send(s, made.id, { contactIds: ids });
     expect(res.status).toBe(200);
-    expect(await json(res)).toEqual({ ok: true, kind: "send", sends: 2, reminders: 5, waitingForPdf: true });
+    expect(await json(res)).toEqual({
+      ok: true,
+      kind: "send",
+      sends: 2,
+      reminders: 5,
+      waitingForPdf: true,
+      remindersPaused: false,
+    });
     const sends = await sendsOf(made.id);
     expect(sends).toHaveLength(2);
     for (const r of sends) {
@@ -233,6 +240,7 @@ describe("sending again [ADM-INV-15]", () => {
       sends: 1,
       reminders: 0,
       waitingForPdf: true,
+      remindersPaused: false,
     });
     expect((await sendsOf(made.id)).map((r) => r.kind).sort()).toEqual(["resend", "send"]);
     expect(await remindersOf(made.id)).toEqual(before);
@@ -403,6 +411,20 @@ describe("revoking the links [POR-06, LD60]", () => {
         })
       ).status,
     ).toBe(403);
+  });
+});
+
+describe("sending again after a revoke [early check finding 5]", () => {
+  it("the answer says the reminders are paused (and nothing resumes them); a plain resend says false", async () => {
+    const { s, made, ids } = await issued(3);
+    expect((await json(await send(s, made.id, { contactIds: [ids[0]] }))).remindersPaused).toBe(false);
+    expect((await json(await send(s, made.id, { contactIds: [ids[1]] }))).remindersPaused).toBe(false);
+    await call(`/invoices/${made.id}/links/revoke`, { cookie: s.cookie, body: {} });
+    const after = await json(await send(s, made.id, { contactIds: [ids[2]] }));
+    expect(after).toMatchObject({ kind: "resend", remindersPaused: true });
+    expect((await remindersOf(made.id)).every((r) => r.skipped_reason === "paused")).toBe(true);
+    await call(`/invoices/${made.id}/reminders/resume`, { cookie: s.cookie, body: {} });
+    expect((await json(await send(s, made.id, { contactIds: [ids[0]] }))).remindersPaused).toBe(false);
   });
 });
 
