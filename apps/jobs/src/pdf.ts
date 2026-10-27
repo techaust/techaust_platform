@@ -39,6 +39,7 @@ import {
   envelopeOfBundle,
   type InvoiceEnvelope,
   invoiceEnvelopeOfBundle,
+  missingStatutoryLine,
   type PdfView,
   parseEnvelope,
   parseInvoiceEnvelope,
@@ -265,6 +266,7 @@ async function renderInvoice(
   envelopeText: string,
   now: number,
   clock: Clock,
+  htmlOf: HtmlOf,
 ): Promise<RenderOutcome> {
   const envelope = parseInvoiceEnvelope(envelopeText);
   const verdict =
@@ -307,7 +309,16 @@ async function renderInvoice(
     return "refused";
   }
   const view = toInvoiceView(envelope, viewConfigFor(env.PORTAL_URL), { signature });
-  const result = await renderPaced(env, renderDocumentHtml(view), pdfOptionsFor(view), clock);
+  const html = htmlOf(view);
+  // LD33 (M5.2): an export invoice prints its frozen endorsement and a proforma its frozen notice, byte for byte, or nothing is rendered (the owners'
+  // bell rings once, the message is acknowledged without a retry: a retry would print the same page).
+  const missing = missingStatutoryLine(envelope, html);
+  if (missing !== null) {
+    logEvent("pdf.refused", { stage: "render", code: `statutory_${missing}`, family: "invoice" });
+    await env.DB.batch([refusedBell(env, row.id, label)]);
+    return "refused";
+  }
+  const result = await renderPaced(env, html, pdfOptionsFor(view), clock);
   if (!result.ok) return failed(env, msg, result, now);
 
   const stored = await putOnce(env.DOCS, keys.pdf, result.bytes, "application/pdf");
@@ -406,12 +417,16 @@ async function settle(
   await onRendered(env, { kind: "document", documentId: row.id });
 }
 
-/** Handles one `pdf.render` message. `clock` is the pacer's (a test passes a fake). */
+/** The page of a document view (the layout). A test passes its own to check the integrity rules whatever the layout prints (LD33). */
+export type HtmlOf = (view: Parameters<typeof renderDocumentHtml>[0]) => string;
+
+/** Handles one `pdf.render` message. `clock` is the pacer's (a test passes a fake), `htmlOf` the layout (a test passes a controlled page for an invoice). */
 export async function processRender(
   env: Env,
   msg: PdfRenderMessage,
   now = Date.now(),
   clock: Clock = realClock,
+  htmlOf: HtmlOf = renderDocumentHtml,
 ): Promise<RenderOutcome> {
   const row = await env.DB.prepare(RENDER_ROW_SQL).bind(msg.documentId).first<RenderRow>();
   const invoice = row !== null && isInvoiceFlowType(row.type);
@@ -442,7 +457,7 @@ export async function processRender(
   }
   const envelopeObject = await env.DOCS.get(row.snapshot_r2_key);
   if (envelopeObject === null) throw new Error("the envelope object is missing");
-  if (invoice) return renderInvoice(env, msg, row, await envelopeObject.text(), now, clock);
+  if (invoice) return renderInvoice(env, msg, row, await envelopeObject.text(), now, clock, htmlOf);
   const envelope = parseEnvelope(await envelopeObject.text());
   const verdict =
     envelope === null

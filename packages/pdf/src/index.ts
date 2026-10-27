@@ -9,6 +9,7 @@ export * from "./escape.ts";
 export * from "./hash.ts";
 export * from "./invoice-bundle.ts";
 export * from "./invoice-envelope.ts";
+export * from "./invoice-integrity.ts";
 export * from "./invoice-types.ts";
 export * from "./invoice-view.ts";
 export type { CertificateView } from "./layout/certificate-skeleton.ts";

@@ -80,6 +80,63 @@ export function lutsFromStoredTax(json: unknown): { fy: string; arn: string }[] 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   v !== null && typeof v === "object" && !Array.isArray(v);
 
+// ---- the daily LUT check (B3: the bell of ADM-INV-18, Q22, LD27) ---------------------------------------------------------------------------
+
+export const LUT_CHECK_KIND = "lut.check";
+/** `asOf` is the IST date the run is for. The cron adds one such message to its existing daily batch (no new cron, no new queue). */
+export type LutCheckMessage = { kind: typeof LUT_CHECK_KIND; asOf: string };
+
+/** The message the daily cron sends: the IST date of the run. */
+export const lutCheckMessage = (scheduledTime: number): LutCheckMessage => ({
+  kind: LUT_CHECK_KIND,
+  asOf: toIsoDate(istDate(scheduledTime)),
+});
+
+/** True for a body that says `kind: "lut.check"` (a malformed one is acknowledged and logged, never a lead). */
+export const isLutCheckKind = (body: unknown): boolean => isRecord(body) && body.kind === LUT_CHECK_KIND;
+
+export function isLutCheckMessage(body: unknown): body is LutCheckMessage {
+  return (
+    isRecord(body) &&
+    body.kind === LUT_CHECK_KIND &&
+    typeof body.asOf === "string" &&
+    parseIsoDate(body.asOf) !== null
+  );
+}
+
+/** The Monday (ISO) of the week (Monday to Sunday) an ISO date falls in; null for a date that is not one. The weekly bell's key. */
+export function weekMondayOf(iso: string): string | null {
+  const d = parseIsoDate(iso);
+  if (!d) return null;
+  const days = Math.floor(Date.UTC(d.year, d.month - 1, d.day) / 86_400_000);
+  const sinceMonday = (days + 3) % 7; // 1 January 1970 was a Thursday
+  return toIsoDate(addDays(d, -sinceMonday));
+}
+
+/**
+ * What the daily check decides for one IST day and the saved letters: a bell for the owners, or null. In March while the next FY has no letter, the
+ * "file next year's LUT" bell (entity `lut:<next FY>:<Monday>`); otherwise, while the running FY has no letter, the "missing" bell (entity
+ * `lut:<running FY>:<Monday>`). One bell a week per owner (the entity carries the week), only then. VERIFY WITH CA/LEGAL.
+ */
+export function lutBellFor(
+  today: string,
+  luts: readonly Lut[],
+): { kind: "next_fy_due" | "current_missing"; fy: string; fyLabel: string; entity: string } | null {
+  const r = lutReminder(today, luts);
+  const monday = weekMondayOf(today);
+  if (!r || !monday) return null;
+  if (r.due)
+    return { kind: "next_fy_due", fy: r.nextFy, fyLabel: r.nextFyLabel, entity: `lut:${r.nextFy}:${monday}` };
+  if (r.currentMissing)
+    return {
+      kind: "current_missing",
+      fy: r.currentFy,
+      fyLabel: r.currentFyLabel,
+      entity: `lut:${r.currentFy}:${monday}`,
+    };
+  return null;
+}
+
 // ---- an advance received against a proforma (Q9, G-6) ------------------------------------------------------------------------------------
 
 /**

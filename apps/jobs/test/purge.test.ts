@@ -147,11 +147,14 @@ describe("enqueueDue: the cron only enqueues [JOB-CRON-01]", () => {
       makeEnv(),
       {} as ExecutionContext,
     );
-    // M3.5: the same run also sends the nightly statistics, one message per metric (apps/jobs/test/stats.test.ts), and M4.3 adds one expiry message (expire.test.ts); the purge part is unchanged
+    // M3.5: the same run also sends the nightly statistics, one message per metric (apps/jobs/test/stats.test.ts), M4.3 adds one expiry message (expire.test.ts) and
+    // M5.2 one LUT check (lut-check.test.ts); the purge part is unchanged
     const kinds = sent.map((s) => (s as { kind: string }).kind);
     expect(kinds.filter((k) => k === "lead.purge")).toHaveLength(1);
     expect(
-      kinds.filter((k) => k !== "lead.purge" && k !== "stats.metric" && k !== "documents.expire"),
+      kinds.filter(
+        (k) => k !== "lead.purge" && k !== "stats.metric" && k !== "documents.expire" && k !== "lut.check",
+      ),
     ).toHaveLength(0);
     expect(await count("leads")).toBe(1);
   });

@@ -3,12 +3,14 @@
 // after 5 tries the queue moves it to the dead-letter queue (wrangler.jsonc).
 import { isOfferExpansionKind, isPurgeMessage, isPurgeScanMessage } from "@techaust/core";
 import { isExpireKind, isExpireMessage } from "@techaust/core/expiry";
+import { isLutCheckKind, isLutCheckMessage } from "@techaust/core/invoices";
 import { isPdfKind } from "@techaust/core/pdf-jobs";
 import { isStatsKind, isStatsMessage } from "@techaust/core/stats";
 import { CLAIM_TIMEOUT_MS, processDeadLetter, processEmail } from "./email.ts";
 import { logExpireDeadLetter, processExpire, skipExpire } from "./expire.ts";
 import { processLead } from "./leads.ts";
 import { logEvent, noteInvocation } from "./log.ts";
+import { logLutCheckDeadLetter, processLutCheck, skipLutCheck } from "./lut-check.ts";
 import { processOfferMessage } from "./offers.ts";
 import { processPdf, processPdfDeadLetter } from "./pdf.ts";
 import { enqueueDue, purgeLead } from "./purge.ts";
@@ -58,6 +60,10 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
         // An expiry message that ran out of tries: the next daily run picks the same offers up again, so no alert and no retry.
         logExpireDeadLetter(queue);
         message.ack();
+      } else if (isDlq && isLutCheckKind(message.body)) {
+        // A LUT check that ran out of tries: tomorrow's run checks again, so no alert and no retry.
+        logLutCheckDeadLetter(queue);
+        message.ack();
       } else if (isDlq) {
         if (await processDeadLetter(env, queue, message.body)) message.ack();
         else message.retry({ delaySeconds: dlqRetryDelay(message.attempts) });
@@ -76,6 +82,11 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
         // After the statistics, before the lead fall-through, so an expiry body (valid or not) can never become a lead.
         if (isExpireMessage(message.body)) await processExpire(env, message.body);
         else skipExpire();
+        message.ack();
+      } else if (queue.endsWith("-leads") && isLutCheckKind(message.body)) {
+        // The daily LUT check (M5.2): before the lead fall-through, so a `lut.check` body (valid or not) can never become a lead.
+        if (isLutCheckMessage(message.body)) await processLutCheck(env, message.body);
+        else skipLutCheck();
         message.ack();
       } else if (queue.endsWith("-leads") && isPdfKind(message.body)) {
         // A PDF body belongs on the PDF queue; here it is logged and dropped, so it can never become a lead.

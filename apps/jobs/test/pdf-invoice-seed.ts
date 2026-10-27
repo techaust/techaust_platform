@@ -7,7 +7,7 @@ import { contentHash, type DraftContent } from "@techaust/core/documents";
 import { sqlPrintfPattern } from "@techaust/core/numbering";
 import { SETTINGS_DEFAULTS } from "@techaust/core/settings";
 import { computeDocument } from "@techaust/core/tax";
-import { invoiceSealOf } from "@techaust/db/documents";
+import { headerExtrasJson, type InvoiceHeaderExtras, invoiceSealOf } from "@techaust/db/documents";
 import {
   type InvoiceIssuerSnapshot,
   invoiceIssueStatements,
@@ -16,6 +16,7 @@ import {
 
 export type SeededInvoice = {
   id: string;
+  type: "tax_invoice" | "export_invoice" | "proforma";
   clientId: string;
   number: number;
   numberDisplay: string;
@@ -39,7 +40,26 @@ export const PNG_BYTES = Uint8Array.from(
   (c) => c.charCodeAt(0),
 );
 
+/** The statutory lines of M5.2, held here as LITERALS (not imported): a change of the constants in core fails a test until a person has looked at it (07-S; VERIFY WITH CA/LEGAL). */
+export const LITERAL_ENDORSEMENT = {
+  lut: "SUPPLY MEANT FOR EXPORT/SUPPLY TO SEZ UNIT OR SEZ DEVELOPER FOR AUTHORISED OPERATIONS UNDER BOND OR LETTER OF UNDERTAKING WITHOUT PAYMENT OF INTEGRATED TAX",
+  igst_paid:
+    "SUPPLY MEANT FOR EXPORT/SUPPLY TO SEZ UNIT OR SEZ DEVELOPER FOR AUTHORISED OPERATIONS ON PAYMENT OF INTEGRATED TAX",
+} as const;
+export const LITERAL_PROFORMA_NOTICE =
+  "This is not a tax invoice. A tax invoice will be issued when payment is received.";
+export const SAMPLE_ARN = "AD0000000000001";
+
 export type InvoiceSeedOptions = {
+  /**
+   * M5.2: the type to issue (default `tax_invoice`). An `export_invoice` is for an overseas USD client under LUT (or with IGST paid when
+   * `exportMode` is `igst_paid`), with a rate, a SWIFT block and the header extras the real issue route freezes; a `proforma` carries its notice
+   * and its own series.
+   */
+  type?: "tax_invoice" | "export_invoice" | "proforma";
+  exportMode?: "lut" | "igst_paid";
+  /** Seals the header WITH its extras but freezes the row WITHOUT them (`header_extras` NULL): the rows then cannot reproduce the seal. */
+  dropFrozenExtras?: boolean;
   /** The instant of issue (default: now). */
   now?: number;
   lines?: number;
@@ -59,6 +79,12 @@ export async function seedIssuedInvoice(o: InvoiceSeedOptions = {}): Promise<See
   const docId = `doc-inv-${n}`;
   const staffId = "usr-inv-owner";
   const sessionId = `sess-inv-${n}`;
+  const type = o.type ?? "tax_invoice";
+  const isExport = type === "export_invoice";
+  const mode = o.exportMode ?? "lut";
+  const currency = isExport ? "USD" : "INR";
+  const series = type === "export_invoice" ? "export" : type === "proforma" ? "proforma" : "invoice";
+  const fx = isExport ? { rateMicros: 83_123_400, date: "2026-10-27", source: "FBIL reference rate" } : null;
 
   await env.DB.batch([
     env.DB.prepare(
@@ -67,9 +93,13 @@ export async function seedIssuedInvoice(o: InvoiceSeedOptions = {}): Promise<See
     env.DB.prepare(
       "INSERT INTO staff_sessions (id, user_id, last_seen_at, idle_expires_at, abs_expires_at, step_up_until) VALUES (?1, ?2, ?3, ?4, ?4, ?4)",
     ).bind(sessionId, staffId, now, now + 3_600_000),
-    env.DB.prepare(
-      "INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, state_code, currency, updated_at) VALUES (?1, ?2, ?3, ?3, 'business', 'IN', 'unregistered', '19', 'INR', 5000)",
-    ).bind(clientId, `INV${n}`, `Sample Invoice Client ${n}`),
+    isExport
+      ? env.DB.prepare(
+          "INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, state_code, currency, updated_at) VALUES (?1, ?2, ?3, ?3, 'business', 'US', 'overseas', NULL, 'USD', 5000)",
+        ).bind(clientId, `INV${n}`, `Sample Invoice Client ${n}`)
+      : env.DB.prepare(
+          "INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, state_code, currency, updated_at) VALUES (?1, ?2, ?3, ?3, 'business', 'IN', 'unregistered', '19', 'INR', 5000)",
+        ).bind(clientId, `INV${n}`, `Sample Invoice Client ${n}`),
   ]);
 
   let termsId: string | null = null;
@@ -88,16 +118,17 @@ export async function seedIssuedInvoice(o: InvoiceSeedOptions = {}): Promise<See
 
   const lineCount = o.lines ?? 2;
   const draft: DraftContent = {
-    type: "tax_invoice",
+    type,
     clientId,
     contactId: null,
     title: null,
-    currency: "INR",
+    currency,
     validityDays: null,
     termsVersionId: null,
     discountKind: null,
     discountValue: null,
-    exportMode: null,
+    exportMode: isExport ? mode : null,
+    ...(fx ? { fx } : {}),
     lines: Array.from({ length: lineCount }, (_, i) => ({
       catalogueItemId: null,
       description: `Sample invoice line ${i + 1}`,
@@ -118,12 +149,20 @@ export async function seedIssuedInvoice(o: InvoiceSeedOptions = {}): Promise<See
   const issueInstant = istDate(now);
   const result = computeDocument(
     {
-      currency: "INR",
+      currency,
       documentDate: issueInstant,
-      recipient: { gstStatus: "unregistered", country: "IN", stateCode: "19" },
+      recipient: isExport
+        ? { gstStatus: "overseas", country: "US" }
+        : { gstStatus: "unregistered", country: "IN", stateCode: "19" },
+      ...(isExport ? { exportMode: mode } : {}),
+      ...(fx ? { fx: { rateMicros: fx.rateMicros } } : {}),
       lines: draft.lines.map((l) => ({ sac: l.sac, qtyMilli: l.qtyMilli, rateMinor: l.rateMinor })),
     },
-    { tax: SETTINGS_DEFAULTS.tax, supplierStateCode: "19" as const, luts: [] },
+    {
+      tax: SETTINGS_DEFAULTS.tax,
+      supplierStateCode: "19" as const,
+      luts: isExport && mode === "lut" ? [{ fy: "2627", arn: SAMPLE_ARN }] : [],
+    },
   );
   if (!result.ok) throw new Error(`seed: ${JSON.stringify(result.errors)}`);
   const computed = result.value;
@@ -132,9 +171,20 @@ export async function seedIssuedInvoice(o: InvoiceSeedOptions = {}): Promise<See
 
   const stmts: D1PreparedStatement[] = [
     env.DB.prepare(
-      `INSERT INTO documents (id, type, status, client_id, currency, content_sha256, created_at, updated_at)
-       VALUES (?1, 'tax_invoice', 'draft', ?2, 'INR', ?3, ?4, ?4)`,
-    ).bind(docId, clientId, contentSha, updatedAt),
+      `INSERT INTO documents (id, type, status, client_id, currency, content_sha256, created_at, updated_at, export_mode, fx_rate_micros, fx_date, fx_source)
+       VALUES (?1, ?5, 'draft', ?2, ?6, ?3, ?4, ?4, ?7, ?8, ?9, ?10)`,
+    ).bind(
+      docId,
+      clientId,
+      contentSha,
+      updatedAt,
+      type,
+      currency,
+      isExport ? mode : null,
+      fx?.rateMicros ?? null,
+      fx?.date ?? null,
+      fx?.source ?? null,
+    ),
   ];
   draft.lines.forEach((l, i) => {
     stmts.push(
@@ -168,14 +218,23 @@ export async function seedIssuedInvoice(o: InvoiceSeedOptions = {}): Promise<See
     if (signatureBytes !== null) await env.DOCS.put(signatureKey, signatureBytes);
   }
 
-  const recipient: RecipientSnapshot = {
-    legalName: `Sample Invoice Client ${n}`,
-    displayName: `Sample Invoice Client ${n}`,
-    country: "IN",
-    clientType: "business",
-    gstStatus: "unregistered",
-    stateCode: "19",
-  };
+  const recipient: RecipientSnapshot = isExport
+    ? {
+        legalName: `Sample Invoice Client ${n}`,
+        displayName: `Sample Invoice Client ${n}`,
+        country: "US",
+        clientType: "business",
+        gstStatus: "overseas",
+        address: { line1: "1 Sample Avenue", city: "Springfield", country: "US" },
+      }
+    : {
+        legalName: `Sample Invoice Client ${n}`,
+        displayName: `Sample Invoice Client ${n}`,
+        country: "IN",
+        clientType: "business",
+        gstStatus: "unregistered",
+        stateCode: "19",
+      };
   const issuer: InvoiceIssuerSnapshot = {
     company: {
       tradeName: "TecHaust Technologies",
@@ -186,39 +245,70 @@ export async function seedIssuedInvoice(o: InvoiceSeedOptions = {}): Promise<See
       logo: "logo-primary-color.svg",
       principalPlace: "2 Sample Office Lane, Balurghat",
     },
-    bank: {
-      inr: o.bank
-        ? {
+    bank: isExport
+      ? {
+          inr: null,
+          swift: {
             accountName: "Sample Proprietor",
-            accountNo: "SAMPLE0001",
-            ifsc: "SAMP0000001",
+            accountNo: "SAMPLEUSD0001",
+            swift: "SAMPINBBXXX",
             bankName: "SAMPLE BANK",
-            branch: null,
-          }
-        : null,
-    },
+            branch: "Sample branch",
+            bankAddress: "3 Sample Bank Street, Kolkata",
+            intermediary: null,
+            purposeCode: "P0802",
+          },
+        }
+      : {
+          inr: o.bank
+            ? {
+                accountName: "Sample Proprietor",
+                accountNo: "SAMPLE0001",
+                ifsc: "SAMP0000001",
+                bankName: "SAMPLE BANK",
+                branch: null,
+              }
+            : null,
+        },
     signature: signatureRef,
     reverseChargeText: SETTINGS_DEFAULTS.tax.reverseChargeText,
     sender: { staffId, name: "Sample Owner", email: "inv-owner@example.test" },
   };
   const issueDate = toIsoDate(issueInstant);
   const dueDate = "2999-01-01";
+  // What the real issue route seals and freezes in `header_extras` (LD37): the endorsement, the LUT letter and the country; or the notice.
+  const extras: Pick<InvoiceHeaderExtras, "export" | "proforma"> = isExport
+    ? {
+        export: {
+          mode,
+          endorsement: LITERAL_ENDORSEMENT[mode],
+          lut: mode === "lut" ? { fy: "2627", arn: SAMPLE_ARN } : null,
+          countryCode: "US",
+          countryName: "United States",
+          declarationRef: null,
+        },
+      }
+    : type === "proforma"
+      ? { proforma: { notice: LITERAL_PROFORMA_NOTICE } }
+      : {};
   const seal = await invoiceSealOf({
     document: {
-      type: "tax_invoice",
+      type,
       clientId,
-      currency: "INR",
+      currency,
       issueDate,
       dueDate,
       contentSha256: contentSha,
       termsRef,
-      exportMode: null,
+      exportMode: isExport ? mode : null,
     },
     computed,
     recipient,
     issuer,
+    ...extras,
+    ...(fx ? { fx } : {}),
   });
-  const numbering = sqlPrintfPattern(SETTINGS_DEFAULTS.numbering.invoice);
+  const numbering = sqlPrintfPattern(SETTINGS_DEFAULTS.numbering[series]);
   const version = async (key: string) =>
     (
       await env.DB.prepare("SELECT version FROM settings WHERE key = ?1")
@@ -230,8 +320,8 @@ export async function seedIssuedInvoice(o: InvoiceSeedOptions = {}): Promise<See
   }>();
   const batch = invoiceIssueStatements(env.DB, {
     documentId: docId,
-    type: "tax_invoice",
-    series: "invoice",
+    type,
+    series,
     fy: "2627",
     pattern: numbering.pattern,
     argOrder: numbering.argOrder,
@@ -245,6 +335,7 @@ export async function seedIssuedInvoice(o: InvoiceSeedOptions = {}): Promise<See
     snapshotSha256: seal.snapshotSha256,
     issuedBy: staffId,
     termsVersionId: termsId,
+    headerExtras: o.dropFrozenExtras ? null : headerExtrasJson(extras),
     expected: {
       updatedAt,
       contentSha256: contentSha,
@@ -266,6 +357,7 @@ export async function seedIssuedInvoice(o: InvoiceSeedOptions = {}): Promise<See
   if (!row) throw new Error("seed: the invoice is gone");
   return {
     id: docId,
+    type,
     clientId,
     number: row.number,
     numberDisplay: row.number_display,
