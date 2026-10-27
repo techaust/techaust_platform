@@ -164,5 +164,70 @@ export const isOfferExpansionKind = (body: unknown): body is { kind: OfferExpans
   body !== null &&
   OFFER_EXPANSION_KINDS.includes((body as { kind: OfferExpansionMessage["kind"] }).kind);
 
+/**
+ * M5.4 invoice messages on the `email` queue (ids only, like the offer ones; a body of this family, valid or not, is never handed to the ordinary
+ * email consumer). `invoice.send` is one recipient of an issued invoice, proforma, credit note or debit note (a `document_sends` row, LD55, LD56);
+ * `reminder.send` is one reminder row (`reminders`), which the consumer claims once and expands to its recipients.
+ */
+export const invoiceSendMessage = z.object({ kind: z.literal("invoice.send"), sendId: z.uuid() });
+export const reminderSendMessage = z.object({ kind: z.literal("reminder.send"), reminderId: z.uuid() });
+export type InvoiceSendMessage = z.infer<typeof invoiceSendMessage>;
+export type ReminderSendMessage = z.infer<typeof reminderSendMessage>;
+export type InvoiceExpansionMessage = InvoiceSendMessage | ReminderSendMessage;
+export const INVOICE_EXPANSION_KINDS = ["invoice.send", "reminder.send"] as const;
+/** True for a body of the M5.4 invoice family (valid or not). */
+export const isInvoiceExpansionKind = (body: unknown): body is { kind: InvoiceExpansionMessage["kind"] } =>
+  typeof body === "object" &&
+  body !== null &&
+  INVOICE_EXPANSION_KINDS.includes((body as { kind: InvoiceExpansionMessage["kind"] }).kind);
+
 /** What the `email` queue carries: an email to send, or a message to expand into emails. */
-export type EmailQueueMessage = EmailMessage | StaffAlertMessage | OfferExpansionMessage;
+export type EmailQueueMessage =
+  | EmailMessage
+  | StaffAlertMessage
+  | OfferExpansionMessage
+  | InvoiceExpansionMessage;
+
+// ---- M5.4 billing messages on the `leads` queue (the jobs Worker's general work queue; the cron only enqueues) -----------------------------------------------------------
+// One unit of work per message (Free plan). Ids and cursors only: no clock, no period, no amount (`draftCarePlan` and `issueCareDraft` use their own).
+const id64 = z.string().min(1).max(64);
+const cursor = z.object({ at: z.int().nonnegative(), id: id64 });
+
+/** `care.scan`: the next page (50) of active plans whose current period is not billed; `after` is the last plan id of the previous page (keyset). */
+export const careScanMessage = z.object({ kind: z.literal("care.scan"), after: id64.nullable() });
+/** `care.bill`: draft one plan's invoice for its current period (the admin API's `draftCarePlan`). */
+export const careBillMessage = z.object({ kind: z.literal("care.bill"), planId: id64 });
+/** `care.issue`: issue one care draft automatically (the admin API's `issueCareDraft`). */
+export const careIssueMessage = z.object({ kind: z.literal("care.issue"), documentId: id64 });
+/** `alerts.daily`: the owners' 09:00 IST alerts. `first` also does the LUT check; the cursors continue the unbilled and proforma-due lists past 50 rows. */
+export const alertsDailyMessage = z.object({
+  kind: z.literal("alerts.daily"),
+  first: z.boolean(),
+  unbilledAfter: cursor.nullable(),
+  proformaAfter: cursor.nullable(),
+});
+/** `reminder.scan`: the due reminders, 50 at a time; `after` is the last row's `(due_at, id)`. */
+export const reminderScanMessage = z.object({ kind: z.literal("reminder.scan"), after: cursor.nullable() });
+export type CareScanMessage = z.infer<typeof careScanMessage>;
+export type CareBillMessage = z.infer<typeof careBillMessage>;
+export type CareIssueMessage = z.infer<typeof careIssueMessage>;
+export type AlertsDailyMessage = z.infer<typeof alertsDailyMessage>;
+export type ReminderScanMessage = z.infer<typeof reminderScanMessage>;
+export type BillingMessage =
+  | CareScanMessage
+  | CareBillMessage
+  | CareIssueMessage
+  | AlertsDailyMessage
+  | ReminderScanMessage;
+export const BILLING_KINDS = [
+  "care.scan",
+  "care.bill",
+  "care.issue",
+  "alerts.daily",
+  "reminder.scan",
+] as const;
+/** True for a body of the M5.4 billing family (valid or not), so a malformed one can never become a lead. */
+export const isBillingKind = (body: unknown): body is { kind: BillingMessage["kind"] } =>
+  typeof body === "object" &&
+  body !== null &&
+  BILLING_KINDS.includes((body as { kind: BillingMessage["kind"] }).kind);

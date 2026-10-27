@@ -7,6 +7,7 @@ import {
   check,
   index,
   integer,
+  primaryKey,
   sqliteTable,
   text,
   uniqueIndex,
@@ -151,6 +152,11 @@ export const clients = sqliteTable(
     paymentTermsDays: integer("payment_terms_days"),
     reminderPolicy: text("reminder_policy", { mode: "json" }).$type<ReminderPolicy>(),
     careAutoIssue: flag("care_auto_issue"),
+    /**
+     * M5.4 (LD58): the Owner who turned the auto-issue toggle on (with a fresh code). The freeze of an automatic care invoice joins this member (an active
+     * owner), so a toggle set by Staff, or one that existed before M5.4 (NULL), never issues. Added with ALTER TABLE only (`clients` is referenced).
+     */
+    careAutoIssueBy: text("care_auto_issue_by").references(() => staffUsers.id),
     attachPdf: flag("attach_pdf"),
     tags: text("tags", { mode: "json" }).$type<string[]>(),
     notes: text("notes"),
@@ -275,6 +281,10 @@ export const milestones = sqliteTable(
     uniqueIndex("milestones_project_position").on(t.projectId, t.position),
     index("milestones_document").on(t.documentId),
     index("milestones_status_due").on(t.status, t.dueDate),
+    // M5.4 (ADM-INV-19, LD67): the daily alert reads the delivered, not yet invoiced milestones, oldest first (one partial index serves the unbilled and the proforma-due readers).
+    index("milestones_unbilled")
+      .on(t.deliveredAt, t.id)
+      .where(sql`${t.status} = 'ready_to_bill' and ${t.deliveredAt} is not null`),
     check("milestones_status", oneOf(t.status, MILESTONE_STATUSES)),
     check("milestones_pct", sql`${t.pctBp} is null or ${t.pctBp} between 0 and 10000`),
   ],
@@ -465,5 +475,40 @@ export const carePlanStatusLog = sqliteTable(
     index("care_plan_status_log_plan").on(t.carePlanId, t.effectiveOn, t.createdAt, t.id),
     check("care_plan_status_log_status", oneOf(t.status, CARE_STATUSES)),
     check("care_plan_status_log_date", sql`date(${t.effectiveOn}) is ${t.effectiveOn}`),
+  ],
+);
+
+/**
+ * The billed periods of a care plan (M5.4, ADM-CARE-02, LD59): one row per plan and period start, written in the SAME batch that moves
+ * `care_plans.last_billed_period` and inserts the draft, so a period is billed at most once (the primary key) and a deleted or voided care invoice is
+ * never billed again by the job. `period_start` is the plan's period start (clamped by the plan's start date), `terms_id` the terms row in force at it
+ * (the automatic issue binds the subtotal to it), and `overage_*` the previous period's overage added to the draft (an invoice with overage is never
+ * auto-issued). `document_id` has no foreign key so a discarded draft can be deleted: the row then keeps the period and its id is set to NULL (once).
+ * Append-only except that one move (triggers of 0044).
+ */
+export const careInvoices = sqliteTable(
+  "care_invoices",
+  {
+    carePlanId: text("care_plan_id")
+      .notNull()
+      .references(() => carePlans.id),
+    periodStart: text("period_start").notNull(),
+    periodEnd: text("period_end").notNull(),
+    termsId: text("terms_id")
+      .notNull()
+      .references(() => carePlanTerms.id),
+    documentId: text("document_id"),
+    /** The period whose unbilled hours the draft charges (the one before this period), and how many minutes; both null when there is none. */
+    overagePeriodStart: text("overage_period_start"),
+    overageMinutes: integer("overage_minutes"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.carePlanId, t.periodStart] }),
+    uniqueIndex("care_invoices_document").on(t.documentId).where(sql`${t.documentId} is not null`),
+    check(
+      "care_invoices_period",
+      sql`date(${t.periodStart}) is ${t.periodStart} and date(${t.periodEnd}) is ${t.periodEnd}`,
+    ),
   ],
 );

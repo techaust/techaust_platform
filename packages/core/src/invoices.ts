@@ -17,6 +17,7 @@ import type { Series } from "./numbering.ts";
 export * from "./export-invoice.ts";
 export * from "./fx.ts";
 export * from "./notes.ts";
+export * from "./reminders.ts";
 
 // ---- types -------------------------------------------------------------------------------------------------------------------------
 

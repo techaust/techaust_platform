@@ -200,12 +200,18 @@ export function sendStatements(db: D1Database, a: SendArgs): SendStatements {
 /**
  * Who may issue, written INTO the freeze statement (LD5): the session must be the Owner's, live, with a fresh step-up (`step_up_until` is
  * checked against the issue instant, not at the guard); an approval additionally names a PENDING `issue` approval of this document for exactly
- * this content. A refusal (an expired step-up, a decided or expired request) leaves the batch aborted and nothing written. `system` actors
- * (the care-plan auto-issue, M5.4) are added by their milestone.
+ * this content. A refusal (an expired step-up, a decided or expired request) leaves the batch aborted and nothing written.
+ *
+ * M5.4 (LD58): `care_auto` is the monthly care-plan invoice the jobs Worker issues with no session at all. Its authority is the Owner's earlier choices, held in
+ * the statement: the client's toggle was turned on by an active Owner (`clients.care_auto_issue_by`), the terms row the amount comes from was written by an Owner,
+ * the document is the untouched draft the billing job made for this plan and period (`care_invoices`, `created_by` NULL, never edited), the plan is active, and the
+ * subtotal is exactly the terms' price (plus AI Ops) with no discount and no overage. `issued_by` is NULL. Everything else (the settings, the client, the contact,
+ * the content hash) is checked as for any issue.
  */
 export type IssueAuthority =
   | { kind: "owner"; sessionId: string }
-  | { kind: "approval"; sessionId: string; approvalId: string };
+  | { kind: "approval"; sessionId: string; approvalId: string }
+  | { kind: "care_auto"; carePlanId: string; periodStart: string; termsId: string };
 
 export type InvoiceIssueArgs = {
   documentId: string;
@@ -228,7 +234,8 @@ export type InvoiceIssueArgs = {
   issuer: InvoiceIssuerSnapshot;
   computedJson: string;
   snapshotSha256: string;
-  issuedBy: string;
+  /** The member who issued it; NULL for a `care_auto` issue (the batch that made it ran with no session, LD58). */
+  issuedBy: string | null;
   /** The newest `invoice` terms version (the footer notes) at the read; none is allowed. */
   termsVersionId: string | null;
   /** M5.2 (LD23): the newest `export_declaration` block pinned to an export invoice that asked for it; null for everything else. Frozen with the document. */
@@ -315,6 +322,30 @@ const FROZEN_BY_THIS_BATCH =
 /** What every invoice freeze needs, whoever the authority is (the owner, an approval, or the owner's advance action). */
 type FreezeBase = Omit<InvoiceIssueArgs, "authority" | "bell">;
 
+/** The Owner's authority in SQL (`?24` is the session): live, with a fresh step-up judged at the issue instant. Shared by the owner, the approval and the advance batches. */
+const OWNER_AUTHORITY_SQL =
+  "EXISTS (SELECT 1 FROM staff_sessions s JOIN staff_users u ON u.id = s.user_id WHERE s.id = ?24 AND s.revoked_at IS NULL AND s.idle_expires_at > ?5 AND s.abs_expires_at > ?5 AND s.step_up_until > ?5 AND u.role = 'owner' AND u.status = 'active')";
+
+/**
+ * The authority of an automatic care invoice (M5.4, LD58): `?24` is the care plan, `?30` the period start and `?31` the terms row (bound by the tail). Nothing here
+ * reads a session: the Owner's choices were made earlier, with a fresh code, and are read back from the rows they wrote. In order: the toggle of the plan's client
+ * was turned on by an active Owner; that period was recorded as billed for this very document and these terms, with no overage; the terms row is the one in force at
+ * the period start and an Owner wrote it; the plan is active now and was at the period start; the amount is the terms' price plus AI Ops with no discount. Then the
+ * draft itself: made by the job (no member), never saved since, and with no pending approval.
+ */
+const CARE_AUTO_SQL = `EXISTS (SELECT 1 FROM care_plans p JOIN clients k ON k.id = p.client_id
+            JOIN staff_users o ON o.id = k.care_auto_issue_by AND o.role = 'owner' AND o.status = 'active'
+            JOIN care_invoices ci ON ci.care_plan_id = p.id AND ci.period_start = ?30 AND ci.document_id = documents.id AND ci.terms_id = ?31 AND ci.overage_minutes IS NULL
+            JOIN care_plan_terms t ON t.id = ?31 AND t.care_plan_id = p.id
+            JOIN staff_users tc ON tc.id = t.created_by AND tc.role = 'owner'
+    WHERE p.id = ?24 AND p.id = documents.care_plan_id AND k.id = documents.client_id AND k.care_auto_issue = 1 AND p.status = 'active'
+      AND p.last_billed_period = ?30
+      AND t.id = (SELECT id FROM care_plan_terms WHERE care_plan_id = p.id AND effective_from <= ?30 ORDER BY effective_from DESC, created_at DESC, id DESC LIMIT 1)
+      AND (SELECT status FROM care_plan_status_log WHERE care_plan_id = p.id AND effective_on <= ?30 ORDER BY effective_on DESC, created_at DESC, id DESC LIMIT 1) = 'active'
+      AND documents.subtotal_minor = t.price_minor + coalesce(t.ai_ops_minor, 0) AND documents.discount_minor = 0)
+  AND documents.created_by IS NULL AND documents.created_at = documents.updated_at
+  AND NOT EXISTS (SELECT 1 FROM approvals ap WHERE ap.document_id = documents.id AND ap.status = 'pending')`;
+
 /**
  * The freeze UPDATE every invoice issue ends with, with every condition in its WHERE (LD5; a read only explains a refusal):
  *   ?1 id, ?2 series, ?3 fy, ?4 pattern, ?5 now, ?6 issue date, ?7 due date, ?8 recipient, ?9 issuer, ?10 computed, ?11 snapshot sha, ?12 issued by,
@@ -329,13 +360,11 @@ type FreezeBase = Omit<InvoiceIssueArgs, "authority" | "bell">;
 function freezeStatement(
   db: D1Database,
   a: FreezeBase,
-  sessionId: string,
+  who: { sql: string; bind: string },
   tail: { where: string; binds: readonly unknown[] },
 ): D1PreparedStatement {
   const nextNo = "(SELECT next_no - 1 FROM doc_counters WHERE series = ?2 AND fy = ?3)";
   const printfArgs = a.argOrder[0] === "fy" ? `?3, ${nextNo}` : `${nextNo}, ?3`;
-  const owner =
-    "EXISTS (SELECT 1 FROM staff_sessions s JOIN staff_users u ON u.id = s.user_id WHERE s.id = ?24 AND s.revoked_at IS NULL AND s.idle_expires_at > ?5 AND s.abs_expires_at > ?5 AND s.step_up_until > ?5 AND u.role = 'owner' AND u.status = 'active')";
   return db
     .prepare(
       `UPDATE documents SET series = ?2, fy = ?3, number = ${nextNo}, number_display = printf(?4, ${printfArgs}),
@@ -352,7 +381,7 @@ function freezeStatement(
          AND NOT EXISTS (SELECT 1 FROM clients z WHERE z.id = documents.client_id AND z.anonymised_at IS NOT NULL)
          AND ${nextNo} <= ?22
          AND (?25 IS NULL OR EXISTS (SELECT 1 FROM contacts k WHERE k.id = ?25 AND k.client_id = documents.client_id AND k.anonymised_at IS NULL AND k.updated_at = ?26))
-         AND ${owner}${tail.where}
+         AND ${who.sql}${tail.where}
        RETURNING number_display, number`,
     )
     .bind(
@@ -379,7 +408,7 @@ function freezeStatement(
       a.expected.clientUpdatedAt,
       a.maxNumber,
       a.type,
-      sessionId,
+      who.bind,
       a.expected.contact?.id ?? null,
       a.expected.contact?.updatedAt ?? null,
       a.exportDeclarationId ?? null,
@@ -430,13 +459,19 @@ export function invoiceIssueStatements(db: D1Database, a: InvoiceIssueArgs): Sen
           binds: [a.authority.approvalId] as const,
         }
       : { where: "", binds: [] as const };
+  // M5.4: an automatic care invoice has no session: its authority text is its own, and it binds the period and the terms at ?30 and ?31 (the plan is ?24).
+  const care = a.authority.kind === "care_auto" ? a.authority : null;
+  const who = care
+    ? { sql: CARE_AUTO_SQL, bind: care.carePlanId }
+    : { sql: OWNER_AUTHORITY_SQL, bind: (a.authority as { sessionId: string }).sessionId };
+  const careBinds = care ? ([care.periodStart, care.termsId] as const) : ([] as const);
   // A note's parent tail follows the approval's (its placeholders start where the approval's end).
   const noteTail = a.note
-    ? noteIssueTail(a.note, 30 + approval.binds.length)
+    ? noteIssueTail(a.note, 30 + approval.binds.length + careBinds.length)
     : { where: "", binds: [] as const };
-  const freeze = freezeStatement(db, a, a.authority.sessionId, {
+  const freeze = freezeStatement(db, a, who, {
     where: approval.where + noteTail.where,
-    binds: [...approval.binds, ...noteTail.binds],
+    binds: [...approval.binds, ...careBinds, ...noteTail.binds],
   });
   const isNote = a.type === "credit_note" || a.type === "debit_note";
   return {
@@ -641,11 +676,16 @@ export function advanceIssueStatements(db: D1Database, a: AdvanceIssueArgs): Sen
     ...a,
     expected: { ...a.expected, updatedAt: a.now, contentSha256: a.contentSha256 },
   };
-  const freeze = freezeStatement(db, base, a.sessionId, {
-    where: ` AND total_minor = ?30
+  const freeze = freezeStatement(
+    db,
+    base,
+    { sql: OWNER_AUTHORITY_SQL, bind: a.sessionId },
+    {
+      where: ` AND total_minor = ?30
          AND EXISTS (SELECT 1 FROM documents p WHERE p.id = ?31 AND p.type = 'proforma' AND p.frozen_at IS NOT NULL AND p.status IN ('issued', 'converted') AND p.updated_at = ?32 AND p.balance_minor >= ?30 AND p.client_id = documents.client_id AND p.currency = documents.currency)`,
-    binds: [a.amountMinor, a.proformaId, a.expectedProformaUpdatedAt],
-  });
+      binds: [a.amountMinor, a.proformaId, a.expectedProformaUpdatedAt],
+    },
+  );
   return {
     main: [
       insert,
@@ -749,11 +789,78 @@ export function noteDraftStatements(db: D1Database, a: NoteDraftArgs): D1Prepare
 }
 
 /**
- * M5.4's reader (ADM-INV-10, Rule 47): milestones whose work was DELIVERED and whose proforma still has a balance, oldest delivery first, keyset by
- * `(delivered_at, id)`, at most 50 rows. `?1` the cutoff (delivered at or before it), `?2` and `?3` the last row's `delivered_at` and `id` (the first
- * page binds -1 and ''). No new index here: M5.4 adds it (0043-0044).
+ * M5.4's reader (ADM-INV-10, Rule 47): milestones whose work was DELIVERED (ready to bill) and whose proforma still has a balance, oldest delivery first, keyset by
+ * `(delivered_at, id)`, at most 50 rows. `?1` the cutoff (delivered at or before it: core `unbilledCutoff`), `?2` and `?3` the last row's `delivered_at` and `id` (the first
+ * page binds -1 and ''). Served by `milestones_unbilled` (0043). Disjoint from `UNBILLED_SQL` (billing.ts): that one lists milestones with NO live frozen document.
  */
 export const PROFORMA_TAX_INVOICE_DUE_SQL = `SELECT m.id AS milestone_id, m.delivered_at, m.title, m.project_id, d.id AS proforma_id, d.number_display, d.client_id, d.currency, d.balance_minor
    FROM milestones m JOIN documents d ON d.id = m.document_id AND d.type = 'proforma' AND d.frozen_at IS NOT NULL AND d.status <> 'void' AND d.balance_minor > 0
-   WHERE m.delivered_at IS NOT NULL AND m.delivered_at <= ?1 AND (m.delivered_at > ?2 OR (m.delivered_at = ?2 AND m.id > ?3))
+   WHERE m.status = 'ready_to_bill' AND m.delivered_at IS NOT NULL AND m.delivered_at <= ?1 AND (m.delivered_at > ?2 OR (m.delivered_at = ?2 AND m.id > ?3))
    ORDER BY m.delivered_at, m.id LIMIT 50`;
+
+// ---- the send of an issued invoice, and its reminders (M5.4, ADM-INV-15, ADM-INV-13, LD55, LD60) -------------------------------------------------------------------
+
+export type InvoiceSendArgs = {
+  documentId: string;
+  /** One row per recipient (1 to 5): the new `document_sends` id and the contact. */
+  rows: readonly { id: string; contactId: string }[];
+  /** null: the client's setting (`clients.attach_pdf`). */
+  attachPdf: boolean | null;
+  /** The member who sent it, or the Owner who turned the automatic issue on (`kind` `auto`). */
+  createdBy: string;
+  kind: "send" | "resend" | "auto";
+  now: number;
+  /** The care issue writes its sends in the batch that froze the document: the document's `frozen_at` must be exactly this. Null for a send of an invoice issued earlier. */
+  frozenAt: number | null;
+  /** The reminders to create, only on the FIRST send (core `reminderRows`): one row per future offset. `id` is the new `reminders` id. */
+  reminders: readonly { id: string; offset: number; dueAt: number }[];
+};
+
+/** The types a send can be about, and the statuses it cannot (a draft is not frozen; a void document is never sent). Credit and debit notes are sent too (LD15). */
+const SENDABLE_TYPES = "('tax_invoice', 'export_invoice', 'proforma', 'credit_note', 'debit_note')";
+const REMINDED_TYPES = "('tax_invoice', 'export_invoice', 'proforma', 'debit_note')";
+
+/**
+ * The statements of a send, for the caller's own `db.batch()` (after its audit row, with the same guard, or in the care issue's batch after the freeze): the
+ * `document_sends` rows (`version_group_id` is the document's own id: an invoice has no versions) and, on the first send, the reminders. Each statement is
+ * written ALL OR NONE: the document must be a frozen, not void, invoice-family document of this client (in the care issue, frozen by this very batch), the
+ * client not anonymised, and every named contact must still be a contact of the client with portal access (the count of valid contacts equals the list). The
+ * reminders are guarded on the first send row existing, so a refused send writes none, and are `INSERT OR IGNORE` on the unique `(document_id, offset_days)`
+ * key, so a second first-send can never double them. `queued_at` stays NULL: the email waits for the PDF (the render step or the send route queues it).
+ * ?1 document, ?2 rows JSON, ?3 attach (null: the client's), ?4 kind, ?5 created by, ?6 now, ?7 frozen at (null: any).
+ */
+export function invoiceSendStatements(db: D1Database, a: InvoiceSendArgs): D1PreparedStatement[] {
+  const valid = `d.id = ?1 AND d.type IN ${SENDABLE_TYPES} AND d.frozen_at IS NOT NULL AND d.status <> 'void' AND d.voided_at IS NULL AND (?7 IS NULL OR d.frozen_at = ?7)
+       AND NOT EXISTS (SELECT 1 FROM clients z WHERE z.id = d.client_id AND z.anonymised_at IS NOT NULL)
+       AND (SELECT count(*) FROM contacts c2 WHERE c2.client_id = d.client_id AND c2.portal_access = 1 AND c2.anonymised_at IS NULL AND c2.id IN (SELECT json_extract(value, '$.contactId') FROM json_each(?2))) = json_array_length(?2)`;
+  const rows = JSON.stringify(a.rows);
+  const first = a.rows[0];
+  const sends = db
+    .prepare(
+      `INSERT INTO document_sends (id, document_id, version_group_id, client_id, contact_id, email, attach_pdf, kind, queued_at, created_by, created_at)
+       SELECT json_extract(j.value, '$.id'), d.id, d.id, d.client_id, c.id, lower(c.email), coalesce(?3, (SELECT cl.attach_pdf FROM clients cl WHERE cl.id = d.client_id)), ?4, NULL, ?5, ?6
+       FROM documents d JOIN json_each(?2) j
+         JOIN contacts c ON c.id = json_extract(j.value, '$.contactId') AND c.client_id = d.client_id AND c.portal_access = 1 AND c.anonymised_at IS NULL
+       WHERE ${valid}`,
+    )
+    .bind(
+      a.documentId,
+      rows,
+      a.attachPdf === null ? null : a.attachPdf ? 1 : 0,
+      a.kind,
+      a.createdBy,
+      a.now,
+      a.frozenAt,
+    );
+  if (a.reminders.length === 0 || !first) return [sends];
+  const reminders = db
+    .prepare(
+      `INSERT OR IGNORE INTO reminders (id, document_id, offset_days, due_at, created_at)
+       SELECT json_extract(j.value, '$.id'), d.id, json_extract(j.value, '$.offset'), json_extract(j.value, '$.dueAt'), ?3
+       FROM documents d JOIN json_each(?2) j
+       WHERE d.id = ?1 AND d.type IN ${REMINDED_TYPES} AND d.frozen_at IS NOT NULL AND d.status <> 'void'
+         AND EXISTS (SELECT 1 FROM document_sends s WHERE s.id = ?4 AND s.document_id = d.id)`,
+    )
+    .bind(a.documentId, JSON.stringify(a.reminders), a.now, first.id);
+  return [sends, reminders];
+}

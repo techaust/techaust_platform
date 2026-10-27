@@ -220,6 +220,14 @@ export function proformaWarnAt(deliveredAtMs: number, alertDays: number): number
   return fromIst(addDays(istDate(deliveredAtMs), alertDays));
 }
 
+/**
+ * The cutoff the unbilled-work and proforma-due readers bind (ADM-INV-19, ADM-INV-10; M5.4): a milestone delivered AT OR BEFORE this instant has reached
+ * its warning (`proformaWarnAt(delivered, alertDays) <= nowMs`). It is the last millisecond before the start of the IST day `alertDays - 1` days before
+ * today, so the day the warning opens is the 25th IST day after delivery: 23:59:59.999 the day before it is still quiet and 00:00 IST is not.
+ */
+export const unbilledCutoff = (nowMs: number, alertDays: number): number =>
+  fromIst(addDays(istDate(nowMs), 1 - alertDays)) - 1;
+
 /** The ISO form of `proformaWarnAt`'s day (for a screen). */
 export const proformaWarnDate = (deliveredAtMs: number, alertDays: number): string =>
   toIsoDate(addDays(istDate(deliveredAtMs), alertDays));
