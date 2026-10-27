@@ -12,6 +12,8 @@ import type {
   Envelope,
   PdfView,
   RecipientSnap,
+  StatementView,
+  StatementViewInput,
   ViewConfig,
   ViewLine,
   ViewSection,
@@ -225,5 +227,62 @@ export function toPdfView(
       brand: footerLine(emailOnDocuments),
       contact: `${header.issuer.sender.name}, ${header.issuer.sender.email}`,
     },
+  };
+}
+
+// ---- the statement of account (M5.5b, LD79; ADM-CLI-04; VERIFY WITH CA/LEGAL for what a statement lists, Q58) --------------------------------------------
+
+/** The layout the skeleton prints with; the designer's layout gives its own id, so the same data gets a new PDF once the page changes. */
+export const STATEMENT_SKELETON_LAYOUT = "statement-skeleton-1";
+
+const addressLinesOf = (a: Partial<Address> | null | undefined): string[] => {
+  if (!a) return [];
+  const clean = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
+  const place = [clean(a.city), clean(a.state), clean(a.postalCode)].filter((p) => p !== "").join(", ");
+  return [clean(a.line1), clean(a.line2), place, a.country ? countryName(clean(a.country)) : ""].filter(
+    (l) => l !== "",
+  );
+};
+
+/**
+ * The pre-formatted statement. Pure: the same input always gives the same view. Money is formatted by core from the integers the database gave (no arithmetic
+ * here); an amount that is not a safe integer throws (a bug, never a rounded figure), and the jobs Worker marks the row failed. `generatedOn` is the only value
+ * that varies between makings of identical data.
+ */
+export function statementView(input: StatementViewInput, layout = STATEMENT_SKELETON_LAYOUT): StatementView {
+  const fmt = (minor: number): string => formatMoney(money(minor, input.currency));
+  const co = input.company;
+  const companyLines = [
+    co.legalName && co.legalName !== co.tradeName ? co.legalName : "",
+    co.address ?? "",
+    co.gstin ? `GSTIN ${co.gstin}` : "",
+  ].filter((l) => l !== "");
+  const clientLines = [
+    ...addressLinesOf(input.client.address),
+    input.client.gstin ? `GSTIN ${input.client.gstin}` : "",
+  ].filter((l) => l !== "");
+  return {
+    layout,
+    company: { name: co.tradeName, lines: companyLines, logo: co.logo },
+    client: { name: input.client.legalName, lines: clientLines },
+    from: longIsoDate(input.from),
+    to: longIsoDate(input.to),
+    currency: input.currency,
+    opening: fmt(input.openingMinor),
+    closing: fmt(input.closingMinor),
+    totalDebits: fmt(input.debitMinor),
+    totalCredits: fmt(input.creditMinor),
+    amountDue: input.closingMinor > 0 ? fmt(input.closingMinor) : null,
+    entries: input.entries.map((e) => ({
+      kind: e.kind,
+      date: shortIsoDate(e.date),
+      document: e.number,
+      againstNumber: e.againstNumber ?? null,
+      debit: e.debitMinor === 0 ? "" : fmt(e.debitMinor),
+      credit: e.creditMinor === 0 ? "" : fmt(e.creditMinor),
+      balance: fmt(e.balanceMinor),
+    })),
+    billingEmail: input.billingEmail,
+    generatedOn: longIsoDate(input.generatedOn),
   };
 }

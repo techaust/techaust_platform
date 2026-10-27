@@ -194,3 +194,84 @@ export type ViewConfig = {
   /** The client portal's address as printed in the acceptance box (default "portal.techaust.com", docs/06 §7.4). */
   portalLink?: string;
 };
+
+// ---- the statement of account (M5.5b, LD79; ADM-CLI-04, JOB-PDF-01) --------------------------------------------------------------------------------------
+
+/** One line of a statement as the jobs Worker reads it: the amount is positive and the kind says which side it is on (`@techaust/core/statement`). */
+export type StatementInputEntry = {
+  kind: "tax_invoice" | "export_invoice" | "debit_note" | "credit_note" | "receipt";
+  /** ISO date (IST): the issue date, or the day the money arrived. */
+  date: string;
+  /** The document's printed number (a receipt shows the number of the invoice it paid). */
+  number: string;
+  amountMinor: number;
+  debitMinor: number;
+  creditMinor: number;
+  balanceMinor: number;
+  /** A credit note: the invoice it is against. */
+  againstNumber?: string | null;
+};
+
+/** Everything `statementView` needs: the company block frozen at the request, the client as it is now, the range and the lines. */
+export type StatementViewInput = {
+  company: {
+    tradeName: string;
+    legalName: string | null;
+    address: string | null;
+    gstin: string | null;
+    stateCode: string;
+    logo: string;
+    email?: string;
+  };
+  client: {
+    legalName: string;
+    address?: Partial<Address> | null;
+    gstin?: string | null;
+  };
+  currency: "INR" | "USD";
+  from: string;
+  to: string;
+  openingMinor: number;
+  entries: readonly StatementInputEntry[];
+  debitMinor: number;
+  creditMinor: number;
+  closingMinor: number;
+  /** The address the footer sends questions to (Settings "Email" senders, billing). */
+  billingEmail: string;
+  /** The IST date the PDF was made, ISO. NOT part of the content hash (identical data reuses the stored PDF). */
+  generatedOn: string;
+};
+
+export type StatementViewEntry = {
+  kind: StatementInputEntry["kind"];
+  /** "06 Oct 26" */
+  date: string;
+  document: string;
+  againstNumber: string | null;
+  /** Formatted amounts; "" where the line has none on that side. */
+  debit: string;
+  credit: string;
+  balance: string;
+};
+
+/** The pre-formatted statement: every value a layout prints is already a string (no arithmetic at layout time). Words are the layout's. */
+export type StatementView = {
+  /** The layout that makes the page: part of the content hash, so a new layout makes a new PDF for the same data. */
+  layout: string;
+  company: { name: string; lines: string[]; logo: string };
+  client: { name: string; lines: string[] };
+  /** "06 Oct 2026" */
+  from: string;
+  to: string;
+  currency: "INR" | "USD";
+  opening: string;
+  closing: string;
+  totalDebits: string;
+  totalCredits: string;
+  /** The closing balance, only when it is above zero (07-V "Amount due"). */
+  amountDue: string | null;
+  entries: StatementViewEntry[];
+  billingEmail: string;
+  /** "28 Oct 2026". The only value that changes between two makings of the same statement. */
+  generatedOn: string;
+};

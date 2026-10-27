@@ -2,6 +2,7 @@
 // JavaScript off, and the CSP meta below would refuse anything external even if it were present.
 import { esc } from "./escape.ts";
 import { PDF_PRINT_CSS, TECHAUST_PDF_FONT_DATA } from "./generated/assets.ts";
+import { canonicalJson, sha256Hex } from "./hash.ts";
 import type { InvoiceView } from "./invoice-types.ts";
 import {
   type CertificateView,
@@ -11,8 +12,9 @@ import {
 } from "./layout/certificate-skeleton.ts";
 import { documentBody } from "./layout/document.ts";
 import { INVOICE_SKELETON_CSS, invoiceBody, invoicePageCss } from "./layout/invoice-skeleton.ts";
+import { statementBody, statementCss } from "./layout/statement-skeleton.ts";
 import { pageCss, TEMPLATE_CSS } from "./layout/styles.ts";
-import type { PdfView } from "./types.ts";
+import type { PdfView, StatementView } from "./types.ts";
 
 export const DOCUMENT_CSP = "default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'";
 
@@ -84,4 +86,35 @@ ${certificateBody(view)}
 </body>
 </html>
 `;
+}
+
+/** The whole HTML document of a statement of account (same page rules as a document: inline fonts and CSS, no network). */
+export function renderStatementHtml(view: StatementView): string {
+  return `<!doctype html>
+<html lang="en-IN">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="${DOCUMENT_CSP}">
+<title>${esc(`Statement of account ${view.from} to ${view.to}`)}</title>
+<style>
+${TECHAUST_PDF_FONT_DATA}
+${PDF_PRINT_CSS}
+${TEMPLATE_CSS}
+${statementCss(view)}
+</style>
+</head>
+<body>
+${statementBody(view)}
+</body>
+</html>
+`;
+}
+
+/**
+ * The content hash of a statement (`statement_pdfs.view_sha256`, and the R2 key `statements/<clientId>/<hash>.pdf`): the SHA-256 of the canonical JSON of the view
+ * WITHOUT `generatedOn`, so the same data made on two days is the same object (LD79). The layout id is inside the view: a new layout is a new object.
+ */
+export async function statementViewSha256(view: StatementView): Promise<string> {
+  const { generatedOn: _generatedOn, ...content } = view;
+  return sha256Hex(canonicalJson(content));
 }
