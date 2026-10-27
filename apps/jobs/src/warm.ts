@@ -9,17 +9,80 @@ import {
   warmConsumerMessages,
   warmLabels,
   warmOfferMessages,
+  warmReportMessages,
 } from "@techaust/core";
+import { canonicalJson } from "@techaust/core/hash";
+import { type StatementKind, statementEntries } from "@techaust/core/statement";
 import { renderEmail } from "@techaust/email";
-import { renderCertificateHtml, warmInvoicePdf, warmPdf } from "@techaust/pdf";
+import {
+  renderCertificateHtml,
+  renderStatementHtml,
+  statementView,
+  warmInvoicePdf,
+  warmPdf,
+} from "@techaust/pdf";
 import { buildCertificateView } from "./certificate.ts";
 import { alertData } from "./leads.ts";
 
+/**
+ * One made-up statement of `count` lines through the same steps the `pdf.statement` consumer takes before Browser Run: `statementEntries`, the view, the canonical JSON the
+ * view hash is made of (the SHA-256 itself is async and left out of start-up) and `renderStatementHtml`. Returns the HTML length (0 on failure: it never stops a Worker from starting).
+ */
+export function warmStatement(count = 3): number {
+  try {
+    const kinds: StatementKind[] = ["tax_invoice", "credit_note", "export_invoice", "receipt"];
+    const rows = Array.from({ length: count }, (_, i) => {
+      const kind = kinds[i % kinds.length] as StatementKind;
+      return {
+        id: `warm-${i}`,
+        kind,
+        date: `2026-10-${String((i % 28) + 1).padStart(2, "0")}`,
+        number: `TH/INV/2627/${String(i + 1).padStart(4, "0")}`,
+        amountMinor: 118_000 + i,
+        againstNumber: kind === "credit_note" ? "TH/INV/2627/0001" : null,
+      };
+    });
+    const done = statementEntries(rows, 500_000);
+    if (!done.ok) return 0;
+    const view = statementView({
+      company: {
+        tradeName: "Warm",
+        legalName: "Warm",
+        address: "Warm",
+        gstin: null,
+        stateCode: "19",
+        logo: "",
+      },
+      client: {
+        code: "C-WARM",
+        legalName: "Warm Client",
+        address: { line1: "1 Warm Road", city: "Kolkata" },
+        gstin: null,
+      },
+      currency: "INR",
+      from: "2026-10-01",
+      to: "2026-10-31",
+      openingMinor: 500_000,
+      entries: done.entries.map((e) => ({ ...e, againstNumber: e.againstNumber ?? null })),
+      debitMinor: done.totals.debitMinor,
+      creditMinor: done.totals.creditMinor,
+      closingMinor: done.closingMinor,
+      billingEmail: "billing@warm-up.invalid",
+      generatedOn: "2026-10-31",
+    });
+    canonicalJson({ layout: "statement-1", ...view });
+    return renderStatementHtml(view).length;
+  } catch {
+    return 0;
+  }
+}
+
 /** Returns the parses and renders that succeeded (5 + 10), so a test notices a warm-up that silently stopped working. */
 export function warmConsumers(): number {
-  const parsed = warmConsumerMessages();
+  const parsed = warmConsumerMessages() + warmReportMessages();
   warmLabels();
   let rendered = 0;
+  let statementOk = 0;
   try {
     const opts = { assetBase: "https://warm-up.invalid/" };
     renderEmail("lead.acknowledgement", { first_name: "Warm", service_name: "Warm", ref: "L-23456" }, opts);
@@ -175,6 +238,34 @@ export function warmConsumers(): number {
       opts,
     );
     rendered++;
+    // M5.5b: the realisation alert (one stage) and the monthly EDF reminder, the two owner emails of the reports
+    renderEmail(
+      "realisation.alert",
+      {
+        owner_first_name: "Warm",
+        stage: "fema_overdue",
+        number: "TH/EXP/2627/0001",
+        client: "Warm",
+        currency: "USD",
+        outstanding: "$1,000.00",
+        due_date: "1 Nov 2026",
+        link: "https://warm-up.invalid/reports/realisation",
+      },
+      opts,
+    );
+    rendered++;
+    renderEmail(
+      "edf.reminder",
+      {
+        owner_first_name: "Warm",
+        month_label: "October 2026",
+        count: "2",
+        due_date: "30 Nov 2026",
+        link: "https://warm-up.invalid/reports/edf",
+      },
+      opts,
+    );
+    rendered++;
     // the user-agent reader the staff alerts use (compiles its patterns on first match)
     describeUserAgent(
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
@@ -186,6 +277,8 @@ export function warmConsumers(): number {
   warmPdf();
   // M5.1: one made-up invoice through the invoice view and the plain skeleton (the same render message, an invoice's code path).
   warmInvoicePdf();
+  // M5.5b: one made-up statement through the entries, the view, the hash input and the HTML (counted in `warm.test.ts`).
+  if (warmStatement() > 0) statementOk = 1;
   // M4.5: the four expansion messages of the email queue, and one made-up acceptance certificate through the view and the HTML.
   warmOfferMessages();
   // M5.4: the invoice send, reminder, care, alert and reminder-scan messages (schemas built at start-up, not in the first message).
@@ -218,5 +311,5 @@ export function warmConsumers(): number {
   } catch {
     // never stop a Worker from starting
   }
-  return parsed + rendered;
+  return parsed + rendered + statementOk;
 }

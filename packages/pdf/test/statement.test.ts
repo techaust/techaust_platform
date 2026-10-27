@@ -132,10 +132,12 @@ describe("statementView", () => {
 });
 
 describe("statementViewSha256", () => {
-  it("does not depend on the day it was made, and does depend on the data and the address", async () => {
+  it("depends on the IST day it was made (finding 5), the data and the address", async () => {
     const a = await statementViewSha256(statementView(input()));
     expect(a).toMatch(/^[0-9a-f]{64}$/);
-    expect(await statementViewSha256(statementView(input({ generatedOn: "2026-11-30" })))).toBe(a);
+    // the same day: the same hash; another day: another one (a later request renders afresh)
+    expect(await statementViewSha256(statementView(input({ generatedOn: "2026-10-28" })))).toBe(a);
+    expect(await statementViewSha256(statementView(input({ generatedOn: "2026-11-30" })))).not.toBe(a);
     expect(await statementViewSha256(statementView(input({ closingMinor: 15_621_00 })))).not.toBe(a);
     expect(await statementViewSha256(statementView(input({ billingEmail: "other@example.test" })))).not.toBe(
       a,
@@ -145,7 +147,7 @@ describe("statementViewSha256", () => {
   it("the layout id is part of the hash: the same view under another layout id would be another object", async () => {
     expect(STATEMENT_LAYOUT_ID).toBe("statement-1");
     const v = statementView(input());
-    const { generatedOn: _d, ...content } = v;
+    const content = v;
     const { canonicalJson, sha256Hex } = await import("../src/hash.ts");
     expect(await statementViewSha256(v)).toBe(
       await sha256Hex(canonicalJson({ layout: "statement-1", ...content })),

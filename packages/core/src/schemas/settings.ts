@@ -253,11 +253,11 @@ export const taxSettings = z.object({
   b2cDetailsThresholdInrMinor: minor,
   /** G-12: export realisation warnings (FEMA). */
   realisation: z.object({
-    warnMonths: intBetween(1),
+    warnMonths: intBetween(1, 1200),
     /** Q15 (M5.5b; VERIFY WITH CA/LEGAL, FEMA 2026): months to realise an export invoice in INR; a stored row without it reads 12. */
     inrMonths: z.prefault(intBetween(1, 120), 12),
-    escalateMonths: intBetween(1),
-    escalateExtraDays: intBetween(0),
+    escalateMonths: intBetween(1, 1200),
+    escalateExtraDays: intBetween(0, 36_500),
   }),
   /**
    * Q18 (M5.5b; VERIFY WITH CA/LEGAL, Notification 12/2024): an inter-state invoice to an unregistered client above this INR amount

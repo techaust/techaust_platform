@@ -189,13 +189,13 @@ describe("the statement PDF: read, view, content hash, render, store once", () =
     expect(logs.join("\n")).not.toContain(inv.numberDisplay);
   });
 
-  it("the same data asked for again, even on another day, is ADOPTED: no second render, the same object, the same view hash", async () => {
+  it("the same data asked for again on the same IST day is ADOPTED: no second render, the same object, the same view hash", async () => {
     const { owner, clientId } = await seed();
     const first = await mkStatement(clientId, owner.id);
     const b = browser();
     await processStatementPdf(mkEnv(b), message(first.id), NOW, clock);
     const second = await mkStatement(clientId, owner.id);
-    expect(await processStatementPdf(mkEnv(b), message(second.id), NOW + 3 * DAY, clock)).toBe("adopted");
+    expect(await processStatementPdf(mkEnv(b), message(second.id), NOW + 3_600_000, clock)).toBe("adopted");
     expect(b.pages).toHaveLength(1);
     const a = await statementRow(first.id);
     const c = await statementRow(second.id);
@@ -203,6 +203,22 @@ describe("the statement PDF: read, view, content hash, render, store once", () =
     expect(c?.view_sha256).toBe(a?.view_sha256);
     expect(c?.pdf_sha256).toBe(a?.pdf_sha256);
     expect(await bells("statement.ready", second.id)).toHaveLength(1);
+  });
+
+  it("a request on a later IST day renders afresh: another object whose page prints its own date (finding 5)", async () => {
+    const { owner, clientId } = await seed();
+    const first = await mkStatement(clientId, owner.id);
+    const b = browser();
+    await processStatementPdf(mkEnv(b), message(first.id), NOW, clock);
+    const second = await mkStatement(clientId, owner.id);
+    expect(await processStatementPdf(mkEnv(b), message(second.id), NOW + DAY, clock)).toBe("rendered");
+    expect(b.pages).toHaveLength(2);
+    expect(b.pages[0]).toContain("Generated on 02 Nov 26");
+    expect(b.pages[1]).toContain("Generated on 03 Nov 26");
+    const a = await statementRow(first.id);
+    const c = await statementRow(second.id);
+    expect(c?.view_sha256).not.toBe(a?.view_sha256);
+    expect(c?.pdf_r2_key).not.toBe(a?.pdf_r2_key);
   });
 
   it("different data (a new document in the range) is a different object", async () => {

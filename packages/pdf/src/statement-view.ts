@@ -50,7 +50,7 @@ export type StatementViewInput = {
   closingMinor: number;
   /** The address the footer sends questions to (Settings "Email" senders, billing). */
   billingEmail: string;
-  /** The IST date the PDF was made, ISO. NOT part of the content hash (identical data reuses the stored PDF). */
+  /** The IST date the PDF was made, ISO. Part of the content hash: identical data is reused within one IST day only. */
   generatedOn: string;
 };
 

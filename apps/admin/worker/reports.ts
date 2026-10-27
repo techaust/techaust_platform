@@ -42,7 +42,7 @@ function cursorOf(after: string | undefined): { d: string; id: string } | null |
 const SETTINGS_SQL = "SELECT key, value FROM settings WHERE key IN ('company', 'tax')";
 
 /** What every report page needs from Settings: the supplier's state and the `tax` row's two readers (no zod, LD77). */
-function settingsOf(rows: readonly { key: string; value: string }[]) {
+function settingsOf(rows: readonly { key: string; value: string }[], opts: { rulesOptional?: boolean } = {}) {
   const parsed: Record<string, unknown> = {};
   for (const r of rows) {
     try {
@@ -56,7 +56,10 @@ function settingsOf(rows: readonly { key: string; value: string }[]) {
     company !== null && typeof company === "object" && "stateCode" in company
       ? (company as { stateCode: unknown }).stateCode
       : null;
-  const rules = realisationParamsFromStoredTax(parsed.tax);
+  let rules = realisationParamsFromStoredTax(parsed.tax);
+  // The registers never use the realisation rules (the meta only echoes them), so an invalid realisation block must not block a GST
+  // filing: they read the documented defaults. The realisation list and the EDF list still refuse (review round, finding 4).
+  if (!rules.ok && opts.rulesOptional) rules = realisationParamsFromStoredTax(undefined);
   const threshold = b2clThresholdFromStoredTax(parsed.tax);
   if (typeof state !== "string" || !/^\d{2}$/.test(state) || !rules.ok || threshold === null) return null;
   return { state, rules, threshold };
@@ -102,7 +105,9 @@ export const reports = new Hono<AppEnv>()
       ),
       c.env.DB.prepare(SETTINGS_SQL),
     ]);
-    const s = settingsOf((settingsRes?.results ?? []) as { key: string; value: string }[]);
+    const s = settingsOf((settingsRes?.results ?? []) as { key: string; value: string }[], {
+      rulesOptional: true,
+    });
     if (!s) return err(c, SETTINGS_INVALID, 409);
     const { page, next } = pageOf((res?.results ?? []) as RegisterSqlRow[]);
     const written = await mutate(c, {

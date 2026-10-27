@@ -239,7 +239,28 @@ describe("the register page", () => {
     const bad = await registers(o.cookie);
     expect(bad.status).toBe(409);
     expect(((await json(bad)) as J).error.code).toBe("settings_invalid");
-    await putTax({ realisation: { warnMonths: 0, escalateMonths: 12, escalateExtraDays: 15 } });
+    // an invalid realisation block alone does not stop the registers (a GST filing); the realisation and EDF routes still refuse
+    for (const realisation of [
+      { warnMonths: 0, escalateMonths: 12, escalateExtraDays: 15 },
+      { warnMonths: 9, escalateMonths: 1300, escalateExtraDays: 15 },
+    ]) {
+      await putTax({ realisation });
+      const ok = await registers(o.cookie);
+      expect(ok.status).toBe(200);
+      expect(((await json(ok)) as J).meta.realisation).toEqual({
+        warnMonths: 9,
+        inrMonths: 12,
+        escalateMonths: 12,
+        escalateExtraDays: 15,
+      });
+      for (const path of ["/reports/realisation", "/reports/edf?month=2026-10"]) {
+        const refused = await call(path, { cookie: o.cookie });
+        expect(refused.status, path).toBe(409);
+        expect(((await json(refused)) as J).error.code).toBe("settings_invalid");
+      }
+    }
+    // a bad threshold still stops the registers
+    await putTax({ b2clThresholdInrMinor: 0 });
     expect((await registers(o.cookie)).status).toBe(409);
     // a stored row without the two new keys still serves, with the defaults
     await putTax({ realisation: { warnMonths: 9, escalateMonths: 12, escalateExtraDays: 15 } });

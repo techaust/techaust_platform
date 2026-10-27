@@ -2,8 +2,8 @@
 // per `statement_pdfs` row (the admin API inserts the row and awaits the send). The row is a CACHE, not a record: nothing here freezes or seals anything.
 //   (1) read the row, its client and the Settings "email" row; a row that is done, failed or gone is acknowledged; a client anonymised since the request makes the row failed (`client_anonymised`), no PDF, no bell;
 //   (2) read the lines in ONE batch: the balance before `from`, the entries (`LIMIT 201`: more than 200 is `statement_too_long`), the range totals;
-//   (3) `statementEntries` (bigint sums) gives the running balances; `statementView` formats them; the CONTENT HASH is the canonical view without `generatedOn` (and with the layout id inside), so the same data made
-//       on two days is the same object: `statements/<clientId>/<hash>.pdf`;
+//   (3) `statementEntries` (bigint sums) gives the running balances; `statementView` formats them; the CONTENT HASH is the canonical view WITH `generatedOn` (the IST day) and the layout id, so the same data made
+//       on one IST day is the same object and a later day renders afresh: `statements/<clientId>/<hash>.pdf`;
 //   (4) the object already there is ADOPTED; otherwise the HTML is rendered through the paced Browser Run client with the M4.4 error table (`failed`: rate and quota delay and re-send with `hop`, cap 30; anything
 //       else throws and the queue retries, then the dead letter marks the row failed);
 //   (5) put once, then ONE batch: the row's `view_sha256`, `pdf_r2_key`, `pdf_sha256`, `rendered_at` (only `WHERE pdf_r2_key IS NULL AND failed_at IS NULL`), the render counted, and the bell `statement.ready` for
