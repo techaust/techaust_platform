@@ -1,7 +1,7 @@
 // The owners' export alerts of M5.5b stage B [ADM-REP-07, ADM-INV-17, LD75, LD76, LD77; Q53, Q54, Q55; VERIFY WITH CA/LEGAL]: the 09:00 IST dispatch (every hour, days 4 to 8, December to January, no D1 read),
 // `realisation.scan` (each stage once, the current stage only, the stored settings, the IGST route, month-end issue dates, realised and voided exports, continuation, an anonymised client, emails
 // before bells, per owner) and `edf.reminder` (one email and one bell per owner per month, none without exports). Documents are inserted the way the scan finds them; the fake clock is the `now` passed in.
-import { type EmailMessage, uuidv7 } from "@techaust/core";
+import { uuidv7 } from "@techaust/core";
 import { fromIst, parseIsoDate } from "@techaust/core/dates";
 import { beforeEach, describe, expect, it } from "vitest";
 import { ALERTS_HOUR_IST, EDF_REMINDER_DAYS_IST, enqueueHourly, hourlyMessages } from "../src/billing.ts";
@@ -389,7 +389,9 @@ describe("realisation.scan: each stage rings once", () => {
       }),
     );
     await scan(tick("2027-10-04")); // 12-month date 2027-11-03 is near; with 18 months the FEMA date is 2028-05-03 (the GST date is later still)
-    expect((await bellsOf(ex.id)).map((b) => b.kind)).toEqual(["export.gst_overdue"].slice(0, 0));
+    expect(await bellsOf(ex.id)).toEqual([]);
+    await scan(tick("2028-04-04")); // 30 days before the 18-month FEMA date (2028-05-03)
+    expect((await bellsOf(ex.id)).map((b) => b.kind)).toEqual(["export.fema_approaching"]);
     await run("DELETE FROM settings WHERE key = 'tax'");
   });
 

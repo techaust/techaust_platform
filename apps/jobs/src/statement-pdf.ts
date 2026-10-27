@@ -135,6 +135,7 @@ async function fail(
             row.id,
             STATEMENT_BELL_COPY.failed(row.client_code),
             `/clients/${row.client_id}`,
+            row.requested_by,
           ),
         ]
       : []),
@@ -251,6 +252,7 @@ export async function processStatementPdf(
         row.id,
         STATEMENT_BELL_COPY.ready(row.client_code),
         `/clients/${row.client_id}`,
+        row.requested_by,
       ),
       ...(usage
         ? [
