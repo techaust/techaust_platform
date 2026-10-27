@@ -66,6 +66,32 @@ describe("the finance figures against a known fixture", () => {
       status: "issued",
       lines: [line(500_00)],
     });
+    // M6: a part-paid (converted) proforma still waits for its remainder; a fully advanced one (balance 0) and a converted one nothing was paid on do not
+    const partBalance = 800_00 + 144_00 - 300_00;
+    await addDoc({
+      type: "proforma",
+      clientId: inr,
+      issueDate: today,
+      status: "converted",
+      lines: [line(800_00)],
+      over: { paid_minor: 300_00, balance_minor: partBalance },
+    });
+    await addDoc({
+      type: "proforma",
+      clientId: inr,
+      issueDate: today,
+      status: "converted",
+      lines: [line(100_00)],
+      over: { paid_minor: 118_00, balance_minor: 0 },
+    });
+    await addDoc({
+      type: "proforma",
+      clientId: inr,
+      issueDate: today,
+      status: "converted",
+      lines: [line(100_00)],
+      over: { balance_minor: 0 },
+    });
     const fresh = await addDoc({ clientId: usd, currency: "USD", issueDate: today, dueDate: plus(10) });
     // an export 290 days old (FEMA's 9 months are over) and one 400 days old under LUT (the 12 months + 15 days are over)
     const feo = await addDoc({ clientId: usd, currency: "USD", issueDate: plus(-290), dueDate: plus(-100) });
@@ -134,7 +160,7 @@ describe("the finance figures against a known fixture", () => {
       clientCode: expect.stringMatching(/^T\d{4}$/),
     });
     expect(f.proformasAwaiting).toEqual([
-      { currency: "INR", count: 1, balanceMinor: pro.computed.totalMinor },
+      { currency: "INR", count: 2, balanceMinor: pro.computed.totalMinor + partBalance },
     ]);
     // the exports: the fresh one is "ok", FEMA is over for the 290-day one, the GST deadline for the 400-day one
     expect(f.exports.counts).toEqual({
@@ -219,12 +245,13 @@ describe("what the finance statements read", () => {
     const results = await db.batch(stmts);
     const reads = results.map((r) => r.meta.rows_read as number);
     // Measured at 2,000 documents, all of them open and issued this financial year (the worst case): an index entry and its row each count, so the invoiced and the
-    // owed figures read about two rows a document each, and the oldest overdue, the proformas and the exports read almost nothing. The brief asked for at most 8,000;
-    // this is about 5 % above it (8,441 measured; reported to the lead as an open question).
+    // owed figures read about two rows a document each, and the oldest overdue, the proformas and the exports read almost nothing. The target, restated by the
+    // lead after the early check (2026-10-28), is at most 9,000 rows at 2,000 documents (8,441 measured at the start of M5.5b; no covering index: it cannot cover the
+    // invoiced figure and adds rows written; no snapshot: LD80, the figure stays live). A regression test, so a new statement or a lost index fails here.
     expect(
       reads.reduce((a, b) => a + b, 0),
       JSON.stringify(reads),
-    ).toBeLessThanOrEqual(8_600);
+    ).toBeLessThanOrEqual(9_000);
     expect(reads[2], "the oldest overdue reads a handful of rows, not every overdue one").toBeLessThanOrEqual(
       30,
     );

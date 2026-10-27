@@ -4,6 +4,7 @@
 import { registerRatesOf } from "@techaust/core/gst";
 import type { ComputedDocument, LineInput } from "@techaust/core/tax";
 import { describe, expect, it } from "vitest";
+import { goldenDocuments } from "../../core/test/tax/golden-cases.ts";
 import {
   EDF_MONTH_SQL,
   EXPORT_NEXT_SQL,
@@ -16,6 +17,7 @@ import {
   REALISATION_PAGE_SQL,
   REALISATION_SCAN_SQL,
   REGISTER_PAGE_SQL,
+  REPORT_PAGE_SIZE,
   type RegisterSqlRow,
   realisationScanBinds,
   STATEMENT_BALANCE_BEFORE_SQL,
@@ -50,6 +52,22 @@ const plan = async (sql: string, ...binds: unknown[]): Promise<string> => {
  */
 const scansTable = (p: string): boolean =>
   /SCAN (documents|advance_receipts|d|r|inv|c|n)\b(?! USING)/.test(p);
+
+describe("the page size is one constant", () => {
+  it("is 50, and every page statement reads one more row to know there is a next page", () => {
+    expect(REPORT_PAGE_SIZE).toBe(50);
+    for (const sql of [
+      REGISTER_PAGE_SQL(false),
+      REGISTER_PAGE_SQL(true),
+      EDF_MONTH_SQL(true),
+      REALISATION_PAGE_SQL("open", false),
+      REALISATION_SCAN_SQL(false),
+      STATEMENT_PAGE_SQL(true),
+    ]) {
+      expect(sql).toMatch(new RegExp(`LIMIT ${REPORT_PAGE_SIZE + 1}$`));
+    }
+  });
+});
 
 describe("EXPLAIN: every report statement uses an index", () => {
   it("the register page, with and without a cursor, reads `documents_issued_on`", async () => {
@@ -503,6 +521,33 @@ describe("the SQL rates are a twin of core's registerRatesOf", () => {
       made++;
     }
     expect(made).toBeGreaterThan(40);
+  });
+
+  it("the tax engine's own golden documents (hand-computed, INR and USD, every supply, discounts, several rates), stored as issued documents", async () => {
+    // the golden table computes each case once with the recorder on (no mock): the documents come out exactly as the engine made them
+    const documents = goldenDocuments();
+    expect(documents.length).toBeGreaterThan(40);
+    const c = await mkReportClient("INR");
+    const u = await mkReportClient("USD");
+    let refused = 0;
+    const start = Date.UTC(2027, 5, 1);
+    for (const [i, computed] of documents.entries()) {
+      const day = new Date(start + i * 86_400_000).toISOString().slice(0, 10);
+      const doc = await addDoc({ clientId: computed.currency === "USD" ? u : c, issueDate: day, computed });
+      const core = registerRatesOf(computed);
+      const sql = await sqlRatesOf(doc.id, day);
+      if (core.ok) {
+        expect(sql, `golden document ${i}`).toEqual(core.value);
+      } else {
+        // core refuses (a USD line without its INR view): the SQL sums are NULL, never zero
+        refused++;
+        expect(
+          sql.some((r) => r.taxableMinor === null),
+          `golden document ${i}`,
+        ).toBe(true);
+      }
+    }
+    expect(refused).toBeLessThan(documents.length / 4);
   });
 });
 

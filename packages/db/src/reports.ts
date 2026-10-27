@@ -14,6 +14,12 @@ import {
   stageSql,
 } from "./realisation.ts";
 
+/**
+ * Rows in one report page (keyset, the admin lists' rule): every page statement reads one more (`LIMIT REPORT_PAGE_SIZE + 1`) to know whether another page exists. One
+ * constant for the SQL and the routes, so the page can be lowered in one place (docs/05 §10: staging `cpuTimeMs` over 7 ms at the p99 means 25).
+ */
+export const REPORT_PAGE_SIZE = 50;
+
 /** The four GST kinds the register reports (a proforma, proposal or estimate never is). */
 const GST_TYPES = "('tax_invoice', 'export_invoice', 'credit_note', 'debit_note')";
 /** The partial-index predicates, written exactly as the index definitions are (SQLite needs the query to imply them for `INDEXED BY`). */
@@ -91,14 +97,14 @@ export const REGISTER_PAGE_SQL = (after: boolean): string =>
   `SELECT ${REGISTER_COLUMNS}
    FROM documents d INDEXED BY documents_issued_on JOIN clients c ON c.id = d.client_id
    WHERE ${ISSUED_GST} AND d.issue_date >= ?1 AND d.issue_date <= ?2 ${after ? KEYSET : ""}
-   ORDER BY d.issue_date, d.id LIMIT 51`;
+   ORDER BY d.issue_date, d.id LIMIT ${REPORT_PAGE_SIZE + 1}`;
 
 /** The invoice month's non-voided export invoices (the EDF list): `?1` first day, `?2` last day, then the keyset as above. */
 export const EDF_MONTH_SQL = (after: boolean): string =>
   `SELECT ${REGISTER_COLUMNS}
    FROM documents d INDEXED BY documents_export_issued JOIN clients c ON c.id = d.client_id
    WHERE ${ISSUED_EXPORT} AND d.voided_at IS NULL AND d.issue_date >= ?1 AND d.issue_date <= ?2 ${after ? KEYSET : ""}
-   ORDER BY d.issue_date, d.id LIMIT 51`;
+   ORDER BY d.issue_date, d.id LIMIT ${REPORT_PAGE_SIZE + 1}`;
 
 /**
  * The realisation list: every non-voided export invoice (`open`: with an amount still outstanding), oldest first; the keyset is `?1` and `?2`. The first page
@@ -108,7 +114,7 @@ export const REALISATION_PAGE_SQL = (show: "open" | "all", after: boolean): stri
   `SELECT ${REGISTER_COLUMNS}
    FROM documents d INDEXED BY documents_export_issued JOIN clients c ON c.id = d.client_id
    WHERE ${ISSUED_EXPORT} AND d.voided_at IS NULL ${show === "open" ? "AND d.balance_minor > 0" : ""} ${after ? "AND (d.issue_date > ?1 OR (d.issue_date = ?1 AND d.id > ?2))" : ""}
-   ORDER BY d.issue_date, d.id LIMIT 51`;
+   ORDER BY d.issue_date, d.id LIMIT ${REPORT_PAGE_SIZE + 1}`;
 
 /**
  * The alert scan (jobs): open exports old enough to be near a deadline, with their stage not "ok" and not "realised". Parameters: `?1` today (IST ISO), `?2`
@@ -125,7 +131,7 @@ export const REALISATION_SCAN_SQL = (after: boolean): string => {
    WHERE ${ISSUED_EXPORT} AND d.voided_at IS NULL AND d.balance_minor > 0
      AND d.issue_date < date(?1, '+' || (?6 + 31) || ' days', '-' || ?7 || ' months') ${after ? "AND (d.issue_date > ?8 OR (d.issue_date = ?8 AND d.id > ?9))" : ""}
      AND ${stageSql("d", p)} IN (${ALERT_STAGE_LIST})
-   ORDER BY d.issue_date, d.id LIMIT 51`;
+   ORDER BY d.issue_date, d.id LIMIT ${REPORT_PAGE_SIZE + 1}`;
 };
 
 /**
@@ -162,7 +168,7 @@ const statementSource = (cond: (dateExpr: string) => string): string =>
 export const STATEMENT_PAGE_SQL = (after: boolean): string =>
   `SELECT u.id, u.kind, u.date, u.number, u.amount, u.sk FROM ${statementSource((x) => `${x} >= ?3 AND ${x} <= ?4`)}
    ${after ? "WHERE (u.sk > ?5 OR (u.sk = ?5 AND u.id > ?6))" : ""}
-   ORDER BY u.sk, u.id LIMIT 51`;
+   ORDER BY u.sk, u.id LIMIT ${REPORT_PAGE_SIZE + 1}`;
 
 /**
  * The balance before a page: everything dated before the range's first day (`?3`), or, for a next page, everything up to and including the cursor row (`?5`
@@ -289,9 +295,16 @@ export const OVERDUE_OLDEST_SQL = `SELECT o.id, o.number_display, o.due_date, o.
    FROM (${overdueOf("issued")} UNION ALL ${overdueOf("partially_paid")} UNION ALL ${overdueOf("partially_credited")}) o JOIN clients c ON c.id = o.client_id
    ORDER BY o.due_date, o.id LIMIT 5`;
 
-/** Proformas that wait for payment (issued, not converted, not void), by currency: read through the type and status index, so a ledger of invoices is never scanned. */
+/**
+ * Proformas that still wait for payment, by currency (M6 of the early check, lead decision 2026-10-28): an `issued` proforma with a balance, and a part-paid
+ * one. The only way a proforma becomes `converted` is a Q9 advance (`advanceIssueStatements`): it adds the amount to `paid_minor` and takes it off
+ * `balance_minor`, so `converted` with `paid_minor > 0 AND balance_minor > 0` is a proforma paid in part whose remainder is still owed, and a fully
+ * advanced one has `balance_minor = 0` and counts nowhere (its money is on the Q9 tax invoices: no double count, LD22). Read through the type and status
+ * index, so a ledger of invoices is never scanned.
+ */
 export const PROFORMAS_AWAITING_SQL = `SELECT d.currency, count(*) AS n, sum(d.balance_minor) AS balance FROM documents d INDEXED BY documents_type_status_created
-   WHERE d.type = 'proforma' AND d.status = 'issued' AND d.balance_minor > 0 AND d.voided_at IS NULL AND d.frozen_at IS NOT NULL
+   WHERE d.type = 'proforma' AND d.status IN ('issued', 'converted') AND d.balance_minor > 0 AND (d.status = 'issued' OR d.paid_minor > 0)
+     AND d.voided_at IS NULL AND d.frozen_at IS NOT NULL
    GROUP BY d.currency ORDER BY d.currency`;
 
 /** The `tax` settings row, read in the same batch so the export statements below can be checked against it (`realisationParamsFromStoredTax`). */

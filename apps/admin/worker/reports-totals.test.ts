@@ -21,10 +21,12 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { call, one, rows, sessionFor } from "./test-helpers.ts";
 import { currentFy, lutOf, mkProforma, putSwiftBank, putTax } from "./test-invoice-types.ts";
 import {
+  issueBodyOf,
   issueInvoice,
   type J,
   json,
   mkInterClient,
+  mkInvoice,
   mkInvoiceClient,
   mkOverseasClient,
   putBank,
@@ -45,6 +47,10 @@ const reg27 = () => {
 
 const issued: Record<string, Issued> = {};
 let voidedId = "";
+let inrExportId = "";
+let advanceId = "";
+let advanceProformaId = "";
+const extraClients: string[] = [];
 const allRows: RegisterApiRow[] = [];
 let meta: ReportMeta;
 const today = new Date(Date.now() + 19_800_000).toISOString().slice(0, 10);
@@ -112,6 +118,42 @@ beforeAll(async () => {
   expect((await voidInvoice(o, doomed.id)).status).toBe(200);
   const pf = await mkProforma(o, { price: 90_000 });
   expect((await issueInvoice(o, pf.id)).status).toBe(200);
+  // an export invoice in INR (Q8: the Owner confirms it at issue; a client abroad billed in rupees)
+  const inrExport = await mkInvoice(o, {
+    client: () =>
+      mkInvoiceClient({
+        country: "US",
+        gst_status: "overseas",
+        state_code: null,
+        currency: "INR",
+        billing_address: JSON.stringify({ line1: "1 Main St", city: "Austin", country: "US" }),
+      }),
+    price: 150_000,
+  });
+  const inrExportIssued = await issueInvoice(o, inrExport.id, {
+    ...(await issueBodyOf(inrExport.id)),
+    confirmInrExport: true,
+  });
+  expect(inrExportIssued.status, await inrExportIssued.clone().text()).toBe(200);
+  inrExportId = inrExport.id;
+  extraClients.push(inrExport.clientId);
+  // the Q9 pair: a proforma and a tax invoice for the money received against it (the only payment M5 records)
+  const pf2 = await mkProforma(o, { price: 200_000 });
+  expect((await issueInvoice(o, pf2.id)).status).toBe(200);
+  const stamp = await one<{ updated_at: number }>("SELECT updated_at FROM documents WHERE id = ?", pf2.id);
+  const adv = await call(`/invoices/${pf2.id}/advance-invoice`, {
+    cookie: o.cookie,
+    body: {
+      expectedProformaUpdatedAt: stamp?.updated_at,
+      amountMinor: 59_000,
+      receivedOn: today,
+      reference: "UTR TOTALS 0001",
+    },
+  });
+  expect(adv.status, await adv.clone().text()).toBe(201);
+  advanceId = ((await json(adv)) as J).id;
+  advanceProformaId = pf2.id;
+  extraClients.push(pf2.clientId);
 
   // read the whole financial year back through the route, page by page
   const fy = fyOfDate(parseIsoDate(today) as never);
@@ -294,5 +336,102 @@ describe("the totals equal the invoices' and each other's", () => {
     }
     expect(table.value.find((r) => r.series === "invoice")?.cancelled).toBe(1);
     expect(table.value.map((r) => r.series)).toEqual(["invoice", "export", "creditNote", "debitNote"]);
+  });
+});
+
+describe("the INR export, the Q9 advance invoice and the purpose code (M5, L5)", () => {
+  it("an INR export is an export invoice in rupees under LUT, to place of supply 96, and reaches GSTR-1's export table", () => {
+    const r = allRows.find((x) => x.id === inrExportId);
+    expect(r).toMatchObject({
+      kind: "export_invoice",
+      currency: "INR",
+      supplyType: "export_lut",
+      placeOfSupplyCode: "96",
+      recipient: { status: "overseas", countryCode: "US" },
+      fxRateMicros: null,
+    });
+    expect(r?.totalInrMinor).toBe(r?.totalMinor);
+    const q = Math.floor(((Number(today.slice(5, 7)) + 8) % 12) / 3) + 1;
+    const sections = gstr1Sections(
+      allRows,
+      { kind: "quarter", fyStartYear: period.fy.startYear, quarter: q as 1 | 2 | 3 | 4 },
+      PARAMS(),
+    );
+    if (!sections.ok) throw new Error(JSON.stringify(sections.errors));
+    expect(sections.value.exp.some((e) => e.docId === inrExportId)).toBe(true);
+  });
+
+  it("the USD exports carry the SWIFT purpose code of the issued snapshot; the INR export and domestic invoices carry none (L5)", () => {
+    const usd = allRows.filter((r) => r.currency === "USD");
+    expect(usd.length).toBeGreaterThanOrEqual(4);
+    for (const r of usd.filter((x) => x.kind === "export_invoice")) {
+      expect(r.purposeCode, r.number).toBe("P0802");
+    }
+    expect(allRows.find((x) => x.id === inrExportId)?.purposeCode).toBeNull();
+    expect(allRows.find((x) => x.id === issued.b2bA?.id)?.purposeCode).toBeNull();
+  });
+
+  it("the Q9 advance invoice is a paid tax invoice in the register; its proforma is not", async () => {
+    const r = allRows.find((x) => x.id === advanceId);
+    expect(r).toMatchObject({ kind: "tax_invoice", outstandingMinor: 0, voided: false });
+    expect(allRows.some((x) => x.id === advanceProformaId)).toBe(false);
+    const receipt = await rows<{ amount_minor: number; invoice_id: string }>(
+      "SELECT amount_minor, invoice_id FROM advance_receipts WHERE proforma_id = ?1",
+      advanceProformaId,
+    );
+    expect(receipt).toEqual([{ amount_minor: 59_000, invoice_id: advanceId }]);
+  });
+});
+
+describe("the statement reconciles with the invoices, client by client (ADM-CLI-04)", () => {
+  const fy = () => fyOfDate(parseIsoDate(today) as never);
+  const statement = async (clientId: string, currency: string) => {
+    const o = await sessionFor("owner");
+    const q = `from=${fy().startYear}-04-01&to=${fy().startYear + 1}-03-31&currency=${currency}`;
+    const res = await call(`/clients/${clientId}/statement?${q}`, { cookie: o.cookie });
+    expect(res.status).toBe(200);
+    return (await json(res)) as J;
+  };
+  const ledger = async (clientId: string, currency: string) =>
+    (
+      await one<{ s: number | null }>(
+        `SELECT sum(balance_minor) AS s FROM documents WHERE client_id = ?1 AND currency = ?2 AND frozen_at IS NOT NULL
+           AND type IN ('tax_invoice', 'export_invoice', 'debit_note') AND voided_at IS NULL AND status <> 'void' AND balance_minor > 0`,
+        clientId,
+        currency,
+      )
+    )?.s ?? 0;
+
+  it("for every client of the register: the closing balance = the sum of the balances of its open debit documents, and opening + debits - credits = closing", async () => {
+    const pairs = new Map<string, { clientId: string; currency: string }>();
+    for (const r of allRows)
+      pairs.set(`${r.clientId}|${r.currency}`, { clientId: r.clientId, currency: r.currency });
+    expect(pairs.size).toBeGreaterThan(10);
+    let withCredits = 0;
+    for (const { clientId, currency } of pairs.values()) {
+      const s = await statement(clientId, currency);
+      expect(s.next, clientId).toBeNull();
+      expect(s.range.closingMinor, `${clientId} ${currency}`).toBe(await ledger(clientId, currency));
+      expect(s.range.openingMinor + s.range.debitMinor - s.range.creditMinor).toBe(s.range.closingMinor);
+      expect(s.entries.at(-1)?.balanceMinor ?? 0).toBe(s.range.closingMinor);
+      if (s.range.creditMinor > 0) withCredits++;
+    }
+    // the clients with credit notes and the Q9 client are in the set
+    expect(withCredits).toBeGreaterThanOrEqual(5);
+  });
+
+  it("the Q9 invoice and its receipt net to zero on the statement; the proforma is absent; the INR export is a debit", async () => {
+    const adv = allRows.find((x) => x.id === advanceId) as RegisterApiRow;
+    const s = await statement(adv.clientId, "INR");
+    expect(s.entries.map((e: J) => e.kind)).toEqual(["tax_invoice", "receipt"]);
+    expect(s.entries.map((e: J) => e.number)).toEqual([adv.number, adv.number]);
+    expect(s.entries[0].debitMinor).toBe(adv.totalMinor);
+    expect(s.entries[1].creditMinor).toBe(59_000);
+    expect(adv.totalMinor).toBe(59_000);
+    expect(s.range.closingMinor).toBe(0);
+    const exp = allRows.find((x) => x.id === inrExportId) as RegisterApiRow;
+    const e = await statement(exp.clientId, "INR");
+    expect(e.entries.map((x: J) => [x.kind, x.debitMinor])).toEqual([["export_invoice", exp.totalMinor]]);
+    expect(e.range.closingMinor).toBe(exp.totalMinor);
   });
 });

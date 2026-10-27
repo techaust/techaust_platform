@@ -28,6 +28,8 @@ export type Spec = {
   headerExtras?: unknown;
   issuer?: unknown;
   recipientSnapshot?: unknown;
+  /** A document already computed (the engine's golden cases): used as it is; `currency` then follows it. */
+  computed?: ComputedDocument;
   /** Overrides on the row, last. */
   over?: Record<string, unknown>;
 };
@@ -80,8 +82,9 @@ const SERIES = {
 export async function addDoc(
   spec: Spec,
 ): Promise<{ id: string; computed: ComputedDocument; number: string }> {
-  const type = spec.type ?? (spec.currency === "USD" ? "export_invoice" : "tax_invoice");
-  const computed = computeFor(spec);
+  const computed = spec.computed ?? computeFor(spec);
+  const cur: "INR" | "USD" = spec.computed ? spec.computed.currency : (spec.currency ?? "INR");
+  const type = spec.type ?? (cur === "USD" ? "export_invoice" : "tax_invoice");
   const id = uuidv7();
   const n = spec.number ?? ++seq;
   const fy = "2627";
@@ -94,7 +97,7 @@ export async function addDoc(
     type,
     status: frozen ? status : "draft",
     client_id: spec.clientId,
-    currency: spec.currency ?? "INR",
+    currency: cur,
     parent_id: spec.parentId ?? null,
     series: frozen ? SERIES[type] : null,
     fy: frozen ? fy : null,
@@ -105,17 +108,17 @@ export async function addDoc(
     due_date: spec.dueDate === undefined ? "2026-11-01" : spec.dueDate,
     content_sha256: "p".repeat(64),
     snapshot_sha256: frozen ? "q".repeat(64) : null,
-    export_mode: (spec.currency ?? "INR") === "USD" ? (spec.exportMode ?? "lut") : null,
-    fx_rate_micros: (spec.currency ?? "INR") === "USD" ? (spec.fx ?? 83_123_400) : null,
-    fx_date: (spec.currency ?? "INR") === "USD" ? "2026-10-24" : null,
-    fx_source: (spec.currency ?? "INR") === "USD" ? "FBIL" : null,
+    export_mode: cur === "USD" ? (spec.exportMode ?? "lut") : null,
+    fx_rate_micros: cur === "USD" ? (spec.fx ?? 83_123_400) : null,
+    fx_date: cur === "USD" ? "2026-10-24" : null,
+    fx_source: cur === "USD" ? "FBIL" : null,
     paid_minor: 0,
     balance_minor: spec.balance ?? total,
     updated_at: 7_000,
     recipient: JSON.stringify(
       spec.recipientSnapshot ?? {
         legalName: `Client ${spec.clientId.slice(-4)}`,
-        country: spec.currency === "USD" ? "US" : "IN",
+        country: cur === "USD" ? "US" : "IN",
         gstStatus: "registered",
       },
     ),

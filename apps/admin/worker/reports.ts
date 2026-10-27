@@ -8,6 +8,7 @@ import {
   EDF_MONTH_SQL,
   REALISATION_PAGE_SQL,
   REGISTER_PAGE_SQL,
+  REPORT_PAGE_SIZE,
   type RegisterSqlRow,
   realisationPageBinds,
   registerPageBinds,
@@ -63,13 +64,13 @@ function settingsOf(rows: readonly { key: string; value: string }[]) {
 
 const todayIst = () => istDate(Date.now());
 
-/** One page of rows (at most 50) and the cursor of the next, from the 51-row read. */
+/** One page of rows (at most `REPORT_PAGE_SIZE`) and the cursor of the next, from the one-more read. */
 function pageOf(rows: readonly RegisterSqlRow[]) {
-  const page = rows.slice(0, 50);
+  const page = rows.slice(0, REPORT_PAGE_SIZE);
   const last = page.at(-1);
   return {
     page,
-    next: rows.length > 50 && last ? encodeCursor({ k: last.issue_date, id: last.id }) : null,
+    next: rows.length > REPORT_PAGE_SIZE && last ? encodeCursor({ k: last.issue_date, id: last.id }) : null,
   };
 }
 

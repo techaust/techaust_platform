@@ -6,6 +6,7 @@
 // Self-contained (LD85): context, http, keyset and packages only, so a later third Worker can take `/clients/:id/statement*`.
 import { type StatementKind, type StatementRow, statementEntries } from "@techaust/core/statement";
 import {
+  REPORT_PAGE_SIZE,
   STATEMENT_BALANCE_BEFORE_SQL,
   STATEMENT_PAGE_SQL,
   STATEMENT_TOTALS_SQL,
@@ -61,13 +62,18 @@ export const statements = new Hono<AppEnv>().get(
       if (!k || typeof k.k !== "string" || !SK.test(k.k)) return err(c, BAD_REQUEST, 400);
       cursor = { sk: k.k, id: k.id };
     }
-    const client = await c.env.DB.prepare("SELECT currency FROM clients WHERE id = ?1")
-      .bind(id)
-      .first<{ currency: string }>();
-    if (!client) return err(c, NOT_FOUND, 404);
-    const currency = q.currency ?? client.currency;
     const db = c.env.DB;
+    const clientStmt = db.prepare("SELECT currency FROM clients WHERE id = ?1").bind(id);
+    // A currency the caller named needs no lookup before the reads: the client's existence is the first statement of the one batch (L7). Without one, the client's own
+    // currency is read first (two round trips, as before).
+    let currency = q.currency;
+    if (currency === undefined) {
+      const client = await clientStmt.first<{ currency: string }>();
+      if (!client) return err(c, NOT_FOUND, 404);
+      currency = client.currency;
+    }
     const stmts = [
+      ...(q.currency === undefined ? [] : [clientStmt]),
       db
         .prepare(STATEMENT_PAGE_SQL(cursor !== undefined))
         .bind(...statementPageBinds(id, currency, q.from, q.to, cursor)),
@@ -84,7 +90,9 @@ export const statements = new Hono<AppEnv>().get(
           ]
         : []),
     ];
-    const res = await db.batch(stmts);
+    const batch = await db.batch(stmts);
+    if (q.currency !== undefined && batch[0]?.results.length === 0) return err(c, NOT_FOUND, 404);
+    const res = q.currency === undefined ? batch : batch.slice(1);
     const lines = (res[0]?.results ?? []) as LineRow[];
     const balanceBefore = (res[1]?.results[0] as { balance: number } | undefined)?.balance ?? 0;
     const totals = (res[2]?.results[0] as { debit: number; credit: number } | undefined) ?? {
@@ -94,7 +102,7 @@ export const statements = new Hono<AppEnv>().get(
     const opening = cursor
       ? ((res[3]?.results[0] as { balance: number } | undefined)?.balance ?? 0)
       : balanceBefore;
-    const page = lines.slice(0, 50);
+    const page = lines.slice(0, REPORT_PAGE_SIZE);
     const done = statementEntries(page.map(asRow), balanceBefore);
     const closing = BigInt(opening) + BigInt(totals.debit) - BigInt(totals.credit);
     if (!done.ok || !Number.isSafeInteger(Number(closing))) return err(c, STATEMENT_FAILED, 500);
@@ -111,7 +119,7 @@ export const statements = new Hono<AppEnv>().get(
         creditMinor: totals.credit,
         closingMinor: Number(closing),
       },
-      next: lines.length > 50 && last ? encodeCursor({ k: last.sk, id: last.id }) : null,
+      next: lines.length > REPORT_PAGE_SIZE && last ? encodeCursor({ k: last.sk, id: last.id }) : null,
     });
   },
 );

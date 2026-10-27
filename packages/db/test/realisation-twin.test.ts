@@ -12,6 +12,7 @@ import {
 } from "@techaust/core/gst";
 import { describe, expect, it } from "vitest";
 import {
+  ALERT_STAGE_LIST,
   ALERT_STAGES,
   addMonthsClampedSql,
   femaDueSql,
@@ -230,6 +231,7 @@ describe("the settings expressions the dashboard uses", () => {
   });
 
   it("the four alert stages and their bell kinds are fixed", () => {
+    expect(ALERT_STAGE_LIST).toBe("'fema_approaching', 'fema_overdue', 'gst_approaching', 'gst_overdue'");
     expect([...ALERT_STAGES]).toEqual(["fema_approaching", "fema_overdue", "gst_approaching", "gst_overdue"]);
     expect(STAGE_BELL_KIND).toEqual({
       fema_approaching: "export.fema_approaching",
@@ -238,4 +240,63 @@ describe("the settings expressions the dashboard uses", () => {
       gst_overdue: "export.gst_overdue",
     });
   });
+});
+
+describe("the alert scan's bound on the issue date never hides an export that is in an alert stage (L4)", () => {
+  // The scan reads only exports with `issue_date < date(today, '+(approaching + 31) days', '-min(FEMA months) months')`. Any export in an alert stage must be inside it:
+  // checked for every variant, both currencies and both supply types, for issue dates through four years (the month-end ones included), on the days where a stage
+  // starts (femaDue - approaching, gstDue - approaching) and the days around them, and with today = femaDue - approaching exactly.
+  for (const { name, rules } of VARIANTS) {
+    it(name, async () => {
+      const cases: { d: string; t: string; cur: string; sup: string }[] = [];
+      for (const issue of ISSUE_DATES) {
+        for (const cur of ["USD", "INR"] as const) {
+          for (const sup of ["export_lut", "export_igst"] as const) {
+            const dates = realisationDates(
+              { invoiceDate: date(issue), currency: cur, supplyType: sup },
+              rules,
+            );
+            if (!dates.ok) throw new Error("dates");
+            for (const anchor of [dates.value.femaDue, dates.value.gstDue]) {
+              for (const o of [
+                -rules.approachingDays - 1,
+                -rules.approachingDays,
+                -rules.approachingDays + 1,
+                0,
+                1,
+                2,
+              ]) {
+                cases.push({ d: issue, t: iso(addDays(anchor, o)), cur, sup });
+              }
+            }
+          }
+        }
+      }
+      const minMonths = Math.min(rules.femaMonthsForeign, rules.femaMonthsInr);
+      let inStage = 0;
+      for (let at = 0; at < cases.length; at += 1_500) {
+        const chunk = cases.slice(at, at + 1_500);
+        const got = await all<{ i: number; stage_in: number; bound_in: number }>(
+          `SELECT t.i, (${stageSql("t", P)}) IN (${ALERT_STAGE_LIST}) AS stage_in,
+                  t.issue_date < date(t.today, '+' || (?6 + 31) || ' days', '-' || ?7 || ' months') AS bound_in
+           FROM (SELECT j.key AS i, json_extract(j.value, '$.d') AS issue_date, json_extract(j.value, '$.t') AS today, json_extract(j.value, '$.cur') AS currency,
+                        json_extract(j.value, '$.sup') AS supply_type, 1000 AS balance_minor FROM json_each(?1) j) t`,
+          JSON.stringify(chunk),
+          ...ruleBinds(rules),
+          minMonths,
+        );
+        for (const r of got) {
+          if (r.stage_in === 1) inStage++;
+          if (r.stage_in === 1 && r.bound_in !== 1) {
+            const c = chunk[r.i] as (typeof chunk)[number];
+            throw new Error(
+              `${c.cur} ${c.sup} issued ${c.d}, today ${c.t}: in an alert stage but outside the scan's bound`,
+            );
+          }
+        }
+      }
+      // the cases really do reach the alert stages (a test of nothing would pass too)
+      expect(inStage).toBeGreaterThan(cases.length / 4);
+    });
+  }
 });

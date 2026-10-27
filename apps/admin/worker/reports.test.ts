@@ -436,6 +436,10 @@ describe("a client's statement", () => {
     )) as J;
     expect(inr.entries).toEqual([]);
     expect((await call(`/clients/nope/statement?${RANGE}`, { cookie: o.cookie })).status).toBe(404);
+    // L7: with a currency named, the existence check rides in the one batch and an unknown client is still 404
+    expect((await call(`/clients/nope/statement?${RANGE}&currency=USD`, { cookie: o.cookie })).status).toBe(
+      404,
+    );
     for (const q of [
       "",
       "from=2026-05-01&to=2026-04-01",
@@ -537,6 +541,50 @@ describe("the statement PDF", () => {
     expect(await since("client.statement_pdf", before)).toHaveLength(0);
   });
 
+  it("the same range asked again while the first is pending gives that row's id and no second job, audit row or cache row (L6); a changed range, a failed or a finished one is a new request", async () => {
+    const o = await sessionFor("owner");
+    const c = await mkReportClient();
+    await addDoc({ clientId: c, issueDate: "2026-10-05" });
+    const q = queue();
+    const first = (await json(await ask(o.cookie, c, { from: "2026-10-01", to: "2026-10-31" }, q.env))) as J;
+    const before = await countOfAudit("client.statement_pdf");
+    const rowsBefore = (await one<{ n: number }>("SELECT count(*) AS n FROM statement_pdfs"))?.n;
+    const again = await ask(o.cookie, c, { from: "2026-10-01", to: "2026-10-31", currency: "INR" }, q.env);
+    expect(again.status).toBe(202);
+    expect(((await json(again)) as J).id).toBe(first.id);
+    expect(q.sent).toHaveLength(1);
+    expect(await since("client.statement_pdf", before)).toHaveLength(0);
+    expect((await one<{ n: number }>("SELECT count(*) AS n FROM statement_pdfs"))?.n).toBe(rowsBefore);
+    // another range: a new row and a new job
+    const other = (await json(await ask(o.cookie, c, { from: "2026-10-01", to: "2026-10-30" }, q.env))) as J;
+    expect(other.id).not.toBe(first.id);
+    expect(q.sent).toHaveLength(2);
+    // older than five minutes: a new request
+    await env.DB.prepare("UPDATE statement_pdfs SET created_at = ?1 WHERE id = ?2")
+      .bind(Date.now() - 6 * 60_000, first.id)
+      .run();
+    const late = (await json(await ask(o.cookie, c, { from: "2026-10-01", to: "2026-10-31" }, q.env))) as J;
+    expect(late.id).not.toBe(first.id);
+    // a failed one is not reused
+    await env.DB.prepare("UPDATE statement_pdfs SET failed_at = 1, fail_code = 'render' WHERE id = ?1")
+      .bind(late.id)
+      .run();
+    const afterFail = (await json(
+      await ask(o.cookie, c, { from: "2026-10-01", to: "2026-10-31" }, q.env),
+    )) as J;
+    expect(afterFail.id).not.toBe(late.id);
+    // a finished one is not reused either
+    await env.DB.prepare(
+      "UPDATE statement_pdfs SET pdf_r2_key = 'k', pdf_sha256 = ?2, rendered_at = 1 WHERE id = ?1",
+    )
+      .bind(afterFail.id, "b".repeat(64))
+      .run();
+    const afterDone = (await json(
+      await ask(o.cookie, c, { from: "2026-10-01", to: "2026-10-31" }, q.env),
+    )) as J;
+    expect(afterDone.id).not.toBe(afterFail.id);
+  });
+
   it("a queue that fails is told to the person: 503, the row marked failed with the code queue", async () => {
     const o = await sessionFor("owner");
     const c = await mkReportClient();
@@ -577,9 +625,16 @@ describe("the statement PDF", () => {
       /attachment.*statement-T\d{4}-2026-10-01-to-2026-10-31\.pdf/,
     );
     expect(Array.from(new Uint8Array(await ready.arrayBuffer()))).toEqual([37, 80, 68, 70, 45]);
-    // the object is gone from R2 (purged): back to pending, never a 500
+    // M2: an anonymised client's PDF is not served even while the object is still there (409 before R2), and comes back once it is not anonymised
+    await env.DB.prepare("UPDATE clients SET anonymised_at = ?1 WHERE id = ?2").bind(Date.now(), c).run();
+    const anon = await get(c, id);
+    expect([anon.status, ((await json(anon)) as J).error.code]).toEqual([409, "client_anonymised"]);
+    await env.DB.prepare("UPDATE clients SET anonymised_at = NULL WHERE id = ?1").bind(c).run();
+    expect((await get(c, id)).status).toBe(200);
+    // M2: the key is set but the object is gone from R2 (purged): a 409 `statement_failed`, never "pending" for ever and never a 500
     await env.DOCS.delete(key);
-    expect((await get(c, id)).status).toBe(202);
+    const gone = await get(c, id);
+    expect([gone.status, ((await json(gone)) as J).error.code]).toEqual([409, "statement_failed"]);
     expect((await get(other, id)).status).toBe(404);
     expect((await get(c, "nope")).status).toBe(404);
     await env.DB.prepare("UPDATE statement_pdfs SET failed_at = ?1, fail_code = 'render' WHERE id = ?2")

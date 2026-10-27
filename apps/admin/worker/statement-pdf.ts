@@ -75,7 +75,11 @@ type PdfRow = {
   pdf_sha256: string | null;
   failed_at: number | null;
   code: string;
+  anonymised_at: number | null;
 };
+
+/** A request identical to a still-pending one from this recent returns that row instead of queueing a second job (L6). */
+const DEDUPE_MS = 5 * 60_000;
 
 export const statementPdf = new Hono<AppEnv>()
   // Ask for the PDF of one range and currency. 202 with the row's id; poll the GET below.
@@ -105,6 +109,15 @@ export const statementPdf = new Hono<AppEnv>()
       const n = count?.n ?? 0;
       if (n === 0) return err(c, EMPTY, 409);
       if (n > STATEMENT_PDF_MAX_ENTRIES) return err(c, TOO_LONG, 409);
+      // L6: the same client, currency and range asked again while the first is still being made: the same row, no second job
+      const pending = await db
+        .prepare(
+          `SELECT id FROM statement_pdfs WHERE client_id = ?1 AND currency = ?2 AND from_date = ?3 AND to_date = ?4
+             AND pdf_r2_key IS NULL AND failed_at IS NULL AND created_at >= ?5 ORDER BY created_at DESC, id DESC LIMIT 1`,
+        )
+        .bind(id, currency, q.from, q.to, Date.now() - DEDUPE_MS)
+        .first<{ id: string }>();
+      if (pending) return c.json({ id: pending.id }, 202);
       const statementId = uuidv7();
       const done = await mutate(c, {
         // the row is written only while the client is still not anonymised; the audit row follows the INSERT's change
@@ -138,16 +151,19 @@ export const statementPdf = new Hono<AppEnv>()
   .get("/:id/statement/pdf/:sid", param(pdfParam), async (c) => {
     const { id, sid } = c.req.valid("param");
     const row = await c.env.DB.prepare(
-      `SELECT s.id, s.client_id, s.from_date, s.to_date, s.pdf_r2_key, s.pdf_sha256, s.failed_at, c.code
+      `SELECT s.id, s.client_id, s.from_date, s.to_date, s.pdf_r2_key, s.pdf_sha256, s.failed_at, c.code, c.anonymised_at
        FROM statement_pdfs s JOIN clients c ON c.id = s.client_id WHERE s.id = ?1 AND s.client_id = ?2`,
     )
       .bind(sid, id)
       .first<PdfRow>();
     if (!row) return err(c, NOT_FOUND, 404);
+    // An anonymised client's statement is never served, even before the purge has deleted the object (M2; DPDP, VERIFY WITH CA/LEGAL)
+    if (row.anonymised_at !== null) return err(c, ANONYMISED, 409);
     if (row.failed_at !== null) return err(c, FAILED, 409);
     if (row.pdf_r2_key === null || row.pdf_sha256 === null) return c.json({ status: "pending" }, 202);
     const obj = await c.env.DOCS.get(row.pdf_r2_key);
-    if (!obj) return c.json({ status: "pending" }, 202);
+    // A key that is set but whose object is gone will not come back: it is a failure, not "still pending" (M2)
+    if (!obj) return err(c, FAILED, 409);
     return new Response(obj.body, {
       headers: {
         "Content-Type": "application/pdf",
