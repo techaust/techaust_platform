@@ -1,4 +1,4 @@
-Date,Number,Type,Client,GSTIN,Place of supply,Supply type,Currency,Document total,Exchange rate,INR total,SAC,Rate,Taxable,IGST,CGST,SGST,Status
+Date,Number,Type,Client,GSTIN,Place of supply,Supply type,Currency,Document total,Exchange rate,Total in INR,SAC,Rate,Taxable value,IGST,CGST,SGST,Status
 05-Oct-2026,TH/INV/2627/0001,Tax invoice,Test Client One,19ABCDE1234F1ZX,19-West Bengal,intra,INR,11800.00,,11800.00,998314,18,10000.00,0.00,900.00,900.00,Issued
 12-Oct-2026,TH/INV/2627/0002,Tax invoice,Test Client Two,27ABCDE1234F1Z0,27-Maharashtra,inter,INR,80000.00,,80000.00,998313,5,20000.00,1000.00,0.00,0.00,Issued
 12-Oct-2026,TH/INV/2627/0002,Tax invoice,Test Client Two,27ABCDE1234F1Z0,27-Maharashtra,inter,INR,80000.00,,80000.00,998314,18,50000.00,9000.00,0.00,0.00,Issued

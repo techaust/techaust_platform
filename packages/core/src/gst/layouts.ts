@@ -299,8 +299,8 @@ export function realisationCsv(
 }
 
 // ---- Sales register, output tax and GSTR-3B summary (M5.5b, LD83): SPA-only working reports of the owner and the CA --------------
-// The headers are the brief's own working names (07-V, the copy appendix, is not drafted yet): a version is never edited once it
-// ships, so the lead confirms them before the first release. UNVERIFIED, like every layout.
+// The headers and the supply and description words are those of 07-V §3 (drafted by the lead, PENDING the owner's approval): a version is never edited once it
+// ships, so the owner's word comes before the first release (nothing has shipped: no production). UNVERIFIED, like every layout.
 const posLabelV1 = (code: StateCode | "96"): Cell =>
   cell.text(code === "96" ? "96-Other Countries" : POS_LABELS_V1[code]);
 
@@ -315,10 +315,10 @@ const salesRegisterV1 = file<SalesRegisterRow>("sales_register", [
   col("Currency", (r) => cell.text(r.currency)),
   col("Document total", (r) => cell.amount(r.totalMinor)),
   col("Exchange rate", (r) => (r.fxRateMicros === null ? cell.blank() : cell.micros(r.fxRateMicros))),
-  col("INR total", (r) => cell.amount(r.totalInrMinor)),
+  col("Total in INR", (r) => cell.amount(r.totalInrMinor)),
   col("SAC", (r) => (r.sac === null ? cell.blank() : cell.text(r.sac))),
   col("Rate", (r) => (r.rateBp === null ? cell.blank() : cell.rate(r.rateBp))),
-  col("Taxable", (r) => cell.amount(r.taxableMinor)),
+  col("Taxable value", (r) => cell.amount(r.taxableMinor)),
   col("IGST", (r) => cell.amount(r.igstMinor)),
   col("CGST", (r) => cell.amount(r.cgstMinor)),
   col("SGST", (r) => cell.amount(r.sgstMinor)),
@@ -328,10 +328,18 @@ export const SALES_REGISTER_LAYOUTS = Object.freeze({ "sales-register-v1": sales
 export type SalesRegisterLayoutId = keyof typeof SALES_REGISTER_LAYOUTS;
 export const CURRENT_SALES_REGISTER_LAYOUT: SalesRegisterLayoutId = "sales-register-v1";
 
+/** 07-V §3: the words of the four supply buckets. */
+const OUTPUT_TAX_SUPPLY_V1: Readonly<Record<OutputTaxRow["bucket"], string>> = Object.freeze({
+  intra: "Intra-state",
+  inter: "Inter-state",
+  zero_rated_wopay: "Zero-rated, without payment of tax (LUT)",
+  zero_rated_wpay: "Zero-rated, with payment of tax",
+});
+
 const outputTaxV1 = file<OutputTaxRow>("output_tax", [
-  col("Supply", (r) => cell.text(r.bucket)),
+  col("Supply", (r) => cell.text(OUTPUT_TAX_SUPPLY_V1[r.bucket])),
   col("Rate", (r) => cell.rate(r.rateBp)),
-  col("Taxable", (r) => cell.amount(r.taxableMinor)),
+  col("Taxable value", (r) => cell.amount(r.taxableMinor)),
   col("IGST", (r) => cell.amount(r.igstMinor)),
   col("CGST", (r) => cell.amount(r.cgstMinor)),
   col("SGST", (r) => cell.amount(r.sgstMinor)),
@@ -340,14 +348,22 @@ export const OUTPUT_TAX_LAYOUTS = Object.freeze({ "output-tax-v1": outputTaxV1 }
 export type OutputTaxLayoutId = keyof typeof OUTPUT_TAX_LAYOUTS;
 export const CURRENT_OUTPUT_TAX_LAYOUT: OutputTaxLayoutId = "output-tax-v1";
 
+/** 07-V §2 and §3: the words of the three GSTR-3B tables. */
+const GSTR3B_DESCRIPTION_V1: Readonly<Record<Gstr3bLine["table"], string>> = Object.freeze({
+  "3.1(a)": "Outward taxable supplies (other than zero-rated)",
+  "3.1(b)": "Outward taxable supplies (zero-rated)",
+  "3.2": "Inter-state supplies to unregistered persons, by place of supply",
+});
+
 const gstr3bV1 = file<Gstr3bLine>("gstr3b_summary", [
   col("Table", (r) => cell.text(r.table)),
+  col("Description", (r) => cell.text(GSTR3B_DESCRIPTION_V1[r.table])),
   col("Place of supply", (r) => (r.posCode === null ? cell.blank() : posLabelV1(r.posCode))),
   col("Taxable value", (r) => cell.amount(r.taxableMinor)),
-  col("Integrated tax", (r) => cell.amount(r.igstMinor)),
+  col("IGST", (r) => cell.amount(r.igstMinor)),
   // Table 3.2 has only the taxable value and the integrated tax
-  col("Central tax", (r) => (r.table === "3.2" ? cell.blank() : cell.amount(r.cgstMinor))),
-  col("State/UT tax", (r) => (r.table === "3.2" ? cell.blank() : cell.amount(r.sgstMinor))),
+  col("CGST", (r) => (r.table === "3.2" ? cell.blank() : cell.amount(r.cgstMinor))),
+  col("SGST", (r) => (r.table === "3.2" ? cell.blank() : cell.amount(r.sgstMinor))),
 ]);
 export const GSTR3B_LAYOUTS = Object.freeze({ "gstr3b-summary-v1": gstr3bV1 } as const);
 export type Gstr3bLayoutId = keyof typeof GSTR3B_LAYOUTS;

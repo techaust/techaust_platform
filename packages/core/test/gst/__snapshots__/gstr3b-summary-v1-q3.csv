@@ -1,5 +1,5 @@
-Table,Place of supply,Taxable value,Integrated tax,Central tax,State/UT tax
-3.1(a),,457016.95,39163.06,19990.00,19990.00
-3.1(b),,147150.00,7560.00,0.00,0.00
-3.2,27-Maharashtra,-5000.00,-900.00,,
-3.2,29-Karnataka,161016.95,28983.06,,
+Table,Description,Place of supply,Taxable value,IGST,CGST,SGST
+3.1(a),Outward taxable supplies (other than zero-rated),,457016.95,39163.06,19990.00,19990.00
+3.1(b),Outward taxable supplies (zero-rated),,147150.00,7560.00,0.00,0.00
+3.2,"Inter-state supplies to unregistered persons, by place of supply",27-Maharashtra,-5000.00,-900.00,,
+3.2,"Inter-state supplies to unregistered persons, by place of supply",29-Karnataka,161016.95,28983.06,,
