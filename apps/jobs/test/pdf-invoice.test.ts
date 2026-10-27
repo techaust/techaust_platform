@@ -24,7 +24,7 @@ import { hexOf, PNG_BYTES, type SeededInvoice, seedIssuedInvoice } from "./pdf-i
 const T0 = Date.UTC(2026, 9, 28, 6, 0, 0);
 const GONE = "UPDATE clients SET anonymised_at = 1 WHERE id = ?";
 const integrityBell = (s: SeededInvoice) =>
-  `The PDF of ${s.numberDisplay} didn't match its saved copy, so it wasn't sent. A developer needs to look at it before it can be sent.`;
+  `The PDF of ${s.numberDisplay} didn't match its saved copy, so it wasn't made. A developer needs to look at it.`; // 07-R §3 (review 11), not 07-P's proposal line
 
 type Sent = { body: PdfMessage; delaySeconds?: number };
 const fakeQueue = () => {

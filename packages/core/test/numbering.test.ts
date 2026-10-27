@@ -13,6 +13,7 @@ import {
   type Series,
   sqlPrintfPattern,
   validateFormat,
+  validateStoredFormat,
 } from "../src/numbering.ts";
 
 const fy2627 = financialYear(2026);
@@ -193,5 +194,36 @@ describe("parsing and counters", () => {
     expect(canSetNextNumber(5, 9)).toBe(true);
     expect(canSetNextNumber(5, 4)).toBe(false);
     expect(canSetNextNumber(5, 6.5)).toBe(false);
+  });
+});
+
+describe("a stored format reads under the pre-M5.1 rules; the first-character rule is for saving [LD18; review 4]", () => {
+  const older = [
+    { template: "{N}/{FY}", padding: 4 },
+    { template: "-{FY}-{N}", padding: 4 },
+    { template: "0TH/{FY}/{N}", padding: 3 },
+  ];
+
+  it("validateStoredFormat accepts what LD18 refuses on save, and still refuses what was never valid", () => {
+    for (const f of older) {
+      expect(validateFormat(f).ok, f.template).toBe(false);
+      expect(validateStoredFormat(f).ok, f.template).toBe(true);
+    }
+    for (const never of [
+      { template: "TH/INVOICE/{FY}/{N}", padding: 4 },
+      { template: "{FY}{N}", padding: 4 },
+      { template: "th/{FY}/{N}", padding: 4 },
+      { template: "TH/{FY}/{N}", padding: 9 },
+    ])
+      expect(validateStoredFormat(never).ok, never.template).toBe(false);
+  });
+
+  it("formatting, parsing and the SQL pattern work for a stored format and never throw", () => {
+    for (const f of older) {
+      const text = formatDocumentNumber(f, fy2627, 7);
+      expect(parseDocumentNumber(f, text)).toMatchObject({ n: 7 });
+      expect(() => sqlPrintfPattern(f)).not.toThrow();
+    }
+    expect(formatDocumentNumber({ template: "{N}/{FY}", padding: 4 }, fy2627, 7)).toBe("0007/2627");
   });
 });

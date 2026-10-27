@@ -1,5 +1,6 @@
 // The client page's Projects, Notes and Files tabs (M3.4, ADM-CLI-03): API only. Mounted next to the clients router on the same base
 // path, so the guard rows read `/clients/:id/projects` and so on. The finance tabs of ADM-CLI-03 stay with M3.3.
+import { INVOICE_FLOW_TYPES } from "@techaust/core/invoices";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { listClientCarePlans } from "./care.ts";
@@ -24,7 +25,7 @@ const documentsQuery = z.object({
 });
 
 const invoicesQuery = z.object({
-  type: z.optional(z.enum(["proforma", "tax_invoice", "export_invoice", "credit_note", "debit_note"])),
+  type: z.optional(z.enum(INVOICE_FLOW_TYPES)),
   status: z.optional(z.enum(INVOICE_LIST_STATUSES)),
   limit: z.optional(z.enum(["25", "50"])),
   after: z.optional(z.string().check(z.maxLength(400))),

@@ -60,6 +60,7 @@ import {
   STALE_VERSION,
   text,
 } from "./http.ts";
+import { INVOICE_TYPES_SQL } from "./invoice-model.ts";
 import { type Direction, decodeCursor, encodeCursor, keysetSql, PREFIX_END, pageOf } from "./keyset.ts";
 
 // ---- errors ----------------------------------------------------------------------------------------------------------
@@ -1252,14 +1253,28 @@ export const contacts = new Hono<AppEnv>()
             `DELETE FROM notifications WHERE entity_type = 'approval' AND entity_id IN (SELECT a.id FROM approvals a WHERE a.document_id IN (SELECT id FROM documents WHERE ${LAST_LIVE_INDIVIDUAL("documents.client_id")})) AND ${g.sql(2)}`,
           )
           .bind(id, ...g.params),
+        //     M5.1 (review 9; VERIFY WITH CA/LEGAL, DPDP): the individual's unissued INVOICE-family drafts go the same way (their line descriptions and milestone
+        //     titles can name the person), with the approvals asked for them. The milestone one of them was made from is freed first (it keeps its status and
+        //     amount; the draft is gone). An ISSUED invoice stays (the law keeps it), and so do its approvals, but the free text of an issue request (the
+        //     requester's reason, the owner's note) is cleared: it can name the person.
         db
           .prepare(
-            `DELETE FROM approvals WHERE document_id IN (SELECT id FROM documents WHERE type IN ('proposal', 'estimate') AND frozen_at IS NULL AND ${LAST_LIVE_INDIVIDUAL("documents.client_id")}) AND ${g.sql(2)}`,
+            `UPDATE milestones SET document_id = NULL, updated_at = max(?2, updated_at + 1) WHERE document_id IN (SELECT id FROM documents WHERE type IN (${INVOICE_TYPES_SQL}) AND frozen_at IS NULL AND ${LAST_LIVE_INDIVIDUAL("documents.client_id")}) AND ${g.sql(3)}`,
+          )
+          .bind(id, t, ...g.params),
+        db
+          .prepare(
+            `UPDATE approvals SET reason = NULL, note = NULL WHERE kind = 'issue' AND document_id IN (SELECT id FROM documents WHERE frozen_at IS NOT NULL AND ${LAST_LIVE_INDIVIDUAL("documents.client_id")}) AND ${g.sql(2)}`,
           )
           .bind(id, ...g.params),
         db
           .prepare(
-            `DELETE FROM documents WHERE type IN ('proposal', 'estimate') AND frozen_at IS NULL AND ${LAST_LIVE_INDIVIDUAL("documents.client_id")} AND ${g.sql(2)}`,
+            `DELETE FROM approvals WHERE document_id IN (SELECT id FROM documents WHERE type IN ('proposal', 'estimate', ${INVOICE_TYPES_SQL}) AND frozen_at IS NULL AND ${LAST_LIVE_INDIVIDUAL("documents.client_id")}) AND ${g.sql(2)}`,
+          )
+          .bind(id, ...g.params),
+        db
+          .prepare(
+            `DELETE FROM documents WHERE type IN ('proposal', 'estimate', ${INVOICE_TYPES_SQL}) AND frozen_at IS NULL AND ${LAST_LIVE_INDIVIDUAL("documents.client_id")} AND ${g.sql(2)}`,
           )
           .bind(id, ...g.params),
         // 3. an individual client's own record, when this is its last live contact (before the contact changes)
@@ -1280,18 +1295,15 @@ export const contacts = new Hono<AppEnv>()
                AND NOT EXISTS (SELECT 1 FROM contacts o WHERE o.client_id = clients.id AND o.id <> ?1 AND o.anonymised_at IS NULL) AND ${g.sql(2)}`,
           )
           .bind(id, ...g.params),
-        // 4. the contact itself. A business client's drafts may still be addressed to a contact that is being deleted: they lose the
-        //    addressee first (a draft's `contact_id` references the contact); a sent document names its contact, so this contact
-        //    could not be erased at all.
-        ...(erase
-          ? [
-              db
-                .prepare(
-                  `UPDATE documents SET contact_id = NULL, content_sha256 = NULL WHERE contact_id = ?1 AND frozen_at IS NULL AND ${g.sql(2)}`,
-                )
-                .bind(id, ...g.params),
-            ]
-          : []),
+        // 4. the contact itself. A business client's drafts may still be addressed to this contact: they lose the addressee first (a draft's
+        //    `contact_id` references the contact, and an erase deletes it), and the saved hash with it, so the draft is saved again with another
+        //    contact before it is sent or issued. An ANONYMISED contact does the same (M5.1 review 1: an invoice frozen with a contact the
+        //    draft's hash did not name could never get its PDF). A sent document names its contact, so that contact could not be erased at all.
+        db
+          .prepare(
+            `UPDATE documents SET contact_id = NULL, content_sha256 = NULL WHERE contact_id = ?1 AND frozen_at IS NULL AND ${g.sql(2)}`,
+          )
+          .bind(id, ...g.params),
         erase
           ? db.prepare(`DELETE FROM contacts WHERE id = ?1 AND ${g.sql(2)}`).bind(id, ...g.params)
           : db

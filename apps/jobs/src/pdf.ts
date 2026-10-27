@@ -33,6 +33,7 @@ import {
   utcDateOf,
 } from "@techaust/core/pdf-jobs";
 import { bundleOf, loadStatements, type TermsRow } from "@techaust/db/documents";
+import { toBase64 } from "@techaust/email";
 import {
   type Envelope,
   envelopeOfBundle,
@@ -82,6 +83,9 @@ export const BELL_COPY = {
   /** A PDF that failed its integrity check (07-Q Q9, owner 2026-10-26): it was not sent; the same check would fail again, so a person looks. */
   integrity: (label: string) =>
     `The PDF of ${label} didn't match its saved copy, so it wasn't sent. A developer needs to look at it before it can be sent.`,
+  /** An invoice PDF refused at the snapshot or the render (`pdf.refused`): 07-R §3's own line (the PDF was "made", not "sent": an invoice is emailed by a person later). */
+  invoiceRefused: (label: string) =>
+    `The PDF of ${label} didn't match its saved copy, so it wasn't made. A developer needs to look at it.`,
   half: "Half of today's PDF allowance is used.",
   quota: "Today's PDF allowance is used up. Waiting PDFs are made tomorrow.",
 } as const;
@@ -191,7 +195,7 @@ export async function processSnapshot(env: Env, msg: PdfSnapshotMessage): Promis
 
 /** The bell of a refused invoice envelope or signature: its own kind (the sweep leaves a document with one alone), and the invoice's page. */
 const refusedBell = (env: Env, id: string, label: string): D1PreparedStatement =>
-  bell(env, "pdf.refused", "document", id, BELL_COPY.integrity(label), `/invoices/${id}`);
+  bell(env, "pdf.refused", "document", id, BELL_COPY.invoiceRefused(label), `/invoices/${id}`);
 
 /** `snapshot` for an issued invoice: the same steps as a proposal's, from the invoice envelope. */
 async function snapshotInvoice(
@@ -233,13 +237,6 @@ export const SIGNATURE_MAX_BYTES = 256 * 1024;
 const SIGNATURE_KEY = /^settings\/signature-[0-9a-f]{16}\.(png|jpg)$/;
 const SIGNATURE_MIMES = ["image/png", "image/jpeg"];
 
-function base64Of(bytes: Uint8Array): string {
-  let binary = "";
-  for (let i = 0; i < bytes.length; i += 0x8000)
-    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  return btoa(binary);
-}
-
 /**
  * The signature image of an invoice, verified: read from DOCS by the key frozen in the envelope, its size within the cap and its SHA-256 the frozen
  * one. `null` is "this invoice has no signature"; `"refused"` is a signature that is frozen but cannot be shown as it was (the object is missing,
@@ -252,13 +249,12 @@ async function verifiedSignature(
   const ref = e.snapshot.header.issuer.signature;
   if (ref === null) return null;
   if (!SIGNATURE_KEY.test(ref.key) || !SIGNATURE_MIMES.includes(ref.mime)) return "refused";
-  const head = await env.DOCS.head(ref.key);
-  if (head === null || head.size < 1 || head.size > SIGNATURE_MAX_BYTES) return "refused";
+  // One read: the object's size is known before its body is, so an oversized one is never read.
   const object = await env.DOCS.get(ref.key);
-  if (object === null) return "refused";
+  if (object === null || object.size < 1 || object.size > SIGNATURE_MAX_BYTES) return "refused";
   const bytes = new Uint8Array(await object.arrayBuffer());
   if (bytes.byteLength > SIGNATURE_MAX_BYTES || !(await verifySignatureBytes(e, bytes))) return "refused";
-  return { mime: ref.mime, base64: base64Of(bytes) };
+  return { mime: ref.mime, base64: toBase64(bytes) };
 }
 
 /** `render` for an issued invoice (the common steps are `processRender`'s). Returns the outcome; throws for anything a retry can fix. */

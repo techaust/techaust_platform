@@ -42,8 +42,13 @@ export const ALREADY_ISSUED = e("already_issued", "This invoice was already issu
 export const ISSUE_BLOCKED = e("issue_blocked", "This invoice can't be issued yet");
 export const SETTINGS_CHANGED = e("settings_changed", "A setting changed while this was issued. Try again");
 export const CLIENT_CHANGED = e("client_changed", "The client changed while this was issued. Try again");
-/** The contact named on the invoice was edited or anonymised while it was issued (copy: `[Placeholder]` until the owner approves 07-R's line). */
-export const CONTACT_CHANGED = e("contact_changed", "[Placeholder]");
+/** The contact named on the invoice was edited or anonymised while it was issued (07-R's line, pending the owner's approval). */
+export const CONTACT_CHANGED = e("contact_changed", "The contact's details changed a moment ago. Try again.");
+/** The draft names a contact that was anonymised (or is gone): the owner picks another one and saves (07-R). The recipient frozen at issue would not match the draft's hash. */
+export const CONTACT_ANONYMISED = e(
+  "contact_anonymised",
+  "This draft's contact has been anonymised. Choose another contact, then save the draft.",
+);
 export const SERIES_FULL = e("series_full", "This numbering series has no numbers left this year");
 export const ISSUE_APPROVAL_REQUIRED = e(
   "approval_required",
@@ -376,6 +381,8 @@ export type MilestoneFacts = {
   id: string;
   title: string;
   project_id: string;
+  /** 1 for the first milestone (read when a draft is made from the milestone). */
+  position?: number;
   amount_minor: number | null;
   pct_bp: number | null;
   status: string;
@@ -384,6 +391,8 @@ export type MilestoneFacts = {
   client_id: string;
   budget_minor: number | null;
   source_document_id: string | null;
+  /** The project's name (read with the invoice's milestone). */
+  project_name?: string | null;
   /** The source proposal's result: read only when a draft is made from the milestone (the read of a draft leaves it out). */
   source_computed?: string | null;
 };

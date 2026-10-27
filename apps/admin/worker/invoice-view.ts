@@ -48,7 +48,7 @@ export const ISSUE_APPROVALS_OF_SQL =
 
 /** The milestone this invoice was made from (at most one), with what the compute and the links need. */
 export const MILESTONE_OF_SQL =
-  "SELECT m.id, m.title, m.project_id, m.amount_minor, m.pct_bp, m.status, m.document_id, m.delivered_at, p.client_id, p.budget_minor, p.source_document_id FROM milestones m JOIN projects p ON p.id = m.project_id WHERE m.document_id = ?1";
+  "SELECT m.id, m.title, m.project_id, m.amount_minor, m.pct_bp, m.status, m.document_id, m.delivered_at, p.client_id, p.budget_minor, p.source_document_id, p.name AS project_name FROM milestones m JOIN projects p ON p.id = m.project_id WHERE m.document_id = ?1";
 
 export type InvoiceViewInput = {
   bundle: DocumentBundle<TermsRef>;
@@ -63,6 +63,8 @@ export type InvoiceViewInput = {
   /** A `document_sends` row exists (the Q1 void rule), and an issued document names this one as its parent. */
   emailed: boolean;
   hasIssuedChild: boolean;
+  /** Who voided it (the `invoice.void` audit row's actor); null for an invoice that is not void. */
+  voidedByName?: string | null;
   now: number;
 };
 
@@ -245,6 +247,8 @@ export function invoiceView(i: InvoiceViewInput) {
     },
     void: {
       voidedAt: d.voided_at,
+      /** The member who voided it, by name (read from the audit row: there is no column). */
+      voidedByName: d.voided_at === null ? null : (i.voidedByName ?? null),
       reason: d.void_reason,
       /** Only the owner voids; the codes say why not (empty: it can be voided now). */
       canVoid: decide(i.role, "invoices.void") !== "deny" && voidReasons.length === 0,
@@ -256,6 +260,8 @@ export function invoiceView(i: InvoiceViewInput) {
           id: i.milestone.id,
           title: i.milestone.title,
           projectId: i.milestone.project_id,
+          /** The project's name (the name only, so a role without `projects.read` can still say which project). */
+          projectName: i.milestone.project_name ?? null,
           status: i.milestone.status,
         }
       : null,
