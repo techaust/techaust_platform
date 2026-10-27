@@ -10,6 +10,7 @@ import type { StateCode } from "../gstin.ts";
 import type { Currency } from "../money.ts";
 import type { Series } from "../numbering.ts";
 import type { RecipientStatus, SupplyType } from "../tax/types.ts";
+import type { RealisationSettings } from "./realisation.ts";
 
 export type { CalendarDate, Currency, RecipientStatus, Series, StateCode, SupplyType };
 
@@ -69,6 +70,26 @@ export type RegisterRow = {
   readonly outstandingMinor: number;
   /** EDF only (the M5.2 hint); may be null. */
   readonly purposeCode: string | null;
+};
+
+/**
+ * One page row of `GET /reports/registers` (M5.5b, LD71): a register row plus what the Table 13 adapter and the screens need (the
+ * series, FY and counter of the number, the client's id and code for the link to the document).
+ */
+export type RegisterApiRow = RegisterRow & {
+  readonly series: Series;
+  readonly fy: string;
+  readonly seq: number;
+  readonly clientId: string;
+  readonly clientCode: string;
+};
+
+/** The `meta` of a register page: what the SPA needs to build the sections (the server's today, its settings). */
+export type ReportMeta = {
+  readonly today: CalendarDate;
+  readonly supplierStateCode: StateCode;
+  readonly b2clThresholdInrMinor: number;
+  readonly realisation: RealisationSettings & { readonly inrMonths: number };
 };
 
 /** One line of the documents-issued summary (GSTR-1 Table 13), as a plain input: the adapter is M5.5b's. */

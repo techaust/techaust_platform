@@ -261,6 +261,36 @@ function rowIssues(row: RegisterRow, supplierStateCode: StateCode): GstIssue[] {
   return out;
 }
 
+/** Every row of a register, voided or not: a reportable kind, a real date, no repeated id or (invoice or note kind, number). */
+export function registerKeyIssues(register: readonly RegisterRow[]): GstIssue[] {
+  const issues: GstIssue[] = [];
+  const ids = new Set<string>();
+  const numbers = new Set<string>();
+  for (const row of register) {
+    const at = [row.id];
+    if (!GST_DOC_KINDS.includes(row.kind)) issues.push({ code: "kind_not_reportable", path: at });
+    if (!isValidDate(row.issueDate)) issues.push({ code: "date_invalid", path: at });
+    const key =
+      row.kind === "tax_invoice" || row.kind === "export_invoice"
+        ? `inv|${row.number}`
+        : `${row.kind}|${row.number}`;
+    if (ids.has(row.id) || numbers.has(key)) issues.push({ code: "duplicate_row", path: at });
+    ids.add(row.id);
+    numbers.add(key);
+  }
+  return issues;
+}
+
+/** All the checks of a reported row (not voided, in the period) that do not need the section: rule 7, supply, SAC. */
+export function rowChecks(row: RegisterRow, supplierStateCode: StateCode): GstIssue[] {
+  const found = rowIssues(row, supplierStateCode);
+  const at = [row.id];
+  if (row.rates.some((r) => sacText(r.sac) === "")) found.push({ code: "sac_missing", path: at });
+  if (row.rates.some((r) => sacText(r.sac) !== "" && !SAC_PATTERN.test(sacText(r.sac))))
+    found.push({ code: "sac_invalid", path: at });
+  return found;
+}
+
 /** Do the tax heads of every rate line fit the supply (intra: CGST = SGST, no IGST; inter or export with IGST: IGST only; LUT: none)? */
 function headsFit(row: RegisterRow): boolean {
   return row.rates.every((r) => {
@@ -333,30 +363,14 @@ export function gstr1Sections(
     const threshold = params.b2clThresholdInrMinor;
 
     // Every row: a reportable kind, a real date, no duplicate.
-    const ids = new Set<string>();
-    const numbers = new Set<string>();
-    for (const row of register) {
-      const at = [row.id];
-      if (!GST_DOC_KINDS.includes(row.kind)) issues.push({ code: "kind_not_reportable", path: at });
-      if (!isValidDate(row.issueDate)) issues.push({ code: "date_invalid", path: at });
-      const key =
-        row.kind === "tax_invoice" || row.kind === "export_invoice"
-          ? `inv|${row.number}`
-          : `${row.kind}|${row.number}`;
-      if (ids.has(row.id) || numbers.has(key)) issues.push({ code: "duplicate_row", path: at });
-      ids.add(row.id);
-      numbers.add(key);
-    }
+    issues.push(...registerKeyIssues(register));
     if (issues.length > 0) return fail(uniqueIssues(issues));
 
     const reported = register.filter((r) => !r.voided && inPeriod(r.issueDate, range.value));
     const items: Item[] = [];
     for (const row of reported) {
-      const found = rowIssues(row, params.supplierStateCode);
+      const found = rowChecks(row, params.supplierStateCode);
       const at = [row.id];
-      if (row.rates.some((r) => sacText(r.sac) === "")) found.push({ code: "sac_missing", path: at });
-      if (row.rates.some((r) => sacText(r.sac) !== "" && !SAC_PATTERN.test(sacText(r.sac))))
-        found.push({ code: "sac_invalid", path: at });
       let section: Item["section"] = "b2cs";
       let urType: UrType | null = null;
       if (row.kind === "tax_invoice" || row.kind === "export_invoice") {

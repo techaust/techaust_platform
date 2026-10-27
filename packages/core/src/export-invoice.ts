@@ -150,6 +150,54 @@ export function alertDaysFromStoredTax(json: unknown): number {
   return typeof days === "number" && Number.isInteger(days) && days >= 1 && days <= 30 ? days : 25;
 }
 
+/** The export realisation rules (FEMA 2026 and Rule 96A; Q15, VERIFY WITH CA/LEGAL) as the Workers read them: no zod, no floats. */
+export type StoredRealisationParams =
+  | {
+      readonly ok: true;
+      readonly femaMonthsForeign: number;
+      readonly femaMonthsInr: number;
+      readonly gstMonths: number;
+      readonly gstExtraDays: number;
+      readonly approachingDays: 30;
+    }
+  | { readonly ok: false };
+
+/**
+ * `tax.realisation` of a stored `tax` settings value read WITHOUT zod (LD77), for the jobs Worker and the admin API (the GST core is
+ * SPA only, LD16): `warnMonths` (foreign), `inrMonths`, `escalateMonths` and `escalateExtraDays`. A missing key is its default (9, 12,
+ * 12, 15); a key of the wrong type, not a whole number, or outside the limits of `realisationRulesOf` makes the whole answer
+ * `{ ok: false }`, so a caller skips the scan with a log line instead of guessing. The twin of `realisationRulesOf` (a table test).
+ */
+export function realisationParamsFromStoredTax(json: unknown): StoredRealisationParams {
+  const tax = isRecord(json) ? json : {};
+  const raw = tax.realisation;
+  if (raw !== undefined && !isRecord(raw)) return { ok: false };
+  const r = raw ?? {};
+  const pick = (key: string, fallback: number, min: number, max: number): number | null => {
+    const v = r[key];
+    if (v === undefined) return fallback;
+    return typeof v === "number" && Number.isSafeInteger(v) && v >= min && v <= max ? v : null;
+  };
+  const femaMonthsForeign = pick("warnMonths", 9, 1, 1200);
+  const femaMonthsInr = pick("inrMonths", 12, 1, 1200);
+  const gstMonths = pick("escalateMonths", 12, 1, 1200);
+  const gstExtraDays = pick("escalateExtraDays", 15, 0, 36_500);
+  if (femaMonthsForeign === null || femaMonthsInr === null || gstMonths === null || gstExtraDays === null) {
+    return { ok: false };
+  }
+  return { ok: true, femaMonthsForeign, femaMonthsInr, gstMonths, gstExtraDays, approachingDays: 30 };
+}
+
+/**
+ * `b2clThresholdInrMinor` of a stored `tax` value, read WITHOUT zod: missing is Rs 1,00,000.00 (Q18); a value that is not a positive
+ * safe integer is `null` (the caller refuses the report instead of filing with a guessed threshold).
+ */
+export function b2clThresholdFromStoredTax(json: unknown): number | null {
+  const v = isRecord(json) ? json.b2clThresholdInrMinor : undefined;
+  if (v === undefined) return 1_00_000_00;
+  return typeof v === "number" && Number.isSafeInteger(v) && v >= 1 ? v : null;
+}
+
 // ---- the daily LUT check (B3: the bell of ADM-INV-18, Q22, LD27) ---------------------------------------------------------------------------
 
 export const LUT_CHECK_KIND = "lut.check";

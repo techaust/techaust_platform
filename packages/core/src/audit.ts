@@ -28,6 +28,10 @@ export const FINANCE_AUDIT_ACTIONS = [
   "payment.verify",
   "refund.issue",
   "export.gst",
+  // M5.5b (LD86): a page of the GST and CA register (rows and range only, never row contents) and a client's statement PDF (the range, currency and the
+  // number of lines). Both are finance events; neither is in the Recent activity feed.
+  "report.export",
+  "client.statement_pdf",
   // M3.3: a client's billing fields (tax identity, currency, terms); Sales does not see these in a client's activity.
   "client.billing_update",
   // M3.5: a care plan's price, hours and overage rate are what the monthly and overage invoices are made from.

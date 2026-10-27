@@ -35,6 +35,7 @@ describe("src/gst: the files the brief names", () => {
       [
         "classify.ts",
         "csv.ts",
+        "docs-issued.ts",
         "docs.ts",
         "edf.ts",
         "format.ts",
@@ -43,8 +44,13 @@ describe("src/gst: the files the brief names", () => {
         "period.ts",
         "rates.ts",
         "realisation.ts",
+        "registers.ts",
+        "sac.ts",
         "sections.ts",
+        "statement-csv.ts",
+        "summary.ts",
         "types.ts",
+        "zip.ts",
       ].sort(),
     );
   });
@@ -73,7 +79,7 @@ describe("src/gst: pure and deterministic", () => {
     expect(src).not.toMatch(/\bfetch\(|\bprocess\.|\bglobalThis\b|\bimport\(/);
   });
 
-  it("imports only what the brief allows, and nothing from invoices.ts or documents.ts", () => {
+  it("imports only what the briefs allow: nothing from documents.ts; invoices.ts and statement.ts for types only", () => {
     const imports = files.flatMap((f) =>
       [...read(f).matchAll(/from "(\.\.\/[^"]+)"/g)].map((m) => m[1] as string),
     );
@@ -83,12 +89,15 @@ describe("src/gst: pure and deterministic", () => {
       "../gstin.ts",
       "../numbering.ts",
       "../tax/types.ts",
+      // types only (checked below): the summary and statement shapes
+      "../invoices.ts",
+      "../statement.ts",
     ]);
     expect([...new Set(imports)].filter((i) => !allowed.has(i))).toEqual([]);
-    // money.ts and tax/types.ts are used for types only
+    // money.ts, tax/types.ts, invoices.ts and statement.ts are used for types only (the gst core never runs their code)
     for (const f of files) {
       for (const m of read(f).matchAll(
-        /^import\s+(?!type\b)[^;]*from "(\.\.\/(?:money|tax\/types)\.ts)"/gm,
+        /^import\s+(?!type\b)[^;]*from "(\.\.\/(?:money|tax\/types|invoices|statement)\.ts)"/gm,
       )) {
         throw new Error(`${f} imports a value from ${m[1]}: types only`);
       }

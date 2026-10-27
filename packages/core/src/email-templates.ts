@@ -31,5 +31,9 @@ export const EMAIL_TEMPLATES = [
   "alert.unbilled",
   "alert.proforma_due",
   "lut.reminder",
+  // M5.5b: the owners' monthly Export Declaration Form reminder (ADM-REP-07, Q55) and the export realisation alerts, one template for the
+  // four stages (the stage is in its data; ADM-REP-07, Q54). The words are 07-V's; the designer builds them (a plain stub until then, LD88).
+  "edf.reminder",
+  "realisation.alert",
 ] as const;
 export type EmailTemplate = (typeof EMAIL_TEMPLATES)[number];

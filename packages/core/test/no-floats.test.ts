@@ -10,6 +10,7 @@ const MONEY_FILES = [
   // M5.5a GST core
   "src/gst/classify.ts",
   "src/gst/csv.ts",
+  "src/gst/docs-issued.ts",
   "src/gst/docs.ts",
   "src/gst/edf.ts",
   "src/gst/format.ts",
@@ -18,8 +19,14 @@ const MONEY_FILES = [
   "src/gst/period.ts",
   "src/gst/rates.ts",
   "src/gst/realisation.ts",
+  // M5.5b: the reports and the statement
+  "src/gst/registers.ts",
+  "src/gst/statement-csv.ts",
+  "src/gst/summary.ts",
+  "src/statement.ts",
   "src/gst/sections.ts",
   "src/gst/types.ts",
+  "src/gst/zip.ts",
   "src/money.ts",
   "src/words.ts",
   "src/numbering.ts",

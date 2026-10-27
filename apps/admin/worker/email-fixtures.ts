@@ -29,6 +29,9 @@ export const TEMPLATE_NAMES: Record<EmailTemplate, string> = {
   "alert.unbilled": "Unbilled work alert (team)",
   "alert.proforma_due": "Proforma for delivered work alert (team)",
   "lut.reminder": "LUT reminder (team)",
+  // M5.5b (names as the Settings list shows them; the words are 07-V's)
+  "edf.reminder": "EDF reminder (team)",
+  "realisation.alert": "Export realisation alert (team)",
 };
 
 const SAMPLE = "https://example.test/sample";
@@ -180,6 +183,25 @@ export function sampleData(
       };
     case "lut.reminder":
       return { owner_first_name: first_name, fy_label: "2027-28", state: "due", admin_url: SAMPLE };
+    case "edf.reminder":
+      return {
+        owner_first_name: first_name,
+        month_label: "October 2026",
+        count: "3",
+        due_date: "30 Nov 2026",
+        link: SAMPLE,
+      };
+    case "realisation.alert":
+      return {
+        owner_first_name: first_name,
+        stage: "fema_approaching",
+        number: "TH/EXP/2627/0001",
+        client: "Sample Company",
+        currency: "USD",
+        outstanding: "$1,000.00",
+        due_date: "3 Aug 2027",
+        link: SAMPLE,
+      };
     case "lead.reply":
       return {
         subject: "Re: your enquiry (L-23456)",

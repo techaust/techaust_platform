@@ -43,7 +43,7 @@ export type DocsRow = {
 
 const SERIES_KEYS = Object.keys(SERIES) as Series[];
 
-const isGstSeries = (series: unknown): series is GstSeries =>
+export const isGstSeries = (series: unknown): series is GstSeries =>
   typeof series === "string" && Object.hasOwn(SERIES, series) && SERIES[series as Series].gst;
 
 /** One row per input, in the order of the series table (inputs of the same series keep their order). */
