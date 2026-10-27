@@ -221,6 +221,12 @@ export const documents = sqliteTable(
     serviceCompletedOn: text("service_completed_on"),
     /** M5.2 (LD23): the optional extra export note (an `export_declaration` block) pinned at issue; frozen. */
     exportDeclarationId: text("export_declaration_id").references(() => termsBlocks.id),
+    /**
+     * M5.2 (LD37): the JSON of exactly the sealed header keys the other columns cannot give (`{export?, proforma?, advance?}`: the endorsement, the LUT
+     * letter, the country name, the notice, the advance reference), written by the freeze and frozen with it; NULL when the document has none (an M5.1
+     * tax invoice). The frozen view, the PDF and the seal's verifier read it; nothing is rebuilt from live settings after issue.
+     */
+    headerExtras: text("header_extras"),
     // IRP e-invoicing (ADM-INV-14): empty at launch.
     irn: text("irn"),
     ackNo: text("ack_no"),

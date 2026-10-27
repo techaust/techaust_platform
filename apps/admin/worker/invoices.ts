@@ -48,6 +48,7 @@ import {
   FX_NOT_APPLICABLE,
   INVOICE_SETTINGS_READ,
   INVOICE_TYPES_SQL,
+  INVOICE_VOID,
   type InvoiceState,
   invoiceColumns,
   invoiceStateOf,
@@ -925,6 +926,8 @@ export const invoices = new Hono<AppEnv>()
     if (!row || !isInvoiceFlowType(row.type)) return err(c, NOT_FOUND, 404);
     if (row.type !== "tax_invoice" && row.type !== "export_invoice")
       return err(c, SERVICE_DATE_NOT_APPLICABLE, 400);
+    // A void invoice has no service to date: its own code, not a stale save (the batch refuses it too: `status <> 'void'`).
+    if (row.status === "void") return err(c, INVOICE_VOID, 409);
     if (row.updated_at !== f.expectedUpdatedAt) return err(c, STALE_VERSION, 409);
     if (row.gone === 1) return err(c, CLIENT_GONE, 409);
     const t = Math.max(Date.now(), row.updated_at + 1);
@@ -953,6 +956,7 @@ export const invoices = new Hono<AppEnv>()
     if (!again) return err(c, NOT_FOUND, 404);
     if (again.service_completed_on !== null)
       return c.json({ error: ALREADY_SET, date: again.service_completed_on, request_id: c.var.rid }, 409);
+    if (again.status === "void") return err(c, INVOICE_VOID, 409);
     if (again.gone === 1) return err(c, CLIENT_GONE, 409);
     return err(c, STALE_VERSION, 409);
   })

@@ -22,4 +22,5 @@ CREATE UNIQUE INDEX `advance_receipts_proforma_reference` ON `advance_receipts` 
 CREATE INDEX `advance_receipts_client` ON `advance_receipts` (`client_id`,`created_at`);--> statement-breakpoint
 ALTER TABLE `documents` ADD `service_completed_on` text;--> statement-breakpoint
 ALTER TABLE `documents` ADD `export_declaration_id` text REFERENCES terms_blocks(id);--> statement-breakpoint
+ALTER TABLE `documents` ADD `header_extras` text;--> statement-breakpoint
 ALTER TABLE `bank_accounts` ADD `purpose_code` text;

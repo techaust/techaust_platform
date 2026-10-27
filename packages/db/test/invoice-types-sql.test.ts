@@ -94,6 +94,13 @@ describe("the statements bind exactly the placeholders they use [M5.2]", () => {
     expect(freeze?.sql).toContain("export_declaration_id = ?27");
     expect(freeze?.values[22]).toBe("proforma");
     expect(freeze?.values[26]).toBeNull();
+    // LD37: the header extras are ?28 (null when there are none, the text as given otherwise)
+    expect(freeze?.sql).toContain("header_extras = ?28");
+    expect(freeze?.values[27]).toBeNull();
+    const again = recorder();
+    invoiceIssueStatements(again.db, issueArgs({ headerExtras: '{"proforma":{"notice":"n"}}' }));
+    const f2 = again.out.find((r) => r.sql.startsWith("UPDATE documents SET series"));
+    expect(f2?.values[27]).toBe('{"proforma":{"notice":"n"}}');
   });
 
   it("a proforma does not move a milestone; every other type does (finding 2)", () => {
@@ -179,7 +186,10 @@ describe("the statements bind exactly the placeholders they use [M5.2]", () => {
     const freeze = (s.main as unknown as Rec[]).at(-1);
     // amount, proforma and its stamp are the last three values of the freeze
     expect(freeze?.values.slice(-3)).toEqual([1180, "p1", 5]);
-    expect(freeze?.sql).toContain("total_minor = ?28");
-    expect(freeze?.sql).toContain("p.balance_minor >= ?28");
+    expect(freeze?.sql).toContain("total_minor = ?29");
+    expect(freeze?.sql).toContain("p.balance_minor >= ?29");
+    // LD37: the header extras are ?28; the proforma must be the invoice's own client's, in its currency (early check 4)
+    expect(freeze?.sql).toContain("header_extras = ?28");
+    expect(freeze?.sql).toContain("p.client_id = documents.client_id AND p.currency = documents.currency");
   });
 });

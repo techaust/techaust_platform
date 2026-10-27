@@ -278,14 +278,14 @@
     {
       "idx": 39,
       "version": "6",
-      "when": 1793059599662,
+      "when": 1793065910694,
       "tag": "0039_invoice_types",
       "breakpoints": true
     },
     {
       "idx": 40,
       "version": "6",
-      "when": 1793059634408,
+      "when": 1793065916011,
       "tag": "0040_invoice_type_triggers",
       "breakpoints": true
     }

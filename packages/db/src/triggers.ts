@@ -681,6 +681,7 @@ export function invoiceTriggerStatements(): string[] {
 export const FROZEN_COLUMNS_0040 = [
   ...FROZEN_COLUMNS_0032.slice(0, FROZEN_COLUMNS_0032.indexOf("realisation_due_at") + 1),
   "export_declaration_id",
+  "header_extras",
   ...FROZEN_COLUMNS_0032.slice(FROZEN_COLUMNS_0032.indexOf("realisation_due_at") + 1),
 ] as const;
 export const SET_ONCE_0040 = [...SET_ONCE_0032, "service_completed_on"] as const;
@@ -688,7 +689,7 @@ export const SET_ONCE_0040 = [...SET_ONCE_0032, "service_completed_on"] as const
 /**
  * Invoice types (M5.2, ADM-INV-01, -06, -10, LD22, LD23, LD29, LD35; new triggers only, no table is rebuilt; every abort message starts with the
  * trigger's name so the API can map it). VERIFY WITH CA/LEGAL for the rules; the API checks the same rules in SQL conditions first:
- *   1. `documents_frozen_update` dropped and created again over the columns of 0040 (`export_declaration_id` is frozen; `service_completed_on`
+ *   1. `documents_frozen_update` dropped and created again over the columns of 0040 (`export_declaration_id` and `header_extras` are frozen; `service_completed_on`
  *      is set once);
  *   2. `documents_service_completed_date_insert` / `_update`: a service date is a real ISO date, and only a tax or export invoice has one;
  *   3. `advance_receipts_no_update` / `_no_delete`: append-only;
@@ -701,7 +702,7 @@ export function invoiceTypeTriggerStatements(): string[] {
     "NEW.service_completed_on IS NOT NULL AND (date(NEW.service_completed_on) IS NOT NEW.service_completed_on OR NEW.type NOT IN ('tax_invoice', 'export_invoice'))";
   const dateMsg = "a service date is a real date, and only a tax or export invoice has one";
   const scopeBad =
-    "NOT EXISTS (SELECT 1 FROM documents p WHERE p.id = NEW.proforma_id AND p.type = 'proforma' AND p.frozen_at IS NOT NULL AND p.client_id = NEW.client_id) OR NOT EXISTS (SELECT 1 FROM documents i WHERE i.id = NEW.invoice_id AND i.type IN ('tax_invoice', 'export_invoice') AND i.frozen_at IS NOT NULL AND i.parent_id = NEW.proforma_id AND i.client_id = NEW.client_id AND i.currency = NEW.currency) OR date(NEW.received_on) IS NOT NEW.received_on";
+    "NOT EXISTS (SELECT 1 FROM documents p WHERE p.id = NEW.proforma_id AND p.type = 'proforma' AND p.frozen_at IS NOT NULL AND p.client_id = NEW.client_id AND p.currency = NEW.currency) OR NOT EXISTS (SELECT 1 FROM documents i WHERE i.id = NEW.invoice_id AND i.type IN ('tax_invoice', 'export_invoice') AND i.frozen_at IS NOT NULL AND i.parent_id = NEW.proforma_id AND i.client_id = NEW.client_id AND i.currency = NEW.currency AND i.total_minor = NEW.amount_minor) OR date(NEW.received_on) IS NOT NEW.received_on";
   return [
     "DROP TRIGGER `documents_frozen_update`;",
     frozenUpdateTrigger(FROZEN_COLUMNS_0040, SET_ONCE_0040),
@@ -709,7 +710,7 @@ export function invoiceTypeTriggerStatements(): string[] {
     `CREATE TRIGGER \`documents_service_completed_date_update\` BEFORE UPDATE OF service_completed_on ON \`documents\` WHEN ${dateBad} BEGIN ${named("documents_service_completed_date_update", dateMsg)} END;`,
     `CREATE TRIGGER \`advance_receipts_no_update\` BEFORE UPDATE ON \`advance_receipts\` BEGIN ${named("advance_receipts_no_update", "advance_receipts is append-only")} END;`,
     `CREATE TRIGGER \`advance_receipts_no_delete\` BEFORE DELETE ON \`advance_receipts\` BEGIN ${named("advance_receipts_no_delete", "advance_receipts is append-only")} END;`,
-    `CREATE TRIGGER \`advance_receipts_scope_insert\` BEFORE INSERT ON \`advance_receipts\` WHEN ${scopeBad} BEGIN ${named("advance_receipts_scope_insert", "an advance receipt links a frozen proforma to the tax or export invoice made from it (same client and currency) on a real date")} END;`,
+    `CREATE TRIGGER \`advance_receipts_scope_insert\` BEFORE INSERT ON \`advance_receipts\` WHEN ${scopeBad} BEGIN ${named("advance_receipts_scope_insert", "an advance receipt links a frozen proforma to the tax or export invoice made from it (same client and currency, the invoice total is the amount) on a real date")} END;`,
   ];
 }
 

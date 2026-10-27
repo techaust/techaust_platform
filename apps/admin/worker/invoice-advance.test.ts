@@ -14,6 +14,7 @@ import {
   putTax,
   renew,
   sealCheck,
+  sealCheckWith,
   todayIso,
   typesRow,
 } from "./test-invoice-types.ts";
@@ -163,7 +164,7 @@ describe("the action [Q9, LD22]", () => {
         },
       }),
     ).toEqual({ content: true, snapshot: true });
-    expect((await sealCheck(b.id))?.snapshot).toBe(false);
+    expect((await sealCheckWith(b.id, {}))?.snapshot).toBe(false);
     // the audit row: ids, codes and amounts; never the reference text
     expect(await auditCount("invoice.advance_issue", b.id)).toBe(1);
     const audit = await one<{ summary: string }>(
@@ -218,6 +219,59 @@ describe("the action [Q9, LD22]", () => {
     expect((await advance(o, pf.id, { amountMinor: 10_000, reference: "HDFC-2" })).status).toBe(201);
   });
 
+  it("a retry after a lost answer carries the OLD stamp and still gets the number it already made (the reference is judged before the stamp); a bad reference is 400 whatever the stamp", async () => {
+    const o = await owner();
+    const pf = await issuedProforma(o);
+    const body = await advanceBody(pf.id, { amountMinor: 10_000, reference: "LOST-ANSWER-1" });
+    const first = await call(`/invoices/${pf.id}/advance-invoice`, { cookie: o.cookie, body });
+    expect(first.status, await first.clone().text()).toBe(201);
+    const number = (await json(first)).number as string;
+    const before = await snapshot(pf.id);
+    // the very same request again: its `expectedProformaUpdatedAt` is now stale, but the number it made comes back
+    const retry = await call(`/invoices/${pf.id}/advance-invoice`, { cookie: o.cookie, body });
+    expect(retry.status).toBe(409);
+    const answer = await json(retry);
+    expect(answer.error.code).toBe("advance_reference_used");
+    expect(answer.number).toBe(number);
+    // a reference that is not a reference is a 400 even with a stale stamp
+    const bad = await call(`/invoices/${pf.id}/advance-invoice`, {
+      cookie: o.cookie,
+      body: { ...body, reference: "!!!" },
+    });
+    expect(bad.status).toBe(400);
+    expect(await codeOf(bad)).toBe("advance_reference_invalid");
+    // a NEW reference with the stale stamp is still stale_version
+    const stale = await call(`/invoices/${pf.id}/advance-invoice`, {
+      cookie: o.cookie,
+      body: { ...body, reference: "LOST-ANSWER-2" },
+    });
+    expect(stale.status).toBe(409);
+    expect(await codeOf(stale)).toBe("stale_version");
+    expect(await snapshot(pf.id)).toEqual(before);
+  });
+
+  it("a session that ended between the read and the batch is 401 unauthenticated (a sign-in, not a reload), and nothing is written", async () => {
+    for (const change of [
+      "UPDATE staff_sessions SET idle_expires_at = 1 WHERE id = ?1",
+      "UPDATE staff_sessions SET abs_expires_at = 1 WHERE id = ?1",
+      "UPDATE staff_sessions SET revoked_at = 5 WHERE id = ?1",
+    ]) {
+      const o = await owner();
+      const pf = await issuedProforma(o);
+      const before = await snapshot(pf.id);
+      const res = await call(
+        `/invoices/${pf.id}/advance-invoice`,
+        { cookie: o.cookie, body: await advanceBody(pf.id) },
+        beforeBatchHolding("issue_guard", async () => {
+          await env.DB.prepare(change).bind(o.sessionId).run();
+        }),
+      );
+      expect(res.status, change).toBe(401);
+      expect(await codeOf(res), change).toBe("unauthenticated");
+      expect(await snapshot(pf.id)).toEqual(before);
+    }
+  });
+
   it("two calls with one reference at once give exactly one invoice (the other answers with its number)", async () => {
     const o = await owner();
     const pf = await issuedProforma(o);
@@ -228,9 +282,9 @@ describe("the action [Q9, LD22]", () => {
     ]);
     const statuses = [a.status, b.status].sort();
     expect(statuses).toEqual([201, 409]);
-    // The loser either read before the winner wrote (the batch refuses it and the reference answers) or after (its stamp is stale: the stamp is checked first).
+    // The loser either read before the winner wrote (the batch refuses it and `explain` answers with the reference) or after (the reference is judged before the stamp).
     const loser = a.status === 409 ? a : b;
-    expect(["advance_reference_used", "stale_version"]).toContain((await json(loser)).error.code);
+    expect((await json(loser)).error.code).toBe("advance_reference_used");
     expect((await receipts(pf.id)).length).toBe(1);
     expect((await rows("SELECT id FROM documents WHERE parent_id = ?", pf.id)).length).toBe(1);
     expect(await typesRow(pf.id)).toMatchObject({ paid_minor: 20_000 });

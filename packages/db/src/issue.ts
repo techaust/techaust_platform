@@ -232,6 +232,12 @@ export type InvoiceIssueArgs = {
   termsVersionId: string | null;
   /** M5.2 (LD23): the newest `export_declaration` block pinned to an export invoice that asked for it; null for everything else. Frozen with the document. */
   exportDeclarationId?: string | null;
+  /**
+   * M5.2 (LD37): the JSON text of exactly the sealed header keys the other columns cannot give (`{export?, proforma?, advance?}`), or null when
+   * there are none. The freeze writes it and the freeze trigger keeps it: the frozen view, the PDF and the seal's verifier read it back, so nothing
+   * is rebuilt from live settings after issue.
+   */
+  headerExtras?: string | null;
   expected: {
     updatedAt: number;
     contentSha256: string;
@@ -264,7 +270,7 @@ type FreezeBase = Omit<InvoiceIssueArgs, "authority" | "bell">;
  *   ?1 id, ?2 series, ?3 fy, ?4 pattern, ?5 now, ?6 issue date, ?7 due date, ?8 recipient, ?9 issuer, ?10 computed, ?11 snapshot sha, ?12 issued by,
  *   ?13 terms version, ?14 expected updated_at, ?15 expected content sha, ?16 numbering, ?17 company, ?18 tax, ?19 payment terms versions, ?20 bank stamp,
  *   ?21 client updated_at, ?22 highest number, ?23 type, ?24 session, ?25 contact id, ?26 contact updated_at (both null: no contact), ?27 the export
- *   declaration block (M5.2), and from ?28 whatever `tail` binds (the approval, or the advance action's amount, proforma and its stamp).
+ *   declaration block (M5.2), ?28 the header extras JSON (M5.2, LD37), and from ?29 whatever `tail` binds (the approval, or the advance action's amount, proforma and its stamp).
  * A proforma's `valid_until` is its due date (M5.2, LD28, Q28): the freeze writes it, so the column is sealed with the rest. Exactly as many values as
  * the highest placeholder are bound (D1 refuses more).
  */
@@ -283,7 +289,7 @@ function freezeStatement(
       `UPDATE documents SET series = ?2, fy = ?3, number = ${nextNo}, number_display = printf(?4, ${printfArgs}),
          status = 'issued', frozen_at = ?5, issue_date = ?6, due_date = ?7, recipient = ?8, issuer = ?9, computed = ?10,
          snapshot_sha256 = ?11, issued_by = ?12, terms_version_id = ?13, balance_minor = total_minor, updated_at = ?5,
-         valid_until = CASE WHEN ?23 = 'proforma' THEN ?7 ELSE valid_until END, export_declaration_id = ?27
+         valid_until = CASE WHEN ?23 = 'proforma' THEN ?7 ELSE valid_until END, export_declaration_id = ?27, header_extras = ?28
        WHERE id = ?1 AND type = ?23 AND status = 'draft' AND frozen_at IS NULL AND updated_at = ?14 AND content_sha256 = ?15
          AND (SELECT version FROM settings WHERE key = 'numbering') IS ?16
          AND (SELECT version FROM settings WHERE key = 'company') IS ?17
@@ -325,6 +331,7 @@ function freezeStatement(
       a.expected.contact?.id ?? null,
       a.expected.contact?.updatedAt ?? null,
       a.exportDeclarationId ?? null,
+      a.headerExtras ?? null,
       ...tail.binds,
     );
 }
@@ -343,7 +350,7 @@ export function invoiceIssueStatements(db: D1Database, a: InvoiceIssueArgs): Sen
     a.authority.kind === "approval"
       ? {
           where:
-            " AND EXISTS (SELECT 1 FROM approvals ap WHERE ap.id = ?28 AND ap.document_id = documents.id AND ap.kind = 'issue' AND ap.status = 'pending' AND ap.content_sha256 = documents.content_sha256)",
+            " AND EXISTS (SELECT 1 FROM approvals ap WHERE ap.id = ?29 AND ap.document_id = documents.id AND ap.kind = 'issue' AND ap.status = 'pending' AND ap.content_sha256 = documents.content_sha256)",
           binds: [a.authority.approvalId] as const,
         }
       : { where: "", binds: [] as const };
@@ -522,8 +529,8 @@ export function advanceIssueStatements(db: D1Database, a: AdvanceIssueArgs): Sen
     expected: { ...a.expected, updatedAt: a.now, contentSha256: a.contentSha256 },
   };
   const freeze = freezeStatement(db, base, a.sessionId, {
-    where: ` AND total_minor = ?28
-         AND EXISTS (SELECT 1 FROM documents p WHERE p.id = ?29 AND p.type = 'proforma' AND p.frozen_at IS NOT NULL AND p.status IN ('issued', 'converted') AND p.updated_at = ?30 AND p.balance_minor >= ?28)`,
+    where: ` AND total_minor = ?29
+         AND EXISTS (SELECT 1 FROM documents p WHERE p.id = ?30 AND p.type = 'proforma' AND p.frozen_at IS NOT NULL AND p.status IN ('issued', 'converted') AND p.updated_at = ?31 AND p.balance_minor >= ?29 AND p.client_id = documents.client_id AND p.currency = documents.currency)`,
     binds: [a.amountMinor, a.proformaId, a.expectedProformaUpdatedAt],
   });
   return {

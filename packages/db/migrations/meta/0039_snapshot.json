@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "022b48d8-aed4-498e-87fe-02e98ddcc551",
+  "id": "5a2f1387-e072-4fba-a94a-b82a83727667",
   "prevId": "984e31f6-470f-468e-bfd1-23118ef19850",
   "tables": {
     "catalogue_items": {
@@ -4101,6 +4101,13 @@
         },
         "export_declaration_id": {
           "name": "export_declaration_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "header_extras": {
+          "name": "header_extras",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

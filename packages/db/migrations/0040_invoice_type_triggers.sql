@@ -52,6 +52,7 @@ CREATE TRIGGER `documents_frozen_update` BEFORE UPDATE ON `documents` WHEN OLD.f
   OR NEW.`sent_at` IS NOT OLD.`sent_at`
   OR NEW.`realisation_due_at` IS NOT OLD.`realisation_due_at`
   OR NEW.`export_declaration_id` IS NOT OLD.`export_declaration_id`
+  OR NEW.`header_extras` IS NOT OLD.`header_extras`
   OR NEW.`created_by` IS NOT OLD.`created_by`
   OR NEW.`created_at` IS NOT OLD.`created_at`
   OR (OLD.`snapshot_r2_key` IS NOT NULL AND NEW.`snapshot_r2_key` IS NOT OLD.`snapshot_r2_key`)
@@ -75,4 +76,4 @@ CREATE TRIGGER `advance_receipts_no_update` BEFORE UPDATE ON `advance_receipts` 
 --> statement-breakpoint
 CREATE TRIGGER `advance_receipts_no_delete` BEFORE DELETE ON `advance_receipts` BEGIN SELECT RAISE(ABORT, 'advance_receipts_no_delete: advance_receipts is append-only'); END;
 --> statement-breakpoint
-CREATE TRIGGER `advance_receipts_scope_insert` BEFORE INSERT ON `advance_receipts` WHEN NOT EXISTS (SELECT 1 FROM documents p WHERE p.id = NEW.proforma_id AND p.type = 'proforma' AND p.frozen_at IS NOT NULL AND p.client_id = NEW.client_id) OR NOT EXISTS (SELECT 1 FROM documents i WHERE i.id = NEW.invoice_id AND i.type IN ('tax_invoice', 'export_invoice') AND i.frozen_at IS NOT NULL AND i.parent_id = NEW.proforma_id AND i.client_id = NEW.client_id AND i.currency = NEW.currency) OR date(NEW.received_on) IS NOT NEW.received_on BEGIN SELECT RAISE(ABORT, 'advance_receipts_scope_insert: an advance receipt links a frozen proforma to the tax or export invoice made from it (same client and currency) on a real date'); END;
+CREATE TRIGGER `advance_receipts_scope_insert` BEFORE INSERT ON `advance_receipts` WHEN NOT EXISTS (SELECT 1 FROM documents p WHERE p.id = NEW.proforma_id AND p.type = 'proforma' AND p.frozen_at IS NOT NULL AND p.client_id = NEW.client_id AND p.currency = NEW.currency) OR NOT EXISTS (SELECT 1 FROM documents i WHERE i.id = NEW.invoice_id AND i.type IN ('tax_invoice', 'export_invoice') AND i.frozen_at IS NOT NULL AND i.parent_id = NEW.proforma_id AND i.client_id = NEW.client_id AND i.currency = NEW.currency AND i.total_minor = NEW.amount_minor) OR date(NEW.received_on) IS NOT NEW.received_on BEGIN SELECT RAISE(ABORT, 'advance_receipts_scope_insert: an advance receipt links a frozen proforma to the tax or export invoice made from it (same client and currency, the invoice total is the amount) on a real date'); END;

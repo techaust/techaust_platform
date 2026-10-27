@@ -31,7 +31,12 @@ import {
   proformaWarnDate,
   voidBlockers,
 } from "../src/invoices.ts";
-import { resolveSetting, SETTINGS_DEFAULTS, SETTINGS_SCHEMAS } from "../src/schemas/settings.ts";
+import {
+  foldLegacyLut,
+  resolveSetting,
+  SETTINGS_DEFAULTS,
+  SETTINGS_SCHEMAS,
+} from "../src/schemas/settings.ts";
 import { lutsOf } from "../src/tax/supply.ts";
 
 // ---- the exchange rate --------------------------------------------------------------------------------------------------------------------
@@ -866,6 +871,27 @@ describe("the tax settings of M5.2 [ADM-SET-03, LD31, Q24]", () => {
       lut: { arn: "OLD1", fy: "2627" },
     });
     expect(lutsOf(tax)).toEqual([{ fy: "2627", arn: "NEW1" }]);
+  });
+  it("`foldLegacyLut` moves the old single letter into the list (unless its FY is listed) and clears it: a deleted letter cannot come back [early check 3]", () => {
+    const legacy = { ...SETTINGS_DEFAULTS.tax, lut: { arn: "OLD1", fy: "2627" } };
+    const folded = foldLegacyLut(legacy);
+    expect(folded.luts).toEqual([{ fy: "2627", arn: "OLD1", filedOn: null }]);
+    expect(folded.lut).toEqual({ arn: null, fy: null });
+    // the letters read are the same before and after (a saved letter never vanishes)
+    expect(lutsOf(folded)).toEqual(lutsOf(legacy));
+    // the list wins for the same FY, and the old key is dropped
+    const both = foldLegacyLut({
+      ...legacy,
+      luts: [{ fy: "2627", arn: "NEW1", filedOn: "2026-03-20" }],
+    });
+    expect(both.luts).toEqual([{ fy: "2627", arn: "NEW1", filedOn: "2026-03-20" }]);
+    expect(both.lut).toEqual({ arn: null, fy: null });
+    // an empty old key changes nothing; the owner deleted the list entry and the old key is empty: no letter
+    expect(foldLegacyLut(SETTINGS_DEFAULTS.tax).luts).toEqual([]);
+    expect(lutsOf(foldLegacyLut({ ...SETTINGS_DEFAULTS.tax, luts: [] }))).toEqual([]);
+    // folding twice is the same as once, and the result still parses
+    expect(foldLegacyLut(folded)).toEqual(folded);
+    expect(schema.safeParse(folded).success).toBe(true);
   });
   it("a letter: consecutive years, an ARN of letters and digits (spaces dropped, upper case), a real filing date or none", () => {
     const one = (over: Record<string, unknown>) =>

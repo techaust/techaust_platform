@@ -21,7 +21,7 @@ import {
   parseFxRate,
 } from "@techaust/core/invoices";
 import { maxNumber, sqlPrintfPattern } from "@techaust/core/numbering";
-import { invoiceSealOf, type TermsRef } from "@techaust/db/documents";
+import { headerExtrasJson, invoiceSealOf, type TermsRef } from "@techaust/db/documents";
 import { advanceIssueStatements } from "@techaust/db/issue";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
@@ -36,6 +36,7 @@ import {
   mutate,
   NOT_FOUND,
   STEP_UP_REQUIRED,
+  UNAUTHENTICATED,
 } from "./context.ts";
 import { afterIssue } from "./document-events.ts";
 import { body, idParam, isoDate, isUnique, param, refusedWith, STALE_VERSION } from "./http.ts";
@@ -114,13 +115,14 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
     // (3) only an issued (or part-converted) proforma
     if (d.frozen_at === null || (d.status !== "issued" && d.status !== "converted"))
       return err(c, PROFORMA_NOT_ISSUED, 409);
-    // (4) the stamp the person saw, and a client that still exists
-    if (d.updated_at !== f.expectedProformaUpdatedAt) return err(c, STALE_VERSION, 409);
-    if (ctx.client.anonymised_at !== null) return err(c, CLIENT_GONE, 409);
-    // (5) the same payment twice is the same invoice: the number it made comes back
+    // (4) the same payment twice is the same invoice: the number it made comes back, BEFORE the stamp is judged (a retry after a lost answer carries
+    // the old stamp, and must get the number it already made, not `stale_version`). The UNIQUE index of `advance_receipts` stays the real guard.
     if (norm === null) return err(c, ADVANCE_REFERENCE_INVALID, 400);
     const used = ctx.extra[0]?.results[0] as { number_display: string } | undefined;
     if (used) return refusedReference(c, used.number_display);
+    // (5) the stamp the person saw, and a client that still exists
+    if (d.updated_at !== f.expectedProformaUpdatedAt) return err(c, STALE_VERSION, 409);
+    if (ctx.client.anonymised_at !== null) return err(c, CLIENT_GONE, 409);
     // (6) the amount against what is left
     if (f.amountMinor > d.balance_minor) return err(c, ADVANCE_EXCEEDS_BALANCE, 409);
     // (7) the day the money arrived: not before the proforma was issued, not in the future (IST); an earlier month only warns (Q27)
@@ -230,6 +232,22 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
       d.export_mode === "lut" || d.export_mode === "igst_paid" ? d.export_mode : ctx.settings.tax.exportMode;
     const receiptId = uuidv7();
     const dueDate = issueDate; // paid on receipt: due the day it is issued
+    // LD37: sealed here and frozen in `header_extras` by the same batch (the receipt id is known before the batch).
+    const extras = headerExtrasOf({
+      state,
+      settings: ctx.settings,
+      client: ctx.client,
+      issueFy: fy,
+      mode,
+      declaration: null,
+      advance: {
+        proformaId: d.id,
+        proformaNumber: d.number_display,
+        proformaIssueDate: d.issue_date,
+        receivedOn: f.receivedOn,
+        receiptId,
+      },
+    });
     const seal = await invoiceSealOf({
       document: {
         type,
@@ -244,21 +262,7 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
       computed,
       recipient,
       issuer,
-      ...headerExtrasOf({
-        state,
-        settings: ctx.settings,
-        client: ctx.client,
-        issueFy: fy,
-        mode,
-        declaration: null,
-        advance: {
-          proformaId: d.id,
-          proformaNumber: d.number_display,
-          proformaIssueDate: d.issue_date,
-          receivedOn: f.receivedOn,
-          receiptId,
-        },
-      }),
+      ...extras,
     });
     const col = invoiceColumns(state, computation);
     const expected = {
@@ -289,6 +293,7 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
       snapshotSha256: seal.snapshotSha256,
       issuedBy: u.id,
       termsVersionId: terms?.id ?? null,
+      headerExtras: headerExtrasJson(extras),
       proformaId: d.id,
       expectedProformaUpdatedAt: d.updated_at,
       sessionId: u.sessionId,
@@ -454,11 +459,12 @@ async function explain(c: Ctx, proformaId: string, x: Expectations) {
        (SELECT max(updated_at) FROM bank_accounts WHERE active = 1) AS bank_stamp,
        (SELECT next_no FROM doc_counters WHERE series = ?3 AND fy = ?4) AS next_no,
        (SELECT s.step_up_until FROM staff_sessions s WHERE s.id = ?5 AND s.revoked_at IS NULL) AS step_up_until,
+       (SELECT s.idle_expires_at > ?7 AND s.abs_expires_at > ?7 FROM staff_sessions s WHERE s.id = ?5 AND s.revoked_at IS NULL) AS session_live,
        (SELECT o.role FROM staff_sessions s JOIN staff_users o ON o.id = s.user_id WHERE s.id = ?5 AND o.status = 'active') AS role,
        (SELECT k.updated_at FROM contacts k WHERE k.id = ?6 AND k.anonymised_at IS NULL) AS contact_updated_at
      FROM documents p JOIN clients cl ON cl.id = p.client_id WHERE p.id = ?1 AND p.type = 'proforma'`,
   )
-    .bind(proformaId, x.norm, x.series, x.fy, u.sessionId, x.expected.contact?.id ?? null)
+    .bind(proformaId, x.norm, x.series, x.fy, u.sessionId, x.expected.contact?.id ?? null, Date.now())
     .first<{
       status: string;
       frozen_at: number | null;
@@ -475,10 +481,13 @@ async function explain(c: Ctx, proformaId: string, x: Expectations) {
       bank_stamp: number | null;
       next_no: number | null;
       step_up_until: number | null;
+      session_live: number | null;
       role: string | null;
       contact_updated_at: number | null;
     }>();
   if (!row) return err(c, NOT_FOUND, 404);
+  // A session that ended between the read and the batch (idle, absolute limit, revoked): the freeze refused it, and the answer is to sign in again (review 13).
+  if (row.session_live !== 1) return err(c, UNAUTHENTICATED, 401);
   if (row.used_number !== null) return refusedReference(c, row.used_number);
   if (row.frozen_at === null || (row.status !== "issued" && row.status !== "converted"))
     return err(c, PROFORMA_NOT_ISSUED, 409);

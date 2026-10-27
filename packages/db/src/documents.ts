@@ -42,6 +42,8 @@ export type DocumentRow = {
   fx_source: string | null;
   service_completed_on: string | null;
   export_declaration_id: string | null;
+  /** M5.2 (LD37): the JSON text of the sealed header keys the other columns cannot give (`{export?, proforma?, advance?}`), frozen at issue; null when none (read it with `headerExtrasOfRow`). */
+  header_extras: string | null;
   valid_until: string | null;
   supply_type: string | null;
   place_of_supply_code: string | null;
@@ -172,7 +174,7 @@ export type DocumentBundle<T extends TermsRef = TermsRow> = {
 };
 
 const DOCUMENT_COLUMNS =
-  "id, type, status, client_id, version_group_id, version, series, fy, number, number_display, currency, issue_date, due_date, parent_id, paid_minor, credited_minor, balance_minor, voided_at, void_reason, fx_rate_micros, fx_date, fx_source, service_completed_on, export_declaration_id, valid_until, supply_type, place_of_supply_code, subtotal_minor, discount_minor, taxable_minor, cgst_minor, sgst_minor, igst_minor, round_off_minor, total_minor, terms_version_id, snapshot_r2_key, snapshot_sha256, pdf_r2_key, pdf_sha256, frozen_at, issued_by, title, contact_id, validity_days, discount_kind, discount_value, export_mode, content_sha256, catalogue_reference_minor, source_document_id, source_step, sent_at, viewed_at, decided_at, decision_reason, decision_note, decided_contact_id, created_by, created_at, updated_at, recipient, issuer, computed";
+  "id, type, status, client_id, version_group_id, version, series, fy, number, number_display, currency, issue_date, due_date, parent_id, paid_minor, credited_minor, balance_minor, voided_at, void_reason, fx_rate_micros, fx_date, fx_source, service_completed_on, export_declaration_id, header_extras, valid_until, supply_type, place_of_supply_code, subtotal_minor, discount_minor, taxable_minor, cgst_minor, sgst_minor, igst_minor, round_off_minor, total_minor, terms_version_id, snapshot_r2_key, snapshot_sha256, pdf_r2_key, pdf_sha256, frozen_at, issued_by, title, contact_id, validity_days, discount_kind, discount_value, export_mode, content_sha256, catalogue_reference_minor, source_document_id, source_step, sent_at, viewed_at, decided_at, decision_reason, decision_note, decided_contact_id, created_by, created_at, updated_at, recipient, issuer, computed";
 
 /** The statements of `loadDocument`, exported so a test can EXPLAIN each one. */
 export const LOAD_DOCUMENT_SQL = {
@@ -504,16 +506,48 @@ export function invoiceContentHashOfBundle(b: DocumentBundle<TermsRef>): Promise
   return b.document.computed ? contentHash(invoiceDraftOfBundle(b), b.document.computed) : null;
 }
 
+/** What the freeze writes to `documents.header_extras`: the JSON of exactly the keys given, or null when there are none (an M5.1 tax invoice). */
+export function headerExtrasJson(
+  x: Pick<InvoiceHeaderExtras, "export" | "proforma" | "advance">,
+): string | null {
+  const out: Pick<InvoiceHeaderExtras, "export" | "proforma" | "advance"> = {
+    ...(x.export ? { export: x.export } : {}),
+    ...(x.proforma ? { proforma: x.proforma } : {}),
+    ...(x.advance ? { advance: x.advance } : {}),
+  };
+  return Object.keys(out).length === 0 ? null : JSON.stringify(out);
+}
+
+/**
+ * The frozen header extras of a row (LD37): the `{export?, proforma?, advance?}` the seal was made with, read back from `header_extras`. Null or an
+ * unreadable text gives none (a seal check then fails, which is the right answer for damaged data). `fx` is never here: it comes from the `fx_*` columns.
+ */
+export function headerExtrasOfRow(d: Pick<DocumentRow, "header_extras">): InvoiceHeaderExtras {
+  const text = d.header_extras;
+  if (typeof text !== "string") return {};
+  let v: unknown;
+  try {
+    v = JSON.parse(text);
+  } catch {
+    return {};
+  }
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return {};
+  const o = v as Record<string, unknown>;
+  return {
+    ...(o.export ? { export: o.export as NonNullable<InvoiceHeaderExtras["export"]> } : {}),
+    ...(o.proforma ? { proforma: o.proforma as NonNullable<InvoiceHeaderExtras["proforma"]> } : {}),
+    ...(o.advance ? { advance: o.advance as NonNullable<InvoiceHeaderExtras["advance"]> } : {}),
+  };
+}
+
 /**
  * The seal parts of a loaded ISSUED invoice, from its frozen columns; null when it is not frozen or lacks a frozen block. The M5.2 header keys that
- * the columns cannot give (the endorsement, the LUT, the country name, the notice, the advance reference) come from the verifier's `extras`: the write-once
- * envelope's header (stage B). The exchange rate is read from the row's own `fx_*` columns.
+ * the other columns cannot give (the endorsement, the LUT letter, the country name, the notice, the advance reference) are read from the frozen
+ * `header_extras` (LD37: NULL gives none, so an M5.1 seal keeps its hash); the exchange rate is read from the row's own `fx_*` columns.
  */
-export function invoiceSealPartsOfBundle(
-  b: DocumentBundle<TermsRef>,
-  extras: InvoiceHeaderExtras = {},
-): InvoiceSealParts | null {
+export function invoiceSealPartsOfBundle(b: DocumentBundle<TermsRef>): InvoiceSealParts | null {
   const d = b.document;
+  const extras = headerExtrasOfRow(d);
   if (d.frozen_at === null) return null;
   const { computed, recipient, issuer } = d;
   if (!computed || !recipient || !issuer || !d.issue_date || !d.due_date || !d.content_sha256) return null;
@@ -542,11 +576,8 @@ export function invoiceSealPartsOfBundle(
 }
 
 /** Checks a loaded issued invoice against the hashes it was sealed with. Null when the bundle is not an issued invoice. */
-export async function verifyInvoiceSealed(
-  b: DocumentBundle<TermsRef>,
-  extras: InvoiceHeaderExtras = {},
-): Promise<SealCheck | null> {
-  const parts = invoiceSealPartsOfBundle(b, extras);
+export async function verifyInvoiceSealed(b: DocumentBundle<TermsRef>): Promise<SealCheck | null> {
+  const parts = invoiceSealPartsOfBundle(b);
   const content = invoiceContentHashOfBundle(b);
   if (!parts || !content) return null;
   const seal = await invoiceSealOf(parts);

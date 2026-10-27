@@ -21,7 +21,7 @@ import {
 } from "@techaust/core/invoices";
 import { maxNumber, sqlPrintfPattern } from "@techaust/core/numbering";
 import { decide } from "@techaust/core/permissions";
-import { invoiceSealOf, type TermsRef } from "@techaust/db/documents";
+import { headerExtrasJson, invoiceSealOf, type TermsRef } from "@techaust/db/documents";
 import { invoiceIssueStatements } from "@techaust/db/issue";
 import { auditStmt } from "@techaust/db/log";
 import { Hono } from "hono/tiny";
@@ -51,6 +51,7 @@ import {
   CONTACT_CHANGED,
   computeInvoice,
   EXPORT_CURRENCY_CONFIRM,
+  EXPORT_DECLARATION_CHANGED,
   headerExtrasOf,
   INVOICE_APPROVAL_EXPIRED,
   ISSUE_APPROVAL_REQUIRED,
@@ -194,10 +195,22 @@ export async function issueInvoice(c: Ctx, p: IssueParams): Promise<Response> {
   // LD23: the optional extra export note, pinned at issue: the NEWEST block, when the draft asked for one.
   const newestDeclaration = (ctx.extra[0]?.results[0] as TermsRef | undefined) ?? null;
   const declaration = state.exportDeclarationId !== null ? newestDeclaration : null;
+  // The note the draft pinned (what the requester and the approver saw) must still be the newest: a newer text is refused, never silently swapped in.
+  if (state.exportDeclarationId !== null && declaration?.id !== state.exportDeclarationId)
+    return err(c, EXPORT_DECLARATION_CHANGED, 409);
   const mode: ExportRoute =
     state.exportMode === "lut" || state.exportMode === "igst_paid"
       ? state.exportMode
       : ctx.settings.tax.exportMode;
+  // LD37: the keys the other columns cannot give are worked out ONCE here, sealed, and frozen in `header_extras` by the same batch.
+  const extras = headerExtrasOf({
+    state,
+    settings: ctx.settings,
+    client: ctx.client,
+    issueFy: fy,
+    mode,
+    declaration,
+  });
   const seal = await invoiceSealOf({
     document: {
       type: d.type,
@@ -212,7 +225,7 @@ export async function issueInvoice(c: Ctx, p: IssueParams): Promise<Response> {
     computed,
     recipient,
     issuer,
-    ...headerExtrasOf({ state, settings: ctx.settings, client: ctx.client, issueFy: fy, mode, declaration }),
+    ...extras,
   });
   const expected = {
     updatedAt: d.updated_at,
@@ -246,6 +259,7 @@ export async function issueInvoice(c: Ctx, p: IssueParams): Promise<Response> {
     issuedBy: u.id,
     termsVersionId: terms?.id ?? null,
     exportDeclarationId: declaration?.id ?? null,
+    headerExtras: headerExtrasJson(extras),
     expected,
     authority: p.approval
       ? { kind: "approval", sessionId: u.sessionId, approvalId: p.approval.id }

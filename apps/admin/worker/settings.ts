@@ -22,6 +22,7 @@ import { canSetNextNumber, maxNumber, SERIES, type Series } from "@techaust/core
 import { type Action, decide } from "@techaust/core/permissions";
 import {
   BRAND_LOGOS,
+  foldLegacyLut,
   GATEWAY_SECRETS,
   GATEWAYS,
   panOf,
@@ -393,7 +394,9 @@ export const settings = new Hono<AppEnv>()
     const { group } = c.req.valid("param");
     if (decide(actor(c).role, READ_ACTION[group]) === "deny") return err(c, FORBIDDEN_GROUP, 403);
     const row = await loadRow(c.env.DB, group);
-    const value = resolveSetting(group, row?.value);
+    const resolved = resolveSetting(group, row?.value);
+    // The old single `lut` is shown as a list entry (and cleared), so a letter deleted from the list is never sent back by the old key.
+    const value = group === "tax" ? foldLegacyLut(resolved as Settings["tax"]) : resolved;
     return c.json({
       group,
       version: row?.version ?? 0,
@@ -435,6 +438,11 @@ export const settings = new Hono<AppEnv>()
       const value = env.data.value;
       if (typeof value === "object" && value !== null && !Array.isArray(value))
         return save(c, "company", { ...value, signature: keep }, env.data.version);
+    }
+    // M5.2 (early check 3): a saved `tax` row never keeps the deprecated single `lut`: it is folded into `luts` (unless that FY is listed) and cleared.
+    if (group === "tax") {
+      const parsed = SETTINGS_SCHEMAS.tax.safeParse(env.data.value);
+      return save(c, "tax", parsed.success ? foldLegacyLut(parsed.data) : env.data.value, env.data.version);
     }
     return save(c, group, env.data.value, env.data.version);
   })

@@ -21,6 +21,7 @@ import {
   putTax,
   renew,
   sealCheck,
+  sealCheckWith,
   setFx,
   todayIso,
   typesRow,
@@ -125,9 +126,9 @@ describe("an export invoice issues [ADM-INV-01, ADM-INV-08, ADM-INV-18, G-8]", (
       { ...header, countryName: "USA" },
       { ...header, mode: "igst_paid" as const },
     ])
-      expect((await sealCheck(made.id, { export: changed }))?.snapshot).toBe(false);
+      expect((await sealCheckWith(made.id, { export: changed }))?.snapshot).toBe(false);
     // a header with no export part at all is not the seal either
-    expect((await sealCheck(made.id))?.snapshot).toBe(false);
+    expect((await sealCheckWith(made.id, {}))?.snapshot).toBe(false);
   });
 
   it("the IGST route needs no LUT and seals the IGST endorsement; the LUT in the header is then null", async () => {
@@ -151,7 +152,7 @@ describe("an export invoice issues [ADM-INV-01, ADM-INV-08, ADM-INV-18, G-8]", (
     };
     expect(await sealCheck(made.id, { export: header })).toEqual({ content: true, snapshot: true });
     expect(
-      (await sealCheck(made.id, { export: { ...header, endorsement: ENDORSEMENT.lut } }))?.snapshot,
+      (await sealCheckWith(made.id, { export: { ...header, endorsement: ENDORSEMENT.lut } }))?.snapshot,
     ).toBe(false);
   });
 
@@ -730,9 +731,9 @@ describe("a proforma [ADM-INV-01, ADM-INV-10, LD28, G-6]", () => {
       snapshot: true,
     });
     expect(
-      (await sealCheck(made.id, { proforma: { notice: `${PROFORMA_NOTICE_LITERAL}.` } }))?.snapshot,
+      (await sealCheckWith(made.id, { proforma: { notice: `${PROFORMA_NOTICE_LITERAL}.` } }))?.snapshot,
     ).toBe(false);
-    expect((await sealCheck(made.id))?.snapshot).toBe(false);
+    expect((await sealCheckWith(made.id, {}))?.snapshot).toBe(false);
     // the SWIFT block of its (USD) bank details is frozen with it, and no LUT or rate exists on it
     const { issuer } = await frozenBlocks(made.id);
     expect(issuer.bank.swift).toMatchObject({ purposeCode: "P0802" });
@@ -1002,12 +1003,23 @@ describe("the address of delivery and the optional export note [LD36, LD23, Rule
       .run();
     expect((await patchFields(o, made.id, { exportDeclaration: true })).status).toBe(200);
     expect(await typesRow(made.id)).toMatchObject({ export_declaration_id: v1 });
-    // a newer version appears before issue: the newest is what is pinned
+    // a newer version appears before issue: the note the draft pinned (the one the requester and the approver saw) is no longer the newest, so the
+    // issue is refused with its own code and nothing is written (the person looks at the new text and pins it again)
     await env.DB.prepare(
       "INSERT INTO terms_blocks (id, kind, version, body_md, sha256) VALUES (?1, 'export_declaration', 2, 'New note', ?2)",
     )
       .bind(v2, "2".repeat(64))
       .run();
+    const counter = await invoiceCounter();
+    const changed = await issueInvoice(o, made.id);
+    expect(changed.status).toBe(409);
+    expect(await codeOf(changed)).toBe("export_declaration_changed");
+    expect(await typesRow(made.id)).toMatchObject({ status: "draft", export_declaration_id: v1 });
+    expect(await invoiceCounter()).toBe(counter);
+    expect(await auditCount("invoice.issue", made.id)).toBe(0);
+    // pinned again, it is the newest
+    expect((await patchFields(o, made.id, { exportDeclaration: true })).status).toBe(200);
+    expect(await typesRow(made.id)).toMatchObject({ export_declaration_id: v2 });
     const res = await issueInvoice(o, made.id);
     expect(res.status, await res.clone().text()).toBe(200);
     expect(await typesRow(made.id)).toMatchObject({ export_declaration_id: v2 });
@@ -1063,5 +1075,144 @@ describe("what stays closed", () => {
     expect(direct.status).toBe(403);
     expect(await codeOf(direct)).toBe("approval_required");
     expect((await requestIssue(staff, made.id)).status).toBe(201);
+  });
+});
+
+// ---- the frozen header is the record (LD37) and the early check's fixes ------------------------------------------------------------------------------
+
+describe("the frozen header extras [LD37]: what was sealed is what is shown, whatever Settings say afterwards", () => {
+  it("a letter, a route and a country edited after issue change neither the frozen view nor the seal; the column holds the sealed keys and cannot be edited", async () => {
+    const o = await owner();
+    const made = await readyExport(o);
+    expect((await issueInvoice(o, made.id)).status).toBe(200);
+    const sealed = {
+      mode: "lut" as const,
+      endorsement: ENDORSEMENT.lut,
+      lut: { fy: currentFy(), arn: LUT_ARN },
+      countryCode: "US",
+      countryName: "United States",
+      declarationRef: null,
+    };
+    expect((await getInvoice(o, made.id)).export).toMatchObject({
+      endorsement: ENDORSEMENT.lut,
+      lut: { fy: currentFy(), arn: LUT_ARN },
+      countryCode: "US",
+      countryName: "United States",
+    });
+    const stored = await one<{ header_extras: string }>(
+      "SELECT header_extras FROM documents WHERE id = ?",
+      made.id,
+    );
+    expect(JSON.parse(stored?.header_extras ?? "null")).toEqual({ export: sealed });
+    // the owner changes the letter's ARN, the default route and the client's country
+    await putTax({ luts: [lutOf(currentFy(), "AD0000000000099")], exportMode: "igst_paid" });
+    await env.DB.prepare(
+      "UPDATE clients SET country = 'DE' WHERE id = (SELECT client_id FROM documents WHERE id = ?1)",
+    )
+      .bind(made.id)
+      .run();
+    const after = await getInvoice(o, made.id);
+    expect(after.export).toMatchObject({
+      endorsement: ENDORSEMENT.lut,
+      lut: { fy: currentFy(), arn: LUT_ARN },
+      countryCode: "US",
+      countryName: "United States",
+    });
+    expect(await sealCheck(made.id, { export: sealed })).toEqual({ content: true, snapshot: true });
+    await expect(
+      env.DB.prepare("UPDATE documents SET header_extras = NULL WHERE id = ?1").bind(made.id).run(),
+    ).rejects.toThrow(/issued document is frozen/);
+  });
+
+  it("an M5.1-shaped tax invoice stores no extras (NULL) and keeps its seal; a proforma stores its notice only", async () => {
+    const o = await owner();
+    const tax = await mkInvoice(o);
+    expect((await issueInvoice(o, tax.id)).status).toBe(200);
+    expect(
+      (
+        await one<{ header_extras: string | null }>(
+          "SELECT header_extras FROM documents WHERE id = ?",
+          tax.id,
+        )
+      )?.header_extras,
+    ).toBeNull();
+    expect(await sealCheck(tax.id)).toEqual({ content: true, snapshot: true });
+    const pf = await mkProforma(o);
+    expect((await issueInvoice(o, pf.id)).status).toBe(200);
+    expect(await sealCheck(pf.id, { proforma: { notice: PROFORMA_NOTICE_LITERAL } })).toEqual({
+      content: true,
+      snapshot: true,
+    });
+    expect((await getInvoice(o, pf.id)).proforma.notice).toBe(PROFORMA_NOTICE_LITERAL);
+  });
+});
+
+describe("a letter deleted from the list cannot come back from the legacy key [analyst early check 3; VERIFY WITH CA/LEGAL]", () => {
+  const put = (s: Awaited<ReturnType<typeof owner>>, version: number, value: unknown) =>
+    call("/settings/groups/tax", { method: "PUT", cookie: s.cookie, body: { version, value } });
+  const get = async (s: Awaited<ReturnType<typeof owner>>) =>
+    json(await call("/settings/groups/tax", { cookie: s.cookie }));
+
+  it("read: the old single letter is shown as a list entry and the old key is empty; deleting it from the list is final, and the issue is blocked", async () => {
+    const o = await owner();
+    await putOldTax({ arn: "OLDARN1", fy: currentFy() });
+    const first = await get(o);
+    expect(first.value.luts).toEqual([{ fy: currentFy(), arn: "OLDARN1", filedOn: null }]);
+    expect(first.value.lut).toEqual({ arn: null, fy: null });
+    const gone = await put(o, first.version, { ...first.value, luts: [] });
+    expect(gone.status, await gone.clone().text()).toBe(200);
+    const after = await get(o);
+    expect(after.value.luts).toEqual([]);
+    expect(after.value.lut).toEqual({ arn: null, fy: null });
+    const made = await readyExport(o);
+    expect(await blockersOf(await issueInvoice(o, made.id))).toEqual([
+      { code: "lut_missing", fy: currentFy() },
+    ]);
+  });
+
+  it("save: an old screen that still sends the single `lut` has it folded into the list (unless that year is listed) and cleared in the stored row", async () => {
+    const o = await owner();
+    await putTax({ luts: [lutOf("2526", "AD0000000000025")] });
+    const cur = await get(o);
+    const ok = await put(o, cur.version, { ...cur.value, lut: { arn: "OLDARN1", fy: currentFy() } });
+    expect(ok.status, await ok.clone().text()).toBe(200);
+    const stored = JSON.parse(
+      (await one<{ value: string }>("SELECT value FROM settings WHERE key = 'tax'"))?.value ?? "{}",
+    );
+    expect(stored.lut).toEqual({ arn: null, fy: null });
+    expect(stored.luts).toEqual([
+      { fy: "2526", arn: "AD0000000000025", filedOn: null },
+      { fy: currentFy(), arn: "OLDARN1", filedOn: null },
+    ]);
+    // the same year in the list wins: the old key is dropped
+    const again = await get(o);
+    const win = await put(o, again.version, {
+      ...again.value,
+      luts: [lutOf(currentFy(), "AD0000000000077")],
+      lut: { arn: "OLDARN9", fy: currentFy() },
+    });
+    expect(win.status, await win.clone().text()).toBe(200);
+    const stored2 = JSON.parse(
+      (await one<{ value: string }>("SELECT value FROM settings WHERE key = 'tax'"))?.value ?? "{}",
+    );
+    expect(stored2.luts).toEqual([{ fy: currentFy(), arn: "AD0000000000077", filedOn: null }]);
+    expect(stored2.lut).toEqual({ arn: null, fy: null });
+  });
+});
+
+describe("the service date of a void invoice [early check, optional]", () => {
+  it("is 409 invoice_void (its own code), not a stale save, and nothing is written", async () => {
+    const o = await owner();
+    const made = await mkInvoice(o);
+    expect((await issueInvoice(o, made.id)).status).toBe(200);
+    expect((await voidInvoice(o, made.id)).status).toBe(200);
+    const stamp = (await typesRow(made.id))?.updated_at as number;
+    const res = await call(`/invoices/${made.id}/service-completed`, {
+      cookie: o.cookie,
+      body: { expectedUpdatedAt: stamp, date: "2026-10-01" },
+    });
+    expect(res.status).toBe(409);
+    expect(await codeOf(res)).toBe("invoice_void");
+    expect(await typesRow(made.id)).toMatchObject({ service_completed_on: null });
   });
 });

@@ -743,6 +743,10 @@ export const EXPORT_DECLARATION_MISSING = e(
 export const SERVICE_DATE_FUTURE = e("service_date_future", "The service can't be completed in the future");
 /** 07-S §7 would carry the words; `[Placeholder]` marks a line the copy has not drafted yet (docs/07-S "Copy gaps"). */
 export const ALREADY_SET = e("already_set", "[Placeholder]");
+/** The service date of a void invoice (07-S has no line yet). */
+export const INVOICE_VOID = e("invoice_void", "[Placeholder]");
+/** The extra export note the draft pinned is no longer the newest one: the person must look at the new text and choose again (07-S has no line yet). */
+export const EXPORT_DECLARATION_CHANGED = e("export_declaration_changed", "[Placeholder]");
 export const NOT_A_PROFORMA = e("not_a_proforma", "That is not a proforma");
 export const PROFORMA_NOT_ISSUED = e("proforma_not_issued", "Only an issued proforma can be converted.");
 export const ADVANCE_REFERENCE_USED = e(

@@ -6,8 +6,11 @@ import { defaultFormat, sqlPrintfPattern, uuidv7 } from "@techaust/core";
 import { describe, expect, it } from "vitest";
 import {
   type DocumentBundle,
+  headerExtrasJson,
+  headerExtrasOfRow,
   invoiceDraftOfBundle,
   invoiceSealOf,
+  invoiceSealPartsOfBundle,
   loadDocument,
   type TermsRef,
 } from "../src/documents.ts";
@@ -331,7 +334,7 @@ describe("migrations 0039 and 0040 [LD35]", () => {
   it("0039 only adds columns and creates a table: no rebuild, no DROP TABLE, no copy", () => {
     const sql = sqlOf("0039_invoice_types.sql");
     expect(sql).not.toMatch(/DROP TABLE|__new_|ALTER TABLE `?\w+`? RENAME|PRAGMA/i);
-    expect(sql.match(/ALTER TABLE `documents` ADD/g)?.length).toBe(2);
+    expect(sql.match(/ALTER TABLE `documents` ADD/g)?.length).toBe(3); // service_completed_on, export_declaration_id, header_extras (LD37)
     expect(sql).toContain("ALTER TABLE `bank_accounts` ADD `purpose_code` text");
     expect(sql).toContain("CREATE TABLE `advance_receipts`");
     expect(sql.match(/CREATE TABLE/g)?.length).toBe(1);
@@ -359,13 +362,14 @@ describe("migrations 0039 and 0040 [LD35]", () => {
     );
   });
 
-  it("the freeze lists of 0032 are pinned, and 0040's are those plus the two new columns (the live lists today)", () => {
+  it("the freeze lists of 0032 are pinned, and 0040's are those plus the three new columns (the live lists today)", () => {
     expect(FROZEN_COLUMNS_0032).not.toContain("export_declaration_id");
     expect(SET_ONCE_0032).not.toContain("service_completed_on");
     const at = FROZEN_COLUMNS_0032.indexOf("realisation_due_at") + 1;
     expect(FROZEN_COLUMNS_0040).toEqual([
       ...FROZEN_COLUMNS_0032.slice(0, at),
       "export_declaration_id",
+      "header_extras",
       ...FROZEN_COLUMNS_0032.slice(at),
     ]);
     expect([...SET_ONCE_0040]).toEqual([...SET_ONCE_0032, "service_completed_on"]);
@@ -488,6 +492,16 @@ describe("service_completed_on [LD29] and export_declaration_id [LD23]", () => {
     });
     const { ownerId, sessionId } = await owner();
     const block = uuidv7();
+    const extrasText = headerExtrasJson({
+      export: {
+        mode: "lut",
+        endorsement: "SUPPLY MEANT FOR EXPORT",
+        lut: { fy: "2627", arn: "AD0000000000001" },
+        countryCode: "US",
+        countryName: "United States",
+        declarationRef: { id: block, version: 1, sha256: "e".repeat(64) },
+      },
+    });
     await run(
       "INSERT INTO terms_blocks (id, kind, version, body_md, sha256) VALUES (?, 'export_declaration', ?, 'Extra note', ?)",
       block,
@@ -516,6 +530,7 @@ describe("service_completed_on [LD29] and export_declaration_id [LD23]", () => {
         pattern: PATTERNS.export.pattern,
         argOrder: PATTERNS.export.argOrder,
         exportDeclarationId: block,
+        headerExtras: extrasText,
       },
     );
     const s = invoiceIssueStatements(env.DB, a);
@@ -523,8 +538,20 @@ describe("service_completed_on [LD29] and export_declaration_id [LD23]", () => {
     expect(await first("SELECT export_declaration_id FROM documents WHERE id = ?", id)).toEqual({
       export_declaration_id: block,
     });
+    // LD37: the header extras are written by the same freeze, byte for byte, and frozen with it
+    expect(await first("SELECT header_extras FROM documents WHERE id = ?", id)).toEqual({
+      header_extras: extrasText,
+    });
     await rejects(
       run("UPDATE documents SET export_declaration_id = NULL WHERE id = ?", id),
+      /issued document is frozen/,
+    );
+    await rejects(
+      run("UPDATE documents SET header_extras = NULL WHERE id = ?", id),
+      /issued document is frozen/,
+    );
+    await rejects(
+      run("UPDATE documents SET header_extras = ? WHERE id = ?", '{"proforma":{"notice":"x"}}', id),
       /issued document is frozen/,
     );
     // an unknown block is a foreign-key error on a draft
@@ -888,6 +915,7 @@ describe("advance_receipts: append-only and scoped [LD22]", () => {
       fy: a.fy,
       number: ++seq,
       number_display: `X/${seq}`,
+      total_minor: 1, // the receipt's amount is the invoice's total (a trigger checks it)
       ...over,
     });
   };
@@ -916,6 +944,7 @@ describe("advance_receipts: append-only and scoped [LD22]", () => {
     await rejects(insert(row(w, await mkDoc(w.clientId, "tax_invoice", { parent_id: w.proformaId }))), scope); // a draft invoice
     await rejects(insert(row(w, await frozenChild(w, { parent_id: null }))), scope); // no parent
     await rejects(insert(row(w, inv, { currency: "USD" })), scope);
+    await rejects(insert(row(w, inv, { amount_minor: 2 })), scope); // the amount is the invoice's total
     await rejects(insert(row(w, inv, { received_on: "2026-02-30" })), scope);
     await rejects(insert(row(w, inv, { received_on: "yesterday" })), scope);
     await rejects(insert(row(w, w.proformaId)), scope); // the proforma itself as the invoice
@@ -924,7 +953,10 @@ describe("advance_receipts: append-only and scoped [LD22]", () => {
   it("the amount is above zero, one invoice has one receipt, and one reference once per proforma", async () => {
     const w = await world();
     const inv = await frozenChild(w);
-    await rejects(insert(row(w, inv, { amount_minor: 0 })), /advance_receipts_amount/);
+    await rejects(
+      insert(row(w, await frozenChild(w, { total_minor: 0 }), { amount_minor: 0 })),
+      /advance_receipts_amount/,
+    );
     await insert(row(w, inv, { reference_norm: "SAME" }));
     await rejects(
       insert(row(w, inv, { reference_norm: "OTHER" })),
@@ -1011,6 +1043,45 @@ describe("the seal and the content hash carry the M5.2 parts [LD24, LD25]", () =
     });
     expect(Object.keys(exp.input)).toContain("export");
     expect(exp.snapshotSha256).not.toBe(base);
+  });
+
+  it("the frozen header extras: NULL when none, the exact JSON of the keys given, read back as the same keys; damaged text gives none [LD37]", () => {
+    expect(headerExtrasJson({})).toBeNull();
+    const x = {
+      proforma: {
+        notice: "This is not a tax invoice. A tax invoice will be issued when payment is received.",
+      },
+    };
+    const text = headerExtrasJson(x);
+    expect(text).toBe(JSON.stringify(x));
+    expect(headerExtrasOfRow({ header_extras: text })).toEqual(x);
+    expect(headerExtrasOfRow({ header_extras: null })).toEqual({});
+    for (const bad of ["{", "[]", "null", "7", '"x"'])
+      expect(headerExtrasOfRow({ header_extras: bad }), bad).toEqual({});
+    // only the three keys can come back: a stray key (or an `fx`) in the text is not part of the extras
+    expect(headerExtrasOfRow({ header_extras: '{"fx":{"rateMicros":1},"zzz":1}' })).toEqual({});
+  });
+
+  it("the seal parts of a frozen invoice take their extras from the column and nowhere else [LD37]", async () => {
+    const w = await world();
+    const a = await advanceArgs(w, {}, 100);
+    await runAdvance(a);
+    const bundle = (await loadDocument(env.DB, a.documentId)) as DocumentBundle<TermsRef>;
+    const advance = {
+      proformaId: w.proformaId,
+      proformaNumber: "TH/PI/2627/0001",
+      proformaIssueDate: "2026-10-27",
+      receivedOn: "2026-10-27",
+      receiptId: "r1",
+    };
+    const withColumn = invoiceSealPartsOfBundle({
+      ...bundle,
+      document: { ...bundle.document, header_extras: headerExtrasJson({ advance }) },
+    });
+    expect(withColumn?.advance).toEqual(advance);
+    expect(
+      invoiceSealPartsOfBundle({ ...bundle, document: { ...bundle.document, header_extras: null } })?.advance,
+    ).toBeUndefined();
   });
 
   it("the stored rate is part of the draft content a verifier hashes (and a row without one has none)", async () => {

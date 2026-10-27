@@ -219,6 +219,23 @@ export const taxSettings = z.object({
   crossBorderWarnInrMinor: minor,
 });
 
+/**
+ * M5.2 (analyst, early check 3; VERIFY WITH CA/LEGAL): folds the deprecated single `lut` of M3 into the `luts` list and clears it, unless its FY is
+ * already listed (then the list entry wins and the legacy value is dropped). Applied when the `tax` row is read for a screen and when it is saved, so a
+ * letter the owner deletes from the list can never come back from the old key, and a letter that was only ever in the old key is never lost.
+ */
+export function foldLegacyLut<
+  T extends {
+    readonly lut: { readonly arn: string | null; readonly fy: string | null };
+    readonly luts: readonly { readonly fy: string; readonly arn: string; readonly filedOn: string | null }[];
+  },
+>(tax: T): T {
+  const { arn, fy } = tax.lut;
+  const luts =
+    arn && fy && !tax.luts.some((l) => l.fy === fy) ? [...tax.luts, { fy, arn, filedOn: null }] : tax.luts;
+  return { ...tax, luts, lut: { arn: null, fy: null } };
+}
+
 const numberingFormatOf = (check: (f: NumberingFormat) => FormatCheck) =>
   z.object({ template: z.string(), padding: z.int() }).check(
     z.refine((f) => check(f).ok, {

@@ -25,7 +25,7 @@ import {
 } from "@techaust/core/invoices";
 import { decide, type Role } from "@techaust/core/permissions";
 import { type ComputedDocument, lutsOf } from "@techaust/core/tax";
-import type { DocumentBundle, TermsRef } from "@techaust/db/documents";
+import { type DocumentBundle, headerExtrasOfRow, type TermsRef } from "@techaust/db/documents";
 import { type ContactFacts, pdfOf, viewRecipient } from "./document-view.ts";
 import {
   type BankRow,
@@ -65,7 +65,7 @@ export const MILESTONE_OF_SQL =
 
 /** M5.2: the issued documents made from this one (a proforma's tax or export invoices), with the receipt row of each, oldest first. Index: `documents_parent`. */
 export const CHILDREN_OF_SQL =
-  "SELECT c.id, c.type, c.number_display, c.status, c.total_minor, c.currency, c.issue_date, r.received_on, r.amount_minor AS received_minor FROM documents c LEFT JOIN advance_receipts r ON r.invoice_id = c.id WHERE c.parent_id = ?1 AND c.frozen_at IS NOT NULL ORDER BY c.created_at, c.id LIMIT 50";
+  "SELECT c.id, c.type, c.number_display, c.status, c.total_minor, c.currency, c.issue_date, r.received_on, r.amount_minor AS received_minor FROM documents c LEFT JOIN advance_receipts r ON r.invoice_id = c.id WHERE c.parent_id = ?1 AND (SELECT x.type FROM documents x WHERE x.id = ?1) = 'proforma' AND c.frozen_at IS NOT NULL ORDER BY c.created_at, c.id LIMIT 50";
 export type ChildRow = {
   id: string;
   type: string;
@@ -176,6 +176,8 @@ export function invoiceView(i: InvoiceViewInput) {
   const isProforma = d.type === "proforma";
   const isExport = d.type === "export_invoice";
   const fxApplies = d.currency === "USD" && (d.type === "tax_invoice" || d.type === "export_invoice");
+  // LD37: a frozen document shows what it was sealed with (the endorsement, the LUT letter, the country name, the notice), never live settings.
+  const sealed = frozen ? headerExtrasOfRow(d) : {};
   // The route of an export document: what the engine worked out (a frozen one is read back), else the draft's own, else the settings'.
   const mode =
     computed?.supply.type === "export_lut"
@@ -186,7 +188,7 @@ export function invoiceView(i: InvoiceViewInput) {
           ? state.exportMode
           : settings.tax.exportMode;
   const luts = lutsOf(settings.tax);
-  const countryCode = recipient ? recipient.country : client.country;
+  const countryCode = sealed.export?.countryCode ?? (recipient ? recipient.country : client.country);
   const approval = approvalOf(i.approvals, d.content_sha256);
   const voidReasons = voidBlockers({
     status: d.status,
@@ -323,6 +325,8 @@ export function invoiceView(i: InvoiceViewInput) {
     // ---- M5.2 -------------------------------------------------------------------------------------------------------------------------------
     /** The day the service was completed (LD29): set once on an issued tax or export invoice (`POST /invoices/:id/service-completed`). */
     serviceCompletedOn: state.serviceCompletedOn,
+    /** The tax or export invoice made for money received (Q9): the proforma it settles and the receipt, as sealed; null on every other document. */
+    advance: sealed.advance ?? null,
     /** Q8: the issue needs the issuer's explicit confirmation (an export invoice in INR). */
     needsInrConfirm: needsInrConfirm(d.type, d.currency),
     /**
@@ -367,12 +371,17 @@ export function invoiceView(i: InvoiceViewInput) {
             mode,
             draftMode: state.exportMode,
             settingsMode: settings.tax.exportMode,
-            endorsement: isExport ? EXPORT_ENDORSEMENT[mode] : null,
+            endorsement: isExport
+              ? frozen
+                ? (sealed.export?.endorsement ?? null)
+                : EXPORT_ENDORSEMENT[mode]
+              : null,
             lutRequired: mode === "lut",
-            lut: lutFor(frozen ? (d.fy ?? issueFy) : issueFy, luts),
+            // A frozen document shows the letter it was sealed with (a proforma has none); a draft the letter of the FY it would be issued in.
+            lut: frozen ? (sealed.export?.lut ?? null) : lutFor(issueFy, luts),
             issueFy: frozen ? d.fy : issueFy,
             countryCode,
-            countryName: countryNameOf(countryCode),
+            countryName: sealed.export?.countryName ?? (frozen ? null : countryNameOf(countryCode)),
             declaration: {
               available: i.declaration !== null,
               pinned: state.exportDeclarationId !== null,
@@ -385,7 +394,7 @@ export function invoiceView(i: InvoiceViewInput) {
     /** A proforma's own facts: the notice it carries, what is left, the tax invoices made from it, and the 25-day warning of delivered work (Rule 47). */
     proforma: isProforma
       ? {
-          notice: PROFORMA_NOTICE,
+          notice: frozen ? (sealed.proforma?.notice ?? null) : PROFORMA_NOTICE,
           validUntil: d.valid_until,
           paidMinor: d.paid_minor,
           balanceMinor: d.balance_minor,

@@ -7,11 +7,15 @@ import { issueDateOf, issueFyOf } from "@techaust/core/invoices";
 import { SETTINGS_DEFAULTS } from "@techaust/core/settings";
 import {
   type DocumentBundle,
+  headerExtrasOfRow,
   type InvoiceHeaderExtras,
+  invoiceSealOf,
+  invoiceSealPartsOfBundle,
   loadDocument,
   type TermsRef,
   verifyInvoiceSealed,
 } from "@techaust/db/documents";
+import { expect } from "vitest";
 import { insert } from "./test-clients.ts";
 import { call, one, type TestSession } from "./test-helpers.ts";
 import {
@@ -166,11 +170,32 @@ export async function mkProforma(
   return { ...made, clientId: client.clientId, contactId: client.contactId };
 }
 
-/** The frozen document, read back and checked against the seal it was issued with (`extras`: the header keys the rows cannot give). */
-export async function sealCheck(id: string, extras: InvoiceHeaderExtras = {}) {
+/**
+ * The frozen document, read back and checked against the seal it was issued with. The sealed header keys the other columns cannot give are read from
+ * the frozen `header_extras` (LD37); when `expected` is given, they must equal it exactly (the tests hold the endorsements and the notice as literals).
+ */
+export async function sealCheck(
+  id: string,
+  expected?: Pick<InvoiceHeaderExtras, "export" | "proforma" | "advance">,
+) {
   const bundle = (await loadDocument(env.DB, id)) as DocumentBundle<TermsRef> | null;
   if (!bundle) throw new Error("no such document");
-  return verifyInvoiceSealed(bundle, extras);
+  if (expected) expect(headerExtrasOfRow(bundle.document)).toEqual(expected);
+  return verifyInvoiceSealed(bundle);
+}
+
+/** A seal check with OTHER header keys than the frozen ones: it must fail, which proves each part is covered by the hash. */
+export async function sealCheckWith(
+  id: string,
+  extras: Pick<InvoiceHeaderExtras, "export" | "proforma" | "advance">,
+) {
+  const bundle = (await loadDocument(env.DB, id)) as DocumentBundle<TermsRef> | null;
+  if (!bundle) throw new Error("no such document");
+  const parts = invoiceSealPartsOfBundle(bundle);
+  if (!parts) throw new Error("not frozen");
+  const { export: _e, proforma: _p, advance: _a, ...rest } = parts;
+  const seal = await invoiceSealOf({ ...rest, ...extras });
+  return { snapshot: seal.snapshotSha256 === bundle.document.snapshot_sha256 };
 }
 
 /** The columns an M5.2 test reads back from a document. */
