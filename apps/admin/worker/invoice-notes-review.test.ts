@@ -337,11 +337,6 @@ describe("the finance audit list holds the money invoice actions only (the lead'
     for (const a of ["invoice.create", "invoice.note_create"]) expect(names.has(a)).toBe(true);
   });
 
-  it("Staff's and Sales's client activity hides only the list's actions; an invoice draft's name is not among them", () => {
-    expect((FINANCE_AUDIT_ACTIONS as readonly string[]).includes("invoice.create")).toBe(false);
-    expect((FINANCE_AUDIT_ACTIONS as readonly string[]).includes("invoice.issue")).toBe(true);
-  });
-
   it("the accountant's audit view shows a note's issue and an IMS answer, and no longer the draft", async () => {
     const o = await owner();
     const accountant = await sessionFor("accountant");

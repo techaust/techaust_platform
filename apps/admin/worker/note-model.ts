@@ -110,12 +110,13 @@ export const IMS_NOT_APPLICABLE = e(
   "ims_not_applicable",
   "IMS status only applies to credit notes for GST-registered clients.",
 );
-/** 07-T §8: "Because of rounding, the nearest amount this credit note can be is {closest}. Use that amount instead?" (the button "Use {closest}" is the screen's). */
+/** 07-T §8: "Because of rounding, the nearest amount this credit note can be is {closest}. Use that amount instead?" (the button "Use {closest}" is the screen's).
+ * With no closest amount (below one rounding unit) 07-T has no line yet: `[Placeholder]` until the owner approves one (batch Q66). */
 export const creditAmountUnfit = (closestMinor: number | null, currency: "INR" | "USD"): ApiError =>
   e(
     "credit_amount_unfit",
     closestMinor === null
-      ? "Because of rounding, this exact amount can't be credited."
+      ? "[Placeholder]"
       : `Because of rounding, the nearest amount this credit note can be is ${formatMoney(money(closestMinor, currency))}. Use that amount instead?`,
   );
 export const CREDIT_DATA_DAMAGED = e(
@@ -368,10 +369,7 @@ export function resolveCredit(
     if (r.reason === "bound")
       return refuse({
         status: 409,
-        error: creditAmountUnfit(
-          r.closest?.document.totalMinor ?? null,
-          p.computed.currency === "USD" ? "USD" : "INR",
-        ),
+        error: creditAmountUnfit(r.closest?.document.totalMinor ?? null, currencyOf(p)),
         extra: { closestMinor: r.closest?.document.totalMinor ?? null, remaining: left.totalLeft },
       });
     // An amount above zero that is below one rounding unit of any line cannot be turned into a note: it is unfit, with no closest figure.
@@ -379,7 +377,7 @@ export function resolveCredit(
       return gross > 0
         ? refuse({
             status: 409,
-            error: creditAmountUnfit(null, p.computed.currency === "USD" ? "USD" : "INR"),
+            error: creditAmountUnfit(null, currencyOf(p)),
             extra: { closestMinor: null, remaining: left.totalLeft },
           })
         : refuse({ status: 400, error: NOTHING_TO_CREDIT });

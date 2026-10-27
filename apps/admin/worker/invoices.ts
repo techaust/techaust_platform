@@ -660,7 +660,6 @@ export const invoices = new Hono<AppEnv>()
     const d = ctx.bundle.document;
     const now = Date.now();
     const role = actor(c).role;
-    // M5.3: a note's draft is worked out from its invoice (never as an invoice of the client); an issued tax or export invoice carries its notes. One more read, only for those types.
     // M5.3: only a note (its invoice's reads) or an issued tax or export invoice (its notes' reads) needs the note statements: one more batch for those, none for a draft,
     // a proforma or any other type.
     const isNote = isNoteType(d.type);

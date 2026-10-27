@@ -203,7 +203,7 @@ const previewOf = (
   })),
 });
 
-/** The draft was not written: one read says why (the invoice moved, went void, the client went, a draft appeared meanwhile, the limit, the deadline). */
+/** The draft was not written: one read says why (the invoice moved, went void, the client went, a draft appeared meanwhile, the limit). */
 async function explainCreate(c: Ctx, kind: NoteKind, parentId: string): Promise<Response> {
   const row = await c.env.DB.prepare(
     `SELECT p.status, p.updated_at, ${clientGoneSql("p.client_id")} AS gone,

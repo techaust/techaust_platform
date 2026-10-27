@@ -146,7 +146,8 @@ export const annualReturnEntry = z
     // 07-T §8: "Enter the financial year." (the token is two consecutive years, "2627")
     fy: z.string().check(
       z.regex(/^\d{4}$/, { error: "Enter the financial year." }),
-      z.refine((v) => (Number(v.slice(0, 2)) + 1) % 100 === Number(v.slice(2)), {
+      // only a four-digit token is checked here, so a malformed one gets the message once
+      z.refine((v) => !/^\d{4}$/.test(v) || (Number(v.slice(0, 2)) + 1) % 100 === Number(v.slice(2)), {
         error: "Enter the financial year.",
       }),
     ),
