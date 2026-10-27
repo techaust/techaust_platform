@@ -102,10 +102,9 @@ export const APPROVAL_DECIDED: ApiError = {
 const ISSUE_REFUSED =
   /issue did not freeze|not an issuable draft|UNIQUE constraint failed: documents\.|documents_(invoice|parent|void|note|credit_note|ims|ledger)/;
 
-/** The document's word in a bell (M5.3: the same sentences, the word bound per type); the notes' variants are `[Placeholder]` until 07-T has them (§8). */
+/** The document's word in a bell (M5.3: the same sentences, the word bound per type; the notes' wording is 07-T §8, pending the owner's approval). */
 const docWord = (type: string) =>
   type === "credit_note" ? "credit note" : type === "debit_note" ? "debit note" : "invoice";
-const noteMark = (type: string) => (isNoteType(type) ? "[Placeholder] " : "");
 
 /**
  * The bells' words are 07-R's (draft copy, pending the owner's approval; a draft has no number, so a bell never uses a title, docs/13 2026-10-26):
@@ -113,12 +112,12 @@ const noteMark = (type: string) => (isNoteType(type) ? "[Placeholder] " : "");
  * rejected." (the issued one is written inside the issue batch).
  */
 const bellRequestTitle = (requester: string, clientName: string, type = "tax_invoice") =>
-  `${noteMark(type)}${requester} asked you to issue ${type === "credit_note" || type === "debit_note" ? "a" : "an"} ${docWord(type)} for ${clientName}.`.slice(
+  `${requester} asked you to issue ${type === "credit_note" || type === "debit_note" ? "a" : "an"} ${docWord(type)} for ${clientName}.`.slice(
     0,
     300,
   );
 const bellRejectedTitle = (clientName: string, type = "tax_invoice") =>
-  `${noteMark(type)}Your request to issue the ${docWord(type)} for ${clientName} was rejected.`.slice(0, 300);
+  `Your request to issue the ${docWord(type)} for ${clientName} was rejected.`.slice(0, 300);
 
 /**
  * A draft that names a contact must freeze exactly that contact: the hash of the draft (`content_sha256`) takes the contact id from `documents.contact_id`,
@@ -324,7 +323,7 @@ export async function issueInvoice(c: Ctx, p: IssueParams): Promise<Response> {
     bell: {
       clientName: ctx.client.display_name,
       linkPrefix: "/invoices/",
-      ...(note ? { subject: docWord(d.type), prefix: noteMark(d.type) } : {}),
+      ...(note ? { subject: docWord(d.type) } : {}),
     },
   });
 

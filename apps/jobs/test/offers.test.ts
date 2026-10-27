@@ -804,7 +804,7 @@ describe("approval.notify for an issue request [ADM-APR-01, ADM-MAIL-01; 07-R §
     });
   });
 
-  it("a credit or debit note names itself in both emails (M5.3: the document type, the wording marked until 07-T has it); an invoice's email carries no document_type", async () => {
+  it("a credit or debit note names itself and its invoice in both emails (M5.3: the document type and `parent_number`, 07-T §8); an invoice's email carries neither key", async () => {
     const w = await world();
     for (const [type, word] of [
       ["credit_note", "credit note"],
@@ -844,8 +844,9 @@ describe("approval.notify for an issue request [ADM-APR-01, ADM-MAIL-01; 07-R §
       expect(queued[0]?.data).toMatchObject({
         kind: "issue",
         document_type: word,
-        title: `[Placeholder] ${word} for Sample Traders`,
-        request_reason: `[Placeholder] issuing a ${word}`,
+        title: `${word} for Sample Traders`,
+        request_reason: `issuing a ${word}`,
+        parent_number: `TH/INV/9998/${word.length}`,
       });
       await run(
         "UPDATE approvals SET status = 'rejected', decided_by = ?2, decided_at = ?3 WHERE id = ?1",
@@ -857,7 +858,12 @@ describe("approval.notify for an issue request [ADM-APR-01, ADM-MAIL-01; 07-R §
       expect(
         await processApprovalNotify(makeEnv(), { kind: "approval.notify", approvalId: id, event: "decided" }),
       ).toBe("queued");
-      expect(queued[0]?.data).toMatchObject({ kind: "issue", document_type: word, decision: "Rejected" });
+      expect(queued[0]?.data).toMatchObject({
+        kind: "issue",
+        document_type: word,
+        decision: "Rejected",
+        parent_number: `TH/INV/9998/${word.length}`,
+      });
     }
     // an invoice's emails are what they were: no document_type key
     queued = [];
@@ -868,6 +874,7 @@ describe("approval.notify for an issue request [ADM-APR-01, ADM-MAIL-01; 07-R §
       event: "requested",
     });
     expect(queued[0]?.data).not.toHaveProperty("document_type");
+    expect(queued[0]?.data).not.toHaveProperty("parent_number");
     expect(queued[0]?.data).toMatchObject({
       title: "Invoice for Sample Traders",
       request_reason: "issuing an invoice",

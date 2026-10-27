@@ -15,6 +15,7 @@ import {
   DEBIT_REASONS,
   debitNoteInput,
   isNoteType,
+  NOTES_MAX,
   type NoteBlocker,
   type NoteKind,
   type NoteOf,
@@ -25,6 +26,7 @@ import {
   noteBlockers,
   noteKindOf,
 } from "@techaust/core/invoices";
+import { formatMoney, money } from "@techaust/core/money";
 import {
   type ComputedDocument,
   type CreditedSoFar,
@@ -61,7 +63,7 @@ export const PARENT_NOT_ISSUED = e(
 export const PARENT_VOID = e("parent_void", "This invoice is void, so no note can be issued against it.");
 export const PARENT_FULLY_CREDITED = e(
   "parent_fully_credited",
-  "[Placeholder] This invoice is already credited in full.",
+  "This invoice has already been credited in full.",
 );
 export const CREDIT_DEADLINE_PASSED = e(
   "credit_deadline_passed",
@@ -77,43 +79,42 @@ export const LINE_CREDIT_EXCEEDS = e(
 );
 export const NOTHING_TO_CREDIT = e("nothing_to_credit", "Choose at least one line or an amount above zero.");
 export const NOTE_REASON_REQUIRED = e("note_reason_required", "Enter a reason.");
-export const NOTE_DRAFT_EXISTS = e(
-  "note_draft_exists",
-  "[Placeholder] This invoice already has an open draft of this kind.",
-);
-export const NOTES_LIMIT = e(
-  "notes_limit",
-  "[Placeholder] This invoice already has the most notes of this kind.",
-);
+/** 07-T §8: "There's already a draft {credit/debit} note for this invoice. Open it to continue." */
+export const noteDraftExists = (kind: NoteKind): ApiError =>
+  e("note_draft_exists", `There's already a draft ${kind} note for this invoice. Open it to continue.`);
+/** 07-T §8: "This invoice already has 20 {credit/debit} notes, the most it can have." */
+export const notesLimit = (kind: NoteKind): ApiError =>
+  e("notes_limit", `This invoice already has ${NOTES_MAX} ${kind} notes, the most it can have.`);
 export const PARENT_CHANGED = e(
   "parent_changed",
-  "[Placeholder] The invoice changed while this was issued. Try again.",
+  "Another credit or debit note was issued on this invoice a moment ago. Open it again to see what's left.",
 );
 export const NOTE_LINES_DERIVED = e(
   "note_lines_derived",
-  "[Placeholder] The lines of a note come from the invoice; change the request instead.",
+  "A note's lines come from its invoice and can't be edited directly.",
 );
 export const NOTE_NOT_VOIDABLE = e(
   "note_not_voidable",
-  "[Placeholder] A credit or debit note can't be voided. Issue another note to correct it.",
+  "Credit and debit notes can't be voided. Correct a credit note with a debit note, or a debit note with a credit note.",
 );
-export const IMS_NOT_PENDING = e("ims_not_pending", "[Placeholder] This credit note was already answered.");
+export const IMS_NOT_PENDING = e("ims_not_pending", "The client's IMS response is already recorded.");
 export const IMS_NOT_APPLICABLE = e(
   "ims_not_applicable",
   "IMS status only applies to credit notes for GST-registered clients.",
 );
-export const CREDIT_AMOUNT_UNFIT = e(
-  "credit_amount_unfit",
-  "[Placeholder] That exact amount can't be credited. The closest amount below it is shown.",
-);
+/** 07-T §8: "Because of rounding, the nearest amount this credit note can be is {closest}. Use that amount instead?" (the button "Use {closest}" is the screen's). */
+export const creditAmountUnfit = (closestMinor: number | null, currency: "INR" | "USD"): ApiError =>
+  e(
+    "credit_amount_unfit",
+    closestMinor === null
+      ? "Because of rounding, this exact amount can't be credited."
+      : `Because of rounding, the nearest amount this credit note can be is ${formatMoney(money(closestMinor, currency))}. Use that amount instead?`,
+  );
 export const CREDIT_DATA_DAMAGED = e(
   "credit_shape_mismatch",
-  "[Placeholder] The credit notes stored for this invoice do not add up. A developer needs to look at it.",
+  "This credit note doesn't match its invoice any more. Start again from the invoice.",
 );
-export const ANNUAL_RETURN_FUTURE = e(
-  "annual_return_future",
-  "[Placeholder] The day a return was filed can't be in the future.",
-);
+export const ANNUAL_RETURN_FUTURE = e("annual_return_future", "The filing date can't be in the future.");
 
 // ---- what is read about the invoice a note is against -------------------------------------------------------------------------------------------
 
@@ -356,7 +357,10 @@ export function resolveCredit(
     if (r.reason === "bound")
       return refuse({
         status: 409,
-        error: CREDIT_AMOUNT_UNFIT,
+        error: creditAmountUnfit(
+          r.closest?.document.totalMinor ?? null,
+          p.computed.currency === "USD" ? "USD" : "INR",
+        ),
         extra: { closestMinor: r.closest?.document.totalMinor ?? null, remaining: left.totalLeft },
       });
     if (r.reason === "empty") return refuse({ status: 400, error: NOTHING_TO_CREDIT });
@@ -576,6 +580,7 @@ export function noteState(a: {
       reasonCode: a.note.reason.code,
       reasonText: a.note.reason.text,
       mode: a.note.request.mode,
+      grossMinor: a.note.request.grossMinor ?? null,
       takes: a.note.request.takes,
     },
   };

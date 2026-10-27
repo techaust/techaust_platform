@@ -17,6 +17,18 @@ export const FINANCE_AUDIT_ACTIONS = [
   // M4.3: an accepted estimate becomes an invoice draft or a care plan (the money side of an offer).
   "document.convert",
   "document.void",
+  // M5.1 to M5.3: every invoice action is a finance event (the lead's answer to stop 1, 2026-10-27): the draft, the issue, the void, the proforma's invoice for money
+  // received, the service date, a credit or debit note's draft, the client's IMS answer on a credit note, and the PDF re-request. Summaries hold ids, numbers, amounts and codes only.
+  "invoice.create",
+  "invoice.update",
+  "invoice.delete",
+  "invoice.issue",
+  "invoice.void",
+  "invoice.advance_issue",
+  "invoice.service_completed",
+  "invoice.note_create",
+  "invoice.ims_status",
+  "invoice.pdf_retry",
   "payment.record",
   "payment.verify",
   "refund.issue",

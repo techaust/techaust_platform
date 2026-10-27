@@ -379,7 +379,7 @@ export async function processOfferAccepted(
 // ---- approval.notify -----------------------------------------------------------------------------------------------------------
 
 const APPROVAL_READ =
-  "SELECT a.id, a.kind, a.status, a.reason, a.note, a.document_id, a.requested_by, d.title, d.version, d.total_minor, d.currency, d.catalogue_reference_minor AS reference_minor, (SELECT coalesce(sum(l.taxable_minor), 0) FROM document_lines l WHERE l.document_id = d.id AND l.catalogue_item_id IS NOT NULL) AS taxable_minor, ru.id AS requester_id, ru.email AS requester_email, ru.name AS requester_name, ru.status AS requester_status, du.name AS decider_name, d.type AS document_type, d.number_display, cl.display_name AS client_name, (cl.anonymised_at IS NOT NULL) AS client_gone FROM approvals a JOIN documents d ON d.id = a.document_id JOIN clients cl ON cl.id = d.client_id LEFT JOIN staff_users ru ON ru.id = a.requested_by LEFT JOIN staff_users du ON du.id = a.decided_by WHERE a.id = ?1";
+  "SELECT a.id, a.kind, a.status, a.reason, a.note, a.document_id, a.requested_by, d.title, d.version, d.total_minor, d.currency, d.catalogue_reference_minor AS reference_minor, (SELECT coalesce(sum(l.taxable_minor), 0) FROM document_lines l WHERE l.document_id = d.id AND l.catalogue_item_id IS NOT NULL) AS taxable_minor, ru.id AS requester_id, ru.email AS requester_email, ru.name AS requester_name, ru.status AS requester_status, du.name AS decider_name, d.type AS document_type, (SELECT p.number_display FROM documents p WHERE p.id = d.parent_id) AS parent_number, d.number_display, cl.display_name AS client_name, (cl.anonymised_at IS NOT NULL) AS client_gone FROM approvals a JOIN documents d ON d.id = a.document_id JOIN clients cl ON cl.id = d.client_id LEFT JOIN staff_users ru ON ru.id = a.requested_by LEFT JOIN staff_users du ON du.id = a.decided_by WHERE a.id = ?1";
 const OWNERS_READ =
   "SELECT id, email FROM staff_users WHERE role = 'owner' AND status = 'active' ORDER BY id";
 
@@ -396,17 +396,18 @@ type IssueApprovalFacts = {
   client_name: string;
   /** `documents.type` of the document (read by `APPROVAL_READ`): a credit or debit note carries its words in the emails (M5.3). */
   document_type?: string;
+  /** M5.3: the number of the invoice a note is against (null for an invoice; the emails of notes name it, 07-T §8). */
+  parent_number?: string | null;
 };
 
 /**
- * M5.3: the document's words in an issue email. An invoice is exactly what it was (no new key, the same strings); a credit or debit note adds `document_type` and names itself,
- * the wording marked `[Placeholder]` until 07-T has the lines (the templates' variants are the designer's, `@techaust/email`).
+ * M5.3: the document's words in an issue email. An invoice is exactly what it was (no new key, the same strings); a credit or debit note adds `document_type` and
+ * `parent_number` (07-T §8: the approval email names the invoice) and names itself in `title` and `request_reason` (the templates' variants are the designer's, `@techaust/email`).
  */
 const noteWords = (a: IssueApprovalFacts) =>
   a.document_type === "credit_note" || a.document_type === "debit_note"
     ? {
         documentType: a.document_type === "credit_note" ? "credit note" : "debit note",
-        marked: "[Placeholder] ",
       }
     : null;
 
@@ -428,13 +429,13 @@ const issueRequestedEmail = (
     kind: "issue",
     requester_name: a.requester_name ?? "",
     client_name: a.client_name,
-    request_reason: noteWords(a)
-      ? `${noteWords(a)?.marked}issuing a ${noteWords(a)?.documentType}`
-      : "issuing an invoice",
+    request_reason: noteWords(a) ? `issuing a ${noteWords(a)?.documentType}` : "issuing an invoice",
     title: noteWords(a)
-      ? `${noteWords(a)?.marked}${noteWords(a)?.documentType} for ${a.client_name}`
+      ? `${noteWords(a)?.documentType} for ${a.client_name}`
       : `Invoice for ${a.client_name}`,
-    ...(noteWords(a) ? { document_type: noteWords(a)?.documentType ?? "" } : {}),
+    ...(noteWords(a)
+      ? { document_type: noteWords(a)?.documentType ?? "", parent_number: a.parent_number ?? "" }
+      : {}),
     version: "1",
     amount: formatMoney(money(a.total_minor, a.currency === "USD" ? "USD" : "INR")),
     admin_url: `${adminBase(env)}/approvals/${approvalId}?kind=issue`,
@@ -458,9 +459,11 @@ const issueDecidedEmail = (
     // The number exists only once the invoice was issued (an approved request); a rejected one has none.
     number: a.status === "approved" ? (a.number_display ?? "") : "",
     title: noteWords(a)
-      ? `${noteWords(a)?.marked}${noteWords(a)?.documentType} for ${a.client_name}`
+      ? `${noteWords(a)?.documentType} for ${a.client_name}`
       : `Invoice for ${a.client_name}`,
-    ...(noteWords(a) ? { document_type: noteWords(a)?.documentType ?? "" } : {}),
+    ...(noteWords(a)
+      ? { document_type: noteWords(a)?.documentType ?? "", parent_number: a.parent_number ?? "" }
+      : {}),
     version: "1",
     decision_note: a.note ?? "",
     admin_url: `${adminBase(env)}/invoices/${a.document_id}`,
@@ -498,6 +501,7 @@ export async function processApprovalNotify(env: OfferEnv, body: unknown): Promi
         requester_status: string | null;
         decider_name: string | null;
         number_display: string | null;
+        parent_number: string | null;
         client_name: string;
         client_gone: number;
       }

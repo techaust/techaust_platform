@@ -7,6 +7,7 @@ import {
   dueDateOf,
   imsStatusAtIssue,
   issueDateOf,
+  NOTES_MAX,
   type NoteBlocker,
   type NoteOf,
   noteKindOf,
@@ -31,11 +32,11 @@ import {
   deadlineOf,
   isLiveParentStatus,
   NOTE_PARENT_READS,
-  NOTES_LIMIT,
   noteComputation,
   noteLines,
   noteOfOf,
   noteState,
+  notesLimit,
   PARENT_CHANGED,
   PARENT_FULLY_CREDITED,
   PARENT_NOT_ISSUED,
@@ -220,7 +221,7 @@ export async function explainNote(
     return c.json({ error: CREDIT_DEADLINE_PASSED, date: x.deadline.lastDay, request_id: c.var.rid }, 409);
   if (row.updated_at !== x.expectedParentUpdatedAt || row.credited_minor !== x.expectedParentCredited)
     return err(c, PARENT_CHANGED, 409);
-  if (row.n >= 20) return err(c, NOTES_LIMIT, 409);
+  if (row.n >= NOTES_MAX) return err(c, notesLimit(d.kind), 409);
   return null;
 }
 

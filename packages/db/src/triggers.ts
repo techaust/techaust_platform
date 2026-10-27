@@ -729,7 +729,9 @@ export function invoiceTypeTriggerStatements(): string[] {
  *   4. `documents_ledger_bounds`: `credited_minor` is between 0 and the total, and `balance_minor` is never negative;
  *   5. `documents_note_no_void`: a credit or debit note is never voided (Q31: a wrong note is corrected by another note);
  *   6. `documents_ims_status_insert` / `_update`: `ims_status` starts empty; only a credit note gets one, set once at the freeze (`pending`, or
- *      `not_applicable`), and a `pending` one moves once to `accepted` or `rejected` (core `canSetImsStatus` is the twin).
+ *      `not_applicable`), and a `pending` one moves once to `accepted` or `rejected` (core `canSetImsStatus` is the twin);
+ *   7. `documents_credit_note_ims_required`: a credit note cannot freeze with an empty IMS status (the freeze sets it; the update trigger above only
+ *      looks when `ims_status` changes, so an empty one would pass unseen).
  */
 export function noteTriggerStatements(): string[] {
   const named = (name: string, message: string) => abort(`${name}: ${message}`);
@@ -754,6 +756,7 @@ export function noteTriggerStatements(): string[] {
   const imsMove =
     "(OLD.ims_status IS NULL AND NEW.ims_status IN ('pending', 'not_applicable') AND OLD.type = 'credit_note' AND OLD.frozen_at IS NULL AND NEW.frozen_at IS NOT NULL) OR (OLD.ims_status IS 'pending' AND NEW.ims_status IN ('accepted', 'rejected') AND OLD.type = 'credit_note' AND OLD.frozen_at IS NOT NULL)";
   const imsBad = `NEW.ims_status IS NOT OLD.ims_status AND NOT coalesce(${imsMove}, 0)`;
+  const imsRequiredMsg = "a credit note is issued with its IMS status set (pending or not applicable)";
   const parentMsg = "a credit or debit note names its invoice";
   const imsMsg =
     "the IMS status is set once at the issue of a credit note, and a pending one is answered once";
@@ -766,6 +769,7 @@ export function noteTriggerStatements(): string[] {
     `CREATE TRIGGER \`documents_note_no_void\` BEFORE UPDATE OF status ON \`documents\` WHEN NEW.status = 'void' AND OLD.type IN ${notes} BEGIN ${named("documents_note_no_void", "a credit or debit note is never voided")} END;`,
     `CREATE TRIGGER \`documents_ims_status_insert\` BEFORE INSERT ON \`documents\` WHEN NEW.ims_status IS NOT NULL BEGIN ${named("documents_ims_status_insert", imsMsg)} END;`,
     `CREATE TRIGGER \`documents_ims_status_update\` BEFORE UPDATE OF ims_status ON \`documents\` WHEN ${imsBad} BEGIN ${named("documents_ims_status_update", imsMsg)} END;`,
+    `CREATE TRIGGER \`documents_credit_note_ims_required\` BEFORE UPDATE OF status ON \`documents\` WHEN ${issuing} AND NEW.type = 'credit_note' AND NEW.ims_status IS NULL BEGIN ${named("documents_credit_note_ims_required", imsRequiredMsg)} END;`,
   ];
 }
 
@@ -816,7 +820,7 @@ export const TRIGGER_SETS = {
     statements: invoiceTypeTriggerStatements,
   },
   note_triggers: {
-    what: "credit and debit notes: parent required, issue check, credit cap, ledger bounds, no void, IMS status (M5.3)",
+    what: "credit and debit notes: parent required, issue check, credit cap, ledger bounds, no void, IMS status and its presence at the freeze (M5.3)",
     statements: noteTriggerStatements,
   },
 } as const;

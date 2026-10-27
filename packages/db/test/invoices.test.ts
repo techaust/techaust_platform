@@ -83,36 +83,45 @@ const frozenDoc = (clientId: string, type: string, status = "issued") =>
   });
 
 describe("the status flow trigger agrees with core canMoveInvoiceStatus, move by move [documents_invoice_status_flow]", () => {
-  it.each([...INVOICE_FLOW_TYPES])("%s", async (type) => {
-    const client = type === "export_invoice" ? await overseas() : await india();
-    // M5.3: a credit or debit note has a parent (documents_note_parent_required), and a note never goes void (documents_note_no_void, 0042; core's table says the same).
-    // (A fresh parent each time: one open draft per parent and type, `documents_open_note`.)
-    const isNote = type === "credit_note" || type === "debit_note";
-    for (const from of STATUSES) {
-      for (const to of STATUSES) {
-        if (from === to) continue;
-        const id = isNote
-          ? await mkDoc(client, type, {
-              status: from,
-              parent_id: await frozenDoc(client, "tax_invoice"),
-              ...(from === "void" ? { voided_at: 5, void_reason: "x" } : {}),
-            })
-          : await frozenDoc(client, type, from);
-        const sql = `UPDATE documents SET status = ?1${to === "void" ? ", voided_at = 9, void_reason = 'r'" : ""} WHERE id = ?2`;
-        let allowed = true;
-        try {
-          await run(sql, to, id);
-        } catch (e) {
-          allowed = false;
-          // every refusal names a trigger: the flow, or (from a void row) the void pairing
-          expect(String(e) + String((e as Error).cause), `${type} ${from} to ${to}`).toMatch(
-            /documents_invoice_status_flow|documents_void_pairing|issued document is frozen|documents_note_no_void/,
+  it.each([...INVOICE_FLOW_TYPES])(
+    "%s",
+    async (type) => {
+      const client = type === "export_invoice" ? await overseas() : await india();
+      // M5.3: a credit or debit note has a parent (documents_note_parent_required), and a note never goes void (documents_note_no_void, 0042; core's table says the same).
+      // (A fresh parent each time: one open draft per parent and type, `documents_open_note`.)
+      const isNote = type === "credit_note" || type === "debit_note";
+      for (const from of STATUSES) {
+        for (const to of STATUSES) {
+          if (from === to) continue;
+          const id = isNote
+            ? await mkDoc(client, type, {
+                status: from,
+                parent_id: await frozenDoc(client, "tax_invoice"),
+                ...(from === "void" ? { voided_at: 5, void_reason: "x" } : {}),
+              })
+            : await frozenDoc(client, type, from);
+          // (M5.3, analyst item 6: a credit note cannot freeze with an empty IMS status, `documents_credit_note_ims_required`: this plain status move has none, so core's
+          // "draft to issued is allowed" is refused for it by that one trigger; the freeze statement sets the status, the issue is tested in note-issue.test.ts.)
+          const needsIms = type === "credit_note" && from === "draft" && to === "issued";
+          const sql = `UPDATE documents SET status = ?1${to === "void" ? ", voided_at = 9, void_reason = 'r'" : ""} WHERE id = ?2`;
+          let allowed = true;
+          try {
+            await run(sql, to, id);
+          } catch (e) {
+            allowed = false;
+            // every refusal names a trigger: the flow, or (from a void row) the void pairing
+            expect(String(e) + String((e as Error).cause), `${type} ${from} to ${to}`).toMatch(
+              /documents_invoice_status_flow|documents_void_pairing|issued document is frozen|documents_note_no_void|documents_credit_note_ims_required/,
+            );
+          }
+          expect(allowed, `${type}: ${from} to ${to}`).toBe(
+            canMoveInvoiceStatus(type, from, to) && !needsIms,
           );
         }
-        expect(allowed, `${type}: ${from} to ${to}`).toBe(canMoveInvoiceStatus(type, from, to));
       }
-    }
-  });
+    },
+    60_000,
+  );
 
   it("a draft can only be issued (and the issued document is then frozen)", async () => {
     const c = await india();

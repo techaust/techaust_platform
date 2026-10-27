@@ -42,18 +42,18 @@ import {
   IMS_NOT_PENDING,
   isLiveParentStatus,
   isNoteParentType,
-  NOTE_DRAFT_EXISTS,
   NOTE_LINES_DERIVED,
   NOTE_PARENT_READS,
   NOTE_REASON_REQUIRED,
-  NOTES_LIMIT,
   type NoteAsk,
   type NoteRefusal,
   noteComputation,
+  noteDraftExists,
   noteHeaderExtras,
   noteLines,
   noteOfOf,
   noteState,
+  notesLimit,
   PARENT_FULLY_CREDITED,
   PARENT_NOT_ISSUED,
   PARENT_READS,
@@ -188,7 +188,9 @@ const previewOf = (c: NonNullable<Awaited<ReturnType<typeof noteComputation>>["c
   },
   supply: c.supply,
   lines: c.lines.map((l) => ({
-    againstLine: l.index,
+    /** The invoice line this takes from, as it is numbered on the invoice (1-based, "Against line {n}", 07-T §8); `line` is the same line's key in a request (0-based). */
+    againstLine: l.index + 1,
+    line: l.index,
     taxableMinor: l.taxableMinor,
     cgstMinor: l.cgstMinor,
     sgstMinor: l.sgstMinor,
@@ -222,10 +224,10 @@ async function explainCreate(
     );
   if (row.gone === 1) return err(c, CLIENT_GONE, 409);
   if (row.draft !== null)
-    return c.json({ error: NOTE_DRAFT_EXISTS, draftId: row.draft, request_id: c.var.rid }, 409);
-  if (row.issued >= NOTES_MAX) return err(c, NOTES_LIMIT, 409);
+    return c.json({ error: noteDraftExists(kind), draftId: row.draft, request_id: c.var.rid }, 409);
+  if (row.issued >= NOTES_MAX) return err(c, notesLimit(kind), 409);
   if (!x.deadlineOk) return err(c, CREDIT_DEADLINE_PASSED, 409);
-  if (row.updated_at !== x.expectedUpdatedAt) return err(c, STALE_VERSION, 409);
+  // The invoice moved since it was read, or nothing explains the refusal: the same answer, a stale version.
   return err(c, STALE_VERSION, 409);
 }
 
@@ -269,8 +271,10 @@ async function createNote(c: Ctx, kind: NoteKind, parentId: string, f: CreateBod
   const first = parentRefusal(kind, p, client);
   if (first) return refuse(c, first);
   const open = kind === "credit" ? p.drafts.credit : p.drafts.debit;
-  if (open !== null) return c.json({ error: NOTE_DRAFT_EXISTS, draftId: open, request_id: c.var.rid }, 409);
-  if ((kind === "credit" ? p.issued.credit : p.issued.debit) >= NOTES_MAX) return err(c, NOTES_LIMIT, 409);
+  if (open !== null)
+    return c.json({ error: noteDraftExists(kind), draftId: open, request_id: c.var.rid }, 409);
+  if ((kind === "credit" ? p.issued.credit : p.issued.debit) >= NOTES_MAX)
+    return err(c, notesLimit(kind), 409);
   if (f.expectedParentUpdatedAt !== p.row.updated_at) return err(c, STALE_VERSION, 409);
   const contact = (contactR?.results[0] as ContactRow | undefined) ?? null;
   if (f.contactId) {
@@ -354,7 +358,7 @@ async function createNote(c: Ctx, kind: NoteKind, parentId: string, f: CreateBod
   } catch (e) {
     // A second open draft of this kind (made in the meantime): the partial unique key.
     if (isUnique(e, "documents.parent_id, documents.type"))
-      return c.json({ error: NOTE_DRAFT_EXISTS, request_id: c.var.rid }, 409);
+      return c.json({ error: noteDraftExists(kind), request_id: c.var.rid }, 409);
     if (refusedWith(e, /documents_contact_scope/)) return err(c, CONTACT_INVALID, 400);
     throw e;
   }
@@ -434,6 +438,8 @@ export async function patchNoteDraft(
   )
     return err(c, BAD_REQUEST, 400);
   const kind = noteKindOf(doc.type as "credit_note" | "debit_note");
+  // A debit note's request is its lines only: a mode that asks for an amount or the whole invoice is not one.
+  if (kind === "debit" && fl?.note && fl.note.mode !== "lines") return err(c, BAD_REQUEST, 400);
   const stored = storedNoteOf(doc);
   const extraContact = fl?.contactId
     ? db.prepare(`SELECT ${CONTACT_COLS} FROM contacts WHERE id = ?1`).bind(fl.contactId)

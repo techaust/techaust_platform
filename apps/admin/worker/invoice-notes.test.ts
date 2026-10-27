@@ -924,13 +924,13 @@ describe("roles and the approval of a note [ADM-APR-01/02, LD38]", () => {
     const asked = await requestIssue(staff, d.id, "Client agreed");
     expect(asked.status, await asked.clone().text()).toBe(201);
     const approvalId = (await json(asked)).id as string;
-    // an owner bell names the document type (07-T §8 wording pending)
+    // an owner bell names the document type in 07-T §8's words
     const bell = await one<{ title: string }>(
       "SELECT title FROM notifications WHERE entity_id = ? AND kind = 'approval.requested' LIMIT 1",
       approvalId,
     );
-    expect(bell?.title).toContain("credit note");
-    expect(bell?.title).toContain("[Placeholder]");
+    expect(bell?.title).toMatch(/^.+ asked you to issue a credit note for .+\.$/);
+    expect(bell?.title).not.toContain("[Placeholder]");
     // editing expires the request
     const doc = await getInvoice(staff, d.id);
     const edited = await call(`/invoices/${d.id}`, {

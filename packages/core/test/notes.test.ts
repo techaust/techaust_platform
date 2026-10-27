@@ -558,6 +558,50 @@ describe("creditForGross: the bound that cannot always hold [LD44]", () => {
     expect(more.ok).toBe(false);
   });
 
+  it("every bound case of a seeded hunt: typing the closest total works and gives exactly that note (analyst item 1)", () => {
+    // A small deterministic generator (the hunt must be the same on every machine): USD invoices of 6 to 12 lines at mixed rates, many amounts each.
+    let seed = 20_261_027;
+    const next = (max: number): number => {
+      seed = (Math.imul(seed, 1_103_515_245) + 12_345) >>> 0;
+      return seed % max;
+    };
+    const bps = [0, 500, 1200, 1800, 2800];
+    let found = 0;
+    for (let inv = 0; inv < 60; inv++) {
+      const n = 6 + next(7);
+      const o = good(
+        computeDocument(
+          {
+            currency: "USD",
+            documentDate: DATE,
+            recipient: OVERSEAS_US,
+            exportMode: "igst_paid",
+            lines: Array.from({ length: n }, () =>
+              line(1_000 + next(90_000_000), { gstRateBp: bps[next(bps.length)] ?? 0 }),
+            ),
+            fx: { rateMicros: 1_000_000 + next(200_000_000) },
+          },
+          EXPORT_IGST,
+        ),
+      );
+      const so = none(n, true);
+      for (let a = 0; a < 400; a++) {
+        const gross = 1_000 + next(Math.max(1, o.totalMinor - 2_000));
+        const r = creditForGross(o, so, gross, EXPORT_IGST);
+        if (r.ok || r.reason !== "bound") continue;
+        found++;
+        const total = r.closest?.document.totalMinor ?? 0;
+        const again = creditForGross(o, so, total, EXPORT_IGST);
+        expect(again.ok, `closest ${total} for G=${gross}`).toBe(true);
+        if (again.ok) {
+          expect(again.document.totalMinor).toBe(total);
+          expect(again.gapMinor).toBe(0);
+        }
+      }
+    }
+    expect(found, "the hunt must find bound cases or it proves nothing").toBeGreaterThan(0);
+  });
+
   it("with fewer runs than it needs it still refuses honestly (never a total above the amount)", () => {
     const o = good(inrDoc(REG_MH, [line(1_000_000), line(500_000, { sac: "998313" })]));
     const r = creditForGross(o, none(2), 1_769_999, DEFAULTS, 1);
@@ -637,6 +681,14 @@ describe("property: creditForGross over random invoices and note sequences (1 to
                 expect(r.closest?.document.totalMinor).toBeLessThanOrEqual(gross);
                 expect(r.closest?.gapMinor).toBeGreaterThan(unit);
                 expect(r.closest?.gapMinor).toBeLessThanOrEqual(4 * unit);
+                // "Use {closest}" (the screen offers the closest amount): typing it must work and give exactly that note (analyst item 1)
+                const closestTotal = r.closest?.document.totalMinor ?? 0;
+                const again = creditForGross(o, so, closestTotal, ctx);
+                expect(again.ok, `closest ${closestTotal} for G=${gross}`).toBe(true);
+                if (again.ok) {
+                  expect(again.document.totalMinor).toBe(closestTotal);
+                  expect(again.gapMinor).toBe(0);
+                }
               } else {
                 // otherwise only an amount too small to buy any credit is refused
                 expect(r.reason, `G=${gross}`).toBe("empty");
@@ -876,6 +928,7 @@ describe("the content hash of a note [LD39]", () => {
       { reasonCode: "other" },
       { reasonText: "x" },
       { mode: "full" },
+      { grossMinor: 118_000 },
       { takes: [{ line: 1, taxableMinor: 5_000 }] },
       { takes: [{ line: 0, taxableMinor: 5_001 }] },
     ])
@@ -897,7 +950,11 @@ describe("the content hash of a note [LD39]", () => {
       "totals",
       "v",
     ]);
-    expect(input.note).toEqual(["p1", "credit", "price_correction", "", "lines", [[0, 5_000]]]);
+    expect(input.note).toEqual(["p1", "credit", "price_correction", "", "lines", null, [[0, 5_000]]]);
+    // the amount typed in amount mode is part of the tuple (review item 2)
+    expect(
+      contentHashInput(draft({ note: { ...note, mode: "amount", grossMinor: 118_000 } }), null).note,
+    ).toEqual(["p1", "credit", "price_correction", "", "amount", 118_000, [[0, 5_000]]]);
   });
 });
 

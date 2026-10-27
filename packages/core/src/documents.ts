@@ -269,6 +269,8 @@ export type DraftContent = {
         readonly reasonCode: string;
         readonly reasonText: string;
         readonly mode: string;
+        /** The amount typed (GST included) in amount mode, else null: the way a note was asked is part of what is hashed (review item 2). */
+        readonly grossMinor?: number | null | undefined;
         readonly takes: readonly { readonly line: number; readonly taxableMinor: number }[];
       }
     | null
@@ -329,6 +331,7 @@ export function contentHashInput(draft: DraftContent, computed: ComputedDocument
             draft.note.reasonCode,
             draft.note.reasonText,
             draft.note.mode,
+            draft.note.grossMinor ?? null,
             draft.note.takes.map((t) => [t.line, t.taxableMinor]),
           ],
         }

@@ -651,10 +651,13 @@ export const invoices = new Hono<AppEnv>()
   .get("/:id", param(idParam), async (c) => {
     const id = c.req.valid("param").id;
     const db = c.env.DB;
-    // The newest extra export note, the documents made from it (a proforma's tax invoices), and who voided it: only what the screen needs.
+    // The newest extra export note, the documents made from it (a proforma's tax invoices), and who voided it: only what the screen needs. M5.3: the reads of an invoice's
+    // notes (4) and of a note's invoice (6) ride the same D1 batch (one call, whatever the type is): each is keyed by this id and matches nothing for the other types.
     const ctx = await readInvoice(c, id, [
       db.prepare(NEWEST_EXPORT_DECLARATION),
       db.prepare(CHILDREN_OF_SQL).bind(id),
+      ...NOTES_VIEW_READS.map((sql) => db.prepare(sql).bind(id)),
+      ...parentStatements(db, NOTE_PARENT_READS, id),
     ]);
     if (!ctx) return err(c, NOT_FOUND, 404);
     const d = ctx.bundle.document;
@@ -666,7 +669,7 @@ export const invoices = new Hono<AppEnv>()
     let noteBlockers: ReturnType<typeof blockersOfNote> | undefined;
     let computation: Awaited<ReturnType<typeof computeInvoice>> | null = null;
     if (isNoteType(d.type)) {
-      const p = parentCtxOf(await db.batch(parentStatements(db, NOTE_PARENT_READS, id)));
+      const p = parentCtxOf(ctx.extra.slice(2 + NOTES_VIEW_READS.length));
       const stored = storedNoteOf(d);
       notePart = noteView({ bundle: ctx.bundle, role, stored, parent: p });
       if (d.frozen_at === null && p && stored) {
@@ -694,7 +697,7 @@ export const invoices = new Hono<AppEnv>()
         });
       }
     } else if (isNoteParentType(d.type) && d.frozen_at !== null) {
-      const results = await db.batch(NOTES_VIEW_READS.map((sql) => db.prepare(sql).bind(id)));
+      const results = ctx.extra.slice(2, 2 + NOTES_VIEW_READS.length);
       notesPart = invoiceNotesView({
         bundle: ctx.bundle,
         role,

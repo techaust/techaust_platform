@@ -506,6 +506,7 @@ export function noteContentOf(d: Pick<DocumentRow, "type" | "header_extras">): D
         reasonCode: n.reason.code,
         reasonText: n.reason.text,
         mode: n.request.mode,
+        grossMinor: n.request.grossMinor ?? null,
         takes: n.request.takes,
       }
     : null;

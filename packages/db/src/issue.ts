@@ -264,7 +264,7 @@ export type InvoiceIssueArgs = {
   authority: IssueAuthority;
   /**
    * The requester's bell when an issue request was waiting (07-R: "Your invoice for {client name} was issued as {number}."): the client's name, and the link up to
-   * the id. M5.3: `subject` is the document's word ("invoice" by default, "credit note" or "debit note") and `prefix` marks wording 07-T has no line for yet.
+   * the id. M5.3: `subject` is the document's word ("invoice" by default, "credit note" or "debit note") and `prefix` (empty now: 07-T §8 has every line) is kept for a wording that is not approved yet.
    */
   bell: { clientName: string; linkPrefix: string; subject?: string; prefix?: string };
 };
@@ -483,12 +483,13 @@ export function invoiceIssueStatements(db: D1Database, a: InvoiceIssueArgs): Sen
         ),
       // M5.3 (LD41): a CREDIT note reduces what its invoice is owed, in this same batch and only for the document this very batch froze. The credited total is
       // RECOMPUTED from the issued, not void credit notes (never incremented: a replay or a concurrent note cannot double count), then the balance and the status
-      // follow from it (core `ledgerStatusOf` is the twin of the CASE; a refund due is derived, M6). A debit note moves nothing on its invoice (LD42).
+      // follow from it (core `ledgerStatusOf` is the twin of the CASE; a refund due is derived, M6). The invoice's `updated_at` always MOVES (`max(now, old + 1)`): two
+      // notes in one millisecond must not leave the stamp a stale draft read. A debit note moves nothing on its invoice (LD42).
       ...(a.note && a.note.kind === "credit"
         ? [
             db
               .prepare(
-                `UPDATE documents SET credited_minor = (SELECT coalesce(sum(c.total_minor), 0) FROM documents c WHERE c.parent_id = ?3 AND c.type = 'credit_note' AND c.frozen_at IS NOT NULL AND c.status <> 'void'), updated_at = ?2
+                `UPDATE documents SET credited_minor = (SELECT coalesce(sum(c.total_minor), 0) FROM documents c WHERE c.parent_id = ?3 AND c.type = 'credit_note' AND c.frozen_at IS NOT NULL AND c.status <> 'void'), updated_at = max(?2, updated_at + 1)
                  WHERE id = ?3 AND ${FROZEN_BY_THIS_BATCH}`,
               )
               .bind(a.documentId, a.now, a.note.parentId),

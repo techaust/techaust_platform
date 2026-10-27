@@ -57,6 +57,7 @@ describe("migrations 0041 and 0042 [LD46, LD39]", () => {
       "documents_note_no_void",
       "documents_ims_status_insert",
       "documents_ims_status_update",
+      "documents_credit_note_ims_required",
     ]);
     // every abort message starts with its trigger's name
     for (const s of noteTriggerStatements()) {
@@ -116,6 +117,23 @@ describe("the note freeze [documents_note_issue_check, documents_credit_note_cap
     expect(after?.balance_minor).toBe(p.computed.totalMinor - d.computed.totalMinor);
     expect(after?.status).toBe("partially_credited");
     expect(after?.updated_at).toBeGreaterThan(p.updatedAt);
+  });
+
+  it("the invoice's updated_at always moves, even when the issue instant is not after it (two notes in one millisecond; analyst item 3)", async () => {
+    const p = await parentInvoice();
+    const before = (await parentState(p.id))?.updated_at ?? 0;
+    const d = await insertNoteDraft(p, "credit", sampleCredit(p, [[0, 10_000]]));
+    // the issue instant is BEFORE the stamp the invoice already has: max(now, old + 1) still moves it forward
+    await issueNote(p, d, "credit", { now: before - 5_000 });
+    expect((await parentState(p.id))?.updated_at).toBe(before + 1);
+    // and a later instant wins when it is the larger
+    const d2 = await insertNoteDraft(
+      p,
+      "credit",
+      sampleCredit(p, [[0, 10_000]], await creditedBySql(p.id, p.computed)),
+    );
+    await issueNote(p, d2, "credit", { now: before + 9_000 });
+    expect((await parentState(p.id))?.updated_at).toBe(before + 9_000);
   });
 
   it("the whole invoice credited in two notes ends `credited` with credited = total and balance 0", async () => {
@@ -230,7 +248,7 @@ describe("the note freeze [documents_note_issue_check, documents_credit_note_cap
     // by hand, past the statement: the trigger refuses
     await rejects(
       run(
-        "UPDATE documents SET status = 'issued', frozen_at = 99, series = 'creditNote', fy = ?, number = 77, number_display = 'X/77' WHERE id = ?",
+        "UPDATE documents SET status = 'issued', frozen_at = 99, ims_status = 'pending', series = 'creditNote', fy = ?, number = 77, number_display = 'X/77' WHERE id = ?",
         p.fy,
         y.id,
       ),
@@ -247,7 +265,7 @@ describe("the note freeze [documents_note_issue_check, documents_credit_note_cap
     await run("UPDATE documents SET cgst_minor = ? WHERE id = ?", p.computed.cgstMinor + 1, d.id);
     await rejects(
       run(
-        "UPDATE documents SET status = 'issued', frozen_at = 99, series = 'creditNote', fy = ?, number = 1, number_display = 'X/2' WHERE id = ?",
+        "UPDATE documents SET status = 'issued', frozen_at = 99, ims_status = 'pending', series = 'creditNote', fy = ?, number = 1, number_display = 'X/2' WHERE id = ?",
         p.fy,
         d.id,
       ),
@@ -430,11 +448,16 @@ describe("documents_ledger_bounds, documents_note_no_void", () => {
 
 describe("IMS status [documents_ims_status_*, LD46]: the trigger and core canSetImsStatus agree, move by move", () => {
   it("after the freeze: only pending moves, once, to accepted or rejected", async () => {
-    // every state a credit note can be in: issued with null (not a credit-note path, only to show nothing moves), pending, not_applicable, accepted, rejected
+    // every state: empty (a credit note can no longer freeze with it, analyst item 6, so the empty state is a DEBIT note's: nothing moves it), pending, not_applicable, accepted, rejected
     const reach = async (from: string | null) => {
       const p = await parentInvoice();
+      if (from === null) {
+        const dn = await insertNoteDraft(p, "debit", p.computed);
+        await issueNote(p, dn, "debit");
+        return dn.id;
+      }
       const d = await insertNoteDraft(p, "credit", sampleCredit(p, [[0, 10_000]]));
-      const issuedWith = from === "not_applicable" ? "not_applicable" : from === null ? null : "pending";
+      const issuedWith = from === "not_applicable" ? "not_applicable" : "pending";
       await issueNote(p, d, "credit", { imsStatus: issuedWith });
       if (from === "accepted" || from === "rejected")
         await run("UPDATE documents SET ims_status = ? WHERE id = ?", from, d.id);
@@ -460,6 +483,11 @@ describe("IMS status [documents_ims_status_*, LD46]: the trigger and core canSet
     const p = await parentInvoice();
     const d = await insertNoteDraft(p, "credit", sampleCredit(p, [[0, 10_000]]));
     await rejects(issueNote(p, d, "credit", { imsStatus: "accepted" }), /documents_ims_status_update/);
+    // a credit note cannot freeze with an empty IMS status at all (analyst item 6): the update trigger only looks when the column changes
+    await rejects(issueNote(p, d, "credit", { imsStatus: null }), /documents_credit_note_ims_required/);
+    expect((await first<{ status: string }>("SELECT status FROM documents WHERE id = ?", d.id))?.status).toBe(
+      "draft",
+    );
     await rejects(
       issueNote(p, await insertNoteDraft(p, "debit", p.computed), "debit", { imsStatus: "pending" }),
       /documents_ims_status_update/,
