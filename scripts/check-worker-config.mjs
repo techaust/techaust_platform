@@ -103,6 +103,42 @@ export function frontServiceProblems(front, api) {
   return problems;
 }
 
+/** The two cron expressions of the jobs Worker since M5.4 (LD61): the daily run at 22:00 UTC and the hourly tick at :30 UTC (the top of every IST hour). */
+export const JOBS_CRONS = ["0 22 * * *", "30 * * * *"];
+
+/**
+ * The jobs Worker's M5.4 wiring (LD57, LD61): in the top level and in `env.staging` both crons and the ADMIN_JOBS service binding to the admin API Worker's `BillingJobs` entrypoint
+ * (the API config's Worker name for that scope); in `env.production` NEITHER (production has no D1, queues or admin API until Phase 7, and a production binding to a Worker that
+ * does not exist would fail the deploy). Empty = passes.
+ */
+export function jobsConfigProblems(jobs, api) {
+  const problems = [];
+  for (const [scope, c] of SCOPES(jobs)) {
+    if (!c) {
+      problems.push(`${scope}: missing`);
+      continue;
+    }
+    const crons = JSON.stringify(c.triggers?.crons ?? []);
+    const bound = (c.services ?? []).find((x) => x.binding === "ADMIN_JOBS");
+    if (scope === "env.production") {
+      if (c.triggers !== undefined) problems.push(`${scope}: no cron triggers until Phase 7`);
+      if (bound) problems.push(`${scope}: no ADMIN_JOBS service binding until Phase 7`);
+      continue;
+    }
+    if (crons !== JSON.stringify(JOBS_CRONS))
+      problems.push(`${scope}: crons must be exactly ${JSON.stringify(JOBS_CRONS)}`);
+    const want = SCOPES(api).find(([n]) => n === scope)?.[1]?.name;
+    if (!bound) problems.push(`${scope}: the ADMIN_JOBS service binding is missing`);
+    else {
+      if (bound.service !== want)
+        problems.push(`${scope}: ADMIN_JOBS points at ${bound.service}, expected ${want}`);
+      if (bound.entrypoint !== "BillingJobs")
+        problems.push(`${scope}: ADMIN_JOBS must name the entrypoint BillingJobs`);
+    }
+  }
+  return problems;
+}
+
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
   let failed = false;
   for (const app of APPS) {
@@ -127,6 +163,10 @@ if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.m
   const front = read("admin/wrangler.jsonc");
   for (const p of [...apiConfigProblems(api, front), ...frontServiceProblems(front, api)]) {
     console.error(`apps/admin: ${p}`);
+    failed = true;
+  }
+  for (const p of jobsConfigProblems(read("jobs/wrangler.jsonc"), api)) {
+    console.error(`apps/jobs: ${p}`);
     failed = true;
   }
   if (failed) process.exit(1);
