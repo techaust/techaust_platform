@@ -37,6 +37,7 @@ import {
   ANNUAL_RETURN_FUTURE,
   CREDIT_DEADLINE_PASSED,
   creditAllowed,
+  DEBIT_PARENT_FULLY_CREDITED,
   deadlineOf,
   IMS_NOT_APPLICABLE,
   IMS_NOT_PENDING,
@@ -54,7 +55,6 @@ import {
   noteOfOf,
   noteState,
   notesLimit,
-  DEBIT_PARENT_FULLY_CREDITED,
   PARENT_FULLY_CREDITED,
   PARENT_NOT_ISSUED,
   PARENT_READS,
@@ -204,12 +204,7 @@ const previewOf = (
 });
 
 /** The draft was not written: one read says why (the invoice moved, went void, the client went, a draft appeared meanwhile, the limit, the deadline). */
-async function explainCreate(
-  c: Ctx,
-  kind: NoteKind,
-  parentId: string,
-  x: { expectedUpdatedAt: number; deadlineOk: boolean },
-): Promise<Response> {
+async function explainCreate(c: Ctx, kind: NoteKind, parentId: string): Promise<Response> {
   const row = await c.env.DB.prepare(
     `SELECT p.status, p.updated_at, ${clientGoneSql("p.client_id")} AS gone,
        (SELECT d.id FROM documents d WHERE d.parent_id = p.id AND d.type = ?2 AND d.frozen_at IS NULL) AS draft,
@@ -234,7 +229,6 @@ async function explainCreate(
   if (row.draft !== null)
     return c.json({ error: noteDraftExists(kind), draftId: row.draft, request_id: c.var.rid }, 409);
   if (row.issued >= NOTES_MAX) return err(c, notesLimit(kind), 409);
-  if (!x.deadlineOk) return err(c, CREDIT_DEADLINE_PASSED, 409);
   // The invoice moved since it was read, or nothing explains the refusal: the same answer, a stale version.
   return err(c, STALE_VERSION, 409);
 }
@@ -365,13 +359,11 @@ async function createNote(c: Ctx, kind: NoteKind, parentId: string, f: CreateBod
     });
   } catch (e) {
     // A second open draft of this kind (made in the meantime): the partial unique key.
-    if (isUnique(e, "documents.parent_id, documents.type"))
-      return c.json({ error: noteDraftExists(kind), request_id: c.var.rid }, 409);
+    if (isUnique(e, "documents.parent_id, documents.type")) return explainCreate(c, kind, parentId);
     if (refusedWith(e, /documents_contact_scope/)) return err(c, CONTACT_INVALID, 400);
     throw e;
   }
-  if (!done)
-    return explainCreate(c, kind, parentId, { expectedUpdatedAt: p.row.updated_at, deadlineOk: true });
+  if (!done) return explainCreate(c, kind, parentId);
   return c.json(
     {
       id,
@@ -459,17 +451,14 @@ export async function patchNoteDraft(
   if (refused) return refuse(c, refused);
 
   let contactId = doc.contact_id;
-  let contact: ContactFacts | null = ctx.contact;
   if (fl?.contactId !== undefined) {
     if (fl.contactId === null) {
       contactId = null;
-      contact = null;
     } else {
       const row = results[6]?.results[0] as ContactRow | undefined;
       if (!row || row.client_id !== ctx.client.id) return err(c, CONTACT_INVALID, 400);
       if (row.anonymised_at !== null) return err(c, CONTACT_GONE, 409);
       contactId = row.id;
-      contact = row;
     }
   }
   const now = Math.max(Date.now(), doc.updated_at + 1);
@@ -563,7 +552,6 @@ export async function patchNoteDraft(
     throw e;
   }
   if (!done) return err(c, STALE_VERSION, 409);
-  void contact;
   return c.json({
     ok: true,
     id: doc.id,
@@ -578,7 +566,7 @@ export async function patchNoteDraft(
 
 const PARENT_CHANGED_DRAFT = {
   code: "content_changed",
-  message: "The invoice changed after this draft was made. Save the request again.",
+  message: "[Placeholder]",
 };
 
 // ---- routes ----------------------------------------------------------------------------------------------------------------------------------------------

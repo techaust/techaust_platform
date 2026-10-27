@@ -365,7 +365,15 @@ export function resolveCredit(
         ),
         extra: { closestMinor: r.closest?.document.totalMinor ?? null, remaining: left.totalLeft },
       });
-    if (r.reason === "empty") return refuse({ status: 400, error: NOTHING_TO_CREDIT });
+    // An amount above zero that is below one rounding unit of any line cannot be turned into a note: it is unfit, with no closest figure.
+    if (r.reason === "empty")
+      return gross > 0
+        ? refuse({
+            status: 409,
+            error: creditAmountUnfit(null, p.computed.currency === "USD" ? "USD" : "INR"),
+            extra: { closestMinor: null, remaining: left.totalLeft },
+          })
+        : refuse({ status: 400, error: NOTHING_TO_CREDIT });
     return refuse(mapCreditErrors(r.errors, left));
   }
   const takes = [...(ask.lines ?? [])].sort((a, b) => a.line - b.line);

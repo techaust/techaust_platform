@@ -252,8 +252,9 @@ describe("the creditable amount cannot be exceeded [docs/09 :106, LD40]", () => 
     const o = await owner();
     const inv = await mkIssuedInvoice(o, { prices: [100_000] });
     expect((await draftCredit(o, inv.id, { mode: "lines", lines: [] })).status).toBe(400);
+    expect((await draftCredit(o, inv.id, { mode: "amount", grossMinor: 0 })).status).toBe(400);
     expect(await codeOf(await draftCredit(o, inv.id, { mode: "amount", grossMinor: 1 }))).toBe(
-      "nothing_to_credit",
+      "credit_amount_unfit",
     );
     expect(
       (await draftCredit(o, inv.id, { mode: "lines", lines: [{ line: 7, taxableMinor: 5 }] })).status,

@@ -29,6 +29,7 @@ import {
 import {
   blockersOfNote,
   CREDIT_DEADLINE_PASSED,
+  DEBIT_PARENT_FULLY_CREDITED,
   deadlineOf,
   isLiveParentStatus,
   NOTE_PARENT_READS,
@@ -38,7 +39,6 @@ import {
   noteState,
   notesLimit,
   PARENT_CHANGED,
-  DEBIT_PARENT_FULLY_CREDITED,
   PARENT_FULLY_CREDITED,
   PARENT_NOT_ISSUED,
   PARENT_STATEMENTS,
@@ -86,8 +86,6 @@ export type NotePrepared = {
   extras: InvoiceHeaderExtras;
   imsStatus: "pending" | "not_applicable" | null;
   noteArgs: NoteIssueArgs;
-  /** The parent as the batch will leave it (a credit note moves it; a debit note does not). */
-  deadlineLastDay: string | null;
 };
 
 /** The recipient of a note (LD52): the invoice's frozen legal identity, plus the note's own live contact (guarded as in M5.1). */
@@ -133,8 +131,9 @@ export async function prepareNoteIssue(
     lines: noteLines(p, stored.request.takes),
   });
   const computation = await noteComputation(state, re.computed, re.errors);
+  // The real blocker first: when the invoice no longer allows the request, the blockers say why (a changed hash would only hide it).
   if (
-    computation.hash !== d.content_sha256 ||
+    (re.refusal === null && computation.hash !== d.content_sha256) ||
     (expectedContentSha256 !== null && expectedContentSha256 !== d.content_sha256)
   )
     return err(c, CONTENT_CHANGED, 409);
@@ -184,7 +183,6 @@ export async function prepareNoteIssue(
       expectedParentCredited: p.row.credited_minor,
       deadline: dl ? { lastDay: dl.lastDay, filedOn: dl.filedOn } : null,
     },
-    deadlineLastDay: dl?.lastDay ?? null,
   };
 }
 

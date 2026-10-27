@@ -1,5 +1,7 @@
 // M5.3 review items (the analyst's early check and the lead's answers to stop 1, 2026-10-27): the 07-T §8 lines word for word, the IMS list's query plan, the amount typed
 // that moves the hash, a debit note's save, "Against line {n}", and the finance audit list. Every rule is VERIFY WITH CA/LEGAL where it is a tax or legal one.
+
+import { env } from "cloudflare:workers";
 import { FINANCE_AUDIT_ACTIONS } from "@techaust/core/audit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ROUTES } from "./guard.ts";
@@ -24,6 +26,7 @@ import {
   mkRegisteredClient,
   noteRow,
 } from "./test-notes.ts";
+import { beforeBatchHolding } from "./test-quotes.ts";
 
 const owner = () => sessionFor("owner", { stepUp: true });
 
@@ -105,7 +108,10 @@ describe("the 07-T §8 lines are the API's words, word for word", () => {
       model.notesLimit("debit"),
       model.creditAmountUnfit(1_000, "INR"),
     ];
-    expect(made.filter((m) => m.message.includes("[Placeholder]")).map((m) => m.code)).toEqual([]);
+    // the debit note's fully-credited line is the owner's to give (07-T question Q66): a marked placeholder until then
+    expect(made.filter((m) => m.message.includes("[Placeholder]")).map((m) => m.code)).toEqual([
+      "debit_parent_fully_credited",
+    ]);
   });
 
   it("the routes answer in those words (a second draft, the limit's wording by kind)", async () => {
@@ -120,6 +126,66 @@ describe("the 07-T §8 lines are the API's words, word for word", () => {
       message: "There's already a draft debit note for this invoice. Open it to continue.",
     });
     expect(typeof body.draftId).toBe("string");
+  });
+
+  it("a draft made by another request meanwhile: note_draft_exists with the draft's id (the race branch)", async () => {
+    const o = await owner();
+    const inv = await mkIssuedInvoice(o, { prices: [100_000] });
+    let rivalId = "";
+    const racing = beforeBatchHolding("INSERT INTO documents", async () => {
+      rivalId = (await json(await draftDebit(o, inv.id, { lines: [{ line: 0, taxableMinor: 100 }] }))).id;
+    });
+    const res = await call(
+      `/invoices/${inv.id}/debit-note`,
+      {
+        cookie: o.cookie,
+        body: {
+          expectedParentUpdatedAt: (
+            await one<{ updated_at: number }>("SELECT updated_at FROM documents WHERE id = ?", inv.id)
+          )?.updated_at,
+          reasonCode: "price_correction",
+          lines: [{ line: 0, taxableMinor: 200 }],
+        },
+      },
+      racing,
+    );
+    expect(res.status, await res.clone().text()).toBe(409);
+    const body = await json(res);
+    expect(body.error.code).toBe("note_draft_exists");
+    expect(rivalId).not.toBe("");
+    expect(body.draftId).toBe(rivalId);
+  });
+
+  it("an amount above zero but below one rounding unit is credit_amount_unfit with no closest figure, not 'nothing to credit'", async () => {
+    const o = await owner();
+    const inv = await mkIssuedInvoice(o, { prices: [100_000] });
+    const res = await draftCredit(o, inv.id, { mode: "amount", grossMinor: 1 });
+    expect(res.status, await res.clone().text()).toBe(409);
+    const body = await json(res);
+    expect(body.error.code).toBe("credit_amount_unfit");
+    expect(body.closestMinor).toBeNull();
+  });
+
+  it("an issue whose invoice moved answers the real blocker, not content_changed", async () => {
+    const o = await owner();
+    const inv = await mkIssuedInvoice(o, { prices: [100_000] });
+    const a = await json(
+      await draftCredit(o, inv.id, { mode: "lines", lines: [{ line: 0, taxableMinor: 60_000 }] }),
+    );
+    // the stored request now asks for more than the line has (as if the invoice had moved under it): the hash no longer matches AND the request is refused
+    const row = await noteRow(a.id);
+    const extras = JSON.parse(String(row?.header_extras));
+    extras.noteOf.request.takes[0].taxableMinor = 90_000_000;
+    await env.DB.prepare("UPDATE documents SET header_extras = ?, updated_at = updated_at + 1 WHERE id = ?")
+      .bind(JSON.stringify(extras), a.id)
+      .run();
+    const res = await issueInvoice(o, a.id);
+    expect(res.status).toBe(409);
+    const body = await json(res);
+    expect(body.error.code).toBe("issue_blocked");
+    expect(body.blockers.map((x: J) => x.code)).toEqual(
+      expect.arrayContaining([expect.stringMatching(/^(line_)?credit_exceeds/)]),
+    );
   });
 
   it("a requested note bell and the issued bell use 07-T §8's sentences, without a mark", async () => {
