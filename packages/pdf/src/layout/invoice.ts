@@ -14,6 +14,12 @@
 //     its total (the eye reads the amount, then what it is in rupees), and its box holds the SWIFT details.
 //   - an invoice issued for a payment received is already paid: it says against which proforma and when the money arrived, and prints neither a
 //     balance due nor how to pay.
+//   - M5.3: a credit or debit note is this same page (07-T §1). Its band holds the reason (Rule 53(1A): the nature of the correction) and, on an
+//     export note, the LUT line; the identity block says which invoice it corrects, the invoice's number in a `<dd>` of its own (ONE text node:
+//     LD54, the jobs Worker refuses a page without it), then that invoice's date; each line says the invoice line it is against; the total is
+//     "Total credited" or "Total added" and the effect sentence sits beside it, where an invoice says how to pay. A credit note owes nothing: no due
+//     date, no balance and no bank block. A debit note is paid like an invoice: due date, balance due, how to pay. A USD note prints the rate of
+//     its invoice.
 //
 // Rule 46 (docs/08-research-appendix/A §3, §8; VERIFY WITH CA/LEGAL), every field the view carries is printed:
 //   (a) supplier name, address, GSTIN (and principal place)   (b) number   (c) date   (d) recipient name, address, GSTIN when registered
@@ -29,13 +35,26 @@
 import { esc } from "../escape.ts";
 import { PDF_LOGOS } from "../generated/assets.ts";
 import type { InvoiceView, InvoiceViewBank, InvoiceViewSwift } from "../invoice-types.ts";
+import { EXPORT_PLACE_OF_SUPPLY } from "../invoice-view.ts";
 import { markdownBlocks } from "../markdown-html.ts";
-import { advanceLine, INVOICE_PDF_COPY as C, EXPORT_PDF_COPY as E, PROFORMA_PDF_COPY as P } from "./copy.ts";
+import {
+  advanceLine,
+  INVOICE_PDF_COPY as C,
+  EXPORT_PDF_COPY as E,
+  NOTE_PDF_COPY as N,
+  PROFORMA_PDF_COPY as P,
+} from "./copy.ts";
 
 const RUPEE = "₹";
 
-/** The invoice-family types this layout prints (credit and debit notes keep the skeleton until M5.3 styles them). */
-export const DESIGNED_INVOICE_TYPES: readonly string[] = ["tax_invoice", "export_invoice", "proforma"];
+/** The invoice-family types this layout prints (every one since M5.3: the skeleton is left for an unknown type only). */
+export const DESIGNED_INVOICE_TYPES: readonly string[] = [
+  "tax_invoice",
+  "export_invoice",
+  "proforma",
+  "credit_note",
+  "debit_note",
+];
 
 const p = (cls: string, text: string, attrs = "") => `<p class="${cls}"${attrs}>${esc(text)}</p>`;
 
@@ -69,9 +88,14 @@ const intra = (view: InvoiceView) => view.supplyType === "intra";
 const isProforma = (view: InvoiceView) => view.type === "proforma";
 /** Paid at issue (the invoice for a payment received, Q9): nothing is left to pay. */
 const isPaid = (view: InvoiceView) => view.advance !== null;
+/** M5.3: a credit note owes nothing (its balance is 0, it has no due date and no bank block); a debit note is its own payable. */
+const isCredit = (view: InvoiceView) => view.note?.kind === "credit";
+/** Nothing is asked of the client: no balance row, no "How to pay". */
+const owesNothing = (view: InvoiceView) => isPaid(view) || isCredit(view);
 
 /** The document's title (07-R §6, 07-S §1, §2). */
 export function titleOf(view: InvoiceView): string {
+  if (view.note) return N[view.note.kind].title;
   if (view.type === "export_invoice") return E.title;
   if (isProforma(view)) return P.title;
   return C.title;
@@ -117,7 +141,24 @@ function statutoryBand(view: InvoiceView): string {
       view.proforma.notice,
       ' data-testid="notice"',
     )}</section>`;
+  if (view.note) return noteBand(view.note);
   return "";
+}
+
+/**
+ * A note's band: the reason (07-T §1 "Reason: {reason}"). "Other" is the words typed for it; any other reason is its label, with the words typed
+ * after it on a line of their own when there are some. An export note under LUT carries its invoice's LUT line after it (VERIFY WITH CA/LEGAL).
+ */
+function noteBand(note: NonNullable<InvoiceView["note"]>): string {
+  const typed = note.reason.text.trim();
+  const other = note.reason.code === "other" && typed !== "";
+  const reason = p("inv-band__line", N.reason(other ? typed : note.reason.label), ' data-testid="reason"');
+  const detail = !other && typed !== "" ? p("inv-band__sub inv-band__reason", typed) : "";
+  const lut =
+    note.route?.mode === "lut" && note.route.lut
+      ? p("inv-band__sub", E.lut(note.route.lut.arn, note.route.lut.fyLabel), ' data-testid="lut"')
+      : "";
+  return `<section class="inv-band" aria-label="${esc(note.title)}">${reason}${detail}${lut}</section>`;
 }
 
 /** The invoice issued for a payment received: against which proforma, and when the money arrived (07-S §8). */
@@ -162,10 +203,19 @@ function parties(view: InvoiceView): string {
 function docBlock(view: InvoiceView): string {
   const H = C.header;
   const pro = view.proforma;
-  const numberLabel = pro ? P.header.number : H.number;
-  const dates = pro
-    ? `${fact(P.header.date, view.issueDate)}${fact(P.header.validUntil, pro.validUntil)}`
-    : `${fact(H.date, view.issueDate)}${fact(H.dueDate, view.dueDate)}`;
+  const note = view.note;
+  const numberLabel = note ? N[note.kind].number : pro ? P.header.number : H.number;
+  // A note says which invoice it corrects: the invoice's number is the whole of its `<dd>` (one text node, LD54), then that invoice's date. A
+  // credit note has no due date (nothing is owed on it); a debit note is due like an invoice.
+  const dates = note
+    ? `${fact(N.header.date, view.issueDate)}<div><dt>${N.header.againstInvoice}</dt><dd data-testid="parent-number">${esc(
+        note.parent.number,
+      )}</dd></div>${fact(N.header.invoiceDate, note.parent.date)}${
+        note.kind === "debit" && view.dueDate !== "" ? fact(H.dueDate, view.dueDate) : ""
+      }`
+    : pro
+      ? `${fact(P.header.date, view.issueDate)}${fact(P.header.validUntil, pro.validUntil)}`
+      : `${fact(H.date, view.issueDate)}${fact(H.dueDate, view.dueDate)}`;
   let place: string;
   if (view.export) {
     // "Outside India (96)" stays whole (07-S §1), and the country of destination follows it.
@@ -174,6 +224,9 @@ function docBlock(view: InvoiceView): string {
       view.export.countryName,
       "wrap",
     )}`;
+  } else if (view.note?.route) {
+    // A note on an export invoice says what its invoice says (07-S §1: "Outside India (96)", whole); the country stays on the invoice.
+    place = fact(E.placeOfSupply, EXPORT_PLACE_OF_SUPPLY, "wrap");
   } else {
     const pos = splitPlaceOfSupply(view.placeOfSupply);
     place = `${fact(H.placeOfSupply, pos.name, "wrap")}${pos.code ? fact(H.stateCode, pos.code) : ""}`;
@@ -194,7 +247,7 @@ function itemsTable(view: InvoiceView): string {
       (l) =>
         `<tr><td class="c-n num">${esc(l.n)}</td><td class="c-desc"><span class="desc">${esc(l.description)}</span>${
           l.detail ? `<span class="sub">${esc(l.detail)}</span>` : ""
-        }</td><td class="c-sac">${l.sac ? esc(l.sac) : ""}</td><td class="num">${esc(l.qty)} <span class="unit">${esc(l.unit)}</span></td><td class="num">${esc(l.rate)}</td>${
+        }${l.againstLine !== undefined ? `<span class="sub inv-against">${esc(N.againstLine(l.againstLine))}</span>` : ""}</td><td class="c-sac">${l.sac ? esc(l.sac) : ""}</td><td class="num">${esc(l.qty)} <span class="unit">${esc(l.unit)}</span></td><td class="num">${esc(l.rate)}</td>${
           withDiscount ? `<td class="num">${l.discount ? esc(l.discount) : ""}</td>` : ""
         }<td class="num">${esc(l.taxable)}</td></tr>`,
     )
@@ -223,14 +276,22 @@ function totalsBlock(view: InvoiceView): string {
         : `<tr><th scope="row">${esc(t.label)}</th><td class="num">${esc(t.value)}</td></tr>`,
     )
     .join("");
-  // Paid at issue (Q9): no balance is due, so the row is left out rather than printing the total as owed.
-  const due = isPaid(view)
+  // Paid at issue (Q9), or a credit note: no balance is due, so the row is left out rather than printing the total as owed.
+  const due = owesNothing(view)
     ? ""
     : `<tr class="due"><th scope="row">${esc(C.balanceDue)}</th><td class="num" data-testid="balance-due">${esc(view.balanceDue)}</td></tr>`;
   // Beside the total: the amount in words, the reverse-charge statement as frozen, then how to pay it (the eye goes from the total to the box);
   // under the total its INR values (a USD invoice), then, level with the foot of the box, the signatory.
-  const notes = `${p("words", C.words(view.words))}${p("inv-rc", view.reverseCharge, ' data-testid="reverse-charge"')}${
-    isPaid(view) ? "" : payBox(view)
+  // A note's effect on its invoice comes first beside its total (07-T §1), then what an invoice prints there.
+  const effect = view.note
+    ? p(
+        "inv-effect",
+        N[view.note.kind].effect(view.note.effect.parentNumber, view.note.effect.total),
+        ' data-testid="effect"',
+      )
+    : "";
+  const notes = `${effect}${p("words", C.words(view.words))}${p("inv-rc", view.reverseCharge, ' data-testid="reverse-charge"')}${
+    owesNothing(view) ? "" : payBox(view)
   }`;
   return `<div class="totals inv-totals"><div class="totals__notes">${notes}</div><div class="inv-side"><table class="totals__table">${rows}${due}</table>${inrBlock(
     view,
@@ -241,7 +302,10 @@ function totalsBlock(view: InvoiceView): string {
 function inrBlock(view: InvoiceView): string {
   const i = view.inr;
   if (!i) return "";
-  const rate = E.inr.rate(i.rate, i.source, i.date);
+  // A note is at its invoice's rate, and says so (07-T §1, §8); an invoice names the rate's source and date (07-S §1).
+  const rate = view.note?.fx
+    ? N.rate(view.note.fx.rate, view.note.fx.parentNumber)
+    : E.inr.rate(i.rate, i.source, i.date);
   const at = rate.indexOf(RUPEE);
   // The first rupee sign of the block in its own span, so the visual suite can ask its font on a USD invoice too.
   const rateHtml = `${esc(rate.slice(0, at))}<span data-testid="rupee">${RUPEE}</span>${esc(rate.slice(at + 1))}`;
@@ -359,9 +423,15 @@ function notesBlock(view: InvoiceView): string {
 
 /** The modifier class of the document (the base class `doc--tax-invoice` carries the whole designed invoice system). */
 const modifierOf = (view: InvoiceView) =>
-  view.type === "export_invoice" ? " doc--export-invoice" : isProforma(view) ? " doc--proforma" : "";
+  view.note
+    ? ` doc--note doc--${view.note.kind}-note`
+    : view.type === "export_invoice"
+      ? " doc--export-invoice"
+      : isProforma(view)
+        ? " doc--proforma"
+        : "";
 
-/** The body of a tax invoice, an export invoice or a proforma (inside `<body>`). */
+/** The body of a tax invoice, an export invoice, a proforma, a credit note or a debit note (inside `<body>`). */
 export function taxInvoiceBody(view: InvoiceView): string {
   return `<div class="doc doc--invoice doc--tax-invoice${modifierOf(view)}">${masthead(view)}
 ${statutoryBand(view)}${advanceHtml(view)}
@@ -410,6 +480,12 @@ export const TAX_INVOICE_CSS = `
 .doc--tax-invoice .inv-band__note { margin: 1.6mm 0 0; max-width: 150mm; font-size: var(--print-table); line-height: 1.4; color: var(--color-text-muted); }
 .doc--tax-invoice .inv-band__note p { margin: 0 0 1mm; }
 .doc--tax-invoice .inv-band__note p:last-child { margin-bottom: 0; }
+
+.doc--tax-invoice .inv-band__reason { max-width: 150mm; overflow-wrap: anywhere; }
+
+/* a note: the invoice line each line is against, and the effect on the invoice beside the total */
+.doc--tax-invoice .inv-items .inv-against { font-variant-numeric: tabular-nums lining-nums; }
+.doc--tax-invoice .totals__notes .inv-effect { margin: 0 0 2.4mm; font-weight: 600; text-wrap: pretty; }
 
 /* the invoice for a payment received: against which proforma, and when */
 .doc--tax-invoice .inv-advance { margin: 0 0 5mm; font-size: var(--print-table); line-height: 1.4; font-weight: 500; }

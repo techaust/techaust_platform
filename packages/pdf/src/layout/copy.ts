@@ -156,6 +156,32 @@ export const PROFORMA_PDF_COPY = {
   header: { number: "Proforma number", date: "Proforma date", validUntil: "Valid until" },
 } as const;
 
+/**
+ * The fixed wording of a credit note and a debit note, word for word from 07-T §1 and §8 (docs/07-content-appendix/T-m5.3-credit-debit-notes.md).
+ * Client-facing; PENDING the owner's word-for-word approval; every tax line is VERIFY WITH CA/LEGAL. The invoice's number, the reason and the amounts
+ * are the frozen note's (`InvoiceView.note`), never worked out here. The lines, tax summary, words, reverse charge and signature are the tax invoice's.
+ */
+export const NOTE_PDF_COPY = {
+  credit: {
+    title: "Credit Note",
+    number: "Credit note number",
+    effect: (invoiceNumber: string, total: string) =>
+      `This credit note reduces the amount due on invoice ${invoiceNumber} by ${total}.`,
+  },
+  debit: {
+    title: "Debit Note",
+    number: "Debit note number",
+    effect: (invoiceNumber: string, total: string) =>
+      `This debit note increases the amount due on invoice ${invoiceNumber} by ${total}.`,
+  },
+  header: { date: "Date", againstInvoice: "Against invoice", invoiceDate: "Invoice date" },
+  reason: (reason: string) => `Reason: ${reason}`,
+  againstLine: (n: number) => `Against line ${n}`,
+  /** 07-T §1 (credit) and §8 (debit): the same line. VERIFY WITH CA/LEGAL. */
+  rate: (rate: string, invoiceNumber: string) =>
+    `Exchange rate: 1 USD = ₹${rate} (the rate of invoice ${invoiceNumber})`,
+} as const;
+
 /** The line under the title of a tax or export invoice issued for a payment received against a proforma (07-S §8, Q9; PENDING approval). */
 export const advanceLine = (proformaNumber: string, proformaDate: string, receivedOn: string) =>
   `Against proforma ${proformaNumber} of ${proformaDate}, payment received on ${receivedOn}.`;

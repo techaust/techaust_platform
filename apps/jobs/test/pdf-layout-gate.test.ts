@@ -118,7 +118,8 @@ describe("LD33 for the invoice issued for a payment received (Q9)", () => {
 // yet: that is the M5.3 designer's (07-T §1: "Against invoice {invoice number}"), so until it does, a note's render is refused by this very gate (the owners' bell rings, nothing
 // reaches Browser Run) and the last case shows what the page must carry. When the layout prints the number as a node of its own, flip `LAYOUT_PRINTS_PARENT` to `true`: every
 // note then renders with the real layout, and the other cases of this block stay as they are.
-const LAYOUT_PRINTS_PARENT = false;
+// Flipped by the M5.3 designer: layout/invoice.ts prints the number in `<dd data-testid="parent-number">` of its own.
+const LAYOUT_PRINTS_PARENT = true;
 
 describe("LD54 with the real layout: the invoice's number on a note's page", () => {
   const names = ["credit_lines", "credit_usd_lut", "debit", "debit_usd_lut"] as const;
