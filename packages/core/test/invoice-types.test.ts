@@ -39,6 +39,7 @@ import {
 } from "../src/invoices.ts";
 import {
   foldLegacyLut,
+  legacyLutFate,
   resolveSetting,
   SETTINGS_DEFAULTS,
   SETTINGS_SCHEMAS,
@@ -958,6 +959,50 @@ describe("the tax settings of M5.2 [ADM-SET-03, LD31, Q24]", () => {
     // folding twice is the same as once, and the result still parses
     expect(foldLegacyLut(folded)).toEqual(folded);
     expect(schema.safeParse(folded).success).toBe(true);
+  });
+  it("`foldLegacyLut` normalises the old ARN like a list entry's and drops one the list would refuse, so a Tax save never fails on it [review 8]", () => {
+    const base = SETTINGS_DEFAULTS.tax;
+    const fold = (lut: { arn: string | null; fy: string | null }, luts: typeof base.luts = []) =>
+      foldLegacyLut({ ...base, luts, lut });
+    // spaces and lower case are the list's normal form
+    expect(fold({ arn: " ad 12 x ", fy: "2627" }).luts).toEqual([
+      { fy: "2627", arn: "AD12X", filedOn: null },
+    ]);
+    // a character the list refuses, an empty-after-trim ARN, a year of two non-consecutive years: dropped, and the result always parses
+    for (const lut of [
+      { arn: "AD-12/3", fy: "2627" },
+      { arn: "   ", fy: "2627" },
+      { arn: "A".repeat(31), fy: "2627" },
+      { arn: "AD123", fy: "2629" },
+    ]) {
+      const folded = fold(lut);
+      expect(folded.luts, JSON.stringify(lut)).toEqual([]);
+      expect(folded.lut).toEqual({ arn: null, fy: null });
+      expect(schema.safeParse(folded).success).toBe(true);
+    }
+    // the fate says which case it was (the route logs it, never the ARN)
+    expect(legacyLutFate({ ...base, lut: { arn: null, fy: null } })).toEqual({ fate: "none" });
+    expect(legacyLutFate({ ...base, lut: { arn: "AD-1", fy: "2627" } })).toEqual({ fate: "invalid" });
+    expect(
+      legacyLutFate({
+        ...base,
+        lut: { arn: "AD1", fy: "2627" },
+        luts: [{ fy: "2627", arn: "NEW", filedOn: null }],
+      }),
+    ).toEqual({ fate: "listed" });
+    expect(legacyLutFate({ ...base, lut: { arn: "ad 1", fy: "2627" } })).toEqual({
+      fate: "folded",
+      entry: { fy: "2627", arn: "AD1", filedOn: null },
+    });
+    // a full list (20 years) takes no more: dropped, not an invalid save
+    const twenty = Array.from({ length: 20 }, (_, i) => {
+      const a = String(10 + i).padStart(2, "0");
+      return { fy: `${a}${String(11 + i).padStart(2, "0")}`, arn: `AD${i}`, filedOn: null };
+    });
+    expect(legacyLutFate({ ...base, luts: twenty, lut: { arn: "AD99", fy: "3031" } })).toEqual({
+      fate: "full",
+    });
+    expect(fold({ arn: "AD99", fy: "3031" }, twenty).luts).toHaveLength(20);
   });
   it("a letter: consecutive years, an ARN of letters and digits (spaces dropped, upper case), a real filing date or none", () => {
     const one = (over: Record<string, unknown>) =>

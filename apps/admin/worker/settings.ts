@@ -25,6 +25,7 @@ import {
   foldLegacyLut,
   GATEWAY_SECRETS,
   GATEWAYS,
+  legacyLutFate,
   panOf,
   resolveSetting,
   SETTINGS_DEFAULTS,
@@ -442,6 +443,21 @@ export const settings = new Hono<AppEnv>()
     // M5.2 (early check 3): a saved `tax` row never keeps the deprecated single `lut`: it is folded into `luts` (unless that FY is listed) and cleared.
     if (group === "tax") {
       const parsed = SETTINGS_SCHEMAS.tax.safeParse(env.data.value);
+      if (parsed.success) {
+        // A legacy letter the fold drops (its FY is already listed, or the list would refuse it) is dropped WITH a note in the log (the case and the FY,
+        // never the ARN), so the save never fails on a field the person cannot see and the drop is never silent (review 8).
+        const fate = legacyLutFate(parsed.data);
+        if (fate.fate === "listed" || fate.fate === "invalid" || fate.fate === "full")
+          console.warn(
+            JSON.stringify({
+              level: "warn",
+              message: "legacy LUT dropped on a tax save",
+              case: fate.fate,
+              fy: parsed.data.lut.fy,
+              rid: c.var.rid,
+            }),
+          );
+      }
       return save(c, "tax", parsed.success ? foldLegacyLut(parsed.data) : env.data.value, env.data.version);
     }
     return save(c, group, env.data.value, env.data.version);

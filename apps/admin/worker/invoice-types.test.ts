@@ -1233,6 +1233,41 @@ describe("a letter deleted from the list cannot come back from the legacy key [a
     expect(stored2.luts).toEqual([{ fy: currentFy(), arn: "AD0000000000077", filedOn: null }]);
     expect(stored2.lut).toEqual({ arn: null, fy: null });
   });
+
+  it("save: a legacy ARN is normalised like a list entry's; one the list would refuse is dropped with a logged note, and the save still succeeds [review 8]", async () => {
+    const o = await owner();
+    const stored = async () =>
+      JSON.parse(
+        (await one<{ value: string }>("SELECT value FROM settings WHERE key = 'tax'"))?.value ?? "{}",
+      );
+    await putTax({ luts: [] });
+    const cur = await get(o);
+    // lower case and spaces: the list's own normal form
+    const spaced = await put(o, cur.version, { ...cur.value, lut: { arn: " ad 1234 x ", fy: currentFy() } });
+    expect(spaced.status, await spaced.clone().text()).toBe(200);
+    expect((await stored()).luts).toEqual([{ fy: currentFy(), arn: "AD1234X", filedOn: null }]);
+    // a character the list refuses (-, /): the old field is dropped, nothing fails, nothing is put into the list
+    await putTax({ luts: [] });
+    const cur2 = await get(o);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const bad = await put(o, cur2.version, { ...cur2.value, lut: { arn: "AD-123/4", fy: currentFy() } });
+    expect(bad.status, await bad.clone().text()).toBe(200);
+    expect((await stored()).luts).toEqual([]);
+    expect((await stored()).lut).toEqual({ arn: null, fy: null });
+    const notes = warn.mock.calls.map((c) => String(c[0]));
+    warn.mockRestore();
+    expect(notes.some((n) => n.includes("legacy LUT dropped") && n.includes('"case":"invalid"'))).toBe(true);
+    expect(notes.join("")).not.toContain("AD-123");
+    // a year that is not two consecutive years is refused by the list too: dropped the same way
+    await putTax({ luts: [] });
+    const cur3 = await get(o);
+    const year = await put(o, cur3.version, { ...cur3.value, lut: { arn: "AD1234", fy: "2629" } });
+    expect(year.status, await year.clone().text()).toBe(200);
+    expect((await stored()).luts).toEqual([]);
+    // reading a stored row with such a letter shows an empty list, not a letter the screen could not save back
+    await putOldTax({ arn: "AD-123/4", fy: currentFy() });
+    expect((await get(o)).value.luts).toEqual([]);
+  });
 });
 
 describe("the service date of a void invoice [early check, optional]", () => {
