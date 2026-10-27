@@ -180,11 +180,12 @@ type MilestoneRow = {
   status: MilestoneStatus;
   delivered_at: number | null;
   document_id: string | null;
+  is_advance: number;
   created_at: number;
   updated_at: number;
 };
 const MILESTONE_COLS =
-  "id, project_id, position, title, amount_minor, pct_bp, due_date, status, delivered_at, document_id, created_at, updated_at";
+  "id, project_id, position, title, amount_minor, pct_bp, due_date, status, delivered_at, document_id, is_advance, created_at, updated_at";
 const milestoneView = (r: MilestoneRow, budget: number | null) => ({
   id: r.id,
   projectId: r.project_id,
@@ -203,6 +204,7 @@ const milestoneView = (r: MilestoneRow, budget: number | null) => ({
   status: r.status,
   deliveredAt: r.delivered_at,
   documentId: r.document_id,
+  isAdvance: r.is_advance === 1,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });

@@ -7,6 +7,7 @@
 //
 // Money: amounts are the server's minor units, formatted through core (`moneyText`); typed amounts are parsed through core. Nothing here adds,
 // multiplies or rounds money. The due date and the number are the server's; the screen never works them out.
+import { milestoneBillableRule } from "@techaust/core/invoices";
 import { SERIES, type Series } from "@techaust/core/numbering";
 import type { Currency } from "../api.ts";
 import { RequestError } from "../api.ts";
@@ -133,15 +134,12 @@ export const convertedToInvoice = (number: string | null) =>
   number === null ? "Converted to a draft invoice." : `Converted to invoice ${number}.`;
 
 /**
- * May a draft invoice be made from this milestone (the server's rule, `milestoneBillable` in worker/invoices.ts)? One that is Ready to bill, or the
- * FIRST milestone of a project started from an accepted proposal while it is still pending: the advance, billable again after its invoice is voided.
+ * May a draft invoice be made from this milestone? The server's rule, shared from core (`milestoneBillableRule`): Ready to bill, or the pending
+ * advance (marked when Start project made it, so a reorder never moves it), billable again after its invoice is voided.
  */
-export function milestoneBillable(
-  m: { status: string; position: number; documentId: string | null },
-  fromProposal: boolean,
-): boolean {
+export function milestoneBillable(m: { status: string; isAdvance: boolean; documentId: string | null }): boolean {
   if (m.documentId !== null) return false;
-  return m.status === "ready_to_bill" || (m.status === "pending" && m.position === 1 && fromProposal);
+  return milestoneBillableRule(m);
 }
 
 // ---- types and badges --------------------------------------------------------------------------------------------------------------------------

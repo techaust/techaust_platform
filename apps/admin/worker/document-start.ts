@@ -123,6 +123,8 @@ export const documentStart = new Hono<AppEnv>().post(
       title: m.title,
       amount: m.amountMinor,
       due: m.dueDate,
+      /** The first instalment's milestone is the advance: stored, so a reorder never moves it (re-check A). */
+      advance: i === 0 && plan.firstInstalment !== null ? 1 : 0,
     }));
 
     for (let attempt = 0; ; attempt++) {
@@ -154,8 +156,8 @@ export const documentStart = new Hono<AppEnv>().post(
               stmts.push(
                 db
                   .prepare(
-                    `INSERT INTO milestones (id, project_id, position, title, amount_minor, pct_bp, due_date, status, created_at, updated_at)
-                     SELECT json_extract(value, '$.id'), ?1, json_extract(value, '$.position'), json_extract(value, '$.title'), json_extract(value, '$.amount'), NULL, json_extract(value, '$.due'), 'pending', ?3, ?3
+                    `INSERT INTO milestones (id, project_id, position, title, amount_minor, pct_bp, due_date, status, is_advance, created_at, updated_at)
+                     SELECT json_extract(value, '$.id'), ?1, json_extract(value, '$.position'), json_extract(value, '$.title'), json_extract(value, '$.amount'), NULL, json_extract(value, '$.due'), 'pending', json_extract(value, '$.advance'), ?3, ?3
                      FROM json_each(?2) WHERE ${g.sql(4)}`,
                   )
                   .bind(projectId, JSON.stringify(ms), now, ...g.params),

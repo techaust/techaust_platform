@@ -59,7 +59,7 @@ export function MilestoneInvoice(props: {
       </span>
     );
   }
-  if (!milestoneBillable(m, props.fromProposal) || !props.canCreate) return null;
+  if (!milestoneBillable(m) || !props.canCreate) return null;
 
   async function create() {
     setBusy(true);

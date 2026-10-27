@@ -17,6 +17,8 @@ import {
   issueDateOf,
   issueFyOf,
   LEDGER_STATUSES,
+  MILESTONE_BILLABLE_SQL,
+  milestoneBillableRule,
   voidBlockers,
 } from "../src/invoices.ts";
 
@@ -441,5 +443,21 @@ describe("the sealed snapshot of an issued invoice [LD4]", () => {
       { ...input, computedSha256: "e".repeat(64) },
     ])
       expect(await invoiceSnapshotSha256(changed)).not.toBe(h);
+  });
+});
+
+describe("which milestone an invoice may be drafted from (re-check A)", () => {
+  it("is Ready to bill, or the pending advance; nothing else", () => {
+    for (const isAdvance of [true, false]) {
+      expect(milestoneBillableRule({ status: "ready_to_bill", isAdvance })).toBe(true);
+      expect(milestoneBillableRule({ status: "invoiced", isAdvance })).toBe(false);
+      expect(milestoneBillableRule({ status: "paid", isAdvance })).toBe(false);
+    }
+    expect(milestoneBillableRule({ status: "pending", isAdvance: true })).toBe(true);
+    expect(milestoneBillableRule({ status: "pending", isAdvance: false })).toBe(false);
+  });
+  it("its SQL twin names is_advance and no position", () => {
+    expect(MILESTONE_BILLABLE_SQL).toContain("is_advance = 1");
+    expect(MILESTONE_BILLABLE_SQL).not.toContain("position");
   });
 });

@@ -1,3 +1,4 @@
 DROP INDEX `documents_pdf_pending`;--> statement-breakpoint
 CREATE INDEX `documents_pdf_pending` ON `documents` (`frozen_at`) WHERE "documents"."frozen_at" is not null and "documents"."pdf_sha256" is null and "documents"."type" in ('proposal', 'estimate', 'tax_invoice', 'export_invoice', 'proforma', 'credit_note', 'debit_note');--> statement-breakpoint
+ALTER TABLE `milestones` ADD `is_advance` integer DEFAULT 0 NOT NULL;--> statement-breakpoint
 CREATE INDEX `approvals_kind_created` ON `approvals` (`kind`,`created_at`,`id`);

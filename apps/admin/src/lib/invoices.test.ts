@@ -155,14 +155,13 @@ describe("07-R copy", () => {
     expect(BADGE_LABELS).toEqual({ draft: "Draft", issued: "Issued", overdue: "Overdue", void: "Void" });
   });
 
-  it("a milestone can be invoiced when Ready to bill, or as the pending first milestone of a project from a proposal (review 5)", () => {
-    const m = { status: "ready_to_bill", position: 3, documentId: null };
-    expect(milestoneBillable(m, false)).toBe(true);
-    expect(milestoneBillable({ ...m, documentId: "d1" }, true)).toBe(false);
-    expect(milestoneBillable({ status: "pending", position: 1, documentId: null }, true)).toBe(true);
-    expect(milestoneBillable({ status: "pending", position: 1, documentId: null }, false)).toBe(false);
-    expect(milestoneBillable({ status: "pending", position: 2, documentId: null }, true)).toBe(false);
-    expect(milestoneBillable({ status: "invoiced", position: 1, documentId: null }, true)).toBe(false);
+  it("a milestone can be invoiced when Ready to bill, or as the pending advance, wherever it sits (re-check A)", () => {
+    const m = { status: "ready_to_bill", isAdvance: false, documentId: null };
+    expect(milestoneBillable(m)).toBe(true);
+    expect(milestoneBillable({ ...m, documentId: "d1" })).toBe(false);
+    expect(milestoneBillable({ status: "pending", isAdvance: true, documentId: null })).toBe(true);
+    expect(milestoneBillable({ status: "pending", isAdvance: false, documentId: null })).toBe(false);
+    expect(milestoneBillable({ status: "invoiced", isAdvance: true, documentId: null })).toBe(false);
   });
 
   it("splits the empty line into a title and a body", () => {

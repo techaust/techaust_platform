@@ -70,6 +70,7 @@ const milestone = (over: Partial<MilestoneView> = {}): MilestoneView => ({
   status: "pending",
   deliveredAt: null,
   documentId: null,
+  isAdvance: false,
   createdAt: 1,
   updatedAt: 5,
   ...over,

@@ -207,6 +207,7 @@ describe("review 5: the first instalment can be billed again after its invoice w
     const project = await mkProject(clientId, { budget_minor: 1_000_000_00, source_document_id: source });
     const m = await mkMilestone(project.id, {
       position: 1,
+      is_advance: 1,
       status: "pending",
       amount_minor: 118_000,
       title: "Start",
@@ -279,6 +280,36 @@ describe("review 5: the first instalment can be billed again after its invoice w
     expect(await codeOf(await create(o, c.clientId, m.id))).toBe("milestone_has_invoice");
   });
 
+  it("re-check A: reordering moves the position, not the advance: the moved pending milestone is refused and the advance is still billable", async () => {
+    const o = await owner();
+    const c = await mkInvoiceClient();
+    const { project, m } = await startedProject(c.clientId);
+    const second = await mkMilestone(project.id, { position: 2, status: "pending", amount_minor: 118_000 });
+    const order = await call(`/projects/${project.id}/milestones/order`, {
+      cookie: o.cookie,
+      body: { ids: [second.id, m.id] },
+    });
+    expect(order.status).toBe(200);
+    expect(await one("SELECT position FROM milestones WHERE id = ?", second.id)).toEqual({ position: 1 });
+    expect(await codeOf(await create(o, c.clientId, second.id))).toBe("milestone_not_ready");
+    const ok = await create(o, c.clientId, m.id);
+    expect(ok.status, await ok.clone().text()).toBe(201);
+  });
+
+  it("re-check A: deleting the first milestone does not make the next one billable", async () => {
+    const o = await owner();
+    const c = await mkInvoiceClient();
+    const { project, m } = await startedProject(c.clientId);
+    const second = await mkMilestone(project.id, { position: 2, status: "pending", amount_minor: 118_000 });
+    const gone = await call(`/milestones/${m.id}`, { method: "DELETE", cookie: o.cookie });
+    expect(gone.status).toBe(200);
+    // the second may move to position 1 by a reorder of the remaining list: still not the advance
+    expect(
+      (await call(`/projects/${project.id}/milestones/order`, { cookie: o.cookie, body: { ids: [second.id] } })).status,
+    ).toBe(200);
+    expect(await codeOf(await create(o, c.clientId, second.id))).toBe("milestone_not_ready");
+  });
+
   it("a milestone that moves out of billable between the read and the batch writes nothing (the guard is in the statement)", async () => {
     const o = await owner();
     const c = await mkInvoiceClient();
@@ -288,7 +319,7 @@ describe("review 5: the first instalment can be billed again after its invoice w
       "/invoices",
       { cookie: o.cookie, body: { clientId: c.clientId, fromMilestoneId: m.id } },
       beforeBatchHolding("INSERT INTO documents", async () => {
-        await env.DB.prepare("UPDATE milestones SET position = 2 WHERE id = ?").bind(m.id).run();
+        await env.DB.prepare("UPDATE milestones SET is_advance = 0 WHERE id = ?").bind(m.id).run();
       }),
     );
     expect(res.status).toBe(409);

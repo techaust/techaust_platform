@@ -344,3 +344,17 @@ export const invoiceSnapshot = (i: InvoiceSnapshotInput) => ({ v: 3, kind: "invo
 /** The hex SHA-256 stored as `documents.snapshot_sha256` of an issued invoice. */
 export const invoiceSnapshotSha256 = (i: InvoiceSnapshotInput): Promise<string> =>
   sha256Hex(canonicalJson(invoiceSnapshot(i)));
+
+// ---- which milestone an invoice may be drafted from (M5.1 re-check A) -------------------------------------------------------------------------
+
+/**
+ * A milestone a draft invoice may be made from: one that is Ready to bill, or the ADVANCE (the first instalment Start project marked with
+ * `is_advance`) while it is still pending: voiding the advance's invoice sends it back to `pending`, and it must be billable again. The mark
+ * is stored, so reordering or deleting milestones never moves it. The worker, its SQL twin and the SPA all use this one rule.
+ */
+export const milestoneBillableRule = (m: { status: string; isAdvance: boolean }): boolean =>
+  m.status === "ready_to_bill" || (m.status === "pending" && m.isAdvance);
+
+/** The SQL twin of `milestoneBillableRule`, for a statement on `milestones` alone. */
+export const MILESTONE_BILLABLE_SQL =
+  "(status = 'ready_to_bill' OR (status = 'pending' AND is_advance = 1))";
