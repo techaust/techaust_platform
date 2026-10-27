@@ -49,7 +49,7 @@ export const REMINDER_CLAIM_SQL = `UPDATE reminders SET sent_at = ?2
    WHERE id = ?1 AND sent_at IS NULL AND skipped_reason IS NULL AND due_at <= ?2
      AND EXISTS (SELECT 1 FROM documents d JOIN clients c ON c.id = d.client_id
                  WHERE d.id = reminders.document_id AND d.frozen_at IS NOT NULL AND d.voided_at IS NULL AND d.type IN (${quoted(REMINDER_TYPES)})
-                   AND d.status IN (${quoted(REMINDER_LIVE_STATUSES)}) AND d.balance_minor > 0
+                   AND (d.status IN (${quoted(REMINDER_LIVE_STATUSES)}) OR (d.type = 'proforma' AND d.status = 'converted')) AND d.balance_minor > 0
                    AND c.anonymised_at IS NULL AND coalesce(json_extract(c.reminder_policy, '$.enabled'), 1) <> 0
                    AND EXISTS (SELECT 1 FROM document_sends s JOIN contacts k ON k.id = s.contact_id AND k.client_id = s.client_id
                                WHERE s.document_id = d.id AND s.cancelled_at IS NULL AND k.portal_access = 1 AND k.anonymised_at IS NULL))

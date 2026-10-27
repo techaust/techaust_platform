@@ -313,7 +313,12 @@ describe("REMINDER_DUE_SQL and the claim [ADM-INV-13, LD60]", () => {
       { name: "credit note", doc: { type: "credit_note" } },
       { name: "paid", doc: { status: "paid", balance: 0 } },
       { name: "credited", doc: { status: "credited", balance: 0 } },
-      { name: "converted proforma", doc: { type: "proforma", status: "converted" } },
+      {
+        name: "part-paid proforma (converted, balance left)",
+        doc: { type: "proforma", status: "converted" },
+      },
+      { name: "settled converted proforma", doc: { type: "proforma", status: "converted", balance: 0 } },
+      { name: "converted debit note", doc: { type: "debit_note", status: "converted" } },
       { name: "void", doc: { status: "void" } },
       { name: "no balance", doc: { balance: 0 } },
       { name: "draft", draft: true },

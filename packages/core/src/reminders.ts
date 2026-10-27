@@ -140,7 +140,11 @@ export function skipReasonOf(f: ReminderFacts, nowMs: number): ReminderSkipReaso
   if (!f.frozen) return "not_issued";
   if (f.voided || f.status === "void") return "void";
   if (!isReminderType(f.type)) return "type";
-  if (!(REMINDER_LIVE_STATUSES as readonly string[]).includes(f.status)) {
+  // A proforma that took a part payment is `converted` while a balance remains (M5.2): it keeps its reminders until it is paid (Q47, early check finding 3).
+  const live =
+    (REMINDER_LIVE_STATUSES as readonly string[]).includes(f.status) ||
+    (f.type === "proforma" && f.status === "converted");
+  if (!live) {
     if (f.status === "paid") return "paid";
     if (f.status === "credited") return "credited";
     if (f.status === "converted") return "converted";
