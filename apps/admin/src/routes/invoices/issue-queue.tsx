@@ -1,7 +1,7 @@
 // Issue requests in the approvals queue (M5.1, ADM-APR-01/02, Q6): Staff ask the owner to issue a draft invoice; the owner issues it from here
 // (approve = issue, with a fresh code and the next number) or rejects it with an optional reason shown to the requester. A request is for one
 // content: a change to the draft afterwards expires it, and the queue shows it as expired. Staff see their own requests and how each went.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { stepUpActive } from "../../api.ts";
 import { type Column, DataTable } from "../../components/data-table.tsx";
@@ -33,9 +33,11 @@ const CODE_MISSING = "Enter the 6-digit code from your authenticator app.";
 export function IssueQueue(props: {
   owner: boolean;
   state: Exclude<ApprovalState, "none"> | null;
-  /** The bell's request: its dialog opens for the owner. */
+  /** The bell's request: its dialog opens for the owner (read by its id when it is older than the first page). */
   linked: string | undefined;
   onLinkedDone: () => void;
+  /** A request was decided (the page's counts change). */
+  onDecided?: () => void;
 }) {
   const toast = useToast();
   const [deciding, setDeciding] = useState<IssueApprovalRow | null>(null);
@@ -44,7 +46,18 @@ export function IssueQueue(props: {
   const [result, setResult] = useState<{ approved: boolean; text: string } | null>(null);
   const key = props.state ?? "all";
   const list = useLoad(() => invoicesApi.issueApprovals({ status: props.state ?? undefined }), key);
-  const rows = [...(list.data?.approvals ?? []), ...more];
+  // A bell's request older than the first page (M5.1 review finding 8): read by its id and shown first.
+  const linkedRow = useLoad(
+    () => (props.linked ? invoicesApi.issueApprovals({ id: props.linked }) : Promise.resolve(null)),
+    props.linked ?? "",
+  );
+  const extra =
+    linkedRow.state === "ready" && list.state === "ready"
+      ? (linkedRow.data?.approvals ?? []).filter(
+          (a) => ![...list.data.approvals, ...more].some((r) => r.id === a.id),
+        )
+      : [];
+  const rows = [...extra, ...(list.data?.approvals ?? []), ...more];
   const next = more.length ? after : (list.data?.next ?? null);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: a new filter starts again from the first page
@@ -53,11 +66,17 @@ export function IssueQueue(props: {
     setAfter(null);
   }, [key]);
 
+  const linkedDone = useRef<string | null>(null);
   useEffect(() => {
-    if (!props.linked || list.state !== "ready" || !props.owner) return;
-    const row = list.data.approvals.find((a) => a.id === props.linked);
+    const linked = props.linked;
+    if (!linked || list.state !== "ready" || !props.owner || linkedDone.current === linked) return;
+    const row =
+      list.data.approvals.find((a) => a.id === linked) ??
+      (linkedRow.state === "ready" ? linkedRow.data?.approvals.find((a) => a.id === linked) : undefined);
+    if (!row && linkedRow.state === "loading") return;
+    linkedDone.current = linked;
     if (row && row.state === "pending" && row.document.status === "draft") setDeciding(row);
-  }, [props.linked, list.state, list.data, props.owner]);
+  }, [props.linked, list.state, list.data, linkedRow.state, linkedRow.data, props.owner]);
 
   const columns: Column<IssueApprovalRow>[] = [
     {
@@ -184,6 +203,7 @@ export function IssueQueue(props: {
               setDeciding(null);
               props.onLinkedDone();
               list.reload(true);
+              props.onDecided?.();
               requestAnimationFrame(() => document.getElementById("decided-line")?.focus());
             }}
           />

@@ -4,7 +4,12 @@
 // the URL, `?tab=`). On narrow screens the row scrolls sideways inside its own box; the focused tab is kept in view.
 import { type KeyboardEvent, type ReactNode, useId, useRef } from "react";
 
-export type TabItem<K extends string> = { key: K; label: string };
+/** A tab; `badge` is a short count after the label (e.g. the requests waiting), its `label` read out by screen readers in place of the digits. */
+export type TabItem<K extends string> = {
+  key: K;
+  label: string;
+  badge?: { text: string; label: string } | null;
+};
 
 export function Tabs<K extends string>(props: {
   label: string;
@@ -61,6 +66,14 @@ export function Tabs<K extends string>(props: {
                 onFocus={(e) => e.currentTarget.scrollIntoView({ block: "nearest", inline: "nearest" })}
               >
                 {t.label}
+                {t.badge && (
+                  <>
+                    <span className="tabs__badge" aria-hidden="true">
+                      {t.badge.text}
+                    </span>
+                    <span className="visually-hidden">, {t.badge.label}</span>
+                  </>
+                )}
               </button>
             );
           })}

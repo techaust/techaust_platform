@@ -315,6 +315,12 @@ export const APPROVAL_LABELS: Record<Exclude<ApprovalState, "none">, string> = {
   rejected: "Rejected",
   expired: "Expired",
 };
+/** A tab's count of the requests waiting in it ("3", or "50+" past the first page), read out as "3 pending"; nothing when none wait. */
+export function pendingBadge(w: { n: number; more: boolean } | null): { text: string; label: string } | null {
+  if (!w || w.n === 0) return null;
+  const text = `${w.n}${w.more ? "+" : ""}`;
+  return { text, label: `${text} ${APPROVAL_LABELS.pending.toLowerCase()}` };
+}
 export const APPROVAL_PILLS: Record<Exclude<ApprovalState, "none">, Pill> = {
   pending: { tone: "warning", icon: "clock" },
   approved: { tone: "success", icon: "check" },

@@ -1,9 +1,11 @@
 // Approvals (M4.3, ADM-APR-01, -02; M5.1 adds the issue requests, kept in their own tab): the owner's queue of discount requests (more than 10 % off the catalogue prices), newest first, with
 // the decision dialog; Staff and Sales see the requests they made and how each was decided. A request is for one version's exact content:
 // a change to the draft after it expires the request, and the queue shows it as expired. `/approvals/:id` (the bell's link) opens that
-// request's dialog for the owner. The custom lines the guard ignores are listed in the dialog, so the owner sees the whole offer (O-Q1).
+// request's dialog for the owner, loaded by its id when it is older than the first page. The custom lines the guard ignores are listed in the
+// dialog, so the owner sees the whole offer (O-Q1). Each tab shows how many requests wait in it, and the page opens on the one that has
+// requests waiting when the other has none (M5.1 review findings 7 and 8).
 import "./documents/parts.tsx";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { type Column, DataTable, FilterBar } from "../components/data-table.tsx";
 import { Modal } from "../components/dialog.tsx";
@@ -26,6 +28,7 @@ import {
   decisionTitle,
   docErrorText,
   moneyText,
+  pendingBadge,
   rateText,
   titleOf,
 } from "../lib/documents.ts";
@@ -58,22 +61,53 @@ function Approvals() {
   // The owner starts on what waits for them; a bell link shows every state, so the request is on the page whatever happened to it.
   const stateP = params.get("state");
   const state = stateP === "all" ? null : isState(stateP) ? stateP : owner && !linked ? "pending" : null;
-  // A bell's link names a request, not its kind: an issue request found in the issue queue switches to it.
+  // A bell's link names a request; an older bell's link has no kind: the request is looked up by its id in the issue queue, and found there
+  // it switches to that tab.
   const probe = useLoad(
-    () => (linked && invoices && kindP === null ? invoicesApi.issueApprovals({}) : Promise.resolve(null)),
+    () =>
+      linked && invoices && kindP === null
+        ? invoicesApi.issueApprovals({ id: linked })
+        : Promise.resolve(null),
     `${linked ?? ""}:${kindP ?? ""}`,
   );
-  useEffect(() => {
-    if (probe.state === "ready" && probe.data?.approvals.some((a) => a.id === linked))
+  // How many requests wait in each queue (the first page of each; "50+" past it), for the tabs.
+  const counts = useLoad(
+    () =>
+      invoices
+        ? Promise.all([
+            documentsApi.approvals({ status: "pending", limit: "50" }),
+            invoicesApi.issueApprovals({ status: "pending" }),
+          ])
+        : Promise.resolve(null),
+    String(invoices),
+  );
+  const waiting = (r: { approvals: unknown[]; next: string | null } | undefined) =>
+    r ? { n: r.approvals.length, more: r.next !== null } : null;
+  const discountWaiting = counts.state === "ready" ? waiting(counts.data?.[0]) : null;
+  const issueWaiting = counts.state === "ready" ? waiting(counts.data?.[1]) : null;
+  const switchTo = useCallback(
+    (k: QueueKind) =>
       setParams(
         (p) => {
           const n = new URLSearchParams(p);
-          n.set("kind", "issue");
+          if (k === "issue") n.set("kind", "issue");
+          else n.delete("kind");
           return n;
         },
         { replace: true },
-      );
-  }, [probe.state, probe.data, linked, setParams]);
+      ),
+    [setParams],
+  );
+  useEffect(() => {
+    if (probe.state === "ready" && probe.data?.approvals.some((a) => a.id === linked)) switchTo("issue");
+  }, [probe.state, probe.data, linked, switchTo]);
+  // Opened without a kind or a linked request: the queue that has requests waiting, when only the issue queue has some.
+  const opened = useRef(false);
+  useEffect(() => {
+    if (opened.current || linked || kindP !== null || !discountWaiting || !issueWaiting) return;
+    opened.current = true;
+    if (discountWaiting.n === 0 && issueWaiting.n > 0) switchTo("issue");
+  }, [linked, kindP, discountWaiting, issueWaiting, switchTo]);
   const onLinkedDone = () => {
     if (linked)
       navigate({ pathname: "/approvals", search: kind === "issue" ? "?kind=issue" : "" }, { replace: true });
@@ -113,9 +147,21 @@ function Approvals() {
   );
   const queue =
     kind === "issue" ? (
-      <IssueQueue owner={owner} state={state} linked={linked} onLinkedDone={onLinkedDone} />
+      <IssueQueue
+        owner={owner}
+        state={state}
+        linked={linked}
+        onLinkedDone={onLinkedDone}
+        onDecided={() => counts.reload(true)}
+      />
     ) : (
-      <DiscountQueue owner={owner} state={state} linked={linked} onLinkedDone={onLinkedDone} />
+      <DiscountQueue
+        owner={owner}
+        state={state}
+        linked={linked}
+        onLinkedDone={onLinkedDone}
+        onDecided={() => counts.reload(true)}
+      />
     );
 
   return (
@@ -125,21 +171,11 @@ function Approvals() {
         <Tabs
           label={DOC_COPY.approvalsHeading}
           tabs={[
-            { key: "discount", label: DOC_COPY.colDiscount },
-            { key: "issue", label: INV_COPY.kindIssue },
+            { key: "discount", label: DOC_COPY.colDiscount, badge: pendingBadge(discountWaiting) },
+            { key: "issue", label: INV_COPY.kindIssue, badge: pendingBadge(issueWaiting) },
           ]}
           selected={kind}
-          onSelect={(k) =>
-            setParams(
-              (p) => {
-                const n = new URLSearchParams(p);
-                if (k === "issue") n.set("kind", "issue");
-                else n.delete("kind");
-                return n;
-              },
-              { replace: true },
-            )
-          }
+          onSelect={switchTo}
         >
           {filters}
           {queue}
@@ -169,6 +205,7 @@ function DiscountQueue(props: {
   state: Exclude<ApprovalState, "none"> | null;
   linked: string | undefined;
   onLinkedDone: () => void;
+  onDecided: () => void;
 }) {
   const toast = useToast();
   const { owner, state, linked } = props;
@@ -177,7 +214,18 @@ function DiscountQueue(props: {
   const [more, setMore] = useState<ApprovalRow[]>([]);
   const key = `${state ?? "all"}`;
   const list = useLoad(() => documentsApi.approvals({ status: state ?? undefined }), key);
-  const rows = [...(list.data?.approvals ?? []), ...more];
+  // A bell's request older than the first page: read by its id and shown first.
+  const linkedRow = useLoad(
+    () => (linked ? documentsApi.approvals({ id: linked }) : Promise.resolve(null)),
+    linked ?? "",
+  );
+  const extra =
+    linkedRow.state === "ready" && list.state === "ready"
+      ? (linkedRow.data?.approvals ?? []).filter(
+          (a) => ![...list.data.approvals, ...more].some((r) => r.id === a.id),
+        )
+      : [];
+  const rows = [...extra, ...(list.data?.approvals ?? []), ...more];
   const next = more.length ? after : (list.data?.next ?? null);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: a new filter starts again from the first page
@@ -208,11 +256,16 @@ function DiscountQueue(props: {
   }, [result, list.state, list.data, more]);
 
   // The bell's link: open that request (the owner decides it; anyone else sees it in the list).
+  const linkedDone = useRef<string | null>(null);
   useEffect(() => {
-    if (!linked || list.state !== "ready" || !owner) return;
-    const row = list.data.approvals.find((a) => a.id === linked);
+    if (!linked || list.state !== "ready" || !owner || linkedDone.current === linked) return;
+    const row =
+      list.data.approvals.find((a) => a.id === linked) ??
+      (linkedRow.state === "ready" ? linkedRow.data?.approvals.find((a) => a.id === linked) : undefined);
+    if (!row && linkedRow.state === "loading") return;
+    linkedDone.current = linked;
     if (row && row.state === "pending" && row.document.status === "draft") setDeciding(row);
-  }, [linked, list.state, list.data, owner]);
+  }, [linked, list.state, list.data, linkedRow.state, linkedRow.data, owner]);
 
   const columns: Column<ApprovalRow>[] = [
     {
@@ -353,6 +406,7 @@ function DiscountQueue(props: {
           setDeciding(null);
           props.onLinkedDone();
           list.reload(true);
+          props.onDecided();
         }}
       />
     </>

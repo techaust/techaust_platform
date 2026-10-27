@@ -26,6 +26,7 @@ import { PDF_COPY } from "../../lib/pdf.ts";
 import { LinesTable, TaxPreview } from "../documents/money.tsx";
 import { PdfPanel, type PdfSource, type PdfWords } from "../documents/pdf-panel.tsx";
 import { VoidDialog } from "./dialogs.tsx";
+import { MilestoneOrigin } from "./editor.tsx";
 import { INVOICES_CRUMB, InvoiceBadge, NumberMark } from "./parts.tsx";
 
 const PDF_WORDS: PdfWords = {
@@ -131,7 +132,11 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
           <div>
             {isVoid && v.void.voidedAt !== null && (
               <p className="inv-lock__void">
-                {voidedLine(formatIstDay(v.void.voidedAt), INV_PLACEHOLDER, v.void.reason ?? "")}
+                {voidedLine(
+                  formatIstDay(v.void.voidedAt),
+                  v.void.voidedByName || INV_PLACEHOLDER,
+                  v.void.reason ?? "",
+                )}
               </p>
             )}
             <p>{frozenBanner(v.issueDate ? (dayText(v.issueDate) ?? v.issueDate) : "", issuedBy(v))}</p>
@@ -156,19 +161,31 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
         </div>
 
         <div className="doc-page__main">
-          {v.milestone && (
-            <p className="inv-origin">
-              <FolderKanban size={16} />
-              <span>
-                {allowed(role, "projects.read") ? (
-                  <Link to={`/projects/${encodeURIComponent(v.milestone.projectId)}`}>
-                    {v.milestone.title}
-                  </Link>
-                ) : (
-                  v.milestone.title
-                )}
-              </span>
-            </p>
+          {v.milestone?.projectName ? (
+            <MilestoneOrigin
+              milestone={v.milestone.title}
+              project={v.milestone.projectName}
+              href={
+                allowed(role, "projects.read")
+                  ? `/projects/${encodeURIComponent(v.milestone.projectId)}`
+                  : null
+              }
+            />
+          ) : (
+            v.milestone && (
+              <p className="inv-origin">
+                <FolderKanban size={16} />
+                <span>
+                  {allowed(role, "projects.read") ? (
+                    <Link to={`/projects/${encodeURIComponent(v.milestone.projectId)}`}>
+                      {v.milestone.title}
+                    </Link>
+                  ) : (
+                    v.milestone.title
+                  )}
+                </span>
+              </p>
+            )
           )}
           <section className="lead-panel doc-sheet inv-sheet" aria-labelledby="inv-sheet-h">
             <h2 id="inv-sheet-h" className="visually-hidden">

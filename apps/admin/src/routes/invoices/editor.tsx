@@ -166,9 +166,15 @@ export function InvoiceEditor({ view, reload }: { view: InvoiceView; reload: () 
     el?.scrollIntoView({ block: "center" });
     el?.focus();
   }, []);
+  // A line's blocker: the cursor goes where that line is fixed (its description in the row; its SAC in the line's details).
+  const [showSac, setShowSac] = useState<{ uid: string; at: number } | null>(null);
   const focusLine = useCallback(
-    (n: number) => {
+    (n: number, field: "description" | "sac" = "description") => {
       const l = ref.current.lines[n - 1];
+      if (l && field === "sac" && l.catalogueItemId === null) {
+        setShowSac({ uid: l.uid, at: Date.now() });
+        return;
+      }
       const el = l ? document.getElementById(`ln-${l.uid}-description`) : null;
       if (el) {
         el.focus();
@@ -193,7 +199,12 @@ export function InvoiceEditor({ view, reload }: { view: InvoiceView; reload: () 
   const discErr = discountError(s.fields, s.currency);
   const waiting = requestLine(v.issue.approval);
   const blocked = s.status === "stale" || s.status === "frozen";
-  const projectName = useProjectName(v.milestone?.projectId ?? null, allowed(user.role, "projects.read"));
+  // The view names the project (M5.1 review fix 6); an older API did not, so the project is read for roles that may open it.
+  const fetchedProject = useProjectName(
+    v.milestone && !v.milestone.projectName ? v.milestone.projectId : null,
+    allowed(user.role, "projects.read"),
+  );
+  const projectName = v.milestone?.projectName || fetchedProject;
 
   return (
     <>
@@ -355,7 +366,11 @@ export function InvoiceEditor({ view, reload }: { view: InvoiceView; reload: () 
             <MilestoneOrigin
               milestone={v.milestone.title}
               project={projectName ?? INV_PLACEHOLDER}
-              href={`/projects/${encodeURIComponent(v.milestone.projectId)}`}
+              href={
+                allowed(user.role, "projects.read")
+                  ? `/projects/${encodeURIComponent(v.milestone.projectId)}`
+                  : null
+              }
             />
           )}
 
@@ -401,6 +416,7 @@ export function InvoiceEditor({ view, reload }: { view: InvoiceView; reload: () 
             type="estimate"
             dispatch={linesDispatch}
             current={currentLines}
+            showSac={showSac}
           />
 
           <section className="lead-panel doc-totals" aria-labelledby="inv-totals-h">
@@ -542,15 +558,17 @@ function useProjectName(projectId: string | null, canRead: boolean): string | nu
   return p.state === "ready" && p.data ? p.data.project.name : null;
 }
 
-/** 07-R "Created from the milestone …": one quiet line, the project's name the link back to it. */
-function MilestoneOrigin(props: { milestone: string; project: string; href: string }) {
+/** 07-R "Created from the milestone …": one quiet line, the project's name the link back to it (plain text for a role that can't open projects). */
+export function MilestoneOrigin(props: { milestone: string; project: string; href: string | null }) {
   const line = fromMilestone(props.milestone, props.project);
   const parts = splitAtPlace(line, props.project);
   return (
     <p className="inv-origin">
       <FolderKanban size={16} />
       <span>
-        {parts ? (
+        {props.href === null ? (
+          line
+        ) : parts ? (
           <>
             {parts[0]}
             <Link to={props.href}>{parts[1]}</Link>

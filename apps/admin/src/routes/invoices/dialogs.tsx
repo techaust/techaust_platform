@@ -16,7 +16,6 @@ import {
   blockerTarget,
   INV_COPY,
   INV_ERRORS,
-  INV_PLACEHOLDER,
   invErrorText,
   invMapped,
   issueBody,
@@ -34,8 +33,8 @@ export function BlockerList(props: {
   blockers: InvoiceBlocker[];
   clientId: string;
   currency: string;
-  /** A line's blocker: put the cursor in that line (the editor maps the position to the line). */
-  onLine?: ((n: number) => void) | undefined;
+  /** A line's blocker: put the cursor where that line is fixed (the editor maps the position to the line; `field` says which part). */
+  onLine?: ((n: number, field: "description" | "sac") => void) | undefined;
   /** A blocker about the lines as a whole. */
   onLines?: (() => void) | undefined;
 }) {
@@ -62,10 +61,14 @@ export function BlockerList(props: {
             </Link>
           );
         } else if (t?.kind === "line" && props.onLine) {
-          const n = t.n;
+          const { n, field } = t;
           const onLine = props.onLine;
           body = (
-            <button type="button" className="blockers__link inv-blockers__jump" onClick={() => onLine(n)}>
+            <button
+              type="button"
+              className="blockers__link inv-blockers__jump"
+              onClick={() => onLine(n, field)}
+            >
               {line}
             </button>
           );
@@ -114,7 +117,7 @@ export function IssueDialog(props: {
   /** Saves what was typed (and the out-of-date figures); resolves with the view to issue, or null when it couldn't. */
   prepare: () => Promise<InvoiceView | null>;
   issue: (v: InvoiceView) => Promise<void>;
-  onLine: (n: number) => void;
+  onLine: (n: number, field: "description" | "sac") => void;
   onLines: () => void;
 }) {
   const v = props.view;
@@ -174,7 +177,7 @@ export function IssueDialog(props: {
               blockers={v.blockers}
               clientId={v.client.id}
               currency={v.client.currency}
-              onLine={(n) => leave(() => props.onLine(n))()}
+              onLine={(n, field) => leave(() => props.onLine(n, field))()}
               onLines={leave(props.onLines)}
             />
           </div>
@@ -218,7 +221,7 @@ export function RequestIssueDialog(props: {
   view: InvoiceView;
   onClose: () => void;
   onSend: () => Promise<void>;
-  onLine: (n: number) => void;
+  onLine: (n: number, field: "description" | "sac") => void;
   onLines: () => void;
 }) {
   const v = props.view;
@@ -248,9 +251,9 @@ export function RequestIssueDialog(props: {
             blockers={v.blockers}
             clientId={v.client.id}
             currency={v.client.currency}
-            onLine={(n) => {
+            onLine={(n, field) => {
               props.onClose();
-              requestAnimationFrame(() => props.onLine(n));
+              requestAnimationFrame(() => props.onLine(n, field));
             }}
             onLines={() => {
               props.onClose();
@@ -291,8 +294,7 @@ export function VoidDialog(props: {
     const r = reason.trim();
     const noReason = r === "";
     const noCode = needsCode && code.length !== 6;
-    // 07-R has no line for an empty reason: a marked placeholder until it does.
-    setReasonError(noReason ? INV_PLACEHOLDER : null);
+    setReasonError(noReason ? INV_COPY.voidReasonEmpty : null);
     setCodeError(noCode ? CODE_MISSING : null);
     if (noReason || noCode) {
       document.getElementById(noReason ? "void-reason" : "void-code")?.focus();

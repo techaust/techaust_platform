@@ -3,15 +3,15 @@
 // reads; the money settings only for roles with clients.finance.read; edited through PATCH /clients/:id/billing by roles
 // with clients.finance.write). Each edit sends only the fields the person changed and the `updatedAt` it was loaded
 // with; a 409 `stale_version` or a reload that clashes with a draft shows the shared notice (M3.2 pattern). The side
-// column: the balance (07-J line until invoicing, finance roles only), the primary contact and the source lead.
+// column: the primary contact and the source lead. (The balance panel returns with payments in M5.3, when GET /finance has figures; until then
+// the client's invoices are on its Invoices tab, so the old 07-J "arrive with invoicing" line is gone: M5.1 review finding 16.)
 // GST treatment: VERIFY WITH CA/LEGAL.
 import { countryName } from "@techaust/core/form-labels";
 import { type Dispatch, type FormEvent, type ReactNode, useState } from "react";
 import { Link } from "react-router";
 import { api, type ClientPage, errorText, RequestError } from "../../api.ts";
 import { FormField, NumberUnit, Switch, VerifyNote } from "../../components/form.tsx";
-import { Inbox, Lock, Pencil, Receipt, User } from "../../components/icons.tsx";
-import { LoadFailed, useLoad } from "../../components/states.tsx";
+import { Inbox, Lock, Pencil, User } from "../../components/icons.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { FieldError, Notice } from "../../components/ui.tsx";
 import { allowed } from "../../lib/access.ts";
@@ -46,8 +46,6 @@ import { AddressFields, type Tax, TaxFields, taxFieldErrors } from "./parts.tsx"
 export const ATTACH_PDF_HINT =
   "Emails to this client carry a link to each document. Turn this on to attach the PDF as well.";
 
-/** 07-J (approved): the lines until invoicing exists. */
-export const INVOICES_LINE = "Invoices and payments arrive with invoicing.";
 export const CURRENCY_LOCKED_LINE = "The currency can't change once this client has an invoice.";
 
 type Errors = Record<string, string>;
@@ -83,7 +81,6 @@ export function Overview(props: {
         )}
       </div>
       <aside className="lead-page__side" aria-label="Summary">
-        {canFinance && <Balance id={client.id} />}
         <section className="lead-panel" aria-labelledby="primary-h">
           <h2 id="primary-h" className="lead-panel__title">
             Primary contact
@@ -141,26 +138,6 @@ export function Fact({ label, children }: { label: string; children: ReactNode }
 }
 
 const none = (text = "Not given") => <span className="muted">{text}</span>;
-
-/** Overview (balance, overdue, lifetime billed) until invoicing: GET /finance answers `{available:false}`. */
-function Balance({ id }: { id: string }) {
-  const fin = useLoad(() => api.clientFinance(id), id);
-  return (
-    <section className="lead-panel" aria-labelledby="balance-h">
-      <h2 id="balance-h" className="lead-panel__title">
-        Balance
-      </h2>
-      {fin.state === "failed" ? (
-        <LoadFailed error={fin.error} onRetry={() => fin.reload()} headingLevel={3} />
-      ) : (
-        <p className="panel-empty">
-          <Receipt size={20} />
-          <span>{INVOICES_LINE}</span>
-        </p>
-      )}
-    </section>
-  );
-}
 
 // ---- details ----------------------------------------------------------------------------------------------------------
 
