@@ -47,6 +47,7 @@ import {
   ADVANCE_EXCEEDS_BALANCE,
   ADVANCE_REFERENCE_INVALID,
   ADVANCE_REFERENCE_USED,
+  ADVANCE_SUPPLY_CHANGED,
   advanceDraft,
   bankStampOf,
   blockersOf,
@@ -66,6 +67,7 @@ import {
   needsInrConfirm,
   PROFORMA_NOT_ISSUED,
   proformaRouteOf,
+  proformaSupplyChanged,
   recipientOf,
   SERIES_FULL,
   SETTINGS_CHANGED,
@@ -129,6 +131,8 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
     // (5) the stamp the person saw, and a client that still exists
     if (d.updated_at !== f.expectedProformaUpdatedAt) return err(c, STALE_VERSION, 409);
     if (ctx.client.anonymised_at !== null) return err(c, CLIENT_GONE, 409);
+    // (5b) the supply the proforma was sealed with must still be the client's (VERIFY WITH CA/LEGAL): nothing is written when it is not
+    if (proformaSupplyChanged(d.computed, ctx.client.gst_status)) return err(c, ADVANCE_SUPPLY_CHANGED, 409);
     // (6) the amount against what is left
     if (f.amountMinor > d.balance_minor) return err(c, ADVANCE_EXCEEDS_BALANCE, 409);
     // (7) the day the money arrived: not before the proforma was issued, not in the future (IST); an earlier month only warns (Q27)

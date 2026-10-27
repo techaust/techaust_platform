@@ -11,6 +11,7 @@ import {
   checklistItemOn,
   DEFAULT_CHECKLIST,
   EXPORT_ENDORSEMENT,
+  exportModeFromStoredTax,
   formatFxRate,
   fxDateOk,
   fxSourceLabel,
@@ -192,6 +193,42 @@ describe("lutFor and lutReminder [ADM-INV-18; Q22]", () => {
   });
 });
 
+describe("exportModeFromStoredTax and the one rule for the legacy LUT [review 2, findings 9 and 13]", () => {
+  it("reads the route without zod: igst_paid only when it says so, the LUT route otherwise, never throws", () => {
+    expect(exportModeFromStoredTax({ exportMode: "igst_paid" })).toBe("igst_paid");
+    expect(exportModeFromStoredTax({ exportMode: "lut" })).toBe("lut");
+    for (const junk of [null, undefined, 3, "x", [], {}, { exportMode: 5 }, { exportMode: "other" }])
+      expect(exportModeFromStoredTax(junk)).toBe("lut");
+  });
+  it("the three readers agree on every legacy shape: folded, listed, invalid (ARN or year), full, none", () => {
+    const entry = (n: number) => ({ fy: `${20 + n}${21 + n}`, arn: `A${n}`, filedOn: null });
+    const twenty = Array.from({ length: 20 }, (_, n) => entry(n));
+    const base = { ...SETTINGS_DEFAULTS.tax, luts: [entry(0)] };
+    const cases: { lut: { arn: string | null; fy: string | null }; luts?: typeof twenty }[] = [
+      { lut: { arn: "ad 1", fy: "2627" } }, // folded, normalised
+      { lut: { arn: "AD1", fy: "2021" } }, // listed
+      { lut: { arn: "AD-1", fy: "2627" } }, // invalid ARN
+      { lut: { arn: "AD1", fy: "2628" } }, // invalid year
+      { lut: { arn: "AD1", fy: "2627" }, luts: twenty }, // full
+      { lut: { arn: null, fy: null } }, // none
+    ];
+    for (const c of cases) {
+      const tax = { ...base, ...(c.luts ? { luts: c.luts } : {}), lut: c.lut };
+      const fate = legacyLutFate(tax);
+      const expected = [
+        ...tax.luts.map(({ fy, arn }) => ({ fy, arn })),
+        ...(fate.fate === "folded" ? [{ fy: fate.entry.fy, arn: fate.entry.arn }] : []),
+      ];
+      expect(lutsOf(tax), JSON.stringify(c)).toEqual(expected);
+      expect(lutsFromStoredTax(tax), JSON.stringify(c)).toEqual(expected);
+      expect(
+        foldLegacyLut(tax).luts.map(({ fy, arn }) => ({ fy, arn })),
+        JSON.stringify(c),
+      ).toEqual(expected);
+    }
+  });
+});
+
 describe("lutsFromStoredTax: the reader without zod [finding 7]", () => {
   it("reads the list and the one legacy letter of M3 (unless its FY is listed)", () => {
     expect(
@@ -208,8 +245,8 @@ describe("lutsFromStoredTax: the reader without zod [finding 7]", () => {
     );
   });
   it("reads a row from before M5.2 (only `lut`), and never throws on garbage", () => {
-    expect(lutsFromStoredTax({ lut: { arn: "TEST-ARN", fy: "2627" } })).toEqual([
-      { fy: "2627", arn: "TEST-ARN" },
+    expect(lutsFromStoredTax({ lut: { arn: "TESTARN", fy: "2627" } })).toEqual([
+      { fy: "2627", arn: "TESTARN" },
     ]);
     expect(lutsFromStoredTax({ lut: { arn: null, fy: null } })).toEqual([]);
     for (const junk of [

@@ -69,21 +69,73 @@ export function lutReminder(today: string, luts: readonly Lut[]): LutReminder | 
   };
 }
 
+/** The most letters the `luts` list keeps. */
+export const LUTS_MAX = 20;
+
+/** A letter as the list stores it. */
+export type LutEntry = { fy: string; arn: string; filedOn: string | null };
+
+/** The ARN as the list keeps it: spaces dropped, upper case (the twin of the `lutEntry` schema's transform). */
+export const normaliseLutArn = (arn: string): string => arn.replace(/\s+/g, "").toUpperCase();
+
+/** True for a year token of two consecutive years ("2627"). */
+const lutFyOk = (fy: string): boolean =>
+  fy.length === 4 &&
+  [...fy].every((ch) => ch >= "0" && ch <= "9") &&
+  (Number(fy.slice(0, 2)) + 1) % 100 === Number(fy.slice(2));
+
+type LegacyLutTax = {
+  readonly lut: { readonly arn: string | null; readonly fy: string | null };
+  readonly luts: readonly { readonly fy: string; readonly arn?: string; readonly filedOn?: string | null }[];
+};
+
+/**
+ * What becomes of the deprecated single `lut` of M3 (review 2, finding 9: the ONE rule; the settings fold, `lutsOf` and the stored-row reader all ask it, pure and
+ * without zod): `none` (no letter in it), `listed` (its FY already has a list entry: the entry wins), `invalid` (the list would refuse it: an ARN that is not 1 to 30
+ * letters or digits once normalised, or a year that is not two consecutive years), `full` (the list already holds 20) or `folded` (it counts as this list entry).
+ * VERIFY WITH CA/LEGAL (the ARN's format is not verified).
+ */
+export type LegacyLutFate =
+  | { fate: "none" | "listed" | "invalid" | "full" }
+  | { fate: "folded"; entry: LutEntry };
+
+export function legacyLutFate(tax: LegacyLutTax): LegacyLutFate {
+  const { arn, fy } = tax.lut;
+  if (!arn || !fy) return { fate: "none" };
+  if (tax.luts.some((l) => l.fy === fy)) return { fate: "listed" };
+  const norm = normaliseLutArn(arn);
+  if (!lutFyOk(fy) || !/^[A-Z0-9]{1,30}$/.test(norm)) return { fate: "invalid" };
+  if (tax.luts.length >= LUTS_MAX) return { fate: "full" };
+  return { fate: "folded", entry: { fy, arn: norm, filedOn: null } };
+}
+
 /**
  * The saved letters, read from the stored `tax` settings value WITHOUT zod (the jobs Worker must not bring zod in): the `luts` list, and the one
- * legacy `lut {arn, fy}` of M3 when set and its FY is not listed. Anything malformed is skipped, never thrown.
+ * legacy `lut {arn, fy}` of M3 when `legacyLutFate` says it counts. Anything malformed is skipped, never thrown.
  */
 export function lutsFromStoredTax(json: unknown): { fy: string; arn: string }[] {
-  const out: { fy: string; arn: string }[] = [];
   const tax = isRecord(json) ? json : {};
-  const add = (fy: unknown, arn: unknown) => {
-    if (typeof fy !== "string" || !/^\d{4}$/.test(fy)) return;
-    if (typeof arn !== "string" || arn.trim() === "") return;
-    if (!out.some((l) => l.fy === fy)) out.push({ fy, arn });
-  };
-  if (Array.isArray(tax.luts)) for (const l of tax.luts) if (isRecord(l)) add(l.fy, l.arn);
-  if (isRecord(tax.lut)) add(tax.lut.fy, tax.lut.arn);
-  return out;
+  const list: { fy: string; arn: string }[] = [];
+  if (Array.isArray(tax.luts))
+    for (const l of tax.luts) {
+      if (!isRecord(l) || typeof l.fy !== "string" || typeof l.arn !== "string") continue;
+      if (!/^\d{4}$/.test(l.fy) || l.arn.trim() === "" || list.some((x) => x.fy === l.fy)) continue;
+      list.push({ fy: l.fy, arn: l.arn });
+    }
+  const legacy = isRecord(tax.lut) ? tax.lut : {};
+  const fate = legacyLutFate({
+    lut: {
+      arn: typeof legacy.arn === "string" ? legacy.arn : null,
+      fy: typeof legacy.fy === "string" ? legacy.fy : null,
+    },
+    luts: list,
+  });
+  return fate.fate === "folded" ? [...list, { fy: fate.entry.fy, arn: fate.entry.arn }] : list;
+}
+
+/** The export route stored in a `tax` settings value (`exportMode`), read WITHOUT zod; anything else is the default, the LUT route (G-8). */
+export function exportModeFromStoredTax(json: unknown): ExportRoute {
+  return isRecord(json) && json.exportMode === "igst_paid" ? "igst_paid" : "lut";
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>

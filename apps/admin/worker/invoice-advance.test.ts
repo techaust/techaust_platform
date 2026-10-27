@@ -855,7 +855,8 @@ describe("the rate date of a frozen invoice made for money received [review 6]",
     });
     expect(res.status, await res.clone().text()).toBe(201);
     const view = await getInvoice(o, (await json(res)).id);
-    expect(view.fx).toMatchObject({ applies: true, refDate: "2030-06-30", dateOk: true });
+    expect(view.fx).toMatchObject({ applies: true, refDate: "2030-06-30", dateOk: null });
+    // review 2 (finding 8): a frozen invoice was judged at issue, so no live window applies to it (null, never a false)
     // a draft is still judged against today
     const draft = await mkExportDraft(o);
     expect((await getInvoice(o, draft.id)).fx.refDate).toBe("2030-07-05");
@@ -946,5 +947,99 @@ describe("the words of the invoice for money received [review 2, decision 10; 07
     expect(res.status).toBe(409);
     expect(await codeOf(res)).toBe("export_declaration_tampered");
     expect(await snapshot(pf.id)).toEqual(before);
+  });
+});
+
+describe("the draft's LUT line, the series preview [review 2, findings 3 and the designer's question 1]", () => {
+  it("the LUT letter shows on the LUT route only: the IGST route has none even when the FY has a letter", async () => {
+    const o = await owner();
+    const d = await mkExportDraft(o);
+    expect((await getInvoice(o, d.id)).export).toMatchObject({
+      mode: "lut",
+      lut: { fy: currentFy(), arn: LUT_ARN },
+    });
+    await putTax({ luts: [lutOf(currentFy())], exportMode: "igst_paid" });
+    const igst = await getInvoice(o, d.id);
+    expect(igst.export).toMatchObject({ mode: "igst_paid", lutRequired: false, lut: null });
+    await putTax({ luts: [lutOf(currentFy())] });
+  });
+
+  it("issue.preview carries the series of the document's own type, with that series' format", async () => {
+    const o = await owner();
+    const pf = await mkProforma(o, { clientId: (await mkInvoiceClient()).clientId, price: 100_000 });
+    const tax = await mkInvoice(o);
+    const exp = await mkExportDraft(o);
+    const fmt = async (series: string) =>
+      (
+        JSON.parse(
+          (await one<{ value: string }>("SELECT value FROM settings WHERE key = 'numbering'"))?.value ?? "{}",
+        ) as Record<string, { template: string }>
+      )[series]?.template;
+    for (const [id, series] of [
+      [pf.id, "proforma"],
+      [tax.id, "invoice"],
+      [exp.id, "export"],
+    ] as const) {
+      const p = (await getInvoice(o, id)).issue.preview;
+      expect(p.series).toBe(series);
+      const stored = await fmt(series);
+      if (stored) expect(p.template).toBe(stored);
+    }
+  });
+});
+
+describe("the client's GST status changed after the proforma [review 2, finding 6; VERIFY WITH CA/LEGAL]", () => {
+  // the clients table keeps a state code for an Indian client and none for an overseas one, so the status and the state move together
+  const setStatus = (clientId: string, status: "overseas" | "unregistered") =>
+    env.DB.prepare("UPDATE clients SET gst_status = ?2, state_code = ?3 WHERE id = ?1")
+      .bind(clientId, status, status === "overseas" ? null : "19")
+      .run();
+
+  it("a domestic proforma for a now-overseas client is refused 409 advance_supply_changed, and nothing is written", async () => {
+    const o = await owner();
+    const pf = await issuedProforma(o);
+    await setStatus(pf.clientId, "overseas");
+    const view = await getInvoice(o, pf.id);
+    expect(view.proforma.advanceSupplyChanged).toBe(true);
+    const before = await snapshot(pf.id);
+    const res = await advance(o, pf.id);
+    expect(res.status).toBe(409);
+    expect(await codeOf(res)).toBe("advance_supply_changed");
+    expect(await snapshot(pf.id)).toEqual(before);
+  });
+
+  it("an overseas proforma for a client who is no longer overseas is refused the same way", async () => {
+    const o = await owner();
+    const pf = await issuedProforma(o, { overseas: true, price: 1_000_000 });
+    await setStatus(pf.clientId, "unregistered");
+    expect((await getInvoice(o, pf.id)).proforma.advanceSupplyChanged).toBe(true);
+    const before = await snapshot(pf.id);
+    const res = await advance(o, pf.id, { fx: { rate: "83.1234", date: todayIso(), source: "FBIL" } });
+    expect(res.status).toBe(409);
+    expect(await codeOf(res)).toBe("advance_supply_changed");
+    expect(await snapshot(pf.id)).toEqual(before);
+  });
+
+  it("when the status still matches nothing is flagged, and the view's INR confirmation is the server's own (an INR export proforma asks, a domestic one does not)", async () => {
+    const o = await owner();
+    const dom = await issuedProforma(o);
+    const domView = await getInvoice(o, dom.id);
+    expect(domView.proforma).toMatchObject({ advanceSupplyChanged: false, advanceNeedsInrConfirm: false });
+    const c = await mkInvoiceClient({
+      country: "US",
+      gst_status: "overseas",
+      state_code: null,
+      currency: "INR",
+      billing_address: JSON.stringify({ line1: "1 Main St", city: "Austin", country: "US" }),
+    });
+    const made = await mkProforma(o, { clientId: c.clientId });
+    expect((await issueInvoice(o, made.id)).status).toBe(200);
+    const exp = made;
+    const expView = await getInvoice(o, exp.id);
+    expect(expView.currency).toBe("INR");
+    expect(expView.proforma).toMatchObject({ advanceSupplyChanged: false, advanceNeedsInrConfirm: true });
+    // and the route agrees: without the yes the INR export is refused, as the view said
+    const res = await advance(o, exp.id, { amountMinor: 50_000 });
+    expect(await codeOf(res)).toBe("export_currency_confirm");
   });
 });
