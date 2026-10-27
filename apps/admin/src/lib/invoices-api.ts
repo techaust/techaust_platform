@@ -272,6 +272,8 @@ export type InvoiceSendRow = {
   queuedAt: number | null;
   cancelledAt: number | null;
   emailStatus: string | null;
+  /** The member who sent it by hand; null for an automatic send (kind `auto`) or a member no longer on record. Absent from an older API. */
+  sentByName?: string | null;
 };
 /** One payment reminder: its signed offset from the due date (−3 is before), when it is due (UTC ms, the window's opening hour IST), and what happened. */
 export type InvoiceReminderRow = {

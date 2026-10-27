@@ -311,11 +311,18 @@ export function EmailsPanel(props: {
                       {r.contactName && r.email && <span className="deliv__meta break">{r.email}</span>}
                     </dd>
                   </div>
-                  {r.kind === "auto" && (
+                  {r.kind === "auto" ? (
                     <div>
                       <dt className="visually-hidden">{SEND_COPY.colSentBy}</dt>
                       <dd className="deliv__meta">{SEND_COPY.sentAutomatically}</dd>
                     </div>
+                  ) : (
+                    r.sentByName && (
+                      <div className="inv-mail__by">
+                        <dt className="deliv__meta">{SEND_COPY.colSentBy}</dt>
+                        <dd className="deliv__meta">{r.sentByName}</dd>
+                      </div>
+                    )
                   )}
                   <div>
                     <dt className="visually-hidden">{SEND_COPY.colWhen}</dt>
