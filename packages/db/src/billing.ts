@@ -24,7 +24,7 @@ export const CARE_DUE_SQL = `SELECT p.id, p.client_id, p.created_at FROM care_pl
  * is a live proforma belongs to `PROFORMA_TAX_INVOICE_DUE_SQL` instead (the two sets are disjoint). Index: `milestones_unbilled`.
  */
 export const UNBILLED_SQL = `SELECT m.id AS milestone_id, m.delivered_at, m.title, m.project_id, p.client_id, c.display_name AS client_name
-   FROM milestones m INDEXED BY milestones_unbilled JOIN projects p ON p.id = m.project_id JOIN clients c ON c.id = p.client_id
+   FROM milestones m INDEXED BY milestones_unbilled JOIN projects p ON p.id = m.project_id JOIN clients c ON c.id = p.client_id AND c.anonymised_at IS NULL
    WHERE m.status = 'ready_to_bill' AND m.delivered_at IS NOT NULL AND m.delivered_at <= ?1 AND (m.delivered_at > ?2 OR (m.delivered_at = ?2 AND m.id > ?3))
      AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.id = m.document_id AND d.frozen_at IS NOT NULL AND d.status <> 'void')
    ORDER BY m.delivered_at, m.id LIMIT 50`;
@@ -74,7 +74,10 @@ export const REMINDER_SKIP_SQL =
 
 /**
  * After a claim, the EARLIER offsets of the same document that are still waiting and already due are superseded (an outage that let three pile up sends one):
- * `?1` the document id, `?2` the claimed offset, `?3` now. Written in the claim's own batch.
+ * `?1` the CLAIMED reminder's id, `?2` now (the claim's own `sent_at`). Written in the claim's own batch, and guarded by it: it changes nothing unless reminder `?1` carries
+ * `sent_at = ?2`, so a refused claim (a redelivery, a stop rule) can never supersede anything. The document and the offset come from the claimed row itself.
  */
 export const SUPERSEDE_SQL = `UPDATE reminders SET skipped_reason = 'superseded'
-   WHERE document_id = ?1 AND offset_days < ?2 AND sent_at IS NULL AND skipped_reason IS NULL AND due_at <= ?3`;
+   WHERE sent_at IS NULL AND skipped_reason IS NULL AND due_at <= ?2
+     AND document_id = (SELECT c.document_id FROM reminders c WHERE c.id = ?1 AND c.sent_at = ?2)
+     AND offset_days < (SELECT c.offset_days FROM reminders c WHERE c.id = ?1 AND c.sent_at = ?2)`;

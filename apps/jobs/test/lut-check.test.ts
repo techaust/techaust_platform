@@ -98,16 +98,14 @@ describe("the message and the cron", () => {
     ]);
   });
 
-  it("the scheduled handler sends it with the daily run only", async () => {
+  it("the 22:00 UTC daily run no longer sends it: since M5.4 (LD61) the check runs inside the 09:00 IST `alerts.daily` message", async () => {
     const sent: Sent = [];
     await worker.scheduled?.(
       { cron: PURGE_CRON, scheduledTime: SCHEDULED } as ScheduledController,
       makeEnv(sent),
       {} as ExecutionContext,
     );
-    expect(sent.filter((b) => (b as { kind?: string }).kind === "lut.check")).toEqual([
-      { kind: "lut.check", asOf: "2027-03-10" },
-    ]);
+    expect(sent.filter((b) => (b as { kind?: string }).kind === "lut.check")).toEqual([]);
   });
 });
 

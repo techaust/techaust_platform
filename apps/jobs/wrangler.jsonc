@@ -36,8 +36,15 @@
     "PORTAL_URL": "http://localhost:5174/"
   },
   // Daily 22:00 UTC (03:30 IST): enqueues the leads due for deletion (JOB-CRON-01) and one message per nightly statistic for the IST day that
-  // just ended (M3.5, stats_daily); it enqueues and reads nothing else. Not inherited.
-  "triggers": { "crons": ["0 22 * * *"] },
+  // just ended (M3.5, stats_daily); it enqueues and reads nothing else. Hourly at :30 UTC (= every IST hour, M5.4, LD61): ONE `sendBatch`, no D1 read;
+  // 06:00 IST the care-plan scan, 09:00 IST the owners' alerts, every hour the reminder scan (the consumer applies the settings window). Not inherited.
+  "triggers": { "crons": ["0 22 * * *", "30 * * * *"] },
+  // The admin API's named entrypoint `BillingJobs` (M5.4, LD57): the care-plan drafting and the automatic issue run THERE (they need the admin code), and this Worker calls them
+  // over RPC. Deploy order: the admin API Worker first (a jobs deploy whose entrypoint does not exist yet fails), so the entrypoint exists before the first call; until it does a
+  // call is an error and the queue message is retried (every call is idempotent). Not inherited.
+  "services": [
+    { "binding": "ADMIN_JOBS", "service": "techaust-platform-admin-api", "entrypoint": "BillingJobs" }
+  ],
   // SES keys: names only; values come from `wrangler secret put` (docs/runbooks/ses-and-turnstile.md). Not inherited.
   "secrets": { "required": ["SES_ACCESS_KEY_ID", "SES_SECRET_ACCESS_KEY"] },
   // D1 (docs/05 §5). Migrations live in packages/db; local dev and tests use a local database.
@@ -120,7 +127,14 @@
       // does not work locally, so only staging has it. The owner switches Browser Run on before the M4.4 merge (run file, H2).
       "browser": { "binding": "BROWSER" },
       "r2_buckets": [{ "binding": "DOCS", "bucket_name": "techaust-staging-docs" }],
-      "triggers": { "crons": ["0 22 * * *"] },
+      "triggers": { "crons": ["0 22 * * *", "30 * * * *"] },
+      "services": [
+        {
+          "binding": "ADMIN_JOBS",
+          "service": "techaust-platform-admin-api-staging",
+          "entrypoint": "BillingJobs"
+        }
+      ],
       "secrets": { "required": ["SES_ACCESS_KEY_ID", "SES_SECRET_ACCESS_KEY"] },
       "d1_databases": [
         {

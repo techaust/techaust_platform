@@ -218,6 +218,15 @@ export type IssueCareResult = {
   readonly notEmailed?: boolean;
 };
 
+/**
+ * The whole RPC surface of the admin API's `BillingJobs` entrypoint (the class `implements` it, so the two cannot drift), and the shape the jobs Worker's typed wrapper
+ * gives its consumers. Each method takes only an id: no clock, period or amount comes from the caller.
+ */
+export interface BillingJobsApi {
+  draftCarePlan(args: { planId: string }): Promise<DraftCareResult>;
+  issueCareDraft(args: { documentId: string }): Promise<IssueCareResult>;
+}
+
 const DRAFT_RESULTS = ["drafted", "already_billed", "not_due", "skipped"] as const;
 const ISSUE_RESULTS = ["issued", "refused", "already_issued", "not_found"] as const;
 const isStrings = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === "string");

@@ -199,7 +199,10 @@ export const careScanMessage = z.object({ kind: z.literal("care.scan"), after: c
 export const careBillMessage = z.object({ kind: z.literal("care.bill"), planId: id64 });
 /** `care.issue`: issue one care draft automatically (the admin API's `issueCareDraft`). */
 export const careIssueMessage = z.object({ kind: z.literal("care.issue"), documentId: id64 });
-/** `alerts.daily`: the owners' 09:00 IST alerts. `first` also does the LUT check; the cursors continue the unbilled and proforma-due lists past 50 rows. */
+/**
+ * `alerts.daily`: the owners' 09:00 IST alerts. `first` (only the cron's message) starts both lists and also does the LUT check; a continuation (`first` false) carries one cursor per list for the
+ * unbilled and proforma-due lists past 50 rows, and on a continuation a null cursor means that list is FINISHED.
+ */
 export const alertsDailyMessage = z.object({
   kind: z.literal("alerts.daily"),
   first: z.boolean(),

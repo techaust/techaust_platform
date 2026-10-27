@@ -9,6 +9,12 @@ export default defineConfig(async () => ({
     cloudflareTest({
       wrangler: { configPath: "./wrangler.jsonc" },
       miniflare: {
+        // M5.4 (LD57): wrangler.jsonc binds `ADMIN_JOBS` to the admin API Worker's `BillingJobs` entrypoint, which does not exist in this test pool (workerd refuses to start when a bound
+        // service is missing). It is stood in for by a function Worker that answers every request with 501. The consumers' tests pass the typed fakes of `billing-fixtures.ts` instead,
+        // so no test calls the entrypoint through this binding; the real call over a service binding is the staging reading (docs/runbooks/cpu-baseline.md).
+        serviceBindings: {
+          ADMIN_JOBS: async () => new Response("no admin API in the test pool", { status: 501 }),
+        },
         bindings: {
           TEST_MIGRATIONS: await readD1Migrations(join(import.meta.dirname, "../../packages/db/migrations")),
           SES_ACCESS_KEY_ID: "AKIATEST",

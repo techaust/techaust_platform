@@ -1,19 +1,28 @@
 // The queue entry point: routes a batch to its consumer by queue name (`techaust-<env>-leads`, `-leads-dlq`, `-email`,
 // `-email-dlq`). Each message is acknowledged on success and retried when its consumer throws or asks for a retry;
 // after 5 tries the queue moves it to the dead-letter queue (wrangler.jsonc).
-import { isOfferExpansionKind, isPurgeMessage, isPurgeScanMessage } from "@techaust/core";
+import {
+  isBillingKind,
+  isInvoiceExpansionKind,
+  isOfferExpansionKind,
+  isPurgeMessage,
+  isPurgeScanMessage,
+} from "@techaust/core";
 import { isExpireKind, isExpireMessage } from "@techaust/core/expiry";
 import { isLutCheckKind, isLutCheckMessage } from "@techaust/core/invoices";
 import { isPdfKind } from "@techaust/core/pdf-jobs";
 import { isStatsKind, isStatsMessage } from "@techaust/core/stats";
+import { processBilling, processBillingDeadLetter } from "./billing.ts";
 import { CLAIM_TIMEOUT_MS, processDeadLetter, processEmail } from "./email.ts";
 import { logExpireDeadLetter, processExpire, skipExpire } from "./expire.ts";
+import { processInvoiceSend } from "./invoice-send.ts";
 import { processLead } from "./leads.ts";
 import { logEvent, noteInvocation } from "./log.ts";
 import { logLutCheckDeadLetter, processLutCheck, skipLutCheck } from "./lut-check.ts";
 import { processOfferMessage } from "./offers.ts";
 import { processPdf, processPdfDeadLetter } from "./pdf.ts";
 import { enqueueDue, purgeLead } from "./purge.ts";
+import { processReminderSend } from "./reminders.ts";
 import { processStaffAlert } from "./staff-alerts.ts";
 import { logStatsDeadLetter, processStats, skipStats } from "./stats.ts";
 
@@ -64,6 +73,10 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
         // A LUT check that ran out of tries: tomorrow's run checks again, so no alert and no retry.
         logLutCheckDeadLetter(queue);
         message.ack();
+      } else if (isDlq && isBillingKind(message.body)) {
+        // M5.4: a care bill or issue that ran out of tries rings the owners' bell (once per plan per IST day); the scans and the daily alerts are listed again by the next run.
+        await processBillingDeadLetter(env, message.body);
+        message.ack();
       } else if (isDlq) {
         if (await processDeadLetter(env, queue, message.body)) message.ack();
         else message.retry({ delaySeconds: dlqRetryDelay(message.attempts) });
@@ -88,6 +101,10 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
         if (isLutCheckMessage(message.body)) await processLutCheck(env, message.body);
         else skipLutCheck();
         message.ack();
+      } else if (queue.endsWith("-leads") && isBillingKind(message.body)) {
+        // M5.4 (care scan and bill and issue, the owners' alerts, the reminder scan): before the lead fall-through, so a body of this family (valid or not) can never become a lead.
+        await processBilling(env, message.body);
+        message.ack();
       } else if (queue.endsWith("-leads") && isPdfKind(message.body)) {
         // A PDF body belongs on the PDF queue; here it is logged and dropped, so it can never become a lead.
         logEvent("pdf.wrong_queue", { queue });
@@ -105,6 +122,17 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
         const verdict = await processOfferMessage(env, message.body);
         if (verdict === "retry") message.retry({ delaySeconds: 60 });
         else message.ack();
+      } else if (queue.endsWith("-email") && isInvoiceExpansionKind(message.body)) {
+        // M5.4: an invoice send or a reminder, expanded into ordinary emails before the generic path (a body of this family, valid or not, is never sent as an email). The PDF is not stored yet:
+        // come back in a minute (the render step and the daily sweep are the safety net). A window wait is a NEW message with a delay, made inside the consumer, never a retry.
+        if (message.body.kind === "invoice.send") {
+          const result = await processInvoiceSend(env, message.body);
+          if (result === "pdf_missing") message.retry({ delaySeconds: 60 });
+          else message.ack();
+        } else {
+          await processReminderSend(env, message.body);
+          message.ack();
+        }
       } else if (queue.endsWith("-email")) {
         const result = await processEmail(env, message.body, undefined, undefined, message.attempts);
         if (result === "retry") message.retry({ delaySeconds: 30 });

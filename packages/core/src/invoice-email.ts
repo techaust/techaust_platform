@@ -35,7 +35,7 @@ export const INVOICE_EMAIL_DATA = {
   "debit_note.sent": DOCUMENT_KEYS,
   "reminder.sent": [
     ...DOCUMENT_KEYS,
-    /** The reminder's offset in days from the due date (-3, 0, 3, 7, 14 by default) as text, and "before", "on" or "after" the due date. */
+    /** The reminder's distance from the due date in days, as text and never negative ("3" for the default -3 and for +3, "0" on the day), and `when`: "before", "on" or "after" the due date. */
     "offset_days",
     "when",
     /** The document kind: "invoice", "proforma" or "debit_note". */

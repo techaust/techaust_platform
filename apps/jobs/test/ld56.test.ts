@@ -118,7 +118,7 @@ describe("LD56: an invoice send is never cancelled by the offer path", () => {
     const acked: string[] = [];
     await handleQueue(
       {
-        queue: "techaust-platform-email-staging",
+        queue: "techaust-staging-email",
         messages: [
           {
             id: uuidv7(),

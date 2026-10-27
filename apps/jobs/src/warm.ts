@@ -5,6 +5,7 @@
 import {
   describeUserAgent,
   WARM_SAMPLES,
+  warmBillingMessages,
   warmConsumerMessages,
   warmLabels,
   warmOfferMessages,
@@ -115,6 +116,8 @@ export function warmConsumers(): number {
   warmInvoicePdf();
   // M4.5: the four expansion messages of the email queue, and one made-up acceptance certificate through the view and the HTML.
   warmOfferMessages();
+  // M5.4: the invoice send, reminder, care, alert and reminder-scan messages (schemas built at start-up, not in the first message).
+  warmBillingMessages();
   try {
     renderCertificateHtml(
       buildCertificateView({

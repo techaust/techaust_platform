@@ -400,7 +400,10 @@ describe("REMINDER_DUE_SQL and the claim [ADM-INV-13, LD60]", () => {
     expect(await claim(r1, now)).toBe(0);
     expect(await claim(r2, now)).toBe(0);
     expect(await claim(r3, now)).toBe(1);
-    await run(SUPERSEDE_SQL, d.documentId, 3, now);
+    // refused claim: nothing is superseded; the claimed one: the earlier rows are
+    expect((await run(SUPERSEDE_SQL, r2, now)).meta.changes).toBe(0);
+    expect((await run(SUPERSEDE_SQL, r3, now + 1)).meta.changes).toBe(0);
+    await run(SUPERSEDE_SQL, r3, now);
     const rows = await all<{ id: string; sent_at: number | null; skipped_reason: string | null }>(
       "SELECT id, sent_at, skipped_reason FROM reminders WHERE document_id = ? ORDER BY offset_days",
       d.documentId,

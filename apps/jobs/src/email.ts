@@ -7,6 +7,7 @@
 import {
   type EmailMessage,
   emailMessage,
+  isInvoiceExpansionKind,
   isOfferExpansionKind,
   leadMessage,
   stableId,
@@ -282,6 +283,10 @@ export async function processDeadLetter(
         "approval.notify": "approval notice",
       }[body.kind as string];
       rendered = dlqAlert({ queue, admin_url: env.ADMIN_URL, template: template ?? "offer message" }, opts);
+    } else if (!email.success && isInvoiceExpansionKind(body)) {
+      // M5.4: which step failed, never the ids, the names or the addresses. A reminder that dead-letters may have been claimed without its emails going out: the owners hear of it here.
+      const template = body.kind === "invoice.send" ? "invoice email" : "payment reminder";
+      rendered = dlqAlert({ queue, admin_url: env.ADMIN_URL, template }, opts);
     } else if (email.success) {
       ref = email.data.entity.type === "lead" ? email.data.entity.id : undefined;
       // The email's log row ends as failed, so it never reads as still pending (best effort).
