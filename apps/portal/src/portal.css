@@ -2015,8 +2015,10 @@ textarea[aria-invalid="true"] {
   white-space: nowrap;
 }
 
-.rcard__lead .inv-table__link {
-  min-height: 2.75rem;
+/* The number's 44 px target sets the row's height: every cell sits on its middle line. */
+.inv-table tbody th,
+.inv-table tbody td {
+  vertical-align: middle;
 }
 
 /* One document: the number is the heading, set in tabular figures (it is a reference people copy). */
@@ -2132,8 +2134,12 @@ textarea[aria-invalid="true"] {
     grid-column: 1 / -1;
   }
 
+  /* The button over its note, at the slip's end; the note never takes the figures' room. */
   .inv-slip__actions {
-    justify-content: flex-end;
+    flex-direction: column;
+    align-items: flex-end;
+    max-width: 16rem;
+    text-align: end;
   }
 }
 
@@ -2195,7 +2201,7 @@ textarea[aria-invalid="true"] {
 }
 
 .inv-lines tbody th,
-.inv-lines td {
+.inv-lines tbody td {
   font-variant-numeric: tabular-nums;
 }
 

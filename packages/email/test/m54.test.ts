@@ -64,8 +64,8 @@ describe("invoice.sent and the other document emails [ADM-INV-15, POR-06]", () =
     );
     expect(r.text).toContain(`${M}View invoice: https://portal.example.test/i#t=SAMPLE`);
     expect(r.text).toContain(`${M}The invoice is attached as a PDF, and it's also in your client portal.`);
-    // the button comes before the closing sentence (07-U: "{closing sentence}" ends the body, the button sits under the request)
-    expect(r.text.indexOf("View invoice:")).toBeLessThan(r.text.indexOf("is attached as a PDF"));
+    // the closing sentence ends the body (07-U §1), the button comes under it ("with the button below")
+    expect(r.text.indexOf("is attached as a PDF")).toBeLessThan(r.text.indexOf("View invoice:"));
     expect(r.html).toContain('href="https://portal.example.test/i#t=SAMPLE"');
     // the number and the amount are bold in HTML (presentation only)
     expect(r.html).toContain('<strong style="font-weight:600;white-space:nowrap;">₹23,600.00</strong>');

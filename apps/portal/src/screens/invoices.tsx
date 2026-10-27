@@ -111,7 +111,11 @@ export function InvoicesScreen(props: { items: InvoiceItem[]; more?: ReactNode; 
             {
               key: "status",
               label: INV.cols.status,
-              cell: (d) => <InvoiceStatusPill status={clientStatus(d, today)} />,
+              // a credit note owes nothing: no status of its own, a dash as in its Due and Balance cells
+              cell: (d) => {
+                const s = clientStatus(d, today);
+                return s === null ? "–" : <InvoiceStatusPill status={s} />;
+              },
             },
           ]}
         />

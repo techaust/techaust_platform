@@ -217,6 +217,7 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
             <EmailsPanel
               view={v}
               canSend={canSend}
+              showLock={voidWhy === null}
               onEmail={() => setSending(true)}
               onRevoked={() => {
                 setOfferResume(false);
@@ -224,9 +225,7 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
               }}
             />
           )}
-        </div>
-        {v.frozen && !isVoid && (
-          <div className="doc-page__versions">
+          {v.frozen && !isVoid && (
             <RemindersPanel
               view={v}
               canAct={canSend}
@@ -236,8 +235,8 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
                 reload();
               }}
             />
-          </div>
-        )}
+          )}
+        </div>
 
         <div className="doc-page__main">
           {v.care && <CareOrigin care={v.care} canOpenPlan={allowed(role, "carePlans.read")} />}

@@ -144,15 +144,16 @@ function documentBody(kind: DocumentKind, d: DocumentEmailData): { subject: stri
   }
 }
 
-/** An issued document emailed to one contact (from billing@): the 07-U §1 body, the button, then the closing sentence (attached or link only). */
+/**
+ * An issued document emailed to one contact (from billing@): the 07-U §1 body ending with its closing sentence (attached or link only; the link-only one
+ * points at "the button below"), then the button.
+ */
 export function documentSent(kind: DocumentKind, d: DocumentEmailData, opts: LayoutOptions): Rendered {
   const { subject, body } = documentBody(kind, d);
   // Every subject here is approved already (07 §8 for the invoice and the payment request; 07 §8 and 07-T §2 for the notes): no mark.
   return securityEmail(headerValue(subject), opts, {
-    before: body.map((pieces) => line(pieces)),
+    before: [...body.map((pieces) => line(pieces)), line([closingSentence(kind, isAttached(d.attached))])],
     action: { label: U(DOCUMENT_WORDS[kind].button), url: d.url },
-    after: [line([closingSentence(kind, isAttached(d.attached))])],
-    actionFirst: true,
   });
 }
 
@@ -258,13 +259,11 @@ export function reminderSent(d: ReminderEmailData, opts: LayoutOptions): Rendere
   const { subject, body } = reminderBody(d);
   // An invoice's five subjects are 07 §8's (approved); the payment-request and debit-note variants are 07-U's only, so they carry the mark.
   return securityEmail(headerValue(kind === "invoice" ? subject : U(subject)), opts, {
-    before: body.map((pieces) => line(pieces)),
+    // 07-U §2: the body ends with the link-only closing sentence ("…with the button below…"); then the button; then 07 §8's "already paid" line.
+    before: [...body.map((pieces) => line(pieces)), line([closingSentence(kind, false)])],
     action: { label: U(DOCUMENT_WORDS[kind].button), url: d.url },
-    after: [
-      line([closingSentence(kind, false)]),
-      // 07 §8 (approved): no mark.
-      line(["If you've already paid, thank you, and please ignore this."], false),
-    ],
+    // 07 §8 (approved): no mark.
+    after: [line(["If you've already paid, thank you, and please ignore this."], false)],
     actionFirst: true,
   });
 }

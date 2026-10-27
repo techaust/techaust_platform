@@ -238,10 +238,10 @@ export function InvoiceSendDialog(props: {
             {body.paragraphs.map((p) => (
               <p key={p}>{p}</p>
             ))}
+            <p>{body.closing}</p>
             <p>
               <span className="sendd__btn">{body.button}</span>
             </p>
-            <p>{body.closing}</p>
           </div>
         </section>
         <div className="dialog__actions sendd__actions">
@@ -270,6 +270,8 @@ export function EmailsPanel(props: {
   view: SendableView;
   /** This member may email it now (the view's `actions.send`). */
   canSend: boolean;
+  /** Show 07-U's lock line: off where the page's banner already says why it can't be voided (the owner sees 07-R's line there). */
+  showLock: boolean;
   onEmail: () => void;
   onRevoked: () => void;
 }) {
@@ -333,7 +335,7 @@ export function EmailsPanel(props: {
           <span>{SEND_COPY.queued}</span>
         </p>
       )}
-      {emailed && lockable && v.status !== "void" && (
+      {props.showLock && emailed && lockable && v.status !== "void" && (
         <p className="inv-mail__lock">
           <Lock size={16} />
           <span>{SEND_COPY.locked(v.type)}</span>
