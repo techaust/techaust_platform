@@ -149,6 +149,8 @@ export const ISSUE_BLOCKER_CODES = [
   "no_lines",
   "line_sac_missing",
   "line_description_missing",
+  // M5.4 (early check, finding 4): a line whose text still carries a marked `[Placeholder` (copy the owner has not approved) is never issued, by anyone
+  "line_text_placeholder",
   "computed_errors",
   "zero_total",
   "reverse_charge_text",
@@ -165,7 +167,7 @@ export const ISSUE_BLOCKER_CODES = [
 ] as const;
 export type IssueBlockerCode = (typeof ISSUE_BLOCKER_CODES)[number];
 /**
- * `line`: the 1-based position of the line the blocker is about (`line_sac_missing`, `line_description_missing`). `fy`: the FY token a missing LUT is
+ * `line`: the 1-based position of the line the blocker is about (`line_sac_missing`, `line_description_missing`, `line_text_placeholder`). `fy`: the FY token a missing LUT is
  * about (`lut_missing`). `date`: the ISO date the rate is for (`fx_missing`) or that it was judged against (`fx_date_invalid`).
  */
 export type IssueBlocker = {
@@ -231,7 +233,7 @@ export const INVOICE_CHECKLIST: readonly ChecklistItem[] = [
     locked: true,
     available: true,
     appliesTo: ALL_TYPES,
-    blockers: ["no_lines", "line_description_missing", "line_sac_missing"],
+    blockers: ["no_lines", "line_description_missing", "line_text_placeholder", "line_sac_missing"],
   },
   { id: "discountTaxable", locked: true, available: true, appliesTo: ALL_TYPES, blockers: [] },
   {
@@ -387,6 +389,7 @@ export function issueBlockers(
   if (f.lines.length === 0) add("no_lines");
   f.lines.forEach((l, i) => {
     if (blank(l.description)) add("line_description_missing", { line: i + 1 });
+    else if (l.description.includes("[Placeholder")) add("line_text_placeholder", { line: i + 1 });
     if (l.sac === null || !SAC.test(l.sac)) add("line_sac_missing", { line: i + 1 });
   });
   if (f.taxErrorCount > 0) add("computed_errors");

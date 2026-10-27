@@ -592,6 +592,20 @@ describe("issueCareDraft: the system issues only what the Owner authorised [LD58
     expect((await issueCareDraft(pdfQueue().env, { documentId: r.documentId as string })).result).toBe(
       "refused",
     );
+    // by hand too (early check finding 4): the Owner's own issue is refused while a line says [Placeholder
+    const row = await one<{ updated_at: number; content_sha256: string }>(
+      "SELECT updated_at, content_sha256 FROM documents WHERE id = ?",
+      r.documentId,
+    );
+    const byHand = await call(`/invoices/${r.documentId}/issue`, {
+      cookie: w.owner.cookie,
+      body: { expectedUpdatedAt: row?.updated_at, expectedContentSha256: row?.content_sha256 },
+    });
+    expect(byHand.status).toBe(409);
+    expect(JSON.stringify(await json(byHand))).toContain("line_text_placeholder");
+    expect(
+      (await one<{ status: string }>("SELECT status FROM documents WHERE id = ?", r.documentId))?.status,
+    ).toBe("draft");
   });
 
   it("financial year boundary: 31 March 23:59:59.999 IST is the old FY, 1 April 00:00 IST the new one (billing day 1)", async () => {

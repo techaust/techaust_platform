@@ -199,6 +199,11 @@ describe("what stops an issue [ADM-INV-07, LD20; Rule 46]", () => {
       (f) => ({ ...f, lines: [{ sac: "998314", description: "  " }] }),
       "line_description_missing",
     ],
+    [
+      "a line whose text still carries a marked placeholder (M5.4: copy the owner has not approved)",
+      (f) => ({ ...f, lines: [{ sac: "998314", description: "[Placeholder, 07-U] Care plan" }] }),
+      "line_text_placeholder",
+    ],
     ["a tax error", (f) => ({ ...f, taxErrorCount: 1, totalMinor: null }), "computed_errors"],
     ["a zero total (Q4)", (f) => ({ ...f, totalMinor: 0 }), "zero_total"],
     ["a total that did not compute", (f) => ({ ...f, totalMinor: null }), "zero_total"],

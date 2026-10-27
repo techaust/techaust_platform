@@ -292,6 +292,39 @@ describe("the freeze refuses whatever the Owner did not authorise [LD58]", () =>
     await refused(await world({ draft: { discount: 1 } }));
     await refused(await world({ aiOps: 400_000, draft: { subtotal: 2_000_000 } })); // AI Ops left out
   });
+  it("a line of the draft still carries marked placeholder text, or the document is not in INR (early check finding 4)", async () => {
+    const w = await world();
+    await run(
+      "INSERT INTO document_lines (id, document_id, position, description, qty_milli, unit, rate_minor, taxable_minor, gst_rate_bp, line_total_minor) VALUES (?, ?, 1, '[Placeholder, 07-U] Care plan', 1000, 'month', 2000000, 2000000, 1800, 2360000)",
+      uuidv7(),
+      w.doc,
+    );
+    await refused(w);
+    // the same draft with real words is issued
+    await run("UPDATE document_lines SET description = 'Care plan Growth' WHERE document_id = ?", w.doc);
+    await issue(await args(w));
+    expect(
+      (await first<{ status: string }>("SELECT status FROM documents WHERE id = ?", w.doc))?.status,
+    ).toBe("issued");
+    // the freeze text itself names the currency
+    const rec: { sql: string }[] = [];
+    const db = {
+      prepare: (sql: string) => ({
+        bind: () => {
+          rec.push({ sql });
+          return {};
+        },
+      }),
+    } as unknown as D1Database;
+    invoiceIssueStatements(db, {
+      ...(await args(w)),
+      authority: { kind: "care_auto", carePlanId: "p", periodStart: "2026-11-05", termsId: "t" },
+    });
+    expect(rec.find((r) => r.sql.startsWith("UPDATE documents SET series"))?.sql).toContain(
+      "documents.currency = 'INR'",
+    );
+  });
+
   it("the draft carries overage (a draft with overage is never issued automatically)", async () => {
     await refused(await world({ draft: { overage: 45 } }));
   });

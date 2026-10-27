@@ -21,7 +21,6 @@ import {
   careDue,
   careLines,
   type DraftCareResult,
-  hasPlaceholder,
   type IssueCareResult,
 } from "@techaust/core/care-billing";
 import { istDate, toIsoDate } from "@techaust/core/dates";
@@ -193,7 +192,6 @@ export function blockerCodesOf(
   }).map((b) => b.code);
   if (!computation.computed) codes.push("computed_errors");
   if (needsInrConfirm(state.type, state.currency)) codes.push("export_inr_confirm");
-  if (state.lines.some((l) => hasPlaceholder(l.description))) codes.push("copy_placeholder");
   return [...new Set(codes)];
 }
 

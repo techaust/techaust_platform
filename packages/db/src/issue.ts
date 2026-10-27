@@ -330,7 +330,7 @@ const OWNER_AUTHORITY_SQL =
  * The authority of an automatic care invoice (M5.4, LD58): `?24` is the care plan, `?30` the period start and `?31` the terms row (bound by the tail). Nothing here
  * reads a session: the Owner's choices were made earlier, with a fresh code, and are read back from the rows they wrote. In order: the toggle of the plan's client
  * was turned on by an active Owner; that period was recorded as billed for this very document and these terms, with no overage; the terms row is the one in force at
- * the period start and an Owner wrote it; the plan is active now and was at the period start; the amount is the terms' price plus AI Ops with no discount. Then the
+ * the period start and an Owner wrote it; the plan is active now and was at the period start; the amount is the terms' price plus AI Ops with no discount, in INR, with no line of marked placeholder text (early check finding 4). Then the
  * draft itself: made by the job (no member), never saved since, and with no pending approval.
  */
 const CARE_AUTO_SQL = `EXISTS (SELECT 1 FROM care_plans p JOIN clients k ON k.id = p.client_id
@@ -343,7 +343,8 @@ const CARE_AUTO_SQL = `EXISTS (SELECT 1 FROM care_plans p JOIN clients k ON k.id
       AND t.id = (SELECT id FROM care_plan_terms WHERE care_plan_id = p.id AND effective_from <= ?30 ORDER BY effective_from DESC, created_at DESC, id DESC LIMIT 1)
       AND (SELECT status FROM care_plan_status_log WHERE care_plan_id = p.id AND effective_on <= ?30 ORDER BY effective_on DESC, created_at DESC, id DESC LIMIT 1) = 'active'
       AND documents.subtotal_minor = t.price_minor + coalesce(t.ai_ops_minor, 0) AND documents.discount_minor = 0)
-  AND documents.created_by IS NULL AND documents.created_at = documents.updated_at
+  AND documents.created_by IS NULL AND documents.created_at = documents.updated_at AND documents.currency = 'INR'
+  AND NOT EXISTS (SELECT 1 FROM document_lines pl WHERE pl.document_id = documents.id AND pl.description LIKE '%[Placeholder%')
   AND NOT EXISTS (SELECT 1 FROM approvals ap WHERE ap.document_id = documents.id AND ap.status = 'pending')`;
 
 /**
