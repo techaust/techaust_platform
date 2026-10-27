@@ -834,7 +834,7 @@ const REMINDED_TYPES = "('tax_invoice', 'export_invoice', 'proforma', 'debit_not
 export function invoiceSendStatements(db: D1Database, a: InvoiceSendArgs): D1PreparedStatement[] {
   const valid = `d.id = ?1 AND d.type IN ${SENDABLE_TYPES} AND d.frozen_at IS NOT NULL AND d.status <> 'void' AND d.voided_at IS NULL AND (?7 IS NULL OR d.frozen_at = ?7)
        AND NOT EXISTS (SELECT 1 FROM clients z WHERE z.id = d.client_id AND z.anonymised_at IS NOT NULL)
-       AND (SELECT count(*) FROM contacts c2 WHERE c2.client_id = d.client_id AND c2.portal_access = 1 AND c2.anonymised_at IS NULL AND c2.id IN (SELECT json_extract(value, '$.contactId') FROM json_each(?2))) = json_array_length(?2)`;
+       AND (SELECT count(*) FROM contacts c2 WHERE c2.client_id = d.client_id AND c2.portal_access = 1 AND c2.can_see_finance = 1 AND c2.anonymised_at IS NULL AND c2.id IN (SELECT json_extract(value, '$.contactId') FROM json_each(?2))) = json_array_length(?2)`;
   const rows = JSON.stringify(a.rows);
   const first = a.rows[0];
   const sends = db
@@ -842,7 +842,7 @@ export function invoiceSendStatements(db: D1Database, a: InvoiceSendArgs): D1Pre
       `INSERT INTO document_sends (id, document_id, version_group_id, client_id, contact_id, email, attach_pdf, kind, queued_at, created_by, created_at)
        SELECT json_extract(j.value, '$.id'), d.id, d.id, d.client_id, c.id, lower(c.email), coalesce(?3, (SELECT cl.attach_pdf FROM clients cl WHERE cl.id = d.client_id)), ?4, NULL, ?5, ?6
        FROM documents d JOIN json_each(?2) j
-         JOIN contacts c ON c.id = json_extract(j.value, '$.contactId') AND c.client_id = d.client_id AND c.portal_access = 1 AND c.anonymised_at IS NULL
+         JOIN contacts c ON c.id = json_extract(j.value, '$.contactId') AND c.client_id = d.client_id AND c.portal_access = 1 AND c.can_see_finance = 1 AND c.anonymised_at IS NULL
        WHERE ${valid}`,
     )
     .bind(

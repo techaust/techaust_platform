@@ -23,7 +23,7 @@ const portalBase = (env: Env) => (env.PORTAL_URL ?? "").replace(/\/+$/, "");
 const SEND_READ =
   "SELECT s.id, s.document_id, s.client_id, s.contact_id, s.attach_pdf, s.kind, s.cancelled_at, d.type, d.status, d.number_display, d.issue_date, d.due_date, d.total_minor, d.balance_minor, d.currency, d.issuer, d.pdf_sha256, d.pdf_r2_key, d.frozen_at IS NOT NULL AS frozen, d.voided_at IS NOT NULL AS voided, (SELECT p.number_display FROM documents p WHERE p.id = d.parent_id) AS parent_number, " +
   NOTE_FACTS_SQL +
-  ", (cl.anonymised_at IS NOT NULL) AS client_gone, c.id AS live_contact, c.name AS contact_name, lower(c.email) AS contact_email FROM document_sends s JOIN documents d ON d.id = s.document_id JOIN clients cl ON cl.id = s.client_id LEFT JOIN contacts c ON c.id = s.contact_id AND c.client_id = s.client_id AND c.portal_access = 1 AND c.anonymised_at IS NULL WHERE s.id = ?1";
+  ", (cl.anonymised_at IS NOT NULL) AS client_gone, c.id AS live_contact, c.name AS contact_name, lower(c.email) AS contact_email FROM document_sends s JOIN documents d ON d.id = s.document_id JOIN clients cl ON cl.id = s.client_id LEFT JOIN contacts c ON c.id = s.contact_id AND c.client_id = s.client_id AND c.portal_access = 1 AND c.can_see_finance = 1 AND c.anonymised_at IS NULL WHERE s.id = ?1";
 const TERMS_READ = "SELECT value FROM settings WHERE key = 'payment_terms'";
 
 type SendRow = DocFacts & {
@@ -52,7 +52,7 @@ type SendRow = DocFacts & {
 const LINK_SQL = `INSERT INTO doc_access_tokens (token_hash, document_id, purpose, expires_at, contact_id, client_id, email, send_id)
   SELECT ?1, d.id, 'view_pay', ?3, c.id, d.client_id, lower(c.email), s.id
   FROM document_sends s JOIN documents d ON d.id = s.document_id JOIN clients cl ON cl.id = s.client_id
-    JOIN contacts c ON c.id = s.contact_id AND c.client_id = s.client_id AND c.portal_access = 1 AND c.anonymised_at IS NULL
+    JOIN contacts c ON c.id = s.contact_id AND c.client_id = s.client_id AND c.portal_access = 1 AND c.can_see_finance = 1 AND c.anonymised_at IS NULL
   WHERE s.id = ?2 AND s.cancelled_at IS NULL AND d.frozen_at IS NOT NULL AND d.voided_at IS NULL AND d.status <> 'void' AND cl.anonymised_at IS NULL`;
 
 /** Marks a send as never going out (set once); the screens then show "not sent" instead of "queued" for ever. */

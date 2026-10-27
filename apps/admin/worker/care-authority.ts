@@ -6,7 +6,7 @@ import { autoIssueEligibility, nextBillingDayOf } from "@techaust/core/care-bill
 export const CARE_AUTHORITY_COLUMNS = `k.care_auto_issue AS toggle, k.care_auto_issue_by AS toggle_by, k.reminder_policy,
     EXISTS (SELECT 1 FROM staff_users o WHERE o.id = k.care_auto_issue_by AND o.role = 'owner' AND o.status = 'active') AS toggle_by_owner,
     EXISTS (SELECT 1 FROM care_plan_terms t JOIN staff_users u ON u.id = t.created_by WHERE t.id = ci.terms_id AND u.role = 'owner') AS terms_by_owner,
-    (SELECT count(*) FROM contacts c WHERE c.client_id = k.id AND c.is_billing = 1 AND c.portal_access = 1 AND c.anonymised_at IS NULL) AS recipients`;
+    (SELECT count(*) FROM contacts c WHERE c.client_id = k.id AND c.is_billing = 1 AND c.portal_access = 1 AND c.can_see_finance = 1 AND c.anonymised_at IS NULL) AS recipients`;
 /**
  * The plan page's billing read (M5.4 API gaps): `last_billed_period`, the record and draft of that last period (left joins: a plan never billed has neither) and the Owner's choices that
  * decide whether the system may issue the draft. One statement on the primary keys. `?1` plan id.

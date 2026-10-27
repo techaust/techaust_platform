@@ -27,7 +27,8 @@ async function issued(contacts = 2) {
   const made = await mkInvoice(s);
   expect((await issueInvoice(s, made.id)).status).toBe(200);
   const ids: string[] = [];
-  for (let i = 0; i < contacts; i++) ids.push((await mkContact(made.clientId, { portal_access: 1 })).id);
+  for (let i = 0; i < contacts; i++)
+    ids.push((await mkContact(made.clientId, { portal_access: 1, can_see_finance: 1 })).id);
   return { s, made, ids };
 }
 const send = (s: { cookie: string }, id: string, body: unknown, e: Env = env) =>
@@ -57,7 +58,7 @@ describe("the send refuses what it must [ADM-INV-15]", () => {
     const s = await owner();
     await putCompany();
     const draft = await mkInvoice(s);
-    const to = await mkContact(draft.clientId, { portal_access: 1 });
+    const to = await mkContact(draft.clientId, { portal_access: 1, can_see_finance: 1 });
     const r1 = await send(s, draft.id, { contactIds: [to.id] });
     expect(r1.status).toBe(409);
     expect(await codeOf(r1)).toBe("not_issued");
@@ -96,8 +97,10 @@ describe("the send refuses what it must [ADM-INV-15]", () => {
     const dup = await send(s, made.id, { contactIds: [ids[0], ids[0]] });
     expect([dup.status, await codeOf(dup)]).toEqual([409, "recipient_invalid"]);
     const off = await mkContact(made.clientId, { portal_access: 0 });
-    const other = await mkContact(await mkClient(), { portal_access: 1 });
-    for (const bad of [off.id, other.id, "unknown"]) {
+    // POR-03: a contact who may not see finance is refused too (the portal would answer 404 to their link). VERIFY WITH CA/LEGAL (DPDP).
+    const noFinance = await mkContact(made.clientId, { portal_access: 1, can_see_finance: 0 });
+    const other = await mkContact(await mkClient(), { portal_access: 1, can_see_finance: 1 });
+    for (const bad of [off.id, noFinance.id, other.id, "unknown"]) {
       const r = await send(s, made.id, { contactIds: [ids[0], bad] });
       expect(r.status, bad).toBe(409);
       expect(await json(r)).toMatchObject({ error: { code: "recipient_invalid" }, contactIds: [bad] });
@@ -251,7 +254,7 @@ describe("sending again [ADM-INV-15]", () => {
     await putCompany();
     const made = await mkInvoice(s);
     expect((await issueInvoice(s, made.id)).status).toBe(200);
-    const to = await mkContact(made.clientId, { portal_access: 1 });
+    const to = await mkContact(made.clientId, { portal_access: 1, can_see_finance: 1 });
     const due = (await one<{ due_date: string }>("SELECT due_date FROM documents WHERE id = ?", made.id))
       ?.due_date as string;
     vi.useFakeTimers({ toFake: ["Date"] });
@@ -474,7 +477,7 @@ describe("pausing and resuming the reminders [ADM-INV-13, LD60]", () => {
     await putCompany();
     const made = await mkInvoice(s);
     expect((await issueInvoice(s, made.id)).status).toBe(200);
-    const to = await mkContact(made.clientId, { portal_access: 1 });
+    const to = await mkContact(made.clientId, { portal_access: 1, can_see_finance: 1 });
     await send(s, made.id, { contactIds: [to.id] });
     expect(
       await json(await call(`/invoices/${made.id}/reminders/pause`, { cookie: s.cookie, body: {} })),

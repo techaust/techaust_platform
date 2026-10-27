@@ -66,6 +66,7 @@ async function world(
     usd?: boolean;
     price?: number;
     contact?: boolean;
+    finance?: boolean;
     aiOps?: number;
   } = {},
 ): Promise<World> {
@@ -85,7 +86,14 @@ async function world(
           }),
         },
   );
-  const contact = await mkContact(clientId, { portal_access: 1, is_billing: 1, is_primary: 1 });
+  const contact = await mkContact(clientId, {
+    portal_access: 1,
+    can_see_finance: 1,
+    is_billing: 1,
+    is_primary: 1,
+  });
+  if (o.finance === false)
+    await env.DB.prepare("UPDATE contacts SET can_see_finance = 0 WHERE id = ?").bind(contact.id).run();
   if (o.contact === false)
     await env.DB.prepare("UPDATE contacts SET portal_access = 0 WHERE id = ?").bind(contact.id).run();
   if (o.toggle !== false)
@@ -465,6 +473,45 @@ describe("issueCareDraft: the system issues only what the Owner authorised [LD58
       number: r.number,
     });
     expect(await rows("SELECT id FROM document_sends WHERE document_id = ?", d.documentId)).toHaveLength(1);
+  });
+
+  it("a billing contact who may not see finance is nobody to email: issued, notEmailed, no sends, no reminders [POR-03, review H1]", async () => {
+    const w = await world({ finance: false });
+    clock(at("2026-11-05"));
+    const d = await draft(w);
+    expect(d.autoEligible).toBe(true);
+    const r = await issueCareDraft(pdfQueue().env, { documentId: d.documentId as string });
+    expect(r).toMatchObject({ result: "issued", notEmailed: true });
+    expect(await rows("SELECT id FROM document_sends WHERE document_id = ?", d.documentId)).toEqual([]);
+    expect(await rows("SELECT id FROM reminders WHERE document_id = ?", d.documentId)).toEqual([]);
+  });
+
+  it("the sends statement writes nothing when the recipient lost finance after the read: notEmailed is true and the bell says not emailed [review M1]", async () => {
+    const w = await world();
+    clock(at("2026-11-05"));
+    const d = await draft(w);
+    const q = pdfQueue();
+    // The contact loses finance access between the read and the batch: the sends insert (all or none) writes 0 rows while the freeze succeeds.
+    const racing = new Proxy(q.env.DB, {
+      get(target, key) {
+        if (key === "batch")
+          return async (stmts: D1PreparedStatement[]) => {
+            await target.prepare("UPDATE contacts SET can_see_finance = 0").run();
+            return target.batch(stmts);
+          };
+        const v = Reflect.get(target, key);
+        return typeof v === "function" ? v.bind(target) : v;
+      },
+    });
+    const r = await issueCareDraft({ ...q.env, DB: racing } as Env, { documentId: d.documentId as string });
+    expect(r).toMatchObject({ result: "issued", notEmailed: true });
+    expect(await rows("SELECT id FROM document_sends WHERE document_id = ?", d.documentId)).toEqual([]);
+    const bell = await one<{ title: string }>(
+      "SELECT title FROM notifications WHERE kind = 'care.issued' AND entity_id = ?",
+      d.documentId,
+    );
+    expect(bell?.title).toContain("wasn't emailed");
+    expect(bell?.title).not.toContain("issued and emailed");
   });
 
   it("with nobody to email it is still issued (the money is owed) and says notEmailed; no sends, no reminders", async () => {

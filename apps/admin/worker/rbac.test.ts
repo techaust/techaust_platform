@@ -1007,7 +1007,7 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
       await putCompany();
       const made = await mkInvoice(s);
       expect((await issueInvoice(s, made.id)).status).toBe(200);
-      const to = await mkContact(made.clientId, { portal_access: 1 });
+      const to = await mkContact(made.clientId, { portal_access: 1, can_see_finance: 1 });
       return run(s, `/invoices/${made.id}/send`, { method: "POST", body: { contactIds: [to.id] } });
     },
     "POST /api/v1/invoices/:id/links/revoke": async () => {
@@ -1022,7 +1022,7 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
       await putCompany();
       const made = await mkInvoice(s);
       expect((await issueInvoice(s, made.id)).status).toBe(200);
-      const to = await mkContact(made.clientId, { portal_access: 1 });
+      const to = await mkContact(made.clientId, { portal_access: 1, can_see_finance: 1 });
       expect(
         (await call(`/invoices/${made.id}/send`, { cookie: s.cookie, body: { contactIds: [to.id] } })).status,
       ).toBe(200);
@@ -1033,7 +1033,7 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
       await putCompany();
       const made = await mkInvoice(s);
       expect((await issueInvoice(s, made.id)).status).toBe(200);
-      const to = await mkContact(made.clientId, { portal_access: 1 });
+      const to = await mkContact(made.clientId, { portal_access: 1, can_see_finance: 1 });
       expect(
         (await call(`/invoices/${made.id}/send`, { cookie: s.cookie, body: { contactIds: [to.id] } })).status,
       ).toBe(200);

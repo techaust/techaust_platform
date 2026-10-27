@@ -120,25 +120,23 @@ function ownersBell(
     .bind(b.kind, b.entityType, b.entityId, b.title.slice(0, 300), b.link, ...g.params);
 }
 
-/** The "issued" bell: its title takes the number the freeze gave, by SQL, so it is right in the batch that issued the invoice. */
-function issuedBell(
-  db: D1Database,
-  documentId: string,
-  client: string,
-  notEmailed: boolean,
-  g: Guard,
-): D1PreparedStatement {
+/**
+ * The "issued" bell: its title takes the number the freeze gave, by SQL, so it is right in the batch that issued the invoice. It also says whether the invoice was emailed by
+ * what the batch really wrote (it runs after the sends statement: a `document_sends` row of this document means emailed), never by what was planned (review M1).
+ */
+function issuedBell(db: D1Database, documentId: string, client: string, g: Guard): D1PreparedStatement {
   return db
     .prepare(
       `INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
-       SELECT 'n_' || lower(hex(randomblob(16))), o.id, 'care.issued', 'document', ?1, substr(?2 || coalesce((SELECT number_display FROM documents WHERE id = ?1), '') || ?3, 1, 300), ?4
-       FROM staff_users o WHERE o.status = 'active' AND o.role = 'owner' AND ${g.sql(5)}`,
+       SELECT 'n_' || lower(hex(randomblob(16))), o.id, 'care.issued', 'document', ?1, substr(?2 || coalesce((SELECT number_display FROM documents WHERE id = ?1), '') || CASE WHEN EXISTS (SELECT 1 FROM document_sends x WHERE x.document_id = ?1) THEN ?3 ELSE ?5 END, 1, 300), ?4
+       FROM staff_users o WHERE o.status = 'active' AND o.role = 'owner' AND ${g.sql(6)}`,
     )
     .bind(
       documentId,
       bellTitle.issuedHead,
-      bellTitle.issuedTail(client, notEmailed),
+      bellTitle.issuedTail(client, false),
       `/invoices/${documentId}`,
+      bellTitle.issuedTail(client, true),
       ...g.params,
     );
 }
@@ -153,7 +151,7 @@ const PLAN_FACTS_SQL = `SELECT p.id, p.client_id, p.last_billed_period, k.care_a
 const TERMS_AUTHORS_SQL =
   "SELECT t.id, u.role AS author_role FROM care_plan_terms t JOIN staff_users u ON u.id = t.created_by WHERE t.care_plan_id = ?1";
 const CONTACTS_COLS =
-  "id, name, email, anonymised_at, updated_at, is_billing, is_primary, portal_access FROM contacts";
+  "id, name, email, anonymised_at, updated_at, is_billing, is_primary, portal_access, can_see_finance FROM contacts";
 const CONTACTS_ORDER = "anonymised_at IS NULL ORDER BY is_billing DESC, is_primary DESC, name, id LIMIT 10";
 /** The live contacts of the client of a plan (`?1` the plan id), billing first. */
 const CONTACTS_OF_PLAN_SQL = `SELECT ${CONTACTS_COLS} WHERE client_id = (SELECT client_id FROM care_plans WHERE id = ?1) AND ${CONTACTS_ORDER}`;
@@ -179,12 +177,18 @@ type ContactRow = {
   is_billing: number;
   is_primary: number;
   portal_access: number;
+  can_see_finance: number;
 };
 type CatalogueRow = { id: string; code: string; sac: string | null; gst_rate_bp: number | null };
 
 /** The billing contacts that can be emailed (portal access on), at most 5: the recipients of an automatic send. */
 const recipientsOf = (contacts: readonly ContactRow[]) =>
-  contacts.filter((k) => k.is_billing === 1 && k.portal_access === 1 && k.anonymised_at === null).slice(0, 5);
+  contacts
+    .filter(
+      (k) =>
+        k.is_billing === 1 && k.portal_access === 1 && k.can_see_finance === 1 && k.anonymised_at === null,
+    )
+    .slice(0, 5);
 
 /** The codes that stop the system issuing a draft by itself: the checklist's blockers, an INR export invoice (the Owner's yes), and a line that still has placeholder text. */
 export function blockerCodesOf(
@@ -716,12 +720,16 @@ export async function issueCareDraft(env: CareEnv, args: { documentId: string })
       : [];
 
   let issued: { number_display: string; number: number } | undefined;
+  let sentRows = 0;
   let done = false;
   try {
     done = await mutateSystem(env, {
       main: batch.main,
       onResults: (results, auditAt) => {
         issued = results[auditAt - 1]?.results[0] as typeof issued;
+        // The sends statement follows the audit row and the issue's own post-audit statements; its `changes` is what was really written (review M1).
+        if (sendStatements.length > 0)
+          sentRows = results[auditAt + 1 + batch.postAudit.length]?.meta.changes ?? 0;
       },
       action: "invoice.issue_auto",
       entityType: "document",
@@ -737,11 +745,7 @@ export async function issueCareDraft(env: CareEnv, args: { documentId: string })
         contentSha: computation.hash.slice(0, 12),
         authorisedBy: care.toggle_by,
       },
-      side: (g) => [
-        ...batch.postAudit,
-        ...sendStatements,
-        issuedBell(db, d.id, ctx.client.display_name, sendRows.length === 0, g),
-      ],
+      side: (g) => [...batch.postAudit, ...sendStatements, issuedBell(db, d.id, ctx.client.display_name, g)],
     });
   } catch (e) {
     // The post-condition aborted the batch: something changed between the read and the freeze. Nothing was written (the counter did not move).
@@ -772,7 +776,7 @@ export async function issueCareDraft(env: CareEnv, args: { documentId: string })
     result: "issued",
     ...(issued?.number_display ? { number: issued.number_display } : {}),
     reasons: [],
-    notEmailed: sendRows.length === 0,
+    notEmailed: sentRows === 0,
   };
 }
 

@@ -89,7 +89,7 @@ const REMINDER_READ = `SELECT r.id, r.document_id, r.offset_days, r.sent_at, r.s
   FROM reminders r JOIN documents d ON d.id = r.document_id WHERE r.id = ?1`;
 const RECIPIENTS_READ = `SELECT c.id, c.name, lower(c.email) AS email
   FROM reminders r JOIN documents d ON d.id = r.document_id
-    JOIN contacts c ON c.client_id = d.client_id AND c.portal_access = 1 AND c.anonymised_at IS NULL
+    JOIN contacts c ON c.client_id = d.client_id AND c.portal_access = 1 AND c.can_see_finance = 1 AND c.anonymised_at IS NULL
       AND c.id IN (SELECT s.contact_id FROM document_sends s WHERE s.document_id = d.id AND s.cancelled_at IS NULL AND s.contact_id IS NOT NULL)
   WHERE r.id = ?1 ORDER BY c.id LIMIT 5`;
 
@@ -100,7 +100,7 @@ const RECIPIENTS_READ = `SELECT c.id, c.name, lower(c.email) AS email
 const REMINDER_LINK_SQL = `INSERT INTO doc_access_tokens (token_hash, document_id, purpose, expires_at, contact_id, client_id, email, send_id)
   SELECT ?1, d.id, 'view_pay', ?2, c.id, d.client_id, lower(c.email), NULL
   FROM reminders r JOIN documents d ON d.id = r.document_id
-    JOIN contacts c ON c.id = ?4 AND c.client_id = d.client_id AND c.portal_access = 1 AND c.anonymised_at IS NULL
+    JOIN contacts c ON c.id = ?4 AND c.client_id = d.client_id AND c.portal_access = 1 AND c.can_see_finance = 1 AND c.anonymised_at IS NULL
   WHERE r.id = ?3 AND r.sent_at = ?5 AND r.email_log_id IS NULL`;
 
 /** Gives the claim back: only while this very claim still holds and no email is recorded (the trigger allows exactly that move). */

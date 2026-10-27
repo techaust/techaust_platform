@@ -52,7 +52,7 @@ export const REMINDER_CLAIM_SQL = `UPDATE reminders SET sent_at = ?2
                    AND (d.status IN (${quoted(REMINDER_LIVE_STATUSES)}) OR (d.type = 'proforma' AND d.status = 'converted')) AND d.balance_minor > 0
                    AND c.anonymised_at IS NULL AND coalesce(json_extract(c.reminder_policy, '$.enabled'), 1) <> 0
                    AND EXISTS (SELECT 1 FROM document_sends s JOIN contacts k ON k.id = s.contact_id AND k.client_id = s.client_id
-                               WHERE s.document_id = d.id AND s.cancelled_at IS NULL AND k.portal_access = 1 AND k.anonymised_at IS NULL))
+                               WHERE s.document_id = d.id AND s.cancelled_at IS NULL AND k.portal_access = 1 AND k.can_see_finance = 1 AND k.anonymised_at IS NULL))
      AND NOT EXISTS (SELECT 1 FROM reminders r2 WHERE r2.document_id = reminders.document_id AND r2.offset_days > reminders.offset_days
                      AND r2.sent_at IS NULL AND r2.skipped_reason IS NULL AND r2.due_at <= ?2)
    RETURNING id, document_id, offset_days`;
@@ -64,7 +64,7 @@ export const REMINDER_CLAIM_SQL = `UPDATE reminders SET sent_at = ?2
 export const REMINDER_FACTS_SQL = `SELECT r.sent_at, r.skipped_reason, r.due_at, d.frozen_at IS NOT NULL AS frozen, d.type, d.status, d.balance_minor, d.voided_at IS NOT NULL AS voided,
        c.anonymised_at IS NOT NULL AS client_anonymised, coalesce(json_extract(c.reminder_policy, '$.enabled'), 1) <> 0 AS policy_enabled,
        EXISTS (SELECT 1 FROM document_sends s JOIN contacts k ON k.id = s.contact_id AND k.client_id = s.client_id
-               WHERE s.document_id = d.id AND s.cancelled_at IS NULL AND k.portal_access = 1 AND k.anonymised_at IS NULL) AS has_recipient,
+               WHERE s.document_id = d.id AND s.cancelled_at IS NULL AND k.portal_access = 1 AND k.can_see_finance = 1 AND k.anonymised_at IS NULL) AS has_recipient,
        EXISTS (SELECT 1 FROM reminders r2 WHERE r2.document_id = r.document_id AND r2.offset_days > r.offset_days AND r2.sent_at IS NULL AND r2.skipped_reason IS NULL AND r2.due_at <= ?2) AS later_due
      FROM reminders r JOIN documents d ON d.id = r.document_id JOIN clients c ON c.id = d.client_id WHERE r.id = ?1`;
 
