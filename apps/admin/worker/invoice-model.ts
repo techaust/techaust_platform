@@ -763,7 +763,7 @@ export const SERVICE_DATE_FUTURE = e(
   "service_date_future",
   "The service completion date can't be in the future.",
 );
-/** The words are 07-S §8; `[Placeholder]` marks a line the copy has not drafted yet. */
+/** The words are 07-S §8. */
 export const ALREADY_SET = e(
   "already_set",
   "The service completion date is already set and can't be changed.",
@@ -789,6 +789,23 @@ export const ADVANCE_REFERENCE_USED = e(
 export const ADVANCE_EXCEEDS_BALANCE = e(
   "advance_exceeds_balance",
   "The amount can't be more than the proforma's balance.",
+);
+/**
+ * VERIFY WITH CA/LEGAL (which supply applies, batch Q37's neighbour): a proforma sealed for an overseas client (an export supply) and a client who is no longer
+ * overseas, or the reverse. The tax on the payment can't be worked out from the proforma, so the advance route refuses (07-S §8).
+ */
+export const proformaSupplyChanged = (
+  proformaComputed: { supply: { type: string } } | null,
+  clientGstStatus: string,
+): boolean => {
+  if (!proformaComputed) return false;
+  const wasExport =
+    proformaComputed.supply.type === "export_lut" || proformaComputed.supply.type === "export_igst";
+  return wasExport !== (clientGstStatus === "overseas");
+};
+export const ADVANCE_SUPPLY_CHANGED = e(
+  "advance_supply_changed",
+  "The client's GST details changed after this proforma was issued, so the tax on this payment can't be worked out from it. Check the client's details with your CA before recording the payment.",
 );
 export const ADVANCE_DATE_INVALID = e(
   "advance_date_invalid",

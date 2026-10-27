@@ -27,6 +27,7 @@ import {
 } from "./documents.ts";
 import type { ApprovalInfo, Discount, DiscountKind, LineFigures } from "./documents-api.ts";
 import { sentence as sentenceOf } from "./format.ts";
+import { fyLabel, INV_PLACEHOLDER } from "./invoice-types.ts";
 import type {
   InvoiceBlocker,
   InvoiceLine,
@@ -38,10 +39,8 @@ import type {
 } from "./invoices-api.ts";
 import { bpToPercent, moneyInput } from "./settings-form.ts";
 
-export { moneyText };
-
-/** A line 07-R does not have yet: shown as it is, so nobody mistakes it for approved copy. */
-export const INV_PLACEHOLDER = "[Placeholder]";
+/** A line 07-R or 07-S does not have yet: shown as it is, so nobody mistakes it for approved copy. */
+export { INV_PLACEHOLDER, moneyText };
 
 // ---- 07-R §1–§4, word for word ---------------------------------------------------------------------------------------------------------------
 
@@ -178,29 +177,45 @@ export const INVOICE_TYPES: readonly InvoiceType[] = [
 export const typeLabel = (t: InvoiceType | string): string =>
   Object.hasOwn(SERIES_OF_TYPE, t) ? SERIES[SERIES_OF_TYPE[t as InvoiceType]].label : t;
 
-/** The four badges of 07-R; Overdue is worked out by the server (a balance past its due date), never stored. */
-export type Badge = "draft" | "issued" | "overdue" | "void";
-export const BADGES: readonly Badge[] = ["draft", "issued", "overdue", "void"];
+/**
+ * The badges: 07-R's four, M5.2's "Converted" (07-S §6: a proforma a tax invoice was issued from) and "Paid" (docs/06 §5.5: the tax invoice issued for a
+ * payment received is paid at issue). Overdue is worked out by the server (a balance past its due date), never stored.
+ */
+export type Badge = "draft" | "issued" | "overdue" | "void" | "converted" | "paid";
+export const BADGES: readonly Badge[] = ["draft", "issued", "overdue", "void", "converted", "paid"];
 export const BADGE_LABELS: Record<Badge, string> = {
   draft: "Draft",
   issued: "Issued",
   overdue: "Overdue",
   void: "Void",
+  converted: "Converted",
+  paid: "Paid",
 };
-type Pill = { tone: PillTone; icon: "pencil" | "fileCheck" | "alert" | "xCircle" };
-/** docs/06 §5.5: Draft neutral (pencil), Issued info (file-check), Overdue danger (alert-triangle), Void muted with a struck label (x-circle). */
+type Pill = {
+  tone: PillTone;
+  icon: "pencil" | "fileCheck" | "alert" | "xCircle" | "check" | "progress";
+};
+/**
+ * docs/06 §5.5: Draft neutral (pencil), Issued info (file-check), Overdue danger (alert-triangle), Void muted with a struck label (x-circle), Paid
+ * success (check-circle). Converted (a proforma money came in against) is success too, with the turning-arrows icon, so it is told from Paid without
+ * colour.
+ */
 export const BADGE_PILLS: Record<Badge, Pill> = {
   draft: { tone: "neutral", icon: "pencil" },
   issued: { tone: "info", icon: "fileCheck" },
   overdue: { tone: "danger", icon: "alert" },
   void: { tone: "muted", icon: "xCircle" },
+  converted: { tone: "success", icon: "progress" },
+  paid: { tone: "success", icon: "check" },
 };
 
-/** The badge of a row or a view. The ledger states of M5.3 and M6 (paid, credited) read as Issued until their badges exist. */
+/** The badge of a row or a view. The credit states of M5.3 read as Issued until their badges exist. */
 export function badgeOf(d: { status: InvoiceStatus | string; overdue: boolean }): Badge {
   if (d.status === "draft") return "draft";
   if (d.status === "void") return "void";
-  return d.overdue ? "overdue" : "issued";
+  if (d.status === "paid") return "paid";
+  if (d.overdue) return "overdue";
+  return d.status === "converted" ? "converted" : "issued";
 }
 
 // ---- the series preview ------------------------------------------------------------------------------------------------------------------------
@@ -229,8 +244,15 @@ export function seriesPreview(p: { template: string; fy: string; padding: number
 
 // ---- blockers --------------------------------------------------------------------------------------------------------------------------------
 
-/** 07-R §2 "Blockers": one line each. `{n}` is the line's position; `{currency}` the client's. */
-export function blockerLine(b: InvoiceBlocker, currency: string): string {
+/**
+ * 07-R §2 "Blockers" and 07-S §3, §8: one line each. `{n}` is the line's position; `{currency}` the client's; `ctx.maxAgeDays` the oldest a rate may be
+ * (Settings › Tax). The server sends `unregistered_high_value` WITH the address or State blocker it explains, and both lines are shown (lead, Q4).
+ */
+export function blockerLine(
+  b: InvoiceBlocker,
+  currency: string,
+  ctx: { maxAgeDays?: number | undefined } = {},
+): string {
   const n = b.line ?? 0;
   switch (b.code) {
     case "supplier_legal_name":
@@ -267,6 +289,22 @@ export function blockerLine(b: InvoiceBlocker, currency: string): string {
       return `The invoice currency must be the client's currency (${currency}).`;
     case "type_not_allowed":
       return "This client is outside India, so this needs an export invoice. Export invoices arrive in the next update.";
+    // 07-S §3
+    case "country_missing":
+      return "Add the client's country.";
+    case "fx_missing":
+      return `Enter the exchange rate for ${b.date ? (dayText(b.date) ?? b.date) : INV_PLACEHOLDER} before issuing a USD invoice.`;
+    case "lut_missing":
+      return `Save the LUT ARN for FY ${b.fy ? fyLabel(b.fy) : INV_PLACEHOLDER} in Settings › Tax before issuing an export invoice under LUT. Or issue it with IGST paid.`;
+    case "unregistered_high_value":
+      return "For an unregistered client and an invoice of ₹50,000 or more, add the client's name, address and state.";
+    case "bank_missing":
+      return "Add an active bank account in Settings › Bank.";
+    case "swift_missing":
+      return "Add the SWIFT details of a bank account in Settings › Bank for export invoices.";
+    // 07-S §8
+    case "fx_date_invalid":
+      return `The rate date must be the invoice date or up to ${ctx.maxAgeDays ?? INV_PLACEHOLDER} days before it.`;
     default:
       return INV_PLACEHOLDER;
   }
@@ -277,6 +315,8 @@ export type BlockerTarget =
   | { kind: "page"; to: string; place?: string }
   | { kind: "line"; n: number; field: "description" | "sac" }
   | { kind: "lines" }
+  /** M5.2: the exchange rate of this draft (the editor opens its dialog). */
+  | { kind: "fx" }
   | null;
 
 export function blockerTarget(b: InvoiceBlocker, clientId: string): BlockerTarget {
@@ -290,11 +330,21 @@ export function blockerTarget(b: InvoiceBlocker, clientId: string): BlockerTarge
       return { kind: "page", to: "/settings/company", place: "Settings › Company" };
     case "reverse_charge_text":
       return { kind: "page", to: "/settings/tax", place: "Settings › Tax" };
+    case "lut_missing":
+      return { kind: "page", to: "/settings/tax#luts", place: "Settings › Tax" };
+    case "bank_missing":
+    case "swift_missing":
+      return { kind: "page", to: "/settings/bank", place: "Settings › Bank" };
+    case "fx_missing":
+    case "fx_date_invalid":
+      return { kind: "fx" };
     case "recipient_legal_name":
     case "recipient_address":
     case "recipient_gstin":
     case "recipient_state":
     case "currency_mismatch":
+    case "country_missing":
+    case "unregistered_high_value":
       return { kind: "page", to: client };
     case "line_sac_missing":
       return b.line ? { kind: "line", n: b.line, field: "sac" } : { kind: "lines" };
@@ -346,6 +396,25 @@ export const INV_ERRORS = {
   milestone_has_invoice: "This milestone already has an invoice.",
   milestone_not_ready:
     "Only a milestone that's Ready to bill, or the advance payment of a started project, can be invoiced.",
+  // 07-S §7
+  export_currency_confirm: "Confirm that this export invoice should be in INR.",
+  advance_reference_used: "This payment reference was already used for this proforma.",
+  advance_exceeds_balance: "The amount can't be more than the proforma's balance.",
+  proforma_not_issued: "Only an issued proforma can be converted.",
+  // 07-S §8
+  advance_date_invalid: "The date received can't be before the proforma's date or in the future.",
+  already_set: "The service completion date is already set and can't be changed.",
+  service_date_future: "The service completion date can't be in the future.",
+  service_date_not_applicable: "This doesn't apply to this type of invoice.",
+  export_mode_not_applicable: "This doesn't apply to this type of invoice.",
+  export_declaration_not_applicable: "This doesn't apply to this type of invoice.",
+  export_declaration_missing: "The export note in Settings › Terms was removed. Choose again.",
+  export_declaration_changed:
+    "The export note in Settings › Terms changed since this draft was saved. Save the draft again.",
+  export_declaration_tampered:
+    "The export note in Settings › Terms doesn't match its saved copy, so the invoice wasn't issued. A developer needs to look at it.",
+  invoice_void: "This invoice is void.",
+  fx_not_applicable: "An exchange rate is only needed for USD invoices.",
 } as const;
 
 /** "This invoice was already issued as {number}." (07-R §5 `already_issued`; the number rides on the 409). */

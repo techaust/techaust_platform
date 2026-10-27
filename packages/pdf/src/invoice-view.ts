@@ -270,8 +270,8 @@ export function toInvoiceView(
         }
       : null,
     signature,
-    // at issue nothing has been paid, so the balance is the total (LD17)
-    balanceDue: m(computed.totalMinor),
+    // at issue nothing has been paid, so the balance is the total (LD17); an invoice made for money received is paid at issue: nothing is due (the layout leaves the row out)
+    balanceDue: m(header.advance ? 0 : computed.totalMinor),
     portalLink: nonEmpty(opts.portalLink) ? opts.portalLink : null,
     integrity: `Document ID ${envelope.documentId} · Content fingerprint ${envelope.snapshotSha256.slice(0, 12)}`,
     footer: {

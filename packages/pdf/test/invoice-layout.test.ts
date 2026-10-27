@@ -266,11 +266,12 @@ describe("the page around the layout", () => {
   it.each(INVOICE_LAYOUT_FIXTURES)(
     "%s is self-contained: the CSP, no script, no external URL; the footer and page numbers are in the page rules",
     async (name) => {
-      const full = await htmlOf(name);
+      const view = await viewOf(name);
+      const full = renderDocumentHtml(view);
       expect(full).toContain(DOCUMENT_CSP);
       expect(full).not.toMatch(/<script|<link|@import|(?:src|href)=["']?https?:|url\(["']?https?:/i);
       expect(full).toContain("@bottom-left");
-      expect(full).toContain("TH/INV/2627/0012");
+      expect(full).toContain(view.numberDisplay);
       expect(full.match(/<h1/g)).toHaveLength(1);
     },
   );
@@ -297,23 +298,26 @@ describe("the page around the layout", () => {
     expect(pdfOptionsFor(view)).toMatchObject({ format: "a4", tagged: true });
   });
 
-  it("an invoice-family type other than the tax invoice keeps the plain skeleton until M5.2 styles it", async () => {
+  it("a credit or debit note keeps the plain skeleton until M5.3 styles it (M5.2 moved the export invoice and the proforma to the layout)", async () => {
     const view = {
       ...(await viewOf("intra")),
-      type: "proforma",
-      docLabel: "Proforma invoice",
+      type: "credit_note",
+      docLabel: "Credit note",
     } as InvoiceView;
     const h = body(renderDocumentHtml(view));
     expect(h).toContain('<div class="doc doc--invoice">');
     expect(h).not.toContain("doc--tax-invoice");
-    expect(h).toContain(">Proforma invoice<");
+    expect(h).toContain(">Credit note<");
     expect(h).toContain('data-testid="reverse-charge"');
+    // the skeleton prints the copy mark only when the view sets one: no empty paragraph
+    const none = body(renderDocumentHtml({ ...view, copyLabel: null }));
+    expect(none).not.toContain('data-testid="copy-label"');
   });
 
   it.each(["inter", "bare", "signed"] as const)(
     "the skeleton still prints %s whole (heads by supply type, no invented bank, the signature)",
     async (name) => {
-      const view = { ...(await viewOf(name)), type: "proforma" } as InvoiceView;
+      const view = { ...(await viewOf(name)), type: "debit_note" } as InvoiceView;
       const h = body(renderDocumentHtml(view));
       expect(h).toContain('<div class="doc doc--invoice">');
       expect(h).toContain('data-testid="signatory"');

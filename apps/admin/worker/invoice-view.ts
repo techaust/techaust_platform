@@ -14,7 +14,6 @@ import {
   INVOICE_CHECKLIST,
   INVOICE_ISSUABLE_TYPES,
   INVOICE_SERIES_OF,
-  type InvoiceFlowType,
   type IssueBlocker,
   isNoteType,
   issueDateOf,
@@ -27,6 +26,7 @@ import {
   proformaWarnDate,
   voidBlockers,
 } from "@techaust/core/invoices";
+import type { Series } from "@techaust/core/numbering";
 import { decide, type Role } from "@techaust/core/permissions";
 import { type ComputedDocument, lutsOf } from "@techaust/core/tax";
 import { type DocumentBundle, headerExtrasOfRow, type TermsRef } from "@techaust/db/documents";
@@ -41,6 +41,7 @@ import {
   invoiceStateOf,
   type MilestoneFacts,
   needsInrConfirm,
+  proformaSupplyChanged,
 } from "./invoice-model.ts";
 import type { InvoiceNotesView, NoteViewPart } from "./note-view.ts";
 import type { ClientRow } from "./quote-model.ts";
@@ -216,9 +217,13 @@ export function invoiceView(i: InvoiceViewInput) {
   });
   const clientDays = client.payment_terms_days;
   const dueDays = clientDays ?? settings.paymentTerms.dueDays;
-  // The series a draft is numbered in: a note has its own (`TH/CN/`, `TH/DN/`); every other type keeps the invoice's preview as before.
-  const noteSeries = isNote ? INVOICE_SERIES_OF[d.type as InvoiceFlowType] : null;
-  const preview = noteSeries ? settings.numbering[noteSeries] : settings.numbering.invoice;
+  // The series this TYPE is numbered in (a proforma, an export invoice and a tax invoice each have their own).
+  const previewSeries =
+    (INVOICE_SERIES_OF as Readonly<Record<string, Series | undefined>>)[d.type] ?? "invoice";
+  const preview = settings.numbering[previewSeries];
+  // The advance invoice for a payment on a proforma is decided from the client's CURRENT status, exactly as the advance route does (review 2, finding 6).
+  const advanceType = client.gst_status === "overseas" ? "export_invoice" : "tax_invoice";
+  const advanceSupplyChanged = isProforma && proformaSupplyChanged(computed, client.gst_status);
   return {
     id: d.id,
     type: d.type,
@@ -318,7 +323,7 @@ export function invoiceView(i: InvoiceViewInput) {
       approval,
       /** The series a draft would be numbered in today (the dialog prints "TH/INV/2627/…"; the number itself is taken at issue). */
       preview: {
-        series: noteSeries ?? "invoice",
+        series: previewSeries,
         fy: issueFyOf(i.now),
         template: preview.template,
         padding: preview.padding,
@@ -382,7 +387,8 @@ export function invoiceView(i: InvoiceViewInput) {
         : null,
       refDate: fxRefDate,
       maxAgeDays: settings.tax.fxMaxAgeDays,
-      dateOk: state.fx ? fxDateOk(state.fx.date, fxRefDate, settings.tax.fxMaxAgeDays) : null,
+      // a frozen invoice was judged at issue: no live window applies to it (review 2, finding 8)
+      dateOk: state.fx && !frozen ? fxDateOk(state.fx.date, fxRefDate, settings.tax.fxMaxAgeDays) : null,
       inr: computed?.inr ?? null,
     },
     /** An export invoice, or a proforma for an overseas client (its route decides the advance invoice's): the route, its endorsement (an export invoice only), the LUT of the FY. */
@@ -399,7 +405,7 @@ export function invoiceView(i: InvoiceViewInput) {
               : null,
             lutRequired: mode === "lut",
             // A frozen document shows the letter it was sealed with (a proforma has none); a draft the letter of the FY it would be issued in.
-            lut: frozen ? (sealed.export?.lut ?? null) : lutFor(issueFy, luts),
+            lut: frozen ? (sealed.export?.lut ?? null) : mode === "lut" ? lutFor(issueFy, luts) : null,
             issueFy: frozen ? d.fy : issueFy,
             countryCode,
             countryName: sealed.export?.countryName ?? (frozen ? null : countryNameOf(countryCode)),
@@ -421,6 +427,10 @@ export function invoiceView(i: InvoiceViewInput) {
           validUntil: d.valid_until,
           paidMinor: d.paid_minor,
           balanceMinor: d.balance_minor,
+          /** The advance invoice needs the Owner's INR yes (Q8): the server's own answer, from the client's current status (the dialog never works it out). */
+          advanceNeedsInrConfirm: needsInrConfirm(advanceType, d.currency),
+          /** The client's GST status no longer matches the supply the proforma was sealed with: the advance route refuses (`advance_supply_changed`). */
+          advanceSupplyChanged,
           /** The Owner may record a payment against it (an issued or part-paid proforma with a balance, not a void one). */
           canAdvance:
             frozen &&

@@ -8,6 +8,7 @@
 import * as z from "zod/mini";
 import { parseIsoDate } from "../dates.ts";
 import { EMAIL_TEMPLATES } from "../email-templates.ts";
+import { type LegacyLutFate, type LutEntry, legacyLutFate, normaliseLutArn } from "../export-invoice.ts";
 import { STATE_CODES, type StateCode, validateGstin } from "../gstin.ts";
 import {
   DEFAULT_PADDING,
@@ -129,10 +130,7 @@ export const lutEntry = z.strictObject({
     }),
   ),
   arn: z.pipe(
-    z.pipe(
-      z.string({ error: "Enter the ARN from the GST portal." }),
-      z.transform((v) => v.replace(/\s+/g, "").toUpperCase()),
-    ),
+    z.pipe(z.string({ error: "Enter the ARN from the GST portal." }), z.transform(normaliseLutArn)),
     z.string().check(z.regex(/^[A-Z0-9]{1,30}$/, { error: "Enter the ARN from the GST portal." })),
   ),
   filedOn: z.nullable(isoDate),
@@ -258,39 +256,15 @@ export const taxSettings = z.object({
  * it could not be a list entry at all. The old ARN is normalised like a list entry's (spaces dropped, upper case); one the list would still refuse is
  * dropped (`legacyLutFate` says which case, for a logged note), so a Tax save never fails on a field the person cannot see (review 8).
  */
-export function foldLegacyLut<T extends LegacyLutTax>(tax: T): T {
+export function foldLegacyLut<T extends Parameters<typeof legacyLutFate>[0] & { luts: readonly LutEntry[] }>(
+  tax: T,
+): T {
   const f = legacyLutFate(tax);
   const luts = f.fate === "folded" ? [...tax.luts, f.entry] : tax.luts;
   return { ...tax, luts, lut: { arn: null, fy: null } };
 }
 
-type LegacyLutTax = {
-  readonly lut: { readonly arn: string | null; readonly fy: string | null };
-  readonly luts: readonly { readonly fy: string; readonly arn: string; readonly filedOn: string | null }[];
-};
-type LutEntry = { fy: string; arn: string; filedOn: string | null };
-
-/** The most letters the list keeps. */
-const LUTS_MAX = 20;
-
-/**
- * What the fold does with the deprecated single `lut`: `none` (no letter in it), `folded` (it becomes a list entry), `listed` (its FY already has a list
- * entry: the entry wins and the old value is dropped), `invalid` (the list would refuse it: an ARN with a character that is not a letter or digit, or a
- * year that is not two consecutive years) or `full` (the list already holds 20). The route logs the last three (codes and the FY, never the ARN).
- */
-export type LegacyLutFate =
-  | { fate: "none" | "listed" | "invalid" | "full" }
-  | { fate: "folded"; entry: LutEntry };
-
-export function legacyLutFate(tax: LegacyLutTax): LegacyLutFate {
-  const { arn, fy } = tax.lut;
-  if (!arn || !fy) return { fate: "none" };
-  if (tax.luts.some((l) => l.fy === fy)) return { fate: "listed" };
-  const entry = lutEntry.safeParse({ fy, arn, filedOn: null });
-  if (!entry.success) return { fate: "invalid" };
-  if (tax.luts.length >= LUTS_MAX) return { fate: "full" };
-  return { fate: "folded", entry: entry.data };
-}
+export { type LegacyLutFate, legacyLutFate };
 
 const numberingFormatOf = (check: (f: NumberingFormat) => FormatCheck) =>
   z.object({ template: z.string(), padding: z.int() }).check(

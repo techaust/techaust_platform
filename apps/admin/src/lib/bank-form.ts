@@ -3,6 +3,7 @@
 // account not entered yet; the screen swaps in the one its own last save of the block returned), so a save over someone else's newer one is refused (409 `stale_version`, review M1).
 import { ACCOUNT_NO, cleanAccountNo, IFSC, SWIFT } from "@techaust/core/bank";
 import type { BankAccount, BankInput, BankKind } from "../api.ts";
+import { checkPurposeCode } from "./invoice-types.ts";
 import { orNull } from "./settings-form.ts";
 
 export type BlockForm = {
@@ -15,6 +16,8 @@ export type BlockForm = {
   branch: string;
   bankAddress: string;
   intermediary: string;
+  /** M5.2 (LD30): the USD account's RBI purpose code. */
+  purposeCode: string;
 };
 
 export const BANK_KINDS: readonly BankKind[] = ["INR", "USD_SWIFT"];
@@ -36,6 +39,7 @@ export const toBlockForm = (a: Partial<BankAccount>): BlockForm => ({
   branch: a.branch ?? "",
   bankAddress: a.bankAddress ?? "",
   intermediary: a.intermediary ?? "",
+  purposeCode: a.purposeCode ?? "",
 });
 
 /** Has anything been typed into a block that has no account yet? (An untouched new block is skipped.) */
@@ -61,13 +65,17 @@ export function checkBlock(kind: BankKind, f: BlockForm, account: BankAccount | 
     e[fid("swift")] = "A SWIFT/BIC has 8 or 11 letters and digits.";
   if (!f.bankName.trim()) e[fid("bankName")] = "Enter the bank's name.";
   if (kind === "USD_SWIFT" && !f.bankAddress.trim()) e[fid("bankAddress")] = "Enter the bank's address.";
+  const purpose = kind === "USD_SWIFT" ? checkPurposeCode(f.purposeCode) : null;
+  if (purpose && !purpose.ok) e[fid("purposeCode")] = purpose.error;
   const body: BankInput = {
     accountName: f.accountName.trim(),
     bankName: f.bankName.trim(),
     branch: orNull(f.branch),
     bankAddress: orNull(f.bankAddress),
     intermediary: orNull(f.intermediary),
-    ...(kind === "INR" ? { ifsc: clean(f.ifsc) } : { swift: clean(f.swift) }),
+    ...(kind === "INR"
+      ? { ifsc: clean(f.ifsc) }
+      : { swift: clean(f.swift), purposeCode: purpose?.ok ? purpose.value : null }),
     ...(no ? { accountNo: no, accountNoAgain: again } : {}),
     expectedUpdatedAt: exists ? (account?.updatedAt ?? null) : null,
   };

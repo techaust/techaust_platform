@@ -8,7 +8,7 @@ import { useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { FieldError, Notice } from "../../components/ui.tsx";
 import { DOC_COPY, DOC_PENDING, DOC_TOASTS } from "../../lib/documents.ts";
-import { INV_COPY, invErrorText } from "../../lib/invoices.ts";
+import { INV_COPY, invErrorText, typeLabel } from "../../lib/invoices.ts";
 import { invoicesApi } from "../../lib/invoices-api.ts";
 import { ClientPicker } from "../projects/new.tsx";
 import { invoiceHref } from "./parts.tsx";
@@ -35,6 +35,8 @@ function NewInvoiceForm(props: { clientId?: string | undefined; onClose: () => v
   const [error, setError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // M5.2 (LD28): an invoice (its type from the client: India gives a tax invoice, abroad an export invoice) or a proforma, for any client.
+  const [kind, setKind] = useState<"invoice" | "proforma">("invoice");
   const preset = useLoad(
     () => (props.clientId ? api.client(props.clientId) : Promise.resolve(null)),
     props.clientId ?? "",
@@ -52,7 +54,7 @@ function NewInvoiceForm(props: { clientId?: string | undefined; onClose: () => v
     setBusy(true);
     setFormError(null);
     try {
-      const made = await invoicesApi.create({ clientId: client.id });
+      const made = await invoicesApi.create({ clientId: client.id, kind });
       toast("success", DOC_TOASTS.created);
       props.onClose();
       navigate(invoiceHref(made.id));
@@ -98,6 +100,31 @@ function NewInvoiceForm(props: { clientId?: string | undefined; onClose: () => v
           )}
           {error && <FieldError id={`${P}-who-error`}>{error}</FieldError>}
         </div>
+        {client && (
+          <fieldset className="radios inv-kind">
+            <legend>{INV_COPY.filterType}</legend>
+            <div className="segmented">
+              {(["invoice", "proforma"] as const).map((k) => (
+                <label key={k} className="segmented__opt">
+                  <input
+                    type="radio"
+                    name={`${P}-kind`}
+                    value={k}
+                    checked={kind === k}
+                    onChange={() => setKind(k)}
+                  />
+                  {typeLabel(
+                    k === "proforma"
+                      ? "proforma"
+                      : client.gstStatus === "overseas"
+                        ? "export_invoice"
+                        : "tax_invoice",
+                  )}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+        )}
         {formError && <Notice tone="error">{formError}</Notice>}
       </div>
       <div className="dialog__actions">
