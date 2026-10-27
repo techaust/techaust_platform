@@ -267,6 +267,13 @@ describe("review round: reminders paused, missed and the window [M2, L2]", () =>
     expect(sendState({ cancelledAt: null, emailStatus: null, queuedAt: null })).toBe("waiting");
     expect(sendState({ cancelledAt: null, emailStatus: null, queuedAt: 5 })).toBe("queued");
     expect(sendState({ cancelledAt: 1, emailStatus: null, queuedAt: null })).toBe("cancelled");
+    // re-check finding 1: the PDF is ready but the consumer hasn't queued the email yet (or an automatic send waits for the window)
+    expect(sendState({ cancelledAt: null, emailStatus: null, queuedAt: null, pdfReady: true })).toBe(
+      "queued",
+    );
+    expect(sendState({ cancelledAt: null, emailStatus: null, queuedAt: null, pdfReady: false })).toBe(
+      "waiting",
+    );
     expect(sendStateLabel("waiting")).toBe(`${M}Waiting for the PDF`);
   });
 });

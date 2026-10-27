@@ -109,16 +109,18 @@ export const SEND_COPY = {
 
 /**
  * The email statuses of 07-U §4 by the send row and its email log status (bounced and complained read as failed; skipped as cancelled), and L1's
- * "waiting": the row isn't queued yet because the PDF is still being made (`queuedAt` null; a caller without the key reads as queued).
+ * "waiting": the row isn't queued yet because the PDF is still being made (`queuedAt` null and the PDF not ready; a caller without the key reads
+ * as queued). A row not queued yet whose PDF is ready (the consumer hasn't run, or an automatic send waits for the window) is "queued".
  */
 export type SendState = "waiting" | "queued" | "sent" | "delivered" | "failed" | "cancelled";
 export function sendState(s: {
   cancelledAt: number | null;
   emailStatus: string | null;
   queuedAt?: number | null | undefined;
+  pdfReady?: boolean | undefined;
 }): SendState {
   if (s.cancelledAt !== null) return "cancelled";
-  if (s.queuedAt === null && s.emailStatus === null) return "waiting";
+  if (s.queuedAt === null && s.emailStatus === null && s.pdfReady !== true) return "waiting";
   switch (s.emailStatus) {
     case "sent":
       return "sent";

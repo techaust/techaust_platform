@@ -333,9 +333,10 @@ export function EmailsPanel(props: {
   const focusNext = useFocusAfterReload(v);
   const rows = v.sends ?? [];
   const live = v.links?.live ?? 0;
-  const waiting = rows.some((r) => r.cancelledAt === null && r.queuedAt === null);
-  // L1: a row not queued yet waits for the PDF; one queued but not sent yet is "Queued".
-  const queued = rows.some((r) => r.cancelledAt === null && r.queuedAt !== null && sendState(r) === "queued");
+  // L1: a row not queued yet waits for the PDF only while the PDF isn't ready; otherwise it is "Queued" like a queued row not sent yet.
+  const pdfReady = v.pdf?.state === "ready";
+  const waiting = rows.some((r) => sendState({ ...r, pdfReady }) === "waiting");
+  const queued = rows.some((r) => sendState({ ...r, pdfReady }) === "queued");
   const pauses = hasReminders(v.type);
   // The void lock line (Q1): an emailed tax, export or proforma invoice can't be voided any more. A note is never voided anyway.
   const lockable = v.type === "tax_invoice" || v.type === "export_invoice" || v.type === "proforma";
@@ -349,7 +350,7 @@ export function EmailsPanel(props: {
       {rows.length > 0 && (
         <ul className="deliv inv-mail__list">
           {rows.map((r) => {
-            const state = sendState(r);
+            const state = sendState({ ...r, pdfReady });
             const look = sendStateLook(state);
             return (
               <li key={r.id} className="deliv__row">
