@@ -15,6 +15,7 @@ import { documentSend } from "./document-send.ts";
 import { documentStart } from "./document-start.ts";
 import { documents } from "./documents.ts";
 import { files } from "./files.ts";
+import { invoiceAdvance } from "./invoice-advance.ts";
 import { invoiceIssue } from "./invoice-issue.ts";
 import { invoices } from "./invoices.ts";
 import { leads } from "./leads.ts";
@@ -47,6 +48,7 @@ export function mountApi(app: App) {
   // Invoices (M5.1): one router per concern under /invoices.
   app.route("/v1/invoices", invoices);
   app.route("/v1/invoices", invoiceIssue);
+  app.route("/v1/invoices", invoiceAdvance);
   app.route("/v1/invoices", invoicePdf);
   app.route("/v1/approvals", approvals);
   app.route("/v1/projects", projects);

@@ -108,7 +108,7 @@ describe("wall-time proxy for CPU of the M5.1 routes [docs/05 §10, NFR p99 ≤ 
 
 describe("start-up warm-up and the seal", () => {
   it("every warm-up sample of the invoice schemas parses", () => {
-    expect(warmInvoices()).toBe(7);
+    expect(warmInvoices()).toBe(11); // M5.2 added four samples (changed on purpose)
   });
 
   it("an issued invoice verifies against its own seal: the content hash and the snapshot hash worked out again from its rows", async () => {

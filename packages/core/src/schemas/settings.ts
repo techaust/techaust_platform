@@ -121,11 +121,11 @@ export const lutEntry = z.strictObject({
     }),
   ),
   arn: z.pipe(
-    z.string({ error: "Enter the ARN from the GST portal." }),
     z.pipe(
+      z.string({ error: "Enter the ARN from the GST portal." }),
       z.transform((v) => v.replace(/\s+/g, "").toUpperCase()),
-      z.string().check(z.regex(/^[A-Z0-9]{1,30}$/, { error: "Enter the ARN from the GST portal." })),
     ),
+    z.string().check(z.regex(/^[A-Z0-9]{1,30}$/, { error: "Enter the ARN from the GST portal." })),
   ),
   filedOn: z.nullable(isoDate),
 });

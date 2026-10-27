@@ -10,20 +10,33 @@
 import { ANONYMISED_CLIENT } from "@techaust/core/clients";
 import { approvalState } from "@techaust/core/documents";
 import { uuidv7 } from "@techaust/core/ids";
-import { INVOICE_FLOW_TYPES, isInvoiceFlowType, issueDateOf, voidBlockers } from "@techaust/core/invoices";
+import {
+  FX_SOURCE_CODES,
+  fxSourceLabel,
+  INVOICE_FLOW_TYPES,
+  isInvoiceFlowType,
+  issueDateOf,
+  parseFxRate,
+  voidBlockers,
+} from "@techaust/core/invoices";
 import { bundleOf, LOAD_STATEMENTS, loadStatements, type TermsRef } from "@techaust/db/documents";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { clientGoneSql } from "./anonymised.ts";
 import { type AppEnv, actor, BAD_REQUEST, type Ctx, err, mutate, NOT_FOUND } from "./context.ts";
 import { discountIn, lineIn } from "./document-save.ts";
-import { body, idParam, limitOf, param, query, refusedWith, STALE_VERSION } from "./http.ts";
+import { body, idParam, isoDate, limitOf, param, query, refusedWith, STALE_VERSION } from "./http.ts";
 import {
+  ALREADY_SET,
   ALREADY_VOID,
   BANK_READ,
   type BankRow,
   type ContactFacts,
   computeInvoice,
+  EXPORT_DECLARATION_MISSING,
+  EXPORT_DECLARATION_NOT_APPLICABLE,
+  EXPORT_MODE_NOT_APPLICABLE,
+  FX_NOT_APPLICABLE,
   INVOICE_SETTINGS_READ,
   INVOICE_TYPES_SQL,
   type InvoiceState,
@@ -37,20 +50,26 @@ import {
   type MilestoneFacts,
   milestoneAmountOf,
   milestoneDraft,
+  NEWEST_EXPORT_DECLARATION,
   NEWEST_INVOICE_TERMS,
   RETURN_PERIOD_CLOSED,
   readInvoiceSettings,
+  SERVICE_DATE_FUTURE,
+  SERVICE_DATE_NOT_APPLICABLE,
   taxContext,
   todayOf,
   VOID_NOT_ALLOWED,
   withoutReference,
 } from "./invoice-model.ts";
 import {
+  CHILDREN_OF_SQL,
+  type ChildRow,
   ISSUE_APPROVALS_OF_SQL,
   type IssueApprovalRow,
   invoiceView,
   isOverdue,
   MILESTONE_OF_SQL,
+  VOID_ACTOR_SQL,
 } from "./invoice-view.ts";
 import { type Direction, decodeCursor, keysetSql, pageOf } from "./keyset.ts";
 import {
@@ -282,6 +301,8 @@ export const targetOf = (m: MilestoneFacts | null): number | null => (m ? milest
 
 export const createBody = z.strictObject({
   clientId: idText,
+  /** M5.2 (LD28): `proforma` makes a proforma for ANY client (default `invoice`: the type still comes from the client). */
+  kind: z.optional(z.enum(["invoice", "proforma"])),
   contactId: z.optional(idText),
   fromMilestoneId: z.optional(idText),
   services: z.optional(
@@ -298,15 +319,48 @@ export const createBody = z.strictObject({
   ),
 });
 
+/** The exchange rate of a USD draft as typed (Q7): a decimal string, its date and its source; the rate is read digit by digit into micros (no float). */
+export const fxIn = z
+  .strictObject({
+    rate: z.string().check(
+      z.trim(),
+      z.refine((v) => parseFxRate(v) !== null, {
+        error: "Enter a rate above zero, with up to 4 decimal places.",
+      }),
+    ),
+    date: isoDate,
+    source: z.enum(FX_SOURCE_CODES),
+    sourceNote: z.optional(z.string().check(z.trim(), z.maxLength(60))),
+  })
+  .check(
+    z.refine((v) => fxSourceLabel(v.source, v.sourceNote) !== null, {
+      error: "Describe the source",
+      path: ["sourceNote"],
+    }),
+  );
+
 export const patchBody = z.strictObject({
   expectedUpdatedAt: z.int(),
   fields: z.optional(
     z.strictObject({
       contactId: z.optional(z.nullable(idText)),
       discount: z.optional(z.nullable(discountIn)),
+      /** M5.2: the export route (an export invoice, or a proforma for an overseas client); null: the settings'. */
+      exportMode: z.optional(z.nullable(z.enum(["lut", "igst_paid"]))),
+      /** M5.2 (Q7, LD24): the exchange rate of a USD tax or export draft; null clears it. */
+      fx: z.optional(z.nullable(fxIn)),
+      /** M5.2 (LD29): the day the service was completed (a tax or export draft); null clears it. */
+      serviceCompletedOn: z.optional(z.nullable(isoDate)),
+      /** M5.2 (LD23): add the newest extra export note (an export draft). */
+      exportDeclaration: z.optional(z.boolean()),
     }),
   ),
   lines: z.optional(z.array(lineIn).check(z.maxLength(100))),
+});
+
+export const serviceCompletedBody = z.strictObject({
+  expectedUpdatedAt: z.int(),
+  date: isoDate,
 });
 
 export const voidBody = z.strictObject({
@@ -376,7 +430,12 @@ export const invoices = new Hono<AppEnv>()
     const now = Date.now();
     const today = todayOf(now);
     const id = uuidv7();
-    const type = client.gst_status === "overseas" ? "export_invoice" : "tax_invoice";
+    const type =
+      f.kind === "proforma"
+        ? "proforma"
+        : client.gst_status === "overseas"
+          ? "export_invoice"
+          : "tax_invoice";
 
     let lines: LineState[] = [];
     let milestone: MilestoneFacts | null = null;
@@ -432,6 +491,9 @@ export const invoices = new Hono<AppEnv>()
       discountKind: null,
       discountValue: null,
       exportMode: null,
+      fx: null,
+      serviceCompletedOn: null,
+      exportDeclarationId: null,
       lines,
     };
     const computation = await computeInvoice(state, client, taxContext(settings), today, target);
@@ -521,7 +583,13 @@ export const invoices = new Hono<AppEnv>()
   // ---- one invoice ----
   .get("/:id", param(idParam), async (c) => {
     const id = c.req.valid("param").id;
-    const ctx = await readInvoice(c, id);
+    const db = c.env.DB;
+    // The newest extra export note, the documents made from it (a proforma's tax invoices), and who voided it: only what the screen needs.
+    const ctx = await readInvoice(c, id, [
+      db.prepare(NEWEST_EXPORT_DECLARATION),
+      db.prepare(CHILDREN_OF_SQL).bind(id),
+      db.prepare(VOID_ACTOR_SQL).bind(id),
+    ]);
     if (!ctx) return err(c, NOT_FOUND, 404);
     const d = ctx.bundle.document;
     const now = Date.now();
@@ -547,6 +615,10 @@ export const invoices = new Hono<AppEnv>()
         milestone: ctx.milestone,
         emailed: ctx.emailed,
         hasIssuedChild: ctx.hasIssuedChild,
+        bank: ctx.bank,
+        declaration: (ctx.extra[0]?.results[0] as TermsRef | undefined) ?? null,
+        children: (ctx.extra[1]?.results ?? []) as ChildRow[],
+        voidedByName: (ctx.extra[2]?.results[0] as { name: string } | undefined)?.name ?? null,
         now,
       }),
     );
@@ -572,6 +644,7 @@ export const invoices = new Hono<AppEnv>()
             )
             .bind(contactId)
         : db.prepare("SELECT NULL WHERE 0"),
+      db.prepare(NEWEST_EXPORT_DECLARATION),
     ]);
     if (!ctx) return err(c, NOT_FOUND, 404);
     const doc = ctx.bundle.document;
@@ -601,6 +674,39 @@ export const invoices = new Hono<AppEnv>()
           contact = row;
         }
       }
+      const exportish =
+        state.type === "export_invoice" ||
+        (state.type === "proforma" && ctx.client.gst_status === "overseas");
+      if (fl.exportMode !== undefined) {
+        if (fl.exportMode !== null && !exportish) return err(c, EXPORT_MODE_NOT_APPLICABLE, 400);
+        state = { ...state, exportMode: fl.exportMode };
+      }
+      if (fl.fx !== undefined) {
+        if (fl.fx === null) state = { ...state, fx: null };
+        else {
+          // A rate belongs to a USD tax or export invoice only (a proforma has none, LD28; an INR document never does).
+          if (state.currency !== "USD" || (state.type !== "tax_invoice" && state.type !== "export_invoice"))
+            return err(c, FX_NOT_APPLICABLE, 400);
+          const rateMicros = parseFxRate(fl.fx.rate);
+          const source = fxSourceLabel(fl.fx.source, fl.fx.sourceNote);
+          if (rateMicros === null || source === null) return err(c, BAD_REQUEST, 400);
+          state = { ...state, fx: { rateMicros, date: fl.fx.date, source } };
+        }
+      }
+      if (fl.serviceCompletedOn !== undefined) {
+        if (fl.serviceCompletedOn !== null && state.type !== "tax_invoice" && state.type !== "export_invoice")
+          return err(c, SERVICE_DATE_NOT_APPLICABLE, 400);
+        state = { ...state, serviceCompletedOn: fl.serviceCompletedOn };
+      }
+      if (fl.exportDeclaration !== undefined) {
+        if (!fl.exportDeclaration) state = { ...state, exportDeclarationId: null };
+        else {
+          if (state.type !== "export_invoice") return err(c, EXPORT_DECLARATION_NOT_APPLICABLE, 400);
+          const newest = ctx.extra[2]?.results[0] as { id: string } | undefined;
+          if (!newest) return err(c, EXPORT_DECLARATION_MISSING, 409);
+          state = { ...state, exportDeclarationId: newest.id };
+        }
+      }
     }
     if (f.lines) {
       const items = new Map(((ctx.extra[0]?.results ?? []) as ItemRow[]).map((i) => [i.id, i]));
@@ -624,6 +730,8 @@ export const invoices = new Hono<AppEnv>()
     );
     const t = Math.max(Date.now(), doc.updated_at + 1);
     const hashChanged = computation.hash !== doc.content_sha256;
+    // The extra export note is not in the content hash, but a request to issue was made WITH or WITHOUT it: changing it ends the request too.
+    const declarationChanged = state.exportDeclarationId !== (doc.export_declaration_id ?? null);
     const all = invoiceColumns(state, computation);
     const stored: Record<string, unknown> = doc;
     const columns: Partial<typeof all> = {};
@@ -649,6 +757,8 @@ export const invoices = new Hono<AppEnv>()
         summary: {
           documentId: id,
           parts: [fl ? "fields" : null, f.lines ? "lines" : null].filter(Boolean),
+          // Codes only: the rate, the note's words and the dates stay in the draft.
+          fx: fl?.fx === undefined ? undefined : fl.fx === null ? "cleared" : "set",
           fields: fl ? Object.keys(fl) : [],
           totalMinor: computation.computed?.totalMinor ?? null,
           contentSha: computation.hash.slice(0, 12),
@@ -656,13 +766,13 @@ export const invoices = new Hono<AppEnv>()
         side: (g) => [
           ...diffChildren(db, "document_lines", id, ctx.bundle.lines, lineDiff, g),
           // An approval is for one exact content: any change expires a waiting request, in this batch, and it never revives.
-          ...(hashChanged
+          ...(hashChanged || declarationChanged
             ? [
                 db
                   .prepare(
-                    `UPDATE approvals SET status = 'expired' WHERE document_id = ?1 AND kind = 'issue' AND status IN ('pending', 'approved') AND content_sha256 <> ?2 AND ${g.sql(3)}`,
+                    `UPDATE approvals SET status = 'expired' WHERE document_id = ?1 AND kind = 'issue' AND status IN ('pending', 'approved') AND (content_sha256 <> ?2 OR ?3 = 1) AND ${g.sql(4)}`,
                   )
-                  .bind(id, computation.hash, ...g.params),
+                  .bind(id, computation.hash, declarationChanged ? 1 : 0, ...g.params),
               ]
             : []),
         ],
@@ -694,6 +804,12 @@ export const invoices = new Hono<AppEnv>()
         contact_id: state.contactId,
         discount_kind: state.discountKind,
         discount_value: state.discountValue,
+        export_mode: state.exportMode,
+        fx_rate_micros: state.fx?.rateMicros ?? null,
+        fx_date: state.fx?.date ?? null,
+        fx_source: state.fx?.source ?? null,
+        service_completed_on: state.serviceCompletedOn,
+        export_declaration_id: state.exportDeclarationId,
       },
     };
     return c.json(
@@ -705,15 +821,18 @@ export const invoices = new Hono<AppEnv>()
         role: actor(c).role,
         prepared: { computation, state },
         approvals: ctx.approvals.map((a) =>
-          hashChanged &&
           (a.status === "pending" || a.status === "approved") &&
-          a.content_sha256 !== computation.hash
+          (hashChanged ? a.content_sha256 !== computation.hash : declarationChanged)
             ? { ...a, status: "expired" }
             : a,
         ),
         milestone: ctx.milestone,
         emailed: false,
         hasIssuedChild: false,
+        bank: ctx.bank,
+        declaration: (ctx.extra[2]?.results[0] as TermsRef | undefined) ?? null,
+        children: [],
+        voidedByName: null,
         now: Date.now(),
       }),
     );
@@ -766,6 +885,59 @@ export const invoices = new Hono<AppEnv>()
     return again.frozen_at !== null ? err(c, FROZEN, 409) : err(c, STALE_VERSION, 409);
   })
 
+  // ---- the day the service was completed (LD29, Rule 47; VERIFY WITH CA/LEGAL): set ONCE, on a tax or export invoice, never in the future; not sealed, not printed ----
+  .post("/:id/service-completed", param(idParam), body(serviceCompletedBody), async (c) => {
+    const { id } = c.req.valid("param");
+    const f = c.req.valid("json");
+    const db = c.env.DB;
+    const row = await db
+      .prepare(
+        `SELECT type, status, number_display, service_completed_on, updated_at, ${clientGoneSql("client_id")} AS gone FROM documents WHERE id = ?1`,
+      )
+      .bind(id)
+      .first<{
+        type: string;
+        status: string;
+        number_display: string | null;
+        service_completed_on: string | null;
+        updated_at: number;
+        gone: number;
+      }>();
+    if (!row || !isInvoiceFlowType(row.type)) return err(c, NOT_FOUND, 404);
+    if (row.type !== "tax_invoice" && row.type !== "export_invoice")
+      return err(c, SERVICE_DATE_NOT_APPLICABLE, 400);
+    if (row.updated_at !== f.expectedUpdatedAt) return err(c, STALE_VERSION, 409);
+    if (row.gone === 1) return err(c, CLIENT_GONE, 409);
+    const t = Math.max(Date.now(), row.updated_at + 1);
+    if (f.date > issueDateOf(t)) return err(c, SERVICE_DATE_FUTURE, 400);
+    if (row.service_completed_on !== null)
+      return c.json({ error: ALREADY_SET, date: row.service_completed_on, request_id: c.var.rid }, 409);
+    const done = await mutate(c, {
+      main: db
+        .prepare(
+          `UPDATE documents SET service_completed_on = ?3, updated_at = ?4
+           WHERE id = ?1 AND updated_at = ?2 AND service_completed_on IS NULL AND status <> 'void' AND type IN ('tax_invoice', 'export_invoice') AND NOT ${clientGoneSql("client_id")}`,
+        )
+        .bind(id, f.expectedUpdatedAt, f.date, t),
+      action: "invoice.service_completed",
+      entityType: "document",
+      entityId: id,
+      summary: { documentId: id, number: row.number_display, type: row.type, date: f.date },
+    });
+    if (done) return c.json({ ok: true, serviceCompletedOn: f.date, updatedAt: t });
+    const again = await db
+      .prepare(
+        `SELECT service_completed_on, updated_at, status, ${clientGoneSql("client_id")} AS gone FROM documents WHERE id = ?1`,
+      )
+      .bind(id)
+      .first<{ service_completed_on: string | null; updated_at: number; status: string; gone: number }>();
+    if (!again) return err(c, NOT_FOUND, 404);
+    if (again.service_completed_on !== null)
+      return c.json({ error: ALREADY_SET, date: again.service_completed_on, request_id: c.var.rid }, 409);
+    if (again.gone === 1) return err(c, CLIENT_GONE, 409);
+    return err(c, STALE_VERSION, 409);
+  })
+
   // ---- void (Q1, Q2, Q23, LD7; VERIFY WITH CA/LEGAL): the owner, with a fresh code, before it was emailed, within the month of issue, and with no payment or credit; the number stays ----
   .post("/:id/void", param(idParam), body(voidBody), async (c) => {
     const { id } = c.req.valid("param");
@@ -785,6 +957,7 @@ export const invoices = new Hono<AppEnv>()
       emailed: ctx.emailed,
       issueDate: d.issue_date,
       today,
+      type: d.type,
     });
     if (reasons.length > 0)
       return c.json(
@@ -812,7 +985,7 @@ export const invoices = new Hono<AppEnv>()
              AND paid_minor = 0 AND credited_minor = 0 AND NOT ${clientGoneSql("client_id")}
              AND NOT EXISTS (SELECT 1 FROM documents x WHERE x.parent_id = documents.id AND x.frozen_at IS NOT NULL)
              AND NOT EXISTS (SELECT 1 FROM document_sends s WHERE s.document_id = documents.id)
-             AND substr(issue_date, 1, 7) = ?6
+             AND (type = 'proforma' OR substr(issue_date, 1, 7) = ?6)
              AND EXISTS (SELECT 1 FROM staff_sessions s JOIN staff_users o ON o.id = s.user_id WHERE s.id = ?5 AND s.revoked_at IS NULL AND s.idle_expires_at > ?3 AND s.abs_expires_at > ?3 AND s.step_up_until > ?3 AND o.role = 'owner' AND o.status = 'active')`,
         )
         .bind(id, f.expectedUpdatedAt, t, f.reason, u.sessionId, today.slice(0, 7)),
@@ -831,7 +1004,7 @@ export const invoices = new Hono<AppEnv>()
       side: (g) => [
         db
           .prepare(
-            `UPDATE milestones SET status = CASE WHEN delivered_at IS NULL THEN 'pending' ELSE 'ready_to_bill' END, document_id = NULL, updated_at = ?2 WHERE document_id = ?1 AND ${g.sql(3)}`,
+            `UPDATE milestones SET status = CASE WHEN status <> 'invoiced' THEN status WHEN delivered_at IS NULL THEN 'pending' ELSE 'ready_to_bill' END, document_id = NULL, updated_at = ?2 WHERE document_id = ?1 AND ${g.sql(3)}`,
           )
           .bind(id, t, ...g.params),
       ],
