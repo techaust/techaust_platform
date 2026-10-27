@@ -573,6 +573,11 @@ describe("the route table", () => {
       "POST /api/v1/invoices/:id/ims-status invoices.ims invoice.ims_status",
       "GET /api/v1/invoices/:id/pdf invoices.read -",
       "POST /api/v1/invoices/:id/pdf/retry invoices.draft invoice.pdf_retry",
+      // M5.4 (added on purpose): send, revoke the links, pause and resume the reminders
+      "POST /api/v1/invoices/:id/send invoices.send invoice.send",
+      "POST /api/v1/invoices/:id/links/revoke invoices.send invoice.links_revoke",
+      "POST /api/v1/invoices/:id/reminders/pause invoices.send invoice.reminders_pause",
+      "POST /api/v1/invoices/:id/reminders/resume invoices.send invoice.reminders_resume",
       "GET /api/v1/clients/:id/invoices invoices.read -",
     ]);
     expect(ROUTES.find((r) => r.path === "/api/v1/invoices/:id" && r.method === "PATCH")?.body).toBe(

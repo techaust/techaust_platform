@@ -16,6 +16,7 @@ import {
   type AutoIssueReason,
   autoIssueEligibility,
   type CareCatalogue,
+  type CareLineWords,
   type CareServiceCode,
   careDue,
   careLines,
@@ -204,7 +205,12 @@ export function blockerCodesOf(
  * inserted guarded on that record, then the audit row (actor `system`) and the owners' bells. Idempotent: the second call for a period finds `last_billed_period` already there and
  * writes nothing; two parallel calls race on the same guarded UPDATE and exactly one wins; a draft that was deleted is never made again (the record stays).
  */
-export async function draftCarePlan(env: CareEnv, args: { planId: string }): Promise<DraftCareResult> {
+export async function draftCarePlan(
+  env: CareEnv,
+  args: { planId: string },
+  /** The words of the lines (the entrypoint never passes it: the approved 07-U text is the default once it exists; tests pass their own). */
+  opts: { words?: CareLineWords } = {},
+): Promise<DraftCareResult> {
   const db = env.DB;
   const now = Date.now();
   const today = toIsoDate(istDate(now));
@@ -227,7 +233,8 @@ export async function draftCarePlan(env: CareEnv, args: { planId: string }): Pro
         `SELECT ${CLIENT_COLS} FROM clients WHERE id = (SELECT client_id FROM care_plans WHERE id = ?1)`,
       )
       .bind(args.planId),
-    ...careStatements(db, { ids: [args.planId] }, { to: today, periodsBack: 1 }),
+    // two periods back: the long window groups by period, so the previous period is read whatever its rollover rule (the short window skips it for a plan without rollover)
+    ...careStatements(db, { ids: [args.planId] }, { to: today, periodsBack: 2 }),
     db.prepare(TERMS_AUTHORS_SQL).bind(args.planId),
     db.prepare(CONTACTS_OF_PLAN_SQL).bind(args.planId),
     db.prepare(INVOICE_SETTINGS_READ),
@@ -293,6 +300,7 @@ export async function draftCarePlan(env: CareEnv, args: { planId: string }): Pro
     period,
     catalogue: catalogue as CareCatalogue,
     overage,
+    ...(opts.words ? { words: opts.words } : {}),
   });
   if (!built.ok) return { result: "skipped", autoEligible: false, reasons: [], why: "service_missing" };
 

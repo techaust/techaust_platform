@@ -20,11 +20,11 @@ const id = (v: unknown): string => {
 
 /** The recurring care invoices (M5.4). Public methods are the RPC surface: keep them to exactly these two. */
 export class BillingJobs extends WorkerEntrypoint<Env> {
-  draftCarePlan(args: { planId: string }): Promise<DraftCareResult> {
+  async draftCarePlan(args: { planId: string }): Promise<DraftCareResult> {
     return draftCarePlan(this.env, { planId: id(args?.planId) });
   }
 
-  issueCareDraft(args: { documentId: string }): Promise<IssueCareResult> {
+  async issueCareDraft(args: { documentId: string }): Promise<IssueCareResult> {
     return issueCareDraft(this.env, { documentId: id(args?.documentId) });
   }
 }

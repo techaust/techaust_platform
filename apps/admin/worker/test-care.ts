@@ -31,6 +31,7 @@ export type PlanOpts = {
   rate?: number | null;
   rollover?: "none" | "one_month";
   currency?: "INR" | "USD";
+  aiOps?: number | null;
 };
 
 /** A care plan with its first terms row and an active status row, as the API writes them (`by` is a member id). */
@@ -49,7 +50,7 @@ export async function mkPlan(by: string, o: PlanOpts = {}) {
     tier: o.tier ?? "growth",
     price_minor: o.price ?? 2_499_900,
     included_minutes: o.included ?? 600,
-    ai_ops_minor: null,
+    ai_ops_minor: o.aiOps ?? null,
     overage_rate_minor: o.rate === undefined ? 150_000 : o.rate,
     rollover: o.rollover ?? "none",
   };

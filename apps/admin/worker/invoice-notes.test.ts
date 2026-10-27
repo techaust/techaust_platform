@@ -153,6 +153,8 @@ describe("a credit note: draft, issue, ledger [ADM-INV-11, LD38, LD41]", () => {
     expect(before.actions).toEqual({
       credit: { allowed: true, reasons: [] },
       debit: { allowed: true, reasons: [] },
+      // M5.4 (added on purpose): the send action joins the note actions
+      send: { allowed: true, reasons: [] },
     });
     expect(before.creditDeadline).toMatchObject({ basis: "cutoff", passed: false });
     expect(before.creditDeadline.date).toMatch(/^\d{4}-11-30$/);

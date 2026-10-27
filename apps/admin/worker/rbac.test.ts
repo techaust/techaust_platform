@@ -1001,6 +1001,44 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
       expect((await issueInvoice(s, made.id)).status).toBe(200);
       return run(s, `/invoices/${made.id}/pdf/retry`, { method: "POST", body: {} });
     },
+    // M5.4 (added on purpose): the send, the revoke of its links and the pause and resume of its reminders.
+    "POST /api/v1/invoices/:id/send": async () => {
+      const s = await owner();
+      await putCompany();
+      const made = await mkInvoice(s);
+      expect((await issueInvoice(s, made.id)).status).toBe(200);
+      const to = await mkContact(made.clientId, { portal_access: 1 });
+      return run(s, `/invoices/${made.id}/send`, { method: "POST", body: { contactIds: [to.id] } });
+    },
+    "POST /api/v1/invoices/:id/links/revoke": async () => {
+      const s = await owner();
+      await putCompany();
+      const made = await mkInvoice(s);
+      expect((await issueInvoice(s, made.id)).status).toBe(200);
+      return run(s, `/invoices/${made.id}/links/revoke`, { method: "POST", body: {} });
+    },
+    "POST /api/v1/invoices/:id/reminders/pause": async () => {
+      const s = await owner();
+      await putCompany();
+      const made = await mkInvoice(s);
+      expect((await issueInvoice(s, made.id)).status).toBe(200);
+      const to = await mkContact(made.clientId, { portal_access: 1 });
+      expect(
+        (await call(`/invoices/${made.id}/send`, { cookie: s.cookie, body: { contactIds: [to.id] } })).status,
+      ).toBe(200);
+      return run(s, `/invoices/${made.id}/reminders/pause`, { method: "POST", body: {} });
+    },
+    "POST /api/v1/invoices/:id/reminders/resume": async () => {
+      const s = await owner();
+      await putCompany();
+      const made = await mkInvoice(s);
+      expect((await issueInvoice(s, made.id)).status).toBe(200);
+      const to = await mkContact(made.clientId, { portal_access: 1 });
+      expect(
+        (await call(`/invoices/${made.id}/send`, { cookie: s.cookie, body: { contactIds: [to.id] } })).status,
+      ).toBe(200);
+      return run(s, `/invoices/${made.id}/reminders/resume`, { method: "POST", body: {} });
+    },
   };
 
   it("there is a scenario for every route that declares an audit action", () => {
