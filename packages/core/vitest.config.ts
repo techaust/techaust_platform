@@ -17,6 +17,8 @@ export default defineConfig({
         branches: 90,
         statements: 90,
         "src/tax/**": { 100: true },
+        // The GST and report core (M5.5a) is held to 100 % as well: every branch is a rule.
+        "src/gst/**": { 100: true },
       },
     },
   },
