@@ -24,7 +24,7 @@ import {
   statementKindText,
 } from "../../lib/reports.ts";
 import { csvBlob, pollStatementPdf, saveFile } from "../../lib/reports-api.ts";
-import { Amount, RangeForm } from "../reports/parts.tsx";
+import { Amount, RangeForm, WideList } from "../reports/parts.tsx";
 
 type Query = { from: string; to: string; currency: Currency };
 type Loaded =
@@ -260,56 +260,58 @@ export function StatementTab(props: {
             </dl>
           )}
 
-          <DataTable<StatementEntryView>
-            caption={STATEMENT_COPY.caption}
-            loading={page.state === "loading"}
-            rows={page.state === "ready" ? page.entries : []}
-            rowKey={(r) => `${r.kind}-${r.id}`}
-            empty={
-              <EmptyState icon={<FileText />} title={STATEMENT_COPY.empty} headingLevel={3}>
-                {null}
-              </EmptyState>
-            }
-            columns={[
-              {
-                key: "date",
-                header: C.date,
-                cell: (r) => <span className="tnum">{isoDayText(r.date)}</span>,
-              },
-              {
-                key: "document",
-                header: C.document,
-                card: "title",
-                cell: (r) =>
-                  r.kind === "receipt" ? (
-                    <span className="docno">{r.number}</span>
-                  ) : (
-                    <Link to={documentHref(r.id)} className="docno">
-                      {r.number}
-                    </Link>
-                  ),
-              },
-              { key: "details", header: C.details, cell: (r) => statementKindText(r.kind) },
-              {
-                key: "debit",
-                header: C.debit,
-                align: "end",
-                cell: (r) => (r.debitMinor === 0 ? null : <Amount minor={r.debitMinor} currency={cur} />),
-              },
-              {
-                key: "credit",
-                header: C.credit,
-                align: "end",
-                cell: (r) => (r.creditMinor === 0 ? null : <Amount minor={r.creditMinor} currency={cur} />),
-              },
-              {
-                key: "balance",
-                header: C.balance,
-                align: "end",
-                cell: (r) => <Amount minor={r.balanceMinor} currency={cur} />,
-              },
-            ]}
-          />
+          <WideList label={STATEMENT_COPY.caption}>
+            <DataTable<StatementEntryView>
+              caption={STATEMENT_COPY.caption}
+              loading={page.state === "loading"}
+              rows={page.state === "ready" ? page.entries : []}
+              rowKey={(r) => `${r.kind}-${r.id}`}
+              empty={
+                <EmptyState icon={<FileText />} title={STATEMENT_COPY.empty} headingLevel={3}>
+                  {null}
+                </EmptyState>
+              }
+              columns={[
+                {
+                  key: "date",
+                  header: C.date,
+                  cell: (r) => <span className="tnum">{isoDayText(r.date)}</span>,
+                },
+                {
+                  key: "document",
+                  header: C.document,
+                  card: "title",
+                  cell: (r) =>
+                    r.kind === "receipt" ? (
+                      <span className="docno">{r.number}</span>
+                    ) : (
+                      <Link to={documentHref(r.id)} className="docno">
+                        {r.number}
+                      </Link>
+                    ),
+                },
+                { key: "details", header: C.details, cell: (r) => statementKindText(r.kind) },
+                {
+                  key: "debit",
+                  header: C.debit,
+                  align: "end",
+                  cell: (r) => (r.debitMinor === 0 ? null : <Amount minor={r.debitMinor} currency={cur} />),
+                },
+                {
+                  key: "credit",
+                  header: C.credit,
+                  align: "end",
+                  cell: (r) => (r.creditMinor === 0 ? null : <Amount minor={r.creditMinor} currency={cur} />),
+                },
+                {
+                  key: "balance",
+                  header: C.balance,
+                  align: "end",
+                  cell: (r) => <Amount minor={r.balanceMinor} currency={cur} />,
+                },
+              ]}
+            />
+          </WideList>
           {page.state === "ready" && page.next && (
             <button
               type="button"

@@ -245,7 +245,8 @@ export const STATEMENT_CSS = `
 /* the ledger: Date · Document · Details · Debit · Credit · Balance */
 .doc--statement .stm-ledger .c-date { width: 19mm; white-space: nowrap; font-variant-numeric: tabular-nums lining-nums; }
 .doc--statement .stm-ledger .c-doc { width: 36mm; white-space: nowrap; font-variant-numeric: tabular-nums lining-nums; }
-.doc--statement .stm-ledger .c-details { overflow-wrap: anywhere; font-weight: 400; }
+.doc--statement .stm-ledger .c-details { overflow-wrap: anywhere; }
+.doc--statement .stm-ledger tbody th { font-weight: 400; border-bottom: 0.2mm solid var(--color-border); }
 .doc--statement .stm-ledger .c-amt { width: 26mm; }
 .doc--statement .stm-ledger .c-bal { width: 28mm; }
 .doc--statement .stm-ledger tbody td.num:last-child { font-weight: 500; }

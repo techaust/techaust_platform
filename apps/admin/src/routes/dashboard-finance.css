@@ -37,8 +37,19 @@
   }
 }
 
+/* The band keeps its own reading order: care.css sends every quiet tile to the end of the phone column (order 5), which would lift the
+   "arrives" line above the empty finance tiles. */
+.dash__finance > * {
+  order: 0;
+}
+
 .fin-tile {
   min-width: 0;
+}
+
+.fin-tile__link {
+  justify-self: start;
+  margin-top: auto;
 }
 
 .fin-hint {
@@ -122,6 +133,19 @@
   border-top: 1px solid var(--color-border);
 }
 
+/* A phone: two periods of up to 12-character figures side by side need the body size, not the display one. */
+@media (max-width: 29.99rem) {
+  .fin-invoiced .fin-money__value.fin-money--lg {
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+  }
+
+  .fin-invoiced th,
+  .fin-invoiced td {
+    padding-inline-end: var(--space-2);
+  }
+}
+
 .fin-invoiced__cur {
   width: 1%;
   color: var(--color-text-muted);
@@ -196,4 +220,8 @@
   color: var(--color-text-muted);
   font-size: var(--text-sm);
   line-height: var(--text-sm--line-height);
+}
+
+.dash__finance > .fin-arrives {
+  order: 1;
 }

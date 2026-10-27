@@ -14,7 +14,7 @@ import { dateText, EDF_COPY, GST_COPY, monthLabel, previousMonth } from "../../l
 import { csvBlob, readAll, reportsApi, saveFile } from "../../lib/reports-api.ts";
 import { buildEdf } from "../../lib/reports-build.ts";
 import { ReportFrame } from "./frame.tsx";
-import { Amount, DocLink, ProblemList, WarningList } from "./parts.tsx";
+import { Amount, DocLink, ProblemList, WarningList, WideList } from "./parts.tsx";
 
 const MONTH_RE = /^(\d{4})-(0[1-9]|1[0-2])$/;
 
@@ -110,53 +110,55 @@ export function EdfReport() {
         ) : (
           <>
             {list.state === "ready" && list.data.ok && <WarningList warnings={list.data.warnings} />}
-            <DataTable<EdfRow>
-              caption={`${EDF_COPY.title}, ${label}`}
-              loading={list.state === "loading"}
-              rows={list.state === "ready" && list.data.ok ? [...list.data.rows] : []}
-              rowKey={(r) => r.id}
-              empty={
-                <EmptyState icon={<FileText />} title={EDF_COPY.empty(label)}>
-                  {null}
-                </EmptyState>
-              }
-              columns={[
-                {
-                  key: "invoice",
-                  header: C.invoice,
-                  card: "title",
-                  cell: (r) => <DocLink doc={{ id: r.id, number: r.number, kind: "export_invoice" }} />,
-                },
-                {
-                  key: "date",
-                  header: C.date,
-                  cell: (r) => <span className="tnum">{dateText(r.issueDate)}</span>,
-                },
-                { key: "client", header: C.client, cell: (r) => r.clientName },
-                {
-                  key: "country",
-                  header: C.country,
-                  cell: (r) => (r.countryCode ? countryName(r.countryCode) : null),
-                },
-                {
-                  key: "currency",
-                  header: C.currency,
-                  cell: (r) => <span className="docno">{r.currency}</span>,
-                },
-                {
-                  key: "amount",
-                  header: C.amount,
-                  align: "end",
-                  cell: (r) => <Amount minor={r.totalMinor} currency={r.currency} />,
-                },
-                {
-                  key: "purpose",
-                  header: C.purpose,
-                  cell: (r) => (r.purposeCode ? <span className="docno">{r.purposeCode}</span> : null),
-                },
-                { key: "realised", header: C.realised, align: "end", cell: () => null },
-              ]}
-            />
+            <WideList label={EDF_COPY.title}>
+              <DataTable<EdfRow>
+                caption={`${EDF_COPY.title}, ${label}`}
+                loading={list.state === "loading"}
+                rows={list.state === "ready" && list.data.ok ? [...list.data.rows] : []}
+                rowKey={(r) => r.id}
+                empty={
+                  <EmptyState icon={<FileText />} title={EDF_COPY.empty(label)}>
+                    {null}
+                  </EmptyState>
+                }
+                columns={[
+                  {
+                    key: "invoice",
+                    header: C.invoice,
+                    card: "title",
+                    cell: (r) => <DocLink doc={{ id: r.id, number: r.number, kind: "export_invoice" }} />,
+                  },
+                  {
+                    key: "date",
+                    header: C.date,
+                    cell: (r) => <span className="tnum">{dateText(r.issueDate)}</span>,
+                  },
+                  { key: "client", header: C.client, cell: (r) => r.clientName },
+                  {
+                    key: "country",
+                    header: C.country,
+                    cell: (r) => (r.countryCode ? countryName(r.countryCode) : null),
+                  },
+                  {
+                    key: "currency",
+                    header: C.currency,
+                    cell: (r) => <span className="docno">{r.currency}</span>,
+                  },
+                  {
+                    key: "amount",
+                    header: C.amount,
+                    align: "end",
+                    cell: (r) => <Amount minor={r.totalMinor} currency={r.currency} />,
+                  },
+                  {
+                    key: "purpose",
+                    header: C.purpose,
+                    cell: (r) => (r.purposeCode ? <span className="docno">{r.purposeCode}</span> : null),
+                  },
+                  { key: "realised", header: C.realised, align: "end", cell: () => null },
+                ]}
+              />
+            </WideList>
             {list.state === "ready" && list.data.ok && list.data.rows.length > 0 && (
               <p className="hint report-note">{EDF_COPY.realisedNote}</p>
             )}

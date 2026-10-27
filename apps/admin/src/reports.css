@@ -9,6 +9,7 @@
   margin: calc(-1 * var(--space-2)) 0 var(--space-6);
   border-bottom: 1px solid var(--color-border);
   overflow-x: auto;
+  overflow-y: hidden;
   scrollbar-width: thin;
 }
 
@@ -46,7 +47,7 @@
   content: "";
   position: absolute;
   inset-inline: var(--space-3) var(--space-3);
-  bottom: -1px;
+  bottom: 0;
   height: 4px;
   background: var(--color-accent-decor);
   clip-path: polygon(0 0, calc(100% - 4px) 0, 100% 100%, 0 100%);
@@ -64,6 +65,10 @@
   display: grid;
   gap: var(--space-4);
   margin-bottom: var(--space-6);
+}
+
+.report-controls > * {
+  min-width: 0;
 }
 
 .report-controls--row {
@@ -106,7 +111,7 @@
 
 .period-picker__select {
   width: auto;
-  min-width: 17rem;
+  min-width: 15rem;
   max-width: 100%;
 }
 
@@ -146,7 +151,7 @@
   display: inline-flex;
   align-items: center;
   min-height: calc(var(--target-min) - 2px);
-  padding: 0 var(--space-4);
+  padding: 0 var(--space-3);
 }
 
 .segmented__opt input:checked + span {
@@ -184,11 +189,18 @@
 
 @media (min-width: 768px) {
   .range-form__fields {
-    grid-template-columns: repeat(auto-fit, minmax(12rem, 15rem));
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
   }
 
+  .range-form__fields > .field {
+    flex: 0 1 15rem;
+  }
+
+  /* The button lines up with the controls, below the labels (one label line and the field's gap). */
   .range-form__go {
-    align-self: end;
+    padding-top: calc(var(--text-body) * var(--text-body--line-height) + var(--space-1));
   }
 }
 
@@ -242,6 +254,7 @@
 }
 
 .report-done {
+  width: fit-content;
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -431,6 +444,30 @@
   color: var(--color-text-muted);
 }
 
+/* A wide list (DataTable) scrolls inside its own box; its headers wrap, and they don't stick (a sticky header can't live in a scrolling box). */
+.wide-list {
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.wide-list:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.wide-list .dtable .dtable__table th,
+.wide-list .dtable .dtable__table td {
+  padding-inline: var(--space-3);
+}
+
+.wide-list .dtable .dtable__table thead th {
+  position: static;
+  white-space: normal;
+  padding-block: var(--space-2);
+  vertical-align: bottom;
+}
+
 .amount,
 .tnum {
   font-variant-numeric: tabular-nums lining-nums;
@@ -467,25 +504,97 @@
   border-top: 1px solid var(--color-border);
 }
 
-.file-list__item {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2) var(--space-4);
-  padding: var(--space-2) 0;
-  border-bottom: 1px solid var(--color-border);
+/* A file is one row and the row is its button: the download icon, 07-V's label, and the file's own name at the end, quiet. */
+.file-list li + li {
+  border-top: 1px solid var(--color-border);
 }
 
-.file-list__name {
+.file-list__btn {
   display: grid;
-  gap: 0;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  width: 100%;
+  min-height: var(--target-min);
+  padding: var(--space-2);
+  border: 0;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.file-list__label {
+  flex: 1 1 auto;
   min-width: 0;
 }
 
+.file-list__btn .icon {
+  flex: none;
+  color: var(--color-text-accent);
+}
+
+.file-list__btn:hover:not(:disabled) {
+  background: var(--color-surface-alt);
+}
+
+.file-list__btn:hover:not(:disabled) .file-list__label {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.file-list__btn:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+}
+
+.file-list__btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .file-list__file {
+  flex: none;
   color: var(--color-text-muted);
   font-size: var(--text-sm);
+}
+
+/* On a phone the file's name goes under its label, in the label's column. */
+@media (max-width: 479px) {
+  .file-list__btn {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .file-list__file {
+    grid-column: 2;
+  }
+
+  .period-picker__select,
+  .segmented {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .segmented__opt {
+    flex: 1 1 0;
+  }
+
+  .segmented__opt span {
+    flex: 1;
+    justify-content: center;
+    text-align: center;
+  }
+}
+
+.report-grid[hidden],
+.report-block[hidden] {
+  display: none;
+}
+
+.report-empty-line {
+  margin: 0;
+  color: var(--color-text-muted);
 }
 
 .report-downloads {

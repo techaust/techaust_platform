@@ -24,6 +24,10 @@ export const V = (line: string): string => (APPROVED_07V ? line : `${INV_PLACEHO
 export const P = (line: string): string => `${INV_PLACEHOLDER} ${line}`;
 
 /** "1 document" / "3 documents": the count words 07-V's lines use ({count} documents). */
+/** A marked line without its mark, for a 07-V line that quotes another 07-V line ({section} in a download label). */
+export const unmark = (line: string): string =>
+  line.startsWith(`${INV_PLACEHOLDER} `) ? line.slice(INV_PLACEHOLDER.length + 1) : line;
+
 const docs = (n: number) => `${n} ${n === 1 ? "document" : "documents"}`;
 
 // ---- 07-V §1 navigation ------------------------------------------------------------------------------------------------------------------------
@@ -77,7 +81,8 @@ export const GST_COPY = {
     total: V("Total"),
     cancelled: V("Cancelled"),
   },
-  download: (section: string) => V(`Download ${section} CSV`),
+  /** `section` may be a marked 07-V name itself: its mark is not repeated inside the line. */
+  download: (section: string) => V(`Download ${unmark(section)} CSV`),
   downloadAll: V("Download all (ZIP)"),
   verify: (version: string) =>
     V(

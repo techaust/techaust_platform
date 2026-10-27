@@ -5,6 +5,7 @@ import type { RegisterApiRow, ReportMeta } from "@techaust/core/gst";
 import { SETTINGS_DEFAULTS } from "@techaust/core/settings";
 import { describe, expect, it } from "vitest";
 import { RequestError } from "../api.ts";
+import { ACTION_LABELS } from "./audit.ts";
 import { reportBellHref } from "./bell-links.ts";
 import {
   APPROVED_07V,
@@ -66,6 +67,11 @@ describe("07-V is marked until the owner approves it", () => {
       STAGE_LABELS.fema_overdue,
     ])
       expect(line.startsWith(M)).toBe(true);
+  });
+
+  it("the two audit labels (07-V §1) carry the same mark as every 07-V line", () => {
+    expect(ACTION_LABELS["report.export"]).toBe(V("exported a report"));
+    expect(ACTION_LABELS["client.statement_pdf"]).toBe(V("made a statement PDF"));
   });
 
   it("07-V §2 words with their figures", () => {

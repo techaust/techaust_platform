@@ -21,7 +21,7 @@ import {
 import { readAll, reportsApi } from "../../lib/reports-api.ts";
 import { buildRealisation, type RealisationList } from "../../lib/reports-build.ts";
 import { ReportFrame } from "./frame.tsx";
-import { Amount, DocLink, ProblemList } from "./parts.tsx";
+import { Amount, DocLink, ProblemList, WideList } from "./parts.tsx";
 
 type Row = Extract<RealisationList, { ok: true }>["rows"][number];
 
@@ -85,66 +85,68 @@ export function RealisationReport() {
             heading={GST_COPY.errorsHeading(list.data.problems.length)}
           />
         ) : (
-          <DataTable<Row>
-            caption={REALISATION_COPY.title}
-            loading={list.state === "loading"}
-            rows={rows}
-            rowKey={(r) => r.id}
-            empty={
-              <EmptyState icon={<CheckCircle />} title={REALISATION_COPY.empty}>
-                {null}
-              </EmptyState>
-            }
-            columns={[
-              {
-                key: "invoice",
-                header: C.invoice,
-                card: "title",
-                cell: (r) => (
-                  <span
-                    id={`real-${r.id}`}
-                    className="real-invoice"
-                    data-marked={r.id === marked || undefined}
-                  >
-                    <DocLink doc={{ id: r.id, number: r.number, kind: "export_invoice" }} />
-                    {r.beforeFema && (
-                      <span className="real-invoice__note">{REALISATION_COPY.beforeFema}</span>
-                    )}
-                  </span>
-                ),
-              },
-              { key: "client", header: C.client, cell: (r) => r.clientName },
-              {
-                key: "issued",
-                header: C.issued,
-                cell: (r) => <span className="tnum">{dateText(r.issueDate)}</span>,
-              },
-              {
-                key: "outstanding",
-                header: C.outstanding,
-                align: "end",
-                cell: (r) => <Amount minor={r.outstandingMinor} currency={r.currency} />,
-              },
-              {
-                key: "stage",
-                header: C.stage,
-                cell: (r) => {
-                  const p = STAGE_PILLS[r.stage];
-                  return (
-                    <StatusPill tone={p.tone} icon={p.icon} outline={p.outline}>
-                      {STAGE_LABELS[r.stage]}
-                    </StatusPill>
-                  );
+          <WideList label={REALISATION_COPY.title}>
+            <DataTable<Row>
+              caption={REALISATION_COPY.title}
+              loading={list.state === "loading"}
+              rows={rows}
+              rowKey={(r) => r.id}
+              empty={
+                <EmptyState icon={<CheckCircle />} title={REALISATION_COPY.empty}>
+                  {null}
+                </EmptyState>
+              }
+              columns={[
+                {
+                  key: "invoice",
+                  header: C.invoice,
+                  card: "title",
+                  cell: (r) => (
+                    <span
+                      id={`real-${r.id}`}
+                      className="real-invoice"
+                      data-marked={r.id === marked || undefined}
+                    >
+                      <DocLink doc={{ id: r.id, number: r.number, kind: "export_invoice" }} />
+                      {r.beforeFema && (
+                        <span className="real-invoice__note">{REALISATION_COPY.beforeFema}</span>
+                      )}
+                    </span>
+                  ),
                 },
-              },
-              {
-                key: "due",
-                header: C.dueBy,
-                cell: (r) =>
-                  r.stage === "realised" ? null : <span className="tnum">{dateText(dueOf(r))}</span>,
-              },
-            ]}
-          />
+                { key: "client", header: C.client, cell: (r) => r.clientName },
+                {
+                  key: "issued",
+                  header: C.issued,
+                  cell: (r) => <span className="tnum">{dateText(r.issueDate)}</span>,
+                },
+                {
+                  key: "outstanding",
+                  header: C.outstanding,
+                  align: "end",
+                  cell: (r) => <Amount minor={r.outstandingMinor} currency={r.currency} />,
+                },
+                {
+                  key: "stage",
+                  header: C.stage,
+                  cell: (r) => {
+                    const p = STAGE_PILLS[r.stage];
+                    return (
+                      <StatusPill tone={p.tone} icon={p.icon} outline={p.outline}>
+                        {STAGE_LABELS[r.stage]}
+                      </StatusPill>
+                    );
+                  },
+                },
+                {
+                  key: "due",
+                  header: C.dueBy,
+                  cell: (r) =>
+                    r.stage === "realised" ? null : <span className="tnum">{dateText(dueOf(r))}</span>,
+                },
+              ]}
+            />
+          </WideList>
         )}
         {list.state === "ready" && list.data.ok && (
           <div className="report-notes">

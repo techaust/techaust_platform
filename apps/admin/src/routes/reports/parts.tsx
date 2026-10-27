@@ -99,10 +99,37 @@ export function Progress({ text }: { text: string }) {
   );
 }
 
-/** A labelled block of a report's results. */
-export function ReportBlock(props: { id: string; title: string; children: ReactNode; aside?: ReactNode }) {
+/**
+ * A wide list (DataTable) that scrolls sideways inside its own box, never the page; the box is a named region that takes focus, so the
+ * keyboard can scroll it (axe: scrollable-region-focusable). Its headers wrap rather than push the table wider.
+ */
+export function WideList({
+  label,
+  className = "wide-list",
+  children,
+}: {
+  label: string;
+  className?: string;
+  children: ReactNode;
+}) {
   return (
-    <section className="report-block" aria-labelledby={props.id}>
+    // biome-ignore lint/a11y/noNoninteractiveTabindex: a scrolling region must be reachable by keyboard (WCAG 2.1.1)
+    <section className={className} tabIndex={0} aria-label={label}>
+      {children}
+    </section>
+  );
+}
+
+/** A labelled block of a report's results. */
+export function ReportBlock(props: {
+  id: string;
+  title: string;
+  children: ReactNode;
+  aside?: ReactNode;
+  hidden?: boolean;
+}) {
+  return (
+    <section className="report-block" aria-labelledby={props.id} hidden={props.hidden}>
       <div className="report-block__head">
         <h2 id={props.id} className="report-sub">
           {props.title}

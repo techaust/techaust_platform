@@ -12,7 +12,7 @@ import { GST_COPY, rangeOk, reportErrorText, SALES_COPY } from "../../lib/report
 import { csvBlob, readAll, reportsApi, saveFile } from "../../lib/reports-api.ts";
 import { type SalesRegister as Built, buildSalesRegister } from "../../lib/reports-build.ts";
 import { ReportFrame } from "./frame.tsx";
-import { Amount, ProblemList, Progress, RangeForm, ReportBlock } from "./parts.tsx";
+import { Amount, ProblemList, Progress, RangeForm, ReportBlock, WideList } from "./parts.tsx";
 
 type Phase =
   | { kind: "idle" }
@@ -104,7 +104,7 @@ function Results({ built, from, to }: { built: Built; from: string; to: string }
         <span>{GST_COPY.done(built.count)}</span>
       </h2>
       <ReportBlock id="sales-output" title={SALES_COPY.previewHeading}>
-        <div className="ledger-scroll">
+        <WideList className="ledger-scroll" label={SALES_COPY.previewHeading}>
           <table className="ledger ledger--plain">
             <caption className="visually-hidden">{SALES_COPY.previewHeading}</caption>
             <thead>
@@ -148,7 +148,7 @@ function Results({ built, from, to }: { built: Built; from: string; to: string }
               ))}
             </tbody>
           </table>
-        </div>
+        </WideList>
       </ReportBlock>
       <div className="report-downloads">
         <button

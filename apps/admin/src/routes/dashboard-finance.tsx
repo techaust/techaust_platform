@@ -49,11 +49,6 @@ function FinTile(props: {
         <h2 id={`tile-${props.id}`} className="lead-panel__title">
           {props.title}
         </h2>
-        {props.link && !props.empty && (
-          <Link to={props.link.to} className="tile__link">
-            {props.link.text}
-          </Link>
-        )}
       </div>
       {props.empty ? (
         <p className="panel-empty">
@@ -62,6 +57,12 @@ function FinTile(props: {
         </p>
       ) : (
         props.children
+      )}
+      {/* The way on sits under the figures: a third-width tile has no room for it beside its title. */}
+      {props.link && !props.empty && (
+        <Link to={props.link.to} className="tile__link fin-tile__link">
+          {props.link.text}
+        </Link>
       )}
     </section>
   );

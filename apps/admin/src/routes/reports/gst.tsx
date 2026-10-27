@@ -23,6 +23,7 @@ import {
   periodOptionText,
   periodValue,
   reportErrorText,
+  SALES_COPY,
   SECTION_NAMES,
   sectionNameOf,
   stateText,
@@ -30,7 +31,7 @@ import {
 import { csvBlob, readAll, reportsApi, saveFile } from "../../lib/reports-api.ts";
 import { buildGstExport, type GstExport, TOTAL_KEYS, zipOf } from "../../lib/reports-build.ts";
 import { ReportFrame } from "./frame.tsx";
-import { Amount, ProblemList, Progress, ReportBlock, WarningList } from "./parts.tsx";
+import { Amount, ProblemList, Progress, ReportBlock, WarningList, WideList } from "./parts.tsx";
 
 type Phase =
   | { kind: "idle" }
@@ -192,10 +193,12 @@ function GstResults({ result, period, threshold }: { result: Ok; period: PeriodC
         <span>{GST_COPY.done(result.checked)}</span>
       </h2>
       <WarningList warnings={result.warnings} />
+      {/* Nothing issued: no ledgers of zeros. The files stay (a period with no supplies is still filed). */}
+      {result.checked === 0 && <p className="report-empty-line">{SALES_COPY.empty}</p>}
 
-      <div className="report-grid">
+      <div className="report-grid" hidden={result.checked === 0}>
         <ReportBlock id="gst-totals" title={GST_COPY.totalsHeading}>
-          <div className="ledger-scroll">
+          <WideList className="ledger-scroll" label={GST_COPY.totalsHeading}>
             <table className="ledger">
               <caption className="visually-hidden">{GST_COPY.totalsHeading}</caption>
               <thead>
@@ -257,7 +260,7 @@ function GstResults({ result, period, threshold }: { result: Ok; period: PeriodC
                 </tr>
               </tfoot>
             </table>
-          </div>
+          </WideList>
           <p className={`ledger-check${result.hsnOk ? "" : " ledger-check--bad"}`}>
             {result.hsnOk ? <Check size={16} /> : <XCircle size={16} />}
             <span>{result.hsnOk ? GST_COPY.hsnMatches : GST_COPY.hsnDiffers}</span>
@@ -269,8 +272,8 @@ function GstResults({ result, period, threshold }: { result: Ok; period: PeriodC
         </ReportBlock>
       </div>
 
-      <ReportBlock id="gst-docs" title={GST_COPY.table13Heading}>
-        <div className="ledger-scroll">
+      <ReportBlock id="gst-docs" title={GST_COPY.table13Heading} hidden={result.checked === 0}>
+        <WideList className="ledger-scroll" label={GST_COPY.table13Heading}>
           <table className="ledger ledger--plain">
             <caption className="visually-hidden">{GST_COPY.table13Heading}</caption>
             <thead>
@@ -302,7 +305,7 @@ function GstResults({ result, period, threshold }: { result: Ok; period: PeriodC
               ))}
             </tbody>
           </table>
-        </div>
+        </WideList>
       </ReportBlock>
 
       <ReportBlock
@@ -322,25 +325,25 @@ function GstResults({ result, period, threshold }: { result: Ok; period: PeriodC
           </button>
         }
       >
+        {/* One row per file: the whole row is the button (07-V's label), the file's own name beside it; the two HSN files share a label, the name
+            tells them apart (and is part of the button's name). */}
         <ul className="file-list">
           {result.files.map((f) => {
             const section =
               f.stem === "gstr3b_summary" ? GST_COPY.gstr3bHeading : sectionNameOf(f.stem, thresholdText);
             return (
-              <li key={f.name} className="file-list__item">
-                <span className="file-list__name">
-                  <span>{section}</span>
-                  <span className="docno file-list__file">{f.name}</span>
-                </span>
+              <li key={f.name}>
                 <button
                   type="button"
-                  className="btn btn--secondary"
+                  className="file-list__btn"
                   disabled={!result.hsnOk}
                   onClick={() => saveFile(csvBlob(f.csv), f.name)}
                 >
-                  <Download size={16} />
-                  {GST_COPY.download(f.stem === "docs" ? SECTION_NAMES.docs : section)}
-                  <span className="visually-hidden"> ({f.name})</span>
+                  <Download size={20} />
+                  <span className="file-list__label">
+                    {GST_COPY.download(f.stem === "docs" ? SECTION_NAMES.docs : section)}
+                  </span>
+                  <span className="docno file-list__file">{f.name}</span>
                 </button>
               </li>
             );
@@ -371,7 +374,7 @@ function Gstr3bTable({ lines }: { lines: Ok["gstr3b"] }) {
     </>
   );
   return (
-    <div className="ledger-scroll">
+    <WideList className="ledger-scroll" label={GST_COPY.gstr3bHeading}>
       <table className="ledger ledger--plain ledger--3b">
         <caption className="visually-hidden">{GST_COPY.gstr3bHeading}</caption>
         <thead>
@@ -425,6 +428,6 @@ function Gstr3bTable({ lines }: { lines: Ok["gstr3b"] }) {
           )}
         </tbody>
       </table>
-    </div>
+    </WideList>
   );
 }
