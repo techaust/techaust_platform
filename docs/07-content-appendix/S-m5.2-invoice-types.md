@@ -73,3 +73,24 @@ _Drafted by the lead on 2026-10-27 from approved facts:
 | advance_reference_used | "This payment reference was already used for this proforma." |
 | advance_exceeds_balance | "The amount can't be more than the proforma's balance." |
 | proforma_not_issued | "Only an issued proforma can be converted." |
+
+## 8. Lines added after the M5.2 brief (2026-10-27; pending owner approval)
+| Code or place | Line |
+|---|---|
+| fx_date_invalid | "The rate date must be the invoice date or up to {days} days before it." (VERIFY WITH CA/LEGAL) |
+| advance_date_invalid | "The date received can't be before the proforma's date or in the future." |
+| advance_previous_period (warning) | "This payment arrived in an earlier month. The GST on it belongs to that month's return: check with your CA." (VERIFY WITH CA/LEGAL) |
+| already_set (service date) | "The service completion date is already set and can't be changed." |
+| service_date_future | "The service completion date can't be in the future." |
+| service_date_not_applicable / export_mode_not_applicable / export_declaration_not_applicable | "This doesn't apply to this type of invoice." |
+| export_declaration_missing | "The export note in Settings › Terms was removed. Choose again." |
+| export_declaration_changed | "The export note in Settings › Terms changed since this draft was saved. Save the draft again." |
+| invoice_void (service date) | "This invoice is void." |
+| fx_not_applicable | "An exchange rate is only needed for USD invoices." |
+| Q9 invoice line description | "Payment received against proforma {proforma number}" |
+| Q9 invoice, PDF line under the title | "Against proforma {proforma number} of {proforma date}, payment received on {date}." |
+| Bank settings, intermediary bank label | "Intermediary bank (if your bank uses one)" |
+| Bank settings, purpose-code hint | "The RBI purpose code for the foreign payments you receive, for example P0802 for software services. Ask your bank which code to use." (VERIFY WITH CA/LEGAL) |
+| Settings › Terms, extra export note hint | "Optional. Printed on export invoices after the legal export statement, which is always printed." |
+| LUT banner when the current year has none | "There's no LUT for FY {fy}. Export invoices without IGST are blocked until you save its ARN." |
+| `lut.reminder` bell | "File the LUT for FY {next fy} and save its ARN in Settings › Tax." |
