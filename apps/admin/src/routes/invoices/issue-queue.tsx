@@ -2,6 +2,7 @@
 // (approve = issue, with a fresh code and the next number) or rejects it with an optional reason shown to the requester. A request is for one
 // content: a change to the draft afterwards expires it, and the queue shows it as expired. Staff see their own requests and how each went.
 // M5.3: a credit or debit note's request is decided here too, in 07-T §8's words (the owner's bell as the request, the note's own issue button and toast).
+import "../../notes.css";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { stepUpActive } from "../../api.ts";
@@ -289,7 +290,7 @@ function IssueDecision(props: {
             : requestRow(requester, r.document.clientName, moneyText(r.totalMinor, r.document.currency))}
         </p>
         {kind && (
-          <dl className="inv-facts">
+          <dl className="inv-facts note-decide__total">
             <div>
               <dt>{DOC_COPY.colTotal}</dt>
               <dd className="tnum">{moneyText(r.totalMinor, r.document.currency)}</dd>

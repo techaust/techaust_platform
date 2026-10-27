@@ -257,12 +257,22 @@
   margin: 0;
 }
 
-.notes-ims__status {
-  margin: 0;
+.notes-ims__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  align-items: baseline;
 }
 
+/* The answer as it stands, in words beside the field's name (colour only repeats what the word says). */
 .notes-ims__value {
+  margin: 0;
   font-weight: 600;
+}
+
+.notes-ims__value--pending,
+.notes-ims__value--not_applicable {
+  color: var(--color-text-muted);
 }
 
 .notes-ims__value--rejected {
@@ -367,14 +377,39 @@
   margin: 0;
 }
 
+/* The amount takes the column's width, so the figures line up with what is left under them. */
+.note-picker__field .money-in,
+.note-amount .money-in {
+  display: flex;
+  width: 100%;
+}
+
+.note-picker__field .money-in input,
+.note-amount .money-in input {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+}
+
 /* A line with nothing left to credit: its words stay, quieter; its field is off. */
 .note-picker__line--done .note-picker__desc {
   color: var(--color-text-muted);
 }
 
+.note-picker__label {
+  display: none;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
 @media (max-width: 39.99rem) {
   .note-picker__head {
     display: none;
+  }
+
+  .note-picker__label {
+    display: block;
   }
 
   .note-picker__line {
@@ -423,6 +458,11 @@
 .note-rate {
   color: var(--color-text-muted);
   font-size: var(--text-sm);
+}
+
+/* The owner's decision on a note's request: the total under the request's sentence, apart from the final statement. */
+.note-decide__total {
+  margin: 0 0 var(--space-3);
 }
 
 .note-final {

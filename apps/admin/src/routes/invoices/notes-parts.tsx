@@ -127,6 +127,11 @@ export function NotesPanel(props: { view: InvoiceWithNotes; role: Role; onIssue:
   const canDraft = allowed(props.role, "invoices.draft") && !v.client.anonymised;
   const credit = v.actions.credit;
   const debit = v.actions.debit;
+  // An open draft is not a reason to stop: the action opens the dialog on that draft (the only one of its kind the invoice may have).
+  const offered = (a: { allowed: boolean; reasons: readonly string[] }) =>
+    a.allowed || (a.reasons.length > 0 && a.reasons.every((r) => r === "note_draft_exists"));
+  const offerCredit = offered(credit);
+  const offerDebit = offered(debit);
   const why = [
     canDraft && !credit.allowed ? reasonNotOffered("credit", credit.reasons) : null,
     canDraft && !debit.allowed ? reasonNotOffered("debit", debit.reasons) : null,
@@ -141,15 +146,15 @@ export function NotesPanel(props: { view: InvoiceWithNotes; role: Role; onIssue:
         <h2 id="notes-h" className="lead-panel__title">
           {NOTE_COPY.notesHeading}
         </h2>
-        {canDraft && (credit.allowed || debit.allowed) && (
+        {canDraft && (offerCredit || offerDebit) && (
           <div className="notes-panel__actions">
-            {credit.allowed && (
+            {offerCredit && (
               <button type="button" className="btn btn--secondary" onClick={() => props.onIssue("credit")}>
                 <RotateCcw size={16} />
                 {NOTE_COPY.issueCredit}
               </button>
             )}
-            {debit.allowed && (
+            {offerDebit && (
               <button type="button" className="btn btn--secondary" onClick={() => props.onIssue("debit")}>
                 <Plus size={16} />
                 {NOTE_COPY.issueDebit}
@@ -191,7 +196,8 @@ export function NoteFacts({ view }: { view: InvoiceWithNotes }) {
   if (!n) return null;
   const kind = n.kind;
   const total = view.totals ? moneyText(view.totals.totalMinor, view.currency) : null;
-  const rate = view.currency === "USD" ? (view.fx?.value?.rate ?? null) : null;
+  // An issued note's rate is in its "Value in INR" facts (the M5.2 panel, with its source and date); a draft's page has no such panel, so it says it here.
+  const rate = view.currency === "USD" && !view.frozen ? (view.fx?.value?.rate ?? null) : null;
   return (
     <section className="lead-panel notes-facts" aria-labelledby="note-facts-h">
       <h2 id="note-facts-h" className="visually-hidden">
@@ -251,9 +257,15 @@ export function ImsPanel({ view, onSaved }: { view: InvoiceWithNotes; onSaved: (
 
   return (
     <section className="lead-panel notes-ims" aria-labelledby="ims-h">
-      <h2 id="ims-h" className="lead-panel__title">
-        {NOTE_COPY.imsLabel}
-      </h2>
+      {/* the answer as it stands, beside the field's name: "Client's response in IMS  Pending" */}
+      <div className="notes-ims__head">
+        <h2 id="ims-h" className="lead-panel__title">
+          {NOTE_COPY.imsLabel}
+        </h2>
+        <p className={`notes-ims__value notes-ims__value--${status}`} id="ims-now">
+          {IMS_LABELS[status]}
+        </p>
+      </div>
       <p className="hint notes-ims__hint" id="ims-hint">
         {NOTE_COPY.imsHint}
       </p>
@@ -265,10 +277,11 @@ export function ImsPanel({ view, onSaved }: { view: InvoiceWithNotes; onSaved: (
             void save();
           }}
         >
-          <fieldset className="radios" aria-describedby={error ? "ims-error ims-hint" : "ims-hint"}>
-            <legend className="notes-ims__now">
-              {NOTE_COPY.imsLabel}: {IMS_LABELS[status]}
-            </legend>
+          <fieldset
+            className="radios"
+            aria-describedby={error ? "ims-now ims-error ims-hint" : "ims-now ims-hint"}
+          >
+            <legend className="visually-hidden">{NOTE_COPY.imsLabel}</legend>
             <div className="segmented">
               {(["accepted", "rejected"] as const).map((s) => (
                 <label key={s} className="segmented__opt">
@@ -304,11 +317,7 @@ export function ImsPanel({ view, onSaved }: { view: InvoiceWithNotes; onSaved: (
             </p>
           )}
         </form>
-      ) : (
-        <p className="notes-ims__status">
-          <span className={`notes-ims__value notes-ims__value--${status}`}>{IMS_LABELS[status]}</span>
-        </p>
-      )}
+      ) : null}
     </section>
   );
 }

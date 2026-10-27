@@ -188,9 +188,10 @@ function NoteDialogBody(props: {
     if (draft) return notesApi.save(draft.id, draft.updatedAt, fields);
     const body = { expectedParentUpdatedAt: p.updatedAt, ...fields };
     try {
-      return kind === "credit"
-        ? await notesApi.createCredit(p.id, body)
-        : await notesApi.createDebit(p.id, { ...body, lines: fields.lines ?? [] });
+      if (kind === "credit") return await notesApi.createCredit(p.id, body);
+      // a debit note's request is its lines only (the route has no mode)
+      const { mode: _mode, grossMinor: _gross, ...debit } = body;
+      return await notesApi.createDebit(p.id, { ...debit, lines: fields.lines ?? [] });
     } catch (e) {
       // A draft was made in the meantime (another tab, another person): open it and save this request into it.
       if (e instanceof RequestError && e.code === "note_draft_exists" && e.extra.draftId) {
@@ -529,6 +530,10 @@ function LinePicker(props: {
                 <span>{l.description}</span>
               </p>
               <div className="note-picker__field">
+                {/* phones: the column's word over each field (the column head is not shown there) */}
+                <span className="note-picker__label" aria-hidden="true">
+                  {props.kind === "credit" ? NOTE_COPY.creditColumn : DEBIT_LINE_LABEL}
+                </span>
                 <div className="money-in">
                   <span aria-hidden="true">{sign}</span>
                   <input
@@ -587,16 +592,21 @@ function NotePreview(props: { kind: NoteKind; parent: InvoiceWithNotes; saved: N
             </tr>
           </thead>
           <tbody>
-            {pv.lines.map((l) => (
-              <tr key={l.line}>
-                <th scope="row">
-                  <span className="read-lines__desc">{descOf(l.line)}</span>
-                  <span className="read-lines__detail tnum">{againstLine(l.againstLine)}</span>
-                </th>
-                <td className="num">{moneyText(l.taxableMinor, p.currency)}</td>
-                <td className="num">{moneyText(l.lineTotalMinor, p.currency)}</td>
-              </tr>
-            ))}
+            {pv.lines.map((l, i) => {
+              // The invoice line of the note's line i is the request's take i (the stored request, sorted by line, one take per note line). The
+              // preview's own `line` is the invoice's index on a credit note but the note's own on a debit note, so the take is what is read.
+              const at = saved.request.takes[i]?.line ?? l.line;
+              return (
+                <tr key={at}>
+                  <th scope="row">
+                    <span className="read-lines__desc">{descOf(at)}</span>
+                    <span className="read-lines__detail tnum">{againstLine(at + 1)}</span>
+                  </th>
+                  <td className="num">{moneyText(l.taxableMinor, p.currency)}</td>
+                  <td className="num">{moneyText(l.lineTotalMinor, p.currency)}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </section>

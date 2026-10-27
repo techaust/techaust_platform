@@ -146,10 +146,10 @@ export function deadlineBanner(d: CreditDeadlineView, invoiceFy: string | null):
     );
     if (d.daysLeft !== null && d.daysLeft <= 30) {
       tone = "warning";
-      // 07-T §4 has the plural; one day left is said in its singular (listed in the run file). On the last day itself the date above says it.
+      // The days left lead (they are the news), the date follows. 07-T §4 has the plural; one day is said in its singular (run file). On the last day the date says it.
       if (d.daysLeft >= 2)
-        lines.push(`Only ${d.daysLeft} days left to issue a credit note for this invoice.`);
-      else if (d.daysLeft === 1) lines.push("Only 1 day left to issue a credit note for this invoice.");
+        lines.unshift(`Only ${d.daysLeft} days left to issue a credit note for this invoice.`);
+      else if (d.daysLeft === 1) lines.unshift("Only 1 day left to issue a credit note for this invoice.");
     }
   }
   if (invoiceFy !== null && d.supplyFy !== invoiceFy)

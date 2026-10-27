@@ -120,8 +120,8 @@ describe("the deadline banner (07-T §4; VERIFY WITH CA/LEGAL)", () => {
     });
     const near = deadlineBanner(deadline({ daysLeft: 12 }), "2627");
     expect(near.tone).toBe("warning");
-    expect(near.lines[1]).toBe("Only 12 days left to issue a credit note for this invoice.");
-    expect(deadlineBanner(deadline({ daysLeft: 1 }), "2627").lines[1]).toBe(
+    expect(near.lines[0]).toBe("Only 12 days left to issue a credit note for this invoice.");
+    expect(deadlineBanner(deadline({ daysLeft: 1 }), "2627").lines[0]).toBe(
       "Only 1 day left to issue a credit note for this invoice.",
     );
     // on the last day itself the date says it
