@@ -260,6 +260,19 @@ describe("sending again [ADM-INV-15]", () => {
   });
 });
 
+describe("the wall clock of the send (local; the staging reading is the gate)", () => {
+  it("a send to five recipients with reminders is one request", async () => {
+    const { s, made, ids } = await issued(5);
+    const t0 = performance.now();
+    const res = await send(s, made.id, { contactIds: ids });
+    const ms = Math.round((performance.now() - t0) * 10) / 10;
+    expect(res.status).toBe(200);
+    expect((await sendsOf(made.id)).length).toBe(5);
+    expect(ms, `[M5.4 wall clock] send x5: ${ms} ms`).toBeLessThan(2_000);
+    console.info(`[M5.4 wall clock ms] send x5: ${ms}`);
+  });
+});
+
 describe("the view after a send [ADM-INV-15]", () => {
   it("lists the sends with their email status, the live links, the reminders and actions.send", async () => {
     const { s, made, ids } = await issued(2);

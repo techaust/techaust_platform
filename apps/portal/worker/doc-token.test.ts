@@ -488,6 +488,38 @@ describe("the first view and the audit rows [NFR-9, Q1 = A]", () => {
   });
 });
 
+describe("the wall clock of the summary (local; the staging reading is the gate)", () => {
+  it("a 100-line invoice is one read of the frozen row and its lines, summarised without the envelope", async () => {
+    const f = await fixtures();
+    const id = uuidv7();
+    await env.DB.prepare(
+      "INSERT INTO documents (id, type, status, client_id, currency, subtotal_minor, taxable_minor, total_minor, balance_minor) VALUES (?1, 'tax_invoice', 'draft', ?2, 'INR', 100000, 100000, 118000, 0)",
+    )
+      .bind(id, f.a.id)
+      .run();
+    await env.DB.batch(
+      Array.from({ length: 100 }, (_, i) =>
+        env.DB.prepare(
+          "INSERT INTO document_lines (id, document_id, position, description, qty_milli, unit, rate_minor, taxable_minor, gst_rate_bp, cgst_minor, sgst_minor, line_total_minor, sac) VALUES (?1, ?2, ?3, ?4, 1000, 'fixed', 1000, 1000, 1800, 90, 90, 1180, '998313')",
+        ).bind(uuidv7(), id, i + 1, `Line ${i + 1} of a long invoice`),
+      ),
+    );
+    await env.DB.prepare(
+      "UPDATE documents SET status = 'issued', series = 'inv-t', fy = '2627', number = 4242, number_display = 'TH/T/4242', frozen_at = 1000, issue_date = '2026-11-05', due_date = '2026-11-12', balance_minor = 118000 WHERE id = ?1",
+    )
+      .bind(id)
+      .run();
+    const token = await link(f.a.finance, id);
+    const t0 = performance.now();
+    const res = await use(token);
+    const ms = Math.round((performance.now() - t0) * 10) / 10;
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { document: { lines: unknown[] } }).document.lines).toHaveLength(100);
+    expect(ms).toBeLessThan(2_000);
+    console.info(`[M5.4 wall clock ms] portal summary of 100 lines: ${ms}`);
+  });
+});
+
 describe("the PDF behind the link [POR-06, M4.5 headers]", () => {
   it("409 pdf_pending until it exists; then the bytes as an attachment, never rendered, never cached, never sniffed", async () => {
     const f = await fixtures();
