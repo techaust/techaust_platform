@@ -686,6 +686,8 @@ export async function processPdf(
   else if (body.kind === "pdf.render") await processRender(env, body, now, clock);
   else if (body.kind === "pdf.certificate") await processCertificate(env, body, now, clock);
   else if (body.kind === "offer.sweep") await processOfferSweep(env, body);
+  // M5.5b: the statement PDF consumer is stage B (the brief's B1); until it lands the message is acknowledged and the row stays pending, so the queue never fills up.
+  else if (body.kind === "pdf.statement") logEvent("pdf.statement_not_built");
   else await processSweep(env, body);
 }
 
