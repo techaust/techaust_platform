@@ -143,14 +143,12 @@ export const lutEntry = z.strictObject({
  * refused from that day (s.34(2): "or the date of furnishing the annual return, whichever is earlier"). `fy` is the token ("2627", the lutEntry rule), `filedOn` an
  * ISO date on or after 1 April after that FY ends. A day after today is refused by the route (`annual_return_future`), never here: this schema has no clock.
  */
-export const annualReturnEntry = z
-  .strictObject({ fy: lutEntry.shape.fy, filedOn: isoDate })
-  .check(
-    z.refine((v) => !/^\d{4}$/.test(v.fy) || v.filedOn >= `${2000 + Number(v.fy.slice(2))}-04-01`, {
-      error: "The return is filed after the financial year ends",
-      path: ["filedOn"],
-    }),
-  );
+export const annualReturnEntry = z.strictObject({ fy: lutEntry.shape.fy, filedOn: isoDate }).check(
+  z.refine((v) => !/^\d{4}$/.test(v.fy) || v.filedOn >= `${2000 + Number(v.fy.slice(2))}-04-01`, {
+    error: "The return is filed after the financial year ends",
+    path: ["filedOn"],
+  }),
+);
 
 /**
  * LD31: only the switchable lines of the mandatory-field checklist (ADM-INV-06) are stored in the `tax` row; the locked ones are a constant in

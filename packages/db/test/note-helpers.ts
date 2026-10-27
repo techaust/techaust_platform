@@ -360,7 +360,10 @@ export async function noteIssueArgs(
   p: Parent,
   d: Draft,
   kind: "credit" | "debit",
-  over: Partial<InvoiceIssueArgs> & { note?: Partial<NonNullable<InvoiceIssueArgs["note"]>> } = {},
+  over: Omit<Partial<InvoiceIssueArgs>, "note" | "imsStatus"> & {
+    imsStatus?: string | null;
+    note?: Partial<NonNullable<InvoiceIssueArgs["note"]>>;
+  } = {},
 ): Promise<InvoiceIssueArgs> {
   const v = await versions();
   const client = await first<{ updated_at: number }>(

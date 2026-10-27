@@ -96,6 +96,17 @@ describe("a credit note: draft, issue, ledger [ADM-INV-11, LD38, LD41]", () => {
     expect(view.noteOf.request.takes).toEqual([{ line: 0, taxableMinor: 30_000 }]);
     expect(view.noteOf.reason).toEqual({ code: "price_correction", text: "Agreed discount" });
     expect(view.parentLink).toMatchObject({ id: inv.id, number: inv.number });
+    // the invoice's facts as M5.5 reads them (LD53): its frozen recipient always carries the GST status (recipientOf writes it on every invoice)
+    expect(view.noteOf.parent).toMatchObject({
+      id: inv.id,
+      type: "tax_invoice",
+      number: inv.number,
+      recipientStatus: "unregistered",
+      supplyType: "intra",
+      placeOfSupplyCode: "19",
+      totalMinor: inv.total,
+      totalInrMinor: inv.total,
+    });
     expect(view.dueDatePreview).toBeNull();
     const issued = await issueInvoice(o, made.id);
     expect(issued.status, await issued.clone().text()).toBe(200);
@@ -394,12 +405,6 @@ describe("the deadline of a credit note [s.34(2), Q32, Q33; VERIFY WITH CA/LEGAL
     const a = await json(
       await draftCredit(o, inv.id, { mode: "lines", lines: [{ line: 0, taxableMinor: 10_000 }] }),
     );
-    const b = await json(
-      await draftCredit(o, inv.id, { mode: "lines", lines: [{ line: 1, taxableMinor: 10_000 }] })
-        .then(async (r) => (r.status === 201 ? r : r))
-        .catch(() => ({ json: async () => ({}) })),
-    );
-    void b;
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date(`${year}-12-01T00:00:00.000+05:30`));
     const late = await issueInvoice(o, a.id);

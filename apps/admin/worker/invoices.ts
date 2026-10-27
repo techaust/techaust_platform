@@ -174,6 +174,8 @@ type ListRow = {
   content_sha256: string | null;
   frozen_at: number | null;
   pdf_sha256: string | null;
+  /** M5.3: a credit note's IMS status (null on every other document). */
+  ims_status: string | null;
   created_at: number;
   updated_at: number;
   approval_status: string | null;
@@ -197,7 +199,7 @@ export const INVOICE_LIST_SQL = (f: {
       : "";
   const client = f.client ? ` AND d.client_id = ?${++at}` : "";
   const cursor = f.cursor ? ` AND ${keysetSql("d.created_at", "d.id", false, "after", at + 1).where}` : "";
-  return `SELECT d.id, d.type, d.status, d.number_display, d.client_id, cl.code AS client_code, cl.display_name AS client_name, (cl.anonymised_at IS NOT NULL) AS client_gone, d.currency, d.total_minor, d.balance_minor, d.issue_date, d.due_date, d.content_sha256, d.frozen_at, d.pdf_sha256, d.created_at, d.updated_at,
+  return `SELECT d.id, d.type, d.status, d.number_display, d.client_id, cl.code AS client_code, cl.display_name AS client_name, (cl.anonymised_at IS NOT NULL) AS client_gone, d.currency, d.total_minor, d.balance_minor, d.issue_date, d.due_date, d.content_sha256, d.frozen_at, d.pdf_sha256, d.ims_status, d.created_at, d.updated_at,
      (SELECT a.status FROM approvals a WHERE a.document_id = d.id AND a.kind = 'issue' ORDER BY a.created_at DESC, a.id DESC LIMIT 1) AS approval_status,
      (SELECT a.content_sha256 FROM approvals a WHERE a.document_id = d.id AND a.kind = 'issue' ORDER BY a.created_at DESC, a.id DESC LIMIT 1) AS approval_sha
    FROM documents d JOIN clients cl ON cl.id = d.client_id
@@ -220,6 +222,7 @@ const listRow = (r: ListRow, todayIso: string) => ({
   dueDate: r.due_date,
   overdue: isOverdue(r, todayIso),
   pdf: r.frozen_at === null ? "none" : r.pdf_sha256 === null ? "pending" : "ready",
+  imsStatus: r.ims_status,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
   // A waiting issue request is shown from the approvals row, never stored as a status; one for another content has expired.

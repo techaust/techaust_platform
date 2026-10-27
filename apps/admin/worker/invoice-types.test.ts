@@ -4,7 +4,6 @@
 import { env } from "cloudflare:workers";
 import { sha256Hex } from "@techaust/core/catalogue";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mkDoc } from "./test-clients.ts";
 import { call, one, sessionFor } from "./test-helpers.ts";
 import {
   currentFy,

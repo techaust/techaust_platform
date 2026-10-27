@@ -35,7 +35,6 @@ const show = (name: string, ms: number[]) => {
   report.push(`${name}: median ${r.median.toFixed(1)}, worst ${r.worst.toFixed(1)}`);
 };
 afterAll(() => {
-  // biome-ignore lint/suspicious/noConsole: the figures are the point of this file
   console.info(`\nM5.3 wall-time proxy (ms, local workerd):\n${report.join("\n")}`);
 });
 
@@ -105,7 +104,7 @@ describe("wall-time proxy for CPU of the M5.3 routes [docs/05 §10, NFR p99 ≤ 
         create0[mode]?.push(
           await timed(async () => {
             const r = await draftCredit(o, fresh.id, body);
-            id = (await r.clone().json()).id;
+            id = ((await r.clone().json()) as { id: string }).id;
             return r;
           }, 202),
         );
@@ -144,7 +143,7 @@ describe("wall-time proxy for CPU of the M5.3 routes [docs/05 §10, NFR p99 ≤ 
       create19[mode]?.push(
         await timed(async () => {
           const r = await draftCredit(o, big.id, body);
-          id = (await r.clone().json()).id;
+          id = ((await r.clone().json()) as { id: string }).id;
           return r;
         }, 202),
       );
@@ -192,7 +191,7 @@ describe("wall-time proxy for CPU of the M5.3 routes [docs/05 §10, NFR p99 ≤ 
               { line: 70, taxableMinor: 50_000 },
             ],
           });
-          id = (await r.clone().json()).id;
+          id = ((await r.clone().json()) as { id: string }).id;
           return r;
         }, 202),
       );
@@ -200,6 +199,6 @@ describe("wall-time proxy for CPU of the M5.3 routes [docs/05 §10, NFR p99 ≤ 
     }
     show("POST /invoices/:id/debit-note (100 lines)", dnCreate);
     show("POST /invoices/:id/issue, debit note (100 lines)", dnIssue);
-    expect(summarise([...create0.full, ...issue19, ...get]).worst).toBeLessThan(1500);
+    expect(summarise([...(create0.full ?? []), ...issue19, ...get]).worst).toBeLessThan(1500);
   }, 300_000);
 });
