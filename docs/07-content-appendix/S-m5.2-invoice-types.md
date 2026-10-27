@@ -94,3 +94,4 @@ _Drafted by the lead on 2026-10-27 from approved facts:
 | Settings › Terms, extra export note hint | "Optional. Printed on export invoices after the legal export statement, which is always printed." |
 | LUT banner when the current year has none | "There's no LUT for FY {fy}. Export invoices without IGST are blocked until you save its ARN." |
 | `lut.reminder` bell | "File the LUT for FY {next fy} and save its ARN in Settings › Tax." |
+| export_declaration_tampered | "The export note in Settings › Terms doesn't match its saved copy, so the invoice wasn't issued. A developer needs to look at it." |
