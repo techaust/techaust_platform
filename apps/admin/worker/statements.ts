@@ -77,7 +77,7 @@ export const statements = new Hono<AppEnv>().get(
     // currency is read first (two round trips, as before).
     let currency = q.currency;
     if (currency === undefined) {
-      const client = await clientStmt.first<{ currency: string }>();
+      const client = await clientStmt.first<{ currency: "INR" | "USD" }>();
       if (!client) return err(c, NOT_FOUND, 404);
       currency = client.currency;
     }
