@@ -26,14 +26,6 @@ import { INVOICE_PDF_COPY as C } from "./copy.ts";
 
 const RUPEE = "₹";
 
-/**
- * What the layout prints once the view carries it (asked of the view's owner in the M5.1 run file; absent today, so the part is left out or
- * falls back as noted): the client portal's address for "Or pay in the client portal", and the supplier's legal name for "For {legal name}"
- * (until then the trade name, as the skeleton printed it).
- */
-type ViewExtras = { portalLink?: string | null; supplier: { legalName?: string | null } };
-const extras = (view: InvoiceView) => view as InvoiceView & ViewExtras;
-
 const p = (cls: string, text: string, attrs = "") => `<p class="${cls}"${attrs}>${esc(text)}</p>`;
 
 /** A block line whose parts are joined by " · " wraps only between the parts (as the proposal layout does). */
@@ -143,10 +135,11 @@ function totalsBlock(view: InvoiceView): string {
         : `<tr><th scope="row">${esc(t.label)}</th><td class="num">${esc(t.value)}</td></tr>`,
     )
     .join("");
+  const due = `<tr class="due"><th scope="row">${esc(C.balanceDue)}</th><td class="num" data-testid="balance-due">${esc(view.balanceDue)}</td></tr>`;
   // Beside the total: the amount in words, the reverse-charge statement as frozen, then how to pay it (the eye goes from the total to the box);
   // under the total, level with the foot of the box, the signatory.
   const notes = `${p("words", C.words(view.words))}${p("inv-rc", view.reverseCharge, ' data-testid="reverse-charge"')}${payBox(view)}`;
-  return `<div class="totals inv-totals"><div class="totals__notes">${notes}</div><div class="inv-side"><table class="totals__table">${rows}</table>${signatory(
+  return `<div class="totals inv-totals"><div class="totals__notes">${notes}</div><div class="inv-side"><table class="totals__table">${rows}${due}</table>${signatory(
     view,
   )}</div></div>`;
 }
@@ -210,7 +203,7 @@ export function bankRows(bank: InvoiceViewBank): { label: string; value: string 
 
 function payBox(view: InvoiceView): string {
   const P = C.payment;
-  const portal = extras(view).portalLink;
+  const portal = view.portalLink;
   const bank = view.bank
     ? `${p("inv-pay__intro", P.bank)}<dl class="inv-bank">${bankRows(view.bank)
         .map((b) => `<div><dt>${esc(b.label)}</dt><dd>${esc(b.value)}</dd></div>`)
@@ -225,7 +218,7 @@ function payBox(view: InvoiceView): string {
 
 function signatory(view: InvoiceView): string {
   const S = C.signature;
-  const legal = extras(view).supplier.legalName;
+  const legal = view.supplier.legalName;
   const name = legal && legal.trim() !== "" ? legal : view.supplier.name;
   const image = view.signature
     ? `<img data-testid="signature" class="inv-sign__img" alt="" src="${esc(view.signature.dataUri)}">`

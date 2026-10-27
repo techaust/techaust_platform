@@ -77,7 +77,8 @@ describe("the tax invoice layout prints every Rule 46 field the view carries", (
       // (p), Rule 48(2), (q)
       '<p class="inv-rc" data-testid="reverse-charge">Tax payable on reverse charge: No</p>',
       '<p class="inv-copy" data-testid="copy-label">ORIGINAL FOR RECIPIENT</p>',
-      "For TecHaust Technologies",
+      "For Sample Proprietor",
+      ">Balance due<",
       'data-testid="signatory">Authorised signatory<',
       // paying, the notes, the last line
       "How to pay",
@@ -171,26 +172,38 @@ describe("the tax invoice layout prints every Rule 46 field the view carries", (
   });
 });
 
-describe("what the layout prints once the view carries it (the view's owner adds the fields)", () => {
-  it("the client portal's address: 'Or pay in the client portal: …' only when the view has one", async () => {
+describe("the view's legal name, portal address and balance due", () => {
+  it("the portal line is left out when the view has no address; with one it names it", async () => {
     const view = await viewOf("short");
+    expect(view.portalLink).toBeNull();
     expect(body(renderDocumentHtml(view))).not.toContain("client portal");
-    const withPortal = { ...view, portalLink: "portal.example.test" } as InvoiceView;
+    const { envelope } = await buildInvoiceLayoutFixture("short");
+    const withPortal = toInvoiceView(envelope, DEFAULT_VIEW_CONFIG, { portalLink: "portal.example.test" });
+    expect(withPortal.portalLink).toBe("portal.example.test");
     expect(body(renderDocumentHtml(withPortal))).toContain(
       'Or pay in the client portal: <span class="accept__link">portal.example.test</span>',
     );
   });
 
-  it("the supplier's legal name for 'For {legal name}', else the trade name", async () => {
+  it("'For {legal name}' uses the frozen legal name, else the trade name", async () => {
     const view = await viewOf("short");
-    expect(body(renderDocumentHtml(view))).toContain(">For TecHaust Technologies<");
-    const withLegal = {
-      ...view,
-      supplier: { ...view.supplier, legalName: "Sample Proprietor" },
-    } as InvoiceView;
-    expect(body(renderDocumentHtml(withLegal))).toContain(">For Sample Proprietor<");
+    expect(view.supplier.legalName).toBe("Sample Proprietor");
+    expect(body(renderDocumentHtml(view))).toContain(">For Sample Proprietor<");
+    const bare = await viewOf("bare");
+    expect(bare.supplier.legalName).toBeNull();
+    expect(body(renderDocumentHtml(bare))).toContain(">For TecHaust Technologies<");
     const blank = { ...view, supplier: { ...view.supplier, legalName: " " } } as InvoiceView;
     expect(body(renderDocumentHtml(blank))).toContain(">For TecHaust Technologies<");
+  });
+
+  it("'Balance due' equals the total at issue and prints under it", async () => {
+    const view = await viewOf("intra");
+    const total = view.totals.find((t) => t.key === "total")?.value;
+    expect(view.balanceDue).toBe(total);
+    const h = body(renderDocumentHtml(view));
+    expect(h).toContain(">Balance due<");
+    expect(h).toContain(`data-testid="balance-due">${view.balanceDue}<`);
+    expect(h.indexOf('data-testid="total"')).toBeLessThan(h.indexOf('data-testid="balance-due"'));
   });
 });
 

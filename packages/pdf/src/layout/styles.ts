@@ -216,6 +216,7 @@ table.grid { width: 100%; table-layout: fixed; border-collapse: collapse; font-s
 .totals__table .grand th, .totals__table .grand td { border-top: 0.4mm solid var(--color-text); padding-top: 2mm; color: var(--color-text); }
 .totals__table .grand th { font-size: var(--print-totals); font-weight: 600; }
 .totals__table .grand td { font-size: var(--print-grand-total); font-weight: 600; line-height: 1.1; }
+.totals__table .due th, .totals__table .due td { padding-top: 1.5mm; color: var(--color-text); font-weight: 600; }
 
 .block { margin-top: 6mm; break-inside: avoid; }
 .block h3 { font-size: var(--print-body); line-height: var(--print-body-leading); font-weight: 600; margin: 0 0 1.6mm; break-after: avoid; }

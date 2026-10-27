@@ -75,7 +75,7 @@ const SIGNATURE_MIMES: readonly string[] = ["image/png", "image/jpeg"];
 export function toInvoiceView(
   envelope: InvoiceEnvelope,
   cfg: ViewConfig,
-  opts: { signature?: VerifiedSignature | null } = {},
+  opts: { signature?: VerifiedSignature | null; portalLink?: string | null } = {},
 ): InvoiceView {
   const { snapshot: s } = envelope;
   const header = s.header;
@@ -173,7 +173,11 @@ export function toInvoiceView(
     dueDate: shortIsoDate(header.document.dueDate),
     copyLabel: ORIGINAL_FOR_RECIPIENT,
     logo: company.logo,
-    supplier: { name: company.tradeName, lines: supplierLines },
+    supplier: {
+      name: company.tradeName,
+      legalName: nonEmpty(company.legalName) ? company.legalName : null,
+      lines: supplierLines,
+    },
     recipient: {
       name,
       attention: nonEmpty(r.contactName) ? r.contactName : null,
@@ -198,6 +202,9 @@ export function toInvoiceView(
         }
       : null,
     signature,
+    // at issue nothing has been paid, so the balance is the total (LD17)
+    balanceDue: m(computed.totalMinor),
+    portalLink: nonEmpty(opts.portalLink) ? opts.portalLink : null,
     integrity: `Document ID ${envelope.documentId} · Content fingerprint ${envelope.snapshotSha256.slice(0, 12)}`,
     footer: {
       sender: emailOnDocuments,

@@ -38,7 +38,9 @@ try {
   for (const name of INVOICE_LAYOUT_FIXTURES) {
     const { envelope, signature } = await buildInvoiceLayoutFixture(name);
     await print(
-      renderDocumentHtml(toInvoiceView(envelope, DEFAULT_VIEW_CONFIG, { signature })),
+      renderDocumentHtml(
+        toInvoiceView(envelope, DEFAULT_VIEW_CONFIG, { signature, portalLink: "portal.techaust.com" }),
+      ),
       `invoice-${name}.pdf`,
     );
   }

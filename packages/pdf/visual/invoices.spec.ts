@@ -14,7 +14,7 @@ import { describeDocument } from "./checks.ts";
 
 async function open(page: Page, name: InvoiceLayoutFixture) {
   const { envelope, signature } = await buildInvoiceLayoutFixture(name);
-  const view = toInvoiceView(envelope, DEFAULT_VIEW_CONFIG, { signature });
+  const view = toInvoiceView(envelope, DEFAULT_VIEW_CONFIG, { signature, portalLink: "portal.techaust.com" });
   const requests: string[] = [];
   page.on("request", (r) => requests.push(r.url()));
   await page.emulateMedia({ media: "print" });

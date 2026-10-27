@@ -104,6 +104,7 @@ export const INVOICE_PDF_COPY = {
     amount: "Amount",
   },
   words: (words: string) => `Amount in words: ${words}`,
+  balanceDue: "Balance due",
   payment: {
     heading: "How to pay",
     bank: "Bank transfer (NEFT, RTGS or IMPS) to:",

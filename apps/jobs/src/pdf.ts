@@ -43,6 +43,7 @@ import {
   parseEnvelope,
   parseInvoiceEnvelope,
   pdfOptionsFor,
+  portalHost,
   renderCertificateHtml,
   renderDocumentHtml,
   serializeEnvelope,
@@ -306,7 +307,11 @@ async function renderInvoice(
     await env.DB.batch([refusedBell(env, row.id, label)]);
     return "refused";
   }
-  const view = toInvoiceView(envelope, viewConfigFor(env.PORTAL_URL), { signature });
+  // the generic portal address (the host of PORTAL_URL), never a personal link; unset leaves the "pay in the portal" line out
+  const view = toInvoiceView(envelope, viewConfigFor(env.PORTAL_URL), {
+    signature,
+    portalLink: portalHost(env.PORTAL_URL),
+  });
   const result = await renderPaced(env, renderDocumentHtml(view), pdfOptionsFor(view), clock);
   if (!result.ok) return failed(env, msg, result, now);
 

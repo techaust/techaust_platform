@@ -69,7 +69,7 @@ function fakeClock(start = T0) {
   return clock;
 }
 
-function makeEnv(browser: unknown, queue = fakeQueue()) {
+function makeEnv(browser: unknown, queue = fakeQueue(), extra: Record<string, string> = {}) {
   const env = {
     DB: realEnv.DB,
     DOCS: realEnv.DOCS,
@@ -78,6 +78,7 @@ function makeEnv(browser: unknown, queue = fakeQueue()) {
     PDF_MIN_SPACING_MS: "0",
     BROWSER: browser,
     PDF_QUEUE: queue,
+    ...extra,
   } as unknown as Env;
   return { env, queue };
 }
@@ -238,6 +239,8 @@ describe("the invoice render step", () => {
       "ORIGINAL FOR RECIPIENT",
       "Tax payable on reverse charge: No",
       "Authorised signatory",
+      "For Sample Proprietor",
+      ">Balance due<",
       // the tax invoice layout (packages/pdf layout/invoice.ts): the SAC in its own column, the place of supply and its code as header facts
       '<td class="c-sac">998314</td>',
       "<dt>Place of supply</dt><dd>West Bengal</dd>",
@@ -247,6 +250,8 @@ describe("the invoice render step", () => {
     ])
       expect(html, must).toContain(must);
     expect(html).not.toContain('<img data-testid="signature"');
+    // no PORTAL_URL in this env: the "pay in the client portal" line is left out
+    expect(html).not.toContain("Or pay in the client portal");
     const row = await one<{ pdf_r2_key: string; pdf_sha256: string }>(
       "SELECT pdf_r2_key, pdf_sha256 FROM documents WHERE id = ?",
       s.id,
@@ -262,6 +267,17 @@ describe("the invoice render step", () => {
       { metric: "pdf.browser_ms", value: 1500 },
       { metric: "pdf.renders", value: 1 },
     ]);
+  });
+
+  it("prints the generic portal address (the host of PORTAL_URL) on the invoice", async () => {
+    const s = await ready({ terms: true, bank: true });
+    const clock = fakeClock();
+    const b = fakeBrowser(clock);
+    const { env } = makeEnv(b.binding, fakeQueue(), { PORTAL_URL: "https://portal.example.test/" });
+    expect(await processRender(env, renderMsg(s.id), T0, clock)).toBe("rendered");
+    expect(String((b.calls[0] as Call).options.html)).toContain(
+      'Or pay in the client portal: <span class="accept__link">portal.example.test</span>',
+    );
   });
 
   it("never renders twice: a second message finds the PDF done, and an orphaned PDF in R2 is adopted", async () => {
