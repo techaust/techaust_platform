@@ -233,8 +233,10 @@ function rowIssues(row: RegisterRow, supplierStateCode: StateCode): GstIssue[] {
   // an export invoice has an export supply, and a tax invoice does not
   if (row.kind === "export_invoice" && !exportSupply) mismatch("kind");
   if (row.kind === "tax_invoice" && exportSupply) mismatch("kind");
-  // an overseas recipient is exactly an export
-  if ((row.recipient.status === "overseas") !== exportSupply) mismatch("recipient");
+  // an overseas recipient is exactly an export; a recipient whose GST status is not one of the three (an old snapshot without it) is not guessed
+  if (!isRecipientStatus(row.recipient.status) || (row.recipient.status === "overseas") !== exportSupply) {
+    mismatch("recipient");
+  }
   // intra-state is the supplier's own state, inter-state any other (known) state
   if (
     posOk &&

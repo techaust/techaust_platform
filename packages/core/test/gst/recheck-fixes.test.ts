@@ -50,6 +50,27 @@ describe("params_invalid (re-check 3): the supplier's state must be a known stat
   });
 });
 
+describe("an unknown recipient status is a mismatch, never a guess (M5.5b: the register's snapshot may lack it)", () => {
+  it("is supply_mismatch at [id, recipient]", () => {
+    for (const status of [undefined, null, "guest", ""]) {
+      const r = gstr1Sections(
+        [
+          row({
+            id: "x",
+            override: { recipient: { ...row({ id: "y" }).recipient, status: status as never } },
+          }),
+        ],
+        Q3,
+        PARAMS,
+      );
+      expect(r, String(status)).toEqual({
+        ok: false,
+        errors: [{ code: "supply_mismatch", path: ["x", "recipient"] }],
+      });
+    }
+  });
+});
+
 describe("sac_invalid (re-check 6): a SAC is trimmed and has exactly six digits", () => {
   const bad = (sac: string) =>
     gstr1Sections([row({ id: "x", rates: [rate(sac, 1800, 1000, "intra")] })], Q3, PARAMS);
