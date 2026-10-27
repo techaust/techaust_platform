@@ -3,7 +3,7 @@
 // quiet marker that says where the line came from (the catalogue, or a custom line the discount guard ignores). The form keeps up to 100
 // lines usable: every row is memoised and owns nothing but its inputs, so a keystroke draws one row, not a hundred. Moving, editing the
 // second line and the custom line's tax, and removing are in each row's menu (keyboard and screen-reader friendly, no drag).
-import { type Dispatch, memo, useCallback, useId, useMemo, useState } from "react";
+import { type Dispatch, memo, useCallback, useEffect, useId, useMemo, useState } from "react";
 import { type CatalogueEntry, type CatalogueListItem, type Currency, catalogueApi } from "../../api.ts";
 import { Modal } from "../../components/dialog.tsx";
 import { FormField } from "../../components/form.tsx";
@@ -43,10 +43,20 @@ export const LinesPanel = memo(function LinesPanel(props: {
   dispatch: Dispatch<EditorAction>;
   /** The current lines, for the row menus (a stable callback reads them when used, not when drawn). */
   current: () => LineDraft[];
+  /** Open one line's details with the cursor in its SAC field (an invoice's "Line {n} needs a 6-digit SAC code." blocker); `at` makes a repeat click count. */
+  showSac?: { uid: string; at: number } | null | undefined;
+  /** An invoice: every line needs a SAC to issue (the `line_sac_missing` blocker), so the field isn't marked "(optional)". */
+  sacRequired?: boolean | undefined;
 }) {
   const { dispatch, current } = props;
   const [picking, setPicking] = useState(false);
   const [details, setDetails] = useState<string | null>(null);
+  const [focusSac, setFocusSac] = useState(false);
+  useEffect(() => {
+    if (!props.showSac) return;
+    setFocusSac(true);
+    setDetails(props.showSac.uid);
+  }, [props.showSac]);
   const [focusId, setFocusId] = useState<string | null>(null);
   const monthly = useMemo(
     () =>
@@ -175,9 +185,12 @@ export const LinesPanel = memo(function LinesPanel(props: {
       <LineDetails
         line={editing}
         n={editing ? props.lines.indexOf(editing) + 1 : 0}
+        focusSac={focusSac}
+        sacRequired={props.sacRequired}
         onClose={() => {
           const u = details;
           setDetails(null);
+          setFocusSac(false);
           if (u) requestAnimationFrame(() => document.getElementById(`ln-${u}-description`)?.focus());
         }}
         onSave={(patch) => {
@@ -523,6 +536,9 @@ function CataloguePickForm(props: {
 function LineDetails(props: {
   line: LineDraft | undefined;
   n: number;
+  /** Put the cursor in the SAC field once open (a custom line; a catalogue line has no SAC to type). */
+  focusSac?: boolean;
+  sacRequired?: boolean | undefined;
   onClose: () => void;
   onSave: (patch: Partial<LineDraft>) => void;
 }) {
@@ -535,11 +551,19 @@ function LineDetails(props: {
 
 function LineDetailsForm(props: {
   line: LineDraft;
+  focusSac?: boolean | undefined;
+  sacRequired?: boolean | undefined;
   onClose: () => void;
   onSave: (patch: Partial<LineDraft>) => void;
 }) {
   const l = props.line;
   const custom = l.catalogueItemId === null;
+  // After the dialog has put focus on its first control: the SAC field, when that is what the caller came to fix.
+  useEffect(() => {
+    if (!props.focusSac || !custom) return;
+    const id = requestAnimationFrame(() => document.getElementById("ld-sac")?.focus());
+    return () => cancelAnimationFrame(id);
+  }, [props.focusSac, custom]);
   const [detail, setDetail] = useState(l.detail);
   const [unit, setUnit] = useState(l.unit);
   const [sac, setSac] = useState(l.sac);
@@ -585,7 +609,7 @@ function LineDetailsForm(props: {
             <FormField
               id="ld-sac"
               label="SAC"
-              optional
+              optional={!props.sacRequired}
               hint={CAT_COPY.sacHint}
               error={tried ? errors.sac : undefined}
             >

@@ -470,13 +470,16 @@ describe("the status flow of a proposal or estimate [documents_status_flow, ADM-
     await run("UPDATE documents SET status = 'draft', updated_at = 77 WHERE id = ?1", q.id);
   });
 
-  it("an invoice's statuses are not restricted by this trigger (pending_approval stays possible there)", async () => {
+  it("an invoice's statuses are not restricted by THIS trigger: its own flow (M5.1, documents_invoice_status_flow) refuses pending_approval", async () => {
     const clientId = await insertClient("C-QINV");
     await run(
       "INSERT INTO documents (id, type, client_id, currency) VALUES ('inv-flow', 'tax_invoice', ?1, 'INR')",
       clientId,
     );
-    await run("UPDATE documents SET status = 'pending_approval' WHERE id = 'inv-flow'");
+    await rejects(
+      run("UPDATE documents SET status = 'pending_approval' WHERE id = 'inv-flow'"),
+      /documents_invoice_status_flow/,
+    );
   });
 });
 

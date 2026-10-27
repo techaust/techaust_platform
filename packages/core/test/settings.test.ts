@@ -50,6 +50,18 @@ describe("settings defaults (docs/08 §7.1, VERIFY WITH CA)", () => {
     }
   });
 
+  it("a stored numbering row that breaks LD18's first-character rule still reads; saving it is refused (review 4)", () => {
+    const stored = { ...SETTINGS_DEFAULTS.numbering, invoice: { template: "{N}/{FY}", padding: 4 } };
+    expect(resolveSetting("numbering", stored).invoice).toEqual({ template: "{N}/{FY}", padding: 4 });
+    expect(SETTINGS_SCHEMAS.numbering.safeParse(stored).success).toBe(false);
+    // what was never valid still fails to read (a corrupted row is a 500, not a silent default)
+    const corrupt = {
+      ...SETTINGS_DEFAULTS.numbering,
+      invoice: { template: "TH/INVOICE/{FY}/{N}", padding: 4 },
+    };
+    expect(() => resolveSetting("numbering", corrupt)).toThrow();
+  });
+
   it("rejects unsafe changes", () => {
     const bad = { ...SETTINGS_DEFAULTS.numbering, invoice: { template: "TH/INVOICE/{FY}/{N}", padding: 4 } };
     expect(SETTINGS_SCHEMAS.numbering.safeParse(bad).success).toBe(false);

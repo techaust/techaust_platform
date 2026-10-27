@@ -23,6 +23,8 @@ export function ConfirmDialog(props: {
   disabled?: boolean | undefined;
   /** The title once the action has happened (a question no longer fits). */
   resultTitle?: string | undefined;
+  /** The way out, when the copy names it (07-R "Keep it"); "Cancel" otherwise. */
+  cancelLabel?: string | undefined;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -97,7 +99,7 @@ export function ConfirmDialog(props: {
           {error && <Notice tone="error">{error}</Notice>}
           <div className="dialog__actions">
             <button type="button" className="btn btn--secondary" onClick={close} disabled={busy}>
-              Cancel
+              {props.cancelLabel ?? "Cancel"}
             </button>
             <button
               type="button"

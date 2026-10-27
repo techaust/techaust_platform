@@ -530,3 +530,18 @@ export const Grip = (p: P) => (
     <circle cx="15" cy="18" r="1" />
   </Icon>
 );
+
+export const FileCheck = (p: P) => (
+  <Icon {...p}>
+    <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
+    <path d="M14 2v4a2 2 0 0 0 2 2h4" />
+    <path d="m9 15 2 2 4-4" />
+  </Icon>
+);
+
+export const XCircle = (p: P) => (
+  <Icon {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="m15 9-6 6M9 9l6 6" />
+  </Icon>
+);

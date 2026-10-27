@@ -1,0 +1,499 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`sendStatements SQL is unchanged by the shared helpers [LD3] > approval needed 1`] = `
+[
+  {
+    "sql": "UPDATE documents SET series = ?2, fy = ?3, number = (SELECT next_no - 1 FROM doc_counters WHERE series = ?2 AND fy = ?3), number_display = printf(?5, ?3, (SELECT next_no - 1 FROM doc_counters WHERE series = ?2 AND fy = ?3)),
+         status = 'sent', frozen_at = ?6, sent_at = ?6, issue_date = ?7, valid_until = ?8, recipient = ?9, issuer = ?10, computed = ?11,
+         snapshot_sha256 = ?12, issued_by = ?13, updated_at = ?6
+       WHERE id = ?1 AND status = 'draft' AND frozen_at IS NULL AND updated_at = ?14 AND content_sha256 = ?15
+         AND (SELECT version FROM settings WHERE key = 'numbering') IS ?16
+         AND NOT EXISTS (SELECT 1 FROM documents x WHERE x.version_group_id = ?4 AND x.status IN ('accepted', 'converted'))
+         AND NOT EXISTS (SELECT 1 FROM clients z WHERE z.id = documents.client_id AND z.anonymised_at IS NOT NULL) AND EXISTS (SELECT 1 FROM approvals ap WHERE ap.document_id = documents.id AND ap.kind = 'discount' AND ap.status = 'approved' AND ap.content_sha256 = documents.content_sha256)
+       RETURNING number_display, valid_until",
+    "values": [
+      "doc1",
+      "proposal",
+      "2627",
+      "grp1",
+      "TH/PRP/%s/%04d",
+      1700000000000,
+      "2026-10-28",
+      "2026-11-12",
+      "{"legalName":"Client","country":"IN"}",
+      "{"company":{"tradeName":"T","legalName":"L","address":"A","gstin":null,"stateCode":"19","logo":"logo-primary-color.svg"},"sender":{"staffId":"s1","name":"N","email":"n@example.com"}}",
+      "{"x":1}",
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "user1",
+      5,
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      3,
+    ],
+  },
+  {
+    "sql": "INSERT INTO issue_guard (document_id) VALUES (?1)",
+    "values": [
+      "doc1",
+    ],
+  },
+  {
+    "sql": "INSERT INTO doc_counters (series, fy, next_no) VALUES (?1, ?2, 1) ON CONFLICT DO NOTHING",
+    "values": [
+      "proposal",
+      "2627",
+    ],
+  },
+  {
+    "sql": "UPDATE doc_counters SET next_no = next_no + 1 WHERE series = ?1 AND fy = ?2",
+    "values": [
+      "proposal",
+      "2627",
+    ],
+  },
+  {
+    "sql": "INSERT INTO issue_result (document_id, series, fy) SELECT ?1, ?2, ?3",
+    "values": [
+      "doc1",
+      "proposal",
+      "2627",
+    ],
+  },
+  {
+    "sql": "UPDATE documents SET status = 'revised' WHERE version_group_id = ?1 AND version < ?2 AND status IN ('sent', 'viewed')
+             AND EXISTS (SELECT 1 FROM documents n WHERE n.id = ?3 AND n.status = 'sent' AND n.frozen_at IS NOT NULL)",
+    "values": [
+      "grp1",
+      1,
+      "doc1",
+    ],
+  },
+]
+`;
+
+exports[`sendStatements SQL is unchanged by the shared helpers [LD3] > first version 1`] = `
+[
+  {
+    "sql": "UPDATE documents SET series = ?2, fy = ?3, number = (SELECT next_no - 1 FROM doc_counters WHERE series = ?2 AND fy = ?3), number_display = printf(?5, ?3, (SELECT next_no - 1 FROM doc_counters WHERE series = ?2 AND fy = ?3)),
+         status = 'sent', frozen_at = ?6, sent_at = ?6, issue_date = ?7, valid_until = ?8, recipient = ?9, issuer = ?10, computed = ?11,
+         snapshot_sha256 = ?12, issued_by = ?13, updated_at = ?6
+       WHERE id = ?1 AND status = 'draft' AND frozen_at IS NULL AND updated_at = ?14 AND content_sha256 = ?15
+         AND (SELECT version FROM settings WHERE key = 'numbering') IS ?16
+         AND NOT EXISTS (SELECT 1 FROM documents x WHERE x.version_group_id = ?4 AND x.status IN ('accepted', 'converted'))
+         AND NOT EXISTS (SELECT 1 FROM clients z WHERE z.id = documents.client_id AND z.anonymised_at IS NOT NULL)
+       RETURNING number_display, valid_until",
+    "values": [
+      "doc1",
+      "proposal",
+      "2627",
+      "grp1",
+      "TH/PRP/%s/%04d",
+      1700000000000,
+      "2026-10-28",
+      "2026-11-12",
+      "{"legalName":"Client","country":"IN"}",
+      "{"company":{"tradeName":"T","legalName":"L","address":"A","gstin":null,"stateCode":"19","logo":"logo-primary-color.svg"},"sender":{"staffId":"s1","name":"N","email":"n@example.com"}}",
+      "{"x":1}",
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "user1",
+      5,
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      3,
+    ],
+  },
+  {
+    "sql": "INSERT INTO issue_guard (document_id) VALUES (?1)",
+    "values": [
+      "doc1",
+    ],
+  },
+  {
+    "sql": "INSERT INTO doc_counters (series, fy, next_no) VALUES (?1, ?2, 1) ON CONFLICT DO NOTHING",
+    "values": [
+      "proposal",
+      "2627",
+    ],
+  },
+  {
+    "sql": "UPDATE doc_counters SET next_no = next_no + 1 WHERE series = ?1 AND fy = ?2",
+    "values": [
+      "proposal",
+      "2627",
+    ],
+  },
+  {
+    "sql": "INSERT INTO issue_result (document_id, series, fy) SELECT ?1, ?2, ?3",
+    "values": [
+      "doc1",
+      "proposal",
+      "2627",
+    ],
+  },
+  {
+    "sql": "UPDATE documents SET status = 'revised' WHERE version_group_id = ?1 AND version < ?2 AND status IN ('sent', 'viewed')
+             AND EXISTS (SELECT 1 FROM documents n WHERE n.id = ?3 AND n.status = 'sent' AND n.frozen_at IS NOT NULL)",
+    "values": [
+      "grp1",
+      1,
+      "doc1",
+    ],
+  },
+]
+`;
+
+exports[`sendStatements SQL is unchanged by the shared helpers [LD3] > first version, number first 1`] = `
+[
+  {
+    "sql": "UPDATE documents SET series = ?2, fy = ?3, number = (SELECT next_no - 1 FROM doc_counters WHERE series = ?2 AND fy = ?3), number_display = printf(?5, (SELECT next_no - 1 FROM doc_counters WHERE series = ?2 AND fy = ?3), ?3),
+         status = 'sent', frozen_at = ?6, sent_at = ?6, issue_date = ?7, valid_until = ?8, recipient = ?9, issuer = ?10, computed = ?11,
+         snapshot_sha256 = ?12, issued_by = ?13, updated_at = ?6
+       WHERE id = ?1 AND status = 'draft' AND frozen_at IS NULL AND updated_at = ?14 AND content_sha256 = ?15
+         AND (SELECT version FROM settings WHERE key = 'numbering') IS ?16
+         AND NOT EXISTS (SELECT 1 FROM documents x WHERE x.version_group_id = ?4 AND x.status IN ('accepted', 'converted'))
+         AND NOT EXISTS (SELECT 1 FROM clients z WHERE z.id = documents.client_id AND z.anonymised_at IS NOT NULL)
+       RETURNING number_display, valid_until",
+    "values": [
+      "doc1",
+      "proposal",
+      "2627",
+      "grp1",
+      "%04d/%s",
+      1700000000000,
+      "2026-10-28",
+      "2026-11-12",
+      "{"legalName":"Client","country":"IN"}",
+      "{"company":{"tradeName":"T","legalName":"L","address":"A","gstin":null,"stateCode":"19","logo":"logo-primary-color.svg"},"sender":{"staffId":"s1","name":"N","email":"n@example.com"}}",
+      "{"x":1}",
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "user1",
+      5,
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      3,
+    ],
+  },
+  {
+    "sql": "INSERT INTO issue_guard (document_id) VALUES (?1)",
+    "values": [
+      "doc1",
+    ],
+  },
+  {
+    "sql": "INSERT INTO doc_counters (series, fy, next_no) VALUES (?1, ?2, 1) ON CONFLICT DO NOTHING",
+    "values": [
+      "proposal",
+      "2627",
+    ],
+  },
+  {
+    "sql": "UPDATE doc_counters SET next_no = next_no + 1 WHERE series = ?1 AND fy = ?2",
+    "values": [
+      "proposal",
+      "2627",
+    ],
+  },
+  {
+    "sql": "INSERT INTO issue_result (document_id, series, fy) SELECT ?1, ?2, ?3",
+    "values": [
+      "doc1",
+      "proposal",
+      "2627",
+    ],
+  },
+  {
+    "sql": "UPDATE documents SET status = 'revised' WHERE version_group_id = ?1 AND version < ?2 AND status IN ('sent', 'viewed')
+             AND EXISTS (SELECT 1 FROM documents n WHERE n.id = ?3 AND n.status = 'sent' AND n.frozen_at IS NOT NULL)",
+    "values": [
+      "grp1",
+      1,
+      "doc1",
+    ],
+  },
+]
+`;
+
+exports[`sendStatements SQL is unchanged by the shared helpers [LD3] > later version 1`] = `
+[
+  {
+    "sql": "UPDATE documents SET series = (SELECT v.series FROM documents v WHERE v.version_group_id = ?4 AND v.version = 1), fy = (SELECT v.fy FROM documents v WHERE v.version_group_id = ?4 AND v.version = 1), number = (SELECT v.number FROM documents v WHERE v.version_group_id = ?4 AND v.version = 1), number_display = (SELECT v.number_display FROM documents v WHERE v.version_group_id = ?4 AND v.version = 1),
+         status = 'sent', frozen_at = ?6, sent_at = ?6, issue_date = ?7, valid_until = ?8, recipient = ?9, issuer = ?10, computed = ?11,
+         snapshot_sha256 = ?12, issued_by = ?13, updated_at = ?6
+       WHERE id = ?1 AND status = 'draft' AND frozen_at IS NULL AND updated_at = ?14 AND content_sha256 = ?15
+         AND (SELECT version FROM settings WHERE key = 'numbering') IS ?16
+         AND NOT EXISTS (SELECT 1 FROM documents x WHERE x.version_group_id = ?4 AND x.status IN ('accepted', 'converted'))
+         AND NOT EXISTS (SELECT 1 FROM clients z WHERE z.id = documents.client_id AND z.anonymised_at IS NOT NULL)
+       RETURNING number_display, valid_until",
+    "values": [
+      "doc1",
+      "proposal",
+      "2627",
+      "grp1",
+      "TH/PRP/%s/%04d",
+      1700000000000,
+      "2026-10-28",
+      "2026-11-12",
+      "{"legalName":"Client","country":"IN"}",
+      "{"company":{"tradeName":"T","legalName":"L","address":"A","gstin":null,"stateCode":"19","logo":"logo-primary-color.svg"},"sender":{"staffId":"s1","name":"N","email":"n@example.com"}}",
+      "{"x":1}",
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "user1",
+      5,
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      3,
+    ],
+  },
+  {
+    "sql": "INSERT INTO issue_guard (document_id) VALUES (?1)",
+    "values": [
+      "doc1",
+    ],
+  },
+  {
+    "sql": "INSERT INTO issue_result (document_id, series, fy) SELECT ?1, (SELECT v.series FROM documents v WHERE v.version_group_id = ?4 AND v.version = 1), (SELECT v.fy FROM documents v WHERE v.version_group_id = ?4 AND v.version = 1)",
+    "values": [
+      "doc1",
+      "proposal",
+      "2627",
+      "grp1",
+    ],
+  },
+  {
+    "sql": "UPDATE documents SET status = 'revised' WHERE version_group_id = ?1 AND version < ?2 AND status IN ('sent', 'viewed')
+             AND EXISTS (SELECT 1 FROM documents n WHERE n.id = ?3 AND n.status = 'sent' AND n.frozen_at IS NOT NULL)",
+    "values": [
+      "grp1",
+      2,
+      "doc1",
+    ],
+  },
+]
+`;
+
+exports[`sendStatements SQL is unchanged by the shared helpers [LD3] > later version with recipients and approval 1`] = `
+[
+  {
+    "sql": "UPDATE documents SET series = (SELECT v.series FROM documents v WHERE v.version_group_id = ?4 AND v.version = 1), fy = (SELECT v.fy FROM documents v WHERE v.version_group_id = ?4 AND v.version = 1), number = (SELECT v.number FROM documents v WHERE v.version_group_id = ?4 AND v.version = 1), number_display = (SELECT v.number_display FROM documents v WHERE v.version_group_id = ?4 AND v.version = 1),
+         status = 'sent', frozen_at = ?6, sent_at = ?6, issue_date = ?7, valid_until = ?8, recipient = ?9, issuer = ?10, computed = ?11,
+         snapshot_sha256 = ?12, issued_by = ?13, updated_at = ?6
+       WHERE id = ?1 AND status = 'draft' AND frozen_at IS NULL AND updated_at = ?14 AND content_sha256 = ?15
+         AND (SELECT version FROM settings WHERE key = 'numbering') IS ?16
+         AND NOT EXISTS (SELECT 1 FROM documents x WHERE x.version_group_id = ?4 AND x.status IN ('accepted', 'converted'))
+         AND NOT EXISTS (SELECT 1 FROM clients z WHERE z.id = documents.client_id AND z.anonymised_at IS NOT NULL) AND EXISTS (SELECT 1 FROM approvals ap WHERE ap.document_id = documents.id AND ap.kind = 'discount' AND ap.status = 'approved' AND ap.content_sha256 = documents.content_sha256) AND (SELECT count(*) FROM contacts rc WHERE rc.client_id = documents.client_id AND rc.portal_access = 1 AND rc.anonymised_at IS NULL AND rc.id IN (SELECT json_extract(value, '$.contactId') FROM json_each(?17))) = ?18
+       RETURNING number_display, valid_until",
+    "values": [
+      "doc1",
+      "proposal",
+      "2627",
+      "grp1",
+      "TH/PRP/%s/%04d",
+      1700000000000,
+      "2026-10-28",
+      "2026-11-12",
+      "{"legalName":"Client","country":"IN"}",
+      "{"company":{"tradeName":"T","legalName":"L","address":"A","gstin":null,"stateCode":"19","logo":"logo-primary-color.svg"},"sender":{"staffId":"s1","name":"N","email":"n@example.com"}}",
+      "{"x":1}",
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "user1",
+      5,
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      3,
+      "[{"id":"s-1","contactId":"c-1"}]",
+      1,
+    ],
+  },
+  {
+    "sql": "INSERT INTO issue_guard (document_id) VALUES (?1)",
+    "values": [
+      "doc1",
+    ],
+  },
+  {
+    "sql": "INSERT INTO issue_result (document_id, series, fy) SELECT ?1, (SELECT v.series FROM documents v WHERE v.version_group_id = ?4 AND v.version = 1), (SELECT v.fy FROM documents v WHERE v.version_group_id = ?4 AND v.version = 1)",
+    "values": [
+      "doc1",
+      "proposal",
+      "2627",
+      "grp1",
+    ],
+  },
+  {
+    "sql": "UPDATE documents SET status = 'revised' WHERE version_group_id = ?1 AND version < ?2 AND status IN ('sent', 'viewed')
+             AND EXISTS (SELECT 1 FROM documents n WHERE n.id = ?3 AND n.status = 'sent' AND n.frozen_at IS NOT NULL)",
+    "values": [
+      "grp1",
+      3,
+      "doc1",
+    ],
+  },
+  {
+    "sql": "INSERT INTO document_sends (id, document_id, version_group_id, client_id, contact_id, email, attach_pdf, kind, queued_at, created_by, created_at)
+                 SELECT json_extract(j.value, '$.id'), d.id, d.version_group_id, d.client_id, c.id, lower(c.email),
+                   coalesce(?3, (SELECT cl.attach_pdf FROM clients cl WHERE cl.id = d.client_id)), 'send', NULL, ?4, ?5
+                 FROM documents d JOIN json_each(?2) j
+                   JOIN contacts c ON c.id = json_extract(j.value, '$.contactId') AND c.client_id = d.client_id AND c.portal_access = 1 AND c.anonymised_at IS NULL
+                 WHERE d.id = ?1 AND d.status = 'sent' AND d.frozen_at = ?5",
+    "values": [
+      "doc1",
+      "[{"id":"s-1","contactId":"c-1"}]",
+      null,
+      "user1",
+      1700000000000,
+    ],
+  },
+]
+`;
+
+exports[`sendStatements SQL is unchanged by the shared helpers [LD3] > no numbering row 1`] = `
+[
+  {
+    "sql": "UPDATE documents SET series = ?2, fy = ?3, number = (SELECT next_no - 1 FROM doc_counters WHERE series = ?2 AND fy = ?3), number_display = printf(?5, ?3, (SELECT next_no - 1 FROM doc_counters WHERE series = ?2 AND fy = ?3)),
+         status = 'sent', frozen_at = ?6, sent_at = ?6, issue_date = ?7, valid_until = ?8, recipient = ?9, issuer = ?10, computed = ?11,
+         snapshot_sha256 = ?12, issued_by = ?13, updated_at = ?6
+       WHERE id = ?1 AND status = 'draft' AND frozen_at IS NULL AND updated_at = ?14 AND content_sha256 = ?15
+         AND (SELECT version FROM settings WHERE key = 'numbering') IS ?16
+         AND NOT EXISTS (SELECT 1 FROM documents x WHERE x.version_group_id = ?4 AND x.status IN ('accepted', 'converted'))
+         AND NOT EXISTS (SELECT 1 FROM clients z WHERE z.id = documents.client_id AND z.anonymised_at IS NOT NULL)
+       RETURNING number_display, valid_until",
+    "values": [
+      "doc1",
+      "proposal",
+      "2627",
+      "grp1",
+      "TH/PRP/%s/%04d",
+      1700000000000,
+      "2026-10-28",
+      "2026-11-12",
+      "{"legalName":"Client","country":"IN"}",
+      "{"company":{"tradeName":"T","legalName":"L","address":"A","gstin":null,"stateCode":"19","logo":"logo-primary-color.svg"},"sender":{"staffId":"s1","name":"N","email":"n@example.com"}}",
+      "{"x":1}",
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "user1",
+      5,
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      null,
+    ],
+  },
+  {
+    "sql": "INSERT INTO issue_guard (document_id) VALUES (?1)",
+    "values": [
+      "doc1",
+    ],
+  },
+  {
+    "sql": "INSERT INTO doc_counters (series, fy, next_no) VALUES (?1, ?2, 1) ON CONFLICT DO NOTHING",
+    "values": [
+      "proposal",
+      "2627",
+    ],
+  },
+  {
+    "sql": "UPDATE doc_counters SET next_no = next_no + 1 WHERE series = ?1 AND fy = ?2",
+    "values": [
+      "proposal",
+      "2627",
+    ],
+  },
+  {
+    "sql": "INSERT INTO issue_result (document_id, series, fy) SELECT ?1, ?2, ?3",
+    "values": [
+      "doc1",
+      "proposal",
+      "2627",
+    ],
+  },
+  {
+    "sql": "UPDATE documents SET status = 'revised' WHERE version_group_id = ?1 AND version < ?2 AND status IN ('sent', 'viewed')
+             AND EXISTS (SELECT 1 FROM documents n WHERE n.id = ?3 AND n.status = 'sent' AND n.frozen_at IS NOT NULL)",
+    "values": [
+      "grp1",
+      1,
+      "doc1",
+    ],
+  },
+]
+`;
+
+exports[`sendStatements SQL is unchanged by the shared helpers [LD3] > with recipients 1`] = `
+[
+  {
+    "sql": "UPDATE documents SET series = ?2, fy = ?3, number = (SELECT next_no - 1 FROM doc_counters WHERE series = ?2 AND fy = ?3), number_display = printf(?5, ?3, (SELECT next_no - 1 FROM doc_counters WHERE series = ?2 AND fy = ?3)),
+         status = 'sent', frozen_at = ?6, sent_at = ?6, issue_date = ?7, valid_until = ?8, recipient = ?9, issuer = ?10, computed = ?11,
+         snapshot_sha256 = ?12, issued_by = ?13, updated_at = ?6
+       WHERE id = ?1 AND status = 'draft' AND frozen_at IS NULL AND updated_at = ?14 AND content_sha256 = ?15
+         AND (SELECT version FROM settings WHERE key = 'numbering') IS ?16
+         AND NOT EXISTS (SELECT 1 FROM documents x WHERE x.version_group_id = ?4 AND x.status IN ('accepted', 'converted'))
+         AND NOT EXISTS (SELECT 1 FROM clients z WHERE z.id = documents.client_id AND z.anonymised_at IS NOT NULL) AND (SELECT count(*) FROM contacts rc WHERE rc.client_id = documents.client_id AND rc.portal_access = 1 AND rc.anonymised_at IS NULL AND rc.id IN (SELECT json_extract(value, '$.contactId') FROM json_each(?17))) = ?18
+       RETURNING number_display, valid_until",
+    "values": [
+      "doc1",
+      "proposal",
+      "2627",
+      "grp1",
+      "TH/PRP/%s/%04d",
+      1700000000000,
+      "2026-10-28",
+      "2026-11-12",
+      "{"legalName":"Client","country":"IN"}",
+      "{"company":{"tradeName":"T","legalName":"L","address":"A","gstin":null,"stateCode":"19","logo":"logo-primary-color.svg"},"sender":{"staffId":"s1","name":"N","email":"n@example.com"}}",
+      "{"x":1}",
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "user1",
+      5,
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      3,
+      "[{"id":"s-1","contactId":"c-1"},{"id":"s-2","contactId":"c-2"}]",
+      2,
+    ],
+  },
+  {
+    "sql": "INSERT INTO issue_guard (document_id) VALUES (?1)",
+    "values": [
+      "doc1",
+    ],
+  },
+  {
+    "sql": "INSERT INTO doc_counters (series, fy, next_no) VALUES (?1, ?2, 1) ON CONFLICT DO NOTHING",
+    "values": [
+      "proposal",
+      "2627",
+    ],
+  },
+  {
+    "sql": "UPDATE doc_counters SET next_no = next_no + 1 WHERE series = ?1 AND fy = ?2",
+    "values": [
+      "proposal",
+      "2627",
+    ],
+  },
+  {
+    "sql": "INSERT INTO issue_result (document_id, series, fy) SELECT ?1, ?2, ?3",
+    "values": [
+      "doc1",
+      "proposal",
+      "2627",
+    ],
+  },
+  {
+    "sql": "UPDATE documents SET status = 'revised' WHERE version_group_id = ?1 AND version < ?2 AND status IN ('sent', 'viewed')
+             AND EXISTS (SELECT 1 FROM documents n WHERE n.id = ?3 AND n.status = 'sent' AND n.frozen_at IS NOT NULL)",
+    "values": [
+      "grp1",
+      1,
+      "doc1",
+    ],
+  },
+  {
+    "sql": "INSERT INTO document_sends (id, document_id, version_group_id, client_id, contact_id, email, attach_pdf, kind, queued_at, created_by, created_at)
+                 SELECT json_extract(j.value, '$.id'), d.id, d.version_group_id, d.client_id, c.id, lower(c.email),
+                   coalesce(?3, (SELECT cl.attach_pdf FROM clients cl WHERE cl.id = d.client_id)), 'send', NULL, ?4, ?5
+                 FROM documents d JOIN json_each(?2) j
+                   JOIN contacts c ON c.id = json_extract(j.value, '$.contactId') AND c.client_id = d.client_id AND c.portal_access = 1 AND c.anonymised_at IS NULL
+                 WHERE d.id = ?1 AND d.status = 'sent' AND d.frozen_at = ?5",
+    "values": [
+      "doc1",
+      "[{"id":"s-1","contactId":"c-1"},{"id":"s-2","contactId":"c-2"}]",
+      1,
+      "user1",
+      1700000000000,
+    ],
+  },
+]
+`;

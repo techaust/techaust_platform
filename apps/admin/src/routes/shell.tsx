@@ -7,7 +7,16 @@ import type { Role } from "@techaust/core/permissions";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Outlet, useLocation, useParams } from "react-router";
 import { type Notification as ApiNotification, api, errorText } from "../api.ts";
-import { Building, FileText, FolderKanban, Inbox, Package, User, Users } from "../components/icons.tsx";
+import {
+  Building,
+  FileText,
+  FolderKanban,
+  Inbox,
+  Package,
+  Receipt,
+  User,
+  Users,
+} from "../components/icons.tsx";
 import { AppShell } from "../components/shell/app-shell.tsx";
 import { GlobalSearch, type SearchGroup } from "../components/shell/global-search.tsx";
 import { type NavItem, navFor, navItem } from "../components/shell/nav.tsx";
@@ -30,6 +39,7 @@ const SEARCH_ICONS = {
   project: <FolderKanban />,
   catalogue: <Package />,
   document: <FileText />,
+  invoice: <Receipt />,
 } as const;
 
 async function runSearch(q: string): Promise<SearchGroup[]> {
@@ -41,7 +51,11 @@ async function runSearch(q: string): Promise<SearchGroup[]> {
       id: `${g.type}-${i.id}`,
       title: i.title,
       // Staff results end with the role as stored ("…, owner"): shown as its label.
-      sub: i.subtitle.replace(/, (owner|staff|sales|accountant)$/, (_, r: Role) => `, ${ROLE_LABELS[r]}`),
+      sub:
+        g.type === "invoice"
+          ? // Invoice results end with the status as stored ("…, issued"): shown as its 07-R badge word.
+            i.subtitle.replace(/, (issued|void)$/, (_, st: string) => (st === "void" ? ", Void" : ", Issued"))
+          : i.subtitle.replace(/, (owner|staff|sales|accountant)$/, (_, r: Role) => `, ${ROLE_LABELS[r]}`),
       href: i.link,
     })),
   }));

@@ -10,9 +10,10 @@ import {
   snapshotSha256,
 } from "@techaust/core/documents";
 import { sha256Hex } from "@techaust/core/hash";
+import { type InvoiceSnapshotInput, invoiceSnapshotSha256 } from "@techaust/core/invoices";
 import { SCHEDULE_TRIGGERS } from "@techaust/core/schedule-text";
 import type { ComputedDocument } from "@techaust/core/tax";
-import type { IssuerSnapshot, RecipientSnapshot } from "./schema/documents.ts";
+import type { InvoiceIssuerSnapshot, IssuerSnapshot, RecipientSnapshot } from "./schema/documents.ts";
 
 export type DocumentRow = {
   id: string;
@@ -27,6 +28,14 @@ export type DocumentRow = {
   number_display: string | null;
   currency: string;
   issue_date: string | null;
+  /** M5.1: an invoice's due date, its ledger columns, its void and its parent are read with the row (null or 0 on a quote). */
+  due_date: string | null;
+  parent_id: string | null;
+  paid_minor: number;
+  credited_minor: number;
+  balance_minor: number;
+  voided_at: number | null;
+  void_reason: string | null;
   valid_until: string | null;
   supply_type: string | null;
   place_of_supply_code: string | null;
@@ -65,7 +74,7 @@ export type DocumentRow = {
   created_at: number;
   updated_at: number;
   recipient: RecipientSnapshot | null;
-  issuer: IssuerSnapshot | null;
+  issuer: IssuerSnapshot | InvoiceIssuerSnapshot | null;
   /** The sealed tax result of a SENT version. Always null for a draft (it is not parsed: a draft is worked out again from its parts). */
   computed: ComputedDocument | null;
 };
@@ -157,7 +166,7 @@ export type DocumentBundle<T extends TermsRef = TermsRow> = {
 };
 
 const DOCUMENT_COLUMNS =
-  "id, type, status, client_id, version_group_id, version, series, fy, number, number_display, currency, issue_date, valid_until, supply_type, place_of_supply_code, subtotal_minor, discount_minor, taxable_minor, cgst_minor, sgst_minor, igst_minor, round_off_minor, total_minor, terms_version_id, snapshot_r2_key, snapshot_sha256, pdf_r2_key, pdf_sha256, frozen_at, issued_by, title, contact_id, validity_days, discount_kind, discount_value, export_mode, content_sha256, catalogue_reference_minor, source_document_id, source_step, sent_at, viewed_at, decided_at, decision_reason, decision_note, decided_contact_id, created_by, created_at, updated_at, recipient, issuer, computed";
+  "id, type, status, client_id, version_group_id, version, series, fy, number, number_display, currency, issue_date, due_date, parent_id, paid_minor, credited_minor, balance_minor, voided_at, void_reason, valid_until, supply_type, place_of_supply_code, subtotal_minor, discount_minor, taxable_minor, cgst_minor, sgst_minor, igst_minor, round_off_minor, total_minor, terms_version_id, snapshot_r2_key, snapshot_sha256, pdf_r2_key, pdf_sha256, frozen_at, issued_by, title, contact_id, validity_days, discount_kind, discount_value, export_mode, content_sha256, catalogue_reference_minor, source_document_id, source_step, sent_at, viewed_at, decided_at, decision_reason, decision_note, decided_contact_id, created_by, created_at, updated_at, recipient, issuer, computed";
 
 /** The statements of `loadDocument`, exported so a test can EXPLAIN each one. */
 export const LOAD_DOCUMENT_SQL = {
@@ -376,6 +385,117 @@ export async function verifySealed(b: DocumentBundle<TermsRef>): Promise<SealChe
   const content = contentHashOfBundle(b);
   if (!parts || !content) return null;
   const seal = await sealOf(parts);
+  return {
+    content: (await content) === b.document.content_sha256,
+    snapshot: seal.snapshotSha256 === b.document.snapshot_sha256,
+  };
+}
+
+// ---- sealing and verifying an issued invoice (M5.1, LD4; the jobs Worker's envelope verifies with these, stage B) -------------------------------
+
+/** Everything the seal of an issued invoice is made from. The issue route fills it from the draft it just worked out; a verifier fills it from the rows. */
+export type InvoiceSealParts = {
+  readonly document: InvoiceSnapshotInput["document"];
+  readonly computed: ComputedDocument;
+  readonly recipient: RecipientSnapshot;
+  readonly issuer: InvoiceIssuerSnapshot;
+};
+
+export type InvoiceSeal = {
+  /** The exact text written to `documents.computed`. */
+  computedJson: string;
+  computedSha256: string;
+  input: InvoiceSnapshotInput;
+  /** `documents.snapshot_sha256`: the hash of the canonical `{v: 3, kind: "invoice", header}` (core `invoiceSnapshot`). */
+  snapshotSha256: string;
+};
+
+/** The one place an invoice's snapshot input and its hash are made: the issue route calls it before the freeze, a verifier after. */
+export async function invoiceSealOf(p: InvoiceSealParts): Promise<InvoiceSeal> {
+  const computedJson = JSON.stringify(p.computed);
+  const computedSha256 = await sha256Hex(computedJson);
+  const input: InvoiceSnapshotInput = {
+    document: p.document,
+    supply: p.computed.supply,
+    recipient: p.recipient,
+    issuer: p.issuer,
+    computedSha256,
+  };
+  return { computedJson, computedSha256, input, snapshotSha256: await invoiceSnapshotSha256(input) };
+}
+
+/**
+ * The editable content of a loaded invoice (any invoice-family type), as `contentHash` takes it: the rows of a draft or of an issued invoice
+ * hash to the `content_sha256` the draft was saved with. An invoice has no title, validity, sections or schedule, and its terms are pinned at
+ * issue (not part of the draft), so those parts are fixed here; the discount and the lines are the draft's.
+ */
+export function invoiceDraftOfBundle(b: DocumentBundle<TermsRef>): DraftContent {
+  const d = b.document;
+  return {
+    type: d.type,
+    clientId: d.client_id,
+    contactId: d.contact_id,
+    title: null,
+    currency: d.currency === "USD" ? "USD" : "INR",
+    validityDays: null,
+    termsVersionId: null,
+    discountKind: kindOf(d.discount_kind),
+    discountValue: d.discount_value,
+    exportMode: d.export_mode,
+    lines: b.lines.map((r) => ({
+      catalogueItemId: r.catalogue_item_id,
+      description: r.description,
+      detail: r.detail,
+      sac: r.sac,
+      qtyMilli: r.qty_milli,
+      unit: r.unit,
+      rateMinor: r.rate_minor,
+      discountKind: kindOf(r.discount_kind),
+      discountValue: r.discount_value,
+      gstRateBp: r.gst_rate_bp,
+      catalogueRateMinor: r.catalogue_rate_minor,
+      catalogueLine: r.catalogue_line,
+    })),
+    sections: [],
+    schedule: [],
+  };
+}
+
+/** The content hash of a loaded ISSUED invoice, worked out again from its rows and its stored `computed` (compare with `content_sha256`). */
+export function invoiceContentHashOfBundle(b: DocumentBundle<TermsRef>): Promise<string> | null {
+  return b.document.computed ? contentHash(invoiceDraftOfBundle(b), b.document.computed) : null;
+}
+
+/** The seal parts of a loaded ISSUED invoice, from its frozen columns; null when it is not frozen or lacks a frozen block. */
+export function invoiceSealPartsOfBundle(b: DocumentBundle<TermsRef>): InvoiceSealParts | null {
+  const d = b.document;
+  if (d.frozen_at === null) return null;
+  const { computed, recipient, issuer } = d;
+  if (!computed || !recipient || !issuer || !d.issue_date || !d.due_date || !d.content_sha256) return null;
+  const t = b.terms;
+  return {
+    document: {
+      type: d.type,
+      clientId: d.client_id,
+      currency: d.currency,
+      issueDate: d.issue_date,
+      dueDate: d.due_date,
+      contentSha256: d.content_sha256,
+      termsRef: t ? { id: t.id, version: t.version, sha256: t.sha256 } : null,
+      exportMode: d.export_mode,
+    },
+    computed,
+    recipient,
+    issuer: issuer as InvoiceIssuerSnapshot,
+  };
+}
+
+/** Checks a loaded issued invoice against the hashes it was sealed with. Null when the bundle is not an issued invoice. */
+export async function verifyInvoiceSealed(b: DocumentBundle<TermsRef>): Promise<SealCheck | null> {
+  const parts = invoiceSealPartsOfBundle(b);
+  const content = invoiceContentHashOfBundle(b);
+  if (!parts || !content) return null;
+  const seal = await invoiceSealOf(parts);
   return {
     content: (await content) === b.document.content_sha256,
     snapshot: seal.snapshotSha256 === b.document.snapshot_sha256,

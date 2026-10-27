@@ -13,6 +13,7 @@ import {
   type Series,
   sqlPrintfPattern,
   validateFormat,
+  validateStoredFormat,
 } from "../src/numbering.ts";
 
 const fy2627 = financialYear(2026);
@@ -65,7 +66,21 @@ describe("format validation", () => {
     expect(check("TH/INV/{N}")).toMatchObject({ ok: false, error: expect.stringContaining("{FY}") });
     expect(check("{FY}/{N}/{N}")).toMatchObject({ ok: false });
     expect(check("TH/{FY}{N}")).toMatchObject({ ok: false, error: expect.stringContaining("separator") });
-    expect(check("{N}/{FY}")).toMatchObject({ ok: true });
+    // M5.1 (LD18): a number that starts with the counter starts with a padding zero, so this needs a one-digit padding now.
+    expect(check("{N}/{FY}", 1)).toMatchObject({ ok: true });
+  });
+
+  it("the number must not start with 0, / or - (LD18, 08-A §4: the e-invoice number starts with a letter or 1-9)", () => {
+    for (const bad of ["/{FY}/{N}", "-{FY}-{N}", "0TH/{FY}/{N}", "0/{FY}/{N}"])
+      expect(check(bad), bad).toMatchObject({ ok: false, error: expect.stringContaining("must not start") });
+    expect(check("{N}/{FY}", 4)).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("must not start"),
+    });
+    expect(check("{N}-{FY}", 2)).toMatchObject({ ok: false });
+    for (const good of ["TH/{FY}/{N}", "{FY}/{N}", "1A/{FY}/{N}", "A0/{FY}/{N}"])
+      expect(check(good), good).toMatchObject({ ok: true });
+    expect(check("{N}/{FY}", 1)).toMatchObject({ ok: true });
   });
 
   it("checks padding", () => {
@@ -123,6 +138,32 @@ describe("properties", () => {
     );
   });
 
+  it("no valid format ever gives a number that starts with 0, / or - (LD18)", () => {
+    fc.assert(
+      fc.property(
+        formatArb,
+        fc.integer({ min: 2010, max: 2098 }),
+        fc.integer({ min: 1, max: 999_999 }),
+        (f, y, raw) => {
+          const value = formatDocumentNumber(f, financialYear(y), (raw % maxNumber(f)) + 1);
+          expect(value).toMatch(/^[A-Z1-9]/);
+        },
+      ),
+      { numRuns: 2_000 },
+    );
+    // and a format that could is refused whatever its other parts (the first character is the point, not the rest)
+    fc.assert(
+      fc.property(
+        fc.constantFrom("/", "-", "0"),
+        seg,
+        fc.integer({ min: 1, max: 6 }),
+        (lead, rest, padding) => {
+          expect(validateFormat({ template: `${lead}${rest}/{FY}/{N}`, padding }).ok).toBe(false);
+        },
+      ),
+    );
+  });
+
   it("the SQL printf pattern produces the same string as the app", () => {
     fc.assert(
       fc.property(formatArb, fc.integer({ min: 1, max: 9 }), (f, n) => {
@@ -153,5 +194,36 @@ describe("parsing and counters", () => {
     expect(canSetNextNumber(5, 9)).toBe(true);
     expect(canSetNextNumber(5, 4)).toBe(false);
     expect(canSetNextNumber(5, 6.5)).toBe(false);
+  });
+});
+
+describe("a stored format reads under the pre-M5.1 rules; the first-character rule is for saving [LD18; review 4]", () => {
+  const older = [
+    { template: "{N}/{FY}", padding: 4 },
+    { template: "-{FY}-{N}", padding: 4 },
+    { template: "0TH/{FY}/{N}", padding: 3 },
+  ];
+
+  it("validateStoredFormat accepts what LD18 refuses on save, and still refuses what was never valid", () => {
+    for (const f of older) {
+      expect(validateFormat(f).ok, f.template).toBe(false);
+      expect(validateStoredFormat(f).ok, f.template).toBe(true);
+    }
+    for (const never of [
+      { template: "TH/INVOICE/{FY}/{N}", padding: 4 },
+      { template: "{FY}{N}", padding: 4 },
+      { template: "th/{FY}/{N}", padding: 4 },
+      { template: "TH/{FY}/{N}", padding: 9 },
+    ])
+      expect(validateStoredFormat(never).ok, never.template).toBe(false);
+  });
+
+  it("formatting, parsing and the SQL pattern work for a stored format and never throw", () => {
+    for (const f of older) {
+      const text = formatDocumentNumber(f, fy2627, 7);
+      expect(parseDocumentNumber(f, text)).toMatchObject({ n: 7 });
+      expect(() => sqlPrintfPattern(f)).not.toThrow();
+    }
+    expect(formatDocumentNumber({ template: "{N}/{FY}", padding: 4 }, fy2627, 7)).toBe("0007/2627");
   });
 });

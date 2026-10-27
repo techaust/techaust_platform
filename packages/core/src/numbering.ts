@@ -55,8 +55,17 @@ function split(template: string): Parts | null {
 
 export type FormatCheck = { ok: true; maxLength: number } | { ok: false; error: string };
 
-/** Validate a format before it is saved in settings. The longest possible number must fit. */
-export function validateFormat(format: NumberingFormat): FormatCheck {
+/**
+ * Validate a format before it is SAVED in settings. The longest possible number must fit, and the number must not start with 0, "/" or "-" (LD18).
+ * The first-character rule applies on save only: a format stored before M5.1 that breaks it must still READ (`validateStoredFormat`), or every
+ * route that reads the numbering settings would answer 500 until someone fixed the row by hand.
+ */
+export const validateFormat = (format: NumberingFormat): FormatCheck => checkFormat(format, true);
+
+/** Validate a format that is already stored: the rules that held before M5.1 (everything except LD18's first character), so reading never throws for a row that was valid when saved. */
+export const validateStoredFormat = (format: NumberingFormat): FormatCheck => checkFormat(format, false);
+
+function checkFormat(format: NumberingFormat, strictStart: boolean): FormatCheck {
   if (!Number.isInteger(format.padding) || format.padding < 1 || format.padding > 8) {
     return { ok: false, error: "Padding must be between 1 and 8 digits" };
   }
@@ -67,6 +76,18 @@ export function validateFormat(format: NumberingFormat): FormatCheck {
     return { ok: false, error: 'Use only capital letters A–Z, digits 0–9, "/" and "-"' };
   }
   if (parts.middle === "") return { ok: false, error: "Put a separator between {FY} and {N}" };
+  // LD18 (VERIFY WITH CA/LEGAL, 08-A §4): the e-invoice schema wants the number to start with a letter or 1-9, never 0, "/" or "-".
+  // The number starts with the text before the first token; with none, the FY token (always 1-9 for a real FY) or the counter,
+  // which starts with a padding zero whenever the padding is more than one digit.
+  const first = parts.before[0];
+  if (
+    strictStart &&
+    (first !== undefined
+      ? first === "/" || first === "-" || first === "0"
+      : !parts.fyFirst && format.padding > 1)
+  ) {
+    return { ok: false, error: 'The number must not start with 0, "/" or "-"' };
+  }
   const maxLength = literals.length + 4 + format.padding;
   if (maxLength > MAX_NUMBER_LENGTH) {
     return {
@@ -78,8 +99,8 @@ export function validateFormat(format: NumberingFormat): FormatCheck {
 }
 
 const assertValid = (format: NumberingFormat) => {
-  const check = validateFormat(format);
-  if (!check.ok) throw new RangeError(check.error);
+  const result = validateStoredFormat(format);
+  if (!result.ok) throw new RangeError(result.error);
 };
 
 /** Format the n-th document of a financial year: (TH/INV/{FY}/{N}, FY 2026-27, 1) → "TH/INV/2627/0001". */

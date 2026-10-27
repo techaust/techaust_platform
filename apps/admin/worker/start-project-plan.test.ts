@@ -22,6 +22,8 @@ const client = (over: Partial<ClientRow> = {}): ClientRow => ({
   currency: "INR",
   attach_pdf: 0,
   anonymised_at: null,
+  payment_terms_days: null,
+  updated_at: 1,
   ...over,
 });
 

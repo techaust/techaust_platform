@@ -147,7 +147,7 @@ export const taxContext = (s: QuoteSettings): TaxContext => ({
 // ---- rows ---------------------------------------------------------------------------------------------------------------------
 
 export const CLIENT_COLS =
-  "id, code, legal_name, display_name, type, country, gst_status, gstin, state_code, billing_address, currency, attach_pdf, anonymised_at";
+  "id, code, legal_name, display_name, type, country, gst_status, gstin, state_code, billing_address, currency, attach_pdf, anonymised_at, payment_terms_days, updated_at";
 export const CLIENT_READ = `SELECT ${CLIENT_COLS} FROM clients WHERE id = ?1`;
 export type ClientRow = {
   id: string;
@@ -163,6 +163,9 @@ export type ClientRow = {
   currency: "INR" | "USD";
   attach_pdf: number;
   anonymised_at: number | null;
+  /** M5.1: the client's own payment terms in days (null: the settings') and its last change (the issue batch refuses a client that moved). */
+  payment_terms_days: number | null;
+  updated_at: number;
 };
 export const taxInputOf = (c: ClientRow): TaxInput => ({
   gstStatus: c.gst_status,
@@ -546,14 +549,15 @@ export type Computation = {
   hash: string;
 };
 
-const discountOf = (s: DocState): Discount | null => {
+/** The document discount of any state that has one (a proposal's, an estimate's, an invoice's: M5.1 shares it). */
+export const discountOf = (s: Pick<DocState, "discountKind" | "discountValue">): Discount | null => {
   if (s.discountKind === null || s.discountValue === null) return null;
   return s.discountKind === "fixed"
     ? { kind: "fixed", minor: s.discountValue }
     : { kind: "percent", bp: s.discountValue };
 };
 
-const lineDiscountOf = (l: LineState): Discount | null => {
+export const lineDiscountOf = (l: LineState): Discount | null => {
   if (l.discountValue === null) return null;
   if (l.discountKind === "fixed") return { kind: "fixed", minor: l.discountValue };
   return l.discountKind === "percent" ? { kind: "percent", bp: l.discountValue } : null;
@@ -692,7 +696,7 @@ export function documentColumns(s: DocState, c: Computation) {
 }
 
 /** The lines as rows for `INSERT ... SELECT ... FROM json_each(?)`: keys are the column names. */
-export function lineRows(s: DocState, c: Computation) {
+export function lineRows(s: Pick<DocState, "lines">, c: Pick<Computation, "computed">) {
   return s.lines.map((l, i) => {
     const k = c.computed?.lines[i];
     return {

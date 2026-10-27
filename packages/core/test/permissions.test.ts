@@ -42,6 +42,7 @@ const EXPECTED: Record<Exclude<Action, "proposals.send">, string> = {
   "invoices.read": "AA-A",
   "invoices.draft": "AA--",
   "invoices.issue": "SP--",
+  "invoices.void": "S---", // M5.1 (Q2): the Owner only, with a fresh code
   "payments.read": "AA-A",
   "payments.record": "AP--",
   "payments.verify": "A---",

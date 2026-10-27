@@ -1,13 +1,13 @@
 // The project page's Overview tab, the project dashboard (M3.4, ADM-PRJ-05): the details (edited through PATCH /projects/:id by
 // owner and staff, sending only what changed and the `updatedAt` it was loaded with; a 409 shows the shared stale notice), the
-// milestones timeline with the total against the budget, the five newest notes and files, and the figures that arrive with later
-// modules (billed vs paid with invoicing, hours with time logs), which say so in the 07-K words instead of showing a zero.
+// milestones timeline with the total against the budget, the five newest notes and files, and the hours logged (07-K words instead of a
+// zero before time logs). The old "billed and paid" placeholder is gone with M5.1: each milestone links its invoice on the Milestones tab.
 import { type Dispatch, type FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router";
 import { api, fileDownloadHref, type ProjectPage, RequestError } from "../../api.ts";
 import { DateField, useUnreadDates } from "../../components/date-field.tsx";
 import { When } from "../../components/display.tsx";
-import { AlertTriangle, Clock, Download, FileText, Pencil, Receipt } from "../../components/icons.tsx";
+import { AlertTriangle, Clock, Download, FileText, Pencil } from "../../components/icons.tsx";
 import { Markdown } from "../../components/markdown.tsx";
 import { useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
@@ -64,12 +64,6 @@ export function Overview(props: {
             Figures
           </h2>
           <dl className="facts figures">
-            <Fact label="Billed and paid">
-              <span className="panel-empty">
-                <Receipt size={20} />
-                <span>{COPY.billedVsPaid}</span>
-              </span>
-            </Fact>
             <Fact label="Hours logged">
               {props.data.figures.hours.available ? (
                 <span className="panel-empty hours-figure">

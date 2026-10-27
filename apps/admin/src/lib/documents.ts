@@ -315,6 +315,12 @@ export const APPROVAL_LABELS: Record<Exclude<ApprovalState, "none">, string> = {
   rejected: "Rejected",
   expired: "Expired",
 };
+/** A tab's count of the requests waiting in it ("3", or "50+" past the first page), read out as "3 pending"; nothing when none wait. */
+export function pendingBadge(w: { n: number; more: boolean } | null): { text: string; label: string } | null {
+  if (!w || w.n === 0) return null;
+  const text = `${w.n}${w.more ? "+" : ""}`;
+  return { text, label: `${text} ${APPROVAL_LABELS.pending.toLowerCase()}` };
+}
 export const APPROVAL_PILLS: Record<Exclude<ApprovalState, "none">, Pill> = {
   pending: { tone: "warning", icon: "clock" },
   approved: { tone: "success", icon: "check" },
@@ -691,7 +697,8 @@ export const isDirty = (s: EditorState) => dirtyParts(s).length > 0;
 
 export type LineErrors = Partial<Record<"description" | "qty" | "rate" | "disc" | "sac" | "gstRate", string>>;
 
-const parseDiscount = (
+/** A typed discount in the API's units (basis points or minor units), or the sentence that says what is wrong. */
+export const parseDiscount = (
   kind: DiscountKind,
   text: string,
   currency: Currency,
@@ -746,7 +753,8 @@ export function fieldErrors(f: FieldsDraft, currency: Currency): FieldErrorsOf {
 
 const nul = (s: string) => (s.trim() === "" ? null : s.trim());
 
-function lineIn(l: LineDraft, currency: Currency): LineIn {
+/** One line as the API takes it (the invoice editor sends the same shape). */
+export function lineIn(l: LineDraft, currency: Currency): LineIn {
   const out: LineIn = {
     description: l.description.trim(),
     detail: nul(l.detail),

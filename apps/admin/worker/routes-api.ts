@@ -9,12 +9,14 @@ import { clients, contacts } from "./clients.ts";
 import { dashboard } from "./dashboard.ts";
 import { documentConvert } from "./document-convert.ts";
 import { documentLinks } from "./document-links.ts";
-import { documentPdf } from "./document-pdf.ts";
+import { documentPdf, invoicePdf } from "./document-pdf.ts";
 import { documentSave } from "./document-save.ts";
 import { documentSend } from "./document-send.ts";
 import { documentStart } from "./document-start.ts";
 import { documents } from "./documents.ts";
 import { files } from "./files.ts";
+import { invoiceIssue } from "./invoice-issue.ts";
+import { invoices } from "./invoices.ts";
 import { leads } from "./leads.ts";
 import { notes } from "./notes.ts";
 import { notifications } from "./notifications.ts";
@@ -42,6 +44,10 @@ export function mountApi(app: App) {
   app.route("/v1/documents", documentPdf);
   app.route("/v1/documents", documentLinks);
   app.route("/v1/documents", documentStart);
+  // Invoices (M5.1): one router per concern under /invoices.
+  app.route("/v1/invoices", invoices);
+  app.route("/v1/invoices", invoiceIssue);
+  app.route("/v1/invoices", invoicePdf);
   app.route("/v1/approvals", approvals);
   app.route("/v1/projects", projects);
   app.route("/v1/milestones", milestones);

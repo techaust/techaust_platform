@@ -26,11 +26,11 @@ import {
   invoiceTitle,
   mappedError,
   moneyText,
+  OPEN_IT,
   reviseBody,
   sendLine,
 } from "../../lib/documents.ts";
 import { type CareConverted, documentsApi } from "../../lib/documents-api.ts";
-import { COPY as PROJECT_COPY } from "../../lib/projects.ts";
 import { intIn } from "../../lib/settings-form.ts";
 import { DurationFields } from "../care/terms-fields.tsx";
 
@@ -142,7 +142,7 @@ export function DiscardDialog(props: { open: boolean; onConfirm: () => Promise<v
   );
 }
 
-/** An accepted estimate becomes an invoice draft (100 % upfront small job, ADM-EST-02). Invoices have no screen until M5. */
+/** An accepted estimate becomes an invoice draft (100 % upfront small job, ADM-EST-02); the result links to the draft (M5.1). */
 export function InvoiceDialog(props: {
   open: boolean;
   id: string;
@@ -162,7 +162,7 @@ export function InvoiceDialog(props: {
       resultTitle={DOC_COPY.invoiceDone}
       confirmLabel={DOC_COPY.invoiceButton}
       onConfirm={async () => {
-        let made: { totalMinor: number };
+        let made: { id: string; totalMinor: number };
         try {
           made = await documentsApi.toInvoice(props.id);
         } catch (e) {
@@ -174,7 +174,9 @@ export function InvoiceDialog(props: {
             <p className="confirm-figure tnum">
               {sendLine(moneyText(made.totalMinor, props.currency), props.client)}
             </p>
-            <p>{PROJECT_COPY.createInvoice}</p>
+            <p>
+              <Link to={`/invoices/${encodeURIComponent(made.id)}`}>{OPEN_IT}</Link>
+            </p>
           </>
         );
       }}

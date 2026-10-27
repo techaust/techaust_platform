@@ -65,12 +65,18 @@ describe("frozen documents (ADM-INV-07, ADM-PROP-05)", () => {
     );
     await run("UPDATE documents SET pdf_r2_key = 'docs/a.pdf', pdf_sha256 = 'abc' WHERE id = ?", id);
     await rejects(run("UPDATE documents SET pdf_r2_key = 'docs/b.pdf' WHERE id = ?", id), /frozen/);
+    // M5.1 (Q1, documents_invoice_status_flow): a part-paid invoice can no longer be voided; the void of an unpaid one is below.
+    await rejects(
+      run("UPDATE documents SET status = 'void', voided_at = 1, void_reason = 'Duplicate' WHERE id = ?", id),
+      /documents_invoice_status_flow/,
+    );
+    const unpaid = await issuedInvoice();
     await run(
       "UPDATE documents SET status = 'void', voided_at = 1, void_reason = 'Duplicate' WHERE id = ?",
-      id,
+      unpaid,
     );
     await rejects(
-      run("UPDATE documents SET voided_at = NULL, void_reason = NULL WHERE id = ?", id),
+      run("UPDATE documents SET voided_at = NULL, void_reason = NULL WHERE id = ?", unpaid),
       /frozen/,
     );
   });
@@ -236,8 +242,13 @@ describe("gap-free numbering (docs/05 §5.4, ADM-INV-03)", () => {
     expect(ISSUABLE_STATUSES).toEqual(["draft"]);
     await issuedInvoice(); // makes sure the counter row exists
     const clientId = await insertClient("C-PEND");
-    const id = await insertDraftInvoice(clientId);
-    await run("UPDATE documents SET status = 'pending_approval' WHERE id = ?", id);
+    // M5.1 (documents_invoice_status_flow): a draft can no longer be moved to pending_approval by UPDATE, so the row is born that way.
+    const id = uuidv7();
+    await run(
+      "INSERT INTO documents (id, type, client_id, currency, status, total_minor) VALUES (?, 'tax_invoice', ?, 'INR', 'pending_approval', 118000)",
+      id,
+      clientId,
+    );
     const before = await counter();
     await rejects(issueBatch(id, "invoice", FY, PATTERN), /not an issuable draft/);
     expect(await counter()).toBe(before);
@@ -246,9 +257,8 @@ describe("gap-free numbering (docs/05 §5.4, ADM-INV-03)", () => {
       id,
     );
     expect(doc).toEqual({ status: "pending_approval", number: null });
-    // Back to a draft (the owner's approval is a record, not a status): it issues with the very next number.
-    await run("UPDATE documents SET status = 'draft' WHERE id = ?", id);
-    await issueBatch(id, "invoice", FY, PATTERN);
+    // (The owner's approval is a record, not a status; a real draft issues with the very next number.)
+    await issueBatch(await insertDraftInvoice(clientId), "invoice", FY, PATTERN);
     expect(await counter()).toBe((before ?? 0) + 1);
   });
 

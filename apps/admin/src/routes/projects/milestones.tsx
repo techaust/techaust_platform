@@ -5,21 +5,20 @@
 // - drag a row by its handle (mouse, pen or touch; Escape cancels; a line shows where it lands)
 // - its actions menu: Move up, Move down, Move to the top, Move to the bottom (keyboard and screen readers)
 // A new order shows at once and is saved as one request; if it fails the old order comes back and the error is said in place.
-// Invoiced and Paid are shown, never offered: invoicing sets them (M5).
+// Invoiced and Paid are shown, never offered: invoicing sets them (M5). A milestone Ready to bill offers "Create invoice" (M5.1).
 import { type FormEvent, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from "react";
 import { api, type MilestoneView, type ProjectPage, RequestError } from "../../api.ts";
 import { ConfirmDialog } from "../../components/confirm-dialog.tsx";
 import { DateField, useUnreadDates } from "../../components/date-field.tsx";
 import { Modal } from "../../components/dialog.tsx";
 import { FormField } from "../../components/form.tsx";
-import { AlertTriangle, Grip, Plus, Receipt } from "../../components/icons.tsx";
+import { AlertTriangle, Grip, Plus } from "../../components/icons.tsx";
 import { MenuButton, type MenuItem } from "../../components/popover.tsx";
 import { StaleNotice } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { Notice } from "../../components/ui.tsx";
 import { allowed } from "../../lib/access.ts";
 import {
-  COPY,
   type MilestoneErrors,
   type MilestoneForm,
   milestoneDeletable,
@@ -37,6 +36,7 @@ import {
   totalsWarning,
 } from "../../lib/projects.ts";
 import { useUser } from "../../session.tsx";
+import { MilestoneInvoice, useInvoiceNumbers } from "../invoices/milestone-action.tsx";
 import { Day, MilestonePill, MoneyIn } from "./parts.tsx";
 import type { Reload } from "./project.tsx";
 
@@ -48,6 +48,13 @@ export function Milestones({ data, reload }: { data: ProjectPage; reload: Reload
   const toast = useToast();
   const canWrite = allowed(user.role, "projects.write") && !data.clientAnonymised;
   const { project } = data;
+  // M5.1: "Create invoice" for a milestone that is Ready to bill; a milestone with an invoice names it (one read of the client's invoices).
+  const canInvoice = canWrite && allowed(user.role, "invoices.draft");
+  const canOpenInvoices = allowed(user.role, "invoices.read");
+  const numbers = useInvoiceNumbers(
+    project.clientId,
+    canOpenInvoices && data.milestones.some((m) => m.documentId !== null),
+  );
   const [order, setOrder] = useState<MilestoneView[]>(data.milestones);
   const [seen, setSeen] = useState(data.milestones);
   if (seen !== data.milestones) {
@@ -244,23 +251,13 @@ export function Milestones({ data, reload }: { data: ProjectPage; reload: Reload
                 <div className="ledger__title">
                   <span className="visually-hidden">{`${i + 1}. `}</span>
                   {m.title}
-                  {canWrite && m.status === "ready_to_bill" && (
-                    <span className="ledger__invoice">
-                      <button
-                        type="button"
-                        className="btn btn--text"
-                        aria-disabled="true"
-                        aria-describedby={`ms-inv-${m.id}`}
-                        onClick={(e) => e.preventDefault()}
-                      >
-                        <Receipt size={16} />
-                        Create invoice
-                      </button>
-                      <span id={`ms-inv-${m.id}`} className="hint">
-                        {COPY.createInvoice}
-                      </span>
-                    </span>
-                  )}
+                  <MilestoneInvoice
+                    milestone={m}
+                    clientId={project.clientId}
+                    canCreate={canInvoice}
+                    canOpen={canOpenInvoices}
+                    numbers={numbers}
+                  />
                 </div>
                 <span className="ledger__cell ledger__due">
                   <span className="ledger__label">Due</span>

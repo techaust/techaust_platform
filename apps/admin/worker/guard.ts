@@ -184,6 +184,20 @@ export const ROUTES: readonly RouteDef[] = [
   R("POST", "/documents/:id/start-project", "projects.write", { audit: "project.create" }),
   R("POST", "/documents/:id/convert", "invoices.draft", { audit: "document.convert" }),
   R("GET", "/clients/:id/documents", "proposals.read"),
+  // Invoices (M5.1, ADM-INV-01..04, -07, ADM-PRJ-02, LD1): their own prefix, because the permissions differ from proposals and a row has one action.
+  // Static paths come before `/:id`. Only the Owner issues (a fresh code at the guard); a Staff member's issue is a request (`approval.request`);
+  // voiding is `invoices.void` (Owner, step-up). Sales reads no invoice at all. A save is up to 96 KB (`body: "document"`).
+  R("GET", "/invoices", "invoices.read"),
+  R("POST", "/invoices", "invoices.draft", { audit: "invoice.create" }),
+  R("GET", "/invoices/:id", "invoices.read"),
+  R("PATCH", "/invoices/:id", "invoices.draft", { audit: "invoice.update", body: "document" }),
+  R("DELETE", "/invoices/:id", "invoices.draft", { audit: "invoice.delete" }),
+  R("POST", "/invoices/:id/issue", "invoices.issue", { audit: "invoice.issue" }),
+  R("POST", "/invoices/:id/issue-request", "invoices.draft", { audit: "approval.request" }),
+  R("POST", "/invoices/:id/void", "invoices.void", { audit: "invoice.void" }),
+  R("GET", "/invoices/:id/pdf", "invoices.read"),
+  R("POST", "/invoices/:id/pdf/retry", "invoices.draft", { audit: "invoice.pdf_retry" }),
+  R("GET", "/clients/:id/invoices", "invoices.read"),
   // The owner's approval queue. Staff and Sales read only their own requests (the handler filters); only the owner decides.
   R("GET", "/approvals", "approvals.readOwn"),
   R("POST", "/approvals/:id/decide", "approvals.decide", { audit: "approval.decide" }),

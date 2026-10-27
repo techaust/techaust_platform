@@ -2,9 +2,12 @@
 // load compiles the view, Markdown and HTML code, so the first real message does not pay for it. Hand-written, so it pulls in no tax
 // engine and no zod. The hashes are placeholders: the warm-up never verifies. Nothing here is stored, sent or logged.
 import { buildEnvelope } from "./envelope.ts";
+import { buildInvoiceEnvelope } from "./invoice-envelope.ts";
+import type { InvoiceEnvelope } from "./invoice-types.ts";
+import { toInvoiceView } from "./invoice-view.ts";
 import { renderDocumentHtml } from "./render.ts";
 import type { Envelope } from "./types.ts";
-import { toPdfView } from "./view.ts";
+import { DEFAULT_VIEW_CONFIG, toPdfView } from "./view.ts";
 
 const ZERO = "0".repeat(64);
 
@@ -136,6 +139,85 @@ export function warmPdf(): number {
     return renderDocumentHtml(toPdfView(warmEnvelope())).length;
   } catch {
     // never stop a Worker from starting
+    return 0;
+  }
+}
+
+/** A valid-looking invoice envelope of made-up data (M5.1), for warming the invoice view and layout. */
+export function warmInvoiceEnvelope(): InvoiceEnvelope {
+  return buildInvoiceEnvelope({
+    documentId: "warm",
+    type: "tax_invoice",
+    number: 1,
+    numberDisplay: "TH/INV/2627/0001",
+    series: "invoice",
+    fy: "2026-27",
+    issuedAt: 1_790_000_000_000,
+    snapshotSha256: ZERO,
+    snapshot: {
+      header: {
+        document: {
+          type: "tax_invoice",
+          clientId: "warm",
+          currency: "INR",
+          issueDate: "2026-10-26",
+          dueDate: "2026-11-02",
+          contentSha256: ZERO,
+          termsRef: { id: "warm", version: 1, sha256: ZERO },
+          exportMode: null,
+        },
+        supply: { type: "intra", placeOfSupplyCode: "19", supplierStateCode: "19" },
+        recipient: {
+          legalName: "Warm Up Client",
+          country: "IN",
+          stateCode: "19",
+          contactName: "Warm Contact",
+        },
+        issuer: {
+          company: {
+            tradeName: "Warm Up",
+            legalName: null,
+            address: null,
+            gstin: null,
+            stateCode: "19",
+            logo: "logo-primary-color.svg",
+          },
+          bank: { inr: null },
+          signature: null,
+          reverseChargeText: "Tax payable on reverse charge: No",
+          sender: { staffId: "warm", name: "Warm Up", email: "warm@example.test" },
+        },
+        computedSha256: ZERO,
+      },
+      computedJson: JSON.stringify(COMPUTED),
+      discountKind: null,
+      discountValue: null,
+      lines: [
+        {
+          catalogueItemId: null,
+          description: "Warm up work",
+          detail: "Detail",
+          sac: "998314",
+          qtyMilli: 1000,
+          unit: "item",
+          rateMinor: 100_000,
+          discountKind: null,
+          discountValue: null,
+          gstRateBp: 1800,
+          catalogueRateMinor: null,
+          catalogueLine: null,
+        },
+      ],
+      terms: { id: "warm", version: 1, sha256: ZERO, bodyMd: "1. Warm notes." },
+    },
+  });
+}
+
+/** Renders the invoice sample once; returns the HTML length (0 on failure: it never stops a Worker from starting). */
+export function warmInvoicePdf(): number {
+  try {
+    return renderDocumentHtml(toInvoiceView(warmInvoiceEnvelope(), DEFAULT_VIEW_CONFIG)).length;
+  } catch {
     return 0;
   }
 }

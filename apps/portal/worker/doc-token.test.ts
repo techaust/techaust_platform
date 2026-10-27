@@ -154,8 +154,9 @@ describe("everything else is the same 404 [POR-06]", () => {
 
   it("a voided document stops opening even if it was open when the link was made", async () => {
     const f = await fixtures();
+    // M5.1 (documents_invoice_status_flow, documents_void_pairing): only an ISSUED invoice can be voided, so this is the fixture's issued one.
     const { token, stmt } = await docTokenStmt(env.DB, {
-      documentId: f.b.docs.proforma,
+      documentId: f.b.docs.issued,
       purpose: "view_pay",
       expiresAt: Date.now() + 60_000,
     });
@@ -164,7 +165,7 @@ describe("everything else is the same 404 [POR-06]", () => {
     await env.DB.prepare(
       "UPDATE documents SET status = 'void', voided_at = ?1, void_reason = 'test' WHERE id = ?2",
     )
-      .bind(Date.now(), f.b.docs.proforma)
+      .bind(Date.now(), f.b.docs.issued)
       .run();
     expect((await use(token)).status).toBe(404);
   });

@@ -180,11 +180,12 @@ type MilestoneRow = {
   status: MilestoneStatus;
   delivered_at: number | null;
   document_id: string | null;
+  is_advance: number;
   created_at: number;
   updated_at: number;
 };
 const MILESTONE_COLS =
-  "id, project_id, position, title, amount_minor, pct_bp, due_date, status, delivered_at, document_id, created_at, updated_at";
+  "id, project_id, position, title, amount_minor, pct_bp, due_date, status, delivered_at, document_id, is_advance, created_at, updated_at";
 const milestoneView = (r: MilestoneRow, budget: number | null) => ({
   id: r.id,
   projectId: r.project_id,
@@ -203,6 +204,7 @@ const milestoneView = (r: MilestoneRow, budget: number | null) => ({
   status: r.status,
   deliveredAt: r.delivered_at,
   documentId: r.document_id,
+  isAdvance: r.is_advance === 1,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });
@@ -656,7 +658,9 @@ export const milestones = new Hono<AppEnv>()
     const t = Math.max(Date.now(), row.updated_at + 1);
     const done = await mutate(c, {
       main: c.env.DB.prepare(
-        `UPDATE milestones SET status = ?2, updated_at = ?3 WHERE id = ?1 AND status = ?4 AND document_id IS NULL AND ${MILESTONE_CLIENT_LIVE}`,
+        // M5.1 (LD12): the move to Ready to bill is when the work was delivered (the date of supply the 30-day invoice rule and the 25-day alert count
+        // from); it is kept when the milestone is invoiced, and kept if it goes back to pending and returns.
+        `UPDATE milestones SET status = ?2, updated_at = ?3${to === "ready_to_bill" ? ", delivered_at = coalesce(delivered_at, ?3)" : ""} WHERE id = ?1 AND status = ?4 AND document_id IS NULL AND ${MILESTONE_CLIENT_LIVE}`,
       ).bind(id, to, t, row.status),
       action: "milestone.status",
       entityType: "milestone",
