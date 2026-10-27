@@ -17,6 +17,7 @@ import { renderEmail } from "@techaust/email";
 import {
   renderCertificateHtml,
   renderStatementHtml,
+  STATEMENT_LAYOUT_ID,
   statementView,
   warmInvoicePdf,
   warmPdf,
@@ -70,14 +71,14 @@ export function warmStatement(count = 3): number {
       billingEmail: "billing@warm-up.invalid",
       generatedOn: "2026-10-31",
     });
-    canonicalJson({ layout: "statement-1", ...view });
+    canonicalJson({ layout: STATEMENT_LAYOUT_ID, ...view });
     return renderStatementHtml(view).length;
   } catch {
     return 0;
   }
 }
 
-/** Returns the parses and renders that succeeded (5 + 10), so a test notices a warm-up that silently stopped working. */
+/** Returns the parses and renders that succeeded (33 today, counted in `warm.test.ts`), so a test notices a warm-up that silently stopped working. */
 export function warmConsumers(): number {
   const parsed = warmConsumerMessages() + warmReportMessages();
   warmLabels();
