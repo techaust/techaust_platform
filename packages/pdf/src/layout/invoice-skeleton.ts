@@ -1,4 +1,4 @@
-// The plain invoice skeleton (M5.1 stage B3): every Rule 46 field of a tax invoice printed in a readable order, in the classes the proposal layout
+// The plain invoice skeleton (M5.1 stage B3; since phase 2 only for the invoice-family types other than the tax invoice, which has ./invoice.ts): every Rule 46 field of a tax invoice printed in a readable order, in the classes the proposal layout
 // already styles (so the page is usable now), and nothing designed. The designer builds the real tax invoice layout on this in phase 2
 // (`layout/invoice.ts`, docs/06 §7.3, wording from 07-R); until then the words below are the skeleton's own and PENDING that approval, and every
 // rule printed is VERIFY WITH CA/LEGAL.
@@ -20,6 +20,7 @@ import { esc } from "../escape.ts";
 import { PDF_LOGOS, PDF_SYMBOL } from "../generated/assets.ts";
 import type { InvoiceView, InvoiceViewLine } from "../invoice-types.ts";
 import { markdownBlocks } from "../markdown-html.ts";
+import { TAX_INVOICE_CSS, taxInvoiceBody } from "./invoice.ts";
 import { cssString } from "./styles.ts";
 
 /** The skeleton's words: 07-R §6 where it has a line (PENDING the owner's word-for-word approval), the rest plain. The designer takes them over in phase 2. */
@@ -204,8 +205,13 @@ function notesBlock(view: InvoiceView): string {
   return `<div class="block"><h3>${esc(view.notes.title)}</h3><div class="terms">${markdownBlocks(view.notes.bodyMd).join("")}</div></div>`;
 }
 
-/** The body of an invoice (inside `<body>`). */
+/** The body of an invoice (inside `<body>`): a tax invoice in its designed layout (./invoice.ts), any other invoice-family type in this skeleton
+ * until M5.2 styles it. */
 export function invoiceBody(view: InvoiceView): string {
+  return view.type === "tax_invoice" ? taxInvoiceBody(view) : skeletonBody(view);
+}
+
+function skeletonBody(view: InvoiceView): string {
   return `<div class="doc doc--invoice">${masthead(view)}
 ${parties(view)}
 <div class="money">${itemsTable(view)}${totalsBlock(view)}${summaryTable(view)}</div>
@@ -215,9 +221,10 @@ ${signatoryBlock(view)}
 <p class="integrity" data-testid="integrity">${esc(view.integrity)}</p></div>`;
 }
 
-/** What the skeleton adds to the template CSS: the body size of the document (the proposal layout sets it on its own class). */
-export const INVOICE_SKELETON_CSS =
-  ".doc--invoice { font-size: var(--print-proposal-body); line-height: var(--print-proposal-leading); }";
+/** What the invoice family adds to the template CSS: the skeleton's body size (the proposal layout sets it on its own class), then the tax invoice
+ * layout's rules (all scoped to `.doc--tax-invoice`, so they never reach the skeleton). */
+export const INVOICE_SKELETON_CSS = `.doc--invoice { font-size: var(--print-proposal-body); line-height: var(--print-proposal-leading); }
+${TAX_INVOICE_CSS}`;
 
 const SYMBOL_URI = `data:image/svg+xml,${encodeURIComponent(PDF_SYMBOL)}`;
 

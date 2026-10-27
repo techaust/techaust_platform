@@ -1,4 +1,4 @@
-// The invoice envelope, view and plain skeleton (M5.1 stage B: B1, B3; test 11). VERIFY WITH CA/LEGAL for every rule printed (Rule 46, Rule 48).
+// The invoice envelope and view (M5.1 stage B: B1; test 11; the printed layout and the skeleton are tested in ./invoice-layout.test.ts). VERIFY WITH CA/LEGAL for every rule printed (Rule 46, Rule 48).
 import { describe, expect, it } from "vitest";
 import { invoiceEnvelopeOfBundle } from "../src/invoice-bundle.ts";
 import {
@@ -11,8 +11,6 @@ import {
 } from "../src/invoice-envelope.ts";
 import type { InvoiceEnvelope } from "../src/invoice-types.ts";
 import { halfRate, toInvoiceView } from "../src/invoice-view.ts";
-import { pdfOptionsFor } from "../src/options.ts";
-import { DOCUMENT_CSP, isInvoiceView, renderDocumentHtml } from "../src/render.ts";
 import { warmInvoiceEnvelope, warmInvoicePdf } from "../src/sample.ts";
 import { DEFAULT_VIEW_CONFIG } from "../src/view.ts";
 import {
@@ -441,118 +439,6 @@ describe("toInvoiceView", () => {
       "settings/signature",
     ])
       expect(text, key).not.toContain(key);
-  });
-});
-
-describe("the plain invoice skeleton prints every Rule 46 field [B3]", () => {
-  const html = async (
-    name: (typeof INVOICE_FIXTURE_NAMES)[number],
-    signature?: { mime: string; base64: string },
-  ) => {
-    const { envelope } = await buildInvoiceFixture(name);
-    return renderDocumentHtml(toInvoiceView(envelope, DEFAULT_VIEW_CONFIG, signature ? { signature } : {}));
-  };
-  const body = (h: string) => h.slice(h.indexOf("<body>"));
-
-  it("an intra-state invoice: supplier, number, date, recipient, State, SAC, description, quantity, unit, taxable value, CGST and SGST per head, place of supply, reverse charge, signatory", async () => {
-    const h = body(await html("intra"));
-    for (const must of [
-      "TecHaust Technologies",
-      "1 Sample Supplier Road, Balurghat, West Bengal 733101",
-      "GSTIN 19ABCDE1234F1ZX",
-      "Principal place of business",
-      "TH/INV/2627/0012",
-      "28 Oct 26",
-      "Sample Client",
-      "1 Sample Road",
-      "State: West Bengal (19)",
-      "Place of supply: West Bengal (19)",
-      "SAC 998314",
-      "Sample design work",
-      "Two sample screens",
-      "Taxable value",
-      ">CGST %<",
-      ">SGST %<",
-      ">9 %<",
-      "Tax summary",
-      "Amount in words:",
-      "Tax payable on reverse charge: No",
-      "ORIGINAL FOR RECIPIENT",
-      "Authorised signatory",
-      "Due date",
-      "04 Nov 26",
-      "SAMPLE BANK",
-      "Notes, version 2",
-      'data-testid="integrity"',
-      'data-testid="total"',
-      'data-testid="rupee"',
-    ])
-      expect(h, must).toContain(/^>[0-9]/.test(must) ? nb(must) : must);
-    expect(h).not.toContain("IGST");
-  });
-
-  it("an inter-state invoice prints IGST 18 % and neither CGST nor SGST", async () => {
-    const h = body(await html("inter"));
-    expect(h).toContain(">IGST %<");
-    expect(h).toContain(nb(">18 %<"));
-    expect(h).toContain("State: Maharashtra (27)");
-    expect(h).not.toContain("CGST");
-    expect(h).not.toContain("SGST");
-  });
-
-  it("an unregistered recipient prints no GSTIN line", async () => {
-    const h = body(await html("discount"));
-    expect(h).toContain("State: West Bengal (19)");
-    const billTo = h.slice(h.indexOf("Billed to"), h.indexOf('class="party party--doc"'));
-    expect(billTo).toContain("Sample Unregistered Person");
-    expect(billTo).not.toContain("GSTIN");
-  });
-
-  it("a signature image appears only when one is set and verified; the signatory line is always there", async () => {
-    const without = body(await html("intra"));
-    expect(without).not.toContain("<img");
-    expect(without).toContain('data-testid="signatory"');
-    const unverified = body(await html("signed"));
-    expect(unverified).not.toContain("<img");
-    const withSig = body(await html("signed", { mime: "image/png", base64: "QUJD" }));
-    expect(withSig).toContain('<img data-testid="signature"');
-    expect(withSig).toContain("data:image/png;base64,QUJD");
-    expect(withSig).toContain('data-testid="signatory"');
-  });
-
-  it("no bank block and no notes when the invoice has none (nothing is invented)", async () => {
-    const h = body(await html("bare"));
-    expect(h).not.toContain("Account number");
-    expect(h).not.toContain("Notes, version");
-    expect(h).toContain("How to pay");
-  });
-
-  it("the page is self-contained: the CSP, no script, no external URL; the footer and page numbers are in the page rules", async () => {
-    const full = await html("intra");
-    expect(full).toContain(DOCUMENT_CSP);
-    expect(full).not.toMatch(/<script|<link|@import|(?:src|href)=["']?https?:|url\(["']?https?:/i);
-    expect(full).toContain("@bottom-left");
-    expect(full).toContain("TH/INV/2627/0012");
-    expect(full).toContain("<title>Tax Invoice TH/INV/2627/0012 – Sample Client</title>");
-  });
-
-  it("escapes what a person typed: a script in a description or a name never reaches the page as markup", async () => {
-    const { envelope } = await buildInvoiceFixture("intra");
-    const e = clone(envelope);
-    (e.snapshot.lines[0] as { description: string }).description = '<script>alert("x")</script>';
-    (e.snapshot.header.recipient as { legalName: string }).legalName = "A & B <b>Ltd</b>";
-    (e.snapshot.header.recipient as { displayName?: string }).displayName = "";
-    const h = renderDocumentHtml(toInvoiceView(e, DEFAULT_VIEW_CONFIG));
-    expect(h).not.toContain("<script>alert");
-    expect(h).toContain("&lt;script&gt;");
-    expect(h).toContain("A &amp; B &lt;b&gt;Ltd&lt;/b&gt;");
-  });
-
-  it("renderDocumentHtml tells an invoice view from a proposal's; the PDF options are the same for both", async () => {
-    const { envelope } = await buildInvoiceFixture("intra");
-    const view = toInvoiceView(envelope, DEFAULT_VIEW_CONFIG);
-    expect(isInvoiceView(view)).toBe(true);
-    expect(pdfOptionsFor(view)).toMatchObject({ format: "a4", tagged: true });
   });
 });
 
