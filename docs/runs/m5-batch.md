@@ -177,6 +177,17 @@ Lead's check: the plan keeps the Free plan (cron count unchanged: `30 * * * *` r
 49. **Signed-in "Invoices" in the client portal now?** (M5.4) (Recommended, built) Yes: a list plus the same page as the emailed link, because the emails say "in your client portal". Alternative: the link page only until M7.1, with that line removed from the emails.
 50. **When reminders start** (M5.4) (Recommended, built) When you first email the invoice; an invoice never emailed gets none. Alternative: from issue, to the invoice's contact.
 51. **Missed care periods** (M5.4) (Recommended, built) Only the current period is billed automatically; an older unbilled period rings a bell for you to invoice by hand.
+52. **What "Invoiced" shows on the dashboard** (M5.5) (Recommended, built) The value before GST, like "Pipeline value"; "Outstanding" and "Overdue" include GST (what clients owe). Alternative: invoiced including GST.
+53. **The 12 months + 15 days GST deadline (Rule 96A)** (VERIFY WITH CA/LEGAL; M5.5) (Recommended, built) Only for exports under your LUT; exports where IGST was charged show only the FEMA deadlines (9 months, or 12 months for INR). Alternative: both deadlines for every export.
+54. **Who gets the realisation and EDF alerts** (M5.5) (Recommended, built) Owners: a bell and one email per stage, once. Alternative: the Accountant too.
+55. **The EDF reminder in a month with no export invoice** (M5.5) (Recommended, built) No email. Alternative: a "nothing to file this month" email.
+56. **Downloading the EDF list and the realisation report** (M5.5) (Recommended, built) As viewing them: Owner and Accountant, no fresh code (GST exports keep the fresh code). Alternative: a fresh code for these too.
+57. **Statement PDFs** (M5.5) (Recommended, built) Kept 30 days, then deleted; make a new one any time. Alternative: kept with the client's records until erase.
+58. **What a statement lists before online payments (M6)** (VERIFY WITH CA/LEGAL; M5.5) (Recommended, built) Debits: tax invoices, export invoices and debit notes. Credits: credit notes and the advance payments recorded against proformas. Proformas aren't listed (not a tax document; their payment shows through the tax invoice). Alternative: unpaid proformas as a note under the table, without changing the balance.
+59. **Who may make a statement PDF** (M5.5) (Recommended, built) Anyone who can see the client's finance tab (Owner, Staff, Accountant). Alternative: Owner and Accountant only.
+60. **A FEMA realisation date extended by your bank or RBI** (M5.5) (Recommended, built) Recorded later with the FIRA/FIRC uploads in M6.1; until then the tracker shows the standard date. Alternative: a date and reference per invoice now.
+61. **GST and EDF files for an anonymised individual client** (VERIFY WITH CA/LEGAL, DPDP and GST retention; M5.5) (Recommended, built) The name and address exactly as issued, so the return and the bank filing match the invoice. Alternative: the redacted name.
+62. **Emailing statements to clients** (M5.5) (Recommended, built) Not in M5: download the PDF and send it yourself; "Email statement" (from billing@) comes with portal statements in M7. Alternative: build it in M5.5, to contacts with portal access.
 
 Not asked, because docs/13 or docs/04 §0 already decide them:
 - the numbering format;
@@ -249,7 +260,7 @@ Not asked, because docs/13 or docs/04 §0 already decide them:
 - **M5.3** credit/debit notes: stages A and B done on `feat/m5.3-builder` (6fa73fa); the **designer** is building the note screens and PDFs on `feat/m5.3-screens` (LD54: print the parent number; flip `LAYOUT_PRINTS_PARENT`). Next: review (code + visual, Opus high) → fixes (incl. the lead's `FINANCE_AUDIT_ACTIONS` answer) → re-check → PR.
 - **M5.4** send/recurring/reminders: brief written (`docs/runs/m5.4-send-recurring-reminders.md`, LD55–LD70, Q42–Q51). Builder starts from M5.3's final branch after M5.3's review fixes. Cron count checked (1 today → 2 of 5). Copy 07-U still to draft (list in the run file).
 - **M5.5a** GST core: done and reviewed, parked on `feat/m5.5a-gst-core` (17eff2b); M5.5b's builder first fixes the re-check lows 2–7 listed there.
-- **M5.5b** (routes, alerts, screens): brief next (analyst).
+- **M5.5b** (routes, alerts, screens): brief written (`docs/runs/m5.5b-exports-statement.md`, LD71–LD88, Q52–Q62); builder starts from M5.4's final branch. **Owner must hear:** realisation alerts fire for SWIFT-paid exports until M6 records payments (staging only).
 - **Copy drafts (pending owner approval):** 07-R, 07-S (§8 has many added lines), 07-T (§8). 07-U (M5.4) and 07-V (M5.5) to draft.
 - **Owner questions:** Q1–Q51 on this page, each built with its recommended default.
 - **Lead side worktrees:** `../m5-lead` (docs branch `feat/m5.1-invoices`), `../m52-b` (`feat/m5.2-builder`), `../m53-b` (`feat/m5.3-builder`), `../m55a-int` (`feat/m5.5a-gst-core`). Screenshots in the main checkout's `.logs/shots/`.
