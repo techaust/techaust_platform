@@ -20,8 +20,11 @@ import {
   statusOn,
   type TermsRow,
 } from "./care.ts";
-import { formatDate, parseIsoDate } from "./dates.ts";
+import { addDays, formatDate, parseIsoDate, toIsoDate } from "./dates.ts";
 import { formatMoney, money } from "./money.ts";
+
+/** The IST hour the care scan runs (the hourly tick queues `care.scan` at 06:00 IST; jobs `hourlyMessages`). */
+export const CARE_SCAN_HOUR_IST = 6;
 
 /** The catalogue services the invoice lines come from (S16 Care Plans, S17 AI Ops, S18 Dev Subscription: `CARE_SERVICE_CODES` in care.ts). */
 export type CareServiceCode = "S16" | "S17" | "S18";
@@ -85,6 +88,8 @@ export function careDue(
 /**
  * The day the billing job next drafts this plan's invoice, as the job sees it (`careDue`): the start date before the plan starts; today when the current period is due and
  * not yet billed (the next 06:00 IST scan picks it up); else the first day of the next period. null for a cancelled plan. Pure: the same inputs as `careDue`.
+ * `istHour` (0 to 23, the hour it is now in IST): from the scan's hour on, today's scan has already run (a period due and unbilled now is a catch-up, drafted at the next scan), so the
+ * day is TOMORROW, not today (review 2026-10-28, finding 11). Without it the answer is as before.
  */
 export function nextBillingDayOf(
   today: string,
@@ -92,12 +97,18 @@ export function nextBillingDayOf(
   status: CareStatus,
   lastBilled: string | null,
   statuses: readonly StatusRow[],
+  istHour?: number,
 ): string | null {
   if (status === "cancelled") return null;
   const period = billingPeriodOf(today, plan);
   if (!period) return plan.startDate;
   const due = careDue(today, plan, lastBilled, statusOn(statuses, period.start)?.status ?? null, statuses);
-  return due.due ? today : nextPeriodStart(today, plan.billingDay);
+  if (!due.due) return nextPeriodStart(today, plan.billingDay);
+  if (istHour !== undefined && istHour >= CARE_SCAN_HOUR_IST) {
+    const d = parseIsoDate(today);
+    if (d) return toIsoDate(addDays(d, 1));
+  }
+  return today;
 }
 
 /**

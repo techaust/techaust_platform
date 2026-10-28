@@ -26,6 +26,7 @@ import {
 } from "@techaust/core/care";
 import { istDate, toIsoDate } from "@techaust/core/dates";
 import { uuidv7 } from "@techaust/core/ids";
+import { istHourOf } from "@techaust/core/invoices";
 import { can, decide } from "@techaust/core/permissions";
 import {
   assembleCare,
@@ -502,6 +503,7 @@ export const carePlans = new Hono<AppEnv>()
               { startDate: d.plan.start_date, billingDay: d.plan.billing_day, status: d.plan.status },
               d.statuses,
               today,
+              istHourOf(Date.now()),
             ),
           }
         : {}),

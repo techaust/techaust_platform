@@ -7,6 +7,7 @@ import {
   autoIssueEligibility,
   billingPeriodOf,
   CARE_LINE_WORDS,
+  CARE_SCAN_HOUR_IST,
   type CareCatalogue,
   careDue,
   careLines,
@@ -43,6 +44,33 @@ describe("nextBillingDayOf: the day the job next drafts the plan", () => {
     expect(
       nextBillingDayOf("2026-11-06", plan(5, "2026-01-01"), "cancelled", "2026-11-05", active),
     ).toBeNull();
+  });
+  it("a period due and unbilled is today before the scan's hour and tomorrow from 06:00 IST on (the scan has run); billed, paused or not started, the hour changes nothing (finding 11)", () => {
+    const p = plan(5, "2026-01-01");
+    expect(CARE_SCAN_HOUR_IST).toBe(6);
+    // before the 06:00 scan: today, as without the hour
+    for (const h of [0, 5]) {
+      expect(nextBillingDayOf("2026-11-06", p, "active", "2026-10-05", active, h)).toBe("2026-11-06");
+    }
+    expect(nextBillingDayOf("2026-11-06", p, "active", "2026-10-05", active)).toBe("2026-11-06");
+    // from 06:00 on: tomorrow, across a month end and a year end too
+    for (const h of [6, 7, 15, 23]) {
+      expect(nextBillingDayOf("2026-11-06", p, "active", "2026-10-05", active, h)).toBe("2026-11-07");
+    }
+    expect(nextBillingDayOf("2026-11-30", p, "active", "2026-10-05", active, 10)).toBe("2026-12-01");
+    expect(nextBillingDayOf("2026-12-31", plan(5, "2026-01-01"), "active", "2026-11-05", active, 10)).toBe(
+      "2027-01-01",
+    );
+    // the billing day itself, never billed: due today until 06:00, tomorrow after (a catch-up)
+    expect(nextBillingDayOf("2026-11-05", p, "active", null, active, 5)).toBe("2026-11-05");
+    expect(nextBillingDayOf("2026-11-05", p, "active", null, active, 6)).toBe("2026-11-06");
+    // already billed: the next period's first day, whatever the hour
+    expect(nextBillingDayOf("2026-11-06", p, "active", "2026-11-05", active, 20)).toBe("2026-12-05");
+    // not started: the start date; cancelled: none
+    expect(nextBillingDayOf("2026-11-04", plan(5, "2026-12-01"), "active", null, active, 20)).toBe(
+      "2026-12-01",
+    );
+    expect(nextBillingDayOf("2026-11-06", p, "cancelled", "2026-11-05", active, 20)).toBeNull();
   });
   it("a plan that was paused on the period's first day is not due: the next period", () => {
     const paused = [
