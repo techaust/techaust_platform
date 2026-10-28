@@ -37,12 +37,13 @@ const DOC_LABELS: Readonly<Record<string, string>> = {
   debit_note: "Debit Note",
 };
 
-/** 07-T §3: the label of each reason a person can pick (the code is what is frozen; `other` is then described in words). Q35: a debit note has two. */
+/** 07-T §3: the label of each reason a person can pick (the code is what is frozen; `other` is then described in words). Q35 (owner 2026-10-28): a debit note has three (07-T §9). */
 const REASON_LABELS: Readonly<Record<string, string>> = {
   price_correction: "Price correction",
   service_not_delivered: "Service not delivered",
   service_deficient: "Service deficient",
   discount_after_sale: "Discount after sale",
+  tax_charged_too_low: "Tax charged too low",
   other: "Other",
 };
 

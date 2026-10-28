@@ -43,8 +43,10 @@ export const noteKindOf = (type: NoteType): NoteKind => (type === "credit_note" 
 export const noteTypeOf = (kind: NoteKind): NoteType => (kind === "credit" ? "credit_note" : "debit_note");
 
 /**
- * The reasons a person can pick (07-T §3; VERIFY WITH CA/LEGAL). "Discount after sale": the s.34(1) amendment is NOT in force (08-A :259), so a credit note for it is
- * kept as a choice the CA must confirm. A debit note has two (Q35): the richer list of 07-T waits for the owner's word.
+ * The reasons a person can pick (07-T §3 and §9). "Discount after sale" is a valid credit-note reason for notes DATED from 1 November 2026 (IST): s.15(3)(b) was
+ * substituted and s.34(1) extended by ss.153 to 154 of the Finance Act 2026, in force from that day by Notification 03/2026-CT (Researched 2026-10-28, 08-C RA-02; the
+ * CBIC repository still shows "yet to be notified": re-read it after 1 November). A debit note has three (Q35, owner 2026-10-28): "Tax charged too low" adds tax only
+ * (s.34(3); Researched 2026-10-28, 08-C RA-22).
  */
 export const CREDIT_REASONS = [
   "price_correction",
@@ -53,7 +55,12 @@ export const CREDIT_REASONS = [
   "discount_after_sale",
   "other",
 ] as const;
-export const DEBIT_REASONS = ["price_correction", "other"] as const;
+export const DEBIT_REASONS = ["price_correction", "tax_charged_too_low", "other"] as const;
+/** The first IST day a credit note for "Discount after sale" may be dated (RA-02). The SQL twin is `DISCOUNT_AFTER_SALE_FROM_SQL` in `@techaust/db/issue` (a test compares them). */
+export const DISCOUNT_AFTER_SALE_FROM = "2026-11-01";
+/** Whether a note of this reason may carry this date (ISO, the IST issue day): only "Discount after sale" is dated-limited. */
+export const reasonInForce = (reasonCode: string, noteDate: string): boolean =>
+  reasonCode !== "discount_after_sale" || noteDate >= DISCOUNT_AFTER_SALE_FROM;
 export const NOTE_REASONS: Readonly<Record<NoteKind, readonly string[]>> = {
   credit: CREDIT_REASONS,
   debit: DEBIT_REASONS,
@@ -75,6 +82,11 @@ export type NoteRequest = {
   readonly mode: "lines" | "amount" | "full";
   /** The amount typed (GST included) when the mode is `amount`. */
   readonly grossMinor?: number;
+  /**
+   * A debit note for "Tax charged too low" (Q35): the total tax to add (above zero, in the invoice's currency). The takes then name the lines the tax is split over, each
+   * with a taxable value of zero; the split is worked out again from this amount at the issue (core `taxOnlyDebitNote`).
+   */
+  readonly taxMinor?: number;
   readonly takes: readonly NoteTake[];
 };
 
@@ -124,6 +136,7 @@ export function noteOfFromStored(v: unknown): NoteOf | null {
     return null;
   if (request.mode !== "lines" && request.mode !== "amount" && request.mode !== "full") return null;
   if (request.grossMinor !== undefined && !isNum(request.grossMinor)) return null;
+  if (request.taxMinor !== undefined && !(isNum(request.taxMinor) && request.taxMinor > 0)) return null;
   if (!isStr(reason.code) || !isStr(reason.text)) return null;
   const p = parent;
   if (
@@ -167,6 +180,7 @@ export function noteOfFromStored(v: unknown): NoteOf | null {
     request: {
       mode: request.mode,
       ...(request.grossMinor !== undefined ? { grossMinor: request.grossMinor } : {}),
+      ...(request.taxMinor !== undefined ? { taxMinor: request.taxMinor } : {}),
       takes: takes.map((t) => ({ line: t.line as number, taxableMinor: t.taxableMinor as number })),
     },
   };
@@ -200,6 +214,7 @@ export const NOTE_BLOCKER_CODES = [
   "line_credit_exceeds",
   "credit_deadline_passed",
   "note_reason_required",
+  "discount_reason_not_in_force",
   "computed_errors",
   "zero_total",
   "reverse_charge_text",
@@ -231,6 +246,8 @@ export type NoteFacts = {
   /** How many notes of this kind are already issued on the parent. */
   readonly issuedOfKind: number;
   readonly reason: { readonly code: string; readonly text: string };
+  /** The IST day the note would be dated (the issue day): "Discount after sale" before 1 November 2026 is blocked. Left out: the date is not judged. */
+  readonly issueDate?: string;
   /** What the amounts check found: nothing chosen, or more than is left (on a line, or on the invoice as a whole). */
   readonly request: {
     readonly empty: boolean;
@@ -278,6 +295,8 @@ export function noteBlockers(f: NoteFacts, checklist: Pick<ChecklistSettings, "b
   if (f.deadline?.passed) out.push({ code: "credit_deadline_passed", date: f.deadline.lastDay });
   if (blank(f.reason.code) || (f.reason.code === "other" && blank(f.reason.text)))
     out.push({ code: "note_reason_required" });
+  if (f.issueDate !== undefined && !reasonInForce(f.reason.code, f.issueDate))
+    out.push({ code: "discount_reason_not_in_force" });
   if (f.taxErrorCount > 0) out.push({ code: "computed_errors" });
   // (An empty or too-big request has its own code above; a zero total then adds nothing.)
   else if ((f.totalMinor === null || f.totalMinor <= 0) && !f.request.empty && f.request.exceeds === null)

@@ -35,6 +35,7 @@ import {
   creditNote,
   type TaxContext,
   type TaxIssue,
+  taxOnlyDebitNote,
 } from "@techaust/core/tax";
 import {
   headerExtrasJson,
@@ -66,8 +67,21 @@ export const PARENT_FULLY_CREDITED = e(
   "parent_fully_credited",
   "This invoice has already been credited in full.",
 );
-/** A debit note on an invoice that is credited in full (the 07-T line is the owner's to give: `[Placeholder]` until then). */
-export const DEBIT_PARENT_FULLY_CREDITED = e("debit_parent_fully_credited", "[Placeholder]");
+/** A debit note on an invoice that is credited in full (07-T §9). */
+export const DEBIT_PARENT_FULLY_CREDITED = e(
+  "debit_parent_fully_credited",
+  "This invoice has been credited in full, so a debit note can't be issued against it. Issue a new invoice instead.",
+);
+/** 07-T §9 (Q35, owner 2026-10-28): the taxable value of a "Tax charged too low" debit note is zero; only the tax to add is entered. */
+export const DEBIT_TAX_ONLY_INVALID = e(
+  "debit_tax_only_invalid",
+  'Enter tax only: the taxable value of a "Tax charged too low" note is zero.',
+);
+/** 07-T §9 (Researched 2026-10-28, 08-C RA-02): a credit note for a discount after sale may be dated from 1 November 2026. */
+export const DISCOUNT_REASON_NOT_IN_FORCE = e(
+  "discount_reason_not_in_force",
+  "A credit note for a discount after sale can be dated from 1 November 2026.",
+);
 export const CREDIT_DEADLINE_PASSED = e(
   "credit_deadline_passed",
   "The deadline for a credit note on this invoice has passed.",
@@ -111,12 +125,12 @@ export const IMS_NOT_APPLICABLE = e(
   "IMS status only applies to credit notes for GST-registered clients.",
 );
 /** 07-T §8: "Because of rounding, the nearest amount this credit note can be is {closest}. Use that amount instead?" (the button "Use {closest}" is the screen's).
- * With no closest amount (below one rounding unit) 07-T has no line yet: `[Placeholder]` until the owner approves one (batch Q66). */
+ * With no closest amount (below one rounding unit): 07-T §9 (batch Q66). */
 export const creditAmountUnfit = (closestMinor: number | null, currency: "INR" | "USD"): ApiError =>
   e(
     "credit_amount_unfit",
     closestMinor === null
-      ? "[Placeholder]"
+      ? "This amount is too small to credit after rounding. Enter a larger amount."
       : `Because of rounding, the nearest amount this credit note can be is ${formatMoney(money(closestMinor, currency))}. Use that amount instead?`,
   );
 export const CREDIT_DATA_DAMAGED = e(
@@ -442,16 +456,48 @@ export function resolveDebit(
   return { ok: true, request: { mode: "lines", takes: sorted }, computed: r.value };
 }
 
-/** The same computed document worked out again from STORED takes (the issue, a save): a credit note as a `lines` request over what was issued since, a debit note as a debit. */
+/**
+ * The computed document of a "Tax charged too low" debit note (Q35, 07-T §9): the tax to add (`taxMinor`, above zero) split over the invoice's lines that carry tax, with a taxable
+ * value of zero, at the invoice's supply, heads and rates (core `taxOnlyDebitNote`). A bad amount or an invoice with no tax to correct is `debit_tax_only_invalid` (400).
+ */
+export function resolveDebitTaxOnly(
+  p: ParentCtx,
+  taxMinor: number,
+  taxCtx: TaxContext,
+): { ok: true; request: NoteRequest; computed: ComputedDocument } | { ok: false; refusal: NoteRefusal } {
+  const r = taxOnlyDebitNote(p.computed, taxMinor, taxCtx);
+  if (!r.ok) {
+    if (r.errors.some((x) => x.code === "credit_line_invalid" || x.code === "credit_empty"))
+      return { ok: false, refusal: { status: 400, error: DEBIT_TAX_ONLY_INVALID } };
+    if (r.errors.some((x) => x.code === "credit_shape_mismatch"))
+      return { ok: false, refusal: { status: 409, error: CREDIT_DATA_DAMAGED } };
+    return { ok: false, refusal: issuesOf(r.errors) };
+  }
+  return {
+    ok: true,
+    request: {
+      mode: "lines",
+      taxMinor,
+      takes: r.value.lines.map((l) => ({ line: l.index, taxableMinor: 0 })),
+    },
+    computed: r.value,
+  };
+}
+
+/** The same computed document worked out again from the STORED request (the issue, a save): a credit note as a `lines` request over what was issued since, a debit note as a debit (or as tax only). */
 export function recomputeNote(
   kind: NoteKind,
   p: ParentCtx,
-  takes: readonly NoteTake[],
+  request: Pick<NoteRequest, "takes" | "taxMinor">,
   taxCtx: TaxContext,
   today: CalendarDate,
 ): { computed: ComputedDocument | null; errors: TaxIssue[]; refusal: NoteRefusal | null } {
+  const takes = request.takes;
   if (kind === "debit") {
-    const r = resolveDebit(p, takes, taxCtx, today);
+    const r =
+      request.taxMinor !== undefined
+        ? resolveDebitTaxOnly(p, request.taxMinor, taxCtx)
+        : resolveDebit(p, takes, taxCtx, today);
     return r.ok
       ? { computed: r.computed, errors: [], refusal: null }
       : { computed: null, errors: [], refusal: r.refusal };
@@ -518,6 +564,7 @@ export function blockersOfNote(a: {
       },
       issuedOfKind: a.kind === "credit" ? a.p.issued.credit : a.p.issued.debit,
       reason: a.stored.reason,
+      issueDate: a.issueDate,
       request: asked,
       taxErrorCount: a.re.computed || known ? 0 : 1,
       totalMinor: a.re.computed?.totalMinor ?? null,

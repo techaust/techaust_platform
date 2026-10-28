@@ -5,7 +5,8 @@
 // packages/db/src/issue.ts); when nothing was written, one read says why. Audit rows hold ids, numbers, codes and amounts, never the reason's text.
 //
 // Never in a request (strict objects make it a 400): a type, a status, a number, a hash, `trustRates`, a due date, a computed value, the invoice's supply or rate or
-// route (a note always has the invoice's own), a tax-only debit note (a debit note adds taxable value; its tax is the invoice's rate on it).
+// route (a note always has the invoice's own). A debit note adds taxable value at the invoice's rate on it, except the reason "Tax charged too low" (Q35, owner
+// 2026-10-28): that one carries `taxAmountMinor` and no lines, a taxable value of zero and the tax split over the invoice's heads (core `taxOnlyDebitNote`).
 import { uuidv7 } from "@techaust/core/ids";
 import {
   CREDIT_REASONS,
@@ -16,6 +17,7 @@ import {
   NOTES_MAX,
   type NoteKind,
   noteKindOf,
+  reasonInForce,
 } from "@techaust/core/invoices";
 import type { ComputedDocument } from "@techaust/core/tax";
 import { noteDraftStatements } from "@techaust/db/issue";
@@ -38,6 +40,8 @@ import {
   CREDIT_DEADLINE_PASSED,
   creditAllowed,
   DEBIT_PARENT_FULLY_CREDITED,
+  DEBIT_TAX_ONLY_INVALID,
+  DISCOUNT_REASON_NOT_IN_FORCE,
   deadlineOf,
   IMS_NOT_APPLICABLE,
   IMS_NOT_PENDING,
@@ -65,6 +69,7 @@ import {
   recomputeNote,
   resolveCredit,
   resolveDebit,
+  resolveDebitTaxOnly,
   storedNoteOf,
 } from "./note-model.ts";
 import {
@@ -114,9 +119,17 @@ export const creditNoteBody = z
     }),
   );
 
+/**
+ * The tax a "Tax charged too low" debit note adds (Q35): any whole number here, judged in the route (above zero and workable, else `debit_tax_only_invalid`, so a bad shape
+ * has its own code and words instead of a generic form error).
+ */
+const taxAmount = z.int().check(z.minimum(-9_000_000_000_000), z.maximum(9_000_000_000_000));
+
+/** A debit note request: the lines (taxable values before GST) for "Price correction" and "Other", or `taxAmountMinor` alone for "Tax charged too low". The route checks the pairing. */
 export const debitNoteBody = z.strictObject({
   expectedParentUpdatedAt: z.int(),
-  lines: takes,
+  lines: z.optional(takes),
+  taxAmountMinor: z.optional(taxAmount),
   reasonCode: z.enum(DEBIT_REASONS),
   reasonText,
   contactId: z.optional(idText),
@@ -128,14 +141,22 @@ export const noteFieldsIn = z
     mode: z.enum(["lines", "amount", "full"]),
     lines: z.optional(takes),
     grossMinor: z.optional(gross),
+    /** A debit note "Tax charged too low" (Q35): the tax to add, instead of `lines`; the route judges it. */
+    taxAmountMinor: z.optional(taxAmount),
     reasonCode: z.enum([...CREDIT_REASONS, ...DEBIT_REASONS]),
     reasonText,
   })
   .check(
-    z.refine(modeShape, {
-      error: "Give the lines, the amount or neither, to match the mode",
-      path: ["mode"],
-    }),
+    z.refine(
+      (v) =>
+        v.taxAmountMinor !== undefined
+          ? v.mode === "lines" && v.lines === undefined && v.grossMinor === undefined
+          : modeShape(v),
+      {
+        error: "Give the lines, the amount or neither, to match the mode",
+        path: ["mode"],
+      },
+    ),
   );
 
 export const imsBody = z.strictObject({
@@ -153,13 +174,37 @@ type ContactRow = ContactFacts & { client_id: string };
 const CONTACT_COLS = "id, client_id, name, email, anonymised_at, updated_at";
 
 /** The reasons a request may carry for this kind; `other` needs its words (07-T §3). A 400 with `note_reason_required`, `bad_request` for a code of the other kind. */
-function reasonRefusal(kind: NoteKind, code: string, text: string | undefined): NoteRefusal | null {
+function reasonRefusal(
+  kind: NoteKind,
+  code: string,
+  text: string | undefined,
+  /** The IST day the note is made on (a draft) or issued on: "Discount after sale" is only for notes dated from 1 November 2026 (RA-02). */
+  noteDate: string,
+): NoteRefusal | null {
   const allowed =
     kind === "credit" ? (CREDIT_REASONS as readonly string[]) : (DEBIT_REASONS as readonly string[]);
   if (!allowed.includes(code)) return { status: 400, error: BAD_REQUEST };
   if (code === "other" && (text === undefined || text.trim() === ""))
     return { status: 400, error: NOTE_REASON_REQUIRED };
+  if (!reasonInForce(code, noteDate)) return { status: 400, error: DISCOUNT_REASON_NOT_IN_FORCE };
   return null;
+}
+
+/**
+ * The pairing of a debit note's reason with its request (Q35): "Tax charged too low" carries `taxAmountMinor` (above zero) and no lines; every other reason carries lines and
+ * no tax amount. A tax-only note with the wrong shape is `debit_tax_only_invalid`; the other pairing wrong is a plain bad request.
+ */
+function debitShapeRefusal(
+  code: string,
+  lines: readonly unknown[] | undefined,
+  taxAmountMinor: number | undefined,
+): NoteRefusal | null {
+  if (code === "tax_charged_too_low") {
+    return lines !== undefined || taxAmountMinor === undefined || taxAmountMinor < 1
+      ? { status: 400, error: DEBIT_TAX_ONLY_INVALID }
+      : null;
+  }
+  return taxAmountMinor !== undefined || lines === undefined ? { status: 400, error: BAD_REQUEST } : null;
 }
 
 /** The state of the invoice a draft may be made for, as the first refusal in the run file's order (the reads and the checks are the same for the create and the save). */
@@ -238,6 +283,8 @@ type CreateBody = {
   mode: "lines" | "amount" | "full";
   lines?: readonly { line: number; taxableMinor: number }[] | undefined;
   grossMinor?: number | undefined;
+  /** A debit note "Tax charged too low" (Q35): the tax to add, instead of `lines`. */
+  taxAmountMinor?: number | undefined;
   reasonCode: string;
   reasonText?: string | undefined;
   contactId?: string | undefined;
@@ -292,12 +339,18 @@ async function createNote(c: Ctx, kind: NoteKind, parentId: string, f: CreateBod
   const dl = kind === "credit" ? deadlineOf(p, settings) : null;
   if (dl && !creditAllowed(today, dl))
     return c.json({ error: CREDIT_DEADLINE_PASSED, date: dl.lastDay, request_id: c.var.rid }, 409);
-  const reasonBad = reasonRefusal(kind, f.reasonCode, f.reasonText);
+  const reasonBad = reasonRefusal(kind, f.reasonCode, f.reasonText, today);
   if (reasonBad) return refuse(c, reasonBad);
+  const shapeBad = kind === "debit" ? debitShapeRefusal(f.reasonCode, f.lines, f.taxAmountMinor) : null;
+  if (shapeBad) return refuse(c, shapeBad);
   const taxCtx = taxContext(settings);
   const ask: NoteAsk = { mode: f.mode, lines: f.lines, grossMinor: f.grossMinor };
   const resolved =
-    kind === "credit" ? resolveCredit(p, ask, taxCtx) : resolveDebit(p, f.lines ?? [], taxCtx, todayOf(now));
+    kind === "credit"
+      ? resolveCredit(p, ask, taxCtx)
+      : f.reasonCode === "tax_charged_too_low"
+        ? resolveDebitTaxOnly(p, f.taxAmountMinor ?? 0, taxCtx)
+        : resolveDebit(p, f.lines ?? [], taxCtx, todayOf(now));
   if (!resolved.ok) return refuse(c, resolved.refusal);
   const id = uuidv7();
   const noteOf = noteOfOf(kind, p, { code: f.reasonCode, text: f.reasonText ?? "" }, resolved.request);
@@ -392,6 +445,7 @@ type PatchFields = {
         mode: "lines" | "amount" | "full";
         lines?: readonly { line: number; taxableMinor: number }[] | undefined;
         grossMinor?: number | undefined;
+        taxAmountMinor?: number | undefined;
         reasonCode: string;
         reasonText?: string | undefined;
       }
@@ -466,8 +520,13 @@ export async function patchNoteDraft(
   if (dl && !creditAllowed(issueDateOf(now), dl))
     return c.json({ error: CREDIT_DEADLINE_PASSED, date: dl.lastDay, request_id: c.var.rid }, 409);
   const reason = fl?.note ? { code: fl.note.reasonCode, text: fl.note.reasonText ?? "" } : stored.reason;
-  const reasonBad = reasonRefusal(kind, reason.code, reason.text);
+  const reasonBad = reasonRefusal(kind, reason.code, reason.text, issueDateOf(now));
   if (reasonBad) return refuse(c, reasonBad);
+  const shapeBad =
+    kind === "debit" && fl?.note
+      ? debitShapeRefusal(fl.note.reasonCode, fl.note.lines, fl.note.taxAmountMinor)
+      : null;
+  if (shapeBad) return refuse(c, shapeBad);
   const taxCtx = taxContext(ctx.settings);
   let request = stored.request;
   let computed: ComputedDocument;
@@ -476,12 +535,14 @@ export async function patchNoteDraft(
     const r =
       kind === "credit"
         ? resolveCredit(p, ask, taxCtx)
-        : resolveDebit(p, fl.note.lines ?? [], taxCtx, todayOf(now));
+        : fl.note.reasonCode === "tax_charged_too_low"
+          ? resolveDebitTaxOnly(p, fl.note.taxAmountMinor ?? 0, taxCtx)
+          : resolveDebit(p, fl.note.lines ?? [], taxCtx, todayOf(now));
     if (!r.ok) return refuse(c, r.refusal);
     request = r.request;
     computed = r.computed;
   } else {
-    const r = recomputeNote(kind, p, stored.request.takes, taxCtx, todayOf(now));
+    const r = recomputeNote(kind, p, stored.request, taxCtx, todayOf(now));
     if (r.refusal || !r.computed) return refuse(c, r.refusal ?? { status: 409, error: PARENT_CHANGED_DRAFT });
     computed = r.computed;
   }
@@ -564,9 +625,11 @@ export async function patchNoteDraft(
   });
 }
 
+/** 07-T §9: a note draft whose invoice changed (another note was issued since the draft was saved). */
 const PARENT_CHANGED_DRAFT = {
   code: "content_changed",
-  message: "[Placeholder]",
+  message:
+    "Another note was issued on this invoice since this draft was saved. Open the draft and save it again.",
 };
 
 // ---- routes ----------------------------------------------------------------------------------------------------------------------------------------------

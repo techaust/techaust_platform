@@ -698,7 +698,7 @@ export const invoices = new Hono<AppEnv>()
       notePart = noteView({ bundle: ctx.bundle, role, stored, parent: p });
       if (d.frozen_at === null && p && stored) {
         const kind = noteKindOf(d.type as "credit_note" | "debit_note");
-        const re = recomputeNote(kind, p, stored.request.takes, taxContext(ctx.settings), todayOf(now));
+        const re = recomputeNote(kind, p, stored.request, taxContext(ctx.settings), todayOf(now));
         const state = noteState({
           id,
           kind,

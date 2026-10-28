@@ -119,7 +119,7 @@ export async function prepareNoteIssue(
   const today = todayOf(now);
   const issueDate = issueDateOf(now);
   const taxCtx = taxContext(i.settings);
-  const re = recomputeNote(kind, p, stored.request.takes, taxCtx, today);
+  const re = recomputeNote(kind, p, stored.request, taxCtx, today);
   const noteOf = noteOfOf(kind, p, stored.reason, stored.request);
   const state = noteState({
     id: d.id,

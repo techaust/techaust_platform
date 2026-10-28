@@ -315,6 +315,73 @@ export function creditNote(
   });
 }
 
+/**
+ * A debit note that adds TAX ONLY ("Tax charged too low", s.34(3) CGST Act; owner 2026-10-28, Q35; Researched 2026-10-28, 08-C RA-22): the taxable value of every
+ * line is zero and `taxMinor` (the total tax to add, in the original's currency, above zero) is split over the original's lines that carry tax, in proportion to
+ * the tax each carries (largest remainder, so the parts add up exactly), at the original's supply and heads: an intra-state original adds CGST and SGST in equal
+ * halves (so `taxMinor` must be even), an inter-state or IGST export original adds IGST. The original's index, SAC and rates are copied; a USD original's INR view
+ * converts each head at the original's rate. Refused: a tax of zero or less, an odd amount on an intra-state original, an original with no tax on any line (an
+ * export under LUT: nothing to correct by tax alone). There is no cap here: how much tax was missing is the Owner's figure. Never throws.
+ */
+export function taxOnlyDebitNote(
+  original: ComputedDocument,
+  taxMinor: number,
+  ctx: TaxContext,
+): TaxResult<ComputedDocument> {
+  return guard(() => {
+    const errors: TaxIssue[] = supplyIssues(original.supply, "original", "supply");
+    errors.push(...originalIssues(original));
+    if (errors.length > 0) return fail(errors);
+    if (!isInt(taxMinor) || taxMinor < 1) return fail([issue("credit_line_invalid", "request", "taxMinor")]);
+    const type = original.supply.type;
+    const taxed = original.lines.filter((l) => l.cgstMinor + l.sgstMinor + l.igstMinor > 0);
+    if (taxed.length === 0) return fail([issue("credit_empty", "request")]);
+    const intra = type === "intra";
+    if (intra && taxMinor % 2 !== 0) return fail([issue("credit_line_invalid", "request", "taxMinor")]);
+    // "INR" is only the label `allocate` wants. For an intra-state original each head takes half of the amount, split over the lines by their CGST.
+    const shares = allocate(
+      money(intra ? taxMinor / 2 : taxMinor, "INR"),
+      taxed.map((l) => (intra ? l.cgstMinor : l.igstMinor)),
+    ).map((m) => BigInt(m.amount));
+    const rate = original.fxRateMicros;
+    const lines: CalcLine[] = [];
+    const inrLines: InrLineParts[] = [];
+    taxed.forEach((l, i) => {
+      const share = shares[i] as bigint;
+      const heads: Heads = intra
+        ? { cgst: share, sgst: share, igst: 0n }
+        : { cgst: 0n, sgst: 0n, igst: share };
+      lines.push({
+        index: l.index,
+        sac: l.sac,
+        gross: 0n,
+        lineDiscount: 0n,
+        docDiscount: 0n,
+        taxable: 0n,
+        gstRateBp: l.gstRateBp,
+        effectiveRateBp: l.effectiveRateBp,
+        ...heads,
+      });
+      if (rate !== null) {
+        const inr = (h: bigint) => divRoundHalfUp(h * BigInt(rate), MICROS);
+        inrLines.push({ taxable: 0n, cgst: inr(heads.cgst), sgst: inr(heads.sgst), igst: inr(heads.igst) });
+      }
+    });
+    const inrSum = inrLines.reduce((a, p) => a + p.cgst + p.sgst + p.igst, 0n);
+    return assemble(
+      {
+        currency: original.currency,
+        supply: original.supply,
+        lines,
+        fxRateMicros: rate,
+        unregisteredRecipient: false,
+        inrPlan: rate === null ? undefined : { lines: inrLines, totalLeft: inrSum, final: false },
+      },
+      ctx,
+    );
+  });
+}
+
 /** Each head limited to what is left of it. */
 function capHeads(heads: Heads, left: Remaining): Heads {
   return {

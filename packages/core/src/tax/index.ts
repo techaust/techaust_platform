@@ -8,6 +8,7 @@ export {
   type CreditedSoFar,
   type CreditRequest,
   creditNote,
+  taxOnlyDebitNote,
 } from "./credit.ts";
 export { computeDocument, type DocumentInput } from "./document.ts";
 export {

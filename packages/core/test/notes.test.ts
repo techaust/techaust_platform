@@ -16,6 +16,7 @@ import {
   creditForGross,
   creditNoteDeadline,
   DEBIT_REASONS,
+  DISCOUNT_AFTER_SALE_FROM,
   debitNoteInput,
   GROSS_EVALUATIONS_MAX,
   IMS_STATUSES,
@@ -32,6 +33,7 @@ import {
   noteKindOf,
   noteOfFromStored,
   noteTypeOf,
+  reasonInForce,
   refundDueOf,
   takesTuples,
 } from "../src/invoices.ts";
@@ -76,7 +78,7 @@ const noteOf = (over: Partial<NoteOf> = {}): NoteOf => ({
 });
 
 describe("kinds, reasons and limits", () => {
-  it("the note types, their kinds and the reasons of 07-T (Q35: a debit note has two)", () => {
+  it("the note types, their kinds and the reasons of 07-T (Q35, owner 2026-10-28: a debit note has three)", () => {
     expect(isNoteType("credit_note")).toBe(true);
     expect(isNoteType("debit_note")).toBe(true);
     expect(isNoteType("tax_invoice")).toBe(false);
@@ -91,7 +93,7 @@ describe("kinds, reasons and limits", () => {
       "discount_after_sale",
       "other",
     ]);
-    expect([...DEBIT_REASONS]).toEqual(["price_correction", "other"]);
+    expect([...DEBIT_REASONS]).toEqual(["price_correction", "tax_charged_too_low", "other"]);
     expect(isNoteReason("credit", "service_deficient")).toBe(true);
     expect(isNoteReason("debit", "service_deficient")).toBe(false);
     expect(NOTE_REASON_TEXT_MAX).toBe(300);
@@ -121,6 +123,18 @@ describe("the stored request (header_extras.noteOf)", () => {
     expect(noteOfFromStored(JSON.parse(JSON.stringify(noteOf())))).toEqual(noteOf());
   });
 
+  it("a tax-only debit request (Q35) keeps its tax amount, between the gross amount and the takes", () => {
+    const n = noteOf({
+      kind: "debit",
+      reason: { code: "tax_charged_too_low", text: "" },
+      request: { mode: "lines", taxMinor: 1_800, takes: [{ line: 0, taxableMinor: 0 }] },
+    });
+    const back = noteOfFromStored(JSON.parse(JSON.stringify(n)));
+    expect(back).toEqual(n);
+    expect(JSON.stringify(back)).toBe(JSON.stringify(n));
+    expect(Object.keys((back as NoteOf).request)).toEqual(["mode", "taxMinor", "takes"]);
+  });
+
   it("anything damaged reads as none", () => {
     const good1 = JSON.parse(JSON.stringify(noteOf()));
     const bad: unknown[] = [
@@ -136,6 +150,8 @@ describe("the stored request (header_extras.noteOf)", () => {
       { ...good1, request: { ...good1.request, takes: [{ line: 0, taxableMinor: 1.5 }] } },
       { ...good1, request: { ...good1.request, mode: "all" } },
       { ...good1, request: { ...good1.request, grossMinor: "5" } },
+      { ...good1, request: { ...good1.request, taxMinor: 0 } },
+      { ...good1, request: { ...good1.request, taxMinor: "5" } },
       { ...good1, reason: { code: 1, text: "" } },
       { ...good1, reason: { code: "x", text: 1 } },
       { ...good1, parent: { ...good1.parent, id: 1 } },
@@ -188,6 +204,21 @@ describe("noteBlockers [LD50, Rule 53(1A)]", () => {
   it("the codes are their own list, separate from the invoice's (LD50)", () => {
     expect(NOTE_BLOCKER_CODES).toContain("credit_deadline_passed");
     expect(new Set(NOTE_BLOCKER_CODES).size).toBe(NOTE_BLOCKER_CODES.length);
+  });
+
+  it("'Discount after sale' is blocked for a note dated before 1 November 2026 (IST) and only then; a fact without a date is not judged (RA-02)", () => {
+    expect(DISCOUNT_AFTER_SALE_FROM).toBe("2026-11-01");
+    const discount = { reason: { code: "discount_after_sale", text: "" } };
+    expect(codes(okFacts({ ...discount, issueDate: "2026-10-31" }))).toEqual([
+      "discount_reason_not_in_force",
+    ]);
+    expect(codes(okFacts({ ...discount, issueDate: "2026-11-01" }))).toEqual([]);
+    expect(codes(okFacts({ ...discount, issueDate: "2027-03-31" }))).toEqual([]);
+    expect(codes(okFacts(discount))).toEqual([]);
+    expect(codes(okFacts({ issueDate: "2026-10-31" }))).toEqual([]);
+    expect(reasonInForce("discount_after_sale", "2026-10-31")).toBe(false);
+    expect(reasonInForce("discount_after_sale", "2026-11-01")).toBe(true);
+    expect(reasonInForce("price_correction", "2020-01-01")).toBe(true);
   });
 
   it("the supplier", () => {

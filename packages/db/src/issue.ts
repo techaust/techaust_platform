@@ -291,6 +291,9 @@ export type NoteIssueArgs = {
 /** At most this many issued notes of a kind per invoice (core `NOTES_MAX`: a test compares the two; core is not imported here to keep the Worker bundle small). */
 export const NOTES_MAX_SQL = 20;
 
+/** The first IST day a credit note for "Discount after sale" may be dated (core `DISCOUNT_AFTER_SALE_FROM`: a test compares the two; Researched 2026-10-28, 08-C RA-02). */
+export const DISCOUNT_AFTER_SALE_FROM_SQL = "2026-11-01";
+
 /** The parent statuses a note can be issued against: not void, not fully credited (core `ledgerStatusOf`'s other values). */
 const NOTE_PARENT_LIVE = `(${NOTE_PARENT_LIVE_STATUSES.map((s) => `'${s}'`).join(", ")})`;
 
@@ -439,7 +442,8 @@ function noteIssueTail(n: NoteIssueArgs, first: number): { where: string; binds:
   const at = (k: number) => `?${first + k}`;
   return {
     where: ` AND EXISTS (SELECT 1 FROM documents p WHERE p.id = documents.parent_id AND p.id = ${p} AND p.type IN ('tax_invoice', 'export_invoice') AND p.frozen_at IS NOT NULL AND p.status IN ${NOTE_PARENT_LIVE} AND p.client_id = documents.client_id AND p.currency = documents.currency AND p.updated_at = ${at(1)} AND p.credited_minor = ${at(2)} AND (documents.type = 'debit_note' OR (documents.total_minor <= p.total_minor - p.credited_minor AND ?6 <= ${at(3)} AND (${at(4)} IS NULL OR ?6 < ${at(4)}))))
-         AND (SELECT count(*) FROM documents c WHERE c.parent_id = ${p} AND c.type = documents.type AND c.frozen_at IS NOT NULL) < ${NOTES_MAX_SQL}`,
+         AND (SELECT count(*) FROM documents c WHERE c.parent_id = ${p} AND c.type = documents.type AND c.frozen_at IS NOT NULL) < ${NOTES_MAX_SQL}
+         AND (json_extract(documents.header_extras, '$.noteOf.reason.code') IS NOT 'discount_after_sale' OR ?6 >= '${DISCOUNT_AFTER_SALE_FROM_SQL}')`,
     binds: [
       n.parentId,
       n.expectedParentUpdatedAt,

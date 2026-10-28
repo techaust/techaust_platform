@@ -35,6 +35,7 @@ const NOTE_REASON_LABELS: Readonly<Record<string, string>> = {
   service_not_delivered: "Service not delivered",
   service_deficient: "Service deficient",
   discount_after_sale: "Discount after sale",
+  tax_charged_too_low: "Tax charged too low",
   other: "Other",
 };
 
