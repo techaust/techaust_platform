@@ -165,7 +165,7 @@ describe("create [ADM-PROP-01]", () => {
     });
   });
 
-  it("the template of the service's category is rendered; a placeholder with no value stays and blocks the send", async () => {
+  it("the template of the service's category is rendered; a service with no assumptions text hides that section, names the gap and does not block the send", async () => {
     const o = await owner();
     const client = await mkQuoteClient();
     const item = await mkService(100_000, {
@@ -201,12 +201,23 @@ describe("create [ADM-PROP-01]", () => {
     expect(by("summary").bodyMd).toMatch(/^For Test Co \d+ by TecHaust Technologies, valid 15 days\.$/);
     expect(by("scope").bodyMd).toBe("Connect the shop");
     expect(by("deliverables").bodyMd).toBe("Three connectors");
-    expect(by("assumptions_exclusions").bodyMd).toBe("{{service.assumptions}}");
+    // The service has no assumptions text: its token is taken out and the section is created hidden (owner, 2026-10-28).
+    expect(by("assumptions_exclusions")).toMatchObject({ bodyMd: null, hidden: true });
     // The three always-present sections were added to a template that lacked them.
     expect(doc.sections.slice(-3).map((s: J) => s.kind)).toEqual(["estimate", "terms", "acceptance"]);
-    expect(doc.canSend).toBe(false);
-    expect(doc.unresolved).toEqual(["service.assumptions"]);
-    expect(doc.blockers).toContainEqual({ code: "unresolved_placeholders", names: ["service.assumptions"] });
+    expect(doc.unresolved).toEqual([]);
+    expect(doc.blockers.map((b: J) => b.code)).not.toContain("unresolved_placeholders");
+    expect(doc.catalogueGaps).toEqual(
+      ["assumptions", "exclusions"].map((field) => ({
+        sectionId: by("assumptions_exclusions").id,
+        sectionKind: "assumptions_exclusions",
+        field,
+        serviceCode: item.code,
+        serviceName: expect.any(String),
+        catalogueItemId: item.id,
+        catalogueHasTextNow: false,
+      })),
+    );
   });
 
   it("several services: all their lines, the schedule of the largest, their texts under their names", async () => {

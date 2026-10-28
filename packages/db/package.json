@@ -16,7 +16,8 @@
     "./portal-shared": "./src/portal-shared.ts",
     "./realisation": "./src/realisation.ts",
     "./reports": "./src/reports.ts",
-    "./catalogue": "./src/seed/catalogue.ts"
+    "./catalogue": "./src/seed/catalogue.ts",
+    "./seed-templates": "./src/seed/templates.ts"
   },
   "scripts": {
     "generate": "drizzle-kit generate",

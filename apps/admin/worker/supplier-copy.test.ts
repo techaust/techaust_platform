@@ -1,5 +1,5 @@
 // GET /invoices/:id/pdf/supplier [Q11, owner 2026-10-28; Rule 48(2) CGST Rules]: the stored DUPLICATE FOR SUPPLIER copy, for the Owner and the Accountant only. It answers like /:id/pdf
-// (the file, or 409 pdf_pending), a proforma, a draft and an unknown id are 404, and a missing copy is asked for again, once the original exists.
+// (the file, or 202 {state: making}; 409 pdf_pending for an erased client), a proforma, a draft and an unknown id are 404, and a missing copy is asked for again, once the original exists.
 import { env } from "cloudflare:workers";
 import { fyLabelOfToken, supplierPdfKey } from "@techaust/core/pdf-jobs";
 import { beforeAll, describe, expect, it } from "vitest";
@@ -72,7 +72,7 @@ describe("GET /invoices/:id/pdf/supplier", () => {
     expect((await call("/invoices/nope/pdf/supplier", { cookie: o.cookie })).status).toBe(404);
   });
 
-  it("not made yet: 409 pdf_pending; with the original's PDF in place the route asks jobs for the copy (one idempotent message); without it, no message", async () => {
+  it("not made yet: 202 making; with the original's PDF in place the route asks jobs for the copy (one idempotent message); without it, no message", async () => {
     const o = await owner();
     const made = await mkInvoice(o);
     expect((await issueInvoice(o, made.id)).status).toBe(200);
@@ -82,8 +82,8 @@ describe("GET /invoices/:id/pdf/supplier", () => {
       { cookie: o.cookie },
       withEnv(env, { PDF_QUEUE: a.queue }),
     );
-    expect(noOriginal.status).toBe(409);
-    expect(await codeOf(noOriginal)).toBe("pdf_pending");
+    expect(noOriginal.status).toBe(202);
+    expect(await noOriginal.json()).toEqual({ state: "making" });
     expect(a.sent).toEqual([]);
     await env.DB.prepare("UPDATE documents SET pdf_r2_key = 'k', pdf_sha256 = ?2 WHERE id = ?1")
       .bind(made.id, "a".repeat(64))
@@ -94,8 +94,8 @@ describe("GET /invoices/:id/pdf/supplier", () => {
       { cookie: o.cookie },
       withEnv(env, { PDF_QUEUE: b.queue }),
     );
-    expect(asked.status).toBe(409);
-    expect(await codeOf(asked)).toBe("pdf_pending");
+    expect(asked.status).toBe(202);
+    expect(await asked.json()).toEqual({ state: "making" });
     expect(b.sent).toEqual([{ v: 1, kind: "pdf.supplier", documentId: made.id, hop: 0 }]);
   });
 
@@ -111,8 +111,8 @@ describe("GET /invoices/:id/pdf/supplier", () => {
       call(`/invoices/${made.id}/pdf/supplier`, { cookie: o.cookie }, withEnv(env, { PDF_QUEUE: q.queue }));
     // sequential: the first asks, the rest are held
     for (const res of [await ask(), await ask(), await ask()]) {
-      expect(res.status).toBe(409);
-      expect(await codeOf(res)).toBe("pdf_pending");
+      expect(res.status).toBe(202);
+      expect(await res.json()).toEqual({ state: "making" });
     }
     // parallel: still the one message
     await Promise.all([ask(), ask(), ask(), ask()]);
@@ -142,7 +142,7 @@ describe("GET /invoices/:id/pdf/supplier", () => {
       { cookie: o.cookie },
       withEnv(env, { PDF_QUEUE: failing }),
     );
-    expect(down.status).toBe(409);
+    expect(down.status).toBe(202);
     await ask();
     expect(q.sent).toHaveLength(3);
   });
@@ -162,6 +162,7 @@ describe("GET /invoices/:id/pdf/supplier", () => {
       withEnv(env, { PDF_QUEUE: q.queue }),
     );
     expect(res.status).toBe(409);
+    expect(await codeOf(res)).toBe("pdf_pending");
     expect(q.sent).toEqual([]);
   });
 });

@@ -12,7 +12,8 @@ import {
   stubPdf,
 } from "../src/browser.ts";
 
-const pdfBytes = (extra = "") => new TextEncoder().encode(`%PDF-1.7\n${extra}%%EOF`);
+/** A structurally valid PDF: the structure check runs on every response. `_tag` only varies the call sites. */
+const pdfBytes = (_tag = "") => stubPdf();
 const pdfResponse = (bytes: Uint8Array = pdfBytes(), headers: Record<string, string> = {}) =>
   new Response(bytes, { status: 200, headers: { "content-type": "application/pdf", ...headers } });
 

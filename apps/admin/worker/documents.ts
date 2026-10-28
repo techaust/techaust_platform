@@ -46,6 +46,7 @@ import {
   DRAFT_EXISTS,
   FROZEN,
   ITEMS_BY_ID,
+  ITEMS_OF_DOCUMENT,
   type ItemRow,
   NEWEST_TERMS,
   NOT_A_QUOTE,
@@ -404,7 +405,11 @@ export const documents = new Hono<AppEnv>()
     const ctx = await readContext(
       c,
       id,
-      [...offerStatements(c.env.DB, id), c.env.DB.prepare(CONVERTED_TO_SQL).bind(id)],
+      [
+        ...offerStatements(c.env.DB, id),
+        c.env.DB.prepare(CONVERTED_TO_SQL).bind(id),
+        c.env.DB.prepare(ITEMS_OF_DOCUMENT).bind(id),
+      ],
       // A SENT version shows the pinned terms text to every role (M11). A draft carries none for the editor (it only names the version);
       // a role that cannot draft has no editor, so its read view gets the text too (lead, 2026-10-26).
       { terms: decide(actor(c).role, "proposals.draft") === "deny" ? "full" : "frozen" },
@@ -427,6 +432,7 @@ export const documents = new Hono<AppEnv>()
       settings: readSettings(ctx.settingsRows),
       today: todayIst(),
       convertedTo: conv ? { kind: conv.kind, id: conv.id } : null,
+      catalogueItems: (ctx.extra[5]?.results ?? []) as ItemRow[],
     });
     // The send path applies the client's own setting when the body omits attachPdf; the dialog shows that same value even to a role that can't read the client.
     return c.json({ ...view, ...offer, attachPdfDefault: ctx.client.attach_pdf === 1 });

@@ -304,6 +304,37 @@ describe("templates (ADM-CAT-03)", () => {
   it("treats an empty value as unresolved", () => {
     expect(renderTemplate("{{client.name}}", { "client.name": "" }).unresolved).toEqual(["client.name"]);
   });
+  it("an empty placeholder is not unresolved: its line goes, in a mixed line only the token goes", () => {
+    const empty = new Set(["service.assumptions", "service.exclusions"]);
+    const both = renderTemplate("{{service.assumptions}}\n{{service.exclusions}}", {}, { empty });
+    expect(both).toEqual({ text: "", unresolved: [] });
+    const one = renderTemplate(
+      "{{service.assumptions}}\n{{service.exclusions}}",
+      { "service.assumptions": "A" },
+      { empty },
+    );
+    expect(one).toEqual({ text: "A", unresolved: [] });
+    const mixed = renderTemplate(
+      "Intro\n\n{{service.exclusions}}\n\nNot included: {{service.exclusions}} ok\nEnd",
+      {},
+      { empty },
+    );
+    expect(mixed.text).toBe("Intro\n\nNot included:  ok\nEnd");
+    expect(mixed.text).not.toContain("{{");
+  });
+  it("an unknown placeholder next to an empty one stays and is listed", () => {
+    const r = renderTemplate(
+      "{{service.exclusions}}\n{{client.contact}}",
+      {},
+      { empty: new Set(["service.exclusions"]) },
+    );
+    expect(r).toEqual({ text: "{{client.contact}}", unresolved: ["client.contact"] });
+  });
+  it("renderTemplateBody passes the empty set to every section", () => {
+    const body = { sections: [{ key: "a", heading: "H", body: "{{service.deliverables}}" }] };
+    const r = renderTemplateBody(body, {}, { empty: new Set(["service.deliverables"]) });
+    expect(r).toEqual({ sections: [{ key: "a", heading: "H", text: "" }], unresolved: [] });
+  });
   it("finds the placeholders and the unknown ones in a body", () => {
     expect(placeholdersOf("{{client.name}} {{x.y}} {{client.name}}")).toEqual(["client.name", "x.y"]);
     const body = { sections: [{ key: "a", heading: "H {{nope.nope}}", body: "{{client.name}}" }] };

@@ -47,6 +47,7 @@ import {
   resolveSteps,
   SECTIONS_INVALID,
   scheduleRows,
+  scheduleSentence,
   sectionRows,
   stateOfBundle,
   TERMS_MISSING,
@@ -54,6 +55,7 @@ import {
   taxInputOf,
   todayIst,
 } from "./quote-model.ts";
+import { fillServiceTokens, hasServiceToken, type ServiceFacts, servicesOf } from "./service-fill.ts";
 
 const idText = z.string().check(z.minLength(1), z.maxLength(64));
 export const discountIn = z.strictObject({
@@ -229,6 +231,49 @@ export const documentSave = new Hono<AppEnv>().patch("/:id", param(idParam), bod
   }
   // schedule
   if (f.schedule) state = { ...state, schedule: resolveSteps(f.schedule, state.schedule) };
+  // Placeholders filled again (owner, 2026-10-28): a draft made before it had a service still holds its `{{service.*}}` tokens; the save that
+  // gives it a service line fills them by the creation rules (a service with no text takes its token out and hides a section left empty).
+  let refilled = false;
+  // Only the save that ADDS the first service line: a token typed into a draft that already has services is the person's own text.
+  if (
+    !ctx.bundle.lines.some((l) => l.catalogue_item_id !== null) &&
+    state.lines.some((l) => l.catalogueItemId !== null) &&
+    state.sections.some((x) => hasServiceToken(x.title) || hasServiceToken(x.bodyMd))
+  ) {
+    const items = new Map<string, ServiceFacts>(
+      ((extra[0]?.results ?? []) as ItemRow[]).map((i) => [i.id, i]),
+    );
+    const missing = [
+      ...new Set(
+        state.lines.flatMap((l) =>
+          l.catalogueItemId && !items.has(l.catalogueItemId) ? [l.catalogueItemId] : [],
+        ),
+      ),
+    ];
+    if (missing.length > 0) {
+      const more = await db.prepare(ITEMS_BY_ID).bind(JSON.stringify(missing)).all<ItemRow>();
+      for (const i of more.results) items.set(i.id, i);
+    }
+    const sections = fillServiceTokens(
+      state.sections,
+      servicesOf(state.lines, items),
+      scheduleSentence(state.schedule),
+    );
+    refilled = sections.some((x, n) => x !== state.sections[n]);
+    if (refilled) {
+      const issues = checkSections(sections);
+      if (issues.length > 0)
+        return c.json(
+          {
+            error: { code: SECTIONS_INVALID.code, message: SECTIONS_INVALID.message },
+            codes: issues,
+            request_id: c.var.rid,
+          },
+          400,
+        );
+      state = { ...state, sections };
+    }
+  }
 
   const computation = await computeQuote(state, taxInputOf(ctx.client), taxContext(settings), todayIst());
   const t = Math.max(Date.now(), doc.updated_at + 1);
@@ -265,7 +310,7 @@ export const documentSave = new Hono<AppEnv>().patch("/:id", param(idParam), bod
         parts: [
           fl ? "fields" : null,
           f.lines ? "lines" : null,
-          f.sections ? "sections" : null,
+          f.sections || refilled ? "sections" : null,
           f.schedule ? "schedule" : null,
         ].filter(Boolean),
         fields: fl ? Object.keys(fl) : [],
