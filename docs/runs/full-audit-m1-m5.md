@@ -177,5 +177,59 @@ Tests run: auth 135/135, admin auth-related 1,683/1,683, portal auth and scope 4
 - 1, 2, 4, 6 and 7 go into an A1 fix task.
 - 3 and 5 wait for the owner's yes.
 
+### A2 public website: reviewer claude-opus-5-5/high, 2026-10-29 ~02:45–03:30 IST, on 937e86d6: SEND BACK
+**Ran:**
+- web build and dist checks: ok;
+- unit tests 443/443; e2e 101/101; content lint ok;
+- a sweep of 37 pages × 4 widths × 2 themes with axe, overflow, targets and text size;
+- forms end to end to `LEADS_QUEUE` locally.
+
+Shots: `.logs/shots/a2-web/` (main checkout).
+
+**Findings:**
+1. **High:** on /security at 375 px, the security.txt `<pre>` scrolls but can't take keyboard focus (WCAG 2.1.1).
+   - Where: `apps/web/src/pages/security.astro:17`, `Prose.astro:94`.
+   - Fix: wrap the text.
+   - Also: axe runs at one width only in e2e. Add 375.
+2. **Medium:** `deploy:staging` (also used by `publish-catalogue.yml`) never runs `check-web-dist.mjs`, so the admin-typed catalogue text served on staging is unguarded.
+   - Fix: run the dist check before the deploy, and refuse "&" and banned phrases at publish (`apps/admin/worker/catalogue.ts`).
+3. **Medium:** the quote endpoint checks codes against the seed catalogue, not the published snapshot (`service-visibility.ts:16-20`, `forms.ts:220`). This is the open M2.4 follow-up.
+   - Fix: build the list from the snapshot at build time, plus a parity test.
+4. **Medium:** WEB-G-10 is partial. `Organization` lacks `alternateName`, `areaServed`, `naics` and `disambiguatingDescription`. The wording is already in docs/04 (`structured-data.ts:44-57`).
+5. **Low:** duplicate landmark names on /pricing, the legal pages and /security. Let the e2e test fail on moderate issues too.
+6. **Low:** straight apostrophes in /thanks, the quote hints and the 404 page (`content/forms.ts:64-108`, `shell.ts:142`).
+7. **Low:** prose notes are set at 14 px (`Notice.astro:36`); body text must be at least 16 px.
+8. **Low:** the CLS test asserts ≤ 0.05; WEB-G-06 says < 0.01.
+9. **Low:** the rate-limiter path is never exercised (it errors locally and lets the request through). Add a mocked-limiter unit test.
+10. **Low:** 11–13 render-blocking CSS files per page. Fix: one site stylesheet.
+11. **Low, owner's copy:** /work shows its lede above an empty state. Suggestion: hide it until there is a case study.
+12. **Low, Phase 7:** `/about.html` and `/about/` redirect with 307. Use permanent redirect rules.
+13. **Low:** the founder photo uses a plain `<img>`. Switch to `astro:assets` before it arrives (WEB-G-13).
+14. **Low:** the footer's first rows are about 6 px out of line at 768 and 1280 (`SiteFooter.astro`).
+
+**Owner inputs, not defects:** headshot and bio; LinkedIn, WhatsApp and Cal.com; case studies; blog drafts; the Turnstile-can't-load line; aliases; launch dates; noindex; backup; Publish on staging; missing 07 sections for S2, S7, S10, S11, S13, S14 and S16.
+
+**Checked and correct:**
+- copy word for word on 12 pages;
+- prices only from the catalogue, "+ GST", S11 USD on request;
+- no "&", no banned phrases, arrows as icons;
+- logos generated and following the theme;
+- forced colours and reduced motion;
+- titles, descriptions, canonicals and OG images;
+- sitemap and robots; S3 is a 404.
+
+**Not verified:**
+- Lighthouse;
+- staging and the served headers;
+- the real `/api/geo` and real Turnstile;
+- the jobs consumer;
+- Safari, Firefox, NVDA, phones;
+- Google's Rich Results test.
+
+**Lead's triage:**
+- 1–10, 13 and 14 go into an A2 fix task (the designer does the screens; the builder does 2, 3, 4 and 9).
+- 11 goes on the owner's copy page.
+- 12 is Phase 7.
+
 ## Handover
 _(written at the end of each conversation)_
