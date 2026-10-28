@@ -2,6 +2,7 @@
 // credit and debit notes. Rows are written straight to the test database only where the API has no route.
 import { env } from "cloudflare:workers";
 import { gstinCheckChar } from "@techaust/core";
+import { issueDateOf } from "@techaust/core/invoices";
 import { type CreditedSoFar, creditNote } from "@techaust/core/tax";
 import { call, one, type TestSession } from "./test-helpers.ts";
 import { issueInvoice, type J, json, mkInvoiceClient, mkOverseasClient } from "./test-invoices.ts";
@@ -58,9 +59,7 @@ export async function mkIssuedInvoice(
       body: {
         expectedUpdatedAt: doc.updatedAt,
         fields: {
-          ...(overseas
-            ? { fx: { rate: "83.1234", date: new Date().toISOString().slice(0, 10), source: "FBIL" } }
-            : {}),
+          ...(overseas ? { fx: { rate: "83.1234", date: issueDateOf(Date.now()), source: "FBIL" } } : {}),
           ...(opts.fields ?? {}),
         },
       },

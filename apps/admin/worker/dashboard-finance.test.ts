@@ -2,6 +2,7 @@
 // voided and proformas never), what clients owe, what is overdue (flips at IST midnight), the proformas that wait, and the exports nearing a deadline; who sees it; and the rows it reads.
 import { env } from "cloudflare:workers";
 import { addDays, fyOfDate, parseIsoDate, toIsoDate } from "@techaust/core/dates";
+import { issueDateOf } from "@techaust/core/invoices";
 import {
   EXPORT_NEXT_SQL,
   EXPORT_STAGE_COUNTS_SQL,
@@ -11,13 +12,12 @@ import {
   PROFORMAS_AWAITING_SQL,
 } from "@techaust/db/reports";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { call, sessionFor } from "./test-helpers.ts";
+import { call, pinClock, sessionFor } from "./test-helpers.ts";
 import { putTax } from "./test-invoice-types.ts";
 import { type J, json } from "./test-invoices.ts";
 import { addDoc, line, mkReportClient } from "./test-reports.ts";
 
-const istToday = () =>
-  toIsoDate(parseIsoDate(new Date(Date.now() + 19_800_000).toISOString().slice(0, 10)) as never);
+const istToday = () => issueDateOf(Date.now());
 const plus = (days: number) => toIsoDate(addDays(parseIsoDate(istToday()) as never, days));
 const dash = async (cookie: string) => {
   const res = await call("/dashboard", { cookie });
@@ -32,6 +32,7 @@ afterEach(() => vi.useRealTimers());
 
 describe("the finance figures against a known fixture", () => {
   it("invoiced, outstanding, overdue, proformas awaiting and the exports in their stages", async () => {
+    pinClock(); // one IST day for the fixture and the dashboard, away from a month or FY edge (audit A0, finding 7)
     const o = await sessionFor("owner");
     const today = istToday();
     const fy = fyOfDate(parseIsoDate(today) as never);
@@ -218,6 +219,7 @@ describe("the finance figures against a known fixture", () => {
 
 describe("what the finance statements read", () => {
   it("2,000 documents: every statement uses its index and the rows read stay in a measured bound", async () => {
+    pinClock();
     const inr = await mkReportClient("INR");
     const usd = await mkReportClient("USD");
     const today = istToday();

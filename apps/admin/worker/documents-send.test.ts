@@ -25,7 +25,8 @@ import {
 } from "./test-quotes.ts";
 
 const owner = () => sessionFor("owner", { stepUp: true });
-const FY = fyOf(Date.now()).token;
+/** The FY of now, read when used (never at module load: a run across IST midnight on 31 March would keep the old one). */
+const fyToken = () => fyOf(Date.now()).token;
 const S9 = 20_000_000; // a catalogue price of 2,00,000 rupees in paise (D1 and D2 of the run file)
 
 beforeAll(async () => {
@@ -345,7 +346,7 @@ describe("numbering and versions [ADM-PROP-05, ADM-INV-03; V5, V6, V7, V8, V9]",
     const made = await mkDraft(o);
     const before = await counter();
     const v1 = await json(await sendDoc(o, made.id, (await getDoc(o, made.id)).updatedAt));
-    expect(v1.number).toBe(`TH/PRP/${FY}/${String(before).padStart(4, "0")}`);
+    expect(v1.number).toBe(`TH/PRP/${fyToken()}/${String(before).padStart(4, "0")}`);
     expect(v1.status).toBe("sent");
     expect(await counter()).toBe(before + 1);
     const v2made = await json(await call(`/documents/${made.id}/revise`, { cookie: o.cookie, body: {} }));
@@ -356,7 +357,7 @@ describe("numbering and versions [ADM-PROP-05, ADM-INV-03; V5, V6, V7, V8, V9]",
       version: 2,
       status: "sent",
       number_display: v1.number,
-      fy: FY,
+      fy: fyToken(),
     });
     expect((await dbRow(made.id))?.status).toBe("revised");
     expect(await counter()).toBe(before + 1);
@@ -370,7 +371,7 @@ describe("numbering and versions [ADM-PROP-05, ADM-INV-03; V5, V6, V7, V8, V9]",
     const o = await owner();
     const made = await mkDraft(o, { type: "estimate" });
     const sent = await json(await sendDoc(o, made.id, (await getDoc(o, made.id)).updatedAt));
-    expect(sent.number).toMatch(new RegExp(`^TH/EST/${FY}/\\d{4}$`));
+    expect(sent.number).toMatch(new RegExp(`^TH/EST/${fyToken()}/\\d{4}$`));
   });
 
   it("V8: 20 drafts sent in parallel get 20 consecutive numbers; two sends of one draft: one wins", async () => {
