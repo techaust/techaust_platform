@@ -31,8 +31,9 @@ export type CreditableLine = {
 
 /**
  * The credit deadline of an invoice (s.34(2), Q32, Q33; Researched 2026-10-28, 08-C RA-03): `lastDay` is the last day a credit note may be dated.
- * Step 5 contract (T §4): `deadlineWarnFrom` is 1 October of the deadline's year and `adviseIssueBy` 31 October (both ISO); optional, so an older API
- * still loads (the warning then follows `daysLeft`).
+ * Step 5 contract (T §4, review 2026-10-28): `deadlineWarnFrom` is the first day of the month before the deadline's month (1 October by default) and `adviseIssueBy` the last
+ * day of that month (31 October), both ISO and never after the last allowed day when an annual return was filed earlier; optional, so an older API still loads (the warning
+ * then follows `daysLeft`).
  */
 export type CreditDeadlineView = {
   date: string;

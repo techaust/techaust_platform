@@ -164,18 +164,21 @@ export const reasonText = (r: { code: string; text: string }): string =>
 
 export type DeadlineBanner = { tone: "info" | "warning" | "danger"; lines: string[] };
 
-/** 07-T §4 "From 1 October before it": the days left lead, then the advice to issue by 31 October (one day is said in its singular). */
-export const deadlineWarnLine = (days: number, advise: boolean) => {
+/**
+ * 07-T §4 "From the first day of the month before the deadline month": the days left lead, then the advice to issue by {advice date} (the server's `adviseIssueBy`, shown as the other dates
+ * of the banner are; one day is said in its singular). Without a date (null) the advice is left out.
+ */
+export const deadlineWarnLine = (days: number, adviseBy: string | null) => {
   const left = days === 1 ? "Only 1 day left" : `Only ${days} days left`;
-  return advise
-    ? `${left} for a credit note on this invoice. Issue it by 31 October so it goes into a return filed in time.`
+  return adviseBy !== null
+    ? `${left} for a credit note on this invoice. Issue it by ${dayText(adviseBy) ?? adviseBy} so it goes into a return filed in time.`
     : `${left} for a credit note on this invoice.`;
 };
 
 /**
  * What the invoice says about its credit deadline: before it, the date a return must be filed by (`date`: 30 November after the FY, or the day the
- * annual return was filed); from `deadlineWarnFrom` (1 October, the contract), the days left as well, leading, with the advice to issue by 31 October
- * until that day has gone (after it, the advice is left out rather than said late); after the deadline, that it has passed (and the credit actions are
+ * annual return was filed); from `deadlineWarnFrom` (the first day of the month before the deadline month, the contract), the days left as well, leading, with the advice to
+ * issue by `adviseIssueBy` (the last day of that month, never after an annual-return filing) until that day has gone (after it, the advice is left out rather than said late); after the deadline, that it has passed (and the credit actions are
  * gone). An older API without `deadlineWarnFrom` warns within 30 days, as before. When the supply's FY is earlier than the invoice's (a payment received
  * or the work completed in the year before), the line that says so. `today` is today's IST date (ISO).
  */
@@ -199,8 +202,8 @@ export function deadlineBanner(
     const warn = d.deadlineWarnFrom ? today >= d.deadlineWarnFrom : d.daysLeft !== null && d.daysLeft <= 30;
     if (warn && d.daysLeft !== null && d.daysLeft >= 1) {
       tone = "warning";
-      const advise = !d.adviseIssueBy || today <= d.adviseIssueBy;
-      lines.unshift(deadlineWarnLine(d.daysLeft, advise));
+      const adviseBy = d.adviseIssueBy && today <= d.adviseIssueBy ? d.adviseIssueBy : null;
+      lines.unshift(deadlineWarnLine(d.daysLeft, adviseBy));
     }
   }
   if (invoiceFy !== null && d.supplyFy !== invoiceFy)

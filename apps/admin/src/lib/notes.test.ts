@@ -132,21 +132,21 @@ describe("the deadline banner (07-T §4; Researched 2026-10-28, 08-C RA-03; the 
   const warnDl = (d: Partial<CreditDeadlineView>) =>
     deadline({ deadlineWarnFrom: "2027-10-01", adviseIssueBy: "2027-10-31", ...d });
 
-  it("before: the return date; from 1 October: the days left lead, with the 31 October advice; passed: the passed line in danger", () => {
+  it("before: the return date; from the warning day: the days left lead, with the advice date; passed: the passed line in danger", () => {
     expect(deadlineBanner(warnDl({}), "2627", "2027-06-01")).toEqual({ tone: "info", lines: [BEFORE] });
     const near = deadlineBanner(warnDl({ daysLeft: 60 }), "2627", "2027-10-01");
     expect(near).toEqual({
       tone: "warning",
       lines: [
-        "Only 60 days left for a credit note on this invoice. Issue it by 31 October so it goes into a return filed in time.",
+        "Only 60 days left for a credit note on this invoice. Issue it by 31 Oct 2027 so it goes into a return filed in time.",
         BEFORE,
       ],
     });
-    // after 31 October the advice would come too late: the days left alone
+    // after the advice date it would come too late: the days left alone
     expect(deadlineBanner(warnDl({ daysLeft: 12 }), "2627", "2027-11-18").lines[0]).toBe(
       "Only 12 days left for a credit note on this invoice.",
     );
-    expect(deadlineWarnLine(1, false)).toBe("Only 1 day left for a credit note on this invoice.");
+    expect(deadlineWarnLine(1, null)).toBe("Only 1 day left for a credit note on this invoice.");
     // an older API without the warning date: within 30 days, as before
     expect(deadlineBanner(deadline({ daysLeft: 12 }), "2627", "2027-11-18").tone).toBe("warning");
     expect(deadlineBanner(deadline({ daysLeft: 45 }), "2627", "2027-10-16").tone).toBe("info");
@@ -159,6 +159,33 @@ describe("the deadline banner (07-T §4; Researched 2026-10-28, 08-C RA-03; the 
         "The deadline for a credit note on this invoice was 30 Nov 2027. A refund now can't reduce the GST already paid. Talk to your CA.",
       ],
     });
+  });
+
+  it("the advice line fills {advice date} from the server's date, whatever the month (finding 7); no date, no advice", () => {
+    expect(
+      deadlineBanner(
+        warnDl({ daysLeft: 30, deadlineWarnFrom: "2027-05-01", adviseIssueBy: "2027-05-31" }),
+        "2627",
+        "2027-05-02",
+      ).lines[0],
+    ).toBe(
+      "Only 30 days left for a credit note on this invoice. Issue it by 31 May 2027 so it goes into a return filed in time.",
+    );
+    // capped at the day before an annual return
+    expect(
+      deadlineBanner(warnDl({ daysLeft: 5, adviseIssueBy: "2027-10-14" }), "2627", "2027-10-10").lines[0],
+    ).toContain("Issue it by 14 Oct 2027 so it goes");
+    // on the advice day itself it is still said; the next day it is not
+    expect(deadlineBanner(warnDl({ daysLeft: 30 }), "2627", "2027-10-31").lines[0]).toContain(
+      "Issue it by 31 Oct 2027",
+    );
+    expect(deadlineBanner(warnDl({ daysLeft: 29 }), "2627", "2027-11-01").lines[0]).toBe(
+      "Only 29 days left for a credit note on this invoice.",
+    );
+    expect(
+      deadlineBanner(deadline({ deadlineWarnFrom: "2027-10-01", daysLeft: 30 }), "2627", "2027-10-31")
+        .lines[0],
+    ).toBe("Only 30 days left for a credit note on this invoice.");
   });
 
   it("an annual return filed earlier: the filing day is the date shown", () => {

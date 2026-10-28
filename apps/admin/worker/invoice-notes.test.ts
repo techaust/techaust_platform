@@ -481,6 +481,31 @@ describe("the deadline of a credit note [s.34(2), Q32, Q33; Researched 2026-10-2
     expect((await issueInvoice(o, a.id)).status).toBe(200);
   });
 
+  it("the advice dates follow the cutoff setting and an earlier annual return (review 2026-10-28, finding 7)", async () => {
+    const o = await owner();
+    await putTax({ luts: [lutOf(currentFy())], creditNoteCutoff: { month: 6, day: 30 } });
+    const inv = await mkIssuedInvoice(o, { prices: [100_000] });
+    const year = await deadlineYear(inv.id);
+    // a 30 June cutoff: the warning from 1 May, the advice 31 May
+    expect((await getInvoice(o, inv.id)).creditDeadline).toMatchObject({
+      date: `${year}-06-30`,
+      deadlineWarnFrom: `${year}-05-01`,
+      adviseIssueBy: `${year}-05-31`,
+    });
+    // an annual return filed on 20 May: nothing is advised for after the day before it
+    const fy = (await one<{ fy: string }>("SELECT fy FROM documents WHERE id = ?", inv.id))?.fy ?? "";
+    await putTax({
+      luts: [lutOf(currentFy())],
+      creditNoteCutoff: { month: 6, day: 30 },
+      annualReturnsFiled: [{ fy, filedOn: `${year}-05-20` }],
+    });
+    expect((await getInvoice(o, inv.id)).creditDeadline).toMatchObject({
+      lastDay: `${year}-05-19`,
+      deadlineWarnFrom: `${year}-05-01`,
+      adviseIssueBy: `${year}-05-19`,
+    });
+  });
+
   it("the cutoff is a setting and a day past the month's end is clamped; the service date moves the supply FY earlier (Q32)", async () => {
     const o = await owner();
     await putTax({ luts: [lutOf(currentFy())], creditNoteCutoff: { month: 11, day: 31 } });

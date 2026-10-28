@@ -380,19 +380,28 @@ export function creditNoteDeadline(
 }
 
 /**
- * The advice dates of the deadline banner (research round 2026-10-28, 08-C RA-31; 07-T §4): from 1 October of the year the deadline falls in the banner says how many days are left, and the
- * advice is to issue the note by 31 October so it goes into a return filed in time (a quarterly filer's November filing is the open question). The hard block is unchanged (`creditAllowed`).
- * Both are ISO days of the year of `deadline.date` (the cutoff day, 30 November by default); an unreadable date gives none.
+ * The advice dates of the deadline banner (research round 2026-10-28, 08-C RA-31; 07-T §4; review 2026-10-28, finding 7). The banner warns from the FIRST day of the month before the month the
+ * cutoff falls in (1 October with the default 30 November) and advises issuing the note by the LAST day of that month (31 October), so it goes into a return filed in time (a quarterly
+ * filer's November filing is the open question). Both follow the cutoff setting (a cutoff in January gives December), and neither is later than the last day a note is still allowed: when an
+ * annual return was filed before the cutoff, that is the day before it was filed (`lastDay`; a note dated on the filing day is refused, `creditAllowed`). The hard block is unchanged.
+ * ISO days; an unreadable date gives none.
  */
-export function creditNoteAdvice(deadline: Pick<CreditDeadline, "date">): {
+export function creditNoteAdvice(
+  deadline: Pick<CreditDeadline, "date"> & Partial<Pick<CreditDeadline, "lastDay">>,
+): {
   readonly deadlineWarnFrom: string | null;
   readonly adviseIssueBy: string | null;
 } {
   const d = parseIsoDate(deadline.date);
   if (!d) return { deadlineWarnFrom: null, adviseIssueBy: null };
+  const year = d.month === 1 ? d.year - 1 : d.year;
+  const month = d.month === 1 ? 12 : d.month - 1;
+  const last =
+    deadline.lastDay !== undefined && parseIsoDate(deadline.lastDay) !== null ? deadline.lastDay : null;
+  const notLater = (day: string): string => (last !== null && last < day ? last : day);
   return {
-    deadlineWarnFrom: toIsoDate({ year: d.year, month: 10, day: 1 }),
-    adviseIssueBy: toIsoDate({ year: d.year, month: 10, day: 31 }),
+    deadlineWarnFrom: notLater(toIsoDate({ year, month, day: 1 })),
+    adviseIssueBy: notLater(toIsoDate({ year, month, day: monthEnd(year, month) })),
   };
 }
 

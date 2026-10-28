@@ -326,15 +326,55 @@ describe("creditNoteAdvice [RA-31; 07-T §4]: the banner's dates", () => {
     );
     expect(dl.date).toBe("2026-11-30");
     expect(creditNoteAdvice(dl)).toEqual({ deadlineWarnFrom: "2026-10-01", adviseIssueBy: "2026-10-31" });
-    // an annual return filed earlier changes the last day, not the advice dates (the cutoff's year)
-    const early = creditNoteDeadline(
-      { parentFy: "2526", parentIssueDate: "2025-10-05" },
-      SETTINGS_DEFAULTS.tax.creditNoteCutoff,
-      [{ fy: "2526", filedOn: "2026-09-20" }],
-    );
-    expect(early.lastDay).toBe("2026-09-19");
-    expect(creditNoteAdvice(early)).toEqual({ deadlineWarnFrom: "2026-10-01", adviseIssueBy: "2026-10-31" });
     expect(creditNoteAdvice({ date: "soon" })).toEqual({ deadlineWarnFrom: null, adviseIssueBy: null });
+  });
+
+  it("follows the cutoff setting: the month before the cutoff month, first day to last day (a 30 June cutoff gives May, a 31 January one December of the year before)", () => {
+    expect(creditNoteAdvice({ date: "2027-06-30" })).toEqual({
+      deadlineWarnFrom: "2027-05-01",
+      adviseIssueBy: "2027-05-31",
+    });
+    expect(creditNoteAdvice({ date: "2027-01-31" })).toEqual({
+      deadlineWarnFrom: "2026-12-01",
+      adviseIssueBy: "2026-12-31",
+    });
+    // a leap February, and a cutoff in March (the month before is February)
+    expect(creditNoteAdvice({ date: "2028-03-31" })).toEqual({
+      deadlineWarnFrom: "2028-02-01",
+      adviseIssueBy: "2028-02-29",
+    });
+    expect(creditNoteAdvice({ date: "2027-03-31" }).adviseIssueBy).toBe("2027-02-28");
+    // the default, through the settings and the deadline
+    const dl = creditNoteDeadline(
+      { parentFy: "2627", parentIssueDate: "2026-06-05" },
+      { month: 11, day: 30 },
+      [],
+    );
+    expect(creditNoteAdvice(dl)).toEqual({ deadlineWarnFrom: "2027-10-01", adviseIssueBy: "2027-10-31" });
+  });
+
+  it("neither date is later than the last day a note is allowed: an annual return filed before the cutoff caps both (the day before it was filed)", () => {
+    const cutoff = SETTINGS_DEFAULTS.tax.creditNoteCutoff;
+    const filed = (filedOn: string) =>
+      creditNoteDeadline({ parentFy: "2526", parentIssueDate: "2025-10-05" }, cutoff, [
+        { fy: "2526", filedOn },
+      ]);
+    // filed on 20 September: the last day is 19 September, before 1 October, so both are 19 September
+    const early = filed("2026-09-20");
+    expect(early.lastDay).toBe("2026-09-19");
+    expect(creditNoteAdvice(early)).toEqual({ deadlineWarnFrom: "2026-09-19", adviseIssueBy: "2026-09-19" });
+    // filed on 15 October: the warning still starts on 1 October, the advice is capped at the 14th
+    const mid = filed("2026-10-15");
+    expect(creditNoteAdvice(mid)).toEqual({ deadlineWarnFrom: "2026-10-01", adviseIssueBy: "2026-10-14" });
+    // filed after the advice date (5 November) or after the cutoff: no cap
+    expect(creditNoteAdvice(filed("2026-11-05"))).toEqual({
+      deadlineWarnFrom: "2026-10-01",
+      adviseIssueBy: "2026-10-31",
+    });
+    expect(creditNoteAdvice(filed("2026-12-20"))).toEqual({
+      deadlineWarnFrom: "2026-10-01",
+      adviseIssueBy: "2026-10-31",
+    });
   });
 });
 
