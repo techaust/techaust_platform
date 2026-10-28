@@ -437,7 +437,14 @@ describe("the deadline of a credit note [s.34(2), Q32, Q33; VERIFY WITH CA/LEGAL
     expect(issued.status, await issued.clone().text()).toBe(200);
     // the view says so
     const view = await getInvoice(o, inv.id);
-    expect(view.creditDeadline).toMatchObject({ date: `${year}-11-30`, passed: false, daysLeft: 0 });
+    expect(view.creditDeadline).toMatchObject({
+      date: `${year}-11-30`,
+      passed: false,
+      daysLeft: 0,
+      // RA-31 (07-T §4): the banner warns from 1 October of the deadline year and advises 31 October; the block is unchanged
+      deadlineWarnFrom: `${year}-10-01`,
+      adviseIssueBy: `${year}-10-31`,
+    });
     vi.setSystemTime(new Date(`${year}-12-01T00:00:00.000+05:30`));
     const after = await getInvoice(o, inv.id);
     expect(after.creditDeadline).toMatchObject({ passed: true });

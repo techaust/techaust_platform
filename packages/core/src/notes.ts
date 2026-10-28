@@ -379,6 +379,23 @@ export function creditNoteDeadline(
   };
 }
 
+/**
+ * The advice dates of the deadline banner (research round 2026-10-28, 08-C RA-31; 07-T §4): from 1 October of the year the deadline falls in the banner says how many days are left, and the
+ * advice is to issue the note by 31 October so it goes into a return filed in time (a quarterly filer's November filing is the open question). The hard block is unchanged (`creditAllowed`).
+ * Both are ISO days of the year of `deadline.date` (the cutoff day, 30 November by default); an unreadable date gives none.
+ */
+export function creditNoteAdvice(deadline: Pick<CreditDeadline, "date">): {
+  readonly deadlineWarnFrom: string | null;
+  readonly adviseIssueBy: string | null;
+} {
+  const d = parseIsoDate(deadline.date);
+  if (!d) return { deadlineWarnFrom: null, adviseIssueBy: null };
+  return {
+    deadlineWarnFrom: toIsoDate({ year: d.year, month: 10, day: 1 }),
+    adviseIssueBy: toIsoDate({ year: d.year, month: 10, day: 31 }),
+  };
+}
+
 /** Q33: a credit note dated `issueDate` (ISO) is allowed on or before the cutoff, and strictly before the day the annual return was filed. */
 export const creditAllowed = (issueDate: string, d: CreditDeadline): boolean =>
   issueDate <= d.date && (d.filedOn === null || issueDate < d.filedOn);

@@ -14,6 +14,7 @@ import {
   creditedSoFarOf,
   creditedSumOf,
   creditForGross,
+  creditNoteAdvice,
   creditNoteDeadline,
   DEBIT_REASONS,
   DISCOUNT_AFTER_SALE_FROM,
@@ -313,6 +314,27 @@ describe("noteBlockers [LD50, Rule 53(1A)]", () => {
     expect(codes(dn({ bank: { inr: false, swift: false } }), false)).toEqual([]);
     // a credit note has no bank block
     expect(codes(okFacts({ bank: { inr: false, swift: false } }))).toEqual([]);
+  });
+});
+
+describe("creditNoteAdvice [RA-31; 07-T §4]: the banner's dates", () => {
+  it("1 October warns and 31 October is the advised last day, in the year the deadline falls in; an unreadable date gives none", () => {
+    const dl = creditNoteDeadline(
+      { parentFy: "2526", parentIssueDate: "2025-10-05" },
+      SETTINGS_DEFAULTS.tax.creditNoteCutoff,
+      [],
+    );
+    expect(dl.date).toBe("2026-11-30");
+    expect(creditNoteAdvice(dl)).toEqual({ deadlineWarnFrom: "2026-10-01", adviseIssueBy: "2026-10-31" });
+    // an annual return filed earlier changes the last day, not the advice dates (the cutoff's year)
+    const early = creditNoteDeadline(
+      { parentFy: "2526", parentIssueDate: "2025-10-05" },
+      SETTINGS_DEFAULTS.tax.creditNoteCutoff,
+      [{ fy: "2526", filedOn: "2026-09-20" }],
+    );
+    expect(early.lastDay).toBe("2026-09-19");
+    expect(creditNoteAdvice(early)).toEqual({ deadlineWarnFrom: "2026-10-01", adviseIssueBy: "2026-10-31" });
+    expect(creditNoteAdvice({ date: "soon" })).toEqual({ deadlineWarnFrom: null, adviseIssueBy: null });
   });
 });
 
