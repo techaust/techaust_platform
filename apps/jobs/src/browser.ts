@@ -3,6 +3,8 @@
 // locally, so `PDF_RENDERER = "stub"` returns a fixed one-page PDF, and only when ENVIRONMENT is "local".
 // Nothing here logs or returns document content: messages are generic.
 import { pdfOptionsFor } from "@techaust/pdf";
+import { checkPdfIntegrity } from "@techaust/pdf/integrity";
+import { logEvent } from "./log.ts";
 import { type Clock, paced, realClock, spacingFrom } from "./pacer.ts";
 
 export const MAX_PDF_BYTES = 10 * 1024 * 1024;
@@ -23,7 +25,8 @@ export type RenderError =
   | { ok: false; kind: "quota"; message: string }
   | { ok: false; kind: "render"; message: string }
   | { ok: false; kind: "upstream"; message: string }
-  | { ok: false; kind: "not_pdf"; message: string };
+  | { ok: false; kind: "not_pdf"; message: string }
+  | { ok: false; kind: "damaged"; message: string };
 export type RenderOk = { ok: true; bytes: Uint8Array; browserMs: number };
 export type RenderResult = RenderOk | RenderError;
 
@@ -80,6 +83,11 @@ const err = {
     kind: "upstream",
     message: `Browser Run unavailable (${what})`,
   }),
+  damaged: (code: string): RenderError => ({
+    ok: false,
+    kind: "damaged",
+    message: `PDF structure damaged (${code})`,
+  }),
   notPdf: (why: string): RenderError => ({ ok: false, kind: "not_pdf", message: `Not a PDF (${why})` }),
 };
 
@@ -135,6 +143,18 @@ async function readPdf(res: Response, startedAt: number, now: () => number): Pro
   const bytes = new Uint8Array(await res.arrayBuffer());
   if (bytes.byteLength > MAX_PDF_BYTES) return err.notPdf("too large");
   if (!hasPdfMagic(bytes)) return err.notPdf("no %PDF- header");
+  // A PDF whose blocks arrived out of order once reached R2 and unlocked the portal offer (owner finding F1): never stored, always retried.
+  const check = await checkPdfIntegrity(bytes, res.headers.has("content-length") ? declared : null);
+  if (!check.ok) {
+    // Numbers only: no document text, no names.
+    logEvent("pdf.damaged", {
+      code: check.code,
+      bytes: check.bytes,
+      firstBadOffsetMod8192: check.firstBadOffset === null ? undefined : check.firstBadOffset % 8192,
+      displacement: check.displacement ?? undefined,
+    });
+    return err.damaged(check.code);
+  }
   const header = res.headers.get("x-browser-ms-used");
   const ms = header === null || header.trim() === "" ? Number.NaN : Number(header);
   return {

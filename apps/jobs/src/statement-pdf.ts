@@ -294,7 +294,13 @@ export async function processStatementPdf(
     clock,
   );
   if (!result.ok) return failed(env, msg, result, now);
-  const stored = await putOnce(env.DOCS, key, result.bytes, "application/pdf");
+  const stored = await putOnce(
+    env.DOCS,
+    key,
+    result.bytes,
+    "application/pdf",
+    await sha256Bytes(result.bytes),
+  );
   const bytes = stored.created ? result.bytes : new Uint8Array(await stored.existing.arrayBuffer());
   const outcome = await settle(await sha256Bytes(bytes), { browserMs: result.browserMs }, "rendered");
   logEvent("pdf.statement_rendered", {
