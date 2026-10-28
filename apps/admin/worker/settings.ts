@@ -16,7 +16,15 @@ import { ACCOUNT_NO, cleanAccountNo, IFSC, SWIFT } from "@techaust/core/bank";
 import { formatIstDateTime, fyOf } from "@techaust/core/dates";
 import { EMAIL_TEMPLATES, type EmailTemplate } from "@techaust/core/email-templates";
 import { uuidv7 } from "@techaust/core/ids";
-import { issueDateOf, lutFor, lutReminder, PURPOSE_CODE } from "@techaust/core/invoices";
+import {
+  HOUSE_RULE_ITEMS,
+  INVOICE_CHECKLIST,
+  isHouseRuleItem,
+  issueDateOf,
+  lutFor,
+  lutReminder,
+  PURPOSE_CODE,
+} from "@techaust/core/invoices";
 import { deleteAfterSql, LEAD_DELETABLE_SQL, LEAD_PURGE_NOTICE_DAYS } from "@techaust/core/lead-lifecycle";
 import { canSetNextNumber, maxNumber, SERIES, type Series, validateFormat } from "@techaust/core/numbering";
 import { type Action, decide } from "@techaust/core/permissions";
@@ -58,6 +66,12 @@ import { sampleData, TEMPLATE_NAMES } from "./email-fixtures.ts";
 import { param } from "./http.ts";
 import { queueEmail } from "./mail.ts";
 import { ANNUAL_RETURN_FUTURE } from "./note-model.ts";
+
+/** 07-S §3: the hint of a statutory checklist item. */
+const CHECKLIST_STATUTORY = {
+  code: "checklist_item_statutory",
+  message: "Required by GST law, so it can't be turned off.",
+} as const;
 
 /** The notice before a lead is deleted: a re-dated lead is never due sooner than this (Researched 2026-10-28, DPDP Act s.8(7), Rule 8 (08-C RB-10)). */
 const LEAD_NOTICE_MS = LEAD_PURGE_NOTICE_DAYS * 86_400_000;
@@ -321,6 +335,13 @@ async function groupMeta(c: Ctx, group: Generic | "gateways", value: unknown) {
           issueDateOf(Date.now()),
           lutsOf((value as Settings["tax"]) ?? SETTINGS_DEFAULTS.tax),
         ),
+        // The checklist of 07-S §3 with its house rules marked (owner 2026-10-28): only `houseRule` items can be switched off (`checklist_item_statutory` otherwise).
+        checklist: INVOICE_CHECKLIST.map((i) => ({
+          id: i.id,
+          houseRule: isHouseRuleItem(i.id),
+          available: i.available,
+        })),
+        houseRuleItems: HOUSE_RULE_ITEMS,
       };
     case "retention":
       return {
@@ -446,6 +467,23 @@ export const settings = new Hono<AppEnv>()
     }
     // M5.2 (early check 3): a saved `tax` row never keeps the deprecated single `lut`: it is folded into `luts` (unless that FY is listed) and cleared.
     if (group === "tax") {
+      // Owner 2026-10-28 (07-S §3; Researched 2026-10-28, Rule 46 CGST Rules, 08-C RA-05): only the house rules of the checklist may be switched; naming a statutory item is 400
+      // `checklist_item_statutory` ("Required by GST law, so it can't be turned off."), whatever its value.
+      const sent = (env.data.value as { invoiceChecklist?: unknown } | null)?.invoiceChecklist;
+      if (typeof sent === "object" && sent !== null && !Array.isArray(sent)) {
+        const statutory = Object.keys(sent).find(
+          (k) => INVOICE_CHECKLIST.some((i) => i.id === k) && !isHouseRuleItem(k),
+        );
+        if (statutory)
+          return c.json(
+            {
+              error: { code: CHECKLIST_STATUTORY.code, message: CHECKLIST_STATUTORY.message },
+              fields: [{ path: `invoiceChecklist.${statutory}`, message: CHECKLIST_STATUTORY.message }],
+              request_id: c.var.rid,
+            },
+            400,
+          );
+      }
       const parsed = SETTINGS_SCHEMAS.tax.safeParse(env.data.value);
       // M5.3 (G-11, Q33): the day an annual return was filed cannot be in the future (a filing that has not happened would close credit notes today).
       if (parsed.success) {

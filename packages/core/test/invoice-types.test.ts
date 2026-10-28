@@ -16,11 +16,13 @@ import {
   fxDateOk,
   fxDateVerdict,
   fxSourceLabel,
+  HOUSE_RULE_ITEMS,
   INVOICE_CHECKLIST,
   ISSUE_BLOCKER_CODES,
   type IssueBlockerCode,
   type IssueFacts,
   invoiceSnapshotSha256,
+  isHouseRuleItem,
   isLutCheckKind,
   isLutCheckMessage,
   issueBlockers,
@@ -396,12 +398,14 @@ describe("the mandatory-field checklist [ADM-INV-06, Q10, LD31]", () => {
       "unregisteredHighValue",
     ]);
   });
-  it("everything is locked but the bank details (a switch) and the payment link (off, not available)", () => {
-    for (const i of INVOICE_CHECKLIST)
-      expect(i.locked, i.id).toBe(i.id !== "bankDetails" && i.id !== "paymentLink");
+  it("everything is locked but the three house rules: bank details and the signatory (switches) and the payment link (off, not available) (owner 2026-10-28, 07-S §3)", () => {
+    for (const i of INVOICE_CHECKLIST) expect(i.locked, i.id).toBe(!isHouseRuleItem(i.id));
     expect(INVOICE_CHECKLIST.find((i) => i.id === "paymentLink")?.available).toBe(false);
     expect(INVOICE_CHECKLIST.filter((i) => i.available).length).toBe(17);
     expect([...CHECKLIST_SWITCHABLE]).toEqual(["bankDetails"]);
+    expect([...HOUSE_RULE_ITEMS]).toEqual(["bankDetails", "paymentLink", "signatory"]);
+    expect(isHouseRuleItem("signatory")).toBe(true);
+    expect(isHouseRuleItem("companyNames")).toBe(false);
   });
   it("the five layout facts own no blocker; 'ORIGINAL FOR RECIPIENT' does not apply to a proforma; the export lines apply to the export invoice", () => {
     for (const id of [
@@ -1109,7 +1113,13 @@ describe("the tax settings of M5.2 [ADM-SET-03, LD31, Q24]", () => {
     expect(ok({ luts: twenty }).success).toBe(true);
     expect(ok({ luts: [...twenty, { fy: "2122", arn: "A", filedOn: null }] }).success).toBe(false);
   });
-  it("the checklist: only the two switches; naming a locked item, or turning the payment link on, is refused", () => {
+  it("the checklist: the house rules are the switches (bank details, signatory); naming a statutory item, or turning the payment link on, is refused", () => {
+    expect(
+      ok({ invoiceChecklist: { bankDetails: true, paymentLink: false, signatory: false } }).success,
+    ).toBe(true);
+    expect(ok({ invoiceChecklist: { bankDetails: true, paymentLink: false, signatory: "no" } }).success).toBe(
+      false,
+    );
     expect(ok({ invoiceChecklist: { bankDetails: false, paymentLink: false } }).success).toBe(true);
     expect(ok({ invoiceChecklist: { bankDetails: true, paymentLink: true } }).success).toBe(false);
     expect(

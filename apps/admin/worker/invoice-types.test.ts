@@ -641,8 +641,58 @@ describe("the mandatory-field checklist over the API [ADM-INV-06, Q10, docs/09: 
     await bad({ bankDetails: true, paymentLink: false, companyNames: false });
     await bad({ bankDetails: true, paymentLink: false, reverseCharge: false });
     await bad({ paymentLink: false });
-    const ok = await put({ ...before.value, invoiceChecklist: { bankDetails: false, paymentLink: false } });
-    expect(ok.status, await ok.clone().text()).toBe(200);
+    // owner 2026-10-28 (07-S §3): a statutory item is refused with its own code and the hint; the house rules are the switches
+    const statutory = await put({
+      ...before.value,
+      invoiceChecklist: { bankDetails: true, paymentLink: false, companyNames: false },
+    });
+    expect(statutory.status).toBe(400);
+    const sb = await json(statutory);
+    expect(sb.error).toEqual({
+      code: "checklist_item_statutory",
+      message: "Required by GST law, so it can't be turned off.",
+    });
+    expect(sb.fields).toEqual([
+      { path: "invoiceChecklist.companyNames", message: "Required by GST law, so it can't be turned off." },
+    ]);
+    // the checklist and its house rules are in the group's meta
+    expect(before.meta.houseRuleItems).toEqual(["bankDetails", "paymentLink", "signatory"]);
+    const byId = Object.fromEntries(before.meta.checklist.map((i: J) => [i.id, i.houseRule]));
+    expect(byId).toMatchObject({
+      bankDetails: true,
+      paymentLink: true,
+      signatory: true,
+      companyNames: false,
+      reverseCharge: false,
+      originalForRecipient: false,
+    });
+    expect(before.meta.checklist).toHaveLength(18);
+    const houseRule = await put({
+      ...before.value,
+      invoiceChecklist: { bankDetails: true, paymentLink: false, signatory: false },
+    });
+    expect(houseRule.status, await houseRule.clone().text()).toBe(200);
+    expect((await get()).value.invoiceChecklist).toEqual({
+      bankDetails: true,
+      paymentLink: false,
+      signatory: false,
+    });
+    // (the version moved with the save above: a save with the old one is a stale save)
+    const stale = await put({
+      ...before.value,
+      invoiceChecklist: { bankDetails: false, paymentLink: false },
+    });
+    expect(stale.status).toBe(409);
+    const fresh = await get();
+    const again = await call("/settings/groups/tax", {
+      method: "PUT",
+      cookie: o.cookie,
+      body: {
+        version: fresh.version,
+        value: { ...fresh.value, invoiceChecklist: { bankDetails: false, paymentLink: false } },
+      },
+    });
+    expect(again.status, await again.clone().text()).toBe(200);
     expect((await get()).value.invoiceChecklist).toEqual({ bankDetails: false, paymentLink: false });
   });
 

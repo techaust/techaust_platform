@@ -185,7 +185,12 @@ export type IssueBlocker = {
 export type ChecklistType = "tax_invoice" | "export_invoice" | "proforma";
 
 /** What the Owner may switch (Settings > Tax, stored in the `tax` row, LD31): only these two keys; the locked items are never stored. */
-export type ChecklistSettings = { readonly bankDetails: boolean; readonly paymentLink: false };
+export type ChecklistSettings = {
+  readonly bankDetails: boolean;
+  readonly paymentLink: false;
+  /** A house rule too (07-S §3): absent is on. It owns no blocker (the signature is optional on an electronic invoice, Rule 46(q) proviso), so switching it off is the Owner's record of the choice. */
+  readonly signatory?: boolean;
+};
 export const DEFAULT_CHECKLIST: ChecklistSettings = { bankDetails: true, paymentLink: false };
 
 export type ChecklistItem = {
@@ -253,7 +258,7 @@ export const INVOICE_CHECKLIST: readonly ChecklistItem[] = [
     appliesTo: ALL_TYPES,
     blockers: ["reverse_charge_text"],
   },
-  { id: "signatory", locked: true, available: true, appliesTo: ALL_TYPES, blockers: [] },
+  { id: "signatory", locked: false, available: true, appliesTo: ALL_TYPES, blockers: [] },
   {
     id: "originalForRecipient",
     locked: true,
@@ -295,10 +300,19 @@ export const INVOICE_CHECKLIST: readonly ChecklistItem[] = [
 /** The keys the Owner may store (an item that is neither locked nor unavailable). */
 export const CHECKLIST_SWITCHABLE = ["bankDetails"] as const;
 
+/**
+ * The house rules of the checklist (owner 2026-10-28, 07-S §3; Researched 2026-10-28, Rule 46 CGST Rules, 08-C RA-05 and RA-06): items GST law does not require, which the Owner may switch off:
+ * bank details, the payment link or QR, and the authorised signatory (an invoice issued electronically needs no signature). Every other item is statutory and locked; the Settings API
+ * refuses to switch one off with `checklist_item_statutory`.
+ */
+export const HOUSE_RULE_ITEMS = ["bankDetails", "paymentLink", "signatory"] as const;
+export const isHouseRuleItem = (id: string): boolean => (HOUSE_RULE_ITEMS as readonly string[]).includes(id);
+
 /** Whether a checklist item is on for these settings: locked items always, `bankDetails` as stored, `paymentLink` never (not available). */
 export function checklistItemOn(item: ChecklistItem, s: ChecklistSettings): boolean {
   if (item.id === "bankDetails") return s.bankDetails;
   if (item.id === "paymentLink") return false;
+  if (item.id === "signatory") return s.signatory !== false;
   return true;
 }
 

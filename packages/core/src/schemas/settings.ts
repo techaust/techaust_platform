@@ -167,6 +167,8 @@ export const annualReturnEntry = z
 export const invoiceChecklistSettings = z.strictObject({
   bankDetails: z.boolean(),
   paymentLink: z.literal(false),
+  /** A house rule (07-S §3); absent is on. */
+  signatory: z.optional(z.boolean()),
 });
 
 export const taxSettings = z.object({
