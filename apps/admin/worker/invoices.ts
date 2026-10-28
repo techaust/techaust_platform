@@ -856,7 +856,7 @@ export const invoices = new Hono<AppEnv>()
               rateMicros,
               date: fl.fx.date,
               source,
-              ...(fl.fx.noRateThatDay === true ? { noRateThatDay: true } : {}),
+              ...(fl.fx.noRateThatDay === true ? { noRateThatDay: true as const } : {}),
             },
           };
         }

@@ -170,7 +170,7 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
       if (verdict === "same_day_exists") return err(c, fxSameDayExistsFor(f.receivedOn), 400);
       if (verdict === "invalid")
         return err(c, fxDateInvalidFor(f.receivedOn, ctx.settings.tax.fxMaxAgeDays), 400);
-      fx = { rateMicros, date: f.fx.date, source, ...(noRate ? { noRateThatDay: true } : {}) };
+      fx = { rateMicros, date: f.fx.date, source, ...(noRate ? { noRateThatDay: true as const } : {}) };
     }
     // (9) the lines: the amount split over the proforma's own (SAC, rate) groups, by the inclusive split
     const proformaComputed = d.computed;

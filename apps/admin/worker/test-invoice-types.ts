@@ -109,7 +109,7 @@ export async function setFx(
     date?: string;
     source?: "FBIL" | "RBI" | "OTHER";
     sourceNote?: string;
-    noRateThatDay?: boolean;
+    noRateThatDay?: boolean | undefined;
   } = {},
 ) {
   const doc = await getInvoice(s, id);

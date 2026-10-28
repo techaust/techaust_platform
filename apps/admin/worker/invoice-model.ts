@@ -291,7 +291,7 @@ export const ISSUED_DOCUMENTS_SQL =
 
 /** M5.2: the exchange rate typed on a USD draft: INR micros per USD, the rate's own date, its source as it is printed (`fxSourceLabel`). */
 /** `noRateThatDay` (Q24, 08-C RA-21): the Owner stated that no rate was published on the day of supply; stored with the rate (`fx_no_rate_that_day`), frozen and sealed with it. */
-export type FxState = { rateMicros: number; date: string; source: string; noRateThatDay?: boolean };
+export type FxState = { rateMicros: number; date: string; source: string; noRateThatDay?: true };
 
 export type InvoiceState = {
   id: string;
