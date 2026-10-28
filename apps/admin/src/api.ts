@@ -934,7 +934,8 @@ export type StatementPage = {
 export type FieldIssue = { path: string; message: string };
 
 type ApiErrorBody = {
-  error?: { code: string; message: string };
+  /** `details` (step 5): the worker's `err(..., details)`, e.g. `{ fy }` of `advance_lut_missing`. */
+  error?: { code: string; message: string; details?: unknown };
   request_id?: string;
   fields?: FieldIssue[];
   /** 422 `snapshot_invalid` (POST /catalogue/publish): the failing paths of the snapshot, never values. */
@@ -1064,11 +1065,15 @@ async function send<T>(path: string, { method, body, raw, signedIn = true }: Opt
   const data = (await res.json().catch(() => ({}))) as T & ApiErrorBody;
   if (res.ok) return data;
   const e = data.error ?? { code: "network", message: NETWORK };
-  // The contract's `details` object (step 5) and the top level are read alike; the top level wins.
+  // The builder's `error.details` (worker `err(..., details)`: `advance_lut_missing` sends `{ fy }`), an older top-level `details`, and the top
+  // level are read alike; the top level wins.
+  const inner = data.error?.details;
   const details =
-    typeof data.details === "object" && data.details !== null
-      ? (data.details as Record<string, unknown>)
-      : {};
+    typeof inner === "object" && inner !== null
+      ? (inner as Record<string, unknown>)
+      : typeof data.details === "object" && data.details !== null
+        ? (data.details as Record<string, unknown>)
+        : {};
   const fy = typeof data.fy === "string" ? data.fy : typeof details.fy === "string" ? details.fy : undefined;
   const date =
     typeof data.date === "string" ? data.date : typeof details.date === "string" ? details.date : undefined;
