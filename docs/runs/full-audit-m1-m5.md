@@ -314,6 +314,55 @@ Shots: `.logs/shots/a4-docs/` (main checkout).
 - 1–3, 5 and 7–9 and the VERIFY retagging go into an A4 fix task.
 - 4 and 6 go on the owner's copy page.
 
+### A5 invoicing: reviewer claude-opus-5-5/high, 2026-10-29 ~04:15–05:00 IST, on e1576b57: SEND BACK
+**Ran:**
+- tests: admin invoicing 740, jobs billing and PDF 186, portal invoices 6, pdf invoice and statement 188; all pass;
+- locally: a tax invoice (line discount, IGST, round-off); LUT and IGST export invoices (the FX same-day rule enforced); proforma → advance invoice with a correct split; the over-balance, reused-reference and paise refusals; the discount-after-sale date gate; a partial credit note; the credit cap refused; debit and tax-only debit notes; void allowed and refused by its rules; send refused to a non-finance contact and to another client's contact, and sent to a finance contact (5 reminders made);
+- GSTR-1/3B/Table 13 recomputed by hand: all match;
+- the statement and the tiles agree with the ledger;
+- the Accountant role: writes 403, reads allowed, step-up on registers;
+- visual sweep: 18 screens × 4 widths, both themes, axe clean, no overflow.
+
+Shots: `.logs/shots/a5-invoicing/` (main checkout).
+
+**Findings:**
+1. **High (OPEN for the CA, 08-C RA-22/RA-23):** a tax-only debit note goes into `cdnr.csv` with taxable 0.00 and no tax column (`packages/core/src/gst/layouts.ts:126-140`), so the Offline Tool imports ₹0 tax and 3B Table 3 under-reports, while the panel says "No errors". Fix: a blocking warning in `gstr1Sections` naming the tax heads to enter by hand, shown on the panel; plus a new OPEN question for the CA.
+2. **High:** the issue panel's blocker links are 22–26 px tall (`invoices.css:465-473`). Fix: a 44 px hit area.
+3. **Medium:** the totals call every discount "Document discount", line discounts included (`routes/documents/money.tsx:40-44`). Fix: separate rows, or "Discount" (copy).
+4. **Medium:** no audit labels for the 15 `invoice.*` actions, `invoice.issue_auto` and `report.export`, and no Invoices or Reports filter group (`lib/audit.ts:44-114`); the dashboard feed shows raw codes (copy).
+5. **Medium (08-C RA-28):** proforma GST is shown as a firm figure. Fix: "GST (estimate)" on the screen, the PDF and the portal, for new proformas (copy).
+6. **Low:** "(after 1 note)" counts credit notes only (`lib/notes.ts:218`). Fix: "(after 1 credit note)", and show each ledger row's type.
+7. **Low:** the statement shows no "against" invoice for debit notes (`packages/db/src/reports.ts:159`).
+8. **Low:** after "Add LUT" the row looks saved but isn't until "Save changes". Mark it "Not saved yet".
+9. **Low:** the supplier copy answers 202 forever when the original PDF never rendered (`document-pdf.ts:136-140`). Answer 409 `pdf_pending` instead.
+10. **Low:** `voidBlockers` lists `not_issued` for a partially credited invoice (`packages/core/src/invoices.ts:494`). Goes to FX-1.
+11. **Low (OPEN for the CA):** a tax-only debit note of ₹10.01 IGST totals ₹10.00 after round-off. Fix: never round a tax-only note below its tax.
+12. **Low:** a custom line has no default SAC, and the SAC field sits behind "Actions". Default it from Settings, or show it inline.
+13. **Low (copy):** Settings › Tax says "rate on the invoice date"; RA-21 says the date of the time of supply.
+14. **Low:** at 375, the sales-register output-tax table has no visible scroll cue.
+
+**Requirements:**
+- Met as exercised: ADM-INV-01, 03–08, 10–13, 15, 17, 18, 19; ADM-REP-06 and 07; ADM-SET-02 and 03.
+- Partial:
+  - ADM-REP-04 (findings 1 and 5; RA-23 OPEN until a test import into the Offline Tool);
+  - ADM-AUD-02 for M5 actions (finding 4);
+  - ADM-INV-14 and ADM-SET-04 (A0).
+- Due later: M6 and M7 items.
+
+**Not verified:**
+- rendered PDFs and emails;
+- the jobs consumers (tests only);
+- the portal invoice screens in this pass;
+- request and approve in the UI;
+- 768 and 1600 by eye;
+- a real Offline Tool import (the CSV column order rests on the reviewer's memory, not a source);
+- staging, NVDA, Safari, Firefox, phones.
+
+**Lead's triage:**
+- 1–9, 11, 12 and 14 go into FX-4 (finding 1's warning now; the CA's question added to 08-C).
+- 10 goes into FX-1.
+- 3, 4, 5 and 13 go on the owner's copy page 07-Y.
+
 ## Fix plan (lead, 2026-10-29 03:45 IST)
 - **Order:** the M5 owner-fix PR merges first. Then each fix task branches from the newest `main`, so each area merges in turn, and migrations land in this order.
 - **Agents:** every builder, designer, analyst and reviewer runs on Opus high.
