@@ -112,3 +112,15 @@ Review (Opus 5.5, high, code + visual) → fixes → re-check → record (12-sta
 
 ## Handover (2026-10-28, lead, after step 4)
 - **Next:** step 5 in a new conversation ("continue"): budget gate, then start the builder with the brief above (`isolation: "worktree"`); the designer after the builder's items 1–5.
+
+## Step 5: API contract (lead, 2026-10-28; builder and designer run in parallel against it)
+The owner said "complete everything here now", so the builder and the designer start together (disjoint files); the designer builds against this contract and the lead integrates.
+- **Advance (Q37):** `advanceBody` gains `route?: "lut" | "igst"` (omitted = the proforma's route). LUT route with no LUT saved for the FY of `receivedOn` → 409 `advance_lut_missing` with `details: { fy: "2027-28" }`. `route: "igst"` on an LUT proforma issues with IGST 18 % and the S §9 PDF line.
+- **FX (RA-21):** `fxIn` gains `noRateThatDay?: boolean`. Rate date = the time-of-supply date → fine. Earlier date → needs `noRateThatDay: true` and within `fxMaxAgeDays`, else 400 `fx_same_day_exists` (flag false/missing) or `fx_date_invalid` (too old or later). Stored with the frozen FX.
+- **Debit reason (Q35):** `DEBIT_REASONS` = `price_correction`, `tax_charged_too_low`, `other`. For `tax_charged_too_low` the debit body carries `taxAmountMinor` (total tax to add, > 0); the taxable value is 0; tax split over the parent's heads; bad shape → 400 `debit_tax_only_invalid`.
+- **Discount after sale:** a credit note with `discount_after_sale` dated before 2026-11-01 IST → 400 `discount_reason_not_in_force`.
+- **Supplier copy (Q11):** `GET /api/v1/invoices/:id/pdf/supplier` (Owner, Accountant; tax, export, credit and debit notes; proformas 404) answers like the existing `/:id/pdf` (ready / pending / failed). Jobs renders it after the original.
+- **Credit-note deadline:** wherever the invoice view returns the credit-note deadline, it also returns `deadlineWarnFrom` (1 October of that year, ISO) and `adviseIssueBy` (31 October, ISO).
+- **Checklist house rules:** core exports `HOUSE_RULE_ITEMS` (bank details, payment link, authorised signatory); the settings API marks each checklist item `houseRule: boolean`; only house-rule items may be switched off (others refused 400 `checklist_item_statutory`).
+- **Notes draft changed:** `content_changed` with T §9's line. **Rounding (Q66):** T §9's line.
+Any change to this contract is written here by whoever makes it, with the reason.
