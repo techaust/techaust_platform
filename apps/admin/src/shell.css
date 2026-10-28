@@ -2375,6 +2375,28 @@ input[readonly] {
   font-weight: 560;
 }
 
+/* A house rule (07-S §3): the label, then its badge, which wraps under the label on a narrow column rather than squeezing the switch. */
+.checklist__label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+}
+
+/* The badge says the line is the business's own choice, not the law's: an outlined tag in the muted text colour, never a status colour, so it reads
+   as a kind of line and not as a state. */
+.checklist__house {
+  display: inline-block;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  font-size: var(--text-caption);
+  font-weight: 500;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
 .row-controls {
   display: flex;
   flex-wrap: wrap;

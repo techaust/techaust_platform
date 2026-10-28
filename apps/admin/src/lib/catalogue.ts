@@ -154,8 +154,6 @@ export const FORMATTING_HINT = "You can use **bold**, *italic*, lists and links.
 
 // ---- lines 07-L lacked, approved word for word in 07-Q (2026-10-26) --------------------------------------------------
 
-export const PLACEHOLDER_TAG = "[Placeholder]";
-
 export const PENDING = {
   emptyTitle: "No services yet",
   emptyBody: "Add the first service, or load the seed catalogue.",

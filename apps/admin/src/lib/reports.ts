@@ -1,10 +1,10 @@
 // The words and the pure rules of the M5.5b screens (ADM-REP-04, ADM-REP-07, ADM-INV-17, ADM-CLI-04, ADM-DASH-01): the reports section (GST exports,
 // sales register, EDF list, export realisation), the client's statement tab and the dashboard's finance tiles.
 //
-// Copy: 07-V (docs/07-content-appendix/V-m5.5b-reports-statements.md), drafted by the lead and PENDING the owner's word-for-word approval. Every line that
-// comes only from 07-V is shown with the "[Placeholder] " mark (`V`), as the M5.1 to M5.4 screens mark unapproved lines; when the owner approves 07-V,
-// `APPROVED_07V` turns to true and the marks go at once. A line 07-V doesn't have either is the plain mark (`P`), never invented, and listed in the run file.
-// Every tax and legal line is VERIFY WITH CA/LEGAL.
+// Copy: 07-V (docs/07-content-appendix/V-m5.5b-reports-statements.md), approved by the lead on 2026-10-28 under the owner's delegation, word for word.
+// A singular of a 07-V plural line ("1 document checked") follows that line; a word 07-V or another approved appendix has is used as written and says
+// where it comes from. A line no approved appendix has is `gap(...)` (./copy-gap.ts: the "[Placeholder]" mark, never invented, listed in the run file).
+// Tax and legal lines: Researched 2026-10-28 or OPEN, per 08-C (the IDs are noted at each line).
 //
 // No value import of `@techaust/core/gst` here (the gst core is fetched only by the reports screens: ./reports-build.ts); types only. Money is formatted
 // through core (`moneyText`); nothing here adds up an amount.
@@ -14,20 +14,9 @@ import { STATE_CODES } from "@techaust/core/gstin";
 import type { StatementKind } from "@techaust/core/statement";
 import { RequestError } from "../api.ts";
 import type { PillTone } from "../components/display.tsx";
-import { INV_PLACEHOLDER } from "./invoice-types.ts";
-
-/** Flip to true when the owner approves 07-V word for word: every mark below disappears at once (the email package has the same switch). */
-export const APPROVED_07V = false;
-/** A 07-V line, marked until the owner approves it. */
-export const V = (line: string): string => (APPROVED_07V ? line : `${INV_PLACEHOLDER} ${line}`);
-/** A line 07-V doesn't have: the plain mark, so approving 07-V alone doesn't unmark it. Each one is listed in the run file. */
-export const P = (line: string): string => `${INV_PLACEHOLDER} ${line}`;
+import { gap } from "./copy-gap.ts";
 
 /** "1 document" / "3 documents": the count words 07-V's lines use ({count} documents). */
-/** A marked line without its mark, for a 07-V line that quotes another 07-V line ({section} in a download label). */
-export const unmark = (line: string): string =>
-  line.startsWith(`${INV_PLACEHOLDER} `) ? line.slice(INV_PLACEHOLDER.length + 1) : line;
-
 const docs = (n: number) => `${n} ${n === 1 ? "document" : "documents"}`;
 
 // ---- 07-V §1 navigation ------------------------------------------------------------------------------------------------------------------------
@@ -36,97 +25,95 @@ export type ReportKey = "gst" | "sales-register" | "edf" | "realisation";
 
 /** The four reports, in 07-V §1's order, with their address under /reports. */
 export const REPORTS: readonly { key: ReportKey; path: string; label: string }[] = [
-  { key: "gst", path: "/reports/gst", label: V("GST exports") },
-  { key: "sales-register", path: "/reports/sales-register", label: V("Sales register") },
-  { key: "edf", path: "/reports/edf", label: V("EDF list") },
-  { key: "realisation", path: "/reports/realisation", label: V("Export realisation") },
+  { key: "gst", path: "/reports/gst", label: "GST exports" },
+  { key: "sales-register", path: "/reports/sales-register", label: "Sales register" },
+  { key: "edf", path: "/reports/edf", label: "EDF list" },
+  { key: "realisation", path: "/reports/realisation", label: "Export realisation" },
 ];
 
 export const REPORTS_COPY = {
   /** 07-V §1: the sidebar group, used as the section's crumb and its sub-navigation's name. */
-  group: V("Reports"),
+  group: "Reports",
 } as const;
 
 // ---- 07-V §2 GST exports ------------------------------------------------------------------------------------------------------------------------
 
 export const GST_COPY = {
-  title: V("GST exports"),
-  lede: V(
-    "Files for your GSTR-1 and GSTR-3B, made from the invoices and notes issued in the period. Check them with your CA before you file.",
-  ),
-  period: V("Period"),
-  month: V("Month"),
-  quarter: V("Quarter"),
-  defaultHint: V("The last complete quarter is selected."),
-  notEnded: V("This period has not ended. The files will change if you issue more documents before it ends."),
-  make: V("Make files"),
-  reading: (n: number) => V(`Reading issued documents: ${n} so far`),
-  checking: (n: number) => V(`Checking ${n} documents`),
-  /** 07-V has only the plural; the singular is not in 07-V (batch Q69), so it carries the plain mark. */
-  done: (n: number) =>
-    n === 1 ? P("1 document checked. No errors.") : V(`${n} documents checked. No errors.`),
+  title: "GST exports",
+  lede: "Files for your GSTR-1 and GSTR-3B, made from the invoices and notes issued in the period. Check them with your CA before you file.",
+  period: "Period",
+  month: "Month",
+  quarter: "Quarter",
+  defaultHint: "The last complete quarter is selected.",
+  notEnded: "This period has not ended. The files will change if you issue more documents before it ends.",
+  make: "Make files",
+  reading: (n: number) => `Reading issued documents: ${n} so far`,
+  checking: (n: number) => `Checking ${n} documents`,
+  /** 07-V has the plural; one document is said in its singular (the plural line's own words). */
+  done: (n: number) => (n === 1 ? "1 document checked. No errors." : `${n} documents checked. No errors.`),
   errorsHeading: (n: number) =>
     n === 1
-      ? P("1 problem to fix before these files can be made")
-      : V(`${n} problems to fix before these files can be made`),
-  openDocument: V("Open document"),
-  warningsHeading: V("Check before filing"),
-  totalsHeading: V("Totals for the period"),
-  hsnMatches: V("HSN/SAC summary matches the section totals."),
-  hsnDiffers: V("HSN/SAC summary does not match the section totals."),
-  gstr3bHeading: V("GSTR-3B figures"),
-  table31a: V("3.1(a) Outward taxable supplies (other than zero-rated)"),
-  table31b: V("3.1(b) Outward taxable supplies (zero-rated)"),
-  table32: V("3.2 Inter-state supplies to unregistered persons, by place of supply"),
-  table13Heading: V("Documents issued"),
+      ? "1 problem to fix before these files can be made"
+      : `${n} problems to fix before these files can be made`,
+  openDocument: "Open document",
+  warningsHeading: "Check before filing",
+  totalsHeading: "Totals for the period",
+  hsnMatches: "HSN/SAC summary matches the section totals.",
+  hsnDiffers: "HSN/SAC summary does not match the section totals.",
+  gstr3bHeading: "GSTR-3B figures",
+  table31a: "3.1(a) Outward taxable supplies (other than zero-rated)",
+  table31b: "3.1(b) Outward taxable supplies (zero-rated)",
+  table32: "3.2 Inter-state supplies to unregistered persons, by place of supply",
+  table13Heading: "Documents issued",
   table13Columns: {
-    series: V("Series"),
-    from: V("From"),
-    to: V("To"),
-    total: V("Total"),
-    cancelled: V("Cancelled"),
+    series: "Series",
+    from: "From",
+    to: "To",
+    total: "Total",
+    cancelled: "Cancelled",
   },
-  /** `section` may be a marked 07-V name itself: its mark is not repeated inside the line. */
-  download: (section: string) => V(`Download ${unmark(section)} CSV`),
-  downloadAll: V("Download all (ZIP)"),
+  download: (section: string) => `Download ${section} CSV`,
+  downloadAll: "Download all (ZIP)",
   verify: (version: string) =>
-    V(
-      `Made with layout ${version} for the GSTR-1 offline tool. Layouts change; check with your CA that this one is current before you upload. (VERIFY WITH CA/LEGAL)`,
-    ),
-  /** Not in 07-V: the column words of the totals panel and the 3B table (the GST portal's own names are kept, 07-V's rule). */
+    // OPEN (08-C RA-23 Q17): the offline tool's layout is the CA's to confirm.
+    `Made with layout ${version} for the GSTR-1 offline tool. Layouts change; before your first upload, test-import one file with your CA.`,
+  /**
+   * The column words of the totals panel and the 3B table: "Taxable value", "Table" and "Place of supply" are 07-V §3's CSV headers; the GST portal's own
+   * names are kept (07-V's rule); "Section" and "Documents" are not in 07-V.
+   */
   columns: {
-    section: P("Section"),
-    documents: P("Documents"),
-    taxable: P("Taxable value"),
+    section: gap("Section"),
+    documents: gap("Documents"),
+    taxable: "Taxable value",
     igst: "IGST",
     cgst: "CGST",
     sgst: "SGST",
-    table: P("Table"),
-    pos: P("Place of supply"),
+    table: "Table",
+    pos: "Place of supply",
   },
   /** Not in 07-V: the line when the step-up was cancelled before any page was read. */
-  cancelled: P("Cancelled. No files were made."),
+  cancelled: gap("Cancelled. No files were made."),
   /** Not in 07-V: the closing row of the totals panel (every reported document of the period, signed). */
-  overall: P("Overall"),
+  overall: gap("Overall"),
   /** Not in 07-V: the heading of the file list. */
-  filesHeading: P("Files"),
+  filesHeading: gap("Files"),
   /** Not in 07-V (batch Q69): the two HSN/SAC files' rows, which 07-V names alike; the file name tells them apart. */
-  downloadHsnB2b: P("Download HSN/SAC summary (B2B) CSV"),
-  downloadHsnB2c: P("Download HSN/SAC summary (B2C) CSV"),
+  downloadHsnB2b: gap("Download HSN/SAC summary (B2B) CSV"),
+  downloadHsnB2c: gap("Download HSN/SAC summary (B2C) CSV"),
   /** Not in 07-V: a 3.2 table with no supplies to unregistered persons in other states. */
-  table32Empty: P("None in this period."),
+  table32Empty: gap("None in this period."),
 } as const;
 
 /** 07-V §2 section names, by the GSTR-1 file's stem (`gstr1Csv`'s file names); the two HSN files share one name, the file name tells them apart. */
 export const SECTION_NAMES = {
-  b2b: V("B2B (registered clients)"),
-  b2cl: (threshold: string) => V(`B2CL (unregistered, inter-state, above ${threshold})`),
-  b2cs: V("B2CS (unregistered, other)"),
-  exp: V("Exports"),
-  cdnr: V("Credit and debit notes (registered)"),
-  cdnur: V("Credit and debit notes (unregistered)"),
-  hsn: V("HSN/SAC summary"),
-  docs: V("Documents issued (Table 13)"),
+  b2b: "B2B (registered clients)",
+  b2cl: (threshold: string) => `B2CL (unregistered, inter-state, above ${threshold})`,
+  b2cs: "B2CS (unregistered, other)",
+  exp: "Exports",
+  cdnr: "Credit and debit notes (registered)",
+  cdnur: "Credit and debit notes (unregistered)",
+  hsn: "HSN/SAC summary",
+  docs: "Documents issued (Table 13)",
 } as const;
 
 /** The section name of one GSTR-1 file by its stem ("b2b", "hsn_b2b", "docs"…); an unknown stem is the stem itself. */
@@ -147,38 +134,37 @@ export function fileDownloadText(stem: string, section: string): string {
   return GST_COPY.download(stem === "docs" ? SECTION_NAMES.docs : section);
 }
 
-/** 07-V §2.1: one message per code (28), VERIFY WITH CA/LEGAL. */
+/** 07-V §2.1: one message per code (28). */
 export const GST_ERRORS: Readonly<Record<GstErrorCode, string>> = {
-  kind_not_reportable: V("This document type is not reported in GSTR-1."),
-  gstin_missing: V("The client's GSTIN is missing."),
-  gstin_invalid: V("The client's GSTIN is not valid."),
-  parent_missing: V("The invoice this note is against was not found in the data."),
-  parent_invalid: V("The invoice this note is against is not a reportable invoice."),
-  supply_mismatch: V(
+  kind_not_reportable: "This document type is not reported in GSTR-1.",
+  gstin_missing: "The client's GSTIN is missing.",
+  gstin_invalid: "The client's GSTIN is not valid.",
+  parent_missing: "The invoice this note is against was not found in the data.",
+  parent_invalid: "The invoice this note is against is not a reportable invoice.",
+  supply_mismatch:
     "The supply details (type, client, place of supply or tax heads) don't agree with each other.",
-  ),
-  sac_missing: V("A line has no SAC code."),
-  sac_invalid: V("A line's SAC code is not six digits."),
-  params_invalid: V("Your state code in Settings is not valid."),
-  rates_empty: V("The document has no tax lines."),
-  rate_invalid: V("A line has a GST rate that isn't allowed."),
-  amount_invalid: V("An amount on the document is not valid."),
-  amount_out_of_range: V("An amount is too large to report."),
-  totals_mismatch: V("The document's totals don't add up from its lines."),
-  pos_invalid: V("The place of supply is not a valid state code."),
-  export_pos_mismatch: V("An export must have place of supply 96 (other countries)."),
-  number_invalid: V("The document number has characters the GST portal won't accept."),
-  duplicate_row: V("This document appears twice."),
-  date_invalid: V("The document date is not valid."),
-  threshold_invalid: V("The B2CL threshold in Settings is not valid."),
-  series_not_gst: V("This number series is not a GST document series."),
-  docs_counts_invalid: V("The documents-issued counts don't add up."),
-  fx_missing: V("A foreign-currency document has no exchange rate."),
-  rules_invalid: V("The realisation periods in Settings are not valid."),
-  period_invalid: V("Pick a period within one financial year, of at most a year."),
-  rates_sum_mismatch: V("The tax lines don't add up to the document total."),
-  layout_unknown: V("This file layout is not known."),
-  internal_error: V("Something went wrong making this file. Try again; if it keeps happening, tell us."),
+  sac_missing: "A line has no SAC code.",
+  sac_invalid: "A line's SAC code is not six digits.",
+  params_invalid: "Your state code in Settings is not valid.",
+  rates_empty: "The document has no tax lines.",
+  rate_invalid: "A line has a GST rate that isn't allowed.",
+  amount_invalid: "An amount on the document is not valid.",
+  amount_out_of_range: "An amount is too large to report.",
+  totals_mismatch: "The document's totals don't add up from its lines.",
+  pos_invalid: "The place of supply is not a valid state code.",
+  export_pos_mismatch: "An export must have place of supply 96 (other countries).",
+  number_invalid: "The document number has characters the GST portal won't accept.",
+  duplicate_row: "This document appears twice.",
+  date_invalid: "The document date is not valid.",
+  threshold_invalid: "The B2CL threshold in Settings is not valid.",
+  series_not_gst: "This number series is not a GST document series.",
+  docs_counts_invalid: "The documents-issued counts don't add up.",
+  fx_missing: "A foreign-currency document has no exchange rate.",
+  rules_invalid: "The realisation periods in Settings are not valid.",
+  period_invalid: "Pick a period within one financial year, of at most a year.",
+  rates_sum_mismatch: "The tax lines don't add up to the document total.",
+  layout_unknown: "This file layout is not known.",
+  internal_error: "Something went wrong making this file. Try again; if it keeps happening, tell us.",
 };
 
 export const gstErrorText = (code: string): string =>
@@ -223,13 +209,12 @@ export function gstWarningText(
 ): string {
   switch (w.code) {
     case "b2cs_negative_net":
-      return V(
-        `B2CS for ${facts.state ?? ""} and ${facts.rate ?? ""} comes to below zero after credit notes. Check with your CA how to report it.`,
-      );
+      return `B2CS for ${facts.state ?? ""} and ${facts.rate ?? ""} comes to below zero after credit notes. Check with your CA how to report it.`;
     case "hsn_description_missing":
-      return V(`SAC ${facts.sac ?? ""} has no description in our list; the file leaves it blank.`);
+      return `SAC ${facts.sac ?? ""} has no description in our list; the file leaves it blank.`;
     case "before_fema_2026":
-      return V("Issued before 1 October 2026: the older realisation period may apply. Check with your CA.");
+      // OPEN (08-C RB-02): which period applies to an invoice raised before 1 October 2026.
+      return "Issued before 1 October 2026: a different realisation period may apply. Ask your bank or CA.";
   }
 }
 
@@ -366,31 +351,29 @@ export const isoDayText = (s: string) => {
 // ---- 07-V §3 sales register ----------------------------------------------------------------------------------------------------------------------
 
 export const SALES_COPY = {
-  title: V("Sales register"),
-  lede: V(
-    "Every tax invoice, export invoice, credit note and debit note issued in the range, for your accounts.",
-  ),
-  from: V("From"),
-  to: V("To"),
-  rangeInvalid: V("Pick a period within one financial year, of at most a year."),
-  downloadRegister: V("Download sales register (CSV)"),
-  downloadOutput: V("Download output tax (CSV)"),
-  downloadGstr3b: V("Download GSTR-3B figures (CSV)"),
-  empty: V("No documents were issued in this range."),
+  title: "Sales register",
+  lede: "Every tax invoice, export invoice, credit note and debit note issued in the range, for your accounts.",
+  from: "From",
+  to: "To",
+  rangeInvalid: "Pick a period within one financial year, of at most a year.",
+  downloadRegister: "Download sales register (CSV)",
+  downloadOutput: "Download output tax (CSV)",
+  downloadGstr3b: "Download GSTR-3B figures (CSV)",
+  empty: "No documents were issued in this range.",
   /** Not in 07-V: the button that reads the range, and the heading of the preview. */
-  show: P("Show"),
-  previewHeading: P("Output tax"),
+  show: gap("Show"),
+  previewHeading: gap("Output tax"),
   supply: {
-    intra: V("Intra-state"),
-    inter: V("Inter-state"),
-    zero_rated_wopay: V("Zero-rated, without payment of tax (LUT)"),
-    zero_rated_wpay: V("Zero-rated, with payment of tax"),
+    intra: "Intra-state",
+    inter: "Inter-state",
+    zero_rated_wopay: "Zero-rated, without payment of tax (LUT)",
+    zero_rated_wpay: "Zero-rated, with payment of tax",
   },
   /** 07-V §3 output-tax headers (the file's own words). */
   columns: {
-    supply: V("Supply"),
-    rate: V("Rate"),
-    taxable: V("Taxable value"),
+    supply: "Supply",
+    rate: "Rate",
+    taxable: "Taxable value",
     igst: "IGST",
     cgst: "CGST",
     sgst: "SGST",
@@ -410,63 +393,62 @@ export function rangeOk(from: string, to: string): boolean {
 // ---- 07-V §4 EDF list --------------------------------------------------------------------------------------------------------------------------
 
 export const EDF_COPY = {
-  title: V("EDF list"),
+  title: "EDF list",
   lede: (due: string) =>
-    V(
-      `Export invoices issued in the month, for the export declaration (EDF) your bank files. Due by ${due}. (VERIFY WITH CA/LEGAL)`,
-    ),
-  month: V("Month"),
+    // Researched 2026-10-28, FEMA 23(R)/2026-RB Reg. 3(2)(a) (08-C RB-03).
+    `Export invoices issued in the month, for the export declaration (EDF) you give your bank. One EDF can cover the whole month. Due by ${due}.`,
+  month: "Month",
   columns: {
-    invoice: V("Invoice"),
-    date: V("Date"),
-    client: V("Client"),
-    country: V("Country"),
-    currency: V("Currency"),
-    amount: V("Amount"),
-    purpose: V("Purpose code"),
-    realised: V("Amount realised"),
+    invoice: "Invoice",
+    date: "Date",
+    client: "Client",
+    country: "Country",
+    currency: "Currency",
+    amount: "Amount",
+    purpose: "Purpose code",
+    realised: "Amount realised",
   },
-  realisedNote: V("Amount realised is left blank: payments are recorded from the payments update."),
-  download: V("Download EDF list (CSV)"),
-  empty: (month: string) => V(`No export invoices were issued in ${month}.`),
+  realisedNote: "Amount realised is left blank: payments are recorded from the payments update.",
+  download: "Download EDF list (CSV)",
+  empty: (month: string) => `No export invoices were issued in ${month}.`,
 } as const;
 
 // ---- 07-V §5 export realisation ------------------------------------------------------------------------------------------------------------------
 
 export const REALISATION_COPY = {
-  title: V("Export realisation"),
-  lede: V(
-    "Export invoices not yet fully paid, most urgent first. Money from an export must reach India within the FEMA period. (VERIFY WITH CA/LEGAL)",
-  ),
-  showRealised: V("Show realised"),
+  title: "Export realisation",
+  // Researched 2026-10-28, FEMA 23(R)/2026-RB Reg. 5(1) (08-C RB-01).
+  lede: "Export invoices not yet fully paid, most urgent first. Money from an export must reach India within the FEMA period: 9 months from the invoice date, or 12 if it was invoiced or settled in Indian Rupees.",
+  showRealised: "Show realised",
   columns: {
-    invoice: V("Invoice"),
-    client: V("Client"),
-    issued: V("Issued"),
-    outstanding: V("Outstanding"),
-    stage: V("Stage"),
-    dueBy: V("Due by"),
+    invoice: "Invoice",
+    client: "Client",
+    issued: "Issued",
+    outstanding: "Outstanding",
+    stage: "Stage",
+    dueBy: "Due by",
   },
-  beforeFema: V("Issued before 1 October 2026: the older realisation period may apply."),
-  igstNote: V(
-    "Exports where IGST was charged show only the FEMA dates; the 12 months and 15 days GST date applies to exports under your LUT. (VERIFY WITH CA/LEGAL)",
-  ),
-  extensionNote: V(
-    "If your bank or RBI extended a date, it can be recorded with the FIRA/FIRC uploads in the payments update.",
-  ),
-  empty: V("No export invoices are waiting for payment."),
+  // OPEN (08-C RB-02).
+  beforeFema: "Issued before 1 October 2026: a different realisation period may apply.",
+  // Researched 2026-10-28, Rule 96A CGST (08-C RA-20).
+  igstNote:
+    "Exports where IGST was charged show only the FEMA dates; the 12 months and 15 days GST date applies to exports under your LUT.",
+  // Researched 2026-10-28, FEMA 23(R)/2026-RB Reg. 5(1) (08-C RB-04); the proof document is OPEN (RB-05).
+  extensionNote:
+    "If your bank extended a date, you can record it with the proof of payment in the payments update.",
+  empty: "No export invoices are waiting for payment.",
   /** Not in 07-V (batch Q69): the empty list with "Show realised" ticked (nothing open and nothing realised). */
-  emptyAll: P("No export invoices in this list."),
+  emptyAll: gap("No export invoices in this list."),
 } as const;
 
 /** 07-V §5 stage labels. */
 export const STAGE_LABELS: Readonly<Record<RealisationStage, string>> = {
-  ok: V("On track"),
-  fema_approaching: V("FEMA date in 30 days"),
-  fema_overdue: V("Past the FEMA date"),
-  gst_approaching: V("GST refund date in 30 days"),
-  gst_overdue: V("Past the GST date"),
-  realised: V("Realised"),
+  ok: "On track",
+  fema_approaching: "FEMA date in 30 days",
+  fema_overdue: "Past the FEMA date",
+  gst_approaching: "GST date in 30 days",
+  gst_overdue: "Past the GST date",
+  realised: "Realised",
 };
 
 /** The reserved status colours (docs/06 §2.1, §5.5; dataviz: status never reused for anything else), always with the icon and the label. */
@@ -514,60 +496,60 @@ export function byUrgency<
 
 export const STATEMENT_COPY = {
   tab: "Statement",
-  from: V("From"),
-  to: V("To"),
-  defaultRange: V("This financial year to date"),
-  currency: V("Currency"),
-  opening: (date: string, amount: string) => V(`Opening balance on ${date}: ${amount}`),
-  closing: (date: string, amount: string) => V(`Closing balance on ${date}: ${amount}`),
+  from: "From",
+  to: "To",
+  defaultRange: "This financial year to date",
+  currency: "Currency",
+  opening: (date: string, amount: string) => `Opening balance on ${date}: ${amount}`,
+  closing: (date: string, amount: string) => `Closing balance on ${date}: ${amount}`,
   /** The same two lines as a label over their figure (the amount is set below it, in tabular figures). */
-  openingLabel: (date: string) => V(`Opening balance on ${date}`),
-  closingLabel: (date: string) => V(`Closing balance on ${date}`),
-  periodInvalid: V("Pick a start date on or before the end date."),
-  anonymised: V("This client's details were erased, so no statement can be made."),
+  openingLabel: (date: string) => `Opening balance on ${date}`,
+  closingLabel: (date: string) => `Closing balance on ${date}`,
+  periodInvalid: "Pick a start date on or before the end date.",
+  anonymised: "This client's details were erased, so no statement can be made.",
   columns: {
-    date: V("Date"),
-    document: V("Document"),
-    details: V("Details"),
-    debit: V("Debit"),
-    credit: V("Credit"),
-    balance: V("Balance"),
+    date: "Date",
+    document: "Document",
+    details: "Details",
+    debit: "Debit",
+    credit: "Credit",
+    balance: "Balance",
   },
-  proformasNote: V(
+  proformasNote:
     "Payment requests (proformas) aren't listed: a payment against one shows through its tax invoice.",
-  ),
-  paymentsNote: V("Only payments recorded against payment requests are listed until online payments arrive."),
-  downloadCsv: V("Download CSV"),
-  makePdf: V("Make PDF"),
-  making: V("Making the PDF…"),
-  downloadPdf: V("Download PDF"),
-  empty: V("Nothing has been issued to this client in this range."),
-  kept: V("Statement PDFs are kept for 30 days."),
+  paymentsNote: "Only payments recorded against payment requests are listed until online payments arrive.",
+  downloadCsv: "Download CSV",
+  makePdf: "Make PDF",
+  making: "Making the PDF…",
+  downloadPdf: "Download PDF",
+  empty: "Nothing has been issued to this client in this range.",
+  kept: "Statement PDFs are kept for 30 days.",
   /** 07-V §6.1's words, used for the CSV's opening and closing rows. */
-  openingWord: V("Opening balance"),
-  closingWord: V("Closing balance"),
-  /** Not in 07-V: the button that reads the range, the summary's sub-labels and the "more lines" button. */
-  show: P("Show"),
-  debits: V("Total debits"),
-  credits: V("Total credits"),
-  more: P("Show more"),
+  openingWord: "Opening balance",
+  closingWord: "Closing balance",
+  /** Not in 07-V: the button that reads the range. */
+  show: gap("Show"),
+  debits: "Total debits",
+  credits: "Total credits",
+  // 07-Q POR3.
+  more: "Show more",
   /** Not in 07-V: the visually hidden caption of the table. */
-  caption: P("Statement entries"),
+  caption: gap("Statement entries"),
 } as const;
 
-/** 07-V §6 entry kinds (Details). A credit note says which invoice it is against when the API gives that number; until then the plain mark. */
+/** 07-V §6 entry kinds (Details). A credit note says which invoice it is against when the API gives that number; else 07-U §3's type name. */
 export function statementKindText(kind: StatementKind, againstNumber?: string | null): string {
   switch (kind) {
     case "tax_invoice":
-      return V("Invoice");
+      return "Invoice";
     case "export_invoice":
-      return V("Export invoice");
+      return "Export invoice";
     case "debit_note":
-      return V("Debit note");
+      return "Debit note";
     case "credit_note":
-      return againstNumber ? V(`Credit note against ${againstNumber}`) : P("Credit note");
+      return againstNumber ? `Credit note against ${againstNumber}` : "Credit note";
     case "receipt":
-      return V("Payment received");
+      return "Payment received";
   }
 }
 
@@ -575,13 +557,13 @@ export function statementKindText(kind: StatementKind, againstNumber?: string | 
 export const statementDetailsText = (e: { kind: StatementKind; againstNumber?: string | null }): string =>
   statementKindText(e.kind, e.againstNumber);
 
-/** The CSV's credit-note words: 07-V's line with core's `{number}` slot, or the plain mark when a credit note in the file lacks its invoice number. */
+/** The CSV's credit-note words: 07-V's line with core's `{number}` slot, or 07-U §3's type name when a credit note in the file lacks its invoice number. */
 export function statementCsvCreditNoteLabel(
   entries: readonly { kind: StatementKind; againstNumber?: string | null }[],
 ) {
   return entries.every((e) => e.kind !== "credit_note" || e.againstNumber)
-    ? V("Credit note against {number}")
-    : P("Credit note");
+    ? "Credit note against {number}"
+    : "Credit note";
 }
 
 /**
@@ -616,11 +598,11 @@ export const statementCsvLabels = (
 
 /** 07-V §6 errors by the API's code; any other refusal keeps the server's own sentence. */
 export const STATEMENT_ERRORS: Readonly<Record<string, string>> = {
-  statement_too_long: V("This range has more than 200 entries. Pick a shorter range for the PDF."),
-  statement_empty: V("Nothing to list in this range."),
-  client_anonymised: V("This client's details were erased, so no statement can be made."),
-  statement_failed: V("The PDF couldn't be made. Try again."),
-  period_invalid: V("Pick a start date on or before the end date."),
+  statement_too_long: "This range has more than 200 entries. Pick a shorter range for the PDF.",
+  statement_empty: "Nothing to list in this range.",
+  client_anonymised: "This client's details were erased, so no statement can be made.",
+  statement_failed: "The PDF couldn't be made. Try again.",
+  period_invalid: "Pick a start date on or before the end date.",
 };
 
 export function statementErrorText(e: unknown): string {
@@ -648,54 +630,55 @@ export const STATEMENT_WAIT_MS = 120_000;
 // ---- 07-V §7 dashboard finance tiles -----------------------------------------------------------------------------------------------------------
 
 export const FINANCE_COPY = {
-  invoiced: V("Invoiced"),
-  thisMonth: V("This month"),
-  thisFy: V("This financial year"),
-  beforeGst: V("Before GST"),
-  inrEquivalent: (amount: string) => V(`≈ ${amount} in INR`),
-  outstanding: V("Outstanding"),
-  overdue: V("Overdue"),
-  documents: (n: number) => V(docs(n)),
-  oldest: V("Oldest"),
+  invoiced: "Invoiced",
+  thisMonth: "This month",
+  thisFy: "This financial year",
+  beforeGst: "Before GST",
+  inrEquivalent: (amount: string) => `≈ ${amount} in INR`,
+  outstanding: "Outstanding",
+  overdue: "Overdue",
+  documents: (n: number) => docs(n),
+  oldest: "Oldest",
   overdueRow: (number: string, client: string, days: number) =>
-    V(`${number} · ${client} · ${days} ${days === 1 ? "day" : "days"}`),
-  proformas: V("Payment requests awaiting payment"),
-  open: (n: number) => V(`${n} open`),
-  exports: V("Exports nearing a deadline"),
+    `${number} · ${client} · ${days} ${days === 1 ? "day" : "days"}`,
+  proformas: "Payment requests awaiting payment",
+  open: (n: number) => `${n} open`,
+  exports: "Exports nearing a deadline",
   counts: {
-    femaApproaching: V("FEMA in 30 days"),
-    femaOverdue: V("Past FEMA"),
-    gstApproaching: V("GST in 30 days"),
-    gstOverdue: V("Past GST"),
+    femaApproaching: "FEMA in 30 days",
+    femaOverdue: "Past FEMA",
+    gstApproaching: "GST in 30 days",
+    gstOverdue: "Past GST",
   },
-  next: V("Next"),
-  noneInvoiced: V("Nothing invoiced yet."),
-  noneOutstanding: V("Nothing outstanding."),
-  noneOverdue: V("Nothing overdue."),
-  noneProformas: V("No payment requests open."),
-  noneExports: V("No export deadlines coming up."),
-  collectedArrives: V("Collected figures arrive with payments."),
+  next: "Next",
+  noneInvoiced: "Nothing invoiced yet.",
+  noneOutstanding: "Nothing outstanding.",
+  noneOverdue: "Nothing overdue.",
+  noneProformas: "No payment requests open.",
+  noneExports: "No export deadlines coming up.",
+  collectedArrives: "Collected figures arrive with payments.",
   /** Not in 07-V: the tile's line when the stored realisation settings can't be read (the API withholds the figures, never guesses). */
-  exportsSettings: P("Export deadlines can't be worked out until the Tax settings are saved again."),
+  exportsSettings: gap("Export deadlines can't be worked out until the Tax settings are saved again."),
   /** Not in 07-V: the link of the exports tile and of the overdue tile. */
-  openRealisation: P("Open export realisation"),
-  openInvoices: P("Open invoices"),
+  // 07-V §10 (the alert email's button).
+  openRealisation: "Open export realisation",
+  openInvoices: gap("Open invoices"),
 } as const;
 
 // ---- 07-V §8 settings › tax ---------------------------------------------------------------------------------------------------------------------
 
 export const TAX_FIELDS_COPY = {
   /** The labels are 07-V §8's field names (the hint lines name them). */
-  b2clLabel: V("B2CL threshold"),
-  b2clHint: V(
-    "Invoices to unregistered clients in another state above this amount are reported one by one (B2CL). Default ₹1,00,000. (VERIFY WITH CA/LEGAL)",
-  ),
-  inrMonthsLabel: V("Realisation period for INR exports"),
-  inrMonthsHint: V(
-    "Months within which payment for an export invoiced in rupees must arrive. Default 12. (VERIFY WITH CA/LEGAL)",
-  ),
-  b2clError: V("Enter an amount above zero."),
-  inrMonthsError: V("Enter a whole number of months from 1 to 120."),
+  b2clLabel: "B2CL threshold",
+  // Researched 2026-10-28, Rule 59(4) CGST as amended by Notification 12/2024-CT (08-C RA-13).
+  b2clHint:
+    "Invoices to unregistered clients in another state above this amount are reported one by one (B2CL). Default ₹1,00,000.",
+  inrMonthsLabel: "Realisation period for INR exports",
+  // Researched 2026-10-28, FEMA 23(R)/2026-RB Reg. 5(1) (08-C RB-01).
+  inrMonthsHint:
+    "Months within which payment must arrive for an export invoiced or settled in Indian Rupees. Default 12. A foreign-currency invoice has 9 months; ask your bank before treating one as settled in rupees.",
+  b2clError: "Enter an amount above zero.",
+  inrMonthsError: "Enter a whole number of months from 1 to 120.",
 } as const;
 
 // 07-V §9 bells: the titles are the jobs Worker's; where each lands is ./bell-links.ts (kept apart so the shell stays small).

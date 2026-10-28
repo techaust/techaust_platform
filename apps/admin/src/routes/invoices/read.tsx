@@ -1,13 +1,15 @@
 // An issued invoice (M5.1, ADM-INV-02, -03, -07), and a draft for a role that only reads it: the number as the page's title (set in tabular
 // figures, struck through once void: it keeps its number), the locked banner, the PDF, the void action for the owner, and the lines and totals
-// as frozen. Nothing here can change the invoice except the void, which keeps the number and the record (Rule 56(8), VERIFY WITH CA/LEGAL).
+// as frozen. Nothing here can change the invoice except the void, which keeps the number and the record (Rule 56(8); whether a never-delivered invoice
+// may be reported as cancelled is OPEN, 08-C RA-10). Step 5 (Q11): the Owner and the Accountant download the stored DUPLICATE FOR SUPPLIER copy under
+// the PDF (07-R §7), never sent to a client.
 // M5.3: an issued tax or export invoice has its notes section (the deadline, its credit and debit notes, the balance after them, the actions that open the
 // note dialog); an issued note says what it is against and why, the client's IMS answer on a credit note, its lines against the invoice's and its totals.
 import type { Role } from "@techaust/core/permissions";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { PageHeader } from "../../components/display.tsx";
-import { Ban, FolderKanban, Lock } from "../../components/icons.tsx";
+import { Ban, Download, FolderKanban, Lock } from "../../components/icons.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { allowed } from "../../lib/access.ts";
 import { dayText, formatIstDay } from "../../lib/documents.ts";
@@ -18,14 +20,22 @@ import {
   draftTitle,
   frozenBanner,
   INV_COPY,
-  INV_PLACEHOLDER,
   milestoneBackLine,
   moneyText,
+  SUPPLIER_COPY_LABEL,
   typeLabel,
+  UNKNOWN,
   voidBlockedText,
   voidedLine,
 } from "../../lib/invoices.ts";
-import { type InvoiceView, invoicePdfHref, invoicesApi, sendActionOf } from "../../lib/invoices-api.ts";
+import {
+  canDownloadSupplierCopy,
+  fetchSupplierCopy,
+  type InvoiceView,
+  invoicePdfHref,
+  invoicesApi,
+  sendActionOf,
+} from "../../lib/invoices-api.ts";
 import { NOTE_COPY, NOTE_ERRORS } from "../../lib/notes.ts";
 import type { InvoiceWithNotes, NoteKind } from "../../lib/notes-api.ts";
 import { PDF_COPY } from "../../lib/pdf.ts";
@@ -76,7 +86,51 @@ const asViewLines = (v: InvoiceView): ViewLine[] =>
 const issuedLine = (date: string, name: string) => `Issued ${date} by ${name}.`;
 
 /** Who issued it: the staff member frozen into the issuer block (the approver, when an owner approved a request). */
-const issuedBy = (v: InvoiceView) => v.issuer?.sender?.name ?? INV_PLACEHOLDER;
+const issuedBy = (v: InvoiceView) => v.issuer?.sender?.name ?? UNKNOWN;
+
+/**
+ * "Download supplier copy" (07-R §7): asks for the copy first, then saves it; while the jobs Worker is still making it (it follows the original), the
+ * toast says so in 07-R §4's words, and a failure says to try again. A text button under the client's PDF: the client's copy stays the panel's action.
+ */
+function SupplierCopy({ id, number }: { id: string; number: string | null }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  async function download() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const r = await fetchSupplierCopy(id);
+      if (r.state === "ready") {
+        const url = URL.createObjectURL(r.blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = r.filename ?? `${(number ?? "invoice").replace(/[^\w.-]+/g, "-")}-supplier.pdf`;
+        document.body.append(a);
+        a.click();
+        a.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      } else
+        toast(
+          r.state === "pending" ? "success" : "error",
+          r.state === "pending" ? INV_COPY.pdfPreparing : INV_COPY.pdfFailed,
+        );
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <button
+      type="button"
+      className="btn btn--text pdf-panel__supplier"
+      onClick={() => void download()}
+      disabled={busy}
+      aria-busy={busy || undefined}
+    >
+      <Download size={16} />
+      {SUPPLIER_COPY_LABEL}
+    </button>
+  );
+}
 
 export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload: () => void; role: Role }) {
   const toast = useToast();
@@ -192,7 +246,7 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
               <p className="inv-lock__void">
                 {voidedLine(
                   formatIstDay(v.void.voidedAt),
-                  v.void.voidedByName || INV_PLACEHOLDER,
+                  v.void.voidedByName || UNKNOWN,
                   v.void.reason ?? "",
                 )}
               </p>
@@ -224,6 +278,11 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
               canRetry={allowed(role, "invoices.draft") && !v.client.anonymised}
               words={PDF_WORDS}
               source={PDF_SOURCE}
+              extra={
+                canDownloadSupplierCopy(role, v.type) ? (
+                  <SupplierCopy id={v.id} number={v.number} />
+                ) : undefined
+              }
             />
           )}
           {showMail && (

@@ -4,6 +4,7 @@
 import { ISSUE_BLOCKER_CODES } from "@techaust/core/invoices";
 import { describe, expect, it } from "vitest";
 import { RequestError } from "../api.ts";
+import { COPY_GAP } from "./copy-gap.ts";
 import {
   applyInvoiceSave,
   BADGE_LABELS,
@@ -19,7 +20,7 @@ import {
   frozenBanner,
   INV_COPY,
   INV_ERRORS,
-  INV_PLACEHOLDER,
+  INV_NO_MATCH,
   initInvoiceEditor,
   invErrorText,
   invoiceEditor,
@@ -30,6 +31,7 @@ import {
   milestoneBillable,
   milestoneHasInvoice,
   requestRow,
+  SUPPLIER_COPY_LABEL,
   seriesPreview,
   splitAtPlace,
   splitSentences,
@@ -214,15 +216,14 @@ describe("badges and types", () => {
 
 describe("blockers", () => {
   it("has a 07-R line for every core blocker code", () => {
-    for (const code of ISSUE_BLOCKER_CODES)
-      expect(blockerLine({ code, line: 2 }, "INR")).not.toBe(INV_PLACEHOLDER);
+    for (const code of ISSUE_BLOCKER_CODES) expect(blockerLine({ code, line: 2 }, "INR")).not.toBe(COPY_GAP);
     expect(blockerLine({ code: "line_sac_missing", line: 3 }, "INR")).toBe(
       "Line 3 needs a 6-digit SAC code.",
     );
     expect(blockerLine({ code: "currency_mismatch" }, "USD")).toBe(
       "The invoice currency must be the client's currency (USD).",
     );
-    expect(blockerLine({ code: "something_new" }, "INR")).toBe(INV_PLACEHOLDER);
+    expect(blockerLine({ code: "something_new" }, "INR")).toBe(COPY_GAP);
   });
 
   it("links each blocker to where it is fixed", () => {
@@ -380,13 +381,24 @@ describe("M5.2 re-check: proforma wording and the advance rate date (07-S §8)",
     expect(issuedToast("TH/INV/2627/0001")).toBe("Invoice TH/INV/2627/0001 issued.");
   });
 
-  it("the advance's rate-date line names the day the payment was received", () => {
-    expect(blockerLine({ code: "fx_date_invalid" }, "USD", { maxAgeDays: 4, advance: true })).toBe(
-      "The rate date must be the date the payment was received or up to 4 days before it.",
+  it("the rate-date line names the day it was judged against: the invoice's, or the day the payment was received (S §8)", () => {
+    expect(blockerLine({ code: "fx_date_invalid", date: "2027-04-02" }, "USD", { maxAgeDays: 4 })).toBe(
+      "Use the rate published on 02 Apr 2027. If none was published that day, use the last one published before it, at most 4 days earlier.",
     );
-    expect(blockerLine({ code: "fx_date_invalid" }, "USD", { maxAgeDays: 4 })).toBe(
-      "The rate date must be the invoice date or up to 4 days before it.",
+    // as a 400, the day and the age ride on the answer; without them, the server's words
+    expect(
+      invErrorText(
+        new RequestError(400, "fx_same_day_exists", "x", null, [], [], [], { date: "2027-04-02" }),
+      ),
+    ).toBe("A rate was published on 02 Apr 2027, so use that day's rate.");
+    expect(invErrorText(new RequestError(400, "fx_date_invalid", "Server words", null))).toBe(
+      "Server words.",
     );
+  });
+
+  it("step 5: the supplier copy's label and the filtered list's proposed title (R §7)", () => {
+    expect(SUPPLIER_COPY_LABEL).toBe("Download supplier copy");
+    expect(INV_NO_MATCH).toBe(`${COPY_GAP} No invoices match these filters`);
   });
 
   it("a proforma's void refused for a reason other than a payment says it was emailed", () => {

@@ -73,6 +73,8 @@ export type ChecklistItemView = {
   on: boolean;
   applies: boolean;
   blockers: string[];
+  /** Step 5 contract (07-S §3): a house rule, not required by GST law (switchable). Absent from an older API. */
+  houseRule?: boolean;
 };
 
 /** M5.2: the reminder of ADM-INV-18 for today (IST): `due` in March while the next FY has no letter, `currentMissing` while the running FY has none. */
@@ -213,17 +215,20 @@ export type InvoiceView = {
     proformaIssueDate: string;
     receivedOn: string;
     receiptId: string;
+    /** Step 5 (Q37, S §9): set when it was issued with IGST because the payment's FY had no LUT (that FY). Optional: an older API has none. */
+    igstNoLutFy?: string | null;
   } | null;
   /** Q8: issuing needs the explicit "Issue in INR" (an export invoice in INR). */
   needsInrConfirm?: boolean;
   checklist?: {
-    settings: { bankDetails: boolean; paymentLink: false };
+    settings: { bankDetails: boolean; paymentLink: false; signatory?: boolean };
     switchable: readonly string[];
     items: ChecklistItemView[];
   };
   fx?: {
     applies: boolean;
-    value: { rate: string; rateMicros: number; date: string; source: string } | null;
+    /** `noRateThatDay`: stored with the frozen rate (step 5 contract); absent from an older API. */
+    value: { rate: string; rateMicros: number; date: string; source: string; noRateThatDay?: boolean } | null;
     refDate: string;
     maxAgeDays: number;
     dateOk: boolean | null;
@@ -335,7 +340,7 @@ export type InvoicePatch = {
     /** M5.2: the export route of an export draft (or of a proforma for an overseas client); null follows Settings. */
     exportMode?: "lut" | "igst_paid" | null;
     /** M5.2 (Q7): the exchange rate of a USD tax or export draft; null clears it. */
-    fx?: { rate: string; date: string; source: "FBIL" | "RBI" | "OTHER"; sourceNote?: string } | null;
+    fx?: FxIn | null;
     /** M5.2: the day the service was completed (a tax or export draft). */
     serviceCompletedOn?: string | null;
     /** M5.2: add the newest extra export note (Settings › Terms) to an export draft. */
@@ -395,6 +400,48 @@ const enc = encodeURIComponent;
 
 /** The PDF of an issued invoice: a same-origin download (the API answers an attachment). */
 export const invoicePdfHref = (id: string) => `/api/v1/invoices/${enc(id)}/pdf`;
+
+/**
+ * Step 5 contract (Q11, 07-R §6–§7): the stored DUPLICATE FOR SUPPLIER copy, for the Owner and the Accountant, of a tax or export invoice and a credit or
+ * debit note (a proforma has none: 404). It answers like `/:id/pdf`: the PDF once ready, else 409 `pdf_pending`.
+ */
+export const invoiceSupplierPdfHref = (id: string) => `/api/v1/invoices/${enc(id)}/pdf/supplier`;
+
+/** The document types that have a supplier copy (never the proforma, which is not a tax document). */
+export const SUPPLIER_COPY_TYPES: readonly string[] = [
+  "tax_invoice",
+  "export_invoice",
+  "credit_note",
+  "debit_note",
+];
+
+/** Who may download it (the contract: Owner and Accountant). */
+export const canDownloadSupplierCopy = (role: string, type: string) =>
+  (role === "owner" || role === "accountant") && SUPPLIER_COPY_TYPES.includes(type);
+
+/**
+ * Fetches the supplier copy (same origin, the session cookie): `ready` with the file, or `pending` (409 `pdf_pending`), or `failed` (anything else). The
+ * screen asks first instead of linking straight to it, so a copy still being made is said in words, never downloaded as an error.
+ */
+export async function fetchSupplierCopy(
+  id: string,
+): Promise<{ state: "ready"; blob: Blob; filename: string | null } | { state: "pending" | "failed" }> {
+  let res: Response;
+  try {
+    res = await fetch(invoiceSupplierPdfHref(id), { credentials: "same-origin" });
+  } catch {
+    return { state: "failed" };
+  }
+  if (res.ok && (res.headers.get("Content-Type") ?? "").includes("pdf")) {
+    const name = /filename="?([^";]+)"?/i.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ?? null;
+    return { state: "ready", blob: await res.blob(), filename: name };
+  }
+  if (res.status === 409) {
+    const body = (await res.json().catch(() => ({}))) as { error?: { code?: string } };
+    if (body.error?.code === "pdf_pending") return { state: "pending" };
+  }
+  return { state: "failed" };
+}
 
 export const invoicesApi = {
   list: (q: InvoiceListQuery = {}) =>
@@ -494,8 +541,19 @@ export type AdvanceInput = {
   amountMinor: number;
   receivedOn: string;
   reference: string;
-  fx?: { rate: string; date: string; source: "FBIL" | "RBI" | "OTHER"; sourceNote?: string };
+  fx?: FxIn;
   confirmInrExport?: true;
+  /** Step 5 contract (Q37): the route of this payment's invoice; omitted = the proforma's. `igst` on an LUT proforma issues it with IGST 18 %. */
+  route?: "lut" | "igst";
+};
+
+/** The rate a person enters (07-S §4); `noRateThatDay` (step 5 contract, S §8) says no rate was published on the document's own day. */
+export type FxIn = {
+  rate: string;
+  date: string;
+  source: "FBIL" | "RBI" | "OTHER";
+  sourceNote?: string;
+  noRateThatDay?: boolean;
 };
 export type AdvanceResult = {
   ok: true;

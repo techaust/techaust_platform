@@ -2,8 +2,9 @@
 // the blocker lines with where each is fixed, the error sentences by API code, the series preview, and the draft editor's state with its two pure
 // autosave steps (`buildInvoicePatch`, `applyInvoiceSave`). Pure, so the copy and the rules are tested without a browser.
 //
-// Copy: 07-R (docs/07-content-appendix/R-m5.1-invoice-screens.md), PENDING the owner's word-for-word approval. A line 07-R does not have is
-// shown as "[Placeholder]" (`INV_PLACEHOLDER`), never invented. The type names are core's series labels (`@techaust/core/numbering`).
+// Copy: 07-R (docs/07-content-appendix/R-m5.1-invoice-screens.md), approved by the lead on 2026-10-28 under the owner's delegation, word for word. A
+// line 07-R does not have is `gap(...)` (./copy-gap.ts: the "[Placeholder]" mark, listed in the run file), never invented. The type names are core's
+// series labels (`@techaust/core/numbering`).
 //
 // Money: amounts are the server's minor units, formatted through core (`moneyText`); typed amounts are parsed through core. Nothing here adds,
 // multiplies or rounds money. The due date and the number are the server's; the screen never works them out.
@@ -13,6 +14,7 @@ import type { Currency } from "../api.ts";
 import { RequestError } from "../api.ts";
 import type { PillTone } from "../components/display.tsx";
 import { milliToQty } from "./catalogue.ts";
+import { COPY_GAP, gap } from "./copy-gap.ts";
 import {
   dayText,
   docErrorText,
@@ -28,8 +30,8 @@ import {
 import type { ApprovalInfo, Discount, DiscountKind, LineFigures } from "./documents-api.ts";
 import { sentence as sentenceOf } from "./format.ts";
 import {
+  advanceLutMissing,
   fyLabel,
-  INV_PLACEHOLDER,
   INVT_COPY,
   proformaDraftTitle,
   proformaLockedLine,
@@ -45,8 +47,17 @@ import type {
 } from "./invoices-api.ts";
 import { bpToPercent, moneyInput } from "./settings-form.ts";
 
-/** A line 07-R or 07-S does not have yet: shown as it is, so nobody mistakes it for approved copy. */
-export { INV_PLACEHOLDER, moneyText };
+export { moneyText };
+
+/** A fact the server didn't send (a name, a date): the screen shows that something is missing, never a guess. */
+export const UNKNOWN = "…";
+
+/** The list's empty state when filters hide every row: 07-R has no line, so the 07-O pattern ("No proposals or estimates match these filters.") is
+ * proposed for invoices, marked until approved (run file). */
+export const INV_NO_MATCH = gap("No invoices match these filters");
+
+/** 07-R §7 (Q11, owner 2026-10-28): the stored supplier copy's download, for the Owner and the Accountant. */
+export const SUPPLIER_COPY_LABEL = "Download supplier copy";
 
 // ---- 07-R §1–§4, word for word ---------------------------------------------------------------------------------------------------------------
 
@@ -103,6 +114,7 @@ export const INV_COPY = {
   pdfFailed: "The PDF couldn't be made. Try again.",
   pdfTryAgain: "Try again",
   voidButton: "Void invoice",
+  // OPEN (08-C RA-10): whether a never-delivered invoice may be reported as cancelled.
   voidBody:
     "Voiding cancels this invoice. It keeps its number, which is reported as cancelled in your GST return. You can only void an invoice in the month it was issued, before it has been emailed, paid or corrected by a credit or debit note; after that, use a credit note.",
   voidReason: "Reason (required, kept with the invoice)",
@@ -296,7 +308,7 @@ export function seriesPreview(p: { template: string; fy: string; padding: number
 export function blockerLine(
   b: InvoiceBlocker,
   currency: string,
-  ctx: { maxAgeDays?: number | undefined; advance?: boolean } = {},
+  ctx: { maxAgeDays?: number | undefined } = {},
 ): string {
   const n = b.line ?? 0;
   switch (b.code) {
@@ -324,13 +336,14 @@ export function blockerLine(
       return `Line ${n} needs a 6-digit SAC code.`;
     case "line_description_missing":
       return `Line ${n} needs a description.`;
-    // M5.4 (early check finding 4): a line still carries "[Placeholder" text, so it can't go out on a legal invoice. 07-R has no line for it; 07-U §6's reason
-    // ("a line's wording isn't approved yet", PENDING the owner) after the "Line {n}" of the other line blockers, marked until 07-U is approved.
+    // M5.4 (early check finding 4): a line still carries "[Placeholder" text, so it can't go out on a legal invoice. 07-R has no line for it: 07-U §6's
+    // reason ("a line's wording isn't approved yet") after the "Line {n}" of the other line blockers, a proposal marked until approved (run file).
     case "line_text_placeholder":
-      return `${INV_PLACEHOLDER} Line ${n}: a line's wording isn't approved yet.`;
+      return gap(`Line ${n}: a line's wording isn't approved yet.`);
     case "computed_errors":
       return "The totals couldn't be worked out. Check the lines and the discount.";
     case "zero_total":
+      // Researched 2026-10-28, s.7(1)(a) CGST (08-C RA-11).
       return "An invoice can't be issued for ₹0 or $0.";
     case "reverse_charge_text":
       return "Set the reverse-charge line in Settings › Tax.";
@@ -342,25 +355,30 @@ export function blockerLine(
     case "country_missing":
       return "Add the client's country.";
     case "fx_missing":
-      return `Enter the exchange rate for ${b.date ? (dayText(b.date) ?? b.date) : INV_PLACEHOLDER} before issuing a USD invoice.`;
+      return `Enter the exchange rate for ${b.date ? (dayText(b.date) ?? b.date) : UNKNOWN} before issuing a USD invoice.`;
     case "lut_missing":
-      return `Save the LUT ARN for FY ${b.fy ? fyLabel(b.fy) : INV_PLACEHOLDER} in Settings › Tax before issuing an export invoice under LUT. Or issue it with IGST paid.`;
+      return `Save the LUT ARN for FY ${b.fy ? fyLabel(b.fy) : UNKNOWN} in Settings › Tax before issuing an export invoice under LUT. Or issue it with IGST paid.`;
     case "unregistered_high_value":
       return "For an unregistered client and an invoice of ₹50,000 or more, add the client's name, address and state.";
     case "bank_missing":
       return "Add an active bank account in Settings › Bank.";
     case "swift_missing":
       return "Add the SWIFT details of a bank account in Settings › Bank for export invoices.";
-    // 07-S §8
+    // 07-S §8 (Researched 2026-10-28, Rule 34(2) CGST, 08-C RA-21). `date` is the day the rate was judged against: the invoice's, or for the advance
+    // the day the payment was received (M5.2 re-check M1); the sentence names the same day either way.
     case "fx_date_invalid":
-      // The advance judges the rate against the day the payment was received (07-S §8, M5.2 re-check M1).
-      return ctx.advance === true
-        ? `The rate date must be the date the payment was received or up to ${ctx.maxAgeDays ?? INV_PLACEHOLDER} days before it.`
-        : `The rate date must be the invoice date or up to ${ctx.maxAgeDays ?? INV_PLACEHOLDER} days before it.`;
+      return `Use the rate published on ${dateOr(b.date)}. If none was published that day, use the last one published before it, at most ${ctx.maxAgeDays ?? UNKNOWN} days earlier.`;
+    case "fx_same_day_exists":
+      return `A rate was published on ${dateOr(b.date)}, so use that day's rate.`;
+    case "advance_lut_missing":
+      return advanceLutMissing(b.fy ? fyLabel(b.fy) : UNKNOWN);
     default:
-      return INV_PLACEHOLDER;
+      return COPY_GAP;
   }
 }
+
+/** A date the server sent, as the admin writes it; "…" when it sent none. */
+const dateOr = (iso: string | undefined) => (iso ? (dayText(iso) ?? iso) : UNKNOWN);
 
 /** Where a blocker is fixed: a settings page, the client, a field of one line of this draft (by position), or the lines panel; null when nothing can. */
 export type BlockerTarget =
@@ -383,12 +401,14 @@ export function blockerTarget(b: InvoiceBlocker, clientId: string): BlockerTarge
     case "reverse_charge_text":
       return { kind: "page", to: "/settings/tax", place: "Settings › Tax" };
     case "lut_missing":
+    case "advance_lut_missing":
       return { kind: "page", to: "/settings/tax#luts", place: "Settings › Tax" };
     case "bank_missing":
     case "swift_missing":
       return { kind: "page", to: "/settings/bank", place: "Settings › Bank" };
     case "fx_missing":
     case "fx_date_invalid":
+    case "fx_same_day_exists":
       return { kind: "fx" };
     case "recipient_legal_name":
     case "recipient_address":
@@ -441,6 +461,7 @@ export const INV_ERRORS = {
   void_not_allowed:
     "This invoice can't be voided: it has been emailed, paid or corrected. Use a credit note instead.",
   already_void: "This invoice is already void.",
+  // OPEN (08-C RA-10).
   return_period_closed:
     "This invoice's GST return period has ended, so it can't be voided. Use a credit note instead.",
   contact_changed: "The contact's details changed a moment ago. Try again.",
@@ -480,6 +501,18 @@ export function invErrorText(e: unknown): string {
   if (e instanceof RequestError) {
     if (e.code === "already_issued")
       return e.extra.number ? alreadyIssued(e.extra.number) : sentenceOf(e.message);
+    // 07-S §9 (Q37): the year that has no LUT rides on the 409 (contract: `details.fy`, "2027-28" or a token).
+    if (e.code === "advance_lut_missing")
+      return e.extra.fy ? advanceLutMissing(fyLabel(e.extra.fy)) : sentenceOf(e.message);
+    // 07-S §8: as a 400 the day rides on the answer; without it, the server's own words.
+    if (e.code === "fx_same_day_exists" || e.code === "fx_date_invalid")
+      return e.extra.date && (e.code === "fx_same_day_exists" || e.extra.maxAgeDays !== undefined)
+        ? blockerLine(
+            { code: e.code, date: e.extra.date },
+            "USD",
+            e.extra.maxAgeDays !== undefined ? { maxAgeDays: e.extra.maxAgeDays } : {},
+          )
+        : sentenceOf(e.message);
     if (Object.hasOwn(INV_ERRORS, e.code)) return (INV_ERRORS as Record<string, string>)[e.code] as string;
     if (e.code === "step_up_cancelled" || e.code === "invalid_code") return e.message;
   }

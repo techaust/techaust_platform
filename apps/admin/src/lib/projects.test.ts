@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { type MilestoneView, type ProjectView, RequestError, uploadHeaders } from "../api.ts";
 import { markdownElements } from "../components/markdown.tsx";
 import { lastLiveOfIndividual } from "./clients.ts";
+import { COPY_GAP as PLACEHOLDER_TAG } from "./copy-gap.ts";
 import {
   COPY,
   cancelConfirm,
@@ -25,7 +26,6 @@ import {
   NO_PROJECT_DRAFTS,
   needsConfirm,
   PENDING,
-  PLACEHOLDER_TAG,
   precheckFile,
   precheckText,
   projectDrafts,

@@ -954,6 +954,11 @@ type ApiErrorBody = {
   closestMinor?: unknown;
   draftId?: unknown;
   date?: unknown;
+  /** Step 5 (research and wording): 409 `advance_lut_missing` names the year without a LUT (`fy`); a 400 `fx_date_invalid` may carry the oldest age
+   * (`maxAgeDays`). The contract writes them under `details`; either place is read. */
+  fy?: unknown;
+  maxAgeDays?: unknown;
+  details?: unknown;
 };
 
 export class RequestError extends Error {
@@ -982,6 +987,8 @@ export class RequestError extends Error {
       closestMinor?: number | null;
       draftId?: string;
       date?: string;
+      fy?: string;
+      maxAgeDays?: number;
     } = {},
   ) {
     super(message);
@@ -1057,6 +1064,20 @@ async function send<T>(path: string, { method, body, raw, signedIn = true }: Opt
   const data = (await res.json().catch(() => ({}))) as T & ApiErrorBody;
   if (res.ok) return data;
   const e = data.error ?? { code: "network", message: NETWORK };
+  // The contract's `details` object (step 5) and the top level are read alike; the top level wins.
+  const details =
+    typeof data.details === "object" && data.details !== null
+      ? (data.details as Record<string, unknown>)
+      : {};
+  const fy = typeof data.fy === "string" ? data.fy : typeof details.fy === "string" ? details.fy : undefined;
+  const date =
+    typeof data.date === "string" ? data.date : typeof details.date === "string" ? details.date : undefined;
+  const maxAge =
+    typeof data.maxAgeDays === "number"
+      ? data.maxAgeDays
+      : typeof details.maxAgeDays === "number"
+        ? details.maxAgeDays
+        : undefined;
   const error = new RequestError(
     res.status,
     e.code,
@@ -1084,7 +1105,9 @@ async function send<T>(path: string, { method, body, raw, signedIn = true }: Opt
         ? { closestMinor: data.closestMinor as number | null }
         : {}),
       ...(typeof data.draftId === "string" ? { draftId: data.draftId } : {}),
-      ...(typeof data.date === "string" ? { date: data.date } : {}),
+      ...(date !== undefined ? { date } : {}),
+      ...(fy !== undefined ? { fy } : {}),
+      ...(maxAge !== undefined ? { maxAgeDays: maxAge } : {}),
     },
   );
   if (signedIn && res.status === 401 && e.code === "unauthenticated") unauthenticatedHandler?.();

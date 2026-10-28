@@ -3,6 +3,7 @@
 // (the server's ids by position, figures kept when unchanged, a part edited during the save stays dirty).
 import { describe, expect, it } from "vitest";
 import { RequestError } from "../api.ts";
+import { COPY_GAP as PLACEHOLDER_TAG } from "./copy-gap.ts";
 import { DASH_COPY, pipelineLine } from "./dashboard.ts";
 import {
   applySave,
@@ -49,7 +50,6 @@ import {
   versionLine,
 } from "./documents.ts";
 import type { DocumentView, SaveAnswer, ViewLine } from "./documents-api.ts";
-import { PLACEHOLDER_TAG } from "./projects.ts";
 
 const view = (over: Partial<DocumentView> = {}): DocumentView => ({
   id: "d1",
