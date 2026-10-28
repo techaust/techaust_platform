@@ -202,7 +202,7 @@ export function EntryMain({ form: f, set, error, mode }: EditorProps) {
         <h2 id="ce-incl-h" className="lead-panel__title">
           Deliverables, assumptions and exclusions
         </h2>
-        <p className="hint">{CATALOGUE_TEXTS_HINT}</p>
+        <p className="hint cat-texts-hint">{CATALOGUE_TEXTS_HINT}</p>
         <MdField
           id="ce-deliverablesMd"
           label="Deliverables"

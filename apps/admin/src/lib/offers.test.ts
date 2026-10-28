@@ -106,6 +106,15 @@ describe("the send dialog's recipients", () => {
     const many = Array.from({ length: 7 }, (_, i) => contact(`b${i}`, { isBilling: true }));
     expect(recipientChoices(many).ticked).toHaveLength(MAX_RECIPIENTS);
   });
+  it("sweep finding 4: the draft's own contact is the one ticked when it has portal access", () => {
+    const list = [contact("a", { isBilling: true }), contact("t", {}), contact("n", { portalAccess: false })];
+    expect(recipientChoices(list, "t").ticked).toEqual(["t"]);
+    // Without access (or unknown), the usual choice stands.
+    expect(recipientChoices(list, "n").ticked).toEqual(["a"]);
+    expect(recipientChoices(list, "gone").ticked).toEqual(["a"]);
+    expect(recipientChoices(list, null).ticked).toEqual(["a"]);
+    expect(recipientChoices(list, "t").choices.map((c) => c.id)).toEqual(["a", "t", "n"]);
+  });
   it("only the latest sent version, still open, can be sent again", () => {
     expect(canResend({ status: "sent", validUntil: "2026-11-10" }, "2026-11-10", true)).toBe(true);
     expect(canResend({ status: "viewed", validUntil: "2026-11-10" }, "2026-11-11", true)).toBe(false);

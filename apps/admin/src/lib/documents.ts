@@ -177,17 +177,20 @@ export const PLACEHOLDER_WORDS: Readonly<Record<string, string>> = {
 const UNKNOWN_VALUE = "a value that can't be filled in"; // 07-X §2.12
 export const placeholderWords = (name: string): string =>
   Object.hasOwn(PLACEHOLDER_WORDS, name) ? (PLACEHOLDER_WORDS[name] as string) : UNKNOWN_VALUE;
-const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+/** "a, b and c": a list in a sentence. */
+const andList = (w: readonly string[]): string =>
+  w.length <= 1 ? (w[0] ?? "") : `${w.slice(0, -1).join(", ")} and ${w.at(-1)}`;
+/** The values, each once, as a list in a sentence ("the assumptions and the exclusions"). */
+export const placeholderList = (names: readonly string[]): string =>
+  andList([...new Set(names.map(placeholderWords))]);
 /** "Deliverables", "Assumptions and exclusions": the Catalogue fields, as a list in a sentence. */
 const FIELD_WORDS = {
   deliverables: "deliverables",
   assumptions: "assumptions",
   exclusions: "exclusions",
 } as const;
-export const fieldList = (fields: readonly (keyof typeof FIELD_WORDS)[]): string => {
-  const w = fields.map((f) => FIELD_WORDS[f]);
-  return w.length <= 1 ? (w[0] ?? "") : `${w.slice(0, -1).join(", ")} and ${w.at(-1)}`;
-};
+export const fieldList = (fields: readonly (keyof typeof FIELD_WORDS)[]): string =>
+  andList(fields.map((f) => FIELD_WORDS[f]));
 
 export const GAP_COPY = {
   /** §1.1: above the list of values still missing (the Send card; replaces 07-O's "These placeholders have no value yet: …"). */
@@ -205,16 +208,12 @@ export const GAP_COPY = {
   filled: X("Catalogue text added."),
   nothingToFill: X("Catalogue has no text for this section yet."),
 } as const;
-/** §1.2: one value still missing, where it sits ("Acceptance: the contact's name has no value yet."). */
-export const unresolvedItem = (place: string | null, name: string): string =>
-  X(
-    place
-      ? `${place}: ${placeholderWords(name)} has no value yet.`
-      : `${capital(placeholderWords(name))} has no value yet.`,
-  );
+/** §1.2: one place and the values it still waits for ("Acceptance: waiting for the contact's name."). */
+export const unresolvedItem = (place: string | null, names: readonly string[]): string =>
+  X(place ? `${place}: waiting for ${placeholderList(names)}.` : `Waiting for ${placeholderList(names)}.`);
 /** §1.3: inside a section, the values its text still waits for. */
 export const sectionHolesLine = (names: readonly string[]): string =>
-  X(`No value yet for ${names.map(placeholderWords).join(", ")}.`);
+  X(`This text is waiting for ${placeholderList(names)}.`);
 /** §3.1: a service with no text in Catalogue for this section. */
 export const gapLine = (
   service: string,
@@ -224,7 +223,7 @@ export const gapLine = (
 export const gapNowLine = (
   service: string,
   fields: readonly ("deliverables" | "assumptions" | "exclusions")[],
-) => X(`Catalogue has ${service}'s ${fieldList(fields)} now.`);
+) => X(`Catalogue now has the ${fieldList(fields)} for ${service}.`);
 /** §3.3: why a section is hidden. */
 export const GAP_HIDDEN = X("This section is hidden until it has text.");
 /** §4.1: the list's empty state when it shows one type (sweep finding 8; 07-O's line names both). */
@@ -1192,10 +1191,11 @@ export type HolePlace =
   | null;
 export type UnresolvedItem = {
   key: string;
-  name: string;
+  /** The values this place waits for, in the server's order. */
+  names: string[];
   place: HolePlace;
-  /** What fills it besides typing: a service line (a service value with no service yet) or a contact (the contact's name). */
-  fix: "service" | "contact" | null;
+  /** What fills them besides typing: a service line (service values with no service yet) or a contact (the contact's name). */
+  fixes: ("service" | "contact")[];
   text: string;
 };
 
@@ -1228,27 +1228,32 @@ function localWhere(names: readonly string[], s: HoleSource): PlaceholderWhere[]
 }
 
 /**
- * `unresolved_placeholders` as a list in plain words (07-X §1): one item per value and place, in the server's order, each naming the place
- * (a section by its name, so the screen can open it) and what is missing, never the `{{…}}` syntax. A name the server lists that no place
- * holds any more (typed away since the last save) still shows, without a place.
+ * `unresolved_placeholders` as a list in plain words (07-X §1): one item per place, in the server's order, naming the place (a section by
+ * its name, so the screen can open it) and the values it waits for, never the `{{…}}` syntax. A name the server lists that no place holds
+ * any more (typed away since the last save) still shows, without a place.
  */
 export function unresolvedItems(b: Blocker, s: HoleSource): UnresolvedItem[] {
   const names = b.names ?? [];
   const where = b.where && b.where.length > 0 ? b.where : localWhere(names, s);
   const hasService = s.lines.some((l) => l.catalogueItemId !== null);
-  const fixOf = (name: string): UnresolvedItem["fix"] =>
+  const fixOf = (name: string): "service" | "contact" | null =>
     name.startsWith("service.") && !hasService
       ? "service"
       : name === "client.contact" && s.contactId === null
         ? "contact"
         : null;
   const out: UnresolvedItem[] = [];
-  const seen = new Set<string>();
   const push = (name: string, place: HolePlace) => {
-    const key = `${name}|${place ? (place.kind === "section" ? place.uid : `${place.kind}:${place.name}`) : "-"}`;
-    if (seen.has(key)) return;
-    seen.add(key);
-    out.push({ key, name, place, fix: fixOf(name), text: unresolvedItem(place?.name ?? null, name) });
+    const key = place ? (place.kind === "section" ? place.uid : `${place.kind}:${place.name}`) : "-";
+    let item = out.find((i) => i.key === key);
+    if (!item) {
+      item = { key, names: [], place, fixes: [], text: "" };
+      out.push(item);
+    }
+    if (!item.names.includes(name)) item.names.push(name);
+    const fix = fixOf(name);
+    if (fix && !item.fixes.includes(fix)) item.fixes.push(fix);
+    item.text = unresolvedItem(place?.name ?? null, item.names);
   };
   for (const w of where) {
     if (names.length > 0 && !names.includes(w.name)) continue;
@@ -1269,7 +1274,7 @@ export function unresolvedItems(b: Blocker, s: HoleSource): UnresolvedItem[] {
       push(w.name, { kind, name: PLACE_NAMES[kind] });
     }
   }
-  for (const n of names) if (!out.some((i) => i.name === n)) push(n, null);
+  for (const n of names) if (!out.some((i) => i.names.includes(n))) push(n, null);
   return out;
 }
 

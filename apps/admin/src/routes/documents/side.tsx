@@ -238,7 +238,6 @@ function HoleList(props: {
       <ul className="holes-list__items">
         {props.items.map((it) => {
           const place = it.place;
-          const fix = it.fix;
           return (
             <li key={it.key} className="holes-list__item">
               <span>
@@ -261,15 +260,16 @@ function HoleList(props: {
                   it.text
                 )}
               </span>
-              {fix && (
+              {it.fixes.map((fix) => (
                 <button
+                  key={fix}
                   type="button"
                   className="btn btn--text holes-list__fix"
                   onClick={() => props.onFix(fix)}
                 >
                   {fix === "service" ? GAP_COPY.addService : GAP_COPY.chooseContact}
                 </button>
-              )}
+              ))}
             </li>
           );
         })}

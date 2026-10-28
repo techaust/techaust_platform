@@ -482,7 +482,8 @@
 
 @media (min-width: 64rem) and (max-width: 87.99rem) {
   .qledger__work {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    /* The quantity cell first takes what its unit needs (finding 5), the rate and the discount share the rest. */
+    grid-template-columns: minmax(min-content, max-content) minmax(7rem, 1fr) minmax(min-content, 1fr);
   }
 
   .qledger__work--step {
