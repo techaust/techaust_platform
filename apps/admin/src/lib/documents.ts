@@ -660,7 +660,11 @@ export type EditorState = {
   error: string | null;
   /** A save was refused for the person's own input: show every field error, not only the ones they left. */
   showErrors: boolean;
-  /** The sections that were hidden or empty when the draft was read: a gap on any other section is the partial case (one text missing). */
+  /**
+   * The sections that were hidden or empty in the server's copy the gaps (`figures.gaps`) were worked out from: when the draft was read, or
+   * at the last answer that carried gaps (review round 3, finding 3). A gap on any other section is the partial case (one text missing); a
+   * gap on one of these that the person has since shown and written in is behind the screen, and is left out (`gapGroups`).
+   */
   gapBase: string[];
 };
 
@@ -778,9 +782,13 @@ export function initEditor(v: DocumentView): EditorState {
     status: "idle",
     error: null,
     showErrors: false,
-    gapBase: v.sections.filter((x) => x.hidden || (x.bodyMd ?? "").trim() === "").map((x) => x.id),
+    gapBase: closedSections(v.sections),
   };
 }
+
+/** The ids of the sections that are hidden or have no text (the base of `gapGroups`). */
+const closedSections = (list: readonly { id: string | null; hidden: boolean; bodyMd: string | null }[]) =>
+  list.flatMap((x) => (x.id !== null && (x.hidden || (x.bodyMd ?? "").trim() === "") ? [x.id] : []));
 
 export const dirtyParts = (s: EditorState): Part[] => PARTS.filter((p) => s.rev[p] !== s.savedRev[p]);
 export const isDirty = (s: EditorState) => dirtyParts(s).length > 0;
@@ -1002,6 +1010,23 @@ export function applySave(s: EditorState, a: SaveAnswer, sent: Sent): EditorStat
   // never writes the old text (a `{{service.…}}` value, the old contact's name) back. A section the person edited while the save was in
   // flight keeps what they typed (it saves next; anything left unfilled is named by the send check).
   const rewritten = new Map((a.sectionsChanged ?? []).map((x) => [x.id, x]));
+  // Fresh gaps come with the server's copy they were worked out from: what this save sent (each section as it was when the save was built),
+  // with the sections the server wrote in their stored form. Their base is taken from that copy (round 3, finding 3), so the note for a
+  // service whose text is still missing stays on a section that a fill or the save just showed.
+  const gapBase =
+    a.catalogueGaps === undefined
+      ? s.gapBase
+      : closedSections(
+          s.sections.flatMap((x) => {
+            const at = sent.sectionsAt?.[x.uid] ?? x;
+            const id = sectionIds.get(x.uid) ?? at.id;
+            if (id === null) return [];
+            const r = rewritten.get(id);
+            return [
+              r ? { id, hidden: r.hidden, bodyMd: r.bodyMd } : { id, hidden: at.hidden, bodyMd: at.bodyMd },
+            ];
+          }),
+        );
   const next: EditorState = {
     ...s,
     updatedAt: a.updatedAt,
@@ -1028,6 +1053,7 @@ export function applySave(s: EditorState, a: SaveAnswer, sent: Sent): EditorStat
     saving: false,
     error: null,
     showErrors: false,
+    gapBase,
     figures: {
       totals: a.totals,
       supply: a.supply,

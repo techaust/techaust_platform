@@ -7,7 +7,7 @@ import { checkSections } from "@techaust/core/documents";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { type ApiError, type AppEnv, err, NOT_FOUND } from "./context.ts";
-import { gapsOf, saveAnswer } from "./document-view.ts";
+import { gapBaseline, gapsOf, saveAnswer } from "./document-view.ts";
 import { writeDraftState } from "./document-write.ts";
 import { readContext } from "./documents.ts";
 import { body, idParam, param, STALE_VERSION } from "./http.ts";
@@ -52,7 +52,8 @@ export const documentFill = new Hono<AppEnv>().post(
     if (!section) return err(c, NOT_FOUND, 404);
     const items = (ctx.extra[0]?.results ?? []) as (ItemRow & ServiceFacts)[];
     const services = servicesOf(read.lines, new Map(items.map((r) => [r.id, r])));
-    const add = textToFill(section, services, doc.created_at);
+    const baseline = gapBaseline(ctx.bundle);
+    const add = textToFill(section, services, baseline);
     if (add === null) return err(c, NOTHING_TO_FILL, 409);
     const filled = {
       ...section,
@@ -86,8 +87,9 @@ export const documentFill = new Hono<AppEnv>().post(
     });
     if (!written.ok) return written.response;
 
-    return c.json({
-      ...saveAnswer({
+    // The slim save answer: the filled section comes back in `sectionsChanged` (review round 3, finding 7: no second copy of it).
+    return c.json(
+      saveAnswer({
         bundle: written.after,
         newestTermsId: ctx.newestTermsId,
         newestTermsVersion: ctx.newestTerms?.version ?? null,
@@ -96,10 +98,8 @@ export const documentFill = new Hono<AppEnv>().post(
         clientGone: false,
         contactGone: ctx.contact !== null && ctx.contact.anonymised_at !== null,
         serverChanged: new Set([section.id]),
-        catalogueGaps: gapsOf(state, items, doc.created_at),
+        catalogueGaps: gapsOf(state, items, baseline),
       }),
-      /** The section as it is now (also in `sectionsChanged`; kept for the screen that reads `filled`). */
-      filled: { sectionId: section.id, title: filled.title, bodyMd: filled.bodyMd, hidden: false },
-    });
+    );
   },
 );

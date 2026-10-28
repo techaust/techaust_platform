@@ -5,7 +5,8 @@
 //              section left with no text is hidden, and nothing blocks the send. The gap is reported on the draft read (`catalogueGaps`)
 //              so the screen can name the service and send the person to Catalogue.
 // The first service fills the template's tokens; every other service adds its own text under its name (the M4.3 shape), so a later service's
-// text never sits under a leftover token. A required section (estimate, terms, acceptance) is never hidden automatically (lead, 2026-10-29).
+// text never sits under a leftover token. A service added by a later save gets its text the same way, under its name (`appendServices`,
+// review round 3, finding 1), so every service's Catalogue text reaches the draft once, when the service does. A required section (estimate, terms, acceptance) is never hidden automatically (lead, 2026-10-29).
 // Pure: no I/O. The Worker budget forbids `import()`; everything here is static.
 import { placeholdersOf, renderTemplate } from "@techaust/core/catalogue";
 import { REQUIRED_SECTIONS } from "@techaust/core/documents";
@@ -98,6 +99,67 @@ export function fillServiceTokens<S extends Fillable>(
   });
 }
 
+/**
+ * A save that adds a service to a draft that already holds Catalogue text (review round 3, finding 1): each added service's texts go at the
+ * end of its Deliverables and Assumptions and exclusions sections, under its name, by the creation rule (a blank text is dropped, never a
+ * `{{…}}` token). A part the section already holds is not added again (a service taken out and put back, text the person pasted), so a save
+ * never repeats text. A section that was hidden because it had no text is shown once it has some (as it would have been made); a section
+ * the person hid while it had text stays hidden. Every other section, and a section with nothing to add, is the same object (the caller
+ * tells the sections the server wrote by identity).
+ */
+export function appendServices<S extends Fillable>(
+  sections: readonly S[],
+  added: readonly ServiceFacts[],
+): S[] {
+  if (added.length === 0) return [...sections];
+  return sections.map((s) => {
+    const kind = s.kind;
+    if (kind !== "deliverables" && kind !== "assumptions_exclusions") return s;
+    let body = s.bodyMd;
+    for (const item of added) {
+      const parts = GAP_FIELDS.filter((g) => g.kind === kind)
+        .map((g) => item[g.column])
+        .filter((t): t is string => !isBlank(t) && !included(body, t as string));
+      if (parts.length > 0) body = joinBlocks(body, `**${lineName(item.name)}**\n${parts.join("\n")}`);
+    }
+    if (body === s.bodyMd) return s;
+    return { ...s, bodyMd: body, hidden: s.hidden && !isBlank(s.bodyMd) };
+  });
+}
+
+/** The distinct catalogue items of a list of lines, in line order (the ids only: no row needs to have been read). */
+export function serviceIdsOf(lines: readonly { catalogueItemId: string | null }[]): string[] {
+  return [...new Set(lines.flatMap((l) => (l.catalogueItemId === null ? [] : [l.catalogueItemId])))];
+}
+
+/** The sections a draft's gaps are worked out from: its Deliverables and Assumptions and exclusions sections. */
+export const isGapKind = (kind: string): kind is GapKind =>
+  kind === "deliverables" || kind === "assumptions_exclusions";
+
+/**
+ * Whether a save changed anything the draft's Catalogue gaps depend on (review round 3, finding 6): the services on its lines (which, and in
+ * which order) or the text or visibility of a Deliverables or Assumptions and exclusions section. A save of the other sections, of a line's
+ * quantity or of the fields leaves the gaps as they were, so its answer carries none (the screen keeps the ones it has).
+ */
+export function gapInputsChanged(
+  before: { services: readonly string[]; sections: readonly GapSection[] },
+  after: { services: readonly string[]; sections: readonly GapSection[] },
+): boolean {
+  const { services: s0 } = before;
+  const s1 = after.services;
+  if (s0.length !== s1.length || s0.some((x, i) => x !== s1[i])) return true;
+  const a = before.sections.filter((s) => isGapKind(s.kind));
+  const b = after.sections.filter((s) => isGapKind(s.kind));
+  const text = (v: string | null) => (isBlank(v) ? "" : v);
+  return (
+    a.length !== b.length ||
+    a.some((s, i) => {
+      const t = b[i] as GapSection;
+      return t.id !== s.id || t.kind !== s.kind || t.hidden !== s.hidden || text(t.bodyMd) !== text(s.bodyMd);
+    })
+  );
+}
+
 /** The distinct services of a draft's lines, in line order, from the catalogue rows that were read (a retired or missing item is skipped). */
 export function servicesOf(
   lines: readonly { catalogueItemId: string | null }[],
@@ -136,8 +198,10 @@ type GapSection = { id: string; kind: string; bodyMd: string | null; hidden: boo
 /**
  * Whether Catalogue text of one service and field may be offered to a section ("Use Catalogue text"): Catalogue has it, the section does
  * not hold it, and either the section shows nothing (adding can't repeat anything) or the Catalogue row changed after the draft was made
- * (`updated_at > createdAt`, review round 2 finding 3). Text Catalogue already had when the draft was made went into it then, so a section
- * that shows text without it holds the person's own wording: it is never called new, and never added a second time.
+ * (`updated_at > createdAt`, review round 2 finding 3). Text Catalogue already had when the draft was made went into it then (or, for a
+ * service added later, when the save added it: `appendServices`), so a section that shows text without it holds the person's own wording:
+ * it is never called new, and never added a second time. `createdAt` is the version group's first creation time (`gapBaseline`): a revision
+ * copies its sections from the version before it, so Catalogue text changed since the first version was made is new to it too.
  */
 function offered(section: GapSection, svc: ServiceFacts, text: string | null, createdAt: number): boolean {
   if (isBlank(text) || included(section.bodyMd, text as string)) return false;
