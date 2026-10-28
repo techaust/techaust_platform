@@ -34,7 +34,7 @@ import {
   TOO_MANY_LINES,
   taxContext,
 } from "./quote-model.ts";
-import { appendedText, emptyServiceTokens, serviceData } from "./service-fill.ts";
+import { appendedText, autoHides, emptyServiceTokens, serviceData } from "./service-fill.ts";
 
 /** What a draft needs to know of its client: for the lead convert the client does not exist yet, so this is not a database row. */
 export type ClientFacts = {
@@ -189,7 +189,9 @@ export async function buildNewDraft(i: NewDraftInput): Promise<NewDraft> {
     if (aex !== null) append("assumptions_exclusions", aex);
   }
   // A section whose template text was only empty tokens and that no service filled is created hidden.
-  for (const s of sections) if (s.bodyMd === null && emptiedKeys.has(s.kind)) s.hidden = true;
+  // Never a required section (estimate, terms, acceptance): it stays shown, and the send check asks for its text (lead, 2026-10-29).
+  for (const s of sections)
+    if (s.bodyMd === null && emptiedKeys.has(s.kind) && autoHides(s.kind)) s.hidden = true;
   if (i.leadMessage) {
     if (sections.some((s) => s.kind === "scope")) append("scope", i.leadMessage);
     // No scope section in the template (or no template): what the lead wrote is the scope, under the service's name (the M3.2 behaviour).

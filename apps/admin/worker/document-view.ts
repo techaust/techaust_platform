@@ -14,14 +14,13 @@ import {
   type Computation,
   computeQuote,
   type DocState,
-  type ItemRow,
   type QuoteSettings,
   sendBlockers,
   stateOfBundle,
   taxContext,
   taxInputOf,
 } from "./quote-model.ts";
-import { type CatalogueGap, catalogueGaps, servicesOf } from "./service-fill.ts";
+import { type CatalogueGap, catalogueGaps, type ServiceFacts, servicesOf } from "./service-fill.ts";
 
 // What the staff view shows in place of the name of a client or contact whose personal details were removed is core's ANONYMISED_CLIENT
 // (owner, 2026-10-26; Researched 2026-10-28, BSA 2023 s.63(4) (08-C RB-19)). Only the VIEW changes: the frozen snapshot in the database stays as it was sent, as evidence.
@@ -159,13 +158,24 @@ export type ViewInput = {
   /** What an accepted estimate became (an invoice draft or a care plan), or null: read with the document, in the same D1 call. */
   convertedTo?: { kind: "invoice" | "care_plan"; id: string } | null;
   /** The CURRENT catalogue rows of the services on the draft's lines (one batched read); the draft's `catalogueGaps` come from them. */
-  catalogueItems?: readonly ItemRow[];
+  catalogueItems?: readonly ServiceFacts[];
 };
 
-/** The gaps between a draft's service sections and the current Catalogue (none for a sent version or when no rows were read). */
-export function gapsOf(state: DocState, items: readonly ItemRow[] | undefined): CatalogueGap[] {
+/**
+ * The gaps between a draft's service sections and the current Catalogue (none for a sent version or when no rows were read). `createdAt`
+ * is the draft's `created_at`: Catalogue text changed after it is the only text called new on a section that shows text.
+ */
+export function gapsOf(
+  state: DocState,
+  items: readonly ServiceFacts[] | undefined,
+  createdAt: number,
+): CatalogueGap[] {
   if (!items || items.length === 0) return [];
-  return catalogueGaps(state.sections, servicesOf(state.lines, new Map(items.map((r) => [r.id, r]))));
+  return catalogueGaps(
+    state.sections,
+    servicesOf(state.lines, new Map(items.map((r) => [r.id, r]))),
+    createdAt,
+  );
 }
 
 export async function documentView(i: ViewInput) {
@@ -348,7 +358,7 @@ export async function documentView(i: ViewInput) {
     warnings: !frozen && computation ? computation.warnings : [],
     blockers,
     // Where Catalogue has no text for a section of this draft (or has it now): the screen names the service and links to it. A draft only.
-    catalogueGaps: frozen ? [] : gapsOf(state, i.catalogueItems),
+    catalogueGaps: frozen ? [] : gapsOf(state, i.catalogueItems, d.created_at),
     // The placeholders still in the text (`{{client.name}}`): the editor lists them; a document with any cannot be sent.
     unresolved: blockers.find((b) => b.code === "unresolved_placeholders")?.names ?? [],
     canSend: !frozen && computation !== null && blockers.length === 0,
@@ -369,21 +379,40 @@ export type SaveAnswerInput = {
   computation: Computation;
   clientGone: boolean;
   contactGone: boolean;
+  /**
+   * The ids of the sections whose text or visibility the SERVER changed in this write (the first-service fill, the contact's name in the
+   * Acceptance text): their text, title and visibility come back in `sectionsChanged`, so the screen applies them from the answer.
+   */
+  serverChanged?: ReadonlySet<string>;
+  /** The draft's gaps after the write, when this write could change them (lines or sections); absent otherwise. */
+  catalogueGaps?: CatalogueGap[] | undefined;
 };
+
+/** A section as the server left it: sent back only for the sections the server itself changed (`serverChanged`). */
+export type SectionChanged = { id: string; title: string | null; bodyMd: string | null; hidden: boolean };
 
 /**
  * What a PATCH answers. The screen already holds what it sent, so this carries only what the server decided: the new `updatedAt` and
  * `contentSha256`, the worked-out figures (totals, supply, tax summary, each line's tax and total, each instalment), the ids (the
  * server makes an id for every new line, section and step; all three lists come back in order), the discount guard, the approval,
  * the blockers, errors and warnings. It never repeats a section's text, a line's description or detail, a step's label or a title:
- * saving 100 lines and 30,000 characters of sections answers in about 8 KB instead of about 60 KB.
+ * saving 100 lines and 30,000 characters of sections answers in about 8 KB instead of about 60 KB. Two exceptions, both decided by the
+ * server (review round 2, findings 4 and 5): `sectionsChanged`, the sections whose text the server itself wrote (so the screen never
+ * re-reads the draft and never writes a stale token back), and `catalogueGaps` after a save that changed lines or sections.
  */
 export function saveAnswer(i: SaveAnswerInput) {
   const { bundle, state, computation } = i;
   const d = bundle.document;
   const computed = computation.computed;
   const blockers = sendBlockers(state, computation, { clientGone: i.clientGone, contactGone: i.contactGone });
+  const changed = i.serverChanged;
   return {
+    sectionsChanged: changed
+      ? state.sections
+          .filter((x) => changed.has(x.id))
+          .map((x): SectionChanged => ({ id: x.id, title: x.title, bodyMd: x.bodyMd, hidden: x.hidden }))
+      : [],
+    ...(i.catalogueGaps === undefined ? {} : { catalogueGaps: i.catalogueGaps }),
     id: d.id,
     updatedAt: d.updated_at,
     contentSha256: d.content_sha256,

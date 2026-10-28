@@ -22,38 +22,28 @@ import { SCHEDULE_TRIGGERS } from "@techaust/core/schedule-text";
 import { wholeWordPattern } from "@techaust/core/text";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
-import { clientGoneSql } from "./anonymised.ts";
-import { type AppEnv, err, mutate, NOT_FOUND } from "./context.ts";
-import { saveAnswer } from "./document-view.ts";
+import { type AppEnv, err, NOT_FOUND } from "./context.ts";
+import { gapsOf, saveAnswer } from "./document-view.ts";
+import { writeDraftState } from "./document-write.ts";
 import { readContext } from "./documents.ts";
-import { body, idParam, param, refusedWith, STALE_VERSION, text } from "./http.ts";
+import { body, idParam, param, STALE_VERSION, text } from "./http.ts";
 import {
   CLIENT_GONE,
   CONTACT_GONE,
   CONTACT_INVALID,
-  computeQuote,
-  diffChildren,
-  documentColumns,
   FROZEN,
-  ITEMS_BY_ID,
+  ITEMS_OF_SAVE,
   type ItemRow,
   type LineIn,
-  lineRows,
   NOT_A_QUOTE,
-  QUOTE_TYPES_SQL,
   readSettings,
   resolveLines,
   resolveSections,
   resolveSteps,
   SECTIONS_INVALID,
-  scheduleRows,
   scheduleSentence,
-  sectionRows,
   stateOfBundle,
   TERMS_MISSING,
-  taxContext,
-  taxInputOf,
-  todayIst,
 } from "./quote-model.ts";
 import { fillServiceTokens, hasServiceToken, type ServiceFacts, servicesOf } from "./service-fill.ts";
 
@@ -138,9 +128,12 @@ export const documentSave = new Hono<AppEnv>().patch("/:id", param(idParam), bod
     ),
   ];
   const contactId = f.fields?.contactId;
+  // A save that changes lines or sections can change the draft's Catalogue gaps, so its answer carries them (review round 2, finding 4):
+  // it also reads the rows of the services already on the draft. Any other save reads only the services it adds (none).
+  const gapsChange = f.lines !== undefined || f.sections !== undefined;
   // One read batch: the document, its client, contact, terms and the settings, plus the services this save adds and the contact it sets.
   const ctx = await readContext(c, id, [
-    db.prepare(ITEMS_BY_ID).bind(JSON.stringify(newItems)),
+    db.prepare(ITEMS_OF_SAVE).bind(id, JSON.stringify(newItems), gapsChange ? 1 : 0),
     contactId
       ? db
           .prepare("SELECT id, client_id, name, email, anonymised_at FROM contacts WHERE id = ?1")
@@ -192,9 +185,13 @@ export const documentSave = new Hono<AppEnv>().patch("/:id", param(idParam), bod
     }
   }
 
+  // The catalogue rows read above: the services this save adds, and (when lines or sections change) those already on the draft.
+  const items = new Map(((extra[0]?.results ?? []) as (ItemRow & ServiceFacts)[]).map((i) => [i.id, i]));
+  // The sections whose text the SERVER writes in this save (the contact's name, the first-service fill): the answer sends them back.
+  const serverChanged = new Set<string>();
+
   // lines
   if (f.lines) {
-    const items = new Map(((extra[0]?.results ?? []) as ItemRow[]).map((i) => [i.id, i]));
     const made = resolveLines(
       f.lines as LineIn[],
       state.lines,
@@ -216,7 +213,13 @@ export const documentSave = new Hono<AppEnv>().patch("/:id", param(idParam), bod
     (contactBefore?.name || TOKEN) !== (contact?.name || TOKEN);
   if (f.sections || renames) {
     let sections = f.sections ? resolveSections(f.sections, state.sections) : state.sections;
-    if (renames) sections = renameContact(sections, contactBefore?.name || null, contact?.name || null);
+    if (renames) {
+      const sent = sections;
+      sections = renameContact(sections, contactBefore?.name || null, contact?.name || null);
+      sections.forEach((x, n) => {
+        if (x.bodyMd !== sent[n]?.bodyMd) serverChanged.add(x.id);
+      });
+    }
     const issues = checkSections(sections);
     if (issues.length > 0)
       return c.json(
@@ -240,25 +243,15 @@ export const documentSave = new Hono<AppEnv>().patch("/:id", param(idParam), bod
     state.lines.some((l) => l.catalogueItemId !== null) &&
     state.sections.some((x) => hasServiceToken(x.title) || hasServiceToken(x.bodyMd))
   ) {
-    const items = new Map<string, ServiceFacts>(
-      ((extra[0]?.results ?? []) as ItemRow[]).map((i) => [i.id, i]),
-    );
-    const missing = [
-      ...new Set(
-        state.lines.flatMap((l) =>
-          l.catalogueItemId && !items.has(l.catalogueItemId) ? [l.catalogueItemId] : [],
-        ),
-      ),
-    ];
-    if (missing.length > 0) {
-      const more = await db.prepare(ITEMS_BY_ID).bind(JSON.stringify(missing)).all<ItemRow>();
-      for (const i of more.results) items.set(i.id, i);
-    }
+    // Every service on the new lines was read above: a new line's service is among the ones this save adds, and the draft had none before.
     const sections = fillServiceTokens(
       state.sections,
       servicesOf(state.lines, items),
       scheduleSentence(state.schedule),
     );
+    sections.forEach((x, n) => {
+      if (x !== state.sections[n]) serverChanged.add(x.id);
+    });
     refilled = sections.some((x, n) => x !== state.sections[n]);
     if (refilled) {
       const issues = checkSections(sections);
@@ -274,116 +267,37 @@ export const documentSave = new Hono<AppEnv>().patch("/:id", param(idParam), bod
       state = { ...state, sections };
     }
   }
+  const written = await writeDraftState(c, ctx, {
+    state,
+    expectedUpdatedAt: f.expectedUpdatedAt,
+    summary: (computation) => ({
+      documentId: id,
+      parts: [
+        fl ? "fields" : null,
+        f.lines ? "lines" : null,
+        f.sections || refilled ? "sections" : null,
+        f.schedule ? "schedule" : null,
+      ].filter(Boolean),
+      fields: fl ? Object.keys(fl) : [],
+      totalMinor: computation.computed?.totalMinor ?? null,
+      contentSha: computation.hash.slice(0, 12),
+    }),
+  });
+  if (!written.ok) return written.response;
 
-  const computation = await computeQuote(state, taxInputOf(ctx.client), taxContext(settings), todayIst());
-  const t = Math.max(Date.now(), doc.updated_at + 1);
-  const hashChanged = computation.hash !== doc.content_sha256;
-  const termsId = state.termsVersionId;
-  // Only the columns that changed are written (a title-only save leaves the indexed columns alone). `computed` and `total_inr_minor` are
-  // not part of the row the loader reads for a draft; they follow the content hash, which covers them.
-  const all = documentColumns(state, computation);
-  const stored: Record<string, unknown> = doc;
-  const columns: Partial<typeof all> = {};
-  for (const k of Object.keys(all) as (keyof typeof all)[]) {
-    const changed = k in stored && k !== "computed" ? (stored[k] ?? null) !== (all[k] ?? null) : hashChanged;
-    if (changed) Object.assign(columns, { [k]: all[k] });
-  }
-  const keys = Object.keys(columns) as (keyof typeof columns)[];
-  // The child rows are brought to the new state by diff (M4.3 review fix 2). A part that was not sent still follows the maths: a document
-  // discount changes every line's share and a changed total changes the instalments, and those rows differ from what is stored.
-  const lineDiff = lineRows(state, computation);
-  const scheduleDiff = scheduleRows(state, computation);
-
-  let done: boolean;
-  try {
-    done = await mutate(c, {
-      main: db
-        .prepare(
-          `UPDATE documents SET ${keys.map((k, i) => `${k} = ?${i + 4}`).join(", ")}${keys.length ? ", " : ""}updated_at = ?3 WHERE id = ?1 AND updated_at = ?2 AND frozen_at IS NULL AND status = 'draft' AND type IN (${QUOTE_TYPES_SQL}) AND NOT ${clientGoneSql("client_id")}`,
-        )
-        .bind(id, f.expectedUpdatedAt, t, ...keys.map((k) => columns[k] ?? null)),
-      action: "document.update",
-      entityType: "document",
-      entityId: id,
-      summary: {
-        documentId: id,
-        parts: [
-          fl ? "fields" : null,
-          f.lines ? "lines" : null,
-          f.sections || refilled ? "sections" : null,
-          f.schedule ? "schedule" : null,
-        ].filter(Boolean),
-        fields: fl ? Object.keys(fl) : [],
-        totalMinor: computation.computed?.totalMinor ?? null,
-        contentSha: computation.hash.slice(0, 12),
-      },
-      side: (g) => [
-        ...diffChildren(db, "document_lines", id, ctx.bundle.lines, lineDiff, g),
-        ...diffChildren(db, "document_sections", id, ctx.bundle.sections, sectionRows(state), g),
-        ...diffChildren(db, "payment_schedules", id, ctx.bundle.schedule, scheduleDiff, g),
-        // An approval is for one exact content: any change expires it, in this batch, and it never revives.
-        ...(hashChanged
-          ? [
-              db
-                .prepare(
-                  `UPDATE approvals SET status = 'expired' WHERE document_id = ?1 AND status IN ('pending', 'approved') AND content_sha256 <> ?2 AND ${g.sql(3)}`,
-                )
-                .bind(id, computation.hash, ...g.params),
-            ]
-          : []),
-      ],
-    });
-  } catch (e) {
-    if (refusedWith(e, /documents_contact_scope/)) return err(c, CONTACT_INVALID, 400);
-    if (refusedWith(e, /issued document is frozen/)) return err(c, FROZEN, 409);
-    throw e;
-  }
-  if (!done) {
-    const again = await db
-      .prepare(
-        `SELECT frozen_at, updated_at, ${clientGoneSql("client_id")} AS gone FROM documents WHERE id = ?1`,
-      )
-      .bind(id)
-      .first<{ frozen_at: number | null; updated_at: number; gone: number }>();
-    if (!again) return err(c, NOT_FOUND, 404);
-    if (again.frozen_at !== null) return err(c, FROZEN, 409);
-    if (again.gone === 1) return err(c, CLIENT_GONE, 409);
-    return err(c, STALE_VERSION, 409);
-  }
-
-  // The answer is slim (`saveAnswer`): what the server decided, built from what was just written (no second read).
-  const after = {
-    ...ctx.bundle,
-    document: {
-      ...doc,
-      updated_at: t,
-      content_sha256: computation.hash,
-      title: state.title,
-      contact_id: state.contactId,
-      validity_days: state.validityDays,
-      discount_kind: state.discountKind,
-      discount_value: state.discountValue,
-      export_mode: state.exportMode,
-      terms_version_id: termsId,
-    },
-    terms: termsId !== null && termsId === ctx.newestTermsId ? ctx.newestTerms : ctx.bundle.terms,
-    approvals: ctx.bundle.approvals.map((a) =>
-      hashChanged &&
-      (a.status === "pending" || a.status === "approved") &&
-      a.content_sha256 !== computation.hash
-        ? { ...a, status: "expired" }
-        : a,
-    ),
-  };
+  // The answer is slim (`saveAnswer`): what the server decided, built from what was just written (no second read), plus the sections the
+  // server wrote itself and, after a change of lines or sections, the gaps.
   return c.json(
     saveAnswer({
-      bundle: after,
+      bundle: written.after,
       newestTermsId: ctx.newestTermsId,
       newestTermsVersion: ctx.newestTerms?.version ?? null,
       state,
-      computation,
+      computation: written.computation,
       clientGone: false,
       contactGone: contact !== null && contact.anonymised_at !== null,
+      serverChanged,
+      catalogueGaps: gapsChange ? gapsOf(state, [...items.values()], doc.created_at) : undefined,
     }),
   );
 });

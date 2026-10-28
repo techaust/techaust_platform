@@ -126,6 +126,18 @@ function fromThrown(e: unknown): RenderError {
   return classify(status, typeof t.message === "string" ? t.message : "", retry);
 }
 
+/**
+ * The length the bytes read from the body must have, or null when the header can't say (review round 2, finding 2). A Content-Length
+ * counts the bytes on the wire: once the runtime has decoded a `Content-Encoding` (gzip, br, ...) the body is longer, so the header is
+ * only compared when the body is sent as is (no encoding, or `identity`), and only when it is a plain decimal number.
+ */
+export function declaredBodyLength(headers: Headers): number | null {
+  const encoding = (headers.get("content-encoding") ?? "").trim().toLowerCase();
+  if (encoding !== "" && encoding !== "identity") return null;
+  const raw = (headers.get("content-length") ?? "").trim();
+  return /^\d{1,15}$/.test(raw) ? Number(raw) : null;
+}
+
 async function readPdf(res: Response, startedAt: number, now: () => number): Promise<RenderResult> {
   if (!res.ok) {
     let text = "";
@@ -144,7 +156,7 @@ async function readPdf(res: Response, startedAt: number, now: () => number): Pro
   if (bytes.byteLength > MAX_PDF_BYTES) return err.notPdf("too large");
   if (!hasPdfMagic(bytes)) return err.notPdf("no %PDF- header");
   // A PDF whose blocks arrived out of order once reached R2 and unlocked the portal offer (owner finding F1): never stored, always retried.
-  const check = await checkPdfIntegrity(bytes, res.headers.has("content-length") ? declared : null);
+  const check = await checkPdfIntegrity(bytes, declaredBodyLength(res.headers));
   if (!check.ok) {
     // Numbers only: no document text, no names.
     logEvent("pdf.damaged", {

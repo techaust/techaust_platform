@@ -494,3 +494,150 @@ Fix every review finding, 1–13, as described above. Items 1, 2 and 10 are in `
 - **Item 1:** report cold and warm timings (Node V8, a fresh process for cold) on the two real PDFs in the main checkout's `.logs/m5-owner-fixes/`. Read them locally and never commit them. Target: cold ≤ 3 ms on the 204 KB file.
 - **Item 3:** prefer the `updated_at` rule. If you record what filled each section instead, it must need no migration, or stop and report.
 - **Done means:** `pnpm check` and the full `pnpm test` pass. Append "### Fix round 2 report".
+
+### Fix round 2 report
+Builder: Opus 5.5 (high), branch `fix/m5-owner-fixes-r2` from `origin/fix/m5-owner-findings` (69494ee3), worktree `agent-a6238019a4d9fee85`. All 13 findings are fixed. No migration. No hosted service touched. No dev server started. No PDF committed: the real PDFs were only read in place from the main checkout's `.logs/`.
+
+**Skills:**
+- `cloudflare:workers-best-practices`: the check stays pure and never throws. The module-level sticky state was dropped (no regular expression is left in the check). The decoded-body rule follows the runtime's handling of `Content-Encoding`. No hand-written `Env`.
+- `cloudflare:workers-profiling`: the method. A cold first call is measured in a fresh process, with the fastest and median of many runs. Wall time in the workerd pool is not CPU (its clock doesn't move during computation), so the staging `cpuTimeMs` stays the gate.
+- `cloudflare:wrangler`: no config changed (only the builds' `--dry-run`).
+- `frontend-design:frontend-design`: item 6. Restraint: the row keeps its look. The chevron stays beside the name, and on a phone the word "Hidden" goes to screen readers only (the struck-through name and the unticked eye already show it).
+- Not loaded: `dataviz` (no chart); `cloudflare:cloudflare` (no new platform feature); the AWS, Supabase, Upstash and Sentry skills (no matching work). Context7 not needed: only platform built-ins were used (`Uint8Array.indexOf`, `DecompressionStream`), and tests in workerd cover them.
+
+**Commits:**
+1. `7fc7e158` fix(pdf): byte-level PDF check for a cold isolate, linearised files, bounded xref, decoded-body length [JOB-PDF-01, ADM-PROP-05]
+2. `1fe043c5` fix(admin): catalogue gaps by row change, every service named, sections in the save answer, one draft write path [ADM-PROP-02, ADM-PROP-05, ADM-CAT-03]
+3. `3753c5a7` test(admin): the slim save answer lists catalogueGaps and sectionsChanged [ADM-PROP-02]
+4. This report.
+
+#### 1. The check's cold CPU (high)
+`packages/pdf/src/integrity.ts` now reads the bytes directly:
+- No whole-file text decode. The windows-1252 decode alone cost about 2 ms cold on the 204 KB file.
+- No regular expression anywhere. The per-entry `new RegExp` is gone.
+- Every search is the native `Uint8Array.prototype.indexOf` / `lastIndexOf` on the rarest byte of the keyword (the "x" of `startxref`, the "j" of ` obj`, the "h" of `/Length`), then a short byte compare.
+- The per-entry work is two flat functions with no helper calls (`entryOffset`, `objectNumberAt`): a cold isolate interprets them, and every call costs there.
+- `startxref` and `%%EOF` are found with `lastIndexOf` in the last 1 KB only. An earlier revision is found by its trailer's `/Prev` (PDF 32000-1 7.5.6) instead of a whole-file count.
+- The stream scan jumps past `endstream`, so each stream's keyword is read once.
+
+Timings in Node 24.19 (V8): a fresh process per cold run, the fastest and median of 9 runs (5 for the base). Warm is the median of 31 later calls. The PC was shared and loaded; the import of the module is not counted.
+
+| File | Bytes | Verdict | Base, cold (min / median) | Now, cold (min / median) | Now, warm | Now with inflate, cold (platform loaded) | Now with inflate, warm |
+|---|---|---|---|---|---|---|---|
+| TH-EST-2627-0001-v1 (the 204 KB estimate) | 203,963 | ok | 13.27 / 18.20 | **2.24 / 2.54** | 0.37 | 3.66 / 4.51 | 0.73 |
+| TH-PRP-2627-0001-v1 (the owner's damaged proposal) | 270,658 | `xref_offset` | 2.55 / 3.21 | 0.63 / 0.70 | 0.03 | 1.20 / 1.27 | 0.03 |
+| inter-estimate | 203,491 | ok | 12.27 / 14.15 | 2.18 / 2.50 | 0.39 | 3.88 / 4.02 | 0.68 |
+| intra-estimate | 209,757 | ok | 12.17 / 14.51 | 2.42 / 2.54 | 0.40 | 3.50 / 4.48 | 0.85 |
+| long-inter-inr (1,926 objects) | 486,091 | ok | 34.39 / 38.80 | 3.22 / 3.58 | 0.42 | 6.40 / 6.91 | 1.33 |
+| long-names | 250,149 | ok | 15.61 / 16.94 | 2.21 / 2.67 | 0.38 | 3.76 / 4.18 | 0.77 |
+| short-intra-inr | 251,702 | ok | 14.60 / 16.24 | 2.23 / 2.73 | 0.45 | 3.67 / 4.54 | 0.79 |
+| usd-export | 204,996 | ok | 13.59 / 14.10 | 2.16 / 2.77 | 0.40 | 3.47 / 3.89 | 0.70 |
+
+How to read the table:
+- **"Base" and "Now" are the structure check:** header, `startxref`/`%%EOF`, every xref entry and every `/Length`, with nothing inflated (budget 0). The reviewer measured this same part. **Target met:** 2.24 ms fastest and 2.54 ms median, cold, on the 204 KB estimate (was 13–18 ms).
+- **"With inflate"** is the full check at the default 512 KiB budget. Each real file has one Flate stream of 8 KB or more. "Platform loaded" means Node's `DecompressionStream` modules were loaded first, untimed: Node builds that class from JS modules on first use, while workerd has it built in. Without that preload, Node's first inflate alone adds about 11–13 ms (cold 12.9–20.8 ms). That is Node's start-up, not our code, and it says nothing about workerd.
+- **Not verified:** workerd's own cold cost of one native inflate. The staging `cpuTimeMs` of `pdf.rendered` stays the gate (A6 follow-up).
+- Every real file passes. The owner's damaged proposal still fails `xref_offset`, with the budget at 0 and at the default.
+- The scratch scripts that produced these figures live in the scratchpad and are not committed.
+
+#### 2. Content-Length vs the decoded body (medium)
+`declaredBodyLength(headers)` in `apps/jobs/src/browser.ts` returns the length the bytes must have, or null. It is null when a `Content-Encoding` other than `identity` is present (the runtime has decoded the body, so the wire length is shorter), and null unless the header is 1–15 plain digits. `readPdf` passes that value to the check. The size pre-check (`MAX_PDF_BYTES`) is unchanged.
+
+#### 3. "Catalogue now has…" and the duplicate fill (medium): the `updated_at` rule
+`service-fill.ts` has one shared predicate, `offered(section, service, text, createdAt)`. Catalogue text the section lacks is offered only when:
+- the section shows nothing (adding to it can't repeat anything), or
+- the Catalogue row changed after the draft was made (`catalogue_items.updated_at > documents.created_at`).
+
+Text Catalogue already had when the draft was made went into it then. So a section that shows text without it holds the person's own wording: it is never called new and never added again. `catalogueGaps` (`catalogueHasTextNow`) and `textToFill` (the route) both use `offered`, so the button adds exactly what the note offers. `ITEMS_OF_DOCUMENT` now also reads `updated_at`.
+
+**Residual, by design (no migration):** the rule works per row, not per field. After any edit of that Catalogue item (a price as well), texts the section doesn't hold are offered again, and the test proves it. Text the section already holds is never offered twice. Per-field precision would need the `catalogue.update` audit rows or a new column. I didn't do it, and it is open question 1.
+
+#### 4. Stale Catalogue notes after the lines change (medium)
+A PATCH that changes lines or sections now answers with `catalogueGaps`. The save reads `ITEMS_OF_SAVE` in its one read batch: the services it adds, plus, only for such a save, those already on the draft. Any other save sends no `catalogueGaps`, and the screen keeps the ones it has. The extra read of the first-service refill path is gone, because those rows are now in the same batch.
+
+#### 5. The re-read after the first service line (medium): root fix
+- **Server:** the save answer carries `sectionsChanged`: the sections the server itself wrote in this save, as stored (`{id, title, bodyMd, hidden}`). That covers the first-service fill and the contact's name in the Acceptance text. It is empty otherwise, so the person's own text is still never sent back.
+- **SPA:** `applySave` puts those sections on screen. `buildPatch`'s `Sent` keeps each section object as it was sent (`sectionsAt`). A section the person touched while the save was in flight keeps what they typed. It saves next, and anything left unfilled is named by the send check.
+- **Removed from `editor.tsx`:** the `reread` state, the effect, `SERVICE_TOKEN_RE` and the first-service guess. So no stale token text is written back, nothing typed is lost on a remount, and titles come from the server too.
+- **"Use Catalogue text" too:** it no longer re-reads. Its answer goes through the same `applySave`, and an autosave waits for it (`inflight`).
+
+#### 6. Section-row chevron at 375 px (medium, CSS)
+- `sections.tsx`: the name (and the kind under a custom title) sit in a `.section-row__label`, which may wrap. The toggle itself no longer wraps, and the chevron is `flex: none` beside the label.
+- `documents.css`: below 30 rem the word "Hidden" goes to screen readers only. Otherwise "Deliverables" plus its chevron didn't fit beside the flags and the controls.
+- **Checked in a static harness, not the app:** the real `tokens.css` and `documents.css` with the row markup, rendered with Playwright at 375, 768 and 1280 px in both themes. At every width and in both themes the chevron is beside the label, no name text overflows, and the page has no horizontal overflow. Screenshots are in the scratchpad, not in the repo. The app itself was not run (it needs a signed-in local session).
+
+#### 7. Required sections never auto-hidden (low)
+`autoHides(kind)` (not estimate, terms or acceptance) is used in `fillServiceTokens` and in `document-draft.ts`.
+
+#### 8. One write path (low)
+The new `apps/admin/worker/document-write.ts` (`writeDraftState`) holds the save's whole write: the changed columns, the child diffs, approval expiry, one `mutate`, telling a refusal apart (frozen, anonymised, stale, `documents_contact_scope`) and the `after` bundle. `document-save.ts` and `document-fill.ts` both call it. The fill route's 409s and its audit summary (`fill: <kind>`) are unchanged.
+
+#### 9. Catalogue rows for drafts only (low)
+`ITEMS_OF_DOCUMENT` adds `AND EXISTS (SELECT 1 FROM documents WHERE id = ?1 AND frozen_at IS NULL)`. A test runs the statement on a draft (1 row) and on the same document once sent (0 rows).
+
+#### 10. Edge cases of the check (low)
+- **The xref entry count:** a count larger than `(size − at) / 20` is `xref_unreadable` (bounded, never spins). An entry that is neither `n` nor `f` is also `xref_unreadable` (before, it was skipped silently).
+- **The end of line before `endstream`:** CR LF, LF, CR alone or none are all accepted.
+- **A linearised file:** `/Linearized` in the first 1 KB means exactly two sections are read through the `/Prev` chain, and a wrong entry in the main section is still `xref_offset`. A third section is `incremental`. A small linearised file (under 2 KB) may hold both `startxref` in the last 1 KB.
+- **`/Prev` in a file that isn't linearised** is `incremental`.
+- **`/Length1` to `/Length3`** of a font file are skipped, and an indirect `/Length n 0 R` falls back to the `endstream` search.
+
+#### 11. 07-X line 29 (low, copy)
+"A new proposal takes its Deliverables section…", in `docs/07-content-appendix/X-m5-owner-fixes.md` and in `apps/admin/src/lib/copy-x.ts`. It still shows `[Placeholder]` until the owner approves 07-X.
+
+#### 12. Every service named (low; lead's Q3 reading)
+A service with no text is named when:
+- the section is hidden or empty;
+- the service has the sibling field (the partial case);
+- the section shows another service's Catalogue text (new).
+
+A section that shows only the person's own writing names nobody: they filled it by hand. The creation test now expects the first service's three blanks next to the later service's exclusions.
+
+#### 13. Wall-time limits (low)
+The `toBeLessThan(50)` and `toBeLessThan(500)` limits in `apps/jobs/test/pdf-integrity.test.ts` are removed; the figures stay as annotations.
+
+New workerd test: a 2,000-object PDF passes. The owner's 3, 1, 2 permutation fails at two places, and the last entry one byte off fails (every entry is read, not a sample). It carries no timing, because workerd's clock doesn't move during computation.
+
+#### Tests added or changed
+- **`packages/pdf/test/integrity.test.ts`:** 7 new cases (item 10, and the displacement number). Byte-exact `splice` replaces a text re-encode that shifted the binary. `no_eof` and `no_startxref` follow the last-1-KB rule.
+- **`apps/jobs/test/pdf-integrity.test.ts`:** item 2 (`declaredBodyLength`, and `renderPdf` with gzip and with identity), the 2,000-object case, the limits removed.
+- **`apps/admin/worker/service-fill.test.ts`:** the gap and fill rules rewritten for items 3 and 12, plus item 7.
+- **`documents-service-text.test.ts`:** `sectionsChanged` and the PATCH gaps (items 4 and 5), item 3 end to end (an edit isn't new; a changed row is offered once), item 9 and item 7. Direct Catalogue edits in the tests now move `updated_at`, as the Catalogue route does.
+- **`documents-batch-fixes.test.ts`:** the contact rename comes back in `sectionsChanged`.
+- **`documents-fixes.test.ts`:** the slim answer's keys, and `sectionsChanged` is empty for typed text.
+- **`apps/admin/src/lib/documents.test.ts`:** `applySave` applies the server's sections and keeps text typed while the save was in flight.
+
+#### Commands and results
+- **Install:** `pnpm install --frozen-lockfile --offline`: ok (the worktree lacked links).
+- **Lint:** `pnpm exec biome check --write <changed files>`: clean each time.
+- **Package tests:**
+  - `pnpm --filter @techaust/pdf test` (heavy.sh): 340 passed. Coverage: statements 97.04 %, branches 90.95 %, lines 99.27 %.
+  - `pnpm --filter @techaust/admin typecheck` (heavy.sh): exit 0.
+  - SPA tests (`vitest run src`): 380 passed.
+- **Targeted admin worker runs** (documents-service-text, documents, service-fill, batch-fixes, documents-send, documents-fixes, rbac, split): all passed.
+- **`pnpm build`** (heavy.sh): exit 0. Budgets:
+
+  | Worker | Bundle (bytes) | Change | Startup (limit 200 ms) |
+  |---|---|---|---|
+  | jobs | 862,642 / 1,000,000 | +6,146 on round 1's 856,496 (the byte-level check and its comments) | 127.8 ms |
+  | admin API | 594,509 / 800,000 | −255 (the shared write path; the third-Worker trigger is 650,000) | 73.6 ms |
+  | admin front | 99,131 / 150,000 | | 18.0 ms |
+  | portal | 96,834 / 120,000 | | 31.6 ms |
+
+- **Full `pnpm test`** (heavy.sh), three runs:
+  - **Run 1:** jobs `stats.test.ts` "exactly 50 plans is one page" timed out at 5 s under load, and the admin run was cut short. That file is untouched by this branch, and it passed alone: 25/25.
+  - **Run 2:** one admin failure, `documents-fixes.test.ts`. Its key list of the slim save answer lacked the two new keys; fixed in `3753c5a7`.
+  - **Run 3, all passed:** auth 135, ui 469 (2 skipped), core 1,755, email 128, db 452, pdf 340, web 443, portal 620, jobs 519, admin 3,226.
+- **`pnpm check`** (heavy.sh; the final check, with the whole-repository lint run once): exit 0. Lint checked 1,269 files with 10 warnings, all existing. Typecheck ok. Binding, content, Worker config and migration guards ok (49 migrations, none new).
+
+#### Not verified
+- Worker CPU on staging. That includes the cold cost of one native inflate in workerd: Node's figure is not workerd's.
+- Whether Browser Run sends a `Content-Encoding`. The code handles both cases.
+- R2's `sha256` refusal on staging.
+- Item 6 in the running app. It was checked in a static harness with the real CSS, so no axe run and no real editor.
+- The editor's `sectionsChanged` path in a browser. It is unit-tested through `applySave` and API-tested through the PATCH and fill answers.
+- The portal offer page with a real offer.
+
+#### Open questions
+1. **Item 3's precision.** Keep the per-row `updated_at` rule (Recommended: no migration; it never adds text twice, and after a Catalogue edit of an item the texts a section lacks are offered again)? Or get per-field precision from the `catalogue.update` audit rows (their `summary.changed` names the fields; an indexed read of `audit_log_entity`, but a coupling to the audit summary format)? Or add a "filled from" record (a migration, a Tier A question)?
+2. **The base moved during the run** (`46e0c3b2`, `e1576b57`: docs only, `docs/runs/full-audit-m1-m5.md`). This branch doesn't touch that file, so the merge should be clean.

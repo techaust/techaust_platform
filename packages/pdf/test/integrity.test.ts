@@ -16,7 +16,16 @@ const cat = (...parts: Uint8Array[]): Uint8Array => {
   return out;
 };
 
-type Stream = { raw: Uint8Array; flate: boolean; indirectLength?: boolean };
+type Stream = {
+  raw: Uint8Array;
+  flate: boolean;
+  indirectLength?: boolean;
+  /** The end of line before `endstream` (default "\n"). */
+  eol?: string;
+  /** Keys written before /Length (e.g. a font file's /Length1), and after it. */
+  before?: string;
+  after?: string;
+};
 
 /** A classic-xref PDF: `filler` small objects (to reach ~760), then the given streams. Offsets are computed. */
 function buildPdf(streams: Stream[], filler = 0): Uint8Array {
@@ -33,8 +42,8 @@ function buildPdf(streams: Stream[], filler = 0): Uint8Array {
   for (let i = 0; i < filler; i++) add(enc.encode(`<< /Type /Note /N ${i} >>`));
   for (const s of streams) {
     const data = s.flate ? new Uint8Array(deflateSync(s.raw)) : s.raw;
-    const dict = `<< /Length ${s.indirectLength ? "9999 0 R" : data.length}${s.flate ? " /Filter /FlateDecode" : ""} >>\nstream\n`;
-    add(cat(enc.encode(dict), data, enc.encode("\nendstream")));
+    const dict = `<< ${s.before ?? ""}/Length ${s.indirectLength ? "9999 0 R" : data.length}${s.after ?? ""}${s.flate ? " /Filter /FlateDecode" : ""} >>\nstream\n`;
+    add(cat(enc.encode(dict), data, enc.encode(`${s.eol ?? "\n"}endstream`)));
   }
   const xref = pos;
   let table = `xref\n0 ${offsets.length + 1}\n0000000000 65535 f \n`;
@@ -51,6 +60,15 @@ const sub = (b: Uint8Array, from: string, to: string): Uint8Array => {
   const out = b.slice();
   out.set(enc.encode(to), at);
   return out;
+};
+
+/** Replaces the first match of `from` with the ASCII `to`, any length (bytes are spliced, never re-encoded: the binary stays as it was). */
+const splice = (b: Uint8Array, from: string | RegExp, to: string): Uint8Array => {
+  const text = new TextDecoder("latin1").decode(b);
+  const m = typeof from === "string" ? { index: text.indexOf(from), 0: from } : from.exec(text);
+  expect(m === null ? -1 : m.index).toBeGreaterThan(-1);
+  const at = m?.index ?? 0;
+  return cat(b.subarray(0, at), enc.encode(to), b.subarray(at + (m?.[0].length ?? 0)));
 };
 
 const big = (): Stream => ({ raw: new Uint8Array(randomBytes(24_000)), flate: true });
@@ -121,8 +139,10 @@ describe("checkPdfIntegrity: one failing case per code", () => {
     expect(await checkPdfIntegrity(sub(pdf, "startxref", "startxxxx"))).toMatchObject({
       code: "no_startxref",
     });
-    const padded = cat(sub(pdf, "%%EOF", "%%EOX"), enc.encode(" ".repeat(2000)));
-    expect(await checkPdfIntegrity(padded)).toMatchObject({ code: "no_eof" });
+    expect(await checkPdfIntegrity(sub(pdf, "%%EOF", "%%EOX"))).toMatchObject({ code: "no_eof" });
+    // both must sit in the last 1 KB: a startxref pushed further from the end is not where a reader looks
+    const padded = cat(pdf, enc.encode(" ".repeat(2000)));
+    expect(await checkPdfIntegrity(padded)).toMatchObject({ code: "no_startxref" });
   });
 
   it("incremental: a second startxref", async () => {
@@ -138,8 +158,7 @@ describe("checkPdfIntegrity: one failing case per code", () => {
   });
 
   it("xref_unreadable: startxref points at nothing", async () => {
-    const text = new TextDecoder("latin1").decode(goodPdf());
-    const damaged = enc.encode(text.replace(/startxref\n\d+/, "startxref\n3"));
+    const damaged = splice(goodPdf(), /startxref\n\d+/, "startxref\n3");
     expect(await checkPdfIntegrity(damaged)).toMatchObject({ ok: false, code: "xref_unreadable" });
   });
 });
@@ -240,6 +259,106 @@ describe("checkPdfIntegrity: the bound on inflating (lead 2026-10-29, audit A6 f
     ).toMatchObject({
       ok: false,
       code: "stream_length",
+    });
+  });
+});
+
+const pad = (n: number) => String(n).padStart(10, "0");
+
+/**
+ * A linearised file (PDF 32000-1 Annex F): the linearisation dictionary, the first-page section (its trailer's /Prev names the main one),
+ * `filler` body objects, the main section; the last startxref points at the first-page section. `mainPrev` gives the main trailer a /Prev
+ * too (a further revision); `breakMain` puts one main-section entry a byte off.
+ */
+function buildLinearised(filler: number, opts: { mainPrev?: boolean; breakMain?: boolean } = {}): Uint8Array {
+  let s = "%PDF-1.4\n";
+  const lin = s.length;
+  s += "1 0 obj\n<< /Linearized 1 /L 0 >>\nendobj\n";
+  const firstXref = s.length;
+  s += `xref\n1 1\n${pad(lin)} 00000 n \ntrailer\n<< /Size ${filler + 2} /Prev PREVPREVPR >>\nstartxref\n0\n%%EOF\n`;
+  const offsets: number[] = [];
+  for (let i = 0; i < filler; i++) {
+    offsets.push(s.length);
+    s += `${i + 2} 0 obj\n<< /Type /Note /N ${i} >>\nendobj\n`;
+  }
+  s = s.replace("PREVPREVPR", pad(s.length)); // ten digits for ten letters: no offset moves
+  let table = `xref\n0 1\n0000000000 65535 f \n2 ${filler}\n`;
+  offsets.forEach((o, i) => {
+    table += `${pad(opts.breakMain && i === 3 ? o + 1 : o)} 00000 n \n`;
+  });
+  table += `trailer\n<< /Size ${filler + 2}${opts.mainPrev ? ` /Prev ${firstXref}` : ""} >>\nstartxref\n${firstXref}\n%%EOF\n`;
+  return enc.encode(s + table);
+}
+
+describe("checkPdfIntegrity: edge cases (review round 2, finding 10)", () => {
+  it("a linearised file is not incremental: both sections are read, and a wrong entry in the main one is xref_offset", async () => {
+    const pdf = buildLinearised(120);
+    expect(pdf.length).toBeGreaterThan(2048); // its first-page startxref and %%EOF lie outside the last 1 KB
+    expect(await checkPdfIntegrity(pdf, pdf.length)).toEqual({ ok: true });
+    expect(await checkPdfIntegrity(buildLinearised(5))).toEqual({ ok: true }); // a small one: both startxref in the last 1 KB
+    expect(await checkPdfIntegrity(buildLinearised(120, { breakMain: true }))).toMatchObject({
+      ok: false,
+      code: "xref_offset",
+    });
+    expect(await checkPdfIntegrity(buildLinearised(120, { mainPrev: true }))).toMatchObject({
+      ok: false,
+      code: "incremental",
+    });
+  });
+
+  it("a trailer /Prev in a file that is not linearised is an earlier revision: incremental", async () => {
+    const updated = splice(goodPdf(), "/Root 1 0 R >>", "/Root 1 0 R /Prev 9 >>");
+    expect(await checkPdfIntegrity(updated)).toMatchObject({ ok: false, code: "incremental" });
+  });
+
+  it("an entry count larger than the bytes left is xref_unreadable (the loop is bounded by the file)", async () => {
+    const huge = splice(goodPdf(), /xref\n0 \d+\n/, "xref\n0 99999999999\n");
+    expect(await checkPdfIntegrity(huge)).toMatchObject({ ok: false, code: "xref_unreadable" });
+  });
+
+  it("an entry that is neither n nor f is xref_unreadable", async () => {
+    expect(await checkPdfIntegrity(sub(goodPdf(), " 00000 n \n", " 00000 x \n"))).toMatchObject({
+      ok: false,
+      code: "xref_unreadable",
+    });
+  });
+
+  it("the end of line before endstream may be CR LF, LF, CR alone or nothing", async () => {
+    for (const eol of ["\r\n", "\n", "\r", ""]) {
+      const pdf = buildPdf([{ raw: enc.encode("BT (eol) Tj ET"), flate: false, eol }], 5);
+      expect(await checkPdfIntegrity(pdf)).toEqual({ ok: true });
+    }
+  });
+
+  it("a font file's /Length1 to /Length3 and a key containing 'stream' don't pass for the stream's /Length", async () => {
+    const raw = enc.encode("x".repeat(40));
+    const cases: Stream[] = [
+      { raw, flate: false, before: "/Length1 5000 " },
+      { raw, flate: false, after: " /Length1 5000 /Length2 7000 /Length3 0" },
+      { raw, flate: false, before: "/Length1 5000 ", indirectLength: true },
+      { raw, flate: false, after: " /Mystream 1 /Upstream (stream) " },
+    ];
+    for (const c of cases) expect(await checkPdfIntegrity(buildPdf([c], 5))).toEqual({ ok: true });
+    // a wrong /Length after a /Length1 is still caught
+    const wrong = buildPdf([{ raw, flate: false, before: "/Length1 5000 " }], 5);
+    expect(await checkPdfIntegrity(sub(wrong, "/Length 40 ", "/Length 39 "))).toMatchObject({
+      ok: false,
+      code: "stream_length",
+    });
+  });
+
+  it("the displacement of a moved object is reported (where it is minus where the table says)", async () => {
+    const pdf = goodPdf();
+    const text = new TextDecoder("latin1").decode(pdf);
+    // one entry pointed 7 bytes early: the object is found 7 bytes later than the table says
+    const m = /\n(\d{10}) 00000 n \n/.exec(text.slice(text.indexOf("\nxref\n") + 30));
+    expect(m).not.toBeNull();
+    const at = Number(m?.[1]);
+    const damaged = splice(pdf, `${pad(at)} 00000 n `, `${pad(at - 7)} 00000 n `);
+    expect(await checkPdfIntegrity(damaged)).toMatchObject({
+      ok: false,
+      code: "xref_offset",
+      displacement: 7,
     });
   });
 });

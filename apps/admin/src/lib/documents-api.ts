@@ -262,8 +262,13 @@ export type SaveAnswer = {
   unresolved: string[];
   canSend: boolean;
   needsResave: boolean;
-  /** When the save answer carries the gaps again (optional in the B2 contract): the editor keeps the last ones otherwise. */
+  /** The gaps after a save that changed lines or sections (review round 2, finding 4); absent otherwise, and the editor keeps the last ones. */
   catalogueGaps?: CatalogueGap[];
+  /**
+   * The sections whose text the SERVER wrote in this save (the service values filled by the save that adds the first service line, the
+   * contact's name in the Acceptance text), exactly as stored (review round 2, finding 5). Empty when it wrote none; absent from an older API.
+   */
+  sectionsChanged?: { id: string; title: string | null; bodyMd: string | null; hidden: boolean }[];
 };
 
 export type LineIn = {
@@ -419,7 +424,7 @@ export const documentsApi = {
   /**
    * "Use Catalogue text" (B2, `document-fill.ts`): adds the Catalogue text that is there now to one section, by the draft's own rules, and shows
    * the section, in one batch. It answers the slim save answer with `filled` and fresh `catalogueGaps`; 409 `stale_version`, `nothing_to_fill`,
-   * `client_anonymised` or `frozen`. The screen reads the draft again after it (the new `updatedAt` draws the editor afresh).
+   * `client_anonymised` or `frozen`. The editor applies it like a save answer (`sectionsChanged` holds the filled section): no re-read.
    */
   fillFromCatalogue: (id: string, sectionId: string, expectedUpdatedAt: number) =>
     request<

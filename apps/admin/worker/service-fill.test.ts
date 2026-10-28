@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import {
   appendedText,
+  autoHides,
   catalogueGaps,
   emptyServiceTokens,
   fillServiceTokens,
@@ -105,11 +106,14 @@ describe("unknown vs empty", () => {
     ).toEqual([b, a]);
   });
 });
+// The draft was made at CREATED; a Catalogue row with `updated_at` after it changed since (review round 2, finding 3).
+const CREATED = 1_000;
+const NEWER = { updated_at: 2_000 };
 
 describe("gaps and Use Catalogue text", () => {
-  it("a hidden section reports every field; Catalogue text since added says so", () => {
+  it("a hidden section reports every field; Catalogue text it lacks is offered (adding to an empty section repeats nothing)", () => {
     const sections = [sec("deliverables", null, true, "d1"), sec("assumptions_exclusions", null, true, "a1")];
-    const gaps = catalogueGaps(sections, [svc({ deliverables_md: "D" })]);
+    const gaps = catalogueGaps(sections, [svc({ deliverables_md: "D" })], CREATED);
     expect(gaps.map((g) => [g.field, g.sectionId, g.catalogueHasTextNow])).toEqual([
       ["deliverables", "d1", true],
       ["assumptions", "a1", false],
@@ -117,30 +121,92 @@ describe("gaps and Use Catalogue text", () => {
     ]);
   });
 
-  it("a shown section: text now in Catalogue but not in the section, and the partial case; nothing when it is all there; no section, no gap", () => {
+  it("a shown section: Catalogue text is new only when the row changed after the draft was made; the partial case; all there, or no section, no gap", () => {
     const withText = [sec("assumptions_exclusions", "Has A")];
+    // Catalogue had the exclusions when the draft was made: they went in then, so their absence now is the person's edit
+    expect(catalogueGaps(withText, [svc({ assumptions_md: "Has A", exclusions_md: "E" })], CREATED)).toEqual(
+      [],
+    );
+    // the row changed since: the exclusions are new, and offered
     expect(
-      catalogueGaps(withText, [svc({ assumptions_md: "Has A", exclusions_md: "New E" })]).map((g) => g.field),
-    ).toEqual(["exclusions"]);
-    expect(catalogueGaps(withText, [svc({ assumptions_md: "Has A" })]).map((g) => g.field)).toEqual([
-      "exclusions",
-    ]);
+      catalogueGaps(
+        withText,
+        [svc({ assumptions_md: "Has A", exclusions_md: "New E", ...NEWER })],
+        CREATED,
+      ).map((g) => [g.field, g.catalogueHasTextNow]),
+    ).toEqual([["exclusions", true]]);
+    // the partial case: Catalogue has the assumptions only
+    expect(
+      catalogueGaps(withText, [svc({ assumptions_md: "Has A" })], CREATED).map((g) => [
+        g.field,
+        g.catalogueHasTextNow,
+      ]),
+    ).toEqual([["exclusions", false]]);
     expect(
       catalogueGaps(
         [sec("assumptions_exclusions", "Has A\nHas E")],
-        [svc({ assumptions_md: "Has A", exclusions_md: "Has E" })],
+        [svc({ assumptions_md: "Has A", exclusions_md: "Has E", ...NEWER })],
+        CREATED,
       ),
     ).toEqual([]);
-    expect(catalogueGaps([sec("scope", "x")], [svc()])).toEqual([]);
+    expect(
+      catalogueGaps([sec("scope", "x")], [svc(), svc({ deliverables_md: "D", ...NEWER })], CREATED),
+    ).toEqual([]);
   });
 
-  it("textToFill: the first service plain into a blank section, the rest under names, only the parts not already in", () => {
+  it("finding 3: a normal edit of the filled text is never called new Catalogue text, and the button adds nothing twice", () => {
+    const edited = sec("deliverables", "We will build the site (edited by staff, first words changed)");
+    const old = svc({ deliverables_md: "Build the site" });
+    expect(catalogueGaps([edited], [old], CREATED)).toEqual([]);
+    expect(textToFill(edited, [old], CREATED)).toBeNull();
+    // after Catalogue changes, the new text is offered once; once in the section, it is no longer offered
+    const changed = svc({ deliverables_md: "Build and launch the site", ...NEWER });
+    expect(textToFill(edited, [changed], CREATED)).toBe("**Alpha and Co**\nBuild and launch the site");
+    const after = sec("deliverables", `${edited.bodyMd}\n\n**Alpha and Co**\nBuild and launch the site`);
+    expect(textToFill(after, [changed], CREATED)).toBeNull();
+    expect(catalogueGaps([after], [changed], CREATED)).toEqual([]);
+  });
+
+  it("finding 12: a service with no text is named while the section shows another service's text, not when it shows only the person's own", () => {
+    const a = svc({ deliverables_md: "A deliv" });
+    const b = svc({ id: "i2", code: "S2", name: "Beta" });
+    const showsA = [sec("deliverables", "A deliv")];
+    expect(
+      catalogueGaps(showsA, [a, b], CREATED).map((g) => [g.serviceCode, g.field, g.catalogueHasTextNow]),
+    ).toEqual([["S2", "deliverables", false]]);
+    // the order of the lines does not matter
+    expect(catalogueGaps(showsA, [b, a], CREATED).map((g) => g.serviceCode)).toEqual(["S2"]);
+    // a section the person wrote by hand: neither service's Catalogue text is in it, so nothing is named
+    expect(catalogueGaps([sec("deliverables", "Our own words")], [b], CREATED)).toEqual([]);
+  });
+
+  it("textToFill: the first service plain into a blank section, the rest under names, only what the gaps offer", () => {
     const a = svc({ deliverables_md: "A deliv" });
     const b = svc({ id: "i2", name: "Beta", deliverables_md: "B deliv" });
-    expect(textToFill({ kind: "deliverables", bodyMd: null }, [a, b])).toBe("A deliv\n\n**Beta**\nB deliv");
-    expect(textToFill({ kind: "deliverables", bodyMd: "A deliv" }, [a, b])).toBe("**Beta**\nB deliv");
-    expect(textToFill({ kind: "deliverables", bodyMd: "A deliv\n**Beta**\nB deliv" }, [a, b])).toBeNull();
-    expect(textToFill({ kind: "scope", bodyMd: null }, [a])).toBeNull();
-    expect(textToFill({ kind: "deliverables", bodyMd: null }, [svc()])).toBeNull();
+    const bNew = { ...b, ...NEWER };
+    expect(textToFill(sec("deliverables", null), [a, b], CREATED)).toBe("A deliv\n\n**Beta**\nB deliv");
+    expect(textToFill(sec("deliverables", "A deliv"), [a, b], CREATED)).toBeNull(); // Beta's text is not new
+    expect(textToFill(sec("deliverables", "A deliv"), [a, bNew], CREATED)).toBe("**Beta**\nB deliv");
+    expect(textToFill(sec("deliverables", "A deliv\n**Beta**\nB deliv"), [a, bNew], CREATED)).toBeNull();
+    expect(textToFill(sec("scope", null), [a], CREATED)).toBeNull();
+    expect(textToFill(sec("deliverables", null), [svc()], CREATED)).toBeNull();
+  });
+});
+
+describe("finding 7: a required section is never hidden automatically", () => {
+  it("left with no text, an Acceptance or Terms section stays shown; a Deliverables section is hidden", () => {
+    const sections = [
+      sec("acceptance", "{{service.assumptions}}"),
+      sec("terms", "{{service.exclusions}}"),
+      sec("deliverables", "{{service.deliverables}}"),
+    ];
+    const out = fillServiceTokens(sections, [svc()], null);
+    expect(out.map((s) => [s.kind, s.bodyMd, s.hidden])).toEqual([
+      ["acceptance", null, false],
+      ["terms", null, false],
+      ["deliverables", null, true],
+    ]);
+    expect(autoHides("estimate")).toBe(false);
+    expect(autoHides("assumptions_exclusions")).toBe(true);
   });
 });
