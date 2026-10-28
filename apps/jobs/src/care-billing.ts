@@ -88,7 +88,7 @@ export async function processCareDeadLetter(
     body.kind === "care.bill"
       ? ["care_plan", body.planId, `/care-plans/${body.planId}`]
       : ["document", body.documentId, `/invoices/${body.documentId}`];
-  // 07-U §7 "Care invoice failed": the client and the period. A plan that cannot be read keeps a plain line; the issue failure has no 07-U line yet (a marked placeholder).
+  // 07-U §7 "Care invoice failed": the client and the period. A plan that cannot be read keeps a plain line; the two lines without a plan or for an issue failure are approved in 07-W §2 (word for word).
   const plan =
     body.kind === "care.bill"
       ? await env.DB.prepare(
