@@ -30,7 +30,15 @@ import {
 import { type RenderEnv, renderPaced } from "./browser.ts";
 import { logEvent } from "./log.ts";
 import { type Clock, realClock } from "./pacer.ts";
-import { BROWSER_ALERT_MS, dayOf, failed, HALF_BELL_SQL, putOnce, STAT_ADD_SQL, sha256Bytes } from "./pdf.ts";
+import {
+  BROWSER_ALERT_MS,
+  dayOf,
+  failed,
+  HALF_BELL_SQL,
+  putPdfOnce,
+  STAT_ADD_SQL,
+  sha256Bytes,
+} from "./pdf.ts";
 
 /** The address a statement's footer sends questions to when Settings has none (07-V §6.1: a fixed word, the billing address of docs/13 2026-10-07). */
 export const DEFAULT_BILLING_EMAIL = "billing@techaust.com";
@@ -294,15 +302,8 @@ export async function processStatementPdf(
     clock,
   );
   if (!result.ok) return failed(env, msg, result, now);
-  const stored = await putOnce(
-    env.DOCS,
-    key,
-    result.bytes,
-    "application/pdf",
-    await sha256Bytes(result.bytes),
-  );
-  const bytes = stored.created ? result.bytes : new Uint8Array(await stored.existing.arrayBuffer());
-  const outcome = await settle(await sha256Bytes(bytes), { browserMs: result.browserMs }, "rendered");
+  const { bytes, sha256 } = await putPdfOnce(env.DOCS, key, result.bytes);
+  const outcome = await settle(sha256, { browserMs: result.browserMs }, "rendered");
   logEvent("pdf.statement_rendered", {
     bytes: bytes.byteLength,
     browserMs: result.browserMs,

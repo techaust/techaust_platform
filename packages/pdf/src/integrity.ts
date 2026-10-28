@@ -1,8 +1,11 @@
 // PDF structure check (JOB-PDF-01, ADM-PROP-05). Browser Run once returned a PDF whose 8 KB blocks were out of order (the cross-reference
 // offsets were wrong, no reader opened it). Pure: bytes in, a verdict out; it never puts document text into a message or a log.
 // Checks, in order: the declared length, one `startxref` and `%%EOF`, a classic cross-reference table (an xref stream fails closed), every
-// entry landing on `N G obj`, every direct `/Length` landing on `endstream`, and the Adler-32 of every Flate stream of 4,096 bytes or more
-// (a block moved inside one stream breaks it without moving any header).
+// entry landing on `N G obj`, every direct `/Length` landing on `endstream`, and the Adler-32 of every Flate stream of 8,192 bytes or more
+// (a block moved inside one stream breaks it without moving any header), within an inflate budget per PDF.
+// The bound (lead, 2026-10-29, docs/13; audit A6 finding 1): a smaller stream can't hold a moved 8 KB block, so it is not inflated; past
+// `INFLATE_BUDGET_BYTES` of inflated output the remaining streams are not inflated and the PDF is accepted on the header, cross-reference and
+// `/Length` checks alone (`partial`), never refused or retried for its size: a large signature image must never make a PDF unrenderable.
 export type PdfIntegrityCode =
   | "length_mismatch"
   | "no_startxref"
@@ -15,7 +18,11 @@ export type PdfIntegrityCode =
   | "stream_checksum";
 
 export type PdfIntegrity =
-  | { ok: true }
+  | {
+      ok: true;
+      /** Present only when the inflate budget ran out: the bytes inflated and the eligible streams left unchecked (numbers only). */
+      partial?: { inflated: number; skippedStreams: number };
+    }
   | {
       ok: false;
       code: PdfIntegrityCode;
@@ -26,21 +33,40 @@ export type PdfIntegrity =
       displacement: number | null;
     };
 
-/** Streams smaller than this are not inflated (their header and Length checks still run). */
-export const INFLATE_MIN_BYTES = 4096;
+/** Flate streams smaller than this are not inflated (their header and Length checks still run): the damage moves whole 8 KB blocks. */
+export const INFLATE_MIN_BYTES = 8192;
+/** The most output one check inflates, over all its streams (1.5 MiB). Past it the rest is accepted unchecked, see the head comment. */
+export const INFLATE_BUDGET_BYTES = 1_572_864;
+
+export type PdfIntegrityOptions = {
+  /** The inflate budget in bytes (default `INFLATE_BUDGET_BYTES`); 0 inflates nothing. */
+  inflateBudget?: number;
+};
 
 const latin1 = new TextDecoder("latin1"); // one char per byte, so a string index is a byte offset
 
-async function inflates(data: Uint8Array): Promise<boolean> {
+type Inflated = { ok: boolean; out: number; complete: boolean };
+
+/**
+ * Inflates one zlib stream, stopping once `cap` bytes have come out (the platform emits small chunks on demand, so a cancel stops the work:
+ * at most one chunk past the cap). `ok: false` is a broken stream (bad data or a wrong Adler-32); `complete: false` means it was cut short.
+ */
+async function inflate(data: Uint8Array, cap: number): Promise<Inflated> {
+  let out = 0;
   try {
     const stream = new Blob([data.slice().buffer]).stream().pipeThrough(new DecompressionStream("deflate"));
     const reader = stream.getReader();
     for (;;) {
-      const { done } = await reader.read();
-      if (done) return true;
+      const { done, value } = await reader.read();
+      if (done) return { ok: true, out, complete: true };
+      out += value.byteLength;
+      if (out > cap) {
+        await reader.cancel().catch(() => undefined);
+        return { ok: true, out, complete: false };
+      }
     }
   } catch {
-    return false;
+    return { ok: false, out, complete: false };
   }
 }
 
@@ -48,7 +74,12 @@ async function inflates(data: Uint8Array): Promise<boolean> {
 export async function checkPdfIntegrity(
   bytes: Uint8Array,
   declaredLength: number | null = null,
+  options: PdfIntegrityOptions = {},
 ): Promise<PdfIntegrity> {
+  const asked = options.inflateBudget ?? INFLATE_BUDGET_BYTES;
+  const budget = Number.isFinite(asked) ? Math.max(0, asked) : INFLATE_BUDGET_BYTES; // never unbounded
+  let inflated = 0;
+  let skippedStreams = 0;
   const size = bytes.byteLength;
   const bad = (
     code: PdfIntegrityCode,
@@ -119,9 +150,15 @@ export async function checkPdfIntegrity(
       if (!/^\r?\n?endstream/.test(text.slice(end, end + 12))) return bad("stream_length", end);
     }
     if (length !== null && end - start >= INFLATE_MIN_BYTES && dict.includes("/FlateDecode")) {
-      if (!(await inflates(bytes.subarray(start, end)))) return bad("stream_checksum", start);
+      if (inflated >= budget) skippedStreams += 1;
+      else {
+        const r = await inflate(bytes.subarray(start, end), budget - inflated);
+        inflated += r.out;
+        if (!r.ok) return bad("stream_checksum", start);
+        if (!r.complete) skippedStreams += 1;
+      }
     }
     from = end;
   }
-  return { ok: true };
+  return skippedStreams === 0 ? { ok: true } : { ok: true, partial: { inflated, skippedStreams } };
 }

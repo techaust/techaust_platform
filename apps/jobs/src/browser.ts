@@ -155,6 +155,13 @@ async function readPdf(res: Response, startedAt: number, now: () => number): Pro
     });
     return err.damaged(check.code);
   }
+  // Past the inflate budget the PDF is kept on its header, xref and Length checks (lead, 2026-10-29): logged, never refused or retried.
+  if (check.partial)
+    logEvent("pdf.integrity_partial", {
+      bytes: bytes.byteLength,
+      inflated: check.partial.inflated,
+      skippedStreams: check.partial.skippedStreams,
+    });
   const header = res.headers.get("x-browser-ms-used");
   const ms = header === null || header.trim() === "" ? Number.NaN : Number(header);
   return {

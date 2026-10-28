@@ -3,7 +3,7 @@
 import { randomBytes } from "node:crypto";
 import { deflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
-import { checkPdfIntegrity } from "../src/integrity.ts";
+import { checkPdfIntegrity, INFLATE_BUDGET_BYTES, INFLATE_MIN_BYTES } from "../src/integrity.ts";
 
 const enc = new TextEncoder();
 const cat = (...parts: Uint8Array[]): Uint8Array => {
@@ -141,5 +141,105 @@ describe("checkPdfIntegrity: one failing case per code", () => {
     const text = new TextDecoder("latin1").decode(goodPdf());
     const damaged = enc.encode(text.replace(/startxref\n\d+/, "startxref\n3"));
     expect(await checkPdfIntegrity(damaged)).toMatchObject({ ok: false, code: "xref_unreadable" });
+  });
+});
+
+/** Swaps two `len`-byte blocks inside the data of the first Flate stream (no header moves; only its Adler-32 can tell). */
+const swapInsideStream = (pdf: Uint8Array, a: number, b: number, len: number, nth = 0): Uint8Array => {
+  const text = new TextDecoder("latin1").decode(pdf);
+  let at = -1;
+  for (let i = 0; i <= nth; i++) at = text.indexOf("/FlateDecode", at + 1);
+  const start = text.indexOf("stream\n", at) + 7;
+  const out = pdf.slice();
+  out.set(pdf.slice(start + b, start + b + len), start + a);
+  out.set(pdf.slice(start + a, start + a + len), start + b);
+  return out;
+};
+
+/** Random bytes whose zlib stream is exactly `size` bytes long (stored blocks: 2 header + 5 block + 4 Adler bytes around the data). */
+const flateOfSize = (size: number): Stream => {
+  const raw = new Uint8Array(randomBytes(size - 11));
+  expect(deflateSync(raw).length).toBe(size);
+  return { raw, flate: true };
+};
+
+describe("checkPdfIntegrity: the bound on inflating (lead 2026-10-29, audit A6 finding 1)", () => {
+  it("the constants are the decided ones: 8,192 bytes and 1.5 MiB; a budget that is not a number is the default, never unbounded", async () => {
+    expect(INFLATE_MIN_BYTES).toBe(8192);
+    expect(INFLATE_BUDGET_BYTES).toBe(1_572_864);
+    const blank = buildPdf([{ raw: new Uint8Array(16 * 1024 * 1024), flate: true }]);
+    for (const inflateBudget of [Number.NaN, Number.POSITIVE_INFINITY])
+      expect(await checkPdfIntegrity(blank, null, { inflateBudget })).toMatchObject({
+        ok: true,
+        partial: { skippedStreams: 1 },
+      });
+  });
+
+  it("a Flate stream of 8,191 bytes is not inflated; one of 8,192 bytes is (a swapped block inside it is stream_checksum)", async () => {
+    const under = buildPdf([flateOfSize(8191)], 20);
+    const at = buildPdf([flateOfSize(8192)], 20);
+    expect(await checkPdfIntegrity(under)).toEqual({ ok: true });
+    expect(await checkPdfIntegrity(at)).toEqual({ ok: true });
+    expect(await checkPdfIntegrity(swapInsideStream(under, 1000, 5000, 1024))).toEqual({ ok: true });
+    expect(await checkPdfIntegrity(swapInsideStream(at, 1000, 5000, 1024))).toMatchObject({
+      ok: false,
+      code: "stream_checksum",
+    });
+  });
+
+  it("past the budget the rest is not inflated: accepted on the header, xref and Length checks, with the numbers of what was left", async () => {
+    const pdf = buildPdf(
+      [
+        { raw: new Uint8Array(randomBytes(100_000)), flate: true },
+        { raw: new Uint8Array(randomBytes(100_000)), flate: true },
+        { raw: new Uint8Array(randomBytes(100_000)), flate: true },
+      ],
+      20,
+    );
+    expect(await checkPdfIntegrity(pdf)).toEqual({ ok: true }); // 300 KB is inside the default budget
+    const r = await checkPdfIntegrity(pdf, pdf.length, { inflateBudget: 150_000 });
+    expect(r.ok).toBe(true);
+    // the first stream in full, the second cut short at the budget (at most one chunk past it), the third not started
+    if (r.ok) {
+      expect(r.partial?.skippedStreams).toBe(2);
+      expect(r.partial?.inflated).toBeGreaterThan(150_000);
+      expect(r.partial?.inflated).toBeLessThan(150_000 + 65_536);
+    }
+    // a block swapped inside the third stream is the accepted risk past the budget; inside the first it is still caught
+    expect(
+      await checkPdfIntegrity(swapInsideStream(pdf, 1000, 50_000, 4096, 2), null, { inflateBudget: 150_000 }),
+    ).toMatchObject({ ok: true, partial: { skippedStreams: 2 } });
+    expect(
+      await checkPdfIntegrity(swapInsideStream(pdf, 1000, 50_000, 4096, 0), null, { inflateBudget: 150_000 }),
+    ).toMatchObject({ ok: false, code: "stream_checksum" });
+  });
+
+  it("the default budget stops a stream that inflates to 16 MB near 1.5 MiB, and never refuses it for its size", async () => {
+    const zeros = { raw: new Uint8Array(16 * 1024 * 1024), flate: true }; // 16 MB of blank pixels: about 16 KB once compressed
+    const r = await checkPdfIntegrity(buildPdf([zeros], 20));
+    expect(r).toMatchObject({ ok: true, partial: { skippedStreams: 1 } });
+    if (r.ok) {
+      expect(r.partial?.inflated).toBeGreaterThan(INFLATE_BUDGET_BYTES);
+      expect(r.partial?.inflated).toBeLessThan(INFLATE_BUDGET_BYTES + 65_536);
+    }
+  });
+
+  it("with the budget at its minimum (0) nothing is inflated, and the owner's 3, 1, 2 permutation is still xref_offset", async () => {
+    const pdf = goodPdf();
+    expect(await checkPdfIntegrity(pdf, pdf.length, { inflateBudget: 0 })).toEqual({
+      ok: true,
+      partial: { inflated: 0, skippedStreams: 1 },
+    });
+    const damaged = move(pdf, 4000 + 2 * 8192, 8192, 4000);
+    expect(await checkPdfIntegrity(damaged, damaged.length, { inflateBudget: 0 })).toMatchObject({
+      ok: false,
+      code: "xref_offset",
+    });
+    expect(
+      await checkPdfIntegrity(sub(pdf, "/Length 16 ", "/Length 15 "), null, { inflateBudget: 0 }),
+    ).toMatchObject({
+      ok: false,
+      code: "stream_length",
+    });
   });
 });
