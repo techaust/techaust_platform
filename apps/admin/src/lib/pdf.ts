@@ -15,6 +15,8 @@ export const PDF_COPY = {
   /** 07-P §4: answers of the API, said in the screen's words. */
   pending: "The PDF is still being made. Try again in a minute.",
   done: "The PDF is already made.",
+  /** On a draft, where the PDF panel will be (owner, 2026-10-28): drafts have no PDF until they are sent. */
+  afterSend: (type: "proposal" | "estimate") => `The PDF is made when you send this ${type}.`,
 } as const;
 
 export const SIGNATURE_COPY = {
