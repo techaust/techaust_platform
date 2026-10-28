@@ -33,12 +33,14 @@ export async function enqueueSupplierPdf(env: Pick<Env, "PDF_QUEUE">, documentId
 export const SUPPLIER_ASK_WINDOW_MS = 5 * 60_000;
 
 /**
- * The claim for a supplier-copy message: one row of `auth_attempts` (the exact-counter table, as the jobs form limits use it) under `ps:<document id>`, whose `window_start` is when it was
- * last claimed. The statement inserts the row, or moves it forward only when the last claim is older than the window; `changes` is 1 for the one request that won it and 0 for every other,
- * so concurrent downloads and repeated clicks enqueue ONE message in 5 minutes. No personal data in the key (an id).
+ * The claim for a supplier-copy message: one row of `pdf_asks` (migration 0048; the sign-in counters table is the front Worker's only, the worker budget guard checks it) under `supplier:<document id>`, whose
+ * `asked_at` is when it was last asked for. The statement inserts the row, or moves it forward only when the last ask is older than the window; `changes` is 1 for the one request
+ * that won it and 0 for every other, so concurrent downloads and repeated clicks enqueue ONE message in 5 minutes. No personal data in the key (an id).
  */
-export const SUPPLIER_ASK_SQL = `INSERT INTO auth_attempts (key, window_start, failures) VALUES (?1, ?2, 1)
-ON CONFLICT(key) DO UPDATE SET window_start = ?2, failures = failures + 1 WHERE window_start <= ?3`;
+export const SUPPLIER_ASK_SQL = `INSERT INTO pdf_asks (key, asked_at) VALUES (?1, ?2)
+ON CONFLICT(key) DO UPDATE SET asked_at = ?2 WHERE asked_at <= ?3`;
+/** The key of a document's supplier-copy claim. */
+export const supplierAskKey = (documentId: string): string => `supplier:${documentId}`;
 
 /**
  * Asks for the supplier copy at most once per document in `SUPPLIER_ASK_WINDOW_MS` (the claim above, then `enqueueSupplierPdf`). Returns whether a message was sent. Never throws: a
@@ -51,7 +53,7 @@ export async function enqueueSupplierPdfOnce(
 ): Promise<boolean> {
   try {
     const r = await env.DB.prepare(SUPPLIER_ASK_SQL)
-      .bind(`ps:${documentId}`, now, now - SUPPLIER_ASK_WINDOW_MS)
+      .bind(supplierAskKey(documentId), now, now - SUPPLIER_ASK_WINDOW_MS)
       .run();
     if (r.meta.changes !== 1) return false;
   } catch (e) {
@@ -66,8 +68,8 @@ export async function enqueueSupplierPdfOnce(
   }
   if (await enqueueSupplierPdf(env, documentId)) return true;
   // The queue could not be reached: release the claim so the next download asks again instead of waiting out the window.
-  await env.DB.prepare("UPDATE auth_attempts SET window_start = 0 WHERE key = ?1")
-    .bind(`ps:${documentId}`)
+  await env.DB.prepare("UPDATE pdf_asks SET asked_at = 0 WHERE key = ?1")
+    .bind(supplierAskKey(documentId))
     .run()
     .catch(() => undefined);
   return false;

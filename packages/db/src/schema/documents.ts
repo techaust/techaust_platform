@@ -369,6 +369,17 @@ export const advanceReceipts = sqliteTable(
 export type StatementIssuer = { company: IssuerSnapshot["company"] };
 
 /**
+ * The claim that keeps a request for a stored PDF from being queued twice in a short time (review 2026-10-28, finding 8): one row per `<kind>:<document id>` (today `supplier:`, the
+ * DUPLICATE FOR SUPPLIER copy), whose `asked_at` is when it was last asked for. The admin API moves it forward only when the last ask is older than 5 minutes (one statement,
+ * `changes` says who won), so repeated or parallel downloads of a copy that is not made yet put ONE message on the queue. A throttle, not a record: no triggers, no foreign key
+ * (the id is a plain string), nothing personal in it.
+ */
+export const pdfAsks = sqliteTable("pdf_asks", {
+  key: text("key").primaryKey(),
+  askedAt: integer("asked_at").notNull(),
+});
+
+/**
  * The PDF of one client's statement of account for one currency and range (M5.5b, LD79, JOB-PDF-01, Q19, Q57): a CACHE, not a record. A row is made by
  * the admin API (`POST /clients/:id/statement/pdf`), rendered by the jobs Worker (`pdf.statement`), and deleted with its R2 object after 30 days or when the
  * client is anonymised. No triggers on purpose: nothing here is a document or a ledger. The R2 key is `statements/<client id>/<view_sha256>.pdf`, so identical

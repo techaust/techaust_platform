@@ -3,7 +3,7 @@
 import { env } from "cloudflare:workers";
 import { fyLabelOfToken, supplierPdfKey } from "@techaust/core/pdf-jobs";
 import { beforeAll, describe, expect, it } from "vitest";
-import { SUPPLIER_ASK_WINDOW_MS } from "./document-events.ts";
+import { SUPPLIER_ASK_WINDOW_MS, supplierAskKey } from "./document-events.ts";
 import { call, one, sessionFor, withEnv } from "./test-helpers.ts";
 import { mkProforma } from "./test-invoice-types.ts";
 import { codeOf, issueInvoice, mkInvoice, putBank, putCompany } from "./test-invoices.ts";
@@ -118,19 +118,19 @@ describe("GET /invoices/:id/pdf/supplier", () => {
     await Promise.all([ask(), ask(), ask(), ask()]);
     expect(q.sent).toEqual([{ v: 1, kind: "pdf.supplier", documentId: made.id, hop: 0 }]);
     // inside the window the claim is held; once the last ask is older than 5 minutes the next one goes
-    const held = await env.DB.prepare("SELECT window_start FROM auth_attempts WHERE key = ?1")
-      .bind(`ps:${made.id}`)
-      .first<{ window_start: number }>();
-    expect(held?.window_start).toBeGreaterThan(0);
-    await env.DB.prepare("UPDATE auth_attempts SET window_start = ?2 WHERE key = ?1")
-      .bind(`ps:${made.id}`, Date.now() - SUPPLIER_ASK_WINDOW_MS - 1)
+    const held = await env.DB.prepare("SELECT asked_at FROM pdf_asks WHERE key = ?1")
+      .bind(supplierAskKey(made.id))
+      .first<{ asked_at: number }>();
+    expect(held?.asked_at).toBeGreaterThan(0);
+    await env.DB.prepare("UPDATE pdf_asks SET asked_at = ?2 WHERE key = ?1")
+      .bind(supplierAskKey(made.id), Date.now() - SUPPLIER_ASK_WINDOW_MS - 1)
       .run();
     await ask();
     expect(q.sent).toHaveLength(2);
     await ask();
     expect(q.sent).toHaveLength(2);
     // a queue that cannot be reached: the claim is released, so the next download asks again (not 5 minutes later)
-    await env.DB.prepare("DELETE FROM auth_attempts WHERE key = ?1").bind(`ps:${made.id}`).run();
+    await env.DB.prepare("DELETE FROM pdf_asks WHERE key = ?1").bind(supplierAskKey(made.id)).run();
     const failing = {
       send: async () => {
         throw new Error("queue down");
