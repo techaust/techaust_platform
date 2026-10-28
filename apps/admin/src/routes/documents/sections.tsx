@@ -249,10 +249,13 @@ const SectionRow = memo(function SectionRow(p: {
           aria-controls={panel}
           onClick={() => p.onToggle(s.uid)}
         >
-          <span className="section-row__name">{name}</span>
-          {s.title.trim() && s.title.trim() !== sectionLabel(s.kind) && (
-            <span className="section-row__kind">{sectionLabel(s.kind)}</span>
-          )}
+          {/* The name (and the kind under a custom title) may wrap; the chevron stays beside them, never on a line of its own. */}
+          <span className="section-row__label">
+            <span className="section-row__name">{name}</span>
+            {s.title.trim() && s.title.trim() !== sectionLabel(s.kind) && (
+              <span className="section-row__kind">{sectionLabel(s.kind)}</span>
+            )}
+          </span>
           <ChevronDown size={16} />
         </button>
         <span className="section-row__flags">
@@ -269,7 +272,7 @@ const SectionRow = memo(function SectionRow(p: {
               <span className="visually-hidden"> {sectionHolesLine(holes)}</span>
             </span>
           )}
-          {s.hidden && <span className="section-row__flag">Hidden</span>}
+          {s.hidden && <span className="section-row__flag section-row__flag--hidden">Hidden</span>}
         </span>
         <span className="section-row__ctl">
           {!required && (

@@ -645,11 +645,13 @@
   font-size: var(--text-sm);
 }
 
+/* The toggle never wraps: a long name wraps inside its label, and the chevron stays beside it (review round 2, finding 6: at 375 px it used
+   to drop onto a line of its own). */
 .section-row__toggle {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-1) var(--space-3);
+  gap: var(--space-3);
+  min-width: 0;
   min-height: var(--target-min);
   padding: var(--space-2) 0;
   border: 0;
@@ -660,7 +662,16 @@
   cursor: pointer;
 }
 
+.section-row__label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+  min-width: 0;
+}
+
 .section-row__toggle .icon {
+  flex: none;
   color: var(--color-text-muted);
   transition: transform var(--duration-fast) var(--ease-standard);
 }
@@ -703,6 +714,20 @@
 .section-row__flag--warn {
   color: var(--color-warning);
   font-weight: 600;
+}
+
+/* On a phone the word "Hidden" would leave the name too little room (the chevron could no longer sit beside "Deliverables"). The struck
+   name and the unticked eye already show it, so the word stays for screen readers only. */
+@media (max-width: 29.99rem) {
+  .section-row__flag--hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
 }
 
 .section-row__ctl {

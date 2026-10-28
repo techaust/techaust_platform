@@ -198,8 +198,16 @@ export type ItemRow = {
 };
 /** Items by id, for a request that names services: `json_each` keeps it to one bound value, whatever the count. */
 export const ITEMS_BY_ID = `SELECT ${ITEM_COLS} FROM catalogue_items WHERE id IN (SELECT value FROM json_each(?1))`;
-/** The current catalogue rows of the services on one document's lines (`?1` = the document id): the draft's `catalogueGaps` read them in the same D1 call. */
-export const ITEMS_OF_DOCUMENT = `SELECT ${ITEM_COLS} FROM catalogue_items WHERE id IN (SELECT catalogue_item_id FROM document_lines WHERE document_id = ?1 AND catalogue_item_id IS NOT NULL)`;
+/**
+ * The current catalogue rows of the services on one DRAFT's lines (`?1` = the document id), with when each last changed: the draft's
+ * `catalogueGaps` read them in the same D1 call. A sent version has no gaps, so it reads no rows (review round 2, finding 9).
+ */
+export const ITEMS_OF_DOCUMENT = `SELECT ${ITEM_COLS}, updated_at FROM catalogue_items WHERE id IN (SELECT catalogue_item_id FROM document_lines WHERE document_id = ?1 AND catalogue_item_id IS NOT NULL) AND EXISTS (SELECT 1 FROM documents WHERE id = ?1 AND frozen_at IS NULL)`;
+/**
+ * A save's catalogue rows (`?1` = the document id, `?2` = a JSON array of the item ids the save adds): the services it adds and, when it
+ * changes lines or sections, those already on the draft (for the gaps in its answer and the first-service fill), in one read.
+ */
+export const ITEMS_OF_SAVE = `SELECT ${ITEM_COLS}, updated_at FROM catalogue_items WHERE id IN (SELECT value FROM json_each(?2) UNION SELECT catalogue_item_id FROM document_lines WHERE document_id = ?1 AND catalogue_item_id IS NOT NULL AND ?3 = 1)`;
 /** The newest proposal terms (the one a new draft pins), without the text: no admin route reads it. Version numbers only go up. */
 export const NEWEST_TERMS =
   "SELECT id, kind, version, sha256 FROM terms_versions WHERE kind = 'proposal' ORDER BY version DESC LIMIT 1";

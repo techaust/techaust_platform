@@ -40,7 +40,7 @@ _Drafted by the designer of the M5 owner fixes task ([runs/m5-owner-fixes](../ru
 ## 4. Other screens (sweep findings 8 and 9)
 27. Proposals list with nothing to show (the type filter on): "No proposals yet" (finding 8; 07-O's "No proposals or estimates yet" stays when both types are shown)
 28. Estimates list, the same: "No estimates yet"
-29. Catalogue, under "Deliverables, assumptions and exclusions" (the service page and the edit form): "A new proposal or estimate takes its Deliverables section, and its Assumptions and exclusions section, from these texts. Where a text is empty, the section is hidden and the draft says so."
+29. Catalogue, under "Deliverables, assumptions and exclusions" (the service page and the edit form): "A new proposal takes its Deliverables section, and its Assumptions and exclusions section, from these texts. Where a text is empty, the section is hidden and the draft says so."
    Or (shorter): "New proposals and estimates take their Deliverables and Assumptions and exclusions sections from these texts. An empty text hides its section."
 
 ## 5. Client portal (client-facing, finding 7)

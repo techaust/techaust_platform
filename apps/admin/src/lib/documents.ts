@@ -873,6 +873,11 @@ export type Sent = {
   parts: Part[];
   rev: Record<Part, number>;
   uids: Partial<Record<"lines" | "sections" | "schedule", string[]>>;
+  /**
+   * Each section as it was when the save was sent (by uid; the objects themselves, since every edit makes a new one): a section the server
+   * rewrote is applied from the answer only if the person has not touched it since, so nothing typed is lost.
+   */
+  sectionsAt?: Readonly<Record<string, SectionDraft>>;
 };
 
 /**
@@ -938,7 +943,8 @@ export function buildPatch(
       uids.schedule = s.schedule.map((x) => x.uid);
     }
   }
-  return { ok: true, patch, sent: { parts, rev: { ...s.rev }, uids } };
+  const sectionsAt = Object.fromEntries(s.sections.map((x) => [x.uid, x]));
+  return { ok: true, patch, sent: { parts, rev: { ...s.rev }, uids, sectionsAt } };
 }
 
 const sameFigures = (a: LineFigures | undefined, b: LineFigures) =>
@@ -992,17 +998,24 @@ export function applySave(s: EditorState, a: SaveAnswer, sent: Sent): EditorStat
   });
   const savedRev = { ...s.savedRev };
   for (const p of sent.parts) savedRev[p] = sent.rev[p];
+  // The sections the server wrote (review round 2, finding 5): applied from the answer, so the screen holds what is stored and a later save
+  // never writes the old text (a `{{service.…}}` value, the old contact's name) back. A section the person edited while the save was in
+  // flight keeps what they typed (it saves next; anything left unfilled is named by the send check).
+  const rewritten = new Map((a.sectionsChanged ?? []).map((x) => [x.id, x]));
   const next: EditorState = {
     ...s,
     updatedAt: a.updatedAt,
     lines: s.lines.map((l) =>
       l.id === null && lineIds.has(l.uid) ? { ...l, id: lineIds.get(l.uid) as string } : l,
     ),
-    sections: s.sections.map((x) =>
-      sectionIds.has(x.uid) && x.id !== sectionIds.get(x.uid)
-        ? { ...x, id: sectionIds.get(x.uid) as string }
-        : x,
-    ),
+    sections: s.sections.map((x) => {
+      const id = sectionIds.get(x.uid) ?? x.id;
+      const r = id === null ? undefined : rewritten.get(id);
+      // untouched since the save was sent: the very object the save was built from
+      if (r && id !== null && sent.sectionsAt?.[x.uid] === x)
+        return { ...x, id, title: r.title ?? "", bodyMd: r.bodyMd ?? "", hidden: r.hidden };
+      return id !== null && id !== x.id ? { ...x, id } : x;
+    }),
     schedule: s.schedule.map((x) =>
       stepIds.has(x.uid) && x.id !== stepIds.get(x.uid) ? { ...x, id: stepIds.get(x.uid) as string } : x,
     ),

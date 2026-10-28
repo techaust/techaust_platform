@@ -515,6 +515,44 @@ describe("the autosave: how the answer lands", () => {
     expect([isDirty(s), s.status]).toEqual([false, "saved"]);
   });
 
+  it("a section the server wrote comes from the answer, title and visibility included, and leaves nothing to save (round 2, finding 5)", () => {
+    let s = initEditor(view());
+    s = editor(s, { type: "fields", patch: { title: "New" } });
+    const b = buildPatch(s);
+    if (!b.ok || !b.patch) throw new Error("no patch");
+    const written = { id: "s1", title: "Estimate for Asha", bodyMd: "Filled by the server", hidden: true };
+    s = applySave(s, { ...answer(s, ["l1"]), sectionsChanged: [written] }, b.sent);
+    expect(s.sections[0]).toMatchObject({
+      id: "s1",
+      title: "Estimate for Asha",
+      bodyMd: "Filled by the server",
+      hidden: true,
+    });
+    expect([isDirty(s), s.status]).toEqual([false, "saved"]);
+    // a null text or title is the editor's empty string
+    s = applySave(
+      s,
+      { ...answer(s, ["l1"]), sectionsChanged: [{ ...written, title: null, bodyMd: null }] },
+      b.sent,
+    );
+    expect(s.sections[0]).toMatchObject({ title: "Estimate for Asha", bodyMd: "Filled by the server" }); // already moved on: kept
+  });
+
+  it("a section typed in while the save was in flight keeps what was typed; an answer with no sectionsChanged changes no text", () => {
+    let s = initEditor(view());
+    s = editor(s, { type: "fields", patch: { title: "New" } });
+    const b = buildPatch(s);
+    if (!b.ok || !b.patch) throw new Error("no patch");
+    const uid = s.sections[0]?.uid as string;
+    s = editor(s, { type: "section", uid, patch: { bodyMd: "Typed meanwhile" } });
+    const written = { id: "s1", title: "Estimate", bodyMd: "Filled by the server", hidden: false };
+    const after = applySave(s, { ...answer(s, ["l1"]), sectionsChanged: [written] }, b.sent);
+    expect(after.sections[0]?.bodyMd).toBe("Typed meanwhile");
+    expect(isDirty(after)).toBe(true);
+    const plain = applySave(s, answer(s, ["l1"]), b.sent);
+    expect(plain.sections[0]?.bodyMd).toBe("Typed meanwhile");
+  });
+
   it("a conflict stops the autosave until the latest is loaded", () => {
     let s = initEditor(view());
     s = editor(s, { type: "failed", status: "stale", error: DOC_ERRORS.stale_version });

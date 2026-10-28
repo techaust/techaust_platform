@@ -9,5 +9,5 @@ export const X = (line: string): string => (APPROVED_07X ? line : `${PLACEHOLDER
 
 /** §4.2 (sweep finding 9): under the Catalogue's "Deliverables, assumptions and exclusions", what the three texts are for. */
 export const CATALOGUE_TEXTS_HINT = X(
-  "A new proposal or estimate takes its Deliverables section, and its Assumptions and exclusions section, from these texts. Where a text is empty, the section is hidden and the draft says so.",
+  "A new proposal takes its Deliverables section, and its Assumptions and exclusions section, from these texts. Where a text is empty, the section is hidden and the draft says so.",
 );
