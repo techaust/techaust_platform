@@ -40,6 +40,7 @@ As 07-O §1 and 06 §7.4: "Summary" · "Your goals" · "Scope" · "Deliverables"
 | PDF button | "Download PDF" |
 | PDF states | "PDF ready" · "Making the PDF…" · after 5 minutes: "The PDF is taking longer than usual." with the button "Try again" |
 | Retry result | "We'll make the PDF again." |
+| A draft, where the PDF will be (owner, 2026-10-28) | "The PDF is made when you send this proposal." ("estimate" on an estimate) |
 | Fingerprint | "Fingerprint {first 12 characters}" |
 | Signature control (Settings, Company) | Heading "Signature" · "Printed on tax invoices above "Authorised signatory". PNG or JPEG, up to 256 KB." · buttons "Upload signature" · "Replace" · "Remove" · "Remove the signature? Invoices issued already keep theirs." |
 

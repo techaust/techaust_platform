@@ -50,6 +50,17 @@ export function createApp(mount: (app: App) => void, before?: (app: App) => void
       const row = answeringRow(matchedRoutes(c), (p) => routeFor(c.req.method, p));
       c.set("route", row);
       await next();
+      // A handler that never read the body (`{}` on a mark-read POST): read it to the end before answering. Through the front's
+      // service binding an unread body fails the front with "Can't read from request stream after response has been sent"
+      // (staging, 2026-10-28). Only a body that declares at most 16 KB: a refused large or unsized body is left unread.
+      const declared = Number(c.req.header("content-length") ?? Number.NaN);
+      if (declared > 0 && declared <= 16 * 1024 && c.req.raw.body && !c.req.raw.bodyUsed) {
+        try {
+          await c.req.raw.arrayBuffer();
+        } catch {
+          // Already cut off by the client: nothing left to read.
+        }
+      }
       c.header("Cache-Control", "no-store");
       // Every API request by a signed-in member, every sign-in attempt and every refusal (Q2). Not for lookups
       // (health, salt, invite start) and not for undeclared routes. A logging failure never changes the answer.

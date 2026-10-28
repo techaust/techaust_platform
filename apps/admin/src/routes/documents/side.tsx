@@ -22,6 +22,7 @@ import {
   versionLine,
 } from "../../lib/documents.ts";
 import type { ApprovalInfo, Blocker, Guard, QuoteType, VersionRow } from "../../lib/documents-api.ts";
+import { PDF_COPY } from "../../lib/pdf.ts";
 import { bpToPercent } from "../../lib/settings-form.ts";
 import { docHref } from "./parts.tsx";
 
@@ -79,6 +80,8 @@ export function SendPanel(props: {
   /** The draft's sections, for `section_empty`'s list; each name opens its section. */
   sections: SectionDraft[];
   onOpenSection: (uid: string) => void;
+  /** Names the document in the "PDF after sending" line. */
+  type: QuoteType;
 }) {
   const needs = !!props.guard?.needsApproval && props.role !== "owner";
   const approved = props.approval.state === "approved";
@@ -154,6 +157,7 @@ export function SendPanel(props: {
           </button>
         )}
       </div>
+      <p className="hint send-panel__note">{PDF_COPY.afterSend(props.type)}</p>
     </section>
   );
 }
