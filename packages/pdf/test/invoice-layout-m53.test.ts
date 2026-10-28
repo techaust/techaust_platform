@@ -1,7 +1,7 @@
 // The M5.3 credit and debit notes in the designed layout (layout/invoice.ts; docs/06 §7.3; words 07-T §1 and §8): the title and copy mark, the reason
 // in the band, the invoice the note corrects (its number as ONE text node: LD54, the jobs Worker's own check `missingStatutoryLine` passes on every
 // fixture), each line's "Against line {n}", the total's label and the effect line; a credit note prints no due date, no balance and no bank block, a
-// debit note is paid like an invoice; a USD note prints the rate of its invoice. Sample data only (fixtures/notes.ts). VERIFY WITH CA/LEGAL.
+// debit note is paid like an invoice; a USD note prints the rate of its invoice. Sample data only (fixtures/notes.ts). Researched 2026-10-28, s.34(3) CGST Act, Rule 53 (08-C RA-22).
 import { describe, expect, it } from "vitest";
 import { missingStatutoryLine } from "../src/invoice-integrity.ts";
 import type { InvoiceEnvelope } from "../src/invoice-types.ts";

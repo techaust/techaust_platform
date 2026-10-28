@@ -1,5 +1,5 @@
 // The GST and report core: `@techaust/core/gst` (M5.5a; ADM-REP-04, ADM-REP-07, ADM-INV-17). Pure, deterministic, never throws:
-// every function returns a `GstResult` (codes only). VERIFY WITH CA/LEGAL: every rule and every column is a researched default
+// every function returns a `GstResult` (codes only). Researched 2026-10-28, GSTN advisories of June 2025 (08-C RA-23): every rule and every column is a researched default
 // or a working assumption (docs/08-research-appendix/A-gst-invoicing.md).
 // SPA ONLY: never import this from Worker code. It is for the admin SPA's reports (bytes: LD16). `scripts/worker-budget.mjs` fails
 // a Worker bundle that contains this module (the `GST_CORE` marker), and a source test fails a value import of it from any Worker

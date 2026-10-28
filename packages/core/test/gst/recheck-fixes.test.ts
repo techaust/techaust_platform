@@ -1,4 +1,4 @@
-// M5.5b step A0: the M5.5a re-check lows 2 to 7 and Q53 [ADM-REP-04, ADM-REP-07, ADM-INV-17; VERIFY WITH CA/LEGAL]. Lows 2, 4 and 5
+// M5.5b step A0: the M5.5a re-check lows 2 to 7 and Q53 [ADM-REP-04, ADM-REP-07, ADM-INV-17; Researched 2026-10-28, FEMA 23(R)/2026-RB Reg. 5(1) (08-C RB-01)]. Lows 2, 4 and 5
 // are also pinned in review-fixes.test.ts (the paths with suffixes and the capital-letter numbers).
 import { describe, expect, it } from "vitest";
 import {

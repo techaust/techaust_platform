@@ -1,7 +1,7 @@
 // Leads API (M3.2, ADM-LEAD-01..06). Every route is a row of ROUTES (guard.ts) with its matrix action and audit action; every
 // mutation is ONE batch through `mutate` (the change, its audit row and access row together).
 //
-// Personal data and the audit log (analyst early check, M3.2; VERIFY WITH CA/LEGAL): `audit_log` is append-only and kept for years,
+// Personal data and the audit log (analyst early check, M3.2; Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11)): `audit_log` is append-only and kept for years,
 // so a lead's audit row holds the lead reference, ids, field NAMES and stage codes, never a name, an email address, a phone number,
 // a note or a message. What changed in a lead's contact fields (before and after) goes on the lead's timeline (`lead_activities`),
 // which is deleted with the lead by the retention clean-up.
@@ -347,7 +347,7 @@ export const convertRequest = z.object({
   country,
   gstStatus: z.enum(["registered", "unregistered", "overseas"]),
   gstin: z.optional(text(20)),
-  /** Required for unregistered Indian clients (owner Q1, 2026-10-25); a registered client's defaults to the GSTIN's. VERIFY WITH CA/LEGAL. */
+  /** Required for unregistered Indian clients (owner Q1, 2026-10-25); a registered client's defaults to the GSTIN's. Researched 2026-10-28, Rule 46 CGST Rules (08-C RA-05). */
   stateCode: z.optional(z.string().check(z.regex(/^\d{2}$/))),
   /** The lead becomes the client's billing contact, who by default may see finance (M3.2 carry-in). */
   billingContact: z.optional(z.boolean()),
@@ -862,7 +862,7 @@ export const leads = new Hono<AppEnv>()
     const db = c.env.DB;
 
     // The tax identity as one rule (core): India for registered and unregistered, a state code, a GSTIN exactly when registered.
-    // VERIFY WITH CA/LEGAL: the place-of-supply treatment is decided at proposal and invoice time (M4).
+    // Researched 2026-10-28, s.12 IGST Act (08-C RA-12): the place-of-supply treatment is decided at proposal and invoice time (M4).
     const tax = clientTaxCheck(f);
     if (!tax.ok) return taxError(c, tax);
     const { gstin, stateCode } = tax;

@@ -1,5 +1,5 @@
 // Invoice rules (M5.1): the status flow, the blockers, the void rule, the due date, the IST day and FY of an issue, and the Table 13 summary.
-// VERIFY WITH CA/LEGAL: every rule under test is a researched default.
+// Researched 2026-10-28, Rule 46 CGST Rules (08-C RA-05): every rule under test is a researched default.
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {

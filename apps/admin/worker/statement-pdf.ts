@@ -157,7 +157,7 @@ export const statementPdf = new Hono<AppEnv>()
       .bind(sid, id)
       .first<PdfRow>();
     if (!row) return err(c, NOT_FOUND, 404);
-    // An anonymised client's statement is never served, even before the purge has deleted the object (M2; DPDP, VERIFY WITH CA/LEGAL)
+    // An anonymised client's statement is never served, even before the purge has deleted the object (M2; DPDP, Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11))
     if (row.anonymised_at !== null) return err(c, ANONYMISED, 409);
     if (row.failed_at !== null) return err(c, FAILED, 409);
     if (row.pdf_r2_key === null || row.pdf_sha256 === null) return c.json({ status: "pending" }, 202);

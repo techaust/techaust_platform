@@ -6,8 +6,26 @@
 //   `document_sends` rows in its own batch, and the jobs Worker queues each `offer.send` once the PDF is stored (`onRendered`), so no email
 //   ever goes out before the PDF exists. The approval emails are `notifyApproval` below.
 // The send route calls this after the batch has committed, never before.
-import type { PdfSnapshotMessage, PdfSnapshotReason } from "@techaust/core/pdf-jobs";
+import type { PdfSnapshotMessage, PdfSnapshotReason, PdfSupplierMessage } from "@techaust/core/pdf-jobs";
 import type { Ctx } from "./context.ts";
+
+/**
+ * Q11: asks the jobs Worker for the DUPLICATE FOR SUPPLIER copy of an issued invoice or note (one `pdf.supplier` message; the consumer is idempotent: a copy already stored is
+ * adopted without a render). Never throws: a failure is logged (ids only) and the next download asks again.
+ */
+export async function enqueueSupplierPdf(env: Pick<Env, "PDF_QUEUE">, documentId: string): Promise<void> {
+  try {
+    await env.PDF_QUEUE.send({ v: 1, kind: "pdf.supplier", documentId, hop: 0 } satisfies PdfSupplierMessage);
+  } catch (e) {
+    console.error(
+      JSON.stringify({
+        level: "error",
+        message: "supplier pdf enqueue failed",
+        cause: e instanceof Error ? e.name : "unknown",
+      }),
+    );
+  }
+}
 
 export type SendEvent = { documentId: string; groupId: string; version: number };
 

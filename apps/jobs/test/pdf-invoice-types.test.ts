@@ -1,4 +1,4 @@
-// JOB-PDF-01 for the M5.2 types [B2, LD33, LD37; VERIFY WITH CA/LEGAL]: the snapshot step writes the envelope of an export invoice (LUT route and IGST route) and of a
+// JOB-PDF-01 for the M5.2 types [B2, LD33, LD37; Researched 2026-10-28, Rule 96A CGST Rules (08-C RA-19)]: the snapshot step writes the envelope of an export invoice (LUT route and IGST route) and of a
 // proforma from the rows alone (the sealed header extras are read from the frozen `header_extras`: no settings, no `Intl`), whatever Settings say afterwards;
 // the render step refuses, before Browser Run, a page that does not carry the frozen endorsement or notice byte for byte as one text node, rings the owners' bell
 // once and never retries. The page the layout makes is replaced by a controlled one (the `htmlOf` argument of `processRender`), so the integrity rule is tested whatever

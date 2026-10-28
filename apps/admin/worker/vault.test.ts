@@ -601,7 +601,7 @@ describe("the upload exception stays narrow [05 §7.1]", () => {
 });
 
 // ---------------------------------------------------------------------------------------------------------------
-describe("a client's notes and files go with its last contact [owner 2026-10-25, VERIFY WITH CA/LEGAL]", () => {
+describe("a client's notes and files go with its last contact [owner 2026-10-25, Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11)]", () => {
   const erase = (cookie: string, id: string, mode: string) =>
     call(`/contacts/${id}/erase`, { cookie, body: { mode, reason: "requested" } });
   const settle = async (keys: string[]) => {

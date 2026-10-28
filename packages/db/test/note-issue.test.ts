@@ -1,26 +1,29 @@
-// M5.3 database rules (ADM-INV-11, ADM-INV-01 "Debit Note", LD38..LD51, LD41; VERIFY WITH CA/LEGAL): migrations 0041 and 0042 (ADD COLUMN, CREATE INDEX and
+// M5.3 database rules (ADM-INV-11, ADM-INV-01 "Debit Note", LD38..LD51, LD41; Researched 2026-10-28, s.34(3) CGST Act, Rule 53 (08-C RA-22)): migrations 0041 and 0042 (ADD COLUMN, CREATE INDEX and
 // CREATE TRIGGER only: no rebuild), the note triggers, the note freeze (the parent's ledger recomputed in the same batch, the credit cap, the deadline, the
 // limit of 20) and the SQL sums of what was credited, which must equal the same sums worked out in JS.
 import { env } from "cloudflare:workers";
 import {
   canSetImsStatus,
   creditedSumOf,
+  DISCOUNT_AFTER_SALE_FROM,
   IMS_STATUSES,
   ledgerStatusOf,
   NOTE_PARENT_LIVE_STATUSES,
   NOTES_MAX,
 } from "@techaust/core/invoices";
-import type { ComputedDocument } from "@techaust/core/tax";
+import { type ComputedDocument, taxOnlyDebitNote } from "@techaust/core/tax";
 import { describe, expect, it } from "vitest";
 import {
   CREDITED_SO_FAR_SQL,
   CREDITED_TOTALS_SQL,
+  DISCOUNT_AFTER_SALE_FROM_SQL,
   invoiceIssueStatements,
   NOTES_MAX_SQL,
 } from "../src/issue.ts";
 import { MUTABLE_AFTER_FREEZE, noteTriggerStatements } from "../src/triggers.ts";
 import { all, first, rejects, run } from "./helpers.ts";
 import {
+  CTX,
   creditedBySql,
   insertNoteDraft,
   issueNote,
@@ -82,6 +85,10 @@ describe("migrations 0041 and 0042 [LD46, LD39]", () => {
 
   it("the core and SQL limits of notes agree", () => {
     expect(NOTES_MAX_SQL).toBe(NOTES_MAX);
+  });
+
+  it("the first day of a credit note for a discount after sale is the same in core and SQL (Researched 2026-10-28, 08-C RA-02)", () => {
+    expect(DISCOUNT_AFTER_SALE_FROM_SQL).toBe(DISCOUNT_AFTER_SALE_FROM);
   });
 });
 
@@ -324,6 +331,51 @@ describe("the note freeze [documents_note_issue_check, documents_credit_note_cap
     // a debit note on the same invoice in December is fine
     const dn = await insertNoteDraft(p, "debit", p.computed);
     await issueNote(p, dn, "debit", { issueDate: "2027-12-15" });
+  });
+
+  it("a credit note for a discount after sale is refused by the freeze before 1 November 2026 (IST) and issues from that day; every other reason has no such day (RA-02)", async () => {
+    const p = await parentInvoice();
+    const d = await insertNoteDraft(p, "credit", sampleCredit(p, [[0, 10_000]]), {
+      reasonCode: "discount_after_sale",
+    });
+    const note = { deadline: { lastDay: "2027-11-30", filedOn: null } };
+    await rejects(issueNote(p, d, "credit", { note, issueDate: "2026-10-31" }), /issue did not freeze/);
+    expect((await first<{ status: string }>("SELECT status FROM documents WHERE id = ?", d.id))?.status).toBe(
+      "draft",
+    );
+    await issueNote(p, d, "credit", { note, issueDate: "2026-11-01" });
+    expect((await first<{ status: string }>("SELECT status FROM documents WHERE id = ?", d.id))?.status).toBe(
+      "issued",
+    );
+    // a price correction is not dated-limited
+    const other = await parentInvoice();
+    const price = await insertNoteDraft(other, "credit", sampleCredit(other, [[0, 10_000]]));
+    await issueNote(other, price, "credit", { note, issueDate: "2026-10-31" });
+  });
+
+  it("a tax-only debit note (Q35: taxable value zero, tax added) issues: its own payable, the invoice untouched, triggers and the cap not in the way", async () => {
+    const p = await parentInvoice({ lines: [line(1_000_00)] });
+    const r = taxOnlyDebitNote(p.computed, 18_00, CTX);
+    if (!r.ok) throw new Error(JSON.stringify(r.errors));
+    expect(r.value.taxableMinor).toBe(0);
+    const d = await insertNoteDraft(p, "debit", r.value, {
+      reasonCode: "tax_charged_too_low",
+      taxMinor: 18_00,
+    });
+    await issueNote(p, d, "debit", { issueDate: "2026-11-05" });
+    const row = await first<Record<string, unknown>>("SELECT * FROM documents WHERE id = ?", d.id);
+    expect(row).toMatchObject({
+      status: "issued",
+      taxable_minor: 0,
+      total_minor: 18_00,
+      balance_minor: 18_00,
+    });
+    const after = await parentState(p.id);
+    expect(after).toMatchObject({
+      credited_minor: 0,
+      balance_minor: p.computed.totalMinor,
+      status: "issued",
+    });
   });
 
   it("the 21st note of a kind is refused by the freeze and by the draft guard", async () => {

@@ -3,11 +3,12 @@
 // session check: an attachment, never rendered by the browser, never cached, never sniffed. VERIFY WITH CA/LEGAL: the PDF is the
 // evidence an acceptance is tied to; its retention is the owner's decision (run file).
 import { contentDisposition } from "@techaust/core/file-types";
+import { fyLabelOfToken, hasSupplierCopy, supplierPdfKey } from "@techaust/core/pdf-jobs";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { clientGoneSql } from "./anonymised.ts";
 import { type ApiError, type AppEnv, type Ctx, err, mutate, NOT_FOUND } from "./context.ts";
-import { enqueuePdf } from "./document-events.ts";
+import { enqueuePdf, enqueueSupplierPdf } from "./document-events.ts";
 import { body, idParam, param } from "./http.ts";
 import { INVOICE_TYPES_SQL } from "./invoice-model.ts";
 import { CLIENT_GONE } from "./quote-model.ts";
@@ -97,6 +98,58 @@ function pdfRoutes(types: string, retryAction: string) {
 }
 
 export const documentPdf = pdfRoutes("'proposal', 'estimate'", "document.pdf_retry");
+
+type SupplierRow = {
+  type: string;
+  number: number | null;
+  number_display: string | null;
+  fy: string | null;
+  frozen_at: number | null;
+  pdf_sha256: string | null;
+  gone: number;
+};
+
+/** `TH-INV-2627-0003-supplier-copy.pdf`: the number with its slashes changed, marked as the stored copy. */
+export const supplierFilename = (numberDisplay: string): string =>
+  `${numberDisplay.replace(/[^A-Za-z0-9-]+/g, "-")}-supplier-copy.pdf`;
+
+/**
+ * The stored DUPLICATE FOR SUPPLIER copy of an issued tax invoice, export invoice, credit note or debit note (Q11, owner 2026-10-28; Rule 48(2) CGST Rules; Researched 2026-10-28, 08-C RA-07):
+ * `GET /invoices/:id/pdf/supplier` for the Owner and the Accountant (`invoices.supplierCopy`). It answers like `/:id/pdf`: the file (an attachment, never cached), or 409 `pdf_pending` while it is
+ * not made yet. A proforma, a draft or an unknown id is 404. It is never attached to an email, never linked from the portal and never offered to a client. The copy is rendered by jobs after
+ * the original; a document issued before this existed (or whose message was lost) has none yet: this route then asks for it (an idempotent queue message) once the original's PDF exists.
+ */
+export const invoiceSupplierPdf = new Hono<AppEnv>().get("/:id/pdf/supplier", param(idParam), async (c) => {
+  const { id } = c.req.valid("param");
+  const row = await c.env.DB.prepare(
+    `SELECT type, number, number_display, fy, frozen_at, pdf_sha256, ${clientGoneSql("client_id")} AS gone FROM documents WHERE id = ?1 AND type IN (${INVOICE_TYPES_SQL})`,
+  )
+    .bind(id)
+    .first<SupplierRow>();
+  const label = row?.fy ? fyLabelOfToken(row.fy) : null;
+  if (!row || row.frozen_at === null || !hasSupplierCopy(row.type) || !row.number || !label)
+    return err(c, NOT_FOUND, 404);
+  const obj = await c.env.DOCS.get(
+    supplierPdfKey({ type: row.type, fy: label, number: row.number, version: 1 }),
+  );
+  if (!obj) {
+    // Not made yet: ask (only when the original exists, and never for an erased client), and say so.
+    if (row.pdf_sha256 !== null && row.gone !== 1) c.executionCtx.waitUntil(enqueueSupplierPdf(c.env, id));
+    return err(c, PDF_PENDING, 409);
+  }
+  return new Response(obj.body, {
+    headers: {
+      "Content-Type": "application/pdf",
+      "Content-Length": String(obj.size),
+      "Content-Disposition": contentDisposition(supplierFilename(row.number_display ?? String(row.number))),
+      "X-Content-Type-Options": "nosniff",
+      "Content-Security-Policy": "default-src 'none'; sandbox",
+      "Cache-Control": "no-store",
+      "X-Robots-Tag": "noindex",
+    },
+  });
+});
+
 export const invoicePdf = pdfRoutes(INVOICE_TYPES_SQL, "invoice.pdf_retry");
 
 function retryEnqueue(c: Ctx, documentId: string): void {

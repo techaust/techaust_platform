@@ -1,6 +1,6 @@
 // Estimate -> care plan [ADM-EST-02, ADM-CARE-01; M4.3 item 8; analyst M5 and L3]: the tier comes from the catalogue default line the server set on
 // the line (never from its description), the price is that line's taxable amount, the plan is made with M3.5's own statements plus the source,
-// and an estimate becomes an invoice draft OR a care plan, never both. VERIFY WITH CA/LEGAL: nothing here is a tax rule.
+// and an estimate becomes an invoice draft OR a care plan, never both. Researched 2026-10-28, s.31(5) CGST Act (08-C RA-24): nothing here is a tax rule.
 import { env } from "cloudflare:workers";
 import { beforeAll, describe, expect, it } from "vitest";
 import { mkItem, putPaymentTerms } from "./test-catalogue.ts";

@@ -6,7 +6,7 @@
 // before a pause are still accepted), before the plan starts, on a cancelled project and for an anonymised individual's projects and
 // plans; nobody logs a future date; a date more than 7 days back is the owner's (`time.writeAny`); the author edits for 7 days from
 // `created_at`, then it is locked and only the owner may change it (the audit row says `lockOverride`); an entry's person never changes.
-// Staff time logs are staff personal data (DPDP; retention is VERIFY WITH CA/LEGAL). Audit rows hold ids, dates, minutes and field names, never
+// Staff time logs are staff personal data (DPDP; retention is Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11)). Audit rows hold ids, dates, minutes and field names, never
 // the note. Local-time dates are IST.
 
 import { addDays, daysBetween, istDate, parseIsoDate, toIsoDate } from "@techaust/core/dates";

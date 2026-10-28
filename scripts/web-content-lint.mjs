@@ -41,6 +41,14 @@ export const BANNED = [
   { id: "cutting-edge", re: String.raw`${BEFORE}cutting[-\s]edge${AFTER}` },
   { id: "limited slots", re: String.raw`${BEFORE}limited\s+slots${AFTER}` },
   { id: "act now", re: String.raw`${BEFORE}act\s+now${AFTER}` },
+  // Prior-price wording (research round 2026-10-28, 08-C RB-22): the Consumer Protection (E-Commerce) Amendment Rules 2026 (in force 1 Jan 2027, if they apply to us) make a "was X, now Y"
+  // or "N % off" claim a risk unless the earlier price was really charged. We state prices only from the catalogue (`{{price:Sx}}` tokens) and make no claim of a reduction. These two are
+  // not in docs/07 §1.3; allow-list an entry, with its reason, if one is ever true and shown.
+  {
+    id: "prior price (was/now)",
+    re: String.raw`${BEFORE}(?:was|now)\s*:?\s*(?:[₹$€£]|rs\.?\s?|inr\s?|usd\s?|\{\{\s*price)`,
+  },
+  { id: "% off", re: String.raw`${BEFORE}\d{1,3}(?:\.\d+)?\s?(?:%|per\s?cent|percent)\s+off${AFTER}` },
 ].map((b) => ({ ...b, regex: new RegExp(b.re, b.caseSensitive ? "gu" : "giu") }));
 
 /** Validates the allow-list file's content (already parsed). Returns { entries, problems }. */

@@ -1,4 +1,4 @@
-// The tax settings schema's realisation bounds equal the Workers' reader's (M5.5b review round, finding 4 [ADM-INV-17; VERIFY WITH CA/LEGAL]):
+// The tax settings schema's realisation bounds equal the Workers' reader's (M5.5b review round, finding 4 [ADM-INV-17; Researched 2026-10-28, FEMA 23(R)/2026-RB Reg. 5(1) (08-C RB-01)]):
 // a value the Settings page can save must never make every report route answer 409 settings_invalid.
 import { describe, expect, it } from "vitest";
 import { realisationParamsFromStoredTax } from "../src/export-invoice.ts";

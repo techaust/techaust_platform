@@ -1,4 +1,4 @@
-// Recurring care-plan invoices, pure (M5.4; ADM-CARE-02, ADM-CARE-03, ADM-INV-12, LD58, LD59, LD66; VERIFY WITH CA/LEGAL for every tax rule). No I/O, no zod, no floats.
+// Recurring care-plan invoices, pure (M5.4; ADM-CARE-02, ADM-CARE-03, ADM-INV-12, LD58, LD59, LD66; Researched 2026-10-28, s.31(5) CGST Act (08-C RA-24) for every tax rule). No I/O, no zod, no floats.
 //
 // A care plan is billed monthly IN ADVANCE: on its billing day (06:00 IST scan; any later day of the period is a catch-up) the job drafts ONE invoice for the plan's
 // current period (the first period of a plan starts on its start date and gets the full monthly price: no proration, ADM-CARE-04). The period is recorded in
@@ -21,6 +21,7 @@ import {
   type TermsRow,
 } from "./care.ts";
 import { formatDate, parseIsoDate } from "./dates.ts";
+import { formatMoney, money } from "./money.ts";
 
 /** The catalogue services the invoice lines come from (S16 Care Plans, S17 AI Ops, S18 Dev Subscription: `CARE_SERVICE_CODES` in care.ts). */
 export type CareServiceCode = "S16" | "S17" | "S18";
@@ -129,27 +130,38 @@ export function periodWords(p: Period): string {
 // ---- the lines ----------------------------------------------------------------------------------------------------------------------------
 
 /**
- * The words of the three lines. [Placeholder, 07-U]: the owner has not approved the care line text yet, so the default carries a marked placeholder and
- * `hasPlaceholder` makes the automatic issue refuse until the copy exists (an invoice with "[Placeholder" in a line is never sent by the system).
+ * The words of the three lines (07-U §6, approved by the lead on 2026-10-28: the automatic issue works where an Owner switched it on). The extra-hours line also names the hours and the
+ * hourly rate, as text.
  */
 export type CareLineWords = {
   readonly plan: (tierName: string, period: Period) => string;
   readonly aiOps: (period: Period) => string;
-  readonly overage: (period: Period) => string;
+  readonly overage: (period: Period, hoursText: string, rateText: string) => string;
 };
+
+/** Hours as a person reads them from whole 15-minute steps: 135 minutes is "2.25", 120 is "2", 90 is "1.5". */
+export function hoursText(minutes: number): string {
+  // whole 15-minute steps are whole hundredths of an hour (15 minutes is 25): integers only
+  const hundredths = (BigInt(minutes) * 5n) / 3n;
+  const whole = hundredths / 100n;
+  const frac = String(hundredths % 100n)
+    .padStart(2, "0")
+    .replace(/0+$/, "");
+  return frac === "" ? String(whole) : `${whole}.${frac}`;
+}
 
 const day = (iso: string): string => {
   const d = parseIsoDate(iso);
   return d ? formatDate(d) : iso;
 };
 
+/** 07-U §6, word for word: "{plan name} care plan, {start} to {end}", "AI Ops, {start} to {end}", "Extra hours above the plan, {start} to {end} ({hours} h at {rate} per hour)". */
 export const CARE_LINE_WORDS: CareLineWords = {
-  plan: (tierName, p) => `[Placeholder, 07-U] Care plan ${tierName}, ${day(p.start)} to ${day(p.end)}`,
-  aiOps: (p) => `[Placeholder, 07-U] AI Ops, ${day(p.start)} to ${day(p.end)}`,
-  overage: (p) => `[Placeholder, 07-U] Extra hours, ${day(p.start)} to ${day(p.end)}`,
+  plan: (tierName, p) => `${tierName} care plan, ${day(p.start)} to ${day(p.end)}`,
+  aiOps: (p) => `AI Ops, ${day(p.start)} to ${day(p.end)}`,
+  overage: (p, hours, rate) =>
+    `Extra hours above the plan, ${day(p.start)} to ${day(p.end)} (${hours} h at ${rate} per hour)`,
 };
-
-export const hasPlaceholder = (text: string): boolean => text.includes("[Placeholder");
 
 export type CareCatalogue = Readonly<
   Partial<Record<CareServiceCode, { readonly sac: string | null; readonly gstRateBp: number | null }>>
@@ -185,7 +197,7 @@ export type CareLines =
 /**
  * The draft's lines: the plan fee (one month at the terms' price, as the taxable amount), AI Ops when the terms have it, and the previous period's extra hours at the
  * terms' hourly rate (only when there is overage AND a rate; an overage with no rate is reported in `overage.priced: false` and left off the invoice). The plan fee
- * comes from S18 for a Dev Subscription and S16 otherwise; the extra hours use S16's SAC and rate (VERIFY WITH CA/LEGAL: the GST treatment of overage).
+ * comes from S18 for a Dev Subscription and S16 otherwise; the extra hours use S16's SAC and rate (Researched 2026-10-28, s.31(5) CGST Act (08-C RA-24): the GST treatment of overage).
  */
 export function careLines(input: {
   readonly tier: CareTier;
@@ -194,6 +206,8 @@ export function careLines(input: {
   readonly catalogue: CareCatalogue;
   readonly overage: CareOverage | null;
   readonly words?: CareLineWords;
+  /** The currency the rate is printed in (the client's; default INR). */
+  readonly currency?: "INR" | "USD";
 }): CareLines {
   const words = input.words ?? CARE_LINE_WORDS;
   const planCode: CareServiceCode = input.tier === "dev_subscription" ? "S18" : "S16";
@@ -233,7 +247,11 @@ export function careLines(input: {
       lines.push({
         kind: "overage",
         code: "S16",
-        description: words.overage(o.period),
+        description: words.overage(
+          o.period,
+          hoursText(o.minutes),
+          formatMoney(money(o.rateMinor, input.currency ?? "INR")),
+        ),
         sac: plan.sac,
         qtyMilli: overageQuantityMilli(o.minutes),
         unit: "hour",

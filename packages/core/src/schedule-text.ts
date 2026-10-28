@@ -1,6 +1,6 @@
 // Payment-schedule text for the public site (WEB-SVC-05), formatted from the catalogue entry's steps and never typed:
 // 40/30/30 → "40 % on acceptance, 30 % at the midpoint milestone, 30 % on delivery"; one full step → "Paid in full
-// upfront" or "Monthly in advance". Percentages are basis points (integers); no floats. VERIFY WITH CA/LEGAL: the
+// upfront" or "Monthly in advance". Percentages are basis points (integers); no floats. Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17): the
 // schedule itself is a setting (Q-P3-6), this only words it.
 
 export const SCHEDULE_TRIGGERS = ["on_accept", "milestone", "delivery", "monthly"] as const;

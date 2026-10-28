@@ -1,4 +1,4 @@
-// The SQL realisation dates and stages are a twin of the gst core's `realisationDates` and stage order [ADM-REP-07; M5.5b, LD75; VERIFY WITH CA/LEGAL]:
+// The SQL realisation dates and stages are a twin of the gst core's `realisationDates` and stage order [ADM-REP-07; M5.5b, LD75; Researched 2026-10-28, FEMA 23(R)/2026-RB Reg. 5(1) (08-C RB-01)]:
 // the Workers may not run the core (SPA only), so SQLite works the dates out and this test proves the two agree: every issue date from 2026-01-01 to
 // 2029-12-31 (the month-end clamps included) for INR and USD under three rule variants, and every stage on the days around each due and approaching date.
 // The month clamping is checked here ON D1 (workerd), not only in Node's SQLite.

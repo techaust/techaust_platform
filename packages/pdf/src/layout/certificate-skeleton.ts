@@ -1,4 +1,4 @@
-// The acceptance certificate (M4.5, ADM-PROP-08; VERIFY WITH CA/LEGAL), one A4 page in the document system of docs/06 §7: the logo over
+// The acceptance certificate (M4.5, ADM-PROP-08; Researched 2026-10-28, BSA 2023 s.63(4) (08-C RB-19)), one A4 page in the document system of docs/06 §7: the logo over
 // the verdigris rule, the title, the statement of what the page records, then three blocks: the document (what was accepted, with its
 // frozen total), who accepted it and when (IST and UTC), and the evidence (the IP address, the browser, how the person reached it, and the
 // fingerprints in full). Grayscale-safe: nothing is said by colour; the rule and hairlines read as black and grey. The total's rupee sign
@@ -51,6 +51,9 @@ export type CertificateView = {
 export const CERTIFICATE_COPY = {
   title: "Acceptance certificate",
   statement: "This certificate records an electronic acceptance through the TecHaust client portal.",
+  /** 07-A §9 (2026-10-28; Researched 2026-10-28, 08-C RB-20): under the statement, so the page is not mistaken for the certificate of BSA 2023 s.63. */
+  recordNote:
+    "This is a record of the acceptance. The document fingerprint is the SHA-256 hash of the PDF that was accepted.",
   document: "Document",
   numberAndVersion: "Number and version",
   total: "Total",
@@ -141,6 +144,7 @@ export function certificateBody(v: CertificateView): string {
 <header class="cert__mast"><div class="cert__logo">${logo}</div></header>
 <h1 class="cert__title">${esc(C.title)}</h1>
 <p class="cert__statement">${esc(C.statement)}</p>
+<p class="cert__statement" data-testid="record-note">${esc(C.recordNote)}</p>
 
 <section class="cert__block" aria-label="${esc(C.document)}">
 <p class="cert__label">${esc(C.document)}</p>

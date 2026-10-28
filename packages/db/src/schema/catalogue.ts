@@ -31,7 +31,7 @@ export const catalogueItems = sqliteTable(
     /** "From" prices; null where a market isn't offered (e.g. S3 is India-only). */
     priceInrMinor: integer("price_inr_minor"),
     priceUsdMinor: integer("price_usd_minor"),
-    /** SAC code, VERIFY WITH CA (docs/08 §7.1 G-2). */
+    /** SAC code, Researched 2026-10-28, Notification 11/2017-CT (Rate) (08-C RA-16) (docs/08 §7.1 G-2). */
     sac: text("sac").notNull(),
     gstRateBp: integer("gst_rate_bp"),
     defaultLines: text("default_lines", { mode: "json" }).$type<DefaultLine[]>(),

@@ -1,4 +1,4 @@
-// The M5.5b report routes [ADM-REP-04, ADM-REP-07, ADM-CLI-04, ADM-DASH-01; LD71, LD74, LD78, LD79, LD85, LD86; VERIFY WITH CA/LEGAL]: who may call each (every role), the fresh step-up on every
+// The M5.5b report routes [ADM-REP-04, ADM-REP-07, ADM-CLI-04, ADM-DASH-01; LD71, LD74, LD78, LD79, LD85, LD86; Researched 2026-10-28, GSTN advisories of June 2025 (08-C RA-23)]: who may call each (every role), the fresh step-up on every
 // register page and one audit row per page (never row contents), the period rules, keyset paging, the settings the pages depend on, the EDF month, the realisation list, a client's
 // statement and its PDF (the cache row, the queue message, the stream, every refusal).
 import { env } from "cloudflare:workers";

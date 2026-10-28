@@ -1,4 +1,4 @@
-// The statement of account's arithmetic [ADM-CLI-04; M5.5b, LD78; Q58, VERIFY WITH CA/LEGAL]: debits, credits, the running balance and the
+// The statement of account's arithmetic [ADM-CLI-04; M5.5b, LD78; Q58, Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-28)]: debits, credits, the running balance and the
 // closing balance, in bigint with a checked way back, never rounded or clipped.
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";

@@ -1,9 +1,8 @@
-// M5.5b emails: the owners' EDF reminder and the export realisation alert in its four stages (07-V §10, PENDING the owner's approval, so every line carries
-// "[Placeholder] "). The data is exactly core's `INVOICE_EMAIL_DATA` keys; values are pre-formatted by the jobs Worker. [ADM-REP-07, ADM-INV-17]
+// M5.5b emails: the owners' EDF reminder and the export realisation alert in its four stages (07-V §10, approved by the lead on 2026-10-28; no mark:
+// ). The data is exactly core's `INVOICE_EMAIL_DATA` keys; values are pre-formatted by the jobs Worker. [ADM-REP-07, ADM-INV-17]
 import { INVOICE_EMAIL_DATA } from "@techaust/core/invoice-email";
 import { describe, expect, it } from "vitest";
 import {
-  APPROVED_07V,
   isRealisationAlertStage,
   NO_REPLY_REPLY_TO,
   REALISATION_ALERT_STAGES,
@@ -13,7 +12,8 @@ import {
 } from "../src/index.ts";
 
 const opts = { assetBase: "https://assets.example.test/brand/" };
-const M = "[Placeholder] ";
+/** No line carries a placeholder mark any more (07-V approved by the lead on 2026-10-28). */
+const M = "";
 
 /** The words of the HTML body, tags and entities out, spaces collapsed (to compare with the text twin). */
 const words = (html: string) =>
@@ -50,13 +50,17 @@ const alert = (stage: string) => ({
   link: "https://admin.example.test/reports/realisation?doc=SAMPLE",
 });
 
-describe("07-V is marked until approved", () => {
-  it("the switch is off and every line carries the mark", () => {
-    expect(APPROVED_07V).toBe(false);
-    const r = renderEmail("edf.reminder", edf, opts);
-    expect(r.subject.startsWith(M)).toBe(true);
-    expect(r.text).toContain(`${M}3 export invoices were issued in October 2026.`);
-    expect(r.text).toContain(`${M}Open EDF list`);
+describe("07-V is approved: no mark and no switch", () => {
+  it("the emails carry no placeholder and no 'VERIFY WITH' note, in the subject, the text or the HTML", () => {
+    const rendered = [renderEmail("edf.reminder", edf, opts)];
+    for (const stage of REALISATION_ALERT_STAGES)
+      rendered.push(renderEmail("realisation.alert", alert(stage), opts));
+    for (const r of rendered)
+      for (const part of [r.subject, r.text, r.html]) {
+        expect(part).not.toContain("Placeholder");
+        expect(part).not.toContain("VERIFY WITH");
+        expect(part).not.toContain("refund date");
+      }
   });
 });
 
@@ -67,7 +71,7 @@ describe("edf.reminder [ADM-REP-07, Q55]", () => {
     expect(r.replyTo).toBe(NO_REPLY_REPLY_TO);
     expect(r.subject).toBe(`${M}EDF list for October 2026: 3 export invoices`);
     expect(flat(r.text)).toContain(
-      `${M}3 export invoices were issued in October 2026. The EDF list is ready for your bank, due by 30 Nov 2026. (VERIFY WITH CA/LEGAL)`,
+      `${M}3 export invoices were issued in October 2026. The EDF list is ready for your bank, due by 30 Nov 2026.`,
     );
     expect(r.html).toContain(edf.link);
     expect(r.html).toContain('<strong style="font-weight:600;white-space:nowrap;">30 Nov 2026</strong>');
@@ -81,7 +85,7 @@ describe("realisation.alert, four stages [ADM-INV-17, Q54]", () => {
     fema_approaching: ["FEMA date in 30 days", "Its FEMA realisation date is 10 Oct 2026."],
     fema_overdue: ["past the FEMA date", "Its FEMA realisation date was 10 Oct 2026."],
     gst_approaching: [
-      "GST refund date in 30 days",
+      "GST date in 30 days",
       "Its GST date (12 months and 15 days, Rule 96A) is 10 Oct 2026.",
     ],
     gst_overdue: ["past the GST date", "Its GST date (12 months and 15 days, Rule 96A) was 10 Oct 2026."],
@@ -93,7 +97,7 @@ describe("realisation.alert, four stages [ADM-INV-17, Q54]", () => {
       const [subject, sentence] = sentences[stage];
       expect(r.subject).toBe(`${M}TH/EXP/2627/0001: ${subject}`);
       expect(flat(r.text)).toContain(
-        `${M}Export invoice TH/EXP/2627/0001 to Sample client B (fake) still shows $1,000.00 outstanding. ${sentence} If the payment has arrived, record it when payments are available; if your bank extended the date, keep its letter. (VERIFY WITH CA/LEGAL)`,
+        `${M}Export invoice TH/EXP/2627/0001 to Sample client B (fake) still shows $1,000.00 outstanding. ${sentence} If the payment has arrived, record it when payments are available; if your bank extended the date, keep its letter.`,
       );
       expect(r.text).toContain(`${M}Open export realisation`);
       const html = words(r.html);
@@ -104,7 +108,7 @@ describe("realisation.alert, four stages [ADM-INV-17, Q54]", () => {
     });
   }
 
-  it("an unknown stage is never guessed: the plain mark and the number, no stage sentence", () => {
+  it("an unknown stage is never guessed: just the number, no stage sentence", () => {
     expect(isRealisationAlertStage("ok")).toBe(false);
     const r = renderEmail("realisation.alert", alert("ok"), opts);
     expect(r.subject).toBe(`${M}TH/EXP/2627/0001`);

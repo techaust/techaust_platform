@@ -1,6 +1,6 @@
 // Issuing an invoice [ADM-INV-03, ADM-INV-07, ADM-APR-01, ADM-APR-02, LD5, LD6, LD8]: gap-free numbers under concurrency, the FY rollover in IST, who may
 // issue, every refusal that must leave the counter, the audit log and the milestone untouched, the freeze, and the approval path.
-// VERIFY WITH CA/LEGAL for every rule under test (Rule 46, Rule 47, Q3, Q4, Q6).
+// Researched 2026-10-28, Rule 46 CGST Rules (08-C RA-05) for every rule under test (Rule 46, Rule 47, Q3, Q4, Q6).
 import { env } from "cloudflare:workers";
 import { issueFyOf } from "@techaust/core/invoices";
 import { SETTINGS_DEFAULTS } from "@techaust/core/settings";
@@ -965,7 +965,7 @@ describe("the route table covers issue", () => {
   });
 });
 
-describe("the bells of an individual's invoices go with the person [DPDP; VERIFY WITH CA/LEGAL; early check required 3]", () => {
+describe("the bells of an individual's invoices go with the person [DPDP; Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11); early check required 3]", () => {
   it("anonymising the last contact deletes the bells about a pending issue request and about an issued invoice; the issued invoice and its approval stay, the draft and its request go", async () => {
     const o = await owner();
     const staff = await sessionFor("staff");

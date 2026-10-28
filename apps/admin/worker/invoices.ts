@@ -2,7 +2,7 @@
 // Issuing and the issue request are in invoice-issue.ts, the PDF in document-pdf.ts, the model in invoice-model.ts, the JSON in invoice-view.ts.
 // Every route is a row of ROUTES (guard.ts); every change is ONE batch through `mutate`. Audit rows hold ids, codes, numbers, totals; never a
 // line's description, a reason's text or a personal value. A rule is written into the statement that changes the row, never decided from a
-// read alone: when nothing was written, one read says why. VERIFY WITH CA/LEGAL for every rule (Rule 46, Rule 56(8), Q1, Q2, Q4).
+// read alone: when nothing was written, one read says why. OPEN (08-C RA-10): may a tax invoice issued in error and never delivered be shown as cancelled in GSTR-1 Table 13 with no credit note? for every rule (Rule 46, Rule 56(8), Q1, Q2, Q4).
 //
 // Never in a request (strict objects make it a 400): a number, a status, a hash, a type, `trustRates`, `targetTotalMinor`, a due date, a computed
 // value. The type comes from the client; the due date from the client's terms; the target of a milestone invoice from the milestone row.
@@ -402,6 +402,8 @@ export const fxIn = z
     ),
     date: isoDate,
     source: z.enum(FX_SOURCE_CODES),
+    /** Q24 (08-C RA-21): the Owner states that no rate was published on the day of supply, so the rate is the last one published before it. */
+    noRateThatDay: z.optional(z.boolean()),
     sourceNote: z.optional(z.string().check(z.trim(), z.maxLength(60))),
   })
   .check(
@@ -698,7 +700,7 @@ export const invoices = new Hono<AppEnv>()
       notePart = noteView({ bundle: ctx.bundle, role, stored, parent: p });
       if (d.frozen_at === null && p && stored) {
         const kind = noteKindOf(d.type as "credit_note" | "debit_note");
-        const re = recomputeNote(kind, p, stored.request.takes, taxContext(ctx.settings), todayOf(now));
+        const re = recomputeNote(kind, p, stored.request, taxContext(ctx.settings), todayOf(now));
         const state = noteState({
           id,
           kind,
@@ -848,7 +850,15 @@ export const invoices = new Hono<AppEnv>()
           const rateMicros = parseFxRate(fl.fx.rate);
           const source = fxSourceLabel(fl.fx.source, fl.fx.sourceNote);
           if (rateMicros === null || source === null) return err(c, BAD_REQUEST, 400);
-          state = { ...state, fx: { rateMicros, date: fl.fx.date, source } };
+          state = {
+            ...state,
+            fx: {
+              rateMicros,
+              date: fl.fx.date,
+              source,
+              ...(fl.fx.noRateThatDay === true ? { noRateThatDay: true as const } : {}),
+            },
+          };
         }
       }
       if (fl.serviceCompletedOn !== undefined) {
@@ -966,6 +976,7 @@ export const invoices = new Hono<AppEnv>()
         fx_rate_micros: state.fx?.rateMicros ?? null,
         fx_date: state.fx?.date ?? null,
         fx_source: state.fx?.source ?? null,
+        fx_no_rate_that_day: state.fx?.noRateThatDay ? 1 : null,
         service_completed_on: state.serviceCompletedOn,
         export_declaration_id: state.exportDeclarationId,
       },
@@ -1052,7 +1063,7 @@ export const invoices = new Hono<AppEnv>()
     return again.frozen_at !== null ? err(c, FROZEN, 409) : err(c, STALE_VERSION, 409);
   })
 
-  // ---- the day the service was completed (LD29, Rule 47; VERIFY WITH CA/LEGAL): set ONCE, on a tax or export invoice, never in the future; not sealed, not printed ----
+  // ---- the day the service was completed (LD29, Rule 47; Researched 2026-10-28, s.2(6) IGST Act, Rule 46 (08-C RA-18)): set ONCE, on a tax or export invoice, never in the future; not sealed, not printed ----
   .post("/:id/service-completed", param(idParam), body(serviceCompletedBody), async (c) => {
     const { id } = c.req.valid("param");
     const f = c.req.valid("json");
@@ -1108,7 +1119,7 @@ export const invoices = new Hono<AppEnv>()
     return err(c, STALE_VERSION, 409);
   })
 
-  // ---- void (Q1, Q2, Q23, LD7; VERIFY WITH CA/LEGAL): the owner, with a fresh code, before it was emailed, within the month of issue, and with no payment or credit; the number stays ----
+  // ---- void (Q1, Q2, Q23, LD7; OPEN (08-C RA-10): may a tax invoice issued in error and never delivered be shown as cancelled in GSTR-1 Table 13 with no credit note?): the owner, with a fresh code, before it was emailed, within the month of issue, and with no payment or credit; the number stays ----
   .post("/:id/void", param(idParam), body(voidBody), async (c) => {
     const { id } = c.req.valid("param");
     const f = c.req.valid("json");
@@ -1117,7 +1128,7 @@ export const invoices = new Hono<AppEnv>()
     const ctx = await readInvoice(c, id);
     if (!ctx) return err(c, NOT_FOUND, 404);
     const d = ctx.bundle.document;
-    // M5.3 (Q31, LD47; VERIFY WITH CA/LEGAL): a credit or debit note is never voided; a wrong one is corrected by another note.
+    // M5.3 (Q31, LD47; Researched 2026-10-28, s.34(3) CGST Act, Rule 53 (08-C RA-22)): a credit or debit note is never voided; a wrong one is corrected by another note.
     if (isNoteType(d.type)) return err(c, NOTE_NOT_VOIDABLE, 409);
     const t = Math.max(Date.now(), d.updated_at + 1);
     const today = issueDateOf(t);
@@ -1146,7 +1157,7 @@ export const invoices = new Hono<AppEnv>()
         409,
       );
     if (d.updated_at !== f.expectedUpdatedAt) return err(c, STALE_VERSION, 409);
-    // An anonymised client takes nothing new (the standing rule, VERIFY WITH CA/LEGAL): a void is a write on its document.
+    // An anonymised client takes nothing new (the standing rule, OPEN (08-C RA-10): may a tax invoice issued in error and never delivered be shown as cancelled in GSTR-1 Table 13 with no credit note?): a void is a write on its document.
     if (ctx.client.anonymised_at !== null) return err(c, CLIENT_GONE, 409);
     // Every rule is in the statement: issued, nothing paid or credited, no issued child, never emailed, still inside the IST month of issue (Q23), and the owner's session with a live step-up.
     const done = await mutate(c, {

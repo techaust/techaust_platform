@@ -104,7 +104,13 @@ export async function mkExportDraft(
 export async function setFx(
   s: TestSession,
   id: string,
-  over: { rate?: string; date?: string; source?: "FBIL" | "RBI" | "OTHER"; sourceNote?: string } = {},
+  over: {
+    rate?: string;
+    date?: string;
+    source?: "FBIL" | "RBI" | "OTHER";
+    sourceNote?: string;
+    noRateThatDay?: boolean | undefined;
+  } = {},
 ) {
   const doc = await getInvoice(s, id);
   return patchInvoice(s, id, {
@@ -201,7 +207,7 @@ export async function sealCheckWith(
 /** The columns an M5.2 test reads back from a document. */
 export const typesRow = (id: string) =>
   one<Record<string, unknown>>(
-    "SELECT type, status, series, fy, number_display, issue_date, due_date, valid_until, parent_id, paid_minor, balance_minor, total_minor, total_inr_minor, export_mode, fx_rate_micros, fx_date, fx_source, service_completed_on, export_declaration_id, updated_at FROM documents WHERE id = ?",
+    "SELECT type, status, series, fy, number_display, issue_date, due_date, valid_until, parent_id, paid_minor, balance_minor, total_minor, total_inr_minor, export_mode, fx_rate_micros, fx_date, fx_source, fx_no_rate_that_day, service_completed_on, export_declaration_id, updated_at FROM documents WHERE id = ?",
     id,
   );
 

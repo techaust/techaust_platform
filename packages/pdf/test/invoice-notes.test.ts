@@ -1,4 +1,4 @@
-// M5.3 stage B1 (ADM-INV-11, ADM-INV-01 "Debit Note", LD39, LD52, LD54; VERIFY WITH CA/LEGAL): the envelope and the view of a credit and a debit note. A note carries
+// M5.3 stage B1 (ADM-INV-11, ADM-INV-01 "Debit Note", LD39, LD52, LD54; Researched 2026-10-28, s.34(3) CGST Act, Rule 53 (08-C RA-22)): the envelope and the view of a credit and a debit note. A note carries
 // `header.noteOf` (and no other type does); a credit note has no due date and no bank block; the view gives the layout the note's facts (the invoice's number and date, the
 // reason, "Against line {n}", the effect line's data, the rate and the LUT of an export note); an M5.1 or M5.2 envelope still parses and verifies; and the page must carry
 // the frozen number of the invoice as ONE text node (the gate the jobs Worker calls).

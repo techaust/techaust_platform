@@ -1,4 +1,4 @@
-// Export realisation dates and stages (M5.5a; ADM-REP-07, docs/08-A §8). VERIFY WITH CA/LEGAL, all of it:
+// Export realisation dates and stages (M5.5a; ADM-REP-07, docs/08-A §8). Researched 2026-10-28, FEMA 23(R)/2026-RB Reg. 5(1) (08-C RB-01), all of it:
 // - FEMA (Export and Import of Goods and Services) Regulations 2026 as amended 22 Sep 2026, in force 1 Oct 2026: 9 months from
 //   the invoice date for services, 12 months if invoiced or settled in INR (docs/08 U-2);
 // - GST Rule 96A(1)(b): IGST with interest within 15 days after one year from the invoice date, or the FEMA period with any
@@ -82,7 +82,7 @@ export type RealisationInput = {
   readonly invoiceDate: CalendarDate;
   readonly currency: Currency;
   /**
-   * Rule 96A (the GST escalation) applies to an export under LUT only (08-A :350; Q53, VERIFY WITH CA/LEGAL): an export with
+   * Rule 96A (the GST escalation) applies to an export under LUT only (08-A :350; Q53, Researched 2026-10-28, FEMA 23(R)/2026-RB Reg. 5(1) (08-C RB-01)): an export with
    * IGST paid moves through the FEMA stages alone. `gstDue` is still worked out for every export (it is in the CSV).
    */
   readonly supplyType: SupplyType;

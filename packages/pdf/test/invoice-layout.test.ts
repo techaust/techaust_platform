@@ -1,5 +1,5 @@
 // The tax invoice layout (M5.1 phase 2: layout/invoice.ts; docs/06 §7.3; words 07-R §6) and the skeleton it replaced for tax invoices only.
-// Every Rule 46 field the view carries is printed, the reverse-charge line exactly as frozen. VERIFY WITH CA/LEGAL for every rule printed.
+// Every Rule 46 field the view carries is printed, the reverse-charge line exactly as frozen. Researched 2026-10-28, Rules 46(p), 50 and 51 CGST Rules (08-C RA-26) for every rule printed.
 import { describe, expect, it } from "vitest";
 import type { InvoiceEnvelope, InvoiceView } from "../src/invoice-types.ts";
 import { toInvoiceView } from "../src/invoice-view.ts";

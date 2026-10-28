@@ -1,5 +1,5 @@
 // A sent version of a client or contact whose personal details were removed (M4.3 re-check, candidate 2; the owner's answer of 2026-10-26;
-// VERIFY WITH CA/LEGAL): the staff GET shows "Anonymised client" and no name, email, GSTIN or address, and the stored snapshot stays as it
+// Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11)): the staff GET shows "Anonymised client" and no name, email, GSTIN or address, and the stored snapshot stays as it
 // was sent, byte for byte, as evidence of the offer.
 import { env } from "cloudflare:workers";
 import { ANONYMISED_CLIENT } from "@techaust/core/clients";

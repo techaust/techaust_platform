@@ -1,4 +1,4 @@
-// The owners' export alerts of M5.5b stage B [ADM-REP-07, ADM-INV-17, LD75, LD76, LD77; Q53, Q54, Q55; VERIFY WITH CA/LEGAL]: the 09:00 IST dispatch (every hour, days 4 to 8, December to January, no D1 read),
+// The owners' export alerts of M5.5b stage B [ADM-REP-07, ADM-INV-17, LD75, LD76, LD77; Q53, Q54, Q55; Researched 2026-10-28, FEMA 23(R)/2026-RB Reg. 5(1) (08-C RB-01)]: the 09:00 IST dispatch (every hour, days 4 to 8, December to January, no D1 read),
 // `realisation.scan` (each stage once, the current stage only, the stored settings, the IGST route, month-end issue dates, realised and voided exports, continuation, an anonymised client, emails
 // before bells, per owner) and `edf.reminder` (one email and one bell per owner per month, none without exports). Documents are inserted the way the scan finds them; the fake clock is the `now` passed in.
 import { uuidv7 } from "@techaust/core";
@@ -7,12 +7,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { ALERTS_HOUR_IST, EDF_REMINDER_DAYS_IST, enqueueHourly, hourlyMessages } from "../src/billing.ts";
 import worker from "../src/index.ts";
 import { handleQueue } from "../src/queue.ts";
-import {
-  PLACEHOLDER_07V,
-  processEdfReminder,
-  processRealisationScan,
-  REALISATION_BELL_TITLE,
-} from "../src/reports.ts";
+import { processEdfReminder, processRealisationScan, REALISATION_BELL_TITLE } from "../src/reports.ts";
 import { chunksOf, SEND_BATCH_MAX_BYTES, SEND_BATCH_MAX_MESSAGES, sendChunked } from "../src/send-batch.ts";
 import {
   all,
@@ -248,16 +243,12 @@ describe("realisation.scan: each stage rings once", () => {
       },
     });
     const [bell] = await bellsOf(ex.id);
-    expect(bell?.title).toBe(`${PLACEHOLDER_07V}${ex.numberDisplay}: FEMA date in 30 days (03 Aug 2027)`);
+    expect(bell?.title).toBe(`${ex.numberDisplay}: FEMA date in 30 days (03 Aug 2027)`);
     expect(REALISATION_BELL_TITLE.gst_overdue("N1", "18 Nov 2027")).toBe(
-      `${PLACEHOLDER_07V}N1: past the GST date (18 Nov 2027)`,
+      `N1: past the GST date (18 Nov 2027)`,
     );
-    expect(REALISATION_BELL_TITLE.gst_approaching("N1", "d")).toBe(
-      `${PLACEHOLDER_07V}N1: GST refund date in 30 days (d)`,
-    );
-    expect(REALISATION_BELL_TITLE.fema_overdue("N1", "d")).toBe(
-      `${PLACEHOLDER_07V}N1: past the FEMA date (d)`,
-    );
+    expect(REALISATION_BELL_TITLE.gst_approaching("N1", "d")).toBe(`N1: GST date in 30 days (d)`);
+    expect(REALISATION_BELL_TITLE.fema_overdue("N1", "d")).toBe(`N1: past the FEMA date (d)`);
   });
 
   it("a GST date shows in the email of a GST stage", async () => {
@@ -536,7 +527,7 @@ describe("edf.reminder [Q55]", () => {
     const bells = await edfBells("edf:2026-10");
     expect(bells.map((x) => x.user_id).sort()).toEqual([a.id, b.id].sort());
     expect(bells[0]).toMatchObject({
-      title: `${PLACEHOLDER_07V}EDF list for October 2026 is due by 30 Nov 2026`,
+      title: `EDF list for October 2026 is due by 30 Nov 2026`,
       link: "/reports/edf?month=2026-10",
       entity_type: "report",
     });

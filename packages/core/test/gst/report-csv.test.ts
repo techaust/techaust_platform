@@ -1,4 +1,4 @@
-// The CSV files of M5.5b [ADM-REP-04, ADM-REP-06, ADM-CLI-04; LD83; every column UNVERIFIED, VERIFY WITH CA/LEGAL]: golden CSVs of the sales
+// The CSV files of M5.5b [ADM-REP-04, ADM-REP-06, ADM-CLI-04; LD83; every column UNVERIFIED, Researched 2026-10-28, GSTN advisories of June 2025 (08-C RA-23)]: golden CSVs of the sales
 // register, the output tax, the GSTR-3B summary and the statement over the golden fixture, no bare LF, formula defence on text only,
 // and the layout versions are known and frozen.
 import { describe, expect, it } from "vitest";

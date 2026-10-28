@@ -1,6 +1,6 @@
 // The GSTR-3B outward-supply summary, worked out from the GSTR-1 sections of the same period (M5.5b, LD83; ADM-REP-04,
 // docs/08-research-appendix/A-gst-invoicing.md :505). A helper for the CA, not a return: the owner or CA types the figures into the
-// portal. UNVERIFIED mapping, VERIFY WITH CA/LEGAL:
+// portal. UNVERIFIED mapping, Researched 2026-10-28, GSTN advisories of June 2025 (08-C RA-23):
 //   3.1(a) outward taxable supplies (other than zero rated, nil rated and exempted) = b2b + b2cl + b2cs + cdnr + cdnur (B2CL);
 //   3.1(b) outward taxable supplies (zero rated)                                   = exp + cdnur (EXPWP and EXPWOP);
 //   3.2    inter-state supplies to unregistered persons, by place of supply        = b2cl + cdnur (B2CL) + inter-state b2cs, netted.

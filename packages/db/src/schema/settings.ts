@@ -46,7 +46,7 @@ export const bankAccounts = sqliteTable(
     branch: text("branch"),
     bankAddress: text("bank_address"),
     intermediary: text("intermediary"),
-    /** M5.2 (LD30): the RBI purpose code printed on a USD export invoice's SWIFT block (VERIFY WITH CA/LEGAL; `PURPOSE_CODE` in core). */
+    /** M5.2 (LD30): the RBI purpose code printed on a USD export invoice's SWIFT block (OPEN (08-C RB-06): which RBI purpose code fits our exports? the bank confirms it; `PURPOSE_CODE` in core). */
     purposeCode: text("purpose_code"),
     active: flag("active"),
     createdAt: createdAt(),

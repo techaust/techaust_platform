@@ -100,7 +100,7 @@ export function registerRowOf(r: RegisterSqlRow): RegisterApiRow {
     fxRateMicros: r.fx_rate_micros,
     supplyType: r.supply_type as RegisterApiRow["supplyType"],
     placeOfSupplyCode: r.place_of_supply_code as RegisterApiRow["placeOfSupplyCode"],
-    // No reverse-charge document type exists (LD87; VERIFY WITH CA/LEGAL)
+    // No reverse-charge document type exists (LD87; Researched 2026-10-28, Rules 46(p), 50 and 51 CGST Rules (08-C RA-26))
     reverseCharge: false,
     recipient: {
       status: r.r_status as RegisterApiRow["recipient"]["status"],

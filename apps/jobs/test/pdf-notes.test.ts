@@ -1,4 +1,4 @@
-// JOB-PDF-01 for an issued credit or debit note (M5.3 stage B2; ADM-INV-11; LD54; VERIFY WITH CA/LEGAL): the snapshot step writes the note's envelope once (the seal and the
+// JOB-PDF-01 for an issued credit or debit note (M5.3 stage B2; ADM-INV-11; LD54; Researched 2026-10-28, s.34(3) CGST Act, Rule 53 (08-C RA-22)): the snapshot step writes the note's envelope once (the seal and the
 // content hash reproduce from the rows), the render step prints the page ONLY when it names the invoice the note is against as one text node (Rule 53(1A)), else the owners'
 // bell rings once and nothing is stored or retried; an anonymised client takes no PDF; the sweep picks a note without a PDF. The notes are written the way the freeze leaves
 // them (test/pdf-note-seed.ts); Browser Run is a fake binding, the clock is fake.

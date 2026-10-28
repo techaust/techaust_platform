@@ -291,6 +291,9 @@ export type NoteIssueArgs = {
 /** At most this many issued notes of a kind per invoice (core `NOTES_MAX`: a test compares the two; core is not imported here to keep the Worker bundle small). */
 export const NOTES_MAX_SQL = 20;
 
+/** The first IST day a credit note for "Discount after sale" may be dated (core `DISCOUNT_AFTER_SALE_FROM`: a test compares the two; Researched 2026-10-28, 08-C RA-02). */
+export const DISCOUNT_AFTER_SALE_FROM_SQL = "2026-11-01";
+
 /** The parent statuses a note can be issued against: not void, not fully credited (core `ledgerStatusOf`'s other values). */
 const NOTE_PARENT_LIVE = `(${NOTE_PARENT_LIVE_STATUSES.map((s) => `'${s}'`).join(", ")})`;
 
@@ -318,6 +321,14 @@ export const NOTE_COUNTS_SQL = `SELECT c.type, count(*) AS count FROM documents 
 /** The issue instant's freeze test, for the statements that follow it: this very batch froze the document. */
 const FROZEN_BY_THIS_BATCH =
   "EXISTS (SELECT 1 FROM documents n WHERE n.id = ?1 AND n.status = 'issued' AND n.frozen_at = ?2)";
+
+/**
+ * Q37: a letter of undertaking with an ARN is saved in the `tax` setting for the FY token `?FY` (the pure twin is core `lutFor`: the `luts` list, and the one
+ * legacy `lut {arn, fy}` of M3). Used inside a freeze WHERE, so a LUT removed between the read and the freeze refuses the batch.
+ */
+export const LUT_FOR_FY_SQL = `EXISTS (SELECT 1 FROM settings ts WHERE ts.key = 'tax' AND (
+           EXISTS (SELECT 1 FROM json_each(ts.value, '$.luts') l WHERE json_extract(l.value, '$.fy') = ?FY AND trim(coalesce(json_extract(l.value, '$.arn'), '')) <> '')
+           OR (json_extract(ts.value, '$.lut.fy') = ?FY AND trim(coalesce(json_extract(ts.value, '$.lut.arn'), '')) <> '')))`;
 
 /** What every invoice freeze needs, whoever the authority is (the owner, an approval, or the owner's advance action). */
 type FreezeBase = Omit<InvoiceIssueArgs, "authority" | "bell">;
@@ -431,7 +442,8 @@ function noteIssueTail(n: NoteIssueArgs, first: number): { where: string; binds:
   const at = (k: number) => `?${first + k}`;
   return {
     where: ` AND EXISTS (SELECT 1 FROM documents p WHERE p.id = documents.parent_id AND p.id = ${p} AND p.type IN ('tax_invoice', 'export_invoice') AND p.frozen_at IS NOT NULL AND p.status IN ${NOTE_PARENT_LIVE} AND p.client_id = documents.client_id AND p.currency = documents.currency AND p.updated_at = ${at(1)} AND p.credited_minor = ${at(2)} AND (documents.type = 'debit_note' OR (documents.total_minor <= p.total_minor - p.credited_minor AND ?6 <= ${at(3)} AND (${at(4)} IS NULL OR ?6 < ${at(4)}))))
-         AND (SELECT count(*) FROM documents c WHERE c.parent_id = ${p} AND c.type = documents.type AND c.frozen_at IS NOT NULL) < ${NOTES_MAX_SQL}`,
+         AND (SELECT count(*) FROM documents c WHERE c.parent_id = ${p} AND c.type = documents.type AND c.frozen_at IS NOT NULL) < ${NOTES_MAX_SQL}
+         AND (json_extract(documents.header_extras, '$.noteOf.reason.code') IS NOT 'discount_after_sale' OR ?6 >= '${DISCOUNT_AFTER_SALE_FROM_SQL}')`,
     binds: [
       n.parentId,
       n.expectedParentUpdatedAt,
@@ -543,7 +555,7 @@ export function invoiceIssueStatements(db: D1Database, a: InvoiceIssueArgs): Sen
   };
 }
 
-// ---- the tax invoice for money received against a proforma (M5.2, Q9, LD22, G-6; VERIFY WITH CA/LEGAL) --------------------------------------
+// ---- the tax invoice for money received against a proforma (M5.2, Q9, LD22, G-6; Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17)) --------------------------------------
 
 /** One line of the new invoice: the proforma's own split of the amount received (`splitInclusive` over its groups), already worked out by the caller. */
 export type AdvanceLine = {
@@ -572,6 +584,11 @@ export type AdvanceIssueArgs = Omit<InvoiceIssueArgs, "authority" | "bell" | "ex
   /** Owner only: the session whose live step-up the freeze checks. */
   sessionId: string;
   amountMinor: number;
+  /**
+   * Q37 (owner 2026-10-28): the FY token ("2627") of the receipt day, set only when this is an export invoice on the LUT route; the freeze then needs a LUT with
+   * an ARN saved for that FY in the `tax` setting at the issue instant (`advance_lut_missing`). Null on every other advance invoice.
+   */
+  lutFy?: string | null;
   /** ISO date the money arrived, and `normaliseReference` of its bank or gateway reference (the idempotency key with the proforma). */
   receivedOn: string;
   referenceNorm: string;
@@ -587,7 +604,7 @@ export type AdvanceIssueArgs = Omit<InvoiceIssueArgs, "authority" | "bell" | "ex
     contactId: string | null;
     currency: string;
     exportMode: string | null;
-    fx: { rateMicros: number; date: string; source: string } | null;
+    fx: { rateMicros: number; date: string; source: string; noRateThatDay?: boolean } | null;
     subtotalMinor: number;
     discountMinor: number;
     taxableMinor: number;
@@ -618,8 +635,8 @@ export function advanceIssueStatements(db: D1Database, a: AdvanceIssueArgs): Sen
     .prepare(
       `INSERT INTO documents (id, type, status, client_id, project_id, parent_id, contact_id, currency, supply_type, place_of_supply_code, export_mode,
          fx_rate_micros, fx_date, fx_source, subtotal_minor, discount_minor, taxable_minor, cgst_minor, sgst_minor, igst_minor, round_off_minor,
-         total_minor, total_inr_minor, content_sha256, created_by, created_at, updated_at)
-       VALUES (?1, ?2, 'draft', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?25)`,
+         total_minor, total_inr_minor, content_sha256, created_by, created_at, updated_at, fx_no_rate_that_day)
+       VALUES (?1, ?2, 'draft', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?25, ?26)`,
     )
     .bind(
       a.documentId,
@@ -647,6 +664,7 @@ export function advanceIssueStatements(db: D1Database, a: AdvanceIssueArgs): Sen
       a.contentSha256,
       a.issuedBy,
       a.now,
+      d.fx?.noRateThatDay ? 1 : null,
     );
   const lines = d.lines.map((l) =>
     db
@@ -683,8 +701,9 @@ export function advanceIssueStatements(db: D1Database, a: AdvanceIssueArgs): Sen
     { sql: OWNER_AUTHORITY_SQL, bind: a.sessionId },
     {
       where: ` AND total_minor = ?30
-         AND EXISTS (SELECT 1 FROM documents p WHERE p.id = ?31 AND p.type = 'proforma' AND p.frozen_at IS NOT NULL AND p.status IN ('issued', 'converted') AND p.updated_at = ?32 AND p.balance_minor >= ?30 AND p.client_id = documents.client_id AND p.currency = documents.currency)`,
-      binds: [a.amountMinor, a.proformaId, a.expectedProformaUpdatedAt],
+         AND EXISTS (SELECT 1 FROM documents p WHERE p.id = ?31 AND p.type = 'proforma' AND p.frozen_at IS NOT NULL AND p.status IN ('issued', 'converted') AND p.updated_at = ?32 AND p.balance_minor >= ?30 AND p.client_id = documents.client_id AND p.currency = documents.currency)
+         AND (?33 IS NULL OR ${LUT_FOR_FY_SQL.replaceAll("?FY", "?33")})`,
+      binds: [a.amountMinor, a.proformaId, a.expectedProformaUpdatedAt, a.lutFy ?? null],
     },
   );
   return {

@@ -1,6 +1,6 @@
 // The envelope as a pre-formatted view: every value a template prints is already a string. No arithmetic happens here (a scanner test
 // bans the operators on money): amounts come from the frozen `computed` text, formatted by core. An empty supplier field is left out.
-// VERIFY WITH CA/LEGAL: the supplier lines, the place-of-supply label, the tax preview rows and the estimate notice wording.
+// Researched 2026-10-28, s.12 IGST Act (08-C RA-12): the supplier lines, the place-of-supply label, the tax preview rows and the estimate notice wording.
 import { formatMoney, isCurrency, type Money, money, negate } from "@techaust/core/money";
 import { placeOfSupplyLabel } from "@techaust/core/pdf-jobs";
 import { percentFromBp } from "@techaust/core/schedule-text";

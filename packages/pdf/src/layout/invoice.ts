@@ -21,7 +21,7 @@
 //     date, no balance and no bank block. A debit note is paid like an invoice: due date, balance due, how to pay. A USD note prints the rate of
 //     its invoice.
 //
-// Rule 46 (docs/08-research-appendix/A §3, §8; VERIFY WITH CA/LEGAL), every field the view carries is printed:
+// Rule 46 (docs/08-research-appendix/A §3, §8; Researched 2026-10-28, Rule 46 CGST Rules (08-C RA-05)), every field the view carries is printed:
 //   (a) supplier name, address, GSTIN (and principal place)   (b) number   (c) date   (d) recipient name, address, GSTIN when registered
 //   (e) recipient State name and code   (g) SAC   (h) description   quantity and unit   (j) value and discount   (k) taxable value
 //   (l) rate and (m) amount per head (the tax summary)   (n) place of supply with its State   (o) the address of delivery when it differs
@@ -147,7 +147,7 @@ function statutoryBand(view: InvoiceView): string {
 
 /**
  * A note's band: the reason (07-T §1 "Reason: {reason}"). "Other" is the words typed for it; any other reason is its label, with the words typed
- * after it on a line of their own when there are some. An export note under LUT carries its invoice's LUT line after it (VERIFY WITH CA/LEGAL).
+ * after it on a line of their own when there are some. An export note under LUT carries its invoice's LUT line after it (Researched 2026-10-28, Rule 96A CGST Rules (08-C RA-19)).
  */
 function noteBand(note: NonNullable<InvoiceView["note"]>): string {
   const typed = note.reason.text.trim();
@@ -167,7 +167,7 @@ function advanceHtml(view: InvoiceView): string {
   if (!a) return "";
   return p(
     "inv-advance",
-    advanceLine(a.proformaNumber, a.proformaDate, a.receivedOn),
+    advanceLine(a.proformaNumber, a.proformaDate, a.receivedOn, a.igstNoLutFy),
     ' data-testid="advance"',
   );
 }

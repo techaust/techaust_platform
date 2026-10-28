@@ -1,5 +1,5 @@
 // What "Start project" makes from an accepted proposal (M4.5; ADM-PRJ-01, ADM-PROP-09): the pure plan. The figures are worked by hand in the comments
-// (paise), not by the engine's own helpers. VERIFY WITH CA/LEGAL: the draft types, the place of supply and merging SACs.
+// (paise), not by the engine's own helpers. Researched 2026-10-28, s.12 IGST Act (08-C RA-12): the draft types, the place of supply and merging SACs.
 import { istDate } from "@techaust/core/dates";
 import { type ComputedDocument, computeDocument, type InclusiveGroup } from "@techaust/core/tax";
 import { describe, expect, it } from "vitest";

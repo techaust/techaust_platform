@@ -1,5 +1,5 @@
 // M5.1 database rules: the invoice triggers (status flow, void pairing, currency, type against client, parent pairs, milestone scope) and the
-// invoice issue batch as statements. VERIFY WITH CA/LEGAL for the rules. The admin Worker tests prove the same through the routes.
+// invoice issue batch as statements. Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-28) for the rules. The admin Worker tests prove the same through the routes.
 import { env } from "cloudflare:workers";
 import { defaultFormat, sqlPrintfPattern, uuidv7 } from "@techaust/core";
 import { canMoveInvoiceStatus, INVOICE_FLOW_TYPES, INVOICE_SERIES_OF } from "@techaust/core/invoices";

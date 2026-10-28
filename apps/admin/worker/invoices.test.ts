@@ -1,5 +1,5 @@
 // Invoice drafts [ADM-INV-01, ADM-INV-04, ADM-PRJ-02, ADM-APR-02]: create (from services and from a milestone), read, save, discard, list, and who may
-// do what. Issuing and voiding are in invoices-issue.test.ts and invoices-void.test.ts. VERIFY WITH CA/LEGAL for every rule under test.
+// do what. Issuing and voiding are in invoices-issue.test.ts and invoices-void.test.ts. OPEN (08-C RA-10): may a tax invoice issued in error and never delivered be shown as cancelled in GSTR-1 Table 13 with no credit note? for every rule under test.
 import { env } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core/ids";
 import { beforeAll, describe, expect, it } from "vitest";
@@ -572,6 +572,7 @@ describe("the route table", () => {
       "POST /api/v1/invoices/:id/debit-note invoices.draft invoice.note_create",
       "POST /api/v1/invoices/:id/ims-status invoices.ims invoice.ims_status",
       "GET /api/v1/invoices/:id/pdf invoices.read -",
+      "GET /api/v1/invoices/:id/pdf/supplier invoices.supplierCopy -",
       "POST /api/v1/invoices/:id/pdf/retry invoices.draft invoice.pdf_retry",
       // M5.4 (added on purpose): send, revoke the links, pause and resume the reminders
       "POST /api/v1/invoices/:id/send invoices.send invoice.send",

@@ -1,6 +1,6 @@
 // Time logs: the rules for an entry's date, who may still edit it, and the timesheet week [ADM-TIME-01..03]. Pure.
 // Minutes are whole 15-minute steps, at most 24 hours per person per day (the database enforces both: a CHECK and a trigger).
-// Staff time logs are staff personal data (DPDP, VERIFY WITH CA/LEGAL for retention; they back overage invoices).
+// Staff time logs are staff personal data (DPDP, Researched 2026-10-28, s.31(5) CGST Act (08-C RA-24) for retention; they back overage invoices).
 import { addDays, parseIsoDate, toIsoDate } from "./dates.ts";
 
 export const TIME_STEP = 15;

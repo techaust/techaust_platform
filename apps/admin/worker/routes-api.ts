@@ -9,7 +9,7 @@ import { clients, contacts } from "./clients.ts";
 import { dashboard } from "./dashboard.ts";
 import { documentConvert } from "./document-convert.ts";
 import { documentLinks } from "./document-links.ts";
-import { documentPdf, invoicePdf } from "./document-pdf.ts";
+import { documentPdf, invoicePdf, invoiceSupplierPdf } from "./document-pdf.ts";
 import { documentSave } from "./document-save.ts";
 import { documentSend } from "./document-send.ts";
 import { documentStart } from "./document-start.ts";
@@ -61,6 +61,7 @@ export function mountApi(app: App) {
   app.route("/v1/invoices", invoiceNotes);
   app.route("/v1/invoices", invoiceSend);
   app.route("/v1/invoices", invoicePdf);
+  app.route("/v1/invoices", invoiceSupplierPdf);
   app.route("/v1/approvals", approvals);
   app.route("/v1/projects", projects);
   app.route("/v1/milestones", milestones);

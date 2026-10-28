@@ -113,7 +113,8 @@ function validAdvance(v: unknown): boolean {
     isStr(v.proformaNumber) &&
     isStr(v.proformaIssueDate) &&
     isStr(v.receivedOn) &&
-    isStr(v.receiptId)
+    isStr(v.receiptId) &&
+    (v.igstNoLutFy === undefined || isStr(v.igstNoLutFy))
   );
 }
 
@@ -182,7 +183,16 @@ export function invoiceDraftOf(e: InvoiceEnvelope): DraftContent {
     sections: [],
     schedule: [],
     // M5.2 (LD24): the rate typed on the draft is part of its content hash (no key at all when there was none: an M5.1 hash is unchanged).
-    ...(h.fx ? { fx: { rateMicros: h.fx.rateMicros, date: h.fx.date, source: h.fx.source } } : {}),
+    ...(h.fx
+      ? {
+          fx: {
+            rateMicros: h.fx.rateMicros,
+            date: h.fx.date,
+            source: h.fx.source,
+            ...(h.fx.noRateThatDay ? { noRateThatDay: true } : {}),
+          },
+        }
+      : {}),
     // M5.3 (LD39): a note's request is part of its content hash, exactly as db `noteContentOf` reads it from `header_extras`.
     ...(h.noteOf
       ? {

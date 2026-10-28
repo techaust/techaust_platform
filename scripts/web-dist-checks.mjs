@@ -227,7 +227,7 @@ const SECURITY_TXT_FIELDS = ["Contact", "Expires", "Policy", "Canonical"];
 
 /**
  * WEB-SEC, RFC 9116: security.txt has Contact, Expires, Policy and Canonical, and Expires is in the future but no
- * more than 366 days away (`now` is injectable for tests).
+ * more than 365 days away (RFC 9116 asks for under a year; was 366 until the research round of 2026-10-28, 08-C RB-29; `now` is injectable for tests).
  */
 export function checkSecurityTxt(text, now = new Date()) {
   const problems = [];
@@ -243,8 +243,8 @@ export function checkSecurityTxt(text, now = new Date()) {
       problems.push(
         `.well-known/security.txt: Expires ${expires} is in the past (renew site.securityTxtExpires)`,
       );
-    else if (t - now.getTime() > 366 * 86_400_000)
-      problems.push(`.well-known/security.txt: Expires ${expires} is more than 366 days away`);
+    else if (t - now.getTime() > 365 * 86_400_000)
+      problems.push(`.well-known/security.txt: Expires ${expires} is more than 365 days away`);
   }
   return problems;
 }

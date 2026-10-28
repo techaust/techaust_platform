@@ -1,4 +1,4 @@
-// The M5.1 review fixes (code) [ADM-INV-01..04, ADM-INV-07, ADM-APR-01, ADM-PRJ-02, ADM-SET-04; VERIFY WITH CA/LEGAL, DPDP]: one describe per finding of the
+// The M5.1 review fixes (code) [ADM-INV-01..04, ADM-INV-07, ADM-APR-01, ADM-PRJ-02, ADM-SET-04; Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11), DPDP]: one describe per finding of the
 // run file's review (1 contact, 4 numbering read, 5 pending milestone, 6 names, 8 approval by id, 9 erase, 10 emails, 13 session, 14 helpers).
 import { env } from "cloudflare:workers";
 import { SETTINGS_DEFAULTS } from "@techaust/core";
@@ -189,7 +189,7 @@ describe("review 1: a draft's contact that was anonymised can never be frozen in
   });
 });
 
-describe("review 4: the numbering first-character rule is for saving; a stored format still reads [LD18; VERIFY WITH CA/LEGAL]", () => {
+describe("review 4: the numbering first-character rule is for saving; a stored format still reads [LD18; Researched 2026-10-28, Rules 46(b), 50, 51 and 53 CGST Rules (08-C RA-09)]", () => {
   it("a stored {N}/{FY} row (valid before M5.1) does not turn the invoice routes into a 500: the draft reads and issues, and the Settings page opens; a save that CHANGES a series to such a format is refused, while the stored one never blocks another series", async () => {
     const o = await owner();
     const stored = { ...SETTINGS_DEFAULTS.numbering, invoice: { template: "{N}/{FY}", padding: 4 } };
@@ -493,7 +493,7 @@ describe("review 8: the bell links the request, and the list opens one request b
   });
 });
 
-describe("review 9: erasing an individual also deletes their unissued invoice drafts and clears issue-request text [DPDP; VERIFY WITH CA/LEGAL]", () => {
+describe("review 9: erasing an individual also deletes their unissued invoice drafts and clears issue-request text [DPDP; Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11)]", () => {
   it("anonymising the last contact deletes the drafts and the approvals asked for them, frees their milestone, keeps the issued invoice, and clears its request's reason and note", async () => {
     const o = await owner();
     const staff = await sessionFor("staff");

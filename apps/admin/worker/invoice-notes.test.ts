@@ -1,4 +1,4 @@
-// M5.3 over the API [ADM-INV-11, ADM-INV-01 "Debit Note", ADM-APR-01/02; LD38..LD54; VERIFY WITH CA/LEGAL for every rule]: credit and debit note drafts against an issued invoice, their issue
+// M5.3 over the API [ADM-INV-11, ADM-INV-01 "Debit Note", ADM-APR-01/02; LD38..LD54; Researched 2026-10-28, s.34(3) CGST Act, Rule 53 (08-C RA-22) for every rule]: credit and debit note drafts against an issued invoice, their issue
 // through the M5.1 pipeline (Owner with a fresh code, Staff asks, Owner approves), the creditable cap, the deadline, the parent's ledger in the same batch, the seal, the IMS answer, void,
 // roles and the anonymised client.
 import { env } from "cloudflare:workers";
@@ -400,7 +400,7 @@ async function issueBodyOfNote(id: string) {
 
 // ---- the deadline ----------------------------------------------------------------------------------------------------------------------------------
 
-describe("the deadline of a credit note [s.34(2), Q32, Q33; VERIFY WITH CA/LEGAL]", () => {
+describe("the deadline of a credit note [s.34(2), Q32, Q33; Researched 2026-10-28, s.34(2) CGST Act (08-C RA-03)]", () => {
   /** The calendar year the supply FY of an invoice ends in: the deadline is 30 November of it. */
   const deadlineYear = async (id: string) =>
     2000 +
@@ -437,7 +437,14 @@ describe("the deadline of a credit note [s.34(2), Q32, Q33; VERIFY WITH CA/LEGAL
     expect(issued.status, await issued.clone().text()).toBe(200);
     // the view says so
     const view = await getInvoice(o, inv.id);
-    expect(view.creditDeadline).toMatchObject({ date: `${year}-11-30`, passed: false, daysLeft: 0 });
+    expect(view.creditDeadline).toMatchObject({
+      date: `${year}-11-30`,
+      passed: false,
+      daysLeft: 0,
+      // RA-31 (07-T §4): the banner warns from 1 October of the deadline year and advises 31 October; the block is unchanged
+      deadlineWarnFrom: `${year}-10-01`,
+      adviseIssueBy: `${year}-10-31`,
+    });
     vi.setSystemTime(new Date(`${year}-12-01T00:00:00.000+05:30`));
     const after = await getInvoice(o, inv.id);
     expect(after.creditDeadline).toMatchObject({ passed: true });
@@ -631,7 +638,7 @@ describe("series and FY [ADM-SET-04, ADM-INV-03]", () => {
 
 // ---- export ----------------------------------------------------------------------------------------------------------------------------------------
 
-describe("export invoices [LD43, LD49; VERIFY WITH CA/LEGAL]", () => {
+describe("export invoices [LD43, LD49; Researched 2026-10-28, s.2(6) IGST Act, Rule 46 (08-C RA-18)]", () => {
   it("a USD invoice under LUT: the credit note has no IGST, the invoice's rate and INR view, and the notes add up exactly in USD and in INR", async () => {
     const o = await owner();
     const inv = await mkIssuedInvoice(o, { prices: [100_000, 50_000], client: mkOverseasClient }); // (a USD price is a tenth of the INR price here: 10,000 and 5,000 cents)
@@ -841,7 +848,7 @@ describe("void [Q1, Q31, LD47]", () => {
 
 // ---- IMS -------------------------------------------------------------------------------------------------------------------------------------------
 
-describe("IMS status [Q14, Q36, LD46; VERIFY WITH CA/LEGAL]", () => {
+describe("IMS status [Q14, Q36, LD46; Researched 2026-10-28, s.34(2) proviso CGST Act (08-C RA-04)]", () => {
   it("a registered client's credit note is pending; an unregistered or overseas client's is not applicable", async () => {
     const o = await owner();
     const reg = await mkIssuedInvoice(o, { prices: [100_000], client: mkRegisteredClient });
@@ -1027,7 +1034,7 @@ describe("roles and the approval of a note [ADM-APR-01/02, LD38]", () => {
 
 // ---- the anonymised client -------------------------------------------------------------------------------------------------------------------------
 
-describe("an anonymised client takes no new note [Q34, LD48; VERIFY WITH CA/LEGAL]", () => {
+describe("an anonymised client takes no new note [Q34, LD48; Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11)]", () => {
   it("creating or issuing a note for it is 409 client_anonymised; nothing is written", async () => {
     const o = await owner();
     const inv = await mkIssuedInvoice(o, { prices: [100_000] });

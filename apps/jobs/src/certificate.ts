@@ -2,7 +2,7 @@
 // certificate prints. The page itself (a plain skeleton in `packages/pdf/src/layout/certificate-skeleton.ts`, finished by the designer) takes this view and nothing else, escapes every
 // value, and loads no external file. Routed from `pdf.certificate` (pdf.ts, stage B).
 //
-// The certificate shows the IP address, the user agent and the country because they ARE the evidence (docs/08 L-11). VERIFY WITH CA/LEGAL: showing
+// The certificate shows the IP address, the user agent and the country because they ARE the evidence (docs/08 L-11). Researched 2026-10-28, BSA 2023 s.63(4) (08-C RB-19): showing
 // them on a document the client downloads, and the Browser Run processing of the name, address and IP (processor terms, location).
 import { formatIstDateTime, formatMoney, money } from "@techaust/core";
 import type { CertificateView } from "@techaust/pdf";

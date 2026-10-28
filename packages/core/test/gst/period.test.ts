@@ -42,7 +42,7 @@ describe("lastDayOfMonth", () => {
 });
 
 describe("addMonthsClamped", () => {
-  it("clamps to the end of the month [VERIFY WITH CA/LEGAL]", () => {
+  it("clamps to the end of the month [Researched 2026-10-28, GSTN advisories of June 2025 (08-C RA-23)]", () => {
     expect(addMonthsClamped(d(2027, 5, 31), 9)).toEqual(d(2028, 2, 29));
     expect(addMonthsClamped(d(2026, 5, 31), 9)).toEqual(d(2027, 2, 28));
     expect(addMonthsClamped(d(2028, 2, 29), 12)).toEqual(d(2029, 2, 28));

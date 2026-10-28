@@ -1,7 +1,7 @@
 // Export realisation dates and stages in SQL (M5.5b, LD75; ADM-REP-07, docs/08-A §8): the Workers (the alert scan, the dashboard) may not run the gst core
 // (SPA only, LD16), so the FEMA and GST due dates and the stage of an export invoice are worked out here, in SQLite, and PROVED equal to core's
 // `realisationDates` and stage order by a property test (`packages/db/test/realisation-twin.test.ts`), the way `CREDITED_SO_FAR_SQL` is.
-// VERIFY WITH CA/LEGAL, all of it (FEMA 2026 as amended 22 Sep 2026; GST Rule 96A(1)(b); Q15, Q53):
+// Researched 2026-10-28, FEMA 23(R)/2026-RB Reg. 5(1) (08-C RB-01), all of it (FEMA 2026 as amended 22 Sep 2026; GST Rule 96A(1)(b); Q15, Q53):
 //   femaDue = issue date + 9 months (a foreign currency) or 12 months (INR), clamped to the end of a shorter month (31 May + 9 months = 28 or 29 Feb);
 //   gstDue  = max(issue date + 12 months, femaDue) + 15 days (Rule 96A), a stage only for an export under LUT (Q53);
 //   both are the LAST allowed day: overdue is the day after, "approaching" starts `approachingDays` before.

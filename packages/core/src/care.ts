@@ -10,7 +10,7 @@
 //   - Q5: a plan paused on its billing day gets NO hours that period (and no carried hours either); time logged after a
 //     resume in that period is all overage.
 // Readers of a past period use the history (`care_plan_terms`, `care_plan_status_log`), never the mirror columns of `care_plans`.
-// VERIFY WITH CA/LEGAL: GST on the overage is M5.4's; the amounts here are before GST.
+// Researched 2026-10-28, s.31(5) CGST Act (08-C RA-24): GST on the overage is M5.4's; the amounts here are before GST.
 import { addDays, type CalendarDate, parseIsoDate, toIsoDate } from "./dates.ts";
 import { divRoundHalfUp } from "./money.ts";
 

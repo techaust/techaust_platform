@@ -1,4 +1,4 @@
-// Review fixes of M5.5a [ADM-REP-04, ADM-REP-07; VERIFY WITH CA/LEGAL]: supply consistency (`supply_mismatch`), the document
+// Review fixes of M5.5a [ADM-REP-04, ADM-REP-07; Researched 2026-10-28, GSTN advisories of June 2025 (08-C RA-23)]: supply consistency (`supply_mismatch`), the document
 // number character set, a note's parent block (`parent_invalid`), blank SACs, one number namespace for invoices, EDF FEMA
 // extensions, and the branded `Cell`.
 import { describe, expect, it } from "vitest";

@@ -180,10 +180,10 @@ describe("security.txt (WEB-SEC)", () => {
     expect(c.checkSecurityTxt(text, now)).toEqual([]);
   });
 
-  it("fails when Expires is in the past, over 366 days away, or not a date", () => {
+  it("fails when Expires is in the past, over 365 days away (RFC 9116: under a year; was 366 before 2026-10-28), or not a date", () => {
     expect(c.checkSecurityTxt(buildSecurityTxt(days(-1)), now).join()).toContain("in the past");
-    expect(c.checkSecurityTxt(buildSecurityTxt(days(367)), now).join()).toContain("more than 366 days");
-    expect(c.checkSecurityTxt(buildSecurityTxt(days(366)), now)).toEqual([]);
+    expect(c.checkSecurityTxt(buildSecurityTxt(days(366)), now).join()).toContain("more than 365 days");
+    expect(c.checkSecurityTxt(buildSecurityTxt(days(365)), now)).toEqual([]);
     expect(c.checkSecurityTxt(buildSecurityTxt("soon"), now).join()).toContain("not an ISO 8601");
   });
 

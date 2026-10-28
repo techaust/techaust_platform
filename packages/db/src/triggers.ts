@@ -281,7 +281,7 @@ export function termsTriggerStatements(): string[] {
 
 /**
  * Client and contact triggers (M3.3, ADM-CLI-01, ADM-CLI-05; a separate set because the existing triggers have no IF NOT EXISTS;
- * neither table is rebuilt, they are referenced). VERIFY WITH CA/LEGAL:
+ * neither table is rebuilt, they are referenced). Researched 2026-10-28, rule by rule in 08-C section 1:
  * - a client's currency cannot change once ANY invoice-family document of any status exists (the API's conditional write is
  *   the first line, this is the backstop; a proposal or estimate alone does not lock it);
  * - an anonymised contact is frozen (the tombstone cannot be edited or revived);
@@ -305,7 +305,7 @@ export function clientTriggerStatements(): string[] {
 /**
  * Client type lock (M3.3 review, ADM-CLI-01; a separate set, the earlier ones have no IF NOT EXISTS): a client's type decides
  * which erase rules apply, so it cannot change once any issued (frozen) document exists. The API's conditional write is the first
- * line, this is the backstop. VERIFY WITH CA/LEGAL.
+ * line, this is the backstop. Researched 2026-10-28, rule by rule in 08-C section 1.
  */
 export function clientTypeLockStatements(): string[] {
   return [
@@ -606,7 +606,7 @@ export const INVOICE_STATUS_FLOW_0038: readonly {
 
 /**
  * The invoice triggers (M5.1, ADM-INV-02, -03, -07, LD21; new triggers only, no table is rebuilt; every abort message starts with the trigger's
- * name so the API can map it). VERIFY WITH CA/LEGAL for the rules; the API checks the same rules in SQL conditions first, these hold
+ * name so the API can map it). Researched 2026-10-28, rule by rule in 08-C section 1 for the rules; the API checks the same rules in SQL conditions first, these hold
  * whatever writes to the tables:
  *   1. `documents_invoice_status_flow`: the moves of `INVOICE_STATUS_FLOW_0038` (the pinned copy of core's table; a db test compares
  *      every move with `canMoveInvoiceStatus`); `void` and `converted` are terminal; a void needs nothing paid or credited and no issued child;
@@ -690,7 +690,7 @@ export const SET_ONCE_0040 = [...SET_ONCE_0032, "service_completed_on"] as const
 
 /**
  * Invoice types (M5.2, ADM-INV-01, -06, -10, LD22, LD23, LD29, LD35; new triggers only, no table is rebuilt; every abort message starts with the
- * trigger's name so the API can map it). VERIFY WITH CA/LEGAL for the rules; the API checks the same rules in SQL conditions first:
+ * trigger's name so the API can map it). Researched 2026-10-28, rule by rule in 08-C section 1 for the rules; the API checks the same rules in SQL conditions first:
  *   1. `documents_frozen_update` dropped and created again over the columns of 0040 (`export_declaration_id` and `header_extras` are frozen; `service_completed_on`
  *      is set once);
  *   2. `documents_service_completed_date_insert` / `_update`: a service date is a real ISO date, and only a tax or export invoice has one;
@@ -718,7 +718,7 @@ export function invoiceTypeTriggerStatements(): string[] {
 
 /**
  * Credit and debit notes (M5.3, ADM-INV-11, LD38..LD51; new triggers only, no table is rebuilt, `ims_status` has no CHECK; every abort message starts with
- * the trigger's name so the API can map it). VERIFY WITH CA/LEGAL for the rules; the API and the freeze statement check the same rules in SQL conditions
+ * the trigger's name so the API can map it). Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-28) for the rules; the API and the freeze statement check the same rules in SQL conditions
  * first, these hold whatever writes to the tables:
  *   1. `documents_note_parent_required_insert` / `_update`: a credit or debit note has a parent;
  *   2. `documents_note_issue_check`: at the freeze, the parent is a frozen tax or export invoice of the same client and currency that is still live
@@ -775,7 +775,7 @@ export function noteTriggerStatements(): string[] {
 
 /**
  * Recurring care invoices, invoice links and reminders (M5.4, ADM-CARE-02, ADM-INV-13, POR-06, LD55, LD58..LD60; new triggers only: no table is rebuilt,
- * `0043_billing.sql` only added columns, a table and indexes; every abort message starts with the trigger's name so the API can map it). VERIFY WITH CA/LEGAL
+ * `0043_billing.sql` only added columns, a table and indexes; every abort message starts with the trigger's name so the API can map it). Researched 2026-10-28, rule by rule in 08-C section 1
  * for the rules; the statements that write these tables hold the same rules in their WHERE, these hold whatever writes to them:
  *   0. a one-off backfill, before any trigger exists: a toggle that was on before M5.4 has no Owner behind it (LD58: "existing toggles count as off"), so it is
  *      switched off, and the rule of 6 then holds for every row;
@@ -817,6 +817,17 @@ export function billingTriggerStatements(): string[] {
     `CREATE TRIGGER \`clients_care_auto_issue_by_update\` BEFORE UPDATE OF care_auto_issue, care_auto_issue_by ON \`clients\` WHEN ${autoBad} BEGIN ${named("clients_care_auto_issue_by_update", autoMsg)} END;`,
     `CREATE TRIGGER \`reminders_fixed\` BEFORE UPDATE ON \`reminders\` WHEN ${reminderBad} BEGIN ${named("reminders_fixed", "a reminder keeps its document, offset and due time, is sent once, and is paused or skipped only by the allowed moves")} END;`,
   ];
+}
+
+/**
+ * The documents columns frozen as migration 0047 installs them (pinned like 0032's and 0040's): 0040's plus `fx_no_rate_that_day` (Q24, 08-C RA-21: the Owner's statement that no rate
+ * was published on the day of supply, frozen with the rate). Today equal to the live list; the coverage test in `triggers.test.ts` checks the INSTALLED trigger against the live schema.
+ */
+export const FROZEN_COLUMNS_0047 = [...FROZEN_COLUMNS_0040, "fx_no_rate_that_day"] as const;
+
+/** The freeze trigger of `documents` dropped and created again over the columns of 0047 (a new frozen column; nothing else changes). */
+export function fxFlagTriggerStatements(): string[] {
+  return ["DROP TRIGGER `documents_frozen_update`;", frozenUpdateTrigger(FROZEN_COLUMNS_0047, SET_ONCE_0040)];
 }
 
 /** The trigger sets, by the name the migration is created with (`drizzle-kit generate --custom --name <set>`). */
@@ -872,6 +883,10 @@ export const TRIGGER_SETS = {
   billing_triggers: {
     what: "care billing forward-only, terms after a billed period, billed-period record, bound invoice links, the auto-issue owner and reminder moves (M5.4)",
     statements: billingTriggerStatements,
+  },
+  fx_flag_triggers: {
+    what: "freeze trigger recreated for the exchange-rate statement column fx_no_rate_that_day (research round 2026-10-28, Q24)",
+    statements: fxFlagTriggerStatements,
   },
 } as const;
 export type TriggerSet = keyof typeof TRIGGER_SETS;

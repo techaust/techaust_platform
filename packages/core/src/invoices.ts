@@ -1,5 +1,5 @@
 // Invoice rules, pure (M5.1; ADM-INV-01..04, -07, ADM-APR-01/02; M5.2: ADM-INV-06, -08, -10, -18). No I/O, no zod, no floats. Error and blocker codes
-// only: the words are the screens'. EVERY RULE HERE IS A RESEARCHED DEFAULT: VERIFY WITH CA/LEGAL (Rule 46, Rule 47, Rule 48, GSTR-1 Table 13, 08-A §3 and §4).
+// only: the words are the screens'. EVERY RULE HERE IS A RESEARCHED DEFAULT: Researched 2026-10-28, Rule 48(2) CGST Rules (08-C RA-07) (Rule 46, Rule 47, Rule 48, GSTR-1 Table 13, 08-A §3 and §4).
 //
 //   - which types can be issued now (the tax invoice, the export invoice and the proforma; credit and debit notes wait for M5.3),
 //   - the status flow (the twin of the `documents_invoice_status_flow` trigger, which is GENERATED from a pinned copy of this table, and a db
@@ -9,7 +9,7 @@
 // The export endorsement, the LUT helpers, the proforma notice and the exchange-rate helpers (`export-invoice.ts`, `fx.ts`) are exported from here.
 import { addDays, fyOf, istDate, parseIsoDate, toIsoDate } from "./dates.ts";
 import { type ExportRoute, type Lut, lutFor } from "./export-invoice.ts";
-import { fxDateOk } from "./fx.ts";
+import { fxDateVerdict } from "./fx.ts";
 import { canonicalJson, sha256Hex } from "./hash.ts";
 import type { NoteOf } from "./notes.ts";
 import type { Series } from "./numbering.ts";
@@ -119,7 +119,7 @@ export function canMoveInvoiceStatus(
 
 // ---- the IST day, the FY and the due date of an issue (LD19, Q3) ------------------------------------------------------------------------
 
-/** The invoice date: the IST day of the issue instant (Q3: never backdated, never in the future). VERIFY WITH CA/LEGAL (Rule 46(c), Rule 47). */
+/** The invoice date: the IST day of the issue instant (Q3: never backdated, never in the future). Researched 2026-10-28, Rule 46 CGST Rules (08-C RA-05) (Rule 46(c), Rule 47). */
 export const issueDateOf = (nowMs: number): string => toIsoDate(istDate(nowMs));
 
 /** The FY token ("2627") the number is taken in: judged by the IST date, so 31 March 23:59 IST is still the old FY. */
@@ -160,6 +160,8 @@ export const ISSUE_BLOCKER_CODES = [
   "country_missing",
   "fx_missing",
   "fx_date_invalid",
+  // Research round 2026-10-28 (08-C RA-21): a rate of an earlier day was typed without the statement that no rate was published on the day of supply
+  "fx_same_day_exists",
   "lut_missing",
   "unregistered_high_value",
   "bank_missing",
@@ -177,13 +179,18 @@ export type IssueBlocker = {
   readonly date?: string;
 };
 
-// ---- the mandatory-field checklist (ADM-INV-06, Q10; Rule 46; VERIFY WITH CA/LEGAL) --------------------------------------------------------
+// ---- the mandatory-field checklist (ADM-INV-06, Q10; Rule 46; Researched 2026-10-28, Rule 46 CGST Rules (08-C RA-05)) --------------------------------------------------------
 
 /** The document types the checklist is about (the tax invoice, the export invoice and the proforma). */
 export type ChecklistType = "tax_invoice" | "export_invoice" | "proforma";
 
 /** What the Owner may switch (Settings > Tax, stored in the `tax` row, LD31): only these two keys; the locked items are never stored. */
-export type ChecklistSettings = { readonly bankDetails: boolean; readonly paymentLink: false };
+export type ChecklistSettings = {
+  readonly bankDetails: boolean;
+  readonly paymentLink: false;
+  /** A house rule too (07-S §3): absent is on. It owns no blocker (the signature is optional on an electronic invoice, Rule 46(q) proviso), so switching it off is the Owner's record of the choice. */
+  readonly signatory?: boolean | undefined;
+};
 export const DEFAULT_CHECKLIST: ChecklistSettings = { bankDetails: true, paymentLink: false };
 
 export type ChecklistItem = {
@@ -251,7 +258,7 @@ export const INVOICE_CHECKLIST: readonly ChecklistItem[] = [
     appliesTo: ALL_TYPES,
     blockers: ["reverse_charge_text"],
   },
-  { id: "signatory", locked: true, available: true, appliesTo: ALL_TYPES, blockers: [] },
+  { id: "signatory", locked: false, available: true, appliesTo: ALL_TYPES, blockers: [] },
   {
     id: "originalForRecipient",
     locked: true,
@@ -293,10 +300,19 @@ export const INVOICE_CHECKLIST: readonly ChecklistItem[] = [
 /** The keys the Owner may store (an item that is neither locked nor unavailable). */
 export const CHECKLIST_SWITCHABLE = ["bankDetails"] as const;
 
+/**
+ * The house rules of the checklist (owner 2026-10-28, 07-S §3; Researched 2026-10-28, Rule 46 CGST Rules, 08-C RA-05 and RA-06): items GST law does not require, which the Owner may switch off:
+ * bank details, the payment link or QR, and the authorised signatory (an invoice issued electronically needs no signature). Every other item is statutory and locked; the Settings API
+ * refuses to switch one off with `checklist_item_statutory`.
+ */
+export const HOUSE_RULE_ITEMS = ["bankDetails", "paymentLink", "signatory"] as const;
+export const isHouseRuleItem = (id: string): boolean => (HOUSE_RULE_ITEMS as readonly string[]).includes(id);
+
 /** Whether a checklist item is on for these settings: locked items always, `bankDetails` as stored, `paymentLink` never (not available). */
 export function checklistItemOn(item: ChecklistItem, s: ChecklistSettings): boolean {
   if (item.id === "bankDetails") return s.bankDetails;
   if (item.id === "paymentLink") return false;
+  if (item.id === "signatory") return s.signatory !== false;
   return true;
 }
 
@@ -331,7 +347,13 @@ export type IssueFacts = {
   readonly reverseChargeText: string | null;
   /** M5.2: the rate typed on the draft (null: none) and the day it is judged against (the issue day; for an advance invoice the day the money arrived). */
   readonly fx: {
-    readonly value: { readonly rateMicros: number; readonly date: string; readonly source: string } | null;
+    readonly value: {
+      readonly rateMicros: number;
+      readonly date: string;
+      readonly source: string;
+      /** The Owner stated that no rate was published on the day of supply (Q24). */
+      readonly noRateThatDay?: boolean;
+    } | null;
     readonly refDate: string;
     readonly maxAgeDays: number;
   };
@@ -358,7 +380,7 @@ const OWNER_OF: ReadonlyMap<IssueBlockerCode, ChecklistItem> = new Map(
 );
 
 /**
- * Everything that stops a draft from being issued, as codes (empty = it can be issued): the statutory list of Rule 46 (VERIFY WITH CA/LEGAL) as the
+ * Everything that stops a draft from being issued, as codes (empty = it can be issued): the statutory list of Rule 46 (Researched 2026-10-28, Rule 46 CGST Rules (08-C RA-05)) as the
  * checklist of ADM-INV-06. Order is stable: supplier, recipient, lines, totals, the type, then the M5.2 items (country, exchange rate, LUT, the
  * ₹50,000 rule, bank). A blocker whose checklist item does not apply to the type, or is switched off (`bankDetails` only), is not raised;
  * blockers no item owns (the exchange rate, the currency, the type) always apply to the types they are about. A proforma has no exchange rate, no
@@ -402,11 +424,20 @@ export function issueBlockers(
 
   // M5.2. The country of an export (Rule 46(o)), named once at issue.
   if (f.type === "export_invoice" && blank(f.recipient.countryName)) add("country_missing");
-  // The exchange rate of a USD tax or export invoice (Rule 34(2); Q7, Q24): typed, and of a day close enough to the one it is judged against.
+  // The exchange rate of a USD tax or export invoice (Rule 34(2); Q7, Q24; Researched 2026-10-28, 08-C RA-21): typed, and the rate of the day of supply, or the last one published before it
+  // when the Owner states that none was published that day (`fxDateVerdict`).
   if (f.currency === "USD" && (f.type === "tax_invoice" || f.type === "export_invoice")) {
     if (f.fx.value === null) add("fx_missing", { date: f.fx.refDate });
-    else if (!fxDateOk(f.fx.value.date, f.fx.refDate, f.fx.maxAgeDays))
-      add("fx_date_invalid", { date: f.fx.refDate });
+    else {
+      const verdict = fxDateVerdict(
+        f.fx.value.date,
+        f.fx.refDate,
+        f.fx.maxAgeDays,
+        f.fx.value.noRateThatDay === true,
+      );
+      if (verdict === "same_day_exists") add("fx_same_day_exists", { date: f.fx.refDate });
+      else if (verdict === "invalid") add("fx_date_invalid", { date: f.fx.refDate });
+    }
   }
   // The letter of undertaking of the FY of ISSUE (a draft saved on 31 March and issued on 1 April needs the new year's), on the LUT route only.
   if (f.type === "export_invoice" && f.export !== null && f.export.mode === "lut") {
@@ -451,15 +482,15 @@ export type VoidFacts = {
   /** The invoice's issue date (IST day) and today's IST day: Q23 lets a void happen only inside the calendar month of issue. */
   readonly issueDate: string | null;
   readonly today: string;
-  /** M5.2 (LD28): a proforma is not a tax document, so the month rule of Q23 does not apply to it (VERIFY WITH CA/LEGAL). Absent: any other type. */
+  /** M5.2 (LD28): a proforma is not a tax document, so the month rule of Q23 does not apply to it (OPEN (08-C RA-10): may a tax invoice issued in error and never delivered be shown as cancelled in GSTR-1 Table 13 with no credit note?). Absent: any other type. */
   readonly type?: string;
 };
 
 /**
- * Q1 (VERIFY WITH CA/LEGAL, 08-A §4): an issued invoice can be voided only while it has not been emailed to the client and has no payment and no
+ * Q1 (OPEN (08-C RA-10): may a tax invoice issued in error and never delivered be shown as cancelled in GSTR-1 Table 13 with no credit note?, 08-A §4): an issued invoice can be voided only while it has not been emailed to the client and has no payment and no
  * credit or debit note; after that, a credit note is the correction. Q23: and only within the IST calendar month of issue (the GST return period of
  * an invoice is the month of its date), after which a credit note is the correction too; a proforma has no return period (LD28). The number stays and
- * the record stays (Rule 56(8)). Codes only. VERIFY WITH CA/LEGAL (the batch page offers both forms of the Q23 rule).
+ * the record stays (Rule 56(8)). Codes only. OPEN (08-C RA-10): may a tax invoice issued in error and never delivered be shown as cancelled in GSTR-1 Table 13 with no credit note? (the batch page offers both forms of the Q23 rule).
  */
 export function voidBlockers(f: VoidFacts): VoidBlockerCode[] {
   if (f.status === "void") return ["already_void"];
@@ -497,7 +528,7 @@ export type IssuedSummary = {
 };
 
 /**
- * Per series and FY: the first and last number issued, how many, how many were cancelled (voided) and the net (VERIFY WITH CA/LEGAL, 08-A §4:
+ * Per series and FY: the first and last number issued, how many, how many were cancelled (voided) and the net (OPEN (08-C RA-10): may a tax invoice issued in error and never delivered be shown as cancelled in GSTR-1 Table 13 with no credit note?, 08-A §4:
  * Table 13 lists each document nature with from and to, total, cancelled and net issued). Input order does not matter; the result is sorted
  * by series, then FY.
  */
@@ -579,7 +610,13 @@ export type InvoiceSnapshotInput = {
     /** The pinned note's text, frozen at issue (absent when no note is pinned); its SHA-256 is `declarationRef.sha256`. */
     readonly declarationText?: string;
   };
-  readonly fx?: { readonly rateMicros: number; readonly date: string; readonly source: string };
+  readonly fx?: {
+    readonly rateMicros: number;
+    readonly date: string;
+    readonly source: string;
+    /** Q24 (08-C RA-21): present (true) only when the Owner stated that no rate was published on the day of supply; frozen with the rate, so an older seal keeps its hash. */
+    readonly noRateThatDay?: true;
+  };
   readonly proforma?: { readonly notice: string };
   readonly advance?: {
     readonly proformaId: string;
@@ -587,6 +624,11 @@ export type InvoiceSnapshotInput = {
     readonly proformaIssueDate: string;
     readonly receivedOn: string;
     readonly receiptId: string;
+    /**
+     * Q37 (07-S section 9): present only when the proforma was under LUT, this invoice was issued with IGST and no LUT was in place for the FY of the receipt day;
+     * the FY as people read it ("2027-28"). Absent on every other advance invoice, so older seals keep their hash.
+     */
+    readonly igstNoLutFy?: string;
   };
   /**
    * M5.3 (LD39): a credit or debit note's request, its reason and the facts of the invoice it is against, as frozen with it (`header_extras.noteOf`). Present

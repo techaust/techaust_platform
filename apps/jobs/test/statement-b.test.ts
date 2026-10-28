@@ -1,4 +1,4 @@
-// The statement PDF consumer and the cache purge of M5.5b stage B [JOB-PDF-01, ADM-CLI-04, LD79; Q57; VERIFY WITH CA/LEGAL]: read, view, content hash, adopt or render, store once, the M4.4 error table (rate, quota,
+// The statement PDF consumer and the cache purge of M5.5b stage B [JOB-PDF-01, ADM-CLI-04, LD79; Q57; Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-28)]: read, view, content hash, adopt or render, store once, the M4.4 error table (rate, quota,
 // failures), a client anonymised in between, the dead letter, the routing, and the purge (30 days and anonymised clients, the shared object, object first then row, pages of 50). Browser Run is a fake binding; the clock
 // is the `now` passed in. All names, numbers and amounts are invented.
 import { env as realEnv } from "cloudflare:workers";

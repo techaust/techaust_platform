@@ -16,7 +16,15 @@ import { ACCOUNT_NO, cleanAccountNo, IFSC, SWIFT } from "@techaust/core/bank";
 import { formatIstDateTime, fyOf } from "@techaust/core/dates";
 import { EMAIL_TEMPLATES, type EmailTemplate } from "@techaust/core/email-templates";
 import { uuidv7 } from "@techaust/core/ids";
-import { issueDateOf, lutFor, lutReminder, PURPOSE_CODE } from "@techaust/core/invoices";
+import {
+  HOUSE_RULE_ITEMS,
+  INVOICE_CHECKLIST,
+  isHouseRuleItem,
+  issueDateOf,
+  lutFor,
+  lutReminder,
+  PURPOSE_CODE,
+} from "@techaust/core/invoices";
 import { deleteAfterSql, LEAD_DELETABLE_SQL, LEAD_PURGE_NOTICE_DAYS } from "@techaust/core/lead-lifecycle";
 import { canSetNextNumber, maxNumber, SERIES, type Series, validateFormat } from "@techaust/core/numbering";
 import { type Action, decide } from "@techaust/core/permissions";
@@ -59,7 +67,13 @@ import { param } from "./http.ts";
 import { queueEmail } from "./mail.ts";
 import { ANNUAL_RETURN_FUTURE } from "./note-model.ts";
 
-/** The notice before a lead is deleted: a re-dated lead is never due sooner than this (VERIFY WITH CA/LEGAL). */
+/** 07-S §3: the hint of a statutory checklist item. */
+const CHECKLIST_STATUTORY = {
+  code: "checklist_item_statutory",
+  message: "Required by GST law, so it can't be turned off.",
+} as const;
+
+/** The notice before a lead is deleted: a re-dated lead is never due sooner than this (Researched 2026-10-28, DPDP Act s.8(7), Rule 8 (08-C RB-10)). */
 const LEAD_NOTICE_MS = LEAD_PURGE_NOTICE_DAYS * 86_400_000;
 
 const STALE: ApiError = {
@@ -239,7 +253,7 @@ const counters = async (db: D1Database, fy: string) =>
  * The series that have an issued document this financial year (a number is assigned only at issue, so `number IS NOT NULL` is
  * "issued"; a voided document keeps its number). Served by the unique index (series, fy, number). Once a series is in this set,
  * its format and next number are locked: changing either would leave a gap or a different style inside the printed run
- * (CGST Rule 46(b); VERIFY WITH CA/LEGAL).
+ * (CGST Rule 46(b); Researched 2026-10-28, Rule 46 CGST Rules (08-C RA-05)).
  */
 const issuedSeries = async (db: D1Database, fy: string): Promise<Set<string>> => {
   const names = Object.keys(SERIES);
@@ -321,6 +335,13 @@ async function groupMeta(c: Ctx, group: Generic | "gateways", value: unknown) {
           issueDateOf(Date.now()),
           lutsOf((value as Settings["tax"]) ?? SETTINGS_DEFAULTS.tax),
         ),
+        // The checklist of 07-S §3 with its house rules marked (owner 2026-10-28): only `houseRule` items can be switched off (`checklist_item_statutory` otherwise).
+        checklist: INVOICE_CHECKLIST.map((i) => ({
+          id: i.id,
+          houseRule: isHouseRuleItem(i.id),
+          available: i.available,
+        })),
+        houseRuleItems: HOUSE_RULE_ITEMS,
       };
     case "retention":
       return {
@@ -420,7 +441,7 @@ export const settings = new Hono<AppEnv>()
     // The leads retention (ADM-SET-09): a new figure re-dates the deletion date of every lead the clean-up may delete, in the same
     // batch (after the settings write, so the shared SQL expression reads the new months). Converted leads and leads under legal
     // hold are left alone. A lowered figure never puts a date earlier than 14 days from now, so the notice period is kept
-    // (the clean-up never deletes a lead the same day the owner lowers the months). VERIFY WITH CA/LEGAL.
+    // (the clean-up never deletes a lead the same day the owner lowers the months). Researched 2026-10-28, DPDP Act s.8(7), Rule 8 (08-C RB-10).
     if (group === "retention")
       return save(c, "retention", env.data.value, env.data.version, {
         extraFor: (before, after) =>
@@ -446,6 +467,23 @@ export const settings = new Hono<AppEnv>()
     }
     // M5.2 (early check 3): a saved `tax` row never keeps the deprecated single `lut`: it is folded into `luts` (unless that FY is listed) and cleared.
     if (group === "tax") {
+      // Owner 2026-10-28 (07-S §3; Researched 2026-10-28, Rule 46 CGST Rules, 08-C RA-05): only the house rules of the checklist may be switched; naming a statutory item is 400
+      // `checklist_item_statutory` ("Required by GST law, so it can't be turned off."), whatever its value.
+      const sent = (env.data.value as { invoiceChecklist?: unknown } | null)?.invoiceChecklist;
+      if (typeof sent === "object" && sent !== null && !Array.isArray(sent)) {
+        const statutory = Object.keys(sent).find(
+          (k) => INVOICE_CHECKLIST.some((i) => i.id === k) && !isHouseRuleItem(k),
+        );
+        if (statutory)
+          return c.json(
+            {
+              error: { code: CHECKLIST_STATUTORY.code, message: CHECKLIST_STATUTORY.message },
+              fields: [{ path: `invoiceChecklist.${statutory}`, message: CHECKLIST_STATUTORY.message }],
+              request_id: c.var.rid,
+            },
+            400,
+          );
+      }
       const parsed = SETTINGS_SCHEMAS.tax.safeParse(env.data.value);
       // M5.3 (G-11, Q33): the day an annual return was filed cannot be in the future (a filing that has not happened would close credit notes today).
       if (parsed.success) {
@@ -732,7 +770,7 @@ async function saveNumbering(c: Ctx, raw: unknown) {
       return null;
     },
     // The series whose format or next number this save changes must not have an issued document this year: checked by the write
-    // itself (L-d), so an invoice issued between the read above and the write cannot slip through. VERIFY WITH CA/LEGAL (CGST Rule 46(b)).
+    // itself (L-d), so an invoice issued between the read above and the write cannot slip through. Researched 2026-10-28, Rule 46 CGST Rules (08-C RA-05) (CGST Rule 46(b)).
     guardFor: (before, after) => {
       const changed = [
         ...new Set([
@@ -790,7 +828,7 @@ const bankBody = z.object({
   branch: z.optional(z.nullable(z.string().check(z.maxLength(120)))),
   bankAddress: z.optional(z.nullable(z.string().check(z.maxLength(300)))),
   intermediary: z.optional(z.nullable(z.string().check(z.maxLength(300)))),
-  /** M5.2 (LD30, VERIFY WITH CA/LEGAL): the RBI purpose code (P and four digits) of the USD account; null or empty clears it. */
+  /** M5.2 (LD30, OPEN (08-C RB-06): which RBI purpose code fits our exports? the bank confirms it): the RBI purpose code (P and four digits) of the USD account; null or empty clears it. */
   purposeCode: z.optional(z.nullable(z.string().check(z.maxLength(20)))),
   /** The `updatedAt` the form was loaded with (GET /settings/bank); null or missing for a first save. A different value is a 409. */
   expectedUpdatedAt: z.optional(z.nullable(z.int())),
