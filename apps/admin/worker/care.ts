@@ -7,7 +7,7 @@
 // the history through the shared loader (`@techaust/db/care`), never the mirror.
 //
 // Owner's answers (2026-10-25, docs/13): a price or hours change takes effect from the NEXT billing period (Q1); Staff may set any
-// terms at creation, later price changes and cancelling are the owner's (Q6). OPEN (08-C RA-10): may a tax invoice issued in error and never delivered be shown as cancelled in GSTR-1 Table 13 with no credit note?: notice for terms changes, GST on
+// terms at creation, later price changes and cancelling are the owner's (Q6). To check with the CA (no 08-C row yet): the notice for terms changes and the GST on
 // overage (M5.4), cancellation takes effect at once and issues no credit note until ADM-CARE-04.
 // Audit rows hold ids, field names, dates, statuses and the new terms (money is not personal data), never a client name.
 import {

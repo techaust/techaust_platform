@@ -13,8 +13,8 @@ import {
 
 /**
  * The Rule 46 export endorsement, one line per route, in capitals as the rule gives it (07-S §1; word for word from 08-A §8 :344-348). Frozen and
- * sealed in the invoice header at issue, and checked byte for byte before the PDF is rendered (LD33). Researched 2026-10-28, s.2(6) IGST Act, Rule 46 (08-C RA-18); the IGST-route wording
- * is NOT VERIFIED beyond "... ON PAYMENT OF INTEGRATED TAX" (08-A :346).
+ * sealed in the invoice header at issue, and checked byte for byte before the PDF is rendered (LD33). Researched 2026-10-28, s.2(6) IGST Act, Rule 46 (08-C RA-18: the endorsement texts as built).
+ * OPEN (08-C RA-18): the IGST-route wording is verified only up to "... ON PAYMENT OF INTEGRATED TAX" (08-A :346).
  */
 export const EXPORT_ENDORSEMENT = {
   lut: "SUPPLY MEANT FOR EXPORT/SUPPLY TO SEZ UNIT OR SEZ DEVELOPER FOR AUTHORISED OPERATIONS UNDER BOND OR LETTER OF UNDERTAKING WITHOUT PAYMENT OF INTEGRATED TAX",
@@ -146,7 +146,7 @@ type LegacyLutTax = {
  * What becomes of the deprecated single `lut` of M3 (review 2, finding 9: the ONE rule; the settings fold, `lutsOf` and the stored-row reader all ask it, pure and
  * without zod): `none` (no letter in it), `listed` (its FY already has a list entry: the entry wins), `invalid` (the list would refuse it: an ARN that is not 1 to 30
  * letters or digits once normalised, or a year that is not two consecutive years), `full` (the list already holds 20) or `folded` (it counts as this list entry).
- * Researched 2026-10-28, s.2(6) IGST Act, Rule 46 (08-C RA-18) (the ARN's format is not verified).
+ * Researched 2026-10-28, Rule 96A CGST Rules (08-C RA-19: one LUT per FY). OPEN (08-C RA-19): the ARN's format, so only 1 to 30 letters and digits are checked.
  */
 export type LegacyLutFate =
   | { fate: "none" | "listed" | "invalid" | "full" }

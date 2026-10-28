@@ -593,7 +593,8 @@ export const advanceLineDescription = (proformaNumber: string) =>
  * The export route of the document made for money received against a proforma (review 1): the proforma's own pick; when it had none, the route the
  * engine computed it under (`export_lut` gives `lut`, `export_igst` gives `igst_paid`), NEVER the live Settings, which may have moved since the
  * proforma was issued (the proforma said 0 % under LUT; the invoice for the money must not turn into an IGST split because the setting changed).
- * A proforma that was not an export has no route (null). Researched 2026-10-28, Rule 96A CGST Rules (08-C RA-19): whether a lapsed LUT should force IGST on the tax invoice.
+ * A proforma that was not an export has no route (null). Researched 2026-10-28, Rule 96A CGST Rules (08-C RA-19): one LUT per FY, furnished before the first export of that FY.
+ * OPEN (08-C RA-19, Q37): must the tax invoice for a payment received after the LUT lapsed charge IGST, or does the earlier FY's LUT cover it? The code refuses the LUT route and lets the Owner choose.
  */
 export function proformaRouteOf(
   exportMode: string | null,

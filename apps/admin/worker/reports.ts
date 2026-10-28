@@ -1,4 +1,4 @@
-// The report routes (M5.5b, LD71, LD74, LD85; ADM-REP-04, ADM-REP-07; OPEN (08-C RA-10): may a tax invoice issued in error and never delivered be shown as cancelled in GSTR-1 Table 13 with no credit note? for every tax reading): the register page that GSTR-1, Table 13, the sales
+// The report routes (M5.5b, LD71, LD74, LD85; ADM-REP-04, ADM-REP-07; Researched 2026-10-28, rule by rule in 08-C section 1): the register page that GSTR-1, Table 13, the sales
 // register, the output tax and the GSTR-3B summary are all built from (in the browser, from the gst core: the Worker does none of that maths), the EDF month and the
 // export realisation list. Keyset pages of at most 50 rows; the Worker never reads `documents.computed` (the rates come from SQL, `@techaust/db/reports`).
 // Self-contained (LD85): it imports only the context, the guard's types, keyset, http, `report-rows` and packages, so a later third Worker can take `/reports/*`.

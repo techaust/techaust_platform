@@ -119,8 +119,8 @@ const isoDate = z.string().check(
 
 /**
  * ADM-SET-03, ADM-INV-18 (M5.2): one letter of undertaking per financial year. `fy` is the token ("2627": two consecutive years), `arn` the number from
- * the GST portal (spaces dropped, upper case; its format is NOT VERIFIED, so only a safe 1 to 30 characters of letters and digits is checked),
- * `filedOn` the day it was filed (optional). Researched 2026-10-28, Rule 96A CGST Rules and 08-C RA-19.
+ * the GST portal (spaces dropped, upper case; only a safe 1 to 30 characters of letters and digits is checked),
+ * `filedOn` the day it was filed (optional). Researched 2026-10-28, Rule 96A CGST Rules (08-C RA-19: one LUT per FY). OPEN (08-C RA-19): the ARN's format, so only 1 to 30 letters and digits are checked.
  */
 export const lutEntry = z.strictObject({
   fy: z.string().check(
