@@ -1,6 +1,6 @@
 // Document numbering formats [ADM-SET-04, ADM-INV-03]. A format is a template such as "TH/INV/{FY}/{N}":
 // {FY} is the financial-year token ("2627") and {N} the counter, zero-padded. GST limits invoice serial numbers
-// to 16 characters of A–Z, 0–9, "/" and "-" (Rule 46(b), VERIFY WITH CA); we apply the same limit to every
+// to 16 characters of A–Z, 0–9, "/" and "-" (Rule 46(b), Researched 2026-10-28, Rule 46 CGST Rules (08-C RA-05)); we apply the same limit to every
 // series so all numbers fit the same columns and PDFs. Numbers are assigned in SQL at issue (docs/05 §5.4),
 // using `sqlPrintfPattern`, so the app and the database format numbers identically.
 import { type FinancialYear, financialYear } from "./dates.ts";
@@ -76,7 +76,7 @@ function checkFormat(format: NumberingFormat, strictStart: boolean): FormatCheck
     return { ok: false, error: 'Use only capital letters A–Z, digits 0–9, "/" and "-"' };
   }
   if (parts.middle === "") return { ok: false, error: "Put a separator between {FY} and {N}" };
-  // LD18 (VERIFY WITH CA/LEGAL, 08-A §4): the e-invoice schema wants the number to start with a letter or 1-9, never 0, "/" or "-".
+  // LD18 (Researched 2026-10-28, Rules 46(b), 50, 51 and 53 CGST Rules (08-C RA-09), 08-A §4): the e-invoice schema wants the number to start with a letter or 1-9, never 0, "/" or "-".
   // The number starts with the text before the first token; with none, the FY token (always 1-9 for a real FY) or the counter,
   // which starts with a padding zero whenever the padding is more than one digit.
   const first = parts.before[0];

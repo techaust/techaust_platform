@@ -1,4 +1,4 @@
-// M5.2 database rules (ADM-INV-01, -06, -10, LD22, LD23, LD28, LD29, LD35; VERIFY WITH CA/LEGAL): migrations 0039 and 0040 (ADD COLUMN and CREATE only, the
+// M5.2 database rules (ADM-INV-01, -06, -10, LD22, LD23, LD28, LD29, LD35; Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17)): migrations 0039 and 0040 (ADD COLUMN and CREATE only, the
 // pinned freeze lists), the service-date and advance-receipt triggers, the proforma issue (its own series, its `valid_until`, its milestone left alone), and
 // the advance batch (Q9): the tax invoice for money received against a proforma.
 import { env } from "cloudflare:workers";
@@ -23,6 +23,7 @@ import {
 import {
   FROZEN_COLUMNS_0032,
   FROZEN_COLUMNS_0040,
+  FROZEN_COLUMNS_0047,
   frozenDocumentColumns,
   SET_ONCE_0032,
   SET_ONCE_0040,
@@ -373,8 +374,25 @@ describe("migrations 0039 and 0040 [LD35]", () => {
       ...FROZEN_COLUMNS_0032.slice(at),
     ]);
     expect([...SET_ONCE_0040]).toEqual([...SET_ONCE_0032, "service_completed_on"]);
-    expect([...FROZEN_COLUMNS_0040].sort()).toEqual([...frozenDocumentColumns()].sort());
+    // since research round 2026-10-28 the live list also holds `fx_no_rate_day` (0047 recreates the trigger over 0040's list plus it)
+    expect([...FROZEN_COLUMNS_0047].sort()).toEqual([...frozenDocumentColumns()].sort());
+    expect([...FROZEN_COLUMNS_0040, "fx_no_rate_day"]).toEqual([...FROZEN_COLUMNS_0047]);
     expect([...SET_ONCE_0040]).toEqual([...SET_ONCE_AFTER_FREEZE]);
+  });
+
+  it("0046 adds the statement column with no rebuild and 0047 freezes it: an issued invoice's 'no rate that day' cannot change (Q24, 08-C RA-21)", async () => {
+    const sql46 = (env.TEST_MIGRATIONS.find((m) => m.name === "0046_fx_no_rate_day.sql")?.queries ?? []).join(
+      "\n",
+    );
+    expect(sql46.trim()).toBe("ALTER TABLE `documents` ADD `fx_no_rate_day` text;");
+    const sql47 = (
+      env.TEST_MIGRATIONS.find((m) => m.name === "0047_fx_flag_triggers.sql")?.queries ?? []
+    ).join("\n");
+    expect(sql47).toContain("NEW.`fx_no_rate_day` IS NOT OLD.`fx_no_rate_day`");
+    const t = await first<{ sql: string }>(
+      "SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'documents_frozen_update'",
+    );
+    expect(t?.sql).toContain("NEW.`fx_no_rate_day` IS NOT OLD.`fx_no_rate_day`");
   });
 
   it("the installed freeze trigger covers export_declaration_id and the set-once service date", async () => {
@@ -630,7 +648,7 @@ describe("a proforma issues in its own series and leaves its milestone alone [LD
 
 // ---- the advance batch ---------------------------------------------------------------------------------------------------------------------
 
-describe("the tax invoice for money received [Q9, LD22; VERIFY WITH CA/LEGAL]", () => {
+describe("the tax invoice for money received [Q9, LD22; Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17)]", () => {
   it("issues the next number as a paid invoice with the proforma as its parent, converts the proforma and writes one receipt", async () => {
     const w = await world();
     const a = await advanceArgs(w, {}, 118_000);

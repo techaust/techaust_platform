@@ -205,7 +205,7 @@ describe("a care message that ran out of tries", () => {
       entity_id: "plan-9:2026-11-06",
       link: "/care-plans/plan-9",
     });
-    expect(rows[0]?.title).toMatch(/^\[Placeholder, 07-U\] /);
+    expect(rows[0]?.title).not.toContain("Placeholder");
     await processCareDeadLetter(makeEnv(), body, NOW + 86_400_000); // the next IST day rings again
     expect((await bells("care.billing_failed")).filter((r) => r.entity_id.startsWith("plan-9"))).toHaveLength(
       4,
@@ -223,13 +223,11 @@ describe("a care message that ran out of tries", () => {
     await processCareDeadLetter(makeEnv(), { kind: "care.bill", planId: id }, NOW);
     const rows = (await bells("care.billing_failed")).filter((r) => r.entity_id.startsWith(id));
     expect(rows[0]?.title).toBe(
-      `[Placeholder, 07-U] The care invoice for ${client?.display_name} (05 Nov 2026 to 04 Dec 2026) couldn't be drafted. Open the care plan to see why.`,
+      `The care invoice for ${client?.display_name} (05 Nov 2026 to 04 Dec 2026) couldn't be drafted. Open the care plan to see why.`,
     );
     await processCareDeadLetter(makeEnv(), { kind: "care.bill", planId: "no-such-plan" }, NOW);
     const plain = (await bells("care.billing_failed")).find((r) => r.entity_id.startsWith("no-such-plan"));
-    expect(plain?.title).toBe(
-      "[Placeholder, 07-U] A care invoice couldn't be drafted. Open the care plan to see why.",
-    );
+    expect(plain?.title).toBe("A care invoice couldn't be drafted. Open the care plan to see why.");
   });
 
   it("a care.issue dead letter links the draft; the scans and the alerts only log (the next run lists the same work), through the leads dead-letter queue", async () => {

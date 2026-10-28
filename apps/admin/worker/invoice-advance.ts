@@ -1,4 +1,4 @@
-// The tax invoice for money received against a proforma (M5.2, ADM-INV-10, Q9, LD22, G-6; VERIFY WITH CA/LEGAL): `POST /invoices/:id/advance-invoice`, the
+// The tax invoice for money received against a proforma (M5.2, ADM-INV-10, Q9, LD22, G-6; Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17)): `POST /invoices/:id/advance-invoice`, the
 // Owner's action with a fresh code (`invoices.advance`). It is the only place M5 writes a paid amount: ONE batch (`advanceIssueStatements`,
 // packages/db/src/issue.ts) inserts the new invoice as a draft, freezes it with the next number of its series (every M5.1 condition, plus: the amount is
 // the invoice's total and the proforma is still the one that was read, with a balance of at least the amount), writes the `advance_receipts` row,
@@ -13,7 +13,9 @@ import { sha256Hex } from "@techaust/core/catalogue";
 import { fyOf } from "@techaust/core/dates";
 import { uuidv7 } from "@techaust/core/ids";
 import {
+  advanceRouteFor,
   type ExportRoute,
+  fxDateVerdict,
   fxSourceLabel,
   INVOICE_SERIES_OF,
   issueDateOf,
@@ -22,6 +24,7 @@ import {
   parseFxRate,
 } from "@techaust/core/invoices";
 import { maxNumber, sqlPrintfPattern } from "@techaust/core/numbering";
+import { lutsOf } from "@techaust/core/tax";
 import { headerExtrasJson, invoiceSealOf, type TermsRef } from "@techaust/db/documents";
 import { advanceIssueStatements } from "@techaust/db/issue";
 import { Hono } from "hono/tiny";
@@ -49,6 +52,7 @@ import {
   ADVANCE_REFERENCE_USED,
   ADVANCE_SUPPLY_CHANGED,
   advanceDraft,
+  advanceLutMissing,
   bankStampOf,
   blockersOf,
   CLIENT_CHANGED,
@@ -57,6 +61,8 @@ import {
   EXPORT_CURRENCY_CONFIRM,
   EXPORT_DECLARATION_TAMPERED,
   FX_NOT_APPLICABLE,
+  fxDateInvalidFor,
+  fxSameDayExistsFor,
   headerExtrasOf,
   type InvoiceState,
   ISSUE_BLOCKED,
@@ -88,6 +94,11 @@ export const advanceBody = z.strictObject({
   /** A USD proforma needs the rate of the day the money arrived (Q9, LD24). */
   fx: z.optional(fxIn),
   confirmInrExport,
+  /**
+   * Q37 (owner 2026-10-28): the route of an export tax invoice. Omitted: the proforma's own. `lut` needs a LUT saved for the FY of `receivedOn`
+   * (`advance_lut_missing`); `igst` charges IGST at 18 % and prints the 07-S section 9 line. Only for an overseas client.
+   */
+  route: z.optional(z.enum(["lut", "igst"])),
 });
 
 /** What a refused advance batch looks like when it comes back as an error. */
@@ -131,7 +142,7 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
     // (5) the stamp the person saw, and a client that still exists
     if (d.updated_at !== f.expectedProformaUpdatedAt) return err(c, STALE_VERSION, 409);
     if (ctx.client.anonymised_at !== null) return err(c, CLIENT_GONE, 409);
-    // (5b) the supply the proforma was sealed with must still be the client's (VERIFY WITH CA/LEGAL): nothing is written when it is not
+    // (5b) the supply the proforma was sealed with must still be the client's (Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17)): nothing is written when it is not
     if (proformaSupplyChanged(d.computed, ctx.client.gst_status)) return err(c, ADVANCE_SUPPLY_CHANGED, 409);
     // (6) the amount against what is left
     if (f.amountMinor > d.balance_minor) return err(c, ADVANCE_EXCEEDS_BALANCE, 409);
@@ -152,15 +163,44 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
       const rateMicros = parseFxRate(f.fx.rate);
       const source = fxSourceLabel(f.fx.source, f.fx.sourceNote);
       if (rateMicros === null || source === null) return err(c, BAD_REQUEST, 400);
-      fx = { rateMicros, date: f.fx.date, source };
+      // Q24 (research round 2026-10-28; Researched 2026-10-28, 08-C RA-21): the rate of the day the money arrived, or the last one published before it when the Owner states that
+      // none was published that day (`noRateThatDay`), at most `fxMaxAgeDays` older; judged here, before anything else is worked out. The statement is stored with the day it covers: the day the money arrived.
+      const noRate = f.fx.noRateThatDay === true;
+      const noRateDay = noRate ? f.receivedOn : null;
+      const verdict = fxDateVerdict(f.fx.date, f.receivedOn, ctx.settings.tax.fxMaxAgeDays, noRateDay);
+      if (verdict === "same_day_exists") return err(c, fxSameDayExistsFor(f.receivedOn), 400);
+      if (verdict === "invalid")
+        return err(c, fxDateInvalidFor(f.receivedOn, ctx.settings.tax.fxMaxAgeDays), 400);
+      fx = { rateMicros, date: f.fx.date, source, ...(noRateDay ? { noRateDay } : {}) };
     }
     // (9) the lines: the amount split over the proforma's own (SAC, rate) groups, by the inclusive split
     const proformaComputed = d.computed;
     if (!proformaComputed || !d.number_display || !d.issue_date) return err(c, PROFORMA_NOT_ISSUED, 409);
     const today = todayOf(now);
-    // Review 1: the route is the PROFORMA's (its own pick, else the one its computation used), never the live Settings of the day the money arrives.
-    const route =
-      ctx.client.gst_status === "overseas" ? proformaRouteOf(d.export_mode, proformaComputed) : null;
+    // Review 1: the route starts from the PROFORMA's (its own pick, else the one its computation used), never the live Settings of the day the money arrives.
+    // Q37: then the Owner's pick (`route`), and the LUT route needs a LUT for the FY of the day the money arrived (core `advanceRouteFor`).
+    let route: ExportRoute | null = null;
+    let lutFy: string | null = null;
+    let igstNoLutFy: string | null = null;
+    let routeFy = fy;
+    if (ctx.client.gst_status === "overseas") {
+      const chosen = advanceRouteFor({
+        proformaRoute: proformaRouteOf(d.export_mode, proformaComputed) ?? ctx.settings.tax.exportMode,
+        requested: f.route ?? null,
+        receivedOn: f.receivedOn,
+        luts: lutsOf(ctx.settings.tax),
+      });
+      if (!chosen.ok)
+        return chosen.code === "advance_lut_missing"
+          ? err(c, advanceLutMissing(chosen.fyLabel), 409, { fy: chosen.fyLabel })
+          : err(c, BAD_REQUEST, 400);
+      route = chosen.route;
+      routeFy = chosen.fy;
+      lutFy = chosen.route === "lut" ? chosen.fy : null;
+      igstNoLutFy = chosen.igstNoLut ? chosen.fyLabel : null;
+    } else if (f.route !== undefined) {
+      return err(c, BAD_REQUEST, 400);
+    }
     const made = advanceDraft({
       amountMinor: f.amountMinor,
       currency,
@@ -221,7 +261,8 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
     const blockers = blockersOf(state, ctx.client, ctx.settings, computation, {
       bank: ctx.bank,
       issueDate,
-      fy,
+      // Q37: the LUT that counts is the one of the FY of the receipt day.
+      fy: routeFy,
       fxRefDate: f.receivedOn,
       advance: true,
     });
@@ -255,7 +296,7 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
       state,
       settings: ctx.settings,
       client: ctx.client,
-      issueFy: fy,
+      issueFy: routeFy,
       mode,
       declaration,
       advance: {
@@ -264,6 +305,7 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
         proformaIssueDate: d.issue_date,
         receivedOn: f.receivedOn,
         receiptId,
+        ...(igstNoLutFy ? { igstNoLutFy } : {}),
       },
     });
     const seal = await invoiceSealOf({
@@ -317,6 +359,7 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
       expectedProformaUpdatedAt: d.updated_at,
       sessionId: u.sessionId,
       amountMinor: f.amountMinor,
+      lutFy,
       receivedOn: f.receivedOn,
       referenceNorm: norm,
       receiptId,

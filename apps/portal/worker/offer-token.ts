@@ -1,6 +1,6 @@
 // Offer links (M4.5; POR-06, owner decision 2026-10-25): `POST /api/v1/t/offer...` with the token in the BODY, never in a path or query. A link
 // is bound to one contact and grants one offer (all its versions), never another offer of the same organisation. The owner approved
-// accepting and declining from the link (docs/13); the record says so (`via = link`, the link's hash). VERIFY WITH CA/LEGAL for high-value
+// accepting and declining from the link (docs/13); the record says so (`via = link`, the link's hash). Researched 2026-10-28, BSA 2023 s.63(4) (08-C RB-19) for high-value
 // contracts: whoever holds the emailed link can act as that contact.
 //
 // Like `doc-token.ts`: the address lock and the link are read in ONE batch; a failed check counts toward the address's `p:fail:` counter

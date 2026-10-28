@@ -256,7 +256,7 @@ TecHaust's plan (immutable invoices, corrections by credit note) fits this pract
 ## 6. Credit notes (Section 34)
 
 **Rule (CBIC current text).**
-- **s.34(1)** allows "one or more credit notes for supplies made in a financial year" when: the taxable value or tax charged is too high; services are deficient; or (inserted by the Finance Act 2026, s.154, **commencement "yet to be notified"**) a post-supply discount under s.15(3)(b) is given.
+- **s.34(1)** allows "one or more credit notes for supplies made in a financial year" when: the taxable value or tax charged is too high; services are deficient; or (inserted by the Finance Act 2026, s.154, **in force from 1 Nov 2026**, Notification 03/2026-CT; updated 2026-10-28, [08-C](C-research-register.md) RA-02) a post-supply discount under s.15(3)(b) is given.
 - **s.34(2)** requires the credit note to be declared in the return for the month of issue, but **"not later than the thirtieth day of November following the end of the financial year in which such supply was made, or the date of furnishing of the relevant annual return, whichever is earlier"**.
 - **New proviso (w.e.f. 1 Oct 2025, Finance (No. 7) Act 2025).** The supplier's output liability is **not reduced** if a registered recipient has not reversed the ITC attributable to the credit note. For an unregistered recipient, it is not reduced if the tax incidence was passed on to anyone else.
 - **s.34(3)–(4).** A **debit note** (which includes a supplementary invoice) is issued when the value or tax was too low. There is no time limit beyond normal returns.

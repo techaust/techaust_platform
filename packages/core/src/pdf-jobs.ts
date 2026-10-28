@@ -23,13 +23,26 @@ export type OfferSweepMessage = { v: 1; kind: "offer.sweep"; asOf: number };
 /** M5.5b (LD79): the PDF of one `statement_pdfs` row (`hop` counts pacing re-sends like `pdf.render`'s). Ids only: the consumer reads the row. */
 export type PdfStatementMessage = { v: 1; kind: "pdf.statement"; statementId: string; hop: number };
 
+/**
+ * The stored DUPLICATE FOR SUPPLIER copy of one issued tax invoice, export invoice, credit note or debit note (Rule 48(2); owner 2026-10-28, Q11). One unit of work: it renders the same
+ * frozen envelope as the original, with the other copy mark, and stores it write-once in `DOCS` under its own key (`supplierPdfKey`). It is never attached, emailed or linked to a client.
+ * `hop` counts pacing re-sends like `pdf.render`'s.
+ */
+export type PdfSupplierMessage = { v: 1; kind: "pdf.supplier"; documentId: string; hop: number };
+
 export type PdfMessage =
   | PdfSnapshotMessage
   | PdfRenderMessage
   | PdfSweepMessage
   | PdfCertificateMessage
   | PdfStatementMessage
+  | PdfSupplierMessage
   | OfferSweepMessage;
+
+/** The invoice-family types that have a supplier copy (Rule 48(2): the services invoice and, by Rule 53, the notes; never a proforma, which is no tax invoice). */
+export const SUPPLIER_COPY_TYPES = ["tax_invoice", "export_invoice", "credit_note", "debit_note"] as const;
+export const hasSupplierCopy = (type: string): boolean =>
+  (SUPPLIER_COPY_TYPES as readonly string[]).includes(type);
 
 export const PDF_MAX_HOPS = 30;
 export const PDF_SNAPSHOT_REASONS: readonly PdfSnapshotReason[] = ["send", "retry", "sweep"];
@@ -44,6 +57,14 @@ export function isPdfMessage(body: unknown): body is PdfMessage {
     case "pdf.snapshot":
       return isId(body.documentId) && PDF_SNAPSHOT_REASONS.includes(body.reason as PdfSnapshotReason);
     case "pdf.render":
+      return (
+        isId(body.documentId) &&
+        typeof body.hop === "number" &&
+        Number.isInteger(body.hop) &&
+        body.hop >= 0 &&
+        body.hop <= PDF_MAX_HOPS
+      );
+    case "pdf.supplier":
       return (
         isId(body.documentId) &&
         typeof body.hop === "number" &&
@@ -98,6 +119,14 @@ export function pdfKeys(i: PdfKeyInput): { snapshot: string; pdf: string } {
     throw new RangeError("pdfKeys: invalid version");
   const stem = `docs/${i.type}/${i.fy}/${String(i.number).padStart(4, "0")}-v${i.version}`;
   return { snapshot: `${stem}.json`, pdf: `${stem}.pdf` };
+}
+
+/**
+ * The R2 key of a document's DUPLICATE FOR SUPPLIER copy: the original's own stem with `-supplier.pdf`, so it is its own object, written once, and no row has to
+ * name it (the object's existence is its state). The same checks as `pdfKeys`.
+ */
+export function supplierPdfKey(i: PdfKeyInput): string {
+  return pdfKeys(i).pdf.replace(/\.pdf$/, "-supplier.pdf");
 }
 
 /**

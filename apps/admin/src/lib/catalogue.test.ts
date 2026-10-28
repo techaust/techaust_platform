@@ -17,7 +17,6 @@ import {
   maxItemIndex,
   milliToQty,
   PENDING,
-  PLACEHOLDER_TAG,
   publishProblems,
   qtyToMilli,
   rebaseEntry,
@@ -27,6 +26,9 @@ import {
   templateTitle,
   unknownIn,
 } from "./catalogue.ts";
+
+/** The mark a line not yet approved would carry (none should). */
+const PLACEHOLDER_TAG = "[Placeholder]";
 
 const ENTRY: CatalogueEntry = {
   id: "i1",

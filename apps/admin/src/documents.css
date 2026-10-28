@@ -1740,3 +1740,11 @@ a.pdf-panel__action:hover {
 .section-row__toggle[aria-expanded="true"] .icon {
   transform: rotate(180deg);
 }
+
+/* The stored supplier copy (07-R §7, Owner and Accountant): a quiet text action under the client's PDF, a full target on its own line. */
+.pdf-panel__supplier {
+  grid-column: 1 / -1;
+  justify-self: start;
+  min-height: var(--target-min);
+  gap: var(--space-2);
+}

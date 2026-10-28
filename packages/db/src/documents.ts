@@ -40,6 +40,8 @@ export type DocumentRow = {
   fx_rate_micros: number | null;
   fx_date: string | null;
   fx_source: string | null;
+  /** Q24 (08-C RA-21): the day (ISO) the Owner's statement "no rate was published that day" covers; null when not stated. Absent on a row read before this existed. */
+  fx_no_rate_day?: string | null;
   service_completed_on: string | null;
   export_declaration_id: string | null;
   /** M5.2 (LD37): the JSON text of the sealed header keys the other columns cannot give (`{export?, proforma?, advance?}`), frozen at issue; null when none (read it with `headerExtrasOfRow`). */
@@ -176,7 +178,7 @@ export type DocumentBundle<T extends TermsRef = TermsRow> = {
 };
 
 const DOCUMENT_COLUMNS =
-  "id, type, status, client_id, version_group_id, version, series, fy, number, number_display, currency, issue_date, due_date, parent_id, paid_minor, credited_minor, balance_minor, voided_at, void_reason, fx_rate_micros, fx_date, fx_source, service_completed_on, export_declaration_id, header_extras, ims_status, valid_until, supply_type, place_of_supply_code, subtotal_minor, discount_minor, taxable_minor, cgst_minor, sgst_minor, igst_minor, round_off_minor, total_minor, terms_version_id, snapshot_r2_key, snapshot_sha256, pdf_r2_key, pdf_sha256, frozen_at, issued_by, title, contact_id, validity_days, discount_kind, discount_value, export_mode, content_sha256, catalogue_reference_minor, source_document_id, source_step, sent_at, viewed_at, decided_at, decision_reason, decision_note, decided_contact_id, created_by, created_at, updated_at, recipient, issuer, computed";
+  "id, type, status, client_id, version_group_id, version, series, fy, number, number_display, currency, issue_date, due_date, parent_id, paid_minor, credited_minor, balance_minor, voided_at, void_reason, fx_rate_micros, fx_date, fx_source, fx_no_rate_day, service_completed_on, export_declaration_id, header_extras, ims_status, valid_until, supply_type, place_of_supply_code, subtotal_minor, discount_minor, taxable_minor, cgst_minor, sgst_minor, igst_minor, round_off_minor, total_minor, terms_version_id, snapshot_r2_key, snapshot_sha256, pdf_r2_key, pdf_sha256, frozen_at, issued_by, title, contact_id, validity_days, discount_kind, discount_value, export_mode, content_sha256, catalogue_reference_minor, source_document_id, source_step, sent_at, viewed_at, decided_at, decision_reason, decision_note, decided_contact_id, created_by, created_at, updated_at, recipient, issuer, computed";
 
 /** The statements of `loadDocument`, exported so a test can EXPLAIN each one. */
 export const LOAD_DOCUMENT_SQL = {
@@ -517,12 +519,20 @@ export function noteContentOf(d: Pick<DocumentRow, "type" | "header_extras">): D
  * absent is the same as null (the hash then has no `fx` key and an M5.1 seal stays byte-identical).
  */
 export function fxOfRow(
-  d: Pick<DocumentRow, "fx_rate_micros" | "fx_date" | "fx_source">,
-): { rateMicros: number; date: string; source: string } | null {
+  d: Pick<DocumentRow, "fx_rate_micros" | "fx_date" | "fx_source"> &
+    Partial<Pick<DocumentRow, "fx_no_rate_day">>,
+): { rateMicros: number; date: string; source: string; noRateDay?: string } | null {
   return typeof d.fx_rate_micros === "number" &&
     typeof d.fx_date === "string" &&
     typeof d.fx_source === "string"
-    ? { rateMicros: d.fx_rate_micros, date: d.fx_date, source: d.fx_source }
+    ? {
+        rateMicros: d.fx_rate_micros,
+        date: d.fx_date,
+        source: d.fx_source,
+        ...(typeof d.fx_no_rate_day === "string" && d.fx_no_rate_day !== ""
+          ? { noRateDay: d.fx_no_rate_day }
+          : {}),
+      }
     : null;
 }
 

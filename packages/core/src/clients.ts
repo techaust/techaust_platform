@@ -1,5 +1,5 @@
 // Client rules shared by the admin Worker and the database tests (M3.3, ADM-CLI-01..05). Pure: no I/O.
-// GST treatment, retention and data-subject items: VERIFY WITH CA/LEGAL.
+// GST treatment, retention and data-subject items: Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11).
 import { isCountryCode } from "./countries.ts";
 import { isStateCode, STATE_CODES, type StateCode, validateGstin } from "./gstin.ts";
 

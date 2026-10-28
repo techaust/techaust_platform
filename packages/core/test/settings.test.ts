@@ -6,14 +6,16 @@ import { gstinCheckChar } from "../src/gstin.ts";
 import { formatDocumentNumber, MAX_NUMBER_LENGTH, maxNumber } from "../src/numbering.ts";
 import {
   BRAND_LOGOS,
+  floorRetention,
   panOf,
+  RETENTION_FLOORS,
   resolveSetting,
   SETTINGS_DEFAULTS,
   SETTINGS_SCHEMAS,
   type SeededSettingKey,
 } from "../src/schemas/settings.ts";
 
-describe("settings defaults (docs/08 §7.1, VERIFY WITH CA)", () => {
+describe("settings defaults (docs/08 §7.1, researched in 08-C)", () => {
   it.each(Object.keys(SETTINGS_SCHEMAS) as SeededSettingKey[])("%s validates against its schema", (key) => {
     expect(SETTINGS_SCHEMAS[key].parse(SETTINGS_DEFAULTS[key])).toEqual(SETTINGS_DEFAULTS[key]);
   });
@@ -84,6 +86,26 @@ describe("settings defaults (docs/08 §7.1, VERIFY WITH CA)", () => {
     expect(
       SETTINGS_SCHEMAS.retention.safeParse({ ...SETTINGS_DEFAULTS.retention, financialYears: 7 }).success,
     ).toBe(false);
+  });
+
+  it("the email-log retention is at least 12 months (DPDP Rule 8(3), from 13 May 2027; Researched 2026-10-28, 08-C RB-09): the schema refuses less, a stored row below it reads as 12, and nothing else is raised", () => {
+    const base = SETTINGS_DEFAULTS.retention;
+    expect(SETTINGS_SCHEMAS.retention.safeParse({ ...base, emailLogMonths: 12 }).success).toBe(true);
+    for (const bad of [11, 1, 0, -1, 12.5])
+      expect(
+        SETTINGS_SCHEMAS.retention.safeParse({ ...base, emailLogMonths: bad }).success,
+        String(bad),
+      ).toBe(false);
+    expect(RETENTION_FLOORS.emailLogMonths).toBe(12);
+    // a row saved before the floor existed
+    expect(resolveSetting("retention", { ...base, emailLogMonths: 1 }).emailLogMonths).toBe(12);
+    expect(resolveSetting("retention", { emailLogMonths: 6 }).emailLogMonths).toBe(12);
+    expect(resolveSetting("retention", { ...base, emailLogMonths: 24 }).emailLogMonths).toBe(24);
+    // only that figure: the others below their floors are still a corrupted row
+    expect(() => resolveSetting("retention", { ...base, securityLogMonths: 6 })).toThrow();
+    expect(() => resolveSetting("retention", { ...base, emailLogMonths: "x" })).toThrow();
+    expect(floorRetention(null)).toBeNull();
+    expect(floorRetention({ emailLogMonths: 1.5 })).toEqual({ emailLogMonths: 1.5 });
   });
 });
 

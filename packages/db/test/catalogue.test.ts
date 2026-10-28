@@ -89,10 +89,10 @@ describe("the seed (ADM-CAT-01, ADM-CAT-03)", () => {
     expect(versions.map((v) => v.version)).toEqual([1, 2, 3]);
   });
 
-  it("seeds versions 1 and 2 of one template per kind and category, and each renders with test data and leaves nothing unresolved", async () => {
+  it("seeds versions 1, 2 and 3 (the care block's, 07-U §9) of one template per kind and category, and each renders with test data and leaves nothing unresolved", async () => {
     await seed();
     const rows = await all<{ kind: string; category: string | null; version: number; body: string }>(
-      "SELECT kind, category, version, body FROM templates WHERE version IN (1, 2) ORDER BY kind, category, version",
+      "SELECT kind, category, version, body FROM templates WHERE version IN (1, 2) OR (version = 3 AND kind = 'care_block') ORDER BY kind, category, version",
     );
     expect(rows).toHaveLength(SEED_TEMPLATES.length);
     expect(new Set(rows.map((r) => `${r.kind}:${r.category}:${r.version}`)).size).toBe(rows.length);
@@ -102,6 +102,27 @@ describe("the seed (ADM-CAT-01, ADM-CAT-03)", () => {
       expect(unknownPlaceholders(body), `${r.kind}/${r.category}/${r.version}`).toEqual([]);
       expect(renderTemplateBody(body, data).unresolved, `${r.kind}/${r.category}/${r.version}`).toEqual([]);
     }
+  });
+
+  it("the care block's version 3 is version 2 with the 07-U §9 sentence added, as a new version (Researched 2026-10-28, 08-C RA-24)", async () => {
+    await seed();
+    const body = async (v: number) =>
+      (
+        JSON.parse(
+          (
+            await first<{ body: string }>(
+              "SELECT body FROM templates WHERE kind = 'care_block' AND version = ?",
+              v,
+            )
+          )?.body ?? "{}",
+        ) as { sections: { key: string; body: string }[] }
+      ).sections;
+    const [v2, v3] = [await body(2), await body(3)];
+    expect(v3.map((s) => s.key)).toEqual(v2.map((s) => s.key));
+    const sentence = "Extra hours are invoiced on the next monthly invoice and are due with it.";
+    expect(v2[0]?.body).not.toContain(sentence);
+    expect(v3[0]?.body).toContain(sentence);
+    expect(v3[0]?.body.replace(` ${sentence}`, "")).toBe(v2[0]?.body);
   });
 
   it("version 2 keeps every section key and carries the 07-O wording (M4.3 review fix 7)", async () => {

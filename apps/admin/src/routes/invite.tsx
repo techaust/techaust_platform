@@ -27,6 +27,10 @@ type Invite = Awaited<ReturnType<typeof api.inviteStart>>;
 type Enrolment = Awaited<ReturnType<typeof api.inviteFinish>>;
 type Step = "details" | "app" | "codes";
 
+/** 07-A §9 (staff enrolment; OPEN, 08-C RB-18: whether a staff member's written consent is needed first): what is kept of the password and the app. */
+const ENROLMENT_NOTICE =
+  "Your password is stored only as a protected hash, and your authenticator secret is encrypted. We use them only to secure your account.";
+
 const STEPS: Record<Step, { n: number; title: string }> = {
   details: { n: 1, title: "Your name and password" },
   app: { n: 2, title: "Add your authenticator app" },
@@ -246,6 +250,7 @@ function DetailsStep(props: { token: string; invite: Invite; onDone: (e: Enrolme
       >
         {phase === "checking" ? "Checking password…" : phase === "hashing" ? "Saving…" : "Continue"}
       </button>
+      <p className="hint hint--foot">{ENROLMENT_NOTICE}</p>
       {ms !== null && (
         <p className="hint hint--foot">
           Password hashing took {ms.toLocaleString("en-IN")} ms on this device.

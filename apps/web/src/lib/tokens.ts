@@ -86,7 +86,7 @@ export const hasTokens = (text: string): boolean => parseTokens(text).some((p) =
 /**
  * Tokens as plain text, in INR (the site's default currency; no switch exists in meta text or link previews):
  * {{price:S1}} → "from ₹40,000 + GST" ("from" once), {{price-plain:S9}} → "₹2,00,000 + GST" (owner, 2026-10-22: INR
- * amounts in meta text carry "+ GST"; VERIFY WITH CA/LEGAL). The words come from the shell copy, as on the pages.
+ * amounts in meta text carry "+ GST"; Researched 2026-10-28, 08-C RA-16). The words come from the shell copy, as on the pages.
  * A terms amount (a threshold) is not a price: no "+ GST".
  */
 export function renderPlain(text: string): string {

@@ -1,5 +1,5 @@
 // Payment schedules [ADM-PROP-03, Q-P3-6, docs/05 §10]: a document total split into instalments that add up exactly.
-// VERIFY WITH CA/LEGAL: instalments are whole rupees for INR when the settings round the total, so a part-payment can
+// Researched 2026-10-28, s.170 CGST Act (08-C RA-14): instalments are whole rupees for INR when the settings round the total, so a part-payment can
 // become a tax invoice for exactly that amount; the last instalment takes the remainder.
 //  - percent steps: each instalment but the last is `total × share` floored to the unit, the last is the rest;
 //  - amount steps: every instalment but the last is typed (a multiple of the unit), the last is the rest, and the

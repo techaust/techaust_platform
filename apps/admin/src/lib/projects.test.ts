@@ -6,6 +6,10 @@ import { describe, expect, it } from "vitest";
 import { type MilestoneView, type ProjectView, RequestError, uploadHeaders } from "../api.ts";
 import { markdownElements } from "../components/markdown.tsx";
 import { lastLiveOfIndividual } from "./clients.ts";
+
+/** The mark a line not yet approved would carry (none should). */
+const PLACEHOLDER_TAG = "[Placeholder]";
+
 import {
   COPY,
   cancelConfirm,
@@ -25,7 +29,6 @@ import {
   NO_PROJECT_DRAFTS,
   needsConfirm,
   PENDING,
-  PLACEHOLDER_TAG,
   precheckFile,
   precheckText,
   projectDrafts,

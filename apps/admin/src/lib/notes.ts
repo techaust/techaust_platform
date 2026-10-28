@@ -2,9 +2,9 @@
 // lists, the deadline banner, the notes section's lines, the error and blocker sentences by API code, the request a dialog sends, and the annual
 // return dates of Settings › Tax. Pure, so the copy and the rules are tested without a browser.
 //
-// Copy: 07-T (docs/07-content-appendix/T-m5.3-credit-debit-notes.md), PENDING the owner's word-for-word approval; every tax and legal line is
-// VERIFY WITH CA/LEGAL. A line 07-T does not have is "[Placeholder]" (`INV_PLACEHOLDER`), never invented; where a line is used in its singular or
-// for the debit note, the place says so (and the run file lists it).
+// Copy: 07-T (docs/07-content-appendix/T-m5.3-credit-debit-notes.md), approved by the lead on 2026-10-28 under the owner's delegation, word for word;
+// the tax lines are Researched 2026-10-28 or OPEN per 08-C (the IDs are noted at each line). A line 07-T lacked is 07-W's (approved 2026-10-28,
+// 07-W §1), never invented; where a line is used in its singular or for the debit note, the place says so.
 //
 // Money: amounts are the server's minor units, formatted through core (`moneyText`); typed amounts are parsed through core (`moneyFrom`). Nothing
 // here adds, multiplies or rounds money: what can still be credited, the totals and the balance are the server's. A typed amount is only COMPARED
@@ -14,8 +14,8 @@ import { CREDIT_REASONS, DEBIT_REASONS } from "@techaust/core/invoices";
 import type { Currency } from "../api.ts";
 import { RequestError } from "../api.ts";
 import { dayText } from "./documents.ts";
-import { fyLabel, INV_PLACEHOLDER } from "./invoice-types.ts";
-import { blockerLine, invErrorText, moneyText } from "./invoices.ts";
+import { fyLabel, INVT_COPY } from "./invoice-types.ts";
+import { blockerLine, invErrorText, moneyText, UNKNOWN } from "./invoices.ts";
 import type {
   CreditableLine,
   CreditDeadlineView,
@@ -27,8 +27,6 @@ import type {
   Take,
 } from "./notes-api.ts";
 import { moneyFrom, moneyInput } from "./settings-form.ts";
-
-export { INV_PLACEHOLDER };
 
 // ---- 07-T §3 to §6, word for word --------------------------------------------------------------------------------------------------------------
 
@@ -50,8 +48,16 @@ export const NOTE_COPY = {
   requestIssue: "Request issue",
   // §4
   annualReturnLabel: "Annual return (GSTR-9) filed on",
-  annualReturnHint: "Once filed, credit notes for that year are blocked.",
-  // §5
+  // Researched 2026-10-28, s.34(2) CGST and Notification 15/2025-CT (08-C RA-03).
+  annualReturnHint:
+    "Only if you file GSTR-9 for that year: it's optional up to ₹2 crore turnover. Once you enter the date, credit notes for that year are blocked.",
+  // §9 (Q35, owner 2026-10-28; Researched 2026-10-28, 08-C RA-22): the tax-only debit note.
+  taxTooLowHint: "Adds only the missing tax. The taxable value stays as invoiced.",
+  taxToAdd: "Tax to add",
+  // §9 (Researched 2026-10-28, 08-C RA-02, RA-04).
+  discountAfterSaleHint:
+    "For a discount agreed after the invoice. Your GST is reduced only once a registered client reverses the matching input tax credit.",
+  // §5 (Researched 2026-10-28, 08-C RA-04; what a rejection means for the balance is OPEN, RA-04)
   imsLabel: "Client's response in IMS",
   imsHint:
     "For a GST-registered client, your GST is reduced only once they accept the credit note in the GST portal's Invoice Management System. Update this from the portal.",
@@ -86,7 +92,7 @@ export const effectLine = (kind: NoteKind, invoiceNumber: string, total: string)
   kind === "credit"
     ? `This credit note reduces the amount due on invoice ${invoiceNumber} by ${total}.`
     : `This debit note increases the amount due on invoice ${invoiceNumber} by ${total}.`;
-/** 07-T §1 (credit) and §8 (debit). VERIFY WITH CA/LEGAL. */
+/** 07-T §1 (credit) and §8 (debit). OPEN (08-C RA-21): which day's rate a note on a USD export uses; the invoice's rate is our default. */
 export const rateLine = (rate: string, invoiceNumber: string) =>
   `Exchange rate: 1 USD = ₹${rate} (the rate of invoice ${invoiceNumber})`;
 /** 07-T §1: "Reason: {reason}". */
@@ -94,45 +100,89 @@ export const reasonLine = (reason: string) => `Reason: ${reason}`;
 /** The label of a note's total (07-T §1). */
 export const totalLabel = (kind: NoteKind) =>
   kind === "credit" ? NOTE_COPY.totalCredited : NOTE_COPY.totalAdded;
+/** 07-T §9: "Up to the difference between the tax due and the tax on invoice {invoice number}." */
+export const taxToAddHint = (invoiceNumber: string) =>
+  `Up to the difference between the tax due and the tax on invoice ${invoiceNumber}.`;
+
 /**
- * The debit note's labels 07-T does not have: the reason field (§3's says "printed on the credit note") and the amount typed on each line. Shown as
- * "[Placeholder]" and "Taxable value" (07-R §6's column word, which is what the amount is) until the owner's lines exist.
+ * The debit note's labels 07-T does not have: the reason field (§3's says "printed on the credit note"), 07-W §1,
+ * and the amount typed on each line, "Taxable value" (07-R §6's column word, which is what the amount is).
  */
-export const DEBIT_REASON_LABEL = INV_PLACEHOLDER;
+export const DEBIT_REASON_LABEL = "Reason (required, printed on the debit note)";
 export const DEBIT_LINE_LABEL = "Taxable value";
 
-// ---- the reasons (07-T §3, §8 Q35; VERIFY WITH CA/LEGAL) --------------------------------------------------------------------------------------
+// ---- the reasons (07-T §3, §9 Q35; Researched 2026-10-28, 08-C RA-02, RA-22) ------------------------------------------------------------------
+
+/** The tax-only debit note's reason (Q35, owner 2026-10-28): taxable value 0, the tax only. */
+export const TAX_TOO_LOW = "tax_charged_too_low";
 
 const REASON_WORDS: Record<string, string> = {
   price_correction: "Price correction",
   service_not_delivered: "Service not delivered",
   service_deficient: "Service deficient",
   discount_after_sale: "Discount after sale",
+  [TAX_TOO_LOW]: "Tax charged too low",
   other: "Other",
 };
 
-/** The reasons a person can pick for this kind, in core's order, with their 07-T words (a code without words keeps the placeholder). */
-export const reasonsOf = (kind: NoteKind): { code: string; label: string }[] =>
-  (kind === "credit" ? CREDIT_REASONS : DEBIT_REASONS).map((code) => ({
-    code,
-    label: REASON_WORDS[code] ?? INV_PLACEHOLDER,
-  }));
+/**
+ * The debit reasons in 07-T §9's order: core's `DEBIT_REASONS` (price correction, tax charged too low, other), the one list the screen and the API share.
+ */
+export const DEBIT_REASON_CODES: readonly string[] = DEBIT_REASONS;
+
+/** The reasons a person can pick for this kind, in core's order, with their 07-T words (a code without words is the gap mark). */
+export const reasonsOf = (
+  kind: NoteKind,
+  /** The invoice's supply: an export under LUT carries no tax, so "Tax charged too low" is not offered on it (07-W 5.11; the server refuses it too). */
+  supplyType?: string | null,
+): { code: string; label: string }[] =>
+  (kind === "credit" ? (CREDIT_REASONS as readonly string[]) : DEBIT_REASON_CODES)
+    .filter((code) => !(code === TAX_TOO_LOW && supplyType === "export_lut"))
+    .map((code) => ({
+      code,
+      label: REASON_WORDS[code] ?? code,
+    }));
+
+/** The hint under the reason (07-T §9): what "Discount after sale" and "Tax charged too low" do; none for the others. */
+export const reasonHint = (code: string): string | undefined =>
+  code === "discount_after_sale"
+    ? NOTE_COPY.discountAfterSaleHint
+    : code === TAX_TOO_LOW
+      ? NOTE_COPY.taxTooLowHint
+      : undefined;
 
 /** A stored reason as the screens print it: "Other" is the words typed for it; any other code is its label. */
 export const reasonText = (r: { code: string; text: string }): string =>
   r.code === "other" && r.text.trim() !== "" ? r.text.trim() : (REASON_WORDS[r.code] ?? r.code);
 
-// ---- the deadline banner (07-T §4; s.34(2), Q32, Q33; VERIFY WITH CA/LEGAL) -----------------------------------------------------------------
+// ---- the deadline banner (07-T §4; s.34(2), Q32, Q33; Researched 2026-10-28, 08-C RA-03; the warning is OPEN, RA-31) ------------------------
 
 export type DeadlineBanner = { tone: "info" | "warning" | "danger"; lines: string[] };
 
 /**
- * What the invoice says about its credit deadline: before it, the date (the last day a credit note may be dated: the cutoff, or the day before the annual
- * return was filed); within 30 days of it, the days left as well; after it, that it has passed (and the credit actions are gone). When the supply's FY is
- * earlier than the invoice's (a payment received or the work completed in the year before), the line that says so.
+ * 07-T §4 "From the first day of the month before the deadline month": the days left lead, then the advice to issue by {advice date} (the server's `adviseIssueBy`, shown as the other dates
+ * of the banner are; one day is said in its singular). Without a date (null) the advice is left out.
  */
-export function deadlineBanner(d: CreditDeadlineView, invoiceFy: string | null): DeadlineBanner {
-  const date = dayText(d.lastDay) ?? d.lastDay;
+export const deadlineWarnLine = (days: number, adviseBy: string | null) => {
+  const left = days === 1 ? "Only 1 day left" : `Only ${days} days left`;
+  return adviseBy !== null
+    ? `${left} for a credit note on this invoice. Issue it by ${dayText(adviseBy) ?? adviseBy} so it goes into a return filed in time.`
+    : `${left} for a credit note on this invoice.`;
+};
+
+/**
+ * What the invoice says about its credit deadline: before it, the date a return must be filed by (`date`: 30 November after the FY, or the day the
+ * annual return was filed); from `deadlineWarnFrom` (the first day of the month before the deadline month, the contract), the days left as well, leading, with the advice to
+ * issue by `adviseIssueBy` (the last day of that month, never after an annual-return filing) until that day has gone (after it, the advice is left out rather than said late); after the deadline, that it has passed (and the credit actions are
+ * gone). An older API without `deadlineWarnFrom` warns within 30 days, as before. When the supply's FY is earlier than the invoice's (a payment received
+ * or the work completed in the year before), the line that says so. `today` is today's IST date (ISO).
+ */
+export function deadlineBanner(
+  d: CreditDeadlineView,
+  invoiceFy: string | null,
+  today: string,
+): DeadlineBanner {
+  const date = dayText(d.date) ?? d.date;
   const lines: string[] = [];
   let tone: DeadlineBanner["tone"] = "info";
   if (d.passed) {
@@ -142,14 +192,13 @@ export function deadlineBanner(d: CreditDeadlineView, invoiceFy: string | null):
     );
   } else {
     lines.push(
-      `Credit notes for this invoice must be issued by ${date} (30 November after its financial year, or earlier if the annual return is filed).`,
+      `A credit note for this invoice must be reported in a GST return filed by ${date} (30 November after its financial year, or the day you file that year's annual return, if earlier).`,
     );
-    if (d.daysLeft !== null && d.daysLeft <= 30) {
+    const warn = d.deadlineWarnFrom ? today >= d.deadlineWarnFrom : d.daysLeft !== null && d.daysLeft <= 30;
+    if (warn && d.daysLeft !== null && d.daysLeft >= 1) {
       tone = "warning";
-      // The days left lead (they are the news), the date follows. 07-T §4 has the plural; one day is said in its singular (run file). On the last day the date says it.
-      if (d.daysLeft >= 2)
-        lines.unshift(`Only ${d.daysLeft} days left to issue a credit note for this invoice.`);
-      else if (d.daysLeft === 1) lines.unshift("Only 1 day left to issue a credit note for this invoice.");
+      const adviseBy = d.adviseIssueBy && today <= d.adviseIssueBy ? d.adviseIssueBy : null;
+      lines.unshift(deadlineWarnLine(d.daysLeft, adviseBy));
     }
   }
   if (invoiceFy !== null && d.supplyFy !== invoiceFy)
@@ -163,7 +212,7 @@ export function deadlineBanner(d: CreditDeadlineView, invoiceFy: string | null):
 
 /**
  * "Balance due: {balance} (after {count} notes)": the invoice's balance as the server holds it, after its credit notes (a debit note is its own
- * payable and does not move the invoice's balance, LD42, so only credit notes are counted). One note is said in the singular (listed in the run file).
+ * payable and does not move the invoice's balance, LD42, so only credit notes are counted). One note is said in the singular.
  */
 export const balanceLine = (balance: string, count: number) =>
   count === 1 ? `Balance due: ${balance} (after 1 note)` : `Balance due: ${balance} (after ${count} notes)`;
@@ -189,7 +238,17 @@ export const NOTE_ERRORS = {
   nothing_to_credit: "Choose at least one line or an amount above zero.",
   ims_not_applicable: "IMS status only applies to credit notes for GST-registered clients.",
   parent_fully_credited: "This invoice has already been credited in full.",
-  debit_parent_fully_credited: "[Placeholder]",
+  debit_parent_fully_credited:
+    "This invoice has been credited in full, so a debit note can't be issued against it. Issue a new invoice instead.",
+  // §9 (Q35; Researched 2026-10-28, 08-C RA-22)
+  debit_tax_only_invalid: 'Enter tax only: the taxable value of a "Tax charged too low" note is zero.',
+  // 07-W 5.9: the tax to add is odd on an intra-state invoice (CGST must equal SGST); `debit_tax_only_invalid` with `details.reason` "odd_amount", and the screen's own check before sending
+  debit_tax_odd_amount: "Enter an even amount: it is split equally between CGST and SGST.",
+  // §9 (Researched 2026-10-28, 08-C RA-02)
+  discount_reason_not_in_force: "A credit note for a discount after sale can be dated from 1 November 2026.",
+  // §9: a note draft whose invoice changed (replaces 07-R's content_changed for a note)
+  content_changed:
+    "Another note was issued on this invoice since this draft was saved. Open the draft and save it again.",
   parent_changed:
     "Another credit or debit note was issued on this invoice a moment ago. Open it again to see what's left.",
   note_lines_derived: "A note's lines come from its invoice and can't be edited directly.",
@@ -199,6 +258,9 @@ export const NOTE_ERRORS = {
   annual_return_future: "The filing date can't be in the future.",
   credit_shape_mismatch: "This credit note doesn't match its invoice any more. Start again from the invoice.",
 } as const;
+
+/** 07-T §9 (Q66): `credit_amount_unfit` when rounding leaves no amount to offer. */
+export const AMOUNT_TOO_SMALL = "This amount is too small to credit after rounding. Enter a larger amount.";
 
 export const exceedsRemaining = (remaining: string) =>
   `That's more than can still be credited on this invoice (${remaining}).`;
@@ -230,6 +292,10 @@ export function noteErrorText(e: unknown, kind: NoteKind, currency: Currency): s
         return left ? exceedsRemaining(left) : e.message;
       case "line_credit_exceeds":
         return left && typeof e.extra.line === "number" ? lineExceeds(e.extra.line + 1, left) : e.message;
+      case "debit_tax_only_invalid":
+        return e.extra.reason === "odd_amount"
+          ? NOTE_ERRORS.debit_tax_odd_amount
+          : NOTE_ERRORS.debit_tax_only_invalid;
       case "note_draft_exists":
         return noteDraftExists(kind);
       case "notes_limit":
@@ -237,7 +303,7 @@ export function noteErrorText(e: unknown, kind: NoteKind, currency: Currency): s
       case "credit_amount_unfit":
         return typeof e.extra.closestMinor === "number"
           ? amountUnfit(moneyText(e.extra.closestMinor, currency))
-          : e.message;
+          : AMOUNT_TOO_SMALL;
     }
     if (Object.hasOwn(NOTE_ERRORS, e.code)) return (NOTE_ERRORS as Record<string, string>)[e.code] as string;
   }
@@ -261,12 +327,16 @@ export function noteBlockerLine(b: NoteBlockerIn, kind: NoteKind, currency: Curr
     case "credit_deadline_passed":
     case "note_reason_required":
       return NOTE_ERRORS[b.code];
+    case "debit_tax_only_invalid":
+    case "discount_reason_not_in_force":
+      return NOTE_ERRORS[b.code];
     case "credit_exceeds_remaining":
-      return b.remaining !== undefined ? exceedsRemaining(moneyText(b.remaining, currency)) : INV_PLACEHOLDER;
+      // An answer without the figure keeps 07-T's sentence with "…" for it (UNKNOWN), as the other blockers do.
+      return exceedsRemaining(b.remaining !== undefined ? moneyText(b.remaining, currency) : UNKNOWN);
     case "line_credit_exceeds":
-      return b.remaining !== undefined && b.line !== undefined
-        ? lineExceeds(b.line + 1, moneyText(b.remaining, currency))
-        : INV_PLACEHOLDER;
+      return b.line !== undefined
+        ? lineExceeds(b.line + 1, b.remaining !== undefined ? moneyText(b.remaining, currency) : UNKNOWN)
+        : exceedsRemaining(b.remaining !== undefined ? moneyText(b.remaining, currency) : UNKNOWN);
     case "notes_limit":
       return notesLimit(kind);
     default:
@@ -283,6 +353,8 @@ export type NoteForm = {
   amount: string;
   reasonCode: string;
   reasonText: string;
+  /** "Tax charged too low" (a debit note): the tax to add, as typed. */
+  tax: string;
 };
 
 export const emptyNoteForm = (): NoteForm => ({
@@ -291,12 +363,18 @@ export const emptyNoteForm = (): NoteForm => ({
   amount: "",
   reasonCode: "",
   reasonText: "",
+  tax: "",
 });
+
+/** A debit note that adds only tax (07-T §9): no lines are asked, the tax to add is. */
+export const isTaxOnly = (kind: NoteKind, reasonCode: string) =>
+  kind === "debit" && reasonCode === TAX_TOO_LOW;
 
 /** A stored request as the dialog shows it again (a draft opened later). */
 export function noteFormOf(n: NoteOfView, currency: Currency): NoteForm {
   const lines: Record<number, string> = {};
-  if (n.request.mode === "lines")
+  // A tax-only debit note's takes are taxable 0 on every taxed line: nothing to show in the (hidden) line fields.
+  if (n.request.mode === "lines" && n.request.taxMinor === undefined)
     for (const t of n.request.takes) lines[t.line] = moneyInput(t.taxableMinor, currency);
   return {
     mode: n.request.mode,
@@ -304,10 +382,11 @@ export function noteFormOf(n: NoteOfView, currency: Currency): NoteForm {
     amount: n.request.grossMinor !== undefined ? moneyInput(n.request.grossMinor, currency) : "",
     reasonCode: n.reason.code,
     reasonText: n.reason.text,
+    tax: n.request.taxMinor !== undefined ? moneyInput(n.request.taxMinor, currency) : "",
   };
 }
 
-/** Field keys of the dialog's errors: `line-{index}`, `lines`, `amount`, `reason`, `reasonText`. */
+/** Field keys of the dialog's errors: `line-{index}`, `lines`, `amount`, `tax`, `reason`, `reasonText`. */
 export type NoteFormErrors = Partial<Record<string, string>>;
 
 /**
@@ -322,13 +401,23 @@ export function buildNoteFields(
     /** The invoice's lines: a credit note's with what is left, a debit note's (anything can be added). */
     lines: readonly Pick<CreditableLine, "line" | "position" | "taxableLeftMinor">[];
     totalLeftMinor: number | null;
+    /** The invoice's supply: on an intra-state one the tax to add is split equally between CGST and SGST, so an odd amount is refused here (07-W 5.9). */
+    supplyType?: string | null | undefined;
   },
 ): { ok: true; fields: NoteFieldsIn } | { ok: false; errors: NoteFormErrors } {
   const errors: NoteFormErrors = {};
   const mode: NoteMode = kind === "debit" ? "lines" : f.mode;
   const takes: Take[] = [];
   let grossMinor: number | undefined;
-  if (mode === "lines") {
+  let taxAmountMinor: number | undefined;
+  if (isTaxOnly(kind, f.reasonCode)) {
+    // 07-T §9: the tax to add, above zero (07-S §8's "Enter an amount above zero."); no lines (the taxable value is 0, contract).
+    const m = moneyFrom(f.tax, ctx.currency);
+    if (f.tax.trim() === "" || (m.ok && m.minor === 0)) errors.tax = INVT_COPY.amountZero;
+    else if (!m.ok) errors.tax = m.error;
+    else if (ctx.supplyType === "intra" && m.minor % 2 !== 0) errors.tax = NOTE_ERRORS.debit_tax_odd_amount;
+    else taxAmountMinor = m.minor;
+  } else if (mode === "lines") {
     for (const l of ctx.lines) {
       const typed = (f.lines[l.line] ?? "").trim();
       if (typed === "") continue;
@@ -362,8 +451,10 @@ export function buildNoteFields(
     ok: true,
     fields: {
       mode,
-      ...(mode === "lines" ? { lines: takes } : {}),
+      // a tax-only debit note sends no `lines` at all (the API refuses an empty list or lines with the tax)
+      ...(mode === "lines" && taxAmountMinor === undefined ? { lines: takes } : {}),
       ...(grossMinor !== undefined ? { grossMinor } : {}),
+      ...(taxAmountMinor !== undefined ? { taxAmountMinor } : {}),
       reasonCode: f.reasonCode,
       // only "Other" is described in words (07-T §3); the words of an earlier "Other" are not sent with another reason
       ...(f.reasonCode === "other" && text !== "" ? { reasonText: text } : {}),
@@ -374,11 +465,11 @@ export function buildNoteFields(
 /** The order the dialog's errors are focused in (the first one takes the cursor). */
 export function firstErrorKey(errors: NoteFormErrors, lines: readonly { line: number }[]): string | null {
   for (const l of lines) if (errors[`line-${l.line}`]) return `line-${l.line}`;
-  for (const k of ["lines", "amount", "reason", "reasonText"]) if (errors[k]) return k;
+  for (const k of ["lines", "amount", "tax", "reason", "reasonText"]) if (errors[k]) return k;
   return null;
 }
 
-// ---- Settings › Tax: the annual return of each FY (07-T §4, §8; Q33; VERIFY WITH CA/LEGAL) ----------------------------------------------------
+// ---- Settings › Tax: the annual return of each FY (07-T §4, §8; Q33; Researched 2026-10-28, 08-C RA-03) --------------------------------------
 
 export const ANNUAL_RETURN_ERRORS = {
   fy: "Enter the financial year.",

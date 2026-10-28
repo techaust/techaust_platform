@@ -1,4 +1,4 @@
-// The monthly EDF working list [ADM-REP-07; VERIFY WITH CA/LEGAL]: the month and its due date, which documents are listed, and
+// The monthly EDF working list [ADM-REP-07; Researched 2026-10-28, FEMA 23(R)/2026-RB Reg. 3(2) (08-C RB-03)]: the month and its due date, which documents are listed, and
 // the row contents. Error codes are in failures.test.ts.
 import { describe, expect, it } from "vitest";
 import { DEFAULT_REALISATION_RULES, edfCsv, edfMonth, edfRows } from "../../src/gst/index.ts";

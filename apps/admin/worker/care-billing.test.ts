@@ -13,7 +13,14 @@ import { beforeBatch, insert, mkClient, mkContact } from "./test-clients.ts";
 import { call, one, rows, sessionFor, withDb, withEnv } from "./test-helpers.ts";
 import { COMPANY_GSTIN, farSession, json, putBank, putCompany } from "./test-invoices.ts";
 
-/** The words of the lines as 07-U will have them (the default is a marked placeholder that the automatic issue refuses). */
+/** Words that carry a marked placeholder, to prove the issue guards still refuse such a line (a safety net, not copy). */
+const MARKED: CareLineWords = {
+  plan: (tier, p) => `[Placeholder] Care plan ${tier}, ${p.start} to ${p.end}`,
+  aiOps: (p) => `[Placeholder] AI Ops, ${p.start} to ${p.end}`,
+  overage: (p) => `[Placeholder] Extra hours, ${p.start} to ${p.end}`,
+};
+
+/** Plain test words (the real default is 07-U §6's, tested on its own). */
 const WORDS: CareLineWords = {
   plan: (tier, p) => `Care plan ${tier}, ${p.start} to ${p.end}`,
   aiOps: (p) => `AI Ops, ${p.start} to ${p.end}`,
@@ -306,7 +313,7 @@ describe("draftCarePlan: one draft per plan and period [ADM-CARE-02, LD59]", () 
         w.owner.id,
       ),
     ).toEqual([{ kind: "care.missed_period" }]);
-    // 07-U §7 (Q51): the client and the OLDEST unbilled period, in a marked placeholder
+    // 07-U §7 (Q51): the client and the OLDEST unbilled period,
     const client = await one<{ display_name: string }>(
       "SELECT display_name FROM clients WHERE id = ?",
       w.clientId,
@@ -320,7 +327,7 @@ describe("draftCarePlan: one draft per plan and period [ADM-CARE-02, LD59]", () 
         )
       )?.title,
     ).toBe(
-      `[Placeholder, 07-U] ${client?.display_name}'s care plan has an unbilled period (05 Oct 2026 to 04 Nov 2026). Invoice it by hand.`,
+      `${client?.display_name}'s care plan has an unbilled period (05 Oct 2026 to 04 Nov 2026). Invoice it by hand.`,
     );
   });
 
@@ -341,9 +348,7 @@ describe("draftCarePlan: one draft per plan and period [ADM-CARE-02, LD59]", () 
           w.owner.id,
         )
       )?.title,
-    ).toBe(
-      `[Placeholder, 07-U] Care invoice draft for ${client?.display_name} needs the exchange rate before it can be issued.`,
-    );
+    ).toBe(`Care invoice draft for ${client?.display_name} needs the exchange rate before it can be issued.`);
   });
 
   it("the previous period's overage is a line in hours at its rate, and the draft is never issued by itself", async () => {
@@ -396,9 +401,7 @@ describe("draftCarePlan: one draft per plan and period [ADM-CARE-02, LD59]", () 
           w.owner.id,
         )
       )?.title,
-    ).toBe(
-      `[Placeholder, 07-U] Care invoice draft for ${client?.display_name} (05 Nov 2026 to 04 Dec 2026) is ready to check.`,
-    );
+    ).toBe(`Care invoice draft for ${client?.display_name} (05 Nov 2026 to 04 Dec 2026) is ready to check.`);
   });
 });
 
@@ -463,7 +466,7 @@ describe("issueCareDraft: the system issues only what the Owner authorised [LD58
     );
     expect(bell?.title).toMatch(
       new RegExp(
-        `^\\[Placeholder, 07-U\\] Care invoice ${(r.number as string).replace(/[/]/g, "\\/")} for .+ was issued and emailed\\.$`,
+        `^Care invoice ${(r.number as string).replace(/[/]/g, "\\/")} for .+ was issued and emailed\\.$`,
       ),
     );
     expect(q.sent).toEqual([{ v: 1, kind: "pdf.snapshot", documentId: d.documentId, reason: "send" }]);
@@ -681,22 +684,32 @@ describe("issueCareDraft: the system issues only what the Owner authorised [LD58
     );
   });
 
-  it("the default words are a marked placeholder: the draft is made but never issued by the system until 07-U's text exists", async () => {
+  it("the default words are 07-U §6's, with no placeholder mark: the draft is eligible and the system issues it (an Owner switched it on)", async () => {
     const w = await world();
     clock(at("2026-11-05"));
     const r = await draftCarePlan(env, { planId: w.planId });
-    expect(r).toMatchObject({ result: "drafted", autoEligible: false, reasons: ["blockers"] });
+    expect(r).toMatchObject({ result: "drafted", autoEligible: true, reasons: [] });
     const [line] = await rows<{ description: string }>(
       "SELECT description FROM document_lines WHERE document_id = ?",
       r.documentId,
     );
-    expect(line?.description).toContain(
-      CARE_LINE_WORDS.plan("Growth", { start: "2026-11-05", end: "2026-12-04" }).slice(0, 25),
+    expect(line?.description).toBe(
+      CARE_LINE_WORDS.plan("Growth", { start: "2026-11-05", end: "2026-12-04" }),
     );
+    expect(line?.description).toBe("Growth care plan, 05 Nov 2026 to 04 Dec 2026");
+    expect((await issueCareDraft(pdfQueue().env, { documentId: r.documentId as string })).result).toBe(
+      "issued",
+    );
+  });
+
+  it("the guard that refuses a line carrying '[Placeholder' stays (a safety net, not copy): the Owner's own issue is 409 line_text_placeholder", async () => {
+    const w = await world();
+    clock(at("2026-11-05"));
+    const r = await draftCarePlan(env, { planId: w.planId }, { words: MARKED });
+    expect(r).toMatchObject({ result: "drafted", autoEligible: false, reasons: ["blockers"] });
     expect((await issueCareDraft(pdfQueue().env, { documentId: r.documentId as string })).result).toBe(
       "refused",
     );
-    // by hand too (early check finding 4): the Owner's own issue is refused while a line says [Placeholder
     const row = await one<{ updated_at: number; content_sha256: string }>(
       "SELECT updated_at, content_sha256 FROM documents WHERE id = ?",
       r.documentId,
@@ -963,6 +976,19 @@ describe("GET /care-plans/:id billing [M5.4 API gaps, Q3]", () => {
     });
   });
 
+  it("a period due and unbilled: today before the 06:00 IST scan, tomorrow once the scan's hour has begun (review 2026-10-28, finding 11)", async () => {
+    const w = await world();
+    clock(at("2026-11-05", "05:59:59.000"));
+    expect((await plan(w.planId)).billing.nextBillingDay).toBe("2026-11-05");
+    clock(at("2026-11-05", "06:00:00.000"));
+    expect((await plan(w.planId)).billing.nextBillingDay).toBe("2026-11-06");
+    clock(at("2026-11-05", "23:30:00.000"));
+    expect((await plan(w.planId)).billing.nextBillingDay).toBe("2026-11-06");
+    // the next morning, before the scan, the catch-up is today
+    clock(at("2026-11-06", "01:00:00.000"));
+    expect((await plan(w.planId)).billing.nextBillingDay).toBe("2026-11-06");
+  });
+
   it("after the job drafted the period: the last period, the next period's first day, the draft and the Owner's choices (blockers not judged); issued, the draft has a number and no auto", async () => {
     const w = await world();
     clock(at("2026-11-05"));
@@ -1114,12 +1140,12 @@ describe("the entrypoint [LD57]", () => {
       ctx,
       withEnv(env, { PDF_QUEUE: { send: async () => undefined, sendBatch: async () => undefined } }),
     );
-    // the entrypoint's default words are the 07-U placeholder, so the draft is made and is not eligible
+    // the entrypoint's default words are 07-U §6's (no placeholder), so the draft is made and is eligible: the system issues it
     const r = await jobs.draftCarePlan({ planId: w.planId });
-    expect(r).toMatchObject({ result: "drafted", autoEligible: false });
+    expect(r).toMatchObject({ result: "drafted", autoEligible: true });
     expect(await jobs.draftCarePlan({ planId: w.planId })).toMatchObject({ result: "already_billed" });
     expect(await jobs.issueCareDraft({ documentId: r.documentId as string })).toMatchObject({
-      result: "refused",
+      result: "issued",
     });
     await expect(jobs.draftCarePlan({ planId: "" })).rejects.toThrow(TypeError);
     await expect(jobs.issueCareDraft({ documentId: undefined as unknown as string })).rejects.toThrow(

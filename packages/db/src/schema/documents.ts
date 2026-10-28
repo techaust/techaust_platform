@@ -1,5 +1,5 @@
 // Commercial documents (docs/05 §5.2–5.4): one table for every type. Issued (frozen) documents are protected
-// by triggers in the hand-written migration (see migrations/*_triggers.sql). VERIFY WITH CA/LEGAL throughout.
+// by triggers in the hand-written migration (see migrations/*_triggers.sql). Researched 2026-10-28, rule by rule in 08-C section 1 throughout.
 import type { Series } from "@techaust/core";
 import type { ComputedDocument } from "@techaust/core/tax";
 import { sql } from "drizzle-orm";
@@ -82,7 +82,7 @@ export type RecipientSnapshot = {
   contactName?: string;
   clientType?: "business" | "individual";
   gstStatus?: "registered" | "unregistered" | "overseas";
-  /** M5.2 (LD36): the client's service address when it has one: Rule 46(o), the export invoice's "address of delivery" (VERIFY WITH CA/LEGAL). */
+  /** M5.2 (LD36): the client's service address when it has one: Rule 46(o), the export invoice's "address of delivery" (Researched 2026-10-28, s.2(6) IGST Act, Rule 46 (08-C RA-18)). */
   deliveryAddress?: Address;
 };
 
@@ -111,7 +111,7 @@ export type InvoiceBankBlock = {
   branch: string | null;
 };
 
-/** The USD account of a USD invoice's SWIFT block (M5.2, LD30), frozen with the invoice. `purposeCode` is the RBI purpose code (VERIFY WITH CA/LEGAL). */
+/** The USD account of a USD invoice's SWIFT block (M5.2, LD30), frozen with the invoice. `purposeCode` is the RBI purpose code (OPEN (08-C RB-06): which RBI purpose code fits our exports? the bank confirms it). */
 export type InvoiceSwiftBlock = {
   accountName: string;
   accountNo: string;
@@ -133,7 +133,9 @@ export type InvoiceIssuerSnapshot = {
   /** `swift` (M5.2) exists only on a USD document that has one: an M5.1 snapshot has no such key and still parses. */
   bank: { inr: InvoiceBankBlock | null; swift?: InvoiceSwiftBlock | null };
   signature: { key: string; sha256: string; mime: string } | null;
-  /** The Rule 46(p) statement printed on the invoice (Settings > Tax at issue), frozen and sealed so a later settings change never changes it (VERIFY WITH CA/LEGAL). */
+  /** Present (false) only when the Owner had switched the checklist's "Authorised signatory" off at issue: the PDF leaves the whole signature block out (07-W 5.6; Researched 2026-10-28, Rule 46 CGST Rules (08-C RA-06)). Absent on every earlier snapshot, so earlier seals are unchanged. */
+  signatory?: false;
+  /** The Rule 46(p) statement printed on the invoice (Settings > Tax at issue), frozen and sealed so a later settings change never changes it (Researched 2026-10-28, Rules 46(p), 50 and 51 CGST Rules (08-C RA-26)). */
   reverseChargeText: string;
   sender: IssuerSnapshot["sender"];
 };
@@ -167,6 +169,11 @@ export const documents = sqliteTable(
     fxRateMicros: integer("fx_rate_micros"),
     fxDate: text("fx_date"),
     fxSource: text("fx_source"),
+    /**
+     * Q24 (owner 2026-10-28, 08-C RA-21): the DAY the Owner's statement "no reference rate was published that day" covers (an ISO date; null: not stated). It is the day of supply the statement
+     * was made for (a draft: the IST day of the save; a payment received: the day it arrived) and counts only at an issue on that same day. Frozen with the rate.
+     */
+    fxNoRateDay: text("fx_no_rate_day"),
     subtotalMinor: integer("subtotal_minor").notNull().default(0),
     discountMinor: integer("discount_minor").notNull().default(0),
     taxableMinor: integer("taxable_minor").notNull().default(0),
@@ -228,7 +235,7 @@ export const documents = sqliteTable(
      */
     headerExtras: text("header_extras"),
     /**
-     * M5.3 (LD46, Q14; VERIFY WITH CA/LEGAL): the client's response to a credit note in the GST portal's Invoice Management System: NULL (not a credit note, or
+     * M5.3 (LD46, Q14; Researched 2026-10-28, s.34(2) CGST Act (08-C RA-03)): the client's response to a credit note in the GST portal's Invoice Management System: NULL (not a credit note, or
      * not frozen yet), `pending`, `accepted`, `rejected` or `not_applicable`. NO schema CHECK (a table CHECK would make drizzle-kit rebuild `documents`, which
      * other tables reference): the values are enforced by the triggers of migration 0042. Mutable after the freeze, through `POST /invoices/:id/ims-status` only.
      */
@@ -319,7 +326,7 @@ export const documents = sqliteTable(
 );
 
 /**
- * Tax invoices made from a proforma for money received (M5.2, LD22, Q9, G-6; VERIFY WITH CA/LEGAL): one row per `advance-invoice` action,
+ * Tax invoices made from a proforma for money received (M5.2, LD22, Q9, G-6; Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17)): one row per `advance-invoice` action,
  * append-only (trigger). `(proforma_id, reference_norm)` is the idempotency key: the same payment reference twice is refused; M6 takes these
  * rows into `payments`. The reference text itself is never stored, only its normal form.
  */
@@ -360,6 +367,17 @@ export const advanceReceipts = sqliteTable(
 
 /** What a statement PDF prints about the supplier: the company block as it was when the PDF was requested (no bank, no sender). */
 export type StatementIssuer = { company: IssuerSnapshot["company"] };
+
+/**
+ * The claim that keeps a request for a stored PDF from being queued twice in a short time (review 2026-10-28, finding 8): one row per `<kind>:<document id>` (today `supplier:`, the
+ * DUPLICATE FOR SUPPLIER copy), whose `asked_at` is when it was last asked for. The admin API moves it forward only when the last ask is older than 5 minutes (one statement,
+ * `changes` says who won), so repeated or parallel downloads of a copy that is not made yet put ONE message on the queue. A throttle, not a record: no triggers, no foreign key
+ * (the id is a plain string), nothing personal in it.
+ */
+export const pdfAsks = sqliteTable("pdf_asks", {
+  key: text("key").primaryKey(),
+  askedAt: integer("asked_at").notNull(),
+});
 
 /**
  * The PDF of one client's statement of account for one currency and range (M5.5b, LD79, JOB-PDF-01, Q19, Q57): a CACHE, not a record. A row is made by

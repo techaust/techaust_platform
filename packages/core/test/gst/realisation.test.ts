@@ -1,4 +1,4 @@
-// Realisation dates and stages [ADM-REP-07, docs/08-A §8; VERIFY WITH CA/LEGAL]: FEMA 9 months (12 in INR), GST 12 months plus
+// Realisation dates and stages [ADM-REP-07, docs/08-A §8; Researched 2026-10-28, FEMA 23(R)/2026-RB Reg. 5(1) (08-C RB-01)]: FEMA 9 months (12 in INR), GST 12 months plus
 // 15 days, both "last allowed day"; boundaries day by day, month-end clamping, extensions, and the ordering properties.
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";

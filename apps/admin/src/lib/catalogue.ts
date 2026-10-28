@@ -85,7 +85,7 @@ export const COPY = {
   listIntro:
     "Your services, their prices and what each one includes. Proposals and estimates start from these, and the website shows the ones marked for it.",
   nothingMatches: "Try fewer filters, or search for the start of a service code or name.",
-  sacHint: "The six-digit service code printed on invoices. VERIFY WITH CA.",
+  sacHint: "The six-digit service code printed on invoices.",
   gstHint: "Leave empty to use the rate in Settings › Tax.",
   fromHint: "The starting price shown on the website. Leave a currency empty if you don't offer it there.",
   linesHint:
@@ -153,8 +153,6 @@ export const TOASTS = {
 export const FORMATTING_HINT = "You can use **bold**, *italic*, lists and links.";
 
 // ---- lines 07-L lacked, approved word for word in 07-Q (2026-10-26) --------------------------------------------------
-
-export const PLACEHOLDER_TAG = "[Placeholder]";
 
 export const PENDING = {
   emptyTitle: "No services yet",

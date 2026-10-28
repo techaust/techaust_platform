@@ -1,5 +1,5 @@
 // Return periods and calendar-month arithmetic (M5.5a; ADM-REP-04). Integer maths only, IST calendar dates, no
-// calendar object (so no time zone and no clock). VERIFY WITH CA/LEGAL: a quarter is the QRMP quarter of the financial year.
+// calendar object (so no time zone and no clock). Researched 2026-10-28, GSTN advisories of June 2025 (08-C RA-23): a quarter is the QRMP quarter of the financial year.
 import type { CalendarDate } from "../dates.ts";
 import { compareDates, fail, type GstPeriod, type GstResult, isIntBetween, issue, ok } from "./types.ts";
 
@@ -18,7 +18,7 @@ export function lastDayOfMonth(year: number, month: number): number {
 
 /**
  * `date` plus whole months, with the day clamped to the end of the target month (31 May + 9 months = 28 or 29 February;
- * 29 February + 12 months = 28 February). VERIFY WITH CA/LEGAL for the "last allowed day" reading of the due dates.
+ * 29 February + 12 months = 28 February). Researched 2026-10-28, GSTN advisories of June 2025 (08-C RA-23) for the "last allowed day" reading of the due dates.
  */
 export function addMonthsClamped(date: CalendarDate, months: number): CalendarDate {
   if (!Number.isSafeInteger(months)) throw new RangeError(`Months must be an integer: ${months}`);

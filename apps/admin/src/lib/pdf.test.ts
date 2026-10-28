@@ -81,7 +81,7 @@ describe("the wording (07-P §3, §4)", () => {
     expect(PDF_COPY.done).toBe("The PDF is already made.");
     expect(SIGNATURE_COPY).toEqual({
       heading: "Signature",
-      hint: 'Printed on tax invoices above "Authorised signatory". PNG or JPEG, up to 256 KB.',
+      hint: `Optional. Invoices you send electronically don't need a signature (GST Rule 46). If you add one, it prints above "Authorised signatory".`,
       upload: "Upload signature",
       replace: "Replace",
       remove: "Remove",

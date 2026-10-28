@@ -1,4 +1,4 @@
-// GSTR-1 Table 13 by interface [ADM-REP-04; VERIFY WITH CA/LEGAL]: the nature-of-document text, the order of the rows, and what
+// GSTR-1 Table 13 by interface [ADM-REP-04; OPEN (08-C RA-10): may a tax invoice issued in error and never delivered be shown as cancelled in GSTR-1 Table 13 with no credit note?]: the nature-of-document text, the order of the rows, and what
 // is checked. Error codes are in failures.test.ts.
 import { describe, expect, it } from "vitest";
 import { type DocsIssuedInput, docsRows, NATURE_OF_DOCUMENT } from "../../src/gst/index.ts";

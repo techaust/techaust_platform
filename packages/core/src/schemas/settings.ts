@@ -1,5 +1,5 @@
 // Settings documents (docs/05 §5.2 `settings`) with the researched defaults from docs/08 §7.1 and docs/04
-// ADM-SET-*. VERIFY WITH CA/LEGAL: every tax and legal rule here is a default the Owner can change, never
+// ADM-SET-*. Researched 2026-10-28, rule by rule in 08-C: every tax and legal rule here is a default the Owner can change, never
 // settled advice. Company identity (legal name, GSTIN, address) and bank details are entered by the Owner in
 // the admin (M3.1) and are never committed: this repository is public.
 //
@@ -70,7 +70,7 @@ const stateCode = z.enum(Object.keys(STATE_CODES) as [StateCode, ...StateCode[]]
  * ADM-SET-01 (M4.4): the authorised signatory's signature image, uploaded by the owner. The image lives in the `DOCS` bucket under a key
  * made from its SHA-256, so a replacement never changes the file an earlier document used. Only the signature routes write this field
  * (the generic company form can neither set nor clear it). A stored company row from before M4.4 has no such key and reads as null.
- * It is printed only on invoices (from M5.2); VERIFY WITH CA/LEGAL that a signature image is wanted at all.
+ * It is printed only on invoices (from M5.2); Researched 2026-10-28, Rule 46(q) proviso CGST Rules (08-C RA-06) that a signature image is wanted at all.
  */
 export const SIGNATURE_MIMES = ["image/png", "image/jpeg"] as const;
 export const SIGNATURE_MAX_BYTES = 256 * 1024;
@@ -119,8 +119,8 @@ const isoDate = z.string().check(
 
 /**
  * ADM-SET-03, ADM-INV-18 (M5.2): one letter of undertaking per financial year. `fy` is the token ("2627": two consecutive years), `arn` the number from
- * the GST portal (spaces dropped, upper case; its format is NOT VERIFIED, so only a safe 1 to 30 characters of letters and digits is checked),
- * `filedOn` the day it was filed (optional). VERIFY WITH CA/LEGAL.
+ * the GST portal (spaces dropped, upper case; only a safe 1 to 30 characters of letters and digits is checked),
+ * `filedOn` the day it was filed (optional). Researched 2026-10-28, Rule 96A CGST Rules (08-C RA-19: one LUT per FY). OPEN (08-C RA-19): the ARN's format, so only 1 to 30 letters and digits are checked.
  */
 export const lutEntry = z.strictObject({
   fy: z.string().check(
@@ -137,7 +137,7 @@ export const lutEntry = z.strictObject({
 });
 
 /**
- * G-11, Q33 (M5.3; VERIFY WITH CA/LEGAL): the day the annual return (GSTR-9) of a financial year was filed. Once it is, credit notes for that year's supplies are
+ * G-11, Q33 (M5.3; Researched 2026-10-28, s.34(2) CGST Act (08-C RA-03)): the day the annual return (GSTR-9) of a financial year was filed. Once it is, credit notes for that year's supplies are
  * refused from that day (s.34(2): "or the date of furnishing the annual return, whichever is earlier"). `fy` is the token ("2627", the lutEntry rule), `filedOn` an
  * ISO date on or after 1 April after that FY ends. A day after today is refused by the route (`annual_return_future`), never here: this schema has no clock.
  */
@@ -167,6 +167,8 @@ export const annualReturnEntry = z
 export const invoiceChecklistSettings = z.strictObject({
   bankDetails: z.boolean(),
   paymentLink: z.literal(false),
+  /** A house rule (07-S §3); absent is on. */
+  signatory: z.optional(z.boolean()),
 });
 
 export const taxSettings = z.object({
@@ -216,7 +218,7 @@ export const taxSettings = z.object({
   ),
   /** ADM-INV-06, Q10 (M5.2, LD31): the switchable lines of the mandatory-field checklist. */
   invoiceChecklist: invoiceChecklistSettings,
-  /** Q24 (M5.2; VERIFY WITH CA/LEGAL, Rule 34(2)): how many days before the invoice date the exchange rate's own date may be (0 = the same day only). */
+  /** Q24 (M5.2; Researched 2026-10-28, Rule 34(2) CGST Rules (08-C RA-21), Rule 34(2)): how many days before the invoice date the exchange rate's own date may be (0 = the same day only). */
   fxMaxAgeDays: intBetween(0, 7),
   /** G-6: Proforma → automatic Tax Invoice on payment; alternatives selectable. */
   advanceMode: z.enum(["proforma", "invoice_upfront", "receipt_voucher"]),
@@ -254,13 +256,13 @@ export const taxSettings = z.object({
   /** G-12: export realisation warnings (FEMA). */
   realisation: z.object({
     warnMonths: intBetween(1, 1200),
-    /** Q15 (M5.5b; VERIFY WITH CA/LEGAL, FEMA 2026): months to realise an export invoice in INR; a stored row without it reads 12. */
+    /** Q15 (M5.5b; Researched 2026-10-28, FEMA 23(R)/2026-RB Reg. 5(1) (08-C RB-01), FEMA 2026): months to realise an export invoice in INR; a stored row without it reads 12. */
     inrMonths: z.prefault(intBetween(1, 120), 12),
     escalateMonths: intBetween(1, 1200),
     escalateExtraDays: intBetween(0, 36_500),
   }),
   /**
-   * Q18 (M5.5b; VERIFY WITH CA/LEGAL, Notification 12/2024): an inter-state invoice to an unregistered client above this INR amount
+   * Q18 (M5.5b; Researched 2026-10-28, Rule 59(4) CGST Rules, Notification 12/2024-CT (08-C RA-13), Notification 12/2024): an inter-state invoice to an unregistered client above this INR amount
    * (strictly more) is reported as B2CL in GSTR-1; at or below it, as B2CS. A stored row without it reads Rs 1,00,000.00; zero is refused.
    */
   b2clThresholdInrMinor: z.prefault(intBetween(1), 1_00_000_00),
@@ -269,7 +271,7 @@ export const taxSettings = z.object({
 });
 
 /**
- * M5.2 (analyst, early check 3; VERIFY WITH CA/LEGAL): folds the deprecated single `lut` of M3 into the `luts` list and clears it, unless its FY is
+ * M5.2 (analyst, early check 3; Researched 2026-10-28, Rule 96A CGST Rules (08-C RA-19)): folds the deprecated single `lut` of M3 into the `luts` list and clears it, unless its FY is
  * already listed (then the list entry wins and the legacy value is dropped). Applied when the `tax` row is read for a screen and when it is saved, so a
  * letter the owner deletes from the list can never come back from the old key, and a letter that was only ever in the old key is never lost, unless
  * it could not be a list entry at all. The old ARN is normalised like a list entry's (spaces dropped, upper case); one the list would still refuse is
@@ -334,14 +336,26 @@ export const paymentTermsSettings = z
     }),
   );
 
+/**
+ * The least each retention figure may be (months, but years for `financialYears`): the one place the floors live. The schema takes them as its minimums, and `resolveSetting` raises a stored
+ * row that is below one to it, so a row saved before a floor existed (the email log was 1 month) reads at the floor instead of failing.
+ */
+export const RETENTION_FLOORS = {
+  leadsMonths: 12,
+  emailLogMonths: 12,
+  securityLogMonths: 13,
+  financialYears: 8,
+} as const;
+
 export const retentionSettings = z.strictObject({
   /** ADM-SET-09: unconverted leads; never below the 1-year minimum (DPDP Rule 8(3)). */
-  leadsMonths: intBetween(12),
-  emailLogMonths: intBetween(1),
+  leadsMonths: intBetween(RETENTION_FLOORS.leadsMonths),
+  /** At least 12 months: the logs of processing personal data are kept for one year (DPDP Rule 8(3), from 13 May 2027; Researched 2026-10-28, 08-C RB-09). A stored row below it reads as 12 (`resolveSetting`). */
+  emailLogMonths: intBetween(RETENTION_FLOORS.emailLogMonths),
   /** ≥ 13 months (DPDP Rule 6: 1 year; CERT-In: 180 days). */
-  securityLogMonths: intBetween(13),
+  securityLogMonths: intBetween(RETENTION_FLOORS.securityLogMonths),
   /** Financial records and the audit log: 10 years by default, never below 8 (s.36). */
-  financialYears: intBetween(8),
+  financialYears: intBetween(RETENTION_FLOORS.financialYears),
 });
 
 export const flagSettings = z.object({
@@ -427,7 +441,19 @@ export type SettingsGroup = (typeof SETTINGS_GROUPS)[number];
  * Throws if the merged value is invalid (a corrupted row), which the caller turns into a 500, never a silent default.
  */
 export function resolveSetting<K extends SeededSettingKey>(key: K, stored: unknown): Settings[K] {
-  return READ_SCHEMAS[key].parse(mergeDefaults(SETTINGS_DEFAULTS[key], stored ?? undefined)) as Settings[K];
+  const merged = mergeDefaults(SETTINGS_DEFAULTS[key], stored ?? undefined);
+  return READ_SCHEMAS[key].parse(key === "retention" ? floorRetention(merged) : merged) as Settings[K];
+}
+
+/**
+ * A retention row with the email-log figure raised to its floor of 12 months (08-C RB-09): the floor is new, and a row saved before it (the figure could be 1) must read at 12, not fail as
+ * a corrupted row. Only that figure: a leads, security or financial figure below its floor was always refused, and stays refused (the caller's 500). Anything not a whole number is left to the schema.
+ */
+export function floorRetention(value: unknown): unknown {
+  if (!isPlain(value)) return value;
+  const v = value.emailLogMonths;
+  if (typeof v !== "number" || !Number.isInteger(v) || v >= RETENTION_FLOORS.emailLogMonths) return value;
+  return { ...value, emailLogMonths: RETENTION_FLOORS.emailLogMonths };
 }
 
 const isPlain = (v: unknown): v is Record<string, unknown> =>
@@ -446,7 +472,7 @@ function mergeDefaults(base: unknown, stored: unknown): unknown {
   return out;
 }
 
-/** The defaults the database is seeded with (VERIFY WITH CA/LEGAL). */
+/** The defaults the database is seeded with (researched 2026-10-28, rule by rule in 08-C). */
 export const SETTINGS_DEFAULTS: Settings = {
   company: {
     tradeName: "TecHaust Technologies",

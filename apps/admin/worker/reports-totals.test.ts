@@ -1,4 +1,4 @@
-// The totals of every export equal the invoices' [ADM-REP-04, ADM-REP-06; M5.5b, LD71, LD72, LD73; VERIFY WITH CA/LEGAL]: 20 documents issued through the REAL routes (domestic and
+// The totals of every export equal the invoices' [ADM-REP-04, ADM-REP-06; M5.5b, LD71, LD72, LD73; Researched 2026-10-28, GSTN advisories of June 2025 (08-C RA-23)]: 20 documents issued through the REAL routes (domestic and
 // export invoices, credit and debit notes, a voided invoice, a proforma), read back through `GET /reports/registers`, and every report built from those rows in the gst core is held
 // against an independent SUM over `documents` and against the others: GSTR-1, the HSN tables, the sales register, the output tax, the GSTR-3B summary and Table 13.
 import { gstinCheckChar } from "@techaust/core";

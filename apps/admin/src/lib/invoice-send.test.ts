@@ -3,7 +3,6 @@
 import { describe, expect, it } from "vitest";
 import { RequestError } from "../api.ts";
 import {
-  APPROVED_07U,
   CARE_COPY,
   documentWord,
   draftedBecause,
@@ -25,17 +24,15 @@ import {
   sendErrorText,
   sendState,
   sendStateLabel,
-  U,
 } from "./invoice-send.ts";
-import { blockerLine, blockerTarget, INV_PLACEHOLDER } from "./invoices.ts";
+import { blockerLine, blockerTarget } from "./invoices.ts";
 import { sendActionOf } from "./invoices-api.ts";
 
-const M = `${INV_PLACEHOLDER} `;
+/** 07-U and 07-W were approved on 2026-10-28 (research and wording): no line carries a mark. */
+const M = "";
 
-describe("07-U is marked until the owner approves it", () => {
-  it("every 07-U line carries [Placeholder]; approved lines don't", () => {
-    expect(APPROVED_07U).toBe(false);
-    expect(U("Send")).toBe("[Placeholder] Send");
+describe("07-U is approved word for word", () => {
+  it("no 07-U or 07-W line carries [Placeholder]", () => {
     for (const line of [
       SEND_COPY.emailToClient,
       SEND_COPY.emailAgain,
@@ -48,10 +45,24 @@ describe("07-U is marked until the owner approves it", () => {
       CARE_COPY.toggle,
       CARE_COPY.ownerOnly,
     ])
-      expect(line.startsWith(M)).toBe(true);
+      expect(line.includes("[Placeholder")).toBe(false);
+    for (const line of [
+      SEND_COPY.sendToHint,
+      SEND_COPY.waitingForPdf,
+      CARE_COPY.toggleHint,
+      CARE_COPY.notInEffect,
+    ])
+      expect(line.includes("[Placeholder")).toBe(false);
+    // 07-W §2 replaces 07-U §4's and §6's hints
+    expect(SEND_COPY.sendToHint).toBe(
+      'Only contacts with portal access and "Can see finance" turned on can receive invoices and notes.',
+    );
+    expect(CARE_COPY.toggleHint).toBe(
+      "On the billing day, the invoice is issued and emailed to the client's billing contacts who have portal access and can see finance. Only an owner can turn this on; an owner or a staff member can turn it off.",
+    );
     // the M4.5 dialog's approved words
     expect(SEND_COPY.chooseOne).toBe("Choose at least one contact.");
-    expect(SEND_COPY.noPortal.startsWith(M)).toBe(false);
+    expect(SEND_COPY.noPortal.includes("[Placeholder")).toBe(false);
   });
 
   it("07-U §4 words with the document's own name", () => {
@@ -122,7 +133,7 @@ describe("reminders [ADM-INV-13, Q47, Q48, Q50]", () => {
       `${M}Skipped: no contact with portal access`,
     );
     expect(reminderStateText({ offset: 3, dueAt: due, sentAt: null, skippedReason: "superseded" })).toBe(
-      `${M}Skipped: ${INV_PLACEHOLDER}`,
+      `${M}Skipped: superseded`,
     );
     expect(reminderState({ offset: 3, dueAt: due, sentAt: null, skippedReason: "paused" })).toBe("paused");
   });
@@ -245,7 +256,7 @@ describe("review round: reminders paused, missed and the window [M2, L2]", () =>
     );
     expect(after.paused).toBe(false);
     expect(reminderStateText(after.rows[0] as ReminderRowView)).toBe(
-      `${M}Skipped: missed while reminders were paused`,
+      "Skipped: missed while reminders were paused",
     );
     expect(reminderState(after.rows[0] as ReminderRowView)).toBe("skipped");
     // The new API's own word reads the same.
@@ -274,7 +285,7 @@ describe("review round: reminders paused, missed and the window [M2, L2]", () =>
     expect(sendState({ cancelledAt: null, emailStatus: null, queuedAt: null, pdfReady: false })).toBe(
       "waiting",
     );
-    expect(sendStateLabel("waiting")).toBe(`${M}Waiting for the PDF`);
+    expect(sendStateLabel("waiting")).toBe("Waiting for the PDF");
   });
 });
 
@@ -288,7 +299,7 @@ describe("care invoices [ADM-CARE-02, Q43]", () => {
       `${M}Drafted, not issued automatically, because the plan's current price wasn't set by an owner, a US dollar invoice needs the exchange rate entered and the invoice has a missing field (see the checklist).`,
     );
     expect(draftedBecause(["something_new"])).toBe(
-      `${M}Drafted, not issued automatically, because ${INV_PLACEHOLDER}.`,
+      `${M}Drafted, not issued automatically, because something_new.`,
     );
   });
 
@@ -299,15 +310,14 @@ describe("care invoices [ADM-CARE-02, Q43]", () => {
     expect(CARE_COPY.onBy("Sample Owner", Date.UTC(2026, 10, 4, 20, 0))).toBe(
       `${M}On, turned on by Sample Owner on 05 Nov 2026`,
     );
-    expect(CARE_COPY.notInEffect).toBe(`${INV_PLACEHOLDER} Not in effect`);
+    expect(CARE_COPY.notInEffect).toBe("Not in effect");
   });
 });
 
 describe("the blocker line of a placeholder line (early check finding 4)", () => {
-  it("has its own marked line, not the bare placeholder, and leads to the line's description", () => {
+  it("has its own 07-W line and leads to the line's description", () => {
     const line = blockerLine({ code: "line_text_placeholder", line: 2 }, "INR");
-    expect(line).not.toBe(INV_PLACEHOLDER);
-    expect(line).toBe(`${INV_PLACEHOLDER} Line 2: a line's wording isn't approved yet.`);
+    expect(line).toBe("Line 2: a line's wording isn't approved yet.");
     expect(blockerTarget({ code: "line_text_placeholder", line: 2 }, "c1")).toEqual({
       kind: "line",
       n: 2,
@@ -375,9 +385,10 @@ describe("the dialog's email preview says what the template says", () => {
 });
 
 describe("the care plan's billing section [ADM-CARE-02, ADM-INV-12]", () => {
-  it("every label is a marked placeholder (07-U has none for this section)", () => {
-    for (const line of Object.values(PLAN_BILLING_COPY))
-      expect(line.startsWith(`${INV_PLACEHOLDER} `)).toBe(true);
+  it("every label is 07-W §2's, unmarked", () => {
+    for (const line of Object.values(PLAN_BILLING_COPY)) expect(line.includes("[Placeholder")).toBe(false);
+    expect(PLAN_BILLING_COPY.heading).toBe("Billing");
+    expect(PLAN_BILLING_COPY.openDraft).toBe("Open the draft");
   });
 
   it("no auto part without a draft not yet issued", () => {

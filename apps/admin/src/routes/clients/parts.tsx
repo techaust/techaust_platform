@@ -1,7 +1,7 @@
 // Pieces the Clients screens share (M3.3): the access gate, the breadcrumbs, the tax identity fields (country, GST status,
 // the GSTIN with its live check, the state with the 07-J mismatch warning), the address fields, and the small name and
 // flag cells. The styles are clients.css (with the M3.2 panels from leads.css), loaded with these screens only.
-// GST treatment: VERIFY WITH CA/LEGAL (the state and place of supply are confirmed on proposals and invoices).
+// GST treatment: Researched 2026-10-28, s.12 IGST (08-C RA-12) (the state and place of supply are confirmed on proposals and invoices).
 import "../../leads.css";
 import "../../clients.css";
 import { selectableStates, validateGstin } from "@techaust/core/gstin";

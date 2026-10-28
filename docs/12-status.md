@@ -1,6 +1,6 @@
 # 12: Status
 
-_Replaced (never appended) at the end of every session. Last updated: **2026-10-28, 13:30** (IST)._
+_Replaced (never appended) at the end of every session. Last updated: **2026-10-28, 23:00** (IST)._
 
 ## Done
 - **Phases 1–5, M1 (foundation), M2 (public website), M3.1–M3.5, M4.1–M4.5:** all approved by the owner (latest: the M3.4–M4.5 batch, 2026-10-26, PR #93). Details live in the run files under [runs/](runs/) and in [13-decisions.md](13-decisions.md).
@@ -15,7 +15,7 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
 - **Verified 2026-10-28:** the whole-repo `pnpm check` passes; `pnpm test` passes in every package (auth 135, core 1,718, ui 469, email 128, db 444, pdf 302, web 423, portal 620, jobs 498, admin 3,112 of 3,113: one M5.4 test timed out under load and passes 22 of 22 alone); CI green; the staging deploy of #101 succeeded first time. Staging, read-only (Cloudflare analytics, 4 hours after the deploy): the jobs Worker ran 8 times with 0 errors, CPU p50 1.7 ms, p99 4.6 ms; the admin and portal Workers had no traffic. Bundles: admin API 576,894 bytes (third Worker planned at 650,000), front 98,743, jobs 844,916 (limit 1,000,000).
 
 ## In progress
-- Nothing is being built. No agent is running.
+- **Research and wording ([PR #104](https://github.com/techaust/techaust_platform/pull/104), auto-merge on, Auto-fix on; [run file](runs/research-and-wording.md)):** every "VERIFY WITH CA/LEGAL" item researched into the register [08-C](08-research-appendix/C-research-register.md) (65 items: settled with source, or OPEN with the CA's or lawyer's question); the owner's four answers (Q37 lapsed LUT blocked, Q11 DUPLICATE FOR SUPPLIER copy, Q35 tax-only debit note, accept-by-link for any value); new rules built in every layer (LUT of the receipt FY, discount after sale from 1 Nov 2026, tax-only debit note, supplier copy, FX same-day rule, credit-note advice dates, email logs ≥ 12 months, signatory switch, backup gate before production); 07-R to 07-V approved by the lead under the owner's delegation, 07-W for the gaps, legal pages v0.3; no `[Placeholder]` left on any screen. Review SEND BACK (1 high) → all fixed → re-check APPROVE; `pnpm check` and `pnpm test` pass. Migrations 0046–0048 apply on staging with the deploy. No agent is running.
 
 ## Next (when work resumes)
 1. **The owner reviews the M5 batch on staging** with the "Owner review pack (2026-10-28)" in the [batch run file](runs/m5-batch.md): the plain-words summary, questions Q1–Q71 (each built with its recommended default) and the copy drafts 07-R, 07-S, 07-T, 07-U, 07-V word for word.
@@ -26,6 +26,7 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
 **Usage now:** 5-hour window 1 %. Gate: no new agent at ≥ 80 %; two agents at once, one browser agent.
 
 ## Waits on the owner
+- **The research and wording summary** ([08-C](08-research-appendix/C-research-register.md) §5 and §6): the CA and lawyer questions, and the dated duties: **the FY 2026-27 LUT now**, credit notes for FY 2025-26 supplies by 31 October (law: reported by 30 November), the October EDF to the bank by 30 November if any export invoice was raised in October.
 - **M5.0 staging check (6 steps, about 5 minutes):** sign in to the staging admin; open Dashboard, Leads and a lead; open a client, a proposal and its PDF; in a project, upload and download a file; save one Settings page; sign out. Then tell the lead "done".
 - **The M5 batch review:** 71 questions on the [batch page](runs/m5-batch.md) (tax and legal ones VERIFY WITH CA/LEGAL); copy [07-R](07-content-appendix/R-m5.1-invoice-screens.md), [07-S](07-content-appendix/S-m5.2-invoice-types.md), [07-T](07-content-appendix/T-m5.3-credit-debit-notes.md), [07-U](07-content-appendix/U-m5.4-send-recurring-reminders.md), [07-V](07-content-appendix/V-m5.5b-reports-statements.md). Until 07-U is approved, care invoices are only drafted on staging (no automatic issue).
 - **Facts to know for the review:** the hourly job runs care billing and reminders on staging (emails only to the staging allow-list); until M6 records payments, an export paid by bank transfer looks unpaid, so realisation alerts fire for it on staging (Q70).
@@ -41,6 +42,7 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
 - **Model menu:** keep **Opus 5.5, medium** for every conversation.
 
 ## Open follow-ups
+- **Research and wording (2026-10-28, run file):** a docs-only sweep of the 224 remaining VERIFY tags (older plan and research docs) against 08-C; purge `pdf_asks` rows; release the supplier-copy claim when jobs refuses a render; one clock reading for the draft's no-rate day (`invoices.ts:861`); the 07-T banner names "30 November" while the cutoff is a setting; `meta.verify` strings → a `kind` field; re-read the CBIC s.34 page after 1 November; not verified: a real Browser Run render of the supplier copy, signatory-off and IGST-advance PDFs; the shared local D1 needs a reset before the next local run (steps in the run file).
 - **M5 (2026-10-28, run files):**
   - a longer timeout for the M5.4 test "each send names the staff member…" in `apps/admin/worker/invoice-send.test.ts` (times out under a full parallel run);
   - export the realisation bounds (1,200 / 36,500) from core instead of three copies (M5.5b re-check low 4);

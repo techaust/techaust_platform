@@ -3,7 +3,7 @@
 // older pending invites for the address stop working, an address that already has an account other than "invited"
 // is refused (nothing is written), the invite is stored, and the audit log gets `user.invite` (actor "system": it was
 // done from the command line). The audit summary carries the role only, never the email: the address stays in the
-// erasable `staff_invites` row (retention is VERIFY WITH CA/LEGAL).
+// erasable `staff_invites` row (retention is Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11)).
 //
 // ONE STATEMENT PER LINE (D1's `exec` and `wrangler d1 execute --file` run a file line by line). Every statement is
 // guarded in SQL on the address having no account but an "invited" one; the audit row is written only if the invite

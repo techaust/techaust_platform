@@ -7,7 +7,7 @@
 // the history through the shared loader (`@techaust/db/care`), never the mirror.
 //
 // Owner's answers (2026-10-25, docs/13): a price or hours change takes effect from the NEXT billing period (Q1); Staff may set any
-// terms at creation, later price changes and cancelling are the owner's (Q6). VERIFY WITH CA/LEGAL: notice for terms changes, GST on
+// terms at creation, later price changes and cancelling are the owner's (Q6). To check with the CA (no 08-C row yet): the notice for terms changes and the GST on
 // overage (M5.4), cancellation takes effect at once and issues no credit note until ADM-CARE-04.
 // Audit rows hold ids, field names, dates, statuses and the new terms (money is not personal data), never a client name.
 import {
@@ -26,6 +26,7 @@ import {
 } from "@techaust/core/care";
 import { istDate, toIsoDate } from "@techaust/core/dates";
 import { uuidv7 } from "@techaust/core/ids";
+import { istHourOf } from "@techaust/core/invoices";
 import { can, decide } from "@techaust/core/permissions";
 import {
   assembleCare,
@@ -465,7 +466,9 @@ export const carePlans = new Hono<AppEnv>()
   .get("/:id", param(idParam), async (c) => {
     const { id } = c.req.valid("param");
     const db = c.env.DB;
-    const today = istToday();
+    // One clock reading for the day and the hour, so the next billing day never mixes two days around midnight IST.
+    const nowMs = Date.now();
+    const today = toIsoDate(istDate(nowMs));
     // The billing read is added only for a role that reads money (Sales never): one more statement in the same batch.
     const money = decide(actor(c).role, "clients.finance.read") !== "deny";
     const [plans, terms, status, usage, gone, billing] = await db.batch<Record<string, unknown>>([
@@ -502,6 +505,7 @@ export const carePlans = new Hono<AppEnv>()
               { startDate: d.plan.start_date, billingDay: d.plan.billing_day, status: d.plan.status },
               d.statuses,
               today,
+              istHourOf(nowMs),
             ),
           }
         : {}),

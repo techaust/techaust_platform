@@ -1,6 +1,6 @@
 # 07-L: Catalogue, templates and publish screen copy for M4.1
 
-_Drafted by the lead on 2026-10-25 from approved facts (04 ADM-CAT-01…05, WEB-G-07; the owner's answer on publishing in docs/13). **PENDING the owner's word-for-word approval** (batch rule: built as drafts, approved before the final review). Staff-facing admin copy; clients never see it. `{…}` is filled in by the system. SAC and GST items are VERIFY WITH CA._
+_Drafted by the lead on 2026-10-25 from approved facts (04 ADM-CAT-01…05, WEB-G-07; the owner's answer on publishing in docs/13). **Approved by the owner word for word on 2026-10-26 ([07-Q](Q-batch-review-copy.md), "approve all")**. Staff-facing admin copy; clients never see it. `{…}` is filled in by the system. SAC and GST items are VERIFY WITH CA._
 
 ## Catalogue list and item
 | Where | Copy |
@@ -10,7 +10,7 @@ _Drafted by the lead on 2026-10-25 from approved facts (04 ADM-CAT-01…05, WEB-
 | Status labels | "Active" · "Retired" · "On the website" · "Not on the website" |
 | Category labels | "Advise" · "Build" · "Automate" · "Connect" · "Run" |
 | Unit labels | "Fixed price" · "Per milestone" · "Per month" · "Per hour" · "Per workflow" · "Per connector" · "Per document" |
-| SAC field hint | "The six-digit service code printed on invoices. VERIFY WITH CA." |
+| SAC field hint | "The six-digit service code printed on invoices." (changed 2026-10-28, 07-W §5.8) |
 | GST rate field hint | "Leave empty to use the rate in Settings › Tax." |
 | "From" prices hint | "The starting price shown on the website. Leave a currency empty if you don't offer it there." |
 | Default lines hint | "The lines a proposal starts with when this service is chosen. Each needs a different description." |
@@ -63,7 +63,7 @@ _Drafted by the lead on 2026-10-25 from approved facts (04 ADM-CAT-01…05, WEB-
 ## Audit labels (Activity)
 "added a service" · "changed a service" · "retired a service" · "made a service active again" · "saved a template version" · "published prices"
 
-## Added after the review (lead, 2026-10-25; PENDING the owner)
+## Added after the review (lead, 2026-10-25; approved 2026-10-26, 07-Q)
 | Where | Copy |
 |---|---|
 | Retire or take off the website, when the website uses this service | "The website shows this service. Retiring it, or taking it off the website, stops the next publish until the website no longer needs it." |

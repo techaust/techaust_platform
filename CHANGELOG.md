@@ -2,6 +2,7 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-10-28 [#104](https://github.com/techaust/techaust_platform/pull/104) feat: researched tax and legal defaults and final wording (research register 08-C; LUT per receipt FY, discount after sale from 1 Nov 2026, tax-only debit note, DUPLICATE FOR SUPPLIER copy, FX same-day rule, email-log floor, legal pages v0.3, 07-R to 07-W approved) [ADM-INV-06, ADM-INV-08, ADM-INV-10, ADM-INV-11, ADM-SET-09]
 - 2026-10-28 [#101](https://github.com/techaust/techaust_platform/pull/101) feat(reports): M5.5 GST and CA exports, export realisation, EDF, statement, finance tiles [ADM-REP-04, ADM-REP-07, ADM-INV-17, ADM-CLI-04]
 - 2026-10-28 [#100](https://github.com/techaust/techaust_platform/pull/100) feat(invoices): M5.4 send, reminders, recurring care invoices, alerts, portal invoices [ADM-INV-15, ADM-INV-13, ADM-INV-12, ADM-CARE-02, ADM-INV-19, POR-06]
 - 2026-10-27 [#99](https://github.com/techaust/techaust_platform/pull/99) feat(invoices): M5.3 credit and debit notes, deadline, IMS, note PDFs [ADM-INV-11, ADM-INV-01, ADM-SET-04, ADM-APR-01]

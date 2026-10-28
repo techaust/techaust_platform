@@ -1,4 +1,4 @@
-// The owners' export alerts (M5.5b stage B; ADM-REP-07, ADM-INV-17, LD75, LD76, LD77; Q54, Q55; VERIFY WITH CA/LEGAL for every date). Two messages on the leads queue, both riding the 09:00 IST
+// The owners' export alerts (M5.5b stage B; ADM-REP-07, ADM-INV-17, LD75, LD76, LD77; Q54, Q55; Researched 2026-10-28, FEMA 23(R)/2026-RB Reg. 3(2) (08-C RB-03) for every date). Two messages on the leads queue, both riding the 09:00 IST
 // tick of M5.4 (the cron reads nothing; `hourlyMessages` in billing.ts decides what to queue):
 //
 //   `realisation.scan`  the export invoices that are in a FEMA or GST stage today (approaching or overdue): one page of at most 50 (`REALISATION_SCAN_SQL`: open exports old enough to be near a deadline, the
@@ -8,7 +8,7 @@
 //                       the no-zod reader; a value it refuses skips the scan with `realisation.settings_invalid` (a retry cannot help; nothing is guessed).
 //   `edf.reminder`      the monthly Export Declaration Form reminder: the invoice month's non-voided exports counted; none, nothing (Q55); else one email and one bell per active owner without the month's `edf.due`
 //                       bell (entity `edf:YYYY-MM`), the email first. IST days 5, 6 and 7 queue it (6 and 7 catch a missed tick; the bell makes a second one a no-op).
-// An anonymised client is named "Anonymised client" in the emails and bells (the snapshot name is personal data; VERIFY WITH CA/LEGAL). Words: 07-V §9 and §10 (the lead's draft, PENDING the owner).
+// An anonymised client is named "Anonymised client" in the emails and bells (the snapshot name is personal data; Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11)). Words: 07-V §9 and §10 (the lead's draft, PENDING the owner).
 // Bells never carry a client name: the document number only. No personal data in a log line.
 import {
   addDays,
@@ -61,15 +61,12 @@ const dateText = (iso: string): string => {
   return d ? formatDate(d) : iso;
 };
 
-/** The mark on a bell title whose words are 07-V's and not yet approved by the owner (as M5.4's 07-U bells are marked `[Placeholder, 07-U]`); it goes when the owner approves 07-V. */
-export const PLACEHOLDER_07V = "[Placeholder, 07-V] ";
-
-/** 07-V §9, word for word (the lead's draft, pending the owner): the bell of each stage. The number only, never a name. */
+/** 07-V §9, word for word (approved by the lead 2026-10-28; "GST date", not "GST refund date"): the bell of each stage. The number only, never a name. */
 export const REALISATION_BELL_TITLE: Record<AlertStage, (number: string, date: string) => string> = {
-  fema_approaching: (n, d) => `${PLACEHOLDER_07V}${n}: FEMA date in 30 days (${d})`,
-  fema_overdue: (n, d) => `${PLACEHOLDER_07V}${n}: past the FEMA date (${d})`,
-  gst_approaching: (n, d) => `${PLACEHOLDER_07V}${n}: GST refund date in 30 days (${d})`,
-  gst_overdue: (n, d) => `${PLACEHOLDER_07V}${n}: past the GST date (${d})`,
+  fema_approaching: (n, d) => `${n}: FEMA date in 30 days (${d})`,
+  fema_overdue: (n, d) => `${n}: past the FEMA date (${d})`,
+  gst_approaching: (n, d) => `${n}: GST date in 30 days (${d})`,
+  gst_overdue: (n, d) => `${n}: past the GST date (${d})`,
 };
 /** Where a realisation bell and email lead: the export realisation report, on that invoice. */
 export const realisationLink = (documentId: string): string => `/reports/realisation?doc=${documentId}`;
@@ -233,7 +230,7 @@ export async function processEdfReminder(env: Env, body: unknown): Promise<EdfRe
     return { kind: "nobody_to_tell" };
   }
   const lastDate = parseIsoDate(last);
-  // Due by: the last day of the invoice month plus 30 days (VERIFY WITH CA/LEGAL, as `meta.edfDue` of the EDF report)
+  // Due by: the last day of the invoice month plus 30 days (Researched 2026-10-28, FEMA 23(R)/2026-RB Reg. 3(2) (08-C RB-03), as `meta.edfDue` of the EDF report)
   const due = lastDate ? formatDate(addDays(lastDate, 30)) : last;
   const monthLabel = `${MONTH_NAMES[month - 1]} ${year}`;
   const emails: EmailMessage[] = ownerRows.map((o) => ({
@@ -252,7 +249,7 @@ export async function processEdfReminder(env: Env, body: unknown): Promise<EdfRe
   await env.DB.prepare(EDF_BELLS_INSERT)
     .bind(
       entity,
-      `${PLACEHOLDER_07V}EDF list for ${monthLabel} is due by ${due}`,
+      `EDF list for ${monthLabel} is due by ${due}`,
       `/reports/edf?month=${year}-${mm}`,
       JSON.stringify(ownerRows.map((o) => ({ u: o.id }))),
     )

@@ -1,7 +1,7 @@
 // The report statements (M5.5b, LD71 to LD80; ADM-REP-04, ADM-REP-06, ADM-REP-07, ADM-CLI-04, ADM-DASH-01): the GST and CA register, the EDF month, the
 // realisation list and scan, a client's statement of account and the dashboard's finance figures. Plain SQL text, bound by the caller; every statement
 // is EXPLAIN-tested (`packages/db/test/reports.test.ts`) so a new filter never goes unindexed. Pages are keysets of at most 50 rows (LIMIT 51: the 51st
-// says there is a next page), as the admin lists are. VERIFY WITH CA/LEGAL for every tax reading (docs/08-research-appendix/A-gst-invoicing.md).
+// says there is a next page), as the admin lists are. Researched 2026-10-28, FEMA 23(R)/2026-RB Reg. 5(1) (08-C RB-01) for every tax reading (docs/08-research-appendix/A-gst-invoicing.md).
 // The Workers never parse `documents.computed` for a page: the rates of each document come from SQL over `json_each(computed, '$.lines')` (a twin of core
 // `registerRatesOf`, proved by test), summed in INR (the line values on an INR document, the `inr` view of each line on a USD one).
 import {

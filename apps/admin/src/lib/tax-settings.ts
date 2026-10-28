@@ -1,4 +1,4 @@
-// The Tax settings form's model (ADM-SET-03, VERIFY WITH CA): the stored `tax` row as the fields hold it, and the payload a save sends back. Pure, so
+// The Tax settings form's model (ADM-SET-03; the defaults are Researched 2026-10-28 or OPEN per 08-C): the stored `tax` row as the fields hold it, and the payload a save sends back. Pure, so
 // the round trip is tested without a browser (routes/settings/tax.tsx draws the fields). Every stored value a field shows comes back as the person left
 // it, and every stored value the page has no field for is kept as stored (`...doc.value`): a save never resets a setting to its default (M5.5b early
 // check H2: the B2CL threshold and the INR realisation period, LD77).
@@ -8,7 +8,7 @@ import type { SettingsDoc } from "../api.ts";
 import type { Built } from "../routes/settings/kit.tsx";
 import type { LutRow } from "./invoice-types.ts";
 import { annualReturnError, annualReturnsOf } from "./notes.ts";
-import { P, TAX_FIELDS_COPY } from "./reports.ts";
+import { TAX_FIELDS_COPY } from "./reports.ts";
 import { bpToPercent, type FieldErrors, intIn, moneyFrom, moneyInput, percentToBp } from "./settings-form.ts";
 
 export type Tax = Settings["tax"];
@@ -25,9 +25,9 @@ export const CATEGORIES: { key: Category; label: string }[] = [
 export const REALISATION_MAX_MONTHS = 1200;
 export const REALISATION_MAX_DAYS = 36_500;
 export const REALISATION_ERRORS = {
-  warnMonths: P("Enter the months before the warning, from 1 to 1,200."),
-  escalateMonths: P("Enter the months before escalating, from 1 to 1,200."),
-  escalateExtraDays: P("Enter the days before the final reminder, from 0 to 36,500."),
+  warnMonths: "Enter the months before the warning, from 1 to 1,200.",
+  escalateMonths: "Enter the months before escalating, from 1 to 1,200.",
+  escalateExtraDays: "Enter the days before the final reminder, from 0 to 36,500.",
 } as const;
 
 /** The field id of an annual return's date (./routes/settings/annual-returns.tsx uses the same). */
@@ -40,8 +40,10 @@ export type TaxForm = {
   exportMode: Tax["exportMode"];
   /** M5.2 (ADM-INV-18): the letters of undertaking, one per financial year (replaces the single ARN field). */
   luts: LutRow[];
-  /** M5.2 (ADM-INV-06, LD31): the one switchable line of the checklist. */
+  /** M5.2 (ADM-INV-06, LD31): a house rule of the checklist (07-S §3), switchable. */
   bankDetails: boolean;
+  /** Step 5 (07-S §3; Researched 2026-10-28, 08-C RA-06): "Authorised signatory" is a house rule too. On unless stored off. */
+  signatory: boolean;
   advanceMode: Tax["advanceMode"];
   fxSource: Tax["fxSource"];
   eInvoicing: boolean;
@@ -71,6 +73,7 @@ export function taxToForm(v: Tax): TaxForm {
     // The API folds the old single letter into the list on read (early check 3), so the list is the whole story.
     luts: (v.luts ?? []).map((l) => ({ fy: l.fy, arn: l.arn, filedOn: l.filedOn ?? null })),
     bankDetails: v.invoiceChecklist?.bankDetails ?? true,
+    signatory: v.invoiceChecklist?.signatory ?? true,
     advanceMode: v.advanceMode,
     fxSource: v.fxSource,
     eInvoicing: v.eInvoicing,
@@ -118,7 +121,7 @@ export function buildTax(f: TaxForm, doc: Pick<SettingsDoc<"tax">, "value">, now
   if (!cross.ok) e["f-crossBorderWarnInrMinor"] = `Cross-border payment warning: ${cross.error}`;
   if (!f.reverseChargeText.trim()) e["f-reverseChargeText"] = "Enter the reverse-charge line.";
   // The realisation periods are bounded as the reports read them (core: 1 to 1,200 months, 0 to 36,500 days), so a saved value never stops the
-  // reports with `settings_invalid` (M5.5b review 4). The bounded words are not in 07 (batch Q69): the plain mark.
+  // reports with `settings_invalid` (M5.5b review 4). The bounded words are not in 07 (batch Q69): 07-W §3.
   const warn = intIn(f.warnMonths, 1, REALISATION_MAX_MONTHS);
   if (warn === null) e["f-realisation-warnMonths"] = REALISATION_ERRORS.warnMonths;
   const inrMonths = intIn(f.inrMonths, 1, 120);
@@ -155,7 +158,7 @@ export function buildTax(f: TaxForm, doc: Pick<SettingsDoc<"tax">, "value">, now
       // The deprecated single letter is never written again: the list is saved, the old key stays empty.
       lut: { arn: null, fy: null },
       luts: f.luts,
-      invoiceChecklist: { bankDetails: f.bankDetails, paymentLink: false },
+      invoiceChecklist: { bankDetails: f.bankDetails, paymentLink: false, signatory: f.signatory },
       advanceMode: f.advanceMode,
       fxSource: f.fxSource,
       eInvoicing: f.eInvoicing,

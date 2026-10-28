@@ -1,6 +1,6 @@
 // The export layouts (M5.5a; ADM-REP-04, ADM-REP-07), frozen constants. A layout version is NEVER edited: a change is a new
 // version (`-v2`), and a snapshot test pins every version's headers. EVERY column below is UNVERIFIED (written from memory
-// of the GSTN Offline Tool templates, VERIFY WITH CA/LEGAL): before anything is filed, the owner or the CA imports the sample
+// of the GSTN Offline Tool templates; OPEN (08-C RA-23): do our CSVs import cleanly into the current Offline Tool?): before anything is filed, the owner or the CA imports the sample
 // CSVs into the current Offline Tool, and a mismatch becomes `gstr1-csv-v2`. The EDF and realisation lists are our own
 // working lists, not the bank's or the portal's forms.
 import type { StateCode } from "../gstin.ts";

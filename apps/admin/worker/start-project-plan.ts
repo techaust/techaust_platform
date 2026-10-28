@@ -3,11 +3,11 @@
 //
 //   - one milestone per payment-schedule step: the title is the step's label, the amount is the step's amount EXACTLY (a fixed amount,
 //     no percentage, so "the created amounts equal the schedule" holds to the paisa), the due date is the step's target date;
-//   - the project's budget is the proposal's total (tax included). VERIFY WITH CA/LEGAL / lead: tax-inclusive, not taxable.
+//   - the project's budget is the proposal's total (tax included). Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17) / lead: tax-inclusive, not taxable.
 //   - a first-instalment draft only when step 1 is paid on acceptance and is more than nothing: the step's amount, tax included, split back
 //     into lines by the inclusive split (core), with the supply of the client's CURRENT record (as the estimate's convert does). More than
 //     10 (SAC, rate) groups are merged by rate (a merged group keeps its SAC only when every member has the same one).
-//     VERIFY WITH CA/LEGAL: the draft's type in each advance mode, the place of supply, and merging SACs on a document that may become a
+//     Researched 2026-10-28, s.12 IGST Act (08-C RA-12): the draft's type in each advance mode, the place of supply, and merging SACs on a document that may become a
 //     tax invoice (Rule 46).
 //   - nothing comes from the request. The draft is never issued here (M5).
 import type { CalendarDate } from "@techaust/core/dates";

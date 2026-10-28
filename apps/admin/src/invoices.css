@@ -364,6 +364,69 @@ form.inv-service {
   margin-top: var(--space-4);
 }
 
+/* The rate's day is before the document's (07-S §8): the statement sits under the date, across the grid. */
+.inv-fx-norate {
+  grid-column: 1 / -1;
+  grid-row: auto;
+  /* the gap below it is a field's, so "Source" reads as the next field */
+  margin: calc(-1 * var(--space-2)) 0 var(--space-5);
+}
+
+/* Q37 (07-S §9): the payment's year has no LUT. A decision, not an error: the warning rule of the LUT banners, the question as its heading, the
+   sentence that explains it, then the two ways on (one leaves for Settings, one stays and switches the route), and the IGST note once chosen. */
+.inv-route-choice {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+  padding: var(--space-4);
+  border-inline-start: 3px solid var(--color-warning);
+  background: var(--color-surface-alt);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.inv-route-choice__title {
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: 600;
+  line-height: var(--text-body--line-height);
+}
+
+.inv-route-choice__title:focus {
+  outline: none;
+}
+
+.inv-route-choice__title:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.inv-route-choice__why,
+.inv-route-choice__note {
+  margin: 0;
+}
+
+.inv-route-choice__note {
+  font-weight: 500;
+}
+
+.inv-route-choice__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+}
+
+/* The link is drawn as a secondary button: the link colours never replace the button's. */
+.inv-route-choice__options a.btn,
+.inv-route-choice__options a.btn:hover {
+  color: var(--color-btn-secondary-fg);
+  text-decoration: none;
+}
+
+.inv-route-choice__options .btn[aria-pressed="true"] {
+  border-color: var(--color-btn-primary-bg);
+  box-shadow: inset 0 0 0 1px var(--color-btn-primary-bg);
+}
+
 .inv-kind {
   margin: 0 0 var(--space-2);
 }

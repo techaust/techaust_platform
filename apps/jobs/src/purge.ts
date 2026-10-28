@@ -1,4 +1,4 @@
-// Lead retention clean-up (M3.2, ADM-LEAD-05, JOB-CRON-01). VERIFY WITH CA/LEGAL (DPDP retention).
+// Lead retention clean-up (M3.2, ADM-LEAD-05, JOB-CRON-01). Researched 2026-10-28, DPDP Act s.8(7), Rule 8 (08-C RB-10) (DPDP retention).
 //   cron (daily 22:00 UTC = 03:30 IST) -> `enqueueDue`: ONLY enqueues. One page of at most LEAD_PURGE_PAGE due leads, one
 //     `lead.purge` message each on the existing leads queue; if more are due, one `lead.purge.scan` message carries the
 //     keyset cursor on to the next page (consumer-driven, so no invocation does more than one page).
@@ -101,7 +101,7 @@ export async function purgeLead(env: Env, leadId: string, now = Date.now()): Pro
   return "deleted";
 }
 
-// ---- the statement PDF cache (M5.5b stage B, LD79; Q57; VERIFY WITH CA/LEGAL for the retention) -------------------------------------------------------------------------
+// ---- the statement PDF cache (M5.5b stage B, LD79; Q57; Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11) for the retention) -------------------------------------------------------------------------
 // `statement_pdfs` is a cache, not a record: a PDF row and its R2 object are deleted 30 days after the request, and at once for a client who has been anonymised (their statement is personal data).
 //   cron (the same daily tick) -> `enqueueStatementPurge`: ONE `statement.purge` message, nothing read;
 //   consumer -> `processStatementPurge`: one page of at most 50 rows by primary key (`id > after`), the OBJECT FIRST, then the row: a failure between the two leaves a row whose object is gone (the download then

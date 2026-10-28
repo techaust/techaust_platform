@@ -1,4 +1,4 @@
-// Payment reminders in the jobs Worker (M5.4; ADM-INV-13, LD60, LD64; VERIFY WITH CA/LEGAL for which documents are chased).
+// Payment reminders in the jobs Worker (M5.4; ADM-INV-13, LD60, LD64; Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-28) for which documents are chased).
 //
 //   cron (every IST hour) -> `reminder.scan` on the leads queue -> `processReminderScan`: outside the settings window it does nothing; inside it, `REMINDER_DUE_SQL` lists the due rows that are
 //     still waiting (50 a page) and each becomes one `reminder.send` on the email queue (a full page also queues the next scan);

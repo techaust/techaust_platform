@@ -1,4 +1,4 @@
-// Tax settings (ADM-SET-03, VERIFY WITH CA): the default GST rate and per-line override, SAC codes per catalogue
+// Tax settings (ADM-SET-03; Researched 2026-10-28 or OPEN per 08-C, noted at each line): the default GST rate and per-line override, SAC codes per catalogue
 // category, the fixed rounding rules, exports under LUT (with the ARN for the year), advances, the USD rate source,
 // e-invoicing, the reverse-charge line, and the alert thresholds. The accountant reads them; the owner changes them.
 // M5.3: the day each year's annual return (GSTR-9) was filed, which closes credit notes for that year (./annual-returns.tsx).
@@ -17,6 +17,7 @@ import {
   day,
   fyLabel,
   INVT_COPY,
+  isHouseRule,
   type LutRow,
   lutDueBanner,
   lutMissingBanner,
@@ -235,10 +236,16 @@ function LutList(props: {
 }
 
 /**
- * "What every invoice must show" (07-S §3, ADM-INV-06): the 18 lines in core's order. A locked line carries the lock and is read as required by law
- * (the sentence is said once, beside the lock that stands for it); "Bank details" is the one switch; the payment link is off until online payment.
+ * "What every invoice must show" (07-S §3, ADM-INV-06): the 18 lines in core's order. A statutory line carries the lock and is read as required by GST law
+ * (the sentence is said once, beside the lock that stands for it). The house rules (bank details, the payment link, the authorised signatory; Researched
+ * 2026-10-28, 08-C RA-05, RA-06) carry the "House rule" badge and a switch; the payment link stays off until online payment exists.
  */
-function Checklist(props: { bankDetails: boolean; readOnly: boolean; onChange: (on: boolean) => void }) {
+type HouseRuleKey = "bankDetails" | "signatory";
+function Checklist(props: {
+  values: Record<HouseRuleKey, boolean>;
+  readOnly: boolean;
+  onChange: (key: HouseRuleKey, on: boolean) => void;
+}) {
   return (
     <section className="checklist" aria-labelledby="tax-checklist-h">
       <h2 id="tax-checklist-h" className="settings-sub">
@@ -253,7 +260,7 @@ function Checklist(props: { bankDetails: boolean; readOnly: boolean; onChange: (
         {INVOICE_CHECKLIST.map((item) => {
           const label = CHECKLIST_LABELS[item.id] ?? item.id;
           const labelId = `checklist-${item.id}`;
-          if (item.locked)
+          if (!isHouseRule(item))
             return (
               <li key={item.id} className="checklist__item">
                 <Lock size={16} />
@@ -263,15 +270,22 @@ function Checklist(props: { bankDetails: boolean; readOnly: boolean; onChange: (
                 </span>
               </li>
             );
+          const key = item.id === "bankDetails" || item.id === "signatory" ? item.id : null;
           return (
             <li key={item.id} className="checklist__item checklist__item--switch">
-              <span id={labelId}>{label}</span>
+              <span className="checklist__label">
+                <span id={labelId}>{label}</span>
+                <span className="checklist__house" id={`${labelId}-house`}>
+                  {INVT_COPY.houseRule}
+                </span>
+              </span>
               <Switch
                 id={`f-checklist-${item.id}`}
                 labelledBy={labelId}
-                checked={item.id === "bankDetails" ? props.bankDetails : false}
-                disabled={props.readOnly || !item.available}
-                onChange={(on) => item.id === "bankDetails" && props.onChange(on)}
+                describedBy={`${labelId}-house`}
+                checked={key ? props.values[key] : false}
+                disabled={props.readOnly || !item.available || key === null}
+                onChange={(on) => key && props.onChange(key, on)}
               />
             </li>
           );
@@ -412,9 +426,9 @@ export function TaxSettings({ readOnly }: { readOnly: boolean }) {
           />
 
           <Checklist
-            bankDetails={f.bankDetails}
+            values={{ bankDetails: f.bankDetails, signatory: f.signatory }}
             readOnly={readOnly}
-            onChange={(bankDetails) => set({ bankDetails })}
+            onChange={(key, on) => set(key === "bankDetails" ? { bankDetails: on } : { signatory: on })}
           />
 
           <h2 className="settings-sub">Documents and alerts</h2>

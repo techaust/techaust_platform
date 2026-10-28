@@ -6,7 +6,7 @@ _Drafted by the lead on 2026-10-26 from approved facts:
 - 07-O (the template wording, terms and status names);
 - the M4.4 lead decisions in `docs/runs/m4.4-pdf.md`.
 
-**PENDING the owner's word-for-word approval** (batch rule). Sections 1–2 print on the client's PDF; sections 3–4 are staff-facing admin copy. `{…}` is filled from the frozen snapshot. Tax wording is VERIFY WITH CA/LEGAL._
+**Approved by the owner word for word on 2026-10-26 ([07-Q](Q-batch-review-copy.md), "approve all")**. Sections 1–2 print on the client's PDF; sections 3–4 are staff-facing admin copy. `{…}` is filled from the frozen snapshot. Tax wording is VERIFY WITH CA/LEGAL._
 
 ## 1. Fixed wording on the PDF (client-facing)
 | Where | Copy |
@@ -16,7 +16,7 @@ _Drafted by the lead on 2026-10-26 from approved facts:
 | Supplier block | "Proprietor: {legal name}" · "GSTIN {gstin} · State {state} ({code})" · `hello@techaust.com`. Fields still empty in Settings are left out, never shown as blanks. |
 | Recipient block | "GSTIN {gstin}" (or left out) · "Place of supply: {state} ({code})" · for export: "Place of supply: Outside India (96 – Other Territory)" (VERIFY WITH CA) |
 | Document block | "No. {number} v{version}" · "Date {date}" · "Valid until {date}" · "Currency {INR/USD}" |
-| Document status (beside "Document") | "Sent" (**PENDING the owner**: printed now, lead answer 3 of 2026-10-26; it carries the PDF's status check) |
+| Document status (beside "Document") | "Sent" (approved 2026-10-26, 07-Q Q4; it carries the PDF's status check) |
 | Cover (proposal) | "Prepared for {client}" · "{date}" · "Version {n}" · "Valid until {date}" · "{number}" · "Your contact at TecHaust: {name}, {email}" |
 | Line table | "#" · "Description" · "SAC" · "Qty" · "Unit" · "Rate" · "Discount" · "Taxable value" · "GST %" |
 | Tax summary | "Tax summary" · "Taxable value" · "CGST" · "SGST" · "IGST" · "Total tax" |
@@ -26,7 +26,7 @@ _Drafted by the lead on 2026-10-26 from approved facts:
 | Estimate notice | "This is an estimate, not a tax invoice." (VERIFY WITH CA/LEGAL) |
 | USD note | "International projects are invoiced from India in USD as an export of services." (07 §2.4; VERIFY WITH CA) |
 | INR note | "Prices exclude GST (18 %)." (07 §2.4; VERIFY WITH CA) |
-| USD documents, the rupee figure | "Indicative total in INR: {₹ amount} (1 USD = ₹{rate})." (**PENDING the owner**: the builder's wording, printed now, lead answer 1 of 2026-10-26; VERIFY WITH CA) |
+| USD documents, the rupee figure | "Indicative total in INR: {₹ amount} (1 USD = ₹{rate})." (approved 2026-10-26, 07-Q Q5; the builder's wording, printed now, lead answer 1 of 2026-10-26; VERIFY WITH CA) |
 | Acceptance box | "Accept online in the TecHaust client portal: {portal link}" · "Your acceptance is recorded on a separate acceptance certificate. This document doesn't change." |
 | Footer (every page) | "TecHaust Technologies · techaust.com · hello@techaust.com" · "{number} v{version}" · "Page {x} of {y}" |
 | Integrity line (last page) | "Document ID {uuid} · Content fingerprint {first 12 characters}" |

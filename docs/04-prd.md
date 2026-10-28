@@ -471,8 +471,9 @@ Every service page uses one template, with sections in this order ([03 §3A.3](0
 | Service catalogue | ✅ (+ publish) | 👁 | 👁 | 👁 |
 | Proposals & estimates | ✅ | ✏️ · 📤 if discount ≤ 10 %, else ⏳ | ✏️ · 📤 if discount ≤ 10 %, else ⏳ | 👁 |
 | Invoices, proformas, credit notes | ✅ issue (step-up) | ✏️ drafts · issue ⏳ | — | 👁 |
-| Issue a tax invoice for a payment received against a proforma (M5.2; VERIFY WITH CA/LEGAL) | ✅ (step-up) | — | — | — |
-| Void an invoice (M5.1; same IST month, not emailed, no payment or note; VERIFY WITH CA/LEGAL) | ✅ (step-up) | — | — | — |
+| Issue a tax invoice for a payment received against a proforma (M5.2; Researched 2026-10-28, 08-C RA-17, RA-19) | ✅ (step-up) | — | — | — |
+| Void an invoice (M5.1; same IST month, not emailed, no payment or note; OPEN, 08-C RA-10) | ✅ (step-up) | — | — | — |
+| Download the stored DUPLICATE FOR SUPPLIER copy (`invoices.supplierCopy`; Rule 48(2), 08-C RA-07) | ✅ | — | — | 👁 |
 | Record manual payment | ✅ (confirmed) | ✏️ → ⏳ pending verification | — | 👁 |
 | Refunds | ✅ (step-up) | — | — | 👁 |
 | Reports | ✅ | Projects, time, care plans | Pipeline only | ✅ finance + exports |

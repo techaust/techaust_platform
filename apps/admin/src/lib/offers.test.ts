@@ -3,6 +3,10 @@
 import { describe, expect, it } from "vitest";
 import { offerSent } from "../../../../packages/email/src/offers.ts";
 import { RequestError } from "../api.ts";
+
+/** The mark a line not yet approved would carry (none should). */
+const PLACEHOLDER_TAG = "[Placeholder]";
+
 import { reasonText } from "./offer-words.ts";
 import {
   canResend,
@@ -18,7 +22,6 @@ import {
   recipientChoices,
   shortSha,
 } from "./offers.ts";
-import { PLACEHOLDER_TAG } from "./projects.ts";
 
 const contact = (
   id: string,

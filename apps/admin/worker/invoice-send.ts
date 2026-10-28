@@ -1,5 +1,5 @@
 // Sending an issued invoice, proforma, credit note or debit note, revoking its links and pausing its reminders (M5.4; ADM-INV-15, ADM-INV-13, POR-06, LD55, LD56, LD60, LD15;
-// VERIFY WITH CA/LEGAL for which documents are chased). Routes (each a `ROUTES` row; every change one batch through `mutate`):
+// Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-28) for which documents are chased). Routes (each a `ROUTES` row; every change one batch through `mutate`):
 //   POST /invoices/:id/send              invoices.send   {contactIds 1 to 5, attachPdf?}  the `document_sends` rows (kind send, or resend when the invoice was sent before) and, on the first send, the reminders
 //   POST /invoices/:id/links/revoke      invoices.send   cancels the sends still waiting, revokes every live link, pauses the reminders (LD60)
 //   POST /invoices/:id/reminders/pause   invoices.send   the waiting reminders go to `paused`

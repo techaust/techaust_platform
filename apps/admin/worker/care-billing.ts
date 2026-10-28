@@ -1,4 +1,4 @@
-// The recurring care-plan invoice, in the admin API Worker (M5.4; ADM-CARE-02, ADM-INV-12, LD57, LD58, LD59, LD66; VERIFY WITH CA/LEGAL for every tax rule). The jobs Worker cannot build or issue an
+// The recurring care-plan invoice, in the admin API Worker (M5.4; ADM-CARE-02, ADM-INV-12, LD57, LD58, LD59, LD66; Researched 2026-10-28, s.31(5) CGST Act (08-C RA-24) for every tax rule). The jobs Worker cannot build or issue an
 // invoice (the model reads settings through zod, and jobs stays free of it), so it calls two methods of the `BillingJobs` entrypoint (`api.ts`), each with its own clock (no `now` and no period
 // come from the caller):
 //   draftCarePlan({planId})      works out the plan's current period and writes the draft, the record of the period and the plan's `last_billed_period` in ONE batch;
@@ -81,25 +81,24 @@ import { mutateSystem } from "./system.ts";
 /** What the two methods need of the Worker's bindings. */
 export type CareEnv = Pick<Env, "DB" | "PDF_QUEUE">;
 
-// ---- words the bells use: 07-U is the lead's to draft, so each is a marked placeholder until it is ---------------------------------------------------------------
+// ---- words the bells use: 07-U §6 to §7, approved by the lead 2026-10-28 ------------------------------------------------------------------------------------------
 
-const PLACEHOLDER = "[Placeholder, 07-U] ";
 /** The owners' bell titles (a bell never carries a number or a name beyond the client's, docs/13 2026-10-26; the issued one names its number, as every issue bell does). */
 const bellTitle = {
   // 07-U §7: "Care invoice draft for {client} ({period}) is ready to check." and, when the exchange rate is what is missing, its own line.
   draftReady: (client: string, period: Period, reasons: readonly string[] = []) =>
     reasons.includes("usd_needs_fx")
-      ? `${PLACEHOLDER}Care invoice draft for ${client} needs the exchange rate before it can be issued.`
-      : `${PLACEHOLDER}Care invoice draft for ${client} (${periodWords(period)}) is ready to check.`,
+      ? `Care invoice draft for ${client} needs the exchange rate before it can be issued.`
+      : `Care invoice draft for ${client} (${periodWords(period)}) is ready to check.`,
   // "Care invoice {number} for {client} was issued and emailed." (the number is put between the two parts by SQL, so it is right in the batch that issued the invoice)
-  issuedHead: `${PLACEHOLDER}Care invoice `,
+  issuedHead: `Care invoice `,
   issuedTail: (client: string, notEmailed: boolean) =>
     notEmailed
       ? ` for ${client} was issued, but no billing contact has portal access, so it wasn't emailed.`
       : ` for ${client} was issued and emailed.`,
   // "{client}'s care plan has an unbilled period ({period}). Invoice it by hand." (Q51)
   missedPeriod: (client: string, period: Period) =>
-    `${PLACEHOLDER}${client}'s care plan has an unbilled period (${periodWords(period)}). Invoice it by hand.`,
+    `${client}'s care plan has an unbilled period (${periodWords(period)}). Invoice it by hand.`,
 };
 
 type Guard = { sql: (at: number) => string; params: readonly unknown[] };
@@ -331,6 +330,7 @@ export async function draftCarePlan(
     period,
     catalogue: catalogue as CareCatalogue,
     overage,
+    currency: client.currency === "USD" ? "USD" : "INR",
     ...(opts.words ? { words: opts.words } : {}),
   });
   if (!built.ok) return { result: "skipped", autoEligible: false, reasons: [], why: "service_missing" };

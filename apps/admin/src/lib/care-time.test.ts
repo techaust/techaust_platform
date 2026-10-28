@@ -39,6 +39,10 @@ import {
   termsDate,
   termsFormOf,
 } from "./care.ts";
+
+/** The mark a line not yet approved would carry (none should). */
+const PLACEHOLDER_TAG = "[Placeholder]";
+
 import {
   ACTIVITY_PENDING,
   activityHref,
@@ -48,7 +52,6 @@ import {
   TILE_TITLES,
 } from "./dashboard.ts";
 import { DATE_INVALID, isUnread, settledValue } from "./date-field.ts";
-import { PLACEHOLDER_TAG } from "./projects.ts";
 import {
   CSV_COLUMNS,
   earliestDate,
@@ -217,8 +220,8 @@ describe("07-M copy, word for word (draft pending the owner)", () => {
       "My time",
       "Recent activity",
     ]);
-    // M5.5b (on purpose): 07-V §7 replaces 07-J's line; marked until the owner approves 07-V.
-    expect(DASH_COPY.financeArrives).toBe("[Placeholder] Collected figures arrive with payments.");
+    // M5.5b (on purpose): 07-V §7 replaces 07-J's line (07-V approved 2026-10-28).
+    expect(DASH_COPY.financeArrives).toBe("Collected figures arrive with payments.");
     expect(DASH_COPY.paymentsArrive).toBe("Payments waiting for checks arrive with payments.");
     expect([DASH_COPY.notStarted, DASH_COPY.system]).toEqual(["Not started", "System"]);
     expect(showingFirst(20)).toBe("Showing the first 20.");

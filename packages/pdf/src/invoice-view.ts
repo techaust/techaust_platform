@@ -1,6 +1,6 @@
 // The invoice envelope as a pre-formatted view (M5.1 stage B; LD10): every value a template prints is already a string. Amounts come from the frozen
 // `computed` text, formatted by core; nothing is added up here. The per-head rates are DERIVED from the frozen rate and the supply type (LD10): an
-// intra-state supply prints half of the rate under CGST and half under SGST, anything else prints the whole rate under IGST (VERIFY WITH CA/LEGAL).
+// intra-state supply prints half of the rate under CGST and half under SGST, anything else prints the whole rate under IGST (Researched 2026-10-28, Rule 46 CGST Rules (08-C RA-05)).
 // A missing bank block or signature leaves its part out; nothing is invented. A signature image is embedded only when the caller hands in bytes it
 // has already verified against the frozen SHA-256 (`verifySignatureBytes`).
 import { formatFxRate } from "@techaust/core/invoices";
@@ -37,12 +37,13 @@ const DOC_LABELS: Readonly<Record<string, string>> = {
   debit_note: "Debit Note",
 };
 
-/** 07-T §3: the label of each reason a person can pick (the code is what is frozen; `other` is then described in words). Q35: a debit note has two. */
+/** 07-T §3: the label of each reason a person can pick (the code is what is frozen; `other` is then described in words). Q35 (owner 2026-10-28): a debit note has three (07-T §9). */
 const REASON_LABELS: Readonly<Record<string, string>> = {
   price_correction: "Price correction",
   service_not_delivered: "Service not delivered",
   service_deficient: "Service deficient",
   discount_after_sale: "Discount after sale",
+  tax_charged_too_low: "Tax charged too low",
   other: "Other",
 };
 
@@ -51,6 +52,8 @@ export const EXPORT_PLACE_OF_SUPPLY = "Outside India (96)";
 
 /** Rule 48(2): the copy a PDF is. */
 export const ORIGINAL_FOR_RECIPIENT = "ORIGINAL FOR RECIPIENT";
+/** Rule 48(2): the mark of the stored copy the supplier keeps; it is never emailed, attached or linked to a client (owner 2026-10-28, Q11). */
+export const DUPLICATE_FOR_SUPPLIER = "DUPLICATE FOR SUPPLIER";
 
 /** Half of a rate in basis points, as the percent text of one head of an intra-state supply: 1800 gives "9 %", 250 gives "1.25 %", 25 gives "0.125 %". */
 export function halfRate(bp: number): string {
@@ -94,7 +97,12 @@ const SIGNATURE_MIMES: readonly string[] = ["image/png", "image/jpeg"];
 export function toInvoiceView(
   envelope: InvoiceEnvelope,
   cfg: ViewConfig,
-  opts: { signature?: VerifiedSignature | null; portalLink?: string | null } = {},
+  opts: {
+    signature?: VerifiedSignature | null;
+    portalLink?: string | null;
+    /** `supplier`: the stored DUPLICATE FOR SUPPLIER copy (a proforma has no copy mark either way). Default: the original for the recipient. */
+    copy?: "recipient" | "supplier";
+  } = {},
 ): InvoiceView {
   const { snapshot: s } = envelope;
   const header = s.header;
@@ -227,7 +235,7 @@ export function toInvoiceView(
       }
     : null;
 
-  // M5.3: a credit or debit note's facts, from the sealed `noteOf` only. The invoice's route and LUT travel with it (the note copies them at issue; VERIFY WITH CA/LEGAL).
+  // M5.3: a credit or debit note's facts, from the sealed `noteOf` only. The invoice's route and LUT travel with it (the note copies them at issue; Researched 2026-10-28, s.34(3) CGST Act, Rule 53 (08-C RA-22)).
   const noteView: InvoiceViewNote | null = noteOf
     ? {
         kind: noteOf.kind,
@@ -287,7 +295,12 @@ export function toInvoiceView(
     numberDisplay: envelope.numberDisplay,
     issueDate: shortIsoDate(header.document.issueDate),
     dueDate: header.document.dueDate === null ? "" : shortIsoDate(header.document.dueDate),
-    copyLabel: envelope.type === "proforma" ? null : ORIGINAL_FOR_RECIPIENT,
+    copyLabel:
+      envelope.type === "proforma"
+        ? null
+        : opts.copy === "supplier"
+          ? DUPLICATE_FOR_SUPPLIER
+          : ORIGINAL_FOR_RECIPIENT,
     logo: company.logo,
     supplier: {
       name: company.tradeName,
@@ -324,6 +337,7 @@ export function toInvoiceView(
           proformaNumber: header.advance.proformaNumber,
           proformaDate: shortIsoDate(header.advance.proformaIssueDate),
           receivedOn: shortIsoDate(header.advance.receivedOn),
+          igstNoLutFy: header.advance.igstNoLutFy ?? null,
         }
       : null,
     note: noteView,
@@ -335,6 +349,7 @@ export function toInvoiceView(
         }
       : null,
     signature,
+    showSignatory: header.issuer.signatory !== false,
     // at issue nothing has been paid, so the balance is the total (LD17); an invoice made for money received is paid at issue: nothing is due (the layout leaves the row out)
     // (a credit note owes nothing either: its balance is 0, M5.3; a debit note is its own payable and owes its total)
     balanceDue: m(header.advance || noteOf?.kind === "credit" ? 0 : computed.totalMinor),

@@ -9,7 +9,6 @@ import { RequestError } from "../api.ts";
 import { ACTION_LABELS } from "./audit.ts";
 import { reportBellHref } from "./bell-links.ts";
 import {
-  APPROVED_07V,
   byUrgency,
   FINANCE_COPY,
   fileDownloadText,
@@ -19,7 +18,6 @@ import {
   issueLines,
   lastCompleteQuarter,
   nearestScrollLeft,
-  P,
   periodDates,
   periodFromValue,
   periodLabel,
@@ -40,7 +38,6 @@ import {
   statementKindText,
   stateText,
   TAX_FIELDS_COPY,
-  V,
 } from "./reports.ts";
 import { dispositionName } from "./reports-api.ts";
 import {
@@ -55,13 +52,13 @@ import {
 } from "./reports-build.ts";
 import { buildTax, REALISATION_ERRORS, taxToForm } from "./tax-settings.ts";
 
-const M = "[Placeholder] ";
+/** 07-V and 07-W were approved on 2026-10-28 (research and wording): no line carries a mark (`M` and `G` are empty). */
+const M = "";
+const G = "";
 
-describe("07-V is marked until the owner approves it", () => {
-  it("every 07-V line carries the mark; a line 07-V lacks carries it too, whatever the switch", () => {
-    expect(APPROVED_07V).toBe(false);
-    expect(V("GST exports")).toBe(`${M}GST exports`);
-    expect(P("Overall")).toBe(`${M}Overall`);
+describe("07-V is approved word for word", () => {
+  it("no 07-V or 07-W line carries the mark", () => {
+    expect(GST_COPY.overall).toBe(`${G}Overall`);
     for (const line of [
       GST_COPY.title,
       GST_COPY.make,
@@ -71,12 +68,34 @@ describe("07-V is marked until the owner approves it", () => {
       TAX_FIELDS_COPY.b2clLabel,
       STAGE_LABELS.fema_overdue,
     ])
-      expect(line.startsWith(M)).toBe(true);
+      expect(line.includes("[Placeholder")).toBe(false);
   });
 
-  it("the two audit labels (07-V §1) carry the same mark as every 07-V line", () => {
-    expect(ACTION_LABELS["report.export"]).toBe(V("exported a report"));
-    expect(ACTION_LABELS["client.statement_pdf"]).toBe(V("made a statement PDF"));
+  it("the two audit labels (07-V §1), unmarked (07-V §11)", () => {
+    expect(ACTION_LABELS["report.export"]).toBe("exported a report");
+    expect(ACTION_LABELS["client.statement_pdf"]).toBe("made a statement PDF");
+  });
+
+  it("the lines changed on 2026-10-28 (07-V §11, 08-C RB-01 to RB-04, RA-20)", () => {
+    expect(STAGE_LABELS.gst_approaching).toBe("GST date in 30 days");
+    expect(GST_COPY.verify("gstr1-csv-v1")).toBe(
+      "Made with layout gstr1-csv-v1 for the GSTR-1 offline tool. Layouts change; before your first upload, test-import one file with your CA.",
+    );
+    expect(REALISATION_COPY.lede).toBe(
+      "Export invoices not yet fully paid, most urgent first. Money from an export must reach India within the FEMA period: 9 months from the invoice date, or 12 if it was invoiced or settled in Indian Rupees.",
+    );
+    expect(REALISATION_COPY.beforeFema).toBe(
+      "Issued before 1 October 2026: a different realisation period may apply.",
+    );
+    expect(REALISATION_COPY.extensionNote).toBe(
+      "If your bank extended a date, you can record it with the proof of payment in the payments update.",
+    );
+    expect(TAX_FIELDS_COPY.inrMonthsHint).toBe(
+      "Months within which payment must arrive for an export invoiced or settled in Indian Rupees. Default 12. A foreign-currency invoice has 9 months; ask your bank before treating one as settled in rupees.",
+    );
+    expect(TAX_FIELDS_COPY.b2clHint).toBe(
+      "Invoices to unregistered clients in another state above this amount are reported one by one (B2CL). Default ₹1,00,000.",
+    );
   });
 
   it("07-V §2 words with their figures", () => {
@@ -85,14 +104,14 @@ describe("07-V is marked until the owner approves it", () => {
     expect(GST_COPY.done(7)).toBe(`${M}7 documents checked. No errors.`);
     expect(GST_COPY.errorsHeading(3)).toBe(`${M}3 problems to fix before these files can be made`);
     expect(GST_COPY.download("Exports")).toBe(`${M}Download Exports CSV`);
-    // review 6: singular forms and the two HSN rows (not in 07-V: the plain mark)
-    expect(GST_COPY.done(1)).toBe(`${M}1 document checked. No errors.`);
-    expect(GST_COPY.errorsHeading(1)).toBe(`${M}1 problem to fix before these files can be made`);
-    expect(fileDownloadText("hsn_b2b", "x")).toBe(`${M}Download HSN/SAC summary (B2B) CSV`);
-    expect(fileDownloadText("hsn_b2c", "x")).toBe(`${M}Download HSN/SAC summary (B2C) CSV`);
+    // review 6: singular forms follow their plural line; the two HSN rows are not in 07-V (marked)
+    expect(GST_COPY.done(1)).toBe("1 document checked. No errors.");
+    expect(GST_COPY.errorsHeading(1)).toBe("1 problem to fix before these files can be made");
+    expect(fileDownloadText("hsn_b2b", "x")).toBe(`${G}Download HSN/SAC summary (B2B) CSV`);
+    expect(fileDownloadText("hsn_b2c", "x")).toBe(`${G}Download HSN/SAC summary (B2C) CSV`);
     expect(fileDownloadText("docs", "x")).toBe(`${M}Download Documents issued (Table 13) CSV`);
     expect(fileDownloadText("exp", "Exports")).toBe(`${M}Download Exports CSV`);
-    expect(REALISATION_COPY.emptyAll).toBe(`${M}No export invoices in this list.`);
+    expect(REALISATION_COPY.emptyAll).toBe(`${G}No export invoices in this list.`);
     expect(GST_COPY.verify("gstr1-csv-v1")).toContain(
       "Made with layout gstr1-csv-v1 for the GSTR-1 offline tool.",
     );
@@ -108,7 +127,7 @@ describe("07-V is marked until the owner approves it", () => {
 describe("GST errors and problems", () => {
   it("has one 07-V message for each of the 28 codes; an unknown code reads as the internal error", () => {
     expect(Object.keys(GST_ERRORS)).toHaveLength(28);
-    for (const m of Object.values(GST_ERRORS)) expect(m.startsWith(M)).toBe(true);
+    for (const m of Object.values(GST_ERRORS)) expect(m.includes("[Placeholder")).toBe(false);
     expect(gstErrorText("sac_invalid")).toBe(`${M}A line's SAC code is not six digits.`);
     expect(gstErrorText("nope")).toBe(GST_ERRORS.internal_error);
   });
@@ -361,6 +380,19 @@ describe("Settings › Tax round trip (early check H2)", () => {
     expect(built.value.reverseChargeText).toBe("Changed line");
   });
 
+  it("the checklist's signatory is read as on unless stored off, and always saved with the switch as it is (no conditional key)", () => {
+    expect(taxToForm(stored).signatory).toBe(true);
+    expect(
+      taxToForm({ ...stored, invoiceChecklist: { ...stored.invoiceChecklist, signatory: false } }).signatory,
+    ).toBe(false);
+    for (const signatory of [true, false]) {
+      const built = buildTax({ ...taxToForm(stored), signatory }, { value: stored });
+      expect("value" in built).toBe(true);
+      if (!("value" in built)) return;
+      expect(built.value.invoiceChecklist).toEqual({ bankDetails: true, paymentLink: false, signatory });
+    }
+  });
+
   it("the two fields save what was typed, and refuse zero or out-of-range values in 07-V's words", () => {
     const ok = buildTax({ ...taxToForm(stored), b2cl: "2,50,000", inrMonths: "24" }, { value: stored });
     expect("value" in ok && ok.value.b2clThresholdInrMinor).toBe(2_50_000_00);
@@ -397,7 +429,7 @@ describe("Settings › Tax round trip (early check H2)", () => {
         "f-realisation-escalateExtraDays",
       ]),
     );
-    expect(REALISATION_ERRORS.warnMonths).toBe(`${M}Enter the months before the warning, from 1 to 1,200.`);
+    expect(REALISATION_ERRORS.warnMonths).toBe(`${G}Enter the months before the warning, from 1 to 1,200.`);
   });
 });
 

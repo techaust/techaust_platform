@@ -1,4 +1,4 @@
-// Credit and debit notes: the model the routes share (M5.3; ADM-INV-11, ADM-INV-01; LD38..LD54; VERIFY WITH CA/LEGAL for every rule): what is read about the invoice a
+// Credit and debit notes: the model the routes share (M5.3; ADM-INV-11, ADM-INV-01; LD38..LD54; Researched 2026-10-28, s.34(3) CGST Act, Rule 53 (08-C RA-22) for every rule): what is read about the invoice a
 // note is against, how a request becomes takes and a computed document, the draft's state and hash, the deadline, and the error lines. No route is here
 // (`invoice-notes.ts` makes the draft and answers the IMS route; `invoice-issue.ts` issues through `prepareNoteIssue`), and nothing here trusts a draft: every
 // figure is worked out again from the frozen invoice, the credit notes issued so far (summed by SQL) and the stored takes.
@@ -35,6 +35,7 @@ import {
   creditNote,
   type TaxContext,
   type TaxIssue,
+  taxOnlyDebitNote,
 } from "@techaust/core/tax";
 import {
   headerExtrasJson,
@@ -47,6 +48,7 @@ import { CREDITED_SO_FAR_SQL, CREDITED_TOTALS_SQL, NOTE_COUNTS_SQL } from "@tech
 import type { ApiError } from "./context.ts";
 import {
   type BankRow,
+  type FxState,
   type InvoiceComputation,
   type InvoiceSettings,
   type InvoiceState,
@@ -54,7 +56,7 @@ import {
 } from "./invoice-model.ts";
 import type { ClientRow, LineState } from "./quote-model.ts";
 
-// ---- errors (07-T §7 where it has the line; `[Placeholder]` where it does not: the copy gaps of the run file) ---------------------------------------
+// ---- errors (07-T §7, §8 and §9) ----------------------------------------------------------------------------------------------------------------------------
 
 const e = (code: string, message: string): ApiError => ({ code, message });
 export const PARENT_NOT_ISSUED = e(
@@ -66,8 +68,23 @@ export const PARENT_FULLY_CREDITED = e(
   "parent_fully_credited",
   "This invoice has already been credited in full.",
 );
-/** A debit note on an invoice that is credited in full (the 07-T line is the owner's to give: `[Placeholder]` until then). */
-export const DEBIT_PARENT_FULLY_CREDITED = e("debit_parent_fully_credited", "[Placeholder]");
+/** A debit note on an invoice that is credited in full (07-T §9). */
+export const DEBIT_PARENT_FULLY_CREDITED = e(
+  "debit_parent_fully_credited",
+  "This invoice has been credited in full, so a debit note can't be issued against it. Issue a new invoice instead.",
+);
+/** 07-T §9 (Q35, owner 2026-10-28): the taxable value of a "Tax charged too low" debit note is zero; only the tax to add is entered. */
+export const DEBIT_TAX_ONLY_INVALID = e(
+  "debit_tax_only_invalid",
+  'Enter tax only: the taxable value of a "Tax charged too low" note is zero.',
+);
+/** The `details.reason` of `debit_tax_only_invalid` when the tax to add is odd on an intra-state invoice (CGST and SGST are equal halves); the screen shows 07-W 5.9's line. */
+export const ODD_AMOUNT = "odd_amount";
+/** 07-T §9 (Researched 2026-10-28, 08-C RA-02): a credit note for a discount after sale may be dated from 1 November 2026. */
+export const DISCOUNT_REASON_NOT_IN_FORCE = e(
+  "discount_reason_not_in_force",
+  "A credit note for a discount after sale can be dated from 1 November 2026.",
+);
 export const CREDIT_DEADLINE_PASSED = e(
   "credit_deadline_passed",
   "The deadline for a credit note on this invoice has passed.",
@@ -111,12 +128,12 @@ export const IMS_NOT_APPLICABLE = e(
   "IMS status only applies to credit notes for GST-registered clients.",
 );
 /** 07-T §8: "Because of rounding, the nearest amount this credit note can be is {closest}. Use that amount instead?" (the button "Use {closest}" is the screen's).
- * With no closest amount (below one rounding unit) 07-T has no line yet: `[Placeholder]` until the owner approves one (batch Q66). */
+ * With no closest amount (below one rounding unit): 07-T §9 (batch Q66). */
 export const creditAmountUnfit = (closestMinor: number | null, currency: "INR" | "USD"): ApiError =>
   e(
     "credit_amount_unfit",
     closestMinor === null
-      ? "[Placeholder]"
+      ? "This amount is too small to credit after rounding. Enter a larger amount."
       : `Because of rounding, the nearest amount this credit note can be is ${formatMoney(money(closestMinor, currency))}. Use that amount instead?`,
   );
 export const CREDIT_DATA_DAMAGED = e(
@@ -129,7 +146,7 @@ export const ANNUAL_RETURN_FUTURE = e("annual_return_future", "The filing date c
 
 const NOTES_SQL = "'credit_note', 'debit_note'";
 const PARENT_COLS =
-  "id, type, status, client_id, project_id, currency, fy, number_display, issue_date, supply_type, place_of_supply_code, export_mode, fx_rate_micros, fx_date, fx_source, total_minor, total_inr_minor, paid_minor, credited_minor, balance_minor, updated_at, service_completed_on, header_extras, frozen_at, computed, recipient";
+  "id, type, status, client_id, project_id, currency, fy, number_display, issue_date, supply_type, place_of_supply_code, export_mode, fx_rate_micros, fx_date, fx_source, fx_no_rate_day, total_minor, total_inr_minor, paid_minor, credited_minor, balance_minor, updated_at, service_completed_on, header_extras, frozen_at, computed, recipient";
 const PARENT_LINE_COLS = "position, description, detail, sac, unit, gst_rate_bp";
 
 export type ParentRow = {
@@ -148,6 +165,8 @@ export type ParentRow = {
   fx_rate_micros: number | null;
   fx_date: string | null;
   fx_source: string | null;
+  /** The day (ISO) the parent's no-rate statement covers (Q24); null when none. */
+  fx_no_rate_day: string | null;
   total_minor: number;
   total_inr_minor: number | null;
   paid_minor: number;
@@ -298,7 +317,7 @@ export function leftOf(p: ParentCtx): { totalLeft: number; taxableLeft: number[]
   };
 }
 
-/** The deadline of a credit note on this invoice (Q32, Q33; VERIFY WITH CA/LEGAL). */
+/** The deadline of a credit note on this invoice (Q32, Q33; Researched 2026-10-28, s.34(2) CGST Act (08-C RA-03)). */
 export function deadlineOf(p: ParentCtx, settings: InvoiceSettings): CreditDeadline {
   return creditNoteDeadline(
     {
@@ -317,7 +336,13 @@ export { creditAllowed };
 // ---- turning a request into takes and a computed document ------------------------------------------------------------------------------------
 
 /** A failed request: the status, the body's error and the extra keys (`remaining`, `line`, `issues`, `closestMinor`). */
-export type NoteRefusal = { status: 400 | 409; error: ApiError; extra?: Record<string, unknown> };
+/** `details` is written inside `error` (`error.details`, like `err(..., details)`): `{ reason: "odd_amount" }` of a tax-only debit note whose tax is odd on an intra-state invoice. */
+export type NoteRefusal = {
+  status: 400 | 409;
+  error: ApiError;
+  extra?: Record<string, unknown>;
+  details?: Readonly<Record<string, string | number | boolean | null>>;
+};
 
 export type NoteAsk = {
   mode: "lines" | "amount" | "full";
@@ -442,16 +467,61 @@ export function resolveDebit(
   return { ok: true, request: { mode: "lines", takes: sorted }, computed: r.value };
 }
 
-/** The same computed document worked out again from STORED takes (the issue, a save): a credit note as a `lines` request over what was issued since, a debit note as a debit. */
+/**
+ * The computed document of a "Tax charged too low" debit note (Q35, 07-T §9): the tax to add (`taxMinor`, above zero) split over the invoice's lines that carry tax, with a taxable
+ * value of zero, at the invoice's supply, heads and rates (core `taxOnlyDebitNote`). A bad amount or an invoice with no tax to correct is `debit_tax_only_invalid` (400).
+ */
+export function resolveDebitTaxOnly(
+  p: ParentCtx,
+  taxMinor: number,
+  taxCtx: TaxContext,
+): { ok: true; request: NoteRequest; computed: ComputedDocument } | { ok: false; refusal: NoteRefusal } {
+  const r = taxOnlyDebitNote(p.computed, taxMinor, taxCtx);
+  if (!r.ok) {
+    // An odd amount on an intra-state invoice (CGST must equal SGST) says so (`details.reason`, 07-W 5.9); a parent with no tax on any line (an export under LUT) and every other bad
+    // amount keep the plain line (07-W 5.11: no tax-only debit note on an LUT invoice, which the screen does not offer).
+    if (
+      p.computed.supply.type === "intra" &&
+      Number.isInteger(taxMinor) &&
+      taxMinor >= 1 &&
+      taxMinor % 2 === 1 &&
+      r.errors.some((x) => x.code === "credit_line_invalid")
+    )
+      return {
+        ok: false,
+        refusal: { status: 400, error: DEBIT_TAX_ONLY_INVALID, details: { reason: ODD_AMOUNT } },
+      };
+    if (r.errors.some((x) => x.code === "credit_line_invalid" || x.code === "credit_empty"))
+      return { ok: false, refusal: { status: 400, error: DEBIT_TAX_ONLY_INVALID } };
+    if (r.errors.some((x) => x.code === "credit_shape_mismatch"))
+      return { ok: false, refusal: { status: 409, error: CREDIT_DATA_DAMAGED } };
+    return { ok: false, refusal: issuesOf(r.errors) };
+  }
+  return {
+    ok: true,
+    request: {
+      mode: "lines",
+      taxMinor,
+      takes: r.value.lines.map((l) => ({ line: l.index, taxableMinor: 0 })),
+    },
+    computed: r.value,
+  };
+}
+
+/** The same computed document worked out again from the STORED request (the issue, a save): a credit note as a `lines` request over what was issued since, a debit note as a debit (or as tax only). */
 export function recomputeNote(
   kind: NoteKind,
   p: ParentCtx,
-  takes: readonly NoteTake[],
+  request: Pick<NoteRequest, "takes" | "taxMinor">,
   taxCtx: TaxContext,
   today: CalendarDate,
 ): { computed: ComputedDocument | null; errors: TaxIssue[]; refusal: NoteRefusal | null } {
+  const takes = request.takes;
   if (kind === "debit") {
-    const r = resolveDebit(p, takes, taxCtx, today);
+    const r =
+      request.taxMinor !== undefined
+        ? resolveDebitTaxOnly(p, request.taxMinor, taxCtx)
+        : resolveDebit(p, takes, taxCtx, today);
     return r.ok
       ? { computed: r.computed, errors: [], refusal: null }
       : { computed: null, errors: [], refusal: r.refusal };
@@ -518,6 +588,7 @@ export function blockersOfNote(a: {
       },
       issuedOfKind: a.kind === "credit" ? a.p.issued.credit : a.p.issued.debit,
       reason: a.stored.reason,
+      issueDate: a.issueDate,
       request: asked,
       taxErrorCount: a.re.computed || known ? 0 : 1,
       totalMinor: a.re.computed?.totalMinor ?? null,
@@ -576,10 +647,19 @@ export function noteLines(p: ParentCtx, takes: readonly NoteTake[]): LineState[]
   });
 }
 
-/** The exchange rate of the invoice, as the note carries it (copied: a note never has a rate of its own). */
-export const fxOfParent = (p: ParentCtx) =>
+/**
+ * The exchange rate of the invoice, as the note carries it (copied: a note never has a rate of its own), with the parent's "no rate was published that day" statement and the day it
+ * covers when it has one (Q24, review 2026-10-28, finding 6): the note's sealed `fx` is then the parent's exactly, and a note is never judged against the day of supply (the engine's
+ * rate rule is for tax and export invoices only).
+ */
+export const fxOfParent = (p: ParentCtx): FxState | null =>
   p.row.fx_rate_micros !== null && p.row.fx_date !== null && p.row.fx_source !== null
-    ? { rateMicros: p.row.fx_rate_micros, date: p.row.fx_date, source: p.row.fx_source }
+    ? {
+        rateMicros: p.row.fx_rate_micros,
+        date: p.row.fx_date,
+        source: p.row.fx_source,
+        ...(p.row.fx_no_rate_day ? { noRateDay: p.row.fx_no_rate_day } : {}),
+      }
     : null;
 
 /** The state of a note draft: the client, the contact, the parent's currency, route and rate, the lines and the request. */

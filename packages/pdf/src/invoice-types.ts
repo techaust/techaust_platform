@@ -14,7 +14,7 @@ export type InvoiceBankSnap = {
   branch: string | null;
 };
 
-/** The SWIFT block of a USD invoice (M5.2; db `InvoiceSwiftBlock`); an M5.1 snapshot has none. The purpose code is the owner's RBI code (VERIFY WITH CA/LEGAL). */
+/** The SWIFT block of a USD invoice (M5.2; db `InvoiceSwiftBlock`); an M5.1 snapshot has none. The purpose code is the owner's RBI code (OPEN (08-C RB-06): which RBI purpose code fits our exports? the bank confirms it). */
 export type InvoiceSwiftSnap = {
   accountName: string;
   accountNo: string;
@@ -33,7 +33,9 @@ export type InvoiceIssuerSnap = {
   company: IssuerSnap["company"] & { phone?: string; principalPlace?: string };
   bank: { inr: InvoiceBankSnap | null; swift?: InvoiceSwiftSnap | null };
   signature: InvoiceSignatureRef | null;
-  /** The Rule 46(p) statement exactly as it was issued (frozen and sealed; VERIFY WITH CA/LEGAL). */
+  /** `false` only when the signature block was switched off at issue (07-W 5.6): the layout prints none. Absent = block printed. */
+  signatory?: false;
+  /** The Rule 46(p) statement exactly as it was issued (frozen and sealed; Researched 2026-10-28, Rules 46(p), 50 and 51 CGST Rules (08-C RA-26)). */
   reverseChargeText: string;
   sender: IssuerSnap["sender"];
 };
@@ -193,7 +195,7 @@ export type InvoiceViewNote = {
   effect: { direction: "reduces" | "increases"; parentNumber: string; total: string };
   /** A USD note: the rate of its invoice and that invoice's number ("Exchange rate: 1 USD = ₹{rate} (the rate of invoice {parentNumber})"); null for INR. */
   fx: { rate: string; parentNumber: string } | null;
-  /** The invoice's export route and its LUT letter (an export credit note prints them, VERIFY WITH CA/LEGAL); null for a domestic note. */
+  /** The invoice's export route and its LUT letter (an export credit note prints them, Researched 2026-10-28, s.34(2) CGST Act (08-C RA-03)); null for a domestic note. */
   route: { mode: "lut" | "igst_paid"; lut: { fy: string; fyLabel: string; arn: string } | null } | null;
 };
 
@@ -242,13 +244,20 @@ export type InvoiceView = {
   /** M5.2: a proforma's notice (printed under the title) and its "Valid until" (its due date); null on every other type. */
   proforma: { notice: string; validUntil: string } | null;
   /** M5.2: the invoice made for money received against a proforma: the proforma's number and date, and the day the money arrived; null otherwise. */
-  advance: { proformaNumber: string; proformaDate: string; receivedOn: string } | null;
+  advance: {
+    proformaNumber: string;
+    proformaDate: string;
+    receivedOn: string;
+    igstNoLutFy: string | null;
+  } | null;
   /** M5.3: a credit or debit note's facts; null on every other type. */
   note: InvoiceViewNote | null;
   /** The footer notes pinned at issue (Markdown), or null. */
   notes: { title: string; version: string; bodyMd: string } | null;
   /** The signature image as a data URI once its bytes were verified; null otherwise (the line "Authorised signatory" is printed either way). */
   signature: { dataUri: string } | null;
+  /** False when the Owner had switched "Authorised signatory" off at issue (frozen in the envelope, 07-W 5.6): no "For {company}", no image, no line. */
+  showSignatory: boolean;
   /** The balance due, printed under the total; at issue it equals the total (LD17). */
   balanceDue: string;
   /** The generic client portal address ("Or pay in the client portal"), or null when none is configured (the line is left out). Never a personal link. */

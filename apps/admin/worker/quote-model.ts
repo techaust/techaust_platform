@@ -1,7 +1,7 @@
 // The model of proposals and estimates in the admin Worker (M4.3; ADM-PROP-01..07, ADM-EST-01). One code path for both types: the state of a
 // draft, how a request changes it, how it is computed (the shared tax engine), hashed and written. No route lives here; the route files
 // (documents, document-save, document-send, approvals, document-convert) use it. Money is integer minor units, bigint inside the engine.
-// VERIFY WITH CA/LEGAL: every tax rule is the engine's (M4.2); this file adds none.
+// Researched 2026-10-28, Rule 46 CGST Rules (08-C RA-05): every tax rule is the engine's (M4.2); this file adds none.
 import type { TaxInput } from "@techaust/core/clients";
 import { type CalendarDate, istDate } from "@techaust/core/dates";
 import {

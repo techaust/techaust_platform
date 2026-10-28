@@ -1,7 +1,7 @@
-// The legal pages and the security policy (WEB-LEGAL, WEB-SEC): docs/07-content-appendix/A-legal-pages.md §1–§6 and
-// §8, word for word. VERIFY WITH CA/LEGAL: every page is a draft written without a lawyer (07-A status line); the
-// optional lawyer review is the owner's decision before launch. The "(VERIFY WITH …)" notes 07-A writes inline stay out
-// of the pages and are kept here as comments next to the text they qualify.
+// The legal pages and the security policy (WEB-LEGAL, WEB-SEC): docs/07-content-appendix/A-legal-pages.md v0.3 (2026-10-28) §1–§6 and
+// §8, word for word. Every page is drafted without a lawyer and checked against the research register (08-C, owner rule 8); the
+// optional lawyer review of the OPEN points (08-C §5) is the owner's decision before launch. The "(Researched, 08-C …)" and
+// "(OPEN, 08-C …)" notes 07-A writes inline stay out of the pages and are kept here as comments next to the text they qualify.
 //
 // Typesetting only: curly apostrophes and quotes; e-mail addresses written as Markdown links to themselves (mailto) so
 // they can be clicked, and 07-A's Markdown links as written; a bold lead that 07-A ends with "." becomes the section
@@ -45,7 +45,7 @@ const BILLING = mail("billing@techaust.com");
 const SECURITY = mail("security@techaust.com");
 
 /**
- * 07-A §2 item 10: the website liability cap (VERIFY WITH CA/LEGAL). Not a catalogue price, so not a {{price}} token:
+ * 07-A §2 item 10: the website liability cap (OPEN, 08-C RB-23). Not a catalogue price, so not a {{price}} token:
  * an integer amount in paise, formatted by @techaust/core like every amount on the site (never typed as text).
  */
 const WEBSITE_LIABILITY_CAP = displayAmount(
@@ -121,7 +121,7 @@ const makePrivacy = (ga: boolean): LegalDoc => ({
                 "**Website visitor**",
                 "IP address, browser and device details, pages visited (cookieless Cloudflare Web Analytics); Cloudflare Turnstile security signals",
                 "Run and secure the website; understand overall usage",
-                // VERIFY WITH CA/LEGAL (07-A): the EU/UK basis.
+                // OPEN (08-C RB-12): the EU/UK basis.
                 "India: provided voluntarily by using the site for that purpose (DPDP s.7(a)). EU/UK: legitimate interests",
               ],
               // Google Analytics rows: only while GA is on (site.ga4Id set).
@@ -151,7 +151,7 @@ const makePrivacy = (ga: boolean): LegalDoc => ({
                 "**Client contact**",
                 "Name, title, work email, phone, portal sign-in activity, messages and files you share, proposal acceptance details (typed name, time, IP address, browser), billing details (company name, address, GSTIN), payment status and references",
                 "Deliver services, give portal access, invoice, collect payment, keep records",
-                // VERIFY WITH CA/LEGAL (07-A): the EU/UK basis.
+                // OPEN (08-C RB-12): the EU/UK basis.
                 "India: provided voluntarily for that purpose (DPDP s.7(a)); **legal obligation** for tax records. EU/UK: contract; **legal obligation** for tax records",
               ],
               [
@@ -212,7 +212,7 @@ const makePrivacy = (ga: boolean): LegalDoc => ({
       title: "Data stored outside India",
       blocks: [
         {
-          // VERIFY WITH CA/LEGAL (07-A): transfers outside India.
+          // OPEN (08-C RB-16, watch): any DPDP s.16(1) notification restricting a country we use? None reported to September 2026.
           p: "Some providers store data outside India. Indian law currently permits this, as the Government has not restricted transfers to these countries. For visitors and clients in the EU or UK, we rely on our providers’ standard contractual clauses or equivalent safeguards.",
         },
       ],
@@ -234,7 +234,7 @@ const makePrivacy = (ga: boolean): LegalDoc => ({
               ["Security and access logs", "13 months"],
               ["Email delivery records", "13 months"],
               ...(ga ? [["Analytics (Google, with consent)", "14 months (Google’s setting)"]] : []),
-              // VERIFY WITH CA/LEGAL (07-A): proof of consent for 3 years.
+              // Owner policy, above the one-year legal minimum: Researched 2026-10-28, DPDP Rules 2025 (08-C RB-28).
               ["Newsletter consent", "Until you unsubscribe, plus proof of consent for 3 years after"],
               [
                 "Backups",
@@ -288,7 +288,7 @@ const makePrivacy = (ga: boolean): LegalDoc => ({
       ],
     },
     {
-      // VERIFY WITH LEGAL (07-A heading of §7a).
+      // OPEN (08-C RB-27): the GDPR / UK GDPR section as a whole (07-A heading of §7a).
       id: "eu-uk",
       num: "7a",
       title: "If you are in the EU or UK",
@@ -299,7 +299,7 @@ const makePrivacy = (ga: boolean): LegalDoc => ({
             "**Extra rights under the GDPR / UK GDPR:** you can also ask us to **restrict** how we use your data, to give it to you in a **portable** format, and you can **object** to our use of it based on legitimate interests, and to direct marketing at any time.",
             "**Our legitimate interests** (where the table above says so): keeping the website secure and free of abuse, replying to business enquiries, and keeping proper business records.",
             "**Automated decisions:** we don’t make decisions about you by purely automated means.",
-            // VERIFY WITH LEGAL (07-A): whether a representative is needed for our level of activity.
+            // OPEN (08-C RB-27): whether a representative is needed for our level of activity.
             "**Representative:** we haven’t appointed a representative in the EU or UK.",
             "**Transfers:** see section 4.",
           ],
@@ -315,7 +315,10 @@ const makePrivacy = (ga: boolean): LegalDoc => ({
       title: "Grievance Officer and privacy contact",
       blocks: [
         { p: `**Rupak Sarkar**, Founder, TecHaust Technologies · ${PRIVACY} · {{postal_address}}, India.` },
-        { p: "We acknowledge complaints within 48 hours and aim to resolve them within one month." },
+        // 07-A v0.3: Researched 2026-10-28, SPDI Rule 5(9) and DPDP (08-C RB-13, RB-22).
+        {
+          p: "We acknowledge complaints within 48 hours and resolve them within one month. We send you a copy of your complaint as we recorded it.",
+        },
       ],
     },
     {
@@ -342,7 +345,7 @@ const makePrivacy = (ga: boolean): LegalDoc => ({
       title: "Languages",
       blocks: [
         {
-          // VERIFY WITH CA/LEGAL (07-A).
+          // 08-B §2, DPDP s.5(3) (text of 2026-10-06).
           p: "This notice is available in English. If you’d like it in Hindi, Bengali or another language listed in the Eighth Schedule to the Constitution of India, email us and we’ll provide it.",
         },
       ],
@@ -396,7 +399,7 @@ const terms: LegalDoc = {
       title: "Prices and tax",
       blocks: [
         {
-          // VERIFY WITH CA (07-A).
+          // Researched 2026-10-28, s.2(6) IGST (08-C RA-18).
           p: "Prices for clients in India **exclude GST**, which is added at the applicable rate. Prices for international clients are in USD and are invoiced from India.",
         },
       ],
@@ -470,7 +473,7 @@ const terms: LegalDoc = {
       title: "Liability",
       blocks: [
         {
-          // VERIFY WITH CA/LEGAL (07-A).
+          // OPEN (08-C RB-23): whether a ₹10,000 website-use cap is enforceable against a consumer.
           p: `To the extent the law allows, we aren’t liable for indirect or consequential losses from using this website, and our total liability for use of the website is limited to ${WEBSITE_LIABILITY_CAP}. Liability for services is governed by your proposal or contract. Nothing here limits liability that can’t be limited by law, such as liability for fraud.`,
         },
       ],
@@ -487,7 +490,7 @@ const terms: LegalDoc = {
       title: "Law and courts",
       blocks: [
         {
-          // VERIFY WITH CA/LEGAL (07-A): Balurghat vs Kolkata; arbitration for client contracts goes in the MSA.
+          // OPEN (08-C RB-23): Balurghat or Kolkata; arbitration for client contracts goes in the MSA.
           p: "These terms are governed by the laws of India. The courts at **Balurghat, Dakshin Dinajpur, West Bengal** have exclusive jurisdiction, subject to any dispute-resolution clause in a signed contract.",
         },
       ],
@@ -517,7 +520,7 @@ const refunds: LegalDoc = {
       "How cancellations and refunds work for fixed-price projects, small fixed jobs, care plans and subscriptions, and how to ask for a refund.",
   },
   blocks: [
-    // VERIFY WITH CA/LEGAL (07-A).
+    // A product term (07-A §3).
     {
       quote:
         "This policy summarises our standard terms. Your proposal may set different terms for your project, and if so, the proposal applies.",
@@ -543,10 +546,13 @@ const refunds: LegalDoc = {
           text: `**How to ask:** email ${BILLING} or use the portal. We acknowledge within 48 hours and decide within 14 days.`,
         },
         {
-          text: "**How refunds are paid:** to the **original payment method** (as payment rules require), within 5–7 business days of approval. Banks and card networks may take longer. Refunds are made in the currency you paid. Exchange-rate differences aren’t covered. Payment-gateway fees aren’t charged to you.",
+          // 07-A v0.3: Researched 2026-10-28, RBI Payment Aggregator Directions 2025 para 10(f) (08-C RB-07, RB-24).
+          text: "**How refunds are paid:** to the **original payment method** or, if you ask, to another account in your own name (as payment rules require), within 5–7 business days of approval. Banks and card networks may take longer. Refunds are made in the currency you paid. Exchange-rate differences aren’t covered. Payment-gateway fees aren’t charged to you.",
         },
-        // VERIFY WITH CA (07-A).
-        { text: "**GST:** for Indian invoices, a refund is documented with a **credit note**." },
+        // 07-A v0.3: Researched 2026-10-28, s.34(2) CGST (08-C RA-03, RA-22).
+        {
+          text: "**GST:** for Indian invoices, a refund is documented with a **credit note**, issued within the GST time limit (30 November after the financial year of the invoice).",
+        },
         {
           text: "**Disputes:** please contact us first. We’d rather fix the problem. This doesn’t affect your rights with your bank or card provider.",
         },
@@ -675,7 +681,7 @@ const security: LegalDoc = {
       ],
     },
     {
-      // VERIFY WITH CA/LEGAL (07-A): safe harbour and the CERT-In reference.
+      // Researched 2026-10-28, RFC 9116 and CERT-In's disclosure programme (08-C RB-29).
       p: "**Safe harbour:** if you act in good faith and follow this policy, we will treat your research as authorised, we won’t pursue or support legal action against you, and we’ll work with you to fix the issue quickly. This policy can’t bind third parties or the authorities. We don’t offer paid bounties at this time. You may also report through CERT-In’s vulnerability disclosure programme.",
     },
     // The file itself is shown from the built endpoint (pages/security.astro), never retyped.
@@ -692,7 +698,7 @@ const accessibility: LegalDoc = {
     description:
       "Our aim to meet WCAG 2.2 level AA on techaust.com, the client portal and the admin, what we do to get there, and how to tell us about a problem.",
   },
-  // 07-A §8: "Draft. VERIFY WITH CA/LEGAL. Source: 08 §7.3 L-15 and 04 WEB-G-16."
+  // 07-A §8: "Draft. OPEN (watch), 08-C RB-33. Source: 08 §7.3 L-15 and 04 WEB-G-16."
   blocks: [
     {
       p: "**Our aim.** We build techaust.com, the client portal and the admin to meet the Web Content Accessibility Guidelines (WCAG) 2.2, level AA.",

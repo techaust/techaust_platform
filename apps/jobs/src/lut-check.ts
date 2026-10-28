@@ -1,4 +1,4 @@
-// The daily LUT check (M5.2 B3, ADM-INV-18, Q22, LD27; VERIFY WITH CA/LEGAL: whether and when a letter of undertaking is needed is the CA's call).
+// The daily LUT check (M5.2 B3, ADM-INV-18, Q22, LD27; Researched 2026-10-28, Rule 96A CGST Rules (08-C RA-19): one LUT per FY, furnished before the first export of that FY, reminder from 1 March; OPEN (08-C RA-19, Q37, Q39): the cases after a lapse are the CA's call).
 //   M5.4 (LD61): the daily check now runs inside the 09:00 IST `alerts.daily` message (`alerts.ts`: `decideLut`, the weekly EMAIL, then `ringLutBell`); the 22:00 UTC cron no longer adds a
 //     `lut.check` message. The kind stays routable (and `processLutCheck` unchanged in what it writes) for a message queued before that deploy.
 //   (M5.2, kept for the record) cron (daily 22:00 UTC = 03:30 IST) -> `enqueueStats` added ONE `lut.check` message (the IST date of the run) to its existing LEADS_QUEUE `sendBatch`
@@ -7,7 +7,7 @@
 //     bring zod in), `lutBellFor` decides. When a bell is due: ONE `INSERT OR IGNORE ... SELECT` over the active owners, kind `lut.reminder`, entity
 //     `lut:<FY>:<Monday of the IST week>`; the unique index (user, kind, entity) keeps it to one a week per owner, whatever the redelivery or rerun. It writes
 //     nothing else, and the weekly EMAIL is M5.4's (LD27).
-//   The title is 07-S §5's banner line; the line for "the running FY has no letter" is not drafted yet, so it is `[Placeholder]` (docs/07-S "Copy gaps").
+//   The titles are 07-S §8: the reminder line and the banner line for "the running FY has no letter" (approved by the lead 2026-10-28).
 import {
   exportModeFromStoredTax,
   type LutCheckMessage,
@@ -16,7 +16,7 @@ import {
 } from "@techaust/core/invoices";
 import { logEvent } from "./log.ts";
 
-/** The bell the owners see: 07-S §8 (pending the owner's word). */
+/** The bell the owners see: 07-S §8 (approved by the lead 2026-10-28). */
 export const LUT_BELL_COPY = {
   next_fy_due: (fyLabel: string) => `File the LUT for FY ${fyLabel} and save its ARN in Settings › Tax.`,
   current_missing: (fyLabel: string) =>

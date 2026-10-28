@@ -7,11 +7,12 @@ import {
   autoIssueEligibility,
   billingPeriodOf,
   CARE_LINE_WORDS,
+  CARE_SCAN_HOUR_IST,
   type CareCatalogue,
   careDue,
   careLines,
   firstMissedPeriod,
-  hasPlaceholder,
+  hoursText,
   nextBillingDayOf,
   periodWords,
 } from "../src/care-billing.ts";
@@ -43,6 +44,33 @@ describe("nextBillingDayOf: the day the job next drafts the plan", () => {
     expect(
       nextBillingDayOf("2026-11-06", plan(5, "2026-01-01"), "cancelled", "2026-11-05", active),
     ).toBeNull();
+  });
+  it("a period due and unbilled is today before the scan's hour and tomorrow from 06:00 IST on (the scan has run); billed, paused or not started, the hour changes nothing (finding 11)", () => {
+    const p = plan(5, "2026-01-01");
+    expect(CARE_SCAN_HOUR_IST).toBe(6);
+    // before the 06:00 scan: today, as without the hour
+    for (const h of [0, 5]) {
+      expect(nextBillingDayOf("2026-11-06", p, "active", "2026-10-05", active, h)).toBe("2026-11-06");
+    }
+    expect(nextBillingDayOf("2026-11-06", p, "active", "2026-10-05", active)).toBe("2026-11-06");
+    // from 06:00 on: tomorrow, across a month end and a year end too
+    for (const h of [6, 7, 15, 23]) {
+      expect(nextBillingDayOf("2026-11-06", p, "active", "2026-10-05", active, h)).toBe("2026-11-07");
+    }
+    expect(nextBillingDayOf("2026-11-30", p, "active", "2026-10-05", active, 10)).toBe("2026-12-01");
+    expect(nextBillingDayOf("2026-12-31", plan(5, "2026-01-01"), "active", "2026-11-05", active, 10)).toBe(
+      "2027-01-01",
+    );
+    // the billing day itself, never billed: due today until 06:00, tomorrow after (a catch-up)
+    expect(nextBillingDayOf("2026-11-05", p, "active", null, active, 5)).toBe("2026-11-05");
+    expect(nextBillingDayOf("2026-11-05", p, "active", null, active, 6)).toBe("2026-11-06");
+    // already billed: the next period's first day, whatever the hour
+    expect(nextBillingDayOf("2026-11-06", p, "active", "2026-11-05", active, 20)).toBe("2026-12-05");
+    // not started: the start date; cancelled: none
+    expect(nextBillingDayOf("2026-11-04", plan(5, "2026-12-01"), "active", null, active, 20)).toBe(
+      "2026-12-01",
+    );
+    expect(nextBillingDayOf("2026-11-06", p, "cancelled", "2026-11-05", active, 20)).toBeNull();
   });
   it("a plan that was paused on the period's first day is not due: the next period", () => {
     const paused = [
@@ -366,12 +394,52 @@ describe("careLines", () => {
       }),
     ).toEqual({ ok: false, error: "service_missing", code: "S17" });
   });
-  it("the default words are a marked placeholder until 07-U (so an automatic issue refuses them)", () => {
-    expect(hasPlaceholder(CARE_LINE_WORDS.plan("Growth", period))).toBe(true);
-    expect(hasPlaceholder(CARE_LINE_WORDS.aiOps(period))).toBe(true);
-    expect(hasPlaceholder(CARE_LINE_WORDS.overage(period))).toBe(true);
-    expect(hasPlaceholder("Care plan, Growth")).toBe(false);
-    expect(CARE_LINE_WORDS.plan("Growth", period)).toContain("05 Nov 2026");
+  it("the default words are 07-U §6 word for word, with no placeholder mark (approved by the lead 2026-10-28), so the automatic issue works for the plan and AI Ops lines", () => {
+    expect(CARE_LINE_WORDS.plan("Growth", period)).toBe("Growth care plan, 05 Nov 2026 to 04 Dec 2026");
+    expect(CARE_LINE_WORDS.aiOps(period)).toBe("AI Ops, 05 Nov 2026 to 04 Dec 2026");
+    expect(CARE_LINE_WORDS.overage(period, "2.25", "₹1,200.00")).toBe(
+      "Extra hours above the plan, 05 Nov 2026 to 04 Dec 2026 (2.25 h at ₹1,200.00 per hour)",
+    );
+    for (const line of [
+      CARE_LINE_WORDS.plan("Growth", period),
+      CARE_LINE_WORDS.aiOps(period),
+      CARE_LINE_WORDS.overage(period, "1", "₹1.00"),
+    ])
+      expect(line).not.toContain("[Placeholder");
+  });
+  it("the extra-hours line names the hours and the rate from the real overage (15-minute steps), in the client's currency", () => {
+    const r = careLines({
+      tier: "essential",
+      terms: { priceMinor: 100_000, aiOpsMinor: null },
+      period,
+      catalogue,
+      overage: { period: { start: "2026-10-05", end: "2026-11-04" }, minutes: 135, rateMinor: 120_000 },
+    });
+    expect(r.ok && r.lines.at(-1)?.description).toBe(
+      "Extra hours above the plan, 05 Oct 2026 to 04 Nov 2026 (2.25 h at ₹1,200.00 per hour)",
+    );
+    const usd = careLines({
+      tier: "essential",
+      terms: { priceMinor: 100_000, aiOpsMinor: null },
+      period,
+      catalogue,
+      overage: { period: { start: "2026-10-05", end: "2026-11-04" }, minutes: 60, rateMinor: 5_000 },
+      currency: "USD",
+    });
+    expect(usd.ok && usd.lines.at(-1)?.description).toContain("(1 h at $50.00 per hour)");
+  });
+  it("hoursText prints whole 15-minute steps as a decimal without trailing zeros", () => {
+    expect([15, 30, 45, 60, 75, 90, 120, 135, 600].map(hoursText)).toEqual([
+      "0.25",
+      "0.5",
+      "0.75",
+      "1",
+      "1.25",
+      "1.5",
+      "2",
+      "2.25",
+      "10",
+    ]);
   });
 });
 

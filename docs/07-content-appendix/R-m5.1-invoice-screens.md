@@ -3,10 +3,10 @@
 _Drafted by the lead on 2026-10-27 from approved facts:
 - 04: ADM-INV-01…04, -07, -14, ADM-APR-01/02, ADM-PRJ-02, §9;
 - 07: §1 (voice and honesty), §5.3 (how payment works: "Invoices are due within 7 days"), §8 (emails);
-- 08-A §3–§4 (Rule 46 fields; VERIFY WITH CA/LEGAL);
+- 08-A §3–§4 (Rule 46 fields) and 08-C;
 - docs/13 and the M5 batch decisions (LD1–LD21; owner questions built with their recommended defaults).
 
-**PENDING the owner's word-for-word approval** (batch rule: built as drafts, approved at the batch review). Sections 1–5 are staff-facing admin copy. Section 6 is client-facing (it is printed on the tax invoice PDF). `{…}` is filled by the screen. Tax and legal wording is VERIFY WITH CA/LEGAL. Anything still missing is shown as `[Placeholder]`, never invented._
+**Approved by the lead on 2026-10-28 under the owner's delegation** ([13-decisions](../13-decisions.md) 2026-10-28: the lead writes the final wording), after the research in [08-C](../08-research-appendix/C-research-register.md). Sections 1–5 are staff-facing admin copy. Section 6 is client-facing (it is printed on the tax invoice PDF). `{…}` is filled by the screen. Tax and legal lines carry **(Researched, 08-C <ID>)** or **(OPEN, 08-C <ID>)**: an OPEN line is our wording until the CA or lawyer answers. Section 7 holds the lines added on 2026-10-28._
 
 ## 1. Navigation, list and client tab
 - Nav item: "Invoices"
@@ -48,7 +48,7 @@ _Drafted by the lead on 2026-10-27 from approved facts:
 | line_sac_missing | "Line {n} needs a 6-digit SAC code." |
 | line_description_missing | "Line {n} needs a description." |
 | computed_errors | "The totals couldn't be worked out. Check the lines and the discount." |
-| zero_total | "An invoice can't be issued for ₹0 or $0." (VERIFY WITH CA/LEGAL) |
+| zero_total | "An invoice can't be issued for ₹0 or $0." (Researched, 08-C RA-11) |
 | reverse_charge_text | "Set the reverse-charge line in Settings › Tax." |
 | currency_mismatch | "The invoice currency must be the client's currency ({currency})." |
 | type_not_allowed | "This client is outside India, so this needs an export invoice." |
@@ -95,7 +95,7 @@ _Drafted by the lead on 2026-10-27 from approved facts:
 - PDF states: "PDF being prepared…" · "Download PDF" · "The PDF couldn't be made. Try again." (button "Try again")
 - Void button (Owner): "Void invoice"
 - Void dialog title: "Void invoice {number}"
-- Void body: "Voiding cancels this invoice. It keeps its number, which is reported as cancelled in your GST return. You can only void an invoice in the month it was issued, before it has been emailed, paid or corrected by a credit or debit note; after that, use a credit note." (VERIFY WITH CA/LEGAL)
+- Void body: "Voiding cancels this invoice. It keeps its number, which is reported as cancelled in your GST return. You can only void an invoice in the month it was issued, before it has been emailed, paid or corrected by a credit or debit note; after that, use a credit note." (OPEN, 08-C RA-10)
 - Reason label: "Reason (required, kept with the invoice)"
 - Empty reason error: "Enter a reason for voiding."
 - Buttons: "Void invoice" · "Cancel"
@@ -122,16 +122,17 @@ _Drafted by the lead on 2026-10-27 from approved facts:
 | step_up_required | (existing 07-H line) |
 | void_not_allowed | "This invoice can't be voided: it has been emailed, paid or corrected. Use a credit note instead." |
 | already_void | "This invoice is already void." |
-| return_period_closed | "This invoice's GST return period has ended, so it can't be voided. Use a credit note instead." (VERIFY WITH CA/LEGAL) |
+| return_period_closed | "This invoice's GST return period has ended, so it can't be voided. Use a credit note instead." (OPEN, 08-C RA-10) |
 | contact_changed | "The contact's details changed a moment ago. Try again." |
 | contact_anonymised | "This draft's contact has been anonymised. Choose another contact, then save the draft." |
 | on_issued_document | (existing 07-J line) |
 | milestone_has_invoice | "This milestone already has an invoice." |
 | milestone_not_ready | "Only a milestone that's Ready to bill, or the advance payment of a started project, can be invoiced." |
 
-## 6. Tax invoice PDF: fixed words (client-facing; `packages/pdf` `layout/copy.ts`; VERIFY WITH CA/LEGAL)
+## 6. Tax invoice PDF: fixed words (client-facing; `packages/pdf` `layout/copy.ts`; Researched, 08-C RA-05, RA-06, RA-07)
 - Title: "Tax Invoice"
-- Copy mark: "ORIGINAL FOR RECIPIENT"
+- Copy mark: "ORIGINAL FOR RECIPIENT" (the PDF sent to the client)
+- Copy mark on the stored supplier copy (never sent; owner 2026-10-28, Q11): "DUPLICATE FOR SUPPLIER"
 - Header labels: "Invoice number" · "Invoice date" · "Due date" · "Place of supply" · "State code"
 - Parties: "From" · "Billed to" · "GSTIN" · "PAN" · "Address" · "State"
 - Lines: "#" · "Description" · "SAC" · "Qty" · "Rate" · "Discount" · "Taxable value"
@@ -142,5 +143,13 @@ _Drafted by the lead on 2026-10-27 from approved facts:
 - Payment block heading: "How to pay"
 - Payment lines: "Bank transfer (NEFT, RTGS or IMPS) to:" · "Account name" · "Account number" · "IFSC" · "Bank and branch" · "Please quote {number} as the payment reference." · "Or pay in the client portal: {portal address}"
 - Signature: "For {company legal name}" · "Authorised signatory"
-- Footer default notes: [Placeholder] (the owner may set footer notes in Settings; none is invented)
+- Footer notes: none by default; the owner's own notes from Settings print here when set.
 - IRN block (only when an IRN exists, from Phase 7): "IRN" · "Ack no." · "Ack date"
+
+## 7. Lines added on 2026-10-28 (lead, from 08-C and the code's marked gaps)
+| Place | Line |
+|---|---|
+| Settings › Company, signature image hint | "Optional. Invoices you send electronically don't need a signature (GST Rule 46). If you add one, it prints above "Authorised signatory"." (Researched, 08-C RA-06) |
+| Invoice line from a milestone (the line's words) | the milestone's title; with more than one tax group, the title followed by "(SAC {code}, {rate}%)" |
+| Proposal start plan line (07-N; the line's words) | the step's label; with more than one tax group, the label followed by "(SAC {code}, {rate}%)" |
+| Supplier copy, admin download label | "Download supplier copy" |

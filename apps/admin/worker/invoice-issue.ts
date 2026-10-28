@@ -2,7 +2,7 @@
 // REQUEST of a Staff member, and the approval that issues. One batch (`invoiceIssueStatements`, packages/db/src/issue.ts): the guard, the
 // counter, the freeze UPDATE with every condition in its WHERE, the request's audit row after it, then `issue_result` UNGUARDED so a refused issue
 // aborts the whole batch (the counter does not move, no audit row, the milestone and the approval untouched). Nothing is decided from a read
-// alone: when the batch refused, one read says why. VERIFY WITH CA/LEGAL for every rule (Rule 46, Rule 47, Q3, Q4, Q6).
+// alone: when the batch refused, one read says why. Researched 2026-10-28, Rule 46 CGST Rules (08-C RA-05) for every rule (Rule 46, Rule 47, Q3, Q4, Q6).
 //
 // An approval to issue is a RECORD next to the draft (never a status), for one exact content: any save that changes the content expires it in the
 // same batch, an Owner who issues directly closes the request as approved, and approving one issues the invoice in the same batch (Q6), with the
@@ -81,7 +81,7 @@ import { APPROVAL_PENDING, CLIENT_GONE, CONTENT_CHANGED, NUMBERING_CHANGED } fro
 
 const hex64 = z.string().check(z.regex(/^[0-9a-f]{64}$/));
 
-/** `confirmInrExport` (Q8, VERIFY WITH CA/LEGAL): the Owner's explicit yes to an export invoice in INR; only `true` is accepted, absent means no. */
+/** `confirmInrExport` (Q8, Researched 2026-10-28, s.2(6) IGST Act, Rule 46 (08-C RA-18)): the Owner's explicit yes to an export invoice in INR; only `true` is accepted, absent means no. */
 export const confirmInrExport = z.optional(z.literal(true));
 export const issueBody = z.strictObject({
   expectedUpdatedAt: z.int(),

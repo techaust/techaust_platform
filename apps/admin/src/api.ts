@@ -934,7 +934,8 @@ export type StatementPage = {
 export type FieldIssue = { path: string; message: string };
 
 type ApiErrorBody = {
-  error?: { code: string; message: string };
+  /** `details` (step 5): the worker's `err(..., details)`, e.g. `{ fy }` of `advance_lut_missing`. */
+  error?: { code: string; message: string; details?: unknown };
   request_id?: string;
   fields?: FieldIssue[];
   /** 422 `snapshot_invalid` (POST /catalogue/publish): the failing paths of the snapshot, never values. */
@@ -982,6 +983,9 @@ export class RequestError extends Error {
       closestMinor?: number | null;
       draftId?: string;
       date?: string;
+      fy?: string;
+      /** `error.details.reason` (`debit_tax_only_invalid`: `odd_amount`, 07-W 5.9). */
+      reason?: string;
     } = {},
   ) {
     super(message);
@@ -1057,6 +1061,12 @@ async function send<T>(path: string, { method, body, raw, signedIn = true }: Opt
   const data = (await res.json().catch(() => ({}))) as T & ApiErrorBody;
   if (res.ok) return data;
   const e = data.error ?? { code: "network", message: NETWORK };
+  // The worker's `error.details` (`err(..., details)`): `advance_lut_missing` sends `{ fy }`, `debit_tax_only_invalid` `{ reason }`. The last day of
+  // `credit_deadline_passed` is a top-level `date` (M5.3).
+  const inner = data.error?.details;
+  const details = typeof inner === "object" && inner !== null ? (inner as Record<string, unknown>) : {};
+  const fy = typeof details.fy === "string" ? details.fy : undefined;
+  const date = typeof data.date === "string" ? data.date : undefined;
   const error = new RequestError(
     res.status,
     e.code,
@@ -1084,7 +1094,9 @@ async function send<T>(path: string, { method, body, raw, signedIn = true }: Opt
         ? { closestMinor: data.closestMinor as number | null }
         : {}),
       ...(typeof data.draftId === "string" ? { draftId: data.draftId } : {}),
-      ...(typeof data.date === "string" ? { date: data.date } : {}),
+      ...(date !== undefined ? { date } : {}),
+      ...(fy !== undefined ? { fy } : {}),
+      ...(typeof details.reason === "string" ? { reason: details.reason } : {}),
     },
   );
   if (signedIn && res.status === 401 && e.code === "unauthenticated") unauthenticatedHandler?.();

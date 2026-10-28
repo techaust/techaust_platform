@@ -103,7 +103,13 @@ function validExport(v: unknown): boolean {
 }
 
 function validFx(v: unknown): boolean {
-  return isObj(v) && typeof v.rateMicros === "number" && isStr(v.date) && isStr(v.source);
+  return (
+    isObj(v) &&
+    typeof v.rateMicros === "number" &&
+    isStr(v.date) &&
+    isStr(v.source) &&
+    (v.noRateDay === undefined || isStr(v.noRateDay))
+  );
 }
 
 function validAdvance(v: unknown): boolean {
@@ -113,7 +119,8 @@ function validAdvance(v: unknown): boolean {
     isStr(v.proformaNumber) &&
     isStr(v.proformaIssueDate) &&
     isStr(v.receivedOn) &&
-    isStr(v.receiptId)
+    isStr(v.receiptId) &&
+    (v.igstNoLutFy === undefined || isStr(v.igstNoLutFy))
   );
 }
 
@@ -150,6 +157,7 @@ export function parseInvoiceEnvelope(text: string): InvoiceEnvelope | null {
   if (!isObj(i.company) || !isObj(i.bank) || !isObj(i.sender) || typeof i.reverseChargeText !== "string")
     return null;
   if (i.signature !== null && !isObj(i.signature)) return null;
+  if (i.signatory !== undefined && i.signatory !== false) return null;
   // M5.2: the optional header keys are absent on an M5.1 envelope; when present they must have their shape (a wrong shape is not an envelope).
   if (h.export !== undefined && !validExport(h.export)) return null;
   if (h.fx !== undefined && !validFx(h.fx)) return null;
@@ -182,7 +190,16 @@ export function invoiceDraftOf(e: InvoiceEnvelope): DraftContent {
     sections: [],
     schedule: [],
     // M5.2 (LD24): the rate typed on the draft is part of its content hash (no key at all when there was none: an M5.1 hash is unchanged).
-    ...(h.fx ? { fx: { rateMicros: h.fx.rateMicros, date: h.fx.date, source: h.fx.source } } : {}),
+    ...(h.fx
+      ? {
+          fx: {
+            rateMicros: h.fx.rateMicros,
+            date: h.fx.date,
+            source: h.fx.source,
+            ...(h.fx.noRateDay ? { noRateDay: h.fx.noRateDay } : {}),
+          },
+        }
+      : {}),
     // M5.3 (LD39): a note's request is part of its content hash, exactly as db `noteContentOf` reads it from `header_extras`.
     ...(h.noteOf
       ? {

@@ -2,10 +2,11 @@
 // terms" and press Accept; a confirmation step shows exactly what is being accepted; then the version is locked and shows the record,
 // with the accepted PDF and the acceptance certificate. Or decline with a reason (decline-dialog.tsx). An expired version, or one whose
 // newer version is still being prepared, can't be accepted. After a decision focus moves to the result, so a screen-reader user hears
-// what happened. Words: 07-N §3 (PENDING the owner's approval); the binding sentence 07-A §7. VERIFY WITH CA/LEGAL.
+// what happened. Words: 07-N §3 (approved with 07-Q, 2026-10-26); the binding sentence 07-A §7; the record notice 07-A §9 (Researched 2026-10-28,
+// 08-C RB-19; the ground for recording the IP address and browser is OPEN, RB-12).
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import type { OfferKind, OfferStatus } from "../../api.ts";
-import { N, WORDS } from "../../copy-documents.ts";
+import { N, NOTICES, WORDS } from "../../copy-documents.ts";
 import { formatIstDateTime, kindWord } from "../../lib/offers.ts";
 import { ConfirmDialog } from "../dialog.tsx";
 import { Alert, CheckCircle, Clock, Download, Lock, XCircle } from "../icons.tsx";
@@ -342,6 +343,7 @@ function AcceptForm(props: DecisionProps & { kind: string }) {
           </div>
         </dl>
         <p className="confirm__binding">{WORDS.binding}</p>
+        <p className="hint confirm__record">{NOTICES.accept}</p>
       </ConfirmDialog>
 
       <DeclineDialog

@@ -73,8 +73,16 @@ export function actor(c: Ctx): Actor {
 }
 
 /** Every error body is `{ error: { code, message }, request_id }` [05 §7.1]. */
-export const err = (c: Ctx, e: ApiError, status: ContentfulStatusCode) =>
-  c.json({ error: { code: e.code, message: e.message }, request_id: c.var.rid }, status);
+export const err = (
+  c: Ctx,
+  e: ApiError,
+  status: ContentfulStatusCode,
+  details?: Readonly<Record<string, string | number | boolean | null>>,
+) =>
+  c.json(
+    { error: { code: e.code, message: e.message, ...(details ? { details } : {}) }, request_id: c.var.rid },
+    status,
+  );
 
 /** Who and where, for audit and access rows. */
 export const requestInfo = (c: Ctx) => ({ requestId: c.var.rid, ip: c.var.ip, ua: c.var.ua });

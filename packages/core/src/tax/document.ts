@@ -1,5 +1,5 @@
 // A whole document: supply, lines, discounts, tax, totals, round-off, words and the INR view [ADM-INV-05, ADM-EST-01/02,
-// ADM-PROP-03, ADM-INV-08, ADM-INV-09, docs/05 §10]. VERIFY WITH CA/LEGAL (the rules are in supply.ts, lines.ts, totals.ts).
+// ADM-PROP-03, ADM-INV-08, ADM-INV-09, docs/05 §10]. Researched 2026-10-28, rule by rule in 08-C section 1 (the rules are in supply.ts, lines.ts, totals.ts).
 import type { TaxInput } from "../clients.ts";
 import type { Currency } from "../money.ts";
 import { isCurrency } from "../money.ts";

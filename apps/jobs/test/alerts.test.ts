@@ -138,7 +138,7 @@ describe("unbilled work: IST day 25 exactly [ADM-INV-19, Rule 47]", () => {
       link: `/projects/${m.projectId}`,
     });
     expect(rows[0]?.title).toMatch(
-      /^\[Placeholder, 07-U\] Launch the site for Sample Traders was delivered \d+ days ago and isn't invoiced yet\.$/,
+      /^Launch the site for Sample Traders was delivered \d+ days ago and isn't invoiced yet\.$/,
     );
   });
 
@@ -259,7 +259,7 @@ describe("more than 50 rows: a continuation message; a finished list has no curs
   });
 });
 
-describe("the LUT reminder rides the first message [ADM-INV-18, Q22, LD27; VERIFY WITH CA/LEGAL]", () => {
+describe("the LUT reminder rides the first message [ADM-INV-18, Q22, LD27; Researched 2026-10-28, Rule 96A CGST Rules (08-C RA-19)]", () => {
   const MARCH = at("2027-03-10", 9); // a Wednesday; the week's Monday is the 8th
   async function overseas() {
     await run(

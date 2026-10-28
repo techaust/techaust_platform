@@ -1,5 +1,5 @@
 // Settings and reference data (docs/05 §5.2). Tax and legal rules are settings with researched defaults
-// (docs/08 §7.1, VERIFY WITH CA), never hard-coded.
+// (docs/08 §7.1, researched in 08-C), never hard-coded.
 import { sql } from "drizzle-orm";
 import { check, index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { createdAt, flag, id, oneOf, updatedAt } from "./common.ts";
@@ -46,7 +46,7 @@ export const bankAccounts = sqliteTable(
     branch: text("branch"),
     bankAddress: text("bank_address"),
     intermediary: text("intermediary"),
-    /** M5.2 (LD30): the RBI purpose code printed on a USD export invoice's SWIFT block (VERIFY WITH CA/LEGAL; `PURPOSE_CODE` in core). */
+    /** M5.2 (LD30): the RBI purpose code printed on a USD export invoice's SWIFT block (OPEN (08-C RB-06): which RBI purpose code fits our exports? the bank confirms it; `PURPOSE_CODE` in core). */
     purposeCode: text("purpose_code"),
     active: flag("active"),
     createdAt: createdAt(),

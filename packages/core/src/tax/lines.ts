@@ -1,4 +1,4 @@
-// Lines: gross, discounts and tax per line per head [ADM-INV-05, ADM-INV-09, docs/05 §10, docs/08 G-10]. VERIFY WITH CA/LEGAL:
+// Lines: gross, discounts and tax per line per head [ADM-INV-05, ADM-INV-09, docs/05 §10, docs/08 G-10]. Researched 2026-10-28, rule by rule in 08-C section 1:
 // - a line's gross is quantity (milli-units) × rate, rounded half up to the minor unit;
 // - a document discount is taken on the net after line discounts and allocated to lines by largest remainder, so the
 //   line taxable values sum exactly; discounts are before tax (s.15(3)(a) CGST Act);

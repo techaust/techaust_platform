@@ -2,7 +2,8 @@
 // is fixed, the series preview, the errors by code, and what an autosave sends (only the contact, the discount and the lines; never a number, a
 // status, a type or a due date) and how its answer lands (the server's ids by position; typing kept).
 import { ISSUE_BLOCKER_CODES } from "@techaust/core/invoices";
-import { describe, expect, it } from "vitest";
+import { decide, ROLES } from "@techaust/core/permissions";
+import { describe, expect, it, vi } from "vitest";
 import { RequestError } from "../api.ts";
 import {
   applyInvoiceSave,
@@ -19,7 +20,7 @@ import {
   frozenBanner,
   INV_COPY,
   INV_ERRORS,
-  INV_PLACEHOLDER,
+  INV_NO_MATCH,
   initInvoiceEditor,
   invErrorText,
   invoiceEditor,
@@ -30,6 +31,7 @@ import {
   milestoneBillable,
   milestoneHasInvoice,
   requestRow,
+  SUPPLIER_COPY_LABEL,
   seriesPreview,
   splitAtPlace,
   splitSentences,
@@ -37,7 +39,7 @@ import {
   voidBlockedText,
   voidTitle,
 } from "./invoices.ts";
-import type { InvoiceView } from "./invoices-api.ts";
+import { canDownloadSupplierCopy, fetchSupplierCopy, type InvoiceView } from "./invoices-api.ts";
 
 const view = (over: Partial<InvoiceView> = {}): InvoiceView => ({
   id: "inv-1",
@@ -214,15 +216,14 @@ describe("badges and types", () => {
 
 describe("blockers", () => {
   it("has a 07-R line for every core blocker code", () => {
-    for (const code of ISSUE_BLOCKER_CODES)
-      expect(blockerLine({ code, line: 2 }, "INR")).not.toBe(INV_PLACEHOLDER);
+    for (const code of ISSUE_BLOCKER_CODES) expect(blockerLine({ code, line: 2 }, "INR")).not.toBe(code);
     expect(blockerLine({ code: "line_sac_missing", line: 3 }, "INR")).toBe(
       "Line 3 needs a 6-digit SAC code.",
     );
     expect(blockerLine({ code: "currency_mismatch" }, "USD")).toBe(
       "The invoice currency must be the client's currency (USD).",
     );
-    expect(blockerLine({ code: "something_new" }, "INR")).toBe(INV_PLACEHOLDER);
+    expect(blockerLine({ code: "something_new" }, "INR")).toBe("something_new");
   });
 
   it("links each blocker to where it is fixed", () => {
@@ -380,13 +381,75 @@ describe("M5.2 re-check: proforma wording and the advance rate date (07-S §8)",
     expect(issuedToast("TH/INV/2627/0001")).toBe("Invoice TH/INV/2627/0001 issued.");
   });
 
-  it("the advance's rate-date line names the day the payment was received", () => {
-    expect(blockerLine({ code: "fx_date_invalid" }, "USD", { maxAgeDays: 4, advance: true })).toBe(
-      "The rate date must be the date the payment was received or up to 4 days before it.",
+  it("the rate-date line names the day it was judged against: the invoice's, or the day the payment was received (S §8)", () => {
+    expect(blockerLine({ code: "fx_date_invalid", date: "2027-04-02" }, "USD", { maxAgeDays: 4 })).toBe(
+      "Use the rate published on 02 Apr 2027. If none was published that day, use the last one published before it, at most 4 days earlier.",
     );
-    expect(blockerLine({ code: "fx_date_invalid" }, "USD", { maxAgeDays: 4 })).toBe(
-      "The rate date must be the invoice date or up to 4 days before it.",
+    // as a 400, the server's words are 07-S's line (the day and the limit are in them)
+    expect(
+      invErrorText(
+        new RequestError(
+          400,
+          "fx_same_day_exists",
+          "A rate was published on 02 Apr 2027, so use that day's rate.",
+          null,
+        ),
+      ),
+    ).toBe("A rate was published on 02 Apr 2027, so use that day's rate.");
+    expect(invErrorText(new RequestError(400, "fx_date_invalid", "Server words", null))).toBe(
+      "Server words.",
     );
+  });
+
+  it("step 5: the supplier copy's label and the filtered list's title (R §7, 07-W §1)", () => {
+    expect(SUPPLIER_COPY_LABEL).toBe("Download supplier copy");
+    expect(INV_NO_MATCH).toBe("No invoices match these filters");
+  });
+
+  it("the supplier copy is offered from core's matrix row and core's document types: Owner and Accountant, never a proforma (review 2026-10-28, finding 9)", () => {
+    for (const type of ["tax_invoice", "export_invoice", "credit_note", "debit_note"]) {
+      expect(canDownloadSupplierCopy("owner", type), type).toBe(true);
+      expect(canDownloadSupplierCopy("accountant", type), type).toBe(true);
+      for (const role of ["staff", "sales"] as const) expect(canDownloadSupplierCopy(role, type)).toBe(false);
+    }
+    for (const role of ROLES) {
+      expect(canDownloadSupplierCopy(role, "proforma"), role).toBe(false);
+      expect(canDownloadSupplierCopy(role, "proposal"), role).toBe(false);
+    }
+    // the same answer as the matrix and the document rule, whichever role
+    for (const role of ROLES)
+      expect(canDownloadSupplierCopy(role, "tax_invoice")).toBe(
+        decide(role, "invoices.supplierCopy") !== "deny",
+      );
+  });
+
+  it("asking for the supplier copy while an ask for the same document is out is not a second request (finding 8)", async () => {
+    const out: ((r: Response) => void)[] = [];
+    vi.stubGlobal("fetch", () => new Promise<Response>((resolve) => out.push(resolve)));
+    try {
+      const first = fetchSupplierCopy("doc-1");
+      const second = fetchSupplierCopy("doc-1");
+      const other = fetchSupplierCopy("doc-2");
+      // two documents, two requests; the second ask of doc-1 joined the first
+      expect(out).toHaveLength(2);
+      const pending = () =>
+        new Response(JSON.stringify({ error: { code: "pdf_pending" } }), {
+          status: 409,
+          headers: { "Content-Type": "application/json" },
+        });
+      out[0]?.(pending());
+      out[1]?.(pending());
+      expect(await first).toEqual({ state: "pending" });
+      expect(await second).toEqual({ state: "pending" });
+      expect(await other).toEqual({ state: "pending" });
+      // once it has answered, the next ask is a new request
+      const again = fetchSupplierCopy("doc-1");
+      expect(out).toHaveLength(3);
+      out[2]?.(new Response("x", { status: 500 }));
+      expect(await again).toEqual({ state: "failed" });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("a proforma's void refused for a reason other than a payment says it was emailed", () => {

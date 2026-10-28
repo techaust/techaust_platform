@@ -1,6 +1,6 @@
 // SAC descriptions for the HSN tables of GSTR-1 and the EDF list (M5.5b; ADM-REP-04). A frozen copy of docs/08-research-appendix/
 // A-gst-invoicing.md §2 (the "Scheme of Classification of Services", Notification 11/2017-CTR; the code order is inferred from the
-// group sequence there). VERIFY WITH CA/LEGAL. A SAC that is not listed gets a blank description and the warning
+// group sequence there). Researched 2026-10-28, Notification 11/2017-CT (Rate) (08-C RA-16). A SAC that is not listed gets a blank description and the warning
 // `hsn_description_missing`: nothing is guessed.
 export const SAC_DESCRIPTIONS: Readonly<Record<string, string>> = Object.freeze({
   "998311": "Management consulting and management services",

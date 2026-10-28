@@ -1,6 +1,6 @@
 // Issuing an invoice [ADM-INV-03, ADM-INV-07, ADM-APR-01, ADM-APR-02, LD5, LD6, LD8]: gap-free numbers under concurrency, the FY rollover in IST, who may
 // issue, every refusal that must leave the counter, the audit log and the milestone untouched, the freeze, and the approval path.
-// VERIFY WITH CA/LEGAL for every rule under test (Rule 46, Rule 47, Q3, Q4, Q6).
+// Researched 2026-10-28, Rule 46 CGST Rules (08-C RA-05) for every rule under test (Rule 46, Rule 47, Q3, Q4, Q6).
 import { env } from "cloudflare:workers";
 import { issueFyOf } from "@techaust/core/invoices";
 import { SETTINGS_DEFAULTS } from "@techaust/core/settings";
@@ -845,6 +845,40 @@ describe("the freeze and the milestone [ADM-INV-07, ADM-PRJ-02]", () => {
     await putTax(SETTINGS_DEFAULTS.tax.reverseChargeText);
   });
 
+  it("the signatory switch (07-W 5.6): off at issue freezes `signatory: false` and no signature reference; a later change never alters an issued invoice or its seal", async () => {
+    const o = await owner();
+    const read = async (id: string) =>
+      (await one<{ issuer: string; snapshot_sha256: string }>(
+        "SELECT issuer, snapshot_sha256 FROM documents WHERE id = ?",
+        id,
+      )) as { issuer: string; snapshot_sha256: string };
+    const putChecklist = (signatory?: false) =>
+      env.DB.prepare(
+        "INSERT INTO settings (key, value, version) VALUES ('tax', ?1, 1) ON CONFLICT(key) DO UPDATE SET value = excluded.value, version = version + 1",
+      )
+        .bind(
+          JSON.stringify({
+            ...SETTINGS_DEFAULTS.tax,
+            invoiceChecklist: {
+              ...SETTINGS_DEFAULTS.tax.invoiceChecklist,
+              ...(signatory === false ? { signatory } : {}),
+            },
+          }),
+        )
+        .run();
+    await putChecklist(false);
+    const off = await mkInvoice(o);
+    expect((await issueInvoice(o, off.id)).status).toBe(200);
+    const frozen = await read(off.id);
+    expect(JSON.parse(frozen.issuer)).toMatchObject({ signatory: false, signature: null });
+    // switched back on: the next invoice has no such key (the block prints), the first is untouched
+    await putChecklist();
+    const on = await mkInvoice(o);
+    expect((await issueInvoice(o, on.id)).status).toBe(200);
+    expect(JSON.parse((await read(on.id)).issuer)).not.toHaveProperty("signatory");
+    expect(await read(off.id)).toEqual(frozen);
+  });
+
   it("issuing a milestone invoice makes the milestone invoiced and keeps its delivery time; the audit row has ids and totals, no description", async () => {
     const o = await owner();
     const c = await mkInvoiceClient();
@@ -965,7 +999,7 @@ describe("the route table covers issue", () => {
   });
 });
 
-describe("the bells of an individual's invoices go with the person [DPDP; VERIFY WITH CA/LEGAL; early check required 3]", () => {
+describe("the bells of an individual's invoices go with the person [DPDP; Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11); early check required 3]", () => {
   it("anonymising the last contact deletes the bells about a pending issue request and about an issued invoice; the issued invoice and its approval stay, the draft and its request go", async () => {
     const o = await owner();
     const staff = await sessionFor("staff");

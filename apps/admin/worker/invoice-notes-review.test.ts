@@ -1,5 +1,5 @@
 // M5.3 review items (the analyst's early check and the lead's answers to stop 1, 2026-10-27): the 07-T §8 lines word for word, the IMS list's query plan, the amount typed
-// that moves the hash, a debit note's save, "Against line {n}", and the finance audit list. Every rule is VERIFY WITH CA/LEGAL where it is a tax or legal one.
+// that moves the hash, a debit note's save, "Against line {n}", and the finance audit list. Every rule is Researched 2026-10-28, s.34(3) CGST Act, Rule 53 (08-C RA-22) where it is a tax or legal one.
 
 import { env } from "cloudflare:workers";
 import { FINANCE_AUDIT_ACTIONS } from "@techaust/core/audit";
@@ -118,10 +118,14 @@ describe("the 07-T §8 lines are the API's words, word for word", () => {
       model.notesLimit("debit"),
       model.creditAmountUnfit(1_000, "INR"),
     ];
-    // the debit note's fully-credited line is the owner's to give (07-T question Q66): a marked placeholder until then
-    expect(made.filter((m) => m.message.includes("[Placeholder]")).map((m) => m.code)).toEqual([
-      "debit_parent_fully_credited",
-    ]);
+    // 07-T §9 (2026-10-28) gave the last two lines (the debit note on a fully credited invoice, the rounding line of Q66): none is a placeholder any more
+    expect(made.filter((m) => m.message.includes("[Placeholder")).map((m) => m.code)).toEqual([]);
+    expect(model.DEBIT_PARENT_FULLY_CREDITED.message).toBe(
+      "This invoice has been credited in full, so a debit note can't be issued against it. Issue a new invoice instead.",
+    );
+    expect(model.creditAmountUnfit(null, "INR").message).toBe(
+      "This amount is too small to credit after rounding. Enter a larger amount.",
+    );
   });
 
   it("the routes answer in those words (a second draft, the limit's wording by kind)", async () => {

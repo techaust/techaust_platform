@@ -1,4 +1,4 @@
-import { type CalendarDate, istDate } from "@techaust/core/dates";
+import { type CalendarDate, formatDate, istDate, parseIsoDate } from "@techaust/core/dates";
 import { contentHash, type DraftContent } from "@techaust/core/documents";
 import { isCountryCode } from "@techaust/core/form-labels";
 import { uuidv7 } from "@techaust/core/ids";
@@ -86,7 +86,7 @@ export const MILESTONE_NO_AMOUNT = e("milestone_no_amount", "That milestone has 
 export const MILESTONE_EXCLUSIVE = e("milestone_exclusive", "Choose a milestone or services, not both");
 export const VOID_NOT_ALLOWED = e("void_not_allowed", "This invoice can't be voided");
 export const ALREADY_VOID = e("already_void", "This invoice is already void");
-/** Q23 (VERIFY WITH CA/LEGAL): the lead's line, 07-R's wording pending the owner's approval. */
+/** Q23 (OPEN (08-C RA-10): may a tax invoice issued in error and never delivered be shown as cancelled in GSTR-1 Table 13 with no credit note?): the lead's line, 07-R's wording pending the owner's approval. */
 export const RETURN_PERIOD_CLOSED = e(
   "return_period_closed",
   "This invoice's GST return period has ended, so it can't be voided. Use a credit note instead.",
@@ -241,7 +241,7 @@ export function recipientOf(client: ClientRow, contact: ContactFacts | null): Re
     ...(client.gstin ? { gstin: client.gstin } : {}),
     ...(client.state_code ? { stateCode: client.state_code } : {}),
     ...(client.billing_address ? { address: JSON.parse(client.billing_address) } : {}),
-    // M5.2 (LD36, Rule 46(o); VERIFY WITH CA/LEGAL): the address of delivery, when the client has a service address.
+    // M5.2 (LD36, Rule 46(o); Researched 2026-10-28, s.2(6) IGST Act, Rule 46 (08-C RA-18)): the address of delivery, when the client has a service address.
     ...(client.service_address ? { deliveryAddress: JSON.parse(client.service_address) } : {}),
     ...(contact && contact.anonymised_at === null
       ? { email: contact.email, contactId: contact.id, contactName: contact.name }
@@ -261,6 +261,7 @@ export function issuerOf(
 ): InvoiceIssuerSnapshot {
   const c = s.company;
   const sig = c.signature;
+  const signatoryOff = s.tax.invoiceChecklist.signatory === false;
   return {
     company: {
       tradeName: c.tradeName,
@@ -274,7 +275,9 @@ export function issuerOf(
       ...(c.principalPlace ? { principalPlace: c.principalPlace } : {}),
     },
     bank: { inr: inrBankOf(bank), ...(currency === "USD" ? { swift: swiftBankOf(bank) } : {}) },
-    signature: sig ? { key: sig.key, sha256: sig.sha256, mime: sig.mime } : null,
+    // 07-W 5.6 (08-C RA-06): with the checklist's signatory item off, the choice is frozen here, so the PDF leaves the block out and a later settings change never alters it.
+    signature: sig && !signatoryOff ? { key: sig.key, sha256: sig.sha256, mime: sig.mime } : null,
+    ...(signatoryOff ? { signatory: false as const } : {}),
     reverseChargeText: s.tax.reverseChargeText,
     sender: { staffId: who.id, name: who.name, email: s.email.senders.billing },
   };
@@ -290,7 +293,8 @@ export const ISSUED_DOCUMENTS_SQL =
 // ---- the state of a draft ---------------------------------------------------------------------------------------------------------------------
 
 /** M5.2: the exchange rate typed on a USD draft: INR micros per USD, the rate's own date, its source as it is printed (`fxSourceLabel`). */
-export type FxState = { rateMicros: number; date: string; source: string };
+/** `noRateDay` (Q24, 08-C RA-21): the DAY the Owner's statement "no rate was published that day" covers (an ISO date); stored with the rate (`fx_no_rate_day`), frozen and sealed with it. It counts only at an issue on that day. */
+export type FxState = { rateMicros: number; date: string; source: string; noRateDay?: string };
 
 export type InvoiceState = {
   id: string;
@@ -469,6 +473,7 @@ export function invoiceColumns(s: InvoiceState, c: InvoiceComputation) {
     fx_rate_micros: s.fx?.rateMicros ?? null,
     fx_date: s.fx?.date ?? null,
     fx_source: s.fx?.source ?? null,
+    fx_no_rate_day: s.fx?.noRateDay ?? null,
     service_completed_on: s.serviceCompletedOn,
     export_declaration_id: s.exportDeclarationId,
     subtotal_minor: k?.subtotalMinor ?? 0,
@@ -561,7 +566,7 @@ export function milestoneDraft(input: {
       catalogueItemId: null,
       catalogueRateMinor: null,
       catalogueLine: null,
-      // [Placeholder, 07-R] the line's words: the milestone's title, with the group when there are several.
+      // 07-R §7 (invoice line from a milestone): the line's words are the milestone's title, with "(SAC {code}, {rate}%)" after it when there is more than one tax group.
       description: many
         ? `${input.title} (${l.sac ? `SAC ${l.sac}, ` : ""}${percentFromBp(rateBp)}%)`
         : input.title,
@@ -588,7 +593,8 @@ export const advanceLineDescription = (proformaNumber: string) =>
  * The export route of the document made for money received against a proforma (review 1): the proforma's own pick; when it had none, the route the
  * engine computed it under (`export_lut` gives `lut`, `export_igst` gives `igst_paid`), NEVER the live Settings, which may have moved since the
  * proforma was issued (the proforma said 0 % under LUT; the invoice for the money must not turn into an IGST split because the setting changed).
- * A proforma that was not an export has no route (null). VERIFY WITH CA/LEGAL: whether a lapsed LUT should force IGST on the tax invoice.
+ * A proforma that was not an export has no route (null). Researched 2026-10-28, Rule 96A CGST Rules (08-C RA-19): one LUT per FY, furnished before the first export of that FY.
+ * OPEN (08-C RA-19, Q37): must the tax invoice for a payment received after the LUT lapsed charge IGST, or does the earlier FY's LUT cover it? The code refuses the LUT route and lets the Owner choose.
  */
 export function proformaRouteOf(
   exportMode: string | null,
@@ -742,7 +748,7 @@ export function blockersOf(
   return issueBlockers(issueFactsOf(state, client, settings, c, x), settings.tax.invoiceChecklist);
 }
 
-/** An export invoice in INR needs the Owner's explicit confirmation (Q8; VERIFY WITH CA/LEGAL, s.2(6) IGST Act). */
+/** An export invoice in INR needs the Owner's explicit confirmation (Q8; Researched 2026-10-28, s.2(6) IGST Act, Rule 46 (08-C RA-18), s.2(6) IGST Act). */
 export const needsInrConfirm = (type: string, currency: string): boolean =>
   type === "export_invoice" && currency === "INR";
 
@@ -792,7 +798,7 @@ export const ADVANCE_EXCEEDS_BALANCE = e(
   "The amount can't be more than the proforma's balance.",
 );
 /**
- * VERIFY WITH CA/LEGAL (which supply applies, batch Q37's neighbour): a proforma sealed for an overseas client (an export supply) and a client who is no longer
+ * Researched 2026-10-28, Rule 96A CGST Rules (08-C RA-19) (which supply applies, batch Q37's neighbour): a proforma sealed for an overseas client (an export supply) and a client who is no longer
  * overseas, or the reverse. The tax on the payment can't be worked out from the proforma, so the advance route refuses (07-S §8).
  */
 export const proformaSupplyChanged = (
@@ -808,6 +814,12 @@ export const ADVANCE_SUPPLY_CHANGED = e(
   "advance_supply_changed",
   "The client's GST details changed after this proforma was issued, so the tax on this payment can't be worked out from it. Check the client's details with your CA before recording the payment.",
 );
+/** Q37 (07-S section 9): the message carries the FY as people read it ("2027-28"); the same FY is in the error's `details`. */
+export const advanceLutMissing = (fyLabel: string): ApiError =>
+  e(
+    "advance_lut_missing",
+    `There's no LUT saved for FY ${fyLabel}, when this payment was received, so this tax invoice can't be issued without IGST. Save that year's LUT ARN in Settings › Tax first, or issue it with IGST.`,
+  );
 export const ADVANCE_DATE_INVALID = e(
   "advance_date_invalid",
   "The date received can't be before the proforma's date or in the future.",
@@ -856,10 +868,31 @@ export function headerExtrasOf(a: {
     };
   }
   if ((state.type === "tax_invoice" || state.type === "export_invoice") && state.fx)
-    out.fx = { rateMicros: state.fx.rateMicros, date: state.fx.date, source: state.fx.source };
+    out.fx = {
+      rateMicros: state.fx.rateMicros,
+      date: state.fx.date,
+      source: state.fx.source,
+      ...(state.fx.noRateDay ? { noRateDay: state.fx.noRateDay } : {}),
+    };
   if (state.type === "proforma") out.proforma = { notice: PROFORMA_NOTICE };
   if (a.advance) out.advance = a.advance;
   return out;
 }
+
+// ---- the exchange rate of the day of supply (research round 2026-10-28, Q24; Researched 2026-10-28, 08-C RA-21; 07-S §8) -----------------------------------------------------
+
+const dayWords = (iso: string): string => {
+  const d = parseIsoDate(iso);
+  return d ? formatDate(d) : iso;
+};
+/** 400 for the tax invoice of a payment received (07-S §8): the rate is older than the limit, of a later day, or not a date; the line names the day the money arrived and the limit. */
+export const fxDateInvalidFor = (receivedOn: string, days: number): ApiError =>
+  e(
+    "fx_date_invalid",
+    `Use the rate published on ${dayWords(receivedOn)}. If none was published that day, use the last one published before it, at most ${days} days earlier.`,
+  );
+/** 400 (07-S §8): a rate of an earlier day was typed without saying that none was published on the day. */
+export const fxSameDayExistsFor = (receivedOn: string): ApiError =>
+  e("fx_same_day_exists", `A rate was published on ${dayWords(receivedOn)}, so use that day's rate.`);
 
 export { taxContext, taxInputOf };

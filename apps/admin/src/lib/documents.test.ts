@@ -3,6 +3,10 @@
 // (the server's ids by position, figures kept when unchanged, a part edited during the save stays dirty).
 import { describe, expect, it } from "vitest";
 import { RequestError } from "../api.ts";
+
+/** The mark a line not yet approved would carry (none should). */
+const PLACEHOLDER_TAG = "[Placeholder]";
+
 import { DASH_COPY, pipelineLine } from "./dashboard.ts";
 import {
   applySave,
@@ -49,7 +53,6 @@ import {
   versionLine,
 } from "./documents.ts";
 import type { DocumentView, SaveAnswer, ViewLine } from "./documents-api.ts";
-import { PLACEHOLDER_TAG } from "./projects.ts";
 
 const view = (over: Partial<DocumentView> = {}): DocumentView => ({
   id: "d1",

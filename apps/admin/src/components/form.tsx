@@ -219,11 +219,21 @@ export function SaveBar(props: {
   );
 }
 
-/** Tax and legal settings carry this (CLAUDE.md hard rule 8): the defaults are researched, not settled advice. */
-export function VerifyNote({ legal, children }: { legal?: boolean; children: ReactNode }) {
+/** 07-W §4: the tag and the accessible name of the researched-default note. */
+export const RESEARCHED_DEFAULT = "Researched default";
+
+/** 07-W §4, Settings pages: whose list holds the questions the sources don't settle. */
+export const researchedSettingsText = (legal: boolean) =>
+  `These defaults follow official sources, researched on 28 October 2026. Questions the sources don't settle are on the list for your ${legal ? "CA and lawyer" : "CA"}.`;
+
+/**
+ * Tax and legal settings carry this (CLAUDE.md hard rule 8): the defaults are researched from official sources (08-C), and what they don't settle is on
+ * the CA's or lawyer's list. One tag for both kinds (07-W §4); the text says whose list.
+ */
+export function VerifyNote({ children }: { children: ReactNode }) {
   return (
-    <aside className="verify-note" aria-label={legal ? "Verify with CA/legal" : "Verify with CA"}>
-      <p className="verify-note__tag">{legal ? "VERIFY WITH CA/LEGAL" : "VERIFY WITH CA"}</p>
+    <aside className="verify-note" aria-label={RESEARCHED_DEFAULT}>
+      <p className="verify-note__tag">{RESEARCHED_DEFAULT}</p>
       <p className="verify-note__text">{children}</p>
     </aside>
   );

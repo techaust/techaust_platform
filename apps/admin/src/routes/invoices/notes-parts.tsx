@@ -1,4 +1,4 @@
-// The credit and debit note pieces of the invoice screens (M5.3; ADM-INV-11, ADM-INV-01 "Debit Note"; words 07-T, VERIFY WITH CA/LEGAL):
+// The credit and debit note pieces of the invoice screens (M5.3; ADM-INV-11, ADM-INV-01 "Debit Note"; words 07-T; Researched 2026-10-28, 08-C RA-03, RA-04):
 // - on an issued tax or export invoice, the notes section: the credit deadline, the notes as a short ledger closed by the balance line under a double
 //   rule (the one thing drawn here: the invoice's arithmetic, its total corrected note by note, as an accountant closes a column), the refund due, an
 //   open draft, and the two actions;
@@ -6,6 +6,7 @@
 //   note; the client's IMS answer on a credit note; its lines, each with the invoice line it is against, and its totals.
 // Every amount is the server's, formatted through core; nothing is added or rounded here.
 import "../../notes.css";
+import { issueDateOf } from "@techaust/core/invoices";
 import type { Role } from "@techaust/core/permissions";
 import { useState } from "react";
 import { Link } from "react-router";
@@ -48,9 +49,9 @@ export const noteKindOfView = (v: { type: string }): NoteKind =>
 
 // ---- the deadline (07-T §4) ---------------------------------------------------------------------------------------------------------------------
 
-/** The credit deadline of an invoice: a dated line in the tone of how close it is (info, then warning within 30 days, then danger once passed). */
+/** The credit deadline of an invoice: a dated line in the tone of how close it is (info, then warning from 1 October, then danger once passed). */
 export function DeadlineNotice({ deadline, fy }: { deadline: CreditDeadlineView; fy: string | null }) {
-  const b = deadlineBanner(deadline, fy);
+  const b = deadlineBanner(deadline, fy, issueDateOf(Date.now()));
   return (
     <div className={`notes-deadline notes-deadline--${b.tone}`} role="status">
       <Calendar size={20} />
@@ -228,7 +229,7 @@ export function AgainstInvoice({ view }: { view: InvoiceWithNotes }) {
 }
 
 /**
- * The client's answer in the GST portal's IMS (07-T §5, Q14; VERIFY WITH CA/LEGAL) on an issued credit note. The Owner records it once, while it is
+ * The client's answer in the GST portal's IMS (07-T §5, Q14; Researched 2026-10-28, s.34(2) CGST as amended, 08-C RA-04) on an issued credit note. The Owner records it once, while it is
  * pending (Accepted or Rejected); everyone else, and every answer once given, reads it.
  */
 export function ImsPanel({ view, onSaved }: { view: InvoiceWithNotes; onSaved: () => void }) {

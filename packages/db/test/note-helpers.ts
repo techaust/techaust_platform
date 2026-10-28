@@ -265,6 +265,8 @@ const NOTE_OF = (
   p: Parent,
   mode: string,
   takes: { line: number; taxableMinor: number }[],
+  reasonCode = "price_correction",
+  taxMinor?: number,
 ) => ({
   kind,
   parent: {
@@ -279,8 +281,8 @@ const NOTE_OF = (
     totalMinor: p.computed.totalMinor,
     totalInrMinor: p.computed.inr?.totalMinor ?? null,
   },
-  reason: { code: "price_correction", text: "" },
-  request: { mode, takes },
+  reason: { code: reasonCode, text: "" },
+  request: { mode, ...(taxMinor === undefined ? {} : { taxMinor }), takes },
 });
 
 /** Inserts a note draft through `noteDraftStatements` (the guard of its SQL included). Throws when the guard or a unique key refuses. */
@@ -294,11 +296,15 @@ export async function insertNoteDraft(
     today?: string;
     deadline?: { lastDay: string; filedOn: string | null } | null;
     mode?: string;
+    reasonCode?: string;
+    taxMinor?: number;
   } = {},
 ): Promise<Draft> {
   const id = uuidv7();
   const takes = computed.lines.map((l) => ({ line: l.index, taxableMinor: l.taxableMinor }));
-  const headerExtras = JSON.stringify({ noteOf: NOTE_OF(kind, p, over.mode ?? "lines", takes) });
+  const headerExtras = JSON.stringify({
+    noteOf: NOTE_OF(kind, p, over.mode ?? "lines", takes, over.reasonCode, over.taxMinor),
+  });
   const credited =
     (await first<{ c: number }>("SELECT credited_minor AS c FROM documents WHERE id = ?", p.id))?.c ?? 0;
   const parentUpdated =

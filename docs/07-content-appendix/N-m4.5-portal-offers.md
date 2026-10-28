@@ -6,7 +6,7 @@ _Drafted by the lead on 2026-10-26 from approved facts:
 - the owner's approval of the M4.5 preview (2026-10-25);
 - the designer's "[Placeholder]" drafts in `apps/portal/src/copy-documents.ts`.
 
-**PENDING the owner's word-for-word approval** (batch rule). Sections 1–5 are client-facing (portal, emails, certificate); sections 6–7 are staff-facing. `{…}` is filled by the system. Acceptance and evidence wording is VERIFY WITH CA/LEGAL._
+**Approved by the owner word for word on 2026-10-26 ([07-Q](Q-batch-review-copy.md), "approve all")**. Sections 1–5 are client-facing (portal, emails, certificate); sections 6–7 are staff-facing. `{…}` is filled by the system. Acceptance and evidence wording is VERIFY WITH CA/LEGAL._
 
 ## 1. Portal home and lists
 | Where | Copy |

@@ -1,4 +1,4 @@
-// The report routes (M5.5b, LD71, LD74, LD85; ADM-REP-04, ADM-REP-07; VERIFY WITH CA/LEGAL for every tax reading): the register page that GSTR-1, Table 13, the sales
+// The report routes (M5.5b, LD71, LD74, LD85; ADM-REP-04, ADM-REP-07; Researched 2026-10-28, rule by rule in 08-C section 1): the register page that GSTR-1, Table 13, the sales
 // register, the output tax and the GSTR-3B summary are all built from (in the browser, from the gst core: the Worker does none of that maths), the EDF month and the
 // export realisation list. Keyset pages of at most 50 rows; the Worker never reads `documents.computed` (the rates come from SQL, `@techaust/db/reports`).
 // Self-contained (LD85): it imports only the context, the guard's types, keyset, http, `report-rows` and packages, so a later third Worker can take `/reports/*`.
@@ -125,7 +125,7 @@ export const reports = new Hono<AppEnv>()
   })
 
   // The EDF list of one invoice month: every non-voided export invoice of the month, whatever the payment rail (Q16). `meta.edfDue` is the last day of the month
-  // plus 30 days (VERIFY WITH CA/LEGAL).
+  // plus 30 days (Researched 2026-10-28, Rules 46(c) and 47 CGST Rules (08-C RA-08)).
   .get("/edf", query(edfQuery), async (c) => {
     const q = c.req.valid("query");
     const year = Number(q.month.slice(0, 4));

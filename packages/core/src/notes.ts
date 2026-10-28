@@ -1,5 +1,5 @@
 // Credit and debit notes, pure (M5.3; ADM-INV-11, ADM-INV-01 "Debit Note", docs/04 §9, docs/08 G-11, 08-A §6). No I/O, no zod, no floats. Codes only: the words are the
-// screens' (07-T). EVERY RULE HERE IS A RESEARCHED DEFAULT: VERIFY WITH CA/LEGAL (s.34 CGST Act, Rule 53(1A), the 30 November block, IMS).
+// screens' (07-T). EVERY RULE HERE IS A RESEARCHED DEFAULT: Researched 2026-10-28, s.34(2) proviso CGST Act (08-C RA-04) (s.34 CGST Act, Rule 53(1A), the 30 November block, IMS).
 //
 //   - the reasons, the limits and the note blockers (own codes, LD50: `ISSUE_BLOCKER_CODES` is the invoice's and does not move),
 //   - the deadline of a credit note (s.34(2): 30 November after the end of the FY of the supply, or earlier once the annual return is filed; Q32, Q33),
@@ -43,8 +43,10 @@ export const noteKindOf = (type: NoteType): NoteKind => (type === "credit_note" 
 export const noteTypeOf = (kind: NoteKind): NoteType => (kind === "credit" ? "credit_note" : "debit_note");
 
 /**
- * The reasons a person can pick (07-T §3; VERIFY WITH CA/LEGAL). "Discount after sale": the s.34(1) amendment is NOT in force (08-A :259), so a credit note for it is
- * kept as a choice the CA must confirm. A debit note has two (Q35): the richer list of 07-T waits for the owner's word.
+ * The reasons a person can pick (07-T §3 and §9). "Discount after sale" is a valid credit-note reason for notes DATED from 1 November 2026 (IST): s.15(3)(b) was
+ * substituted and s.34(1) extended by ss.153 to 154 of the Finance Act 2026, in force from that day by Notification 03/2026-CT (Researched 2026-10-28, 08-C RA-02; the
+ * CBIC repository still shows "yet to be notified": re-read it after 1 November). A debit note has three (Q35, owner 2026-10-28): "Tax charged too low" adds tax only
+ * (s.34(3); Researched 2026-10-28, 08-C RA-22).
  */
 export const CREDIT_REASONS = [
   "price_correction",
@@ -53,7 +55,12 @@ export const CREDIT_REASONS = [
   "discount_after_sale",
   "other",
 ] as const;
-export const DEBIT_REASONS = ["price_correction", "other"] as const;
+export const DEBIT_REASONS = ["price_correction", "tax_charged_too_low", "other"] as const;
+/** The first IST day a credit note for "Discount after sale" may be dated (RA-02). The SQL twin is `DISCOUNT_AFTER_SALE_FROM_SQL` in `@techaust/db/issue` (a test compares them). */
+export const DISCOUNT_AFTER_SALE_FROM = "2026-11-01";
+/** Whether a note of this reason may carry this date (ISO, the IST issue day): only "Discount after sale" is dated-limited. */
+export const reasonInForce = (reasonCode: string, noteDate: string): boolean =>
+  reasonCode !== "discount_after_sale" || noteDate >= DISCOUNT_AFTER_SALE_FROM;
 export const NOTE_REASONS: Readonly<Record<NoteKind, readonly string[]>> = {
   credit: CREDIT_REASONS,
   debit: DEBIT_REASONS,
@@ -75,6 +82,11 @@ export type NoteRequest = {
   readonly mode: "lines" | "amount" | "full";
   /** The amount typed (GST included) when the mode is `amount`. */
   readonly grossMinor?: number;
+  /**
+   * A debit note for "Tax charged too low" (Q35): the total tax to add (above zero, in the invoice's currency). The takes then name the lines the tax is split over, each
+   * with a taxable value of zero; the split is worked out again from this amount at the issue (core `taxOnlyDebitNote`).
+   */
+  readonly taxMinor?: number;
   readonly takes: readonly NoteTake[];
 };
 
@@ -124,6 +136,7 @@ export function noteOfFromStored(v: unknown): NoteOf | null {
     return null;
   if (request.mode !== "lines" && request.mode !== "amount" && request.mode !== "full") return null;
   if (request.grossMinor !== undefined && !isNum(request.grossMinor)) return null;
+  if (request.taxMinor !== undefined && !(isNum(request.taxMinor) && request.taxMinor > 0)) return null;
   if (!isStr(reason.code) || !isStr(reason.text)) return null;
   const p = parent;
   if (
@@ -167,6 +180,7 @@ export function noteOfFromStored(v: unknown): NoteOf | null {
     request: {
       mode: request.mode,
       ...(request.grossMinor !== undefined ? { grossMinor: request.grossMinor } : {}),
+      ...(request.taxMinor !== undefined ? { taxMinor: request.taxMinor } : {}),
       takes: takes.map((t) => ({ line: t.line as number, taxableMinor: t.taxableMinor as number })),
     },
   };
@@ -176,7 +190,7 @@ export function noteOfFromStored(v: unknown): NoteOf | null {
 export const takesTuples = (takes: readonly NoteTake[]): [number, number][] =>
   takes.map((t) => [t.line, t.taxableMinor]);
 
-// ---- the note blockers (LD50; Rule 53(1A); VERIFY WITH CA/LEGAL) -----------------------------------------------------------------------------
+// ---- the note blockers (LD50; Rule 53(1A); Researched 2026-10-28, Rule 46 CGST Rules (08-C RA-05)) -----------------------------------------------------------------------------
 
 /**
  * The statuses of an invoice a note can be issued against (not a draft, not void, not credited in full). The one list: the note blockers, the admin's refusals, the issue guard's SQL
@@ -200,6 +214,7 @@ export const NOTE_BLOCKER_CODES = [
   "line_credit_exceeds",
   "credit_deadline_passed",
   "note_reason_required",
+  "discount_reason_not_in_force",
   "computed_errors",
   "zero_total",
   "reverse_charge_text",
@@ -231,6 +246,8 @@ export type NoteFacts = {
   /** How many notes of this kind are already issued on the parent. */
   readonly issuedOfKind: number;
   readonly reason: { readonly code: string; readonly text: string };
+  /** The IST day the note would be dated (the issue day): "Discount after sale" before 1 November 2026 is blocked. Left out: the date is not judged. */
+  readonly issueDate?: string;
   /** What the amounts check found: nothing chosen, or more than is left (on a line, or on the invoice as a whole). */
   readonly request: {
     readonly empty: boolean;
@@ -278,6 +295,8 @@ export function noteBlockers(f: NoteFacts, checklist: Pick<ChecklistSettings, "b
   if (f.deadline?.passed) out.push({ code: "credit_deadline_passed", date: f.deadline.lastDay });
   if (blank(f.reason.code) || (f.reason.code === "other" && blank(f.reason.text)))
     out.push({ code: "note_reason_required" });
+  if (f.issueDate !== undefined && !reasonInForce(f.reason.code, f.issueDate))
+    out.push({ code: "discount_reason_not_in_force" });
   if (f.taxErrorCount > 0) out.push({ code: "computed_errors" });
   // (An empty or too-big request has its own code above; a zero total then adds nothing.)
   else if ((f.totalMinor === null || f.totalMinor <= 0) && !f.request.empty && f.request.exceeds === null)
@@ -291,7 +310,7 @@ export function noteBlockers(f: NoteFacts, checklist: Pick<ChecklistSettings, "b
   return out;
 }
 
-// ---- the deadline of a credit note (s.34(2); G-11; Q32, Q33; VERIFY WITH CA/LEGAL) ---------------------------------------------------------------
+// ---- the deadline of a credit note (s.34(2); G-11; Q32, Q33; Researched 2026-10-28, s.34(2) CGST Act (08-C RA-03)) ---------------------------------------------------------------
 
 export type AnnualReturnFiled = { readonly fy: string; readonly filedOn: string };
 
@@ -315,7 +334,7 @@ const monthEnd = (year: number, month: number): number =>
   month === 2 ? (isLeap(year) ? 29 : 28) : [4, 6, 9, 11].includes(month) ? 30 : 31;
 
 /**
- * Q32 (VERIFY WITH CA/LEGAL): the credit note is judged against the FY the SUPPLY belongs to. That is the earliest of three: the FY of the invoice; the FY of the day
+ * Q32 (Researched 2026-10-28, s.34(2) CGST Act (08-C RA-03)): the credit note is judged against the FY the SUPPLY belongs to. That is the earliest of three: the FY of the invoice; the FY of the day
  * an advance was received (the tax invoice made for money already received, Q9: the supply's time of supply is the receipt); and the FY of the day the service was
  * completed, when the invoice came more than 30 days after it (Rule 47: the invoice is due within 30 days of the supply). `cutoff` is `tax.creditNoteCutoff`.
  * `annualReturnsFiled` (Q33): the return of that FY, once filed, closes credit notes from the day it was filed. An unreadable date is ignored.
@@ -357,6 +376,32 @@ export function creditNoteDeadline(
     supplyFy: fy.token,
     filedOn: filedOn !== null && filed ? filedOn : null,
     lastDay: date,
+  };
+}
+
+/**
+ * The advice dates of the deadline banner (research round 2026-10-28, 08-C RA-31; 07-T §4; review 2026-10-28, finding 7). The banner warns from the FIRST day of the month before the month the
+ * cutoff falls in (1 October with the default 30 November) and advises issuing the note by the LAST day of that month (31 October), so it goes into a return filed in time (a quarterly
+ * filer's November filing is the open question). Both follow the cutoff setting (a cutoff in January gives December), and neither is later than the last day a note is still allowed: when an
+ * annual return was filed before the cutoff, that is the day before it was filed (`lastDay`; a note dated on the filing day is refused, `creditAllowed`). The hard block is unchanged.
+ * ISO days; an unreadable date gives none.
+ */
+export function creditNoteAdvice(
+  deadline: Pick<CreditDeadline, "date"> & Partial<Pick<CreditDeadline, "lastDay">>,
+): {
+  readonly deadlineWarnFrom: string | null;
+  readonly adviseIssueBy: string | null;
+} {
+  const d = parseIsoDate(deadline.date);
+  if (!d) return { deadlineWarnFrom: null, adviseIssueBy: null };
+  const year = d.month === 1 ? d.year - 1 : d.year;
+  const month = d.month === 1 ? 12 : d.month - 1;
+  const last =
+    deadline.lastDay !== undefined && parseIsoDate(deadline.lastDay) !== null ? deadline.lastDay : null;
+  const notLater = (day: string): string => (last !== null && last < day ? last : day);
+  return {
+    deadlineWarnFrom: notLater(toIsoDate({ year, month, day: 1 })),
+    adviseIssueBy: notLater(toIsoDate({ year, month, day: monthEnd(year, month) })),
   };
 }
 
@@ -426,7 +471,7 @@ const takesOf = (doc: ComputedDocument): NoteTake[] =>
   doc.lines.map((l) => ({ line: l.index, taxableMinor: l.taxableMinor }));
 
 /**
- * The largest credit note whose total is at most `grossMinor` (the amount typed, GST included; VERIFY WITH CA/LEGAL: a credit note states the tax it reverses,
+ * The largest credit note whose total is at most `grossMinor` (the amount typed, GST included; Researched 2026-10-28, s.34(2) CGST Act (08-C RA-03): a credit note states the tax it reverses,
  * so the person types what the client sees and the engine finds the taxable value). An amount that covers everything that is left gives the full note. Otherwise
  * it starts from `grossMinor × taxable left / total left` (bigint) and corrects with the engine's own result, at most `GROSS_EVALUATIONS_MAX` runs; the best
  * result is the one with the biggest total that is not above the amount. `gapMinor` says how far below it is. No result within one rounding unit (a whole
@@ -502,7 +547,7 @@ export function creditForGross(
   };
 }
 
-// ---- the debit note (s.34(3); LD43; VERIFY WITH CA/LEGAL) -----------------------------------------------------------------------------------
+// ---- the debit note (s.34(3); LD43; Researched 2026-10-28, s.34(3) CGST Act, Rule 53 (08-C RA-22)) -----------------------------------------------------------------------------------
 
 export type DebitInput =
   | { readonly ok: true; readonly input: DocumentInput }
@@ -550,7 +595,7 @@ export function debitNoteInput(
   };
 }
 
-// ---- IMS status (Q14, LD46; VERIFY WITH CA/LEGAL) ---------------------------------------------------------------------------------------------
+// ---- IMS status (Q14, LD46; Researched 2026-10-28, s.34(2) proviso CGST Act (08-C RA-04)) ---------------------------------------------------------------------------------------------
 
 export const IMS_STATUSES = ["pending", "accepted", "rejected", "not_applicable"] as const;
 export type ImsStatus = (typeof IMS_STATUSES)[number];

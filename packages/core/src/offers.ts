@@ -1,5 +1,5 @@
 // Pure helpers of sending, accepting and declining a proposal or estimate (M4.5; ADM-PROP-07..10, ADM-EST-01, POR-04, POR-05).
-// Zod-free and I/O-free, so the admin, jobs and portal Workers can all use them. VERIFY WITH CA/LEGAL: a typed name and a
+// Zod-free and I/O-free, so the admin, jobs and portal Workers can all use them. Researched 2026-10-28, BSA 2023 s.63(4) (08-C RB-19): a typed name and a
 // ticked box as acceptance, and the link lifetimes below (docs/runs/m4.5-send-accept.md §4).
 import { addDays, fromIst, istDate, parseIsoDate, toIsoDate } from "./dates.ts";
 import { pdfKeys } from "./pdf-jobs.ts";

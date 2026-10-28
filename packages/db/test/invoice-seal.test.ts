@@ -1,5 +1,5 @@
 // The seal of an issued invoice (M5.1, LD4): the Rule 46(p) reverse-charge statement is part of the frozen issuer block, so it is part of the
-// hash too (the analyst's early check, required 1). VERIFY WITH CA/LEGAL.
+// hash too (the analyst's early check, required 1). Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17).
 import { describe, expect, it } from "vitest";
 import { type InvoiceSealParts, invoiceSealOf } from "../src/documents.ts";
 import type { InvoiceIssuerSnapshot } from "../src/schema/documents.ts";

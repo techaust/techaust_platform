@@ -1,4 +1,4 @@
-// The dashboard's finance tile [ADM-DASH-01; M5.5b, LD80; VERIFY WITH CA/LEGAL for what counts as invoiced]: invoiced (this financial year and this month, credit notes negative,
+// The dashboard's finance tile [ADM-DASH-01; M5.5b, LD80; Researched 2026-10-28, s.34(2) CGST Act (08-C RA-03) for what counts as invoiced]: invoiced (this financial year and this month, credit notes negative,
 // voided and proformas never), what clients owe, what is overdue (flips at IST midnight), the proformas that wait, and the exports nearing a deadline; who sees it; and the rows it reads.
 import { env } from "cloudflare:workers";
 import { addDays, fyOfDate, parseIsoDate, toIsoDate } from "@techaust/core/dates";

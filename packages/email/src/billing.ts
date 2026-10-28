@@ -2,10 +2,8 @@
 // (ADM-INV-15, ADM-INV-13, ADM-INV-19, ADM-INV-10, ADM-INV-18, POR-06), in the brand layout of every other email (the subject as the heading, the
 // sentences, the 48 px verdigris button with the plain address under it, light and dark), each with its plain-text twin saying the same words.
 //
-// Words: docs/07-content-appendix/U-m5.4-send-recurring-reminders.md (07-U), drafted by the lead and PENDING the owner's word-for-word approval. So every
-// line that comes only from 07-U carries the "[Placeholder] " mark (`U`), in the subject, the HTML and the text alike, exactly as the M5.1 to M5.3 screens
-// mark unapproved lines; when the owner approves 07-U, `APPROVED_07U` turns to true and nothing else changes. The LUT email's body is 07-S §5 (its words
-// are not 07-U's, so they carry no mark); the "running year has no letter" form is 07-U §8's. Tax and legal sentences: VERIFY WITH CA/LEGAL.
+// Words: docs/07-content-appendix/U-m5.4-send-recurring-reminders.md (07-U), word for word, approved by the lead on 2026-10-28. The LUT email's body is 07-S §5; the "running year has
+// no letter" form is 07-U §8's. Tax and legal sentences: Researched 2026-10-28 (08-C RA-08, RA-17, RA-19, RA-22, RA-28).
 //
 // The data is exactly `INVOICE_EMAIL_DATA` (@techaust/core/invoices): every value a string, money and dates already formatted by the jobs Worker
 // (nothing is added up or worked out here), flags "1" or "". The notes' "Reason: {reason}." uses `reason` (core `noteReasonWords`) and the credit note's
@@ -16,21 +14,14 @@
 import { escapeHtml, headerValue } from "./headers.ts";
 import { type LayoutOptions, type Para, para, type Rendered, securityEmail } from "./templates.ts";
 
-/** Flip to true when the owner approves 07-U word for word: every mark below disappears at once. */
-export const APPROVED_07U = false;
-/** The mark on an unapproved 07-U line (the screens' `INV_PLACEHOLDER`, followed by the draft's words). */
-export const PLACEHOLDER_MARK = "[Placeholder] ";
-/** A 07-U line, marked until the owner approves it. */
-const U = (line: string): string => (APPROVED_07U ? line : `${PLACEHOLDER_MARK}${line}`);
-
 /** One piece of a sentence: plain text, or a value set in bold (a number or an amount) in HTML. */
 type Piece = string | { b: string };
 const B = (v: string): Piece => ({ b: v });
 
 const esc = escapeHtml;
 
-/** A 07-U sentence from its pieces: the mark in front (until approved), the values bold in HTML; the text twin says the same words. */
-function line(pieces: Piece[], mark = true): Para {
+/** A 07-U sentence from its pieces: the values bold in HTML; the text twin says the same words. */
+function line(pieces: Piece[]): Para {
   const text = pieces.map((p) => (typeof p === "string" ? p : p.b)).join("");
   const html = pieces
     .map((p) =>
@@ -39,8 +30,7 @@ function line(pieces: Piece[], mark = true): Para {
         : `<strong style="font-weight:600;white-space:nowrap;">${esc(p.b)}</strong>`,
     )
     .join("");
-  if (!mark || APPROVED_07U) return { text, html };
-  return { text: `${PLACEHOLDER_MARK}${text}`, html: `${esc(PLACEHOLDER_MARK)}${html}` };
+  return { text, html };
 }
 
 // ---- 1. Document emails (client-facing, from billing@) ------------------------------------------------------------------------------------------
@@ -175,7 +165,7 @@ export function documentSent(kind: DocumentKind, d: DocumentEmailData, opts: Lay
   // Every subject here is approved already (07 §8 for the invoice and the payment request; 07 §8 and 07-T §2 for the notes): no mark.
   return securityEmail(headerValue(subject), opts, {
     before: [...body.map((pieces) => line(pieces)), line([closingSentence(kind, isAttached(d.attached))])],
-    action: { label: U(DOCUMENT_WORDS[kind].button), url: d.url },
+    action: { label: DOCUMENT_WORDS[kind].button, url: d.url },
   });
 }
 
@@ -280,12 +270,12 @@ export function reminderSent(d: ReminderEmailData, opts: LayoutOptions): Rendere
   const kind = reminderKindOf(d.kind);
   const { subject, body } = reminderBody(d);
   // An invoice's five subjects are 07 §8's (approved); the payment-request and debit-note variants are 07-U's only, so they carry the mark.
-  return securityEmail(headerValue(kind === "invoice" ? subject : U(subject)), opts, {
+  return securityEmail(headerValue(subject), opts, {
     // 07-U §2: the body ends with the link-only closing sentence ("…with the button below…"); then the button; then 07 §8's "already paid" line.
     before: [...body.map((pieces) => line(pieces)), line([closingSentence(kind, false)])],
-    action: { label: U(DOCUMENT_WORDS[kind].button), url: d.url },
+    action: { label: DOCUMENT_WORDS[kind].button, url: d.url },
     // 07 §8 (approved): no mark.
-    after: [line(["If you've already paid, thank you, and please ignore this."], false)],
+    after: [line(["If you've already paid, thank you, and please ignore this."])],
     actionFirst: true,
   });
 }
@@ -313,7 +303,7 @@ const OPEN_IN_ADMIN = "Open in admin";
 
 /** 07-U §8: work delivered and not invoiced yet. */
 export function alertUnbilled(d: UnbilledAlertData, opts: LayoutOptions): Rendered {
-  return securityEmail(headerValue(U(`Not invoiced yet: ${d.milestone_title} for ${d.client_name}`)), opts, {
+  return securityEmail(headerValue(`Not invoiced yet: ${d.milestone_title} for ${d.client_name}`), opts, {
     before: [
       line([
         `${hi(d.owner_first_name)}${d.milestone_title} for ${d.client_name} was delivered on ${d.delivered_date}, ${days(d.days_since)} ago, and has no invoice yet.`,
@@ -323,10 +313,10 @@ export function alertUnbilled(d: UnbilledAlertData, opts: LayoutOptions): Render
   });
 }
 
-/** 07-U §8: a payment request still unpaid after the work was delivered (VERIFY WITH CA/LEGAL). */
+/** 07-U §8: a payment request still unpaid after the work was delivered (Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-28)). */
 export function alertProformaDue(d: ProformaDueAlertData, opts: LayoutOptions): Rendered {
   return securityEmail(
-    headerValue(U(`Payment request ${d.proforma_number} still unpaid after delivery`)),
+    headerValue(`Payment request ${d.proforma_number} still unpaid after delivery`),
     opts,
     {
       before: [
@@ -343,10 +333,10 @@ export function alertProformaDue(d: ProformaDueAlertData, opts: LayoutOptions): 
   );
 }
 
-/** The weekly LUT email (VERIFY WITH CA/LEGAL): 07-S §5 while next year's letter is due; 07-U §8 while the running year has none. */
+/** The weekly LUT email (Researched 2026-10-28, Rule 96A CGST Rules (08-C RA-19)): 07-S §5 while next year's letter is due; 07-U §8 while the running year has none. */
 export function lutReminder(d: LutReminderData, opts: LayoutOptions): Rendered {
   if (d.state === "current_missing")
-    return securityEmail(headerValue(U(`No LUT saved for FY ${d.fy_label}`)), opts, {
+    return securityEmail(headerValue(`No LUT saved for FY ${d.fy_label}`), opts, {
       before: [
         line([
           `${hi(d.owner_first_name)}there's no letter of undertaking saved for FY ${d.fy_label}, so export invoices without IGST are blocked. File it on the GST portal and save the ARN in Settings › Tax.`,

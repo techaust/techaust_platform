@@ -9,6 +9,7 @@ import {
   type ReportMessage,
   reminderScanMessage,
 } from "@techaust/core";
+import { CARE_SCAN_HOUR_IST } from "@techaust/core/care-billing";
 import { istDate } from "@techaust/core/dates";
 import { istHourOf } from "@techaust/core/invoices";
 import { processAlertsDaily } from "./alerts.ts";
@@ -19,7 +20,7 @@ import { processReminderScan } from "./reminders.ts";
 /** The hourly cron (`30 * * * *` UTC is the top of every IST hour). */
 export const HOURLY_CRON = "30 * * * *";
 /** IST hour of the care-plan scan and of the owners' alerts. */
-export const CARE_SCAN_HOUR_IST = 6;
+export { CARE_SCAN_HOUR_IST };
 export const ALERTS_HOUR_IST = 9;
 
 /** IST days of the month on which the EDF reminder is queued for the previous month (the 5th, and the 6th and 7th to catch a missed tick; the owners' bell makes a repeat a no-op; LD76, Q55). */

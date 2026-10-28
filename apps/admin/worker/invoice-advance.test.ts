@@ -1,9 +1,10 @@
-// The tax invoice for money received against a proforma [Q9, LD22, G-6, ADM-INV-10; VERIFY WITH CA/LEGAL]: the Owner's `POST /invoices/:id/advance-invoice`.
+// The tax invoice for money received against a proforma [Q9, LD22, G-6, ADM-INV-10; Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17)]: the Owner's `POST /invoices/:id/advance-invoice`.
 // The proforma converts, the invoice is made paid with the next number of its series, one receipt row is the evidence, a repeated reference is the same
 // invoice, and every refusal leaves the counters, the proforma, the receipts and the audit log exactly as they were.
 
 import { env } from "cloudflare:workers";
 import { sha256Hex } from "@techaust/core/catalogue";
+import { fyOf } from "@techaust/core/dates";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { advanceLineDescription } from "./invoice-model.ts";
 import { call, one, rows, sessionFor } from "./test-helpers.ts";
@@ -494,7 +495,7 @@ describe("the refusals [every one leaves the counters, the proforma, the receipt
     const same = await advance(o, pf.id, { receivedOn: "2030-06-10", amountMinor: 10_000 });
     expect(same.status, await same.clone().text()).toBe(201);
     expect((await json(same)).warnings).toEqual([]);
-    // a payment of an earlier month than today: allowed, with the warning (Q27; VERIFY WITH CA/LEGAL, s.13(2))
+    // a payment of an earlier month than today: allowed, with the warning (Q27; Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17), s.13(2))
     vi.setSystemTime(Date.UTC(2030, 6, 5, 6, 0, 0));
     await renew(o);
     const late = await advance(o, pf.id, { receivedOn: "2030-06-30", amountMinor: 10_000 });
@@ -616,23 +617,70 @@ describe("an overseas proforma gives an export invoice [LUT rule, FX, Q8]", () =
     const none = await advance(o, pf.id, { amountMinor: 50_000 });
     expect(none.status).toBe(409);
     expect((await json(none)).blockers as J[]).toEqual([{ code: "fx_missing", date: todayIso() }]);
-    // a rate dated five days before the money arrived is too old (4 days at most), whatever today is
+    // Q24 (owner 2026-10-28, RA-21): the rate of the day the money arrived. A rate of an EARLIER day without the statement "no rate was published that day" is 400 fx_same_day_exists
+    // (use that day's rate), however old; with the statement it must be at most `fxMaxAgeDays` (4) older, else 400 fx_date_invalid; a later day is fx_date_invalid whatever is said.
     const day = (n: number) =>
       new Date(Date.parse(`${todayIso()}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+    const noStatement = await advance(
+      o,
+      pf.id,
+      usd({ amountMinor: 50_000, fx: { rate: "83.1234", date: day(-1), source: "FBIL" } }),
+    );
+    expect(noStatement.status).toBe(400);
+    const nb = await json(noStatement);
+    expect(nb.error.code).toBe("fx_same_day_exists");
+    expect(nb.error.message).toMatch(/^A rate was published on \d{2} \w{3} \d{4}, so use that day's rate\.$/);
+    const flagFalse = await advance(
+      o,
+      pf.id,
+      usd({
+        amountMinor: 50_000,
+        fx: { rate: "83.1234", date: day(-1), source: "FBIL", noRateThatDay: false },
+      }),
+    );
+    expect(await codeOf(flagFalse)).toBe("fx_same_day_exists");
     const old = await advance(
       o,
       pf.id,
-      usd({ amountMinor: 50_000, fx: { rate: "83.1234", date: day(-5), source: "FBIL" } }),
+      usd({
+        amountMinor: 50_000,
+        fx: { rate: "83.1234", date: day(-5), source: "FBIL", noRateThatDay: true },
+      }),
     );
-    expect(old.status).toBe(409);
-    expect((await json(old)).blockers as J[]).toEqual([{ code: "fx_date_invalid", date: todayIso() }]);
-    const future = await advance(
+    expect(old.status).toBe(400);
+    const ob = await json(old);
+    expect(ob.error.code).toBe("fx_date_invalid");
+    expect(ob.error.message).toMatch(
+      /^Use the rate published on \d{2} \w{3} \d{4}\. If none was published that day, use the last one published before it, at most 4 days earlier\.$/,
+    );
+    for (const noRateThatDay of [true, false]) {
+      const future = await advance(
+        o,
+        pf.id,
+        usd({
+          amountMinor: 50_000,
+          fx: { rate: "83.1234", date: day(1), source: "FBIL", noRateThatDay },
+        }),
+      );
+      expect(future.status).toBe(400);
+      expect(await codeOf(future)).toBe("fx_date_invalid");
+    }
+    expect(await snapshot(pf.id)).toEqual(before);
+    // with the statement, four days older is the limit and is accepted; the flag is stored with the rate and sealed
+    const four = await advance(
       o,
       pf.id,
-      usd({ amountMinor: 50_000, fx: { rate: "83.1234", date: day(1), source: "FBIL" } }),
+      usd({
+        amountMinor: 10_000,
+        fx: { rate: "83.1234", date: day(-4), source: "FBIL", noRateThatDay: true },
+      }),
     );
-    expect((await json(future)).blockers as J[]).toEqual([{ code: "fx_date_invalid", date: todayIso() }]);
-    expect(await snapshot(pf.id)).toEqual(before);
+    expect(four.status, await four.clone().text()).toBe(201);
+    const fourId = (await json(four)).id;
+    expect((await typesRow(fourId))?.fx_no_rate_day).toBe(todayIso()); // the day the money arrived
+    expect(await sealCheck(fourId)).toEqual({ content: true, snapshot: true });
+    const view = await getInvoice(o, fourId);
+    expect(view.fx.value).toMatchObject({ noRateThatDay: true, noRateDay: todayIso(), date: day(-4) });
     // the rate is judged against the day the money arrived: a rate of that day is fine even if today is later
     const received = day(0);
     expect(
@@ -665,7 +713,10 @@ describe("an overseas proforma gives an export invoice [LUT rule, FX, Q8]", () =
     const before = await snapshot(pf.id);
     const res = await advance(o, pf.id, usd({ amountMinor: 50_000 }));
     expect(res.status).toBe(409);
-    expect((await json(res)).blockers as J[]).toEqual([{ code: "lut_missing", fy: currentFy() }]);
+    // Q37 (2026-10-28): the LUT of the FY of the day the money arrived is judged first, and the refusal names that FY (details.fy)
+    const refused = await json(res);
+    expect((refused.error as J).code).toBe("advance_lut_missing");
+    expect((refused.error as J).details).toEqual({ fy: fyOf(Date.now()).label });
     expect(await snapshot(pf.id)).toEqual(before);
     // a proforma made for the IGST route keeps it for its advance invoice
     const igst = await mkProforma(o, { client: mkOverseasClient });
@@ -747,7 +798,7 @@ describe("what a converted proforma and its invoice cannot do [Q1, LD22]", () =>
 
 // ---- the proforma decides the route and the words (code review of M5.2) ----------------------------------------------------------------------------
 
-describe("the invoice for money received keeps the PROFORMA's export route [review 1; VERIFY WITH CA/LEGAL]", () => {
+describe("the invoice for money received keeps the PROFORMA's export route [review 1; Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17)]", () => {
   const usd = (over: Record<string, unknown> = {}) => ({
     fx: { rate: "83.1234", date: todayIso(), source: "FBIL" },
     ...over,
@@ -851,7 +902,7 @@ describe("the rate date of a frozen invoice made for money received [review 6]",
     const res = await advance(o, pf.id, {
       amountMinor: 100_000,
       receivedOn: "2030-06-30",
-      fx: { rate: "83.1234", date: "2030-06-28", source: "FBIL" },
+      fx: { rate: "83.1234", date: "2030-06-28", source: "FBIL", noRateThatDay: true },
     });
     expect(res.status, await res.clone().text()).toBe(201);
     const view = await getInvoice(o, (await json(res)).id);
@@ -988,7 +1039,7 @@ describe("the draft's LUT line, the series preview [review 2, findings 3 and the
   });
 });
 
-describe("the client's GST status changed after the proforma [review 2, finding 6; VERIFY WITH CA/LEGAL]", () => {
+describe("the client's GST status changed after the proforma [review 2, finding 6; Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17)]", () => {
   // the clients table keeps a state code for an Indian client and none for an overseas one, so the status and the state move together
   const setStatus = (clientId: string, status: "overseas" | "unregistered") =>
     env.DB.prepare("UPDATE clients SET gst_status = ?2, state_code = ?3 WHERE id = ?1")

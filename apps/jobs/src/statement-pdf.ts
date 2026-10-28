@@ -1,4 +1,4 @@
-// The PDF of a client's statement of account (M5.5b stage B, LD79; JOB-PDF-01, ADM-CLI-04; Q19, Q57; VERIFY WITH CA/LEGAL for what a statement lists, Q58). One `pdf.statement` message on `PDF_QUEUE`
+// The PDF of a client's statement of account (M5.5b stage B, LD79; JOB-PDF-01, ADM-CLI-04; Q19, Q57; Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-28) for what a statement lists, Q58). One `pdf.statement` message on `PDF_QUEUE`
 // per `statement_pdfs` row (the admin API inserts the row and awaits the send). The row is a CACHE, not a record: nothing here freezes or seals anything.
 //   (1) read the row, its client and the Settings "email" row; a row that is done, failed or gone is acknowledged; a client anonymised since the request makes the row failed (`client_anonymised`), no PDF, no bell;
 //   (2) read the lines in ONE batch: the balance before `from`, the entries (`LIMIT 201`: more than 200 is `statement_too_long`), the range totals;
@@ -31,15 +31,14 @@ import { type RenderEnv, renderPaced } from "./browser.ts";
 import { logEvent } from "./log.ts";
 import { type Clock, realClock } from "./pacer.ts";
 import { BROWSER_ALERT_MS, dayOf, failed, HALF_BELL_SQL, putOnce, STAT_ADD_SQL, sha256Bytes } from "./pdf.ts";
-import { PLACEHOLDER_07V } from "./reports.ts";
 
 /** The address a statement's footer sends questions to when Settings has none (07-V §6.1: a fixed word, the billing address of docs/13 2026-10-07). */
 export const DEFAULT_BILLING_EMAIL = "billing@techaust.com";
 
-/** 07-V §9, word for word with the client's CODE as `{client}`; marked until the owner approves 07-V (as M5.4's 07-U bells are). */
+/** 07-V §9, word for word with the client's CODE as `{client}` (approved by the lead 2026-10-28). */
 export const STATEMENT_BELL_COPY = {
-  ready: (client: string) => `${PLACEHOLDER_07V}Statement PDF for ${client} is ready`,
-  failed: (client: string) => `${PLACEHOLDER_07V}Statement PDF for ${client} couldn't be made`,
+  ready: (client: string) => `Statement PDF for ${client} is ready`,
+  failed: (client: string) => `Statement PDF for ${client} couldn't be made`,
 } as const;
 
 /** Where a statement bell leads: the client's Statement tab, on that PDF. */
@@ -171,7 +170,7 @@ export async function processStatementPdf(
     logEvent("pdf.statement_skipped", { why: row.failed_at !== null ? "failed" : "done" });
     return "skipped";
   }
-  // Anonymised since the request: no PDF, no bell (nothing is left to try again; VERIFY WITH CA/LEGAL)
+  // Anonymised since the request: no PDF, no bell (nothing is left to try again; Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11))
   if (row.anonymised_at !== null) return fail(env, row, "client_anonymised", now, false);
 
   const [before, lines, totals] = await env.DB.batch([

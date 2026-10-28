@@ -21,7 +21,8 @@ export const PDF_COPY = {
 
 export const SIGNATURE_COPY = {
   heading: "Signature",
-  hint: 'Printed on tax invoices above "Authorised signatory". PNG or JPEG, up to 256 KB.',
+  // 07-R §7 (Researched 2026-10-28, Rule 46 CGST proviso, 08-C RA-06); replaces 07-P's hint.
+  hint: `Optional. Invoices you send electronically don't need a signature (GST Rule 46). If you add one, it prints above "Authorised signatory".`,
   upload: "Upload signature",
   replace: "Replace",
   remove: "Remove",

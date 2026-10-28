@@ -1,4 +1,4 @@
-// The report statements [ADM-REP-04, ADM-REP-06, ADM-REP-07, ADM-CLI-04, ADM-DASH-01; M5.5b, LD71 to LD81; VERIFY WITH CA/LEGAL]: every statement is EXPLAINed
+// The report statements [ADM-REP-04, ADM-REP-06, ADM-REP-07, ADM-CLI-04, ADM-DASH-01; M5.5b, LD71 to LD81; Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-28)]: every statement is EXPLAINed
 // (the new partial indexes are used, no table scan), the register page reads what it should in the order it should, the SQL rates are a twin of core's
 // `registerRatesOf`, and the statement closes at the sum of the open debit documents' balances.
 import { registerRatesOf } from "@techaust/core/gst";

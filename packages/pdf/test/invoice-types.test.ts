@@ -1,4 +1,4 @@
-// M5.2 stage B1 and the first line of B2 (LD25, LD33, LD37; VERIFY WITH CA/LEGAL): the invoice envelope and its view carry the optional header keys of an export
+// M5.2 stage B1 and the first line of B2 (LD25, LD33, LD37; Researched 2026-10-28, Rule 46 CGST Rules (08-C RA-05)): the invoice envelope and its view carry the optional header keys of an export
 // invoice, a proforma and the invoice made for money received; an M5.1 envelope with none of them still parses and verifies; the statutory lines are
 // held here as LITERALS (not imported from core) so a change of the constants fails a test until a person has looked at it.
 import { invoiceSnapshotSha256 } from "@techaust/core/invoices";
@@ -261,6 +261,7 @@ describe("the view of the M5.2 types", () => {
       proformaNumber: SAMPLE_ADVANCE.proformaNumber,
       proformaDate: "20 Oct 26",
       receivedOn: "27 Oct 26",
+      igstNoLutFy: null,
     });
     const x = view((await buildInvoiceFixture("advance_export")).envelope);
     expect(x.advance?.proformaNumber).toBe(SAMPLE_ADVANCE.proformaNumber);

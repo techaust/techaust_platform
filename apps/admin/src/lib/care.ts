@@ -88,9 +88,9 @@ export const CARE_COPY = {
   beforeGst: "Amounts are before GST.",
   /** An older API (`addToInvoice.available: false`): the M3.5 line. */
   addToInvoice: "Adding overage to the next invoice arrives with recurring invoices.",
-  /** M5.4 (`via: "next_care_draft"`): no approved line yet, so a marked placeholder (review M3). */
+  /** M5.4 (`via: "next_care_draft"`): 07-U §9, the care plan's overage note. */
   addToNextDraft:
-    "[Placeholder] Overage goes on the next monthly care invoice for you to check: an invoice with overage is never issued automatically.",
+    "Extra hours go on the next monthly care invoice for you to check: an invoice with extra hours is never issued automatically.",
   /** The client tab's line is the empty state's heading (the M3.4 pattern), without its full stop. */
   clientTabEmptyTitle: "No care plans for this client yet",
   clientAnonymised: "This client's personal details were removed, so nothing new can be added to it.",

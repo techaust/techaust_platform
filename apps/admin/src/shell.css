@@ -1968,7 +1968,8 @@ input[readonly] {
   margin: 0 0 var(--space-5);
   padding: var(--space-3) var(--space-4);
   background: var(--color-surface-alt);
-  border-inline-start: 3px solid var(--color-warning);
+  /* 07-W §4: a researched default is information, not a warning (it was amber while it read "VERIFY"). */
+  border-inline-start: 3px solid var(--color-info);
   border-radius: var(--radius-sm);
 }
 
@@ -1977,7 +1978,7 @@ input[readonly] {
 }
 
 .verify-note__tag {
-  color: var(--color-warning);
+  color: var(--color-text-accent);
   font-size: var(--text-caption);
   font-weight: 600;
   letter-spacing: var(--text-caption--letter-spacing);
@@ -2373,6 +2374,28 @@ input[readonly] {
   /* in line with the labels of the locked lines (the lock icon is one --space-4 wide) */
   padding-inline-start: calc(var(--space-4) + var(--space-3));
   font-weight: 560;
+}
+
+/* A house rule (07-S §3): the label, then its badge on the line under it, the same on every house rule whatever the label's length. */
+.checklist__label {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+}
+
+/* The badge says the line is the business's own choice, not the law's: an outlined tag in the muted text colour, never a status colour, so it reads
+   as a kind of line and not as a state. */
+.checklist__house {
+  display: inline-block;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  font-size: var(--text-caption);
+  font-weight: 500;
+  line-height: 1.6;
+  white-space: nowrap;
 }
 
 .row-controls {

@@ -1,5 +1,5 @@
 // Estimate -> invoice draft (M4.3; ADM-EST-02, phase 1): `POST /documents/:id/convert {to: "invoice"}`. The estimate must be accepted. The draft's type
-// follows the advance mode of the tax settings (VERIFY WITH CA/LEGAL, G-6 and Q-P3-3): proforma by default; "invoice upfront" gives a tax
+// follows the advance mode of the tax settings (Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17), G-6 and Q-P3-3): proforma by default; "invoice upfront" gives a tax
 // invoice (an export invoice for an overseas client); receipt-voucher mode gives a proforma too (the voucher itself is M5's). Lines, the
 // document discount and the currency are copied, and the tax is worked out again from the client's CURRENT record, so the B2C and LUT
 // warnings survive; the draft is never issued here (issuing is M5's, with its own approval and step-up). One estimate has one invoice
@@ -96,7 +96,7 @@ export const convertBody = z.discriminatedUnion("to", [toInvoiceBody, toCarePlan
 type CarePlanBody = z.infer<typeof toCarePlanBody>;
 
 type AdvanceMode = "proforma" | "invoice_upfront" | "receipt_voucher";
-/** The draft's document type for an advance mode (VERIFY WITH CA/LEGAL: G-6; receipt-voucher mode is a proforma until M5 builds the voucher). */
+/** The draft's document type for an advance mode (Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17): G-6; receipt-voucher mode is a proforma until M5 builds the voucher). */
 export function invoiceTypeFor(
   mode: AdvanceMode,
   overseas: boolean,

@@ -1,7 +1,7 @@
 // The INR rates of a computed document, for the register (M5.5a; ADM-REP-04). It reads the tax engine's output and
 // groups its lines by (SAC, effective rate): an INR document uses the line values, a USD document the INR view of each line
 // (`line.inr`). The sums must equal the document's INR totals; if the engine ever disagrees, the result says
-// `rates_sum_mismatch` and nothing is patched around it. VERIFY WITH CA/LEGAL.
+// `rates_sum_mismatch` and nothing is patched around it. Researched 2026-10-28, GSTN advisories of June 2025 (08-C RA-23).
 import type { ComputedDocument } from "../tax/types.ts";
 import { compareText, fail, type GstResult, guard, issue, num, ok, type RegisterRate } from "./types.ts";
 

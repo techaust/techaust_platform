@@ -1,7 +1,7 @@
 // Shared types and tiny helpers of the tax engine (M4.2; ADM-INV-05, docs/05 §10). Pure: no I/O, no zod, no floats, no
 // module-level mutable state, deterministic. Every public function of `@techaust/core/tax` returns a `TaxResult`:
 // codes only (M4.3 maps them to words), and none of them throws for any input of the declared types.
-// Every rule here is a researched default: VERIFY WITH CA/LEGAL.
+// Every rule here is a researched default: Researched 2026-10-28, rule by rule in 08-C section 1.
 import type { TaxErrorCode as ClientTaxErrorCode, TaxWarning as ClientTaxWarning } from "../clients.ts";
 import type { CalendarDate } from "../dates.ts";
 import type { StateCode } from "../gstin.ts";

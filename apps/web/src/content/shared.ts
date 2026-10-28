@@ -11,7 +11,7 @@ export function homeOneLiner(code: string): string {
 }
 
 export const shared = {
-  /** VERIFY WITH CA (07 §2.4). */
+  /** 07 §2.4; Researched 2026-10-28, 18 % for heading 9983 (08-C RA-16). */
   gstNote: "Prices exclude GST (18 %).",
   usdNote: "International projects are invoiced from India in USD as an export of services.",
   /** A price with no USD amount, in the USD view (07 §4.7, owner 2026-10-22). */

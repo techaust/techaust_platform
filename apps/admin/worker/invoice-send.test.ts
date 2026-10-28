@@ -97,7 +97,7 @@ describe("the send refuses what it must [ADM-INV-15]", () => {
     const dup = await send(s, made.id, { contactIds: [ids[0], ids[0]] });
     expect([dup.status, await codeOf(dup)]).toEqual([409, "recipient_invalid"]);
     const off = await mkContact(made.clientId, { portal_access: 0 });
-    // POR-03: a contact who may not see finance is refused too (the portal would answer 404 to their link). VERIFY WITH CA/LEGAL (DPDP).
+    // POR-03: a contact who may not see finance is refused too (the portal would answer 404 to their link). Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11) (DPDP).
     const noFinance = await mkContact(made.clientId, { portal_access: 1, can_see_finance: 0 });
     const other = await mkContact(await mkClient(), { portal_access: 1, can_see_finance: 1 });
     for (const bad of [off.id, noFinance.id, other.id, "unknown"]) {

@@ -1,7 +1,7 @@
 // The adapter from the register page to GSTR-1 Table 13 (M5.5b, LD73; ADM-REP-04). M5.1's `documentsIssuedSummary` stays the one place
 // that works out "from, to, total, cancelled" per series: this file only turns register rows into its input and its output into the
 // `DocsIssuedInput` that `docsRows` takes. Only TYPES come from `../invoices.ts` (the summary function itself runs in the SPA through
-// `@techaust/core/invoices`, and the gst core must not pull it in). SPA ONLY, like the rest of `gst/`. VERIFY WITH CA/LEGAL.
+// `@techaust/core/invoices`, and the gst core must not pull it in). SPA ONLY, like the rest of `gst/`. Researched 2026-10-28, GSTN advisories of June 2025 (08-C RA-23).
 import type { IssuedRow, IssuedSummary } from "../invoices.ts";
 import { isGstSeries } from "./docs.ts";
 import {

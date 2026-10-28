@@ -3,7 +3,7 @@
 // 10 seconds for 5 minutes (from the send, or from the last "Try again"), then stops and offers the retry. Errors while asking are
 // ignored: the next ask, or the retry, says what is true. The download is a plain same-origin link: the API answers an attachment.
 // Wording: 07-P §3–§4 (PENDING the owner's word-for-word approval).
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { documentPdfHref, errorText, RequestError } from "../../api.ts";
 import { Download, RotateCcw } from "../../components/icons.tsx";
 import { useToast } from "../../components/toast.tsx";
@@ -41,6 +41,8 @@ export function PdfPanel(props: {
   canRetry: boolean;
   words?: PdfWords | undefined;
   source?: PdfSource | undefined;
+  /** Shown under the download once the PDF is ready (an invoice's supplier copy, 07-R §7). */
+  extra?: ReactNode;
 }) {
   const words = props.words ?? OFFER_WORDS;
   const source = props.source ?? DOCUMENT_SOURCE;
@@ -132,6 +134,7 @@ export function PdfPanel(props: {
           {words.download}
         </a>
       )}
+      {phase === "ready" && props.extra}
       {phase === "slow" && props.canRetry && (
         <button
           type="button"

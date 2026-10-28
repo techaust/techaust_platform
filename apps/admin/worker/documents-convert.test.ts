@@ -1,5 +1,5 @@
 // Estimate -> invoice draft, the lead convert's full draft, and the privacy rules of a proposal [ADM-EST-02, ADM-LEAD-04, ADM-CLI-05, O-Q4].
-// VERIFY WITH CA/LEGAL: the draft type for each advance mode, and what erasing or anonymising a person does to the offers addressed to them.
+// Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17): the draft type for each advance mode, and what erasing or anonymising a person does to the offers addressed to them.
 import { env } from "cloudflare:workers";
 import { beforeAll, describe, expect, it } from "vitest";
 import { invoiceTypeFor } from "./document-convert.ts";
@@ -50,7 +50,7 @@ const convert = (cookie: string, id: string) =>
 
 // ---------------------------------------------------------------------------------------------------------------
 describe("estimate -> invoice draft [ADM-EST-02]", () => {
-  it("the draft type follows the advance mode (VERIFY WITH CA/LEGAL, G-6)", () => {
+  it("the draft type follows the advance mode (Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17), G-6)", () => {
     expect(invoiceTypeFor("proforma", false)).toBe("proforma");
     expect(invoiceTypeFor("proforma", true)).toBe("proforma");
     expect(invoiceTypeFor("invoice_upfront", false)).toBe("tax_invoice");
@@ -411,7 +411,7 @@ describe("a sent offer and the people it names [ADM-CLI-05, O-Q4; VERIFY WITH CA
     for (const id of [draft.id, revision.id, estimate.id])
       expect(await countOf("documents", "id = ?", id), id).toBe(0);
     expect(await countOf("approvals", "document_id = ?", draft.id)).toBe(0);
-    // the bell rows about the erased drafts' approvals go with them (their titles named the draft; VERIFY WITH CA/LEGAL)
+    // the bell rows about the erased drafts' approvals go with them (their titles named the draft; Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11))
     expect(await countOf("notifications", "entity_type = 'approval' AND entity_id = ?", approvalId)).toBe(0);
     expect(
       await countOf("document_lines", "document_id IN (?, ?, ?)", draft.id, revision.id, estimate.id),

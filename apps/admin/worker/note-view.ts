@@ -6,6 +6,7 @@ import {
   type CreditDeadline,
   creditAllowed,
   creditedSoFarOf,
+  creditNoteAdvice,
   creditNoteDeadline,
   isNoteType,
   NOTES_MAX,
@@ -141,6 +142,8 @@ export function invoiceNotesView(a: {
       supplyFy: dl.supplyFy,
       filedOn: dl.filedOn,
       daysLeft,
+      /** The first day of the month before the cutoff month (1 October by default): from this day the banner says how many days are left, and the last day of that month is the advised last day to issue (07-T §4; 08-C RA-31). The block itself is `passed`. */
+      ...creditNoteAdvice(dl),
       passed,
     },
     /** What the client is owed back (paid and credited above the total): derived, display only (M6 records the refund). */

@@ -78,8 +78,48 @@ export function checkNoindex(headersText) {
     : [];
 }
 
+/** Where the Phase 7 L7 runbook records that a backup was taken and restored (the one file this gate reads; a repo file, dates and a flag only, no data). */
+export const BACKUP_RECORD_FILE = join(dirname(fileURLToPath(import.meta.url)), "backup-verified.json");
+
+/**
+ * The "encrypted, off-site backups" claim of the privacy notice and /security is true only once the off-site backup runs (Phase 7 L7: Cloudflare D1 and R2 encrypt at rest, but the copy
+ * outside Cloudflare is L7's `backup.yml`). So production is blocked until `scripts/backup-verified.json` says a backup was taken AND restored: `{"verifiedOn": "YYYY-MM-DD",
+ * "restoreDrill": true}` (the owner or the lead sets it, in the commit that closes L7). Researched 2026-10-28, Cloudflare D1/R2 data-security pages (08-C RB-30).
+ * `text` is the file's text, or null when it is missing; `today` is an ISO day (the verified day may not be in the future).
+ */
+export function checkBackupVerified(text, today = new Date().toISOString().slice(0, 10)) {
+  const how =
+    'Set scripts/backup-verified.json to {"verifiedOn": "YYYY-MM-DD", "restoreDrill": true} in the commit that closes Phase 7 L7 (backups on, first backup restored on the production data).';
+  if (text === null)
+    return [
+      `No verified backup is recorded (scripts/backup-verified.json is missing): the "encrypted, off-site backups" claim on the privacy notice and /security is not true yet. ${how}`,
+    ];
+  let v;
+  try {
+    v = JSON.parse(text);
+  } catch {
+    return [`scripts/backup-verified.json is not valid JSON. ${how}`];
+  }
+  const on = v && typeof v === "object" ? v.verifiedOn : null;
+  const real =
+    typeof on === "string" &&
+    /^\d{4}-\d{2}-\d{2}$/.test(on) &&
+    !Number.isNaN(Date.parse(`${on}T00:00:00Z`)) &&
+    new Date(`${on}T00:00:00Z`).toISOString().slice(0, 10) === on;
+  if (!real)
+    return [
+      `No verified backup is recorded (verifiedOn is empty or not a real date): the "encrypted, off-site backups" claim is not true yet. ${how}`,
+    ];
+  if (on > today) return [`The backup's verifiedOn (${on}) is in the future. ${how}`];
+  if (v.restoreDrill !== true)
+    return [
+      `A backup is recorded (${on}) but its restore drill is not: a backup that was never restored is not verified. ${how}`,
+    ];
+  return [];
+}
+
 /** Everything for `webDir` (apps/web); needs dist built. Returns the problems (empty = ready). */
-export function checkProdReadiness(webDir) {
+export function checkProdReadiness(webDir, backupFile = BACKUP_RECORD_FILE) {
   const dist = join(webDir, "dist");
   if (!existsSync(dist)) return [`${dist} does not exist: build the site first.`];
   const siteTs = readFileSync(join(webDir, "src", "config", "site.ts"), "utf8");
@@ -89,6 +129,7 @@ export function checkProdReadiness(webDir) {
     if (file.endsWith(".html"))
       problems.push(...checkBuiltPage(relative(dist, file).split(sep).join("/"), readFileSync(file, "utf8")));
   problems.push(...checkNoindex(readFileSync(join(webDir, "public", "_headers"), "utf8")));
+  problems.push(...checkBackupVerified(existsSync(backupFile) ? readFileSync(backupFile, "utf8") : null));
   return problems;
 }
 

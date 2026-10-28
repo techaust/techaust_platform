@@ -5,7 +5,7 @@ _Drafted by the lead on 2026-10-26 from approved facts:
 - 07: §1 (voice and honesty), §5.3 (how payment works), §5.5 (fixed-price rules, ownership, AI tools, warranty) and §8 (emails);
 - the owner's answers in docs/13.
 
-**PENDING the owner's word-for-word approval** (batch rule: built as drafts, approved before the final review). Sections 1 and 2 are client-facing (they appear in proposals, estimates and their PDFs). The rest is staff-facing admin copy. `{…}` is filled by the screen; `{{…}}` is a template placeholder (07-L). Tax and legal wording is VERIFY WITH CA/LEGAL._
+**Approved by the owner word for word on 2026-10-26 ([07-Q](Q-batch-review-copy.md), "approve all")**. Sections 1 and 2 are client-facing (they appear in proposals, estimates and their PDFs). The rest is staff-facing admin copy. `{…}` is filled by the screen; `{{…}}` is a template placeholder (07-L). Tax and legal wording is VERIFY WITH CA/LEGAL._
 
 ## 1. Template wording (new versions of the M4.1 templates; client-facing)
 The new version keeps every section key and heading from M4.1. Sections marked "written per proposal" stay empty in the template, and the editor asks staff to write them or hide them (§3).
@@ -149,7 +149,7 @@ Every line comes from approved copy (07 §5.3, §5.5). Placeholders aren't used 
 ## 8. Correction to 07 §8
 - **The approval emails:** "Approval needed: {{document_type}} {{number}}" can't work for drafts, which have no number before sending. Subject and bell use the title and version instead: "Approval needed: {{title}} v{{version}}". The decision email becomes "{{decision}}: {{title}} v{{version}}".
 
-## 9. Added after the screens (lead, 2026-10-26; PENDING the owner)
+## 9. Added after the screens (lead, 2026-10-26; approved 2026-10-26, 07-Q)
 The designer's drafts, accepted as wording to approve:
 
 | Where | Copy |
@@ -165,7 +165,7 @@ The designer's drafts, accepted as wording to approve:
 | Read view | "Your role can read this draft but not change it." · "Next steps" · "A newer version of this document exists." · "Open the newest version" · "Open the care plan" |
 | Activity feed | "marked a document as expired" · "marked an approval as expired" |
 
-## 10. Added after the review (lead, 2026-10-26; PENDING the owner)
+## 10. Added after the review (lead, 2026-10-26; approved 2026-10-26, 07-Q)
 | Where | Copy |
 |---|---|
 | Care plan dialog, included hours | Essential: "Leave empty to use the plan's 2 hours." · Growth, Scale and Dev Subscription: "Required: this plan's hours are agreed per client." |

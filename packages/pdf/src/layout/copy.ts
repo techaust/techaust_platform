@@ -1,5 +1,5 @@
 // The fixed wording printed on a proposal or estimate PDF, word for word from 07-P §1 (docs/07-content-appendix/P-m4.4-pdf-documents.md)
-// and, for the terms line, 07-O §1. 07-P is PENDING the owner's word-for-word approval; the tax lines are VERIFY WITH CA/LEGAL.
+// and, for the terms line, 07-O §1. 07-P is PENDING the owner's word-for-word approval; the tax lines are Researched 2026-10-28, Rule 46 CGST Rules (08-C RA-05).
 // Values (names, numbers, dates, amounts) come pre-formatted in the view; nothing here is worked out.
 import { DEFAULT_CONTACT_EMAIL, footerLine } from "../footer.ts";
 
@@ -43,9 +43,9 @@ export const PDF_COPY = {
     targetDate: "Target date",
     payment: "Payment",
   },
-  /** VERIFY WITH CA/LEGAL (07-P §1; 07 §2.4). */
+  /** Researched 2026-10-28, Rule 46 CGST Rules (08-C RA-05) (07-P §1; 07 §2.4). */
   usdNote: "International projects are invoiced from India in USD as an export of services.",
-  /** VERIFY WITH CA (07-P §1; 07 §2.4). */
+  /** Researched 2026-10-28, Rule 46 CGST Rules (08-C RA-05) (07-P §1; 07 §2.4). */
   inrNote: "Prices exclude GST.",
   acceptance: {
     online: "Accept online in the TecHaust client portal:",
@@ -62,7 +62,7 @@ export const PDF_COPY = {
 
 /**
  * The fixed wording printed on a tax invoice PDF, word for word from 07-R §6 (docs/07-content-appendix/R-m5.1-invoice-screens.md).
- * Client-facing; PENDING the owner's word-for-word approval; every tax line is VERIFY WITH CA/LEGAL. The reverse-charge statement is NOT here:
+ * Client-facing; PENDING the owner's word-for-word approval; every tax line is Researched 2026-10-28, Rules 46(p), 50 and 51 CGST Rules (08-C RA-26). The reverse-charge statement is NOT here:
  * the invoice prints the text frozen with it at issue (Rule 46(p)), never a constant. 07-R's footer default notes are a placeholder, so no
  * notes are printed unless the owner set some (nothing is invented).
  */
@@ -121,7 +121,7 @@ export const INVOICE_PDF_COPY = {
 
 /**
  * The fixed wording an export invoice adds, word for word from 07-S §1 (docs/07-content-appendix/S-m5.2-invoice-types.md). Client-facing; PENDING the
- * owner's word-for-word approval; every tax line is VERIFY WITH CA/LEGAL. The endorsement itself is NOT here: the invoice prints the text frozen with
+ * owner's word-for-word approval; every tax line is Researched 2026-10-28, s.2(6) IGST Act, Rule 46 (08-C RA-18). The endorsement itself is NOT here: the invoice prints the text frozen with
  * it at issue (Rule 46; LD23, LD33), never a constant.
  */
 export const EXPORT_PDF_COPY = {
@@ -158,7 +158,7 @@ export const PROFORMA_PDF_COPY = {
 
 /**
  * The fixed wording of a credit note and a debit note, word for word from 07-T §1 and §8 (docs/07-content-appendix/T-m5.3-credit-debit-notes.md).
- * Client-facing; PENDING the owner's word-for-word approval; every tax line is VERIFY WITH CA/LEGAL. The invoice's number, the reason and the amounts
+ * Client-facing; PENDING the owner's word-for-word approval; every tax line is Researched 2026-10-28, Rule 46 CGST Rules (08-C RA-05). The invoice's number, the reason and the amounts
  * are the frozen note's (`InvoiceView.note`), never worked out here. The lines, tax summary, words, reverse charge and signature are the tax invoice's.
  */
 export const NOTE_PDF_COPY = {
@@ -177,7 +177,7 @@ export const NOTE_PDF_COPY = {
   header: { date: "Date", againstInvoice: "Against invoice", invoiceDate: "Invoice date" },
   reason: (reason: string) => `Reason: ${reason}`,
   againstLine: (n: number) => `Against line ${n}`,
-  /** 07-T §1 (credit) and §8 (debit): the same line. VERIFY WITH CA/LEGAL. */
+  /** 07-T §1 (credit) and §8 (debit): the same line. Researched 2026-10-28, Rule 46 CGST Rules (08-C RA-05). */
   rate: (rate: string, invoiceNumber: string) =>
     `Exchange rate: 1 USD = ₹${rate} (the rate of invoice ${invoiceNumber})`,
 } as const;
@@ -220,5 +220,12 @@ export const STATEMENT_PDF_COPY = {
 } as const;
 
 /** The line under the title of a tax or export invoice issued for a payment received against a proforma (07-S §8, Q9; PENDING approval). */
-export const advanceLine = (proformaNumber: string, proformaDate: string, receivedOn: string) =>
-  `Against proforma ${proformaNumber} of ${proformaDate}, payment received on ${receivedOn}.`;
+export const advanceLine = (
+  proformaNumber: string,
+  proformaDate: string,
+  receivedOn: string,
+  igstNoLutFy: string | null = null,
+) =>
+  igstNoLutFy === null
+    ? `Against proforma ${proformaNumber} of ${proformaDate}, payment received on ${receivedOn}.`
+    : `Against proforma ${proformaNumber} of ${proformaDate}, payment received on ${receivedOn}. Issued with IGST: no LUT was in place for FY ${igstNoLutFy}.`;

@@ -1,4 +1,4 @@
-// The `care_auto` issue authority [ADM-CARE-02, LD58; VERIFY WITH CA/LEGAL]: the system issues a care invoice with NO session, and every condition that makes that safe
+// The `care_auto` issue authority [ADM-CARE-02, LD58; Researched 2026-10-28, s.31(5) CGST Act (08-C RA-24)]: the system issues a care invoice with NO session, and every condition that makes that safe
 // is in the freeze statement. Each refusal is the post-condition aborting the whole batch: no number burned, nothing changed, the draft left as it was.
 import { env } from "cloudflare:workers";
 import { defaultFormat, sqlPrintfPattern, uuidv7 } from "@techaust/core";

@@ -29,7 +29,12 @@ export type CreditableLine = {
   grossLeftMinor: number;
 };
 
-/** The credit deadline of an invoice (s.34(2), Q32, Q33; VERIFY WITH CA/LEGAL): `lastDay` is the last day a credit note may be dated. */
+/**
+ * The credit deadline of an invoice (s.34(2), Q32, Q33; Researched 2026-10-28, 08-C RA-03): `lastDay` is the last day a credit note may be dated.
+ * Step 5 contract (T §4, review 2026-10-28): `deadlineWarnFrom` is the first day of the month before the deadline's month (1 October by default) and `adviseIssueBy` the last
+ * day of that month (31 October), both ISO and never after the last allowed day when an annual return was filed earlier; optional, so an older API still loads (the warning
+ * then follows `daysLeft`).
+ */
 export type CreditDeadlineView = {
   date: string;
   lastDay: string;
@@ -38,6 +43,8 @@ export type CreditDeadlineView = {
   filedOn: string | null;
   daysLeft: number | null;
   passed: boolean;
+  deadlineWarnFrom?: string | null;
+  adviseIssueBy?: string | null;
 };
 
 export type NoteAction = { allowed: boolean; reasons: string[] };
@@ -59,7 +66,13 @@ export type NoteOfView = {
     lut?: { fy: string; arn: string };
   };
   reason: { code: string; text: string };
-  request: { mode: NoteMode; grossMinor?: number; takes: { line: number; taxableMinor: number }[] };
+  /** `taxMinor`: a "Tax charged too low" debit note's tax to add (builder's contract, Q35); its takes carry a taxable value of 0. */
+  request: {
+    mode: NoteMode;
+    grossMinor?: number;
+    takes: { line: number; taxableMinor: number }[];
+    taxMinor?: number;
+  };
 };
 
 /** What GET /invoices/:id adds in M5.3 (each null when it does not apply to the document). */
@@ -141,9 +154,12 @@ export type CreditNoteIn = {
 
 export type DebitNoteIn = {
   expectedParentUpdatedAt: number;
-  lines: Take[];
+  /** Every reason but "Tax charged too low" (which must send none). */
+  lines?: Take[];
   reasonCode: string;
   reasonText?: string;
+  /** Step 5 contract (Q35): "Tax charged too low" carries the total tax to add (> 0) and no lines; the taxable value is 0. */
+  taxAmountMinor?: number;
 };
 
 /** `fields.note` of a PATCH: the whole request and reason again. */
@@ -153,6 +169,7 @@ export type NoteFieldsIn = {
   grossMinor?: number;
   reasonCode: string;
   reasonText?: string;
+  taxAmountMinor?: number;
 };
 
 const enc = encodeURIComponent;

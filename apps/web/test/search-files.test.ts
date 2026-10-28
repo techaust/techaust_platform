@@ -54,7 +54,7 @@ describe("sitePages (WEB-G-11, WEB-G-17)", () => {
     const by = Object.fromEntries(pages.map((p) => [p.path, p.lastmod]));
     expect(by["/blog/a-post"]).toBe("2026-11-02");
     expect(by["/blog/b-post"]).toBe("2026-12-01");
-    expect(by["/privacy"]).toBe("2026-10-22");
+    expect(by["/privacy"]).toBe("2026-10-28");
     expect(by["/pricing"]).toBe(pageDates["/pricing"]);
   });
 

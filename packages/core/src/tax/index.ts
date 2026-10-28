@@ -1,6 +1,6 @@
 // The tax engine: `@techaust/core/tax` (M4.2; ADM-INV-05, docs/05 §10). A subpath export, not re-exported from the package
 // root: it is only needed where documents are computed, and its `TaxWarning` would clash with `clients.ts`'s.
-// Pure and deterministic; every function returns a `TaxResult` and never throws. VERIFY WITH CA/LEGAL: every rule is a
+// Pure and deterministic; every function returns a `TaxResult` and never throws. Researched 2026-10-28, rule by rule in 08-C section 1: every rule is a
 // researched default (docs/08-research-appendix/A-gst-invoicing.md), and the settings feed it as an input.
 export {
   type CreditedInr,
@@ -8,6 +8,7 @@ export {
   type CreditedSoFar,
   type CreditRequest,
   creditNote,
+  taxOnlyDebitNote,
 } from "./credit.ts";
 export { computeDocument, type DocumentInput } from "./document.ts";
 export {

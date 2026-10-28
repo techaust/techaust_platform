@@ -180,10 +180,10 @@ describe("security.txt (WEB-SEC)", () => {
     expect(c.checkSecurityTxt(text, now)).toEqual([]);
   });
 
-  it("fails when Expires is in the past, over 366 days away, or not a date", () => {
+  it("fails when Expires is in the past, over 365 days away (RFC 9116: under a year; was 366 before 2026-10-28), or not a date", () => {
     expect(c.checkSecurityTxt(buildSecurityTxt(days(-1)), now).join()).toContain("in the past");
-    expect(c.checkSecurityTxt(buildSecurityTxt(days(367)), now).join()).toContain("more than 366 days");
-    expect(c.checkSecurityTxt(buildSecurityTxt(days(366)), now)).toEqual([]);
+    expect(c.checkSecurityTxt(buildSecurityTxt(days(366)), now).join()).toContain("more than 365 days");
+    expect(c.checkSecurityTxt(buildSecurityTxt(days(365)), now)).toEqual([]);
     expect(c.checkSecurityTxt(buildSecurityTxt("soon"), now).join()).toContain("not an ISO 8601");
   });
 
@@ -317,6 +317,9 @@ describe("accessibility statement version (07-A §8)", () => {
     expect(legal.accessibility.changes).toEqual([
       { version: "0.2", date: "2026-10-22", note: "First published version." },
     ]);
-    expect(legal.privacy.version).toBe("0.1");
+    // 07-A v0.3 (2026-10-28) moved the privacy notice and the refund policy to 0.2; the rest stay at 0.1.
+    expect(legal.privacy.version).toBe("0.2");
+    expect(legal["refund-policy"].version).toBe("0.2");
+    expect(legal.terms.version).toBe("0.1");
   });
 });

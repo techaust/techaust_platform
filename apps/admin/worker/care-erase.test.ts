@@ -1,4 +1,4 @@
-// Erase and anonymise clear the notes of time entries [owner answer Q7, 2026-10-25, VERIFY WITH CA/LEGAL]: when an individual client's last
+// Erase and anonymise clear the notes of time entries [owner answer Q7, 2026-10-25, Researched 2026-10-28, Rule 34(2) CGST Rules (08-C RA-21)]: when an individual client's last
 // live contact goes, the notes on the time entries of its projects and care plans are removed; the minutes, the dates and who logged them
 // stay. A business client's entries are untouched, and a legal hold writes nothing. Also: no audit row of the care and time routes holds
 // note text.

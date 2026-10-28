@@ -1,4 +1,4 @@
-// Payment reminders, pure (M5.4; ADM-INV-13, ADM-SET-05, LD60, LD64; VERIFY WITH CA/LEGAL for which documents are chased). No I/O, no zod, no floats.
+// Payment reminders, pure (M5.4; ADM-INV-13, ADM-SET-05, LD60, LD64; Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-28) for which documents are chased). No I/O, no zod, no floats.
 //
 // A reminder is one row per (invoice, offset in days from the due date), created when the invoice is first sent, for the days AFTER the send day only, due at the
 // window's opening hour (IST). It is sent only inside the window (default 09:00 to 19:00 IST, "from" inclusive, "to" exclusive). The claim that sends one is a single
