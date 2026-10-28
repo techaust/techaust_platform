@@ -2,7 +2,8 @@
 // is fixed, the series preview, the errors by code, and what an autosave sends (only the contact, the discount and the lines; never a number, a
 // status, a type or a due date) and how its answer lands (the server's ids by position; typing kept).
 import { ISSUE_BLOCKER_CODES } from "@techaust/core/invoices";
-import { describe, expect, it } from "vitest";
+import { decide, ROLES } from "@techaust/core/permissions";
+import { describe, expect, it, vi } from "vitest";
 import { RequestError } from "../api.ts";
 import {
   applyInvoiceSave,
@@ -38,7 +39,7 @@ import {
   voidBlockedText,
   voidTitle,
 } from "./invoices.ts";
-import type { InvoiceView } from "./invoices-api.ts";
+import { canDownloadSupplierCopy, fetchSupplierCopy, type InvoiceView } from "./invoices-api.ts";
 
 const view = (over: Partial<InvoiceView> = {}): InvoiceView => ({
   id: "inv-1",
@@ -398,6 +399,52 @@ describe("M5.2 re-check: proforma wording and the advance rate date (07-S §8)",
   it("step 5: the supplier copy's label and the filtered list's title (R §7, 07-W §1)", () => {
     expect(SUPPLIER_COPY_LABEL).toBe("Download supplier copy");
     expect(INV_NO_MATCH).toBe("No invoices match these filters");
+  });
+
+  it("the supplier copy is offered from core's matrix row and core's document types: Owner and Accountant, never a proforma (review 2026-10-28, finding 9)", () => {
+    for (const type of ["tax_invoice", "export_invoice", "credit_note", "debit_note"]) {
+      expect(canDownloadSupplierCopy("owner", type), type).toBe(true);
+      expect(canDownloadSupplierCopy("accountant", type), type).toBe(true);
+      for (const role of ["staff", "sales"] as const) expect(canDownloadSupplierCopy(role, type)).toBe(false);
+    }
+    for (const role of ROLES) {
+      expect(canDownloadSupplierCopy(role, "proforma"), role).toBe(false);
+      expect(canDownloadSupplierCopy(role, "proposal"), role).toBe(false);
+    }
+    // the same answer as the matrix and the document rule, whichever role
+    for (const role of ROLES)
+      expect(canDownloadSupplierCopy(role, "tax_invoice")).toBe(
+        decide(role, "invoices.supplierCopy") !== "deny",
+      );
+  });
+
+  it("asking for the supplier copy while an ask for the same document is out is not a second request (finding 8)", async () => {
+    const out: ((r: Response) => void)[] = [];
+    vi.stubGlobal("fetch", () => new Promise<Response>((resolve) => out.push(resolve)));
+    try {
+      const first = fetchSupplierCopy("doc-1");
+      const second = fetchSupplierCopy("doc-1");
+      const other = fetchSupplierCopy("doc-2");
+      // two documents, two requests; the second ask of doc-1 joined the first
+      expect(out).toHaveLength(2);
+      const pending = () =>
+        new Response(JSON.stringify({ error: { code: "pdf_pending" } }), {
+          status: 409,
+          headers: { "Content-Type": "application/json" },
+        });
+      out[0]?.(pending());
+      out[1]?.(pending());
+      expect(await first).toEqual({ state: "pending" });
+      expect(await second).toEqual({ state: "pending" });
+      expect(await other).toEqual({ state: "pending" });
+      // once it has answered, the next ask is a new request
+      const again = fetchSupplierCopy("doc-1");
+      expect(out).toHaveLength(3);
+      out[2]?.(new Response("x", { status: 500 }));
+      expect(await again).toEqual({ state: "failed" });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("a proforma's void refused for a reason other than a payment says it was emailed", () => {

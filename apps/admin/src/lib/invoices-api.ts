@@ -3,8 +3,11 @@
 // (`InvoiceView`, the list rows, the issue-request queue). Money is integer minor units in the invoice's currency; the screens only format it
 // (through core), never work it out.
 import type { IssueBlockerCode, VoidBlockerCode } from "@techaust/core/invoices";
+import { hasSupplierCopy } from "@techaust/core/pdf-jobs";
+import type { Role } from "@techaust/core/permissions";
 import type { Currency } from "../api.ts";
 import { qs, request } from "../api.ts";
+import { allowed } from "./access.ts";
 import type {
   ApprovalInfo,
   ApprovalState,
@@ -416,25 +419,34 @@ export const invoicePdfHref = (id: string) => `/api/v1/invoices/${enc(id)}/pdf`;
  */
 export const invoiceSupplierPdfHref = (id: string) => `/api/v1/invoices/${enc(id)}/pdf/supplier`;
 
-/** The document types that have a supplier copy (never the proforma, which is not a tax document). */
-export const SUPPLIER_COPY_TYPES: readonly string[] = [
-  "tax_invoice",
-  "export_invoice",
-  "credit_note",
-  "debit_note",
-];
+/**
+ * Who may download it, and for which document: core's matrix row `invoices.supplierCopy` (Owner and Accountant; `allowed` is the screens' one reading of it) and core's
+ * `hasSupplierCopy` (a proforma has none), so neither rule is written a second time here.
+ */
+export const canDownloadSupplierCopy = (role: Role, type: string) =>
+  allowed(role, "invoices.supplierCopy") && hasSupplierCopy(type);
 
-/** Who may download it (the contract: Owner and Accountant). */
-export const canDownloadSupplierCopy = (role: string, type: string) =>
-  (role === "owner" || role === "accountant") && SUPPLIER_COPY_TYPES.includes(type);
+export type SupplierCopyResult =
+  | { state: "ready"; blob: Blob; filename: string | null }
+  | { state: "pending" | "failed" };
+
+/** One request at a time per document: a second ask while the first is out gets the same answer (a click twice, or two tabs' worth of impatience, is one request). */
+const supplierAsks = new Map<string, Promise<SupplierCopyResult>>();
 
 /**
  * Fetches the supplier copy (same origin, the session cookie): `ready` with the file, or `pending` (409 `pdf_pending`), or `failed` (anything else). The
- * screen asks first instead of linking straight to it, so a copy still being made is said in words, never downloaded as an error.
+ * screen asks first instead of linking straight to it, so a copy still being made is said in words, never downloaded as an error. While a request for the same
+ * document is pending it is not asked again (the server also asks jobs at most once in 5 minutes).
  */
-export async function fetchSupplierCopy(
-  id: string,
-): Promise<{ state: "ready"; blob: Blob; filename: string | null } | { state: "pending" | "failed" }> {
+export function fetchSupplierCopy(id: string): Promise<SupplierCopyResult> {
+  const pending = supplierAsks.get(id);
+  if (pending) return pending;
+  const ask = askSupplierCopy(id).finally(() => supplierAsks.delete(id));
+  supplierAsks.set(id, ask);
+  return ask;
+}
+
+async function askSupplierCopy(id: string): Promise<SupplierCopyResult> {
   let res: Response;
   try {
     res = await fetch(invoiceSupplierPdfHref(id), { credentials: "same-origin" });

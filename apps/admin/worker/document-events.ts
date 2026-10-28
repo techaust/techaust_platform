@@ -11,11 +11,12 @@ import type { Ctx } from "./context.ts";
 
 /**
  * Q11: asks the jobs Worker for the DUPLICATE FOR SUPPLIER copy of an issued invoice or note (one `pdf.supplier` message; the consumer is idempotent: a copy already stored is
- * adopted without a render). Never throws: a failure is logged (ids only) and the next download asks again.
+ * adopted without a render). Never throws: a failure is logged (ids only) and answers false.
  */
-export async function enqueueSupplierPdf(env: Pick<Env, "PDF_QUEUE">, documentId: string): Promise<void> {
+export async function enqueueSupplierPdf(env: Pick<Env, "PDF_QUEUE">, documentId: string): Promise<boolean> {
   try {
     await env.PDF_QUEUE.send({ v: 1, kind: "pdf.supplier", documentId, hop: 0 } satisfies PdfSupplierMessage);
+    return true;
   } catch (e) {
     console.error(
       JSON.stringify({
@@ -24,7 +25,52 @@ export async function enqueueSupplierPdf(env: Pick<Env, "PDF_QUEUE">, documentId
         cause: e instanceof Error ? e.name : "unknown",
       }),
     );
+    return false;
   }
+}
+
+/** How long a request for the supplier copy holds: at most one message per document in this time (review 2026-10-28, finding 8). */
+export const SUPPLIER_ASK_WINDOW_MS = 5 * 60_000;
+
+/**
+ * The claim for a supplier-copy message: one row of `auth_attempts` (the exact-counter table, as the jobs form limits use it) under `ps:<document id>`, whose `window_start` is when it was
+ * last claimed. The statement inserts the row, or moves it forward only when the last claim is older than the window; `changes` is 1 for the one request that won it and 0 for every other,
+ * so concurrent downloads and repeated clicks enqueue ONE message in 5 minutes. No personal data in the key (an id).
+ */
+export const SUPPLIER_ASK_SQL = `INSERT INTO auth_attempts (key, window_start, failures) VALUES (?1, ?2, 1)
+ON CONFLICT(key) DO UPDATE SET window_start = ?2, failures = failures + 1 WHERE window_start <= ?3`;
+
+/**
+ * Asks for the supplier copy at most once per document in `SUPPLIER_ASK_WINDOW_MS` (the claim above, then `enqueueSupplierPdf`). Returns whether a message was sent. Never throws: a
+ * failure of the claim is logged and treated as not claimed (the next download asks again).
+ */
+export async function enqueueSupplierPdfOnce(
+  env: Pick<Env, "DB" | "PDF_QUEUE">,
+  documentId: string,
+  now: number = Date.now(),
+): Promise<boolean> {
+  try {
+    const r = await env.DB.prepare(SUPPLIER_ASK_SQL)
+      .bind(`ps:${documentId}`, now, now - SUPPLIER_ASK_WINDOW_MS)
+      .run();
+    if (r.meta.changes !== 1) return false;
+  } catch (e) {
+    console.error(
+      JSON.stringify({
+        level: "error",
+        message: "supplier pdf claim failed",
+        cause: e instanceof Error ? e.name : "unknown",
+      }),
+    );
+    return false;
+  }
+  if (await enqueueSupplierPdf(env, documentId)) return true;
+  // The queue could not be reached: release the claim so the next download asks again instead of waiting out the window.
+  await env.DB.prepare("UPDATE auth_attempts SET window_start = 0 WHERE key = ?1")
+    .bind(`ps:${documentId}`)
+    .run()
+    .catch(() => undefined);
+  return false;
 }
 
 export type SendEvent = { documentId: string; groupId: string; version: number };

@@ -8,7 +8,7 @@ import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { clientGoneSql } from "./anonymised.ts";
 import { type ApiError, type AppEnv, type Ctx, err, mutate, NOT_FOUND } from "./context.ts";
-import { enqueuePdf, enqueueSupplierPdf } from "./document-events.ts";
+import { enqueuePdf, enqueueSupplierPdfOnce } from "./document-events.ts";
 import { body, idParam, param } from "./http.ts";
 import { INVOICE_TYPES_SQL } from "./invoice-model.ts";
 import { CLIENT_GONE } from "./quote-model.ts";
@@ -134,7 +134,8 @@ export const invoiceSupplierPdf = new Hono<AppEnv>().get("/:id/pdf/supplier", pa
   );
   if (!obj) {
     // Not made yet: ask (only when the original exists, and never for an erased client), and say so.
-    if (row.pdf_sha256 !== null && row.gone !== 1) c.executionCtx.waitUntil(enqueueSupplierPdf(c.env, id));
+    if (row.pdf_sha256 !== null && row.gone !== 1)
+      c.executionCtx.waitUntil(enqueueSupplierPdfOnce(c.env, id));
     return err(c, PDF_PENDING, 409);
   }
   return new Response(obj.body, {
