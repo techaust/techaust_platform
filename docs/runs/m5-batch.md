@@ -275,3 +275,28 @@ Not asked, because docs/13 or docs/04 §0 already decide them:
 - **Owner questions:** Q1–Q51 on this page, each built with its recommended default.
 - **Lead side worktrees:** `../m5-lead` (docs branch `feat/m5.1-invoices`), `../m52-b` (`feat/m5.2-builder`), `../m53-b` (`feat/m5.3-builder`), `../m55a-int` (`feat/m5.5a-gst-core`). Screenshots in the main checkout's `.logs/shots/`.
 - **Process notes:** reviewers sometimes don't append to the run file: the lead writes the summary; a designer needs the latest M5.x base (it stopped once on a stale base); the squash-merge to `main` makes "ours" the right resolution when the branch already contains the merged branch's final tree (verify with `git diff --quiet <merged-head> origin/main`).
+
+## Owner review pack (2026-10-28)
+Everything in M5 is on staging (PRs #95, #96, #97, #99, #100, #101). Nothing here is approved until you say so. Admin: `https://techaust-platform-admin-staging.techaust-technologies-153.workers.dev`; portal: `https://techaust-platform-portal-staging.techaust-technologies-153.workers.dev`.
+
+**What each part does, in plain words**
+1. **M5.0, the admin split:** the admin now runs as two Workers so it fits the free plan's size limit. You should notice nothing; the 6-step check in docs/12 proves it.
+2. **M5.1, tax invoices:** make an invoice from a project milestone, check it, and issue it (Owner, with your code). The number is given only at issue and never skips. Staff can ask you to issue; approving issues it. A mistaken invoice can be voided only in the same month, before it is emailed or paid; after that, a credit note.
+3. **M5.2, other invoice types:** export invoices (under LUT or with IGST, with the exchange rate you type), proformas (a payment request, not a GST invoice) and the tax invoice for an advance you received. A checklist stops an invoice that misses a required field.
+4. **M5.3, credit and debit notes:** reduce or add to an issued invoice with a note. A credit note can never exceed what is left on the invoice; notes for a year close on 30 November (or when you mark the annual return filed).
+5. **M5.4, sending and chasing:** email an invoice to client contacts who can see finance; they open it in the portal. Reminders go automatically 3 days before the due date, on the day, and 3, 7 and 14 days after, only between 09:00 and 19:00. Care plans get a monthly draft invoice; it is issued automatically only for clients where you turn that on.
+6. **M5.5, reports and statements:** Reports gives your CA the GSTR-1 files, the sales register, output tax and the 3B summary as CSV files; export invoices show where they stand on foreign payment (FEMA) and GST refund deadlines; the EDF reminder comes on the 5th to 7th of each month. Each client has a statement (what they were billed, what was credited, what they owe) with a PDF. The dashboard has money tiles.
+
+**Suggested click-through (about 20 minutes, after the M5.0 check):** enter the company profile and sample bank details in Settings; create a client with a GSTIN and a project with a milestone; mark it Ready to bill; create and issue an invoice; open its PDF; send it to a test contact on the staging allow-list; open the link in the portal; make a credit note for part of it; open Reports and download the GSTR-1 files; open the client's Statement and its PDF; look at the dashboard.
+
+**What to answer:** questions **Q1–Q71** above (each already built with the recommended option, so "approve all" is possible; tax and legal ones stay VERIFY WITH CA/LEGAL); the copy drafts, word for word: [07-R](../07-content-appendix/R-m5.1-invoice-screens.md) (invoices), [07-S](../07-content-appendix/S-m5.2-invoice-types.md) (export, proforma, advance), [07-T](../07-content-appendix/T-m5.3-credit-debit-notes.md) (notes), [07-U](../07-content-appendix/U-m5.4-send-recurring-reminders.md) (sending, reminders, care billing), [07-V](../07-content-appendix/V-m5.5b-reports-statements.md) (reports, statements). Until they are approved, the new lines show `[Placeholder]` and care invoices are only drafted.
+
+**Good to know:** the hourly job runs on staging (emails only to the allow-list); until M6 records payments, an export paid by bank transfer looks unpaid, so its realisation alerts fire (Q70); LUT export invoices stay blocked until the FY 2026-27 LUT ARN is entered.
+
+**How to reply:** list everything you notice in one message (or several, then "that's all"); the lead fixes them together in one task, then asks for your "approved". M6.1 (payments, sandbox only) starts after that.
+
+## Handover (2026-10-28, end of day)
+- **M5.0–M5.5 merged and on staging** (#95–#97, #99–#101). Every run file has its review, fixes, re-check and integration notes. No agent is running.
+- **Verified:** `pnpm check` and `pnpm test` (one load timeout, passes alone), CI green, the #101 staging deploy first time; jobs on staging 8 runs, 0 errors, CPU p99 4.6 ms. Not verified: admin staging CPU (no traffic), Browser Run renders, NVDA, real mail clients.
+- **Next:** the owner's batch review with the pack above → one fix task (reviewer UI/UX sweep first) → "approved" → M6.1. Staging CPU readings once the owner has signed in.
+- **Usage over the batch:** every agent run on its plan model and effort (see each run file's `Usage:` lines; `node tools/model-audit.mjs` flagged nothing).
