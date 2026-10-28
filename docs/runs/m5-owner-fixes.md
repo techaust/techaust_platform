@@ -235,4 +235,85 @@ Builder: Sonnet 5.5 (medium), branch `fix/m5-owner-fixes-builder` from `origin/f
 2. Should the lead have me re-run the 7 failing admin tests against the base to prove they are date-dependent and unrelated?
 
 ## Designer report
-_(pending)_
+Designer: Opus 5.5 (high), branch `fix/m5-owner-fixes-design` from `origin/fix/m5-owner-findings` (c41c532), worktree `agent-ad88b1b123ab6efe8`. Built first against the B2 contract with a dev-only mock; the lead had already merged the builder into `origin/fix/m5-owner-findings` (6a260d3) by the time the screens were done, so I merged it into this branch (643b3cb, no conflicts), removed the mock and did the **real-API pass** in the same run (1333f58).
+
+### Skills
+- `frontend-design:frontend-design`: **loaded first**, before any other work. It set one bold element and kept the rest quiet: the Catalogue gap is drawn as an editor's margin note on its section (a fine verdigris rule down the left of the section's text column, quiet type, plain text actions), kept in full colour on a hidden section whose struck-through name it explains; the send check became a list of places in plain words instead of code; no new colours, chips, cards or label chrome.
+- `dataviz`: not loaded (no chart, stat tile or dashboard in this task). No other docs/14 §9 row fits screens. Context7 not needed (no library API in question).
+
+### What changed (D1)
+- **Send panel, one list in plain words** (replaces the main-column banner with raw `{{…}}` and the panel's "Some placeholders have no value yet."): "Fill these in before sending:", then one item per place, "{place}: waiting for {values}." (07-X §1). A section's name is a link that opens it and puts the cursor in its text; "Title", "Lines" and "Payment schedule" name the other places. Built from `unresolved_placeholders.where`; an answer without `where` (the PATCH answer of an older API) falls back to the text on screen. Fixes beside an item: "Add a service line" (cursor to "Add from the catalogue") when a service value has no service yet, "Choose a contact" (cursor to "Send to") for the contact's name. Staff never see token syntax in a message; a hand-typed unknown value is "a value that can't be filled in".
+- **Catalogue gaps** (`catalogueGaps`): notes (information mark, never the warning mark: they block nothing) under the blockers on the Send panel, one per section, naming the section (link), the service and the missing fields, "Add the text in Catalogue" (`/catalogue/<catalogueItemId>`), "This section is hidden until it has text." for a hidden one, and "Use Catalogue text" when `catalogueHasTextNow`. The same note sits on the section itself, open or closed, with "Write it here" on a hidden section (shows it, opens it, cursor in the text). A gap goes when the person shows and writes in a section that was hidden or empty when read; the partial case (section had text, a field missing) stays.
+- **"Use Catalogue text"**: saves everything typed first, calls `POST /api/v1/documents/:id/sections/fill-from-catalogue {sectionId, expectedUpdatedAt}`, toasts "Catalogue text added.", reads the draft again (the new `updatedAt` redraws the editor). `nothing_to_fill` has its 07-X line; other errors use the existing 07-O sentences.
+- **Inside a section**: the amber mono tokens became "This text is waiting for {values}." with the warning icon; the flag's screen-reader text uses the same words.
+- **Real-API follow-up found in the pass**: the save that adds the first service line fills the sections on the server, but a save answer never carries text, so the screen would keep showing the old tokens and a later save could write them back. The editor now reads the draft again after such a save, once nothing typed is waiting (`editor.tsx`, `SERVICE_TOKEN_RE`).
+- Remaining by design: the text boxes themselves still hold whatever text the section has, so a `{{client.contact}}` that has no contact yet stays visible inside the textarea (it is the stored text being edited). Every message about it is in words.
+
+### What changed (D2, sweep findings 4–17)
+4. Send dialog ticks the draft's "Send to" contact when it has portal access (`recipientChoices(contacts, preferredId)`), so the preview greets that person; otherwise billing contacts as before. Verified: "Hi Team" with Team ticked (shot 04).
+5. Line editor unit: the quantity cell sizes to its unit (`minmax(8rem, max-content)` at ≥ 88 rem, `minmax(min-content, max-content)` at 64–88 rem) and the unit wraps inside its box if it ever must. "Per milestone" whole at 1280, 1408, 1440 and 1600 (shot 13), no overflow.
+6. Each section's text box is named "Text of {section}" (custom sections keep their number, like the title field).
+7. Portal: an ended offer link (and a malformed one) shows "Proposals and estimates" with 07-X §5 line 30 and "Sign in", the invoice link's pattern (`OfferScreen` takes a `missing` element; `offer-link.tsx`).
+8. `/proposals` and `/estimates` empty states name their type ("No proposals yet", "No estimates yet"); 07-O's line stays when both types show.
+9. Catalogue service page and edit form: a hint under "Deliverables, assumptions and exclusions" (07-X line 29).
+10. Emails panel: the PDF panel tells the page when the PDF turns ready (`onReady`), and while an email still waits for it the page reads again every 10 s for up to a minute (`useMailAfterPdf`; proposals and the invoice family).
+11. Supplier copy: a 202 is "still being made" (the toast, no console error); a 409 `pdf_pending` from an older API means the same.
+12. Skip link 44 px tall, admin and portal (measured 44 px in both).
+13. Stale "PENDING" comment in `pdf-panel.tsx` corrected (07-P approved with 07-Q).
+14. Draft "Send to": contacts without portal access are grouped under "Has no portal access yet" (the approved send-dialog line), still choosable for the Acceptance name; the same line shows as the hint when one is chosen. The payload already had `portalAccess`.
+15. An invoice draft with no lines lists "Add at least one line." only; `computed_errors` and `zero_total` are left out while `no_lines` is there (`shownBlockers`, every `BlockerList`).
+16. **Not fixed: stopped, it needs a file outside my scope.** The admin CSP has no `'unsafe-inline'` and no hash, so the theme must be set by a blocking same-origin script in `<head>` (`/theme-boot.js` in `apps/admin/public/`). `apps/admin/worker/headers.test.ts` (worker/, not mine) asserts `index.html` holds only the one module script, so the fix fails that test. Patch for the lead (three small edits): (a) new `apps/admin/public/theme-boot.js`: `try{var t=localStorage.getItem("ta-admin-theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}`; (b) `apps/admin/index.html`: `<script src="/theme-boot.js"></script>` in `<head>` before the module, plus `<meta name="color-scheme" content="light dark" />`; (c) in `headers.test.ts` "index.html needs no inline script…", expect `['<script src="/theme-boot.js">', '<script type="module" src="/src/main.tsx">']`. `script-src 'self'` already allows it; `lib/theme.ts` keeps applying it too. The portal has no in-app theme (it follows the OS and already has the `color-scheme` meta), so it has no such gap.
+17. Facts strip at 48–64 rem: the client's name and code take the first row, the short facts share the second (editor and sent view), hairlines between rows (shots 07, 31 at 768).
+
+### Files changed
+- `apps/admin/src/lib/documents.ts` (07-X words, `unresolvedItems`, `gapGroups`, `gaps` in the figures, `gapBase`, `LIST_EMPTY_BY_TYPE`, `nothing_to_fill`), `lib/documents-api.ts` (`PlaceholderWhere`, `CatalogueGap`, `catalogueGaps`, `fillFromCatalogue`), `lib/copy-x.ts` (new: the 07-X mark switch and the Catalogue hint), `lib/offers.ts`, `lib/invoices.ts` (`shownBlockers`), `lib/invoices-api.ts` (202)
+- `apps/admin/src/routes/documents/{editor,side,sections,send-dialog,lines,pdf-panel,read}.tsx`, `routes/documents.tsx`, `routes/invoices/{read,dialogs}.tsx`, `routes/catalogue/{editor,service}.tsx`
+- `apps/admin/src/{documents,catalogue,shell}.css`
+- `apps/admin/src/lib/gaps.test.ts` (new), `lib/offers.test.ts`
+- `apps/portal/src/{copy-documents.ts,portal.css}`, `routes/{offer,offer-link}.tsx`
+- `docs/07-content-appendix/X-m5-owner-fixes.md` (new)
+- `apps/admin/src/lib/gaps-mock.ts` added for the mock phase and removed in the real-API pass.
+
+### Placeholder lines
+All 07-X lines show "[Placeholder] " before the recommended words until the owner approves 07-X (`APPROVED_07X` in `apps/admin/src/lib/copy-x.ts` and `apps/portal/src/copy-documents.ts`): lines 1–22, 24, 25, 27–30. Not marked (the brief's own words): "Use Catalogue text" (23) and "Text of {section}" (26). The page has 30 numbered lines with recommendations; the lead takes it to the owner.
+
+### Screenshots (`.logs/shots/m5-owner-fixes/` in this worktree; 110 files; light and dark; 375, 768, 1280, 1600 unless noted)
+- `31-real-draft-gaps-top-*`: a fresh S5 proposal on the real API: send panel with `section_empty`, the two Catalogue notes (Deliverables, Assumptions and exclusions hidden); 768 shows the tablet facts strip (finding 17).
+- `32-real-draft-gaps-section-*`: the margin note on hidden Deliverables with "Add the text in Catalogue" and "Write it here".
+- `33-real-draft-catalogue-now-*`: Catalogue given assumptions only: the A&E note says exclusions are missing and Catalogue now has the assumptions, with "Use Catalogue text".
+- `34-real-draft-after-fill-*`: after "Use Catalogue text" through the screen: the section shown with the assumptions, the note left with the missing exclusions (partial case).
+- `06-estimate-values-missing-*`: an estimate draft with no contact and a hand-typed value: "Validity: waiting for the contact's name and a value that can't be filled in." with "Choose a contact".
+- `04-send-dialog-preferred-contact-1280-light`: send dialog with the draft's contact (Team) ticked, "Hi Team" (finding 4).
+- `07-sent-read-facts-*`: the sent proposal: facts strip, PDF "Making the PDF…", Emails panel waiting (findings 10, 17).
+- `08-estimates-empty-by-type-*` and `08-proposals-empty-by-type-1280-light`: empty lists by type (finding 8).
+- `09-catalogue-service-hint-*`, `10-catalogue-new-hint-*`: the Catalogue hint (finding 9).
+- `11-invoice-empty-one-blocker-*`: empty invoice draft, one line blocker (finding 15).
+- `12-skip-link-focus-{375,1280}-*`, `21-portal-skip-link-focus-{375,1280}-*`: the 44 px skip links (finding 12).
+- `13-draft-line-unit-{1280,1408,1440,1600}-*`: the unit column (finding 5).
+- `14-keyboard-send-panel-1280-*`, `15-keyboard-section-note-1280-*`: keyboard pass (taken in the mock phase; same components): Tab order section links → section notes → "Use Catalogue text" → next section; 2 px solid focus outline on every stop.
+- `20-portal-offer-link-ended-*`: the portal's ended offer link (finding 7).
+
+### Commands and results
+- `pnpm install --frozen-lockfile --offline` (via heavy.sh): ok. Local setup: `pnpm dev:secrets`, `db:migrate:local`, `db:seed:local`, `portal:sample`, `invite --role owner`: ok (local D1 of this worktree only).
+- `tsc -p tsconfig.json` admin and portal (heavy.sh): exit 0, before and after the merge.
+- `pnpm exec biome check --write <my files>`: clean.
+- `pnpm --filter @techaust/admin exec vitest run src` (heavy.sh): 21 files, 378 tests passed (before the merge; the new `gaps.test.ts` and the `offers.test.ts` case included).
+- `pnpm check` (heavy.sh), after the merge, my final check (it runs the whole-repository `pnpm lint`): exit 0; lint 1,266 files, 10 warnings and 8 infos, all existing; typecheck, binding, content, Worker config and migration guards ok.
+- `pnpm --filter @techaust/portal test` (heavy.sh), after the merge: 24 files, 620 passed.
+- `pnpm --filter @techaust/admin test` (heavy.sh), after the merge: 3,198 passed, 10 skipped, **6 failed in 3 files, none mine**: `worker/invoice-notes.test.ts` (3), `worker/note-research.test.ts` (3) and `worker/reports-totals.test.ts` (whole file), all on `fx_same_day_exists` with date 2026-10-29 (the FX fixtures against today's IST date), the same ones the builder reported. My diff touches no `worker/`, `packages/` or jobs file (`git diff --stat c41c532 HEAD -- apps/*/worker apps/jobs packages` lists only the builder's merged files).
+- Screenshots and axe: Playwright 1.64.1 + `@axe-core/playwright` 4.14.0 from `apps/web` (scripts in my scratchpad, not committed), WCAG 2.2 AA tags at 375 and 1280 on every shot. **axe clean** on every real-API shot (31–34), 04, 06–11, 13–15, 20 and the portal skip link. Two findings, both on the target-size rule and both from what overlaps the target, not from these screens: the admin skip link, while focused, covers the phone top bar's menu and mark (12, 375 only); and in the mock-phase section shot at 375 the sticky top bar covered the "Show Scope" checkbox at that scroll position. No horizontal overflow on any shot. Console: only the expected 401 before sign-in and the expected 404 of the ended-link API.
+- Dev servers (admin, then portal, one after the other) and every Playwright browser were stopped before this report; the MCP browser closed.
+
+### Mocked, then replaced
+- The B2 answer was mocked in `lib/gaps-mock.ts` (dev only, behind `import.meta.env.DEV` and a localStorage switch) for the first round; removed in 1333f58. Every screen above in 31–34 is the real API (`catalogueGaps`, `where`, the fill route); the builder's shapes matched the brief, except that `sectionId` is never null as built (the screen still handles null) and the PATCH answer carries no `catalogueGaps` (the screen keeps the last ones and filters them by what is on screen).
+
+### Not verified
+- A real Browser Run render, so the Emails panel moving on by itself once the PDF is ready (finding 10) is untested end to end (no jobs Worker locally); the hook and `onReady` are only read and type-checked.
+- The supplier copy 202 path in the browser (no PDF locally); the code path is a status check.
+- The portal offer page with a real offer, accept and decline (the ended-link page only).
+- Finding 16 (not fixed, above). Screen readers (NVDA) not run; names checked through the accessibility tree.
+
+### Open questions
+1. Finding 16: apply the three-edit patch above (it touches `apps/admin/worker/headers.test.ts`)? Recommended: yes, by the lead or a one-file builder fix.
+2. The send panel now carries the only list (the main-column banner is gone, as the brief's "replace the banner and the Send card's line with a list"); on desktop the panel sits beside the editor and on phones before it. Keep one list (recommended), or also repeat a short summary at the top of the editing column?
+3. 07-X goes to the owner as one page (30 numbered lines, recommendations given; two lines offer an "Or:").
