@@ -5,6 +5,7 @@
 import type { ScheduleTrigger } from "@techaust/core";
 import type { Currency } from "../api.ts";
 import { qs, request } from "../api.ts";
+import { mockFill, mockGaps, mockGapsOn } from "./gaps-mock.ts";
 import type { OfferSection, StartResult } from "./offers.ts";
 
 export type QuoteType = "proposal" | "estimate";
@@ -21,6 +22,29 @@ export type Blocker = {
   /** `section_empty`: the visible optional sections with no text, as ids in order; `kinds` is the same list by kind (the names the Worker sends). */
   sections?: string[];
   kinds?: string[];
+  /** `unresolved_placeholders` (M5 owner fixes, B2): where each name still sits, so the screen can name the place and link to it. */
+  where?: PlaceholderWhere[];
+};
+/** One place a placeholder still sits in a draft (`unresolved_placeholders.where`). */
+export type PlaceholderWhere = {
+  name: string;
+  sectionId: string | null;
+  sectionKind: string | null;
+  part: "title" | "line" | "section" | "schedule";
+};
+/**
+ * A section a service's Catalogue text would fill but can't, because the service has none (M5 owner fixes, B2; owner 2026-10-28 and Q3 of
+ * 2026-10-29): worked out when a draft is read, from its service lines and their current Catalogue rows. Drafts only.
+ */
+export type CatalogueGap = {
+  sectionId: string | null;
+  sectionKind: "deliverables" | "assumptions_exclusions";
+  field: "deliverables" | "assumptions" | "exclusions";
+  serviceCode: string;
+  serviceName: string;
+  catalogueItemId: string;
+  /** Catalogue has the text now (filled in since the draft was made): "Use Catalogue text" can add it. */
+  catalogueHasTextNow: boolean;
 };
 
 /** What a sent version was addressed to, as frozen at send (review fix 1; the db's `RecipientSnapshot`). */
@@ -196,6 +220,8 @@ export type DocumentViewBase = {
   unresolved: string[];
   canSend: boolean;
   needsResave: boolean;
+  /** A draft's Catalogue gaps (B2); absent on a sent version and on an API before M5 owner fixes. */
+  catalogueGaps?: CatalogueGap[];
   /** The client's "Attach PDF" setting (M4.5 review fix 2): what a send applies when it names none; readable by every role that can send. */
   attachPdfDefault: boolean;
   /** A frozen version: the recipient and issuer as frozen (drafts read the live client and contact). */
@@ -237,6 +263,8 @@ export type SaveAnswer = {
   unresolved: string[];
   canSend: boolean;
   needsResave: boolean;
+  /** When the save answer carries the gaps again (optional in the B2 contract): the editor keeps the last ones otherwise. */
+  catalogueGaps?: CatalogueGap[];
 };
 
 export type LineIn = {
@@ -388,7 +416,20 @@ export const documentsApi = {
     request<{ documents: ListRow[]; next: string | null }>(
       `/clients/${enc(clientId)}/documents${qs({ after })}`,
     ),
-  get: (id: string) => request<DocumentView>(`/documents/${enc(id)}`),
+  get: (id: string) =>
+    import.meta.env.DEV
+      ? request<DocumentView>(`/documents/${enc(id)}`).then(mockGaps)
+      : request<DocumentView>(`/documents/${enc(id)}`),
+  /**
+   * "Use Catalogue text" (B2): adds the Catalogue text that is there now to one section, by the draft's own rules, and shows the section. One
+   * batch on the server; 409 `stale_version` or `nothing_to_fill`. The screen reloads the draft after it, so only success matters here.
+   */
+  fillFromCatalogue: (id: string, sectionId: string, expectedUpdatedAt: number) =>
+    import.meta.env.DEV && mockGapsOn()
+      ? mockFill(sectionId)
+      : request<{ updatedAt?: number }>(`/documents/${enc(id)}/sections/fill-from-catalogue`, {
+          body: { sectionId, expectedUpdatedAt },
+        }),
   create: (body: NewDocumentInput) => request<Created>("/documents", { body }),
   save: (id: string, body: DocumentPatch) =>
     request<SaveAnswer>(`/documents/${enc(id)}`, { method: "PATCH", body }),

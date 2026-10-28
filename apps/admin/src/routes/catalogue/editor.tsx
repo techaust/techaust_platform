@@ -27,6 +27,7 @@ import {
   UNIT_LABELS,
   UNITS,
 } from "../../lib/catalogue.ts";
+import { CATALOGUE_TEXTS_HINT } from "../../lib/copy-x.ts";
 import { bpToPercent, percentToBp } from "../../lib/settings-form.ts";
 import { ctl, MoneyIn, RowError } from "../settings/kit.tsx";
 import { ScheduleBar } from "./parts.tsx";
@@ -201,6 +202,7 @@ export function EntryMain({ form: f, set, error, mode }: EditorProps) {
         <h2 id="ce-incl-h" className="lead-panel__title">
           Deliverables, assumptions and exclusions
         </h2>
+        <p className="hint">{CATALOGUE_TEXTS_HINT}</p>
         <MdField
           id="ce-deliverablesMd"
           label="Deliverables"

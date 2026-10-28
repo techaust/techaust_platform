@@ -43,7 +43,7 @@ import { CareDialog, InvoiceDialog, ReviseDialog } from "./dialogs.tsx";
 import { LinesTable, ScheduleTable, SectionBody, TaxPreview } from "./money.tsx";
 import { AcceptancePanel, DeclinePanel, DeliveryPanel, StartProjectPanel } from "./offer-panels.tsx";
 import { crumbsFor, DocPill, docHref } from "./parts.tsx";
-import { PdfPanel } from "./pdf-panel.tsx";
+import { PdfPanel, useMailAfterPdf } from "./pdf-panel.tsx";
 import { SendDialog } from "./send-dialog.tsx";
 import { VersionsPanel } from "./side.tsx";
 
@@ -67,6 +67,10 @@ export function ReadView({ view, reload }: { view: DocumentView; reload: () => v
   const navigate = useNavigate();
   const [dialog, setDialog] = useState<"revise" | "invoice" | "care" | "resend" | null>(null);
   const v = view;
+  useMailAfterPdf(
+    v.pdf?.state === "ready" && (v.delivery ?? []).some((r) => r.state === "waiting_pdf"),
+    reload,
+  );
   const accepted = v.versions.some((x) => x.status === "accepted");
   const newer = v.versions.filter((x) => x.version > v.version).at(-1);
   const latestSent = Math.max(
@@ -173,6 +177,7 @@ export function ReadView({ view, reload }: { view: DocumentView; reload: () => v
               sentAt={v.sentAt}
               initial={v.pdf}
               canRetry={allowed(user.role, "proposals.send") && !v.client.anonymised}
+              onReady={reload}
             />
           )}
           {!v.frozen && <p className="hint">{PDF_COPY.afterSend(v.type)}</p>}

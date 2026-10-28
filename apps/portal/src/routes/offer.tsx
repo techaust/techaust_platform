@@ -55,6 +55,8 @@ export function OfferScreen(props: {
    */
   onSuperseded: (latestId: string) => boolean;
   notices?: ReactNode | undefined;
+  /** What a 404 shows: "Page not found" in the portal; the emailed link says it has ended, with the way to sign in (finding 7). */
+  missing?: ReactNode | undefined;
 }) {
   const { source, onSuperseded } = props;
   const [state, setState] = useState<State>({ phase: "loading" });
@@ -99,7 +101,7 @@ export function OfferScreen(props: {
   }, [props.loadKey]);
 
   if (state.phase === "loading") return <ScreenSkeleton label={COPY.loading} />;
-  if (state.phase === "missing") return <NotFoundScreen homeHref={props.homeHref} />;
+  if (state.phase === "missing") return props.missing ?? <NotFoundScreen homeHref={props.homeHref} />;
   if (state.phase === "failed") {
     const e = state.error;
     if (e instanceof RequestError && e.status === 429)

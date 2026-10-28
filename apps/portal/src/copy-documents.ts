@@ -189,3 +189,16 @@ export const NOTICES = {
   signInSee: "See our",
   privacyNotice: "Privacy notice",
 } as const;
+
+/**
+ * 07-X (M5 owner fixes, docs/07-content-appendix/X-m5-owner-fixes.md): lines PENDING the owner, shown with the "[Placeholder] " mark before the
+ * designer's recommended words until the page is approved (then `APPROVED_07X` turns true and the marks go).
+ */
+export const APPROVED_07X = false;
+const X = (line: string): string => (APPROVED_07X ? line : `[Placeholder] ${line}`);
+export const OFFER_LINK = {
+  /** §5.1 (sweep finding 7): an offer's email link that has ended, in the pattern of 07-U §3's invoice line. */
+  ended: X(
+    "This link no longer works. Sign in to your client portal to see your proposals and estimates, or ask us for a new link at contact@techaust.com.",
+  ),
+} as const;

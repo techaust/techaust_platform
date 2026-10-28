@@ -14,6 +14,7 @@ import { useToast } from "../../components/toast.tsx";
 import { allowed } from "../../lib/access.ts";
 import { dayText, formatIstDay } from "../../lib/documents.ts";
 import type { ViewLine } from "../../lib/documents-api.ts";
+import { sendState } from "../../lib/invoice-send.ts";
 import { INVT_COPY } from "../../lib/invoice-types.ts";
 import {
   badgeOf,
@@ -40,7 +41,7 @@ import { NOTE_COPY, NOTE_ERRORS } from "../../lib/notes.ts";
 import type { InvoiceWithNotes, NoteKind } from "../../lib/notes-api.ts";
 import { PDF_COPY } from "../../lib/pdf.ts";
 import { LinesTable, TaxPreview } from "../documents/money.tsx";
-import { PdfPanel, type PdfSource, type PdfWords } from "../documents/pdf-panel.tsx";
+import { PdfPanel, type PdfSource, type PdfWords, useMailAfterPdf } from "../documents/pdf-panel.tsx";
 import { VoidDialog } from "./dialogs.tsx";
 import { NoteDialog } from "./note-dialog.tsx";
 import {
@@ -156,6 +157,11 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
   const sendAction = sendActionOf(v);
   const canSend = v.frozen && sendAction?.allowed === true;
   const showMail = v.frozen && (canSend || (v.sends?.length ?? 0) > 0);
+  // Finding 10: the emails that waited for the PDF go a moment after it is ready; the Emails panel reads them again until they have.
+  useMailAfterPdf(
+    v.pdf?.state === "ready" && (v.sends ?? []).some((r) => sendState({ ...r, pdfReady: true }) === "queued"),
+    reload,
+  );
   const badge = badgeOf(v);
   const isVoid = v.status === "void";
   const isNote = isNoteView(v);
@@ -278,6 +284,7 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
               canRetry={allowed(role, "invoices.draft") && !v.client.anonymised}
               words={PDF_WORDS}
               source={PDF_SOURCE}
+              onReady={reload}
               extra={
                 canDownloadSupplierCopy(role, v.type) ? (
                   <SupplierCopy id={v.id} number={v.number} />

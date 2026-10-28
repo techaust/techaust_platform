@@ -5,7 +5,7 @@
 // shows the "saved at the same moment" notice and stops saving until the latest is loaded.
 import { istDate } from "@techaust/core/dates";
 import { validUntil } from "@techaust/core/documents";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { api, RequestError } from "../../api.ts";
 import { PageHeader } from "../../components/display.tsx";
@@ -29,6 +29,8 @@ import {
   editor,
   fieldErrors,
   formatIstDay,
+  GAP_COPY,
+  gapGroups,
   initEditor,
   isDirty,
   newerTerms,
@@ -36,7 +38,7 @@ import {
   sentAs,
   TYPE_LABELS,
   titleOf,
-  UNRESOLVED_AROUND,
+  unresolvedItems,
   validFor,
 } from "../../lib/documents.ts";
 import { type DocumentView, documentsApi } from "../../lib/documents-api.ts";
@@ -170,8 +172,56 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
     [],
   );
 
-  const contacts = useLoad(() => api.clientContacts(view.client.id), view.client.id);
+  // The send check in plain words and the Catalogue gaps (07-X): worked out from the server's answer and what is on screen now.
   const f = s.figures;
+  const holesBlocker = f.blockers.find((b) => b.code === "unresolved_placeholders");
+  const holes = useMemo(
+    () =>
+      holesBlocker
+        ? unresolvedItems(holesBlocker, {
+            title: s.fields.title,
+            lines: s.lines,
+            sections: s.sections,
+            schedule: s.schedule,
+            contactId: s.fields.contactId,
+          })
+        : [],
+    [holesBlocker, s.fields.title, s.lines, s.sections, s.schedule, s.fields.contactId],
+  );
+  const gaps = useMemo(() => gapGroups(f.gaps, s.sections, s.gapBase), [f.gaps, s.sections, s.gapBase]);
+  // "Add a service line" and "Choose a contact": put the cursor on the control that fills the value.
+  const onFix = useCallback((fix: "service" | "contact") => {
+    const el = document.getElementById(fix === "service" ? "doc-add-catalogue" : "doc-contact");
+    el?.scrollIntoView({ block: "center" });
+    el?.focus({ preventScroll: true });
+  }, []);
+  // "Use Catalogue text": everything typed is saved first (the route takes the version it saw), then the draft is read again.
+  const [filling, setFilling] = useState<string | null>(null);
+  const onFill = useCallback(
+    async (sectionId: string) => {
+      if (filling) return;
+      setFilling(sectionId);
+      try {
+        const at = await flush();
+        if (at === null) {
+          toast("error", ref.current.error ?? DOC_ERRORS.stale_version);
+          return;
+        }
+        await documentsApi.fillFromCatalogue(ref.current.id, sectionId, at);
+        toast("success", GAP_COPY.filled);
+        reload();
+      } catch (e) {
+        toast("error", docErrorText(e));
+      } finally {
+        setFilling(null);
+      }
+    },
+    [filling, flush, reload, toast],
+  );
+
+  const contacts = useLoad(() => api.clientContacts(view.client.id), view.client.id);
+  const live = (contacts.data?.contacts ?? []).filter((c) => c.anonymisedAt === null);
+  const chosen = live.find((c) => c.id === s.fields.contactId);
   const title = titleOf(s.fields.title);
   const dirty = isDirty(s);
   const saveLine =
@@ -250,6 +300,11 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
             sections={s.sections}
             onOpenSection={onOpenSection}
             type={view.type}
+            holes={holes}
+            gaps={gaps}
+            onFix={onFix}
+            onFill={onFill}
+            filling={filling}
           />
         </div>
 
@@ -302,23 +357,6 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
               </div>
             </div>
           )}
-          {f.unresolved.length > 0 && (
-            <div className="notice notice--warning holes" role="status">
-              <Info size={20} />
-              <div>
-                <p>
-                  {UNRESOLVED_AROUND[0]}
-                  {f.unresolved.map((n, i) => (
-                    <span key={n}>
-                      <code className="hole">{`{{${n}}}`}</code>
-                      {i < f.unresolved.length - 1 ? ", " : ""}
-                    </span>
-                  ))}
-                  {UNRESOLVED_AROUND[1]}
-                </p>
-              </div>
-            </div>
-          )}
 
           <section className="lead-panel doc-details" aria-labelledby="doc-details-h">
             <h2 id="doc-details-h" className="visually-hidden">
@@ -341,7 +379,13 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
               <FormField
                 id="doc-contact"
                 label={DOC_COPY.sendTo}
-                hint={s.fields.contactId === null ? DOC_COPY.noContact : undefined}
+                hint={
+                  s.fields.contactId === null
+                    ? DOC_COPY.noContact
+                    : chosen && !chosen.portalAccess
+                      ? OFFER_COPY.noPortal
+                      : undefined
+                }
               >
                 {(a) => (
                   <select
@@ -356,13 +400,26 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
                     {view.contact && !contacts.data?.contacts.some((c) => c.id === view.contact?.id) && (
                       <option value={view.contact.id}>{view.contact.name}</option>
                     )}
-                    {(contacts.data?.contacts ?? [])
-                      .filter((c) => c.anonymisedAt === null)
+                    {/* Finding 14: only a contact with portal access can receive the offer, so those without it are grouped apart, under
+                        the send dialog's own words for them. They stay choosable: the name still fills the Acceptance text. */}
+                    {live
+                      .filter((c) => c.portalAccess)
                       .map((c) => (
                         <option key={c.id} value={c.id}>
                           {c.name}, {c.email}
                         </option>
                       ))}
+                    {live.some((c) => !c.portalAccess) && (
+                      <optgroup label={OFFER_COPY.noPortal}>
+                        {live
+                          .filter((c) => !c.portalAccess)
+                          .map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name}, {c.email}
+                            </option>
+                          ))}
+                      </optgroup>
+                    )}
                   </select>
                 )}
               </FormField>
@@ -471,6 +528,9 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
             dispatch={dispatch}
             current={currentSections}
             openRequest={openSection}
+            gaps={gaps}
+            onFill={onFill}
+            filling={filling}
           />
         </div>
 
@@ -493,6 +553,7 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
         clientId={view.client.id}
         clientName={view.client.name}
         attachPdfDefault={view.attachPdfDefault}
+        preferredContactId={s.fields.contactId}
         validUntil={sendValidUntil(s.fields.validityDays)}
         onClose={() => setDialog(null)}
         onSend={async (contactIds, attachPdf) => {

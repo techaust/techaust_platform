@@ -42,6 +42,7 @@ import {
   TOASTS,
   UNIT_LABELS,
 } from "../../lib/catalogue.ts";
+import { CATALOGUE_TEXTS_HINT } from "../../lib/copy-x.ts";
 import { bpToPercent } from "../../lib/settings-form.ts";
 import type { Draft } from "../leads/drafts.ts";
 import { EntryMain, EntrySide } from "./editor.tsx";
@@ -323,6 +324,7 @@ function ServiceRead({ data }: { data: CataloguePage }) {
           <h2 id="svc-incl-h" className="lead-panel__title">
             Deliverables, assumptions and exclusions
           </h2>
+          <p className="hint">{CATALOGUE_TEXTS_HINT}</p>
           <MdBlock title="Deliverables" source={item.deliverablesMd} />
           <MdBlock title="Assumptions" source={item.assumptionsMd} />
           <MdBlock title="Exclusions" source={item.exclusionsMd} />
