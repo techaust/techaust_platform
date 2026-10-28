@@ -1,44 +1,52 @@
 # 12: Status
 
-_Replaced (never appended) at the end of every session. Last updated: **2026-10-28, 23:00** (IST)._
+_Replaced (never appended) at the end of every session. Last updated: **2026-10-28, 23:15** (IST)._
 
 ## Done
 - **Phases 1–5, M1 (foundation), M2 (public website), M3.1–M3.5, M4.1–M4.5:** all approved by the owner (latest: the M3.4–M4.5 batch, 2026-10-26, PR #93). Details live in the run files under [runs/](runs/) and in [13-decisions.md](13-decisions.md).
-- **Working rules:** the three-model plan ([14-models-and-usage.md](14-models-and-usage.md)); Team plan gate (5-hour window only; no new agent at ≥ 80 %; lifted by the owner for the rest of M5 only); skills mandatory; Cloudflare Access on every staging Worker.
-- **The M5 batch is complete: M5.0 to M5.5 are built, reviewed and on staging** (owner: one batch while away, their calls built as flagged defaults on one question page; [batch run file](runs/m5-batch.md)). Every milestone went brief → builder → early check → designer → review → fixes → re-check → PR; every critical, high and medium finding was fixed in its task.
-  - **M5.0 admin Worker split** ([PR #95](https://github.com/techaust/techaust_platform/pull/95); [run file](runs/m5.0-admin-split.md)): the front Worker forwards every other `/api` route to `techaust-platform-admin-api(-staging)` (no URL, no secrets). **Not yet checked by the owner.**
-  - **M5.1 tax invoices** ([PR #96](https://github.com/techaust/techaust_platform/pull/96); [run file](runs/m5.1-invoices.md)): gap-free numbers per series and FY in one D1 batch, Owner issue with step-up, Staff request (approve = issue), void, sealed snapshot, the invoice PDF. Migrations 0037–0038.
-  - **M5.2 export invoices, proformas, advances** ([PR #97](https://github.com/techaust/techaust_platform/pull/97); [run file](runs/m5.2-invoice-types.md)): LUT and IGST exports with the frozen endorsement and FX, proformas, the tax invoice for a payment received, the mandatory-field checklist, the LUT list. Migrations 0039–0040.
-  - **M5.3 credit and debit notes** ([PR #99](https://github.com/techaust/techaust_platform/pull/99); [run file](runs/m5.3-credit-debit-notes.md)): notes against an issued invoice with the credit cap held in four places, the 30 November deadline from settings, IMS answers (Owner), note PDFs with the parent number. Migrations 0041–0042.
-  - **M5.4 send, reminders, recurring care invoices** ([PR #100](https://github.com/techaust/techaust_platform/pull/100); [run file](runs/m5.4-send-recurring-reminders.md)): invoice emails and links to finance contacts, automatic reminders, monthly care-plan drafts (auto-issue only with an owner's toggle), daily alerts, the portal's invoice pages; a second cron (hourly). Migrations 0043–0044.
-  - **M5.5 GST and CA exports, realisation, EDF, statements, finance tiles** ([PR #101](https://github.com/techaust/techaust_platform/pull/101); run files [5.5a](runs/m5.5a-gst-core.md), [5.5b](runs/m5.5b-exports-statement.md)): GSTR-1, Table 13, sales register, output tax and 3B summary as CSV built in the browser; export realisation stages and alerts; EDF reminders; the client statement with a cached PDF; dashboard finance tiles. Migration 0045.
-- **Verified 2026-10-28:** the whole-repo `pnpm check` passes; `pnpm test` passes in every package (auth 135, core 1,718, ui 469, email 128, db 444, pdf 302, web 423, portal 620, jobs 498, admin 3,112 of 3,113: one M5.4 test timed out under load and passes 22 of 22 alone); CI green; the staging deploy of #101 succeeded first time. Staging, read-only (Cloudflare analytics, 4 hours after the deploy): the jobs Worker ran 8 times with 0 errors, CPU p50 1.7 ms, p99 4.6 ms; the admin and portal Workers had no traffic. Bundles: admin API 576,894 bytes (third Worker planned at 650,000), front 98,743, jobs 844,916 (limit 1,000,000).
+- **Working rules:** the three-model plan ([14-models-and-usage.md](14-models-and-usage.md)); Team plan gate (5-hour window only; no new agent at ≥ 80 %); skills mandatory; Cloudflare Access on every staging Worker; owner rule 8 (2026-10-28): tax and legal items are researched from official sources and tagged "Researched <date>, <source>" or "OPEN: <question>".
+- **The M5 batch: M5.0 to M5.5 built, reviewed and on staging** (PRs [#95](https://github.com/techaust/techaust_platform/pull/95)–[#97](https://github.com/techaust/techaust_platform/pull/97), [#99](https://github.com/techaust/techaust_platform/pull/99)–[#101](https://github.com/techaust/techaust_platform/pull/101); [batch run file](runs/m5-batch.md)): admin Worker split, tax invoices, export invoices, proformas and advances, credit and debit notes, sending, reminders and recurring care invoices, GST and CA exports, realisation, EDF, statements, finance tiles. Staging fix after the owner's M5.0 check: [#103](https://github.com/techaust/techaust_platform/pull/103).
+- **Research and wording, merged 2026-10-28** ([PR #104](https://github.com/techaust/techaust_platform/pull/104); [run file](runs/research-and-wording.md)). It replaces the owner's line-by-line M5 review (owner, 2026-10-28).
+  - **Register:** [08-C](08-research-appendix/C-research-register.md), 65 items, settled with a source or OPEN with the CA's or lawyer's question.
+  - **Owner answers:** Q37 lapsed LUT blocked; Q11 DUPLICATE FOR SUPPLIER copy; Q35 tax-only debit note; accept-by-link for any value. Every other batch question (Q1–Q71) is settled by the register or by its built default (08-C §7).
+  - **Rules built:** the LUT of the receipt day's FY; discount after sale from 1 Nov 2026; tax-only debit note; supplier copy; FX same-day rule with a dated statement; credit-note advice dates; email logs ≥ 12 months; signatory switch; backup gate before production; security.txt ≤ 365 days; prior-price lint.
+  - **Copy:** 07-R to 07-V approved by the lead under the owner's delegation; 07-W for the gaps; legal pages v0.3; no `[Placeholder]` left on any screen. Care invoices can now be issued automatically where an owner has switched it on.
+  - Migrations 0046–0048.
+- **Verified 2026-10-28:** `pnpm check` and `pnpm test` pass in every package (auth 135, ui 469, core 1,752, email 128, db 452, pdf 318, web 443, portal 620, jobs 507, admin 3,170); review SEND BACK (1 high, 3 medium, 7 low) → all fixed → re-check APPROVE; CI green on #104. Bundles: admin API 587,821 bytes (third Worker planned at 650,000), jobs 851,190 (limit 1,000,000).
 
 ## In progress
-- **Research and wording ([PR #104](https://github.com/techaust/techaust_platform/pull/104), auto-merge on, Auto-fix on; [run file](runs/research-and-wording.md)):** every "VERIFY WITH CA/LEGAL" item researched into the register [08-C](08-research-appendix/C-research-register.md) (65 items: settled with source, or OPEN with the CA's or lawyer's question); the owner's four answers (Q37 lapsed LUT blocked, Q11 DUPLICATE FOR SUPPLIER copy, Q35 tax-only debit note, accept-by-link for any value); new rules built in every layer (LUT of the receipt FY, discount after sale from 1 Nov 2026, tax-only debit note, supplier copy, FX same-day rule, credit-note advice dates, email logs ≥ 12 months, signatory switch, backup gate before production); 07-R to 07-V approved by the lead under the owner's delegation, 07-W for the gaps, legal pages v0.3; no `[Placeholder]` left on any screen. Review SEND BACK (1 high) → all fixed → re-check APPROVE; `pnpm check` and `pnpm test` pass. Migrations 0046–0048 apply on staging with the deploy. No agent is running.
+- Nothing is being built. No agent is running. The staging deploy of #104 runs from `main` (CI, then "Deploy staging", which applies migrations 0046–0048 to staging D1). If it fails on a temporary Cloudflare API error, the lead re-runs it once (13-decisions, 2026-10-27).
 
 ## Next (when work resumes)
-1. **The owner reviews the M5 batch on staging** with the "Owner review pack (2026-10-28)" in the [batch run file](runs/m5-batch.md): the plain-words summary, questions Q1–Q71 (each built with its recommended default) and the copy drafts 07-R, 07-S, 07-T, 07-U, 07-V word for word.
-2. **The lead collects every finding first, then one fix task** (a reviewer UI/UX sweep of every affected screen first, owner rule 2026-10-26); approved copy replaces `[Placeholder]`; then the owner's "approved".
-3. **Staging readings** once someone signs in to staging (`cpuTimeMs`, front + API ≤ 7 ms): invoice issue at 1 and 100 lines, export, proforma, advance, note issue, send, `/dashboard`, a register page, `realisation.scan`, `pdf.statement`, `care.bill`, `care.issue`, `reminder.send`; plus the M4.x readings still open. The lead can't sign in through Cloudflare Access, so these follow the owner's M5.0 check.
-4. **After approval: M6.1** (payments, sandbox only). The 80 % usage gate applies again.
+1. **Check the #104 staging deploy** (run green, migrations 0046–0048 applied); re-run once if Cloudflare's API flaked.
+2. **The owner checks staging and says "approved" for the M5 batch** (see "Waits on the owner"). Their findings are collected first, then one fix task, after a reviewer UI/UX sweep of every affected screen (owner rule 2026-10-26).
+3. **Staging readings** once someone signs in to staging (`cpuTimeMs`, front + API ≤ 7 ms): invoice issue at 1 and 100 lines, export, proforma, advance, note issue, send, `/dashboard`, a register page, `realisation.scan`, `pdf.statement`, `pdf.supplier`, `care.bill`, `care.issue`, `reminder.send`; plus the M4.x readings still open. The lead can't sign in through Cloudflare Access.
+4. **After approval: M6.1** (payments, sandbox only). The 80 % usage gate applies.
 
-**Usage now:** 5-hour window 1 %. Gate: no new agent at ≥ 80 %; two agents at once, one browser agent.
+**Usage now:** 5-hour window 57 % (resets 23:10 IST). Gate: no new agent at ≥ 80 %; two agents at once, one browser agent.
 
 ## Waits on the owner
-- **The research and wording summary** ([08-C](08-research-appendix/C-research-register.md) §5 and §6): the CA and lawyer questions, and the dated duties: **the FY 2026-27 LUT now**, credit notes for FY 2025-26 supplies by 31 October (law: reported by 30 November), the October EDF to the bank by 30 November if any export invoice was raised in October.
-- **M5.0 staging check (6 steps, about 5 minutes):** sign in to the staging admin; open Dashboard, Leads and a lead; open a client, a proposal and its PDF; in a project, upload and download a file; save one Settings page; sign out. Then tell the lead "done".
-- **The M5 batch review:** 71 questions on the [batch page](runs/m5-batch.md) (tax and legal ones VERIFY WITH CA/LEGAL); copy [07-R](07-content-appendix/R-m5.1-invoice-screens.md), [07-S](07-content-appendix/S-m5.2-invoice-types.md), [07-T](07-content-appendix/T-m5.3-credit-debit-notes.md), [07-U](07-content-appendix/U-m5.4-send-recurring-reminders.md), [07-V](07-content-appendix/V-m5.5b-reports-statements.md). Until 07-U is approved, care invoices are only drafted on staging (no automatic issue).
-- **Facts to know for the review:** the hourly job runs care billing and reminders on staging (emails only to the staging allow-list); until M6 records payments, an export paid by bank transfer looks unpaid, so realisation alerts fire for it on staging (Q70).
-- **Staging data for invoicing:** the real company profile (legal name, GSTIN, address) and clearly labelled sample bank details in staging Settings (Q21); the LUT ARN for FY 2026-27 when filed (U-1; LUT export invoices are blocked until then).
-- **Zoho:** confirm the `billing@` alias exists (invoice emails and statements); also `hello` and `no-reply` (they clear Zoho's "Sender couldn't be verified" warning).
-- **For the CA or lawyer (VERIFY WITH CA/LEGAL), collected at the batch review:** every M5 tax and invoicing default on the batch page; proposal terms v1's "GST at 18 %" line; anonymising a client deletes its document bells; drafts of a client anonymised later; client-written lead text; signature retention; accept-by-link evidence and the certificate's IP, browser and country; the first-instalment invoice type and place of supply; keeping the decline note.
+- **Dated duties** ([08-C](08-research-appendix/C-research-register.md) §6):
+  - **now:** file the FY 2026-27 LUT and save its ARN in Settings › Tax (LUT export invoices stay blocked until then);
+  - **by 31 October:** credit notes for FY 2025-26 supplies (the law's limit is reporting them by 30 November);
+  - **by 30 November:** the October EDF to your bank, if any export invoice was raised in October;
+  - **every April:** the turnover check.
+- **For the CA and the lawyer:** the OPEN list in [08-C §5](08-research-appendix/C-research-register.md) (one place; it replaces the earlier scattered "VERIFY WITH CA/LEGAL" items).
+- **M5 staging check and approval:**
+  - the M5.0 six steps: sign in to the staging admin; open Dashboard, Leads and a lead; open a client, a proposal and its PDF; in a project, upload and download a file; save one Settings page; sign out;
+  - then try an invoice, a credit note and the Settings › Tax checklist;
+  - tell the lead "done" with any findings, or "approved".
+- **Local test database** (only before someone runs the app on this PC): stop the app, delete `.wrangler\state\v3\d1`, then run `pnpm db:migrate:local` and `pnpm db:seed:local` (the permission check refused the lead's delete).
+- **Staging data for invoicing:** the real company profile (legal name, GSTIN, address) and clearly labelled sample bank details in staging Settings; the LUT ARN when filed.
+- **Zoho:** confirm the `billing@` alias exists (invoice emails and statements); also `hello` and `no-reply`.
 - **Catalogue › Publish on staging** (if not done yet), so the website shows the six service names with "and".
 - **When TecHaust's AWS is needed (Phase 7):** sign the AWS MCP in to the TecHaust account (the lead gives steps).
-- **For the website:** a new headshot; bio facts; the company LinkedIn page URL; WhatsApp Business number, Cal.com link, 2–3 case-study briefs, one social handle per platform; the 3 blog drafts ([07-E](07-content-appendix/E-blog-drafts.md)); the postal address against the GST certificate (VERIFY WITH CA/LEGAL); one line for when the "I'm human" check can't load; before production, the security@ and privacy@ aliases (U-5) and "encrypted off-site backups" on /security.
+- **For the website:**
+  - content: a new headshot; bio facts; the company LinkedIn page URL; WhatsApp Business number; Cal.com link; 2–3 case-study briefs; one social handle per platform; the 3 blog drafts ([07-E](07-content-appendix/E-blog-drafts.md)); one line for when the "I'm human" check can't load;
+  - the postal address, checked against the GST certificate;
+  - before production: the security@ and privacy@ aliases (U-5).
 - **SES key rotation:** the staging IAM key `techaust-ses-sender-staging` by **2027-01-21**.
-- **Time-sensitive compliance** ([08 §0](08-security-compliance.md); all VERIFY WITH CA): U-3 UPI MDR from 15 Oct 2026; U-1 the LUT; U-2 FEMA EDF filing; U-9 GST rules after the 57th GST Council.
-- **Not blocking:** upload the social kit; "since 2019" against the GST registration date (VERIFY WITH CA); wallpapers; Renovate; trademark search (VERIFY WITH LEGAL); printed brand proof and Pantone; business-card phone number; Argon2id timing on a phone; U-6 and U-7.
+- **Not blocking:** upload the social kit; "since 2019" against the GST registration date; wallpapers; Renovate; trademark search (U-8, 08-C RB-34); printed brand proof and Pantone; business-card phone number; Argon2id timing on a phone; U-6 and U-7.
 - **Model menu:** keep **Opus 5.5, medium** for every conversation.
 
 ## Open follow-ups
@@ -50,7 +58,7 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
   - the deploy workflow doesn't enforce "admin API before jobs" (a workflow change: owner's yes);
   - a CI job for Linux PDF visual baselines (workflow change: owner's yes);
   - FEMA extensions (M6.1, Q60); refunds, the payment register and "collected" figures (M6);
-  - the admin API is at 576,894 bytes: plan the third admin Worker before it passes 650,000 (likely during M6);
+  - the admin API is at 587,821 bytes: plan the third admin Worker before it passes 650,000 (likely during M6);
   - not verified for M5: staging CPU of the admin routes (no traffic yet), a real Browser Run render of the invoice, note and statement PDFs, `Intl.DisplayNames` on the deployed runtime, NVDA, real mail clients for the invoice and statement emails.
 - **Batch review fixes (2026-10-26, [run file](runs/batch-review-fixes.md)):** not verified: NVDA on the new date field and its button names, the native calendar popup; the staging rename reported 7 changes for 6 rows (likely a trigger; not checked).
 - **M4.5 (2026-10-26, [run file](runs/m4.5-send-accept.md)):** refill `{{client.contact}}` when a draft's contact changes; one shared list of the 07-N §3 decline reasons in `@techaust/core` (now in admin, portal and jobs); an optional "record Viewed only after a real interaction"; not verified: real mail clients, the certificate on Browser Run (Bengali and Hindi names may fall back to a system font), NVDA, the date-field focus ring in Firefox and Safari.
