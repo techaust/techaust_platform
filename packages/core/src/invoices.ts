@@ -296,10 +296,6 @@ export const INVOICE_CHECKLIST: readonly ChecklistItem[] = [
     blockers: ["unregistered_high_value"],
   },
 ];
-
-/** The keys the Owner may store (an item that is neither locked nor unavailable). */
-export const CHECKLIST_SWITCHABLE = ["bankDetails"] as const;
-
 /**
  * The house rules of the checklist (owner 2026-10-28, 07-S §3; Researched 2026-10-28, Rule 46 CGST Rules, 08-C RA-05 and RA-06): items GST law does not require, which the Owner may switch off:
  * bank details, the payment link or QR, and the authorised signatory (an invoice issued electronically needs no signature). Every other item is statutory and locked; the Settings API
@@ -307,6 +303,11 @@ export const CHECKLIST_SWITCHABLE = ["bankDetails"] as const;
  */
 export const HOUSE_RULE_ITEMS = ["bankDetails", "paymentLink", "signatory"] as const;
 export const isHouseRuleItem = (id: string): boolean => (HOUSE_RULE_ITEMS as readonly string[]).includes(id);
+
+/** The keys the Owner may switch: the house rules whose thing exists (the payment link does not yet), derived so the two lists cannot drift apart (review 2026-10-28, finding 5). */
+export const CHECKLIST_SWITCHABLE: readonly string[] = HOUSE_RULE_ITEMS.filter(
+  (id) => INVOICE_CHECKLIST.find((i) => i.id === id)?.available === true,
+);
 
 /** Whether a checklist item is on for these settings: locked items always, `bankDetails` as stored, `paymentLink` never (not available). */
 export function checklistItemOn(item: ChecklistItem, s: ChecklistSettings): boolean {

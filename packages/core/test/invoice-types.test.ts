@@ -410,7 +410,11 @@ describe("the mandatory-field checklist [ADM-INV-06, Q10, LD31]", () => {
     for (const i of INVOICE_CHECKLIST) expect(i.locked, i.id).toBe(!isHouseRuleItem(i.id));
     expect(INVOICE_CHECKLIST.find((i) => i.id === "paymentLink")?.available).toBe(false);
     expect(INVOICE_CHECKLIST.filter((i) => i.available).length).toBe(17);
-    expect([...CHECKLIST_SWITCHABLE]).toEqual(["bankDetails"]);
+    // derived from the house rules, available ones only (review 2026-10-28, finding 5)
+    expect([...CHECKLIST_SWITCHABLE]).toEqual(["bankDetails", "signatory"]);
+    expect(CHECKLIST_SWITCHABLE.every((id) => isHouseRuleItem(id))).toBe(true);
+    for (const i of INVOICE_CHECKLIST)
+      expect(CHECKLIST_SWITCHABLE.includes(i.id), i.id).toBe(isHouseRuleItem(i.id) && i.available);
     expect([...HOUSE_RULE_ITEMS]).toEqual(["bankDetails", "paymentLink", "signatory"]);
     expect(isHouseRuleItem("signatory")).toBe(true);
     expect(isHouseRuleItem("companyNames")).toBe(false);

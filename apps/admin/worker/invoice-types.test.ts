@@ -629,7 +629,7 @@ describe("the mandatory-field checklist over the API [ADM-INV-06, Q10, docs/09: 
     const view = await getInvoice(o, made.id);
     expect(view.checklist.items).toHaveLength(18);
     expect(view.checklist.settings).toEqual({ bankDetails: true, paymentLink: false });
-    expect(view.checklist.switchable).toEqual(["bankDetails"]);
+    expect(view.checklist.switchable).toEqual(["bankDetails", "signatory"]);
     const item = (id: string) => view.checklist.items.find((i: J) => i.id === id);
     expect(item("bankDetails")).toMatchObject({ locked: false, available: true, on: true, applies: true });
     expect(item("paymentLink")).toMatchObject({ locked: false, available: false, on: false });
