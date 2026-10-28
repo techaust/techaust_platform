@@ -142,7 +142,7 @@ export function invoiceNotesView(a: {
       supplyFy: dl.supplyFy,
       filedOn: dl.filedOn,
       daysLeft,
-      /** 1 October of the deadline year: from this day the banner says how many days are left (07-T §4; 08-C RA-31), and 31 October is the advised last day to issue. The block itself is `passed`. */
+      /** The first day of the month before the cutoff month (1 October by default): from this day the banner says how many days are left, and the last day of that month is the advised last day to issue (07-T §4; 08-C RA-31). The block itself is `passed`. */
       ...creditNoteAdvice(dl),
       passed,
     },

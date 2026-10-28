@@ -337,3 +337,19 @@ Not verified: the SPA screens in a browser (no screen was added; the new lines a
 Open for the lead: (a) finding 7 reads "capped at an annual-return filing date" as the day before filing (`lastDay`); (b) docs/05 lists the D1 tables: `pdf_asks` is new (a throttle, no personal data); (c) the advice date prints as "31 Oct 2027" (the banner's date format), not "31 October"; (d) 0046 and 0047 have new names and contents, so any environment that applied the old ones (the shared local D1) must be reset.
 
 **Lead, after the review fixes (2026-10-28):** accepted the builder's choices: migration 0048 `pdf_asks` (one table, no triggers or foreign keys, nothing personal; added to docs/05 §5.2); the advice date capped at the day before an annual-return filing date (a note dated on the filing day is refused); dates in the banner's own format ("31 Oct 2027"). The shared local D1 still holds the first 0046/0047 (deleting it was refused by the permission check); before the next local run: stop `pnpm dev`, delete `.wranglerstate3`, then `pnpm db:migrate:local` and `pnpm db:seed:local`. Tests and staging are unaffected.
+
+## Re-check (2026-10-28; reviewer Opus 5.5 medium; copied by the lead)
+**APPROVE.** All eleven findings FIXED (targeted tests: core 243, db 95, admin 242 passed). Lows left:
+1. `pdf_asks` rows are never deleted; each GET for a missing copy writes once (follow-up: delete on store or purge in the nightly job).
+2. The claim is released only when the queue can't be reached; a refused render waits up to 5 minutes (accepted by 07-W §5.7; optional follow-up).
+3. Midnight IST: the draft's `noRateDay` reads its own clock (`invoices.ts:861`) instead of the save's `t` (follow-up, a millisecond edge; the Owner would only tick the statement again); `care.ts` now reads the clock once (fixed by the lead).
+4. Stale comment `note-view.ts:145` (fixed by the lead).
+5. The banner text names "30 November" while the cutoff is a setting (approved 07-T §4 copy and the statutory date; follow-up only if the setting may differ from the law).
+
+## Integration (2026-10-28, lead)
+- Web build, `pnpm check`, `pnpm test` on 302fd02: all pass (admin 3,170, core 1,752, db 452, pdf 318, jobs 507, portal 620, web 443, email 128, auth 135, ui 469). The lead's two low fixes: care worker tests pass, Biome clean.
+- Bundles (builder): admin API 587,821 bytes (third Worker threshold 650,000), jobs 851,190.
+- VERIFY tags: 658 → 224 lines, now mostly in older plan and research docs (04 29, 08-A 20, 03 18, 08 10, 01-B 10, 08-B 8, 02 8, 01 8); code files carry "Researched … (08-C)" or "OPEN (08-C …)". A docs-only sweep against 08-C is a follow-up.
+- Not verified: a real Browser Run render (supplier copy, signatory off, IGST advance line), migrations 0046–0048 on staging D1 (they run with the deploy), the invoice screens in a browser by the reviewer (judged from the designer's real-API screenshots), the shared local D1 reset (refused by the permission check; steps above).
+- model-audit: three research analyst runs loaded no skill (kept with reason, as recorded).
+- Usage: builder (claude-sonnet-5-5 / high, skills cloudflare:workers-best-practices, cloudflare:wrangler); designer (claude-opus-5-5 / high, frontend-design); builder fix (sonnet / medium); designer fix (opus / medium); reviewer (opus / high, code-review, security-review, workers-best-practices); review-fix builder (sonnet / high); re-check (opus / medium). 5-hour window 35 % before the fix pass.

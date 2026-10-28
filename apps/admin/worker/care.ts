@@ -466,7 +466,9 @@ export const carePlans = new Hono<AppEnv>()
   .get("/:id", param(idParam), async (c) => {
     const { id } = c.req.valid("param");
     const db = c.env.DB;
-    const today = istToday();
+    // One clock reading for the day and the hour, so the next billing day never mixes two days around midnight IST.
+    const nowMs = Date.now();
+    const today = toIsoDate(istDate(nowMs));
     // The billing read is added only for a role that reads money (Sales never): one more statement in the same batch.
     const money = decide(actor(c).role, "clients.finance.read") !== "deny";
     const [plans, terms, status, usage, gone, billing] = await db.batch<Record<string, unknown>>([
@@ -503,7 +505,7 @@ export const carePlans = new Hono<AppEnv>()
               { startDate: d.plan.start_date, billingDay: d.plan.billing_day, status: d.plan.status },
               d.statuses,
               today,
-              istHourOf(Date.now()),
+              istHourOf(nowMs),
             ),
           }
         : {}),
