@@ -52,7 +52,54 @@ Each area gets a fresh audit with no anchoring on earlier reviews: code, tests, 
   Each audit lists these as **not verified**, never as passed.
 
 ## Findings
-_(one section per area, copied in by the lead)_
+
+### A0 data and money core: analyst claude-opus-5-5/high, 2026-10-29 01:00–01:45 IST, on 6a260d3d
+1. **High:** two test helpers take today as the UTC date while the server uses IST.
+   - Where: `apps/admin/worker/test-notes.ts:62` and `note-research.test.ts:230-231`.
+   - Effect: 6 tests (invoice-notes, note-research, reports-totals) fail every day from 00:00 to 05:29 IST, so CI is red about 23 % of the day. Proven at 01:22 IST.
+   - Fix: use `todayIso()` (`test-invoice-types.ts:34`), and add a guard test against `toISOString().slice(0, 10)` in test helpers. **Goes into the M5 owner-fix round** (CI).
+2. **Medium:** two series can print the same number in one FY (Rule 46(b)).
+   - Where: `packages/core/src/schemas/settings.ts:290-300`; the unique index is on (`number_display`, `series`, `version`).
+   - Fix: refuse a save where two series' formats clash (distinct prefixes), plus a partial unique index on `number_display` for invoice-family types (index-only migration).
+3. **Medium, owner question (OPEN, 08-C RA-10):** an invoice the client has already opened in the portal can still be voided.
+   - Where: `apps/admin/worker/invoices.ts:1168-1176`, `packages/core/src/invoices.ts:491`. The portal lists every frozen invoice at once (`apps/portal/worker/invoices.ts:27`) and records `viewed_at`.
+   - Options: (a) a portal view also blocks the void (recommended); (b) the portal hides invoices until they are sent.
+4. **Medium:** nothing in the database ties `balance_minor` to total − paid − credited. `paid_minor` and `balance_minor` are mutable after freeze, and `documents_ledger_bounds` checks only the bounds.
+   - Fix: a new trigger on frozen invoice-family documents except credit notes: `paid_minor` ≥ 0 and `balance_minor` = max(0, total − paid − credited). Before M6.1.
+5. **Low:** the e-invoice fields (`irn`, `ack_no`, `ack_date`, `signed_qr`) stay editable after issue, and no PDF renders the IRN QR (ADM-INV-14 partial).
+   - Fix: make them set-once by re-creating `documents_frozen_update`. The QR block is a follow-up for when e-invoicing applies (OPEN: threshold).
+6. **Low:** a full proposal or estimate series gives a generic 500, not `series_full` (`packages/db/src/issue.ts:119-128` has no max guard).
+7. **Low:** tests read the clock once at module load and break across IST midnight or 1 April (`documents-send.test.ts:28`, `reports-totals.test.ts:56`, `dashboard-finance.test.ts:20`).
+   - Fix: compute the value inside each test, or pin the clock (`vi.useFakeTimers({toFake:["Date"]})` at 12:00 IST, mid-month, mid-FY).
+8. **Low:** the credit-note INR cap passes when a note's `total_inr_minor` is NULL on a USD parent (`triggers.ts:752-753`). Add a NULL guard by re-creating the trigger.
+9. **Low:** the LUT-of-the-receipt-FY and the discount-after-sale (from 2026-11-01) rules have no trigger, only core and the freeze WHERE. Either add issue-time triggers or correct CLAUDE.md's "every layer". Lead: add the triggers.
+10. **Low, docs:** docs/04 §9 lacks the rows for `invoices.ims`, `invoices.send` and `clients.careAutoIssue`.
+
+**Partial requirements:**
+- ADM-INV-14 (finding 5).
+- ADM-SET-04 (finding 2).
+- ADM-INV-02 and -09: the ledger identity (finding 4).
+
+**Checked and correct:**
+- No rebuild after 0006.
+- Gap-free numbering in one batch; issue date, FY and FX day from one instant.
+- The credit cap in four layers; the void rule all in SQL.
+- Care billing day ≤ 28.
+- Core: 1,755 tests; coverage 98.97 % statements, 98.05 % branches; the tax and gst 100 % gates pass.
+- Settings defaults match 08-C.
+
+**Not verified:**
+- the full db, admin, jobs and portal suites;
+- every CHECK constraint and the seed SQL line by line;
+- the GST CSV formats;
+- tax-engine rounding beyond `lines.ts`;
+- the jobs IST-hour dispatch;
+- whether finding 8 can actually happen.
+
+**Lead's triage:**
+- Finding 1 goes into the M5 owner-fix round.
+- Findings 2 and 4–10 go into one A0 fix task (Tier A, migrations: index and triggers only).
+- Finding 3 waits for the owner.
 
 ## Handover
 _(written at the end of each conversation)_
