@@ -128,8 +128,6 @@ export const TOASTS = {
 
 // ---- lines 07-K lacked, approved word for word in 07-Q (2026-10-26) --------------------------------------------------
 
-export const PLACEHOLDER_TAG = "[Placeholder]";
-
 export const PENDING = {
   milestonesEmpty: "No milestones yet.",
   notesEmpty: "No notes yet.",

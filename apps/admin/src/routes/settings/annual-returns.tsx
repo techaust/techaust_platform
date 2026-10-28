@@ -1,5 +1,5 @@
 // Settings › Tax: the day the annual return (GSTR-9) of each financial year was filed (M5.3; ADM-SET-04, ADM-INV-11; 07-T §4, §8; s.34(2), Q33;
-// VERIFY WITH CA/LEGAL). Once filed, credit notes for invoices of that year are blocked from that day. One date per year, no list to build: the
+// Researched 2026-10-28, 08-C RA-03). Once filed, credit notes for invoices of that year are blocked from that day. One date per year, no list to build: the
 // two last completed years are always offered (a return is filed after its year ends), and any year already saved; an empty date is no return.
 // The dates save with the rest of the tax form.
 import { issueDateOf } from "@techaust/core/invoices";

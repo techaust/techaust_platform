@@ -1,7 +1,7 @@
 // The signature image on Settings, Company (M4.4; ADM-SET-01): upload, replace, or remove it (with a confirmation). It saves on its own,
 // outside the company form: each change answers the company settings' new version, which the form takes on (`adopt`). The preview is the
-// way it prints: on white paper, above the line "Authorised signatory" (from M5.2, on tax invoices only; VERIFY WITH CA/LEGAL). The
-// file is checked here first (PNG or JPEG, up to 256 KB) and again by the server by its bytes. Wording: 07-P §3–§4 (PENDING the owner).
+// way it prints: on white paper, above the line "Authorised signatory" (from M5.2, on tax invoices only; optional on an electronic invoice: Researched 2026-10-28, 08-C RA-06). The
+// file is checked here first (PNG or JPEG, up to 256 KB) and again by the server by its bytes. Wording: 07-P §3–§4 and 07-R §7.
 import type { SignatureRef } from "@techaust/core/settings";
 import { useEffect, useId, useRef, useState } from "react";
 import { errorText, RequestError, signatureApi, signatureSrc } from "../../api.ts";

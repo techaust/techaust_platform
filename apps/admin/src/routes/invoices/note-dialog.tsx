@@ -1,8 +1,9 @@
-// Issuing a credit or debit note (M5.3; ADM-INV-11, ADM-INV-01 "Debit Note", ADM-APR-01; words 07-T §3, §7, §8; VERIFY WITH CA/LEGAL). One dialog,
-// two steps, the pattern of the invoice's issue:
+// Issuing a credit or debit note (M5.3; ADM-INV-11, ADM-INV-01 "Debit Note", ADM-APR-01; words 07-T §3, §7, §8, §9; Researched 2026-10-28, 08-C RA-02,
+// RA-03, RA-22). One dialog, two steps, the pattern of the invoice's issue:
 //   1. what to credit or add: a credit note by some lines (before GST, each with what is left on it), by an amount (GST included; the largest note not
-//      above it, and "Use {closest}" when rounding can't reach it exactly) or the whole invoice; a debit note by lines; the reason. Pressing the
-//      issue button saves the draft (the server works the note out from the invoice as it is now; the screen never does);
+//      above it, and "Use {closest}" when rounding can't reach it exactly) or the whole invoice, then the reason; a debit note's reason comes first,
+//      because it decides what is asked: "Tax charged too low" asks only the tax to add (Q35), the others the lines. Pressing the issue button saves
+//      the draft (the server works the note out from the invoice as it is now; the screen never does);
 //   2. the note as it will be issued: its lines ("Against line {n}"), its totals, the effect on the invoice, the final statement and, for the Owner, a
 //      fresh code. Staff send it to the Owner instead ("Request issue").
 // A draft left open (one per invoice and kind) is opened again here, with its request as it was saved. Every amount is the server's, through core.
@@ -28,6 +29,7 @@ import {
   emptyNoteForm,
   firstErrorKey,
   issueLabel,
+  isTaxOnly,
   lineHint,
   NOTE_COPY,
   type NoteBlockerIn,
@@ -39,7 +41,9 @@ import {
   noteFormOf,
   noteIssuedToast,
   rateLine,
+  reasonHint,
   reasonsOf,
+  taxToAddHint,
 } from "../../lib/notes.ts";
 import {
   type InvoiceWithNotes,
@@ -177,6 +181,8 @@ function NoteDialogBody(props: {
         next[form.mode === "amount" ? "amount" : "lines"] = text;
       else if (e.code === "note_reason_required")
         next[form.reasonCode === "other" ? "reasonText" : "reason"] = text;
+      else if (e.code === "debit_tax_only_invalid") next.tax = text;
+      else if (e.code === "discount_reason_not_in_force") next.reason = text;
       else setFormError(text);
     } else setFormError(noteErrorText(e, kind, currency));
     setErrors(next);
@@ -270,6 +276,42 @@ function NoteDialogBody(props: {
     );
 
   const primary = asks ? NOTE_COPY.requestIssue : issueLabel(kind);
+  const taxOnly = isTaxOnly(kind, form.reasonCode);
+  const reason = (
+    <FormField
+      id={fieldId("reason")}
+      label={kind === "credit" ? NOTE_COPY.reasonLabel : DEBIT_REASON_LABEL}
+      hint={reasonHint(form.reasonCode)}
+      error={errors.reason}
+      className="note-reason"
+    >
+      {(a) => (
+        <select
+          {...a}
+          value={form.reasonCode}
+          disabled={busy}
+          onChange={(e) => {
+            set({ reasonCode: e.target.value });
+            if (errors.reason || errors.reasonText || errors.tax || errors.lines)
+              setErrors((x) => ({
+                ...x,
+                reason: undefined,
+                reasonText: undefined,
+                tax: undefined,
+                lines: undefined,
+              }));
+          }}
+        >
+          <option value=""> </option>
+          {reasonsOf(kind).map((r) => (
+            <option key={r.code} value={r.code}>
+              {r.label}
+            </option>
+          ))}
+        </select>
+      )}
+    </FormField>
+  );
   return step === "compose" ? (
     <form
       className="note-dialog"
@@ -281,6 +323,7 @@ function NoteDialogBody(props: {
     >
       <div className="dialog__body note-dialog__body">
         {kind === "debit" && <p className="note-dialog__lede">{NOTE_COPY.debitBody}</p>}
+        {kind === "debit" && reason}
         {kind === "credit" && (
           <fieldset className="radios note-modes" disabled={busy}>
             <legend className="visually-hidden">{noteDialogTitle(kind, p.number ?? "")}</legend>
@@ -309,7 +352,7 @@ function NoteDialogBody(props: {
           </fieldset>
         )}
 
-        {form.mode === "lines" && (
+        {form.mode === "lines" && !taxOnly && (
           <LinePicker
             kind={kind}
             uid={uid}
@@ -376,32 +419,34 @@ function NoteDialogBody(props: {
           <p className="note-full">{amountHint(moneyText(totalLeft, currency))}</p>
         )}
 
-        <FormField
-          id={fieldId("reason")}
-          label={kind === "credit" ? NOTE_COPY.reasonLabel : DEBIT_REASON_LABEL}
-          error={errors.reason}
-          className="note-reason"
-        >
-          {(a) => (
-            <select
-              {...a}
-              value={form.reasonCode}
-              disabled={busy}
-              onChange={(e) => {
-                set({ reasonCode: e.target.value });
-                if (errors.reason || errors.reasonText)
-                  setErrors((x) => ({ ...x, reason: undefined, reasonText: undefined }));
-              }}
-            >
-              <option value=""> </option>
-              {reasonsOf(kind).map((r) => (
-                <option key={r.code} value={r.code}>
-                  {r.label}
-                </option>
-              ))}
-            </select>
-          )}
-        </FormField>
+        {taxOnly && (
+          <FormField
+            id={fieldId("tax")}
+            label={NOTE_COPY.taxToAdd}
+            hint={taxToAddHint(p.number ?? "")}
+            error={errors.tax}
+            className="note-amount"
+          >
+            {(a) => (
+              <div className="money-in">
+                <span aria-hidden="true">{currency === "INR" ? "₹" : "$"}</span>
+                <input
+                  {...a}
+                  inputMode="decimal"
+                  autoComplete="off"
+                  value={form.tax}
+                  disabled={busy}
+                  onChange={(e) => {
+                    set({ tax: e.target.value });
+                    if (errors.tax) setErrors((x) => ({ ...x, tax: undefined }));
+                  }}
+                />
+              </div>
+            )}
+          </FormField>
+        )}
+
+        {kind === "credit" && reason}
         {form.reasonCode === "other" && (
           <FormField id={fieldId("reasonText")} label={NOTE_COPY.describeReason} error={errors.reasonText}>
             {(a) => (

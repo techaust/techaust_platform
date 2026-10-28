@@ -128,7 +128,7 @@ export const shell = {
     accept: "Accept analytics",
     reject: "Reject",
     preferences: "Preferences",
-    // 07-A §5 (cookie policy draft, VERIFY WITH CA/LEGAL).
+    // 07-A §5 (cookie policy; nothing needs consent today: Researched 2026-10-28, 08-C RB-26).
     bannerText: "Google Analytics loads only if you click “Accept analytics”.",
     settingsTitle: "Cookie settings",
     settingsIntro:

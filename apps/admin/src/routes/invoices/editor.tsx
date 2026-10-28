@@ -41,7 +41,6 @@ import {
   dueNote,
   INV_COPY,
   INV_ERRORS,
-  INV_PLACEHOLDER,
   type InvAction,
   type InvEditorState,
   initInvoiceEditor,
@@ -52,6 +51,7 @@ import {
   issueLabelFor,
   requestLine,
   typeLabel,
+  UNKNOWN,
 } from "../../lib/invoices.ts";
 import { type InvoicePatch, type InvoiceView, invoicesApi } from "../../lib/invoices-api.ts";
 import { useUser } from "../../session.tsx";
@@ -338,7 +338,7 @@ export function InvoiceEditor({ view, reload }: { view: InvoiceView; reload: () 
               <dd>
                 {v.dueDatePreview
                   ? dueNote(dayText(v.dueDatePreview) ?? v.dueDatePreview, v.dueDays)
-                  : INV_PLACEHOLDER}
+                  : UNKNOWN}
               </dd>
             </dl>
             <div className="send-panel__actions">
@@ -407,7 +407,7 @@ export function InvoiceEditor({ view, reload }: { view: InvoiceView; reload: () 
           {v.milestone && (
             <MilestoneOrigin
               milestone={v.milestone.title}
-              project={projectName ?? INV_PLACEHOLDER}
+              project={projectName ?? UNKNOWN}
               href={
                 allowed(user.role, "projects.read")
                   ? `/projects/${encodeURIComponent(v.milestone.projectId)}`

@@ -17,7 +17,6 @@ import {
   maxItemIndex,
   milliToQty,
   PENDING,
-  PLACEHOLDER_TAG,
   publishProblems,
   qtyToMilli,
   rebaseEntry,
@@ -27,6 +26,7 @@ import {
   templateTitle,
   unknownIn,
 } from "./catalogue.ts";
+import { COPY_GAP as PLACEHOLDER_TAG } from "./copy-gap.ts";
 
 const ENTRY: CatalogueEntry = {
   id: "i1",

@@ -163,3 +163,69 @@ client and contact export contents (`clients.ts` 951, 956, 965, 995), the erase 
 `pnpm check` (lint, typecheck, binding guard, content lint, Worker config guard, migration guard): ok. `pnpm lint` (whole repo, once): ok. Package tests through `tools/heavy.sh`: core 1,748 passed (coverage gate ok), db 450, admin worker 2,799 (the `src/lib` tests of the designer's files fail by design, see above), jobs 506, pdf 305, email 128, portal 620, web (research-guards, content-m23, content-lint, link-check, dist-checks) passed. Builds: admin front 98,886 bytes (limit 150,000), **admin API 585,765** (limit 800,000; was 576,894; third Worker at 650,000), portal not rebuilt, **jobs 851,190** (limit 1,000,000; was 844,916); startup 59 ms and 60 ms (limit 200). Dev servers: none started.
 Not verified: the PDF render of a supplier copy in real Browser Run (the tests use the fake binding); `wrangler` dry-run of the migrations on staging D1 (local workerd only); the CBIC page re-read of s.34 after 1 Nov; the SPA against these contract changes (the designer builds those).
 Open questions: signatory switch (above); whether `GET .../pdf/supplier` should also be offered on a note's own page (it is one route for every type); docs/04 §9 needs the row `invoices.supplierCopy` (Owner, Accountant).
+- **Designer, 2026-10-28 (contract notes):** (a) the issued invoice view needs the FY that had no LUT to print S §9's line on screen; the SPA reads `advance.igstNoLutFy` (a name I chose; builder or lead, add it or say the real one). (b) A tax-only debit note is sent with `lines: []` (and `mode: "lines"` in `fields.note`) plus `taxAmountMinor`: the contract didn't say. (c) `checklist_item_statutory` has no 07 line; the screen never offers that switch. (d) The certificate line of 07-A §9 is the builder's (pdf).
+
+## Designer report (Opus 5.5 high, 2026-10-28)
+Branch `feat/rw-designer` (from `origin/feat/research-and-wording` 2a34ba0; pushed). Commits: 9d8c92e (admin and portal wording, new UI), a410b0a (legal pages and the §9 notices), c52a27e (visual-pass fixes), then this report. Only `apps/admin/src`, `apps/portal/src`, `apps/web/src` and two `apps/web/test` files (their assertions follow the new legal version data) changed; no worker, package, jobs or script file. No hosted service touched. Local data fake ("(sample)", `@example.test`). Every dev server I started (admin, portal, website) is stopped; the browser is closed.
+
+### Skills
+- **`frontend-design:frontend-design`: loaded first.** What it changed: this is wording inside an approved system, so the direction was restraint: no new colours, cards or motion; each new piece reuses an existing device (the LUT banner's warning rule for the Q37 choice; the checklist's lock for statutory lines and one quiet outlined "House rule" tag for the rest; a text button under the PDF for the supplier copy, so the client's copy stays the panel's action). One change after looking: the badge now sits on its own line under every house rule (it had wrapped on one and not another).
+- `dataviz`: not loaded (no chart, tile or dashboard changed). The other §9 rows (Workers, Cloudflare, SES) don't apply to SPA screens.
+
+### Screens and copy placed
+1. **Mechanisms removed** (SPA): `U`, `APPROVED_07U` (admin `lib/invoice-send.ts`, portal `copy-invoices.ts`), `V`, `P`, `APPROVED_07V`, `unmark` (`lib/reports.ts`), `V07` (`lib/audit.ts`), `INV_PLACEHOLDER` (`lib/invoice-types.ts` and its re-exports, route fallbacks), `PLACEHOLDER_TAG` (`lib/catalogue.ts`, `lib/projects.ts`). Every 07-R/S/T/U/V line shows unmarked. A line no approved appendix has goes through one helper, `apps/admin/src/lib/copy-gap.ts` (`gap()`, `COPY_GAP` = "[Placeholder]"), so the gaps are greppable in one place (list below). Data fallbacks that were `INV_PLACEHOLDER` (issuer name, void-by name, project name, due preview, a blocker's FY/date/days) are now "…" (`UNKNOWN`), as the send preview already did.
+2. **07-S:** checklist intro, locked hint, "House rule" badge, INR export confirmation (Q8), `advance_lut_missing` and the §9 route lines, the IGST note, the advance line with IGST (on the issued invoice when the view sends `advance.igstNoLutFy`), `fx_date_invalid` (§8 new line; the day is the blocker's `date`), `fx_same_day_exists`.
+3. **07-T:** debit reasons in §9 order, "Tax charged too low" hint, "Tax to add" and hint, "Discount after sale" hint, `debit_tax_only_invalid`, `discount_reason_not_in_force`, `debit_parent_fully_credited`, Q66 no-closest line, note-draft `content_changed`, GSTR-9 hint, the deadline banner (before / from 1 October / passed).
+4. **07-U:** all lines unmarked; the care overage note (§9) in `lib/care.ts`.
+5. **07-V:** all lines unmarked; §11 changes ("GST date in 30 days", layout note, EDF lede, realisation lede, "a different realisation period may apply" in the row line and the warning, extension note, B2CL and INR-period hints). Singulars of 07-V plurals follow their plural line; words that exist in 07-V §3 headers ("Taxable value", "Table", "Place of supply"), 07-U §3 ("Credit note"), 07-V §10 ("Open export realisation") and 07-Q POR3 ("Show more") are used as written.
+6. **07-R §7:** signature hint (Settings › Company, replaces 07-P's), "Download supplier copy".
+7. **New UI:** Settings › Tax checklist (statutory locked; Bank details, Payment link or QR, Authorised signatory with the badge, which is also the switch's description; `signatory` saved once stored or turned off); "Download supplier copy" for Owner and Accountant on tax, export, credit and debit notes (asks `/pdf/supplier` first; 409 `pdf_pending` toasts "PDF being prepared…", other failures "The PDF couldn't be made. Try again."; `fetchSupplierCopy`, `SupplierCopy`, an `extra` slot on `PdfPanel`); debit dialog with the reason first and "Tax to add" for "Tax charged too low"; reason hints; the deadline banner from `deadlineWarnFrom` (fallback: within 30 days) with the 31 October advice until `adviseIssueBy`; the advance dialog's Q37 choice ("Save the LUT first" links to Settings › Tax #luts; "Issue with IGST" is a pressed toggle that sends `route: "igst"` and shows the IGST note; focus moves to its heading); the "no rate was published that day" checkbox on an earlier rate date, sent as `noRateThatDay: true` only when ticked.
+8. **07-A v0.3** (`apps/web/src/content/legal-pages.ts`, `legal.ts`): privacy §8, refunds items 5 and 6; privacy and refunds at **0.2**, `effective` "2026-10-28" (literal). Changes rows: privacy "Complaints are resolved within one month, and you get a copy of your complaint as we recorded it." (07-A's v0.3 row without its "(not "aim to")" aside); refunds "Refunds to another account in your own name on request; the GST time limit for credit notes." (07-A §3). Every VERIFY tag on the legal pages and their `.astro` files replaced with its 08-C ID.
+9. **§9 notices:** portal sign-in under the button ("Privacy notice" links to `https://techaust.com/privacy`), portal Accept confirmation above the buttons (`NOTICES` in `copy-documents.ts`), staff enrolment step 1 under Continue (`routes/invite.tsx`). The certificate line is the builder's.
+
+### Coded against contract fields the worker doesn't send yet
+`route` and 409 `advance_lut_missing` with `details.fy` (also read at the top level; `api.ts` reads `fy`, `date`, `maxAgeDays` from either); `noRateThatDay` (body and view) and 400 `fx_same_day_exists` / `fx_date_invalid` (with `date`, `maxAgeDays` when sent, else the server's words); `taxAmountMinor` (body, `fields.note`, stored `request`) and `tax_charged_too_low` in core's `DEBIT_REASONS` (until core has it the SPA inserts it before "Other"; a test keeps every core code in the list); `discount_reason_not_in_force`; `GET /invoices/:id/pdf/supplier`; `deadlineWarnFrom` / `adviseIssueBy`; `houseRule` on checklist items and `invoiceChecklist.signatory`; `advance.igstNoLutFy` (my name, see the contract note above).
+
+### Lines still missing from 07 (shown with "[Placeholder]"; proposals for one approval pass)
+1. FX checkbox "No rate was published that day".
+2. Debit reason label "Reason (required, printed on the debit note)".
+3. Invoices list with filters hiding every row: "No invoices match these filters".
+4. Blocker `line_text_placeholder`: "Line {n}: a line's wording isn't approved yet."
+5. M5.4 review lines 07-U lacks: the send hint and two lines with "Can see finance", "Waiting for the PDF. The email goes as soon as it's made.", "Waiting for the PDF", "Payment reminders are paused too. You can resume them on this page.", "Reminders paused.", "Reminders resumed.", "Skipped: missed while reminders were paused", the care toggle hint (07-U §6's approved hint says "billing contacts with portal access" and "anyone can turn it off", wrong on this screen, so the L7 version stays marked), "Not in effect", the care plan's billing section (9 lines), portal "Sign in to your client portal to see all your invoices and payment requests in one place."
+6. 07-V lacks: "Section", "Documents", "Cancelled. No files were made.", "Overall", "Files", the two HSN/SAC download rows, "None in this period.", "Show" (twice), "Output tax", "No export invoices in this list.", "Statement entries", "Export deadlines can't be worked out until the Tax settings are saved again.", "Open invoices", and the three realisation-period errors in Settings › Tax.
+
+### Screenshots (`.logs/rw-designer/` in my worktree)
+SIMULATED = view or answer changed in the browser (a `fetch` wrapper; the contract's fields and a local PDF don't exist yet); SAMPLE = the portal's dev-only sample API.
+- `admin-enrolment-notice-1280-light`, `-375-dark`: enrolment notice under Continue.
+- `settings-tax-checklist-1280-light`, `-375-dark`: locks, house-rule badges, switches.
+- `settings-signature-hint-375-dark`: R §7 hint.
+- `invoice-supplier-copy-deadline-info-1280-light-SIMULATED`: supplier copy under the PDF, the deadline's info line.
+- `invoice-supplier-copy-pending-toast-1280-light-SIMULATED`: copy still being made.
+- `invoice-deadline-warning-1280-light-SIMULATED`: the 1 October warning.
+- `debit-dialog-tax-too-low-1280-light-SIMULATED`, `debit-dialog-tax-too-low-error-375-dark-SIMULATED`: reason first, tax field, its error.
+- `credit-dialog-discount-hint-375-dark-SIMULATED`: discount-after-sale hint.
+- `advance-lut-missing-choice-375-dark-SIMULATED`, `advance-igst-chosen-375-dark-SIMULATED`, `advance-igst-chosen-1280-light-SIMULATED`: Q37 choice, no-rate checkbox, IGST note.
+- `keyboard-advance-route-focus-1280-dark-SIMULATED`: focus ring on "Issue with IGST".
+- `reports-realisation-1280-dark`: new lede and notes, no marks.
+- `portal-signin-notice-1280-light`, `-375-dark`; `portal-accept-notice-1280-light-SAMPLE`, `-375-dark-SAMPLE`; `portal-invoices-unmarked-1280-light-SAMPLE`.
+- `web-privacy-grievance-1280-dark`, `web-privacy-changes-1280-dark` (0.2 first), `web-refunds-375-light`.
+
+### Checks run
+- `biome check --write` on the changed files: clean. `tsc -p tsconfig.json` admin (`rwd-tsc-admin3`) and portal (`rwd-tsc-portal2`): exit 0.
+- Admin `vitest run src` (`rwd-test-admin-src2`): 19 files, **351 passed**. Portal `vitest run src` (`rwd-portal`): **41 passed**. Web `test` (`rwd-web-test2`): 21 files, **423 passed** (two assertions changed on purpose: privacy 0.2 and its lastmod). Web build (`rwd-web-build`): exit 0, dist checks pass.
+- axe (wcag2a, 2aa, 21aa, 22aa): admin Settings › Tax, the issued invoice, the debit dialog with its error, the proforma; portal sign-in, the Accept confirmation, the invoice list; /privacy, /refund-policy: **0 violations** each.
+- Keyboard: the route choice takes focus on its heading, Tab reaches both options with a visible ring; house-rule switches are named by the label and described by the badge. Console: only 401s before sign-in and my own setup requests.
+- Whole-repo `pnpm lint` once (`rwd-lint`): exit 0; its 10 warnings are in files I didn't touch.
+
+### Not verified
+- Nothing against the builder's real API: every new contract path was seen only SIMULATED. The real supplier-copy download and the "passed" deadline state were not shown.
+- Admin worker tests, `pnpm check` and the full `pnpm test` not run (no worker file changed; the lead's integration).
+- 30 VERIFY tags remain in my files outside the legal pages and the invoice libraries (settings and clients screens, web price notes, `company.ts`); several have no clear 08-C row. Not changed.
+
+### Open questions (lead)
+1. The 07-U §6 care toggle hint: the approved line as written, or approve the marked L7 version?
+2. The privacy "Changes" note wording above: keep?
+3. After 31 October the banner drops "Issue it by 31 October…" and keeps "Only {days} days left for a credit note on this invoice." Intended reading of T §4?
+4. The admin `VerifyNote` component still prints "VERIFY WITH CA/LEGAL" as a visible tag on five screens; its words need the lead's choice now that tags are "Researched/OPEN".
+5. The portal's "Privacy notice" link is `https://techaust.com/privacy` (no website-origin setting in the portal; on staging it leaves for production). A `WEBSITE_ORIGIN` var would be the builder's.
+6. The marked lines above, for one approval pass.

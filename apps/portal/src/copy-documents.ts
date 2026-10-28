@@ -4,7 +4,7 @@
 //   shown as written;
 // - PENDING: lines 07-N didn't have, approved word for word in 07-Q (POR1 to POR4), shown without a tag (the name keeps the
 //   history of where they came from).
-// English (India/UK spelling), "and" never "&", no banned phrases (07 §1.3). Acceptance and evidence wording: VERIFY WITH CA/LEGAL.
+// English (India/UK spelling), "and" never "&", no banned phrases (07 §1.3). Acceptance and evidence wording: Researched 2026-10-28, 08-C RB-19, RB-20 (the ground for recording the IP address and browser is OPEN, RB-12).
 import type { OfferKind, OfferStatus } from "./api.ts";
 import { COPY } from "./copy.ts";
 
@@ -174,4 +174,20 @@ export const PENDING = {
   // Too many failed link checks from one network (a 429 on the email link; copy.ts has only the sign-in wording).
   linkRateLimited: (wait: string) =>
     `Too many attempts from this network. Wait ${wait}, then open the link again.`,
+} as const;
+
+/**
+ * 07-A §9 (2026-10-28, from 08-C): the short notices at the point where data is collected. The lawful ground for recording the IP address and browser
+ * is OPEN (08-C RB-12); the evidence an acceptance keeps is Researched 2026-10-28, BSA 2023 s.63(4) (08-C RB-19).
+ */
+export const NOTICES = {
+  /** Above the Accept button of the confirmation step. */
+  accept:
+    "When you accept, we record your typed name, the time, your IP address and browser, and a fingerprint of this exact document, as the record of your acceptance.",
+  /** Under the sign-in button: the sentence, then "See our [Privacy notice](/privacy)." with the link on the website's privacy page. */
+  signIn: "We record the time, your IP address and browser when you sign in, as a security record.",
+  signInSee: "See our",
+  privacyNotice: "Privacy notice",
+  /** The website's privacy notice: the portal has no page of its own at /privacy, so the link names the public site. */
+  privacyHref: "https://techaust.com/privacy",
 } as const;

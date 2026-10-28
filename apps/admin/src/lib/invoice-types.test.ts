@@ -8,6 +8,7 @@ import {
   ADVANCE_FIELDS,
   advanceFocus,
   advanceLine,
+  advanceLutMissing,
   arrivedEarlierMonth,
   CHECKLIST_LABELS,
   checkAdvance,
@@ -21,8 +22,9 @@ import {
   fxFormOf,
   fxLine,
   fyLabel,
-  INV_PLACEHOLDER,
+  HOUSE_RULE_IDS,
   INVT_COPY,
+  isHouseRule,
   lutDueBanner,
   lutLine,
   lutMissingBanner,
@@ -30,6 +32,7 @@ import {
   proformaDraftTitle,
   proformaLockedLine,
   rateDateFollows,
+  rateDayEarlier,
   splitAdvanceRefusal,
   warn25Line,
 } from "./invoice-types.ts";
@@ -42,7 +45,7 @@ describe("07-S word for word", () => {
       "Enter the RBI or FBIL reference rate for 27 Oct 2026. If none was published that day, use the last published rate. The rate is stored with the invoice and used for its INR values in your GST return.",
     );
     expect(INVT_COPY.inrConfirm).toBe(
-      "This export invoice is in INR. Exports are usually invoiced in foreign currency. Issue it in INR anyway?",
+      "This export invoice is in INR. It counts as an export only if the payment reaches you in a way the RBI allows for exports in rupees: check with your bank. Issue it in INR anyway?",
     );
     expect(FX_SOURCE_LABELS).toEqual({
       FBIL: "FBIL reference rate",
@@ -98,7 +101,10 @@ describe("the seven new blocker lines (07-S §3, §8)", () => {
       "Add the SWIFT details of a bank account in Settings › Bank for export invoices.",
     );
     expect(blockerLine({ code: "fx_date_invalid", date: "2026-10-27" }, "USD", { maxAgeDays: 4 })).toBe(
-      "The rate date must be the invoice date or up to 4 days before it.",
+      "Use the rate published on 27 Oct 2026. If none was published that day, use the last one published before it, at most 4 days earlier.",
+    );
+    expect(blockerLine({ code: "fx_same_day_exists", date: "2026-10-27" }, "USD")).toBe(
+      "A rate was published on 27 Oct 2026, so use that day's rate.",
     );
   });
 
@@ -134,9 +140,10 @@ describe("the seven new blocker lines (07-S §3, §8)", () => {
     expect(blockerTarget({ code: "fx_date_invalid" }, "c1")).toEqual({ kind: "fx" });
   });
 
-  it("an unknown FY or days stay marked, never guessed", () => {
-    expect(blockerLine({ code: "lut_missing" }, "USD")).toContain(`FY ${INV_PLACEHOLDER}`);
-    expect(blockerLine({ code: "fx_date_invalid" }, "USD")).toContain(`up to ${INV_PLACEHOLDER} days`);
+  it("an unknown FY, day or number of days is shown as missing, never guessed", () => {
+    expect(blockerLine({ code: "lut_missing" }, "USD")).toContain("FY …");
+    expect(blockerLine({ code: "fx_date_invalid" }, "USD")).toContain("published on …");
+    expect(blockerLine({ code: "fx_date_invalid" }, "USD")).toContain("at most … days");
   });
 });
 
@@ -178,23 +185,27 @@ describe("badges", () => {
 
 describe("the exchange rate as typed (Q7, core's parse)", () => {
   it("accepts up to 4 decimals above zero; anything else is 07-S's error", () => {
-    expect(checkFx({ rate: "83.1234", date: "2026-10-27", source: "FBIL", note: "" })).toEqual({
-      ok: true,
-      value: { rate: "83.1234", date: "2026-10-27", source: "FBIL" },
-    });
+    expect(checkFx({ rate: "83.1234", date: "2026-10-27", source: "FBIL", note: "", noRate: false })).toEqual(
+      {
+        ok: true,
+        value: { rate: "83.1234", date: "2026-10-27", source: "FBIL" },
+      },
+    );
     for (const bad of ["", "0", "83.12345", "-1", "1e2", "83,12"])
-      expect(checkFx({ rate: bad, date: "2026-10-27", source: "RBI", note: "" })).toEqual({
+      expect(checkFx({ rate: bad, date: "2026-10-27", source: "RBI", note: "", noRate: false })).toEqual({
         ok: false,
         errors: { rate: INVT_COPY.fxError },
       });
   });
 
   it("'Other' needs its description; the stored label maps back to its code", () => {
-    expect(checkFx({ rate: "83", date: "2026-10-27", source: "OTHER", note: " " })).toEqual({
+    expect(checkFx({ rate: "83", date: "2026-10-27", source: "OTHER", note: " ", noRate: false })).toEqual({
       ok: false,
       errors: { note: "Describe where the rate comes from." },
     });
-    expect(checkFx({ rate: "83", date: "2026-10-27", source: "OTHER", note: " Sample bank rate " })).toEqual({
+    expect(
+      checkFx({ rate: "83", date: "2026-10-27", source: "OTHER", note: " Sample bank rate ", noRate: false }),
+    ).toEqual({
       ok: true,
       value: { rate: "83", date: "2026-10-27", source: "OTHER", sourceNote: "Sample bank rate" },
     });
@@ -205,6 +216,7 @@ describe("the exchange rate as typed (Q7, core's parse)", () => {
       date: "2026-10-26",
       source: "RBI",
       note: "",
+      noRate: false,
     });
     expect(
       fxFormOf({ rate: "83.1", date: "2026-10-26", source: "Sample bank rate" }, "2026-10-27"),
@@ -212,7 +224,13 @@ describe("the exchange rate as typed (Q7, core's parse)", () => {
       source: "OTHER",
       note: "Sample bank rate",
     });
-    expect(fxFormOf(null, "2026-10-27")).toEqual({ rate: "", date: "2026-10-27", source: "FBIL", note: "" });
+    expect(fxFormOf(null, "2026-10-27")).toEqual({
+      rate: "",
+      date: "2026-10-27",
+      source: "FBIL",
+      note: "",
+      noRate: false,
+    });
   });
 });
 
@@ -238,7 +256,7 @@ describe("the payment received against a proforma (Q9)", () => {
   });
 
   it("the rate's date follows 'Date received' until the Owner picks its own (review 2, 1)", () => {
-    const fx = { rate: "84.2", date: "2026-10-27", source: "FBIL" as const, note: "" };
+    const fx = { rate: "84.2", date: "2026-10-27", source: "FBIL" as const, note: "", noRate: false };
     expect(rateDateFollows(fx, false, "2026-10-20")).toEqual({ ...fx, date: "2026-10-20" });
     expect(rateDateFollows(fx, true, "2026-10-20")).toBe(fx);
     expect(rateDateFollows(fx, false, "")).toBe(fx);
@@ -269,9 +287,66 @@ describe("the payment received against a proforma (Q9)", () => {
       rateDate: null,
       rest: [{ code: "lut_missing", fy: "2627" }],
     });
-    expect(blockerLine({ code: "fx_date_invalid" }, "USD", { maxAgeDays: 7 })).toBe(
-      "The rate date must be the invoice date or up to 7 days before it.",
+    expect(blockerLine({ code: "fx_date_invalid", date: "2026-10-20" }, "USD", { maxAgeDays: 7 })).toBe(
+      "Use the rate published on 20 Oct 2026. If none was published that day, use the last one published before it, at most 7 days earlier.",
     );
+    // S §8: the "same day exists" refusal goes under the rate's date too
+    expect(splitAdvanceRefusal([{ code: "fx_same_day_exists" }]).rateDate).toEqual({
+      code: "fx_same_day_exists",
+    });
+  });
+
+  it("step 5: the 'no rate that day' statement is sent only when it is said, and asked only for an earlier day (S §8)", () => {
+    const base = { rate: "84.2", date: "2026-10-24", source: "FBIL" as const, note: "" };
+    expect(checkFx({ ...base, noRate: true })).toEqual({
+      ok: true,
+      value: { rate: "84.2", date: "2026-10-24", source: "FBIL", noRateThatDay: true },
+    });
+    expect(checkFx({ ...base, noRate: false })).toEqual({
+      ok: true,
+      value: { rate: "84.2", date: "2026-10-24", source: "FBIL" },
+    });
+    expect(rateDayEarlier("2026-10-24", "2026-10-27")).toBe(true);
+    expect(rateDayEarlier("2026-10-27", "2026-10-27")).toBe(false);
+    expect(rateDayEarlier("2026-10-24", null)).toBe(false);
+    expect(
+      fxFormOf(
+        { rate: "84.2", date: "2026-10-24", source: "FBIL reference rate", noRateThatDay: true },
+        "2026-10-27",
+      ),
+    ).toMatchObject({ noRate: true });
+    expect(INVT_COPY.fxNoRateThatDay.startsWith("[Placeholder] ")).toBe(true);
+  });
+
+  it("step 5: Q37's lines (S §9) and the house rules (S §3), word for word", () => {
+    expect(advanceLutMissing("2027-28")).toBe(
+      "There's no LUT saved for FY 2027-28, when this payment was received, so this tax invoice can't be issued without IGST. Save that year's LUT ARN in Settings › Tax first, or issue it with IGST.",
+    );
+    expect(INVT_COPY.advanceRouteLegend).toBe("This payment's year has no LUT");
+    expect(INVT_COPY.advanceRouteSaveLut).toBe("Save the LUT first");
+    expect(INVT_COPY.advanceRouteIgst).toBe("Issue with IGST");
+    expect(INVT_COPY.advanceIgstNote).toBe(
+      "IGST at 18 % is charged on this payment. The proforma's other payments are not affected.",
+    );
+    expect(advanceLine("TH/PI/2627/0001", "1 Mar 2027", "2 Apr 2027", "2027-28")).toBe(
+      "Against proforma TH/PI/2627/0001 of 1 Mar 2027, payment received on 2 Apr 2027. Issued with IGST: no LUT was in place for FY 2027-28.",
+    );
+    expect(blockerLine({ code: "advance_lut_missing", fy: "2728" }, "USD")).toBe(
+      advanceLutMissing("2027-28"),
+    );
+    expect(blockerTarget({ code: "advance_lut_missing" }, "c1")).toMatchObject({ to: "/settings/tax#luts" });
+    expect(
+      invErrorText(new RequestError(409, "advance_lut_missing", "x", null, [], [], [], { fy: "2728" })),
+    ).toBe(advanceLutMissing("2027-28"));
+    expect(INVT_COPY.checklistIntro).toBe(
+      'Issuing is blocked while anything ticked here is missing. The defaults follow GST Rule 46. Items marked "House rule" aren\'t required by GST law; you can turn them off.',
+    );
+    expect(INVT_COPY.checklistLocked).toBe("Required by GST law, so it can't be turned off.");
+    expect(INVT_COPY.houseRule).toBe("House rule");
+    expect(HOUSE_RULE_IDS).toEqual(["bankDetails", "paymentLink", "signatory"]);
+    expect(isHouseRule({ id: "signatory" })).toBe(true);
+    expect(isHouseRule({ id: "companyNames" })).toBe(false);
+    expect(isHouseRule({ id: "companyNames", houseRule: true })).toBe(true);
   });
 
   it("07-S §8 lines of the advance and the proforma, word for word", () => {

@@ -14,7 +14,7 @@ import {
   BADGES,
   type Badge,
   INV_COPY,
-  INV_PLACEHOLDER,
+  INV_NO_MATCH,
   INVOICE_TYPES,
   splitSentences,
   typeLabel,
@@ -143,7 +143,7 @@ function InvoiceList() {
               filtered ? (
                 <EmptyState
                   icon={<Search />}
-                  title={INV_PLACEHOLDER}
+                  title={INV_NO_MATCH}
                   action={
                     <button type="button" className="btn btn--secondary" onClick={clear}>
                       Clear filters

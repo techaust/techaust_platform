@@ -5,12 +5,6 @@ import { formatIstDateTime, MASKED } from "@techaust/core";
 import { ROLE_LABELS } from "@techaust/core/permissions";
 import type { AuditEntry } from "../api.ts";
 
-/**
- * A 07-V line (M5.5b), marked until the owner approves 07-V. Written here, not imported from ./reports.ts (that module reaches this one through
- * ./documents.ts, a cycle): lib/reports.test.ts proves these equal `V(...)`, so they flip with `APPROVED_07V`.
- */
-const V07 = (line: string) => `[Placeholder] ${line}`;
-
 /** Every action the API writes today, in words. Unknown ones read as their own name ("lead.created"). */
 /** A label by its own key only: a free-form value such as "constructor" never reads an inherited property. */
 const own = (map: Record<string, string>, k: string): string | undefined =>
@@ -57,9 +51,9 @@ export const ACTION_LABELS: Record<string, string> = {
   "client.create": "added a client",
   "client.update": "changed a client's details",
   "client.billing_update": "changed a client's tax and billing",
-  // M5.5b: 07-V §1 ("Exported a report", "Made a statement PDF"), in the log's verb form; marked until the owner approves 07-V.
-  "client.statement_pdf": V07("made a statement PDF"),
-  "report.export": V07("exported a report"),
+  // 07-V §1 ("Made a statement PDF", "Exported a report"), in this list's lower-case form (it follows the person's name).
+  "client.statement_pdf": "made a statement PDF",
+  "report.export": "exported a report",
   "contact.create": "added a contact",
   "contact.update": "changed a contact",
   "contact.export": "exported a contact's data",

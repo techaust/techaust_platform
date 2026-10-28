@@ -3,6 +3,7 @@
 // The form never says an email "has been sent" as a fact: a link goes only to addresses that can use the portal.
 // M2.4b: the Turnstile check is always on this form (managed widget, action `portal_link`); each request takes the
 // widget's current token once, and the widget is reset after every request that didn't succeed (tokens are single use).
+// 07-A §9: under the button, what a sign-in records and the link to the privacy notice.
 import type { TurnstileWidget } from "@techaust/auth/client";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { api } from "../api.ts";
@@ -10,6 +11,7 @@ import { Mail } from "../components/icons.tsx";
 import { TurnstileBox } from "../components/turnstile.tsx";
 import { Card, Field, Notice, Reference } from "../components/ui.tsx";
 import { COPY, checkFailed, emailProblem, type LinkOutcome, linkOutcome } from "../copy.ts";
+import { NOTICES } from "../copy-documents.ts";
 import { useSession } from "../session.tsx";
 
 export function SignIn() {
@@ -126,6 +128,9 @@ export function SignIn() {
         >
           {busy ? COPY.signIn.busy : COPY.signIn.submit}
         </button>
+        <p className="hint signin-notice">
+          {NOTICES.signIn} {NOTICES.signInSee} <a href={NOTICES.privacyHref}>{NOTICES.privacyNotice}</a>.
+        </p>
       </form>
     </Card>
   );

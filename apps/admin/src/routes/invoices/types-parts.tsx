@@ -2,6 +2,8 @@
 // country, the extra export note), the exchange rate and its dialog, the service completion date, a proforma's money (what came in, what is left, the
 // tax invoices issued from it) with the Owner's "Issue tax invoice for payment received", and the line that says which proforma a paid invoice settles.
 // Words: 07-S (lib/invoice-types.ts). Money only through core; the screen sends what was typed and the server decides.
+// Step 5 (research and wording): a rate dated before the document's day asks whether no rate was published that day (S §8, `noRateThatDay`); a payment
+// whose year has no LUT offers "Save the LUT first" or "Issue with IGST" (S §9, Q37; Researched 2026-10-28, 08-C RA-19, RA-21).
 //
 // One thing is drawn: the STATUTORY LINE. The endorsement of an export invoice and the notice of a proforma are printed on the PDF in a band (an ink bar,
 // the words in semibold, word for word as frozen); the screens show the same band in the same words, so what the Owner reads here is what the client
@@ -14,7 +16,7 @@ import { RequestError, stepUpActive } from "../../api.ts";
 import { DateField, useUnreadDates } from "../../components/date-field.tsx";
 import { Modal } from "../../components/dialog.tsx";
 import { FormField, Switch } from "../../components/form.tsx";
-import { Alert, Pencil, Receipt } from "../../components/icons.tsx";
+import { Alert, Check, Pencil, Receipt } from "../../components/icons.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { CodeField, Notice } from "../../components/ui.tsx";
 import { dateError } from "../../lib/date-field.ts";
@@ -35,10 +37,10 @@ import {
   fxFormOf,
   fxLine,
   fyLabel,
-  INV_PLACEHOLDER,
   INVT_COPY,
   lutLine,
   rateDateFollows,
+  rateDayEarlier,
   splitAdvanceRefusal,
   warn25Line,
 } from "../../lib/invoice-types.ts";
@@ -183,7 +185,11 @@ export function FxPanel(props: { view: InvoiceView; canWrite: boolean; busy: boo
           {fx.dateOk === false && (
             <p className="inv-fx__warn">
               <Alert size={16} />
-              <span>{blockerLine({ code: "fx_date_invalid" }, "USD", { maxAgeDays: fx.maxAgeDays })}</span>
+              <span>
+                {blockerLine({ code: "fx_date_invalid", date: fx.refDate }, "USD", {
+                  maxAgeDays: fx.maxAgeDays,
+                })}
+              </span>
             </p>
           )}
           {fx.inr && (
@@ -214,13 +220,18 @@ export function FxPanel(props: { view: InvoiceView; canWrite: boolean; busy: boo
           </button>
         </p>
       ) : (
-        <p className="muted">{INV_PLACEHOLDER}</p>
+        // A role that can't set it reads the same sentence, as text (it says what is missing and for which day).
+        <p className="muted">{blockerLine({ code: "fx_missing", date: fx.refDate }, "USD")}</p>
       )}
     </section>
   );
 }
 
-/** The three fields of a rate (07-S §4), shared by the draft's dialog and the advance dialog. */
+/**
+ * The three fields of a rate (07-S §4), shared by the draft's dialog and the advance dialog. `refDate` is the document's own day (the invoice date, or
+ * the day the payment was received): a rate dated before it asks the Owner to say no rate was published that day (S §8; the server refuses an earlier
+ * rate without it, `fx_same_day_exists`).
+ */
 export function FxFields(props: {
   prefix: string;
   form: FxForm;
@@ -228,10 +239,12 @@ export function FxFields(props: {
   errors: Partial<Record<"rate" | "note" | "date", string>>;
   dates: ReturnType<typeof useUnreadDates<"date">>;
   max: string;
+  refDate?: string | null | undefined;
 }) {
   const f = props.form;
   const set = (p: Partial<FxForm>) => props.onChange({ ...f, ...p });
   const P = props.prefix;
+  const earlier = rateDayEarlier(f.date, props.refDate);
   return (
     <div className="form-grid inv-fx-fields">
       <FormField id={`${P}-rate`} label={INVT_COPY.fxRate} error={props.errors.rate}>
@@ -253,10 +266,23 @@ export function FxFields(props: {
             {...props.dates.bind("date")}
             value={f.date}
             max={props.max}
-            onChange={(date) => set({ date })}
+            onChange={(date) =>
+              set({ date, ...(rateDayEarlier(date, props.refDate) ? {} : { noRate: false }) })
+            }
           />
         )}
       </FormField>
+      {earlier && (
+        <label className="check inv-fx-norate">
+          <input
+            id={`${P}-norate`}
+            type="checkbox"
+            checked={f.noRate}
+            onChange={(e) => set({ noRate: e.target.checked })}
+          />
+          <span>{INVT_COPY.fxNoRateThatDay}</span>
+        </label>
+      )}
       <FormField id={`${P}-source`} label={INVT_COPY.fxSource}>
         {(a) => (
           <select
@@ -347,7 +373,15 @@ function FxDialogBody(props: {
     >
       <div className="dialog__body">
         <p>{fxBody(day(today))}</p>
-        <FxFields prefix="fxd" form={form} onChange={setForm} errors={errors} dates={dates} max={today} />
+        <FxFields
+          prefix="fxd"
+          form={form}
+          onChange={setForm}
+          errors={errors}
+          dates={dates}
+          max={today}
+          refDate={props.view.fx?.refDate ?? null}
+        />
         {failure && <Notice tone="error">{failure}</Notice>}
       </div>
       <div className="dialog__actions">
@@ -490,7 +524,12 @@ export function ExportFacts({ view }: { view: InvoiceView }) {
 export function AdvanceOrigin({ view }: { view: InvoiceView }) {
   const a = view.advance;
   if (!a) return null;
-  const line = advanceLine(a.proformaNumber, day(a.proformaIssueDate), day(a.receivedOn));
+  const line = advanceLine(
+    a.proformaNumber,
+    day(a.proformaIssueDate),
+    day(a.receivedOn),
+    a.igstNoLutFy ? fyLabel(a.igstNoLutFy) : null,
+  );
   const at = line.indexOf(a.proformaNumber);
   return (
     <p className="inv-origin">
@@ -624,6 +663,9 @@ function AdvanceBody(props: { view: InvoiceView; onClose: () => void; onIssued: 
   // The rate is for the day the money came (Q9): its date follows "Date received" until the Owner picks one of its own (review 2, 1).
   const [fxDateOwn, setFxDateOwn] = useState(false);
   const [confirmInr, setConfirmInr] = useState(false);
+  // Q37: the payment's year has no LUT (409 `advance_lut_missing`, its FY); the Owner saves the LUT first or issues this one with IGST.
+  const [lutMissingFy, setLutMissingFy] = useState<string | null>(null);
+  const [igst, setIgst] = useState(false);
   // What the server refused with: its blocker lines (409 `issue_blocked`), drawn as the issue dialog draws them.
   const [refused, setRefused] = useState<InvoiceBlocker[]>([]);
   const [code, setCode] = useState("");
@@ -677,6 +719,7 @@ function AdvanceBody(props: { view: InvoiceView; onClose: () => void; onIssued: 
           reference: form.reference.trim(),
           ...(f?.ok ? { fx: f.value } : {}),
           ...(confirmInr ? { confirmInrExport: true as const } : {}),
+          ...(igst ? { route: "igst" as const } : {}),
         }),
       );
       // Q27: a payment from an earlier month is a warning, said with the result.
@@ -693,13 +736,19 @@ function AdvanceBody(props: { view: InvoiceView; onClose: () => void; onIssued: 
         setConfirmInr(true);
         return;
       }
+      // Q37: no LUT for the payment's year; the choice is drawn and takes the focus (S §9).
+      if (e instanceof RequestError && e.code === "advance_lut_missing") {
+        setLutMissingFy(e.extra.fy ?? "");
+        requestAnimationFrame(() => document.getElementById("adv-route-h")?.focus());
+        return;
+      }
       // The server's blockers (the rate's date against the day the money came, among others): their own lines, the rate's under its field.
       const listed = e instanceof RequestError && e.code === "issue_blocked" ? (e.extra.blockers ?? []) : [];
       if (listed.length > 0) {
         const { rateDate, rest } = splitAdvanceRefusal(listed);
         if (rateDate) {
           setErrors({
-            fxDate: blockerLine(rateDate, v.currency, { maxAgeDays: v.fx?.maxAgeDays, advance: true }),
+            fxDate: blockerLine(rateDate, v.currency, { maxAgeDays: v.fx?.maxAgeDays }),
           });
           focusField("adv-fx-date");
         }
@@ -712,10 +761,14 @@ function AdvanceBody(props: { view: InvoiceView; onClose: () => void; onIssued: 
     }
   }
 
-  /** "Date received" changed: the rate's date goes with it unless the Owner set its own. */
+  /** "Date received" changed: the rate's date goes with it unless the Owner set its own. A new day may have a LUT: the choice is asked again. */
   function setReceived(date: string) {
     setForm({ ...form, date });
     setFx(rateDateFollows(fx, fxDateOwn, date));
+    if (lutMissingFy !== null) {
+      setLutMissingFy(null);
+      setIgst(false);
+    }
   }
 
   return (
@@ -798,8 +851,39 @@ function AdvanceBody(props: { view: InvoiceView; onClose: () => void; onIssued: 
               }}
               dates={fxDates}
               max={form.date || today}
+              refDate={form.date || null}
             />
           </fieldset>
+        )}
+        {lutMissingFy !== null && (
+          <section className="inv-route-choice" aria-labelledby="adv-route-h">
+            <h3 id="adv-route-h" className="inv-route-choice__title" tabIndex={-1}>
+              {INVT_COPY.advanceRouteLegend}
+            </h3>
+            <p className="inv-route-choice__why">
+              {invErrorText(
+                new RequestError(409, "advance_lut_missing", "", null, [], [], [], {
+                  ...(lutMissingFy ? { fy: lutMissingFy } : {}),
+                }),
+              )}
+            </p>
+            <div className="inv-route-choice__options">
+              <Link className="btn btn--secondary" to="/settings/tax#luts">
+                {INVT_COPY.advanceRouteSaveLut}
+              </Link>
+              <button
+                type="button"
+                className="btn btn--secondary"
+                aria-pressed={igst}
+                onClick={() => setIgst(!igst)}
+                disabled={busy}
+              >
+                {igst && <Check size={16} />}
+                {INVT_COPY.advanceRouteIgst}
+              </button>
+            </div>
+            {igst && <p className="inv-route-choice__note">{INVT_COPY.advanceIgstNote}</p>}
+          </section>
         )}
         {refused.length > 0 && (
           <div className="inv-issue__blocked" role="alert">

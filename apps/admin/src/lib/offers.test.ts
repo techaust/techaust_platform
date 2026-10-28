@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 import { offerSent } from "../../../../packages/email/src/offers.ts";
 import { RequestError } from "../api.ts";
+import { COPY_GAP as PLACEHOLDER_TAG } from "./copy-gap.ts";
 import { reasonText } from "./offer-words.ts";
 import {
   canResend,
@@ -18,7 +19,6 @@ import {
   recipientChoices,
   shortSha,
 } from "./offers.ts";
-import { PLACEHOLDER_TAG } from "./projects.ts";
 
 const contact = (
   id: string,
