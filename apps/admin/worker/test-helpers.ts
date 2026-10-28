@@ -22,6 +22,16 @@ import type { RouteDef } from "./context.ts";
 import app from "./test-app.ts";
 
 export const ORIGIN = "https://admin.example";
+
+/** 12:00 IST on a mid-month day in the middle of a financial year: far from any IST midnight, month end or 1 April (audit A0, finding 7). */
+export const NOON_IST_MID_FY = Date.parse("2026-10-15T12:00:00.000+05:30");
+
+/**
+ * Pins the clock (Date only) for a test or a file whose fixtures and checks must share one IST day, month, quarter and FY. The clock still
+ * moves with real time, so timestamps keep increasing. Undo with `vi.useRealTimers()` (in afterEach, or afterAll for a whole file).
+ */
+export const pinClock = (at: number = NOON_IST_MID_FY) =>
+  vi.useFakeTimers({ toFake: ["Date"], shouldAdvanceTime: true, now: at });
 export const hash = () => b64url(randomBytes(32));
 
 // ---- D1 wrappers ---------------------------------------------------------------------------------------------

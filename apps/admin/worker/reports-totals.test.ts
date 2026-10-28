@@ -16,9 +16,9 @@ import {
   SAC_DESCRIPTIONS,
   salesRegisterRows,
 } from "@techaust/core/gst";
-import { documentsIssuedSummary } from "@techaust/core/invoices";
-import { beforeAll, describe, expect, it } from "vitest";
-import { call, one, rows, sessionFor } from "./test-helpers.ts";
+import { documentsIssuedSummary, issueDateOf } from "@techaust/core/invoices";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { call, NOON_IST_MID_FY, one, pinClock, rows, sessionFor } from "./test-helpers.ts";
 import { currentFy, lutOf, mkProforma, putSwiftBank, putTax } from "./test-invoice-types.ts";
 import {
   issueBodyOf,
@@ -53,9 +53,13 @@ let advanceProformaId = "";
 const extraClients: string[] = [];
 const allRows: RegisterApiRow[] = [];
 let meta: ReportMeta;
-const today = new Date(Date.now() + 19_800_000).toISOString().slice(0, 10);
+/** The whole file runs at 12:00 IST in mid-month and mid-FY (pinned in beforeAll): the data made there and every check share one IST day, quarter and FY. */
+const today = issueDateOf(NOON_IST_MID_FY);
+
+afterAll(() => vi.useRealTimers());
 
 beforeAll(async () => {
+  pinClock();
   await putCompany();
   await putBank();
   await putSwiftBank();
