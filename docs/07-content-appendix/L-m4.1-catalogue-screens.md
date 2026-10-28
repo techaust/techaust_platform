@@ -1,6 +1,6 @@
 # 07-L: Catalogue, templates and publish screen copy for M4.1
 
-_Drafted by the lead on 2026-10-25 from approved facts (04 ADM-CAT-01…05, WEB-G-07; the owner's answer on publishing in docs/13). **PENDING the owner's word-for-word approval** (batch rule: built as drafts, approved before the final review). Staff-facing admin copy; clients never see it. `{…}` is filled in by the system. SAC and GST items are VERIFY WITH CA._
+_Drafted by the lead on 2026-10-25 from approved facts (04 ADM-CAT-01…05, WEB-G-07; the owner's answer on publishing in docs/13). **Approved by the owner word for word on 2026-10-26 ([07-Q](Q-batch-review-copy.md), "approve all")**. Staff-facing admin copy; clients never see it. `{…}` is filled in by the system. SAC and GST items are VERIFY WITH CA._
 
 ## Catalogue list and item
 | Where | Copy |
@@ -63,7 +63,7 @@ _Drafted by the lead on 2026-10-25 from approved facts (04 ADM-CAT-01…05, WEB-
 ## Audit labels (Activity)
 "added a service" · "changed a service" · "retired a service" · "made a service active again" · "saved a template version" · "published prices"
 
-## Added after the review (lead, 2026-10-25; PENDING the owner)
+## Added after the review (lead, 2026-10-25; approved 2026-10-26, 07-Q)
 | Where | Copy |
 |---|---|
 | Retire or take off the website, when the website uses this service | "The website shows this service. Retiring it, or taking it off the website, stops the next publish until the website no longer needs it." |

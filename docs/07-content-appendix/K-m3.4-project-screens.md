@@ -1,6 +1,6 @@
 # 07-K: Project, milestone, note and file screen copy for M3.4
 
-_Drafted by the lead on 2026-10-25 from approved facts (04 ADM-PRJ-01…05; the owner's batch answers in docs/13). **PENDING the owner's word-for-word approval** (batch rule: built as drafts, approved before the final review). Staff-facing admin copy; clients never see it. `{…}` is filled in by the system._
+_Drafted by the lead on 2026-10-25 from approved facts (04 ADM-PRJ-01…05; the owner's batch answers in docs/13). **Approved by the owner word for word on 2026-10-26 ([07-Q](Q-batch-review-copy.md), "approve all")**. Staff-facing admin copy; clients never see it. `{…}` is filled in by the system._
 
 ## Lists and statuses
 | Where | Copy |
@@ -65,7 +65,7 @@ _Drafted by the lead on 2026-10-25 from approved facts (04 ADM-PRJ-01…05; the 
 ## Audit labels (Activity)
 "added a project" · "changed the project" · "changed the project status" · "added a milestone" · "changed a milestone" · "changed a milestone status" · "deleted a milestone" · "reordered the milestones" · "added a note" · "changed a note" · "shared a note" · "deleted a note" · "uploaded a file" · "shared a file" · "deleted a file"
 
-## Added after the screens (lead, 2026-10-25; PENDING the owner)
+## Added after the screens (lead, 2026-10-25; approved 2026-10-26, 07-Q)
 | Where | Copy |
 |---|---|
 | Milestones, empty | "No milestones yet." |

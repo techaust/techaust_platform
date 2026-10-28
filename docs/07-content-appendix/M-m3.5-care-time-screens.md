@@ -1,6 +1,6 @@
 # 07-M: Care plan, time log and dashboard screen copy for M3.5
 
-_Drafted by the lead on 2026-10-25 from approved facts: 04 ADM-CARE-01, -03, ADM-TIME-01…03 and ADM-DASH-01, plus the owner's M3.5 answers in docs/13. **PENDING the owner's word-for-word approval** (batch rule: built as drafts, approved before the final review). This is staff-facing admin copy that clients never see. `{…}` is filled in by the system. Overage amounts are before GST; GST on overage is VERIFY WITH CA/LEGAL._
+_Drafted by the lead on 2026-10-25 from approved facts: 04 ADM-CARE-01, -03, ADM-TIME-01…03 and ADM-DASH-01, plus the owner's M3.5 answers in docs/13. **Approved by the owner word for word on 2026-10-26 ([07-Q](Q-batch-review-copy.md), "approve all")**. This is staff-facing admin copy that clients never see. `{…}` is filled in by the system. Overage amounts are before GST; GST on overage is VERIFY WITH CA/LEGAL._
 
 ## Care plans
 | Where | Copy |

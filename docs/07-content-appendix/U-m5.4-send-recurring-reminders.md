@@ -6,7 +6,7 @@ _Drafted by the lead on 2026-10-27 from approved facts:
 - 07-M (care plans), 07-R, 07-S, 07-T (invoice, proforma and note words);
 - the M5 batch questions Q12, Q13, Q20, Q42–Q51 and Q63, each built with its recommended default.
 
-**PENDING the owner's word-for-word approval** (batch rule). Sections 1–3 are client-facing. The rest is staff-facing. `{…}` is filled by the system. **Every tax and legal line is VERIFY WITH CA/LEGAL.** Anything still missing is `[Placeholder]`.
+**Approved by the lead on 2026-10-28 under the owner's delegation** ([13-decisions](../13-decisions.md) 2026-10-28), after the research in [08-C](../08-research-appendix/C-research-register.md); this approval also turns on automatic care-invoice issuing where an owner has switched it on (no line carries a placeholder any more). Sections 1–3 are client-facing. The rest is staff-facing. `{…}` is filled by the system. Tax and legal lines carry **(Researched, 08-C <ID>)** or **(OPEN, 08-C <ID>)**. Section 9 holds the lines added on 2026-10-28.
 
 **Rules used:** client emails come from billing@ with Reply-To billing@ (LD65); the button is "View invoice" (Q13; "View and pay" from M6/M7.1); until M6 the only payment method is bank transfer; "and", never "&"; no threats, no urgency words._
 
@@ -21,12 +21,12 @@ Each body has two forms: **attached** (the PDF is attached) and **link only** (n
   - body: "Hi {first name}, please find invoice {number} for {total}, issued on {issue date} and due on {due date}. You can pay by bank transfer; the bank details are on the invoice. {closing sentence}"
   - button: "View invoice"
 - **Proforma** (replaces 07-S §2's body, which assumed an attachment), subject: "Payment request {number}: {total}"
-  - body: "Hi {first name}, please find payment request {number} for {total}, valid until {due date}. You can pay by bank transfer; the bank details are on the payment request. A tax invoice will be issued when payment is received. {closing sentence}" (VERIFY WITH CA/LEGAL)
+  - body: "Hi {first name}, please find payment request {number} for {total}, valid until {due date}. You can pay by bank transfer; the bank details are on the payment request. A tax invoice will be issued when payment is received. {closing sentence}" (Researched, 08-C RA-17, RA-28)
   - button: "View payment request"
 - **Credit note** (07-T §2 subject unchanged), body: "Hi {first name}, we've issued credit note {number} for {total} against invoice {parent number}. Reason: {reason}. The amount due on the invoice is now {balance}. {closing sentence}"
   - button: "View credit note"
 - **Debit note** (replaces 07-T §2's body, per Q63: a debit note is its own amount with its own due date; the invoice's balance does not change), subject unchanged.
-  - body: "Hi {first name}, we've issued debit note {number} for {total} against invoice {parent number}, because the invoice amount needed correcting upwards. Reason: {reason}. Please pay {total} by {due date}. {closing sentence}" (VERIFY WITH CA/LEGAL)
+  - body: "Hi {first name}, we've issued debit note {number} for {total} against invoice {parent number}, because the invoice amount needed correcting upwards. Reason: {reason}. Please pay {total} by {due date}. {closing sentence}" (Researched, 08-C RA-22)
   - button: "View debit note"
 - **Footer** (all): 07 §8's footer.
 
@@ -63,7 +63,7 @@ Sent only for a document that was emailed (Q50), only 09:00–19:00 IST (Q48), a
 - No eligible contact: "No contact of this client has portal access. Turn it on for a contact on the client's page, then send."
 - Attach option: "Attach the PDF" · hint: "Without it, the email has a link to the document only."
 - Button: "Send" · toast: "Sent to {n} contact." / "Sent to {n} contacts." · queued toast: "Queued. It will be emailed in a moment."
-- After sending, the lock line: "Emailed, so this {document} can no longer be voided. Corrections are made with a credit note or a debit note." (VERIFY WITH CA/LEGAL; Q1)
+- After sending, the lock line: "Emailed, so this {document} can no longer be voided. Corrections are made with a credit note or a debit note." (OPEN, 08-C RA-10; Q1)
 - Sends list heading: "Emails" · columns: "To" · "Sent by" · "When" · "Status" · statuses: "Queued" · "Sent" · "Delivered" · "Failed" · "Cancelled"
 - Sent by an automatic send: "Sent automatically"
 - Revoke: "Revoke links" · confirm title: "Revoke every link to {number}?" · body: "The links in the emails sent so far stop working. Contacts can still see the {document} in the client portal." · button: "Revoke links" · toast: "Links revoked."
@@ -78,7 +78,7 @@ Sent only for a document that was emailed (Q50), only 09:00–19:00 IST (Q48), a
 - Errors: `reminders_not_started` "Reminders haven't started: email the {document} first." · `not_issued` "Only an issued document can be emailed." · `invoice_void` "This {document} is void, so it can't be emailed." · `owner_only` "Only an owner can do this." · `recipient_invalid` "One of the contacts can't receive documents. Check that they still have portal access." · `send_refused` "This can't be sent right now. Reload the page and try again."
 
 ## 6. Recurring care invoices (admin; ADM-CARE-02, ADM-INV-12; Q43–Q46, Q51)
-- **Care line descriptions** (on the invoice and the PDF; VERIFY WITH CA/LEGAL):
+- **Care line descriptions** (on the invoice and the PDF; Researched, 08-C RA-24):
   - plan fee: "{plan name} care plan, {period start} to {period end}"
   - AI Ops: "AI Ops, {period start} to {period end}"
   - extra hours: "Extra hours above the plan, {period start} to {period end} ({hours} h at {rate} per hour)"
@@ -102,10 +102,16 @@ Sent only for a document that was emailed (Q50), only 09:00–19:00 IST (Q48), a
 - Missed period (Q51): "{client}'s care plan has an unbilled period ({period}). Invoice it by hand."
 - USD rate needed: "Care invoice draft for {client} needs the exchange rate before it can be issued."
 - Unbilled work (Q20): "{milestone} for {client} was delivered {days} days ago and isn't invoiced yet."
-- Proforma unpaid after delivery (ADM-INV-10): "Payment request {number} for {client} is still unpaid {days} days after {milestone} was delivered. A tax invoice is due within 30 days of delivery." (VERIFY WITH CA/LEGAL)
+- Proforma unpaid after delivery (ADM-INV-10): "Payment request {number} for {client} is still unpaid {days} days after {milestone} was delivered. A tax invoice is due within 30 days of delivery." (Researched, 08-C RA-08)
 - Email failed: "The email of {number} to {contact} failed. Check the address and send again."
 
 ## 8. Staff alert emails (to every owner, from no-reply@; Q20)
 - Unbilled work, subject: "Not invoiced yet: {milestone} for {client}" · body: "Hi {owner first name}, {milestone} for {client} was delivered on {delivered date}, {days} days ago, and has no invoice yet. [Open in admin]"
-- Proforma unpaid, subject: "Payment request {proforma number} still unpaid after delivery" · body: "Hi {owner first name}, {milestone} for {client} was delivered on {delivered date}, {days} days ago, and payment request {proforma number} still shows {balance} unpaid. A tax invoice is due within 30 days of delivery even if payment hasn't arrived. [Open in admin]" (VERIFY WITH CA/LEGAL)
-- LUT reminder: 07-S §5 unchanged; the line for "the running FY has no letter" (07-S copy gap): subject "No LUT saved for FY {fy}" · body "Hi {owner first name}, there's no letter of undertaking saved for FY {fy}, so export invoices without IGST are blocked. File it on the GST portal and save the ARN in Settings › Tax. [Open in admin]" (VERIFY WITH CA/LEGAL)
+- Proforma unpaid, subject: "Payment request {proforma number} still unpaid after delivery" · body: "Hi {owner first name}, {milestone} for {client} was delivered on {delivered date}, {days} days ago, and payment request {proforma number} still shows {balance} unpaid. A tax invoice is due within 30 days of delivery even if payment hasn't arrived. [Open in admin]" (Researched, 08-C RA-08)
+- LUT reminder: 07-S §5 unchanged; the line for "the running FY has no letter" (07-S copy gap): subject "No LUT saved for FY {fy}" · body "Hi {owner first name}, there's no letter of undertaking saved for FY {fy}, so export invoices without IGST are blocked. File it on the GST portal and save the ARN in Settings › Tax. [Open in admin]" (Researched, 08-C RA-19)
+
+## 9. Lines added on 2026-10-28 (lead, from 08-C and the code's marked gaps)
+| Place | Line |
+|---|---|
+| Care plan, overage note (admin) | "Extra hours go on the next monthly care invoice for you to check: an invoice with extra hours is never issued automatically." |
+| Care terms (seeded terms and 07 care terms; Researched, 08-C RA-24) | "Extra hours are invoiced on the next monthly invoice and are due with it." |
