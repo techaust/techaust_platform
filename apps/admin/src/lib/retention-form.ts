@@ -59,9 +59,7 @@ export const retentionToForm = (v: {
 });
 
 /** The figures to save, or each row's own line for a figure that is not a whole number at its minimum or more. */
-export function buildRetention(
-  f: RetentionForm,
-):
+export function buildRetention(f: RetentionForm):
   | { errors: FieldErrors }
   | {
       value: {

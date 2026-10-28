@@ -402,7 +402,7 @@ export function buildNoteFields(
     lines: readonly Pick<CreditableLine, "line" | "position" | "taxableLeftMinor">[];
     totalLeftMinor: number | null;
     /** The invoice's supply: on an intra-state one the tax to add is split equally between CGST and SGST, so an odd amount is refused here (07-W 5.9). */
-    supplyType?: string | null;
+    supplyType?: string | null | undefined;
   },
 ): { ok: true; fields: NoteFieldsIn } | { ok: false; errors: NoteFormErrors } {
   const errors: NoteFormErrors = {};
