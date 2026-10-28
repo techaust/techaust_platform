@@ -293,8 +293,8 @@ export const ISSUED_DOCUMENTS_SQL =
 // ---- the state of a draft ---------------------------------------------------------------------------------------------------------------------
 
 /** M5.2: the exchange rate typed on a USD draft: INR micros per USD, the rate's own date, its source as it is printed (`fxSourceLabel`). */
-/** `noRateThatDay` (Q24, 08-C RA-21): the Owner stated that no rate was published on the day of supply; stored with the rate (`fx_no_rate_that_day`), frozen and sealed with it. */
-export type FxState = { rateMicros: number; date: string; source: string; noRateThatDay?: true };
+/** `noRateDay` (Q24, 08-C RA-21): the DAY the Owner's statement "no rate was published that day" covers (an ISO date); stored with the rate (`fx_no_rate_day`), frozen and sealed with it. It counts only at an issue on that day. */
+export type FxState = { rateMicros: number; date: string; source: string; noRateDay?: string };
 
 export type InvoiceState = {
   id: string;
@@ -473,7 +473,7 @@ export function invoiceColumns(s: InvoiceState, c: InvoiceComputation) {
     fx_rate_micros: s.fx?.rateMicros ?? null,
     fx_date: s.fx?.date ?? null,
     fx_source: s.fx?.source ?? null,
-    fx_no_rate_that_day: s.fx?.noRateThatDay ? 1 : null,
+    fx_no_rate_day: s.fx?.noRateDay ?? null,
     service_completed_on: s.serviceCompletedOn,
     export_declaration_id: s.exportDeclarationId,
     subtotal_minor: k?.subtotalMinor ?? 0,
@@ -871,7 +871,7 @@ export function headerExtrasOf(a: {
       rateMicros: state.fx.rateMicros,
       date: state.fx.date,
       source: state.fx.source,
-      ...(state.fx.noRateThatDay ? { noRateThatDay: true as const } : {}),
+      ...(state.fx.noRateDay ? { noRateDay: state.fx.noRateDay } : {}),
     };
   if (state.type === "proforma") out.proforma = { notice: PROFORMA_NOTICE };
   if (a.advance) out.advance = a.advance;

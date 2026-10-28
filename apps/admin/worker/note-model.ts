@@ -48,6 +48,7 @@ import { CREDITED_SO_FAR_SQL, CREDITED_TOTALS_SQL, NOTE_COUNTS_SQL } from "@tech
 import type { ApiError } from "./context.ts";
 import {
   type BankRow,
+  type FxState,
   type InvoiceComputation,
   type InvoiceSettings,
   type InvoiceState,
@@ -143,7 +144,7 @@ export const ANNUAL_RETURN_FUTURE = e("annual_return_future", "The filing date c
 
 const NOTES_SQL = "'credit_note', 'debit_note'";
 const PARENT_COLS =
-  "id, type, status, client_id, project_id, currency, fy, number_display, issue_date, supply_type, place_of_supply_code, export_mode, fx_rate_micros, fx_date, fx_source, total_minor, total_inr_minor, paid_minor, credited_minor, balance_minor, updated_at, service_completed_on, header_extras, frozen_at, computed, recipient";
+  "id, type, status, client_id, project_id, currency, fy, number_display, issue_date, supply_type, place_of_supply_code, export_mode, fx_rate_micros, fx_date, fx_source, fx_no_rate_day, total_minor, total_inr_minor, paid_minor, credited_minor, balance_minor, updated_at, service_completed_on, header_extras, frozen_at, computed, recipient";
 const PARENT_LINE_COLS = "position, description, detail, sac, unit, gst_rate_bp";
 
 export type ParentRow = {
@@ -162,6 +163,8 @@ export type ParentRow = {
   fx_rate_micros: number | null;
   fx_date: string | null;
   fx_source: string | null;
+  /** The day (ISO) the parent's no-rate statement covers (Q24); null when none. */
+  fx_no_rate_day: string | null;
   total_minor: number;
   total_inr_minor: number | null;
   paid_minor: number;
@@ -623,10 +626,19 @@ export function noteLines(p: ParentCtx, takes: readonly NoteTake[]): LineState[]
   });
 }
 
-/** The exchange rate of the invoice, as the note carries it (copied: a note never has a rate of its own). */
-export const fxOfParent = (p: ParentCtx) =>
+/**
+ * The exchange rate of the invoice, as the note carries it (copied: a note never has a rate of its own), with the parent's "no rate was published that day" statement and the day it
+ * covers when it has one (Q24, review 2026-10-28, finding 6): the note's sealed `fx` is then the parent's exactly, and a note is never judged against the day of supply (the engine's
+ * rate rule is for tax and export invoices only).
+ */
+export const fxOfParent = (p: ParentCtx): FxState | null =>
   p.row.fx_rate_micros !== null && p.row.fx_date !== null && p.row.fx_source !== null
-    ? { rateMicros: p.row.fx_rate_micros, date: p.row.fx_date, source: p.row.fx_source }
+    ? {
+        rateMicros: p.row.fx_rate_micros,
+        date: p.row.fx_date,
+        source: p.row.fx_source,
+        ...(p.row.fx_no_rate_day ? { noRateDay: p.row.fx_no_rate_day } : {}),
+      }
     : null;
 
 /** The state of a note draft: the client, the contact, the parent's currency, route and rate, the lines and the request. */

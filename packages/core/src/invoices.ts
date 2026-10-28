@@ -351,8 +351,8 @@ export type IssueFacts = {
       readonly rateMicros: number;
       readonly date: string;
       readonly source: string;
-      /** The Owner stated that no rate was published on the day of supply (Q24). */
-      readonly noRateThatDay?: boolean;
+      /** The day (ISO) the Owner stated that no rate was published (Q24); it counts only when it is the day of supply (`refDate`). */
+      readonly noRateDay?: string | undefined;
     } | null;
     readonly refDate: string;
     readonly maxAgeDays: number;
@@ -429,12 +429,7 @@ export function issueBlockers(
   if (f.currency === "USD" && (f.type === "tax_invoice" || f.type === "export_invoice")) {
     if (f.fx.value === null) add("fx_missing", { date: f.fx.refDate });
     else {
-      const verdict = fxDateVerdict(
-        f.fx.value.date,
-        f.fx.refDate,
-        f.fx.maxAgeDays,
-        f.fx.value.noRateThatDay === true,
-      );
+      const verdict = fxDateVerdict(f.fx.value.date, f.fx.refDate, f.fx.maxAgeDays, f.fx.value.noRateDay);
       if (verdict === "same_day_exists") add("fx_same_day_exists", { date: f.fx.refDate });
       else if (verdict === "invalid") add("fx_date_invalid", { date: f.fx.refDate });
     }
@@ -614,8 +609,8 @@ export type InvoiceSnapshotInput = {
     readonly rateMicros: number;
     readonly date: string;
     readonly source: string;
-    /** Q24 (08-C RA-21): present (true) only when the Owner stated that no rate was published on the day of supply; frozen with the rate, so an older seal keeps its hash. */
-    readonly noRateThatDay?: true;
+    /** Q24 (08-C RA-21): present only when the Owner stated that no rate was published; the DAY the statement covers (the day of supply), frozen with the rate so an older seal keeps its hash. */
+    readonly noRateDay?: string;
   };
   readonly proforma?: { readonly notice: string };
   readonly advance?: {

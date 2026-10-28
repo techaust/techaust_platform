@@ -65,7 +65,7 @@ describe("migrations apply cleanly to a fresh D1", () => {
       "0043_billing.sql",
       "0044_billing_triggers.sql",
       "0045_reports.sql",
-      "0046_fx_no_rate_that_day.sql",
+      "0046_fx_no_rate_day.sql",
       "0047_fx_flag_triggers.sql",
     ]);
   });

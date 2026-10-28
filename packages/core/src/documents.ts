@@ -261,8 +261,8 @@ export type DraftContent = {
     readonly rateMicros: number;
     readonly date: string;
     readonly source: string;
-    /** Q24 (08-C RA-21): the Owner stated that no rate was published on the day of supply. Hashed only when true, so every earlier hash is unchanged. */
-    readonly noRateThatDay?: boolean;
+    /** Q24 (08-C RA-21): the day (ISO) the Owner stated that no rate was published, as stored. Hashed only when set, so every earlier hash is unchanged. */
+    readonly noRateDay?: string | undefined;
   } | null;
   /**
    * M5.3 (LD39): a credit or debit note's request (the invoice it is against, the kind, the reason, the way it was asked and the takes). Absent (or null) on every
@@ -316,7 +316,7 @@ export function contentHashInput(draft: DraftContent, computed: ComputedDocument
             draft.fx.rateMicros,
             draft.fx.date,
             draft.fx.source,
-            ...(draft.fx.noRateThatDay ? [true] : []),
+            ...(draft.fx.noRateDay ? [draft.fx.noRateDay] : []),
           ],
         }
       : {}),

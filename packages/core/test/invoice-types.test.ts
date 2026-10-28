@@ -108,29 +108,37 @@ describe("parseFxRate [ADM-INV-08; Q7]", () => {
 describe("fxDateOk and fxDateVerdict [Q24, owner 2026-10-28; Rule 34(2); 08-C RA-21]", () => {
   it("the day of supply is right; an earlier day only with the statement and up to the maximum age; never the future", () => {
     expect(fxDateOk("2026-10-28", "2026-10-28", 4)).toBe(true);
-    expect(fxDateOk("2026-10-28", "2026-10-28", 4, true)).toBe(true);
+    expect(fxDateOk("2026-10-28", "2026-10-28", 4, "2026-10-28")).toBe(true);
     // earlier: the statement is needed
     expect(fxDateOk("2026-10-24", "2026-10-28", 4)).toBe(false);
-    expect(fxDateOk("2026-10-24", "2026-10-28", 4, true)).toBe(true);
-    expect(fxDateOk("2026-10-23", "2026-10-28", 4, true)).toBe(false);
-    expect(fxDateOk("2026-10-29", "2026-10-28", 4, true)).toBe(false);
+    expect(fxDateOk("2026-10-24", "2026-10-28", 4, "2026-10-28")).toBe(true);
+    expect(fxDateOk("2026-10-23", "2026-10-28", 4, "2026-10-28")).toBe(false);
+    expect(fxDateOk("2026-10-29", "2026-10-28", 4, "2026-10-28")).toBe(false);
     expect(fxDateOk("2026-10-29", "2026-10-28", 4)).toBe(false);
     expect(fxDateOk("2026-10-28", "2026-10-28", 0)).toBe(true);
-    expect(fxDateOk("2026-10-27", "2026-10-28", 0, true)).toBe(false);
+    expect(fxDateOk("2026-10-27", "2026-10-28", 0, "2026-10-28")).toBe(false);
   });
   it("the verdicts: ok, same_day_exists (an earlier day without the statement, however old) and invalid (too old with it, later, or not a date)", () => {
-    expect(fxDateVerdict("2026-10-28", "2026-10-28", 4, false)).toBe("ok");
-    expect(fxDateVerdict("2026-10-27", "2026-10-28", 4, false)).toBe("same_day_exists");
-    expect(fxDateVerdict("2026-09-01", "2026-10-28", 4, false)).toBe("same_day_exists");
-    expect(fxDateVerdict("2026-10-24", "2026-10-28", 4, true)).toBe("ok");
-    expect(fxDateVerdict("2026-10-23", "2026-10-28", 4, true)).toBe("invalid");
-    expect(fxDateVerdict("2026-10-29", "2026-10-28", 4, false)).toBe("invalid");
-    expect(fxDateVerdict("2026-10-29", "2026-10-28", 4, true)).toBe("invalid");
+    expect(fxDateVerdict("2026-10-28", "2026-10-28", 4, null)).toBe("ok");
+    expect(fxDateVerdict("2026-10-27", "2026-10-28", 4, null)).toBe("same_day_exists");
+    expect(fxDateVerdict("2026-09-01", "2026-10-28", 4, null)).toBe("same_day_exists");
+    expect(fxDateVerdict("2026-10-24", "2026-10-28", 4, "2026-10-28")).toBe("ok");
+    expect(fxDateVerdict("2026-10-23", "2026-10-28", 4, "2026-10-28")).toBe("invalid");
+    expect(fxDateVerdict("2026-10-29", "2026-10-28", 4, null)).toBe("invalid");
+    expect(fxDateVerdict("2026-10-29", "2026-10-28", 4, "2026-10-28")).toBe("invalid");
+  });
+  it("a statement made for another day does not cover the day of supply (review 2026-10-28, finding 1)", () => {
+    // Monday's statement at a Tuesday issue: Tuesday's own rate has to be used
+    expect(fxDateVerdict("2026-10-24", "2026-10-28", 4, "2026-10-27")).toBe("same_day_exists");
+    expect(fxDateVerdict("2026-10-24", "2026-10-28", 4, "2026-10-29")).toBe("same_day_exists");
+    expect(fxDateVerdict("2026-10-24", "2026-10-28", 4, "2026-10-28")).toBe("ok");
+    // a rate of the day of supply needs no statement, and a stale one does no harm
+    expect(fxDateVerdict("2026-10-28", "2026-10-28", 4, "2026-10-27")).toBe("ok");
   });
   it("counts across a month and a year end, and refuses dates that are not dates", () => {
-    expect(fxDateOk("2026-12-29", "2027-01-02", 4, true)).toBe(true);
-    expect(fxDateOk("2026-12-28", "2027-01-02", 4, true)).toBe(false);
-    expect(fxDateOk("2026-13-01", "2026-12-01", 4, true)).toBe(false);
+    expect(fxDateOk("2026-12-29", "2027-01-02", 4, "2027-01-02")).toBe(true);
+    expect(fxDateOk("2026-12-28", "2027-01-02", 4, "2027-01-02")).toBe(false);
+    expect(fxDateOk("2026-13-01", "2026-12-01", 4, "2026-12-01")).toBe(false);
     expect(fxDateOk("26-10-28", "2026-10-28", 4)).toBe(false);
     expect(fxDateOk("2026-10-28", "2026-10-28", -1)).toBe(false);
     expect(fxDateOk("2026-10-28", "2026-10-28", 1.5)).toBe(false);
@@ -747,26 +755,29 @@ describe("what stops each kind of issue, one blocker per field [ADM-INV-06, -08,
 
   it("fx_date_invalid carries the day it was judged against (future and too old, with the statement, are both invalid); an earlier day without the statement is fx_same_day_exists (RA-21)", () => {
     const f = base("export");
-    const withRate = (date: string, noRateThatDay?: boolean, maxAgeDays = usdFx.maxAgeDays) => ({
+    const withRate = (date: string, noRateDay?: string | undefined, maxAgeDays = usdFx.maxAgeDays) => ({
       ...f,
       fx: {
         ...usdFx,
         maxAgeDays,
-        value: { ...usdFx.value, date, ...(noRateThatDay === undefined ? {} : { noRateThatDay }) },
+        value: { ...usdFx.value, date, ...(noRateDay === undefined ? {} : { noRateDay }) },
       },
     });
     for (const date of ["2027-04-02", "2027-03-27"])
-      expect(issueBlockers(withRate(date, true))).toEqual([{ code: "fx_date_invalid", date: "2027-04-01" }]);
+      expect(issueBlockers(withRate(date, "2027-04-01"))).toEqual([
+        { code: "fx_date_invalid", date: "2027-04-01" },
+      ]);
     expect(issueBlockers(withRate("2027-04-02"))).toEqual([{ code: "fx_date_invalid", date: "2027-04-01" }]);
     for (const date of ["2027-03-28", "2027-03-31", "2027-03-27"])
       expect(issueBlockers(withRate(date))).toEqual([{ code: "fx_same_day_exists", date: "2027-04-01" }]);
-    expect(issueBlockers(withRate("2027-03-31", false))).toEqual([
+    expect(issueBlockers(withRate("2027-03-31", "2027-03-31"))).toEqual([
       { code: "fx_same_day_exists", date: "2027-04-01" },
     ]);
     expect(issueBlockers(withRate("2027-04-01"))).toEqual([]);
-    for (const date of ["2027-04-01", "2027-03-28"]) expect(issueBlockers(withRate(date, true))).toEqual([]);
+    for (const date of ["2027-04-01", "2027-03-28"])
+      expect(issueBlockers(withRate(date, "2027-04-01"))).toEqual([]);
     // the maximum age is a setting
-    expect(codes(withRate("2027-03-31", true, 0))).toEqual(["fx_date_invalid"]);
+    expect(codes(withRate("2027-03-31", "2027-04-01", 0))).toEqual(["fx_date_invalid"]);
   });
 
   it("lut_missing carries the FY of issue: a draft made on 31 March and issued on 1 April needs the new year's letter", () => {

@@ -103,6 +103,7 @@ describe("an export invoice issues [ADM-INV-01, ADM-INV-08, ADM-INV-18, G-8]", (
       date: todayIso(),
       source: "FBIL reference rate",
       noRateThatDay: false,
+      noRateDay: null,
     });
   });
 
@@ -254,7 +255,7 @@ describe("the LUT of the FY of issue [ADM-INV-18, G-8, docs/09: LUT without an A
     vi.useFakeTimers({ toFake: ["Date"], now: Date.UTC(2027, 2, 31, 12, 0, 0, 0) }); // 31 March 2027, 17:30 IST
     await putTax({ luts: [lutOf("2627")] });
     const made = await mkExportDraft(o);
-    expect((await setFx(o, made.id, { date: "2027-03-31", noRateThatDay: true })).status).toBe(200);
+    expect((await setFx(o, made.id, { date: "2027-04-01" })).status).toBe(200); // the rate of the issue day, typed ahead
     vi.setSystemTime(Date.UTC(2027, 2, 31, 18, 30, 0, 0)); // 1 April 2027, 00:00:00.000 IST
     await renew(o);
     const blocked = await issueInvoice(o, made.id);
@@ -353,18 +354,59 @@ describe("the exchange rate [ADM-INV-08, Q7, Q24, LD24]", () => {
     // the statement is part of the draft: it is saved with the rate, and four days before is the oldest rate accepted (Q24)
     expect((await setFx(o, made.id, { date: day(-4), noRateThatDay: true })).status).toBe(200);
     expect((await getInvoice(o, made.id)).fx).toMatchObject({
-      value: { noRateThatDay: true },
+      value: { noRateThatDay: true, noRateDay: todayIso() },
       dateOk: true,
       dateVerdict: "ok",
     });
     expect((await issueInvoice(o, made.id)).status).toBe(200);
-    expect((await typesRow(made.id))?.fx_no_rate_that_day).toBe(1);
+    expect((await typesRow(made.id))?.fx_no_rate_day).toBe(todayIso()); // the day the statement covers
     expect(await sealCheck(made.id)).toEqual({ content: true, snapshot: true });
     const today = await mkExportDraft(o);
     expect((await setFx(o, today.id, { date: day(0) })).status).toBe(200);
     expect((await getInvoice(o, today.id)).fx).toMatchObject({ dateOk: true, dateVerdict: "ok" });
     expect((await issueInvoice(o, today.id)).status).toBe(200);
-    expect((await typesRow(today.id))?.fx_no_rate_that_day).toBeNull();
+    expect((await typesRow(today.id))?.fx_no_rate_day).toBeNull();
+  });
+
+  it("the statement covers the day it was made for (review 2026-10-28, finding 1): saved on a Monday, issued on the Tuesday it is refused; issued on the Monday, or saved again on the Tuesday, it passes", async () => {
+    const o = await farSession();
+    vi.useFakeTimers({ toFake: ["Date"], now: Date.UTC(2027, 5, 7, 6, 0, 0, 0) }); // Monday 7 June 2027, 11:30 IST
+    await putTax({ luts: [lutOf("2728")] });
+    const stale = await mkExportDraft(o);
+    expect((await setFx(o, stale.id, { date: "2027-06-05", noRateThatDay: true })).status).toBe(200);
+    expect((await typesRow(stale.id))?.fx_no_rate_day).toBe("2027-06-07");
+    expect((await getInvoice(o, stale.id)).fx).toMatchObject({
+      value: { noRateThatDay: true, noRateDay: "2027-06-07" },
+      dateVerdict: "ok",
+    });
+    // the same day: the statement counts
+    const sameDay = await mkExportDraft(o);
+    expect((await setFx(o, sameDay.id, { date: "2027-06-05", noRateThatDay: true })).status).toBe(200);
+    expect((await issueInvoice(o, sameDay.id)).status).toBe(200);
+    expect((await typesRow(sameDay.id))?.fx_no_rate_day).toBe("2027-06-07");
+    expect(await sealCheck(sameDay.id)).toEqual({ content: true, snapshot: true });
+    // Tuesday: Monday's statement covers nothing; the view says so and the issue is refused with nothing written
+    vi.setSystemTime(Date.UTC(2027, 5, 8, 6, 0, 0, 0));
+    await renew(o);
+    expect((await getInvoice(o, stale.id)).fx).toMatchObject({
+      value: { noRateThatDay: false, noRateDay: "2027-06-07" },
+      dateVerdict: "same_day_exists",
+    });
+    const counter = await invoiceCounter();
+    const refused = await issueInvoice(o, stale.id);
+    expect(refused.status).toBe(409);
+    expect(await blockersOf(refused)).toEqual([{ code: "fx_same_day_exists", date: "2027-06-08" }]);
+    expect(await invoiceCounter()).toBe(counter);
+    expect(await typesRow(stale.id)).toMatchObject({ status: "draft", number_display: null });
+    // a rate of Tuesday itself needs no statement
+    expect((await setFx(o, stale.id, { date: "2027-06-08" })).status).toBe(200);
+    expect((await getInvoice(o, stale.id)).fx).toMatchObject({ dateVerdict: "ok" });
+    // or the statement made again, on Tuesday
+    expect((await setFx(o, stale.id, { date: "2027-06-05", noRateThatDay: true })).status).toBe(200);
+    expect((await typesRow(stale.id))?.fx_no_rate_day).toBe("2027-06-08");
+    const ok = await issueInvoice(o, stale.id);
+    expect(ok.status, await ok.clone().text()).toBe(200);
+    expect(await sealCheck(stale.id)).toEqual({ content: true, snapshot: true });
   });
 
   it("the age allowed is a setting: with 0 days only the issue day counts, statement or not", async () => {

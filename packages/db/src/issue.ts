@@ -604,7 +604,7 @@ export type AdvanceIssueArgs = Omit<InvoiceIssueArgs, "authority" | "bell" | "ex
     contactId: string | null;
     currency: string;
     exportMode: string | null;
-    fx: { rateMicros: number; date: string; source: string; noRateThatDay?: boolean } | null;
+    fx: { rateMicros: number; date: string; source: string; noRateDay?: string } | null;
     subtotalMinor: number;
     discountMinor: number;
     taxableMinor: number;
@@ -635,7 +635,7 @@ export function advanceIssueStatements(db: D1Database, a: AdvanceIssueArgs): Sen
     .prepare(
       `INSERT INTO documents (id, type, status, client_id, project_id, parent_id, contact_id, currency, supply_type, place_of_supply_code, export_mode,
          fx_rate_micros, fx_date, fx_source, subtotal_minor, discount_minor, taxable_minor, cgst_minor, sgst_minor, igst_minor, round_off_minor,
-         total_minor, total_inr_minor, content_sha256, created_by, created_at, updated_at, fx_no_rate_that_day)
+         total_minor, total_inr_minor, content_sha256, created_by, created_at, updated_at, fx_no_rate_day)
        VALUES (?1, ?2, 'draft', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?25, ?26)`,
     )
     .bind(
@@ -664,7 +664,7 @@ export function advanceIssueStatements(db: D1Database, a: AdvanceIssueArgs): Sen
       a.contentSha256,
       a.issuedBy,
       a.now,
-      d.fx?.noRateThatDay ? 1 : null,
+      d.fx?.noRateDay ?? null,
     );
   const lines = d.lines.map((l) =>
     db

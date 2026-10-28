@@ -389,7 +389,10 @@ export function invoiceView(i: InvoiceViewInput) {
             rateMicros: state.fx.rateMicros,
             date: state.fx.date,
             source: state.fx.source,
-            noRateThatDay: state.fx.noRateThatDay === true,
+            /** The Owner's statement "no rate was published that day" is in force: a frozen invoice kept it; a draft only while its day is the day of supply (a statement of another day counts for nothing). */
+            noRateThatDay: frozen ? state.fx.noRateDay !== undefined : state.fx.noRateDay === fxRefDate,
+            /** The day the statement was made for (ISO), null when none was made. */
+            noRateDay: state.fx.noRateDay ?? null,
           }
         : null,
       refDate: fxRefDate,
@@ -397,17 +400,12 @@ export function invoiceView(i: InvoiceViewInput) {
       // a frozen invoice was judged at issue: no live window applies to it (review 2, finding 8)
       dateOk:
         state.fx && !frozen
-          ? fxDateOk(state.fx.date, fxRefDate, settings.tax.fxMaxAgeDays, state.fx.noRateThatDay === true)
+          ? fxDateOk(state.fx.date, fxRefDate, settings.tax.fxMaxAgeDays, state.fx.noRateDay)
           : null,
       /** Research round 2026-10-28 (RA-21): `same_day_exists` when a rate of an earlier day was typed without the statement; `invalid` when too old or later. */
       dateVerdict:
         state.fx && !frozen
-          ? fxDateVerdict(
-              state.fx.date,
-              fxRefDate,
-              settings.tax.fxMaxAgeDays,
-              state.fx.noRateThatDay === true,
-            )
+          ? fxDateVerdict(state.fx.date, fxRefDate, settings.tax.fxMaxAgeDays, state.fx.noRateDay)
           : null,
       inr: computed?.inr ?? null,
     },

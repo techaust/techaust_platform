@@ -227,8 +227,15 @@ export type InvoiceView = {
   };
   fx?: {
     applies: boolean;
-    /** `noRateThatDay`: stored with the frozen rate (step 5 contract); absent from an older API. */
-    value: { rate: string; rateMicros: number; date: string; source: string; noRateThatDay?: boolean } | null;
+    /** `noRateThatDay`: the Owner's statement is in force (a frozen invoice kept it; a draft only while it was made for the day of supply); `noRateDay`: the day it was made for. */
+    value: {
+      rate: string;
+      rateMicros: number;
+      date: string;
+      source: string;
+      noRateThatDay?: boolean;
+      noRateDay?: string | null;
+    } | null;
     refDate: string;
     maxAgeDays: number;
     dateOk: boolean | null;

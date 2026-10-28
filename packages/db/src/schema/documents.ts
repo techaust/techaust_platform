@@ -169,8 +169,11 @@ export const documents = sqliteTable(
     fxRateMicros: integer("fx_rate_micros"),
     fxDate: text("fx_date"),
     fxSource: text("fx_source"),
-    /** Q24 (owner 2026-10-28, 08-C RA-21): 1 when the Owner stated that no reference rate was published on the day of supply and the rate is the last one published before it. Null: not stated. Frozen with the rate. */
-    fxNoRateThatDay: integer("fx_no_rate_that_day"),
+    /**
+     * Q24 (owner 2026-10-28, 08-C RA-21): the DAY the Owner's statement "no reference rate was published that day" covers (an ISO date; null: not stated). It is the day of supply the statement
+     * was made for (a draft: the IST day of the save; a payment received: the day it arrived) and counts only at an issue on that same day. Frozen with the rate.
+     */
+    fxNoRateDay: text("fx_no_rate_day"),
     subtotalMinor: integer("subtotal_minor").notNull().default(0),
     discountMinor: integer("discount_minor").notNull().default(0),
     taxableMinor: integer("taxable_minor").notNull().default(0),

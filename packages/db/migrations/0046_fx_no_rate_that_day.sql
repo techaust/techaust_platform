@@ -1,1 +1,0 @@
-ALTER TABLE `documents` ADD `fx_no_rate_that_day` integer;

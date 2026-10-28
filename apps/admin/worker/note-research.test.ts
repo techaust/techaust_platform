@@ -23,7 +23,15 @@ import {
   putBank,
   putCompany,
 } from "./test-invoices.ts";
-import { draftCredit, draftDebit, issueCredit, mkIssuedInvoice, noteRow, parentRow } from "./test-notes.ts";
+import {
+  draftCredit,
+  draftDebit,
+  issueCredit,
+  issueDebit,
+  mkIssuedInvoice,
+  noteRow,
+  parentRow,
+} from "./test-notes.ts";
 
 beforeEach(async () => {
   await putCompany();
@@ -211,6 +219,40 @@ describe("the debit note 'Tax charged too low' [Q35, RA-22]", () => {
     const issued = await issueInvoice(o, b.id);
     expect(issued.status, await issued.clone().text()).toBe(200);
     expect(await noteRow(b.id)).toMatchObject({ taxable_minor: 0, igst_minor: 1_800, total_minor: 1_800 });
+  });
+
+  it("a note copies the parent's no-rate statement with the day it covers: the note's own fx columns and seal are the parent's (review 2026-10-28, finding 6)", async () => {
+    const o = await farSession("owner");
+    const day = (n: number) =>
+      new Date(Date.parse(`${new Date().toISOString().slice(0, 10)}T00:00:00Z`) + n * 86_400_000)
+        .toISOString()
+        .slice(0, 10);
+    const inv = await mkIssuedInvoice(o, {
+      prices: [100_000],
+      client: mkOverseasClient,
+      fields: {
+        exportMode: "igst_paid",
+        fx: { rate: "83.1234", date: day(-3), source: "FBIL", noRateThatDay: true },
+      },
+    });
+    const parentFx = await env.DB.prepare("SELECT fx_date, fx_no_rate_day FROM documents WHERE id = ?")
+      .bind(inv.id)
+      .first<{ fx_date: string; fx_no_rate_day: string }>();
+    expect(parentFx).toEqual({ fx_date: day(-3), fx_no_rate_day: day(0) });
+    const debit = await issueDebit(o, inv.id, taxOnly(1_800));
+    const credit = await issueCredit(o, inv.id, {
+      mode: "lines",
+      lines: [{ line: 0, taxableMinor: 10_000 }],
+    });
+    for (const id of [debit.id, credit.id]) {
+      const row = await env.DB.prepare("SELECT fx_date, fx_no_rate_day FROM documents WHERE id = ?")
+        .bind(id)
+        .first();
+      expect(row).toEqual({ fx_date: day(-3), fx_no_rate_day: day(0) });
+      const bundle = (await loadDocument(env.DB, id)) as DocumentBundle<TermsRef>;
+      expect(await verifyInvoiceSealed(bundle)).toEqual({ content: true, snapshot: true });
+      expect(invoiceSealPartsOfBundle(bundle)?.fx).toMatchObject({ noRateDay: day(0) });
+    }
   });
 
   it("a save changes the amount, or turns the note into a price correction (and back), always from the invoice as it is now", async () => {

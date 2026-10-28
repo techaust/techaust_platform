@@ -856,7 +856,9 @@ export const invoices = new Hono<AppEnv>()
               rateMicros,
               date: fl.fx.date,
               source,
-              ...(fl.fx.noRateThatDay === true ? { noRateThatDay: true as const } : {}),
+              // Q24: the statement is stored with the day it was made for, the day of supply as far as it is known now: today (IST), the day the draft would issue.
+              // An issue on another day does not accept it (core `fxDateVerdict`).
+              ...(fl.fx.noRateThatDay === true ? { noRateDay: issueDateOf(Date.now()) } : {}),
             },
           };
         }
@@ -976,7 +978,7 @@ export const invoices = new Hono<AppEnv>()
         fx_rate_micros: state.fx?.rateMicros ?? null,
         fx_date: state.fx?.date ?? null,
         fx_source: state.fx?.source ?? null,
-        fx_no_rate_that_day: state.fx?.noRateThatDay ? 1 : null,
+        fx_no_rate_day: state.fx?.noRateDay ?? null,
         service_completed_on: state.serviceCompletedOn,
         export_declaration_id: state.exportDeclarationId,
       },
