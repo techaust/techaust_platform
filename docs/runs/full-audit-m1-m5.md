@@ -231,5 +231,56 @@ Shots: `.logs/shots/a2-web/` (main checkout).
 - 11 goes on the owner's copy page.
 - 12 is Phase 7.
 
+### A3 admin core: reviewer claude-opus-5-5/high, 2026-10-29 ~02:35–03:15 IST, on 1b788a85: SEND BACK
+**Ran:**
+- 20 A3 worker test files, 1,609/1,609 passed;
+- a functional pass: enrolment and TOTP sign-in, a Sales member, a lead converted to client, a project, a note, a care plan, time logs, the day cap, a stale save, a fake PDF refused, and every route the Sales role must not reach;
+- a visual pass with axe, overflow, targets and text size.
+
+Shots: `.logs/shots/a3-admin/` (main checkout).
+
+**Findings:**
+1. **High:** tables that scroll sideways can't be scrolled by keyboard (WCAG 2.1.1).
+   - Where: the timesheet's `.sheet-wrap` (`time.tsx:373`, `care.css:456`) at 768 and 1024, and `DataTable`'s `.dtable` (`data-table.tsx:56`) when it overflows.
+   - Fix: `tabIndex=0`, `role=region`, an `aria-label` and a focus style; axe at 768 and 1024 in e2e.
+2. **Medium:** the whole page scrolls sideways at 1024 on /time.
+   - Cause: `.visually-hidden` (`app.css:88`) escapes the overflow clip.
+   - Fix: `position: relative` on every overflow wrapper, plus a sweep test that `scrollWidth` ≤ `clientWidth` at 768 and 1024.
+3. **Medium:** the Entries "Note" column breaks words letter by letter at 1024 (`care.css:600-604`).
+4. **Medium, ADM-CLI-03 partial:** the client Overview shows no billed, overdue or balance figures (`clients.ts:790` answers `{available:false}`), though they can be computed from frozen invoices now. "Collected" waits for M6.
+5. **Medium, ADM-PRJ-05 partial:** the project's Figures panel shows hours only (`projects.ts:406-408`). Billed can be shown now; paid comes in M6.
+6. **Medium (one-line):** the debug line "Password hashing took N ms" is still on the sign-in code step (`sign-in.tsx:272-275`); docs/13 of 2026-10-21 said it would go in M3.1.
+7. **Low:** note Markdown leaves headings as literal text (ADM-PRJ-03 says "rich text"). Lead: support `#`–`###` in `@techaust/core/markdown`.
+8. **Low, ADM-LEAD-01 partial:** a manual lead has no budget band, timeline or currency (the labels exist in core).
+9. **Low, ADM-LEAD-04:** conversion stays on the lead instead of opening the draft proposal. Fix: open the draft (no new copy needed).
+10. **Low:** the dashboard's Projects tile leaves out Planned projects, and a date-only next action prints with "23:59 IST".
+11. **Low, owner's copy:** the dashboard's foot line repeats itself. Suggestion: "Collected figures and payments waiting for checks arrive with payments."
+12. **Low:** the Convert dialog defaults the country to India when the lead gave none. Fix: require a choice.
+13. **Low:** staff sign-in has no "Show password" toggle, while enrolment has one.
+
+**Checked and correct:**
+- every route in `ROUTES`; the Sales boundaries in the API and the UI;
+- search escapes `LIKE`;
+- the upload path (cap, sniffing, `FixedLengthStream`, R2 SHA-256, the object removed when the row fails);
+- download headers;
+- anonymised clients: notes and files deleted, writes locked;
+- audit summaries hold ids only; the note renderer sets no HTML;
+- milestone invoiced and paid can't be set by hand;
+- focus, skip link, 44 px targets, reduced-motion CSS, the logo.
+
+**Not verified:**
+- staging and the publish workflow end to end;
+- a real 25 MB R2 upload and an upload through the UI;
+- the Accountant role signed in;
+- the catalogue and template editors, export, erase and care status in the UI (the tests cover them);
+- NVDA, Safari, Firefox, phones;
+- 768 and 1600 for care, catalogue, settings, users, account and audit;
+- dark theme at 1024. Many Playwright shots caught loading frames.
+
+**Lead's triage:**
+- 1–10, 12 and 13 go into an A3 fix task (the builder does 4, 5, 7, 8 and 10; the designer does the screens).
+- 11 goes on the owner's copy page.
+- A re-check covers the screens and widths not checked here.
+
 ## Handover
 _(written at the end of each conversation)_
