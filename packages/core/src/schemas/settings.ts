@@ -334,14 +334,26 @@ export const paymentTermsSettings = z
     }),
   );
 
+/**
+ * The least each retention figure may be (months, but years for `financialYears`): the one place the floors live. The schema takes them as its minimums, and `resolveSetting` raises a stored
+ * row that is below one to it, so a row saved before a floor existed (the email log was 1 month) reads at the floor instead of failing.
+ */
+export const RETENTION_FLOORS = {
+  leadsMonths: 12,
+  emailLogMonths: 12,
+  securityLogMonths: 13,
+  financialYears: 8,
+} as const;
+
 export const retentionSettings = z.strictObject({
   /** ADM-SET-09: unconverted leads; never below the 1-year minimum (DPDP Rule 8(3)). */
-  leadsMonths: intBetween(12),
-  emailLogMonths: intBetween(1),
+  leadsMonths: intBetween(RETENTION_FLOORS.leadsMonths),
+  /** At least 12 months: the logs of processing personal data are kept for one year (DPDP Rule 8(3), from 13 May 2027; Researched 2026-10-28, 08-C RB-09). A stored row below it reads as 12 (`resolveSetting`). */
+  emailLogMonths: intBetween(RETENTION_FLOORS.emailLogMonths),
   /** ≥ 13 months (DPDP Rule 6: 1 year; CERT-In: 180 days). */
-  securityLogMonths: intBetween(13),
+  securityLogMonths: intBetween(RETENTION_FLOORS.securityLogMonths),
   /** Financial records and the audit log: 10 years by default, never below 8 (s.36). */
-  financialYears: intBetween(8),
+  financialYears: intBetween(RETENTION_FLOORS.financialYears),
 });
 
 export const flagSettings = z.object({
@@ -427,7 +439,19 @@ export type SettingsGroup = (typeof SETTINGS_GROUPS)[number];
  * Throws if the merged value is invalid (a corrupted row), which the caller turns into a 500, never a silent default.
  */
 export function resolveSetting<K extends SeededSettingKey>(key: K, stored: unknown): Settings[K] {
-  return READ_SCHEMAS[key].parse(mergeDefaults(SETTINGS_DEFAULTS[key], stored ?? undefined)) as Settings[K];
+  const merged = mergeDefaults(SETTINGS_DEFAULTS[key], stored ?? undefined);
+  return READ_SCHEMAS[key].parse(key === "retention" ? floorRetention(merged) : merged) as Settings[K];
+}
+
+/**
+ * A retention row with the email-log figure raised to its floor of 12 months (08-C RB-09): the floor is new, and a row saved before it (the figure could be 1) must read at 12, not fail as
+ * a corrupted row. Only that figure: a leads, security or financial figure below its floor was always refused, and stays refused (the caller's 500). Anything not a whole number is left to the schema.
+ */
+export function floorRetention(value: unknown): unknown {
+  if (!isPlain(value)) return value;
+  const v = value.emailLogMonths;
+  if (typeof v !== "number" || !Number.isInteger(v) || v >= RETENTION_FLOORS.emailLogMonths) return value;
+  return { ...value, emailLogMonths: RETENTION_FLOORS.emailLogMonths };
 }
 
 const isPlain = (v: unknown): v is Record<string, unknown> =>
