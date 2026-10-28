@@ -8,7 +8,7 @@ import { ROUTES } from "./guard.ts";
 import app, { createApp } from "./test-app.ts";
 import { mkLog, mkOpenProject, mkPlan, today } from "./test-care.ts";
 import { entryBody, mkItem, putPaymentTerms, siteItems } from "./test-catalogue.ts";
-import { mkContact } from "./test-clients.ts";
+import { insert, mkContact } from "./test-clients.ts";
 import {
   accept,
   bodyOf,
@@ -763,6 +763,32 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
       return run(s, `/documents/${made.id}`, {
         method: "PATCH",
         body: { expectedUpdatedAt: made.updatedAt, fields: { title: "Scenario title" } },
+      });
+    },
+    "POST /api/v1/documents/:id/sections/fill-from-catalogue": async () => {
+      const s = await owner();
+      await mkTerms();
+      // a template with a Deliverables section, a service with no text yet (the section is created hidden), then Catalogue gets the text
+      await insert("templates", {
+        id: uuidv7(),
+        kind: "proposal",
+        category: "build",
+        version: 9_000,
+        body: JSON.stringify({
+          sections: [{ key: "deliverables", heading: "Deliverables", body: "{{service.deliverables}}" }],
+        }),
+      });
+      const made = await mkDraft(s);
+      await env.DB.prepare("UPDATE catalogue_items SET deliverables_md = 'Scenario text' WHERE id = ?")
+        .bind(made.itemId)
+        .run();
+      const sec = await one<{ id: string }>(
+        "SELECT id FROM document_sections WHERE document_id = ? AND kind = 'deliverables'",
+        made.id,
+      );
+      return run(s, `/documents/${made.id}/sections/fill-from-catalogue`, {
+        method: "POST",
+        body: { sectionId: sec?.id, expectedUpdatedAt: made.updatedAt },
       });
     },
     "DELETE /api/v1/documents/:id": async () => {
