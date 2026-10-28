@@ -35,8 +35,8 @@ export type PdfIntegrity =
 
 /** Flate streams smaller than this are not inflated (their header and Length checks still run): the damage moves whole 8 KB blocks. */
 export const INFLATE_MIN_BYTES = 8192;
-/** The most output one check inflates, over all its streams (1.5 MiB). Past it the rest is accepted unchecked, see the head comment. */
-export const INFLATE_BUDGET_BYTES = 1_572_864;
+/** The most output one check inflates, over all its streams (512 KiB, lead 2026-10-29: keeps the worst case inside the Free plan CPU). Past it the rest is accepted unchecked, see the head comment. */
+export const INFLATE_BUDGET_BYTES = 524_288;
 
 export type PdfIntegrityOptions = {
   /** The inflate budget in bytes (default `INFLATE_BUDGET_BYTES`); 0 inflates nothing. */

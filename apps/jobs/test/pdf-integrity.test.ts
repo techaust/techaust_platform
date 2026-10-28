@@ -123,7 +123,7 @@ describe("the structure check in workerd", () => {
       return { ms: (performance.now() - t0) / runs, result: first };
     };
     const small = await syntheticPdf(755, 262_000, "huffman"); // inflates 262 KB
-    const atBudget = await syntheticPdf(755, INFLATE_BUDGET_BYTES - 16_384, "huffman"); // just under 1.5 MiB inflated
+    const atBudget = await syntheticPdf(755, INFLATE_BUDGET_BYTES - 16_384, "huffman"); // just under 512 KiB inflated
     const past = await syntheticPdf(755, 4 * 1024 * 1024, "huffman"); // 4 MiB inflated: cut at the budget
     const [s, at, p] = [await time(small, 10), await time(atBudget, 5), await time(past, 5)];
     // the same files with nothing inflated: the part of the cost that grows with the file's size, not with the budget

@@ -164,9 +164,9 @@ const flateOfSize = (size: number): Stream => {
 };
 
 describe("checkPdfIntegrity: the bound on inflating (lead 2026-10-29, audit A6 finding 1)", () => {
-  it("the constants are the decided ones: 8,192 bytes and 1.5 MiB; a budget that is not a number is the default, never unbounded", async () => {
+  it("the constants are the decided ones: 8,192 bytes and 512 KiB; a budget that is not a number is the default, never unbounded", async () => {
     expect(INFLATE_MIN_BYTES).toBe(8192);
-    expect(INFLATE_BUDGET_BYTES).toBe(1_572_864);
+    expect(INFLATE_BUDGET_BYTES).toBe(524_288);
     const blank = buildPdf([{ raw: new Uint8Array(16 * 1024 * 1024), flate: true }]);
     for (const inflateBudget of [Number.NaN, Number.POSITIVE_INFINITY])
       expect(await checkPdfIntegrity(blank, null, { inflateBudget })).toMatchObject({
@@ -214,7 +214,7 @@ describe("checkPdfIntegrity: the bound on inflating (lead 2026-10-29, audit A6 f
     ).toMatchObject({ ok: false, code: "stream_checksum" });
   });
 
-  it("the default budget stops a stream that inflates to 16 MB near 1.5 MiB, and never refuses it for its size", async () => {
+  it("the default budget stops a stream that inflates to 16 MB near 512 KiB, and never refuses it for its size", async () => {
     const zeros = { raw: new Uint8Array(16 * 1024 * 1024), flate: true }; // 16 MB of blank pixels: about 16 KB once compressed
     const r = await checkPdfIntegrity(buildPdf([zeros], 20));
     expect(r).toMatchObject({ ok: true, partial: { skippedStreams: 1 } });
