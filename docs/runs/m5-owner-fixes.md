@@ -317,3 +317,16 @@ All 07-X lines show "[Placeholder] " before the recommended words until the owne
 1. Finding 16: apply the three-edit patch above (it touches `apps/admin/worker/headers.test.ts`)? Recommended: yes, by the lead or a one-file builder fix.
 2. The send panel now carries the only list (the main-column banner is gone, as the brief's "replace the banner and the Send card's line with a list"); on desktop the panel sits beside the editor and on phones before it. Keep one list (recommended), or also repeat a short summary at the top of the editing column?
 3. 07-X goes to the owner as one page (30 numbered lines, recommendations given; two lines offer an "Or:").
+
+## Fix round 1 (lead's brief, 2026-10-29 night; builder claude-opus-5-5/high per the owner's audit instruction)
+Inputs: the builder's and designer's open items, and two audit findings that land in this task's files (docs/runs/full-audit-m1-m5.md, A0 and A6).
+1. **CI clock, A0 high 1:** `apps/admin/worker/test-notes.ts:62` and `note-research.test.ts:230-231` use the UTC date while the server uses IST, so 6 tests fail every day from 00:00 to 05:29 IST. Use `todayIso()` (`test-invoice-types.ts:34`). Add a guard test that fails any worker test or helper using `toISOString().slice(0, 10)` for "today" without the IST offset. Also pin the module-load clocks (A0 low 7): `documents-send.test.ts:28`, `reports-totals.test.ts:56`, `dashboard-finance.test.ts:20`. Compute the value inside each test, or use fake timers set to 12:00 IST, mid-month, mid-FY.
+2. **PDF check CPU bound, A6 high 1** (lead's decision, recorded in docs/13). The check must never make a legitimate PDF unrenderable:
+   - (a) raise `INFLATE_MIN_BYTES` to 8,192: a moved 8 KB block can't hide inside a smaller stream;
+   - (b) keep a running total of inflated bytes with a hard budget (1.5 MB, a named constant). Over budget, the remaining streams are **not inflated**. The PDF is accepted on the header, xref and `/Length` checks alone, and `pdf.integrity_partial {bytes, inflated, skippedStreams}` is logged (numbers only). Never refuse, never retry for this.
+   - (c) hash the rendered bytes once and reuse the hash (A6 low 5, `pdf.ts:352/370`, `595-607`).
+   - Tests: the budget path, the 8 KB threshold, and that the owner's 3-block permutation is still caught with the budget at its minimum.
+   - Measure the check's wall time again on a synthetic PDF that holds a large Huffman-coded (not stored) stream, and report it.
+3. **The white flash, sweep 16:** apply the designer's three-edit patch above (`apps/admin/public/theme-boot.js`, `apps/admin/index.html`, `apps/admin/worker/headers.test.ts`).
+4. **The editing column (designer question 2):** keep the list on the Send panel only (lead's decision). No change.
+- **Done means:** `pnpm check` and `pnpm test` all green, including the 6 tests run at any hour (prove it with fake timers set to 01:00 IST). Bundle and startup budgets reported. Append "### Fix round 1 report" here.

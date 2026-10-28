@@ -101,5 +101,42 @@ Each area gets a fresh audit with no anchoring on earlier reviews: code, tests, 
 - Findings 2 and 4–10 go into one A0 fix task (Tier A, migrations: index and triggers only).
 - Finding 3 waits for the owner.
 
+### A6 jobs and operations: analyst claude-opus-5-5/high, 2026-10-29 01:45–02:00 IST, on 38e2fe87
+1. **High (not measured):** the new PDF integrity check inflates every Flate stream of 4 KB or more (`packages/pdf/src/integrity.ts:121`). A transparent PNG signature (2400×1200 allowed, `settings-signature.ts:26-27`) means megabytes of pixels to inflate in one invocation, so the consumer could be cut off and retried, then dead-lettered, and signed invoices would get no PDF. **Goes into the M5 owner-fix round 1:** an 8 KB threshold, an inflate budget with an accepted partial check and a log line, and the hash computed once. Later: downscale the signature at upload to at most 800×400 (A4/A5 fix), and record a staging `cpuTimeMs` reading for `pdf.rendered`.
+2. **Medium:** documents that keep failing block the daily PDF sweep and use up Browser Run time (`pdf.ts:722-725`; dead letters ring only `pdf.failed`). Fix: count failures per document, stop sweeping it after N nights with a `pdf.refused` bell, and order the sweep by last attempt.
+3. **Medium (latent):** jobs production inherits both crons (`apps/jobs/wrangler.jsonc:41`; `triggers` is inheritable). The guard `check-worker-config.mjs:124` requires it to be absent. Fix: `"triggers": {"crons": []}` in `env.production`, and make the guard require an empty array.
+4. **Medium:** an email outage of a few minutes fails emails for good (`queue.ts:215` retries after a fixed 30 s, the catch-all `:232`, `max_retries` 5). Fix: exponential backoff from 60 s to 1 h, `max_retries` about 10, and optionally one re-drive from the DLQ. The 8 s SES timeout can send twice: at-least-once delivery is accepted.
+5. **Low:** the PDF is hashed twice (fix round 1 covers it).
+6. **Low:** the daily cron reads D1 (`purge.ts:37`), though `index.ts:28` says it doesn't. Move that read into a queued message, or correct the comment.
+7. **Low:** the care scan (06:00 IST) and `alerts.daily` (09:00 IST) run on a single tick each. Repeat both at the next two hours: both are idempotent.
+8. **Low, owner's yes (workflow change):** the deploy order (admin API, then jobs) rests on alphabetical order. Fix: explicit steps, plus a `/healthz` smoke check after each.
+9. **Low:** no queue-consumer CPU readings in `cpu-baseline.md`; no Traces. Enabling Traces is the owner's choice.
+10. **Low, docs:** `environments.md` is stale (R2 "Not created yet", no Browser Run, no crons, no `ADMIN_JOBS`, "four Workers"). `ses-and-turnstile.md` has no step-by-step for the 90-day key rotation. Backup and restore, incident and secret-rotation runbooks are due in M7.5 and L7.
+- **Missing or partial, and when it's due:**
+  - JOB-Q-01 / docs/05 §11.2: dead letters in an admin "Needs review" list (`review_items`) do not exist and nothing schedules them. Lead: M6.1, since ADM-PAY-07 needs it too.
+  - JOB-CRON-01: session, token and log clean-up and the D1 usage check are due in M7.4.
+  - JOB-PDF-01: the 20-PDF burst is not proven on staging.
+  - Not yet due: JOB-CRON-03 (M7.2), JOB-BKP-01 (L7), JOB-HOOK-01–03 (M6).
+- **Headroom on the Free plan, estimated:**
+  - Queues: about 1,000 operations a day out of 10,000.
+  - Browser Run: about 250 renders a month; a care-billing day takes 80–200 s of the 600 s daily allowance.
+  - D1: well within limits.
+  - R2: about 9 years to 10 GB.
+  - The jobs bundle will likely pass its ceiling in M6: plan a webhook Worker before M6.2.
+- **Logs:** clean of personal data.
+- **Not verified:**
+  - the structure of real Browser Run PDFs;
+  - the check's CPU on real PDFs;
+  - whether queue consumers really have 10 ms or 30 s of CPU;
+  - the deployed state of the hosted services;
+  - pnpm's ordering guarantee.
+
+**Lead's triage:**
+- 1 and 5 go into the M5 owner-fix round 1.
+- 2, 3, 4, 6, 7 and 10 go into an A6 fix task.
+- 8 waits for the owner's yes.
+- 9: the runbook part goes into the A6 task; Traces is the owner's choice.
+- The `review_items` gap goes to M6.1.
+
 ## Handover
 _(written at the end of each conversation)_
