@@ -7,7 +7,7 @@
 //     bring zod in), `lutBellFor` decides. When a bell is due: ONE `INSERT OR IGNORE ... SELECT` over the active owners, kind `lut.reminder`, entity
 //     `lut:<FY>:<Monday of the IST week>`; the unique index (user, kind, entity) keeps it to one a week per owner, whatever the redelivery or rerun. It writes
 //     nothing else, and the weekly EMAIL is M5.4's (LD27).
-//   The title is 07-S §5's banner line; the line for "the running FY has no letter" is not drafted yet, so it is `[Placeholder]` (docs/07-S "Copy gaps").
+//   The titles are 07-S §8: the reminder line and the banner line for "the running FY has no letter" (approved by the lead 2026-10-28).
 import {
   exportModeFromStoredTax,
   type LutCheckMessage,
@@ -16,7 +16,7 @@ import {
 } from "@techaust/core/invoices";
 import { logEvent } from "./log.ts";
 
-/** The bell the owners see: 07-S §8 (pending the owner's word). */
+/** The bell the owners see: 07-S §8 (approved by the lead 2026-10-28). */
 export const LUT_BELL_COPY = {
   next_fy_due: (fyLabel: string) => `File the LUT for FY ${fyLabel} and save its ARN in Settings › Tax.`,
   current_missing: (fyLabel: string) =>

@@ -261,6 +261,7 @@ describe("the view of the M5.2 types", () => {
       proformaNumber: SAMPLE_ADVANCE.proformaNumber,
       proformaDate: "20 Oct 26",
       receivedOn: "27 Oct 26",
+      igstNoLutFy: null,
     });
     const x = view((await buildInvoiceFixture("advance_export")).envelope);
     expect(x.advance?.proformaNumber).toBe(SAMPLE_ADVANCE.proformaNumber);

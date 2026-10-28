@@ -563,7 +563,7 @@ export function milestoneDraft(input: {
       catalogueItemId: null,
       catalogueRateMinor: null,
       catalogueLine: null,
-      // [Placeholder, 07-R] the line's words: the milestone's title, with the group when there are several.
+      // 07-R §7 (invoice line from a milestone): the line's words are the milestone's title, with "(SAC {code}, {rate}%)" after it when there is more than one tax group.
       description: many
         ? `${input.title} (${l.sac ? `SAC ${l.sac}, ` : ""}${percentFromBp(rateBp)}%)`
         : input.title,

@@ -135,6 +135,19 @@ const CARE_V2: TemplateBody = {
     ),
   ],
 };
+/**
+ * Version 3 of the care-plan block (research round 2026-10-28; 07-U §9; Researched 2026-10-28, 08-C RA-24): the V2 text with one sentence added, "Extra hours are invoiced on the next monthly
+ * invoice and are due with it." (s.31(5) CGST Act: a continuous supply is invoiced on or before its due date; overage hours are charged at the plan's SAC and rate). A NEW version, never an edit.
+ */
+const CARE_V3: TemplateBody = {
+  sections: [
+    section(
+      "care_plan",
+      "Care plan",
+      "Care plans are paid monthly in advance. Hours above the included hours are charged at the overage rate, before GST. Extra hours are invoiced on the next monthly invoice and are due with it. Price and hours changes take effect from the next billing period.",
+    ),
+  ],
+};
 const TERMS_V2: TemplateBody = {
   sections: [section("terms", "Terms", "These terms are part of the proposal from {{company.name}}.")],
 };
@@ -156,4 +169,6 @@ const V2: readonly SeedTemplate[] = [
   { version: 2, kind: "terms_block", category: null, body: TERMS_V2 },
 ];
 
-export const SEED_TEMPLATES: readonly SeedTemplate[] = [...V1, ...V2];
+const V3: readonly SeedTemplate[] = [{ version: 3, kind: "care_block", category: null, body: CARE_V3 }];
+
+export const SEED_TEMPLATES: readonly SeedTemplate[] = [...V1, ...V2, ...V3];

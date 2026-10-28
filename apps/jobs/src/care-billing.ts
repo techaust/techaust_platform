@@ -14,7 +14,6 @@ import { billingJobs } from "./billing-rpc.ts";
 import { logEvent } from "./log.ts";
 
 const PAGE = 50;
-const PLACEHOLDER = "[Placeholder, 07-U] ";
 
 export type CareScanResult = { plans: number; continued: boolean };
 
@@ -104,9 +103,9 @@ export async function processCareDeadLetter(
   const title =
     body.kind === "care.bill"
       ? plan && period
-        ? `${PLACEHOLDER}The care invoice for ${plan.display_name} (${periodWords(period)}) couldn't be drafted. Open the care plan to see why.`
-        : `${PLACEHOLDER}A care invoice couldn't be drafted. Open the care plan to see why.`
-      : `${PLACEHOLDER}A care invoice draft could not be issued by itself. Check the draft.`;
+        ? `The care invoice for ${plan.display_name} (${periodWords(period)}) couldn't be drafted. Open the care plan to see why.`
+        : `A care invoice couldn't be drafted. Open the care plan to see why.`
+      : `A care invoice draft could not be issued by itself. Check the draft.`;
   await env.DB.prepare(FAILED_BELL_SQL).bind(entityType, `${id}:${day}`, title, link).run();
   logEvent("care.dead_letter", { kind: body.kind });
 }

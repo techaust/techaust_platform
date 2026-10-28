@@ -210,7 +210,7 @@ export const documentStart = new Hono<AppEnv>().post(
                       id: uuidv7(),
                       position: i + 1,
                       catalogue_item_id: null,
-                      // [Placeholder, 07-N] the line's words: the step's label, with the group when there are several.
+                      // 07-R §7 (proposal start plan line): the line's words are the step's label, with "(SAC {code}, {rate}%)" after it when there is more than one tax group.
                       description: many
                         ? `${inst.label} (${l.sac ? `SAC ${l.sac}, ` : ""}${rate})`
                         : inst.label,

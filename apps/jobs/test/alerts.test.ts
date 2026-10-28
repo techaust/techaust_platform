@@ -138,7 +138,7 @@ describe("unbilled work: IST day 25 exactly [ADM-INV-19, Rule 47]", () => {
       link: `/projects/${m.projectId}`,
     });
     expect(rows[0]?.title).toMatch(
-      /^\[Placeholder, 07-U\] Launch the site for Sample Traders was delivered \d+ days ago and isn't invoiced yet\.$/,
+      /^Launch the site for Sample Traders was delivered \d+ days ago and isn't invoiced yet\.$/,
     );
   });
 

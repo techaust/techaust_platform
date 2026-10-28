@@ -31,15 +31,14 @@ import { type RenderEnv, renderPaced } from "./browser.ts";
 import { logEvent } from "./log.ts";
 import { type Clock, realClock } from "./pacer.ts";
 import { BROWSER_ALERT_MS, dayOf, failed, HALF_BELL_SQL, putOnce, STAT_ADD_SQL, sha256Bytes } from "./pdf.ts";
-import { PLACEHOLDER_07V } from "./reports.ts";
 
 /** The address a statement's footer sends questions to when Settings has none (07-V §6.1: a fixed word, the billing address of docs/13 2026-10-07). */
 export const DEFAULT_BILLING_EMAIL = "billing@techaust.com";
 
-/** 07-V §9, word for word with the client's CODE as `{client}`; marked until the owner approves 07-V (as M5.4's 07-U bells are). */
+/** 07-V §9, word for word with the client's CODE as `{client}` (approved by the lead 2026-10-28). */
 export const STATEMENT_BELL_COPY = {
-  ready: (client: string) => `${PLACEHOLDER_07V}Statement PDF for ${client} is ready`,
-  failed: (client: string) => `${PLACEHOLDER_07V}Statement PDF for ${client} couldn't be made`,
+  ready: (client: string) => `Statement PDF for ${client} is ready`,
+  failed: (client: string) => `Statement PDF for ${client} couldn't be made`,
 } as const;
 
 /** Where a statement bell leads: the client's Statement tab, on that PDF. */

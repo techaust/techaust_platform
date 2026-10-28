@@ -1,20 +1,14 @@
 // M5.4 emails: the four client document emails (attached and link only), the payment reminder (invoice, payment request and debit note, every stage),
-// and the three staff alerts. Words: 07-U (PENDING the owner's approval, so every 07-U line carries "[Placeholder] "), 07 §8 and 07-T §2 subjects
+// and the three staff alerts. Words: 07-U (approved by the lead on 2026-10-28; no placeholder mark), 07 §8 and 07-T §2 subjects
 // (approved, unmarked), 07-S §5 (the LUT email). The data is exactly core's `INVOICE_EMAIL_DATA`.
 import { EMAIL_TEMPLATES } from "@techaust/core/email-templates";
 import { INVOICE_EMAIL_DATA } from "@techaust/core/invoice-email";
 import { describe, expect, it } from "vitest";
-import {
-  APPROVED_07U,
-  NO_REPLY_REPLY_TO,
-  PLACEHOLDER_MARK,
-  reminderStage,
-  renderEmail,
-  SENDERS,
-} from "../src/index.ts";
+import { NO_REPLY_REPLY_TO, reminderStage, renderEmail, SENDERS } from "../src/index.ts";
 
 const opts = { assetBase: "https://assets.example.test/brand/" };
-const M = PLACEHOLDER_MARK;
+/** No line carries a placeholder mark any more (07-U approved by the lead on 2026-10-28): kept as the empty prefix the expectations below were written with. */
+const M = "";
 
 const doc = {
   first_name: "Asha",
@@ -47,10 +41,21 @@ const words = (html: string) =>
     .trim();
 const flat = (s: string) => s.replace(/\s+/g, " ").trim();
 
-describe("the marks follow the approval switch", () => {
-  it("07-U is not approved yet: its lines carry the mark", () => {
-    expect(APPROVED_07U).toBe(false);
-    expect(M).toBe("[Placeholder] ");
+describe("07-U is approved: no placeholder mark and no switch", () => {
+  it("the document email and the reminder render without a placeholder or a 'VERIFY WITH' note in their subject, text or HTML (the other emails' tests below say the same words exactly)", () => {
+    const rendered = [
+      renderEmail("invoice.sent", doc, opts),
+      renderEmail(
+        "reminder.sent",
+        { ...doc, attached: "", kind: "invoice", when: "due", offset_days: "0" },
+        opts,
+      ),
+    ];
+    for (const r of rendered)
+      for (const part of [r.subject, r.text, r.html]) {
+        expect(part).not.toContain("Placeholder");
+        expect(part).not.toContain("VERIFY WITH");
+      }
   });
 });
 
@@ -228,7 +233,6 @@ describe("reminder.sent [ADM-INV-13, Q47, Q48, Q50]", () => {
       );
       // 07 §8: approved, no mark; it is the last paragraph
       expect(r.text).toContain("\n\nIf you've already paid, thank you, and please ignore this.\n\n");
-      expect(r.text).not.toContain(`${M}If you've already paid`);
       expect(r.text).not.toContain("attached as a PDF");
     }
   });
@@ -303,7 +307,7 @@ describe("the staff alerts, to the owners from no-reply@ [ADM-INV-19, ADM-INV-10
     );
   });
 
-  it("lut.reminder: next year's letter due (07-S §5, unmarked) and the running year without one (07-U §8, marked)", () => {
+  it("lut.reminder: next year's letter due (07-S §5) and the running year without one (07-U §8)", () => {
     const due = renderEmail(
       "lut.reminder",
       {
@@ -319,7 +323,7 @@ describe("the staff alerts, to the owners from no-reply@ [ADM-INV-19, ADM-INV-10
     expect(due.text).toContain(
       "Export invoices without IGST from 1 April need a letter of undertaking for FY 2027-28. File it on the GST portal (Services, User Services, Furnish Letter of Undertaking) and save the ARN in Settings › Tax. We'll remind you each week until it's saved.",
     );
-    expect(due.text).not.toContain(M);
+    expect(due.text).not.toContain("Placeholder");
     const missing = renderEmail(
       "lut.reminder",
       {

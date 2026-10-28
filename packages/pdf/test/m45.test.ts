@@ -105,6 +105,18 @@ describe("the acceptance certificate page", () => {
     for (const id of ["typed-name", "time", "sha"]) expect(html).toContain(`data-testid="${id}"`);
   });
 
+  it("says under its statement that it is a record, not the BSA 2023 s.63 certificate (07-A §9; Researched 2026-10-28, 08-C RB-20)", () => {
+    const html = renderCertificateHtml(view);
+    const statement = "This certificate records an electronic acceptance through the TecHaust client portal.";
+    const note =
+      "This is a record of the acceptance. The document fingerprint is the SHA-256 hash of the PDF that was accepted.";
+    expect(html).toContain(note);
+    expect(html).toContain('data-testid="record-note"');
+    // the note sits right under the statement, before the first block
+    expect(html.indexOf(statement)).toBeLessThan(html.indexOf(note));
+    expect(html.indexOf(note)).toBeLessThan(html.indexOf('aria-label="Document"'));
+  });
+
   it("is one self-contained page: a CSP that refuses the network, no script, no external reference", () => {
     const html = renderCertificateHtml(view);
     expect(html).toContain("Content-Security-Policy");

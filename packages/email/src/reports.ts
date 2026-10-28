@@ -2,22 +2,15 @@
 // (four stages: the FEMA date in 30 days or past, the GST date in 30 days or past), in the brand layout of every staff alert (the subject as the heading,
 // the sentences, the 48 px verdigris button with the plain address under it, light and dark), each with its plain-text twin saying the same words.
 //
-// Words: docs/07-content-appendix/V-m5.5b-reports-statements.md §10 (07-V), drafted by the lead and PENDING the owner's word-for-word approval. So every
-// line carries the "[Placeholder] " mark (`V`), in the subject, the HTML and the text alike, as the M5.4 emails mark 07-U; when the owner approves 07-V,
-// `APPROVED_07V` turns to true and nothing else changes. 07-V §10 has no greeting, so none is added. Every tax and legal sentence is VERIFY WITH CA/LEGAL.
+// Words: docs/07-content-appendix/V-m5.5b-reports-statements.md §10 (07-V), word for word, approved by the lead on 2026-10-28 (the FEMA and GST lines: Researched 2026-10-28,
+// 08-C RB-01, RB-03, RB-04, RA-20). 07-V §10 has no greeting, so none is added.
 //
 // The data is exactly `INVOICE_EMAIL_DATA["edf.reminder"]` and `["realisation.alert"]` (@techaust/core/invoice-email): every value a string, money and
-// dates already formatted by the jobs Worker (nothing is added up or worked out here). An unknown stage is never guessed: the subject is the plain mark
+// dates already formatted by the jobs Worker (nothing is added up or worked out here). An unknown stage is never guessed: the subject is just
 // and the number, and the stage sentence is left out. Presentation only: the number, the amounts and the dates are bold in HTML (kept on one line); every
 // variable is escaped.
 import { escapeHtml, headerValue } from "./headers.ts";
 import { type LayoutOptions, type Para, type Rendered, securityEmail } from "./templates.ts";
-
-/** Flip to true when the owner approves 07-V word for word: every mark below disappears at once (the admin screens have the same switch). */
-export const APPROVED_07V = false;
-const MARK = "[Placeholder] ";
-/** A 07-V line, marked until the owner approves it. */
-const V = (line: string): string => (APPROVED_07V ? line : `${MARK}${line}`);
 
 export type EdfReminderData = {
   owner_first_name: string;
@@ -41,7 +34,7 @@ export type RealisationAlertData = {
 type Piece = string | { b: string };
 const B = (v: string): Piece => ({ b: v });
 
-/** A 07-V sentence from its pieces: the mark in front (until approved), the values bold in HTML; the text twin says the same words. */
+/** A 07-V sentence from its pieces: the values bold in HTML; the text twin says the same words. */
 function line(pieces: Piece[]): Para {
   const text = pieces.map((p) => (typeof p === "string" ? p : p.b)).join("");
   const html = pieces
@@ -51,24 +44,23 @@ function line(pieces: Piece[]): Para {
         : `<strong style="font-weight:600;white-space:nowrap;">${escapeHtml(p.b)}</strong>`,
     )
     .join("");
-  if (APPROVED_07V) return { text, html };
-  return { text: `${MARK}${text}`, html: `${escapeHtml(MARK)}${html}` };
+  return { text, html };
 }
 
 // ---- EDF reminder (07-V §10) ---------------------------------------------------------------------------------------------------------------------
 
 /** `edf.reminder`: the monthly Export Declaration Form reminder (ADM-REP-07, Q55; VERIFY WITH CA/LEGAL). */
 export function edfReminder(d: EdfReminderData, opts: LayoutOptions): Rendered {
-  return securityEmail(headerValue(V(`EDF list for ${d.month_label}: ${d.count} export invoices`)), opts, {
+  return securityEmail(headerValue(`EDF list for ${d.month_label}: ${d.count} export invoices`), opts, {
     before: [
       line([
         B(d.count),
         ` export invoices were issued in ${d.month_label}. The EDF list is ready for your bank, due by `,
         B(d.due_date),
-        ". (VERIFY WITH CA/LEGAL)",
+        ".",
       ]),
     ],
-    action: { label: V("Open EDF list"), url: d.link },
+    action: { label: "Open EDF list", url: d.link },
   });
 }
 
@@ -88,15 +80,15 @@ export const isRealisationAlertStage = (s: string): s is RealisationAlertStage =
 export function realisationSubject(stage: string, number: string): string {
   switch (stage) {
     case "fema_approaching":
-      return V(`${number}: FEMA date in 30 days`);
+      return `${number}: FEMA date in 30 days`;
     case "fema_overdue":
-      return V(`${number}: past the FEMA date`);
+      return `${number}: past the FEMA date`;
     case "gst_approaching":
-      return V(`${number}: GST refund date in 30 days`);
+      return `${number}: GST date in 30 days`;
     case "gst_overdue":
-      return V(`${number}: past the GST date`);
+      return `${number}: past the GST date`;
     default:
-      return `${MARK}${number}`;
+      return number;
   }
 }
 
@@ -128,9 +120,9 @@ export function realisationAlert(d: RealisationAlertData, opts: LayoutOptions): 
         B(d.outstanding),
         " outstanding.",
         ...(stage.length > 0 ? [" ", ...stage] : []),
-        " If the payment has arrived, record it when payments are available; if your bank extended the date, keep its letter. (VERIFY WITH CA/LEGAL)",
+        " If the payment has arrived, record it when payments are available; if your bank extended the date, keep its letter.",
       ]),
     ],
-    action: { label: V("Open export realisation"), url: d.link },
+    action: { label: "Open export realisation", url: d.link },
   });
 }

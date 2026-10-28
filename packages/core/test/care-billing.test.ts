@@ -11,7 +11,7 @@ import {
   careDue,
   careLines,
   firstMissedPeriod,
-  hasPlaceholder,
+  hoursText,
   nextBillingDayOf,
   periodWords,
 } from "../src/care-billing.ts";
@@ -366,12 +366,52 @@ describe("careLines", () => {
       }),
     ).toEqual({ ok: false, error: "service_missing", code: "S17" });
   });
-  it("the default words are a marked placeholder until 07-U (so an automatic issue refuses them)", () => {
-    expect(hasPlaceholder(CARE_LINE_WORDS.plan("Growth", period))).toBe(true);
-    expect(hasPlaceholder(CARE_LINE_WORDS.aiOps(period))).toBe(true);
-    expect(hasPlaceholder(CARE_LINE_WORDS.overage(period))).toBe(true);
-    expect(hasPlaceholder("Care plan, Growth")).toBe(false);
-    expect(CARE_LINE_WORDS.plan("Growth", period)).toContain("05 Nov 2026");
+  it("the default words are 07-U §6 word for word, with no placeholder mark (approved by the lead 2026-10-28), so the automatic issue works for the plan and AI Ops lines", () => {
+    expect(CARE_LINE_WORDS.plan("Growth", period)).toBe("Growth care plan, 05 Nov 2026 to 04 Dec 2026");
+    expect(CARE_LINE_WORDS.aiOps(period)).toBe("AI Ops, 05 Nov 2026 to 04 Dec 2026");
+    expect(CARE_LINE_WORDS.overage(period, "2.25", "₹1,200.00")).toBe(
+      "Extra hours above the plan, 05 Nov 2026 to 04 Dec 2026 (2.25 h at ₹1,200.00 per hour)",
+    );
+    for (const line of [
+      CARE_LINE_WORDS.plan("Growth", period),
+      CARE_LINE_WORDS.aiOps(period),
+      CARE_LINE_WORDS.overage(period, "1", "₹1.00"),
+    ])
+      expect(line).not.toContain("[Placeholder");
+  });
+  it("the extra-hours line names the hours and the rate from the real overage (15-minute steps), in the client's currency", () => {
+    const r = careLines({
+      tier: "essential",
+      terms: { priceMinor: 100_000, aiOpsMinor: null },
+      period,
+      catalogue,
+      overage: { period: { start: "2026-10-05", end: "2026-11-04" }, minutes: 135, rateMinor: 120_000 },
+    });
+    expect(r.ok && r.lines.at(-1)?.description).toBe(
+      "Extra hours above the plan, 05 Oct 2026 to 04 Nov 2026 (2.25 h at ₹1,200.00 per hour)",
+    );
+    const usd = careLines({
+      tier: "essential",
+      terms: { priceMinor: 100_000, aiOpsMinor: null },
+      period,
+      catalogue,
+      overage: { period: { start: "2026-10-05", end: "2026-11-04" }, minutes: 60, rateMinor: 5_000 },
+      currency: "USD",
+    });
+    expect(usd.ok && usd.lines.at(-1)?.description).toContain("(1 h at $50.00 per hour)");
+  });
+  it("hoursText prints whole 15-minute steps as a decimal without trailing zeros", () => {
+    expect([15, 30, 45, 60, 75, 90, 120, 135, 600].map(hoursText)).toEqual([
+      "0.25",
+      "0.5",
+      "0.75",
+      "1",
+      "1.25",
+      "1.5",
+      "2",
+      "2.25",
+      "10",
+    ]);
   });
 });
 

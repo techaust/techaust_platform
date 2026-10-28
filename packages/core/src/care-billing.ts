@@ -21,6 +21,7 @@ import {
   type TermsRow,
 } from "./care.ts";
 import { formatDate, parseIsoDate } from "./dates.ts";
+import { formatMoney, money } from "./money.ts";
 
 /** The catalogue services the invoice lines come from (S16 Care Plans, S17 AI Ops, S18 Dev Subscription: `CARE_SERVICE_CODES` in care.ts). */
 export type CareServiceCode = "S16" | "S17" | "S18";
@@ -129,27 +130,37 @@ export function periodWords(p: Period): string {
 // ---- the lines ----------------------------------------------------------------------------------------------------------------------------
 
 /**
- * The words of the three lines. [Placeholder, 07-U]: the owner has not approved the care line text yet, so the default carries a marked placeholder and
- * `hasPlaceholder` makes the automatic issue refuse until the copy exists (an invoice with "[Placeholder" in a line is never sent by the system).
+ * The words of the three lines (07-U §6, approved by the lead on 2026-10-28: the automatic issue works where an Owner switched it on). The extra-hours line also names the hours and the
+ * hourly rate, as text.
  */
 export type CareLineWords = {
   readonly plan: (tierName: string, period: Period) => string;
   readonly aiOps: (period: Period) => string;
-  readonly overage: (period: Period) => string;
+  readonly overage: (period: Period, hoursText: string, rateText: string) => string;
 };
+
+/** Hours as a person reads them from whole 15-minute steps: 135 minutes is "2.25", 120 is "2", 90 is "1.5". */
+export function hoursText(minutes: number): string {
+  const hundredths = (minutes * 100) / 60;
+  const whole = Math.floor(hundredths / 100);
+  const frac = String(Math.round(hundredths - whole * 100))
+    .padStart(2, "0")
+    .replace(/0+$/, "");
+  return frac === "" ? String(whole) : `${whole}.${frac}`;
+}
 
 const day = (iso: string): string => {
   const d = parseIsoDate(iso);
   return d ? formatDate(d) : iso;
 };
 
+/** 07-U §6, word for word: "{plan name} care plan, {start} to {end}", "AI Ops, {start} to {end}", "Extra hours above the plan, {start} to {end} ({hours} h at {rate} per hour)". */
 export const CARE_LINE_WORDS: CareLineWords = {
-  plan: (tierName, p) => `[Placeholder, 07-U] Care plan ${tierName}, ${day(p.start)} to ${day(p.end)}`,
-  aiOps: (p) => `[Placeholder, 07-U] AI Ops, ${day(p.start)} to ${day(p.end)}`,
-  overage: (p) => `[Placeholder, 07-U] Extra hours, ${day(p.start)} to ${day(p.end)}`,
+  plan: (tierName, p) => `${tierName} care plan, ${day(p.start)} to ${day(p.end)}`,
+  aiOps: (p) => `AI Ops, ${day(p.start)} to ${day(p.end)}`,
+  overage: (p, hours, rate) =>
+    `Extra hours above the plan, ${day(p.start)} to ${day(p.end)} (${hours} h at ${rate} per hour)`,
 };
-
-export const hasPlaceholder = (text: string): boolean => text.includes("[Placeholder");
 
 export type CareCatalogue = Readonly<
   Partial<Record<CareServiceCode, { readonly sac: string | null; readonly gstRateBp: number | null }>>
@@ -194,6 +205,8 @@ export function careLines(input: {
   readonly catalogue: CareCatalogue;
   readonly overage: CareOverage | null;
   readonly words?: CareLineWords;
+  /** The currency the rate is printed in (the client's; default INR). */
+  readonly currency?: "INR" | "USD";
 }): CareLines {
   const words = input.words ?? CARE_LINE_WORDS;
   const planCode: CareServiceCode = input.tier === "dev_subscription" ? "S18" : "S16";
@@ -233,7 +246,11 @@ export function careLines(input: {
       lines.push({
         kind: "overage",
         code: "S16",
-        description: words.overage(o.period),
+        description: words.overage(
+          o.period,
+          hoursText(o.minutes),
+          formatMoney(money(o.rateMinor, input.currency ?? "INR")),
+        ),
         sac: plan.sac,
         qtyMilli: overageQuantityMilli(o.minutes),
         unit: "hour",

@@ -55,7 +55,7 @@ import {
 } from "./invoice-model.ts";
 import type { ClientRow, LineState } from "./quote-model.ts";
 
-// ---- errors (07-T §7 where it has the line; `[Placeholder]` where it does not: the copy gaps of the run file) ---------------------------------------
+// ---- errors (07-T §7, §8 and §9) ----------------------------------------------------------------------------------------------------------------------------
 
 const e = (code: string, message: string): ApiError => ({ code, message });
 export const PARENT_NOT_ISSUED = e(

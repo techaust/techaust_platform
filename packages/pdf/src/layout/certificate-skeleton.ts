@@ -51,6 +51,9 @@ export type CertificateView = {
 export const CERTIFICATE_COPY = {
   title: "Acceptance certificate",
   statement: "This certificate records an electronic acceptance through the TecHaust client portal.",
+  /** 07-A §9 (2026-10-28; Researched 2026-10-28, 08-C RB-20): under the statement, so the page is not mistaken for the certificate of BSA 2023 s.63. */
+  recordNote:
+    "This is a record of the acceptance. The document fingerprint is the SHA-256 hash of the PDF that was accepted.",
   document: "Document",
   numberAndVersion: "Number and version",
   total: "Total",
@@ -141,6 +144,7 @@ export function certificateBody(v: CertificateView): string {
 <header class="cert__mast"><div class="cert__logo">${logo}</div></header>
 <h1 class="cert__title">${esc(C.title)}</h1>
 <p class="cert__statement">${esc(C.statement)}</p>
+<p class="cert__statement" data-testid="record-note">${esc(C.recordNote)}</p>
 
 <section class="cert__block" aria-label="${esc(C.document)}">
 <p class="cert__label">${esc(C.document)}</p>

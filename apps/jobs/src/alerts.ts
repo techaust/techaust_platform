@@ -8,7 +8,7 @@
 // at most 100 a call; entity = the milestone, so the email consumer's log row deduplicates a rerun), THEN the bells are written (`INSERT OR IGNORE`): a run that dies in between is retried and the
 // emails are deduplicated, a bell never exists without its email having been queued. Pages are 50 rows; a full page queues the next message (`first` false, one cursor per list; on a continuation a null
 // cursor means that list is finished).
-// The bell titles and the email words are the lead's 07-U, marked `[Placeholder]` until the owner approves them.
+// The bell titles and the email words are 07-U §7 and §8, approved by the lead on 2026-10-28 (no placeholder mark any more).
 import { alertsDailyMessage, daysBetween, type EmailMessage, formatDate, istDate } from "@techaust/core";
 import { alertDaysFromStoredTax, unbilledCutoff } from "@techaust/core/invoices";
 import { todayIst } from "@techaust/core/offers";
@@ -18,7 +18,6 @@ import { firstName, moneyText } from "./invoice-mail.ts";
 import { logEvent } from "./log.ts";
 import { decideLut, ringLutBell } from "./lut-check.ts";
 
-const PLACEHOLDER = "[Placeholder, 07-U] ";
 const CHUNK = 100;
 
 /** The page of one list with whether each item already has its bell (any owner): the existing lists, wrapped. */
@@ -120,8 +119,7 @@ export async function processAlertsDaily(
     "milestone.unbilled",
     (r) => `/projects/${r.project_id}`,
     // 07-U §7 (Q20): the milestone, the client and the days.
-    (r) =>
-      `${PLACEHOLDER}${r.title} for ${r.client_name} was delivered ${daysSince(r)} days ago and isn't invoiced yet.`,
+    (r) => `${r.title} for ${r.client_name} was delivered ${daysSince(r)} days ago and isn't invoiced yet.`,
   );
   const proformaBells = itemBells(
     proforma,
@@ -129,7 +127,7 @@ export async function processAlertsDaily(
     (r) => `/invoices/${r.proforma_id}`,
     // 07-U §7 (ADM-INV-10; VERIFY WITH CA/LEGAL for the 30 days).
     (r) =>
-      `${PLACEHOLDER}Payment request ${r.number_display ?? ""} for ${r.client_name} is still unpaid ${daysSince(r)} days after ${r.title} was delivered. A tax invoice is due within 30 days of delivery.`,
+      `Payment request ${r.number_display ?? ""} for ${r.client_name} is still unpaid ${daysSince(r)} days after ${r.title} was delivered. A tax invoice is due within 30 days of delivery.`,
   );
   for (const o of ownerRows) {
     for (const r of unbilledBells.fresh)

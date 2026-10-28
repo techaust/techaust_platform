@@ -8,7 +8,6 @@ import { ALERTS_HOUR_IST, EDF_REMINDER_DAYS_IST, enqueueHourly, hourlyMessages }
 import worker from "../src/index.ts";
 import { handleQueue } from "../src/queue.ts";
 import {
-  PLACEHOLDER_07V,
   processEdfReminder,
   processRealisationScan,
   REALISATION_BELL_TITLE,
@@ -248,15 +247,15 @@ describe("realisation.scan: each stage rings once", () => {
       },
     });
     const [bell] = await bellsOf(ex.id);
-    expect(bell?.title).toBe(`${PLACEHOLDER_07V}${ex.numberDisplay}: FEMA date in 30 days (03 Aug 2027)`);
+    expect(bell?.title).toBe(`${ex.numberDisplay}: FEMA date in 30 days (03 Aug 2027)`);
     expect(REALISATION_BELL_TITLE.gst_overdue("N1", "18 Nov 2027")).toBe(
-      `${PLACEHOLDER_07V}N1: past the GST date (18 Nov 2027)`,
+      `N1: past the GST date (18 Nov 2027)`,
     );
     expect(REALISATION_BELL_TITLE.gst_approaching("N1", "d")).toBe(
-      `${PLACEHOLDER_07V}N1: GST refund date in 30 days (d)`,
+      `N1: GST date in 30 days (d)`,
     );
     expect(REALISATION_BELL_TITLE.fema_overdue("N1", "d")).toBe(
-      `${PLACEHOLDER_07V}N1: past the FEMA date (d)`,
+      `N1: past the FEMA date (d)`,
     );
   });
 
@@ -536,7 +535,7 @@ describe("edf.reminder [Q55]", () => {
     const bells = await edfBells("edf:2026-10");
     expect(bells.map((x) => x.user_id).sort()).toEqual([a.id, b.id].sort());
     expect(bells[0]).toMatchObject({
-      title: `${PLACEHOLDER_07V}EDF list for October 2026 is due by 30 Nov 2026`,
+      title: `EDF list for October 2026 is due by 30 Nov 2026`,
       link: "/reports/edf?month=2026-10",
       entity_type: "report",
     });
