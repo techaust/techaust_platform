@@ -845,6 +845,40 @@ describe("the freeze and the milestone [ADM-INV-07, ADM-PRJ-02]", () => {
     await putTax(SETTINGS_DEFAULTS.tax.reverseChargeText);
   });
 
+  it("the signatory switch (07-W 5.6): off at issue freezes `signatory: false` and no signature reference; a later change never alters an issued invoice or its seal", async () => {
+    const o = await owner();
+    const read = async (id: string) =>
+      (await one<{ issuer: string; snapshot_sha256: string }>(
+        "SELECT issuer, snapshot_sha256 FROM documents WHERE id = ?",
+        id,
+      )) as { issuer: string; snapshot_sha256: string };
+    const putChecklist = (signatory?: false) =>
+      env.DB.prepare(
+        "INSERT INTO settings (key, value, version) VALUES ('tax', ?1, 1) ON CONFLICT(key) DO UPDATE SET value = excluded.value, version = version + 1",
+      )
+        .bind(
+          JSON.stringify({
+            ...SETTINGS_DEFAULTS.tax,
+            invoiceChecklist: {
+              ...SETTINGS_DEFAULTS.tax.invoiceChecklist,
+              ...(signatory === false ? { signatory } : {}),
+            },
+          }),
+        )
+        .run();
+    await putChecklist(false);
+    const off = await mkInvoice(o);
+    expect((await issueInvoice(o, off.id)).status).toBe(200);
+    const frozen = await read(off.id);
+    expect(JSON.parse(frozen.issuer)).toMatchObject({ signatory: false, signature: null });
+    // switched back on: the next invoice has no such key (the block prints), the first is untouched
+    await putChecklist();
+    const on = await mkInvoice(o);
+    expect((await issueInvoice(o, on.id)).status).toBe(200);
+    expect(JSON.parse((await read(on.id)).issuer)).not.toHaveProperty("signatory");
+    expect(await read(off.id)).toEqual(frozen);
+  });
+
   it("issuing a milestone invoice makes the milestone invoiced and keeps its delivery time; the audit row has ids and totals, no description", async () => {
     const o = await owner();
     const c = await mkInvoiceClient();

@@ -192,6 +192,7 @@ function paymentBlock(view: InvoiceView): string {
 }
 
 function signatoryBlock(view: InvoiceView): string {
+  if (!view.showSignatory) return "";
   const image = view.signature
     ? `<img data-testid="signature" alt="" src="${esc(view.signature.dataUri)}" style="display:block;max-height:18mm;max-width:60mm;margin:2mm 0">`
     : `<div style="height:14mm"></div>`;

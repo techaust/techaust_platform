@@ -151,6 +151,7 @@ export function parseInvoiceEnvelope(text: string): InvoiceEnvelope | null {
   if (!isObj(i.company) || !isObj(i.bank) || !isObj(i.sender) || typeof i.reverseChargeText !== "string")
     return null;
   if (i.signature !== null && !isObj(i.signature)) return null;
+  if (i.signatory !== undefined && i.signatory !== false) return null;
   // M5.2: the optional header keys are absent on an M5.1 envelope; when present they must have their shape (a wrong shape is not an envelope).
   if (h.export !== undefined && !validExport(h.export)) return null;
   if (h.fx !== undefined && !validFx(h.fx)) return null;

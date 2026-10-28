@@ -133,6 +133,8 @@ export type InvoiceIssuerSnapshot = {
   /** `swift` (M5.2) exists only on a USD document that has one: an M5.1 snapshot has no such key and still parses. */
   bank: { inr: InvoiceBankBlock | null; swift?: InvoiceSwiftBlock | null };
   signature: { key: string; sha256: string; mime: string } | null;
+  /** Present (false) only when the Owner had switched the checklist's "Authorised signatory" off at issue: the PDF leaves the whole signature block out (07-W 5.6; Researched 2026-10-28, Rule 46 CGST Rules (08-C RA-06)). Absent on every earlier snapshot, so earlier seals are unchanged. */
+  signatory?: false;
   /** The Rule 46(p) statement printed on the invoice (Settings > Tax at issue), frozen and sealed so a later settings change never changes it (Researched 2026-10-28, Rules 46(p), 50 and 51 CGST Rules (08-C RA-26)). */
   reverseChargeText: string;
   sender: IssuerSnapshot["sender"];
