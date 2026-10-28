@@ -156,11 +156,22 @@ export function ExportPanel(props: {
 
 // ---- the exchange rate (Q7) ----------------------------------------------------------------------------------------------------------------------------
 
+/**
+ * The blocker a draft's rate would meet at issue (builder's contract, RA-21): `dateVerdict` names which one; an older API only says `dateOk`.
+ */
+function fxWarning(fx: NonNullable<InvoiceView["fx"]>): "fx_same_day_exists" | "fx_date_invalid" | null {
+  if (fx.dateVerdict === "same_day_exists") return "fx_same_day_exists";
+  if (fx.dateVerdict === "invalid") return "fx_date_invalid";
+  if (fx.dateVerdict === undefined && fx.dateOk === false) return "fx_date_invalid";
+  return null;
+}
+
 /** The rate of a USD draft: the line it prints, or the blocker's sentence as the way in; "Change" opens the dialog. */
 export function FxPanel(props: { view: InvoiceView; canWrite: boolean; busy: boolean; onOpen: () => void }) {
   const fx = props.view.fx;
   if (!fx?.applies) return null;
   const v = fx.value;
+  const warn = fxWarning(fx);
   return (
     <section className="lead-panel inv-fx" aria-labelledby="inv-fx-h">
       <div className="lead-panel__head">
@@ -182,11 +193,12 @@ export function FxPanel(props: { view: InvoiceView; canWrite: boolean; busy: boo
               {v.source}, {day(v.date)}
             </span>
           </p>
-          {fx.dateOk === false && (
+          {v.noRateThatDay === true && <p className="inv-fx__meta">{INVT_COPY.fxNoRateThatDay}</p>}
+          {warn && (
             <p className="inv-fx__warn">
               <Alert size={16} />
               <span>
-                {blockerLine({ code: "fx_date_invalid", date: fx.refDate }, "USD", {
+                {blockerLine({ code: warn, date: fx.refDate }, "USD", {
                   maxAgeDays: fx.maxAgeDays,
                 })}
               </span>
@@ -739,7 +751,13 @@ function AdvanceBody(props: { view: InvoiceView; onClose: () => void; onIssued: 
       // Q37: no LUT for the payment's year; the choice is drawn and takes the focus (S §9).
       if (e instanceof RequestError && e.code === "advance_lut_missing") {
         setLutMissingFy(e.extra.fy ?? "");
-        requestAnimationFrame(() => document.getElementById("adv-route-h")?.focus());
+        // Focus alone left the choice below the fold of the dialog's scrolling body (seen against the real API): bring the section into view.
+        requestAnimationFrame(() => {
+          const h = document.getElementById("adv-route-h");
+          h?.focus({ preventScroll: true });
+          // "start": the dialog's sticky actions would cover the bottom of the section with "nearest"
+          h?.parentElement?.scrollIntoView({ block: "start" });
+        });
         return;
       }
       // The server's blockers (the rate's date against the day the money came, among others): their own lines, the rate's under its field.

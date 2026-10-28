@@ -5,7 +5,7 @@
 // with; a 409 `stale_version` or a reload that clashes with a draft shows the shared notice (M3.2 pattern). The side
 // column: the primary contact and the source lead. (The balance panel returns with payments in M5.3, when GET /finance has figures; until then
 // the client's invoices are on its Invoices tab, so the old 07-J "arrive with invoicing" line is gone: M5.1 review finding 16.)
-// GST treatment: VERIFY WITH CA/LEGAL.
+// GST treatment: Researched 2026-10-28, s.12 IGST and Rule 46 CGST (08-C RA-12, RA-05).
 import { countryName } from "@techaust/core/form-labels";
 import { type Dispatch, type FormEvent, type ReactNode, useState } from "react";
 import { Link } from "react-router";
@@ -492,7 +492,7 @@ function Billing(props: Parameters<typeof Overview>[0] & { canFinance: boolean; 
               )}
             </fieldset>
           )}
-          <VerifyNote legal>The GST treatment is confirmed on the proposal and the invoice.</VerifyNote>
+          <VerifyNote>The GST treatment is confirmed on the proposal and the invoice.</VerifyNote>
           <h3 className="lead-panel__sub">
             Billing address<span className="field__optional"> (optional)</span>
           </h3>

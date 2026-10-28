@@ -184,10 +184,8 @@ export const NOTICES = {
   /** Above the Accept button of the confirmation step. */
   accept:
     "When you accept, we record your typed name, the time, your IP address and browser, and a fingerprint of this exact document, as the record of your acceptance.",
-  /** Under the sign-in button: the sentence, then "See our [Privacy notice](/privacy)." with the link on the website's privacy page. */
+  /** Under the sign-in button: the sentence, then "See our [Privacy notice]." with the link on the privacy page of this environment's website (sign-in.tsx). */
   signIn: "We record the time, your IP address and browser when you sign in, as a security record.",
   signInSee: "See our",
   privacyNotice: "Privacy notice",
-  /** The website's privacy notice: the portal has no page of its own at /privacy, so the link names the public site. */
-  privacyHref: "https://techaust.com/privacy",
 } as const;

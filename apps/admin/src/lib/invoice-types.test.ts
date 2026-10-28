@@ -315,7 +315,7 @@ describe("the payment received against a proforma (Q9)", () => {
         "2026-10-27",
       ),
     ).toMatchObject({ noRate: true });
-    expect(INVT_COPY.fxNoRateThatDay.startsWith("[Placeholder] ")).toBe(true);
+    expect(INVT_COPY.fxNoRateThatDay).toBe("No rate was published that day");
   });
 
   it("step 5: Q37's lines (S §9) and the house rules (S §3), word for word", () => {

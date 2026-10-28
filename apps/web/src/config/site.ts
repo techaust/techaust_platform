@@ -42,7 +42,7 @@ export const site = {
   launchDate: "" as string,
   /**
    * `Expires` of /.well-known/security.txt (RFC 9116), ISO 8601, set to one year after it was written. The dist check
-   * fails when it is in the past or more than 366 days away: renew it before it lapses.
+   * fails when it is in the past or more than 365 days away: renew it before it lapses.
    */
   securityTxtExpires: "2027-10-22T00:00:00.000Z",
 } as const;

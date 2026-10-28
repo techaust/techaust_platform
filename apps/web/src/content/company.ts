@@ -123,7 +123,7 @@ export const howWeBuildAi = {
       text: "We use providers whose terms don’t train on your data where an opt-out exists, keep data in India where required, and document every system that touches it.",
     },
     {
-      // VERIFY WITH CA/LEGAL (07 §5.6): the DPDP reference.
+      // Researched 2026-10-28, DPDP Act 2023 and Rules 2025 (07 §5.6; 08-C RB-08): the DPDP reference.
       title: "Privacy by design",
       text: "Collect only what’s needed, delete on schedule, and log access, in line with India’s DPDP Act.",
     },

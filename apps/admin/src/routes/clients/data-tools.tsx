@@ -140,7 +140,7 @@ export function ExportDialog(props: { contact: ContactView | null; onClose: () =
     >
       <div className="dialog__body data-tool">
         <p>{EXPORT_EXPLAINER}</p>
-        <VerifyNote legal>{DATA_TOOLS_VERIFY}</VerifyNote>
+        <VerifyNote>{DATA_TOOLS_VERIFY}</VerifyNote>
         {state.step === "ready" && needsCode && (
           <CodeField
             id="export-code"
@@ -323,7 +323,7 @@ export function EraseDialog(props: {
         {c && props.lastContactOf && (
           <p className="data-tool__also">{lastContactLine(props.lastContactOf)}</p>
         )}
-        <VerifyNote legal>{DATA_TOOLS_VERIFY}</VerifyNote>
+        <VerifyNote>{DATA_TOOLS_VERIFY}</VerifyNote>
         {blocked && (
           <Notice tone="error">
             <p>{blocked.text}</p>

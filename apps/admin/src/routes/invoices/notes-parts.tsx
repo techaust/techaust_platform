@@ -229,7 +229,7 @@ export function AgainstInvoice({ view }: { view: InvoiceWithNotes }) {
 }
 
 /**
- * The client's answer in the GST portal's IMS (07-T §5, Q14; VERIFY WITH CA/LEGAL) on an issued credit note. The Owner records it once, while it is
+ * The client's answer in the GST portal's IMS (07-T §5, Q14; Researched 2026-10-28, s.34(2) CGST as amended, 08-C RA-04) on an issued credit note. The Owner records it once, while it is
  * pending (Accepted or Rejected); everyone else, and every answer once given, reads it.
  */
 export function ImsPanel({ view, onSaved }: { view: InvoiceWithNotes; onSaved: () => void }) {

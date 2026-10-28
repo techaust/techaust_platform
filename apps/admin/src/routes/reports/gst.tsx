@@ -1,4 +1,4 @@
-// GST exports (M5.5b; ADM-REP-04, LD71, LD73, LD84; VERIFY WITH CA/LEGAL): a month or a QRMP quarter (the last complete quarter by default), then
+// GST exports (M5.5b; ADM-REP-04, LD71, LD73, LD84; Researched 2026-10-28, GSTR-1 and Table 13, 08-C RA-23, RA-10; test import before the first filing, 08-C §6): a month or a QRMP quarter (the last complete quarter by default), then
 // "Make files": the register of the period is read page by page (a fresh code when the server asks, `exports.gst`; one audit row per page), the gst
 // core checks every document and builds GSTR-1, Table 13 and the 3B figures in the browser, and the files are downloaded one by one or as one ZIP.
 // A problem in any document stops every file (owner decision 2026-10-27): the list names each document with a link to fix it. The totals stand on
@@ -346,7 +346,7 @@ function GstResults({ result, period, threshold }: { result: Ok; period: PeriodC
             );
           })}
         </ul>
-        <VerifyNote legal>{GST_COPY.verify(result.layout)}</VerifyNote>
+        <VerifyNote>{GST_COPY.verify(result.layout)}</VerifyNote>
       </ReportBlock>
     </>
   );

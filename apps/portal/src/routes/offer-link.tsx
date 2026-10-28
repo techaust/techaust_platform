@@ -1,7 +1,7 @@
 // A proposal or estimate opened from its email link, without signing in (POR-06; owner decision 2026-10-25: the link may accept and
 // decline). Only that document is shown, with an offer to sign in for the rest; no sections, no account. The token was taken from the
 // address before the app rendered (lib/offers.ts) and goes in each request's body. A bad, revoked or ended link is the plain
-// "Page not found" (the API answers one 404 for all of them). VERIFY WITH CA/LEGAL: whoever holds the link acts as its contact.
+// "Page not found" (the API answers one 404 for all of them). Researched 2026-10-28 (08-C RB-19; owner: link acceptance for any value): whoever holds the link acts as its contact.
 import { useMemo } from "react";
 import { Link } from "react-router";
 import { offerLinkApi } from "../api.ts";

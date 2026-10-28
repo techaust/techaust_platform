@@ -36,6 +36,21 @@ describe("API client: step-up and expired sessions [ADM-AUTH-08, ADM-AUTH-05]", 
     expect(JSON.parse(fetchFn.mock.calls[1]?.[1].body)).toEqual({ email: "new@example.test", role: "staff" });
   });
 
+  it("reads the worker's `error.details` (advance_lut_missing's FY) [ADM-INV-10, Q37]", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValueOnce(
+        json(409, {
+          error: { code: "advance_lut_missing", message: "x", details: { fy: "2026-27" } },
+          request_id: "r2",
+        }),
+      ),
+    );
+    const e = await api.deactivate("u1").catch((x: unknown) => x);
+    expect(e).toBeInstanceOf(RequestError);
+    expect((e as RequestError).extra.fy).toBe("2026-27");
+  });
+
   it("a cancelled step-up sends nothing more and reports that nothing changed", async () => {
     const fetchFn = vi.fn().mockResolvedValueOnce(json(403, STEP_UP));
     vi.stubGlobal("fetch", fetchFn);

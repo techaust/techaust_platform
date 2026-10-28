@@ -1,4 +1,4 @@
-// Export realisation (M5.5b; ADM-INV-17, Q15, Q53, LD75; VERIFY WITH CA/LEGAL): the export invoices not yet fully paid, most urgent first, each with
+// Export realisation (M5.5b; ADM-INV-17, Q15, Q53, LD75; Researched 2026-10-28, FEMA and Rule 96A CGST, 08-C RB-01, RA-20): the export invoices not yet fully paid, most urgent first, each with
 // its stage as a status pill (the reserved status colours, always with the icon and the words) and the date it is due by. The stages are core's
 // (`realisationRows`, as of the server's today, with the stored settings); "Show realised" adds the paid ones (`?show=all`). A bell about one
 // invoice lands here with that invoice marked and in view (`?doc=<id>`). Before M6 only an advance invoice records a payment (LD17), so an export

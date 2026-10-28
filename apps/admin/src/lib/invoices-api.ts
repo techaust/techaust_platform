@@ -232,6 +232,8 @@ export type InvoiceView = {
     refDate: string;
     maxAgeDays: number;
     dateOk: boolean | null;
+    /** The rate's day judged against today's (RA-21): which of the two refusals the issue would give; null when frozen or no rate. Absent from an older API. */
+    dateVerdict?: "ok" | "same_day_exists" | "invalid" | null;
     inr: InrView | null;
   };
   export?: {

@@ -7,7 +7,13 @@ import { SETTINGS_SCHEMAS, type Settings } from "@techaust/core/settings";
 import { type FormEvent, type ReactNode, useEffect, useState } from "react";
 import { api, errorText, type GroupMeta, type JsonGroup, RequestError, type SettingsDoc } from "../../api.ts";
 import { Skeleton } from "../../components/display.tsx";
-import { ErrorSummary, SaveBar, type SummaryError, VerifyNote } from "../../components/form.tsx";
+import {
+  ErrorSummary,
+  researchedSettingsText,
+  SaveBar,
+  type SummaryError,
+  VerifyNote,
+} from "../../components/form.tsx";
 import { LoadFailed, StaleNotice, useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { FieldError, Notice } from "../../components/ui.tsx";
@@ -162,10 +168,8 @@ function GroupFormBody<K extends JsonGroup, F>(props: {
     <>
       {stale && <StaleNotice onReload={props.reload} />}
       {verify && (
-        <VerifyNote legal={verify.includes("LEGAL")}>
-          These are researched defaults, not settled advice. Confirm each one with your{" "}
-          {verify.includes("LEGAL") ? "CA and a lawyer" : "CA"} before you rely on it.
-        </VerifyNote>
+        // The meta string names whose list holds the open questions (the CA's, or the CA's and a lawyer's).
+        <VerifyNote>{researchedSettingsText(/legal|lawyer/i.test(verify))}</VerifyNote>
       )}
       {props.intro}
       {readOnly && <Notice tone="info">You can read these settings. Only the owner can change them.</Notice>}

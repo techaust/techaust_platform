@@ -1,7 +1,7 @@
 // Company profile (ADM-SET-01): names, the GSTIN with its live check and the PAN taken from it, the state (fixed by a
 // valid GSTIN), the address and contact printed on documents, and the two logos, picked from the generated brand files
 // (lead decision L7 of M4.4: never uploaded). After the form, the signature image (M4.4), which is uploaded and saves on its own.
-// Changes apply to new documents only (VERIFY WITH CA for the GST fields).
+// Changes apply to new documents only (GST fields: Researched 2026-10-28, Rule 46 CGST, 08-C RA-05).
 import { STATE_CODES, type StateCode, selectableStates, validateGstin } from "@techaust/core";
 import { BRAND_LOGOS, type Settings } from "@techaust/core/settings";
 import primaryBlack from "@techaust/ui/brand/logo-primary-black.svg?url";

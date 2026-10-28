@@ -4,7 +4,6 @@
 import { ISSUE_BLOCKER_CODES } from "@techaust/core/invoices";
 import { describe, expect, it } from "vitest";
 import { RequestError } from "../api.ts";
-import { COPY_GAP } from "./copy-gap.ts";
 import {
   applyInvoiceSave,
   BADGE_LABELS,
@@ -216,14 +215,14 @@ describe("badges and types", () => {
 
 describe("blockers", () => {
   it("has a 07-R line for every core blocker code", () => {
-    for (const code of ISSUE_BLOCKER_CODES) expect(blockerLine({ code, line: 2 }, "INR")).not.toBe(COPY_GAP);
+    for (const code of ISSUE_BLOCKER_CODES) expect(blockerLine({ code, line: 2 }, "INR")).not.toBe(code);
     expect(blockerLine({ code: "line_sac_missing", line: 3 }, "INR")).toBe(
       "Line 3 needs a 6-digit SAC code.",
     );
     expect(blockerLine({ code: "currency_mismatch" }, "USD")).toBe(
       "The invoice currency must be the client's currency (USD).",
     );
-    expect(blockerLine({ code: "something_new" }, "INR")).toBe(COPY_GAP);
+    expect(blockerLine({ code: "something_new" }, "INR")).toBe("something_new");
   });
 
   it("links each blocker to where it is fixed", () => {
@@ -396,9 +395,9 @@ describe("M5.2 re-check: proforma wording and the advance rate date (07-S §8)",
     );
   });
 
-  it("step 5: the supplier copy's label and the filtered list's proposed title (R §7)", () => {
+  it("step 5: the supplier copy's label and the filtered list's title (R §7, 07-W §1)", () => {
     expect(SUPPLIER_COPY_LABEL).toBe("Download supplier copy");
-    expect(INV_NO_MATCH).toBe(`${COPY_GAP} No invoices match these filters`);
+    expect(INV_NO_MATCH).toBe("No invoices match these filters");
   });
 
   it("a proforma's void refused for a reason other than a payment says it was emailed", () => {

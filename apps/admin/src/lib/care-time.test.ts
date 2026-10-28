@@ -39,7 +39,10 @@ import {
   termsDate,
   termsFormOf,
 } from "./care.ts";
-import { COPY_GAP as PLACEHOLDER_TAG } from "./copy-gap.ts";
+
+/** The mark a line not yet approved would carry (none should). */
+const PLACEHOLDER_TAG = "[Placeholder]";
+
 import {
   ACTIVITY_PENDING,
   activityHref,

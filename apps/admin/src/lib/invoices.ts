@@ -3,7 +3,7 @@
 // autosave steps (`buildInvoicePatch`, `applyInvoiceSave`). Pure, so the copy and the rules are tested without a browser.
 //
 // Copy: 07-R (docs/07-content-appendix/R-m5.1-invoice-screens.md), approved by the lead on 2026-10-28 under the owner's delegation, word for word. A
-// line 07-R does not have is `gap(...)` (./copy-gap.ts: the "[Placeholder]" mark, listed in the run file), never invented. The type names are core's
+// line 07-R lacked is 07-W's (approved 2026-10-28), never invented. The type names are core's
 // series labels (`@techaust/core/numbering`).
 //
 // Money: amounts are the server's minor units, formatted through core (`moneyText`); typed amounts are parsed through core. Nothing here adds,
@@ -14,7 +14,6 @@ import type { Currency } from "../api.ts";
 import { RequestError } from "../api.ts";
 import type { PillTone } from "../components/display.tsx";
 import { milliToQty } from "./catalogue.ts";
-import { COPY_GAP, gap } from "./copy-gap.ts";
 import {
   dayText,
   docErrorText,
@@ -53,8 +52,8 @@ export { moneyText };
 export const UNKNOWN = "…";
 
 /** The list's empty state when filters hide every row: 07-R has no line, so the 07-O pattern ("No proposals or estimates match these filters.") is
- * proposed for invoices, marked until approved (run file). */
-export const INV_NO_MATCH = gap("No invoices match these filters");
+ * proposed for invoices, 07-W §1. */
+export const INV_NO_MATCH = "No invoices match these filters";
 
 /** 07-R §7 (Q11, owner 2026-10-28): the stored supplier copy's download, for the Owner and the Accountant. */
 export const SUPPLIER_COPY_LABEL = "Download supplier copy";
@@ -336,10 +335,9 @@ export function blockerLine(
       return `Line ${n} needs a 6-digit SAC code.`;
     case "line_description_missing":
       return `Line ${n} needs a description.`;
-    // M5.4 (early check finding 4): a line still carries "[Placeholder" text, so it can't go out on a legal invoice. 07-R has no line for it: 07-U §6's
-    // reason ("a line's wording isn't approved yet") after the "Line {n}" of the other line blockers, a proposal marked until approved (run file).
+    // M5.4 (early check finding 4): a line still carries "[Placeholder" text, so it can't go out on a legal invoice (the safety net stays). 07-W §1.
     case "line_text_placeholder":
-      return gap(`Line ${n}: a line's wording isn't approved yet.`);
+      return `Line ${n}: a line's wording isn't approved yet.`;
     case "computed_errors":
       return "The totals couldn't be worked out. Check the lines and the discount.";
     case "zero_total":
@@ -373,7 +371,8 @@ export function blockerLine(
     case "advance_lut_missing":
       return advanceLutMissing(b.fy ? fyLabel(b.fy) : UNKNOWN);
     default:
-      return COPY_GAP;
+      // A code this screen has no words for (a newer server): its code, never invented words (a test keeps every core code covered above).
+      return b.code;
   }
 }
 
