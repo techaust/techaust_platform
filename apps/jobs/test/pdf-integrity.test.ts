@@ -4,7 +4,7 @@
 import { env } from "cloudflare:workers";
 import { checkPdfIntegrity, INFLATE_BUDGET_BYTES } from "@techaust/pdf/integrity";
 import { describe, expect, it, vi } from "vitest";
-import { type RenderEnv, renderPdf } from "../src/browser.ts";
+import { declaredBodyLength, type RenderEnv, renderPdf } from "../src/browser.ts";
 import { failed, putOnce, putPdfOnce, sha256Bytes } from "../src/pdf.ts";
 
 const enc = new TextEncoder();
@@ -107,10 +107,38 @@ describe("the structure check in workerd", () => {
     const objectsOnly = await syntheticPdf(755, 10);
     const streamOnly = await syntheticPdf(2, 262_000);
     const [a, b, c] = [await time(whole), await time(objectsOnly), await time(streamOnly)];
+    // Wall time on a shared PC is no test (review round 2, finding 13): the figures are annotations only; the cold Worker CPU is measured
+    // on real Chrome PDFs in a fresh process and on staging (docs/runs/m5-owner-fixes.md).
     await annotate(
       `integrity ms per check: whole ${whole.length} B ${a.toFixed(2)}, 756 objects ${b.toFixed(2)}, one 262 KB stream ${c.toFixed(2)}`,
     );
-    expect(a).toBeLessThan(50); // a loose guard; the real figure is in the annotation (a tap reporter prints it)
+  });
+
+  // No timing here: workerd's clock does not move during computation (it advances on I/O), so a single call reads 0 ms. The cold figures
+  // come from a fresh Node process on the real Chrome PDFs (docs/runs/m5-owner-fixes.md, fix round 2 report).
+  it("a 2,000-object PDF (the size of a long proposal): every entry checked, the owner's damage caught", async () => {
+    const pdf = await syntheticPdf(2000, 300_000, "huffman");
+    expect(await checkPdfIntegrity(pdf, pdf.length, { inflateBudget: 0 })).toEqual({
+      ok: true,
+      partial: { inflated: 0, skippedStreams: 1 },
+    });
+    expect(await checkPdfIntegrity(pdf, pdf.length)).toEqual({ ok: true });
+    // the owner's 3, 1, 2 permutation, inside the objects and across the end of the table's targets
+    for (const at of [3770, 40_000]) {
+      expect(await checkPdfIntegrity(rotate(pdf, at), pdf.length, { inflateBudget: 0 })).toMatchObject({
+        ok: false,
+        code: "xref_offset",
+      });
+    }
+    // the last object's entry a byte off: every entry is read, not a sample
+    const text = new TextDecoder("latin1").decode(pdf);
+    const last = text.lastIndexOf(" 00000 n ");
+    const damaged = pdf.slice();
+    damaged[last - 1] = (damaged[last - 1] ?? 48) === 57 ? 56 : (damaged[last - 1] ?? 48) + 1;
+    expect(await checkPdfIntegrity(damaged, null, { inflateBudget: 0 })).toMatchObject({
+      ok: false,
+      code: "xref_offset",
+    });
   });
 
   it("Huffman-coded streams (fonts, content): the check's wall time under, at and past the inflate budget", async ({
@@ -137,9 +165,8 @@ describe("the structure check in workerd", () => {
         `4 MiB inflated, cut at the budget (${past.length} B) ${p.ms.toFixed(2)}; ` +
         `with no inflating: ${at0.ms.toFixed(2)} and ${p0.ms.toFixed(2)}`,
     );
-    // A loose sanity guard only: the bound itself is proven by the inflated byte count (packages/pdf/test/integrity.test.ts); wall times on
-    // this shared PC swing by half. Unbounded, the 4 MiB stream alone would inflate 2.7 times the budget.
-    expect(p.ms).toBeLessThan(500);
+    // No wall-time limit (review round 2, finding 13): the bound itself is proven by the inflated byte count
+    // (packages/pdf/test/integrity.test.ts); wall times on a shared PC swing by half.
   }, 60_000);
 
   it("the platform's DecompressionStream rejects a block moved inside one Flate stream (Adler-32)", async () => {
@@ -230,6 +257,35 @@ describe("renderPdf with a damaged response", () => {
       "x",
     );
     expect(r).toMatchObject({ ok: false, kind: "damaged" });
+  });
+
+  it("the content-length is compared only for a body sent as is, and only when it is a plain number (review round 2, finding 2)", async () => {
+    const h = (o: Record<string, string>) => new Headers(o);
+    expect(declaredBodyLength(h({ "content-length": "1234" }))).toBe(1234);
+    expect(declaredBodyLength(h({ "content-length": " 1234 ", "content-encoding": "identity" }))).toBe(1234);
+    expect(declaredBodyLength(h({ "content-length": "1234", "content-encoding": "gzip" }))).toBeNull();
+    expect(declaredBodyLength(h({ "content-length": "1234", "content-encoding": "br" }))).toBeNull();
+    for (const bad of ["", "12ab", "-5", "1e3", "0x10", "1234567890123456"])
+      expect(declaredBodyLength(h({ "content-length": bad }))).toBeNull();
+    expect(declaredBodyLength(h({}))).toBeNull();
+    // through renderPdf: an encoded body's shorter wire length is no damage; a plain body's wrong length still is
+    const pdf = await syntheticPdf(5, 5000);
+    expect(
+      await renderPdf(
+        envFor(() =>
+          respond(pdf, { "content-length": String(pdf.length - 900), "content-encoding": "gzip" }),
+        ),
+        "x",
+      ),
+    ).toMatchObject({ ok: true });
+    expect(
+      await renderPdf(
+        envFor(() =>
+          respond(pdf, { "content-length": String(pdf.length - 900), "content-encoding": "identity" }),
+        ),
+        "x",
+      ),
+    ).toMatchObject({ ok: false, kind: "damaged" });
   });
 
   it("failed() throws for it, so the queue retries with a fresh render", async () => {
