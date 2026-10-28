@@ -210,6 +210,9 @@ const SectionRow = memo(function SectionRow(p: {
   filling: string | null;
 }) {
   const { s } = p;
+  // While "Use Catalogue text" fills this section its text, title and visibility are read-only (review round 3, finding 4): an edit made
+  // meanwhile would keep the filled text off the screen, and the next save would write over it.
+  const busy = p.filling !== null && p.filling === s.id;
   const required = isRequiredSection(s.kind);
   const holes = holeNames(`${s.title}\n${s.bodyMd}`);
   const empty = s.bodyMd.trim() === "";
@@ -236,7 +239,12 @@ const SectionRow = memo(function SectionRow(p: {
       : []),
   ];
   return (
-    <li className="section-row" data-hidden={s.hidden || undefined} data-open={p.open || undefined}>
+    <li
+      className="section-row"
+      data-hidden={s.hidden || undefined}
+      data-open={p.open || undefined}
+      aria-busy={busy || undefined}
+    >
       <div className="section-row__head">
         <span className="section-row__n tnum" aria-hidden="true">
           {String(p.n).padStart(2, "0")}
@@ -281,6 +289,7 @@ const SectionRow = memo(function SectionRow(p: {
                 type="checkbox"
                 className="section-row__check"
                 checked={!s.hidden}
+                disabled={busy}
                 onChange={(e) => p.onEdit(s.uid, { hidden: !e.target.checked })}
                 aria-label={`Show ${name} in the document`}
               />
@@ -308,6 +317,7 @@ const SectionRow = memo(function SectionRow(p: {
               aria-label={sectionTitleName(kindName)}
               autoComplete="off"
               maxLength={SECTION_TITLE_MAX}
+              readOnly={busy}
               value={s.title}
               onChange={(e) => p.onEdit(s.uid, { title: e.target.value })}
             />
@@ -324,6 +334,7 @@ const SectionRow = memo(function SectionRow(p: {
               aria-describedby={`sec-${s.uid}-body-hint`}
               rows={Math.min(14, Math.max(4, s.bodyMd.split("\n").length + 1))}
               maxLength={SECTION_BODY_MAX}
+              readOnly={busy}
               value={s.bodyMd}
               onChange={(e) => p.onEdit(s.uid, { bodyMd: e.target.value })}
             />
@@ -377,6 +388,7 @@ function GapNote(props: {
               type="button"
               className="btn btn--text gap-note__act"
               onClick={() => props.onWriteHere(uidOf)}
+              disabled={props.filling !== null}
             >
               {GAP_COPY.writeHere}
             </button>

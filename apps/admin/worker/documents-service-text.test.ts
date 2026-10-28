@@ -353,12 +353,11 @@ describe("POST /documents/:id/sections/fill-from-catalogue [ADM-PROP-02]", () =>
     const res = await fill(o, made.id, sec.id, before.updatedAt);
     expect(res.status, await res.clone().text()).toBe(200);
     const body = await json(res);
-    expect(body.filled).toEqual({
-      sectionId: sec.id,
-      title: sec.title,
-      bodyMd: "Now delivered",
-      hidden: false,
-    });
+    // round 3, finding 7: the filled section comes back once, in `sectionsChanged` (no `filled` copy)
+    expect(body.sectionsChanged).toEqual([
+      { id: sec.id, title: sec.title, bodyMd: "Now delivered", hidden: false },
+    ]);
+    expect("filled" in body).toBe(false);
     expect(body.catalogueGaps.map((g: J) => g.field)).not.toContain("deliverables");
     expect(body.updatedAt).toBeGreaterThan(before.updatedAt);
     const after = await getDoc(o, made.id);
@@ -390,7 +389,7 @@ describe("POST /documents/:id/sections/fill-from-catalogue [ADM-PROP-02]", () =>
     expect((await fill(viewer, made.id, aex.id, v.updatedAt)).status).toBe(403);
     const res = await fill(o, made.id, aex.id, v.updatedAt);
     expect(res.status).toBe(200);
-    expect((await json(res)).filled.bodyMd).toBe("Has assumptions\n\n**Part svc**\nNow excluded");
+    expect((await json(res)).sectionsChanged[0].bodyMd).toBe("Has assumptions\n\n**Part svc**\nNow excluded");
   });
 
   it("finding 3: text Catalogue had when the draft was made, edited by the person, is neither called new nor added again", async () => {
@@ -444,12 +443,17 @@ describe("POST /documents/:id/sections/fill-from-catalogue [ADM-PROP-02]", () =>
     const res = await fill(o, made.id, section(now, KINDS.deliverables).id, now.updatedAt);
     expect(res.status).toBe(200);
     const body = await json(res);
-    expect(body.filled.bodyMd).toBe("We build five pages\n\n**Edit svc**\nBuild six pages");
+    const deliverables = section(now, KINDS.deliverables);
     expect(body.sectionsChanged).toEqual([
-      { id: body.filled.sectionId, title: body.filled.title, bodyMd: body.filled.bodyMd, hidden: false },
+      {
+        id: deliverables.id,
+        title: deliverables.title,
+        bodyMd: "We build five pages\n\n**Edit svc**\nBuild six pages",
+        hidden: false,
+      },
     ]);
     // added once: the same section has nothing more to take
-    const twice = await fill(o, made.id, body.filled.sectionId, body.updatedAt);
+    const twice = await fill(o, made.id, deliverables.id, body.updatedAt);
     expect(await codeOf(twice)).toBe("nothing_to_fill");
   });
 
@@ -493,6 +497,190 @@ describe("POST /documents/:id/sections/fill-from-catalogue [ADM-PROP-02]", () =>
         )
       )?.n,
     ).toBe(0);
+  });
+});
+
+describe("round 3: a service added later, the revision baseline [ADM-PROP-02, ADM-PROP-05]", () => {
+  const fill = (o: { cookie: string }, id: string, sectionId: string, expectedUpdatedAt: number) =>
+    call(`/documents/${id}/sections/fill-from-catalogue`, {
+      cookie: o.cookie,
+      body: { sectionId, expectedUpdatedAt },
+    });
+  /** The draft's lines as a save sends them (the whole part), plus new lines for the given services. */
+  const linesWith = (doc: J, ...add: { id: string; name?: string }[]) => [
+    ...doc.lines.map((l: J) => ({
+      id: l.id,
+      description: l.description,
+      qtyMilli: l.qtyMilli,
+      unit: l.unit,
+      rateMinor: l.rateMinor,
+    })),
+    ...add.map((x) => ({ catalogueItemId: x.id, description: "Added line", qtyMilli: 1000, unit: "fixed" })),
+  ];
+
+  it("finding 1: service B added to a draft with A gets its text under its name, comes back in sectionsChanged, is named while a text is missing, and fills once Catalogue has it", async () => {
+    const o = await owner();
+    const a = await mkService(100_000, {
+      name: "A svc",
+      deliverables_md: "A delivers",
+      assumptions_md: "A assumes",
+      exclusions_md: "A excludes",
+    });
+    const b = await mkService(50_000, {
+      name: "B svc",
+      deliverables_md: "B delivers",
+      exclusions_md: "B excludes",
+    });
+    const made = await draftOf([a]);
+    const v = await getDoc(o, made.id);
+    expect(v.catalogueGaps).toEqual([]);
+
+    // B is added, and a second line of A (already on the draft: nothing of A is added again)
+    const res = await patchDoc(o, made.id, { expectedUpdatedAt: v.updatedAt, lines: linesWith(v, b, a) });
+    expect(res.status, await res.clone().text()).toBe(200);
+    const answer = await json(res);
+    const doc = await getDoc(o, made.id);
+    const del = section(doc, KINDS.deliverables);
+    const aex = section(doc, KINDS.aex);
+    expect(del).toMatchObject({ bodyMd: "A delivers\n\n**B svc**\nB delivers", hidden: false });
+    expect(aex).toMatchObject({ bodyMd: "A assumes\nA excludes\n\n**B svc**\nB excludes", hidden: false });
+    expect(JSON.stringify(doc.sections)).not.toContain("{{");
+    // exactly the two sections the server wrote, as stored; the gaps in the answer are the read's
+    expect(answer.sectionsChanged).toEqual(
+      [del, aex].map((s: J) => ({ id: s.id, title: s.title, bodyMd: s.bodyMd, hidden: s.hidden })),
+    );
+    expect(answer.catalogueGaps).toEqual(doc.catalogueGaps);
+    // B has exclusions but no assumptions: named (the partial case), nothing offered yet
+    expect(doc.catalogueGaps.map((g: J) => [g.serviceCode, g.field, g.catalogueHasTextNow])).toEqual([
+      [b.code, "assumptions", false],
+    ]);
+    expect(await codeOf(await fill(o, made.id, aex.id, doc.updatedAt))).toBe("nothing_to_fill");
+    expect(await codeOf(await fill(o, made.id, del.id, doc.updatedAt))).toBe("nothing_to_fill");
+
+    // Catalogue gets B's assumptions: offered on the section, added under B's name, and then nothing is left
+    await env.DB.prepare(
+      "UPDATE catalogue_items SET assumptions_md = 'B assumes', updated_at = updated_at + 86400000 WHERE id = ?",
+    )
+      .bind(b.id)
+      .run();
+    const now = await getDoc(o, made.id);
+    expect(now.catalogueGaps.map((g: J) => [g.serviceCode, g.field, g.catalogueHasTextNow])).toEqual([
+      [b.code, "assumptions", true],
+    ]);
+    const filled = await fill(o, made.id, aex.id, now.updatedAt);
+    expect(filled.status, await filled.clone().text()).toBe(200);
+    const body = await json(filled);
+    expect(body.sectionsChanged).toEqual([
+      {
+        id: aex.id,
+        title: aex.title,
+        bodyMd: "A assumes\nA excludes\n\n**B svc**\nB excludes\n\n**B svc**\nB assumes",
+        hidden: false,
+      },
+    ]);
+    expect(body.catalogueGaps).toEqual([]);
+    expect((await getDoc(o, made.id)).catalogueGaps).toEqual([]);
+
+    // a later save of the lines that adds no service writes no section; a save of the other sections carries no gaps (finding 6)
+    const after = await getDoc(o, made.id);
+    const qty = await json(
+      await patchDoc(o, made.id, {
+        expectedUpdatedAt: after.updatedAt,
+        lines: after.lines.map((l: J) => ({
+          id: l.id,
+          description: l.description,
+          qtyMilli: 2000,
+          unit: l.unit,
+          rateMinor: l.rateMinor,
+        })),
+      }),
+    );
+    expect(qty.sectionsChanged).toEqual([]);
+    expect("catalogueGaps" in qty).toBe(false);
+    const terms = await json(
+      await patchDoc(o, made.id, {
+        expectedUpdatedAt: qty.updatedAt,
+        sections: after.sections.map((s: J) => ({
+          id: s.id,
+          kind: s.kind,
+          title: s.title,
+          bodyMd: s.kind === "terms" ? "Our own terms" : s.bodyMd,
+          hidden: s.hidden,
+        })),
+      }),
+    );
+    expect(terms.sectionsChanged).toEqual([]);
+    expect("catalogueGaps" in terms).toBe(false);
+  });
+
+  it("finding 1: a service with no text is named on a section showing A's; a hidden empty section is shown with B's text", async () => {
+    const o = await owner();
+    const a = await mkService(100_000, { name: "A only", assumptions_md: "A assumes" });
+    const blank = await mkService(10_000, { name: "Blank svc" });
+    const b = await mkService(50_000, { name: "B deliv", deliverables_md: "B delivers" });
+    const made = await draftOf([a]);
+    const v = await getDoc(o, made.id);
+    expect(section(v, KINDS.deliverables)).toMatchObject({ bodyMd: null, hidden: true });
+
+    // a service with no text at all: no section is written, and it is named everywhere its texts are missing
+    const r1 = await json(
+      await patchDoc(o, made.id, { expectedUpdatedAt: v.updatedAt, lines: linesWith(v, blank) }),
+    );
+    expect(r1.sectionsChanged).toEqual([]);
+    expect(r1.catalogueGaps.map((g: J) => [g.serviceCode, g.field])).toEqual([
+      [a.code, "deliverables"],
+      [a.code, "exclusions"],
+      [blank.code, "deliverables"],
+      [blank.code, "assumptions"],
+      [blank.code, "exclusions"],
+    ]);
+
+    // B brings deliverables: the hidden, empty Deliverables section is shown with B's text under its name
+    const v2 = await getDoc(o, made.id);
+    const r2 = await json(
+      await patchDoc(o, made.id, { expectedUpdatedAt: r1.updatedAt, lines: linesWith(v2, b) }),
+    );
+    const del = section(await getDoc(o, made.id), KINDS.deliverables);
+    expect(del).toMatchObject({ bodyMd: "**B deliv**\nB delivers", hidden: false });
+    expect(r2.sectionsChanged).toEqual([{ id: del.id, title: del.title, bodyMd: del.bodyMd, hidden: false }]);
+    // A and the blank service are still named on Deliverables (it now shows another service's text)
+    expect(
+      r2.catalogueGaps
+        .filter((g: J) => g.field === "deliverables")
+        .map((g: J) => [g.serviceCode, g.catalogueHasTextNow]),
+    ).toEqual([
+      [a.code, false],
+      [blank.code, false],
+    ]);
+  });
+
+  it("finding 2: a revision's baseline is the version group's first creation time, so Catalogue text changed since version 1 is offered", async () => {
+    const o = await owner();
+    const svc = await mkService(100_000, { name: "Rev svc", assumptions_md: "Rev assumes" });
+    const made = await draftOf([svc]);
+    const ready = await hideEmptySections(o, made.id);
+    expect((await sendDoc(o, made.id, ready)).status).toBe(200);
+    const v1 = await one<{ created_at: number }>("SELECT created_at FROM documents WHERE id = ?", made.id);
+    // Catalogue gets the exclusions after version 1 was made and before the revision
+    await env.DB.prepare(
+      "UPDATE catalogue_items SET exclusions_md = 'Rev excludes', updated_at = ? WHERE id = ?",
+    )
+      .bind((v1?.created_at ?? 0) + 1, svc.id)
+      .run();
+    const revised = await call(`/documents/${made.id}/revise`, { cookie: o.cookie, body: {} });
+    expect(revised.status, await revised.clone().text()).toBe(201);
+    const rid = (await json(revised)).id;
+    const doc = await getDoc(o, rid);
+    // the revision was made after the Catalogue change: by its own `created_at` this would not be new
+    expect(doc.createdAt).toBeGreaterThan((v1?.created_at ?? 0) + 1);
+    const aex = section(doc, KINDS.aex);
+    expect(aex.bodyMd).toBe("Rev assumes");
+    expect(doc.catalogueGaps.filter((g: J) => g.sectionKind === KINDS.aex)).toEqual([
+      expect.objectContaining({ field: "exclusions", catalogueHasTextNow: true, sectionId: aex.id }),
+    ]);
+    const res = await fill(o, rid, aex.id, doc.updatedAt);
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect((await json(res)).sectionsChanged[0].bodyMd).toBe("Rev assumes\n\n**Rev svc**\nRev excludes");
   });
 });
 

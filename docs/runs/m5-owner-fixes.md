@@ -671,3 +671,127 @@ New workerd test: a 2,000-object PDF passes. The owner's 3, 1, 2 permutation fai
 - Finding 1 replaces the old "add B later" behaviour, and the test at `service-fill.test.ts:188` changes with it.
 - Keep every round-2 behaviour the re-check marked FIXED.
 - **Done means:** `pnpm check` and the full `pnpm test` pass. Append "### Fix round 3 report".
+
+### Fix round 3 report
+Builder: Opus 5.5 (high), branch `fix/m5-owner-fixes-r3` from `origin/fix/m5-owner-findings` (7d1b62de), worktree `agent-afb26b806ae7979cf`. All 8 findings are fixed. No migration, no hosted service touched, no dev server started, `packages/pdf` untouched, and every round-2 behaviour marked FIXED is kept.
+
+**Skills:**
+- `cloudflare:workers-best-practices`: the save still does one read batch and one write batch. The gap work runs only when its inputs change (finding 6). No module-level request state, no hand-written `Env`.
+- `cloudflare:wrangler`: no config changed. It was used only through the builds' `--dry-run`.
+- Not loaded:
+  - `frontend-design`: the SPA changes are behaviour only (read-only while filling, the gap base); nothing was restyled;
+  - `cloudflare:workers-profiling`: no CPU-path change worth measuring (finding 6 removes work);
+  - `cloudflare:cloudflare`: no platform feature;
+  - the AWS, Supabase, Upstash and Sentry skills: no matching work.
+- Context7: not needed. No library API was in question; the changes are our own code and D1 SQL already in use.
+
+**Commits:**
+1. `bda167a1` fix(admin): a service added later brings its Catalogue text, group baseline, gaps only on change, fill answer slim [ADM-PROP-02, ADM-CAT-03]
+2. `5eb4d8db` test(admin): service B added later, the revision baseline, gapBase after a fill [ADM-PROP-02, ADM-PROP-05]
+3. This report.
+
+#### 1. A service added later (high)
+- **The rule:** `appendServices(sections, added)` (new, in `apps/admin/worker/service-fill.ts`) follows the decided approach.
+  - Each service a save adds goes at the end of the Deliverables and Assumptions and exclusions sections, under `**Name**`.
+  - Blank texts are dropped. No `{{…}}` token is ever written.
+  - A part the section already holds is not added again (the same 60-character check the gaps use). So a second line of a service that's already on the draft, or a service taken out and put back, adds nothing.
+- **Visibility:** a section hidden *because it had no text* is shown once it gets text, as the creation rule would have made it. A section the person hid while it had text stays hidden, with the text appended.
+- **The save** (`document-save.ts`):
+  - "Added" means a service on the new lines that wasn't on the stored lines. Its row is already in the save's one read batch (`ITEMS_OF_SAVE`, the services this save adds).
+  - The first-service token fill runs as before. Then `appendServices` runs over every section; the sections the token fill just wrote already hold the text, so nothing is doubled.
+  - Every section the server wrote comes back in `sectionsChanged`. The audit summary lists `sections`.
+  - The appended text is checked by the same limits as typed text (`checkSections`; 400 `sections_invalid`, as for the contact rename).
+- **Gaps after the append:** a missing text of B is named by the existing rules (the partial case, or "shows another service's text"), and nothing of B's is ever "now" until Catalogue changes.
+- **The pinned test** `service-fill.test.ts:188` keeps its assertion: a section that lacks B's text now means the person removed it. Its comment now says so.
+
+#### 2. The revision baseline (medium)
+- `gapBaseline(bundle)` (`document-view.ts`) is the smallest `created_at` of the version group, falling back to the document's own.
+- The group's versions query (`LOAD_DOCUMENT_SQL.versions`, `packages/db/src/documents.ts`) now also reads `created_at`. That's one column on a query the bundle already runs; the EXPLAIN no-scan test still passes.
+- The draft GET, the save and the fill route all use the baseline.
+
+#### 3. `gapBase` refreshed (medium, visible)
+- In the SPA's `applySave` (`apps/admin/src/lib/documents.ts`), an answer that carries `catalogueGaps` also resets `gapBase`.
+- The new base comes from the server's copy those gaps were worked out from: each section as it was when the save was built (`sent.sectionsAt`), with `sectionsChanged` applied.
+- So after a fill, or a save that shows a section, the note for a service whose text is still missing stays on screen. An answer without gaps keeps the base and the gaps together.
+- `initEditor` uses the same helper (`closedSections`).
+
+#### 4. A fill lost to typing (low)
+- While "Use Catalogue text" runs, from the click until the answer is on screen, that section is read-only (`sections.tsx`):
+  - its title and text are `readOnly`;
+  - its "Show in the document" checkbox is disabled;
+  - the row is `aria-busy`.
+- "Write it here" is disabled during any fill.
+
+#### 5. `inflight` (low)
+In `editor.tsx`, both `finally` blocks clear `inflight.current` only when it still holds their own promise.
+
+#### 6. Gaps on every sections autosave (low, CPU)
+- **Before the read:** the save reads the draft's existing catalogue rows only when it sends lines, or a Deliverables or Assumptions and exclusions section.
+- **After it is built:** `gapInputsChanged` decides whether the answer carries `catalogueGaps`. It does when the services on the lines changed (which ones, in which order), or when the id, kind, visibility or text of a gap section changed (null and spaces count as the same blank).
+- A quantity edit, or a save of the other sections, carries no gaps. The screen keeps the ones it has.
+
+#### 7. `filled` (low)
+- The fill answer is now exactly the slim save answer. The filled section is in `sectionsChanged`.
+- The SPA type `fillFromCatalogue` returns `SaveAnswer`. The editor never read `filled`.
+
+#### 8. 07-X line 44 (copy)
+The "Or (shorter)" alternative now reads "New proposals take their Deliverables and Assumptions and exclusions sections from these texts. An empty text hides its section." (`docs/07-content-appendix/X-m5-owner-fixes.md`). The code shows the main line 29, which was already right.
+
+#### Tests added or changed
+- **`apps/admin/worker/documents-service-text.test.ts`** has a new block, "round 3":
+  - **Service B added to a draft with A, end to end:**
+    - the text goes under B's name in both sections, and A's second line adds nothing;
+    - `sectionsChanged` holds exactly the two stored sections;
+    - the answer's gaps equal the read's: B's missing assumptions are named, and `nothing_to_fill` before Catalogue changes;
+    - Catalogue gets B's assumptions: the gap is offered as "now", the fill adds it, and no gaps are left;
+    - a later quantity-only save and a terms-only save carry no `catalogueGaps` and no `sectionsChanged` (finding 6).
+  - **Hidden section and a service with no text:**
+    - a service with no text added to A's draft writes no section, and is named on every field;
+    - a service with deliverables added later shows the hidden, empty Deliverables section with its text, while A and the blank service stay named there.
+  - **Revision baseline:** Catalogue is changed between version 1's creation and the revision. The revision offers the change as "now", and the fill adds it.
+  - The `filled` assertions became `sectionsChanged` assertions.
+- **`apps/admin/worker/service-fill.test.ts`:**
+  - `appendServices`: under names, blanks dropped, same objects when there is nothing to add, no repeat, hidden-empty shown, a hidden section with text kept hidden;
+  - the gaps after an append;
+  - `gapInputsChanged` and `serviceIdsOf`;
+  - the comment of the pinned case.
+- **`apps/admin/src/lib/documents.test.ts`:** a fill answer with fresh gaps resets `gapBase`, so the note for the missing exclusions stays. The old base drops it. An answer without gaps keeps both.
+
+#### Commands and results
+- `pnpm install --frozen-lockfile --offline`: ok. The worktree lacked links; no version changed.
+- `pnpm exec biome check --write <changed files>`: clean.
+- Targeted runs (heavy.sh):
+  - `service-fill.test.ts`: 18 passed;
+  - SPA `vitest run src/lib`: 355 passed;
+  - documents-service-text, service-fill, documents-fixes, documents-batch-fixes, documents, documents-plans: 95 passed;
+  - the three new end-to-end tests, verbose: 3 passed.
+- `pnpm --filter @techaust/admin typecheck`: exit 0.
+- **Full `pnpm test`** (heavy.sh), all passed: auth 135, ui 469 (2 skipped), core 1,755, email 128, db 452, pdf 340, web 427 (16 skipped: the real-build tests, since no `apps/web/dist` was present), portal 620, jobs 519, admin 3,235 (+9).
+- **`pnpm build`:**
+  - The first run failed only on the jobs startup reading (213.4 ms against 200). It started as the test run ended, on a loaded PC. This branch changes no jobs code (one column name in a shared SQL string, +12 bytes).
+  - Run alone, it gave exit 0:
+
+  | Worker | Bundle (bytes) | Startup (limit 200 ms) |
+  |---|---|---|
+  | jobs | 862,654 / 1,000,000 (+12) | 116.0 ms |
+  | admin API | 595,533 / 800,000 (+1,024; the third-Worker trigger is 650,000) | 88.1 ms |
+  | admin front | 99,131 / 150,000 | 21.6 ms |
+  | portal | 96,834 / 120,000 | 21.4 ms |
+
+- **`pnpm check`** (heavy.sh; the final check, with the whole-repository lint run once): exit 0.
+  - Lint checked 1,269 files with 10 warnings and 8 infos, all existing.
+  - Typecheck ok.
+  - Binding, content, Worker config and migration guards ok (49 migrations, none new).
+
+#### Not verified
+- The editor paths in a live browser: the read-only section while filling, the note staying after a fill, and `sectionsChanged` from a service added later. They are covered by `applySave` unit tests and the API tests only.
+- Drafts made before this branch that already had a later service added: that service's text is not in them, and nothing offers it until its Catalogue row changes. There is no record to tell it apart from a removal without a migration. This only matters on staging.
+- Carried over from round 2:
+  - workerd's cold native inflate and staging CPU;
+  - Browser Run's `Content-Encoding`;
+  - R2's `sha256` refusal on staging;
+  - a real linearised PDF;
+  - the portal offer page with a real offer.
+
+#### Open questions
+None.

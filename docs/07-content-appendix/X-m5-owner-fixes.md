@@ -41,7 +41,7 @@ _Drafted by the designer of the M5 owner fixes task ([runs/m5-owner-fixes](../ru
 27. Proposals list with nothing to show (the type filter on): "No proposals yet" (finding 8; 07-O's "No proposals or estimates yet" stays when both types are shown)
 28. Estimates list, the same: "No estimates yet"
 29. Catalogue, under "Deliverables, assumptions and exclusions" (the service page and the edit form): "A new proposal takes its Deliverables section, and its Assumptions and exclusions section, from these texts. Where a text is empty, the section is hidden and the draft says so."
-   Or (shorter): "New proposals and estimates take their Deliverables and Assumptions and exclusions sections from these texts. An empty text hides its section."
+   Or (shorter): "New proposals take their Deliverables and Assumptions and exclusions sections from these texts. An empty text hides its section."
 
 ## 5. Client portal (client-facing, finding 7)
 30. A proposal or estimate email link that has ended (expired, revoked, the contact's access turned off, or never valid), under the heading "Proposals and estimates", with the "Sign in" button; the pattern of 07-U §3's invoice line: "This link no longer works. Sign in to your client portal to see your proposals and estimates, or ask us for a new link at contact@techaust.com."

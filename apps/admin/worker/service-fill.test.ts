@@ -2,11 +2,14 @@
 import { describe, expect, it } from "vitest";
 import {
   appendedText,
+  appendServices,
   autoHides,
   catalogueGaps,
   emptyServiceTokens,
   fillServiceTokens,
+  gapInputsChanged,
   type ServiceFacts,
+  serviceIdsOf,
   servicesOf,
   textToFill,
 } from "./service-fill.ts";
@@ -185,7 +188,9 @@ describe("gaps and Use Catalogue text", () => {
     const b = svc({ id: "i2", name: "Beta", deliverables_md: "B deliv" });
     const bNew = { ...b, ...NEWER };
     expect(textToFill(sec("deliverables", null), [a, b], CREATED)).toBe("A deliv\n\n**Beta**\nB deliv");
-    expect(textToFill(sec("deliverables", "A deliv"), [a, b], CREATED)).toBeNull(); // Beta's text is not new
+    // Round 3, finding 1: Beta's text went into the section when the save added Beta (`appendServices`), so a section without it holds
+    // the person's own edit: it is not new, and not offered again until Catalogue changes
+    expect(textToFill(sec("deliverables", "A deliv"), [a, b], CREATED)).toBeNull();
     expect(textToFill(sec("deliverables", "A deliv"), [a, bNew], CREATED)).toBe("**Beta**\nB deliv");
     expect(textToFill(sec("deliverables", "A deliv\n**Beta**\nB deliv"), [a, bNew], CREATED)).toBeNull();
     expect(textToFill(sec("scope", null), [a], CREATED)).toBeNull();
@@ -208,5 +213,105 @@ describe("finding 7: a required section is never hidden automatically", () => {
     ]);
     expect(autoHides("estimate")).toBe(false);
     expect(autoHides("assumptions_exclusions")).toBe(true);
+  });
+});
+
+describe("round 3, finding 1: a service added to a draft that already has text", () => {
+  const a = svc({ deliverables_md: "A deliv", assumptions_md: "A assumes" });
+  const b = svc({ id: "i2", code: "S2", name: "Beta", deliverables_md: "B deliv", exclusions_md: "B excl" });
+
+  it("appends each added service's texts under its name, blanks dropped, never a token; other sections are the same objects", () => {
+    const sections = [
+      sec("deliverables", "A deliv"),
+      sec("assumptions_exclusions", "A assumes"),
+      sec("scope", "x"),
+    ];
+    const out = appendServices(sections, [b]);
+    expect(out.map((s) => s.bodyMd)).toEqual([
+      "A deliv\n\n**Beta**\nB deliv",
+      "A assumes\n\n**Beta**\nB excl",
+      "x",
+    ]);
+    expect(out[2]).toBe(sections[2]);
+    expect(JSON.stringify(out)).not.toContain("{{");
+    // nothing to add: the very same objects (the save tells the sections it wrote by identity)
+    const none = appendServices(sections, [svc({ id: "i3", name: "Empty" })]);
+    none.forEach((s, i) => {
+      expect(s).toBe(sections[i]);
+    });
+    expect(appendServices(sections, [])).toEqual(sections);
+  });
+
+  it("a part the section already holds is not added twice; a section hidden for having no text is shown, one the person hid is not", () => {
+    const holds = [
+      sec("deliverables", "A deliv\n\n**Beta**\nB deliv"),
+      sec("assumptions_exclusions", "B excl"),
+    ];
+    const out = appendServices(holds, [b]);
+    expect(out[0]).toBe(holds[0]);
+    expect(out[1]).toBe(holds[1]);
+    const closed = appendServices(
+      [sec("deliverables", null, true), sec("assumptions_exclusions", "A assumes", true)],
+      [b],
+    );
+    expect(closed.map((s) => [s.bodyMd, s.hidden])).toEqual([
+      ["**Beta**\nB deliv", false],
+      ["A assumes\n\n**Beta**\nB excl", true],
+    ]);
+  });
+
+  it("after the append the gaps name only what is still missing, and nothing is offered twice", () => {
+    const sections = appendServices(
+      [sec("deliverables", "A deliv"), sec("assumptions_exclusions", "A assumes")],
+      [b],
+    );
+    const gaps = catalogueGaps(sections, [a, b], CREATED).map((g) => [
+      g.serviceCode,
+      g.field,
+      g.catalogueHasTextNow,
+    ]);
+    // A has no exclusions and B no assumptions (both the partial case); B's own texts are in, so nothing is "now"
+    expect(gaps).toEqual([
+      ["S1", "exclusions", false],
+      ["S2", "assumptions", false],
+    ]);
+    for (const s of sections) expect(textToFill(s, [a, b], CREATED)).toBeNull();
+  });
+});
+
+describe("round 3, finding 6: when a save's answer carries the gaps", () => {
+  const base = { services: ["i1"], sections: [sec("deliverables", "D"), sec("terms", "T")] };
+  const withSections = (...sections: ReturnType<typeof sec>[]) => ({ ...base, sections });
+
+  it("only when the services or a Deliverables or Assumptions and exclusions section changed", () => {
+    expect(gapInputsChanged(base, { ...base })).toBe(false);
+    // another section's text, or a blank written as null or as spaces, changes nothing
+    expect(gapInputsChanged(base, withSections(sec("deliverables", "D"), sec("terms", "New")))).toBe(false);
+    expect(
+      gapInputsChanged(
+        { services: [], sections: [sec("deliverables", null)] },
+        { services: [], sections: [sec("deliverables", "  ")] },
+      ),
+    ).toBe(false);
+    expect(gapInputsChanged(base, { ...base, services: ["i1", "i2"] })).toBe(true);
+    expect(gapInputsChanged(base, { ...base, services: [] })).toBe(true);
+    expect(gapInputsChanged(base, withSections(sec("deliverables", "D2"), sec("terms", "T")))).toBe(true);
+    expect(gapInputsChanged(base, withSections(sec("deliverables", "D", true), sec("terms", "T")))).toBe(
+      true,
+    );
+    expect(gapInputsChanged(base, withSections(...base.sections, sec("assumptions_exclusions", null)))).toBe(
+      true,
+    );
+  });
+
+  it("serviceIdsOf: the distinct catalogue items in line order", () => {
+    expect(
+      serviceIdsOf([
+        { catalogueItemId: "b" },
+        { catalogueItemId: null },
+        { catalogueItemId: "a" },
+        { catalogueItemId: "b" },
+      ]),
+    ).toEqual(["b", "a"]);
   });
 });

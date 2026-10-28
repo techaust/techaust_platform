@@ -115,7 +115,8 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
       else dispatch({ type: "failed", status: "error", error: docErrorText(e) });
       return false;
     } finally {
-      inflight.current = null;
+      // Only its own promise (review round 3, finding 5): a fill or a save started meanwhile keeps its place, so a later save still waits for it.
+      if (inflight.current === p) inflight.current = null;
     }
   }, [dispatch]);
 
@@ -198,12 +199,14 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
   }, []);
   // "Use Catalogue text": everything typed is saved first (the route takes the version it saw); its answer is a save answer whose
   // `sectionsChanged` holds the filled section, applied like a save's (no re-read, so nothing typed meanwhile is lost; review round 2, finding 5).
-  // An autosave waits for it (`inflight`), so it never sends the old version.
+  // An autosave waits for it (`inflight`), so it never sends the old version. The section is read-only from the click until the answer is on
+  // screen (review round 3, finding 4): text typed into it meanwhile would keep the fill off the screen and the next save would overwrite it.
   const [filling, setFilling] = useState<string | null>(null);
   const onFill = useCallback(
     async (sectionId: string) => {
       if (filling) return;
       setFilling(sectionId);
+      let p: Promise<unknown> | null = null;
       try {
         const at = await flush();
         if (at === null) {
@@ -211,9 +214,10 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
           return;
         }
         const before = ref.current;
-        const p = documentsApi.fillFromCatalogue(before.id, sectionId, at);
-        inflight.current = p;
-        const answer = await p;
+        const call = documentsApi.fillFromCatalogue(before.id, sectionId, at);
+        p = call;
+        inflight.current = call;
+        const answer = await call;
         const sectionsAt = Object.fromEntries(before.sections.map((x) => [x.uid, x]));
         dispatch({
           type: "saved",
@@ -224,7 +228,7 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
       } catch (e) {
         toast("error", docErrorText(e));
       } finally {
-        inflight.current = null;
+        if (p !== null && inflight.current === p) inflight.current = null;
         setFilling(null);
       }
     },
