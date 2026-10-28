@@ -314,5 +314,34 @@ Shots: `.logs/shots/a4-docs/` (main checkout).
 - 1–3, 5 and 7–9 and the VERIFY retagging go into an A4 fix task.
 - 4 and 6 go on the owner's copy page.
 
+## Fix plan (lead, 2026-10-29 03:45 IST)
+- **Order:** the M5 owner-fix PR merges first. Then each fix task branches from the newest `main`, so each area merges in turn, and migrations land in this order.
+- **Agents:** every builder, designer, analyst and reviewer runs on Opus high.
+- **No overlap:** two parallel tasks never touch the same files.
+
+| Task | Findings | Tier | Who | Files (main) |
+|---|---|---|---|---|
+| **FX-1 data and jobs** | A0 2, 4, 5, 6, 8, 9, 10; A6 2, 3, 4, 6, 7, 10 | A (migrations: an index and triggers only; the analyst's early check) | builder | `packages/db`, `packages/core` (settings schema, invoices), `apps/jobs`, `apps/*/wrangler.jsonc`, `scripts/check-worker-config.mjs`, `docs/04` §9, `docs/runbooks` |
+| **FX-2 security and website** | A1 1, 2, 4, 6, 7; A2 1–10, 13, 14 | B | builder (A1, A2 2, 3, 4, 9) then designer (A2 screens) | the `public/_headers` files of all three apps (portal's is new), the header setup in `apps/{admin,portal}/worker/{app,index}.ts`, `scripts/check-prod-readiness.mjs`, a new SPA headers guard, `tools/model-guard.mjs`, `apps/web/**`, `apps/admin/worker/catalogue.ts` (publish text guard) |
+| **FX-3 admin and portal** | A3 1–10, 12, 13; A4 1–3, 5, 7–9; retagging the bare VERIFY tags; A6 1c (signature downscaled to ≤ 800×400 at upload) | B | builder (A3 4, 5, 7, 8, 10; A4 3, 5, 9; signature) then designer (A3 1–3, 6, 9, 12, 13; A4 1, 2, 7, 8) | `apps/admin/src/**`, `apps/admin/worker/{clients,projects,dashboard,leads,settings-signature}.ts`, `apps/portal/src/**`, `apps/portal/worker/offer-sql.ts`, `packages/pdf` (fonts), `packages/email/src/offers.ts`, `packages/core/src/markdown*` |
+| **FX-4 invoicing** | A5 (after its audit) | A | builder then designer | as A5 finds |
+
+- **Shared files:**
+  - FX-2 touches only admin's `public/_headers`, `worker/app.ts` and `worker/catalogue.ts`, not its `src`.
+  - FX-1 and FX-3 both touch `packages/core`, but different files: FX-1 has `schemas/settings.ts` and `invoices.ts`, FX-3 has `markdown`.
+- **Owner's copy page (07-Y, one page):**
+  - A2 11: the /work lede;
+  - A3 11: the dashboard foot line;
+  - A4 4: the pre-existing tools line in the terms (also for the CA and lawyer);
+  - A4 6: three places where estimates are worded as proposals;
+  - plus every new line the fixes need.
+- **Owner's yes (workflow changes):**
+  - A1 3: a dependency audit in CI;
+  - A1 5: separate the build and deploy steps;
+  - A6 8: explicit deploy order plus `/healthz` smoke checks;
+  - A6 9: Traces.
+- **Owner's question:** A0 3, voiding an invoice the client has already viewed.
+- **Re-check:** after the fix tasks, a final sweep by a reviewer at all widths and in both themes, covering the screens A3 left out.
+
 ## Handover
 _(written at the end of each conversation)_
