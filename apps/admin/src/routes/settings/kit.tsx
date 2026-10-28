@@ -57,13 +57,17 @@ export type FormCtx<K extends JsonGroup, F> = {
 
 const GENERIC = "Check this value.";
 
+/** The validator's own default texts ("Too small: expected number to be >=12", "Invalid input: expected string, received number"): never shown to a person. */
+const RAW_VALIDATOR_TEXT =
+  /^(Invalid (input|option|string|number|type|value)|Too (small|big)|Unrecognized key)/;
+
 /** Schema issues → field errors (the zod/mini default text is replaced by a plain one). */
 function schemaErrors(issues: readonly { path: readonly PropertyKey[]; message: string }[]): FieldErrors {
   const out: FieldErrors = {};
   for (const i of issues) {
     const path = i.path.map(String).join(".");
     const id = nearestField(path, (x) => document.getElementById(x) !== null) ?? fieldId(path);
-    out[id] ??= i.message && i.message !== "Invalid input" ? i.message : GENERIC;
+    out[id] ??= i.message && !RAW_VALIDATOR_TEXT.test(i.message) ? i.message : GENERIC;
   }
   return out;
 }
