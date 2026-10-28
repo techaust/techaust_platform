@@ -178,6 +178,8 @@ export const ROUTES: readonly RouteDef[] = [
   R("POST", "/documents", "proposals.draft", { audit: "document.create" }),
   R("GET", "/documents/:id", "proposals.read"),
   R("PATCH", "/documents/:id", "proposals.draft", { audit: "document.update", body: "document" }),
+  // "Use Catalogue text" (owner 2026-10-28): adds the text Catalogue has since been given to a hidden or short service section.
+  R("POST", "/documents/:id/sections/fill-from-catalogue", "proposals.draft", { audit: "document.update" }),
   R("DELETE", "/documents/:id", "proposals.draft", { audit: "document.delete" }),
   R("POST", "/documents/:id/revise", "proposals.draft", { audit: "document.revise" }),
   R("POST", "/documents/:id/approval-request", "proposals.draft", { audit: "approval.request" }),

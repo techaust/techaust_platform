@@ -320,23 +320,48 @@ export function placeholdersOf(body: string): string[] {
   return [...new Set([...body.matchAll(PLACEHOLDER_RE)].map((m) => m[1] as string))];
 }
 
+/** Options of `renderTemplate`: `empty` names placeholders that are known to have NO text (unlike an unknown one, which stays in the text). */
+export type RenderOptions = { readonly empty?: ReadonlySet<string> | undefined };
+
+/** The text without its empty placeholders: a line that holds only such placeholders goes, in a mixed line only the placeholder goes. */
+function dropEmpty(body: string, empty: ReadonlySet<string>): string {
+  let dropped = false;
+  const kept: string[] = [];
+  for (const line of body.split("\n")) {
+    const left = line.replace(PLACEHOLDER_RE, (whole, name: string) => (empty.has(name) ? "" : whole));
+    if (left === line) {
+      kept.push(line);
+      continue;
+    }
+    dropped = true;
+    if (left.trim() !== "") kept.push(left);
+  }
+  const text = kept.join("\n");
+  return dropped ? text.replace(/\n{3,}/g, "\n\n").trim() : text;
+}
+
 /**
  * Fills the placeholders from `data` (a flat map of `client.name`-style keys). A placeholder with no value (missing, null or empty)
- * stays in the text exactly as written and is listed in `unresolved`, so the caller can refuse to send it.
+ * stays in the text exactly as written and is listed in `unresolved`, so the caller can refuse to send it. A placeholder named in
+ * `options.empty` is different: it is known to have no text, so it is taken out (its whole line when the line holds nothing else)
+ * and is not unresolved. A name in `empty` that `data` does fill is filled.
  */
 export function renderTemplate(
   body: string,
   data: Readonly<Record<string, string | number | null | undefined>>,
+  options: RenderOptions = {},
 ): { text: string; unresolved: string[] } {
   const unresolved = new Set<string>();
-  const text = body.replace(PLACEHOLDER_RE, (whole, name: string) => {
+  const empty = options.empty;
+  const filled = body.replace(PLACEHOLDER_RE, (whole, name: string) => {
     const v = data[name];
     if (v === undefined || v === null || v === "") {
-      unresolved.add(name);
+      if (!empty?.has(name)) unresolved.add(name);
       return whole;
     }
     return String(v);
   });
+  const text = empty && empty.size > 0 ? dropEmpty(filled, empty) : filled;
   return { text, unresolved: [...unresolved] };
 }
 
@@ -378,11 +403,12 @@ export function unknownPlaceholders(body: TemplateBody): string[] {
 export function renderTemplateBody(
   body: TemplateBody,
   data: Readonly<Record<string, string | number | null | undefined>>,
+  options: RenderOptions = {},
 ): { sections: { key: string; heading: string; text: string }[]; unresolved: string[] } {
   const unresolved = new Set<string>();
   const sections = body.sections.map((s) => {
-    const h = renderTemplate(s.heading, data);
-    const b = renderTemplate(s.body, data);
+    const h = renderTemplate(s.heading, data, options);
+    const b = renderTemplate(s.body, data, options);
     for (const u of [...h.unresolved, ...b.unresolved]) unresolved.add(u);
     return { key: s.key, heading: h.text, text: b.text };
   });

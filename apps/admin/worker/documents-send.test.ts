@@ -558,6 +558,10 @@ describe("what a send refuses [ADM-PROP-05, ADM-CAT-03]", () => {
     expect(body.reasons).toContainEqual({
       code: "unresolved_placeholders",
       names: ["client.name", "unknown.thing"],
+      where: [
+        { name: "client.name", sectionId: expect.any(String), sectionKind: "estimate", part: "section" },
+        { name: "unknown.thing", sectionId: expect.any(String), sectionKind: "estimate", part: "section" },
+      ],
     });
 
     const empty = await json(

@@ -2,7 +2,7 @@
 // a sent version's rows, and the lead convert (M3.2), so a draft always has its group, its template sections, server-built lines, its
 // schedule and the newest terms. The statements it returns go into the caller's own batch.
 
-import { renderTemplateBody, type TemplateBody } from "@techaust/core/catalogue";
+import { placeholdersOf, renderTemplateBody, type TemplateBody } from "@techaust/core/catalogue";
 import type { TaxInput } from "@techaust/core/clients";
 import type { CalendarDate } from "@techaust/core/dates";
 import { sectionsFromTemplate } from "@techaust/core/documents";
@@ -34,6 +34,7 @@ import {
   TOO_MANY_LINES,
   taxContext,
 } from "./quote-model.ts";
+import { appendedText, emptyServiceTokens, serviceData } from "./service-fill.ts";
 
 /** What a draft needs to know of its client: for the lead convert the client does not exist yet, so this is not a database row. */
 export type ClientFacts = {
@@ -156,15 +157,18 @@ export async function buildNewDraft(i: NewDraftInput): Promise<NewDraft> {
     "client.contact": i.contact?.name ?? null,
     "company.name": settings.company.tradeName,
     "proposal.validity_days": settings.paymentTerms.proposalValidityDays,
-    "service.code": first?.code ?? null,
-    "service.name": first ? lineName(first.name) : null,
-    "service.short": first?.short ?? null,
-    "service.deliverables": first?.deliverables_md ?? null,
-    "service.assumptions": first?.assumptions_md ?? null,
-    "service.exclusions": first?.exclusions_md ?? null,
+    ...serviceData(first ?? null),
     "service.schedule": scheduleSentence(steps),
   };
-  const rendered = tpl ? renderTemplateBody(tpl, data).sections : [];
+  // A service with no text for a token makes it EMPTY (taken out, section hidden); no service at all leaves it UNKNOWN (kept, filled by the
+  // save that adds the first service line). See service-fill.ts.
+  const empty = emptyServiceTokens(first ?? null);
+  const rendered = tpl ? renderTemplateBody(tpl, data, { empty }).sections : [];
+  const emptiedKeys = new Set(
+    (tpl?.sections ?? [])
+      .filter((s) => placeholdersOf(`${s.heading}\n${s.body}`).some((n) => empty.has(n)))
+      .map((s) => s.key),
+  );
   const drafts = sectionsFromTemplate(rendered);
   // Mutable copies: the other services' texts are appended to them below.
   const sections: {
@@ -179,11 +183,13 @@ export async function buildNewDraft(i: NewDraftInput): Promise<NewDraft> {
     if (at) at.bodyMd = at.bodyMd ? `${at.bodyMd}\n\n${text}` : text;
   };
   for (const s of i.services.slice(1)) {
-    const name = `**${lineName(s.item.name)}**`;
-    if (s.item.deliverables_md) append("deliverables", `${name}\n${s.item.deliverables_md}`);
-    const aex = [s.item.assumptions_md, s.item.exclusions_md].filter(Boolean).join("\n");
-    if (aex) append("assumptions_exclusions", `${name}\n${aex}`);
+    const d = appendedText("deliverables", s.item);
+    if (d !== null) append("deliverables", d);
+    const aex = appendedText("assumptions_exclusions", s.item);
+    if (aex !== null) append("assumptions_exclusions", aex);
   }
+  // A section whose template text was only empty tokens and that no service filled is created hidden.
+  for (const s of sections) if (s.bodyMd === null && emptiedKeys.has(s.kind)) s.hidden = true;
   if (i.leadMessage) {
     if (sections.some((s) => s.kind === "scope")) append("scope", i.leadMessage);
     // No scope section in the template (or no template): what the lead wrote is the scope, under the service's name (the M3.2 behaviour).
