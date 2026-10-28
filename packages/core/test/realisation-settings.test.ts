@@ -1,5 +1,5 @@
 // The two M5.5b settings (`tax.b2clThresholdInrMinor`, `tax.realisation.inrMonths`) and their no-zod readers [ADM-INV-17, ADM-REP-07; LD77, Q15, Q18;
-// VERIFY WITH CA/LEGAL]: a stored row without the new keys still parses, the zod schema and the Worker reader agree, and the reader is a twin of
+// Researched 2026-10-28, 08-C RB-01 and RA-13]: a stored row without the new keys still parses, the zod schema and the Worker reader agree, and the reader is a twin of
 // the gst core's `realisationRulesOf`.
 import { describe, expect, it } from "vitest";
 import { b2clThresholdFromStoredTax, realisationParamsFromStoredTax } from "../src/export-invoice.ts";
