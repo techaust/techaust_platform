@@ -367,7 +367,9 @@ form.inv-service {
 /* The rate's day is before the document's (07-S §8): the statement sits under the date, across the grid. */
 .inv-fx-norate {
   grid-column: 1 / -1;
-  margin: 0;
+  grid-row: auto;
+  /* the gap below it is a field's, so "Source" reads as the next field */
+  margin: calc(-1 * var(--space-2)) 0 var(--space-5);
 }
 
 /* Q37 (07-S §9): the payment's year has no LUT. A decision, not an error: the warning rule of the LUT banners, the question as its heading, the

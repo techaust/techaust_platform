@@ -2375,12 +2375,12 @@ input[readonly] {
   font-weight: 560;
 }
 
-/* A house rule (07-S §3): the label, then its badge, which wraps under the label on a narrow column rather than squeezing the switch. */
+/* A house rule (07-S §3): the label, then its badge on the line under it, the same on every house rule whatever the label's length. */
 .checklist__label {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-1) var(--space-2);
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
 }
 
 /* The badge says the line is the business's own choice, not the law's: an outlined tag in the muted text colour, never a status colour, so it reads
