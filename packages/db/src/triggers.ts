@@ -5,6 +5,7 @@
 import { INVOICE_FAMILY_SQL, QUOTE_DOCUMENT_TYPES } from "@techaust/core/clients";
 import { getTableColumns } from "drizzle-orm";
 import { getTableConfig } from "drizzle-orm/sqlite-core";
+import { DISCOUNT_AFTER_SALE_FROM_SQL, fyTokenOfDateSql, LUT_FOR_FY_SQL } from "./issue.ts";
 import {
   acceptanceCertificates,
   documentLines,
@@ -28,16 +29,15 @@ import {
   termsVersions,
 } from "./schema/index.ts";
 
-/** Columns of an issued document that may still change (ledger, status, void and e-invoice fields). */
+/**
+ * Columns of an issued document that may still change (ledger, status, void and the e-invoice status). FX-1 (A0 5): `irn`, `ack_no`, `ack_date` and
+ * `signed_qr` moved to the set-once list (migration 0050); the ledger columns are tied together by `documents_ledger_identity` (0050).
+ */
 export const MUTABLE_AFTER_FREEZE = [
   "status",
   "paid_minor",
   "credited_minor",
   "balance_minor",
-  "irn",
-  "ack_no",
-  "ack_date",
-  "signed_qr",
   "einv_status",
   // M5.3 (LD46): the client's IMS response to a credit note; the triggers of 0042 allow only the moves of `canSetImsStatus`.
   "ims_status",
@@ -55,8 +55,9 @@ export const SET_ONCE_0001 = [
 
 /**
  * Columns that may be filled in once after freezing, today. M4.3 adds the portal's reads and the client's decision (M4.5 writes
- * them): each can be set once, then never changed. M5.2 adds `service_completed_on` (LD29: set once, through `invoices.draft`).
- * Migration 0032 holds the list as it was before: `SET_ONCE_0032`.
+ * them): each can be set once, then never changed. M5.2 adds `service_completed_on` (LD29: set once, through `invoices.draft`). FX-1 (A0 5, ADM-INV-14) adds the
+ * four e-invoice fields the IRP answers with (`irn`, `ack_no`, `ack_date`, `signed_qr`): recorded once, never edited. Migration 0032 holds the list as it was
+ * before: `SET_ONCE_0032`.
  */
 export const SET_ONCE_AFTER_FREEZE = [
   ...SET_ONCE_0001,
@@ -66,6 +67,10 @@ export const SET_ONCE_AFTER_FREEZE = [
   "decision_note",
   "decided_contact_id",
   "service_completed_on",
+  "irn",
+  "ack_no",
+  "ack_date",
+  "signed_qr",
 ] as const;
 
 /** The set-once list exactly as migration 0032 installed it (pinned, LD35: a later column must not move the bytes of 0032). */
@@ -733,13 +738,17 @@ export function invoiceTypeTriggerStatements(): string[] {
  *   7. `documents_credit_note_ims_required`: a credit note cannot freeze with an empty IMS status (the freeze sets it; the update trigger above only
  *      looks when `ims_status` changes, so an empty one would pass unseen).
  */
-export function noteTriggerStatements(): string[] {
-  const named = (name: string, message: string) => abort(`${name}: ${message}`);
-  const notes = "('credit_note', 'debit_note')";
-  const issuing = `OLD.status = 'draft' AND NEW.status = 'issued' AND NEW.type IN ${notes}`;
-  const needsParent = `NEW.type IN ${notes} AND NEW.parent_id IS NULL`;
-  const badParent =
-    "NOT EXISTS (SELECT 1 FROM documents p WHERE p.id = NEW.parent_id AND p.type IN ('tax_invoice', 'export_invoice') AND p.frozen_at IS NOT NULL AND p.status IN ('issued', 'partially_paid', 'paid', 'partially_credited') AND p.client_id = NEW.client_id AND p.currency = NEW.currency AND p.supply_type IS NEW.supply_type AND p.place_of_supply_code IS NEW.place_of_supply_code AND p.fx_rate_micros IS NEW.fx_rate_micros AND p.export_mode IS NEW.export_mode)";
+/** The credit-note freeze, as `documents_credit_note_cap` judges it (0042, and 0050 again with the INR guard). */
+const NOTE_ISSUING =
+  "OLD.status = 'draft' AND NEW.status = 'issued' AND NEW.type IN ('credit_note', 'debit_note')";
+const CREDIT_CAP_MSG =
+  "the credit notes of an invoice cannot add up to more than the invoice, in total or in any tax head";
+
+/**
+ * The cap of `documents_credit_note_cap`: the note's total, taxable value, each tax head and INR total, each over what the parent has left. `extra` is one more
+ * clause OR-ed in the same parent row (empty in 0042, the INR guard in 0050); with it empty the text is exactly 0042's (a test regenerates 0042 byte for byte).
+ */
+function creditCapSql(extra: string): string {
   const heads = [
     "total_minor",
     "taxable_minor",
@@ -750,7 +759,17 @@ export function noteTriggerStatements(): string[] {
   ] as const;
   const sums = heads.map((h) => `coalesce(sum(c.${h}), 0) AS ${h}`).join(", ");
   const over = heads.map((h) => `NEW.${h} > p.${h} - s.${h}`).join(" OR ");
-  const overCap = `EXISTS (SELECT 1 FROM documents p, (SELECT ${sums} FROM documents c WHERE c.parent_id = NEW.parent_id AND c.type = 'credit_note' AND c.frozen_at IS NOT NULL AND c.status <> 'void' AND c.id <> NEW.id) s WHERE p.id = NEW.parent_id AND (${over}))`;
+  return `EXISTS (SELECT 1 FROM documents p, (SELECT ${sums} FROM documents c WHERE c.parent_id = NEW.parent_id AND c.type = 'credit_note' AND c.frozen_at IS NOT NULL AND c.status <> 'void' AND c.id <> NEW.id) s WHERE p.id = NEW.parent_id AND (${over}${extra}))`;
+}
+
+export function noteTriggerStatements(): string[] {
+  const named = (name: string, message: string) => abort(`${name}: ${message}`);
+  const notes = "('credit_note', 'debit_note')";
+  const issuing = `OLD.status = 'draft' AND NEW.status = 'issued' AND NEW.type IN ${notes}`;
+  const needsParent = `NEW.type IN ${notes} AND NEW.parent_id IS NULL`;
+  const badParent =
+    "NOT EXISTS (SELECT 1 FROM documents p WHERE p.id = NEW.parent_id AND p.type IN ('tax_invoice', 'export_invoice') AND p.frozen_at IS NOT NULL AND p.status IN ('issued', 'partially_paid', 'paid', 'partially_credited') AND p.client_id = NEW.client_id AND p.currency = NEW.currency AND p.supply_type IS NEW.supply_type AND p.place_of_supply_code IS NEW.place_of_supply_code AND p.fx_rate_micros IS NEW.fx_rate_micros AND p.export_mode IS NEW.export_mode)";
+  const overCap = creditCapSql("");
   const ledgerBad = "NEW.credited_minor < 0 OR NEW.credited_minor > NEW.total_minor OR NEW.balance_minor < 0";
   // Three-valued logic: `OLD.ims_status = 'pending'` is NULL when it was empty, and a NULL WHEN does not fire; so `IS` for every comparison with a nullable column and `coalesce` around the whole move.
   const imsMove =
@@ -830,6 +849,58 @@ export function fxFlagTriggerStatements(): string[] {
   return ["DROP TRIGGER `documents_frozen_update`;", frozenUpdateTrigger(FROZEN_COLUMNS_0047, SET_ONCE_0040)];
 }
 
+/** The set-once columns as migration 0050 installs them: 0040's plus the four e-invoice fields (A0 5; pinned like the lists before it). */
+export const SET_ONCE_0050 = [...SET_ONCE_0040, "irn", "ack_no", "ack_date", "signed_qr"] as const;
+
+/**
+ * The document types whose ledger (`paid_minor`, `credited_minor`, `balance_minor`) is tied by `documents_ledger_identity`: the invoice-flow types other than a
+ * credit note (core `INVOICE_FLOW_TYPES`; a credit note owes nothing, its balance is 0 from the freeze, LD41). The receipt and voucher types are not issuable yet;
+ * M6 defines their ledger and widens this list in its own migration. A db test compares the list with core.
+ */
+export const LEDGER_IDENTITY_TYPES_0050 = [
+  "proforma",
+  "tax_invoice",
+  "export_invoice",
+  "debit_note",
+] as const;
+
+/**
+ * The full-audit fixes to the data core (FX-1: A0 4, 5, 8, 9; ADM-INV-02, -09, -11, -14; new and recreated triggers only, no table is rebuilt; every abort
+ * message starts with its trigger's name so the API can map it):
+ *   1. `documents_frozen_update` dropped and created again over 0047's columns, with the e-invoice fields set once (`SET_ONCE_0050`);
+ *   2. `documents_credit_note_cap` dropped and created again: as 0042's, and a note with no INR total on a parent that has one is refused (A0 8: the comparison
+ *      with NULL passed silently before);
+ *   3. `documents_ledger_identity`: a frozen proforma, tax or export invoice or debit note has `paid_minor` >= 0 and `balance_minor` = max(0, total - paid -
+ *      credited), at the freeze and on every later write of the ledger (A0 4); every write path keeps to it (the issue, the advance batch, the credit recompute,
+ *      which is one statement since 0050, and the void, which writes no ledger column);
+ *   4. `documents_discount_after_sale_from`: a note for "Discount after sale" is issued only with an issue date on or after `DISCOUNT_AFTER_SALE_FROM_SQL`
+ *      (Researched 2026-10-28, s.15(3)(b) and s.34(1) CGST Act as amended by ss.153-154 Finance Act 2026, Notification 03/2026-CT (08-C RA-02)); the twin of
+ *      core `reasonInForce` and of the note freeze's WHERE (`noteIssueTail`);
+ *   5. `documents_advance_lut_fy`: a tax invoice for a payment received (`header_extras.advance`) that is an export invoice on the LUT route is issued only while
+ *      a LUT with an ARN is saved for the FY of the RECEIPT day (Researched 2026-10-28, Rule 96A(1) CGST Rules, s.13(2) CGST Act (08-C RA-19, Q37); OPEN (08-C
+ *      RA-19): does the FY X LUT cover a payment received in FY X+1 before the new LUT is filed? The safe side is held: it does not); the twin of core
+ *      `advanceRouteFor` and of the advance freeze's WHERE (`LUT_FOR_FY_SQL` with the receipt FY).
+ */
+export function ledgerTriggerStatements(): string[] {
+  const named = (name: string, message: string) => abort(`${name}: ${message}`);
+  const ledgerTypes = LEDGER_IDENTITY_TYPES_0050.map((t) => `'${t}'`).join(", ");
+  const inrGuard = " OR (p.total_inr_minor IS NOT NULL AND NEW.total_inr_minor IS NULL)";
+  const ledgerBad = `NEW.frozen_at IS NOT NULL AND NEW.type IN (${ledgerTypes}) AND (NEW.paid_minor IS NULL OR NEW.paid_minor < 0 OR NEW.balance_minor IS NOT max(0, NEW.total_minor - NEW.paid_minor - NEW.credited_minor))`;
+  const issuing = "OLD.status = 'draft' AND NEW.status = 'issued'";
+  const discountBad = `${issuing} AND NEW.type IN ('credit_note', 'debit_note') AND json_extract(NEW.header_extras, '$.noteOf.reason.code') IS 'discount_after_sale' AND (NEW.issue_date IS NULL OR NEW.issue_date < '${DISCOUNT_AFTER_SALE_FROM_SQL}')`;
+  const receivedOn = "json_extract(NEW.header_extras, '$.advance.receivedOn')";
+  const lutBad = `${issuing} AND NEW.type = 'export_invoice' AND NEW.export_mode = 'lut' AND ${receivedOn} IS NOT NULL AND NOT ${LUT_FOR_FY_SQL.replaceAll("?FY", fyTokenOfDateSql(receivedOn))}`;
+  return [
+    "DROP TRIGGER `documents_frozen_update`;",
+    frozenUpdateTrigger(FROZEN_COLUMNS_0047, SET_ONCE_0050),
+    "DROP TRIGGER `documents_credit_note_cap`;",
+    `CREATE TRIGGER \`documents_credit_note_cap\` BEFORE UPDATE OF status ON \`documents\` WHEN ${NOTE_ISSUING} AND NEW.type = 'credit_note' AND ${creditCapSql(inrGuard)} BEGIN ${named("documents_credit_note_cap", CREDIT_CAP_MSG)} END;`,
+    `CREATE TRIGGER \`documents_ledger_identity\` BEFORE UPDATE OF paid_minor, credited_minor, balance_minor, frozen_at ON \`documents\` WHEN ${ledgerBad} BEGIN ${named("documents_ledger_identity", "an issued document owes its total less what was paid and credited, never less than zero, and nothing paid is negative")} END;`,
+    `CREATE TRIGGER \`documents_discount_after_sale_from\` BEFORE UPDATE OF status ON \`documents\` WHEN ${discountBad} BEGIN ${named("documents_discount_after_sale_from", `a note for a discount after sale is dated on or after ${DISCOUNT_AFTER_SALE_FROM_SQL}`)} END;`,
+    `CREATE TRIGGER \`documents_advance_lut_fy\` BEFORE UPDATE OF status ON \`documents\` WHEN ${lutBad} BEGIN ${named("documents_advance_lut_fy", "an export invoice under LUT for a payment received needs a LUT saved for the financial year of the day the payment arrived")} END;`,
+  ];
+}
+
 /** The trigger sets, by the name the migration is created with (`drizzle-kit generate --custom --name <set>`). */
 export const TRIGGER_SETS = {
   triggers: { what: "integrity triggers (docs/05 §5.3)", statements: triggerStatements },
@@ -887,6 +958,10 @@ export const TRIGGER_SETS = {
   fx_flag_triggers: {
     what: "freeze trigger recreated for the exchange-rate statement column fx_no_rate_day (research round 2026-10-28, Q24: the day the statement covers)",
     statements: fxFlagTriggerStatements,
+  },
+  ledger_triggers: {
+    what: "full-audit data fixes (FX-1): e-invoice fields set once, the credit cap's INR guard, the ledger identity, the discount-after-sale date and the advance LUT of the receipt FY at issue",
+    statements: ledgerTriggerStatements,
   },
 } as const;
 export type TriggerSet = keyof typeof TRIGGER_SETS;

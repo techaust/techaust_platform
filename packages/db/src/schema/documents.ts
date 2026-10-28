@@ -257,6 +257,14 @@ export const documents = sqliteTable(
     uniqueIndex("documents_number_display")
       .on(t.numberDisplay, t.series, t.version)
       .where(sql`${t.numberDisplay} is not null`),
+    // FX-1 (A0 2; Researched 2026-10-28, Rules 46(b), 50(b), 51(b), 53(1A) CGST Rules (08-C RA-09): a number is unique for the FY, whichever series): no two
+    // invoice-family documents print the same number, even from two series. The backstop of core `numberingClashes` (the Settings save). The type list is
+    // core `INVOICE_FAMILY` written out (the schema imports types only); `test/number-display-index.test.ts` compares the two.
+    uniqueIndex("documents_invoice_number_display")
+      .on(t.numberDisplay)
+      .where(
+        sql`${t.numberDisplay} is not null and ${t.type} in ('proforma', 'tax_invoice', 'export_invoice', 'credit_note', 'debit_note', 'receipt', 'receipt_voucher', 'refund_voucher')`,
+      ),
     uniqueIndex("documents_version")
       .on(t.versionGroupId, t.version)
       .where(sql`${t.versionGroupId} is not null`),

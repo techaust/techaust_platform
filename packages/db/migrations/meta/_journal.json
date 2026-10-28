@@ -344,6 +344,20 @@
       "when": 1793205903523,
       "tag": "0048_pdf_asks",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "6",
+      "when": 1793229816392,
+      "tag": "0049_invoice_number_display",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "6",
+      "when": 1793230095121,
+      "tag": "0050_ledger_triggers",
+      "breakpoints": true
     }
   ]
 }

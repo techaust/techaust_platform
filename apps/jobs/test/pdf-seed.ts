@@ -211,6 +211,7 @@ export async function seedSent(o: SeedOptions = {}): Promise<Seeded> {
     fy: "2627",
     pattern: numbering.pattern,
     argOrder: numbering.argOrder,
+    maxNumber: 9999,
     isFirstVersion: true,
     groupId,
     version: 1,

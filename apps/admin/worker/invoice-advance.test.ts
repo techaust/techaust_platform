@@ -777,7 +777,9 @@ describe("what a converted proforma and its invoice cannot do [Q1, LD22]", () =>
     const v2 = await voidInvoice(o, inv.id);
     expect(v2.status).toBe(409);
     const body = await json(v2);
-    expect(body.reasons).toEqual(expect.arrayContaining(["not_issued", "has_payment"]));
+    // A5 10: a paid invoice is issued; its payment is the reason (no `not_issued`).
+    expect(body.reasons).toEqual(expect.arrayContaining(["has_payment"]));
+    expect(body.reasons).not.toContain("not_issued");
     expect(await typesRow(inv.id)).toMatchObject({ status: "paid" });
     expect(await typesRow(pf.id)).toMatchObject({ status: "converted" });
     // an overdue check never chases the paid invoice

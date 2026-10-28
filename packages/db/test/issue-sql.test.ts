@@ -1,6 +1,7 @@
 // The SQL of the issue batches is a stored contract (M5.1, LD3): `sendStatements` (proposals and estimates, M4.3 and M4.5) must stay
 // BYTE-IDENTICAL after `invoiceIssueStatements` shared its helpers. This file's snapshot was taken before the refactor and is compared after:
-// a recording stand-in for the database sees every `prepare` text and every bound value, in order.
+// a recording stand-in for the database sees every `prepare` text and every bound value, in order. FX-1 (A0 6) moved it once, on purpose: a first version's
+// freeze holds `AND (next number) <= 9999` (the series' highest number, as a literal), the invoice freeze's `series_full` guard; nothing else changed.
 import { describe, expect, it } from "vitest";
 import { sendStatements } from "../src/issue.ts";
 
@@ -37,6 +38,7 @@ const base = {
   fy: "2627",
   pattern: "TH/PRP/%s/%04d",
   argOrder: ["fy", "n"] as const,
+  maxNumber: 9999,
   isFirstVersion: true,
   groupId: "grp1",
   version: 1,

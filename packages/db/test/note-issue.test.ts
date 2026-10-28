@@ -303,7 +303,10 @@ describe("the note freeze [documents_note_issue_check, documents_credit_note_cap
     const a = await insertNoteDraft(p, "credit", sampleCredit(p, [[0, 60_000]]));
     const args = await noteIssueArgs(p, a, "credit");
     // another note issues between the read and the batch
-    await run("UPDATE documents SET credited_minor = 10, updated_at = updated_at + 1 WHERE id = ?", p.id);
+    await run(
+      "UPDATE documents SET credited_minor = 10, balance_minor = balance_minor - 10, updated_at = updated_at + 1 WHERE id = ?",
+      p.id,
+    );
     const s = invoiceIssueStatements(env.DB, args);
     await rejects(env.DB.batch([...s.main, ...s.postAudit]), /issue did not freeze/);
     const counter = await first<{ next_no: number }>(
@@ -475,17 +478,27 @@ describe("the draft guard [noteDraftStatements]", () => {
 describe("documents_ledger_bounds, documents_note_no_void", () => {
   it("credited is between 0 and the total, the balance is never negative", async () => {
     const p = await parentInvoice();
+    // FX-1: each write keeps the balance the identity of 0050 wants, so only the bounds are judged here.
     await rejects(
-      run("UPDATE documents SET credited_minor = ? WHERE id = ?", p.computed.totalMinor + 1, p.id),
+      run(
+        "UPDATE documents SET credited_minor = ?, balance_minor = 0 WHERE id = ?",
+        p.computed.totalMinor + 1,
+        p.id,
+      ),
       /documents_ledger_bounds/,
     );
     await rejects(
-      run("UPDATE documents SET credited_minor = -1 WHERE id = ?", p.id),
+      run(
+        "UPDATE documents SET credited_minor = -1, balance_minor = ? WHERE id = ?",
+        p.computed.totalMinor + 1,
+        p.id,
+      ),
       /documents_ledger_bounds/,
     );
+    // A negative balance breaks both rules; either trigger may answer first.
     await rejects(
       run("UPDATE documents SET balance_minor = -1 WHERE id = ?", p.id),
-      /documents_ledger_bounds/,
+      /documents_ledger_bounds|documents_ledger_identity/,
     );
     await run(
       "UPDATE documents SET credited_minor = ?, balance_minor = 0 WHERE id = ?",

@@ -27,6 +27,7 @@ import {
   frozenDocumentColumns,
   SET_ONCE_0032,
   SET_ONCE_0040,
+  SET_ONCE_0050,
   SET_ONCE_AFTER_FREEZE,
 } from "../src/triggers.ts";
 import { all, first, rejects, run } from "./helpers.ts";
@@ -377,7 +378,9 @@ describe("migrations 0039 and 0040 [LD35]", () => {
     // since research round 2026-10-28 the live list also holds `fx_no_rate_day` (0047 recreates the trigger over 0040's list plus it)
     expect([...FROZEN_COLUMNS_0047].sort()).toEqual([...frozenDocumentColumns()].sort());
     expect([...FROZEN_COLUMNS_0040, "fx_no_rate_day"]).toEqual([...FROZEN_COLUMNS_0047]);
-    expect([...SET_ONCE_0040]).toEqual([...SET_ONCE_AFTER_FREEZE]);
+    // FX-1 (A0 5): 0050 recreates the trigger with the four e-invoice fields set once; that is the live list today.
+    expect([...SET_ONCE_0050]).toEqual([...SET_ONCE_0040, "irn", "ack_no", "ack_date", "signed_qr"]);
+    expect([...SET_ONCE_0050]).toEqual([...SET_ONCE_AFTER_FREEZE]);
   });
 
   it("0046 adds the statement column with no rebuild and 0047 freezes it: an issued invoice's 'no rate that day' cannot change (Q24, 08-C RA-21)", async () => {
@@ -897,6 +900,89 @@ describe("the tax invoice for money received [Q9, LD22; Researched 2026-10-28, s
       ),
       /documents_invoice_status_flow|documents_void_pairing/,
     );
+  });
+});
+
+// ---- FX-1: the ledger identity and the receipt-FY LUT hold on the advance batch (A0 4, A0 9; migration 0050) ---------------------------------------
+
+describe("the advance batch keeps the ledger identity and the receipt FY's LUT [FX-1, A0 4, A0 9]", () => {
+  const ledger = (id: string) =>
+    first<{ total_minor: number; paid_minor: number; credited_minor: number; balance_minor: number }>(
+      "SELECT total_minor, paid_minor, credited_minor, balance_minor FROM documents WHERE id = ?",
+      id,
+    );
+  const holds = (r: Awaited<ReturnType<typeof ledger>>) =>
+    r !== null && r.balance_minor === Math.max(0, r.total_minor - r.paid_minor - r.credited_minor);
+
+  it("after every payment both the proforma and each new invoice owe their total less what was paid (documents_ledger_identity)", async () => {
+    const w = await world({ total: 100_000 });
+    for (const amount of [30_000, 30_000, 40_000]) {
+      const a = await advanceArgs(w, {}, amount);
+      await runAdvance(a);
+      expect(holds(await ledger(w.proformaId))).toBe(true);
+      expect(await ledger(a.documentId)).toMatchObject({ paid_minor: amount, balance_minor: 0 });
+      expect(holds(await ledger(a.documentId))).toBe(true);
+    }
+    expect(await ledger(w.proformaId)).toMatchObject({ paid_minor: 100_000, balance_minor: 0 });
+    // A write that breaks the identity is refused, whoever makes it.
+    await rejects(
+      run("UPDATE documents SET balance_minor = 5 WHERE id = ?", w.proformaId),
+      /documents_ledger_identity/,
+    );
+  });
+
+  const setLuts = (value: Record<string, unknown>) =>
+    run(
+      "INSERT INTO settings (key, value) VALUES ('tax', ?1) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+      JSON.stringify(value),
+    );
+  /** An export invoice on the LUT route for money received on `receivedOn`, with the freeze's own LUT test switched off (`lutFy` null) so only the trigger judges. */
+  async function lutAdvance(w: World, receivedOn: string) {
+    const base = await advanceArgs(w, {}, 50_000);
+    const a: AdvanceIssueArgs = {
+      ...base,
+      receivedOn,
+      lutFy: null,
+      draft: { ...base.draft, exportMode: "lut" },
+      headerExtras: JSON.stringify({
+        advance: {
+          proformaId: w.proformaId,
+          proformaNumber: "TH/PI/0001",
+          proformaIssueDate: "2026-10-28",
+          receivedOn,
+          receiptId: base.receiptId,
+        },
+      }),
+    };
+    return a;
+  }
+
+  it("an export invoice under LUT for a payment received needs a LUT for the receipt day's FY, not the issue day's (documents_advance_lut_fy; 08-C RA-19, Q37)", async () => {
+    try {
+      // Only the FY 2026-27 letter is saved: a payment received on 2 April 2027 (FY 2027-28) is refused, one on 31 March 2027 is not.
+      await setLuts({ luts: [{ fy: "2627", arn: "AD1903260000001" }] });
+      const w = await world({ overseas: true, total: 200_000 });
+      const late = await lutAdvance(w, "2027-04-02");
+      await rejects(runAdvance(late), /documents_advance_lut_fy/);
+      expect(await proformaState(w.proformaId)).toMatchObject({ paid_minor: 0 });
+      await runAdvance(await lutAdvance(w, "2027-03-31"));
+      // A blank ARN is no letter; the legacy single `lut` key counts as one (core `lutFor`'s twin).
+      await setLuts({ luts: [{ fy: "2728", arn: "  " }] });
+      await rejects(runAdvance(await lutAdvance(w, "2027-04-02")), /documents_advance_lut_fy/);
+      await setLuts({ luts: [], lut: { fy: "2728", arn: "AD1903270000002" } });
+      await runAdvance(await lutAdvance(w, "2027-04-02"));
+      // The IGST route needs no letter (the trigger looks only at `export_mode = 'lut'`).
+      await setLuts({ luts: [] });
+      const base = await advanceArgs(w, {}, 10_000);
+      await runAdvance({
+        ...base,
+        receivedOn: "2028-05-01",
+        draft: { ...base.draft, exportMode: "igst_paid" },
+        headerExtras: JSON.stringify({ advance: { receivedOn: "2028-05-01" } }),
+      });
+    } finally {
+      await run("DELETE FROM settings WHERE key = 'tax'");
+    }
   });
 });
 

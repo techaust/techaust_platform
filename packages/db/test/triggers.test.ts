@@ -291,7 +291,7 @@ describe("gap-free numbering (docs/05 §5.4, ADM-INV-03)", () => {
           "UPDATE doc_counters SET next_no = next_no + 1 WHERE series = 'invoice' AND fy = ?",
         ).bind(FY),
         env.DB.prepare(
-          "UPDATE documents SET series = 'invoice', fy = ?1, number = 999, number_display = 'X/999', status = 'issued', frozen_at = 1 WHERE id = ?2",
+          "UPDATE documents SET series = 'invoice', fy = ?1, number = 999, number_display = 'X/999', status = 'issued', frozen_at = 1, balance_minor = total_minor WHERE id = ?2",
         ).bind(FY, id),
         env.DB.prepare("INSERT INTO issue_result (document_id, series, fy) VALUES (?, 'invoice', ?)").bind(
           id,
@@ -311,7 +311,7 @@ describe("gap-free numbering (docs/05 §5.4, ADM-INV-03)", () => {
         env.DB.prepare("INSERT INTO issue_guard (document_id) VALUES (?)").bind(id),
         env.DB.prepare("INSERT INTO doc_counters (series, fy, next_no) VALUES ('invoice', '2098', 1)"),
         env.DB.prepare(
-          "UPDATE documents SET series = 'invoice', fy = '2098', number = 0, number_display = 'X/0', status = 'issued', frozen_at = 1 WHERE id = ?",
+          "UPDATE documents SET series = 'invoice', fy = '2098', number = 0, number_display = 'X/0', status = 'issued', frozen_at = 1, balance_minor = total_minor WHERE id = ?",
         ).bind(id),
         env.DB.prepare(
           "INSERT INTO issue_result (document_id, series, fy) VALUES (?, 'invoice', '2098')",

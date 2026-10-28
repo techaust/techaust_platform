@@ -8,7 +8,7 @@
 import { fyOf, istDate, toIsoDate } from "@techaust/core/dates";
 import { validUntil } from "@techaust/core/documents";
 import { uuidv7 } from "@techaust/core/ids";
-import { sqlPrintfPattern } from "@techaust/core/numbering";
+import { maxNumber, sqlPrintfPattern } from "@techaust/core/numbering";
 import { decide } from "@techaust/core/permissions";
 import { sealOf } from "@techaust/db/documents";
 import { type IssuerSnapshot, type RecipientSnapshot, sendStatements } from "@techaust/db/issue";
@@ -22,6 +22,7 @@ import { checkRecipientIds, invalidRecipients } from "./document-links.ts";
 import { customLinesOf } from "./document-view.ts";
 import { readContext } from "./documents.ts";
 import { body, idParam, param, refusedWith, STALE_VERSION } from "./http.ts";
+import { SERIES_FULL } from "./invoice-model.ts";
 import {
   ALREADY_ACCEPTED,
   APPROVAL_REQUIRED,
@@ -189,6 +190,7 @@ export const documentSend = new Hono<AppEnv>().post(
       fy: fyOf(now).token,
       pattern: numbering.pattern,
       argOrder: numbering.argOrder,
+      maxNumber: maxNumber(settings.numbering[series]),
       isFirstVersion: d.version === 1,
       groupId,
       version: d.version,
@@ -254,6 +256,7 @@ export const documentSend = new Hono<AppEnv>().post(
         settings.numberingVersion,
         needsApproval,
         shape.ids,
+        d.version === 1 ? { series, fy: fyOf(now).token, max: maxNumber(settings.numbering[series]) } : null,
       );
 
     afterSend(c, { documentId: id, groupId, version: d.version });
@@ -279,15 +282,18 @@ async function explain(
   numberingVersion: number | null,
   approvalNeeded: boolean,
   recipientIds: readonly string[],
+  /** A first version takes a number: its series, the FY it was taken in, and the series' highest number (A0 6). Null for a later version. */
+  numbered: { series: string; fy: string; max: number } | null,
 ) {
   const row = await c.env.DB.prepare(
     `SELECT d.client_id, d.status, d.frozen_at, d.updated_at, d.content_sha256, ${clientGoneSql("d.client_id")} AS gone,
        (SELECT version FROM settings WHERE key = 'numbering') AS numbering_version,
+       (SELECT next_no FROM doc_counters WHERE series = ?2 AND fy = ?3) AS next_no,
        EXISTS (SELECT 1 FROM documents x WHERE x.version_group_id = d.version_group_id AND x.status IN ('accepted', 'converted')) AS accepted,
        EXISTS (SELECT 1 FROM approvals a WHERE a.document_id = d.id AND a.kind = 'discount' AND a.status = 'approved' AND a.content_sha256 = d.content_sha256) AS approved
      FROM documents d WHERE d.id = ?1`,
   )
-    .bind(id)
+    .bind(id, numbered?.series ?? null, numbered?.fy ?? null)
     .first<{
       client_id: string;
       status: string;
@@ -296,6 +302,7 @@ async function explain(
       content_sha256: string | null;
       gone: number;
       numbering_version: number | null;
+      next_no: number | null;
       accepted: number;
       approved: number;
     }>();
@@ -307,6 +314,8 @@ async function explain(
   if (row.content_sha256 !== hash) return refuse(CONTENT_CHANGED, 409);
   if (row.accepted === 1) return refuse(ALREADY_ACCEPTED, 409);
   if ((row.numbering_version ?? null) !== numberingVersion) return refuse(NUMBERING_CHANGED, 409);
+  // A0 6: the series has no number left this FY (the freeze holds `next number <= highest`); the counter did not move.
+  if (numbered && (row.next_no ?? 1) > numbered.max) return refuse(SERIES_FULL, 409);
   if (approvalNeeded && row.approved !== 1) return refuse(APPROVAL_REQUIRED, 403);
   // A recipient lost portal access (or was anonymised) between the read and the batch: the whole send was refused, no number was taken.
   const invalid = await invalidRecipients(c.env.DB, row.client_id, recipientIds);
