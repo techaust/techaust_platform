@@ -641,3 +641,33 @@ New workerd test: a 2,000-object PDF passes. The owner's 3, 1, 2 permutation fai
 #### Open questions
 1. **Item 3's precision.** Keep the per-row `updated_at` rule (Recommended: no migration; it never adds text twice, and after a Catalogue edit of an item the texts a section lacks are offered again)? Or get per-field precision from the `catalogue.update` audit rows (their `summary.changed` names the fields; an indexed read of `audit_log_entity`, but a coupling to the audit summary format)? Or add a "filled from" record (a migration, a Tier A question)?
 2. **The base moved during the run** (`46e0c3b2`, `e1576b57`: docs only, `docs/runs/full-audit-m1-m5.md`). This branch doesn't touch that file, so the merge should be clean.
+
+## Re-check of round 2 (reviewer claude-opus-5-5/high, 2026-10-29 ~04:15–04:45 IST, on 846b92da): SEND BACK
+- **Verdicts on the 13 review findings:** 11 FIXED; 2 PARTLY (3 and 5).
+- **Verified:**
+  - tests: pdf 340, jobs 519, admin 3,226; `pnpm check` exit 0;
+  - the PDF check on real files: all 7 clean ones pass, the damaged one fails `xref_offset`;
+  - fuzzing (about 365 truncations, 400 byte flips, 60 block swaps, 100 inserts or deletes, junk inputs): no throw, no hang, every input returns a code; every block swap and insert/delete fails;
+  - cold time: 2.73 ms fastest, 3.01 ms median on the 204 KB estimate;
+  - `document-write.ts` keeps every guard of the old save.
+- **New findings:**
+  1. **High:** a service added after the draft was created never has its Catalogue text offered or named (`service-fill.ts:145`, `offered`). The save that adds a later service writes no text, and the `updated_at` rule skips it. The test `service-fill.test.ts:188` pins the regression. Fix: a save that adds a service line to a draft that already has services appends that service's text under its name by the creation rule (no migration), and the section comes back through `sectionsChanged`. Add end-to-end tests for adding service B later.
+  2. **Medium:** on a revision, the baseline is the revision's own `created_at` (`documents.ts:503-580`). Use the version group's first `created_at`.
+  3. **Medium (visible):** `gapBase` is never refreshed after a fill or `sectionsChanged` (`lib/documents.ts:781,1321`), so the Q3 note for B goes missing until a reload. Refresh it from the server's answer.
+  4. **Low:** a fill can be lost to typing while it runs (`editor.tsx:213-223`). Make the section read-only while it fills.
+  5. **Low (one-line × 2):** `inflight.current = null` in a `finally` must check the promise is its own (`editor.tsx:227`, `:118`).
+  6. **Low (CPU):** `gapsChange` is true on every sections autosave (`document-save.ts:133`). Narrow it to lines changed, or a deliverables or assumptions/exclusions section sent.
+  7. **Low:** `filled` in the fill answer is unused (`document-fill.ts:102`, `documents-api.ts:431`). Remove it.
+  8. **Low (copy):** the 07-X "Or (shorter)" alternative at line 44 says "and estimates". Change it to "New proposals take…".
+- **Not verified:**
+  - item 6 and the editor paths in a live browser;
+  - workerd's native inflate cost when cold, and staging CPU;
+  - Browser Run's `Content-Encoding`;
+  - R2's `sha256` refusal on staging;
+  - a real linearised PDF.
+
+## Fix round 3 (lead's brief; builder claude-opus-5-5/high)
+- Fix the re-check's new findings 1–8 as described above.
+- Finding 1 replaces the old "add B later" behaviour, and the test at `service-fill.test.ts:188` changes with it.
+- Keep every round-2 behaviour the re-check marked FIXED.
+- **Done means:** `pnpm check` and the full `pnpm test` pass. Append "### Fix round 3 report".
