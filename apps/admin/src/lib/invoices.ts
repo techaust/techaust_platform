@@ -503,15 +503,8 @@ export function invErrorText(e: unknown): string {
     // 07-S §9 (Q37): the year that has no LUT rides on the 409 (contract: `details.fy`, "2027-28" or a token).
     if (e.code === "advance_lut_missing")
       return e.extra.fy ? advanceLutMissing(fyLabel(e.extra.fy)) : sentenceOf(e.message);
-    // 07-S §8: as a 400 the day rides on the answer; without it, the server's own words.
-    if (e.code === "fx_same_day_exists" || e.code === "fx_date_invalid")
-      return e.extra.date && (e.code === "fx_same_day_exists" || e.extra.maxAgeDays !== undefined)
-        ? blockerLine(
-            { code: e.code, date: e.extra.date },
-            "USD",
-            e.extra.maxAgeDays !== undefined ? { maxAgeDays: e.extra.maxAgeDays } : {},
-          )
-        : sentenceOf(e.message);
+    // 07-S §8: as a 400 the server's own words are 07-S's line, with the day and the limit in it.
+    if (e.code === "fx_same_day_exists" || e.code === "fx_date_invalid") return sentenceOf(e.message);
     if (Object.hasOwn(INV_ERRORS, e.code)) return (INV_ERRORS as Record<string, string>)[e.code] as string;
     if (e.code === "step_up_cancelled" || e.code === "invalid_code") return e.message;
   }

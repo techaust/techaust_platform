@@ -51,6 +51,32 @@ describe("API client: step-up and expired sessions [ADM-AUTH-08, ADM-AUTH-05]", 
     expect((e as RequestError).extra.fy).toBe("2026-27");
   });
 
+  it("reads `error.details.reason` (an odd tax amount, 07-W 5.9) and the top-level `date` of a passed credit deadline; nothing else is read from the top level", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          json(400, {
+            error: { code: "debit_tax_only_invalid", message: "x", details: { reason: "odd_amount" } },
+          }),
+        )
+        .mockResolvedValueOnce(
+          json(409, { error: { code: "credit_deadline_passed", message: "x" }, date: "2027-11-30" }),
+        )
+        .mockResolvedValueOnce(
+          json(409, { error: { code: "advance_lut_missing", message: "x" }, fy: "2026-27", maxAgeDays: 4 }),
+        ),
+    );
+    const odd = (await api.deactivate("u1").catch((x: unknown) => x)) as RequestError;
+    expect(odd.extra.reason).toBe("odd_amount");
+    const passed = (await api.deactivate("u1").catch((x: unknown) => x)) as RequestError;
+    expect(passed.extra.date).toBe("2027-11-30");
+    // a `fy` outside `error.details` is not the contract: it is not read
+    const stray = (await api.deactivate("u1").catch((x: unknown) => x)) as RequestError;
+    expect(stray.extra).toEqual({});
+  });
+
   it("a cancelled step-up sends nothing more and reports that nothing changed", async () => {
     const fetchFn = vi.fn().mockResolvedValueOnce(json(403, STEP_UP));
     vi.stubGlobal("fetch", fetchFn);

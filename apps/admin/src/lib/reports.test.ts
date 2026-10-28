@@ -380,6 +380,19 @@ describe("Settings › Tax round trip (early check H2)", () => {
     expect(built.value.reverseChargeText).toBe("Changed line");
   });
 
+  it("the checklist's signatory is read as on unless stored off, and always saved with the switch as it is (no conditional key)", () => {
+    expect(taxToForm(stored).signatory).toBe(true);
+    expect(
+      taxToForm({ ...stored, invoiceChecklist: { ...stored.invoiceChecklist, signatory: false } }).signatory,
+    ).toBe(false);
+    for (const signatory of [true, false]) {
+      const built = buildTax({ ...taxToForm(stored), signatory }, { value: stored });
+      expect("value" in built).toBe(true);
+      if (!("value" in built)) return;
+      expect(built.value.invoiceChecklist).toEqual({ bankDetails: true, paymentLink: false, signatory });
+    }
+  });
+
   it("the two fields save what was typed, and refuse zero or out-of-range values in 07-V's words", () => {
     const ok = buildTax({ ...taxToForm(stored), b2cl: "2,50,000", inrMonths: "24" }, { value: stored });
     expect("value" in ok && ok.value.b2clThresholdInrMinor).toBe(2_50_000_00);

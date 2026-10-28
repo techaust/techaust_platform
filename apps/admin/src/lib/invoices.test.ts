@@ -385,10 +385,15 @@ describe("M5.2 re-check: proforma wording and the advance rate date (07-S §8)",
     expect(blockerLine({ code: "fx_date_invalid", date: "2027-04-02" }, "USD", { maxAgeDays: 4 })).toBe(
       "Use the rate published on 02 Apr 2027. If none was published that day, use the last one published before it, at most 4 days earlier.",
     );
-    // as a 400, the day and the age ride on the answer; without them, the server's words
+    // as a 400, the server's words are 07-S's line (the day and the limit are in them)
     expect(
       invErrorText(
-        new RequestError(400, "fx_same_day_exists", "x", null, [], [], [], { date: "2027-04-02" }),
+        new RequestError(
+          400,
+          "fx_same_day_exists",
+          "A rate was published on 02 Apr 2027, so use that day's rate.",
+          null,
+        ),
       ),
     ).toBe("A rate was published on 02 Apr 2027, so use that day's rate.");
     expect(invErrorText(new RequestError(400, "fx_date_invalid", "Server words", null))).toBe(

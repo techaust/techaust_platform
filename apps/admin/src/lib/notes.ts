@@ -126,14 +126,9 @@ const REASON_WORDS: Record<string, string> = {
 };
 
 /**
- * The debit reasons in 07-T §9's order. The step 5 contract gives core's `DEBIT_REASONS` the same three codes; until core has the new one, it is put
- * before "Other" here, so the screen follows the contract (a test keeps every core code in this list).
+ * The debit reasons in 07-T §9's order: core's `DEBIT_REASONS` (price correction, tax charged too low, other), the one list the screen and the API share.
  */
-export const DEBIT_REASON_CODES: readonly string[] = (DEBIT_REASONS as readonly string[]).includes(
-  TAX_TOO_LOW,
-)
-  ? DEBIT_REASONS
-  : [...DEBIT_REASONS.filter((c) => c !== "other"), TAX_TOO_LOW, "other"];
+export const DEBIT_REASON_CODES: readonly string[] = DEBIT_REASONS;
 
 /** The reasons a person can pick for this kind, in core's order, with their 07-T words (a code without words is the gap mark). */
 export const reasonsOf = (

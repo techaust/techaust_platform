@@ -73,7 +73,7 @@ export function taxToForm(v: Tax): TaxForm {
     // The API folds the old single letter into the list on read (early check 3), so the list is the whole story.
     luts: (v.luts ?? []).map((l) => ({ fy: l.fy, arn: l.arn, filedOn: l.filedOn ?? null })),
     bankDetails: v.invoiceChecklist?.bankDetails ?? true,
-    signatory: (v.invoiceChecklist as { signatory?: boolean } | undefined)?.signatory ?? true,
+    signatory: v.invoiceChecklist?.signatory ?? true,
     advanceMode: v.advanceMode,
     fxSource: v.fxSource,
     eInvoicing: v.eInvoicing,
@@ -158,14 +158,7 @@ export function buildTax(f: TaxForm, doc: Pick<SettingsDoc<"tax">, "value">, now
       // The deprecated single letter is never written again: the list is saved, the old key stays empty.
       lut: { arn: null, fy: null },
       luts: f.luts,
-      // `signatory` is written once it is stored, or once it is turned off (the step 5 contract adds the key; an older API would refuse it while on).
-      invoiceChecklist: {
-        bankDetails: f.bankDetails,
-        paymentLink: false,
-        ...("signatory" in (doc.value.invoiceChecklist ?? {}) || !f.signatory
-          ? { signatory: f.signatory }
-          : {}),
-      } as Tax["invoiceChecklist"],
+      invoiceChecklist: { bankDetails: f.bankDetails, paymentLink: false, signatory: f.signatory },
       advanceMode: f.advanceMode,
       fxSource: f.fxSource,
       eInvoicing: f.eInvoicing,

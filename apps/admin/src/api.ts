@@ -955,11 +955,6 @@ type ApiErrorBody = {
   closestMinor?: unknown;
   draftId?: unknown;
   date?: unknown;
-  /** Step 5 (research and wording): 409 `advance_lut_missing` names the year without a LUT (`fy`); a 400 `fx_date_invalid` may carry the oldest age
-   * (`maxAgeDays`). The contract writes them under `details`; either place is read. */
-  fy?: unknown;
-  maxAgeDays?: unknown;
-  details?: unknown;
 };
 
 export class RequestError extends Error {
@@ -989,7 +984,6 @@ export class RequestError extends Error {
       draftId?: string;
       date?: string;
       fy?: string;
-      maxAgeDays?: number;
       /** `error.details.reason` (`debit_tax_only_invalid`: `odd_amount`, 07-W 5.9). */
       reason?: string;
     } = {},
@@ -1067,24 +1061,12 @@ async function send<T>(path: string, { method, body, raw, signedIn = true }: Opt
   const data = (await res.json().catch(() => ({}))) as T & ApiErrorBody;
   if (res.ok) return data;
   const e = data.error ?? { code: "network", message: NETWORK };
-  // The builder's `error.details` (worker `err(..., details)`: `advance_lut_missing` sends `{ fy }`), an older top-level `details`, and the top
-  // level are read alike; the top level wins.
+  // The worker's `error.details` (`err(..., details)`): `advance_lut_missing` sends `{ fy }`, `debit_tax_only_invalid` `{ reason }`. The last day of
+  // `credit_deadline_passed` is a top-level `date` (M5.3).
   const inner = data.error?.details;
-  const details =
-    typeof inner === "object" && inner !== null
-      ? (inner as Record<string, unknown>)
-      : typeof data.details === "object" && data.details !== null
-        ? (data.details as Record<string, unknown>)
-        : {};
-  const fy = typeof data.fy === "string" ? data.fy : typeof details.fy === "string" ? details.fy : undefined;
-  const date =
-    typeof data.date === "string" ? data.date : typeof details.date === "string" ? details.date : undefined;
-  const maxAge =
-    typeof data.maxAgeDays === "number"
-      ? data.maxAgeDays
-      : typeof details.maxAgeDays === "number"
-        ? details.maxAgeDays
-        : undefined;
+  const details = typeof inner === "object" && inner !== null ? (inner as Record<string, unknown>) : {};
+  const fy = typeof details.fy === "string" ? details.fy : undefined;
+  const date = typeof data.date === "string" ? data.date : undefined;
   const error = new RequestError(
     res.status,
     e.code,
@@ -1114,7 +1096,6 @@ async function send<T>(path: string, { method, body, raw, signedIn = true }: Opt
       ...(typeof data.draftId === "string" ? { draftId: data.draftId } : {}),
       ...(date !== undefined ? { date } : {}),
       ...(fy !== undefined ? { fy } : {}),
-      ...(maxAge !== undefined ? { maxAgeDays: maxAge } : {}),
       ...(typeof details.reason === "string" ? { reason: details.reason } : {}),
     },
   );
