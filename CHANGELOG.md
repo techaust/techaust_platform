@@ -2,6 +2,10 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-10-28 [#101](https://github.com/techaust/techaust_platform/pull/101) feat(reports): M5.5 GST and CA exports, export realisation, EDF, statement, finance tiles [ADM-REP-04, ADM-REP-07, ADM-INV-17, ADM-CLI-04]
+- 2026-10-28 [#100](https://github.com/techaust/techaust_platform/pull/100) feat(invoices): M5.4 send, reminders, recurring care invoices, alerts, portal invoices [ADM-INV-15, ADM-INV-13, ADM-INV-12, ADM-CARE-02, ADM-INV-19, POR-06]
+- 2026-10-27 [#99](https://github.com/techaust/techaust_platform/pull/99) feat(invoices): M5.3 credit and debit notes, deadline, IMS, note PDFs [ADM-INV-11, ADM-INV-01, ADM-SET-04, ADM-APR-01]
+- 2026-10-27 [#98](https://github.com/techaust/techaust_platform/pull/98) docs: end of day 2026-10-27 (M5 batch: status, decisions, changelog, run files, briefs)
 - 2026-10-27 [#97](https://github.com/techaust/techaust_platform/pull/97) feat(invoices): M5.2 export invoices, proformas, advances, checklist, FX and LUT [ADM-INV-06, -08, -10, -18]
 - 2026-10-27 [#96](https://github.com/techaust/techaust_platform/pull/96) feat(invoices): M5.1 issue pipeline and numbering, tax invoice PDF [ADM-INV-01..04, -07, ADM-APR-01/02]
 - 2026-10-27 [#95](https://github.com/techaust/techaust_platform/pull/95) feat(admin): M5.0 admin Worker split behind a service binding [ADM-G-02]
