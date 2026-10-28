@@ -239,3 +239,60 @@ Skills: `cloudflare:workers-best-practices` (build-time constant instead of a ru
 4. **VERIFY tags.** Replaced 5 lines (core `schemas/settings.ts` 2, 123 (RA-19), 475; `test/settings.test.ts` 18; `test/realisation-settings.test.ts` 2 (RB-01, RA-13); db `schema/settings.ts` 2): 41 becomes 36. **Left, with reasons** (no 08-C row covers them, or a screen reads them): the `VERIFY` map and `meta.verify` strings in `apps/admin/worker/settings.ts` (113-115, 601) and their tests: the designer's `routes/settings/kit.tsx` reads `verify.includes("LEGAL")` to choose "CA" or "CA and a lawyer", so changing the value would break the screen; **proposal: add a `kind: "ca" | "legal"` field next to `verify` in a later pass and drop the string.** Others: core `clients.ts` 97, `documents.ts` 2 and 383, `gstin.ts` 1, `pdf-jobs.ts` 134, `schemas/settings.ts` 52, 93, 323, 535, 537; db `contact-access.ts` 3, `schema/crm.ts` 29, `seed/terms.ts` 5, migration 0016 (never edited); `apps/jobs/src/expire.ts` 1; admin `clients.ts` 951, 956, 965, 995, 1295, `document-pdf.ts` 3; test titles in core (`documents`, `gstin`), db `clients.test.ts`, admin `documents-convert`, `leads`, `settings` tests, jobs `expire.test.ts`. The email tests' "VERIFY WITH" assertions are guards (the text must be absent), not tags.
 5. **Commands.** `pnpm check`: ok. Tests via `tools/heavy.sh`: pdf 318 passed; jobs 507; db 450; core (settings files) 35; admin `invoices-issue.test.ts` 44 (the full admin worker suite not rerun: only `issuerOf` changed, and advance, note and care use the same function); web (portal-website-origin, signin-config) 19. Whole-repo `pnpm lint`: ok. Not verified: a real Browser Run render without the block (fake binding only); the SPA against `__WEBSITE_ORIGIN__`.
 Open: docs/04 §9 still needs the `invoices.supplierCopy` row (from the first pass).
+
+## Designer fix report (Opus 5.5, high; 2026-10-28; branch `fix/rw-designer` from `origin/feat/research-and-wording`, then merged with 0f4f4eb for the portal origin)
+Only `apps/admin/src`, `apps/portal/src`, `apps/web/src` changed (plus this report). No worker, package, jobs or script file; no hosted service touched. Local data only, fake and labelled ("(sample)", `@example.test`), in my worktree's local D1. Every dev server I started (admin, portal, jobs, website) is stopped and the browser is closed.
+
+### Skills
+- **`frontend-design:frontend-design`: loaded first.** Direction inside the approved system: restraint. One visible change it drove: the `VerifyNote` was an amber warning while it read "VERIFY"; as "Researched default" it is information, so its stripe is `--color-info` and its tag `--color-text-accent` (07-W §4). Nothing else new.
+- Not loaded: `dataviz` (no chart changed); the Cloudflare, AWS, Sentry, Supabase and Upstash rows (no Worker, infrastructure or service code in my files).
+
+### Items
+1. **Fit to the real API** (all checked against the running local admin API, nothing simulated):
+   - tax-only debit note: the SPA now sends **no `lines`** (it sent `lines: []`, which the schema refuses) and reads the stored request's `taxMinor` (it read `taxAmountMinor`) (`lib/notes.ts`, `lib/notes-api.ts`, `routes/invoices/note-dialog.tsx`). Draft, preview and issue worked (TH/DN/2627/0001, CGST ₹900 + SGST ₹900).
+   - **Bug found only against the real API:** the worker puts `details` inside `error` (`{error: {code, message, details: {fy}}}`); the SPA read a top-level `details`, so the Q37 choice printed "." instead of the 07-S §9 sentence. `api.ts` now reads `error.details` first (new test in `api.test.ts`).
+   - The Q37 choice opened below the dialog's fold (focus moved, nothing scrolled): the section now scrolls to its start when it appears.
+   - FX: the draft's panel shows the blocker that `dateVerdict` names (`fx_same_day_exists` or `fx_date_invalid`; `dateOk` only for an older API) and, when stored, "No rate was published that day" under the rate (`routes/invoices/types-parts.tsx`, `lib/invoices-api.ts`).
+   - House rules come from core (`HOUSE_RULE_ITEMS`, `isHouseRuleItem`); the API's `houseRule` mark wins when sent.
+   - `advance.igstNoLutFy` (the builder kept my name) prints on the issued invoice: verified.
+   - The three `src/lib` tests the builder listed already passed after the merge; `invoice-types.test.ts` (the FX checkbox's mark) and the 07-W expectations were updated.
+2. **07-W:** every `[Placeholder]` mark is gone from SPA copy (admin `invoice-send.ts`, `invoice-types.ts`, `invoices.ts`, `notes.ts`, `reports.ts`, `tax-settings.ts`; portal `copy-invoices.ts`), words exactly 07-W's, including the replaced send hint and care toggle hint. `lib/copy-gap.ts` is deleted. Fallbacks that printed the mark now print an unknown code (a newer server) as the code itself, and a missing amount as "…" (`UNKNOWN`) inside 07-T's sentence. The issue guards elsewhere are untouched. `VerifyNote` per 07-W §4: tag and accessible name "Researched default" for both kinds; the Settings text is 07-W §4's, with "CA" or "CA and lawyer" chosen from the `meta.verify` string (kept as the builder left it); Terms, client forms and GST exports keep their texts.
+3. **Portal privacy link:** `${__WEBSITE_ORIGIN__}/privacy` in `routes/sign-in.tsx`; `src/website-origin.d.ts` declares the constant; `privacyHref` removed from `copy-documents.ts`. No portal SPA test renders the link, so no vitest `define` was needed. Locally the link is `http://localhost:4321/privacy` (seen in the browser).
+4. `apps/web/src/config/site.ts`: the comment says 365 days.
+5. **VERIFY tags:** 29 were left in my files after the merge (the builder's 78 included lines since replaced); 21 replaced with their 08-C rows (RA-04, RA-05, RA-09, RA-10, RA-12, RA-16, RA-17, RA-20, RA-23, RA-25, RB-01, RB-03, RB-08, RB-09, RB-10, RB-19). **8 left, no 08-C row settles them:** `lib/catalogue.ts:88` (the visible SAC hint "… VERIFY WITH CA." is 07-L's approved copy, word for word), `lib/clients.ts` lines 4 (data-subject items) and 368 (erase of notes and files), `lib/projects.ts:111` (07-K erase confirmation), `routes/clients/data-tools.tsx:2` (erase, anonymise and keep beyond tax data), `routes/reports/sales-register.tsx:1` (register layout), `routes/settings/payment-terms.tsx:1` (due days, validity, small-job threshold), `routes/settings/terms.tsx:1` (terms wording: lawyer).
+
+### Screenshots (`.logs/rw-designer-fix/` in my worktree; all against the real local API)
+- `export-draft-fx-same-day-1280-light`: draft with an earlier rate day, `fx_same_day_exists` in the issue panel and under the rate.
+- `fx-dialog-no-rate-1280-light`, `fx-dialog-no-rate-375-dark`: the checkbox on an earlier rate day.
+- `export-draft-fx-no-rate-saved-1280-light`: saved with the flag; verdict "ok"; the statement under the rate.
+- `advance-lut-missing-choice-1280-light`, `advance-lut-choice-375-dark`: the Q37 choice from the real 409 with its FY.
+- `advance-igst-chosen-1280-light`, `keyboard-advance-save-lut-focus-375-dark`: IGST pressed; visible focus ring on the options.
+- `advance-invoice-igst-issued-1280-light`, `advance-invoice-igst-issued-1280-dark`: TH/EXP/2627/0001 issued with IGST, the "no LUT was in place for FY 2026-27" line, IGST in INR.
+- `invoice-supplier-copy-deadline-1280-light`, `invoice-pdf-panel-375-dark`: "Download supplier copy" under the PDF (the real route answered 200 `application/pdf`; `TH-INV-2627-0001-supplier-copy.pdf` downloaded); the deadline line (before 1 October).
+- `invoice-notes-deadline-375-dark`: notes section with the issued tax-only debit note.
+- `debit-dialog-tax-only-1280-light`, `debit-tax-only-preview-1280-light`: reason first, "Tax to add", the server's preview (taxable ₹0.00, CGST and SGST ₹900.00).
+- `debit-tax-only-invalid-375-dark`: the real `debit_tax_only_invalid` for an odd amount on an intra-state invoice.
+- `credit-discount-before-1-nov-refused-1280-light`, `credit-discount-refused-375-dark`: the real `discount_reason_not_in_force` (today is 28 Oct).
+- `settings-tax-researched-1280-light`, `settings-tax-note-375-dark`: the "Researched default" note; `settings-tax-checklist-1280-light`: locks and house-rule switches.
+- `care-plan-billing-section-1280-light`, `care-plan-billing-375-dark`: billing section with the 07-W words, unmarked.
+- `send-dialog-1280-light`, `send-dialog-375-dark`, `send-done-emails-1280-light`, `invoice-sent-375-dark`: 07-W send hint and per-contact reasons; sent, queued, reminders.
+- `portal-signin-1280-light`, `portal-signin-375-dark`: notice with the origin-based privacy link.
+- `portal-invoice-list-1280-light`, `portal-invoice-list-375-dark`, `portal-debit-note-375-dark`: the client's real invoices and the tax-only debit note.
+- `web-privacy-grievance-375-dark`, `web-refunds-1280-light`: legal pages (unchanged since the first pass, re-checked).
+
+### Checks
+- axe (wcag2a, 2aa, 21aa, 22aa; the workspace's axe-core 4.14.0 injected): **0 violations** on the issued invoice, the debit dialog (tax-only), the send dialog, the advance dialog with IGST pressed, the export draft and its FX dialog, Settings › Tax, the care plan, portal invoices and debit note, /privacy, /refund-policy.
+- Keyboard: the LUT choice takes focus on its heading and scrolls into view; both options reachable with a visible ring; `aria-pressed` true on IGST.
+- Console: only my deliberate refusals (409, 400), 401 before portal sign-in, and HMR remount errors after editing `api.ts` while the app ran (not seen on a fresh load).
+- `biome check --write` on the changed files: clean. Through `tools/heavy.sh`: admin `vitest run src` **352 passed** (`rwdf-admin-src3`); admin `tsc` exit 0 (`rwdf-tsc-admin2`); portal `vitest run src` **41 passed** and `tsc` exit 0 (`rwdf-portal-src2`, `rwdf-tsc-portal2`); web `astro check` 0 errors (`rwdf-web-check`); web `test` **427 passed, 16 skipped** (the real-build tests: no fresh dist) (`rwdf-web-test`). Whole-repo `pnpm lint` once (`rwdf-lint`): exit 0 (10 warnings, 8 infos, none in my files).
+
+### Not verified
+- The credit-note banner's "from 1 October" and "passed" states against the real API (they need an invoice of an earlier FY; issued documents can't be back-dated). Seen only simulated in the first pass.
+- 1280 dark and 375 light of every screen (taken: 1280 light and 375 dark of each, plus 1280 dark of the issued export invoice).
+- Every local PDF fingerprint reads `8955a2d5e489` (the local Browser stand-in returns the same bytes); the real render is the builder's to verify.
+- The client page's care toggle hint (shown only in its edit form; its words are test-pinned).
+
+### Open questions (lead)
+1. `debit_tax_only_invalid` also answers an odd tax on an intra-state invoice (CGST must equal SGST). 07-T §9's only line ("Enter tax only: the taxable value of a "Tax charged too low" note is zero.") doesn't tell the Owner what to change there. A line such as "Enter an even amount: it is split equally between CGST and SGST." would need approval (not added).
+2. The 07-L SAC hint still ends "VERIFY WITH CA." on screen (approved copy). RA-16 settles the codes with an open sub-question (998313 for some services): keep or reword?
+3. The billing section showed "Next billing day 28 Oct 2026" for a plan started 1 Oct with billing day 1 (server data; probably the catch-up day). Worth a builder look if unintended.
