@@ -990,6 +990,8 @@ export class RequestError extends Error {
       date?: string;
       fy?: string;
       maxAgeDays?: number;
+      /** `error.details.reason` (`debit_tax_only_invalid`: `odd_amount`, 07-W 5.9). */
+      reason?: string;
     } = {},
   ) {
     super(message);
@@ -1113,6 +1115,7 @@ async function send<T>(path: string, { method, body, raw, signedIn = true }: Opt
       ...(date !== undefined ? { date } : {}),
       ...(fy !== undefined ? { fy } : {}),
       ...(maxAge !== undefined ? { maxAgeDays: maxAge } : {}),
+      ...(typeof details.reason === "string" ? { reason: details.reason } : {}),
     },
   );
   if (signedIn && res.status === 401 && e.code === "unauthenticated") unauthenticatedHandler?.();

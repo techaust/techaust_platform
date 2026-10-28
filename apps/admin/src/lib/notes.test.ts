@@ -438,6 +438,44 @@ describe("step 5: the T §9 lines and the tax-only debit note [Q35]", () => {
     expect(firstErrorKey({ tax: "x", reason: "y" }, [])).toBe("tax");
   });
 
+  it("an odd tax on an intra-state invoice is refused before it is sent, in 07-W 5.9's line; inter-state and export amounts may be odd", () => {
+    const odd = f({ reasonCode: "tax_charged_too_low", tax: "1,800.01" });
+    expect(buildNoteFields("debit", odd, { ...ctx, supplyType: "intra" })).toEqual({
+      ok: false,
+      errors: { tax: "Enter an even amount: it is split equally between CGST and SGST." },
+    });
+    for (const supplyType of ["inter", "export_igst", null, undefined]) {
+      const built = buildNoteFields("debit", odd, { ...ctx, supplyType });
+      expect(built.ok).toBe(true);
+    }
+    expect(
+      buildNoteFields("debit", f({ reasonCode: "tax_charged_too_low", tax: "1,800.02" }), {
+        ...ctx,
+        supplyType: "intra",
+      }).ok,
+    ).toBe(true);
+  });
+
+  it("the server's odd-amount refusal (`details.reason`) shows the same line; any other debit_tax_only_invalid keeps the plain one", () => {
+    const err = (extra: ConstructorParameters<typeof RequestError>[7]) =>
+      new RequestError(400, "debit_tax_only_invalid", "server words", null, [], [], [], extra);
+    expect(noteErrorText(err({ reason: "odd_amount" }), "debit", "INR")).toBe(
+      "Enter an even amount: it is split equally between CGST and SGST.",
+    );
+    expect(noteErrorText(err({}), "debit", "INR")).toBe(
+      'Enter tax only: the taxable value of a "Tax charged too low" note is zero.',
+    );
+  });
+
+  it('"Tax charged too low" is not offered on an invoice under LUT (it carries no tax; 07-W 5.11), and the server refuses it too', () => {
+    const codes = (s?: string | null) => reasonsOf("debit", s).map((r) => r.code);
+    expect(codes("export_lut")).toEqual(["price_correction", "other"]);
+    for (const s of ["intra", "inter", "export_igst", null, undefined])
+      expect(codes(s)).toContain("tax_charged_too_low");
+    // a credit note's list never changes
+    expect(reasonsOf("credit", "export_lut").map((r) => r.code)).toEqual([...CREDIT_REASONS]);
+  });
+
   it("the new refusals in T §9's words", () => {
     const err = (code: string, extra: ConstructorParameters<typeof RequestError>[7] = {}) =>
       new RequestError(400, code, "server words", null, [], [], [], extra);

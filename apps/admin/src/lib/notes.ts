@@ -136,11 +136,17 @@ export const DEBIT_REASON_CODES: readonly string[] = (DEBIT_REASONS as readonly 
   : [...DEBIT_REASONS.filter((c) => c !== "other"), TAX_TOO_LOW, "other"];
 
 /** The reasons a person can pick for this kind, in core's order, with their 07-T words (a code without words is the gap mark). */
-export const reasonsOf = (kind: NoteKind): { code: string; label: string }[] =>
-  (kind === "credit" ? (CREDIT_REASONS as readonly string[]) : DEBIT_REASON_CODES).map((code) => ({
-    code,
-    label: REASON_WORDS[code] ?? code,
-  }));
+export const reasonsOf = (
+  kind: NoteKind,
+  /** The invoice's supply: an export under LUT carries no tax, so "Tax charged too low" is not offered on it (07-W 5.11; the server refuses it too). */
+  supplyType?: string | null,
+): { code: string; label: string }[] =>
+  (kind === "credit" ? (CREDIT_REASONS as readonly string[]) : DEBIT_REASON_CODES)
+    .filter((code) => !(code === TAX_TOO_LOW && supplyType === "export_lut"))
+    .map((code) => ({
+      code,
+      label: REASON_WORDS[code] ?? code,
+    }));
 
 /** The hint under the reason (07-T §9): what "Discount after sale" and "Tax charged too low" do; none for the others. */
 export const reasonHint = (code: string): string | undefined =>
@@ -238,6 +244,8 @@ export const NOTE_ERRORS = {
     "This invoice has been credited in full, so a debit note can't be issued against it. Issue a new invoice instead.",
   // §9 (Q35; Researched 2026-10-28, 08-C RA-22)
   debit_tax_only_invalid: 'Enter tax only: the taxable value of a "Tax charged too low" note is zero.',
+  // 07-W 5.9: the tax to add is odd on an intra-state invoice (CGST must equal SGST); `debit_tax_only_invalid` with `details.reason` "odd_amount", and the screen's own check before sending
+  debit_tax_odd_amount: "Enter an even amount: it is split equally between CGST and SGST.",
   // §9 (Researched 2026-10-28, 08-C RA-02)
   discount_reason_not_in_force: "A credit note for a discount after sale can be dated from 1 November 2026.",
   // §9: a note draft whose invoice changed (replaces 07-R's content_changed for a note)
@@ -286,6 +294,10 @@ export function noteErrorText(e: unknown, kind: NoteKind, currency: Currency): s
         return left ? exceedsRemaining(left) : e.message;
       case "line_credit_exceeds":
         return left && typeof e.extra.line === "number" ? lineExceeds(e.extra.line + 1, left) : e.message;
+      case "debit_tax_only_invalid":
+        return e.extra.reason === "odd_amount"
+          ? NOTE_ERRORS.debit_tax_odd_amount
+          : NOTE_ERRORS.debit_tax_only_invalid;
       case "note_draft_exists":
         return noteDraftExists(kind);
       case "notes_limit":
@@ -391,6 +403,8 @@ export function buildNoteFields(
     /** The invoice's lines: a credit note's with what is left, a debit note's (anything can be added). */
     lines: readonly Pick<CreditableLine, "line" | "position" | "taxableLeftMinor">[];
     totalLeftMinor: number | null;
+    /** The invoice's supply: on an intra-state one the tax to add is split equally between CGST and SGST, so an odd amount is refused here (07-W 5.9). */
+    supplyType?: string | null;
   },
 ): { ok: true; fields: NoteFieldsIn } | { ok: false; errors: NoteFormErrors } {
   const errors: NoteFormErrors = {};
@@ -403,6 +417,7 @@ export function buildNoteFields(
     const m = moneyFrom(f.tax, ctx.currency);
     if (f.tax.trim() === "" || (m.ok && m.minor === 0)) errors.tax = INVT_COPY.amountZero;
     else if (!m.ok) errors.tax = m.error;
+    else if (ctx.supplyType === "intra" && m.minor % 2 !== 0) errors.tax = NOTE_ERRORS.debit_tax_odd_amount;
     else taxAmountMinor = m.minor;
   } else if (mode === "lines") {
     for (const l of ctx.lines) {

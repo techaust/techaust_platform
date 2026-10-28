@@ -172,6 +172,10 @@ describe("the debit note 'Tax charged too low' [Q35, RA-22]", () => {
       const err = (await json(res)).error;
       expect(err.code).toBe("debit_tax_only_invalid");
       expect(err.message).toBe('Enter tax only: the taxable value of a "Tax charged too low" note is zero.');
+      // only the odd amount on an intra-state invoice says why (07-W 5.9): the screen shows its own line for `details.reason`
+      if ((body as Record<string, unknown>).taxAmountMinor === 1_801)
+        expect(err.details).toEqual({ reason: "odd_amount" });
+      else expect(err.details).toBeUndefined();
     }
     expect(await docs()).toBe(before);
   });
@@ -272,6 +276,16 @@ describe("the debit note 'Tax charged too low' [Q35, RA-22]", () => {
     });
     expect(more.status, await more.clone().text()).toBe(200);
     expect((await json(more)).totalMinor).toBe(5_400);
+    // a save with an odd amount says why too (07-W 5.9)
+    const doc1 = await getInvoice(o, made.id);
+    const odd = await patchInvoice(o, made.id, {
+      expectedUpdatedAt: doc1.updatedAt,
+      fields: { note: { mode: "lines", reasonCode: "tax_charged_too_low", taxAmountMinor: 5_401 } },
+    });
+    expect(odd.status).toBe(400);
+    const oddBody = await json(odd);
+    expect(oddBody.error.code).toBe("debit_tax_only_invalid");
+    expect(oddBody.error.details).toEqual({ reason: "odd_amount" });
     const doc2 = await getInvoice(o, made.id);
     const price = await patchInvoice(o, made.id, {
       expectedUpdatedAt: doc2.updatedAt,
