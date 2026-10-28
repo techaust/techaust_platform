@@ -29,6 +29,7 @@ import {
   docErrorText,
   editor,
   emptySectionsOf,
+  gapGroups,
   guardLine,
   initEditor,
   isDirty,
@@ -52,7 +53,7 @@ import {
   unresolvedLine,
   versionLine,
 } from "./documents.ts";
-import type { DocumentView, SaveAnswer, ViewLine } from "./documents-api.ts";
+import type { CatalogueGap, DocumentView, SaveAnswer, ViewLine } from "./documents-api.ts";
 
 const view = (over: Partial<DocumentView> = {}): DocumentView => ({
   id: "d1",
@@ -551,6 +552,65 @@ describe("the autosave: how the answer lands", () => {
     expect(isDirty(after)).toBe(true);
     const plain = applySave(s, answer(s, ["l1"]), b.sent);
     expect(plain.sections[0]?.bodyMd).toBe("Typed meanwhile");
+  });
+
+  it("round 3, finding 3: fresh gaps bring their base with them, so a note left after a fill stays on screen; no gaps, no change", () => {
+    const gap = (field: CatalogueGap["field"], now: boolean): CatalogueGap => ({
+      sectionId: "s2",
+      sectionKind: "assumptions_exclusions",
+      field,
+      serviceCode: "S2",
+      serviceName: "Beta",
+      catalogueItemId: "i2",
+      catalogueHasTextNow: now,
+    });
+    let s = initEditor(
+      view({
+        sections: [
+          { id: "s1", position: 1, kind: "estimate", hidden: false, title: "Estimate", bodyMd: "E" },
+          {
+            id: "s2",
+            position: 2,
+            kind: "assumptions_exclusions",
+            hidden: true,
+            title: "Assumptions and exclusions",
+            bodyMd: null,
+          },
+        ],
+        catalogueGaps: [gap("assumptions", true), gap("exclusions", false)],
+      }),
+    );
+    expect(s.gapBase).toEqual(["s2"]);
+    // "Use Catalogue text": the fill's answer holds the filled section and the gaps after it (Beta's exclusions still missing)
+    const sent = {
+      parts: [],
+      rev: { ...s.rev },
+      uids: {},
+      sectionsAt: Object.fromEntries(s.sections.map((x) => [x.uid, x])),
+    };
+    const filled = { id: "s2", title: "Assumptions and exclusions", bodyMd: "Beta assumes", hidden: false };
+    const fresh = [gap("exclusions", false)];
+    const a = {
+      ...answer(s, ["l1"]),
+      sections: [
+        { id: "s1", position: 1 },
+        { id: "s2", position: 2 },
+      ],
+      sectionsChanged: [filled],
+      catalogueGaps: fresh,
+    };
+    const after = applySave(s, a, sent);
+    expect(after.sections[1]).toMatchObject({ bodyMd: "Beta assumes", hidden: false });
+    expect(after.gapBase).toEqual([]);
+    const groups = gapGroups(after.figures.gaps, after.sections, after.gapBase);
+    expect(groups.map((g) => [g.sectionId, g.services.map((x) => [x.name, x.missing, x.now])])).toEqual([
+      ["s2", [["Beta", ["exclusions"], []]]],
+    ]);
+    // before round 3 the base kept "s2", so this note was dropped until a reload
+    expect(gapGroups(fresh, after.sections, ["s2"])).toEqual([]);
+    // an answer without gaps keeps the base and the gaps it was taken with
+    s = applySave(after, answer(after, ["l1"]), { ...sent, sectionsAt: {} });
+    expect([s.gapBase, s.figures.gaps]).toEqual([[], fresh]);
   });
 
   it("a conflict stops the autosave until the latest is loaded", () => {
