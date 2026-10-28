@@ -86,7 +86,7 @@ export const MILESTONE_NO_AMOUNT = e("milestone_no_amount", "That milestone has 
 export const MILESTONE_EXCLUSIVE = e("milestone_exclusive", "Choose a milestone or services, not both");
 export const VOID_NOT_ALLOWED = e("void_not_allowed", "This invoice can't be voided");
 export const ALREADY_VOID = e("already_void", "This invoice is already void");
-/** Q23 (VERIFY WITH CA/LEGAL): the lead's line, 07-R's wording pending the owner's approval. */
+/** Q23 (OPEN (08-C RA-10): may a tax invoice issued in error and never delivered be shown as cancelled in GSTR-1 Table 13 with no credit note?): the lead's line, 07-R's wording pending the owner's approval. */
 export const RETURN_PERIOD_CLOSED = e(
   "return_period_closed",
   "This invoice's GST return period has ended, so it can't be voided. Use a credit note instead.",
@@ -241,7 +241,7 @@ export function recipientOf(client: ClientRow, contact: ContactFacts | null): Re
     ...(client.gstin ? { gstin: client.gstin } : {}),
     ...(client.state_code ? { stateCode: client.state_code } : {}),
     ...(client.billing_address ? { address: JSON.parse(client.billing_address) } : {}),
-    // M5.2 (LD36, Rule 46(o); VERIFY WITH CA/LEGAL): the address of delivery, when the client has a service address.
+    // M5.2 (LD36, Rule 46(o); Researched 2026-10-28, s.2(6) IGST Act, Rule 46 (08-C RA-18)): the address of delivery, when the client has a service address.
     ...(client.service_address ? { deliveryAddress: JSON.parse(client.service_address) } : {}),
     ...(contact && contact.anonymised_at === null
       ? { email: contact.email, contactId: contact.id, contactName: contact.name }
@@ -590,7 +590,7 @@ export const advanceLineDescription = (proformaNumber: string) =>
  * The export route of the document made for money received against a proforma (review 1): the proforma's own pick; when it had none, the route the
  * engine computed it under (`export_lut` gives `lut`, `export_igst` gives `igst_paid`), NEVER the live Settings, which may have moved since the
  * proforma was issued (the proforma said 0 % under LUT; the invoice for the money must not turn into an IGST split because the setting changed).
- * A proforma that was not an export has no route (null). VERIFY WITH CA/LEGAL: whether a lapsed LUT should force IGST on the tax invoice.
+ * A proforma that was not an export has no route (null). Researched 2026-10-28, Rule 96A CGST Rules (08-C RA-19): whether a lapsed LUT should force IGST on the tax invoice.
  */
 export function proformaRouteOf(
   exportMode: string | null,
@@ -744,7 +744,7 @@ export function blockersOf(
   return issueBlockers(issueFactsOf(state, client, settings, c, x), settings.tax.invoiceChecklist);
 }
 
-/** An export invoice in INR needs the Owner's explicit confirmation (Q8; VERIFY WITH CA/LEGAL, s.2(6) IGST Act). */
+/** An export invoice in INR needs the Owner's explicit confirmation (Q8; Researched 2026-10-28, s.2(6) IGST Act, Rule 46 (08-C RA-18), s.2(6) IGST Act). */
 export const needsInrConfirm = (type: string, currency: string): boolean =>
   type === "export_invoice" && currency === "INR";
 
@@ -794,7 +794,7 @@ export const ADVANCE_EXCEEDS_BALANCE = e(
   "The amount can't be more than the proforma's balance.",
 );
 /**
- * VERIFY WITH CA/LEGAL (which supply applies, batch Q37's neighbour): a proforma sealed for an overseas client (an export supply) and a client who is no longer
+ * Researched 2026-10-28, Rule 96A CGST Rules (08-C RA-19) (which supply applies, batch Q37's neighbour): a proforma sealed for an overseas client (an export supply) and a client who is no longer
  * overseas, or the reverse. The tax on the payment can't be worked out from the proforma, so the advance route refuses (07-S §8).
  */
 export const proformaSupplyChanged = (

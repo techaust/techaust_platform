@@ -1,4 +1,4 @@
-// M5.2 over the API [ADM-INV-01, -06, -08, -10, -18, ADM-SET-02, -03; LD22-LD36; VERIFY WITH CA/LEGAL for every rule]: the export invoice and the proforma issue; the
+// M5.2 over the API [ADM-INV-01, -06, -08, -10, -18, ADM-SET-02, -03; LD22-LD36; Researched 2026-10-28, s.2(6) IGST Act, Rule 46 (08-C RA-18) for every rule]: the export invoice and the proforma issue; the
 // mandatory-field checklist and every blocker a route can reach; the exchange rate; the letters of undertaking and the FY of issue; the INR export
 // confirmation; the sealed header (the endorsement and the notice are literals here); the service date; the purpose code; the view the screens read.
 import { env } from "cloudflare:workers";
@@ -438,7 +438,7 @@ const headerOfLut = () => ({
 
 // ---- the INR export confirmation (Q8) ------------------------------------------------------------------------------------------------------------
 
-describe("an export invoice in INR needs the Owner's yes [Q8; VERIFY WITH CA/LEGAL, s.2(6) IGST Act]", () => {
+describe("an export invoice in INR needs the Owner's yes [Q8; Researched 2026-10-28, s.2(6) IGST Act, Rule 46 (08-C RA-18), s.2(6) IGST Act]", () => {
   const mkInrExportClient = () =>
     mkInvoiceClient({
       country: "US",
@@ -1189,7 +1189,7 @@ describe("the frozen header extras [LD37]: what was sealed is what is shown, wha
   });
 });
 
-describe("a letter deleted from the list cannot come back from the legacy key [analyst early check 3; VERIFY WITH CA/LEGAL]", () => {
+describe("a letter deleted from the list cannot come back from the legacy key [analyst early check 3; Researched 2026-10-28, Rule 46 CGST Rules (08-C RA-05)]", () => {
   const put = (s: Awaited<ReturnType<typeof owner>>, version: number, value: unknown) =>
     call("/settings/groups/tax", { method: "PUT", cookie: s.cookie, body: { version, value } });
   const get = async (s: Awaited<ReturnType<typeof owner>>) =>

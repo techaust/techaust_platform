@@ -1,7 +1,7 @@
 // The statement of account of one client in one currency (M5.5b, LD78; ADM-CLI-04, JOB-PDF-01). Pure, no I/O, no zod, no floats:
 // money in minor units with bigint sums and a checked way back to a safe integer. Worker-safe (the admin API, the jobs Worker and
 // the SPA all import it as `@techaust/core/statement`).
-// What a statement lists before online payments exist (M6; Q58, VERIFY WITH CA/LEGAL):
+// What a statement lists before online payments exist (M6; Q58, Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-28)):
 //   debits   tax invoices, export invoices and debit notes (not voided);
 //   credits  credit notes, and the advance payments recorded against proformas (`advance_receipts`, Q9);
 // and NOT proformas (not a tax document; their payment shows through the tax invoice, so nothing counts twice, LD22). The closing

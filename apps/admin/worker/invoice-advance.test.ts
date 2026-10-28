@@ -1,4 +1,4 @@
-// The tax invoice for money received against a proforma [Q9, LD22, G-6, ADM-INV-10; VERIFY WITH CA/LEGAL]: the Owner's `POST /invoices/:id/advance-invoice`.
+// The tax invoice for money received against a proforma [Q9, LD22, G-6, ADM-INV-10; Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17)]: the Owner's `POST /invoices/:id/advance-invoice`.
 // The proforma converts, the invoice is made paid with the next number of its series, one receipt row is the evidence, a repeated reference is the same
 // invoice, and every refusal leaves the counters, the proforma, the receipts and the audit log exactly as they were.
 
@@ -495,7 +495,7 @@ describe("the refusals [every one leaves the counters, the proforma, the receipt
     const same = await advance(o, pf.id, { receivedOn: "2030-06-10", amountMinor: 10_000 });
     expect(same.status, await same.clone().text()).toBe(201);
     expect((await json(same)).warnings).toEqual([]);
-    // a payment of an earlier month than today: allowed, with the warning (Q27; VERIFY WITH CA/LEGAL, s.13(2))
+    // a payment of an earlier month than today: allowed, with the warning (Q27; Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17), s.13(2))
     vi.setSystemTime(Date.UTC(2030, 6, 5, 6, 0, 0));
     await renew(o);
     const late = await advance(o, pf.id, { receivedOn: "2030-06-30", amountMinor: 10_000 });
@@ -798,7 +798,7 @@ describe("what a converted proforma and its invoice cannot do [Q1, LD22]", () =>
 
 // ---- the proforma decides the route and the words (code review of M5.2) ----------------------------------------------------------------------------
 
-describe("the invoice for money received keeps the PROFORMA's export route [review 1; VERIFY WITH CA/LEGAL]", () => {
+describe("the invoice for money received keeps the PROFORMA's export route [review 1; Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17)]", () => {
   const usd = (over: Record<string, unknown> = {}) => ({
     fx: { rate: "83.1234", date: todayIso(), source: "FBIL" },
     ...over,
@@ -1039,7 +1039,7 @@ describe("the draft's LUT line, the series preview [review 2, findings 3 and the
   });
 });
 
-describe("the client's GST status changed after the proforma [review 2, finding 6; VERIFY WITH CA/LEGAL]", () => {
+describe("the client's GST status changed after the proforma [review 2, finding 6; Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17)]", () => {
   // the clients table keeps a state code for an Indian client and none for an overseas one, so the status and the state move together
   const setStatus = (clientId: string, status: "overseas" | "unregistered") =>
     env.DB.prepare("UPDATE clients SET gst_status = ?2, state_code = ?3 WHERE id = ?1")

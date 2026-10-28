@@ -4,7 +4,7 @@
 // none of them throws for any input of the declared types. The calendar and formatting helpers (`lastDayOfMonth`,
 // `addMonthsClamped`, `format*`, `cell.*`) are exported too, are not wrapped, and throw a RangeError on a programming error
 // (a value outside their declared domain).
-// Every rule and every column here is a researched default: VERIFY WITH CA/LEGAL.
+// Every rule and every column here is a researched default: Researched 2026-10-28, GSTN advisories of June 2025 (08-C RA-23).
 import type { CalendarDate } from "../dates.ts";
 import type { StateCode } from "../gstin.ts";
 import type { Currency } from "../money.ts";

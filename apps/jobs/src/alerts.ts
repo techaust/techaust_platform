@@ -1,4 +1,4 @@
-// The owners' daily alerts at 09:00 IST (M5.4; ADM-INV-19, ADM-INV-10, ADM-INV-18, LD61, LD67; Q20; VERIFY WITH CA/LEGAL for the number of days). One `alerts.daily` message from the cron (no D1 read there):
+// The owners' daily alerts at 09:00 IST (M5.4; ADM-INV-19, ADM-INV-10, ADM-INV-18, LD61, LD67; Q20; Researched 2026-10-28, Rule 96A CGST Rules (08-C RA-19) for the number of days). One `alerts.daily` message from the cron (no D1 read there):
 //
 //   unbilled work     milestones marked ready to bill whose work was delivered `invoiceAlertDays` (default 25) or more days ago and that have no invoice document yet (`UNBILLED_SQL`);
 //   proforma due      milestones whose work was delivered that long ago and whose PROFORMA still has a balance: the tax invoice is due (`PROFORMA_TAX_INVOICE_DUE_SQL`, Rule 47; the two lists never overlap);
@@ -125,7 +125,7 @@ export async function processAlertsDaily(
     proforma,
     "proforma.tax_invoice_due",
     (r) => `/invoices/${r.proforma_id}`,
-    // 07-U §7 (ADM-INV-10; VERIFY WITH CA/LEGAL for the 30 days).
+    // 07-U §7 (ADM-INV-10; Researched 2026-10-28, Rules 46(c) and 47 CGST Rules (08-C RA-08) for the 30 days).
     (r) =>
       `Payment request ${r.number_display ?? ""} for ${r.client_name} is still unpaid ${daysSince(r)} days after ${r.title} was delivered. A tax invoice is due within 30 days of delivery.`,
   );

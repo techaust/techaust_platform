@@ -22,7 +22,7 @@ import {
 } from "./quote-model.ts";
 
 // What the staff view shows in place of the name of a client or contact whose personal details were removed is core's ANONYMISED_CLIENT
-// (owner, 2026-10-26; VERIFY WITH CA/LEGAL). Only the VIEW changes: the frozen snapshot in the database stays as it was sent, as evidence.
+// (owner, 2026-10-26; Researched 2026-10-28, BSA 2023 s.63(4) (08-C RB-19)). Only the VIEW changes: the frozen snapshot in the database stays as it was sent, as evidence.
 
 /**
  * A sent version's recipient block as the staff view shows it. When the client was anonymised, every personal field (names, email, GSTIN,
@@ -48,7 +48,7 @@ export function viewRecipient(r: RecipientSnapshot, clientGone: boolean, contact
 
 /**
  * The personal values of a frozen recipient that the view must also take out of the document's own text (owner, 2026-10-26;
- * VERIFY WITH CA/LEGAL): the templates write the client name and the contact into the sections at draft time (`{{client.name}}`,
+ * Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11)): the templates write the client name and the contact into the sections at draft time (`{{client.name}}`,
  * `{{client.contact}}`), and that text is frozen at send. Client gone: the legal name, display name, contact name and email. Only
  * the contact gone: the contact's name and email (the business named on the offer is not personal). Blank values are skipped.
  */
@@ -63,7 +63,7 @@ export function redactionNames(r: RecipientSnapshot, clientGone: boolean, contac
  * Builds the function that replaces every exact occurrence of the given names with `ANONYMISED_CLIENT`, in one pass, longest name first
  * (so a name that holds another is replaced whole, and the label is never searched again), only where it stands as a whole word: a
  * client named "Ram" leaves "Ramp-up" alone. VIEW ONLY: the stored text is not touched.
- * Staff-typed free text that only mentions a person in other words is not redacted (owner, 2026-10-26, VERIFY WITH CA/LEGAL).
+ * Staff-typed free text that only mentions a person in other words is not redacted (owner, 2026-10-26, Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11)).
  */
 export function redactor(names: string[]): (text: string | null) => string | null {
   if (names.length === 0) return (text) => text;
@@ -176,7 +176,7 @@ export async function documentView(i: ViewInput) {
   // A sent version shows who it was addressed to AS SENT (the frozen `recipient` and `issuer`), never today's client record (M4.3 review 1).
   // A draft shows the live client and contact. The ids and the code are the same either way.
   // When the client, or the contact the offer was addressed to, was anonymised, the view shows "Anonymised client" and no name, email,
-  // GSTIN or address; the stored snapshot is never touched (owner, 2026-10-26; VERIFY WITH CA/LEGAL).
+  // GSTIN or address; the stored snapshot is never touched (owner, 2026-10-26; Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11)).
   const snapshot = frozen ? d.recipient : null;
   const snapshotContactGone =
     snapshot !== null &&

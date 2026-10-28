@@ -1,4 +1,4 @@
-// M5.2 database rules (ADM-INV-01, -06, -10, LD22, LD23, LD28, LD29, LD35; VERIFY WITH CA/LEGAL): migrations 0039 and 0040 (ADD COLUMN and CREATE only, the
+// M5.2 database rules (ADM-INV-01, -06, -10, LD22, LD23, LD28, LD29, LD35; Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17)): migrations 0039 and 0040 (ADD COLUMN and CREATE only, the
 // pinned freeze lists), the service-date and advance-receipt triggers, the proforma issue (its own series, its `valid_until`, its milestone left alone), and
 // the advance batch (Q9): the tax invoice for money received against a proforma.
 import { env } from "cloudflare:workers";
@@ -648,7 +648,7 @@ describe("a proforma issues in its own series and leaves its milestone alone [LD
 
 // ---- the advance batch ---------------------------------------------------------------------------------------------------------------------
 
-describe("the tax invoice for money received [Q9, LD22; VERIFY WITH CA/LEGAL]", () => {
+describe("the tax invoice for money received [Q9, LD22; Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17)]", () => {
   it("issues the next number as a paid invoice with the proforma as its parent, converts the proforma and writes one receipt", async () => {
     const w = await world();
     const a = await advanceArgs(w, {}, 118_000);

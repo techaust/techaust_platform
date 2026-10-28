@@ -1,4 +1,4 @@
-// Credit and debit notes (M5.3; ADM-INV-11, ADM-INV-01 "Debit Note"; LD38..LD48; VERIFY WITH CA/LEGAL for every rule): `POST /invoices/:id/credit-note` and `/debit-note` make
+// Credit and debit notes (M5.3; ADM-INV-11, ADM-INV-01 "Debit Note"; LD38..LD48; Researched 2026-10-28, s.34(3) CGST Act, Rule 53 (08-C RA-22) for every rule): `POST /invoices/:id/credit-note` and `/debit-note` make
 // the DRAFT of a note against an issued invoice (`:id`), `PATCH` changes its request, reason or contact, and `POST /invoices/:id/ims-status` records the client's answer in
 // the GST portal's IMS (Q14, Q36). Issuing a note is `invoice-issue.ts` (the same issue, request and approval routes as an invoice); discarding is the invoice DELETE.
 // Every route is a row of ROUTES (guard.ts), every change ONE batch through `mutate`, every rule in the statement that changes the row (`noteDraftStatements`,
@@ -335,7 +335,7 @@ async function createNote(c: Ctx, kind: NoteKind, parentId: string, f: CreateBod
   );
   const now = Date.now();
   const today = issueDateOf(now);
-  // A credit note past its deadline is refused as a DRAFT too (LD45; s.34(2), VERIFY WITH CA/LEGAL): the date is the last day it could be dated.
+  // A credit note past its deadline is refused as a DRAFT too (LD45; s.34(2), Researched 2026-10-28, s.34(2) CGST Act (08-C RA-03)): the date is the last day it could be dated.
   const dl = kind === "credit" ? deadlineOf(p, settings) : null;
   if (dl && !creditAllowed(today, dl))
     return c.json({ error: CREDIT_DEADLINE_PASSED, date: dl.lastDay, request_id: c.var.rid }, 409);
@@ -643,7 +643,7 @@ export const invoiceNotes = new Hono<AppEnv>()
     return createNote(c, "debit", c.req.valid("param").id, { ...f, mode: "lines" });
   })
 
-  // ---- the client's answer in the GST portal's IMS (Q14, Q36; VERIFY WITH CA/LEGAL): pending, once, to accepted or rejected ----
+  // ---- the client's answer in the GST portal's IMS (Q14, Q36; Researched 2026-10-28, s.34(2) proviso CGST Act (08-C RA-04)): pending, once, to accepted or rejected ----
   .post("/:id/ims-status", param(idParam), body(imsBody), async (c) => {
     const { id } = c.req.valid("param");
     const f = c.req.valid("json");

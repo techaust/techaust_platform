@@ -313,7 +313,7 @@ export function alertUnbilled(d: UnbilledAlertData, opts: LayoutOptions): Render
   });
 }
 
-/** 07-U §8: a payment request still unpaid after the work was delivered (VERIFY WITH CA/LEGAL). */
+/** 07-U §8: a payment request still unpaid after the work was delivered (Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-28)). */
 export function alertProformaDue(d: ProformaDueAlertData, opts: LayoutOptions): Rendered {
   return securityEmail(
     headerValue(`Payment request ${d.proforma_number} still unpaid after delivery`),
@@ -333,7 +333,7 @@ export function alertProformaDue(d: ProformaDueAlertData, opts: LayoutOptions): 
   );
 }
 
-/** The weekly LUT email (VERIFY WITH CA/LEGAL): 07-S §5 while next year's letter is due; 07-U §8 while the running year has none. */
+/** The weekly LUT email (Researched 2026-10-28, Rule 96A CGST Rules (08-C RA-19)): 07-S §5 while next year's letter is due; 07-U §8 while the running year has none. */
 export function lutReminder(d: LutReminderData, opts: LayoutOptions): Rendered {
   if (d.state === "current_missing")
     return securityEmail(headerValue(`No LUT saved for FY ${d.fy_label}`), opts, {

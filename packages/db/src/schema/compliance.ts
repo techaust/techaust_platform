@@ -63,7 +63,7 @@ export const accessLog = sqliteTable(
  * The nightly history of a few dashboard figures (M3.5, docs/05 section 1.2 rule 7): one integer per date, metric and dimension
  * (a lead stage, a project status, a care plan id, or empty). The dashboard itself is live; this table is for trends and for the
  * burn per plan over time. Written by the jobs Worker's cron, one metric per queue message, and idempotent on its primary key.
- * Per-plan rows are business records about clients: their retention is VERIFY WITH CA/LEGAL (docs/08 L-6).
+ * Per-plan rows are business records about clients: their retention is Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11) (docs/08 L-6).
  */
 export const statsDaily = sqliteTable(
   "stats_daily",

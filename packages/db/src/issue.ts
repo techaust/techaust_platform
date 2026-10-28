@@ -555,7 +555,7 @@ export function invoiceIssueStatements(db: D1Database, a: InvoiceIssueArgs): Sen
   };
 }
 
-// ---- the tax invoice for money received against a proforma (M5.2, Q9, LD22, G-6; VERIFY WITH CA/LEGAL) --------------------------------------
+// ---- the tax invoice for money received against a proforma (M5.2, Q9, LD22, G-6; Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17)) --------------------------------------
 
 /** One line of the new invoice: the proforma's own split of the amount received (`splitInclusive` over its groups), already worked out by the caller. */
 export type AdvanceLine = {

@@ -1,4 +1,4 @@
-// The statement of account's view and content hash [ADM-CLI-04, JOB-PDF-01; M5.5b, LD79; VERIFY WITH CA/LEGAL for what a statement lists]: pure formatting from integers into the designer's layout contract
+// The statement of account's view and content hash [ADM-CLI-04, JOB-PDF-01; M5.5b, LD79; Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-28) for what a statement lists]: pure formatting from integers into the designer's layout contract
 // (`StatementLayoutView`), a content hash that ignores the day it was made but not the data or the layout, and the page the designer's layout makes from it. All names, numbers and amounts are invented.
 import { describe, expect, it } from "vitest";
 import { renderStatementHtml, statementViewSha256 } from "../src/render.ts";

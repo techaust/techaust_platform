@@ -1,5 +1,5 @@
 // Lead life cycle rules shared by the admin and jobs Workers (M3.2, ADM-LEAD-02, -04, -05, FRM-04). Pure: no I/O.
-// Retention and DPDP items: VERIFY WITH CA/LEGAL.
+// Retention and DPDP items: Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11).
 import { SETTINGS_DEFAULTS } from "./schemas/settings.ts";
 
 export const LEAD_STAGES = ["new", "qualified", "proposal_sent", "won", "lost"] as const;
@@ -87,7 +87,7 @@ export function isPurgeScanMessage(body: unknown): body is LeadPurgeScanMessage 
 // ---- retention in SQL ----------------------------------------------------------------------------------------------
 // ONE expression for the leads retention, used by the jobs insert, every activity update (admin), the settings re-dating and
 // the 0016 backfill, so the figure cannot drift (analyst early check, M3.2). Months come from the stored `retention` setting,
-// floored at 12 (the settings schema's minimum, DPDP Rule 8(3)) and 12 when the setting was never saved. VERIFY WITH CA/LEGAL.
+// floored at 12 (the settings schema's minimum, DPDP Rule 8(3)) and 12 when the setting was never saved. Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11).
 
 /** Months of lead retention, as a SQL expression over the `settings` table. */
 export const LEAD_RETENTION_MONTHS_SQL =

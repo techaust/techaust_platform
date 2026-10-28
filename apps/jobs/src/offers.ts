@@ -10,7 +10,7 @@
 //   offer.accepted the confirmation emails, once the certificate exists: to the accepting contact (with a confirmation link) and to TecHaust.
 //   approval.notify the M4.3 approval emails: requested to the active owners, decided to the requester.
 //
-// VERIFY WITH CA/LEGAL: the confirmation link and the stored address of the person who accepted.
+// Researched 2026-10-28, BSA 2023 s.63(4) (08-C RB-19): the confirmation link and the stored address of the person who accepted.
 import {
   approvalNotifyMessage,
   type EmailMessage,

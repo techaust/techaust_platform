@@ -166,7 +166,7 @@ export const users = new Hono<AppEnv>()
       action: "user.invite",
       entityType: "staff_invite",
       entityId: hash,
-      // The role only: the address stays in the erasable `staff_invites` row, not in the append-only log (DPDP: VERIFY WITH CA/LEGAL).
+      // The role only: the address stays in the erasable `staff_invites` row, not in the append-only log (DPDP: Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11)).
       summary: { role },
       status: 201,
       // Older pending invites for the same email stop working (never deleted).

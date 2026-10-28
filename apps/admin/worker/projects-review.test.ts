@@ -1,6 +1,6 @@
 // The M3.4 review fixes [ADM-PRJ-01, -02, -03, -04, ADM-CLI-05]: the budget lock, the project version, the export of an individual
 // client's notes and files, the anonymised individual taking nothing new, and the erase renaming projects and milestones.
-// VERIFY WITH CA/LEGAL: the erase, export and anonymised-client rules.
+// Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11): the erase, export and anonymised-client rules.
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import { mkClient, mkContact } from "./test-clients.ts";
@@ -164,7 +164,7 @@ describe("the data-subject export has the client's notes and files for an indivi
 });
 
 // ---------------------------------------------------------------------------------------------------------------
-describe("an anonymised individual client takes nothing new [ADM-PRJ-01..04; VERIFY WITH CA/LEGAL]", () => {
+describe("an anonymised individual client takes nothing new [ADM-PRJ-01..04; Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11)]", () => {
   it("refuses notes, files, projects and milestone writes with 409 client_anonymised, and says so in the detail responses", async () => {
     const o = await owner();
     const { clientId, contact, p, m1, m2 } = await individual();
@@ -314,7 +314,7 @@ describe("an anonymised individual client takes nothing new [ADM-PRJ-01..04; VER
 });
 
 // ---------------------------------------------------------------------------------------------------------------
-describe("the erase renames an individual client's projects and milestones [ADM-CLI-05; owner 2026-10-25, VERIFY WITH CA/LEGAL]", () => {
+describe("the erase renames an individual client's projects and milestones [ADM-CLI-05; owner 2026-10-25, Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11)]", () => {
   it("in both modes: projects take their code, milestones become Milestone 1, 2... in order; amounts, dates and statuses stay", async () => {
     const o = await owner();
     for (const mode of ["erase", "anonymise"] as const) {

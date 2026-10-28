@@ -40,7 +40,7 @@ export const PNG_BYTES = Uint8Array.from(
   (c) => c.charCodeAt(0),
 );
 
-/** The statutory lines of M5.2, held here as LITERALS (not imported): a change of the constants in core fails a test until a person has looked at it (07-S; VERIFY WITH CA/LEGAL). */
+/** The statutory lines of M5.2, held here as LITERALS (not imported): a change of the constants in core fails a test until a person has looked at it (07-S; Researched 2026-10-28, Rule 46 CGST Rules (08-C RA-05)). */
 export const LITERAL_ENDORSEMENT = {
   lut: "SUPPLY MEANT FOR EXPORT/SUPPLY TO SEZ UNIT OR SEZ DEVELOPER FOR AUTHORISED OPERATIONS UNDER BOND OR LETTER OF UNDERTAKING WITHOUT PAYMENT OF INTEGRATED TAX",
   igst_paid:

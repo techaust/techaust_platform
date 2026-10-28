@@ -1,5 +1,5 @@
 // The frozen TEXT of a sent proposal or estimate after its client or contact was anonymised (M4.3 re-check 2, finding 1; the owner's rule
-// of 2026-10-26, VERIFY WITH CA/LEGAL). The seed templates write `{{client.name}}` and `{{client.contact}}` into the sections at draft time,
+// of 2026-10-26, Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11)). The seed templates write `{{client.name}}` and `{{client.contact}}` into the sections at draft time,
 // and that text is frozen at send. The staff view takes every exact occurrence of the frozen names and email out of the section texts, the
 // section titles and the document title; the stored rows and their hash stay as sent, byte for byte.
 import { env } from "cloudflare:workers";

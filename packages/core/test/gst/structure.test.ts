@@ -104,11 +104,11 @@ describe("src/gst: pure and deterministic", () => {
     }
   });
 
-  it("states that it is SPA only, and VERIFY WITH CA/LEGAL, in the header of index.ts", () => {
+  it("states that it is SPA only, and carries its research tag (08-C), in the header of index.ts", () => {
     const head = read("index.ts").split("\n").slice(0, 8).join("\n");
     expect(head).toMatch(/SPA ONLY/);
     expect(head).toMatch(/never import this from Worker code/);
-    expect(head).toMatch(/VERIFY WITH CA\/LEGAL/);
+    expect(head).toMatch(/Researched 2026-10-28.*08-C RA-23/);
   });
 
   it("calling a function twice gives the same answer", () => {

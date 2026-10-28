@@ -1,4 +1,4 @@
-// Supply type and place of supply [ADM-INV-05, docs/05 §10, docs/08 G-7, G-8]. VERIFY WITH CA/LEGAL:
+// Supply type and place of supply [ADM-INV-05, docs/05 §10, docs/08 G-7, G-8]. Researched 2026-10-28, s.12 IGST Act (08-C RA-12):
 // - a registered recipient: the place of supply is the state of the GSTIN (s.12(2)(a) IGST Act); a different state on the
 //   record is a warning;
 // - an unregistered recipient: the state on the record (s.12(2)(b)); a missing state is an error;

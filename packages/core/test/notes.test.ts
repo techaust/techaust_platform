@@ -1,4 +1,4 @@
-// Credit and debit notes, pure (M5.3; ADM-INV-11; VERIFY WITH CA/LEGAL): the reasons and limits, the stored request, the note blockers, the deadline (s.34(2)),
+// Credit and debit notes, pure (M5.3; ADM-INV-11; Researched 2026-10-28, s.34(3) CGST Act, Rule 53 (08-C RA-22)): the reasons and limits, the stored request, the note blockers, the deadline (s.34(2)),
 // the parent's ledger, `creditForGross` (with a property over random invoices and note sequences), the debit note's input, the IMS twin, and the sums of
 // what the stored credit notes took.
 import fc from "fast-check";
@@ -338,7 +338,7 @@ describe("creditNoteAdvice [RA-31; 07-T §4]: the banner's dates", () => {
   });
 });
 
-describe("creditNoteDeadline [s.34(2); Q32, Q33; VERIFY WITH CA/LEGAL]", () => {
+describe("creditNoteDeadline [s.34(2); Q32, Q33; Researched 2026-10-28, s.34(2) CGST Act (08-C RA-03)]", () => {
   const cutoff = { month: 11, day: 30 };
   const base = { parentFy: "2627", parentIssueDate: "2026-10-25" };
 

@@ -1,4 +1,4 @@
-// The sales register, the output tax and the GSTR-3B summary [ADM-REP-04, ADM-REP-06; M5.5b, LD71, LD83; VERIFY WITH CA/LEGAL]: they are built
+// The sales register, the output tax and the GSTR-3B summary [ADM-REP-04, ADM-REP-06; M5.5b, LD71, LD83; Researched 2026-10-28, GSTN advisories of June 2025 (08-C RA-23)]: they are built
 // from the same register rows as GSTR-1, so their totals are checked against GSTR-1's and against an independent sum over the rows.
 import { describe, expect, it } from "vitest";
 import {

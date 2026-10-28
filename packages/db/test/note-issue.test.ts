@@ -1,4 +1,4 @@
-// M5.3 database rules (ADM-INV-11, ADM-INV-01 "Debit Note", LD38..LD51, LD41; VERIFY WITH CA/LEGAL): migrations 0041 and 0042 (ADD COLUMN, CREATE INDEX and
+// M5.3 database rules (ADM-INV-11, ADM-INV-01 "Debit Note", LD38..LD51, LD41; Researched 2026-10-28, s.34(3) CGST Act, Rule 53 (08-C RA-22)): migrations 0041 and 0042 (ADD COLUMN, CREATE INDEX and
 // CREATE TRIGGER only: no rebuild), the note triggers, the note freeze (the parent's ledger recomputed in the same batch, the credit cap, the deadline, the
 // limit of 20) and the SQL sums of what was credited, which must equal the same sums worked out in JS.
 import { env } from "cloudflare:workers";

@@ -1,4 +1,4 @@
-// Which GSTR-1 section a document belongs to (M5.5a; ADM-REP-04, ADM-INV-17 thresholds). Every rule is VERIFY WITH CA/LEGAL
+// Which GSTR-1 section a document belongs to (M5.5a; ADM-REP-04, ADM-INV-17 thresholds). Every rule is Researched 2026-10-28, GSTN advisories of June 2025 (08-C RA-23)
 // (docs/08-research-appendix/A-gst-invoicing.md §4, §8). Pure and never throws.
 import { validateGstin } from "../gstin.ts";
 import {

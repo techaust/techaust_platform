@@ -1,7 +1,7 @@
 // Clients and contacts API (M3.3, ADM-CLI-01..05). Every route is a row of ROUTES (guard.ts); every change is ONE batch through
 // `mutate`; the finance boundary, the currency lock and the erase rules are enforced in SQL, not in a read before a write.
 //
-// Personal data and the audit log (VERIFY WITH CA/LEGAL): `audit_log` is append-only and outlives the people in it, so a client's
+// Personal data and the audit log (Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11)): `audit_log` is append-only and outlives the people in it, so a client's
 // or contact's audit row holds ids, codes, field NAMES, modes and reason codes, never a name, an email, a phone number or an
 // address. Client and contact audit rows are all written on entity `client` (the contact's id is in the summary), so a client's
 // activity still shows them after a contact was erased.
@@ -1264,7 +1264,7 @@ export const contacts = new Hono<AppEnv>()
           .bind(id, ANONYMISED_CONTACT, anonymisedEmail(id), t, ...g.params),
         // 2. sign-in access: sessions and links of this contact
         ...deleteContactAccess(db, id, g),
-        // 2b. an individual client's notes and files go with its last live contact (owner, 2026-10-25; VERIFY WITH CA/LEGAL; a
+        // 2b. an individual client's notes and files go with its last live contact (owner, 2026-10-25; Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11); a
         //     business client's are never touched). The same conditions as step 3, in the same batch, before the contact changes.
         //     The file rows come back (RETURNING) so their R2 objects can be deleted after the batch.
         db
@@ -1275,12 +1275,12 @@ export const contacts = new Hono<AppEnv>()
             `DELETE FROM files WHERE ${LAST_LIVE_INDIVIDUAL("files.client_id")} AND ${g.sql(2)} RETURNING r2_key`,
           )
           .bind(id, ...g.params),
-        // 2b2. the notes of time entries on its projects and care plans (owner Q7, 2026-10-25; VERIFY WITH CA/LEGAL): a note can name the
+        // 2b2. the notes of time entries on its projects and care plans (owner Q7, 2026-10-25; Researched 2026-10-28, Rule 34(2) CGST Rules (08-C RA-21)): a note can name the
         //      person. Minutes, dates and who logged them stay (they back invoices and are staff records). Same conditions; a business
         //      client's entries are never touched.
         db.prepare(TIME_NOTE_CLEAR_SQL(g.sql(3))).bind(id, t, ...g.params),
         // 2c. its projects keep only their codes, and their milestones become "Milestone 1, 2, ..." in order (owner, 2026-10-25;
-        //     free-text names can name the person; amounts, dates and statuses stay; VERIFY WITH CA/LEGAL). Same conditions.
+        //     free-text names can name the person; amounts, dates and statuses stay; Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11)). Same conditions.
         db
           .prepare(
             `UPDATE milestones SET title = 'Milestone ' || (SELECT count(*) FROM milestones m2 WHERE m2.project_id = milestones.project_id AND m2.position <= milestones.position), updated_at = max(?2, updated_at + 1)
@@ -1310,7 +1310,7 @@ export const contacts = new Hono<AppEnv>()
             `DELETE FROM notifications WHERE entity_type = 'approval' AND entity_id IN (SELECT a.id FROM approvals a WHERE a.document_id IN (SELECT id FROM documents WHERE ${LAST_LIVE_INDIVIDUAL("documents.client_id")})) AND ${g.sql(2)}`,
           )
           .bind(id, ...g.params),
-        //     M5.1 (review 9; VERIFY WITH CA/LEGAL, DPDP): the individual's unissued INVOICE-family drafts go the same way (their line descriptions and milestone
+        //     M5.1 (review 9; Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11), DPDP): the individual's unissued INVOICE-family drafts go the same way (their line descriptions and milestone
         //     titles can name the person), with the approvals asked for them. The milestone one of them was made from is freed first (it keeps its status and
         //     amount; the draft is gone). An ISSUED invoice stays (the law keeps it), and so do its approvals, but the free text of an issue request (the
         //     requester's reason, the owner's note) is cleared: it can name the person.
@@ -1349,7 +1349,7 @@ export const contacts = new Hono<AppEnv>()
           )
           .bind(id, ANONYMISED_CLIENT, t, ...g.params),
         //    and its GSTIN, which holds the person's PAN: a registered one becomes unregistered (owner, 2026-10-25; issued
-        //    documents keep their own snapshot; VERIFY WITH CA/LEGAL). Its own statement, so the state trigger only meets
+        //    documents keep their own snapshot; Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-28)). Its own statement, so the state trigger only meets
         //    registered rows and an older client without a state still erases.
         db
           .prepare(

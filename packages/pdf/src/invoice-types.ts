@@ -14,7 +14,7 @@ export type InvoiceBankSnap = {
   branch: string | null;
 };
 
-/** The SWIFT block of a USD invoice (M5.2; db `InvoiceSwiftBlock`); an M5.1 snapshot has none. The purpose code is the owner's RBI code (VERIFY WITH CA/LEGAL). */
+/** The SWIFT block of a USD invoice (M5.2; db `InvoiceSwiftBlock`); an M5.1 snapshot has none. The purpose code is the owner's RBI code (OPEN (08-C RB-06): which RBI purpose code fits our exports? the bank confirms it). */
 export type InvoiceSwiftSnap = {
   accountName: string;
   accountNo: string;
@@ -33,7 +33,7 @@ export type InvoiceIssuerSnap = {
   company: IssuerSnap["company"] & { phone?: string; principalPlace?: string };
   bank: { inr: InvoiceBankSnap | null; swift?: InvoiceSwiftSnap | null };
   signature: InvoiceSignatureRef | null;
-  /** The Rule 46(p) statement exactly as it was issued (frozen and sealed; VERIFY WITH CA/LEGAL). */
+  /** The Rule 46(p) statement exactly as it was issued (frozen and sealed; Researched 2026-10-28, Rules 46(p), 50 and 51 CGST Rules (08-C RA-26)). */
   reverseChargeText: string;
   sender: IssuerSnap["sender"];
 };
@@ -193,7 +193,7 @@ export type InvoiceViewNote = {
   effect: { direction: "reduces" | "increases"; parentNumber: string; total: string };
   /** A USD note: the rate of its invoice and that invoice's number ("Exchange rate: 1 USD = ₹{rate} (the rate of invoice {parentNumber})"); null for INR. */
   fx: { rate: string; parentNumber: string } | null;
-  /** The invoice's export route and its LUT letter (an export credit note prints them, VERIFY WITH CA/LEGAL); null for a domestic note. */
+  /** The invoice's export route and its LUT letter (an export credit note prints them, Researched 2026-10-28, s.34(2) CGST Act (08-C RA-03)); null for a domestic note. */
   route: { mode: "lut" | "igst_paid"; lut: { fy: string; fyLabel: string; arn: string } | null } | null;
 };
 

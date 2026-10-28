@@ -1,4 +1,4 @@
-// The recurring care-plan invoices in the jobs Worker (M5.4; ADM-CARE-02, LD57, LD58, LD59, LD66; VERIFY WITH CA/LEGAL for the invoice date and the first-period price). The cron only enqueues (06:00 IST):
+// The recurring care-plan invoices in the jobs Worker (M5.4; ADM-CARE-02, LD57, LD58, LD59, LD66; Researched 2026-10-28, s.31(5) CGST Act (08-C RA-24) for the invoice date and the first-period price). The cron only enqueues (06:00 IST):
 //
 //   care.scan  -> `CARE_DUE_SQL` (active plans whose current period is not billed, 50 a page, keyset by `(created_at, id)`): one `care.bill` per plan, and the next `care.scan` when the page was full;
 //   care.bill  -> the admin API's `draftCarePlan` over the `BillingJobs` entrypoint (it drafts the invoice for the period ONCE: `care_invoices` and `last_billed_period`). When the draft may be issued

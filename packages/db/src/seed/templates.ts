@@ -1,7 +1,7 @@
 // The seeded templates (M4.1, ADM-CAT-03). Version 1 has only the section headings of ADM-PROP-02 and placeholders. Version 2 (M4.3 review
 // fix 7) carries the wording of docs/07-content-appendix/O-m4.3-proposal-screens.md section 1, word for word, as a NEW version of each template
 // (templates are append-only; an edit is a new version, and a draft takes the newest version). Keys never change.
-// VERIFY WITH CA/LEGAL: "This is an estimate, not a tax invoice." Proposal and estimate: one per category. Care-plan block and terms block: one
+// Researched 2026-10-28, s.31(5) CGST Act (08-C RA-24): "This is an estimate, not a tax invoice." Proposal and estimate: one per category. Care-plan block and terms block: one
 // each, with no category.
 import { CATALOGUE_CATEGORIES, type TemplateBody } from "@techaust/core/catalogue";
 

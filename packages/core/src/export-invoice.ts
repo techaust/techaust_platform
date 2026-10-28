@@ -1,5 +1,5 @@
 // What an export invoice and a proforma need beyond a domestic tax invoice (M5.2; ADM-INV-10, ADM-INV-18, G-6, G-8, U-1, 08-A §8), pure: no I/O, no zod,
-// no floats. Exported through `@techaust/core/invoices`. EVERY RULE AND EVERY WORD HERE IS A RESEARCHED DEFAULT: VERIFY WITH CA/LEGAL.
+// no floats. Exported through `@techaust/core/invoices`. EVERY RULE AND EVERY WORD HERE IS A RESEARCHED DEFAULT: Researched 2026-10-28, s.2(6) IGST Act, Rule 46 (08-C RA-18).
 import {
   addDays,
   daysBetween,
@@ -13,7 +13,7 @@ import {
 
 /**
  * The Rule 46 export endorsement, one line per route, in capitals as the rule gives it (07-S §1; word for word from 08-A §8 :344-348). Frozen and
- * sealed in the invoice header at issue, and checked byte for byte before the PDF is rendered (LD33). VERIFY WITH CA/LEGAL; the IGST-route wording
+ * sealed in the invoice header at issue, and checked byte for byte before the PDF is rendered (LD33). Researched 2026-10-28, s.2(6) IGST Act, Rule 46 (08-C RA-18); the IGST-route wording
  * is NOT VERIFIED beyond "... ON PAYMENT OF INTEGRATED TAX" (08-A :346).
  */
 export const EXPORT_ENDORSEMENT = {
@@ -23,7 +23,7 @@ export const EXPORT_ENDORSEMENT = {
 } as const;
 export type ExportRoute = keyof typeof EXPORT_ENDORSEMENT;
 
-/** What a proforma must say about itself (07-S §2; VERIFY WITH CA/LEGAL): it is not a tax invoice. Frozen in the header and checked before rendering. */
+/** What a proforma must say about itself (07-S §2; Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17)): it is not a tax invoice. Frozen in the header and checked before rendering. */
 export const PROFORMA_NOTICE =
   "This is not a tax invoice. A tax invoice will be issued when payment is received.";
 
@@ -146,7 +146,7 @@ type LegacyLutTax = {
  * What becomes of the deprecated single `lut` of M3 (review 2, finding 9: the ONE rule; the settings fold, `lutsOf` and the stored-row reader all ask it, pure and
  * without zod): `none` (no letter in it), `listed` (its FY already has a list entry: the entry wins), `invalid` (the list would refuse it: an ARN that is not 1 to 30
  * letters or digits once normalised, or a year that is not two consecutive years), `full` (the list already holds 20) or `folded` (it counts as this list entry).
- * VERIFY WITH CA/LEGAL (the ARN's format is not verified).
+ * Researched 2026-10-28, s.2(6) IGST Act, Rule 46 (08-C RA-18) (the ARN's format is not verified).
  */
 export type LegacyLutFate =
   | { fate: "none" | "listed" | "invalid" | "full" }
@@ -203,7 +203,7 @@ export function alertDaysFromStoredTax(json: unknown): number {
   return typeof days === "number" && Number.isInteger(days) && days >= 1 && days <= 30 ? days : 25;
 }
 
-/** The export realisation rules (FEMA 2026 and Rule 96A; Q15, VERIFY WITH CA/LEGAL) as the Workers read them: no zod, no floats. */
+/** The export realisation rules (FEMA 2026 and Rule 96A; Q15, Researched 2026-10-28, FEMA 23(R)/2026-RB Reg. 5(1) (08-C RB-01)) as the Workers read them: no zod, no floats. */
 export type StoredRealisationParams =
   | {
       readonly ok: true;
@@ -287,7 +287,7 @@ export function weekMondayOf(iso: string): string | null {
 /**
  * What the daily check decides for one IST day and the saved letters: a bell for the owners, or null. In March while the next FY has no letter, the
  * "file next year's LUT" bell (entity `lut:<next FY>:<Monday>`); otherwise, while the running FY has no letter, the "missing" bell (entity
- * `lut:<running FY>:<Monday>`). One bell a week per owner (the entity carries the week), only then. VERIFY WITH CA/LEGAL.
+ * `lut:<running FY>:<Monday>`). One bell a week per owner (the entity carries the week), only then. Researched 2026-10-28, Rule 96A CGST Rules (08-C RA-19).
  */
 export function lutBellFor(
   today: string,
@@ -319,7 +319,7 @@ export function normaliseReference(text: string): string | null {
   return /^[A-Z0-9/-]{1,60}$/.test(n) ? n : null;
 }
 
-/** The RBI purpose code of a foreign-currency receipt, e.g. P0802 (08-A :365; the codes themselves are NOT VERIFIED here, VERIFY WITH CA/LEGAL). */
+/** The RBI purpose code of a foreign-currency receipt, e.g. P0802 (08-A :365; the codes themselves are NOT VERIFIED here, OPEN (08-C RB-06): which RBI purpose code fits our exports? the bank confirms it). */
 export const PURPOSE_CODE = /^P\d{4}$/;
 
 /**

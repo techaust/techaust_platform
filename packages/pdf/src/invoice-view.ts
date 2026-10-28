@@ -1,6 +1,6 @@
 // The invoice envelope as a pre-formatted view (M5.1 stage B; LD10): every value a template prints is already a string. Amounts come from the frozen
 // `computed` text, formatted by core; nothing is added up here. The per-head rates are DERIVED from the frozen rate and the supply type (LD10): an
-// intra-state supply prints half of the rate under CGST and half under SGST, anything else prints the whole rate under IGST (VERIFY WITH CA/LEGAL).
+// intra-state supply prints half of the rate under CGST and half under SGST, anything else prints the whole rate under IGST (Researched 2026-10-28, Rule 46 CGST Rules (08-C RA-05)).
 // A missing bank block or signature leaves its part out; nothing is invented. A signature image is embedded only when the caller hands in bytes it
 // has already verified against the frozen SHA-256 (`verifySignatureBytes`).
 import { formatFxRate } from "@techaust/core/invoices";
@@ -235,7 +235,7 @@ export function toInvoiceView(
       }
     : null;
 
-  // M5.3: a credit or debit note's facts, from the sealed `noteOf` only. The invoice's route and LUT travel with it (the note copies them at issue; VERIFY WITH CA/LEGAL).
+  // M5.3: a credit or debit note's facts, from the sealed `noteOf` only. The invoice's route and LUT travel with it (the note copies them at issue; Researched 2026-10-28, s.34(3) CGST Act, Rule 53 (08-C RA-22)).
   const noteView: InvoiceViewNote | null = noteOf
     ? {
         kind: noteOf.kind,

@@ -1,4 +1,4 @@
-// The invoice envelope and view (M5.1 stage B: B1; test 11; the printed layout and the skeleton are tested in ./invoice-layout.test.ts). VERIFY WITH CA/LEGAL for every rule printed (Rule 46, Rule 48).
+// The invoice envelope and view (M5.1 stage B: B1; test 11; the printed layout and the skeleton are tested in ./invoice-layout.test.ts). Researched 2026-10-28, Rule 48(2) CGST Rules (08-C RA-07) for every rule printed (Rule 46, Rule 48).
 import { describe, expect, it } from "vitest";
 import { invoiceEnvelopeOfBundle } from "../src/invoice-bundle.ts";
 import {

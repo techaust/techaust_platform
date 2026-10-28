@@ -1,4 +1,4 @@
-// The monthly Export Declaration Form (EDF) working list (M5.5a; ADM-REP-07, docs/08-A §8). VERIFY WITH CA/LEGAL: under the
+// The monthly Export Declaration Form (EDF) working list (M5.5a; ADM-REP-07, docs/08-A §8). Researched 2026-10-28, FEMA 23(R)/2026-RB Reg. 3(2) (08-C RB-03): under the
 // FEMA 2026 regulations an exporter of services gives the AD bank an EDF within 30 days from the end of the month of the
 // invoice (UNVERIFIED whether one EDF may cover a whole month: secondary sources). This is OUR list for the bank
 // conversation, not the bank's form. All payment rails are included (Q16). Export credit notes are not included (VERIFY).

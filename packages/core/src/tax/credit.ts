@@ -1,4 +1,4 @@
-// Credit notes [ADM-INV-11, docs/05 §10, docs/08 G-11]. VERIFY WITH CA/LEGAL (s.34 CGST Act):
+// Credit notes [ADM-INV-11, docs/05 §10, docs/08 G-11]. Researched 2026-10-28, s.34(2) CGST Act (08-C RA-03) (s.34 CGST Act):
 // - a credit note reverses tax per line, never more than what is left of that line's taxable value and of each tax head;
 // - the supply (and the FX rate of a USD invoice) are always the original's;
 // - a line credited in full takes exactly the tax that is left, so the credit notes of a line add up to the original line;
@@ -340,7 +340,7 @@ export function taxOnlyDebitNote(
     if (intra && taxMinor % 2 !== 0) return fail([issue("credit_line_invalid", "request", "taxMinor")]);
     // "INR" is only the label `allocate` wants. For an intra-state original each head takes half of the amount, split over the lines by their CGST.
     const shares = allocate(
-      money(intra ? taxMinor / 2 : taxMinor, "INR"),
+      money(intra ? Number(BigInt(taxMinor) / 2n) : taxMinor, "INR"),
       taxed.map((l) => (intra ? l.cgstMinor : l.igstMinor)),
     ).map((m) => BigInt(m.amount));
     const rate = original.fxRateMicros;

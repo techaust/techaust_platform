@@ -1,7 +1,7 @@
 // The M5.2 invoice types in the designed layout (layout/invoice.ts; docs/06 §7.3; words 07-S §1, §2, §8): the export invoice (LUT and IGST routes),
 // the proforma, and the tax or export invoice issued for a payment received. The statutory lines are held as LITERALS (fixtures), never imported
 // from core. The gate of the M5.2 review (LD33): the jobs Worker's own check, `missingStatutoryLine`, passes on what this layout prints for a LUT
-// export, an IGST export, a proforma and an export invoice for a payment received. VERIFY WITH CA/LEGAL for every rule printed.
+// export, an IGST export, a proforma and an export invoice for a payment received. Researched 2026-10-28, s.2(6) IGST Act, Rule 46 (08-C RA-18) for every rule printed.
 import { describe, expect, it } from "vitest";
 import { TECHAUST_PDF_FONT_DATA } from "../src/generated/assets.ts";
 import { hasTextNode, missingStatutoryLine } from "../src/invoice-integrity.ts";

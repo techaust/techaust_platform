@@ -1,5 +1,5 @@
 // The inclusive split [ADM-PROP-09, ADM-INV-10, docs/05 §10]: from a gross amount that already includes tax (an
-// instalment, a payment received) back to lines and tax, as a tax invoice for the amount received. VERIFY WITH CA/LEGAL:
+// instalment, a payment received) back to lines and tax, as a tax invoice for the amount received. Researched 2026-10-28, rule by rule in 08-C section 1:
 // - the gross is allocated to the source's (SAC, rate) groups by their weights, by largest remainder;
 // - per group the taxable value is the largest one whose taxable value plus its own tax does not exceed the group's gross,
 //   so the tax is never more than what the client paid;

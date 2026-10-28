@@ -1,5 +1,5 @@
 // M5.2: the export invoice, the proforma, the mandatory-field checklist, the exchange rate and the LUT (ADM-INV-06, -08, -10, -18; G-6, G-8, G-9, U-1).
-// VERIFY WITH CA/LEGAL: every rule under test is a researched default. The two endorsement lines and the proforma notice are held here as LITERALS,
+// Researched 2026-10-28, s.2(6) IGST Act, Rule 46 (08-C RA-18): every rule under test is a researched default. The two endorsement lines and the proforma notice are held here as LITERALS,
 // not imported, so a change of the constant (the statutory text) fails a test until a person has looked at it.
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
@@ -151,7 +151,7 @@ describe("fxSourceLabel", () => {
 // ---- the statutory words ------------------------------------------------------------------------------------------------------------------
 
 describe("the export endorsement and the proforma notice [Rule 46; 07-S §1, §2; LD33]", () => {
-  it("are exactly the words of the rule (literals here, VERIFY WITH CA/LEGAL)", () => {
+  it("are exactly the words of the rule (literals here, Researched 2026-10-28, Rule 46 CGST Rules (08-C RA-05))", () => {
     expect(EXPORT_ENDORSEMENT.lut).toBe(
       "SUPPLY MEANT FOR EXPORT/SUPPLY TO SEZ UNIT OR SEZ DEVELOPER FOR AUTHORISED OPERATIONS UNDER BOND OR LETTER OF UNDERTAKING WITHOUT PAYMENT OF INTEGRATED TAX",
     );

@@ -49,7 +49,7 @@ function line(pieces: Piece[]): Para {
 
 // ---- EDF reminder (07-V §10) ---------------------------------------------------------------------------------------------------------------------
 
-/** `edf.reminder`: the monthly Export Declaration Form reminder (ADM-REP-07, Q55; VERIFY WITH CA/LEGAL). */
+/** `edf.reminder`: the monthly Export Declaration Form reminder (ADM-REP-07, Q55; Researched 2026-10-28, FEMA 23(R)/2026-RB Reg. 3(2) (08-C RB-03)). */
 export function edfReminder(d: EdfReminderData, opts: LayoutOptions): Rendered {
   return securityEmail(headerValue(`EDF list for ${d.month_label}: ${d.count} export invoices`), opts, {
     before: [
@@ -108,7 +108,7 @@ function stageSentence(stage: string, date: string): Piece[] {
   }
 }
 
-/** `realisation.alert`: one export invoice reached a stage (FEMA or GST, approaching or past; ADM-INV-17, Q54; VERIFY WITH CA/LEGAL). */
+/** `realisation.alert`: one export invoice reached a stage (FEMA or GST, approaching or past; ADM-INV-17, Q54; Researched 2026-10-28, FEMA 23(R)/2026-RB Reg. 5(1) (08-C RB-01)). */
 export function realisationAlert(d: RealisationAlertData, opts: LayoutOptions): Rendered {
   const stage = stageSentence(d.stage, d.due_date);
   return securityEmail(headerValue(realisationSubject(d.stage, d.number)), opts, {

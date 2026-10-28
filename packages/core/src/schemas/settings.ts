@@ -70,7 +70,7 @@ const stateCode = z.enum(Object.keys(STATE_CODES) as [StateCode, ...StateCode[]]
  * ADM-SET-01 (M4.4): the authorised signatory's signature image, uploaded by the owner. The image lives in the `DOCS` bucket under a key
  * made from its SHA-256, so a replacement never changes the file an earlier document used. Only the signature routes write this field
  * (the generic company form can neither set nor clear it). A stored company row from before M4.4 has no such key and reads as null.
- * It is printed only on invoices (from M5.2); VERIFY WITH CA/LEGAL that a signature image is wanted at all.
+ * It is printed only on invoices (from M5.2); Researched 2026-10-28, Rule 46(q) proviso CGST Rules (08-C RA-06) that a signature image is wanted at all.
  */
 export const SIGNATURE_MIMES = ["image/png", "image/jpeg"] as const;
 export const SIGNATURE_MAX_BYTES = 256 * 1024;
@@ -137,7 +137,7 @@ export const lutEntry = z.strictObject({
 });
 
 /**
- * G-11, Q33 (M5.3; VERIFY WITH CA/LEGAL): the day the annual return (GSTR-9) of a financial year was filed. Once it is, credit notes for that year's supplies are
+ * G-11, Q33 (M5.3; Researched 2026-10-28, s.34(2) CGST Act (08-C RA-03)): the day the annual return (GSTR-9) of a financial year was filed. Once it is, credit notes for that year's supplies are
  * refused from that day (s.34(2): "or the date of furnishing the annual return, whichever is earlier"). `fy` is the token ("2627", the lutEntry rule), `filedOn` an
  * ISO date on or after 1 April after that FY ends. A day after today is refused by the route (`annual_return_future`), never here: this schema has no clock.
  */
@@ -216,7 +216,7 @@ export const taxSettings = z.object({
   ),
   /** ADM-INV-06, Q10 (M5.2, LD31): the switchable lines of the mandatory-field checklist. */
   invoiceChecklist: invoiceChecklistSettings,
-  /** Q24 (M5.2; VERIFY WITH CA/LEGAL, Rule 34(2)): how many days before the invoice date the exchange rate's own date may be (0 = the same day only). */
+  /** Q24 (M5.2; Researched 2026-10-28, Rule 34(2) CGST Rules (08-C RA-21), Rule 34(2)): how many days before the invoice date the exchange rate's own date may be (0 = the same day only). */
   fxMaxAgeDays: intBetween(0, 7),
   /** G-6: Proforma → automatic Tax Invoice on payment; alternatives selectable. */
   advanceMode: z.enum(["proforma", "invoice_upfront", "receipt_voucher"]),
@@ -254,13 +254,13 @@ export const taxSettings = z.object({
   /** G-12: export realisation warnings (FEMA). */
   realisation: z.object({
     warnMonths: intBetween(1, 1200),
-    /** Q15 (M5.5b; VERIFY WITH CA/LEGAL, FEMA 2026): months to realise an export invoice in INR; a stored row without it reads 12. */
+    /** Q15 (M5.5b; Researched 2026-10-28, FEMA 23(R)/2026-RB Reg. 5(1) (08-C RB-01), FEMA 2026): months to realise an export invoice in INR; a stored row without it reads 12. */
     inrMonths: z.prefault(intBetween(1, 120), 12),
     escalateMonths: intBetween(1, 1200),
     escalateExtraDays: intBetween(0, 36_500),
   }),
   /**
-   * Q18 (M5.5b; VERIFY WITH CA/LEGAL, Notification 12/2024): an inter-state invoice to an unregistered client above this INR amount
+   * Q18 (M5.5b; Researched 2026-10-28, Rule 59(4) CGST Rules, Notification 12/2024-CT (08-C RA-13), Notification 12/2024): an inter-state invoice to an unregistered client above this INR amount
    * (strictly more) is reported as B2CL in GSTR-1; at or below it, as B2CS. A stored row without it reads Rs 1,00,000.00; zero is refused.
    */
   b2clThresholdInrMinor: z.prefault(intBetween(1), 1_00_000_00),
@@ -269,7 +269,7 @@ export const taxSettings = z.object({
 });
 
 /**
- * M5.2 (analyst, early check 3; VERIFY WITH CA/LEGAL): folds the deprecated single `lut` of M3 into the `luts` list and clears it, unless its FY is
+ * M5.2 (analyst, early check 3; Researched 2026-10-28, Rule 96A CGST Rules (08-C RA-19)): folds the deprecated single `lut` of M3 into the `luts` list and clears it, unless its FY is
  * already listed (then the list entry wins and the legacy value is dropped). Applied when the `tax` row is read for a screen and when it is saved, so a
  * letter the owner deletes from the list can never come back from the old key, and a letter that was only ever in the old key is never lost, unless
  * it could not be a list entry at all. The old ARN is normalised like a list entry's (spaces dropped, upper case); one the list would still refuse is

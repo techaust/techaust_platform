@@ -1,4 +1,4 @@
-// The daily LUT check [M5.2 B3, ADM-INV-18, Q22, LD27; VERIFY WITH CA/LEGAL]: the cron adds ONE `lut.check` message to its existing statistics batch (no D1 read,
+// The daily LUT check [M5.2 B3, ADM-INV-18, Q22, LD27; Researched 2026-10-28, Rule 96A CGST Rules (08-C RA-19)]: the cron adds ONE `lut.check` message to its existing statistics batch (no D1 read,
 // no new cron or queue); the consumer reads the stored `tax` row WITHOUT zod, and rings one bell per active owner per IST week, only in March while the next FY has
 // no letter, or while the running FY has none; a rerun, a redelivery and a second day of the same week write nothing; the weekly email is M5.4's.
 import { env as realEnv } from "cloudflare:workers";

@@ -1,4 +1,4 @@
-// Recurring care-plan invoices, pure (M5.4; ADM-CARE-02, ADM-CARE-03, ADM-INV-12, LD58, LD59, LD66; VERIFY WITH CA/LEGAL for every tax rule). No I/O, no zod, no floats.
+// Recurring care-plan invoices, pure (M5.4; ADM-CARE-02, ADM-CARE-03, ADM-INV-12, LD58, LD59, LD66; Researched 2026-10-28, s.31(5) CGST Act (08-C RA-24) for every tax rule). No I/O, no zod, no floats.
 //
 // A care plan is billed monthly IN ADVANCE: on its billing day (06:00 IST scan; any later day of the period is a catch-up) the job drafts ONE invoice for the plan's
 // current period (the first period of a plan starts on its start date and gets the full monthly price: no proration, ADM-CARE-04). The period is recorded in
@@ -141,9 +141,10 @@ export type CareLineWords = {
 
 /** Hours as a person reads them from whole 15-minute steps: 135 minutes is "2.25", 120 is "2", 90 is "1.5". */
 export function hoursText(minutes: number): string {
-  const hundredths = (minutes * 100) / 60;
-  const whole = Math.floor(hundredths / 100);
-  const frac = String(Math.round(hundredths - whole * 100))
+  // whole 15-minute steps are whole hundredths of an hour (15 minutes is 25): integers only
+  const hundredths = (BigInt(minutes) * 5n) / 3n;
+  const whole = hundredths / 100n;
+  const frac = String(hundredths % 100n)
     .padStart(2, "0")
     .replace(/0+$/, "");
   return frac === "" ? String(whole) : `${whole}.${frac}`;
@@ -196,7 +197,7 @@ export type CareLines =
 /**
  * The draft's lines: the plan fee (one month at the terms' price, as the taxable amount), AI Ops when the terms have it, and the previous period's extra hours at the
  * terms' hourly rate (only when there is overage AND a rate; an overage with no rate is reported in `overage.priced: false` and left off the invoice). The plan fee
- * comes from S18 for a Dev Subscription and S16 otherwise; the extra hours use S16's SAC and rate (VERIFY WITH CA/LEGAL: the GST treatment of overage).
+ * comes from S18 for a Dev Subscription and S16 otherwise; the extra hours use S16's SAC and rate (Researched 2026-10-28, s.31(5) CGST Act (08-C RA-24): the GST treatment of overage).
  */
 export function careLines(input: {
   readonly tier: CareTier;

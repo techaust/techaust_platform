@@ -1,6 +1,6 @@
 // The exchange rate printed on a USD invoice (M5.2; ADM-INV-08, Rule 34(2) CGST Rules, GSTR-1 table 6A), pure: no I/O, no zod, no floats. The rate is
 // typed by hand as a decimal STRING, read digit by digit into whole micros (INR micros per USD, 1,000,000 = INR 1), never through a float.
-// VERIFY WITH CA/LEGAL: the rate of which day is acceptable (Q24: the issue date, or up to `fxMaxAgeDays` earlier) and its source (Q7).
+// Researched 2026-10-28, Rule 34(2) CGST Rules (08-C RA-21): the rate of which day is acceptable (Q24: the issue date, or up to `fxMaxAgeDays` earlier) and its source (Q7).
 import { daysBetween, parseIsoDate } from "./dates.ts";
 
 /** The dearest rate accepted: 1,000 INR per USD (a typing slip, not a rate, above it). */

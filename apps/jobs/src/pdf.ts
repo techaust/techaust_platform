@@ -1,4 +1,4 @@
-// The PDF of a sent proposal or estimate (M4.4, JOB-PDF-01) and of an issued invoice (M5.1 stage B: the same three steps, `docs/<type>/<fy>/<nnnn>-v1.{json,pdf}`). VERIFY WITH CA/LEGAL: the PDF is the evidence an acceptance is tied to (run file).
+// The PDF of a sent proposal or estimate (M4.4, JOB-PDF-01) and of an issued invoice (M5.1 stage B: the same three steps, `docs/<type>/<fy>/<nnnn>-v1.{json,pdf}`). Researched 2026-10-28, BSA 2023 s.63(4) (08-C RB-19): the PDF is the evidence an acceptance is tied to (run file).
 //   send route -> `pdf.snapshot` (admin `afterSend`, through waitUntil)
 //   snapshot  -> reads the sent rows in ONE batch, checks the seal with the send route's own functions (`envelopeOfBundle`), writes the
 //                R2 envelope (`docs/<type>/<fy>/<nnnn>-v<v>.json`, once, never overwritten), sets `snapshot_r2_key`, enqueues `pdf.render`.
@@ -167,7 +167,7 @@ export async function processSnapshot(env: Env, msg: PdfSnapshotMessage): Promis
   const d = bundle.document;
   const label = documentLabel(d.number_display);
   if (d.pdf_sha256 !== null) return skip("done");
-  // An erased client takes nothing new: no envelope, no PDF, no bell (the standing rule for anonymised clients; VERIFY WITH CA/LEGAL).
+  // An erased client takes nothing new: no envelope, no PDF, no bell (the standing rule for anonymised clients; Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11)).
   if (await clientIsGone(env, d.client_id)) return skip("client_gone");
   if (isInvoiceFlowType(d.type)) return snapshotInvoice(env, msg, bundle, label);
   const made = await envelopeOfBundle(bundle);
@@ -249,7 +249,7 @@ const SIGNATURE_MIMES = ["image/png", "image/jpeg"];
 /**
  * The signature image of an invoice, verified: read from DOCS by the key frozen in the envelope, its size within the cap and its SHA-256 the frozen
  * one. `null` is "this invoice has no signature"; `"refused"` is a signature that is frozen but cannot be shown as it was (the object is missing,
- * another size, other bytes, an unexpected key or type): the invoice is not rendered without it (LD11; VERIFY WITH CA/LEGAL).
+ * another size, other bytes, an unexpected key or type): the invoice is not rendered without it (LD11; Researched 2026-10-28, Rule 46 CGST Rules (08-C RA-05)).
  */
 async function verifiedSignature(
   env: Env,
@@ -333,7 +333,7 @@ async function renderInvoice(
   const html = htmlOf(view);
   // LD33 (M5.2): an export invoice prints its frozen endorsement and a proforma its frozen notice, byte for byte, or nothing is rendered (the owners'
   // bell rings once, the message is acknowledged without a retry: a retry would print the same page). LD54 (M5.3): a credit or debit note names the invoice it
-  // is against (the frozen number as one text node of its own), or nothing is rendered the same way (Rule 53(1A); VERIFY WITH CA/LEGAL).
+  // is against (the frozen number as one text node of its own), or nothing is rendered the same way (Rule 53(1A); Researched 2026-10-28, Rule 46 CGST Rules (08-C RA-05)).
   const missing = missingStatutoryLine(envelope, html);
   if (missing !== null) {
     logEvent("pdf.refused", {
@@ -518,7 +518,7 @@ export async function processRender(
     logEvent("pdf.render_skipped", { why: "done" });
     return "skipped";
   }
-  // Anonymised while the render waited (a quota or rate delay): no PDF, no `onRendered` (the standing rule; VERIFY WITH CA/LEGAL).
+  // Anonymised while the render waited (a quota or rate delay): no PDF, no `onRendered` (the standing rule; Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11)).
   if (row.client_gone) {
     logEvent("pdf.render_skipped", { why: "client_gone" });
     return "skipped";

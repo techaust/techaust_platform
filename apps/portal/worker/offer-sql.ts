@@ -1,7 +1,7 @@
 // The SQL of the portal's offer routes (M4.5; POR-04, POR-05, ADM-PROP-08, ADM-PROP-10). Every statement says `client_id = ?1`
 // (the organisation, from the session or from a live offer link), reaches child tables only through a scoped parent, and decides
 // nothing from an earlier read: each condition of an accept or a decline sits in the statement that writes. Placeholders are numbered.
-// VERIFY WITH CA/LEGAL: accepting by a typed name and a ticked box, and the evidence recorded (docs/runs/m4.5-send-accept.md §4).
+// Researched 2026-10-28, BSA 2023 s.63(4) (08-C RB-19): accepting by a typed name and a ticked box, and the evidence recorded (docs/runs/m4.5-send-accept.md §4).
 import { clipHeader } from "@techaust/db/log";
 
 /** The statuses a client may see. A `converted` estimate is shown as accepted (lead decision, 2026-10-26: conversion is internal to TecHaust); drafts are never shown. */

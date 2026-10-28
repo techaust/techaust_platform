@@ -1,7 +1,7 @@
 // The plain invoice skeleton (M5.1 stage B3; since M5.3 only for a type ./invoice.ts does not know: every invoice-family type has the designed layout): every Rule 46 field of a tax invoice printed in a readable order, in the classes the proposal layout
 // already styles (so the page is usable now), and nothing designed. The designer builds the real tax invoice layout on this in phase 2
 // (`layout/invoice.ts`, docs/06 §7.3, wording from 07-R); until then the words below are the skeleton's own and PENDING that approval, and every
-// rule printed is VERIFY WITH CA/LEGAL.
+// rule printed is Researched 2026-10-28, Rule 46 CGST Rules (08-C RA-05).
 //
 // What it prints (Rule 46, docs/08-research-appendix/A §3):
 //   (a) the supplier's name, address and GSTIN (and the principal place of business);   (b) the consecutive number;   (c) the date of issue;

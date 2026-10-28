@@ -1,8 +1,8 @@
-// The last check before an invoice PDF is rendered (M5.2, LD33; VERIFY WITH CA/LEGAL): an export invoice's HTML must carry its FROZEN endorsement, and a
+// The last check before an invoice PDF is rendered (M5.2, LD33; Researched 2026-10-28, s.2(6) IGST Act, Rule 46 (08-C RA-18)): an export invoice's HTML must carry its FROZEN endorsement, and a
 // proforma's its FROZEN notice, each byte for byte as ONE text node. Rule 46's endorsement and the "not a tax invoice" notice are the statutory
 // lines of those documents: a layout that drops, rewords or splits one must never reach Browser Run. The check reads the sealed header of the
 // envelope (not live settings and not the view), so what is checked is what was issued.
-// M5.3 (LD54; Rule 53(1A), VERIFY WITH CA/LEGAL): a credit or debit note's HTML must carry the FROZEN number of the invoice it is against as ONE text node: a note that
+// M5.3 (LD54; Rule 53(1A), Researched 2026-10-28, s.34(3) CGST Act, Rule 53 (08-C RA-22)): a credit or debit note's HTML must carry the FROZEN number of the invoice it is against as ONE text node: a note that
 // does not name its invoice is not a document to send.
 import { esc } from "./escape.ts";
 import type { InvoiceEnvelope } from "./invoice-types.ts";

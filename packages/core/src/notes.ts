@@ -1,5 +1,5 @@
 // Credit and debit notes, pure (M5.3; ADM-INV-11, ADM-INV-01 "Debit Note", docs/04 §9, docs/08 G-11, 08-A §6). No I/O, no zod, no floats. Codes only: the words are the
-// screens' (07-T). EVERY RULE HERE IS A RESEARCHED DEFAULT: VERIFY WITH CA/LEGAL (s.34 CGST Act, Rule 53(1A), the 30 November block, IMS).
+// screens' (07-T). EVERY RULE HERE IS A RESEARCHED DEFAULT: Researched 2026-10-28, s.34(2) proviso CGST Act (08-C RA-04) (s.34 CGST Act, Rule 53(1A), the 30 November block, IMS).
 //
 //   - the reasons, the limits and the note blockers (own codes, LD50: `ISSUE_BLOCKER_CODES` is the invoice's and does not move),
 //   - the deadline of a credit note (s.34(2): 30 November after the end of the FY of the supply, or earlier once the annual return is filed; Q32, Q33),
@@ -190,7 +190,7 @@ export function noteOfFromStored(v: unknown): NoteOf | null {
 export const takesTuples = (takes: readonly NoteTake[]): [number, number][] =>
   takes.map((t) => [t.line, t.taxableMinor]);
 
-// ---- the note blockers (LD50; Rule 53(1A); VERIFY WITH CA/LEGAL) -----------------------------------------------------------------------------
+// ---- the note blockers (LD50; Rule 53(1A); Researched 2026-10-28, Rule 46 CGST Rules (08-C RA-05)) -----------------------------------------------------------------------------
 
 /**
  * The statuses of an invoice a note can be issued against (not a draft, not void, not credited in full). The one list: the note blockers, the admin's refusals, the issue guard's SQL
@@ -310,7 +310,7 @@ export function noteBlockers(f: NoteFacts, checklist: Pick<ChecklistSettings, "b
   return out;
 }
 
-// ---- the deadline of a credit note (s.34(2); G-11; Q32, Q33; VERIFY WITH CA/LEGAL) ---------------------------------------------------------------
+// ---- the deadline of a credit note (s.34(2); G-11; Q32, Q33; Researched 2026-10-28, s.34(2) CGST Act (08-C RA-03)) ---------------------------------------------------------------
 
 export type AnnualReturnFiled = { readonly fy: string; readonly filedOn: string };
 
@@ -334,7 +334,7 @@ const monthEnd = (year: number, month: number): number =>
   month === 2 ? (isLeap(year) ? 29 : 28) : [4, 6, 9, 11].includes(month) ? 30 : 31;
 
 /**
- * Q32 (VERIFY WITH CA/LEGAL): the credit note is judged against the FY the SUPPLY belongs to. That is the earliest of three: the FY of the invoice; the FY of the day
+ * Q32 (Researched 2026-10-28, s.34(2) CGST Act (08-C RA-03)): the credit note is judged against the FY the SUPPLY belongs to. That is the earliest of three: the FY of the invoice; the FY of the day
  * an advance was received (the tax invoice made for money already received, Q9: the supply's time of supply is the receipt); and the FY of the day the service was
  * completed, when the invoice came more than 30 days after it (Rule 47: the invoice is due within 30 days of the supply). `cutoff` is `tax.creditNoteCutoff`.
  * `annualReturnsFiled` (Q33): the return of that FY, once filed, closes credit notes from the day it was filed. An unreadable date is ignored.
@@ -462,7 +462,7 @@ const takesOf = (doc: ComputedDocument): NoteTake[] =>
   doc.lines.map((l) => ({ line: l.index, taxableMinor: l.taxableMinor }));
 
 /**
- * The largest credit note whose total is at most `grossMinor` (the amount typed, GST included; VERIFY WITH CA/LEGAL: a credit note states the tax it reverses,
+ * The largest credit note whose total is at most `grossMinor` (the amount typed, GST included; Researched 2026-10-28, s.34(2) CGST Act (08-C RA-03): a credit note states the tax it reverses,
  * so the person types what the client sees and the engine finds the taxable value). An amount that covers everything that is left gives the full note. Otherwise
  * it starts from `grossMinor × taxable left / total left` (bigint) and corrects with the engine's own result, at most `GROSS_EVALUATIONS_MAX` runs; the best
  * result is the one with the biggest total that is not above the amount. `gapMinor` says how far below it is. No result within one rounding unit (a whole
@@ -538,7 +538,7 @@ export function creditForGross(
   };
 }
 
-// ---- the debit note (s.34(3); LD43; VERIFY WITH CA/LEGAL) -----------------------------------------------------------------------------------
+// ---- the debit note (s.34(3); LD43; Researched 2026-10-28, s.34(3) CGST Act, Rule 53 (08-C RA-22)) -----------------------------------------------------------------------------------
 
 export type DebitInput =
   | { readonly ok: true; readonly input: DocumentInput }
@@ -586,7 +586,7 @@ export function debitNoteInput(
   };
 }
 
-// ---- IMS status (Q14, LD46; VERIFY WITH CA/LEGAL) ---------------------------------------------------------------------------------------------
+// ---- IMS status (Q14, LD46; Researched 2026-10-28, s.34(2) proviso CGST Act (08-C RA-04)) ---------------------------------------------------------------------------------------------
 
 export const IMS_STATUSES = ["pending", "accepted", "rejected", "not_applicable"] as const;
 export type ImsStatus = (typeof IMS_STATUSES)[number];

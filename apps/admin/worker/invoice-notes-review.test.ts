@@ -1,5 +1,5 @@
 // M5.3 review items (the analyst's early check and the lead's answers to stop 1, 2026-10-27): the 07-T §8 lines word for word, the IMS list's query plan, the amount typed
-// that moves the hash, a debit note's save, "Against line {n}", and the finance audit list. Every rule is VERIFY WITH CA/LEGAL where it is a tax or legal one.
+// that moves the hash, a debit note's save, "Against line {n}", and the finance audit list. Every rule is Researched 2026-10-28, s.34(3) CGST Act, Rule 53 (08-C RA-22) where it is a tax or legal one.
 
 import { env } from "cloudflare:workers";
 import { FINANCE_AUDIT_ACTIONS } from "@techaust/core/audit";

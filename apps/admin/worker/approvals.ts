@@ -67,7 +67,7 @@ export const requestBody = z.strictObject({
 });
 export const decideBody = z.strictObject({
   decision: z.enum(["approve", "reject"]),
-  /** M5.2, Q8 (VERIFY WITH CA/LEGAL): the approver confirms an export invoice in INR; only `true` is accepted, absent means no. */
+  /** M5.2, Q8 (Researched 2026-10-28, s.2(6) IGST Act, Rule 46 (08-C RA-18)): the approver confirms an export invoice in INR; only `true` is accepted, absent means no. */
   confirmInrExport: z.optional(z.literal(true)),
   note: z.optional(text(500)),
 });

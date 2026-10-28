@@ -227,9 +227,7 @@ describe("a care message that ran out of tries", () => {
     );
     await processCareDeadLetter(makeEnv(), { kind: "care.bill", planId: "no-such-plan" }, NOW);
     const plain = (await bells("care.billing_failed")).find((r) => r.entity_id.startsWith("no-such-plan"));
-    expect(plain?.title).toBe(
-      "A care invoice couldn't be drafted. Open the care plan to see why.",
-    );
+    expect(plain?.title).toBe("A care invoice couldn't be drafted. Open the care plan to see why.");
   });
 
   it("a care.issue dead letter links the draft; the scans and the alerts only log (the next run lists the same work), through the leads dead-letter queue", async () => {

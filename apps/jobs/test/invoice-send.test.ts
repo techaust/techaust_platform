@@ -318,7 +318,7 @@ describe("refusals: acknowledged, nothing minted, nothing queued, the row marked
     for (const how of ["access", "finance", "anonymised", "erased"] as const) {
       const w = await world();
       if (how === "access") await run("UPDATE contacts SET portal_access = 0 WHERE id = ?1", w.contact.id);
-      // POR-03: a contact who may not see finance is no recipient (the portal would 404 their link). VERIFY WITH CA/LEGAL (DPDP).
+      // POR-03: a contact who may not see finance is no recipient (the portal would 404 their link). Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11) (DPDP).
       if (how === "finance") await run("UPDATE contacts SET can_see_finance = 0 WHERE id = ?1", w.contact.id);
       if (how === "anonymised")
         await run("UPDATE contacts SET portal_access = 0, anonymised_at = 9 WHERE id = ?1", w.contact.id);

@@ -1,4 +1,4 @@
-// Issuing a credit or debit note (M5.3; ADM-INV-11, ADM-INV-03, -07, ADM-APR-01/02; LD38..LD54; VERIFY WITH CA/LEGAL): what `issueInvoice` does differently for a note.
+// Issuing a credit or debit note (M5.3; ADM-INV-11, ADM-INV-03, -07, ADM-APR-01/02; LD38..LD54; Researched 2026-10-28, s.34(3) CGST Act, Rule 53 (08-C RA-22)): what `issueInvoice` does differently for a note.
 // Everything is worked out AGAIN from the frozen invoice, the credit notes issued so far (summed by SQL) and the takes stored in the draft: the draft's own figures
 // are only what the person saw, never what is frozen, so a hash that does not match is `content_changed` (another note issued meanwhile lands here). The freeze
 // statement (`invoiceIssueStatements` with `note`) holds the same rules in SQL: the invoice is still the one that was read, a credit note fits inside what is left

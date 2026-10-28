@@ -89,20 +89,20 @@ const MATRIX = {
   "invoices.read": { owner: "allow", staff: "allow", accountant: "allow" },
   "invoices.draft": { owner: "allow", staff: "allow" },
   "invoices.issue": { owner: "step-up", staff: "approval" },
-  // M5.1 (Q2, VERIFY WITH CA/LEGAL): only the Owner voids an issued invoice, with a fresh code; Staff cannot request a void.
+  // M5.1 (Q2, OPEN (08-C RA-10): may a tax invoice issued in error and never delivered be shown as cancelled in GSTR-1 Table 13 with no credit note?): only the Owner voids an issued invoice, with a fresh code; Staff cannot request a void.
   "invoices.void": { owner: "step-up" },
   // M5.2 (LD22, Q9): the tax invoice made for money received against a proforma: the Owner only, with a fresh code. A new docs/04 §9 row.
   "invoices.advance": { owner: "step-up" },
-  // M5.3 (Q36, LD46; VERIFY WITH CA/LEGAL): recording the client's answer to a credit note in the GST portal's IMS: the Owner only (no fresh code: it changes no money).
+  // M5.3 (Q36, LD46; Researched 2026-10-28, s.34(2) proviso CGST Act (08-C RA-04)): recording the client's answer to a credit note in the GST portal's IMS: the Owner only (no fresh code: it changes no money).
   // A new docs/04 §9 row.
   "invoices.ims": { owner: "allow" },
-  // M5.4 (Q42, ADM-INV-15, ADM-INV-13; VERIFY WITH CA/LEGAL): sending an issued invoice to the client, sending it again, revoking its links and pausing its reminders: Owner and Staff
+  // M5.4 (Q42, ADM-INV-15, ADM-INV-13; Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-28)): sending an issued invoice to the client, sending it again, revoking its links and pausing its reminders: Owner and Staff
   // (the Owner already issued it; sending moves no money). A new docs/04 §9 row.
   "invoices.send": { owner: "allow", staff: "allow" },
   // M5 research round (Q11, owner 2026-10-28; Rule 48(2) CGST Rules): the stored, never-sent DUPLICATE FOR SUPPLIER copy of an invoice or note is the books, so the Owner and the
   // Accountant read it. A new docs/04 §9 row.
   "invoices.supplierCopy": { owner: "allow", accountant: "allow" },
-  // M5.4 (Q43, LD58; VERIFY WITH CA/LEGAL): turning on the automatic issue of a client's monthly care invoice lets the system issue invoices WITHOUT the Owner each month, so only the Owner
+  // M5.4 (Q43, LD58; Researched 2026-10-28, s.31(5) CGST Act (08-C RA-24)): turning on the automatic issue of a client's monthly care invoice lets the system issue invoices WITHOUT the Owner each month, so only the Owner
   // may, with a fresh code (turning it off is `clients.finance.write`: Staff may). A new docs/04 §9 row.
   "clients.careAutoIssue": { owner: "step-up" },
   // Manual payments (Staff entries wait for the Owner's verification)

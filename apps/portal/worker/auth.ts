@@ -82,7 +82,7 @@ export const CONTACT_READ =
 export const USE_LINK_SQL =
   "UPDATE magic_link_tokens SET used_at = ?2 WHERE token_hash = ?1 AND used_at IS NULL AND expires_at > ?2 AND NOT EXISTS (SELECT 1 FROM auth_attempts WHERE key = ?3 AND locked_until > ?2)";
 // `ip` and `user_agent` stay NULL (data minimisation, LD15's logic: the session list does not exist for clients and the
-// access row of the sign-in keeps both; VERIFY WITH CA/LEGAL for the retention position).
+// access row of the sign-in keeps both; Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11) for the retention position).
 export const NEW_SESSION_SQL =
   "INSERT INTO client_sessions (id, contact_id, client_id, last_seen_at, idle_expires_at, abs_expires_at) SELECT ?2, c.id, c.client_id, ?3, ?4, ?5 FROM magic_link_tokens t JOIN contacts c ON c.id = t.contact_id WHERE t.token_hash = ?1 AND t.used_at = ?3 AND changes() = 1 AND c.portal_access = 1 AND c.anonymised_at IS NULL";
 

@@ -1,4 +1,4 @@
-// A client's statement of account (M5.5b, LD78, LD85; ADM-CLI-04; Q58, VERIFY WITH CA/LEGAL): `GET /clients/:id/statement`, one currency, a range, keyset pages of at
+// A client's statement of account (M5.5b, LD78, LD85; ADM-CLI-04; Q58, Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-28)): `GET /clients/:id/statement`, one currency, a range, keyset pages of at
 // most 50 lines with the balance before each page. Debits are the tax invoices, export invoices and debit notes (not voided); credits are the credit notes and the advance
 // payments recorded against proformas (Q9); proformas are not listed (LD22). The lines come from SQL (`@techaust/db/reports`), the running balance from core
 // `statementEntries` (bigint, no floats); a statement made today closes at the sum of the client's open balances (the ledger). Staff only: nothing here is sent to a client

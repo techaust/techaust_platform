@@ -1,4 +1,4 @@
-// M5.3 through the advance invoice and through random sequences [Q9, Q32, docs/09 :106; VERIFY WITH CA/LEGAL]: the supply FY of an invoice made for money already received, and
+// M5.3 through the advance invoice and through random sequences [Q9, Q32, docs/09 :106; Researched 2026-10-28, s.34(2) CGST Act (08-C RA-03)]: the supply FY of an invoice made for money already received, and
 // note sequences (lines, amount, full) that never exceed the invoice and add up to it exactly.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { call, one, sessionFor } from "./test-helpers.ts";
@@ -25,7 +25,7 @@ beforeEach(async () => {
 });
 afterEach(() => vi.useRealTimers());
 
-describe("the supply FY of an invoice for money already received [Q9, Q32; VERIFY WITH CA/LEGAL]", () => {
+describe("the supply FY of an invoice for money already received [Q9, Q32; Researched 2026-10-28, s.34(2) CGST Act (08-C RA-03)]", () => {
   it("money received on 28 March and the invoice made on 2 April: the credit deadline is the year of the money, 30 November of the same calendar year", async () => {
     const o = await farSession("owner");
     const c = await mkInvoiceClient();

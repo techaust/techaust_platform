@@ -1,4 +1,4 @@
-// The PDF of a client's statement of account (M5.5b stage B, LD79; JOB-PDF-01, ADM-CLI-04; Q19, Q57; VERIFY WITH CA/LEGAL for what a statement lists, Q58). One `pdf.statement` message on `PDF_QUEUE`
+// The PDF of a client's statement of account (M5.5b stage B, LD79; JOB-PDF-01, ADM-CLI-04; Q19, Q57; Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-28) for what a statement lists, Q58). One `pdf.statement` message on `PDF_QUEUE`
 // per `statement_pdfs` row (the admin API inserts the row and awaits the send). The row is a CACHE, not a record: nothing here freezes or seals anything.
 //   (1) read the row, its client and the Settings "email" row; a row that is done, failed or gone is acknowledged; a client anonymised since the request makes the row failed (`client_anonymised`), no PDF, no bell;
 //   (2) read the lines in ONE batch: the balance before `from`, the entries (`LIMIT 201`: more than 200 is `statement_too_long`), the range totals;
@@ -170,7 +170,7 @@ export async function processStatementPdf(
     logEvent("pdf.statement_skipped", { why: row.failed_at !== null ? "failed" : "done" });
     return "skipped";
   }
-  // Anonymised since the request: no PDF, no bell (nothing is left to try again; VERIFY WITH CA/LEGAL)
+  // Anonymised since the request: no PDF, no bell (nothing is left to try again; Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11))
   if (row.anonymised_at !== null) return fail(env, row, "client_anonymised", now, false);
 
   const [before, lines, totals] = await env.DB.batch([

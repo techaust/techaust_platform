@@ -1,4 +1,4 @@
-// The tax invoice for money received against a proforma (M5.2, ADM-INV-10, Q9, LD22, G-6; VERIFY WITH CA/LEGAL): `POST /invoices/:id/advance-invoice`, the
+// The tax invoice for money received against a proforma (M5.2, ADM-INV-10, Q9, LD22, G-6; Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17)): `POST /invoices/:id/advance-invoice`, the
 // Owner's action with a fresh code (`invoices.advance`). It is the only place M5 writes a paid amount: ONE batch (`advanceIssueStatements`,
 // packages/db/src/issue.ts) inserts the new invoice as a draft, freezes it with the next number of its series (every M5.1 condition, plus: the amount is
 // the invoice's total and the proforma is still the one that was read, with a balance of at least the amount), writes the `advance_receipts` row,
@@ -142,7 +142,7 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
     // (5) the stamp the person saw, and a client that still exists
     if (d.updated_at !== f.expectedProformaUpdatedAt) return err(c, STALE_VERSION, 409);
     if (ctx.client.anonymised_at !== null) return err(c, CLIENT_GONE, 409);
-    // (5b) the supply the proforma was sealed with must still be the client's (VERIFY WITH CA/LEGAL): nothing is written when it is not
+    // (5b) the supply the proforma was sealed with must still be the client's (Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17)): nothing is written when it is not
     if (proformaSupplyChanged(d.computed, ctx.client.gst_status)) return err(c, ADVANCE_SUPPLY_CHANGED, 409);
     // (6) the amount against what is left
     if (f.amountMinor > d.balance_minor) return err(c, ADVANCE_EXCEEDS_BALANCE, 409);

@@ -1,5 +1,5 @@
 // Totals, round-off and the INR view of a USD document: the one assembly shared by documents, inclusive splits and credit
-// notes [ADM-INV-05, ADM-INV-08, docs/05 §10, docs/08 G-9, G-10]. VERIFY WITH CA/LEGAL:
+// notes [ADM-INV-05, ADM-INV-08, docs/05 §10, docs/08 G-9, G-10]. Researched 2026-10-28, rule by rule in 08-C section 1:
 // - totals are the sums of the lines; the round-off makes the INR total a whole rupee (-49 to +50 paise, half up); USD is
 //   never rounded;
 // - a target total (inclusive splits, final credit notes) sets the round-off to the difference, within +-99.99 (the

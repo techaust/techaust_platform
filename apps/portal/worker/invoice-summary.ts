@@ -1,4 +1,4 @@
-// What the client sees of an invoice, proforma, credit note or debit note (M5.4; POR-06, LD62; VERIFY WITH CA/LEGAL): a summary built from the FROZEN row of the document and its frozen lines, never from the
+// What the client sees of an invoice, proforma, credit note or debit note (M5.4; POR-06, LD62; Researched 2026-10-28, s.34(3) CGST Act, Rule 53 (08-C RA-22)): a summary built from the FROZEN row of the document and its frozen lines, never from the
 // R2 envelope (the full document is the PDF, which this Worker streams but never builds) and never importing `@techaust/pdf` (a 40 KB module the portal does not carry). The same function answers the
 // emailed link (`/t/document`) and the signed-in routes (`/invoices/:id`), so the two can never disagree. Pure: no I/O.
 import { formatMoney, money } from "@techaust/core/money";

@@ -24,7 +24,7 @@ export type RecipientSnap = {
   contactName?: string;
   clientType?: "business" | "individual";
   gstStatus?: "registered" | "unregistered" | "overseas";
-  /** M5.2 (LD36): the client's service address when it has one (an invoice's "address of delivery", Rule 46(o); VERIFY WITH CA/LEGAL). */
+  /** M5.2 (LD36): the client's service address when it has one (an invoice's "address of delivery", Rule 46(o); Researched 2026-10-28, s.2(6) IGST Act, Rule 46 (08-C RA-18)). */
   deliveryAddress?: Address;
 };
 

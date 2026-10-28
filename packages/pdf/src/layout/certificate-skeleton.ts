@@ -1,4 +1,4 @@
-// The acceptance certificate (M4.5, ADM-PROP-08; VERIFY WITH CA/LEGAL), one A4 page in the document system of docs/06 §7: the logo over
+// The acceptance certificate (M4.5, ADM-PROP-08; Researched 2026-10-28, BSA 2023 s.63(4) (08-C RB-19)), one A4 page in the document system of docs/06 §7: the logo over
 // the verdigris rule, the title, the statement of what the page records, then three blocks: the document (what was accepted, with its
 // frozen total), who accepted it and when (IST and UTC), and the evidence (the IP address, the browser, how the person reached it, and the
 // fingerprints in full). Grayscale-safe: nothing is said by colour; the rule and hairlines read as black and grey. The total's rupee sign

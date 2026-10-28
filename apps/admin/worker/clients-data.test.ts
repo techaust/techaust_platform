@@ -417,7 +417,7 @@ describe("POST /contacts/:id/export [ADM-CLI-05]", () => {
 });
 
 // ---------------------------------------------------------------------------------------------------------------
-describe("POST /contacts/:id/erase: erase and anonymise [ADM-CLI-05; owner answers 2026-10-25, VERIFY WITH CA/LEGAL]", () => {
+describe("POST /contacts/:id/erase: erase and anonymise [ADM-CLI-05; owner answers 2026-10-25, Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11)]", () => {
   it("only the owner, with a fresh step-up", async () => {
     const client = await mkClient();
     const c = await mkContact(client);

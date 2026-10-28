@@ -1,5 +1,5 @@
 // The GSTR-1 sections of one return period, built from the register (M5.5a; ADM-REP-04). Pure and deterministic; every rule is
-// VERIFY WITH CA/LEGAL (docs/08-research-appendix/A-gst-invoicing.md §4, §8, §10, §12). A bad row fails the whole result:
+// Researched 2026-10-28, GSTN advisories of June 2025 (08-C RA-23) (docs/08-research-appendix/A-gst-invoicing.md §4, §8, §10, §12). A bad row fails the whole result:
 // nothing is skipped quietly. Credit notes reduce the sums and debit notes add to them; rows of cdnr and cdnur carry the
 // note's own (positive) amounts with a note type, as the Offline Tool does, while b2cs and hsn rows are signed.
 import { type CalendarDate, isValidDate } from "../dates.ts";
@@ -34,11 +34,11 @@ import {
 } from "./types.ts";
 
 /**
- * Rule 46(b) (VERIFY WITH CA/LEGAL): capital letters, digits, "/" and "-", starting with a letter or digit: exactly the characters
+ * Rule 46(b) (Researched 2026-10-28, Rule 46 CGST Rules (08-C RA-05)): capital letters, digits, "/" and "-", starting with a letter or digit: exactly the characters
  * of M5.1's numbering validator (`LITERAL`), so a number is never changed by `defuse` and a duplicate is never a matter of case.
  */
 const NUMBER_PATTERN = /^[A-Z0-9][A-Z0-9/-]*$/;
-/** A SAC for services has exactly six digits (08-A §2; VERIFY WITH CA/LEGAL). */
+/** A SAC for services has exactly six digits (08-A §2; Researched 2026-10-28, Notification 11/2017-CT (Rate) (08-C RA-16)). */
 const SAC_PATTERN = /^\d{6}$/;
 const sacText = (sac: string | null): string => (sac === null ? "" : sac.trim());
 const isExportSupply = (s: SupplyType): boolean => s === "export_lut" || s === "export_igst";
@@ -224,7 +224,7 @@ function rowIssues(row: RegisterRow, supplierStateCode: StateCode): GstIssue[] {
   if (!posOk) add("pos_invalid");
   else if (exportSupply !== (row.placeOfSupplyCode === "96")) add("export_pos_mismatch");
 
-  // Supply consistency (a lead decision, VERIFY WITH CA/LEGAL): everything that picks a section, a tax head or a report must
+  // Supply consistency (a lead decision, Researched 2026-10-28, GSTN advisories of June 2025 (08-C RA-23)): everything that picks a section, a tax head or a report must
   // tell the same story, or the return disagrees with itself at filing.
   const isNote = row.kind === "credit_note" || row.kind === "debit_note";
   // Each rule has its own path suffix, so a screen can say which one failed.

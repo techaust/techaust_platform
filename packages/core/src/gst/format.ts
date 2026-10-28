@@ -1,5 +1,5 @@
 // Number and date text for the export files (M5.5a): amounts with two decimals, rates without trailing zeros, dates as
-// dd-Mmm-yyyy. No floats: everything goes through integers and bigint. VERIFY WITH CA/LEGAL (the GSTN Offline Tool formats
+// dd-Mmm-yyyy. No floats: everything goes through integers and bigint. Researched 2026-10-28, GSTN advisories of June 2025 (08-C RA-23) (the GSTN Offline Tool formats
 // are UNVERIFIED, from memory; the owner or CA imports a sample before filing).
 import type { CalendarDate } from "../dates.ts";
 

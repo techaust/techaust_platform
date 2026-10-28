@@ -1,4 +1,4 @@
-// Credit and debit notes: the model the routes share (M5.3; ADM-INV-11, ADM-INV-01; LD38..LD54; VERIFY WITH CA/LEGAL for every rule): what is read about the invoice a
+// Credit and debit notes: the model the routes share (M5.3; ADM-INV-11, ADM-INV-01; LD38..LD54; Researched 2026-10-28, s.34(3) CGST Act, Rule 53 (08-C RA-22) for every rule): what is read about the invoice a
 // note is against, how a request becomes takes and a computed document, the draft's state and hash, the deadline, and the error lines. No route is here
 // (`invoice-notes.ts` makes the draft and answers the IMS route; `invoice-issue.ts` issues through `prepareNoteIssue`), and nothing here trusts a draft: every
 // figure is worked out again from the frozen invoice, the credit notes issued so far (summed by SQL) and the stored takes.
@@ -312,7 +312,7 @@ export function leftOf(p: ParentCtx): { totalLeft: number; taxableLeft: number[]
   };
 }
 
-/** The deadline of a credit note on this invoice (Q32, Q33; VERIFY WITH CA/LEGAL). */
+/** The deadline of a credit note on this invoice (Q32, Q33; Researched 2026-10-28, s.34(2) CGST Act (08-C RA-03)). */
 export function deadlineOf(p: ParentCtx, settings: InvoiceSettings): CreditDeadline {
   return creditNoteDeadline(
     {

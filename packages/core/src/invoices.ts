@@ -1,5 +1,5 @@
 // Invoice rules, pure (M5.1; ADM-INV-01..04, -07, ADM-APR-01/02; M5.2: ADM-INV-06, -08, -10, -18). No I/O, no zod, no floats. Error and blocker codes
-// only: the words are the screens'. EVERY RULE HERE IS A RESEARCHED DEFAULT: VERIFY WITH CA/LEGAL (Rule 46, Rule 47, Rule 48, GSTR-1 Table 13, 08-A §3 and §4).
+// only: the words are the screens'. EVERY RULE HERE IS A RESEARCHED DEFAULT: Researched 2026-10-28, Rule 48(2) CGST Rules (08-C RA-07) (Rule 46, Rule 47, Rule 48, GSTR-1 Table 13, 08-A §3 and §4).
 //
 //   - which types can be issued now (the tax invoice, the export invoice and the proforma; credit and debit notes wait for M5.3),
 //   - the status flow (the twin of the `documents_invoice_status_flow` trigger, which is GENERATED from a pinned copy of this table, and a db
@@ -119,7 +119,7 @@ export function canMoveInvoiceStatus(
 
 // ---- the IST day, the FY and the due date of an issue (LD19, Q3) ------------------------------------------------------------------------
 
-/** The invoice date: the IST day of the issue instant (Q3: never backdated, never in the future). VERIFY WITH CA/LEGAL (Rule 46(c), Rule 47). */
+/** The invoice date: the IST day of the issue instant (Q3: never backdated, never in the future). Researched 2026-10-28, Rule 46 CGST Rules (08-C RA-05) (Rule 46(c), Rule 47). */
 export const issueDateOf = (nowMs: number): string => toIsoDate(istDate(nowMs));
 
 /** The FY token ("2627") the number is taken in: judged by the IST date, so 31 March 23:59 IST is still the old FY. */
@@ -179,7 +179,7 @@ export type IssueBlocker = {
   readonly date?: string;
 };
 
-// ---- the mandatory-field checklist (ADM-INV-06, Q10; Rule 46; VERIFY WITH CA/LEGAL) --------------------------------------------------------
+// ---- the mandatory-field checklist (ADM-INV-06, Q10; Rule 46; Researched 2026-10-28, Rule 46 CGST Rules (08-C RA-05)) --------------------------------------------------------
 
 /** The document types the checklist is about (the tax invoice, the export invoice and the proforma). */
 export type ChecklistType = "tax_invoice" | "export_invoice" | "proforma";
@@ -366,7 +366,7 @@ const OWNER_OF: ReadonlyMap<IssueBlockerCode, ChecklistItem> = new Map(
 );
 
 /**
- * Everything that stops a draft from being issued, as codes (empty = it can be issued): the statutory list of Rule 46 (VERIFY WITH CA/LEGAL) as the
+ * Everything that stops a draft from being issued, as codes (empty = it can be issued): the statutory list of Rule 46 (Researched 2026-10-28, Rule 46 CGST Rules (08-C RA-05)) as the
  * checklist of ADM-INV-06. Order is stable: supplier, recipient, lines, totals, the type, then the M5.2 items (country, exchange rate, LUT, the
  * ₹50,000 rule, bank). A blocker whose checklist item does not apply to the type, or is switched off (`bankDetails` only), is not raised;
  * blockers no item owns (the exchange rate, the currency, the type) always apply to the types they are about. A proforma has no exchange rate, no
@@ -468,15 +468,15 @@ export type VoidFacts = {
   /** The invoice's issue date (IST day) and today's IST day: Q23 lets a void happen only inside the calendar month of issue. */
   readonly issueDate: string | null;
   readonly today: string;
-  /** M5.2 (LD28): a proforma is not a tax document, so the month rule of Q23 does not apply to it (VERIFY WITH CA/LEGAL). Absent: any other type. */
+  /** M5.2 (LD28): a proforma is not a tax document, so the month rule of Q23 does not apply to it (OPEN (08-C RA-10): may a tax invoice issued in error and never delivered be shown as cancelled in GSTR-1 Table 13 with no credit note?). Absent: any other type. */
   readonly type?: string;
 };
 
 /**
- * Q1 (VERIFY WITH CA/LEGAL, 08-A §4): an issued invoice can be voided only while it has not been emailed to the client and has no payment and no
+ * Q1 (OPEN (08-C RA-10): may a tax invoice issued in error and never delivered be shown as cancelled in GSTR-1 Table 13 with no credit note?, 08-A §4): an issued invoice can be voided only while it has not been emailed to the client and has no payment and no
  * credit or debit note; after that, a credit note is the correction. Q23: and only within the IST calendar month of issue (the GST return period of
  * an invoice is the month of its date), after which a credit note is the correction too; a proforma has no return period (LD28). The number stays and
- * the record stays (Rule 56(8)). Codes only. VERIFY WITH CA/LEGAL (the batch page offers both forms of the Q23 rule).
+ * the record stays (Rule 56(8)). Codes only. OPEN (08-C RA-10): may a tax invoice issued in error and never delivered be shown as cancelled in GSTR-1 Table 13 with no credit note? (the batch page offers both forms of the Q23 rule).
  */
 export function voidBlockers(f: VoidFacts): VoidBlockerCode[] {
   if (f.status === "void") return ["already_void"];
@@ -514,7 +514,7 @@ export type IssuedSummary = {
 };
 
 /**
- * Per series and FY: the first and last number issued, how many, how many were cancelled (voided) and the net (VERIFY WITH CA/LEGAL, 08-A §4:
+ * Per series and FY: the first and last number issued, how many, how many were cancelled (voided) and the net (OPEN (08-C RA-10): may a tax invoice issued in error and never delivered be shown as cancelled in GSTR-1 Table 13 with no credit note?, 08-A §4:
  * Table 13 lists each document nature with from and to, total, cancelled and net issued). Input order does not matter; the result is sorted
  * by series, then FY.
  */
