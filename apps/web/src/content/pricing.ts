@@ -2,7 +2,7 @@
 // apostrophes). The price list is not copy: it is built from the catalogue through the services hub's groups (07 §5.1)
 // and each service page's prices (lib/prices.ts), so no amount is typed here (WEB-G-07). The small-job threshold is
 // the settings default through {{terms:small_job_threshold}} (lead decision 2026-10-22, docs/13).
-// "How payment works" ends with the GST and USD notes of 07 §2.4 (content/shared.ts; GST: VERIFY WITH CA).
+// "How payment works" ends with the GST and USD notes of 07 §2.4 (content/shared.ts; GST: Researched 2026-10-28, 08-C RA-16).
 import type { FaqItem, PriceSpec, ServiceCode } from "./types";
 
 export const pricing = {

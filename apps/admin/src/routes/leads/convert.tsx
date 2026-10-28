@@ -4,7 +4,7 @@
 // country, `gstin_invalid` and `gstin_in_use` on the GSTIN; `already_converted` says so and offers the latest.
 // M3.3 carry-ins: the state (required for registered and unregistered Indian clients; it follows a valid GSTIN, a
 // different one shows the 07-J warning) and the billing-contact flag for the new contact.
-// VERIFY WITH CA/LEGAL: GST status and place of supply are confirmed at proposal and invoice time (M4).
+// Researched 2026-10-28, s.12 IGST (08-C RA-12): GST status and place of supply are confirmed at proposal and invoice time (M4).
 import { selectableStates, validateGstin } from "@techaust/core/gstin";
 import { type FormEvent, useState } from "react";
 import { api, type ConvertInput, errorText, type LeadDetail, RequestError } from "../../api.ts";

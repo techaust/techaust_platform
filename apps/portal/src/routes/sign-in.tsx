@@ -129,7 +129,8 @@ export function SignIn() {
           {busy ? COPY.signIn.busy : COPY.signIn.submit}
         </button>
         <p className="hint signin-notice">
-          {NOTICES.signIn} {NOTICES.signInSee} <a href={NOTICES.privacyHref}>{NOTICES.privacyNotice}</a>.
+          {NOTICES.signIn} {NOTICES.signInSee}{" "}
+          <a href={`${__WEBSITE_ORIGIN__}/privacy`}>{NOTICES.privacyNotice}</a>.
         </p>
       </form>
     </Card>

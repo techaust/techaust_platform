@@ -2,7 +2,7 @@
 // registered and unregistered Indian clients need, the 07-J mismatch warning), its currency, and optionally a service
 // address, tags, notes and a first contact, which becomes the primary contact in the same request. The billing address
 // and the money settings are set afterwards on the client's page (owner and staff). Optional fields are marked (owner
-// decision 2026-10-24). On success the client's page opens. GST treatment: VERIFY WITH CA/LEGAL.
+// decision 2026-10-24). On success the client's page opens. GST treatment: Researched 2026-10-28, s.12 IGST and Rule 46 CGST (08-C RA-12, RA-05).
 import { type FormEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { api, type ContactInput, errorText, type NewClientInput, RequestError } from "../../api.ts";

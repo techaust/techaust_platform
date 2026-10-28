@@ -1,4 +1,4 @@
-// EDF list (M5.5b; ADM-REP-07, Q16, Q56; VERIFY WITH CA/LEGAL): the export invoices of one month for the declaration the bank files, due 30 days after
+// EDF list (M5.5b; ADM-REP-07, Q16, Q56; Researched 2026-10-28, FEMA export regulations, 08-C RB-03): the export invoices of one month for the declaration the bank files, due 30 days after
 // the month ends. The previous month by default (or the one a bell names, `?month=YYYY-MM`); the list reads as soon as the month changes (no fresh code:
 // `reports.finance`). "Amount realised" stays blank until payments are recorded (M6.1), and the screen says why.
 import { istDate } from "@techaust/core/dates";

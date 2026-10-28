@@ -1,4 +1,4 @@
-// Data retention (ADM-SET-09, VERIFY WITH CA/LEGAL): how long unconverted leads, email logs, security logs and the
+// Data retention (ADM-SET-09; Researched 2026-10-28, DPDP Rule 8 and Rule 56 CGST, 08-C RB-09, RB-10, RA-25): how long unconverted leads, email logs, security logs and the
 // financial records with the audit log are kept, each with its legal minimum (the shared schema refuses less, and so
 // does the API). Legal hold and the nightly deletion job arrive in M7.4; the API's note says so.
 import { NumberUnit, SettingRow } from "../../components/form.tsx";

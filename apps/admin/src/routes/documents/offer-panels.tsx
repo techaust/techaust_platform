@@ -2,7 +2,7 @@
 // (the IP address and browser for the owner only, LD8), a decline with the client's reason, "Start project" for an accepted proposal
 // with the figures the route will write, and the emails: who each went to and how far it got, "Send again" and "Revoke links".
 // Everything shown is the API's (GET /documents/:id); the start-project figures come from the same plan function as the route.
-// VERIFY WITH CA/LEGAL: the acceptance evidence and the first-instalment draft type.
+// Researched 2026-10-28: the acceptance evidence (BSA 2023 s.63, 08-C RB-19) and the first-instalment draft type (s.13(2), s.31 CGST, 08-C RA-17).
 import { formatIstDateTime } from "@techaust/core/dates";
 import { type ReactNode, useState } from "react";
 import { Link } from "react-router";
