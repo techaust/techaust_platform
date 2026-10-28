@@ -2,14 +2,47 @@
 import { describe, expect, it } from "vitest";
 import {
   fyLabelOfToken,
+  hasSupplierCopy,
   isPdfKind,
   isPdfMessage,
   nextUtcMidnight,
   PDF_MAX_HOPS,
   pdfKeys,
   placeOfSupplyLabel,
+  supplierPdfKey,
   utcDateOf,
 } from "../src/pdf-jobs.ts";
+
+describe("the supplier copy (Q11, owner 2026-10-28)", () => {
+  it("pdf.supplier is a message of the PDF family, with an id and a bounded hop", () => {
+    expect(isPdfMessage({ v: 1, kind: "pdf.supplier", documentId: "d1", hop: 0 })).toBe(true);
+    expect(isPdfMessage({ v: 1, kind: "pdf.supplier", documentId: "d1", hop: PDF_MAX_HOPS })).toBe(true);
+    expect(isPdfKind({ v: 1, kind: "pdf.supplier" })).toBe(true);
+    for (const bad of [
+      { v: 1, kind: "pdf.supplier", documentId: "", hop: 0 },
+      { v: 1, kind: "pdf.supplier", documentId: "d1", hop: -1 },
+      { v: 1, kind: "pdf.supplier", documentId: "d1", hop: PDF_MAX_HOPS + 1 },
+      { v: 1, kind: "pdf.supplier", documentId: "d1", hop: 1.5 },
+      { v: 1, kind: "pdf.supplier", hop: 0 },
+    ])
+      expect(isPdfMessage(bad), JSON.stringify(bad)).toBe(false);
+  });
+
+  it("the key is the original's own stem with -supplier, never the original's key; the same checks as pdfKeys", () => {
+    const input = { type: "tax_invoice", fy: "2026-27", number: 12, version: 1 };
+    expect(supplierPdfKey(input)).toBe("docs/tax_invoice/2026-27/0012-v1-supplier.pdf");
+    expect(supplierPdfKey(input)).not.toBe(pdfKeys(input).pdf);
+    expect(() => supplierPdfKey({ ...input, fy: "2026" })).toThrow(RangeError);
+    expect(() => supplierPdfKey({ ...input, type: "../x" })).toThrow(RangeError);
+  });
+
+  it("a supplier copy is for a tax invoice, an export invoice, a credit note and a debit note; never a proforma or a proposal", () => {
+    for (const t of ["tax_invoice", "export_invoice", "credit_note", "debit_note"])
+      expect(hasSupplierCopy(t), t).toBe(true);
+    for (const t of ["proforma", "proposal", "estimate", "receipt", ""])
+      expect(hasSupplierCopy(t), t).toBe(false);
+  });
+});
 
 describe("isPdfMessage", () => {
   it("accepts the three kinds", () => {

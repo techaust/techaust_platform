@@ -99,6 +99,9 @@ const MATRIX = {
   // M5.4 (Q42, ADM-INV-15, ADM-INV-13; VERIFY WITH CA/LEGAL): sending an issued invoice to the client, sending it again, revoking its links and pausing its reminders: Owner and Staff
   // (the Owner already issued it; sending moves no money). A new docs/04 §9 row.
   "invoices.send": { owner: "allow", staff: "allow" },
+  // M5 research round (Q11, owner 2026-10-28; Rule 48(2) CGST Rules): the stored, never-sent DUPLICATE FOR SUPPLIER copy of an invoice or note is the books, so the Owner and the
+  // Accountant read it. A new docs/04 §9 row.
+  "invoices.supplierCopy": { owner: "allow", accountant: "allow" },
   // M5.4 (Q43, LD58; VERIFY WITH CA/LEGAL): turning on the automatic issue of a client's monthly care invoice lets the system issue invoices WITHOUT the Owner each month, so only the Owner
   // may, with a fresh code (turning it off is `clients.finance.write`: Staff may). A new docs/04 §9 row.
   "clients.careAutoIssue": { owner: "step-up" },

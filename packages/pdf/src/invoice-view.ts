@@ -52,6 +52,8 @@ export const EXPORT_PLACE_OF_SUPPLY = "Outside India (96)";
 
 /** Rule 48(2): the copy a PDF is. */
 export const ORIGINAL_FOR_RECIPIENT = "ORIGINAL FOR RECIPIENT";
+/** Rule 48(2): the mark of the stored copy the supplier keeps; it is never emailed, attached or linked to a client (owner 2026-10-28, Q11). */
+export const DUPLICATE_FOR_SUPPLIER = "DUPLICATE FOR SUPPLIER";
 
 /** Half of a rate in basis points, as the percent text of one head of an intra-state supply: 1800 gives "9 %", 250 gives "1.25 %", 25 gives "0.125 %". */
 export function halfRate(bp: number): string {
@@ -95,7 +97,12 @@ const SIGNATURE_MIMES: readonly string[] = ["image/png", "image/jpeg"];
 export function toInvoiceView(
   envelope: InvoiceEnvelope,
   cfg: ViewConfig,
-  opts: { signature?: VerifiedSignature | null; portalLink?: string | null } = {},
+  opts: {
+    signature?: VerifiedSignature | null;
+    portalLink?: string | null;
+    /** `supplier`: the stored DUPLICATE FOR SUPPLIER copy (a proforma has no copy mark either way). Default: the original for the recipient. */
+    copy?: "recipient" | "supplier";
+  } = {},
 ): InvoiceView {
   const { snapshot: s } = envelope;
   const header = s.header;
@@ -288,7 +295,12 @@ export function toInvoiceView(
     numberDisplay: envelope.numberDisplay,
     issueDate: shortIsoDate(header.document.issueDate),
     dueDate: header.document.dueDate === null ? "" : shortIsoDate(header.document.dueDate),
-    copyLabel: envelope.type === "proforma" ? null : ORIGINAL_FOR_RECIPIENT,
+    copyLabel:
+      envelope.type === "proforma"
+        ? null
+        : opts.copy === "supplier"
+          ? DUPLICATE_FOR_SUPPLIER
+          : ORIGINAL_FOR_RECIPIENT,
     logo: company.logo,
     supplier: {
       name: company.tradeName,

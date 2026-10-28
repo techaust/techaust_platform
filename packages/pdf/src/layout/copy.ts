@@ -69,6 +69,8 @@ export const PDF_COPY = {
 export const INVOICE_PDF_COPY = {
   title: "Tax Invoice",
   copyMark: "ORIGINAL FOR RECIPIENT",
+  /** The stored supplier copy, never sent (Rule 48(2); owner 2026-10-28, Q11; 07-R §6). */
+  supplierCopyMark: "DUPLICATE FOR SUPPLIER",
   header: {
     number: "Invoice number",
     date: "Invoice date",

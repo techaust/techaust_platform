@@ -212,6 +212,7 @@ export const ROUTES: readonly RouteDef[] = [
   R("POST", "/invoices/:id/debit-note", "invoices.draft", { audit: "invoice.note_create" }),
   R("POST", "/invoices/:id/ims-status", "invoices.ims", { audit: "invoice.ims_status" }),
   R("GET", "/invoices/:id/pdf", "invoices.read"),
+  R("GET", "/invoices/:id/pdf/supplier", "invoices.supplierCopy"),
   R("POST", "/invoices/:id/pdf/retry", "invoices.draft", { audit: "invoice.pdf_retry" }),
   // M5.4 (ADM-INV-15, ADM-INV-13, POR-06): send an issued invoice (Owner and Staff, Q42), revoke its links, pause or resume its reminders.
   R("POST", "/invoices/:id/send", "invoices.send", { audit: "invoice.send" }),

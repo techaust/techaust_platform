@@ -572,6 +572,7 @@ describe("the route table", () => {
       "POST /api/v1/invoices/:id/debit-note invoices.draft invoice.note_create",
       "POST /api/v1/invoices/:id/ims-status invoices.ims invoice.ims_status",
       "GET /api/v1/invoices/:id/pdf invoices.read -",
+      "GET /api/v1/invoices/:id/pdf/supplier invoices.supplierCopy -",
       "POST /api/v1/invoices/:id/pdf/retry invoices.draft invoice.pdf_retry",
       // M5.4 (added on purpose): send, revoke the links, pause and resume the reminders
       "POST /api/v1/invoices/:id/send invoices.send invoice.send",

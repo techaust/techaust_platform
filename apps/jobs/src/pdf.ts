@@ -21,6 +21,7 @@
 import { isInvoiceFlowType } from "@techaust/core/invoices";
 import { todayIst } from "@techaust/core/offers";
 import {
+  hasSupplierCopy,
   isPdfMessage,
   nextUtcMidnight,
   type OfferSweepMessage,
@@ -29,8 +30,10 @@ import {
   type PdfRenderMessage,
   type PdfSnapshotMessage,
   type PdfStatementMessage,
+  type PdfSupplierMessage,
   type PdfSweepMessage,
   pdfKeys,
+  supplierPdfKey,
   utcDateOf,
 } from "@techaust/core/pdf-jobs";
 import { bundleOf, loadStatements, type TermsRow } from "@techaust/db/documents";
@@ -266,12 +269,14 @@ async function verifiedSignature(
 /** `render` for an issued invoice (the common steps are `processRender`'s). Returns the outcome; throws for anything a retry can fix. */
 async function renderInvoice(
   env: Env,
-  msg: PdfRenderMessage,
+  msg: PdfRenderMessage | PdfSupplierMessage,
   row: RenderRow,
   envelopeText: string,
   now: number,
   clock: Clock,
   htmlOf: HtmlOf,
+  /** `supplier`: the stored DUPLICATE FOR SUPPLIER copy (Q11): the same frozen envelope, the other copy mark, its own key; no row is written, nothing is emailed. */
+  copy: "recipient" | "supplier" = "recipient",
 ): Promise<RenderOutcome> {
   const envelope = parseInvoiceEnvelope(envelopeText);
   const verdict =
@@ -290,20 +295,23 @@ async function renderInvoice(
     await env.DB.batch([refusedBell(env, row.id, label)]);
     return "refused";
   }
-  const keys = pdfKeys({ type: envelope.type, fy: envelope.fy, number: envelope.number, version: 1 });
+  const keyInput = { type: envelope.type, fy: envelope.fy, number: envelope.number, version: 1 };
+  const keys = pdfKeys(keyInput);
+  const target = copy === "supplier" ? supplierPdfKey(keyInput) : keys.pdf;
 
   // A PDF stored by an earlier run whose row update was lost: the first one stays, a document is never rendered twice.
-  const already = await env.DOCS.get(keys.pdf);
+  const already = await env.DOCS.get(target);
   if (already !== null) {
-    await settle(
-      env,
-      row,
-      keys.pdf,
-      await sha256Bytes(new Uint8Array(await already.arrayBuffer())),
-      { renders: 0, browserMs: 0 },
-      now,
-    );
-    logEvent("pdf.adopted", { family: "invoice" });
+    if (copy === "recipient")
+      await settle(
+        env,
+        row,
+        keys.pdf,
+        await sha256Bytes(new Uint8Array(await already.arrayBuffer())),
+        { renders: 0, browserMs: 0 },
+        now,
+      );
+    logEvent("pdf.adopted", { family: "invoice", copy });
     return "adopted";
   }
 
@@ -320,6 +328,7 @@ async function renderInvoice(
   const view = toInvoiceView(envelope, viewConfigFor(env.PORTAL_URL), {
     signature,
     portalLink: portalHost(env.PORTAL_URL),
+    copy,
   });
   const html = htmlOf(view);
   // LD33 (M5.2): an export invoice prints its frozen endorsement and a proforma its frozen notice, byte for byte, or nothing is rendered (the owners'
@@ -339,23 +348,70 @@ async function renderInvoice(
   const result = await renderPaced(env, html, pdfOptionsFor(view), clock);
   if (!result.ok) return failed(env, msg, result, now);
 
-  const stored = await putOnce(env.DOCS, keys.pdf, result.bytes, "application/pdf");
+  const stored = await putOnce(env.DOCS, target, result.bytes, "application/pdf");
   const bytes = stored.created ? result.bytes : new Uint8Array(await stored.existing.arrayBuffer());
-  await settle(
-    env,
-    row,
-    keys.pdf,
-    await sha256Bytes(bytes),
-    { renders: 1, browserMs: result.browserMs },
-    now,
-  );
+  if (copy === "supplier") {
+    // The copy is the supplier's own record: no row names it and nobody is told; the Browser Run time it used is counted like any render.
+    const date = dayOf(now);
+    await env.DB.batch([
+      stat(env, date, "pdf.renders", 1, now),
+      stat(env, date, "pdf.browser_ms", result.browserMs, now),
+      env.DB.prepare(HALF_BELL_SQL).bind(date, BROWSER_ALERT_MS, BELL_COPY.half),
+    ]);
+  } else {
+    await settle(
+      env,
+      row,
+      keys.pdf,
+      await sha256Bytes(bytes),
+      { renders: 1, browserMs: result.browserMs },
+      now,
+    );
+  }
   logEvent("pdf.rendered", {
     bytes: bytes.byteLength,
     browserMs: result.browserMs,
     hop: msg.hop,
     family: "invoice",
+    copy,
   });
   return "rendered";
+}
+
+/**
+ * Handles one `pdf.supplier` message (Q11, Rule 48(2)): the DUPLICATE FOR SUPPLIER copy of an issued tax invoice, export invoice, credit note or debit note, rendered from the SAME
+ * frozen envelope as the original (so only after the original's PDF exists), with every check the original has, and stored write-once under its own key. A proforma has none.
+ * A client that was anonymised takes no PDF at all (the standing rule).
+ */
+export async function processSupplierCopy(
+  env: Env,
+  msg: PdfSupplierMessage,
+  now = Date.now(),
+  clock: Clock = realClock,
+  htmlOf: HtmlOf = renderDocumentHtml,
+): Promise<RenderOutcome> {
+  const row = await env.DB.prepare(RENDER_ROW_SQL).bind(msg.documentId).first<RenderRow>();
+  if (!row || row.frozen_at === null || !hasSupplierCopy(row.type)) {
+    logEvent("pdf.supplier_skipped", { why: row ? "not_supported" : "not_found" });
+    return "skipped";
+  }
+  if (row.client_gone) {
+    logEvent("pdf.supplier_skipped", { why: "client_gone" });
+    return "skipped";
+  }
+  // The original's PDF comes first (it is made from the same envelope): until then there is nothing to copy; the original's own render sends this message again once it is stored.
+  if (row.pdf_sha256 === null || row.snapshot_r2_key === null) {
+    logEvent("pdf.supplier_skipped", { why: "original_not_ready" });
+    return "skipped";
+  }
+  const envelopeObject = await env.DOCS.get(row.snapshot_r2_key);
+  if (envelopeObject === null) throw new Error("the envelope object is missing");
+  return renderInvoice(env, msg, row, await envelopeObject.text(), now, clock, htmlOf, "supplier");
+}
+
+/** Asks for a document's supplier copy (one message; a queue that fails is the caller's to log: the admin download asks again on demand). */
+export async function enqueueSupplierCopy(env: Pick<Env, "PDF_QUEUE">, documentId: string): Promise<void> {
+  await env.PDF_QUEUE.send({ v: 1, kind: "pdf.supplier", documentId, hop: 0 } satisfies PdfSupplierMessage);
 }
 
 const GONE_SQL = "SELECT 1 AS gone FROM clients WHERE id = ?1 AND anonymised_at IS NOT NULL";
@@ -433,6 +489,8 @@ async function settle(
   }
   await env.DB.batch(statements);
   await onRendered(env, { kind: "document", documentId: row.id });
+  // Q11: the supplier's copy follows the original, as its own unit of work (after `onRendered`, so a failed send leaves the client's PDF and its emails untouched).
+  if (hasSupplierCopy(row.type)) await enqueueSupplierCopy(env, row.id);
 }
 
 /** The page of a document view (the layout). A test passes its own to check the integrity rules whatever the layout prints (LD33). */
@@ -455,6 +513,8 @@ export async function processRender(
   if (row.pdf_sha256 !== null) {
     // Done already. A redelivery whose first run stored the PDF but died before `onRendered` completes it here (idempotent).
     await onRendered(env, { kind: "document", documentId: row.id });
+    // the supplier copy too (idempotent: a copy already stored is adopted without a render)
+    if (hasSupplierCopy(row.type)) await enqueueSupplierCopy(env, row.id);
     logEvent("pdf.render_skipped", { why: "done" });
     return "skipped";
   }
@@ -540,7 +600,7 @@ export async function processRender(
 /** A render that did not give a PDF: delay (rate, quota) or throw (anything a retry might fix). */
 export async function failed(
   env: Env,
-  msg: PdfRenderMessage | PdfCertificateMessage | PdfStatementMessage,
+  msg: PdfRenderMessage | PdfCertificateMessage | PdfStatementMessage | PdfSupplierMessage,
   result: Exclude<Awaited<ReturnType<typeof renderPaced>>, { ok: true }>,
   now: number,
 ): Promise<"delayed"> {
@@ -686,6 +746,7 @@ export async function processPdf(
   if (body.kind === "pdf.snapshot") await processSnapshot(env, body);
   else if (body.kind === "pdf.render") await processRender(env, body, now, clock);
   else if (body.kind === "pdf.certificate") await processCertificate(env, body, now, clock);
+  else if (body.kind === "pdf.supplier") await processSupplierCopy(env, body, now, clock);
   else if (body.kind === "offer.sweep") await processOfferSweep(env, body);
   // M5.5b: a statement PDF is routed by `handleQueue` to `statement-pdf.ts` before it reaches here (that file imports this one); a message that does arrive is acknowledged and logged.
   else if (body.kind === "pdf.statement") logEvent("pdf.statement_misrouted");
@@ -739,5 +800,7 @@ export async function processPdfDeadLetter(env: Env, body: unknown, now = Date.n
       ),
     ]);
   }
+  // A supplier copy that ran out of tries rings no bell (07 has no line for it, and nothing is lost: the original is made, and the Owner's or Accountant's download asks for the copy
+  // again on demand); it is logged below.
   logEvent("pdf.dead_letter", { kind: isPdfMessage(body) ? body.kind : "unknown" });
 }
