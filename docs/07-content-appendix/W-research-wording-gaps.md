@@ -19,6 +19,7 @@ _The designer of the research and wording task found these lines on screens with
 - Care toggle hint (replaces 07-U §6's hint, which named the wrong people and recipients): "On the billing day, the invoice is issued and emailed to the client's billing contacts who have portal access and can see finance. Only an owner can turn this on; an owner or a staff member can turn it off."
 - Toggle on, but the owner who turned it on is no longer active: "Not in effect"
 - Care plan page, billing section: heading "Billing" · "Last billed period" · "Not billed yet" · "No invoice on record for this period" · "Next billing day" · "None, the plan is cancelled" · "The owner's choices allow this draft to be issued automatically." · "Any field still missing is listed on the draft's page." · "Open the draft"
+- Care dead-letter bells (to owners): "A care invoice couldn't be drafted. Open the care plan to see why." · "A care invoice draft could not be issued by itself. Check the draft."
 - Portal (client-facing), invoices sign-in hint: "Sign in to your client portal to see all your invoices and payment requests in one place."
 
 ## 3. Reports and statements (07-V)
@@ -41,3 +42,5 @@ _The designer of the research and wording task found these lines on screens with
 3. After 31 October the deadline banner keeps only "Only {days} days left for a credit note on this invoice.": intended (the advice date has passed).
 4. `VerifyNote`: §4.
 5. The portal's privacy link: a portal `WEBSITE_ORIGIN` var (staging: the staging website; production: https://techaust.com), the builder's.
+6. Checklist "Authorised signatory" switched off: the PDF leaves out the signature block ("For {company}", the image and "Authorised signatory"); an electronically issued invoice needs none (08-C RA-06).
+7. No bell for a failed supplier copy: the admin's download asks jobs again, which is enough.
