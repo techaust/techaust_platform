@@ -1866,6 +1866,16 @@ html:has(.mmenu[open]) {
   line-height: var(--text-sm--line-height);
 }
 
+/* 07-A §9: what the acceptance records, said just above the button that records it; quieter than the binding sentence it follows. */
+.confirm__record {
+  margin: var(--space-3) 0 0;
+}
+
+/* 07-A §9: what a sign-in records, under the button. */
+.signin-notice {
+  margin: var(--space-4) 0 0;
+}
+
 .radios {
   margin: 0 0 var(--space-5);
   padding: 0;

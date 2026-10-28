@@ -317,6 +317,9 @@ describe("accessibility statement version (07-A §8)", () => {
     expect(legal.accessibility.changes).toEqual([
       { version: "0.2", date: "2026-10-22", note: "First published version." },
     ]);
-    expect(legal.privacy.version).toBe("0.1");
+    // 07-A v0.3 (2026-10-28) moved the privacy notice and the refund policy to 0.2; the rest stay at 0.1.
+    expect(legal.privacy.version).toBe("0.2");
+    expect(legal["refund-policy"].version).toBe("0.2");
+    expect(legal.terms.version).toBe("0.1");
   });
 });
