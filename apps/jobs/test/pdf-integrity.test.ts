@@ -25,7 +25,7 @@ function randomBytes(n: number): Uint8Array {
 }
 
 async function deflate(raw: Uint8Array): Promise<Uint8Array> {
-  const stream = new Blob([raw as BlobPart]).stream().pipeThrough(new CompressionStream("deflate"));
+  const stream = new Blob([raw.slice().buffer]).stream().pipeThrough(new CompressionStream("deflate"));
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 

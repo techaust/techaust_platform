@@ -33,7 +33,7 @@ const latin1 = new TextDecoder("latin1"); // one char per byte, so a string inde
 
 async function inflates(data: Uint8Array): Promise<boolean> {
   try {
-    const stream = new Blob([data as BlobPart]).stream().pipeThrough(new DecompressionStream("deflate"));
+    const stream = new Blob([data.slice().buffer]).stream().pipeThrough(new DecompressionStream("deflate"));
     const reader = stream.getReader();
     for (;;) {
       const { done } = await reader.read();

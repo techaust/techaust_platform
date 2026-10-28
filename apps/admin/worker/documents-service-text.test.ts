@@ -6,7 +6,7 @@ import { SEED_TEMPLATES } from "@techaust/db/seed-templates";
 import { beforeAll, describe, expect, it } from "vitest";
 import { putPaymentTerms } from "./test-catalogue.ts";
 import { insert } from "./test-clients.ts";
-import { call, one, rows, sessionFor } from "./test-helpers.ts";
+import { call, one, rows, sessionFor, type TestSession } from "./test-helpers.ts";
 import {
   codeOf,
   getDoc,
@@ -58,7 +58,7 @@ async function draftOf(
 }
 
 /** Hides the template's other empty optional sections (the person's job), so the draft can be sent; returns the new `updatedAt`. */
-async function hideEmptySections(o: { cookie: string }, id: string): Promise<number> {
+async function hideEmptySections(o: TestSession, id: string): Promise<number> {
   const v = await getDoc(o, id);
   const res = await patchDoc(o, id, {
     expectedUpdatedAt: v.updatedAt,
