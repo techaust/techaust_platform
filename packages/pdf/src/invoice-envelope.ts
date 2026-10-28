@@ -113,7 +113,8 @@ function validAdvance(v: unknown): boolean {
     isStr(v.proformaNumber) &&
     isStr(v.proformaIssueDate) &&
     isStr(v.receivedOn) &&
-    isStr(v.receiptId)
+    isStr(v.receiptId) &&
+    (v.igstNoLutFy === undefined || isStr(v.igstNoLutFy))
   );
 }
 

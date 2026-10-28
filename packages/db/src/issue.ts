@@ -319,6 +319,14 @@ export const NOTE_COUNTS_SQL = `SELECT c.type, count(*) AS count FROM documents 
 const FROZEN_BY_THIS_BATCH =
   "EXISTS (SELECT 1 FROM documents n WHERE n.id = ?1 AND n.status = 'issued' AND n.frozen_at = ?2)";
 
+/**
+ * Q37: a letter of undertaking with an ARN is saved in the `tax` setting for the FY token `?FY` (the pure twin is core `lutFor`: the `luts` list, and the one
+ * legacy `lut {arn, fy}` of M3). Used inside a freeze WHERE, so a LUT removed between the read and the freeze refuses the batch.
+ */
+export const LUT_FOR_FY_SQL = `EXISTS (SELECT 1 FROM settings ts WHERE ts.key = 'tax' AND (
+           EXISTS (SELECT 1 FROM json_each(ts.value, '$.luts') l WHERE json_extract(l.value, '$.fy') = ?FY AND trim(coalesce(json_extract(l.value, '$.arn'), '')) <> '')
+           OR (json_extract(ts.value, '$.lut.fy') = ?FY AND trim(coalesce(json_extract(ts.value, '$.lut.arn'), '')) <> '')))`;
+
 /** What every invoice freeze needs, whoever the authority is (the owner, an approval, or the owner's advance action). */
 type FreezeBase = Omit<InvoiceIssueArgs, "authority" | "bell">;
 
@@ -572,6 +580,11 @@ export type AdvanceIssueArgs = Omit<InvoiceIssueArgs, "authority" | "bell" | "ex
   /** Owner only: the session whose live step-up the freeze checks. */
   sessionId: string;
   amountMinor: number;
+  /**
+   * Q37 (owner 2026-10-28): the FY token ("2627") of the receipt day, set only when this is an export invoice on the LUT route; the freeze then needs a LUT with
+   * an ARN saved for that FY in the `tax` setting at the issue instant (`advance_lut_missing`). Null on every other advance invoice.
+   */
+  lutFy: string | null;
   /** ISO date the money arrived, and `normaliseReference` of its bank or gateway reference (the idempotency key with the proforma). */
   receivedOn: string;
   referenceNorm: string;
@@ -683,8 +696,9 @@ export function advanceIssueStatements(db: D1Database, a: AdvanceIssueArgs): Sen
     { sql: OWNER_AUTHORITY_SQL, bind: a.sessionId },
     {
       where: ` AND total_minor = ?30
-         AND EXISTS (SELECT 1 FROM documents p WHERE p.id = ?31 AND p.type = 'proforma' AND p.frozen_at IS NOT NULL AND p.status IN ('issued', 'converted') AND p.updated_at = ?32 AND p.balance_minor >= ?30 AND p.client_id = documents.client_id AND p.currency = documents.currency)`,
-      binds: [a.amountMinor, a.proformaId, a.expectedProformaUpdatedAt],
+         AND EXISTS (SELECT 1 FROM documents p WHERE p.id = ?31 AND p.type = 'proforma' AND p.frozen_at IS NOT NULL AND p.status IN ('issued', 'converted') AND p.updated_at = ?32 AND p.balance_minor >= ?30 AND p.client_id = documents.client_id AND p.currency = documents.currency)
+         AND (?33 IS NULL OR ${LUT_FOR_FY_SQL.replaceAll("?FY", "?33")})`,
+      binds: [a.amountMinor, a.proformaId, a.expectedProformaUpdatedAt, a.lutFy],
     },
   );
   return {

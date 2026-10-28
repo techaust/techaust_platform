@@ -242,7 +242,12 @@ export type InvoiceView = {
   /** M5.2: a proforma's notice (printed under the title) and its "Valid until" (its due date); null on every other type. */
   proforma: { notice: string; validUntil: string } | null;
   /** M5.2: the invoice made for money received against a proforma: the proforma's number and date, and the day the money arrived; null otherwise. */
-  advance: { proformaNumber: string; proformaDate: string; receivedOn: string } | null;
+  advance: {
+    proformaNumber: string;
+    proformaDate: string;
+    receivedOn: string;
+    igstNoLutFy: string | null;
+  } | null;
   /** M5.3: a credit or debit note's facts; null on every other type. */
   note: InvoiceViewNote | null;
   /** The footer notes pinned at issue (Markdown), or null. */

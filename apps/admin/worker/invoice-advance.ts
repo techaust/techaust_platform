@@ -13,6 +13,7 @@ import { sha256Hex } from "@techaust/core/catalogue";
 import { fyOf } from "@techaust/core/dates";
 import { uuidv7 } from "@techaust/core/ids";
 import {
+  advanceRouteFor,
   type ExportRoute,
   fxSourceLabel,
   INVOICE_SERIES_OF,
@@ -22,6 +23,7 @@ import {
   parseFxRate,
 } from "@techaust/core/invoices";
 import { maxNumber, sqlPrintfPattern } from "@techaust/core/numbering";
+import { lutsOf } from "@techaust/core/tax";
 import { headerExtrasJson, invoiceSealOf, type TermsRef } from "@techaust/db/documents";
 import { advanceIssueStatements } from "@techaust/db/issue";
 import { Hono } from "hono/tiny";
@@ -49,6 +51,7 @@ import {
   ADVANCE_REFERENCE_USED,
   ADVANCE_SUPPLY_CHANGED,
   advanceDraft,
+  advanceLutMissing,
   bankStampOf,
   blockersOf,
   CLIENT_CHANGED,
@@ -88,6 +91,11 @@ export const advanceBody = z.strictObject({
   /** A USD proforma needs the rate of the day the money arrived (Q9, LD24). */
   fx: z.optional(fxIn),
   confirmInrExport,
+  /**
+   * Q37 (owner 2026-10-28): the route of an export tax invoice. Omitted: the proforma's own. `lut` needs a LUT saved for the FY of `receivedOn`
+   * (`advance_lut_missing`); `igst` charges IGST at 18 % and prints the 07-S section 9 line. Only for an overseas client.
+   */
+  route: z.optional(z.enum(["lut", "igst"])),
 });
 
 /** What a refused advance batch looks like when it comes back as an error. */
@@ -158,9 +166,30 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
     const proformaComputed = d.computed;
     if (!proformaComputed || !d.number_display || !d.issue_date) return err(c, PROFORMA_NOT_ISSUED, 409);
     const today = todayOf(now);
-    // Review 1: the route is the PROFORMA's (its own pick, else the one its computation used), never the live Settings of the day the money arrives.
-    const route =
-      ctx.client.gst_status === "overseas" ? proformaRouteOf(d.export_mode, proformaComputed) : null;
+    // Review 1: the route starts from the PROFORMA's (its own pick, else the one its computation used), never the live Settings of the day the money arrives.
+    // Q37: then the Owner's pick (`route`), and the LUT route needs a LUT for the FY of the day the money arrived (core `advanceRouteFor`).
+    let route: ExportRoute | null = null;
+    let lutFy: string | null = null;
+    let igstNoLutFy: string | null = null;
+    let routeFy = fy;
+    if (ctx.client.gst_status === "overseas") {
+      const chosen = advanceRouteFor({
+        proformaRoute: proformaRouteOf(d.export_mode, proformaComputed) ?? ctx.settings.tax.exportMode,
+        requested: f.route ?? null,
+        receivedOn: f.receivedOn,
+        luts: lutsOf(ctx.settings.tax),
+      });
+      if (!chosen.ok)
+        return chosen.code === "advance_lut_missing"
+          ? err(c, advanceLutMissing(chosen.fyLabel), 409, { fy: chosen.fyLabel })
+          : err(c, BAD_REQUEST, 400);
+      route = chosen.route;
+      routeFy = chosen.fy;
+      lutFy = chosen.route === "lut" ? chosen.fy : null;
+      igstNoLutFy = chosen.igstNoLut ? chosen.fyLabel : null;
+    } else if (f.route !== undefined) {
+      return err(c, BAD_REQUEST, 400);
+    }
     const made = advanceDraft({
       amountMinor: f.amountMinor,
       currency,
@@ -221,7 +250,8 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
     const blockers = blockersOf(state, ctx.client, ctx.settings, computation, {
       bank: ctx.bank,
       issueDate,
-      fy,
+      // Q37: the LUT that counts is the one of the FY of the receipt day.
+      fy: routeFy,
       fxRefDate: f.receivedOn,
       advance: true,
     });
@@ -255,7 +285,7 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
       state,
       settings: ctx.settings,
       client: ctx.client,
-      issueFy: fy,
+      issueFy: routeFy,
       mode,
       declaration,
       advance: {
@@ -264,6 +294,7 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
         proformaIssueDate: d.issue_date,
         receivedOn: f.receivedOn,
         receiptId,
+        ...(igstNoLutFy ? { igstNoLutFy } : {}),
       },
     });
     const seal = await invoiceSealOf({
@@ -317,6 +348,7 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
       expectedProformaUpdatedAt: d.updated_at,
       sessionId: u.sessionId,
       amountMinor: f.amountMinor,
+      lutFy,
       receivedOn: f.receivedOn,
       referenceNorm: norm,
       receiptId,

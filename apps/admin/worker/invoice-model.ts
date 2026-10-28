@@ -808,6 +808,12 @@ export const ADVANCE_SUPPLY_CHANGED = e(
   "advance_supply_changed",
   "The client's GST details changed after this proforma was issued, so the tax on this payment can't be worked out from it. Check the client's details with your CA before recording the payment.",
 );
+/** Q37 (07-S section 9): the message carries the FY as people read it ("2027-28"); the same FY is in the error's `details`. */
+export const advanceLutMissing = (fyLabel: string): ApiError =>
+  e(
+    "advance_lut_missing",
+    `There's no LUT saved for FY ${fyLabel}, when this payment was received, so this tax invoice can't be issued without IGST. Save that year's LUT ARN in Settings › Tax first, or issue it with IGST.`,
+  );
 export const ADVANCE_DATE_INVALID = e(
   "advance_date_invalid",
   "The date received can't be before the proforma's date or in the future.",

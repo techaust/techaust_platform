@@ -167,7 +167,7 @@ function advanceHtml(view: InvoiceView): string {
   if (!a) return "";
   return p(
     "inv-advance",
-    advanceLine(a.proformaNumber, a.proformaDate, a.receivedOn),
+    advanceLine(a.proformaNumber, a.proformaDate, a.receivedOn, a.igstNoLutFy),
     ' data-testid="advance"',
   );
 }

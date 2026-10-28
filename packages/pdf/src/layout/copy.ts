@@ -220,5 +220,12 @@ export const STATEMENT_PDF_COPY = {
 } as const;
 
 /** The line under the title of a tax or export invoice issued for a payment received against a proforma (07-S §8, Q9; PENDING approval). */
-export const advanceLine = (proformaNumber: string, proformaDate: string, receivedOn: string) =>
-  `Against proforma ${proformaNumber} of ${proformaDate}, payment received on ${receivedOn}.`;
+export const advanceLine = (
+  proformaNumber: string,
+  proformaDate: string,
+  receivedOn: string,
+  igstNoLutFy: string | null = null,
+) =>
+  igstNoLutFy === null
+    ? `Against proforma ${proformaNumber} of ${proformaDate}, payment received on ${receivedOn}.`
+    : `Against proforma ${proformaNumber} of ${proformaDate}, payment received on ${receivedOn}. Issued with IGST: no LUT was in place for FY ${igstNoLutFy}.`;

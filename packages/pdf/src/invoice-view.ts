@@ -324,6 +324,7 @@ export function toInvoiceView(
           proformaNumber: header.advance.proformaNumber,
           proformaDate: shortIsoDate(header.advance.proformaIssueDate),
           receivedOn: shortIsoDate(header.advance.receivedOn),
+          igstNoLutFy: header.advance.igstNoLutFy ?? null,
         }
       : null,
     note: noteView,

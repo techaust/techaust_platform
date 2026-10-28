@@ -587,6 +587,11 @@ export type InvoiceSnapshotInput = {
     readonly proformaIssueDate: string;
     readonly receivedOn: string;
     readonly receiptId: string;
+    /**
+     * Q37 (07-S section 9): present only when the proforma was under LUT, this invoice was issued with IGST and no LUT was in place for the FY of the receipt day;
+     * the FY as people read it ("2027-28"). Absent on every other advance invoice, so older seals keep their hash.
+     */
+    readonly igstNoLutFy?: string;
   };
   /**
    * M5.3 (LD39): a credit or debit note's request, its reason and the facts of the invoice it is against, as frozen with it (`header_extras.noteOf`). Present

@@ -38,6 +38,59 @@ export function lutFor(fyToken: string, luts: readonly Lut[]): { fy: string; arn
   return hit ? { fy: hit.fy, arn: hit.arn } : null;
 }
 
+/** The route the tax invoice for a payment received may take (Q37, owner 2026-10-28), as the API names it: `igst` is the engine's `igst_paid`. */
+export type AdvanceRouteChoice = "lut" | "igst";
+
+export type AdvanceRoute =
+  | {
+      readonly ok: true;
+      readonly route: ExportRoute;
+      /** The FY of the receipt day, as its token ("2627") and its label ("2026-27"): the LUT of THIS year is the one that is needed. */
+      readonly fy: string;
+      readonly fyLabel: string;
+      /** The proforma was under LUT, this invoice is issued with IGST and no LUT is saved for the receipt year: the PDF says so (07-S section 9). */
+      readonly igstNoLut: boolean;
+    }
+  | {
+      readonly ok: false;
+      readonly code: "advance_lut_missing";
+      readonly fy: string;
+      readonly fyLabel: string;
+    }
+  | { readonly ok: false; readonly code: "advance_route_invalid" };
+
+/**
+ * The route of a tax invoice for a payment received, judged by the FY of the day the payment arrived (the time of supply of an advance, s.13(2) CGST),
+ * not by the day the invoice is issued (Q37; Researched 2026-10-28, Rule 96A "prior to export", 08-C RA-19). `proformaRoute` is the proforma's own;
+ * `requested` is the Owner's pick (omitted: the proforma's). The LUT route needs a LUT saved for the receipt FY, else `advance_lut_missing`; the Owner
+ * then saves the LUT or asks for the IGST route. An LUT route on a proforma that charged IGST is refused (`advance_route_invalid`: a payment cannot
+ * move from tax charged to none). An unreadable date is `advance_route_invalid`.
+ */
+export function advanceRouteFor(input: {
+  readonly proformaRoute: ExportRoute;
+  readonly requested?: AdvanceRouteChoice | null;
+  readonly receivedOn: string;
+  readonly luts: readonly Lut[];
+}): AdvanceRoute {
+  const d = parseIsoDate(input.receivedOn);
+  if (!d) return { ok: false, code: "advance_route_invalid" };
+  const fy = fyOfDate(d);
+  const want: ExportRoute =
+    input.requested === "igst" ? "igst_paid" : input.requested === "lut" ? "lut" : input.proformaRoute;
+  if (want === "lut" && input.proformaRoute === "igst_paid")
+    return { ok: false, code: "advance_route_invalid" };
+  const hasLut = lutFor(fy.token, input.luts) !== null;
+  if (want === "lut" && !hasLut)
+    return { ok: false, code: "advance_lut_missing", fy: fy.token, fyLabel: fy.label };
+  return {
+    ok: true,
+    route: want,
+    fy: fy.token,
+    fyLabel: fy.label,
+    igstNoLut: want === "igst_paid" && input.proformaRoute === "lut" && !hasLut,
+  };
+}
+
 export type LutReminder = {
   /** The FY that is running, and the one after it, as tokens and as people read them ("2026-27"). */
   readonly currentFy: string;

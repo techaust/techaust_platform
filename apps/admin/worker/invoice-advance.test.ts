@@ -4,6 +4,7 @@
 
 import { env } from "cloudflare:workers";
 import { sha256Hex } from "@techaust/core/catalogue";
+import { fyOf } from "@techaust/core/dates";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { advanceLineDescription } from "./invoice-model.ts";
 import { call, one, rows, sessionFor } from "./test-helpers.ts";
@@ -665,7 +666,10 @@ describe("an overseas proforma gives an export invoice [LUT rule, FX, Q8]", () =
     const before = await snapshot(pf.id);
     const res = await advance(o, pf.id, usd({ amountMinor: 50_000 }));
     expect(res.status).toBe(409);
-    expect((await json(res)).blockers as J[]).toEqual([{ code: "lut_missing", fy: currentFy() }]);
+    // Q37 (2026-10-28): the LUT of the FY of the day the money arrived is judged first, and the refusal names that FY (details.fy)
+    const refused = await json(res);
+    expect((refused.error as J).code).toBe("advance_lut_missing");
+    expect((refused.error as J).details).toEqual({ fy: fyOf(Date.now()).label });
     expect(await snapshot(pf.id)).toEqual(before);
     // a proforma made for the IGST route keeps it for its advance invoice
     const igst = await mkProforma(o, { client: mkOverseasClient });
