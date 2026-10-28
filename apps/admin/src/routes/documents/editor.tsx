@@ -249,6 +249,7 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
             onRequest={() => setDialog("request")}
             sections={s.sections}
             onOpenSection={onOpenSection}
+            type={view.type}
           />
         </div>
 

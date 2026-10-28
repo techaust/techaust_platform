@@ -37,6 +37,7 @@ import { type DocumentView, documentsApi, type ViewLine } from "../../lib/docume
 import { convertedToInvoice } from "../../lib/invoices.ts";
 import { invoicesApi } from "../../lib/invoices-api.ts";
 import { canResend, OFFER_COPY } from "../../lib/offers.ts";
+import { PDF_COPY } from "../../lib/pdf.ts";
 import { useUser } from "../../session.tsx";
 import { CareDialog, InvoiceDialog, ReviseDialog } from "./dialogs.tsx";
 import { LinesTable, ScheduleTable, SectionBody, TaxPreview } from "./money.tsx";
@@ -174,6 +175,7 @@ export function ReadView({ view, reload }: { view: DocumentView; reload: () => v
               canRetry={allowed(user.role, "proposals.send") && !v.client.anonymised}
             />
           )}
+          {!v.frozen && <p className="hint">{PDF_COPY.afterSend(v.type)}</p>}
           {v.acceptance && (
             <AcceptancePanel
               docId={v.acceptance.documentId}

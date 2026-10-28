@@ -1,14 +1,26 @@
 // Lists and lookups of M3.1: the staff list's keyset paging and filters, reactivation, the invite email, the bell, the global
 // search and the audit viewer [ADM-G-03, ADM-G-05, ADM-G-09, ADM-AUTH-07, ADM-AUD-02, ADM-MAIL-01]. Permissions per role for every
 // route are in rbac.test.ts; the audit row of every mutation is checked there too.
+import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { FINANCE_AUDIT_ACTIONS } from "@techaust/core/audit";
 import { fromIst } from "@techaust/core/dates";
 import { uuidv7 } from "@techaust/core/ids";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { LEADS_SQL, USERS_SQL } from "./search.ts";
+import app from "./test-app.ts";
 import { mkClient } from "./test-clients.ts";
-import { bodyOf, call, captureQueue, countOf, one, rows, sessionFor, tokenOfLink } from "./test-helpers.ts";
+import {
+  bodyOf,
+  call,
+  captureQueue,
+  countOf,
+  ORIGIN,
+  one,
+  rows,
+  sessionFor,
+  tokenOfLink,
+} from "./test-helpers.ts";
 
 // biome-ignore lint/suspicious/noExplicitAny: response bodies in tests are read loosely
 type J = Record<string, any>;
@@ -355,6 +367,26 @@ describe("the bell [ADM-G-09]", () => {
     expect(await countOf("notifications", "user_id = ? AND read_at IS NULL", other.id)).toBe(1); // the other member's untouched
     expect(await countOf("audit_log", "action = 'notification.read' AND actor_id = ?", s.id)).toBe(1);
     expect(await countOf("audit_log", "action = 'notification.read_all' AND actor_id = ?", s.id)).toBe(1);
+  });
+
+  it("a mark-read POST that sends `{}` has its body read before the answer (front binding error, staging 2026-10-28)", async () => {
+    const s = await sessionFor("sales");
+    const mine = await bell(s.id);
+    const req = new Request(`${ORIGIN}/api/v1/notifications/${mine}/read`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": "2",
+        Origin: ORIGIN,
+        Cookie: s.cookie,
+      },
+      body: "{}",
+    });
+    const ctx = createExecutionContext();
+    const res = await app.fetch(req, env, ctx);
+    await waitOnExecutionContext(ctx);
+    expect(res.status).toBe(200);
+    expect(req.bodyUsed).toBe(true);
   });
 
   it("every role has a bell", async () => {
