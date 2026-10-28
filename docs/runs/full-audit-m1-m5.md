@@ -282,5 +282,37 @@ Shots: `.logs/shots/a3-admin/` (main checkout).
 - 11 goes on the owner's copy page.
 - A re-check covers the screens and widths not checked here.
 
+### A4 documents and portal: reviewer claude-opus-5-5/high, 2026-10-29 ~03:15–03:40 IST, on bf7e7e8f: APPROVE (no critical or high)
+**Ran:**
+- tests: portal 620, pdf 333, email 128, admin documents, links, offers and approvals 236, jobs offers, pdf and layout gate 118: all pass;
+- locally: a proposal sent to 2 contacts and frozen; the portal accept (with a Bengali name), the error summary, a decline, the record, invoices, the ended link and the email previews, at 4 widths in both themes; axe clean except one moderate `region` item.
+
+Shots: `.logs/shots/a4-docs/` (main checkout).
+
+**Findings:**
+1. **Medium:** the first click after correcting the name is lost: the error line is removed on blur and the form shifts (`apps/portal/src/components/decision/decision-panel.tsx:263-265`). Fix: keep the error's space or clear it on input; add an e2e test.
+2. **Medium:** the document number breaks mid-number in the accept dialog at 375 (`portal.css:1158`). Fix: no-wrap the number; consider a sticky dialog footer.
+3. **Medium:** no Bengali or Devanagari font is embedded in the PDFs (`packages/pdf/src/generated/assets.ts`). The certificate prints the typed name. Fix: OFL Noto Sans Bengali and Devanagari subsets as fallbacks, plus a layout-gate test with an Indic name.
+4. **Medium, owner's copy (also for the CA and lawyer):** the terms say "our own pre-existing tools, which we list in this proposal", but no proposal has such a list (`packages/db/src/seed/terms.ts:12`). Owner's choice: add a section, or reword the line.
+5. **Low (one-line):** "has Approved your request" has a capital letter mid-sentence (`packages/email/src/offers.ts:171`).
+6. **Low, owner's copy:** estimates are worded as proposals in three places: the binding sentence, the confirmation email (`offers.ts:89`), and a sentence that repeats the accept notice.
+7. **Low:** the Acceptance section still says "Accept this offer…" after a decision. Hide it once decided.
+8. **Low:** the agreement checkbox's own hit area is 22 px. Make the whole row the label.
+9. **Low:** when the newest version is frozen but not yet rendered, an accept on the old version is refused as `superseded` and leads to a 404 (`offer-sql.ts:94,116`). Fix: point to the newest rendered version, or say "A new version is being prepared".
+10. **Low:** the portal sample home lists one item twice (preview data). The "Send to" item belongs to the M5 fix.
+
+**Lead's addition (grep):** 29 bare `VERIFY WITH CA/LEGAL` tags remain in code comments (for example `apps/admin/src/routes/clients/data-tools.tsx:2`, `settings/terms.tsx:1`, `reports/sales-register.tsx:1`). That breaks the 2026-10-28 rule ("Researched <date>, <source> (08-C <ID>)" or "OPEN (08-C <ID>): <question>"). Fix: retag each one against 08-C.
+
+**Requirements:**
+- ADM-PROP-07/08/10, POR-01/02/03/05 and POR-06 (read side): met.
+- JOB-PDF-01: partial (Indic glyphs; the 20-PDF burst).
+- POR-04, 07–09 and 11 are M7.1.
+
+**Not verified:** rendered PDFs, the certificate and the emails from jobs (memory was too low to run jobs), real mail clients, Browser Run fonts, NVDA, Safari and Firefox, phones, staging.
+
+**Lead's triage:**
+- 1–3, 5 and 7–9 and the VERIFY retagging go into an A4 fix task.
+- 4 and 6 go on the owner's copy page.
+
 ## Handover
 _(written at the end of each conversation)_
