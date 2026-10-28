@@ -2,7 +2,8 @@
 // usual with "Try again". The jobs Worker makes it a few seconds after the send; while it waits, this panel asks the API again every
 // 10 seconds for 5 minutes (from the send, or from the last "Try again"), then stops and offers the retry. Errors while asking are
 // ignored: the next ask, or the retry, says what is true. The download is a plain same-origin link: the API answers an attachment.
-// Wording: 07-P §3–§4 (PENDING the owner's word-for-word approval).
+// Once the PDF turns ready while the page is open, `onReady` tells the page, so the emails that waited for it are read again (finding 10).
+// Wording: 07-P §3–§4 (approved by the owner with 07-Q, 2026-10-26).
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { documentPdfHref, errorText, RequestError } from "../../api.ts";
 import { Download, RotateCcw } from "../../components/icons.tsx";
@@ -43,6 +44,8 @@ export function PdfPanel(props: {
   source?: PdfSource | undefined;
   /** Shown under the download once the PDF is ready (an invoice's supplier copy, 07-R §7). */
   extra?: ReactNode;
+  /** The PDF became ready while this page was open (it was not ready when the page loaded). */
+  onReady?: (() => void) | undefined;
 }) {
   const words = props.words ?? OFFER_WORDS;
   const source = props.source ?? DOCUMENT_SOURCE;
@@ -54,6 +57,14 @@ export function PdfPanel(props: {
   const heading = useRef<HTMLHeadingElement>(null);
   const moved = useRef(false);
   const phase = pdfPhase(pdf.state, since, now);
+  // Tell the page once, when the state moves to ready here (not when it was ready from the start).
+  const wasReady = useRef(props.initial.state === "ready");
+  const onReady = props.onReady;
+  useEffect(() => {
+    if (pdf.state !== "ready" || wasReady.current) return;
+    wasReady.current = true;
+    onReady?.();
+  }, [pdf.state, onReady]);
 
   // Ask again while the PDF is being made; stop once it is ready or the 5 minutes are over.
   useEffect(() => {
@@ -149,6 +160,27 @@ export function PdfPanel(props: {
       )}
     </section>
   );
+}
+
+/** How long after the PDF is ready the page keeps reading the emails that waited for it (the jobs Worker sends them a moment later). */
+const MAIL_AFTER_PDF_MS = 60_000;
+
+/**
+ * Sweep finding 10: once the PDF is ready, emails that waited for it go out a few seconds later. While the page still shows one waiting,
+ * it reads the page again every 10 seconds, for a minute at most, so the Emails panel moves on without a manual reload.
+ */
+export function useMailAfterPdf(waiting: boolean, reload: () => void) {
+  const since = useRef<number | null>(null);
+  useEffect(() => {
+    if (!waiting) {
+      since.current = null;
+      return;
+    }
+    since.current ??= Date.now();
+    if (Date.now() - since.current > MAIL_AFTER_PDF_MS) return;
+    const t = window.setTimeout(reload, PDF_POLL_MS);
+    return () => window.clearTimeout(t);
+  });
 }
 
 /** A small A4 sheet (1 : 1.414) with the document's verdigris header rule and the 45° cut on its top corner; the lines are dashed while

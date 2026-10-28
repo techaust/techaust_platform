@@ -11,7 +11,14 @@ import { EmptyState, PageHeader } from "../components/display.tsx";
 import { FileText, Plus, Search } from "../components/icons.tsx";
 import { LoadFailed, useLoad } from "../components/states.tsx";
 import { allowed } from "../lib/access.ts";
-import { DOC_COPY, DOC_PENDING, QUOTE_STATUSES, STATUS_LABELS, TYPE_LABELS } from "../lib/documents.ts";
+import {
+  DOC_COPY,
+  DOC_PENDING,
+  LIST_EMPTY_BY_TYPE,
+  QUOTE_STATUSES,
+  STATUS_LABELS,
+  TYPE_LABELS,
+} from "../lib/documents.ts";
 import { documentsApi, type QuoteStatus, type QuoteType } from "../lib/documents-api.ts";
 import { useUser } from "../session.tsx";
 import { NewDocumentDialog } from "./documents/new.tsx";
@@ -166,7 +173,13 @@ function DocumentList() {
             empty={
               <EmptyState
                 icon={filtered ? <Search /> : <FileText />}
-                title={filtered ? DOC_PENDING.listNoMatchTitle : DOC_COPY.listEmptyTitle}
+                title={
+                  filtered
+                    ? DOC_PENDING.listNoMatchTitle
+                    : type
+                      ? LIST_EMPTY_BY_TYPE[type]
+                      : DOC_COPY.listEmptyTitle
+                }
                 action={
                   filtered ? (
                     <button type="button" className="btn btn--secondary" onClick={clear}>

@@ -141,7 +141,13 @@ export const LinesPanel = memo(function LinesPanel(props: {
         </ol>
       )}
       <div className="doc-lines__add">
-        <button type="button" className="btn btn--secondary" onClick={() => setPicking(true)} disabled={full}>
+        <button
+          type="button"
+          id="doc-add-catalogue"
+          className="btn btn--secondary"
+          onClick={() => setPicking(true)}
+          disabled={full}
+        >
           <Package size={20} />
           {DOC_PENDING.addCatalogueLine}
         </button>

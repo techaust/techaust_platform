@@ -23,6 +23,7 @@ import {
   issueBody,
   issueLabelFor,
   seriesPreview,
+  shownBlockers,
   splitAtPlace,
   voidTitle,
 } from "../../lib/invoices.ts";
@@ -45,10 +46,11 @@ export function BlockerList(props: {
   /** M5.2: the oldest a rate's date may be, in days (Settings › Tax), for its blocker's sentence. */
   maxAgeDays?: number | undefined;
 }) {
-  if (props.blockers.length === 0) return null;
+  const shown = shownBlockers(props.blockers);
+  if (shown.length === 0) return null;
   return (
     <ul className="blockers inv-blockers">
-      {props.blockers.map((b, i) => {
+      {shown.map((b, i) => {
         const line = blockerLine(b, props.currency, { maxAgeDays: props.maxAgeDays });
         const t = blockerTarget(b, props.clientId);
         let body: React.ReactNode = line;
