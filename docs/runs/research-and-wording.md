@@ -296,3 +296,20 @@ Only `apps/admin/src`, `apps/portal/src`, `apps/web/src` changed (plus this repo
 1. `debit_tax_only_invalid` also answers an odd tax on an intra-state invoice (CGST must equal SGST). 07-T §9's only line ("Enter tax only: the taxable value of a "Tax charged too low" note is zero.") doesn't tell the Owner what to change there. A line such as "Enter an even amount: it is split equally between CGST and SGST." would need approval (not added).
 2. The 07-L SAC hint still ends "VERIFY WITH CA." on screen (approved copy). RA-16 settles the codes with an open sub-question (998313 for some services): keep or reword?
 3. The billing section showed "Next billing day 28 Oct 2026" for a plan started 1 Oct with billing day 1 (server data; probably the catch-up day). Worth a builder look if unintended.
+
+## Review (2026-10-28; reviewer Opus 5.5 high; copied by the lead)
+**SEND BACK** for one high finding. Lead integration before it: web build, `pnpm check` and `pnpm test` all pass (admin 3,153, core 1,748, db 450, pdf 318, jobs 507, portal 620, web 443, email 128, auth 135, ui 469).
+1. **High:** the "no rate was published that day" flag is a bare integer (0046), saved on a draft and judged against the issue day later, so a statement made for Monday passes a Tuesday issue when Tuesday had a rate. Fix: store the day the statement covers; accept only when it equals the day of supply; regenerate 0046/0047 (not on staging yet).
+2. **Medium:** an odd tax amount on an intra-state tax-only debit note shows the generic `debit_tax_only_invalid` line; 07-W §5.9 not used; an LUT parent gets the same line.
+3. **Medium (visible):** Settings › Data retention lets email logs go below 12 and shows the raw schema text "Too small: expected number to be >=12".
+4. **Medium:** some tags say "Researched" where 08-C or the line says open (`invoice-model.ts:596` RA-19, `export-invoice.ts:16,149`, `invoices.ts:1160` cites RA-10 for an unrelated rule; script-mapped tags containing "not verified" or "whether").
+5. Low: `CHECKLIST_SWITCHABLE` stale (`packages/core/src/invoices.ts:301`).
+6. Low: a note against a parent issued with the flag doesn't carry it (`note-model.ts:627`).
+7. Low: banner advice dates fixed to October though the cutoff is a setting; ignores `filedOn`.
+8. Low: repeated supplier-copy GETs can enqueue several renders.
+9. Low: supplier-copy rules repeated in the SPA (`invoices-api.ts:413`); unused `supplierCopyMark`.
+10. Low: SPA compatibility code for an older API (`notes.ts:132`, `api.ts` top-level `fy`/`maxAgeDays`/`details`, `tax-settings.ts`).
+11. Low: "Next billing day" shows today after the 06:00 IST scan has already run; intended catch-up otherwise.
+Checked and fine: Q37 in every layer, discount after sale in every layer, the tax-only maths, migrations (no rebuild), signatory freeze, email-log floor, supplier-copy permissions, write-once and never sent, byte budgets, legal pages and §9 notices word for word. Visual: web legal pages, portal sign-in, admin enrolment and Settings › Tax checked (axe 0); the invoice screens judged from the designer's real-API screenshots (not re-run). model-audit: three research analyst runs of 12:27–12:31 loaded no skill (kept: no §9 row fits pure legal research, as recorded for R-A).
+
+**Lead triage:** all eleven fixed in this task. Copy: 07-W §5.9 (odd amount), §5.10 (retention lines), §5.11 (no tax-only debit on an LUT invoice); 07-T §4 advice line now "{advice date}", worked out from the cutoff month and capped at the filing date. Fix builder: Sonnet 5.5, high (finding 1 is high), one agent for worker and SPA files (no designer runs in parallel); then a re-check at medium.

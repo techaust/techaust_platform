@@ -46,3 +46,5 @@ _The designer of the research and wording task found these lines on screens with
 7. No bell for a failed supplier copy: the admin's download asks jobs again, which is enough.
 8. Catalogue SAC hint (07-L): "The six-digit service code printed on invoices." (the visible "VERIFY WITH CA." goes; the SAC list is researched, 08-C RA-16, and the care-plan code is on the CA's list).
 9. `debit_tax_only_invalid` when the tax on an intra-state invoice is odd (CGST must equal SGST): "Enter an even amount: it is split equally between CGST and SGST."
+10. Settings › Data retention, email logs (08-C RB-09): hint "Never below 12 months (DPDP Rule 8(3))." · error "Keep email logs at least 12 months (DPDP Rule 8(3))."
+11. A tax-only debit note is not offered on an invoice under LUT (it carries no tax); no line needed.
