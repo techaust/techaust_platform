@@ -189,7 +189,7 @@ export type ChecklistSettings = {
   readonly bankDetails: boolean;
   readonly paymentLink: false;
   /** A house rule too (07-S §3): absent is on. It owns no blocker (the signature is optional on an electronic invoice, Rule 46(q) proviso), so switching it off is the Owner's record of the choice. */
-  readonly signatory?: boolean;
+  readonly signatory?: boolean | undefined;
 };
 export const DEFAULT_CHECKLIST: ChecklistSettings = { bankDetails: true, paymentLink: false };
 
