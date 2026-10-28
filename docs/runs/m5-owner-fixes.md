@@ -330,3 +330,125 @@ Inputs: the builder's and designer's open items, and two audit findings that lan
 3. **The white flash, sweep 16:** apply the designer's three-edit patch above (`apps/admin/public/theme-boot.js`, `apps/admin/index.html`, `apps/admin/worker/headers.test.ts`).
 4. **The editing column (designer question 2):** keep the list on the Send panel only (lead's decision). No change.
 - **Done means:** `pnpm check` and `pnpm test` all green, including the 6 tests run at any hour (prove it with fake timers set to 01:00 IST). Bundle and startup budgets reported. Append "### Fix round 1 report" here.
+
+### Fix round 1 report
+Builder: Opus 5.5 (high), branch `fix/m5-owner-fixes-r1` from `origin/fix/m5-owner-findings` (bb6f3b5), worktree `agent-ab4f52512f8d28dfa`. Run 01:50–02:45 IST, inside the 00:00–05:29 IST window of A0 finding 1, so every real-clock run below is also a night run.
+
+**Skills:**
+- `cloudflare:workers-best-practices`: the bounded inflate cancels the stream instead of buffering it; the check stays pure; no hand-written `Env` (the new test binding is declared in `test-env.d.ts`).
+- `cloudflare:workers-profiling`: the method and its limit. The pool measures wall time, not Worker CPU, so the staging `cpuTimeMs` reading stays the gate.
+- `cloudflare:wrangler`: used only to read the existing configs; no config changed.
+- Not loaded: `frontend-design` (the white-flash fix is the designer's patch applied as given, no design work); `cloudflare:cloudflare` (no new platform feature); the AWS, Supabase, Upstash and Sentry skills (no matching work).
+- Context7: vitest 4 (`useFakeTimers` with `shouldAdvanceTime`, `setSystemTime`, the test context's `annotate`).
+
+**Commits:**
+1. `7f4bcb2` test(admin): IST today in note helpers, no clock read at module load, guard and opt-in shifted clock [ADM-INV-11, ADM-INV-17]
+2. `8d924ee` fix(admin): set the in-app theme before the first paint, no white flash [ADM-G-01]
+3. `8bf0c01` fix(jobs): bound the PDF check: 8 KB inflate threshold, 1.5 MiB budget, partial accept, hash once [JOB-PDF-01, ADM-PROP-05]
+4. `beb4af3` test(jobs): Huffman-coded PDF check timings and the integrity_partial log line [JOB-PDF-01]
+5. This report.
+
+#### 1. CI clock (A0 findings 1 and 7)
+- **The two helpers:** `test-notes.ts:63` takes the FX date from `issueDateOf(Date.now())` (the server's IST day); `note-research.test.ts:231` takes it from `todayIso()`.
+- **No clock read at module load any more:**
+  - `documents-send.test.ts`: `fyToken()`.
+  - `invoices-issue.test.ts`: `fy()`.
+  - `test-invoices.ts`: `invoiceCounter` defaults to the FY at the moment of the call. Every caller reads it before and after at the same clock, and tests that move the clock put it back in `afterEach`.
+  - `reports-totals.test.ts`: the whole file is pinned with `pinClock()` in `beforeAll`, `today` is that pinned day, and `afterAll` puts the real clock back.
+  - `dashboard-finance.test.ts`: `istToday()` is `issueDateOf(Date.now())`, and the two fixture tests call `pinClock()`.
+- **`pinClock(at = NOON_IST_MID_FY)`** (in `test-helpers.ts`): fakes Date only, with `shouldAdvanceTime: true` so timestamps keep increasing. The default is 2026-10-15 12:00 IST (mid-month, mid-FY).
+- **Guard, `apps/admin/worker/clock-ist.test.ts`** (each rule first checks itself against sample lines):
+  - (a) No `new Date()` or `new Date(Date.now() ± …)` cut with `.toISOString().slice(0, 10)` without the IST offset, in every `worker/*.ts` file and every SPA source.
+  - (b) No top-level constant in a test or helper whose value reads the clock.
+  - (c) At 01:00 IST (19:30 UTC the day before), `todayIso()` is the IST day, and `mkIssuedInvoice` with an overseas client issues with `issue_date` = `fx_date` = the IST day. This is the exact path that failed.
+- **Opt-in shifted clock** (`worker/test-setup.ts`; the binding `TEST_CLOCK_AT` comes from `TA_TEST_CLOCK` in `vitest.config.ts`):
+  - With `TA_TEST_CLOCK=<ISO instant>` every test runs as if the run had started at that instant (Date only, still moving).
+  - A test that sets its own clock keeps it.
+  - Unset (as in CI), nothing changes.
+- **Proof with fake timers at 01:00 IST:** with `TA_TEST_CLOCK=2026-11-18T01:00:00+05:30`, the files note-research, invoice-notes, reports-totals, dashboard-finance, documents-send and clock-ist: 6 files, 93 passed.
+- **Control** (the old `test-notes.ts` line put back for the run, never committed):
+  - At `2026-11-18T12:00+05:30`, invoice-notes and reports-totals pass (47 tests).
+  - At `2026-11-18T01:00+05:30`, invoice-notes fails 3 tests with `fx_same_day_exists` dated 2026-11-18, the reported failure.
+  - So the shift is live, and the fix is what makes the tests pass. reports-totals passes even with the old line now, because the file is pinned to noon.
+- **Real-clock night run:** the 7 touched files at 01:53 IST, 137 passed. The full admin suite at 02:26 IST: 104 files, **3,218 passed, 0 failed**.
+
+#### 2. PDF check bound (A6 findings 1 and 5; docs/13, 2026-10-29)
+**The check (`packages/pdf/src/integrity.ts`):**
+- `INFLATE_MIN_BYTES = 8192` and `INFLATE_BUDGET_BYTES = 1_572_864` (1.5 MiB).
+- An option `{ inflateBudget }`, used by the tests only. A non-finite value means the default, never unbounded.
+- Each Flate stream is read chunk by chunk with a running total. Once the total passes the budget, the reader is cancelled, and every later eligible stream is counted but not inflated.
+- The verdict is `{ ok: true }` when everything was checked, else `{ ok: true, partial: { inflated, skippedStreams } }`.
+- The header, xref and `/Length` checks always run. A broken stream found before the budget runs out is still `stream_checksum`.
+
+**The consumer (`apps/jobs/src/browser.ts`, `readPdf`):** a `partial` verdict logs `pdf.integrity_partial {bytes, inflated, skippedStreams}` (numbers only) and returns the PDF. It is never refused and never retried for its size.
+
+**Hashed once:** `putPdfOnce(bucket, key, rendered)` in `apps/jobs/src/pdf.ts` hashes the rendered bytes once, passes that hash to R2 and returns it for the row. Only when another render got there first does it read and hash the stored file. It is used by the invoice family and the supplier copy, proposals and estimates, certificates and statements (`statement-pdf.ts`).
+
+**Tests in Node (`packages/pdf/test/integrity.test.ts`):**
+- The constants.
+- A Flate stream of 8,191 bytes is not inflated; one of 8,192 bytes is (a block swapped inside it gives `stream_checksum`).
+- The budget path: three 100 KB streams with a 150 KB budget give `skippedStreams` 2, and `inflated` between the budget and one chunk past it. Damage in a skipped stream is the accepted risk; damage in the first stream is still caught.
+- The default budget stops a 16 MB blank-image stream just past 1.5 MiB, with `ok: true`.
+- **Budget 0:** nothing is inflated, the owner's 3, 1, 2 permutation is still `xref_offset`, and a bad `/Length` is still `stream_length`.
+
+**Tests in workerd (`apps/jobs/test/pdf-integrity.test.ts`):**
+- `renderPdf` past the budget returns the bytes, with one `pdf.integrity_partial` line of numbers only and no `pdf.damaged`.
+- `putPdfOnce` makes one digest for a new file, and returns the stored file and its hash when another render got there first.
+
+**Wall time** (workerd test pool on this shared 8 GB PC, with another agent's browser sweep running; mean of 5–20 runs after a warm-up; wall time, not Worker CPU). Each synthetic PDF has 755 small objects and one Flate stream:
+
+| Stream | File | Check |
+|---|---|---|
+| Random, 262 KB (the builder's case) | 308,932 B | 8.0–9.3 ms (builder: 6.15) |
+| Huffman-coded, 262 KB inflated | 220 KB | 3.9–5.2 ms |
+| Huffman-coded, 1,556,480 B inflated (just under the budget) | 1.08 MB | 19.4–19.8 ms, of which 7.8 ms with nothing inflated |
+| Huffman-coded, 4 MiB inflated, cut at the budget | 2.82 MB | 42.0–50.6 ms, of which 18.8 ms with nothing inflated |
+
+- The Huffman stream is skewed text from 40 symbols with no long repeats, so deflate codes it with dynamic Huffman tables, not stored blocks.
+- Inflating costs about 7–8 ms of wall time per MiB of Huffman output here. The budget caps that part at about 12–23 ms, whatever the stream's size: a 40 MB blank stream took 269 ms unbounded and 36 ms capped.
+- The rest of the cost grows with the file's size: the latin1 decode and the regex scans of the whole file, about 7 ms per MB here.
+
+#### 3. White flash (sweep finding 16)
+- The designer's patch, as given:
+  - `apps/admin/public/theme-boot.js` reads `ta-admin-theme` and sets `data-theme` for light or dark (written with `const` and `catch {}` to satisfy the linter);
+  - `apps/admin/index.html` gets `<meta name="color-scheme" content="light dark">` and `<script src="/theme-boot.js">` before the module;
+  - `headers.test.ts` expects the two scripts in that order, the boot script inside `<head>`, and the same key in the boot script and `src/lib/theme.ts`.
+- The built `dist/client/index.html` keeps the boot script before the module and the stylesheet. `script-src 'self'` covers it.
+
+#### 4. The editing column
+No change (lead's decision).
+
+#### Commands and results
+- `bash tools/heavy.sh --log r1-install pnpm install --frozen-lockfile --offline`: ok. The worktree lacked the apps' bins; no version changed and the lockfile is untouched.
+- `pnpm exec biome check --write <changed files>`: clean.
+- Targeted `vitest run` on the admin worker tests:
+  - 7 files on the real clock at 01:53 IST: 137 passed;
+  - with `TA_TEST_CLOCK` at 01:00 IST: 93 passed;
+  - the control runs described in item 1.
+- `pnpm --filter @techaust/pdf test`: 333 passed. Coverage: statements 97.58 %, branches 92.79 %, functions 99.28 %, lines 99.4 %.
+- `pnpm --filter @techaust/jobs test`: 517 passed (31 files).
+- `pnpm build`: exit 0. **Budgets:**
+
+  | Worker | Bundle (bytes) | Startup (limit 200 ms) |
+  |---|---|---|
+  | jobs | 856,496 / 1,000,000 (+617 on the builder's 855,879) | 118.0 ms |
+  | admin API | 594,764 / 800,000 (unchanged) | 99.7 ms |
+  | admin front | 99,131 | 19.1 ms |
+  | portal | 96,834 | 17.0 ms |
+
+- `pnpm test` (full, 02:26 IST), all passed: auth 135, ui 469 (2 skipped), core 1,755, email 128, db 452, pdf 333, web 443, jobs 517, portal 620, admin 3,218.
+- `pnpm check` (the final check, which runs the whole-repository lint once): exit 0. Lint checked 1,268 files with 10 warnings, all in files this branch doesn't touch. Typecheck, the binding guard, the content lint, the Worker config guard and the migration guard (49 migrations, none new) all ok.
+- No dev server started, no hosted service touched, no PDF committed (every PDF in the tests is built by the test), no migration.
+
+#### Not verified
+- The check's Worker CPU on staging. Every figure above is wall time in the local pool on a loaded PC, so the staging `cpuTimeMs` of `pdf.rendered` (the A6 follow-up) is still the gate.
+- A real Browser Run PDF going through the bounded check (none can be made locally).
+- The white flash in a browser. It was checked through the built HTML and the header test, not with a screenshot (the screens are the designer's).
+
+#### Open questions
+1. **The 1.5 MiB budget against the 10 ms CPU limit.**
+   - Here, a check that uses the whole budget on Huffman-coded streams costs about 19 ms of wall time for a 1.08 MB file and 42–50 ms for a 2.8 MB file. The size-dependent part (decode and scans) is about 7 ms per MB on its own.
+   - If staging CPU comes anywhere near these wall figures, a large signed PDF could pass the 10 ms limit through the check alone.
+   - Cheap options for the lead, one constant or a few lines each: a smaller budget (512 KiB would roughly halve the inflate part), or no inflating at all above a file size.
+   - I kept the decided 1.5 MiB.
+2. The base branch moved while I worked (`937e86d`, `1b788a8`: the audit A1 and A2 notes in `docs/runs/full-audit-m1-m5.md`). This branch doesn't touch that file, so the merge should be clean.
