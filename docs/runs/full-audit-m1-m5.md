@@ -138,5 +138,44 @@ Each area gets a fresh audit with no anchoring on earlier reviews: code, tests, 
 - 9: the runbook part goes into the A6 task; Traces is the owner's choice.
 - The `review_items` gap goes to M6.1.
 
+### A1 foundation and security: reviewer claude-opus-5-5/high, 2026-10-29 ~02:00–02:40 IST, on bb6f3b5b: SEND BACK
+Tests run: auth 135/135, admin auth-related 1,683/1,683, portal auth and scope 421/421.
+1. **High:** the portal's pages have no security headers.
+   - Where: `apps/portal/public/_headers` has never existed, and the Worker runs only for `/api/*`.
+   - Missing: CSP, `frame-ancestors`, HSTS, nosniff, Referrer-Policy, Permissions-Policy, COOP, CORP and `X-Robots-Tag`. So Accept and Continue can be framed, and any future XSS has no CSP behind it.
+   - Fix: a `_headers` file modelled on admin's, plus a build guard that every SPA's `dist/client/_headers` holds the docs/08 §3.1 set.
+2. **Medium:** no `Cross-Origin-Resource-Policy: same-site` on static files (`apps/admin/public/_headers`, `apps/web/public/_headers`).
+3. **Medium, owner's yes (workflow):** no dependency audit in CI (docs/08 §3.5).
+4. **Low:** the admin and portal API secure-headers use Hono's defaults: HSTS of 180 days, not 1 year, and no Permissions-Policy (`apps/admin/worker/app.ts:33`, `apps/portal/worker/index.ts:44`). Fix: explicit options, as web does.
+5. **Low, owner's yes (workflow):** `vite build` and `astro build` run in the same step as `CLOUDFLARE_API_TOKEN` (`deploy-staging.yml:78-82`, `publish-catalogue.yml`). Fix: split build and deploy. Also, `renovate.json` automerges devDependency patches (latent).
+6. **Low:** `check-prod-readiness.mjs` covers the website only. Add: `[Placeholder` in the admin and portal bundles, empty production `TURNSTILE_SITE_KEY`s, and missing production queues (before Phase 7).
+7. **Low (tooling):** `tools/model-guard.mjs:31` doesn't refuse an Agent call with no `subagent_type`.
+
+**Checked and correct:**
+- staff sign-in end to end (Argon2id, pepper, fake salts, gated reserve, TOTP replay, recovery, `__Host-` cookies, expiries, step-up, revocation, last-owner rule, invites);
+- the guard against docs/04 §9; the API Worker has no URL and re-runs CSRF and the guard;
+- portal client scoping (`forClient`); tokens only in request bodies;
+- the website forms' order of checks; HMAC'd addresses only;
+- no secret committed;
+- CI fork-safe, SHA-pinned, least privilege; the production deploy guarded;
+- release-age and build allow-lists set.
+
+**Missing or partial:**
+- docs/08 §3.1: findings 1, 2 and 4.
+- docs/08 §3.5: finding 3.
+- docs/08 §3.4: access-log retention (M7.4).
+- 08-C RB-12 OPEN: whether IP and user agent may stay in the audit log for its 10 years (VERIFY WITH CA/LEGAL; a CA question).
+
+**Not verified:**
+- Access on staging, and the headers staging actually serves;
+- the hosted secrets and Turnstile hostname lists;
+- branch protection and the production environment's reviewers;
+- Safari and Firefox SameSite behaviour;
+- the full admin, portal and web suites.
+
+**Lead's triage:**
+- 1, 2, 4, 6 and 7 go into an A1 fix task.
+- 3 and 5 wait for the owner's yes.
+
 ## Handover
 _(written at the end of each conversation)_
