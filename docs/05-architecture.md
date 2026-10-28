@@ -217,6 +217,7 @@ techaust_platform/
 | `staff_sessions` | id (= SHA-256 of the token), user_id, created_at, last_seen_at, idle_expires_at, abs_expires_at, step_up_until, ip, user_agent, revoked_at · idx(user_id) |
 | `staff_invites` | token_hash, email, role, invited_by, expires_at, used_at |
 | `auth_attempts` | key, window_start, failures, locked_until (exact counters). Keys: staff `acct:<SHA-256 of the email, 32 hex>` (passwords), `code:<user id>` (TOTP, recovery and step-up codes), `ip:<HMAC(SALT_PEPPER) of the address>`; portal `p:req:` (link requests per address), `p:mail:` (per email), `p:fail:` (failed link checks per address), each an HMAC under `PORTAL_KEY_PEPPER`. No raw address or email is stored. |
+| `pdf_asks` | document_id, asked_at: a claim so the admin asks jobs for a supplier copy (Rule 48(2) DUPLICATE FOR SUPPLIER) at most once per document every 5 minutes (migration 0048; research and wording, 2026-10-28). No personal data. |
 | `client_sessions` | id (hash), contact_id, client_id, created_at, last_seen_at, idle/abs expiry, ip, user_agent, revoked_at |
 | `magic_link_tokens` | token_hash, contact_id, expires_at (15 min), used_at, request_ip (left NULL: the access row already holds the address, LD15 of M1.6) |
 | `doc_access_tokens` | token_hash, document_id, purpose (`view_pay`), expires_at, revoked_at (POR-06) |
