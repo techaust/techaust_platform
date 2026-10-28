@@ -1,5 +1,5 @@
 // Settings and reference data (docs/05 §5.2). Tax and legal rules are settings with researched defaults
-// (docs/08 §7.1, VERIFY WITH CA), never hard-coded.
+// (docs/08 §7.1, researched in 08-C), never hard-coded.
 import { sql } from "drizzle-orm";
 import { check, index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { createdAt, flag, id, oneOf, updatedAt } from "./common.ts";

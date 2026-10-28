@@ -261,6 +261,7 @@ export function issuerOf(
 ): InvoiceIssuerSnapshot {
   const c = s.company;
   const sig = c.signature;
+  const signatoryOff = s.tax.invoiceChecklist.signatory === false;
   return {
     company: {
       tradeName: c.tradeName,
@@ -274,7 +275,9 @@ export function issuerOf(
       ...(c.principalPlace ? { principalPlace: c.principalPlace } : {}),
     },
     bank: { inr: inrBankOf(bank), ...(currency === "USD" ? { swift: swiftBankOf(bank) } : {}) },
-    signature: sig ? { key: sig.key, sha256: sig.sha256, mime: sig.mime } : null,
+    // 07-W 5.6 (08-C RA-06): with the checklist's signatory item off, the choice is frozen here, so the PDF leaves the block out and a later settings change never alters it.
+    signature: sig && !signatoryOff ? { key: sig.key, sha256: sig.sha256, mime: sig.mime } : null,
+    ...(signatoryOff ? { signatory: false as const } : {}),
     reverseChargeText: s.tax.reverseChargeText,
     sender: { staffId: who.id, name: who.name, email: s.email.senders.billing },
   };

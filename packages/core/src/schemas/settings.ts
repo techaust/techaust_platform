@@ -1,5 +1,5 @@
 // Settings documents (docs/05 §5.2 `settings`) with the researched defaults from docs/08 §7.1 and docs/04
-// ADM-SET-*. VERIFY WITH CA/LEGAL: every tax and legal rule here is a default the Owner can change, never
+// ADM-SET-*. Researched 2026-10-28, rule by rule in 08-C: every tax and legal rule here is a default the Owner can change, never
 // settled advice. Company identity (legal name, GSTIN, address) and bank details are entered by the Owner in
 // the admin (M3.1) and are never committed: this repository is public.
 //
@@ -120,7 +120,7 @@ const isoDate = z.string().check(
 /**
  * ADM-SET-03, ADM-INV-18 (M5.2): one letter of undertaking per financial year. `fy` is the token ("2627": two consecutive years), `arn` the number from
  * the GST portal (spaces dropped, upper case; its format is NOT VERIFIED, so only a safe 1 to 30 characters of letters and digits is checked),
- * `filedOn` the day it was filed (optional). VERIFY WITH CA/LEGAL.
+ * `filedOn` the day it was filed (optional). Researched 2026-10-28, Rule 96A CGST Rules and 08-C RA-19.
  */
 export const lutEntry = z.strictObject({
   fy: z.string().check(
@@ -472,7 +472,7 @@ function mergeDefaults(base: unknown, stored: unknown): unknown {
   return out;
 }
 
-/** The defaults the database is seeded with (VERIFY WITH CA/LEGAL). */
+/** The defaults the database is seeded with (researched 2026-10-28, rule by rule in 08-C). */
 export const SETTINGS_DEFAULTS: Settings = {
   company: {
     tradeName: "TecHaust Technologies",

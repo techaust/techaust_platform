@@ -33,6 +33,8 @@ export type InvoiceIssuerSnap = {
   company: IssuerSnap["company"] & { phone?: string; principalPlace?: string };
   bank: { inr: InvoiceBankSnap | null; swift?: InvoiceSwiftSnap | null };
   signature: InvoiceSignatureRef | null;
+  /** `false` only when the signature block was switched off at issue (07-W 5.6): the layout prints none. Absent = block printed. */
+  signatory?: false;
   /** The Rule 46(p) statement exactly as it was issued (frozen and sealed; Researched 2026-10-28, Rules 46(p), 50 and 51 CGST Rules (08-C RA-26)). */
   reverseChargeText: string;
   sender: IssuerSnap["sender"];
@@ -254,6 +256,8 @@ export type InvoiceView = {
   notes: { title: string; version: string; bodyMd: string } | null;
   /** The signature image as a data URI once its bytes were verified; null otherwise (the line "Authorised signatory" is printed either way). */
   signature: { dataUri: string } | null;
+  /** False when the Owner had switched "Authorised signatory" off at issue (frozen in the envelope, 07-W 5.6): no "For {company}", no image, no line. */
+  showSignatory: boolean;
   /** The balance due, printed under the total; at issue it equals the total (LD17). */
   balanceDue: string;
   /** The generic client portal address ("Or pay in the client portal"), or null when none is configured (the line is left out). Never a personal link. */

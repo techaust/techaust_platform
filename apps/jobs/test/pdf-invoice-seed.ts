@@ -67,6 +67,8 @@ export type InvoiceSeedOptions = {
   terms?: boolean;
   /** Freezes a signature reference; `bytes` is what DOCS holds under it (default: the PNG; null: nothing is stored). */
   signature?: { bytes?: Uint8Array | null; key?: string; mime?: string };
+  /** Freezes `signatory: false` (the Owner switched "Authorised signatory" off at issue, 07-W 5.6). */
+  signatoryOff?: boolean;
   /** Freezes the INR bank block. */
   bank?: boolean;
 };
@@ -271,6 +273,7 @@ export async function seedIssuedInvoice(o: InvoiceSeedOptions = {}): Promise<See
             : null,
         },
     signature: signatureRef,
+    ...(o.signatoryOff ? { signatory: false as const } : {}),
     reverseChargeText: SETTINGS_DEFAULTS.tax.reverseChargeText,
     sender: { staffId, name: "Sample Owner", email: "inv-owner@example.test" },
   };

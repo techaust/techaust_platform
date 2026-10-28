@@ -307,6 +307,19 @@ describe("the invoice render step", () => {
     expect(html).toContain(`data:image/png;base64,${btoa(String.fromCharCode(...PNG_BYTES))}`);
   });
 
+  it("a frozen `signatory: false` leaves the whole signature block out of the PDF (07-W 5.6)", async () => {
+    const s = await ready({ signatoryOff: true });
+    const clock = fakeClock();
+    const b = fakeBrowser(clock);
+    const { env } = makeEnv(b.binding);
+    expect(await processRender(env, renderMsg(s.id), T0, clock)).toBe("rendered");
+    const html = String((b.calls[0] as Call).options.html);
+    expect(html).toContain("Tax payable on reverse charge: No");
+    expect(html).not.toContain("Authorised signatory");
+    expect(html).not.toContain("For Sample Proprietor");
+    expect(html).not.toContain('data-testid="signature"');
+  });
+
   it("reads the signature with ONE R2 get (no head first) and embeds it through the shared base64 [review 12]", async () => {
     const s = await ready({ signature: {} });
     const clock = fakeClock();
