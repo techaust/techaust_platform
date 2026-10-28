@@ -5,7 +5,6 @@
 import type { ScheduleTrigger } from "@techaust/core";
 import type { Currency } from "../api.ts";
 import { qs, request } from "../api.ts";
-import { mockFill, mockGaps, mockGapsOn } from "./gaps-mock.ts";
 import type { OfferSection, StartResult } from "./offers.ts";
 
 export type QuoteType = "proposal" | "estimate";
@@ -416,20 +415,16 @@ export const documentsApi = {
     request<{ documents: ListRow[]; next: string | null }>(
       `/clients/${enc(clientId)}/documents${qs({ after })}`,
     ),
-  get: (id: string) =>
-    import.meta.env.DEV
-      ? request<DocumentView>(`/documents/${enc(id)}`).then(mockGaps)
-      : request<DocumentView>(`/documents/${enc(id)}`),
+  get: (id: string) => request<DocumentView>(`/documents/${enc(id)}`),
   /**
-   * "Use Catalogue text" (B2): adds the Catalogue text that is there now to one section, by the draft's own rules, and shows the section. One
-   * batch on the server; 409 `stale_version` or `nothing_to_fill`. The screen reloads the draft after it, so only success matters here.
+   * "Use Catalogue text" (B2, `document-fill.ts`): adds the Catalogue text that is there now to one section, by the draft's own rules, and shows
+   * the section, in one batch. It answers the slim save answer with `filled` and fresh `catalogueGaps`; 409 `stale_version`, `nothing_to_fill`,
+   * `client_anonymised` or `frozen`. The screen reads the draft again after it (the new `updatedAt` draws the editor afresh).
    */
   fillFromCatalogue: (id: string, sectionId: string, expectedUpdatedAt: number) =>
-    import.meta.env.DEV && mockGapsOn()
-      ? mockFill(sectionId)
-      : request<{ updatedAt?: number }>(`/documents/${enc(id)}/sections/fill-from-catalogue`, {
-          body: { sectionId, expectedUpdatedAt },
-        }),
+    request<
+      SaveAnswer & { filled: { sectionId: string; title: string | null; bodyMd: string; hidden: false } }
+    >(`/documents/${enc(id)}/sections/fill-from-catalogue`, { body: { sectionId, expectedUpdatedAt } }),
   create: (body: NewDocumentInput) => request<Created>("/documents", { body }),
   save: (id: string, body: DocumentPatch) =>
     request<SaveAnswer>(`/documents/${enc(id)}`, { method: "PATCH", body }),

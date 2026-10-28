@@ -65,6 +65,9 @@ function sendValidUntil(days: string): string | null {
   return Number.isInteger(n) && n >= 1 && n <= 90 ? dayText(validUntil(istDate(Date.now()), n)) : null;
 }
 
+/** A service value still in a section's text (`{{service.deliverables}}`), as core's placeholder pattern reads one. */
+const SERVICE_TOKEN_RE = /\{\{\s*service\.[a-z_]+\s*\}\}/;
+
 /** How long after the last keystroke a draft saves itself (lead, review fix 2: fewer D1 writes); leaving a field saves at once. */
 const AUTOSAVE_MS = 3000;
 
@@ -87,6 +90,11 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
   const [dialog, setDialog] = useState<"send" | "request" | "discard" | null>(null);
   const canWrite = allowed(user.role, "proposals.draft");
   const canSendRole = allowed(user.role, "proposals.send");
+  const [reread, setReread] = useState(false);
+  // The server filled the service values (above): read the draft again as soon as nothing typed is waiting to be saved.
+  useEffect(() => {
+    if (reread && !s.saving && !isDirty(s)) reload();
+  }, [reread, s, reload]);
 
   const save = useCallback(async (): Promise<boolean> => {
     if (inflight.current) await inflight.current.catch(() => null);
@@ -98,12 +106,20 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
       return false;
     }
     if (!b.patch) return true;
+    // B2: the save that adds the first service line fills the sections' service values on the server (and may hide a section). The answer
+    // never carries text, so the draft is read again once nothing is left to save.
+    const firstService =
+      !!b.patch.lines &&
+      !cur.lines.some((l) => l.id !== null && l.catalogueItemId !== null) &&
+      cur.lines.some((l) => l.catalogueItemId !== null) &&
+      cur.sections.some((x) => SERVICE_TOKEN_RE.test(x.bodyMd));
     dispatch({ type: "saving" });
     const p = documentsApi.save(cur.id, b.patch);
     inflight.current = p;
     try {
       const answer = await p;
       dispatch({ type: "saved", answer, sent: b.sent });
+      if (firstService) setReread(true);
       return true;
     } catch (e) {
       const code = e instanceof RequestError ? e.code : "";
