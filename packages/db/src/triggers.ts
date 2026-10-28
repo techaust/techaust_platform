@@ -819,6 +819,17 @@ export function billingTriggerStatements(): string[] {
   ];
 }
 
+/**
+ * The documents columns frozen as migration 0047 installs them (pinned like 0032's and 0040's): 0040's plus `fx_no_rate_that_day` (Q24, 08-C RA-21: the Owner's statement that no rate
+ * was published on the day of supply, frozen with the rate). Today equal to the live list; the coverage test in `triggers.test.ts` checks the INSTALLED trigger against the live schema.
+ */
+export const FROZEN_COLUMNS_0047 = [...FROZEN_COLUMNS_0040, "fx_no_rate_that_day"] as const;
+
+/** The freeze trigger of `documents` dropped and created again over the columns of 0047 (a new frozen column; nothing else changes). */
+export function fxFlagTriggerStatements(): string[] {
+  return ["DROP TRIGGER `documents_frozen_update`;", frozenUpdateTrigger(FROZEN_COLUMNS_0047, SET_ONCE_0040)];
+}
+
 /** The trigger sets, by the name the migration is created with (`drizzle-kit generate --custom --name <set>`). */
 export const TRIGGER_SETS = {
   triggers: { what: "integrity triggers (docs/05 §5.3)", statements: triggerStatements },
@@ -872,6 +883,10 @@ export const TRIGGER_SETS = {
   billing_triggers: {
     what: "care billing forward-only, terms after a billed period, billed-period record, bound invoice links, the auto-issue owner and reminder moves (M5.4)",
     statements: billingTriggerStatements,
+  },
+  fx_flag_triggers: {
+    what: "freeze trigger recreated for the exchange-rate statement column fx_no_rate_that_day (research round 2026-10-28, Q24)",
+    statements: fxFlagTriggerStatements,
   },
 } as const;
 export type TriggerSet = keyof typeof TRIGGER_SETS;

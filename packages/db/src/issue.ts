@@ -588,7 +588,7 @@ export type AdvanceIssueArgs = Omit<InvoiceIssueArgs, "authority" | "bell" | "ex
    * Q37 (owner 2026-10-28): the FY token ("2627") of the receipt day, set only when this is an export invoice on the LUT route; the freeze then needs a LUT with
    * an ARN saved for that FY in the `tax` setting at the issue instant (`advance_lut_missing`). Null on every other advance invoice.
    */
-  lutFy: string | null;
+  lutFy?: string | null;
   /** ISO date the money arrived, and `normaliseReference` of its bank or gateway reference (the idempotency key with the proforma). */
   receivedOn: string;
   referenceNorm: string;
@@ -604,7 +604,7 @@ export type AdvanceIssueArgs = Omit<InvoiceIssueArgs, "authority" | "bell" | "ex
     contactId: string | null;
     currency: string;
     exportMode: string | null;
-    fx: { rateMicros: number; date: string; source: string } | null;
+    fx: { rateMicros: number; date: string; source: string; noRateThatDay?: boolean } | null;
     subtotalMinor: number;
     discountMinor: number;
     taxableMinor: number;
@@ -635,8 +635,8 @@ export function advanceIssueStatements(db: D1Database, a: AdvanceIssueArgs): Sen
     .prepare(
       `INSERT INTO documents (id, type, status, client_id, project_id, parent_id, contact_id, currency, supply_type, place_of_supply_code, export_mode,
          fx_rate_micros, fx_date, fx_source, subtotal_minor, discount_minor, taxable_minor, cgst_minor, sgst_minor, igst_minor, round_off_minor,
-         total_minor, total_inr_minor, content_sha256, created_by, created_at, updated_at)
-       VALUES (?1, ?2, 'draft', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?25)`,
+         total_minor, total_inr_minor, content_sha256, created_by, created_at, updated_at, fx_no_rate_that_day)
+       VALUES (?1, ?2, 'draft', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?25, ?26)`,
     )
     .bind(
       a.documentId,
@@ -664,6 +664,7 @@ export function advanceIssueStatements(db: D1Database, a: AdvanceIssueArgs): Sen
       a.contentSha256,
       a.issuedBy,
       a.now,
+      d.fx?.noRateThatDay ? 1 : null,
     );
   const lines = d.lines.map((l) =>
     db
@@ -702,7 +703,7 @@ export function advanceIssueStatements(db: D1Database, a: AdvanceIssueArgs): Sen
       where: ` AND total_minor = ?30
          AND EXISTS (SELECT 1 FROM documents p WHERE p.id = ?31 AND p.type = 'proforma' AND p.frozen_at IS NOT NULL AND p.status IN ('issued', 'converted') AND p.updated_at = ?32 AND p.balance_minor >= ?30 AND p.client_id = documents.client_id AND p.currency = documents.currency)
          AND (?33 IS NULL OR ${LUT_FOR_FY_SQL.replaceAll("?FY", "?33")})`,
-      binds: [a.amountMinor, a.proformaId, a.expectedProformaUpdatedAt, a.lutFy],
+      binds: [a.amountMinor, a.proformaId, a.expectedProformaUpdatedAt, a.lutFy ?? null],
     },
   );
   return {

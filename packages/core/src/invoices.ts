@@ -9,7 +9,7 @@
 // The export endorsement, the LUT helpers, the proforma notice and the exchange-rate helpers (`export-invoice.ts`, `fx.ts`) are exported from here.
 import { addDays, fyOf, istDate, parseIsoDate, toIsoDate } from "./dates.ts";
 import { type ExportRoute, type Lut, lutFor } from "./export-invoice.ts";
-import { fxDateOk } from "./fx.ts";
+import { fxDateVerdict } from "./fx.ts";
 import { canonicalJson, sha256Hex } from "./hash.ts";
 import type { NoteOf } from "./notes.ts";
 import type { Series } from "./numbering.ts";
@@ -160,6 +160,8 @@ export const ISSUE_BLOCKER_CODES = [
   "country_missing",
   "fx_missing",
   "fx_date_invalid",
+  // Research round 2026-10-28 (08-C RA-21): a rate of an earlier day was typed without the statement that no rate was published on the day of supply
+  "fx_same_day_exists",
   "lut_missing",
   "unregistered_high_value",
   "bank_missing",
@@ -331,7 +333,13 @@ export type IssueFacts = {
   readonly reverseChargeText: string | null;
   /** M5.2: the rate typed on the draft (null: none) and the day it is judged against (the issue day; for an advance invoice the day the money arrived). */
   readonly fx: {
-    readonly value: { readonly rateMicros: number; readonly date: string; readonly source: string } | null;
+    readonly value: {
+      readonly rateMicros: number;
+      readonly date: string;
+      readonly source: string;
+      /** The Owner stated that no rate was published on the day of supply (Q24). */
+      readonly noRateThatDay?: boolean;
+    } | null;
     readonly refDate: string;
     readonly maxAgeDays: number;
   };
@@ -402,11 +410,20 @@ export function issueBlockers(
 
   // M5.2. The country of an export (Rule 46(o)), named once at issue.
   if (f.type === "export_invoice" && blank(f.recipient.countryName)) add("country_missing");
-  // The exchange rate of a USD tax or export invoice (Rule 34(2); Q7, Q24): typed, and of a day close enough to the one it is judged against.
+  // The exchange rate of a USD tax or export invoice (Rule 34(2); Q7, Q24; Researched 2026-10-28, 08-C RA-21): typed, and the rate of the day of supply, or the last one published before it
+  // when the Owner states that none was published that day (`fxDateVerdict`).
   if (f.currency === "USD" && (f.type === "tax_invoice" || f.type === "export_invoice")) {
     if (f.fx.value === null) add("fx_missing", { date: f.fx.refDate });
-    else if (!fxDateOk(f.fx.value.date, f.fx.refDate, f.fx.maxAgeDays))
-      add("fx_date_invalid", { date: f.fx.refDate });
+    else {
+      const verdict = fxDateVerdict(
+        f.fx.value.date,
+        f.fx.refDate,
+        f.fx.maxAgeDays,
+        f.fx.value.noRateThatDay === true,
+      );
+      if (verdict === "same_day_exists") add("fx_same_day_exists", { date: f.fx.refDate });
+      else if (verdict === "invalid") add("fx_date_invalid", { date: f.fx.refDate });
+    }
   }
   // The letter of undertaking of the FY of ISSUE (a draft saved on 31 March and issued on 1 April needs the new year's), on the LUT route only.
   if (f.type === "export_invoice" && f.export !== null && f.export.mode === "lut") {
@@ -579,7 +596,13 @@ export type InvoiceSnapshotInput = {
     /** The pinned note's text, frozen at issue (absent when no note is pinned); its SHA-256 is `declarationRef.sha256`. */
     readonly declarationText?: string;
   };
-  readonly fx?: { readonly rateMicros: number; readonly date: string; readonly source: string };
+  readonly fx?: {
+    readonly rateMicros: number;
+    readonly date: string;
+    readonly source: string;
+    /** Q24 (08-C RA-21): present (true) only when the Owner stated that no rate was published on the day of supply; frozen with the rate, so an older seal keeps its hash. */
+    readonly noRateThatDay?: true;
+  };
   readonly proforma?: { readonly notice: string };
   readonly advance?: {
     readonly proformaId: string;

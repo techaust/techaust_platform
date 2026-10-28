@@ -617,23 +617,70 @@ describe("an overseas proforma gives an export invoice [LUT rule, FX, Q8]", () =
     const none = await advance(o, pf.id, { amountMinor: 50_000 });
     expect(none.status).toBe(409);
     expect((await json(none)).blockers as J[]).toEqual([{ code: "fx_missing", date: todayIso() }]);
-    // a rate dated five days before the money arrived is too old (4 days at most), whatever today is
+    // Q24 (owner 2026-10-28, RA-21): the rate of the day the money arrived. A rate of an EARLIER day without the statement "no rate was published that day" is 400 fx_same_day_exists
+    // (use that day's rate), however old; with the statement it must be at most `fxMaxAgeDays` (4) older, else 400 fx_date_invalid; a later day is fx_date_invalid whatever is said.
     const day = (n: number) =>
       new Date(Date.parse(`${todayIso()}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+    const noStatement = await advance(
+      o,
+      pf.id,
+      usd({ amountMinor: 50_000, fx: { rate: "83.1234", date: day(-1), source: "FBIL" } }),
+    );
+    expect(noStatement.status).toBe(400);
+    const nb = await json(noStatement);
+    expect(nb.error.code).toBe("fx_same_day_exists");
+    expect(nb.error.message).toMatch(/^A rate was published on \d{2} \w{3} \d{4}, so use that day's rate\.$/);
+    const flagFalse = await advance(
+      o,
+      pf.id,
+      usd({
+        amountMinor: 50_000,
+        fx: { rate: "83.1234", date: day(-1), source: "FBIL", noRateThatDay: false },
+      }),
+    );
+    expect(await codeOf(flagFalse)).toBe("fx_same_day_exists");
     const old = await advance(
       o,
       pf.id,
-      usd({ amountMinor: 50_000, fx: { rate: "83.1234", date: day(-5), source: "FBIL" } }),
+      usd({
+        amountMinor: 50_000,
+        fx: { rate: "83.1234", date: day(-5), source: "FBIL", noRateThatDay: true },
+      }),
     );
-    expect(old.status).toBe(409);
-    expect((await json(old)).blockers as J[]).toEqual([{ code: "fx_date_invalid", date: todayIso() }]);
-    const future = await advance(
+    expect(old.status).toBe(400);
+    const ob = await json(old);
+    expect(ob.error.code).toBe("fx_date_invalid");
+    expect(ob.error.message).toMatch(
+      /^Use the rate published on \d{2} \w{3} \d{4}\. If none was published that day, use the last one published before it, at most 4 days earlier\.$/,
+    );
+    for (const noRateThatDay of [true, false]) {
+      const future = await advance(
+        o,
+        pf.id,
+        usd({
+          amountMinor: 50_000,
+          fx: { rate: "83.1234", date: day(1), source: "FBIL", noRateThatDay },
+        }),
+      );
+      expect(future.status).toBe(400);
+      expect(await codeOf(future)).toBe("fx_date_invalid");
+    }
+    expect(await snapshot(pf.id)).toEqual(before);
+    // with the statement, four days older is the limit and is accepted; the flag is stored with the rate and sealed
+    const four = await advance(
       o,
       pf.id,
-      usd({ amountMinor: 50_000, fx: { rate: "83.1234", date: day(1), source: "FBIL" } }),
+      usd({
+        amountMinor: 10_000,
+        fx: { rate: "83.1234", date: day(-4), source: "FBIL", noRateThatDay: true },
+      }),
     );
-    expect((await json(future)).blockers as J[]).toEqual([{ code: "fx_date_invalid", date: todayIso() }]);
-    expect(await snapshot(pf.id)).toEqual(before);
+    expect(four.status, await four.clone().text()).toBe(201);
+    const fourId = (await json(four)).id;
+    expect((await typesRow(fourId))?.fx_no_rate_that_day).toBe(1);
+    expect(await sealCheck(fourId)).toEqual({ content: true, snapshot: true });
+    const view = await getInvoice(o, fourId);
+    expect(view.fx.value).toMatchObject({ noRateThatDay: true, date: day(-4) });
     // the rate is judged against the day the money arrived: a rate of that day is fine even if today is later
     const received = day(0);
     expect(
@@ -855,7 +902,7 @@ describe("the rate date of a frozen invoice made for money received [review 6]",
     const res = await advance(o, pf.id, {
       amountMinor: 100_000,
       receivedOn: "2030-06-30",
-      fx: { rate: "83.1234", date: "2030-06-28", source: "FBIL" },
+      fx: { rate: "83.1234", date: "2030-06-28", source: "FBIL", noRateThatDay: true },
     });
     expect(res.status, await res.clone().text()).toBe(201);
     const view = await getInvoice(o, (await json(res)).id);

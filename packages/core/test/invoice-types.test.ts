@@ -14,6 +14,7 @@ import {
   exportModeFromStoredTax,
   formatFxRate,
   fxDateOk,
+  fxDateVerdict,
   fxSourceLabel,
   INVOICE_CHECKLIST,
   ISSUE_BLOCKER_CODES,
@@ -102,19 +103,32 @@ describe("parseFxRate [ADM-INV-08; Q7]", () => {
   });
 });
 
-describe("fxDateOk [Q24]", () => {
-  it("the issue day and up to the maximum age before it; never the future", () => {
+describe("fxDateOk and fxDateVerdict [Q24, owner 2026-10-28; Rule 34(2); 08-C RA-21]", () => {
+  it("the day of supply is right; an earlier day only with the statement and up to the maximum age; never the future", () => {
     expect(fxDateOk("2026-10-28", "2026-10-28", 4)).toBe(true);
-    expect(fxDateOk("2026-10-24", "2026-10-28", 4)).toBe(true);
-    expect(fxDateOk("2026-10-23", "2026-10-28", 4)).toBe(false);
+    expect(fxDateOk("2026-10-28", "2026-10-28", 4, true)).toBe(true);
+    // earlier: the statement is needed
+    expect(fxDateOk("2026-10-24", "2026-10-28", 4)).toBe(false);
+    expect(fxDateOk("2026-10-24", "2026-10-28", 4, true)).toBe(true);
+    expect(fxDateOk("2026-10-23", "2026-10-28", 4, true)).toBe(false);
+    expect(fxDateOk("2026-10-29", "2026-10-28", 4, true)).toBe(false);
     expect(fxDateOk("2026-10-29", "2026-10-28", 4)).toBe(false);
     expect(fxDateOk("2026-10-28", "2026-10-28", 0)).toBe(true);
-    expect(fxDateOk("2026-10-27", "2026-10-28", 0)).toBe(false);
+    expect(fxDateOk("2026-10-27", "2026-10-28", 0, true)).toBe(false);
+  });
+  it("the verdicts: ok, same_day_exists (an earlier day without the statement, however old) and invalid (too old with it, later, or not a date)", () => {
+    expect(fxDateVerdict("2026-10-28", "2026-10-28", 4, false)).toBe("ok");
+    expect(fxDateVerdict("2026-10-27", "2026-10-28", 4, false)).toBe("same_day_exists");
+    expect(fxDateVerdict("2026-09-01", "2026-10-28", 4, false)).toBe("same_day_exists");
+    expect(fxDateVerdict("2026-10-24", "2026-10-28", 4, true)).toBe("ok");
+    expect(fxDateVerdict("2026-10-23", "2026-10-28", 4, true)).toBe("invalid");
+    expect(fxDateVerdict("2026-10-29", "2026-10-28", 4, false)).toBe("invalid");
+    expect(fxDateVerdict("2026-10-29", "2026-10-28", 4, true)).toBe("invalid");
   });
   it("counts across a month and a year end, and refuses dates that are not dates", () => {
-    expect(fxDateOk("2026-12-29", "2027-01-02", 4)).toBe(true);
-    expect(fxDateOk("2026-12-28", "2027-01-02", 4)).toBe(false);
-    expect(fxDateOk("2026-13-01", "2026-12-01", 4)).toBe(false);
+    expect(fxDateOk("2026-12-29", "2027-01-02", 4, true)).toBe(true);
+    expect(fxDateOk("2026-12-28", "2027-01-02", 4, true)).toBe(false);
+    expect(fxDateOk("2026-13-01", "2026-12-01", 4, true)).toBe(false);
     expect(fxDateOk("26-10-28", "2026-10-28", 4)).toBe(false);
     expect(fxDateOk("2026-10-28", "2026-10-28", -1)).toBe(false);
     expect(fxDateOk("2026-10-28", "2026-10-28", 1.5)).toBe(false);
@@ -411,7 +425,13 @@ describe("the mandatory-field checklist [ADM-INV-06, Q10, LD31]", () => {
       for (const c of i.blockers) owners.set(c, [...(owners.get(c) ?? []), i.id]);
     for (const [code, ids] of owners) expect(ids.length, code).toBe(1);
     const unowned = ISSUE_BLOCKER_CODES.filter((c) => !owners.has(c)).sort();
-    expect(unowned).toEqual(["currency_mismatch", "fx_date_invalid", "fx_missing", "type_not_allowed"]);
+    expect(unowned).toEqual([
+      "currency_mismatch",
+      "fx_date_invalid",
+      "fx_missing",
+      "fx_same_day_exists",
+      "type_not_allowed",
+    ]);
   });
   it("checklistItemOn: locked items always, the bank item as stored, the payment link never", () => {
     const bank = INVOICE_CHECKLIST.find((i) => i.id === "bankDetails");
@@ -721,18 +741,28 @@ describe("what stops each kind of issue, one blocker per field [ADM-INV-06, -08,
     expect(codes({ ...base("tax"), fx: usdFx })).toEqual([]);
   });
 
-  it("fx_date_invalid carries the day it was judged against (future and too old are both invalid)", () => {
+  it("fx_date_invalid carries the day it was judged against (future and too old, with the statement, are both invalid); an earlier day without the statement is fx_same_day_exists (RA-21)", () => {
     const f = base("export");
+    const withRate = (date: string, noRateThatDay?: boolean, maxAgeDays = usdFx.maxAgeDays) => ({
+      ...f,
+      fx: {
+        ...usdFx,
+        maxAgeDays,
+        value: { ...usdFx.value, date, ...(noRateThatDay === undefined ? {} : { noRateThatDay }) },
+      },
+    });
     for (const date of ["2027-04-02", "2027-03-27"])
-      expect(issueBlockers({ ...f, fx: { ...usdFx, value: { ...usdFx.value, date } } })).toEqual([
-        { code: "fx_date_invalid", date: "2027-04-01" },
-      ]);
-    for (const date of ["2027-04-01", "2027-03-28"])
-      expect(issueBlockers({ ...f, fx: { ...usdFx, value: { ...usdFx.value, date } } })).toEqual([]);
+      expect(issueBlockers(withRate(date, true))).toEqual([{ code: "fx_date_invalid", date: "2027-04-01" }]);
+    expect(issueBlockers(withRate("2027-04-02"))).toEqual([{ code: "fx_date_invalid", date: "2027-04-01" }]);
+    for (const date of ["2027-03-28", "2027-03-31", "2027-03-27"])
+      expect(issueBlockers(withRate(date))).toEqual([{ code: "fx_same_day_exists", date: "2027-04-01" }]);
+    expect(issueBlockers(withRate("2027-03-31", false))).toEqual([
+      { code: "fx_same_day_exists", date: "2027-04-01" },
+    ]);
+    expect(issueBlockers(withRate("2027-04-01"))).toEqual([]);
+    for (const date of ["2027-04-01", "2027-03-28"]) expect(issueBlockers(withRate(date, true))).toEqual([]);
     // the maximum age is a setting
-    expect(
-      codes({ ...f, fx: { ...usdFx, maxAgeDays: 0, value: { ...usdFx.value, date: "2027-03-31" } } }),
-    ).toEqual(["fx_date_invalid"]);
+    expect(codes(withRate("2027-03-31", true, 0))).toEqual(["fx_date_invalid"]);
   });
 
   it("lut_missing carries the FY of issue: a draft made on 31 March and issued on 1 April needs the new year's letter", () => {

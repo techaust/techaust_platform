@@ -25,17 +25,38 @@ export function formatFxRate(rateMicros: number): string {
   return `${whole}.${fraction}`;
 }
 
+/** What may be said of a rate's date against the day of supply (`refDate`). */
+export type FxDateVerdict = "ok" | "same_day_exists" | "invalid";
+
 /**
- * Whether the rate's date may be used on a document of `refDate` (ISO dates): `refDate - maxAgeDays <= fxDate <= refDate`. A rate of the future is
- * never valid (Q24). A date that is not a real ISO date is invalid.
+ * The rule of Rule 34(2) CGST Rules for the rate of a USD document (owner 2026-10-28, Q24; Researched 2026-10-28, 08-C RA-21): the rate is the one determined for the DAY OF SUPPLY
+ * (`refDate`: the issue day, or for the tax invoice of a payment received the day the money arrived). A rate dated that day is right (`ok`). A rate of an EARLIER day is right only when
+ * the Owner states that no rate was published that day (`noRateThatDay`) and the rate is at most `maxAgeDays` older (the stricter reading of the open question, lead 2026-10-28):
+ * without the statement it is `same_day_exists` (use that day's rate), however old it is; with it, older than the limit is `invalid`. A rate of a LATER day is never valid, nor a date that is not a real ISO date.
  */
-export function fxDateOk(fxDate: string, refDate: string, maxAgeDays: number): boolean {
+export function fxDateVerdict(
+  fxDate: string,
+  refDate: string,
+  maxAgeDays: number,
+  noRateThatDay: boolean,
+): FxDateVerdict {
   const fx = parseIsoDate(fxDate);
   const ref = parseIsoDate(refDate);
-  if (!fx || !ref || !Number.isSafeInteger(maxAgeDays) || maxAgeDays < 0) return false;
+  if (!fx || !ref || !Number.isSafeInteger(maxAgeDays) || maxAgeDays < 0) return "invalid";
   const age = daysBetween(fx, ref);
-  return age >= 0 && age <= maxAgeDays;
+  if (age < 0) return "invalid";
+  if (age === 0) return "ok";
+  if (!noRateThatDay) return "same_day_exists";
+  return age <= maxAgeDays ? "ok" : "invalid";
 }
+
+/** Whether the rate's date may be used (`fxDateVerdict` is `ok`). */
+export const fxDateOk = (
+  fxDate: string,
+  refDate: string,
+  maxAgeDays: number,
+  noRateThatDay = false,
+): boolean => fxDateVerdict(fxDate, refDate, maxAgeDays, noRateThatDay) === "ok";
 
 export const FX_SOURCE_CODES = ["FBIL", "RBI", "OTHER"] as const;
 export type FxSourceCode = (typeof FX_SOURCE_CODES)[number];

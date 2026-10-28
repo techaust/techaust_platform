@@ -402,6 +402,8 @@ export const fxIn = z
     ),
     date: isoDate,
     source: z.enum(FX_SOURCE_CODES),
+    /** Q24 (08-C RA-21): the Owner states that no rate was published on the day of supply, so the rate is the last one published before it. */
+    noRateThatDay: z.optional(z.boolean()),
     sourceNote: z.optional(z.string().check(z.trim(), z.maxLength(60))),
   })
   .check(
@@ -848,7 +850,15 @@ export const invoices = new Hono<AppEnv>()
           const rateMicros = parseFxRate(fl.fx.rate);
           const source = fxSourceLabel(fl.fx.source, fl.fx.sourceNote);
           if (rateMicros === null || source === null) return err(c, BAD_REQUEST, 400);
-          state = { ...state, fx: { rateMicros, date: fl.fx.date, source } };
+          state = {
+            ...state,
+            fx: {
+              rateMicros,
+              date: fl.fx.date,
+              source,
+              ...(fl.fx.noRateThatDay === true ? { noRateThatDay: true } : {}),
+            },
+          };
         }
       }
       if (fl.serviceCompletedOn !== undefined) {
@@ -966,6 +976,7 @@ export const invoices = new Hono<AppEnv>()
         fx_rate_micros: state.fx?.rateMicros ?? null,
         fx_date: state.fx?.date ?? null,
         fx_source: state.fx?.source ?? null,
+        fx_no_rate_that_day: state.fx?.noRateThatDay ? 1 : null,
         service_completed_on: state.serviceCompletedOn,
         export_declaration_id: state.exportDeclarationId,
       },

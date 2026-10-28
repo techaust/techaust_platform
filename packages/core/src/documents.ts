@@ -257,7 +257,13 @@ export type DraftContent = {
    * M5.2 (LD24): the exchange rate typed on a USD invoice draft: INR micros per USD, the rate's date, and its source as printed. Absent (or null)
    * on every other document: the hash then has no `fx` key, so every proposal, estimate and M5.1 invoice keeps its hash.
    */
-  readonly fx?: { readonly rateMicros: number; readonly date: string; readonly source: string } | null;
+  readonly fx?: {
+    readonly rateMicros: number;
+    readonly date: string;
+    readonly source: string;
+    /** Q24 (08-C RA-21): the Owner stated that no rate was published on the day of supply. Hashed only when true, so every earlier hash is unchanged. */
+    readonly noRateThatDay?: boolean;
+  } | null;
   /**
    * M5.3 (LD39): a credit or debit note's request (the invoice it is against, the kind, the reason, the way it was asked and the takes). Absent (or null) on every
    * other document: the hash then has no `note` key, so every proposal, estimate and earlier invoice keeps its hash.
@@ -304,7 +310,16 @@ export function contentHashInput(draft: DraftContent, computed: ComputedDocument
       validityDays: draft.validityDays,
     },
     // M5.2: written only when the draft has a rate, between `document` and `lineTotals` (keys stay in sorted order).
-    ...(draft.fx ? { fx: [draft.fx.rateMicros, draft.fx.date, draft.fx.source] } : {}),
+    ...(draft.fx
+      ? {
+          fx: [
+            draft.fx.rateMicros,
+            draft.fx.date,
+            draft.fx.source,
+            ...(draft.fx.noRateThatDay ? [true] : []),
+          ],
+        }
+      : {}),
     lineTotals: computed
       ? computed.lines.map((l) => [l.taxableMinor, l.cgstMinor, l.sgstMinor, l.igstMinor, l.lineTotalMinor])
       : null,

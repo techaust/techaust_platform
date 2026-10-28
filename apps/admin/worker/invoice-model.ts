@@ -1,4 +1,4 @@
-import { type CalendarDate, istDate } from "@techaust/core/dates";
+import { type CalendarDate, formatDate, istDate, parseIsoDate } from "@techaust/core/dates";
 import { contentHash, type DraftContent } from "@techaust/core/documents";
 import { isCountryCode } from "@techaust/core/form-labels";
 import { uuidv7 } from "@techaust/core/ids";
@@ -290,7 +290,8 @@ export const ISSUED_DOCUMENTS_SQL =
 // ---- the state of a draft ---------------------------------------------------------------------------------------------------------------------
 
 /** M5.2: the exchange rate typed on a USD draft: INR micros per USD, the rate's own date, its source as it is printed (`fxSourceLabel`). */
-export type FxState = { rateMicros: number; date: string; source: string };
+/** `noRateThatDay` (Q24, 08-C RA-21): the Owner stated that no rate was published on the day of supply; stored with the rate (`fx_no_rate_that_day`), frozen and sealed with it. */
+export type FxState = { rateMicros: number; date: string; source: string; noRateThatDay?: boolean };
 
 export type InvoiceState = {
   id: string;
@@ -469,6 +470,7 @@ export function invoiceColumns(s: InvoiceState, c: InvoiceComputation) {
     fx_rate_micros: s.fx?.rateMicros ?? null,
     fx_date: s.fx?.date ?? null,
     fx_source: s.fx?.source ?? null,
+    fx_no_rate_that_day: s.fx?.noRateThatDay ? 1 : null,
     service_completed_on: s.serviceCompletedOn,
     export_declaration_id: s.exportDeclarationId,
     subtotal_minor: k?.subtotalMinor ?? 0,
@@ -862,10 +864,31 @@ export function headerExtrasOf(a: {
     };
   }
   if ((state.type === "tax_invoice" || state.type === "export_invoice") && state.fx)
-    out.fx = { rateMicros: state.fx.rateMicros, date: state.fx.date, source: state.fx.source };
+    out.fx = {
+      rateMicros: state.fx.rateMicros,
+      date: state.fx.date,
+      source: state.fx.source,
+      ...(state.fx.noRateThatDay ? { noRateThatDay: true as const } : {}),
+    };
   if (state.type === "proforma") out.proforma = { notice: PROFORMA_NOTICE };
   if (a.advance) out.advance = a.advance;
   return out;
 }
+
+// ---- the exchange rate of the day of supply (research round 2026-10-28, Q24; Researched 2026-10-28, 08-C RA-21; 07-S §8) -----------------------------------------------------
+
+const dayWords = (iso: string): string => {
+  const d = parseIsoDate(iso);
+  return d ? formatDate(d) : iso;
+};
+/** 400 for the tax invoice of a payment received (07-S §8): the rate is older than the limit, of a later day, or not a date; the line names the day the money arrived and the limit. */
+export const fxDateInvalidFor = (receivedOn: string, days: number): ApiError =>
+  e(
+    "fx_date_invalid",
+    `Use the rate published on ${dayWords(receivedOn)}. If none was published that day, use the last one published before it, at most ${days} days earlier.`,
+  );
+/** 400 (07-S §8): a rate of an earlier day was typed without saying that none was published on the day. */
+export const fxSameDayExistsFor = (receivedOn: string): ApiError =>
+  e("fx_same_day_exists", `A rate was published on ${dayWords(receivedOn)}, so use that day's rate.`);
 
 export { taxContext, taxInputOf };

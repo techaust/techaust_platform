@@ -102,6 +102,7 @@ describe("an export invoice issues [ADM-INV-01, ADM-INV-08, ADM-INV-18, G-8]", (
       rateMicros: 83_123_400,
       date: todayIso(),
       source: "FBIL reference rate",
+      noRateThatDay: false,
     });
   });
 
@@ -253,7 +254,7 @@ describe("the LUT of the FY of issue [ADM-INV-18, G-8, docs/09: LUT without an A
     vi.useFakeTimers({ toFake: ["Date"], now: Date.UTC(2027, 2, 31, 12, 0, 0, 0) }); // 31 March 2027, 17:30 IST
     await putTax({ luts: [lutOf("2627")] });
     const made = await mkExportDraft(o);
-    expect((await setFx(o, made.id, { date: "2027-03-31" })).status).toBe(200);
+    expect((await setFx(o, made.id, { date: "2027-03-31", noRateThatDay: true })).status).toBe(200);
     vi.setSystemTime(Date.UTC(2027, 2, 31, 18, 30, 0, 0)); // 1 April 2027, 00:00:00.000 IST
     await renew(o);
     const blocked = await issueInvoice(o, made.id);
@@ -331,31 +332,47 @@ describe("the exchange rate [ADM-INV-08, Q7, Q24, LD24]", () => {
     expect(await codeOf(r2)).toBe("fx_not_applicable");
   });
 
-  it("the rate's day: today and up to four days before are accepted; tomorrow and five days ago are fx_date_invalid (carrying the day it was judged against)", async () => {
+  it("the rate's day (Q24, RA-21): the issue day is right; an earlier day needs the statement 'no rate was published that day' (else fx_same_day_exists) and at most four days; tomorrow and five days ago are fx_date_invalid (carrying the day it was judged against)", async () => {
     const o = await owner();
     const made = await mkExportDraft(o);
     const day = (n: number) =>
       new Date(Date.parse(`${todayIso()}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
     for (const date of [day(1), day(-5)]) {
-      expect((await setFx(o, made.id, { date })).status).toBe(200);
+      expect((await setFx(o, made.id, { date, noRateThatDay: true })).status).toBe(200);
       const res = await issueInvoice(o, made.id);
       expect(res.status, date).toBe(409);
       expect(await blockersOf(res), date).toEqual([{ code: "fx_date_invalid", date: todayIso() }]);
     }
-    // four days before is the oldest rate accepted (Q24)
-    expect((await setFx(o, made.id, { date: day(-4) })).status).toBe(200);
+    // a rate of an earlier day without the statement: a rate was published that day
+    for (const noRateThatDay of [undefined, false]) {
+      expect((await setFx(o, made.id, { date: day(-1), noRateThatDay })).status).toBe(200);
+      expect(await blockersOf(await issueInvoice(o, made.id))).toEqual([
+        { code: "fx_same_day_exists", date: todayIso() },
+      ]);
+    }
+    // the statement is part of the draft: it is saved with the rate, and four days before is the oldest rate accepted (Q24)
+    expect((await setFx(o, made.id, { date: day(-4), noRateThatDay: true })).status).toBe(200);
+    expect((await getInvoice(o, made.id)).fx).toMatchObject({
+      value: { noRateThatDay: true },
+      dateOk: true,
+      dateVerdict: "ok",
+    });
     expect((await issueInvoice(o, made.id)).status).toBe(200);
+    expect((await typesRow(made.id))?.fx_no_rate_that_day).toBe(1);
+    expect(await sealCheck(made.id)).toEqual({ content: true, snapshot: true });
     const today = await mkExportDraft(o);
     expect((await setFx(o, today.id, { date: day(0) })).status).toBe(200);
+    expect((await getInvoice(o, today.id)).fx).toMatchObject({ dateOk: true, dateVerdict: "ok" });
     expect((await issueInvoice(o, today.id)).status).toBe(200);
+    expect((await typesRow(today.id))?.fx_no_rate_that_day).toBeNull();
   });
 
-  it("the age allowed is a setting: with 0 days only the issue day counts", async () => {
+  it("the age allowed is a setting: with 0 days only the issue day counts, statement or not", async () => {
     await putTax({ luts: [lutOf(currentFy())], fxMaxAgeDays: 0 });
     const o = await owner();
     const made = await mkExportDraft(o);
     const yesterday = new Date(Date.parse(`${todayIso()}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
-    expect((await setFx(o, made.id, { date: yesterday })).status).toBe(200);
+    expect((await setFx(o, made.id, { date: yesterday, noRateThatDay: true })).status).toBe(200);
     expect(await blockersOf(await issueInvoice(o, made.id))).toEqual([
       { code: "fx_date_invalid", date: todayIso() },
     ]);

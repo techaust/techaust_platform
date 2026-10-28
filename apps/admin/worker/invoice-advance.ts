@@ -15,6 +15,7 @@ import { uuidv7 } from "@techaust/core/ids";
 import {
   advanceRouteFor,
   type ExportRoute,
+  fxDateVerdict,
   fxSourceLabel,
   INVOICE_SERIES_OF,
   issueDateOf,
@@ -60,6 +61,8 @@ import {
   EXPORT_CURRENCY_CONFIRM,
   EXPORT_DECLARATION_TAMPERED,
   FX_NOT_APPLICABLE,
+  fxDateInvalidFor,
+  fxSameDayExistsFor,
   headerExtrasOf,
   type InvoiceState,
   ISSUE_BLOCKED,
@@ -160,7 +163,14 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
       const rateMicros = parseFxRate(f.fx.rate);
       const source = fxSourceLabel(f.fx.source, f.fx.sourceNote);
       if (rateMicros === null || source === null) return err(c, BAD_REQUEST, 400);
-      fx = { rateMicros, date: f.fx.date, source };
+      // Q24 (research round 2026-10-28; Researched 2026-10-28, 08-C RA-21): the rate of the day the money arrived, or the last one published before it when the Owner states that
+      // none was published that day (`noRateThatDay`), at most `fxMaxAgeDays` older; judged here, before anything else is worked out.
+      const noRate = f.fx.noRateThatDay === true;
+      const verdict = fxDateVerdict(f.fx.date, f.receivedOn, ctx.settings.tax.fxMaxAgeDays, noRate);
+      if (verdict === "same_day_exists") return err(c, fxSameDayExistsFor(f.receivedOn), 400);
+      if (verdict === "invalid")
+        return err(c, fxDateInvalidFor(f.receivedOn, ctx.settings.tax.fxMaxAgeDays), 400);
+      fx = { rateMicros, date: f.fx.date, source, ...(noRate ? { noRateThatDay: true } : {}) };
     }
     // (9) the lines: the amount split over the proforma's own (SAC, rate) groups, by the inclusive split
     const proformaComputed = d.computed;
