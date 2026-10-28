@@ -1,7 +1,7 @@
 // M5.4 portal invoice rules (lib/invoices.ts, copy-invoices.ts): the status a client reads, quantities as text, 07-U word for word, and the invoice
 // link's token (taken from `/i#t=`, stripped from the address, kept for the tab only).
 import { describe, expect, it } from "vitest";
-import { documentWord, INV, PLACEHOLDER } from "../copy-invoices.ts";
+import { documentWord, INV } from "../copy-invoices.ts";
 import { clientStatus, minusMoneyText, moneyText, qtyText, takeInvoiceToken, typeLabel } from "./invoices.ts";
 
 /** 07-U was approved on 2026-10-28 (research and wording): its lines carry no mark. */
@@ -45,8 +45,10 @@ describe("text", () => {
     expect(minusMoneyText(500_000, "INR")).toContain("5,000.00");
     expect(minusMoneyText(500_000, "INR")).not.toBe(moneyText(500_000, "INR"));
   });
-  it("07-U words carry no mark; the one line 07-U lacks still does", () => {
-    expect(INV.signInHint.startsWith(`${PLACEHOLDER} `)).toBe(true);
+  it("07-U and 07-W words carry no mark", () => {
+    expect(INV.signInHint).toBe(
+      "Sign in to your client portal to see all your invoices and payment requests in one place.",
+    );
     expect(INV.empty).toBe(`${M}No invoices yet. When we send you one, it appears here.`);
     expect(INV.howToPay("proforma", "TH/PRO/2627/0002")).toBe(
       `${M}Pay by bank transfer to the account shown on the payment request. Please quote TH/PRO/2627/0002 as the payment reference.`,

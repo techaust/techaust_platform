@@ -3,7 +3,10 @@
 import { describe, expect, it } from "vitest";
 import { offerSent } from "../../../../packages/email/src/offers.ts";
 import { RequestError } from "../api.ts";
-import { COPY_GAP as PLACEHOLDER_TAG } from "./copy-gap.ts";
+
+/** The mark a line not yet approved would carry (none should). */
+const PLACEHOLDER_TAG = "[Placeholder]";
+
 import { reasonText } from "./offer-words.ts";
 import {
   canResend,

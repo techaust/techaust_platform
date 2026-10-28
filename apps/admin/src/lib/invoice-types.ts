@@ -1,15 +1,21 @@
 // The words and pure rules of the M5.2 screens (ADM-INV-06, -08, -10, -18, ADM-SET-02, -03): the export invoice, the proforma and the tax invoice
 // for a payment received, the exchange rate, the letters of undertaking and the mandatory-field checklist. 07-S word for word
 // (docs/07-content-appendix/S-m5.2-invoice-types.md), approved by the lead on 2026-10-28 under the owner's delegation; the tax lines are Researched
-// 2026-10-28 or OPEN per 08-C (the IDs are noted at each line). A line 07-S does not have is `gap(...)` (./copy-gap.ts, listed in the run file), never
+// 2026-10-28 or OPEN per 08-C (the IDs are noted at each line). A line 07-S lacked is 07-W's (approved 2026-10-28), never
 // invented; a word borrowed from an approved screen says where it comes from.
 //
 // Money: amounts are the server's minor units, formatted through core; typed amounts are parsed through core (`moneyFrom`), the rate through core's
 // `parseFxRate` (digit by digit, no float). Nothing here adds, multiplies or rounds money: the only arithmetic is comparing two integers.
 import { financialYear } from "@techaust/core";
-import { FX_SOURCE_CODES, type FxSourceCode, PURPOSE_CODE, parseFxRate } from "@techaust/core/invoices";
+import {
+  FX_SOURCE_CODES,
+  type FxSourceCode,
+  HOUSE_RULE_ITEMS,
+  isHouseRuleItem,
+  PURPOSE_CODE,
+  parseFxRate,
+} from "@techaust/core/invoices";
 import type { Currency } from "../api.ts";
-import { gap } from "./copy-gap.ts";
 import { dayText, moneyText } from "./documents.ts";
 import { moneyFrom } from "./settings-form.ts";
 
@@ -94,20 +100,20 @@ export const INVT_COPY = {
   advanceIgstNote: "IGST at 18 % is charged on this payment. The proforma's other payments are not affected.",
   /**
    * The FX dialog's statement that no rate was published on the invoice's day (contract `noRateThatDay`, builder item 5). 07-S has no line for the
-   * checkbox itself: its words are a proposal built from 07-S §4 and §8's own ("If none was published that day"), marked until approved (run file).
+   * checkbox itself: its words are a proposal built from 07-S §4 and §8's own ("If none was published that day"), approved in 07-W §1.
    */
-  fxNoRateThatDay: gap("No rate was published that day"),
+  fxNoRateThatDay: "No rate was published that day",
 } as const;
 
 /** 07-S §9 `advance_lut_missing` (Q37): `fy` is the financial year of the day the payment was received. */
 export const advanceLutMissing = (fy: string) =>
   `There's no LUT saved for FY ${fy}, when this payment was received, so this tax invoice can't be issued without IGST. Save that year's LUT ARN in Settings › Tax first, or issue it with IGST.`;
 
-/** The house rules of the checklist (07-S §3; Researched 2026-10-28, 08-C RA-05, RA-06): switchable, with the "House rule" badge. Mirrors core's
- * `HOUSE_RULE_ITEMS` (the step 5 contract); an item the API marks `houseRule` counts too. */
-export const HOUSE_RULE_IDS: readonly string[] = ["bankDetails", "paymentLink", "signatory"];
+/** The house rules of the checklist (07-S §3; Researched 2026-10-28, 08-C RA-05, RA-06): switchable, with the "House rule" badge. Core's
+ * `HOUSE_RULE_ITEMS` (the list the settings API refuses `checklist_item_statutory` against); the API's `houseRule` mark wins when sent. */
+export const HOUSE_RULE_IDS: readonly string[] = HOUSE_RULE_ITEMS;
 export const isHouseRule = (item: { id: string; houseRule?: boolean | undefined }) =>
-  item.houseRule ?? HOUSE_RULE_IDS.includes(item.id);
+  item.houseRule ?? isHouseRuleItem(item.id);
 
 /** 07-S §8: the proforma draft's title. */
 export const proformaDraftTitle = (clientName: string) => `Draft proforma for ${clientName}`;

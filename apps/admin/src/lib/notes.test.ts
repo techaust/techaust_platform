@@ -3,7 +3,6 @@
 import { CREDIT_REASONS, DEBIT_REASONS, NOTE_BLOCKER_CODES } from "@techaust/core/invoices";
 import { describe, expect, it } from "vitest";
 import { RequestError } from "../api.ts";
-import { COPY_GAP } from "./copy-gap.ts";
 import { BADGE_PILLS, badgeOf } from "./invoices.ts";
 import {
   AMOUNT_TOO_SMALL,
@@ -216,7 +215,7 @@ describe("errors and blockers (07-T §7, §8)", () => {
     for (const code of NOTE_BLOCKER_CODES)
       expect(
         noteBlockerLine({ code, line: 0, remaining: 100, date: "2027-11-30" }, "credit", "INR"),
-      ).not.toBe(COPY_GAP);
+      ).not.toBe(code);
     expect(noteBlockerLine({ code: "debit_parent_fully_credited" }, "debit", "INR")).toBe(
       "This invoice has been credited in full, so a debit note can't be issued against it. Issue a new invoice instead.",
     );
@@ -349,6 +348,17 @@ describe("the request a dialog sends", () => {
     });
     const a = { ...n, request: { mode: "amount", grossMinor: 590_000, takes: [] } } as unknown as NoteOfView;
     expect(noteFormOf(a, "INR").amount).toBe("5,900");
+    // a tax-only debit note as the API stores it: `taxMinor`, takes of taxable 0 (builder's contract)
+    const t = {
+      kind: "debit",
+      reason: { code: "tax_charged_too_low", text: "" },
+      request: { mode: "lines", taxMinor: 180_000, takes: [{ line: 0, taxableMinor: 0 }] },
+    } as unknown as NoteOfView;
+    expect(noteFormOf(t, "INR")).toMatchObject({
+      lines: {},
+      tax: "1,800",
+      reasonCode: "tax_charged_too_low",
+    });
   });
 });
 
@@ -419,7 +429,7 @@ describe("step 5: the T §9 lines and the tax-only debit note [Q35]", () => {
     expect(isTaxOnly("credit", "tax_charged_too_low")).toBe(false);
     expect(buildNoteFields("debit", f({ reasonCode: "tax_charged_too_low", tax: "1,800" }), ctx)).toEqual({
       ok: true,
-      fields: { mode: "lines", lines: [], taxAmountMinor: 180_000, reasonCode: "tax_charged_too_low" },
+      fields: { mode: "lines", taxAmountMinor: 180_000, reasonCode: "tax_charged_too_low" },
     });
     expect(buildNoteFields("debit", f({ reasonCode: "tax_charged_too_low", tax: "" }), ctx)).toEqual({
       ok: false,

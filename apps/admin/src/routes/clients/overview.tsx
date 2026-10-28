@@ -492,7 +492,7 @@ function Billing(props: Parameters<typeof Overview>[0] & { canFinance: boolean; 
               )}
             </fieldset>
           )}
-          <VerifyNote legal>The GST treatment is confirmed on the proposal and the invoice.</VerifyNote>
+          <VerifyNote>The GST treatment is confirmed on the proposal and the invoice.</VerifyNote>
           <h3 className="lead-panel__sub">
             Billing address<span className="field__optional"> (optional)</span>
           </h3>

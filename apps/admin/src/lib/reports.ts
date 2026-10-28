@@ -3,7 +3,7 @@
 //
 // Copy: 07-V (docs/07-content-appendix/V-m5.5b-reports-statements.md), approved by the lead on 2026-10-28 under the owner's delegation, word for word.
 // A singular of a 07-V plural line ("1 document checked") follows that line; a word 07-V or another approved appendix has is used as written and says
-// where it comes from. A line no approved appendix has is `gap(...)` (./copy-gap.ts: the "[Placeholder]" mark, never invented, listed in the run file).
+// where it comes from. A line 07-V lacked is 07-W's (approved 2026-10-28), never invented.
 // Tax and legal lines: Researched 2026-10-28 or OPEN, per 08-C (the IDs are noted at each line).
 //
 // No value import of `@techaust/core/gst` here (the gst core is fetched only by the reports screens: ./reports-build.ts); types only. Money is formatted
@@ -14,7 +14,6 @@ import { STATE_CODES } from "@techaust/core/gstin";
 import type { StatementKind } from "@techaust/core/statement";
 import { RequestError } from "../api.ts";
 import type { PillTone } from "../components/display.tsx";
-import { gap } from "./copy-gap.ts";
 
 /** "1 document" / "3 documents": the count words 07-V's lines use ({count} documents). */
 const docs = (n: number) => `${n} ${n === 1 ? "document" : "documents"}`;
@@ -82,8 +81,8 @@ export const GST_COPY = {
    * names are kept (07-V's rule); "Section" and "Documents" are not in 07-V.
    */
   columns: {
-    section: gap("Section"),
-    documents: gap("Documents"),
+    section: "Section",
+    documents: "Documents",
     taxable: "Taxable value",
     igst: "IGST",
     cgst: "CGST",
@@ -92,16 +91,16 @@ export const GST_COPY = {
     pos: "Place of supply",
   },
   /** Not in 07-V: the line when the step-up was cancelled before any page was read. */
-  cancelled: gap("Cancelled. No files were made."),
+  cancelled: "Cancelled. No files were made.",
   /** Not in 07-V: the closing row of the totals panel (every reported document of the period, signed). */
-  overall: gap("Overall"),
+  overall: "Overall",
   /** Not in 07-V: the heading of the file list. */
-  filesHeading: gap("Files"),
+  filesHeading: "Files",
   /** Not in 07-V (batch Q69): the two HSN/SAC files' rows, which 07-V names alike; the file name tells them apart. */
-  downloadHsnB2b: gap("Download HSN/SAC summary (B2B) CSV"),
-  downloadHsnB2c: gap("Download HSN/SAC summary (B2C) CSV"),
+  downloadHsnB2b: "Download HSN/SAC summary (B2B) CSV",
+  downloadHsnB2c: "Download HSN/SAC summary (B2C) CSV",
   /** Not in 07-V: a 3.2 table with no supplies to unregistered persons in other states. */
-  table32Empty: gap("None in this period."),
+  table32Empty: "None in this period.",
 } as const;
 
 /** 07-V §2 section names, by the GSTR-1 file's stem (`gstr1Csv`'s file names); the two HSN files share one name, the file name tells them apart. */
@@ -361,8 +360,8 @@ export const SALES_COPY = {
   downloadGstr3b: "Download GSTR-3B figures (CSV)",
   empty: "No documents were issued in this range.",
   /** Not in 07-V: the button that reads the range, and the heading of the preview. */
-  show: gap("Show"),
-  previewHeading: gap("Output tax"),
+  show: "Show",
+  previewHeading: "Output tax",
   supply: {
     intra: "Intra-state",
     inter: "Inter-state",
@@ -438,7 +437,7 @@ export const REALISATION_COPY = {
     "If your bank extended a date, you can record it with the proof of payment in the payments update.",
   empty: "No export invoices are waiting for payment.",
   /** Not in 07-V (batch Q69): the empty list with "Show realised" ticked (nothing open and nothing realised). */
-  emptyAll: gap("No export invoices in this list."),
+  emptyAll: "No export invoices in this list.",
 } as const;
 
 /** 07-V §5 stage labels. */
@@ -528,13 +527,13 @@ export const STATEMENT_COPY = {
   openingWord: "Opening balance",
   closingWord: "Closing balance",
   /** Not in 07-V: the button that reads the range. */
-  show: gap("Show"),
+  show: "Show",
   debits: "Total debits",
   credits: "Total credits",
   // 07-Q POR3.
   more: "Show more",
   /** Not in 07-V: the visually hidden caption of the table. */
-  caption: gap("Statement entries"),
+  caption: "Statement entries",
 } as const;
 
 /** 07-V §6 entry kinds (Details). A credit note says which invoice it is against when the API gives that number; else 07-U §3's type name. */
@@ -658,11 +657,11 @@ export const FINANCE_COPY = {
   noneExports: "No export deadlines coming up.",
   collectedArrives: "Collected figures arrive with payments.",
   /** Not in 07-V: the tile's line when the stored realisation settings can't be read (the API withholds the figures, never guesses). */
-  exportsSettings: gap("Export deadlines can't be worked out until the Tax settings are saved again."),
+  exportsSettings: "Export deadlines can't be worked out until the Tax settings are saved again.",
   /** Not in 07-V: the link of the exports tile and of the overdue tile. */
   // 07-V §10 (the alert email's button).
   openRealisation: "Open export realisation",
-  openInvoices: gap("Open invoices"),
+  openInvoices: "Open invoices",
 } as const;
 
 // ---- 07-V §8 settings › tax ---------------------------------------------------------------------------------------------------------------------

@@ -47,7 +47,7 @@ export function DocumentTerms() {
   const { blocks } = loaded.data;
   return (
     <>
-      <VerifyNote legal>
+      <VerifyNote>
         The wording of these blocks is yours and your lawyer's. Confirm it with your CA and a lawyer before
         documents carry it.
       </VerifyNote>

@@ -293,7 +293,7 @@ function NewClient() {
             </div>
             <p className="hint">The currency can't change once this client has an invoice.</p>
           </fieldset>
-          <VerifyNote legal>The GST treatment is confirmed on the proposal and the invoice.</VerifyNote>
+          <VerifyNote>The GST treatment is confirmed on the proposal and the invoice.</VerifyNote>
         </fieldset>
 
         <fieldset className="form-section">

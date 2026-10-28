@@ -346,7 +346,7 @@ function GstResults({ result, period, threshold }: { result: Ok; period: PeriodC
             );
           })}
         </ul>
-        <VerifyNote legal>{GST_COPY.verify(result.layout)}</VerifyNote>
+        <VerifyNote>{GST_COPY.verify(result.layout)}</VerifyNote>
       </ReportBlock>
     </>
   );

@@ -2,13 +2,10 @@
 // - docs/07-content-appendix/U-m5.4-send-recurring-reminders.md §3 (07-U), approved by the lead on 2026-10-28 under the owner's delegation, word for word;
 // - the PDF's own words (07-R §6, 07-S §1 and §2, 07-T §1, `@techaust/pdf/copy`), because 07-U says the page shows "the lines and tax summary as on the
 //   PDF"; and approved portal words from copy-documents.ts (the navigation, "Download PDF", "Show more", "Sign in").
-// A line 07-U doesn't have carries the "[Placeholder]" mark (`PLACEHOLDER`), never invented, and is listed in the run file. English (India/UK spelling),
+// A line 07-U lacked is 07-W's (approved 2026-10-28), never invented. English (India/UK spelling),
 // "and" never "&". The payment line is a product rule (Researched 2026-10-28, 08-C RA-28: a statement or reminder is not a tax document).
 import { EXPORT_PDF_COPY, INVOICE_PDF_COPY, NOTE_PDF_COPY, PROFORMA_PDF_COPY } from "@techaust/pdf/copy";
 import { N, PENDING, WORDS } from "./copy-documents.ts";
-
-/** The mark of a line no approved appendix has yet. */
-export const PLACEHOLDER = "[Placeholder]";
 
 /** {document} in a sentence (07-U §1): "invoice", "payment request", "credit note", "debit note". */
 export function documentWord(type: string): string {
@@ -59,7 +56,7 @@ export const INV = {
    * The emailed link's offer to sign in: 07-U has no line for it (the M4.5 one speaks of accepting). Review L7: a proposed line instead of the bare
    * mark, marked until the owner approves its words (run file).
    */
-  signInHint: `${PLACEHOLDER} Sign in to your client portal to see all your invoices and payment requests in one place.`,
+  signInHint: "Sign in to your client portal to see all your invoices and payment requests in one place.",
   // Approved portal words.
   downloadPdf: WORDS.downloadPdf,
   showMore: PENDING.showMore,

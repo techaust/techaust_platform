@@ -65,12 +65,12 @@ export type NoteOfView = {
     lut?: { fy: string; arn: string };
   };
   reason: { code: string; text: string };
-  /** `taxAmountMinor`: a "Tax charged too low" debit note's tax to add (step 5 contract, Q35); its takes are empty. */
+  /** `taxMinor`: a "Tax charged too low" debit note's tax to add (builder's contract, Q35); its takes carry a taxable value of 0. */
   request: {
     mode: NoteMode;
     grossMinor?: number;
     takes: { line: number; taxableMinor: number }[];
-    taxAmountMinor?: number;
+    taxMinor?: number;
   };
 };
 
@@ -153,7 +153,8 @@ export type CreditNoteIn = {
 
 export type DebitNoteIn = {
   expectedParentUpdatedAt: number;
-  lines: Take[];
+  /** Every reason but "Tax charged too low" (which must send none). */
+  lines?: Take[];
   reasonCode: string;
   reasonText?: string;
   /** Step 5 contract (Q35): "Tax charged too low" carries the total tax to add (> 0) and no lines; the taxable value is 0. */

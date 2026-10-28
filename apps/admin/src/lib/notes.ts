@@ -3,8 +3,8 @@
 // return dates of Settings › Tax. Pure, so the copy and the rules are tested without a browser.
 //
 // Copy: 07-T (docs/07-content-appendix/T-m5.3-credit-debit-notes.md), approved by the lead on 2026-10-28 under the owner's delegation, word for word;
-// the tax lines are Researched 2026-10-28 or OPEN per 08-C (the IDs are noted at each line). A line 07-T does not have is `gap(...)` (./copy-gap.ts,
-// listed in the run file), never invented; where a line is used in its singular or for the debit note, the place says so.
+// the tax lines are Researched 2026-10-28 or OPEN per 08-C (the IDs are noted at each line). A line 07-T lacked is 07-W's (approved 2026-10-28,
+// 07-W §1), never invented; where a line is used in its singular or for the debit note, the place says so.
 //
 // Money: amounts are the server's minor units, formatted through core (`moneyText`); typed amounts are parsed through core (`moneyFrom`). Nothing
 // here adds, multiplies or rounds money: what can still be credited, the totals and the balance are the server's. A typed amount is only COMPARED
@@ -13,10 +13,9 @@ import { financialYear, fyOf } from "@techaust/core";
 import { CREDIT_REASONS, DEBIT_REASONS } from "@techaust/core/invoices";
 import type { Currency } from "../api.ts";
 import { RequestError } from "../api.ts";
-import { COPY_GAP, gap } from "./copy-gap.ts";
 import { dayText } from "./documents.ts";
 import { fyLabel, INVT_COPY } from "./invoice-types.ts";
-import { blockerLine, invErrorText, moneyText } from "./invoices.ts";
+import { blockerLine, invErrorText, moneyText, UNKNOWN } from "./invoices.ts";
 import type {
   CreditableLine,
   CreditDeadlineView,
@@ -106,10 +105,10 @@ export const taxToAddHint = (invoiceNumber: string) =>
   `Up to the difference between the tax due and the tax on invoice ${invoiceNumber}.`;
 
 /**
- * The debit note's labels 07-T does not have: the reason field (§3's says "printed on the credit note"), a proposal marked until approved (run file),
+ * The debit note's labels 07-T does not have: the reason field (§3's says "printed on the credit note"), 07-W §1,
  * and the amount typed on each line, "Taxable value" (07-R §6's column word, which is what the amount is).
  */
-export const DEBIT_REASON_LABEL = gap("Reason (required, printed on the debit note)");
+export const DEBIT_REASON_LABEL = "Reason (required, printed on the debit note)";
 export const DEBIT_LINE_LABEL = "Taxable value";
 
 // ---- the reasons (07-T §3, §9 Q35; Researched 2026-10-28, 08-C RA-02, RA-22) ------------------------------------------------------------------
@@ -140,7 +139,7 @@ export const DEBIT_REASON_CODES: readonly string[] = (DEBIT_REASONS as readonly 
 export const reasonsOf = (kind: NoteKind): { code: string; label: string }[] =>
   (kind === "credit" ? (CREDIT_REASONS as readonly string[]) : DEBIT_REASON_CODES).map((code) => ({
     code,
-    label: REASON_WORDS[code] ?? COPY_GAP,
+    label: REASON_WORDS[code] ?? code,
   }));
 
 /** The hint under the reason (07-T §9): what "Discount after sale" and "Tax charged too low" do; none for the others. */
@@ -209,7 +208,7 @@ export function deadlineBanner(
 
 /**
  * "Balance due: {balance} (after {count} notes)": the invoice's balance as the server holds it, after its credit notes (a debit note is its own
- * payable and does not move the invoice's balance, LD42, so only credit notes are counted). One note is said in the singular (listed in the run file).
+ * payable and does not move the invoice's balance, LD42, so only credit notes are counted). One note is said in the singular.
  */
 export const balanceLine = (balance: string, count: number) =>
   count === 1 ? `Balance due: ${balance} (after 1 note)` : `Balance due: ${balance} (after ${count} notes)`;
@@ -322,11 +321,12 @@ export function noteBlockerLine(b: NoteBlockerIn, kind: NoteKind, currency: Curr
     case "discount_reason_not_in_force":
       return NOTE_ERRORS[b.code];
     case "credit_exceeds_remaining":
-      return b.remaining !== undefined ? exceedsRemaining(moneyText(b.remaining, currency)) : COPY_GAP;
+      // An answer without the figure keeps 07-T's sentence with "…" for it (UNKNOWN), as the other blockers do.
+      return exceedsRemaining(b.remaining !== undefined ? moneyText(b.remaining, currency) : UNKNOWN);
     case "line_credit_exceeds":
-      return b.remaining !== undefined && b.line !== undefined
-        ? lineExceeds(b.line + 1, moneyText(b.remaining, currency))
-        : COPY_GAP;
+      return b.line !== undefined
+        ? lineExceeds(b.line + 1, b.remaining !== undefined ? moneyText(b.remaining, currency) : UNKNOWN)
+        : exceedsRemaining(b.remaining !== undefined ? moneyText(b.remaining, currency) : UNKNOWN);
     case "notes_limit":
       return notesLimit(kind);
     default:
@@ -363,7 +363,8 @@ export const isTaxOnly = (kind: NoteKind, reasonCode: string) =>
 /** A stored request as the dialog shows it again (a draft opened later). */
 export function noteFormOf(n: NoteOfView, currency: Currency): NoteForm {
   const lines: Record<number, string> = {};
-  if (n.request.mode === "lines")
+  // A tax-only debit note's takes are taxable 0 on every taxed line: nothing to show in the (hidden) line fields.
+  if (n.request.mode === "lines" && n.request.taxMinor === undefined)
     for (const t of n.request.takes) lines[t.line] = moneyInput(t.taxableMinor, currency);
   return {
     mode: n.request.mode,
@@ -371,7 +372,7 @@ export function noteFormOf(n: NoteOfView, currency: Currency): NoteForm {
     amount: n.request.grossMinor !== undefined ? moneyInput(n.request.grossMinor, currency) : "",
     reasonCode: n.reason.code,
     reasonText: n.reason.text,
-    tax: n.request.taxAmountMinor !== undefined ? moneyInput(n.request.taxAmountMinor, currency) : "",
+    tax: n.request.taxMinor !== undefined ? moneyInput(n.request.taxMinor, currency) : "",
   };
 }
 
@@ -437,7 +438,8 @@ export function buildNoteFields(
     ok: true,
     fields: {
       mode,
-      ...(mode === "lines" ? { lines: takes } : {}),
+      // a tax-only debit note sends no `lines` at all (the API refuses an empty list or lines with the tax)
+      ...(mode === "lines" && taxAmountMinor === undefined ? { lines: takes } : {}),
       ...(grossMinor !== undefined ? { grossMinor } : {}),
       ...(taxAmountMinor !== undefined ? { taxAmountMinor } : {}),
       reasonCode: f.reasonCode,

@@ -3,7 +3,10 @@
 // (the server's ids by position, figures kept when unchanged, a part edited during the save stays dirty).
 import { describe, expect, it } from "vitest";
 import { RequestError } from "../api.ts";
-import { COPY_GAP as PLACEHOLDER_TAG } from "./copy-gap.ts";
+
+/** The mark a line not yet approved would carry (none should). */
+const PLACEHOLDER_TAG = "[Placeholder]";
+
 import { DASH_COPY, pipelineLine } from "./dashboard.ts";
 import {
   applySave,

@@ -6,7 +6,6 @@ import { issueDateOf } from "@techaust/core/invoices";
 import type { Settings } from "@techaust/core/settings";
 import type { SettingsDoc } from "../api.ts";
 import type { Built } from "../routes/settings/kit.tsx";
-import { gap } from "./copy-gap.ts";
 import type { LutRow } from "./invoice-types.ts";
 import { annualReturnError, annualReturnsOf } from "./notes.ts";
 import { TAX_FIELDS_COPY } from "./reports.ts";
@@ -26,9 +25,9 @@ export const CATEGORIES: { key: Category; label: string }[] = [
 export const REALISATION_MAX_MONTHS = 1200;
 export const REALISATION_MAX_DAYS = 36_500;
 export const REALISATION_ERRORS = {
-  warnMonths: gap("Enter the months before the warning, from 1 to 1,200."),
-  escalateMonths: gap("Enter the months before escalating, from 1 to 1,200."),
-  escalateExtraDays: gap("Enter the days before the final reminder, from 0 to 36,500."),
+  warnMonths: "Enter the months before the warning, from 1 to 1,200.",
+  escalateMonths: "Enter the months before escalating, from 1 to 1,200.",
+  escalateExtraDays: "Enter the days before the final reminder, from 0 to 36,500.",
 } as const;
 
 /** The field id of an annual return's date (./routes/settings/annual-returns.tsx uses the same). */
@@ -122,7 +121,7 @@ export function buildTax(f: TaxForm, doc: Pick<SettingsDoc<"tax">, "value">, now
   if (!cross.ok) e["f-crossBorderWarnInrMinor"] = `Cross-border payment warning: ${cross.error}`;
   if (!f.reverseChargeText.trim()) e["f-reverseChargeText"] = "Enter the reverse-charge line.";
   // The realisation periods are bounded as the reports read them (core: 1 to 1,200 months, 0 to 36,500 days), so a saved value never stops the
-  // reports with `settings_invalid` (M5.5b review 4). The bounded words are not in 07 (batch Q69): marked gaps (run file).
+  // reports with `settings_invalid` (M5.5b review 4). The bounded words are not in 07 (batch Q69): 07-W §3.
   const warn = intIn(f.warnMonths, 1, REALISATION_MAX_MONTHS);
   if (warn === null) e["f-realisation-warnMonths"] = REALISATION_ERRORS.warnMonths;
   const inrMonths = intIn(f.inrMonths, 1, 120);

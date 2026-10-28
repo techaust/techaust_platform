@@ -244,7 +244,7 @@ export function ConvertDialog(props: {
                 ))}
               </div>
             </fieldset>
-            <VerifyNote legal>The GST treatment is confirmed on the proposal and the invoice.</VerifyNote>
+            <VerifyNote>The GST treatment is confirmed on the proposal and the invoice.</VerifyNote>
             {registered && (
               <FormField
                 id="cv-gstin"

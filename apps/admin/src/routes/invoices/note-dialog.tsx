@@ -195,9 +195,9 @@ function NoteDialogBody(props: {
     const body = { expectedParentUpdatedAt: p.updatedAt, ...fields };
     try {
       if (kind === "credit") return await notesApi.createCredit(p.id, body);
-      // a debit note's request is its lines only (the route has no mode)
+      // a debit note's request is its lines, or for "Tax charged too low" its tax and no lines (the route has no mode)
       const { mode: _mode, grossMinor: _gross, ...debit } = body;
-      return await notesApi.createDebit(p.id, { ...debit, lines: fields.lines ?? [] });
+      return await notesApi.createDebit(p.id, debit);
     } catch (e) {
       // A draft was made in the meantime (another tab, another person): open it and save this request into it.
       if (e instanceof RequestError && e.code === "note_draft_exists" && e.extra.draftId) {

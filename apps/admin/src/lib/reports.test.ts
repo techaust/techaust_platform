@@ -8,7 +8,6 @@ import { describe, expect, it } from "vitest";
 import { RequestError } from "../api.ts";
 import { ACTION_LABELS } from "./audit.ts";
 import { reportBellHref } from "./bell-links.ts";
-import { COPY_GAP } from "./copy-gap.ts";
 import {
   byUrgency,
   FINANCE_COPY,
@@ -53,12 +52,12 @@ import {
 } from "./reports-build.ts";
 import { buildTax, REALISATION_ERRORS, taxToForm } from "./tax-settings.ts";
 
-/** 07-V was approved on 2026-10-28 (research and wording): its lines carry no mark; only a line 07-V lacks does (`G`). */
+/** 07-V and 07-W were approved on 2026-10-28 (research and wording): no line carries a mark (`M` and `G` are empty). */
 const M = "";
-const G = `${COPY_GAP} `;
+const G = "";
 
 describe("07-V is approved word for word", () => {
-  it("no 07-V line carries the mark; a line 07-V lacks still does", () => {
+  it("no 07-V or 07-W line carries the mark", () => {
     expect(GST_COPY.overall).toBe(`${G}Overall`);
     for (const line of [
       GST_COPY.title,

@@ -2,7 +2,7 @@
 // emails and links, its reminders, why a care draft wasn't issued by itself, and the client's automatic-issue switch.
 //
 // Copy: 07-U (docs/07-content-appendix/U-m5.4-send-recurring-reminders.md), approved by the lead on 2026-10-28 under the owner's delegation, word for
-// word. A line 07-U doesn't have is `gap(...)` (./copy-gap.ts: shown with the "[Placeholder]" mark, never invented, listed in the run file). Lines reused
+// word. A line 07-U lacked is 07-W's (approved 2026-10-28), never invented. Lines reused
 // from approved copy (07-N/07-Q, the M4.5 send dialog) say where they come from.
 //
 // The email preview repeats the words of the real templates (packages/email/src/billing.ts, which the admin does not bundle); a test renders the real
@@ -12,7 +12,6 @@ import { noteReasonWords } from "@techaust/core/invoice-email";
 import type { Currency } from "../api.ts";
 import { RequestError } from "../api.ts";
 import type { PillTone } from "../components/display.tsx";
-import { COPY_GAP, gap } from "./copy-gap.ts";
 import { dayText, formatIstDay, moneyText } from "./documents.ts";
 import { invErrorText } from "./invoices.ts";
 import type { InvoiceType } from "./invoices-api.ts";
@@ -47,25 +46,23 @@ export const SEND_COPY = {
   emailAgain: "Email again",
   dialogTitle: (type: InvoiceType | string, number: string) => `Email ${documentWord(type)} ${number}`,
   sendTo: `Send to (up to ${MAX_RECIPIENTS})`,
-  /** H1: finance documents go only to contacts with portal access who can see finance (POR-03); 07-U's line names portal access only. */
-  sendToHint: gap(
+  /** H1: finance documents go only to contacts with portal access who can see finance (POR-03); 07-W §2 (replaces 07-U §4's hint). */
+  sendToHint:
     'Only contacts with portal access and "Can see finance" turned on can receive invoices and notes.',
-  ),
   noneWithPortal:
     "No contact of this client has portal access. Turn it on for a contact on the client's page, then send.",
   /** H1: some contacts have portal access, none of them can see finance. */
-  noneWithFinance: gap(
+  noneWithFinance:
     'No contact of this client with portal access can see finance. Turn on "Can see finance" for a contact on the client\'s page, then send.',
-  ),
   /** H1: the reason under a contact who has portal access but can't see finance. */
-  noFinance: gap('"Can see finance" is off for this contact'),
+  noFinance: '"Can see finance" is off for this contact',
   attach: "Attach the PDF",
   attachHint: "Without it, the email has a link to the document only.",
   send: "Send",
   sent: (n: number) => (n === 1 ? `Sent to ${n} contact.` : `Sent to ${n} contacts.`),
   queued: "Queued. It will be emailed in a moment.",
   /** L1: the send waits for the PDF to be made (the send rows' `queuedAt` is still empty). */
-  waitingForPdf: gap("Waiting for the PDF. The email goes as soon as it's made."),
+  waitingForPdf: "Waiting for the PDF. The email goes as soon as it's made.",
   locked: (type: InvoiceType | string) =>
     `Emailed, so this ${documentWord(type)} can no longer be voided. Corrections are made with a credit note or a debit note.`,
   emailsHeading: "Emails",
@@ -79,7 +76,7 @@ export const SEND_COPY = {
   revokeBody: (type: InvoiceType | string) =>
     `The links in the emails sent so far stop working. Contacts can still see the ${documentWord(type)} in the client portal.`,
   /** L7: revoking pauses the reminders too (only for a document that has them). */
-  revokePauses: gap("Payment reminders are paused too. You can resume them on this page."),
+  revokePauses: "Payment reminders are paused too. You can resume them on this page.",
   revoked: "Links revoked.",
   // Approved (07-N/07-Q, the M4.5 send dialog): no mark.
   noPortal: OFFER_COPY.noPortal,
@@ -123,7 +120,7 @@ export function sendState(s: {
   }
 }
 const SEND_STATE_WORDS: Record<SendState, string> = {
-  waiting: gap("Waiting for the PDF"),
+  waiting: "Waiting for the PDF",
   queued: "Queued",
   sent: "Sent",
   delivered: "Delivered",
@@ -166,8 +163,8 @@ export const REMINDER_COPY = {
   /** L2: the hours come from the view (`reminders.window`, Settings > Payment terms): 07-U's line with them filled in. */
   window: (from: string, to: string) => `Reminders go out between ${from} and ${to} IST.`,
   /** H2: the toast (the page's status region) after Pause and Resume. */
-  pausedDone: gap("Reminders paused."),
-  resumedDone: gap("Reminders resumed."),
+  pausedDone: "Reminders paused.",
+  resumedDone: "Reminders resumed.",
 } as const;
 
 /** 07-U §5 schedule row: "3 days before the due date", "On the due date", "7 days after the due date" (the offset is signed: −3 is before). */
@@ -177,7 +174,7 @@ export function reminderDayLabel(offset: number): string {
   return `${n} ${n === 1 ? "day" : "days"} ${offset < 0 ? "before" : "after"} the due date`;
 }
 
-/** 07-U §5 skip reasons; a reason it doesn't name (superseded, policy off, anonymised…) is the plain placeholder. */
+/** 07-U §5 skip reasons; a reason it doesn't name (superseded, policy off, anonymised…) shows its code. */
 const SKIP_WORDS: Record<string, string> = {
   paid: "paid",
   credited: "credited in full",
@@ -185,8 +182,8 @@ const SKIP_WORDS: Record<string, string> = {
   paused: "paused",
   no_recipient: "no contact with portal access",
 };
-/** M2: a reminder whose day passed while the reminders were paused (the server's `missed_while_paused`): not 07-U's, so the plain mark. */
-const MISSED_WHILE_PAUSED = gap("Skipped: missed while reminders were paused");
+/** M2: a reminder whose day passed while the reminders were paused (the server's `missed_while_paused`): 07-W §2. */
+const MISSED_WHILE_PAUSED = "Skipped: missed while reminders were paused";
 
 export type ReminderRowView = {
   offset: number;
@@ -228,7 +225,7 @@ export function reminderStateText(r: ReminderRowView): string {
   if (r.skippedReason === "missed_while_paused") return MISSED_WHILE_PAUSED;
   if (r.skippedReason) {
     const why = SKIP_WORDS[r.skippedReason];
-    return why ? `Skipped: ${why}` : `Skipped: ${COPY_GAP}`;
+    return `Skipped: ${why ?? r.skippedReason}`;
   }
   return `Due ${formatIstDay(r.dueAt)}`;
 }
@@ -376,7 +373,7 @@ function reasonLine(reason: string): string[] {
   return [/[.!?]$/.test(r) ? `Reason: ${r}` : `Reason: ${r}.`];
 }
 
-/** The body's paragraphs (07-U §1, marked), the button and the closing sentence, for one first name. */
+/** The body's paragraphs (07-U §1), the button and the closing sentence, for one first name. */
 export function previewBody(
   f: PreviewFacts,
   firstName: string,
@@ -448,7 +445,7 @@ const joinAnd = (xs: readonly string[]) =>
 /** 07-U §6: "Drafted, not issued automatically, because {reasons}." (null when there is no reason to give). */
 export function draftedBecause(reasons: readonly string[]): string | null {
   if (reasons.length === 0) return null;
-  const words = reasons.map((r) => AUTO_REASON_WORDS[r] ?? COPY_GAP);
+  const words = reasons.map((r) => AUTO_REASON_WORDS[r] ?? r);
   return `Drafted, not issued automatically, because ${joinAnd(words)}.`;
 }
 
@@ -458,19 +455,15 @@ export const periodText = (start: string, end: string) =>
 
 export const CARE_COPY = {
   toggle: "Issue care invoices automatically",
-  /**
-   * L7: Sales can't turn it off (no billing permission), so the hint names Owner and Staff and the finance rule (H1). 07-U §6's approved hint says "billing
-   * contacts with portal access" and "anyone can turn it off", which the screen would get wrong, so this proposed line stays marked (run file).
-   */
-  toggleHint: gap(
+  /** 07-W §2 (replaces 07-U §6's hint): Sales can't turn it off (no billing permission), and recipients need finance access (H1). */
+  toggleHint:
     "On the billing day, the invoice is issued and emailed to the client's billing contacts who have portal access and can see finance. Only an owner can turn this on; an owner or a staff member can turn it off.",
-  ),
   /** 07-U §6 "On, turned on by {name} on {date}"; the date part only when the audit log still says when (`careAutoIssueBy.at`), never guessed. */
   onBy: (name: string, at?: number | null) =>
     typeof at === "number" ? `On, turned on by ${name} on ${formatIstDay(at)}` : `On, turned on by ${name}`,
   ownerOnly: "Only an owner can turn on automatic issuing.",
-  /** The brief: "not in effect" when the owner who turned it on is no longer active. 07-U has no line for it (run file). */
-  notInEffect: `${COPY_GAP} Not in effect`,
+  /** 07-W §2: the owner who turned it on is no longer active. */
+  notInEffect: "Not in effect",
   /** The care plan the invoice bills (the admin's own section name). */
   carePlan: "Care plan",
 } as const;
@@ -490,21 +483,20 @@ export type CarePlanBilling = {
 };
 
 /**
- * The section's words. 07-U has no line for the plan page's billing section, so every one is a marked gap (`COPY_GAP`, listed in the run file). Only the
- * reasons line is 07-U §6's (`draftedBecause`).
+ * The section's words: 07-W §2. Only the reasons line is 07-U §6's (`draftedBecause`).
  */
 export const PLAN_BILLING_COPY = {
-  heading: `${COPY_GAP} Billing`,
-  lastBilled: `${COPY_GAP} Last billed period`,
-  notBilled: `${COPY_GAP} Not billed yet`,
-  noRecord: `${COPY_GAP} No invoice on record for this period`,
-  nextDay: `${COPY_GAP} Next billing day`,
-  noNextDay: `${COPY_GAP} None, the plan is cancelled`,
+  heading: `Billing`,
+  lastBilled: `Last billed period`,
+  notBilled: `Not billed yet`,
+  noRecord: `No invoice on record for this period`,
+  nextDay: `Next billing day`,
+  noNextDay: `None, the plan is cancelled`,
   /** The Owner's choices allow it; this never says the draft is ready (`blockersChecked` is false). */
-  autoAllowed: `${COPY_GAP} The owner's choices allow this draft to be issued automatically.`,
+  autoAllowed: `The owner's choices allow this draft to be issued automatically.`,
   /** Where the missing fields are: the draft's own page (its checklist). */
-  checkDraft: `${COPY_GAP} Any field still missing is listed on the draft's page.`,
-  openDraft: `${COPY_GAP} Open the draft`,
+  checkDraft: `Any field still missing is listed on the draft's page.`,
+  openDraft: `Open the draft`,
 } as const;
 
 /** The auto-issue lines of the section: 07-U §6's reasons (not eligible) or the allowed line, then always the pointer to the draft's own checklist. */
