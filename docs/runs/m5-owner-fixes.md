@@ -452,3 +452,45 @@ No change (lead's decision).
    - Cheap options for the lead, one constant or a few lines each: a smaller budget (512 KiB would roughly halve the inflate part), or no inflating at all above a file size.
    - I kept the decided 1.5 MiB.
 2. The base branch moved while I worked (`937e86d`, `1b788a8`: the audit A1 and A2 notes in `docs/runs/full-audit-m1-m5.md`). This branch doesn't touch that file, so the merge should be clean.
+
+## Review (reviewer claude-opus-5-5/high, 2026-10-29 ~02:50–03:40 IST, on 24d9d3e2): SEND BACK
+The lead's summary of the reviewer's reply.
+- **Verified:**
+  - All 7 real Chrome PDFs on this PC pass the check; the owner's damaged proposal fails `xref_offset` at budget 0 and by default.
+  - Every PDF put goes through `putPdfOnce` with a `sha256`.
+  - The fill route's ROUTES row and the `mutate` WHERE match the save's.
+  - The clock fixes landed: the full admin suite passed at 03:02 IST, inside the old failure window.
+  - The theme boot script is correct.
+  - pdf 333, jobs 517, portal 620 and admin 3,218 tests pass; `pnpm check` passes.
+  - The visual review (from screenshots, since another agent had the browser) found no brand or accessibility break apart from finding 6.
+  - 07-X is clear; only line 29 needs a correction.
+- **Findings:**
+  1. **High:** the check's CPU comes from a `new RegExp` built per xref entry (`packages/pdf/src/integrity.ts:119`). Measured with Node 24's V8 on real Chrome PDFs, with nothing inflated: cold, 37.0 ms on a 486 KB, 1,926-object file and 15.3 ms on the owner's 204 KB estimate; warm, 5.8 ms and 2.2 ms. The regex loop alone, cold, costs 24.6 ms against 1.9 ms with one precompiled regex. So a cold consumer would pass 10 ms, then retry and dead-letter. Fix:
+     - one module-level sticky regex (`/(\d+)\s+(\d+)\s+obj/y`, set `lastIndex`, no `slice`);
+     - find `startxref` and `%%EOF` with `lastIndexOf` in the last 1 KB;
+     - optionally scan bytes instead of latin1-decoding the whole file;
+     - a workerd test on a synthetic PDF of about 2,000 objects.
+  2. **Medium:** Content-Length is compared with the decoded body (`browser.ts:147`). Pass `null` when `content-encoding` is present and not `identity`, or when the header isn't digits.
+  3. **Medium:** "Catalogue now has…" and the duplicate fill after a normal edit (`service-fill.ts:121-124`, a 60-character match). Report "now" only for Catalogue text changed after the draft was made (`catalogue_items.updated_at > documents.created_at`), or record what filled each section.
+  4. **Medium:** the Catalogue notes go stale after the lines change (`lib/documents.ts:1030`; the PATCH answer has no `catalogueGaps`). Return `catalogueGaps` in the PATCH answer whenever the lines changed.
+  5. **Medium:** the re-read after the first service line is fragile (`editor.tsx:93-122`): stale token text written back, typing lost on remount, `reread` never reset, titles not checked. Root fix: return the refilled sections in the save answer, apply them in `applySave`, and drop the re-read.
+  6. **Medium:** at 375 px the section-row chevron drops onto its own line (shots 33 and 34). Keep it inline.
+  7. **Low:** never auto-hide `REQUIRED_SECTIONS` (`service-fill.ts:88-89`, `document-draft.ts:192`).
+  8. **Low:** `document-fill.ts:86-161` copies the save's write path. Make one shared `writeDraftState` helper.
+  9. **Low:** `ITEMS_OF_DOCUMENT` runs for sent versions too (`documents.ts:411`). Add a `frozen_at IS NULL` condition.
+  10. **Low:** check edge cases: cap the xref `count` at `(size - at) / 20`; accept a CR-only line end before `endstream`; recognise a linearised file (two `startxref`) instead of reading it as incremental.
+  11. **Low, copy:** 07-X line 29 should read "A new proposal takes…", since estimates have no such sections.
+  12. **Low:** a second service with no text, in a section that shows the first service's text, gets no note. **Lead's reading of the owner's Q3:** yes, the note names every service whose text is missing.
+  13. **Low:** loosen or remove the wall-time limits in `apps/jobs/test/pdf-integrity.test.ts`.
+- **Not verified:**
+  - Worker CPU on staging;
+  - whether Browser Run sends a `Content-Encoding`;
+  - R2's `sha256` refusal on staging;
+  - a live keyboard and axe pass;
+  - the portal offer page with a real offer.
+
+## Fix round 2 (lead's brief; builder claude-opus-5-5/high, designer claude-opus-5-5/high for item 6)
+Fix every review finding, 1–13, as described above. Items 1, 2 and 10 are in `packages/pdf` and `apps/jobs`. Items 3, 4, 5, 7, 8, 9 and 12 are in the admin worker, plus the SPA's `applySave`/editor for 4 and 5. Item 6 is CSS in `apps/admin/src`. Item 11 is the copy page. Item 13 is the jobs test.
+- **Item 1:** report cold and warm timings (Node V8, a fresh process for cold) on the two real PDFs in the main checkout's `.logs/m5-owner-fixes/`. Read them locally and never commit them. Target: cold ≤ 3 ms on the 204 KB file.
+- **Item 3:** prefer the `updated_at` rule. If you record what filled each section instead, it must need no migration, or stop and report.
+- **Done means:** `pnpm check` and the full `pnpm test` pass. Append "### Fix round 2 report".
