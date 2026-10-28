@@ -212,7 +212,7 @@ const makePrivacy = (ga: boolean): LegalDoc => ({
       title: "Data stored outside India",
       blocks: [
         {
-          // Researched 2026-10-28, DPDP s.16 (08-C RB-16; a watch item: no country restricted to September 2026).
+          // OPEN (08-C RB-16, watch): any DPDP s.16(1) notification restricting a country we use? None reported to September 2026.
           p: "Some providers store data outside India. Indian law currently permits this, as the Government has not restricted transfers to these countries. For visitors and clients in the EU or UK, we rely on our providers’ standard contractual clauses or equivalent safeguards.",
         },
       ],

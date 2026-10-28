@@ -166,7 +166,11 @@ export const imsBody = z.strictObject({
 
 const refuse = (c: Ctx, r: NoteRefusal) =>
   c.json(
-    { error: { code: r.error.code, message: r.error.message }, ...(r.extra ?? {}), request_id: c.var.rid },
+    {
+      error: { code: r.error.code, message: r.error.message, ...(r.details ? { details: r.details } : {}) },
+      ...(r.extra ?? {}),
+      request_id: c.var.rid,
+    },
     r.status,
   );
 

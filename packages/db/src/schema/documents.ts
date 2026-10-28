@@ -169,8 +169,11 @@ export const documents = sqliteTable(
     fxRateMicros: integer("fx_rate_micros"),
     fxDate: text("fx_date"),
     fxSource: text("fx_source"),
-    /** Q24 (owner 2026-10-28, 08-C RA-21): 1 when the Owner stated that no reference rate was published on the day of supply and the rate is the last one published before it. Null: not stated. Frozen with the rate. */
-    fxNoRateThatDay: integer("fx_no_rate_that_day"),
+    /**
+     * Q24 (owner 2026-10-28, 08-C RA-21): the DAY the Owner's statement "no reference rate was published that day" covers (an ISO date; null: not stated). It is the day of supply the statement
+     * was made for (a draft: the IST day of the save; a payment received: the day it arrived) and counts only at an issue on that same day. Frozen with the rate.
+     */
+    fxNoRateDay: text("fx_no_rate_day"),
     subtotalMinor: integer("subtotal_minor").notNull().default(0),
     discountMinor: integer("discount_minor").notNull().default(0),
     taxableMinor: integer("taxable_minor").notNull().default(0),
@@ -364,6 +367,17 @@ export const advanceReceipts = sqliteTable(
 
 /** What a statement PDF prints about the supplier: the company block as it was when the PDF was requested (no bank, no sender). */
 export type StatementIssuer = { company: IssuerSnapshot["company"] };
+
+/**
+ * The claim that keeps a request for a stored PDF from being queued twice in a short time (review 2026-10-28, finding 8): one row per `<kind>:<document id>` (today `supplier:`, the
+ * DUPLICATE FOR SUPPLIER copy), whose `asked_at` is when it was last asked for. The admin API moves it forward only when the last ask is older than 5 minutes (one statement,
+ * `changes` says who won), so repeated or parallel downloads of a copy that is not made yet put ONE message on the queue. A throttle, not a record: no triggers, no foreign key
+ * (the id is a plain string), nothing personal in it.
+ */
+export const pdfAsks = sqliteTable("pdf_asks", {
+  key: text("key").primaryKey(),
+  askedAt: integer("asked_at").notNull(),
+});
 
 /**
  * The PDF of one client's statement of account for one currency and range (M5.5b, LD79, JOB-PDF-01, Q19, Q57): a CACHE, not a record. A row is made by

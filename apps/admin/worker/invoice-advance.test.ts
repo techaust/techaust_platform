@@ -677,10 +677,10 @@ describe("an overseas proforma gives an export invoice [LUT rule, FX, Q8]", () =
     );
     expect(four.status, await four.clone().text()).toBe(201);
     const fourId = (await json(four)).id;
-    expect((await typesRow(fourId))?.fx_no_rate_that_day).toBe(1);
+    expect((await typesRow(fourId))?.fx_no_rate_day).toBe(todayIso()); // the day the money arrived
     expect(await sealCheck(fourId)).toEqual({ content: true, snapshot: true });
     const view = await getInvoice(o, fourId);
-    expect(view.fx.value).toMatchObject({ noRateThatDay: true, date: day(-4) });
+    expect(view.fx.value).toMatchObject({ noRateThatDay: true, noRateDay: todayIso(), date: day(-4) });
     // the rate is judged against the day the money arrived: a rate of that day is fine even if today is later
     const received = day(0);
     expect(

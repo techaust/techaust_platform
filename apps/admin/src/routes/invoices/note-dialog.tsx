@@ -212,7 +212,12 @@ function NoteDialogBody(props: {
   async function compose(f: NoteForm = form) {
     setClosest(null);
     setBlockers([]);
-    const built = buildNoteFields(kind, f, { currency, lines, totalLeftMinor: totalLeft });
+    const built = buildNoteFields(kind, f, {
+      currency,
+      lines,
+      totalLeftMinor: totalLeft,
+      supplyType: p.supply?.type ?? null,
+    });
     if (!built.ok) {
       setErrors(built.errors);
       focusFirst(built.errors);
@@ -303,7 +308,7 @@ function NoteDialogBody(props: {
           }}
         >
           <option value=""> </option>
-          {reasonsOf(kind).map((r) => (
+          {reasonsOf(kind, p.supply?.type ?? null).map((r) => (
             <option key={r.code} value={r.code}>
               {r.label}
             </option>

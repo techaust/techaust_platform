@@ -103,7 +103,13 @@ function validExport(v: unknown): boolean {
 }
 
 function validFx(v: unknown): boolean {
-  return isObj(v) && typeof v.rateMicros === "number" && isStr(v.date) && isStr(v.source);
+  return (
+    isObj(v) &&
+    typeof v.rateMicros === "number" &&
+    isStr(v.date) &&
+    isStr(v.source) &&
+    (v.noRateDay === undefined || isStr(v.noRateDay))
+  );
 }
 
 function validAdvance(v: unknown): boolean {
@@ -190,7 +196,7 @@ export function invoiceDraftOf(e: InvoiceEnvelope): DraftContent {
             rateMicros: h.fx.rateMicros,
             date: h.fx.date,
             source: h.fx.source,
-            ...(h.fx.noRateThatDay ? { noRateThatDay: true } : {}),
+            ...(h.fx.noRateDay ? { noRateDay: h.fx.noRateDay } : {}),
           },
         }
       : {}),

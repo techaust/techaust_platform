@@ -1,6 +1,6 @@
 // The layouts [ADM-REP-04, ADM-REP-07]: a version is never edited, so every version's file stems and headers are pinned in a
 // snapshot. A change to a header is a new version (`-v2`) and a new snapshot, never an edit of this one. Every column is
-// UNVERIFIED (docs/08-A; Researched 2026-10-28, GSTN advisories of June 2025 (08-C RA-23)): the CA's import of the sample CSVs is the check.
+// UNVERIFIED (docs/08-A; OPEN, 08-C RA-23): the CA's import of the sample CSVs is the check.
 import { describe, expect, it } from "vitest";
 import {
   CURRENT_EDF_LAYOUT,

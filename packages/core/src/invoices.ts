@@ -296,10 +296,6 @@ export const INVOICE_CHECKLIST: readonly ChecklistItem[] = [
     blockers: ["unregistered_high_value"],
   },
 ];
-
-/** The keys the Owner may store (an item that is neither locked nor unavailable). */
-export const CHECKLIST_SWITCHABLE = ["bankDetails"] as const;
-
 /**
  * The house rules of the checklist (owner 2026-10-28, 07-S §3; Researched 2026-10-28, Rule 46 CGST Rules, 08-C RA-05 and RA-06): items GST law does not require, which the Owner may switch off:
  * bank details, the payment link or QR, and the authorised signatory (an invoice issued electronically needs no signature). Every other item is statutory and locked; the Settings API
@@ -307,6 +303,11 @@ export const CHECKLIST_SWITCHABLE = ["bankDetails"] as const;
  */
 export const HOUSE_RULE_ITEMS = ["bankDetails", "paymentLink", "signatory"] as const;
 export const isHouseRuleItem = (id: string): boolean => (HOUSE_RULE_ITEMS as readonly string[]).includes(id);
+
+/** The keys the Owner may switch: the house rules whose thing exists (the payment link does not yet), derived so the two lists cannot drift apart (review 2026-10-28, finding 5). */
+export const CHECKLIST_SWITCHABLE: readonly string[] = HOUSE_RULE_ITEMS.filter(
+  (id) => INVOICE_CHECKLIST.find((i) => i.id === id)?.available === true,
+);
 
 /** Whether a checklist item is on for these settings: locked items always, `bankDetails` as stored, `paymentLink` never (not available). */
 export function checklistItemOn(item: ChecklistItem, s: ChecklistSettings): boolean {
@@ -351,8 +352,8 @@ export type IssueFacts = {
       readonly rateMicros: number;
       readonly date: string;
       readonly source: string;
-      /** The Owner stated that no rate was published on the day of supply (Q24). */
-      readonly noRateThatDay?: boolean;
+      /** The day (ISO) the Owner stated that no rate was published (Q24); it counts only when it is the day of supply (`refDate`). */
+      readonly noRateDay?: string | undefined;
     } | null;
     readonly refDate: string;
     readonly maxAgeDays: number;
@@ -429,12 +430,7 @@ export function issueBlockers(
   if (f.currency === "USD" && (f.type === "tax_invoice" || f.type === "export_invoice")) {
     if (f.fx.value === null) add("fx_missing", { date: f.fx.refDate });
     else {
-      const verdict = fxDateVerdict(
-        f.fx.value.date,
-        f.fx.refDate,
-        f.fx.maxAgeDays,
-        f.fx.value.noRateThatDay === true,
-      );
+      const verdict = fxDateVerdict(f.fx.value.date, f.fx.refDate, f.fx.maxAgeDays, f.fx.value.noRateDay);
       if (verdict === "same_day_exists") add("fx_same_day_exists", { date: f.fx.refDate });
       else if (verdict === "invalid") add("fx_date_invalid", { date: f.fx.refDate });
     }
@@ -614,8 +610,8 @@ export type InvoiceSnapshotInput = {
     readonly rateMicros: number;
     readonly date: string;
     readonly source: string;
-    /** Q24 (08-C RA-21): present (true) only when the Owner stated that no rate was published on the day of supply; frozen with the rate, so an older seal keeps its hash. */
-    readonly noRateThatDay?: true;
+    /** Q24 (08-C RA-21): present only when the Owner stated that no rate was published; the DAY the statement covers (the day of supply), frozen with the rate so an older seal keeps its hash. */
+    readonly noRateDay?: string;
   };
   readonly proforma?: { readonly notice: string };
   readonly advance?: {

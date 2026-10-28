@@ -39,6 +39,8 @@ export function careBillingView(
   plan: { startDate: string; billingDay: number; status: CareStatus },
   statuses: readonly StatusRow[],
   today: string,
+  /** The hour it is now in IST: from the care scan's hour on, a period due and unbilled is drafted at tomorrow's scan (review 2026-10-28, finding 11). */
+  istHour?: number,
 ) {
   const lastBilled = row?.last_billed_period ?? null;
   const draftOpen = row?.doc_id && row.doc_status === "draft" && row.doc_frozen_at === null;
@@ -63,7 +65,7 @@ export function careBillingView(
       : null;
   return {
     lastBilledPeriod: lastBilled,
-    nextBillingDay: nextBillingDayOf(today, plan, plan.status, lastBilled, statuses),
+    nextBillingDay: nextBillingDayOf(today, plan, plan.status, lastBilled, statuses, istHour),
     draft:
       row?.doc_id && row.doc_status
         ? { id: row.doc_id, number: row.doc_number, status: row.doc_status }

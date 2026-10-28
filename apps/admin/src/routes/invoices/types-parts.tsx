@@ -2,7 +2,7 @@
 // country, the extra export note), the exchange rate and its dialog, the service completion date, a proforma's money (what came in, what is left, the
 // tax invoices issued from it) with the Owner's "Issue tax invoice for payment received", and the line that says which proforma a paid invoice settles.
 // Words: 07-S (lib/invoice-types.ts). Money only through core; the screen sends what was typed and the server decides.
-// Step 5 (research and wording): a rate dated before the document's day asks whether no rate was published that day (S §8, `noRateThatDay`); a payment
+// Step 5 (research and wording): a rate dated before the document's day asks the Owner to state that no rate was published that day (S §8, `noRateThatDay`); a payment
 // whose year has no LUT offers "Save the LUT first" or "Issue with IGST" (S §9, Q37; Researched 2026-10-28, 08-C RA-19, RA-21).
 //
 // One thing is drawn: the STATUTORY LINE. The endorsement of an export invoice and the notice of a proforma are printed on the PDF in a band (an ink bar,

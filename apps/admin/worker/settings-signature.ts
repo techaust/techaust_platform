@@ -3,7 +3,7 @@
 // file an earlier document used; the reference lives in the company settings (`company.signature`; a row from before M4.4 reads as null).
 // Objects are never deleted here: replacing or removing the signature only changes the reference, so a document that already used the image
 // keeps it whatever M5.2 decides (orphan clean-up is a follow-up with the other R2 clean-up, M7.4).
-// It is printed only on invoices (from M5.2). Researched 2026-10-28, Rule 46(q) proviso CGST Rules (08-C RA-06): whether an image of a signature is wanted on a tax invoice at all.
+// It is printed only on invoices (from M5.2). Researched 2026-10-28, Rule 46(q) proviso CGST Rules (08-C RA-06): a signature is not required on an invoice issued electronically; the image is optional.
 // Nothing here executes or renders the image: the type is decided by the first bytes (no SVG, no scripts), and the download is an
 // attachment with a sandbox CSP.
 import { resolveSetting, SIGNATURE_MAX_BYTES, type SignatureRef } from "@techaust/core/settings";

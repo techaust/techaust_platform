@@ -23,7 +23,15 @@ import {
   putBank,
   putCompany,
 } from "./test-invoices.ts";
-import { draftCredit, draftDebit, issueCredit, mkIssuedInvoice, noteRow, parentRow } from "./test-notes.ts";
+import {
+  draftCredit,
+  draftDebit,
+  issueCredit,
+  issueDebit,
+  mkIssuedInvoice,
+  noteRow,
+  parentRow,
+} from "./test-notes.ts";
 
 beforeEach(async () => {
   await putCompany();
@@ -164,6 +172,10 @@ describe("the debit note 'Tax charged too low' [Q35, RA-22]", () => {
       const err = (await json(res)).error;
       expect(err.code).toBe("debit_tax_only_invalid");
       expect(err.message).toBe('Enter tax only: the taxable value of a "Tax charged too low" note is zero.');
+      // only the odd amount on an intra-state invoice says why (07-W 5.9): the screen shows its own line for `details.reason`
+      if ((body as Record<string, unknown>).taxAmountMinor === 1_801)
+        expect(err.details).toEqual({ reason: "odd_amount" });
+      else expect(err.details).toBeUndefined();
     }
     expect(await docs()).toBe(before);
   });
@@ -213,6 +225,40 @@ describe("the debit note 'Tax charged too low' [Q35, RA-22]", () => {
     expect(await noteRow(b.id)).toMatchObject({ taxable_minor: 0, igst_minor: 1_800, total_minor: 1_800 });
   });
 
+  it("a note copies the parent's no-rate statement with the day it covers: the note's own fx columns and seal are the parent's (review 2026-10-28, finding 6)", async () => {
+    const o = await farSession("owner");
+    const day = (n: number) =>
+      new Date(Date.parse(`${new Date().toISOString().slice(0, 10)}T00:00:00Z`) + n * 86_400_000)
+        .toISOString()
+        .slice(0, 10);
+    const inv = await mkIssuedInvoice(o, {
+      prices: [100_000],
+      client: mkOverseasClient,
+      fields: {
+        exportMode: "igst_paid",
+        fx: { rate: "83.1234", date: day(-3), source: "FBIL", noRateThatDay: true },
+      },
+    });
+    const parentFx = await env.DB.prepare("SELECT fx_date, fx_no_rate_day FROM documents WHERE id = ?")
+      .bind(inv.id)
+      .first<{ fx_date: string; fx_no_rate_day: string }>();
+    expect(parentFx).toEqual({ fx_date: day(-3), fx_no_rate_day: day(0) });
+    const debit = await issueDebit(o, inv.id, taxOnly(1_800));
+    const credit = await issueCredit(o, inv.id, {
+      mode: "lines",
+      lines: [{ line: 0, taxableMinor: 10_000 }],
+    });
+    for (const id of [debit.id, credit.id]) {
+      const row = await env.DB.prepare("SELECT fx_date, fx_no_rate_day FROM documents WHERE id = ?")
+        .bind(id)
+        .first();
+      expect(row).toEqual({ fx_date: day(-3), fx_no_rate_day: day(0) });
+      const bundle = (await loadDocument(env.DB, id)) as DocumentBundle<TermsRef>;
+      expect(await verifyInvoiceSealed(bundle)).toEqual({ content: true, snapshot: true });
+      expect(invoiceSealPartsOfBundle(bundle)?.fx).toMatchObject({ noRateDay: day(0) });
+    }
+  });
+
   it("a save changes the amount, or turns the note into a price correction (and back), always from the invoice as it is now", async () => {
     const o = await farSession("owner");
     const inv = await mkIssuedInvoice(o, { prices: [100_000, 50_000] });
@@ -230,6 +276,16 @@ describe("the debit note 'Tax charged too low' [Q35, RA-22]", () => {
     });
     expect(more.status, await more.clone().text()).toBe(200);
     expect((await json(more)).totalMinor).toBe(5_400);
+    // a save with an odd amount says why too (07-W 5.9)
+    const doc1 = await getInvoice(o, made.id);
+    const odd = await patchInvoice(o, made.id, {
+      expectedUpdatedAt: doc1.updatedAt,
+      fields: { note: { mode: "lines", reasonCode: "tax_charged_too_low", taxAmountMinor: 5_401 } },
+    });
+    expect(odd.status).toBe(400);
+    const oddBody = await json(odd);
+    expect(oddBody.error.code).toBe("debit_tax_only_invalid");
+    expect(oddBody.error.details).toEqual({ reason: "odd_amount" });
     const doc2 = await getInvoice(o, made.id);
     const price = await patchInvoice(o, made.id, {
       expectedUpdatedAt: doc2.updatedAt,

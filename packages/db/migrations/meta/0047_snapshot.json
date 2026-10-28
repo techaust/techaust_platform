@@ -1,6 +1,6 @@
 {
-  "id": "9a4f01cf-805a-425c-b3ed-2f416bd32673",
-  "prevId": "b66db533-e919-4c16-94b5-4675adde337a",
+  "id": "52c4f1d5-f69b-4317-a04e-af3c961ec615",
+  "prevId": "fad1d53f-96d1-41be-848f-22b8843af4d4",
   "version": "6",
   "dialect": "sqlite",
   "tables": {
@@ -3940,9 +3940,9 @@
           "notNull": false,
           "autoincrement": false
         },
-        "fx_no_rate_that_day": {
-          "name": "fx_no_rate_that_day",
-          "type": "integer",
+        "fx_no_rate_day": {
+          "name": "fx_no_rate_day",
+          "type": "text",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false

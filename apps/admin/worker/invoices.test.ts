@@ -1,5 +1,5 @@
 // Invoice drafts [ADM-INV-01, ADM-INV-04, ADM-PRJ-02, ADM-APR-02]: create (from services and from a milestone), read, save, discard, list, and who may
-// do what. Issuing and voiding are in invoices-issue.test.ts and invoices-void.test.ts. OPEN (08-C RA-10): may a tax invoice issued in error and never delivered be shown as cancelled in GSTR-1 Table 13 with no credit note? for every rule under test.
+// do what. Issuing and voiding are in invoices-issue.test.ts and invoices-void.test.ts.
 import { env } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core/ids";
 import { beforeAll, describe, expect, it } from "vitest";

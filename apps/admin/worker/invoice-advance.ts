@@ -164,13 +164,14 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
       const source = fxSourceLabel(f.fx.source, f.fx.sourceNote);
       if (rateMicros === null || source === null) return err(c, BAD_REQUEST, 400);
       // Q24 (research round 2026-10-28; Researched 2026-10-28, 08-C RA-21): the rate of the day the money arrived, or the last one published before it when the Owner states that
-      // none was published that day (`noRateThatDay`), at most `fxMaxAgeDays` older; judged here, before anything else is worked out.
+      // none was published that day (`noRateThatDay`), at most `fxMaxAgeDays` older; judged here, before anything else is worked out. The statement is stored with the day it covers: the day the money arrived.
       const noRate = f.fx.noRateThatDay === true;
-      const verdict = fxDateVerdict(f.fx.date, f.receivedOn, ctx.settings.tax.fxMaxAgeDays, noRate);
+      const noRateDay = noRate ? f.receivedOn : null;
+      const verdict = fxDateVerdict(f.fx.date, f.receivedOn, ctx.settings.tax.fxMaxAgeDays, noRateDay);
       if (verdict === "same_day_exists") return err(c, fxSameDayExistsFor(f.receivedOn), 400);
       if (verdict === "invalid")
         return err(c, fxDateInvalidFor(f.receivedOn, ctx.settings.tax.fxMaxAgeDays), 400);
-      fx = { rateMicros, date: f.fx.date, source, ...(noRate ? { noRateThatDay: true as const } : {}) };
+      fx = { rateMicros, date: f.fx.date, source, ...(noRateDay ? { noRateDay } : {}) };
     }
     // (9) the lines: the amount split over the proforma's own (SAC, rate) groups, by the inclusive split
     const proformaComputed = d.computed;

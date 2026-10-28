@@ -3,6 +3,7 @@
 import { env } from "cloudflare:workers";
 import { fyLabelOfToken, supplierPdfKey } from "@techaust/core/pdf-jobs";
 import { beforeAll, describe, expect, it } from "vitest";
+import { SUPPLIER_ASK_WINDOW_MS, supplierAskKey } from "./document-events.ts";
 import { call, one, sessionFor, withEnv } from "./test-helpers.ts";
 import { mkProforma } from "./test-invoice-types.ts";
 import { codeOf, issueInvoice, mkInvoice, putBank, putCompany } from "./test-invoices.ts";
@@ -96,6 +97,54 @@ describe("GET /invoices/:id/pdf/supplier", () => {
     expect(asked.status).toBe(409);
     expect(await codeOf(asked)).toBe("pdf_pending");
     expect(b.sent).toEqual([{ v: 1, kind: "pdf.supplier", documentId: made.id, hop: 0 }]);
+  });
+
+  it("repeated and parallel downloads of a copy not made yet send ONE message in 5 minutes; after the window it asks again; a queue that fails frees the claim (review 2026-10-28, finding 8)", async () => {
+    const o = await owner();
+    const made = await mkInvoice(o);
+    expect((await issueInvoice(o, made.id)).status).toBe(200);
+    await env.DB.prepare("UPDATE documents SET pdf_r2_key = 'k', pdf_sha256 = ?2 WHERE id = ?1")
+      .bind(made.id, "c".repeat(64))
+      .run();
+    const q = queueOf();
+    const ask = () =>
+      call(`/invoices/${made.id}/pdf/supplier`, { cookie: o.cookie }, withEnv(env, { PDF_QUEUE: q.queue }));
+    // sequential: the first asks, the rest are held
+    for (const res of [await ask(), await ask(), await ask()]) {
+      expect(res.status).toBe(409);
+      expect(await codeOf(res)).toBe("pdf_pending");
+    }
+    // parallel: still the one message
+    await Promise.all([ask(), ask(), ask(), ask()]);
+    expect(q.sent).toEqual([{ v: 1, kind: "pdf.supplier", documentId: made.id, hop: 0 }]);
+    // inside the window the claim is held; once the last ask is older than 5 minutes the next one goes
+    const held = await env.DB.prepare("SELECT asked_at FROM pdf_asks WHERE key = ?1")
+      .bind(supplierAskKey(made.id))
+      .first<{ asked_at: number }>();
+    expect(held?.asked_at).toBeGreaterThan(0);
+    await env.DB.prepare("UPDATE pdf_asks SET asked_at = ?2 WHERE key = ?1")
+      .bind(supplierAskKey(made.id), Date.now() - SUPPLIER_ASK_WINDOW_MS - 1)
+      .run();
+    await ask();
+    expect(q.sent).toHaveLength(2);
+    await ask();
+    expect(q.sent).toHaveLength(2);
+    // a queue that cannot be reached: the claim is released, so the next download asks again (not 5 minutes later)
+    await env.DB.prepare("DELETE FROM pdf_asks WHERE key = ?1").bind(supplierAskKey(made.id)).run();
+    const failing = {
+      send: async () => {
+        throw new Error("queue down");
+      },
+      sendBatch: async () => undefined,
+    };
+    const down = await call(
+      `/invoices/${made.id}/pdf/supplier`,
+      { cookie: o.cookie },
+      withEnv(env, { PDF_QUEUE: failing }),
+    );
+    expect(down.status).toBe(409);
+    await ask();
+    expect(q.sent).toHaveLength(3);
   });
 
   it("an anonymised client: the stored copy still downloads (as the original does), but none is asked for", async () => {

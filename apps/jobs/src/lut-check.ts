@@ -1,4 +1,4 @@
-// The daily LUT check (M5.2 B3, ADM-INV-18, Q22, LD27; Researched 2026-10-28, Rule 96A CGST Rules (08-C RA-19): whether and when a letter of undertaking is needed is the CA's call).
+// The daily LUT check (M5.2 B3, ADM-INV-18, Q22, LD27; Researched 2026-10-28, Rule 96A CGST Rules (08-C RA-19): one LUT per FY, furnished before the first export of that FY, reminder from 1 March; OPEN (08-C RA-19, Q37, Q39): the cases after a lapse are the CA's call).
 //   M5.4 (LD61): the daily check now runs inside the 09:00 IST `alerts.daily` message (`alerts.ts`: `decideLut`, the weekly EMAIL, then `ringLutBell`); the 22:00 UTC cron no longer adds a
 //     `lut.check` message. The kind stays routable (and `processLutCheck` unchanged in what it writes) for a message queued before that deploy.
 //   (M5.2, kept for the record) cron (daily 22:00 UTC = 03:30 IST) -> `enqueueStats` added ONE `lut.check` message (the IST date of the run) to its existing LEADS_QUEUE `sendBatch`
