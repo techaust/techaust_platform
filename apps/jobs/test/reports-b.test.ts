@@ -28,7 +28,9 @@ useFakes();
 // Tests of one file share a database and an issued document is frozen (it cannot be deleted), so every test starts with every earlier export realised (a zero balance is a mutable column)
 // and with only its own owners active (the database refuses to leave no active owner, so the new ones are made first).
 beforeEach(async () => {
-  await run("UPDATE documents SET balance_minor = 0 WHERE type = 'export_invoice'");
+  await run(
+    "UPDATE documents SET paid_minor = total_minor, balance_minor = 0 WHERE type = 'export_invoice' AND balance_minor > 0",
+  );
 });
 
 /** `n` new active owners, and nobody else active as an owner. */
@@ -308,7 +310,7 @@ describe("realisation.scan: each stage rings once", () => {
     await owners();
     const ex = await mkExport("2026-11-03");
     await scan(tick("2027-07-10"));
-    await run("UPDATE documents SET balance_minor = 0 WHERE id = ?1", ex.id);
+    await run("UPDATE documents SET credited_minor = total_minor, balance_minor = 0 WHERE id = ?1", ex.id);
     fakes.email.length = 0;
     await scan(tick("2027-08-10")); // would be fema_overdue
     expect(alertEmails()).toEqual([]);

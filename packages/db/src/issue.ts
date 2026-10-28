@@ -19,7 +19,10 @@ import type {
   IssuerSnapshot,
   RecipientSnapshot,
 } from "./schema/documents.ts";
+import { DISCOUNT_AFTER_SALE_FROM_SQL, LUT_FOR_FY_SQL } from "./sql-rules.ts";
 
+/** The pure SQL of the rules the triggers share (`sql-rules.ts`, no D1 types, so the Node-only trigger script can read it). */
+export { DISCOUNT_AFTER_SALE_FROM_SQL, fyTokenOfDateSql, LUT_FOR_FY_SQL } from "./sql-rules.ts";
 /** The two frozen blocks of a sent document, for a caller that builds them (type only: nothing of the schema reaches a Worker bundle). */
 export type { InvoiceBankBlock, InvoiceIssuerSnapshot, InvoiceSwiftBlock, IssuerSnapshot, RecipientSnapshot };
 
@@ -300,9 +303,6 @@ export type NoteIssueArgs = {
 /** At most this many issued notes of a kind per invoice (core `NOTES_MAX`: a test compares the two; core is not imported here to keep the Worker bundle small). */
 export const NOTES_MAX_SQL = 20;
 
-/** The first IST day a credit note for "Discount after sale" may be dated (core `DISCOUNT_AFTER_SALE_FROM`: a test compares the two; Researched 2026-10-28, 08-C RA-02). */
-export const DISCOUNT_AFTER_SALE_FROM_SQL = "2026-11-01";
-
 /** The parent statuses a note can be issued against: not void, not fully credited (core `ledgerStatusOf`'s other values). */
 const NOTE_PARENT_LIVE = `(${NOTE_PARENT_LIVE_STATUSES.map((s) => `'${s}'`).join(", ")})`;
 
@@ -330,21 +330,6 @@ export const NOTE_COUNTS_SQL = `SELECT c.type, count(*) AS count FROM documents 
 /** The issue instant's freeze test, for the statements that follow it: this very batch froze the document. */
 const FROZEN_BY_THIS_BATCH =
   "EXISTS (SELECT 1 FROM documents n WHERE n.id = ?1 AND n.status = 'issued' AND n.frozen_at = ?2)";
-
-/**
- * Q37: a letter of undertaking with an ARN is saved in the `tax` setting for the FY token `?FY` (the pure twin is core `lutFor`: the `luts` list, and the one
- * legacy `lut {arn, fy}` of M3). Used inside a freeze WHERE, so a LUT removed between the read and the freeze refuses the batch.
- */
-export const LUT_FOR_FY_SQL = `EXISTS (SELECT 1 FROM settings ts WHERE ts.key = 'tax' AND (
-           EXISTS (SELECT 1 FROM json_each(ts.value, '$.luts') l WHERE json_extract(l.value, '$.fy') = ?FY AND trim(coalesce(json_extract(l.value, '$.arn'), '')) <> '')
-           OR (json_extract(ts.value, '$.lut.fy') = ?FY AND trim(coalesce(json_extract(ts.value, '$.lut.arn'), '')) <> '')))`;
-
-/**
- * The FY token ("2627") of an ISO date given as an SQL expression (`date`), the twin of core `fyOfDate(...).token` (1 April to 31 March; a test compares the
- * two day by day). Used by the trigger `documents_advance_lut_fy` (0050), which has only the receipt day to go on; the advance freeze binds the token.
- */
-export const fyTokenOfDateSql = (date: string): string =>
-  `(CASE WHEN CAST(substr(${date}, 6, 2) AS INTEGER) >= 4 THEN substr(${date}, 3, 2) || printf('%02d', (CAST(substr(${date}, 3, 2) AS INTEGER) + 1) % 100) ELSE printf('%02d', (CAST(substr(${date}, 3, 2) AS INTEGER) + 99) % 100) || substr(${date}, 3, 2) END)`;
 
 /** What every invoice freeze needs, whoever the authority is (the owner, an approval, or the owner's advance action). */
 type FreezeBase = Omit<InvoiceIssueArgs, "authority" | "bell">;

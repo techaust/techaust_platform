@@ -97,7 +97,9 @@ describe("the finance figures against a known fixture", () => {
     // an export 290 days old (FEMA's 9 months are over) and one 400 days old under LUT (the 12 months + 15 days are over)
     const feo = await addDoc({ clientId: usd, currency: "USD", issueDate: plus(-290), dueDate: plus(-100) });
     const gso = await addDoc({ clientId: usd, currency: "USD", issueDate: plus(-400), dueDate: plus(-200) });
-    await env.DB.prepare("UPDATE documents SET balance_minor = balance_minor - ?1 WHERE id = ?2")
+    await env.DB.prepare(
+      "UPDATE documents SET balance_minor = balance_minor - ?1, credited_minor = credited_minor + ?1 WHERE id = ?2",
+    )
       .bind(cn.computed.totalMinor, b.id)
       .run();
 

@@ -5,7 +5,6 @@
 import { INVOICE_FAMILY_SQL, QUOTE_DOCUMENT_TYPES } from "@techaust/core/clients";
 import { getTableColumns } from "drizzle-orm";
 import { getTableConfig } from "drizzle-orm/sqlite-core";
-import { DISCOUNT_AFTER_SALE_FROM_SQL, fyTokenOfDateSql, LUT_FOR_FY_SQL } from "./issue.ts";
 import {
   acceptanceCertificates,
   documentLines,
@@ -28,6 +27,7 @@ import {
   termsBlocks,
   termsVersions,
 } from "./schema/index.ts";
+import { DISCOUNT_AFTER_SALE_FROM_SQL, fyTokenOfDateSql, LUT_FOR_FY_SQL } from "./sql-rules.ts";
 
 /**
  * Columns of an issued document that may still change (ledger, status, void and the e-invoice status). FX-1 (A0 5): `irn`, `ack_no`, `ack_date` and

@@ -298,7 +298,7 @@ describe("the creditable amount cannot be exceeded [docs/09 :106, LD40]", () => 
     const aId = (await json(a)).id as string;
     // another credit note takes 60 % by SQL (a second one issued elsewhere): the parent moved
     await env.DB.prepare(
-      "UPDATE documents SET credited_minor = 70800, updated_at = updated_at + 1 WHERE id = ?",
+      "UPDATE documents SET credited_minor = 70800, balance_minor = balance_minor - 70800, updated_at = updated_at + 1 WHERE id = ?",
     )
       .bind(inv.id)
       .run();
@@ -324,7 +324,7 @@ describe("the creditable amount cannot be exceeded [docs/09 :106, LD40]", () => 
       beforeBatchHolding("issue_guard", async () => {
         // a credit note issued by SQL meanwhile: the invoice's ledger moved
         await env.DB.prepare(
-          "UPDATE documents SET credited_minor = 5, updated_at = updated_at + 1 WHERE id = ?",
+          "UPDATE documents SET credited_minor = 5, balance_minor = balance_minor - 5, updated_at = updated_at + 1 WHERE id = ?",
         )
           .bind(inv.id)
           .run();
