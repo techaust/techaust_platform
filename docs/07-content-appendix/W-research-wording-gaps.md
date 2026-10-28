@@ -44,3 +44,5 @@ _The designer of the research and wording task found these lines on screens with
 5. The portal's privacy link: a portal `WEBSITE_ORIGIN` var (staging: the staging website; production: https://techaust.com), the builder's.
 6. Checklist "Authorised signatory" switched off: the PDF leaves out the signature block ("For {company}", the image and "Authorised signatory"); an electronically issued invoice needs none (08-C RA-06).
 7. No bell for a failed supplier copy: the admin's download asks jobs again, which is enough.
+8. Catalogue SAC hint (07-L): "The six-digit service code printed on invoices." (the visible "VERIFY WITH CA." goes; the SAC list is researched, 08-C RA-16, and the care-plan code is on the CA's list).
+9. `debit_tax_only_invalid` when the tax on an intra-state invoice is odd (CGST must equal SGST): "Enter an even amount: it is split equally between CGST and SGST."

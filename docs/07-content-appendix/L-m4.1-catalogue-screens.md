@@ -10,7 +10,7 @@ _Drafted by the lead on 2026-10-25 from approved facts (04 ADM-CAT-01…05, WEB-
 | Status labels | "Active" · "Retired" · "On the website" · "Not on the website" |
 | Category labels | "Advise" · "Build" · "Automate" · "Connect" · "Run" |
 | Unit labels | "Fixed price" · "Per milestone" · "Per month" · "Per hour" · "Per workflow" · "Per connector" · "Per document" |
-| SAC field hint | "The six-digit service code printed on invoices. VERIFY WITH CA." |
+| SAC field hint | "The six-digit service code printed on invoices." (changed 2026-10-28, 07-W §5.8) |
 | GST rate field hint | "Leave empty to use the rate in Settings › Tax." |
 | "From" prices hint | "The starting price shown on the website. Leave a currency empty if you don't offer it there." |
 | Default lines hint | "The lines a proposal starts with when this service is chosen. Each needs a different description." |
