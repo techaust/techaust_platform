@@ -349,6 +349,7 @@ export function toInvoiceView(
         }
       : null,
     signature,
+    showSignatory: header.issuer.signatory !== false,
     // at issue nothing has been paid, so the balance is the total (LD17); an invoice made for money received is paid at issue: nothing is due (the layout leaves the row out)
     // (a credit note owes nothing either: its balance is 0, M5.3; a debit note is its own payable and owes its total)
     balanceDue: m(header.advance || noteOf?.kind === "credit" ? 0 : computed.totalMinor),

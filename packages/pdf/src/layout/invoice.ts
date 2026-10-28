@@ -407,6 +407,7 @@ function payBox(view: InvoiceView): string {
 }
 
 function signatory(view: InvoiceView): string {
+  if (!view.showSignatory) return "";
   const S = C.signature;
   const legal = view.supplier.legalName;
   const name = legal && legal.trim() !== "" ? legal : view.supplier.name;

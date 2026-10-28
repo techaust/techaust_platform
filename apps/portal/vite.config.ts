@@ -2,6 +2,7 @@ import { cloudflare } from "@cloudflare/vite-plugin";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import { siteKeyForApp } from "../../scripts/turnstile-site-key.mjs";
+import { websiteOriginForApp } from "../../scripts/website-origin.mjs";
 
 // Local D1/R2 state is shared by every app in ../../.wrangler/state, so admin, portal and jobs see one database
 // (`pnpm db:migrate:local` applies the migrations there).
@@ -12,7 +13,11 @@ import { siteKeyForApp } from "../../scripts/turnstile-site-key.mjs";
 // __TURNSTILE_SITE_KEY__: the sign-in widget's public key from wrangler.jsonc for CLOUDFLARE_ENV (M2.4b); a staging build with an
 // empty key fails here.
 export default defineConfig({
-  define: { __TURNSTILE_SITE_KEY__: JSON.stringify(siteKeyForApp(new URL("./", import.meta.url))) },
+  define: {
+    __TURNSTILE_SITE_KEY__: JSON.stringify(siteKeyForApp(new URL("./", import.meta.url))),
+    // __WEBSITE_ORIGIN__: the website of this environment (vars.WEBSITE_ORIGIN; 07-W 5.5), for the "Privacy notice" link.
+    __WEBSITE_ORIGIN__: JSON.stringify(websiteOriginForApp(new URL("./", import.meta.url))),
+  },
   plugins: [react(), cloudflare({ persistState: { path: "../../.wrangler/state" } })],
   environments: { techaust_platform_portal: { build: { minify: true } } },
 });

@@ -800,7 +800,7 @@ export async function processPdfDeadLetter(env: Env, body: unknown, now = Date.n
       ),
     ]);
   }
-  // A supplier copy that ran out of tries rings no bell (07 has no line for it, and nothing is lost: the original is made, and the Owner's or Accountant's download asks for the copy
+  // A supplier copy that ran out of tries rings no bell (decided, 07-W §5.7, and nothing is lost: the original is made, and the Owner's or Accountant's download asks for the copy
   // again on demand); it is logged below.
   logEvent("pdf.dead_letter", { kind: isPdfMessage(body) ? body.kind : "unknown" });
 }

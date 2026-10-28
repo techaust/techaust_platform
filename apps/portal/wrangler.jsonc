@@ -23,7 +23,9 @@
     "ENVIRONMENT": "local",
     "PAYMENTS_LIVE_ALLOWED": "false",
     "TURNSTILE_SITE_KEY": "1x00000000000000000000AA",
-    "TURNSTILE_HOSTNAMES": "localhost"
+    "TURNSTILE_HOSTNAMES": "localhost",
+    // The website of this environment, for the SPA's "Privacy notice" link (07-W 5.5); read at build time by vite.config.ts (scripts/website-origin.mjs).
+    "WEBSITE_ORIGIN": "http://localhost:4321"
   },
   // The portal secrets (M1.6, LD4; M2.4b): names only; values are set with `wrangler secret put`. PORTAL_KEY_PEPPER keys
   // the HMACs of the rate-limit counters (address and email never sit in the counter table); the link and session
@@ -62,7 +64,8 @@
         "ENVIRONMENT": "staging",
         "PAYMENTS_LIVE_ALLOWED": "false",
         "TURNSTILE_SITE_KEY": "0x4AAAAAAFhrfYyx9bhG6lmt",
-        "TURNSTILE_HOSTNAMES": "techaust-platform-portal-staging.techaust-technologies-153.workers.dev"
+        "TURNSTILE_HOSTNAMES": "techaust-platform-portal-staging.techaust-technologies-153.workers.dev",
+        "WEBSITE_ORIGIN": "https://techaust-platform-web-staging.techaust-technologies-153.workers.dev"
       },
       "secrets": { "required": ["PORTAL_KEY_PEPPER", "TURNSTILE_SECRET"] },
       "queues": {
@@ -90,7 +93,8 @@
         "ENVIRONMENT": "production",
         "PAYMENTS_LIVE_ALLOWED": "false",
         "TURNSTILE_SITE_KEY": "",
-        "TURNSTILE_HOSTNAMES": "portal.techaust.com"
+        "TURNSTILE_HOSTNAMES": "portal.techaust.com",
+        "WEBSITE_ORIGIN": "https://techaust.com"
       },
       "secrets": { "required": ["PORTAL_KEY_PEPPER", "TURNSTILE_SECRET"] },
       // Production: NO invocation logs from day one (they carry the client IP, user agent and location of every

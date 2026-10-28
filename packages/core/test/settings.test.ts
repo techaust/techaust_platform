@@ -15,7 +15,7 @@ import {
   type SeededSettingKey,
 } from "../src/schemas/settings.ts";
 
-describe("settings defaults (docs/08 §7.1, VERIFY WITH CA)", () => {
+describe("settings defaults (docs/08 §7.1, researched in 08-C)", () => {
   it.each(Object.keys(SETTINGS_SCHEMAS) as SeededSettingKey[])("%s validates against its schema", (key) => {
     expect(SETTINGS_SCHEMAS[key].parse(SETTINGS_DEFAULTS[key])).toEqual(SETTINGS_DEFAULTS[key]);
   });
