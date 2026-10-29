@@ -235,7 +235,8 @@ export function gstWarningText(
 /**
  * FX-4 (full audit A5 1; 07-Y, PENDING): a tax-only note's blocking warning, naming the note, the recipient's GSTIN and each tax head with its amount to enter by hand.
  * OPEN (08-C RA-32): how is a tax-only debit note (taxable value nil, tax only) reported in GSTR-1 Table 9B through the Offline Tool, and how does it flow to 3B Table 3?
- * The line names what the files leave out and sends the question to the CA; it never says how to file it.
+ * The line names what the files may leave out (OPEN (08-C RA-23): the Offline Tool import is untested, so it says "may not come through", never "would be nil") and
+ * sends the question to the CA; it never says how to file it.
  */
 export function taxOnlyNoteText(w: GstWarning): string {
   const m = w.manual;
@@ -247,7 +248,7 @@ export function taxOnlyNoteText(w: GstWarning): string {
   ].filter((h): h is string => h !== null);
   const who = m.gstin === null ? "unregistered client" : `GSTIN ${m.gstin}`;
   return Y(
-    `${m.number} (${who}) adds tax only. The files show it with a taxable value of 0.00 and no tax, so the offline tool would take its tax as nil. Enter by hand: ${heads.join(", ")}. Ask your CA how to report it in Table 9B.`,
+    `${m.number} (${who}) adds tax only. The files show it with a taxable value of 0.00 and no tax column, so its tax may not come through on import. Enter by hand: ${heads.join(", ")}. Ask your CA how to report it in Table 9B.`,
   );
 }
 

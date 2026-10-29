@@ -426,9 +426,9 @@ export function gstr1Sections(
 
 /**
  * A note whose rate rows carry tax on a taxable value of nil (a "Tax charged too low" debit note, Researched 2026-10-28, s.34(3) CGST Act (08-C RA-22)): the cdnr, cdnur
- * and b2cs files give a taxable value and a rate and no tax column, so the Offline Tool would work its tax out as nil and GSTR-3B Table 3, filled from GSTR-1, would
- * under-report it (Researched 2026-10-28, GSTN advisories of June 2025 (08-C RA-23)). The rows stay in the files; this names what they leave out, so a person enters it
- * by hand. OPEN (08-C RA-32): how is a tax-only debit note (taxable value nil, tax only) reported in GSTR-1 Table 9B through the Offline Tool, and how does it flow to
+ * and b2cs files give a taxable value and a rate and no tax column. OPEN (08-C RA-23): what tax does the Offline Tool take for such a row on import? Untested (no test
+ * import yet); if it takes nil, GSTR-3B Table 3, auto-filled from GSTR-1 (Researched 2026-10-28, GSTN advisories of June 2025 (08-C RA-23)), would under-report it.
+ * The rows stay in the files; this names what they may leave out, so a person enters it by hand. OPEN (08-C RA-32): how is a tax-only debit note (taxable value nil, tax only) reported in GSTR-1 Table 9B through the Offline Tool, and how does it flow to
  * 3B Table 3? Null for any other document. Only the rate rows with a nil taxable value and some tax are listed.
  */
 function manualEntryOf(item: Item): ManualTaxEntry | null {

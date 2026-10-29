@@ -589,7 +589,7 @@ describe("files from register rows (core does every sum)", () => {
       igstMinor: 0,
     });
     expect(first?.text).toBe(
-      `${Y_MARK}TH/DN/2627/0001 (GSTIN 19ABCDE1234F1ZX) adds tax only. The files show it with a taxable value of 0.00 and no tax, so the offline tool would take its tax as nil. Enter by hand: CGST ₹9.01, SGST ₹9.01. Ask your CA how to report it in Table 9B.`,
+      `${Y_MARK}TH/DN/2627/0001 (GSTIN 19ABCDE1234F1ZX) adds tax only. The files show it with a taxable value of 0.00 and no tax column, so its tax may not come through on import. Enter by hand: CGST ₹9.01, SGST ₹9.01. Ask your CA how to report it in Table 9B.`,
     );
     expect(GST_COPY.doneManual(2, 1)).toBe(
       `${Y_MARK}2 documents checked. 1 note needs its tax entered by hand before you file.`,
