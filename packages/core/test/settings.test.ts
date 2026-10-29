@@ -250,3 +250,21 @@ describe("M3.1 settings fields", () => {
     expect(() => resolveSetting("tax", { ...SETTINGS_DEFAULTS.tax, lut: null })).toThrow();
   });
 });
+
+describe("FX-4 (full audit A5 12): the default SAC of a custom line", () => {
+  it("empty by default, and a stored row without it reads empty", () => {
+    expect(SETTINGS_DEFAULTS.tax.defaultSac).toBe("");
+    const { defaultSac: _d, ...old } = SETTINGS_DEFAULTS.tax;
+    expect(resolveSetting("tax", old).defaultSac).toBe("");
+    expect(SETTINGS_SCHEMAS.tax.parse(old).defaultSac).toBe("");
+  });
+
+  it("six digits or empty; anything else is refused", () => {
+    const parse = (defaultSac: unknown) =>
+      SETTINGS_SCHEMAS.tax.safeParse({ ...SETTINGS_DEFAULTS.tax, defaultSac }).success;
+    expect(parse("")).toBe(true);
+    expect(parse("998314")).toBe(true);
+    for (const bad of ["99831", "9983140", "99831a", " 998314", null, 998314])
+      expect(parse(bad), String(bad)).toBe(false);
+  });
+});

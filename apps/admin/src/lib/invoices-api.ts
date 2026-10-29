@@ -172,6 +172,8 @@ export type InvoiceView = {
   issuer: InvoiceIssuerView | null;
   discount: Discount | null;
   lines: InvoiceLine[];
+  /** FX-4 (A5 12): the SAC a new custom line starts with (Settings › Tax "default SAC"); null when none is set or on an issued document. Absent from an older API. */
+  newLineSac?: string | null;
   totals: Totals | null;
   supply: Supply | null;
   summary: SummaryRow[] | null;

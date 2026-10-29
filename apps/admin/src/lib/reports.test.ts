@@ -52,7 +52,7 @@ import {
   wholePeriodOf,
   zipOf,
 } from "./reports-build.ts";
-import { buildTax, REALISATION_ERRORS, taxToForm } from "./tax-settings.ts";
+import { buildTax, REALISATION_ERRORS, TAX_SAC_COPY, taxToForm } from "./tax-settings.ts";
 
 /** 07-V and 07-W were approved on 2026-10-28 (research and wording): no line carries a mark (`M` and `G` are empty). */
 const M = "";
@@ -428,6 +428,22 @@ describe("Settings › Tax round trip (early check H2)", () => {
       if (!("value" in built)) return;
       expect(built.value.invoiceChecklist).toEqual({ bankDetails: true, paymentLink: false, signatory });
     }
+  });
+
+  it("FX-4 (A5 12): the default SAC of a custom line round-trips, saves empty or six digits, and refuses anything else (07-Y, marked)", () => {
+    expect(taxToForm(stored).defaultSac).toBe("");
+    const kept = buildTax({ ...taxToForm({ ...stored, defaultSac: "998313" }) }, { value: stored });
+    expect("value" in kept && kept.value.defaultSac).toBe("998313");
+    const trimmed = buildTax({ ...taxToForm(stored), defaultSac: " 998314 " }, { value: stored });
+    expect("value" in trimmed && trimmed.value.defaultSac).toBe("998314");
+    const cleared = buildTax(
+      { ...taxToForm(stored), defaultSac: "" },
+      { value: { ...stored, defaultSac: "998313" } },
+    );
+    expect("value" in cleared && cleared.value.defaultSac).toBe("");
+    const bad = buildTax({ ...taxToForm(stored), defaultSac: "99831" }, { value: stored });
+    expect("errors" in bad && bad.errors["f-defaultSac"]).toBe(TAX_SAC_COPY.defaultSacError);
+    expect(TAX_SAC_COPY.defaultSacError).toBe(`${Y_MARK}The default SAC has 6 digits, or leave it empty.`);
   });
 
   it("the two fields save what was typed, and refuse zero or out-of-range values in 07-V's words", () => {

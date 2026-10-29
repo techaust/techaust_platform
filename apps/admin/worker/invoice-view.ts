@@ -310,6 +310,8 @@ export function invoiceView(i: InvoiceViewInput) {
       igstMinor: lineAt(n)?.igstMinor ?? null,
       lineTotalMinor: lineAt(n)?.lineTotalMinor ?? null,
     })),
+    /** A draft's new custom line starts with this SAC (Settings › Tax "default SAC"; FX-4, A5 12); null when none is set, and on an issued document. */
+    newLineSac: frozen ? null : settings.tax.defaultSac || null,
     totals: totalsOf(computed),
     supply: computed?.supply ?? null,
     summary: computed?.summary ?? null,

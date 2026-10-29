@@ -188,6 +188,12 @@ export const taxSettings = z.object({
     z.enum(["advise", "build", "automate", "connect", "run"]),
     z.string().check(z.regex(/^\d{6}$/)),
   ),
+  /**
+   * FX-4 (full audit A5 12): the SAC a new custom line (one not from the catalogue) starts with; "" (the default, and what a stored row without it reads) means none, so
+   * the person enters it and an invoice without one is still blocked (`line_sac_missing`). Six digits when set (Researched 2026-10-28, Notification 11/2017-CT (Rate)
+   * (08-C RA-16)); which code is right for a given piece of work is the person's choice, never guessed here.
+   */
+  defaultSac: z.prefault(z.string().check(z.regex(/^(\d{6})?$/)), ""),
   /** G-10: tax per line per head, half-up to the paisa; INR grand total to the nearest ₹1; USD not rounded. */
   rounding: z.object({
     lineTax: z.literal("half_up"),
@@ -530,6 +536,7 @@ export const SETTINGS_DEFAULTS: Settings = {
       connect: "998314",
       run: "998313",
     },
+    defaultSac: "",
     rounding: { lineTax: "half_up", totalInr: "nearest_rupee", totalUsd: "none" },
     exportMode: "lut",
     lut: { arn: null, fy: null },

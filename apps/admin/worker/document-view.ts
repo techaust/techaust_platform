@@ -284,6 +284,8 @@ export async function documentView(i: ViewInput) {
       igstMinor: lineAt(n)?.igstMinor ?? null,
       lineTotalMinor: lineAt(n)?.lineTotalMinor ?? null,
     })),
+    /** A draft's new custom line starts with this SAC (Settings › Tax "default SAC"; FX-4, A5 12); null when none is set, on a sent version, or without settings. */
+    newLineSac: !frozen && i.settings ? i.settings.tax.defaultSac || null : null,
     sections: state.sections.map((s, n) => ({
       id: s.id,
       position: n + 1,

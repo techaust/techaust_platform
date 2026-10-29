@@ -198,6 +198,7 @@ export const documentSave = new Hono<AppEnv>().patch("/:id", param(idParam), bod
       items,
       state.currency,
       settings.tax.defaultRateBp,
+      settings.tax.defaultSac || null,
     );
     if (!made.ok) return err(c, made.error, made.status);
     state = { ...state, lines: made.lines };

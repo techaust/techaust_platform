@@ -8,6 +8,7 @@
 //
 // No value import of `@techaust/core/gst` here (the gst core is fetched only by the reports screens: ./reports-build.ts); types only. Money is formatted
 // through core (`moneyText`); nothing here adds up an amount.
+import { formatMoney, money } from "@techaust/core";
 import { formatDate, parseIsoDate } from "@techaust/core/dates";
 import type { CalendarDate, GstErrorCode, GstIssue, GstWarning, RealisationStage } from "@techaust/core/gst";
 import { STATE_CODES } from "@techaust/core/gstin";
@@ -15,7 +16,9 @@ import type { StatementKind } from "@techaust/core/statement";
 import { RequestError } from "../api.ts";
 import type { PillTone } from "../components/display.tsx";
 import { Y } from "./copy-y.ts";
-import { moneyText } from "./projects.ts";
+
+/** An INR amount in words for a line (core formats it; nothing here adds up). */
+const inr = (minor: number): string => formatMoney(money(minor, "INR"));
 
 /** "1 document" / "3 documents": the count words 07-V's lines use ({count} documents). */
 const docs = (n: number) => `${n} ${n === 1 ? "document" : "documents"}`;
@@ -238,9 +241,9 @@ export function taxOnlyNoteText(w: GstWarning): string {
   const m = w.manual;
   if (!m) return Y("A tax-only note's tax is not in the files. Ask your CA how to report it.");
   const heads = [
-    m.igstMinor > 0 ? `IGST ${moneyText(m.igstMinor, "INR")}` : null,
-    m.cgstMinor > 0 ? `CGST ${moneyText(m.cgstMinor, "INR")}` : null,
-    m.sgstMinor > 0 ? `SGST ${moneyText(m.sgstMinor, "INR")}` : null,
+    m.igstMinor > 0 ? `IGST ${inr(m.igstMinor)}` : null,
+    m.cgstMinor > 0 ? `CGST ${inr(m.cgstMinor)}` : null,
+    m.sgstMinor > 0 ? `SGST ${inr(m.sgstMinor)}` : null,
   ].filter((h): h is string => h !== null);
   const who = m.gstin === null ? "unregistered client" : `GSTIN ${m.gstin}`;
   return Y(
