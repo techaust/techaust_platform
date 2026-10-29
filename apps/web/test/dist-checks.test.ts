@@ -15,6 +15,7 @@ const headers = (extra = "") => `/*
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: camera=()
   Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Resource-Policy: same-site
   Content-Security-Policy: default-src 'self'; script-src 'self' ${c.sha256Source(SCRIPT)} ${extra}; frame-ancestors 'none'
 `;
 const page = (body: string) => `<!doctype html><html><head>${body}</head><body></body></html>`;

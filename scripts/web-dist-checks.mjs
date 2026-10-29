@@ -4,6 +4,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
+import { parseCsp, parseHeaders } from "./headers-shared.mjs";
 import { lintBuiltPage, lintSource, readAllowList, visibleText } from "./web-content-lint.mjs";
 import { checkLinks } from "./web-link-check.mjs";
 import { checkOgImage, readDist } from "./web-og.mjs";
@@ -16,32 +17,7 @@ import {
 } from "./web-seo-checks.mjs";
 import { readSiteString, walk } from "./web-shared.mjs";
 
-/** The `/*` block of a Cloudflare `_headers` file as a lower-cased-name map. */
-export function parseHeaders(text) {
-  const headers = {};
-  let inBlock = false;
-  for (const raw of text.split(/\r?\n/)) {
-    if (raw.trim() === "" || raw.trim().startsWith("#")) continue;
-    if (!/^\s/.test(raw)) {
-      inBlock = raw.trim() === "/*";
-      continue;
-    }
-    if (!inBlock) continue;
-    const i = raw.indexOf(":");
-    if (i > 0) headers[raw.slice(0, i).trim().toLowerCase()] = raw.slice(i + 1).trim();
-  }
-  return headers;
-}
-
-/** Directive name → source list. */
-export function parseCsp(csp) {
-  const out = {};
-  for (const part of csp.split(";")) {
-    const [name, ...sources] = part.trim().split(/\s+/);
-    if (name) out[name.toLowerCase()] = sources;
-  }
-  return out;
-}
+export { parseCsp, parseHeaders };
 
 export function sha256Source(text) {
   return `'sha256-${createHash("sha256").update(text, "utf8").digest("base64")}'`;
@@ -68,6 +44,7 @@ const REQUIRED_HEADERS = [
   "referrer-policy",
   "permissions-policy",
   "cross-origin-opener-policy",
+  "cross-origin-resource-policy",
   "content-security-policy",
 ];
 

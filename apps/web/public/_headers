@@ -4,6 +4,8 @@
 # If you change that script, `pnpm --filter @techaust/web build` fails and prints the new hash: copy it here.
 # Cloudflare Insights (cookieless Web Analytics) and Turnstile (forms, M2.4) are allowed; Google Tag Manager / GA is
 # NOT (no GA4 at launch, owner 2026-10-22): add it here in the same change that sets the GA4 ID.
+# Cross-Origin-Resource-Policy same-site (audit A1 finding 2): our files load only on techaust.com and its subdomains, except
+# the email logos under /brand/ (below), which mail clients load from other sites.
 # X-Robots-Tag keeps staging out of search; it MUST be removed for production (Phase 7, with the M2.5 robots work).
 /*
   Strict-Transport-Security: max-age=31536000; includeSubDomains
@@ -11,9 +13,15 @@
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
   Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Resource-Policy: same-site
   Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-wDRHJled15aR6MzW5WblEL2Mygm3aBO3lPaRsez3XCY=' https://static.cloudflareinsights.com https://challenges.cloudflare.com; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://cloudflareinsights.com; frame-src https://challenges.cloudflare.com; manifest-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'
   X-Robots-Tag: noindex
 
 # Astro writes content-hashed file names, so these can be cached for a year.
 /_astro/*
   Cache-Control: public, max-age=31536000, immutable
+
+# The email logos (packages/email, EMAIL_ASSET_BASE) are shown by webmail on other sites: no CORP on them, or the browser
+# would refuse the image.
+/brand/*
+  ! Cross-Origin-Resource-Policy
