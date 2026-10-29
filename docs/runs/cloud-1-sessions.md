@@ -378,3 +378,8 @@ Builder, Opus 5.5 high, Tier B. Branch `fix/cloud-1-r3` from `origin/chore/cloud
 1. The unbalanced-text refusal is new behaviour beyond the findings' wording (it closes `echo "$("; gh pr merge 1`, which the old guard refused): a command with an unclosed quote is refused in the cloud with "never closes" instead of running into bash's syntax error. Say if you'd rather let such text through.
 2. `wrangler --install-skills` is refused in the cloud (found in wrangler's help; it installs agent skills, against rule 11). Not in the brief's list either way.
 3. `wrangler deploy --help` and `wrangler d1 migrations create` are refused (not on the allow-list); `wrangler help deploy` passes.
+
+### Lead, after fix round 3 (2026-10-30)
+- Merged `fix/cloud-1-r3` (aafefa29) into `chore/cloud-sessions`.
+- The builder's three questions, lead's decisions: (1) text with an unclosed quote, `$(`, backtick or `$[` stays refused in the cloud (fail closed; bash would refuse it anyway); (2) `wrangler --install-skills` stays refused (hard rule 11: no installs without the owner); (3) `wrangler deploy --help` and `wrangler d1 migrations create` stay refused (`wrangler help deploy` passes; migrations come from drizzle-kit).
+- Next: the second re-check (a high finding was raised), then the PR.
