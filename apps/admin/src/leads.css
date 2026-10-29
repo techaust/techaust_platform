@@ -726,8 +726,9 @@ a.lead-card__name:hover {
 /* Phones: tighter cells and a narrower Field column give Before and After about 96 px each at 375 px, so ordinary
    words fit whole (re-check 2); only a word wider than that (a long email address) still breaks. */
 @media (max-width: 29.99rem) {
+  /* 27 %: the longest field name, "Currency" (FX-3), stays whole; Before and After keep about 80 px each. */
   .act__diff thead th:first-child {
-    width: 24%;
+    width: 27%;
   }
 
   .act__diff thead th:nth-child(3) {
@@ -738,6 +739,11 @@ a.lead-card__name:hover {
   table.diff__table.act__diff th:not(:first-child),
   table.diff__table.act__diff td:not(.diff__arrow) {
     padding-inline: var(--space-1);
+  }
+
+  /* The Field column's end inset is tight too, so "Currency" fits whole (FX-3). */
+  table.diff__table.act__diff th:first-child {
+    padding-inline-end: var(--space-1);
   }
 }
 
