@@ -1063,6 +1063,9 @@ describe("model-guard in a cloud session: second re-check findings [CLOUD-1 fix 
       `${"x".repeat(200_000)};gh pr merge 1`,
       `${"do ".repeat(100_000)}gh pr merge 1`,
       `${"a;".repeat(100_000)}gh pr merge 1`,
+      // third re-check, finding 1: an open brace with many separators and no close took 22 s with the old regex
+      `echo {${"a,".repeat(100_000)}\ngh pr merge 1`,
+      `echo {${"a..".repeat(60_000)}\ngh pr merge 1`,
     ]) {
       const start = performance.now();
       expect(check(command)).not.toBe("");
@@ -1078,6 +1081,75 @@ describe("model-guard in a cloud session: second re-check findings [CLOUD-1 fix 
       expect(cloud.reason).toContain("could not be read");
       expect((await hookRaw(raw)).stdout, raw).toBe("");
     }
+  });
+});
+
+describe("the guard after the third re-check [CLOUD-1]", () => {
+  it("a brace expansion is still found in one pass", () => {
+    for (const command of [
+      "{gh,} pr merge 1",
+      "git push origin {main,}",
+      "git push --{force,} origin fix/x",
+      "{a..c}/gh pr merge 1",
+    ])
+      expect(check(command), command).not.toBe("");
+    for (const command of ["echo {a,b", "echo a,b}", "echo {}", "ls ~/{a}", "echo '{gh,}'"])
+      expect(check(command), command).toBe("");
+  });
+  it("git takes a unique prefix of a long push option", () => {
+    for (const command of [
+      "git push --delet origin x",
+      "git push --mirro origin",
+      "git push --forc origin fix/x",
+      "git push --force-w origin fix/x",
+      "git push --prun origin",
+      "git push --al origin",
+    ])
+      expect(check(command), command).toContain("rewrites or deletes");
+    for (const command of [
+      "git push --dry-run origin fix/x",
+      "git push --follow-tags origin fix/x",
+      "git push --atomic origin fix/x",
+      "git push --progress origin fix/x",
+      "git push --set-upstream origin fix/x",
+    ])
+      expect(check(command), command).toBe("");
+  });
+  it("git -c can't set an alias or a push setting", () => {
+    for (const command of [
+      "git -c remote.origin.push=+HEAD:refs/heads/main push",
+      'git -c alias.p="push --force" p origin main',
+      "git -c remote.origin.mirror=true push",
+      "git -c push.default=current push",
+    ])
+      expect(check(command), command).toContain("isn't checked");
+    expect(check("git -c user.name=x commit -m x")).toBe("");
+    expect(check("git -c core.autocrlf=false status")).toBe("");
+  });
+  it("git -C a -C b reads the branch of a/b", () => {
+    const dirs: (string | undefined)[] = [];
+    const reader = (dir?: string) => {
+      dirs.push(dir);
+      return "fix/x";
+    };
+    cloudRefusal("git -C /repo -C sub push", { currentBranch: reader });
+    cloudRefusal("git -C /repo -C /other push", { currentBranch: reader });
+    expect(dirs).toEqual(["/repo/sub", "/other"]);
+  });
+  it("wrangler's camelCase spellings can't turn a dry run off", () => {
+    for (const command of [
+      "wrangler deploy --dry-run --no-dryRun",
+      "wrangler deploy --dryRun=false",
+      "wrangler deploy --dryRun false",
+      "wrangler d1 execute DB --local --no-Local --command x",
+    ])
+      expect(check(command), command).not.toBe("");
+    for (const command of [
+      "wrangler deploy --dryRun --outdir dist",
+      "wrangler deploy --dry-run=true",
+      "wrangler d1 execute DB --local --command x",
+    ])
+      expect(check(command), command).toBe("");
   });
 });
 

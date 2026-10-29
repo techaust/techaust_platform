@@ -33,7 +33,8 @@
 // refused, and so is text that can't be read (a quote or $( that never closes, nesting too deep).
 // This is BEST EFFORT. Accepted gaps (CLOUD-1 re-checks, lead's triage 2026-10-30):
 //   - a script written then run (cat <<EOF > x.sh && bash x.sh, a file piped into a shell), an alias, a function defined
-//     earlier, or another language (node -e, python -c) can run anything; only the command as typed is checked;
+//     earlier (function f { …; }; f), coproc, or another language (node -e, python -c) can run anything; only the command
+//     as typed is checked;
 //   - programs that run their arguments or input as a command: env -S, trap, find -exec, flock, su -c, script -c, parallel,
 //     and a program's output piped into a shell (base64 -d | bash) or a shell this file doesn't name (ksh);
 //   - the current branch for a push is read in the hook's folder (or git -C's), so `git switch main && git push` or
@@ -99,8 +100,25 @@ const PRINTERS = new Set(["echo", "printf"]);
 const ARITH_KEYWORDS = new Set(["for", "if", "elif", "while", "until", "do", "then", "else", "!"]);
 /** Words that may come before `case` or `esac` at the start of a command (second re-check, finding 3). */
 const CASE_LEAD = new Set([...ARITH_KEYWORDS, "{"]);
-/** Unquoted brace expansion in a word: `{gh,}`, `--{force,}`, `{1..3}` (second re-check, finding 5). */
-const BRACE = /\{[^{}]*(,|\.\.)[^{}]*\}/;
+/**
+ * Unquoted brace expansion in a word: `{gh,}`, `--{force,}`, `{1..3}` (second re-check, finding 5): a `{…}` with no inner brace
+ * that holds `,` or `..`. One pass: the regex form backtracked quadratically on `{a,a,a,…` with no `}` (third re-check, 1).
+ */
+function hasBrace(s) {
+  let open = false;
+  let sep = false;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (ch === "{") {
+      open = true;
+      sep = false;
+    } else if (ch === "}") {
+      if (open && sep) return true;
+      open = false;
+    } else if (open && (ch === "," || (ch === "." && s[i + 1] === "."))) sep = true;
+  }
+  return false;
+}
 /** What may follow `$` in a parameter expansion: a name, a digit, a special parameter, or `{`. */
 const VAR_START = /^[A-Za-z_0-9@*#?!${-]$/;
 /**
@@ -386,7 +404,7 @@ function makeParser(src, out, counter) {
     };
     const endWord = () => {
       if (word) {
-        if (BRACE.test(word.plain ?? "")) word.built = true;
+        if (hasBrace(word.plain ?? "")) word.built = true;
         const bare = !word.quoted.length && !word.lastQuoted;
         if (bare && leadOnly) {
           if (word.text === "case") cases++;
@@ -576,12 +594,21 @@ function apiRefusal(args) {
 /** The branch name a push target names: `main` for main, heads/main and refs/heads/main. */
 const targetBranch = (ref) => ref.replace(/^refs\//, "").replace(/^heads\//, "");
 
+/** Settings that make a later word push, or push elsewhere: an alias, a remote's push refspec or mirror, push.* (third re-check). */
+const GIT_PUSH_CONFIG = /^(alias\.|remote\..*\.(push|mirror)|push\.)/i;
+/** git push options that force, delete or push everything; git also takes any unique prefix of them (`--delet`; third re-check). */
+const PUSH_DANGER = ["force", "force-with-lease", "force-if-includes", "delete", "mirror", "all", "prune"];
+/** `git -C a -C b`: each -C is taken relative to the one before. */
+const joinDir = (dir, next) => (!dir || /^([\\/]|[A-Za-z]:)/.test(next) ? next : `${dir}/${next}`);
+
 function gitRefusal(rest, opts) {
   let k = 0;
   let dir;
   for (; k < rest.length; k++) {
     const t = rest[k].text;
-    if (t === "-C") dir = rest[k + 1]?.text;
+    if (t === "-C" && rest[k + 1]) dir = joinDir(dir, rest[k + 1].text);
+    if (t === "-c" && GIT_PUSH_CONFIG.test(rest[k + 1]?.text ?? ""))
+      return `"git -c ${rest[k + 1].text}" can turn a later command into a push that isn't checked`;
     if (GIT_VALUE_OPTS.has(t)) k++;
     else if (!t.startsWith("-")) break;
   }
@@ -597,7 +624,11 @@ function gitRefusal(rest, opts) {
     if (t === "--") continue;
     if (t.startsWith("--")) {
       const name = t.split("=")[0];
-      if (/^--(force|delete|mirror|all|prune)/.test(name))
+      const bare = name.slice(2);
+      if (
+        /^--(force|delete|mirror|all|prune)/.test(name) ||
+        (bare && PUSH_DANGER.some((o) => o.startsWith(bare)))
+      )
         return `"git push ${name}" rewrites or deletes remote branches`;
       if (PUSH_VALUE_OPTS.has(t)) m++;
     } else if (t.startsWith("-") && t.length > 1) {
@@ -629,15 +660,23 @@ function gitRefusal(rest, opts) {
  * `--no-name`, `--name=false|0` or `--name false|0` (yargs reads a following true/false as the flag's value; re-check finding 6).
  */
 function flagOn(rest, name) {
+  // yargs also reads the camelCase spelling (`--dryRun`, `--no-dryRun`): compare without case or dashes (third re-check)
+  const flat = (s) => s.toLowerCase().replace(/^--/, "").replace(/-/g, "");
+  const n = flat(name);
   let on = false;
   for (let k = 0; k < rest.length; k++) {
-    const t = rest[k].text.toLowerCase();
+    const raw = rest[k].text;
+    if (!raw.startsWith("--")) continue;
+    const [key, value] = [
+      flat(raw.split("=")[0]),
+      raw.includes("=") ? raw.slice(raw.indexOf("=") + 1).toLowerCase() : null,
+    ];
     const after = rest[k + 1]?.text.toLowerCase();
-    if (t === `--no-${name}` || t === `--${name}=false` || t === `--${name}=0`) return false;
-    if (t === `--${name}`) {
-      if (after === "false" || after === "0") return false;
-      on = true;
-    } else if (t === `--${name}=true` || t === `--${name}=1`) on = true;
+    if (key === `no${n}`) return false;
+    if (key !== n) continue;
+    if (value === "false" || value === "0") return false;
+    if (value === null && (after === "false" || after === "0")) return false;
+    if (value === null || value === "true" || value === "1") on = true;
   }
   return on;
 }

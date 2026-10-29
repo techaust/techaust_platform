@@ -472,3 +472,16 @@ Builder, Opus 5.5 high, Tier B. Branch `fix/cloud-1-r4` from `origin/chore/cloud
 - Merged `fix/cloud-1-r4` (8a20bb7a) into `chore/cloud-sessions`.
 - The builder's open points, lead's decisions: (1) plain variables in a `git push` stay refused in the cloud (a pushed branch must be readable in the command; `tools/cloud-pr.sh` is unaffected because the guard sees only `bash tools/cloud-pr.sh …`); (2) `ksh`, `mksh`, `fish` stay a named accepted class (not used here); (3) the known false positives (`$(case …)`, `printf … | sh`, `eval "$(ssh-agent -s)"`, `$(npm bin)/tool`) are accepted: a cloud session gets a clear reason and writes it another way.
 - Next: a narrow re-check of round 4, then the PR.
+
+## Third re-check (reviewer, Opus 5.5 high, 2026-10-30, on adaa7bc7): APPROVE (copied by the lead)
+All six round 4 items closed; probe sets (388) show only the 15 accepted mismatches; round 3 → round 4 changed 20 probes, all from allowed to refused as expected; no false positive on ordinary work; 25 long and deep inputs up to 400,000 characters finish under 1.4 s, none throws. Hooks on this PC print nothing. Web tests (queue): 619 passed, 17 skipped.
+1. **medium, round 4 regression** `tools/cloud-guard.mjs:103`: the `BRACE` regex backtracked quadratically: `echo {` + `a,` × 100,000 took 22 s (and `a..` × 60,000, 10.6 s), past the 5 s bar, so a hook timeout could let a very long word through. Fix: a linear scan; long-input tests.
+**Older items (identical in round 3), low:** git's abbreviated long options (`--delet`, `--mirro`); `git -c remote.origin.push=…` / `git -c alias.p="push --force" p`; `git -C /repo -C sub push` read against `sub`; `function f { gh pr merge 1; }; f` and `coproc …`; wrangler's camelCase `--no-dryRun`, `--dryRun=false`; false positive `npx -p wrangler wrangler dev`.
+**Not verified:** a real cloud session; Claude Code's hook timeout and what a timed-out hook does; the launcher at run time; the new keyword and `case` rules against bash itself.
+
+### Lead's fix after the third re-check (2026-10-30)
+Small and in one file, so done by the lead (CLAUDE.md: small work without agents):
+- Finding 1: `hasBrace()`, one pass, same matches as the regex; the two brace inputs added to "keeps long input fast".
+- Older items fixed: unique prefixes of git's dangerous push options; `git -c alias.*|remote.*.push|remote.*.mirror|push.*` refused; `-C` joins (`/repo/sub`); wrangler flags compared without case or dashes (`--no-dryRun`, `--dryRun=false`, `--no-Local`). Tests for each, including ordinary pushes (`--dry-run`, `--follow-tags`, `--atomic`, `--progress`, `--set-upstream`) and `git -c user.name=…`.
+- Kept as accepted best effort (header): shell functions and `coproc` (the command runs under another name); the `npx -p wrangler` false positive (the repo runs wrangler through pnpm).
+- Checks: `vitest run --project node test/model-guard.test.ts test/dev-ports.test.ts` 71 passed; every probe set (395 lines) gives exactly round 4's answers (15 accepted mismatches, no line differs); biome clean.
