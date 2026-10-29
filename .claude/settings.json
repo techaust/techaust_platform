@@ -8,9 +8,22 @@
   "availableModels": ["claude-opus-5-5"],
   "effortLevel": "high",
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/cloud-session-start.sh\"",
+            "timeout": 600,
+            "statusMessage": "Session start (cloud setup only)"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
-        "matcher": "Agent|Bash",
+        "matcher": "Agent|Bash|Monitor",
         "hooks": [
           {
             "type": "command",

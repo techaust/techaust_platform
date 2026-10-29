@@ -63,7 +63,10 @@ A subagent can't start another subagent, so only the lead starts agents.
 
   A task with only screens (most of Tier C) skips steps 1 and 2. A task with no screens skips step 3.
 - **Handing a branch from the builder to the designer:** git won't check out one branch in two worktrees. Once the builder has finished, remove its worktree (`git worktree remove`; the branch and its commits stay), then start the designer (`isolation: "worktree"`), which checks out the task branch. Restarting a stopped agent works the same way, or resume it with SendMessage if it is still reachable.
-- **Browser agents:** the designer and the reviewer use the Playwright browser and the dev-server ports. On this PC, only one runs at a time. A cloud session may run two (§5), but only once each one gets its own dev-server ports and browser profile. Until that change is built, cloud sessions also keep to one.
+- **Browser agents:** the designer and the reviewer use the Playwright browser and the dev-server ports. On this PC, only one runs at a time. A cloud session may run two (§5) only once each one has its own dev-server ports and its own browser server; for now it runs one (below).
+  - **Ports (built, CLOUD-1):** the first browser agent runs its dev servers with `TECHAUST_PORT_OFFSET=0` (the default), the second with `TECHAUST_PORT_OFFSET=100` (`scripts/dev-ports.mjs`: every dev, browser-test and inspector port moves by 100, with a dev registry of its own). The brief names the offset.
+  - **One browser per server:** the cloud browser is the one `playwright` server in `.mcp.json`, and one server is one browser with one tab, shared by every agent of the session; cookies ignore ports, so two agents on different ports would still share each other's sign-ins. A second browser agent needs a server of its own (a `playwright-2` entry, or `mcpServers` in that agent's frontmatter, each with its own `--output-dir`). Until a task builds that, a cloud session runs **one browser agent** (`tools/agent-slots.mjs` holds the cloud browser limit at 1).
+  - **Own worktree:** each browser agent works in its own git worktree, which also gives it its own local database (the `--persist-to` state lives in the worktree's `.wrangler/state`; it isn't tied to the port offset).
 - **Commits as it goes:** at least every 20 minutes and at each finished layer or screen, so a stopped agent loses nothing.
 - **Severity triage:** critical and high findings are fixed before the merge. Medium and low findings are fixed in the same task too (lead practice since M2.2), unless they belong to a later milestone (then a listed follow-up in [12-status.md](12-status.md)) or the lead keeps one with a reason in the run file.
 - **`main` taken early:** if `main` has moved since the task branched, the lead merges it into the task before the review, not after. If the task's migrations change a table, trigger, constraint or foreign key, the analyst plans that merge first. **Analyst gate for migrations:** the analyst also confirms that no migration rebuilds (drops, or copies through `__new_…`) a table other tables reference; `scripts/check-migrations.mjs` fails CI for any such migration after 0006, and the only way past it is the analyst's written check plus an entry (with the reason) in `scripts/migration-rebuild-allowlist.json`.
@@ -89,7 +92,7 @@ The local lead (or the owner) posts the reading: the percentage and the time, as
 | Where | Agents at once | Browser agents | Before each start |
 |---|---|---|---|
 | **This PC** (8 GB, 4 processors) | at most **2** | at most **1** | free memory at least **300 MB** |
-| **A cloud session** (its virtual machine) | at most **5** | at most **2** (§4: each with its own ports) | at least **3 GB** free memory, and the 1-minute load average under **80 %** of its processors |
+| **A cloud session** (its virtual machine) | at most **5** | at most **2** (§4: each with its own ports and browser server); **1** until a second browser server exists | at least **3 GB** free memory, and the 1-minute load average under **80 %** of its processors |
 
 **Heavy commands** (the full lint, typecheck, builds, the database and end-to-end suites) still take turns, one at a time per machine, through `tools/heavy.sh`, both here and in a cloud session.
 
@@ -108,12 +111,12 @@ Each lock covers the others' gaps. The locks were first tested on 2026-10-12 on 
 | `.claude/settings.json` → `env` | Points every alias at Opus 5.5 (`opus`, `sonnet` and `haiku` → `claude-opus-5-5`), including Claude Code's background tasks and built-in agents. A new Anthropic model changes nothing here. | (2026-10-12) an agent started with no model ran on the aliased model |
 | `.claude/settings.json` → `availableModels`, `effortLevel` | Allows only `claude-opus-5-5` for the main conversation, agents and skills; the project's effort is `high` | (2026-10-12) a run asked for Fable ran on Opus 5.5 instead |
 | Agent files | Each names `model: claude-opus-5-5` and `effort: high` | All seven agents |
-| `tools/model-guard.mjs` (a `PreToolUse` hook on Agent and Bash) | Refuses an agent on any model but Opus 5.5, at any effort but high, of a built-in Explore, Plan, general-purpose or `claude` type, or with no `subagent_type`. Tells the lead its effort level on its first command and whenever it changes | `apps/web/test/model-guard.test.ts` |
+| `tools/model-guard.mjs` (a `PreToolUse` hook on Agent, Bash and Monitor: matcher `Agent\|Bash\|Monitor`) | Refuses an agent on any model but Opus 5.5, at any effort but high, of a built-in Explore, Plan, general-purpose or `claude` type, or with no `subagent_type`. Tells the lead its effort level on its first Bash command and whenever it changes. In a cloud session only, refuses merging, deploying and hosted changes in Bash and Monitor commands (`tools/cloud-guard.mjs`, CLOUD-1) | `apps/web/test/model-guard.test.ts` |
 | The lead's own check | The lead knows its model from the moment a conversation opens and its effort from the hook; if either is off it stops and tells the owner | — |
 | `node tools/model-audit.mjs [date]` | Lists every run since the date with the model and effort from its own log, and flags anything but Opus 5.5 at high (runs before 2026-10-29 followed the older plan). The end-of-day routine runs it | Flagged the 2026-10-08 Haiku 4.5 test runs |
 
 - **Claude Code 2.1.293 or later** is required. The app runs 2.1.295 or later.
-- **`CLAUDE_CODE_EFFORT_LEVEL` stays unset:** the agent files and `effortLevel` already give high everywhere.
+- **`CLAUDE_CODE_EFFORT_LEVEL` stays unset on this PC:** the agent files and `effortLevel` already give high everywhere. **Cloud exception:** the claude.ai environment sets `CLAUDE_CODE_EFFORT_LEVEL=high` ([runbooks/cloud-sessions.md](runbooks/cloud-sessions.md) Part 2), the same level, as a second hold there besides the project's `effortLevel`.
 - **A new model from Anthropic** is a question for the owner; nothing changes until the owner approves it and a [13-decisions.md](13-decisions.md) row records it.
 
 ## 7. Habits that save usage without touching quality

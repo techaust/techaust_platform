@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { createInviteStatements } from "./create-invite-sql.mjs";
+import { portOffset, shiftLocalUrl } from "./dev-ports.mjs";
 
 const ROLES = ["owner", "staff", "sales", "accountant"];
 const ORIGINS = {
@@ -77,7 +78,8 @@ try {
 if (rows(`SELECT 1 AS x FROM staff_invites WHERE token_hash = ${q(hash)} AND used_at IS NULL`).length === 0)
   throw new Error("The invite was not created (the address changed while running); nothing was changed.");
 
-const origin = values.staging ? ORIGINS.staging : ORIGINS.local;
+// The local link follows TECHAUST_PORT_OFFSET (CLOUD-1, scripts/dev-ports.mjs): the dev server the person opens it on.
+const origin = values.staging ? ORIGINS.staging : shiftLocalUrl(ORIGINS.local, portOffset());
 console.log(
   `Invite for ${email} (${values.role}), valid ${hours} h, single use:\n${origin}/invite#t=${token}`,
 );

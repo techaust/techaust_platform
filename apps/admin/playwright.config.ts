@@ -5,10 +5,13 @@
 //   pnpm dev:secrets && pnpm db:migrate:local && pnpm db:seed:local && pnpm portal:sample
 // then run `pnpm --filter @techaust/admin e2e` (through `bash tools/heavy.sh --log e2e-admin …`). The global setup enrols a
 // throwaway Owner (`e2e-…@example.test`, local database only) over the API, as a browser would, and signs the tests in.
+// The port follows TECHAUST_PORT_OFFSET (CLOUD-1, scripts/dev-ports.mjs): the admin's usual dev port by default, 100 higher for the
+// second browser agent.
 import { defineConfig, devices } from "@playwright/test";
+import { localOrigin, portOffset } from "../../scripts/dev-ports.mjs";
 
-const PORT = 5173; // the admin's dev port: the API's CSRF check and the cookie are bound to it
-export const ORIGIN = `http://localhost:${PORT}`;
+// the admin's dev server: the API's CSRF check compares the Origin with it, and the cookie is bound to it
+export const ORIGIN = localOrigin("admin", portOffset());
 
 export default defineConfig({
   testDir: "./e2e",
@@ -23,7 +26,7 @@ export default defineConfig({
   use: { baseURL: ORIGIN, storageState: "./.e2e/owner-state.json", trace: "retain-on-failure" },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    command: `pnpm exec vite --port ${PORT} --strictPort`,
+    command: "node ../../scripts/dev.mjs admin",
     url: `${ORIGIN}/api/v1/health`,
     reuseExistingServer: true,
     timeout: 180_000,

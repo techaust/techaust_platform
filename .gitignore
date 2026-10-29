@@ -28,6 +28,8 @@ apps/portal/test-results/
 # owner-supplied originals (moved into packages/ui/brand/source in M1.1)
 brand-incoming/
 .claude/launch.json
+# this PC's own Claude Code settings (CLOUD-1: tools/mcp-local-off.mjs keeps the cloud-only .mcp.json browser off here)
+.claude/settings.local.json
 .claude/worktrees/
 .logs/
 .playwright-mcp/

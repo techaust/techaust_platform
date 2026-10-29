@@ -3,20 +3,31 @@
 //                              [--reading <pct> --reading-at <ISO time>]
 // - this PC: at most 2 agents (every agent counts, the helpers too), at most 1 using a browser, and none starts while free
 //   memory is under 300 MB;
-// - a cloud session (--cloud, or a Linux machine with CLAUDE_CODE_REMOTE set): another agent starts while the virtual machine has at
-//   least 3 GB of free memory and its 1-minute load average is under 80 % of its processors, up to 5 agents, at most 2 using a browser;
+// - a cloud session (--cloud, or CLAUDE_CODE_REMOTE=true, which Claude Code sets only there, on any OS): another agent starts while
+//   the virtual machine has at least 3 GB of free memory and its 1-minute load average is under 80 % of its processors, up to 5 agents;
+//   at most 1 using a browser for now (the owner allows 2, but one .mcp.json server is one browser with one tab; a second browser
+//   agent needs a server of its own, a later task: docs/14 §4);
 // - the budget gate: new agents start while the 5-hour bar is at or under 95 %. A cloud session that can't read the bar uses the
 //   reading posted in docs/runs/usage-reading.md: none for today (IST) means nothing new starts, one over 2 hours old means one agent
 //   at a time.
-// Prints one line ("start: yes|no …") and exits 0 when an agent may start, 1 when not. `decide` is pure, for the test.
-import { cpus, freemem, loadavg, platform } from "node:os";
+// Prints one line ("start: yes|no …") and exits 0 when an agent may start, 1 when not. `decide` is pure, for the test. A value that
+// isn't a plain non-negative number (whole for --running and --browsers), a flag given without its value, or a --reading-at that
+// isn't a date is refused before deciding: "start: no (bad value for --usage: "abc")", exit 1.
+import { cpus, freemem, loadavg } from "node:os";
 
 export const LIMITS = {
   local: { agents: 2, browsers: 1, minFreeBytes: 300 * 1024 ** 2 },
-  cloud: { agents: 5, browsers: 2, minFreeBytes: 3 * 1024 ** 3, maxLoadShare: 0.8 },
+  cloud: { agents: 5, browsers: 1, minFreeBytes: 3 * 1024 ** 3, maxLoadShare: 0.8 },
   gatePct: 95,
   staleReadingMs: 2 * 60 * 60 * 1000,
 };
+
+/**
+ * Whether this process runs in a Claude Code cloud session: Claude Code sets CLAUDE_CODE_REMOTE to "true" there and never on this
+ * PC (code.claude.com/docs env-vars, read 2026-10-29). The value is compared exactly, whatever the OS.
+ * @param {Record<string, string | undefined>} env
+ */
+export const isCloudSession = (env) => env.CLAUDE_CODE_REMOTE === "true";
 
 /** The IST calendar day of a UTC instant, as YYYY-MM-DD. */
 const istDay = (ms) => new Date(ms + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -72,20 +83,37 @@ if (isMain) {
     const i = args.indexOf(name);
     return i >= 0 ? args[i + 1] : undefined;
   };
-  const num = (name) => (val(name) === undefined ? undefined : Number(val(name)));
-  const cloud =
-    args.includes("--cloud") || (platform() === "linux" && Boolean(process.env.CLAUDE_CODE_REMOTE));
+  // A flag's value: undefined when the flag is absent; a refusal when it is present without a usable value (NaN would slip
+  // through every comparison in `decide`).
+  const refuse = (name, raw) => {
+    console.log(
+      `start: no (bad value for ${name}: ${raw === undefined ? "none given" : JSON.stringify(raw)})`,
+    );
+    process.exit(1);
+  };
+  const num = (name, whole = false) => {
+    if (!args.includes(name)) return undefined;
+    const raw = val(name);
+    if (raw === undefined || !(whole ? /^\d+$/ : /^\d+(\.\d+)?$/).test(raw)) refuse(name, raw);
+    return Number(raw);
+  };
+  const cloud = args.includes("--cloud") || isCloudSession(process.env);
+  const running = num("--running", true);
+  const browsers = num("--browsers", true);
+  const usage = num("--usage");
   const readingPct = num("--reading");
   const readingAt = val("--reading-at");
+  if (args.includes("--reading-at") && (readingAt === undefined || Number.isNaN(Date.parse(readingAt))))
+    refuse("--reading-at", readingAt);
   const r = decide({
     place: cloud ? "cloud" : "local",
-    running: num("--running") ?? 0,
-    browsers: num("--browsers") ?? 0,
+    running: running ?? 0,
+    browsers: browsers ?? 0,
     wantsBrowser: args.includes("--browser"),
     freeBytes: freemem(),
     cores: cpus().length,
     load1: loadavg()[0],
-    usagePct: num("--usage") ?? null,
+    usagePct: usage ?? null,
     reading: readingPct !== undefined && readingAt ? { pct: readingPct, atMs: Date.parse(readingAt) } : null,
     nowMs: Date.now(),
   });

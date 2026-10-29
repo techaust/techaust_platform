@@ -33,6 +33,19 @@ jobs:
     timeout-minutes: 20
     # The Cloudflare credentials are set only on the steps that use them, so the install step never sees them.
     steps:
+      # Only the owner (techaust) may start this by hand or re-run it (owner, 2026-10-29), as in deploy-prod.yml. A scheduled run's
+      # first attempt is GitHub's own and always passes; a re-run of it must come from the owner.
+      - name: Who started this run
+        env:
+          EVENT: ${{ github.event_name }}
+          ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          case "$EVENT" in
+            schedule) [ "$ATTEMPT" = "1" ] || [ "$TRIGGERING_ACTOR" = "techaust" ] ;;
+            *) [ "$ACTOR" = "techaust" ] && [ "$TRIGGERING_ACTOR" = "techaust" ] ;;
+          esac || { echo "Only the owner (techaust) may start or re-run this workflow."; exit 1; }
       - name: Check staging credentials
         id: creds
         env:
