@@ -41,6 +41,21 @@ export function postalAddressNode(s: Pick<SiteSlice, "postalAddress" | "locality
   };
 }
 
+/**
+ * WEB-G-10's identity fields (docs/04; audit A2 finding 4), word for word: the short name (02-C section 4: "TecHaust" only, never
+ * "Techaust", which would merge us with Tech Australia), India and worldwide as the area served, NAICS 541511 (custom computer
+ * programming services) and the line that tells us apart from Tech Australia. No taxID and no proprietor name (owner: invoices only).
+ */
+export const ORG_IDENTITY = {
+  alternateName: ["TecHaust"],
+  areaServed: [
+    { "@type": "Country", name: "India" },
+    { "@type": "Place", name: "Worldwide" },
+  ],
+  naics: "541511",
+  disambiguatingDescription: "Indian software and AI automation studio; not affiliated with Tech Australia",
+} as const;
+
 export function organizationNode(s: SiteSlice = site): LdNode {
   const address = postalAddressNode(s);
   const sameAs = [s.linkedinCompany].filter((u) => u !== "");
@@ -48,10 +63,14 @@ export function organizationNode(s: SiteSlice = site): LdNode {
     "@type": ["Organization", "ProfessionalService"],
     "@id": ORG_ID,
     name: s.name,
+    alternateName: [...ORG_IDENTITY.alternateName],
     url: ORIGIN,
     logo: { "@type": "ImageObject", url: `${ORIGIN}${LOGO_PATH}` },
     email: s.email,
     ...(address ? { address } : {}),
+    areaServed: ORG_IDENTITY.areaServed.map((a) => ({ ...a })),
+    naics: ORG_IDENTITY.naics,
+    disambiguatingDescription: ORG_IDENTITY.disambiguatingDescription,
     ...(sameAs.length > 0 ? { sameAs } : {}),
   };
 }

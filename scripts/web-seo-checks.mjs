@@ -214,6 +214,13 @@ export function checkStructuredData(name, html) {
   else {
     if (org["@id"] !== `${ORIGIN}/#org`) problems.push(`${name}: Organization @id must be ${ORIGIN}/#org`);
     for (const f of ["name", "url", "email"]) if (!org[f]) problems.push(`${name}: Organization has no ${f}`);
+    // WEB-G-10's identity fields (audit A2 finding 4): the short name, the area served, the industry code and the line that
+    // tells us apart from Tech Australia.
+    for (const f of ["alternateName", "areaServed", "naics", "disambiguatingDescription"])
+      if (!org[f] || (Array.isArray(org[f]) && org[f].length === 0))
+        problems.push(`${name}: Organization has no ${f}`);
+    if (org.naics && org.naics !== "541511")
+      problems.push(`${name}: Organization naics must be 541511 (WEB-G-10)`);
     if (!org.logo?.url) problems.push(`${name}: Organization has no logo.url`);
     if (org.address) {
       for (const f of ["streetAddress", "addressLocality", "addressCountry"])
