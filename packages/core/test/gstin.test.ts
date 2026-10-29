@@ -84,7 +84,7 @@ describe("GSTIN check character [ADM-SET-01]", () => {
     expect(() => gstinCheckChar("short")).toThrow(RangeError);
   });
 
-  it("flags legacy state codes instead of rejecting them (VERIFY WITH CA)", () => {
+  it("flags legacy state codes instead of rejecting them (08-C RA-34)", () => {
     const body = "25AAPFU0939F1Z";
     expect(validateGstin(body + gstinCheckChar(body))).toMatchObject({
       ok: true,

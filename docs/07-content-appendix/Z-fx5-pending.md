@@ -16,3 +16,9 @@ An invoice or proforma the client has opened in the portal can no longer be void
 
 1. Invoice: "The client has opened this invoice in the portal, so it can't be voided. Use a credit note instead."
 2. Proforma: "The client has opened this proforma in the portal, so it can't be voided."
+
+## 2. Proposal terms and the due days (full audit C4)
+The proposal terms are one text shared by every proposal, so the number of days to pay that they state must be the one in Settings › Payment terms. Saving terms with another number is refused; changing the setting first is allowed, and Settings › Payment terms then says the terms disagree. `{days}` is "7 days" (or "1 day"; two numbers are joined with "and").
+
+3. Settings › Terms, the save is refused: "These terms say invoices are due within {days}, but Settings › Payment terms says {days}. Change the number here, or change Payment terms first."
+4. Settings › Payment terms, while the newest proposal terms state other days: "Your proposal terms say invoices are due within {days}. Save a new version in Settings › Terms so they match."

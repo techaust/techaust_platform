@@ -948,12 +948,12 @@ export const EXPORT_PARTS: Record<string, { sql: (cur: boolean) => string; time?
     sql: (cur) =>
       `SELECT rowid AS id, created_at, expires_at, used_at FROM magic_link_tokens WHERE contact_id = ?1${cur ? " AND rowid > ?5" : ""} ORDER BY rowid LIMIT 51`,
   },
-  // M4.5 (VERIFY WITH CA/LEGAL): the offer links sent to this person. Never the token hash; purpose, dates and the revoke only.
+  // M4.5 (Researched 2026-10-29, DPDP s.11(1) (08-C RB-36)): the offer links sent to this person. Never the token hash; purpose, dates and the revoke only.
   offer_links: {
     sql: (cur) =>
       `SELECT rowid AS id, document_id, send_id, acceptance_id, purpose, expires_at, revoked_at, created_at FROM offer_links WHERE contact_id = ?1${cur ? " AND rowid > ?5" : ""} ORDER BY rowid LIMIT 51`,
   },
-  // M5.4 (VERIFY WITH CA/LEGAL): the invoice links sent to this person (POR-06). Never the token hash; document, purpose, dates and the revoke only.
+  // M5.4 (Researched 2026-10-29, DPDP s.11(1) (08-C RB-36)): the invoice links sent to this person (POR-06). Never the token hash; document, purpose, dates and the revoke only.
   doc_access_tokens: {
     sql: (cur) =>
       `SELECT rowid AS id, document_id, send_id, purpose, expires_at, revoked_at, created_at FROM doc_access_tokens WHERE contact_id = ?1${cur ? " AND rowid > ?5" : ""} ORDER BY rowid LIMIT 51`,
@@ -962,7 +962,7 @@ export const EXPORT_PARTS: Record<string, { sql: (cur: boolean) => string; time?
     sql: (cur) =>
       `SELECT id, document_id, contact_id, typed_name, email, accepted_at, ip, user_agent, country, pdf_sha256, terms_version_id, via, snapshot_sha256 FROM acceptances WHERE contact_id = ?1${cur ? " AND id > ?5" : ""} ORDER BY id LIMIT 51`,
   },
-  // M4.5 (VERIFY WITH CA/LEGAL): the proposals this person declined (the reason and the note are theirs), and the offers sent to them.
+  // M4.5 (Researched 2026-10-29, DPDP s.11(1) (08-C RB-36)): the proposals this person declined (the reason and the note are theirs), and the offers sent to them.
   decisions: {
     sql: (cur) =>
       `SELECT id, number_display, version, status, decided_at, decision_reason, decision_note FROM documents WHERE decided_contact_id = ?1 AND status IN ('rejected', 'accepted')${cur ? " AND id > ?5" : ""} ORDER BY id LIMIT 51`,
@@ -992,7 +992,7 @@ export const EXPORT_PARTS: Record<string, { sql: (cur: boolean) => string; time?
   },
   // The client's notes and file records, only where the erase would delete them: the contact is an individual client's last live
   // contact (`LAST_LIVE_INDIVIDUAL`; the manifest lists these two parts only then, and the SQL repeats the condition). Metadata only:
-  // never the file bytes or the R2 key. Whether the file contents belong in an export is VERIFY WITH CA/LEGAL.
+  // never the file bytes or the R2 key. OPEN (08-C RB-36): the Act asks for a summary; file bytes on request or never?
   notes: {
     sql: (cur) =>
       `SELECT n.id, n.body_md AS body, n.visibility, (SELECT code FROM projects WHERE id = n.project_id) AS project_code, n.created_at FROM notes n WHERE n.client_id = ?3 AND ${LAST_LIVE_INDIVIDUAL("n.client_id")}${cur ? " AND n.id > ?5" : ""} ORDER BY n.id LIMIT 51`,
@@ -1292,8 +1292,9 @@ export const contacts = new Hono<AppEnv>()
             `UPDATE projects SET name = code, updated_at = max(?2, updated_at + 1) WHERE ${LAST_LIVE_INDIVIDUAL("projects.client_id")} AND ${g.sql(3)}`,
           )
           .bind(id, t, ...g.params),
-        // 2d. an individual's never-sent proposal and estimate drafts go with its last live contact (owner O-Q4, 2026-10-25; VERIFY WITH
-        //     CA/LEGAL). A sent version keeps its frozen copy (it is evidence of the offer and blocks the erase of the person it names).
+        // 2d. an individual's never-sent proposal and estimate drafts go with its last live contact (owner O-Q4, 2026-10-25; Researched 2026-10-29,
+        //     DPDP s.8(7), s.12(3) (08-C RB-37)). A sent version keeps its frozen copy (it is evidence of the offer and blocks the erase of the person
+        //     it names) (OPEN (08-C RB-37): may an unaccepted sent offer be kept against an erasure request, and for how long?).
         //     The approvals of those drafts go first (they reference the document); a lead's link to a deleted draft is cleared by the
         //     foreign key. Same conditions as step 3, in the same batch, before the contact changes.
         //     The bell rows about those approvals go too, before the approvals do (their titles hold the draft's title). They go for EVERY approval of the

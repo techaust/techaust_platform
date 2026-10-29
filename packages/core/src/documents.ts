@@ -1,6 +1,6 @@
 // Proposals and estimates, pure (M4.3; ADM-PROP-01..07, ADM-EST-01, ADM-APR-01/02, docs/04 §5.11, §5.12, §5.15). No I/O, no zod, no floats.
-// One code path serves both types. VERIFY WITH CA/LEGAL: the discount threshold is the owner's commercial rule (Q-P3-2); what a sent
-// proposal means as evidence of an offer, and the validity rule, are the lead's and the CA's to confirm (run file, VERIFY items 1 to 12).
+// One code path serves both types. The discount threshold is the owner's commercial rule (Q-P3-2), not a legal item. Validity: Researched
+// 2026-10-29, Contract Act s.6(2) (08-C RB-35); a sent proposal kept as evidence: OPEN (08-C RB-37); M4.3 items 1-12: 08-C §7.
 //
 //   - sections (the caps and the three that are always present),
 //   - the status flow (the twin of the `documents_status_flow` trigger),
@@ -445,7 +445,7 @@ export function contentHashInput(draft: DraftContent, computed: ComputedDocument
 export const contentHash = (draft: DraftContent, computed: ComputedDocument | null): Promise<string> =>
   sha256Hex(JSON.stringify(contentHashInput(draft, computed)));
 
-// ---- validity (VERIFY WITH CA/LEGAL item 5) -----------------------------------------------------------------------------------
+// ---- validity (Researched 2026-10-29, Contract Act s.6(2) (08-C RB-35)) -------------------------------------------------------
 
 /**
  * The last day an offer can be accepted, as a date string: the IST date it was sent plus its validity in days, inclusive (an offer

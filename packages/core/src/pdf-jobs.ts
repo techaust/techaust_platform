@@ -130,12 +130,13 @@ export function supplierPdfKey(i: PdfKeyInput): string {
 }
 
 /**
- * The place of supply as printed: "West Bengal (19)"; for an export "Outside India (96 – Other Territory)".
- * VERIFY WITH CA/LEGAL: the wording and showing it on a proposal at all.
+ * The place of supply as printed: "West Bengal (19)"; for an export "Outside India (96)", as invoices print it (07-S §1). Researched 2026-10-29,
+ * Rule 46(n), e-invoice master code 96 (08-C RA-35): 96 is "other countries" (97 is "Other Territory"); on a proposal or estimate it is a preview
+ * (08-C RA-12, RA-28). Stored PDFs are write-once and keep the words they were made with.
  */
 export function placeOfSupplyLabel(code: string, supplyType: string): string {
   if (supplyType === "export_lut" || supplyType === "export_igst" || code === EXPORT_PLACE_OF_SUPPLY) {
-    return "Outside India (96 – Other Territory)";
+    return `Outside India (${EXPORT_PLACE_OF_SUPPLY})`;
   }
   return isStateCode(code) ? `${STATE_CODES[code].name} (${code})` : code;
 }

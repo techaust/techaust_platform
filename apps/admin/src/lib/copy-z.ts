@@ -14,3 +14,22 @@ export const VOID_VIEWED_COPY = {
   ),
   proforma: Z("The client has opened this proforma in the portal, so it can't be voided."),
 } as const;
+
+const daysText = (days: readonly number[]) =>
+  days.map((n) => `${n} ${n === 1 ? "day" : "days"}`).join(" and ");
+
+/**
+ * 07-Z §2 (FX-5, full audit C4): the proposal terms and Settings › Payment terms disagree on the days to pay. `refused` is the terms save's
+ * 400 `terms_due_days_mismatch` (its `details`); `warning` is for Settings › Payment terms while the newest terms state other days
+ * (`meta.termsDueDays`).
+ */
+export const TERMS_DUE_DAYS_COPY = {
+  refused: (stated: readonly number[], dueDays: number) =>
+    Z(
+      `These terms say invoices are due within ${daysText(stated)}, but Settings › Payment terms says ${daysText([dueDays])}. Change the number here, or change Payment terms first.`,
+    ),
+  warning: (stated: readonly number[]) =>
+    Z(
+      `Your proposal terms say invoices are due within ${daysText(stated)}. Save a new version in Settings › Terms so they match.`,
+    ),
+} as const;

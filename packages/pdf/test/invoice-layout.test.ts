@@ -244,8 +244,8 @@ describe("the layout's formatting helpers", () => {
       name: "Andaman and Nicobar Islands",
       code: "35",
     });
-    expect(splitPlaceOfSupply("Outside India (96 – Other Territory)")).toEqual({
-      name: "Outside India (96 – Other Territory)",
+    expect(splitPlaceOfSupply("Outside India")).toEqual({
+      name: "Outside India",
       code: null,
     });
     expect(splitPlaceOfSupply("97")).toEqual({ name: "97", code: null });

@@ -1,5 +1,5 @@
-// The expiry of proposals and estimates (M4.3 item 9, JOB-CRON-01, ADM-PROP-06). VERIFY WITH CA/LEGAL: what an expired offer means (the offer
-// lapses; a new version or a new proposal is a new offer).
+// The expiry of proposals and estimates (M4.3 item 9, JOB-CRON-01, ADM-PROP-06). Researched 2026-10-29, Contract Act s.6(2) (08-C RB-35): the
+// offer lapses after the date it prescribes; a new version is a new offer.
 //   cron (daily 22:00 UTC = 03:30 IST) -> `enqueueStats` adds ONE `documents.expire` message (the IST date of the run) to its existing
 //     LEADS_QUEUE `sendBatch`. The cron reads no D1 for it.
 //   consumer -> `processExpire`: ONE page per message. It picks at most 50 ids of sent or viewed proposals and estimates whose `valid_until`

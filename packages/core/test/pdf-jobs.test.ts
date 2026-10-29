@@ -134,9 +134,9 @@ describe("placeOfSupplyLabel", () => {
     expect(placeOfSupplyLabel("27", "inter")).toBe("Maharashtra (27)");
   });
   it("writes Outside India for exports", () => {
-    expect(placeOfSupplyLabel("96", "export_lut")).toBe("Outside India (96 – Other Territory)");
-    expect(placeOfSupplyLabel("96", "export_igst")).toBe("Outside India (96 – Other Territory)");
-    expect(placeOfSupplyLabel("96", "inter")).toBe("Outside India (96 – Other Territory)");
+    expect(placeOfSupplyLabel("96", "export_lut")).toBe("Outside India (96)");
+    expect(placeOfSupplyLabel("96", "export_igst")).toBe("Outside India (96)");
+    expect(placeOfSupplyLabel("96", "inter")).toBe("Outside India (96)");
   });
   it("falls back to the code for an unknown one", () => {
     expect(placeOfSupplyLabel("ZZ", "inter")).toBe("ZZ");

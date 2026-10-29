@@ -1,4 +1,4 @@
-// Document terms (ADM-SET-08, VERIFY WITH CA/LEGAL): the five blocks (standard terms, proposal terms, invoice footer
+// Document terms (ADM-SET-08; OPEN (08-C RB-38): the proposal terms text; export declaration RA-18; refund link RB-24): the five blocks (standard terms, proposal terms, invoice footer
 // notes, export declaration, refund-policy link), each versioned. Saving never edits a version: it adds the next one,
 // and documents keep the version they were made with. "Used by N documents" exists for the proposal terms and invoice
 // notes; documents don't record the other three until M5, and the page says so instead of showing a zero.

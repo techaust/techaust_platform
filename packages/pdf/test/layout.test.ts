@@ -102,7 +102,7 @@ describe("the header blocks (07-P §1)", () => {
   });
 
   it("prints the export place of supply", async () => {
-    expect(await bodyOf("usd-export")).toContain("Place of supply: Outside India (96 – Other Territory)");
+    expect(await bodyOf("usd-export")).toContain("Place of supply: Outside India (96)");
   });
 });
 

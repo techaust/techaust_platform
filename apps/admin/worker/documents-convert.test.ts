@@ -364,7 +364,7 @@ describe("the lead convert builds the full draft [ADM-LEAD-04; M3.2 convert uses
 });
 
 // ---------------------------------------------------------------------------------------------------------------
-describe("a sent offer and the people it names [ADM-CLI-05, O-Q4; VERIFY WITH CA/LEGAL]", () => {
+describe("a sent offer and the people it names [ADM-CLI-05, O-Q4; OPEN (08-C RB-37)]", () => {
   const erase = (cookie: string, contactId: string, mode: "erase" | "anonymise") =>
     call(`/contacts/${contactId}/erase`, { cookie, body: { mode, reason: "requested" } });
 

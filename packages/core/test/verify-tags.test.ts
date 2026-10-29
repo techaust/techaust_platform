@@ -2,7 +2,8 @@
 // `Researched <date>, <source> (08-C <ID>)` when the register settles it, or `OPEN (08-C <ID>): <question>` when it does not. This test scans
 // apps/, packages/, scripts/, tools/ and .github/ (code, styles, JSON and JSONC, Markdown, SQL, YAML and shell or PowerShell scripts; applied
 // migrations are never edited, so `packages/db/migrations/` is left out; FX-3 fix round, item 9; the wrangler `.jsonc` configs, whose comments
-// can carry a note, fix round 2, item G) and fails on a bare tag in a file that is not below, or on more
+// can carry a note, fix round 2, item G; FX-5: HTML, Python and `.example` files too, such as `index.html`, `measure-cmyk.py` and
+// `.dev.vars.example`; test snapshots stay out, being generated) and fails on a bare tag in a file that is not below, or on more
 // tags than the file is allowed. The list is the tags whose question has no 08-C row yet (FX-3 builder report): each is retagged
 // once the register has a row, and a stale count fails too, so the list only shrinks.
 import { readdirSync, readFileSync } from "node:fs";
@@ -11,59 +12,29 @@ import { describe, expect, it } from "vitest";
 
 const REPO = join(import.meta.dirname, "..", "..", "..");
 const SCANNED = ["apps", "packages", "scripts", "tools", ".github"];
-/** Installed packages, build output and generated files, skipped wherever they sit; below the tops, every folder whose name starts with "." too. */
-const SKIP_DIRS = new Set(["node_modules", "dist", "coverage", "generated", "fonts", "brand"]);
+/** Installed packages, build output, generated files and test snapshots, skipped wherever they sit; below the tops, every folder whose name starts with "." too. */
+const SKIP_DIRS = new Set([
+  "node_modules",
+  "dist",
+  "coverage",
+  "generated",
+  "fonts",
+  "brand",
+  "__snapshots__",
+]);
 /** The applied migrations (never edited): skipped by their path only, so a `.sql` file anywhere else is scanned. */
 const SKIP_PATHS = new Set(["packages/db/migrations"]);
-const EXTENSIONS = /\.(ts|tsx|mts|mjs|cjs|js|astro|css|jsonc?|md|sql|ya?ml|sh|ps1)$/;
+const EXTENSIONS = /\.(ts|tsx|mts|mjs|cjs|js|astro|css|jsonc?|md|sql|ya?ml|sh|ps1|html|py|example)$/;
 /** "VERIFY WITH CA", "VERIFY WITH CA/LEGAL", "VERIFY WITH LEGAL", also when a comment breaks the line between the words. */
 const BARE = /VERIFY\s+WITH(?:\s|\/\/|\*)+(?:CA|LEGAL)\b/g;
 const SELF = "packages/core/test/verify-tags.test.ts";
 
-/** File → how many bare tags it may still hold, and why (no 08-C row covers the question yet). */
-const NO_ROW_YET: Record<string, { count: number; why: string }> = {
-  "apps/admin/worker/clients.ts": {
-    count: 5,
-    why: "what a data-subject export holds (offer links, invoice links, decisions, file contents) and the erase of never-sent drafts (O-Q4)",
-  },
-  "apps/admin/worker/documents-convert.test.ts": {
-    count: 1,
-    why: "a sent offer as evidence against erasing the person it names",
-  },
-  "apps/admin/src/lib/clients.ts": { count: 2, why: "data-subject items (export, erase, anonymise)" },
-  "apps/admin/src/lib/projects.ts": {
-    count: 1,
-    why: "notes and files deleted with an individual's last contact",
-  },
-  "apps/admin/src/routes/settings/payment-terms.tsx": {
-    count: 1,
-    why: "due days, validity, the small-job threshold and the part-payment floor (the liability cap is RB-23)",
-  },
-  "apps/admin/src/routes/settings/terms.tsx": {
-    count: 1,
-    why: "the document terms text (the export declaration is RA-18)",
-  },
-  "apps/jobs/src/expire.ts": { count: 1, why: "what an expired offer means" },
-  "apps/jobs/test/expire.test.ts": { count: 1, why: "what an expired offer means" },
-  "packages/core/src/documents.ts": {
-    count: 2,
-    why: "a sent proposal as evidence of an offer, and the validity rule (run file items 1 to 12)",
-  },
-  "packages/core/test/documents.test.ts": { count: 1, why: "the validity rule (item 5)" },
-  "packages/core/src/gstin.ts": { count: 1, why: "the GST state-code list (e-way bill master)" },
-  "packages/core/test/gstin.test.ts": { count: 1, why: "legacy state codes" },
-  "packages/core/src/schemas/settings.ts": {
-    count: 3,
-    why: "the GSTIN check (twice) and the INR 10,000 part-payment floor",
-  },
-  "packages/core/src/pdf-jobs.ts": { count: 1, why: "the place-of-supply wording on a proposal" },
-  "packages/db/src/contact-access.ts": { count: 1, why: "when a contact's portal access ends" },
-  "packages/db/src/schema/crm.ts": { count: 1, why: "the consent receipt kept with a lead (FRM-05)" },
-  "packages/db/src/seed/terms.ts": {
-    count: 1,
-    why: "the proposal terms text and Ownership (GST at 18 % is RA-16)",
-  },
-};
+/**
+ * File → how many bare tags it may still hold, and why (no 08-C row covers the question yet). Empty since FX-5 (2026-10-30): the last 25 tags
+ * in 17 files were retagged once 08-C gained RA-34, RA-35 and RB-35 to RB-39 (and amended RB-28). It stays so a question found later can be
+ * listed while its row is researched; the list only shrinks back to empty.
+ */
+const NO_ROW_YET: Record<string, { count: number; why: string }> = {};
 
 const relOf = (path: string): string => relative(REPO, path).replaceAll("\\", "/");
 
@@ -119,15 +90,37 @@ describe("bare VERIFY tags (FX-3)", () => {
       "apps/portal/wrangler.jsonc",
       "apps/web/wrangler.jsonc",
       "packages/db/wrangler.jsonc",
+      // FX-5: HTML, Python and .example files
+      "apps/admin/index.html",
+      "apps/portal/index.html",
+      "packages/ui/scripts/measure-cmyk.py",
+      "apps/admin/.dev.vars.example",
+      "apps/web/.dev.vars.example",
     ])
       expect(all, want).toContain(want);
     expect(all.some((f) => f.startsWith("packages/db/migrations/"))).toBe(false);
+    // FX-5: test snapshots are generated, so they stay out
+    expect(all.some((f) => f.includes("/__snapshots__/"))).toBe(false);
+    expect(entersDir("packages/email/test/__snapshots__", "__snapshots__")).toBe(false);
     // the folder rule: the migrations are skipped at their own path only; installed packages and dot folders below the tops never entered
     expect(entersDir("packages/db/migrations", "migrations")).toBe(false);
     expect(entersDir("packages/db/src/migrations", "migrations")).toBe(true);
     expect(entersDir("apps/web/node_modules", "node_modules")).toBe(false);
     expect(entersDir("apps/web/.wrangler", ".wrangler")).toBe(false);
-    for (const name of ["x.sql", "x.yml", "x.yaml", "x.sh", "x.ps1", "x.ts", "x.md", "x.json", "x.jsonc"])
+    for (const name of [
+      "x.sql",
+      "x.yml",
+      "x.yaml",
+      "x.sh",
+      "x.ps1",
+      "x.ts",
+      "x.md",
+      "x.json",
+      "x.jsonc",
+      "x.html",
+      "x.py",
+      ".dev.vars.example",
+    ])
       expect(EXTENSIONS.test(name), name).toBe(true);
     for (const name of ["x.png", "x.woff2", "x.pdf", "x.lock"])
       expect(EXTENSIONS.test(name), name).toBe(false);
@@ -137,5 +130,7 @@ describe("bare VERIFY tags (FX-3)", () => {
     const got = found();
     const allowed = Object.fromEntries(Object.entries(NO_ROW_YET).map(([f, v]) => [f, v.count]));
     expect(got).toEqual(allowed);
+    // FX-5: every question now has its 08-C row, so no file may hold a bare tag
+    expect(allowed).toEqual({});
   });
 });

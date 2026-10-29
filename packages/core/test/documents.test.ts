@@ -530,7 +530,7 @@ describe("the status flow [ADM-PROP-06]", () => {
 
 // ---- validity --------------------------------------------------------------------------------------------------------------------
 
-describe("validUntil [VERIFY WITH CA/LEGAL item 5]", () => {
+describe("validUntil [08-C RB-35]", () => {
   it("is the IST sent date plus the validity, inclusive", () => {
     // Sent 1 October 2026 with 15 days: acceptable through 16 October.
     expect(validUntil({ year: 2026, month: 10, day: 1 }, 15)).toBe("2026-10-16");

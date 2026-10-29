@@ -1118,3 +1118,45 @@ describe("the leads retention re-dates the leads the clean-up may delete [ADM-SE
     expect(at).toBeLessThan(Date.now() + 14 * 86_400_000 + 5_000);
   });
 });
+
+describe("the proposal terms' due days follow Settings › Payment terms [FX-5 C4, ADM-SET-05, ADM-SET-08, 08-C RB-39]", () => {
+  const postTerms = (cookie: string, text: string) =>
+    call("/settings/terms/proposal_terms", { method: "POST", body: { body: text }, cookie });
+  const metaOf = async (cookie: string) => (await json(await call(GROUP("payment_terms"), { cookie }))).meta;
+
+  it("a terms text with other due days is 400 terms_due_days_mismatch and writes nothing; matching text saves; the setting's page says when they disagree", async () => {
+    await clear("payment_terms");
+    const o = await owner();
+    const before = await countOf("terms_versions", "kind = 'proposal'");
+    const refused = await postTerms(o.cookie, "2. **Payment.** Invoices are due within 14 days.");
+    expect(refused.status).toBe(400);
+    const body = await json(refused);
+    expect(body.error.code).toBe("terms_due_days_mismatch");
+    expect(body.details).toEqual({ stated: [14], dueDays: 7 });
+    expect(body.fields[0].path).toBe("body");
+    expect(await countOf("terms_versions", "kind = 'proposal'")).toBe(before);
+    // other blocks are not checked (the invoice footer may say anything)
+    expect(
+      (
+        await call("/settings/terms/invoice_footer", {
+          method: "POST",
+          body: { body: "Pay within 14 days." },
+          cookie: o.cookie,
+        })
+      ).status,
+    ).toBe(201);
+    expect((await postTerms(o.cookie, "2. **Payment.** Invoices are due within 7 days.")).status).toBe(201);
+    expect((await metaOf(o.cookie)).termsDueDays).toEqual({ stated: [7], matches: true });
+    // the setting is changed first (never refused), the page then says the terms disagree, and the matching terms save
+    const next = { ...SETTINGS_DEFAULTS.payment_terms, dueDays: 14 };
+    expect((await put(GROUP("payment_terms"), o.cookie, { version: 0, value: next })).status).toBe(200);
+    expect((await metaOf(o.cookie)).termsDueDays).toEqual({ stated: [7], matches: false });
+    expect((await postTerms(o.cookie, "2. **Payment.** Invoices are due within 14 days.")).status).toBe(201);
+    expect((await metaOf(o.cookie)).termsDueDays).toEqual({ stated: [14], matches: true });
+    // a text that states no number of days is never refused
+    expect((await postTerms(o.cookie, "2. **Payment.** Invoices are due on the date shown.")).status).toBe(
+      201,
+    );
+    await clear("payment_terms");
+  });
+});

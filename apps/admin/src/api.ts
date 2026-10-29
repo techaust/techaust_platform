@@ -90,6 +90,8 @@ export type GroupMeta = {
     currentMissing: boolean;
   } | null;
   notes?: string;
+  /** FX-5 (Settings › Payment terms): the days the newest proposal terms state, and whether they all match the saved due days. */
+  termsDueDays?: { stated: number[]; matches: boolean };
   pan?: string | null;
   logos?: readonly string[];
   fy?: string;
