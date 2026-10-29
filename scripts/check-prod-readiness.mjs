@@ -1,9 +1,14 @@
 // Pre-production check (M2.3): run by .github/workflows/deploy-prod.yml before a production deploy, NEVER by CI or the
 // staging deploy. It fails while a pending owner input is still a placeholder, so production can't ship with one.
 // Each failure line says what the owner must supply. Pure functions for the tests; the CLI is at the bottom.
+// Since the full audit (A1 finding 6) it also reads the admin's and the portal's built bundles for "[Placeholder" copy, and the
+// Worker configs for an empty production Turnstile site key and for queues staging has and production lacks. The admin and the
+// portal must be built before it runs: today deploy-prod.yml builds only the website, so this check fails there until Phase 7
+// adds those builds (a workflow change, the owner's yes); production is blocked anyway until then.
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseJsonc } from "./check-worker-config.mjs";
 import { POSTAL_PLACEHOLDER_TEXT, readSiteBool, readSiteString, walk } from "./web-shared.mjs";
 
 export { POSTAL_PLACEHOLDER_TEXT, readSiteBool, readSiteString };
@@ -118,18 +123,139 @@ export function checkBackupVerified(text, today = new Date().toISOString().slice
   return [];
 }
 
-/** Everything for `webDir` (apps/web); needs dist built. Returns the problems (empty = ready). */
-export function checkProdReadiness(webDir, backupFile = BACKUP_RECORD_FILE) {
+// ---- the admin and the portal (audit A1 finding 6) ----------------------------------------------------------------------------
+
+/** The two SPAs whose built bundles (the browser files and their Workers, all under `dist/`) are read. */
+export const SPA_APPS = ["admin", "portal"];
+
+/**
+ * Copy the owner has not approved yet is shown with a "[Placeholder]" mark (07-W, 07-X: `X(line)` until `APPROVED_07X`), so a
+ * built bundle that still holds the mark would show it to clients and staff. The issue guard that REFUSES such a line looks for
+ * the bare prefix and stays in the bundle on purpose: `"[Placeholder"` in core (`issueBlockers`) and `'%[Placeholder%'` in the
+ * freeze SQL. So a match counts only when the prefix is not followed by a closing quote or "%".
+ */
+const PENDING_COPY = /\[Placeholder(?![%"'`])/g;
+const BUNDLE_TEXT = /\.(?:js|mjs|cjs|html|css|json|txt)$/i;
+
+/** Problems in one built file of `app`: each pending-copy mark, with a little of the text around it (never more). */
+export function checkBundleText(app, name, text) {
+  const problems = [];
+  for (const m of text.matchAll(PENDING_COPY)) {
+    const around = text
+      .slice(m.index, m.index + 70)
+      .replace(/\s+/g, " ")
+      .trim();
+    problems.push(
+      `${app} ${name}: still shows copy marked "[Placeholder" ("${around}…"): the owner approves the page (07-W/07-X), then the lead sets APPROVED_07X and rebuilds.`,
+    );
+  }
+  return problems;
+}
+
+/** Every built file of the admin and the portal under `appsDir` (apps/); a missing build is a problem in itself. */
+export function checkBundles(appsDir) {
+  const problems = [];
+  for (const app of SPA_APPS) {
+    const dist = join(appsDir, app, "dist");
+    if (!existsSync(join(dist, "client", "index.html"))) {
+      problems.push(
+        `apps/${app}/dist is not built: build the ${app} for production (CLOUDFLARE_ENV=production vite build) before this check, so its bundles can be read for "[Placeholder" copy.`,
+      );
+      continue;
+    }
+    for (const file of walk(dist))
+      if (BUNDLE_TEXT.test(file))
+        problems.push(
+          ...checkBundleText(app, relative(dist, file).split(sep).join("/"), readFileSync(file, "utf8")),
+        );
+  }
+  return problems;
+}
+
+/** The Worker configs production reads: the app, its file, and whether its sign-in or forms page carries a Turnstile widget. */
+export const PROD_CONFIGS = [
+  { app: "web", file: "wrangler.jsonc", turnstile: true },
+  { app: "admin", file: "wrangler.jsonc", turnstile: true },
+  { app: "admin", file: "wrangler.api.jsonc", turnstile: false },
+  { app: "portal", file: "wrangler.jsonc", turnstile: true },
+  { app: "jobs", file: "wrangler.jsonc", turnstile: false },
+];
+
+/** A queue's name without its environment word, so `techaust-staging-pdf` and `techaust-pdf` are the same queue. */
+const queueStem = (name) =>
+  String(name)
+    .split("-")
+    .filter((w) => !["staging", "production", "prod"].includes(w))
+    .join("-");
+
+/**
+ * One parsed config's production gaps: an empty `TURNSTILE_SITE_KEY` where the page has a widget (the sign-in or the forms would ship
+ * without bot protection), and every queue producer binding or consumer that staging has and production lacks (the sends would fail,
+ * or nothing would read them). `where` names the file in the message.
+ */
+export function checkProductionConfig(where, config, { turnstile }) {
+  const problems = [];
+  const prod = config.env?.production;
+  const staging = config.env?.staging ?? {};
+  if (!prod) return [`${where}: has no env.production (Phase 7 adds it).`];
+  if (turnstile && !String(prod.vars?.TURNSTILE_SITE_KEY ?? "").trim())
+    problems.push(
+      `${where}: env.production.vars.TURNSTILE_SITE_KEY is empty: the owner creates the production Turnstile widget (docs/runbooks/ses-and-turnstile.md) and the lead sets its public site key and TURNSTILE_SECRET (Phase 7).`,
+    );
+  const prodProducers = new Set((prod.queues?.producers ?? []).map((p) => p.binding));
+  for (const p of staging.queues?.producers ?? [])
+    if (!prodProducers.has(p.binding))
+      problems.push(
+        `${where}: staging sends on the queue binding ${p.binding} but env.production has none: create the production queue and bind it (Phase 7, owner approval).`,
+      );
+  const prodConsumers = new Set((prod.queues?.consumers ?? []).map((c) => queueStem(c.queue)));
+  for (const c of staging.queues?.consumers ?? [])
+    if (!prodConsumers.has(queueStem(c.queue)))
+      problems.push(
+        `${where}: staging consumes ${c.queue} but env.production consumes no ${queueStem(c.queue)} queue: add the production consumer (Phase 7, owner approval).`,
+      );
+  return problems;
+}
+
+/** checkProductionConfig over every config in PROD_CONFIGS under `appsDir`. */
+export function checkProductionConfigs(appsDir) {
+  const problems = [];
+  for (const c of PROD_CONFIGS) {
+    const path = join(appsDir, c.app, c.file);
+    const where = `apps/${c.app}/${c.file}`;
+    if (!existsSync(path)) {
+      problems.push(`${where} is missing.`);
+      continue;
+    }
+    problems.push(...checkProductionConfig(where, parseJsonc(readFileSync(path, "utf8")), c));
+  }
+  return problems;
+}
+
+/**
+ * Everything for `webDir` (apps/web); needs the site built, and the admin and the portal built (their bundles are read).
+ * `appsDir` is apps/ (the parent of `webDir` unless given). Returns the problems (empty = ready).
+ */
+export function checkProdReadiness(webDir, backupFile = BACKUP_RECORD_FILE, appsDir = join(webDir, "..")) {
   const dist = join(webDir, "dist");
-  if (!existsSync(dist)) return [`${dist} does not exist: build the site first.`];
-  const siteTs = readFileSync(join(webDir, "src", "config", "site.ts"), "utf8");
-  const problems = checkSiteConfig(siteTs);
-  problems.push(...checkLaunchDate(siteTs, readFileSync(join(webDir, "src", "content", "legal.ts"), "utf8")));
-  for (const file of walk(dist))
-    if (file.endsWith(".html"))
-      problems.push(...checkBuiltPage(relative(dist, file).split(sep).join("/"), readFileSync(file, "utf8")));
-  problems.push(...checkNoindex(readFileSync(join(webDir, "public", "_headers"), "utf8")));
-  problems.push(...checkBackupVerified(existsSync(backupFile) ? readFileSync(backupFile, "utf8") : null));
+  const problems = [];
+  if (!existsSync(dist)) problems.push(`${dist} does not exist: build the site first.`);
+  else {
+    const siteTs = readFileSync(join(webDir, "src", "config", "site.ts"), "utf8");
+    problems.push(...checkSiteConfig(siteTs));
+    problems.push(
+      ...checkLaunchDate(siteTs, readFileSync(join(webDir, "src", "content", "legal.ts"), "utf8")),
+    );
+    for (const file of walk(dist))
+      if (file.endsWith(".html"))
+        problems.push(
+          ...checkBuiltPage(relative(dist, file).split(sep).join("/"), readFileSync(file, "utf8")),
+        );
+    problems.push(...checkNoindex(readFileSync(join(webDir, "public", "_headers"), "utf8")));
+    problems.push(...checkBackupVerified(existsSync(backupFile) ? readFileSync(backupFile, "utf8") : null));
+  }
+  problems.push(...checkBundles(appsDir));
+  problems.push(...checkProductionConfigs(appsDir));
   return problems;
 }
 
