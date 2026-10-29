@@ -224,9 +224,15 @@ export async function buildNewDraft(i: NewDraftInput): Promise<NewDraft> {
     i.services.slice(1).map((s) => s.item),
     i.services.map((s) => s.item),
   ).map((s) => ({ ...s }));
+  // The lead's message goes into the Scope section, which is then shown: one hidden below for having no text has some now (the rule a
+  // later save follows, `appendServices`), and the client must see what they asked for (FX-3 round 3, item 4). Known limit: the message
+  // (at most 2,000 characters) is not held to the section's 6,000; only a template whose Scope section's short values already fill
+  // 4,000 characters or more could take it past that.
   const append = (kind: string, text: string) => {
     const at = sections.find((s) => s.kind === kind);
-    if (at) at.bodyMd = at.bodyMd ? `${at.bodyMd}\n\n${text}` : text;
+    if (!at) return;
+    at.bodyMd = at.bodyMd ? `${at.bodyMd}\n\n${text}` : text;
+    at.hidden = false;
   };
   // A section whose template text was only empty tokens and that no service filled is created hidden, and so is one left with no text
   // when the first service's Catalogue text had no room in it (FX-3 round 2; the gaps name it).

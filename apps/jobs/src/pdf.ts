@@ -628,6 +628,16 @@ export async function failed(
     logEvent("pdf.delayed", { kind: result.kind, delay, hop: msg.hop + 1 });
     return "delayed";
   }
+  // A refused 2xx answer (damaged, not a PDF) used browser time all the same: counted, with the half-of-the-day bell, before the retry
+  // (FX-3 round 3, item 4). The time is the only figure kept; no render is counted.
+  const used = "browserMs" in result ? (result.browserMs ?? 0) : 0;
+  if (used > 0) {
+    const date = dayOf(now);
+    await env.DB.batch([
+      stat(env, date, "pdf.browser_ms", used, now),
+      env.DB.prepare(HALF_BELL_SQL).bind(date, BROWSER_ALERT_MS, BELL_COPY.half),
+    ]);
+  }
   logEvent("pdf.render_failed", { kind: result.kind });
   throw new Error(`pdf render failed: ${result.kind}`);
 }
