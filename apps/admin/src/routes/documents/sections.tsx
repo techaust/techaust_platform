@@ -22,6 +22,7 @@ import {
   Trash,
 } from "../../components/icons.tsx";
 import { MenuButton } from "../../components/popover.tsx";
+import { useKeptCaret } from "../../lib/caret.ts";
 import {
   ADDABLE_KINDS,
   DOC_COPY,
@@ -214,6 +215,9 @@ const SectionRow = memo(function SectionRow(p: {
   // While "Use Catalogue text" fills this section its text, title and visibility are read-only (review round 3, finding 4): an edit made
   // meanwhile would keep the filled text off the screen, and the next save would write over it.
   const busy = p.filling !== null && p.filling === s.id;
+  // The server's own change merged into a box being typed in keeps the caret where it was (round 4 re-check, finding 2).
+  const titleCaret = useKeptCaret<HTMLInputElement>(s.title);
+  const bodyCaret = useKeptCaret<HTMLTextAreaElement>(s.bodyMd);
   const required = isRequiredSection(s.kind);
   const holes = holeNames(`${s.title}\n${s.bodyMd}`);
   const empty = s.bodyMd.trim() === "";
@@ -320,7 +324,13 @@ const SectionRow = memo(function SectionRow(p: {
               maxLength={SECTION_TITLE_MAX}
               readOnly={busy}
               value={s.title}
-              onChange={(e) => p.onEdit(s.uid, { title: e.target.value })}
+              ref={titleCaret.ref}
+              onSelect={titleCaret.onSelect}
+              onFocus={titleCaret.onFocus}
+              onChange={(e) => {
+                titleCaret.noteEdit();
+                p.onEdit(s.uid, { title: e.target.value });
+              }}
             />
           </div>
           <div className="field">
@@ -337,7 +347,13 @@ const SectionRow = memo(function SectionRow(p: {
               maxLength={SECTION_BODY_MAX}
               readOnly={busy}
               value={s.bodyMd}
-              onChange={(e) => p.onEdit(s.uid, { bodyMd: e.target.value })}
+              ref={bodyCaret.ref}
+              onSelect={bodyCaret.onSelect}
+              onFocus={bodyCaret.onFocus}
+              onChange={(e) => {
+                bodyCaret.noteEdit();
+                p.onEdit(s.uid, { bodyMd: e.target.value });
+              }}
             />
           </div>
         </div>

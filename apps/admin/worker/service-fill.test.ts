@@ -11,7 +11,6 @@ import {
   fillServiceTokens,
   fits,
   gapInputsChanged,
-  insertParts,
   type ServiceFacts,
   serviceIdsOf,
   servicesOf,
@@ -164,9 +163,10 @@ describe("gaps and Use Catalogue text", () => {
     const old = svc({ deliverables_md: "Build the site" });
     expect(catalogueGaps([edited], [old], CREATED)).toEqual([]);
     expect(fill(edited, [old])).toBeNull();
-    // after Catalogue changes, the new text is offered once; once in the section, it is no longer offered
+    // after Catalogue changes, the new text is offered once, into the service's own block (round 5: the unheaded opening is the first
+    // service's block, so it goes at its end, with no heading); once in the section, it is no longer offered
     const changed = svc({ deliverables_md: "Build and launch the site", ...NEWER });
-    const after = sec("deliverables", `${edited.bodyMd}\n\n**Alpha and Co**\nBuild and launch the site`);
+    const after = sec("deliverables", `${edited.bodyMd}\nBuild and launch the site`);
     expect(fill(edited, [changed])).toBe(after.bodyMd);
     expect(fill(after, [changed])).toBeNull();
     expect(catalogueGaps([after], [changed], CREATED)).toEqual([]);
@@ -179,8 +179,14 @@ describe("gaps and Use Catalogue text", () => {
     expect(
       catalogueGaps(showsA, [a, b], CREATED).map((g) => [g.serviceCode, g.field, g.catalogueHasTextNow]),
     ).toEqual([["S2", "deliverables", false]]);
-    // the order of the lines does not matter
-    expect(catalogueGaps(showsA, [b, a], CREATED).map((g) => g.serviceCode)).toEqual(["S2"]);
+    // with B's line first, the unheaded opening is B's block (round 5, the block rule): A has no block and its text is B's to keep, so
+    // nobody is named (A's text is offered again, under its name, only once its Catalogue row changes: the documented limit)
+    expect(catalogueGaps(showsA, [b, a], CREATED)).toEqual([]);
+    expect(
+      catalogueGaps([sec("deliverables", "**Alpha and Co**\nA deliv")], [b, a], CREATED).map(
+        (g) => g.serviceCode,
+      ),
+    ).toEqual(["S2"]);
     // a section the person wrote by hand: neither service's Catalogue text is in it, so nothing is named
     expect(catalogueGaps([sec("deliverables", "Our own words")], [b], CREATED)).toEqual([]);
   });
@@ -228,7 +234,7 @@ describe("round 3, finding 1: a service added to a draft that already has text",
       sec("assumptions_exclusions", "A assumes"),
       sec("scope", "x"),
     ];
-    const out = appendServices(sections, [b]);
+    const out = appendServices(sections, [b], [a, b]);
     expect(out.map((s) => s.bodyMd)).toEqual([
       "A deliv\n\n**Beta**\nB deliv",
       "A assumes\n\n**Beta**\nB excl",
@@ -237,24 +243,29 @@ describe("round 3, finding 1: a service added to a draft that already has text",
     expect(out[2]).toBe(sections[2]);
     expect(JSON.stringify(out)).not.toContain("{{");
     // nothing to add: the very same objects (the save tells the sections it wrote by identity)
-    const none = appendServices(sections, [svc({ id: "i3", name: "Empty" })]);
+    const empty = svc({ id: "i3", name: "Empty" });
+    const none = appendServices(sections, [empty], [a, empty]);
     none.forEach((s, i) => {
       expect(s).toBe(sections[i]);
     });
-    expect(appendServices(sections, [])).toEqual(sections);
+    expect(appendServices(sections, [], [a])).toEqual(sections);
   });
 
   it("a part the section already holds is not added twice; a section hidden for having no text is shown, one the person hid is not", () => {
     const holds = [
       sec("deliverables", "A deliv\n\n**Beta**\nB deliv"),
-      sec("assumptions_exclusions", "B excl"),
+      sec("assumptions_exclusions", "A assumes\n\n**Beta**\nB excl"),
     ];
-    const out = appendServices(holds, [b]);
+    const out = appendServices(holds, [b], [a, b]);
     expect(out[0]).toBe(holds[0]);
     expect(out[1]).toBe(holds[1]);
+    // round 5: the same line in A's block (the unheaded opening) is A's, so B still gets its own block
+    const inA = [sec("assumptions_exclusions", "B excl")];
+    expect(appendServices(inA, [b], [a, b])[0]?.bodyMd).toBe("B excl\n\n**Beta**\nB excl");
     const closed = appendServices(
       [sec("deliverables", null, true), sec("assumptions_exclusions", "A assumes", true)],
       [b],
+      [a, b],
     );
     expect(closed.map((s) => [s.bodyMd, s.hidden])).toEqual([
       ["**Beta**\nB deliv", false],
@@ -266,6 +277,7 @@ describe("round 3, finding 1: a service added to a draft that already has text",
     const sections = appendServices(
       [sec("deliverables", "A deliv"), sec("assumptions_exclusions", "A assumes")],
       [b],
+      [a, b],
     );
     const gaps = catalogueGaps(sections, [a, b], CREATED).map((g) => [
       g.serviceCode,
@@ -346,30 +358,24 @@ describe("round 4, M1: a part goes into its service's own block", () => {
       ...over,
     });
 
-  it("exclusions just after the service's assumptions, assumptions just before its exclusions; never a second heading", () => {
-    const b = beta();
-    const ex = { field: "exclusions" as const, text: "B excl" };
-    const as = { field: "assumptions" as const, text: "B assumes" };
-    expect(insertParts("A text\n\n**Beta**\nB assumes\n\n**Gamma**\nG", b, [ex], false)).toBe(
-      "A text\n\n**Beta**\nB assumes\nB excl\n\n**Gamma**\nG",
-    );
-    expect(insertParts("A text\n\n**Beta**\nB excl", b, [as], false)).toBe(
-      "A text\n\n**Beta**\nB assumes\nB excl",
-    );
-    // the first service's plain text (no heading): beside its sibling all the same
+  it("a part goes into its service's own block (assumptions before its exclusions, else at the block's end), else a new block; never a second heading", () => {
     const a = svc({ assumptions_md: "A assumes", exclusions_md: "A excl" });
-    expect(insertParts("A assumes\n\n**Beta**\nB", a, [{ field: "exclusions", text: "A excl" }], false)).toBe(
-      "A assumes\nA excl\n\n**Beta**\nB",
+    const b = beta();
+    const g = svc({ id: "i3", code: "S3", name: "Gamma" });
+    // "Use Catalogue text" once Beta's row changed: the parts its block lacks go in by the block rule
+    const put = (body: string) => fill(sec("assumptions_exclusions", body), [a, { ...b, ...NEWER }, g]);
+    expect(put("A assumes\nA excl\n\n**Beta**\nB excl")).toBe(
+      "A assumes\nA excl\n\n**Beta**\nB assumes\nB excl",
     );
-    // no sibling text left, but the service's heading: at the end of its block
-    expect(insertParts("**Beta**\nOur words\n\n**Gamma**\nG", b, [ex], false)).toBe(
-      "**Beta**\nOur words\nB excl\n\n**Gamma**\nG",
+    expect(put("A assumes\nA excl\n\n**Beta**\nB assumes\n\n**Gamma**\nG")).toBe(
+      "A assumes\nA excl\n\n**Beta**\nB assumes\nB excl\n\n**Gamma**\nG",
     );
-    expect(insertParts("X\n\n**Beta**", b, [ex], false)).toBe("X\n\n**Beta**\nB excl");
-    // neither: a new block under its name (plain only for the first service of a blank section)
-    expect(insertParts("X", b, [as, ex], false)).toBe("X\n\n**Beta**\nB assumes\nB excl");
-    expect(insertParts(null, b, [as, ex], true)).toBe("B assumes\nB excl");
-    expect(insertParts(null, b, [as, ex], false)).toBe("**Beta**\nB assumes\nB excl");
+    // no part of Beta's own left, but its heading: at the end of its block
+    expect(put("A assumes\n\n**Beta**\nOur words\n\n**Gamma**\nG")).toBe(
+      "A assumes\n\n**Beta**\nOur words\nB assumes\nB excl\n\n**Gamma**\nG",
+    );
+    // no block: a new one under its name
+    expect(put("A assumes")).toBe("A assumes\n\n**Beta**\nB assumes\nB excl");
   });
 
   it("Use Catalogue text puts a service's new exclusions into its block, with no second **Name** heading", () => {
@@ -386,10 +392,129 @@ describe("round 4, M1: a part goes into its service's own block", () => {
     ).toBe("A assumes\nA excl\n\n**Beta**\nB assumes\nB excl");
   });
 
-  it("a save adding a service taken out and put back adds only its missing part, into its block", () => {
+  it("round 5, finding 4: a service taken out and put back finds its block as the person left it: nothing is added or repeated", () => {
     const b = beta();
-    const out = appendServices([sec("assumptions_exclusions", "A\n\n**Beta**\nB assumes")], [b]);
-    expect(out[0]?.bodyMd).toBe("A\n\n**Beta**\nB assumes\nB excl");
+    const s = [sec("assumptions_exclusions", "A\n\n**Beta**\nB assumes")];
+    expect(appendServices(s, [b], [svc(), b])[0]).toBe(s[0]);
+    // its block edited: the Catalogue text is not put back under the edit
+    const edited = [sec("assumptions_exclusions", "A\n\n**Beta**\nB assumes, as agreed on the call\nB excl")];
+    expect(appendServices(edited, [b], [svc(), b])[0]).toBe(edited[0]);
+    // and the gaps don't call it missing (the block is the person's) until Catalogue changes
+    expect(catalogueGaps(edited, [svc(), b], CREATED).filter((g) => g.serviceCode === "S2")).toEqual([]);
+    expect(
+      catalogueGaps(edited, [svc(), { ...b, ...NEWER }], CREATED)
+        .filter((g) => g.serviceCode === "S2")
+        .map((g) => [g.serviceCode, g.field, g.catalogueHasTextNow]),
+    ).toEqual([["S2", "assumptions", true]]);
+  });
+});
+
+describe("round 5: the block rule, end to end through the pure rules", () => {
+  const shared = "Third-party fees are billed separately.";
+  // the reviewer's case: two services share an exclusion line
+  const s5 = svc({
+    id: "i5",
+    code: "S5",
+    name: "Web build",
+    assumptions_md: "S5 assumes",
+    exclusions_md: shared,
+  });
+  const s6 = svc({
+    id: "i6",
+    code: "S6",
+    name: "Hosting",
+    assumptions_md: "S6 assumes",
+    exclusions_md: shared,
+  });
+  const tpl = () => [sec("assumptions_exclusions", "{{service.assumptions}}\n{{service.exclusions}}")];
+
+  it("creation with shared texts: each service gets its own block with its own copy of the shared line", () => {
+    const out = fillServiceTokens(tpl(), [s5, s6], null);
+    expect(out[0]?.bodyMd).toBe(`S5 assumes\n${shared}\n\n**Hosting**\nS6 assumes\n${shared}`);
+    expect(catalogueGaps(out, [s5, s6], CREATED)).toEqual([]);
+    // the same through the creation path's append
+    const created = appendServices([sec("assumptions_exclusions", `S5 assumes\n${shared}`)], [s6], [s5, s6]);
+    expect(created[0]?.bodyMd).toBe(out[0]?.bodyMd);
+  });
+
+  it("a part lands in its own service's block, never before or after the other service's copy of a shared line", () => {
+    // S5 has no assumptions in Catalogue when the draft is made; S6 later gets new assumptions
+    const s5bare = { ...s5, assumptions_md: null };
+    const made = fillServiceTokens(tpl(), [s5bare, { ...s6, assumptions_md: null }], null);
+    expect(made[0]?.bodyMd).toBe(`${shared}\n\n**Hosting**\n${shared}`);
+    const s6new = { ...s6, ...NEWER };
+    const after = filledBody(
+      made[0] as ReturnType<typeof sec>,
+      [s5bare, s6new],
+      CREATED,
+      made[0]?.bodyMd?.length ?? 0,
+    );
+    // S6's assumptions go before S6's OWN copy of the line, not before S5's
+    expect(after).toBe(`${shared}\n\n**Hosting**\nS6 assumes\n${shared}`);
+  });
+
+  it("'None.' inside another service's sentence is not the service's 'None.'", () => {
+    const a = svc({ deliverables_md: "Hosting is None. of our concern." });
+    const b = svc({ id: "i2", code: "S2", name: "Beta", deliverables_md: "None." });
+    const out = appendServices([sec("deliverables", "Hosting is None. of our concern.")], [b], [a, b]);
+    expect(out[0]?.bodyMd).toBe("Hosting is None. of our concern.\n\n**Beta**\nNone.");
+    // and a whole "None." line in A's block is A's, not B's
+    const out2 = appendServices([sec("deliverables", "None.")], [b], [svc({ deliverables_md: "None." }), b]);
+    expect(out2[0]?.bodyMd).toBe("None.\n\n**Beta**\nNone.");
+  });
+
+  it("a two-paragraph Catalogue text is held whole: never offered or added again; a part goes after it, inside the block", () => {
+    const two = "We build the pages.\n\nWe test them on phones.";
+    const a = svc({ deliverables_md: "A deliv" });
+    const b = svc({ id: "i2", code: "S2", name: "Beta", deliverables_md: two });
+    const out = appendServices([sec("deliverables", "A deliv")], [b], [a, b]);
+    expect(out[0]?.bodyMd).toBe(`A deliv\n\n**Beta**\n${two}`);
+    expect(catalogueGaps(out, [a, { ...b, ...NEWER }], CREATED)).toEqual([]);
+    expect(fill(out[0] as ReturnType<typeof sec>, [a, { ...b, ...NEWER }])).toBeNull();
+    // Beta's assumptions after its two-paragraph exclusions: still in Beta's block, above the next service
+    const c = svc({ id: "i3", code: "S3", name: "Gamma", exclusions_md: "G excl" });
+    const be = svc({
+      id: "i2",
+      code: "S2",
+      name: "Beta",
+      exclusions_md: two,
+      assumptions_md: "B assumes",
+      ...NEWER,
+    });
+    const body = `A\n\n**Beta**\n${two}\n\n**Gamma**\nG excl`;
+    expect(fill(sec("assumptions_exclusions", body), [svc(), be, c])).toBe(
+      `A\n\n**Beta**\nB assumes\n${two}\n\n**Gamma**\nG excl`,
+    );
+  });
+
+  it("finding 3: the room check counts only the parts that would be put in, never a part the person took out", () => {
+    const long = "x".repeat(2400);
+    // Beta's long assumptions were taken out by the person; its exclusions are new in Catalogue and short
+    const b = svc({
+      id: "i2",
+      code: "S2",
+      name: "Beta",
+      assumptions_md: long,
+      exclusions_md: "B excl new",
+      ...NEWER,
+    });
+    const filler = "f".repeat(5_900);
+    const section = sec("assumptions_exclusions", `${filler}\n\n**Beta**\nOur words`);
+    const gaps = catalogueGaps([section], [svc(), b], CREATED).filter((g) => g.serviceCode === "S2");
+    // with the row changed, both parts are offered together (per row: L1) and together have no room…
+    expect(gaps.map((g) => [g.field, g.noRoom, g.catalogueHasTextNow])).toEqual([
+      ["assumptions", true, false],
+      ["exclusions", true, false],
+    ]);
+    // …but with the row unchanged nothing is offered, and nothing is called "no room": Beta has a block, so the person took it out
+    expect(catalogueGaps([section], [svc(), { ...b, updated_at: 0 }], CREATED)).toEqual([]);
+  });
+
+  it("a person-edited heading: the service has no block there, so its text is not taken for held, and nothing goes under the edit", () => {
+    const a = svc({ deliverables_md: "A deliv" });
+    const b = svc({ id: "i2", code: "S2", name: "Beta", deliverables_md: "B deliv", ...NEWER });
+    const body = "A deliv\n\n**Beta (phase 1)**\nB deliv";
+    expect(fill(sec("deliverables", body), [a, b])).toBe(`${body}\n\n**Beta**\nB deliv`);
   });
 });
 
@@ -398,12 +523,16 @@ describe("round 4, L3: appendServices compares whole texts", () => {
     const common =
       "The client provides every text, image and login before the work starts, and answers within two days.";
     const b = svc({ id: "i2", name: "Beta", deliverables_md: `${common} Beta also needs the brand files.` });
-    const out = appendServices([sec("deliverables", common)], [b]);
+    const out = appendServices([sec("deliverables", common)], [b], [svc(), b]);
     expect(out[0]?.bodyMd).toBe(`${common}\n\n**Beta**\n${common} Beta also needs the brand files.`);
-    // the very same text is still not repeated
+    // the very same text, whole, in the service's own block is not repeated (spaces around it don't count)
     const same = svc({ id: "i3", name: "Gamma", deliverables_md: `  ${common}\n` });
-    const kept = [sec("deliverables", common)];
-    expect(appendServices(kept, [same])[0]).toBe(kept[0]);
+    const kept = [sec("deliverables", `${common}\n\n**Gamma**\n${common}`)];
+    expect(appendServices(kept, [same], [svc(), same])[0]).toBe(kept[0]);
+    // round 5: the same text in ANOTHER service's block (here the first service's opening) is that service's; Gamma gets its own block
+    expect(appendServices([sec("deliverables", common)], [same], [svc(), same])[0]?.bodyMd).toBe(
+      `${common}\n\n**Gamma**\n${common}`,
+    );
   });
 });
 
@@ -432,7 +561,8 @@ describe("round 4, M3: an addition that would pass a length limit is left out an
     const third = big("i3", "Gamma", 2400);
     // 3000 + 2500 fits; Gamma's 2400 more does not; Delta's 100 does
     const fourth = big("i4", "Delta", 100);
-    const out = appendServices(sections, [tooBig, third, fourth]);
+    const first = svc({ deliverables_md: long(3000, "a") });
+    const out = appendServices(sections, [tooBig, third, fourth], [first, tooBig, third, fourth]);
     const body = out[0]?.bodyMd ?? "";
     expect(body.length).toBeLessThanOrEqual(SECTION_BODY_MAX);
     expect(body).toContain("**Beta**");
@@ -441,11 +571,7 @@ describe("round 4, M3: an addition that would pass a length limit is left out an
     // the other section still gets Beta's exclusions
     expect(out[1]?.bodyMd).toBe("A\n\n**Beta**\nB excl");
     // the gap names Gamma, as left out for the limit (not as text to fill)
-    const gaps = catalogueGaps(
-      out,
-      [svc({ deliverables_md: long(3000, "a") }), tooBig, third, fourth],
-      CREATED,
-    );
+    const gaps = catalogueGaps(out, [first, tooBig, third, fourth], CREATED);
     expect(gaps.filter((g) => g.noRoom).map((g) => [g.serviceCode, g.field, g.catalogueHasTextNow])).toEqual([
       ["I3", "deliverables", false],
     ]);
@@ -467,9 +593,10 @@ describe("round 4, M3: an addition that would pass a length limit is left out an
     const sections = [...filler, sec("deliverables", "D")];
     expect(textLength(sections)).toBe(29_951);
     const b = big("i2", "Beta", 100);
-    const out = appendServices(sections, [b]);
+    const a = svc({ deliverables_md: "D" });
+    const out = appendServices(sections, [b], [a, b]);
     expect(out[5]).toBe(sections[5]);
-    expect(catalogueGaps(out, [b], CREATED).map((g) => [g.field, g.noRoom])).toEqual([
+    expect(catalogueGaps(out, [a, b], CREATED).map((g) => [g.field, g.noRoom])).toEqual([
       ["deliverables", true],
     ]);
   });

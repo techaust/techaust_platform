@@ -7,17 +7,41 @@
 // The first service fills the template's tokens; every other service adds its own text under its name (the M4.3 shape), so a later service's
 // text never sits under a leftover token. A service added by a later save gets its text the same way, under its name (`appendServices`,
 // review round 3, finding 1), so every service's Catalogue text reaches the draft once, when the service does. A required section (estimate, terms, acceptance) is never hidden automatically (lead, 2026-10-29).
-// A part of a service that already has text in the section goes into that service's own block (assumptions before exclusions), never under
-// a second heading of its name (round 4, M1). An addition that would pass a section's length limit, or the document's, is left out of that
-// section and named as a gap (`noRoom`): never a refused save (lead's rule, 2026-10-29; round 4, M3).
-// Known limits, by design (no migration; round 4, L1 and L4):
+// A section's service text is a list of BLOCKS, one per service under its `**Name**` heading (the draft's first service may own the
+// unheaded opening): service-blocks.ts (lead's decision 2026-10-29, docs/13; round 5). Whether a service already holds a part, where a part
+// goes (into the service's own block, assumptions before its exclusions; else a new block at the end), what "Use Catalogue text" offers and
+// what the room check counts are all asked of the service's own block only, with whole lines and whole texts, never of another service's
+// text (two services that share a line; "None." inside a sentence). An addition that would pass a section's length limit, or the
+// document's, is left out of that section and named as a gap (`noRoom`): never a refused save (lead's rule, 2026-10-29; round 4, M3).
+// Known limits, by design (no migration; round 4, L1 and L4; round 5):
 //   - text the person edited is told apart from text Catalogue has only by the row's `updated_at` (per row, not per field): after any edit
-//     of that Catalogue item, a part the section no longer holds word for word is offered again as new;
-//   - a section the person hid AND emptied reads the same as one hidden for having no text: a service added later shows it with its text.
+//     of that Catalogue item, a part the service's block no longer holds word for word is offered again as new;
+//   - a section the person hid AND emptied reads the same as one hidden for having no text: a service added later shows it with its text;
+//   - the unheaded opening goes with the FIRST service in line order: once the lines are reordered so that another service with no heading
+//     of its own comes first, the opening is that service's, and the service whose text it holds has no block there;
+//   - a part left out for room (M3) is named only while its service has no block in the section (services are left out whole); a part
+//     missing from a block the service has is the person's edit, named only once the Catalogue row changes (L1);
+//   - the reads (gaps, "Use Catalogue text") know only the services on the lines: the block of a service taken off the lines runs on as
+//     part of the block above it until its text is removed;
+//   - a save puts the services the draft had before the ones it adds, while the reads take line order (round 5 re-check, L3): a service
+//     added on a line ABOVE a first service with no heading gets a headed block, and the reads then give the opening to the added service
+//     (the first limit above);
+//   - two services with the same line name share one heading, the first in line order owning it (round 5 re-check, L2): Catalogue names
+//     are not unique, so the second has no block of its own and its Catalogue text is offered again after each change of its row;
+//   - a save that adds a service to a draft with no service and no `{{service.*}}` token left (every line removed and saved, then a line
+//     added) puts nothing in: the text there is taken as the person's own, by the round 4 L2 rule.
 // Pure: no I/O. The Worker budget forbids `import()`; everything here is static.
 import { placeholdersOf, renderTemplate } from "@techaust/core/catalogue";
 import { REQUIRED_SECTIONS, SECTION_BODY_MAX, SECTIONS_TOTAL_MAX } from "@techaust/core/documents";
 import { type ItemRow, lineName } from "./quote-model.ts";
+import {
+  type BlockService,
+  hasBlock,
+  holdsText,
+  insertParts,
+  type ParsedBlocks,
+  parseBlocks,
+} from "./service-blocks.ts";
 
 export type ServiceFacts = Pick<
   ItemRow,
@@ -67,8 +91,6 @@ export const hasServiceToken = (text: string | null | undefined): boolean =>
 
 type Fillable = { id: string; kind: string; title: string | null; bodyMd: string | null; hidden: boolean };
 
-const joinBlocks = (a: string | null, b: string): string => (isBlank(a) ? b : `${a}\n\n${b}`);
-
 /** The characters a document's sections hold together (what `checkSections` holds to SECTIONS_TOTAL_MAX). */
 export const textLength = (sections: readonly { bodyMd: string | null }[]): number =>
   sections.reduce((n, s) => n + (s.bodyMd?.length ?? 0), 0);
@@ -80,10 +102,11 @@ export const textLength = (sections: readonly { bodyMd: string | null }[]): numb
 export const fits = (body: string | null, next: string, total: number): boolean =>
   next.length <= SECTION_BODY_MAX && total - (body?.length ?? 0) + next.length <= SECTIONS_TOTAL_MAX;
 
-/** The section holds this text, whole (round 4, L3: two services whose texts begin alike are told apart). */
-const holds = (body: string | null, text: string): boolean => (body ?? "").includes(text.trim());
-
 type Part = { field: GapField; text: string };
+
+/** The draft's services as the blocks know them: the id and the name their heading shows. */
+const asBlocks = (services: readonly ServiceFacts[]): BlockService[] =>
+  services.map((s) => ({ id: s.id, name: lineName(s.name) }));
 
 /** One service's Catalogue parts for a section of this kind, in their order (assumptions before exclusions), blanks dropped, trimmed. */
 function partsOf(kind: GapKind, item: ServiceFacts): Part[] {
@@ -93,81 +116,45 @@ function partsOf(kind: GapKind, item: ServiceFacts): Part[] {
   });
 }
 
-/** Where the block under the service's name begins (its `**Name**` line), or -1. */
-function headingAt(body: string, item: ServiceFacts): number {
-  const h = `**${lineName(item.name)}**`;
-  if (body === h || body.startsWith(`${h}\n`)) return 0;
-  const at = body.indexOf(`\n${h}\n`);
-  if (at >= 0) return at + 1;
-  return body.endsWith(`\n${h}`) ? body.length - h.length : -1;
-}
-
-/** The service's own text of a field, trimmed, or null. */
-const ownText = (item: ServiceFacts, column: "assumptions_md" | "exclusions_md"): string | null =>
-  isBlank(item[column]) ? null : (item[column] as string).trim();
-
-/**
- * The section's text with some of one service's parts put in (round 4, M1): beside the service's other part when the section holds it
- * (assumptions just before its exclusions, exclusions just after its assumptions); else at the end of the block under its name; else as
- * a new block at the end, under its name. `plain` (the first service of a section that shows nothing yet) leaves the name off, the
- * template's own shape.
- */
-export function insertParts(
+/** One service's parts put into a section's text by the block rule (`insertParts`, service-blocks.ts; its assumptions before its exclusions). */
+const putIn = (
   body: string | null,
+  all: readonly BlockService[],
   item: ServiceFacts,
   parts: readonly Part[],
-  plain: boolean,
-): string {
-  let b = body ?? "";
-  const fresh: string[] = [];
-  for (const p of parts) {
-    if (p.field === "assumptions") {
-      const ex = ownText(item, "exclusions_md");
-      const at = ex === null ? -1 : b.indexOf(ex);
-      if (at >= 0) {
-        b = `${b.slice(0, at)}${p.text}\n${b.slice(at)}`;
-        continue;
-      }
-    }
-    if (p.field === "exclusions") {
-      const as = ownText(item, "assumptions_md");
-      const at = as === null ? -1 : b.indexOf(as);
-      if (as !== null && at >= 0) {
-        const end = at + as.length;
-        b = `${b.slice(0, end)}\n${p.text}${b.slice(end)}`;
-        continue;
-      }
-    }
-    const head = headingAt(b, item);
-    if (head >= 0) {
-      const next = b.indexOf("\n\n", head);
-      const end = next < 0 ? b.length : next;
-      b = `${b.slice(0, end)}\n${p.text}${b.slice(end)}`;
-      continue;
-    }
-    fresh.push(p.text);
-  }
-  if (fresh.length === 0) return b;
-  const block = plain && isBlank(b) ? fresh.join("\n") : `**${lineName(item.name)}**\n${fresh.join("\n")}`;
-  return joinBlocks(b, block);
-}
+  others: readonly BlockService[],
+): string =>
+  insertParts(
+    body,
+    all,
+    { id: item.id, name: lineName(item.name) },
+    parts,
+    isBlank(item.exclusions_md) ? null : item.exclusions_md,
+    others,
+  );
 
 /**
- * Puts each service's missing parts into one section by `insertParts`, in order; an addition that would pass a length limit is left out
- * (round 4, M3: the gaps name it as `noRoom`). `total` is the document's text length before; the answer carries the new one.
+ * Adds each service that has no block in one section yet as a new block, by the block rule, in order; an addition that would pass a length
+ * limit is left out (round 4, M3: the gaps name it as `noRoom`). A service that already has a block there (taken out and put back, or a
+ * heading the person wrote) gets nothing: its block, edited or not, is the person's, so its text is never repeated under an edit (round 5,
+ * finding 4; the gaps read it the same way). `all` is the draft's services in line order (the first may own the opening), `others`
+ * services whose headings still stand in the text. `total` is the document's text length before; the answer carries the new one.
  */
 function addServices(
   body: string | null,
   kind: GapKind,
   services: readonly ServiceFacts[],
   total: number,
+  all: readonly BlockService[],
+  others: readonly BlockService[],
 ): { body: string | null; total: number } {
   let b = body;
   let t = total;
   for (const item of services) {
-    const parts = partsOf(kind, item).filter((p) => !holds(b, p.text));
+    if (hasBlock(parseBlocks(b, all, others), item.id)) continue;
+    const parts = partsOf(kind, item);
     if (parts.length === 0) continue;
-    const next = insertParts(b, item, parts, false);
+    const next = putIn(b, all, item, parts, others);
     if (!fits(b, next, t)) continue;
     t += next.length - (b?.length ?? 0);
     b = next;
@@ -177,7 +164,7 @@ function addServices(
 
 /**
  * Fills every remaining `service.*` token of a draft's sections from its services (in line order, distinct): the first service by the
- * template rules, the others added under their names, only to a section that held a token, and only while the text stays within its
+ * template rules, the others added by the block rule, only to a section that held a token, and only while the text stays within its
  * limits (round 4, M3). A section left with no text is hidden; a section that already shows text keeps its visibility. A draft with no
  * service is returned as it is.
  */
@@ -190,6 +177,7 @@ export function fillServiceTokens<S extends Fillable>(
   if (!first) return [...sections];
   const data: Record<string, string | null> = { ...serviceData(first), "service.schedule": scheduleSentence };
   const empty = emptyServiceTokens(first);
+  const all = asBlocks(services);
   const held = sections.map((s) => hasServiceToken(s.title) || hasServiceToken(s.bodyMd));
   const rendered = sections.map((s, n) =>
     held[n]
@@ -205,7 +193,7 @@ export function fillServiceTokens<S extends Fillable>(
     if (!held[n]) return s;
     let body = s.bodyMd;
     const kind = s.kind;
-    if (isGapKind(kind)) ({ body, total } = addServices(body, kind, services.slice(1), total));
+    if (isGapKind(kind)) ({ body, total } = addServices(body, kind, services.slice(1), total, all, []));
     const blank = isBlank(body);
     return { ...s, bodyMd: blank ? null : body, hidden: s.hidden || (blank && autoHides(kind)) };
   });
@@ -213,24 +201,32 @@ export function fillServiceTokens<S extends Fillable>(
 
 /**
  * Each added service's texts go into its Deliverables and Assumptions and exclusions sections by the creation rule (a blank text is
- * dropped, never a `{{…}}` token; `insertParts`): at creation for every service after the first, and when a save adds a service to a draft
- * that already had services (review round 3, finding 1; round 4, L2). A part the section already holds, whole, is not added again (a service
- * taken out and put back, text the person pasted), so a save never repeats text. An addition that would pass the section's or the
- * document's length limit is left out of that section (round 4, M3) and named as a gap (`noRoom`). A section that was hidden because it had
- * no text is shown once it has some (as it would have been made); a section the person hid while it had text stays hidden (round 4, L4:
- * one hidden AND emptied by the person reads as the first). Every other section, and a section with nothing added, is the same object
- * (the caller tells the sections the server wrote by identity).
+ * dropped, never a `{{…}}` token; the block rule): at creation for every service after the first, and when a save adds a service to a draft
+ * that already had services (review round 3, finding 1; round 4, L2). A service that already has a block in the section (taken out and put
+ * back) gets nothing added to it, edited or not, so a save never repeats text (round 5, finding 4); the same line in ANOTHER service's block
+ * is that service's and never stands for this one's (round 5, finding 1). An addition that would pass the section's or the document's length limit is left out of that
+ * section (round 4, M3) and named as a gap (`noRoom`). A section that was hidden because it had no text is shown once it has some (as it
+ * would have been made); a section the person hid while it had text stays hidden (round 4, L4: one hidden AND emptied by the person reads
+ * as the first). Every other section, and a section with nothing added, is the same object (the caller tells the sections the server wrote
+ * by identity).
+ * `services` is the draft's services in line order, the added ones among them; the caller puts the services the draft had before first, so
+ * an added service never owns the unheaded opening (it was written before the service came). `others` are services taken off the lines
+ * whose headings still stand in the text (their blocks still end the blocks above them).
  */
 export function appendServices<S extends Fillable>(
   sections: readonly S[],
   added: readonly ServiceFacts[],
+  services: readonly ServiceFacts[],
+  others: readonly ServiceFacts[] = [],
 ): S[] {
   if (added.length === 0) return [...sections];
+  const all = asBlocks(services);
+  const gone = asBlocks(others);
   let total = textLength(sections);
   return sections.map((s) => {
     const kind = s.kind;
     if (!isGapKind(kind)) return s;
-    const out = addServices(s.bodyMd, kind, added, total);
+    const out = addServices(s.bodyMd, kind, added, total, all, gone);
     total = out.total;
     if (out.body === s.bodyMd) return s;
     return { ...s, bodyMd: out.body, hidden: s.hidden && !isBlank(s.bodyMd) };
@@ -305,34 +301,65 @@ export type CatalogueGap = {
   noRoom: boolean;
 };
 
-const SAMPLE = 60;
-/** The service's text is already in the section: its first characters appear (an edit further down does not make it a gap). */
-const included = (body: string | null, text: string): boolean =>
-  (body ?? "").includes(text.trim().slice(0, SAMPLE));
-
 type GapSection = { id: string; kind: string; bodyMd: string | null; hidden: boolean };
+type KindSection = GapSection & { kind: GapKind };
 
 /**
- * Whether Catalogue text of one service and field may be offered to a section ("Use Catalogue text"): Catalogue has it, the section does
- * not hold it, and either the section shows nothing (adding can't repeat anything) or the Catalogue row changed after the draft was made
- * (`updated_at > createdAt`, review round 2 finding 3). Text Catalogue already had when the draft was made went into it then (or, for a
- * service added later, when the save added it: `appendServices`), so a section that shows text without it holds the person's own wording:
- * it is never called new, and never added a second time. `createdAt` is the version group's first creation time (`gapBaseline`): a revision
- * copies its sections from the version before it, so Catalogue text changed since the first version was made is new to it too.
+ * Whether Catalogue text of one service and field may be offered to a section ("Use Catalogue text"): Catalogue has it, the service's own
+ * block does not hold it (round 5: never another service's block), and either the section shows nothing (adding can't repeat anything) or
+ * the Catalogue row changed after the draft was made (`updated_at > createdAt`, review round 2 finding 3). Text Catalogue already had when
+ * the draft was made went into it then (or, for a service added later, when the save added it: `appendServices`), so a block without it
+ * holds the person's own wording: it is never called new, and never added a second time. `createdAt` is the version group's first creation
+ * time (`gapBaseline`): a revision copies its sections from the version before it, so Catalogue text changed since the first version was
+ * made is new to it too.
  */
-function offered(section: GapSection, svc: ServiceFacts, text: string | null, createdAt: number): boolean {
-  if (isBlank(text) || included(section.bodyMd, text as string)) return false;
+function offered(
+  section: GapSection,
+  blocks: ParsedBlocks,
+  svc: ServiceFacts,
+  text: string | null,
+  createdAt: number,
+): boolean {
+  if (isBlank(text) || holdsText(blocks, svc.id, text as string)) return false;
   const closed = section.hidden || isBlank(section.bodyMd);
   return closed || (svc.updated_at ?? 0) > createdAt;
 }
 
+/** The parts of one service "Use Catalogue text" would put into the section (the ones `offered`), in their order. */
+const offeredParts = (
+  section: KindSection,
+  blocks: ParsedBlocks,
+  svc: ServiceFacts,
+  createdAt: number,
+): Part[] => partsOf(section.kind, svc).filter((p) => offered(section, blocks, svc, p.text, createdAt));
+
 /**
- * The gaps of a draft, worked out from its services and their CURRENT catalogue rows (`createdAt` = the draft's `created_at`):
- *   - Catalogue has text the section lacks: a gap with `noRoom` when it would not fit (round 4, M3: it was left out for the limit), else
- *     a gap with `catalogueHasTextNow` when it may be offered (see `offered`); otherwise none;
+ * Whether these parts of one service, put in by the block rule, keep the section and the document within their limits (round 4, M3).
+ * Only the parts that would really be put in are counted (round 5, finding 3), never a part the person took out of the service's block.
+ */
+function roomFor(
+  section: GapSection,
+  all: readonly BlockService[],
+  svc: ServiceFacts,
+  parts: readonly Part[],
+  total: number,
+): boolean {
+  if (parts.length === 0) return true;
+  return fits(section.bodyMd, putIn(section.bodyMd, all, svc, parts, []), total);
+}
+
+/**
+ * The gaps of a draft, worked out from its services and their CURRENT catalogue rows (`createdAt` = the draft's `created_at`), each
+ * service against its own block (round 5):
+ *   - Catalogue has text the service's block lacks:
+ *       - when it may be offered (`offered`): a gap with `catalogueHasTextNow`, or with `noRoom` when the parts that would be put in (only
+ *         the offered ones: round 5, finding 3) would not fit;
+ *       - when it is not offered and the service has no block in the section at all (it was left out whole): a gap with `noRoom` when its
+ *         parts would not fit now (round 4, M3: left out for the limit); otherwise the person took it out, and nothing is named;
+ *       - when it is not offered and the service has a block: the person's edit; nothing is named;
  *   - Catalogue has no text for a service (owner Q3, lead's reading 2026-10-29: every such service is named): a gap when the section is
  *     hidden or empty, when that service has the sibling field (the partial Assumptions and exclusions case), or when the section shows
- *     another service's Catalogue text. A section that shows only the person's own writing raises none for it (they filled it by hand).
+ *     another service's Catalogue text (in that service's block). A section that shows only the person's own writing raises none for it.
  * A draft with no section of that kind (the estimate template has none) has nothing to fill and nothing to hide: no gap.
  */
 export function catalogueGaps(
@@ -342,19 +369,34 @@ export function catalogueGaps(
 ): CatalogueGap[] {
   const out: CatalogueGap[] = [];
   const total = textLength(sections);
-  services.forEach((svc, i) => {
+  const all = asBlocks(services);
+  const parsed = new Map<string, ParsedBlocks>();
+  const blocksOf = (s: GapSection): ParsedBlocks => {
+    const known = parsed.get(s.id);
+    if (known) return known;
+    const p = parseBlocks(s.bodyMd, all);
+    parsed.set(s.id, p);
+    return p;
+  };
+  for (const svc of services) {
     for (const g of GAP_FIELDS) {
-      const section = sections.find((s) => s.kind === g.kind) ?? null;
-      if (section === null) continue;
+      const found = sections.find((s) => s.kind === g.kind);
+      if (found === undefined) continue;
+      const section = found as KindSection;
+      const blocks = blocksOf(section);
       const text = svc[g.column];
       let now = false;
       let noRoom = false;
       if (!isBlank(text)) {
-        if (included(section.bodyMd, text as string)) continue;
-        // Text that would not fit is named whether or not it is new: it was left out for the limit, or the person may want it back.
-        noRoom = !roomFor(section, svc, i === 0, total);
-        if (!noRoom && !offered(section, svc, text, createdAt)) continue;
-        now = !noRoom;
+        if (holdsText(blocks, svc.id, text as string)) continue;
+        if (offered(section, blocks, svc, text, createdAt)) {
+          noRoom = !roomFor(section, all, svc, offeredParts(section, blocks, svc, createdAt), total);
+          now = !noRoom;
+        } else if (!hasBlock(blocks, svc.id)) {
+          const missing = partsOf(g.kind, svc).filter((p) => !holdsText(blocks, svc.id, p.text));
+          noRoom = !roomFor(section, all, svc, missing, total);
+          if (!noRoom) continue;
+        } else continue;
       } else {
         const closed = section.hidden || isBlank(section.bodyMd);
         const siblingHas = GAP_FIELDS.some(
@@ -365,7 +407,7 @@ export function catalogueGaps(
             o !== svc &&
             GAP_FIELDS.some(
               (f) =>
-                f.kind === g.kind && !isBlank(o[f.column]) && included(section.bodyMd, o[f.column] as string),
+                f.kind === g.kind && !isBlank(o[f.column]) && holdsText(blocks, o.id, o[f.column] as string),
             ),
         );
         if (!(closed || siblingHas || showsAnother)) continue;
@@ -381,25 +423,16 @@ export function catalogueGaps(
         noRoom,
       });
     }
-  });
+  }
   return out;
 }
 
-/** Whether every part of one service the section lacks would fit in it, put in as "Use Catalogue text" would (round 4, M3). */
-function roomFor(section: GapSection, svc: ServiceFacts, first: boolean, total: number): boolean {
-  if (!isGapKind(section.kind)) return true;
-  const parts = partsOf(section.kind, svc).filter((p) => !included(section.bodyMd, p.text));
-  if (parts.length === 0) return true;
-  const next = insertParts(section.bodyMd, svc, parts, first && isBlank(section.bodyMd));
-  return fits(section.bodyMd, next, total);
-}
-
 /**
- * The section's text after "Use Catalogue text": exactly the parts the gaps offer (`catalogueHasTextNow`) put in by `insertParts` (into the
- * service's own block when it has one, round 4 M1; else under its name; the first service of a section that shows nothing yet plain, as
- * the template would have made it), so the button never repeats text the section holds and never re-adds a part the person edited out.
- * A service whose parts would pass a length limit is left out (round 4, M3; `total` = the document's text length now); `bounded: false`
- * puts every offered part in (the route's way to tell "no room" from "nothing to fill"). Null when nothing is added.
+ * The section's text after "Use Catalogue text": exactly the parts the gaps offer (`catalogueHasTextNow`) put in by the block rule (into
+ * the service's own block; else a new block under its name; the draft's first service into a blank section plain, as the template would
+ * have made it), so the button never repeats text a service's block holds and never re-adds a part the person edited out. A service whose
+ * parts would pass a length limit is left out (round 4, M3; `total` = the document's text length now); `bounded: false` puts every offered
+ * part in (the route's way to tell "no room" from "nothing to fill"). Null when nothing is added.
  */
 export function filledBody(
   section: GapSection,
@@ -409,16 +442,18 @@ export function filledBody(
   bounded = true,
 ): string | null {
   if (!isGapKind(section.kind)) return null;
-  const kind = section.kind;
+  const gap = section as KindSection;
+  const all = asBlocks(services);
+  const blocks = parseBlocks(section.bodyMd, all);
   let body = section.bodyMd;
   let t = total;
-  services.forEach((svc, i) => {
-    const parts = partsOf(kind, svc).filter((p) => offered(section, svc, p.text, createdAt));
-    if (parts.length === 0) return;
-    const next = insertParts(body, svc, parts, i === 0 && isBlank(section.bodyMd));
-    if (bounded && !fits(body, next, t)) return;
+  for (const svc of services) {
+    const parts = offeredParts(gap, blocks, svc, createdAt);
+    if (parts.length === 0) continue;
+    const next = putIn(body, all, svc, parts, []);
+    if (bounded && !fits(body, next, t)) continue;
     t += next.length - (body?.length ?? 0);
     body = next;
-  });
+  }
   return body === section.bodyMd ? null : body;
 }
