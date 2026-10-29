@@ -9,8 +9,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createInviteStatements } from "../../../scripts/create-invite-sql.mjs";
+import { localOrigin, portOffset } from "../../../scripts/dev-ports.mjs";
 
-const ORIGIN = "http://localhost:5173";
+const ORIGIN = localOrigin("admin", portOffset()); // the same server as playwright.config.ts (TECHAUST_PORT_OFFSET, CLOUD-1)
 const here = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 
 function d1(sql: string) {

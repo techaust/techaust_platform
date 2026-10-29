@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "astro dev --port 4321",
-    "dev:worker": "astro build && wrangler dev",
+    "dev": "node ../../scripts/dev.mjs web",
+    "dev:worker": "astro build && node ../../scripts/dev.mjs webWorker",
     "build": "astro build && node ../../scripts/build-og.mjs && node ../../scripts/check-web-dist.mjs && wrangler deploy --dry-run --outdir .wrangler/dry-run",
     "typecheck": "wrangler types && astro check && tsc -p tsconfig.worker.json",
     "test": "vitest run",

@@ -6,9 +6,11 @@
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { defineConfig, devices } from "@playwright/test";
+import { localOrigin, portOffset } from "../../scripts/dev-ports.mjs";
 
-const PORT = 8799; // not 4321 / 8787 / 5173, so a running `pnpm dev` never collides
-const ORIGIN = `http://localhost:${PORT}`;
+// A port of its own (`webE2e`), so a running `pnpm dev` never collides; it follows TECHAUST_PORT_OFFSET (CLOUD-1,
+// scripts/dev-ports.mjs) like the other dev ports.
+const ORIGIN = localOrigin("webE2e", portOffset());
 
 const here = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 if (!existsSync(here("./dist/index.html")))
@@ -29,8 +31,8 @@ export default defineConfig({
   use: { baseURL: ORIGIN, trace: "retain-on-failure" },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    // FORMS_ALLOWED_ORIGINS is overridden so the form endpoints accept this port's Origin (FRM-03).
-    command: `pnpm exec wrangler dev --port ${PORT} --var FORMS_ALLOWED_ORIGINS:${ORIGIN}`,
+    // `wrangler dev --port <port> --var FORMS_ALLOWED_ORIGINS:<origin>`: the form endpoints accept this port's Origin (FRM-03).
+    command: "node ../../scripts/dev.mjs webE2e",
     url: `${ORIGIN}/`,
     reuseExistingServer: false,
     timeout: 120_000,

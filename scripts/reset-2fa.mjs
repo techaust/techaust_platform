@@ -18,6 +18,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { portOffset, shiftLocalUrl } from "./dev-ports.mjs";
 import {
   breakGlassStatements,
   checkBreakGlass,
@@ -96,7 +97,8 @@ function runFile(statements) {
     rmSync(dir, { recursive: true, force: true });
   }
 }
-const origin = values.staging ? ORIGINS.staging : ORIGINS.local;
+// The local link follows TECHAUST_PORT_OFFSET (CLOUD-1, scripts/dev-ports.mjs): the dev server the person opens it on.
+const origin = values.staging ? ORIGINS.staging : shiftLocalUrl(ORIGINS.local, portOffset());
 
 if (onlyOwner) {
   // Break-glass for the only owner: the trigger stays strict, so a second owner is invited instead (one atomic run).
