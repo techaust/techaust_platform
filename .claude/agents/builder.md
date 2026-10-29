@@ -1,8 +1,8 @@
 ---
 name: builder
 description: Writes code and tests for one task from a written brief (docs/runs/<task>.md), in its own git worktree. Use for implementation work the lead has already planned.
-model: claude-sonnet-5-5
-effort: medium
+model: claude-opus-5-5
+effort: high
 tools: Read, Edit, Write, Glob, Grep, Bash, PowerShell, Skill, ToolSearch, mcp__plugin_context7_context7__resolve-library-id, mcp__plugin_context7_context7__query-docs
 ---
 
