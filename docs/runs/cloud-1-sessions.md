@@ -225,3 +225,28 @@ _(Summary by the lead; the full text is in the conversation record.)_ Sound: the
 - **Open point 3, explained:** the admin failure (`dashboard-stress.test.ts`, owner 6,126 rows against 6,100) is a date-dependent test, not this branch; it failed every PR on 30 October and is fixed in #114 (pinned to the worst day measured). This branch merges `main` once #114 is in.
 - The full `pnpm test` timeouts came from several heavy runs sharing this PC; each package passed alone. The review re-runs the full suite with the queue free.
 - Next: the review (reviewer, Opus high).
+
+## Review (reviewer, Opus 5.5 high, 2026-10-30, on 01bced49): APPROVE (copied by the lead; the reviewer can't write)
+No critical or high findings; 3 medium, 8 low. Skills: `code-review` (high; its helper's 10 candidates checked against 66 probe commands, 6 held), `security-review` (done by hand: no Agent tool for its sub-tasks). No visual review (no screens).
+
+1. **medium** `tools/cloud-guard.mjs:166-183`: `gh` subcommands use a short deny-list. Passes in the cloud: `gh repo edit --visibility private`, `gh repo delete --yes`, `gh release create`, `gh cache delete --all`, `gh label …`, `gh repo deploy-key add`, and `gh alias set mm 'pr merge'` then `gh mm 12`. Fix: in the cloud allow only read subcommands (`pr view|list|diff|checks|status`, `run view|list|watch`, `workflow view|list`, `repo view`, `issue view|list`, `release view|list`, `auth status`, `api` under its rules); refuse everything else, `alias`, `extension` and unknown first words included; tests.
+2. **medium** `tools/cloud-guard.mjs:266-272`: a leading redirection or `$"…"` stops the lead-word scan: `>out.log wrangler deploy`, `2>/dev/null gh pr merge 12`, `</dev/null gh pr merge 12`, `$"wrangler" deploy` pass. Fix: `/^\d*(<|>|&>)/` words are lead words (a lone operator also skips the next word); `$"` like `"`; tests.
+3. **medium** `.claude/settings.json:26`: the PreToolUse matcher `Agent|Bash` leaves other shell-running tools (Monitor) unchecked in the cloud. Fix: add them to the matcher and read their command field in `model-guard.mjs`; confirm in the first cloud check.
+4. **low** `tools/cloud-guard.mjs:237-238`: on main, `git push`, `git push origin HEAD`, `git push origin heads/main` pass (branch protection still stops them). Fix: refuse `heads/main`; refuse bare push / `HEAD` when the current branch is main, or document protection as the stop.
+5. **low** `tools/cloud-guard.mjs:244-252`: `wrangler dev -r`, `d1 create`, `queues create`, `r2 bucket create`, `kv namespace create` pass. Fix: refuse `-r` and `create`.
+6. **low** `tools/cloud-guard.mjs:249`: false positive on `pnpm -F @techaust/jobs exec wrangler deploy --dry-run --outdir dist`. Fix: allow `deploy` with `--dry-run`.
+7. **low** `tools/cloud-guard.mjs:293`: heredoc and quoted text that never runs is checked (commit bodies through `$(cat <<'EOF' …)`, `cat > file <<'EOF'`, quoted arguments of `bash script.sh`). Fix: re-check heredocs only when they feed a shell, quoted text only for `bash|sh -c` and `eval`; a lone `-` is not a lead-word flag.
+8. **low** `docs/10-tooling.md:27` (T4): `@playwright/mcp@0.0.83` (`.mcp.json`) isn't listed (hard rule 11). Fix: add the cloud-only line.
+9. **low** `docs/14-models-and-usage.md:119` vs runbook Part 2 step 5: §6 says `CLAUDE_CODE_EFFORT_LEVEL` stays unset, the runbook sets it in the cloud. Fix: "on this PC" plus the cloud exception.
+10. **low** `scripts/dev-ports.mjs:76`: the free-port test tries only 127.0.0.1; a port held on `::1` or `0.0.0.0` is reported free. Fix: free only when all three are free.
+11. **low** `scripts/dev.mjs:49-53`: SIGINT is passed on although Ctrl-C already reaches the child; a double SIGINT can skip workerd clean-up. Fix: forward SIGTERM/SIGHUP only, or skip SIGINT on a terminal.
+
+**Checked and sound:** the workflow actor checks (first step, safe under `bash -e`, scheduled first attempt passes, by hand needs both actors, expressions via `env`, fork-safe); the guard refuses quoting, `VAR=` prefixes, `&&`/`;`/`|`, subshells, braces, backticks, `$(…)`, `bash -c`, `eval`, `xargs`, `sudo -u`, `env -i`, `nice`, `timeout`, `exec -a`, `npx wrangler@4`, `pnpm exec --`, `deploy:*`, `gh api` merge/GraphQL/PATCH/releases/refs, `-R`/`--repo=`, force/`+`/`:` refspecs; ordinary work allowed; a thrown error fails open; on this PC the hooks print nothing and refuse nothing; `agent-slots.mjs` matches docs/14 §5; dev ports never collide across offsets 0–900; `heavy.sh` lock unchanged; no secrets or personal data; `cloud-pr.sh` never merges; docs agree apart from 8 and 9.
+
+**Commands:** `pnpm check` (queue): exit 0 (10 lint warnings outside this diff). `pnpm test` (queue): exit 1 on a load timeout in web `og.test.ts` (not in this diff), after auth 135, ui 469, core 1801, email 128, db 471, pdf 340 passed; reruns alone: web 583 (+17 skipped), portal 631, jobs 528, admin 3372, all passed. Manual hook checks on this PC: clean.
+
+**Not verified:** hooks seeing `CLAUDE_CODE_REMOTE=true` in a real cloud session; which shell-running tools the cloud has (3); the GitHub App's permissions (1); the setup script end to end, the MCP tool names, `cloud-pr.sh` against the real proxy; a real by-hand run of the two workflows; e2e at offset 100.
+
+## Lead's triage after the review (2026-10-30)
+- Fix in this task (fix round 2, builder): 1, 2, 4 (refuse `heads/main`, and bare push / `HEAD` while on main), 5, 6, 7, 8, 9, 10, 11.
+- 3 changes `.claude/settings.json` (the hook matcher): asked the owner first, since it changes the project's hook configuration.
