@@ -6,6 +6,9 @@
 // `stale_version`, or a reload that brings someone else's change to a field a draft holds, shows the shared "changed
 // by someone else" notice, keeps nothing half-saved and offers the latest. Leaving with unsaved edits asks first
 // (ADM-G-04).
+// FX-3 fix round 2 (B, D): a reload never starts the page again. The view stays mounted and takes the new copy as props, so the
+// open forms, their drafts and the keyboard focus stay where they were; a control that goes away with a save or a cancel hands
+// the focus to the control that opened its form, or to its panel's heading (`focusAfter`).
 import { formatDate, formatIstDateTime, istDate } from "@techaust/core/dates";
 import {
   budgetBandLabel,
@@ -14,7 +17,16 @@ import {
   TIMELINE_LABELS,
   TOOL_LABELS,
 } from "@techaust/core/form-labels";
-import { type Dispatch, type FormEvent, type ReactNode, useId, useReducer, useState } from "react";
+import {
+  type Dispatch,
+  type FormEvent,
+  type ReactNode,
+  useEffect,
+  useId,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
 import { Link, useParams } from "react-router";
 import {
   type Assignee,
@@ -96,7 +108,12 @@ function LeadScreen({ id }: { id: string }) {
   const [seen, setSeen] = useState<LeadPageData | null>(null);
   if (page.state === "ready" && page.data !== seen) {
     setSeen(page.data);
-    draft({ type: "loaded", contact: contactOf(page.data.lead), follow: followOf(page.data.lead) });
+    draft({
+      type: "loaded",
+      contact: contactOf(page.data.lead),
+      follow: followOf(page.data.lead),
+      answers: answersOf(page.data.lead),
+    });
   }
 
   if (page.state === "failed") {
@@ -111,9 +128,9 @@ function LeadScreen({ id }: { id: string }) {
   if (page.state === "loading") return <LeadSkeleton />;
   return (
     <LeadView
-      // A fresh copy of the lead (after a save or a reload) starts the page again from what's stored; what the person
-      // has typed and not saved (the drafts) is held here, above the reload, and carried across it.
-      key={page.data.lead.updatedAt}
+      // A fresh copy of the lead (after a save or a reload) is new props for the same view, never a new page (fix round 2, B and D):
+      // what the person has typed and not saved (the drafts) is held here, above the reload, and carried onto it; open forms and
+      // the focus stay.
       data={page.data}
       assignees={people.data?.assignees ?? []}
       drafts={drafts}
@@ -157,6 +174,15 @@ function LeadView({
   const canWrite = allowed(user.role, "leads.write");
   const canConvert = allowed(user.role, "clients.write") && allowed(user.role, "proposals.draft");
   const [saveStale, setStale] = useState(false);
+  const [error, setError] = useState<{ where: Where; text: string } | null>(null);
+  // A new copy of the lead: a refused save's 409 and a failed save's line belonged to the old copy (the drafts were carried onto
+  // the new one), as when the page used to start again.
+  const [version, setVersion] = useState(lead.updatedAt);
+  if (version !== lead.updatedAt) {
+    setVersion(lead.updatedAt);
+    setStale(false);
+    setError(null);
+  }
   const stale = saveStale || hasConflict(drafts);
   const follow = drafts.follow?.value ?? followOf(lead);
   const followBase = drafts.follow?.base ?? followOf(lead);
@@ -166,18 +192,21 @@ function LeadView({
   const contactBase = drafts.contact?.base ?? contactOf(lead);
   const setContact = (value: Contact | null) => draft({ type: "contact", value, base: contactOf(lead) });
   const [busy, setBusy] = useState<Where | null>(null);
-  const [error, setError] = useState<{ where: Where; text: string } | null>(null);
-  // FX-3 (A3 8): a manual lead's quote answers, edited on the Enquiry panel (null while shown read-only).
-  const [answers, setAnswers] = useState<{ base: Answers; value: Answers } | null>(null);
+  // FX-3 (A3 8): a manual lead's quote answers, edited on the Enquiry panel (null while shown read-only); a draft above the reload
+  // (fix round 2, B), so "Stay" after a convert keeps it.
+  const answers = drafts.answers;
+  const setAnswers = (value: AnswersDraft | null) =>
+    draft({ type: "answers", value: value?.value ?? null, base: value?.base ?? answersOf(lead) });
   const answersDirty = answers !== null && JSON.stringify(answers.value) !== JSON.stringify(answers.base);
   const [emailError, setEmailError] = useState<string | null>(null);
   const [nextDateError, setNextDateError] = useState<string | null>(null);
   const dates = useUnreadDates<"date">();
-  // A stale reload sets the edits aside, so unreadable date text and its error line go with them.
+  // A stale reload sets the edits aside (the answers too: `reloaded-latest`), so unreadable date text and its error line go with them.
+  // The notice and its button go too: the focus moves to the page's heading, the top of the latest copy.
   const reloadStale = () => {
-    setAnswers(null);
     dates.reset();
     setNextDateError(null);
+    focusLater(() => document.querySelector<HTMLElement>("#main h1"));
     reload("stale");
   };
   const note = drafts.note;
@@ -187,6 +216,20 @@ function LeadView({
   const [converting, setConverting] = useState(false);
   // Converted, and the proposal is opening: the lead reloads only if the leave question is answered "Stay" (FX-3 review 2).
   const [convertedAway, setConvertedAway] = useState(false);
+
+  // Where the focus goes once a save or a cancel has taken away the control that had it (fix round 2, D): the control that opened
+  // the form, or the panel's heading. Taken as soon as that element is on the page (after the reload for one that only the new copy
+  // shows, such as Linked records after a convert).
+  const focusAfter = useRef<(() => HTMLElement | null) | null>(null);
+  function focusLater(target: string | (() => HTMLElement | null)) {
+    focusAfter.current = typeof target === "string" ? () => document.getElementById(target) : target;
+  }
+  useEffect(() => {
+    const el = focusAfter.current?.();
+    if (!el) return;
+    focusAfter.current = null;
+    el.focus();
+  });
 
   // Text in the Next action field that can't be read is a change too: Save shows the line, Discard takes it back.
   const followDirty = dates.any || JSON.stringify(follow) !== JSON.stringify(followBase);
@@ -202,8 +245,8 @@ function LeadView({
     try {
       const r = await api.updateLead(lead.id, { ...patch, expectedUpdatedAt: lead.updatedAt });
       toast("success", r.changed ? "Saved." : "No change: that's already saved.");
-      if (where === "contact") setContact(null);
-      else if (where === "answers") setAnswers(null);
+      if (where === "contact") closeContact();
+      else if (where === "answers") closeAnswers();
       else discardFollow();
       reload();
     } catch (e) {
@@ -221,6 +264,18 @@ function LeadView({
     setFollow(null);
     dates.reset();
     setNextDateError(null);
+    focusLater("pipeline-h");
+  }
+
+  // The contact and Enquiry forms close back onto their own Edit button.
+  function closeContact() {
+    setContact(null);
+    setEmailError(null);
+    focusLater("lead-contact-edit");
+  }
+  function closeAnswers() {
+    setAnswers(null);
+    focusLater("lead-answers-edit");
   }
 
   function saveFollow(e: FormEvent) {
@@ -260,6 +315,8 @@ function LeadView({
     try {
       await api.addLeadNote(lead.id, text);
       setNote("");
+      // "Add note" is disabled while the field is empty, so the field keeps the focus, ready for the next note.
+      focusLater("lead-note");
       toast("success", "Note added.");
       reload();
     } catch (err) {
@@ -292,6 +349,8 @@ function LeadView({
         onStay={() => {
           if (!convertedAway) return;
           setConvertedAway(false);
+          // The Convert button goes; Linked records then shows the client and the proposal.
+          focusLater("linked-h");
           reload();
         }}
       />
@@ -337,7 +396,7 @@ function LeadView({
       <div className="lead-page">
         <aside className="lead-page__side" aria-label="Pipeline and contact">
           <section className="lead-panel" aria-labelledby="pipeline-h">
-            <h2 id="pipeline-h" className="lead-panel__title">
+            <h2 id="pipeline-h" className="lead-panel__title" tabIndex={-1}>
               Pipeline
             </h2>
             <div className="lead-stage">
@@ -445,7 +504,12 @@ function LeadView({
                 Contact
               </h2>
               {canWrite && !editing && (
-                <button type="button" className="btn btn--text" onClick={() => setContact(contactOf(lead))}>
+                <button
+                  type="button"
+                  id="lead-contact-edit"
+                  className="btn btn--text"
+                  onClick={() => setContact(contactOf(lead))}
+                >
                   <Pencil size={16} />
                   Edit<span className="visually-hidden"> contact</span>
                 </button>
@@ -523,8 +587,7 @@ function LeadView({
                     type="button"
                     className="btn btn--secondary"
                     onClick={() => {
-                      setContact(null);
-                      setEmailError(null);
+                      closeContact();
                       setError(null);
                     }}
                     disabled={busy === "contact"}
@@ -570,7 +633,7 @@ function LeadView({
             busy={busy === "answers"}
             error={error?.where === "answers" ? error.text : null}
             onCancel={() => {
-              setAnswers(null);
+              closeAnswers();
               setError(null);
             }}
             onSave={(base, value) => save("answers", answersPatch(base, value))}
@@ -630,6 +693,7 @@ function LeadView({
           onClose={() => setConverting(false)}
           onConverted={() => {
             setConverting(false);
+            focusLater("linked-h");
             reload();
           }}
           onOpening={() => {
@@ -685,7 +749,7 @@ function Linked({ data }: { data: LeadPageData }) {
   if (!data.client && !data.proposal && data.duplicates.length === 0) return null;
   return (
     <section className="lead-panel" aria-labelledby="linked-h">
-      <h2 id="linked-h" className="lead-panel__title">
+      <h2 id="linked-h" className="lead-panel__title" tabIndex={-1}>
         Linked records
       </h2>
       <ul className="lead-links">
@@ -817,6 +881,7 @@ function Enquiry({
           {canEdit && !editing && (
             <button
               type="button"
+              id="lead-answers-edit"
               className="btn btn--text"
               onClick={() => onAnswers({ base: answersOf(lead), value: answersOf(lead) })}
             >
@@ -908,20 +973,37 @@ function Timeline(props: {
   const [next, setNext] = useState(props.first.next);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A reload brings a new first page (fix round 2: the view is no longer started again): older pages and the cursor start over from
+  // it, so a new entry that pushed one off the first page never leaves a gap before "Show older".
+  const [first, setFirst] = useState(props.first);
+  if (first !== props.first) {
+    setFirst(props.first);
+    setOlder([]);
+    setNext(props.first.next);
+    setError(null);
+  }
   const items = [...props.first.items, ...older.filter((o) => !props.first.items.some((f) => f.id === o.id))];
   const now = Date.now();
   const titleId = useId();
 
+  // The first page an answer belongs to: a page that arrives after a reload replaced it is dropped (its cursor is the old one's).
+  const shownFirst = useRef(props.first);
+  useEffect(() => {
+    shownFirst.current = props.first;
+  }, [props.first]);
+
   async function more() {
     if (!next) return;
+    const from = props.first;
     setLoading(true);
     setError(null);
     try {
       const r = await api.leadActivities(props.leadId, next);
+      if (shownFirst.current !== from) return;
       setOlder((o) => [...o, ...r.items]);
       setNext(r.next);
     } catch (e) {
-      setError(`Older entries didn't load. ${errorText(e)}`);
+      if (shownFirst.current === from) setError(`Older entries didn't load. ${errorText(e)}`);
     } finally {
       setLoading(false);
     }
