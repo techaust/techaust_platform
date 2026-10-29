@@ -992,3 +992,93 @@ _(Summary by the lead; the full text is in the conversation record. Shots: `.log
 ## Fix round 3 (lead's triage)
 - **Designer** (`fix/fx3-fix3-d`): 1, 2, 3, 4, 5, 6 and 8. Item 7 is kept.
 - **After it:** a focused re-check of only these items, live. Then the FX-3 PR.
+
+### Fix round 3, designer report
+_(designer claude-opus-5-5/high, branch `fix/fx3-fix3-d` from `origin/fix/fx3-admin-portal` 5fd84df9, 2026-10-29)_
+
+**Skills:** `frontend-design:frontend-design` loaded first. It kept every change inside docs/06 (tokens only; the Enquiry form uses the timeline's own container pattern; no new visual devices). It also pushed item 4 past the summary to the real cause of the lost click: a line appearing between the press and the release. `dataviz` does not apply (no chart or tile).
+
+**Items, one commit each:**
+1. `821c081a` Signature (`apps/admin/src/lib/signature-scale.ts`, `.test.ts`):
+   - The fitted decode passes only `resizeWidth`, with `resizeQuality: "high"` and `imageOrientation: "from-image"`. The full-size decode also passes `imageOrientation: "from-image"`.
+   - Both sides are still checked (`fittedDecodeMatches`): the width exactly, the height equal or one pixel more. Chrome rounds the side it computes up (measured live: 2400 by 901, asked for 800 wide, comes back 800 by 301; our fit rounds to 300). Without that one pixel, about half of all large images would fall back to the full-size decode and undo fix round 2's H. A match is drawn at exactly the fitted size.
+   - New tests: a PNG that its orientation chunk turns the other way falls back (533 by 711, then 3000 by 4000, drawn at 300 by 400, both bitmaps freed); the rounding-up case; the match rule.
+   - Live (Chrome): a 4000 by 3000 PNG with an eXIf chunk (orientation 6) is stored at 300 by 400, turned, with a drawn circle of 120 by 120 px (not stretched). The old both-sides options gave 533 by 400, the stretch the reviewer saw. A 4000 by 3000 JPEG with Exif 6 is stored at 300 by 400, circle 120 by 120.
+2. `52b33625` Stale field lines (`lead.tsx`):
+   - When a new copy arrives, `emailError` goes if the email field now shows a different value from the one the person last saw; `nextDateError` and `dates.reset()` go if the follow date does. A line under the person's own kept text stays.
+   - "Reload the latest" now clears the email line too. Before, it was left behind and came back on the next Edit.
+   - Live: the reviewer's steps (a bad email and an unreadable date saved, both changed in "another tab" through the API, then a note added here) leave no red line; the stored values and the stale notice show. In the opposite case (the other tab changed only the phone), the email line stays under the still-bad email.
+3. `1a519f17` Enquiry edit (`leads.css`):
+   - `.lead-answers` is an inline-size container. Its `.form-grid` has one column, and two from 30rem of form width, with the shared span-2 and subgrid rules so the controls start level. `.form-grid` elsewhere is unchanged.
+   - Measured: the longest value (INR "₹7,00,000 to ₹15,00,000") needs 198 px; at 30rem each column is 228 px.
+   - Live form widths: 255 px at 1024 with the menu open (stacked), 439 at 1024 with the menu closed (stacked), 407 at 768 (stacked), 294 at 375 (stacked), 511 at 1280 (two columns), 831 at 1600 (two columns). Every select shows its full value, and the budget hint row keeps both controls level.
+4. `4adecc0d` Template editor (`template.tsx`):
+   - The error summary renders only after a save was tried (`tried`).
+   - Field lines still show live on blur. But a blur caused by pressing Save or Cancel waits until the press ends (`holdBlurChecks` on `pointerdown`, run after `pointerup` or `pointercancel`), because the field line alone also moved Save from under the pointer.
+   - Live:
+     - an invalid heading, then Save straight away: the summary appears and takes focus on the first click;
+     - a valid heading, then Save straight away: saved as version 3;
+     - an invalid body in the last section (the line right above Save), then Save: the summary on the first click;
+     - Tab out of an invalid heading before any save: the field line, no summary.
+5. `af217e15` Waiting focus (`lead.tsx`):
+   - A waiting target lapses when a key or a pointer was pressed after `focusLater` and the focus is now on an element other than `body`.
+   - A plain "focus moved" test was not used. The leave dialog hands focus back to "Convert to client" while the target waits, so that test would have broken fix round 2's D.
+   - Live, with the lead reload delayed by 3 s: "Stay" after a convert, with no action, and Linked records takes the focus. The same with a press and focus in the note field while waiting: the note keeps the focus and Linked records doesn't take it.
+6. `3c7905a2` "Show older" (`lead.tsx`, Timeline): a new first page sets `loading` to false, and each request has a number (`asked`); only the latest one shows its answer or ends the loading. Live (activities delayed by 6 s, 55 sample notes): "Show older" pressed, then a note added here. The button at once reads "Show older" and is enabled, and the stale answer adds nothing (25 entries).
+8. `ccf61c76` First field (`lead.tsx`): Edit contact focuses Name (and clears a leftover email line); Edit enquiry focuses Currency. Checked live by mouse and by keyboard (Enter); Cancel returns the focus to the Edit button.
+- `de01bd4e`: formatting of the Edit enquiry button. `pnpm check` caught it; my per-file check had hidden the error because I cut its output with `tail`.
+
+**Files:**
+- `apps/admin/src/lib/signature-scale.ts`
+- `apps/admin/src/lib/signature-scale.test.ts`
+- `apps/admin/src/routes/leads/lead.tsx`
+- `apps/admin/src/leads.css`
+- `apps/admin/src/routes/catalogue/template.tsx`
+- this run file
+
+**Screenshots** (`.logs/shots/fx3-fix3-d/` in the worktree; I opened and checked each one):
+- `01-signature-png-exif6-1280-light.png`: the signature stored from the turned PNG, upright and round.
+- `02-enquiry-edit-1024-menu-open-light.png`: stacked selects with full values, focus on Currency.
+- `03-enquiry-edit-1280-light.png`: two columns, full values.
+- `04-enquiry-edit-1600-dark-in-app-os-light.png`: two columns, in-app dark against OS light.
+- `05-enquiry-edit-768-light-in-app-os-dark.png`: stacked, in-app light against OS dark.
+- `06-enquiry-edit-375-dark-in-app-os-light.png`: stacked on a phone.
+- `07-enquiry-edit-1024-menu-closed-dark-hint.png`: stacked, with the "choose a currency" hint.
+- `08-enquiry-edit-1280-menu-closed-dark-hint-aligned.png`: two columns, controls level despite the hint.
+- `09-lead-errors-before-other-tab-1280-dark.png`: the email and date lines before the other tab's change.
+- `10-lead-no-stale-errors-after-reload-1280-dark.png`: after the note: the stored values, no stale lines, the notice.
+- `11-edit-contact-focus-on-name-1280-dark.png`: Edit contact open, focus ring on Name.
+- `12-template-first-save-click-summary-1280-dark.png`: the summary after the first Save click.
+- `13-template-summary-after-submit-375-light.png`: the same at 375.
+- `14-edit-contact-keyboard-focus-1600-light-in-app-os-dark.png`: Edit contact opened by keyboard, focus on Name.
+
+**Checks:**
+- **axe** (axe-core 4.14, WCAG 2.0 to 2.2 A and AA):
+  - the lead page with both edits open, at 375, 768, 1024 (menu open and closed) and 1600, in-app light and dark, each against OS light and OS dark: 0 violations;
+  - one `target-size` hit at 768 appeared only while the page was scrolled so the sticky top bar covered the date field; at the top of the page it was 0;
+  - the template editor with the summary, both themes: 0.
+- **Keyboard:**
+  - Edit enquiry by Enter goes to Currency; Tab order is Currency, Budget, Timeline, Cancel, Save; Enter on Cancel returns to Edit.
+  - Edit contact by Enter goes to Name.
+  - Focus rings are visible and there are no traps.
+- **Console:** no errors on the checked pages. The only ones were the expected 401s on the invite page before sign-in.
+- **Commands:**
+  - `pnpm --filter @techaust/admin exec vitest run src/lib/signature-scale.test.ts`: 19 passed.
+  - `bash tools/heavy.sh --log fx3d-typecheck-admin pnpm --filter @techaust/admin typecheck`: exit 0.
+  - `bash tools/heavy.sh --log fx3d-test pnpm test`: exit 0, no timeouts. Admin 3,372; portal 631; jobs 528; core 1,801; db 471; pdf 340; web 510 (+17 skipped); ui 469 (+2 skipped); auth 135; email 128.
+  - `bash tools/heavy.sh --log fx3d-e2e-admin pnpm --filter @techaust/admin e2e`: 6/6 passed (9.2 min).
+  - `bash tools/heavy.sh --log fx3d-check pnpm check`: exit 1, on my formatting of `lead.tsx` (fixed in `de01bd4e`).
+  - `bash tools/heavy.sh --log fx3d-check2 pnpm check`: **exit 0**. Its 10 warnings and 8 infos are in files this round didn't touch.
+- **Local data only:** an Owner `designer-fx3@example.test`, and sample leads "Sample Lead Asha/Bina/Chand/Devi (fake)" with `@example.test` addresses and notes, in this worktree's local D1.
+- **Clean-up:** the dev server and the e2e server are stopped, no process runs from the worktree, and the browser is closed.
+
+**Not verified:**
+- Safari and Firefox were not run. The press hold in item 4 relies on `pointerdown` coming before `blur`, which is the order in all three engines.
+- The PNG eXIf path was checked in Chrome only.
+
+**Placeholders seen (not mine):**
+- "[Placeholder] We made the image smaller to fit 800 by 400 pixels." (signature)
+- "[Placeholder] Choose a currency first." (the Enquiry budget hint)
+- "[Placeholder] Choose a country" (Convert dialog)
+
+**Open questions:** none. A possible later improvement, outside this brief: `imageHeaderSize` could read a PNG's eXIf orientation, so a turned PNG also takes the fitted decode instead of the full-size fallback.
