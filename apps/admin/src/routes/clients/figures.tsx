@@ -6,8 +6,8 @@
 // Amounts are formatted by core (`moneyText`); nothing is added up here.
 import type { ClientFigures, ProjectBilled } from "../../api.ts";
 import { api } from "../../api.ts";
-import { AlertTriangle, Receipt } from "../../components/icons.tsx";
-import { LoadFailed, useLoad } from "../../components/states.tsx";
+import { AlertTriangle, Receipt, RefreshCw } from "../../components/icons.tsx";
+import { useLoad } from "../../components/states.tsx";
 import { Y } from "../../lib/copy-y.ts";
 import { moneyText } from "../../lib/projects.ts";
 import { FINANCE_COPY } from "../../lib/reports.ts";
@@ -68,10 +68,13 @@ function CurrencyFigures({ f, many }: { f: ClientFigures; many: boolean }) {
         </dd>
       </div>
       <div className="acct__row">
-        <dt>{FIGURES_COPY.billed}</dt>
+        {/* The note names what the figure counts, so it sits under the label; the amount keeps its own column. */}
+        <dt>
+          {FIGURES_COPY.billed}
+          <span className="acct__sub">{FIGURES_COPY.billedHint}</span>
+        </dt>
         <dd>
           <Amount minor={f.billedMinor} currency={f.currency} />
-          <span className="acct__sub">{FIGURES_COPY.billedHint}</span>
         </dd>
       </div>
       {f.creditedMinor > 0 && (
@@ -119,7 +122,16 @@ export function ClientFiguresPanel(props: { clientId: string; onStatement: () =>
           <span className="skeleton" style={{ width: "60%" }} />
         </div>
       ) : finance.state === "failed" ? (
-        <LoadFailed error={finance.error} onRetry={() => finance.reload()} headingLevel={3} />
+        // One quiet line inside the panel (never a card in a card), in the words of the shared LoadFailed.
+        <>
+          <p className="panel-empty" role="alert">
+            <RefreshCw size={20} />
+            <span>This didn't load. Try again in a moment.</span>
+          </p>
+          <button type="button" className="btn btn--text panel-link" onClick={() => finance.reload()}>
+            Try again
+          </button>
+        </>
       ) : rows.length === 0 ? (
         <p className="panel-empty">
           <Receipt size={20} />

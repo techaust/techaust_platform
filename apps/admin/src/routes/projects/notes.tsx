@@ -219,7 +219,7 @@ function NoteEditor(props: { scope: VaultScope; clientName: string; onAdded: () 
       <div className="field">
         <label htmlFor={id}>New note</label>
         <p className="hint" id={`${id}-hint`}>
-          {COPY.formattingHint}
+          {COPY.noteFormattingHint}
         </p>
         <textarea
           id={id}
@@ -361,7 +361,7 @@ function NoteItem(props: {
           <div className="field">
             <label htmlFor={`${id}-body`}>Note</label>
             <p className="hint" id={`${id}-hint`}>
-              {COPY.formattingHint}
+              {COPY.noteFormattingHint}
             </p>
             <textarea
               id={`${id}-body`}

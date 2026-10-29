@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { type MilestoneView, type ProjectView, RequestError, uploadHeaders } from "../api.ts";
 import { markdownElements } from "../components/markdown.tsx";
 import { lastLiveOfIndividual } from "./clients.ts";
+import { Y } from "./copy-y.ts";
 
 /** The mark a line not yet approved would carry (none should). */
 const PLACEHOLDER_TAG = "[Placeholder]";
@@ -105,6 +106,8 @@ describe("07-K copy, word for word [ADM-PRJ-01..05]", () => {
     );
     expect(COPY.noteDelete).toBe("Delete this note? This can't be undone.");
     expect(COPY.formattingHint).toBe("You can use **bold**, *italic*, lists and links.");
+    // FX-3 (A3 7): notes take headings; the line is a 07-Y line, marked until the owner approves it.
+    expect(COPY.noteFormattingHint).toBe(Y("You can use # headings, **bold**, *italic*, lists and links."));
     expect(COPY.uploadHint).toBe("PDF, PNG, JPG, WebP, Word, Excel, CSV, text or ZIP, up to 25 MB each.");
     expect(COPY.filesSharedExplainer).toBe(
       "Shared files can be downloaded from the client portal by everyone at this client who has portal access.",
