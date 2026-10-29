@@ -117,10 +117,12 @@ const READ_ACTION: Record<Generic, Action> = {
   retention: "settings.manage",
   flags: "settings.manage",
 };
+// Which list in 08-C §5 holds a group's open questions (FX-3: a pointer, never a bare "VERIFY WITH" tag). The SPA shows the researched-settings note
+// when it is present and names the lawyer when it says so (settings/kit.tsx).
 const VERIFY: Partial<Record<Generic | "gateways", string>> = {
-  tax: "VERIFY WITH CA",
-  payment_terms: "VERIFY WITH CA/LEGAL",
-  retention: "VERIFY WITH CA/LEGAL",
+  tax: "08-C §5: CA",
+  payment_terms: "08-C §5: CA and lawyer",
+  retention: "08-C §5: CA and lawyer",
 };
 
 const groupParam = z.object({ group: z.enum(GENERIC) });
@@ -606,7 +608,7 @@ export const settings = new Hono<AppEnv>()
         };
       }),
       meta: {
-        verify: "VERIFY WITH CA/LEGAL",
+        verify: "08-C §5: CA and lawyer",
         usedByNote:
           "Used-by counts exist for proposal terms and invoice footer notes; the other blocks are not yet recorded on documents.",
       },

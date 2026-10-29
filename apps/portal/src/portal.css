@@ -1677,10 +1677,13 @@ html:has(.mmenu[open]) {
   background: var(--color-surface);
 }
 
+/* The whole row is the checkbox's label (FX-3, A4 8): the box, its words and the space between are one 44 px target. */
 .check {
   display: flex;
   align-items: flex-start;
   gap: var(--space-3);
+  min-height: var(--target-min);
+  cursor: pointer;
 }
 
 .check input,
@@ -1694,7 +1697,7 @@ html:has(.mmenu[open]) {
   accent-color: var(--color-btn-primary-bg);
 }
 
-.check label {
+.check__text {
   display: flex;
   align-items: center;
   min-height: var(--target-min);
@@ -1854,6 +1857,15 @@ html:has(.mmenu[open]) {
   gap: var(--space-3);
   padding: var(--space-3) 0;
   border-bottom: 1px solid var(--color-border);
+}
+
+/* A phone (FX-3, A4 2): each fact's label sits above its value, so the value has the dialog's full width and a document
+   number stays on one line. */
+@media (max-width: 29.99rem) {
+  .facts--confirm > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-1);
+  }
 }
 
 .num-strong {

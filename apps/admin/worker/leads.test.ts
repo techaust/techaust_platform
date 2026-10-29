@@ -446,7 +446,8 @@ describe("conversion: consent, country and the draft link (analyst early check)"
   });
 });
 
-// M3.3 carry-ins: the state code (owner Q1, 2026-10-25) and the billing contact flag. VERIFY WITH CA/LEGAL.
+// M3.3 carry-ins: the state code (owner Q1, 2026-10-25; Researched 2026-10-28, s.12 IGST (08-C RA-12)) and the billing contact flag (Researched
+// 2026-10-28, DPDP s.6(1) (08-C RB-31): only finance contacts get finance by default).
 let panSeq = 0;
 describe("conversion: state code and billing contact (M3.3 carry-ins)", () => {
   const refused = async (body: Body, want: string) => {

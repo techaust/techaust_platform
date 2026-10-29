@@ -5,6 +5,7 @@ import { formatDate, formatIstDateTime, parseIsoDate } from "@techaust/core/date
 import { type Download, type OfferItem, type OfferKind, RequestError } from "../api.ts";
 import { COPY, waitText } from "../copy.ts";
 import { N, PENDING, WORDS } from "../copy-documents.ts";
+import { OFFER_Y } from "../copy-y.ts";
 
 export { formatIstDateTime };
 
@@ -33,10 +34,23 @@ export function splitOffers(items: readonly OfferItem[]) {
   return { awaiting, decided };
 }
 
+/**
+ * The refusals that end the decision: the page reloads to show what is true now, and says why (07-N §7). `newer_version_pending`
+ * (FX-3, A4 9): a newer version is frozen but not rendered yet, so this one can't be decided; the reload shows it as replaced.
+ */
+export const FINAL: ReadonlySet<string> = new Set([
+  "already_accepted",
+  "already_decided",
+  "superseded",
+  "newer_version_pending",
+  "expired",
+]);
+
 /** The 07-N words for an API error (§7), the name rules, a refused link, the network and the server. */
 export function errorText(e: unknown): string {
   if (!(e instanceof RequestError) || e.code === "network") return COPY.network;
-  const known = (N.errors as Record<string, string>)[e.code];
+  const known =
+    (N.errors as Record<string, string>)[e.code] ?? (OFFER_Y.errors as Record<string, string>)[e.code];
   if (known) return known;
   switch (e.code) {
     case "name_too_short":

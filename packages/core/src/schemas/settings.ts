@@ -75,6 +75,13 @@ const stateCode = z.enum(Object.keys(STATE_CODES) as [StateCode, ...StateCode[]]
  */
 export const SIGNATURE_MIMES = ["image/png", "image/jpeg"] as const;
 export const SIGNATURE_MAX_BYTES = 256 * 1024;
+/**
+ * FX-3 (A6 1c): the largest signature in pixels. The admin scales a bigger image down to fit (aspect kept, PNG out) before it uploads, and the
+ * API refuses a larger one from its header, so the PDF integrity check never inflates megabytes of pixels (jobs `pdf.ts`). A signature
+ * stored before FX-3 is left as it is.
+ */
+export const SIGNATURE_MAX_WIDTH = 800;
+export const SIGNATURE_MAX_HEIGHT = 400;
 export const signatureRef = z.strictObject({
   key: z.string().check(z.minLength(1), z.maxLength(120)),
   mime: z.enum(SIGNATURE_MIMES),
@@ -346,7 +353,7 @@ export const paymentTermsSettings = z
     razorpayMinPartialInrMinor: minor,
     /**
      * The website's liability cap (INR minor), printed on /terms (M2.3 follow-up, 07-A section 2 item 10). One source: apps/web reads
-     * it from SETTINGS_DEFAULTS. VERIFY WITH CA/LEGAL (08 L-12).
+     * it from SETTINGS_DEFAULTS. OPEN (08-C RB-23): is a ₹10,000 website-use cap enforceable against a consumer?
      */
     websiteLiabilityCapInrMinor: minor,
   })
@@ -560,7 +567,7 @@ export const SETTINGS_DEFAULTS: Settings = {
     reminderWindowIst: { fromHour: 9, toHour: 19 },
     // VERIFY WITH CA/LEGAL: the default part-payment floor (docs/04 ADM-SET-05): INR 10,000.
     razorpayMinPartialInrMinor: 10_000_00,
-    // VERIFY WITH CA/LEGAL (08 L-12): INR 10,000, the figure the site printed before this setting existed.
+    // OPEN (08-C RB-23): is a ₹10,000 website-use cap enforceable against a consumer? INR 10,000 is the figure the site printed before this setting existed.
     websiteLiabilityCapInrMinor: 1_000_000,
   },
   retention: { leadsMonths: 12, emailLogMonths: 13, securityLogMonths: 13, financialYears: 10 },

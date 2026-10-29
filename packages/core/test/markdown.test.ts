@@ -1,6 +1,13 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { type Block, type Inline, MAX_MARKDOWN_CHARS, parseMarkdown, safeHref } from "../src/markdown.ts";
+import {
+  type Block,
+  type Inline,
+  MAX_MARKDOWN_CHARS,
+  parseMarkdown,
+  parseNoteMarkdown,
+  safeHref,
+} from "../src/markdown.ts";
 
 const walk = (nodes: Inline[], f: (n: Inline) => void) => {
   for (const n of nodes) {
@@ -159,6 +166,72 @@ describe("property: the AST holds only what the parser created", () => {
           expect(texts.map((n) => (n as { text: string }).text).join("")).toBe(src);
         },
       ),
+    );
+  });
+});
+
+describe("parseNoteMarkdown: a note's headings (FX-3, A3 7) [ADM-PRJ-03]", () => {
+  it("reads `#`, `##` and `###` as levels 1 to 3, with inline marks, and drops closing hashes", () => {
+    expect(parseNoteMarkdown("# One\n## Two **b**\n### Three ###\ntext")).toEqual([
+      { t: "h", level: 1, children: [{ t: "text", text: "One" }] },
+      {
+        t: "h",
+        level: 2,
+        children: [
+          { t: "text", text: "Two " },
+          { t: "strong", children: [{ t: "text", text: "b" }] },
+        ],
+      },
+      { t: "h", level: 3, children: [{ t: "text", text: "Three" }] },
+      { t: "p", children: [{ t: "text", text: "text" }] },
+    ]);
+  });
+
+  it("a heading ends the paragraph before it; `####`, `#tag` and a bare `#` stay text", () => {
+    expect(parseNoteMarkdown("before\n# Head\nafter")).toEqual([
+      { t: "p", children: [{ t: "text", text: "before" }] },
+      { t: "h", level: 1, children: [{ t: "text", text: "Head" }] },
+      { t: "p", children: [{ t: "text", text: "after" }] },
+    ]);
+    for (const src of ["#### Four", "#tag", "#", "#   "]) {
+      expect(
+        parseNoteMarkdown(src).every((b) => b.t !== "h"),
+        src,
+      ).toBe(true);
+    }
+    // a `#` line inside a code block is code
+    expect(parseNoteMarkdown("```\n# not a heading\n```")).toEqual([{ t: "code", text: "# not a heading" }]);
+    // up to three spaces before the hashes, as for lists
+    expect(parseNoteMarkdown("   ## Indented")[0]).toEqual({
+      t: "h",
+      level: 2,
+      children: [{ t: "text", text: "Indented" }],
+    });
+  });
+
+  it("documents keep a `#` line as text: parseMarkdown never makes a heading (frozen sections read as before)", () => {
+    expect(parseMarkdown("# Scope\nwork")).toEqual([
+      { t: "p", children: [{ t: "text", text: "# Scope\nwork" }] },
+    ]);
+  });
+
+  it("property: a heading holds only parser nodes; links stay http, https or mailto; without `#` both parsers agree", () => {
+    const md = fc.string({ unit: fc.constantFrom(..."ab *_`[]()!\\\n-1.<>/:# javscript"), maxLength: 120 });
+    fc.assert(
+      fc.property(md, (src) => {
+        for (const b of parseNoteMarkdown(src)) {
+          expect(["p", "code", "list", "h"]).toContain(b.t);
+          if (b.t === "h") {
+            expect([1, 2, 3]).toContain(b.level);
+            walk(b.children, (n) => {
+              expect(["text", "code", "strong", "em", "link"]).toContain(n.t);
+              if (n.t === "link") expect(n.href).toMatch(/^(https?:|mailto:)/);
+            });
+          }
+        }
+        if (!src.includes("#")) expect(parseNoteMarkdown(src)).toEqual(parseMarkdown(src));
+      }),
+      { numRuns: 500 },
     );
   });
 });

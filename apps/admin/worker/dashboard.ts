@@ -143,7 +143,7 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
     add(
       "projects",
       db.prepare(
-        "SELECT status, count(*) AS n FROM projects WHERE status IN ('active', 'on_hold') GROUP BY status",
+        "SELECT status, count(*) AS n FROM projects WHERE status IN ('planned', 'active', 'on_hold') GROUP BY status",
       ),
     );
   }
@@ -347,7 +347,8 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
     const by = Object.fromEntries(
       rows<{ status: string; n: number }>("projects").map((r) => [r.status, r.n]),
     );
-    out.projects = { active: by.active ?? 0, onHold: by.on_hold ?? 0 };
+    // FX-3 (A3 10): Planned projects count too (work agreed, not started).
+    out.projects = { planned: by.planned ?? 0, active: by.active ?? 0, onHold: by.on_hold ?? 0 };
   }
   if (tiles.has("milestones")) {
     out.milestones = {

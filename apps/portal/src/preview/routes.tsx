@@ -25,6 +25,7 @@ const SCREENS: [string, string][] = [
   ["/proposals/sample-names?sample=on", "Long names"],
   ["/proposals/sample-revised?sample=on", "A new version is being prepared"],
   ["/proposals/sample-refused?sample=on", "Accept refused: a colleague accepted first"],
+  ["/proposals/sample-pending?sample=on", "Accept refused: a newer version is being prepared"],
   ["/proposals/sample-accepted?sample=on", "Accepted by you"],
   ["/proposals/sample-accepted-other?sample=on", "Accepted by a colleague"],
   ["/proposals/sample-declined?sample=on", "Declined"],

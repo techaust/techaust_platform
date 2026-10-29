@@ -1,5 +1,6 @@
 // The owner's data-subject tools for one contact (M3.3, ADM-CLI-05; owner answer Q4: owner only, with step-up).
-// VERIFY WITH CA/LEGAL: what is erased, anonymised and kept follows the owner's answers Q2 and Q3 of 2026-10-25.
+// What is erased, anonymised and kept follows the owner's answers Q2 and Q3 of 2026-10-25: Researched 2026-10-28, s.36 CGST and Rules 56, 57
+// (08-C RA-25) for the tax records kept, and DPDP s.8(7), s.12(3) (08-C RB-11) for keeping them while the person is anonymised.
 // - Export: the 07-J explainer, a fresh authenticator code (unless a step-up is still open), then the summary and every
 //   part of the manifest, page by page (≤ 50 rows each, one audit row per call), assembled into one JSON file in the
 //   browser and downloaded. Progress is shown and announced; Cancel stops before the next call and downloads nothing.

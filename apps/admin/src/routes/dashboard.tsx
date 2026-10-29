@@ -225,6 +225,11 @@ function ProjectsTile({ tile }: { tile: NonNullable<DashboardTiles["projects"]> 
     >
       <Figure value={tile.active} label="Active" />
       <dl className="mini-facts">
+        {/* FX-3 (A3 10): Planned projects count too (the status label of lib/projects.ts). */}
+        <div>
+          <dt>Planned</dt>
+          <dd className="tnum">{tile.planned}</dd>
+        </div>
         <div>
           <dt>On hold</dt>
           <dd className="tnum">{tile.onHold}</dd>

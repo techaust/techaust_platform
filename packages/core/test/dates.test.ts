@@ -6,10 +6,13 @@ import {
   financialYear,
   formatDate,
   formatIstDateTime,
+  formatIstMoment,
   fromIst,
   fyOf,
   fyOfDate,
+  isIstDayEnd,
   istDate,
+  istDayEnd,
   isValidDate,
   parseIsoDate,
   toIsoDate,
@@ -74,6 +77,29 @@ describe("IST conversion [ADM-G-08]", () => {
     expect(formatDate({ year: 2026, month: 10, day: 6 })).toBe("06 Oct 2026");
     expect(formatIstDateTime(utc("2026-10-06T08:35:00Z"))).toBe("06 Oct 2026, 14:05 IST");
     expect(istDate(utc("2026-03-31T18:30:00Z"))).toEqual({ year: 2026, month: 4, day: 1 });
+  });
+
+  it("FX-3: a date-only moment is the last millisecond of its IST day and prints as the day alone", () => {
+    const day = { year: 2026, month: 10, day: 14 };
+    const end = istDayEnd(day);
+    expect(end).toBe(utc("2026-10-14T18:29:59.999Z"));
+    expect(isIstDayEnd(end)).toBe(true);
+    expect(formatIstMoment(end)).toBe("14 Oct 2026");
+    expect(formatIstDateTime(end)).toBe("14 Oct 2026, 23:59 IST"); // what the dashboard printed before
+    for (const near of [end - 1, end + 1, utc("2026-10-14T18:29:59.000Z"), fromIst(day)])
+      expect(isIstDayEnd(near), String(near)).toBe(false);
+    expect(formatIstMoment(utc("2026-10-06T08:35:00Z"))).toBe("06 Oct 2026, 14:05 IST");
+    expect(() => isIstDayEnd(Number.NaN)).toThrow(RangeError);
+    fc.assert(
+      fc.property(fc.integer({ min: 0, max: 200_000 }), (n) => {
+        const d = istDate(utc("2020-01-01T00:00:00Z") + n * 86_400_000);
+        const ms = istDayEnd(d);
+        expect(istDate(ms)).toEqual(d);
+        expect(isIstDayEnd(ms)).toBe(true);
+        expect(isIstDayEnd(ms + 1)).toBe(false);
+      }),
+      { numRuns: 200 },
+    );
   });
 });
 

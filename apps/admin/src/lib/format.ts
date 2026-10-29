@@ -1,7 +1,8 @@
-// Display helpers. Times are stored as UTC ms and shown in IST (CLAUDE.md conventions).
-import { formatIstDateTime } from "@techaust/core";
+// Display helpers. Times are stored as UTC ms and shown in IST (CLAUDE.md conventions). A date-only moment (a lead's next action, stored as the last
+// millisecond of its IST day) prints as the day alone, never "23:59 IST" (FX-3, A3 10: core `formatIstMoment`).
+import { daysBetween, formatIstMoment, isIstDayEnd, istDate } from "@techaust/core/dates";
 
-export const when = (utcMs: number | null | undefined) => (utcMs ? formatIstDateTime(utcMs) : "Never");
+export const when = (utcMs: number | null | undefined) => (utcMs ? formatIstMoment(utcMs) : "Never");
 
 const rtf = new Intl.RelativeTimeFormat("en-IN", { numeric: "auto" });
 const STEPS: [Intl.RelativeTimeFormatUnit, number][] = [
@@ -13,8 +14,19 @@ const STEPS: [Intl.RelativeTimeFormatUnit, number][] = [
   ["year", 31_557_600],
 ];
 
-/** "just now", "12 minutes ago", "yesterday", "3 weeks ago" (the absolute IST time is shown next to it). */
+/**
+ * "just now", "12 minutes ago", "yesterday", "3 weeks ago" (the absolute IST time is shown next to it). A date-only moment counts whole IST days
+ * ("today", "yesterday", "in 3 days"), so an action due yesterday never reads "10 hours ago".
+ */
 export function relative(utcMs: number, now = Date.now()): string {
+  if (isIstDayEnd(utcMs)) {
+    const days = daysBetween(istDate(now), istDate(utcMs));
+    return Math.abs(days) < 7 ? rtf.format(days, "day") : relativeSpan(utcMs, now);
+  }
+  return relativeSpan(utcMs, now);
+}
+
+function relativeSpan(utcMs: number, now: number): string {
   const s = Math.round((utcMs - now) / 1000);
   const abs = Math.abs(s);
   if (abs < 45) return "just now";

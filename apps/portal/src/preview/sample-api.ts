@@ -53,6 +53,15 @@ const DOCS: Doc[] = [
     refuse: "already_accepted",
   },
   {
+    // FX-3 (A4 9): a newer version was frozen after this page loaded and is still being made; the accept is refused and the
+    // page reloads to show the version as replaced.
+    id: "sample-pending",
+    fixture: "short-intra-inr",
+    status: "viewed",
+    sentAt: NOW - 8 * DAY,
+    refuse: "newer_version_pending",
+  },
+  {
     id: "sample-accepted",
     fixture: "short-intra-inr",
     status: "accepted",
@@ -273,6 +282,10 @@ async function act(
         };
         doc.certificate = "pending";
         return error(409, "already_accepted", { name: "Rahul Sen", at: doc.acceptance.acceptedAt });
+      }
+      if (doc.refuse === "newer_version_pending") {
+        doc.status = "revised";
+        return error(409, "newer_version_pending");
       }
       if (doc.status !== "sent" && doc.status !== "viewed") return error(409, "already_decided");
       const name = String(body.typedName ?? "").trim();

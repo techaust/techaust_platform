@@ -185,6 +185,33 @@ describe("the structure check in workerd", () => {
     const pdf = await syntheticPdf(755, 262_000);
     expect(await checkPdfIntegrity(rotate(pdf, 3770))).toMatchObject({ ok: false, code: "xref_offset" });
   });
+
+  it("known limit (FX-3 round 3, item 4): blocks moved wholly inside one stream that is not Flate (a JPEG) pass", async () => {
+    // One DCTDecode image of 40,000 bytes: three 8 KB blocks rotated inside it move no object and no stream end.
+    const head = enc.encode("%PDF-1.4\n");
+    const jpeg = randomBytes(40_000);
+    const obj = cat(
+      enc.encode(
+        `1 0 obj\n<< /Type /XObject /Subtype /Image /Length ${jpeg.length} /Filter /DCTDecode >>\nstream\n`,
+      ),
+      jpeg,
+      enc.encode("\nendstream\nendobj\n"),
+    );
+    const xref = head.length + obj.length;
+    const pdf = cat(
+      head,
+      obj,
+      enc.encode(
+        `xref\n0 2\n0000000000 65535 f \n${String(head.length).padStart(10, "0")} 00000 n \ntrailer\n<< /Size 2 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`,
+      ),
+    );
+    const inside = head.length + 200; // past the dictionary, with 3 x 8 KB still inside the image data
+    const moved = rotate(pdf, inside);
+    expect(moved).not.toEqual(pdf);
+    expect(await checkPdfIntegrity(moved)).toEqual({ ok: true });
+    // the same move across the stream's end is caught
+    expect(await checkPdfIntegrity(rotate(pdf, head.length + 20_000))).toMatchObject({ ok: false });
+  });
 });
 
 describe("renderPdf with a damaged response", () => {

@@ -23,6 +23,9 @@ import {
   saveFailureText,
   scheduleTotal,
   splitPlaceholders,
+  TEMPLATE_RULES,
+  templateRuleErrors,
+  templateRuleFields,
   templateTitle,
   unknownIn,
 } from "./catalogue.ts";
@@ -312,6 +315,78 @@ describe("copy", () => {
   it("the confirmations are 07-L word for word", () => {
     expect(COPY.retire("S3", "DPDP Readiness for Apps")).toBe(
       "Retire S3 DPDP Readiness for Apps? It can't be added to new proposals or estimates. Documents that already include it don't change.",
+    );
+  });
+});
+
+describe("FX-3 round 3: the template rules the editor shows before it sends [ADM-CAT-03]", () => {
+  const s = (key: string, body: string, heading = key) => ({ key, heading, body });
+  const extra = (n: number, size: number) =>
+    Array.from({ length: n }, (_, i) => s(`x${i}`, "w".repeat(size)));
+
+  it("Q2: names each joined section with the 07-Y line (marked until the owner approves it)", () => {
+    const errs = templateRuleErrors("proposal", [s("cover", ""), ...extra(5, 2_000)]);
+    expect(Object.keys(errs)).toEqual(["3", "4", "5"]);
+    expect(errs[3]).toBe(TEMPLATE_RULES.joinedTooLong);
+    expect(TEMPLATE_RULES.joinedTooLong.startsWith(PLACEHOLDER_TAG)).toBe(true);
+    expect(templateRuleErrors("estimate", extra(5, 2_000))[2]).toBe(TEMPLATE_RULES.joinedTooLong);
+    // fits, or a block that is never joined: nothing
+    expect(templateRuleErrors("proposal", extra(5, 1_000))).toEqual({});
+    expect(templateRuleErrors("care_block", extra(5, 2_000))).toEqual({});
+  });
+
+  it("Q3: names a Catalogue-text placeholder in a heading or in another section's text, both lines in one section", () => {
+    const errs = templateRuleErrors("care_block", [
+      s("scope", "{{service.deliverables}} {{service.exclusions}}", "About {{service.assumptions}}"),
+      s("deliverables", "{{service.deliverables}}"),
+    ]);
+    expect(errs).toEqual({
+      0: [
+        TEMPLATE_RULES.textInHeading("{{service.assumptions}}"),
+        TEMPLATE_RULES.textElsewhere("{{service.deliverables}}", "Deliverables"),
+        TEMPLATE_RULES.textElsewhere("{{service.exclusions}}", "Assumptions and exclusions"),
+      ].join(" "),
+    });
+    expect(TEMPLATE_RULES.textInHeading("{{service.assumptions}}")).toBe(
+      `${PLACEHOLDER_TAG} {{service.assumptions}} can't go in a heading. Put it in the text of its own section.`,
+    );
+    expect(TEMPLATE_RULES.textElsewhere("{{service.exclusions}}", "Assumptions and exclusions")).toBe(
+      `${PLACEHOLDER_TAG} {{service.exclusions}} can only go in the text of the Assumptions and exclusions section.`,
+    );
+  });
+
+  it("by field: a placeholder in a heading is the heading's, the rest the text's (FX-3 review 5)", () => {
+    const sections = [
+      s("scope", "{{service.deliverables}} {{service.exclusions}}", "About {{service.assumptions}}"),
+      s("deliverables", "{{service.deliverables}}"),
+      s("terms", "Plain text.", "Terms for {{service.exclusions}}"),
+    ];
+    expect(templateRuleFields("care_block", sections)).toEqual({
+      0: {
+        heading: TEMPLATE_RULES.textInHeading("{{service.assumptions}}"),
+        body: [
+          TEMPLATE_RULES.textElsewhere("{{service.deliverables}}", "Deliverables"),
+          TEMPLATE_RULES.textElsewhere("{{service.exclusions}}", "Assumptions and exclusions"),
+        ].join(" "),
+      },
+      2: { heading: TEMPLATE_RULES.textInHeading("{{service.exclusions}}") },
+    });
+    // the joined-length rule is the text's
+    expect(templateRuleFields("proposal", [s("cover", ""), ...extra(5, 2_000)])[3]).toEqual({
+      body: TEMPLATE_RULES.joinedTooLong,
+    });
+    // the section view keeps one line per section, the heading's first
+    expect(templateRuleErrors("care_block", sections)[2]).toBe(
+      TEMPLATE_RULES.textInHeading("{{service.exclusions}}"),
+    );
+  });
+
+  it("the page's own lines: a stored version that breaks a rule, and a summary line naming its section (FX-3 designer)", () => {
+    expect(TEMPLATE_RULES.storedBreaks).toBe(
+      `${PLACEHOLDER_TAG} This version was saved before the template rules below. Drafts made from it may not save. Edit it and save a new version.`,
+    );
+    expect(TEMPLATE_RULES.section(4, TEMPLATE_RULES.joinedTooLong)).toBe(
+      `Section 4: ${TEMPLATE_RULES.joinedTooLong}`,
     );
   });
 });

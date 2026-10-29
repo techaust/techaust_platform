@@ -18,6 +18,7 @@ import {
   placeholdersOf,
   TEMPLATE_PLACEHOLDERS,
 } from "@techaust/core/catalogue";
+import { joinedPastLimit, misplacedTextTokens, TEXT_TOKEN_KINDS } from "@techaust/core/documents";
 import type {
   CatalogueCategory,
   CatalogueEntry,
@@ -30,6 +31,7 @@ import type {
   TemplateMeta,
 } from "../api.ts";
 import type { Draft } from "../routes/leads/drafts.ts";
+import { Y } from "./copy-y.ts";
 import { bpToPercent, moneyFrom, moneyInput, percentToBp } from "./settings-form.ts";
 
 // ---- labels (07-L) -------------------------------------------------------------------------------------------------------------
@@ -652,6 +654,90 @@ const KNOWN = new Set<string>(TEMPLATE_PLACEHOLDERS);
 
 /** The placeholders in a text that aren't on the list, in order of first use. */
 export const unknownIn = (text: string) => placeholdersOf(text).filter((p) => !KNOWN.has(p));
+
+/**
+ * 07-Y lines (FX-3 round 3, pending the owner) for the template rules the API also holds (`template_text_token_place`,
+ * `template_joined_too_long`): shown under each section the rule names.
+ */
+export const TEMPLATE_RULES = {
+  /** Q3: a Catalogue-text placeholder in a heading. */
+  textInHeading: (placeholder: string) =>
+    Y(`${placeholder} can't go in a heading. Put it in the text of its own section.`),
+  /** Q3: a Catalogue-text placeholder in the text of another section; `section` is where it belongs. */
+  textElsewhere: (placeholder: string, section: string) =>
+    Y(`${placeholder} can only go in the text of the ${section} section.`),
+  joinedTooLong: Y(
+    "A proposal or estimate has room for 3 sections of your own. This one and the ones after the third are joined into one, which would pass 6,000 characters. Shorten them or remove some.",
+  ),
+  /** FX-3 (designer): the newest version, saved before these rules, breaks one; shown above its sections when the page opens. */
+  storedBreaks: Y(
+    "This version was saved before the template rules below. Drafts made from it may not save. Edit it and save a new version.",
+  ),
+  /** The line under a section in the read view and in the summary: "Section 4: …". */
+  section: (n: number, line: string) => `Section ${n}: ${line}`,
+} as const;
+
+/** The section each Catalogue-text placeholder belongs in, by the heading the seeded templates give it. */
+const TEXT_HOME: Record<string, string> = {
+  deliverables: "Deliverables",
+  assumptions_exclusions: "Assumptions and exclusions",
+};
+
+/**
+ * The template rules a save is refused for, by section (0-based), with the 07-Y lines for each (joined by a space), so the editor shows
+ * them before it sends (the API answers the same sections): Catalogue-text placeholders outside their own section's text (every kind),
+ * and custom sections joined past 6,000 characters (proposal and estimate templates only: the care plan and terms blocks are never
+ * joined).
+ */
+export function templateRuleErrors(
+  kind: TemplateKind,
+  sections: readonly { key: string; heading: string; body: string }[],
+): Record<number, string> {
+  const fields = templateRuleFields(kind, sections);
+  const out: Record<number, string> = {};
+  sections.forEach((_, i) => {
+    const line = [fields[i]?.heading, fields[i]?.body].filter(Boolean).join(" ");
+    if (line) out[i] = line;
+  });
+  return out;
+}
+
+/**
+ * The same rules by field (FX-3 review 5): a Catalogue-text placeholder in a heading belongs to the heading input (`tpl-s{i}-heading`,
+ * its own `aria-invalid` and summary link); one in another section's text and a joined section's length belong to the text.
+ */
+export function templateRuleFields(
+  kind: TemplateKind,
+  sections: readonly { key: string; heading: string; body: string }[],
+): Record<number, { heading?: string; body?: string }> {
+  const lines = new Map<number, { heading: string[]; body: string[] }>();
+  const add = (n: number, part: "heading" | "body", line: string) => {
+    const at = lines.get(n) ?? { heading: [], body: [] };
+    at[part].push(line);
+    lines.set(n, at);
+  };
+  for (const m of misplacedTextTokens(sections)) {
+    const placeholder = `{{${m.name}}}`;
+    if (m.part === "heading") add(m.index, "heading", TEMPLATE_RULES.textInHeading(placeholder));
+    else
+      add(
+        m.index,
+        "body",
+        TEMPLATE_RULES.textElsewhere(placeholder, TEXT_HOME[TEXT_TOKEN_KINDS[m.name] ?? ""] ?? ""),
+      );
+  }
+  if (kind === "proposal" || kind === "estimate")
+    for (const n of joinedPastLimit(sections)) add(n, "body", TEMPLATE_RULES.joinedTooLong);
+  return Object.fromEntries(
+    [...lines].map(([n, l]) => [
+      n,
+      {
+        ...(l.heading.length ? { heading: l.heading.join(" ") } : {}),
+        ...(l.body.length ? { body: l.body.join(" ") } : {}),
+      },
+    ]),
+  );
+}
 
 /** "Build proposal", "Care plan block". */
 export function templateTitle(t: Pick<TemplateMeta, "kind" | "category">): string {

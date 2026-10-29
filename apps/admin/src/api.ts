@@ -78,6 +78,7 @@ export type SeriesState = {
   lockReason: string | null;
 };
 export type GroupMeta = {
+  /** Which 08-C §5 list holds the group's open questions: "08-C §5: CA", or "08-C §5: CA and lawyer" (FX-3; was a "VERIFY WITH" tag). */
   verify?: string;
   /** M5.2 (Settings › Tax): today's LUT reminder, worked out by the server from the saved letters. */
   lutStatus?: {
@@ -304,8 +305,22 @@ export type NewLead = {
   ownerId?: string | null;
   nextActionAt?: number | null;
   nextActionNote?: string | null;
+  /**
+   * FX-3 (ADM-LEAD-01): the quote form's answers, given by hand. A band needs its currency and must be one of `budgetBandOptions(currency)`; the timeline
+   * one of `TIMELINE_LABELS` (core `form-labels`). Anything else is a 400.
+   */
+  currency?: Currency | null;
+  budgetBand?: string | null;
+  timeline?: string | null;
 };
-export type LeadPatch = Omit<Partial<NewLead>, "serviceCode" | "message"> & { expectedUpdatedAt: number };
+/**
+ * FX-3 round 2 (docs/13 2026-10-29): a manual lead's `currency`, `budgetBand` and `timeline` can be changed, with the creation checks on the
+ * values the lead ends up with (a band needs its own currency: change both together); anything else is a 400. A website lead's answers are
+ * fixed: changing one is a 409 `lead_answers_fixed`.
+ */
+export type LeadPatch = Omit<Partial<NewLead>, "serviceCode" | "message"> & {
+  expectedUpdatedAt: number;
+};
 export type ReplyTemplateFilled = { id: string; label: string; subject: string; body: string };
 export type ConvertInput = {
   type: "business" | "individual";
@@ -560,6 +575,23 @@ export type FileView = {
   uploadedByName: string | null;
   createdAt: number;
 };
+/** FX-3: one currency of a project's billed figure (worker/figures.ts `ProjectBilled`); minor units, tax included. */
+export type ProjectBilled = { currency: Currency; billedMinor: number; creditedMinor: number };
+/**
+ * FX-3 (ADM-CLI-03): one currency of a client's Overview figures (worker/figures.ts `ClientFigures`); minor units, tax included. Billed is the statement's
+ * debit column over all time, the balance its closing balance today; "collected" arrives with payments (M6) and is not sent.
+ */
+export type ClientFigures = {
+  currency: Currency;
+  billedMinor: number;
+  creditedMinor: number;
+  balanceMinor: number;
+  overdueMinor: number;
+  overdueCount: number;
+};
+export type ClientFinance =
+  | { available: true; asOf: string; currencies: ClientFigures[] }
+  | { available: false; reason: "anonymised" };
 export type ProjectPage = {
   project: ProjectView;
   milestones: MilestoneView[];
@@ -569,7 +601,11 @@ export type ProjectPage = {
   recentNotes: NoteView[];
   recentFiles: FileView[];
   figures: {
-    billedVsPaid: { available: boolean; arrivesWith: string };
+    /**
+     * FX-3 (ADM-PRJ-05): billed from the project's issued invoices and debit notes, and its credit notes, by currency (the client statement's rules).
+     * Absent for a role without `clients.finance.read` (Sales); `available: false` for an anonymised client. "Paid" arrives with payments (M6).
+     */
+    billed?: { available: true; currencies: ProjectBilled[] } | { available: false; reason: "anonymised" };
     /** M3.5: the time logged on the project (totals only, the same for every role). */
     hours:
       | { available: true; totalMinutes: number; billableMinutes: number }
@@ -810,7 +846,8 @@ export type DashboardTiles = {
   pipelineValue?: { asOf: string; byCurrency: { currency: Currency; count: number; taxableMinor: number }[] };
   /** M5.5b (LD80): the finance tiles (Owner, Accountant). Before M5.5b the API sent `{available: false}`. */
   finance?: FinanceTile | { available: false; arrivesWith?: unknown };
-  projects?: { active: number; onHold: number };
+  /** FX-3 (A3 10): Planned projects count too. */
+  projects?: { planned: number; active: number; onHold: number };
   milestones?: {
     windowDays: number;
     count: number;
@@ -1305,8 +1342,8 @@ export const api = {
       method: "PATCH",
       body,
     }),
-  clientFinance: (id: string) =>
-    request<{ available: boolean }>(`/clients/${encodeURIComponent(id)}/finance`),
+  /** FX-3 (ADM-CLI-03): the Overview figures (finance roles). Shape: worker/figures.ts `ClientFinanceAnswer`. */
+  clientFinance: (id: string) => request<ClientFinance>(`/clients/${encodeURIComponent(id)}/finance`),
   /** M5.5b (ADM-CLI-04, LD78): one page (≤ 50 entries) of the statement of one currency; `after` is the previous page's `next`. */
   clientStatement: (id: string, q: { from: string; to: string; currency?: Currency; after?: string }) =>
     request<StatementPage>(`/clients/${encodeURIComponent(id)}/statement${qs(q)}`),
