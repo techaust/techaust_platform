@@ -23,6 +23,14 @@ function hook(
   remote?: string,
   extra: Record<string, unknown> = {},
 ) {
+  return hookRaw(
+    JSON.stringify({ tool_name: toolName, tool_input: toolInput, session_id: "test", ...extra }),
+    remote,
+  );
+}
+
+/** The hook with `stdin` as its raw input (second re-check, finding 6), plus CLAUDE_CODE_REMOTE=`remote` when given. */
+function hookRaw(stdin: string, remote?: string) {
   const { CLAUDE_CODE_REMOTE: _r, ...env } = process.env;
   if (remote !== undefined) env.CLAUDE_CODE_REMOTE = remote;
   return new Promise<Answer>((resolve, reject) => {
@@ -33,9 +41,7 @@ function hook(
       const o = JSON.parse(out).hookSpecificOutput;
       resolve({ decision: o.permissionDecision ?? null, reason: o.permissionDecisionReason ?? "", stdout });
     });
-    child.stdin?.end(
-      JSON.stringify({ tool_name: toolName, tool_input: toolInput, session_id: "test", ...extra }),
-    );
+    child.stdin?.end(stdin);
   });
 }
 
@@ -914,6 +920,164 @@ describe("model-guard in a cloud session: re-check findings [CLOUD-1 fix round 3
     expect(b.decision).toBe("deny");
     const ok = await hook({ command: 'jq -r .x <<< "$json"' }, "Bash", "true");
     expect(ok.decision).toBeNull();
+  });
+});
+
+// CLOUD-1 second re-check (fix round 4): every probe named in findings 1–3 and in the refused part of 5 (lead's triage), with
+// neighbours. Checked on branch main unless a push needs fix/x.
+const ROUND4_REFUSED: Record<string, string[]> = {
+  // 1: `((` right after a keyword is the arithmetic command, so `<<` in it is a shift and the next line runs
+  arithAfterKeyword: [
+    "for((i=0;i<<2;i++)); do :; done\ngh pr merge 1",
+    "if((x<<2)); then :; fi\ngh pr merge 1",
+    "while((i<<1>9)); do :; done\ngh pr merge 1",
+    "until((i<<1>9)); do :; done\ngh pr merge 1",
+    "if false; then :; elif((x<<2)); then :; fi\ngh pr merge 1",
+    "!((x<<2))\ngh pr merge 1",
+    "while :; do((x<<=1)); done\ngh pr merge 1",
+    "if :; then((x<<2)); fi\ngh pr merge 1",
+  ],
+  // 2: the shell's options after -c come before its command text
+  optionsAfterC: [
+    "bash -c -e 'gh pr merge 1'",
+    "bash -c -- 'gh pr merge 1'",
+    'sh -c -x "gh pr merge 1"',
+    "bash -c -o pipefail 'gh pr merge 1'",
+    "bash -eo pipefail -c 'gh pr merge 1'",
+    "bash -c - 'gh pr merge 1'",
+  ],
+  // 3: a case pattern's `)` inside $( … ) (in double quotes or an unquoted heredoc the rest would be read as text)
+  caseInSubstitution: [
+    'x="$(case a in a) gh pr merge 1;; esac)"',
+    "cat <<EOF\n$(case a in a) gh pr merge 1;; esac)\nEOF",
+    'echo "$(case a in a) echo x;; esac)"',
+  ],
+  // 5: --staging on the four scripts that run wrangler d1 execute --remote
+  staging: [
+    "pnpm invite --email a@example.test --role owner --staging",
+    "pnpm admin:reset-2fa --email a@example.test --staging",
+    "pnpm portal:sample --staging",
+    "pnpm portal:link --email a@example.test --staging",
+    "pnpm run portal:link --staging --email a@example.test",
+    "node scripts/create-invite.mjs --email a@example.test --staging",
+    "node scripts/reset-2fa.mjs --staging=true",
+  ],
+  // 5: a command name built at run time
+  builtName: [
+    "{gh,} pr merge 1",
+    "$'\\x67h' pr merge 1",
+    "$(echo gh) pr merge 1",
+    "`echo gh` pr merge 1",
+    "sudo {gh,} pr merge 1",
+  ],
+  // 5: a push remote, refspec or option built at run time
+  builtPush: [
+    "git push origin {main,}",
+    "git push --{force,} origin fix/x",
+    'git push origin "$B"',
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: shell text, not a template
+    "git push origin ${BRANCH}",
+    "git push origin $(git branch --show-current)",
+    "git push origin `git branch --show-current`",
+    "git push $'or\\x69gin' fix/x",
+  ],
+  // 5: a shell, eval or source running a substitution's output, and printf into a shell
+  substitutionRun: [
+    'eval "$(echo gh pr merge 1)"',
+    "bash -c \"$(printf 'gh pr merge 1')\"",
+    'sh -c "`echo gh pr merge 1`"',
+    "source <(echo gh pr merge 1)",
+    ". <(echo gh pr merge 1)",
+    'bash < <(echo "gh pr merge 1")',
+    "bash <(echo ls)",
+    'printf "%s %s %s %s" gh pr merge 1 | bash',
+    "printf 'ls\\n' | sh",
+  ],
+};
+
+// What must still pass beside them: the second re-check's ordinary work and the harmless forms of each new rule.
+const ROUND4_ALLOWED = [
+  "for((i=0;i<<2;i++)); do echo $i; done",
+  "if((x<<2)); then echo y; fi",
+  "for f in a b; do echo $f; done",
+  "for i in {1..3}; do echo $i; done",
+  "x=$(( 1 << 3 )); echo $x",
+  "bash -c -e 'pnpm test'",
+  "bash -e script.sh",
+  "bash --norc -c 'pnpm test'",
+  "bash -c 'echo $(date)'",
+  "eval 'echo hi'",
+  "case a in a) echo x;; esac",
+  "(case a in a) echo x;; esac)",
+  "pnpm invite --email a@example.test --role owner",
+  "pnpm portal:sample",
+  "pnpm portal:link --email a@example.test",
+  '"$HOME/bin/tool" x',
+  "$EDITOR notes.md",
+  "git push origin fix/x",
+  "git push -u origin HEAD",
+  'git -C "$D" log',
+  "diff <(ls a) <(ls b)",
+  "printf '%s\\n' a b | sort",
+  "echo 'ls -la' | bash",
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: shell text, not a template
+  'echo "${HOME}" >> .logs/x.txt',
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: shell text, not a template
+  "echo ${x,,} ${y:-$(date)}",
+  "TECHAUST_PORT_OFFSET=100 pnpm --filter @techaust/portal dev",
+  "git commit -m \"$(cat <<'EOF'\nfix(tooling): don't merge (CLOUD-1)\n\nWe run `pnpm check` and never 'wrangler deploy'.\nEOF\n)\"",
+  "cat >> .logs/pr-body.md <<'EOF'\n## Summary\nIt's a fix; the lead merges (gh pr merge is the lead's).\nEOF",
+  'bash tools/cloud-pr.sh --title "fix(x): it isn\'t done [CLOUD-1]" --body-file .logs/pr-body.md',
+  "bash tools/heavy.sh --log w pnpm --filter @techaust/web test",
+  "gh api repos/techaust/techaust_platform/pulls -f title=x -f head=fix/x -f base=main -f body=@b.md",
+  "git fetch && git rebase origin/main",
+  "test -f x && echo y || echo n",
+];
+
+describe("model-guard in a cloud session: second re-check findings [CLOUD-1 fix round 4]", {
+  timeout: 60_000,
+}, () => {
+  for (const [group, commands] of Object.entries(ROUND4_REFUSED))
+    it(`refuses every probe: ${group}`, () => {
+      for (const command of commands) expect(check(command, "main"), command).not.toBe("");
+    });
+
+  it("lets ordinary work and the harmless forms through (on a feature branch)", () => {
+    for (const command of ROUND4_ALLOWED) expect(check(command), command).toBe("");
+  });
+
+  it("names why", () => {
+    expect(check("{gh,} pr merge 1")).toContain("command name built at run time");
+    expect(check('git push origin "$B"')).toContain("built at run time");
+    expect(check('x="$(case a in a) gh pr merge 1;; esac)"')).toContain("case pattern");
+    expect(check("bash -c \"$(printf 'gh pr merge 1')\"")).toContain("output of $( … )");
+    // eval is a wrapper, so its "$( … )" word reads as the command: refused as a built command name
+    expect(check('eval "$(echo gh pr merge 1)"')).toContain("built at run time");
+    expect(check("source <(echo gh pr merge 1)")).toContain("output of <( … )");
+    expect(check("printf 'ls\\n' | sh")).toContain("printf piped into a shell");
+    expect(check("pnpm portal:link --email a@example.test --staging")).toContain("staging database");
+  });
+
+  it("keeps long input fast (a slow hook could time out, which lets the command through)", () => {
+    for (const command of [
+      `${"x".repeat(200_000)};gh pr merge 1`,
+      `${"do ".repeat(100_000)}gh pr merge 1`,
+      `${"a;".repeat(100_000)}gh pr merge 1`,
+    ]) {
+      const start = performance.now();
+      expect(check(command)).not.toBe("");
+      expect(performance.now() - start, command.slice(0, 20)).toBeLessThan(5_000);
+    }
+  });
+
+  // finding 6: hook input that isn't a JSON object
+  it("in a cloud session the hook refuses input it can't read; on this PC it says nothing", async () => {
+    for (const raw of ["not json", "null", "[]", "42", '"x"', ""]) {
+      const cloud = await hookRaw(raw, "true");
+      expect(cloud.decision, raw).toBe("deny");
+      expect(cloud.reason).toContain("could not be read");
+      expect((await hookRaw(raw)).stdout, raw).toBe("");
+    }
   });
 });
 

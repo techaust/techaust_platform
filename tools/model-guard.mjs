@@ -11,7 +11,8 @@
 //   GitHub or Cloudflare settings (gh other than its reads, gh api other than GET or opening or commenting on a PR, git push
 //   --force/--delete/":" refspecs/main, or of the current branch while it is main, wrangler other than its local commands and a
 //   dry-run deploy, the deploy:* scripts). The patterns live in tools/cloud-guard.mjs, loaded only then; only then it reads the
-//   current branch (git rev-parse) for a push. If the check itself fails, the command is refused (fails closed). Best effort: a
+//   current branch (git rev-parse) for a push. If the check itself fails, or the hook input isn't a JSON object, the call is
+//   refused there (fails closed). Best effort: a
 //   script can get round a pattern; CLAUDE.md "In a cloud session" stays the rule.
 // Prints nothing when there is nothing to say. On this PC it never blocks Bash or Monitor and starts nothing new.
 import { execFileSync } from "node:child_process";
@@ -27,14 +28,26 @@ const RULE = "Allowed: Opus 5.5 at high effort, for every task (docs/14-models-a
 const out = (o) => console.log(JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", ...o } }));
 const deny = (why) => out({ permissionDecision: "deny", permissionDecisionReason: `${why}. ${RULE}` });
 
+const CLOUD = process.env.CLAUDE_CODE_REMOTE === "true";
+
 let input;
 try {
   input = JSON.parse(readFileSync(0, "utf8"));
 } catch {
-  process.exit(0);
+  input = undefined;
 }
 
-if (input.tool_name === "Agent") {
+if (input === null || typeof input !== "object" || Array.isArray(input)) {
+  // Input that isn't a JSON object (unreadable, null, a list, a bare value): on this PC the hook says nothing, as before; in a
+  // cloud session the call is refused, because a hook that exits quietly or crashes lets it through (CLOUD-1 second re-check,
+  // finding 6).
+  if (CLOUD)
+    out({
+      permissionDecision: "deny",
+      permissionDecisionReason:
+        'The hook input could not be read, so the call can\'t be checked in a cloud session. This check is best effort; CLAUDE.md "In a cloud session" stays the rule.',
+    });
+} else if (input.tool_name === "Agent") {
   const { model, effort, subagent_type: raw } = input.tool_input ?? {};
   const type = typeof raw === "string" ? raw.trim() : "";
   let why = "";
@@ -49,7 +62,7 @@ if (input.tool_name === "Agent") {
   if (why) deny(why);
 } else if (input.tool_name === "Bash" || input.tool_name === "Monitor") {
   let refused = "";
-  if (process.env.CLAUDE_CODE_REMOTE === "true") {
+  if (CLOUD) {
     try {
       const { cloudRefusal } = await import("./cloud-guard.mjs");
       // Both tools hold their shell command in tool_input.command (Monitor: { command, description, timeout_ms }).
